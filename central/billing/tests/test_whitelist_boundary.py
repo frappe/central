@@ -38,7 +38,6 @@ BOUNDARY_ALLOWLIST = {
 GUARD_ALLOWLIST = {
 	"api/dashboard/account.py::whoami",  # reports the caller's own session/scope
 	"api/dashboard/account.py::get_billing_geo",  # static country/state lists
-	"api/dashboard/account.py::list_switchable_teams",  # session-derived team list
 }
 
 # Calling any of these on the first lines is what "guarded" means (security.md §3).

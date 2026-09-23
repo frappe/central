@@ -17,7 +17,7 @@ class TestImagePlanCompatibility(TestCase):
 		}
 		with (
 			patch("central.integrations.images.selected_image", return_value={"rootfs_size_mib": 15361}),
-			patch("central.billing.api.dashboard.catalog.get_eligible_plans", return_value=catalog),
+			patch("central.billing.catalog.server_plans.get_server_plans", return_value=catalog),
 		):
 			result = eligible_plans("team", "region", "pilot", "image")
 		self.assertEqual([row["plan"] for row in result["plans"]["General"]], ["fit"])

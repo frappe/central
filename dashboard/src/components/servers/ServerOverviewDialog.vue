@@ -13,10 +13,10 @@ import ServerSnapshotsCard from '@/components/snapshots/ServerSnapshotsCard.vue'
 import { useRegions } from '@/composables/useRegions'
 import type { VirtualMachineRow } from '@/composables/useServers'
 import { useSession } from '@/composables/useSession'
+import { getErrorMessage } from '@/lib/feedback'
 import type { LoadPoint } from '@/lib/loadChart'
 import { formatPlanLabel } from '@/lib/planLabel'
 import { statusVisual } from '@/lib/serverMap'
-import { getErrorMessage } from '@/lib/toast'
 
 type Overview = {
 	server: VirtualMachineRow & {
@@ -26,7 +26,7 @@ type Overview = {
 		plan_currency: string | null
 		plan_billing_cycle: string | null
 		team_name: string
-		region: { display_name?: string | null; provider?: string | null }
+		region_details: { display_name?: string | null; provider?: string | null }
 	}
 	monitoring: {
 		available: boolean
@@ -130,23 +130,26 @@ const visual = computed(() => {
 	return row ? statusVisual(row) : null
 })
 const provider = computed(() => {
-	if (server.value?.region.provider) return server.value.region.provider
-	const cluster = props.server?.cluster
-	if (!cluster) return null
+	if (server.value?.region_details.provider)
+		return server.value.region_details.provider
+	const regionName = props.server?.region
+	if (!regionName) return null
 	return (
-		regions.value.find((region) => region.region === cluster)?.provider || null
+		regions.value.find((region) => region.region === regionName)?.provider ||
+		null
 	)
 })
 const locationLine = computed(() => {
 	if (server.value) {
-		const location = server.value.region.display_name || server.value.cluster
-		const name = server.value.region.provider
+		const location =
+			server.value.region_details.display_name || server.value.region
+		const name = server.value.region_details.provider
 		return name ? `${location} · ${name}` : location
 	}
-	const cluster = props.server?.cluster
-	if (!cluster) return ''
-	const region = regions.value.find((entry) => entry.region === cluster)
-	const location = region?.display_name || cluster
+	const regionName = props.server?.region
+	if (!regionName) return ''
+	const region = regions.value.find((entry) => entry.region === regionName)
+	const location = region?.display_name || regionName
 	return region?.provider ? `${location} · ${region.provider}` : location
 })
 const title = computed(
@@ -220,8 +223,8 @@ const planLabel = computed(() =>
 
 				<div class="grid gap-4 md:grid-cols-2">
 					<ServerInfoCard
-						:hosted-on="server.region.display_name || server.cluster || '—'"
-						:provider="server.region.provider"
+						:hosted-on="server.region_details.display_name || server.region || '—'"
+						:provider="server.region_details.provider"
 						:plan="planLabel"
 						:inbound-ip="server.public_ipv4 || '—'"
 						:frappe-version="server.frappe_version || '—'"

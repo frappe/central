@@ -3,7 +3,7 @@ from unittest.mock import Mock, patch
 import frappe
 from frappe.tests import IntegrationTestCase
 
-from central.api.sites import claim_site, get_site, onboarding_status, terminate_site
+from central.api.sites import claim_site, get_site, login_site, onboarding_status, terminate_site
 from central.errors import AtlasResourceGone
 from central.infrastructure.doctype.pilot_credential.pilot_credential import PilotCredential
 from central.infrastructure.doctype.site.site import on_host
@@ -48,7 +48,7 @@ class SiteOnAMachine(IntegrationTestCase):
 				"doctype": "Virtual Machine",
 				"resource_id": "server-" + frappe.generate_hash(length=8),
 				"team": self.team.name,
-				"cluster": region.name,
+				"region": region.name,
 				"atlas_vm_id": "vm-00001",
 				"status": "Provisioning",
 			}
@@ -137,7 +137,24 @@ class TestSiteRoutes(SiteOnAMachine):
 		self.assertFalse(state["ready"])
 		self.assertIsNone(state["login_url"])
 
-	def test_a_reachable_site_hands_back_a_sign_in_URL(self):
+	def test_first_successful_probe_records_and_announces_readiness(self):
+		site = self.site()
+		with (
+			patch("central.api.sites.is_site_reachable", return_value=True),
+			patch("central.notification.engine.queue_event") as queue_event,
+		):
+			get_site(site.name)
+			get_site(site.name)
+
+		self.assertTrue(site.reload().ready_at)
+		queue_event.assert_called_once_with(
+			site.team,
+			"site_ready",
+			reference_doctype="Site",
+			reference_name=site.name,
+		)
+
+	def test_status_read_does_not_create_a_login(self):
 		with (
 			patch("central.api.sites.is_site_reachable", return_value=True),
 			patch(
@@ -147,10 +164,21 @@ class TestSiteRoutes(SiteOnAMachine):
 		):
 			state = get_site(self.site().name)
 
-		# Pilot is asked for the site's bench name, and the session comes back on the
-		# public address the customer's browser can actually reach.
-		self.assertEqual(login.call_args.args[2], "site.local")
 		self.assertTrue(state["ready"])
+		self.assertIsNone(state["login_url"])
+		login.assert_not_called()
+
+	def test_explicit_login_hands_back_a_sign_in_url(self):
+		with (
+			patch("central.api.sites.is_site_reachable", return_value=True),
+			patch(
+				"central.integrations.pilot.fetch_site_login_url",
+				return_value="https://site.local/desk?sid=abc",
+			) as login,
+		):
+			state = login_site(self.site().name)
+
+		self.assertEqual(login.call_args.args[2], "site.local")
 		self.assertEqual(state["login_url"], "https://site-1z141z4.par-2.example.test/desk?sid=abc")
 
 	def test_a_site_is_ready_before_the_machine_reports_running(self):
@@ -163,7 +191,7 @@ class TestSiteRoutes(SiteOnAMachine):
 				return_value="https://site.local/desk?sid=abc",
 			),
 		):
-			state = get_site(self.site().name)
+			state = login_site(self.site().name)
 
 		self.assertEqual(state["status"], "Provisioning")
 		self.assertTrue(state["ready"])
@@ -230,6 +258,12 @@ class TestSiteRoutes(SiteOnAMachine):
 
 		with self.assertRaises(frappe.PermissionError):
 			get_site(self.site().name)
+		with self.assertRaises(frappe.PermissionError):
+			login_site(self.site().name)
+
+	def test_status_is_get_and_login_is_post_only(self):
+		self.assertEqual(frappe.allowed_http_methods_for_whitelisted_func[get_site], ("GET", "QUERY"))
+		self.assertEqual(frappe.allowed_http_methods_for_whitelisted_func[login_site], ("POST",))
 
 	def test_onboarding_follows_only_a_site_creation(self):
 		server_action = self.creation_action("Server")
@@ -396,6 +430,20 @@ class TestSiteNaming(SiteOnAMachine):
 
 		rename.assert_not_called()
 
+	def test_a_failed_rename_is_traceable_and_retryable(self):
+		site = self.site()
+		with patch("central.integrations.pilot.rename_site", side_effect=OSError("pilot unavailable")):
+			site.apply_subdomain()
+
+		self.assertIn("Retry", site.rename_error)
+		self.assertIn("pilot unavailable", frappe.db.get_value("Error Log", site.rename_error_log, "error"))
+
+		self.enqueue_doc.reset_mock()
+		site.retry_subdomain_rename()
+
+		self.enqueue_doc.assert_called_once()
+		self.assertIsNone(site.rename_error)
+
 
 class TestAdminHostname(SiteOnAMachine):
 	def test_a_running_pilot_machine_claims_its_admin_hostname_once(self):
@@ -417,7 +465,10 @@ class TestAdminHostname(SiteOnAMachine):
 		with patch("central.integrations.pilot.rename_admin_domain", side_effect=OSError("unreachable")):
 			observe_server(self.server)
 
-		self.assertIsNone(self.server.reload().admin_domain_task)
+		server = self.server.reload()
+		self.assertIsNone(server.admin_domain_task)
+		self.assertIn("retry", server.admin_domain_error)
+		self.assertIn("unreachable", frappe.db.get_value("Error Log", server.admin_domain_error_log, "error"))
 
 	def test_a_response_without_a_task_leaves_it_to_the_next_report(self):
 		self.enroll()
@@ -463,22 +514,21 @@ class TestSubdomainAvailability(SiteOnAMachine):
 		self.assertEqual(answer["subdomain"], unique)
 
 
-class TestTrialCreationIsSentInTheRequest(IntegrationTestCase):
-	"""A trial is one call out and one read back, so the customer is shown the outcome."""
+class TestTrialCreationIsQueued(IntegrationTestCase):
+	"""A trial returns durable intent while the regional operation runs after commit."""
 
 	def setUp(self):
 		super().setUp()
 		frappe.set_user("Administrator")
 		self.addCleanup(frappe.db.rollback)
 
-	def start(self, drive):
+	def start(self):
 		from central.site_provisioning import create_trial_site
 
 		with (
 			patch("central.site_provisioning.validated_subdomain", return_value="acme"),
 			patch("central.site_provisioning.trial_configuration", return_value={}),
 			patch("central.site_provisioning.submit_request") as submit,
-			patch("central.integrations.server_provisioning.process_request", side_effect=drive),
 		):
 			action = frappe.get_doc(
 				{
@@ -495,34 +545,19 @@ class TestTrialCreationIsSentInTheRequest(IntegrationTestCase):
 					"status": "Queued",
 				}
 			).insert(ignore_permissions=True)
-			submit.return_value = {"action": action.name}
+			submit.return_value = action.customer_status()
 			self.action = action
 			return create_trial_site(None, "acme", "key-" + frappe.generate_hash(length=8))
 
-	def test_a_refusal_comes_back_to_the_caller(self):
-		def refuse(name):
-			frappe.db.set_value(
-				"Resource Action", name, {"status": "Failed", "error_code": "CREATE_NOT_ACCEPTED"}
-			)
+	def test_creation_returns_the_queued_action(self):
+		status = self.start()
 
-		status = self.start(refuse)
+		self.assertEqual(status["status"], "Queued")
+		self.assertEqual(status["action"], self.action.name)
 
-		self.assertEqual(status["status"], "Failed")
-		self.assertEqual(status["error"]["code"], "CREATE_NOT_ACCEPTED")
-
-	def test_a_machine_that_started_comes_back_without_an_error(self):
-		def accept(name):
-			frappe.db.set_value("Resource Action", name, "status", "In Progress")
-
-		status = self.start(accept)
-
-		self.assertEqual(status["status"], "In Progress")
-		self.assertIsNone(status["error"])
-
-	def test_a_site_request_is_never_put_on_a_queue(self):
-		"""The customer is waiting on the answer, so nothing defers it to a worker."""
+	def test_site_and_server_requests_use_the_same_queue(self):
 		team = frappe.get_doc(
-			{"doctype": "Team", "team_name": "Unqueued", "owner_user": "Administrator"}
+			{"doctype": "Team", "team_name": "Queued", "owner_user": "Administrator"}
 		).insert()
 
 		with patch("frappe.enqueue") as enqueue:
@@ -539,5 +574,4 @@ class TestTrialCreationIsSentInTheRequest(IntegrationTestCase):
 					}
 				).insert(ignore_permissions=True)
 
-		# Only the server was queued.
-		self.assertEqual(enqueue.call_count, 1)
+		self.assertEqual(enqueue.call_count, 2)

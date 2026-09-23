@@ -29,9 +29,7 @@ class TestResourceActions(IntegrationTestCase):
 		self.enterContext(patch("frappe.enqueue"))
 		self.enterContext(patch("frappe.db.commit"))
 		self.enterContext(patch.object(VirtualMachine, "ensure_subscription_enabled"))
-		self.subscription = self.enterContext(
-			patch("central.integrations.server_provisioning._create_subscription")
-		)
+		self.enterContext(patch("central.billing.catalog.subscriptions.create_server_subscription"))
 		self.enterContext(
 			patch(
 				"central.integrations.server_provisioning.central_url",
@@ -190,6 +188,22 @@ class TestResourceActions(IntegrationTestCase):
 		self.assertEqual(frappe.db.count("Virtual Machine", {"team": self.team.name}), 1)
 		self.assertEqual(self.client.return_value.create_vm.call_count, 2)
 
+	def test_creation_failure_queues_one_notification_after_commit(self):
+		name = self.submit()["action"]
+		self.client.return_value.create_vm.side_effect = AtlasConnectionError("region refused")
+
+		with patch("central.notification.engine.queue_event") as queue_event:
+			_process_locked(name)
+
+		queue_event.assert_called_once()
+		self.assertEqual(queue_event.call_args.args, (self.team.name, "provision_failure"))
+		self.assertEqual(queue_event.call_args.kwargs["reference_name"], name)
+		action = frappe.get_doc("Resource Action", name)
+		diagnostic = frappe.db.get_value("Error Log", action.error_log, "error")
+		self.assertIn("Traceback", diagnostic)
+		self.assertIn("AtlasConnectionError: region refused", diagnostic)
+		self.assertNotIn("region refused", action.error_message)
+
 	def test_retry_is_refused_without_a_saved_configuration(self):
 		name = self.submit()["action"]
 		frappe.db.set_value("Resource Action", name, {"status": "Failed", "request_payload": None})
@@ -264,6 +278,10 @@ class TestResourceActions(IntegrationTestCase):
 		action = frappe.get_doc("Resource Action", name)
 		self.assertEqual(action.remote_vm_id, "vm-00009")
 		self.assertEqual(action.status, "Succeeded")
+		self.assertIn(
+			"AtlasRequestUncertain: lost reply",
+			frappe.db.get_value("Error Log", action.error_log, "error"),
+		)
 		self.client.return_value.create_vm.assert_called_once()
 
 	def test_a_lost_reply_that_built_nothing_is_a_retriable_failure(self):
@@ -395,9 +413,16 @@ class TestResourceActions(IntegrationTestCase):
 				side_effect=RuntimeError("worker failure"),
 			),
 			patch("frappe.db.rollback"),
-			patch("frappe.log_error"),
 		):
 			process_request(name)
-		self.assertEqual(get_status(name)["status"], "Failed")
-		self.assertEqual(get_status(name)["error"]["code"], "UNEXPECTED")
+		action = frappe.get_doc("Resource Action", name)
+		self.assertEqual(action.status, "Failed")
+		self.assertEqual(action.error_code, "UNEXPECTED")
+		self.assertIn(
+			"RuntimeError: worker failure", frappe.db.get_value("Error Log", action.error_log, "error")
+		)
+		self.assertEqual(
+			frappe.db.get_value("Error Log", action.error_log, ["reference_doctype", "reference_name"]),
+			("Resource Action", action.name),
+		)
 		self.client.return_value.create_vm.assert_not_called()

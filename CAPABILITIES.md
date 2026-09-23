@@ -17,7 +17,7 @@ A capability is named `resource:action` and belongs to exactly one **plane**:
 | `atlas` | Atlas | Atlas API (when wired) |
 | `bench` | each bench | bench `admin/backend/auth.py` (`BENCH_CAPS`) |
 
-## Server is the atomic unit (model v3)
+## Server is the atomic unit (model v5)
 
 Role capabilities live at the **team** and **server** level only. A team manages
 servers; a server *is* a bench host. The **bench plane** — site-level capabilities
@@ -38,9 +38,9 @@ The distinction matters:
   a new capability string, so a bench always understands the result. Teams can
   create as many custom roles as they like without affecting this contract.
 
-## The 13 capabilities
+## The 14 capabilities
 
-### `central` plane (5)
+### `central` plane (7)
 
 | Capability | Meaning |
 | --- | --- |
@@ -49,19 +49,20 @@ The distinction matters:
 | `team:edit` | Edit team metadata. |
 | `team:manage_members` | Invite, suspend, and change team members. |
 | `team:delete` | Delete a team. |
+| `service:view` | View managed service configuration. |
+| `service:manage` | Configure managed services and credentials. |
 
-### `atlas` plane (8)
+### `atlas` plane (7)
 
 | Capability | Meaning |
 | --- | --- |
 | `cluster:view` | View clusters the team can place servers in. |
-| `server:view` | List servers; view status, specs, and metrics. |
+| `server:view` | List and open servers and sites; view status, specs, and metrics. |
 | `server:create` | Provision a new server. |
 | `server:power` | Start, stop, and restart a server. |
 | `server:resize` | Resize or rebuild a server. |
 | `server:snapshot` | Create and restore server snapshots. |
 | `server:terminate` | Destroy a server. |
-| `server:open` | Open a server's console (bench admin) via signed-token SSO. |
 
 ### `bench` plane (0 — deferred)
 
@@ -77,7 +78,6 @@ under these implications before it is asserted or evaluated
 
 | Capability | Implies |
 | --- | --- |
-| `server:open` | `server:view` |
 | `server:create` | `server:view`, `cluster:view` |
 | `server:power` / `resize` / `snapshot` / `terminate` | `server:view` |
 
@@ -104,9 +104,10 @@ all teams. Teams may also define custom roles scoped to themselves.
 | `server:resize` | ✓ | ✓ | ✓ | | |
 | `server:snapshot` | ✓ | ✓ | ✓ | | |
 | `server:terminate` | ✓ | ✓ | ✓ | | |
-| `server:open` | ✓ | ✓ | ✓ | | |
+| `service:view` | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `service:manage` | ✓ | ✓ | ✓ | | ✓ |
 
-Totals: Owner 13, Admin 12, Developer 8, Viewer 2, Billing 4.
+Totals: Owner 14, Admin 13, Developer 9, Viewer 3, Billing 6.
 
 The ladder reads top to bottom: **Viewer** (look) → **Billing** (look + pay) →
 **Developer** (operate servers) → **Admin** (Developer + run the team) → **Owner**

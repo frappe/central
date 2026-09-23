@@ -15,7 +15,7 @@
   "column_break_main",
   "reference_doctype",
   "reference_name",
-  "sent_at",
+  "queued_at",
   "section_break_body",
   "subject",
   "message"
@@ -28,13 +28,13 @@
   },
   {"default": "email", "fieldname": "channel", "fieldtype": "Data", "label": "Channel"},
   {
-   "default": "Sent", "fieldname": "status", "fieldtype": "Select", "in_list_view": 1,
-   "label": "Status", "options": "Sent\nSuppressed"
+   "default": "Suppressed", "fieldname": "status", "fieldtype": "Select", "in_list_view": 1,
+   "label": "Status", "options": "Queued\nFailed\nSuppressed"
   },
   {"fieldname": "column_break_main", "fieldtype": "Column Break"},
   {"fieldname": "reference_doctype", "fieldtype": "Data", "label": "Reference DocType"},
   {"fieldname": "reference_name", "fieldtype": "Data", "label": "Reference Name"},
-  {"fieldname": "sent_at", "fieldtype": "Datetime", "label": "Sent At"},
+  {"fieldname": "queued_at", "fieldtype": "Datetime", "label": "Queued At"},
   {"fieldname": "section_break_body", "fieldtype": "Section Break"},
   {"fieldname": "subject", "fieldtype": "Data", "label": "Subject"},
   {"fieldname": "message", "fieldtype": "Small Text", "label": "Message"}

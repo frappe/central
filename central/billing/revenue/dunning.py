@@ -228,6 +228,7 @@ def process_invoice_dunning(invoice_name: str, now=None) -> dict:
 	if "Overdue" in reached:
 		if inv.status == "Open":
 			transition(inv, "Overdue", reason="dunning: past due window elapsed", actor="scheduler")
+			# The scheduled dunning transition owns this invoice state change.
 			inv.save(ignore_permissions=True)
 			actions.append("overdue")
 			from central.billing.platform import notifications
@@ -251,16 +252,6 @@ def process_invoice_dunning(invoice_name: str, now=None) -> dict:
 			_notify(inv, f"Suspended for non-payment (day {days}); resource stopped, data preserved.")
 			from central.notification import engine
 
-			engine.ensure_event_type(
-				"server_suspended",
-				category="Server",
-				severity="Error",
-				required_cap="server:view",
-				in_app_title="Server suspended: {{ reference_name }}",
-				in_app_body="Server {{ reference_name }} suspended for non-payment: {{ message }}",
-				action_label="Pay now",
-				action_route="/billing/invoices",
-			)
 			engine.dispatch(
 				inv.team,
 				"server_suspended",

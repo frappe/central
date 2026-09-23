@@ -12,6 +12,34 @@ import frappe
 from frappe import _
 
 
+def queue_event(
+	team: str,
+	event_type: str,
+	*,
+	message: str | None = None,
+	context: dict | None = None,
+	reference_doctype: str | None = None,
+	reference_name: str | None = None,
+	affected_user: str | None = None,
+) -> None:
+	"""Queue one event after its owning resource transaction commits."""
+	identity = reference_name or affected_user or team
+	frappe.enqueue(
+		dispatch,
+		team=team,
+		event_type=event_type,
+		message=message,
+		context=context,
+		reference_doctype=reference_doctype,
+		reference_name=reference_name,
+		affected_user=affected_user,
+		queue="short",
+		enqueue_after_commit=True,
+		job_id=f"notification:{event_type}:{identity}",
+		deduplicate=True,
+	)
+
+
 def dispatch(
 	team: str,
 	event_type: str,
@@ -34,8 +62,8 @@ def dispatch(
 	the email (capability check is bypassed for that user).  All other members
 	receive nothing for that event.
 
-	Returns ``{"created": True, "notification": <name>}`` on success, or
-	``{"created": False, "reason": "duplicate"}`` when dedup fires.
+	The result always includes creation and email queue counts. A duplicate returns
+	``reason="duplicate"`` with zero email attempts.
 	"""
 	ctx = _resolve_context(team, event_type, context, reference_name, reference_doctype)
 	ctx["message"] = message or ""
@@ -50,7 +78,14 @@ def dispatch(
 	# Deduplication: suppress if an unread notification with the same
 	# event_type and reference_name already exists for this team.
 	if _is_duplicate(team, event_type, reference_name):
-		return {"created": False, "reason": "duplicate"}
+		return {
+			"created": False,
+			"reason": "duplicate",
+			"notification": None,
+			"emails_queued": 0,
+			"email_attempted": 0,
+			"email_failed": 0,
+		}
 
 	title = _render_template(event.in_app_title, ctx)
 	body = _render_template(event.in_app_body, ctx)
@@ -92,55 +127,10 @@ def dispatch(
 		"notification": doc.name if doc else None,
 		"title": title,
 		"body": body,
-		"emails_sent": email_result["sent"],
+		"emails_queued": email_result["queued"],
 		"email_attempted": email_result["attempted"],
 		"email_failed": email_result["failed"],
 	}
-
-
-# ---------------------------------------------------------------------------
-# Internal helpers
-# ---------------------------------------------------------------------------
-
-
-def ensure_event_type(
-	event_type: str,
-	*,
-	category: str,
-	severity: str,
-	required_cap: str,
-	in_app_title: str,
-	in_app_body: str,
-	action_label: str | None = None,
-	action_route: str | None = None,
-	direct_recipients: str = "None",
-	create_in_app: bool = True,
-	email_template: str | None = None,
-):
-	"""Create the ``Notification Event Type`` row if it doesn't already exist.
-
-	Callers should invoke this before ``dispatch()`` when the fixture may not
-	have been loaded (e.g. in tests or isolated background jobs).  The
-	insertion is a no-op when the row is already present.
-	"""
-	if frappe.db.exists("Notification Event Type", event_type):
-		return
-	frappe.get_doc(
-		{
-			"doctype": "Notification Event Type",
-			"event_type": event_type,
-			"category": category,
-			"severity": severity,
-			"required_cap": required_cap,
-			"in_app_title": in_app_title,
-			"in_app_body": in_app_body,
-			"action_label": action_label,
-			"action_route": action_route,
-			"direct_recipients": direct_recipients,
-			"create_in_app": int(create_in_app),
-			"email_template": email_template,
-		}
-	).insert(ignore_permissions=True)
 
 
 def _get_event_type(event_type: str):
@@ -154,7 +144,6 @@ def _get_event_type(event_type: str):
 			"severity",
 			"required_cap",
 			"direct_recipients",
-			"email_template",
 			"in_app_title",
 			"in_app_body",
 			"action_label",
@@ -244,11 +233,11 @@ def _fan_out_emails(
 	the email — capability is bypassed for that user and no other members are
 	contacted.
 
-	Returns ``{"sent": N, "attempted": N, "failed": N}``.
+	Returns ``{"queued": N, "attempted": N, "failed": N}``.
 	"""
 	from central.iam import can
 
-	result = {"sent": 0, "attempted": 0, "failed": 0}
+	result = {"queued": 0, "attempted": 0, "failed": 0}
 
 	if event.direct_recipients == "Affected User":
 		if affected_user and _email_enabled(affected_user, team, event.category):
@@ -263,7 +252,7 @@ def _fan_out_emails(
 			)
 			result["attempted"] = 1
 			if ok:
-				result["sent"] = 1
+				result["queued"] = 1
 			else:
 				result["failed"] = 1
 		return result
@@ -290,7 +279,7 @@ def _fan_out_emails(
 			reference_name=reference_name,
 		)
 		if ok:
-			result["sent"] += 1
+			result["queued"] += 1
 		else:
 			result["failed"] += 1
 
@@ -367,33 +356,17 @@ def _notification_email(event, ctx, message=None) -> tuple[str, str]:
 def _send_member_email(
 	user, team, event, ctx, *, message=None, reference_doctype=None, reference_name=None
 ) -> bool:
-	"""Render and queue a single email for *user*.
+	"""Render the shared notification template and queue one email for *user*.
 
 	Best-effort: if the outgoing email account is not configured the
 	notification is still recorded in the feed; the email is simply skipped.
 
-	Returns True if the email was sent successfully, False if it failed.
+	Returns True if Frappe accepted the email for delivery, False if queuing failed.
 
-	When the Event Type has an ``email_template`` link, the Frappe Email
-	Template DocType is used for subject/body rendering.  Otherwise the event's
-	own fields render through templates/emails/notification.html.
+	Every event uses templates/emails/notification.html. The event registry supplies
+	the title, body and action without maintaining a second template system.
 	"""
-	if event.email_template:
-		try:
-			from frappe.email.doctype.email_template.email_template import (
-				get_email_template,
-			)
-
-			rendered = get_email_template(event.email_template, ctx)
-			subject = rendered["subject"]
-			body = rendered["message"]
-		except Exception:
-			# A broken Email Template shouldn't silently downgrade with no trace —
-			# log why, then fall back to the generic branded template.
-			frappe.log_error(title=f"Notification email template render failed: {event.event_type}")
-			subject, body = _notification_email(event, ctx, message)
-	else:
-		subject, body = _notification_email(event, ctx, message)
+	subject, body = _notification_email(event, ctx, message)
 
 	try:
 		frappe.sendmail(

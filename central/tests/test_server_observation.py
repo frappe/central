@@ -33,7 +33,7 @@ class TestServerObservation(IntegrationTestCase):
 				"doctype": "Virtual Machine",
 				"resource_id": "server-" + frappe.generate_hash(length=8),
 				"team": self.team.name,
-				"cluster": region.name,
+				"region": region.name,
 				"atlas_vm_id": "vm-00001",
 				"status": "Provisioning",
 			}
@@ -57,7 +57,7 @@ class TestServerObservation(IntegrationTestCase):
 				"resource_type": "Server",
 				"action": "stop",
 				"team": self.team.name,
-				"atlas_instance": self.server.cluster,
+				"region": self.server.region,
 				"server": self.server.name,
 				"resource_id": self.server.name,
 				"remote_vm_id": "vm-00001",
@@ -181,6 +181,23 @@ class TestServerObservation(IntegrationTestCase):
 			)
 			VirtualMachine.record_observed_state("server-absent", now, {"status": "Stopped"})
 
+		self.assertNotIn(
+			"server_state_changed", [call.args[0] for call in published.call_args_list if call.args]
+		)
+
+	def test_a_newer_same_state_report_updates_only_the_watermark(self):
+		now = frappe.utils.now_datetime()
+		self.server.db_set({"status": "Stopped", "last_reported_at": now})
+		later = frappe.utils.add_to_date(now, seconds=1)
+
+		with patch("frappe.publish_realtime") as published:
+			self.assertTrue(
+				VirtualMachine.record_observed_state(
+					self.server.name, later, {"status": "Stopped"}, reported_at=later
+				)
+			)
+
+		self.assertEqual(frappe.utils.get_datetime(self.server.reload().last_reported_at), later)
 		self.assertNotIn(
 			"server_state_changed", [call.args[0] for call in published.call_args_list if call.args]
 		)

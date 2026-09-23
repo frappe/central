@@ -145,9 +145,9 @@ class TestConsoleResize(UnitTestCase):
 				return_value={"queued": True, "resized": True},
 			)
 		)
-		self.enterContext(patch("central.api.servers.resolve_team", return_value="TEAM-1"))
-		self.enterContext(patch("central.api.servers.can", return_value=True))
-		self.enterContext(patch("central.api.servers.frappe.session", user="user@example.com"))
+		self.enterContext(patch("central.utils.guards.resolve_team", return_value="TEAM-1"))
+		self.enterContext(patch("central.utils.guards.can", return_value=True))
+		self.enterContext(patch("central.utils.guards.frappe.session", user="user@example.com"))
 
 		def get_value(doctype, filters, field):
 			if doctype == "Virtual Machine":
@@ -168,22 +168,9 @@ class TestConsoleResize(UnitTestCase):
 	def test_resize_without_the_capability_is_refused(self):
 		from central.api.servers import resize_server
 
-		self.enterContext(patch("central.api.servers.resolve_team", return_value="TEAM-1"))
-		self.enterContext(patch("central.api.servers.can", return_value=False))
-		self.enterContext(patch("central.api.servers.frappe.session", user="user@example.com"))
+		self.enterContext(patch("central.utils.guards.resolve_team", return_value="TEAM-1"))
+		self.enterContext(patch("central.utils.guards.can", return_value=False))
+		self.enterContext(patch("central.utils.guards.frappe.session", user="user@example.com"))
 
 		with self.assertRaises(frappe.PermissionError):
 			resize_server(team="TEAM-1", resource_id="server-1", plan="plan-2vcpu", disk_gigabytes=20)
-
-
-class TestReshapeVm(UnitTestCase):
-	def test_server_that_is_not_ready_is_refused(self):
-		from central.billing.catalog.subscriptions import _reshape_vm
-
-		with (
-			patch("central.integrations.servers.resize_server") as resize,
-			self.assertRaises(frappe.ValidationError),
-		):
-			_reshape_vm("server-1", "par-2", "Provisioning", SHAPE)
-
-		resize.assert_not_called()

@@ -40,11 +40,11 @@ def pilot_credential_auth(func: Callable) -> Callable:
 
 def get_pilot_region(credential: PilotCredential) -> str | None:
 	"""The region this pilot runs in, or None while Atlas has not bound its VirtualMachine.
-	`VirtualMachine.cluster` is a Region, so the region needs no lookup of its own."""
+	`VirtualMachine.region` links directly to Region, so no separate lookup is needed."""
 	if not credential.server:
 		return None
 
-	return frappe.db.get_value("Virtual Machine", credential.server, "cluster", cache=True)
+	return frappe.get_cached_value("Virtual Machine", credential.server, "region")
 
 
 def get_telemetry_base_url(region: str | None) -> str | None:
@@ -138,6 +138,7 @@ def deregister_domain(domain: str) -> None:
 	SiteDomain.deregister(frappe.local.pilot_credential, domain)
 
 
+# nosemgrep: guest-whitelisted-method -- a signed, short-lived, single-use token authenticates enrollment.
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 def enroll(bootstrap_token: str) -> dict:
 	"""First-boot handshake: exchange a single-use, create-time bootstrap token for this
@@ -160,12 +161,16 @@ def enroll(bootstrap_token: str) -> dict:
 	# The pilot_credential_id is this bench's audience id: every downward token Central mints
 	# for it carries `aud = pcid`, and the bench verifies against it. issue_for preserves any
 	# VirtualMachine link the VM events already bound (billing reads it) — enrollment only mints the token.
-	token = PilotCredential.issue_for(
-		team=grant["team"], pilot_credential_id=grant["pcid"], audience_id=grant["pcid"]
-	)
-	# Commit before returning: a rollback of this request must not strand the pilot with a
-	# token Central will not recognise.
-	frappe.db.commit()
+	try:
+		token = PilotCredential.issue_for(
+			team=grant["team"], pilot_credential_id=grant["pcid"], audience_id=grant["pcid"]
+		)
+		# Commit before returning: a rollback of this request must not strand the pilot with a
+		# token Central will not recognise.
+		frappe.db.commit()  # nosemgrep: frappe-manual-commit -- commit before returning
+	except Exception:
+		frappe.cache.delete(consumed_key)
+		raise
 
 	return {
 		"auth_token": token,

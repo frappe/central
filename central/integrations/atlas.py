@@ -318,7 +318,7 @@ class AtlasClient:
 		"""The `error.message` an Atlas error body carries, escaped and bounded, or None."""
 		try:
 			error = response.json().get("error", {})
-		except (ValueError, AttributeError):
+		except ValueError, AttributeError:
 			return None
 		message = error.get("message") if isinstance(error, dict) else None
 		return frappe.utils.escape_html(message[:1000]) if isinstance(message, str) else None
@@ -333,8 +333,8 @@ class AtlasClient:
 		if response.status_code == 404:
 			raise AtlasResourceGone(_("The regional resource was not found."))
 
-		# A 503 that names why (for example out_of_capacity when no host can hold the new shape)
-		# is a definite refusal, not an uncertain outcome, so surface its reason to the customer.
+		# A 503 that names why is a definite refusal, not an uncertain outcome. The reason is
+		# retained for Desk diagnostics and translated at the customer API boundary.
 		if response.status_code == 503:
 			reason = self._error_message(response)
 			if reason:

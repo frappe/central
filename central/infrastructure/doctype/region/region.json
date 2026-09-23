@@ -239,12 +239,12 @@
   {
    "group": "Fleet",
    "link_doctype": "Virtual Machine",
-   "link_fieldname": "cluster"
+   "link_fieldname": "region"
   },
   {
    "group": "Fleet",
    "link_doctype": "Resource Action",
-   "link_fieldname": "atlas_instance"
+   "link_fieldname": "region"
   },
   {
    "group": "Routing",

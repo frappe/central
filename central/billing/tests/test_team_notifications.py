@@ -2,6 +2,8 @@
 # For license information, please see license.txt
 """Team Notification feed — the console's unified in-app inbox (billing + server)."""
 
+from unittest.mock import patch
+
 import frappe
 
 from central import notification as feed
@@ -57,7 +59,7 @@ class TestFeedWriter(TeamNotificationBase):
 
 	def test_notify_writes_feed_in_app(self):
 		out = billing_notify.notify(TEAM, "Payment Failure", context={"invoice": "INV-2", "reason": "x"})
-		self.assertTrue(out["sent"])
+		self.assertTrue(out["notified"])
 		self.assertEqual(feed.unread_count(TEAM), 1)
 
 
@@ -89,6 +91,15 @@ class TestFeedAPI(TeamNotificationBase):
 		out = notif_api.mark_all_notifications_read(team=TEAM)
 		self.assertEqual(out["unread"], 0)
 		self.assertEqual(feed.unread_count(TEAM), 0)
+
+	def test_mark_all_reads_every_batch_without_a_fixed_feed_cap(self):
+		for title in ("A", "B", "C", "D", "E"):
+			feed.create_notification(TEAM, title)
+
+		with patch("central.notification.api.MARK_READ_BATCH_SIZE", 2):
+			out = notif_api.mark_all_notifications_read(team=TEAM)
+
+		self.assertEqual(out, {"ok": True, "updated": 5, "unread": 0})
 
 	def test_mark_read_rejects_other_teams_row(self):
 		# A row belonging to another team can't be marked read via this team's scope.
@@ -128,23 +139,25 @@ class TestServerFailureFeed(TeamNotificationBase):
 		ensure_atlas_instance(self.CLUSTER)
 		frappe.db.delete("Virtual Machine", {"resource_id": "vm-feed-1"})
 
-	def test_a_failed_server_emits_a_notification(self):
-		# A mirror flipping to Failed drops a Server-category error into the feed.
+	def test_a_failed_server_queues_a_notification(self):
 		server = frappe.get_doc(
 			{
 				"doctype": "Virtual Machine",
 				"resource_id": "vm-feed-1",
 				"team": TEAM,
-				"cluster": self.CLUSTER,
+				"region": self.CLUSTER,
 				"status": "Pending",
 			}
 		).insert(ignore_permissions=True)
-		server.status = "Failed"
-		server.save(ignore_permissions=True)
-		rows = frappe.get_all(
-			"Team Notification", {"team": TEAM, "event_type": "server_failed"}, ["severity", "category"]
+		with patch("central.notification.engine.queue_event") as queue_event:
+			server.status = "Failed"
+			server.save(ignore_permissions=True)
+
+		queue_event.assert_called_once_with(
+			TEAM,
+			"server_failed",
+			message="The region reported a failure for this server.",
+			reference_doctype="Virtual Machine",
+			reference_name=server.name,
 		)
-		self.assertEqual(len(rows), 1)
-		self.assertEqual(rows[0].severity, "Error")
-		self.assertEqual(rows[0].category, "Server")
 		frappe.db.delete("Virtual Machine", {"resource_id": "vm-feed-1"})

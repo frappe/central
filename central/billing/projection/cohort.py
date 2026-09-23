@@ -79,7 +79,7 @@ def _filtered_teams_query(filters: dict):
 	if filters.get("cluster"):
 		server = frappe.qb.DocType("Virtual Machine")
 		query = query.join(server).on(server.name == sub.server_id)
-		query = query.where(server.cluster == filters["cluster"])
+		query = query.where(server.region == filters["cluster"])
 
 	if filters.get("account_standing"):
 		query = query.where(sub.account_standing == filters["account_standing"])

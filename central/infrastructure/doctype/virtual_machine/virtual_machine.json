@@ -8,7 +8,7 @@
   "resource_id",
   "title",
   "team",
-  "cluster",
+  "region",
   "plan",
   "frappe_version",
   "status",
@@ -19,7 +19,8 @@
   "public_ipv4",
   "gateway_url",
   "admin_domain_task",
-  "resize_in_progress",
+  "admin_domain_error",
+  "admin_domain_error_log",
   "skip_automatic_snapshot",
   "atlas_vm_id",
   "image_offering",
@@ -58,11 +59,11 @@
   },
   {
    "description": "The region this VM lives in.",
-   "fieldname": "cluster",
+   "fieldname": "region",
    "fieldtype": "Link",
    "in_list_view": 1,
    "in_standard_filter": 1,
-   "label": "Cluster",
+   "label": "Region",
    "options": "Region",
    "reqd": 1,
    "search_index": 1
@@ -90,7 +91,8 @@
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Status",
-   "options": "Pending\nProvisioning\nDeploying\nRunning\nPaused\nStopped\nFailed\nTerminated"
+   "options": "Pending\nProvisioning\nDeploying\nRunning\nPaused\nStopped\nFailed\nTerminated",
+   "read_only": 1
   },
   {
    "fieldname": "vcpus",
@@ -127,7 +129,8 @@
    "fieldname": "gateway_url",
    "fieldtype": "Data",
    "label": "Gateway URL",
-   "options": "URL"
+   "options": "URL",
+   "read_only": 1
   },
   {
    "description": "The Pilot task that changed the local admin domain to the routed gateway hostname.",
@@ -137,11 +140,18 @@
    "read_only": 1
   },
   {
-   "default": "0",
-   "description": "Set while a background hardware resize runs; blocks power actions and shows a Resizing state.",
-   "fieldname": "resize_in_progress",
-   "fieldtype": "Check",
-   "label": "Resize In Progress",
+   "description": "A safe summary of the latest admin hostname failure.",
+   "fieldname": "admin_domain_error",
+   "fieldtype": "Small Text",
+   "label": "Admin Domain Error",
+   "read_only": 1
+  },
+  {
+   "description": "The Error Log for the latest admin hostname failure.",
+   "fieldname": "admin_domain_error_log",
+   "fieldtype": "Link",
+   "label": "Admin Domain Error Log",
+   "options": "Error Log",
    "read_only": 1
   },
   {
@@ -231,8 +241,42 @@
   }
  ],
  "row_format": "Dynamic",
- "sort_field": "resource_id",
- "sort_order": "ASC",
- "states": [],
- "title_field": "resource_id"
+ "search_fields": "title,resource_id,atlas_vm_id,public_ipv4",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [
+  {
+   "color": "Gray",
+   "title": "Pending"
+  },
+  {
+   "color": "Blue",
+   "title": "Provisioning"
+  },
+  {
+   "color": "Blue",
+   "title": "Deploying"
+  },
+  {
+   "color": "Green",
+   "title": "Running"
+  },
+  {
+   "color": "Orange",
+   "title": "Paused"
+  },
+  {
+   "color": "Gray",
+   "title": "Stopped"
+  },
+  {
+   "color": "Red",
+   "title": "Failed"
+  },
+  {
+   "color": "Gray",
+   "title": "Terminated"
+  }
+ ],
+ "title_field": "title"
 }

@@ -1,7 +1,7 @@
 import { call, frappeRequest } from 'frappe-ui'
 import { onBeforeUnmount, type Ref, ref, watch } from 'vue'
 import { API, methodV1 } from '@/api/methods'
-import { getErrorMessage } from '@/lib/toast'
+import { getErrorMessage } from '@/lib/feedback'
 import type { ActionStatus } from '@/types/serverCreation'
 
 // Central has no push channel for action state yet, so the page polls: quickly while a

@@ -1,5 +1,12 @@
 <script setup lang="ts">
-import { Button, Dialog, FormControl, LoadingText, useCall } from 'frappe-ui'
+import {
+	Alert,
+	Button,
+	Dialog,
+	FormControl,
+	LoadingText,
+	useCall,
+} from 'frappe-ui'
 import { computed, nextTick, ref, watch } from 'vue'
 import { API, method } from '@/api/methods'
 import PaymentNetworkMark, {
@@ -11,8 +18,8 @@ import { useAddStripeCard } from '@/composables/useAddStripeCard'
 import { useBillingOverview } from '@/composables/useBillingOverview'
 import { useSession } from '@/composables/useSession'
 import { whenTeamReady } from '@/composables/useTeamScope'
+import { getErrorMessage } from '@/lib/feedback'
 import { money } from '@/lib/format'
-import { errorToast } from '@/lib/toast'
 import type { PaymentInstrument, PaymentMethodOptions } from '@/types/billing'
 
 const open = defineModel<boolean>({ default: false })
@@ -41,7 +48,12 @@ function done(res?: unknown): void {
 	emit('done', res)
 }
 
-const { run, loading } = useAddPaymentMethod({ onDone: done })
+const {
+	run,
+	loading,
+	error: gatewayError,
+	clearError: clearGatewayError,
+} = useAddPaymentMethod({ onDone: done })
 
 // Razorpay opens its own hosted sheet on <body>. Our dialog is a modal with an
 // overlay + focus trap, so leaving it open renders the sheet *behind* our overlay
@@ -53,6 +65,7 @@ async function launchGateway(
 	contact?: string,
 	instrument?: string,
 ): Promise<void> {
+	clearGatewayError()
 	const keepInstrument = selected.value?.instrument ?? null
 	const keepPhone = phone.value
 	open.value = false
@@ -111,6 +124,7 @@ const selected = ref<PaymentInstrument | null>(null)
 
 function select(tile: PaymentInstrument): void {
 	if (blockedReason(tile)) return
+	clearGatewayError()
 	selected.value = tile
 }
 
@@ -167,6 +181,7 @@ const phone = ref('')
 
 const stripeMode = ref(false)
 const stripeLoading = ref(false)
+const dialogError = ref('')
 const cardEl = ref<HTMLElement | null>(null)
 const {
 	mount: mountStripe,
@@ -174,9 +189,14 @@ const {
 	destroy: destroyStripe,
 	complete: stripeComplete,
 	submitting: stripeSubmitting,
+	error: stripeError,
 } = useAddStripeCard({ onDone: done })
+const paymentError = computed(
+	() => dialogError.value || stripeError.value || gatewayError.value,
+)
 
 async function startStripeMode(): Promise<void> {
+	dialogError.value = ''
 	stripeMode.value = true
 	stripeLoading.value = true
 	await nextTick() // the Element needs its mount node in the DOM
@@ -187,7 +207,7 @@ async function startStripeMode(): Promise<void> {
 		})
 		if (!stripeMode.value || !open.value) destroyStripe()
 	} catch (e) {
-		errorToast(e, 'Could not start Stripe card setup.')
+		dialogError.value = getErrorMessage(e, 'Could not start Stripe card setup.')
 		cancelStripe()
 	} finally {
 		stripeLoading.value = false
@@ -209,6 +229,7 @@ watch(open, (isOpen) => {
 		stripeLoading.value = false
 		phone.value = ''
 		selected.value = null
+		dialogError.value = ''
 	}
 })
 </script>
@@ -221,6 +242,12 @@ watch(open, (isOpen) => {
 		:show-close-button="!stripeSubmitting"
 	>
 		<template #default>
+			<Alert
+				v-if="paymentError"
+				class="mb-4"
+				theme="red"
+				:title="paymentError"
+			/>
 			<div v-if="options.loading && !options.data" class="space-y-2">
 				<LoadingText :lines="3" />
 			</div>

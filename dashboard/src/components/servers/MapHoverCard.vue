@@ -14,8 +14,8 @@ const props = defineProps<{
 	allowCreate: boolean
 	/** Show direct bench-open affordances inside cluster cards. */
 	allowOpen: boolean
-	/** Site name currently being opened — spins its cluster-card open button. */
-	openingSite: string | null
+	/** Server resource id or site name currently opening in a new tab. */
+	opening: string | null
 }>()
 
 const emit = defineEmits<{
@@ -136,29 +136,32 @@ function canOpenBench(server: NonNullable<MapPin['server']>): boolean {
 			<button
 				v-if="m.kind === 'server' && m.server"
 				class="grid size-7 shrink-0 place-items-center rounded-4 text-ink-gray-5 transition-opacity disabled:cursor-default disabled:opacity-30 enabled:opacity-0 enabled:hover:text-ink-gray-8 group-hover:enabled:opacity-100"
-				:disabled="!canOpenBench(m.server)"
+				:class="{ '!opacity-100': opening === m.server.resource_id }"
+				:disabled="!canOpenBench(m.server) || opening === m.server.resource_id"
 				title="Open"
 				aria-label="Open"
 				@click.stop="emit('open-server', m.server)"
 			>
-				<span class="lucide-arrow-up-right size-3.5" />
+				<span
+					:class="opening === m.server.resource_id ? 'lucide-loader-circle size-3.5 animate-spin' : 'lucide-arrow-up-right size-3.5'"
+				/>
 			</button>
 			<button
 				v-else-if="m.site"
 				class="grid size-7 shrink-0 place-items-center rounded-4 text-ink-gray-5 transition-opacity disabled:cursor-default disabled:opacity-30 enabled:opacity-0 enabled:hover:text-ink-gray-8 group-hover:enabled:opacity-100"
-				:class="{ '!opacity-100': openingSite === m.site.name }"
+				:class="{ '!opacity-100': opening === m.site.name }"
 				:disabled="
 					!allowOpen ||
 					!m.site.url ||
 					m.server?.status !== 'Running' ||
-					openingSite === m.site.name
+					opening === m.site.name
 				"
 				title="Open"
 				aria-label="Open"
 				@click.stop="m.site.url && emit('open-site', m.site.name)"
 			>
 				<span
-					:class="openingSite === m.site.name ? 'lucide-loader-circle size-3.5 animate-spin' : 'lucide-arrow-up-right size-3.5'"
+					:class="opening === m.site.name ? 'lucide-loader-circle size-3.5 animate-spin' : 'lucide-arrow-up-right size-3.5'"
 				/>
 			</button>
 		</div>

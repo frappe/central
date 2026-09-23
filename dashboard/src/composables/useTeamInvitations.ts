@@ -1,27 +1,42 @@
-import { useCall } from 'frappe-ui'
+import { useCall, useList } from 'frappe-ui'
 import { computed, watch } from 'vue'
 import { API, method } from '@/api/methods'
 import { useBusyRunner } from '@/composables/useBusyRunner'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { teamParams, whenTeamReady } from '@/composables/useTeamScope'
+import { getErrorMessage, isAbortError } from '@/lib/feedback'
 import { submitOrThrow } from '@/lib/frappeCall'
-import { getErrorMessage, isAbortError } from '@/lib/toast'
 import type { InvitationRow } from '@/types/api'
 
 // The active team's invitations — the manager's view (gated server-side on
 // team:manage_members). Resend extends the expiry and re-emails; revoke kills a
 // pending invite. One invitation mutates at a time; `busy` holds its name.
 
-const invitationsCall = useCall<InvitationRow[], { team: string }>({
-	url: method(API.listTeamInvitations),
-	params: teamParams,
+const invitationsCall = useList<InvitationRow>({
+	doctype: 'Team Invitation',
+	fields: [
+		'name',
+		'email',
+		'role',
+		'resource_type',
+		'resource_name',
+		'status',
+		'invited_by',
+		'expires_on',
+		'accepted_by',
+		'accepted_at',
+		'creation',
+	],
+	filters: teamParams,
+	orderBy: 'creation desc',
+	limit: 100,
 	refetch: true,
 	immediate: false,
 })
 
 // The roster shows pending invites inline, so this module now loads on the Teams
-// page for everyone. list_team_invitations is gated on team:manage_members, so
-// wait for the capability rather than firing a request a viewer can only 403 on.
+// page for everyone. Wait for the capability rather than issuing a read that the
+// Team Invitation permission hooks will correctly deny.
 const { canManageMembers } = useCapabilities()
 whenTeamReady(() => {
 	if (canManageMembers.value) invitationsCall.reload()

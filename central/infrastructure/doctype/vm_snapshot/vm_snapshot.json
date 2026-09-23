@@ -25,7 +25,8 @@
   "image_offering",
   "is_restorable",
   "column_break_region",
-  "error_detail"
+  "error_detail",
+  "error_log"
  ],
  "fields": [
   {
@@ -180,7 +181,15 @@
    "fieldtype": "Long Text",
    "label": "Error Detail",
    "read_only": 1,
-   "description": "What the region answered when the snapshot failed."
+   "description": "A safe summary of the current failure."
+  },
+  {
+   "description": "The Error Log for the latest snapshot failure.",
+   "fieldname": "error_log",
+   "fieldtype": "Link",
+   "label": "Error Log",
+   "options": "Error Log",
+   "read_only": 1
   }
  ],
  "links": [],

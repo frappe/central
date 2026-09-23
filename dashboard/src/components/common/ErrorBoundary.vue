@@ -5,7 +5,7 @@ import { useRoute } from 'vue-router'
 
 // App-wide safety net: catches an unexpected render/lifecycle error anywhere
 // below it and shows a recoverable fallback instead of a white screen. Routine
-// API failures are handled upstream (inline states + toasts) — this is for the
+// API failures are handled upstream with inline or persistent alerts. This is for the
 // unexpected. Navigating away clears it, so the rest of the app stays usable.
 const failed = ref(false)
 const route = useRoute()

@@ -3,7 +3,7 @@ from unittest.mock import patch
 import frappe
 from frappe.tests import IntegrationTestCase
 
-from central.api.auth import _otp_key, sign_up, verify_signup
+from central.api.auth import OTP_TTL_SECONDS, _otp_key, _send_signup_code, sign_up, verify_signup
 from central.www.dashboard import build_auth_context
 
 
@@ -116,3 +116,22 @@ class TestAuth(IntegrationTestCase):
 
 		self.assertEqual(status, 0)
 		self.assertEqual(message, "Already Registered")
+
+	def test_signup_code_uses_the_documented_ten_minute_expiry(self):
+		with (
+			patch("central.api.auth.frappe.cache.set_value") as set_value,
+			patch("central.api.auth.frappe.sendmail"),
+		):
+			_send_signup_code("expiry@example.test", "Expiry Test")
+
+		self.assertEqual(OTP_TTL_SECONDS, 10 * 60)
+		self.assertEqual(set_value.call_args.kwargs["expires_in_sec"], 10 * 60)
+
+	def test_resending_a_code_preserves_failed_attempts(self):
+		with (
+			patch("central.api.auth.frappe.cache.set_value") as set_value,
+			patch("central.api.auth.frappe.sendmail"),
+		):
+			_send_signup_code("attempts@example.test", "Attempts Test", attempts=3)
+
+		self.assertEqual(set_value.call_args.args[1]["attempts"], 3)

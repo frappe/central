@@ -29,14 +29,14 @@ class TestVirtualMachine(IntegrationTestCase):
 				"doctype": "Virtual Machine",
 				"resource_id": "vm-xyz",
 				"team": self.team.name,
-				"cluster": self.cluster,
+				"region": self.cluster,
 				"status": "Running",
 				"gateway_url": "http://localhost:3030",
 			}
 		).insert()
 		self.assertEqual(server.name, "vm-xyz")
 		self.assertEqual(server.team, self.team.name)
-		self.assertEqual(server.cluster, self.cluster)
+		self.assertEqual(server.region, self.cluster)
 
 	def test_operator_can_queue_route_removal_for_a_terminated_server(self):
 		server = self._server("vm-routes-gone", "Terminated")
@@ -67,13 +67,31 @@ class TestVirtualMachine(IntegrationTestCase):
 
 		enqueue.assert_not_called()
 
+	def test_failed_and_terminated_states_queue_notifications(self):
+		server = self._server("vm-state-events", "Pending")
+
+		with (
+			patch.object(server, "sync_subscription_on_status_change"),
+			patch("central.notification.engine.queue_event") as queue_event,
+			patch.object(server, "enqueue_route_removal"),
+		):
+			server.status = "Failed"
+			server.save()
+			server.status = "Terminated"
+			server.save()
+
+		self.assertEqual(
+			[call.args[1] for call in queue_event.call_args_list],
+			["server_failed", "server_terminated"],
+		)
+
 	def _server(self, resource_id: str, status: str):
 		return frappe.get_doc(
 			{
 				"doctype": "Virtual Machine",
 				"resource_id": resource_id,
 				"team": self.team.name,
-				"cluster": self.cluster,
+				"region": self.cluster,
 				"status": status,
 			}
 		).insert()
@@ -131,7 +149,7 @@ class TestVirtualMachineSubscriptionSync(IntegrationTestCase):
 				"doctype": "Virtual Machine",
 				"resource_id": resource_id,
 				"team": self.team,
-				"cluster": self.cluster,
+				"region": self.cluster,
 				"status": status,
 				"plan": plan or self.plan_a,
 			}

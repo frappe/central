@@ -6,7 +6,7 @@ import frappe
 from frappe import _
 from frappe.query_builder import Order
 
-from central.iam import can, expand_capabilities, get_all_capabilities, user_has_operator_bypass
+from central.iam import expand_capabilities, get_all_capabilities
 from central.utils.guards import require_capability, require_team_member
 
 # Team-roster reads + role management for the console's Team screens. Visibility
@@ -91,44 +91,6 @@ def list_team_roles(team: str) -> list[dict[str, Any]]:
 	return list(roles.values())
 
 
-@frappe.whitelist(methods=["GET"])
-def list_capabilities() -> list[dict[str, Any]]:
-	"""Every capability in the system — the palette the role builder picks from."""
-	return frappe.get_all(
-		"Capability",
-		fields=["name", "plane", "resource", "description"],
-		order_by="name asc",
-	)
-
-
-@frappe.whitelist(methods=["GET"])
-@require_capability("team:manage_members", "You can't manage invitations for this team.")
-def list_team_invitations(team: str, status: str | None = None) -> list[dict[str, Any]]:
-	"""Invitations for a team — the manager's view."""
-	filters: dict[str, Any] = {"team": team}
-	if status:
-		filters["status"] = status
-	return frappe.get_all(
-		"Team Invitation",
-		filters=filters,
-		fields=[
-			"name",
-			"email",
-			"role",
-			"resource_type",
-			"resource_name",
-			"status",
-			"invited_by",
-			"expires_on",
-			"accepted_by",
-			"accepted_at",
-			"creation",
-		],
-		order_by="creation desc",
-		limit=100,
-	)
-
-
 @frappe.whitelist(methods=["POST"])
 def create_team(team_name: str) -> dict[str, Any]:
 	"""Create a new team owned by the caller. The Team doc seeds the active Owner
@@ -158,19 +120,7 @@ def transfer_team_ownership(team: str, user: str) -> dict[str, Any]:
 @frappe.whitelist(methods=["POST"])
 @require_capability("team:delete", "You can't delete this team.")
 def delete_team(team: str) -> dict[str, Any]:
-	"""Delete a team, once it owns no servers or sites (those must be torn down
-	deliberately). Invitations and custom roles are cleared first so their Link
-	references don't block the delete."""
-	for doctype in ("Virtual Machine", "Site"):
-		if frappe.db.exists(doctype, {"team": team}):
-			frappe.throw(
-				_("Remove this team's servers and sites before deleting it."), frappe.ValidationError
-			)
-	# force=True: clear the child links that would otherwise raise LinkExistsError on the Team delete.
-	for name in frappe.get_all("Team Invitation", {"team": team}, pluck="name"):
-		frappe.delete_doc("Team Invitation", name, ignore_permissions=True, force=True)
-	for name in frappe.get_all("Team Role", {"team": team, "is_system": 0}, pluck="name"):
-		frappe.delete_doc("Team Role", name, ignore_permissions=True, force=True)
+	"""Delete a team. The Team lifecycle validates and removes owned access records."""
 	frappe.delete_doc("Team", team)
 	return {"team": team, "deleted": True}
 
@@ -263,17 +213,8 @@ def create_custom_role(team: str, role_name: str, capabilities: list | str) -> d
 
 @frappe.whitelist(methods=["POST"])
 def delete_custom_role(role: str) -> dict:
-	"""Delete a team-scoped custom role. Gated on team:manage_members for its team;
-	refuses system roles and roles still referenced by a member or pending invite."""
+	"""Delete a team-scoped custom role through its controller rules."""
 	doc = frappe.get_doc("Team Role", role)
-	if doc.is_system:
-		frappe.throw(_("System roles cannot be deleted."), frappe.ValidationError)
-	if not can(frappe.session.user, doc.team, "team:manage_members") and not user_has_operator_bypass():
-		frappe.throw(_("You can't manage roles for this team."), frappe.PermissionError)
-	if frappe.db.exists("Team Member", {"role": role}):
-		frappe.throw(_("Reassign members off this role before deleting it."), frappe.ValidationError)
-	if frappe.db.exists("Team Invitation", {"role": role, "status": "Pending"}):
-		frappe.throw(_("A pending invitation still uses this role."), frappe.ValidationError)
-	# Authorized above; the Team Role doctype grants delete only to System Manager.
-	frappe.delete_doc("Team Role", role, ignore_permissions=True)
+	# TeamRole.on_trash enforces customer authorization because DocType RBAC is operator-only.
+	doc.delete(ignore_permissions=True)
 	return {"role": role, "deleted": True}

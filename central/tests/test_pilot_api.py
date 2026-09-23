@@ -79,7 +79,7 @@ class TestPilotAPI(IntegrationTestCase):
 				"doctype": "Virtual Machine",
 				"resource_id": f"vm-{self.region}",
 				"team": self.team,
-				"cluster": self.region,
+				"region": self.region,
 				"status": "Running",
 			}
 		).insert(ignore_permissions=True)
@@ -104,7 +104,7 @@ class TestPilotAPI(IntegrationTestCase):
 
 	def test_token_names_the_regional_telemetry_endpoint(self):
 		"""The pilot is told where to ship without being told which region it is in: the
-		VirtualMachine's cluster is the region, and that region's own report names the host."""
+		The Virtual Machine links to its region, whose report names the host."""
 		self.reporting_region("https://datum.example.test")
 
 		self.assertEqual(self.call_datum_token(self.token)["endpoint"], "https://datum.example.test")

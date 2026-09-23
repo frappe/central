@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import {
+	Alert,
 	Button,
 	Dialog,
 	FormControl,
@@ -16,8 +17,8 @@ import { useCapabilities } from '@/composables/useCapabilities'
 import { useSession } from '@/composables/useSession'
 import { whenTeamReady } from '@/composables/useTeamScope'
 import { ordinalDate } from '@/lib/date'
+import { getErrorMessage, successToast } from '@/lib/feedback'
 import { currencySymbol, money } from '@/lib/format'
-import { errorToast, successToast } from '@/lib/toast'
 import type { BillingSettings } from '@/types/billing'
 
 // Estimated this cycle — the projected month-end bill, when it bills + days left,
@@ -218,22 +219,26 @@ const alertTint = computed(() =>
 // Dialog: edit against a draft so Cancel leaves the live value untouched.
 const dialogOpen = ref(false)
 const draft = ref(0)
+const formError = ref('')
 function openDialog(): void {
 	draft.value = spendAlert.value
+	formError.value = ''
 	dialogOpen.value = true
 }
+watch(draft, () => (formError.value = ''))
 async function submitAlert(): Promise<void> {
 	try {
 		await saveAlert.submit({
 			team: activeTeam.value!,
 			spend_alert_threshold: Number(draft.value) || 0,
 		})
+		if (saveAlert.error) throw saveAlert.error
 		spendAlert.value = Number(draft.value) || 0
 		successToast('Billing alert saved')
 		dialogOpen.value = false
 		settings.reload()
 	} catch (e) {
-		errorToast(e)
+		formError.value = getErrorMessage(e, "The budget alert couldn't be saved.")
 	}
 }
 </script>
@@ -379,6 +384,7 @@ async function submitAlert(): Promise<void> {
 
 		<Dialog v-model:open="dialogOpen" title="Set a budget alert">
 			<template #default>
+				<Alert v-if="formError" class="mb-4" theme="red" :title="formError" />
 				<FormControl
 					v-model="draft"
 					type="number"

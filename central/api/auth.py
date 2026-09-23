@@ -17,11 +17,11 @@ from central.utils.inputs import require_secret
 # fires `bootstrap_user_team` (central/users.py) to provision the Central role and
 # personal Team — then logs the new user in so onboarding continues authenticated.
 
-# 2 hours
-OTP_TTL_SECONDS = 2 * 60 * 60
+OTP_TTL_SECONDS = 10 * 60
 MAX_OTP_ATTEMPTS = 5
 
 
+# nosemgrep: guest-whitelisted-method -- signup requires guest access and enforces the site signup limit.
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 def sign_up(email: str, full_name: str) -> tuple[int, str]:
 	"""Start an SMB signup: email a verification code, hold the pending signup in
@@ -40,17 +40,20 @@ def sign_up(email: str, full_name: str) -> tuple[int, str]:
 	return 1, _("Please check your email for your verification code")
 
 
+# nosemgrep: guest-whitelisted-method -- a pending signup and route rate limit constrain resends.
 @frappe.whitelist(allow_guest=True, methods=["POST"])
+@rate_limit(limit=5, seconds=OTP_TTL_SECONDS, methods="POST")
 def resend_signup_code(email: str) -> tuple[int, str]:
 	"""Re-issue a fresh code for a pending signup."""
 	email = email.strip().lower()
 	pending = frappe.cache.get_value(_otp_key(email))
 	if not pending:
 		frappe.throw(_("Start the signup again — your session expired."), frappe.ValidationError)
-	_send_signup_code(email, pending["full_name"])
+	_send_signup_code(email, pending["full_name"], attempts=pending.get("attempts", 0))
 	return 1, _("A new verification code is on its way")
 
 
+# nosemgrep: guest-whitelisted-method -- the one-time code and attempt limit authenticate the signup.
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 def verify_signup(email: str, code: str) -> dict:
 	"""Verify the code, create the User (which bootstraps the personal Team), and
@@ -58,11 +61,6 @@ def verify_signup(email: str, code: str) -> dict:
 	email = email.strip().lower()
 	code = (code or "").strip()
 	pending = frappe.cache.get_value(_otp_key(email))
-
-	# NOTE: will be removed once we have setup proper email service
-	# for developer mode, any 6-digit code passes
-	if frappe.conf.developer_mode and pending and len(code) == 6 and code.isdigit():
-		pending["code"] = code
 
 	if not pending:
 		frappe.throw(_("Your verification code expired. Please sign up again."), frappe.ValidationError)
@@ -104,14 +102,14 @@ def _otp_key(email: str) -> str:
 	return f"signup:otp:{email}"
 
 
-def _send_signup_code(email: str, full_name: str) -> None:
+def _send_signup_code(email: str, full_name: str, attempts: int = 0) -> None:
 	code = f"{secrets.randbelow(900000) + 100000}"
 	frappe.cache.set_value(
 		_otp_key(email),
-		{"full_name": full_name, "code": code, "attempts": 0},
+		{"full_name": full_name, "code": code, "attempts": attempts},
 		expires_in_sec=OTP_TTL_SECONDS,
 	)
-	# Queued (not `now`), and a delivery failure (e.g. no outgoing account in dev)
+	# A delivery failure (for example, no outgoing account in development)
 	# is logged, never fatal — the code is already cached, so signup can proceed.
 	try:
 		frappe.sendmail(
@@ -146,7 +144,6 @@ def _create_verified_user(email: str, full_name: str):
 			"roles": [{"role": role} for role in _signup_roles()],
 		}
 	)
-	user.flags.ignore_permissions = True
 	user.flags.ignore_password_policy = True
 	user.flags.no_welcome_mail = True
 	# ignore permissions because we are inserting a user as a website user

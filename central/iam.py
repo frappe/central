@@ -15,7 +15,7 @@ OPERATOR_BYPASS_ROLE = "System Manager"
 # redundant server:view are dropped; role capabilities live at team + server level
 # only. The plane field and the bench-caps SSO mint stay, so site caps can return
 # under the bench plane later with no contract change.
-CAPABILITY_VERSION = 4
+CAPABILITY_VERSION = 5
 
 # Capability implications: granting the key implies every cap in the value. Acting
 # on a resource is meaningless without seeing it, so we close every grant under
@@ -23,7 +23,6 @@ CAPABILITY_VERSION = 4
 # `server:create` without also remembering `server:view`/`cluster:view`, and a grant
 # hand-crafted through the API can't bypass it either. Phase 1: scope is still "*".
 CAP_IMPLICATIONS = {
-	"server:open": ("server:view",),
 	"server:create": ("server:view", "cluster:view"),
 	"server:terminate": ("server:view",),
 	"server:power": ("server:view",),
@@ -73,6 +72,7 @@ def get_user_team_names(user: str) -> list[str]:
 		.join(team)
 		.on(team.name == member.parent)
 		.select(team.name)
+		.distinct()
 		.where(
 			(member.parenttype == "Team")
 			& (member.parentfield == "members")

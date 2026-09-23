@@ -2,8 +2,8 @@
 # For license information, please see license.txt
 """Atlas-based revenue — where billed revenue is earned, by Atlas instance / region.
 
-A Virtual Machine's `cluster` is the Atlas instance it runs on (one Atlas instance is one
-region/cluster), so grouping line-item revenue by cluster is revenue-by-Atlas. One
+A Virtual Machine's `region` identifies the Atlas instance it runs on. Billing copies
+that value into its cluster dimension, so grouping line-item revenue by cluster is revenue-by-Atlas. One
 row per (cluster, currency): the revenue provisioned on that Atlas instance, its
 human region label, and its share of that currency's total. Recurring (bundle) vs
 usage is split out so you can see a region's compute base separately from its

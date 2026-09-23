@@ -29,7 +29,7 @@ Central refuses the regional zone itself, a name 2 or more labels below the zone
 
 The regional proxy answers a `site-*` or `*-vm-*` name below the zone from the label alone. It reads the mesh address out of the base-36 token of the label before it reads its site map, and it refuses a map entry for such a name with HTTP 409.
 
-`Region.get_vm_admin_host` and `Region.get_vm_site_host` build the 2 routed names of one server from `Asset.ipv6_address`. Example: `admin-vm-1z141z4.par-2.frappe.dev` and `site-1z141z4.par-2.frappe.dev`.
+`Region.get_vm_admin_host` and `Region.get_vm_site_host` build the 2 routed names of one server from `Virtual Machine.ipv6_address`. Example: `admin-vm-1z141z4.par-2.frappe.dev` and `site-1z141z4.par-2.frappe.dev`.
 
 - Central keeps no record for a routed name and makes no proxy call for it. `register_domain` returns success, because the name is live already.
 - Central refuses a routed name that belongs to a different server. No record can bring that name to this server.
@@ -48,7 +48,8 @@ server Terminated --> remove_server_routes job --> remove() each route --> recor
                                                         '--> error --> Failed + failure_reason
 ```
 
-- `apply()` reads the current `Asset.ipv6_address`, sends it, and stores it in `ipv6_address`. A success resets `attempts` to 0.
+- `apply()` reads the current Virtual Machine `ipv6_address`, sends it, and stores it in `ipv6_address`. A success resets `attempts` to 0 and clears the previous failure.
+- A failed apply or removal stores a safe `failure_reason` and links the full traceback through Error Log.
 - The desk **Retry** button resets `attempts` and runs `apply()` again. It shows for a record that is not Active.
 - A PATCH and a DELETE are safe to repeat, so a retry never needs cleanup.
 - A delete fails when the proxy call fails. The record stays, so the route and the record cannot drift apart. Fix the cause and delete again.

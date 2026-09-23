@@ -171,3 +171,7 @@ class PilotCredential(Document):
 		self.save(ignore_permissions=True)
 
 		return token
+
+
+def on_doctype_update() -> None:
+	frappe.db.add_index("Pilot Credential", ["team"])

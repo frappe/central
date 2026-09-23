@@ -1,41 +1,12 @@
 <script setup lang="ts">
-import { Badge, useCall } from 'frappe-ui'
+import { Badge } from 'frappe-ui'
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { API, method } from '@/api/methods'
-import { useSession } from '@/composables/useSession'
-import { whenTeamReady } from '@/composables/useTeamScope'
+import { useMeteredServices } from '@/composables/useMeteredServices'
 import { features } from '@/lib/features'
 import { money } from '@/lib/format'
 
-interface ServiceRow {
-	resource_type: string | null
-	unit: string | null
-	period_usage: number
-	locked_rate: number
-	currency: string
-}
-interface ServicePlan {
-	resource_type: string | null
-	rate: number
-}
-interface MeteredServices {
-	currency: string
-	services: ServiceRow[]
-	available_plans: ServicePlan[]
-}
-
-const { activeTeam } = useSession()
-
-const metered = useCall<MeteredServices, { team: string }>({
-	url: method(API.meteredServices),
-	params: () => ({ team: activeTeam.value! }),
-	immediate: false,
-	refetch: true,
-})
-whenTeamReady(() => metered.reload())
-
-const currency = computed(() => metered.data?.currency ?? 'USD')
+const { metered, currency } = useMeteredServices()
 
 // The catalog is product copy; whether a service is rolled out comes from the
 // Central Settings feature flags, and what it costs and has used comes from the

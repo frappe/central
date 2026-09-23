@@ -57,6 +57,7 @@ delete_expired_snapshots (hourly maintenance) --> delete_from_region() --> Delet
 - Atlas sends no event for a snapshot, so Central reads each Pending one until it settles.
 - A lost reply to the create call is found again by the image tag `central_snapshot`.
 - A snapshot the region never recorded is marked Failed after 30 minutes.
+- A failed snapshot keeps a safe reason on the record, links the full diagnostic through Error Log, and queues one notification after commit.
 - One snapshot runs per server at a time.
 - A deleted snapshot keeps its record, so its invoice lines still resolve.
 - A paid snapshot is a `Subscription` with `vm_snapshot` set. Invoicing bills it in the snapshot's region.

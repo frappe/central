@@ -6,7 +6,7 @@ import { useTeamSettings } from '@/composables/useTeamSettings'
 // servers page's dialog and the Teams tab of settings. The rule that a name
 // must be unique among your teams lives here so both can't drift apart on it.
 export function useCreateTeam() {
-	const { saving, createTeam } = useTeamSettings()
+	const { saving, error, clearError, createTeam } = useTeamSettings()
 	const { teams } = useSession()
 
 	const teamName = ref('')
@@ -26,6 +26,7 @@ export function useCreateTeam() {
 
 	const reset = (): void => {
 		teamName.value = ''
+		clearError()
 	}
 
 	// Resolves true once the team exists; useTeamSettings.createTeam switches to
@@ -37,5 +38,5 @@ export function useCreateTeam() {
 		return true
 	}
 
-	return { teamName, name, duplicate, canSubmit, saving, submit, reset }
+	return { teamName, name, duplicate, canSubmit, saving, error, submit, reset }
 }

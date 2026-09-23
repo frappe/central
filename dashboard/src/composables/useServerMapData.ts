@@ -6,12 +6,12 @@ import type { VirtualMachineRow } from '@/composables/useServers'
 import { useSession } from '@/composables/useSession'
 import { teamParams, whenTeamReady } from '@/composables/useTeamScope'
 import {
-	errorToast,
 	getErrorMessage,
 	infoToast,
 	isAbortError,
+	reportError,
 	successToast,
-} from '@/lib/toast'
+} from '@/lib/feedback'
 import type { ActionStatus } from '@/types/serverCreation'
 
 // The team's whole fleet in one read — its servers and its self-serve sites (each a
@@ -71,7 +71,7 @@ const ANNOUNCED: Record<string, (label: string) => void> = {
 	Running: (label) => successToast(`${label} is running.`),
 	Stopped: (label) => infoToast(`${label} is stopped.`),
 	Terminated: (label) => infoToast(`${label} was removed.`),
-	Failed: (label) => errorToast(`${label} failed. Open it to see why.`),
+	Failed: (label) => reportError(`${label} failed. Open it to see why.`),
 }
 
 interface SeenState {

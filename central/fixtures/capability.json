@@ -40,16 +40,6 @@
   "resource": "server"
  },
  {
-  "capability": "server:open",
-  "description": "Open a server's console",
-  "docstatus": 0,
-  "doctype": "Capability",
-  "modified": "2026-08-07 12:00:00.000000",
-  "name": "server:open",
-  "plane": "atlas",
-  "resource": "server"
- },
- {
   "capability": "server:power",
   "description": "Start, stop, and restart servers",
   "docstatus": 0,

@@ -1,43 +1,23 @@
 <script setup lang="ts">
-import { Badge, Button, useCall } from 'frappe-ui'
+import { Badge, Button } from 'frappe-ui'
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { API, method } from '@/api/methods'
 import BillingCard from '@/components/billing/BillingCard.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import { useBillingOverview } from '@/composables/useBillingOverview'
 import { useCapabilities } from '@/composables/useCapabilities'
-import { useSession } from '@/composables/useSession'
-import { whenTeamReady } from '@/composables/useTeamScope'
+import { useMeteredServices } from '@/composables/useMeteredServices'
 import { money } from '@/lib/format'
+import type { ServiceRow } from '@/types/billing'
 
 // Metered services (ADR 0015) — the team-level services it has subscribed to (AI
 // tokens, email, PDF, storage), each with its allowance draw-down / usage this
 // period, plus a subscribe/upgrade action. A metered service has no VM: it is a
 // synthesized subject billed off the same rollup + price-lock spine as a server.
-interface ServiceRow {
-	service_subject: string
-	plan: string
-	title: string | null
-	resource_type: string | null
-	cluster: string | null
-	currency: string
-	unit: string | null
-	billing_type: string | null
-	settlement_mode: string
-	reporting_mode: string
-	allowance: number
-	period_usage: number
-}
-interface MeteredServices {
-	currency: string
-	services: ServiceRow[]
-}
-
 const { canManageBilling } = useCapabilities()
-const { activeTeam } = useSession()
 const router = useRouter()
 const { cycleCosts, currency } = useBillingOverview()
+const { services: rows, loading } = useMeteredServices()
 
 // A metered service showed its draw-down but never what it had cost — the one
 // question the card was silent on. Joined on service_subject, which is the
@@ -51,17 +31,6 @@ const costBySubject = computed(() => {
 function cycleCost(row: ServiceRow): number | null {
 	return costBySubject.value.get(row.service_subject) ?? null
 }
-
-const data = useCall<MeteredServices, { team: string }>({
-	url: method(API.meteredServices),
-	params: () => ({ team: activeTeam.value! }),
-	immediate: false,
-	refetch: true,
-})
-whenTeamReady(() => data.reload())
-
-const loading = computed(() => data.loading && !data.data)
-const rows = computed(() => data.data?.services ?? [])
 
 // Subscribing happens on the Add-ons page (plan browsing lives there) — this
 // card only reports usage, so both Subscribe actions are links, not a dialog.

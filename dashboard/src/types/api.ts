@@ -58,7 +58,7 @@ export interface TeamRoleRow {
 	capabilities: string[]
 }
 
-/** central.api.teams.list_capabilities item — the palette of authorization atoms. */
+/** Capability document used by the role builder. */
 export interface CapabilityInfo {
 	name: string
 	plane: CapabilityPlane
@@ -73,12 +73,12 @@ export interface TeamRegistry {
 		name: string
 		resource_id: string
 		title: string
-		cluster: string
+		region: string
 	}[]
 	sites: { name: string; subdomain: string; region: string }[]
 }
 
-/** central.api.teams.list_team_invitations item (the manager's view). */
+/** Team Invitation document shown in the manager view. */
 export interface InvitationRow {
 	name: string
 	email: string

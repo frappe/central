@@ -4,7 +4,7 @@ import { API, method } from '@/api/methods'
 import { useAuth } from '@/composables/useAuth'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { useSession } from '@/composables/useSession'
-import { errorToast, successToast } from '@/lib/toast'
+import { getErrorMessage, successToast } from '@/lib/feedback'
 
 // Team-level mutations for the active team: rename (team:edit), transfer ownership
 // (current owner only), delete (team:delete), and create a new team. Each re-pulls
@@ -41,6 +41,7 @@ export function useTeamSettings() {
 	const caps = useCapabilities()
 	const { currentUser } = useAuth()
 	const saving = ref(false)
+	const error = ref('')
 	const activeTeam = session.activeTeam
 
 	const isOwner = computed(
@@ -56,6 +57,7 @@ export function useTeamSettings() {
 		ok: string,
 	): Promise<boolean> {
 		saving.value = true
+		error.value = ''
 		try {
 			await call.submit(params)
 			if (call.error) throw call.error
@@ -63,7 +65,7 @@ export function useTeamSettings() {
 			await onDone()
 			return true
 		} catch (e) {
-			errorToast(e)
+			error.value = getErrorMessage(e)
 			return false
 		} finally {
 			saving.value = false
@@ -120,6 +122,8 @@ export function useTeamSettings() {
 	return {
 		isOwner,
 		saving: computed(() => saving.value),
+		error,
+		clearError: () => (error.value = ''),
 		rename,
 		transferOwnership,
 		deleteTeam,

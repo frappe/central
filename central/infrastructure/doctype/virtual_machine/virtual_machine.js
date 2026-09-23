@@ -1,6 +1,6 @@
 // Desk buttons for the Central → Atlas command path (central/api/servers.py). The
 // server methods re-check capability (server:power / server:terminate) and that
-// the asset belongs to the team, so these buttons just call them by id.
+// the server belongs to the team, so these buttons just call them by id.
 frappe.ui.form.on("Virtual Machine", {
 	refresh(frm) {
 		if (frm.is_new()) return;

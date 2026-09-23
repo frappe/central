@@ -6,6 +6,7 @@ from central.iam import (
 	can,
 	get_user_team_names,
 	get_user_team_names_with_capability,
+	is_active_team_member,
 	user_has_operator_bypass,
 )
 
@@ -155,6 +156,77 @@ def iam_permission_probe_has_permission(
 	if user_has_operator_bypass(user):
 		return True
 	return doc.user == user
+
+
+def user_notification_preference_query_conditions(user: str | None = None) -> str:
+	"""1. A System Manager sees every preference.
+	2. A user sees only preferences owned by that user.
+	"""
+	user = user or frappe.session.user
+	if user_has_operator_bypass(user):
+		return ""
+	return f"`tabUser Notification Preference`.`user` = {frappe.db.escape(user)}"
+
+
+def user_notification_preference_has_permission(
+	doc, user: str | None = None, ptype: str | None = None, **kwargs
+) -> bool:
+	"""1. A System Manager has every permission.
+	2. A user can act only on that user's row.
+	3. The user must be an active member of the row's team.
+	"""
+	user = user or frappe.session.user
+	if user_has_operator_bypass(user):
+		return True
+	return doc.user == user and bool(doc.team) and is_active_team_member(user, doc.team)
+
+
+def pilot_credential_query_conditions(user: str | None = None) -> str:
+	"""1. A System Manager sees every credential.
+	2. All other users see no credential because it contains authentication state.
+	"""
+	return _operator_only_query_conditions(user)
+
+
+def pilot_credential_has_permission(doc, user: str | None = None, ptype: str | None = None, **kwargs) -> bool:
+	"""1. A System Manager has every permission.
+	2. All other users have no direct permission because Pilot uses token authentication.
+	"""
+	return user_has_operator_bypass(user or frappe.session.user)
+
+
+def team_notification_query_conditions(user: str | None = None) -> str:
+	"""1. A System Manager sees every stored notification.
+	2. Customers use the capability-filtered notification feed and cannot query records directly.
+	"""
+	return _operator_only_query_conditions(user)
+
+
+def team_notification_has_permission(
+	doc, user: str | None = None, ptype: str | None = None, **kwargs
+) -> bool:
+	"""1. A System Manager has every permission.
+	2. Customers have no direct document permission because the feed applies recipient policy.
+	"""
+	return user_has_operator_bypass(user or frappe.session.user)
+
+
+def team_service_query_conditions(user: str | None = None) -> str:
+	"""1. A System Manager sees every service record.
+	2. Customers use the service API, which redacts credentials and applies service capabilities.
+	"""
+	return _operator_only_query_conditions(user)
+
+
+def team_service_has_permission(doc, user: str | None = None, ptype: str | None = None, **kwargs) -> bool:
+	"""1. A System Manager has every permission.
+	2. Customers have no direct permission because the record contains service credentials.
+	"""
+	return user_has_operator_bypass(user or frappe.session.user)
+
+
+def _operator_only_query_conditions(user: str | None = None) -> str:
+	return "" if user_has_operator_bypass(user or frappe.session.user) else "1 = 0"
 
 
 def _team_field_query_conditions(doctype: str, capability: str, user: str | None = None) -> str:

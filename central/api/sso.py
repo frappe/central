@@ -22,9 +22,9 @@ def get_bench_link(
 ) -> dict:
 	"""Return the URL to open a bench at, as ``{gateway}/sso?sid=<jwt>``.
 
-	Pass `server` (a VM resource_id) to open that server: `server:open` on its team is the
-	gate (distinct from `server:view`, which only lists it), and the VM must be Running with
-	a bench gateway on an Active cluster. `gateway_url` (no server) is the dev shortcut: open
+	Pass `server` (a VM resource_id) to open that server: `server:view` on its team is the
+	gate, and the VM must be Running with
+	a bench gateway in an active region. `gateway_url` (no server) is the dev shortcut: open
 	an explicit gateway, minting against a fixed dev audience."""
 	user = frappe.session.user
 	if not user or user == "Guest":
@@ -32,28 +32,28 @@ def get_bench_link(
 	if server:
 		return _server_login_link(server, team, user)
 	team = resolve_team(user, team)
-	if not can(user, team, "server:open"):
+	if not can(user, team, "server:view"):
 		frappe.throw(_("You can't open servers for this team."), frappe.PermissionError)
 	target = gateway_url.rstrip("/") if gateway_url else bench_gateway()
 	return {"url": f"{target}/?sid={mint_bench_login(DEV_AUDIENCE)}"}
 
 
 def _server_login_link(server: str, team: str | None, user: str) -> dict:
-	"""Resolve a VM VirtualMachine to its one-click login URL, gated on `server:open`.
+	"""Resolve a VM VirtualMachine to its one-click login URL, gated on `server:view`.
 
 	get_doc enforces the team-scoped VirtualMachine read perm, so a user who can't see the VM can't
-	probe it here either. The VM must be Running and live on an Active cluster, with a bench
+	probe it here either. The VM must be Running and live in an active region, with a bench
 	gateway. The SID is Central-signed, scoped to the VM's resource_id, and freshly minted on
 	every Open (it is single-use)."""
 	doc = frappe.get_doc("Virtual Machine", server)
 	if team and team != doc.team:
 		frappe.throw(_("That server isn't in this team."), frappe.PermissionError)
-	if not can(user, doc.team, "server:open"):
+	if not can(user, doc.team, "server:view"):
 		frappe.throw(_("You can't open servers for this team."), frappe.PermissionError)
 	if doc.status != "Running":
 		frappe.throw(_("Server is {0}, not running.").format(doc.status.lower()), frappe.ValidationError)
-	if frappe.db.get_value("Region", doc.cluster, "status") != "Active":
-		frappe.throw(_("That cluster is not active."), frappe.ValidationError)
+	if frappe.db.get_value("Region", doc.region, "status") != "Active":
+		frappe.throw(_("That region is not active."), frappe.ValidationError)
 	gateway = (doc.gateway_url or "").rstrip("/")
 	if not gateway:
 		frappe.throw(_("This server has no bench gateway yet."), frappe.ValidationError)

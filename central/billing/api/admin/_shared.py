@@ -49,15 +49,13 @@ def _plan_monthly_inr(plan: str, cluster: str | None) -> float:
 
 
 def _server_cluster_map(server_ids) -> dict:
-	"""Map server_id -> cluster in one query. Cluster lives on the VirtualMachine now (the
-	runtime record), not the Subscription (cdea38e); admin aggregates resolve a
-	subscription's region through its server_id."""
+	"""Map server_id to its billing cluster from the Virtual Machine region."""
 	ids = [a for a in set(server_ids) if a]
 	if not ids:
 		return {}
 	return {
-		r.name: r.cluster
-		for r in frappe.get_all("Virtual Machine", filters={"name": ["in", ids]}, fields=["name", "cluster"])
+		r.name: r.region
+		for r in frappe.get_all("Virtual Machine", filters={"name": ["in", ids]}, fields=["name", "region"])
 	}
 
 

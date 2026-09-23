@@ -11,7 +11,7 @@
   "resource_type",
   "action",
   "team",
-  "atlas_instance",
+  "region",
   "server",
   "resource_id",
   "subdomain",
@@ -36,7 +36,8 @@
   "correlation_id",
   "request_key",
   "request_digest",
-  "credential"
+  "credential",
+  "error_log"
  ],
  "fields": [
   {
@@ -154,7 +155,7 @@
    "read_only": 1
   },
   {
-   "fieldname": "atlas_instance",
+   "fieldname": "region",
    "fieldtype": "Link",
    "in_standard_filter": 1,
    "label": "Region",
@@ -253,6 +254,15 @@
    "fieldtype": "Link",
    "label": "Pilot Credential",
    "options": "Pilot Credential",
+   "permlevel": 1,
+   "read_only": 1
+  },
+  {
+   "description": "Latest Error Log created for this action. All related Error Logs also reference this Resource Action.",
+   "fieldname": "error_log",
+   "fieldtype": "Link",
+   "label": "Error Log",
+   "options": "Error Log",
    "permlevel": 1,
    "read_only": 1
   }

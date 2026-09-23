@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { Button, Switch } from 'frappe-ui'
+import { Alert, Button, Switch } from 'frappe-ui'
 import { computed, ref } from 'vue'
 import { useSnapshots } from '@/composables/useSnapshots'
+import { getErrorMessage } from '@/lib/feedback'
 import { formatDate } from '@/lib/format'
 import { SNAPSHOT_TYPE_LABEL } from '@/lib/snapshots'
-import { errorToast } from '@/lib/toast'
 
 interface ServerSnapshotsCardProps {
 	resourceId: string
@@ -31,13 +31,18 @@ const latest = computed(
 	() => snapshots.value.find((row) => row.status === 'Available') ?? null,
 )
 const saving = ref(false)
+const mutationError = ref('')
 
 async function toggle(enabled: boolean) {
 	saving.value = true
+	mutationError.value = ''
 	try {
 		await setAutomatic(props.resourceId, enabled)
 	} catch (failure) {
-		errorToast(failure)
+		mutationError.value = getErrorMessage(
+			failure,
+			"Automatic snapshots couldn't be changed.",
+		)
 	} finally {
 		saving.value = false
 	}
@@ -58,6 +63,7 @@ defineExpose({ reload })
 		</p>
 		<p v-else-if="error" class="text-p-sm text-ink-red-7">{{ error }}</p>
 		<div v-else class="space-y-4">
+			<Alert v-if="mutationError" theme="red" :title="mutationError" />
 			<div class="flex items-start justify-between gap-4">
 				<div class="min-w-0">
 					<p class="text-sm text-ink-gray-9">Daily free snapshot</p>

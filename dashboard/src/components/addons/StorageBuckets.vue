@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import {
+	Alert,
 	Badge,
 	Button,
 	Dialog,
@@ -20,7 +21,7 @@ import type {
 } from '@/composables/useObjectStorage'
 import { useObjectStorage } from '@/composables/useObjectStorage'
 import { copyToClipboard } from '@/lib/clipboard'
-import { errorToast, successToast } from '@/lib/toast'
+import { getErrorMessage, reportError, successToast } from '@/lib/feedback'
 
 const props = defineProps<{ managedService: string; canManage: boolean }>()
 
@@ -97,11 +98,14 @@ watch(details, () => (secretRevealed.value = false))
 const createOpen = ref(false)
 const newName = ref('')
 const creating = ref(false)
+const createError = ref('')
 
 const openCreate = (): void => {
 	newName.value = ''
+	createError.value = ''
 	createOpen.value = true
 }
+watch(newName, () => (createError.value = ''))
 
 const create = async (): Promise<void> => {
 	const bucket = newName.value.trim()
@@ -113,7 +117,7 @@ const create = async (): Promise<void> => {
 		details.value = await createBucket(bucket)
 		createOpen.value = false
 	} catch (e) {
-		errorToast(e)
+		createError.value = getErrorMessage(e, "The bucket couldn't be created.")
 	} finally {
 		creating.value = false
 		pendingName.value = ''
@@ -127,18 +131,28 @@ const reveal = async (bucket: StorageBucket): Promise<void> => {
 	try {
 		details.value = await revealBucketKey(bucket.name)
 	} catch (e) {
-		errorToast(e)
+		reportError(e)
 	} finally {
 		revealingName.value = ''
 	}
 }
 
 const pendingRevoke = ref<StorageBucket | null>(null)
+const revokeError = ref('')
+watch(pendingRevoke, () => (revokeError.value = ''))
 
 const confirmRevoke = async (): Promise<void> => {
 	const bucket = pendingRevoke.value
-	pendingRevoke.value = null
-	if (bucket) await revokeBucketKey(bucket.name)
+	if (!bucket) return
+	try {
+		await revokeBucketKey(bucket.name)
+		pendingRevoke.value = null
+	} catch (e) {
+		revokeError.value = getErrorMessage(
+			e,
+			"The bucket key couldn't be revoked.",
+		)
+	}
 }
 
 const rowActions = (bucket: StorageBucket): DropdownOptions => [
@@ -170,7 +184,7 @@ const copy = async (value: string, label: string): Promise<void> => {
 		return
 	}
 
-	errorToast(`${label} could not be copied. Select it and copy by hand.`)
+	reportError(`${label} could not be copied. Select it and copy by hand.`)
 }
 </script>
 
@@ -312,6 +326,7 @@ const copy = async (value: string, label: string): Promise<void> => {
 			}
 		"
 	>
+		<Alert v-if="createError" class="mb-4" theme="red" :title="createError" />
 		<FormControl
 			v-model="newName"
 			type="text"
@@ -461,6 +476,7 @@ const copy = async (value: string, label: string): Promise<void> => {
 			}
 		"
 	>
+		<Alert v-if="revokeError" class="mb-4" theme="red" :title="revokeError" />
 		<p class="text-p-base text-ink-gray-7">
 			Revoke the key for
 			<span class="break-all font-semibold text-ink-gray-8">

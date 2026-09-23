@@ -24,8 +24,6 @@ export const API = {
 	// ── Team roster, roles & invitations (central.api.teams) ──
 	listTeamMembers: 'central.api.teams.list_team_members',
 	listTeamRoles: 'central.api.teams.list_team_roles',
-	listCapabilities: 'central.api.teams.list_capabilities',
-	listTeamInvitations: 'central.api.teams.list_team_invitations',
 	createTeam: 'central.api.teams.create_team',
 	renameTeam: 'central.api.teams.rename_team',
 	myProfile: 'central.api.identity.my_profile',
@@ -98,6 +96,7 @@ export const API = {
 	onboardingStatus: 'central.api.sites.onboarding_status',
 	claimSite: 'central.api.sites.claim_site',
 	getSite: 'central.api.sites.get_site',
+	loginSite: 'central.api.sites.login_site',
 	terminateSite: 'central.api.sites.terminate_site',
 
 	// ── SSO open-in-bench (central.api.sso) ──
@@ -106,8 +105,6 @@ export const API = {
 	// ── Billing catalog (central.billing.api.dashboard.catalog) ──
 	eligiblePlans: 'central.billing.api.dashboard.catalog.get_eligible_plans',
 	composedConfig: 'central.billing.api.dashboard.catalog.get_composed_config',
-	resizeComposedConfig:
-		'central.billing.api.dashboard.catalog.resize_composed_config',
 
 	// ── Billing: reads (central.billing.api.dashboard.*, billing:view) ──
 	// The dashboard package re-exports every submodule fn, so these flat paths are

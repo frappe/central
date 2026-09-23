@@ -3,8 +3,8 @@ import { computed, ref } from 'vue'
 import { API, method } from '@/api/methods'
 import { useSession } from '@/composables/useSession'
 import { teamParams, whenTeamReady } from '@/composables/useTeamScope'
+import { successToast } from '@/lib/feedback'
 import { submitOrThrow } from '@/lib/frappeCall'
-import { errorToast, successToast } from '@/lib/toast'
 
 // The team's add-on services (LLM hosting via Grove today). One module-level
 // composable so the catalogue and the detail page share one fetch. Central owns team
@@ -173,8 +173,6 @@ export function useServices() {
 				await submitOrThrow(revokeKeyCall, { name })
 				successToast('API key revoked')
 				await reloadApiKeys()
-			} catch (e) {
-				errorToast(e)
 			} finally {
 				busyKey.value = ''
 			}

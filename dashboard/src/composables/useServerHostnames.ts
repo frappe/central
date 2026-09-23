@@ -3,7 +3,7 @@ import { type Ref, ref, watch } from 'vue'
 import { API, methodV1 } from '@/api/methods'
 import type { VirtualMachineRow } from '@/composables/useServers'
 import { useSession } from '@/composables/useSession'
-import { getErrorMessage } from '@/lib/toast'
+import { getErrorMessage } from '@/lib/feedback'
 
 export interface ServerHostname {
 	hostname: string

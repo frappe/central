@@ -63,7 +63,27 @@ class Team(Document):
 
 	def on_trash(self) -> None:
 		self._require_capability("team:delete")
+		self._validate_no_owned_resources()
+		self._delete_owned_access_records()
 		clear_grants_cache()
+
+	def _validate_no_owned_resources(self) -> None:
+		for doctype in ("Virtual Machine", "Site"):
+			if frappe.db.exists(doctype, {"team": self.name}):
+				frappe.throw(
+					_("Remove this team's servers and sites before deleting it."),
+					frappe.ValidationError,
+				)
+
+	def _delete_owned_access_records(self) -> None:
+		for name in frappe.get_all("Team Invitation", {"team": self.name}, pluck="name"):
+			# Team deletion already passed team:delete and owns this dependent cleanup.
+			frappe.delete_doc("Team Invitation", name, ignore_permissions=True, force=True)
+		for name in frappe.get_all("Team Role", {"team": self.name, "is_system": 0}, pluck="name"):
+			role = frappe.get_doc("Team Role", name)
+			role.flags.from_team_delete = True
+			# Team deletion already passed team:delete and owns this dependent cleanup.
+			role.delete(ignore_permissions=True, force=True)
 
 	# Internal; the HTTP surface is central.api.teams.invite_team_member.
 	def invite_member(

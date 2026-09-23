@@ -12,7 +12,6 @@ from central.api.teams import (
 	delete_custom_role,
 	delete_team,
 	invite_team_member,
-	list_team_invitations,
 	rename_team,
 	resend_invitation,
 	revoke_invitation,
@@ -325,18 +324,26 @@ class TestTeamManagement(IntegrationTestCase):
 		self.assertEqual(team._get_member(self.owner).role, "Owner")
 		self.assertTrue(can(self.owner, team.name, "team:delete"))
 
-	def test_list_team_invitations_is_manager_only(self):
+	def test_team_invitation_list_is_manager_only(self):
 		frappe.set_user(self.owner)
-		invite_team_member(self.team.name, self.invitee, "Developer")
+		invitation = invite_team_member(self.team.name, self.invitee, "Developer")
 
-		rows = list_team_invitations(self.team.name)
+		rows = frappe.get_list(
+			"Team Invitation",
+			filters={"team": self.team.name},
+			fields=["name", "email", "status"],
+		)
 		self.assertEqual(len(rows), 1)
+		self.assertEqual(rows[0]["name"], invitation)
 		self.assertEqual(rows[0]["email"], self.invitee)
 		self.assertEqual(rows[0]["status"], "Pending")
 
 		frappe.set_user(self.viewer)
-		with self.assertRaises(frappe.PermissionError):
-			list_team_invitations(self.team.name)
+		self.assertEqual(
+			frappe.get_list("Team Invitation", filters={"team": self.team.name}, pluck="name"),
+			[],
+		)
+		self.assertFalse(frappe.has_permission("Team Invitation", "read", invitation))
 
 	def test_invite_can_scope_role_to_a_resource(self):
 		frappe.set_user(self.owner)
@@ -476,13 +483,12 @@ class TestTeamManagement(IntegrationTestCase):
 		self.assertFalse(frappe.db.exists("Team", fresh))
 
 	def test_delete_team_clears_invitations_that_would_block_it(self):
-		# An invitation Links to the Team; without cleanup the delete raised
-		# LinkExistsError. delete_team clears invitations + custom roles first.
+		# The controller owns cleanup, so Desk and API deletion behave the same.
 		frappe.set_user(self.owner)
 		team = create_team("Team With Invite")["name"]
 		invite = invite_team_member(team, "blocks.delete@example.test", "Viewer")
 
-		self.assertTrue(delete_team(team)["deleted"])
+		frappe.delete_doc("Team", team)
 		self.assertFalse(frappe.db.exists("Team", team))
 		self.assertFalse(frappe.db.exists("Team Invitation", invite))
 

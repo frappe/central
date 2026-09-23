@@ -5,6 +5,8 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
+from central.iam import can, user_has_operator_bypass
+
 
 class TeamRole(Document):
 	# begin: auto-generated types
@@ -29,6 +31,14 @@ class TeamRole(Document):
 		if not self.is_system and not self.team:
 			frappe.throw(_("Custom Team Roles must be tied to one team."))
 
-	def on_trash(self):
+	def on_trash(self) -> None:
 		if self.is_system:
 			frappe.throw(_("System Team Roles cannot be deleted."))
+		if self.flags.from_team_delete:
+			return
+		if not user_has_operator_bypass() and not can(frappe.session.user, self.team, "team:manage_members"):
+			frappe.throw(_("You can't manage roles for this team."), frappe.PermissionError)
+		if frappe.db.exists("Team Member", {"role": self.name}):
+			frappe.throw(_("Reassign members off this role before deleting it."), frappe.ValidationError)
+		if frappe.db.exists("Team Invitation", {"role": self.name, "status": "Pending"}):
+			frappe.throw(_("A pending invitation still uses this role."), frappe.ValidationError)

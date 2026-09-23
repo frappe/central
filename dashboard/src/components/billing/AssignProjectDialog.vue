@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { Dialog, FormControl, useCall } from 'frappe-ui'
+import { Alert, Dialog, FormControl, useCall } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import { API, method } from '@/api/methods'
 import { useBillingOverview } from '@/composables/useBillingOverview'
-import { errorToast } from '@/lib/toast'
+import { getErrorMessage } from '@/lib/feedback'
 import type { SubscriptionRow } from '@/types/billing'
 
 // Tag a subscription into a Project, or clear it back to untagged. Controlled by
@@ -30,12 +30,15 @@ const open = computed({
 })
 
 const selected = ref(UNTAGGED)
+const formError = ref('')
 watch(
 	() => props.subscription,
 	(sub) => {
+		formError.value = ''
 		if (sub) selected.value = sub.project || UNTAGGED
 	},
 )
+watch(selected, () => (formError.value = ''))
 
 const options = computed(() => [
 	{ label: 'No project', value: UNTAGGED },
@@ -68,7 +71,7 @@ async function submit(): Promise<void> {
 		emit('update:subscription', null)
 		emit('assigned')
 	} catch (e) {
-		errorToast(e)
+		formError.value = getErrorMessage(e, "The project couldn't be changed.")
 	}
 }
 
@@ -93,13 +96,16 @@ const dialogOptions = computed(() => ({
 		:actions="dialogOptions.actions"
 	>
 		<template #default>
-			<FormControl
-				type="select"
-				v-model="selected"
-				:options="options"
-				label="Project"
-				description="Which project this subscription shows under in your cost breakdown. This doesn't change your invoice — every subscription bills on your one consolidated invoice."
-			/>
+			<div class="space-y-4">
+				<Alert v-if="formError" theme="red" :title="formError" />
+				<FormControl
+					type="select"
+					v-model="selected"
+					:options="options"
+					label="Project"
+					description="Which project this subscription shows under in your cost breakdown. This doesn't change your invoice — every subscription bills on your one consolidated invoice."
+				/>
+			</div>
 		</template>
 	</Dialog>
 </template>

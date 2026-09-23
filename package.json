@@ -12,6 +12,8 @@
     "watch": "yarn dev",
     "build": "NODE_ENV=production yarn run build-dashboard && yarn run build-email-css",
     "build-dashboard": "cd dashboard && yarn build",
+    "lint-dashboard": "cd dashboard && yarn lint",
+    "type-check-dashboard": "cd dashboard && yarn type-check",
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --headed",
     "test:e2e:report": "playwright show-report",

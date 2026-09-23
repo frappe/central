@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Badge, Button, useCall } from 'frappe-ui'
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { API, method } from '@/api/methods'
 import AddMethodDialog from '@/components/AddMethodDialog.vue'
 import BillingCard from '@/components/billing/BillingCard.vue'
@@ -11,8 +11,8 @@ import { useBillingSetup } from '@/composables/useBillingSetup'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { useSession } from '@/composables/useSession'
 import { whenTeamReady } from '@/composables/useTeamScope'
+import { getErrorMessage, reportError, successToast } from '@/lib/feedback'
 import { money } from '@/lib/format'
-import { errorToast, successToast } from '@/lib/toast'
 import type { CollectionStatus, PaymentMethod } from '@/types/billing'
 
 // Payment methods — one ordered list of the ways an invoice gets settled. Each row
@@ -133,6 +133,7 @@ async function makeDefault(pm: PaymentMethod): Promise<void> {
 	busy.value = pm.name
 	try {
 		await setDefault.submit({ payment_method: pm.name })
+		if (setDefault.error) throw setDefault.error
 		// Charging this first only means something if anything is charged at all, so
 		// a prepaid team comes off prepaid by asking for it.
 		if (creditsFirst.value) {
@@ -143,7 +144,7 @@ async function makeDefault(pm: PaymentMethod): Promise<void> {
 		await collection.reload()
 		reloadMethods()
 	} catch (e) {
-		errorToast(e)
+		reportError(e)
 	} finally {
 		busy.value = ''
 	}
@@ -151,13 +152,18 @@ async function makeDefault(pm: PaymentMethod): Promise<void> {
 
 async function confirmRemove(pm: PaymentMethod): Promise<void> {
 	busy.value = pm.name
+	removeError.value = ''
 	try {
 		await remove.submit({ payment_method: pm.name })
+		if (remove.error) throw remove.error
 		successToast('Payment method removed')
 		pendingRemove.value = null
 		reloadMethods()
 	} catch (e) {
-		errorToast(e)
+		removeError.value = getErrorMessage(
+			e,
+			"The payment method couldn't be removed.",
+		)
 	} finally {
 		busy.value = ''
 	}
@@ -173,15 +179,18 @@ async function move(pm: PaymentMethod, delta: number): Promise<void> {
 	busy.value = pm.name
 	try {
 		await reorder.submit({ team: activeTeam.value!, ordered: list })
+		if (reorder.error) throw reorder.error
 		reloadMethods()
 	} catch (e) {
-		errorToast(e)
+		reportError(e)
 	} finally {
 		busy.value = ''
 	}
 }
 
 const showAdd = ref(false)
+const removeError = ref('')
+watch(pendingRemove, () => (removeError.value = ''))
 function onAdd(): void {
 	if (requireSetup()) showAdd.value = true
 }
@@ -307,6 +316,7 @@ function onAdd(): void {
 			confirm-label="Remove"
 			theme="red"
 			:loading="busy === pendingRemove?.name"
+			:error="removeError"
 			@confirm="confirmRemove"
 		/>
 		<AddMethodDialog v-model="showAdd" @done="reloadMethods" />

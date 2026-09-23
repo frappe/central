@@ -3,6 +3,7 @@ from __future__ import annotations
 from urllib.parse import urlsplit, urlunsplit
 
 import frappe
+from frappe import _
 from frappe.model.document import Document
 
 IMAGE_SITE_NAME = "site.local"
@@ -29,6 +30,9 @@ class Site(Document):
 
 		server: DF.Link
 		claimed_at: DF.Datetime | None
+		ready_at: DF.Datetime | None
+		rename_error: DF.SmallText | None
+		rename_error_log: DF.Link | None
 		rename_task: DF.Data | None
 		site_name: DF.Data
 		subdomain: DF.Data | None
@@ -71,19 +75,19 @@ class Site(Document):
 			return
 
 		machine = frappe.db.get_value(
-			"Virtual Machine", server, ["team", "cluster", "ipv6_address"], as_dict=True
+			"Virtual Machine", server, ["team", "region", "ipv6_address"], as_dict=True
 		)
 		if not machine or not machine.ipv6_address:
 			return
 		if not frappe.db.exists("Pilot Credential", {"server": server, "status": "Active"}):
 			return
 
-		host = frappe.get_cached_doc("Region", machine.cluster).get_vm_site_host(machine.ipv6_address)
+		host = frappe.get_cached_doc("Region", machine.region).get_vm_site_host(machine.ipv6_address)
 		if not host:
 			return
 
 		# The verified region authorizes this record, the same way it authorizes the machine's.
-		frappe.get_doc(
+		site = frappe.get_doc(
 			{
 				"doctype": "Site",
 				"site_name": host,
@@ -93,7 +97,9 @@ class Site(Document):
 				"team": machine.team,
 				"server": server,
 			}
-		).insert(ignore_permissions=True)
+		)
+		# The verified regional server report owns creation of this system mirror.
+		site.insert(ignore_permissions=True)
 
 	def mark_claimed(self) -> None:
 		"""Record the first successful login handoff and schedule the optional rename."""
@@ -101,6 +107,21 @@ class Site(Document):
 			self.db_set("claimed_at", frappe.utils.now_datetime())
 
 		self.enqueue_subdomain_rename()
+
+	def record_ready(self) -> None:
+		"""Record and announce the first successful probe of the site's public address."""
+		if self.ready_at:
+			return
+
+		self.db_set("ready_at", frappe.utils.now_datetime())
+		from central.notification.engine import queue_event
+
+		queue_event(
+			self.team,
+			"site_ready",
+			reference_doctype=self.doctype,
+			reference_name=self.name,
+		)
 
 	def enqueue_subdomain_rename(self) -> None:
 		"""Schedule the rename without keeping the login response waiting on Pilot."""
@@ -128,8 +149,42 @@ class Site(Document):
 		if not self.subdomain or self.rename_task:
 			return
 
-		task = rename_site(self.server, IMAGE_SITE_NAME, self.rename_target)
-		self.db_set("rename_task", task.get("task_id"))
+		try:
+			task = rename_site(self.server, IMAGE_SITE_NAME, self.rename_target)
+		# This worker boundary records every failure so an operator can retry it safely.
+		except Exception:
+			self.record_rename_failure(
+				_("Pilot did not accept the site rename. Retry it from this Site."),
+				frappe.get_traceback(with_context=False),
+			)
+			return
+
+		task_id = task.get("task_id") if isinstance(task, dict) else None
+		if not task_id:
+			self.record_rename_failure(
+				_("Pilot did not return a task for the site rename. Retry it from this Site."),
+				frappe.as_json(task),
+			)
+			return
+
+		self.db_set({"rename_task": task_id, "rename_error": None, "rename_error_log": None})
+
+	def record_rename_failure(self, reason: str, diagnostic: str) -> None:
+		"""Keep a safe reason on the Site and the diagnostic in Error Log."""
+		error_log = self.log_error(title="Pilot site rename failed", message=diagnostic)
+		self.db_set({"rename_error": reason, "rename_error_log": error_log.name})
+
+	@frappe.whitelist(methods=["POST"])
+	def retry_subdomain_rename(self) -> None:
+		"""Operator action: retry a rename that Pilot did not accept."""
+		self.check_permission("write")
+		if self.rename_task:
+			frappe.throw(_("Pilot already accepted this site rename."))
+		if not self.rename_error:
+			frappe.throw(_("This site rename has no recorded failure."))
+
+		self.db_set({"rename_error": None, "rename_error_log": None})
+		self.enqueue_subdomain_rename()
 
 	def get_login_url(self) -> str | None:
 		"""A one-click Administrator session, on the address the customer can reach.

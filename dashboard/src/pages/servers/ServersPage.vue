@@ -1,8 +1,7 @@
 <script setup lang="ts">
-import { Button, Spinner, useCall } from 'frappe-ui'
+import { Button, Spinner } from 'frappe-ui'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { API, method } from '@/api/methods'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import MapHealthStrips from '@/components/servers/MapHealthStrips.vue'
@@ -17,25 +16,11 @@ import ServerRowActions from '@/components/servers/ServerRowActions.vue'
 import TerminateServerDialog from '@/components/servers/TerminateServerDialog.vue'
 import TakeSnapshotDialog from '@/components/snapshots/TakeSnapshotDialog.vue'
 import CreateTeamDialog from '@/components/team/CreateTeamDialog.vue'
-import { useCapabilities } from '@/composables/useCapabilities'
-import { useFleetRows } from '@/composables/useFleetRows'
-import { useRegions } from '@/composables/useRegions'
-import { useServerMapData } from '@/composables/useServerMapData'
+import { useServerFleet } from '@/composables/useServerFleet'
+import { useServerNavigation } from '@/composables/useServerNavigation'
 import type { VirtualMachineRow } from '@/composables/useServers'
 import { useServers } from '@/composables/useServers'
-import { useSession } from '@/composables/useSession'
-import {
-	flagEmoji,
-	hasMapCoords,
-	type MapPin,
-	type MapSpot,
-	type ResourceRow,
-	regionLabel,
-	type ServerVisual,
-	STATUS_FILTERS,
-} from '@/lib/serverMap'
-import { errorToast, getErrorMessage } from '@/lib/toast'
-import signingInHtml from './signing-in.html?raw'
+import { getErrorMessage } from '@/lib/feedback'
 
 // The servers page: the world map is the list (FC V2). Servers (the Virtual Machine mirror)
 // and sites (the Site mirror — each a 1:1-backed VM) come from one feed and list
@@ -45,40 +30,37 @@ import signingInHtml from './signing-in.html?raw'
 const router = useRouter()
 const route = useRoute()
 
-const { servers, sites, loading, error, reload } = useServerMapData()
-const { regions } = useRegions()
 const {
+	sites,
+	loading,
+	error,
+	reload,
 	canPowerServer,
+	canResizeServer,
 	canTerminateServer,
 	canSnapshotServer,
-	canOpenServer,
+	canViewServers,
 	canCreateServer,
-} = useCapabilities()
+	activeTeam,
+	sessionLoading,
+	rows,
+	query: q,
+	statusFilter,
+	regionSelection,
+	locationFilter,
+	statusOptions,
+	regionOptions,
+	panelRows,
+	pillLabel,
+	pins,
+	spots,
+} = useServerFleet()
 // Actions only — list reads come from useServerMapData.
-const {
-	refreshing,
-	stale,
-	busy,
-	opening,
-	refreshServers,
-	start,
-	stop,
-	restart,
-	terminate,
-	open,
-} = useServers()
-
-const getSiteCall = useCall<
-	{ url: string | null; login_url: string | null },
-	{ name: string }
->({
-	url: method(API.getSite),
-	immediate: false,
-})
+const { refreshing, stale, busy, opening, refreshServers, runCommand } =
+	useServers()
 
 // A user in no team can't own servers/billing/regions — offer team creation
 // instead of the (empty, error-prone) map until a team exists.
-const { activeTeam, loading: sessionLoading } = useSession()
 const createTeamOpen = ref(false)
 const hasNoTeam = computed(() => !sessionLoading.value && !activeTeam.value)
 
@@ -98,210 +80,14 @@ function dismissOnboarding(): void {
 	localStorage.setItem(ONBOARDING_KEY, '1')
 }
 
-const q = ref('')
-const statusFilter = ref<ServerVisual['key'] | ''>('')
-const regionFilter = ref<{ provider: string; region: string }>({
-	provider: '',
-	region: '',
-})
 const hoverId = ref<string | null>(null)
 const panelOpen = ref(false)
-
-// Servers and sites decorated into one sorted ResourceRow list (useFleetRows).
-const { rows } = useFleetRows(servers, sites, regions)
-
-// — Filters. Status and region scope the map and the panel; search only
-//   narrows the panel rows.
-const statusOptions = computed(() => [
-	{ label: 'All statuses', value: '', dot: 'var(--ink-gray-4)' },
-	...STATUS_FILTERS.map((s) => ({ label: s.label, value: s.key, dot: s.dot })),
-])
-
-// A place a customer can filter by: a name, a country, and a spot on the map.
-// Internal and test regions never reach this list.
-const placeableRegions = computed(() =>
-	regions.value
-		.filter(
-			(region) =>
-				region.display_name?.trim() &&
-				region.country_code &&
-				hasMapCoords(region) &&
-				region.display_name !== region.region,
-		)
-		.slice()
-		.sort((a, b) => regionLabel(a).localeCompare(regionLabel(b))),
-)
-
-const regionOptions = computed(() => [
-	{ label: 'All regions', value: '' },
-	...placeableRegions.value.map((region) => ({
-		label: `${flagEmoji(region.country_code)} ${regionLabel(region)}`.trim(),
-		value: `r:${region.provider || ''}|${region.region}`,
-	})),
-])
-const regionSelection = computed({
-	get(): string {
-		const { provider, region } = regionFilter.value
-		if (!provider && !region) return ''
-		if (!region) return `p:${provider}`
-		return `r:${provider}|${region}`
-	},
-	set(value: string) {
-		if (!value) regionFilter.value = { provider: '', region: '' }
-		else if (value.startsWith('p:'))
-			regionFilter.value = { provider: value.slice(2), region: '' }
-		else {
-			const [provider, region] = value.slice(2).split('|')
-			regionFilter.value = { provider, region }
-		}
-	},
-})
-
-const filtered = computed(() =>
-	rows.value.filter((row) => {
-		if (
-			regionFilter.value.provider &&
-			(row.provider || 'Other') !== regionFilter.value.provider
-		)
-			return false
-		if (regionFilter.value.region && row.cluster !== regionFilter.value.region)
-			return false
-		if (statusFilter.value && row.visual.key !== statusFilter.value)
-			return false
-		return true
-	}),
-)
-
-// Clicking a map cluster narrows the panel to that spot ({ ids, label }).
-const locationFilter = ref<{ ids: string[]; label: string } | null>(null)
-
-const panelRows = computed(() => {
-	let list = filtered.value
-	if (locationFilter.value)
-		list = list.filter((row) => locationFilter.value!.ids.includes(row.id))
-	const term = q.value.trim().toLowerCase()
-	if (!term) return list
-	return list.filter((row) =>
-		`${row.name} ${row.id} ${row.regionLabel} ${row.provider ?? ''}`
-			.toLowerCase()
-			.includes(term),
-	)
-})
-
-const pillLabel = computed(() =>
-	statusFilter.value || regionFilter.value.provider || regionFilter.value.region
-		? `Servers (${filtered.value.length})`
-		: `All servers (${filtered.value.length})`,
-)
-
-// — Map data. Every VM pins — servers and sites alike; a site clusters with any
-//   server sharing its region, so co-located resources gather under one node. Pins
-//   carry everything their hover card shows so ServerMap stays presentational.
-const pins = computed<MapPin[]>(() =>
-	filtered.value
-		.filter(
-			(row) =>
-				(row.server || row.site) && row.region && hasMapCoords(row.region),
-		)
-		.map((row) => {
-			const base = {
-				id: row.id,
-				name: row.name,
-				lat: row.region!.latitude!,
-				lng: row.region!.longitude!,
-				provider: row.provider,
-				visual: row.visual,
-				cluster: row.cluster,
-				regionLabel: row.regionLabel,
-				flag: row.flag,
-				specs: row.specs,
-			}
-			const machine = row.server
-				? {
-						publicIpv4: row.server.public_ipv4 ?? null,
-						plan: row.server.plan ?? null,
-						frappeVersion: row.server.frappe_version ?? null,
-						server: row.server,
-					}
-				: {}
-			return row.kind === 'server'
-				? { ...base, kind: 'server' as const, ...machine }
-				: { ...base, kind: 'site' as const, site: row.site!, ...machine }
-		}),
-)
-
-// Regions with no servers show as + spots — everywhere you could deploy next.
-const spots = computed<MapSpot[]>(() => {
-	if (!canCreateServer.value) return []
-	const occupied = new Set(servers.value.map((server) => server.cluster))
-	return regions.value
-		.filter((r) => !occupied.has(r.region) && hasMapCoords(r))
-		.filter(
-			(r) =>
-				!regionFilter.value.provider ||
-				(r.provider || 'Other') === regionFilter.value.provider,
-		)
-		.filter(
-			(r) =>
-				!regionFilter.value.region || r.region === regionFilter.value.region,
-		)
-		.map((r) => ({
-			id: r.region,
-			lat: r.latitude!,
-			lng: r.longitude!,
-			provider: r.provider || null,
-			regionLabel: regionLabel(r),
-			flag: flagEmoji(r.country_code),
-		}))
-})
+const overviewServer = ref<VirtualMachineRow | null>(null)
+const { siteFor, openServer, openResource, openById, openBench, openSite } =
+	useServerNavigation(rows, sites, canViewServers, overviewServer)
 
 // — Wiring. Pin / cluster-row clicks go straight to the live site or server.
 //   If the side panel is open, keep its location filter in step.
-function canOpenBench(server: VirtualMachineRow): boolean {
-	return (
-		canOpenServer.value && server.status === 'Running' && !!server.gateway_url
-	)
-}
-function siteFor(server: VirtualMachineRow) {
-	return sites.value.find((site) => site.server === server.name)
-}
-function openServer(server: VirtualMachineRow): void {
-	const site = siteFor(server)
-	if (site) {
-		void openSite(site.name)
-		return
-	}
-	open(server)
-}
-function openResource(row: ResourceRow): void {
-	if (!row.server) return
-	// A site is the same machine. Open goes to the site. Everything else opens the bench.
-	if (row.site) {
-		if (
-			canOpenServer.value &&
-			row.server.status === 'Running' &&
-			row.site.url
-		) {
-			void openSite(row.site.name)
-			return
-		}
-		overviewServer.value = row.server
-		return
-	}
-	if (canOpenBench(row.server)) {
-		open(row.server)
-		return
-	}
-	// Not openable yet (still provisioning, stopped, …) — show the overview.
-	overviewServer.value = row.server
-}
-function onOpen(id: string): void {
-	const row = rows.value.find((r) => r.id === id)
-	if (!row) return
-	// Opening one server is not a filter. A cluster click still narrows the
-	// list to that place, because that click is "show me these".
-	openResource(row)
-}
 function onClusterOpen(payload: { ids: string[]; label: string }): void {
 	if (panelOpen.value) locationFilter.value = payload
 }
@@ -334,19 +120,18 @@ onMounted(() => {
 function reloadAll(): void {
 	reload()
 }
-async function withReload(action: Promise<unknown>): Promise<void> {
-	await action
-	reload()
+async function reloadAfter(action: Promise<boolean>): Promise<void> {
+	if (await action) reload()
 }
-const doRefresh = (): Promise<void> => withReload(refreshServers())
+const doRefresh = (): Promise<void> => reloadAfter(refreshServers())
 const doStart = (server: VirtualMachineRow): Promise<void> =>
-	withReload(start(server))
+	reloadAfter(runCommand('start', server))
 const doStop = (server: VirtualMachineRow): Promise<void> =>
-	withReload(stop(server))
+	reloadAfter(runCommand('stop', server))
 const pendingRestart = ref<VirtualMachineRow | null>(null)
 async function confirmRestart(server: VirtualMachineRow): Promise<void> {
 	try {
-		await withReload(restart(server))
+		await reloadAfter(runCommand('restart', server))
 	} finally {
 		pendingRestart.value = null
 	}
@@ -366,7 +151,10 @@ async function confirmTerminate(
 	try {
 		// Destructive: keep the dialog open and show the reason inline on failure, rather
 		// than closing and firing a toast the user may miss. The row then shows "Terminating…".
-		await terminate(server, takeSnapshot)
+		await runCommand('terminate', server, {
+			takeSnapshot,
+			throwOnError: true,
+		})
 		pendingTerminate.value = null
 		reload()
 	} catch (e) {
@@ -379,7 +167,6 @@ async function confirmTerminate(
 
 const pendingResize = ref<VirtualMachineRow | null>(null)
 const pendingSnapshot = ref<VirtualMachineRow | null>(null)
-const overviewServer = ref<VirtualMachineRow | null>(null)
 const overviewOpensSite = computed(
 	() => !!overviewServer.value && !!siteFor(overviewServer.value),
 )
@@ -389,42 +176,6 @@ const overviewOpen = computed({
 		if (!isOpen) overviewServer.value = null
 	},
 })
-
-// — Sites. Open logs in: fetch a fresh login_url (Central mints a session on read),
-// opening the tab synchronously so it isn't popup-blocked (with a signing-in page so
-// it isn't a blank white screen during the round-trip). Terminate tears down the VM.
-const openingSite = ref<string | null>(null)
-async function openSite(name: string): Promise<void> {
-	if (openingSite.value) return // one open at a time — no duplicate tabs/session mints
-	openingSite.value = name
-	// Open the signing-in page from a blob URL (no deprecated document.write, and a
-	// synchronous window.open isn't popup-blocked), then point the tab at the real
-	// session URL once it resolves.
-	const loadingUrl = URL.createObjectURL(
-		new Blob([signingInHtml], { type: 'text/html' }),
-	)
-	const tab = window.open(loadingUrl, '_blank')
-	try {
-		await getSiteCall.submit({ name })
-		if (getSiteCall.error) throw getSiteCall.error
-		const url = getSiteCall.data?.login_url || getSiteCall.data?.url
-		if (url && tab) tab.location.href = url
-		else if (url) window.location.href = url
-		else {
-			tab?.close()
-			errorToast(
-				undefined,
-				"Couldn't open the site. It may not be ready yet. Try again in a moment.",
-			)
-		}
-	} catch (e) {
-		tab?.close()
-		errorToast(e)
-	} finally {
-		URL.revokeObjectURL(loadingUrl)
-		openingSite.value = null
-	}
-}
 </script>
 
 <template>
@@ -480,10 +231,10 @@ async function openSite(name: string): Promise<void> {
 				:spots="spots"
 				:highlight-id="hoverId"
 				:allow-create="canCreateServer"
-				:allow-open="canOpenServer"
-				:opening-site="openingSite"
-				@open="onOpen"
-				@open-server="open"
+				:allow-open="canViewServers"
+				:opening="opening"
+				@open="openById"
+				@open-server="openBench"
 				@open-site="openSite"
 				@new-server="goNewServer"
 				@cluster-open="onClusterOpen"
@@ -492,16 +243,16 @@ async function openSite(name: string): Promise<void> {
 					<ServerRowActions
 						v-if="pin.server"
 						:server="pin.server"
-						:can-open="canOpenServer"
+						:can-open="canViewServers"
 						:can-power="canPowerServer"
+						:can-resize="canResizeServer"
 						:can-terminate="canTerminateServer"
 						:can-snapshot="canSnapshotServer"
 						:opens-site="!!pin.site"
 						side="right"
 						:busy="busy === pin.server.resource_id"
 						:opening="
-							opening === pin.server.resource_id ||
-							openingSite === pin.site?.name
+							opening === pin.server.resource_id || opening === pin.site?.name
 						"
 						@overview="overviewServer = $event"
 						@open="openServer"
@@ -537,14 +288,14 @@ async function openSite(name: string): Promise<void> {
 				:rows="panelRows"
 				:has-rows="rows.length > 0"
 				:location-filter="locationFilter"
-				:can-open="canOpenServer"
+				:can-open="canViewServers"
 				:can-power="canPowerServer"
+				:can-resize="canResizeServer"
 				:can-terminate="canTerminateServer"
 				:can-snapshot="canSnapshotServer"
 				:can-create="canCreateServer"
 				:busy="busy"
 				:opening="opening"
-				:opening-site="openingSite"
 				@open-row="openResource"
 				@clear-location="locationFilter = null"
 				@overview="overviewServer = $event"
@@ -612,8 +363,8 @@ async function openSite(name: string): Promise<void> {
 		<ServerOverviewDialog
 			v-model:open="overviewOpen"
 			:server="overviewServer"
-			:can-open="canOpenServer"
-			:can-resize="canPowerServer"
+			:can-open="canViewServers"
+			:can-resize="canResizeServer"
 			:opens-site="overviewOpensSite"
 			:can-snapshot="canSnapshotServer"
 			@open="openServer"

@@ -41,6 +41,7 @@ class SiteDomain(Document):
 		server: DF.Link
 		attempts: DF.Int
 		domain: DF.Data
+		error_log: DF.Link | None
 		failure_reason: DF.SmallText | None
 		ipv6_address: DF.Data | None
 		last_attempt_at: DF.Datetime | None
@@ -113,10 +114,10 @@ class SiteDomain(Document):
 
 	def validate_targets(self) -> None:
 		"""The server and site must belong to this team, and the server to this region."""
-		server = frappe.db.get_value("Virtual Machine", self.server, ["team", "cluster"], as_dict=True)
+		server = frappe.db.get_value("Virtual Machine", self.server, ["team", "region"], as_dict=True)
 		if not server or server.team != self.team:
 			frappe.throw(_("Server {0} does not belong to team {1}.").format(self.server, self.team))
-		if server.cluster != self.region:
+		if server.region != self.region:
 			frappe.throw(_("Server {0} is not in region {1}.").format(self.server, self.region))
 		if self.site and frappe.db.get_value("Site", self.site, "team") != self.team:
 			frappe.throw(_("Site {0} does not belong to team {1}.").format(self.site, self.team))
@@ -155,10 +156,21 @@ class SiteDomain(Document):
 			else:
 				client.set_domain(self.domain, address)
 		# ProxyError and missing regional config are both ValidationErrors.
-		except (frappe.ValidationError, httpx.HTTPError) as exception:
-			values.update(status="Failed", failure_reason=str(exception))
+		except frappe.ValidationError, httpx.HTTPError:
+			values.update(
+				self.failure_values(
+					_("Central could not update this route. It will retry automatically."),
+					"Site route update failed",
+				)
+			)
 		else:
-			values.update(status="Active", failure_reason=None, attempts=0, ipv6_address=address)
+			values.update(
+				status="Active",
+				failure_reason=None,
+				error_log=None,
+				attempts=0,
+				ipv6_address=address,
+			)
 
 		self.db_set(values)
 
@@ -169,15 +181,27 @@ class SiteDomain(Document):
 			# The server is gone, so the system removes its routes; no user acts here.
 			frappe.delete_doc("Site Domain", self.name, ignore_permissions=True)
 		# ProxyError and missing regional config are both ValidationErrors.
-		except frappe.ValidationError as exception:
+		except frappe.ValidationError:
 			self.db_set(
 				{
-					"status": "Failed",
-					"failure_reason": str(exception),
+					**self.failure_values(
+						_("Central could not remove this route. It will retry automatically."),
+						"Site route removal failed",
+					),
 					"attempts": self.attempts + 1,
 					"last_attempt_at": now_datetime(),
 				}
 			)
+
+	def failure_values(self, reason: str, title: str) -> dict:
+		"""Build a safe failure and linked traceback for this route."""
+		diagnostic = frappe.get_traceback(with_context=False)
+		error_log = self.log_error(title=title, message=diagnostic)
+		return {
+			"status": "Failed",
+			"failure_reason": reason,
+			"error_log": error_log.name,
+		}
 
 	@staticmethod
 	def new_for_pilot(credential: PilotCredential, domain: str) -> SiteDomain:
@@ -195,7 +219,7 @@ class SiteDomain(Document):
 				"team": credential.team,
 				"server": credential.server,
 				"site": frappe.db.get_value("Site", {"server": credential.server}, "name"),
-				"region": frappe.db.get_value("Virtual Machine", credential.server, "cluster"),
+				"region": frappe.db.get_value("Virtual Machine", credential.server, "region"),
 			}
 		)
 		route.route_type = route.get_route_type()

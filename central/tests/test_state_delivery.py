@@ -48,7 +48,7 @@ class TestStateDelivery(IntegrationTestCase):
 				"doctype": "Virtual Machine",
 				"resource_id": "server-" + frappe.generate_hash(length=8),
 				"team": self.team.name,
-				"cluster": self.cluster.name,
+				"region": self.cluster.name,
 				"atlas_vm_id": "vm-00007",
 				"status": "Stopped",
 			}
@@ -140,6 +140,29 @@ class TestStateDelivery(IntegrationTestCase):
 
 		self.assertEqual(self.deliver(report), {"queued": False, "ignored": "no change"})
 		self.assertEqual(self.server.reload().status, "Running")
+
+	def test_a_newer_unchanged_report_advances_the_ordering_watermark(self):
+		"""Running at T3 makes a delayed Stopped at T2 stale, even though T3 did not
+		change the visible state."""
+		self.apply(self.state_report(status="running", observed_at="2026-06-01 00:00:00"))
+
+		unchanged = self.state_report(status="running", observed_at="2026-06-03 00:00:00")
+		self.assertEqual(self.deliver(unchanged), {"queued": False, "ignored": "no change"})
+		self.assertEqual(
+			frappe.utils.get_datetime(self.server.reload().last_reported_at),
+			frappe.utils.get_datetime("2026-06-03 00:00:00"),
+		)
+
+		delayed = self.state_report(status="stopped", observed_at="2026-06-02 00:00:00")
+		self.assertEqual(self.deliver(delayed), {"queued": False, "ignored": "stale report"})
+		self.assertEqual(self.server.reload().status, "Running")
+
+	def test_a_report_requires_a_valid_source_timestamp(self):
+		self.assertEqual(
+			self.deliver(self.state_report(observed_at="not-a-time")),
+			{"queued": False, "ignored": "invalid observed_at"},
+		)
+		self.queued.assert_not_called()
 
 	def test_a_report_older_than_the_last_is_dropped(self):
 		"""An older observed_at is a reorder or replay and must not overwrite a newer state."""
@@ -248,7 +271,7 @@ class TestStateDelivery(IntegrationTestCase):
 				"resource_type": "Server",
 				"action": verb,
 				"team": self.team.name,
-				"atlas_instance": self.cluster.name,
+				"region": self.cluster.name,
 				"resource_id": self.server.name,
 				"server": self.server.name,
 				"remote_vm_id": self.server.atlas_vm_id,

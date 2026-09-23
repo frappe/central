@@ -8,8 +8,8 @@ from frappe import _
 from central.billing.api.dashboard._shared import _team_currency
 from central.billing.catalog.snapshots import get_snapshot_rate
 from central.billing.settings import daily_snapshot_retention_hours, free_snapshots_per_server
-from central.iam import can, resolve_team
 from central.infrastructure.doctype.vm_snapshot.vm_snapshot import VMSnapshot
+from central.utils.guards import require_capability
 
 SNAPSHOT_FIELDS = (
 	"name",
@@ -31,10 +31,10 @@ SNAPSHOT_FIELDS = (
 
 
 @frappe.whitelist(methods=["GET"])
+@require_capability("server:view", "You can't view this team's snapshots.")
 def list_snapshots(team: str | None = None, resource_id: str | None = None) -> dict:
 	"""The team's snapshots, newest first, each with what it costs. Pass `resource_id` for
 	one server's snapshots and its automatic setting. Gated on `server:view`."""
-	team = _authorized_team(team, "server:view")
 	filters = {"team": team, "status": ["!=", "Deleted"]}
 	if resource_id:
 		filters["server"] = _team_server(team, resource_id).name
@@ -58,17 +58,17 @@ def list_snapshots(team: str | None = None, resource_id: str | None = None) -> d
 
 
 @frappe.whitelist(methods=["GET"])
+@require_capability("server:view", "You can't view this team's snapshots.")
 def snapshot_pricing(team: str | None = None, region: str | None = None) -> dict:
 	"""The price per GB-month of a snapshot in `region`, shown before the customer commits."""
-	team = _authorized_team(team, "server:view")
 	rate, currency = get_snapshot_rate(team, region)
 	return {"rate_per_gib": rate, "currency": currency, **_allowance()}
 
 
 @frappe.whitelist(methods=["POST"])
+@require_capability("server:snapshot", "You can't manage this team's snapshots.")
 def take_snapshot(team: str | None = None, resource_id: str | None = None, title: str | None = None) -> dict:
 	"""Take a paid snapshot of a server now. Gated on `server:snapshot`."""
-	team = _authorized_team(team, "server:snapshot")
 	server = _team_server(team, resource_id)
 	snapshot = frappe.get_doc(
 		{
@@ -85,18 +85,18 @@ def take_snapshot(team: str | None = None, resource_id: str | None = None, title
 
 
 @frappe.whitelist(methods=["POST"])
+@require_capability("server:snapshot", "You can't manage this team's snapshots.")
 def keep_snapshot(team: str | None = None, name: str | None = None) -> dict:
 	"""Keep a daily snapshot past its deletion time. Gated on `server:snapshot`."""
-	team = _authorized_team(team, "server:snapshot")
 	_team_snapshot(team, name).keep()
 	return {"name": name}
 
 
 @frappe.whitelist(methods=["POST"])
+@require_capability("server:snapshot", "You can't manage this team's snapshots.")
 def delete_snapshots(team: str | None = None, names: list[str] | str | None = None) -> dict:
 	"""Delete snapshots from their region. One failure does not stop the others; each
 	reason comes back by name. Gated on `server:snapshot`."""
-	team = _authorized_team(team, "server:snapshot")
 	if isinstance(names, str):
 		names = frappe.parse_json(names)
 	if not names:
@@ -114,22 +114,14 @@ def delete_snapshots(team: str | None = None, names: list[str] | str | None = No
 
 
 @frappe.whitelist(methods=["POST"])
+@require_capability("server:snapshot", "You can't manage this team's snapshots.")
 def set_automatic_snapshots(
 	team: str | None = None, resource_id: str | None = None, enabled: bool | int | str = True
 ) -> dict:
 	"""Turn the daily free snapshot of one server on or off. Gated on `server:snapshot`."""
-	team = _authorized_team(team, "server:snapshot")
 	server = _team_server(team, resource_id)
 	server.db_set("skip_automatic_snapshot", 0 if frappe.utils.cint(enabled) else 1)
 	return _automatic_setting(team, resource_id)
-
-
-def _authorized_team(team: str | None, capability: str) -> str:
-	user = frappe.session.user
-	team = resolve_team(user, team)
-	if not can(user, team, capability):
-		frappe.throw(_("You can't manage this team's snapshots."), frappe.PermissionError)
-	return team
 
 
 def _team_server(team: str, resource_id: str | None):
@@ -150,7 +142,7 @@ def _automatic_setting(team: str, resource_id: str) -> dict:
 	return {
 		"resource_id": server.name,
 		"automatic": not server.skip_automatic_snapshot,
-		"region_automatic": bool(frappe.db.get_value("Region", server.cluster, "automatic_snapshots")),
+		"region_automatic": bool(frappe.db.get_value("Region", server.region, "automatic_snapshots")),
 	}
 
 

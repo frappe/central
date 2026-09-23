@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import frappe
+from frappe import _
 from frappe.model.document import Document
 from requests import RequestException
 
@@ -16,18 +17,19 @@ class VirtualMachine(Document):
 
 		atlas_image_id: DF.Data | None
 		atlas_vm_id: DF.Data | None
-		cluster: DF.Link
+		region: DF.Link
 		disk_gigabytes: DF.Float
 		frappe_version: DF.Data | None
 		gateway_url: DF.Data | None
 		admin_domain_task: DF.Data | None
+		admin_domain_error: DF.SmallText | None
+		admin_domain_error_log: DF.Link | None
 		image_offering: DF.Link | None
 		ipv6_address: DF.Data | None
 		last_reported_at: DF.Datetime | None
 		memory_megabytes: DF.Int
 		plan: DF.Link | None
 		public_ipv4: DF.Data | None
-		resize_in_progress: DF.Check
 		resource_id: DF.Data
 		skip_automatic_snapshot: DF.Check
 		state_observed_at: DF.Datetime | None
@@ -39,13 +41,42 @@ class VirtualMachine(Document):
 		vcpus: DF.Int
 	# end: auto-generated types
 
+	@classmethod
+	def create_from_action(cls, action, resource_id: str) -> VirtualMachine:
+		"""Create Central's server record from one accepted creation action."""
+		if frappe.db.exists("Virtual Machine", resource_id):
+			return frappe.get_doc("Virtual Machine", resource_id)
+
+		configuration = action.get_configuration()
+		server = frappe.get_doc(
+			{
+				"doctype": "Virtual Machine",
+				"resource_id": resource_id,
+				"title": action.title,
+				"team": action.team,
+				"region": action.region,
+				"status": "Provisioning",
+				"atlas_vm_id": action.remote_vm_id,
+				"atlas_image_id": configuration.image_id,
+				"image_offering": configuration.offering,
+				"plan": configuration.plan,
+				"vcpus": configuration.virtual_cpu_count,
+				"memory_megabytes": configuration.memory_mib,
+				"disk_gigabytes": configuration.disk_mib / 1024,
+				"frappe_version": configuration.image_tags.get("frappe_version"),
+			}
+		)
+		# The authorized Resource Action permits this system-owned mirror write.
+		return server.insert(ignore_permissions=True)
+
 	def on_update(self):
 		if self.has_value_changed("status") or self.has_value_changed("plan"):
 			self.sync_subscription_on_status_change()
 		if self.has_value_changed("status") and self.status == "Failed":
-			self.notify_failure()
+			self.queue_status_notification("server_failed")
 		if self.has_value_changed("status") and self.status == "Terminated":
 			self.enqueue_route_removal()
+			self.queue_status_notification("server_terminated")
 
 	def enqueue_route_removal(self) -> None:
 		"""A terminated server serves nothing, so its site and custom-domain routes go too."""
@@ -57,25 +88,17 @@ class VirtualMachine(Document):
 			deduplicate=True,
 		)
 
-	def notify_failure(self):
-		"""Surface a failed server in the team's console feed (a Server-category
-		notification), so a server turning Failed is not silent in the console."""
-		from central.notification import engine
+	def queue_status_notification(self, event_type: str) -> None:
+		"""Queue a notification after the observed server state is committed."""
+		from central.notification.engine import queue_event
 
-		engine.ensure_event_type(
-			"server_failed",
-			category="Server",
-			severity="Error",
-			required_cap="server:view",
-			in_app_title="Server failed: {{ reference_name }}",
-			in_app_body="Your server {{ reference_name }} entered a Failed state: {{ message }}",
-			action_label="View server",
-			action_route="/servers",
-		)
-		engine.dispatch(
+		message = None
+		if event_type == "server_failed":
+			message = _("The region reported a failure for this server.")
+		queue_event(
 			self.team,
-			"server_failed",
-			message=f"Your server in {self.cluster} entered a Failed state. Review it in the console.",
+			event_type,
+			message=message,
 			reference_doctype="Virtual Machine",
 			reference_name=self.name,
 		)
@@ -98,9 +121,10 @@ class VirtualMachine(Document):
 				sub.enable()
 			if sub.plan != self.plan:
 				sub.plan = self.plan
+				# The observed server lifecycle owns its system-managed subscription.
 				sub.save(ignore_permissions=True)
 		else:
-			frappe.get_doc(
+			subscription = frappe.get_doc(
 				{
 					"doctype": "Subscription",
 					"team": self.team,
@@ -108,7 +132,9 @@ class VirtualMachine(Document):
 					"plan": self.plan,
 					"enabled": 1,
 				}
-			).insert(ignore_permissions=True)
+			)
+			# The observed server lifecycle owns its system-managed subscription.
+			subscription.insert(ignore_permissions=True)
 
 	def disable_active_subscription(self):
 		"""Terminated: cancel the team's active subscription for this server, if any.
@@ -144,7 +170,7 @@ class VirtualMachine(Document):
 	def record_observed_state(cls, resource_id: str, observed_at, state: dict, *, reported_at=None) -> bool:
 		"""Apply a region's report. `reported_at` is the region's own timestamp for a
 		webhook; a report not newer than the last is dropped (reconcile omits it and always
-		applies). Returns False when nothing is applied."""
+		applies). Returns False when the server is absent or the report is stale."""
 		try:
 			# Lock first, so a concurrent worker's write is not missed.
 			doc = frappe.get_doc("Virtual Machine", resource_id, for_update=True)
@@ -153,14 +179,16 @@ class VirtualMachine(Document):
 		if reported_at is not None and not doc.is_newer_report(reported_at):
 			return False
 
-		for field in cls.OBSERVED_FIELDS:
-			if field in state:
-				setattr(doc, field, state[field])
+		observed = {field: state[field] for field in cls.OBSERVED_FIELDS if field in state}
+		changed = any(doc.get(field) != value for field, value in observed.items())
+		for field, value in observed.items():
+			setattr(doc, field, value)
 		doc.state_observed_at = observed_at
 		if reported_at is not None:
 			doc.last_reported_at = reported_at
 		doc.save(ignore_permissions=True)
-		doc.publish_state_change()
+		if changed:
+			doc.publish_state_change()
 		return True
 
 	@frappe.whitelist(methods=["POST"])
@@ -218,20 +246,38 @@ class VirtualMachine(Document):
 		try:
 			task = rename_admin_domain(self.name, tls=False)
 		except RequestException, OSError, ValueError:
-			frappe.log_error(
-				title=f"Pilot admin domain rename failed: {self.name}",
-				message=frappe.get_traceback(with_context=True),
+			self.record_admin_domain_failure(
+				_("Pilot did not accept the admin hostname change. Central will retry it."),
+				"Pilot admin domain rename failed",
+				frappe.get_traceback(with_context=False),
 			)
 			return
 
 		task_id = task.get("task_id") if isinstance(task, dict) else None
 		if task_id:
-			self.db_set("admin_domain_task", task_id)
-		else:
-			frappe.log_error(
-				title=f"Pilot admin domain rename returned no task: {self.name}",
-				message=frappe.as_json(task),
+			self.db_set(
+				{
+					"admin_domain_task": task_id,
+					"admin_domain_error": None,
+					"admin_domain_error_log": None,
+				}
 			)
+		else:
+			self.record_admin_domain_failure(
+				_("Pilot did not return a task for the admin hostname change. Central will retry it."),
+				"Pilot admin domain rename returned no task",
+				frappe.as_json(task),
+			)
+
+	def record_admin_domain_failure(self, reason: str, title: str, diagnostic: str) -> None:
+		"""Keep the admin-hostname failure beside the server a Desk operator opens."""
+		error_log = self.log_error(title=title, message=diagnostic)
+		self.db_set(
+			{
+				"admin_domain_error": reason,
+				"admin_domain_error_log": error_log.name,
+			}
+		)
 
 	def is_newer_report(self, reported_at) -> bool:
 		"""True when `reported_at` is newer than the last applied report. A missing
@@ -240,15 +286,6 @@ class VirtualMachine(Document):
 			return True
 
 		return frappe.utils.get_datetime(reported_at) > frappe.utils.get_datetime(self.last_reported_at)
-
-	@staticmethod
-	def mark_resizing(resource_id: str, resizing: bool) -> None:
-		"""Flag or unflag a server as mid-resize, so the console shows a "Resizing" state
-		and gates power actions while the reshape job runs. This is Central's own
-		orchestration flag, not an observed field, so a region report never clears it."""
-		doc = frappe.get_doc("Virtual Machine", resource_id)
-		doc.db_set("resize_in_progress", 1 if resizing else 0)
-		doc.publish_state_change()
 
 	@staticmethod
 	def mark_terminated(resource_id: str, observed_at=None) -> bool:
@@ -269,5 +306,5 @@ class VirtualMachine(Document):
 
 
 def on_doctype_update() -> None:
-	frappe.db.add_unique("Virtual Machine", ["cluster", "atlas_vm_id"])
+	frappe.db.add_unique("Virtual Machine", ["region", "atlas_vm_id"])
 	frappe.db.add_index("Virtual Machine", ["team", "status"])

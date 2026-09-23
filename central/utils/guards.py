@@ -7,7 +7,7 @@ from collections.abc import Callable
 import frappe
 from frappe import _
 
-from central.iam import can, is_active_team_member, user_has_operator_bypass
+from central.iam import can, is_active_team_member, resolve_team, user_has_operator_bypass
 
 # Authorization decorators for the whitelisted Team endpoints — the guard runs
 # before the handler body. Ordered under @frappe.whitelist (which stays outermost);
@@ -21,15 +21,20 @@ def _signature(func: Callable) -> inspect.Signature:
 	return inspect.signature(func)
 
 
-def bound_args(func: Callable, args: tuple, kwargs: dict) -> dict:
-	"""All call arguments as a name→value dict, whether passed positionally or by
-	keyword. The one signature resolver the decorators here share."""
-	return _signature(func).bind_partial(*args, **kwargs).arguments
+def _bound_call(func: Callable, args: tuple, kwargs: dict) -> inspect.BoundArguments:
+	"""Bind one call so guards can read or replace positional and keyword arguments."""
+	return _signature(func).bind_partial(*args, **kwargs)
 
 
 def _call_arg(func: Callable, args: tuple, kwargs: dict, name: str):
 	"""Read one named argument from the call."""
-	return bound_args(func, args, kwargs).get(name)
+	return _bound_call(func, args, kwargs).arguments.get(name)
+
+
+def _resolve_team_call(func: Callable, args: tuple, kwargs: dict) -> inspect.BoundArguments:
+	bound = _bound_call(func, args, kwargs)
+	bound.arguments["team"] = resolve_team(frappe.session.user, bound.arguments.get("team"))
+	return bound
 
 
 def require_team_member(func: Callable) -> Callable:
@@ -37,10 +42,11 @@ def require_team_member(func: Callable) -> Callable:
 
 	@functools.wraps(func)
 	def wrapper(*args, **kwargs):
-		team = _call_arg(func, args, kwargs, "team")
+		bound = _resolve_team_call(func, args, kwargs)
+		team = bound.arguments["team"]
 		if not user_has_operator_bypass() and not is_active_team_member(frappe.session.user, team):
 			frappe.throw(_("You are not a member of this team."), frappe.PermissionError)
-		return func(*args, **kwargs)
+		return func(*bound.args, **bound.kwargs)
 
 	return wrapper
 
@@ -51,11 +57,10 @@ def require_capability(capability: str, message: str) -> Callable:
 	def decorator(func: Callable) -> Callable:
 		@functools.wraps(func)
 		def wrapper(*args, **kwargs):
-			team = _call_arg(func, args, kwargs, "team")
-			# can() denies a suspended team even to operators, so keep the explicit operator fallback.
-			if not can(frappe.session.user, team, capability) and not user_has_operator_bypass():
-				frappe.throw(message, frappe.PermissionError)
-			return func(*args, **kwargs)
+			bound = _resolve_team_call(func, args, kwargs)
+			if not can(frappe.session.user, bound.arguments["team"], capability):
+				frappe.throw(_(message), frappe.PermissionError)
+			return func(*bound.args, **bound.kwargs)
 
 		return wrapper
 

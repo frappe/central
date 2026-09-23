@@ -28,7 +28,6 @@ export function useSearchIndex() {
 	const {
 		canCreateServer,
 		canViewServers,
-		canOpenServer,
 		canViewBilling,
 		canManageMembers,
 		isMember,
@@ -110,9 +109,9 @@ export function useSearchIndex() {
 				searchOnly: true,
 				items: servers.value.map((server) => ({
 					name: server.title || server.resource_id,
-					description: server.cluster,
+					description: server.region,
 					icon: 'lucide-server',
-					onSelect: canOpenServer.value ? () => openServer(server) : undefined,
+					onSelect: canViewServers.value ? () => openServer(server) : undefined,
 				})),
 			}
 		}

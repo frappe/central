@@ -9,8 +9,8 @@
 import { useCall } from 'frappe-ui'
 import { computed } from 'vue'
 import { API, method } from '@/api/methods'
+import { reportError, successToast } from '@/lib/feedback'
 import { openRazorpayCheckout, type RazorpayOrder } from '@/lib/gateway'
-import { errorToast, infoToast, successToast } from '@/lib/toast'
 
 export function usePayInvoiceCheckout({
 	onDone,
@@ -33,7 +33,7 @@ export function usePayInvoiceCheckout({
 			await create.submit({ invoice })
 			const order = create.data
 			if (!order || order.created === false) {
-				infoToast('No payment was started')
+				reportError('No payment was started')
 				return order
 			}
 			const handles = await openRazorpayCheckout(order, {
@@ -54,7 +54,7 @@ export function usePayInvoiceCheckout({
 			return res
 		} catch (e) {
 			if ((e as Error)?.message === 'cancelled') return
-			errorToast(e, 'Could not complete the payment')
+			reportError(e, { fallback: 'Could not complete the payment' })
 		}
 	}
 

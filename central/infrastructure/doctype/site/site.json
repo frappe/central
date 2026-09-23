@@ -10,8 +10,11 @@
   "subdomain",
   "team",
   "server",
+  "ready_at",
   "claimed_at",
-  "rename_task"
+  "rename_task",
+  "rename_error",
+  "rename_error_log"
  ],
  "fields": [
   {
@@ -57,6 +60,14 @@
    "search_index": 1
   },
   {
+   "description": "The first time Central confirmed that the site answered on its public address.",
+   "fieldname": "ready_at",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "Ready At",
+   "read_only": 1
+  },
+  {
    "description": "The first time Central created a working login handoff for this site.",
    "fieldname": "claimed_at",
    "fieldtype": "Datetime",
@@ -69,6 +80,21 @@
    "fieldname": "rename_task",
    "fieldtype": "Data",
    "label": "Rename Task",
+   "read_only": 1
+  },
+  {
+   "description": "A safe summary of the latest site rename failure.",
+   "fieldname": "rename_error",
+   "fieldtype": "Small Text",
+   "label": "Rename Error",
+   "read_only": 1
+  },
+  {
+   "description": "The Error Log for the latest site rename failure.",
+   "fieldname": "rename_error_log",
+   "fieldtype": "Link",
+   "label": "Rename Error Log",
+   "options": "Error Log",
    "read_only": 1
   }
  ],

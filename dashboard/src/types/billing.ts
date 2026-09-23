@@ -102,7 +102,7 @@ export interface NextPayment {
 }
 
 export interface PredebitNotice {
-	sent_at: string
+	queued_at: string
 	invoice: string | null
 	subject: string | null
 	status: string | null
@@ -566,9 +566,24 @@ export interface ServiceRow {
 	cluster: string | null
 	currency: string
 	unit: string | null
+	billing_type?: string | null
 	settlement_mode: string
+	reporting_mode?: string
 	allowance: number
 	period_usage: number
+	locked_rate?: number
+}
+
+export interface MeteredServicePlan {
+	name?: string
+	resource_type: string | null
+	rate: number
+}
+
+export interface MeteredServices {
+	currency: string
+	services: ServiceRow[]
+	available_plans: MeteredServicePlan[]
 }
 
 /** One line of "what you're paying for" — a server or a metered service. */

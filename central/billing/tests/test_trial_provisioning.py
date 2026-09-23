@@ -82,7 +82,7 @@ class TestTrialProvisioning(IntegrationTestCase):
 			{
 				"doctype": "Virtual Machine",
 				"team": self.team,
-				"cluster": REGION,
+				"region": REGION,
 				"title": resource_id,
 				"status": status,
 			}

@@ -3,7 +3,7 @@ import { computed, ref } from 'vue'
 import { API, method } from '@/api/methods'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { useSession } from '@/composables/useSession'
-import { errorToast, successToast } from '@/lib/toast'
+import { reportError, successToast } from '@/lib/feedback'
 import type { MyInvitation } from '@/types/api'
 
 // The signed-in user's pending invitations across teams — the invitee's inbox.
@@ -55,7 +55,7 @@ export function useMyInvitations() {
 			caps.reload()
 			invitationsCall.reload()
 		} catch (e) {
-			errorToast(e)
+			reportError(e)
 		} finally {
 			busy.value = ''
 		}
@@ -69,7 +69,7 @@ export function useMyInvitations() {
 			successToast(`Declined the invite to ${invitation.team_name}`)
 			invitationsCall.reload()
 		} catch (e) {
-			errorToast(e)
+			reportError(e)
 		} finally {
 			busy.value = ''
 		}

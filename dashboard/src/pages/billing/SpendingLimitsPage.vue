@@ -1,40 +1,34 @@
 <script setup lang="ts">
-import { Button, LoadingText, useCall } from 'frappe-ui'
-import { computed, ref } from 'vue'
-import { API, method } from '@/api/methods'
+import { Button, LoadingText } from 'frappe-ui'
+import { ref } from 'vue'
 import AddMethodDialog from '@/components/AddMethodDialog.vue'
 import EditBillingProfileDialog from '@/components/billing/EditBillingProfileDialog.vue'
-import { useBillingOverview } from '@/composables/useBillingOverview'
 import { useBillingSetup } from '@/composables/useBillingSetup'
-import { useSession } from '@/composables/useSession'
-import { whenTeamReady } from '@/composables/useTeamScope'
+import { useSpendingLimits } from '@/composables/useSpendingLimits'
 import { money } from '@/lib/format'
-import type { TierLevel, TrustTier } from '@/types/billing'
 
-// Layout mirrors the frappe-cloud-v2 prototype: a standing band, a tiers table
-// whose Requirements column shows each rung's promotion gates against the team's
-// live progress, and a "how it works" explainer.
-const { activeTeam } = useSession()
-const { forecast, credit, methods } = useBillingOverview()
+const {
+	tier,
+	currency,
+	current: cur,
+	monthlySpend,
+	nextLevel,
+	cycleRatio,
+	resourcesUsed,
+	resourceRatio,
+	record,
+	gates,
+	levels,
+	requirementsFor,
+	tierLabel,
+	reloadAfterMethodAdded,
+} = useSpendingLimits()
 
-const tier = useCall<TrustTier, { team: string }>({
-	url: method(API.trustTier),
-	params: () => ({ team: activeTeam.value! }),
-	immediate: false,
-	refetch: true,
-})
-
-whenTeamReady(() => tier.reload())
-
-// The empty state's button is the real action, not a pointer to Billing:
-// billing details first when the profile is incomplete, then the add-method
-// flow — both dialogs mounted on this page.
 const { complete, setupDialogOpen } = useBillingSetup()
 const showAddMethod = ref(false)
+const howOpen = ref(false)
 
 function startFirstTier(): void {
-	// requireSetup()'s toast explains a detour — pointless here, where the
-	// button already says "Add billing details" when the profile is incomplete.
 	if (!complete.value) {
 		setupDialogOpen.value = true
 		return
@@ -42,183 +36,11 @@ function startFirstTier(): void {
 	showAddMethod.value = true
 }
 
-function onMethodAdded(): void {
-	tier.reload()
-	methods.reload()
-}
-
-const currency = computed(() => tier.data?.currency || 'INR')
-const cur = computed(() => tier.data?.current)
-const prog = computed(() => tier.data?.progress)
-const monthlySpend = computed(() => forecast.data?.projected_total)
-
-// Whole months since the team's first paid invoice, for the "Customer for" stat.
-const payingSince = computed(() => {
-	const firstPaidAt = prog.value?.first_paid_at
-
-	if (!firstPaidAt) return null
-
-	const months = Math.max(
-		0,
-		Math.floor(
-			(Date.now() - new Date(firstPaidAt).getTime()) /
-				(1000 * 60 * 60 * 24 * 30),
-		),
-	)
-
-	return months < 1 ? '< 1 month' : `${months} month${months === 1 ? '' : 's'}`
-})
-
-// This cycle's spend drawn against the current cap, so the limit is the
-// endpoint of a bar rather than a number floating elsewhere on the page.
-const cycleRatio = computed(() => {
-	const cap = Number(cur.value?.max_spend ?? 0)
-	const spent = Number(monthlySpend.value ?? 0)
-	return cap ? Math.min(1, spent / cap) : 0
-})
-
-// Same treatment for the resource cap: a live count against the ceiling,
-// in the same row grammar as the cycle meter.
-const resourcesUsed = computed(() => Number(prog.value?.resources_used ?? 0))
-const resourceRatio = computed(() => {
-	const cap = Number(cur.value?.max_resource_count ?? 0)
-	return cap ? Math.min(1, resourcesUsed.value / cap) : 0
-})
-
-// Quiet account record for the card footer — context, not a call to action.
-// Only records that exist: a team that has never paid an invoice gets no
-// "Last paid invoice ₹0" line, and with nothing to show the footer hides.
-const record = computed(() =>
-	[
-		payingSince.value ? `Customer for ${payingSince.value}` : null,
-		Number(prog.value?.last_paid_invoice_amount) > 0
-			? `Last paid invoice ${money(prog.value!.last_paid_invoice_amount, currency.value, { trimTrailingZeros: true })}`
-			: null,
-	]
-		.filter(Boolean)
-		.join(' · '),
-)
-
-// Reference, not news — folded away until you're asking why you're on this rung.
-const howOpen = ref(false)
-
-const nextLevel = computed(() => tier.data?.next ?? null)
-
-// The one question this page exists to answer: how far to the next rung. Gates
-// are shown as distance travelled, not as a yes/no — a bar plus the two numbers
-// behind it, since those numbers are load-bearing and appear nowhere else.
-interface Gate {
-	label: string
-	done: boolean
-	ratio: number
-	detail: string
-}
-
-const gates = computed<Gate[]>(() => {
-	const level = nextLevel.value
-	const p = prog.value
-	if (!level || !p) return []
-
-	const out: Gate[] = []
-	const gate = (
-		label: string,
-		have: number,
-		need: number,
-		fmt: (v: number) => string = String,
-	) => {
-		const done = have >= need
-		out.push({
-			label,
-			done,
-			ratio: Math.min(1, need ? have / need : 1),
-			// Clamped so a met gate reads "3 of 3" rather than "9 of 3".
-			detail: `${fmt(done ? need : have)} of ${fmt(need)}`,
-		})
-	}
-
-	if (level.min_paid_invoices) {
-		gate('Paid invoices', Number(p.paid_invoices ?? 0), level.min_paid_invoices)
-	}
-	if (level.min_cumulative_paid) {
-		gate(
-			'Paid to date',
-			Number(p.cumulative_paid ?? 0),
-			Number(level.min_cumulative_paid),
-			(v) => money(Number(v), currency.value),
-		)
-	}
-	return out
-})
-
-// The rail is a route, not a form: travelled rungs are filled stops, the
-// current rung is the largest solid mark, rungs ahead shrink to plain nodes.
-// No rings or hollows — a ringed circle beside a table reads as a radio button.
-const DOT_CLASSES: Record<RungState, string> = {
+const DOT_CLASSES = {
 	reached: 'size-2.5 bg-surface-gray-6',
 	current: 'size-3 bg-surface-gray-9',
 	locked: 'size-1.5 bg-surface-gray-4',
-}
-
-const tierLabel = (level: TierLevel | null | undefined): string => {
-	if (!level) return '—'
-	return level.tier || '—'
-}
-
-interface Requirement {
-	text: string
-	met: boolean
-}
-
-// A rung's promotion gates, checked against the team's live progress. The base
-// rung's gate is a payment method or prepaid credits — everything past it is
-// paid-invoice tenure + cumulative spend.
-const requirementsFor = (level: TierLevel): Requirement[] => {
-	const p = prog.value
-	const paid = Number(p?.paid_invoices ?? 0)
-	const cumulative = Number(p?.cumulative_paid ?? 0)
-
-	if (level.sequence <= 0) {
-		const hasChargeableMethod = (methods.data ?? []).some(
-			(m) => m.status === 'Active' && !m.reauth_required,
-		)
-		const met = hasChargeableMethod || Number(credit.data?.balance ?? 0) > 0
-		return [{ text: 'Payment method added or prepaid credits available', met }]
-	}
-
-	const reqs: Requirement[] = []
-
-	if (level.min_paid_invoices) {
-		const n = level.min_paid_invoices
-
-		reqs.push({
-			text: `≥ ${n} paid invoice${n === 1 ? '' : 's'}`,
-			met: paid >= n,
-		})
-	}
-
-	if (level.min_cumulative_paid) {
-		reqs.push({
-			text: `≥ ${money(level.min_cumulative_paid, currency.value)} paid to date`,
-			met: cumulative >= Number(level.min_cumulative_paid),
-		})
-	}
-
-	return reqs.length
-		? reqs
-		: [{ text: 'No additional requirements', met: true }]
-}
-
-type RungState = 'reached' | 'current' | 'locked'
-
-// Every rung, tagged reached / current / locked relative to where the team is.
-const levels = computed(() => {
-	const all = (tier.data?.all_levels ?? []).filter((l): l is TierLevel => !!l)
-	const ci = all.findIndex((l) => l.tier === cur.value?.tier)
-	return all.map((l, i) => ({
-		...l,
-		state: (i < ci ? 'reached' : i === ci ? 'current' : 'locked') as RungState,
-	}))
-})
+} as const
 </script>
 
 <template>
@@ -526,7 +348,7 @@ const levels = computed(() => {
 		<!-- The empty state's flow, in place: billing details first when the
 		     profile is incomplete, then the add-method dialog. -->
 		<EditBillingProfileDialog v-model="setupDialogOpen" />
-		<AddMethodDialog v-model="showAddMethod" @done="onMethodAdded" />
+		<AddMethodDialog v-model="showAddMethod" @done="reloadAfterMethodAdded" />
 	</div>
 </template>
 

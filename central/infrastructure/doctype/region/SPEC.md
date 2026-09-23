@@ -94,10 +94,9 @@ field.
 timestamp. It does not guess numeric region IDs, rotate keys, or create remote resources.
 Repeating the patch preserves checks with a timestamp.
 
-Region absorbed the connection fields that used to live on the separate `Atlas Instance`
-doctype. `Asset.cluster`, `Resource Action.atlas_instance`, and the billing `cluster` Link
-fields all point at Region directly now; there is no second doctype to join through.
-`Cargo Instance` folded in the same way, into the `cargo_*` fields.
+Region absorbed the connection fields that used to live on separate Atlas Instance and Cargo Instance records. `Virtual Machine.region` and `Resource Action.region` link directly to Region. Billing keeps its own `cluster` price dimension. There is no second infrastructure record to join through.
+
+The `rename_region_fields` patch copies values from the former Virtual Machine `cluster` and Resource Action `atlas_instance` columns after schema sync, then removes those columns. A repeat or partially applied run skips each missing source column.
 
 ## Scope and validation
 

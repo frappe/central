@@ -37,12 +37,11 @@ class ServiceDetail(Document):
 		However data path of the service is the services responsibility.
 		~ AT
 		"""
-		detail = frappe.db.get_value(
+		detail = frappe.get_cached_value(
 			"Service Detail",
 			f"{region}-{service}",
 			["status", "service_endpoint"],
 			as_dict=True,
-			cache=True,
 		)
 		if not detail or detail.status != "Available":
 			return None

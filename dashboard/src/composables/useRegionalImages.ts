@@ -2,8 +2,8 @@ import { call, frappeRequest } from 'frappe-ui'
 import { computed, type Ref, ref, watch } from 'vue'
 import { API, methodV1 } from '@/api/methods'
 import { useSession } from '@/composables/useSession'
+import { getErrorMessage } from '@/lib/feedback'
 import { formatUnixTime } from '@/lib/format'
-import { getErrorMessage } from '@/lib/toast'
 import type {
 	ImageOffering,
 	ImageSelection,
@@ -60,7 +60,10 @@ export function useRegionalImages(
 		const current = ++snapshotGeneration
 		snapshots.value = []
 		snapshotsError.value = ''
-		if (!activeTeam.value || !region.value) return
+		if (!activeTeam.value || !region.value) {
+			snapshotsLoading.value = false
+			return
+		}
 
 		snapshotsLoading.value = true
 		try {
@@ -139,7 +142,7 @@ export function useRegionalImages(
 				const page: { items: RegionalImage[]; next_offset: number | null } =
 					await call('central.api.images.list_images', {
 						team,
-						atlas_instance: atlas,
+						region: atlas,
 						offering: offering.value,
 						offset,
 					})

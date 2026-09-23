@@ -10,6 +10,8 @@ from central.api.jwks import jwks_document
 from central.errors import AtlasConnectionError, AtlasRequestUncertain, build_envelope, to_error_response
 from central.iam import can
 from central.infrastructure.doctype.pilot_credential.pilot_credential import PilotCredential
+from central.infrastructure.doctype.resource_action.resource_action import PENDING_STATES, TERMINAL_STATES
+from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
 from central.integrations.atlas import AtlasClient
 from central.integrations.bucket_provisioning import BucketProvisioning
 from central.integrations.servers import observe_server
@@ -33,22 +35,35 @@ def process_request(name: str) -> None:
 				_process_locked(name)
 			except Exception:
 				# A worker crash must leave an actionable record without repeating a mutation.
+				diagnostic = frappe.get_traceback()
 				frappe.db.rollback()
-				frappe.log_error(
-					title="Resource action failed", message=frappe.get_traceback(with_context=False)
-				)
 				action = frappe.get_doc("Resource Action", name, for_update=True)
 				if action.status == "Queued":
-					action.set_error("Failed", build_envelope("UNEXPECTED"))
+					action.transition("Failed", envelope=build_envelope("UNEXPECTED"), diagnostic=diagnostic)
+				elif action.action == "resize" and action.status == "Dispatching":
+					action.transition(
+						"Uncertain", envelope=build_envelope("OUTCOME_UNKNOWN"), diagnostic=diagnostic
+					)
 				elif action.remote_vm_id:
-					action.set_error("Sent", build_envelope("FINALIZATION_FAILED"))
+					action.transition(
+						"Sent", envelope=build_envelope("FINALIZATION_FAILED"), diagnostic=diagnostic
+					)
 				else:
-					action.set_error("Uncertain", build_envelope("OUTCOME_UNKNOWN"))
+					action.transition(
+						"Uncertain", envelope=build_envelope("OUTCOME_UNKNOWN"), diagnostic=diagnostic
+					)
 	except LockNotOwnedError:
 		# Ours expired while the region was still answering. The work ran unguarded and may
 		# be half finished, which is not the same as another worker holding the lock, so it
 		# is recorded rather than passed over in silence.
-		frappe.log_error(title=f"Provisioning lock expired: {name}")
+		diagnostic = frappe.get_traceback()
+		frappe.db.rollback()
+		if frappe.db.exists("Resource Action", name):
+			frappe.get_doc("Resource Action", name).record_diagnostic(
+				diagnostic, "Resource action lock expired"
+			)
+		else:
+			frappe.log_error(title=f"Resource action lock expired: {name}", message=diagnostic)
 	except LockError:
 		# Another worker holds it. Theirs to finish.
 		return
@@ -56,7 +71,13 @@ def process_request(name: str) -> None:
 
 def _process_locked(name: str) -> None:
 	request = frappe.get_doc("Resource Action", name, for_update=True)
-	if request.status in ("Succeeded", "Failed", "Timed Out"):
+	if request.status in TERMINAL_STATES:
+		return
+
+	if request.action == "resize":
+		from central.integrations.servers import process_resize
+
+		process_resize(request)
 		return
 
 	if request.action != "create":
@@ -79,11 +100,12 @@ def _process_locked(name: str) -> None:
 				_("The requester no longer has permission to create this server."), frappe.PermissionError
 			)
 
-		if frappe.db.get_value("Region", request.atlas_instance, "status") != "Active":
+		if frappe.db.get_value("Region", request.region, "status") != "Active":
 			frappe.throw(_("This region is not accepting server creation."))
 		client = _client(request)
 		payload = _create_payload(request)
-		request.db_set({"status": "Dispatching", "dispatched_at": frappe.utils.now_datetime()})
+		request.transition("Dispatching", notify=False)
+		request.db_set("dispatched_at", frappe.utils.now_datetime())
 		# Persist the dispatch marker and credential before a remote mutation can succeed.
 		try:
 			frappe.db.commit()
@@ -97,15 +119,22 @@ def _process_locked(name: str) -> None:
 				_("Atlas returned an invalid creation receipt. An operator must check the result.")
 			)
 
-		request.db_set({"remote_vm_id": remote_id, "status": "Sent", "error_message": None})
+		request.db_set("remote_vm_id", remote_id)
+		request.transition("Sent", notify=False)
 		# Retain the remote identity even if local billing or mirror finalization fails.
 		frappe.db.commit()
 	except AtlasRequestUncertain:
+		request.record_diagnostic(frappe.get_traceback(), "Atlas create result was uncertain")
 		recover_unanswered(request)
 		return
 	except (AtlasConnectionError, frappe.ValidationError, frappe.PermissionError) as error:
 		PilotCredential.revoke_by_id(request.credential)
-		request.set_error("Failed", to_error_response(error))
+		request.transition(
+			"Failed",
+			envelope=to_error_response(error),
+			diagnostic=frappe.get_traceback() if isinstance(error, AtlasConnectionError) else None,
+			diagnostic_title="Atlas create failed",
+		)
 		return
 
 	_finalize(request)
@@ -122,24 +151,21 @@ def recover_unanswered(request) -> None:
 	try:
 		remote_vm_id = find_created_vm(request)
 	except AtlasConnectionError:
-		request.set_error("Uncertain", build_envelope("OUTCOME_UNKNOWN"))
+		request.transition(
+			"Uncertain",
+			envelope=build_envelope("OUTCOME_UNKNOWN"),
+			diagnostic=frappe.get_traceback(),
+			diagnostic_title="Atlas create recovery failed",
+		)
 		return
 
 	if not remote_vm_id:
 		PilotCredential.revoke_by_id(request.credential)
-		request.set_error("Failed", build_envelope("CREATE_NOT_ACCEPTED", action=request.action))
+		request.transition("Failed", envelope=build_envelope("CREATE_NOT_ACCEPTED", action=request.action))
 		return
 
-	request.db_set(
-		{
-			"remote_vm_id": remote_vm_id,
-			"status": "Sent",
-			"error_code": None,
-			"error_message": None,
-			"remediation": None,
-			"retriable": 0,
-		}
-	)
+	request.db_set("remote_vm_id", remote_vm_id)
+	request.transition("Sent", notify=False)
 	frappe.db.commit()
 	_finalize(request)
 
@@ -170,7 +196,7 @@ def find_created_vm(request) -> str | None:
 
 
 def _client(request) -> AtlasClient:
-	instance = frappe.get_doc("Region", request.atlas_instance)
+	instance = frappe.get_doc("Region", request.region)
 	tenant_id = frappe.db.get_value("Team", request.team, "tenant_id")
 	return AtlasClient(instance, tenant_id)
 
@@ -204,9 +230,9 @@ def _create_payload(request) -> dict:
 		try:
 			bootstrap["s3"] = BucketProvisioning(request).get_configuration()
 		except Exception:
-			frappe.log_error(
-				title="Pilot object storage provisioning failed",
-				message=frappe.get_traceback(with_context=True),
+			request.record_diagnostic(
+				frappe.get_traceback(),
+				"Pilot object storage provisioning failed",
 			)
 		payload["metadata"]["pilot-central"] = json.dumps(bootstrap)
 
@@ -231,94 +257,46 @@ def _finalize(request) -> None:
 		frappe.db.get_value("Team", request.team, "name", for_update=True)
 		server_id = request.server or f"server-{request.name}"
 		if not request.server:
-			_create_server(request, server_id)
-			_create_subscription(request, server_id)
+			from central.billing.catalog.subscriptions import create_server_subscription
+
+			VirtualMachine.create_from_action(request, server_id)
+			create_server_subscription(request, server_id)
 			PilotCredential.link_server(request.credential, server_id)
 			request.db_set({"server": server_id, "resource_id": server_id})
 		# Finalize local ownership and billing together, independently of the next remote read.
 		frappe.db.commit()
 	except Exception:
+		diagnostic = frappe.get_traceback()
 		frappe.db.rollback()
-		frappe.log_error(title="Server finalization failed", message=frappe.get_traceback(with_context=False))
 		request.reload()
-		request.set_error("Sent", build_envelope("FINALIZATION_FAILED"))
+		request.transition(
+			"Sent",
+			envelope=build_envelope("FINALIZATION_FAILED"),
+			diagnostic=diagnostic,
+			diagnostic_title="Server finalization failed",
+		)
 		return
 
 	try:
 		status = observe_server(frappe.get_doc("Virtual Machine", server_id))
 	except AtlasConnectionError:
-		request.set_error("Sent", build_envelope("REFRESH_FAILED"))
-		return
-
-	if status == "Running":
-		request.succeed()
-	elif status in ("Failed", "Terminated"):
-		request.set_error("Failed", build_envelope("ACTION_FAILED", action="create"))
-	else:
-		request.db_set(
-			{
-				"status": "In Progress",
-				"last_checked_at": frappe.utils.now_datetime(),
-				"error_code": None,
-				"error_message": None,
-				"remediation": None,
-				"retriable": 0,
-			}
+		request.transition(
+			"Sent",
+			envelope=build_envelope("REFRESH_FAILED"),
+			diagnostic=frappe.get_traceback(),
+			diagnostic_title="Atlas server refresh failed",
 		)
-
-
-def _create_server(request, server_id: str) -> None:
-	"""Open the server record. Central owns every value here; the region only reports
-	state afterwards, through `VirtualMachine.record_observed_state`.
-
-	Recovery can reach this again after a local failure, so an already-open record is
-	left alone. The id comes from the request, so a second attempt carries the same
-	values as the first."""
-	if frappe.db.exists("Virtual Machine", server_id):
 		return
 
-	configuration = request.get_configuration()
-	# The authorized request is what permits this write, not the requesting user's role.
-	frappe.get_doc(
-		{
-			"doctype": "Virtual Machine",
-			"resource_id": server_id,
-			"title": request.title,
-			"team": request.team,
-			"cluster": request.atlas_instance,
-			"status": "Provisioning",
-			"atlas_vm_id": request.remote_vm_id,
-			"atlas_image_id": configuration.image_id,
-			"image_offering": configuration.offering,
-			"plan": configuration.plan,
-			"vcpus": configuration.virtual_cpu_count,
-			"memory_megabytes": configuration.memory_mib,
-			"disk_gigabytes": configuration.disk_mib / 1024,
-			"frappe_version": configuration.image_tags.get("frappe_version"),
-		}
-	).insert(ignore_permissions=True)
-
-
-def _create_subscription(request, server_id: str) -> None:
-	from central.billing.catalog.subscriptions import create_subscription
-
-	configuration = request.get_configuration()
-	if frappe.db.exists("Subscription", {"team": request.team, "server_id": server_id}):
+	request.reload()
+	if request.status in TERMINAL_STATES:
 		return
-
-	# The reservation already passed policy and budget checks before dispatch.
-	create_subscription(
-		request.team,
-		request.atlas_instance,
-		plan=configuration.plan,
-		billing_cycle=configuration.billing_cycle,
-		resource_id=server_id,
-		changed_by=request.requested_by,
-		pricing_mode="Preset" if configuration.plan else "Composed",
-		includes=None if configuration.plan else [row.model_dump() for row in configuration.includes],
-		sub_category=configuration.sub_category,
-		opening_quote=(request.reserved_monthly_rate, configuration.currency),
-	)
+	if status == "Running":
+		request.transition("Succeeded")
+	elif status in ("Failed", "Terminated"):
+		request.transition("Failed", envelope=build_envelope("ACTION_FAILED", action="create"))
+	else:
+		request.transition("In Progress", notify=False)
 
 
 def recover_requests() -> None:
@@ -331,10 +309,7 @@ def recover_requests() -> None:
 	rows = (
 		frappe.qb.from_(action)
 		.select(action.name)
-		.where(
-			(action.modified < cutoff)
-			& action.status.isin(("Queued", "Dispatching", "Sent", "In Progress", "Uncertain"))
-		)
+		.where((action.modified < cutoff) & action.status.isin(PENDING_STATES))
 		.orderby(action.modified)
 		.limit(100)
 	).run(as_dict=True)

@@ -13,7 +13,7 @@ Atlas regional requests use a separate Ed25519 key and public endpoint. Pilot lo
 1. Central mints `mint_bench_login(aud)` — `scope=bench`, 5 min, single jti.
 2. Browser → `{gateway}/?sid=<jwt>`; the bench SPA exchanges it for a local session cookie.
 
-**Site login** — `central.api.sites.get_site` → `_pilot_site_login_url`
+**Site login** — `central.api.sites.login_site` → `_pilot_site_login_url`
 1. Central resolves the site's hosting bench (audience + gateway) from `Site.pilot_credential_id`
    → `Pilot Credential` → `VirtualMachine.gateway_url`, then mints `mint_site_login(aud, site)` —
    `scope=site`, `site` claim, 5 min.

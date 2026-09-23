@@ -11,8 +11,6 @@ from frappe import _
 from frappe.query_builder.functions import Sum
 from pydantic import ValidationError
 
-from central.billing.api.dashboard._shared import _team_currency
-from central.billing.api.dashboard.catalog import get_eligible_plans
 from central.billing.catalog.composition import (
 	COMPUTE,
 	DISK,
@@ -21,11 +19,15 @@ from central.billing.catalog.composition import (
 	validate_composition,
 )
 from central.billing.catalog.pricing import resolve_config_rate
+from central.billing.catalog.server_plans import get_server_plans
+from central.billing.doctype.billing_profile.billing_profile import (
+	get_team_currency,
+	require_billing_profile,
+)
 from central.iam import can
+from central.infrastructure.doctype.resource_action.resource_action import PENDING_STATES
 from central.integrations.images import selected_image, snapshot_image, snapshot_source
 from central.server_models import CreateServerInput, ServerCreation
-
-PENDING_STATES = ("Queued", "Dispatching", "Sent", "In Progress", "Uncertain")
 
 
 def submit_request(
@@ -47,111 +49,145 @@ def submit_request(
 ) -> dict:
 	"""Authorize and persist intent before any remote mutation.
 
-	`resource_type` says what the customer asked for, which decides how the request is
-	driven: a server is queued, a site is sent in the request its customer is waiting on.
-	A restore passes `snapshot`; its offering and image come from the snapshot."""
+	Server and site requests use the same queued action. A restore passes `snapshot`;
+	its offering and image come from the snapshot."""
 	if snapshot:
 		offering, image_id = snapshot_source(team, snapshot)
-	try:
-		input = CreateServerInput.model_validate(
-			dict(
-				team=team,
-				region=region,
-				title=title,
-				offering=offering,
-				image_id=image_id,
-				request_key=request_key,
-				plan=plan,
-				includes=includes or [],
-				sub_category=sub_category,
-				hostname=hostname or "",
-				ssh_keys=ssh_keys or [],
-			)
-		)
-	except ValidationError as error:
-		frappe.throw(
-			_("Invalid server configuration: {0}").format(
-				"; ".join(
-					".".join(map(str, item["loc"])) + ": " + item["msg"]
-					for item in error.errors(include_input=False)
-				)
-			)
-		)
 
-	if not can(frappe.session.user, input.team, "server:create"):
+	server_input = _validate_server_input(
+		team=team,
+		region=region,
+		title=title,
+		offering=offering,
+		image_id=image_id,
+		request_key=request_key,
+		plan=plan,
+		includes=includes,
+		sub_category=sub_category,
+		hostname=hostname,
+		ssh_keys=ssh_keys,
+	)
+	if not can(frappe.session.user, server_input.team, "server:create"):
 		frappe.throw(_("You cannot create servers for this Team."), frappe.PermissionError)
 
-	values = input.model_dump()
-	team, region, offering, image_id = input.team, input.region, input.offering, input.image_id
-	request_key, plan, sub_category = input.request_key, input.plan, input.sub_category
-	includes = [row.model_dump() for row in input.includes]
-	if bool(input.plan) == bool(input.includes):
-		frappe.throw(_("Choose either a plan or a custom configuration."))
-	if input.includes and len({row.resource_type for row in input.includes}) != len(input.includes):
-		frappe.throw(_("Each resource type must occur once."))
-
-	settings = {
-		**{key: value for key, value in values.items() if key != "request_key"},
-		"resource_type": resource_type,
-		"subdomain": subdomain,
-	}
-	digest = hashlib.sha256(json.dumps(settings, sort_keys=True).encode()).hexdigest()
+	digest = _request_digest(server_input, resource_type, subdomain)
 	# Serialize budget reservations and repeated submissions within one Team.
-	frappe.db.get_value("Team", team, "name", for_update=True)
-	existing = frappe.db.get_value(
-		"Resource Action", {"team": team, "request_key": request_key}, for_update=True
+	frappe.db.get_value("Team", server_input.team, "name", for_update=True)
+	if existing := _repeated_request(server_input, digest):
+		return existing.customer_status()
+
+	configuration, rate = _build_server_configuration(server_input, snapshot)
+	return _create_resource_action(server_input, configuration, rate, digest, resource_type, subdomain)
+
+
+def _validate_server_input(**values) -> CreateServerInput:
+	"""Validate untrusted server creation values at the service boundary."""
+	values["includes"] = values.get("includes") or []
+	values["hostname"] = values.get("hostname") or ""
+	values["ssh_keys"] = values.get("ssh_keys") or []
+	try:
+		server_input = CreateServerInput.model_validate(values)
+	except ValidationError as error:
+		detail = "; ".join(
+			".".join(str(part) for part in item["loc"]) + ": " + item["msg"]
+			for item in error.errors(include_input=False)
+		)
+		frappe.throw(_("Invalid server configuration: {0}").format(detail))
+
+	if bool(server_input.plan) == bool(server_input.includes):
+		frappe.throw(_("Choose either a plan or a custom configuration."))
+	if len({row.resource_type for row in server_input.includes}) != len(server_input.includes):
+		frappe.throw(_("Each resource type must occur once."))
+	return server_input
+
+
+def _request_digest(server_input: CreateServerInput, resource_type: str, subdomain: str | None) -> str:
+	settings = server_input.model_dump(exclude={"request_key"})
+	settings.update(resource_type=resource_type, subdomain=subdomain)
+	return hashlib.sha256(json.dumps(settings, sort_keys=True).encode()).hexdigest()
+
+
+def _repeated_request(server_input: CreateServerInput, digest: str):
+	"""Return the action that already represents this customer request, if any."""
+	name = frappe.db.get_value(
+		"Resource Action",
+		{"team": server_input.team, "request_key": server_input.request_key},
+		for_update=True,
 	)
-	if existing:
-		request = frappe.get_doc("Resource Action", existing)
-		if request.request_digest != digest:
+	if name:
+		action = frappe.get_doc("Resource Action", name)
+		if action.request_digest != digest:
 			frappe.throw(_("This request key was already used for different server settings."))
-		return request.customer_status()
+		return action
 
-	unanswered = unanswered_request(team, digest)
-	if unanswered:
-		return frappe.get_doc("Resource Action", unanswered).customer_status()
+	name = unanswered_request(server_input.team, digest)
+	return frappe.get_doc("Resource Action", name) if name else None
 
+
+def _build_server_configuration(
+	server_input: CreateServerInput, snapshot: str | None
+) -> tuple[ServerCreation, float]:
+	"""Resolve the authorized image, purchasable composition, and saved configuration."""
 	image = (
-		snapshot_image(team, region, snapshot, "server:create")
+		snapshot_image(server_input.team, server_input.region, snapshot, "server:create")
 		if snapshot
-		else selected_image(team, region, offering, image_id, "server:create")
+		else selected_image(
+			server_input.team,
+			server_input.region,
+			server_input.offering,
+			server_input.image_id,
+			"server:create",
+		)
 	)
-	composition, rate = validate_purchase(team, region, plan, includes, sub_category)
-	shape = image_shape(composition, image)
-	validate_guest_input(values, image)
+	includes = [row.model_dump() for row in server_input.includes]
+	composition, rate = validate_purchase(
+		server_input.team,
+		server_input.region,
+		server_input.plan,
+		includes,
+		server_input.sub_category,
+	)
+	validate_guest_input(server_input, image)
 
-	configuration = ServerCreation.model_validate(
-		{
-			**{
-				key: values[key]
-				for key in (
-					"offering",
-					"image_id",
-					"plan",
-					"sub_category",
-					"hostname",
-					"ssh_keys",
-				)
-			},
-			"currency": _team_currency(team),
-			"billing_cycle": frappe.db.get_value("Plan", plan, "billing_cycle") if plan else "Monthly",
-			"includes": composition,
-			"image_tags": image["tags"],
-			**shape,
-		}
+	configuration = ServerCreation(
+		offering=server_input.offering,
+		image_id=server_input.image_id,
+		plan=server_input.plan,
+		currency=get_team_currency(server_input.team),
+		billing_cycle=frappe.db.get_value("Plan", server_input.plan, "billing_cycle")
+		if server_input.plan
+		else "Monthly",
+		includes=composition,
+		sub_category=server_input.sub_category,
+		hostname=server_input.hostname,
+		ssh_keys=server_input.ssh_keys,
+		image_tags=image["tags"],
+		**image_shape(composition, image),
 	)
-	request = frappe.get_doc(
+	return configuration, rate
+
+
+def _create_resource_action(
+	server_input: CreateServerInput,
+	configuration: ServerCreation,
+	rate: float,
+	digest: str,
+	resource_type: str,
+	subdomain: str | None,
+) -> dict:
+	"""Persist validated creation intent and return its customer status."""
+	action = frappe.get_doc(
 		{
 			"doctype": "Resource Action",
 			"resource_type": resource_type,
 			"subdomain": subdomain,
 			"action": "create",
-			"team": input.team,
-			"atlas_instance": input.region,
-			"title": input.title,
+			"team": server_input.team,
+			"region": server_input.region,
+			"title": server_input.title,
 			"request_payload": configuration.model_dump(),
 			"correlation_id": frappe.generate_hash(length=32),
-			"request_key": input.request_key,
+			"request_key": server_input.request_key,
 			"request_digest": digest,
 			"reserved_monthly_rate": rate,
 			"requested_by": frappe.session.user,
@@ -159,8 +195,8 @@ def submit_request(
 		}
 	)
 	# Only this authorized service accepts customer intent; customers cannot write outcomes.
-	request.insert(ignore_permissions=True)
-	return request.customer_status()
+	action.insert(ignore_permissions=True)
+	return action.customer_status()
 
 
 def unanswered_request(team: str, digest: str) -> str | None:
@@ -192,11 +228,9 @@ def validate_purchase(
 	if trial:
 		validate_trial(team)
 	else:
-		from central.billing.api.dashboard._shared import require_billing_profile
-
 		require_billing_profile(team, "create servers")
 
-	catalog = get_eligible_plans(cluster=region, team=team)
+	catalog = get_server_plans(team, cluster=region)
 	if plan:
 		choices = [row for rows in catalog["plans"].values() for row in rows]
 		selected = next((row for row in choices if row["plan"] == plan), None)
@@ -253,19 +287,21 @@ def image_shape(includes: list[dict], image: dict) -> dict[str, int]:
 	if any(not math.isfinite(value) or value <= 0 or int(value) != value for value in values):
 		frappe.throw(_("Choose whole virtual CPUs and positive memory and disk sizes in MiB."))
 	shape = dict(zip(("virtual_cpu_count", "memory_mib", "disk_mib"), map(int, values), strict=True))
+	if shape["virtual_cpu_count"] > 32:
+		frappe.throw(_("Choose at most 32 virtual CPUs."))
 	if shape["disk_mib"] < image["rootfs_size_mib"]:
 		frappe.throw(_("This plan's disk is smaller than the selected image."))
 	return shape
 
 
-def validate_guest_input(values: dict, image: dict) -> None:
-	if not values["title"] or len(values["title"]) > 140:
-		frappe.throw(_("Enter a server name of at most 140 characters."))
-	if values["hostname"] and not re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", values["hostname"]):
+def validate_guest_input(server_input: CreateServerInput, image: dict) -> None:
+	if server_input.hostname and not re.fullmatch(
+		r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", server_input.hostname
+	):
 		frappe.throw(_("Use a valid lowercase guest hostname."))
-	if image["tags"].get("purpose") != "pilot" and not values["ssh_keys"]:
+	if image["tags"].get("purpose") != "pilot" and not server_input.ssh_keys:
 		frappe.throw(_("Add an SSH public key for this server."))
-	for key in values["ssh_keys"]:
+	for key in server_input.ssh_keys:
 		try:
 			load_ssh_public_key(key.strip().encode())
 		except ValueError, TypeError:

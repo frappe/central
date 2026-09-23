@@ -48,7 +48,7 @@ def receipt():
 
 
 def provisioning_request():
-	return Mock(team="TEAM-00001", atlas_instance="in-mumbai", requested_by="Administrator")
+	return Mock(team="TEAM-00001", region="in-mumbai", requested_by="Administrator")
 
 
 def pilot_request():
@@ -238,15 +238,15 @@ class TestPilotStoragePayload(TestCase):
 		self.assertEqual(metadata["s3"], STORAGE_CONFIG)
 
 	def test_storage_failure_does_not_block_pilot_creation(self):
+		request = pilot_request()
 		with (
 			patch(f"{SERVERS}.PilotCredential.mint", return_value="token"),
 			patch(f"{SERVERS}.central_url", return_value="https://central.test"),
 			patch(f"{SERVERS}.jwks_url", return_value="https://central.test/jwks"),
 			patch(f"{SERVERS}.BucketProvisioning", side_effect=ObjectStorageRequestUncertain()),
-			patch(f"{SERVERS}.frappe.log_error") as log_error,
 		):
-			payload = _create_payload(pilot_request())
+			payload = _create_payload(request)
 
 		metadata = json.loads(payload["metadata"]["pilot-central"])
 		self.assertNotIn("s3", metadata)
-		log_error.assert_called_once()
+		request.record_diagnostic.assert_called_once()

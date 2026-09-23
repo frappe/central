@@ -26,7 +26,7 @@ Pause Team creation and resource mutations during the migration. Run the registe
 
 The patch checks preserved IDs for range and duplicates before assigning missing IDs. It retains Team names, memberships, and billing references.
 
-If an unassigned Team owns a non-terminated Asset or Site, the patch stops with a readable error. Verify regional ownership and restore the mapping before retrying. Do not infer ownership from a display name.
+If an unassigned Team owns a non-terminated Virtual Machine or Site, the patch stops with a readable error. Verify regional ownership and restore the mapping before retrying. Do not infer ownership from a display name.
 
 The patch can run again without changing assigned IDs. It calls the controller schema hook to install the uniqueness constraint after the backfill.
 

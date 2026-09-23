@@ -52,7 +52,7 @@ REGIONS = (
 	("us-nyc", "DigitalOcean", "New York, USA", "US", 40.71, -74.01, "Active"),
 )
 
-# slug, team index (clamped to available teams), cluster, status, vcpus,
+# slug, team index (clamped to available teams), region, status, vcpus,
 # memory_megabytes, disk_gigabytes, frappe_version. Statuses cover every console
 # visual: Running (green), Pending (setting up), Stopped/Paused (gray), Failed
 # (broken, red pulse) and one Terminated row that must never render.
@@ -158,7 +158,7 @@ def _upsert_region(region_row: tuple) -> None:
 
 
 def _seed_server(index: int, server_row: tuple, teams: list[str], observed_at) -> None:
-	slug, team_index, cluster, status, vcpus, memory_megabytes, disk_gigabytes, frappe_version = server_row
+	slug, team_index, region, status, vcpus, memory_megabytes, disk_gigabytes, frappe_version = server_row
 	resource_id = _resource_id(slug)
 	if frappe.db.exists("Virtual Machine", resource_id):
 		return
@@ -169,7 +169,7 @@ def _seed_server(index: int, server_row: tuple, teams: list[str], observed_at) -
 			"doctype": "Virtual Machine",
 			"resource_id": resource_id,
 			"team": teams[min(team_index, len(teams) - 1)],
-			"cluster": cluster,
+			"region": region,
 			"title": slug,
 			"status": status,
 			"vcpus": vcpus,

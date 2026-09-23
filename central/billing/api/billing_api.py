@@ -461,6 +461,7 @@ def reconcile_payment_setup() -> dict:
 # ── Plans ────────────────────────────────────────────────────────────────────
 
 
+# nosemgrep: guest-whitelisted-method -- pilot_credential_auth verifies the caller below.
 @frappe.whitelist(allow_guest=True, methods=["GET"])
 @pilot_credential_auth
 def get_available_plans() -> dict:
@@ -471,7 +472,7 @@ def get_available_plans() -> dict:
 	from central.billing.api.dashboard.catalog import get_eligible_plans
 
 	team = _team()
-	cluster = frappe.db.get_value("Virtual Machine", _server(), "cluster")
+	cluster = frappe.db.get_value("Virtual Machine", _server(), "region")
 	# No provisioned cluster → offer nothing; a cluster-less menu skips the
 	# allowed-clusters guard and would leak plans from other regions.
 	if not cluster:
@@ -755,12 +756,12 @@ def get_plan_options() -> dict:
 	from central.billing.api.dashboard.catalog import get_eligible_plans
 
 	team, server = _team(), _server()
-	row = frappe.db.get_value("Virtual Machine", server, ["cluster", "plan"], as_dict=True) or frappe._dict()
+	row = frappe.db.get_value("Virtual Machine", server, ["region", "plan"], as_dict=True) or frappe._dict()
 	subscription = frappe.db.get_value("Subscription", {"team": team, "server_id": server}, "name")
 
 	# No provisioned server/cluster → offer nothing. A cluster-less menu would skip
 	# get_eligible_plans' allowed-clusters guard and leak plans from other regions.
-	if not row.cluster:
+	if not row.region:
 		return {
 			"currency": _team_currency(team),
 			"provider": None,
@@ -771,9 +772,9 @@ def get_plan_options() -> dict:
 		}
 
 	with _as_operator():
-		menu = get_eligible_plans(cluster=row.cluster, team=team, exclude_subscription=subscription or None)
+		menu = get_eligible_plans(cluster=row.region, team=team, exclude_subscription=subscription or None)
 	currency = menu.get("currency") or _team_currency(team)
-	provider, region = _provider_region(row.cluster)
+	provider, region = _provider_region(row.region)
 
 	plans = [
 		{

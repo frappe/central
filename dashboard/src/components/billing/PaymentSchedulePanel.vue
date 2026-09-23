@@ -98,7 +98,7 @@ const blockerLines = computed(() => {
 				class="border-b border-outline-gray-2 p-4"
 			>
 				<p class="mb-2 text-p-sm text-ink-gray-5">
-					Advance notices we sent you before debiting
+					Advance notices queued before debiting
 				</p>
 				<ul class="divide-y divide-outline-gray-1">
 					<li
@@ -110,7 +110,7 @@ const blockerLines = computed(() => {
 							{{ notice.subject || notice.invoice || 'Pre-debit notice' }}
 						</span>
 						<span class="shrink-0 text-p-sm text-ink-gray-5">
-							{{ formatDate(notice.sent_at) }}
+							{{ formatDate(notice.queued_at) }}
 						</span>
 					</li>
 				</ul>
