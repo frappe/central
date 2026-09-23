@@ -89,7 +89,8 @@ def _validate_server_input(**values) -> CreateServerInput:
 		server_input = CreateServerInput.model_validate(values)
 	except ValidationError as error:
 		detail = "; ".join(
-			".".join(map(str, item["loc"])) + ": " + item["msg"] for item in error.errors(include_input=False)
+			".".join(str(part) for part in item["loc"]) + ": " + item["msg"]
+			for item in error.errors(include_input=False)
 		)
 		frappe.throw(_("Invalid server configuration: {0}").format(detail))
 

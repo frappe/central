@@ -252,7 +252,7 @@ def process_command(action) -> None:
 		action.transition("Dispatching", notify=False)
 		action.db_set("dispatched_at", frappe.utils.now_datetime())
 		# The remote command can outlive this worker; recovery must never redispatch it.
-		frappe.db.commit()
+		frappe.db.commit()  # nosemgrep: frappe-manual-commit -- persist dispatch before Atlas mutates the VM
 		try:
 			client.vm_action(action.remote_vm_id, action.action)
 		except AtlasRequestUncertain as error:
@@ -289,7 +289,7 @@ def process_command(action) -> None:
 		else:
 			action.transition("Sent", notify=False)
 
-		frappe.db.commit()
+		frappe.db.commit()  # nosemgrep: frappe-manual-commit -- persist Atlas acceptance before observation
 
 	try:
 		status = observe_server(server)

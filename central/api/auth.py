@@ -21,6 +21,7 @@ OTP_TTL_SECONDS = 10 * 60
 MAX_OTP_ATTEMPTS = 5
 
 
+# nosemgrep: guest-whitelisted-method -- signup requires guest access and enforces the site signup limit.
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 def sign_up(email: str, full_name: str) -> tuple[int, str]:
 	"""Start an SMB signup: email a verification code, hold the pending signup in
@@ -39,6 +40,7 @@ def sign_up(email: str, full_name: str) -> tuple[int, str]:
 	return 1, _("Please check your email for your verification code")
 
 
+# nosemgrep: guest-whitelisted-method -- a pending signup and route rate limit constrain resends.
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 @rate_limit(limit=5, seconds=OTP_TTL_SECONDS, methods="POST")
 def resend_signup_code(email: str) -> tuple[int, str]:
@@ -51,6 +53,7 @@ def resend_signup_code(email: str) -> tuple[int, str]:
 	return 1, _("A new verification code is on its way")
 
 
+# nosemgrep: guest-whitelisted-method -- the one-time code and attempt limit authenticate the signup.
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 def verify_signup(email: str, code: str) -> dict:
 	"""Verify the code, create the User (which bootstraps the personal Team), and

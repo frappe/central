@@ -461,6 +461,7 @@ def reconcile_payment_setup() -> dict:
 # ── Plans ────────────────────────────────────────────────────────────────────
 
 
+# nosemgrep: guest-whitelisted-method -- pilot_credential_auth verifies the caller below.
 @frappe.whitelist(allow_guest=True, methods=["GET"])
 @pilot_credential_auth
 def get_available_plans() -> dict:

@@ -138,6 +138,7 @@ def deregister_domain(domain: str) -> None:
 	SiteDomain.deregister(frappe.local.pilot_credential, domain)
 
 
+# nosemgrep: guest-whitelisted-method -- a signed, short-lived, single-use token authenticates enrollment.
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 def enroll(bootstrap_token: str) -> dict:
 	"""First-boot handshake: exchange a single-use, create-time bootstrap token for this
