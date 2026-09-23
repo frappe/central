@@ -1,5 +1,5 @@
 import { ref } from 'vue'
-import { errorToast, successToast } from '@/lib/toast'
+import { reportError, successToast } from '@/lib/feedback'
 
 // Shared "one mutation at a time" pattern for row-scoped actions: `busy` holds
 // the key (user id, invitation name, ...) of the row in flight so it alone
@@ -33,7 +33,7 @@ export function useBusyRunner() {
 			await runOrThrow(fn, ok, key, onSuccess)
 			return true
 		} catch (error) {
-			errorToast(error)
+			reportError(error)
 			return false
 		}
 	}

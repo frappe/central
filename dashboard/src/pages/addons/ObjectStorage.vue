@@ -10,7 +10,7 @@ import { useCapabilities } from '@/composables/useCapabilities'
 import { useServices } from '@/composables/useServices'
 import { useSession } from '@/composables/useSession'
 import { whenTeamReady } from '@/composables/useTeamScope'
-import { errorToast, errorToastWithAction } from '@/lib/toast'
+import { reportError } from '@/lib/feedback'
 
 interface MeteredRow {
 	resource_type: string | null
@@ -84,12 +84,14 @@ const activateService = async (): Promise<void> => {
 		await activate(serviceKey)
 	} catch (e) {
 		if (canManageBilling.value) {
-			errorToastWithAction(e, {
-				label: 'Set up billing',
-				onClick: () => router.push('/billing'),
+			reportError(e, {
+				action: {
+					label: 'Set up billing',
+					onClick: () => router.push('/billing'),
+				},
 			})
 		} else {
-			errorToast(e)
+			reportError(e)
 		}
 	} finally {
 		activating.value = false

@@ -8,7 +8,7 @@ import EmptyState from '@/components/common/EmptyState.vue'
 import { useBreadcrumbs } from '@/composables/useBreadcrumbs'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { useServices } from '@/composables/useServices'
-import { errorToast, errorToastWithAction } from '@/lib/toast'
+import { reportError } from '@/lib/feedback'
 
 const router = useRouter()
 const serviceKey = 'ai'
@@ -49,12 +49,14 @@ const activateService = async (): Promise<void> => {
 		await activate(serviceKey)
 	} catch (e) {
 		if (canManageBilling.value) {
-			errorToastWithAction(e, {
-				label: 'Set up billing',
-				onClick: () => router.push('/billing'),
+			reportError(e, {
+				action: {
+					label: 'Set up billing',
+					onClick: () => router.push('/billing'),
+				},
 			})
 		} else {
-			errorToast(e)
+			reportError(e)
 		}
 	} finally {
 		activating.value = false

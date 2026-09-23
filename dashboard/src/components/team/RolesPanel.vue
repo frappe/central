@@ -15,6 +15,7 @@ import { useCapabilities } from '@/composables/useCapabilities'
 import { useTeamMembers } from '@/composables/useTeamMembers'
 import { useTeamRoles } from '@/composables/useTeamRoles'
 import { useTeamRowSelection } from '@/composables/useTeamRowSelection'
+import { reportError } from '@/lib/feedback'
 import { roleDisplay } from '@/lib/roles'
 import type { TeamMemberRow, TeamRoleRow } from '@/types/api'
 
@@ -46,6 +47,8 @@ const onDeleteRole = async (role: TeamRoleRow): Promise<void> => {
 
 	try {
 		await deleteRole(role.name, role.role_name)
+	} catch (error) {
+		reportError(error)
 	} finally {
 		deletingName.value = ''
 	}

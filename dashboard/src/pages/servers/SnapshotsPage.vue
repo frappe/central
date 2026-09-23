@@ -6,8 +6,8 @@ import KeepSnapshotDialog from '@/components/snapshots/KeepSnapshotDialog.vue'
 import SnapshotListView from '@/components/snapshots/SnapshotListView.vue'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { useSnapshots } from '@/composables/useSnapshots'
+import { getErrorMessage, successToast } from '@/lib/feedback'
 import { plural } from '@/lib/format'
-import { getErrorMessage, successToast } from '@/lib/toast'
 import type { VMSnapshotRow } from '@/types/snapshots'
 
 const router = useRouter()

@@ -2,7 +2,7 @@ import { useCall } from 'frappe-ui'
 import { ref } from 'vue'
 import { API, method } from '@/api/methods'
 import { useBillingOverview } from '@/composables/useBillingOverview'
-import { errorToast, successToast } from '@/lib/toast'
+import { reportError, successToast } from '@/lib/feedback'
 import type { Project } from '@/types/billing'
 
 // Rename / enable-disable for Projects — the mutations ProjectsCard and
@@ -30,7 +30,7 @@ export function useProjects() {
 			successToast(p.enabled ? 'Project disabled.' : 'Project enabled.')
 			reloadProjects()
 		} catch (e) {
-			errorToast(e)
+			reportError(e)
 		} finally {
 			busy.value = ''
 		}

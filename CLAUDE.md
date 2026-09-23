@@ -234,6 +234,9 @@ dashboard/src/components/<feature>/   Feature components, one folder per domain
 - Keep shared types in `dashboard/src/types/` and keep them in step with the DocType they describe. Avoid `any`.
 - Give every component typed props with a named props interface.
 - Always handle the loading, empty, error, and disabled states. The user must never reach a dead end.
+- Use a toast for short success feedback or a non-actionable background status. Use `backgroundErrorToast` only when the failure happened outside the user's current task.
+- Use `reportError` for an API or action failure. It shows one persistent alert at the top center of the viewport. Give it an action-specific title when the automatic error category does not identify the failed task.
+- Keep a form or dialog failure inside that form or dialog, before the fields or actions it affects. Put a field validation message directly below its field. Keep a page or list loading failure in its content area.
 - Use Frappe UI components and semantic classes for layout, spacing, color, and typography. Use a raw Tailwind class only for what the design system does not cover.
 - Do not mix ad hoc Tailwind values with design-system tokens. Inconsistent class usage is a defect.
 - Keep line heights and text sizes on the Frappe UI scale.

@@ -4,8 +4,8 @@ import { API, method } from '@/api/methods'
 import { useBusyRunner } from '@/composables/useBusyRunner'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { teamParams, whenTeamReady } from '@/composables/useTeamScope'
+import { getErrorMessage, isAbortError } from '@/lib/feedback'
 import { submitOrThrow } from '@/lib/frappeCall'
-import { getErrorMessage, isAbortError } from '@/lib/toast'
 import type { InvitationRow } from '@/types/api'
 
 // The active team's invitations — the manager's view (gated server-side on

@@ -9,9 +9,9 @@ import {
 	estimateConfig,
 	rateCardComplete,
 } from '@/lib/composed'
+import { getErrorMessage, successToast } from '@/lib/feedback'
 import { money } from '@/lib/format'
 import { planResources } from '@/lib/plans'
-import { getErrorMessage, successToast } from '@/lib/toast'
 import type { ComposedConfig, Plan, Profile } from '@/types/api'
 
 interface ResizeCallbacks {

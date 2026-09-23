@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Avatar, Button, Dialog, FormControl } from 'frappe-ui'
+import { Alert, Avatar, Button, Dialog, FormControl } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useCapabilities } from '@/composables/useCapabilities'
@@ -12,7 +12,7 @@ import { useTeamSettings } from '@/composables/useTeamSettings'
 // menu in the roster, where the new owner is picked in context.
 const router = useRouter()
 const { activeTeamLabel, activeTeamLogo } = useSession()
-const { saving, rename, deleteTeam } = useTeamSettings()
+const { saving, error, clearError, rename, deleteTeam } = useTeamSettings()
 const { canEditTeam, canDeleteTeam } = useCapabilities()
 
 // Switching teams while this is open re-points the form at the new team.
@@ -28,6 +28,7 @@ async function onSave(): Promise<void> {
 	if (!changed.value) return
 	await rename(name.value.trim())
 }
+watch(name, clearError)
 
 // — Logo. The row is here but inert: the upload endpoint is held back for a
 // follow-up PR, so the control shows what's coming without pretending to work.
@@ -61,6 +62,7 @@ async function onDelete(): Promise<void> {
 <template>
 	<div>
 		<div class="space-y-6">
+			<Alert v-if="error && !confirmDelete" theme="red" :title="error" />
 			<!-- Logo row, no label — the avatar speaks for itself. The control is
 			     disabled until the upload endpoint lands. -->
 			<div class="space-y-1.5">
@@ -134,6 +136,8 @@ async function onDelete(): Promise<void> {
 			:title="deleteOptions.title"
 			:message="deleteOptions.message"
 			:actions="deleteOptions.actions"
-		/>
+		>
+			<Alert v-if="error" theme="red" :title="error" />
+		</Dialog>
 	</div>
 </template>

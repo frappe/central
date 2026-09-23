@@ -1,13 +1,20 @@
 <script setup lang="ts">
-import { Button, Dialog, FormControl, LoadingText, useCall } from 'frappe-ui'
-import { computed, reactive, watch } from 'vue'
+import {
+	Alert,
+	Button,
+	Dialog,
+	FormControl,
+	LoadingText,
+	useCall,
+} from 'frappe-ui'
+import { computed, reactive, ref, watch } from 'vue'
 import { API, method } from '@/api/methods'
 import { useBillingOverview } from '@/composables/useBillingOverview'
 import { useBillingSetup } from '@/composables/useBillingSetup'
 import { useSession } from '@/composables/useSession'
 import { whenTeamReady } from '@/composables/useTeamScope'
 import { emailError as validateEmail } from '@/lib/auth'
-import { errorToast, infoToast, successToast } from '@/lib/toast'
+import { getErrorMessage, successToast } from '@/lib/feedback'
 import type { BillingGeo } from '@/types/billing'
 
 // Edit the billing profile — currency (locked after activity), contact, address,
@@ -41,15 +48,14 @@ const FIELDS = [
 	'pincode',
 ] as const
 const form = reactive<Record<string, string>>({})
-watch(
-	() => profile.data,
-	(d) => {
-		if (!d) return
-		const row = d as unknown as Record<string, unknown>
-		for (const f of FIELDS) form[f] = row[f]?.toString() ?? ''
-	},
-	{ immediate: true },
-)
+
+function resetForm(): void {
+	if (!profile.data) return
+	const row = profile.data as unknown as Record<string, unknown>
+	for (const field of FIELDS) form[field] = row[field]?.toString() ?? ''
+}
+
+watch(() => profile.data, resetForm, { immediate: true })
 
 const countryOptions = computed(() =>
 	(geo.data?.countries ?? []).map((c) => ({ label: c, value: c })),
@@ -89,6 +95,19 @@ const missingRequired = computed(() =>
 		.filter(([field]) => !form[field]?.trim())
 		.map(([, label]) => label),
 )
+const formError = ref('')
+const submitted = ref(false)
+
+function requiredError(field: string, label: string): string {
+	return submitted.value && !form[field]?.trim() ? `${label} is required.` : ''
+}
+
+watch(form, () => (formError.value = ''), { deep: true })
+watch(open, (isOpen) => {
+	formError.value = ''
+	submitted.value = false
+	if (isOpen) resetForm()
+})
 
 type SaveBillingProfileResponse = {
 	setup_complete?: boolean
@@ -100,24 +119,23 @@ const save = useCall<SaveBillingProfileResponse, Record<string, unknown>>({
 	immediate: false,
 })
 async function submit(): Promise<void> {
-	if (missingRequired.value.length) {
-		infoToast(`Missing: ${missingRequired.value.join(', ')}`)
-		return
-	}
+	submitted.value = true
+	if (missingRequired.value.length || emailIssue.value) return
 	try {
 		await save.submit({ team: activeTeam.value, ...form })
+		if (save.error) throw save.error
 		await reloadSetup()
 		reloadProfile()
 		if (save.data?.setup_complete === false) {
 			const missing =
 				save.data.missing_labels?.join(', ') || 'the required fields'
-			infoToast(`Saved. Still missing: ${missing}`)
+			formError.value = `Saved, but these fields are still required: ${missing}.`
 			return
 		}
 		successToast('Billing details saved')
 		open.value = false
 	} catch (e) {
-		errorToast(e)
+		formError.value = getErrorMessage(e)
 	}
 }
 </script>
@@ -130,6 +148,7 @@ async function submit(): Promise<void> {
 			</div>
 
 			<div v-else class="space-y-6">
+				<Alert v-if="formError" theme="red" :title="formError" />
 				<div class="space-y-3">
 					<h3 class="text-sm-medium text-ink-gray-8">Contact</h3>
 					<div class="grid gap-4 sm:grid-cols-2">
@@ -137,19 +156,16 @@ async function submit(): Promise<void> {
 							v-model="form.legal_name"
 							label="Legal name"
 							placeholder="Acme Technologies Pvt. Ltd."
+							:error="requiredError('legal_name', 'Legal name')"
 							required
 						/>
-						<div>
-							<FormControl
-								v-model="form.email"
-								type="email"
-								label="Billing email"
-								placeholder="billing@company.com"
-							/>
-							<p v-if="emailIssue" class="mt-1 text-p-xs text-ink-red-7">
-								{{ emailIssue }}
-							</p>
-						</div>
+						<FormControl
+							v-model="form.email"
+							type="email"
+							label="Billing email"
+							placeholder="billing@company.com"
+							:error="emailIssue"
+						/>
 						<FormControl
 							v-model="form.phone"
 							label="Phone"
@@ -172,6 +188,8 @@ async function submit(): Promise<void> {
 								label="Country"
 								placeholder="Select country"
 								:options="countryOptions"
+								:error="requiredError('country', 'Country')"
+								required
 							/>
 							<p class="mt-1 text-p-xs text-ink-gray-5">
 								{{ currencyLocked
@@ -183,6 +201,7 @@ async function submit(): Promise<void> {
 							v-model="form.address_line1"
 							label="Address line 1"
 							placeholder="Street address"
+							:error="requiredError('address_line1', 'Address line 1')"
 							required
 						/>
 						<FormControl
@@ -190,7 +209,12 @@ async function submit(): Promise<void> {
 							label="Address line 2"
 							placeholder="Suite, floor (optional)"
 						/>
-						<FormControl v-model="form.city" label="City" required />
+						<FormControl
+							v-model="form.city"
+							label="City"
+							:error="requiredError('city', 'City')"
+							required
+						/>
 						<FormControl
 							v-if="isIndia"
 							v-model="form.state"

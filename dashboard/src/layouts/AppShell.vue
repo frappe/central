@@ -10,6 +10,7 @@ import {
 } from 'frappe-ui'
 import { computed, defineAsyncComponent, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
+import ErrorAlertHost from '@/components/common/ErrorAlertHost.vue'
 import Sidebar from '@/components/navigation/Sidebar.vue'
 import NotificationsPanel from '@/components/notifications/NotificationsPanel.vue'
 import SettingsModal from '@/components/settings/SettingsModal.vue'
@@ -122,6 +123,8 @@ const breadcrumbs = computed(
 		<Sidebar class="p-4" />
 	</BottomSheet>
 
+	<ErrorAlertHost />
+	<!-- Toasts are reserved for short success and non-actionable status updates. -->
 	<ToastProvider />
 	<!-- Desktop only: on mobile the same tabs are pages (/settings/:tab), so the
 	     dialog never mounts there. -->

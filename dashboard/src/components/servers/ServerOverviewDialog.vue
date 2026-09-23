@@ -13,10 +13,10 @@ import ServerSnapshotsCard from '@/components/snapshots/ServerSnapshotsCard.vue'
 import { useRegions } from '@/composables/useRegions'
 import type { VirtualMachineRow } from '@/composables/useServers'
 import { useSession } from '@/composables/useSession'
+import { getErrorMessage } from '@/lib/feedback'
 import type { LoadPoint } from '@/lib/loadChart'
 import { formatPlanLabel } from '@/lib/planLabel'
 import { statusVisual } from '@/lib/serverMap'
-import { getErrorMessage } from '@/lib/toast'
 
 type Overview = {
 	server: VirtualMachineRow & {

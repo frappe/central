@@ -2,7 +2,7 @@ import { call, frappeRequest } from 'frappe-ui'
 import { computed, type Ref, ref, watch } from 'vue'
 import { API, methodV1 } from '@/api/methods'
 import { useSession } from '@/composables/useSession'
-import { getErrorMessage } from '@/lib/toast'
+import { getErrorMessage } from '@/lib/feedback'
 import type {
 	SnapshotList,
 	SnapshotPricing,

@@ -20,7 +20,7 @@ import { useServerFleet } from '@/composables/useServerFleet'
 import { useServerNavigation } from '@/composables/useServerNavigation'
 import type { VirtualMachineRow } from '@/composables/useServers'
 import { useServers } from '@/composables/useServers'
-import { getErrorMessage } from '@/lib/toast'
+import { getErrorMessage } from '@/lib/feedback'
 
 // The servers page: the world map is the list (FC V2). Servers (the Virtual Machine mirror)
 // and sites (the Site mirror — each a 1:1-backed VM) come from one feed and list

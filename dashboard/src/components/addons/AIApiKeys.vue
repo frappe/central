@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import {
+	Alert,
 	Badge,
 	Button,
 	Dialog,
@@ -18,7 +19,7 @@ import type {
 } from '@/composables/useServices'
 import { useServices } from '@/composables/useServices'
 import { copyToClipboard } from '@/lib/clipboard'
-import { errorToast, successToast } from '@/lib/toast'
+import { getErrorMessage, reportError, successToast } from '@/lib/feedback'
 
 const props = defineProps<{
 	managedService: string
@@ -51,7 +52,7 @@ const reveal = async (key: ServiceApiKey): Promise<void> => {
 	try {
 		details.value = await revealKey(key.name)
 	} catch (e) {
-		errorToast(e)
+		reportError(e)
 	} finally {
 		revealingName.value = ''
 	}
@@ -71,11 +72,14 @@ const rowActions = (key: ServiceApiKey): DropdownOptions => {
 const generateOpen = ref(false)
 const newLabel = ref('')
 const generating = ref(false)
+const generateError = ref('')
 
 const openGenerate = (): void => {
 	newLabel.value = ''
+	generateError.value = ''
 	generateOpen.value = true
 }
+watch(newLabel, () => (generateError.value = ''))
 
 const generate = async (): Promise<void> => {
 	const label = newLabel.value.trim()
@@ -87,7 +91,7 @@ const generate = async (): Promise<void> => {
 		details.value = await generateApiKey(props.managedService, label)
 		generateOpen.value = false
 	} catch (e) {
-		errorToast(e)
+		generateError.value = getErrorMessage(e, "The API key couldn't be created.")
 	} finally {
 		generating.value = false
 	}
@@ -135,7 +139,7 @@ const copy = async (value: string, label: string): Promise<void> => {
 		return
 	}
 
-	errorToast(`${label} could not be copied. Select it and copy by hand.`)
+	reportError(`${label} could not be copied. Select it and copy by hand.`)
 }
 
 const copyCurl = (): void => {
@@ -147,10 +151,17 @@ const copyCurl = (): void => {
 }
 
 const pendingRevoke = ref<ServiceApiKey | null>(null)
+const revokeError = ref('')
+watch(pendingRevoke, () => (revokeError.value = ''))
 const confirmRevoke = async (): Promise<void> => {
 	const key = pendingRevoke.value
-	pendingRevoke.value = null
-	if (key) await revokeKey(key.name)
+	if (!key) return
+	try {
+		await revokeKey(key.name)
+		pendingRevoke.value = null
+	} catch (e) {
+		revokeError.value = getErrorMessage(e, "The API key couldn't be revoked.")
+	}
 }
 </script>
 
@@ -275,13 +286,16 @@ const confirmRevoke = async (): Promise<void> => {
 		]"
 	>
 		<template #default>
-			<FormControl
-				v-model="newLabel"
-				label="Label"
-				placeholder="e.g. n8n prod"
-				description="A name to recognise this key by. You can revoke it independently."
-				@keyup.enter="generate"
-			/>
+			<div class="space-y-4">
+				<Alert v-if="generateError" theme="red" :title="generateError" />
+				<FormControl
+					v-model="newLabel"
+					label="Label"
+					placeholder="e.g. n8n prod"
+					description="A name to recognise this key by. You can revoke it independently."
+					@keyup.enter="generate"
+				/>
+			</div>
 		</template>
 	</Dialog>
 
@@ -402,5 +416,7 @@ const confirmRevoke = async (): Promise<void> => {
 				if (!v) pendingRevoke = null
 			}
 		"
-	/>
+	>
+		<Alert v-if="revokeError" theme="red" :title="revokeError" />
+	</Dialog>
 </template>

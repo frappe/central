@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { Button, SettingsRow, Switch, useCall } from 'frappe-ui'
-import { computed, reactive, watch } from 'vue'
+import { Alert, Button, SettingsRow, Switch, useCall } from 'frappe-ui'
+import { computed, reactive, ref, watch } from 'vue'
 import { API, method } from '@/api/methods'
 import { teamParams } from '@/composables/useTeamScope'
-import { errorToast, successToast } from '@/lib/toast'
+import { getErrorMessage, successToast } from '@/lib/feedback'
 
 // Per-user notification preferences, one row per category. Email delivery and the
 // in-app feed toggle independently. Opt-out model: a category with no saved row is
@@ -59,6 +59,8 @@ function toMap(prefs: Preference[] | undefined): Record<Category, Channels> {
 }
 
 const state = reactive<Record<Category, Channels>>(defaults())
+const formError = ref('')
+watch(state, () => (formError.value = ''), { deep: true })
 
 const load = useCall<{ preferences: Preference[] }, { team: string }>({
 	url: method(API.notificationPreferences),
@@ -105,16 +107,21 @@ async function onSave(): Promise<void> {
 			in_app_enabled: state[key].in_app ? 1 : 0,
 		}))
 		await save.submit({ ...teamParams(), preferences })
+		if (save.error) throw save.error
 		await load.reload()
 		successToast('Notification preferences saved')
 	} catch (e) {
-		errorToast(e)
+		formError.value = getErrorMessage(
+			e,
+			"Notification preferences couldn't be saved.",
+		)
 	}
 }
 </script>
 
 <template>
 	<div>
+		<Alert v-if="formError" class="mb-4" theme="red" :title="formError" />
 		<!-- Column headers, aligned to the switch cells below: with two switches
 		     per row, naming the channel once beats repeating a label against
 		     every toggle. -->

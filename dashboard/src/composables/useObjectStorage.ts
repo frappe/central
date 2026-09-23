@@ -2,8 +2,8 @@ import { useCall } from 'frappe-ui'
 import { computed, ref } from 'vue'
 import { API, method } from '@/api/methods'
 import { useSession } from '@/composables/useSession'
+import { successToast } from '@/lib/feedback'
 import { submitOrThrow } from '@/lib/frappeCall'
-import { errorToast, successToast } from '@/lib/toast'
 
 // The team's object-storage buckets. Central creates and names them, mints a key
 // scoped to each, and shows both halves; whoever holds them configures their own
@@ -95,8 +95,6 @@ export function useObjectStorage() {
 				await submitOrThrow(revokeCall, { name })
 				successToast('Bucket key revoked')
 				await reloadBuckets()
-			} catch (e) {
-				errorToast(e)
 			} finally {
 				busyBucket.value = ''
 			}

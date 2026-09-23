@@ -2,7 +2,7 @@ import { useCall } from 'frappe-ui'
 import { computed } from 'vue'
 import { API, method } from '@/api/methods'
 import { teamParams, whenTeamReady } from '@/composables/useTeamScope'
-import { getErrorMessage, isAbortError } from '@/lib/toast'
+import { getErrorMessage, isAbortError } from '@/lib/feedback'
 import type { InvoiceSummary } from '@/types/billing'
 
 // The team's invoice list (list_invoices), shared by the Invoices page and

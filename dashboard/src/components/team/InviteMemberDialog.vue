@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import { Dialog, FormControl, useCall } from 'frappe-ui'
+import { Alert, Dialog, FormControl, useCall } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import { API, method } from '@/api/methods'
 import { useRegions } from '@/composables/useRegions'
 import { useSession } from '@/composables/useSession'
 import { useTeamRoles } from '@/composables/useTeamRoles'
 import { teamParams } from '@/composables/useTeamScope'
-import { errorToast, successToast } from '@/lib/toast'
+import { getErrorMessage, successToast } from '@/lib/feedback'
 import type { ResourceType, TeamRegistry } from '@/types/api'
 
 // Invite a person with a role scoped to all resources or a specific server or
@@ -28,6 +28,7 @@ const email = ref('')
 const role = ref('')
 const resource = ref('*::')
 const expiresInDays = ref(7)
+const formError = ref('')
 
 const registryCall = useCall<TeamRegistry, { team: string }>({
 	url: method(API.registry),
@@ -76,9 +77,11 @@ watch(open, (isOpen) => {
 		role.value = ''
 		resource.value = '*::'
 		expiresInDays.value = 7
+		formError.value = ''
 		if (!registryCall.data) registryCall.reload()
 	}
 })
+watch([email, role, resource, expiresInDays], () => (formError.value = ''))
 
 type InviteParams = {
 	team: string
@@ -138,7 +141,7 @@ async function submit() {
 		emit('invited')
 		open.value = false
 	} catch (e) {
-		errorToast(e)
+		formError.value = getErrorMessage(e, "The invitation couldn't be sent.")
 	}
 }
 </script>
@@ -152,6 +155,7 @@ async function submit() {
 	>
 		<template #default>
 			<div class="space-y-4">
+				<Alert v-if="formError" theme="red" :title="formError" />
 				<FormControl
 					v-model="email"
 					type="email"

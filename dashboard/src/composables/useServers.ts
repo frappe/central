@@ -4,8 +4,8 @@ import { API, method } from '@/api/methods'
 import signingInHtml from '@/assets/signing-in.html?raw'
 import { useBusyRunner } from '@/composables/useBusyRunner'
 import { useSession } from '@/composables/useSession'
+import { reportError } from '@/lib/feedback'
 import { submitOrThrow } from '@/lib/frappeCall'
-import { errorToast } from '@/lib/toast'
 import type { RefreshResponse } from '@/types/api'
 import type { VirtualMachine } from '@/types/Central/VirtualMachine'
 
@@ -120,7 +120,7 @@ async function refreshServers(): Promise<boolean> {
 		await submitOrThrow(refreshCall, { team })
 		return true
 	} catch (error) {
-		errorToast(error)
+		reportError(error, { title: "Couldn't refresh servers" })
 		return false
 	}
 }
@@ -141,7 +141,9 @@ async function openBench(server: VirtualMachineRow): Promise<void> {
 		openResolvedUrl(benchLinkCall.data?.url, tab, 'server')
 	} catch (error) {
 		tab?.close()
-		errorToast(error)
+		reportError(error, {
+			title: `Couldn't open ${server.title || server.resource_id}`,
+		})
 	} finally {
 		URL.revokeObjectURL(loadingUrl)
 		opening.value = ''
@@ -158,7 +160,7 @@ async function openSite(name: string): Promise<void> {
 		openResolvedUrl(url, tab, 'site')
 	} catch (error) {
 		tab?.close()
-		errorToast(error)
+		reportError(error, { title: "Couldn't open this site" })
 	} finally {
 		URL.revokeObjectURL(loadingUrl)
 		opening.value = ''
@@ -180,10 +182,10 @@ function openResolvedUrl(
 	}
 
 	tab?.close()
-	errorToast(
-		undefined,
-		`Couldn't open this ${target}. It may not be ready yet. Try again in a moment.`,
-	)
+	reportError(undefined, {
+		title: `Couldn't open this ${target}`,
+		fallback: 'It may not be ready yet. Try again in a moment.',
+	})
 }
 
 export function useServers() {

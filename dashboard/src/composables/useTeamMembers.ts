@@ -3,8 +3,8 @@ import { computed } from 'vue'
 import { API, method } from '@/api/methods'
 import { useBusyRunner } from '@/composables/useBusyRunner'
 import { teamParams, whenTeamReady } from '@/composables/useTeamScope'
+import { getErrorMessage, isAbortError } from '@/lib/feedback'
 import { submitOrThrow } from '@/lib/frappeCall'
-import { getErrorMessage, isAbortError } from '@/lib/toast'
 import type {
 	MemberStatus,
 	TeamMemberRoleAssignment,
@@ -49,11 +49,19 @@ const removeCall = useCall<unknown, RemoveParams>({
 	immediate: false,
 })
 
-const { busy, run } = useBusyRunner()
+const { busy, run, runOrThrow } = useBusyRunner()
+
+interface MutationOptions {
+	throwOnError?: boolean
+}
 
 export function useTeamMembers() {
-	const setRoles = (user: string, roles: TeamMemberRoleAssignment[]) =>
-		run(
+	const setRoles = (
+		user: string,
+		roles: TeamMemberRoleAssignment[],
+		options: MutationOptions = {},
+	) =>
+		(options.throwOnError ? runOrThrow : run)(
 			() =>
 				submitOrThrow(setRolesCall, { team: teamParams().team, user, roles }),
 			`Updated ${user}'s roles`,
@@ -72,8 +80,8 @@ export function useTeamMembers() {
 		)
 	}
 
-	function remove(user: string) {
-		return run(
+	function remove(user: string, options: MutationOptions = {}) {
+		return (options.throwOnError ? runOrThrow : run)(
 			() => submitOrThrow(removeCall, { team: teamParams().team, user }),
 			`Removed ${user} from the team`,
 			user,

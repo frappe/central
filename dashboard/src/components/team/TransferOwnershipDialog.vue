@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Dialog, FormControl } from 'frappe-ui'
+import { Alert, Dialog, FormControl } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import { useSession } from '@/composables/useSession'
 import { useTeamMembers } from '@/composables/useTeamMembers'
@@ -12,7 +12,7 @@ import type { TeamMemberRow } from '@/types/api'
 const props = defineProps<{ member: TeamMemberRow | null }>()
 const emit = defineEmits<{ 'update:member': [member: TeamMemberRow | null] }>()
 
-const { transferOwnership, saving } = useTeamSettings()
+const { transferOwnership, saving, error, clearError } = useTeamSettings()
 const { reload } = useTeamMembers()
 const { activeTeamLabel } = useSession()
 
@@ -24,7 +24,11 @@ const open = computed({
 })
 
 const typed = ref('')
-watch(open, () => (typed.value = ''))
+watch(open, () => {
+	typed.value = ''
+	clearError()
+})
+watch(typed, clearError)
 
 const expected = computed(() => props.member?.full_name ?? '')
 const confirmed = computed(
@@ -70,6 +74,7 @@ const dialogOptions = computed(() => ({
 		:actions="dialogOptions.actions"
 	>
 		<div class="space-y-4">
+			<Alert v-if="error" theme="red" :title="error" />
 			<p class="text-p-base text-ink-gray-7">
 				<span class="font-medium text-ink-gray-9">{{ expected }}</span>
 				becomes the owner of

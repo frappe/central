@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { Dialog } from 'frappe-ui'
-import { computed, ref } from 'vue'
+import { Alert, Dialog } from 'frappe-ui'
+import { computed, ref, watch } from 'vue'
 import { useSession } from '@/composables/useSession'
 import { useTeamMembers } from '@/composables/useTeamMembers'
+import { getErrorMessage } from '@/lib/feedback'
 import type { TeamMemberRow } from '@/types/api'
 
 const props = defineProps<{ member: TeamMemberRow | null }>()
@@ -19,13 +20,24 @@ const open = computed({
 })
 
 const removing = ref(false)
+const formError = ref('')
+watch(
+	() => props.member,
+	() => (formError.value = ''),
+)
 
 const confirmRemove = async (): Promise<void> => {
 	if (!props.member) return
 	removing.value = true
-	const ok = await remove(props.member.user)
-	removing.value = false
-	if (ok) open.value = false
+	formError.value = ''
+	try {
+		await remove(props.member.user, { throwOnError: true })
+		open.value = false
+	} catch (e) {
+		formError.value = getErrorMessage(e, "The member couldn't be removed.")
+	} finally {
+		removing.value = false
+	}
 }
 
 const dialogOptions = computed(() => ({
@@ -56,10 +68,15 @@ const dialogOptions = computed(() => ({
 		size="sm"
 		:actions="dialogOptions.actions"
 	>
-		<p class="text-p-base text-ink-gray-7">
-			They'll immediately lose access to
-			<span class="font-semibold text-ink-gray-9">{{ activeTeamLabel }}'s</span>
-			team and all its servers and sites. You can re-invite them at any time.
-		</p>
+		<div class="space-y-4">
+			<Alert v-if="formError" theme="red" :title="formError" />
+			<p class="text-p-base text-ink-gray-7">
+				They'll immediately lose access to
+				<span class="font-semibold text-ink-gray-9"
+					>{{ activeTeamLabel }}'s</span
+				>
+				team and all its servers and sites. You can re-invite them at any time.
+			</p>
+		</div>
 	</Dialog>
 </template>

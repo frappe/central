@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { Checkbox, Dialog, FormControl } from 'frappe-ui'
+import { Alert, Checkbox, Dialog, FormControl } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import { useTeamRoles } from '@/composables/useTeamRoles'
 import {
 	capabilityLabel,
 	groupCapabilitiesByCategory,
 } from '@/lib/capabilities'
+import { getErrorMessage } from '@/lib/feedback'
 
 // Build a custom team role: a name + any subset of capabilities. Central closes
 // the set under its implications on save (e.g. server:create pulls in
@@ -22,13 +23,16 @@ const open = computed({
 
 const roleName = ref('')
 const picked = ref<string[]>([])
+const formError = ref('')
 
 watch(open, (isOpen) => {
 	if (isOpen) {
 		roleName.value = ''
 		picked.value = []
+		formError.value = ''
 	}
 })
+watch([roleName, picked], () => (formError.value = ''), { deep: true })
 
 // Grouped by area (Billing / Team / Services / Servers) with only the plain
 // description shown — the slug is a backend detail the picker doesn't need.
@@ -66,8 +70,8 @@ async function submit() {
 		await createRole(roleName.value.trim(), picked.value)
 		emit('created')
 		open.value = false
-	} catch {
-		/* toast already surfaced in the composable */
+	} catch (e) {
+		formError.value = getErrorMessage(e, "The role couldn't be created.")
 	}
 }
 </script>
@@ -81,6 +85,7 @@ async function submit() {
 	>
 		<template #default>
 			<div class="space-y-5">
+				<Alert v-if="formError" theme="red" :title="formError" />
 				<FormControl
 					v-model="roleName"
 					label="Role name"
