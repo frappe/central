@@ -34,3 +34,23 @@ class UserNotificationPreference(Document):
 		)
 		if existing:
 			frappe.throw(_("Preference for {0} already exists on this team").format(self.category))
+
+
+def on_doctype_update() -> None:
+	_remove_duplicate_preferences()
+	frappe.db.add_unique("User Notification Preference", ["user", "team", "category"])
+
+
+def _remove_duplicate_preferences() -> None:
+	fields = ["name", "user", "team", "category"]
+	rows = frappe.get_all("User Notification Preference", fields=fields, order_by="modified desc", limit=0)
+	seen = set()
+	duplicates = []
+	for row in rows:
+		key = (row.user, row.team, row.category)
+		if key in seen:
+			duplicates.append(row.name)
+		else:
+			seen.add(key)
+	if duplicates:
+		frappe.db.delete("User Notification Preference", {"name": ["in", duplicates]})

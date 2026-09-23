@@ -15,126 +15,6 @@ import frappe
 
 from central.notification import engine
 
-# Billing event type defaults — used to self-bootstrap the registry rows
-# when the fixture hasn't been loaded yet (e.g. in isolated test runs).
-_BILLING_EVENT_TYPES = {
-	"payment_success": (
-		"Payment received",
-		"Payment received for invoice {{ reference_name }}.",
-		"Success",
-		"billing:view",
-		None,
-		None,
-	),
-	"payment_failure": (
-		"Payment failed",
-		"Payment for invoice {{ reference_name }} failed: {{ message }}",
-		"Error",
-		"billing:view",
-		"Pay now",
-		"/billing/invoices",
-	),
-	"payment_retry": (
-		"Payment retry failed",
-		"Payment retry for invoice {{ reference_name }} failed: {{ message }}",
-		"Warning",
-		"billing:view",
-		"Pay now",
-		"/billing/invoices",
-	),
-	"invoice_overdue": (
-		"Invoice overdue",
-		"Invoice {{ reference_name }} is overdue. Please settle it to avoid suspension.",
-		"Error",
-		"billing:view",
-		"Pay now",
-		"/billing/invoices",
-	),
-	"credit_low": (
-		"Credit balance low",
-		"Your credit balance is low (projected use {{ message }}). Top up to avoid interruption.",
-		"Warning",
-		"billing:view",
-		"Top up",
-		"/billing",
-	),
-	"card_expiry": (
-		"Card expired",
-		"Your card has expired. Please add a new payment method.",
-		"Warning",
-		"billing:view",
-		"Update card",
-		"/billing",
-	),
-	"mandate_reauth": (
-		"Mandate re-authorisation needed",
-		"Your UPI Autopay mandate needs re-authorisation for the new limit.",
-		"Warning",
-		"billing:view",
-		"Re-authorise",
-		"/billing",
-	),
-	"trial_expiring": (
-		"Trial ending",
-		"Your trial is ending. Add a payment method to keep your resources running.",
-		"Warning",
-		"billing:view",
-		"Add payment method",
-		"/billing",
-	),
-	"action_required": (
-		"Action required — choose how to pay",
-		"Your usage is above the limit for automatic payments. Please choose to pay each invoice or prepay your wallet.",
-		"Warning",
-		"billing:view",
-		"Choose how to pay",
-		"/billing/invoices",
-	),
-	"pre_debit_notice": (
-		"Upcoming auto-payment",
-		"We'll auto-debit for your upcoming invoice. No action needed; this is a heads-up before the payment.",
-		"Info",
-		"billing:view",
-		None,
-		None,
-	),
-	"add_payment_method": (
-		"Add another way to pay",
-		"We couldn't charge your saved payment method for invoice {{ reference_name }}, and there's "
-		"nothing else on file to try. Add another way to pay to keep your services running.",
-		"Error",
-		"billing:view",
-		"Add payment method",
-		"/billing",
-	),
-	"team_suspension": (
-		"Team suspended",
-		"Your team has been suspended due to billing issues.",
-		"Error",
-		"billing:view",
-		None,
-		None,
-	),
-}
-
-
-def _ensure_event_type(slug: str):
-	"""Create the Event Type row if it doesn't already exist."""
-	spec = _BILLING_EVENT_TYPES.get(slug)
-	if not spec:
-		return
-	title, body, severity, cap, label, route = spec
-	engine.ensure_event_type(
-		slug,
-		category="Billing",
-		severity=severity,
-		required_cap=cap,
-		in_app_title=title,
-		in_app_body=body,
-		action_label=label,
-		action_route=route,
-	)
-
 
 def _render_log_body(slug: str, ref: str | None, msg: str | None) -> str:
 	"""Render the billing log body from the Event Type's in_app_body template."""
@@ -177,7 +57,6 @@ def notify(
 	# Pascal Case (e.g. "Payment Success" → "payment_success"). Hyphens in
 	# display names ("Pre-debit Notice") map to underscores too.
 	slug = event_type.lower().replace(" ", "_").replace("-", "_")
-	_ensure_event_type(slug)
 
 	result = engine.dispatch(
 		team,
@@ -190,20 +69,25 @@ def notify(
 
 	body = _render_log_body(slug, ref, msg)
 	created = result.get("created", False)
+	queued = result.get("emails_queued", 0)
+	failed = result.get("email_failed", 0)
+	status = "Failed" if failed else "Queued" if queued else "Suppressed"
 	log = frappe.get_doc(
 		{
 			"doctype": "Billing Notification Log",
 			"team": team,
 			"event_type": event_type,
 			"channel": "email",
-			"status": "Sent",
+			"status": status,
 			"subject": result.get("title") or event_type,
 			"message": message or body,
 			"reference_doctype": reference_doctype,
 			"reference_name": ref,
-			"sent_at": frappe.utils.now_datetime(),
+			"queued_at": frappe.utils.now_datetime() if queued else None,
 		}
-	).insert(ignore_permissions=True)
+	)
+	# This internal audit row records the engine result on behalf of the billing operation.
+	log.insert(ignore_permissions=True)
 
 	if reference_doctype and ref:
 		try:
@@ -212,6 +96,10 @@ def notify(
 				message or body,
 			)
 		except Exception:
-			pass
+			frappe.log_error(
+				title="Notification audit comment failed",
+				reference_doctype=reference_doctype,
+				reference_name=ref,
+			)
 
-	return {"sent": created, "log": log.name}
+	return {"notified": created, "email_status": status, "log": log.name}

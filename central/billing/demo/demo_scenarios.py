@@ -335,16 +335,6 @@ def _seed_notification_feed(slug_to_team: dict):
 	# Resize Failed + Cluster Degraded — the same writer the real hooks use.
 	acme = slug_to_team.get("acme-corp")
 	if acme:
-		engine.ensure_event_type(
-			"resize_failed",
-			category="Server",
-			severity="Error",
-			required_cap="server:view",
-			in_app_title="Resize failed: {{ reference_name }}",
-			in_app_body="Server resize failed for {{ reference_name }}: {{ message }}",
-			action_label="View server",
-			action_route="/servers",
-		)
 		engine.dispatch(
 			acme,
 			"resize_failed",
@@ -353,16 +343,6 @@ def _seed_notification_feed(slug_to_team: dict):
 		)
 	umbrella = slug_to_team.get("umbrella")
 	if umbrella:
-		engine.ensure_event_type(
-			"cluster_degraded",
-			category="Server",
-			severity="Warning",
-			required_cap="server:view",
-			in_app_title="Region unavailable: {{ reference_name }}",
-			in_app_body="Region {{ reference_name }}: {{ message }}",
-			action_label="View servers",
-			action_route="/servers",
-		)
 		engine.dispatch(
 			umbrella,
 			"cluster_degraded",

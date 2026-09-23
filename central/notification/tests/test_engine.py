@@ -18,7 +18,6 @@ _FIXTURE_FIELDS = [
 	"severity",
 	"required_cap",
 	"direct_recipients",
-	"email_template",
 	"in_app_title",
 	"in_app_body",
 	"action_label",
@@ -97,6 +96,32 @@ class EngineTestBase(IntegrationTestCase):
 
 
 class TestDispatchCreatesFeedEntry(EngineTestBase):
+	def test_resource_event_is_queued_after_commit_and_deduplicated(self):
+		from central.notification.engine import dispatch, queue_event
+
+		with patch("central.notification.engine.frappe.enqueue") as enqueue:
+			queue_event(
+				TEAM,
+				"backup_failure",
+				reference_doctype="Site",
+				reference_name="my-site",
+			)
+
+		enqueue.assert_called_once_with(
+			dispatch,
+			team=TEAM,
+			event_type="backup_failure",
+			message=None,
+			context=None,
+			reference_doctype="Site",
+			reference_name="my-site",
+			affected_user=None,
+			queue="short",
+			enqueue_after_commit=True,
+			job_id="notification:backup_failure:my-site",
+			deduplicate=True,
+		)
+
 	def test_dispatch_creates_team_notification_with_required_cap(self):
 		"""dispatch() writes a Team Notification whose required_cap matches the Event Type registry."""
 		self._ensure_event_type("backup_failure")
@@ -478,6 +503,15 @@ class TestSaveUserPreferences(EngineTestBase):
 		self.assertEqual(len(out["preferences"]), 1)
 		self.assertEqual(out["preferences"][0]["category"], "Billing")
 
+	def test_rejects_an_unsupported_category(self):
+		from central.notification.api import save_user_preferences
+
+		with self.assertRaises(frappe.ValidationError):
+			save_user_preferences(
+				team=TEAM,
+				preferences=[{"category": "Other", "email_enabled": 1, "in_app_enabled": 1}],
+			)
+
 
 class TestCapabilityFilteredList(EngineTestBase):
 	def setUp(self):
@@ -761,7 +795,7 @@ class TestDirectRecipientsAffectedUser(EngineTestBase):
 		# Assert on the dispatch's own accounting, not the global sendmail mock: Frappe
 		# core Notification fixtures can call frappe.sendmail during the same request.
 		self.assertEqual(result["email_attempted"], 0)
-		self.assertEqual(result["emails_sent"], 0)
+		self.assertEqual(result["emails_queued"], 0)
 
 	@patch("central.notification.engine.frappe.sendmail")
 	def test_affected_user_bypasses_capability(self, mock_sendmail):

@@ -2,6 +2,8 @@
 # For license information, please see license.txt
 """Notification suite — sole sender (issue #20)."""
 
+from unittest.mock import patch
+
 import frappe
 
 from central.billing.payments import settlement
@@ -37,9 +39,9 @@ class NotificationTestBase(IntegrationTestCase):
 class TestNotify(NotificationTestBase):
 	def test_default_sends_and_logs(self):
 		out = notifications.notify(TEAM, "Payment Success", context={"invoice": "INV-1"})
-		self.assertTrue(out["sent"])
+		self.assertTrue(out["notified"])
 		logs = self._logs("Payment Success")
-		self.assertEqual(logs[0]["status"], "Sent")
+		self.assertEqual(logs[0]["status"], "Queued")
 		self.assertIn("INV-1", logs[0]["message"])
 
 	def test_template_renders_with_context(self):
@@ -54,9 +56,29 @@ class TestNotify(NotificationTestBase):
 
 	def test_always_sends_and_logs(self):
 		out = notifications.notify(TEAM, "Payment Retry", context={"invoice": "INV-3", "reason": "x"})
-		self.assertTrue(out["sent"])
+		self.assertTrue(out["notified"])
 		log = self._logs("Payment Retry")[0]
-		self.assertEqual(log["status"], "Sent")
+		self.assertEqual(log["status"], "Queued")
+
+	def test_email_log_records_queued_instead_of_sent(self):
+		with patch(
+			"central.notification.engine._fan_out_emails",
+			return_value={"queued": 1, "attempted": 1, "failed": 0},
+		):
+			out = notifications.notify(TEAM, "Payment Success")
+
+		self.assertEqual(out["email_status"], "Queued")
+		self.assertEqual(self._logs("Payment Success")[0]["status"], "Queued")
+
+	def test_email_log_records_failed_queueing(self):
+		with patch(
+			"central.notification.engine._fan_out_emails",
+			return_value={"queued": 0, "attempted": 1, "failed": 1},
+		):
+			out = notifications.notify(TEAM, "Payment Failure")
+
+		self.assertEqual(out["email_status"], "Failed")
+		self.assertEqual(self._logs("Payment Failure")[0]["status"], "Failed")
 
 
 class TestWiredEvents(NotificationTestBase):

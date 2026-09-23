@@ -102,7 +102,7 @@ export interface NextPayment {
 }
 
 export interface PredebitNotice {
-	sent_at: string
+	queued_at: string
 	invoice: string | null
 	subject: string | null
 	status: string | null

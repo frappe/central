@@ -45,13 +45,18 @@ def create_notification(
 	team (no content), so it never leaks across sockets; the console refetches the
 	feed for the active team when it fires.
 	"""
+	if category not in CATEGORIES:
+		frappe.throw(frappe._("Unsupported notification category {0}.").format(frappe.bold(category)))
+	if severity not in SEVERITIES:
+		frappe.throw(frappe._("Unsupported notification severity {0}.").format(frappe.bold(severity)))
+
 	doc = frappe.get_doc(
 		{
 			"doctype": "Team Notification",
 			"team": team,
-			"category": category if category in CATEGORIES else "Billing",
+			"category": category,
 			"event_type": event_type,
-			"severity": severity if severity in SEVERITIES else "Info",
+			"severity": severity,
 			"required_cap": required_cap,
 			"title": title,
 			"message": message,
@@ -61,7 +66,9 @@ def create_notification(
 			"action_route": action_route,
 			"is_read": 0,
 		}
-	).insert(ignore_permissions=True)
+	)
+	# Team Notification is an internal delivery record and grants no customer create permission.
+	doc.insert(ignore_permissions=True)
 
 	if publish:
 		from central.notification.engine import publish_team_nudge
@@ -132,6 +139,22 @@ def unread_count(team: str, *, user: str | None = None) -> int:
 		.where(Criterion.all(_visible_conditions(tn, team, user, None)))
 		.where(nr.name.isnull())
 	).run()[0][0]
+
+
+def unread_names(team: str, user: str, *, limit: int) -> list[str]:
+	"""Return one bounded batch of visible unread notification names."""
+	tn = frappe.qb.DocType("Team Notification")
+	nr = frappe.qb.DocType("Notification Read")
+	return (
+		frappe.qb.from_(tn)
+		.left_join(nr)
+		.on((nr.notification == tn.name) & (nr.user == user))
+		.select(tn.name)
+		.where(Criterion.all(_visible_conditions(tn, team, user, None)))
+		.where(nr.name.isnull())
+		.orderby(tn.creation, order=Order.desc)
+		.limit(limit)
+	).run(pluck=True)
 
 
 def list_notifications(
