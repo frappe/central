@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { Skeleton } from 'frappe-ui'
+import ServerSnapshotsCardSkeleton from '@/components/snapshots/ServerSnapshotsCardSkeleton.vue'
 </script>
 
 <template>
@@ -46,5 +47,7 @@ import { Skeleton } from 'frappe-ui'
 				</div>
 			</section>
 		</div>
+
+		<ServerSnapshotsCardSkeleton />
 	</div>
 </template>
