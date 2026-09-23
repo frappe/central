@@ -150,15 +150,15 @@ def eligible_plans(
 	passes `snapshot` instead of an offering and image."""
 	from math import ceil
 
-	from central.billing.api.dashboard.catalog import get_eligible_plans
 	from central.billing.catalog.composition import DISK, composition_quantities
+	from central.billing.catalog.server_plans import get_server_plans
 
 	image = (
 		snapshot_image(team, cluster, snapshot)
 		if snapshot
 		else selected_image(team, cluster, offering, image_id)
 	)
-	catalog = get_eligible_plans(cluster=cluster, team=team)
+	catalog = get_server_plans(team, cluster=cluster)
 	minimum_disk = image["rootfs_size_mib"]
 	groups = {}
 	for name, plans in catalog["plans"].items():

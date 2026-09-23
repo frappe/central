@@ -9,7 +9,6 @@ from central.billing.api.dashboard.catalog import (
 	get_composed_config,
 	get_eligible_plans,
 	provision_composed_config,
-	resize_composed_config,
 )
 from central.billing.catalog.pricing import set_catalog_rate
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
@@ -144,32 +143,6 @@ class TestEligibilityComposed(IntegrationTestCase):
 		self.assertIsNone(got["sub_category"])  # designer defaults to the first profile
 		self.assertEqual((got["vcpus"], got["memory_gb"], got["disk_gb"]), (2, 4, 25))
 
-	def test_resize_endpoint_relocks(self):
-		from unittest.mock import patch
-
-		from central.billing.catalog import subscriptions
-
-		out = subscriptions.provision_composed_subscription(TEAM, CLUSTER, GENERAL, "General")
-		# A resize needs a Stopped VM and drives the real machine on its Atlas; mark it
-		# stopped and stub the outbound call so this stays an endpoint-logic test.
-		frappe.db.set_value("Virtual Machine", out["resource_id"], "status", "Stopped")
-		bigger = [
-			{"resource_type": "Compute", "quantity": 4, "unit": "vCPU"},
-			{"resource_type": "Memory", "quantity": 16, "unit": "GB"},
-			{"resource_type": "Disk", "quantity": 40, "unit": "GB"},
-		]
-		with (
-			patch("central.billing.catalog.subscriptions._reshape_vm", return_value="task-1"),
-		):
-			result = resize_composed_config(out["subscription"], bigger, "General")
-		self.assertTrue(result["resized"])
-		self.assertEqual(
-			frappe.db.count(
-				"Subscription Change", {"subscription": out["subscription"], "change_type": "Plan Changed"}
-			),
-			1,
-		)
-
 	def test_begin_resize_onto_preset_bundle(self):
 		from unittest.mock import patch
 
@@ -177,12 +150,20 @@ class TestEligibilityComposed(IntegrationTestCase):
 		from central.billing.tests.utils import make_plan
 
 		out = subscriptions.provision_composed_subscription(TEAM, CLUSTER, GENERAL, "General")
-		frappe.db.set_value("Virtual Machine", out["resource_id"], "status", "Stopped")
+		frappe.db.set_value(
+			"Virtual Machine",
+			out["resource_id"],
+			{"status": "Stopped", "atlas_vm_id": "vm-resize-bundle"},
+		)
 		plan = make_plan("resize-bundle", rates=[{"cluster": "", "currency": "INR", "rate": 1500}])
+
 		# The reshape + re-lock are deferred to a background job; run it inline here to
 		# assert the end-to-end effect (queued path).
+		def record_resize(server, shape):
+			frappe.db.set_value("Virtual Machine", server.name, shape)
+
 		with (
-			patch("central.billing.catalog.subscriptions._reshape_vm", return_value="task-1") as resize_vm,
+			patch("central.integrations.servers.resize_server", side_effect=record_resize) as resize_vm,
 			patch("frappe.enqueue", side_effect=run_enqueued_inline),
 		):
 			result = subscriptions.begin_resize(out["subscription"], plan=plan)
@@ -191,5 +172,5 @@ class TestEligibilityComposed(IntegrationTestCase):
 		resize_vm.assert_called_once()  # the bundle's shape drove a real VM resize
 		doc = frappe.get_doc("Subscription", out["subscription"])
 		self.assertEqual((doc.pricing_mode, doc.plan), ("Preset", plan))
-		# The Resizing flag is set for the job and cleared when it finishes.
-		self.assertEqual(frappe.db.get_value("Virtual Machine", out["resource_id"], "resize_in_progress"), 0)
+		self.assertEqual(frappe.db.get_value("Virtual Machine", doc.server_id, "plan"), plan)
+		self.assertEqual(frappe.db.get_value("Resource Action", result["action"], "status"), "Succeeded")

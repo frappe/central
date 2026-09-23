@@ -13,6 +13,21 @@ from frappe import _
 
 from central.billing import authz
 from central.billing.catalog.subscriptions import team_active_segments
+from central.billing.doctype.billing_profile.billing_profile import (
+	get_missing_field_labels as _missing_profile_labels,
+)
+from central.billing.doctype.billing_profile.billing_profile import (
+	get_missing_fields as _missing_profile_fields,
+)
+from central.billing.doctype.billing_profile.billing_profile import (
+	get_team_currency as _team_currency,
+)
+from central.billing.doctype.billing_profile.billing_profile import (
+	is_complete as _profile_complete,
+)
+from central.billing.doctype.billing_profile.billing_profile import (
+	require_billing_profile,
+)
 
 # Tier caps (max_spend) are stored in INR; convert to the team's billing currency
 # so a USD team sees a coherent cap-vs-spend comparison.
@@ -75,39 +90,6 @@ def _team_clusters(team: str) -> list[str]:
 	return sorted({s.cluster for s in team_active_segments(team) if s.cluster})
 
 
-def _team_currency(team: str) -> str:
-	"""A team bills in a single currency: the one set on its Billing Profile.
-
-	Falls back to an open-segment currency (legacy teams whose profile predates the
-	currency field) then INR, so reads never break before a profile exists."""
-	seg_currency = next((s.currency for s in team_active_segments(team) if s.currency), None)
-	return frappe.db.get_value("Billing Profile", team, "currency") or seg_currency or "INR"
-
-
-# A team must complete its billing profile — currency + legal name + a billing
-# address — before any money moves (top-up, buy credits, add a payment method).
-# Currency is the load-bearing field: wallet, payment methods and invoices are
-# all denominated in it, so it must be chosen first and then held fixed.
-#
-# State and pincode are deliberately NOT required: they're irrelevant for foreign
-# customers, and for India the state is only enforced when a GSTIN is entered
-# (see BillingProfile.validate_india_state).
-_REQUIRED_PROFILE_FIELDS = (
-	"currency",
-	"legal_name",
-	"address_line1",
-	"city",
-	"country",
-)
-_PROFILE_FIELD_LABELS = {
-	"currency": "currency",
-	"legal_name": "legal name",
-	"address_line1": "address line 1",
-	"city": "city",
-	"country": "country",
-}
-
-
 def currency_for_country(country: str | None) -> str:
 	"""Billing currency follows the customer's country: India bills in INR, every
 	other country in USD. Derived, not chosen — so a customer can't pick a currency
@@ -115,39 +97,6 @@ def currency_for_country(country: str | None) -> str:
 	from central.billing.india_gst import INDIA
 
 	return "INR" if (country or "").strip() == INDIA else "USD"
-
-
-def _missing_profile_fields(team: str) -> list[str]:
-	"""Required billing-profile fields the team has not filled in yet."""
-	if not frappe.db.exists("Billing Profile", team):
-		return list(_REQUIRED_PROFILE_FIELDS)
-	doc = frappe.get_doc("Billing Profile", team)
-	return [f for f in _REQUIRED_PROFILE_FIELDS if not str(doc.get(f) or "").strip()]
-
-
-def _profile_complete(team: str) -> bool:
-	return not _missing_profile_fields(team)
-
-
-def _missing_profile_labels(team: str) -> list[str]:
-	return [_PROFILE_FIELD_LABELS.get(field, field) for field in _missing_profile_fields(team)]
-
-
-def require_billing_profile(team: str, action: str):
-	"""Refuse `action` until the team's billing profile is complete.
-
-	Server-side backstop for anything that needs billing set up first (money
-	movement, provisioning a billable resource). The dashboard also blocks these;
-	this guarantees it can't be bypassed. `action` completes the sentence
-	"… before you can {action}"."""
-	missing = _missing_profile_labels(team)
-	if missing:
-		frappe.throw(
-			_("Complete your billing profile before you can {0}. Missing: {1}.").format(
-				action, ", ".join(missing)
-			),
-			frappe.ValidationError,
-		)
 
 
 def _require_billing_setup(team: str):

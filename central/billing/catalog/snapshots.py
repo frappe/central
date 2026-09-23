@@ -1,9 +1,9 @@
 import frappe
 from frappe import _
 
-from central.billing.api.dashboard._shared import _team_currency
 from central.billing.catalog.pricing import resolve_component_rate
 from central.billing.catalog.subscriptions import cancel_subscription
+from central.billing.doctype.billing_profile.billing_profile import get_team_currency
 
 SNAPSHOT_RESOURCE = "Snapshot"
 
@@ -11,7 +11,7 @@ SNAPSHOT_RESOURCE = "Snapshot"
 def get_snapshot_rate(team: str, region: str) -> tuple[float | None, str]:
 	"""The team's price per GB-month for snapshot storage in `region`, and its currency.
 	The rate is the `Snapshot` Resource Type's Catalog Rate, so an operator changes it there."""
-	currency = _team_currency(team)
+	currency = get_team_currency(team)
 	return resolve_component_rate(SNAPSHOT_RESOURCE, currency, region), currency
 
 
