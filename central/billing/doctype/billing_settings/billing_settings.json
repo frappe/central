@@ -24,6 +24,9 @@
   "projection_budget_seconds",
   "section_break_retention",
   "payment_log_retention_days",
+  "section_break_snapshots",
+  "daily_snapshot_retention_hours",
+  "free_snapshots_per_server",
   "section_break_routing",
   "enable_gateway_fallback",
   "section_break_tax",
@@ -153,6 +156,25 @@
    "non_negative": 1
   },
   {
+   "fieldname": "section_break_snapshots",
+   "fieldtype": "Section Break",
+   "label": "Snapshots"
+  },
+  {
+   "default": "48",
+   "fieldname": "daily_snapshot_retention_hours",
+   "fieldtype": "Int",
+   "label": "Daily Snapshot Retention (Hours)",
+   "description": "How long Central keeps a daily snapshot before it deletes it. A customer can keep one for longer."
+  },
+  {
+   "default": "2",
+   "fieldname": "free_snapshots_per_server",
+   "fieldtype": "Int",
+   "label": "Free Snapshots per Server",
+   "description": "The newest snapshots of each server, up to this count, are free. Each older one costs the Snapshot rate in Catalog Rate, per GB per month."
+  },
+  {
    "fieldname": "section_break_routing",
    "fieldtype": "Section Break",
    "label": "Gateway Routing"
@@ -180,7 +202,7 @@
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-08-03 00:00:00.000000",
+ "modified": "2026-09-23 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Billing Settings",

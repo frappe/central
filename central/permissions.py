@@ -125,6 +125,22 @@ def site_domain_has_permission(doc, user: str | None = None, ptype: str | None =
 	return _team_field_has_permission(doc, ("server:view",), (), user, ptype)
 
 
+def vm_snapshot_query_conditions(user: str | None = None) -> str:
+	"""1. A System Manager sees every snapshot.
+	2. A user sees the snapshots of each team where the user holds server:view.
+	3. A user without such a team sees no snapshot."""
+	return _team_field_query_conditions("VM Snapshot", "server:view", user)
+
+
+def vm_snapshot_has_permission(doc, user: str | None = None, ptype: str | None = None, **kwargs) -> bool:
+	"""1. A System Manager has every permission.
+	2. A snapshot without a team is denied.
+	3. Read needs server:view on the snapshot's team.
+	4. Create, write, and delete are denied. Customers change snapshots through the API,
+	   which checks server:snapshot."""
+	return _team_field_has_permission(doc, ("server:view",), (), user, ptype)
+
+
 def iam_permission_probe_query_conditions(user: str | None = None) -> str:
 	user = user or frappe.session.user
 	if user_has_operator_bypass(user):

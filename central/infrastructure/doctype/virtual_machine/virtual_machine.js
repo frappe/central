@@ -53,6 +53,21 @@ frappe.ui.form.on("Virtual Machine", {
 			return;
 		}
 
+		frm.add_custom_button(
+			__("Take snapshot"),
+			() =>
+				frappe
+					.call({
+						method: "central.api.snapshots.take_snapshot",
+						args: { team: frm.doc.team, resource_id: frm.doc.resource_id },
+						freeze: true,
+					})
+					.then((r) => {
+						if (r.exc) return;
+						frappe.show_alert({ message: __("Snapshot started"), indicator: "blue" }, 5);
+					}),
+			__("Server"),
+		);
 		frm.add_custom_button(__("Start"), () => run(__("Start"), "start_server", "green"), __("Server"));
 		frm.add_custom_button(__("Stop"), () => run(__("Stop"), "stop_server", "orange"), __("Server"));
 		if (frm.doc.status === "Running") {

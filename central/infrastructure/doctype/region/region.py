@@ -31,6 +31,7 @@ class Region(AtlasConnectionMixin, CargoConnectionMixin, Document):
 		from frappe.types import DF
 
 		atlas_region_id: DF.Data | None
+		automatic_snapshots: DF.Check
 		base_url: DF.Data | None
 		cargo_base_url: DF.Data | None
 		cargo_registered_at: DF.Datetime | None

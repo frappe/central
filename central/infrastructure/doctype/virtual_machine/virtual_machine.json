@@ -20,6 +20,7 @@
   "gateway_url",
   "admin_domain_task",
   "resize_in_progress",
+  "skip_automatic_snapshot",
   "atlas_vm_id",
   "image_offering",
   "atlas_image_id",
@@ -144,6 +145,13 @@
    "read_only": 1
   },
   {
+   "default": "0",
+   "fieldname": "skip_automatic_snapshot",
+   "fieldtype": "Check",
+   "label": "Skip Automatic Snapshot",
+   "description": "The customer turned off the daily free snapshot for this server."
+  },
+  {
    "description": "VM identifier within the linked Atlas region.",
    "fieldname": "atlas_vm_id",
    "fieldtype": "Data",
@@ -190,9 +198,13 @@
   {
    "link_doctype": "Site Domain",
    "link_fieldname": "server"
+  },
+  {
+   "link_doctype": "VM Snapshot",
+   "link_fieldname": "server"
   }
  ],
- "modified": "2026-09-17 12:00:00.000000",
+ "modified": "2026-09-23 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Infrastructure",
  "name": "Virtual Machine",

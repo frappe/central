@@ -131,6 +131,35 @@ def terminate_after_days() -> int:
 	return frappe.utils.cint(_settings().terminate_after_days)
 
 
+# Starting points for the snapshot settings; an operator changes them in Billing Settings.
+SNAPSHOT_DEFAULTS = {"daily_snapshot_retention_hours": 48, "free_snapshots_per_server": 2}
+
+
+def ensure_snapshot_settings() -> None:
+	"""Seed each snapshot setting that was never stored. A saved Single does not take a
+	new field's default, and a stored value, even 0, is the operator's and is kept."""
+	singles = frappe.qb.DocType("Singles")
+	stored = (
+		frappe.qb.from_(singles)
+		.select(singles.field)
+		.where((singles.doctype == SETTINGS) & singles.field.isin(list(SNAPSHOT_DEFAULTS)))
+		.run(pluck=True)
+	)
+	for field, value in SNAPSHOT_DEFAULTS.items():
+		if field not in stored:
+			frappe.db.set_single_value(SETTINGS, field, value)
+
+
+def daily_snapshot_retention_hours() -> int:
+	"""How long a daily snapshot is kept before Central deletes it."""
+	return frappe.utils.cint(_settings().daily_snapshot_retention_hours)
+
+
+def free_snapshots_per_server() -> int:
+	"""How many of a server's newest snapshots are free. Older ones are billed by size."""
+	return frappe.utils.cint(_settings().free_snapshots_per_server)
+
+
 def payment_log_retention_days() -> int:
 	"""Rolling window (days) the gateway logs — Payment Attempt and Webhook Event —
 	are kept before daily pruning."""
