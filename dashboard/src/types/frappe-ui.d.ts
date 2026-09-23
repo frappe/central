@@ -204,6 +204,7 @@ export const SettingsPanel: Component
 export const SettingsRow: Component
 export const SettingsSidebar: Component
 export const Sidebar: Component
+export const SidebarCollapseToggle: Component
 export const SidebarHeader: Component
 export const SidebarItem: Component
 export const SidebarLabel: Component

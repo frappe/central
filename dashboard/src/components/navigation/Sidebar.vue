@@ -2,15 +2,15 @@
 import {
 	Avatar,
 	Dropdown,
-	formatShortcutLabel,
 	KeyboardShortcut,
 	Sidebar,
+	SidebarCollapseToggle,
 	SidebarHeader,
 	SidebarItem,
 	SidebarLabel,
 	useShortcut,
 } from 'frappe-ui'
-import { onScopeDispose, ref, watch } from 'vue'
+import { ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import frappeCloudLogo from '@/assets/fc-logo.svg'
 import { useAppMenu } from '@/composables/useAppMenu'
@@ -56,7 +56,6 @@ useShortcut({
 		sidebarCollapsed.value = !sidebarCollapsed.value
 	},
 })
-const sidebarShortcut = formatShortcutLabel({ key: 'b', ctrl: true })
 // KeyboardShortcut's showPlus is not platform-aware. Mac reads as ⌘K;
 // Windows/Linux still need the plus so Ctrl+K doesn't run together.
 const showShortcutPlus = !isMac()
@@ -67,23 +66,6 @@ const collapsedSections = ref<Record<string, boolean>>({})
 const toggleSection = (label: string) => {
 	collapsedSections.value[label] = !collapsedSections.value[label]
 }
-
-// The collapse chevron follows the cursor down the sidebar's edge strip.
-// Coalesce mousemove to one update per frame — the ref only drives a CSS offset,
-// so more than one write per paint is wasted work.
-const edgeY = ref(60)
-let pendingEdgeY = 60
-let edgeRaf = 0
-const onEdgeMove = (event: MouseEvent): void => {
-	const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
-	pendingEdgeY = event.clientY - rect.top
-	if (edgeRaf) return
-	edgeRaf = requestAnimationFrame(() => {
-		edgeY.value = pendingEdgeY
-		edgeRaf = 0
-	})
-}
-onScopeDispose(() => cancelAnimationFrame(edgeRaf))
 </script>
 
 <template>
@@ -152,8 +134,13 @@ onScopeDispose(() => cancelAnimationFrame(edgeRaf))
 			</template>
 		</nav>
 
+		<!-- The framework's collapse row stays in one place; Ctrl/Cmd+B toggles it too. -->
+		<div v-if="!isMobile" class="mt-auto px-2">
+			<SidebarCollapseToggle />
+		</div>
+
 		<!-- user profile dropdown -->
-		<div class="mt-auto px-2 pb-2" v-if="!isMobile">
+		<div class="px-2 pb-2" v-if="!isMobile">
 			<Dropdown
 				:options="footerMenuItems"
 				side="top"
@@ -213,41 +200,4 @@ onScopeDispose(() => cancelAnimationFrame(edgeRaf))
 			</Dropdown>
 		</div>
 	</Sidebar>
-
-	<!-- collapse knob -->
-	<button
-		v-if="!isMobile"
-		class="sb-edge relative z-10 -mx-3 w-6 shrink-0 cursor-pointer"
-		:aria-label="
-			sidebarCollapsed
-				? `Expand sidebar (${sidebarShortcut})`
-				: `Collapse sidebar (${sidebarShortcut})`
-		"
-		@mousemove="onEdgeMove"
-		@focus="edgeY = 60"
-		@click="sidebarCollapsed = !sidebarCollapsed"
-	>
-		<span
-			class="sb-edge-knob pointer-events-none absolute left-1/2 top-0 grid size-6 place-items-center rounded-full border border-outline-gray-2 bg-surface-elevation-1 text-ink-gray-6 shadow-sm"
-			:style="{ transform: `translate(-50%, calc(${edgeY}px - 50%))` }"
-		>
-			<lucide-chevron-left
-				class="size-3.5"
-				:class='sidebarCollapsed? "rotate-180" : ""'
-			/>
-		</span>
-	</button>
 </template>
-
-<style scoped>
-/* The chevron knob is hidden until the edge is hovered or keyboard-focused;
-   only opacity fades — its vertical position tracks the cursor instantly. */
-.sb-edge-knob {
-	opacity: 0;
-	transition: opacity 150ms ease-out;
-}
-.sb-edge:hover .sb-edge-knob,
-.sb-edge:focus-visible .sb-edge-knob {
-	opacity: 1;
-}
-</style>
