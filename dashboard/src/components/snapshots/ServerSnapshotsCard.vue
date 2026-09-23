@@ -4,7 +4,6 @@ import { computed, ref } from 'vue'
 import { useSnapshots } from '@/composables/useSnapshots'
 import { getErrorMessage } from '@/lib/feedback'
 import { formatDate } from '@/lib/format'
-import { SNAPSHOT_TYPE_LABEL } from '@/lib/snapshots'
 
 interface ServerSnapshotsCardProps {
 	resourceId: string
@@ -53,51 +52,67 @@ defineExpose({ reload })
 
 <template>
 	<section class="rounded-7 border border-outline-gray-2 p-5">
-		<div class="mb-4 flex items-center justify-between gap-3">
+		<div class="mb-5 flex items-center justify-between gap-3">
 			<h3 class="text-base font-semibold text-ink-gray-9">Snapshots</h3>
-			<Button variant="ghost" label="View all" @click="emit('viewAll')" />
-		</div>
-
-		<p v-if="loading && !server" class="text-p-sm text-ink-gray-5">
-			Loading snapshots…
-		</p>
-		<p v-else-if="error" class="text-p-sm text-ink-red-7">{{ error }}</p>
-		<div v-else class="space-y-4">
-			<Alert v-if="mutationError" theme="red" :title="mutationError" />
-			<div class="flex items-start justify-between gap-4">
-				<div class="min-w-0">
-					<p class="text-sm text-ink-gray-9">Daily free snapshot</p>
-					<p class="text-p-sm text-ink-gray-5">
-						{{ server?.region_automatic
-								? `Kept ${dailyRetentionHours} hours, then deleted. The ${freePerServer} newest snapshots of a server are free.`
-								: 'This region does not take daily snapshots yet.' }}
-					</p>
-				</div>
-				<Switch
-					:model-value="!!server?.automatic"
-					:disabled="!canManage || saving || !server?.region_automatic"
-					label=""
-					aria-label="Daily free snapshot"
-					@update:model-value="toggle"
+			<div class="flex items-center gap-2">
+				<Button
+					v-if="canManage"
+					size="sm"
+					icon-left="lucide-camera"
+					label="Take snapshot"
+					@click="emit('take')"
+				/>
+				<Button
+					size="sm"
+					variant="ghost"
+					label="View all"
+					@click="emit('viewAll')"
 				/>
 			</div>
+		</div>
 
-			<p class="text-p-sm text-ink-gray-7">
-				<template v-if="latest">
-					Latest: {{ latest.title }} ·
-					{{ SNAPSHOT_TYPE_LABEL[latest.snapshot_type] }}
-					·
-					{{ formatDate(latest.creation) }}
-				</template>
-				<template v-else>No snapshot of this server yet.</template>
-			</p>
-
-			<Button
-				v-if="canManage"
-				icon-left="lucide-camera"
-				label="Take snapshot"
-				@click="emit('take')"
-			/>
+		<p v-if="loading && !server" class="text-sm text-ink-gray-5">
+			Loading snapshots…
+		</p>
+		<p v-else-if="error" class="text-sm text-ink-red-7">{{ error }}</p>
+		<div v-else class="space-y-3.5">
+			<Alert v-if="mutationError" theme="red" :title="mutationError" />
+			<dl class="space-y-3.5 text-sm">
+				<div class="flex items-center justify-between gap-4">
+					<dt class="text-ink-gray-5">Latest</dt>
+					<dd v-if="latest" class="truncate text-ink-gray-9">
+						{{ latest.title }}
+						· {{ formatDate(latest.creation) }}
+					</dd>
+					<dd v-else class="text-ink-gray-5">None yet</dd>
+				</div>
+				<div class="flex items-center justify-between gap-4">
+					<dt class="text-ink-gray-5">Free</dt>
+					<dd class="text-ink-gray-9">
+						The {{ freePerServer }} newest snapshots
+					</dd>
+				</div>
+				<!-- A region without daily snapshots has nothing to switch. -->
+				<div
+					v-if="server?.region_automatic"
+					class="flex items-center justify-between gap-4"
+				>
+					<dt class="text-ink-gray-5">
+						Daily snapshot
+						<span class="text-ink-gray-4"
+							>· kept {{ dailyRetentionHours }} hours</span
+						>
+					</dt>
+					<dd>
+						<Switch
+							:model-value="server.automatic"
+							:disabled="!canManage || saving"
+							aria-label="Daily snapshot"
+							@update:model-value="toggle"
+						/>
+					</dd>
+				</div>
+			</dl>
 		</div>
 	</section>
 </template>
