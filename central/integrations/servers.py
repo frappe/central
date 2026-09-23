@@ -20,7 +20,8 @@ from central.infrastructure.doctype.virtual_machine.virtual_machine import Virtu
 from central.integrations.atlas import AtlasClient
 
 CAPABILITY = {"start": "server:power", "stop": "server:power", "terminate": "server:terminate"}
-POWER_WAIT_SECONDS = 240
+# A resize may move the VM to another host, so the wait is generous enough to cover a migration.
+POWER_WAIT_SECONDS = 15 * 60
 POWER_POLL_SECONDS = 5
 COMMAND_TIMEOUT_SECONDS = 10 * 60
 
@@ -94,8 +95,10 @@ def observe_server(server: VirtualMachine) -> str:
 def resize_server(server: VirtualMachine, shape: dict) -> None:
 	"""Apply a new size on Atlas, then start the server.
 
-	Atlas changes CPU and memory only on a stopped VM, so a compute change stops it first.
-	Every call sets an absolute value, so repeating the resize is safe."""
+	A CPU or memory change needs a stopped VM and may move it to a host that fits (a
+	`migrating` state during the wait), so it stops the VM and sends CPU, memory and disk in
+	one resize. A disk-only grow is online, with no stop. Every call sets absolute values, so
+	repeating the resize is safe."""
 	client = _client(server)
 	remote = client.get_vm(server.atlas_vm_id)
 	compute, disk = remote.get("compute") or {}, remote.get("disk") or {}
@@ -104,14 +107,12 @@ def resize_server(server: VirtualMachine, shape: dict) -> None:
 	disk_mib = shape["disk_gigabytes"] * 1024
 
 	# A resized server has outgrown the hobby idle shutdown, so it stops sleeping for good.
-	# Atlas needs a stopped VM for CPU or memory, but not for the timeout on its own.
 	reshaping = (compute.get("cpu_millicores"), compute.get("memory_mib")) != (cpu_millicores, memory_mib)
 	if reshaping or compute.get("sleep_after_idle_seconds"):
 		if reshaping:
 			_wait_for_power_state(client, server.atlas_vm_id, "stop", "stopped")
-		client.update_compute(server.atlas_vm_id, cpu_millicores, memory_mib, sleep_after_idle_seconds=0)
-
-	if disk_mib > (disk.get("size_mib") or 0):
+		client.resize(server.atlas_vm_id, cpu_millicores, memory_mib, disk_mib)
+	elif disk_mib > (disk.get("size_mib") or 0):
 		client.update_disk(server.atlas_vm_id, disk_mib)
 
 	_wait_for_power_state(client, server.atlas_vm_id, "start", "running")
@@ -119,13 +120,18 @@ def resize_server(server: VirtualMachine, shape: dict) -> None:
 
 
 def _wait_for_power_state(client: AtlasClient, vm_id: str, action: str, state: str) -> None:
-	"""Request a power state when the VM is not in it, then wait until Atlas observes it."""
-	if client.get_vm(vm_id).get("current_state") == state:
-		return
-
-	client.vm_action(vm_id, action)
+	"""Wait until Atlas observes the VM in `state`, sending the power action once the VM is in
+	a stable state. A `migrating` or `pending` VM is left to settle first — Atlas may be moving
+	it to another host during a resize — and is never told to change power mid-transition."""
 	deadline = time.monotonic() + POWER_WAIT_SECONDS
-	while client.get_vm(vm_id).get("current_state") != state:
+	acted = False
+	while True:
+		current = client.get_vm(vm_id).get("current_state")
+		if current == state:
+			return
+		if not acted and current not in ("migrating", "pending"):
+			client.vm_action(vm_id, action)
+			acted = True
 		if time.monotonic() > deadline:
 			frappe.throw(
 				_("The server did not reach the {0} state in time.").format(state), AtlasConnectionError

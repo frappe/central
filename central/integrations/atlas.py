@@ -81,20 +81,30 @@ class AtlasClient:
 
 		return self._request("POST", f"{path}/actions/{action}")
 
-	def update_compute(
-		self, name: str, cpu_millicores: int, memory_mib: int, sleep_after_idle_seconds: int
+	def resize(
+		self,
+		name: str,
+		cpu_millicores: int,
+		memory_mib: int,
+		disk_mib: int,
+		sleep_after_idle_seconds: int = 0,
 	) -> dict:
-		"""Set CPU, memory and the idle shutdown delay. Atlas takes a CPU or memory change
-		only while the VM is stopped. Zero seconds turns idle shutdown off."""
+		"""Set CPU, memory and disk in one call. Atlas takes a CPU or memory change only on a
+		stopped VM, resizes it in place or moves it to a host that fits (reporting a `migrating`
+		state meanwhile), and never shrinks the disk. Zero seconds turns idle shutdown off,
+		since a resized server has outgrown the hobby sleep."""
 		payload = {
 			"cpu_millicores": cpu_millicores,
 			"memory_mib": memory_mib,
+			"disk_mib": disk_mib,
 			"sleep_after_idle_seconds": sleep_after_idle_seconds,
 		}
-		return self._request("PATCH", f"virtual-machines/{quote(name, safe='')}/compute", payload=payload)
+		return self._request(
+			"POST", f"virtual-machines/{quote(name, safe='')}/actions/resize", payload=payload
+		)
 
 	def update_disk(self, name: str, disk_mib: int) -> dict:
-		"""Grow the disk. Atlas refuses a smaller size."""
+		"""Grow the disk online, without stopping the VM. Atlas refuses a smaller size."""
 		return self._request(
 			"PATCH", f"virtual-machines/{quote(name, safe='')}/disk", payload={"disk_mib": disk_mib}
 		)
@@ -270,6 +280,15 @@ class AtlasClient:
 		if parsed.scheme != "https" and not local_http:
 			frappe.throw(_("Atlas requires HTTPS except for local development hosts."), AtlasConnectionError)
 
+	def _error_message(self, response: requests.Response) -> str | None:
+		"""The `error.message` an Atlas error body carries, escaped and bounded, or None."""
+		try:
+			error = response.json().get("error", {})
+		except (ValueError, AttributeError):
+			return None
+		message = error.get("message") if isinstance(error, dict) else None
+		return frappe.utils.escape_html(message[:1000]) if isinstance(message, str) else None
+
 	def _read_response(self, response: requests.Response, method: str = "GET") -> dict:
 		if response.status_code in (401, 403):
 			frappe.throw(
@@ -279,6 +298,13 @@ class AtlasClient:
 
 		if response.status_code == 404:
 			raise AtlasResourceGone(_("The regional resource was not found."))
+
+		# A 503 that names why (for example out_of_capacity when no host can hold the new shape)
+		# is a definite refusal, not an uncertain outcome, so surface its reason to the customer.
+		if response.status_code == 503:
+			reason = self._error_message(response)
+			if reason:
+				raise AtlasRejected(reason)
 
 		if method != "GET" and response.status_code >= 500:
 			raise AtlasRequestUncertain(_("Atlas could not confirm the operation result."))
@@ -291,15 +317,10 @@ class AtlasClient:
 			)
 			if method != "GET" and response.status_code < 400:
 				error_type = AtlasRequestUncertain
-			message = _("Atlas returned HTTP {0} for the regional request.").format(response.status_code)
-			if response.status_code in (400, 409, 422):
-				try:
-					error = response.json().get("error", {})
-				except ValueError, AttributeError:
-					error = {}
-				if isinstance(error, dict) and isinstance(error.get("message"), str):
-					message = frappe.utils.escape_html(error["message"][:1000])
-			raise error_type(message)
+			raise error_type(
+				self._error_message(response)
+				or _("Atlas returned HTTP {0} for the regional request.").format(response.status_code)
+			)
 
 		if response.status_code == 204:
 			return {}

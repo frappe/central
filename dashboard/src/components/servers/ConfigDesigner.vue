@@ -31,6 +31,8 @@ const props = defineProps<{
 	capacity?: Capacity | null
 	// Pre-fill the controls with a running config's shape (resize, #82/#84).
 	initial?: ComposedConfig | null
+	/** Resize keeps disk on its own control. This slider then only moves CPU. */
+	hideDisk?: boolean
 }>()
 
 // The chosen config (null while invalid / over headroom) — the parent provisions it.
@@ -274,7 +276,7 @@ function indexOf(ladder: number[], value: number): number {
 			</div>
 
 			<!-- Storage: independent ladder slider with rung-by-rung ± steppers. -->
-			<div class="flex items-center gap-4">
+			<div v-if="!hideDisk" class="flex items-center gap-4">
 				<span class="w-20 shrink-0 text-p-sm text-ink-gray-7">Storage</span>
 				<div class="min-w-0 flex-1">
 					<Slider

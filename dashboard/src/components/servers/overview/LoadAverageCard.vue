@@ -43,12 +43,13 @@ const seriesConfig = Object.fromEntries(
 				:series-config="seriesConfig"
 			/>
 		</div>
-		<p v-else class="grid h-44 place-items-center text-center text-sm text-ink-gray-5">
-			{{
-				available
+		<p
+			v-else
+			class="grid h-44 place-items-center text-center text-sm text-ink-gray-5"
+		>
+			{{ available
 					? 'Monitoring has not collected enough history yet.'
-					: 'Live metrics are unavailable for this server right now.'
-			}}
+					: 'Live metrics are unavailable for this server right now.' }}
 		</p>
 	</section>
 </template>

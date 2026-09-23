@@ -89,6 +89,27 @@ class TestResizeComposed(IntegrationTestCase):
 			TEAM, CLUSTER, includes or SMALL, "General", start_date=start_date
 		)["subscription"]
 
+	def test_preset_plus_disk_rate_adds_only_the_extra_disk(self):
+		"""Growing a preset's disk keeps the bundle price and adds the disk rate for the GB
+		beyond the plan's own disk, instead of dropping to the cheaper a-la-carte total."""
+		plan = make_plan(
+			"resize-preset-rate",
+			rates=[{"cluster": "", "currency": "INR", "rate": 5000}],
+			includes=[
+				{"resource_type": "Compute", "quantity": 2, "unit": "vCPU"},
+				{"resource_type": "Memory", "quantity": 8, "unit": "GB"},
+				{"resource_type": "Disk", "quantity": 40, "unit": "GB"},
+			],
+			sub_category="General",
+		)
+		sub = subscriptions.provision_subscription(TEAM, CLUSTER, plan)["subscription"]
+		doc = frappe.get_doc("Subscription", sub)
+
+		# 5000 bundle + (80 - 40) GB * 10/GB = 5400 (the a-la-carte total would be only 3800).
+		self.assertEqual(subscriptions._preset_plus_disk_rate(doc, plan, 80), 5400)
+		# No growth beyond the plan's own disk keeps the plain bundle price.
+		self.assertEqual(subscriptions._preset_plus_disk_rate(doc, plan, 40), 5000)
+
 	def test_resize_relocks_at_current_rates_old_row_untouched(self):
 		sub = self._provision()
 		self._ready(sub)

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Badge } from 'frappe-ui'
 import { computed } from 'vue'
 import ConfigDesigner from '@/components/servers/ConfigDesigner.vue'
 import { configSpecs, estimateConfig } from '@/lib/composed'
@@ -26,6 +27,12 @@ const props = defineProps<{
 	capacity?: Capacity | null
 	// Pre-fill the custom designer with a running config's shape (resize, #82/#84).
 	initial?: ComposedConfig | null
+	/** Resize: the rows are CPU and memory. Disk is chosen separately. */
+	omitDisk?: boolean
+	/** Plan name to mark as the size running now. */
+	currentPlan?: string | null
+	/** Plans with less disk than this cannot be selected. Disk cannot shrink. */
+	minDisk?: number
 }>()
 
 const selectedPlan = defineModel<string | null>('selectedPlan', {
@@ -48,11 +55,12 @@ const customEstimate = computed<number | null>(() =>
 		? estimateConfig(composedConfig.value, props.rateCard)
 		: null,
 )
-const customSpec = computed<string>(() =>
-	composedConfig.value
-		? configSpecs(composedConfig.value, props.rateCard.Disk?.unit)
-		: '',
-)
+const customSpec = computed<string>(() => {
+	const config = composedConfig.value
+	if (!config) return ''
+	if (!props.omitDisk) return configSpecs(config, props.rateCard.Disk?.unit)
+	return `${config.vcpus} vCPU · ${config.memory_gb} GB RAM`
+})
 const customPrice = computed<string>(() =>
 	customEstimate.value !== null
 		? `${money(customEstimate.value, props.currency)} / mo`
@@ -61,6 +69,15 @@ const customPrice = computed<string>(() =>
 
 // Bundle-discount note: shown only while the designed shape sits exactly on one of
 // this profile's presets (which may price it below its component sum).
+function bundledDisk(plan: Plan): number {
+	return (
+		plan.includes.find((inc) => inc.resource_type === 'Disk')?.quantity ?? 0
+	)
+}
+function diskTooSmall(plan: Plan): boolean {
+	return props.minDisk != null && bundledDisk(plan) < props.minDisk
+}
+
 const matchingPreset = computed<Plan | null>(() => {
 	const c = composedConfig.value
 	if (!c || !isCustom.value) return null
@@ -83,22 +100,24 @@ const matchingPreset = computed<Plan | null>(() => {
 		<label
 			v-for="plan in presets"
 			:key="plan.plan"
-			:class="
-				[
-					'flex cursor-pointer items-center gap-3 rounded-6 border px-3 py-2 text-sm',
-					'transition-colors',
-					'focus-within:border-outline-gray-4 focus-within:ring-1 focus-within:ring-outline-gray-4',
-					selectedPlan === plan.plan
-						? 'border-outline-gray-4 bg-surface-gray-1'
-						: 'border-outline-gray-2 hover:border-outline-gray-3',
-				]
-			"
+			:class="[
+				'flex items-center gap-3 rounded-6 border px-3 py-2.5 text-p-sm transition-colors',
+				diskTooSmall(plan)
+					? 'cursor-not-allowed border-outline-gray-2 opacity-50'
+					: [
+							'cursor-pointer focus-within:ring-1 focus-within:ring-outline-gray-4',
+							selectedPlan === plan.plan
+								? 'border-outline-gray-4 bg-surface-gray-1'
+								: 'border-outline-gray-2 hover:border-outline-gray-3',
+						],
+			]"
 		>
 			<input
 				v-model="selectedPlan"
 				type="radio"
 				:value="plan.plan"
 				class="peer sr-only"
+				:disabled="diskTooSmall(plan)"
 			/>
 			<span
 				aria-hidden="true"
@@ -106,13 +125,20 @@ const matchingPreset = computed<Plan | null>(() => {
 			/>
 			<!-- Title carries the size too (e.g. "Starter · 1 vCPU / 2 GB"); the specs
            already spell it out, so show just the tier name to avoid the echo. -->
-			<span class="shrink-0 font-medium text-ink-gray-9"
+			<span class="shrink-0 text-p-sm font-medium text-ink-gray-9"
 				>{{ plan.title.split(' · ')[0] }}</span
 			>
-			<span class="min-w-0 flex-1 truncate text-ink-gray-5"
-				>{{ planSpecs(plan) }}</span
+			<Badge
+				v-if="currentPlan && currentPlan === plan.plan"
+				label="Current"
+				theme="gray"
+				variant="subtle"
+				size="sm"
+			/>
+			<span class="min-w-0 flex-1 truncate text-p-sm text-ink-gray-6"
+				>{{ planSpecs(plan, { disk: !omitDisk }) }}</span
 			>
-			<span class="shrink-0 font-medium text-ink-gray-9"
+			<span class="shrink-0 text-p-sm font-medium text-ink-gray-9"
 				>{{ planPrice(plan) }}</span
 			>
 		</label>
@@ -120,17 +146,16 @@ const matchingPreset = computed<Plan | null>(() => {
 		<!-- Custom: a radio row that expands into the design slider for this profile. -->
 		<div
 			v-if="profile"
-			:class="
-				[
-					'rounded-6 border transition-colors',
-					'focus-within:border-outline-gray-4 focus-within:ring-1 focus-within:ring-outline-gray-4',
-					isCustom
-						? 'border-outline-gray-4 bg-surface-gray-1'
-						: 'border-outline-gray-2 hover:border-outline-gray-3',
-				]
-			"
+			:class="[
+				'rounded-6 border transition-colors focus-within:ring-1 focus-within:ring-outline-gray-4',
+				isCustom
+					? 'border-outline-gray-4 bg-surface-gray-1'
+					: 'border-outline-gray-2 hover:border-outline-gray-3',
+			]"
 		>
-			<label class="flex cursor-pointer items-center gap-3 px-3 py-2 text-sm">
+			<label
+				class="flex cursor-pointer items-center gap-3 px-3 py-2.5 text-p-sm"
+			>
 				<input
 					v-model="selectedPlan"
 					type="radio"
@@ -150,10 +175,17 @@ const matchingPreset = computed<Plan | null>(() => {
 						aria-hidden="true"
 					/>
 				</span>
-				<span class="min-w-0 flex-1 truncate text-ink-gray-5"
+				<Badge
+					v-if="currentPlan && currentPlan === customKey"
+					label="Current"
+					theme="gray"
+					variant="subtle"
+					size="sm"
+				/>
+				<span class="min-w-0 flex-1 truncate text-p-sm text-ink-gray-6"
 					>{{ isCustom ? customSpec : '' }}</span
 				>
-				<span class="shrink-0 font-medium text-ink-gray-9"
+				<span class="shrink-0 text-p-sm font-medium text-ink-gray-9"
 					>{{ isCustom ? customPrice : 'Design your own' }}</span
 				>
 			</label>
@@ -174,6 +206,7 @@ const matchingPreset = computed<Plan | null>(() => {
 							:available="available"
 							:capacity="capacity"
 							:initial="initial"
+							:hide-disk="omitDisk"
 						/>
 						<p v-if="matchingPreset" class="mt-3 text-p-xs text-ink-gray-5">
 							The

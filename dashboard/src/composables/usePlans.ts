@@ -42,6 +42,7 @@ export function usePlans(
 			team: string
 			cluster: string
 			exclude_subscription?: string
+			for_resize?: number
 			offering?: string
 			image_id?: string
 		}
@@ -54,7 +55,10 @@ export function usePlans(
 			cluster: cluster.value!,
 			...(imageSelection?.value ?? {}),
 			...(excludeSubscription?.value
-				? { exclude_subscription: excludeSubscription.value }
+				? {
+						exclude_subscription: excludeSubscription.value,
+						for_resize: 1,
+					}
 				: {}),
 		}),
 		immediate: false,

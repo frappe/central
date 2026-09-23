@@ -2,6 +2,7 @@
 import {
 	Alert,
 	Button,
+	Checkbox,
 	Dialog,
 	LoadingIndicator,
 	Tabs,
@@ -13,15 +14,21 @@ import PlanGroup from '@/components/servers/PlanGroup.vue'
 import { usePlans } from '@/composables/usePlans'
 import type { VirtualMachineRow } from '@/composables/useServers'
 import { useSession } from '@/composables/useSession'
-import { configIncludes, rateCardComplete } from '@/lib/composed'
+import {
+	configIncludes,
+	estimateConfig,
+	formatGb,
+	formatVcpu,
+	rateCardComplete,
+} from '@/lib/composed'
 import { money } from '@/lib/format'
+import { planResources } from '@/lib/plans'
 import { getErrorMessage, successToast } from '@/lib/toast'
-import type { ComposedConfig, Profile } from '@/types/api'
+import type { ComposedConfig, Plan, Profile } from '@/types/api'
 
-// Resize a server with the same plan picker used to create it (#84): its region's
-// preset bundles plus a custom slider, pre-selected to whatever the server runs now.
-// One action — the backend power-cycles the VM as needed (Firecracker reconfigures
-// pre-boot), so there's no separate "turn off first" step. Controlled by the page
+// Resize sends the new size. Atlas moves the server if this host cannot fit it.
+// Disk stays put unless they check "Grow the disk". A larger disk cannot shrink.
+// A CPU or memory change on a running server restarts it. Controlled by the page
 // via v-model:server.
 const props = defineProps<{ server: VirtualMachineRow | null }>()
 const emit = defineEmits<{
@@ -33,13 +40,8 @@ const { activeTeam } = useSession()
 const activeTeamId = computed(() => activeTeam.value ?? '')
 
 const region = computed(() => props.server?.cluster ?? null)
-const needsRestart = computed(
+const serverIsLive = computed(
 	() => props.server?.status === 'Running' || props.server?.status === 'Paused',
-)
-// Be explicit that a live resize power-cycles the server (stop → resize → start),
-// which the backend does automatically; a server that's already off just resizes.
-const resizeLabel = computed(() =>
-	needsRestart.value ? 'Restart & resize' : 'Resize',
 )
 
 // The config running on this server (current shape + preset, and the subscription
@@ -106,6 +108,9 @@ const open = computed({
 // exact shape PlanGroup speaks (matching the New Server flow).
 const selectedPlan = ref<string | null>(null)
 const composedConfig = ref<ComposedConfig | null>(null)
+// Disk stays put unless they opt in. Growing it cannot be undone.
+const growDisk = ref(false)
+const selectedDisk = ref<number | null>(null)
 const isCustomSel = computed(() =>
 	(selectedPlan.value ?? '').startsWith('custom:'),
 )
@@ -184,27 +189,133 @@ watch(
 		selectedPlan.value = null
 		composedConfig.value = null
 		activeTab.value = ''
+		growDisk.value = false
+		selectedDisk.value = null
 		if (server && activeTeamId.value) configCall.reload()
 	},
 )
 
-// A confirm is meaningful only when the selection differs from what's running.
-const changed = computed(() => {
-	if (!selectedPlan.value) return false
-	if (isCustomSel.value) {
-		const c = composedConfig.value
-		if (!c) return false
-		if (!configCall.data?.composed) return true // preset → custom is always a change
-		const i = initial.value
-		return (
-			!i ||
-			c.vcpus !== i.vcpus ||
-			c.disk_gb !== i.disk_gb ||
-			c.sub_category !== i.sub_category
-		)
-	}
-	return selectedPlan.value !== configCall.data?.plan
+const currentPlanKey = computed(() => {
+	const cfg = configCall.data
+	if (!cfg?.resizable) return null
+	if (cfg.composed) return `custom:${cfg.sub_category || soleClass.value}`
+	return cfg.plan ?? null
 })
+const currentDisk = computed(() => configCall.data?.disk_gb ?? 0)
+
+const largerDisks = computed(() => {
+	const fromProfiles = profiles.value.flatMap((profile) => profile.disk_steps)
+	const fromPlans = plans.value.map(
+		(plan) =>
+			plan.includes.find((inc) => inc.resource_type === 'Disk')?.quantity ?? 0,
+	)
+	return [...new Set([...fromProfiles, ...fromPlans])]
+		.filter((gb) => gb > currentDisk.value)
+		.sort((a, b) => a - b)
+})
+watch(largerDisks, (steps) => {
+	if (!steps.length) {
+		selectedDisk.value = null
+		growDisk.value = false
+		return
+	}
+	if (selectedDisk.value == null || !steps.includes(selectedDisk.value))
+		selectedDisk.value = steps[0]
+})
+
+const targetCompute = computed<ComposedConfig | null>(() => {
+	const current = initial.value
+	if (isCustomSel.value) return composedConfig.value
+	const plan = plans.value.find((p) => p.plan === selectedPlan.value)
+	if (!plan) return null
+	const qty = (type: string) =>
+		plan.includes.find((inc) => inc.resource_type === type)?.quantity ?? 0
+	return {
+		sub_category: plan.sub_category,
+		vcpus: qty('Compute'),
+		memory_gb: qty('Memory'),
+		disk_gb: current?.disk_gb ?? qty('Disk'),
+	}
+})
+const targetDisk = computed(() =>
+	growDisk.value && selectedDisk.value != null
+		? selectedDisk.value
+		: currentDisk.value,
+)
+const computeChanged = computed(() => {
+	const next = targetCompute.value
+	const now = initial.value
+	if (!selectedPlan.value || !next || !now) return false
+	if (isCustomSel.value && !configCall.data?.composed) return true
+	if (!isCustomSel.value && selectedPlan.value !== configCall.data?.plan)
+		return true
+	return (
+		next.vcpus !== now.vcpus ||
+		next.memory_gb !== now.memory_gb ||
+		next.sub_category !== now.sub_category
+	)
+})
+const diskChanged = computed(
+	() => growDisk.value && targetDisk.value > currentDisk.value,
+)
+
+const changed = computed(() => computeChanged.value || diskChanged.value)
+const needsRestart = computed(() => serverIsLive.value && computeChanged.value)
+const resizeLabel = computed(() => {
+	if (needsRestart.value) return 'Restart and resize'
+	if (diskChanged.value && !computeChanged.value) return 'Grow disk'
+	return 'Resize'
+})
+const totalShape = computed(() => {
+	const compute = targetCompute.value ?? initial.value
+	if (!compute) return null
+	return {
+		vcpus: compute.vcpus,
+		memory_gb: compute.memory_gb,
+		disk_gb: targetDisk.value || compute.disk_gb,
+		sub_category: compute.sub_category,
+	}
+})
+const diskRate = computed(() => rateCard.value.Disk?.rate ?? 0)
+
+// A preset keeps its bundle price and pays the disk rate only for GB grown beyond what the
+// plan already includes, so growing disk always adds to the price. A custom config is priced
+// à la carte from the rate card.
+function presetPrice(plan: Plan, diskGb: number): number {
+	const extra = Math.max(0, diskGb - planResources(plan).disk_gigabytes)
+	return plan.rate + extra * diskRate.value
+}
+const totalPrice = computed(() => {
+	const shape = totalShape.value
+	if (!shape) return ''
+	const plan = plans.value.find((p) => p.plan === selectedPlan.value)
+	const cur = currency.value || lock.value?.currency || 'USD'
+	let amount: number | null = null
+	let unit = cur
+	if (plan && !isCustomSel.value) {
+		amount = presetPrice(plan, shape.disk_gb)
+		unit = plan.currency
+	} else if (rateCardComplete(rateCard.value)) {
+		amount = estimateConfig(shape, rateCard.value)
+	} else if (!changed.value && lock.value) {
+		amount = lock.value.locked_rate
+		unit = lock.value.currency
+	}
+	return amount == null
+		? ''
+		: `${money(amount, unit, { trimTrailingZeros: true })} / mo`
+})
+function priceForDisk(diskGb: number): string {
+	const shape = totalShape.value
+	if (!shape) return ''
+	const plan = plans.value.find((p) => p.plan === selectedPlan.value)
+	const cur = currency.value || lock.value?.currency || 'USD'
+	if (plan && !isCustomSel.value)
+		return `${money(presetPrice(plan, diskGb), plan.currency, { trimTrailingZeros: true })} / mo`
+	if (!rateCardComplete(rateCard.value)) return ''
+	const amount = estimateConfig({ ...shape, disk_gb: diskGb }, rateCard.value)
+	return `${money(amount, cur, { trimTrailingZeros: true })} / mo`
+}
 
 const resizeCall = useCall<
 	{ subscription: string; queued: boolean; resized: boolean },
@@ -215,27 +326,41 @@ const resizeCall = useCall<
 	immediate: false,
 })
 
-// A failed resize (most often a disk downgrade — Atlas can only grow a disk) keeps
-// the dialog open with the reason shown, instead of silently dropping back to the
-// picker. Cleared when the selection changes so a fresh attempt starts clean.
+// A failed resize keeps the dialog open with the reason. Cleared when the
+// selection changes so a fresh attempt starts clean.
 const resizeError = computed(() =>
 	resizeCall.error
 		? getErrorMessage(resizeCall.error, "Couldn't resize the server.")
 		: '',
 )
-watch([selectedPlan, composedConfig], () => resizeCall.reset())
+watch([selectedPlan, composedConfig, growDisk, selectedDisk], () =>
+	resizeCall.reset(),
+)
 
 async function confirm() {
-	const sub = subscription.value
-	if (!sub || !changed.value) return
+	const server = props.server
+	const compute = targetCompute.value
+	if (!server?.resource_id || !activeTeamId.value || !changed.value || !compute)
+		return
+	const disk = targetDisk.value
+	const plan = plans.value.find((p) => p.plan === selectedPlan.value)
+	// central.api.servers.resize_server resolves the subscription, re-locks
+	// billing, and asks Atlas to apply the shape.
 	const payload =
-		isCustomSel.value && composedConfig.value
+		plan && !isCustomSel.value
 			? {
-					subscription: sub,
-					includes: configIncludes(composedConfig.value),
-					sub_category: composedConfig.value.sub_category,
+					team: activeTeamId.value,
+					resource_id: server.resource_id,
+					plan: plan.plan,
+					disk_gigabytes: disk,
 				}
-			: { subscription: sub, plan: selectedPlan.value }
+			: {
+					team: activeTeamId.value,
+					resource_id: server.resource_id,
+					includes: configIncludes({ ...compute, disk_gb: disk }),
+					sub_category: compute.sub_category,
+					disk_gigabytes: disk,
+				}
 	await resizeCall.submit(payload)
 	if (!resizeCall.error) {
 		// The reshape runs in the background now — the server shows "Resizing" in the list
@@ -253,7 +378,7 @@ async function confirm() {
 </script>
 
 <template>
-	<Dialog v-model="open" title="Resize server" size="2xl">
+	<Dialog v-model="open" title="Resize server" size="3xl">
 		<template #default>
 			<!-- Resize runs on the host and can take a while for a data-heavy server, so
            show a clear in-progress state and hold the dialog open until it lands. -->
@@ -280,7 +405,7 @@ async function confirm() {
 			>
 				This server can't be resized right now.
 			</p>
-			<div v-else class="space-y-4">
+			<div v-else class="space-y-5">
 				<Alert v-if="resizeError" theme="red" :title="resizeError" />
 				<Alert
 					v-if="losesLockedRate && lock"
@@ -288,42 +413,114 @@ async function confirm() {
 					title="Resizing will change your rate"
 					:description="`You pay ${money(lock.locked_rate, lock.currency)}/mo for this size; it now lists at ${money(lock.list_rate, lock.currency)}/mo. Any resize is priced at today's rates, and the old rate doesn't come back, including if you resize to this size again later.`"
 				/>
-				<div
-					v-if="needsRestart"
-					class="rounded-6 border border-outline-gray-2 bg-surface-gray-1 px-3 py-2.5 text-p-sm text-ink-gray-6"
-				>
-					Your server will be briefly stopped to apply the new size, then
-					started again automatically.
+				<div class="space-y-3">
+					<p class="text-p-sm text-ink-gray-6">
+						Changing CPU or memory restarts the server.
+					</p>
+
+					<Tabs v-if="hasTabs" v-model="activeTab" :tabs="classTabs">
+						<template #tab-panel="{ tab }">
+							<PlanGroup
+								class="pt-4"
+								omit-disk
+								:min-disk="currentDisk"
+								:current-plan="currentPlanKey"
+								:presets="groups[tab.value] ?? []"
+								:profile="designableProfile(String(tab.value))"
+								:rate-card="rateCard"
+								:available="available ?? 0"
+								:currency="currency ?? 'USD'"
+								:capacity="capacity"
+								:initial="initialFor(designableProfile(String(tab.value)))"
+								v-model:selected-plan="selectedPlan"
+								v-model:composed-config="composedConfig"
+							/>
+						</template>
+					</Tabs>
+					<PlanGroup
+						v-else
+						omit-disk
+						:min-disk="currentDisk"
+						:current-plan="currentPlanKey"
+						:presets="flatPresets"
+						:profile="flatProfile"
+						:rate-card="rateCard"
+						:available="available ?? 0"
+						:currency="currency ?? 'USD'"
+						:capacity="capacity"
+						:initial="initialFor(flatProfile)"
+						v-model:selected-plan="selectedPlan"
+						v-model:composed-config="composedConfig"
+					/>
 				</div>
 
-				<Tabs v-if="hasTabs" v-model="activeTab" :tabs="classTabs">
-					<template #tab-panel="{ tab }">
-						<PlanGroup
-							class="pt-4"
-							:presets="groups[tab.value] ?? []"
-							:profile="designableProfile(String(tab.value))"
-							:rate-card="rateCard"
-							:available="available ?? 0"
-							:currency="currency ?? 'USD'"
-							:capacity="capacity"
-							:initial="initialFor(designableProfile(String(tab.value)))"
-							v-model:selected-plan="selectedPlan"
-							v-model:composed-config="composedConfig"
-						/>
-					</template>
-				</Tabs>
-				<PlanGroup
-					v-else
-					:presets="flatPresets"
-					:profile="flatProfile"
-					:rate-card="rateCard"
-					:available="available ?? 0"
-					:currency="currency ?? 'USD'"
-					:capacity="capacity"
-					:initial="initialFor(flatProfile)"
-					v-model:selected-plan="selectedPlan"
-					v-model:composed-config="composedConfig"
-				/>
+				<div class="space-y-3 border-t border-outline-gray-2 pt-4">
+					<Checkbox
+						v-model="growDisk"
+						label="Grow the disk"
+						:description="
+							largerDisks.length
+								? 'Storage can only be increased. If you increase it, you cannot resize to a smaller plan later.'
+								: 'No larger disk is available.'
+						"
+						:disabled="!largerDisks.length"
+					/>
+					<div v-if="growDisk" class="space-y-1.5">
+						<label
+							v-for="gb in largerDisks"
+							:key="gb"
+							:class="[
+								'flex cursor-pointer items-center gap-3 rounded-6 border px-3 py-2.5 text-p-sm',
+								selectedDisk === gb
+									? 'border-outline-gray-4 bg-surface-gray-1'
+									: 'border-outline-gray-2 hover:border-outline-gray-3',
+							]"
+						>
+							<input
+								v-model="selectedDisk"
+								type="radio"
+								class="peer sr-only"
+								:value="gb"
+							/>
+							<span
+								aria-hidden="true"
+								class="size-3.5 shrink-0 rounded-full border border-outline-gray-4 peer-checked:border-4 peer-checked:border-outline-gray-5"
+							/>
+							<span class="font-medium text-ink-gray-9"
+								>{{ formatGb(gb) }}
+								GB</span
+							>
+							<span
+								v-if="priceForDisk(gb)"
+								class="ml-auto text-p-sm font-medium text-ink-gray-9"
+								>{{ priceForDisk(gb) }}</span
+							>
+						</label>
+					</div>
+				</div>
+
+				<div
+					v-if="totalShape"
+					class="flex items-center justify-between gap-6 rounded-6 border border-outline-gray-2 bg-surface-gray-1 px-4 py-3"
+				>
+					<div class="min-w-0">
+						<p class="text-p-sm font-medium text-ink-gray-9">Monthly total</p>
+						<p class="text-p-sm text-ink-gray-6">
+							{{ formatVcpu(totalShape.vcpus) }}
+							vCPU ·
+							{{ formatGb(totalShape.memory_gb) }}
+							GB RAM ·
+							{{ formatGb(totalShape.disk_gb) }}
+							GB disk
+						</p>
+					</div>
+					<p
+						v-if="totalPrice"
+						class="shrink-0 text-p-base font-medium text-ink-gray-9"
+					>
+						{{ totalPrice }}
+					</p>
+				</div>
 			</div>
 		</template>
 		<template #actions>

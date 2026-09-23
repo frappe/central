@@ -42,7 +42,10 @@ _SUB_CATEGORY_ORDER = ["General", "CPU Optimised", "Memory Optimised", "Storage 
 
 @frappe.whitelist()
 def get_eligible_plans(
-	cluster: str | None = None, team: str | None = None, exclude_subscription: str | None = None
+	cluster: str | None = None,
+	team: str | None = None,
+	exclude_subscription: str | None = None,
+	for_resize: int | str | None = None,
 ) -> dict:
 	"""Return priced server plans and custom profiles authorized for this Team.
 
@@ -62,9 +65,11 @@ def get_eligible_plans(
 
 	# Staging trials: narrow the menu to the plans flagged Available on Trial (none
 	# flagged = no extra narrowing) and offer no design-your-own — a trial can't
-	# provision a composed server without a full billing profile.
+	# provision a composed server without a full billing profile. Resize is the
+	# way off that plan, so it sees the same catalog as a paying team.
 	is_staging_trial = bool(frappe.db.get_value("Team", team, "is_staging_trial"))
-	if is_staging_trial:
+	resizing = bool(frappe.utils.cint(for_resize))
+	if is_staging_trial and not resizing:
 		trial_plans = trial_plan_names()
 		if trial_plans is not None:
 			allowed_plans = trial_plans if allowed_plans is None else (allowed_plans & trial_plans)
@@ -98,8 +103,8 @@ def get_eligible_plans(
 	if not server_categories:
 		return empty
 
-	rate_card = {} if is_staging_trial else _rate_card(currency, cluster)
-	profiles = [] if is_staging_trial else _profiles(server_categories)
+	rate_card = {} if is_staging_trial and not resizing else _rate_card(currency, cluster)
+	profiles = [] if is_staging_trial and not resizing else _profiles(server_categories)
 
 	# The whole active catalog (in server families) is wanted on purpose —
 	# currency/cluster/headroom filtering happens in Python below — so opt out of
@@ -334,9 +339,11 @@ def resize_server(
 	plan: str | None = None,
 	includes: list | str | None = None,
 	sub_category: str | None = None,
+	disk_gigabytes: int | None = None,
 ) -> dict:
 	"""Resize a server to a preset bundle (`plan`) or a custom shape (`includes` +
-	`sub_category`) — the console's single Resize action (#84). Validates synchronously,
+	`sub_category`). `disk_gigabytes` keeps or grows the disk instead of taking the
+	plan's disk. Validates synchronously,
 	then hands the slow VM reshape (stop→resize→start on the host) plus the current-rate
 	re-lock to a background job, marking the server "Resizing" for the console meanwhile.
 	Returns `{queued, resized}`: `queued` when a live VM is being reshaped in the
@@ -350,7 +357,17 @@ def resize_server(
 
 	if isinstance(includes, str):
 		includes = frappe.parse_json(includes)
-	result = begin_resize(subscription, plan=plan, includes=includes, sub_category=sub_category)
+	if disk_gigabytes is not None and disk_gigabytes != "":
+		disk_gigabytes = frappe.utils.cint(disk_gigabytes)
+	else:
+		disk_gigabytes = None
+	result = begin_resize(
+		subscription,
+		plan=plan,
+		includes=includes,
+		sub_category=sub_category,
+		disk_gigabytes=disk_gigabytes,
+	)
 	return {"subscription": subscription, **result}
 
 

@@ -310,7 +310,10 @@ function onDown(e: PointerEvent): void {
 	if (e.button !== 0 || !props.interactive) return
 	// A locked card (its ⋯ menu was opened) closes on any press outside it.
 	// The ⋯ menu is portaled outside the card. A press on it is still the card.
-	if (cardLocked.value && !closestOf(e, '[data-map-card], [data-slot="content"]'))
+	if (
+		cardLocked.value &&
+		!closestOf(e, '[data-map-card], [data-slot="content"]')
+	)
 		hideCard()
 	// if (zoom.value <= 1) return
 	// if (closestOf(e, '[data-map-card],[data-map-controls]')) return

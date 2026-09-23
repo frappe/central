@@ -49,6 +49,18 @@ class TestAtlasErrors(IntegrationTestCase):
 			)
 		self.assertEqual(to_error_response(caught.exception)["message"], "No host has capacity.")
 
+	def test_capacity_503_is_a_definite_refusal_with_its_reason(self):
+		"""A 503 that names why (out_of_capacity) is Atlas refusing the shape, not an
+		uncertain outcome — so it surfaces as a rejection carrying the region's reason."""
+		with self.assertRaises(AtlasRejected) as caught:
+			self.client._read_response(
+				self.response(
+					503, {"error": {"code": "out_of_capacity", "message": "No host has capacity."}}
+				),
+				"POST",
+			)
+		self.assertEqual(to_error_response(caught.exception)["message"], "No host has capacity.")
+
 	def test_read_failure_does_not_claim_mutation_acceptance(self):
 		with self.assertRaises(AtlasConnectionError) as caught:
 			self.client._read_response(self.response(503, {}))
