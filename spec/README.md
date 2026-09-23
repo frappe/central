@@ -6,7 +6,7 @@
 - [Delivery](DELIVERY.md): phase PRs into `v0.2` and their acceptance checks.
 - [Validation](LOCAL_ENVIRONMENT.md): contract tests, populated migrations, and real-region evidence.
 
-Friday covers trial signup, Pilot server creation and access, plain Ubuntu creation, and server power actions. Rename, custom domains, and Cargo registration follow this milestone.
+Friday covers trial signup, Pilot server creation and access, plain Ubuntu creation, and server power actions. Custom domains and Cargo registration follow this milestone. Site rename and TLS stay with Pilot.
 
 The v0.2 documents distinguish the proposed design from the verified baseline. Each implementation phase updates the current module specifications when its behavior lands.
 

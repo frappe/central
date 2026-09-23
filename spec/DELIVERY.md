@@ -26,7 +26,7 @@ A Pilot-registered Site Domain resolves its `Site` from the credential's Asset, 
 
 Work that landed ahead of its phase: proxy site and custom domain routes, the Pilot rename helpers, the Cargo report receiver, Pilot-driven domain registration with DNS ownership checks, one regional telemetry token for logs and metrics, and, in Pilot itself, renamed-site token binding and route resolution by hostname (`frappe/pilot#513`).
 
-Phase 4 is therefore part done. A Pilot registers its own site and custom domains through `central.api.pilot`, and Central verifies a TXT record, and a CNAME for a non-apex name, before it creates the route. Pilot can now bind a session token to a renamed site and resolve a route by hostname, which is what Central-driven rename needs on the other side. Central-driven rename and TLS coordination remain, and are now unblocked rather than waiting on Pilot.
+Phase 4 is therefore part done. A Pilot registers its own site and custom domains through `central.api.pilot`, and Central verifies a TXT record, and a CNAME for a non-apex name, before it creates the route. Site rename and TLS stay with Pilot. Central does not drive them.
 
 ### Deferred by design, still open
 
@@ -34,8 +34,6 @@ These were removed from the staging milestone on purpose. They are the next stru
 
 ### Known gaps outside the phase list
 
-- A terminated server keeps its Site Domain routes. Only its Pilot credentials are revoked.
-- Resize accepts a disk change. The agreed product rule is CPU and memory only.
 - `Central Tunnel Settings`, `Connect Credential`, and `Passport Registration` have no reader in this app or its siblings.
 
 ## Branch workflow
@@ -131,7 +129,7 @@ Acceptance:
 
 ## Deferred integration work
 
-Site rename, admin-domain rename, custom domains, TLS coordination, and Cargo backend registration follow the Friday milestone.
+Custom domains and Cargo backend registration follow the Friday milestone. Site rename, admin-domain rename, and TLS stay with Pilot.
 
 Their verified contracts and known gaps remain in [Scope](REWRITE_SCOPE.md). They must not block signup or the required server lifecycle.
 
@@ -190,37 +188,24 @@ The Friday target has passed and the critical journey works at a bare minimum. T
 - Cargo needs the matching route before its half can work. Until it exists, keep the Cargo secret manual and say so on the record.
 - Remove `db_set` from the Atlas `VM State` doctype, so it only raises events. This is Atlas-side work.
 
-### 4. Central-driven site and admin rename, with TLS
-
-**Result:** a customer's chosen name and a custom domain both take over cleanly, with TLS.
-
-Pilot has now landed the two pieces this needed on its side: a session token bound to the renamed site, and route resolution by hostname after a rename (`frappe/pilot#513`). This item was blocked on that; it is not anymore.
-
-- Drive the admin-domain and site rename from Central instead of leaving it to the Pilot-side helpers alone.
-- Tell Pilot it is behind TLS termination, so the admin domain stops serving plain `http`.
-- Generate TLS for a non-wildcard custom domain.
-- Run `clear-cache` after a rename so a site's in-app cloud window shows the new URL without a manual step.
-
-### 5. Model cleanup
+### 4. Model cleanup
 
 **Result:** the records are named and shaped the way the product talks about them.
 
-Do this as separate PRs, each with its patch, and after items 1 and 4 land.
+Do this as separate PRs, each with its patch, and after item 1 lands.
 
 - Renamed `Asset` to `Virtual Machine` — done, via `frappe.rename_doc` and a patch. `cluster` stays the field name for now — renaming it to `region` would touch the doctype a second time right after this rename touched it once.
 - Merged `Atlas Instance` and `Cargo Instance` into `Region` — done. Every regional read is one record now, each service behind its own mixin (`atlas_connection.py`, `cargo_connection.py`) so the two stay separated in code and never share a field, and both merge patches carried existing connection data across losslessly.
 - Link `Site` to its machine and hide a machine that carries a site. A trial customer owns a site, not a VM, and should not see both.
 - Split Central's doctypes out of the one flat `Central` module into `Identity`, `Provisioning` (Asset/Virtual Machine, Resource Action, Region, Image Offering, Site, Site Domain), `Credentials`, and a slimmer `Central`. This is what gives the Desk sidebar the same grouped navigation Atlas has, for free, via Frappe's own per-module tree — no custom sidebar code. Do this once the doctypes above reach their final names, so nothing moves folders twice. Add a Number Card dashboard to Central's own workspace at the same time (servers by status, sites, stuck Resource Actions, regions) — today it holds only IAM shortcuts.
 
-### 6. Product rules and cleanup
+### 5. Product rules and cleanup
 
-- Resize must offer CPU and memory only. Remove the disk change from `resize_server`, the API, and the console.
-- Remove a terminated server's Site Domain routes, or refuse termination while a site still holds a route.
 - Delete `Central Tunnel Settings`, `Connect Credential`, and `Passport Registration`, with a patch each. Nothing reads them.
 - Increase the wildcard-domain suffix length allowed in New Site, and widen that dialog to fit it.
 - Confirm the Frappe `Asia/Calcutta` timezone fault and where it comes from.
 
-### 7. Staging proof
+### 6. Staging proof
 
 **Result:** the agreed customer journey is proved on the real staging region, not just in tests.
 
