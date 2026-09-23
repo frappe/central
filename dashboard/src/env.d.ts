@@ -7,7 +7,7 @@ declare const __SOCKETIO_PORT__: number | null
 declare module '*.vue' {
 	import type { DefineComponent } from 'vue'
 
-	const component: DefineComponent<{}, {}, any>
+	const component: DefineComponent<Record<string, unknown>>
 	export default component
 }
 

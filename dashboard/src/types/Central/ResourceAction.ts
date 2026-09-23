@@ -50,7 +50,7 @@ export interface ResourceAction {
 	/**	Remediation : Small Text	*/
 	remediation?: string
 	/**	Validated Request : JSON - Validated operation inputs. Contains no credentials or tokens.	*/
-	request_payload?: any
+	request_payload?: unknown
 	/**	Reserved Monthly Rate : Currency	*/
 	reserved_monthly_rate?: number
 	/**	Atlas VM ID : Data	*/
