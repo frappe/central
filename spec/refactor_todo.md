@@ -211,6 +211,23 @@ Recheck earlier backlog items: billing-profile fetch duplication, `useBillingOve
 - Update module specs as each phase lands. At closure, fix relevant stale Asset/Atlas Instance language, capability claims, broken links, and contradictory delivery instructions. Avoid an unrelated documentation rewrite.
 - Document changed API inputs, responses, capabilities, team ownership, errors, mutation methods, asynchronous status, and retry rules using the same typed models. Atlas's `api/routes/virtual_machines.py` shows shared operations with explicit arguments and typed contracts; adopt that clarity without copying its router.
 
+### Closure inventory
+
+| Area | Closure |
+|---|---|
+| Identity and access | IAM owns team and capability decisions. Duplicate team resolution and `server:open` are removed. Team-scoped query and document permission hooks remain the enforcement boundary. Scoped grants and capability-version changes remain deferred. |
+| Authentication and tokens | OTP lifetime, resend handling, enrollment replay, signing audiences, and credential isolation have focused coverage. Signing and credential types remain separate because their audiences, scopes, and rotation rules differ. |
+| Resource lifecycle | Resource Action owns durable intent, transitions, safe customer errors, operator diagnostics, and retry state. Virtual Machine owns local identity and observed state. Site, snapshots, and domains retain their separate readiness and recovery state. |
+| Integrations | Remote calls stay in `central/integrations/`. Common Atlas errors and receipts are normalized while tenant checks, source ordering, uncertain outcomes, and protocol-specific clients remain explicit. |
+| Services and partners | Existing service and partner owners remain in place. Bucket, Cargo, and object-storage refactors remain deferred by product direction. Service credential merging remains deferred until ownership and rotation rules are equivalent. |
+| Notifications and errors | Fixtures own event types. Transition owners enqueue deduplicated notifications. Customer messages use safe envelopes and persistent inline alerts. Resource records and linked Error Logs keep operator diagnostics. |
+| Console | Pages compose domain composables and shared primitives. Plain permitted DocType reads use Frappe UI resources. Forms keep field validation inline, while actionable operation failures use persistent alerts. |
+| Operations and tests | Patches cover capability and field migrations. Tests use current schemas and cover repeat and partial migration. Desk fields expose useful identity, state, region, links, filters, and read-only observed values. |
+
+**Completed on 2026-09-23.** Virtual Machine and Resource Action now use `region` across schema, controllers, APIs, integrations, dashboard types, and required billing references. Billing keeps `cluster` as its pricing and reporting dimension and derives it from `Virtual Machine.region`. The data patch preserved populated rows, completed from a partially applied state, removed the legacy columns and indexes, and is repeatable. Module specifications now describe the current region and Resource Action contracts. `cluster:view` remains unchanged because it is persisted authorization vocabulary used by fixtures and the dashboard; a rename needs a separate consumer and stored-grant migration decision.
+
+The full Central suite passed 12 unit tests, 1,632 integration tests, and 21 additional tests with one skip. The final four-test migration suite also passed after adding the missing-target schema guard. Ruff lint, changed-file formatting, patch validation, pre-commit, dashboard type-check, dashboard lint, schema migration, and the production asset build passed. The repository-wide formatter still reports six pre-existing billing files outside this phase. The local live dashboard loaded the server registry, region filter, and creation region selector with the renamed contract. The configured region was unreachable, so real Atlas creation, power, resize, snapshot, and deletion operations remain an external validation gap.
+
 ### Final validation
 
 Run focused suites during each phase. Before the single PR is ready, run the full Central suite, static checks, patch validation, dashboard checks, and build. Use Bench Python and Pilot as required by `CLAUDE.md`.
@@ -241,5 +258,6 @@ Approved defaults: one Central PR, no new remote contracts, queued trial creatio
 
 - Defer merging Service API Key and Site Service Credential until current schema, callers, ownership, and rotation rules demonstrate a real simplification. Do not revive an obsolete schema proposal.
 - Defer scoped grants, capability-version changes, and upstream restart-completion contracts. If the current contract cannot prove completion, show the limitation honestly and record the exact dependency.
+- Defer renaming `cluster:view`. It is stored authorization vocabulary and has dashboard and fixture consumers. Rename it only with a grant migration and coordinated consumer update.
 - Defer unrelated billing defects and billing test repairs. Required access, lifecycle, and delivery corrections remain in scope as listed above.
 - Record newly discovered structural or product decisions here before implementing them. Ordinary simplification within agreed behavior does not need a new design exercise.
