@@ -60,7 +60,10 @@ export function useRegionalImages(
 		const current = ++snapshotGeneration
 		snapshots.value = []
 		snapshotsError.value = ''
-		if (!activeTeam.value || !region.value) return
+		if (!activeTeam.value || !region.value) {
+			snapshotsLoading.value = false
+			return
+		}
 
 		snapshotsLoading.value = true
 		try {

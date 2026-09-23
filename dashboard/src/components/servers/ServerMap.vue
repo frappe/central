@@ -43,8 +43,8 @@ const props = withDefaults(
 		allowCreate?: boolean
 		/** Show direct bench-open affordances inside cluster cards. */
 		allowOpen?: boolean
-		/** Site name currently being opened — spins its cluster-card open button. */
-		openingSite?: string | null
+		/** Server resource id or site name currently opening in a new tab. */
+		opening?: string | null
 	}>(),
 	{
 		pins: () => [],
@@ -56,7 +56,7 @@ const props = withDefaults(
 		interactive: true,
 		allowCreate: false,
 		allowOpen: false,
-		openingSite: null,
+		opening: null,
 	},
 )
 
@@ -721,7 +721,7 @@ function clickNode(n: MapNode): void {
 					:node="card.node"
 					:allow-create="allowCreate"
 					:allow-open="allowOpen"
-					:opening-site="openingSite"
+					:opening="opening"
 					@open="emit('open', $event)"
 					@open-server="emit('open-server', $event)"
 					@open-site="emit('open-site', $event)"

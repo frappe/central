@@ -30,6 +30,7 @@ export function useSnapshots(resourceId?: Ref<string | null>) {
 		const team = activeTeam.value
 		if (!team || (resourceId && !resourceId.value)) {
 			data.value = null
+			loading.value = false
 			return
 		}
 

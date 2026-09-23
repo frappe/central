@@ -25,7 +25,6 @@ defineProps<{
 	canCreate: boolean
 	busy: string | null
 	opening: string | null
-	openingSite: string | null
 }>()
 
 defineEmits<{
@@ -45,7 +44,7 @@ defineEmits<{
 
 const open = defineModel<boolean>('open', { required: true })
 const query = defineModel<string>('query', { required: true })
-const hoverId = defineModel<string | null>('hoverId', { required: true })
+const _hoverId = defineModel<string | null>('hoverId', { required: true })
 </script>
 
 <template>
@@ -120,8 +119,8 @@ const hoverId = defineModel<string | null>('hoverId', { required: true })
 						class="sp-row group flex cursor-pointer items-center gap-3 rounded-6 px-2.5 py-2.5 transition-colors"
 						:style="{ animationDelay: `${Math.min(i * 25, 200)}ms` }"
 						@click="$emit('openRow', row)"
-						@mouseenter="hoverId = row.id"
-						@mouseleave="hoverId = null"
+						@mouseenter="_hoverId = row.id"
+						@mouseleave="_hoverId = null"
 					>
 						<span class="relative shrink-0">
 							<ProviderAvatar :provider="row.provider" :size="32" />
@@ -149,7 +148,7 @@ const hoverId = defineModel<string | null>('hoverId', { required: true })
 						</span>
 						<span
 							class="sp-row-actions"
-							:class="{ 'sp-row-actions-active': busy === row.id || opening === row.id || openingSite === row.id }"
+							:class="{ 'sp-row-actions-active': busy === row.id || opening === row.id }"
 							@click.stop
 						>
 							<ServerRowActions
@@ -163,8 +162,7 @@ const hoverId = defineModel<string | null>('hoverId', { required: true })
 								:opens-site="!!row.site"
 								:busy="busy === row.server.resource_id"
 								:opening="
-									opening === row.server.resource_id ||
-									openingSite === row.site?.name
+								opening === row.server.resource_id || opening === row.site?.name
 								"
 								@overview="$emit('overview', $event)"
 								@open="$emit('open', $event)"

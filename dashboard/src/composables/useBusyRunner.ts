@@ -7,25 +7,36 @@ import { errorToast, successToast } from '@/lib/toast'
 export function useBusyRunner() {
 	const busy = ref<string>('')
 
+	async function runOrThrow(
+		fn: () => Promise<unknown>,
+		ok: string | null,
+		key: string,
+		onSuccess?: () => void,
+	): Promise<void> {
+		busy.value = key
+		try {
+			await fn()
+			if (ok) successToast(ok)
+			onSuccess?.()
+		} finally {
+			busy.value = ''
+		}
+	}
+
 	async function run(
 		fn: () => Promise<unknown>,
 		ok: string,
 		key: string,
 		onSuccess?: () => void,
 	): Promise<boolean> {
-		busy.value = key
 		try {
-			await fn()
-			successToast(ok)
-			onSuccess?.()
+			await runOrThrow(fn, ok, key, onSuccess)
 			return true
-		} catch (e) {
-			errorToast(e)
+		} catch (error) {
+			errorToast(error)
 			return false
-		} finally {
-			busy.value = ''
 		}
 	}
 
-	return { busy, run }
+	return { busy, run, runOrThrow }
 }
