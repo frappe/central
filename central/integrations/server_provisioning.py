@@ -35,7 +35,7 @@ def process_request(name: str) -> None:
 				_process_locked(name)
 			except Exception:
 				# A worker crash must leave an actionable record without repeating a mutation.
-				diagnostic = frappe.get_traceback(with_context=False)
+				diagnostic = frappe.get_traceback()
 				frappe.db.rollback()
 				action = frappe.get_doc("Resource Action", name, for_update=True)
 				if action.status == "Queued":
@@ -56,7 +56,7 @@ def process_request(name: str) -> None:
 		# Ours expired while the region was still answering. The work ran unguarded and may
 		# be half finished, which is not the same as another worker holding the lock, so it
 		# is recorded rather than passed over in silence.
-		diagnostic = frappe.get_traceback(with_context=False)
+		diagnostic = frappe.get_traceback()
 		frappe.db.rollback()
 		if frappe.db.exists("Resource Action", name):
 			frappe.get_doc("Resource Action", name).record_diagnostic(
@@ -123,8 +123,8 @@ def _process_locked(name: str) -> None:
 		request.transition("Sent", notify=False)
 		# Retain the remote identity even if local billing or mirror finalization fails.
 		frappe.db.commit()
-	except AtlasRequestUncertain as error:
-		request.record_diagnostic(f"{type(error).__name__}: {error}", "Atlas create result was uncertain")
+	except AtlasRequestUncertain:
+		request.record_diagnostic(frappe.get_traceback(), "Atlas create result was uncertain")
 		recover_unanswered(request)
 		return
 	except (AtlasConnectionError, frappe.ValidationError, frappe.PermissionError) as error:
@@ -132,9 +132,7 @@ def _process_locked(name: str) -> None:
 		request.transition(
 			"Failed",
 			envelope=to_error_response(error),
-			diagnostic=f"{type(error).__name__}: {error}"
-			if isinstance(error, AtlasConnectionError)
-			else None,
+			diagnostic=frappe.get_traceback() if isinstance(error, AtlasConnectionError) else None,
 			diagnostic_title="Atlas create failed",
 		)
 		return
@@ -152,11 +150,11 @@ def recover_unanswered(request) -> None:
 	the next sweep."""
 	try:
 		remote_vm_id = find_created_vm(request)
-	except AtlasConnectionError as error:
+	except AtlasConnectionError:
 		request.transition(
 			"Uncertain",
 			envelope=build_envelope("OUTCOME_UNKNOWN"),
-			diagnostic=f"{type(error).__name__}: {error}",
+			diagnostic=frappe.get_traceback(),
 			diagnostic_title="Atlas create recovery failed",
 		)
 		return
@@ -233,7 +231,7 @@ def _create_payload(request) -> dict:
 			bootstrap["s3"] = BucketProvisioning(request).get_configuration()
 		except Exception:
 			request.record_diagnostic(
-				frappe.get_traceback(with_context=False),
+				frappe.get_traceback(),
 				"Pilot object storage provisioning failed",
 			)
 		payload["metadata"]["pilot-central"] = json.dumps(bootstrap)
@@ -268,7 +266,7 @@ def _finalize(request) -> None:
 		# Finalize local ownership and billing together, independently of the next remote read.
 		frappe.db.commit()
 	except Exception:
-		diagnostic = frappe.get_traceback(with_context=False)
+		diagnostic = frappe.get_traceback()
 		frappe.db.rollback()
 		request.reload()
 		request.transition(
@@ -281,11 +279,11 @@ def _finalize(request) -> None:
 
 	try:
 		status = observe_server(frappe.get_doc("Virtual Machine", server_id))
-	except AtlasConnectionError as error:
+	except AtlasConnectionError:
 		request.transition(
 			"Sent",
 			envelope=build_envelope("REFRESH_FAILED"),
-			diagnostic=f"{type(error).__name__}: {error}",
+			diagnostic=frappe.get_traceback(),
 			diagnostic_title="Atlas server refresh failed",
 		)
 		return

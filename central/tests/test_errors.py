@@ -11,9 +11,10 @@ from frappe.tests import IntegrationTestCase
 from central.errors import (
 	ENVELOPE_KEY,
 	ERROR_CATALOG,
+	AtlasConnectionError,
 	ResourceActionError,
 	build_envelope,
-	resource_action,
+	handle_resource_operation,
 	throw_action_error,
 	to_error_response,
 )
@@ -41,7 +42,7 @@ class TestErrorCatalog(IntegrationTestCase):
 			"ATLAS_REJECTED", message="No capacity — retry shortly.", action="create this server"
 		)
 		self.assertEqual(env["message"], "No capacity — retry shortly.")
-		self.assertIn("create this server", env["title"])
+		self.assertEqual(env["title"], "This request couldn't be completed")
 
 	def test_unknown_code_falls_back_to_unexpected(self):
 		self.assertEqual(build_envelope("NOPE")["code"], "UNEXPECTED")
@@ -85,12 +86,16 @@ class TestToErrorResponse(IntegrationTestCase):
 	def test_permission_maps_to_permission_denied(self):
 		self.assertEqual(to_error_response(frappe.PermissionError("nope"))["code"], "PERMISSION_DENIED")
 
-	def test_unexpected_error_is_logged_and_generalised(self):
-		with patch("central.errors.frappe.log_error") as log:
-			env = to_error_response(KeyError("internal detail"))
+	def test_regional_diagnostic_is_hidden_from_customer(self):
+		env = to_error_response(AtlasConnectionError("Set the Atlas region ID."))
+		self.assertEqual(env["code"], "REGION_UNAVAILABLE")
+		self.assertNotIn("Atlas", env["message"])
+		self.assertNotIn("region ID", env["message"])
+
+	def test_unexpected_error_is_generalised(self):
+		env = to_error_response(KeyError("internal detail"))
 		self.assertEqual(env["code"], "UNEXPECTED")
 		self.assertNotIn("internal detail", env["message"])
-		log.assert_called_once()
 
 	def test_prebuilt_envelope_passes_through(self):
 		error = ResourceActionError("x")
@@ -98,12 +103,12 @@ class TestToErrorResponse(IntegrationTestCase):
 		self.assertEqual(to_error_response(error)["code"], "ATLAS_REJECTED")
 
 
-class TestResourceActionDecorator(IntegrationTestCase):
+class TestResourceOperationDecorator(IntegrationTestCase):
 	def setUp(self):
 		frappe.clear_messages()
 
 	def test_unexpected_exception_becomes_a_clean_envelope(self):
-		@resource_action
+		@handle_resource_operation
 		def boom():
 			raise KeyError("internal detail")
 
@@ -115,7 +120,7 @@ class TestResourceActionDecorator(IntegrationTestCase):
 		self.assertNotIn("internal detail", caught.exception.envelope["message"])
 
 	def test_clean_validation_error_passes_through_enriched(self):
-		@resource_action
+		@handle_resource_operation
 		def bad():
 			frappe.throw("Region is required.", frappe.ValidationError)
 
@@ -125,7 +130,7 @@ class TestResourceActionDecorator(IntegrationTestCase):
 		self.assertIn("Region is required", str(caught.exception))
 
 	def test_prebuilt_error_is_not_reprocessed(self):
-		@resource_action
+		@handle_resource_operation
 		def rejected():
 			throw_action_error("ATLAS_REJECTED", message="No capacity.", action="create this server")
 

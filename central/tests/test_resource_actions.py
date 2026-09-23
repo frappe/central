@@ -198,6 +198,11 @@ class TestResourceActions(IntegrationTestCase):
 		queue_event.assert_called_once()
 		self.assertEqual(queue_event.call_args.args, (self.team.name, "provision_failure"))
 		self.assertEqual(queue_event.call_args.kwargs["reference_name"], name)
+		action = frappe.get_doc("Resource Action", name)
+		diagnostic = frappe.db.get_value("Error Log", action.error_log, "error")
+		self.assertIn("Traceback", diagnostic)
+		self.assertIn("AtlasConnectionError: region refused", diagnostic)
+		self.assertNotIn("region refused", action.error_message)
 
 	def test_retry_is_refused_without_a_saved_configuration(self):
 		name = self.submit()["action"]

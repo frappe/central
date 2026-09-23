@@ -165,15 +165,15 @@ def process_resize(action) -> None:
 		action.transition(
 			"Failed",
 			envelope=to_error_response(error),
-			diagnostic=f"{type(error).__name__}: {error}",
+			diagnostic=frappe.get_traceback(),
 			diagnostic_title="Atlas resize was rejected",
 		)
 		return
-	except AtlasConnectionError as error:
+	except AtlasConnectionError:
 		action.transition(
 			"Uncertain",
 			envelope=build_envelope("OUTCOME_UNKNOWN"),
-			diagnostic=f"{type(error).__name__}: {error}",
+			diagnostic=frappe.get_traceback(),
 			diagnostic_title="Atlas resize result was uncertain",
 		)
 		return
@@ -186,7 +186,7 @@ def process_resize(action) -> None:
 		apply_resize_billing(action)
 		server.db_set("plan", configuration.plan, notify=False)
 	except Exception:
-		diagnostic = frappe.get_traceback(with_context=False)
+		diagnostic = frappe.get_traceback()
 		frappe.db.rollback()
 		action.reload()
 		action.transition(
@@ -259,7 +259,7 @@ def process_command(action) -> None:
 			action.transition(
 				"Uncertain",
 				envelope=to_error_response(error),
-				diagnostic=f"{type(error).__name__}: {error}",
+				diagnostic=frappe.get_traceback(),
 				diagnostic_title="Atlas command result was uncertain",
 			)
 		except AtlasResourceGone as error:
@@ -267,13 +267,14 @@ def process_command(action) -> None:
 				action.transition(
 					"Failed",
 					envelope=to_error_response(error),
-					diagnostic=f"{type(error).__name__}: {error}",
+					diagnostic=frappe.get_traceback(),
 					diagnostic_title="Atlas resource was not found",
 				)
 				return
 			mark_terminated(server)
 			action.record_diagnostic(
-				f"{type(error).__name__}: {error}", "Atlas confirmed the terminated resource was gone"
+				frappe.get_traceback(),
+				"Atlas confirmed the terminated resource was gone",
 			)
 			action.transition("Succeeded")
 			return
@@ -281,7 +282,7 @@ def process_command(action) -> None:
 			action.transition(
 				"Failed",
 				envelope=to_error_response(error),
-				diagnostic=f"{type(error).__name__}: {error}",
+				diagnostic=frappe.get_traceback(),
 				diagnostic_title="Atlas command failed",
 			)
 			return
@@ -292,11 +293,11 @@ def process_command(action) -> None:
 
 	try:
 		status = observe_server(server)
-	except AtlasConnectionError as error:
+	except AtlasConnectionError:
 		action.transition(
 			action.status,
 			envelope=build_envelope("REFRESH_FAILED"),
-			diagnostic=f"{type(error).__name__}: {error}",
+			diagnostic=frappe.get_traceback(),
 			diagnostic_title="Atlas server refresh failed",
 		)
 		return
@@ -342,7 +343,7 @@ def is_final_snapshot_ready(action, server: VirtualMachine, client: AtlasClient)
 		action.transition(
 			"Failed",
 			envelope=to_error_response(error),
-			diagnostic=f"{type(error).__name__}: {error}",
+			diagnostic=frappe.get_traceback(),
 			diagnostic_title="Atlas snapshot preparation failed",
 		)
 		return False

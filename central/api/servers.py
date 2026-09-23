@@ -3,7 +3,7 @@ from __future__ import annotations
 import frappe
 from frappe import _
 
-from central.errors import resource_action
+from central.errors import handle_resource_operation
 from central.infrastructure.doctype.resource_action.resource_action import ResourceAction
 from central.integrations.servers import reconcile
 from central.utils.guards import require_capability
@@ -293,28 +293,28 @@ def refresh_servers(team: str | None = None) -> dict:
 
 
 @frappe.whitelist(methods=["POST"])
-@resource_action
+@handle_resource_operation
 def start_server(team: str | None = None, resource_id: str | None = None) -> dict:
 	"""Start a stopped server. Gated on `server:power`."""
 	return _run_command("start", team, resource_id)
 
 
 @frappe.whitelist(methods=["POST"])
-@resource_action
+@handle_resource_operation
 def stop_server(team: str | None = None, resource_id: str | None = None) -> dict:
 	"""Stop a running server. Gated on `server:power`."""
 	return _run_command("stop", team, resource_id)
 
 
 @frappe.whitelist(methods=["POST"])
-@resource_action
+@handle_resource_operation
 def restart_server(team: str | None = None, resource_id: str | None = None) -> dict:
 	"""Restart a running server. Gated on `server:power`."""
 	return _run_command("restart", team, resource_id)
 
 
 @frappe.whitelist(methods=["POST"])
-@resource_action
+@handle_resource_operation
 @require_capability("server:resize", "You can't resize this team's servers.")
 def resize_server(
 	team: str | None = None,
@@ -358,7 +358,7 @@ def resize_server(
 
 
 @frappe.whitelist(methods=["POST"])
-@resource_action
+@handle_resource_operation
 def terminate_server(
 	team: str | None = None, resource_id: str | None = None, take_snapshot: bool | int | str = False
 ) -> dict:
@@ -374,7 +374,7 @@ def _run_command(action: str, team: str | None, resource_id: str | None, take_sn
 
 
 @frappe.whitelist(methods=["POST"])
-@resource_action
+@handle_resource_operation
 def create_server(
 	team: str,
 	region: str,
@@ -405,7 +405,7 @@ def create_server(
 
 
 @frappe.whitelist(methods=["POST"])
-@resource_action
+@handle_resource_operation
 def create_composed_server(
 	team: str,
 	region: str,
@@ -445,7 +445,7 @@ def action_status(name: str) -> dict:
 
 
 @frappe.whitelist(methods=["POST"])
-@resource_action
+@handle_resource_operation
 def retry_action(name: str) -> dict:
 	"""Send a failed creation again on its own record. Gated on `server:create`."""
 	from central.resource_actions import retry

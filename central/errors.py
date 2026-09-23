@@ -1,4 +1,4 @@
-"""User-facing error envelopes for server-flow actions.
+"""Customer-safe errors and operator diagnostics for console APIs.
 
 A failed action must tell the user what happened and what to do about it — never a
 FrappeException or a raw traceback. Every server-action failure is shaped into a small
@@ -9,8 +9,8 @@ switches on; `message`/`remediation` are the words a person reads (see the Wix "
 better error messages" guidance: plain language, cause, reassurance, next step).
 
 Wire this at the two ends of the Server flow: `throw_action_error` where Central raises a
-known failure, and the `@resource_action` decorator on the whitelisted endpoints so nothing
-— not even an unexpected bug — reaches the user as a bare exception.
+known failure, and the `@handle_resource_operation` decorator on the whitelisted endpoints so
+nothing, including an unexpected bug, reaches the user as a bare exception.
 """
 
 from __future__ import annotations
@@ -50,7 +50,7 @@ class CargoConnectionError(frappe.ValidationError):
 
 # code -> user-facing copy. Templates are formatted with the call's context (action,
 # region, resource_id, field); a missing placeholder renders empty rather than crashing
-# the error path. `message` may be overridden at the call site (e.g. Atlas's own sentence).
+# the error path. `message` may be overridden when Central owns customer-safe copy.
 ERROR_CATALOG: dict[str, dict] = {
 	"PERMISSION_DENIED": {
 		"title": "You don't have access",
@@ -77,21 +77,21 @@ ERROR_CATALOG: dict[str, dict] = {
 		"retriable": True,
 	},
 	"REGION_UNAVAILABLE": {
-		"title": "Region isn't responding",
-		"message": "The region is not responding. Central could not refresh this resource.",
-		"remediation": "This is usually temporary. Please try again in a moment; if it keeps happening, contact support.",
+		"title": "This region is temporarily unavailable",
+		"message": "We couldn't reach the selected region.",
+		"remediation": "Try again in a few minutes. If the problem continues, contact support.",
 		"retriable": True,
 	},
 	"ATLAS_REJECTED": {
-		"title": "Couldn't {action}",
-		"message": "The region couldn't complete this request.",
-		"remediation": "",
+		"title": "This request couldn't be completed",
+		"message": "The selected region couldn't complete this request.",
+		"remediation": "Review your selections and try again. If the problem continues, contact support.",
 		"retriable": False,
 	},
 	"RESOURCE_GONE": {
-		"title": "No longer exists",
-		"message": "This server no longer exists in its region — it may already have been removed.",
-		"remediation": "Refresh your list to see the current state.",
+		"title": "This server is no longer available",
+		"message": "The server may already have been removed.",
+		"remediation": "Refresh your server list to see the current state.",
 		"retriable": False,
 	},
 	"ACTION_FAILED": {
@@ -107,33 +107,33 @@ ERROR_CATALOG: dict[str, dict] = {
 		"retriable": False,
 	},
 	"CREATE_NOT_ACCEPTED": {
-		"title": "Couldn't {action}",
-		"message": "The region did not take this request, and no server was built.",
-		"remediation": "",
+		"title": "The server wasn't created",
+		"message": "The selected region did not accept the request. No server was created.",
+		"remediation": "Try again, or select another region if the problem continues.",
 		"retriable": True,
 	},
 	"SNAPSHOT_FAILED": {
 		"title": "The final snapshot didn't complete",
-		"message": "The region could not finish the snapshot, so Central did not destroy the server. It is stopped.",
+		"message": "The snapshot failed, so the server was not removed. The server is stopped.",
 		"remediation": "Start the server again, or terminate it without a snapshot.",
 		"retriable": True,
 	},
 	"OUTCOME_UNKNOWN": {
-		"title": "The operation result is not confirmed",
-		"message": "Atlas may have accepted this operation, but Central did not receive a valid confirmation.",
-		"remediation": "Central is checking the region for it and will follow up on its own.",
+		"title": "We're still confirming this request",
+		"message": "We couldn't confirm whether the selected region accepted it.",
+		"remediation": "We'll keep checking. Don't submit the request again.",
 		"retriable": False,
 	},
 	"REFRESH_FAILED": {
-		"title": "Progress could not be refreshed",
-		"message": "The operation was accepted. Central could not read its current state.",
-		"remediation": "Central will retry the status check. Do not create another server.",
+		"title": "Progress isn't available yet",
+		"message": "Your request was accepted, but we couldn't load its latest status.",
+		"remediation": "We'll check again automatically. Don't submit another request.",
 		"retriable": False,
 	},
 	"FINALIZATION_FAILED": {
-		"title": "Central could not finish the local update",
-		"message": "Atlas accepted this operation, but Central could not finish updating its records.",
-		"remediation": "Contact support with this action ID. The recorded VM will be checked without creating another.",
+		"title": "Setup needs support",
+		"message": "The selected region accepted the request, but setup did not finish.",
+		"remediation": "Don't submit another request. Contact support with this action ID.",
 		"retriable": False,
 	},
 	"VALIDATION_ERROR": {
@@ -143,9 +143,9 @@ ERROR_CATALOG: dict[str, dict] = {
 		"retriable": False,
 	},
 	"UNEXPECTED": {
-		"title": "Something went wrong on our end",
-		"message": "Central encountered an unexpected problem processing this action.",
-		"remediation": "Check the action status before trying again. Contact support if the result is unclear.",
+		"title": "We couldn't complete that",
+		"message": "Something went wrong while we were processing your request.",
+		"remediation": "Check its status before trying again. If the result is unclear, contact support.",
 		"retriable": False,
 	},
 }
@@ -190,9 +190,7 @@ def throw_action_error(code: str, *, exc: type[Exception] = ResourceActionError,
 
 
 def to_error_response(exc: Exception) -> dict:
-	"""Shape an already-raised exception into an envelope. A message the user was meant to
-	see (any frappe exception) is preserved verbatim; a genuinely unexpected error is logged
-	for operators and shown a generic, honest message instead of its internals."""
+	"""Shape an already-raised exception into a customer-safe envelope."""
 	if getattr(exc, "envelope", None):
 		return exc.envelope
 
@@ -201,9 +199,9 @@ def to_error_response(exc: Exception) -> dict:
 	if isinstance(exc, AtlasResourceGone):
 		return build_envelope("RESOURCE_GONE")
 	if isinstance(exc, AtlasRejected):
-		return build_envelope("ATLAS_REJECTED", message=str(exc))
+		return build_envelope("ATLAS_REJECTED")
 	if isinstance(exc, AtlasConnectionError):
-		return build_envelope("REGION_UNAVAILABLE", message=str(exc))
+		return build_envelope("REGION_UNAVAILABLE")
 
 	if isinstance(exc, frappe.PermissionError):
 		return build_envelope("PERMISSION_DENIED", message=str(exc) or None)
@@ -214,14 +212,11 @@ def to_error_response(exc: Exception) -> dict:
 	if isinstance(exc, frappe.ValidationError):
 		return build_envelope("VALIDATION_ERROR", message=str(exc) or None)
 
-	frappe.log_error(title="Unexpected server-action error", message=frappe.get_traceback())
 	return build_envelope("UNEXPECTED")
 
 
-def resource_action(func):
-	"""Guarantee a whitelisted action endpoint fails as a clean envelope, never a bare
-	exception. An error already shaped by `throw_action_error` passes through untouched;
-	anything else is converted, preserving the user's message and the exception's status."""
+def handle_resource_operation(func):
+	"""Return customer-safe errors from a resource endpoint."""
 
 	@functools.wraps(func)
 	def wrapper(*args, **kwargs):

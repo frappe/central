@@ -42,16 +42,16 @@ class TestAtlasErrors(IntegrationTestCase):
 		with self.assertRaises(AtlasRequestUncertain):
 			self.client._read_response(response, "POST")
 
-	def test_explicit_rejection_preserves_safe_reason(self):
+	def test_explicit_rejection_hides_regional_detail(self):
 		with self.assertRaises(AtlasRejected) as caught:
 			self.client._read_response(
 				self.response(409, {"error": {"message": "No host has capacity."}}), "POST"
 			)
-		self.assertEqual(to_error_response(caught.exception)["message"], "No host has capacity.")
+		self.assertNotIn("host", to_error_response(caught.exception)["message"])
 
-	def test_capacity_503_is_a_definite_refusal_with_its_reason(self):
+	def test_capacity_503_is_a_definite_refusal(self):
 		"""A 503 that names why (out_of_capacity) is Atlas refusing the shape, not an
-		uncertain outcome — so it surfaces as a rejection carrying the region's reason."""
+		uncertain outcome."""
 		with self.assertRaises(AtlasRejected) as caught:
 			self.client._read_response(
 				self.response(
@@ -59,7 +59,8 @@ class TestAtlasErrors(IntegrationTestCase):
 				),
 				"POST",
 			)
-		self.assertEqual(to_error_response(caught.exception)["message"], "No host has capacity.")
+		self.assertEqual(to_error_response(caught.exception)["code"], "ATLAS_REJECTED")
+		self.assertNotIn("host", to_error_response(caught.exception)["message"])
 
 	def test_read_failure_does_not_claim_mutation_acceptance(self):
 		with self.assertRaises(AtlasConnectionError) as caught:

@@ -84,7 +84,7 @@ A paid server never sleeps. A resize ends sleep for good, because a server its o
 
 Customer status uses one response shape: `action`, `status`, `resource_id`, `title`, and an optional structured `error`. Errors include a stable code, message, remediation, and retry indication. Network loss after mutation is an unknown outcome. A failed read never means the VM was deleted.
 
-Desk links the action to its latest Error Log. Atlas failures and unexpected local failures store their full diagnostic in Error Log, while the action keeps only its customer-safe error envelope. Linked Error Log records retain the incident history. Customer responses never include operator diagnostics.
+Desk links the action to its latest Error Log. Regional failures and unexpected local failures store their full traceback without local variables in Error Log, while the action keeps only its customer-safe error envelope. Linked Error Log records retain the incident history. Customer responses state what happened, the effect on the request, and the next safe action. They never include service names, configuration values, or operator diagnostics.
 
 The request digest, Pilot credential, and Error Log link use permission level 1 for System Manager. This boundary is required because a Central User can read an authorized Resource Action through the standard document API even when that user has no Desk access.
 

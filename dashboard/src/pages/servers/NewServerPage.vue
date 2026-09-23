@@ -251,7 +251,11 @@ const selectedRegionName = computed(() =>
 									Loading regional images…
 								</p>
 								<div v-else-if="imagesError">
-									<Alert theme="red" :description="imagesError" />
+									<Alert
+										theme="red"
+										title="Images aren't available in this region"
+										:description="imagesError"
+									/>
 									<Button
 										class="mt-2"
 										label="Retry images"
@@ -291,7 +295,11 @@ const selectedRegionName = computed(() =>
 						</p>
 
 						<div v-else-if="plansError">
-							<Alert theme="red" description="Plans could not be loaded." />
+							<Alert
+								theme="red"
+								title="Plans aren't available for this image"
+								description="Try again, or select another image or region."
+							/>
 							<Button class="mt-2" label="Retry plans" @click="reloadPlans" />
 						</div>
 
@@ -378,6 +386,7 @@ const selectedRegionName = computed(() =>
 								v-if="submitError"
 								class="mb-3"
 								theme="red"
+								title="We couldn't create this server"
 								:description="submitError"
 							/>
 

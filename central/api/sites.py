@@ -3,7 +3,7 @@ from __future__ import annotations
 import frappe
 from frappe import _
 
-from central.errors import resource_action
+from central.errors import handle_resource_operation
 from central.iam import can
 from central.infrastructure.doctype.resource_action.resource_action import (
 	PENDING_STATES,
@@ -34,7 +34,7 @@ def check_subdomain(subdomain: str, team: str | None = None) -> dict:
 
 
 @frappe.whitelist(methods=["POST"])
-@resource_action
+@handle_resource_operation
 def create_trial_site(subdomain: str, request_key: str, team: str | None = None) -> dict:
 	"""Start a trial site under a name the customer chose. Gated on `server:create`."""
 	from central.site_provisioning import create_trial_site as start
@@ -43,7 +43,7 @@ def create_trial_site(subdomain: str, request_key: str, team: str | None = None)
 
 
 @frappe.whitelist(methods=["POST"])
-@resource_action
+@handle_resource_operation
 def claim_site(name: str) -> dict:
 	"""Hand back a way in and schedule the customer's hostname behind the response.
 
@@ -108,7 +108,7 @@ def onboarding_status(team: str | None = None) -> dict:
 
 
 @frappe.whitelist(methods=["POST"])
-@resource_action
+@handle_resource_operation
 def terminate_site(name: str) -> dict:
 	"""Terminate a site by terminating the machine it is. Gated on `server:terminate`."""
 	from central.resource_actions import submit_command
