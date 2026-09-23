@@ -204,7 +204,7 @@ scheduler_events = {
 	"hourly_maintenance": [
 		"central.infrastructure.doctype.vm_snapshot.vm_snapshot.delete_expired_snapshots",
 	],
-	"daily_maintenance": [
+	"daily_long": [
 		"central.infrastructure.doctype.vm_snapshot.vm_snapshot.take_automatic_snapshots",
 	],
 	"daily": [
