@@ -1,28 +1,22 @@
-import { computed, provide, type Ref, ref, type WritableComputedRef } from 'vue'
-import { SIDE_PANEL_SWITCHING } from '@/components/common/SidePanel.vue'
+import { type Ref, ref, watch } from 'vue'
 
 export function useTrayColumn<Name extends string>(): {
 	tray: Ref<Name | null>
-	trayModel: (name: Name) => WritableComputedRef<boolean>
+	shown: Ref<Name | null>
+	onClosed: () => void
 } {
 	const tray = ref(null) as Ref<Name | null>
-	const switching = ref(false)
-	provide(SIDE_PANEL_SWITCHING, switching)
 
-	function trayModel(name: Name): WritableComputedRef<boolean> {
-		return computed({
-			get: () => tray.value === name,
-			set: (open: boolean) => {
-				if (open) {
-					switching.value = tray.value !== null && tray.value !== name
-					tray.value = name
-				} else if (tray.value === name) {
-					switching.value = false
-					tray.value = null
-				}
-			},
-		})
+	// Trails `tray` through the slide-out so the closing panel keeps its body
+	// instead of blanking; cleared once it has left, so a reopen mounts fresh.
+	const shown = ref(null) as Ref<Name | null>
+	watch(tray, (name) => {
+		if (name) shown.value = name
+	})
+
+	function onClosed(): void {
+		shown.value = null
 	}
 
-	return { tray, trayModel }
+	return { tray, shown, onClosed }
 }

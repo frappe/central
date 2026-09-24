@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Button, LoadingText, Switch } from 'frappe-ui'
 import { computed, ref } from 'vue'
-import SidePanel from '@/components/common/SidePanel.vue'
+import SidePanelContent from '@/components/common/SidePanelContent.vue'
 import TopupDialog from '@/components/TopupDialog.vue'
 import { useBillingOverview } from '@/composables/useBillingOverview'
 import { useBillingSetup } from '@/composables/useBillingSetup'
@@ -12,9 +12,7 @@ import type { CreditLedgerEntry } from '@/types/billing'
 
 // Wallet history — a docked side panel (like the invoice detail tray), opened
 // from the compact Wallet card. Balance header, auto-recharge toggle, the credit
-// ledger, and Add credit (TopupDialog → #67). The page owns whether it's mounted;
-// the close button clears that.
-const open = defineModel<boolean>('open', { default: false })
+// ledger, and Add credit (TopupDialog → #67). The page owns whether it's mounted.
 const { credit, ledger, currency, reloadMoney } = useBillingOverview()
 const { canManageBilling } = useCapabilities()
 const { requireSetup } = useBillingSetup()
@@ -40,9 +38,7 @@ function isCredit(entry: CreditLedgerEntry): boolean {
 </script>
 
 <template>
-	<!-- The shared docked SidePanel (billing invoice anatomy). -->
-	<SidePanel
-		v-model:open="open"
+	<SidePanelContent
 		title="Wallet history"
 		:subtitle="`Balance ${money(balance, currency)}`"
 	>
@@ -118,5 +114,5 @@ function isCredit(entry: CreditLedgerEntry): boolean {
 				>
 			</Button>
 		</template>
-	</SidePanel>
+	</SidePanelContent>
 </template>
