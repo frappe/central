@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Alert, Button, Popover } from 'frappe-ui'
+import { Alert, Button, MultiSelect } from 'frappe-ui'
 import { computed, ref } from 'vue'
 import SSHKeyDialog from '@/components/servers/SSHKeyDialog.vue'
 import { useCapabilities } from '@/composables/useCapabilities'
@@ -15,101 +15,89 @@ const props = defineProps<Props>()
 const emit = defineEmits<{ 'update:modelValue': [value: string[]] }>()
 const { keys, loading, error, reload, create } = useTeamSSHKeys()
 const { canManageSSHKeys } = useCapabilities()
-const open = ref(false)
 const adding = ref(false)
-const chosen = computed(() =>
-	keys.value.filter((key) => props.modelValue.includes(key.name)),
+const options = computed(() =>
+	keys.value.map((key) => ({
+		label: key.title,
+		value: key.name,
+		description: key.fingerprint,
+	})),
 )
 
-function toggle(name: string) {
-	const next = props.modelValue.includes(name)
-		? props.modelValue.filter((value) => value !== name)
-		: [...props.modelValue, name]
-	emit('update:modelValue', next)
+function updateSelection(values: Array<string | number>) {
+	emit('update:modelValue', values.map(String))
+}
+
+function addKey(setOpen: (value: boolean) => void) {
+	setOpen(false)
+	adding.value = true
 }
 
 function saved(key: TeamSSHKey | null) {
-	if (key) emit('update:modelValue', [...props.modelValue, key.name])
-	open.value = false
+	if (key && !props.modelValue.includes(key.name)) {
+		emit('update:modelValue', [...props.modelValue, key.name])
+	}
 }
 </script>
 
 <template>
-	<div class="flex flex-col gap-2">
-		<label class="text-p-sm font-medium text-ink-gray-8"
-			>SSH keys{{ required ? '' : ' (optional)' }}</label
+	<div class="space-y-3">
+		<MultiSelect
+			:model-value="modelValue"
+			:options="options"
+			:loading="loading"
+			:disabled="!!error"
+			:required="required"
+			:description="
+				required
+					? 'Select at least one team key to sign in to Ubuntu.'
+					: 'Add a team key if you want SSH access to this server.'
+			"
+			:empty-text="keys.length ? 'No matching keys' : 'No team SSH keys yet'"
+			label="SSH keys"
+			placeholder="Select team SSH keys"
+			variant="outline"
+			class="w-full max-w-xs"
+			@update:model-value="updateSelection"
 		>
-		<Popover v-model:open="open" align="start" :offset="5">
-			<template #trigger>
-				<button
-					type="button"
-					class="flex w-full items-center justify-between rounded-5 border border-outline-gray-2 bg-surface-base px-3 py-2 text-left text-p-sm text-ink-gray-8 focus-visible:outline focus-visible:outline-2 focus-visible:outline-outline-gray-4"
-					aria-label="Select SSH keys"
-				>
-					<span class="truncate"
-						>{{ chosen.length ? chosen.map((key) => key.title).join(', ') : 'Select team SSH keys' }}</span
-					>
-					<span
-						class="lucide-chevron-down size-4 shrink-0 text-ink-gray-5"
-						aria-hidden="true"
-					/>
-				</button>
-			</template>
-			<div
-				class="w-80 max-w-[calc(100vw-2rem)] rounded-6 border border-outline-gray-2 bg-surface-base p-2 shadow-lg"
-			>
-				<p v-if="loading" class="px-2 py-3 text-p-sm text-ink-gray-5">
-					Loading keys…
-				</p>
-				<Alert
-					v-else-if="error"
-					theme="red"
-					title="Couldn't load SSH keys"
-					:description="error"
-					:primary-action="{ label: 'Retry', onClick: reload }"
-				/>
-				<p v-else-if="!keys.length" class="px-2 py-3 text-p-sm text-ink-gray-5">
-					No team keys yet.
-				</p>
-				<div v-else class="max-h-56 overflow-y-auto">
-					<label
-						v-for="key in keys"
-						:key="key.name"
-						class="flex cursor-pointer items-center gap-3 rounded-4 px-2 py-2 hover:bg-surface-gray-2"
-					>
-						<input
-							type="checkbox"
-							:checked="modelValue.includes(key.name)"
-							class="size-4"
-							@change="toggle(key.name)"
-						/>
-						<span class="min-w-0">
-							<span class="block truncate text-p-sm font-medium text-ink-gray-8"
-								>{{ key.title }}</span
-							>
-							<span class="block truncate font-mono text-xs text-ink-gray-5"
-								>{{ key.fingerprint }}</span
-							>
-						</span>
-					</label>
+			<template #item-label="{ item }">
+				<div class="min-w-0">
+					<div class="truncate">{{ item.label }}</div>
+					<div class="truncate font-mono text-p-sm text-ink-gray-5">
+						{{ item.description }}
+					</div>
 				</div>
+			</template>
+			<template #footer="{ clear, selectedOptions, setOpen }">
 				<div
-					v-if="canManageSSHKeys"
-					class="border-t border-outline-gray-1 pt-2"
+					v-if="keys.length || canManageSSHKeys"
+					class="flex items-center justify-between gap-2 border-t border-outline-gray-1 px-2 py-1.5"
 				>
 					<Button
-						label="Add SSH key"
-						icon-left="lucide-plus"
+						v-if="selectedOptions.length"
 						variant="ghost"
 						size="sm"
-						@click="adding = true; open = false"
+						label="Clear all"
+						@click="clear"
+					/>
+					<Button
+						v-if="canManageSSHKeys"
+						variant="ghost"
+						size="sm"
+						icon-left="lucide-plus"
+						label="Add SSH key"
+						@click="addKey(setOpen)"
 					/>
 				</div>
-			</div>
-		</Popover>
-		<p v-if="required && !modelValue.length" class="text-p-sm text-ink-gray-5">
-			Select at least one key to sign in to Ubuntu.
-		</p>
+			</template>
+		</MultiSelect>
+		<Alert
+			v-if="error"
+			theme="red"
+			title="Couldn't load SSH keys"
+			:description="error"
+			:primary-action="{ label: 'Retry', onClick: reload }"
+		/>
 		<SSHKeyDialog v-model="adding" :save="create" @saved="saved" />
 	</div>
 </template>

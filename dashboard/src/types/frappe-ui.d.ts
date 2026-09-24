@@ -192,6 +192,7 @@ export const LoadingText: Component
 export const MobileNav: Component
 export const MobileNavItem: Component
 export const MobileShell: Component
+export const MultiSelect: Component
 export const Popover: Component
 export const Select: Component
 export const SettingsBody: Component
