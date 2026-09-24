@@ -61,6 +61,7 @@ def pilot_request():
 		disk_mib=10240,
 		hostname="pilot-1",
 		ssh_keys=[],
+		ssh_key_ids=[],
 		image_tags={"purpose": "pilot"},
 	)
 	return request
