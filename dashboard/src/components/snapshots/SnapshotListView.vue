@@ -33,6 +33,7 @@ interface SnapshotListViewProps {
 const props = defineProps<SnapshotListViewProps>()
 const emit = defineEmits<{
 	retry: []
+	take: []
 	keep: [snapshot: VMSnapshotRow]
 	restore: [snapshot: VMSnapshotRow]
 	delete: [snapshots: VMSnapshotRow[]]
@@ -164,15 +165,15 @@ function rowActions(row: VMSnapshotRow): SnapshotAction[] {
 		:row-key="(row) => row.name"
 		:loading="loading"
 		:error="error"
-		:filters="filters"
+		:filters="snapshots.length ? filters : []"
 		:selectable="canManage"
-		searchable
+		:searchable="snapshots.length > 0"
 		search-placeholder="Search by snapshot or server name"
 		item-label="snapshot"
 		row-class="min-h-12 py-1.5"
 		:empty-state="{
 			title: 'No snapshots yet',
-			description: `Take a snapshot from a server's menu. ${freeRule}`,
+			description: 'Take a snapshot of a server to save its disk.',
 		}"
 		@retry="emit('retry')"
 	>
@@ -189,6 +190,21 @@ function rowActions(row: VMSnapshotRow): SnapshotAction[] {
 					/>
 				</span>
 			</Tooltip>
+			<Button
+				v-if="canManage"
+				variant="subtle"
+				icon-left="lucide-plus"
+				label="Take snapshot"
+				@click="emit('take')"
+			/>
+		</template>
+		<template v-if="canManage" #empty-action>
+			<Button
+				variant="subtle"
+				icon-left="lucide-plus"
+				label="Take snapshot"
+				@click="emit('take')"
+			/>
 		</template>
 
 		<template #selection-actions="{ rows, clear }">

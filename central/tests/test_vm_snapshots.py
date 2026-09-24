@@ -325,6 +325,14 @@ class TestSnapshotAccess(SnapshotTestCase):
 		with self.assertRaises(frappe.PermissionError):
 			api.delete_snapshots(self.team, [snapshot.name])
 
+	def test_a_server_from_another_team_cannot_be_snapshotted(self):
+		other_team = self._team("Other", {})
+		other_server = self._server("other", other_team)
+
+		frappe.set_user(self.owner)
+		with self.assertRaises(frappe.DoesNotExistError):
+			api.take_snapshot(self.team, other_server.name)
+
 	def test_delete_reports_each_failure_by_name(self):
 		available = self._available()
 		pending = self._snapshot("Manual", self._server("b", self.team))
