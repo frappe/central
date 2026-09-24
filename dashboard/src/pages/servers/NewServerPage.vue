@@ -197,7 +197,9 @@ const selectedRegionName = computed(() =>
 
 					<FormStep title="Select an image">
 						<div class="space-y-3">
+							<!-- Offer the snapshot source only when this region has one to restore. -->
 							<TabButtons
+								v-if="snapshotOptions.length > 1 || source === 'snapshot'"
 								v-model="source"
 								:options="[
 									{ label: 'Image', value: 'image' },
