@@ -349,6 +349,7 @@ override_doctype_dashboards = {
 # Authentication and authorization
 
 permission_query_conditions = {
+	"Team SSH Key": "central.permissions.team_ssh_key_query_conditions",
 	"Virtual Machine": "central.permissions.server_query_conditions",
 	"IAM Permission Probe": "central.permissions.iam_permission_probe_query_conditions",
 	"Pilot Credential": "central.permissions.pilot_credential_query_conditions",
@@ -365,6 +366,7 @@ permission_query_conditions = {
 }
 
 has_permission = {
+	"Team SSH Key": "central.permissions.team_ssh_key_has_permission",
 	"Virtual Machine": "central.permissions.server_has_permission",
 	"IAM Permission Probe": "central.permissions.iam_permission_probe_has_permission",
 	"Pilot Credential": "central.permissions.pilot_credential_has_permission",

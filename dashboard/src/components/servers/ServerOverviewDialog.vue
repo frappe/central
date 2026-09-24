@@ -26,6 +26,7 @@ type Overview = {
 		plan_currency: string | null
 		plan_billing_cycle: string | null
 		team_name: string
+		ssh_command?: string | null
 		region_details: { display_name?: string | null; provider?: string | null }
 	}
 	monitoring: {
@@ -231,6 +232,7 @@ const planLabel = computed(() =>
 						:provider="server.region_details.provider"
 						:plan="planLabel"
 						:inbound-ip="server.public_ipv4 || '—'"
+						:ssh-command="server.ssh_command"
 						:frappe-version="server.frappe_version || '—'"
 						:created-on="server.creation"
 						:owned-by="server.team_name"

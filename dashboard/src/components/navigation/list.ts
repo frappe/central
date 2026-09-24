@@ -68,6 +68,12 @@ export const sidebarSections = computed<SidebarSection[]>(() => {
 					condition: canViewServers.value,
 				},
 				{
+					label: 'SSH Keys',
+					icon: 'lucide-key-round',
+					to: '/servers/ssh-keys',
+					condition: canViewServers.value,
+				},
+				{
 					label: 'Services',
 					icon: 'lucide-blocks',
 					to: '/addons',

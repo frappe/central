@@ -57,6 +57,11 @@ export const API = {
 	terminateServer: 'central.api.servers.terminate_server',
 	serverOverview: 'central.api.servers.server_overview',
 	serverHostnames: 'central.api.servers.server_hostnames',
+	listTeamSSHKeys: 'central.api.ssh_keys.list_team_ssh_keys',
+	createTeamSSHKey: 'central.api.ssh_keys.create_team_ssh_key',
+	rotateTeamSSHKey: 'central.api.ssh_keys.rotate_team_ssh_key',
+	retryTeamSSHKeySync: 'central.api.ssh_keys.retry_team_ssh_key_sync',
+	deleteTeamSSHKey: 'central.api.ssh_keys.delete_team_ssh_key',
 
 	// ── Snapshots (central.api.snapshots) ──
 	// server:view reads them and their price; server:snapshot takes, keeps and deletes.

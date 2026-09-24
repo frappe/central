@@ -38,6 +38,7 @@ class CreateServerInput(BaseModel):
 	sub_category: str | None = None
 	hostname: str = Field(default="", max_length=63)
 	ssh_keys: list[SSHKey] = Field(default_factory=list, max_length=20)
+	ssh_key_ids: list[str] = Field(default_factory=list, max_length=20)
 
 
 class ServerCreation(BaseModel):
@@ -54,6 +55,7 @@ class ServerCreation(BaseModel):
 	sub_category: str | None
 	hostname: str
 	ssh_keys: list[SSHKey]
+	ssh_key_ids: list[str] = Field(default_factory=list)
 	image_tags: dict[str, str]
 	virtual_cpu_count: int = Field(gt=0, le=32)
 	memory_mib: PositiveInt

@@ -8,7 +8,7 @@ import ImageOfferingSelector from '@/components/servers/ImageOfferingSelector.vu
 import PlanGroup from '@/components/servers/PlanGroup.vue'
 import ProviderAvatar from '@/components/servers/ProviderAvatar.vue'
 import ServerMap from '@/components/servers/ServerMap.vue'
-import SshKeysField from '@/components/servers/SshKeysField.vue'
+import SSHKeysField from '@/components/servers/SSHKeysField.vue'
 import { useServerCreation } from '@/composables/useServerCreation'
 import { flagEmoji, regionLabel } from '@/lib/serverMap'
 
@@ -67,9 +67,8 @@ const {
 	imagesLoading,
 	imagesError,
 	reloadImages,
-	sshKeys,
+	sshKeyIds,
 	sshRequired,
-	sshProblem,
 	action,
 	retry,
 	editSettings,
@@ -210,14 +209,13 @@ const selectedRegionName = computed(() =>
 								>
 									Loading snapshots…
 								</p>
-								<div v-else-if="snapshotsError">
-									<Alert theme="red" :description="snapshotsError" />
-									<Button
-										class="mt-2"
-										label="Retry snapshots"
-										@click="reloadSnapshots"
-									/>
-								</div>
+								<Alert
+									v-else-if="snapshotsError"
+									theme="red"
+									title="Couldn't load snapshots"
+									:description="snapshotsError"
+									:primary-action="{ label: 'Retry snapshots', onClick: reloadSnapshots }"
+								/>
 								<p
 									v-else-if="snapshotOptions.length < 2"
 									class="text-p-sm text-ink-gray-5"
@@ -250,18 +248,13 @@ const selectedRegionName = computed(() =>
 								>
 									Loading regional images…
 								</p>
-								<div v-else-if="imagesError">
-									<Alert
-										theme="red"
-										title="Images aren't available in this region"
-										:description="imagesError"
-									/>
-									<Button
-										class="mt-2"
-										label="Retry images"
-										@click="reloadImages"
-									/>
-								</div>
+								<Alert
+									v-else-if="imagesError"
+									theme="red"
+									title="Images aren't available in this region"
+									:description="imagesError"
+									:primary-action="{ label: 'Retry images', onClick: reloadImages }"
+								/>
 								<template v-else-if="imageOptions.length < 2">
 									<p class="text-p-sm text-ink-gray-5">
 										This image has no build in this region. Select another image
@@ -276,11 +269,10 @@ const selectedRegionName = computed(() =>
 									:options="imageOptions"
 								/>
 							</template>
-							<SshKeysField
+							<SSHKeysField
 								v-if="image"
-								v-model="sshKeys"
+								v-model="sshKeyIds"
 								:required="sshRequired"
-								:problem="sshProblem"
 							/>
 						</div>
 					</FormStep>
@@ -294,14 +286,13 @@ const selectedRegionName = computed(() =>
 							Loading plans…
 						</p>
 
-						<div v-else-if="plansError">
-							<Alert
-								theme="red"
-								title="Plans aren't available for this image"
-								description="Try again, or select another image or region."
-							/>
-							<Button class="mt-2" label="Retry plans" @click="reloadPlans" />
-						</div>
+						<Alert
+							v-else-if="plansError"
+							theme="red"
+							title="Plans aren't available for this image"
+							:description="plansError"
+							:primary-action="{ label: 'Retry plans', onClick: reloadPlans }"
+						/>
 
 						<Alert
 							v-else-if="regionFull"

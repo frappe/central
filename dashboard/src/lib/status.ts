@@ -1,6 +1,6 @@
 import type { InvitationStatus } from '@/types/api'
 import type { PaymentAttempt } from '@/types/billing'
-import type { VirtualMachine } from '@/types/Central/VirtualMachine'
+import type { VirtualMachine } from '@/types/Infrastructure/VirtualMachine'
 
 // The DocType statuses plus Central's own derived display state (see displayStatus).
 export type VirtualMachineStatus =

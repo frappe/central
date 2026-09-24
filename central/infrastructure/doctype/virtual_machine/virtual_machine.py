@@ -64,6 +64,7 @@ class VirtualMachine(Document):
 				"memory_megabytes": configuration.memory_mib,
 				"disk_gigabytes": configuration.disk_mib / 1024,
 				"frappe_version": configuration.image_tags.get("frappe_version"),
+				"ssh_keys": [{"team_ssh_key": key} for key in configuration.ssh_key_ids],
 			}
 		)
 		# The authorized Resource Action permits this system-owned mirror write.
@@ -245,7 +246,7 @@ class VirtualMachine(Document):
 
 		try:
 			task = rename_admin_domain(self.name, tls=False)
-		except RequestException, OSError, ValueError:
+		except (RequestException, OSError, ValueError):
 			self.record_admin_domain_failure(
 				_("Pilot did not accept the admin hostname change. Central will retry it."),
 				"Pilot admin domain rename failed",

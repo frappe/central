@@ -62,6 +62,7 @@ The distinction matters:
 | `server:power` | Start, stop, and restart a server. |
 | `server:resize` | Resize or rebuild a server. |
 | `server:snapshot` | Create and restore server snapshots. |
+| `server:ssh-key` | Add, rotate, and remove Team SSH keys for selected servers. |
 | `server:terminate` | Destroy a server. |
 
 ### `bench` plane (0 — deferred)
@@ -80,6 +81,7 @@ under these implications before it is asserted or evaluated
 | --- | --- |
 | `server:create` | `server:view`, `cluster:view` |
 | `server:power` / `resize` / `snapshot` / `terminate` | `server:view` |
+| `server:ssh-key` | `server:view` |
 
 The role builder can let a user tick `server:create` without remembering
 `server:view`/`cluster:view`, and a grant hand-crafted through the API cannot
@@ -103,11 +105,12 @@ all teams. Teams may also define custom roles scoped to themselves.
 | `server:power` | ✓ | ✓ | ✓ | | |
 | `server:resize` | ✓ | ✓ | ✓ | | |
 | `server:snapshot` | ✓ | ✓ | ✓ | | |
+| `server:ssh-key` | ✓ | ✓ | ✓ | | |
 | `server:terminate` | ✓ | ✓ | ✓ | | |
 | `service:view` | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `service:manage` | ✓ | ✓ | ✓ | | ✓ |
 
-Totals: Owner 14, Admin 13, Developer 9, Viewer 3, Billing 6.
+Totals: Owner 15, Admin 14, Developer 10, Viewer 3, Billing 6.
 
 The ladder reads top to bottom: **Viewer** (look) → **Billing** (look + pay) →
 **Developer** (operate servers) → **Admin** (Developer + run the team) → **Owner**

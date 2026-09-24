@@ -5,30 +5,47 @@
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
+  "overview_tab",
+  "identity_section",
   "resource_id",
   "title",
   "team",
   "region",
+  "identity_column",
   "plan",
   "frappe_version",
   "status",
+  "configuration_tab",
+  "capacity_section",
   "vcpus",
   "memory_megabytes",
   "disk_gigabytes",
+  "capacity_column",
+  "image_offering",
+  "skip_automatic_snapshot",
+  "access_tab",
+  "network_section",
   "ipv6_address",
   "public_ipv4",
+  "network_column",
   "gateway_url",
+  "ssh_keys_section",
+  "ssh_keys",
+  "diagnostics_tab",
+  "admin_domain_section",
   "admin_domain_task",
   "admin_domain_error",
   "admin_domain_error_log",
-  "skip_automatic_snapshot",
+  "regional_section",
   "atlas_vm_id",
-  "image_offering",
   "atlas_image_id",
+  "regional_column",
   "state_observed_at",
   "last_reported_at"
  ],
  "fields": [
+  {"fieldname": "overview_tab", "fieldtype": "Tab Break", "label": "Overview"},
+  {"fieldname": "identity_section", "fieldtype": "Section Break", "label": "Identity"},
   {
    "description": "The VM identifier in Atlas (the source of truth).",
    "fieldname": "resource_id",
@@ -68,6 +85,7 @@
    "reqd": 1,
    "search_index": 1
   },
+  {"fieldname": "identity_column", "fieldtype": "Column Break"},
   {
    "fieldname": "plan",
    "fieldtype": "Link",
@@ -94,6 +112,8 @@
    "options": "Pending\nProvisioning\nDeploying\nRunning\nPaused\nStopped\nFailed\nTerminated",
    "read_only": 1
   },
+  {"fieldname": "configuration_tab", "fieldtype": "Tab Break", "label": "Configuration"},
+  {"fieldname": "capacity_section", "fieldtype": "Section Break", "label": "Capacity"},
   {
    "fieldname": "vcpus",
    "fieldtype": "Int",
@@ -112,6 +132,11 @@
    "label": "Disk (GB)",
    "read_only": 1
   },
+  {"fieldname": "capacity_column", "fieldtype": "Column Break"},
+  {"fieldname": "image_offering", "fieldtype": "Link", "label": "Image Offering", "options": "Image Offering", "read_only": 1},
+  {"fieldname": "skip_automatic_snapshot", "fieldtype": "Check", "label": "Skip Automatic Snapshot", "default": "0", "description": "The customer turned off the daily free snapshot for this server."},
+  {"fieldname": "access_tab", "fieldtype": "Tab Break", "label": "Access"},
+  {"fieldname": "network_section", "fieldtype": "Section Break", "label": "Network"},
   {
    "fieldname": "ipv6_address",
    "fieldtype": "Data",
@@ -124,6 +149,7 @@
    "label": "Public IPv4",
    "read_only": 1
   },
+  {"fieldname": "network_column", "fieldtype": "Column Break"},
   {
    "description": "The URL a bench VM is fronted at, reported by Atlas; empty for a non-bench VM.",
    "fieldname": "gateway_url",
@@ -132,6 +158,10 @@
    "options": "URL",
    "read_only": 1
   },
+  {"fieldname": "ssh_keys_section", "fieldtype": "Section Break", "label": "SSH Keys"},
+  {"fieldname": "ssh_keys", "fieldtype": "Table", "label": "SSH Keys", "options": "Server SSH Key", "read_only": 1, "description": "Team public keys selected for this server."},
+  {"fieldname": "diagnostics_tab", "fieldtype": "Tab Break", "label": "Diagnostics"},
+  {"fieldname": "admin_domain_section", "fieldtype": "Section Break", "label": "Admin Domain", "collapsible": 1},
   {
    "description": "The Pilot task that changed the local admin domain to the routed gateway hostname.",
    "fieldname": "admin_domain_task",
@@ -154,13 +184,7 @@
    "options": "Error Log",
    "read_only": 1
   },
-  {
-   "default": "0",
-   "fieldname": "skip_automatic_snapshot",
-   "fieldtype": "Check",
-   "label": "Skip Automatic Snapshot",
-   "description": "The customer turned off the daily free snapshot for this server."
-  },
+  {"fieldname": "regional_section", "fieldtype": "Section Break", "label": "Regional State", "collapsible": 1},
   {
    "description": "VM identifier within the linked Atlas region.",
    "fieldname": "atlas_vm_id",
@@ -169,18 +193,12 @@
    "read_only": 1
   },
   {
-   "fieldname": "image_offering",
-   "fieldtype": "Link",
-   "label": "Image Offering",
-   "options": "Image Offering",
-   "read_only": 1
-  },
-  {
    "fieldname": "atlas_image_id",
    "fieldtype": "Data",
    "label": "Atlas Image ID",
    "read_only": 1
   },
+  {"fieldname": "regional_column", "fieldtype": "Column Break"},
   {
    "description": "When Central last recorded this server's state.",
    "fieldname": "state_observed_at",

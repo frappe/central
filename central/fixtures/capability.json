@@ -70,6 +70,16 @@
   "resource": "server"
  },
  {
+  "capability": "server:ssh-key",
+  "description": "Manage team SSH keys and rotate keys on selected servers",
+  "docstatus": 0,
+  "doctype": "Capability",
+  "modified": "2026-09-24 00:00:00.000000",
+  "name": "server:ssh-key",
+  "plane": "central",
+  "resource": "server"
+ },
+ {
   "capability": "server:terminate",
   "description": "Permanently destroy servers",
   "docstatus": 0,

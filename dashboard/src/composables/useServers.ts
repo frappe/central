@@ -7,7 +7,7 @@ import { useSession } from '@/composables/useSession'
 import { reportError } from '@/lib/feedback'
 import { submitOrThrow } from '@/lib/frappeCall'
 import type { RefreshResponse } from '@/types/api'
-import type { VirtualMachine } from '@/types/Central/VirtualMachine'
+import type { VirtualMachine } from '@/types/Infrastructure/VirtualMachine'
 
 type BenchLinkResponse = { url: string }
 type SiteLinkResponse = { url: string | null; login_url: string | null }

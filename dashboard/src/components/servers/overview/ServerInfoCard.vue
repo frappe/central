@@ -7,6 +7,7 @@ defineProps<{
 	provider?: string | null
 	plan: string
 	inboundIp: string
+	sshCommand?: string | null
 	frappeVersion: string
 	createdOn?: string | null
 	ownedBy: string
@@ -33,6 +34,10 @@ defineProps<{
 			<div class="flex items-center justify-between gap-4">
 				<dt class="text-ink-gray-5">Inbound IP</dt>
 				<dd class="font-mono text-ink-gray-9">{{ inboundIp }}</dd>
+			</div>
+			<div v-if="sshCommand" class="flex items-center justify-between gap-4">
+				<dt class="text-ink-gray-5">Connect by SSH</dt>
+				<dd class="font-mono text-ink-gray-9">{{ sshCommand }}</dd>
 			</div>
 			<div class="flex items-center justify-between gap-4">
 				<dt class="text-ink-gray-5">Frappe version</dt>

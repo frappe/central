@@ -28,6 +28,7 @@ CAP_IMPLICATIONS = {
 	"server:power": ("server:view",),
 	"server:resize": ("server:view",),
 	"server:snapshot": ("server:view",),
+	"server:ssh-key": ("server:view",),
 	"service:manage": ("service:view",),
 }
 

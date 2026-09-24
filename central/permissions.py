@@ -91,6 +91,22 @@ def server_has_permission(doc, user: str | None = None, ptype: str | None = None
 	return _team_field_has_permission(doc, ("server:view",), (), user, ptype)
 
 
+def team_ssh_key_query_conditions(user: str | None = None) -> str:
+	"""1. Operators see all keys.
+	2. Users see keys in teams where they can view servers.
+	3. Other users see no keys.
+	"""
+	return _team_field_query_conditions("Team SSH Key", "server:view", user)
+
+
+def team_ssh_key_has_permission(doc, user: str | None = None, ptype: str | None = None, **kwargs) -> bool:
+	"""1. Operators may manage keys.
+	2. Server viewers may read their team's keys.
+	3. Key managers may create, change, or remove their team's keys.
+	"""
+	return _team_field_has_permission(doc, ("server:view",), ("server:ssh-key",), user, ptype)
+
+
 def resource_action_query_conditions(user: str | None = None) -> str:
 	return _team_field_query_conditions("Resource Action", "server:view", user)
 

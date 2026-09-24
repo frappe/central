@@ -22,7 +22,6 @@ import {
 	type MapSpot,
 	regionLabel,
 } from '@/lib/serverMap'
-import { parseSshKeys, sshKeysProblem } from '@/lib/sshKeys'
 import type { ComposedConfig, Plan, Profile } from '@/types/api'
 import type { Region } from '@/types/Region'
 
@@ -204,15 +203,18 @@ export function useServerCreation() {
 		() =>
 			offerings.value.find((item) => item.name === offering.value)?.description,
 	)
-	const sshKeys = ref('')
+	const sshKeyIds = ref<string[]>([])
+	watch(activeTeam, () => {
+		sshKeyIds.value = []
+	})
 	// Only a non-Pilot image needs a key; Pilot hands the user its web admin instead.
 	const sshRequired = computed(
 		() => !!image.value && image.value.tags.purpose !== 'pilot',
 	)
-	// Only a malformed key is an error. A missing required key is not a mistake yet — the
-	// field's own hint says why it is needed, and the Create button stays disabled.
-	const sshProblem = computed(() => sshKeysProblem(sshKeys.value))
-	const sshMissing = computed(() => sshRequired.value && !sshKeys.value.trim())
+	// The picker explains the required key while Create stays disabled.
+	const sshMissing = computed(
+		() => sshRequired.value && !sshKeyIds.value.length,
+	)
 	watch(selection, () => {
 		selectedPlan.value = null
 		composedConfig.value = null
@@ -367,7 +369,7 @@ export function useServerCreation() {
 			!subdomain.value
 		)
 			return false
-		if (sshMissing.value || sshProblem.value) return false
+		if (sshMissing.value) return false
 		if (regionFull.value) return false // the region can't seat a new server right now
 		if (bracketExhausted.value) return false // nothing here fits the budget
 		return isCustom.value ? !!composedConfig.value : !!selectedPlanObj.value
@@ -387,7 +389,7 @@ export function useServerCreation() {
 			title: name.value.trim(),
 			hostname: subdomain.value,
 			...selection.value,
-			ssh_keys: parseSshKeys(sshKeys.value),
+			ssh_key_ids: sshKeyIds.value,
 		}
 		if (isCustom.value && composedConfig.value) {
 			await operation.submit('central.api.servers.create_composed_server', {
@@ -479,9 +481,8 @@ export function useServerCreation() {
 		imagesLoading,
 		imagesError,
 		reloadImages,
-		sshKeys,
+		sshKeyIds,
 		sshRequired,
-		sshProblem,
 		action,
 		retry,
 		editSettings,
