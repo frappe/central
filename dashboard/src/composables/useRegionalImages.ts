@@ -1,4 +1,4 @@
-import { call, frappeRequest } from 'frappe-ui'
+import { frappeRequest } from 'frappe-ui'
 import { computed, type Ref, ref, watch } from 'vue'
 import { API, methodV1 } from '@/api/methods'
 import { useSession } from '@/composables/useSession'
@@ -124,10 +124,11 @@ export function useRegionalImages(
 
 		loading.value = true
 		try {
-			const choices = await call<ImageOffering[]>(
-				'central.api.images.list_offerings',
-				{ team },
-			)
+			const choices = await frappeRequest<ImageOffering[]>({
+				url: methodV1(API.listImageOfferings),
+				method: 'GET',
+				params: { team },
+			})
 			if (current !== generation) return
 			offerings.value = choices
 			if (!choices.some((choice) => choice.name === offering.value)) {
@@ -139,13 +140,14 @@ export function useRegionalImages(
 			const builds: RegionalImage[] = []
 			let offset: number | null = 0
 			do {
-				const page: { items: RegionalImage[]; next_offset: number | null } =
-					await call('central.api.images.list_images', {
-						team,
-						region: atlas,
-						offering: offering.value,
-						offset,
-					})
+				const page: {
+					items: RegionalImage[]
+					next_offset: number | null
+				} = await frappeRequest({
+					url: methodV1(API.listRegionalImages),
+					method: 'GET',
+					params: { team, region: atlas, offering: offering.value, offset },
+				})
 				if (current !== generation) return
 				builds.push(...page.items)
 				offset = page.next_offset

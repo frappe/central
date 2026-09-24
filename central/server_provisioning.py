@@ -6,6 +6,7 @@ import math
 import re
 
 import frappe
+from cryptography.exceptions import UnsupportedAlgorithm
 from cryptography.hazmat.primitives.serialization import load_ssh_public_key
 from frappe import _
 from frappe.query_builder.functions import Sum
@@ -43,6 +44,7 @@ def submit_request(
 	sub_category: str | None = None,
 	hostname: str | None = None,
 	ssh_keys: list[str] | None = None,
+	ssh_key_ids: list[str] | None = None,
 	resource_type: str = "Server",
 	subdomain: str | None = None,
 	snapshot: str | None = None,
@@ -66,6 +68,7 @@ def submit_request(
 		sub_category=sub_category,
 		hostname=hostname,
 		ssh_keys=ssh_keys,
+		ssh_key_ids=ssh_key_ids,
 	)
 	if not can(frappe.session.user, server_input.team, "server:create"):
 		frappe.throw(_("You cannot create servers for this Team."), frappe.PermissionError)
@@ -85,6 +88,7 @@ def _validate_server_input(**values) -> CreateServerInput:
 	values["includes"] = values.get("includes") or []
 	values["hostname"] = values.get("hostname") or ""
 	values["ssh_keys"] = values.get("ssh_keys") or []
+	values["ssh_key_ids"] = values.get("ssh_key_ids") or []
 	try:
 		server_input = CreateServerInput.model_validate(values)
 	except ValidationError as error:
@@ -148,6 +152,9 @@ def _build_server_configuration(
 		server_input.sub_category,
 	)
 	validate_guest_input(server_input, image)
+	selected_keys = resolve_team_ssh_keys(server_input.team, server_input.ssh_key_ids)
+	if image["tags"].get("purpose") != "pilot" and not (selected_keys or server_input.ssh_keys):
+		frappe.throw(_("Select an SSH key for this server."))
 
 	configuration = ServerCreation(
 		offering=server_input.offering,
@@ -160,7 +167,8 @@ def _build_server_configuration(
 		includes=composition,
 		sub_category=server_input.sub_category,
 		hostname=server_input.hostname,
-		ssh_keys=server_input.ssh_keys,
+		ssh_keys=[*selected_keys, *server_input.ssh_keys],
+		ssh_key_ids=server_input.ssh_key_ids,
 		image_tags=image["tags"],
 		**image_shape(composition, image),
 	)
@@ -295,14 +303,29 @@ def image_shape(includes: list[dict], image: dict) -> dict[str, int]:
 
 
 def validate_guest_input(server_input: CreateServerInput, image: dict) -> None:
+	if server_input.ssh_key_ids and server_input.ssh_keys:
+		frappe.throw(_("Choose saved SSH keys or enter public keys, not both."))
 	if server_input.hostname and not re.fullmatch(
 		r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", server_input.hostname
 	):
 		frappe.throw(_("Use a valid lowercase guest hostname."))
-	if image["tags"].get("purpose") != "pilot" and not server_input.ssh_keys:
-		frappe.throw(_("Add an SSH public key for this server."))
 	for key in server_input.ssh_keys:
 		try:
 			load_ssh_public_key(key.strip().encode())
-		except ValueError, TypeError:
+		except (ValueError, TypeError, UnsupportedAlgorithm):
 			frappe.throw(_("Enter a valid OpenSSH public key on each line."))
+
+
+def resolve_team_ssh_keys(team: str, names: list[str]) -> list[str]:
+	"""Resolve only public keys owned by the authorized Team."""
+	if len(names) != len(set(names)):
+		frappe.throw(_("Select each SSH key only once."))
+	if not names:
+		return []
+	rows = frappe.get_list(
+		"Team SSH Key", filters={"team": team, "name": ["in", names]}, fields=["name", "public_key"], limit=20
+	)
+	keys = {row.name: row.public_key for row in rows}
+	if len(keys) != len(names):
+		frappe.throw(_("One selected SSH key is unavailable to this Team."), frappe.PermissionError)
+	return [keys[name] for name in names]

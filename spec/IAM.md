@@ -58,7 +58,7 @@ combination such as administration and billing.
 Server is the atomic unit (capability model v3): role capabilities live at the
 team and server level only. Server capabilities are `server:view`,
 `server:create`, `server:power`, `server:resize`, `server:snapshot`,
-`server:terminate`, plus `cluster:view` for placement. `server:view` also permits
+`server:terminate`, `server:ssh-key`, plus `cluster:view` for placement. `server:view` also permits
 opening a server or site. The
 site-level (bench-plane) capabilities are deferred; see
 [`CAPABILITIES.md`](../CAPABILITIES.md) for the full taxonomy.

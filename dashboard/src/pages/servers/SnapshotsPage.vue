@@ -1,10 +1,14 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import DeleteSnapshotsDialog from '@/components/snapshots/DeleteSnapshotsDialog.vue'
 import KeepSnapshotDialog from '@/components/snapshots/KeepSnapshotDialog.vue'
+import SelectSnapshotServerDialog from '@/components/snapshots/SelectSnapshotServerDialog.vue'
 import SnapshotListView from '@/components/snapshots/SnapshotListView.vue'
+import TakeSnapshotDialog from '@/components/snapshots/TakeSnapshotDialog.vue'
 import { useCapabilities } from '@/composables/useCapabilities'
+import { useServerMapData } from '@/composables/useServerMapData'
+import type { VirtualMachineRow } from '@/composables/useServers'
 import { useSnapshots } from '@/composables/useSnapshots'
 import { getErrorMessage, successToast } from '@/lib/feedback'
 import { plural } from '@/lib/format'
@@ -15,6 +19,19 @@ const route = useRoute()
 const initialSearch =
 	typeof route.query.search === 'string' ? route.query.search : ''
 const { canSnapshotServer } = useCapabilities()
+const {
+	servers,
+	loading: serversLoading,
+	error: serversError,
+	reload: reloadServers,
+} = useServerMapData()
+const eligibleServers = computed(() =>
+	servers.value.filter((server) =>
+		['Running', 'Stopped', 'Paused'].includes(server.status ?? ''),
+	),
+)
+const selectingServer = ref(false)
+const pendingSnapshot = ref<VirtualMachineRow | null>(null)
 const {
 	snapshots,
 	currency,
@@ -93,8 +110,18 @@ function restore(row: VMSnapshotRow) {
 				@keep="(row) => { keepError = ''; pendingKeep = row }"
 				@delete="(rows) => { deleteError = ''; pendingDelete = rows }"
 				@restore="restore"
+				@take="selectingServer = true"
 			/>
 		</div>
+		<SelectSnapshotServerDialog
+			v-model="selectingServer"
+			:servers="eligibleServers"
+			:loading="serversLoading"
+			:error="serversError"
+			@retry="reloadServers"
+			@selected="pendingSnapshot = $event"
+		/>
+		<TakeSnapshotDialog v-model:server="pendingSnapshot" @taken="reload" />
 
 		<KeepSnapshotDialog
 			v-model:target="pendingKeep"

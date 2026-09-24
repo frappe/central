@@ -1,0 +1,27 @@
+{
+ "actions": [],
+ "autoname": "hash",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": ["title", "team", "fingerprint", "public_key", "sync_section", "last_sync_error"],
+ "fields": [
+  {"fieldname": "title", "fieldtype": "Data", "label": "Name", "reqd": 1, "in_list_view": 1, "search_index": 1, "description": "A name the team can recognize, such as Work laptop."},
+  {"fieldname": "team", "fieldtype": "Link", "label": "Team", "options": "Team", "reqd": 1, "set_only_once": 1, "in_list_view": 1, "in_standard_filter": 1, "search_index": 1},
+  {"fieldname": "fingerprint", "fieldtype": "Data", "label": "Fingerprint", "read_only": 1, "in_list_view": 1, "search_index": 1},
+  {"fieldname": "public_key", "fieldtype": "Long Text", "label": "SSH Public Key", "reqd": 1, "description": "Paste one complete OpenSSH public key. Never paste a private key."},
+  {"fieldname": "sync_section", "fieldtype": "Section Break", "label": "Server Synchronization", "collapsible": 1},
+  {"fieldname": "last_sync_error", "fieldtype": "Small Text", "label": "Last Sync Error", "read_only": 1, "description": "The last regional synchronization failure, if any."}
+ ],
+ "links": [{"link_doctype": "Virtual Machine", "link_fieldname": "team"}],
+ "module": "Infrastructure",
+ "name": "Team SSH Key",
+ "naming_rule": "Random",
+ "permissions": [
+  {"role": "System Manager", "read": 1, "write": 1, "create": 1, "delete": 1, "report": 1},
+  {"role": "Central User", "read": 1, "write": 1, "create": 1, "delete": 1, "report": 1}
+ ],
+ "search_fields": "title,fingerprint",
+ "sort_field": "title",
+ "sort_order": "ASC",
+ "title_field": "title"
+}

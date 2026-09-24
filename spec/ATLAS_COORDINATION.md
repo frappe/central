@@ -28,6 +28,8 @@ Atlas must return the following fields with each build:
 
 Cargo's current Pilot image contains `default-bench` and `site.local`. Server and signup flows use that image layout. Ubuntu uses a base image and requires SSH keys. See [Image Offering](../central/infrastructure/doctype/image_offering/SPEC.md) for selectors and pagination.
 
+Ubuntu creation asks Atlas for `public_ipv4: "auto"` and enables a firewall that allows inbound TCP port 22 and outbound traffic. The create-time public IPv4 selector is in the Atlas `ipv6_router` branch and must be deployed before this Central creation path. Central stores the observed public IPv4 address and shows `ssh ubuntu@<ip>` when the address is available. See [Team SSH Key](../central/infrastructure/doctype/team_ssh_key/SPEC.md) for selected keys and rotation.
+
 ## Server operation contract
 
 Central stores each authorized operation in Resource Action before dispatch. Atlas receives one create or power request. Central saves the accepted VM identity before local finalization. A lost mutation response remains uncertain and must not trigger another remote mutation.

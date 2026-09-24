@@ -1,11 +1,10 @@
 <script setup lang="ts">
-import { Button, Spinner } from 'frappe-ui'
+import { Alert, Button, Spinner } from 'frappe-ui'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import MapHealthStrips from '@/components/servers/MapHealthStrips.vue'
-import MapMessageCard from '@/components/servers/MapMessageCard.vue'
 import ResizeServerDialog from '@/components/servers/ResizeServerDialog.vue'
 import ServerFilters from '@/components/servers/ServerFilters.vue'
 import ServerListPanel from '@/components/servers/ServerListPanel.vue'
@@ -316,17 +315,18 @@ const overviewOpen = computed({
 			>
 				<Spinner class="size-5 text-ink-gray-5" />
 			</div>
-			<MapMessageCard
+			<div
 				v-else-if="error && !rows.length"
-				icon="lucide-circle-alert"
-				icon-class="text-ink-red-4"
-				title="Couldn't load your servers"
-				:description="error"
+				class="pointer-events-none absolute inset-x-0 top-1/2 flex -translate-y-1/2 justify-center px-4"
 			>
-				<template #action>
-					<Button class="mt-3" label="Retry" @click="reloadAll" />
-				</template>
-			</MapMessageCard>
+				<Alert
+					class="pointer-events-auto w-full max-w-md shadow-lg"
+					theme="red"
+					title="Couldn't load your servers"
+					:description="error"
+					:primary-action="{ label: 'Retry', onClick: reloadAll }"
+				/>
+			</div>
 			<!-- First-run onboarding: a dismissible nudge toward the one right action. -->
 			<ServerOnboarding
 				v-else-if="showOnboarding && !panelOpen"

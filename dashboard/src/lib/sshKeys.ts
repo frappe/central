@@ -13,7 +13,7 @@ const KEY_TYPES = [
 	'sk-ecdsa-sha2-nistp256@openssh.com',
 ]
 
-export function parseSshKeys(value: string): string[] {
+export function parseSSHKeys(value: string): string[] {
 	return value
 		.split('\n')
 		.map((line) => line.trim())
@@ -22,7 +22,7 @@ export function parseSshKeys(value: string): string[] {
 
 /** The reason these keys can't be used, or '' when they can. */
 export function sshKeysProblem(value: string): string {
-	const lines = parseSshKeys(value)
+	const lines = parseSSHKeys(value)
 	const seen = new Set<string>()
 
 	for (const [index, line] of lines.entries()) {

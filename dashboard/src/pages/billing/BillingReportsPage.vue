@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Button, LoadingText, TabButtons } from 'frappe-ui'
+import { Alert, Button, LoadingText, TabButtons } from 'frappe-ui'
 import { NumberCard } from 'frappe-ui/charts'
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
@@ -66,16 +66,12 @@ const showStatement = ref(false)
 					</template>
 				</EmptyState>
 
-				<EmptyState
+				<Alert
 					v-else-if="!history.data"
-					icon="lucide-chart-no-axes-column"
+					theme="red"
 					title="Couldn't load reports"
-					description="Something went wrong on our side."
-				>
-					<template #action>
-						<Button variant="subtle" label="Retry" @click="history.reload()" />
-					</template>
-				</EmptyState>
+					:primary-action="{ label: 'Retry', onClick: () => history.reload() }"
+				/>
 
 				<template v-else>
 					<OutstandingAlert

@@ -203,6 +203,10 @@ def _client(request) -> AtlasClient:
 
 def _create_payload(request) -> dict:
 	configuration = request.get_configuration()
+	if configuration.ssh_key_ids:
+		from central.server_provisioning import resolve_team_ssh_keys
+
+		configuration.ssh_keys = resolve_team_ssh_keys(request.team, configuration.ssh_key_ids)
 	payload = {
 		"image_id": configuration.image_id,
 		"cpu_millicores": configuration.virtual_cpu_count * 1000,
@@ -214,6 +218,14 @@ def _create_payload(request) -> dict:
 		"sleep_after_idle_seconds": idle_shutdown_seconds(request.team),
 		"metadata": {"central_action_id": request.name},
 	}
+	# TODO: Should support other OSes as well when we add more images.
+	if configuration.image_tags.get("os", "").lower() == "ubuntu":
+		payload["public_ipv4"] = "auto"
+		payload["firewall"] = {
+			"enabled": True,
+			"inbound": [{"protocol": "tcp", "ports": "22", "cidrs": ["0.0.0.0/0", "::/0"]}],
+			"outbound": [{"protocol": "any", "cidrs": ["0.0.0.0/0", "::/0"]}],
+		}
 	if configuration.image_tags.get("purpose") == "pilot":
 		credential = f"pilot-{request.name}"
 		token = PilotCredential.mint(request.team, credential, audience_id=credential)

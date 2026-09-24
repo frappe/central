@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { Button, ErrorMessage, Spinner } from 'frappe-ui'
+import { Alert, Button, ErrorMessage, Spinner } from 'frappe-ui'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { API } from '@/api/methods'
 import AuthShell from '@/components/auth/AuthShell.vue'
 import {
@@ -38,6 +39,7 @@ const LOGIN_RETRY_DELAYS_MS = [
 
 const status = ref<OnboardingStatus | null>(null)
 const error = ref('')
+const router = useRouter()
 let timer: ReturnType<typeof setTimeout> | undefined
 let loginRetryIndex = 0
 
@@ -152,12 +154,12 @@ onUnmounted(() => clearTimeout(timer))
 			<h1 class="text-2xl font-semibold text-ink-gray-9">
 				Setup didn't finish
 			</h1>
-			<p class="mt-2 text-p-base text-ink-gray-5">
-				{{ creation?.error?.message || "We couldn't finish setting up your site." }}
-			</p>
-			<RouterLink to="/onboarding/site" class="mt-8 block">
-				<Button variant="solid" size="md" class="w-full">Try again</Button>
-			</RouterLink>
+			<Alert
+				class="mt-6"
+				theme="red"
+				:title="creation?.error?.message || `We couldn't finish setting up your site.`"
+				:primary-action="{ label: 'Try again', onClick: () => router.push('/onboarding/site') }"
+			/>
 		</template>
 
 		<template v-else>

@@ -46,6 +46,8 @@ Daily snapshots run only in a region with `Region.automatic_snapshots` on. It is
 
 ## Operation
 
+On the Snapshots page, a member with `server:snapshot` selects a Running, Stopped, or Paused server, reviews the price, and starts a manual snapshot. The same price dialog is available from a server's menu.
+
 ```text
 insert --> after_insert job --> send_to_region() --> Atlas image (tagged with the snapshot name)
 sync_pending_snapshots (every 5 minutes) --> sync() --> Available + size | Failed + reason

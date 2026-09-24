@@ -113,6 +113,14 @@ class AtlasClient:
 			"PATCH", f"virtual-machines/{quote(name, safe='')}/disk", payload={"disk_mib": disk_mib}
 		)
 
+	def replace_vm_ssh_keys(self, name: str, public_keys: list[str]) -> dict:
+		"""Replace the full authorized key list on one regional VM."""
+		return self._request(
+			"PUT",
+			f"virtual-machines/{quote(name, safe='')}/ssh-keys",
+			payload={"ssh_keys": public_keys},
+		)
+
 	def check_connection(self) -> None:
 		response = self._get("images", params={"limit": 1})
 		if not isinstance(response.get("items"), list) or type(response.get("has_more")) is not bool:
@@ -318,7 +326,7 @@ class AtlasClient:
 		"""The `error.message` an Atlas error body carries, escaped and bounded, or None."""
 		try:
 			error = response.json().get("error", {})
-		except ValueError, AttributeError:
+		except (ValueError, AttributeError):
 			return None
 		message = error.get("message") if isinstance(error, dict) else None
 		return frappe.utils.escape_html(message[:1000]) if isinstance(message, str) else None

@@ -355,10 +355,12 @@ watch(open, (isOpen) => {
 				</div>
 			</div>
 
-			<div v-else class="space-y-3">
-				<p class="text-p-sm text-ink-gray-5">Couldn't load payment options.</p>
-				<Button variant="subtle" label="Retry" @click="options.reload()" />
-			</div>
+			<Alert
+				v-else
+				theme="red"
+				title="Couldn't load payment options"
+				:primary-action="{ label: 'Retry', onClick: () => options.reload() }"
+			/>
 		</template>
 
 		<template #actions>

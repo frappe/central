@@ -116,11 +116,15 @@ def server_overview(team: str | None = None, resource_id: str | None = None) -> 
 			"status": row.status,
 			"plan": row.plan,
 			"frappe_version": row.frappe_version,
+			"image_offering": row.image_offering,
 			"vcpus": row.vcpus,
 			"memory_megabytes": row.memory_megabytes,
 			"disk_gigabytes": row.disk_gigabytes,
 			"ipv6_address": row.ipv6_address,
 			"public_ipv4": row.public_ipv4,
+			"ssh_command": f"ssh ubuntu@{row.public_ipv4}"
+			if row.image_offering == "ubuntu" and row.public_ipv4
+			else None,
 			"gateway_url": row.gateway_url,
 			"creation": row.creation,
 		}
@@ -187,6 +191,7 @@ def _overview_server_row(resource_id: str, team: str):
 			server.status,
 			server.plan,
 			server.frappe_version,
+			server.image_offering,
 			server.vcpus,
 			server.memory_megabytes,
 			server.disk_gigabytes,
@@ -385,6 +390,7 @@ def create_server(
 	image_id: str = "",
 	hostname: str | None = None,
 	ssh_keys: list[str] | None = None,
+	ssh_key_ids: list[str] | None = None,
 	snapshot: str | None = None,
 ) -> dict:
 	"""Create a server from an image, or restore one from a `snapshot`."""
@@ -400,6 +406,7 @@ def create_server(
 		plan=plan,
 		hostname=hostname,
 		ssh_keys=ssh_keys,
+		ssh_key_ids=ssh_key_ids,
 		snapshot=snapshot,
 	)
 
@@ -417,6 +424,7 @@ def create_composed_server(
 	image_id: str = "",
 	hostname: str | None = None,
 	ssh_keys: list[str] | None = None,
+	ssh_key_ids: list[str] | None = None,
 	snapshot: str | None = None,
 ) -> dict:
 	"""Create a custom-sized server from an image, or restore one from a `snapshot`."""
@@ -433,6 +441,7 @@ def create_composed_server(
 		sub_category=sub_category,
 		hostname=hostname,
 		ssh_keys=ssh_keys,
+		ssh_key_ids=ssh_key_ids,
 		snapshot=snapshot,
 	)
 

@@ -46,6 +46,20 @@ const stage = computed(() => STAGE_OF[props.action.status] ?? 0)
 const canRetry = computed(
 	() => mode.value === 'failed' && !!props.action.error?.retriable,
 )
+const failurePrimaryAction = computed(() =>
+	canRetry.value
+		? {
+				label: 'Try again',
+				loading: props.retrying,
+				onClick: () => emit('retry'),
+			}
+		: { label: 'Change settings', onClick: () => emit('edit') },
+)
+const failureSecondaryAction = computed(() =>
+	canRetry.value
+		? { label: 'Change settings', onClick: () => emit('edit') }
+		: undefined,
+)
 const heading = computed(() => {
 	if (mode.value === 'failed') return `Couldn't create ${props.action.title}`
 	if (mode.value === 'unresolved') return `${props.action.title} is unconfirmed`
@@ -102,12 +116,16 @@ const checkedAgo = computed(() => {
 		</ol>
 
 		<Alert
-			v-if="action.error"
+			v-if="action.error || mode === 'failed'"
 			:theme="mode === 'failed' ? 'red' : 'amber'"
-			:title="action.error.title"
+			:title="action.error?.title ?? heading"
 			:description="
-				[action.error.message, action.error.remediation].join(' ').trim()
+				action.error
+					? [action.error.message, action.error.remediation].join(' ').trim()
+					: 'Change settings and try again.'
 			"
+			:primary-action="mode === 'failed' ? failurePrimaryAction : undefined"
+			:secondary-action="mode === 'failed' ? failureSecondaryAction : undefined"
 		/>
 
 		<p v-if="checkError" class="text-p-sm text-ink-gray-6">{{ checkError }}</p>
@@ -119,30 +137,15 @@ const checkedAgo = computed(() => {
 		</p>
 
 		<div
-			v-if="canRetry || stalled || checkError || mode === 'failed'"
+			v-if="mode !== 'failed' && (stalled || checkError)"
 			class="flex flex-wrap items-center gap-2"
 		>
 			<Button
-				v-if="canRetry"
-				variant="solid"
-				:loading="retrying"
-				icon-left="lucide-rotate-ccw"
-				label="Try again"
-				@click="emit('retry')"
-			/>
-			<Button
-				v-if="mode !== 'failed' && (stalled || checkError)"
 				variant="solid"
 				:loading="checking"
 				icon-left="lucide-refresh-cw"
 				label="Check now"
 				@click="emit('check')"
-			/>
-			<Button
-				v-if="mode === 'failed'"
-				:variant="canRetry ? 'ghost' : 'subtle'"
-				label="Change settings"
-				@click="emit('edit')"
 			/>
 		</div>
 	</div>
