@@ -312,7 +312,7 @@ def validate_guest_input(server_input: CreateServerInput, image: dict) -> None:
 	for key in server_input.ssh_keys:
 		try:
 			load_ssh_public_key(key.strip().encode())
-		except ValueError, TypeError, UnsupportedAlgorithm:
+		except (ValueError, TypeError, UnsupportedAlgorithm):
 			frappe.throw(_("Enter a valid OpenSSH public key on each line."))
 
 
