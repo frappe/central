@@ -116,6 +116,7 @@ def server_overview(team: str | None = None, resource_id: str | None = None) -> 
 			"status": row.status,
 			"plan": row.plan,
 			"frappe_version": row.frappe_version,
+			"image_offering": row.image_offering,
 			"vcpus": row.vcpus,
 			"memory_megabytes": row.memory_megabytes,
 			"disk_gigabytes": row.disk_gigabytes,
