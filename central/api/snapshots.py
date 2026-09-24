@@ -8,6 +8,7 @@ from frappe import _
 from central.billing.api.dashboard._shared import _team_currency
 from central.billing.catalog.snapshots import get_snapshot_rate
 from central.billing.settings import daily_snapshot_retention_hours, free_snapshots_per_server
+from central.iam import can, get_server_capabilities
 from central.infrastructure.doctype.vm_snapshot.vm_snapshot import VMSnapshot
 from central.utils.guards import require_capability
 
@@ -31,7 +32,7 @@ SNAPSHOT_FIELDS = (
 
 
 @frappe.whitelist(methods=["GET"])
-@require_capability("server:view", "You can't view this team's snapshots.")
+@require_capability("server:view", "You can't view this team's snapshots.", server="resource_id")
 def list_snapshots(team: str | None = None, resource_id: str | None = None) -> dict:
 	"""The team's snapshots, newest first, each with what it costs. Pass `resource_id` for
 	one server's snapshots and its automatic setting. Gated on `server:view`."""
@@ -44,7 +45,14 @@ def list_snapshots(team: str | None = None, resource_id: str | None = None) -> d
 	)
 	servers = _server_titles(team, [row.server for row in rows])
 	rates = _region_rates(team, {row.region for row in rows})
-	snapshots = [_snapshot_row(row, servers, rates) for row in rows]
+	capabilities_by_server = {
+		server: get_server_capabilities(frappe.session.user, team, server)
+		for server in {row.server for row in rows}
+	}
+	snapshots = [
+		_snapshot_row(row, servers, rates) | {"capabilities": capabilities_by_server[row.server]}
+		for row in rows
+	]
 
 	result = {
 		"snapshots": snapshots,
@@ -66,7 +74,7 @@ def snapshot_pricing(team: str | None = None, region: str | None = None) -> dict
 
 
 @frappe.whitelist(methods=["POST"])
-@require_capability("server:snapshot", "You can't manage this team's snapshots.")
+@require_capability("server:snapshot", "You can't manage this team's snapshots.", server="resource_id")
 def take_snapshot(team: str | None = None, resource_id: str | None = None, title: str | None = None) -> dict:
 	"""Take a paid snapshot of a server now. Gated on `server:snapshot`."""
 	server = _team_server(team, resource_id)
@@ -114,7 +122,7 @@ def delete_snapshots(team: str | None = None, names: list[str] | str | None = No
 
 
 @frappe.whitelist(methods=["POST"])
-@require_capability("server:snapshot", "You can't manage this team's snapshots.")
+@require_capability("server:snapshot", "You can't manage this team's snapshots.", server="resource_id")
 def set_automatic_snapshots(
 	team: str | None = None, resource_id: str | None = None, enabled: bool | int | str = True
 ) -> dict:
@@ -132,8 +140,12 @@ def _team_server(team: str, resource_id: str | None):
 
 
 def _team_snapshot(team: str, name: str | None) -> VMSnapshot:
-	if not name or frappe.db.get_value("VM Snapshot", name, "team") != team:
+	"""A snapshot of this team, once the caller holds server:snapshot on its server."""
+	row = frappe.db.get_value("VM Snapshot", name, ["team", "server"], as_dict=True) if name else None
+	if not row or row.team != team:
 		frappe.throw(_("No snapshot '{0}' for this team.").format(name), frappe.DoesNotExistError)
+	if not can(frappe.session.user, team, "server:snapshot", server=row.server):
+		frappe.throw(_("You can't manage snapshots of this server."), frappe.PermissionError)
 	return frappe.get_doc("VM Snapshot", name)
 
 

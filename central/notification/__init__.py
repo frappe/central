@@ -22,6 +22,8 @@ from frappe.query_builder.functions import Count
 
 CATEGORIES = ("Billing", "Server", "Team")
 SEVERITIES = ("Info", "Success", "Warning", "Error")
+# Records that point at one server through their `server` field.
+SERVER_LINKED_DOCTYPES = ("Resource Action", "VM Snapshot", "Site", "Site Domain")
 
 
 def create_notification(
@@ -62,6 +64,7 @@ def create_notification(
 			"message": message,
 			"reference_doctype": reference_doctype,
 			"reference_name": reference_name,
+			"server": get_reference_server(reference_doctype, reference_name),
 			"action_label": action_label,
 			"action_route": action_route,
 			"is_read": 0,
@@ -75,6 +78,18 @@ def create_notification(
 
 		publish_team_nudge(team)
 	return doc
+
+
+def get_reference_server(reference_doctype: str | None, reference_name: str | None) -> str | None:
+	"""The server a notification is about, so the feed can hide it from members scoped
+	to other servers. None for a team-level subject such as an invoice."""
+	if not reference_name:
+		return None
+	if reference_doctype == "Virtual Machine":
+		return reference_name if frappe.db.exists("Virtual Machine", reference_name) else None
+	if reference_doctype in SERVER_LINKED_DOCTYPES:
+		return frappe.db.get_value(reference_doctype, reference_name, "server") or None
+	return None
 
 
 _FEED_FIELDS = (
@@ -99,7 +114,7 @@ def _visible_conditions(tn, team: str, user: str, category: str | None) -> list:
 	category, the per-row capability gate (skipped for operators), and the user's
 	in-app category preferences. ``resolve_user_grants`` is request-cached, so the
 	cap set costs one join per request, not one per row."""
-	from central.iam import resolve_user_grants, user_has_operator_bypass
+	from central.iam import user_has_operator_bypass
 
 	conds = [tn.team == team]
 	if category:
@@ -107,11 +122,7 @@ def _visible_conditions(tn, team: str, user: str, category: str | None) -> list:
 	if user_has_operator_bypass(user):
 		return conds
 
-	caps = sorted({cap for grant in resolve_user_grants(user).get(team, []) for cap in grant.get("caps", [])})
-	cap_gate = tn.required_cap.isnull() | (tn.required_cap == "")
-	if caps:
-		cap_gate = cap_gate | tn.required_cap.isin(caps)
-	conds.append(cap_gate)
+	conds.append(_capability_gate(tn, team, user))
 
 	disabled = frappe.get_all(
 		"User Notification Preference",
@@ -121,6 +132,23 @@ def _visible_conditions(tn, team: str, user: str, category: str | None) -> list:
 	if disabled:
 		conds.append(tn.category.notin(disabled))
 	return conds
+
+
+def _capability_gate(tn, team: str, user: str):
+	"""A row with no required capability is visible to every member. A team-wide grant
+	sees a row it has the capability for. A grant scoped to servers sees a row only when
+	the row is about one of those servers."""
+	from central.iam import ALL_SERVERS, get_allowed_servers, resolve_user_grants
+
+	gate = tn.required_cap.isnull() | (tn.required_cap == "")
+	caps = {cap for grant in resolve_user_grants(user).get(team, []) for cap in grant["caps"]}
+	for cap in sorted(caps):
+		servers = get_allowed_servers(user, cap)[team]
+		if servers == ALL_SERVERS:
+			gate = gate | (tn.required_cap == cap)
+		else:
+			gate = gate | ((tn.required_cap == cap) & tn.server.isin(sorted(servers)))
+	return gate
 
 
 def unread_count(team: str, *, user: str | None = None) -> int:

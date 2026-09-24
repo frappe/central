@@ -20,3 +20,21 @@ def ensure_atlas_instance(region: str, **overrides) -> str:
 		doc.update({"base_url": f"https://{region}.atlas.example.test", "status": "Active", **overrides})
 		doc.save(ignore_permissions=True)
 	return region
+
+
+def ensure_server(resource_id: str, team: str, region: str = "scope-test", **fields) -> str:
+	"""A Running server of `team`, recreated so each test starts from the same row."""
+	ensure_atlas_instance(region)
+	if frappe.db.exists("Virtual Machine", resource_id):
+		frappe.delete_doc("Virtual Machine", resource_id, force=True, ignore_permissions=True)
+	frappe.get_doc(
+		{
+			"doctype": "Virtual Machine",
+			"resource_id": resource_id,
+			"team": team,
+			"region": region,
+			"status": "Running",
+			**fields,
+		}
+	).insert(ignore_permissions=True)
+	return resource_id

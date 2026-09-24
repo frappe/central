@@ -6,7 +6,7 @@ import frappe
 from frappe import _
 
 from central.billing import authz
-from central.billing.api.dashboard._shared import _resolve_team, _team_currency
+from central.billing.api.dashboard._shared import _resolve_resize_team, _resolve_team, _team_currency
 from central.billing.catalog.composition import (
 	COMPUTE,
 	DISK,
@@ -26,8 +26,15 @@ def get_eligible_plans(
 	"""Return the server catalog available to the authorized Team."""
 	from central.billing.catalog.server_plans import get_server_plans
 
+	server = None
+	if frappe.utils.cint(for_resize) and team and exclude_subscription:
+		# A resize prices the server that this subscription bills.
+		server = frappe.db.get_value(
+			"Subscription", {"name": exclude_subscription, "team": team}, "server_id"
+		)
+
 	return get_server_plans(
-		_resolve_team(team),
+		_resolve_resize_team(team, server),
 		cluster=cluster,
 		exclude_subscription=exclude_subscription,
 		for_resize=for_resize,
@@ -96,7 +103,7 @@ def get_composed_config(server: str, team: str | None = None) -> dict:
 	slides it onto a custom config, so `sub_category` is None and the slider defaults
 	to the region's first profile. `{resizable: False}` when there's no live
 	subscription to resize."""
-	team = _resolve_team(team)
+	team = _resolve_resize_team(team, server)
 	sub = frappe.db.get_value(
 		"Subscription",
 		{"server_id": server, "team": team},

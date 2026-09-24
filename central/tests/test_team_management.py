@@ -20,6 +20,7 @@ from central.api.teams import (
 )
 from central.iam import can, resolve_user_grants
 from central.identity.doctype.team_invitation.team_invitation import expire_pending_invitations
+from central.tests.utils import ensure_server
 
 
 def create_user(email: str) -> str:
@@ -82,6 +83,7 @@ class TestTeamManagement(IntegrationTestCase):
 		)
 		_ensure_event_type("role_change", direct_recipients="Affected User")
 		_ensure_event_type("member_joined")
+		self.server = ensure_server("srv-x", self.team.name)
 
 	def tearDown(self):
 		frappe.set_user("Administrator")
@@ -261,23 +263,24 @@ class TestTeamManagement(IntegrationTestCase):
 		self.assertTrue(can(self.viewer, self.team.name, "server:create"))
 
 	def test_member_can_hold_multiple_roles_with_unioned_capabilities(self):
-		# Proves the IAM engine needed no changes: resolve_user_grants already
-		# keys grants by (team, role) and unions capabilities across every
-		# Team Member row a user holds, so adding a second role grant is enough.
+		# A team-wide role and a role scoped to one server combine: the scoped role adds
+		# its server capabilities on that server only, and never a team-wide one.
 		frappe.set_user(self.owner)
 		team = frappe.get_doc("Team", self.team.name)
-		billing_only = create_custom_role(self.team.name, "Billing Only", ["server:view"])["role"]
+		view_only = create_custom_role(self.team.name, "View Only", ["server:view"])["role"]
 
 		team.set_member_roles(
 			self.viewer,
 			[
-				{"role": billing_only, "resource_type": "*"},
-				{"role": "Developer", "resource_type": "Server", "resource_name": "some-server"},
+				{"role": view_only, "resource_type": "*"},
+				{"role": "Developer", "resource_type": "Server", "resource_name": self.server},
 			],
 		)
 
 		self.assertTrue(can(self.viewer, self.team.name, "server:view"))
-		self.assertTrue(can(self.viewer, self.team.name, "server:create"))
+		self.assertTrue(can(self.viewer, self.team.name, "server:power", server=self.server))
+		self.assertFalse(can(self.viewer, self.team.name, "server:power"))
+		self.assertFalse(can(self.viewer, self.team.name, "server:create"))
 
 	def test_duplicate_role_resource_grant_is_rejected(self):
 		frappe.set_user(self.owner)
@@ -352,12 +355,12 @@ class TestTeamManagement(IntegrationTestCase):
 			self.invitee,
 			"Developer",
 			resource_type="Server",
-			resource_name="srv-acme",
+			resource_name=self.server,
 		)
 
 		invitation = frappe.get_doc("Team Invitation", name)
 		self.assertEqual(invitation.resource_type, "Server")
-		self.assertEqual(invitation.resource_name, "srv-acme")
+		self.assertEqual(invitation.resource_name, self.server)
 
 		frappe.set_user(self.invitee)
 		invitation.accept()
@@ -366,7 +369,7 @@ class TestTeamManagement(IntegrationTestCase):
 		grant = team._get_member(self.invitee)
 		self.assertEqual(grant.role, "Developer")
 		self.assertEqual(grant.resource_type, "Server")
-		self.assertEqual(grant.resource_name, "srv-acme")
+		self.assertEqual(grant.resource_name, self.server)
 
 	def test_resend_invitation_extends_expiry_and_re_emails(self):
 		frappe.set_user(self.owner)

@@ -17,9 +17,13 @@ def submit_command(
 	"""Authorize the specific operation and persist it before dispatch. Only a terminate can
 	take a final snapshot first."""
 	team = resolve_team(frappe.session.user, team)
-	if action not in ACTION_CAPABILITIES or not can(frappe.session.user, team, ACTION_CAPABILITIES[action]):
+	if action not in ACTION_CAPABILITIES or not can(
+		frappe.session.user, team, ACTION_CAPABILITIES[action], server=resource_id
+	):
 		frappe.throw(_("You cannot perform this server action."), frappe.PermissionError)
-	if take_snapshot and (action != "terminate" or not can(frappe.session.user, team, "server:snapshot")):
+	if take_snapshot and (
+		action != "terminate" or not can(frappe.session.user, team, "server:snapshot", server=resource_id)
+	):
 		frappe.throw(_("You cannot take a snapshot of this server."), frappe.PermissionError)
 	if not isinstance(resource_id, str) or not resource_id:
 		frappe.throw(_("Select a server."))

@@ -147,11 +147,11 @@ def site_state(site: Site, with_login: bool = True) -> dict:
 
 
 def authorized_site(name: str, capability: str) -> Site:
-	"""The Site document, once the caller holds `capability` in the Team that owns it."""
-	team = frappe.db.get_value("Site", name, "team")
-	if not team:
+	"""The Site document, once the caller holds `capability` on the server the site runs on."""
+	row = frappe.db.get_value("Site", name, ["team", "server"], as_dict=True)
+	if not row or not row.team:
 		frappe.throw(_("No site '{0}'.").format(name), frappe.DoesNotExistError)
-	if not can(frappe.session.user, team, capability):
+	if not can(frappe.session.user, row.team, capability, server=row.server):
 		frappe.throw(_("You can't manage this site."), frappe.PermissionError)
 
 	site = frappe.get_doc("Site", name)

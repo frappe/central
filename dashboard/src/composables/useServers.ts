@@ -4,6 +4,7 @@ import { API, method } from '@/api/methods'
 import signingInHtml from '@/assets/signing-in.html?raw'
 import { useBusyRunner } from '@/composables/useBusyRunner'
 import { useSession } from '@/composables/useSession'
+import type { ServerAccess } from '@/lib/capabilities'
 import { reportError } from '@/lib/feedback'
 import { submitOrThrow } from '@/lib/frappeCall'
 import type { RefreshResponse } from '@/types/api'
@@ -36,9 +37,10 @@ export type VirtualMachineRow = Pick<
 	| 'public_ipv4'
 	| 'gateway_url'
 	| 'state_observed_at'
-> & {
-	pending_action?: string | null
-}
+> &
+	ServerAccess & {
+		pending_action?: string | null
+	}
 
 const { activeTeam } = useSession()
 const { busy, run, runOrThrow } = useBusyRunner()

@@ -54,6 +54,7 @@ class Team(Document):
 		self._validate_unique_members()
 		self._validate_owner_membership()
 		self._validate_role_scope()
+		self._validate_member_resources()
 		self._validate_changes()
 
 	def on_update(self) -> None:
@@ -280,6 +281,19 @@ class Team(Document):
 			)
 			if not is_system and role_team != self.name:
 				frappe.throw(_("Team Role {0} does not belong to this team.").format(member.role))
+
+	def _validate_member_resources(self) -> None:
+		"""Check the scope of each row this save adds or changes. A saved row may name a
+		server removed since; it grants nothing and must not block other edits."""
+		previous = self.get_doc_before_save()
+		saved = {self._grant_key(row) for row in previous.members} if previous else set()
+		for row in self.members:
+			if self._grant_key(row) not in saved:
+				row.validate_resource(self.name)
+
+	@staticmethod
+	def _grant_key(row) -> tuple:
+		return (row.user, row.role, row.resource_type or "*", row.resource_name or None)
 
 	def _validate_changes(self) -> None:
 		if self.is_new() or self.flags.from_team_invitation or self._is_operator():

@@ -7,7 +7,13 @@ from collections.abc import Callable
 import frappe
 from frappe import _
 
-from central.iam import can, is_active_team_member, resolve_team, user_has_operator_bypass
+from central.iam import (
+	can,
+	can_on_any_server,
+	is_active_team_member,
+	resolve_team,
+	user_has_operator_bypass,
+)
 
 # Authorization decorators for the whitelisted Team endpoints — the guard runs
 # before the handler body. Ordered under @frappe.whitelist (which stays outermost);
@@ -51,14 +57,25 @@ def require_team_member(func: Callable) -> Callable:
 	return wrapper
 
 
-def require_capability(capability: str, message: str) -> Callable:
-	"""Gate an endpoint on `capability` for the `team` argument; operators bypass."""
+def require_capability(capability: str, message: str, server: str | None = None) -> Callable:
+	"""Gate an endpoint on `capability` for the `team` argument; operators bypass.
+
+	1. When the argument named by `server` holds a server, the user needs the capability
+	   on that server.
+	2. Otherwise the user needs it team-wide or on at least one server of the team. A
+	   route that then reads a list relies on the permission rules to narrow it."""
 
 	def decorator(func: Callable) -> Callable:
 		@functools.wraps(func)
 		def wrapper(*args, **kwargs):
 			bound = _resolve_team_call(func, args, kwargs)
-			if not can(frappe.session.user, bound.arguments["team"], capability):
+			team = bound.arguments["team"]
+			server_name = bound.arguments.get(server) if server else None
+			if server_name:
+				allowed = can(frappe.session.user, team, capability, server=server_name)
+			else:
+				allowed = can_on_any_server(frappe.session.user, team, capability)
+			if not allowed:
 				frappe.throw(_(message), frappe.PermissionError)
 			return func(*bound.args, **bound.kwargs)
 

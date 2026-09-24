@@ -4,6 +4,7 @@ import frappe
 from frappe import _
 
 from central.errors import handle_resource_operation
+from central.iam import get_server_capabilities
 from central.infrastructure.doctype.resource_action.resource_action import ResourceAction
 from central.integrations.servers import reconcile
 from central.utils.guards import require_capability
@@ -62,6 +63,7 @@ def registry(team: str | None = None) -> dict:
 	pending = ResourceAction.pending_labels(team)
 	for server in servers:
 		server["pending_action"] = pending.get(server["resource_id"])
+		server["capabilities"] = get_server_capabilities(frappe.session.user, team, server["name"])
 
 	# A creation has no server row until the region accepts it, so it cannot be overlaid
 	# like the pending actions above. It rides here as its own list: the console picks its
@@ -98,7 +100,7 @@ def _sites(rows: list[dict], servers: list[dict], pending: dict[str, str]) -> li
 
 
 @frappe.whitelist(methods=["GET"])
-@require_capability("server:view", "You can't view this team's servers.")
+@require_capability("server:view", "You can't view this team's servers.", server="resource_id")
 def server_overview(team: str | None = None, resource_id: str | None = None) -> dict:
 	"""Return one server's Central mirror plus Pilot's cached operational metrics."""
 	if not resource_id:
@@ -145,7 +147,7 @@ def server_overview(team: str | None = None, resource_id: str | None = None) -> 
 
 
 @frappe.whitelist(methods=["GET"])
-@require_capability("server:view", "You can't view this team's servers.")
+@require_capability("server:view", "You can't view this team's servers.", server="resource_id")
 def server_hostnames(team: str | None = None, resource_id: str | None = None) -> list[dict]:
 	"""The site and custom-domain hostnames a server answers. They stop working when the
 	server is terminated, so the console lists them before it asks. Gated on `server:view`."""
@@ -320,7 +322,7 @@ def restart_server(team: str | None = None, resource_id: str | None = None) -> d
 
 @frappe.whitelist(methods=["POST"])
 @handle_resource_operation
-@require_capability("server:resize", "You can't resize this team's servers.")
+@require_capability("server:resize", "You can't resize this team's servers.", server="resource_id")
 def resize_server(
 	team: str | None = None,
 	resource_id: str | None = None,

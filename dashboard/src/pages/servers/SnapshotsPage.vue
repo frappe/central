@@ -18,7 +18,7 @@ const router = useRouter()
 const route = useRoute()
 const initialSearch =
 	typeof route.query.search === 'string' ? route.query.search : ''
-const { canSnapshotServer } = useCapabilities()
+const { canSnapshotServer, canCreateServer } = useCapabilities()
 const {
 	servers,
 	loading: serversLoading,
@@ -104,6 +104,7 @@ function restore(row: VMSnapshotRow) {
 				:error="error"
 				:currency="currency"
 				:can-manage="canSnapshotServer"
+				:can-restore="canCreateServer && canSnapshotServer"
 				:free-per-server="freePerServer"
 				:initial-search="initialSearch"
 				@retry="reload"

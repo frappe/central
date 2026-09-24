@@ -1,3 +1,5 @@
+import type { ServerCapability } from '@/lib/capabilities'
+
 export type SnapshotType = 'Automatic' | 'Manual' | 'Terminate'
 export type SnapshotStatus = 'Pending' | 'Available' | 'Failed'
 
@@ -24,6 +26,8 @@ export interface VMSnapshotRow {
 	image_offering: string | null
 	atlas_image_id: string | null
 	error_detail: string | null
+	/** The caller's capabilities on the snapshot's server. */
+	capabilities: ServerCapability[]
 }
 
 export interface SnapshotServerSetting {
