@@ -38,9 +38,9 @@ The distinction matters:
   a new capability string, so a bench always understands the result. Teams can
   create as many custom roles as they like without affecting this contract.
 
-## The 14 capabilities
+## The 15 capabilities
 
-### `central` plane (7)
+### `central` plane (8)
 
 | Capability | Meaning |
 | --- | --- |
@@ -51,6 +51,7 @@ The distinction matters:
 | `team:delete` | Delete a team. |
 | `service:view` | View managed service configuration. |
 | `service:manage` | Configure managed services and credentials. |
+| `server:ssh-key` | Add, rotate, and remove Team SSH keys for selected servers. |
 
 ### `atlas` plane (7)
 
@@ -62,7 +63,6 @@ The distinction matters:
 | `server:power` | Start, stop, and restart a server. |
 | `server:resize` | Resize or rebuild a server. |
 | `server:snapshot` | Create and restore server snapshots. |
-| `server:ssh-key` | Add, rotate, and remove Team SSH keys for selected servers. |
 | `server:terminate` | Destroy a server. |
 
 ### `bench` plane (0 — deferred)
