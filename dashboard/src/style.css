@@ -7,12 +7,6 @@ body {
 	@apply bg-surface-base text-ink-gray-9 text-base;
 }
 
-@layer base {
-	form:invalid [type="submit"] {
-		@apply pointer-events-none opacity-50;
-	}
-}
-
 @layer utilities {
 	/* Scroll with no scrollbar chrome. Use it where the cut-off content is itself the
 	   affordance, such as a pane beside a fixed panel. */
