@@ -57,6 +57,8 @@ export const API = {
 	terminateServer: 'central.api.servers.terminate_server',
 	serverOverview: 'central.api.servers.server_overview',
 	serverHostnames: 'central.api.servers.server_hostnames',
+	listImageOfferings: 'central.api.images.list_offerings',
+	listRegionalImages: 'central.api.images.list_images',
 	listTeamSSHKeys: 'central.api.ssh_keys.list_team_ssh_keys',
 	createTeamSSHKey: 'central.api.ssh_keys.create_team_ssh_key',
 	rotateTeamSSHKey: 'central.api.ssh_keys.rotate_team_ssh_key',

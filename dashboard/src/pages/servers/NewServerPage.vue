@@ -234,6 +234,7 @@ const selectedRegionName = computed(() =>
 							</template>
 							<template v-else>
 								<ImageOfferingSelector
+									v-if="offeringOptions.length || (!imagesLoading && !imagesError)"
 									v-model="offering"
 									:options="offeringOptions"
 									:disabled="imagesLoading || !selectedRegion"
@@ -251,7 +252,7 @@ const selectedRegionName = computed(() =>
 								<Alert
 									v-else-if="imagesError"
 									theme="red"
-									title="Images aren't available in this region"
+									title="Couldn't load images"
 									:description="imagesError"
 									:primary-action="{ label: 'Retry images', onClick: reloadImages }"
 								/>
