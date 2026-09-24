@@ -997,6 +997,13 @@ def cancel_subscription(subscription: str, changed_by: str | None = None):
 	return frappe.get_doc("Subscription", subscription)
 
 
+def end_subscription(subscription: str, changed_by: str | None = None) -> None:
+	"""Cancel the intent and disable the subscription, so it stops billing and a new one
+	can open for the same subject."""
+	cancel_subscription(subscription, changed_by=changed_by)
+	frappe.get_doc("Subscription", subscription).disable()
+
+
 def pause_billing(subscription: str, changed_by: str | None = None):
 	"""Pause billing for a subscription. Disables the subscription, logs the change,
 	and STOPS the linked server resource — the VM and the sites/services running on

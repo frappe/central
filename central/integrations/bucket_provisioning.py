@@ -6,8 +6,6 @@ import frappe
 from frappe import _
 from frappe.utils.synchronization import filelock
 
-from central.billing.catalog.subscriptions import provision_service_subscription
-from central.integrations.object_storage import ObjectStorageClient
 from central.services.doctype.service_detail.service_detail import ServiceDetail
 
 STORAGE_SERVICE = "storage"
@@ -43,21 +41,13 @@ class BucketProvisioning:
 		self.team = request.team
 		self.region = request.region
 		self.requested_by = request.requested_by
-		self.bucket_name = self.get_bucket_name()
+		self.bucket_name = get_backup_bucket_name(self.team, self.region)
 
 	def get_configuration(self) -> BucketConfiguration:
 		"""The team's bucket, provisioned once under a lock so two requests for the same
 		server cannot each ask Cargo for it."""
 		with filelock(f"team-storage-{self.bucket_name}", timeout=LOCK_TIMEOUT_SECONDS):
 			return self.get_existing() or self.create_new()
-
-	def get_bucket_name(self) -> str:
-		"""Derived, never chosen, so every request names the same bucket."""
-		tenant_id = frappe.db.get_value("Team", self.team, "tenant_id")
-		if not tenant_id:
-			frappe.throw(_("This team has no tenant ID."))
-
-		return f"team-{tenant_id}-{self.region.casefold()}-backups"
 
 	def get_existing(self) -> BucketConfiguration | None:
 		name = frappe.db.get_value(
@@ -74,33 +64,18 @@ class BucketProvisioning:
 		return self.read_configuration(service)
 
 	def create_new(self) -> BucketConfiguration:
-		"""Create the bucket, bill it, then record it. Cargo answers first, so a record
-		always names a bucket that exists."""
-		# Cargo mints a bucket's key once, and only a rotation issues another. A name it
-		# already holds is therefore left alone: taking it over would revoke the key every
-		# server in this team and region is already backing up with. An operator settles it.
-		client = ObjectStorageClient.from_region(self.region)
-		credentials = client.create_bucket(self.bucket_name)["credentials"]
-
-		subscription = provision_service_subscription(
-			self.team, self.get_plan(), cluster=self.region, changed_by=self.requested_by
-		)
-
-		# The authorized provisioning request owns this system-created service record.
 		service: TeamService = frappe.get_doc(
 			{
 				"doctype": "Team Service",
 				"team": self.team,
 				"add_on_service": STORAGE_SERVICE,
 				"region": self.region,
-				"status": "Active",
-				"subscription": subscription["subscription"],
 				"bucket_name": self.bucket_name,
-				"endpoint_url": self.get_endpoint_url(),
-				"access_key": credentials["access_key"],
-				"secret_access_key": credentials["secret_access_key"],
 			}
-		).insert(ignore_permissions=True)
+		)
+		service.flags.requested_by = self.requested_by
+		# The authorized provisioning request owns this system-created service record.
+		service.insert(ignore_permissions=True)
 		frappe.db.commit()
 
 		return self.read_configuration(service)
@@ -119,16 +94,37 @@ class BucketProvisioning:
 
 		return configuration
 
-	def get_endpoint_url(self) -> str:
-		endpoint_url = ServiceDetail.endpoint_for(self.region, STORAGE_SERVICE)
-		if not endpoint_url:
-			frappe.throw(_("Object storage is not available in region {0}.").format(self.region))
 
-		return endpoint_url
+def get_backup_bucket_name(team: str, region: str) -> str:
+	"""Derived, never chosen, so every request names the same bucket."""
+	return f"team-{get_tenant_id(team)}-{region.casefold()}-backups"
 
-	def get_plan(self) -> str:
-		plan = frappe.db.get_value("Plan", STORAGE_PLAN, "name")
-		if not plan:
-			frappe.throw(_("The Object Storage Plan is not configured."))
 
-		return plan
+def get_customer_bucket_name(team: str, region: str, name: str) -> str:
+	"""The bucket a customer names `name`. Bucket names are shared by every team in a region,
+	so the tenant and region prefix keeps teams apart and can never form a backup name."""
+	return f"{get_tenant_id(team)}-{region.casefold()}-{name}"
+
+
+def get_tenant_id(team: str) -> int:
+	tenant_id = frappe.db.get_value("Team", team, "tenant_id")
+	if not tenant_id:
+		frappe.throw(_("This team has no tenant ID."))
+
+	return tenant_id
+
+
+def get_storage_endpoint_url(region: str) -> str:
+	endpoint_url = ServiceDetail.endpoint_for(region, STORAGE_SERVICE)
+	if not endpoint_url:
+		frappe.throw(_("Object storage is not available in region {0}.").format(region))
+
+	return endpoint_url
+
+
+def get_storage_plan() -> str:
+	plan = frappe.db.get_value("Plan", STORAGE_PLAN, "name")
+	if not plan:
+		frappe.throw(_("The Object Storage Plan is not configured."))
+
+	return plan
