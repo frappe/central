@@ -52,11 +52,11 @@ class TestCentralIAM(IntegrationTestCase):
 		return team
 
 	def test_fixtures_create_capability_catalog_and_system_roles(self):
-		# 15 capabilities across two live planes: central (8) + atlas (7). v5 merges
+		# 16 capabilities across two live planes: central (8) + atlas (8). v5 merges
 		# server:open into server:view. The bench plane remains deferred.
-		self.assertEqual(frappe.db.count("Capability"), 15)
+		self.assertEqual(frappe.db.count("Capability"), 16)
 		self.assertEqual(frappe.db.count("Capability", {"plane": "central"}), 8)
-		self.assertEqual(frappe.db.count("Capability", {"plane": "atlas"}), 7)
+		self.assertEqual(frappe.db.count("Capability", {"plane": "atlas"}), 8)
 		self.assertEqual(frappe.db.count("Capability", {"plane": "bench"}), 0)
 		# The retired roles are gone; the five-rung ladder is all that remains.
 		self.assertEqual(frappe.db.count("Team Role", {"is_system": 1}), 5)
@@ -78,6 +78,7 @@ class TestCentralIAM(IntegrationTestCase):
 				"server:snapshot",
 				"server:ssh-key",
 				"server:terminate",
+				"server:console",
 			):
 				self.assertIn(cap, caps)
 		# Team management is Owner/Admin; deleting the team is Owner-only.

@@ -38,7 +38,7 @@ The distinction matters:
   a new capability string, so a bench always understands the result. Teams can
   create as many custom roles as they like without affecting this contract.
 
-## The 15 capabilities
+## The 16 capabilities
 
 ### `central` plane (8)
 
@@ -53,7 +53,7 @@ The distinction matters:
 | `service:manage` | Configure managed services and credentials. |
 | `server:ssh-key` | Add, rotate, and remove Team SSH keys for selected servers. |
 
-### `atlas` plane (7)
+### `atlas` plane (8)
 
 | Capability | Meaning |
 | --- | --- |
@@ -64,6 +64,7 @@ The distinction matters:
 | `server:resize` | Resize or rebuild a server. |
 | `server:snapshot` | Create and restore server snapshots. |
 | `server:terminate` | Destroy a server. |
+| `server:console` | Open the web console of an Ubuntu server. |
 
 ### `bench` plane (0 — deferred)
 
@@ -82,6 +83,7 @@ under these implications before it is asserted or evaluated
 | `server:create` | `server:view`, `cluster:view` |
 | `server:power` / `resize` / `snapshot` / `terminate` | `server:view` |
 | `server:ssh-key` | `server:view` |
+| `server:console` | `server:view` |
 
 The role builder can let a user tick `server:create` without remembering
 `server:view`/`cluster:view`, and a grant hand-crafted through the API cannot
@@ -89,7 +91,7 @@ bypass the closure either.
 
 ## Scoped grants
 
-A role grant can apply to one server or site instead of the whole team. A scoped grant carries only these capabilities, on that server: `server:view`, `server:power`, `server:resize`, `server:snapshot`, and `server:terminate`. Every other capability is team-wide and comes only from a team-wide grant. For example, Developer on one server can stop that server, but cannot create a server or change the Team SSH keys. See [IAM resource scope](spec/IAM.md#resource-scope).
+A role grant can apply to one server or site instead of the whole team. A scoped grant carries only these capabilities, on that server: `server:view`, `server:power`, `server:resize`, `server:snapshot`, `server:terminate`, and `server:console`. Every other capability is team-wide and comes only from a team-wide grant. For example, Developer on one server can stop that server, but cannot create a server or change the Team SSH keys. See [IAM resource scope](spec/IAM.md#resource-scope).
 
 ## The 5 system roles
 
@@ -111,10 +113,11 @@ all teams. Teams may also define custom roles scoped to themselves.
 | `server:snapshot` | ✓ | ✓ | ✓ | | |
 | `server:ssh-key` | ✓ | ✓ | ✓ | | |
 | `server:terminate` | ✓ | ✓ | ✓ | | |
+| `server:console` | ✓ | ✓ | ✓ | | |
 | `service:view` | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `service:manage` | ✓ | ✓ | ✓ | | ✓ |
 
-Totals: Owner 15, Admin 14, Developer 10, Viewer 3, Billing 6.
+Totals: Owner 16, Admin 15, Developer 11, Viewer 3, Billing 6.
 
 The ladder reads top to bottom: **Viewer** (look) → **Billing** (look + pay) →
 **Developer** (operate servers) → **Admin** (Developer + run the team) → **Owner**

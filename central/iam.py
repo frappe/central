@@ -29,13 +29,21 @@ CAP_IMPLICATIONS = {
 	"server:resize": ("server:view",),
 	"server:snapshot": ("server:view",),
 	"server:ssh-key": ("server:view",),
+	"server:console": ("server:view",),
 	"service:manage": ("service:view",),
 }
 
 # The capabilities a grant can scope to one server. Every other capability is team-wide,
 # so a grant scoped to a server or site never answers for it.
 SERVER_CAPABILITIES = frozenset(
-	{"server:view", "server:power", "server:resize", "server:snapshot", "server:terminate"}
+	{
+		"server:view",
+		"server:power",
+		"server:resize",
+		"server:snapshot",
+		"server:terminate",
+		"server:console",
+	}
 )
 # The scope of a team-wide grant. A scoped grant's scope is its server's name.
 ALL_SERVERS = "*"

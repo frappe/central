@@ -25,6 +25,7 @@ from central.tests.test_iam import ensure_user
 from central.tests.utils import ensure_server
 
 SERVER_CAPABILITIES = [
+	"server:console",
 	"server:power",
 	"server:resize",
 	"server:snapshot",
