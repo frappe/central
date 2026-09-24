@@ -30,6 +30,16 @@
   "resource": "cluster"
  },
  {
+  "capability": "server:console",
+  "description": "Open the web console of selected servers",
+  "docstatus": 0,
+  "doctype": "Capability",
+  "modified": "2026-09-24 00:00:00.000000",
+  "name": "server:console",
+  "plane": "atlas",
+  "resource": "server"
+ },
+ {
   "capability": "server:create",
   "description": "Create new servers",
   "docstatus": 0,

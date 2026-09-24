@@ -51,6 +51,8 @@ def registry(team: str | None = None) -> dict:
 			"disk_gigabytes",
 			"ipv6_address",
 			"public_ipv4",
+			"public_ipv6",
+			"image_offering",
 			"gateway_url",
 			"state_observed_at",
 		],
@@ -124,9 +126,10 @@ def server_overview(team: str | None = None, resource_id: str | None = None) -> 
 			"disk_gigabytes": row.disk_gigabytes,
 			"ipv6_address": row.ipv6_address,
 			"public_ipv4": row.public_ipv4,
-			"ssh_command": f"ssh ubuntu@{row.public_ipv4}"
-			if row.image_offering == "ubuntu" and row.public_ipv4
-			else None,
+			"public_ipv6": row.public_ipv6,
+			"has_public_ipv6": row.has_public_ipv6,
+			"is_firewall_enabled": row.is_firewall_enabled,
+			"ssh_command": _ssh_command(row),
 			"gateway_url": row.gateway_url,
 			"creation": row.creation,
 		}
@@ -199,6 +202,9 @@ def _overview_server_row(resource_id: str, team: str):
 			server.disk_gigabytes,
 			server.ipv6_address,
 			server.public_ipv4,
+			server.public_ipv6,
+			server.has_public_ipv6,
+			server.is_firewall_enabled,
 			server.gateway_url,
 			server.creation,
 			region.display_name.as_("region_display_name"),
@@ -212,6 +218,14 @@ def _overview_server_row(resource_id: str, team: str):
 		.run(as_dict=True)
 	)
 	return rows[0] if rows else None
+
+
+def _ssh_command(row) -> str | None:
+	"""The command that signs in to an Ubuntu server over its public address."""
+	address = row.public_ipv6 or row.public_ipv4
+	if row.image_offering != "ubuntu" or not address:
+		return None
+	return f"ssh root@{address}"
 
 
 def _overview_plan(server: dict, team: str) -> dict:
@@ -297,6 +311,17 @@ def refresh_servers(team: str | None = None) -> dict:
 	"""Manually reconcile this team's mirror from every Active Atlas — the on-demand
 	twin of the scheduled reconcile. Gated on `server:view`."""
 	return reconcile(team)
+
+
+@frappe.whitelist(methods=["POST"])
+@handle_resource_operation
+@require_capability("server:console", "You can't open this server's console.", server="resource_id")
+def open_console(team: str | None = None, resource_id: str | None = None) -> dict:
+	"""Return a single-use web console URL for one server. Gated on `server:console`."""
+	from central.integrations.servers import get_console_url
+
+	server = frappe.get_doc("Virtual Machine", {"team": team, "resource_id": resource_id})
+	return {"url": get_console_url(server)}
 
 
 @frappe.whitelist(methods=["POST"])
@@ -393,6 +418,8 @@ def create_server(
 	hostname: str | None = None,
 	ssh_keys: list[str] | None = None,
 	ssh_key_ids: list[str] | None = None,
+	has_public_ipv6: bool = False,
+	is_firewall_enabled: bool = False,
 	snapshot: str | None = None,
 ) -> dict:
 	"""Create a server from an image, or restore one from a `snapshot`."""
@@ -409,6 +436,8 @@ def create_server(
 		hostname=hostname,
 		ssh_keys=ssh_keys,
 		ssh_key_ids=ssh_key_ids,
+		has_public_ipv6=has_public_ipv6,
+		is_firewall_enabled=is_firewall_enabled,
 		snapshot=snapshot,
 	)
 
@@ -427,6 +456,8 @@ def create_composed_server(
 	hostname: str | None = None,
 	ssh_keys: list[str] | None = None,
 	ssh_key_ids: list[str] | None = None,
+	has_public_ipv6: bool = False,
+	is_firewall_enabled: bool = False,
 	snapshot: str | None = None,
 ) -> dict:
 	"""Create a custom-sized server from an image, or restore one from a `snapshot`."""
@@ -444,6 +475,8 @@ def create_composed_server(
 		hostname=hostname,
 		ssh_keys=ssh_keys,
 		ssh_key_ids=ssh_key_ids,
+		has_public_ipv6=has_public_ipv6,
+		is_firewall_enabled=is_firewall_enabled,
 		snapshot=snapshot,
 	)
 

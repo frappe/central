@@ -23,6 +23,10 @@ CLOCK_SKEW_SECONDS = 120
 # Long enough to cover a region answering a create, so the lock outlives the work it
 # guards rather than expiring under it.
 LOCK_TIMEOUT_SECONDS = 15 * 60
+ANYWHERE = ["0.0.0.0/0", "::/0"]
+# Atlas addresses every machine on its WireGuard mesh from this prefix, and an enabled
+# firewall filters mesh traffic too.
+MESH_NETWORK = "fdaa::/16"
 
 
 def process_request(name: str) -> None:
@@ -214,18 +218,12 @@ def _create_payload(request) -> dict:
 		"disk_mib": configuration.disk_mib,
 		"hostname": configuration.hostname or "",
 		"ssh_keys": configuration.ssh_keys,
-		"firewall": {"enabled": False},
+		"firewall": firewall_configuration(configuration),
 		"sleep_after_idle_seconds": idle_shutdown_seconds(request.team),
 		"metadata": {"central_action_id": request.name},
 	}
-	# TODO: Should support other OSes as well when we add more images.
-	if configuration.image_tags.get("os", "").lower() == "ubuntu":
-		payload["public_ipv4"] = "auto"
-		payload["firewall"] = {
-			"enabled": True,
-			"inbound": [{"protocol": "tcp", "ports": "22", "cidrs": ["0.0.0.0/0", "::/0"]}],
-			"outbound": [{"protocol": "any", "cidrs": ["0.0.0.0/0", "::/0"]}],
-		}
+	if configuration.has_public_ipv6:
+		payload["public_ipv6"] = "auto"
 	if configuration.image_tags.get("purpose") == "pilot":
 		credential = f"pilot-{request.name}"
 		token = PilotCredential.mint(request.team, credential, audience_id=credential)
@@ -249,6 +247,27 @@ def _create_payload(request) -> dict:
 		payload["metadata"]["pilot-central"] = json.dumps(bootstrap)
 
 	return payload
+
+
+def firewall_configuration(configuration) -> dict:
+	"""The Atlas firewall for a new machine. A disabled firewall permits all traffic.
+
+	1. Allow the region's mesh, which the regional gateway and console use.
+	2. Allow ICMP, which IPv6 neighbour discovery and path MTU need.
+	3. Allow SSH, HTTP, and HTTPS from anywhere.
+	4. Allow all outbound traffic."""
+	if not configuration.is_firewall_enabled:
+		return {"enabled": False}
+
+	return {
+		"enabled": True,
+		"inbound": [
+			{"protocol": "any", "cidrs": [MESH_NETWORK]},
+			{"protocol": "icmp", "cidrs": ANYWHERE},
+			*({"protocol": "tcp", "ports": port, "cidrs": ANYWHERE} for port in ("22", "80", "443")),
+		],
+		"outbound": [{"protocol": "any", "cidrs": ANYWHERE}],
+	}
 
 
 def idle_shutdown_seconds(team: str) -> int:

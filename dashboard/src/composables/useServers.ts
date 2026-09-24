@@ -35,6 +35,8 @@ export type VirtualMachineRow = Pick<
 	| 'disk_gigabytes'
 	| 'ipv6_address'
 	| 'public_ipv4'
+	| 'public_ipv6'
+	| 'image_offering'
 	| 'gateway_url'
 	| 'state_observed_at'
 > &
@@ -65,6 +67,11 @@ const commandCalls = {
 
 const benchLinkCall = useCall<BenchLinkResponse, { server: string }>({
 	url: method(API.getBenchLink),
+	immediate: false,
+})
+const consoleCall = useCall<{ url: string }, CommandParams>({
+	url: method(API.openConsole),
+	method: 'POST',
 	immediate: false,
 })
 const siteLinkCall = useCall<SiteLinkResponse, { name: string }>({
@@ -127,11 +134,15 @@ async function refreshServers(): Promise<boolean> {
 	}
 }
 
-function openLoadingTab(): { tab: Window | null; loadingUrl: string } {
+// Open the window inside the click, before any await, or the browser blocks it.
+function openLoadingTab(
+	target = '_blank',
+	features = '',
+): { tab: Window | null; loadingUrl: string } {
 	const loadingUrl = URL.createObjectURL(
 		new Blob([signingInHtml], { type: 'text/html' }),
 	)
-	return { tab: window.open(loadingUrl, '_blank'), loadingUrl }
+	return { tab: window.open(loadingUrl, target, features), loadingUrl }
 }
 
 async function openBench(server: VirtualMachineRow): Promise<void> {
@@ -146,6 +157,29 @@ async function openBench(server: VirtualMachineRow): Promise<void> {
 		reportError(error, {
 			title: `Couldn't open ${server.title || server.resource_id}`,
 		})
+	} finally {
+		URL.revokeObjectURL(loadingUrl)
+		opening.value = ''
+	}
+}
+
+/** Open the server's Atlas web console in a popup. Atlas spends a token on first
+ *  use, so every request mints a new one. One window per server: a second request
+ *  replaces the session in that window. */
+async function openConsole(server: VirtualMachineRow): Promise<void> {
+	const team = activeTeam.value
+	if (!team || opening.value) return
+	opening.value = server.resource_id
+	const { tab, loadingUrl } = openLoadingTab(
+		`console-${server.resource_id}`,
+		'popup,width=960,height=640',
+	)
+	try {
+		await submitOrThrow(consoleCall, { team, resource_id: server.resource_id })
+		openResolvedUrl(consoleCall.data?.url, tab, 'console')
+	} catch (error) {
+		tab?.close()
+		reportError(error, { title: "Couldn't open the console" })
 	} finally {
 		URL.revokeObjectURL(loadingUrl)
 		opening.value = ''
@@ -172,7 +206,7 @@ async function openSite(name: string): Promise<void> {
 function openResolvedUrl(
 	url: string | null | undefined,
 	tab: Window | null,
-	target: 'server' | 'site',
+	target: 'server' | 'site' | 'console',
 ) {
 	if (url && tab) {
 		tab.location.href = url
@@ -200,6 +234,7 @@ export function useServers() {
 		runCommand,
 		open: openBench,
 		openBench,
+		openConsole,
 		openSite,
 	}
 }

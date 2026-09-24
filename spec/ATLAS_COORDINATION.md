@@ -28,7 +28,18 @@ Atlas must return the following fields with each build:
 
 Cargo's current Pilot image contains `default-bench` and `site.local`. Server and signup flows use that image layout. Ubuntu uses a base image and requires SSH keys. See [Image Offering](../central/infrastructure/doctype/image_offering/SPEC.md) for selectors and pagination.
 
-Ubuntu creation asks Atlas for `public_ipv4: "auto"` and enables a firewall that allows inbound TCP port 22 and outbound traffic. The create-time public IPv4 selector is in the Atlas `ipv6_router` branch and must be deployed before this Central creation path. Central stores the observed public IPv4 address and shows `ssh ubuntu@<ip>` when the address is available. See [Team SSH Key](../central/infrastructure/doctype/team_ssh_key/SPEC.md) for selected keys and rotation.
+Server creation has two customer options, stored on `Virtual Machine` as `has_public_ipv6` and `is_firewall_enabled`. Central sends an option to Atlas only when the customer selects it:
+
+| Option | Atlas create field |
+| --- | --- |
+| Public IPv6 | `public_ipv6: "auto"` |
+| Firewall | `firewall.enabled: true` with the rules below |
+
+The firewall allows all inbound traffic from the mesh prefix `fdaa::/16`, because an enabled Atlas firewall also filters mesh traffic and the regional gateway reaches a machine over the mesh. It also allows inbound ICMP, inbound TCP ports 22, 80, and 443, and all outbound traffic. Without the option, Central sends `firewall.enabled: false`, which permits all traffic.
+
+Atlas reports the guest public IPv6 as a `/128` prefix. Central stores the address without the prefix length in `public_ipv6`, and stores `public_ipv4` as reported. The overview shows `ssh root@<address>` for an Ubuntu server and uses the IPv6 address first. See [Team SSH Key](../central/infrastructure/doctype/team_ssh_key/SPEC.md) for selected keys and rotation.
+
+A member with `server:console` can open the web console of a running Ubuntu server. Central asks Atlas for a single-use console token in `ssh` mode through `POST /virtual-machines/{id}/actions/console-token`, and returns `<region base URL>/vm_console#token=<token>`. The dashboard asks for a new token each time a member opens the console from the overview or the server actions, because Atlas spends the token on first use. It opens the Atlas URL in one popup window per server, so a second request replaces the session in that window. The token expires after 60 seconds and stays in the URL fragment, so the browser does not send it to a server.
 
 ## Server operation contract
 

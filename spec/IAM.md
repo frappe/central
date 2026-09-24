@@ -57,7 +57,7 @@ A member can hold several role grants in a Team. Each grant is team-wide or scop
 Server is the atomic unit (capability model v3): role capabilities live at the
 team and server level only. Server capabilities are `server:view`,
 `server:create`, `server:power`, `server:resize`, `server:snapshot`,
-`server:terminate`, `server:ssh-key`, plus `cluster:view` for placement. `server:view` also permits
+`server:terminate`, `server:ssh-key`, `server:console`, plus `cluster:view` for placement. `server:view` also permits
 opening a server or site. The
 site-level (bench-plane) capabilities are deferred; see
 [`CAPABILITIES.md`](../CAPABILITIES.md) for the full taxonomy.
@@ -69,10 +69,10 @@ A role grant applies to all resources (`resource_type = "*"`) or to one resource
 | Question | What counts |
 | --- | --- |
 | A team-wide action, such as create a server, manage storage, see billing, or manage members | Team-wide grants only |
-| One server, such as power, resize, snapshot, terminate, or open | A team-wide grant, or a grant scoped to that server |
+| One server, such as power, resize, snapshot, terminate, console, or open | A team-wide grant, or a grant scoped to that server |
 | A list, such as the fleet, snapshots, or notifications | A grant anywhere in the team, then only the rows of the allowed servers |
 
-- Only `server:view`, `server:power`, `server:resize`, `server:snapshot`, and `server:terminate` can be scoped. A scoped grant drops every other capability of its role.
+- Only `server:view`, `server:power`, `server:resize`, `server:snapshot`, `server:terminate`, and `server:console` can be scoped. A scoped grant drops every other capability of its role.
 - A scoped grant must name a server or site of the same Team. The Owner role is always team-wide. A grant whose resource no longer belongs to the Team grants nothing.
 - `iam.can(user, team, capability, server=None)` answers the first two questions. Without `server`, it is the team-wide question. Routes that act on one server pass it. `iam.can_on_any_server` answers the list question.
 - The permission rules for Virtual Machine, Site, VM Snapshot, Resource Action, and Site Domain filter lists by the allowed servers and check the server on each record.

@@ -22,6 +22,7 @@ defineProps<{
 	canResize: boolean
 	canTerminate: boolean
 	canSnapshot?: boolean
+	canOpenConsole?: boolean
 	canCreate: boolean
 	busy: string | null
 	opening: string | null
@@ -38,6 +39,7 @@ defineEmits<{
 	restart: [server: VirtualMachineRow]
 	resize: [server: VirtualMachineRow]
 	snapshot: [server: VirtualMachineRow]
+	console: [server: VirtualMachineRow]
 	terminate: [server: VirtualMachineRow]
 	create: []
 }>()
@@ -177,6 +179,7 @@ const _hoverId = defineModel<string | null>('hoverId', { required: true })
 								:can-resize="canResize"
 								:can-terminate="canTerminate"
 								:can-snapshot="canSnapshot"
+								:can-open-console="canOpenConsole"
 								:opens-site="!!row.site"
 								:busy="busy === row.server.resource_id"
 								:opening="
@@ -189,6 +192,7 @@ const _hoverId = defineModel<string | null>('hoverId', { required: true })
 								@restart="$emit('restart', $event)"
 								@resize="$emit('resize', $event)"
 								@snapshot="$emit('snapshot', $event)"
+								@console="$emit('console', $event)"
 								@terminate="$emit('terminate', $event)"
 							/>
 						</span>

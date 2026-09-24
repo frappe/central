@@ -6,7 +6,6 @@ import frappe
 
 from central.api.ssh_keys import rotate_team_ssh_key
 from central.infrastructure.doctype.team_ssh_key.team_ssh_key import TeamSSHKey, fingerprint
-from central.integrations.server_provisioning import _create_payload
 from central.integrations.ssh_keys import _replace_server_keys
 from central.permissions import team_ssh_key_has_permission, team_ssh_key_query_conditions
 from central.server_provisioning import resolve_team_ssh_keys
@@ -98,24 +97,6 @@ class TestTeamSSHKeys(TestCase):
 				)
 			]
 		)
-
-	@patch("central.integrations.server_provisioning.idle_shutdown_seconds", return_value=0)
-	def test_ubuntu_create_requests_an_ip_and_ssh_only_firewall(self, _idle) -> None:
-		configuration = SimpleNamespace(
-			image_id="ubuntu-image",
-			virtual_cpu_count=2,
-			memory_mib=2048,
-			disk_mib=20480,
-			hostname="worker",
-			ssh_keys=["ssh-ed25519 AAAA"],
-			ssh_key_ids=[],
-			image_tags={"os": "Ubuntu", "purpose": "base"},
-		)
-		request = SimpleNamespace(name="action-1", team="team-a", get_configuration=lambda: configuration)
-		payload = _create_payload(request)
-		self.assertEqual(payload["public_ipv4"], "auto")
-		self.assertEqual(payload["firewall"]["inbound"][0]["ports"], "22")
-		self.assertTrue(payload["firewall"]["enabled"])
 
 	@patch("central.integrations.ssh_keys.AtlasClient")
 	@patch("central.integrations.ssh_keys.frappe.get_doc", return_value=SimpleNamespace(name="region-a"))

@@ -19,6 +19,7 @@ export type ServerCapability =
 	| 'server:resize'
 	| 'server:snapshot'
 	| 'server:terminate'
+	| 'server:console'
 
 /** A row that carries the caller's capabilities on its own server. */
 export interface ServerAccess {
@@ -32,6 +33,7 @@ export interface ServerActions {
 	resize: boolean
 	snapshot: boolean
 	terminate: boolean
+	console?: boolean
 }
 
 /** What the caller may do on this row's server. Central sends each row its own
@@ -49,6 +51,7 @@ export function getServerActions(
 		resize: caps.includes('server:resize'),
 		snapshot: caps.includes('server:snapshot'),
 		terminate: caps.includes('server:terminate'),
+		console: caps.includes('server:console'),
 	}
 }
 

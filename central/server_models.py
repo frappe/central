@@ -39,6 +39,8 @@ class CreateServerInput(BaseModel):
 	hostname: str = Field(default="", max_length=63)
 	ssh_keys: list[SSHKey] = Field(default_factory=list, max_length=20)
 	ssh_key_ids: list[str] = Field(default_factory=list, max_length=20)
+	has_public_ipv6: bool = False
+	is_firewall_enabled: bool = False
 
 
 class ServerCreation(BaseModel):
@@ -56,6 +58,8 @@ class ServerCreation(BaseModel):
 	hostname: str
 	ssh_keys: list[SSHKey]
 	ssh_key_ids: list[str] = Field(default_factory=list)
+	has_public_ipv6: bool = False
+	is_firewall_enabled: bool = False
 	image_tags: dict[str, str]
 	virtual_cpu_count: int = Field(gt=0, le=32)
 	memory_mib: PositiveInt

@@ -45,12 +45,15 @@
    },
    {
     "capability": "server:ssh-key"
+   },
+   {
+    "capability": "server:console"
    }
   ],
   "docstatus": 0,
   "doctype": "Team Role",
   "is_system": 1,
-  "modified": "2026-06-30 00:00:00",
+  "modified": "2026-09-24 00:00:00",
   "name": "Owner",
   "role_name": "Owner",
   "team": null
@@ -98,12 +101,15 @@
    },
    {
     "capability": "server:ssh-key"
+   },
+   {
+    "capability": "server:console"
    }
   ],
   "docstatus": 0,
   "doctype": "Team Role",
   "is_system": 1,
-  "modified": "2026-06-30 00:00:00",
+  "modified": "2026-09-24 00:00:00",
   "name": "Admin",
   "role_name": "Admin",
   "team": null
@@ -139,12 +145,15 @@
    },
    {
     "capability": "server:ssh-key"
+   },
+   {
+    "capability": "server:console"
    }
   ],
   "docstatus": 0,
   "doctype": "Team Role",
   "is_system": 1,
-  "modified": "2026-06-30 00:00:00",
+  "modified": "2026-09-24 00:00:00",
   "name": "Developer",
   "role_name": "Developer",
   "team": null
