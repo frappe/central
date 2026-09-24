@@ -225,7 +225,8 @@ def _fan_out_emails(
 
 	Members are qualified by:
 	  1. Being an active member of the team.
-	  2. Having the required capability (via ``iam.can``).
+	  2. Having the required capability (via ``iam.can``), on the referenced server when
+	     the event is about one.
 	  3. Having ``email_enabled`` in their ``UserNotificationPreference``
 	     (default: enabled when no preference record exists).
 
@@ -236,8 +237,10 @@ def _fan_out_emails(
 	Returns ``{"queued": N, "attempted": N, "failed": N}``.
 	"""
 	from central.iam import can
+	from central.notification import get_reference_server
 
 	result = {"queued": 0, "attempted": 0, "failed": 0}
+	server = get_reference_server(reference_doctype, reference_name)
 
 	if event.direct_recipients == "Affected User":
 		if affected_user and _email_enabled(affected_user, team, event.category):
@@ -262,7 +265,7 @@ def _fan_out_emails(
 		return result
 
 	for member_user in members:
-		if event.required_cap and not can(member_user, team, event.required_cap):
+		if event.required_cap and not can(member_user, team, event.required_cap, server=server):
 			continue
 
 		if not _email_enabled(member_user, team, event.category):

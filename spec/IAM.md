@@ -76,6 +76,7 @@ A role grant applies to all resources (`resource_type = "*"`) or to one resource
 - A scoped grant must name a server or site of the same Team. The Owner role is always team-wide. A grant whose resource no longer belongs to the Team grants nothing.
 - `iam.can(user, team, capability, server=None)` answers the first two questions. Without `server`, it is the team-wide question. Routes that act on one server pass it. `iam.can_on_any_server` answers the list question.
 - The permission rules for Virtual Machine, Site, VM Snapshot, Resource Action, and Site Domain filter lists by the allowed servers and check the server on each record.
+- A notification that is about a server records it in `Team Notification.server`. A scoped member sees and receives only the notifications for its servers.
 
 ## User And Invitation Flow
 

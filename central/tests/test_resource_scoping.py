@@ -17,6 +17,8 @@ from central.iam import (
 	get_server_capabilities,
 )
 from central.integrations.servers import process_command
+from central.notification import create_notification, list_notifications
+from central.notification.engine import dispatch
 from central.resource_actions import submit_command
 from central.tests.test_iam import ensure_user
 from central.tests.utils import ensure_server
@@ -276,6 +278,62 @@ class TestScopedRoutes(ResourceScopingTestCase):
 		frappe.set_user(self.scoped)
 		with self.assertRaises(frappe.PermissionError):
 			authorized_site(site, "server:view")
+
+
+class TestScopedNotifications(ResourceScopingTestCase):
+	def _notify(self, server: str | None, required_cap: str = "server:view") -> str:
+		reference = {"reference_doctype": "Virtual Machine", "reference_name": server} if server else {}
+		return create_notification(
+			self.team,
+			f"About {server}",
+			category="Server",
+			required_cap=required_cap,
+			publish=False,
+			**reference,
+		).name
+
+	def _feed(self, user: str) -> set[str]:
+		return {row["name"] for row in list_notifications(self.team, user=user, limit=100)["items"]}
+
+	def test_the_feed_shows_a_scoped_member_only_its_server(self):
+		mine, theirs, team_wide = self._notify(self.mine), self._notify(self.theirs), self._notify(None)
+		billing = self._notify(None, required_cap="billing:view")
+
+		self.assertEqual(frappe.db.get_value("Team Notification", mine, "server"), self.mine)
+		feed = self._feed(self.scoped)
+		self.assertIn(mine, feed)
+		self.assertNotIn(theirs, feed)
+		self.assertNotIn(team_wide, feed)
+		self.assertNotIn(billing, feed)
+		self.assertTrue({mine, theirs, team_wide} <= self._feed(self.viewer))
+
+	def test_emails_go_to_a_scoped_member_only_for_its_server(self):
+		frappe.db.delete("Notification Event Type", {"event_type": "scope_test_event"})
+		frappe.get_doc(
+			{
+				"doctype": "Notification Event Type",
+				"event_type": "scope_test_event",
+				"category": "Server",
+				"severity": "Info",
+				"required_cap": "server:view",
+				"in_app_title": "Scope test",
+				"in_app_body": "{{ message }}",
+				"direct_recipients": "None",
+				"create_in_app": 0,
+			}
+		).insert(ignore_permissions=True)
+
+		recipients = {}
+		for server in (self.mine, self.theirs):
+			with patch("central.notification.engine._send_member_email", return_value=True) as send:
+				dispatch(
+					self.team, "scope_test_event", reference_doctype="Virtual Machine", reference_name=server
+				)
+			recipients[server] = {call.args[0] for call in send.call_args_list}
+
+		self.assertIn(self.scoped, recipients[self.mine])
+		self.assertNotIn(self.scoped, recipients[self.theirs])
+		self.assertIn(self.viewer, recipients[self.theirs])
 
 
 class TestScopedDispatch(ResourceScopingTestCase):
