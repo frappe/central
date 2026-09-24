@@ -55,7 +55,6 @@ function saved(key: TeamSSHKey | null) {
 			:empty-text="keys.length ? 'No matching keys' : 'No team SSH keys yet'"
 			label="SSH keys"
 			placeholder="Select team SSH keys"
-			variant="outline"
 			class="w-full max-w-xs"
 			@update:model-value="updateSelection"
 		>

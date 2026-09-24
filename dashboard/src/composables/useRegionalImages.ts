@@ -29,6 +29,19 @@ function buildLabel(image: RegionalImage, withArchitecture: boolean): string {
 	return parts.filter(Boolean).join(' · ')
 }
 
+// A plain OS image has no build history worth choosing from: the newest build of
+// each version and architecture is the one to run.
+function latestBuilds(images: RegionalImage[]): RegionalImage[] {
+	const latest = new Map<string, RegionalImage>()
+	for (const image of images) {
+		const key = `${versionLabel(image)}|${image.architecture}`
+		const current = latest.get(key)
+		if (!current || image.created_at > current.created_at)
+			latest.set(key, image)
+	}
+	return [...latest.values()]
+}
+
 export type ImageSource = 'image' | 'snapshot'
 
 // A snapshot restores into a server of its source's kind, so it stands in for an image
@@ -155,7 +168,8 @@ export function useRegionalImages(
 			images.value = builds
 			// One build is not a choice; picking it here saves a required click and lets
 			// the plan step load straight away.
-			if (builds.length === 1) imageId.value = builds[0].id
+			if (buildChoices.value.length === 1)
+				imageId.value = buildChoices.value[0].id
 		} catch (failure) {
 			if (current === generation)
 				error.value = getErrorMessage(
@@ -186,13 +200,17 @@ export function useRegionalImages(
 			? { offering: offering.value, image_id: image.value.id }
 			: null
 	})
+	const isPlainImage = computed(() => offering.value === 'ubuntu')
+	const buildChoices = computed(() =>
+		isPlainImage.value ? latestBuilds(images.value) : images.value,
+	)
 	const imageOptions = computed(() => {
 		// Architecture only earns its place when the region offers more than one.
 		const mixed =
 			new Set(images.value.map((item) => item.architecture)).size > 1
 		// Versions stay together and the newest build of each leads its group, so the
 		// current build of a version is the first one under its name.
-		const builds = [...images.value].sort(
+		const builds = [...buildChoices.value].sort(
 			(a, b) =>
 				versionLabel(a).localeCompare(versionLabel(b)) ||
 				b.created_at - a.created_at,
@@ -200,7 +218,11 @@ export function useRegionalImages(
 		return [
 			{ label: 'Select an image build', value: '' },
 			...builds.map((item) => ({
-				label: buildLabel(item, mixed),
+				label: isPlainImage.value
+					? [versionLabel(item), mixed && item.architecture]
+							.filter(Boolean)
+							.join(' · ')
+					: buildLabel(item, mixed),
 				value: item.id,
 			})),
 		]

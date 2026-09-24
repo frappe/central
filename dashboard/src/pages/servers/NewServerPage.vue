@@ -196,7 +196,7 @@ const selectedRegionName = computed(() =>
 						<div class="space-y-3">
 							<TabButtons
 								v-model="source"
-								:buttons="[
+								:options="[
 									{ label: 'Image', value: 'image' },
 									{ label: 'Snapshot', value: 'snapshot' },
 								]"
@@ -230,6 +230,7 @@ const selectedRegionName = computed(() =>
 									type="select"
 									label="Snapshot"
 									:options="snapshotOptions"
+									class="max-w-xs"
 								/>
 							</template>
 							<template v-else>
@@ -268,6 +269,7 @@ const selectedRegionName = computed(() =>
 									type="select"
 									label="Image build"
 									:options="imageOptions"
+									class="max-w-xs"
 								/>
 							</template>
 							<SSHKeysField
