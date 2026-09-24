@@ -13,6 +13,7 @@
   "region",
   "identity_column",
   "plan",
+  "atlas_vm_id",
   "frappe_version",
   "status",
   "configuration_tab",
@@ -27,8 +28,11 @@
   "network_section",
   "ipv6_address",
   "public_ipv4",
+  "public_ipv6",
   "network_column",
   "gateway_url",
+  "has_public_ipv6",
+  "is_firewall_enabled",
   "ssh_keys_section",
   "ssh_keys",
   "diagnostics_tab",
@@ -37,15 +41,22 @@
   "admin_domain_error",
   "admin_domain_error_log",
   "regional_section",
-  "atlas_vm_id",
   "atlas_image_id",
   "regional_column",
   "state_observed_at",
   "last_reported_at"
  ],
  "fields": [
-  {"fieldname": "overview_tab", "fieldtype": "Tab Break", "label": "Overview"},
-  {"fieldname": "identity_section", "fieldtype": "Section Break", "label": "Identity"},
+  {
+   "fieldname": "overview_tab",
+   "fieldtype": "Tab Break",
+   "label": "Overview"
+  },
+  {
+   "fieldname": "identity_section",
+   "fieldtype": "Section Break",
+   "label": "Identity"
+  },
   {
    "description": "The VM identifier in Atlas (the source of truth).",
    "fieldname": "resource_id",
@@ -85,7 +96,10 @@
    "reqd": 1,
    "search_index": 1
   },
-  {"fieldname": "identity_column", "fieldtype": "Column Break"},
+  {
+   "fieldname": "identity_column",
+   "fieldtype": "Column Break"
+  },
   {
    "fieldname": "plan",
    "fieldtype": "Link",
@@ -112,8 +126,16 @@
    "options": "Pending\nProvisioning\nDeploying\nRunning\nPaused\nStopped\nFailed\nTerminated",
    "read_only": 1
   },
-  {"fieldname": "configuration_tab", "fieldtype": "Tab Break", "label": "Configuration"},
-  {"fieldname": "capacity_section", "fieldtype": "Section Break", "label": "Capacity"},
+  {
+   "fieldname": "configuration_tab",
+   "fieldtype": "Tab Break",
+   "label": "Configuration"
+  },
+  {
+   "fieldname": "capacity_section",
+   "fieldtype": "Section Break",
+   "label": "Capacity"
+  },
   {
    "fieldname": "vcpus",
    "fieldtype": "Int",
@@ -132,15 +154,39 @@
    "label": "Disk (GB)",
    "read_only": 1
   },
-  {"fieldname": "capacity_column", "fieldtype": "Column Break"},
-  {"fieldname": "image_offering", "fieldtype": "Link", "label": "Image Offering", "options": "Image Offering", "read_only": 1},
-  {"fieldname": "skip_automatic_snapshot", "fieldtype": "Check", "label": "Skip Automatic Snapshot", "default": "0", "description": "The customer turned off the daily free snapshot for this server."},
-  {"fieldname": "access_tab", "fieldtype": "Tab Break", "label": "Access"},
-  {"fieldname": "network_section", "fieldtype": "Section Break", "label": "Network"},
   {
+   "fieldname": "capacity_column",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "image_offering",
+   "fieldtype": "Link",
+   "label": "Image Offering",
+   "options": "Image Offering",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "description": "The customer turned off the daily free snapshot for this server.",
+   "fieldname": "skip_automatic_snapshot",
+   "fieldtype": "Check",
+   "label": "Skip Automatic Snapshot"
+  },
+  {
+   "fieldname": "access_tab",
+   "fieldtype": "Tab Break",
+   "label": "Access"
+  },
+  {
+   "fieldname": "network_section",
+   "fieldtype": "Section Break",
+   "label": "Network"
+  },
+  {
+   "description": "The private WireGuard mesh address. Only the region reaches it.",
    "fieldname": "ipv6_address",
    "fieldtype": "Data",
-   "label": "IPv6 Address",
+   "label": "Mesh IPv6",
    "read_only": 1
   },
   {
@@ -149,7 +195,17 @@
    "label": "Public IPv4",
    "read_only": 1
   },
-  {"fieldname": "network_column", "fieldtype": "Column Break"},
+  {
+   "description": "The public IPv6 address Atlas reports for the guest.",
+   "fieldname": "public_ipv6",
+   "fieldtype": "Data",
+   "label": "Public IPv6",
+   "read_only": 1
+  },
+  {
+   "fieldname": "network_column",
+   "fieldtype": "Column Break"
+  },
   {
    "description": "The URL a bench VM is fronted at, reported by Atlas; empty for a non-bench VM.",
    "fieldname": "gateway_url",
@@ -158,10 +214,46 @@
    "options": "URL",
    "read_only": 1
   },
-  {"fieldname": "ssh_keys_section", "fieldtype": "Section Break", "label": "SSH Keys"},
-  {"fieldname": "ssh_keys", "fieldtype": "Table", "label": "SSH Keys", "options": "Server SSH Key", "read_only": 1, "description": "Team public keys selected for this server."},
-  {"fieldname": "diagnostics_tab", "fieldtype": "Tab Break", "label": "Diagnostics"},
-  {"fieldname": "admin_domain_section", "fieldtype": "Section Break", "label": "Admin Domain", "collapsible": 1},
+  {
+   "default": "0",
+   "description": "The customer asked for a public IPv6 address at creation. Anyone on the internet can reach the machine at that address.",
+   "fieldname": "has_public_ipv6",
+   "fieldtype": "Check",
+   "label": "Public IPv6 Requested",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "description": "The customer turned on the Atlas firewall at creation. It allows the mesh, ICMP, SSH, HTTP, and HTTPS.",
+   "fieldname": "is_firewall_enabled",
+   "fieldtype": "Check",
+   "label": "Firewall Enabled",
+   "read_only": 1
+  },
+  {
+   "fieldname": "ssh_keys_section",
+   "fieldtype": "Section Break",
+   "label": "SSH Keys"
+  },
+  {
+   "description": "Team public keys selected for this server.",
+   "fieldname": "ssh_keys",
+   "fieldtype": "Table",
+   "label": "SSH Keys",
+   "options": "Server SSH Key",
+   "read_only": 1
+  },
+  {
+   "fieldname": "diagnostics_tab",
+   "fieldtype": "Tab Break",
+   "label": "Diagnostics"
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "admin_domain_section",
+   "fieldtype": "Section Break",
+   "label": "Admin Domain"
+  },
   {
    "description": "The Pilot task that changed the local admin domain to the routed gateway hostname.",
    "fieldname": "admin_domain_task",
@@ -184,7 +276,12 @@
    "options": "Error Log",
    "read_only": 1
   },
-  {"fieldname": "regional_section", "fieldtype": "Section Break", "label": "Regional State", "collapsible": 1},
+  {
+   "collapsible": 1,
+   "fieldname": "regional_section",
+   "fieldtype": "Section Break",
+   "label": "Regional State"
+  },
   {
    "description": "VM identifier within the linked Atlas region.",
    "fieldname": "atlas_vm_id",
@@ -198,7 +295,10 @@
    "label": "Atlas Image ID",
    "read_only": 1
   },
-  {"fieldname": "regional_column", "fieldtype": "Column Break"},
+  {
+   "fieldname": "regional_column",
+   "fieldtype": "Column Break"
+  },
   {
    "description": "When Central last recorded this server's state.",
    "fieldname": "state_observed_at",
@@ -232,7 +332,7 @@
    "link_fieldname": "server"
   }
  ],
- "modified": "2026-09-23 12:00:00.000000",
+ "modified": "2026-09-24 18:28:13.015331",
  "modified_by": "Administrator",
  "module": "Infrastructure",
  "name": "Virtual Machine",

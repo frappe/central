@@ -15,23 +15,29 @@ class VirtualMachine(Document):
 	if TYPE_CHECKING:
 		from frappe.types import DF
 
+		from central.infrastructure.doctype.server_ssh_key.server_ssh_key import ServerSSHKey
+
+		admin_domain_error: DF.SmallText | None
+		admin_domain_error_log: DF.Link | None
+		admin_domain_task: DF.Data | None
 		atlas_image_id: DF.Data | None
 		atlas_vm_id: DF.Data | None
-		region: DF.Link
 		disk_gigabytes: DF.Float
 		frappe_version: DF.Data | None
 		gateway_url: DF.Data | None
-		admin_domain_task: DF.Data | None
-		admin_domain_error: DF.SmallText | None
-		admin_domain_error_log: DF.Link | None
+		has_public_ipv6: DF.Check
 		image_offering: DF.Link | None
 		ipv6_address: DF.Data | None
+		is_firewall_enabled: DF.Check
 		last_reported_at: DF.Datetime | None
 		memory_megabytes: DF.Int
 		plan: DF.Link | None
 		public_ipv4: DF.Data | None
+		public_ipv6: DF.Data | None
+		region: DF.Link
 		resource_id: DF.Data
 		skip_automatic_snapshot: DF.Check
+		ssh_keys: DF.Table[ServerSSHKey]
 		state_observed_at: DF.Datetime | None
 		status: DF.Literal[
 			"Pending", "Provisioning", "Deploying", "Running", "Paused", "Stopped", "Failed", "Terminated"
@@ -65,6 +71,8 @@ class VirtualMachine(Document):
 				"disk_gigabytes": configuration.disk_mib / 1024,
 				"frappe_version": configuration.image_tags.get("frappe_version"),
 				"ssh_keys": [{"team_ssh_key": key} for key in configuration.ssh_key_ids],
+				"has_public_ipv6": configuration.has_public_ipv6,
+				"is_firewall_enabled": configuration.is_firewall_enabled,
 			}
 		)
 		# The authorized Resource Action permits this system-owned mirror write.
@@ -164,6 +172,7 @@ class VirtualMachine(Document):
 		"disk_gigabytes",
 		"ipv6_address",
 		"public_ipv4",
+		"public_ipv6",
 		"gateway_url",
 	)
 

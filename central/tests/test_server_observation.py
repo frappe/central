@@ -79,6 +79,16 @@ class TestServerObservation(IntegrationTestCase):
 		self.assertTrue(self.server.name.startswith("server-"))
 		self.client.get_vm.assert_called_once_with("vm-00001")
 
+	def test_observation_records_public_addresses(self):
+		self.client.get_vm.return_value["network"].update(
+			{"public_ipv4": "203.0.113.10", "public_ipv6": "2001:db8:5::7/128"}
+		)
+
+		observe_server(self.server)
+		self.server.reload()
+		self.assertEqual(self.server.public_ipv4, "203.0.113.10")
+		self.assertEqual(self.server.public_ipv6, "2001:db8:5::7")
+
 	def test_gateway_waits_for_an_enrolled_pilot(self):
 		self.assertEqual(observe_server(self.server), "Running")
 		self.assertIsNone(self.server.reload().gateway_url)

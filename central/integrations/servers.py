@@ -85,6 +85,8 @@ def observe_server(server: VirtualMachine) -> str:
 			"disk_gigabytes": disk["size_mib"] / 1024,
 			"ipv6_address": network.get("mesh_ipv6"),
 			"public_ipv4": network.get("public_ipv4"),
+			# Atlas reports the guest's public IPv6 as a prefix. A /128 is one address.
+			"public_ipv6": (network.get("public_ipv6") or "").removesuffix("/128") or None,
 			"gateway_url": gateway,
 		},
 	)
@@ -114,6 +116,7 @@ def resize_server(server: VirtualMachine, shape: dict) -> None:
 	disk_mib = shape["disk_gigabytes"] * 1024
 
 	reshaping = (compute.get("cpu_millicores"), compute.get("memory_mib")) != (cpu_millicores, memory_mib)
+	# TODO: remove the update disk API entirely - only rely on disk resize API instead
 	if not reshaping and disk_mib > (disk.get("size_mib") or 0):
 		client.update_disk(server.atlas_vm_id, disk_mib)
 	if reshaping:
