@@ -21,8 +21,10 @@ interface SnapshotListViewProps {
 	loading: boolean
 	error: string
 	currency: string
-	/** The viewer holds server:snapshot, so rows can be kept, deleted and restored. */
+	/** The viewer holds server:snapshot on some server. Each row still checks its own. */
 	canManage: boolean
+	/** The viewer can create a server, which restoring a snapshot does. */
+	canRestore: boolean
 	/** How many of each server's newest snapshots are free. */
 	freePerServer: number
 	/** Search to open with, such as the server a link came from. */
@@ -133,9 +135,11 @@ interface SnapshotAction {
 }
 
 function rowActions(row: VMSnapshotRow): SnapshotAction[] {
-	if (!props.canManage || row.status === 'Pending') return []
+	// A member can be scoped to some servers, so each row checks its own server.
+	if (!row.capabilities.includes('server:snapshot') || row.status === 'Pending')
+		return []
 	const actions: SnapshotAction[] = []
-	if (row.status === 'Available' && row.is_restorable)
+	if (props.canRestore && row.status === 'Available' && row.is_restorable)
 		actions.push({
 			label: 'Create server from this',
 			icon: 'lucide-server',

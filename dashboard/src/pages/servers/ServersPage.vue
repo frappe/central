@@ -19,6 +19,7 @@ import { useServerFleet } from '@/composables/useServerFleet'
 import { useServerNavigation } from '@/composables/useServerNavigation'
 import type { VirtualMachineRow } from '@/composables/useServers'
 import { useServers } from '@/composables/useServers'
+import { getServerActions, type ServerActions } from '@/lib/capabilities'
 import { getErrorMessage } from '@/lib/feedback'
 
 // The servers page: the world map is the list (FC V2). Servers (the Virtual Machine mirror)
@@ -168,6 +169,20 @@ const pendingResize = ref<VirtualMachineRow | null>(null)
 const pendingSnapshot = ref<VirtualMachineRow | null>(null)
 const overviewOpensSite = computed(
 	() => !!overviewServer.value && !!siteFor(overviewServer.value),
+)
+// A member can be scoped to some servers, so each dialog follows the server it shows.
+const teamActions = computed<ServerActions>(() => ({
+	open: canViewServers.value,
+	power: canPowerServer.value,
+	resize: canResizeServer.value,
+	snapshot: canSnapshotServer.value,
+	terminate: canTerminateServer.value,
+}))
+const terminateActions = computed(() =>
+	getServerActions(pendingTerminate.value, teamActions.value),
+)
+const overviewActions = computed(() =>
+	getServerActions(overviewServer.value, teamActions.value),
 )
 const overviewOpen = computed({
 	get: () => !!overviewServer.value,
@@ -354,7 +369,7 @@ const overviewOpen = computed({
 			v-model:target="pendingTerminate"
 			:loading="busy === pendingTerminate?.resource_id"
 			:error="terminateError"
-			:can-snapshot="canSnapshotServer"
+			:can-snapshot="terminateActions.snapshot"
 			@confirm="confirmTerminate"
 		/>
 		<TakeSnapshotDialog v-model:server="pendingSnapshot" />
@@ -363,10 +378,10 @@ const overviewOpen = computed({
 		<ServerOverviewDialog
 			v-model:open="overviewOpen"
 			:server="overviewServer"
-			:can-open="canViewServers"
-			:can-resize="canResizeServer"
+			:can-open="overviewActions.open"
+			:can-resize="overviewActions.resize"
 			:opens-site="overviewOpensSite"
-			:can-snapshot="canSnapshotServer"
+			:can-snapshot="overviewActions.snapshot"
 			@open="openServer"
 			@resize="pendingResize = $event"
 		/>

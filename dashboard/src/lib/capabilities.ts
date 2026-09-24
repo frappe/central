@@ -12,6 +12,46 @@ const CATEGORY_LABEL: Record<string, string> = {
 }
 const CATEGORY_ORDER = ['Billing', 'Team', 'Services', 'Servers']
 
+/** The capabilities Central can grant on one server rather than the whole team. */
+export type ServerCapability =
+	| 'server:view'
+	| 'server:power'
+	| 'server:resize'
+	| 'server:snapshot'
+	| 'server:terminate'
+
+/** A row that carries the caller's capabilities on its own server. */
+export interface ServerAccess {
+	capabilities?: ServerCapability[] | null
+}
+
+/** The server actions the caller may take. */
+export interface ServerActions {
+	open: boolean
+	power: boolean
+	resize: boolean
+	snapshot: boolean
+	terminate: boolean
+}
+
+/** What the caller may do on this row's server. Central sends each row its own
+ *  capabilities, because a member can be scoped to some servers only. A row without
+ *  them, such as a creation in flight, falls back to the team-level actions. */
+export function getServerActions(
+	row: ServerAccess | null | undefined,
+	teamActions: ServerActions,
+): ServerActions {
+	const caps = row?.capabilities
+	if (!caps) return teamActions
+	return {
+		open: caps.includes('server:view'),
+		power: caps.includes('server:power'),
+		resize: caps.includes('server:resize'),
+		snapshot: caps.includes('server:snapshot'),
+		terminate: caps.includes('server:terminate'),
+	}
+}
+
 export interface CapabilityCategory {
 	label: string
 	caps: CapabilityInfo[]

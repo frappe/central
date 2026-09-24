@@ -3,12 +3,13 @@ import type { DropdownSide } from 'frappe-ui'
 import { computed } from 'vue'
 import RowActionsMenu from '@/components/common/RowActionsMenu.vue'
 import type { VirtualMachineRow } from '@/composables/useServers'
+import { getServerActions } from '@/lib/capabilities'
 import { canStart, canStop, isSettingUp, isTerminated } from '@/lib/status'
 
 // The lifecycle menu for one server row. Which actions show is gated by both the
-// server's status and the user's capabilities — the same rules the API enforces
-// in central/api/servers.py, so we never offer a button that would 403. The component
-// is presentational: it emits the chosen verb; the page owns the calls.
+// server's status and the user's capabilities on this server — the same rules the API
+// enforces in central/api/servers.py, so we never offer a button that would 403. The
+// component is presentational: it emits the chosen verb; the page owns the calls.
 const props = defineProps<{
 	server: VirtualMachineRow
 	canOpen: boolean
@@ -43,6 +44,16 @@ interface ActionItem {
 	onClick: () => void
 }
 
+const allowed = computed(() =>
+	getServerActions(props.server, {
+		open: props.canOpen,
+		power: props.canPower,
+		resize: props.canResize,
+		snapshot: !!props.canSnapshot,
+		terminate: props.canTerminate,
+	}),
+)
+
 const options = computed(() => {
 	const items: ActionItem[] = []
 	items.push({
@@ -55,7 +66,7 @@ const options = computed(() => {
 	if (props.server.pending_action) return items
 	// Still provisioning — Open/Resize/Terminate wait until the VM leaves Setting up.
 	const settingUp = isSettingUp(props.server.status)
-	if (props.canOpen && !settingUp)
+	if (allowed.value.open && !settingUp)
 		items.push({
 			label: 'Open',
 			icon: 'lucide-external-link',
@@ -64,20 +75,20 @@ const options = computed(() => {
 				!(props.opensSite || props.server.gateway_url),
 			onClick: () => emit('open', props.server),
 		})
-	if (props.canPower && canStart(props.server.status))
+	if (allowed.value.power && canStart(props.server.status))
 		items.push({
 			label: 'Start',
 			icon: 'lucide-play',
 			onClick: () => emit('start', props.server),
 		})
-	if (props.canPower && canStop(props.server.status))
+	if (allowed.value.power && canStop(props.server.status))
 		items.push({
 			label: 'Stop',
 			icon: 'lucide-square',
 			onClick: () => emit('stop', props.server),
 		})
 	// Only a running server can restart, and the API refuses it in any other state.
-	if (props.canPower && canStop(props.server.status))
+	if (allowed.value.power && canStop(props.server.status))
 		items.push({
 			label: 'Restart',
 			icon: 'lucide-rotate-ccw',
@@ -85,19 +96,27 @@ const options = computed(() => {
 		})
 	// Resize compute; the dialog gates on a Stopped VM and slides a preset onto a
 	// custom config.
-	if (props.canResize && !isTerminated(props.server.status) && !settingUp)
+	if (allowed.value.resize && !isTerminated(props.server.status) && !settingUp)
 		items.push({
 			label: 'Resize',
 			icon: 'lucide-sliders-horizontal',
 			onClick: () => emit('resize', props.server),
 		})
-	if (props.canSnapshot && !isTerminated(props.server.status) && !settingUp)
+	if (
+		allowed.value.snapshot &&
+		!isTerminated(props.server.status) &&
+		!settingUp
+	)
 		items.push({
 			label: 'Take snapshot',
 			icon: 'lucide-camera',
 			onClick: () => emit('snapshot', props.server),
 		})
-	if (props.canTerminate && !isTerminated(props.server.status) && !settingUp)
+	if (
+		allowed.value.terminate &&
+		!isTerminated(props.server.status) &&
+		!settingUp
+	)
 		items.push({
 			label: 'Terminate',
 			icon: 'lucide-trash-2',

@@ -78,6 +78,7 @@ A role grant applies to all resources (`resource_type = "*"`) or to one resource
 - The permission rules for Virtual Machine, Site, VM Snapshot, Resource Action, and Site Domain filter lists by the allowed servers and check the server on each record.
 - Pricing a resize reads the plans and the current configuration of one server. Those two billing reads accept `server:resize` on that server in place of `billing:view`.
 - A notification that is about a server records it in `Team Notification.server`. A scoped member sees and receives only the notifications for its servers.
+- The console reads each server's capabilities from the `capabilities` field on its row, so it shows only the actions that the member can do on that server.
 
 ## User And Invitation Flow
 
