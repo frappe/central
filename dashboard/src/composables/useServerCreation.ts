@@ -207,10 +207,11 @@ export function useServerCreation() {
 	watch(activeTeam, () => {
 		sshKeyIds.value = []
 	})
+	const isPilotImage = computed(() => image.value?.tags.purpose === 'pilot')
 	// Only a non-Pilot image needs a key; Pilot hands the user its web admin instead.
-	const sshRequired = computed(
-		() => !!image.value && image.value.tags.purpose !== 'pilot',
-	)
+	const sshRequired = computed(() => !!image.value && !isPilotImage.value)
+	const hasPublicIpv6 = ref(true)
+	const isFirewallEnabled = ref(false)
 	// The picker explains the required key while Create stays disabled.
 	const sshMissing = computed(
 		() => sshRequired.value && !sshKeyIds.value.length,
@@ -390,6 +391,8 @@ export function useServerCreation() {
 			hostname: subdomain.value,
 			...selection.value,
 			ssh_key_ids: sshKeyIds.value,
+			has_public_ipv6: hasPublicIpv6.value,
+			is_firewall_enabled: isFirewallEnabled.value,
 		}
 		if (isCustom.value && composedConfig.value) {
 			await operation.submit('central.api.servers.create_composed_server', {
@@ -483,6 +486,8 @@ export function useServerCreation() {
 		reloadImages,
 		sshKeyIds,
 		sshRequired,
+		hasPublicIpv6,
+		isFirewallEnabled,
 		action,
 		retry,
 		editSettings,

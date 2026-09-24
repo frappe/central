@@ -53,6 +53,7 @@ export const API = {
 	startServer: 'central.api.servers.start_server',
 	stopServer: 'central.api.servers.stop_server',
 	restartServer: 'central.api.servers.restart_server',
+	openConsole: 'central.api.servers.open_console',
 	resizeServer: 'central.api.servers.resize_server',
 	terminateServer: 'central.api.servers.terminate_server',
 	serverOverview: 'central.api.servers.server_overview',

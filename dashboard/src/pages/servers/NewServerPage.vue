@@ -8,6 +8,7 @@ import ImageOfferingSelector from '@/components/servers/ImageOfferingSelector.vu
 import PlanGroup from '@/components/servers/PlanGroup.vue'
 import ProviderAvatar from '@/components/servers/ProviderAvatar.vue'
 import ServerMap from '@/components/servers/ServerMap.vue'
+import ServerNetworkOptions from '@/components/servers/ServerNetworkOptions.vue'
 import SSHKeysField from '@/components/servers/SSHKeysField.vue'
 import { useServerCreation } from '@/composables/useServerCreation'
 import { flagEmoji, regionLabel } from '@/lib/serverMap'
@@ -69,6 +70,8 @@ const {
 	reloadImages,
 	sshKeyIds,
 	sshRequired,
+	hasPublicIpv6,
+	isFirewallEnabled,
 	action,
 	retry,
 	editSettings,
@@ -276,6 +279,11 @@ const selectedRegionName = computed(() =>
 								v-if="image"
 								v-model="sshKeyIds"
 								:required="sshRequired"
+							/>
+							<ServerNetworkOptions
+								v-if="image"
+								v-model:has-public-ipv6="hasPublicIpv6"
+								v-model:is-firewall-enabled="isFirewallEnabled"
 							/>
 						</div>
 					</FormStep>

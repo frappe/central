@@ -17,6 +17,7 @@ const props = defineProps<{
 	canResize: boolean
 	canTerminate: boolean
 	canSnapshot?: boolean
+	canOpenConsole?: boolean
 	busy?: boolean
 	opening?: boolean
 	/** This machine carries a site. Open goes to that site, not the bench. */
@@ -33,6 +34,7 @@ const emit = defineEmits<{
 	restart: [server: VirtualMachineRow]
 	resize: [server: VirtualMachineRow]
 	snapshot: [server: VirtualMachineRow]
+	console: [server: VirtualMachineRow]
 	terminate: [server: VirtualMachineRow]
 }>()
 
@@ -51,6 +53,7 @@ const allowed = computed(() =>
 		resize: props.canResize,
 		snapshot: !!props.canSnapshot,
 		terminate: props.canTerminate,
+		console: !!props.canOpenConsole,
 	}),
 )
 
@@ -74,6 +77,13 @@ const options = computed(() => {
 				props.server.status !== 'Running' ||
 				!(props.opensSite || props.server.gateway_url),
 			onClick: () => emit('open', props.server),
+		})
+	if (allowed.value.console && props.server.image_offering === 'ubuntu')
+		items.push({
+			label: 'Web console',
+			icon: 'lucide-terminal',
+			disabled: props.server.status !== 'Running',
+			onClick: () => emit('console', props.server),
 		})
 	if (allowed.value.power && canStart(props.server.status))
 		items.push({

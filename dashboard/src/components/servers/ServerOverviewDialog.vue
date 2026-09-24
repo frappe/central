@@ -7,11 +7,12 @@ import ListViewState from '@/components/common/list-view/ListViewState.vue'
 import LoadAverageCard from '@/components/servers/overview/LoadAverageCard.vue'
 import OverviewSkeleton from '@/components/servers/overview/OverviewSkeleton.vue'
 import ResourceUsageCard from '@/components/servers/overview/ResourceUsageCard.vue'
+import ServerConnectCard from '@/components/servers/overview/ServerConnectCard.vue'
 import ServerInfoCard from '@/components/servers/overview/ServerInfoCard.vue'
 import ProviderAvatar from '@/components/servers/ProviderAvatar.vue'
 import ServerSnapshotRows from '@/components/snapshots/ServerSnapshotRows.vue'
 import { useRegions } from '@/composables/useRegions'
-import type { VirtualMachineRow } from '@/composables/useServers'
+import { useServers, type VirtualMachineRow } from '@/composables/useServers'
 import { useSession } from '@/composables/useSession'
 import { getErrorMessage } from '@/lib/feedback'
 import type { LoadPoint } from '@/lib/loadChart'
@@ -28,6 +29,8 @@ type Overview = {
 		team_name: string
 		image_offering: string | null
 		ssh_command?: string | null
+		has_public_ipv6: 0 | 1
+		is_firewall_enabled: 0 | 1
 		region_details: { display_name?: string | null; provider?: string | null }
 	}
 	monitoring: {
@@ -50,6 +53,7 @@ const props = defineProps<{
 	/** This machine carries a site. Open goes there instead of the bench. */
 	opensSite?: boolean
 	canSnapshot?: boolean
+	canOpenConsole?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -71,6 +75,7 @@ function viewSnapshots() {
 }
 const { activeTeam } = useSession()
 const { regions } = useRegions()
+const { openConsole, opening } = useServers()
 const overview = ref<Overview | null>(null)
 const hasLoaded = ref(false)
 const overviewError = ref('')
@@ -127,6 +132,11 @@ function expandStorage(): void {
 }
 
 const server = computed(() => overview.value?.server)
+const consoleUnavailableReason = computed(() =>
+	server.value?.status === 'Running'
+		? null
+		: 'Start the server to open its console.',
+)
 const current = computed(() => overview.value?.monitoring.current)
 const loadPoints = computed(
 	() => overview.value?.monitoring.history?.system?.points ?? [],
@@ -176,7 +186,7 @@ const planLabel = computed(() =>
 </script>
 
 <template>
-	<Dialog v-model:open="open" size="3xl" bare>
+	<Dialog v-model:open="open" size="5xl" bare>
 		<div class="bg-surface-elevation-1 px-6 pb-6 pt-5">
 			<header class="mb-5 flex items-start justify-between gap-4">
 				<div class="flex min-w-0 items-start gap-3">
@@ -232,9 +242,10 @@ const planLabel = computed(() =>
 						:hosted-on="server.region_details.display_name || server.region || '—'"
 						:provider="server.region_details.provider"
 						:plan="planLabel"
-						:inbound-ip="server.public_ipv4 || '—'"
+						:public-ipv4="server.public_ipv4"
+						:public-ipv6="server.public_ipv6"
+						:is-firewall-enabled="!!server.is_firewall_enabled"
 						:is-ubuntu="server.image_offering === 'ubuntu'"
-						:ssh-command="server.ssh_command"
 						:frappe-version="server.frappe_version || '—'"
 						:created-on="server.creation"
 						:owned-by="server.team_name"
@@ -251,6 +262,15 @@ const planLabel = computed(() =>
 						:available="overview.monitoring.available"
 					/>
 				</div>
+
+				<ServerConnectCard
+					v-if="server.image_offering === 'ubuntu'"
+					:ssh-command="server.ssh_command"
+					:can-open-console="canOpenConsole"
+					:console-unavailable-reason="consoleUnavailableReason"
+					:opening-console="opening === server.resource_id"
+					@open-console="openConsole(server)"
+				/>
 			</div>
 
 			<ListViewState

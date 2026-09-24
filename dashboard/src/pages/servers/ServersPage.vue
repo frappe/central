@@ -39,6 +39,7 @@ const {
 	canResizeServer,
 	canTerminateServer,
 	canSnapshotServer,
+	canOpenConsole,
 	canViewServers,
 	canCreateServer,
 	activeTeam,
@@ -56,8 +57,15 @@ const {
 	spots,
 } = useServerFleet()
 // Actions only — list reads come from useServerMapData.
-const { refreshing, stale, busy, opening, refreshServers, runCommand } =
-	useServers()
+const {
+	refreshing,
+	stale,
+	busy,
+	opening,
+	refreshServers,
+	runCommand,
+	openConsole,
+} = useServers()
 
 // A user in no team can't own servers/billing/regions — offer team creation
 // instead of the (empty, error-prone) map until a team exists.
@@ -177,6 +185,7 @@ const teamActions = computed<ServerActions>(() => ({
 	resize: canResizeServer.value,
 	snapshot: canSnapshotServer.value,
 	terminate: canTerminateServer.value,
+	console: canOpenConsole.value,
 }))
 const terminateActions = computed(() =>
 	getServerActions(pendingTerminate.value, teamActions.value),
@@ -262,6 +271,7 @@ const overviewOpen = computed({
 						:can-resize="canResizeServer"
 						:can-terminate="canTerminateServer"
 						:can-snapshot="canSnapshotServer"
+						:can-open-console="canOpenConsole"
 						:opens-site="!!pin.site"
 						side="right"
 						:busy="busy === pin.server.resource_id"
@@ -275,6 +285,7 @@ const overviewOpen = computed({
 						@restart="pendingRestart = $event"
 						@resize="pendingResize = $event"
 						@snapshot="pendingSnapshot = $event"
+						@console="openConsole"
 						@terminate="pendingTerminate = $event"
 					/>
 				</template>
@@ -307,6 +318,7 @@ const overviewOpen = computed({
 				:can-resize="canResizeServer"
 				:can-terminate="canTerminateServer"
 				:can-snapshot="canSnapshotServer"
+				:can-open-console="canOpenConsole"
 				:can-create="canCreateServer"
 				:busy="busy"
 				:opening="opening"
@@ -319,6 +331,7 @@ const overviewOpen = computed({
 				@restart="pendingRestart = $event"
 				@resize="pendingResize = $event"
 				@snapshot="pendingSnapshot = $event"
+				@console="openConsole"
 				@terminate="pendingTerminate = $event"
 				@create="$router.push('/servers/new')"
 			/>
@@ -382,6 +395,7 @@ const overviewOpen = computed({
 			:can-resize="overviewActions.resize"
 			:opens-site="overviewOpensSite"
 			:can-snapshot="overviewActions.snapshot"
+			:can-open-console="overviewActions.console"
 			@open="openServer"
 			@resize="pendingResize = $event"
 		/>
