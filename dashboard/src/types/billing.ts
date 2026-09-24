@@ -578,6 +578,8 @@ export interface MeteredServicePlan {
 	name?: string
 	resource_type: string | null
 	rate: number
+	allowance?: number
+	unit?: string
 }
 
 export interface MeteredServices {

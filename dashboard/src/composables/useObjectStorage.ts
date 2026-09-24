@@ -2,102 +2,113 @@ import { useCall } from 'frappe-ui'
 import { computed, ref } from 'vue'
 import { API, method } from '@/api/methods'
 import { useSession } from '@/composables/useSession'
+import { teamParams, whenTeamReady } from '@/composables/useTeamScope'
 import { successToast } from '@/lib/feedback'
 import { submitOrThrow } from '@/lib/frappeCall'
-
-// The team's object-storage buckets. Central creates and names them, mints a key
-// scoped to each, and shows both halves; whoever holds them configures their own
-// bench by hand. Revoking a key leaves the bucket and its objects untouched. Team
-// activation lives in `useServices`, shared with every other add-on.
-
-// A bucket, as listed (no secret).
-export interface StorageBucket {
-	name: string
-	label: string
-	status: string
-	gateway_url: string | null
-	provider_ref: string | null
-	service_backend: string | null
-	region: string | null
-	creation: string
-	masked_key: string
-}
-
-// The endpoint and both key halves, returned on create and on reveal. S3 needs all four.
-export interface RevealedBucket {
-	name: string
-	bucket: string
-	endpoint_url: string
-	access_key_id: string
-	secret_access_key: string
-}
+import type {
+	BucketCredentials,
+	BucketUsage,
+	ObjectStorage,
+	StorageBucket,
+} from '@/types/storage'
 
 const { activeTeam } = useSession()
-const managedRef = ref('')
 
-const bucketsCall = useCall<StorageBucket[], { managed_service: string }>({
-	url: method(API.listBuckets),
-	params: () => ({ managed_service: managedRef.value }),
+const storageCall = useCall<ObjectStorage, { team: string }>({
+	url: method(API.objectStorage),
+	params: teamParams,
+	immediate: false,
+	refetch: true,
+})
+
+whenTeamReady(() => storageCall.reload())
+
+const usageName = ref('')
+const usageCall = useCall<BucketUsage, { team: string; name: string }>({
+	url: method(API.bucketUsage),
+	params: () => ({ team: activeTeam.value!, name: usageName.value }),
 	immediate: false,
 })
 
 const createCall = useCall<
-	RevealedBucket & { status: string },
-	{ team: string; bucket: string }
+	BucketCredentials,
+	{ team: string; bucket_name: string; region: string }
 >({ url: method(API.createBucket), method: 'POST', immediate: false })
 
-const revealCall = useCall<RevealedBucket, { name: string }>({
-	url: method(API.revealBucketKey),
+const rotateCall = useCall<BucketCredentials, { team: string; name: string }>({
+	url: method(API.rotateBucketCredentials),
 	method: 'POST',
 	immediate: false,
 })
 
-const revokeCall = useCall<{ name: string; status: string }, { name: string }>({
-	url: method(API.revokeBucketKey),
+const quotaCall = useCall<
+	{ name: string },
+	{ team: string; name: string; size_gib: number; max_objects: number }
+>({ url: method(API.setBucketQuota), method: 'POST', immediate: false })
+
+const deleteCall = useCall<{ name: string }, { team: string; name: string }>({
+	url: method(API.deleteBucket),
 	method: 'POST',
 	immediate: false,
 })
 
-// Row-level busy: the bucket currently mutating, so its control alone spins.
-const busyBucket = ref('')
+export const bucketLabel = (bucket: StorageBucket): string =>
+	bucket.is_managed
+		? 'Server backups'
+		: bucket.bucket_name.replace(new RegExp(`^\\d+-${bucket.region}-`), '')
 
-function reloadBuckets(): Promise<unknown> | void {
-	if (managedRef.value) return bucketsCall.reload()
-}
+export const useObjectStorage = () => ({
+	regions: computed(() => storageCall.data?.regions ?? []),
+	buckets: computed(() => storageCall.data?.buckets ?? []),
+	loading: computed(() => storageCall.loading && !storageCall.data),
+	error: computed(() => storageCall.error),
+	reload: () => storageCall.reload(),
 
-export function useObjectStorage() {
-	return {
-		buckets: computed(() => bucketsCall.data ?? []),
-		bucketsLoading: computed(() => bucketsCall.loading),
-		busyBucket: computed(() => busyBucket.value),
+	usage: computed(() => usageCall.data),
+	usageLoading: computed(() => usageCall.loading),
+	usageError: computed(() => usageCall.error),
+	loadUsage: (name: string) => {
+		usageName.value = name
+		return usageCall.reload()
+	},
 
-		loadBuckets(managedService: string): Promise<unknown> {
-			managedRef.value = managedService
-			return bucketsCall.reload()
-		},
+	createBucket: async (
+		bucketName: string,
+		region: string,
+	): Promise<BucketCredentials> => {
+		await submitOrThrow(createCall, {
+			team: activeTeam.value!,
+			bucket_name: bucketName,
+			region,
+		})
+		await storageCall.reload()
+		return createCall.data!
+	},
 
-		// Create and reveal throw so the caller can show the credentials itself.
-		async createBucket(bucket: string): Promise<RevealedBucket> {
-			await submitOrThrow(createCall, { team: activeTeam.value!, bucket })
-			await reloadBuckets()
-			return createCall.data!
-		},
+	rotateCredentials: async (name: string): Promise<BucketCredentials> => {
+		await submitOrThrow(rotateCall, { team: activeTeam.value!, name })
+		await storageCall.reload()
+		return rotateCall.data!
+	},
 
-		async revealBucketKey(name: string): Promise<RevealedBucket> {
-			await submitOrThrow(revealCall, { name })
-			return revealCall.data!
-		},
+	setQuota: async (
+		name: string,
+		sizeGib: number,
+		maxObjects: number,
+	): Promise<void> => {
+		await submitOrThrow(quotaCall, {
+			team: activeTeam.value!,
+			name,
+			size_gib: sizeGib,
+			max_objects: maxObjects,
+		})
+		successToast('Quota saved')
+		await usageCall.reload()
+	},
 
-		// Revoke follows the toast + reload row pattern.
-		async revokeBucketKey(name: string): Promise<void> {
-			busyBucket.value = name
-			try {
-				await submitOrThrow(revokeCall, { name })
-				successToast('Bucket key revoked')
-				await reloadBuckets()
-			} finally {
-				busyBucket.value = ''
-			}
-		},
-	}
-}
+	deleteBucket: async (name: string): Promise<void> => {
+		await submitOrThrow(deleteCall, { team: activeTeam.value!, name })
+		successToast('Bucket deleted')
+		await storageCall.reload()
+	},
+})

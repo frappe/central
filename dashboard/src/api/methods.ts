@@ -77,10 +77,13 @@ export const API = {
 	listApiKeys: 'central.services.api.dashboard.list_api_keys',
 	revealApiKey: 'central.services.api.dashboard.reveal_api_key',
 	revokeApiKey: 'central.services.api.dashboard.revoke_api_key',
-	listBuckets: 'central.services.api.dashboard.list_buckets',
-	createBucket: 'central.services.api.dashboard.create_bucket',
-	revealBucketKey: 'central.services.api.dashboard.reveal_bucket_key',
-	revokeBucketKey: 'central.services.api.dashboard.revoke_bucket_key',
+
+	objectStorage: 'central.services.api.storage.get_object_storage',
+	bucketUsage: 'central.services.api.storage.get_bucket_usage',
+	createBucket: 'central.services.api.storage.create_bucket',
+	rotateBucketCredentials: 'central.services.api.storage.rotate_credentials',
+	setBucketQuota: 'central.services.api.storage.set_bucket_quota',
+	deleteBucket: 'central.services.api.storage.delete_bucket',
 
 	// ── Auth / SMB signup (central.api.auth) ──
 	signUp: 'central.api.auth.sign_up',
