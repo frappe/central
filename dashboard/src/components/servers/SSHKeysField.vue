@@ -20,7 +20,6 @@ const options = computed(() =>
 	keys.value.map((key) => ({
 		label: key.title,
 		value: key.name,
-		description: key.fingerprint,
 	})),
 )
 
@@ -60,14 +59,6 @@ function saved(key: TeamSSHKey | null) {
 			class="w-full max-w-xs"
 			@update:model-value="updateSelection"
 		>
-			<template #item-label="{ item }">
-				<div class="min-w-0">
-					<div class="truncate">{{ item.label }}</div>
-					<div class="truncate font-mono text-p-sm text-ink-gray-5">
-						{{ item.description }}
-					</div>
-				</div>
-			</template>
 			<template #footer="{ clear, selectedOptions, setOpen }">
 				<div
 					v-if="keys.length || canManageSSHKeys"
@@ -86,6 +77,7 @@ function saved(key: TeamSSHKey | null) {
 						size="sm"
 						icon-left="lucide-plus"
 						label="Add SSH key"
+						class="ml-auto"
 						@click="addKey(setOpen)"
 					/>
 				</div>
