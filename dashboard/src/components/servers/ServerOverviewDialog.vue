@@ -9,7 +9,7 @@ import OverviewSkeleton from '@/components/servers/overview/OverviewSkeleton.vue
 import ResourceUsageCard from '@/components/servers/overview/ResourceUsageCard.vue'
 import ServerInfoCard from '@/components/servers/overview/ServerInfoCard.vue'
 import ProviderAvatar from '@/components/servers/ProviderAvatar.vue'
-import ServerSnapshotsCard from '@/components/snapshots/ServerSnapshotsCard.vue'
+import ServerSnapshotRows from '@/components/snapshots/ServerSnapshotRows.vue'
 import { useRegions } from '@/composables/useRegions'
 import type { VirtualMachineRow } from '@/composables/useServers'
 import { useSession } from '@/composables/useSession'
@@ -53,15 +53,19 @@ const props = defineProps<{
 const emit = defineEmits<{
 	open: [server: VirtualMachineRow]
 	resize: [server: VirtualMachineRow]
-	snapshot: [server: VirtualMachineRow]
 }>()
 
 const open = defineModel<boolean>('open', { required: true })
 const router = useRouter()
 
+// The Snapshots page opens searched to this server; clearing the search shows them all.
 function viewSnapshots() {
+	const title = props.server?.title || props.server?.resource_id
 	open.value = false
-	router.push('/servers/snapshots')
+	router.push({
+		path: '/servers/snapshots',
+		query: title ? { search: title } : {},
+	})
 }
 const { activeTeam } = useSession()
 const { regions } = useRegions()
@@ -230,20 +234,19 @@ const planLabel = computed(() =>
 						:frappe-version="server.frappe_version || '—'"
 						:created-on="server.creation"
 						:owned-by="server.team_name"
-					/>
+					>
+						<ServerSnapshotRows
+							v-if="props.server"
+							:resource-id="props.server.resource_id"
+							:can-manage="!!canSnapshot"
+							@view-all="viewSnapshots"
+						/>
+					</ServerInfoCard>
 					<LoadAverageCard
 						:points="loadPoints"
 						:available="overview.monitoring.available"
 					/>
 				</div>
-
-				<ServerSnapshotsCard
-					v-if="props.server"
-					:resource-id="props.server.resource_id"
-					:can-manage="!!canSnapshot"
-					@take="props.server && emit('snapshot', props.server)"
-					@view-all="viewSnapshots"
-				/>
 			</div>
 
 			<ListViewState

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Button, LoadingText, TabButtons } from 'frappe-ui'
 import { NumberCard } from 'frappe-ui/charts'
+import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import BillingCard from '@/components/billing/BillingCard.vue'
 import OutstandingAlert from '@/components/billing/OutstandingAlert.vue'
@@ -14,7 +15,6 @@ import {
 	BILLING_REPORT_MONTHS,
 	useBillingReports,
 } from '@/composables/useBillingReports'
-import { useTrayColumn } from '@/composables/useTrayColumn'
 
 const router = useRouter()
 const {
@@ -37,9 +37,7 @@ const {
 } = useBillingReports()
 
 const MONTH_OPTIONS = BILLING_REPORT_MONTHS
-type Tray = 'statement'
-const { trayModel } = useTrayColumn<Tray>()
-const showStatement = trayModel('statement')
+const showStatement = ref(false)
 </script>
 
 <template>

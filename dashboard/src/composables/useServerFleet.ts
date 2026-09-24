@@ -115,7 +115,7 @@ export function useServerFleet() {
 			statusFilter.value ||
 			regionFilter.value.provider ||
 			regionFilter.value.region
-		return `${filtered ? 'Servers' : 'All servers'} (${filteredRows.value.length})`
+		return filtered ? 'Servers' : 'All servers'
 	})
 
 	const pins = computed<MapPin[]>(() =>

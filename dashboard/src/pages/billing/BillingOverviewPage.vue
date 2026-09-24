@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Alert } from 'frappe-ui'
-import { computed, ref } from 'vue'
+import { ref } from 'vue'
 import BillingContactTaxCard from '@/components/billing/BillingContactTaxCard.vue'
 import CollectionActionBanner from '@/components/billing/CollectionActionBanner.vue'
 import CycleBreakdownPanel from '@/components/billing/CycleBreakdownPanel.vue'
@@ -16,7 +16,9 @@ import ProjectsPanel from '@/components/billing/ProjectsPanel.vue'
 import StopBillingCard from '@/components/billing/StopBillingCard.vue'
 import WalletCard from '@/components/billing/WalletCard.vue'
 import WalletHistoryPanel from '@/components/billing/WalletHistoryPanel.vue'
+import SidePanel from '@/components/common/SidePanel.vue'
 import { useBillingSetup } from '@/composables/useBillingSetup'
+import { useTrayColumn } from '@/composables/useTrayColumn'
 
 // Billing › Overview (#69) — one scrollable surface that absorbs the legacy
 // Overview, Credits, Payment methods, Subscriptions, and Settings pages. Each card
@@ -28,25 +30,10 @@ import { useBillingSetup } from '@/composables/useBillingSetup'
 // the same dialog (useBillingSetup.requireSetup → setupDialogOpen).
 const { complete, setupDialogOpen } = useBillingSetup()
 
-// One docked tray at a time: the panel column is a single 24rem slot, and two
-// open at once would stack two SidePanels side by side and squeeze the content
-// out. A single ref names which is showing, and each card's v-model writes it.
-type Tray = 'wallet' | 'cycle' | 'schedule' | 'payingFor' | 'projects' | null
-const tray = ref<Tray>(null)
-
-function trayModel(name: Exclude<Tray, null>) {
-	return computed({
-		get: () => tray.value === name,
-		set: (open: boolean) => {
-			tray.value = open ? name : null
-		},
-	})
-}
-const showWalletHistory = trayModel('wallet')
-const showCycleBreakdown = trayModel('cycle')
-const showSchedule = trayModel('schedule')
-const showPayingFor = trayModel('payingFor')
-const showProjects = trayModel('projects')
+// One docked panel, many trays: the panel stays open while a card swaps which
+// body it shows, so moving between trays never re-slides the column.
+type Tray = 'wallet' | 'cycle' | 'schedule' | 'payingFor' | 'projects'
+const { tray, shown, onClosed } = useTrayColumn<Tray>()
 
 // Rare, scary verbs live folded under "Advanced" — reference, not news, same
 // pattern as the invoice Activity fold.
@@ -73,22 +60,16 @@ const advancedOpen = ref(false)
 					<CollectionActionBanner />
 					<!-- The cycle figure is the page's headline, so it gets the full
                width; what happens to it next sits in the pair beneath. -->
-					<EstimatedCard
-						:active="showCycleBreakdown"
-						@open="showCycleBreakdown = true"
-					/>
+					<EstimatedCard :active="tray === 'cycle'" @open="tray = 'cycle'" />
 					<div class="cards-row grid gap-4">
 						<NextPaymentCard
-							:active="showSchedule"
-							@open="showSchedule = true"
+							:active="tray === 'schedule'"
+							@open="tray = 'schedule'"
 						/>
-						<WalletCard
-							:active="showWalletHistory"
-							@open="showWalletHistory = true"
-						/>
+						<WalletCard :active="tray === 'wallet'" @open="tray = 'wallet'" />
 					</div>
-					<PayingForCard @open="showPayingFor = true" />
-					<ProjectsCard @open="showProjects = true" />
+					<PayingForCard @open="tray = 'payingFor'" />
+					<ProjectsCard @open="tray = 'projects'" />
 					<PaymentMethodsCard />
 					<BillingContactTaxCard @edit="setupDialogOpen = true" />
 
@@ -113,13 +94,18 @@ const advancedOpen = ref(false)
 				</div>
 			</div>
 
-			<!-- The shared docked SidePanel owns its own slide-in/out. Only one is
-           ever open (see `tray`), so they can all mount here. -->
-			<WalletHistoryPanel v-model:open="showWalletHistory" />
-			<CycleBreakdownPanel v-model:open="showCycleBreakdown" />
-			<PaymentSchedulePanel v-model:open="showSchedule" />
-			<PayingForPanel v-model:open="showPayingFor" />
-			<ProjectsPanel v-model:open="showProjects" />
+			<SidePanel
+				bare
+				:open="tray !== null"
+				@update:open="(open: boolean) => !open && (tray = null)"
+				@closed="onClosed"
+			>
+				<WalletHistoryPanel v-if="shown === 'wallet'" />
+				<CycleBreakdownPanel v-else-if="shown === 'cycle'" />
+				<PaymentSchedulePanel v-else-if="shown === 'schedule'" />
+				<PayingForPanel v-else-if="shown === 'payingFor'" />
+				<ProjectsPanel v-else-if="shown === 'projects'" />
+			</SidePanel>
 		</div>
 
 		<EditBillingProfileDialog v-model="setupDialogOpen" />

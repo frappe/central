@@ -2,7 +2,7 @@
 import { LoadingText } from 'frappe-ui'
 import { computed } from 'vue'
 import ChargeBreakdown from '@/components/billing/ChargeBreakdown.vue'
-import SidePanel from '@/components/common/SidePanel.vue'
+import SidePanelContent from '@/components/common/SidePanelContent.vue'
 import { useBillingOverview } from '@/composables/useBillingOverview'
 import { billingPeriod } from '@/lib/date'
 import { money } from '@/lib/format'
@@ -12,7 +12,6 @@ import type { BillingLine } from '@/types/billing'
 // tagged with whether it is already owed or still inferred, then the totals it
 // sums to. The split is the point — a bill that is part guesswork must not read
 // like a bill, so the card refuses to quote a bare number and this explains it.
-const open = defineModel<boolean>('open', { default: false })
 const { forecast, currency } = useBillingOverview()
 
 const loading = computed(() => forecast.loading && !forecast.data)
@@ -25,11 +24,7 @@ const period = computed(() =>
 </script>
 
 <template>
-	<SidePanel
-		v-model:open="open"
-		title="Breakdown of this cycle"
-		:subtitle="period"
-	>
+	<SidePanelContent title="Breakdown of this cycle" :subtitle="period">
 		<div v-if="loading" class="space-y-3 p-4">
 			<LoadingText :lines="6" />
 		</div>
@@ -89,5 +84,5 @@ const period = computed(() =>
 				</p>
 			</div>
 		</template>
-	</SidePanel>
+	</SidePanelContent>
 </template>

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import DeleteSnapshotsDialog from '@/components/snapshots/DeleteSnapshotsDialog.vue'
 import KeepSnapshotDialog from '@/components/snapshots/KeepSnapshotDialog.vue'
 import SnapshotListView from '@/components/snapshots/SnapshotListView.vue'
@@ -11,6 +11,9 @@ import { plural } from '@/lib/format'
 import type { VMSnapshotRow } from '@/types/snapshots'
 
 const router = useRouter()
+const route = useRoute()
+const initialSearch =
+	typeof route.query.search === 'string' ? route.query.search : ''
 const { canSnapshotServer } = useCapabilities()
 const {
 	snapshots,
@@ -85,6 +88,7 @@ function restore(row: VMSnapshotRow) {
 				:currency="currency"
 				:can-manage="canSnapshotServer"
 				:free-per-server="freePerServer"
+				:initial-search="initialSearch"
 				@retry="reload"
 				@keep="(row) => { keepError = ''; pendingKeep = row }"
 				@delete="(rows) => { deleteError = ''; pendingDelete = rows }"

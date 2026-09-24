@@ -46,6 +46,8 @@ defineProps<{
 				<dt class="text-ink-gray-5">Owned by</dt>
 				<dd class="text-ink-gray-9">{{ ownedBy }}</dd>
 			</div>
+			<!-- Extra rows a caller owns, such as the server's snapshots. -->
+			<slot />
 		</dl>
 	</section>
 </template>

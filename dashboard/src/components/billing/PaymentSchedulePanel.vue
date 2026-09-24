@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { Alert, LoadingText, useCall } from 'frappe-ui'
-import { computed, watch } from 'vue'
+import { computed, onMounted } from 'vue'
 import { API, method } from '@/api/methods'
-import SidePanel from '@/components/common/SidePanel.vue'
+import SidePanelContent from '@/components/common/SidePanelContent.vue'
 import { useSession } from '@/composables/useSession'
 import { shortDate } from '@/lib/date'
 import { formatDate, money } from '@/lib/format'
@@ -15,8 +15,8 @@ import type { PaymentSchedule } from '@/types/billing'
 // The escalation ladder is published up front deliberately. Dunning is the part of
 // billing customers fear most, and it is far less frightening stated as a dated
 // process with "nothing is deleted" attached than discovered one failed retry at a
-// time. Loaded on open — nobody needs a dunning ladder on first paint.
-const open = defineModel<boolean>('open', { default: false })
+// time. Loaded on open (the page mounts this per open) — nobody needs a dunning
+// ladder on first paint.
 const { activeTeam } = useSession()
 
 const schedule = useCall<PaymentSchedule, { team: string }>({
@@ -24,8 +24,8 @@ const schedule = useCall<PaymentSchedule, { team: string }>({
 	params: () => ({ team: activeTeam.value! }),
 	immediate: false,
 })
-watch(open, (isOpen) => {
-	if (isOpen && activeTeam.value) schedule.reload()
+onMounted(() => {
+	if (activeTeam.value) schedule.reload()
 })
 
 const loading = computed(() => schedule.loading && !schedule.data)
@@ -42,7 +42,7 @@ const blockerLines = computed(() => {
 </script>
 
 <template>
-	<SidePanel v-model:open="open" title="Payment schedule">
+	<SidePanelContent title="Payment schedule">
 		<div v-if="loading" class="space-y-3 p-4">
 			<LoadingText :lines="5" />
 		</div>
@@ -137,5 +137,5 @@ const blockerLines = computed(() => {
 				</p>
 			</div>
 		</template>
-	</SidePanel>
+	</SidePanelContent>
 </template>

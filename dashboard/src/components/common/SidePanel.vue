@@ -1,14 +1,8 @@
-<script lang="ts">
-import type { InjectionKey, Ref } from 'vue'
-
-export const SIDE_PANEL_SWITCHING: InjectionKey<Ref<boolean>> = Symbol(
-	'side-panel-switching',
-)
-</script>
-
 <script setup lang="ts">
-import { Button } from 'frappe-ui'
-import { inject, onBeforeUnmount, ref, watch } from 'vue'
+import { onBeforeUnmount, provide, watch } from 'vue'
+import SidePanelContent, {
+	SIDE_PANEL_CLOSE,
+} from '@/components/common/SidePanelContent.vue'
 
 // The docked detail panel every page shares — a 24rem column that slides in
 // beside the content (never over it), the billing invoice panel's anatomy made
@@ -16,12 +10,20 @@ import { inject, onBeforeUnmount, ref, watch } from 'vue'
 // the text props for rich headers; #actions renders between the title block and
 // the built-in close button; #footer pins below the scrollable body.
 //
+// `bare` drops the built-in SidePanelContent so the default slot supplies it.
+// A page with several trays uses that to keep one panel open while its body
+// swaps; `closed` fires once the slide-out ends, when the body can go.
+//
 // Hosting: render as the last child of a `flex h-full` row, after the page's
 // own `min-w-0 flex-1 overflow-y-auto` content column.
-defineProps<{ title?: string; subtitle?: string }>()
+defineProps<{ title?: string; subtitle?: string; bare?: boolean }>()
+const emit = defineEmits<{ closed: [] }>()
 const open = defineModel<boolean>('open', { default: false })
 
-const switching = inject(SIDE_PANEL_SWITCHING, ref(false))
+function close(): void {
+	open.value = false
+}
+provide(SIDE_PANEL_CLOSE, close)
 
 // The panel is docked, not modal, so it never holds focus — Esc has to be
 // caught on the document. A stacked dialog owns Esc first: closing both at once
@@ -29,7 +31,7 @@ const switching = inject(SIDE_PANEL_SWITCHING, ref(false))
 function onEscape(event: KeyboardEvent): void {
 	if (event.key !== 'Escape') return
 	if (document.querySelector('[role="dialog"]')) return
-	open.value = false
+	close()
 }
 
 watch(
@@ -44,46 +46,17 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onEscape))
 </script>
 
 <template>
-	<Transition :name="switching ? 'switch' : 'slide'" appear>
+	<Transition name="slide" appear @after-leave="emit('closed')">
 		<aside
 			v-if="open"
 			class="flex w-[24rem] shrink-0 flex-col border-l border-outline-gray-2 bg-surface-base"
 		>
-			<div
-				class="flex items-start justify-between gap-3 border-b border-outline-gray-2 p-4"
-			>
-				<div class="min-w-0">
-					<slot name="title">
-						<div class="truncate text-base-semibold text-ink-gray-9">
-							{{ title }}
-						</div>
-					</slot>
-					<slot name="subtitle">
-						<div v-if="subtitle" class="truncate text-p-sm text-ink-gray-5">
-							{{ subtitle }}
-						</div>
-					</slot>
-				</div>
-				<div class="flex shrink-0 items-center gap-0.5">
-					<slot name="actions" />
-					<!-- `label` (not aria-label) is what frappe-ui's Button turns into
-					     the accessible name; with `icon` set it renders no text. -->
-					<Button
-						variant="ghost"
-						icon="lucide-x"
-						label="Close"
-						@click="open = false"
-					/>
-				</div>
-			</div>
-
-			<div class="flex min-h-0 flex-1 flex-col overflow-y-auto">
-				<slot />
-			</div>
-
-			<div v-if="$slots.footer" class="border-t border-outline-gray-2 p-4">
-				<slot name="footer" />
-			</div>
+			<slot v-if="bare" />
+			<SidePanelContent v-else :title="title" :subtitle="subtitle">
+				<template v-for="(_, name) in $slots" #[name]>
+					<slot :name="name" />
+				</template>
+			</SidePanelContent>
 		</aside>
 	</Transition>
 </template>
@@ -114,15 +87,5 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onEscape))
 	/* -24rem mirrors w-[24rem]: net layout width 0 while hidden. */
 	transform: translateX(100%);
 	margin-inline-end: -24rem;
-}
-
-.switch-leave-active {
-	display: none;
-}
-.switch-enter-active {
-	transition: opacity 150ms ease-out;
-}
-.switch-enter-from {
-	opacity: 0;
 }
 </style>
