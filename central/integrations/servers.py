@@ -399,6 +399,18 @@ def reconcile(team: str | None = None) -> dict:
 	return {"synced": [], "stale": [], "queued": len(servers)}
 
 
+def get_console_url(server: VirtualMachine) -> str:
+	"""Return a single-use Atlas web console URL for a running Ubuntu server.
+
+	Atlas opens the session over SSH with a key it pushes for that session only."""
+	if server.image_offering != "ubuntu":
+		frappe.throw(_("The web console is available only for Ubuntu servers."))
+	if server.status != "Running":
+		frappe.throw(_("Start the server before you open its console."))
+
+	return _client(server).get_console_url(server.atlas_vm_id, mode="ssh")
+
+
 def refresh_server(name: str) -> None:
 	server = frappe.get_doc("Virtual Machine", name, for_update=True)
 	if server.status != "Terminated":

@@ -315,6 +315,17 @@ def refresh_servers(team: str | None = None) -> dict:
 
 @frappe.whitelist(methods=["POST"])
 @handle_resource_operation
+@require_capability("server:console", "You can't open this server's console.", server="resource_id")
+def open_console(team: str | None = None, resource_id: str | None = None) -> dict:
+	"""Return a single-use web console URL for one server. Gated on `server:console`."""
+	from central.integrations.servers import get_console_url
+
+	server = frappe.get_doc("Virtual Machine", {"team": team, "resource_id": resource_id})
+	return {"url": get_console_url(server)}
+
+
+@frappe.whitelist(methods=["POST"])
+@handle_resource_operation
 def start_server(team: str | None = None, resource_id: str | None = None) -> dict:
 	"""Start a stopped server. Gated on `server:power`."""
 	return _run_command("start", team, resource_id)

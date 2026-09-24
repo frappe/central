@@ -39,6 +39,8 @@ The firewall allows all inbound traffic from the mesh prefix `fdaa::/16`, becaus
 
 Atlas reports the guest public IPv6 as a `/128` prefix. Central stores the address without the prefix length in `public_ipv6`, and stores `public_ipv4` as reported. The overview shows `ssh root@<address>` for an Ubuntu server and uses the IPv6 address first. See [Team SSH Key](../central/infrastructure/doctype/team_ssh_key/SPEC.md) for selected keys and rotation.
 
+A member with `server:console` can open the web console of a running Ubuntu server. Central asks Atlas for a single-use console token in `ssh` mode through `POST /virtual-machines/{id}/actions/console-token`, and returns `<region base URL>/vm_console#token=<token>`. The dashboard asks for a new token each time a member opens the console from the overview or the server actions, because Atlas spends the token on first use. It opens the Atlas URL in one popup window per server, so a second request replaces the session in that window. The token expires after 60 seconds and stays in the URL fragment, so the browser does not send it to a server.
+
 ## Server operation contract
 
 Central stores each authorized operation in Resource Action before dispatch. Atlas receives one create or power request. Central saves the accepted VM identity before local finalization. A lost mutation response remains uncertain and must not trigger another remote mutation.
