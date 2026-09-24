@@ -24,7 +24,6 @@ watch(bucket, (target) => {
 	if (!target) return
 	sizeGib.value = Math.round((props.usage?.quota_bytes ?? 0) / GIB)
 	maxObjects.value = props.usage?.quota_objects ?? 0
-	error.value = ''
 })
 
 const save = async (): Promise<void> => {
@@ -52,6 +51,7 @@ const save = async (): Promise<void> => {
 		:title="bucket ? `Quota for ${bucketLabel(bucket)}` : ''"
 		size="md"
 		@update:model-value="(open: boolean) => !open && (bucket = null)"
+		@after-leave="error = ''"
 	>
 		<Alert v-if="error" class="mb-4" theme="red" :title="error" />
 

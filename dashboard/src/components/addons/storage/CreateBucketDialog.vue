@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Alert, Button, Dialog, Select, TextInput } from 'frappe-ui'
-import { computed, ref, watch } from 'vue'
+import { computed, ref } from 'vue'
 import ServerMap from '@/components/servers/ServerMap.vue'
 import { useMeteredServices } from '@/composables/useMeteredServices'
 import { useObjectStorage } from '@/composables/useObjectStorage'
@@ -32,13 +32,11 @@ const creating = ref(false)
 
 const error = ref('')
 
-watch(open, (isOpen) => {
-	if (!isOpen) return
+const reset = (): void => {
 	name.value = ''
 	pickedRegion.value = ''
 	error.value = ''
-})
-watch([name, region], () => (error.value = ''))
+}
 
 const regionOptions = computed(() =>
 	regions.value.map((r) => ({
@@ -67,6 +65,7 @@ const create = async (): Promise<void> => {
 	if (creating.value) return
 
 	creating.value = true
+	error.value = ''
 	try {
 		emit('created', await createBucket(name.value, region.value))
 		open.value = false
@@ -84,6 +83,7 @@ const create = async (): Promise<void> => {
 		title="Create bucket"
 		size="lg"
 		:options="{ backdropDismiss: !creating, showCloseButton: !creating }"
+		@after-leave="reset"
 	>
 		<form class="space-y-5" @submit.prevent="create">
 			<Alert v-if="error" theme="red" :title="error" />

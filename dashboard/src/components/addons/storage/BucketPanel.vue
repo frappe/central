@@ -96,10 +96,10 @@ const rotateTarget = ref<StorageBucket | null>(null)
 const deleteTarget = ref<StorageBucket | null>(null)
 const busy = ref(false)
 const actionError = ref('')
-watch([rotateTarget, deleteTarget], () => (actionError.value = ''))
 
 const rotate = async (target: StorageBucket): Promise<void> => {
 	busy.value = true
+	actionError.value = ''
 	try {
 		emit('rotated', await rotateCredentials(target.name))
 		rotateTarget.value = null
@@ -112,6 +112,7 @@ const rotate = async (target: StorageBucket): Promise<void> => {
 
 const remove = async (target: StorageBucket): Promise<void> => {
 	busy.value = true
+	actionError.value = ''
 	try {
 		await deleteBucket(target.name)
 		deleteTarget.value = null
@@ -256,6 +257,7 @@ const remove = async (target: StorageBucket): Promise<void> => {
 		:loading="busy"
 		:error="actionError"
 		@confirm="rotate"
+		@after-leave="actionError = ''"
 	>
 		<p v-if="rotateTarget" class="text-p-base text-ink-gray-7">
 			Issue a new key for
@@ -274,6 +276,7 @@ const remove = async (target: StorageBucket): Promise<void> => {
 		:loading="busy"
 		:error="actionError"
 		@confirm="remove"
+		@after-leave="actionError = ''"
 	>
 		<p v-if="deleteTarget" class="text-p-base text-ink-gray-7">
 			Delete

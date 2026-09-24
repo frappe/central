@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Button, Dialog, TextInput } from 'frappe-ui'
-import { computed, ref, watch } from 'vue'
+import { computed, ref } from 'vue'
 import { copyToClipboard } from '@/lib/clipboard'
 import { reportError, successToast } from '@/lib/feedback'
 import type { BucketCredentials } from '@/types/storage'
@@ -8,7 +8,6 @@ import type { BucketCredentials } from '@/types/storage'
 const credentials = defineModel<BucketCredentials | null>({ required: true })
 
 const secretRevealed = ref(false)
-watch(credentials, () => (secretRevealed.value = false))
 
 const fields = computed(() => {
 	const value = credentials.value
@@ -56,6 +55,7 @@ const copy = async (value: string, label: string): Promise<void> => {
 		title="Save your credentials"
 		size="xl"
 		@update:model-value="(open: boolean) => !open && (credentials = null)"
+		@after-leave="secretRevealed = false"
 	>
 		<div v-if="credentials" class="space-y-5">
 			<div
