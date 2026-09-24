@@ -21,7 +21,7 @@ CAPABILITY_VERSION = 5
 # on a resource is meaningless without seeing it, so we close every grant under
 # these before it is asserted or evaluated — the role builder can let a user tick
 # `server:create` without also remembering `server:view`/`cluster:view`, and a grant
-# hand-crafted through the API can't bypass it either. Phase 1: scope is still "*".
+# hand-crafted through the API can't bypass it either.
 CAP_IMPLICATIONS = {
 	"server:create": ("server:view", "cluster:view"),
 	"server:terminate": ("server:view",),
@@ -31,6 +31,14 @@ CAP_IMPLICATIONS = {
 	"server:ssh-key": ("server:view",),
 	"service:manage": ("service:view",),
 }
+
+# The capabilities a grant can scope to one server. Every other capability is team-wide,
+# so a grant scoped to a server or site never answers for it.
+SERVER_CAPABILITIES = frozenset(
+	{"server:view", "server:power", "server:resize", "server:snapshot", "server:terminate"}
+)
+# The scope of a team-wide grant. A scoped grant's scope is its server's name.
+ALL_SERVERS = "*"
 
 
 def expand_capabilities(caps: list[str]) -> list[str]:
@@ -127,12 +135,8 @@ def resolve_team(user: str, team: str | None = None) -> str:
 
 
 def get_user_team_names_with_capability(user: str, capability: str) -> list[str]:
-	grants = resolve_user_grants(user)
-	return sorted(
-		team
-		for team, team_grants in grants.items()
-		if any(capability in grant.get("caps", []) for grant in team_grants)
-	)
+	"""Teams where the user holds `capability` team-wide or on at least one server."""
+	return sorted(get_allowed_servers(user, capability))
 
 
 def _get_membership_capability_rows(user: str) -> list[dict[str, Any]]:
@@ -140,6 +144,8 @@ def _get_membership_capability_rows(user: str) -> list[dict[str, Any]]:
 	member = frappe.qb.DocType("Team Member")
 	team_role = frappe.qb.DocType("Team Role")
 	role_capability = frappe.qb.DocType("Role Capability")
+	site = frappe.qb.DocType("Site")
+	server = frappe.qb.DocType("Virtual Machine")
 
 	return (
 		frappe.qb.from_(member)
@@ -153,9 +159,22 @@ def _get_membership_capability_rows(user: str) -> list[dict[str, Any]]:
 			& (role_capability.parenttype == "Team Role")
 			& (role_capability.parentfield == "capabilities")
 		)
+		# A scoped grant counts only while its resource belongs to the team. A site is one
+		# machine, so a grant on a site is a grant on its server.
+		.left_join(server)
+		.on(
+			(member.resource_type == "Server")
+			& (server.name == member.resource_name)
+			& (server.team == team.name)
+		)
+		.left_join(site)
+		.on((member.resource_type == "Site") & (site.name == member.resource_name) & (site.team == team.name))
 		.select(
 			team.name.as_("team"),
 			member.role,
+			member.resource_type,
+			server.name.as_("server"),
+			site.server.as_("site_server"),
 			team_role.is_system,
 			team_role.team.as_("role_team"),
 			role_capability.capability,
@@ -187,7 +206,7 @@ def resolve_user_grants(user: str) -> dict[str, list[dict[str, Any]]]:
 				{
 					"role": OPERATOR_BYPASS_ROLE,
 					"source": "operator",
-					"scope": "*",
+					"scope": ALL_SERVERS,
 					"caps": caps,
 				}
 			)
@@ -198,14 +217,13 @@ def resolve_user_grants(user: str) -> dict[str, list[dict[str, Any]]]:
 		if not row.is_system and row.role_team != row.team:
 			continue
 
-		key = (row.team, row.role)
+		scope = _get_grant_scope(row)
+		if scope is None:
+			continue
+
+		key = (row.team, row.role, scope)
 		if key not in grants_by_key:
-			grants_by_key[key] = {
-				"role": row.role,
-				"source": "member",
-				"scope": "*",
-				"caps": [],
-			}
+			grants_by_key[key] = {"role": row.role, "source": "member", "scope": scope, "caps": []}
 			grants_by_team[row.team].append(grants_by_key[key])
 
 		if row.capability not in grants_by_key[key]["caps"]:
@@ -213,11 +231,27 @@ def resolve_user_grants(user: str) -> dict[str, list[dict[str, Any]]]:
 
 	# Close every grant under the implication rules so enforcement (`can`, the SSO
 	# mint, the capability reads) always sees a self-consistent set — never
-	# server:create without the server:view/cluster:view it depends on.
+	# server:create without the server:view/cluster:view it depends on. A scoped
+	# grant then keeps only the capabilities one server can carry.
 	for grant in grants_by_key.values():
-		grant["caps"] = expand_capabilities(grant["caps"])
+		caps = expand_capabilities(grant["caps"])
+		if grant["scope"] != ALL_SERVERS:
+			caps = [cap for cap in caps if cap in SERVER_CAPABILITIES]
+		grant["caps"] = caps
 
 	return dict(grants_by_team)
+
+
+def _get_grant_scope(row) -> str | None:
+	"""ALL_SERVERS for a team-wide row, the server a scoped row grants on, or None when
+	a scoped row names nothing this team owns, so the row grants nothing."""
+	if not row.resource_type or row.resource_type == "*":
+		return ALL_SERVERS
+	if row.resource_type == "Server":
+		return row.server or None
+	if row.resource_type == "Site":
+		return row.site_server or None
+	return None
 
 
 def clear_grants_cache() -> None:
@@ -230,7 +264,12 @@ def clear_grants_cache() -> None:
 		cache.clear()
 
 
-def can(user: str, team: str, capability: str) -> bool:
+def can(user: str, team: str, capability: str, server: str | None = None) -> bool:
+	"""Whether `user` holds `capability` in `team`.
+
+	1. An operator always does.
+	2. With no `server`, only a team-wide grant counts: this is the team-level question.
+	3. With a `server`, a team-wide grant or a grant scoped to that server counts."""
 	# No pre-flight db.exists probes: resolve_user_grants only returns Active teams
 	# (the join filters team.status), so an inactive/unknown team yields no grants,
 	# and an unknown capability simply won't match any grant's caps — both fall
@@ -240,10 +279,35 @@ def can(user: str, team: str, capability: str) -> bool:
 		return True
 
 	for grant in resolve_user_grants(user).get(team, []):
-		if capability in grant.get("caps", []):
+		if capability in grant["caps"] and grant["scope"] in (ALL_SERVERS, server):
 			return True
 
 	return False
+
+
+def can_on_any_server(user: str, team: str, capability: str) -> bool:
+	"""Whether `user` holds `capability` team-wide or on at least one server of `team`.
+	It gates a list, which the permission rules then narrow to the allowed servers. For a
+	capability that cannot be scoped, it is the same as `can` without a server."""
+	return user_has_operator_bypass(user) or team in get_allowed_servers(user, capability)
+
+
+def get_allowed_servers(user: str, capability: str) -> dict[str, str | frozenset[str]]:
+	"""For each team where `user` holds `capability`: ALL_SERVERS for a team-wide grant,
+	else the servers that scoped grants name. Teams without the capability are left out."""
+	allowed: dict[str, str | frozenset[str]] = {}
+	for team, team_grants in resolve_user_grants(user).items():
+		scopes = {grant["scope"] for grant in team_grants if capability in grant["caps"]}
+		if ALL_SERVERS in scopes:
+			allowed[team] = ALL_SERVERS
+		elif scopes:
+			allowed[team] = frozenset(scopes)
+	return allowed
+
+
+def get_server_capabilities(user: str, team: str, server: str) -> list[str]:
+	"""The capabilities `user` holds on one server, for the console's buttons."""
+	return sorted(cap for cap in SERVER_CAPABILITIES if can(user, team, cap, server=server))
 
 
 def get_effective_permissions(user: str, team: str | None = None) -> dict[str, Any]:

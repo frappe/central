@@ -22,7 +22,7 @@ def get_bench_link(
 ) -> dict:
 	"""Return the URL to open a bench at, as ``{gateway}/sso?sid=<jwt>``.
 
-	Pass `server` (a VM resource_id) to open that server: `server:view` on its team is the
+	Pass `server` (a VM resource_id) to open that server: `server:view` on that server is the
 	gate, and the VM must be Running with
 	a bench gateway in an active region. `gateway_url` (no server) is the dev shortcut: open
 	an explicit gateway, minting against a fixed dev audience."""
@@ -48,7 +48,7 @@ def _server_login_link(server: str, team: str | None, user: str) -> dict:
 	doc = frappe.get_doc("Virtual Machine", server)
 	if team and team != doc.team:
 		frappe.throw(_("That server isn't in this team."), frappe.PermissionError)
-	if not can(user, doc.team, "server:view"):
+	if not can(user, doc.team, "server:view", server=doc.name):
 		frappe.throw(_("You can't open servers for this team."), frappe.PermissionError)
 	if doc.status != "Running":
 		frappe.throw(_("Server is {0}, not running.").format(doc.status.lower()), frappe.ValidationError)

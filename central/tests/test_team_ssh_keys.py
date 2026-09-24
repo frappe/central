@@ -24,9 +24,14 @@ class TestTeamSSHKeys(TestCase):
 			fingerprint("-----BEGIN OPENSSH PRIVATE KEY-----")
 
 	@patch("central.permissions.user_has_operator_bypass", return_value=False)
+	@patch("central.permissions.can_on_any_server")
 	@patch("central.permissions.can")
-	def test_read_and_write_permissions_are_separate(self, can, _operator) -> None:
-		can.side_effect = lambda user, team, capability: team == "team-a" and capability == "server:view"
+	def test_read_and_write_permissions_are_separate(self, can, on_any_server, _operator) -> None:
+		# Reading needs server:view on any server of the team; writing needs server:ssh-key team-wide.
+		on_any_server.side_effect = (
+			lambda user, team, capability: team == "team-a" and capability == "server:view"
+		)
+		can.return_value = False
 		doc = SimpleNamespace(team="team-a")
 		self.assertTrue(team_ssh_key_has_permission(doc, "viewer", "read"))
 		self.assertFalse(team_ssh_key_has_permission(doc, "viewer", "write"))

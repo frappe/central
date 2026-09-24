@@ -52,8 +52,7 @@ There are no per-user capability overrides. A Team owner is an active
 | Viewer | Read-only server access |
 | Billing | Billing and read-only server access |
 
-A member has one role per Team. Create a custom Team role when a member needs a
-combination such as administration and billing.
+A member can hold several role grants in a Team. Each grant is team-wide or scoped to one server or site. Create a custom Team role when a member needs a combination such as administration and billing.
 
 Server is the atomic unit (capability model v3): role capabilities live at the
 team and server level only. Server capabilities are `server:view`,
@@ -62,6 +61,21 @@ team and server level only. Server capabilities are `server:view`,
 opening a server or site. The
 site-level (bench-plane) capabilities are deferred; see
 [`CAPABILITIES.md`](../CAPABILITIES.md) for the full taxonomy.
+
+## Resource Scope
+
+A role grant applies to all resources (`resource_type = "*"`) or to one resource. A grant on a server applies to that server. A grant on a site applies to the server that the site runs on, because each site is one machine.
+
+| Question | What counts |
+| --- | --- |
+| A team-wide action, such as create a server, manage storage, see billing, or manage members | Team-wide grants only |
+| One server, such as power, resize, snapshot, terminate, or open | A team-wide grant, or a grant scoped to that server |
+| A list, such as the fleet, snapshots, or notifications | A grant anywhere in the team, then only the rows of the allowed servers |
+
+- Only `server:view`, `server:power`, `server:resize`, `server:snapshot`, and `server:terminate` can be scoped. A scoped grant drops every other capability of its role.
+- A scoped grant must name a server or site of the same Team. The Owner role is always team-wide. A grant whose resource no longer belongs to the Team grants nothing.
+- `iam.can(user, team, capability, server=None)` answers the first two questions. Without `server`, it is the team-wide question. Routes that act on one server pass it. `iam.can_on_any_server` answers the list question.
+- The permission rules for Virtual Machine, Site, VM Snapshot, Resource Action, and Site Domain filter lists by the allowed servers and check the server on each record.
 
 ## User And Invitation Flow
 
@@ -93,7 +107,6 @@ member of John's Team.
 
 - Resource groups
 - Partner and reseller access
-- Per-server ACLs
 - Bench authorization
 - Billing enforcement
 - Delegated custom-role administration

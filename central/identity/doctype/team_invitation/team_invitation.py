@@ -14,6 +14,7 @@ from frappe.utils import (
 )
 
 from central.iam import can, user_has_operator_bypass
+from central.identity.doctype.team_member.team_member import validate_resource_scope
 
 
 class TeamInvitation(Document):
@@ -157,14 +158,7 @@ class TeamInvitation(Document):
 			frappe.throw(_("Team Role {0} does not belong to this team.").format(self.role))
 
 	def _validate_resource(self) -> None:
-		resource_type = self.resource_type or "*"
-		if resource_type not in {"*", "Server", "Site"}:
-			frappe.throw(_("Invalid resource type."))
-		if resource_type == "*":
-			self.resource_name = None
-			return
-		if not self.resource_name:
-			frappe.throw(_("Resource name is required when scoping an invitation."))
+		validate_resource_scope(self, self.team)
 
 	def _validate_user(self) -> None:
 		if not self.is_new():

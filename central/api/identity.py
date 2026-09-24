@@ -24,7 +24,9 @@ from central.utils.inputs import require_text
 def my_capabilities(team: str | None = None) -> list[str]:
 	"""Capabilities the signed-in user carries on a team (or any team, if omitted).
 	The console gates every screen on this: reads behind `*:view`, mutations behind
-	`*:manage`. Always the session user, so it is safe for any logged-in member."""
+	`*:manage`. A server capability is listed when the user holds it on any server;
+	each server row then carries its own list. Always the session user, so it is safe
+	for any logged-in member."""
 	user = frappe.session.user
 	if not user or user == "Guest":
 		return []

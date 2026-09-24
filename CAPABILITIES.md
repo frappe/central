@@ -87,6 +87,10 @@ The role builder can let a user tick `server:create` without remembering
 `server:view`/`cluster:view`, and a grant hand-crafted through the API cannot
 bypass the closure either.
 
+## Scoped grants
+
+A role grant can apply to one server or site instead of the whole team. A scoped grant carries only these capabilities, on that server: `server:view`, `server:power`, `server:resize`, `server:snapshot`, and `server:terminate`. Every other capability is team-wide and comes only from a team-wide grant. For example, Developer on one server can stop that server, but cannot create a server or change the Team SSH keys. See [IAM resource scope](spec/IAM.md#resource-scope).
+
 ## The 5 system roles
 
 System roles are seeded from `fixtures/team_role.json` and are identical across

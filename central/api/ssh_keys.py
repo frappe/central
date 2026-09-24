@@ -3,11 +3,13 @@ from __future__ import annotations
 import frappe
 from frappe import _
 
-from central.iam import can
+from central.iam import can_on_any_server
 
 
 def require_access(team: str, capability: str) -> None:
-	if not can(frappe.session.user, team, capability):
+	# The key library is team-wide, so viewing any server of the team reads it. Changing
+	# keys needs server:ssh-key, which a grant cannot scope, so it stays team-wide.
+	if not can_on_any_server(frappe.session.user, team, capability):
 		frappe.throw(_("You cannot manage SSH keys for this Team."), frappe.PermissionError)
 
 
