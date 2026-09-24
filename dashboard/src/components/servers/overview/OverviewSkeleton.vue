@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { Skeleton } from 'frappe-ui'
-import ServerSnapshotsCardSkeleton from '@/components/snapshots/ServerSnapshotsCardSkeleton.vue'
 </script>
 
 <template>
@@ -26,7 +25,7 @@ import ServerSnapshotsCardSkeleton from '@/components/snapshots/ServerSnapshotsC
 				<Skeleton class="mb-5 h-4 w-36 rounded-4" />
 				<div class="space-y-3.5">
 					<div
-						v-for="n in 6"
+						v-for="n in 7"
 						:key="n"
 						class="flex items-center justify-between gap-4"
 					>
@@ -47,7 +46,5 @@ import ServerSnapshotsCardSkeleton from '@/components/snapshots/ServerSnapshotsC
 				</div>
 			</section>
 		</div>
-
-		<ServerSnapshotsCardSkeleton />
 	</div>
 </template>

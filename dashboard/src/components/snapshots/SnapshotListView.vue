@@ -25,6 +25,8 @@ interface SnapshotListViewProps {
 	canManage: boolean
 	/** How many of each server's newest snapshots are free. */
 	freePerServer: number
+	/** Search to open with, such as the server a link came from. */
+	initialSearch?: string
 }
 
 // Presentational: emits what the customer chose; the page owns the dialogs and calls.
@@ -36,7 +38,9 @@ const emit = defineEmits<{
 	delete: [snapshots: VMSnapshotRow[]]
 }>()
 
-const query = ref(createListViewQuery({ pageSize: 20 }))
+const query = ref(
+	createListViewQuery({ pageSize: 20, search: props.initialSearch ?? '' }),
+)
 
 const freeRule = computed(
 	() =>

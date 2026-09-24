@@ -369,7 +369,6 @@ const overviewOpen = computed({
 			:can-snapshot="canSnapshotServer"
 			@open="openServer"
 			@resize="pendingResize = $event"
-			@snapshot="pendingSnapshot = $event"
 		/>
 		<CreateTeamDialog v-model:open="createTeamOpen" />
 	</div>
