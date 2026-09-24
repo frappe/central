@@ -56,7 +56,16 @@ const _hoverId = defineModel<string | null>('hoverId', { required: true })
 		@keydown.esc="open = false"
 	>
 		<button class="sp-float-pill text-base" :inert="open" @click="open = true">
-			<span class="truncate">{{ pillLabel }}</span>
+			<span class="flex min-w-0 items-center gap-1.5">
+				<span class="truncate">{{ pillLabel }}</span>
+				<Badge
+					class="shrink-0"
+					:label="rows.length"
+					theme="gray"
+					variant="subtle"
+					size="sm"
+				/>
+			</span>
 			<span class="lucide-maximize-2 size-3.5 shrink-0 text-ink-gray-6" />
 		</button>
 
@@ -68,8 +77,17 @@ const _hoverId = defineModel<string | null>('hoverId', { required: true })
 			<div
 				class="flex shrink-0 items-center justify-between gap-2 px-4 pb-2 pt-3"
 			>
-				<h2 class="truncate text-base font-semibold text-ink-gray-9">
-					{{ pillLabel }}
+				<h2
+					class="flex min-w-0 items-center gap-1.5 text-base font-semibold text-ink-gray-9"
+				>
+					<span class="truncate">{{ pillLabel }}</span>
+					<Badge
+						class="shrink-0"
+						:label="rows.length"
+						theme="gray"
+						variant="subtle"
+						size="sm"
+					/>
 				</h2>
 				<Button
 					variant="ghost"
@@ -207,7 +225,7 @@ const _hoverId = defineModel<string | null>('hoverId', { required: true })
    story — the pill grows into the panel in place. The two faces crossfade inside. */
 .sp-float {
 	--sp-ease: cubic-bezier(0.23, 1, 0.32, 1);
-	width: 10.5rem;
+	width: 12rem;
 	height: 2rem;
 	border-radius: 0.5rem;
 	box-shadow: var(--shadow-sm, 0 1px 2px rgb(0 0 0 / 0.05));
@@ -234,7 +252,7 @@ const _hoverId = defineModel<string | null>('hoverId', { required: true })
 	top: 0;
 	display: flex;
 	height: 2rem;
-	width: 10.5rem;
+	width: 12rem;
 	align-items: center;
 	justify-content: space-between;
 	gap: 0.625rem;
