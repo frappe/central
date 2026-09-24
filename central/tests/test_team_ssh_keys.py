@@ -53,16 +53,36 @@ class TestTeamSSHKeys(TestCase):
 		with self.assertRaises(frappe.PermissionError):
 			rotate_team_ssh_key("team-a", "key-b", "ssh-ed25519 AAAA")
 
-	@patch("central.infrastructure.doctype.team_ssh_key.team_ssh_key._", side_effect=lambda value: value)
-	def test_pending_creation_prevents_key_deletion(self, _translate) -> None:
+	def _delete_key(self, rows: list) -> None:
 		fake_frappe = SimpleNamespace(
 			db=SimpleNamespace(exists=lambda *_: False),
-			get_all=lambda *_, **__: [SimpleNamespace(request_payload='{"ssh_key_ids":["key-a"]}')],
+			get_all=lambda *_, **__: rows,
 			throw=self.throw,
 		)
 		with patch("central.infrastructure.doctype.team_ssh_key.team_ssh_key.frappe", fake_frappe):
-			with self.assertRaises(frappe.ValidationError):
+			with patch("central.infrastructure.doctype.team_ssh_key.team_ssh_key._", side_effect=lambda value: value):
 				TeamSSHKey.on_trash(SimpleNamespace(name="key-a", team="team-a"))
+
+	def test_pending_creation_prevents_key_deletion(self) -> None:
+		with self.assertRaises(frappe.ValidationError):
+			self._delete_key(
+				[SimpleNamespace(status="Queued", remote_vm_id=None, request_payload='{"ssh_key_ids":["key-a"]}')]
+			)
+
+	def test_retryable_failed_creation_prevents_key_deletion(self) -> None:
+		with self.assertRaises(frappe.ValidationError):
+			self._delete_key(
+				[SimpleNamespace(status="Failed", remote_vm_id=None, request_payload='{"ssh_key_ids":["key-a"]}')]
+			)
+
+	def test_failed_creation_with_a_vm_does_not_block_key_deletion(self) -> None:
+		self._delete_key(
+			[
+				SimpleNamespace(
+					status="Failed", remote_vm_id="vm-1", request_payload='{"ssh_key_ids":["key-a"]}'
+				)
+			]
+		)
 
 	@patch("central.integrations.server_provisioning.idle_shutdown_seconds", return_value=0)
 	def test_ubuntu_create_requests_an_ip_and_ssh_only_firewall(self, _idle) -> None:

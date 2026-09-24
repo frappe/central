@@ -10,7 +10,10 @@ from cryptography.exceptions import UnsupportedAlgorithm
 from frappe import _
 from frappe.model.document import Document
 
-from central.infrastructure.doctype.resource_action.resource_action import PENDING_STATES
+from central.infrastructure.doctype.resource_action.resource_action import (
+	PENDING_STATES,
+	RETRYABLE_CREATE_STATES,
+)
 
 
 class TeamSSHKey(Document):
@@ -42,13 +45,17 @@ class TeamSSHKey(Document):
 			frappe.throw(_("Remove this key from its servers before deleting it."))
 		requests = frappe.get_all(
 			"Resource Action",
-			filters={"team": self.team, "action": "create", "status": ["in", PENDING_STATES]},
-			fields=["request_payload"],
+			filters={
+				"team": self.team,
+				"action": "create",
+				"status": ["in", (*PENDING_STATES, *RETRYABLE_CREATE_STATES)],
+			},
+			fields=["status", "remote_vm_id", "request_payload"],
 		)
-		if any(
-			self.name in json.loads(row.request_payload or "{}").get("ssh_key_ids", []) for row in requests
-		):
+		if any(_creation_holds_key(self.name, row) for row in requests if row.status in PENDING_STATES):
 			frappe.throw(_("Wait for pending server creation before deleting this key."))
+		if any(_creation_holds_key(self.name, row) for row in requests if _creation_can_be_retried(row)):
+			frappe.throw(_("A failed server creation can still be retried with this key."))
 
 	def queue_sync(self) -> None:
 		frappe.enqueue(
@@ -57,6 +64,16 @@ class TeamSSHKey(Document):
 			queue="long",
 			enqueue_after_commit=True,
 		)
+
+
+def _creation_holds_key(key_name: str, row) -> bool:
+	key_ids = json.loads(row.request_payload or "{}").get("ssh_key_ids") or []
+	return key_name in key_ids
+
+
+def _creation_can_be_retried(row) -> bool:
+	# Matches Resource Action.retry: only a create with no accepted VM is sent again.
+	return row.status in RETRYABLE_CREATE_STATES and not row.remote_vm_id and bool(row.request_payload)
 
 
 def fingerprint(public_key: str) -> str:
@@ -73,7 +90,7 @@ def fingerprint(public_key: str) -> str:
 		blob = base64.b64decode(parts[1], validate=True)
 		if not blob or key is None:
 			raise ValueError
-	except ValueError, TypeError, binascii.Error, UnsupportedAlgorithm:
+	except (ValueError, TypeError, binascii.Error, UnsupportedAlgorithm):
 		frappe.throw(_("Enter one valid OpenSSH public key. Private keys are not accepted."))
 	return "SHA256:" + base64.b64encode(hashlib.sha256(blob).digest()).decode().rstrip("=")
 

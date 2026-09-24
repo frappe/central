@@ -36,6 +36,8 @@ GOAL_STATUS = {
 # away from the goal once. That report is what shows the restart really began.
 ROUND_TRIP_ACTIONS = ("restart",)
 TERMINAL_STATES = ("Succeeded", "Failed", "Timed Out")
+# A creation in one of these states can be sent again while it holds no VM identity.
+RETRYABLE_CREATE_STATES = ("Failed", "Timed Out")
 ACTION_STATES = (*PENDING_STATES, *TERMINAL_STATES)
 # What `action_status` reads, so a list query can build the same shape as a document.
 STATUS_FIELDS = (
@@ -202,7 +204,7 @@ class ResourceAction(Document):
 			frappe.throw(_("Only a server creation can be retried. Run this action again from the server."))
 		if not can(frappe.session.user, self.team, "server:create"):
 			frappe.throw(_("You cannot create servers for this Team."), frappe.PermissionError)
-		if self.status not in ("Failed", "Timed Out"):
+		if self.status not in RETRYABLE_CREATE_STATES:
 			frappe.throw(_("Only a failed creation can be retried."))
 		if self.remote_vm_id:
 			frappe.throw(
