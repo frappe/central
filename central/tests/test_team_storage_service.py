@@ -6,11 +6,12 @@ from unittest.mock import Mock, patch
 import frappe
 
 from central.integrations.bucket_provisioning import BucketProvisioning
-from central.integrations.object_storage import ObjectStorageRejected, ObjectStorageRequestUncertain
+from central.integrations.object_storage import ObjectStorageRequestUncertain
 from central.integrations.server_provisioning import _create_payload
 
 BUCKETS = "central.integrations.bucket_provisioning"
 SERVERS = "central.integrations.server_provisioning"
+CONTROLLER = "central.services.doctype.team_service.team_service"
 BUCKET = "team-42-in-mumbai-backups"
 ENDPOINT = "https://s3.in-mumbai.example.test"
 STORAGE_CONFIG = {
@@ -103,101 +104,38 @@ class TestBucketProvisioning(TestCase):
 			no_lock(),
 			patch(f"{BUCKETS}.frappe.db.get_value", side_effect=lookup("service-1")),
 			patch(f"{BUCKETS}.frappe.get_doc", return_value=service),
-			patch(f"{BUCKETS}.ObjectStorageClient") as client_class,
+			patch(f"{CONTROLLER}.ObjectStorageClient") as client_class,
 		):
 			configuration = BucketProvisioning(provisioning_request()).get_configuration()
 
 		self.assertEqual(configuration, STORAGE_CONFIG)
 		client_class.from_region.assert_not_called()
 
-	def test_creates_the_bucket_before_the_record(self):
-		order = []
+	def test_records_a_new_bucket_for_the_requester(self):
 		service = storage_service()
-		service.insert.side_effect = lambda **kwargs: order.append("record") or service
-
-		storage_client = Mock()
-		storage_client.create_bucket.side_effect = lambda name: order.append("bucket") or receipt()
-		subscribe = Mock(
-			side_effect=lambda *args, **kwargs: (
-				order.append("subscription") or {"subscription": "subscription-1"}
-			)
-		)
+		service.flags = frappe._dict()
 
 		with (
 			no_lock(),
 			patch(f"{BUCKETS}.frappe.db.get_value", side_effect=lookup(None)),
 			patch(f"{BUCKETS}.frappe.db.commit") as commit,
-			patch(f"{BUCKETS}.ObjectStorageClient") as client_class,
-			patch(f"{BUCKETS}.ServiceDetail") as service_detail,
-			patch(f"{BUCKETS}.provision_service_subscription", subscribe),
 			patch(f"{BUCKETS}.frappe.get_doc", return_value=service) as get_doc,
 		):
-			client_class.from_region.return_value = storage_client
-			service_detail.endpoint_for.return_value = ENDPOINT
 			configuration = BucketProvisioning(provisioning_request()).get_configuration()
 
 		self.assertEqual(configuration, STORAGE_CONFIG)
-		self.assertEqual(order, ["bucket", "subscription", "record"])
-		storage_client.create_bucket.assert_called_once_with(BUCKET)
-		subscribe.assert_called_once_with(
-			"TEAM-00001", "storage-plan", cluster="in-mumbai", changed_by="Administrator"
-		)
 		get_doc.assert_called_once_with(
 			{
 				"doctype": "Team Service",
 				"team": "TEAM-00001",
 				"add_on_service": "storage",
 				"region": "in-mumbai",
-				"status": "Active",
-				"subscription": "subscription-1",
 				"bucket_name": BUCKET,
-				"endpoint_url": ENDPOINT,
-				"access_key": "access",
-				"secret_access_key": "secret",
 			}
 		)
+		self.assertEqual(service.flags.requested_by, "Administrator")
+		service.insert.assert_called_once_with(ignore_permissions=True)
 		commit.assert_called_once()
-
-	def test_never_rotates_the_key_of_a_bucket_cargo_already_holds(self):
-		"""One key opens a bucket, so rotating it would cut off every server in this team
-		and region already backing up. A taken name is left for an operator instead."""
-		storage_client = Mock()
-		storage_client.create_bucket.side_effect = ObjectStorageRejected("bucket name taken")
-
-		with (
-			no_lock(),
-			patch(f"{BUCKETS}.frappe.db.get_value", side_effect=lookup(None)),
-			patch(f"{BUCKETS}.ObjectStorageClient") as client_class,
-			patch(f"{BUCKETS}.provision_service_subscription") as subscribe,
-			patch(f"{BUCKETS}.frappe.get_doc") as get_doc,
-			self.assertRaises(ObjectStorageRejected),
-		):
-			client_class.from_region.return_value = storage_client
-			BucketProvisioning(provisioning_request()).get_configuration()
-
-		storage_client.rotate_credentials.assert_not_called()
-		subscribe.assert_not_called()
-		get_doc.assert_not_called()
-
-	def test_records_nothing_when_cargo_never_answers(self):
-		storage_client = Mock()
-		storage_client.create_bucket.side_effect = ObjectStorageRequestUncertain()
-
-		with (
-			no_lock(),
-			patch(f"{BUCKETS}.frappe.db.get_value", side_effect=lookup(None)),
-			patch(f"{BUCKETS}.ObjectStorageClient") as client_class,
-			patch(f"{BUCKETS}.ServiceDetail") as service_detail,
-			patch(f"{BUCKETS}.provision_service_subscription") as subscribe,
-			patch(f"{BUCKETS}.frappe.get_doc") as get_doc,
-			self.assertRaises(ObjectStorageRequestUncertain),
-		):
-			client_class.from_region.return_value = storage_client
-			service_detail.endpoint_for.return_value = ENDPOINT
-			BucketProvisioning(provisioning_request()).get_configuration()
-
-		subscribe.assert_not_called()
-		get_doc.assert_not_called()
 
 	def test_refuses_a_suspended_service(self):
 		with (
