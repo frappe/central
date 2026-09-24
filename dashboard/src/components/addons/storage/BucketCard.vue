@@ -20,7 +20,7 @@ defineEmits<{ select: [] }>()
 		class="group flex w-full flex-col gap-5 rounded-6 border p-4 text-left transition-colors hover:bg-surface-gray-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-outline-gray-3"
 		:class="
 			active
-				? 'border-outline-gray-4 bg-surface-gray-2'
+				? 'border-outline-gray-4 bg-surface-gray-1'
 				: 'border-outline-gray-2'
 		"
 		:aria-pressed="active"
@@ -29,7 +29,6 @@ defineEmits<{ select: [] }>()
 		<div class="flex w-full items-start gap-3">
 			<span
 				class="grid size-9 shrink-0 place-items-center rounded-4 bg-surface-gray-2 text-ink-gray-6 group-hover:bg-surface-gray-3"
-				:class="{ 'bg-surface-gray-3': active }"
 				aria-hidden="true"
 			>
 				<span

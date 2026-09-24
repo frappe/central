@@ -90,7 +90,7 @@ const create = async (): Promise<void> => {
 
 			<div
 				v-if="markers.length"
-				class="relative h-56 overflow-hidden rounded-6"
+				class="relative h-56 overflow-hidden rounded-6 border border-outline-gray-2"
 			>
 				<ServerMap
 					:interactive="false"
