@@ -285,7 +285,8 @@ Use `pilot frappe ...` for any Frappe CLI command, such as `migrate` or `clear-c
 - Remove complexity that the change introduces or exposes, when the removal stays in task scope.
 - Keep valid error handling, boundary validation, cleanup, synchronization, and security checks.
 - Validate untrusted input at its boundary. Central is the authorization source, so treat every capability and team check as security-sensitive.
-- Run the focused tests for the changed module, and the full app suite before a broad refactor.
+- Run the focused tests for the changed module, and the full app suite only before a broad refactor.
+- Always run tests in isolation and in a separate site.
 - In the handover, report the result, the changed paths, and the verification. Explain implementation details only when the user asks or the reason is not clear.
 
 ## Commits and pull requests
