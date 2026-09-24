@@ -28,6 +28,7 @@ from central.billing.doctype.billing_profile.billing_profile import (
 from central.billing.doctype.billing_profile.billing_profile import (
 	require_billing_profile,
 )
+from central.iam import can
 
 # Tier caps (max_spend) are stored in INR; convert to the team's billing currency
 # so a USD team sees a coherent cap-vs-spend comparison.
@@ -53,6 +54,14 @@ def _resolve_team(team: str | None, require: str = authz.VIEW) -> str:
 		frappe.throw(_("No billing team in context."), frappe.ValidationError)
 	authz.require_capability(team, require)
 	return team
+
+
+def _resolve_resize_team(team: str | None, server: str | None) -> str:
+	"""The team for a read that prices a resize of `server`. A member who may resize the
+	server may see what the resize costs; anyone else needs `billing:view`."""
+	if team and server and can(frappe.session.user, team, "server:resize", server=server):
+		return team
+	return _resolve_team(team)
 
 
 def _require_view(team: str) -> str:

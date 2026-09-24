@@ -8,6 +8,7 @@ from central.api.servers import registry, resize_server, server_overview
 from central.api.sites import authorized_site
 from central.api.snapshots import keep_snapshot, list_snapshots, take_snapshot
 from central.api.sso import get_bench_link
+from central.billing.api.dashboard.catalog import get_composed_config, get_eligible_plans
 from central.iam import (
 	ALL_SERVERS,
 	can,
@@ -374,3 +375,43 @@ class TestScopedDispatch(ResourceScopingTestCase):
 				process_command(frappe.get_doc("Resource Action", name))
 
 		client.assert_called_once()
+
+
+class TestScopedResizePricing(ResourceScopingTestCase):
+	"""Pricing a resize needs server:resize on that server; anyone else needs billing:view."""
+
+	def _subscription(self, server: str) -> str:
+		return self._insert({"doctype": "Subscription", "team": self.team, "server_id": server, "enabled": 1})
+
+	def test_the_resize_config_follows_server_resize(self):
+		frappe.set_user(self.scoped)
+		self.assertIn("resizable", get_composed_config(self.mine, self.team))
+		with self.assertRaises(frappe.PermissionError):
+			get_composed_config(self.theirs, self.team)
+
+		frappe.set_user(self.viewer)
+		with self.assertRaises(frappe.PermissionError):
+			get_composed_config(self.mine, self.team)
+
+	def test_resize_plans_follow_server_resize(self):
+		mine, theirs = self._subscription(self.mine), self._subscription(self.theirs)
+
+		frappe.set_user(self.scoped)
+		with patch("central.billing.catalog.server_plans.get_server_plans", return_value={}) as plans:
+			get_eligible_plans(team=self.team, exclude_subscription=mine, for_resize=1)
+			with self.assertRaises(frappe.PermissionError):
+				get_eligible_plans(team=self.team, exclude_subscription=theirs, for_resize=1)
+			with self.assertRaises(frappe.PermissionError):
+				get_eligible_plans(team=self.team)
+
+		self.assertEqual(plans.call_args.args, (self.team,))
+
+	def test_a_team_wide_developer_without_billing_view_can_price_a_resize(self):
+		developer = ensure_user("scope.teamdeveloper@example.test")
+		self._grant(developer, "Developer", "*", None)
+		subscription = self._subscription(self.theirs)
+
+		frappe.set_user(developer)
+		with patch("central.billing.catalog.server_plans.get_server_plans", return_value={}):
+			get_eligible_plans(team=self.team, exclude_subscription=subscription, for_resize=1)
+		get_composed_config(self.theirs, self.team)

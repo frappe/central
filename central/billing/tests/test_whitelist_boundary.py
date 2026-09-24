@@ -47,6 +47,7 @@ GUARD_TOKENS = (
 	"require_billing_manage",
 	"require_capability",
 	"_resolve_team",
+	"_resolve_resize_team",
 	"_require_manage",
 	"_require_view",
 	"_assert_owns",
