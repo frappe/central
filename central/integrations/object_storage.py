@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING
 
 import frappe
@@ -62,11 +63,11 @@ class ObjectStorageClient:
 
 		return cls(region)
 
-	def _call(self, method: str, name: str) -> dict:
+	def _call(self, method: str, name: str, **arguments) -> dict:
 		try:
 			response = requests.post(
 				f"{self.cargo_endpoint}/api/method/cargo.object_storage.api.bucket.{method}",
-				json={"name": name, "region": self.region},
+				json={"name": name, "region": self.region, **arguments},
 				headers={"X-Cargo-Access-Token": mint_cargo_token(self.region_id)},
 				timeout=(5, 20),
 				allow_redirects=False,
@@ -90,6 +91,8 @@ class ObjectStorageClient:
 					for key in ("access_key", "secret_access_key")
 				)
 			)
+		elif method == "get_usage":
+			valid = valid and isinstance(receipt.get("usage"), dict)
 
 		if not valid:
 			raise ObjectStorageRequestUncertain()
@@ -101,7 +104,10 @@ class ObjectStorageClient:
 			if response.status_code == 404:
 				raise ObjectStorageNotFound(_("The bucket does not exist."))
 			if 400 <= response.status_code < 500:
-				raise ObjectStorageRejected(_("Object storage request was rejected."))
+				raise ObjectStorageRejected(
+					ObjectStorageClient._read_validation_message(response)
+					or _("Object storage request was rejected.")
+				)
 			raise ObjectStorageRequestUncertain()
 
 		try:
@@ -115,6 +121,21 @@ class ObjectStorageClient:
 
 		return message
 
+	@staticmethod
+	def _read_validation_message(response: requests.Response) -> str | None:
+		"""The message Cargo threw for a request it found invalid, such as a taken or badly
+		formed bucket name. Other refusals stay generic: they describe Cargo, not the request."""
+		if response.status_code != 417:
+			return None
+
+		try:
+			messages = json.loads(response.json()["_server_messages"])
+			message = json.loads(messages[-1])["message"]
+		except (ValueError, KeyError, IndexError, TypeError):
+			return None
+
+		return frappe.utils.strip_html(message) if isinstance(message, str) else None
+
 	def create_bucket(self, name: str) -> dict:
 		"""Create a bucket and return the credentials."""
 		return self._call("create_bucket", name)
@@ -126,3 +147,11 @@ class ObjectStorageClient:
 	def rotate_credentials(self, name: str) -> dict:
 		"""Rotate credentials for a bucket."""
 		return self._call("rotate_credentials", name)
+
+	def get_usage(self, name: str) -> dict:
+		"""What a bucket holds, against its caps."""
+		return self._call("get_usage", name)
+
+	def set_quota(self, name: str, size_gib: int, max_objects: int) -> dict:
+		"""Cap a bucket's total size and object count. Zero lifts a cap."""
+		return self._call("set_quota", name, size_gib=size_gib, max_objects=max_objects)

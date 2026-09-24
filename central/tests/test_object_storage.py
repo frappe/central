@@ -176,6 +176,69 @@ class TestObjectStorageClient(TestCase):
 			"Cargo object-storage request returned HTTP %s.", 409
 		)
 
+	def test_set_quota_sends_the_caps(self):
+		response = self.response(200, {"message": {"name": "b", "region": "par-2", "size_gib": 50}})
+
+		with (
+			patch("central.integrations.object_storage.mint_cargo_token", return_value="cargo-token"),
+			patch("central.integrations.object_storage.requests.post", return_value=response) as post,
+		):
+			self.client().set_quota("b", 50, 1000)
+
+		self.assertEqual(
+			post.call_args.kwargs["json"],
+			{"name": "b", "region": "par-2", "size_gib": 50, "max_objects": 1000},
+		)
+
+	def test_a_validation_refusal_carries_cargos_message(self):
+		messages = json.dumps([json.dumps({"message": "The bucket name 42-par-2-media is already taken."})])
+
+		with (
+			patch("central.integrations.object_storage.mint_cargo_token", return_value="cargo-token"),
+			patch("central.integrations.object_storage.frappe.logger"),
+			patch(
+				"central.integrations.object_storage.requests.post",
+				return_value=self.response(417, {"_server_messages": messages}),
+			),
+			self.assertRaises(ObjectStorageRejected) as caught,
+		):
+			self.client().create_bucket("42-par-2-media")
+
+		self.assertEqual(str(caught.exception), "The bucket name 42-par-2-media is already taken.")
+
+	def test_a_validation_refusal_without_a_message_stays_generic(self):
+		with (
+			patch("central.integrations.object_storage.mint_cargo_token", return_value="cargo-token"),
+			patch("central.integrations.object_storage.frappe.logger"),
+			patch(
+				"central.integrations.object_storage.requests.post",
+				return_value=self.response(417, {"exception": "refused"}),
+			),
+			self.assertRaises(ObjectStorageRejected) as caught,
+		):
+			self.client().create_bucket("42-par-2-media")
+
+		self.assertEqual(str(caught.exception), "Object storage request was rejected.")
+
+	def test_usage_needs_a_usage_receipt(self):
+		for message, expected in (
+			({"name": "b", "region": "par-2", "usage": {"used_bytes": 1}}, {"used_bytes": 1}),
+			({"name": "b", "region": "par-2"}, None),
+		):
+			with self.subTest(message=message):
+				with (
+					patch("central.integrations.object_storage.mint_cargo_token", return_value="cargo-token"),
+					patch(
+						"central.integrations.object_storage.requests.post",
+						return_value=self.response(200, {"message": message}),
+					),
+				):
+					if expected is None:
+						with self.assertRaises(ObjectStorageRequestUncertain):
+							self.client().get_usage("b")
+					else:
+						self.assertEqual(self.client().get_usage("b")["usage"], expected)
+
 	def test_a_missing_bucket_is_reported_as_such(self):
 		with (
 			patch("central.integrations.object_storage.mint_cargo_token", return_value="cargo-token"),

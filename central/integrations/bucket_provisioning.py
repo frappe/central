@@ -97,11 +97,21 @@ class BucketProvisioning:
 
 def get_backup_bucket_name(team: str, region: str) -> str:
 	"""Derived, never chosen, so every request names the same bucket."""
+	return f"team-{get_tenant_id(team)}-{region.casefold()}-backups"
+
+
+def get_customer_bucket_name(team: str, region: str, name: str) -> str:
+	"""The bucket a customer names `name`. Bucket names are shared by every team in a region,
+	so the tenant and region prefix keeps teams apart and can never form a backup name."""
+	return f"{get_tenant_id(team)}-{region.casefold()}-{name}"
+
+
+def get_tenant_id(team: str) -> int:
 	tenant_id = frappe.db.get_value("Team", team, "tenant_id")
 	if not tenant_id:
 		frappe.throw(_("This team has no tenant ID."))
 
-	return f"team-{tenant_id}-{region.casefold()}-backups"
+	return tenant_id
 
 
 def get_storage_endpoint_url(region: str) -> str:
