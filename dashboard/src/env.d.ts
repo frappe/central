@@ -14,6 +14,7 @@ interface Window {
 	user?: string
 	user_type?: string
 	provider_logins?: import('@/types/api').ProviderLogin[]
+	identity_portal?: { url: string; label: string } | null
 	site_name?: string
 	socketio_port?: number
 	onboarding_complete?: boolean

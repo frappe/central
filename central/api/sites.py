@@ -95,11 +95,16 @@ def get_site(name: str) -> dict:
 
 	doc = frappe.get_doc("Site", name)
 	running = doc.status == "Running"
+	# One click into the desk is root on the site, so it answers to `server:open` like
+	# every other acting capability. Membership alone was enough to get one, which the
+	# console hid from a viewer but the endpoint handed out to anyone who asked it.
+	may_open = running and can(user, mirror.team, "server:open")
+
 	return {
 		"name": doc.name,
 		"status": doc.status,
 		"url": doc.url if running else None,
-		"login_url": site_login_url(doc) if running else None,
+		"login_url": site_login_url(doc) if may_open else None,
 	}
 
 
