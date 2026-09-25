@@ -5,12 +5,12 @@ import BucketCard from '@/components/addons/storage/BucketCard.vue'
 import BucketPanel from '@/components/addons/storage/BucketPanel.vue'
 import CreateBucketDialog from '@/components/addons/storage/CreateBucketDialog.vue'
 import CredentialsDialog from '@/components/addons/storage/CredentialsDialog.vue'
+import StorageSummary from '@/components/addons/storage/StorageSummary.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import { useBreadcrumbs } from '@/composables/useBreadcrumbs'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { useObjectStorage } from '@/composables/useObjectStorage'
 import { getErrorMessage } from '@/lib/feedback'
-import { plural } from '@/lib/format'
 import { regionLabel } from '@/lib/serverMap'
 import type { BucketCredentials, StorageBucket } from '@/types/storage'
 
@@ -34,11 +34,6 @@ const regionName = (code: string): string => {
 	const region = regions.value.find((r) => r.region === code)
 	return region ? regionLabel(region) : code
 }
-
-const summary = computed(() => {
-	const used = new Set(buckets.value.map((bucket) => bucket.region)).size
-	return `${plural(buckets.value.length, 'bucket')} · ${plural(used, 'region')}`
-})
 
 const canCreate = computed(
 	() => canManageServices.value && regions.value.length > 0,
@@ -99,9 +94,9 @@ const canCreate = computed(
 				</EmptyState>
 
 				<template v-else>
-					<p class="text-sm text-ink-gray-5">{{ summary }}</p>
+					<StorageSummary />
 
-					<div class="mt-3 grid gap-3 md:grid-cols-2">
+					<div class="mt-4 grid gap-4 md:grid-cols-2">
 						<BucketCard
 							v-for="bucket in buckets"
 							:key="bucket.name"

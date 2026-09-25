@@ -1,6 +1,6 @@
-import { useCall } from 'frappe-ui'
-import { computed, ref } from 'vue'
-import { API, method } from '@/api/methods'
+import { frappeRequest, useCall } from 'frappe-ui'
+import { computed, ref, watch } from 'vue'
+import { API, method, methodV1 } from '@/api/methods'
 import { useSession } from '@/composables/useSession'
 import { teamParams, whenTeamReady } from '@/composables/useTeamScope'
 import { successToast } from '@/lib/feedback'
@@ -22,6 +22,20 @@ const storageCall = useCall<ObjectStorage, { team: string }>({
 })
 
 whenTeamReady(() => storageCall.reload())
+
+const usages = ref<Record<string, BucketUsage | null>>({})
+
+watch(
+	() => storageCall.data?.buckets,
+	(buckets) =>
+		buckets?.forEach(async ({ name }) => {
+			usages.value[name] = await frappeRequest<BucketUsage>({
+				url: methodV1(API.bucketUsage),
+				method: 'GET',
+				params: { team: activeTeam.value, name },
+			}).catch(() => null)
+		}),
+)
 
 const usageName = ref('')
 const usageCall = useCall<BucketUsage, { team: string; name: string }>({
@@ -60,6 +74,7 @@ export const bucketLabel = (bucket: StorageBucket): string =>
 export const useObjectStorage = () => ({
 	regions: computed(() => storageCall.data?.regions ?? []),
 	buckets: computed(() => storageCall.data?.buckets ?? []),
+	usages: computed(() => usages.value),
 	loading: computed(() => storageCall.loading && !storageCall.data),
 	error: computed(() => storageCall.error),
 	reload: () => storageCall.reload(),
