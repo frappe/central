@@ -93,6 +93,21 @@ class TestSyncSuccess(ErpnextSyncTestBase):
 		self.assertEqual(payload["doctype"], "Sales Invoice")
 		self.assertEqual(payload["cloud_billing_invoice"], inv)
 		self.assertEqual(payload["customer"], CUSTOMER)  # the synced customer, not the team
+		self.assertEqual(payload["gst_category"], "Unregistered")  # the invoice carried no GSTIN
+		self.assertEqual(payload["billing_address_gstin"], "")
+
+	def test_registered_invoice_carries_its_gstin(self):
+		inv = self._paid_invoice()
+		frappe.db.set_value("Invoice", inv, "customer_gstin", "27AAPFU0939F1ZV")
+		frappe.db.set_value("Billing Profile", TEAM, "address_id", "ADDR-1")
+		with patch(
+			"central.billing.revenue.erpnext_sync.requests.post", return_value=ok_response("SINV-10")
+		) as post:
+			erpnext_sync.sync_invoice(inv)
+		payload = post.call_args.kwargs["json"]
+		self.assertEqual(payload["billing_address_gstin"], "27AAPFU0939F1ZV")
+		self.assertEqual(payload["customer_address"], "ADDR-1")
+		self.assertNotIn("gst_category", payload)
 		self.assertEqual(len(payload["items"]), 1)
 
 	def test_already_synced_is_idempotent(self):

@@ -30,6 +30,8 @@ const recheck = useCall<
 
 async function checkAgain(): Promise<void> {
 	const result = await recheck.submit({ team: activeTeam.value! })
+	// submit() resolves on a server error too; onError has already said so.
+	if (recheck.error) return
 	successToast(
 		result?.gst_lapsed
 			? `The GST portal still shows your GSTIN as ${(result.gst_status || 'not active').toLowerCase()}`
