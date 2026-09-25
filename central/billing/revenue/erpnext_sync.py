@@ -15,7 +15,9 @@ nothing is ever read back from ERPNext into billing.
 
 import frappe
 import requests
-from central.billing.ingester.connection import _auth_headers
+
+from central.billing.ingester.connection import auth_headers
+
 MAX_ATTEMPTS = 3
 BACKOFF_BASE_SECONDS = 60  # 60s, 120s, 240s
 
@@ -46,7 +48,7 @@ def sync_invoice(invoice: str) -> dict:
 
 	attempt = (inv.erpnext_sync_attempts or 0) + 1
 	try:
-		erpnext_name = _post_sales_invoice(_build_sales_invoice(inv))
+		erpnext_name = _post_sales_invoice(_build_sales_invoice(inv, _customer_for(inv.team)))
 	except Exception as e:
 		return _handle_failure(invoice, attempt, str(e))
 
@@ -100,11 +102,21 @@ def retry_failed_syncs(now=None) -> list:
 # --- ERPNext transport ------------------------------------------------------
 
 
-def _build_sales_invoice(inv) -> dict:
+def _customer_for(team: str) -> str:
+	"""The team's customer in ERPNext, created first if the profile never synced."""
+	from central.billing.ingester.customer import ensure_customer
+
+	customer = ensure_customer(team)
+	if not customer:
+		raise RuntimeError(f"team {team} has no customer in ERPNext yet")
+	return customer
+
+
+def _build_sales_invoice(inv, customer: str) -> dict:
 	"""Map a Cloud Billing invoice to an ERPNext Sales Invoice payload."""
 	return {
 		"doctype": "Sales Invoice",
-		"customer": inv.team,
+		"customer": customer,
 		"posting_date": str(inv.period_end),
 		"currency": inv.currency,
 		"cloud_billing_invoice": inv.name,  # back-reference for reconciliation
@@ -130,7 +142,7 @@ def _post_sales_invoice(payload: dict) -> str:
 	response = requests.post(
 		f"{base}/api/resource/Sales Invoice",
 		json=payload,
-		headers=_auth_headers(),
+		headers=auth_headers(),
 		timeout=30,
 	)
 	response.raise_for_status()
