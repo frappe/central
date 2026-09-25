@@ -13,10 +13,9 @@ from central.errors import (
 	build_envelope,
 	to_error_response,
 )
-from central.iam import can, can_on_any_server
+from central.iam import can_on_any_server
 from central.infrastructure.doctype.pilot_credential.pilot_credential import PilotCredential
 from central.infrastructure.doctype.resource_action.resource_action import (
-	ACTION_CAPABILITIES,
 	ROUND_TRIP_ACTIONS,
 	TERMINAL_STATES,
 	ResourceAction,
@@ -146,7 +145,7 @@ def process_resize(action) -> None:
 
 	first_dispatch = action.status == "Queued"
 	if first_dispatch:
-		if not can(action.requested_by, action.team, "server:resize", server=action.server):
+		if not action.is_allowed():
 			action.transition("Failed", envelope=build_envelope("PERMISSION_DENIED", action="resize"))
 			return
 		action.transition("Dispatching", notify=False)
@@ -242,11 +241,7 @@ def process_command(action) -> None:
 		return
 
 	if action.status == "Queued":
-		capability = ACTION_CAPABILITIES[action.action]
-		if not can(action.requested_by, action.team, capability, server=action.server) or (
-			action.take_snapshot
-			and not can(action.requested_by, action.team, "server:snapshot", server=action.server)
-		):
+		if not action.is_allowed():
 			action.transition("Failed", envelope=build_envelope("PERMISSION_DENIED", action=action.action))
 			return
 

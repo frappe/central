@@ -349,7 +349,7 @@ class TestResourceActions(IntegrationTestCase):
 
 	def test_revoked_permission_fails_before_dispatch(self):
 		name = self.submit()["action"]
-		with patch("central.integrations.server_provisioning.can", return_value=False):
+		with patch("central.infrastructure.doctype.resource_action.resource_action.can", return_value=False):
 			_process_locked(name)
 		self.assertEqual(get_status(name)["error"]["code"], "PERMISSION_DENIED")
 		self.client.return_value.create_vm.assert_not_called()

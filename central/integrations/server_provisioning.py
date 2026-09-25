@@ -8,7 +8,6 @@ from redis.exceptions import LockError, LockNotOwnedError
 
 from central.api.jwks import jwks_document
 from central.errors import AtlasConnectionError, AtlasRequestUncertain, build_envelope, to_error_response
-from central.iam import can
 from central.infrastructure.doctype.pilot_credential.pilot_credential import PilotCredential
 from central.infrastructure.doctype.resource_action.resource_action import PENDING_STATES, TERMINAL_STATES
 from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
@@ -99,7 +98,7 @@ def _process_locked(name: str) -> None:
 		return
 
 	try:
-		if not can(request.requested_by, request.team, "server:create"):
+		if not request.is_allowed():
 			frappe.throw(
 				_("The requester no longer has permission to create this server."), frappe.PermissionError
 			)

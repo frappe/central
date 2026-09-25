@@ -26,7 +26,7 @@ from central.billing.doctype.billing_profile.billing_profile import (
 	require_billing_profile,
 )
 from central.iam import can
-from central.infrastructure.doctype.resource_action.resource_action import PENDING_STATES
+from central.infrastructure.doctype.resource_action.resource_action import PENDING_STATES, ResourceAction
 from central.integrations.images import selected_image, snapshot_image, snapshot_source
 from central.server_models import CreateServerInput, ServerCreation
 
@@ -84,7 +84,18 @@ def submit_request(
 		return existing.customer_status()
 
 	configuration, rate = _build_server_configuration(server_input, snapshot)
-	return _create_resource_action(server_input, configuration, rate, digest, resource_type, subdomain)
+	return ResourceAction.queue(
+		"create",
+		server_input.team,
+		server_input.region,
+		server_input.title,
+		resource_type=resource_type,
+		subdomain=subdomain,
+		request_payload=configuration.model_dump(),
+		request_key=server_input.request_key,
+		request_digest=digest,
+		reserved_monthly_rate=rate,
+	).customer_status()
 
 
 def _validate_server_input(**values) -> CreateServerInput:
@@ -181,38 +192,6 @@ def _build_server_configuration(
 		**image_shape(composition, image),
 	)
 	return configuration, rate
-
-
-def _create_resource_action(
-	server_input: CreateServerInput,
-	configuration: ServerCreation,
-	rate: float,
-	digest: str,
-	resource_type: str,
-	subdomain: str | None,
-) -> dict:
-	"""Persist validated creation intent and return its customer status."""
-	action = frappe.get_doc(
-		{
-			"doctype": "Resource Action",
-			"resource_type": resource_type,
-			"subdomain": subdomain,
-			"action": "create",
-			"team": server_input.team,
-			"region": server_input.region,
-			"title": server_input.title,
-			"request_payload": configuration.model_dump(),
-			"correlation_id": frappe.generate_hash(length=32),
-			"request_key": server_input.request_key,
-			"request_digest": digest,
-			"reserved_monthly_rate": rate,
-			"requested_by": frappe.session.user,
-			"status": "Queued",
-		}
-	)
-	# Only this authorized service accepts customer intent; customers cannot write outcomes.
-	action.insert(ignore_permissions=True)
-	return action.customer_status()
 
 
 def unanswered_request(team: str, digest: str) -> str | None:

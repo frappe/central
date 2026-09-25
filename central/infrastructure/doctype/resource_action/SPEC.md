@@ -57,7 +57,7 @@ Action Status contains `action`, `status`, `resource_id`, `title`, and an option
 
 The worker saves the remote VM identity before billing or local finalization. A local failure retains that identity and a readable error. Recovery retries local finalization and regional reads. It does not repeat the create call. A resize saves its absolute target before dispatch. Recovery observes the current shape before it sends another resize, and billing changes only after the observed shape matches the target.
 
-The scheduled recovery job selects old actions that have not finished. Redis and database locks serialize workers. Customer retries cannot change an existing action's payload. A power, resize, or terminate request cannot start while another action is pending for the same server.
+The scheduled recovery job selects old actions that have not finished. Redis and database locks serialize workers. Customer retries cannot change an existing action's payload. A power, resize, or terminate request cannot start while another action is pending for the same server. `ResourceAction.get_pending` owns this rule: it returns the pending action when the request repeats it, and refuses a different one. `ResourceAction.queue` saves every new action, and `ResourceAction.is_allowed` rechecks the requester before dispatch against the one `ACTION_CAPABILITIES` map.
 
 A creation the region never answered settles itself. Central stamps its action ID into the guest metadata of every create, so it asks the region what that request built. The region lists newest first, and the search stops at the first machine older than the dispatch. A machine counts only when its tenant, image and action marker all match, so another request's machine is never adopted.
 
@@ -112,7 +112,7 @@ A scoped not-found response records the server as terminated, applies the billin
 
 The console selects region, offering, exact build, and compatible plan. It keeps no copy of the request: `central.api.servers.registry` returns the team's unfinished creations, and the form picks up the one this user started. A page reload, a second tab and a lost reply all reach the same record instead of starting another. Switching Teams clears the visible action and ignores late responses from the previous Team.
 
-Resize uses the same action flow. `central.api.servers.resize_server` validates the target and inserts the action. The integration grows a disk online when CPU and memory stay the same. When CPU or memory changes, it stops the VM and sends the full CPU, memory, and disk target. A server with idle sleep on also receives the resize call, which turns sleep off. The integration starts the VM, records the observed shape, and then asks billing to reprice. A billing failure leaves the action at Sent, so recovery can finish the local change without repeating a confirmed remote resize.
+Resize uses the same action flow. `central.api.servers.resize_server` validates the target and inserts the action. The integration grows a disk online when CPU and memory stay the same. When CPU or memory changes, it stops the VM and sends the full CPU, memory, and disk target. A server with idle sleep on also receives a resize call that changes only the idle time, which turns sleep off. The integration starts the VM, records the observed shape, and then asks billing to reprice. A billing failure leaves the action at Sent, so recovery can finish the local change without repeating a confirmed remote resize.
 
 ## Validation
 

@@ -17,12 +17,17 @@ PENDING_LABEL = {
 	"restart": "Restarting",
 	"resize": "Resizing",
 }
+# The capability a requester must hold, both when an action is accepted and when it is sent.
 ACTION_CAPABILITIES = {
+	"create": "server:create",
 	"start": "server:power",
 	"stop": "server:power",
 	"restart": "server:power",
 	"terminate": "server:terminate",
+	"resize": "server:resize",
 }
+# The actions a customer runs against an existing server as a plain command.
+COMMAND_ACTIONS = ("start", "stop", "restart", "terminate")
 # The observed status that means an action reached its goal.
 GOAL_STATUS = {
 	"create": "Running",
@@ -71,6 +76,62 @@ def action_status(row) -> ActionStatus:
 
 class ResourceAction(Document):
 	"""One durable resource operation, from validated intent to confirmed outcome."""
+
+	@classmethod
+	def queue(
+		cls,
+		action: str,
+		team: str,
+		region: str,
+		title: str,
+		*,
+		server: str | None = None,
+		remote_vm_id: str | None = None,
+		requested_by: str | None = None,
+		**fields,
+	) -> ResourceAction:
+		"""Save one authorized request as a Queued action."""
+		document = frappe.get_doc(
+			{
+				"doctype": "Resource Action",
+				"resource_type": "Server",
+				"action": action,
+				"team": team,
+				"region": region,
+				"title": title,
+				"server": server,
+				"resource_id": server,
+				"remote_vm_id": remote_vm_id,
+				"requested_by": requested_by or frappe.session.user,
+				"correlation_id": frappe.generate_hash(length=32),
+				"status": "Queued",
+				**fields,
+			}
+		)
+		# Customers have read-only access, so the authorized service inserts for them.
+		document.insert(ignore_permissions=True)
+		return document
+
+	@classmethod
+	def get_pending(cls, server: str, action: str) -> ResourceAction | None:
+		"""Return the same pending action, or refuse when a different one is pending."""
+		name = frappe.db.get_value(
+			"Resource Action", {"resource_id": server, "status": ["in", PENDING_STATES]}
+		)
+		if not name:
+			return None
+
+		pending = frappe.get_doc("Resource Action", name)
+		if pending.action != action:
+			frappe.throw(_("Another action is still pending for this server."))
+		return pending
+
+	def is_allowed(self) -> bool:
+		"""Whether the requester still holds the capabilities this action needs."""
+		server = self.server or None
+		if not can(self.requested_by, self.team, ACTION_CAPABILITIES[self.action], server=server):
+			return False
+		return not self.take_snapshot or can(self.requested_by, self.team, "server:snapshot", server=server)
 
 	def after_insert(self) -> None:
 		if self.status == "Queued":
