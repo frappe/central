@@ -8,7 +8,6 @@ from frappe import _
 from central.errors import (
 	AtlasConnectionError,
 	AtlasRejected,
-	AtlasRequestUncertain,
 	AtlasResourceGone,
 	build_envelope,
 	to_error_response,
@@ -16,8 +15,6 @@ from central.errors import (
 from central.iam import can_on_any_server
 from central.infrastructure.doctype.pilot_credential.pilot_credential import PilotCredential
 from central.infrastructure.doctype.resource_action.resource_action import (
-	ROUND_TRIP_ACTIONS,
-	TERMINAL_STATES,
 	ResourceAction,
 )
 from central.infrastructure.doctype.site.site import Site
@@ -29,7 +26,6 @@ POWER_WAIT_SECONDS = 15 * 60
 # A resize waits for a stop and a start, so its job must outlive both waits.
 RESIZE_JOB_TIMEOUT_SECONDS = 2 * POWER_WAIT_SECONDS + 5 * 60
 POWER_POLL_SECONDS = 5
-COMMAND_TIMEOUT_SECONDS = 10 * 60
 
 
 def observe_server(server: VirtualMachine) -> str:
@@ -149,7 +145,6 @@ def process_resize(action) -> None:
 			action.transition("Failed", envelope=build_envelope("PERMISSION_DENIED", action="resize"))
 			return
 		action.transition("Dispatching", notify=False)
-		action.db_set("dispatched_at", frappe.utils.now_datetime())
 		frappe.db.commit()
 
 	configuration = action.get_resize_configuration()
@@ -164,14 +159,10 @@ def process_resize(action) -> None:
 		if not _matches_shape(server, target):
 			raise AtlasConnectionError(_("Atlas did not report the requested server size."))
 	except AtlasRejected as error:
-		action.transition(
-			"Failed",
-			envelope=to_error_response(error),
-			diagnostic=frappe.get_traceback(),
-			diagnostic_title="Atlas resize was rejected",
-		)
+		action.fail(error, "Atlas resize was rejected")
 		return
 	except AtlasConnectionError:
+		# A resize sets absolute values, so recovery can safely run it again.
 		action.transition(
 			"Uncertain",
 			envelope=build_envelope("OUTCOME_UNKNOWN"),
@@ -250,42 +241,23 @@ def process_command(action) -> None:
 			return
 
 		action.transition("Dispatching", notify=False)
-		action.db_set("dispatched_at", frappe.utils.now_datetime())
 		# The remote command can outlive this worker; recovery must never redispatch it.
 		frappe.db.commit()  # nosemgrep: frappe-manual-commit -- persist dispatch before Atlas mutates the VM
 		try:
 			client.vm_action(action.remote_vm_id, action.action)
-		except AtlasRequestUncertain as error:
-			action.transition(
-				"Uncertain",
-				envelope=to_error_response(error),
-				diagnostic=frappe.get_traceback(),
-				diagnostic_title="Atlas command result was uncertain",
-			)
 		except AtlasResourceGone as error:
+			# A terminate that finds the machine gone has reached its goal.
 			if action.action != "terminate":
-				action.transition(
-					"Failed",
-					envelope=to_error_response(error),
-					diagnostic=frappe.get_traceback(),
-					diagnostic_title="Atlas resource was not found",
-				)
+				action.fail(error, "Atlas command failed")
 				return
 			mark_terminated(server)
-			action.record_diagnostic(
-				frappe.get_traceback(),
-				"Atlas confirmed the terminated resource was gone",
-			)
 			action.transition("Succeeded")
 			return
 		except AtlasConnectionError as error:
-			action.transition(
-				"Failed",
-				envelope=to_error_response(error),
-				diagnostic=frappe.get_traceback(),
-				diagnostic_title="Atlas command failed",
-			)
-			return
+			action.fail(error, "Atlas command failed")
+			# An uncertain reply is settled by the read below, never by a second command.
+			if action.status == "Failed":
+				return
 		else:
 			action.transition("Sent", notify=False)
 
@@ -302,19 +274,7 @@ def process_command(action) -> None:
 		)
 		return
 
-	action.reload()
-	if action.status in TERMINAL_STATES:
-		return
-	if action.record_observed_status(status):
-		return
-	if status in ("Failed", "Terminated"):
-		action.transition("Failed", envelope=build_envelope("ACTION_FAILED", action=action.action))
-	elif _is_command_overdue(action):
-		action.transition("Timed Out", envelope=build_envelope("ACTION_TIMED_OUT", action=action.action))
-	elif action.action in ROUND_TRIP_ACTIONS:
-		return
-	else:
-		action.transition("In Progress", notify=False)
+	action.finish(status)
 
 
 def is_final_snapshot_ready(action, server: VirtualMachine, client: AtlasClient) -> bool:
@@ -362,11 +322,6 @@ def is_final_snapshot_ready(action, server: VirtualMachine, client: AtlasClient)
 	snapshot.insert(ignore_permissions=True)
 	action.db_set({"vm_snapshot": snapshot.name, "last_checked_at": frappe.utils.now_datetime()})
 	return False
-
-
-def _is_command_overdue(action) -> bool:
-	started = action.dispatched_at or action.creation
-	return frappe.utils.time_diff_in_seconds(frappe.utils.now_datetime(), started) > COMMAND_TIMEOUT_SECONDS
 
 
 def reconcile(team: str | None = None) -> dict:

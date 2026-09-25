@@ -7,7 +7,7 @@ from frappe import _
 from redis.exceptions import LockError, LockNotOwnedError
 
 from central.api.jwks import jwks_document
-from central.errors import AtlasConnectionError, AtlasRequestUncertain, build_envelope, to_error_response
+from central.errors import AtlasConnectionError, AtlasRequestUncertain, build_envelope
 from central.infrastructure.doctype.pilot_credential.pilot_credential import PilotCredential
 from central.infrastructure.doctype.resource_action.resource_action import PENDING_STATES, TERMINAL_STATES
 from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
@@ -108,7 +108,6 @@ def _process_locked(name: str) -> None:
 		client = _client(request)
 		payload = _create_payload(request)
 		request.transition("Dispatching", notify=False)
-		request.db_set("dispatched_at", frappe.utils.now_datetime())
 		# Persist the dispatch marker and credential before a remote mutation can succeed.
 		try:
 			frappe.db.commit()
@@ -131,13 +130,7 @@ def _process_locked(name: str) -> None:
 		recover_unanswered(request)
 		return
 	except (AtlasConnectionError, frappe.ValidationError, frappe.PermissionError) as error:
-		PilotCredential.revoke_by_id(request.credential)
-		request.transition(
-			"Failed",
-			envelope=to_error_response(error),
-			diagnostic=frappe.get_traceback() if isinstance(error, AtlasConnectionError) else None,
-			diagnostic_title="Atlas create failed",
-		)
+		request.fail(error, "Atlas create failed")
 		return
 
 	_finalize(request)
@@ -163,7 +156,6 @@ def recover_unanswered(request) -> None:
 		return
 
 	if not remote_vm_id:
-		PilotCredential.revoke_by_id(request.credential)
 		request.transition("Failed", envelope=build_envelope("CREATE_NOT_ACCEPTED", action=request.action))
 		return
 
@@ -318,15 +310,7 @@ def _finalize(request) -> None:
 		)
 		return
 
-	request.reload()
-	if request.status in TERMINAL_STATES:
-		return
-	if status == "Running":
-		request.transition("Succeeded")
-	elif status in ("Failed", "Terminated"):
-		request.transition("Failed", envelope=build_envelope("ACTION_FAILED", action="create"))
-	else:
-		request.transition("In Progress", notify=False)
+	request.finish(status)
 
 
 def recover_requests() -> None:

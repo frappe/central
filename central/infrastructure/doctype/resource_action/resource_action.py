@@ -4,8 +4,9 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
-from central.errors import build_envelope
+from central.errors import AtlasConnectionError, AtlasRequestUncertain, build_envelope, to_error_response
 from central.iam import can
+from central.infrastructure.doctype.pilot_credential.pilot_credential import PilotCredential
 from central.server_models import ActionStatus, ResizeConfiguration, ServerCreation
 
 PENDING_STATES = ("Queued", "Dispatching", "Sent", "In Progress", "Uncertain")
@@ -40,6 +41,8 @@ GOAL_STATUS = {
 # The region publishes no restart counter, so the action waits until it reports the server
 # away from the goal once. That report is what shows the restart really began.
 ROUND_TRIP_ACTIONS = ("restart",)
+# A command that has not reached its goal this long after dispatch has timed out.
+COMMAND_TIMEOUT_SECONDS = 10 * 60
 TERMINAL_STATES = ("Succeeded", "Failed", "Timed Out")
 # A creation in one of these states can be sent again while it holds no VM identity.
 RETRYABLE_CREATE_STATES = ("Failed", "Timed Out")
@@ -180,12 +183,46 @@ class ResourceAction(Document):
 			"remediation": envelope["remediation"] if envelope else None,
 			"retriable": int(envelope["retriable"]) if envelope else 0,
 		}
+		if status in ("Queued", "Dispatching"):
+			values["dispatched_at"] = now if status == "Dispatching" else None
 		if diagnostic:
 			values.update(self._diagnostic_values(diagnostic, diagnostic_title))
 
 		self.db_set(values, notify=notify)
 		if status != previous_status and status in ("Failed", "Timed Out"):
+			# A creation the region never accepted leaves no machine to use its credential.
+			if self.action == "create" and not self.remote_vm_id:
+				PilotCredential.revoke_by_id(self.credential)
 			self.queue_attention_notification(envelope)
+
+	def fail(self, error: Exception, title: str) -> None:
+		"""Record a failed dispatch. An uncertain Atlas reply stays pending for recovery."""
+		self.transition(
+			"Uncertain" if isinstance(error, AtlasRequestUncertain) else "Failed",
+			envelope=to_error_response(error),
+			diagnostic=frappe.get_traceback() if isinstance(error, AtlasConnectionError) else None,
+			diagnostic_title=title,
+		)
+
+	def finish(self, observed_status: str) -> None:
+		"""Settle this action against the server status the region reported."""
+		self.reload()
+		if self.status in TERMINAL_STATES or self.record_observed_status(observed_status):
+			return
+
+		if observed_status in ("Failed", "Terminated"):
+			self.transition("Failed", envelope=build_envelope("ACTION_FAILED", action=self.action))
+		elif self.action != "create" and self.is_overdue:
+			self.transition("Timed Out", envelope=build_envelope("ACTION_TIMED_OUT", action=self.action))
+		elif self.action not in ROUND_TRIP_ACTIONS:
+			self.transition("In Progress", notify=False)
+
+	@property
+	def is_overdue(self) -> bool:
+		started = self.dispatched_at or self.creation
+		return (
+			frappe.utils.time_diff_in_seconds(frappe.utils.now_datetime(), started) > COMMAND_TIMEOUT_SECONDS
+		)
 
 	def queue_attention_notification(self, envelope: dict | None) -> None:
 		"""Notify once when an action reaches a terminal state that needs attention."""
@@ -277,7 +314,6 @@ class ResourceAction(Document):
 
 		self.revalidate_purchase()
 		self.transition("Queued")
-		self.db_set("dispatched_at", None, notify=True)
 		self.enqueue()
 		return self.customer_status()
 

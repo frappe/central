@@ -188,6 +188,31 @@ class TestResourceActions(IntegrationTestCase):
 		self.assertEqual(frappe.db.count("Virtual Machine", {"team": self.team.name}), 1)
 		self.assertEqual(self.client.return_value.create_vm.call_count, 2)
 
+	def test_a_refused_creation_revokes_its_credential_and_retry_resets_dispatch(self):
+		name = self.submit()["action"]
+		self.client.return_value.create_vm.side_effect = AtlasConnectionError("region refused")
+		_process_locked(name)
+
+		action = frappe.get_doc("Resource Action", name)
+		self.assertEqual(frappe.db.get_value("Pilot Credential", action.credential, "status"), "Revoked")
+		self.assertIsNotNone(action.dispatched_at)
+
+		action.retry()
+		self.assertIsNone(frappe.db.get_value("Resource Action", name, "dispatched_at"))
+
+	def test_a_crash_while_sending_keeps_the_credential_for_recovery(self):
+		"""The region may have built the machine, so only a completed search can revoke it."""
+		from central.integrations.server_provisioning import process_request
+
+		name = self.submit()["action"]
+		self.client.return_value.create_vm.side_effect = RuntimeError("worker failure")
+		with patch("frappe.db.rollback"):
+			process_request(name)
+
+		action = frappe.get_doc("Resource Action", name)
+		self.assertEqual(action.status, "Uncertain")
+		self.assertEqual(frappe.db.get_value("Pilot Credential", action.credential, "status"), "Active")
+
 	def test_creation_failure_queues_one_notification_after_commit(self):
 		name = self.submit()["action"]
 		self.client.return_value.create_vm.side_effect = AtlasConnectionError("region refused")

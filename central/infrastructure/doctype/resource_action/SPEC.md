@@ -53,11 +53,11 @@ Action Status contains `action`, `status`, `resource_id`, `title`, and an option
 | Uncertain | The mutation may have succeeded and the region could not be reached to find out. A creation is looked up again on the next sweep. |
 | Succeeded | A scoped read confirmed the target state, or termination returned a scoped not-found response. |
 | Failed | A definite rejection or observed failure is recorded. The record retains the error and any accepted VM identity. |
-| Timed Out | A historical terminal state. Elapsed time alone does not prove failure or permit a repeated create. |
+| Timed Out | A power, restart, or terminate command did not reach its goal within 10 minutes of dispatch. A creation never times out, and elapsed time never permits a repeated create. |
 
 The worker saves the remote VM identity before billing or local finalization. A local failure retains that identity and a readable error. Recovery retries local finalization and regional reads. It does not repeat the create call. A resize saves its absolute target before dispatch. Recovery observes the current shape before it sends another resize, and billing changes only after the observed shape matches the target.
 
-The scheduled recovery job selects old actions that have not finished. Redis and database locks serialize workers. Customer retries cannot change an existing action's payload. A power, resize, or terminate request cannot start while another action is pending for the same server. `ResourceAction.get_pending` owns this rule: it returns the pending action when the request repeats it, and refuses a different one. `ResourceAction.queue` saves every new action, and `ResourceAction.is_allowed` rechecks the requester before dispatch against the one `ACTION_CAPABILITIES` map.
+The scheduled recovery job selects old actions that have not finished. Redis and database locks serialize workers. Customer retries cannot change an existing action's payload. A power, resize, or terminate request cannot start while another action is pending for the same server. `ResourceAction.get_pending` owns this rule: it returns the pending action when the request repeats it, and refuses a different one. `ResourceAction.queue` saves every new action, and `ResourceAction.is_allowed` rechecks the requester before dispatch against the one `ACTION_CAPABILITIES` map. `ResourceAction.fail` records an Atlas or validation error: an uncertain reply becomes Uncertain and any other error becomes Failed. `ResourceAction.finish` settles a create or a command from the observed server status and `GOAL_STATUS`.
 
 A creation the region never answered settles itself. Central stamps its action ID into the guest metadata of every create, so it asks the region what that request built. The region lists newest first, and the search stops at the first machine older than the dispatch. A machine counts only when its tenant, image and action marker all match, so another request's machine is never adopted.
 
@@ -84,7 +84,7 @@ A retry requires `server:create` and re-checks the plan, the trial limit and the
 
 ## Pilot and Ubuntu
 
-A Pilot creation issues one credential before dispatch. Atlas receives the `pilot-central` metadata document with the Central endpoint, bearer token, public-key endpoint, audience ID, and the signing key set itself. The keys travel with the credential so the Pilot's first token needs no fetch, and a boot before Central is reachable still verifies. Central stores the token hash, not its plaintext, and keeps credentials outside the saved request payload and customer status.
+A Pilot creation issues one credential before dispatch. Atlas receives the `pilot-central` metadata document with the Central endpoint, bearer token, public-key endpoint, audience ID, and the signing key set itself. The keys travel with the credential so the Pilot's first token needs no fetch, and a boot before Central is reachable still verifies. Central stores the token hash, not its plaintext, and keeps credentials outside the saved request payload and customer status. A creation that fails before the region accepts a machine revokes this credential. An Uncertain creation keeps it until a completed search settles the request.
 
 An accepted Pilot VM is linked to its credential during local finalization. Its management gateway uses Atlas's `proxy_hostname_suffix`. A running VM does not prove that Pilot or a site is ready. Site readiness and signup belong to the next phase.
 
