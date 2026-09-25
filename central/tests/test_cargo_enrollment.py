@@ -95,3 +95,101 @@ class TestCargoEnrollment(IntegrationTestCase):
 		with self.assertRaises(frappe.PermissionError):
 			self.instance.enroll_cargo()
 		self.get.assert_not_called()
+
+
+class TestCargoFollowsAtlas(IntegrationTestCase):
+	def setUp(self):
+		super().setUp()
+		frappe.set_user("Administrator")
+		self.addCleanup(frappe.db.rollback)
+		frappe.db.set_single_value("Central Settings", "wildcard_domain", "example.test")
+		self.instance = frappe.get_doc(
+			{
+				"doctype": "Region",
+				"region": frappe.generate_hash(length=8),
+				"atlas_region_id": "8",
+				"status": "Active",
+			}
+		).insert()
+		self.enterContext(patch("central.integrations.cargo.mint_cargo_token", return_value="cargo-token"))
+		self.get = self.enterContext(patch("central.integrations.cargo.requests.get"))
+		self.post = self.enterContext(patch("central.integrations.cargo.requests.post"))
+		self.get.return_value = self.response({"message": "pong"})
+		self.post.return_value = self.response({"enabled": True})
+		self.atlas = self.enterContext(
+			patch("central.integrations.atlas.AtlasClient.for_operator")
+		).return_value
+
+	def response(self, body, status=200):
+		response = requests.Response()
+		response.status_code = status
+		response._content = json.dumps(body).encode()
+		return response
+
+	def cargo_url(self):
+		return f"https://cargo.{self.instance.name}.example.test"
+
+	def test_a_blank_cargo_url_is_the_address_atlas_serves_it_at(self):
+		self.assertEqual(self.instance.get_cargo_url(), self.cargo_url())
+
+		self.instance.cargo_base_url = "http://10.0.0.5:8000"
+		self.assertEqual(self.instance.get_cargo_url(), "http://10.0.0.5:8000")
+
+	def test_enrolling_atlas_registers_a_cargo_that_answers(self):
+		self.instance.enroll_atlas()
+
+		self.atlas.configure_webhooks.assert_called_once()
+		self.get.assert_called_once_with(f"{self.cargo_url()}/api/method/ping", timeout=(5, 10))
+		self.assertEqual(self.instance.reload().cargo_status, "Registered")
+
+	def test_enrolling_atlas_keeps_its_secret_when_cargo_is_not_up(self):
+		self.get.return_value = self.response({}, 502)
+
+		with patch("central.infrastructure.doctype.region.atlas_connection.frappe.msgprint") as msgprint:
+			self.instance.enroll_atlas()
+
+		msgprint.assert_called_once()
+		self.post.assert_not_called()
+		self.instance.reload()
+		self.assertTrue(self.instance.get_password("webhook_secret"))
+		self.assertEqual(self.instance.cargo_status, "Draft")
+
+	def test_a_cargo_that_rejects_enrollment_does_not_fail_atlas(self):
+		self.post.return_value = self.response({}, 403)
+
+		self.instance.enroll_atlas()
+
+		self.instance.reload()
+		self.assertTrue(self.instance.get_password("webhook_secret"))
+		self.assertEqual(self.instance.cargo_status, "Draft")
+		self.assertTrue(
+			frappe.db.exists(
+				"Error Log", {"reference_doctype": "Region", "reference_name": self.instance.name}
+			)
+		)
+
+	def test_the_sweep_registers_cargo_only_for_an_enrolled_atlas(self):
+		from central.infrastructure.doctype.region.cargo_connection import register_pending_cargo
+
+		register_pending_cargo()
+		self.assertEqual(self.instance.reload().cargo_status, "Draft")
+
+		self.instance.enroll_atlas()
+		self.instance.db_set("cargo_status", "Draft")
+		register_pending_cargo()
+		self.assertEqual(self.instance.reload().cargo_status, "Registered")
+
+	def test_the_sweep_leaves_a_disabled_cargo_alone(self):
+		from central.infrastructure.doctype.region.cargo_connection import register_pending_cargo
+
+		self.get.return_value = self.response({}, 502)
+		self.instance.enroll_atlas()
+		self.instance.db_set("cargo_status", "Disabled")
+		self.get.reset_mock()
+
+		register_pending_cargo()
+
+		self.assertNotIn(
+			f"{self.cargo_url()}/api/method/ping", [call.args[0] for call in self.get.call_args_list]
+		)
+		self.assertEqual(self.instance.reload().cargo_status, "Disabled")

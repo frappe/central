@@ -198,7 +198,7 @@
    "read_only": 1
   },
   {
-   "description": "Where this region's Cargo site is served, e.g. http://10.0.0.5:8000. Blank until an operator connects this region to a Cargo host.",
+   "description": "Leave blank to use https://cargo.<region>.<wildcard domain>, where Atlas serves every Cargo it builds. Set it only for a Cargo at another address, such as http://10.0.0.5:8000 in development.",
    "fieldname": "cargo_base_url",
    "fieldtype": "Data",
    "label": "Cargo Base URL",
@@ -257,7 +257,7 @@
    "link_fieldname": "region"
   }
  ],
- "modified": "2026-09-23 12:00:00.000000",
+ "modified": "2026-09-25 17:33:51.962673",
  "modified_by": "Administrator",
  "module": "Infrastructure",
  "name": "Region",
