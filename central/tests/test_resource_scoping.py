@@ -17,7 +17,7 @@ from central.iam import (
 	get_allowed_servers,
 	get_server_capabilities,
 )
-from central.integrations.servers import process_command
+from central.integrations.resource_actions import process_command
 from central.notification import create_notification, list_notifications
 from central.notification.engine import dispatch
 from central.resource_actions import submit_command
@@ -361,7 +361,7 @@ class TestScopedDispatch(ResourceScopingTestCase):
 	def test_a_queued_command_outside_the_scope_is_refused_before_the_region(self):
 		name = self._queue(self.theirs)
 
-		with patch("central.integrations.servers._client") as client:
+		with patch("central.integrations.servers.get_client") as client:
 			process_command(frappe.get_doc("Resource Action", name))
 
 		self.assertEqual(frappe.db.get_value("Resource Action", name, "status"), "Failed")
@@ -370,7 +370,7 @@ class TestScopedDispatch(ResourceScopingTestCase):
 	def test_a_queued_command_on_the_scoped_server_reaches_the_region(self):
 		name = self._queue(self.mine)
 
-		with patch("central.integrations.servers._client") as client:
+		with patch("central.integrations.servers.get_client") as client:
 			client.side_effect = RuntimeError("stop here")
 			with self.assertRaisesRegex(RuntimeError, "stop here"):
 				process_command(frappe.get_doc("Resource Action", name))

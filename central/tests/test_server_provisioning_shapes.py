@@ -4,8 +4,8 @@ import frappe
 from frappe.tests import IntegrationTestCase
 
 from central.billing.catalog.server_plans import _profiles
+from central.resource_actions import _build_server_configuration, image_shape
 from central.server_models import CreateServerInput
-from central.server_provisioning import _build_server_configuration, image_shape
 
 
 class TestServerProvisioningShapes(IntegrationTestCase):
@@ -61,9 +61,9 @@ class TestServerProvisioningShapes(IntegrationTestCase):
 		)
 		image = {"tags": {"os": "Ubuntu"}, "rootfs_size_mib": 8192}
 		with (
-			patch("central.server_provisioning.selected_image", return_value=image),
+			patch("central.resource_actions.selected_image", return_value=image),
 			patch(
-				"central.server_provisioning.validate_purchase",
+				"central.resource_actions.validate_purchase",
 				return_value=(
 					[
 						{"resource_type": "Compute", "quantity": 1, "unit": "vCPU"},
@@ -74,10 +74,10 @@ class TestServerProvisioningShapes(IntegrationTestCase):
 				),
 			),
 			patch(
-				"central.server_provisioning.resolve_team_ssh_keys", return_value=["ssh-ed25519 AAAA"]
+				"central.resource_actions.resolve_team_ssh_keys", return_value=["ssh-ed25519 AAAA"]
 			) as resolve,
-			patch("central.server_provisioning.get_team_currency", return_value="USD"),
-			patch("central.server_provisioning.frappe.db.get_value", return_value="Monthly"),
+			patch("central.resource_actions.get_team_currency", return_value="USD"),
+			patch("central.resource_actions.frappe.db.get_value", return_value="Monthly"),
 		):
 			configuration, _rate = _build_server_configuration(server_input, None)
 

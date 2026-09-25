@@ -7,7 +7,7 @@ import frappe
 
 from central.integrations.bucket_provisioning import BucketProvisioning
 from central.integrations.object_storage import ObjectStorageRequestUncertain
-from central.integrations.server_provisioning import _create_payload
+from central.integrations.resource_actions import _create_payload
 
 BUCKETS = "central.integrations.bucket_provisioning"
 PILOT = "central.integrations.pilot"

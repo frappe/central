@@ -21,7 +21,7 @@ from central.billing.tests.utils import (
 	set_team_tier,
 )
 from central.errors import AtlasConnectionError
-from central.integrations.server_provisioning import _process_locked
+from central.integrations.resource_actions import _process_locked
 
 TEAM = "team-resize"
 CLUSTER = "ap-south-1"

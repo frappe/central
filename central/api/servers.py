@@ -423,7 +423,7 @@ def create_server(
 	snapshot: str | None = None,
 ) -> dict:
 	"""Create a server from an image, or restore one from a `snapshot`."""
-	from central.server_provisioning import submit_request
+	from central.resource_actions import submit_request
 
 	return submit_request(
 		team=team,
@@ -461,7 +461,7 @@ def create_composed_server(
 	snapshot: str | None = None,
 ) -> dict:
 	"""Create a custom-sized server from an image, or restore one from a `snapshot`."""
-	from central.server_provisioning import submit_request
+	from central.resource_actions import submit_request
 
 	return submit_request(
 		team=team,

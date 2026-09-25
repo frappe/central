@@ -14,7 +14,7 @@ class TestServerResize(UnitTestCase):
 	def setUp(self):
 		self.server = SimpleNamespace(atlas_vm_id="vm-00001")
 		self.client = MagicMock()
-		self.enterContext(patch("central.integrations.servers._client", return_value=self.client))
+		self.enterContext(patch("central.integrations.servers.get_client", return_value=self.client))
 		self.observe = self.enterContext(patch("central.integrations.servers.observe_server"))
 		self.enterContext(patch("central.integrations.servers.time.sleep"))
 

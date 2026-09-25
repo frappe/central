@@ -6,7 +6,7 @@ from frappe.tests import IntegrationTestCase
 from central.api.servers import registry
 from central.errors import AtlasConnectionError, AtlasRequestUncertain, AtlasResourceGone
 from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
-from central.integrations.server_provisioning import _process_locked
+from central.integrations.resource_actions import _process_locked
 from central.integrations.servers import reconcile
 from central.resource_actions import get_status, submit_command
 from central.tests.test_iam import ensure_user
@@ -36,7 +36,7 @@ class TestServerActions(IntegrationTestCase):
 				"status": "Stopped",
 			}
 		).insert()
-		self.client = self.enterContext(patch("central.integrations.servers._client")).return_value
+		self.client = self.enterContext(patch("central.integrations.servers.get_client")).return_value
 		self.observe = self.enterContext(
 			patch("central.integrations.servers.observe_server", return_value="Running")
 		)

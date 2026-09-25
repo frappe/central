@@ -4,13 +4,20 @@ import frappe
 from frappe import _
 from redis.exceptions import LockError, LockNotOwnedError
 
-from central.errors import AtlasConnectionError, AtlasRequestUncertain, build_envelope
+from central.errors import (
+	AtlasConnectionError,
+	AtlasRejected,
+	AtlasRequestUncertain,
+	AtlasResourceGone,
+	build_envelope,
+	to_error_response,
+)
 from central.infrastructure.doctype.pilot_credential.pilot_credential import PilotCredential
 from central.infrastructure.doctype.resource_action.resource_action import PENDING_STATES, TERMINAL_STATES
 from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
+from central.integrations import servers
 from central.integrations.atlas import AtlasClient
 from central.integrations.pilot import get_bootstrap_metadata
-from central.integrations.servers import observe_server
 
 # A region stamps its own clock on a machine, so allow for a little drift when deciding
 # which machines are new enough to have come from this request.
@@ -74,14 +81,10 @@ def _process_locked(name: str) -> None:
 		return
 
 	if request.action == "resize":
-		from central.integrations.servers import process_resize
-
 		process_resize(request)
 		return
 
 	if request.action != "create":
-		from central.integrations.servers import process_command
-
 		process_command(request)
 		return
 
@@ -195,7 +198,7 @@ def _client(request) -> AtlasClient:
 def _create_payload(request) -> dict:
 	configuration = request.get_configuration()
 	if configuration.ssh_key_ids:
-		from central.server_provisioning import resolve_team_ssh_keys
+		from central.resource_actions import resolve_team_ssh_keys
 
 		configuration.ssh_keys = resolve_team_ssh_keys(request.team, configuration.ssh_key_ids)
 	payload = {
@@ -277,7 +280,7 @@ def _finalize(request) -> None:
 		return
 
 	try:
-		status = observe_server(frappe.get_doc("Virtual Machine", server_id))
+		status = servers.observe_server(frappe.get_doc("Virtual Machine", server_id))
 	except AtlasConnectionError:
 		request.transition(
 			"Sent",
@@ -288,6 +291,184 @@ def _finalize(request) -> None:
 		return
 
 	request.finish(status)
+
+
+def process_resize(action) -> None:
+	"""Apply one durable resize, then re-lock billing after the shape is confirmed."""
+	server = frappe.get_doc("Virtual Machine", action.server, for_update=True)
+	if (
+		server.team != action.team
+		or server.region != action.region
+		or server.atlas_vm_id != action.remote_vm_id
+	):
+		action.transition(
+			"Failed", envelope=build_envelope("SERVER_NOT_FOUND", resource_id=action.resource_id)
+		)
+		return
+
+	first_dispatch = action.status == "Queued"
+	if first_dispatch:
+		if not action.is_allowed():
+			action.transition("Failed", envelope=build_envelope("PERMISSION_DENIED", action="resize"))
+			return
+		action.transition("Dispatching", notify=False)
+		frappe.db.commit()
+
+	configuration = action.get_resize_configuration()
+	target = configuration.shape.model_dump()
+	try:
+		if not first_dispatch:
+			servers.observe_server(server)
+			server.reload()
+		if not _matches_shape(server, target):
+			servers.resize_server(server, target)
+			server.reload()
+		if not _matches_shape(server, target):
+			raise AtlasConnectionError(_("Atlas did not report the requested server size."))
+	except AtlasRejected as error:
+		action.fail(error, "Atlas resize was rejected")
+		return
+	except AtlasConnectionError:
+		# A resize sets absolute values, so recovery can safely run it again.
+		action.transition(
+			"Uncertain",
+			envelope=build_envelope("OUTCOME_UNKNOWN"),
+			diagnostic=frappe.get_traceback(),
+			diagnostic_title="Atlas resize result was uncertain",
+		)
+		return
+
+	action.transition("Sent", notify=False)
+	frappe.db.commit()
+	try:
+		from central.billing.catalog.subscriptions import apply_resize_billing
+
+		apply_resize_billing(action)
+		server.db_set("plan", configuration.plan, notify=False)
+	except Exception:
+		diagnostic = frappe.get_traceback()
+		frappe.db.rollback()
+		action.reload()
+		action.transition(
+			"Sent",
+			envelope=build_envelope("FINALIZATION_FAILED"),
+			diagnostic=diagnostic,
+			diagnostic_title="Resize billing finalization failed",
+		)
+		return
+
+	action.transition("Succeeded")
+
+
+def _matches_shape(server: VirtualMachine, shape: dict) -> bool:
+	return all(
+		frappe.utils.flt(server.get(field)) == frappe.utils.flt(value) for field, value in shape.items()
+	)
+
+
+def process_command(action) -> None:
+	server = frappe.get_doc("Virtual Machine", action.server, for_update=True)
+	if (
+		server.team != action.team
+		or server.region != action.region
+		or server.atlas_vm_id != action.remote_vm_id
+	):
+		action.transition(
+			"Failed", envelope=build_envelope("SERVER_NOT_FOUND", resource_id=action.resource_id)
+		)
+		return
+
+	if action.status == "Queued":
+		if not action.is_allowed():
+			action.transition("Failed", envelope=build_envelope("PERMISSION_DENIED", action=action.action))
+			return
+
+		client = servers.get_client(server)
+		if action.take_snapshot and not is_final_snapshot_ready(action, server, client):
+			return
+
+		action.transition("Dispatching", notify=False)
+		# The remote command can outlive this worker; recovery must never redispatch it.
+		frappe.db.commit()  # nosemgrep: frappe-manual-commit -- persist dispatch before Atlas mutates the VM
+		try:
+			client.vm_action(action.remote_vm_id, action.action)
+		except AtlasResourceGone as error:
+			# A terminate that finds the machine gone has reached its goal.
+			if action.action != "terminate":
+				action.fail(error, "Atlas command failed")
+				return
+			servers.mark_terminated(server)
+			action.transition("Succeeded")
+			return
+		except AtlasConnectionError as error:
+			action.fail(error, "Atlas command failed")
+			# An uncertain reply is settled by the read below, never by a second command.
+			if action.status == "Failed":
+				return
+		else:
+			action.transition("Sent", notify=False)
+
+		frappe.db.commit()  # nosemgrep: frappe-manual-commit -- persist Atlas acceptance before observation
+
+	try:
+		status = servers.observe_server(server)
+	except AtlasConnectionError:
+		action.transition(
+			action.status,
+			envelope=build_envelope("REFRESH_FAILED"),
+			diagnostic=frappe.get_traceback(),
+			diagnostic_title="Atlas server refresh failed",
+		)
+		return
+
+	action.finish(status)
+
+
+def is_final_snapshot_ready(action, server: VirtualMachine, client: AtlasClient) -> bool:
+	"""Stop the server, take its final snapshot, and return True once it is Available.
+
+	The action stays Queued meanwhile, so the recovery loop runs it again until the snapshot
+	settles. A failed snapshot fails the terminate and leaves the server stopped."""
+	if action.vm_snapshot:
+		status = frappe.db.get_value("VM Snapshot", action.vm_snapshot, "status")
+		if status == "Available":
+			return True
+		if status == "Pending":
+			action.db_set("last_checked_at", frappe.utils.now_datetime())
+		else:
+			action.transition("Failed", envelope=build_envelope("SNAPSHOT_FAILED", action="terminate"))
+		return False
+
+	# One snapshot runs per server; a daily one already running is waited out first.
+	if frappe.db.exists("VM Snapshot", {"server": server.name, "status": "Pending"}):
+		action.db_set("last_checked_at", frappe.utils.now_datetime())
+		return False
+
+	try:
+		servers.wait_for_power_state(client, server.atlas_vm_id, "stop", "stopped")
+	except AtlasConnectionError as error:
+		action.transition(
+			"Failed",
+			envelope=to_error_response(error),
+			diagnostic=frappe.get_traceback(),
+			diagnostic_title="Atlas snapshot preparation failed",
+		)
+		return False
+
+	snapshot = frappe.get_doc(
+		{
+			"doctype": "VM Snapshot",
+			"title": _("Final snapshot of {0}").format(server.title or server.name),
+			"team": server.team,
+			"server": server.name,
+			"snapshot_type": "Terminate",
+			"requested_by": action.requested_by,
+		}
+	)
+	# The terminate already checked server:snapshot for the requester.
+	snapshot.insert(ignore_permissions=True)
+	action.db_set({"vm_snapshot": snapshot.name, "last_checked_at": frappe.utils.now_datetime()})
+	return False
 
 
 def recover_requests() -> None:

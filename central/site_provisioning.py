@@ -8,7 +8,7 @@ from frappe import _
 from central.billing.catalog.server_plans import get_server_plans
 from central.iam import resolve_team
 from central.integrations.images import list_images
-from central.server_provisioning import submit_request
+from central.resource_actions import submit_request
 
 SIGNUP_FLOW = "Signup"
 # A trial is a site the image already carries, on the Frappe version a signup runs. The

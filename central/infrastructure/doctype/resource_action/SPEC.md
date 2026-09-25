@@ -24,7 +24,7 @@ The request key is unique within a Team. Reusing it with identical inputs return
 
 A repeat under a new key is also answered with the saved action, when the same requester sent the same settings and no region has returned a VM identity yet. Central saves the request before it calls a region, so a lost reply leaves the record while the caller keeps nothing. A request that already holds a VM identity never matches, so a deliberate second server is still a second record. The request digest covers the settings only, not the key.
 
-API routes remain thin. `central/server_models.py` defines input and saved-configuration models. `central/server_provisioning.py` owns creation policy. `central/resource_actions.py` owns power-operation authorization. Billing catalog modules own purchase and repricing policy. Remote calls and observed-state writes belong to `central/integrations/`. Resource Action queues every server and trial-site operation after the request transaction commits.
+API routes remain thin. `central/server_models.py` defines input and saved-configuration models. `central/resource_actions.py` owns intake: creation policy and command authorization. `central/integrations/resource_actions.py` owns dispatch, recovery and completion. `central/integrations/servers.py` holds the plain Atlas server calls. Billing catalog modules own purchase and repricing policy. Remote calls and observed-state writes belong to `central/integrations/`. Resource Action queues every server and trial-site operation after the request transaction commits.
 
 ## Console API
 

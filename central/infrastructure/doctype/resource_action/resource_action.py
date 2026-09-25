@@ -142,7 +142,7 @@ class ResourceAction(Document):
 
 	def enqueue(self) -> None:
 		frappe.enqueue(
-			"central.integrations.server_provisioning.process_request",
+			"central.integrations.resource_actions.process_request",
 			name=self.name,
 			queue="long",
 			enqueue_after_commit=True,
@@ -323,7 +323,7 @@ class ResourceAction(Document):
 		A failed request holds no budget, so a retry is a new decision to spend. The
 		reserved rate stays as it was accepted; only the team's remaining headroom, plan
 		eligibility and trial limits are checked again."""
-		from central.server_provisioning import validate_purchase
+		from central.resource_actions import validate_purchase
 
 		frappe.db.get_value("Team", self.team, "name", for_update=True)
 		configuration = self.get_configuration()
