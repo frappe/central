@@ -139,8 +139,10 @@ def ensure_tax_profile(team: str):
 
 def apply_gst_category(team: str, category: str | None) -> None:
 	"""Zero-rate an SEZ team, and undo it once its GST category is no longer SEZ."""
-	profile = ensure_tax_profile(team)
 	is_sez = category == "SEZ"
+	if not is_sez and not frappe.db.exists("Tax Profile", team):
+		return
+	profile = ensure_tax_profile(team)
 	was_sez = bool(profile.zero_rated) and profile.zero_rating_reason == "SEZ"
 	if is_sez == was_sez:
 		return

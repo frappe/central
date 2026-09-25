@@ -33,6 +33,7 @@
   "gst_status",
   "gst_category",
   "gst_status_checked_at",
+  "gst_status_retry_after",
   "section_break_settings",
   "min_balance",
   "collection_mode",
@@ -292,11 +293,18 @@
    "label": "GST Status Checked At",
    "read_only": 1,
    "search_index": 1
+  },
+  {
+   "description": "A failed lookup waits until this time, so the sweep reaches other teams first.",
+   "fieldname": "gst_status_retry_after",
+   "fieldtype": "Datetime",
+   "label": "GST Status Retry After",
+   "read_only": 1
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-09-25 23:30:00.000000",
+ "modified": "2026-09-26 00:30:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Billing Profile",
