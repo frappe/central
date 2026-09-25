@@ -29,6 +29,7 @@ const props = defineProps<{
 const emit = defineEmits<{
 	overview: [server: VirtualMachineRow]
 	open: [server: VirtualMachineRow]
+	pilot: [server: VirtualMachineRow]
 	start: [server: VirtualMachineRow]
 	stop: [server: VirtualMachineRow]
 	restart: [server: VirtualMachineRow]
@@ -77,6 +78,14 @@ const options = computed(() => {
 				props.server.status !== 'Running' ||
 				!(props.opensSite || props.server.gateway_url),
 			onClick: () => emit('open', props.server),
+		})
+	// Open goes to the site on a site server, so Pilot admin needs its own entry.
+	if (allowed.value.open && !settingUp && props.opensSite)
+		items.push({
+			label: 'Open Pilot',
+			icon: 'lucide-layout-dashboard',
+			disabled: props.server.status !== 'Running' || !props.server.gateway_url,
+			onClick: () => emit('pilot', props.server),
 		})
 	if (allowed.value.console && props.server.image_offering === 'ubuntu')
 		items.push({
