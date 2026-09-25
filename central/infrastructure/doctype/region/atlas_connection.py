@@ -118,9 +118,9 @@ class AtlasConnectionMixin:
 	@frappe.whitelist(methods=["POST"])
 	def enroll_atlas(self) -> None:
 		"""Point this region's Atlas at Central's state-delivery receiver, minting a
-		delivery secret the first time. Separate from `test_connection`: that call only
-		reads from Atlas, this one mutates its webhook configuration. A failure raises,
-		same as any other Desk action -- there is nothing here worth recording twice."""
+		delivery secret the first time, then register its Cargo if it answers. Separate
+		from `test_connection`: that call only reads from Atlas, this one mutates its
+		webhook configuration. A failure raises, same as any other Desk action."""
 		from frappe.utils.password import set_encrypted_password
 
 		from central.integrations.atlas import AtlasClient
@@ -136,6 +136,17 @@ class AtlasConnectionMixin:
 		secret = self.get_password("webhook_secret", raise_exception=False) or frappe.generate_hash(length=32)
 		AtlasClient.for_operator(self).configure_webhooks(secret)
 		set_encrypted_password("Region", self.name, secret, "webhook_secret")
+
+		if self.cargo_status != "Draft":
+			return
+
+		# Atlas already holds the new secret, so a Cargo failure must not undo this enrollment.
+		try:
+			if self.register_cargo():
+				return
+		except frappe.ValidationError:
+			self.log_error("Cargo enrollment failed")
+		frappe.msgprint(_("Atlas enrolled. Cargo is not registered yet; Central retries every 10 minutes."))
 
 
 def is_auto_routed_label(label: str) -> bool:

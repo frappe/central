@@ -50,7 +50,7 @@ function update_enroll_buttons(frm) {
 		});
 	}
 
-	if (active_tab === "cargo_tab" && frm.doc.cargo_base_url && frm.doc.cargo_status !== "Registered") {
+	if (active_tab === "cargo_tab" && frm.doc.cargo_status === "Draft") {
 		frm.add_custom_button(__("Enroll Cargo"), async () => {
 			if (frm.is_dirty()) {
 				frappe.msgprint(__("Save the region before enrolling its Cargo."));

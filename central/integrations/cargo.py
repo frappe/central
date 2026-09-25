@@ -65,4 +65,4 @@ class CargoClient:
 			)
 
 	def _base_url(self) -> str:
-		return (self.instance.cargo_base_url or "").rstrip("/")
+		return self.instance.get_cargo_url()
