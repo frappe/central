@@ -15,8 +15,6 @@ from central.integrations.atlas import AtlasClient
 
 # A resize may move the VM to another host, so the wait is generous enough to cover a migration.
 POWER_WAIT_SECONDS = 15 * 60
-# A resize waits for a stop and a start, so its job must outlive both waits.
-RESIZE_JOB_TIMEOUT_SECONDS = 2 * POWER_WAIT_SECONDS + 5 * 60
 POWER_POLL_SECONDS = 5
 
 

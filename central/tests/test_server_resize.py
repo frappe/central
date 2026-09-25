@@ -174,3 +174,24 @@ class TestConsoleResize(UnitTestCase):
 
 		with self.assertRaises(frappe.PermissionError):
 			resize_server(team="TEAM-1", resource_id="server-1", plan="plan-2vcpu", disk_gigabytes=20)
+
+
+class TestResizeJobTimeout(UnitTestCase):
+	def test_a_resize_job_and_its_lock_outlive_a_stop_and_a_start(self):
+		"""A worker killed mid-resize would leave the lock free for a second worker."""
+		from central.integrations.resource_actions import process_request
+		from central.integrations.servers import POWER_WAIT_SECONDS
+
+		with patch("frappe.enqueue") as enqueue:
+			frappe.get_doc({"doctype": "Resource Action", "action": "resize"}).enqueue()
+		job_timeout = enqueue.call_args.kwargs["timeout"]
+
+		with (
+			patch("central.integrations.resource_actions.frappe.db.get_value", return_value="resize"),
+			patch("central.integrations.resource_actions.frappe.cache.lock") as lock,
+			patch("central.integrations.resource_actions._process_locked"),
+		):
+			process_request("resize-action")
+
+		self.assertGreater(job_timeout, 2 * POWER_WAIT_SECONDS)
+		self.assertEqual(lock.call_args.kwargs["timeout"], job_timeout)

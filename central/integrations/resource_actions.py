@@ -22,21 +22,26 @@ from central.integrations.pilot import get_bootstrap_metadata
 # A region stamps its own clock on a machine, so allow for a little drift when deciding
 # which machines are new enough to have come from this request.
 CLOCK_SKEW_SECONDS = 120
-# Long enough to cover a region answering a create, so the lock outlives the work it
-# guards rather than expiring under it.
-LOCK_TIMEOUT_SECONDS = 15 * 60
+# How long one dispatch job may run. Its lock lasts as long, so a second worker never
+# starts while the first still works. A job waits for at most one power change, such as
+# the stop before a final snapshot. A resize waits for a stop and a start.
+JOB_TIMEOUT_SECONDS = servers.POWER_WAIT_SECONDS + 5 * 60
+RESIZE_JOB_TIMEOUT_SECONDS = 2 * servers.POWER_WAIT_SECONDS + 5 * 60
 ANYWHERE = ["0.0.0.0/0", "::/0"]
 # Atlas addresses every machine on its WireGuard mesh from this prefix, and an enabled
 # firewall filters mesh traffic too.
 MESH_NETWORK = "fdaa::/16"
 
 
+def get_job_timeout_seconds(action: str | None) -> int:
+	return RESIZE_JOB_TIMEOUT_SECONDS if action == "resize" else JOB_TIMEOUT_SECONDS
+
+
 def process_request(name: str) -> None:
 	"""Dispatch once, then recover accepted creates using reads only."""
+	timeout = get_job_timeout_seconds(frappe.db.get_value("Resource Action", name, "action"))
 	try:
-		with frappe.cache.lock(
-			f"server-provisioning:{name}", timeout=LOCK_TIMEOUT_SECONDS, blocking_timeout=0
-		):
+		with frappe.cache.lock(f"server-provisioning:{name}", timeout=timeout, blocking_timeout=0):
 			try:
 				_process_locked(name)
 			except Exception:

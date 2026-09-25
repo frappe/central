@@ -141,10 +141,13 @@ class ResourceAction(Document):
 			self.enqueue()
 
 	def enqueue(self) -> None:
+		from central.integrations.resource_actions import get_job_timeout_seconds
+
 		frappe.enqueue(
 			"central.integrations.resource_actions.process_request",
 			name=self.name,
 			queue="long",
+			timeout=get_job_timeout_seconds(self.action),
 			enqueue_after_commit=True,
 			job_id=f"resource-action:{self.name}",
 			deduplicate=True,
