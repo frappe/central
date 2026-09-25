@@ -23,3 +23,7 @@ central.patches.v0_0.record_server_has_site
 central.patches.v0_0.shorten_pilot_offering_description
 central.patches.v0_0.rename_pilot_offering_to_frappe
 central.patches.v0_0.seed_billing_details_grace
+# Zero-rating reasons follow the GST category names (SEZ LUT -> SEZ, Export -> Overseas).
+central.patches.v0_0.rename_zero_rating_reasons
+# The GSTIN sweep knobs read 0 on a Single saved before they existed.
+central.patches.v0_0.seed_gst_status_refresh

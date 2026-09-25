@@ -29,6 +29,8 @@
   "gstin",
   "column_break_jgnz",
   "gst_status",
+  "gst_category",
+  "gst_status_checked_at",
   "section_break_settings",
   "min_balance",
   "collection_mode",
@@ -125,7 +127,7 @@
    "options": "Country"
   },
   {
-   "description": "For India, pick the GST registration state \u2014 its code must match the GSTIN.",
+   "description": "For India, pick the GST registration state — its code must match the GSTIN.",
    "fieldname": "state",
    "fieldtype": "Autocomplete",
    "label": "State"
@@ -258,12 +260,27 @@
    "fieldname": "gst_status",
    "fieldtype": "Select",
    "label": "GST Status",
-   "options": "\nActive\nInvalid\nSuspended\nCancelled"
+   "options": "\nActive\nInactive\nSuspended\nCancelled\nInvalid",
+   "read_only": 1,
+   "description": "As reported by the GST portal. Anything but Active bills the team as unregistered."
+  },
+  {
+   "fieldname": "gst_category",
+   "fieldtype": "Data",
+   "label": "GST Category",
+   "read_only": 1
+  },
+  {
+   "fieldname": "gst_status_checked_at",
+   "fieldtype": "Datetime",
+   "label": "GST Status Checked At",
+   "read_only": 1,
+   "search_index": 1
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-09-25 21:11:58.280614",
+ "modified": "2026-09-25 22:00:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Billing Profile",

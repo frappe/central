@@ -6,7 +6,12 @@ import frappe
 
 from central.billing.revenue import invoicing, tax
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
-from central.billing.tests.utils import add_segment, make_billing_subscription, make_plan
+from central.billing.tests.utils import (
+	add_segment,
+	complete_billing_profile,
+	make_billing_subscription,
+	make_plan,
+)
 
 TEAM = "team-tax"
 CLUSTER = "ap-south-1"
@@ -61,15 +66,54 @@ class TestOutputTax(TaxTestBase):
 
 class TestZeroRating(TaxTestBase):
 	def test_sez_is_zero_with_a_reason_code(self):
-		set_tax_profile(output_tax_type="GST", output_tax_rate=18, zero_rated=1, zero_rating_reason="SEZ LUT")
+		set_tax_profile(output_tax_type="GST", output_tax_rate=18, zero_rated=1, zero_rating_reason="SEZ")
 		inv = self._invoice()
 		self.assertEqual(inv.output_tax_amount, 0)  # zero-rated
-		self.assertEqual(inv.zero_rating_reason, "SEZ LUT")  # ... but with a reason
+		self.assertEqual(inv.zero_rating_reason, "SEZ")  # ... but with a reason
 		self.assertEqual(inv.total, 1000.0)
 
 	def test_zero_rated_profile_requires_a_reason(self):
 		with self.assertRaises(frappe.ValidationError):
 			set_tax_profile(output_tax_type="GST", zero_rated=1)  # no reason
+
+
+class TestGstinStanding(TaxTestBase):
+	GSTIN = "27AAPFU0939F1ZV"
+
+	def _gstin(self, status):
+		complete_billing_profile(TEAM)
+		frappe.db.set_value("Billing Profile", TEAM, {"gstin": self.GSTIN, "gst_status": status})
+
+	def test_active_gstin_goes_on_the_invoice(self):
+		self._gstin("Active")
+		self.assertEqual(self._invoice().customer_gstin, self.GSTIN)
+
+	def test_unchecked_gstin_is_trusted(self):
+		self._gstin(None)
+		self.assertEqual(self._invoice().customer_gstin, self.GSTIN)
+
+	def test_lapsed_gstin_bills_as_unregistered(self):
+		for status in ("Inactive", "Suspended", "Cancelled", "Invalid"):
+			self._gstin(status)
+			frappe.db.delete("Invoice", {"team": TEAM})
+			set_tax_profile(output_tax_type="GST", output_tax_rate=18)
+			inv = self._invoice()
+			self.assertFalse(inv.customer_gstin, status)
+			self.assertEqual(inv.output_tax_amount, 180.0)  # GST still charged
+
+	def test_lapsed_sez_gstin_loses_zero_rating(self):
+		self._gstin("Cancelled")
+		set_tax_profile(output_tax_type="GST", output_tax_rate=18, zero_rated=1, zero_rating_reason="SEZ")
+		inv = self._invoice()
+		self.assertEqual(inv.output_tax_amount, 180.0)
+		self.assertFalse(inv.zero_rating_reason)
+
+	def test_lapsed_gstin_keeps_overseas_zero_rating(self):
+		self._gstin("Cancelled")
+		set_tax_profile(
+			output_tax_type="GST", output_tax_rate=18, zero_rated=1, zero_rating_reason="Overseas"
+		)
+		self.assertEqual(self._invoice().output_tax_amount, 0)
 
 
 class TestWithholdingSeam(TaxTestBase):
