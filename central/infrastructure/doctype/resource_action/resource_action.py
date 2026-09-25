@@ -4,8 +4,9 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
-from central.errors import build_envelope
+from central.errors import AtlasConnectionError, AtlasRequestUncertain, build_envelope, to_error_response
 from central.iam import can
+from central.infrastructure.doctype.pilot_credential.pilot_credential import PilotCredential
 from central.server_models import ActionStatus, ResizeConfiguration, ServerCreation
 
 PENDING_STATES = ("Queued", "Dispatching", "Sent", "In Progress", "Uncertain")
@@ -17,12 +18,17 @@ PENDING_LABEL = {
 	"restart": "Restarting",
 	"resize": "Resizing",
 }
+# The capability a requester must hold, both when an action is accepted and when it is sent.
 ACTION_CAPABILITIES = {
+	"create": "server:create",
 	"start": "server:power",
 	"stop": "server:power",
 	"restart": "server:power",
 	"terminate": "server:terminate",
+	"resize": "server:resize",
 }
+# The actions a customer runs against an existing server as a plain command.
+COMMAND_ACTIONS = ("start", "stop", "restart", "terminate")
 # The observed status that means an action reached its goal.
 GOAL_STATUS = {
 	"create": "Running",
@@ -35,6 +41,8 @@ GOAL_STATUS = {
 # The region publishes no restart counter, so the action waits until it reports the server
 # away from the goal once. That report is what shows the restart really began.
 ROUND_TRIP_ACTIONS = ("restart",)
+# A command that has not reached its goal this long after dispatch has timed out.
+COMMAND_TIMEOUT_SECONDS = 10 * 60
 TERMINAL_STATES = ("Succeeded", "Failed", "Timed Out")
 # A creation in one of these states can be sent again while it holds no VM identity.
 RETRYABLE_CREATE_STATES = ("Failed", "Timed Out")
@@ -72,15 +80,74 @@ def action_status(row) -> ActionStatus:
 class ResourceAction(Document):
 	"""One durable resource operation, from validated intent to confirmed outcome."""
 
+	@classmethod
+	def queue(
+		cls,
+		action: str,
+		team: str,
+		region: str,
+		title: str,
+		*,
+		server: str | None = None,
+		remote_vm_id: str | None = None,
+		requested_by: str | None = None,
+		**fields,
+	) -> ResourceAction:
+		"""Save one authorized request as a Queued action."""
+		document = frappe.get_doc(
+			{
+				"doctype": "Resource Action",
+				"resource_type": "Server",
+				"action": action,
+				"team": team,
+				"region": region,
+				"title": title,
+				"server": server,
+				"resource_id": server,
+				"remote_vm_id": remote_vm_id,
+				"requested_by": requested_by or frappe.session.user,
+				"correlation_id": frappe.generate_hash(length=32),
+				"status": "Queued",
+				**fields,
+			}
+		)
+		# Customers have read-only access, so the authorized service inserts for them.
+		document.insert(ignore_permissions=True)
+		return document
+
+	@classmethod
+	def get_pending(cls, server: str, action: str) -> ResourceAction | None:
+		"""Return the same pending action, or refuse when a different one is pending."""
+		name = frappe.db.get_value(
+			"Resource Action", {"resource_id": server, "status": ["in", PENDING_STATES]}
+		)
+		if not name:
+			return None
+
+		pending = frappe.get_doc("Resource Action", name)
+		if pending.action != action:
+			frappe.throw(_("Another action is still pending for this server."))
+		return pending
+
+	def is_allowed(self) -> bool:
+		"""Whether the requester still holds the capabilities this action needs."""
+		server = self.server or None
+		if not can(self.requested_by, self.team, ACTION_CAPABILITIES[self.action], server=server):
+			return False
+		return not self.take_snapshot or can(self.requested_by, self.team, "server:snapshot", server=server)
+
 	def after_insert(self) -> None:
 		if self.status == "Queued":
 			self.enqueue()
 
 	def enqueue(self) -> None:
+		from central.integrations.resource_actions import get_job_timeout_seconds
+
 		frappe.enqueue(
-			"central.integrations.server_provisioning.process_request",
+			"central.integrations.resource_actions.process_request",
 			name=self.name,
 			queue="long",
+			timeout=get_job_timeout_seconds(self.action),
 			enqueue_after_commit=True,
 			job_id=f"resource-action:{self.name}",
 			deduplicate=True,
@@ -119,12 +186,46 @@ class ResourceAction(Document):
 			"remediation": envelope["remediation"] if envelope else None,
 			"retriable": int(envelope["retriable"]) if envelope else 0,
 		}
+		if status in ("Queued", "Dispatching"):
+			values["dispatched_at"] = now if status == "Dispatching" else None
 		if diagnostic:
 			values.update(self._diagnostic_values(diagnostic, diagnostic_title))
 
 		self.db_set(values, notify=notify)
 		if status != previous_status and status in ("Failed", "Timed Out"):
+			# A creation the region never accepted leaves no machine to use its credential.
+			if self.action == "create" and not self.remote_vm_id:
+				PilotCredential.revoke_by_id(self.credential)
 			self.queue_attention_notification(envelope)
+
+	def fail(self, error: Exception, title: str) -> None:
+		"""Record a failed dispatch. An uncertain Atlas reply stays pending for recovery."""
+		self.transition(
+			"Uncertain" if isinstance(error, AtlasRequestUncertain) else "Failed",
+			envelope=to_error_response(error),
+			diagnostic=frappe.get_traceback() if isinstance(error, AtlasConnectionError) else None,
+			diagnostic_title=title,
+		)
+
+	def finish(self, observed_status: str) -> None:
+		"""Settle this action against the server status the region reported."""
+		self.reload()
+		if self.status in TERMINAL_STATES or self.record_observed_status(observed_status):
+			return
+
+		if observed_status in ("Failed", "Terminated"):
+			self.transition("Failed", envelope=build_envelope("ACTION_FAILED", action=self.action))
+		elif self.action != "create" and self.is_overdue:
+			self.transition("Timed Out", envelope=build_envelope("ACTION_TIMED_OUT", action=self.action))
+		elif self.action not in ROUND_TRIP_ACTIONS:
+			self.transition("In Progress", notify=False)
+
+	@property
+	def is_overdue(self) -> bool:
+		started = self.dispatched_at or self.creation
+		return (
+			frappe.utils.time_diff_in_seconds(frappe.utils.now_datetime(), started) > COMMAND_TIMEOUT_SECONDS
+		)
 
 	def queue_attention_notification(self, envelope: dict | None) -> None:
 		"""Notify once when an action reaches a terminal state that needs attention."""
@@ -216,7 +317,6 @@ class ResourceAction(Document):
 
 		self.revalidate_purchase()
 		self.transition("Queued")
-		self.db_set("dispatched_at", None, notify=True)
 		self.enqueue()
 		return self.customer_status()
 
@@ -226,7 +326,7 @@ class ResourceAction(Document):
 		A failed request holds no budget, so a retry is a new decision to spend. The
 		reserved rate stays as it was accepted; only the team's remaining headroom, plan
 		eligibility and trial limits are checked again."""
-		from central.server_provisioning import validate_purchase
+		from central.resource_actions import validate_purchase
 
 		frappe.db.get_value("Team", self.team, "name", for_update=True)
 		configuration = self.get_configuration()

@@ -189,7 +189,7 @@ doc_events = {
 # ---------------
 
 scheduler_events = {
-	"all": ["central.integrations.server_provisioning.recover_requests"],
+	"all": ["central.integrations.resource_actions.recover_requests"],
 	"cron": {
 		# Repair observed state through scoped regional reads.
 		"*/10 * * * *": ["central.integrations.servers.reconcile"],

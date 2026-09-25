@@ -7,10 +7,10 @@ import frappe
 
 from central.integrations.bucket_provisioning import BucketProvisioning
 from central.integrations.object_storage import ObjectStorageRequestUncertain
-from central.integrations.server_provisioning import _create_payload
+from central.integrations.resource_actions import _create_payload
 
 BUCKETS = "central.integrations.bucket_provisioning"
-SERVERS = "central.integrations.server_provisioning"
+PILOT = "central.integrations.pilot"
 CONTROLLER = "central.services.doctype.team_service.team_service"
 BUCKET = "team-42-in-mumbai-backups"
 ENDPOINT = "https://s3.in-mumbai.example.test"
@@ -166,10 +166,10 @@ class TestPilotStoragePayload(TestCase):
 		provisioning.get_configuration.return_value = STORAGE_CONFIG
 
 		with (
-			patch(f"{SERVERS}.PilotCredential.mint", return_value="token"),
-			patch(f"{SERVERS}.central_url", return_value="https://central.test"),
-			patch(f"{SERVERS}.jwks_url", return_value="https://central.test/jwks"),
-			patch(f"{SERVERS}.BucketProvisioning", return_value=provisioning),
+			patch(f"{PILOT}.PilotCredential.mint", return_value="token"),
+			patch(f"{PILOT}.central_url", return_value="https://central.test"),
+			patch(f"{PILOT}.jwks_url", return_value="https://central.test/jwks"),
+			patch(f"{PILOT}.BucketProvisioning", return_value=provisioning),
 		):
 			payload = _create_payload(pilot_request())
 
@@ -179,10 +179,10 @@ class TestPilotStoragePayload(TestCase):
 	def test_storage_failure_does_not_block_pilot_creation(self):
 		request = pilot_request()
 		with (
-			patch(f"{SERVERS}.PilotCredential.mint", return_value="token"),
-			patch(f"{SERVERS}.central_url", return_value="https://central.test"),
-			patch(f"{SERVERS}.jwks_url", return_value="https://central.test/jwks"),
-			patch(f"{SERVERS}.BucketProvisioning", side_effect=ObjectStorageRequestUncertain()),
+			patch(f"{PILOT}.PilotCredential.mint", return_value="token"),
+			patch(f"{PILOT}.central_url", return_value="https://central.test"),
+			patch(f"{PILOT}.jwks_url", return_value="https://central.test/jwks"),
+			patch(f"{PILOT}.BucketProvisioning", side_effect=ObjectStorageRequestUncertain()),
 		):
 			payload = _create_payload(request)
 

@@ -22,6 +22,7 @@ import frappe
 # transition authority; re-exported so callers that catch `subscriptions.InvalidTransition`
 # keep working. Suspension is still staged through Past Due (grace), never a direct jump.
 from central.billing.states import InvalidTransition, transition
+from central.infrastructure.doctype.resource_action.resource_action import ResourceAction
 
 
 def anchor_subscription(team: str) -> str | None:
@@ -416,19 +417,8 @@ def begin_resize(
 		if doc.server_id
 		else None
 	)
-	if server:
-		from central.infrastructure.doctype.resource_action.resource_action import PENDING_STATES
-
-		pending = frappe.db.get_value(
-			"Resource Action",
-			{"resource_id": doc.server_id, "status": ["in", PENDING_STATES]},
-			"name",
-		)
-		if pending:
-			action = frappe.get_doc("Resource Action", pending)
-			if action.action == "resize":
-				return {"queued": True, "resized": True, **action.customer_status()}
-			frappe.throw(frappe._("Another action is still pending for this server."))
+	if server and (pending := ResourceAction.get_pending(doc.server_id, "resize")):
+		return {"queued": True, "resized": True, **pending.customer_status()}
 
 	is_live = bool(server and server.status in ("Running", "Paused", "Stopped"))
 	if is_live and not server.atlas_vm_id:
@@ -474,25 +464,17 @@ def begin_resize(
 			"shape": shape,
 		}
 	)
-	action = frappe.get_doc(
-		{
-			"doctype": "Resource Action",
-			"resource_type": "Server",
-			"action": "resize",
-			"team": doc.team,
-			"region": server.region,
-			"server": doc.server_id,
-			"resource_id": doc.server_id,
-			"remote_vm_id": server.atlas_vm_id,
-			"title": server.title or doc.server_id,
-			"requested_by": changed_by or frappe.session.user,
-			"correlation_id": frappe.generate_hash(length=32),
-			"request_payload": configuration.model_dump(),
-			"status": "Queued",
-		}
-	)
 	# Billing validated the target and the route already checked server:resize.
-	action.insert(ignore_permissions=True)
+	action = ResourceAction.queue(
+		"resize",
+		doc.team,
+		server.region,
+		server.title or doc.server_id,
+		server=doc.server_id,
+		remote_vm_id=server.atlas_vm_id,
+		requested_by=changed_by,
+		request_payload=configuration.model_dump(),
+	)
 	return {"queued": True, "resized": True, **action.customer_status()}
 
 

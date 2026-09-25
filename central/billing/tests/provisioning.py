@@ -3,7 +3,7 @@ from unittest.mock import MagicMock, patch
 import frappe
 
 from central.api.servers import create_server
-from central.integrations.server_provisioning import _process_locked
+from central.integrations.resource_actions import _process_locked
 
 IMAGE = {
 	"id": "pilot-test-image",
@@ -28,17 +28,17 @@ def create_billed_server(team, region, plan, **overrides):
 		**overrides,
 	}
 	with (
-		patch("central.server_provisioning.selected_image", return_value=IMAGE),
-		patch("central.integrations.server_provisioning._client", return_value=client),
+		patch("central.resource_actions.selected_image", return_value=IMAGE),
+		patch("central.integrations.resource_actions._client", return_value=client),
 		patch(
-			"central.integrations.server_provisioning.central_url",
+			"central.integrations.pilot.central_url",
 			return_value="https://central.example.test",
 		),
 		patch(
-			"central.integrations.server_provisioning.jwks_url",
+			"central.integrations.pilot.jwks_url",
 			return_value="https://central.example.test/jwks",
 		),
-		patch("central.integrations.server_provisioning.observe_server", return_value="Running"),
+		patch("central.integrations.servers.observe_server", return_value="Running"),
 		patch("frappe.enqueue"),
 		patch("frappe.db.commit"),
 	):

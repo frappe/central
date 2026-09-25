@@ -12,7 +12,7 @@ from central.billing.tests.utils import (
 	make_plan,
 	set_team_tier,
 )
-from central.integrations.server_provisioning import _process_locked
+from central.integrations.resource_actions import _process_locked
 
 TEAM = "team-create-server"
 REGION = "ap-south-1"
@@ -112,8 +112,8 @@ class TestCreateServerRecordsSubscription(BillingTestCase):
 		self.assertEqual(action.error_code, "FINALIZATION_FAILED")
 		self.assertEqual(action.remote_vm_id, "vm-billing-test")
 		with (
-			patch("central.integrations.server_provisioning._client", return_value=client),
-			patch("central.integrations.server_provisioning.observe_server", return_value="Running"),
+			patch("central.integrations.resource_actions._client", return_value=client),
+			patch("central.integrations.servers.observe_server", return_value="Running"),
 			patch("frappe.db.commit"),
 		):
 			_process_locked(action.name)
@@ -128,8 +128,8 @@ class TestCreateServerRecordsSubscription(BillingTestCase):
 			action, client = self.create()
 		set_catalog_rate("Plan", self.plan, "INR", 1900)
 		with (
-			patch("central.integrations.server_provisioning._client", return_value=client),
-			patch("central.integrations.server_provisioning.observe_server", return_value="Running"),
+			patch("central.integrations.resource_actions._client", return_value=client),
+			patch("central.integrations.servers.observe_server", return_value="Running"),
 			patch("frappe.db.commit"),
 		):
 			_process_locked(action.name)

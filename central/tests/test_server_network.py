@@ -6,7 +6,7 @@ import frappe
 from frappe.tests import IntegrationTestCase
 
 from central.api.servers import open_console, server_overview
-from central.integrations.server_provisioning import MESH_NETWORK, _create_payload
+from central.integrations.resource_actions import MESH_NETWORK, _create_payload
 from central.tests.test_iam import ensure_user
 from central.tests.utils import ensure_atlas_instance
 
@@ -29,7 +29,7 @@ def creation_request(purpose: str = "base", **options) -> SimpleNamespace:
 	return SimpleNamespace(name="action-1", team="team-a", get_configuration=lambda: configuration)
 
 
-@patch("central.integrations.server_provisioning.idle_shutdown_seconds", return_value=0)
+@patch("central.integrations.resource_actions.idle_shutdown_seconds", return_value=0)
 class TestCreationNetworkPayload(TestCase):
 	def test_no_public_address_and_open_firewall_by_default(self, _idle) -> None:
 		payload = _create_payload(creation_request())

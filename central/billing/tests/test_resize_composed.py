@@ -21,7 +21,7 @@ from central.billing.tests.utils import (
 	set_team_tier,
 )
 from central.errors import AtlasConnectionError
-from central.integrations.server_provisioning import _process_locked
+from central.integrations.resource_actions import _process_locked
 
 TEAM = "team-resize"
 CLUSTER = "ap-south-1"
@@ -443,7 +443,7 @@ class TestResizeComposed(IntegrationTestCase):
 		with patch("frappe.enqueue"):
 			result = subscriptions.begin_resize(sub, includes=BIG, sub_category="General")
 
-		with patch("central.integrations.servers.can", return_value=False):
+		with patch("central.infrastructure.doctype.resource_action.resource_action.can", return_value=False):
 			_process_locked(result["action"])
 
 		self.assertEqual(frappe.db.get_value("Resource Action", result["action"], "status"), "Failed")
