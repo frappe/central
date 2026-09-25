@@ -195,6 +195,14 @@ class TestSezFollowsTheGstin(GstStatusTestCase):
 		doc.save(ignore_permissions=True)
 		self.assertEqual(self._zero_rated("team-gst-sez-removed"), 0)
 
+	def test_changed_gstin_drops_sez_without_lookups(self):
+		self._sez("team-gst-sez-unchecked")
+		frappe.local.conf["enable_erpnext_sync"] = 0
+		doc = frappe.get_doc("Billing Profile", "team-gst-sez-unchecked")
+		doc.gstin = "27AAACR5055K1Z7"
+		doc.save(ignore_permissions=True)
+		self.assertEqual(self._zero_rated("team-gst-sez-unchecked"), 0)
+
 	def test_changed_gstin_drops_sez_until_its_lookup(self):
 		self._sez("team-gst-sez-changed")
 		doc = frappe.get_doc("Billing Profile", "team-gst-sez-changed")
