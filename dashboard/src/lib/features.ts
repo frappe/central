@@ -20,5 +20,5 @@ export const features: Features = {
 	llm: window.features?.llm ?? false,
 	pdf: window.features?.pdf ?? false,
 	email: window.features?.email ?? false,
-	storage: window.features?.storage ?? false,
+	storage: window.features?.storage ?? import.meta.env.DEV,
 }

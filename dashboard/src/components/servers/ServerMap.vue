@@ -45,6 +45,7 @@ const props = withDefaults(
 		allowOpen?: boolean
 		/** Server resource id or site name currently opening in a new tab. */
 		opening?: string | null
+		compact?: boolean
 	}>(),
 	{
 		pins: () => [],
@@ -57,6 +58,7 @@ const props = withDefaults(
 		allowCreate: false,
 		allowOpen: false,
 		opening: null,
+		compact: false,
 	},
 )
 
@@ -677,13 +679,18 @@ function clickNode(n: MapNode): void {
 							@click="clickNode(n)"
 						>
 							<span v-if="n.selected" class="relative block rounded-full">
-								<ProviderAvatar :provider="n.marker.provider" :size="36" />
+								<ProviderAvatar
+									:provider="n.marker.provider"
+									:size="compact ? 24 : 36"
+								/>
 							</span>
 							<span
 								v-else
-								class="block size-3 rounded-full transition-transform duration-150 ease-out group-hover:scale-125"
-								:class="isHot(n) && 'scale-125'"
-								style="background: var(--ink-gray-9)"
+								class="block rounded-full transition-transform duration-150 ease-out group-hover:scale-125"
+								:class="[compact ? 'size-2' : 'size-3', isHot(n) && 'scale-125']"
+								:style="{
+									background: compact ? 'var(--ink-gray-5)' : 'var(--ink-gray-9)',
+								}"
 							/>
 						</button>
 
