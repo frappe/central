@@ -7,6 +7,7 @@ from frappe import _
 from redis.exceptions import LockError, LockNotOwnedError
 
 from central.api.jwks import jwks_document
+from central.api.pilot import get_telemetry_base_url, region_id_of
 from central.errors import AtlasConnectionError, AtlasRequestUncertain, build_envelope, to_error_response
 from central.iam import can
 from central.infrastructure.doctype.pilot_credential.pilot_credential import PilotCredential
@@ -15,7 +16,7 @@ from central.infrastructure.doctype.virtual_machine.virtual_machine import Virtu
 from central.integrations.atlas import AtlasClient
 from central.integrations.bucket_provisioning import BucketProvisioning
 from central.integrations.servers import observe_server
-from central.sso import central_url, jwks_url
+from central.sso import central_url, jwks_url, mint_datum_token
 
 # A region stamps its own clock on a machine, so allow for a little drift when deciding
 # which machines are new enough to have come from this request.
@@ -244,9 +245,28 @@ def _create_payload(request) -> dict:
 				frappe.get_traceback(),
 				"Pilot object storage provisioning failed",
 			)
+		try:
+			bootstrap["telemetry"] = telemetry_configuration(request)
+		except Exception:
+			request.record_diagnostic(frappe.get_traceback(), "Pilot telemetry configuration failed")
 		payload["metadata"]["pilot-central"] = json.dumps(bootstrap)
 
 	return payload
+
+
+def telemetry_configuration(request) -> dict:
+	"""The region's Datum and the token this server writes to it with."""
+	endpoint = get_telemetry_base_url(request.region)
+	if not endpoint:
+		frappe.throw(_("Region {0} has no telemetry host yet.").format(request.region))
+
+	token = mint_datum_token(region_id_of(request.region), server_id_of(request))
+	return {"endpoint": endpoint, "token": token}
+
+
+def server_id_of(request) -> str:
+	"""The Virtual Machine name a create request gives its server."""
+	return request.server or f"server-{request.name}"
 
 
 def firewall_configuration(configuration) -> dict:
@@ -286,7 +306,7 @@ def idle_shutdown_seconds(team: str) -> int:
 def _finalize(request) -> None:
 	try:
 		frappe.db.get_value("Team", request.team, "name", for_update=True)
-		server_id = request.server or f"server-{request.name}"
+		server_id = server_id_of(request)
 		if not request.server:
 			from central.billing.catalog.subscriptions import create_server_subscription
 
