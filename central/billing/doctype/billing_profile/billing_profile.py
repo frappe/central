@@ -39,6 +39,7 @@ class BillingProfile(Document):
 		country: DF.Link | None
 		currency: DF.Link | None
 		email: DF.Data | None
+		gst_status: DF.Literal["", "Active", "Invalid", "Suspended", "Cancelled"]
 		gstin: DF.Data | None
 		legal_name: DF.Data | None
 		manual_override: DF.Check
@@ -66,16 +67,18 @@ class BillingProfile(Document):
 		self.release_held_invoices()
 		self.enqueue_profile_sync()
 
-	def enqueue_profile_sync(self):
-		from central.billing.ingester.customer import create_customer_profile, update_customer_profile
-
+	def enqueue_profile_sync(self):		
 		if not self.profile_id:
-			create_customer_profile(self)
+			method = 'central.billing.ingester.customer.create_customer_profile'
 		else:
-			update_customer_profile
-		# frappe.enqueue(
+			method = 'central.billing.ingester.customer.update_customer_profile'
 
-		# )
+		frappe.enqueue(
+			method,
+			queue="short",
+			billing_profile=self,
+			enqueue_after_commit=True,
+		)
 
 	def release_held_invoices(self):
 		"""Settle anything held back for these details once they are on file.

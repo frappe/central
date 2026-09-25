@@ -15,7 +15,7 @@ nothing is ever read back from ERPNext into billing.
 
 import frappe
 import requests
-
+from central.billing.ingester.connection import _auth_headers
 MAX_ATTEMPTS = 3
 BACKOFF_BASE_SECONDS = 60  # 60s, 120s, 240s
 
@@ -130,19 +130,11 @@ def _post_sales_invoice(payload: dict) -> str:
 	response = requests.post(
 		f"{base}/api/resource/Sales Invoice",
 		json=payload,
-		headers=_erpnext_headers(),
+		headers=_auth_headers(),
 		timeout=30,
 	)
 	response.raise_for_status()
 	return (response.json().get("data") or {}).get("name")
-
-
-def _erpnext_headers() -> dict:
-	key = frappe.conf.get("erpnext_api_key")
-	secret = frappe.conf.get("erpnext_api_secret")
-	if key and secret:
-		return {"Authorization": f"token {key}:{secret}"}
-	return {}
 
 
 def _alert_ops(invoice: str, error: str):
