@@ -25,7 +25,6 @@ def provision_billing_profile(team: str) -> None:
 	Idempotent and best-effort per step; call it after a billing profile is
 	created/updated."""
 	assign_entry_tier(team)
-	ensure_tax_profile(team)
 	grant_welcome_credits(team)
 
 
@@ -123,7 +122,8 @@ def ensure_tax_profile(team: str) -> None:
 	profile (output tax None) — a real row an admin can edit, rather than the
 	implicit no-profile default."""
 	if frappe.db.exists("Tax Profile", team):
-		return
+		return frappe.get_cached_doc("Tax Profile", team)
+		
 
 	profile = (
 		frappe.db.get_value("Billing Profile", team, ["country", "currency"], as_dict=True) or frappe._dict()
@@ -134,7 +134,7 @@ def ensure_tax_profile(team: str) -> None:
 		if india
 		else {"output_tax_type": "None", "output_tax_rate": 0}
 	)
-	frappe.get_doc({"doctype": "Tax Profile", "team": team, **values}).insert(ignore_permissions=True)
+	return frappe.get_doc({"doctype": "Tax Profile", "team": team, **values}).insert(ignore_permissions=True)
 
 
 def grant_welcome_credits(team: str) -> None:

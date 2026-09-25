@@ -27,6 +27,8 @@
   "pincode",
   "section_break_tax",
   "gstin",
+  "column_break_jgnz",
+  "gst_status",
   "section_break_settings",
   "min_balance",
   "collection_mode",
@@ -247,11 +249,21 @@
    "fieldtype": "Data",
    "label": "Profile ID",
    "read_only": 1
+  },
+  {
+   "fieldname": "column_break_jgnz",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "gst_status",
+   "fieldtype": "Select",
+   "label": "GST Status",
+   "options": "\nActive\nInvalid\nSuspended\nCancelled"
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-09-25 19:01:58.978603",
+ "modified": "2026-09-25 21:11:58.280614",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Billing Profile",

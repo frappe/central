@@ -25,7 +25,7 @@ def post(endpoint, payload):
 		timeout=30
 	)
 	response.raise_for_status()
-	return (response.json().get('data') or {})
+	return (response.json().get('data') or response.json().get('message') or {})
 
 def get(endpoint, payload):
 	if not frappe.conf.get("enable_erpnext_sync"):
@@ -40,7 +40,7 @@ def get(endpoint, payload):
 		timeout=30
 	)
 	response.raise_for_status()
-	return (response.json().get("data") or {})
+	return (response.json().get('data') or response.json().get('message') or {})
 
 def put(endpoint, payload):
 	pass
