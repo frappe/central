@@ -131,6 +131,31 @@ class TestSweep(GstStatusTestCase):
 		self.assertEqual(len(deferred), gst_status.MAX_FAILURES_IN_A_ROW)
 		self.assertEqual(len(reached), 2)
 
+	def test_failure_after_the_status_is_stored_undoes_it(self):
+		team = profile_with_gstin("team-gst-half", "Active", checked_days_ago=30)
+		before = frappe.db.get_value("Billing Profile", team, "gst_status_checked_at")
+		real = gst_status.stale_teams
+		with (
+			patch.object(
+				gst_status, "stale_teams", side_effect=lambda limit: [t for t in real(limit) if t == team]
+			),
+			patch(LOOKUP, return_value={"status": "Cancelled", "gst_category": "SEZ"}),
+			patch(
+				"central.billing.payments.provisioning.apply_gst_category", side_effect=RuntimeError("boom")
+			),
+		):
+			self.assertEqual(gst_status.refresh_stale()["failed"], 1)
+		row = frappe.db.get_value(
+			"Billing Profile",
+			team,
+			["gst_status", "gst_category", "gst_status_checked_at", "gst_status_retry_after"],
+			as_dict=True,
+		)
+		self.assertEqual(row.gst_status, "Active")  # the half-stored answer is gone
+		self.assertFalse(row.gst_category)
+		self.assertEqual(row.gst_status_checked_at, before)  # still stale, so it is retried
+		self.assertTrue(row.gst_status_retry_after)  # ... after its wait
+
 	def test_sweep_leaves_the_commit_to_its_job(self):
 		profile_with_gstin("team-gst-nocommit")
 		with (
