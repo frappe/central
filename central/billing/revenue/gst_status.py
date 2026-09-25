@@ -25,6 +25,9 @@ SWEEP_BUDGET_SECONDS = 20 * 60
 # How long a team whose lookup failed waits before the sweep tries it again.
 FAILED_RETRY_HOURS = 24
 
+# Undoes one team's half-done refresh without touching the rest of the sweep.
+_SAVEPOINT = "gst_status_refresh"
+
 # A customer's "check again" inside this window is answered from the store.
 RECHECK_COOLDOWN_SECONDS = 10 * 60
 
@@ -163,7 +166,7 @@ def refresh_stale() -> dict:
 	"""Look up stale statuses one at a time, paced, capped and time-boxed.
 
 	Stops for the day after a run of failures: the portal or ERPNext is down, and
-	asking harder would not help it.
+	asking harder would not help it. The answers commit together when the job ends.
 	"""
 	if not lookups_enabled():
 		return {"checked": 0, "failed": 0, "skipped": "lookups_off"}
@@ -172,19 +175,19 @@ def refresh_stale() -> dict:
 	for team in stale_teams(settings.gst_status_daily_limit()):
 		if time.monotonic() - started > SWEEP_BUDGET_SECONDS:
 			break
+		frappe.db.savepoint(_SAVEPOINT)
 		try:
 			refresh(team)
 			checked += 1
 			in_a_row = 0
 		except Exception:
+			frappe.db.rollback(save_point=_SAVEPOINT)
 			failed += 1
 			in_a_row += 1
 			frappe.log_error(
 				title="GSTIN Status Lookup Failed", reference_doctype="Billing Profile", reference_name=team
 			)
 			_defer(team)
-		if not frappe.in_test:
-			frappe.db.commit()  # nosemgrep: frappe-manual-commit -- keep each answer the portal gave
 		if in_a_row >= MAX_FAILURES_IN_A_ROW:
 			break
 		time.sleep(PACE_SECONDS)
