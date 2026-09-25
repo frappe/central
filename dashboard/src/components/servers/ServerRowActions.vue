@@ -72,18 +72,18 @@ const options = computed(() => {
 	const settingUp = isSettingUp(props.server.status)
 	if (allowed.value.open && !settingUp)
 		items.push({
-			label: 'Open',
-			icon: 'lucide-external-link',
+			label: props.opensSite ? 'Visit site' : 'Open server',
+			icon: props.opensSite ? 'lucide-globe' : 'lucide-server',
 			disabled:
 				props.server.status !== 'Running' ||
 				!(props.opensSite || props.server.gateway_url),
 			onClick: () => emit('open', props.server),
 		})
-	// Open goes to the site on a site server, so Pilot admin needs its own entry.
+	// On a site server the first entry visits the site, so the server gets its own.
 	if (allowed.value.open && !settingUp && props.opensSite)
 		items.push({
-			label: 'Open Pilot',
-			icon: 'lucide-layout-dashboard',
+			label: 'Open server',
+			icon: 'lucide-server',
 			disabled: props.server.status !== 'Running' || !props.server.gateway_url,
 			onClick: () => emit('pilot', props.server),
 		})
