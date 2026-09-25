@@ -3,12 +3,11 @@
 """Keep a team's customer, address and contact in the accounting system in step
 with its Billing Profile.
 
-Runs only as its own background job, one team at a time. Each record's id is
-kept on the profile as soon as it exists, so a sync that fails half way resumes
-where it stopped instead of creating the customer again.
+A sync is a chain of background jobs, one step each. Creating a record is a step,
+so its id commits at the end of that job, and a failed step resumes from the last
+id instead of creating the customer again.
 """
 
-from contextlib import contextmanager
 from urllib.parse import quote
 
 import frappe
@@ -32,7 +31,7 @@ SYNCED_FIELDS = (
 
 PENDING_BATCH = 100
 
-# Longest a sync may hold its team's lock: three requests at their timeout, and room.
+# Longest one step may hold its team's lock: a request at its timeout, and room.
 LOCK_SECONDS = 5 * 60
 
 
@@ -46,42 +45,34 @@ def enqueue_sync(profile) -> None:
 
 
 def sync_customer_profile(team: str) -> None:
-	"""Background job: create the team's records, or bring them up to date.
+	"""Background job: take the team's next sync step, then queue the one after.
 
-	Never call it inline. It commits each record id as it lands, which is only
-	safe in a transaction that holds nothing else.
+	The team's lock is taken before anything is read and held until this job's
+	transaction ends, so the next sync to get it sees every id this one wrote.
 	"""
-	with _team_lock(team) as held:
-		if not held:
-			return  # another sync for this team is running and will finish the job
-		_fresh_snapshot()
-		profile = frappe.get_doc("Billing Profile", team)
-		if not _should_sync(profile):
-			return
-		if profile.profile_id:
-			update_customer_profile(profile)
-		else:
-			create_customer_profile(profile)
-
-
-def create_customer_profile(profile) -> None:
-	customer = post("api/resource/Customer", _customer_payload(profile))
-	# Kept before anything else can fail, so a retry updates this customer.
-	_keep(profile, "profile_id", customer.name)
-	_keep(profile, "address_id", post("api/resource/Address", _address_payload(profile)).name)
-	_keep(profile, "contact_id", post("api/resource/Contact", _contact_payload(profile)).name)
+	if not _lock_until_transaction_ends(team):
+		return  # another step for this team is running and queues what follows
+	profile = frappe.get_doc("Billing Profile", team)
+	if not _should_sync(profile):
+		return
+	if not profile.profile_id:
+		_create(profile, "profile_id", "Customer", _customer_payload)
+	elif not profile.address_id:
+		_create(profile, "address_id", "Address", _address_payload)
+	elif not profile.contact_id:
+		_create(profile, "contact_id", "Contact", _contact_payload)
+	else:
+		update_customer_profile(profile)
+		return
+	# A last update pass also catches profile edits made while the records were created.
+	_enqueue(team, job_id=f"customer-sync::{team}::next")
 
 
 def update_customer_profile(profile) -> None:
+	"""Bring all three records up to date. Safe to repeat."""
 	put(_resource("Customer", profile.profile_id), _customer_payload(profile))
-	if profile.address_id:
-		put(_resource("Address", profile.address_id), _address_payload(profile))
-	else:
-		_keep(profile, "address_id", post("api/resource/Address", _address_payload(profile)).name)
-	if profile.contact_id:
-		put(_resource("Contact", profile.contact_id), _contact_payload(profile))
-	else:
-		_keep(profile, "contact_id", post("api/resource/Contact", _contact_payload(profile)).name)
+	put(_resource("Address", profile.address_id), _address_payload(profile))
+	put(_resource("Contact", profile.contact_id), _contact_payload(profile))
 
 
 def ensure_customer(team: str) -> str | None:
@@ -122,36 +113,39 @@ def _should_sync(profile) -> bool:
 	return not frappe.db.get_value("Team", profile.team, "is_staging_trial")
 
 
-def _enqueue(team: str) -> None:
+def _enqueue(team: str, job_id: str | None = None) -> None:
 	frappe.enqueue(
 		"central.billing.ingester.customer.sync_customer_profile",
 		queue="short",
-		job_id=f"customer-sync::{team}",
+		job_id=job_id or f"customer-sync::{team}",
 		deduplicate=True,
 		enqueue_after_commit=True,
 		team=team,
 	)
 
 
-@contextmanager
-def _team_lock(team: str):
-	"""Hold the team's sync lock, or yield False if another sync has it."""
-	lock = frappe.cache.lock(frappe.cache.make_key(f"customer-sync::{team}"), timeout=LOCK_SECONDS)
-	held = lock.acquire(blocking=False)
-	try:
-		yield held
-	finally:
-		if held:
-			try:
-				lock.release()
-			except LockError:
-				pass  # it outlived its timeout; nothing left to release
+def _lock_name(team: str) -> str:
+	return frappe.cache.make_key(f"customer-sync::{team}")
 
 
-def _fresh_snapshot() -> None:
-	"""See ids a sync that just released the lock committed. Nothing is written yet."""
-	if not frappe.in_test:
-		frappe.db.rollback()
+def _lock_until_transaction_ends(team: str) -> bool:
+	"""Take the team's sync lock, released once this transaction commits or rolls back.
+
+	The timeout frees it if the worker dies first.
+	"""
+	lock = frappe.cache.lock(_lock_name(team), timeout=LOCK_SECONDS)
+	if not lock.acquire(blocking=False):
+		return False
+
+	def release():
+		try:
+			lock.release()
+		except LockError:
+			pass  # it outlived its timeout; nothing left to release
+
+	frappe.db.after_commit.add(release)
+	frappe.db.after_rollback.add(release)
+	return True
 
 
 def _pending_teams() -> list[str]:
@@ -177,11 +171,9 @@ def _blank(column):
 	return column.isnull() | (column == "")
 
 
-def _keep(profile, field: str, value: str) -> None:
-	"""Store a record id and commit it, so it survives a later step failing."""
-	profile.db_set(field, value, update_modified=False)
-	if not frappe.in_test:
-		frappe.db.commit()  # nosemgrep: frappe-manual-commit -- the record exists remotely now
+def _create(profile, field: str, doctype: str, payload) -> None:
+	record = post(f"api/resource/{doctype}", payload(profile))
+	profile.db_set(field, record.name, update_modified=False)
 
 
 def _resource(doctype: str, name: str) -> str:

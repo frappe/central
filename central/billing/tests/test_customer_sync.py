@@ -29,6 +29,7 @@ class CustomerSyncTestCase(IntegrationTestCase):
 		self._conf.start()
 
 	def tearDown(self):
+		self._end_job()
 		self._conf.stop()
 
 	def _ids(self):
@@ -36,31 +37,48 @@ class CustomerSyncTestCase(IntegrationTestCase):
 			"Billing Profile", TEAM, ["profile_id", "address_id", "contact_id"], as_dict=True
 		)
 
+	def _end_job(self):
+		"""What the end of a job's transaction does: free the team's lock."""
+		frappe.cache.delete(customer._lock_name(TEAM))
+
+	def _job(self):
+		"""Run one sync job to its end. Returns the step it queued next, if any."""
+		with patch("central.billing.ingester.customer._enqueue") as enqueue:
+			customer.sync_customer_profile(TEAM)
+		self._end_job()
+		return enqueue
+
 
 class TestCreate(CustomerSyncTestCase):
-	def test_creates_all_three_and_keeps_their_ids(self):
-		with patch(POST, side_effect=created("CUST-1", "ADDR-1", "CONT-1")) as post:
-			customer.sync_customer_profile(TEAM)
+	def test_one_record_per_job_until_all_three_exist(self):
+		with patch(POST, side_effect=created("CUST-1", "ADDR-1", "CONT-1")) as post, patch(PUT) as put:
+			for _ in range(3):
+				self._job().assert_called_once_with(TEAM, job_id=f"customer-sync::{TEAM}::next")
+			self._job().assert_not_called()  # the last pass only updates
 		self.assertEqual(
 			self._ids(), {"profile_id": "CUST-1", "address_id": "ADDR-1", "contact_id": "CONT-1"}
 		)
 		address, contact = post.call_args_list[1].args[1], post.call_args_list[2].args[1]
 		self.assertEqual(address["links"][0]["link_name"], "CUST-1")
 		self.assertEqual(contact["links"][0]["link_name"], "CUST-1")
+		self.assertEqual(put.call_count, 3)
 
-	def test_failure_half_way_resumes_without_a_second_customer(self):
-		with patch(POST, side_effect=[frappe._dict(name="CUST-1"), ConnectionError("down")]):
-			with self.assertRaises(ConnectionError):
-				customer.sync_customer_profile(TEAM)
+	def test_failed_step_resumes_without_a_second_customer(self):
+		with patch(POST, side_effect=created("CUST-1")):
+			self._job()
+		with patch(POST, side_effect=ConnectionError("down")), self.assertRaises(ConnectionError):
+			self._job()
+		self._end_job()
+		with patch(POST, side_effect=created("ADDR-1")) as post:
+			self._job()
+		self.assertEqual(post.call_args.args[0], "api/resource/Address")
 		self.assertEqual(self._ids().profile_id, "CUST-1")
+		self.assertEqual(self._ids().address_id, "ADDR-1")
 
-		with patch(POST, side_effect=created("ADDR-1", "CONT-1")) as post, patch(PUT) as put:
-			customer.sync_customer_profile(TEAM)
-		self.assertEqual(put.call_args.args[0], "api/resource/Customer/CUST-1")
-		self.assertEqual(
-			[c.args[0] for c in post.call_args_list], ["api/resource/Address", "api/resource/Contact"]
-		)
-		self.assertEqual(self._ids().contact_id, "CONT-1")
+	def test_never_commits_itself(self):
+		with patch(POST, side_effect=created("CUST-1")), patch.object(frappe.db, "commit") as commit:
+			self._job()
+		commit.assert_not_called()
 
 
 class TestUpdate(CustomerSyncTestCase):
@@ -69,7 +87,7 @@ class TestUpdate(CustomerSyncTestCase):
 			"Billing Profile", TEAM, {"profile_id": "CUST 1", "address_id": "ADDR-1", "contact_id": "CONT-1"}
 		)
 		with patch(POST) as post, patch(PUT) as put:
-			customer.sync_customer_profile(TEAM)
+			self._job().assert_not_called()
 		post.assert_not_called()
 		self.assertEqual(
 			[c.args[0] for c in put.call_args_list],
@@ -146,7 +164,7 @@ class TestGstCategory(CustomerSyncTestCase):
 
 class TestOneSyncAtATime(CustomerSyncTestCase):
 	def test_a_second_sync_while_one_runs_does_nothing(self):
-		lock = frappe.cache.lock(frappe.cache.make_key(f"customer-sync::{TEAM}"), timeout=30)
+		lock = frappe.cache.lock(customer._lock_name(TEAM), timeout=30)
 		self.assertTrue(lock.acquire(blocking=False))
 		try:
 			with patch(POST) as post:
@@ -154,6 +172,12 @@ class TestOneSyncAtATime(CustomerSyncTestCase):
 			post.assert_not_called()
 		finally:
 			lock.release()
+
+	def test_lock_is_held_until_the_transaction_ends(self):
+		with patch(POST, side_effect=created("CUST-1")), patch("central.billing.ingester.customer._enqueue"):
+			customer.sync_customer_profile(TEAM)
+		lock = frappe.cache.lock(customer._lock_name(TEAM), timeout=30)
+		self.assertFalse(lock.acquire(blocking=False))  # the id is not committed yet
 
 	def test_invoice_path_queues_the_sync_instead_of_creating(self):
 		with patch(POST) as post, patch("central.billing.ingester.customer._enqueue") as enqueue:
@@ -165,8 +189,9 @@ class TestOneSyncAtATime(CustomerSyncTestCase):
 class TestLapsedGstin(CustomerSyncTestCase):
 	def test_lapsed_gstin_is_left_off_the_records(self):
 		frappe.db.set_value("Billing Profile", TEAM, {"gstin": "27AAPFU0939F1ZV", "gst_status": "Cancelled"})
-		with patch(POST, side_effect=created("CUST-1", "ADDR-1", "CONT-1")) as post:
-			customer.sync_customer_profile(TEAM)
+		with patch(POST, side_effect=created("CUST-1", "ADDR-1")) as post:
+			self._job()
+			self._job()
 		customer_payload, address_payload = post.call_args_list[0].args[1], post.call_args_list[1].args[1]
 		self.assertEqual(customer_payload["gstin"], "")
 		self.assertEqual(address_payload["gstin"], "")

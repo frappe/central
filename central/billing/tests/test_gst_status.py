@@ -131,6 +131,15 @@ class TestSweep(GstStatusTestCase):
 		self.assertEqual(len(deferred), gst_status.MAX_FAILURES_IN_A_ROW)
 		self.assertEqual(len(reached), 2)
 
+	def test_sweep_leaves_the_commit_to_its_job(self):
+		profile_with_gstin("team-gst-nocommit")
+		with (
+			patch(LOOKUP, return_value={"status": "Active"}),
+			patch.object(frappe.db, "commit") as commit,
+		):
+			gst_status.refresh_stale()
+		commit.assert_not_called()
+
 	def test_does_nothing_when_lookups_are_off(self):
 		profile_with_gstin("team-gst-off")
 		frappe.local.conf["enable_erpnext_sync"] = 0
