@@ -9,9 +9,10 @@ import requests
 
 from central.billing.revenue import erpnext_sync
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
-from central.billing.tests.utils import ensure_team
+from central.billing.tests.utils import complete_billing_profile, ensure_team
 
 TEAM = "team-erp"
+CUSTOMER = "Team Erp Ltd"
 
 
 def ok_response(name="SINV-2026-001"):
@@ -30,6 +31,8 @@ def err_response():
 class ErpnextSyncTestBase(IntegrationTestCase):
 	def setUp(self):
 		ensure_team(TEAM)
+		complete_billing_profile(TEAM)
+		frappe.db.set_value("Billing Profile", TEAM, "profile_id", CUSTOMER)
 		frappe.conf.erpnext_url = "https://erp.example"
 		self._purge()
 
@@ -89,6 +92,7 @@ class TestSyncSuccess(ErpnextSyncTestBase):
 		payload = post.call_args.kwargs["json"]
 		self.assertEqual(payload["doctype"], "Sales Invoice")
 		self.assertEqual(payload["cloud_billing_invoice"], inv)
+		self.assertEqual(payload["customer"], CUSTOMER)  # the synced customer, not the team
 		self.assertEqual(len(payload["items"]), 1)
 
 	def test_already_synced_is_idempotent(self):
@@ -109,6 +113,14 @@ class TestSyncSuccess(ErpnextSyncTestBase):
 
 
 class TestFailureIsolation(ErpnextSyncTestBase):
+	def test_team_without_a_customer_retries_later(self):
+		inv = self._paid_invoice()
+		frappe.db.set_value("Billing Profile", TEAM, "profile_id", None)
+		with patch("central.billing.revenue.erpnext_sync.requests.post") as post:
+			out = erpnext_sync.sync_invoice(inv)
+			post.assert_not_called()
+		self.assertTrue(out["retry_scheduled"])
+
 	def test_erpnext_500_does_not_touch_the_customer_invoice(self):
 		inv = self._paid_invoice()
 		with patch("central.billing.revenue.erpnext_sync.requests.post", return_value=err_response()):
