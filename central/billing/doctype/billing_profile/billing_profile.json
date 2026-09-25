@@ -10,6 +10,8 @@
   "team_owner",
   "column_break_hfov",
   "profile_id",
+  "address_id",
+  "contact_id",
   "section_break_currency",
   "currency",
   "section_break_contact",
@@ -246,10 +248,24 @@
    "fieldtype": "Column Break"
   },
   {
-   "description": "Will get synced from frappe.io",
+   "description": "Customer record in the accounting system. Set by the sync.",
    "fieldname": "profile_id",
    "fieldtype": "Data",
    "label": "Profile ID",
+   "read_only": 1
+  },
+  {
+   "description": "Billing address record in the accounting system. Set by the sync.",
+   "fieldname": "address_id",
+   "fieldtype": "Data",
+   "label": "Address ID",
+   "read_only": 1
+  },
+  {
+   "description": "Contact record in the accounting system. Set by the sync.",
+   "fieldname": "contact_id",
+   "fieldtype": "Data",
+   "label": "Contact ID",
    "read_only": 1
   },
   {
@@ -280,7 +296,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-09-25 22:00:00.000000",
+ "modified": "2026-09-25 23:30:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Billing Profile",

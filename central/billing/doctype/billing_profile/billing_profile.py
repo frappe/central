@@ -31,15 +31,19 @@ class BillingProfile(Document):
 	if TYPE_CHECKING:
 		from frappe.types import DF
 
+		address_id: DF.Data | None
 		address_line1: DF.Data | None
 		address_line2: DF.Data | None
 		city: DF.Data | None
 		collection_action_reason: DF.Data | None
 		collection_mode: DF.Literal["Auto Charge", "Manual Checkout", "Prepaid", "Action Required"]
+		contact_id: DF.Data | None
 		country: DF.Link | None
 		currency: DF.Link | None
 		email: DF.Data | None
-		gst_status: DF.Literal["", "Active", "Invalid", "Suspended", "Cancelled"]
+		gst_category: DF.Data | None
+		gst_status: DF.Literal["", "Active", "Inactive", "Suspended", "Cancelled", "Invalid"]
+		gst_status_checked_at: DF.Datetime | None
 		gstin: DF.Data | None
 		legal_name: DF.Data | None
 		manual_override: DF.Check
@@ -69,24 +73,16 @@ class BillingProfile(Document):
 		self.enqueue_profile_sync()
 
 	def refresh_gst_status_on_change(self):
-		"""A new GSTIN starts with no status. The first one is looked up with the ERPNext customer."""
+		"""A new GSTIN starts with no status and is looked up in the background."""
 		from central.billing.revenue import gst_status
 
-		if self.get_doc_before_save() and self.has_value_changed("gstin"):
+		if self.has_value_changed("gstin"):
 			gst_status.forget(self)
 
 	def enqueue_profile_sync(self):
-		if not self.profile_id:
-			method = "central.billing.ingester.customer.create_customer_profile"
-		else:
-			method = "central.billing.ingester.customer.update_customer_profile"
+		from central.billing.ingester.customer import enqueue_sync
 
-		frappe.enqueue(
-			method,
-			queue="short",
-			billing_profile=self,
-			enqueue_after_commit=True,
-		)
+		enqueue_sync(self)
 
 	def release_held_invoices(self):
 		"""Settle anything held back for these details once they are on file.

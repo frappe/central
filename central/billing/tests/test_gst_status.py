@@ -36,8 +36,11 @@ class GstStatusTestCase(IntegrationTestCase):
 		self._conf.start()
 		self._pace = patch.object(gst_status, "PACE_SECONDS", 0)
 		self._pace.start()
+		self._customer_sync = patch("central.billing.ingester.customer._enqueue")
+		self._customer_sync.start()
 
 	def tearDown(self):
+		self._customer_sync.stop()
 		self._pace.stop()
 		self._conf.stop()
 

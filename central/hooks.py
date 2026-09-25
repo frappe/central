@@ -218,6 +218,8 @@ scheduler_events = {
 		"central.billing.revenue.credits.run_credit_expiry",
 		# Keep stored GSTIN statuses fresh for invoicing, a paced and capped batch a day.
 		"central.billing.revenue.gst_status.run_gst_status_refresh",
+		# Retry billing profiles whose customer records never finished syncing.
+		"central.billing.ingester.customer.sync_pending_profiles",
 		# Services (LLM): refresh the model catalog from the Grove backend.
 		"central.services.llm.sync_models",
 		# Assert the money invariants that no DB constraint can hold (they span

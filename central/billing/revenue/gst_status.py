@@ -44,7 +44,10 @@ def standing(team: str) -> frappe._dict:
 
 
 def store(team: str, gstin: str, details: dict) -> None:
-	"""Save what the portal said, unless the GSTIN changed while we asked."""
+	"""Save what the portal said, unless the GSTIN changed while we asked.
+
+	The GST category also decides whether the team is zero-rated as SEZ.
+	"""
 	values = {"gst_status_checked_at": frappe.utils.now_datetime()}
 	status = (details.get("status") or "").strip().title()
 	if status in KNOWN:
@@ -55,7 +58,13 @@ def store(team: str, gstin: str, details: dict) -> None:
 		)
 	if details.get("gst_category"):
 		values["gst_category"] = details["gst_category"]
-	frappe.db.set_value("Billing Profile", {"name": team, "gstin": gstin}, values, update_modified=False)
+	if frappe.db.get_value("Billing Profile", team, "gstin") != gstin:
+		return
+	frappe.db.set_value("Billing Profile", team, values, update_modified=False)
+	if details.get("gst_category"):
+		from central.billing.payments.provisioning import apply_gst_category
+
+		apply_gst_category(team, details["gst_category"])
 
 
 def refresh(team: str) -> str | None:

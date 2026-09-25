@@ -25,6 +25,7 @@ def provision_billing_profile(team: str) -> None:
 	Idempotent and best-effort per step; call it after a billing profile is
 	created/updated."""
 	assign_entry_tier(team)
+	ensure_tax_profile(team)
 	grant_welcome_credits(team)
 
 
@@ -115,15 +116,14 @@ def assign_entry_tier(team: str) -> None:
 	profile.save(ignore_permissions=True)
 
 
-def ensure_tax_profile(team: str) -> None:
+def ensure_tax_profile(team: str):
 	"""Create the team's Tax Profile if absent.
 
 	India is GST at the rate on Billing Settings; everywhere else ships an untaxed
 	profile (output tax None) — a real row an admin can edit, rather than the
 	implicit no-profile default."""
 	if frappe.db.exists("Tax Profile", team):
-		return frappe.get_cached_doc("Tax Profile", team)
-		
+		return frappe.get_doc("Tax Profile", team)
 
 	profile = (
 		frappe.db.get_value("Billing Profile", team, ["country", "currency"], as_dict=True) or frappe._dict()
@@ -135,6 +135,18 @@ def ensure_tax_profile(team: str) -> None:
 		else {"output_tax_type": "None", "output_tax_rate": 0}
 	)
 	return frappe.get_doc({"doctype": "Tax Profile", "team": team, **values}).insert(ignore_permissions=True)
+
+
+def apply_gst_category(team: str, category: str | None) -> None:
+	"""Zero-rate an SEZ team, and undo it once its GST category is no longer SEZ."""
+	profile = ensure_tax_profile(team)
+	is_sez = category == "SEZ"
+	was_sez = bool(profile.zero_rated) and profile.zero_rating_reason == "SEZ"
+	if is_sez == was_sez:
+		return
+	profile.zero_rated = int(is_sez)
+	profile.zero_rating_reason = "SEZ" if is_sez else None
+	profile.save(ignore_permissions=True)
 
 
 def grant_welcome_credits(team: str) -> None:
