@@ -81,6 +81,34 @@ class TestAtlasErrors(IntegrationTestCase):
 				self.client.create_vm({"image_id": "pilot"})
 		request.assert_called_once()
 
+	def test_metadata_the_host_would_refuse_is_never_sent(self):
+		"""Metal refuses it only after Atlas saved a draft machine, so Central stops it first."""
+		oversized = {
+			"too many entries": {f"key-{index}": "value" for index in range(65)},
+			"key too long": {"k" * 129: "value"},
+			"value too long": {"pilot-central": "v" * 1025},
+		}
+		for case, metadata in oversized.items():
+			with (
+				self.subTest(case=case),
+				patch("central.integrations.atlas.requests.request") as request,
+				self.assertRaises(frappe.ValidationError),
+			):
+				self.client.create_vm({"image_id": "pilot", "metadata": metadata})
+			request.assert_not_called()
+
+	def test_metadata_at_the_limits_is_sent(self):
+		metadata = {f"key-{index}": "value" for index in range(63)} | {"k" * 128: "v" * 1024}
+		with (
+			patch.object(self.client, "_configuration", return_value=("https://atlas.example.test", 1)),
+			patch("central.integrations.atlas.mint_atlas_token", return_value="test-token"),
+			patch(
+				"central.integrations.atlas.requests.request", return_value=self.response(202, {})
+			) as request,
+		):
+			self.client.create_vm({"image_id": "pilot", "metadata": metadata})
+		request.assert_called_once()
+
 	def test_unknown_error_does_not_claim_nothing_changed(self):
 		with patch("central.errors.frappe.log_error"):
 			error = to_error_response(RuntimeError("private internal detail"))

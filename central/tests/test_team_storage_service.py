@@ -5,6 +5,7 @@ from unittest.mock import Mock, patch
 
 import frappe
 
+from central.integrations.atlas import MAXIMUM_METADATA_VALUE_BYTES
 from central.integrations.bucket_provisioning import BucketProvisioning
 from central.integrations.object_storage import ObjectStorageRequestUncertain
 from central.integrations.resource_actions import _create_payload
@@ -175,8 +176,14 @@ class TestPilotStoragePayload(TestCase):
 		):
 			payload = _create_payload(pilot_request())
 
-		metadata = json.loads(payload["metadata"]["pilot-central"])
-		self.assertEqual(metadata["s3"], STORAGE_CONFIG)
+		metadata = payload["metadata"]
+		self.assertEqual(json.loads(metadata["pilot-storage"]), STORAGE_CONFIG)
+		self.assertEqual(json.loads(metadata["pilot-telemetry"]), TELEMETRY_CONFIG)
+		self.assertNotIn("s3", json.loads(metadata["pilot-central"]))
+		self.assertTrue(
+			all(len(value.encode()) <= MAXIMUM_METADATA_VALUE_BYTES for value in metadata.values()),
+			"Metal refuses a guest metadata value over 1 KiB.",
+		)
 
 	def test_storage_failure_does_not_block_pilot_creation(self):
 		request = pilot_request()
@@ -189,8 +196,7 @@ class TestPilotStoragePayload(TestCase):
 		):
 			payload = _create_payload(request)
 
-		metadata = json.loads(payload["metadata"]["pilot-central"])
-		self.assertNotIn("s3", metadata)
+		self.assertNotIn("pilot-storage", payload["metadata"])
 		request.record_diagnostic.assert_called_once()
 
 	def test_pilot_payload_contains_the_telemetry_configuration(self):
@@ -209,8 +215,7 @@ class TestPilotStoragePayload(TestCase):
 		):
 			payload = _create_payload(request)
 
-		metadata = json.loads(payload["metadata"]["pilot-central"])
-		self.assertEqual(metadata["telemetry"], TELEMETRY_CONFIG)
+		self.assertEqual(json.loads(payload["metadata"]["pilot-telemetry"]), TELEMETRY_CONFIG)
 		# The server does not exist yet, so the token names the one this request creates.
 		mint.assert_called_once_with(7, "server-action-1")
 
@@ -228,6 +233,5 @@ class TestPilotStoragePayload(TestCase):
 		):
 			payload = _create_payload(request)
 
-		metadata = json.loads(payload["metadata"]["pilot-central"])
-		self.assertNotIn("telemetry", metadata)
+		self.assertNotIn("pilot-telemetry", payload["metadata"])
 		request.record_diagnostic.assert_called_once()

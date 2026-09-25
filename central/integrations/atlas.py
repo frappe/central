@@ -18,6 +18,10 @@ if TYPE_CHECKING:
 
 # The tag that ties a region's Machine image to the Central snapshot it holds.
 SNAPSHOT_TAG = "central_snapshot"
+# The region's host (Metal) refuses guest metadata beyond these limits.
+MAXIMUM_METADATA_ENTRIES = 64
+MAXIMUM_METADATA_KEY_BYTES = 128
+MAXIMUM_METADATA_VALUE_BYTES = 1024
 
 
 class AtlasClient:
@@ -63,7 +67,27 @@ class AtlasClient:
 
 	def create_vm(self, payload: dict) -> dict:
 		"""Submit once. A lost reply must never trigger an automatic create retry."""
+		self._validate_metadata(payload.get("metadata") or {})
 		return self._request("POST", "virtual-machines", payload=payload)
+
+	@staticmethod
+	def _validate_metadata(metadata: dict[str, str]) -> None:
+		"""Metal refuses these only after Atlas saved a draft machine."""
+		if len(metadata) > MAXIMUM_METADATA_ENTRIES:
+			frappe.throw(_("Guest metadata has more than {0} entries.").format(MAXIMUM_METADATA_ENTRIES))
+		for key, value in metadata.items():
+			if len(key.encode()) > MAXIMUM_METADATA_KEY_BYTES:
+				frappe.throw(
+					_("Guest metadata key {0} is longer than {1} bytes.").format(
+						key, MAXIMUM_METADATA_KEY_BYTES
+					)
+				)
+			if len(value.encode()) > MAXIMUM_METADATA_VALUE_BYTES:
+				frappe.throw(
+					_("Guest metadata {0} is longer than {1} bytes.").format(
+						key, MAXIMUM_METADATA_VALUE_BYTES
+					)
+				)
 
 	def get_vm(self, name: str) -> dict:
 		return self._get(f"virtual-machines/{quote(name, safe='')}")
