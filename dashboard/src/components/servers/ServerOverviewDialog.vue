@@ -286,7 +286,7 @@ const planLabel = computed(() =>
 				<Button
 					v-if="props.server && canOpen"
 					variant="subtle"
-					:label="opensSite ? 'Open' : 'Open server'"
+					:label="opensSite ? 'Visit site' : 'Open server'"
 					icon-right="lucide-arrow-up-right"
 					@click="openServer"
 				/>

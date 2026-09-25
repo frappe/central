@@ -34,6 +34,7 @@ defineEmits<{
 	clearLocation: []
 	overview: [server: VirtualMachineRow]
 	open: [server: VirtualMachineRow]
+	pilot: [server: VirtualMachineRow]
 	start: [server: VirtualMachineRow]
 	stop: [server: VirtualMachineRow]
 	restart: [server: VirtualMachineRow]
@@ -187,6 +188,7 @@ const _hoverId = defineModel<string | null>('hoverId', { required: true })
 								"
 								@overview="$emit('overview', $event)"
 								@open="$emit('open', $event)"
+								@pilot="$emit('pilot', $event)"
 								@start="$emit('start', $event)"
 								@stop="$emit('stop', $event)"
 								@restart="$emit('restart', $event)"
