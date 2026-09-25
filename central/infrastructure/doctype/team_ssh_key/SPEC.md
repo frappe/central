@@ -10,7 +10,7 @@ A Team SSH Key stores one public login key. A server records the keys selected w
 
 ## Creation
 
-The Ubuntu creation form lists the active Team's keys. The Add SSH key action creates a Team SSH Key and selects it in the form. Central saves selected key links on the Virtual Machine and sends their public values in the Atlas create request. An Ubuntu server needs at least one selected key.
+The Ubuntu creation form lists the active Team's keys. The Add SSH key action creates a Team SSH Key and selects it in the form. Central saves selected key links on the Virtual Machine and sends their public values in the Atlas create request. The saved request holds only the key links. Central reads the public values when it sends the request, so a retry sends the current value of a rotated key. An Ubuntu server needs at least one selected key.
 
 ## Rotation
 

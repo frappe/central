@@ -13,7 +13,7 @@ from central.infrastructure.doctype.vm_snapshot import vm_snapshot
 from central.infrastructure.doctype.vm_snapshot.vm_snapshot import VMSnapshot
 from central.integrations.atlas import AtlasClient
 from central.integrations.images import snapshot_image, snapshot_source
-from central.integrations.servers import process_command
+from central.integrations.resource_actions import process_command
 from central.resource_actions import submit_command
 from central.tests.test_iam import ensure_user
 from central.tests.utils import ensure_atlas_instance
@@ -356,8 +356,8 @@ class TestTerminateWithSnapshot(SnapshotTestCase):
 	def setUp(self):
 		super().setUp()
 		self.client = MagicMock()
-		self.enterContext(patch("central.integrations.servers._client", return_value=self.client))
-		self.enterContext(patch("central.integrations.servers._wait_for_power_state"))
+		self.enterContext(patch("central.integrations.servers.get_client", return_value=self.client))
+		self.enterContext(patch("central.integrations.servers.wait_for_power_state"))
 		self.enterContext(patch("central.integrations.servers.observe_server", return_value="Terminated"))
 		self.enterContext(patch("frappe.enqueue"))
 		frappe.set_user(self.owner)

@@ -47,7 +47,7 @@ minting `webhook_secret` the first time it runs and reusing it after. The payloa
 raising where more than one Central environment shares an Atlas — Atlas itself refuses
 anything but 1 outside developer mode. Run it after Test Connection succeeds; it does not
 itself prove Atlas is reachable. A failure raises and shows in the Desk like any other
-action; nothing about it is recorded on the record itself.
+action; nothing about it is recorded on the record itself. After Atlas is enrolled, it registers the region's Cargo when Cargo already answers. See [Registration](#registration).
 
 Changing the endpoint or numeric region ID clears the connection result. Image offerings
 read the regional catalog on demand.
@@ -62,24 +62,21 @@ non-secret allowlist (`region`, `status`, `reachable`, and the display fields). 
 
 ## Scope and Cargo
 
-Cargo also connects through this record, in its own `cargo_*` fields, under the Cargo tab.
-Cargo runs on infrastructure Atlas itself provisions in the region (see
-`atlas/docs/bootstrapping.md`) and holds its own credentials to call Atlas and the Proxy —
-neither of those is Central's concern. What Central needs is narrower: `cargo_base_url`
-(operator-entered, the same way Atlas's `base_url` is) and `cargo_status`, plus
-`cargo_webhook_secret`, which verifies its service reports (`central.integrations.
-state_delivery.accept_cargo_report`).
+Cargo also connects through this record, in its own `cargo_*` fields, under the Cargo tab. Atlas builds Cargo in the region and gives it its own credentials to call Atlas and the Proxy. Atlas installs Cargo with a placeholder Central URL and delivery secret, so Cargo reports nothing until Central registers it. Central needs three values: the Cargo address, `cargo_status`, and `cargo_webhook_secret`, which verifies Cargo's service reports in `central.integrations.state_delivery.accept_cargo_report`.
 
-**Enroll Cargo** is the operator action that finishes the connection, once the address is
-in, shown only on the Cargo tab. It checks the Frappe liveness endpoint
-(`/api/method/ping`) of `cargo_base_url` first —
-Cargo has no polled Test Connection of its own, so this is the one place Central checks
-before it acts — then mints a fresh `cargo_webhook_secret` and hands it to Cargo through
-`cargo.api.webhooks.configure` (signed with `mint_cargo_token`), and only then sets
-`cargo_status` to `Registered`. Cargo reports itself in from there, once it and its first
-storage cluster exist; `accept_cargo_report` refuses every report until this has run. A
-failure — Cargo not up yet, or rejecting the configuration — raises and shows in the Desk;
-run the action again once Cargo answers.
+`Region.get_cargo_url` gives the Cargo address. It is `cargo_base_url` when an operator sets it, for example `http://10.0.0.5:8000` in development. Otherwise it is `https://cargo.<region>.<wildcard domain>`, where Atlas serves every Cargo it builds.
+
+### Registration
+
+`register_cargo` checks `/api/method/ping` at the Cargo address. When Cargo answers `pong`, Central sends it a fresh `cargo_webhook_secret` and Central's receiver URL through `cargo.api.webhooks.configure`, and sets `cargo_status` to Registered. A repeat only replaces the secret, so it is safe to retry. `accept_cargo_report` refuses every report until then.
+
+| Trigger | When Cargo answers | When Cargo does not answer or refuses |
+|---|---|---|
+| **Enroll Atlas** | Atlas and Cargo are both enrolled. | Atlas stays enrolled. A refusal leaves an Error Log on the Region. The Desk says Central retries. |
+| `register_pending_cargo`, every 10 minutes | Cargo becomes Registered. | Cargo stays Draft. A refusal leaves an Error Log on the Region. |
+| **Enroll Cargo** on the Cargo tab | Cargo becomes Registered. | The action fails and shows the reason in the Desk. |
+
+The sweep checks only Active regions whose Atlas is enrolled and whose Cargo is Draft, because Atlas does not report when Cargo is up. A Disabled Cargo is never registered automatically. After registration, Cargo reports its storage cluster, and Central records the region's storage Service Detail.
 
 Atlas and Cargo are not peers: Cargo is created by Atlas and depends on it being there
 first. That asymmetry is a fact about provisioning, not about where Central keeps its own

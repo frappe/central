@@ -4,7 +4,8 @@ import frappe
 from frappe.tests import IntegrationTestCase
 
 from central.billing.catalog.server_plans import _profiles
-from central.server_provisioning import image_shape
+from central.resource_actions import _build_server_configuration, image_shape
+from central.server_models import CreateServerInput
 
 
 class TestServerProvisioningShapes(IntegrationTestCase):
@@ -43,3 +44,43 @@ class TestServerProvisioningShapes(IntegrationTestCase):
 
 		self.assertEqual([profile["sub_category"] for profile in profiles], ["mixed"])
 		self.assertEqual(profiles[0]["vcpu_steps"], [1, 2])
+
+	def test_saved_keys_are_checked_but_only_their_ids_are_stored(self):
+		"""Dispatch reads the key text, so a rotation before a retry sends the current key."""
+		server_input = CreateServerInput.model_validate(
+			{
+				"team": "team-a",
+				"region": "region-a",
+				"title": "worker",
+				"offering": "ubuntu",
+				"image_id": "image-a",
+				"request_key": "request-key-00000001",
+				"plan": "plan-a",
+				"ssh_key_ids": ["key-a"],
+			}
+		)
+		image = {"tags": {"os": "Ubuntu"}, "rootfs_size_mib": 8192}
+		with (
+			patch("central.resource_actions.selected_image", return_value=image),
+			patch(
+				"central.resource_actions.validate_purchase",
+				return_value=(
+					[
+						{"resource_type": "Compute", "quantity": 1, "unit": "vCPU"},
+						{"resource_type": "Memory", "quantity": 1, "unit": "GB"},
+						{"resource_type": "Disk", "quantity": 20, "unit": "GB"},
+					],
+					10.0,
+				),
+			),
+			patch(
+				"central.resource_actions.resolve_team_ssh_keys", return_value=["ssh-ed25519 AAAA"]
+			) as resolve,
+			patch("central.resource_actions.get_team_currency", return_value="USD"),
+			patch("central.resource_actions.frappe.db.get_value", return_value="Monthly"),
+		):
+			configuration, _rate = _build_server_configuration(server_input, None)
+
+		resolve.assert_called_once_with("team-a", ["key-a"])
+		self.assertEqual(configuration.ssh_key_ids, ["key-a"])
+		self.assertEqual(configuration.ssh_keys, [])

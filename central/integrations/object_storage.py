@@ -38,7 +38,7 @@ class ObjectStorageClient:
 	"""Call one region's Cargo bucket-control API."""
 
 	def __init__(self, region: Region):
-		self.cargo_endpoint = region.cargo_base_url
+		self.cargo_endpoint = region.get_cargo_url()
 		self.region = region.name
 		self.region_id = region.get_atlas_region_id()
 
@@ -52,13 +52,6 @@ class ObjectStorageClient:
 		):
 			frappe.throw(
 				_("No available storage service in region {0}.").format(region.name), frappe.ValidationError
-			)
-
-		# Region clears a blank Cargo base URL to None, so a region whose Cargo was never
-		# enrolled reaches here with nothing to call.
-		if not region.cargo_base_url:
-			frappe.throw(
-				_("Region {0} has no Cargo endpoint.").format(region.name), ObjectStorageConnectionError
 			)
 
 		return cls(region)

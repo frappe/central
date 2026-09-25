@@ -24,7 +24,7 @@ The request key is unique within a Team. Reusing it with identical inputs return
 
 A repeat under a new key is also answered with the saved action, when the same requester sent the same settings and no region has returned a VM identity yet. Central saves the request before it calls a region, so a lost reply leaves the record while the caller keeps nothing. A request that already holds a VM identity never matches, so a deliberate second server is still a second record. The request digest covers the settings only, not the key.
 
-API routes remain thin. `central/server_models.py` defines input and saved-configuration models. `central/server_provisioning.py` owns creation policy. `central/resource_actions.py` owns power-operation authorization. Billing catalog modules own purchase and repricing policy. Remote calls and observed-state writes belong to `central/integrations/`. Resource Action queues every server and trial-site operation after the request transaction commits.
+API routes remain thin. `central/server_models.py` defines input and saved-configuration models. `central/resource_actions.py` owns intake: creation policy and command authorization. `central/integrations/resource_actions.py` owns dispatch, recovery and completion. `central/integrations/servers.py` holds the plain Atlas server calls. Billing catalog modules own purchase and repricing policy. Remote calls and observed-state writes belong to `central/integrations/`. Resource Action queues every server and trial-site operation after the request transaction commits.
 
 ## Console API
 
@@ -53,11 +53,11 @@ Action Status contains `action`, `status`, `resource_id`, `title`, and an option
 | Uncertain | The mutation may have succeeded and the region could not be reached to find out. A creation is looked up again on the next sweep. |
 | Succeeded | A scoped read confirmed the target state, or termination returned a scoped not-found response. |
 | Failed | A definite rejection or observed failure is recorded. The record retains the error and any accepted VM identity. |
-| Timed Out | A historical terminal state. Elapsed time alone does not prove failure or permit a repeated create. |
+| Timed Out | A power, restart, or terminate command did not reach its goal within 10 minutes of dispatch. A creation never times out, and elapsed time never permits a repeated create. |
 
 The worker saves the remote VM identity before billing or local finalization. A local failure retains that identity and a readable error. Recovery retries local finalization and regional reads. It does not repeat the create call. A resize saves its absolute target before dispatch. Recovery observes the current shape before it sends another resize, and billing changes only after the observed shape matches the target.
 
-The scheduled recovery job selects old actions that have not finished. Redis and database locks serialize workers. Customer retries cannot change an existing action's payload. A power, resize, or terminate request cannot start while another action is pending for the same server.
+The scheduled recovery job selects old actions that have not finished. Redis and database locks serialize workers. A dispatch job and its Redis lock share one timeout: 20 minutes, or 35 minutes for a resize, which waits for a stop and a start. So a second worker cannot start while the first still works. Customer retries cannot change an existing action's payload. A power, resize, or terminate request cannot start while another action is pending for the same server. `ResourceAction.get_pending` owns this rule: it returns the pending action when the request repeats it, and refuses a different one. `ResourceAction.queue` saves every new action, and `ResourceAction.is_allowed` rechecks the requester before dispatch against the one `ACTION_CAPABILITIES` map. `ResourceAction.fail` records an Atlas or validation error: an uncertain reply becomes Uncertain and any other error becomes Failed. `ResourceAction.finish` settles a create or a command from the observed server status and `GOAL_STATUS`.
 
 A creation the region never answered settles itself. Central stamps its action ID into the guest metadata of every create, so it asks the region what that request built. The region lists newest first, and the search stops at the first machine older than the dispatch. A machine counts only when its tenant, image and action marker all match, so another request's machine is never adopted.
 
@@ -84,7 +84,7 @@ A retry requires `server:create` and re-checks the plan, the trial limit and the
 
 ## Pilot and Ubuntu
 
-A Pilot creation issues one credential before dispatch. Atlas receives the `pilot-central` metadata document with the Central endpoint, bearer token, public-key endpoint, audience ID, and the signing key set itself. The keys travel with the credential so the Pilot's first token needs no fetch, and a boot before Central is reachable still verifies. Central stores the token hash, not its plaintext, and keeps credentials outside the saved request payload and customer status.
+A Pilot creation issues one credential before dispatch. `get_bootstrap_metadata` in `central/integrations/pilot.py` mints it and builds the `pilot-central` metadata document. Atlas receives that document with the Central endpoint, bearer token, public-key endpoint, audience ID, and the signing key set itself. The keys travel with the credential so the Pilot's first token needs no fetch, and a boot before Central is reachable still verifies. Central stores the token hash, not its plaintext, and keeps credentials outside the saved request payload and customer status. A creation that fails before the region accepts a machine revokes this credential. An Uncertain creation keeps it until a completed search settles the request.
 
 An accepted Pilot VM is linked to its credential during local finalization. Its management gateway uses Atlas's `proxy_hostname_suffix`. A running VM does not prove that Pilot or a site is ready. Site readiness and signup belong to the next phase.
 
@@ -112,7 +112,7 @@ A scoped not-found response records the server as terminated, applies the billin
 
 The console selects region, offering, exact build, and compatible plan. It keeps no copy of the request: `central.api.servers.registry` returns the team's unfinished creations, and the form picks up the one this user started. A page reload, a second tab and a lost reply all reach the same record instead of starting another. Switching Teams clears the visible action and ignores late responses from the previous Team.
 
-Resize uses the same action flow. `central.api.servers.resize_server` validates the target and inserts the action. The integration grows a disk online when CPU and memory stay the same. When CPU or memory changes, it stops the VM and sends the full CPU, memory, and disk target. A server with idle sleep on also receives the resize call, which turns sleep off. The integration starts the VM, records the observed shape, and then asks billing to reprice. A billing failure leaves the action at Sent, so recovery can finish the local change without repeating a confirmed remote resize.
+Resize uses the same action flow. `central.api.servers.resize_server` validates the target and inserts the action. The integration grows a disk online when CPU and memory stay the same. When CPU or memory changes, it stops the VM and sends the full CPU, memory, and disk target. A server with idle sleep on also receives a resize call that changes only the idle time, which turns sleep off. The integration starts the VM, records the observed shape, and then asks billing to reprice. A billing failure leaves the action at Sent, so recovery can finish the local change without repeating a confirmed remote resize.
 
 ## Validation
 

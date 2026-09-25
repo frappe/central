@@ -9,7 +9,7 @@ frappe.ui.form.on("Region", {
 				return;
 			}
 
-			const response = await frm.call({ method: "test_connection", freeze: true });
+			const response = await frm.call({ doc: frm.doc, method: "test_connection", freeze: true });
 			const result = response.message;
 			frappe.show_alert(
 				{
@@ -44,20 +44,20 @@ function update_enroll_buttons(frm) {
 				return;
 			}
 
-			await frm.call({ method: "enroll_atlas", freeze: true });
+			await frm.call({ doc: frm.doc, method: "enroll_atlas", freeze: true });
 			frappe.show_alert({ message: __("Atlas enrolled"), indicator: "green" }, 5);
 			await frm.reload_doc();
 		});
 	}
 
-	if (active_tab === "cargo_tab" && frm.doc.cargo_base_url && frm.doc.cargo_status !== "Registered") {
+	if (active_tab === "cargo_tab" && frm.doc.cargo_status === "Draft") {
 		frm.add_custom_button(__("Enroll Cargo"), async () => {
 			if (frm.is_dirty()) {
 				frappe.msgprint(__("Save the region before enrolling its Cargo."));
 				return;
 			}
 
-			await frm.call({ method: "enroll_cargo", freeze: true });
+			await frm.call({ doc: frm.doc, method: "enroll_cargo", freeze: true });
 			frappe.show_alert({ message: __("Cargo enrolled"), indicator: "green" }, 5);
 			await frm.reload_doc();
 		});

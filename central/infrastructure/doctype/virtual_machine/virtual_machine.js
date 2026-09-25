@@ -26,6 +26,7 @@ frappe.ui.form.on("Virtual Machine", {
 				__("Sync state"),
 				async () => {
 					const response = await frm.call({
+						doc: frm.doc,
 						method: "sync_state",
 						freeze: true,
 						freeze_message: __("Asking the region…"),
@@ -44,7 +45,7 @@ frappe.ui.form.on("Virtual Machine", {
 		if (frm.doc.status === "Terminated") {
 			frm.add_custom_button(__("Remove routes"), () =>
 				frappe.confirm(__("Remove every site and domain route of {0}?", [frm.doc.resource_id]), () =>
-					frm.call({ method: "remove_routes", freeze: true }).then((r) => {
+					frm.call({ doc: frm.doc, method: "remove_routes", freeze: true }).then((r) => {
 						if (r.exc) return;
 						frappe.show_alert({ message: __("Route removal queued"), indicator: "blue" }, 5);
 					}),

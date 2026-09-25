@@ -1,4 +1,7 @@
+import datetime
 import json
+import os
+import time
 from copy import deepcopy
 from unittest.mock import patch
 
@@ -9,9 +12,8 @@ from central.billing.tests.utils import make_plan
 from central.errors import AtlasConnectionError, AtlasRequestUncertain
 from central.infrastructure.doctype.resource_action.resource_action import ResourceAction
 from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
-from central.integrations.server_provisioning import _process_locked
-from central.resource_actions import get_status
-from central.server_provisioning import submit_request
+from central.integrations.resource_actions import _process_locked
+from central.resource_actions import get_status, submit_request
 
 COMPOSITION = [
 	{"resource_type": "Compute", "quantity": 1, "unit": "vCPU"},
@@ -32,19 +34,19 @@ class TestResourceActions(IntegrationTestCase):
 		self.enterContext(patch("central.billing.catalog.subscriptions.create_server_subscription"))
 		self.enterContext(
 			patch(
-				"central.integrations.server_provisioning.central_url",
+				"central.integrations.pilot.central_url",
 				return_value="https://central.example.test",
 			)
 		)
 		self.enterContext(
 			patch(
-				"central.integrations.server_provisioning.jwks_url",
+				"central.integrations.pilot.jwks_url",
 				return_value="https://central.example.test/jwks",
 			)
 		)
-		self.client = self.enterContext(patch("central.integrations.server_provisioning.AtlasClient"))
+		self.client = self.enterContext(patch("central.integrations.resource_actions.AtlasClient"))
 		self.observation = self.enterContext(
-			patch("central.integrations.server_provisioning.observe_server", return_value="Running")
+			patch("central.integrations.servers.observe_server", return_value="Running")
 		)
 		self.region = frappe.get_doc(
 			{
@@ -66,9 +68,9 @@ class TestResourceActions(IntegrationTestCase):
 			"rootfs_size_mib": 8192,
 			"tags": {"purpose": "pilot"},
 		}
-		self.enterContext(patch("central.server_provisioning.selected_image", return_value=self.image))
+		self.enterContext(patch("central.resource_actions.selected_image", return_value=self.image))
 		self.purchase = self.enterContext(
-			patch("central.server_provisioning.validate_purchase", return_value=(COMPOSITION, 100))
+			patch("central.resource_actions.validate_purchase", return_value=(COMPOSITION, 100))
 		)
 		self.client.return_value.tenant_id = self.team.tenant_id
 		self.client.return_value.create_vm.return_value = {"id": "vm-00001", "tenant_id": self.team.tenant_id}
@@ -188,6 +190,31 @@ class TestResourceActions(IntegrationTestCase):
 		self.assertEqual(frappe.db.count("Virtual Machine", {"team": self.team.name}), 1)
 		self.assertEqual(self.client.return_value.create_vm.call_count, 2)
 
+	def test_a_refused_creation_revokes_its_credential_and_retry_resets_dispatch(self):
+		name = self.submit()["action"]
+		self.client.return_value.create_vm.side_effect = AtlasConnectionError("region refused")
+		_process_locked(name)
+
+		action = frappe.get_doc("Resource Action", name)
+		self.assertEqual(frappe.db.get_value("Pilot Credential", action.credential, "status"), "Revoked")
+		self.assertIsNotNone(action.dispatched_at)
+
+		action.retry()
+		self.assertIsNone(frappe.db.get_value("Resource Action", name, "dispatched_at"))
+
+	def test_a_crash_while_sending_keeps_the_credential_for_recovery(self):
+		"""The region may have built the machine, so only a completed search can revoke it."""
+		from central.integrations.resource_actions import process_request
+
+		name = self.submit()["action"]
+		self.client.return_value.create_vm.side_effect = RuntimeError("worker failure")
+		with patch("frappe.db.rollback"):
+			process_request(name)
+
+		action = frappe.get_doc("Resource Action", name)
+		self.assertEqual(action.status, "Uncertain")
+		self.assertEqual(frappe.db.get_value("Pilot Credential", action.credential, "status"), "Active")
+
 	def test_creation_failure_queues_one_notification_after_commit(self):
 		name = self.submit()["action"]
 		self.client.return_value.create_vm.side_effect = AtlasConnectionError("region refused")
@@ -267,7 +294,7 @@ class TestResourceActions(IntegrationTestCase):
 			"guest": {"metadata": {"central_action_id": name}},
 			**changes,
 		}
-		return {"id": "vm-00009", "created_at": int(frappe.utils.now_datetime().timestamp())}
+		return {"id": "vm-00009", "created_at": int(time.time())}
 
 	def test_a_lost_reply_finds_the_machine_it_built(self):
 		name = self.submit()["action"]
@@ -283,6 +310,29 @@ class TestResourceActions(IntegrationTestCase):
 			frappe.db.get_value("Error Log", action.error_log, "error"),
 		)
 		self.client.return_value.create_vm.assert_called_once()
+
+	def test_the_search_reads_dispatch_time_in_the_system_time_zone(self):
+		"""A server process in UTC must not move an IST dispatch time 5.5 hours ahead, which
+		would skip the machine the region built and fail the creation."""
+		self.addCleanup(time.tzset)
+		self.enterContext(patch.dict(os.environ, {"TZ": "UTC"}))
+		time.tzset()
+		self.enterContext(
+			patch(
+				"central.integrations.resource_actions.frappe.utils.get_system_timezone",
+				return_value="Asia/Kolkata",
+			)
+		)
+		self.enterContext(
+			patch(
+				"central.infrastructure.doctype.resource_action.resource_action.frappe.utils.now_datetime",
+				return_value=frappe.utils.convert_utc_to_timezone(
+					datetime.datetime.now(datetime.UTC), "Asia/Kolkata"
+				).replace(tzinfo=None),
+			)
+		)
+
+		self.test_a_lost_reply_finds_the_machine_it_built()
 
 	def test_a_lost_reply_that_built_nothing_is_a_retriable_failure(self):
 		name = self.lose_the_reply()
@@ -318,7 +368,7 @@ class TestResourceActions(IntegrationTestCase):
 	def test_a_machine_older_than_the_dispatch_is_not_searched(self):
 		name = self.submit()["action"]
 		self.client.return_value.create_vm.side_effect = AtlasRequestUncertain("lost reply")
-		older = {"id": "vm-00001", "created_at": int(frappe.utils.now_datetime().timestamp()) - 3600}
+		older = {"id": "vm-00001", "created_at": int(time.time()) - 3600}
 		self.client.return_value.list_vms.return_value = [older]
 		_process_locked(name)
 
@@ -349,7 +399,7 @@ class TestResourceActions(IntegrationTestCase):
 
 	def test_revoked_permission_fails_before_dispatch(self):
 		name = self.submit()["action"]
-		with patch("central.integrations.server_provisioning.can", return_value=False):
+		with patch("central.infrastructure.doctype.resource_action.resource_action.can", return_value=False):
 			_process_locked(name)
 		self.assertEqual(get_status(name)["error"]["code"], "PERMISSION_DENIED")
 		self.client.return_value.create_vm.assert_not_called()
@@ -385,7 +435,7 @@ class TestResourceActions(IntegrationTestCase):
 
 	def test_the_recovery_sweep_picks_up_an_unanswered_creation(self):
 		"""An unanswered creation settles itself now, so the sweep must reach it."""
-		from central.integrations.server_provisioning import recover_requests
+		from central.integrations.resource_actions import recover_requests
 
 		unanswered = self.submit()["action"]
 		queued = self.submit(request_key="second-request-key-001", title="Second server")["action"]
@@ -404,12 +454,12 @@ class TestResourceActions(IntegrationTestCase):
 		self.assertIn(unanswered, names)
 
 	def test_unexpected_worker_failure_is_recorded_without_redispatch(self):
-		from central.integrations.server_provisioning import process_request
+		from central.integrations.resource_actions import process_request
 
 		name = self.submit()["action"]
 		with (
 			patch(
-				"central.integrations.server_provisioning._process_locked",
+				"central.integrations.resource_actions._process_locked",
 				side_effect=RuntimeError("worker failure"),
 			),
 			patch("frappe.db.rollback"),

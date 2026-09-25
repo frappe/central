@@ -189,10 +189,13 @@ doc_events = {
 # ---------------
 
 scheduler_events = {
-	"all": ["central.integrations.server_provisioning.recover_requests"],
+	"all": ["central.integrations.resource_actions.recover_requests"],
 	"cron": {
-		# Repair observed state through scoped regional reads.
-		"*/10 * * * *": ["central.integrations.servers.reconcile"],
+		"*/10 * * * *": [
+			# Repair observed state through scoped regional reads.
+			"central.integrations.servers.reconcile",
+			"central.infrastructure.doctype.region.cargo_connection.register_pending_cargo",
+		],
 		# Retry proxy routes that failed or never ran, up to the attempt limit.
 		"*/5 * * * *": [
 			"central.infrastructure.doctype.site_domain.site_domain.retry_failed",

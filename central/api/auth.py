@@ -115,9 +115,8 @@ def _send_signup_code(email: str, full_name: str, attempts: int = 0) -> None:
 		frappe.sendmail(
 			recipients=[email],
 			subject=_("Your Frappe Cloud verification code"),
-			message=_(
-				"<p>Your verification code is <strong>{0}</strong>.</p><p>It expires in 10 minutes.</p>"
-			).format(code),
+			template="verification_code",
+			args={"code": code, "expires_minutes": OTP_TTL_SECONDS // 60},
 			now=True,
 		)
 	except Exception:

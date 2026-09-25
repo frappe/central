@@ -18,7 +18,7 @@ frappe.ui.form.on("VM Snapshot", {
 
 		if (frm.doc.status === "Pending") {
 			frm.add_custom_button(__("Sync"), () =>
-				frm.call({ method: "sync", freeze: true, freeze_message: __("Asking the region…") }).then(() =>
+				frm.call({ doc: frm.doc, method: "sync", freeze: true, freeze_message: __("Asking the region…") }).then(() =>
 					frm.reload_doc(),
 				),
 			);

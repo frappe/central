@@ -48,7 +48,7 @@ Read implementation and specifications together. Track the following areas here 
 |---|---|---|
 | Identity and access | `central/iam.py`, `permissions.py`, `utils/guards.py`, `identity/`, `users.py` | Duplicate policy, team resolution, cache invalidation, controller invariants, query and document permissions. |
 | Authentication and tokens | `central/api/auth.py`, `api/pilot.py`, `api/sso.py`, `sso.py`, signing settings, Pilot Credential | OTP lifecycle, throttling, replay protection, audiences, secret handling, shared signing operations. |
-| Resource lifecycle | `central/server_provisioning.py`, `resource_actions.py`, `site_provisioning.py`, `server_models.py`, infrastructure controllers | Intent, reservation, dispatch, observation, completion, retry, snapshots, domains. |
+| Resource lifecycle | `central/resource_actions.py`, `integrations/resource_actions.py`, `site_provisioning.py`, `server_models.py`, infrastructure controllers | Intent, reservation, dispatch, observation, completion, retry, snapshots, domains. |
 | Integrations | `central/integrations/`, Region connection modules | Client construction, response validation, errors, webhook ordering, bounded recovery. |
 | Services and partners | `central/services/`, storage/Cargo clients, Team partner methods | Repeated provision/rotate/delete behavior, credential ownership, remote call placement. |
 | Notifications and errors | `central/notification/`, `errors.py`, affected billing delivery calls | Event ownership, read markers, delivery outcomes, safe diagnostics. |

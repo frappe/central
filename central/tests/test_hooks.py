@@ -19,3 +19,25 @@ class TestSchedulerHooks(IntegrationTestCase):
 		for dotted_path in targets:
 			with self.subTest(target=dotted_path):
 				self.assertTrue(callable(frappe.get_attr(dotted_path)), dotted_path)
+
+
+class TestDeskScripts(IntegrationTestCase):
+	def test_every_document_call_passes_the_document(self):
+		"""`frm.call({ method })` without `doc` resolves `method` as a module function, so a
+		controller method fails with "Failed to get method for command"."""
+		import re
+		from pathlib import Path
+
+		root = Path(frappe.get_app_path("central"))
+		for script in root.glob("**/doctype/*/*.js"):
+			source = script.read_text()
+			for match in re.finditer(r"frm\.call\(\{", source):
+				depth, end = 0, match.end() - 1
+				for end in range(match.end() - 1, len(source)):
+					depth += {"{": 1, "}": -1}.get(source[end], 0)
+					if depth == 0:
+						break
+				options = source[match.end() : end]
+				method = re.search(r"method:\s*[\"']([^\"']+)", options)
+				with self.subTest(script=script.name, method=method and method.group(1)):
+					self.assertTrue("doc:" in options or (method and "." in method.group(1)))

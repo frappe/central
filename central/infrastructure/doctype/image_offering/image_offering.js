@@ -25,6 +25,7 @@ frappe.ui.form.on("Image Offering", {
 
 async function show_images(frm, region, offset) {
 	const { message } = await frm.call({
+		doc: frm.doc,
 		method: "preview_images",
 		args: { region, offset },
 		freeze: true,

@@ -8,7 +8,7 @@ from central.api.ssh_keys import rotate_team_ssh_key
 from central.infrastructure.doctype.team_ssh_key.team_ssh_key import TeamSSHKey, fingerprint
 from central.integrations.ssh_keys import _replace_server_keys
 from central.permissions import team_ssh_key_has_permission, team_ssh_key_query_conditions
-from central.server_provisioning import resolve_team_ssh_keys
+from central.resource_actions import resolve_team_ssh_keys
 
 
 class TestTeamSSHKeys(TestCase):
@@ -41,9 +41,9 @@ class TestTeamSSHKeys(TestCase):
 	def test_query_denies_users_without_server_view(self, _teams, _operator) -> None:
 		self.assertEqual(team_ssh_key_query_conditions("outsider"), "1 = 0")
 
-	@patch("central.server_provisioning.frappe.get_list")
-	@patch("central.server_provisioning._", side_effect=lambda value: value)
-	@patch("central.server_provisioning.frappe.throw", side_effect=throw)
+	@patch("central.resource_actions.frappe.get_list")
+	@patch("central.resource_actions._", side_effect=lambda value: value)
+	@patch("central.resource_actions.frappe.throw", side_effect=throw)
 	def test_selected_keys_must_all_belong_to_the_team(self, _throw, _translate, get_list) -> None:
 		get_list.return_value = [SimpleNamespace(name="own", public_key="ssh-ed25519 AAAA")]
 		with self.assertRaises(frappe.PermissionError):

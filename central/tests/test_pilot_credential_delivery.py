@@ -35,7 +35,7 @@ class TestPilotCredentialRevocation(IntegrationTestCase):
 		other_token = PilotCredential.mint(team.name, other_id, audience_id=other_id)
 		self.assertIsNotNone(PilotCredential.verify(token))
 		with (
-			patch("central.integrations.servers._client") as client,
+			patch("central.integrations.servers.get_client") as client,
 			patch.object(VirtualMachine, "disable_active_subscription"),
 		):
 			client.return_value.get_vm.side_effect = AtlasResourceGone("gone")

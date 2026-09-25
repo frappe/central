@@ -127,6 +127,18 @@ class TestAuth(IntegrationTestCase):
 		self.assertEqual(OTP_TTL_SECONDS, 10 * 60)
 		self.assertEqual(set_value.call_args.kwargs["expires_in_sec"], 10 * 60)
 
+	def test_signup_email_states_the_code_and_its_expiry(self):
+		with patch("central.api.auth.frappe.sendmail") as sendmail:
+			_send_signup_code("template@example.test", "Template Test")
+
+		code = frappe.cache.get_value(_otp_key("template@example.test"))["code"]
+		html = frappe.render_template(
+			"templates/emails/verification_code.html", sendmail.call_args.kwargs["args"]
+		)
+		self.assertEqual(sendmail.call_args.kwargs["template"], "verification_code")
+		self.assertIn(code, html)
+		self.assertIn("It expires in 10 minutes.", html)
+
 	def test_resending_a_code_preserves_failed_attempts(self):
 		with (
 			patch("central.api.auth.frappe.cache.set_value") as set_value,

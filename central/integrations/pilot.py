@@ -1,12 +1,17 @@
 from __future__ import annotations
 
+import json
 from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import quote, urlparse
 
 import frappe
 import requests
 
-from central.sso import mint_bench_login, mint_site_login
+from central.api.jwks import jwks_document
+from central.api.pilot import get_telemetry_base_url, region_id_of
+from central.infrastructure.doctype.pilot_credential.pilot_credential import PilotCredential
+from central.integrations.bucket_provisioning import BucketProvisioning
+from central.sso import central_url, jwks_url, mint_bench_login, mint_datum_token, mint_site_login
 
 METRICS_CACHE_TTL_SECONDS = 30
 PILOT_TIMEOUT_SECONDS = 3
@@ -15,6 +20,45 @@ PILOT_TASK_TIMEOUT_SECONDS = 35
 # enough for that process rather than discarding a session the machine creates later.
 SITE_LOGIN_TIMEOUT_SECONDS = 120
 SITE_PING_TIMEOUT_SECONDS = 4
+
+
+def get_bootstrap_metadata(action) -> str:
+	"""Mint the credential for a Pilot creation and return its `pilot-central` metadata."""
+	credential = f"pilot-{action.name}"
+	token = PilotCredential.mint(action.team, credential, audience_id=credential)
+	action.db_set("credential", credential)
+	bootstrap = {
+		"central_endpoint": central_url(),
+		"central_auth_token": token,
+		"jwks_url": jwks_url(),
+		"jwks_audience_id": credential,
+		# The keys travel with the credential, so the first token needs no fetch and a boot
+		# before Central is reachable still verifies.
+		"initial_jwks_cache": jwks_document(),
+	}
+
+	# Object storage is optional for a Pilot, so its failure must not block the creation.
+	try:
+		bootstrap["s3"] = BucketProvisioning(action).get_configuration()
+	except Exception:
+		action.record_diagnostic(frappe.get_traceback(), "Pilot object storage provisioning failed")
+
+	try:
+		bootstrap["telemetry"] = get_telemetry_configuration(action)
+	except Exception:
+		action.record_diagnostic(frappe.get_traceback(), "Pilot telemetry configuration failed")
+
+	return json.dumps(bootstrap)
+
+
+def get_telemetry_configuration(action) -> dict:
+	"""The region's Datum and the token the new server writes to it with."""
+	endpoint = get_telemetry_base_url(action.region)
+	if not endpoint:
+		frappe.throw(frappe._("Region {0} has no telemetry host yet.").format(action.region))
+
+	token = mint_datum_token(region_id_of(action.region), action.server_id)
+	return {"endpoint": endpoint, "token": token}
 
 
 class PilotLoginPending(Exception):

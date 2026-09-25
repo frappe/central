@@ -7,10 +7,10 @@ import frappe
 
 from central.integrations.bucket_provisioning import BucketProvisioning
 from central.integrations.object_storage import ObjectStorageRequestUncertain
-from central.integrations.server_provisioning import _create_payload
+from central.integrations.resource_actions import _create_payload
 
 BUCKETS = "central.integrations.bucket_provisioning"
-SERVERS = "central.integrations.server_provisioning"
+PILOT = "central.integrations.pilot"
 CONTROLLER = "central.services.doctype.team_service.team_service"
 BUCKET = "team-42-in-mumbai-backups"
 ENDPOINT = "https://s3.in-mumbai.example.test"
@@ -54,7 +54,7 @@ def provisioning_request():
 
 
 def pilot_request():
-	request = Mock(team="TEAM-00001", region="in-mumbai", server=None)
+	request = Mock(team="TEAM-00001", region="in-mumbai", server_id="server-action-1")
 	request.name = "action-1"
 	request.get_configuration.return_value = Mock(
 		image_id="image-1",
@@ -167,11 +167,11 @@ class TestPilotStoragePayload(TestCase):
 		provisioning.get_configuration.return_value = STORAGE_CONFIG
 
 		with (
-			patch(f"{SERVERS}.PilotCredential.mint", return_value="token"),
-			patch(f"{SERVERS}.central_url", return_value="https://central.test"),
-			patch(f"{SERVERS}.jwks_url", return_value="https://central.test/jwks"),
-			patch(f"{SERVERS}.BucketProvisioning", return_value=provisioning),
-			patch(f"{SERVERS}.telemetry_configuration", return_value=TELEMETRY_CONFIG),
+			patch(f"{PILOT}.PilotCredential.mint", return_value="token"),
+			patch(f"{PILOT}.central_url", return_value="https://central.test"),
+			patch(f"{PILOT}.jwks_url", return_value="https://central.test/jwks"),
+			patch(f"{PILOT}.BucketProvisioning", return_value=provisioning),
+			patch(f"{PILOT}.get_telemetry_configuration", return_value=TELEMETRY_CONFIG),
 		):
 			payload = _create_payload(pilot_request())
 
@@ -181,11 +181,11 @@ class TestPilotStoragePayload(TestCase):
 	def test_storage_failure_does_not_block_pilot_creation(self):
 		request = pilot_request()
 		with (
-			patch(f"{SERVERS}.PilotCredential.mint", return_value="token"),
-			patch(f"{SERVERS}.central_url", return_value="https://central.test"),
-			patch(f"{SERVERS}.jwks_url", return_value="https://central.test/jwks"),
-			patch(f"{SERVERS}.BucketProvisioning", side_effect=ObjectStorageRequestUncertain()),
-			patch(f"{SERVERS}.telemetry_configuration", return_value=TELEMETRY_CONFIG),
+			patch(f"{PILOT}.PilotCredential.mint", return_value="token"),
+			patch(f"{PILOT}.central_url", return_value="https://central.test"),
+			patch(f"{PILOT}.jwks_url", return_value="https://central.test/jwks"),
+			patch(f"{PILOT}.BucketProvisioning", side_effect=ObjectStorageRequestUncertain()),
+			patch(f"{PILOT}.get_telemetry_configuration", return_value=TELEMETRY_CONFIG),
 		):
 			payload = _create_payload(request)
 
@@ -196,16 +196,16 @@ class TestPilotStoragePayload(TestCase):
 	def test_pilot_payload_contains_the_telemetry_configuration(self):
 		request = pilot_request()
 		with (
-			patch(f"{SERVERS}.PilotCredential.mint", return_value="token"),
-			patch(f"{SERVERS}.central_url", return_value="https://central.test"),
-			patch(f"{SERVERS}.jwks_url", return_value="https://central.test/jwks"),
+			patch(f"{PILOT}.PilotCredential.mint", return_value="token"),
+			patch(f"{PILOT}.central_url", return_value="https://central.test"),
+			patch(f"{PILOT}.jwks_url", return_value="https://central.test/jwks"),
 			patch(
-				f"{SERVERS}.BucketProvisioning",
+				f"{PILOT}.BucketProvisioning",
 				return_value=Mock(get_configuration=Mock(return_value=STORAGE_CONFIG)),
 			),
-			patch(f"{SERVERS}.get_telemetry_base_url", return_value=TELEMETRY_CONFIG["endpoint"]),
-			patch(f"{SERVERS}.region_id_of", return_value=7),
-			patch(f"{SERVERS}.mint_datum_token", return_value="datum-token") as mint,
+			patch(f"{PILOT}.get_telemetry_base_url", return_value=TELEMETRY_CONFIG["endpoint"]),
+			patch(f"{PILOT}.region_id_of", return_value=7),
+			patch(f"{PILOT}.mint_datum_token", return_value="datum-token") as mint,
 		):
 			payload = _create_payload(request)
 
@@ -217,14 +217,14 @@ class TestPilotStoragePayload(TestCase):
 	def test_a_region_without_a_telemetry_host_does_not_block_pilot_creation(self):
 		request = pilot_request()
 		with (
-			patch(f"{SERVERS}.PilotCredential.mint", return_value="token"),
-			patch(f"{SERVERS}.central_url", return_value="https://central.test"),
-			patch(f"{SERVERS}.jwks_url", return_value="https://central.test/jwks"),
+			patch(f"{PILOT}.PilotCredential.mint", return_value="token"),
+			patch(f"{PILOT}.central_url", return_value="https://central.test"),
+			patch(f"{PILOT}.jwks_url", return_value="https://central.test/jwks"),
 			patch(
-				f"{SERVERS}.BucketProvisioning",
+				f"{PILOT}.BucketProvisioning",
 				return_value=Mock(get_configuration=Mock(return_value=STORAGE_CONFIG)),
 			),
-			patch(f"{SERVERS}.get_telemetry_base_url", return_value=None),
+			patch(f"{PILOT}.get_telemetry_base_url", return_value=None),
 		):
 			payload = _create_payload(request)
 

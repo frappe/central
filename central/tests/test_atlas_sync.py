@@ -6,7 +6,7 @@ from frappe.tests import IntegrationTestCase
 from central.api.servers import registry
 from central.errors import AtlasConnectionError, AtlasRequestUncertain, AtlasResourceGone
 from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
-from central.integrations.server_provisioning import _process_locked
+from central.integrations.resource_actions import _process_locked
 from central.integrations.servers import reconcile
 from central.resource_actions import get_status, submit_command
 from central.tests.test_iam import ensure_user
@@ -36,7 +36,7 @@ class TestServerActions(IntegrationTestCase):
 				"status": "Stopped",
 			}
 		).insert()
-		self.client = self.enterContext(patch("central.integrations.servers._client")).return_value
+		self.client = self.enterContext(patch("central.integrations.servers.get_client")).return_value
 		self.observe = self.enterContext(
 			patch("central.integrations.servers.observe_server", return_value="Running")
 		)
@@ -66,6 +66,13 @@ class TestServerActions(IntegrationTestCase):
 		self.assertEqual(self.submit()["action"], first["action"])
 		with self.assertRaises(frappe.ValidationError):
 			self.submit("stop")
+
+	def test_create_and_resize_are_not_accepted_as_commands(self):
+		"""Both carry a saved configuration that only their own intake validates."""
+		for action in ("create", "resize"):
+			with self.subTest(action=action), self.assertRaises(frappe.PermissionError):
+				self.submit(action)
+		self.assertFalse(frappe.db.exists("Resource Action", {"resource_id": self.server.name}))
 
 	def test_restart_is_refused_unless_the_server_is_running(self):
 		with self.assertRaises(frappe.ValidationError):
@@ -126,7 +133,7 @@ class TestServerActions(IntegrationTestCase):
 
 	def test_revoked_permission_prevents_queued_command(self):
 		name = self.submit()["action"]
-		with patch("central.integrations.servers.can", return_value=False):
+		with patch("central.infrastructure.doctype.resource_action.resource_action.can", return_value=False):
 			_process_locked(name)
 		self.assertEqual(get_status(name)["error"]["code"], "PERMISSION_DENIED")
 		self.client.vm_action.assert_not_called()
