@@ -106,8 +106,10 @@ def resize_server(server: VirtualMachine, shape: dict) -> None:
 
 	A CPU or memory change needs a stopped VM and may move it to a host that fits (a
 	`migrating` state during the wait), so it stops the VM and sends CPU, memory and disk in
-	one resize. A disk-only grow is online, with no stop. Every call sets absolute values, so
-	repeating the resize is safe."""
+	one resize. A disk-only grow uses the online disk API, because the resize API needs a
+	stopped VM for a disk change too. Every call sets absolute values, so repeating the
+	resize is safe. A resized server has outgrown the hobby idle shutdown, so both paths
+	turn it off."""
 	client = _client(server)
 	remote = client.get_vm(server.atlas_vm_id)
 	compute, disk = remote.get("compute") or {}, remote.get("disk") or {}
@@ -116,16 +118,14 @@ def resize_server(server: VirtualMachine, shape: dict) -> None:
 	disk_mib = shape["disk_gigabytes"] * 1024
 
 	reshaping = (compute.get("cpu_millicores"), compute.get("memory_mib")) != (cpu_millicores, memory_mib)
-	# TODO: remove the update disk API entirely - only rely on disk resize API instead
-	if not reshaping and disk_mib > (disk.get("size_mib") or 0):
-		client.update_disk(server.atlas_vm_id, disk_mib)
 	if reshaping:
 		_wait_for_power_state(client, server.atlas_vm_id, "stop", "stopped")
-
-	# A resized server has outgrown the hobby idle shutdown, so it stops sleeping for good.
-	# Atlas takes a resize with unchanged resources on a running VM as a sleep change only.
-	if reshaping or compute.get("sleep_after_idle_seconds"):
 		client.resize(server.atlas_vm_id, cpu_millicores, memory_mib, disk_mib)
+	else:
+		if disk_mib > (disk.get("size_mib") or 0):
+			client.update_disk(server.atlas_vm_id, disk_mib)
+		if compute.get("sleep_after_idle_seconds"):
+			client.disable_idle_shutdown(server.atlas_vm_id)
 
 	_wait_for_power_state(client, server.atlas_vm_id, "start", "running")
 	observe_server(server)
