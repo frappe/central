@@ -156,6 +156,8 @@ def _build_server_configuration(
 		server_input.sub_category,
 	)
 	validate_guest_input(server_input, image)
+	# Check the saved keys now so the form shows the error. Dispatch reads their text, which a
+	# rotation can change before a retry.
 	selected_keys = resolve_team_ssh_keys(server_input.team, server_input.ssh_key_ids)
 	if image["tags"].get("purpose") != "pilot" and not (selected_keys or server_input.ssh_keys):
 		frappe.throw(_("Select an SSH key for this server."))
@@ -171,7 +173,7 @@ def _build_server_configuration(
 		includes=composition,
 		sub_category=server_input.sub_category,
 		hostname=server_input.hostname,
-		ssh_keys=[*selected_keys, *server_input.ssh_keys],
+		ssh_keys=server_input.ssh_keys,
 		ssh_key_ids=server_input.ssh_key_ids,
 		has_public_ipv6=server_input.has_public_ipv6,
 		is_firewall_enabled=server_input.is_firewall_enabled,
