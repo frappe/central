@@ -8,9 +8,10 @@ import frappe
 import requests
 
 from central.api.jwks import jwks_document
+from central.api.pilot import get_telemetry_base_url, region_id_of
 from central.infrastructure.doctype.pilot_credential.pilot_credential import PilotCredential
 from central.integrations.bucket_provisioning import BucketProvisioning
-from central.sso import central_url, jwks_url, mint_bench_login, mint_site_login
+from central.sso import central_url, jwks_url, mint_bench_login, mint_datum_token, mint_site_login
 
 METRICS_CACHE_TTL_SECONDS = 30
 PILOT_TIMEOUT_SECONDS = 3
@@ -42,7 +43,22 @@ def get_bootstrap_metadata(action) -> str:
 	except Exception:
 		action.record_diagnostic(frappe.get_traceback(), "Pilot object storage provisioning failed")
 
+	try:
+		bootstrap["telemetry"] = get_telemetry_configuration(action)
+	except Exception:
+		action.record_diagnostic(frappe.get_traceback(), "Pilot telemetry configuration failed")
+
 	return json.dumps(bootstrap)
+
+
+def get_telemetry_configuration(action) -> dict:
+	"""The region's Datum and the token the new server writes to it with."""
+	endpoint = get_telemetry_base_url(action.region)
+	if not endpoint:
+		frappe.throw(frappe._("Region {0} has no telemetry host yet.").format(action.region))
+
+	token = mint_datum_token(region_id_of(action.region), action.server_id)
+	return {"endpoint": endpoint, "token": token}
 
 
 class PilotLoginPending(Exception):

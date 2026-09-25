@@ -14,6 +14,7 @@ PILOT = "central.integrations.pilot"
 CONTROLLER = "central.services.doctype.team_service.team_service"
 BUCKET = "team-42-in-mumbai-backups"
 ENDPOINT = "https://s3.in-mumbai.example.test"
+TELEMETRY_CONFIG = {"endpoint": "https://datum.in-mumbai.example.test", "token": "datum-token"}
 STORAGE_CONFIG = {
 	"access_key": "access",
 	"secret_key": "secret",
@@ -53,7 +54,7 @@ def provisioning_request():
 
 
 def pilot_request():
-	request = Mock(team="TEAM-00001")
+	request = Mock(team="TEAM-00001", region="in-mumbai", server_id="server-action-1")
 	request.name = "action-1"
 	request.get_configuration.return_value = Mock(
 		image_id="image-1",
@@ -170,6 +171,7 @@ class TestPilotStoragePayload(TestCase):
 			patch(f"{PILOT}.central_url", return_value="https://central.test"),
 			patch(f"{PILOT}.jwks_url", return_value="https://central.test/jwks"),
 			patch(f"{PILOT}.BucketProvisioning", return_value=provisioning),
+			patch(f"{PILOT}.get_telemetry_configuration", return_value=TELEMETRY_CONFIG),
 		):
 			payload = _create_payload(pilot_request())
 
@@ -183,9 +185,49 @@ class TestPilotStoragePayload(TestCase):
 			patch(f"{PILOT}.central_url", return_value="https://central.test"),
 			patch(f"{PILOT}.jwks_url", return_value="https://central.test/jwks"),
 			patch(f"{PILOT}.BucketProvisioning", side_effect=ObjectStorageRequestUncertain()),
+			patch(f"{PILOT}.get_telemetry_configuration", return_value=TELEMETRY_CONFIG),
 		):
 			payload = _create_payload(request)
 
 		metadata = json.loads(payload["metadata"]["pilot-central"])
 		self.assertNotIn("s3", metadata)
+		request.record_diagnostic.assert_called_once()
+
+	def test_pilot_payload_contains_the_telemetry_configuration(self):
+		request = pilot_request()
+		with (
+			patch(f"{PILOT}.PilotCredential.mint", return_value="token"),
+			patch(f"{PILOT}.central_url", return_value="https://central.test"),
+			patch(f"{PILOT}.jwks_url", return_value="https://central.test/jwks"),
+			patch(
+				f"{PILOT}.BucketProvisioning",
+				return_value=Mock(get_configuration=Mock(return_value=STORAGE_CONFIG)),
+			),
+			patch(f"{PILOT}.get_telemetry_base_url", return_value=TELEMETRY_CONFIG["endpoint"]),
+			patch(f"{PILOT}.region_id_of", return_value=7),
+			patch(f"{PILOT}.mint_datum_token", return_value="datum-token") as mint,
+		):
+			payload = _create_payload(request)
+
+		metadata = json.loads(payload["metadata"]["pilot-central"])
+		self.assertEqual(metadata["telemetry"], TELEMETRY_CONFIG)
+		# The server does not exist yet, so the token names the one this request creates.
+		mint.assert_called_once_with(7, "server-action-1")
+
+	def test_a_region_without_a_telemetry_host_does_not_block_pilot_creation(self):
+		request = pilot_request()
+		with (
+			patch(f"{PILOT}.PilotCredential.mint", return_value="token"),
+			patch(f"{PILOT}.central_url", return_value="https://central.test"),
+			patch(f"{PILOT}.jwks_url", return_value="https://central.test/jwks"),
+			patch(
+				f"{PILOT}.BucketProvisioning",
+				return_value=Mock(get_configuration=Mock(return_value=STORAGE_CONFIG)),
+			),
+			patch(f"{PILOT}.get_telemetry_base_url", return_value=None),
+		):
+			payload = _create_payload(request)
+
+		metadata = json.loads(payload["metadata"]["pilot-central"])
+		self.assertNotIn("telemetry", metadata)
 		request.record_diagnostic.assert_called_once()

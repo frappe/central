@@ -221,6 +221,11 @@ class ResourceAction(Document):
 			self.transition("In Progress", notify=False)
 
 	@property
+	def server_id(self) -> str:
+		"""The Virtual Machine this action works on, or the one a creation gives its server."""
+		return self.server or f"server-{self.name}"
+
+	@property
 	def is_overdue(self) -> bool:
 		started = self.dispatched_at or self.creation
 		return (

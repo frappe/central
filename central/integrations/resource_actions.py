@@ -267,7 +267,7 @@ def idle_shutdown_seconds(team: str) -> int:
 def _finalize(request) -> None:
 	try:
 		frappe.db.get_value("Team", request.team, "name", for_update=True)
-		server_id = request.server or f"server-{request.name}"
+		server_id = request.server_id
 		if not request.server:
 			from central.billing.catalog.subscriptions import create_server_subscription
 
