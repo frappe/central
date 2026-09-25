@@ -1,4 +1,7 @@
+import datetime
 import json
+import os
+import time
 from copy import deepcopy
 from unittest.mock import patch
 
@@ -291,7 +294,7 @@ class TestResourceActions(IntegrationTestCase):
 			"guest": {"metadata": {"central_action_id": name}},
 			**changes,
 		}
-		return {"id": "vm-00009", "created_at": int(frappe.utils.now_datetime().timestamp())}
+		return {"id": "vm-00009", "created_at": int(time.time())}
 
 	def test_a_lost_reply_finds_the_machine_it_built(self):
 		name = self.submit()["action"]
@@ -307,6 +310,29 @@ class TestResourceActions(IntegrationTestCase):
 			frappe.db.get_value("Error Log", action.error_log, "error"),
 		)
 		self.client.return_value.create_vm.assert_called_once()
+
+	def test_the_search_reads_dispatch_time_in_the_system_time_zone(self):
+		"""A server process in UTC must not move an IST dispatch time 5.5 hours ahead, which
+		would skip the machine the region built and fail the creation."""
+		self.addCleanup(time.tzset)
+		self.enterContext(patch.dict(os.environ, {"TZ": "UTC"}))
+		time.tzset()
+		self.enterContext(
+			patch(
+				"central.integrations.resource_actions.frappe.utils.get_system_timezone",
+				return_value="Asia/Kolkata",
+			)
+		)
+		self.enterContext(
+			patch(
+				"central.infrastructure.doctype.resource_action.resource_action.frappe.utils.now_datetime",
+				return_value=frappe.utils.convert_utc_to_timezone(
+					datetime.datetime.now(datetime.UTC), "Asia/Kolkata"
+				).replace(tzinfo=None),
+			)
+		)
+
+		self.test_a_lost_reply_finds_the_machine_it_built()
 
 	def test_a_lost_reply_that_built_nothing_is_a_retriable_failure(self):
 		name = self.lose_the_reply()
@@ -342,7 +368,7 @@ class TestResourceActions(IntegrationTestCase):
 	def test_a_machine_older_than_the_dispatch_is_not_searched(self):
 		name = self.submit()["action"]
 		self.client.return_value.create_vm.side_effect = AtlasRequestUncertain("lost reply")
-		older = {"id": "vm-00001", "created_at": int(frappe.utils.now_datetime().timestamp()) - 3600}
+		older = {"id": "vm-00001", "created_at": int(time.time()) - 3600}
 		self.client.return_value.list_vms.return_value = [older]
 		_process_locked(name)
 
