@@ -9,7 +9,7 @@ frappe.ui.form.on("Region", {
 				return;
 			}
 
-			const response = await frm.call({ method: "test_connection", freeze: true });
+			const response = await frm.call({ doc: frm.doc, method: "test_connection", freeze: true });
 			const result = response.message;
 			frappe.show_alert(
 				{
@@ -44,7 +44,7 @@ function update_enroll_buttons(frm) {
 				return;
 			}
 
-			await frm.call({ method: "enroll_atlas", freeze: true });
+			await frm.call({ doc: frm.doc, method: "enroll_atlas", freeze: true });
 			frappe.show_alert({ message: __("Atlas enrolled"), indicator: "green" }, 5);
 			await frm.reload_doc();
 		});
@@ -57,7 +57,7 @@ function update_enroll_buttons(frm) {
 				return;
 			}
 
-			await frm.call({ method: "enroll_cargo", freeze: true });
+			await frm.call({ doc: frm.doc, method: "enroll_cargo", freeze: true });
 			frappe.show_alert({ message: __("Cargo enrolled"), indicator: "green" }, 5);
 			await frm.reload_doc();
 		});
