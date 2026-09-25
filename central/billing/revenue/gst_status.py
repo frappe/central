@@ -106,7 +106,7 @@ def forget(profile) -> None:
 	"""Drop the old GSTIN's status and look the new one up in the background.
 
 	SEZ zero-rating belonged to the old GSTIN, so it goes too. A new GSTIN gets it
-	back from its own lookup; without lookups, only a removed GSTIN clears it.
+	back from its own lookup, or from an admin when lookups are off.
 	"""
 	from central.billing.payments.provisioning import apply_gst_category
 
@@ -119,8 +119,7 @@ def forget(profile) -> None:
 		},
 		update_modified=False,
 	)
-	if not profile.gstin or lookups_enabled():
-		apply_gst_category(profile.name, None)
+	apply_gst_category(profile.name, None)
 	if not profile.gstin or not lookups_enabled():
 		return
 	frappe.enqueue(
