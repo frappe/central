@@ -23,6 +23,40 @@ def validate_gstin(gstin: str) -> bool:
 
 
 class BillingProfile(Document):
+	# begin: auto-generated types
+	# This code is auto-generated. Do not modify anything in this block.
+
+	from typing import TYPE_CHECKING
+
+	if TYPE_CHECKING:
+		from frappe.types import DF
+
+		address_line1: DF.Data | None
+		address_line2: DF.Data | None
+		city: DF.Data | None
+		collection_action_reason: DF.Data | None
+		collection_mode: DF.Literal["Auto Charge", "Manual Checkout", "Prepaid", "Action Required"]
+		country: DF.Link | None
+		currency: DF.Link | None
+		email: DF.Data | None
+		gstin: DF.Data | None
+		legal_name: DF.Data | None
+		manual_override: DF.Check
+		min_balance: DF.Currency
+		override_max_spend: DF.Currency
+		phone: DF.Data | None
+		pincode: DF.Data | None
+		profile_id: DF.Data | None
+		promoted_at: DF.Datetime | None
+		promotion_basis: DF.SmallText | None
+		spend_alert_threshold: DF.Currency
+		state: DF.Autocomplete | None
+		team: DF.Link
+		team_owner: DF.ReadOnly | None
+		trust_tier: DF.Data | None
+		trust_tier_level: DF.Link | None
+	# end: auto-generated types
+
 	def validate(self):
 		self.validate_gstin()
 		self.validate_india_state()
@@ -30,6 +64,18 @@ class BillingProfile(Document):
 
 	def on_update(self):
 		self.release_held_invoices()
+		self.enqueue_profile_sync()
+
+	def enqueue_profile_sync(self):
+		from central.billing.ingester.customer import create_customer_profile, update_customer_profile
+
+		if not self.profile_id:
+			create_customer_profile(self)
+		else:
+			update_customer_profile
+		# frappe.enqueue(
+
+		# )
 
 	def release_held_invoices(self):
 		"""Settle anything held back for these details once they are on file.
