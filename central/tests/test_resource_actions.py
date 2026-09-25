@@ -32,13 +32,13 @@ class TestResourceActions(IntegrationTestCase):
 		self.enterContext(patch("central.billing.catalog.subscriptions.create_server_subscription"))
 		self.enterContext(
 			patch(
-				"central.integrations.server_provisioning.central_url",
+				"central.integrations.pilot.central_url",
 				return_value="https://central.example.test",
 			)
 		)
 		self.enterContext(
 			patch(
-				"central.integrations.server_provisioning.jwks_url",
+				"central.integrations.pilot.jwks_url",
 				return_value="https://central.example.test/jwks",
 			)
 		)

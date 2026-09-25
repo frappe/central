@@ -31,11 +31,11 @@ def create_billed_server(team, region, plan, **overrides):
 		patch("central.server_provisioning.selected_image", return_value=IMAGE),
 		patch("central.integrations.server_provisioning._client", return_value=client),
 		patch(
-			"central.integrations.server_provisioning.central_url",
+			"central.integrations.pilot.central_url",
 			return_value="https://central.example.test",
 		),
 		patch(
-			"central.integrations.server_provisioning.jwks_url",
+			"central.integrations.pilot.jwks_url",
 			return_value="https://central.example.test/jwks",
 		),
 		patch("central.integrations.server_provisioning.observe_server", return_value="Running"),

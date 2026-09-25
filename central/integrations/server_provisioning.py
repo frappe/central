@@ -1,20 +1,16 @@
 from __future__ import annotations
 
-import json
-
 import frappe
 from frappe import _
 from redis.exceptions import LockError, LockNotOwnedError
 
-from central.api.jwks import jwks_document
 from central.errors import AtlasConnectionError, AtlasRequestUncertain, build_envelope
 from central.infrastructure.doctype.pilot_credential.pilot_credential import PilotCredential
 from central.infrastructure.doctype.resource_action.resource_action import PENDING_STATES, TERMINAL_STATES
 from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
 from central.integrations.atlas import AtlasClient
-from central.integrations.bucket_provisioning import BucketProvisioning
+from central.integrations.pilot import get_bootstrap_metadata
 from central.integrations.servers import observe_server
-from central.sso import central_url, jwks_url
 
 # A region stamps its own clock on a machine, so allow for a little drift when deciding
 # which machines are new enough to have come from this request.
@@ -216,26 +212,7 @@ def _create_payload(request) -> dict:
 	if configuration.has_public_ipv6:
 		payload["public_ipv6"] = "auto"
 	if configuration.image_tags.get("purpose") == "pilot":
-		credential = f"pilot-{request.name}"
-		token = PilotCredential.mint(request.team, credential, audience_id=credential)
-		request.db_set("credential", credential)
-		bootstrap = {
-			"central_endpoint": central_url(),
-			"central_auth_token": token,
-			"jwks_url": jwks_url(),
-			"jwks_audience_id": credential,
-			# The keys, delivered with the credential, so the pilot's first token
-			# needs no fetch and a boot before Central is reachable still verifies.
-			"initial_jwks_cache": jwks_document(),
-		}
-		try:
-			bootstrap["s3"] = BucketProvisioning(request).get_configuration()
-		except Exception:
-			request.record_diagnostic(
-				frappe.get_traceback(),
-				"Pilot object storage provisioning failed",
-			)
-		payload["metadata"]["pilot-central"] = json.dumps(bootstrap)
+		payload["metadata"]["pilot-central"] = get_bootstrap_metadata(request)
 
 	return payload
 
