@@ -225,7 +225,7 @@ def _create_payload(request) -> dict:
 	if configuration.has_public_ipv6:
 		payload["public_ipv6"] = "auto"
 	if configuration.image_tags.get("purpose") == "pilot":
-		payload["metadata"]["pilot-central"] = get_bootstrap_metadata(request)
+		payload["metadata"].update(get_bootstrap_metadata(request))
 
 	return payload
 
