@@ -65,13 +65,21 @@ class BillingProfile(Document):
 
 	def on_update(self):
 		self.release_held_invoices()
+		self.refresh_gst_status_on_change()
 		self.enqueue_profile_sync()
 
-	def enqueue_profile_sync(self):		
+	def refresh_gst_status_on_change(self):
+		"""A new GSTIN starts with no status. The first one is looked up with the ERPNext customer."""
+		from central.billing.revenue import gst_status
+
+		if self.get_doc_before_save() and self.has_value_changed("gstin"):
+			gst_status.forget(self)
+
+	def enqueue_profile_sync(self):
 		if not self.profile_id:
-			method = 'central.billing.ingester.customer.create_customer_profile'
+			method = "central.billing.ingester.customer.create_customer_profile"
 		else:
-			method = 'central.billing.ingester.customer.update_customer_profile'
+			method = "central.billing.ingester.customer.update_customer_profile"
 
 		frappe.enqueue(
 			method,

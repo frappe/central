@@ -28,7 +28,9 @@
   "section_break_routing",
   "enable_gateway_fallback",
   "section_break_tax",
-  "default_gst_rate"
+  "default_gst_rate",
+  "gst_status_refresh_days",
+  "gst_status_daily_limit"
  ],
  "fields": [
   {
@@ -184,12 +186,28 @@
    "fieldname": "default_gst_rate",
    "fieldtype": "Percent",
    "label": "Default GST Rate"
+  },
+  {
+   "default": "7",
+   "description": "How old a GSTIN status may get before the daily sweep asks the GST portal again. Invoicing only reads the stored status.",
+   "fieldname": "gst_status_refresh_days",
+   "fieldtype": "Int",
+   "label": "GSTIN Status Refresh (Days)",
+   "non_negative": 1
+  },
+  {
+   "default": "500",
+   "description": "Most GSTIN lookups the daily sweep makes. Keeps the GST portal and ERPNext out of harm's way.",
+   "fieldname": "gst_status_daily_limit",
+   "fieldtype": "Int",
+   "label": "GSTIN Lookups per Day",
+   "non_negative": 1
   }
  ],
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-08-03 00:00:00.000000",
+ "modified": "2026-09-25 22:00:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Billing Settings",

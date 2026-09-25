@@ -28,6 +28,7 @@
   "output_tax_rate",
   "output_tax_amount",
   "zero_rating_reason",
+  "customer_gstin",
   "total",
   "column_break_totals",
   "tds_applicable",
@@ -174,8 +175,15 @@
    "fieldname": "zero_rating_reason",
    "fieldtype": "Select",
    "label": "Zero-Rating Reason",
-   "options": "\nSEZ LUT\nExport",
+   "options": "\nSEZ\nOverseas",
    "description": "Why output tax is 0 (compliance reason — never blank when zero-rated)"
+  },
+  {
+   "description": "The GSTIN this invoice is made out to. Blank when the team is billed as unregistered (no GSTIN, or one the GST portal does not report as Active).",
+   "fieldname": "customer_gstin",
+   "fieldtype": "Data",
+   "label": "Customer GSTIN",
+   "read_only": 1
   },
   {
    "fieldname": "total",
@@ -311,7 +319,7 @@
    "link_fieldname": "invoice"
   }
  ],
- "modified": "2026-06-03 00:00:00.000000",
+ "modified": "2026-09-25 22:00:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Invoice",
