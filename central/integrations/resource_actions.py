@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from zoneinfo import ZoneInfo
+
 import frappe
 from frappe import _
 from redis.exceptions import LockError, LockNotOwnedError
@@ -177,7 +179,10 @@ def find_created_vm(request) -> str | None:
 	match, which is what keeps another request's machine from being adopted."""
 	client = _client(request)
 	configuration = request.get_configuration()
-	started = frappe.utils.get_datetime(request.dispatched_at or request.creation).timestamp()
+	# Central stores naive times in its system time zone, and `timestamp()` would read them in
+	# the process time zone. The region stamps real Unix seconds.
+	dispatched = frappe.utils.get_datetime(request.dispatched_at or request.creation)
+	started = dispatched.replace(tzinfo=ZoneInfo(frappe.utils.get_system_timezone())).timestamp()
 
 	for row in client.list_vms():
 		created_at = row.get("created_at")
