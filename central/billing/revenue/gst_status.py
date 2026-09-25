@@ -22,6 +22,9 @@ PACE_SECONDS = 0.5
 MAX_FAILURES_IN_A_ROW = 5
 SWEEP_BUDGET_SECONDS = 20 * 60
 
+# How long a team whose lookup failed waits before the sweep tries it again.
+FAILED_RETRY_HOURS = 24
+
 # A customer's "check again" inside this window is answered from the store.
 RECHECK_COOLDOWN_SECONDS = 10 * 60
 
@@ -48,7 +51,7 @@ def store(team: str, gstin: str, details: dict) -> None:
 
 	The GST category also decides whether the team is zero-rated as SEZ.
 	"""
-	values = {"gst_status_checked_at": frappe.utils.now_datetime()}
+	values = {"gst_status_checked_at": frappe.utils.now_datetime(), "gst_status_retry_after": None}
 	status = (details.get("status") or "").strip().title()
 	if status in KNOWN:
 		values["gst_status"] = status
@@ -60,11 +63,17 @@ def store(team: str, gstin: str, details: dict) -> None:
 		values["gst_category"] = details["gst_category"]
 	if frappe.db.get_value("Billing Profile", team, "gstin") != gstin:
 		return
+	was_lapsed = standing(team).lapsed
 	frappe.db.set_value("Billing Profile", team, values, update_modified=False)
 	if details.get("gst_category"):
 		from central.billing.payments.provisioning import apply_gst_category
 
 		apply_gst_category(team, details["gst_category"])
+	if standing(team).lapsed != was_lapsed:
+		# The customer's records carry the GSTIN only while it is live.
+		from central.billing.ingester.customer import enqueue_for
+
+		enqueue_for(team)
 
 
 def refresh(team: str) -> str | None:
@@ -91,10 +100,24 @@ def recheck(team: str) -> str | None:
 
 
 def forget(profile) -> None:
-	"""Drop the old GSTIN's status and look the new one up in the background."""
+	"""Drop the old GSTIN's status and look the new one up in the background.
+
+	SEZ zero-rating belonged to the old GSTIN, so it goes too. A new GSTIN gets it
+	back from its own lookup; without lookups, only a removed GSTIN clears it.
+	"""
+	from central.billing.payments.provisioning import apply_gst_category
+
 	profile.db_set(
-		{"gst_status": None, "gst_category": None, "gst_status_checked_at": None}, update_modified=False
+		{
+			"gst_status": None,
+			"gst_category": None,
+			"gst_status_checked_at": None,
+			"gst_status_retry_after": None,
+		},
+		update_modified=False,
 	)
+	if not profile.gstin or lookups_enabled():
+		apply_gst_category(profile.name, None)
 	if not profile.gstin or not lookups_enabled():
 		return
 	frappe.enqueue(
@@ -108,14 +131,19 @@ def forget(profile) -> None:
 
 
 def stale_teams(limit: int) -> list[str]:
-	"""Teams with a GSTIN never checked or checked too long ago, oldest first."""
+	"""Teams with a GSTIN never checked or checked too long ago, oldest first.
+
+	A team whose last lookup failed sits out until its retry time.
+	"""
 	profile = frappe.qb.DocType("Billing Profile")
-	cutoff = frappe.utils.add_days(frappe.utils.now_datetime(), -settings.gst_status_refresh_days())
+	now = frappe.utils.now_datetime()
+	cutoff = frappe.utils.add_days(now, -settings.gst_status_refresh_days())
 	return (
 		frappe.qb.from_(profile)
 		.select(profile.name)
 		.where(profile.gstin.isnotnull() & (profile.gstin != ""))
 		.where(profile.gst_status_checked_at.isnull() | (profile.gst_status_checked_at < cutoff))
+		.where(profile.gst_status_retry_after.isnull() | (profile.gst_status_retry_after <= now))
 		.orderby(profile.gst_status_checked_at)
 		.limit(limit)
 	).run(pluck=True)
@@ -154,12 +182,19 @@ def refresh_stale() -> dict:
 			frappe.log_error(
 				title="GSTIN Status Lookup Failed", reference_doctype="Billing Profile", reference_name=team
 			)
+			_defer(team)
 		if not frappe.in_test:
 			frappe.db.commit()  # nosemgrep: frappe-manual-commit -- keep each answer the portal gave
 		if in_a_row >= MAX_FAILURES_IN_A_ROW:
 			break
 		time.sleep(PACE_SECONDS)
 	return {"checked": checked, "failed": failed}
+
+
+def _defer(team: str) -> None:
+	"""Move a failed team out of the way until its retry time."""
+	retry_after = frappe.utils.add_to_date(frappe.utils.now_datetime(), hours=FAILED_RETRY_HOURS)
+	frappe.db.set_value("Billing Profile", team, "gst_status_retry_after", retry_after, update_modified=False)
 
 
 def _seconds_since(moment) -> float:

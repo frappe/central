@@ -3,14 +3,16 @@
 """Keep a team's customer, address and contact in the accounting system in step
 with its Billing Profile.
 
-Runs in the background; saving a profile never waits on it. Each record's id is
+Runs only as its own background job, one team at a time. Each record's id is
 kept on the profile as soon as it exists, so a sync that fails half way resumes
 where it stopped instead of creating the customer again.
 """
 
+from contextlib import contextmanager
 from urllib.parse import quote
 
 import frappe
+from redis.exceptions import LockError
 
 from central.billing.ingester.connection import enabled, get, post, put
 
@@ -30,6 +32,9 @@ SYNCED_FIELDS = (
 
 PENDING_BATCH = 100
 
+# Longest a sync may hold its team's lock: three requests at their timeout, and room.
+LOCK_SECONDS = 5 * 60
+
 
 def enqueue_sync(profile) -> None:
 	"""Queue a sync for a complete, real profile whose synced details changed."""
@@ -41,14 +46,22 @@ def enqueue_sync(profile) -> None:
 
 
 def sync_customer_profile(team: str) -> None:
-	"""Create the team's records, or bring them up to date."""
-	profile = frappe.get_doc("Billing Profile", team)
-	if not _should_sync(profile):
-		return
-	if profile.profile_id:
-		update_customer_profile(profile)
-	else:
-		create_customer_profile(profile)
+	"""Background job: create the team's records, or bring them up to date.
+
+	Never call it inline. It commits each record id as it lands, which is only
+	safe in a transaction that holds nothing else.
+	"""
+	with _team_lock(team) as held:
+		if not held:
+			return  # another sync for this team is running and will finish the job
+		_fresh_snapshot()
+		profile = frappe.get_doc("Billing Profile", team)
+		if not _should_sync(profile):
+			return
+		if profile.profile_id:
+			update_customer_profile(profile)
+		else:
+			create_customer_profile(profile)
 
 
 def create_customer_profile(profile) -> None:
@@ -72,12 +85,17 @@ def update_customer_profile(profile) -> None:
 
 
 def ensure_customer(team: str) -> str | None:
-	"""The team's customer id, syncing the profile first if it has none yet."""
+	"""The team's customer id. Without one, queue the sync and return None."""
 	customer = frappe.db.get_value("Billing Profile", team, "profile_id")
-	if not customer and enabled():
-		sync_customer_profile(team)
-		customer = frappe.db.get_value("Billing Profile", team, "profile_id")
+	if not customer:
+		enqueue_for(team)
 	return customer
+
+
+def enqueue_for(team: str) -> None:
+	"""Queue a sync for this team if its profile is one we sync."""
+	if frappe.db.exists("Billing Profile", team) and _should_sync(frappe.get_doc("Billing Profile", team)):
+		_enqueue(team)
 
 
 def sync_pending_profiles() -> None:
@@ -115,6 +133,27 @@ def _enqueue(team: str) -> None:
 	)
 
 
+@contextmanager
+def _team_lock(team: str):
+	"""Hold the team's sync lock, or yield False if another sync has it."""
+	lock = frappe.cache.lock(frappe.cache.make_key(f"customer-sync::{team}"), timeout=LOCK_SECONDS)
+	held = lock.acquire(blocking=False)
+	try:
+		yield held
+	finally:
+		if held:
+			try:
+				lock.release()
+			except LockError:
+				pass  # it outlived its timeout; nothing left to release
+
+
+def _fresh_snapshot() -> None:
+	"""See ids a sync that just released the lock committed. Nothing is written yet."""
+	if not frappe.in_test:
+		frappe.db.rollback()
+
+
 def _pending_teams() -> list[str]:
 	"""Complete profiles of real teams that are missing a record id."""
 	from central.billing.api.dashboard._shared import _REQUIRED_PROFILE_FIELDS
@@ -149,8 +188,15 @@ def _resource(doctype: str, name: str) -> str:
 	return f"api/resource/{quote(doctype)}/{quote(name, safe='')}"
 
 
+def _gstin(profile) -> str:
+	"""The GSTIN our own invoices carry: blank while the GST portal calls it lapsed."""
+	from central.billing.revenue import gst_status
+
+	return gst_status.standing(profile.team).gstin or ""
+
+
 def _customer_payload(profile) -> dict:
-	return {"customer_name": profile.legal_name, "customer_type": "Company", "gstin": profile.gstin}
+	return {"customer_name": profile.legal_name, "customer_type": "Company", "gstin": _gstin(profile)}
 
 
 def _address_payload(profile) -> dict:
@@ -163,7 +209,7 @@ def _address_payload(profile) -> dict:
 		"state": profile.state,
 		"pincode": profile.pincode,
 		"country": profile.country,
-		"gstin": profile.gstin,
+		"gstin": _gstin(profile),
 		"is_primary_address": 1,
 		"is_shipping_address": 1,
 		"links": [{"link_doctype": "Customer", "link_name": profile.profile_id}],

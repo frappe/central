@@ -142,3 +142,31 @@ class TestGstCategory(CustomerSyncTestCase):
 		apply_gst_category(TEAM, "Registered Regular")
 		profile.reload()
 		self.assertEqual((profile.zero_rated, profile.zero_rating_reason), (1, "Overseas"))
+
+
+class TestOneSyncAtATime(CustomerSyncTestCase):
+	def test_a_second_sync_while_one_runs_does_nothing(self):
+		lock = frappe.cache.lock(frappe.cache.make_key(f"customer-sync::{TEAM}"), timeout=30)
+		self.assertTrue(lock.acquire(blocking=False))
+		try:
+			with patch(POST) as post:
+				customer.sync_customer_profile(TEAM)
+			post.assert_not_called()
+		finally:
+			lock.release()
+
+	def test_invoice_path_queues_the_sync_instead_of_creating(self):
+		with patch(POST) as post, patch("central.billing.ingester.customer._enqueue") as enqueue:
+			self.assertIsNone(customer.ensure_customer(TEAM))
+		post.assert_not_called()
+		enqueue.assert_called_once_with(TEAM)
+
+
+class TestLapsedGstin(CustomerSyncTestCase):
+	def test_lapsed_gstin_is_left_off_the_records(self):
+		frappe.db.set_value("Billing Profile", TEAM, {"gstin": "27AAPFU0939F1ZV", "gst_status": "Cancelled"})
+		with patch(POST, side_effect=created("CUST-1", "ADDR-1", "CONT-1")) as post:
+			customer.sync_customer_profile(TEAM)
+		customer_payload, address_payload = post.call_args_list[0].args[1], post.call_args_list[1].args[1]
+		self.assertEqual(customer_payload["gstin"], "")
+		self.assertEqual(address_payload["gstin"], "")

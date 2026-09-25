@@ -44,6 +44,7 @@ class BillingProfile(Document):
 		gst_category: DF.Data | None
 		gst_status: DF.Literal["", "Active", "Inactive", "Suspended", "Cancelled", "Invalid"]
 		gst_status_checked_at: DF.Datetime | None
+		gst_status_retry_after: DF.Datetime | None
 		gstin: DF.Data | None
 		legal_name: DF.Data | None
 		manual_override: DF.Check

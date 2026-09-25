@@ -103,12 +103,12 @@ def retry_failed_syncs(now=None) -> list:
 
 
 def _customer_for(team: str) -> str:
-	"""The team's customer in ERPNext, created first if the profile never synced."""
+	"""The team's customer in ERPNext. Missing one queues its sync and fails this try."""
 	from central.billing.ingester.customer import ensure_customer
 
 	customer = ensure_customer(team)
 	if not customer:
-		raise RuntimeError(f"team {team} has no customer in ERPNext yet")
+		raise RuntimeError(f"team {team} has no customer in ERPNext yet; its sync is queued")
 	return customer
 
 
@@ -117,6 +117,7 @@ def _build_sales_invoice(inv, customer: str) -> dict:
 	return {
 		"doctype": "Sales Invoice",
 		"customer": customer,
+		**_gst_treatment(inv),
 		"posting_date": str(inv.period_end),
 		"currency": inv.currency,
 		"cloud_billing_invoice": inv.name,  # back-reference for reconciliation
@@ -132,6 +133,20 @@ def _build_sales_invoice(inv, customer: str) -> dict:
 		"total": inv.subtotal,
 		"grand_total": inv.total,
 	}
+
+
+def _gst_treatment(inv) -> dict:
+	"""The GSTIN this invoice was issued to, so both records agree.
+
+	No GSTIN means the team was billed as unregistered, whatever its address says.
+	"""
+	address = frappe.db.get_value("Billing Profile", inv.team, "address_id")
+	treatment = {"billing_address_gstin": inv.customer_gstin or ""}
+	if address:
+		treatment["customer_address"] = address
+	if not inv.customer_gstin:
+		treatment["gst_category"] = "Unregistered"
+	return treatment
 
 
 def _post_sales_invoice(payload: dict) -> str:

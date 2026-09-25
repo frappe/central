@@ -106,6 +106,31 @@ class TestSweep(GstStatusTestCase):
 		self.assertEqual(lookup.call_count, gst_status.MAX_FAILURES_IN_A_ROW)
 		self.assertEqual(result["failed"], gst_status.MAX_FAILURES_IN_A_ROW)
 
+	def test_failed_teams_step_aside_for_the_rest(self):
+		teams = [
+			profile_with_gstin(f"team-gst-flaky-{n}") for n in range(gst_status.MAX_FAILURES_IN_A_ROW + 2)
+		]
+		real = gst_status.stale_teams
+
+		def only_ours(limit):
+			# Other profiles on the site must not take the failing slots.
+			return [t for t in real(limit) if t in teams]
+
+		with patch.object(gst_status, "stale_teams", side_effect=only_ours):
+			with patch(LOOKUP, side_effect=ConnectionError("portal down")):
+				gst_status.refresh_stale()
+			with patch(LOOKUP, return_value={"status": "Active"}):
+				gst_status.refresh_stale()
+		rows = frappe.get_all(
+			"Billing Profile",
+			filters={"name": ["in", teams]},
+			fields=["gst_status_checked_at", "gst_status_retry_after"],
+		)
+		deferred = [r for r in rows if r.gst_status_retry_after and not r.gst_status_checked_at]
+		reached = [r for r in rows if r.gst_status_checked_at]
+		self.assertEqual(len(deferred), gst_status.MAX_FAILURES_IN_A_ROW)
+		self.assertEqual(len(reached), 2)
+
 	def test_does_nothing_when_lookups_are_off(self):
 		profile_with_gstin("team-gst-off")
 		frappe.local.conf["enable_erpnext_sync"] = 0
@@ -141,3 +166,42 @@ class TestGstinChange(GstStatusTestCase):
 		self.assertFalse(row.gst_status_checked_at)
 		methods = [c.args[0] for c in enqueue.call_args_list]
 		self.assertIn("central.billing.revenue.gst_status.refresh", methods)
+
+
+class TestSezFollowsTheGstin(GstStatusTestCase):
+	def _sez(self, team):
+		profile_with_gstin(team, "Active", checked_days_ago=1)
+		from central.billing.payments.provisioning import apply_gst_category
+
+		apply_gst_category(team, "SEZ")
+
+	def _zero_rated(self, team):
+		return frappe.db.get_value("Tax Profile", team, "zero_rated")
+
+	def test_removed_gstin_drops_sez(self):
+		self._sez("team-gst-sez-removed")
+		frappe.local.conf["enable_erpnext_sync"] = 0  # cleared even without lookups
+		doc = frappe.get_doc("Billing Profile", "team-gst-sez-removed")
+		doc.gstin = None
+		doc.save(ignore_permissions=True)
+		self.assertEqual(self._zero_rated("team-gst-sez-removed"), 0)
+
+	def test_changed_gstin_drops_sez_until_its_lookup(self):
+		self._sez("team-gst-sez-changed")
+		doc = frappe.get_doc("Billing Profile", "team-gst-sez-changed")
+		doc.gstin = "27AAACR5055K1Z7"
+		with patch("frappe.enqueue"):
+			doc.save(ignore_permissions=True)
+		self.assertEqual(self._zero_rated("team-gst-sez-changed"), 0)
+		gst_status.store("team-gst-sez-changed", doc.gstin, {"status": "Active", "gst_category": "SEZ"})
+		self.assertEqual(self._zero_rated("team-gst-sez-changed"), 1)
+
+
+class TestLapseReachesTheCustomer(GstStatusTestCase):
+	def test_a_status_flip_queues_a_customer_sync(self):
+		team = profile_with_gstin("team-gst-flip", "Active", checked_days_ago=1)
+		with patch("central.billing.ingester.customer.enqueue_for") as enqueue:
+			gst_status.store(team, GSTIN, {"status": "Active"})
+			enqueue.assert_not_called()
+			gst_status.store(team, GSTIN, {"status": "Cancelled"})
+			enqueue.assert_called_once_with(team)
