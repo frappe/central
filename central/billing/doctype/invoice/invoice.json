@@ -16,6 +16,7 @@
   "period_end",
   "due_date",
   "dunning_starts_on",
+  "hold_reason",
   "period_key",
   "section_break_items",
   "items",
@@ -101,6 +102,14 @@
    "label": "Dunning Starts On",
    "read_only": 1,
    "description": "When the retry ladder may begin. Starts at the due date, and is pushed forward whenever a collection attempt fails on our side — so a billing-run backlog never costs the customer their grace period."
+  },
+  {
+   "description": "Why this draft is waiting instead of being issued. Cleared when it opens.",
+   "fieldname": "hold_reason",
+   "fieldtype": "Select",
+   "label": "Hold Reason",
+   "options": "\nBilling Details\nAccounting Sync\nGSTIN Check",
+   "read_only": 1
   },
   {
    "fieldname": "period_key",
@@ -319,7 +328,7 @@
    "link_fieldname": "invoice"
   }
  ],
- "modified": "2026-09-25 22:00:00.000000",
+ "modified": "2026-09-26 10:00:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Invoice",

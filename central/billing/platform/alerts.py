@@ -72,8 +72,8 @@ def invariant_violations() -> list[dict]:
 
 
 def held_invoices() -> list[dict]:
-	"""Bills still unissued long after their period closed — usually a team we have
-	no billing details for.
+	"""Bills still unissued long after their period closed — missing billing details,
+	accounting records that never synced, or a GSTIN never checked.
 
 	This is money we are not collecting on resources that are still running, and
 	nothing else surfaces it: the invoice stays Draft, so dunning never sees it.
@@ -86,7 +86,7 @@ def held_invoices() -> list[dict]:
 			"alert": "held_invoice",
 			"subject": i.name,
 			"team": i.team,
-			"detail": f"{i.currency} {i.total} still unissued, period closed {i.period_end}",
+			"detail": f"{i.currency} {i.total} still unissued ({i.hold_reason or 'not opened'}), period closed {i.period_end}",
 		}
 		for i in held_drafts(held_before=cutoff, limit=100)
 	]

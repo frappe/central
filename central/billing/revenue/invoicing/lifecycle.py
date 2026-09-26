@@ -46,11 +46,15 @@ def open_and_collect(invoice: str, collect: bool = True) -> dict:
 
 	doc = frappe.get_doc("Invoice", invoice)
 
-	# An invoice has to be made out to somebody, so a draft is held until the team's
-	# billing details are on file. Completing the profile releases it; the monthly
-	# run picks up anything that release missed.
-	if doc.invoice_type == "Billable" and _hold_for_billing_details(doc):
-		return {"invoice": invoice, "claimed": False, "held": "billing_details"}
+	# A billable draft waits until it can become a correct statutory invoice. Whatever
+	# clears the hold releases it; the monthly run picks up anything a release missed.
+	if doc.invoice_type == "Billable":
+		hold = _hold_reason(doc)
+		if hold:
+			_mark_held(doc, hold)
+			return {"invoice": invoice, "claimed": False, "held": HOLD_KEYS[hold]}
+		# Re-read now, not at drafting: a GSTIN checked since then changes the tax.
+		_retax(doc)
 
 	# Free/trial: a cost_report is computed, never collected — no credits, no
 	# charge. It is opened as a record of the subsidy cost.
@@ -126,6 +130,51 @@ def open_and_collect(invoice: str, collect: bool = True) -> dict:
 	}
 
 
+# Hold Reason values, and the keys callers of `open_and_collect` see.
+HOLD_KEYS = {
+	"Billing Details": "billing_details",
+	"Accounting Sync": "accounting_sync",
+	"GSTIN Check": "gstin_check",
+}
+
+
+def _hold_reason(doc) -> str | None:
+	"""Why this billable draft must wait, or None when it may be issued.
+
+	Each check also starts whatever clears it.
+	"""
+	from central.billing.ingester import customer
+	from central.billing.revenue import gst_status
+
+	if _hold_for_billing_details(doc):
+		return "Billing Details"
+	if customer.awaiting_records(doc.team):
+		return "Accounting Sync"
+	if gst_status.awaiting_check(doc.team):
+		return "GSTIN Check"
+	return None
+
+
+def _mark_held(doc, hold: str) -> None:
+	if doc.hold_reason != hold:
+		frappe.db.set_value("Invoice", doc.name, "hold_reason", hold, update_modified=False)
+
+
+def _retax(doc) -> None:
+	"""Recompute the draft's tax block from the team's current tax standing."""
+	from central.billing.revenue.tax import resolve_tax
+
+	base = frappe.utils.flt(
+		frappe.utils.flt(doc.subtotal)
+		- frappe.utils.flt(doc.commitment_discount)
+		+ frappe.utils.flt(doc.commitment_clawback),
+		2,
+	)
+	doc.update(resolve_tax(doc.team, base))
+	doc.total = frappe.utils.flt(base + frappe.utils.flt(doc.output_tax_amount), 2)
+	doc.hold_reason = None
+
+
 def _hold_for_billing_details(doc) -> bool:
 	"""Whether this invoice must wait for billing details, asking for them if so.
 
@@ -148,7 +197,7 @@ def _hold_for_billing_details(doc) -> bool:
 
 
 def held_drafts(team: str | None = None, held_before=None, limit: int | None = None) -> list[dict]:
-	"""Billable drafts waiting on billing details — one team's, or everybody's.
+	"""Billable drafts still waiting to be issued — one team's, or everybody's.
 
 	`held_before` keeps only those whose period closed on or before that date, which
 	is how long the invoice has been waiting.
@@ -163,7 +212,7 @@ def held_drafts(team: str | None = None, held_before=None, limit: int | None = N
 	return frappe.get_all(
 		"Invoice",
 		filters=filters,
-		fields=["name", "team", "total", "currency", "period_end"],
+		fields=["name", "team", "total", "currency", "period_end", "hold_reason"],
 		order_by="period_end asc",
 		limit=limit,
 	)

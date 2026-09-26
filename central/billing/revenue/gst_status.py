@@ -49,6 +49,21 @@ def standing(team: str) -> frappe._dict:
 	return frappe._dict(gstin=None if lapsed else (profile.gstin or None), lapsed=lapsed)
 
 
+def awaiting_check(team: str) -> bool:
+	"""Whether the team's GSTIN has never been checked. Queues its lookup if so."""
+	if not lookups_enabled():
+		return False
+	profile = frappe.db.get_value(
+		"Billing Profile", team, ["gstin", "gst_status", "gst_status_retry_after"], as_dict=True
+	)
+	if not profile or not profile.gstin or profile.gst_status:
+		return False
+	retry_after = profile.gst_status_retry_after
+	if not retry_after or frappe.utils.get_datetime(retry_after) <= frappe.utils.now_datetime():
+		_enqueue_refresh(team)
+	return True
+
+
 def store(team: str, gstin: str, details: dict) -> None:
 	"""Save what the portal said, unless the GSTIN changed while we asked.
 
@@ -72,6 +87,10 @@ def store(team: str, gstin: str, details: dict) -> None:
 		from central.billing.payments.provisioning import apply_gst_category
 
 		apply_gst_category(team, details["gst_category"])
+	if values.get("gst_status"):
+		from central.billing.revenue.invoicing.run import release_held_drafts
+
+		release_held_drafts(team)
 	if standing(team).lapsed != was_lapsed:
 		# The customer's records carry the GSTIN only while it is live.
 		from central.billing.ingester.customer import enqueue_for
@@ -120,15 +139,18 @@ def forget(profile) -> None:
 		update_modified=False,
 	)
 	apply_gst_category(profile.name, None)
-	if not profile.gstin or not lookups_enabled():
-		return
+	if profile.gstin and lookups_enabled():
+		_enqueue_refresh(profile.name)
+
+
+def _enqueue_refresh(team: str) -> None:
 	frappe.enqueue(
 		"central.billing.revenue.gst_status.refresh",
 		queue="short",
-		job_id=f"gst-status::{profile.name}",
+		job_id=f"gst-status::{team}",
 		deduplicate=True,
 		enqueue_after_commit=True,
-		team=profile.name,
+		team=team,
 	)
 
 
