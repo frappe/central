@@ -118,6 +118,7 @@ export const API = {
 		'central.billing.api.dashboard.set_default_payment_method',
 	reorderPaymentMethods:
 		'central.billing.api.dashboard.reorder_payment_methods',
+	recheckGstStatus: 'central.billing.api.dashboard.recheck_gst_status',
 	removePaymentMethod: 'central.billing.api.dashboard.remove_payment_method',
 	saveBillingProfile: 'central.billing.api.dashboard.save_billing_profile',
 	saveBillingSettings: 'central.billing.api.dashboard.save_billing_settings',

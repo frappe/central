@@ -154,3 +154,7 @@ central.patches.v0_0.drop_project_scoping_from_credits_and_methods
 # A Single doesn't pick up a new field's default once it has been saved, and a
 # zero grace would page the operators about every held invoice on day one.
 central.patches.v0_0.seed_billing_details_grace
+# Zero-rating reasons follow the GST category names (SEZ LUT -> SEZ, Export -> Overseas).
+central.patches.v0_0.rename_zero_rating_reasons
+# The GSTIN sweep knobs read 0 on a Single saved before they existed.
+central.patches.v0_0.seed_gst_status_refresh

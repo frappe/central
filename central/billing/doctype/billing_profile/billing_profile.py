@@ -23,6 +23,46 @@ def validate_gstin(gstin: str) -> bool:
 
 
 class BillingProfile(Document):
+	# begin: auto-generated types
+	# This code is auto-generated. Do not modify anything in this block.
+
+	from typing import TYPE_CHECKING
+
+	if TYPE_CHECKING:
+		from frappe.types import DF
+
+		address_id: DF.Data | None
+		address_line1: DF.Data | None
+		address_line2: DF.Data | None
+		city: DF.Data | None
+		collection_action_reason: DF.Data | None
+		collection_mode: DF.Literal["Auto Charge", "Manual Checkout", "Prepaid", "Action Required"]
+		contact_id: DF.Data | None
+		country: DF.Link | None
+		currency: DF.Link | None
+		email: DF.Data | None
+		gst_category: DF.Data | None
+		gst_status: DF.Literal["", "Active", "Inactive", "Suspended", "Cancelled", "Invalid"]
+		gst_status_checked_at: DF.Datetime | None
+		gst_status_retry_after: DF.Datetime | None
+		gstin: DF.Data | None
+		legal_name: DF.Data | None
+		manual_override: DF.Check
+		min_balance: DF.Currency
+		override_max_spend: DF.Currency
+		phone: DF.Data | None
+		pincode: DF.Data | None
+		profile_id: DF.Data | None
+		promoted_at: DF.Datetime | None
+		promotion_basis: DF.SmallText | None
+		spend_alert_threshold: DF.Currency
+		state: DF.Autocomplete | None
+		team: DF.Link
+		team_owner: DF.ReadOnly | None
+		trust_tier: DF.Data | None
+		trust_tier_level: DF.Link | None
+	# end: auto-generated types
+
 	def validate(self):
 		self.validate_gstin()
 		self.validate_india_state()
@@ -30,6 +70,20 @@ class BillingProfile(Document):
 
 	def on_update(self):
 		self.release_held_invoices()
+		self.refresh_gst_status_on_change()
+		self.enqueue_profile_sync()
+
+	def refresh_gst_status_on_change(self):
+		"""A new GSTIN starts with no status and is looked up in the background."""
+		from central.billing.revenue import gst_status
+
+		if self.has_value_changed("gstin"):
+			gst_status.forget(self)
+
+	def enqueue_profile_sync(self):
+		from central.billing.ingester.customer import enqueue_sync
+
+		enqueue_sync(self)
 
 	def release_held_invoices(self):
 		"""Settle anything held back for these details once they are on file.

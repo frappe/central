@@ -375,6 +375,10 @@ export interface BillingProfile {
 	email?: string | null
 	phone?: string | null
 	gstin?: string | null
+	/** As the GST portal last reported it; blank until checked. */
+	gst_status?: GstStatus | null
+	gst_category?: string | null
+	gst_status_checked_at?: string | null
 	address_line1?: string | null
 	address_line2?: string | null
 	city?: string | null
@@ -389,7 +393,16 @@ export interface BillingProfile {
 	credit_headroom?: number
 	currency_locked: boolean
 	supported_currencies: Currency[]
+	/** GSTIN on file but not Active: invoices go out as unregistered. */
+	gst_lapsed?: boolean
 }
+
+export type GstStatus =
+	| 'Active'
+	| 'Inactive'
+	| 'Suspended'
+	| 'Cancelled'
+	| 'Invalid'
 
 /** get_billing_geo — dropdown feeds for the address form. */
 export interface BillingGeo {

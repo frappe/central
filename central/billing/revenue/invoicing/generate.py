@@ -218,6 +218,7 @@ def _rate(team: str, lines: list[dict], period_start, period_end):
 			"output_tax_rate": tax["output_tax_rate"],
 			"output_tax_amount": tax["output_tax_amount"],
 			"zero_rating_reason": tax["zero_rating_reason"],
+			"customer_gstin": tax["customer_gstin"],
 			"tds_applicable": tax["tds_applicable"],
 			"tds_rate": tax["tds_rate"],
 			"tds_amount": tax["tds_amount"],

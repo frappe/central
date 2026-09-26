@@ -16,6 +16,7 @@
   "period_end",
   "due_date",
   "dunning_starts_on",
+  "hold_reason",
   "period_key",
   "section_break_items",
   "items",
@@ -28,6 +29,7 @@
   "output_tax_rate",
   "output_tax_amount",
   "zero_rating_reason",
+  "customer_gstin",
   "total",
   "column_break_totals",
   "tds_applicable",
@@ -102,6 +104,14 @@
    "description": "When the retry ladder may begin. Starts at the due date, and is pushed forward whenever a collection attempt fails on our side — so a billing-run backlog never costs the customer their grace period."
   },
   {
+   "description": "Why this draft is waiting instead of being issued. Cleared when it opens.",
+   "fieldname": "hold_reason",
+   "fieldtype": "Select",
+   "label": "Hold Reason",
+   "options": "\nBilling Details\nAccounting Sync\nGSTIN Check",
+   "read_only": 1
+  },
+  {
    "fieldname": "period_key",
    "fieldtype": "Data",
    "label": "Period Key",
@@ -174,8 +184,15 @@
    "fieldname": "zero_rating_reason",
    "fieldtype": "Select",
    "label": "Zero-Rating Reason",
-   "options": "\nSEZ LUT\nExport",
+   "options": "\nSEZ\nOverseas",
    "description": "Why output tax is 0 (compliance reason — never blank when zero-rated)"
+  },
+  {
+   "description": "The GSTIN this invoice is made out to. Blank when the team is billed as unregistered (no GSTIN, or one the GST portal does not report as Active).",
+   "fieldname": "customer_gstin",
+   "fieldtype": "Data",
+   "label": "Customer GSTIN",
+   "read_only": 1
   },
   {
    "fieldname": "total",
@@ -311,7 +328,7 @@
    "link_fieldname": "invoice"
   }
  ],
- "modified": "2026-06-03 00:00:00.000000",
+ "modified": "2026-09-26 10:00:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Invoice",

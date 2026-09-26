@@ -1,11 +1,9 @@
 {
  "actions": [],
- "allow_rename": 0,
  "autoname": "field:team",
- "creation": "2026-06-03 00:00:00.000000",
+ "creation": "2026-06-03 00:00:00",
  "description": "Per-team tax treatment: additive output tax (GST/VAT), zero-rating with a compliance reason (SEZ/export), and the TDS withholding declaration.",
  "doctype": "DocType",
- "editable_grid": 0,
  "engine": "InnoDB",
  "field_order": [
   "team",
@@ -22,11 +20,11 @@
   {
    "fieldname": "team",
    "fieldtype": "Link",
-   "options": "Team",
    "in_list_view": 1,
    "label": "Team",
-   "unique": 1,
-   "reqd": 1
+   "options": "Team",
+   "reqd": 1,
+   "unique": 1
   },
   {
    "default": "None",
@@ -48,16 +46,16 @@
   },
   {
    "default": "0",
+   "description": "SEZ-LUT / export \u2014 output tax 0 but a reason is mandatory",
    "fieldname": "zero_rated",
    "fieldtype": "Check",
-   "label": "Zero Rated",
-   "description": "SEZ-LUT / export — output tax 0 but a reason is mandatory"
+   "label": "Zero Rated"
   },
   {
    "fieldname": "zero_rating_reason",
    "fieldtype": "Select",
    "label": "Zero-Rating Reason",
-   "options": "\nSEZ LUT\nExport"
+   "options": "\nSEZ\nOverseas"
   },
   {
    "fieldname": "section_break_tds",
@@ -66,10 +64,10 @@
   },
   {
    "default": "0",
+   "description": "Customer self-declares (has TAN). 0 at launch.",
    "fieldname": "tds_applicable",
    "fieldtype": "Check",
-   "label": "TDS Applicable",
-   "description": "Customer self-declares (has TAN). 0 at launch."
+   "label": "TDS Applicable"
   },
   {
    "default": "0",
@@ -80,7 +78,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-06-03 00:00:00.000000",
+ "modified": "2026-09-25 20:27:57.959627",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Tax Profile",
@@ -100,6 +98,7 @@
    "write": 1
   }
  ],
+ "row_format": "Dynamic",
  "sort_field": "creation",
  "sort_order": "DESC",
  "states": []

@@ -6,6 +6,7 @@ team header, and trust-tier progress.
 
 import frappe
 from frappe import _
+from frappe.rate_limiter import rate_limit
 
 from central.billing import authz
 from central.billing.api.dashboard._shared import (
@@ -20,6 +21,7 @@ from central.billing.api.dashboard._shared import (
 	_team_resource_count,
 	currency_for_country,
 )
+from central.billing.revenue import gst_status
 
 
 @frappe.whitelist()
@@ -68,9 +70,19 @@ def get_billing_profile(team: str | None = None) -> dict:
 			"credit_headroom": credit_funded_headroom(team),
 			"currency_locked": _has_money_activity(team),
 			"supported_currencies": supported_currencies(),
+			"gst_lapsed": gst_status.standing(team).lapsed,
 		}
 	)
 	return profile
+
+
+@frappe.whitelist(methods=["POST"])
+@rate_limit(limit=5, seconds=60 * 60, methods="POST")
+def recheck_gst_status(team: str | None = None) -> dict:
+	"""Ask the GST portal about the team's GSTIN again, e.g. after reactivating it."""
+	team = _resolve_team(team, authz.MANAGE)
+	status = gst_status.recheck(team)
+	return {"team": team, "gst_status": status, "gst_lapsed": gst_status.standing(team).lapsed}
 
 
 @frappe.whitelist()

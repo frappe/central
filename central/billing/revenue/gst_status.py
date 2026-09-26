@@ -1,0 +1,225 @@
+# Copyright (c) 2026, Frappe and contributors
+# For license information, please see license.txt
+"""GSTIN status: looked up from the GST portal, read from the Billing Profile.
+
+Invoicing never looks a GSTIN up. It reads the stored status, which a paced,
+capped daily sweep keeps fresh, so billing every Indian team costs the portal
+nothing.
+"""
+
+import time
+
+import frappe
+
+from central.billing import settings
+
+# Statuses that stop an invoice from carrying the GSTIN.
+LAPSED = ("Inactive", "Suspended", "Cancelled", "Invalid")
+KNOWN = ("Active", *LAPSED)
+
+# Gap between two sweep lookups, and when the sweep gives up for the day.
+PACE_SECONDS = 0.5
+MAX_FAILURES_IN_A_ROW = 5
+SWEEP_BUDGET_SECONDS = 20 * 60
+
+# How long a team whose lookup failed waits before the sweep tries it again.
+FAILED_RETRY_HOURS = 24
+
+# Undoes one team's half-done refresh without touching the rest of the sweep.
+_SAVEPOINT = "gst_status_refresh"
+
+# A customer's "check again" inside this window is answered from the store.
+RECHECK_COOLDOWN_SECONDS = 10 * 60
+
+
+def lookups_enabled() -> bool:
+	"""Lookups go through ERPNext, so they are off when the sync is."""
+	return bool(frappe.conf.get("enable_erpnext_sync"))
+
+
+def standing(team: str) -> frappe._dict:
+	"""The GSTIN an invoice may carry, and whether the portal last called it lapsed.
+
+	A GSTIN that has not been checked yet is trusted.
+	"""
+	profile = (
+		frappe.db.get_value("Billing Profile", team, ["gstin", "gst_status"], as_dict=True) or frappe._dict()
+	)
+	lapsed = bool(profile.gstin) and profile.gst_status in LAPSED
+	return frappe._dict(gstin=None if lapsed else (profile.gstin or None), lapsed=lapsed)
+
+
+def awaiting_check(team: str) -> bool:
+	"""Whether the team's GSTIN has never been checked. Queues its lookup if so."""
+	if not lookups_enabled():
+		return False
+	profile = frappe.db.get_value(
+		"Billing Profile", team, ["gstin", "gst_status", "gst_status_retry_after"], as_dict=True
+	)
+	if not profile or not profile.gstin or profile.gst_status:
+		return False
+	retry_after = profile.gst_status_retry_after
+	if not retry_after or frappe.utils.get_datetime(retry_after) <= frappe.utils.now_datetime():
+		_enqueue_refresh(team)
+	return True
+
+
+def store(team: str, gstin: str, details: dict) -> None:
+	"""Save what the portal said, unless the GSTIN changed while we asked.
+
+	The GST category also decides whether the team is zero-rated as SEZ.
+	"""
+	values = {"gst_status_checked_at": frappe.utils.now_datetime(), "gst_status_retry_after": None}
+	status = (details.get("status") or "").strip().title()
+	if status in KNOWN:
+		values["gst_status"] = status
+	else:
+		frappe.logger("billing").warning(
+			f"GSTIN status {status!r} for {team} not recognised, kept the old one"
+		)
+	if details.get("gst_category"):
+		values["gst_category"] = details["gst_category"]
+	if frappe.db.get_value("Billing Profile", team, "gstin") != gstin:
+		return
+	was_lapsed = standing(team).lapsed
+	frappe.db.set_value("Billing Profile", team, values, update_modified=False)
+	if details.get("gst_category"):
+		from central.billing.payments.provisioning import apply_gst_category
+
+		apply_gst_category(team, details["gst_category"])
+	if values.get("gst_status"):
+		from central.billing.revenue.invoicing.run import release_held_drafts
+
+		release_held_drafts(team)
+	if standing(team).lapsed != was_lapsed:
+		# The customer's records carry the GSTIN only while it is live.
+		from central.billing.ingester.customer import enqueue_for
+
+		enqueue_for(team)
+
+
+def refresh(team: str) -> str | None:
+	"""Look the team's GSTIN up now and store the answer. Returns the stored status."""
+	from central.billing.ingester.customer import get_gstin_details
+
+	gstin = frappe.db.get_value("Billing Profile", team, "gstin")
+	if not gstin or not lookups_enabled():
+		return None
+	details = get_gstin_details(gstin)
+	if details:
+		store(team, gstin, details)
+	return frappe.db.get_value("Billing Profile", team, "gst_status")
+
+
+def recheck(team: str) -> str | None:
+	"""A customer's "check again". Repeats inside the cooldown cost no lookup."""
+	checked_at, status = frappe.db.get_value(
+		"Billing Profile", team, ["gst_status_checked_at", "gst_status"]
+	) or (None, None)
+	if checked_at and _seconds_since(checked_at) < RECHECK_COOLDOWN_SECONDS:
+		return status
+	return refresh(team)
+
+
+def forget(profile) -> None:
+	"""Drop the old GSTIN's status and look the new one up in the background.
+
+	SEZ zero-rating belonged to the old GSTIN, so it goes too. A new GSTIN gets it
+	back from its own lookup, or from an admin when lookups are off.
+	"""
+	from central.billing.payments.provisioning import apply_gst_category
+
+	profile.db_set(
+		{
+			"gst_status": None,
+			"gst_category": None,
+			"gst_status_checked_at": None,
+			"gst_status_retry_after": None,
+		},
+		update_modified=False,
+	)
+	apply_gst_category(profile.name, None)
+	if profile.gstin and lookups_enabled():
+		_enqueue_refresh(profile.name)
+
+
+def _enqueue_refresh(team: str) -> None:
+	frappe.enqueue(
+		"central.billing.revenue.gst_status.refresh",
+		queue="short",
+		job_id=f"gst-status::{team}",
+		deduplicate=True,
+		enqueue_after_commit=True,
+		team=team,
+	)
+
+
+def stale_teams(limit: int) -> list[str]:
+	"""Teams with a GSTIN never checked or checked too long ago, oldest first.
+
+	A team whose last lookup failed sits out until its retry time.
+	"""
+	profile = frappe.qb.DocType("Billing Profile")
+	now = frappe.utils.now_datetime()
+	cutoff = frappe.utils.add_days(now, -settings.gst_status_refresh_days())
+	return (
+		frappe.qb.from_(profile)
+		.select(profile.name)
+		.where(profile.gstin.isnotnull() & (profile.gstin != ""))
+		.where(profile.gst_status_checked_at.isnull() | (profile.gst_status_checked_at < cutoff))
+		.where(profile.gst_status_retry_after.isnull() | (profile.gst_status_retry_after <= now))
+		.orderby(profile.gst_status_checked_at)
+		.limit(limit)
+	).run(pluck=True)
+
+
+def run_gst_status_refresh() -> None:
+	"""Daily: queue the sweep, off the scheduler's own worker."""
+	frappe.enqueue(
+		"central.billing.revenue.gst_status.refresh_stale",
+		queue="long",
+		job_id="gst-status-refresh",
+		deduplicate=True,
+	)
+
+
+def refresh_stale() -> dict:
+	"""Look up stale statuses one at a time, paced, capped and time-boxed.
+
+	Stops for the day after a run of failures: the portal or ERPNext is down, and
+	asking harder would not help it. The answers commit together when the job ends.
+	"""
+	if not lookups_enabled():
+		return {"checked": 0, "failed": 0, "skipped": "lookups_off"}
+	started = time.monotonic()
+	checked = failed = in_a_row = 0
+	for team in stale_teams(settings.gst_status_daily_limit()):
+		if time.monotonic() - started > SWEEP_BUDGET_SECONDS:
+			break
+		frappe.db.savepoint(_SAVEPOINT)
+		try:
+			refresh(team)
+			checked += 1
+			in_a_row = 0
+		except Exception:
+			frappe.db.rollback(save_point=_SAVEPOINT)
+			failed += 1
+			in_a_row += 1
+			frappe.log_error(
+				title="GSTIN Status Lookup Failed", reference_doctype="Billing Profile", reference_name=team
+			)
+			_defer(team)
+		if in_a_row >= MAX_FAILURES_IN_A_ROW:
+			break
+		time.sleep(PACE_SECONDS)
+	return {"checked": checked, "failed": failed}
+
+
+def _defer(team: str) -> None:
+	"""Move a failed team out of the way until its retry time."""
+	retry_after = frappe.utils.add_to_date(frappe.utils.now_datetime(), hours=FAILED_RETRY_HOURS)
+	frappe.db.set_value("Billing Profile", team, "gst_status_retry_after", retry_after, update_modified=False)
+
+
+def _seconds_since(moment) -> float:
+	return frappe.utils.time_diff_in_seconds(frappe.utils.now_datetime(), moment)

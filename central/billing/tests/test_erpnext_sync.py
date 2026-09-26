@@ -7,11 +7,12 @@ from unittest.mock import MagicMock, patch
 import frappe
 import requests
 
-from central.billing.revenue import erpnext_sync
+from central.billing.ingester import erpnext_sync
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
-from central.billing.tests.utils import ensure_team
+from central.billing.tests.utils import complete_billing_profile, ensure_team
 
 TEAM = "team-erp"
+CUSTOMER = "Team Erp Ltd"
 
 
 def ok_response(name="SINV-2026-001"):
@@ -30,6 +31,8 @@ def err_response():
 class ErpnextSyncTestBase(IntegrationTestCase):
 	def setUp(self):
 		ensure_team(TEAM)
+		complete_billing_profile(TEAM)
+		frappe.db.set_value("Billing Profile", TEAM, "profile_id", CUSTOMER)
 		frappe.conf.erpnext_url = "https://erp.example"
 		self._purge()
 
@@ -77,7 +80,7 @@ class TestSyncSuccess(ErpnextSyncTestBase):
 	def test_paid_invoice_syncs_and_stores_reference(self):
 		inv = self._paid_invoice()
 		with patch(
-			"central.billing.revenue.erpnext_sync.requests.post", return_value=ok_response("SINV-9")
+			"central.billing.ingester.erpnext_sync.requests.post", return_value=ok_response("SINV-9")
 		) as post:
 			out = erpnext_sync.sync_invoice(inv)
 
@@ -89,12 +92,28 @@ class TestSyncSuccess(ErpnextSyncTestBase):
 		payload = post.call_args.kwargs["json"]
 		self.assertEqual(payload["doctype"], "Sales Invoice")
 		self.assertEqual(payload["cloud_billing_invoice"], inv)
+		self.assertEqual(payload["customer"], CUSTOMER)  # the synced customer, not the team
+		self.assertEqual(payload["gst_category"], "Unregistered")  # the invoice carried no GSTIN
+		self.assertEqual(payload["billing_address_gstin"], "")
+
+	def test_registered_invoice_carries_its_gstin(self):
+		inv = self._paid_invoice()
+		frappe.db.set_value("Invoice", inv, "customer_gstin", "27AAPFU0939F1ZV")
+		frappe.db.set_value("Billing Profile", TEAM, "address_id", "ADDR-1")
+		with patch(
+			"central.billing.ingester.erpnext_sync.requests.post", return_value=ok_response("SINV-10")
+		) as post:
+			erpnext_sync.sync_invoice(inv)
+		payload = post.call_args.kwargs["json"]
+		self.assertEqual(payload["billing_address_gstin"], "27AAPFU0939F1ZV")
+		self.assertEqual(payload["customer_address"], "ADDR-1")
+		self.assertNotIn("gst_category", payload)
 		self.assertEqual(len(payload["items"]), 1)
 
 	def test_already_synced_is_idempotent(self):
 		inv = self._paid_invoice()
 		frappe.db.set_value("Invoice", inv, {"erpnext_invoice": "SINV-1", "erpnext_sync_status": "Synced"})
-		with patch("central.billing.revenue.erpnext_sync.requests.post") as post:
+		with patch("central.billing.ingester.erpnext_sync.requests.post") as post:
 			out = erpnext_sync.sync_invoice(inv)
 			post.assert_not_called()
 		self.assertEqual(out["skipped"], "already_synced")
@@ -102,16 +121,24 @@ class TestSyncSuccess(ErpnextSyncTestBase):
 	def test_cost_report_and_unpaid_are_skipped(self):
 		cost = self._paid_invoice(invoice_type="Cost Report", month=5)
 		draft = self._paid_invoice(status="Open", month=6)
-		with patch("central.billing.revenue.erpnext_sync.requests.post") as post:
+		with patch("central.billing.ingester.erpnext_sync.requests.post") as post:
 			self.assertEqual(erpnext_sync.sync_invoice(cost)["skipped"], "not_billable")
 			self.assertEqual(erpnext_sync.sync_invoice(draft)["skipped"], "not_paid")
 			post.assert_not_called()
 
 
 class TestFailureIsolation(ErpnextSyncTestBase):
+	def test_team_without_a_customer_retries_later(self):
+		inv = self._paid_invoice()
+		frappe.db.set_value("Billing Profile", TEAM, "profile_id", None)
+		with patch("central.billing.ingester.erpnext_sync.requests.post") as post:
+			out = erpnext_sync.sync_invoice(inv)
+			post.assert_not_called()
+		self.assertTrue(out["retry_scheduled"])
+
 	def test_erpnext_500_does_not_touch_the_customer_invoice(self):
 		inv = self._paid_invoice()
-		with patch("central.billing.revenue.erpnext_sync.requests.post", return_value=err_response()):
+		with patch("central.billing.ingester.erpnext_sync.requests.post", return_value=err_response()):
 			out = erpnext_sync.sync_invoice(inv)
 
 		self.assertTrue(out["retry_scheduled"])
@@ -124,7 +151,7 @@ class TestFailureIsolation(ErpnextSyncTestBase):
 
 	def test_backoff_grows_then_alerts_ops_after_three_attempts(self):
 		inv = self._paid_invoice()
-		with patch("central.billing.revenue.erpnext_sync.requests.post", return_value=err_response()):
+		with patch("central.billing.ingester.erpnext_sync.requests.post", return_value=err_response()):
 			a1 = erpnext_sync.sync_invoice(inv)
 			a2 = erpnext_sync.sync_invoice(inv)
 			a3 = erpnext_sync.sync_invoice(inv)
@@ -146,12 +173,12 @@ class TestFailureIsolation(ErpnextSyncTestBase):
 
 	def test_retry_scheduler_picks_up_due_pending_and_succeeds(self):
 		inv = self._paid_invoice()
-		with patch("central.billing.revenue.erpnext_sync.requests.post", return_value=err_response()):
+		with patch("central.billing.ingester.erpnext_sync.requests.post", return_value=err_response()):
 			erpnext_sync.sync_invoice(inv)  # → pending, next_retry_at in ~60s
 
 		future = frappe.utils.add_to_date(frappe.utils.now_datetime(), seconds=120)
 		with patch(
-			"central.billing.revenue.erpnext_sync.requests.post", return_value=ok_response("SINV-RETRY")
+			"central.billing.ingester.erpnext_sync.requests.post", return_value=ok_response("SINV-RETRY")
 		):
 			erpnext_sync.retry_failed_syncs(now=future)
 
@@ -163,7 +190,7 @@ class TestFailureIsolation(ErpnextSyncTestBase):
 class TestPostPaymentHook(ErpnextSyncTestBase):
 	def test_enqueue_after_commit(self):
 		inv = self._paid_invoice()
-		with patch("central.billing.revenue.erpnext_sync.frappe.enqueue") as enqueue:
+		with patch("central.billing.ingester.erpnext_sync.frappe.enqueue") as enqueue:
 			erpnext_sync.enqueue_invoice_sync(inv)
 		enqueue.assert_called_once()
 		self.assertEqual(enqueue.call_args.kwargs["invoice"], inv)

@@ -4,6 +4,7 @@
 
 import time
 from contextlib import contextmanager
+from unittest.mock import patch
 
 import frappe
 from frappe.tests import IntegrationTestCase
@@ -107,7 +108,9 @@ class BillingTestCase(IntegrationTestCase):
 		before = {doctype: set(frappe.get_all(doctype, pluck="name")) for doctype in self._TRACKED}
 		gateways = self._snapshot_gateways()
 		try:
-			return super().run(result)
+			# The bench config may point at a real accounting site; a test opts in.
+			with patch.dict(frappe.local.conf, {"enable_erpnext_sync": 0}):
+				return super().run(result)
 		finally:
 			self._sweep(before)
 			self._restore_gateways(gateways)

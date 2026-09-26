@@ -173,10 +173,10 @@ def settle_draft(invoice: str, counters: dict | None = None) -> dict | None:
 
 
 def release_held_drafts(team: str) -> None:
-	"""Queue the settlement of whatever was held for this team's billing details.
+	"""Queue the settlement of whatever this team has held back.
 
-	Enqueued, not inline: the customer is waiting on a form, not on a charge. A team
-	with nothing held queues nothing.
+	Called when something that holds an invoice may have cleared. Enqueued, not
+	inline: nobody is waiting on a charge. A team with nothing held queues nothing.
 	"""
 	if not held_drafts(team, limit=1):
 		return

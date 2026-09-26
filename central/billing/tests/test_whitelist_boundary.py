@@ -155,7 +155,7 @@ class TestAuditedPrimitivesStayInternal(BillingTestCase):
 		"central.billing.payments.charges.pay_invoice",
 		"central.billing.catalog.plans.create_configured_plan",
 		"central.billing.catalog.plans.get_plan_pricing",
-		"central.billing.revenue.erpnext_sync.sync_invoice",
+		"central.billing.ingester.erpnext_sync.sync_invoice",
 	)
 
 	def test_primitives_are_rejected_at_the_http_door(self):

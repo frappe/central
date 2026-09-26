@@ -1,14 +1,17 @@
 {
  "actions": [],
- "allow_rename": 0,
  "autoname": "field:team",
- "creation": "2026-06-03 00:00:00.000000",
+ "creation": "2026-06-03 00:00:00",
  "description": "A team's billing identity for invoicing: legal name, address, and GSTIN (validated).",
  "doctype": "DocType",
- "editable_grid": 0,
  "engine": "InnoDB",
  "field_order": [
   "team",
+  "team_owner",
+  "column_break_hfov",
+  "profile_id",
+  "address_id",
+  "contact_id",
   "section_break_currency",
   "currency",
   "section_break_contact",
@@ -26,6 +29,11 @@
   "pincode",
   "section_break_tax",
   "gstin",
+  "column_break_jgnz",
+  "gst_status",
+  "gst_category",
+  "gst_status_checked_at",
+  "gst_status_retry_after",
   "section_break_settings",
   "min_balance",
   "collection_mode",
@@ -42,50 +50,281 @@
   "promotion_basis"
  ],
  "fields": [
-  {"fieldname": "team", "fieldtype": "Link", "options": "Team", "in_list_view": 1, "label": "Team", "unique": 1, "reqd": 1},
-  {"fieldname": "section_break_currency", "fieldtype": "Section Break", "label": "Billing Currency"},
-  {"fieldname": "currency", "fieldtype": "Link", "options": "Currency", "in_list_view": 1, "label": "Billing Currency", "description": "The single currency this team is billed and pays in; locks once money moves."},
-  {"fieldname": "section_break_contact", "fieldtype": "Section Break", "label": "Contact"},
-  {"fieldname": "legal_name", "fieldtype": "Data", "in_list_view": 1, "label": "Legal Name"},
-  {"fieldname": "email", "fieldtype": "Data", "label": "Billing Email", "options": "Email"},
-  {"fieldname": "column_break_contact", "fieldtype": "Column Break"},
-  {"fieldname": "phone", "fieldtype": "Data", "label": "Phone"},
-  {"fieldname": "section_break_addr", "fieldtype": "Section Break", "label": "Address"},
-  {"fieldname": "address_line1", "fieldtype": "Data", "label": "Address Line 1"},
-  {"fieldname": "address_line2", "fieldtype": "Data", "label": "Address Line 2"},
-  {"fieldname": "city", "fieldtype": "Data", "label": "City"},
-  {"fieldname": "column_break_addr", "fieldtype": "Column Break"},
-  {"default": "India", "fieldname": "country", "fieldtype": "Link", "options": "Country", "label": "Country"},
-  {"fieldname": "state", "fieldtype": "Autocomplete", "label": "State", "description": "For India, pick the GST registration state — its code must match the GSTIN."},
-  {"fieldname": "pincode", "fieldtype": "Data", "label": "Pincode"},
-  {"fieldname": "section_break_tax", "fieldtype": "Section Break", "label": "Tax Details"},
-  {"fieldname": "gstin", "fieldtype": "Data", "label": "GSTIN", "description": "15-char GST identifier (India); validated on save against the selected state."},
-  {"fieldname": "section_break_settings", "fieldtype": "Section Break", "label": "Billing Settings"},
-  {"default": "0", "fieldname": "min_balance", "fieldtype": "Currency", "label": "Low Balance Alert"},
-  {"default": "Prepaid", "fieldname": "collection_mode", "fieldtype": "Select", "label": "Collection Mode", "options": "Auto Charge\nManual Checkout\nPrepaid\nAction Required", "description": "How this team's invoices are collected (ADR 0022). Auto Charge names what the customer experiences; which gateway pulls it is a property of the method."},
-  {"fieldname": "column_break_settings", "fieldtype": "Column Break"},
-  {"default": "0", "fieldname": "spend_alert_threshold", "fieldtype": "Currency", "label": "Spend Alert Threshold"},
-  {"fieldname": "collection_action_reason", "fieldtype": "Data", "label": "Collection Action Reason", "read_only": 1, "description": "Why the team is in action_required: forecast_over_threshold / invoice_over_threshold / mandate_failed / tier_cap."},
-  {"fieldname": "section_break_trust", "fieldtype": "Section Break", "label": "Trust Tier"},
-  {"fieldname": "trust_tier_level", "fieldtype": "Link", "options": "Trust Tier Level", "label": "Trust Tier Level", "description": "The team's current ladder rung; caps resolve live from it and the currency."},
-  {"fieldname": "trust_tier", "fieldtype": "Data", "read_only": 1, "label": "Trust Tier", "description": "Denormalised tier key (from the linked level) for lists and reports."},
-  {"default": "0", "fieldname": "manual_override", "fieldtype": "Check", "label": "Manual Override", "description": "Admin-set: exempt from auto promotion/demotion."},
-  {"fieldname": "column_break_trust", "fieldtype": "Column Break"},
-  {"fieldname": "override_max_spend", "fieldtype": "Currency", "options": "currency", "label": "Override Max Spend", "description": "Bespoke spend cap for Manual Override; blank uses the level's cap."},
-  {"fieldname": "promoted_at", "fieldtype": "Datetime", "label": "Promoted At", "read_only": 1},
-  {"fieldname": "promotion_basis", "fieldtype": "Small Text", "label": "Promotion Basis", "read_only": 1}
+  {
+   "fieldname": "team",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Team",
+   "options": "Team",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "fieldname": "section_break_currency",
+   "fieldtype": "Section Break",
+   "label": "Billing Currency"
+  },
+  {
+   "description": "The single currency this team is billed and pays in; locks once money moves.",
+   "fieldname": "currency",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Billing Currency",
+   "options": "Currency"
+  },
+  {
+   "fieldname": "section_break_contact",
+   "fieldtype": "Section Break",
+   "label": "Contact"
+  },
+  {
+   "fieldname": "legal_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Legal Name"
+  },
+  {
+   "fieldname": "email",
+   "fieldtype": "Data",
+   "label": "Billing Email",
+   "options": "Email"
+  },
+  {
+   "fieldname": "column_break_contact",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "phone",
+   "fieldtype": "Data",
+   "label": "Phone"
+  },
+  {
+   "fieldname": "section_break_addr",
+   "fieldtype": "Section Break",
+   "label": "Address"
+  },
+  {
+   "fieldname": "address_line1",
+   "fieldtype": "Data",
+   "label": "Address Line 1"
+  },
+  {
+   "fieldname": "address_line2",
+   "fieldtype": "Data",
+   "label": "Address Line 2"
+  },
+  {
+   "fieldname": "city",
+   "fieldtype": "Data",
+   "label": "City"
+  },
+  {
+   "fieldname": "column_break_addr",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "India",
+   "fieldname": "country",
+   "fieldtype": "Link",
+   "label": "Country",
+   "options": "Country"
+  },
+  {
+   "description": "For India, pick the GST registration state — its code must match the GSTIN.",
+   "fieldname": "state",
+   "fieldtype": "Autocomplete",
+   "label": "State"
+  },
+  {
+   "fieldname": "pincode",
+   "fieldtype": "Data",
+   "label": "Pincode"
+  },
+  {
+   "fieldname": "section_break_tax",
+   "fieldtype": "Section Break",
+   "label": "Tax Details"
+  },
+  {
+   "description": "15-char GST identifier (India); validated on save against the selected state.",
+   "fieldname": "gstin",
+   "fieldtype": "Data",
+   "label": "GSTIN"
+  },
+  {
+   "fieldname": "section_break_settings",
+   "fieldtype": "Section Break",
+   "label": "Billing Settings"
+  },
+  {
+   "default": "0",
+   "fieldname": "min_balance",
+   "fieldtype": "Currency",
+   "label": "Low Balance Alert"
+  },
+  {
+   "default": "Prepaid",
+   "description": "How this team's invoices are collected (ADR 0022). Auto Charge names what the customer experiences; which gateway pulls it is a property of the method.",
+   "fieldname": "collection_mode",
+   "fieldtype": "Select",
+   "label": "Collection Mode",
+   "options": "Auto Charge\nManual Checkout\nPrepaid\nAction Required"
+  },
+  {
+   "fieldname": "column_break_settings",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "0",
+   "fieldname": "spend_alert_threshold",
+   "fieldtype": "Currency",
+   "label": "Spend Alert Threshold"
+  },
+  {
+   "description": "Why the team is in action_required: forecast_over_threshold / invoice_over_threshold / mandate_failed / tier_cap.",
+   "fieldname": "collection_action_reason",
+   "fieldtype": "Data",
+   "label": "Collection Action Reason",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_break_trust",
+   "fieldtype": "Section Break",
+   "label": "Trust Tier"
+  },
+  {
+   "description": "The team's current ladder rung; caps resolve live from it and the currency.",
+   "fieldname": "trust_tier_level",
+   "fieldtype": "Link",
+   "label": "Trust Tier Level",
+   "options": "Trust Tier Level",
+   "search_index": 1
+  },
+  {
+   "description": "Denormalised tier key (from the linked level) for lists and reports.",
+   "fieldname": "trust_tier",
+   "fieldtype": "Data",
+   "label": "Trust Tier",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "description": "Admin-set: exempt from auto promotion/demotion.",
+   "fieldname": "manual_override",
+   "fieldtype": "Check",
+   "label": "Manual Override"
+  },
+  {
+   "fieldname": "column_break_trust",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "Bespoke spend cap for Manual Override; blank uses the level's cap.",
+   "fieldname": "override_max_spend",
+   "fieldtype": "Currency",
+   "label": "Override Max Spend",
+   "options": "currency"
+  },
+  {
+   "fieldname": "promoted_at",
+   "fieldtype": "Datetime",
+   "label": "Promoted At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "promotion_basis",
+   "fieldtype": "Small Text",
+   "label": "Promotion Basis",
+   "read_only": 1
+  },
+  {
+   "fetch_from": "team.owner_user",
+   "fetch_if_empty": 1,
+   "fieldname": "team_owner",
+   "fieldtype": "Read Only",
+   "label": "Team Owner"
+  },
+  {
+   "fieldname": "column_break_hfov",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "Customer record in the accounting system. Set by the sync.",
+   "fieldname": "profile_id",
+   "fieldtype": "Data",
+   "label": "Profile ID",
+   "read_only": 1
+  },
+  {
+   "description": "Billing address record in the accounting system. Set by the sync.",
+   "fieldname": "address_id",
+   "fieldtype": "Data",
+   "label": "Address ID",
+   "read_only": 1
+  },
+  {
+   "description": "Contact record in the accounting system. Set by the sync.",
+   "fieldname": "contact_id",
+   "fieldtype": "Data",
+   "label": "Contact ID",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_jgnz",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "gst_status",
+   "fieldtype": "Select",
+   "label": "GST Status",
+   "options": "\nActive\nInactive\nSuspended\nCancelled\nInvalid",
+   "read_only": 1,
+   "description": "As reported by the GST portal. Anything but Active bills the team as unregistered."
+  },
+  {
+   "fieldname": "gst_category",
+   "fieldtype": "Data",
+   "label": "GST Category",
+   "read_only": 1
+  },
+  {
+   "fieldname": "gst_status_checked_at",
+   "fieldtype": "Datetime",
+   "label": "GST Status Checked At",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "description": "A failed lookup waits until this time, so the sweep reaches other teams first.",
+   "fieldname": "gst_status_retry_after",
+   "fieldtype": "Datetime",
+   "label": "GST Status Retry After",
+   "read_only": 1
+  }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-06-16 00:00:00.000000",
+ "modified": "2026-09-26 00:30:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Billing Profile",
  "naming_rule": "By fieldname",
  "owner": "Administrator",
  "permissions": [
-  {"create": 1, "delete": 1, "email": 1, "export": 1, "print": 1, "read": 1, "report": 1, "role": "System Manager", "share": 1, "write": 1}
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
  ],
+ "row_format": "Dynamic",
  "sort_field": "creation",
  "sort_order": "DESC",
  "states": []

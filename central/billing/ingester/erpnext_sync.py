@@ -16,6 +16,8 @@ nothing is ever read back from ERPNext into billing.
 import frappe
 import requests
 
+from central.billing.ingester.connection import auth_headers
+
 MAX_ATTEMPTS = 3
 BACKOFF_BASE_SECONDS = 60  # 60s, 120s, 240s
 
@@ -23,7 +25,7 @@ BACKOFF_BASE_SECONDS = 60  # 60s, 120s, 240s
 def enqueue_invoice_sync(invoice: str):
 	"""Post-payment hook: queue the ERPNext sync after the transaction commits."""
 	frappe.enqueue(
-		"central.billing.revenue.erpnext_sync.sync_invoice",
+		"central.billing.ingester.erpnext_sync.sync_invoice",
 		invoice=invoice,
 		enqueue_after_commit=True,
 		queue="long",
@@ -46,7 +48,7 @@ def sync_invoice(invoice: str) -> dict:
 
 	attempt = (inv.erpnext_sync_attempts or 0) + 1
 	try:
-		erpnext_name = _post_sales_invoice(_build_sales_invoice(inv))
+		erpnext_name = _post_sales_invoice(_build_sales_invoice(inv, _customer_for(inv.team)))
 	except Exception as e:
 		return _handle_failure(invoice, attempt, str(e))
 
@@ -100,11 +102,22 @@ def retry_failed_syncs(now=None) -> list:
 # --- ERPNext transport ------------------------------------------------------
 
 
-def _build_sales_invoice(inv) -> dict:
+def _customer_for(team: str) -> str:
+	"""The team's customer in ERPNext. Missing one queues its sync and fails this try."""
+	from central.billing.ingester.customer import ensure_customer
+
+	customer = ensure_customer(team)
+	if not customer:
+		raise RuntimeError(f"team {team} has no customer in ERPNext yet; its sync is queued")
+	return customer
+
+
+def _build_sales_invoice(inv, customer: str) -> dict:
 	"""Map a Cloud Billing invoice to an ERPNext Sales Invoice payload."""
 	return {
 		"doctype": "Sales Invoice",
-		"customer": inv.team,
+		"customer": customer,
+		**_gst_treatment(inv),
 		"posting_date": str(inv.period_end),
 		"currency": inv.currency,
 		"cloud_billing_invoice": inv.name,  # back-reference for reconciliation
@@ -122,6 +135,20 @@ def _build_sales_invoice(inv) -> dict:
 	}
 
 
+def _gst_treatment(inv) -> dict:
+	"""The GSTIN this invoice was issued to, so both records agree.
+
+	No GSTIN means the team was billed as unregistered, whatever its address says.
+	"""
+	address = frappe.db.get_value("Billing Profile", inv.team, "address_id")
+	treatment = {"billing_address_gstin": inv.customer_gstin or ""}
+	if address:
+		treatment["customer_address"] = address
+	if not inv.customer_gstin:
+		treatment["gst_category"] = "Unregistered"
+	return treatment
+
+
 def _post_sales_invoice(payload: dict) -> str:
 	"""POST the Sales Invoice to ERPNext; return its name. Raises on any failure."""
 	base = (frappe.conf.get("erpnext_url") or "").rstrip("/")
@@ -130,19 +157,11 @@ def _post_sales_invoice(payload: dict) -> str:
 	response = requests.post(
 		f"{base}/api/resource/Sales Invoice",
 		json=payload,
-		headers=_erpnext_headers(),
+		headers=auth_headers(),
 		timeout=30,
 	)
 	response.raise_for_status()
 	return (response.json().get("data") or {}).get("name")
-
-
-def _erpnext_headers() -> dict:
-	key = frappe.conf.get("erpnext_api_key")
-	secret = frappe.conf.get("erpnext_api_secret")
-	if key and secret:
-		return {"Authorization": f"token {key}:{secret}"}
-	return {}
 
 
 def _alert_ops(invoice: str, error: str):

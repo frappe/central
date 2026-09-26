@@ -150,6 +150,16 @@ def default_gst_rate() -> float:
 	return frappe.utils.flt(_settings().default_gst_rate)
 
 
+def gst_status_refresh_days() -> int:
+	"""How old a stored GSTIN status may get before the sweep looks it up again."""
+	return frappe.utils.cint(_settings().gst_status_refresh_days)
+
+
+def gst_status_daily_limit() -> int:
+	"""Most GSTIN lookups the daily sweep makes."""
+	return frappe.utils.cint(_settings().gst_status_daily_limit)
+
+
 def forecast_notify_ratio() -> float:
 	"""Share of a team's cap at which its forecast spend warning fires (0.8 = 80%)."""
 	override = _override("forecast_notify_percent")
