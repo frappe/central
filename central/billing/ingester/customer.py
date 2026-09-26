@@ -63,6 +63,7 @@ def sync_customer_profile(team: str) -> None:
 		_create(profile, "contact_id", "Contact", _contact_payload)
 	else:
 		update_customer_profile(profile)
+		_release_held_drafts(team)
 		return
 	# A last update pass also catches profile edits made while the records were created.
 	_enqueue(team, job_id=f"customer-sync::{team}::next")
@@ -81,6 +82,17 @@ def ensure_customer(team: str) -> str | None:
 	if not customer:
 		enqueue_for(team)
 	return customer
+
+
+def awaiting_records(team: str) -> bool:
+	"""Whether the team's records should exist but don't yet. Queues their sync if so."""
+	if not frappe.db.exists("Billing Profile", team):
+		return False
+	profile = frappe.get_doc("Billing Profile", team)
+	if not _should_sync(profile) or (profile.profile_id and profile.address_id and profile.contact_id):
+		return False
+	_enqueue(team)
+	return True
 
 
 def enqueue_for(team: str) -> None:
@@ -122,6 +134,12 @@ def _enqueue(team: str, job_id: str | None = None) -> None:
 		enqueue_after_commit=True,
 		team=team,
 	)
+
+
+def _release_held_drafts(team: str) -> None:
+	from central.billing.revenue.invoicing.run import release_held_drafts
+
+	release_held_drafts(team)
 
 
 def _lock_name(team: str) -> str:
