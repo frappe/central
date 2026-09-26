@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Button, Dialog, TextInput } from 'frappe-ui'
+import { Alert, Button, Dialog, TextInput } from 'frappe-ui'
 import { computed, ref } from 'vue'
 import { copyToClipboard } from '@/lib/clipboard'
 import { reportError, successToast } from '@/lib/feedback'
@@ -58,16 +58,11 @@ const copy = async (value: string, label: string): Promise<void> => {
 		@after-leave="secretRevealed = false"
 	>
 		<div v-if="credentials" class="space-y-5">
-			<div
-				class="flex items-start gap-3 rounded-4 bg-surface-amber-1 p-3 text-p-sm text-ink-amber-6"
-			>
-				<span
-					class="lucide-key-round mt-0.5 size-4 shrink-0"
-					aria-hidden="true"
-				/>
-				The secret key is shown only now. Copy it somewhere safe. If you lose
-				it, rotate the credentials to get a new one.
-			</div>
+			<Alert
+				theme="amber"
+				title="The secret key is shown only now"
+				description="Copy it somewhere safe. If you lose it, rotate the credentials to get a new one."
+			/>
 
 			<TextInput
 				v-for="field in fields"
