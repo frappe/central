@@ -230,7 +230,7 @@ scheduler_events = {
 	],
 	"hourly": [
 		# Billing: ERPNext sync retries whose backoff window has elapsed.
-		"central.billing.revenue.erpnext_sync.retry_failed_syncs",
+		"central.billing.ingester.erpnext_sync.retry_failed_syncs",
 		# Services (LLM): reconcile Grove's cumulative token usage into billing.
 		"central.services.llm.pull_usage",
 		# A charge whose outcome we don't know is money in the air: ask the gateway and

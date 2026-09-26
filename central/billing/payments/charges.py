@@ -509,7 +509,7 @@ def _mark_invoice_paid(invoice: str, amount) -> bool:
 	)
 
 	# Async, one-way, non-blocking push to the statutory SOR (#17).
-	from central.billing.revenue.erpnext_sync import enqueue_invoice_sync
+	from central.billing.ingester.erpnext_sync import enqueue_invoice_sync
 
 	enqueue_invoice_sync(inv.name)
 	return True
