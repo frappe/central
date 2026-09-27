@@ -5,6 +5,7 @@
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
+  "tab_billing",
   "section_break_credits",
   "grant_welcome_credits",
   "promotional_credit_validity_days",
@@ -33,9 +34,56 @@
   "section_break_tax",
   "default_gst_rate",
   "gst_status_refresh_days",
-  "gst_status_daily_limit"
+  "gst_status_daily_limit",
+  "tab_accounting",
+  "section_company",
+  "company",
+  "company_gstin",
+  "company_address_id",
+  "column_break_company",
+  "company_address_line1",
+  "company_city",
+  "company_state",
+  "company_pincode",
+  "section_accounts",
+  "receivable_account",
+  "advance_account",
+  "advance_parent_account",
+  "column_break_accounts",
+  "income_account",
+  "cost_center",
+  "clearing_parent_account",
+  "section_gateways",
+  "gateways",
+  "section_item",
+  "service_item",
+  "item_group",
+  "column_break_item",
+  "sac_code",
+  "section_tax",
+  "in_state_template",
+  "column_break_tax",
+  "out_state_template",
+  "section_series",
+  "series_india_b2b",
+  "series_india_b2c",
+  "column_break_series",
+  "series_overseas",
+  "series_receipt_voucher",
+  "section_print",
+  "invoice_print_format",
+  "column_break_print",
+  "receipt_voucher_print_format",
+  "section_accounting_setup",
+  "accounting_setup_ran_at",
+  "accounting_setup_report"
  ],
  "fields": [
+  {
+   "fieldname": "tab_billing",
+   "fieldtype": "Tab Break",
+   "label": "Billing"
+  },
   {
    "fieldname": "section_break_credits",
    "fieldtype": "Section Break",
@@ -224,12 +272,241 @@
    "fieldtype": "Int",
    "label": "GSTIN Lookups per Day",
    "non_negative": 1
+  },
+  {
+   "fieldname": "tab_accounting",
+   "fieldtype": "Tab Break",
+   "label": "Accounting",
+   "depends_on": "eval:doc.__onload && doc.__onload.accounting_sync_enabled"
+  },
+  {
+   "fieldname": "section_company",
+   "fieldtype": "Section Break",
+   "label": "Company"
+  },
+  {
+   "fieldname": "company",
+   "fieldtype": "Data",
+   "label": "Company",
+   "description": "The company's name in the accounting system."
+  },
+  {
+   "fieldname": "company_gstin",
+   "fieldtype": "Data",
+   "label": "Company GSTIN"
+  },
+  {
+   "fieldname": "company_address_id",
+   "fieldtype": "Data",
+   "label": "Company Address ID",
+   "read_only": 1,
+   "description": "Set by the setup."
+  },
+  {
+   "fieldname": "column_break_company",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "company_address_line1",
+   "fieldtype": "Data",
+   "label": "Address Line 1"
+  },
+  {
+   "fieldname": "company_city",
+   "fieldtype": "Data",
+   "label": "City"
+  },
+  {
+   "fieldname": "company_state",
+   "fieldtype": "Data",
+   "label": "State",
+   "description": "The GST state name, for example Maharashtra."
+  },
+  {
+   "fieldname": "company_pincode",
+   "fieldtype": "Data",
+   "label": "Pincode"
+  },
+  {
+   "fieldname": "section_accounts",
+   "fieldtype": "Section Break",
+   "label": "Accounts",
+   "description": "Full account names, for example Debtors - ABBR."
+  },
+  {
+   "fieldname": "receivable_account",
+   "fieldtype": "Data",
+   "label": "Receivable Account"
+  },
+  {
+   "fieldname": "advance_account",
+   "fieldtype": "Data",
+   "label": "Advance Account",
+   "description": "Holds customer advances. Liability, account type Receivable."
+  },
+  {
+   "fieldname": "advance_parent_account",
+   "fieldtype": "Data",
+   "label": "Advance Parent Account",
+   "description": "Group the setup creates the advance account under."
+  },
+  {
+   "fieldname": "column_break_accounts",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "income_account",
+   "fieldtype": "Data",
+   "label": "Income Account"
+  },
+  {
+   "fieldname": "cost_center",
+   "fieldtype": "Data",
+   "label": "Cost Center"
+  },
+  {
+   "fieldname": "clearing_parent_account",
+   "fieldtype": "Data",
+   "label": "Clearing Parent Account",
+   "description": "Group the setup creates gateway clearing accounts under."
+  },
+  {
+   "fieldname": "section_gateways",
+   "fieldtype": "Section Break",
+   "label": "Gateways"
+  },
+  {
+   "fieldname": "gateways",
+   "fieldtype": "Table",
+   "label": "Gateway Accounts",
+   "options": "Accounting Gateway Account"
+  },
+  {
+   "fieldname": "section_item",
+   "fieldtype": "Section Break",
+   "label": "Service Item"
+  },
+  {
+   "fieldname": "service_item",
+   "fieldtype": "Data",
+   "label": "Service Item",
+   "default": "Cloud Hosting"
+  },
+  {
+   "fieldname": "item_group",
+   "fieldtype": "Data",
+   "label": "Item Group",
+   "default": "Services"
+  },
+  {
+   "fieldname": "column_break_item",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "sac_code",
+   "fieldtype": "Data",
+   "label": "SAC Code",
+   "default": "998315"
+  },
+  {
+   "fieldname": "section_tax",
+   "fieldtype": "Section Break",
+   "label": "Tax",
+   "description": "Supplies outside India and to SEZ units are zero-rated and use no template."
+  },
+  {
+   "fieldname": "in_state_template",
+   "fieldtype": "Data",
+   "label": "In-State Tax Template"
+  },
+  {
+   "fieldname": "column_break_tax",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "out_state_template",
+   "fieldtype": "Data",
+   "label": "Out-of-State Tax Template"
+  },
+  {
+   "fieldname": "section_series",
+   "fieldtype": "Section Break",
+   "label": "Naming Series",
+   "description": "A GST invoice number has 16 characters or fewer: letters, digits, / and -."
+  },
+  {
+   "fieldname": "series_india_b2b",
+   "fieldtype": "Data",
+   "label": "India B2B Invoices",
+   "default": "B2B/.TFY./.#####"
+  },
+  {
+   "fieldname": "series_india_b2c",
+   "fieldtype": "Data",
+   "label": "India B2C Invoices",
+   "default": "B2C/.TFY./.#####"
+  },
+  {
+   "fieldname": "column_break_series",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "series_overseas",
+   "fieldtype": "Data",
+   "label": "Overseas Invoices",
+   "default": "EXP/.TFY./.#####"
+  },
+  {
+   "fieldname": "series_receipt_voucher",
+   "fieldtype": "Data",
+   "label": "Receipt Vouchers",
+   "default": "RV/.TFY./.######",
+   "description": "Numbers the advance received for a wallet top-up."
+  },
+  {
+   "fieldname": "section_print",
+   "fieldtype": "Section Break",
+   "label": "Print Formats"
+  },
+  {
+   "fieldname": "invoice_print_format",
+   "fieldtype": "Data",
+   "label": "Invoice Print Format",
+   "default": "Cloud Tax Invoice"
+  },
+  {
+   "fieldname": "column_break_print",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "receipt_voucher_print_format",
+   "fieldtype": "Data",
+   "label": "Receipt Voucher Print Format",
+   "default": "Cloud Receipt Voucher"
+  },
+  {
+   "fieldname": "section_accounting_setup",
+   "fieldtype": "Section Break",
+   "label": "Last Setup Run"
+  },
+  {
+   "fieldname": "accounting_setup_ran_at",
+   "fieldtype": "Datetime",
+   "label": "Ran At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "accounting_setup_report",
+   "fieldtype": "Code",
+   "label": "Report",
+   "read_only": 1,
+   "options": "JSON"
   }
  ],
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-09-25 22:00:00.000000",
+ "modified": "2026-09-27 16:00:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Billing Settings",
