@@ -36,6 +36,17 @@ def put(endpoint: str, payload: dict) -> frappe._dict | None:
 	return _request("PUT", endpoint, json=payload)
 
 
+def call(method: str, params: dict | None = None) -> dict | None:
+	"""GET a whitelisted method and return its whole response body."""
+	if not enabled():
+		return None
+	response = requests.get(
+		_url(f"api/method/{method}"), params=params, headers=auth_headers(), timeout=TIMEOUT_SECONDS
+	)
+	response.raise_for_status()
+	return response.json()
+
+
 def fetch(doctype: str, name: str) -> frappe._dict | None:
 	"""One record by name, or None when it does not exist."""
 	if not enabled():

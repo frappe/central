@@ -119,6 +119,7 @@ def _company_address(s) -> Step:
 		)
 		if found:
 			s.db_set("company_address_id", found[0].name, update_modified=False)
+			step.name = found[0].name
 			return EXISTS
 		return MISSING
 
@@ -139,8 +140,10 @@ def _company_address(s) -> Step:
 			},
 		)
 		s.db_set("company_address_id", address.name, update_modified=False)
+		step.name = address.name
 
-	return Step("Company address", "Address", s.company_address_id, state, apply)
+	step = Step("Company address", "Address", s.company_address_id, state, apply)
+	return step
 
 
 def _company_fields(s) -> Step:
@@ -303,18 +306,15 @@ def _exists(doctype: str, name: str | None) -> str:
 
 
 def _series_options(doctype: str) -> list[str]:
-	"""The naming series on offer for `doctype`: a site override first, else the DocType's own."""
-	override = connection.find(
-		"Property Setter",
-		[["doc_type", "=", doctype], ["field_name", "=", "naming_series"], ["property", "=", "options"]],
-		["value"],
-	)
-	if override:
-		options = override[0].value
-	else:
-		fields = (connection.fetch("DocType", doctype) or {}).get("fields") or []
-		options = next((f.get("options") for f in fields if f.get("fieldname") == "naming_series"), "")
-	return [o.strip() for o in (options or "").split("\n") if o.strip()]
+	"""The naming series on offer for `doctype`, site changes included."""
+	meta = connection.call("frappe.desk.form.load.getdoctype", {"doctype": doctype}) or {}
+	for doc in meta.get("docs") or []:
+		if doc.get("name") != doctype:
+			continue
+		for field in doc.get("fields") or []:
+			if field.get("fieldname") == "naming_series":
+				return [o.strip() for o in (field.get("options") or "").split("\n") if o.strip()]
+	return []
 
 
 def _by_mode(rows) -> dict[str, list]:
