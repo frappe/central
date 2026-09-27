@@ -1,0 +1,37 @@
+{#- Receipt voucher for an advance (CGST Rule 50). Rendered by the accounting system for a Payment Entry. -#}
+<div class="cloud-receipt-voucher">
+	<h2 class="text-center">{{ _("Receipt Voucher") }}</h2>
+
+	<table class="table table-bordered">
+		<tr>
+			<td style="width: 50%">
+				<b>{{ doc.company }}</b>
+				{% if doc.company_gstin %}<br>{{ _("GSTIN") }}: {{ doc.company_gstin }}{% endif %}
+			</td>
+			<td>
+				{{ _("Voucher No") }}: <b>{{ doc.name }}</b><br>
+				{{ _("Date") }}: {{ frappe.utils.format_date(doc.posting_date) }}<br>
+				{{ _("Place of Supply") }}: {{ doc.place_of_supply or "" }}
+			</td>
+		</tr>
+		<tr>
+			<td colspan="2">
+				{{ _("Received From") }}: <b>{{ doc.party_name }}</b>
+				{% if doc.billing_address_gstin %}<br>{{ _("GSTIN") }}: {{ doc.billing_address_gstin }}{% endif %}
+				<br>{{ _("Payment Reference") }}: {{ doc.reference_no or "" }}
+			</td>
+		</tr>
+	</table>
+
+	<table class="table table-bordered" style="width: 60%; margin-left: auto">
+		<tr><td>{{ _("Description") }}</td><td class="text-right">{{ _("Advance for cloud hosting services") }}</td></tr>
+		<tr><td>{{ _("Taxable Value") }}</td><td class="text-right">{{ frappe.format_value(doc.paid_amount - (doc.total_taxes_and_charges or 0), {"fieldtype": "Currency", "options": "paid_from_account_currency"}, doc) }}</td></tr>
+		{% for tax in doc.taxes %}
+		<tr><td>{{ tax.description or tax.account_head }} @ {{ tax.rate }}%</td><td class="text-right">{{ tax.get_formatted("tax_amount") }}</td></tr>
+		{% endfor %}
+		<tr><td><b>{{ _("Amount Received") }}</b></td><td class="text-right"><b>{{ doc.get_formatted("paid_amount") }}</b></td></tr>
+	</table>
+
+	<p>{{ _("Amount in words") }}: {{ doc.in_words or "" }}</p>
+	<p class="text-right" style="margin-top: 40px">{{ _("For") }} {{ doc.company }}<br><br>{{ _("Authorised Signatory") }}</p>
+</div>
