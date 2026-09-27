@@ -16,6 +16,12 @@ from frappe.model.document import Document
 
 
 class BillingSettings(Document):
+	def onload(self):
+		from central.billing.ingester.connection import enabled
+
+		# The Accounting tab shows only while the accounting sync is on.
+		self.set_onload("accounting_sync_enabled", enabled())
+
 	def validate(self):
 		self.validate_retry_days()
 		self.validate_dunning_ladder()

@@ -1,6 +1,6 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
-"""Reading Accounting Settings, and the choices made from them."""
+"""Reading the accounting settings on Billing Settings, and the choices made from them."""
 
 import frappe
 from frappe import _
@@ -10,10 +10,10 @@ from central.billing.ingester.connection import enabled
 
 
 def accounting_settings():
-	"""Accounting Settings. Refused while the accounting sync is off."""
+	"""Billing Settings, for its Accounting tab. Refused while the accounting sync is off."""
 	if not enabled():
-		frappe.throw(_("The accounting sync is off, so Accounting Settings are not in use."))
-	return frappe.get_cached_doc("Accounting Settings")
+		frappe.throw(_("The accounting sync is off, so the accounting settings are not in use."))
+	return frappe.get_cached_doc("Billing Settings")
 
 
 def invoice_series(team: str) -> str:

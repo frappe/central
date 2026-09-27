@@ -1,6 +1,6 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
-"""Admin actions on Accounting Settings: check the setup, create what is missing."""
+"""Admin actions for the accounting setup: check it, create what is missing."""
 
 import frappe
 

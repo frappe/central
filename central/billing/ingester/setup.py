@@ -49,7 +49,10 @@ def create_missing() -> list[dict]:
 	settings = accounting_settings()
 	rows = [_run(step) for step in steps(settings)]
 	settings.db_set(
-		{"setup_ran_at": frappe.utils.now_datetime(), "setup_report": json.dumps(rows, indent=1)},
+		{
+			"accounting_setup_ran_at": frappe.utils.now_datetime(),
+			"accounting_setup_report": json.dumps(rows, indent=1),
+		},
 		update_modified=False,
 	)
 	return rows
@@ -94,7 +97,7 @@ def _must_exist(record: str, doctype: str, name: str | None) -> Step:
 def _account(record, name, parent, account_type, currency, s) -> Step:
 	def apply():
 		if not parent:
-			raise ValueError(f"set the parent account for {name} in Accounting Settings")
+			raise ValueError(f"set the parent account for {name} in Billing Settings")
 		connection.post(
 			"api/resource/Account",
 			{
@@ -129,10 +132,10 @@ def _company_address(s) -> Step:
 			{
 				"address_title": s.company,
 				"address_type": "Billing",
-				"address_line1": s.address_line1,
-				"city": s.city,
-				"state": s.state,
-				"pincode": s.pincode,
+				"address_line1": s.company_address_line1,
+				"city": s.company_city,
+				"state": s.company_state,
+				"pincode": s.company_pincode,
 				"country": "India",
 				"gstin": s.company_gstin,
 				"is_your_company_address": 1,

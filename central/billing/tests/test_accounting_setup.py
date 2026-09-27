@@ -1,6 +1,6 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
-"""Accounting Settings and the setup that checks and creates its records."""
+"""The accounting settings on Billing Settings, and the setup that checks and creates their records."""
 
 import re
 from unittest.mock import patch
@@ -94,16 +94,16 @@ class AccountingSetupTestCase(IntegrationTestCase):
 		self._conf.stop()
 
 	def _configure(self):
-		doc = frappe.get_doc("Accounting Settings")
+		doc = frappe.get_doc("Billing Settings")
 		doc.update(
 			{
 				"company": COMPANY,
 				"company_gstin": "27AAACZ9999Z1ZC",
 				"company_address_id": None,
-				"address_line1": "1 Test Road",
-				"city": "Mumbai",
-				"state": "Maharashtra",
-				"pincode": "400001",
+				"company_address_line1": "1 Test Road",
+				"company_city": "Mumbai",
+				"company_state": "Maharashtra",
+				"company_pincode": "400001",
 				"receivable_account": "Debtors - TC",
 				"advance_account": "Customer Advances - TC",
 				"advance_parent_account": "Current Liabilities - TC",
@@ -125,7 +125,7 @@ class AccountingSetupTestCase(IntegrationTestCase):
 			},
 		)
 		doc.save(ignore_permissions=True)
-		frappe.clear_document_cache("Accounting Settings", "Accounting Settings")
+		frappe.clear_document_cache("Billing Settings", "Billing Settings")
 
 	def _states(self, rows):
 		return {(r["record"], r["name"]): r["state"] for r in rows}
@@ -139,6 +139,14 @@ class TestCheck(AccountingSetupTestCase):
 		self.assertEqual(states[("Receivable account", "Debtors - TC")], "Exists")
 		self.assertEqual(states[("Advance account", "Customer Advances - TC")], "Missing")
 		self.assertEqual(states[("Company GST and advance settings", COMPANY)], "Incomplete")
+
+	def test_accounting_tab_shows_only_while_sync_is_on(self):
+		doc = frappe.get_doc("Billing Settings")
+		doc.run_method("onload")
+		self.assertTrue(doc.get_onload().accounting_sync_enabled)
+		frappe.local.conf["enable_erpnext_sync"] = 0
+		doc.run_method("onload")
+		self.assertFalse(doc.get_onload().accounting_sync_enabled)
 
 	def test_refused_while_sync_is_off(self):
 		frappe.local.conf["enable_erpnext_sync"] = 0
@@ -157,7 +165,7 @@ class TestCreateMissing(AccountingSetupTestCase):
 		self.assertEqual(states[("Receivable account", "Debtors - TC")], "Exists")
 		created = [w[1] for w in self.remote.writes if w[0] == "POST"]
 		self.assertNotIn("api/resource/Company", created)
-		self.assertTrue(frappe.db.get_single_value("Accounting Settings", "setup_ran_at"))
+		self.assertTrue(frappe.db.get_single_value("Billing Settings", "accounting_setup_ran_at"))
 
 	def test_a_second_run_changes_nothing(self):
 		setup.create_missing()
@@ -221,7 +229,7 @@ class TestInvoiceSeries(AccountingSetupTestCase):
 		self.assertEqual(accounting.invoice_series(self.TEAM), "EXP/.TFY./.#####")
 
 	def test_default_series_fit_the_gst_limit(self):
-		s = frappe.get_doc("Accounting Settings")
+		s = frappe.get_doc("Billing Settings")
 		for series in (s.series_india_b2b, s.series_india_b2c, s.series_overseas, s.series_receipt_voucher):
 			# `.TFY.` renders the fiscal year as 26-27.
 			number = re.sub(r"\.#+", lambda m: "9" * (len(m.group()) - 1), series.replace(".TFY.", "26-27"))

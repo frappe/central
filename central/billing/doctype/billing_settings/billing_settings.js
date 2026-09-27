@@ -1,33 +1,35 @@
 // Copyright (c) 2026, Frappe and contributors
 // For license information, please see license.txt
 
-const API = "central.billing.api.admin.accounting";
+const ACCOUNTING_API = "central.billing.api.admin.accounting";
 
-frappe.ui.form.on("Accounting Settings", {
+frappe.ui.form.on("Billing Settings", {
 	refresh(frm) {
-		if (!frm.doc.__onload?.sync_enabled) {
-			frm.set_intro(__("The accounting sync is off, so these settings are not in use."), "orange");
-			frm.disable_form();
-			return;
-		}
-		frm.add_custom_button(__("Check Setup"), () => run(frm, "check_accounting_setup", "GET"));
-		frm.add_custom_button(__("Create Missing"), () => {
-			frappe.confirm(
-				__("Create the missing records in the accounting system? Existing records are not changed."),
-				() => run(frm, "create_missing_accounting_setup", "POST")
-			);
-		});
+		// The accounting setup is usable only while the accounting sync is on.
+		if (!frm.doc.__onload?.accounting_sync_enabled) return;
+
+		const group = __("Accounting Setup");
+		frm.add_custom_button(__("Check"), () => run_setup(frm, "check_accounting_setup", "GET"), group);
+		frm.add_custom_button(
+			__("Create Missing"),
+			() =>
+				frappe.confirm(
+					__("Create the missing records in the accounting system? Existing records are not changed."),
+					() => run_setup(frm, "create_missing_accounting_setup", "POST")
+				),
+			group
+		);
 	},
 });
 
-function run(frm, method, type) {
-	frappe.call({ method: `${API}.${method}`, type, freeze: true }).then(({ message }) => {
-		show_report(message || []);
+function run_setup(frm, method, type) {
+	frappe.call({ method: `${ACCOUNTING_API}.${method}`, type, freeze: true }).then(({ message }) => {
+		show_setup_report(message || []);
 		frm.reload_doc();
 	});
 }
 
-function show_report(rows) {
+function show_setup_report(rows) {
 	const colour = {
 		Exists: "green",
 		Created: "green",
