@@ -1,0 +1,73 @@
+{#- Tax invoice (CGST Rule 46). Rendered by the accounting system for a Sales Invoice. -#}
+{%- set export = doc.gst_category in ("Overseas", "SEZ") -%}
+<div class="cloud-invoice">
+	<h2 class="text-center">{{ _("Tax Invoice") }}</h2>
+
+	<table class="table table-bordered">
+		<tr>
+			<td style="width: 50%">
+				<b>{{ doc.company }}</b><br>
+				{{ doc.company_address_display or "" }}
+				{% if doc.company_gstin %}<br>{{ _("GSTIN") }}: {{ doc.company_gstin }}{% endif %}
+			</td>
+			<td>
+				{{ _("Invoice No") }}: <b>{{ doc.name }}</b><br>
+				{{ _("Date") }}: {{ frappe.utils.format_date(doc.posting_date) }}<br>
+				{{ _("Place of Supply") }}: {{ doc.place_of_supply or "" }}
+			</td>
+		</tr>
+		<tr>
+			<td colspan="2">
+				{{ _("Billed To") }}: <b>{{ doc.customer_name }}</b><br>
+				{{ doc.address_display or "" }}
+				{% if doc.billing_address_gstin %}<br>{{ _("GSTIN") }}: {{ doc.billing_address_gstin }}{% endif %}
+			</td>
+		</tr>
+	</table>
+
+	<table class="table table-bordered">
+		<thead>
+			<tr>
+				<th>{{ _("Description") }}</th>
+				<th>{{ _("SAC") }}</th>
+				<th class="text-right">{{ _("Qty") }}</th>
+				<th class="text-right">{{ _("Rate") }}</th>
+				<th class="text-right">{{ _("Taxable Value") }}</th>
+			</tr>
+		</thead>
+		<tbody>
+			{% for item in doc.items %}
+			<tr>
+				<td>{{ item.description or item.item_name }}</td>
+				<td>{{ item.gst_hsn_code or "" }}</td>
+				<td class="text-right">{{ item.get_formatted("qty") }}</td>
+				<td class="text-right">{{ item.get_formatted("rate") }}</td>
+				<td class="text-right">{{ item.get_formatted("net_amount") }}</td>
+			</tr>
+			{% endfor %}
+		</tbody>
+	</table>
+
+	<table class="table table-bordered" style="width: 50%; margin-left: auto">
+		<tr><td>{{ _("Taxable Value") }}</td><td class="text-right">{{ doc.get_formatted("net_total") }}</td></tr>
+		{% for tax in doc.taxes %}
+		<tr><td>{{ tax.description }} @ {{ tax.rate }}%</td><td class="text-right">{{ tax.get_formatted("tax_amount") }}</td></tr>
+		{% endfor %}
+		<tr><td><b>{{ _("Total") }}</b></td><td class="text-right"><b>{{ doc.get_formatted("grand_total") }}</b></td></tr>
+		{% if doc.total_advance %}
+		<tr><td>{{ _("Paid from Advance") }}</td><td class="text-right">{{ doc.get_formatted("total_advance") }}</td></tr>
+		{% endif %}
+		<tr><td>{{ _("Amount Due") }}</td><td class="text-right">{{ doc.get_formatted("outstanding_amount") }}</td></tr>
+	</table>
+
+	<p>{{ _("Amount in words") }}: {{ doc.in_words }}</p>
+	{% if export %}
+	<p>{{ _("Supply meant for export or to an SEZ unit under LUT, without payment of integrated tax.") }}</p>
+	{% endif %}
+	{% if doc.advances %}
+	<p>{{ _("Advances adjusted") }}:
+		{% for row in doc.advances %}{{ row.reference_name }} ({{ row.get_formatted("allocated_amount") }}){% if not loop.last %}, {% endif %}{% endfor %}
+	</p>
+	{% endif %}
+	<p class="text-right" style="margin-top: 40px">{{ _("For") }} {{ doc.company }}<br><br>{{ _("Authorised Signatory") }}</p>
+</div>
