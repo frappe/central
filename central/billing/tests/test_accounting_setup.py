@@ -39,10 +39,12 @@ class FakeAccountingSystem:
 		record = self.records.get((doctype, name))
 		return frappe._dict(record, name=name) if record is not None else None
 
+	def call(self, method, params=None):
+		doctype = params["doctype"]
+		options = self.series.get(doctype) or self.records[("DocType", doctype)]["fields"][0]["options"]
+		return {"docs": [{"name": doctype, "fields": [{"fieldname": "naming_series", "options": options}]}]}
+
 	def find(self, doctype, filters, fields=None):
-		if doctype == "Property Setter":
-			options = self.series.get(filters[0][2])
-			return [frappe._dict(value=options)] if options else []
 		return [
 			frappe._dict(name=n) for (dt, n), r in self.records.items() if dt == doctype and r.get("mine")
 		]
@@ -80,7 +82,7 @@ class AccountingSetupTestCase(IntegrationTestCase):
 		self.remote = FakeAccountingSystem(EXISTING)
 		self._remote = [
 			patch(f"central.billing.ingester.connection.{fn}", getattr(self.remote, fn))
-			for fn in ("fetch", "find", "post", "put", "run_doc_method")
+			for fn in ("call", "fetch", "find", "post", "put", "run_doc_method")
 		]
 		for p in self._remote:
 			p.start()
