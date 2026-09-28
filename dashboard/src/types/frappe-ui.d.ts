@@ -159,6 +159,36 @@ export function useShortcut(
 ): void
 export function formatShortcutLabel(config: ShortcutConfig): string
 
+export interface KeyboardShortcutConfig {
+	combo: string
+	description?: string
+	group?: string
+	allowInInput?: boolean
+	allowInDialog?: boolean
+	enabled?: () => boolean
+	handler: () => void
+}
+
+export function useKeyboardShortcut(
+	shortcuts: KeyboardShortcutConfig | KeyboardShortcutConfig[],
+): void
+
+export interface DialogArgs {
+	title: string
+	message?: string
+	confirmLabel?: string
+	onConfirm?: () => void | Promise<void>
+}
+
+export interface DialogHandle {
+	close: () => void
+}
+
+export const dialog: {
+	confirm: (args: DialogArgs) => DialogHandle
+	danger: (args: DialogArgs) => DialogHandle
+}
+
 export interface BreadcrumbItem {
 	label: string
 	route?: string | object
@@ -179,6 +209,7 @@ export const Checkbox: Component
 export const Combobox: Component
 export const DateRangePicker: Component
 export const DesktopShell: Component
+export const Dialogs: Component
 export const Dialog: Component & {
 	Title: Component
 	Close: Component

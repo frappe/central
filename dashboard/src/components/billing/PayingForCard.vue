@@ -78,7 +78,6 @@ function serverTitle(sub: SubscriptionRow): string {
 			<Button
 				v-if="hidden"
 				variant="ghost"
-				size="sm"
 				class="-mb-2 -ml-2 mt-2"
 				:label="`View all ${rows.length}`"
 				@click="$emit('open')"
@@ -96,7 +95,7 @@ function serverTitle(sub: SubscriptionRow): string {
 			description="Servers and metered services you're subscribed to will show here with what they cost."
 		>
 			<template v-if="canManageBilling" #action>
-				<Button variant="subtle" label="Browse add-ons" @click="goToAddons" />
+				<Button label="Browse add-ons" @click="goToAddons" />
 			</template>
 		</EmptyState>
 

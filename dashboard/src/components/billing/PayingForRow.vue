@@ -186,11 +186,11 @@ function overAllowance(s: ServiceRow): boolean {
 					</div>
 				</div>
 			</div>
-			<div class="shrink-0 text-right">
-				<span class="block text-sm-medium tabular-nums text-ink-gray-9">
-					{{ money(row.cost ?? 0, currency) }}
-				</span>
-			</div>
+			<span
+				class="block shrink-0 text-right text-sm-medium tabular-nums text-ink-gray-9"
+			>
+				{{ money(row.cost ?? 0, currency) }}
+			</span>
 		</template>
 	</div>
 </template>

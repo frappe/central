@@ -2,11 +2,12 @@
 import { LoadingText } from 'frappe-ui'
 import { computed } from 'vue'
 import PayingForRow from '@/components/billing/PayingForRow.vue'
-import SidePanelContent from '@/components/common/SidePanelContent.vue'
+import SidePanel from '@/components/common/SidePanel.vue'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { usePayingFor } from '@/composables/usePayingFor'
 import { money } from '@/lib/format'
 
+const open = defineModel<boolean>('open', { default: false })
 const { canManageBilling } = useCapabilities()
 const {
 	rows,
@@ -28,10 +29,8 @@ const subtitle = computed(() =>
 </script>
 
 <template>
-	<SidePanelContent title="Subscriptions" :subtitle="subtitle">
-		<div v-if="loading" class="space-y-3 p-4">
-			<LoadingText :lines="6" />
-		</div>
+	<SidePanel v-model:open="open" title="Subscriptions" :subtitle="subtitle">
+		<LoadingText v-if="loading" :lines="6" class="p-4" />
 		<div v-else class="divide-y divide-outline-gray-1 px-4">
 			<PayingForRow
 				v-for="row in rows"
@@ -46,5 +45,5 @@ const subtitle = computed(() =>
 				@assign-project="askAssignProject"
 			/>
 		</div>
-	</SidePanelContent>
+	</SidePanel>
 </template>

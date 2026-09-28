@@ -2,9 +2,10 @@
 import {
 	Alert,
 	Button,
+	Combobox,
 	Dialog,
-	FormControl,
 	LoadingText,
+	TextInput,
 	useCall,
 } from 'frappe-ui'
 import { computed, reactive, ref, watch } from 'vue'
@@ -143,30 +144,32 @@ async function submit(): Promise<void> {
 <template>
 	<Dialog v-model:open="open" title="Billing details" size="2xl">
 		<template #default>
-			<div v-if="profile.loading && !profile.data" class="space-y-3">
-				<LoadingText :lines="6" />
-			</div>
+			<LoadingText v-if="profile.loading && !profile.data" :lines="6" />
 
 			<div v-else class="space-y-6">
 				<Alert v-if="formError" theme="red" :title="formError" />
 				<div class="space-y-3">
 					<h3 class="text-sm-medium text-ink-gray-8">Contact</h3>
 					<div class="grid gap-4 sm:grid-cols-2">
-						<FormControl
+						<TextInput
 							v-model="form.legal_name"
 							label="Legal name"
 							placeholder="Acme Technologies Pvt. Ltd."
 							:error="requiredError('legal_name', 'Legal name')"
 							required
 						/>
-						<FormControl
-							v-model="form.email"
-							type="email"
-							label="Billing email"
-							placeholder="billing@company.com"
-							:error="emailIssue"
-						/>
-						<FormControl
+						<div>
+							<TextInput
+								v-model="form.email"
+								type="email"
+								label="Billing email"
+								placeholder="billing@company.com"
+							/>
+							<p v-if="emailIssue" class="mt-1 text-p-xs text-ink-red-7">
+								{{ emailIssue }}
+							</p>
+						</div>
+						<TextInput
 							v-model="form.phone"
 							label="Phone"
 							placeholder="+91 98765 43210"
@@ -182,9 +185,8 @@ async function submit(): Promise<void> {
 					<h3 class="text-sm-medium text-ink-gray-8">Address</h3>
 					<div class="grid gap-4 sm:grid-cols-2">
 						<div class="sm:col-span-2">
-							<FormControl
+							<Combobox
 								v-model="form.country"
-								type="combobox"
 								label="Country"
 								placeholder="Select country"
 								:options="countryOptions"
@@ -197,41 +199,40 @@ async function submit(): Promise<void> {
 										: `Sets your billing currency (${form.currency || 'USD'}).` }}
 							</p>
 						</div>
-						<FormControl
+						<TextInput
 							v-model="form.address_line1"
 							label="Address line 1"
 							placeholder="Street address"
 							:error="requiredError('address_line1', 'Address line 1')"
 							required
 						/>
-						<FormControl
+						<TextInput
 							v-model="form.address_line2"
 							label="Address line 2"
 							placeholder="Suite, floor (optional)"
 						/>
-						<FormControl
+						<TextInput
 							v-model="form.city"
 							label="City"
 							:error="requiredError('city', 'City')"
 							required
 						/>
-						<FormControl
+						<Combobox
 							v-if="isIndia"
 							v-model="form.state"
-							type="combobox"
 							label="State"
 							placeholder="Select state"
 							:options="stateOptions"
 						/>
-						<FormControl v-else v-model="form.state" label="State" />
-						<FormControl v-model="form.pincode" :label="postalLabel" />
+						<TextInput v-else v-model="form.state" label="State" />
+						<TextInput v-model="form.pincode" :label="postalLabel" />
 					</div>
 				</div>
 
 				<div v-if="isIndia" class="space-y-3">
 					<h3 class="text-sm-medium text-ink-gray-8">Tax</h3>
 					<div class="sm:max-w-[calc(50%-0.5rem)]">
-						<FormControl
+						<TextInput
 							v-model="form.gstin"
 							label="GSTIN"
 							placeholder="22AAAAA0000A1Z5"

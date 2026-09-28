@@ -48,7 +48,6 @@ export default defineConfig({
 	build: {
 		outDir: path.resolve(__dirname, '../central/public/dashboard'),
 		emptyOutDir: true,
-		target: 'es2015',
 		sourcemap: true,
 		manifest: true,
 	},

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Alert, Dialog, FormControl, useCall } from 'frappe-ui'
+import { Alert, Dialog, TextInput, useCall } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import { API, method } from '@/api/methods'
 import { getErrorMessage } from '@/lib/feedback'
@@ -26,7 +26,7 @@ const open = computed({
 })
 
 const title = ref('')
-const spendingLimit = ref<number | null>(null)
+const spendingLimit = ref<number>()
 const formError = ref('')
 watch(
 	() => props.project,
@@ -34,7 +34,7 @@ watch(
 		formError.value = ''
 		if (project) {
 			title.value = project.title
-			spendingLimit.value = project.spending_limit || null
+			spendingLimit.value = project.spending_limit || undefined
 		}
 	},
 )
@@ -110,8 +110,8 @@ const dialogOptions = computed(() => ({
 		<template #default>
 			<div class="space-y-4">
 				<Alert v-if="formError" theme="red" :title="formError" />
-				<FormControl v-model="title" label="Title" @keyup.enter="submit" />
-				<FormControl
+				<TextInput v-model="title" label="Title" @keyup.enter="submit" />
+				<TextInput
 					v-model="spendingLimit"
 					type="number"
 					label="Spending limit"

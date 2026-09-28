@@ -1,7 +1,3 @@
-// Whitelisted method paths in one place. `method(path)` builds the v2 method URL
-// the data-fetching composables call. These are the live, capability-gated,
-// team-scoped endpoints under central/api/.
-
 export function method(path: string): string {
 	return `/api/v2/method/${path}`
 }
@@ -16,12 +12,10 @@ export function methodV1(path: string): string {
 }
 
 export const API = {
-	// ── Identity / capability IAM (central.api.identity) ──
 	myTeams: 'central.api.identity.my_teams',
 	myCapabilities: 'central.api.identity.my_capabilities',
 	myInvitations: 'central.api.identity.my_invitations',
 
-	// ── Team roster, roles & invitations (central.api.teams) ──
 	listTeamMembers: 'central.api.teams.list_team_members',
 	listTeamRoles: 'central.api.teams.list_team_roles',
 	createTeam: 'central.api.teams.create_team',
@@ -31,6 +25,7 @@ export const API = {
 	changePassword: 'central.api.auth.change_password',
 	transferOwnership: 'central.api.teams.transfer_team_ownership',
 	deleteTeam: 'central.api.teams.delete_team',
+	leaveTeam: 'central.api.teams.leave_team',
 	inviteTeamMember: 'central.api.teams.invite_team_member',
 	setTeamMemberRoles: 'central.api.teams.set_team_member_roles',
 	setTeamMemberStatus: 'central.api.teams.set_team_member_status',
@@ -42,7 +37,6 @@ export const API = {
 	acceptInvitation: 'central.api.teams.accept_invitation',
 	declineInvitation: 'central.api.teams.decline_invitation',
 
-	// ── Servers (central.api.servers) ──
 	registry: 'central.api.servers.registry',
 	listInstances: 'central.api.servers.list_instances',
 	refreshServers: 'central.api.servers.refresh_servers',
@@ -75,9 +69,6 @@ export const API = {
 	deleteSnapshots: 'central.api.snapshots.delete_snapshots',
 	setAutomaticSnapshots: 'central.api.snapshots.set_automatic_snapshots',
 
-	// ── Managed add-on services (central.services.api.dashboard) ──
-	// service:view for the reads, service:manage for the mutations + key reveal.
-	// Per-site enable/disable is a bench (Pilot) surface, not a console method.
 	listOffers: 'central.services.api.dashboard.list_offers',
 	serviceInstance: 'central.services.api.dashboard.get_instance',
 	activateService: 'central.services.api.dashboard.activate_service',
@@ -93,14 +84,10 @@ export const API = {
 	setBucketQuota: 'central.services.api.storage.set_bucket_quota',
 	deleteBucket: 'central.services.api.storage.delete_bucket',
 
-	// ── Auth / SMB signup (central.api.auth) ──
 	signUp: 'central.api.auth.sign_up',
 	verifySignup: 'central.api.auth.verify_signup',
 	resendSignupCode: 'central.api.auth.resend_signup_code',
 
-	// ── Self-serve sites (central.api.sites) ──
-	// A site is the machine its Pilot image was baked on, and has no lifecycle of its
-	// own. The customer names it; the address the region derives stays ours.
 	siteDomain: 'central.api.sites.site_domain',
 	checkSubdomain: 'central.api.sites.check_subdomain',
 	createTrialSite: 'central.api.sites.create_trial_site',
@@ -110,16 +97,11 @@ export const API = {
 	loginSite: 'central.api.sites.login_site',
 	terminateSite: 'central.api.sites.terminate_site',
 
-	// ── SSO open-in-bench (central.api.sso) ──
 	getBenchLink: 'central.api.sso.get_bench_link',
 
-	// ── Billing catalog (central.billing.api.dashboard.catalog) ──
 	eligiblePlans: 'central.billing.api.dashboard.catalog.get_eligible_plans',
 	composedConfig: 'central.billing.api.dashboard.catalog.get_composed_config',
 
-	// ── Billing: reads (central.billing.api.dashboard.*, billing:view) ──
-	// The dashboard package re-exports every submodule fn, so these flat paths are
-	// stable regardless of which module (account/invoices/methods) owns them.
 	teamOverview: 'central.billing.api.dashboard.get_team_overview',
 	forecast: 'central.billing.api.dashboard.get_forecast',
 	trustTier: 'central.billing.api.dashboard.get_trust_tier',
@@ -150,7 +132,6 @@ export const API = {
 	notificationBadge: 'central.notification.api.notification_badge',
 	notificationPreferences: 'central.notification.api.get_user_preferences',
 
-	// ── Billing: mutations (POST, billing:manage) ──
 	payInvoice: 'central.billing.api.dashboard.pay_invoice',
 	payInvoiceCheckout: 'central.billing.api.dashboard.pay_invoice_checkout',
 	confirmInvoiceCheckout:

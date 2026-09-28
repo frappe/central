@@ -448,7 +448,6 @@ const showListControls = computed(
 					:key="filter.key"
 					:model-value="query.filters[filter.key] || ''"
 					class="w-40"
-					variant="subtle"
 					:placeholder="filter.allLabel || `All ${filter.label.toLowerCase()}`"
 					:options="[
             {
@@ -506,7 +505,10 @@ const showListControls = computed(
 		<!-- flex-1 is inert unless the caller makes the root section a flex column
          (class fall-through) to pin the pagination footer to the bottom. -->
 		<div ref="scroller" class="relative min-w-0 flex-1 overflow-x-auto">
-			<div role="table" class="min-w-[720px]">
+			<div
+				role="table"
+				:class="pageRows.length || loading ? 'min-w-[720px]' : ''"
+			>
 				<div
 					v-if="hasRows || loading"
 					role="row"

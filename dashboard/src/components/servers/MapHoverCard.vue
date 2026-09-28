@@ -42,7 +42,6 @@ function canOpenBench(server: NonNullable<MapPin['server']>): boolean {
 					>
 					<Badge
 						:theme="node.pin.visual.badgeTheme"
-						variant="subtle"
 						size="sm"
 						:label="node.pin.visual.label"
 					/>
@@ -189,8 +188,6 @@ function canOpenBench(server: NonNullable<MapPin['server']>): boolean {
 		</div>
 		<Button
 			class="mt-3"
-			variant="subtle"
-			size="sm"
 			label="New server"
 			icon-left="lucide-plus"
 			@click="emit('new-server', node.targets[0].id)"

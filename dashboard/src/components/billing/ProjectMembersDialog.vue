@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Alert, Button, Dialog, FormControl, useCall } from 'frappe-ui'
+import { Alert, Button, Dialog, Select, useCall } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import { API, method } from '@/api/methods'
 import RowActionsMenu from '@/components/common/RowActionsMenu.vue'
@@ -12,20 +12,15 @@ import type { Project, SubscriptionRow } from '@/types/billing'
 // here you pick servers for one project). Reuses the same tag/untag endpoint
 // and the team's already-loaded subscriptions — no new reads. Controlled by the
 // card/panel via v-model:project, like RenameProjectDialog.
-const props = defineProps<{ project: Project | null }>()
-const emit = defineEmits<{
-	'update:project': [project: Project | null]
-	changed: []
-}>()
+interface Props {
+	project: Project | null
+}
+
+const props = defineProps<Props>()
+const open = defineModel<boolean>('open', { default: false })
+const emit = defineEmits<{ changed: [] }>()
 
 const { subscriptions, reloadSubscriptionGrouping } = useBillingOverview()
-
-const open = computed({
-	get: () => !!props.project,
-	set: (v: boolean) => {
-		if (!v) emit('update:project', null)
-	},
-})
 
 // Servers only — the same set PayingForCard's row action can tag (a team-level
 // metered service has no "Move to project" entry point yet either).
@@ -103,11 +98,7 @@ async function removeMember(sub: SubscriptionRow): Promise<void> {
 </script>
 
 <template>
-	<Dialog
-		v-model="open"
-		:title="project ? `${project.title} — servers` : ''"
-		size="lg"
-	>
+	<Dialog v-model="open" :title="project ? `${project.title} — servers` : ''">
 		<template #default>
 			<div class="space-y-4">
 				<Alert v-if="formError" theme="red" :title="formError" />
@@ -139,9 +130,8 @@ async function removeMember(sub: SubscriptionRow): Promise<void> {
 				</p>
 
 				<div class="flex items-end gap-2 border-t border-outline-gray-2 pt-4">
-					<FormControl
+					<Select
 						v-if="candidates.length"
-						type="select"
 						v-model="toAdd"
 						:options="[{ label: 'Choose a server…', value: NONE }, ...candidates]"
 						label="Add a server"
@@ -152,7 +142,6 @@ async function removeMember(sub: SubscriptionRow): Promise<void> {
 					</p>
 					<Button
 						v-if="candidates.length"
-						variant="subtle"
 						label="Add"
 						:disabled="!toAdd"
 						@click="addMember"

@@ -3,8 +3,8 @@ import {
 	Alert,
 	Button,
 	Dialog,
-	FormControl,
 	LoadingText,
+	TextInput,
 	Tooltip,
 	useCall,
 } from 'frappe-ui'
@@ -284,9 +284,8 @@ async function submitAlert(): Promise<void> {
 			</div>
 		</div>
 
-		<div v-if="loading" class="mt-2 w-40">
-			<LoadingText :lines="2" />
-		</div>
+		<LoadingText v-if="loading" :lines="2" class="mt-2 w-40" />
+
 		<template v-else>
 			<div class="mt-1.5 flex flex-wrap items-baseline gap-x-2.5">
 				<span class="text-2xl-semibold tabular-nums text-ink-gray-9">
@@ -385,7 +384,7 @@ async function submitAlert(): Promise<void> {
 		<Dialog v-model:open="dialogOpen" title="Set a budget alert">
 			<template #default>
 				<Alert v-if="formError" class="mb-4" theme="red" :title="formError" />
-				<FormControl
+				<TextInput
 					v-model="draft"
 					type="number"
 					:label="`Alert me above (${currencySymbol(currency)})`"

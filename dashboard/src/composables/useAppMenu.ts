@@ -2,11 +2,12 @@ import { type ColorScheme, useColorScheme } from 'frappe-ui'
 import { computed, h } from 'vue'
 import { useAuth } from '@/composables/useAuth'
 import { openSettings } from '@/composables/useSettings'
+import { openTeamSwitcher } from '@/composables/useTeamSwitcher'
 
 const themeOptions: { label: string; icon: string; value: ColorScheme }[] = [
+	{ label: 'System', icon: 'lucide-monitor', value: 'system' },
 	{ label: 'Light', icon: 'lucide-sun', value: 'light' },
 	{ label: 'Dark', icon: 'lucide-moon', value: 'dark' },
-	{ label: 'System', icon: 'lucide-monitor', value: 'system' },
 ]
 
 export const useAppMenu = () => {
@@ -22,7 +23,7 @@ export const useAppMenu = () => {
 		{
 			label: 'Switch team',
 			icon: 'lucide-repeat',
-			onClick: () => openSettings('teams'),
+			onClick: openTeamSwitcher,
 		},
 		{
 			label: 'Theme',

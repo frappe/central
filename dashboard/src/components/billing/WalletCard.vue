@@ -84,9 +84,7 @@ function onAddCredit(): void {
 			</button>
 		</div>
 
-		<div v-if="loading" class="mt-2 w-32">
-			<LoadingText :lines="1" />
-		</div>
+		<LoadingText v-if="loading" :lines="1" class="mt-2 w-32" />
 		<template v-else>
 			<p class="mt-1.5 text-2xl-semibold tabular-nums text-ink-gray-9">
 				{{ money(balance, currency) }}
@@ -148,12 +146,7 @@ function onAddCredit(): void {
 				v-if="hasMethod && canManageBilling"
 				class="mt-auto flex items-center justify-end gap-2 pt-4"
 			>
-				<Button
-					variant="subtle"
-					size="sm"
-					label="Add credit"
-					@click="onAddCredit"
-				>
+				<Button label="Add credit" @click="onAddCredit">
 					<template #prefix
 						><span class="lucide-plus size-4" aria-hidden="true" /></template
 					>
