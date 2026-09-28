@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { FormControl } from 'frappe-ui'
+import { TextInput } from 'frappe-ui'
 import { computed, ref, useAttrs } from 'vue'
 
 defineOptions({ inheritAttrs: false })
@@ -45,13 +45,12 @@ defineExpose({ dirty, valid, validate })
 </script>
 
 <template>
-	<FormControl
+	<TextInput
 		:model-value="modelValue"
 		:label="label"
 		:type="type"
 		:error="error"
 		size="md"
-		variant="subtle"
 		v-bind="attrs"
 		:class="attrs.class"
 		@update:model-value="emit('update:modelValue', String($event ?? ''))"
@@ -64,5 +63,5 @@ defineExpose({ dirty, valid, validate })
 		>
 			<slot :name="name" v-bind="slotProps" />
 		</template>
-	</FormControl>
+	</TextInput>
 </template>

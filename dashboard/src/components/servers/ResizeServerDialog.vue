@@ -7,7 +7,7 @@ import {
 	LoadingIndicator,
 	Tabs,
 } from 'frappe-ui'
-import { toRef } from 'vue'
+import { computed, toRef } from 'vue'
 import PlanGroup from '@/components/servers/PlanGroup.vue'
 import { useResizeServer } from '@/composables/useResizeServer'
 import type { VirtualMachineRow } from '@/composables/useServers'
@@ -19,13 +19,10 @@ interface Props {
 }
 
 const props = defineProps<Props>()
-const emit = defineEmits<{
-	'update:server': [server: VirtualMachineRow | null]
-	resized: []
-}>()
+const model = defineModel<boolean>('open', { default: false })
+const emit = defineEmits<{ resized: [] }>()
 
 const {
-	open,
 	configCall,
 	resizeCall,
 	plansLoading,
@@ -60,8 +57,15 @@ const {
 	changed,
 	confirm,
 } = useResizeServer(toRef(props, 'server'), {
-	close: () => emit('update:server', null),
+	close: () => (model.value = false),
 	resized: () => emit('resized'),
+})
+
+const open = computed({
+	get: () => model.value,
+	set: (value: boolean) => {
+		if (!value && !resizeCall.loading) model.value = false
+	},
 })
 </script>
 

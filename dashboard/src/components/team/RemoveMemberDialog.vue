@@ -6,18 +6,15 @@ import { useTeamMembers } from '@/composables/useTeamMembers'
 import { getErrorMessage } from '@/lib/feedback'
 import type { TeamMemberRow } from '@/types/api'
 
-const props = defineProps<{ member: TeamMemberRow | null }>()
-const emit = defineEmits<{ 'update:member': [member: TeamMemberRow | null] }>()
+interface Props {
+	member: TeamMemberRow | null
+}
+
+const props = defineProps<Props>()
+const open = defineModel<boolean>('open', { default: false })
 
 const { remove } = useTeamMembers()
 const { activeTeamLabel } = useSession()
-
-const open = computed({
-	get: () => !!props.member,
-	set: (v: boolean) => {
-		if (!v) emit('update:member', null)
-	},
-})
 
 const removing = ref(false)
 const formError = ref('')
@@ -41,7 +38,6 @@ const confirmRemove = async (): Promise<void> => {
 }
 
 const dialogOptions = computed(() => ({
-	title: `Remove ${props.member?.full_name ?? ''}?`,
 	actions: [
 		{
 			label: 'Cancel',
@@ -64,7 +60,7 @@ const dialogOptions = computed(() => ({
 <template>
 	<Dialog
 		v-model="open"
-		:title="dialogOptions.title"
+		:title="`Remove ${member?.full_name}?`"
 		size="sm"
 		:actions="dialogOptions.actions"
 	>

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Alert, Button, LoadingText, TabButtons } from 'frappe-ui'
+import { Button, LoadingText, TabButtons } from 'frappe-ui'
 import { NumberCard } from 'frappe-ui/charts'
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
@@ -41,10 +41,12 @@ const showStatement = ref(false)
 </script>
 
 <template>
-	<div class="flex h-full min-h-0">
+	<div class="relative flex h-full min-h-0">
 		<div class="min-w-0 flex-1 overflow-y-auto">
-			<div class="mx-auto w-full max-w-5xl space-y-5 px-6 py-8">
-				<div v-if="loading" class="space-y-5">
+			<div
+				class="mx-auto w-full max-w-5xl space-y-3 p-3 md:space-y-4 md:p-4 lg:mt-6"
+			>
+				<div v-if="loading" class="space-y-3 md:space-y-4">
 					<BillingCard v-for="i in 2" :key="i" title=" ">
 						<LoadingText :lines="4" />
 					</BillingCard>
@@ -59,19 +61,22 @@ const showStatement = ref(false)
 				>
 					<template #action>
 						<Button
-							variant="subtle"
 							label="Go to billing overview"
 							@click="router.push({ name: 'Billing' })"
 						/>
 					</template>
 				</EmptyState>
 
-				<Alert
+				<EmptyState
 					v-else-if="!history.data"
-					theme="red"
+					icon="lucide-chart-no-axes-column"
 					title="Couldn't load reports"
-					:primary-action="{ label: 'Retry', onClick: () => history.reload() }"
-				/>
+					description="Something went wrong on our side."
+				>
+					<template #action>
+						<Button label="Retry" @click="history.reload()" />
+					</template>
+				</EmptyState>
 
 				<template v-else>
 					<OutstandingAlert

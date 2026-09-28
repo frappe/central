@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Alert } from 'frappe-ui'
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import BillingContactTaxCard from '@/components/billing/BillingContactTaxCard.vue'
 import CollectionActionBanner from '@/components/billing/CollectionActionBanner.vue'
 import CycleBreakdownPanel from '@/components/billing/CycleBreakdownPanel.vue'
@@ -16,9 +16,7 @@ import ProjectsPanel from '@/components/billing/ProjectsPanel.vue'
 import StopBillingCard from '@/components/billing/StopBillingCard.vue'
 import WalletCard from '@/components/billing/WalletCard.vue'
 import WalletHistoryPanel from '@/components/billing/WalletHistoryPanel.vue'
-import SidePanel from '@/components/common/SidePanel.vue'
 import { useBillingSetup } from '@/composables/useBillingSetup'
-import { useTrayColumn } from '@/composables/useTrayColumn'
 
 // Billing › Overview (#69) — one scrollable surface that absorbs the legacy
 // Overview, Credits, Payment methods, Subscriptions, and Settings pages. Each card
@@ -30,10 +28,25 @@ import { useTrayColumn } from '@/composables/useTrayColumn'
 // the same dialog (useBillingSetup.requireSetup → setupDialogOpen).
 const { complete, setupDialogOpen } = useBillingSetup()
 
-// One docked panel, many trays: the panel stays open while a card swaps which
-// body it shows, so moving between trays never re-slides the column.
-type Tray = 'wallet' | 'cycle' | 'schedule' | 'payingFor' | 'projects'
-const { tray, shown, onClosed } = useTrayColumn<Tray>()
+// One docked tray at a time: the panel column is a single 24rem slot, and two
+// open at once would stack two SidePanels side by side and squeeze the content
+// out. A single ref names which is showing, and each card's v-model writes it.
+type Tray = 'wallet' | 'cycle' | 'schedule' | 'payingFor' | 'projects' | null
+const tray = ref<Tray>(null)
+
+function trayModel(name: Exclude<Tray, null>) {
+	return computed({
+		get: () => tray.value === name,
+		set: (open: boolean) => {
+			tray.value = open ? name : null
+		},
+	})
+}
+const showWalletHistory = trayModel('wallet')
+const showCycleBreakdown = trayModel('cycle')
+const showSchedule = trayModel('schedule')
+const showPayingFor = trayModel('payingFor')
+const showProjects = trayModel('projects')
 
 // Rare, scary verbs live folded under "Advanced" — reference, not news, same
 // pattern as the invoice Activity fold.
@@ -41,88 +54,70 @@ const advancedOpen = ref(false)
 </script>
 
 <template>
-	<div class="flex h-full flex-col">
-		<!-- Content + docked wallet-history panel (like the invoice tray): the panel
-         shares the row, the content stays bright beside it — no modal overlay. -->
-		<div class="flex min-h-0 flex-1">
-			<div class="cards-host min-w-0 flex-1 overflow-y-auto">
-				<div class="mx-auto w-full max-w-3xl space-y-5 px-6 py-8">
-					<!-- Until the billing profile is filled, ask the team to complete it
+	<!-- Content + docked wallet-history panel (like the invoice tray): the panel
+       shares the row, the content stays bright beside it — no modal overlay. -->
+	<div class="relative flex h-full min-h-0">
+		<div
+			class="grid min-w-0 flex-1 grid-cols-[min(48rem,100%)] content-start justify-center gap-3 md:gap-4
+      overflow-y-auto p-3 md:p-4 lg:mt-6  [container-type:inline-size]"
+		>
+			<!-- Until the billing profile is filled, ask the team to complete it
                first — money-moving actions stay gated on it. -->
-					<Alert
-						v-if="!complete"
-						theme="amber"
-						title="Add your billing details"
-						description="Currency, legal name, and address are needed to add credit, save a payment method, and provision servers."
-						:primary-action="{ label: 'Add billing details', onClick: () => { setupDialogOpen = true } }"
-					/>
+			<Alert
+				v-if="!complete"
+				theme="amber"
+				title="Add your billing details"
+				description="Currency, legal name, and address are needed to add credit, save a payment method, and provision servers."
+				:primary-action="{ label: 'Add billing details', onClick: () => { setupDialogOpen = true } }"
+			/>
 
-					<CollectionActionBanner />
-					<!-- The cycle figure is the page's headline, so it gets the full
+			<CollectionActionBanner />
+			<!-- The cycle figure is the page's headline, so it gets the full
                width; what happens to it next sits in the pair beneath. -->
-					<EstimatedCard :active="tray === 'cycle'" @open="tray = 'cycle'" />
-					<div class="cards-row grid gap-4">
-						<NextPaymentCard
-							:active="tray === 'schedule'"
-							@open="tray = 'schedule'"
-						/>
-						<WalletCard :active="tray === 'wallet'" @open="tray = 'wallet'" />
-					</div>
-					<PayingForCard @open="tray = 'payingFor'" />
-					<ProjectsCard @open="tray = 'projects'" />
-					<PaymentMethodsCard />
-					<BillingContactTaxCard @edit="setupDialogOpen = true" />
-
-					<!-- Advanced — collapsed home for the rare, destructive-adjacent
-               verbs (Stop billing). -->
-					<section>
-						<button
-							class="-mx-2 flex items-center gap-1.5 rounded-5 px-2 py-1 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-outline-gray-4"
-							:aria-expanded="advancedOpen"
-							@click="advancedOpen = !advancedOpen"
-						>
-							<span
-								class="lucide-chevron-right size-3.5 shrink-0 text-ink-gray-5 transition-transform duration-150 ease-out"
-								:class="advancedOpen ? 'rotate-90' : ''"
-							/>
-							<h2 class="text-base-medium text-ink-gray-8">Advanced</h2>
-						</button>
-						<div v-if="advancedOpen" class="mt-4">
-							<StopBillingCard />
-						</div>
-					</section>
-				</div>
-			</div>
-
-			<SidePanel
-				bare
-				:open="tray !== null"
-				@update:open="(open: boolean) => !open && (tray = null)"
-				@closed="onClosed"
+			<EstimatedCard
+				:active="showCycleBreakdown"
+				@open="showCycleBreakdown = true"
+			/>
+			<div
+				class="grid gap-3 md:gap-4 [@container_(min-width:50rem)]:grid-cols-2"
 			>
-				<WalletHistoryPanel v-if="shown === 'wallet'" />
-				<CycleBreakdownPanel v-else-if="shown === 'cycle'" />
-				<PaymentSchedulePanel v-else-if="shown === 'schedule'" />
-				<PayingForPanel v-else-if="shown === 'payingFor'" />
-				<ProjectsPanel v-else-if="shown === 'projects'" />
-			</SidePanel>
+				<NextPaymentCard :active="showSchedule" @open="showSchedule = true" />
+				<WalletCard
+					:active="showWalletHistory"
+					@open="showWalletHistory = true"
+				/>
+			</div>
+			<PayingForCard @open="showPayingFor = true" />
+			<ProjectsCard @open="showProjects = true" />
+			<PaymentMethodsCard />
+			<BillingContactTaxCard @edit="setupDialogOpen = true" />
+
+			<!-- Advanced — collapsed home for the rare, destructive-adjacent
+               verbs (Stop billing). -->
+			<section>
+				<button
+					class="-mx-2 flex items-center gap-1.5 rounded-5 px-2 py-1 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-outline-gray-4"
+					:aria-expanded="advancedOpen"
+					@click="advancedOpen = !advancedOpen"
+				>
+					<span
+						class="lucide-chevron-right size-3.5 shrink-0 text-ink-gray-5 transition-transform duration-150 ease-out"
+						:class="advancedOpen ? 'rotate-90' : ''"
+					/>
+					<h2 class="text-base-medium text-ink-gray-8">Advanced</h2>
+				</button>
+				<StopBillingCard v-if="advancedOpen" class="mt-4" />
+			</section>
 		</div>
 
-		<EditBillingProfileDialog v-model="setupDialogOpen" />
+		<!-- The shared docked SidePanel owns its own slide-in/out. Only one is
+         ever open (see `tray`), so they can all mount here. -->
+		<WalletHistoryPanel v-model:open="showWalletHistory" />
+		<CycleBreakdownPanel v-model:open="showCycleBreakdown" />
+		<PaymentSchedulePanel v-model:open="showSchedule" />
+		<PayingForPanel v-model:open="showPayingFor" />
+		<ProjectsPanel v-model:open="showProjects" />
 	</div>
-</template>
 
-<style scoped>
-/* Queried on the content column, which is the space the page actually gets:
-   it narrows when the wallet panel opens and widens when the sidebar collapses,
-   so one rule covers both. (The max-w-3xl box inside can't be the container —
-   it reads 768px regardless, so it never sees either change.) */
-.cards-host {
-	container-type: inline-size;
-}
-@container (min-width: 50rem) {
-	.cards-row {
-		grid-template-columns: repeat(2, minmax(0, 1fr));
-	}
-}
-</style>
+	<EditBillingProfileDialog v-model="setupDialogOpen" />
+</template>

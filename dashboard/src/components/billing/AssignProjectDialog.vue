@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Alert, Dialog, FormControl, useCall } from 'frappe-ui'
+import { Alert, Dialog, Select, useCall } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import { API, method } from '@/api/methods'
 import { useBillingOverview } from '@/composables/useBillingOverview'
@@ -96,16 +96,13 @@ const dialogOptions = computed(() => ({
 		:actions="dialogOptions.actions"
 	>
 		<template #default>
-			<div class="space-y-4">
-				<Alert v-if="formError" theme="red" :title="formError" />
-				<FormControl
-					type="select"
-					v-model="selected"
-					:options="options"
-					label="Project"
-					description="Which project this subscription shows under in your cost breakdown. This doesn't change your invoice — every subscription bills on your one consolidated invoice."
-				/>
-			</div>
+			<Alert v-if="formError" class="mb-4" theme="red" :title="formError" />
+			<Select
+				v-model="selected"
+				:options="options"
+				label="Project"
+				description="Which project this subscription shows under in your cost breakdown. This doesn't change your invoice — every subscription bills on your one consolidated invoice."
+			/>
 		</template>
 	</Dialog>
 </template>

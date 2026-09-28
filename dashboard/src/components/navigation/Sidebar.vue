@@ -2,13 +2,12 @@
 import {
 	Avatar,
 	Dropdown,
-	formatShortcutLabel,
 	KeyboardShortcut,
 	Sidebar,
 	SidebarHeader,
 	SidebarItem,
 	SidebarLabel,
-	useShortcut,
+	useKeyboardShortcut,
 } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
@@ -46,19 +45,18 @@ watch(
 	},
 )
 
-useShortcut({
-	key: 'b',
-	ctrl: true,
+useKeyboardShortcut({
+	combo: 'Mod+B',
 	description: 'Toggle sidebar',
 	group: 'General',
 	allowInInput: true,
 	allowInDialog: true,
-	condition: () => !isMobile.value,
+	enabled: () => !isMobile.value,
 	handler: () => {
 		sidebarCollapsed.value = !sidebarCollapsed.value
 	},
 })
-const sidebarShortcut = formatShortcutLabel({ key: 'b', ctrl: true })
+const sidebarShortcut = isMac() ? '⌘B' : 'Ctrl+B'
 const toggleLabel = computed(
 	() =>
 		`${sidebarCollapsed.value ? 'Expand' : 'Collapse'} sidebar (${sidebarShortcut})`,
@@ -80,7 +78,7 @@ const toggleSection = (label: string) => {
 		v-model:collapsed="sidebarCollapsed"
 		:disable-collapse="isMobile"
 		class="border-r"
-		:class="isMobile ? '!w-full !border-r-0 bg-transparent' : ''"
+		:class="isMobile ? '!w-full !border-r-0 bg-transparent pb-8' : ''"
 	>
 		<SidebarHeader
 			v-if="!isMobile"
@@ -124,10 +122,10 @@ const toggleSection = (label: string) => {
 							:to="item.to"
 							:onclick="item.onClick"
 							class="mb-0.5"
-							:class="item.class"
+							:class="[item.class, isMobile ? '!h-10' : '']"
 							:active="!!item.to && item.to === route.path"
 						>
-							<span class="truncate text-sm">{{ item.label }}</span>
+							<span class="truncate md:text-sm">{{ item.label }}</span>
 							<template v-if="item.shortcut" #suffix>
 								<KeyboardShortcut
 									:combo="item.shortcut"
@@ -143,12 +141,7 @@ const toggleSection = (label: string) => {
 
 		<!-- user profile dropdown -->
 		<div class="mt-auto px-2 pb-2" v-if="!isMobile">
-			<Dropdown
-				:options="footerMenuItems"
-				side="top"
-				align="start"
-				match-trigger-width
-			>
+			<Dropdown :options="footerMenuItems" side="top" match-trigger-width>
 				<template #default="{ open }">
 					<!-- No transition on the button itself: `duration-*` alone animates
 					     ALL properties, so the open state's white card faded in over
@@ -170,7 +163,6 @@ const toggleSection = (label: string) => {
 						<Avatar
 							:image="profile?.user_image ?? undefined"
 							:label="profile?.full_name || currentUser || ''"
-							size="md"
 						/>
 						<!-- Name first, email beneath — the email alone reads like a
 						     login prompt, not a person. -->

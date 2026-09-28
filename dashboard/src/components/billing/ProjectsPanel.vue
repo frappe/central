@@ -2,7 +2,7 @@
 import { Badge, LoadingText } from 'frappe-ui'
 import { computed } from 'vue'
 import ProjectRowActions from '@/components/billing/ProjectRowActions.vue'
-import SidePanelContent from '@/components/common/SidePanelContent.vue'
+import SidePanel from '@/components/common/SidePanel.vue'
 import { useBillingOverview } from '@/composables/useBillingOverview'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { useProjects } from '@/composables/useProjects'
@@ -13,6 +13,7 @@ import type { Project } from '@/types/billing'
 
 // Every Project, in full. The card keeps the top few; this is where the long
 // tail goes, so the card never grows its own scrollbar.
+const open = defineModel<boolean>('open', { default: false })
 const { canManageBilling } = useCapabilities()
 const { projects, busy, onToggle, onRename, onManageMembers } = useProjects()
 const { currency } = useBillingOverview()
@@ -42,10 +43,8 @@ function rowSubtitle(p: Project): string {
 </script>
 
 <template>
-	<SidePanelContent title="Projects" :subtitle="subtitle">
-		<div v-if="loading" class="space-y-3 p-4">
-			<LoadingText :lines="6" />
-		</div>
+	<SidePanel v-model:open="open" title="Projects" :subtitle="subtitle">
+		<LoadingText v-if="loading" :lines="6" class="p-4" />
 		<div v-else class="divide-y divide-outline-gray-1 px-4">
 			<div
 				v-for="p in rows"
@@ -83,5 +82,5 @@ function rowSubtitle(p: Project): string {
 				/>
 			</div>
 		</div>
-	</SidePanelContent>
+	</SidePanel>
 </template>

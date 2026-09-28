@@ -1,5 +1,13 @@
 <script setup lang="ts">
-import { Alert, Badge, Button, FormControl, TabButtons, Tabs } from 'frappe-ui'
+import {
+	Alert,
+	Badge,
+	Button,
+	Select,
+	TabButtons,
+	Tabs,
+	TextInput,
+} from 'frappe-ui'
 import { computed } from 'vue'
 import ChoiceCards from '@/components/common/ChoiceCards.vue'
 import FormStep from '@/components/common/FormStep.vue'
@@ -99,7 +107,7 @@ const selectedRegionName = computed(() =>
 
 		<div class="flex flex-col-reverse lg:flex-row">
 			<!-- Stepped form (left) -->
-			<div class="w-full p-4 lg:w-[40rem] lg:shrink-0">
+			<div class="w-full p-3 md:p-4 lg:w-[40rem] lg:shrink-0">
 				<p v-if="loading" class="text-p-sm text-ink-gray-5">Loading regions…</p>
 				<p v-else-if="!regions.length" class="text-p-sm text-ink-gray-5">
 					No active regions are available right now.
@@ -107,10 +115,9 @@ const selectedRegionName = computed(() =>
 
 				<div v-else>
 					<FormStep title="Name the server">
-						<FormControl
+						<TextInput
 							v-model="name"
 							aria-label="Server name"
-							type="text"
 							placeholder="e.g. Acme Production"
 							:maxlength="60"
 							class="max-w-xs auto-f"
@@ -130,10 +137,9 @@ const selectedRegionName = computed(() =>
 									Reset
 								</button>
 							</div>
-							<FormControl
+							<TextInput
 								id="subdomain"
 								:model-value="subdomain"
-								type="text"
 								placeholder="acme-production"
 								:maxlength="63"
 								autocomplete="off"
@@ -168,7 +174,6 @@ const selectedRegionName = computed(() =>
 							<Button
 								v-for="r in providerRegions"
 								:key="r.region"
-								size="sm"
 								variant="outline"
 								:class="[
 									'!rounded-6 focus-visible:!ring-1 focus-visible:!ring-outline-gray-4',
@@ -184,13 +189,7 @@ const selectedRegionName = computed(() =>
 									{{ flagEmoji(r.country_code) }}
 								</span>
 								{{ regionLabel(r) }}
-								<Badge
-									v-if="!r.reachable"
-									theme="gray"
-									variant="subtle"
-									label="Unreachable"
-									class="ml-1"
-								/>
+								<Badge v-if="!r.reachable" label="Unreachable" class="ml-1" />
 							</Button>
 						</div>
 					</FormStep>
@@ -229,10 +228,9 @@ const selectedRegionName = computed(() =>
 									restores only in the region it was taken in, and a Pilot
 									server snapshot cannot be restored yet.
 								</p>
-								<FormControl
+								<Select
 									v-else
 									v-model="snapshotName"
-									type="select"
 									label="Snapshot"
 									:options="snapshotOptions"
 									class="max-w-xs"
@@ -268,10 +266,9 @@ const selectedRegionName = computed(() =>
 										or region.
 									</p>
 								</template>
-								<FormControl
+								<Select
 									v-else
 									v-model="imageId"
-									type="select"
 									label="Image build"
 									:options="imageOptions"
 									class="max-w-xs"

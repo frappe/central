@@ -174,6 +174,11 @@ async function confirmTerminate(
 }
 
 const pendingResize = ref<VirtualMachineRow | null>(null)
+const resizeOpen = ref(false)
+const openResize = (server: VirtualMachineRow): void => {
+	pendingResize.value = server
+	resizeOpen.value = true
+}
 const pendingSnapshot = ref<VirtualMachineRow | null>(null)
 const overviewOpensSite = computed(
 	() => !!overviewServer.value && !!siteFor(overviewServer.value),
@@ -284,7 +289,7 @@ const overviewOpen = computed({
 						@start="doStart"
 						@stop="doStop"
 						@restart="pendingRestart = $event"
-						@resize="pendingResize = $event"
+						@resize="openResize"
 						@snapshot="pendingSnapshot = $event"
 						@console="openConsole"
 						@terminate="pendingTerminate = $event"
@@ -331,7 +336,7 @@ const overviewOpen = computed({
 				@start="doStart"
 				@stop="doStop"
 				@restart="pendingRestart = $event"
-				@resize="pendingResize = $event"
+				@resize="openResize"
 				@snapshot="pendingSnapshot = $event"
 				@console="openConsole"
 				@terminate="pendingTerminate = $event"
@@ -389,7 +394,11 @@ const overviewOpen = computed({
 		/>
 		<TakeSnapshotDialog v-model:server="pendingSnapshot" />
 
-		<ResizeServerDialog v-model:server="pendingResize" @resized="reloadAll" />
+		<ResizeServerDialog
+			v-model:open="resizeOpen"
+			:server="pendingResize"
+			@resized="reloadAll"
+		/>
 		<ServerOverviewDialog
 			v-model:open="overviewOpen"
 			:server="overviewServer"
@@ -399,7 +408,7 @@ const overviewOpen = computed({
 			:can-snapshot="overviewActions.snapshot"
 			:can-open-console="overviewActions.console"
 			@open="openServer"
-			@resize="pendingResize = $event"
+			@resize="openResize"
 		/>
 		<CreateTeamDialog v-model:open="createTeamOpen" />
 	</div>
