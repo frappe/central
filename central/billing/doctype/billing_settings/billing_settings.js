@@ -8,36 +8,18 @@ frappe.ui.form.on("Billing Settings", {
 		// The accounting setup is usable only while the accounting sync is on.
 		if (!frm.doc.__onload?.accounting_sync_enabled) return;
 
-		const group = __("Accounting Setup");
-		frm.add_custom_button(__("Check"), () => run_setup(frm, "check_accounting_setup", "GET"), group);
-		frm.add_custom_button(
-			__("Create Missing"),
-			() =>
-				frappe.confirm(
-					__("Create the missing records in the accounting system? Existing records are not changed."),
-					() => run_setup(frm, "create_missing_accounting_setup", "POST")
-				),
-			group
-		);
+		frm.add_custom_button(__("Check Accounting Setup"), () => check_setup(frm));
 	},
 });
 
-function run_setup(frm, method, type) {
-	frappe.call({ method: `${ACCOUNTING_API}.${method}`, type, freeze: true }).then(({ message }) => {
-		show_setup_report(message || []);
-		frm.reload_doc();
-	});
+function check_setup(frm) {
+	frappe.call({ method: `${ACCOUNTING_API}.check_accounting_setup`, type: "GET", freeze: true }).then(
+		({ message }) => show_setup_report(message || [])
+	);
 }
 
 function show_setup_report(rows) {
-	const colour = {
-		Exists: "green",
-		Created: "green",
-		Updated: "blue",
-		Incomplete: "orange",
-		Missing: "red",
-		Failed: "red",
-	};
+	const colour = { OK: "green", Wrong: "orange", "No Access": "orange", Missing: "red", Failed: "red" };
 	const body = rows
 		.map(
 			(r) => `<tr>

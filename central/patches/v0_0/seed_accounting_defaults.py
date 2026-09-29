@@ -3,15 +3,13 @@
 """Stamp the accounting defaults on sites that already saved Billing Settings.
 
 A field added after the save reads back blank, which would leave invoices with no
-naming series and the setup with no item or print format to create.
+naming series, item or print format.
 """
 
 import frappe
 
 DEFAULTS = {
 	"service_item": "Cloud Hosting",
-	"item_group": "Services",
-	"sac_code": "998315",
 	"series_india_b2b": "B2B/.TFY./.#####",
 	"series_india_b2c": "B2C/.TFY./.#####",
 	"series_overseas": "EXP/.TFY./.#####",

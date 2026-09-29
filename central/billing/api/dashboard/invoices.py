@@ -8,6 +8,7 @@ Top-ups credit the wallet only after the gateway confirms the money moved
 
 import frappe
 from frappe import _
+from frappe.rate_limiter import rate_limit
 
 from central.billing import authz
 from central.billing.api.dashboard._shared import (
@@ -306,10 +307,28 @@ def list_invoices(team: str | None = None) -> list[dict]:
 			"amount_paid",
 			"currency",
 			"due_date",
+			"erpnext_invoice",
 		],
 		order_by="period_start desc",
 	)
+	for row in rows:
+		row["has_pdf"] = bool(row.pop("erpnext_invoice"))
 	return rows
+
+
+@frappe.whitelist(methods=["GET"])
+@rate_limit(limit=30, seconds=60 * 60)
+def download_invoice_pdf(name: str) -> None:
+	"""The customer's copy of the statutory invoice, as ERPNext renders it."""
+	from central.billing.ingester.erpnext_sync import sales_invoice_pdf
+
+	team, sales_invoice = frappe.db.get_value("Invoice", name, ["team", "erpnext_invoice"]) or (None, None)
+	_require_view(team)
+	if not sales_invoice:
+		frappe.throw(_("This invoice has not been issued yet, so it has no PDF."), frappe.DoesNotExistError)
+	frappe.local.response.filename = f"{sales_invoice.replace('/', '-')}.pdf"
+	frappe.local.response.filecontent = sales_invoice_pdf(sales_invoice)
+	frappe.local.response.type = "download"
 
 
 @frappe.whitelist()
@@ -364,6 +383,7 @@ def get_invoice(name: str) -> dict:
 		"expected_collection": doc.expected_collection,
 		"amount_paid": doc.amount_paid,
 		"due_date": str(doc.due_date) if doc.due_date else None,
+		"has_pdf": bool(doc.erpnext_invoice),
 		"payment_in_progress": payment_in_progress,
 		"paid_with": paid_with,
 		"items": [_describe_line(doc.team, li) for li in doc.items],

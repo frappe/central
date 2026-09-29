@@ -149,6 +149,22 @@ def _gst_treatment(inv) -> dict:
 	return treatment
 
 
+def sales_invoice_pdf(sales_invoice: str) -> bytes:
+	"""The statutory invoice as a PDF, rendered by ERPNext with the configured print format."""
+	from central.billing.ingester.connection import download
+	from central.billing.ingester.settings import accounting_settings
+
+	return download(
+		"frappe.utils.print_format.download_pdf",
+		{
+			"doctype": "Sales Invoice",
+			"name": sales_invoice,
+			"format": accounting_settings().invoice_print_format,
+			"no_letterhead": 0,
+		},
+	)
+
+
 def _post_sales_invoice(payload: dict) -> str:
 	"""POST the Sales Invoice to ERPNext; return its name. Raises on any failure."""
 	base = (frappe.conf.get("erpnext_url") or "").rstrip("/")

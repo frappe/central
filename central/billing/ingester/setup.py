@@ -1,32 +1,24 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
-"""Check and create what Central needs in the accounting system.
+"""Check that every name Central reads from the accounting system is there.
 
-`check` only reads. `create_missing` creates what is missing and fills fields that
-are blank on the company and the GST settings. Neither ever changes a value someone
-has already set, or deletes anything.
+Central only reads this setup. The accounting system is where it is made and kept,
+so this reports what is missing or wrong and never writes.
 """
 
-import json
 from collections.abc import Callable
 from dataclasses import dataclass
-from pathlib import Path
 
 import frappe
 
 from central.billing.ingester import connection
 from central.billing.ingester.settings import accounting_settings
 
-EXISTS = "Exists"
+OK = "OK"
 MISSING = "Missing"
-INCOMPLETE = "Incomplete"
-CREATED = "Created"
-UPDATED = "Updated"
+WRONG = "Wrong"
+NO_ACCESS = "No Access"
 FAILED = "Failed"
-
-PRINT_FORMATS = Path(__file__).parent / "print_formats"
-
-_CREATE_BY_HAND = "Central does not create this. Create it in the accounting system."
 
 
 @dataclass
@@ -34,278 +26,150 @@ class Step:
 	record: str
 	doctype: str
 	name: str | None
-	check: Callable[[], str]
-	apply: Callable[[], None] | None = None  # None: must exist, Central does not create it
-	detail: str = ""
+	check: Callable[[], tuple[str, str]]  # (state, detail)
 
 
 def check() -> list[dict]:
-	"""What exists in the accounting system and what does not. Writes nothing."""
-	return [_row(step, _safe(step.check, step)) for step in steps(accounting_settings())]
-
-
-def create_missing() -> list[dict]:
-	"""Create what is missing, fill what is blank, and keep a report of the run."""
-	settings = accounting_settings()
-	rows = [_run(step) for step in steps(settings)]
-	settings.db_set(
-		{
-			"accounting_setup_ran_at": frappe.utils.now_datetime(),
-			"accounting_setup_report": json.dumps(rows, indent=1),
-		},
-		update_modified=False,
-	)
-	return rows
+	"""One row per record Central reads, with what is wrong with it, if anything."""
+	return [_run(step) for step in steps(accounting_settings())]
 
 
 def steps(s) -> list[Step]:
-	"""Every record, in the order they depend on each other."""
 	return [
-		_must_exist("Company", "Company", s.company),
-		_must_exist("Receivable account", "Account", s.receivable_account),
-		_must_exist("Income account", "Account", s.income_account),
-		_must_exist("Cost center", "Cost Center", s.cost_center),
-		_must_exist("In-state tax template", "Sales Taxes and Charges Template", s.in_state_template),
-		_must_exist("Out-of-state tax template", "Sales Taxes and Charges Template", s.out_state_template),
-		_must_exist("SAC code", "GST HSN Code", s.sac_code),
-		_account("Advance account", s.advance_account, s.advance_parent_account, "Receivable", None, s),
-		*[
-			_account(
-				"Clearing account", row.clearing_account, s.clearing_parent_account, "Bank", row.currency, s
-			)
-			for row in s.gateways
-		],
-		_company_address(s),
-		_company_fields(s),
-		_overseas_supplies(),
-		*[_mode_of_payment(mode, rows, s) for mode, rows in _by_mode(s.gateways).items()],
-		_service_item(s),
+		_exists("Company", "Company", s.company),
+		Step("Company address", "Address", s.company_address, lambda: _company_address(s)),
+		_exists("Receivable account", "Account", s.receivable_account),
+		Step("Advance account", "Account", s.advance_account, lambda: _advance_account(s)),
+		_exists("Income account", "Account", s.income_account),
+		_exists("Cost center", "Cost Center", s.cost_center),
+		*[step for row in s.gateways for step in _gateway(row)],
+		Step("Service item", "Item", s.service_item, lambda: _service_item(s.service_item)),
+		_exists("In-state tax template", "Sales Taxes and Charges Template", s.in_state_template),
+		_exists("Out-of-state tax template", "Sales Taxes and Charges Template", s.out_state_template),
+		Step("Overseas and SEZ supplies", "GST Settings", "GST Settings", _overseas_supplies),
 		_series("Sales Invoice", [s.series_india_b2b, s.series_india_b2c, s.series_overseas]),
 		_series("Payment Entry", [s.series_receipt_voucher]),
-		_print_format(s.invoice_print_format, "Sales Invoice", "tax_invoice.html"),
-		_print_format(s.receipt_voucher_print_format, "Payment Entry", "receipt_voucher.html"),
+		_print_format(s.invoice_print_format, "Sales Invoice"),
+		_print_format(s.receipt_voucher_print_format, "Payment Entry"),
 	]
 
 
-# --- step builders ------------------------------------------------------------
+# --- checks -------------------------------------------------------------------
 
 
-def _must_exist(record: str, doctype: str, name: str | None) -> Step:
-	return Step(record, doctype, name, lambda: _exists(doctype, name))
+def _exists(record: str, doctype: str, name: str | None) -> Step:
+	def check():
+		return (OK, "") if _fetch(doctype, name) else (MISSING, "")
+
+	return Step(record, doctype, name, check)
 
 
-def _account(record, name, parent, account_type, currency, s) -> Step:
-	def apply():
-		if not parent:
-			raise ValueError(f"set the parent account for {name} in Billing Settings")
-		connection.post(
-			"api/resource/Account",
-			{
-				"account_name": _short_account_name(name),
-				"parent_account": parent,
-				"company": s.company,
-				"account_type": account_type,
-				"account_currency": currency or _company_currency(s.company),
-			},
-		)
-
-	return Step(record, "Account", name, lambda: _exists("Account", name), apply)
-
-
-def _company_address(s) -> Step:
-	def state():
-		if s.company_address_id and connection.fetch("Address", s.company_address_id):
-			return EXISTS
+def _company_address(s) -> tuple[str, str]:
+	if not s.company_address:
 		found = connection.find(
 			"Address",
 			[["Dynamic Link", "link_name", "=", s.company], ["is_your_company_address", "=", 1]],
 		)
-		if found:
-			s.db_set("company_address_id", found[0].name, update_modified=False)
-			step.name = found[0].name
-			return EXISTS
-		return MISSING
-
-	def apply():
-		address = connection.post(
-			"api/resource/Address",
-			{
-				"address_title": s.company,
-				"address_type": "Billing",
-				"address_line1": s.company_address_line1,
-				"city": s.company_city,
-				"state": s.company_state,
-				"pincode": s.company_pincode,
-				"country": "India",
-				"gstin": s.company_gstin,
-				"is_your_company_address": 1,
-				"links": [{"link_doctype": "Company", "link_name": s.company}],
-			},
-		)
-		s.db_set("company_address_id", address.name, update_modified=False)
-		step.name = address.name
-
-	step = Step("Company address", "Address", s.company_address_id, state, apply)
-	return step
+		hint = f" The company has: {', '.join(a.name for a in found)}." if found else ""
+		return MISSING, f"Set the company address.{hint}"
+	address = _fetch("Address", s.company_address)
+	if not address:
+		return MISSING, ""
+	if not address.get("gstin"):
+		return WRONG, "It has no GSTIN, so no GST can be charged."
+	return OK, f"GSTIN {address.gstin}"
 
 
-def _company_fields(s) -> Step:
-	wanted = {
-		"gstin": s.company_gstin,
-		"gst_category": "Registered Regular",
-		"book_advance_payments_in_separate_party_account": 1,
-		"default_advance_received_account": s.advance_account,
-	}
-	return _fill_blanks("Company GST and advance settings", "Company", s.company, wanted)
+def _advance_account(s) -> tuple[str, str]:
+	if not _fetch("Account", s.advance_account):
+		return MISSING, ""
+	company = _fetch("Company", s.company) or {}
+	if not company.get("book_advance_payments_in_separate_party_account"):
+		return WRONG, "The company does not book advances in a separate account."
+	if company.get("default_advance_received_account") != s.advance_account:
+		return WRONG, f"The company books advances in {company.get('default_advance_received_account')}."
+	return OK, ""
 
 
-def _overseas_supplies() -> Step:
-	step = _fill_blanks(
-		"Overseas and SEZ supplies", "GST Settings", "GST Settings", {"enable_overseas_transactions": 1}
-	)
-	step.detail = "Site-wide. Lets an invoice carry the Overseas or SEZ GST category."
-	return step
+def _gateway(row) -> list[Step]:
+	def mode_of_payment():
+		return (OK, "") if _fetch("Mode of Payment", row.mode_of_payment) else (MISSING, "")
+
+	def clearing_account():
+		account = _fetch("Account", row.clearing_account)
+		if not account:
+			return MISSING, ""
+		if account.get("account_currency") != row.currency:
+			return WRONG, f"It is in {account.get('account_currency')}, not {row.currency}."
+		return OK, ""
+
+	label = f"{row.gateway} {row.currency}"
+	return [
+		Step(f"{label}: mode of payment", "Mode of Payment", row.mode_of_payment, mode_of_payment),
+		Step(f"{label}: clearing account", "Account", row.clearing_account, clearing_account),
+	]
 
 
-def _fill_blanks(record: str, doctype: str, name: str | None, wanted: dict) -> Step:
-	def blanks() -> dict:
-		current = connection.fetch(doctype, name) or {}
-		return {field: value for field, value in wanted.items() if value and not current.get(field)}
-
-	def state():
-		if not connection.fetch(doctype, name):
-			return MISSING
-		return INCOMPLETE if blanks() else EXISTS
-
-	def apply():
-		connection.put(_resource(doctype, name), blanks())
-
-	return Step(record, doctype, name, state, apply)
+def _service_item(name: str | None) -> tuple[str, str]:
+	item = _fetch("Item", name)
+	if not item:
+		return MISSING, ""
+	if not item.get("gst_hsn_code"):
+		return WRONG, "It has no SAC code."
+	return OK, f"SAC {item.gst_hsn_code}"
 
 
-def _mode_of_payment(mode: str, rows: list, s) -> Step:
-	accounts = [{"company": s.company, "default_account": row.clearing_account} for row in rows[:1]]
-
-	def state():
-		current = connection.fetch("Mode of Payment", mode)
-		if not current:
-			return MISSING
-		has_company = any(a.get("company") == s.company for a in current.get("accounts") or [])
-		return EXISTS if has_company else INCOMPLETE
-
-	def apply():
-		current = connection.fetch("Mode of Payment", mode)
-		if not current:
-			connection.post(
-				"api/resource/Mode of Payment",
-				{"mode_of_payment": mode, "type": "Bank", "enabled": 1, "accounts": accounts},
-			)
-			return
-		connection.put(
-			_resource("Mode of Payment", mode), {"accounts": [*(current.get("accounts") or []), *accounts]}
-		)
-
-	return Step("Mode of payment", "Mode of Payment", mode, state, apply)
-
-
-def _service_item(s) -> Step:
-	def apply():
-		connection.post(
-			"api/resource/Item",
-			{
-				"item_code": s.service_item,
-				"item_name": s.service_item,
-				"item_group": s.item_group,
-				"stock_uom": "Nos",
-				"is_stock_item": 0,
-				"gst_hsn_code": s.sac_code,
-				"item_defaults": [{"company": s.company, "income_account": s.income_account}],
-			},
-		)
-
-	return Step("Service item", "Item", s.service_item, lambda: _exists("Item", s.service_item), apply)
+def _overseas_supplies() -> tuple[str, str]:
+	settings = _fetch("GST Settings", "GST Settings") or {}
+	if not settings.get("enable_overseas_transactions"):
+		return WRONG, "Overseas transactions are off, so an export invoice cannot be saved."
+	return OK, ""
 
 
 def _series(doctype: str, wanted: list[str]) -> Step:
 	wanted = [series for series in wanted if series]
 
-	def missing() -> list[str]:
-		current = _series_options(doctype)
-		return [series for series in wanted if series not in current]
+	def check():
+		missing = [series for series in wanted if series not in _series_options(doctype)]
+		return (MISSING, "Not offered: " + ", ".join(missing)) if missing else (OK, "")
 
-	def apply():
-		naming = connection.post("api/method/frappe.client.get", {"doctype": "Document Naming Settings"})
-		options = [*_series_options(doctype), *missing()]
-		connection.run_doc_method(
-			{**naming, "transaction_type": doctype, "naming_series_options": "\n".join(options)},
-			"update_series",
-		)
-
-	return Step(
-		f"{doctype} naming series",
-		"Document Naming Settings",
-		", ".join(wanted),
-		lambda: INCOMPLETE if missing() else EXISTS,
-		apply,
-	)
+	return Step(f"{doctype} naming series", "Document Naming Settings", ", ".join(wanted), check)
 
 
-def _print_format(name: str, doc_type: str, template: str) -> Step:
-	def apply():
-		connection.post(
-			"api/resource/Print Format",
-			{
-				"name": name,
-				"doc_type": doc_type,
-				"module": "Accounts",
-				"standard": "No",
-				"custom_format": 1,
-				"print_format_type": "Jinja",
-				"html": (PRINT_FORMATS / template).read_text(),
-			},
-		)
+def _print_format(name: str | None, doc_type: str) -> Step:
+	def check():
+		print_format = _fetch("Print Format", name)
+		if not print_format:
+			return MISSING, ""
+		if print_format.get("doc_type") != doc_type:
+			return WRONG, f"It is for {print_format.get('doc_type')}, not {doc_type}."
+		return OK, ""
 
-	return Step("Print format", "Print Format", name, lambda: _exists("Print Format", name), apply)
+	return Step(f"{doc_type} print format", "Print Format", name, check)
 
 
 # --- helpers ------------------------------------------------------------------
 
 
 def _run(step: Step) -> dict:
-	state = _safe(step.check, step)
-	if state in (MISSING, INCOMPLETE) and step.apply:
-		try:
-			step.apply()
-			state = CREATED if state == MISSING else UPDATED
-		except Exception as error:
-			frappe.log_error(title=f"Accounting setup: {step.record}")
-			step.detail = _error_text(error)
-			state = FAILED
-	return _row(step, state)
-
-
-def _safe(check: Callable[[], str], step: Step) -> str:
 	try:
-		return check()
+		state, detail = step.check()
+	except connection.NoAccess:
+		state, detail = NO_ACCESS, "The accounting sync user cannot read this."
 	except Exception as error:
-		step.detail = _error_text(error)
-		return FAILED
-
-
-def _row(step: Step, state: str) -> dict:
+		frappe.log_error(title=f"Accounting setup check: {step.record}")
+		state, detail = FAILED, str(error)[:300]
 	return {
 		"record": step.record,
 		"doctype": step.doctype,
 		"name": step.name,
 		"state": state,
-		"detail": step.detail or (_CREATE_BY_HAND if state == MISSING and not step.apply else ""),
+		"detail": detail,
 	}
 
 
-def _exists(doctype: str, name: str | None) -> str:
-	if not name:
-		return MISSING
-	return EXISTS if connection.fetch(doctype, name) else MISSING
+def _fetch(doctype: str, name: str | None):
+	return connection.fetch(doctype, name) if name else None
 
 
 def _series_options(doctype: str) -> list[str]:
@@ -318,36 +182,3 @@ def _series_options(doctype: str) -> list[str]:
 			if field.get("fieldname") == "naming_series":
 				return [o.strip() for o in (field.get("options") or "").split("\n") if o.strip()]
 	return []
-
-
-def _by_mode(rows) -> dict[str, list]:
-	modes: dict[str, list] = {}
-	for row in rows:
-		modes.setdefault(row.mode_of_payment, []).append(row)
-	return modes
-
-
-def _short_account_name(name: str) -> str:
-	"""`Customer Advances - ABBR` is created as `Customer Advances`."""
-	return name.rsplit(" - ", 1)[0]
-
-
-def _company_currency(company: str) -> str:
-	return (connection.fetch("Company", company) or {}).get("default_currency") or "INR"
-
-
-def _resource(doctype: str, name: str) -> str:
-	from urllib.parse import quote
-
-	return f"api/resource/{quote(doctype)}/{quote(name, safe='')}"
-
-
-def _error_text(error: Exception) -> str:
-	response = getattr(error, "response", None)
-	if response is not None:
-		try:
-			body = response.json()
-			return str(body.get("exception") or body.get("_server_messages") or body)[:500]
-		except ValueError:
-			return response.text[:500]
-	return str(error)[:500]
