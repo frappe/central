@@ -37,6 +37,8 @@
   "tds_amount",
   "tds_certificate_received",
   "credit_applied",
+  "advance_applied",
+  "advance_tax_applied",
   "expected_collection",
   "amount_paid",
   "paid_at",
@@ -240,6 +242,22 @@
    "label": "Credit Applied"
   },
   {
+   "description": "The part of the wallet credit that came from paid top-ups.",
+   "fieldname": "advance_applied",
+   "fieldtype": "Currency",
+   "label": "From Paid Top-ups",
+   "options": "currency",
+   "read_only": 1
+  },
+  {
+   "description": "GST on this invoice paid from the GST collected with those top-ups.",
+   "fieldname": "advance_tax_applied",
+   "fieldtype": "Currency",
+   "label": "GST Paid in Advance",
+   "options": "currency",
+   "read_only": 1
+  },
+  {
    "fieldname": "expected_collection",
    "fieldtype": "Currency",
    "label": "Expected Collection",
@@ -336,7 +354,7 @@
    "link_fieldname": "invoice"
   }
  ],
- "modified": "2026-09-29 14:00:00.000000",
+ "modified": "2026-09-30 10:00:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Invoice",

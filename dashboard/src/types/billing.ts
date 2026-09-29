@@ -250,6 +250,8 @@ export interface InvoiceDetail {
 	zero_rating_reason: string | null
 	total: number
 	credit_applied: number
+	/** GST paid with the top-ups the credit came from, so not charged again. */
+	advance_tax_applied: number
 	expected_collection: number
 	amount_paid: number
 	due_date: string | null

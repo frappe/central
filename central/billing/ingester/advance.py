@@ -1,9 +1,11 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
-"""Push each wallet top-up to the accounting system as an advance, GST included.
+"""Push each wallet top-up to the accounting system as an advance with its GST.
 
 Money received before the service is an advance, and GST on it is due as it
-arrives. When an invoice later uses the wallet, the invoice uses this advance.
+arrives. The customer paid the credit plus GST, so the advance is the credit and
+the GST is booked beside it. An invoice that later uses the credit uses this
+advance, and its GST is settled from the GST paid here.
 """
 
 import frappe
@@ -73,6 +75,7 @@ def _payload(credit, customer: str, gateway: str, payment_id: str) -> dict:
 	route = _gateway_row(settings, gateway, credit.currency)
 	tax = gst.treatment(credit.team)
 	date = frappe.utils.getdate(credit.created_at or credit.creation)
+	paid = frappe.utils.flt(credit.amount) + frappe.utils.flt(credit.tax_amount)  # credit plus its GST
 	return {
 		"doctype": "Payment Entry",
 		"docstatus": 1,
@@ -85,8 +88,8 @@ def _payload(credit, customer: str, gateway: str, payment_id: str) -> dict:
 		# Named here because the accounting system does not always move it there itself.
 		"paid_from": settings.advance_account,
 		"paid_to": route.clearing_account,
-		"paid_amount": credit.amount,
-		"received_amount": credit.amount,
+		"paid_amount": paid,
+		"received_amount": paid,
 		"mode_of_payment": route.mode_of_payment,
 		"reference_no": payment_id,
 		"reference_date": str(date),
@@ -96,7 +99,7 @@ def _payload(credit, customer: str, gateway: str, payment_id: str) -> dict:
 		"billing_address_gstin": tax.gstin,
 		"gst_category": tax.gst_category,
 		"place_of_supply": tax.place_of_supply,
-		"taxes": gst.tax_rows(tax.template, paid_amount=credit.amount),
+		"taxes": gst.tax_rows(tax.template, paid_amount=paid) if frappe.utils.flt(credit.tax_amount) else [],
 		"remarks": f"Wallet top-up {credit.name} ({payment_id})",
 	}
 

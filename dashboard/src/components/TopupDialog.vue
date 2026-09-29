@@ -31,15 +31,22 @@ const amount = ref<number>()
 const presets = [1000, 5000, 10000, 25000]
 
 const { activeTeam } = useSession()
-const options = useCall<{ instruments: PaymentInstrument[] }, { team: string }>(
-	{
-		url: method(API.topupOptions),
-		params: () => ({ team: activeTeam.value! }),
-		immediate: false,
-		refetch: true,
-	},
-)
+const options = useCall<
+	{ instruments: PaymentInstrument[]; gst_rate: number },
+	{ team: string }
+>({
+	url: method(API.topupOptions),
+	params: () => ({ team: activeTeam.value! }),
+	immediate: false,
+	refetch: true,
+})
 const instruments = computed(() => options.data?.instruments ?? [])
+// GST is charged on top of a top-up; the wallet is credited the amount entered.
+const gstRate = computed(() => options.data?.gst_rate ?? 0)
+const gst = computed(
+	() => Math.round(Number(amount.value || 0) * gstRate.value) / 100,
+)
+const payable = computed(() => Number(amount.value || 0) + gst.value)
 const instrument = ref<string | null>(null)
 
 // A caller-supplied instrument is fixed unless the customer asks to change it.
@@ -205,7 +212,7 @@ watch(open, (isOpen) => {
 			<!-- Stripe card entry: Element renders inside the iframe Stripe hosts. -->
 			<div v-if="cardPhase" class="space-y-3">
 				<p class="text-sm text-ink-gray-8">
-					Paying {{ money(Number(amount), currency) }}
+					Paying {{ money(payable, currency) }}
 				</p>
 				<p v-if="cardLoading" class="text-p-sm text-ink-gray-5">
 					Loading secure card field…
@@ -223,7 +230,7 @@ watch(open, (isOpen) => {
 			<!-- PayPal entry: PayPal Buttons render here; approval happens in PayPal's popup. -->
 			<div v-else-if="paypalPhase" class="space-y-3">
 				<p class="text-sm text-ink-gray-8">
-					Paying {{ money(Number(amount), currency) }}
+					Paying {{ money(payable, currency) }}
 				</p>
 				<p v-if="paypalLoading" class="text-p-sm text-ink-gray-5">
 					Loading PayPal…
@@ -316,6 +323,29 @@ watch(open, (isOpen) => {
 						:placeholder="`Enter amount in ${currency}`"
 						min="1"
 					/>
+					<dl
+						v-if="gstRate && Number(amount) > 0"
+						class="mt-3 space-y-1 text-p-sm"
+					>
+						<div class="flex justify-between">
+							<dt class="text-ink-gray-5">Wallet credit</dt>
+							<dd class="tabular-nums text-ink-gray-8">
+								{{ money(Number(amount), currency) }}
+							</dd>
+						</div>
+						<div class="flex justify-between">
+							<dt class="text-ink-gray-5">GST ({{ gstRate }}%)</dt>
+							<dd class="tabular-nums text-ink-gray-8">
+								{{ money(gst, currency) }}
+							</dd>
+						</div>
+						<div class="flex justify-between font-medium">
+							<dt class="text-ink-gray-8">You pay</dt>
+							<dd class="tabular-nums text-ink-gray-9">
+								{{ money(payable, currency) }}
+							</dd>
+						</div>
+					</dl>
 				</div>
 				<p class="text-p-sm text-ink-gray-5">
 					You'll complete payment securely. Your wallet is credited only after

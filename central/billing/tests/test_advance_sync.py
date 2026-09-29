@@ -45,9 +45,22 @@ class TestTopUp(AdvanceTestCase):
 		entry, enqueue = self._top_up()
 		enqueue.assert_called_once_with(entry)
 
-	def test_the_advance_books_gst_inside_what_was_paid(self):
+	def test_gst_is_paid_on_top_and_kept_beside_the_credit(self):
 		billing_team(TEAM, gstin=GSTIN)
-		entry, _ = self._top_up()
+		entry, _ = self._top_up(amount=11800)
+		row = frappe.db.get_value("Credit Ledger Entry", entry, ["amount", "tax_amount"], as_dict=True)
+		self.assertEqual((row.amount, row.tax_amount), (10000, 1800))
+		self.assertEqual(credits.get_balance(TEAM, "INR")["balance"], 10000)
+		self.assertEqual(credits.advance_gst_balance(TEAM, "INR"), 1800)
+
+	def test_an_overseas_top_up_is_all_credit(self):
+		billing_team(TEAM, country="United States", state="California", currency="USD")
+		entry, _ = self._top_up(amount=500, currency="USD")
+		self.assertEqual(frappe.db.get_value("Credit Ledger Entry", entry, "tax_amount"), 0)
+
+	def test_the_advance_books_the_credit_and_its_gst(self):
+		billing_team(TEAM, gstin=GSTIN)
+		entry, _ = self._top_up(amount=11800)
 		name = advance.sync_advance(entry)
 
 		payment = self.remote.posts("Payment Entry")[-1]
@@ -62,7 +75,8 @@ class TestTopUp(AdvanceTestCase):
 		self.assertTrue(
 			all(t["included_in_paid_amount"] and t["charge_type"] == "On Paid Amount" for t in taxes)
 		)
-		self.assertEqual([t["tax_amount"] for t in taxes], [762.71, 762.71])
+		self.assertEqual(payment["paid_amount"], 11800)
+		self.assertEqual([t["tax_amount"] for t in taxes], [900, 900])
 		self.assertEqual(frappe.db.get_value("Credit Ledger Entry", entry, "advance_id"), name)
 
 	def test_an_advance_already_booked_is_adopted(self):

@@ -185,13 +185,14 @@ def _gst_category(inv, tax) -> str:
 
 
 def _advances(inv) -> tuple[list[dict], float]:
-	"""The team's advances this invoice's wallet credit uses, oldest first.
+	"""The advances this invoice's paid top-up credit came from, oldest first.
 
-	Returns the rows and any credit no advance covers (promotional credit).
+	Returns the rows and any wallet credit no advance covers (promotional credit).
 	"""
-	needed = frappe.utils.flt(inv.credit_applied)
+	needed = frappe.utils.flt(inv.advance_applied)
+	unbacked = frappe.utils.flt(frappe.utils.flt(inv.credit_applied) - needed, 2)
 	if needed <= 0:
-		return [], 0
+		return [], unbacked
 	pending = frappe.get_all(
 		"Credit Ledger Entry",
 		filters=[
@@ -211,34 +212,26 @@ def _advances(inv) -> tuple[list[dict], float]:
 		pluck="advance_id",
 		order_by="creation asc",
 	):
-		advance = connection.fetch("Payment Entry", advance_id) or {}
-		unallocated = frappe.utils.flt(advance.get("unallocated_amount"))
-		# The advance is held net of the GST paid on it, and that GST comes back as it
-		# is used. So wallet money (gross) is allocated at the advance's net share.
-		net_share = _net_share(advance)
-		take_gross = min(frappe.utils.flt(unallocated / net_share, 2), needed)
-		if take_gross <= 0:
+		unallocated = frappe.utils.flt(
+			(connection.fetch("Payment Entry", advance_id) or {}).get("unallocated_amount")
+		)
+		# The advance is held without its GST, the same as the credit. Its GST comes
+		# back to settle this invoice's GST as the credit is used.
+		take = min(unallocated, needed)
+		if take <= 0:
 			continue
 		rows.append(
 			{
 				"reference_type": "Payment Entry",
 				"reference_name": advance_id,
 				"advance_amount": unallocated,
-				"allocated_amount": min(frappe.utils.flt(take_gross * net_share, 2), unallocated),
+				"allocated_amount": frappe.utils.flt(take, 2),
 			}
 		)
-		needed = frappe.utils.flt(needed - take_gross, 2)
+		needed = frappe.utils.flt(needed - take, 2)
 		if needed <= 0:
 			break
-	return rows, needed
-
-
-def _net_share(advance) -> float:
-	"""What part of the money paid is the advance itself, the rest being GST."""
-	paid = frappe.utils.flt(advance.get("paid_amount"))
-	if not paid:
-		return 1.0
-	return (paid - frappe.utils.flt(advance.get("total_taxes_and_charges"))) / paid
+	return rows, unbacked
 
 
 def _card_attempt(inv):
