@@ -161,7 +161,7 @@ const open = computed({
 							v-for="gb in largerDisks"
 							:key="gb"
 							:class="[
-								'flex cursor-pointer items-center gap-3 rounded-6 border px-3 py-2.5 text-p-sm',
+								'relative flex cursor-pointer items-center gap-3 rounded-6 border px-3 py-2.5 text-p-sm',
 								selectedDisk === gb
 									? 'border-outline-gray-4 bg-surface-gray-1'
 									: 'border-outline-gray-2 hover:border-outline-gray-3',
@@ -170,6 +170,7 @@ const open = computed({
 							<input
 								v-model="selectedDisk"
 								type="radio"
+								name="disk"
 								class="peer sr-only"
 								:value="gb"
 							/>

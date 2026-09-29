@@ -41,7 +41,7 @@ const canCreate = computed(
 </script>
 
 <template>
-	<div class="flex h-full min-h-0">
+	<div class="relative flex h-full min-h-0">
 		<Teleport defer to="#header-actions">
 			<Button
 				v-if="canCreate && buckets.length"

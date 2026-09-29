@@ -5,7 +5,6 @@ import {
 	DesktopShell,
 	MobileNav,
 	MobileNavItem,
-	MobileShell,
 	ToastProvider,
 } from 'frappe-ui'
 import { computed, defineAsyncComponent, ref, watch } from 'vue'
@@ -62,9 +61,9 @@ const breadcrumbs = computed(
 </script>
 
 <template>
-	<MobileShell v-if="isMobile">
+	<div v-if="isMobile" class="fixed inset-0 flex flex-col overflow-hidden">
 		<header
-			class="sticky top-0 z-10 flex h-12 shrink-0 items-center justify-between gap-3 border-b border-outline-gray-1 bg-surface-base px-3"
+			class="flex h-12 shrink-0 items-center justify-between gap-3 border-b border-outline-gray-1 bg-surface-base px-3"
 		>
 			<button class="flex items-center gap-1" @click="mobileNavDrawer = true">
 				<Breadcrumbs :items="breadcrumbs" />
@@ -73,28 +72,22 @@ const breadcrumbs = computed(
 			<div id="header-actions" class="flex shrink-0 items-center gap-2" />
 		</header>
 
-		<main class="h-full overflow-hidden">
+		<main class="min-h-0 flex-1 overflow-hidden">
 			<router-view />
 		</main>
 
-		<template #nav>
-			<MobileNav>
-				<MobileNavItem
-					label="Home"
-					icon="lucide-house"
-					to="/home"
-					:active="route.name === 'Home'"
-				/>
-				<MobileNavItem
-					label="Search"
-					icon="lucide-search"
-					@click="openSearch"
-				/>
-				<NotificationsPanel mobile />
-				<MobileNavItem label="Settings" icon="lucide-settings" to="/settings" />
-			</MobileNav>
-		</template>
-	</MobileShell>
+		<MobileNav>
+			<MobileNavItem
+				label="Home"
+				icon="lucide-house"
+				to="/home"
+				:active="route.name === 'Home'"
+			/>
+			<MobileNavItem label="Search" icon="lucide-search" @click="openSearch" />
+			<NotificationsPanel mobile />
+			<MobileNavItem label="Settings" icon="lucide-settings" to="/settings" />
+		</MobileNav>
+	</div>
 
 	<DesktopShell v-else :scroll="false" class="h-screen">
 		<template #sidebar>
