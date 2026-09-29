@@ -101,7 +101,7 @@ const matchingPreset = computed<Plan | null>(() => {
 			v-for="plan in presets"
 			:key="plan.plan"
 			:class="[
-				'flex items-center gap-3 rounded-6 border px-3 py-2.5 text-p-sm transition-colors',
+				'relative flex items-center gap-3 rounded-6 border px-3 py-2.5 text-p-sm transition-colors',
 				diskTooSmall(plan)
 					? 'cursor-not-allowed border-outline-gray-2 opacity-50'
 					: [
@@ -115,6 +115,7 @@ const matchingPreset = computed<Plan | null>(() => {
 			<input
 				v-model="selectedPlan"
 				type="radio"
+				name="plan"
 				:value="plan.plan"
 				class="peer sr-only"
 				:disabled="diskTooSmall(plan)"
@@ -154,11 +155,12 @@ const matchingPreset = computed<Plan | null>(() => {
 			]"
 		>
 			<label
-				class="flex cursor-pointer items-center gap-3 px-3 py-2.5 text-p-sm"
+				class="relative flex cursor-pointer items-center gap-3 px-3 py-2.5 text-p-sm"
 			>
 				<input
 					v-model="selectedPlan"
 					type="radio"
+					name="plan"
 					:value="customKey"
 					class="peer sr-only"
 				/>
