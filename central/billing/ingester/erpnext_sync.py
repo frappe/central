@@ -318,19 +318,10 @@ def _error_text(error: Exception) -> str:
 
 
 def sales_invoice_pdf(sales_invoice: str) -> bytes:
-	"""The statutory invoice as a PDF, rendered by ERPNext with the configured print format.
-
-	Uses the Chromium generator, which the current print formats are designed for.
-	"""
+	"""The statutory invoice as a PDF, rendered by ERPNext with the configured print format."""
 	settings = accounting_settings()
-	return connection.download(
-		"frappe.utils.print_format_generator.download_pdf",
-		{
-			"doctype": "Sales Invoice",
-			"name": sales_invoice,
-			"print_format": settings.invoice_print_format,
-			"letterhead": settings.invoice_letter_head or "No Letterhead",
-		},
+	return connection.print_pdf(
+		"Sales Invoice", sales_invoice, settings.invoice_print_format, settings.invoice_letter_head
 	)
 
 

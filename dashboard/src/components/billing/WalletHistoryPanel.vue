@@ -8,6 +8,8 @@ import { useBillingSetup } from '@/composables/useBillingSetup'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { infoToast } from '@/lib/feedback'
 import { money, signedMoney } from '@/lib/format'
+import { downloadReceipt } from '@/lib/invoicePdf'
+import { infoToast } from '@/lib/toast'
 import type { CreditLedgerEntry } from '@/types/billing'
 
 // Wallet history — a docked side panel (like the invoice detail tray), opened
@@ -71,8 +73,8 @@ function isCredit(entry: CreditLedgerEntry): boolean {
 			</div>
 			<ul v-else class="divide-y divide-outline-gray-1 px-4">
 				<li
-					v-for="(e, idx) in ledger.data"
-					:key="idx"
+					v-for="e in ledger.data"
+					:key="e.name"
 					class="flex items-center gap-3 py-3"
 				>
 					<span
@@ -93,7 +95,12 @@ function isCredit(entry: CreditLedgerEntry): boolean {
 						<p class="truncate text-sm text-ink-gray-8">
 							{{ e.note || e.entry_type }}
 						</p>
-						<p class="text-p-sm text-ink-gray-5">{{ e.created_at }}</p>
+						<p class="text-p-sm text-ink-gray-5">
+							{{ e.created_at }}
+							<span v-if="Number(e.tax_amount)">
+								· GST {{ money(e.tax_amount, e.currency || currency) }} paid
+							</span>
+						</p>
 					</div>
 					<span
 						class="shrink-0 text-sm tabular-nums"
@@ -101,6 +108,14 @@ function isCredit(entry: CreditLedgerEntry): boolean {
 					>
 						{{ signedMoney(e.amount, e.currency || currency, isCredit(e)) }}
 					</span>
+					<Button
+						v-if="e.has_receipt"
+						variant="ghost"
+						icon="lucide-download"
+						label="Download receipt"
+						title="Download receipt"
+						@click="downloadReceipt(e.name)"
+					/>
 				</li>
 			</ul>
 		</div>

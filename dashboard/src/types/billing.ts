@@ -188,8 +188,13 @@ export interface ExpiringCredit {
 
 /** credit_ledger row — append-only wallet movement (ADR 0006). */
 export interface CreditLedgerEntry {
+	name: string
 	entry_type: 'Credit' | 'Debit'
 	amount: number
+	/** GST paid on top of a top-up; it later pays invoice GST. */
+	tax_amount: number
+	/** A top-up booked in the accounting system, so its receipt can be downloaded. */
+	has_receipt: boolean
 	running_balance: number
 	currency: Currency
 	note: string | null

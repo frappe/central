@@ -68,6 +68,19 @@ def fetch(doctype: str, name: str) -> frappe._dict | None:
 	return frappe._dict(response.json().get("data") or {})
 
 
+def print_pdf(doctype: str, name: str, print_format: str, letterhead: str | None = None) -> bytes:
+	"""A document as a PDF, rendered by the accounting system's Chromium print generator."""
+	return download(
+		"frappe.utils.print_format_generator.download_pdf",
+		{
+			"doctype": doctype,
+			"name": name,
+			"print_format": print_format,
+			"letterhead": letterhead or "No Letterhead",
+		},
+	)
+
+
 def download(method: str, params: dict) -> bytes:
 	"""GET a whitelisted method that answers with a file, and return its bytes."""
 	response = requests.get(

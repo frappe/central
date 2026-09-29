@@ -124,6 +124,7 @@ export const API = {
 	invoices: 'central.billing.api.dashboard.list_invoices',
 	invoice: 'central.billing.api.dashboard.get_invoice',
 	invoicePdf: 'central.billing.api.dashboard.download_invoice_pdf',
+	topupReceipt: 'central.billing.api.dashboard.download_topup_receipt',
 	paymentAttempts: 'central.billing.api.dashboard.list_payment_attempts',
 	paymentMethods: 'central.billing.api.dashboard.list_payment_methods',
 	paymentMethodOptions:
