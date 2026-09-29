@@ -12,6 +12,16 @@ frappe.ui.form.on("Billing Settings", {
 	},
 });
 
+frappe.ui.form.on("Accounting Gateway Account", {
+	gateway(frm, cdt, cdn) {
+		// The mode of payment is usually named after the gateway. Never overwrite one already set.
+		const row = locals[cdt][cdn];
+		if (row.gateway && !row.mode_of_payment) {
+			frappe.model.set_value(cdt, cdn, "mode_of_payment", row.gateway);
+		}
+	},
+});
+
 function check_setup(frm) {
 	frappe.call({ method: `${ACCOUNTING_API}.check_accounting_setup`, type: "GET", freeze: true }).then(
 		({ message }) => show_setup_report(message || [])
