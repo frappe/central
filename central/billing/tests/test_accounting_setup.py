@@ -244,7 +244,9 @@ class TestInvoicePdf(AccountingSetupTestCase):
 	def test_an_issued_invoice_downloads_with_the_configured_print_format(self):
 		frappe.db.set_value("Invoice", self.invoice.name, "erpnext_invoice", "B2B/26-27/00001")
 		download = self._download()
-		self.assertEqual(download.call_args.args[1]["format"], "Cloud Tax Invoice")
+		self.assertEqual(download.call_args.args[0], "frappe.utils.print_format_generator.download_pdf")
+		self.assertEqual(download.call_args.args[1]["print_format"], "Cloud Tax Invoice")
+		self.assertEqual(download.call_args.args[1]["letterhead"], "No Letterhead")
 		self.assertEqual(frappe.local.response.filecontent, b"%PDF-1.7")
 		self.assertEqual(frappe.local.response.filename, "B2B-26-27-00001.pdf")
 
