@@ -41,11 +41,12 @@
   "company_address",
   "column_break_company",
   "section_accounts",
-  "receivable_account",
   "advance_account",
   "column_break_accounts",
   "income_account",
   "cost_center",
+  "section_receivables",
+  "receivable_accounts",
   "section_gateways",
   "gateways",
   "section_item",
@@ -295,11 +296,6 @@
    "description": "Full account names, for example Debtors - ABBR."
   },
   {
-   "fieldname": "receivable_account",
-   "fieldtype": "Data",
-   "label": "Receivable Account"
-  },
-  {
    "fieldname": "advance_account",
    "fieldtype": "Data",
    "label": "Advance Account",
@@ -318,6 +314,18 @@
    "fieldname": "cost_center",
    "fieldtype": "Data",
    "label": "Cost Center"
+  },
+  {
+   "fieldname": "section_receivables",
+   "fieldtype": "Section Break",
+   "label": "Receivable Accounts",
+   "description": "An invoice is booked to the receivable in its own currency."
+  },
+  {
+   "fieldname": "receivable_accounts",
+   "fieldtype": "Table",
+   "label": "Receivable Accounts",
+   "options": "Accounting Receivable Account"
   },
   {
    "fieldname": "section_gateways",
@@ -423,7 +431,7 @@
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-09-29 10:00:00.000000",
+ "modified": "2026-09-29 16:00:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Billing Settings",

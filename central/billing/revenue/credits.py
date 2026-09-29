@@ -347,6 +347,11 @@ def purchase(
 		note=note or "Credit top-up",
 		gateway_payment_id=_namespaced_payment_id(gateway, gateway_payment_id),
 	)
+	if gateway_payment_id:
+		# Money received, so the accounting system books it as an advance.
+		from central.billing.ingester import advance
+
+		advance.enqueue_sync(entry.name)
 	return {"ledger_entry": entry.name, "new_balance": new_balance}
 
 

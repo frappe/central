@@ -101,6 +101,9 @@ def open_and_collect(invoice: str, collect: bool = True) -> dict:
 		doc.paid_at = frappe.utils.now_datetime()
 		transition(doc, "Paid", reason="credits covered in full", actor="scheduler", amount=applied)
 		doc.save(ignore_permissions=True)
+		from central.billing.ingester.erpnext_sync import enqueue_invoice_sync
+
+		enqueue_invoice_sync(doc.name)
 		return {
 			"invoice": invoice,
 			"claimed": True,

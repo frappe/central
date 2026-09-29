@@ -38,7 +38,7 @@ def steps(s) -> list[Step]:
 	return [
 		_exists("Company", "Company", s.company),
 		Step("Company address", "Address", s.company_address, lambda: _company_address(s)),
-		_exists("Receivable account", "Account", s.receivable_account),
+		*[_receivable(row) for row in s.receivable_accounts],
 		Step("Advance account", "Account", s.advance_account, lambda: _advance_account(s)),
 		_exists("Income account", "Account", s.income_account),
 		_exists("Cost center", "Cost Center", s.cost_center),
@@ -78,6 +78,18 @@ def _company_address(s) -> tuple[str, str]:
 	if not address.get("gstin"):
 		return WRONG, "It has no GSTIN, so no GST can be charged."
 	return OK, f"GSTIN {address.gstin}"
+
+
+def _receivable(row) -> Step:
+	def check():
+		account = _fetch("Account", row.account)
+		if not account:
+			return MISSING, ""
+		if account.get("account_currency") != row.currency:
+			return WRONG, f"It is in {account.get('account_currency')}, not {row.currency}."
+		return OK, ""
+
+	return Step(f"{row.currency} receivable account", "Account", row.account, check)
 
 
 def _advance_account(s) -> tuple[str, str]:

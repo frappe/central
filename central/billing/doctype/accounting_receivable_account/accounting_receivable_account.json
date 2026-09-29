@@ -1,0 +1,42 @@
+{
+ "actions": [],
+ "creation": "2026-09-29 16:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "istable": 1,
+ "description": "The receivable account for invoices in one currency.",
+ "field_order": [
+  "currency",
+  "account"
+ ],
+ "fields": [
+  {
+   "fieldname": "currency",
+   "fieldtype": "Link",
+   "label": "Currency",
+   "options": "Currency",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "account",
+   "fieldtype": "Data",
+   "label": "Receivable Account",
+   "reqd": 1,
+   "in_list_view": 1,
+   "description": "Full account name, in this currency. For example Debtors USD - ABBR."
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-09-29 16:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Billing",
+ "name": "Accounting Receivable Account",
+ "owner": "Administrator",
+ "row_format": "Dynamic",
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
+}

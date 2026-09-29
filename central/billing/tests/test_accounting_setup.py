@@ -24,7 +24,7 @@ def complete_setup() -> dict:
 			"default_advance_received_account": "Customer Advances - TC",
 		},
 		("Address", "Test Co-Billing"): {"gstin": "27AAACZ9999Z1ZC"},
-		("Account", "Debtors - TC"): {},
+		("Account", "Debtors - TC"): {"account_currency": "INR"},
 		("Account", "Customer Advances - TC"): {},
 		("Account", "Sales - TC"): {},
 		("Account", "Stripe Clearing - TC"): {"account_currency": "INR"},
@@ -102,7 +102,6 @@ class AccountingSetupTestCase(IntegrationTestCase):
 			{
 				"company": COMPANY,
 				"company_address": "Test Co-Billing",
-				"receivable_account": "Debtors - TC",
 				"advance_account": "Customer Advances - TC",
 				"income_account": "Sales - TC",
 				"cost_center": "Main - TC",
@@ -111,6 +110,8 @@ class AccountingSetupTestCase(IntegrationTestCase):
 				**values,
 			}
 		)
+		doc.set("receivable_accounts", [])
+		doc.append("receivable_accounts", {"currency": "INR", "account": "Debtors - TC"})
 		doc.set("gateways", [])
 		doc.append(
 			"gateways",

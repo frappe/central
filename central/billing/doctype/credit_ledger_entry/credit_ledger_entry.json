@@ -19,6 +19,7 @@
   "reference_type",
   "reference_name",
   "gateway_payment_id",
+  "advance_id",
   "column_break_ref",
   "created_at",
   "note"
@@ -98,6 +99,14 @@
    "unique": 1
   },
   {
+   "description": "The advance booked for this top-up in the accounting system.",
+   "fieldname": "advance_id",
+   "fieldtype": "Data",
+   "label": "Advance ID",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
    "fieldname": "column_break_ref",
    "fieldtype": "Column Break"
   },
@@ -114,7 +123,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-06-03 00:00:00.000000",
+ "modified": "2026-09-29 14:00:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Credit Ledger Entry",

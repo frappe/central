@@ -248,6 +248,8 @@ scheduler_events = {
 		"central.billing.revenue.gst_status.run_gst_status_refresh",
 		# Retry billing profiles whose customer records never finished syncing.
 		"central.billing.ingester.customer.sync_pending_profiles",
+		# Retry wallet top-ups whose advance never reached the accounting system.
+		"central.billing.ingester.advance.sync_pending_advances",
 		# Services (LLM): refresh the model catalog from the Grove backend.
 		"central.services.llm.sync_models",
 		# Assert the money invariants that no DB constraint can hold (they span
