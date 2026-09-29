@@ -259,3 +259,58 @@ class TestInvoicePdf(AccountingSetupTestCase):
 		frappe.set_user(make_user("pdf-outsider@example.com"))
 		with self.assertRaises(frappe.PermissionError):
 			dashboard_invoices.download_invoice_pdf(self.invoice.name)
+
+
+class TestTopUpReceipt(AccountingSetupTestCase):
+	TEAM = "team-topup-receipt"
+
+	def setUp(self):
+		super().setUp()
+		ensure_team(self.TEAM)
+		self.entry = frappe.get_doc(
+			{
+				"doctype": "Credit Ledger Entry",
+				"team": self.TEAM,
+				"entry_type": "Credit",
+				"amount": 10000,
+				"tax_amount": 1800,
+				"currency": "INR",
+				"gateway_payment_id": "Stripe:pi_receipt",
+			}
+		).insert(ignore_permissions=True)
+		self.addCleanup(frappe.set_user, frappe.session.user)
+
+	def _download(self):
+		frappe.local.response = frappe._dict()
+		with (
+			patch("central.billing.api.dashboard.invoices._require_view"),
+			patch("central.billing.ingester.connection.download", return_value=b"%PDF-1.7") as download,
+		):
+			dashboard_invoices.download_topup_receipt(self.entry.name)
+		return download
+
+	def test_a_booked_top_up_downloads_its_receipt_voucher(self):
+		self.entry.db_set("advance_id", "RV/26-27/000001")
+		download = self._download()
+		self.assertEqual(download.call_args.args[1]["doctype"], "Payment Entry")
+		self.assertEqual(download.call_args.args[1]["print_format"], "Cloud Receipt Voucher")
+		self.assertEqual(frappe.local.response.filename, "RV-26-27-000001.pdf")
+
+	def test_a_top_up_not_yet_booked_has_no_receipt(self):
+		with self.assertRaises(frappe.DoesNotExistError):
+			self._download()
+
+	def test_another_team_cannot_download(self):
+		self.entry.db_set("advance_id", "RV/26-27/000001")
+		frappe.set_user(make_user("receipt-outsider@example.com"))
+		with self.assertRaises(frappe.PermissionError):
+			dashboard_invoices.download_topup_receipt(self.entry.name)
+
+	def test_the_wallet_history_says_which_top_ups_have_a_receipt(self):
+		self.entry.db_set("advance_id", "RV/26-27/000001")
+		with patch("central.billing.api.dashboard.invoices._resolve_team", return_value=self.TEAM):
+			rows = dashboard_invoices.credit_ledger(self.TEAM)
+		row = next(r for r in rows if r["name"] == self.entry.name)
+		self.assertTrue(row["has_receipt"])
+		self.assertEqual(row["tax_amount"], 1800)
+		self.assertNotIn("advance_id", row)

@@ -568,22 +568,47 @@ def get_credit_balance(team: str | None = None) -> dict:
 @frappe.whitelist()
 def credit_ledger(team: str | None = None, limit: int = 50) -> list[dict]:
 	team = _resolve_team(team)
-	return frappe.get_all(
+	rows = frappe.get_all(
 		"Credit Ledger Entry",
 		filters={"team": team},
 		fields=[
+			"name",
 			"entry_type",
 			"amount",
+			"tax_amount",
 			"running_balance",
 			"currency",
 			"note",
 			"created_at",
 			"reference_type",
 			"reference_name",
+			"advance_id",
 		],
 		order_by="creation desc",
 		limit=limit,
 	)
+	for row in rows:
+		# A top-up booked in the accounting system has a receipt to download.
+		row["has_receipt"] = bool(row.pop("advance_id"))
+	return rows
+
+
+@frappe.whitelist(methods=["GET"])
+@rate_limit(limit=30, seconds=60 * 60)
+def download_topup_receipt(name: str) -> None:
+	"""The receipt voucher for a wallet top-up, as the accounting system renders it."""
+	from central.billing.ingester.advance import receipt_pdf
+
+	team, advance_id = frappe.db.get_value("Credit Ledger Entry", name, ["team", "advance_id"]) or (
+		None,
+		None,
+	)
+	_require_view(team)
+	if not advance_id:
+		frappe.throw(_("This top-up has no receipt yet."), frappe.DoesNotExistError)
+	frappe.local.response.filename = f"{advance_id.replace('/', '-')}.pdf"
+	frappe.local.response.filecontent = receipt_pdf(advance_id)
+	frappe.local.response.type = "download"
 
 
 @frappe.whitelist(methods=["POST"])

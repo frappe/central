@@ -56,6 +56,14 @@ def sync_advance(entry: str) -> str | None:
 	return advance.name
 
 
+def receipt_pdf(advance_id: str) -> bytes:
+	"""The receipt voucher for a top-up, rendered by the accounting system."""
+	settings = accounting_settings()
+	return connection.print_pdf(
+		"Payment Entry", advance_id, settings.receipt_voucher_print_format, settings.invoice_letter_head
+	)
+
+
 def sync_pending_advances() -> None:
 	"""Daily: queue every top-up whose advance never made it."""
 	if not connection.enabled():
