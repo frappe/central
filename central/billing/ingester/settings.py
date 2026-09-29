@@ -31,3 +31,11 @@ def invoice_series(team: str) -> str:
 	if gst_status.standing(team).gstin:
 		return settings.series_india_b2b
 	return settings.series_india_b2c
+
+
+def receivable_account(currency: str) -> str:
+	"""The receivable account an invoice in `currency` is booked to."""
+	for row in accounting_settings().receivable_accounts:
+		if row.currency == currency:
+			return row.account
+	frappe.throw(_("Billing Settings has no receivable account for {0}.").format(currency))

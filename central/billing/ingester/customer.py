@@ -206,7 +206,19 @@ def _gstin(profile) -> str:
 
 
 def _customer_payload(profile) -> dict:
-	return {"customer_name": profile.legal_name, "customer_type": "Company", "gstin": _gstin(profile)}
+	return {
+		"customer_name": profile.legal_name,
+		"customer_type": "Company",
+		"default_currency": profile.currency,
+		"gstin": _gstin(profile),
+		"gst_category": _gst_category(profile),
+	}
+
+
+def _gst_category(profile) -> str:
+	from central.billing.ingester import gst
+
+	return gst.treatment(profile.team).gst_category
 
 
 def _address_payload(profile) -> dict:
@@ -220,6 +232,7 @@ def _address_payload(profile) -> dict:
 		"pincode": profile.pincode,
 		"country": profile.country,
 		"gstin": _gstin(profile),
+		"gst_category": _gst_category(profile),
 		"is_primary_address": 1,
 		"is_shipping_address": 1,
 		"links": [{"link_doctype": "Customer", "link_name": profile.profile_id}],

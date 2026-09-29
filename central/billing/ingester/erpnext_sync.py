@@ -14,9 +14,9 @@ nothing is ever read back from ERPNext into billing.
 """
 
 import frappe
-import requests
 
-from central.billing.ingester.connection import auth_headers
+from central.billing.ingester import connection, gst
+from central.billing.ingester.settings import accounting_settings, invoice_series, receivable_account
 
 MAX_ATTEMPTS = 3
 BACKOFF_BASE_SECONDS = 60  # 60s, 120s, 240s
@@ -33,43 +33,50 @@ def enqueue_invoice_sync(invoice: str):
 
 
 def sync_invoice(invoice: str) -> dict:
-	"""Create the ERPNext Sales Invoice for a Paid invoice (idempotent, one-way).
+	"""Issue the ERPNext Sales Invoice for a Paid invoice, and record its card payment.
 
-	Never raises into the caller and never touches the customer invoice's
-	status — the sync state lives in its own fields.
+	Never raises into the caller and never touches the customer invoice's status.
+	Each step is looked up before it is made, so a retry finishes the job instead
+	of repeating it.
 	"""
+	if not connection.enabled():
+		return {"skipped": "sync_off"}
 	inv = frappe.get_doc("Invoice", invoice)
 	if inv.invoice_type != "Billable":
 		return {"skipped": "not_billable"}  # cost_report is not a statutory sale
 	if inv.status != "Paid":
 		return {"skipped": "not_paid"}
-	if inv.erpnext_invoice:
-		return {"skipped": "already_synced"}  # one-way + idempotent
+	if inv.erpnext_invoice and (inv.payment_record_id or not _card_attempt(inv)):
+		return {"skipped": "already_synced"}
 
 	attempt = (inv.erpnext_sync_attempts or 0) + 1
 	try:
-		erpnext_name = _post_sales_invoice(_build_sales_invoice(inv, _customer_for(inv.team)))
+		customer = _customer_for(inv.team)
+		if not inv.erpnext_invoice:
+			inv.erpnext_invoice = _issue(inv, customer)
+			frappe.db.set_value("Invoice", invoice, "erpnext_invoice", inv.erpnext_invoice)
+		payment = _record_card_payment(inv, customer)
 	except Exception as e:
-		return _handle_failure(invoice, attempt, str(e))
+		return _handle_failure(invoice, attempt, _error_text(e))
 
 	frappe.db.set_value(
 		"Invoice",
 		invoice,
 		{
-			"erpnext_invoice": erpnext_name,
+			"payment_record_id": payment,
 			"erpnext_sync_status": "Synced",
 			"erpnext_sync_attempts": attempt,
 			"erpnext_sync_error": None,
 			"erpnext_next_retry_at": None,
 		},
 	)
-	return {"synced": erpnext_name, "attempt": attempt}
+	return {"synced": inv.erpnext_invoice, "payment": payment, "attempt": attempt}
 
 
 def _handle_failure(invoice: str, attempt: int, error: str) -> dict:
 	"""Record a failed attempt; schedule a backoff retry or alert ops. The
 	customer invoice is never rolled back — it stays Paid."""
-	values = {"erpnext_sync_attempts": attempt, "erpnext_sync_error": error[:140]}
+	values = {"erpnext_sync_attempts": attempt, "erpnext_sync_error": error[:1000]}
 	if attempt >= MAX_ATTEMPTS:
 		values["erpnext_sync_status"] = "Failed"
 		values["erpnext_next_retry_at"] = None
@@ -112,49 +119,214 @@ def _customer_for(team: str) -> str:
 	return customer
 
 
+def _issue(inv, customer: str) -> str:
+	"""The submitted Sales Invoice for this invoice: found if it exists, else created."""
+	existing = connection.find(
+		"Sales Invoice", [["remarks", "like", f"%{_marker(inv)}%"], ["docstatus", "=", 1]], ["name"]
+	)
+	if existing:
+		return existing[0].name
+	return connection.post("api/resource/Sales Invoice", _build_sales_invoice(inv, customer)).name
+
+
 def _build_sales_invoice(inv, customer: str) -> dict:
-	"""Map a Cloud Billing invoice to an ERPNext Sales Invoice payload."""
+	"""Map a Central invoice to a submitted ERPNext Sales Invoice."""
+	settings = accounting_settings()
+	tax = gst.treatment(inv.team)
+	# The GST on our invoice decides the rows. A lapsed GSTIN was billed as unregistered.
+	template = tax.template if frappe.utils.flt(inv.output_tax_amount) else None
+	advances, unbacked = _advances(inv)
+	remarks = _marker(inv)
+	if unbacked:
+		remarks += f". Wallet credit not backed by an advance: {unbacked}"
 	return {
 		"doctype": "Sales Invoice",
+		"docstatus": 1,
+		"naming_series": invoice_series(inv.team),
+		"company": settings.company,
 		"customer": customer,
-		**_gst_treatment(inv),
-		"posting_date": str(inv.period_end),
 		"currency": inv.currency,
-		"cloud_billing_invoice": inv.name,  # back-reference for reconciliation
-		"items": [
-			{
-				"item_name": f"{li.plan or li.resource_type or 'usage'} ({li.subscription_resource or ''})",
-				"qty": li.days or li.quantity or 1,
-				"rate": li.rate,
-				"amount": li.amount,
-			}
-			for li in inv.items
-		],
-		"total": inv.subtotal,
-		"grand_total": inv.total,
+		"debit_to": receivable_account(inv.currency),
+		"due_date": frappe.utils.nowdate(),
+		"company_address": settings.company_address,
+		"company_gstin": gst.company_gstin(),
+		"customer_address": frappe.db.get_value("Billing Profile", inv.team, "address_id"),
+		"billing_address_gstin": inv.customer_gstin or "",
+		"gst_category": _gst_category(inv, tax),
+		"place_of_supply": tax.place_of_supply,
+		"taxes_and_charges": template,
+		"taxes": gst.tax_rows(template),
+		"items": [_item(li, settings) for li in inv.items],
+		"advances": advances,
+		"allocate_advances_automatically": 0,
+		"disable_rounded_total": 1,
+		"ignore_pricing_rule": 1,
+		"remarks": remarks,
 	}
 
 
-def _gst_treatment(inv) -> dict:
-	"""The GSTIN this invoice was issued to, so both records agree.
+def _item(line, settings) -> dict:
+	label = " · ".join(x for x in (line.plan or line.resource_type, line.subscription_resource) if x)
+	period = f"{line.period_from or ''} to {line.period_to or ''}" if line.period_from else ""
+	return {
+		"item_code": settings.service_item,
+		"description": " · ".join(x for x in (label or "Usage", period) if x),
+		"qty": 1,
+		"rate": frappe.utils.flt(line.amount),
+		"income_account": settings.income_account,
+		"cost_center": settings.cost_center,
+	}
 
-	No GSTIN means the team was billed as unregistered, whatever its address says.
+
+def _gst_category(inv, tax) -> str:
+	if tax.gst_category == "Overseas" or inv.customer_gstin:
+		return tax.gst_category
+	return "Unregistered"
+
+
+def _advances(inv) -> tuple[list[dict], float]:
+	"""The team's advances this invoice's wallet credit uses, oldest first.
+
+	Returns the rows and any credit no advance covers (promotional credit).
 	"""
-	address = frappe.db.get_value("Billing Profile", inv.team, "address_id")
-	treatment = {"billing_address_gstin": inv.customer_gstin or ""}
-	if address:
-		treatment["customer_address"] = address
-	if not inv.customer_gstin:
-		treatment["gst_category"] = "Unregistered"
-	return treatment
+	needed = frappe.utils.flt(inv.credit_applied)
+	if needed <= 0:
+		return [], 0
+	pending = frappe.get_all(
+		"Credit Ledger Entry",
+		filters=[
+			["team", "=", inv.team],
+			["gateway_payment_id", "is", "set"],
+			["advance_id", "is", "not set"],
+		],
+		limit=1,
+	)
+	if pending:
+		raise RuntimeError(f"a top-up of team {inv.team} has no advance yet; its sync is queued")
+
+	rows = []
+	for advance_id in frappe.get_all(
+		"Credit Ledger Entry",
+		filters=[["team", "=", inv.team], ["advance_id", "is", "set"], ["currency", "=", inv.currency]],
+		pluck="advance_id",
+		order_by="creation asc",
+	):
+		advance = connection.fetch("Payment Entry", advance_id) or {}
+		unallocated = frappe.utils.flt(advance.get("unallocated_amount"))
+		# The advance is held net of the GST paid on it, and that GST comes back as it
+		# is used. So wallet money (gross) is allocated at the advance's net share.
+		net_share = _net_share(advance)
+		take_gross = min(frappe.utils.flt(unallocated / net_share, 2), needed)
+		if take_gross <= 0:
+			continue
+		rows.append(
+			{
+				"reference_type": "Payment Entry",
+				"reference_name": advance_id,
+				"advance_amount": unallocated,
+				"allocated_amount": min(frappe.utils.flt(take_gross * net_share, 2), unallocated),
+			}
+		)
+		needed = frappe.utils.flt(needed - take_gross, 2)
+		if needed <= 0:
+			break
+	return rows, needed
+
+
+def _net_share(advance) -> float:
+	"""What part of the money paid is the advance itself, the rest being GST."""
+	paid = frappe.utils.flt(advance.get("paid_amount"))
+	if not paid:
+		return 1.0
+	return (paid - frappe.utils.flt(advance.get("total_taxes_and_charges"))) / paid
+
+
+def _card_attempt(inv):
+	"""The captured card or UPI payment that settled this invoice, if one did."""
+	if frappe.utils.flt(inv.amount_paid) <= 0:
+		return None
+	name = frappe.db.get_value(
+		"Payment Attempt", {"invoice": inv.name, "status": "Captured"}, "name", order_by="creation desc"
+	)
+	return frappe.get_doc("Payment Attempt", name) if name else None
+
+
+def _record_card_payment(inv, customer: str) -> str | None:
+	"""A Payment Entry against the Sales Invoice for what the card paid. Found if it exists."""
+	attempt = _card_attempt(inv)
+	if not attempt:
+		return None
+	existing = connection.find(
+		"Payment Entry",
+		[["reference_no", "=", attempt.gateway_transaction_id], ["docstatus", "=", 1]],
+		["name"],
+	)
+	if existing:
+		return existing[0].name
+
+	settings = accounting_settings()
+	route = _gateway_row(settings, attempt.gateway, attempt.currency)
+	if attempt.currency != inv.currency:
+		raise RuntimeError(f"{inv.name} is in {inv.currency} but was paid in {attempt.currency}")
+	sales_invoice = connection.fetch("Sales Invoice", inv.erpnext_invoice)
+	owed = frappe.utils.flt(sales_invoice.outstanding_amount)
+	# The receivable and the clearing account are both in the invoice's currency.
+	rate = frappe.utils.flt(sales_invoice.conversion_rate) or 1
+	payload = {
+		"doctype": "Payment Entry",
+		"docstatus": 1,
+		"payment_type": "Receive",
+		"company": settings.company,
+		"posting_date": frappe.utils.nowdate(),
+		"party_type": "Customer",
+		"party": customer,
+		"paid_from": sales_invoice.debit_to,
+		"paid_to": route.clearing_account,
+		"paid_amount": owed,
+		"received_amount": owed,
+		"source_exchange_rate": rate,
+		"target_exchange_rate": rate,
+		"mode_of_payment": route.mode_of_payment,
+		"reference_no": attempt.gateway_transaction_id,
+		"reference_date": str(frappe.utils.getdate(attempt.completed_at or attempt.creation)),
+		"references": [
+			{
+				"reference_doctype": "Sales Invoice",
+				"reference_name": inv.erpnext_invoice,
+				"allocated_amount": owed,
+			}
+		],
+		"remarks": f"{attempt.gateway} payment {attempt.gateway_transaction_id} for {_marker(inv)}",
+	}
+	return connection.post("api/resource/Payment Entry", payload).name
+
+
+def _gateway_row(settings, gateway: str, currency: str):
+	for row in settings.gateways:
+		if row.gateway == gateway and row.currency == currency:
+			return row
+	raise RuntimeError(f"Billing Settings has no {gateway} {currency} row under Gateway Accounts")
+
+
+def _marker(inv) -> str:
+	return f"Central invoice {inv.name}"
+
+
+def _error_text(error: Exception) -> str:
+	response = getattr(error, "response", None)
+	if response is not None:
+		try:
+			body = response.json()
+			messages = body.get("_server_messages") or body.get("exception") or body
+			return str(messages)[:1000]
+		except ValueError:
+			return response.text[:1000]
+	return str(error)[:1000]
 
 
 def sales_invoice_pdf(sales_invoice: str) -> bytes:
 	"""The statutory invoice as a PDF, rendered by ERPNext with the configured print format."""
-	from central.billing.ingester.connection import download
-	from central.billing.ingester.settings import accounting_settings
-
-	return download(
+	return connection.download(
 		"frappe.utils.print_format.download_pdf",
 		{
 			"doctype": "Sales Invoice",
@@ -163,21 +335,6 @@ def sales_invoice_pdf(sales_invoice: str) -> bytes:
 			"no_letterhead": 0,
 		},
 	)
-
-
-def _post_sales_invoice(payload: dict) -> str:
-	"""POST the Sales Invoice to ERPNext; return its name. Raises on any failure."""
-	base = (frappe.conf.get("erpnext_url") or "").rstrip("/")
-	if not base:
-		raise RuntimeError("erpnext_url is not configured")
-	response = requests.post(
-		f"{base}/api/resource/Sales Invoice",
-		json=payload,
-		headers=auth_headers(),
-		timeout=30,
-	)
-	response.raise_for_status()
-	return (response.json().get("data") or {}).get("name")
 
 
 def _alert_ops(invoice: str, error: str):

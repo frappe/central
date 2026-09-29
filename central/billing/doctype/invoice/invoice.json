@@ -42,6 +42,7 @@
   "paid_at",
   "section_break_ext",
   "erpnext_invoice",
+  "payment_record_id",
   "erpnext_sync_status",
   "erpnext_sync_attempts",
   "erpnext_next_retry_at",
@@ -269,6 +270,13 @@
    "description": "Sales Invoice name in ERPNext (statutory SOR); set on successful sync"
   },
   {
+   "description": "The payment recorded against this invoice in the accounting system, for the part a card or UPI paid.",
+   "fieldname": "payment_record_id",
+   "fieldtype": "Data",
+   "label": "Payment Record ID",
+   "read_only": 1
+  },
+  {
    "default": "Pending",
    "fieldname": "erpnext_sync_status",
    "fieldtype": "Select",
@@ -328,7 +336,7 @@
    "link_fieldname": "invoice"
   }
  ],
- "modified": "2026-09-26 10:00:00.000000",
+ "modified": "2026-09-29 14:00:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Invoice",
