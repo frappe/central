@@ -12,6 +12,7 @@
   "entry_type",
   "column_break_amount",
   "amount",
+  "tax_amount",
   "currency",
   "running_balance",
   "expires_on",
@@ -53,6 +54,14 @@
    "label": "Amount",
    "description": "Always positive; direction is entry_type",
    "reqd": 1
+  },
+  {
+   "description": "GST paid on top of this top-up. It pays the GST of the invoices this credit is used for.",
+   "fieldname": "tax_amount",
+   "fieldtype": "Currency",
+   "label": "GST Paid in Advance",
+   "options": "currency",
+   "read_only": 1
   },
   {
    "fieldname": "currency",
@@ -123,7 +132,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-09-29 14:00:00.000000",
+ "modified": "2026-09-30 10:00:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Credit Ledger Entry",

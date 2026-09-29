@@ -380,6 +380,7 @@ def get_invoice(name: str) -> dict:
 		"zero_rating_reason": doc.zero_rating_reason,
 		"total": doc.total,
 		"credit_applied": doc.credit_applied,
+		"advance_tax_applied": doc.advance_tax_applied,
 		"expected_collection": doc.expected_collection,
 		"amount_paid": doc.amount_paid,
 		"due_date": str(doc.due_date) if doc.due_date else None,
@@ -680,7 +681,13 @@ def get_topup_options(team: str | None = None) -> dict:
 		from central.billing.gateways.registry import get_adapter
 
 		publishable_key = get_adapter(frappe.get_doc("Payment Gateway", card_gw)).get_credential("api_key")
-	return {"currency": currency, "instruments": tiles, "publishable_key": publishable_key}
+	return {
+		"currency": currency,
+		"instruments": tiles,
+		"publishable_key": publishable_key,
+		# GST charged on top of a top-up, as a percentage. 0 where none applies.
+		"gst_rate": frappe.utils.flt(credits.top_up_gst_rate(team) * 100, 2),
+	}
 
 
 @frappe.whitelist(methods=["POST"])
@@ -756,7 +763,11 @@ def create_topup_order(
 	# returned order, Stripe via a PaymentIntent the SPA confirms with Stripe.js
 	# (no hosted-Checkout redirect). The India-export billing address rides on the
 	# Stripe PaymentIntent from the Billing Profile, so it's never re-asked.
-	handles = adapter.create_order(amount, currency, receipt, notes=notes, customer=customer_id)
+	# GST is charged on top of the credit. The wallet gets the credit, and the GST
+	# is held to pay the GST of the invoices the credit is used for.
+	gst = credits.top_up_gst(team, amount)
+	total = frappe.utils.flt(amount + gst, 2)
+	handles = adapter.create_order(total, currency, receipt, notes=notes, customer=customer_id)
 	# The SPA branches on adapter_key: Stripe → PaymentIntent Element, Razorpay → hosted
 	# sheet, Paypal → PayPal Buttons against the returned order_id (ADR 0007). For a
 	# Via-Razorpay PayPal top-up the adapter_key is Razorpay (settlement runs there) and
@@ -766,6 +777,8 @@ def create_topup_order(
 		"adapter_key": gw_doc.adapter_key,
 		"display_paypal": display_paypal,
 		"amount": amount,
+		"gst": gst,
+		"total": total,
 		"currency": currency,
 		"receipt": receipt,
 		**handles,

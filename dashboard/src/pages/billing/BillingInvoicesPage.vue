@@ -242,6 +242,15 @@ const eventDate = (at: string | null): string => String(at ?? '').split(',')[0]
 							</dd>
 						</div>
 						<div
+							v-if="detail.data.advance_tax_applied"
+							class="flex justify-between gap-3"
+						>
+							<dt class="text-ink-green-5">GST paid with top-ups</dt>
+							<dd class="tabular-nums text-ink-green-5">
+								−{{ money(detail.data.advance_tax_applied, detail.data.currency) }}
+							</dd>
+						</div>
+						<div
 							class="mt-1 flex justify-between gap-3 border-t border-outline-gray-1 pt-2.5 font-semibold"
 						>
 							<dt class="text-ink-gray-8">Total</dt>

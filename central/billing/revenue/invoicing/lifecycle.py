@@ -66,28 +66,24 @@ def open_and_collect(invoice: str, collect: bool = True) -> dict:
 		return {"invoice": invoice, "claimed": True, "cost_report": True, "expected_collection": 0}
 
 	# Leg 1 — credits first (only against the collectable amount, gross less TDS).
-	applied = 0
 	collectable = frappe.utils.flt(doc.total) - frappe.utils.flt(doc.tds_amount)
-	if collectable > 0:
-		# Draw and debit in the invoice's own currency — a USD team's wallet must be
-		# debited in USD, not the apply_credit default (INR).
-		available = credits.get_balance(doc.team, doc.currency)["balance"]
-		applied = min(frappe.utils.flt(available), collectable)
-		if applied > 0:
-			credits.apply_credit(
-				doc.team,
-				applied,
-				doc.currency,
-				reference_type="Invoice",
-				reference_name=invoice,
-				note=f"Credit applied to {invoice}",
-			)
-
-	doc.credit_applied = applied
-	# Auto-charge target = gross total, less withheld TDS, less credits applied.
-	doc.expected_collection = frappe.utils.flt(
-		frappe.utils.flt(doc.total) - frappe.utils.flt(doc.tds_amount) - applied, 2
-	)
+	draw = _draw_wallet(doc, collectable) if collectable > 0 else frappe._dict(wallet=0, advance=0, gst=0)
+	if draw.wallet > 0:
+		credits.apply_credit(
+			doc.team,
+			draw.wallet,
+			doc.currency,
+			reference_type="Invoice",
+			reference_name=invoice,
+			note=f"Credit applied to {invoice}",
+		)
+	applied = draw.wallet
+	doc.credit_applied = draw.wallet
+	doc.advance_applied = draw.advance
+	doc.advance_tax_applied = draw.gst
+	# Auto-charge target = gross total, less withheld TDS, less credits and the GST
+	# already paid with the top-ups those credits came from.
+	doc.expected_collection = frappe.utils.flt(collectable - draw.wallet - draw.gst, 2)
 	# Both dates are set from *today*, not from the period end: an invoice the run
 	# opened three days late is due three days later, and its dunning ladder starts
 	# three days later. A backlog delays collection; it never shortens the customer's
@@ -139,6 +135,39 @@ HOLD_KEYS = {
 	"Accounting Sync": "accounting_sync",
 	"GSTIN Check": "gstin_check",
 }
+
+
+def _draw_wallet(doc, collectable: float) -> frappe._dict:
+	"""What the wallet pays of `collectable`, in the order it is spent.
+
+	Credit with GST already paid on it (a top-up) pays the invoice's net amount, and
+	that GST pays the GST on it. Any other credit (promotional, a refund) pays the
+	invoice as it stands, GST included. The wallet stays locked until this commits.
+	"""
+	credits.lock_team_wallet(doc.team, doc.currency)
+	gst_due = frappe.utils.flt(doc.output_tax_amount)
+	net_due = collectable - gst_due
+	gst_per_net = gst_due / net_due if gst_due and net_due > 0 else 0
+	gst_left = credits.advance_gst_balance(doc.team, doc.currency)
+
+	owed, wallet, advance, gst = collectable, 0.0, 0.0, 0.0
+	for lot in credits.credit_lots(doc.team, doc.currency):
+		if owed <= 0.005:
+			break
+		if lot.remaining <= 0:
+			continue
+		if lot.gateway_payment_id and gst_per_net:
+			net = min(lot.remaining, owed / (1 + gst_per_net))
+			tax = min(net * gst_per_net, max(gst_left - gst, 0))
+			wallet, advance, gst, owed = wallet + net, advance + net, gst + tax, owed - net - tax
+		else:
+			use = min(lot.remaining, owed)
+			wallet, owed = wallet + use, owed - use
+			if lot.gateway_payment_id:
+				advance += use
+	return frappe._dict(
+		wallet=frappe.utils.flt(wallet, 2), advance=frappe.utils.flt(advance, 2), gst=frappe.utils.flt(gst, 2)
+	)
 
 
 def _hold_reason(doc) -> str | None:

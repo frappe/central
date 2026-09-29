@@ -30,7 +30,9 @@ class SyncTestCase(IntegrationTestCase):
 		self.remote = FakeAccountingSystem()
 		self.enterContext(self.remote.patches())
 
-	def _invoice(self, team=TEAM, currency="INR", subtotal=8000, tax=1440, credit=0, paid=0, month=8):
+	def _invoice(
+		self, team=TEAM, currency="INR", subtotal=8000, tax=1440, credit=0, paid=0, month=8, advance=0
+	):
 		start = f"2026-{month:02d}-01"
 		return (
 			frappe.get_doc(
@@ -46,6 +48,7 @@ class SyncTestCase(IntegrationTestCase):
 					"output_tax_amount": tax,
 					"total": subtotal + tax,
 					"credit_applied": credit,
+					"advance_applied": advance,
 					"amount_paid": paid,
 					"customer_gstin": frappe.db.get_value("Billing Profile", team, "gstin"),
 					"items": [
@@ -113,46 +116,47 @@ class TestIssue(SyncTestCase):
 
 
 class TestAdvances(SyncTestCase):
-	def _top_up(self, advance_id="RV-1", paid=10000, taxes=1525.42):
+	def _top_up(self, advance_id="RV-1", credit=10000):
 		frappe.get_doc(
 			{
 				"doctype": "Credit Ledger Entry",
 				"team": TEAM,
 				"entry_type": "Credit",
-				"amount": paid,
+				"amount": credit,
+				"tax_amount": credit * 0.18,
 				"currency": "INR",
 				"gateway_payment_id": f"Stripe:pi_{advance_id}",
 				"advance_id": advance_id,
 			}
 		).insert(ignore_permissions=True)
 		if advance_id:
-			self.remote.records[("Payment Entry", advance_id)] = {
-				"paid_amount": paid,
-				"total_taxes_and_charges": taxes,
-				"unallocated_amount": paid - taxes,
-			}
+			self.remote.records[("Payment Entry", advance_id)] = {"unallocated_amount": credit}
 
-	def test_wallet_credit_uses_the_advance_at_its_net_share(self):
+	def test_the_credit_used_is_allocated_from_the_advance(self):
 		billing_team(TEAM, gstin=GSTIN)
 		self._top_up()
-		erpnext_sync.sync_invoice(self._invoice(credit=9440))
+		erpnext_sync.sync_invoice(self._invoice(credit=8000, advance=8000))
 		advance = self._sales_invoice()["advances"][0]
-		self.assertEqual(advance["reference_name"], "RV-1")
-		self.assertEqual(advance["allocated_amount"], 8000)  # the GST on it comes back as it is used
-		self.assertEqual(advance["advance_amount"], 8474.58)
+		self.assertEqual((advance["reference_name"], advance["allocated_amount"]), ("RV-1", 8000))
 
 	def test_oldest_advance_first_then_the_next(self):
 		billing_team(TEAM, gstin=GSTIN)
-		self._top_up("RV-1", paid=1180, taxes=180)
-		self._top_up("RV-2", paid=10000, taxes=1525.42)
-		erpnext_sync.sync_invoice(self._invoice(credit=9440))
+		self._top_up("RV-1", credit=1000)
+		self._top_up("RV-2", credit=10000)
+		erpnext_sync.sync_invoice(self._invoice(credit=8000, advance=8000))
 		rows = [(a["reference_name"], a["allocated_amount"]) for a in self._sales_invoice()["advances"]]
 		self.assertEqual(rows, [("RV-1", 1000), ("RV-2", 7000)])
+
+	def test_promotional_credit_is_noted_as_not_backed(self):
+		billing_team(TEAM, gstin=GSTIN)
+		self._top_up()
+		erpnext_sync.sync_invoice(self._invoice(credit=9000, advance=8000))
+		self.assertIn("not backed by an advance: 1000", self._sales_invoice()["remarks"])
 
 	def test_waits_for_a_top_up_whose_advance_has_not_synced(self):
 		billing_team(TEAM, gstin=GSTIN)
 		self._top_up(advance_id=None)
-		out = erpnext_sync.sync_invoice(self._invoice(credit=9440))
+		out = erpnext_sync.sync_invoice(self._invoice(credit=8000, advance=8000))
 		self.assertTrue(out["retry_scheduled"])
 		self.assertEqual(self.remote.posts("Sales Invoice"), [])
 
