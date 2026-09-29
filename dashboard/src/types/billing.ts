@@ -219,6 +219,8 @@ export interface InvoiceSummary {
 	amount_paid: number
 	currency: Currency
 	due_date: string | null
+	/** Issued in the accounting system, so its PDF can be downloaded. */
+	has_pdf: boolean
 }
 
 /** One event in an invoice's lifecycle timeline (issued → credits → payment → settled). */

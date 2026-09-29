@@ -38,28 +38,18 @@
   "tab_accounting",
   "section_company",
   "company",
-  "company_gstin",
-  "company_address_id",
+  "company_address",
   "column_break_company",
-  "company_address_line1",
-  "company_city",
-  "company_state",
-  "company_pincode",
   "section_accounts",
   "receivable_account",
   "advance_account",
-  "advance_parent_account",
   "column_break_accounts",
   "income_account",
   "cost_center",
-  "clearing_parent_account",
   "section_gateways",
   "gateways",
   "section_item",
   "service_item",
-  "item_group",
-  "column_break_item",
-  "sac_code",
   "section_tax",
   "in_state_template",
   "column_break_tax",
@@ -73,10 +63,7 @@
   "section_print",
   "invoice_print_format",
   "column_break_print",
-  "receipt_voucher_print_format",
-  "section_accounting_setup",
-  "accounting_setup_ran_at",
-  "accounting_setup_report"
+  "receipt_voucher_print_format"
  ],
  "fields": [
   {
@@ -277,7 +264,8 @@
    "fieldname": "tab_accounting",
    "fieldtype": "Tab Break",
    "label": "Accounting",
-   "depends_on": "eval:doc.__onload && doc.__onload.accounting_sync_enabled"
+   "depends_on": "eval:doc.__onload && doc.__onload.accounting_sync_enabled",
+   "description": "Names Central reads from the accounting system. Central does not create them."
   },
   {
    "fieldname": "section_company",
@@ -291,41 +279,14 @@
    "description": "The company's name in the accounting system."
   },
   {
-   "fieldname": "company_gstin",
+   "fieldname": "company_address",
    "fieldtype": "Data",
-   "label": "Company GSTIN"
-  },
-  {
-   "fieldname": "company_address_id",
-   "fieldtype": "Data",
-   "label": "Company Address ID",
-   "read_only": 1,
-   "description": "Set by the setup."
+   "label": "Company Address",
+   "description": "The company's address in the accounting system. It carries the company GSTIN."
   },
   {
    "fieldname": "column_break_company",
    "fieldtype": "Column Break"
-  },
-  {
-   "fieldname": "company_address_line1",
-   "fieldtype": "Data",
-   "label": "Address Line 1"
-  },
-  {
-   "fieldname": "company_city",
-   "fieldtype": "Data",
-   "label": "City"
-  },
-  {
-   "fieldname": "company_state",
-   "fieldtype": "Data",
-   "label": "State",
-   "description": "The GST state name, for example Maharashtra."
-  },
-  {
-   "fieldname": "company_pincode",
-   "fieldtype": "Data",
-   "label": "Pincode"
   },
   {
    "fieldname": "section_accounts",
@@ -342,13 +303,7 @@
    "fieldname": "advance_account",
    "fieldtype": "Data",
    "label": "Advance Account",
-   "description": "Holds customer advances. Liability, account type Receivable."
-  },
-  {
-   "fieldname": "advance_parent_account",
-   "fieldtype": "Data",
-   "label": "Advance Parent Account",
-   "description": "Group the setup creates the advance account under."
+   "description": "Where customer advances are booked. The company must book advances in a separate account, this one."
   },
   {
    "fieldname": "column_break_accounts",
@@ -363,12 +318,6 @@
    "fieldname": "cost_center",
    "fieldtype": "Data",
    "label": "Cost Center"
-  },
-  {
-   "fieldname": "clearing_parent_account",
-   "fieldtype": "Data",
-   "label": "Clearing Parent Account",
-   "description": "Group the setup creates gateway clearing accounts under."
   },
   {
    "fieldname": "section_gateways",
@@ -390,23 +339,8 @@
    "fieldname": "service_item",
    "fieldtype": "Data",
    "label": "Service Item",
-   "default": "Cloud Hosting"
-  },
-  {
-   "fieldname": "item_group",
-   "fieldtype": "Data",
-   "label": "Item Group",
-   "default": "Services"
-  },
-  {
-   "fieldname": "column_break_item",
-   "fieldtype": "Column Break"
-  },
-  {
-   "fieldname": "sac_code",
-   "fieldtype": "Data",
-   "label": "SAC Code",
-   "default": "998315"
+   "default": "Cloud Hosting",
+   "description": "The item on every invoice line. Its SAC code comes from the accounting system."
   },
   {
    "fieldname": "section_tax",
@@ -466,7 +400,8 @@
   {
    "fieldname": "section_print",
    "fieldtype": "Section Break",
-   "label": "Print Formats"
+   "label": "Print Formats",
+   "description": "Print formats in the accounting system. Invoice PDFs are rendered with them."
   },
   {
    "fieldname": "invoice_print_format",
@@ -483,30 +418,12 @@
    "fieldtype": "Data",
    "label": "Receipt Voucher Print Format",
    "default": "Cloud Receipt Voucher"
-  },
-  {
-   "fieldname": "section_accounting_setup",
-   "fieldtype": "Section Break",
-   "label": "Last Setup Run"
-  },
-  {
-   "fieldname": "accounting_setup_ran_at",
-   "fieldtype": "Datetime",
-   "label": "Ran At",
-   "read_only": 1
-  },
-  {
-   "fieldname": "accounting_setup_report",
-   "fieldtype": "Code",
-   "label": "Report",
-   "read_only": 1,
-   "options": "JSON"
   }
  ],
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-09-27 16:00:00.000000",
+ "modified": "2026-09-29 10:00:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Billing Settings",

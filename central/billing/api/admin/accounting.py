@@ -1,6 +1,6 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
-"""Admin actions for the accounting setup: check it, create what is missing."""
+"""Admin action for the accounting setup: check that what Central reads is there."""
 
 import frappe
 
@@ -13,10 +13,3 @@ def check_accounting_setup() -> list[dict]:
 	"""What exists in the accounting system and what does not. Writes nothing."""
 	authz.require_operator()
 	return setup.check()
-
-
-@frappe.whitelist(methods=["POST"])
-def create_missing_accounting_setup() -> list[dict]:
-	"""Create the missing records and fill blank settings. Changes nothing already set."""
-	authz.require_operator()
-	return setup.create_missing()

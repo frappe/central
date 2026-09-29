@@ -11,6 +11,10 @@ import requests
 TIMEOUT_SECONDS = 30
 
 
+class NoAccess(Exception):
+	"""The accounting sync user may not read this record."""
+
+
 def enabled() -> bool:
 	"""Whether this site pushes records to the accounting system at all."""
 	return bool(frappe.conf.get("enable_erpnext_sync"))
@@ -58,8 +62,19 @@ def fetch(doctype: str, name: str) -> frappe._dict | None:
 	)
 	if response.status_code == 404:
 		return None
+	if response.status_code == 403:
+		raise NoAccess(f"{doctype} {name}")
 	response.raise_for_status()
 	return frappe._dict(response.json().get("data") or {})
+
+
+def download(method: str, params: dict) -> bytes:
+	"""GET a whitelisted method that answers with a file, and return its bytes."""
+	response = requests.get(
+		_url(f"api/method/{method}"), params=params, headers=auth_headers(), timeout=TIMEOUT_SECONDS
+	)
+	response.raise_for_status()
+	return response.content
 
 
 def find(doctype: str, filters: list, fields: list | None = None) -> list[frappe._dict]:
@@ -73,14 +88,6 @@ def find(doctype: str, filters: list, fields: list | None = None) -> list[frappe
 		},
 	)
 	return [frappe._dict(row) for row in rows or []]
-
-
-def run_doc_method(doc: dict, method: str, args: dict | None = None):
-	"""Call a whitelisted method on a document built from `doc`."""
-	payload = {"docs": json.dumps(doc), "method": method}
-	if args:
-		payload["args"] = json.dumps(args)
-	return post("api/method/run_doc_method", payload)
 
 
 def _request_list(endpoint: str, **kwargs) -> list | None:

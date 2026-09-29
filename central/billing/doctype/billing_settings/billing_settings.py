@@ -23,9 +23,19 @@ class BillingSettings(Document):
 		self.set_onload("accounting_sync_enabled", enabled())
 
 	def validate(self):
+		self.strip_accounting_names()
 		self.validate_retry_days()
 		self.validate_dunning_ladder()
 		self.validate_one_row_per_currency()
+
+	def strip_accounting_names(self):
+		"""The accounting names are matched exactly, so a pasted space would miss."""
+		for field in self.meta.get("fields", {"fieldtype": "Data"}):
+			if isinstance(self.get(field.fieldname), str):
+				self.set(field.fieldname, self.get(field.fieldname).strip())
+		for row in self.gateways:
+			for field in ("mode_of_payment", "clearing_account"):
+				row.set(field, (row.get(field) or "").strip())
 
 	def retry_days(self) -> list[int]:
 		"""The dunning retry days, parsed, de-duplicated and in order.

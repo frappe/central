@@ -1,117 +1,114 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
-"""The accounting settings on Billing Settings, and the setup that checks and creates their records."""
+"""The accounting settings on Billing Settings, the setup check, and invoice PDFs."""
 
 import re
 from unittest.mock import patch
 
 import frappe
 
+from central.billing.api.dashboard import invoices as dashboard_invoices
+from central.billing.ingester import connection, setup
 from central.billing.ingester import settings as accounting
-from central.billing.ingester import setup
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
-from central.billing.tests.utils import complete_billing_profile, ensure_team
+from central.billing.tests.utils import complete_billing_profile, ensure_team, make_user
 
 COMPANY = "Test Co"
-EXISTING = {
-	("Company", COMPANY): {"default_currency": "INR", "gstin": None, "gst_category": "Unregistered"},
-	("Account", "Debtors - TC"): {},
-	("Account", "Sales - TC"): {},
-	("Cost Center", "Main - TC"): {},
-	("Sales Taxes and Charges Template", "In - TC"): {},
-	("Sales Taxes and Charges Template", "Out - TC"): {},
-	("GST HSN Code", "998315"): {},
-	("GST Settings", "GST Settings"): {"enable_overseas_transactions": 0},
-	("DocType", "Sales Invoice"): {"fields": [{"fieldname": "naming_series", "options": "ACC-SINV-.YYYY.-"}]},
-	("DocType", "Payment Entry"): {"fields": [{"fieldname": "naming_series", "options": "ACC-PAY-.YYYY.-"}]},
+
+
+def complete_setup() -> dict:
+	"""An accounting system that has everything the settings below name."""
+	return {
+		("Company", COMPANY): {
+			"book_advance_payments_in_separate_party_account": 1,
+			"default_advance_received_account": "Customer Advances - TC",
+		},
+		("Address", "Test Co-Billing"): {"gstin": "27AAACZ9999Z1ZC"},
+		("Account", "Debtors - TC"): {},
+		("Account", "Customer Advances - TC"): {},
+		("Account", "Sales - TC"): {},
+		("Account", "Stripe Clearing - TC"): {"account_currency": "INR"},
+		("Cost Center", "Main - TC"): {},
+		("Mode of Payment", "Stripe"): {},
+		("Item", "Cloud Hosting"): {"gst_hsn_code": "998315"},
+		("Sales Taxes and Charges Template", "In - TC"): {},
+		("Sales Taxes and Charges Template", "Out - TC"): {},
+		("GST Settings", "GST Settings"): {"enable_overseas_transactions": 1},
+		("Print Format", "Cloud Tax Invoice"): {"doc_type": "Sales Invoice"},
+		("Print Format", "Cloud Receipt Voucher"): {"doc_type": "Payment Entry"},
+	}
+
+
+SERIES = {
+	"Sales Invoice": "ACC-SINV-.YYYY.-\nB2B/.TFY./.#####\nB2C/.TFY./.#####\nEXP/.TFY./.#####",
+	"Payment Entry": "ACC-PAY-.YYYY.-\nRV/.TFY./.######",
 }
 
 
 class FakeAccountingSystem:
-	"""An in-memory stand-in for the remote site."""
+	"""An in-memory, read-only stand-in for the remote site."""
 
-	def __init__(self, records: dict):
-		self.records = {key: dict(value) for key, value in records.items()}
+	def __init__(self):
+		self.records = complete_setup()
+		self.series = dict(SERIES)
+		self.forbidden = set()
 		self.writes = []
-		self.series = {}
 
 	def fetch(self, doctype, name):
+		if doctype in self.forbidden:
+			raise connection.NoAccess(doctype)
 		record = self.records.get((doctype, name))
 		return frappe._dict(record, name=name) if record is not None else None
 
-	def call(self, method, params=None):
-		doctype = params["doctype"]
-		options = self.series.get(doctype) or self.records[("DocType", doctype)]["fields"][0]["options"]
-		return {"docs": [{"name": doctype, "fields": [{"fieldname": "naming_series", "options": options}]}]}
-
 	def find(self, doctype, filters, fields=None):
-		return [
-			frappe._dict(name=n) for (dt, n), r in self.records.items() if dt == doctype and r.get("mine")
-		]
+		return [frappe._dict(name=n) for (dt, n) in self.records if dt == doctype]
 
-	def post(self, endpoint, payload):
-		self.writes.append(("POST", endpoint, payload))
-		if endpoint == "api/method/frappe.client.get":
-			return frappe._dict(doctype="Document Naming Settings", name="Document Naming Settings")
-		doctype = endpoint.rsplit("/", 1)[1].replace("%20", " ")
-		name = self._name(doctype, payload)
-		self.records[(doctype, name)] = dict(payload, mine=doctype == "Address")
-		return frappe._dict(name=name)
+	def call(self, method, params=None):
+		options = self.series[params["doctype"]]
+		fields = [{"fieldname": "naming_series", "options": options}]
+		return {"docs": [{"name": params["doctype"], "fields": fields}]}
 
-	def put(self, endpoint, payload):
-		self.writes.append(("PUT", endpoint, payload))
-		_, doctype, name = endpoint.rsplit("/", 2)
-		self.records[(doctype.replace("%20", " "), name.replace("%20", " "))].update(payload)
-
-	def run_doc_method(self, doc, method, args=None):
-		self.writes.append(("RUN", method, doc))
-		self.series[doc["transaction_type"]] = doc["naming_series_options"]
-
-	def _name(self, doctype, payload):
-		if doctype == "Account":
-			return f"{payload['account_name']} - TC"
-		if doctype == "Address":
-			return f"{payload['address_title']}-Billing"
-		return payload.get("name") or payload.get("mode_of_payment") or payload.get("item_code")
+	def write(self, *args, **kwargs):
+		self.writes.append(args)
 
 
 class AccountingSetupTestCase(IntegrationTestCase):
 	def setUp(self):
 		self._conf = patch.dict(frappe.local.conf, {"enable_erpnext_sync": 1})
 		self._conf.start()
-		self.remote = FakeAccountingSystem(EXISTING)
-		self._remote = [
-			patch(f"central.billing.ingester.connection.{fn}", getattr(self.remote, fn))
-			for fn in ("call", "fetch", "find", "post", "put", "run_doc_method")
+		self.remote = FakeAccountingSystem()
+		self._patches = [
+			*[
+				patch(f"central.billing.ingester.connection.{fn}", getattr(self.remote, fn))
+				for fn in ("fetch", "find", "call")
+			],
+			*[
+				patch(f"central.billing.ingester.connection.{fn}", self.remote.write)
+				for fn in ("post", "put")
+			],
 		]
-		for p in self._remote:
+		for p in self._patches:
 			p.start()
 		self._configure()
 
 	def tearDown(self):
-		for p in self._remote:
+		for p in self._patches:
 			p.stop()
 		self._conf.stop()
 
-	def _configure(self):
+	def _configure(self, **values):
 		doc = frappe.get_doc("Billing Settings")
 		doc.update(
 			{
 				"company": COMPANY,
-				"company_gstin": "27AAACZ9999Z1ZC",
-				"company_address_id": None,
-				"company_address_line1": "1 Test Road",
-				"company_city": "Mumbai",
-				"company_state": "Maharashtra",
-				"company_pincode": "400001",
+				"company_address": "Test Co-Billing",
 				"receivable_account": "Debtors - TC",
 				"advance_account": "Customer Advances - TC",
-				"advance_parent_account": "Current Liabilities - TC",
 				"income_account": "Sales - TC",
 				"cost_center": "Main - TC",
-				"clearing_parent_account": "Bank Accounts - TC",
 				"in_state_template": "In - TC",
 				"out_state_template": "Out - TC",
+				**values,
 			}
 		)
 		doc.set("gateways", [])
@@ -127,18 +124,48 @@ class AccountingSetupTestCase(IntegrationTestCase):
 		doc.save(ignore_permissions=True)
 		frappe.clear_document_cache("Billing Settings", "Billing Settings")
 
-	def _states(self, rows):
-		return {(r["record"], r["name"]): r["state"] for r in rows}
+	def _states(self):
+		return {r["record"]: (r["state"], r["detail"]) for r in setup.check()}
 
 
 class TestCheck(AccountingSetupTestCase):
-	def test_check_writes_nothing(self):
-		rows = setup.check()
-		self.assertEqual(self.remote.writes, [])
-		states = self._states(rows)
-		self.assertEqual(states[("Receivable account", "Debtors - TC")], "Exists")
-		self.assertEqual(states[("Advance account", "Customer Advances - TC")], "Missing")
-		self.assertEqual(states[("Company GST and advance settings", COMPANY)], "Incomplete")
+	def test_a_complete_setup_is_all_ok(self):
+		states = self._states()
+		self.assertEqual({state for state, _ in states.values()}, {"OK"})
+		self.assertEqual(self.remote.writes, [])  # the check never writes
+
+	def test_missing_records_are_reported(self):
+		del self.remote.records[("Item", "Cloud Hosting")]
+		self.remote.series["Payment Entry"] = "ACC-PAY-.YYYY.-"
+		states = self._states()
+		self.assertEqual(states["Service item"][0], "Missing")
+		self.assertEqual(states["Payment Entry naming series"], ("Missing", "Not offered: RV/.TFY./.######"))
+
+	def test_wrong_setup_is_explained(self):
+		self.remote.records[("Company", COMPANY)]["book_advance_payments_in_separate_party_account"] = 0
+		self.remote.records[("Account", "Stripe Clearing - TC")]["account_currency"] = "USD"
+		self.remote.records[("Print Format", "Cloud Tax Invoice")]["doc_type"] = "Delivery Note"
+		states = self._states()
+		gateway = frappe.get_doc("Billing Settings").gateways[0].gateway
+		self.assertEqual(states["Advance account"][0], "Wrong")
+		self.assertEqual(states[f"{gateway} INR: clearing account"][0], "Wrong")
+		self.assertEqual(states["Sales Invoice print format"][0], "Wrong")
+
+	def test_a_record_the_sync_user_cannot_read_is_flagged(self):
+		self.remote.forbidden.add("Print Format")
+		self.assertEqual(self._states()["Sales Invoice print format"][0], "No Access")
+
+	def test_a_missing_company_address_names_the_candidates(self):
+		self._configure(company_address="")
+		state, detail = self._states()["Company address"]
+		self.assertEqual(state, "Missing")
+		self.assertIn("Test Co-Billing", detail)
+
+	def test_names_are_saved_without_stray_spaces(self):
+		self._configure(advance_account=" Customer Advances - TC ")
+		self.assertEqual(
+			frappe.db.get_single_value("Billing Settings", "advance_account"), "Customer Advances - TC"
+		)
 
 	def test_accounting_tab_shows_only_while_sync_is_on(self):
 		doc = frappe.get_doc("Billing Settings")
@@ -152,60 +179,6 @@ class TestCheck(AccountingSetupTestCase):
 		frappe.local.conf["enable_erpnext_sync"] = 0
 		with self.assertRaises(frappe.ValidationError):
 			setup.check()
-
-
-class TestCreateMissing(AccountingSetupTestCase):
-	def test_creates_what_is_missing_and_nothing_else(self):
-		rows = setup.create_missing()
-		states = self._states(rows)
-		self.assertEqual(states[("Advance account", "Customer Advances - TC")], "Created")
-		self.assertEqual(states[("Clearing account", "Stripe Clearing - TC")], "Created")
-		self.assertEqual(states[("Mode of payment", "Stripe")], "Created")
-		self.assertEqual(states[("Service item", "Cloud Hosting")], "Created")
-		self.assertEqual(states[("Receivable account", "Debtors - TC")], "Exists")
-		created = [w[1] for w in self.remote.writes if w[0] == "POST"]
-		self.assertNotIn("api/resource/Company", created)
-		self.assertTrue(frappe.db.get_single_value("Billing Settings", "accounting_setup_ran_at"))
-
-	def test_a_second_run_changes_nothing(self):
-		setup.create_missing()
-		self.remote.writes.clear()
-		rows = setup.create_missing()
-		self.assertEqual({r["state"] for r in rows}, {"Exists"})
-		self.assertEqual(self.remote.writes, [])
-
-	def test_only_blank_company_fields_are_filled(self):
-		self.remote.records[("Company", COMPANY)]["gstin"] = "29AAACZ9999Z1Z1"
-		setup.create_missing()
-		company = self.remote.records[("Company", COMPANY)]
-		self.assertEqual(company["gstin"], "29AAACZ9999Z1Z1")  # left as it was
-		self.assertEqual(company["default_advance_received_account"], "Customer Advances - TC")
-		self.assertEqual(company["gst_category"], "Unregistered")  # set already, so kept
-
-	def test_new_series_follow_the_existing_ones(self):
-		setup.create_missing()
-		options = self.remote.series["Sales Invoice"].split("\n")
-		self.assertEqual(options[0], "ACC-SINV-.YYYY.-")  # the default stays the default
-		self.assertEqual(options[1:], ["B2B/.TFY./.#####", "B2C/.TFY./.#####", "EXP/.TFY./.#####"])
-
-	def test_an_existing_mode_of_payment_gets_this_companys_account(self):
-		self.remote.records[("Mode of Payment", "Stripe")] = {"accounts": [{"company": "Other Co"}]}
-		setup.create_missing()
-		accounts = self.remote.records[("Mode of Payment", "Stripe")]["accounts"]
-		self.assertEqual([a["company"] for a in accounts], ["Other Co", COMPANY])
-
-	def test_a_failed_step_is_reported_and_the_run_goes_on(self):
-		real_post = self.remote.post
-
-		def post(endpoint, payload):
-			if endpoint == "api/resource/Item":
-				raise RuntimeError("item rejected")
-			return real_post(endpoint, payload)
-
-		with patch("central.billing.ingester.connection.post", post):
-			states = self._states(setup.create_missing())
-		self.assertEqual(states[("Service item", "Cloud Hosting")], "Failed")
-		self.assertEqual(states[("Print format", "Cloud Tax Invoice")], "Created")
 
 
 class TestInvoiceSeries(AccountingSetupTestCase):
@@ -235,3 +208,51 @@ class TestInvoiceSeries(AccountingSetupTestCase):
 			number = re.sub(r"\.#+", lambda m: "9" * (len(m.group()) - 1), series.replace(".TFY.", "26-27"))
 			self.assertLessEqual(len(number), 16, number)
 			self.assertRegex(number, r"^[A-Za-z0-9/-]+$")
+
+
+class TestInvoicePdf(AccountingSetupTestCase):
+	TEAM = "team-invoice-pdf"
+
+	def setUp(self):
+		super().setUp()
+		ensure_team(self.TEAM)
+		self.invoice = frappe.get_doc(
+			{
+				"doctype": "Invoice",
+				"team": self.TEAM,
+				"invoice_type": "Billable",
+				"status": "Paid",
+				"period_start": "2026-08-01",
+				"period_end": "2026-08-31",
+				"currency": "INR",
+				"subtotal": 500,
+				"total": 590,
+			}
+		).insert(ignore_permissions=True)
+		self.addCleanup(frappe.set_user, frappe.session.user)
+
+	def _download(self):
+		frappe.local.response = frappe._dict()
+		with (
+			patch("central.billing.api.dashboard.invoices._require_view"),
+			patch("central.billing.ingester.connection.download", return_value=b"%PDF-1.7") as download,
+		):
+			dashboard_invoices.download_invoice_pdf(self.invoice.name)
+		return download
+
+	def test_an_issued_invoice_downloads_with_the_configured_print_format(self):
+		frappe.db.set_value("Invoice", self.invoice.name, "erpnext_invoice", "B2B/26-27/00001")
+		download = self._download()
+		self.assertEqual(download.call_args.args[1]["format"], "Cloud Tax Invoice")
+		self.assertEqual(frappe.local.response.filecontent, b"%PDF-1.7")
+		self.assertEqual(frappe.local.response.filename, "B2B-26-27-00001.pdf")
+
+	def test_an_unissued_invoice_has_no_pdf(self):
+		with self.assertRaises(frappe.DoesNotExistError):
+			self._download()
+
+	def test_another_team_cannot_download(self):
+		frappe.db.set_value("Invoice", self.invoice.name, "erpnext_invoice", "B2B/26-27/00001")
+		frappe.set_user(make_user("pdf-outsider@example.com"))
+		with self.assertRaises(frappe.PermissionError):
+			dashboard_invoices.download_invoice_pdf(self.invoice.name)
