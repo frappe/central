@@ -172,7 +172,7 @@ const copy = async (value: string, label: string): Promise<void> => {
 const copyCurl = (): void => {
 	if (!details.value) return
 	void copy(
-		curlTemplate.value.replace('$LLM_API_KEY', details.value.api_key),
+		curlTemplate.value.replace('$API_KEY', details.value.api_key),
 		'Command',
 	)
 }
@@ -297,7 +297,7 @@ const confirmRevoke = async (): Promise<void> => {
 				v-model="newLabel"
 				label="Label"
 				placeholder="e.g. n8n prod"
-				description="A name to recognise this key by. You can revoke it independently."
+				description="A name to recognise this key by. You can revoke it independently. New keys can take a few minutes to start working."
 				@keyup.enter="generate"
 			/>
 		</template>
@@ -397,7 +397,7 @@ const confirmRevoke = async (): Promise<void> => {
 
 				<p class="mt-1 text-xs text-ink-gray-5">
 					Copy runs with your key filled in; the shown command keeps it as
-					<code class="font-mono">$LLM_API_KEY</code>.
+					<code class="font-mono">$API_KEY</code>.
 				</p>
 			</div>
 		</template>
@@ -406,7 +406,7 @@ const confirmRevoke = async (): Promise<void> => {
 	<Dialog
 		:model-value="!!pendingRevoke"
 		title="Revoke API key"
-		:message="`Revoke ${pendingRevoke?.label}? Any app using it will stop working immediately. This can't be undone.`"
+		:message="`Revoke ${pendingRevoke?.label}? Any app using it will stop working within a few minutes. This can't be undone.`"
 		:actions="[
 			{
 				label: 'Revoke',

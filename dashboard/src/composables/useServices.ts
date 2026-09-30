@@ -235,7 +235,7 @@ export function useServices() {
 			busyKey.value = name
 			try {
 				await submitOrThrow(revokeKeyCall, { name })
-				successToast('API key revoked')
+				successToast('API key revoked. It can take a few minutes to stop working.')
 				await reloadApiKeys()
 			} catch (e) {
 				errorToast(e)
