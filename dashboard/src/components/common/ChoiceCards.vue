@@ -23,16 +23,17 @@ const emit = defineEmits<{ 'update:modelValue': [value: string] }>()
 		:disabled="disabled"
 		:class="[
 			'grid gap-3',
-			columns === 2 ? 'sm:grid-cols-2' : 'grid-cols-2 sm:grid-cols-3',
+			columns === 2 ? 'md:grid-cols-2' : 'grid-cols-2 md:grid-cols-3',
 		]"
+		role="radiogroup"
 		:aria-label="label"
 	>
 		<button
 			v-for="option in options"
 			:key="option.value"
 			type="button"
-			:aria-pressed="modelValue === option.value"
-			class="flex w-full items-center gap-3 rounded-6 border border-outline-gray-2 px-4 py-3 text-start transition-colors hover:bg-surface-gray-2 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-outline-gray-4 disabled:cursor-not-allowed disabled:opacity-50 aria-pressed:border-outline-gray-6"
+			role="radio"
+			:aria-checked="modelValue === option.value"
 			@click="emit('update:modelValue', option.value)"
 		>
 			<slot name="icon" :option="option" />
@@ -50,3 +51,25 @@ const emit = defineEmits<{ 'update:modelValue': [value: string] }>()
 		</button>
 	</fieldset>
 </template>
+
+<style scoped>
+button {
+	@apply flex w-full items-center gap-3 rounded-6 border border-outline-gray-2 px-3 py-2 text-start transition-colors;
+
+	&:hover {
+		@apply bg-surface-gray-2;
+	}
+
+	&[aria-checked='true'] {
+		@apply border-outline-gray-6;
+	}
+
+	&:focus-visible {
+		@apply outline-none ring-1 ring-outline-gray-4;
+	}
+
+	&:disabled {
+		@apply cursor-not-allowed opacity-50;
+	}
+}
+</style>

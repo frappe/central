@@ -43,12 +43,12 @@ function logoFor(option: ImageChoice): string | null {
 					v-if="logoFor(option as ImageChoice)"
 					:src="logoFor(option as ImageChoice) ?? ''"
 					alt=""
-					class="size-9 shrink-0 rounded-6 bg-surface-gray-2 object-contain p-2"
+					class="size-7 shrink-0 rounded-4 bg-surface-gray-2 object-contain p-1.5"
 					draggable="false"
 				/>
 				<span
 					v-else
-					class="grid size-9 shrink-0 place-items-center rounded-6 bg-surface-gray-2 text-ink-gray-8"
+					class="grid size-7 shrink-0 place-items-center rounded-4 bg-surface-gray-2 text-ink-gray-8"
 					aria-hidden="true"
 					>{{ option.label.charAt(0) }}</span
 				>
