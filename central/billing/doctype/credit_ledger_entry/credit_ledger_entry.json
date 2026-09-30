@@ -13,6 +13,7 @@
   "column_break_amount",
   "amount",
   "tax_amount",
+  "paid_in",
   "currency",
   "running_balance",
   "expires_on",
@@ -61,6 +62,14 @@
    "fieldtype": "Currency",
    "label": "GST Paid in Advance",
    "options": "currency",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "description": "Money the customer paid, as opposed to promotional credit. Its advance GST pays the GST of the invoices it is used for.",
+   "fieldname": "paid_in",
+   "fieldtype": "Check",
+   "label": "Paid In",
    "read_only": 1
   },
   {
@@ -132,7 +141,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-09-30 10:00:00.000000",
+ "modified": "2026-09-30 16:00:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Credit Ledger Entry",

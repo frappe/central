@@ -39,3 +39,11 @@ def receivable_account(currency: str) -> str:
 		if row.currency == currency:
 			return row.account
 	frappe.throw(_("Billing Settings has no receivable account for {0}.").format(currency))
+
+
+def wallet_clearing_account(currency: str) -> str:
+	"""The account wallet credit passes through when it is given back, in `currency`."""
+	for row in accounting_settings().receivable_accounts:
+		if row.currency == currency and row.wallet_clearing_account:
+			return row.wallet_clearing_account
+	frappe.throw(_("Billing Settings has no wallet clearing account for {0}.").format(currency))

@@ -156,14 +156,14 @@ def _draw_wallet(doc, collectable: float) -> frappe._dict:
 			break
 		if lot.remaining <= 0:
 			continue
-		if lot.gateway_payment_id and gst_per_net:
+		if lot.paid_in and gst_per_net:
 			net = min(lot.remaining, owed / (1 + gst_per_net))
 			tax = min(net * gst_per_net, max(gst_left - gst, 0))
 			wallet, advance, gst, owed = wallet + net, advance + net, gst + tax, owed - net - tax
 		else:
 			use = min(lot.remaining, owed)
 			wallet, owed = wallet + use, owed - use
-			if lot.gateway_payment_id:
+			if lot.paid_in:
 				advance += use
 	return frappe._dict(
 		wallet=frappe.utils.flt(wallet, 2), advance=frappe.utils.flt(advance, 2), gst=frappe.utils.flt(gst, 2)
@@ -252,23 +252,53 @@ def held_drafts(team: str | None = None, held_before=None, limit: int | None = N
 
 
 def cancel_invoice(invoice: str, reason: str | None = None) -> str:
-	"""Cancel a pre-payment (Draft/Open/Overdue) invoice.
+	"""Cancel an invoice that is not paid yet (Draft, Open or Overdue).
 
 	Issued line items are never mutated — a correction cancels the whole invoice
-	and reissues a fresh one. A Paid invoice cannot be cancelled (use a refund).
+	and reissues a fresh one. What the invoice drew from the wallet goes back to it.
+	A paid invoice is cancelled with a refund instead.
 	"""
 	doc = frappe.get_doc("Invoice", invoice)
 	if doc.status == "Paid":
 		frappe.throw(
-			_("A paid invoice cannot be cancelled — issue a refund instead."), frappe.ValidationError
+			_("A paid invoice cannot be cancelled on its own — cancel and refund it instead."),
+			frappe.ValidationError,
 		)
 	if doc.status == "Cancelled":
 		return invoice
+	if frappe.db.exists(
+		"Payment Attempt", {"invoice": invoice, "status": ["in", ["Initiated", "Authorised", "Captured"]]}
+	):
+		frappe.throw(
+			_("A card or UPI payment for this invoice is under way or taken. Settle or refund it first."),
+			frappe.ValidationError,
+		)
 	transition(doc, "Cancelled", reason=reason, actor=frappe.session.user)
 	doc.save(ignore_permissions=True)
+	give_back_wallet(doc)
 	if reason:
 		doc.add_comment("Info", f"Cancelled: {reason}")
 	return invoice
+
+
+def give_back_wallet(doc) -> None:
+	"""Return what the invoice drew from the wallet, each part as the credit it was."""
+	paid_in = frappe.utils.flt(doc.advance_applied)
+	promotional = frappe.utils.flt(frappe.utils.flt(doc.credit_applied) - paid_in, 2)
+	note = f"Returned from cancelled invoice {doc.name}"
+	if paid_in > 0:
+		credits.return_credit(
+			doc.team,
+			paid_in,
+			doc.currency,
+			"Invoice",
+			doc.name,
+			note,
+			paid_in=True,
+			tax_amount=frappe.utils.flt(doc.advance_tax_applied),
+		)
+	if promotional > 0:
+		credits.return_credit(doc.team, promotional, doc.currency, "Invoice", doc.name, note)
 
 
 def reissue_invoice(invoice: str, reason: str | None = None) -> str | None:
