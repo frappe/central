@@ -11,7 +11,7 @@ import { useServices } from '@/composables/useServices'
 import { errorToast, errorToastWithAction } from '@/lib/toast'
 
 const router = useRouter()
-const serviceKey = 'ai'
+const serviceKey = 'llm'
 
 const { canManageServices, canManageBilling } = useCapabilities()
 const { offers, offersLoading, instance, loadInstance, activate } =

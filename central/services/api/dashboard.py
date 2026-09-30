@@ -6,7 +6,7 @@ from frappe.utils.password import get_decrypted_password
 
 from central.services import provisioning
 from central.services.drivers.base import get_driver
-from central.services.permissions import require_service_capability
+from central.services.permissions import assert_operator, require_service_capability
 
 # Every endpoint is a capability-gated whitelisted method rather than the native
 # DocType list/get: team access to services is governed by capability IAM
@@ -23,11 +23,12 @@ from central.services.permissions import require_service_capability
 @require_service_capability("service:manage")
 def activate_service(team: str, service: str) -> dict:
 	"""Activate a team's add-on (idempotent). Needs an active billing subscription in
-	the service's plan category; LLM has no team-level provisioning, so it goes Active."""
+	the service's plan category, except LLM Hosting: it is prepaid at Grove and has no
+	billing plan. LLM registers the team owner as the team's Grove user."""
 	add_on = provisioning.get_active_service(service)
 
 	subscription = _resolve_subscription(team, add_on)
-	if not subscription:
+	if not subscription and add_on.handler_key != "grove":
 		frappe.throw(
 			_(
 				"{0} is not available in this team's plan. Ask your account administrator to add it, then try again."
@@ -42,9 +43,16 @@ def activate_service(team: str, service: str) -> dict:
 
 	doc = frappe.new_doc("Managed Service")
 	doc.update(
-		{"team": team, "add_on_service": add_on.name, "subscription": subscription, "status": "Active"}
+		{
+			"team": team,
+			"add_on_service": add_on.name,
+			"subscription": subscription,
+			"status": "Active",
+			"provider_ref": _register_at_provider(add_on, team),
+		}
 	)
-	doc.insert()
+	# Team users hold no DocType permission. The decorator checked the team capability.
+	doc.insert(ignore_permissions=True)
 
 	return {"managed_service": doc.name, "status": doc.status}
 
@@ -52,9 +60,9 @@ def activate_service(team: str, service: str) -> dict:
 @frappe.whitelist(methods=["POST"])
 @require_service_capability("service:manage")
 def generate_api_key(managed_service: str, label: str) -> dict:
-	"""Mint a team-level inference key for use in the customer's own apps. Same plan
-	gating and token meter as a site key — just not tied to a site. The secret is
-	returned once here and re-readable later via reveal_api_key."""
+	"""Mint a team-level inference key for use in the customer's own apps, for the
+	team's Grove user. The secret is returned once here and re-readable later via
+	reveal_api_key."""
 	service = provisioning.get_managed_service(managed_service)
 	if service.status != "Active":
 		frappe.throw(_("Managed service is not active."))
@@ -65,13 +73,13 @@ def generate_api_key(managed_service: str, label: str) -> dict:
 
 	add_on = provisioning.get_active_service(service.add_on_service)
 	backend = provisioning.get_backend(add_on.name)
-	options = provisioning.provision_options(add_on.handler_key, service.subscription)
 
-	# Provision first, persist second: a provider failure leaves no orphan row. A random
-	# email is this key's meterable Grove identity, so usage attributes to it alone. If
-	# insert dies after minting, the key's secret is never disclosed, so it's inert.
-	email = f"key-{frappe.generate_hash(length=12)}@svc.frappe.cloud"
-	result = get_driver(add_on.handler_key).provision_key(backend, label, email, options)
+	# Provision first, persist second: a provider failure leaves no orphan row. The key is
+	# minted for the team's Grove user, so its usage is the team's. No plan options go
+	# with it: Grove decides the models. If insert dies after minting, the key's secret
+	# is never disclosed, so it's inert.
+	email = _grove_user(managed_service)
+	result = get_driver(add_on.handler_key).provision_key(backend, label, email, {})
 
 	doc = frappe.new_doc("Service Credential")
 	doc.update(
@@ -85,7 +93,8 @@ def generate_api_key(managed_service: str, label: str) -> dict:
 			"api_key": result["api_key"],
 		}
 	)
-	doc.insert()
+	# Team users hold no DocType permission. The decorator checked the team capability.
+	doc.insert(ignore_permissions=True)
 
 	return {
 		"name": doc.name,
@@ -239,7 +248,7 @@ def list_offers(team: str) -> list[dict]:
 @frappe.whitelist(methods=["GET"])
 @require_service_capability("service:view")
 def get_instance(managed_service: str) -> dict:
-	"""A managed service's status, enabled sites, and included models. service:view.
+	"""A managed service's status, enabled sites, and the models it may call. service:view.
 	`enabled_sites` are the sites Central has minted keys for — its own record, not a
 	VM scan (the bench owns the authoritative site list)."""
 	instance = provisioning.get_managed_service(managed_service)
@@ -253,7 +262,10 @@ def get_instance(managed_service: str) -> dict:
 		"Site", filters={"name": ["in", [row.site for row in sites]]}, fields=["name", "cluster"]
 	)
 	cluster_by_site = {row.name: row.cluster for row in clusters}
-	plan = frappe.db.get_value("Subscription", instance.subscription, "plan")
+	# LLM Hosting has no billing plan. A blank name would match any Subscription.
+	plan = (
+		frappe.db.get_value("Subscription", instance.subscription, "plan") if instance.subscription else None
+	)
 
 	return {
 		"managed_service": instance.name,
@@ -262,17 +274,67 @@ def get_instance(managed_service: str) -> dict:
 		"plan": plan,
 		"plan_title": frappe.db.get_value("Plan", plan, "title") if plan else None,
 		"enabled_sites": [{"site": row.site, "cluster": cluster_by_site.get(row.site)} for row in sites],
-		"models": _included_models(instance.add_on_service, plan),
+		"models": _reachable_models(instance.add_on_service, managed_service),
 	}
 
 
-def _included_models(service: str, plan: str | None) -> list[dict]:
+@frappe.whitelist(methods=["GET"])
+@require_service_capability("service:view")
+def get_usage(managed_service: str, period: str = "Last 7 Days") -> dict:
+	"""What the team used at Grove over a period: requests and cost, in total, per model,
+	and per day. service:view."""
+	instance = provisioning.get_managed_service(managed_service)
+	_assert_grove(instance.add_on_service)
+
+	from central.services import llm
+
+	return llm.get_usage_report(_grove_user(managed_service), period, instance.add_on_service)
+
+
+@frappe.whitelist(methods=["POST"])
+def add_credit(managed_service: str, amount: float, reference: str | None = None) -> dict:
+	"""Add USD credit to the team's balance at Grove. Operator only: nothing is charged to
+	the team for it, and no screen calls it yet. A repeat with the same `reference` adds
+	nothing. Returns the balance after it."""
+	assert_operator()
+
+	instance = provisioning.get_managed_service(managed_service)
+	_assert_grove(instance.add_on_service)
+
+	return get_driver("grove").add_credit(
+		provisioning.get_backend(instance.add_on_service), _grove_user(managed_service), amount, reference
+	)
+
+
+def _reachable_models(service: str, managed_service: str) -> list[dict]:
 	if frappe.db.get_value("Add-on Service", service, "handler_key", cache=True) != "grove":
 		return []
 
 	from central.services import llm
 
-	return llm.included_models(plan)
+	return llm.get_reachable_models(_grove_user(managed_service), service)
+
+
+def _grove_user(managed_service: str) -> str | None:
+	# The team's Grove user: its owner's email, kept from the time the team activated.
+	return frappe.db.get_value("Managed Service", managed_service, "provider_ref")
+
+
+def _register_at_provider(add_on, team: str) -> str | None:
+	# Only the LLM handler has a team-level identity at the provider: the team owner,
+	# registered as a Grove user.
+	if add_on.handler_key != "grove":
+		return None
+
+	from central.services import llm
+
+	return llm.register_grove_user(team, add_on.name)
+
+
+def _assert_grove(service: str) -> None:
+	add_on = provisioning.get_active_service(service)
+	if add_on.handler_key != "grove":
+		frappe.throw(_("{0} has no usage or credit at a provider.").format(add_on.title))
 
 
 def _resolve_subscription(team: str, add_on) -> str | None:

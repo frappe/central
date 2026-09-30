@@ -1,56 +1,12 @@
 <script setup lang="ts">
-import { Badge, Button, Spinner, useCall } from 'frappe-ui'
+import { Badge, Button, Spinner } from 'frappe-ui'
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { API, method } from '@/api/methods'
 import { useServices } from '@/composables/useServices'
-import { useSession } from '@/composables/useSession'
-import { whenTeamReady } from '@/composables/useTeamScope'
-
-interface MeteredRow {
-	resource_type: string | null
-	settlement_mode: string
-	period_usage: number
-}
 
 const router = useRouter()
 const { instance, instanceLoading } = useServices()
-const { activeTeam } = useSession()
 
-const metered = useCall<{ services: MeteredRow[] }, { team: string }>({
-	url: method(API.meteredServices),
-	params: () => ({ team: activeTeam.value! }),
-	immediate: false,
-	refetch: true,
-})
-
-whenTeamReady(() => metered.reload())
-
-const tokenRow = computed(() =>
-	metered.data?.services.find((s) => s.resource_type === 'Tokens'),
-)
-
-const tokensThisCycle = computed(() => {
-	const tokens = tokenRow.value?.period_usage
-
-	if (!tokens) return '0'
-
-	return new Intl.NumberFormat(undefined, {
-		notation: 'compact',
-		maximumFractionDigits: 1,
-	}).format(tokens)
-})
-
-const settlementLine = computed(() => {
-	const mode = tokenRow.value?.settlement_mode
-	if (mode === 'Prepaid Pack') return 'Prepaid pack · capped at your bundle'
-
-	return 'Postpaid overage · billed per token'
-})
-
-const planTitle = computed(
-	() => instance.value?.plan_title || instance.value?.plan || '—',
-)
 const models = computed(() => instance.value?.models ?? [])
 const enabledSites = computed(() => instance.value?.enabled_sites ?? [])
 </script>
@@ -65,33 +21,17 @@ const enabledSites = computed(() => instance.value?.enabled_sites ?? [])
 				<Spinner class="size-5 text-ink-gray-5" />
 			</div>
 
-			<!-- plan card -->
+			<!-- status card: LLM hosting has no billing plan -->
 			<template v-else>
 				<section
 					class="rounded-6 border border-outline-gray-2 bg-surface-base p-5"
 				>
 					<div class="flex h-6 items-center justify-between gap-3">
-						<span class="text-p-sm text-ink-gray-5">Plan</span>
+						<span class="text-p-sm text-ink-gray-5">Status</span>
 						<Badge
 							:label="instance?.status ?? 'Active'"
 							:theme="instance?.status === 'Active' ? 'green' : 'amber'"
 						/>
-					</div>
-
-					<div class="mt-1.5 flex items-end justify-between gap-4">
-						<div class="min-w-0">
-							<p class="truncate text-sm font-semibold text-ink-gray-9">
-								{{ planTitle }}
-							</p>
-							<p class="mt-1 text-p-sm text-ink-gray-5">{{ settlementLine }}</p>
-						</div>
-
-						<div class="shrink-0 text-right">
-							<div class="text-lg font-semibold tabular-nums text-ink-gray-9">
-								{{ tokensThisCycle }}
-							</div>
-							<div class="text-p-xs text-ink-gray-5">tokens this cycle</div>
-						</div>
 					</div>
 				</section>
 
@@ -145,7 +85,7 @@ const enabledSites = computed(() => instance.value?.enabled_sites ?? [])
 				</h2>
 
 				<p class="mt-0.5 text-p-sm text-ink-gray-5">
-					Granted by your plan's tiers.
+					The models your keys can call.
 				</p>
 
 				<table v-if="models.length" class="mt-3 w-full border-collapse">
@@ -158,15 +98,14 @@ const enabledSites = computed(() => instance.value?.enabled_sites ?? [])
 							</td>
 
 							<td class="py-3 text-right text-p-sm text-ink-gray-5">
-								{{ model.tier }}
+								{{ model.modality }}
 							</td>
 						</tr>
 					</tbody>
 				</table>
 
 				<p v-else class="mt-3 text-p-sm text-ink-gray-5">
-					No models yet. They appear once your plan grants a tier and the
-					provider publishes them.
+					No models accessible yet.
 				</p>
 			</template>
 		</div>

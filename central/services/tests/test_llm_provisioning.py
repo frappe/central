@@ -1,7 +1,8 @@
 # Copyright (c) 2026, frappe and Contributors
 # See license.txt
 
-from unittest.mock import patch
+from contextlib import contextmanager
+from unittest.mock import Mock, patch
 
 import frappe
 from frappe.tests import IntegrationTestCase
@@ -34,6 +35,93 @@ def _ensure_llm_service():
 		).insert(ignore_permissions=True)
 
 
+@contextmanager
+def _grove_replies(message):
+	with patch("central.services.drivers.grove.requests.post") as post:
+		post.return_value.status_code = 200
+		post.return_value.json.return_value = {"message": message}
+		yield post
+
+
+class TestGroveDriverCalls(IntegrationTestCase):
+	"""What the driver puts on the wire. The argument names are Grove's `grove.api`
+	signatures: Grove drops a name it does not know and rejects a wrong type."""
+
+	def setUp(self):
+		self.backend = Mock(base_url="http://grove.localhost:8001", control_api_key="control-key")
+		self.backend.get_password.return_value = "control-secret"
+
+	def sent(self, post) -> tuple[str, dict]:
+		return post.call_args.args[0].rsplit("/api/method/", 1)[1], post.call_args.kwargs["json"]
+
+	def test_enroll_exchanges_the_bootstrap_secret(self):
+		minted = {"api_key": "gr_key", "api_secret": "gr_sec", "user": "central@central.localhost"}
+		with _grove_replies(minted) as post:
+			result = GroveDriver().enroll("http://grove.localhost:8001/", "bootstrap-xyz")
+
+		self.assertEqual(
+			self.sent(post),
+			(
+				"grove.api.create_control_client",
+				{"email": f"central@{frappe.local.site}", "token": "bootstrap-xyz"},
+			),
+		)
+		self.assertNotIn("headers", post.call_args.kwargs)
+		self.assertEqual(result, minted)
+
+	def test_provision_user_registers_a_free_grove_user(self):
+		with _grove_replies({"geography": "Main"}) as post:
+			GroveDriver().provision_user(self.backend, "Owner Person", "owner@example.com")
+
+		self.assertEqual(
+			self.sent(post),
+			(
+				"grove.api.provision_user",
+				{"name": "Owner Person", "email": "owner@example.com", "free": True},
+			),
+		)
+		self.assertEqual(
+			post.call_args.kwargs["headers"], {"Authorization": "token control-key:control-secret"}
+		)
+
+	def test_provision_key_mints_for_the_grove_user_under_a_title(self):
+		with _grove_replies(_FAKE) as post:
+			result = GroveDriver().provision_key(
+				self.backend, "n8n prod", "owner@example.com", {"token_limit": 5}
+			)
+
+		# The plan options are not sent: Grove decides the models and the limits.
+		self.assertEqual(
+			self.sent(post), ("grove.api.provision_key", {"email": "owner@example.com", "title": "n8n prod"})
+		)
+		self.assertEqual(result["provider_ref"], "owner@example.com")
+
+	def test_list_models_asks_for_what_a_grove_user_may_call(self):
+		with _grove_replies([{"name": "frappe/m-fast", "modality": "text"}]) as post:
+			GroveDriver().list_models(self.backend, "owner@example.com")
+
+		self.assertEqual(self.sent(post), ("grove.api.available_models", {"email": "owner@example.com"}))
+
+	def test_fetch_usage_names_a_period(self):
+		with _grove_replies({"model_summary": []}) as post:
+			GroveDriver().fetch_usage(self.backend, ["owner@example.com"], period="Last 7 Days")
+
+		self.assertEqual(
+			self.sent(post),
+			("grove.api.usage", {"users": ["owner@example.com"], "month": None, "period": "Last 7 Days"}),
+		)
+
+	def test_add_credit_sends_the_amount_under_a_reference(self):
+		with _grove_replies({"balance": 5}) as post:
+			result = GroveDriver().add_credit(self.backend, "owner@example.com", 5, "ref-1")
+
+		self.assertEqual(
+			self.sent(post),
+			("grove.api.add_credit", {"email": "owner@example.com", "amount": 5, "reference": "ref-1"}),
+		)
+		self.assertEqual(result, {"balance": 5})
+
+
 class TestLLMProvisioning(IntegrationTestCase):
 	def setUp(self):
 		site = frappe.get_all("Site", fields=["name", "team"], limit=1)
@@ -42,6 +130,7 @@ class TestLLMProvisioning(IntegrationTestCase):
 			self.skipTest("Needs at least one Site and Subscription on the site.")
 
 		self.site, self.team = site[0].name, site[0].team
+		self.owner = frappe.db.get_value("Team", self.team, "owner_user")
 
 		_ensure_llm_service()
 		# Frappe rolls the suite back only at class teardown, so wipe our own rows
@@ -71,6 +160,7 @@ class TestLLMProvisioning(IntegrationTestCase):
 				"add_on_service": "llm",
 				"subscription": subscription[0],
 				"status": "Active",
+				"provider_ref": self.owner,
 			}
 		).insert()
 
@@ -154,6 +244,120 @@ class TestLLMProvisioning(IntegrationTestCase):
 		self.assertEqual(listed[0]["name"], out["name"])
 		self.assertNotIn("api_key", listed[0])
 
+	def test_api_key_is_minted_for_the_teams_grove_user(self):
+		with patch.object(GroveDriver, "provision_key", return_value=_FAKE) as provision_key:
+			dashboard.generate_api_key(self.managed.name, "n8n prod")
+
+		self.assertEqual(provision_key.call_args.args[1:3], ("n8n prod", self.owner))
+
+	def test_activation_registers_the_team_owner_as_its_grove_user(self):
+		# As the owner, who holds the team capability and no Desk role.
+		subscription = self.managed.subscription
+		frappe.delete_doc("Managed Service", self.managed.name)
+		self.addCleanup(frappe.set_user, "Administrator")
+		frappe.set_user(self.owner)
+
+		with (
+			patch.object(dashboard, "_resolve_subscription", return_value=subscription),
+			patch.object(GroveDriver, "provision_user") as provision_user,
+			patch.object(GroveDriver, "provision_key", return_value=_FAKE),
+		):
+			out = dashboard.activate_service(self.team, "llm")
+			key = dashboard.generate_api_key(out["managed_service"], "app")
+
+		self.assertEqual(out["status"], "Active")
+		self.assertEqual(provision_user.call_args.args[2], self.owner)
+		self.assertEqual(
+			frappe.db.get_value("Managed Service", out["managed_service"], "provider_ref"), self.owner
+		)
+		self.assertEqual(key["status"], "Active")
+
+	def test_one_grove_user_serves_one_team(self):
+		from central.services import llm
+
+		second = frappe.get_doc(
+			{
+				"doctype": "Team",
+				"team_name": "Second LLM Team",
+				"owner_user": self.owner,
+				"members": [{"user": self.owner, "role": "Owner", "status": "Active"}],
+			}
+		).insert()
+
+		with (
+			patch.object(GroveDriver, "provision_user") as provision_user,
+			self.assertRaisesRegex(frappe.ValidationError, "already holds the llm service"),
+		):
+			llm.register_grove_user(second.name, "llm")
+
+		provision_user.assert_not_called()
+
+	def test_only_an_operator_adds_credit(self):
+		with patch.object(GroveDriver, "add_credit", return_value={"balance": 5}) as add_credit:
+			self.assertEqual(dashboard.add_credit(self.managed.name, 5, "ref-1"), {"balance": 5})
+			self.assertEqual(add_credit.call_args.args[1:], (self.owner, 5, "ref-1"))
+
+			# It charges the team nothing, so the team itself must not reach it.
+			self.addCleanup(frappe.set_user, "Administrator")
+			frappe.set_user(self.owner)
+			with self.assertRaises(frappe.PermissionError):
+				dashboard.add_credit(self.managed.name, 5, "ref-2")
+
+		add_credit.assert_called_once()
+
+	def test_usage_is_the_teams_requests_and_cost_in_total_per_model_and_per_day(self):
+		usage = {
+			"users": [self.owner],
+			"from_date": "2026-09-28",
+			"to_date": "2026-09-30",
+			"as_of": "2026-09-30T10:00:00Z",
+			"model_summary": [
+				{"model": "frappe/m-big", "requests": 2, "cost": 1.0},
+				{"model": "frappe/m-fast", "requests": 4, "cost": 0.75},
+			],
+			"daily_summary": [
+				{"day": "2026-09-28", "model": "frappe/m-fast", "requests": 4, "cost": 0.75},
+				{"day": "2026-09-30", "model": "frappe/m-big", "requests": 2, "cost": 1.0},
+			],
+			self.owner: {"requests": 6, "cost": 1.75},
+		}
+		with patch.object(GroveDriver, "fetch_usage", return_value=usage) as fetch_usage:
+			report = dashboard.get_usage(self.managed.name, period="Last 30 Days")
+
+		self.assertEqual(
+			(fetch_usage.call_args.args[1], fetch_usage.call_args.kwargs),
+			([self.owner], {"period": "Last 30 Days"}),
+		)
+		self.assertEqual(report["totals"], {"requests": 6, "cost": 1.75})
+		self.assertEqual(report["models"], usage["model_summary"])
+		# Every day of the period for every model, so a chart shows the quiet days too.
+		self.assertEqual(
+			report["daily"],
+			[
+				{"day": "2026-09-28", "model": "frappe/m-big", "requests": 0, "cost": 0},
+				{"day": "2026-09-28", "model": "frappe/m-fast", "requests": 4, "cost": 0.75},
+				{"day": "2026-09-29", "model": "frappe/m-big", "requests": 0, "cost": 0},
+				{"day": "2026-09-29", "model": "frappe/m-fast", "requests": 0, "cost": 0},
+				{"day": "2026-09-30", "model": "frappe/m-big", "requests": 2, "cost": 1.0},
+				{"day": "2026-09-30", "model": "frappe/m-fast", "requests": 0, "cost": 0},
+			],
+		)
+
+	def test_usage_with_nothing_used_is_zeros_not_an_error(self):
+		empty = {
+			"users": [self.owner],
+			"from_date": "2026-09-24",
+			"to_date": "2026-09-30",
+			"as_of": None,
+			"model_summary": [],
+			"daily_summary": [],
+		}
+		with patch.object(GroveDriver, "fetch_usage", return_value=empty):
+			report = dashboard.get_usage(self.managed.name)
+
+		self.assertEqual(report["totals"], {"requests": 0, "cost": 0})
+		self.assertEqual((report["models"], report["daily"]), ([], []))
+
 	def test_reveal_and_revoke_api_key(self):
 		with patch.object(GroveDriver, "provision_key", return_value=_FAKE):
 			out = dashboard.generate_api_key(self.managed.name, "app")
@@ -188,24 +392,52 @@ class TestLLMProvisioning(IntegrationTestCase):
 		llm_offer = next(o for o in offers if o["name"] == "llm")
 		self.assertEqual(llm_offer["managed_service"], self.managed.name)
 
-	def test_activation_explains_how_to_get_access_when_the_plan_is_missing(self):
+	def test_llm_activates_with_no_billing_plan(self):
+		# LLM Hosting is prepaid at Grove: no subscription entitles it.
+		frappe.delete_doc("Managed Service", self.managed.name)
+
+		with (
+			patch.object(dashboard, "_resolve_subscription", return_value=None),
+			patch.object(GroveDriver, "provision_user"),
+			patch.object(GroveDriver, "provision_key", return_value=_FAKE),
+			patch.object(GroveDriver, "list_models", return_value=[]),
+		):
+			out = dashboard.activate_service(self.team, "llm")
+			dashboard.generate_api_key(out["managed_service"], "app")
+			instance = dashboard.get_instance(out["managed_service"])
+
+		self.assertEqual(out["status"], "Active")
+		self.assertIsNone(frappe.db.get_value("Managed Service", out["managed_service"], "subscription"))
+		self.assertEqual((instance["plan"], instance["plan_title"]), (None, None))
+
+	def test_another_add_on_still_needs_its_plan(self):
 		# Title-agnostic: the service's display title is operator-set, so assert the
 		# stable, actionable part of the message rather than the exact title.
-		with patch.object(dashboard, "_resolve_subscription", return_value=None):
-			with self.assertRaisesRegex(
+		storage = frappe._dict(name="storage", title="Object Storage", handler_key="storage", is_active=1)
+
+		with (
+			patch.object(provisioning, "get_active_service", return_value=storage),
+			patch.object(dashboard, "_resolve_subscription", return_value=None),
+			self.assertRaisesRegex(
 				frappe.ValidationError,
 				"is not available in this team's plan. Ask your account administrator to add it",
-			):
-				dashboard.activate_service(self.team, "llm")
+			),
+		):
+			dashboard.activate_service(self.team, "storage")
 
 	def test_get_instance_returns_status_sites_models(self):
 		with patch.object(GroveDriver, "provision_site", return_value=_FAKE):
 			provisioning.enable_site(self.managed.name, self.site)
 
-		instance = dashboard.get_instance(self.managed.name)
+		# The models are the ones Grove lets the team's Grove user call.
+		reachable = [{"name": "frappe/m-fast", "model_id": "m-fast", "modality": "text"}]
+		with patch.object(GroveDriver, "list_models", return_value=reachable) as list_models:
+			instance = dashboard.get_instance(self.managed.name)
+
 		self.assertEqual(instance["status"], "Active")
 		self.assertIn(self.site, [row["site"] for row in instance["enabled_sites"]])
-		self.assertIsInstance(instance["models"], list)
+		self.assertEqual(instance["models"], [{"name": "frappe/m-fast", "modality": "text"}])
+		self.assertEqual(list_models.call_args.args[1], self.owner)
 
 	def test_reads_require_capability(self):
 		self.addCleanup(frappe.set_user, "Administrator")
@@ -215,14 +447,13 @@ class TestLLMProvisioning(IntegrationTestCase):
 			dashboard.list_offers(self.team)
 
 
-class TestLLMPolicyAndUsage(IntegrationTestCase):
+class TestLLMUsage(IntegrationTestCase):
 	def setUp(self):
 		from central.services import llm
 
 		self.llm = llm
 		_ensure_llm_service()
 		frappe.db.delete("Service Backend", {"service": "llm"})
-		frappe.db.delete("LLM Model", {"model_key": ["in", ["m-fast", "m-premium", "m-stale"]]})
 
 		frappe.get_doc(
 			{
@@ -234,60 +465,6 @@ class TestLLMPolicyAndUsage(IntegrationTestCase):
 				"is_active": 1,
 			}
 		).insert()
-
-	def test_sync_models_upserts_and_unpublishes(self):
-		frappe.get_doc(
-			{"doctype": "LLM Model", "model_key": "m-stale", "tier": "Fast", "is_published": 1}
-		).insert()
-
-		catalog = [
-			{"name": "m-fast", "display_name": "Fast"},
-			{"name": "m-premium", "display_name": "Premium"},
-		]
-		with patch("central.services.drivers.grove.GroveDriver.list_models", return_value=catalog):
-			count = self.llm.sync_models()
-
-		self.assertEqual(count, 2)
-		self.assertTrue(frappe.db.get_value("LLM Model", "m-fast", "is_published"))
-		self.assertFalse(frappe.db.get_value("LLM Model", "m-stale", "is_published"))
-
-	def test_resolve_options_gates_by_tier(self):
-		frappe.get_doc(
-			{"doctype": "LLM Model", "model_key": "m-fast", "tier": "Fast", "is_published": 1}
-		).insert()
-		frappe.get_doc(
-			{"doctype": "LLM Model", "model_key": "m-premium", "tier": "Premium", "is_published": 1}
-		).insert()
-
-		plans = frappe.get_all("Plan", pluck="name", limit=1)
-		if not plans:
-			self.skipTest("Needs at least one Plan.")
-		plan = plans[0]
-		frappe.db.delete("LLM Plan Tier", {"parent": plan})
-		frappe.db.delete("LLM Plan Policy", {"plan": plan})
-		frappe.get_doc(
-			{"doctype": "LLM Plan Policy", "plan": plan, "allowed_tiers": [{"tier": "Fast"}]}
-		).insert()
-
-		options = self.llm.resolve_provision_options(plan)
-		self.assertIn("m-fast", options["allowed_models"])
-		self.assertNotIn("m-premium", options["allowed_models"])
-
-	def test_resolve_options_denies_when_tier_has_no_models(self):
-		frappe.db.delete("LLM Model", {"tier": "Premium"})
-		plans = frappe.get_all("Plan", pluck="name", limit=1)
-		if not plans:
-			self.skipTest("Needs at least one Plan.")
-		plan = plans[0]
-		frappe.db.delete("LLM Plan Tier", {"parent": plan})
-		frappe.db.delete("LLM Plan Policy", {"plan": plan})
-		frappe.get_doc(
-			{"doctype": "LLM Plan Policy", "plan": plan, "allowed_tiers": [{"tier": "Premium"}]}
-		).insert()
-
-		# A configured-but-empty policy must refuse, never fall through to unrestricted.
-		with self.assertRaises(frappe.ValidationError):
-			self.llm.resolve_provision_options(plan)
 
 	def test_pull_usage_sums_and_reports(self):
 		usage = {

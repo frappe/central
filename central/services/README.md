@@ -10,29 +10,26 @@ billing links; the executor (Grove) owns the runtime and mints the credentials.
 | --- | --- | --- |
 | **Add-on Service** | A service offered by Central, such as `llm`. | Links the service to the Plan Category that pays for it. |
 | **Service Backend** | An enrolled provider endpoint and Central's control credential. | None; it is runtime configuration. |
-| **LLM Model** | A model published by Grove and its `Fast`, `Balanced`, or `Premium` tier. | Its tier is what a plan policy permits. |
-| **LLM Plan Policy** | The LLM access policy for one Billing Plan. | Maps that plan to its allowed model tiers. One policy per Plan. |
-| **LLM Plan Tier** | One allowed-tier row inside an LLM Plan Policy. | Not managed on its own. |
-| **Managed Service** | A team's activated add-on and the subscription that entitles it. | Requires an active subscription in the service's Plan Category. |
+| **Managed Service** | A team's activated add-on and the subscription that entitles it. For LLM Hosting, `provider_ref` is the team's Grove user. | Requires an active subscription in the service's Plan Category. LLM Hosting needs none. |
 | **Service Credential** | A provider credential under a managed service, either per-`Site` (bench-delivered) or a team-level API key (`Team`, with a `label`), set by `subject_type`. | Provider usage is grouped through active credentials of both subject types and reported to Billing. |
 
-## Billing setup for LLM Hosting
+## LLM Hosting and the Grove user
 
-1. Create the `AI Tokens` **Plan Category** as a metered `Tokens` family. Choose:
-   `Prepaid Pack` to hard-cap included tokens, or `Postpaid Overage` to bill excess.
-2. Create an active **Plan** in that category with one `Plan Includes` row for
-   `Tokens`, then add its **Catalog Rate**.
-3. Set `Add-on Service.plan_category` to `AI Tokens`.
-4. Sync published **LLM Models**, assign each a tier, and create an **LLM Plan
-   Policy** for each Plan with the tiers that Plan should receive.
-5. When a team activates LLM, Central uses its active subscription's Plan to set the
-   permitted models. For prepaid plans it also sends the Plan Includes token quantity
-   as the provider-side token limit. Usage is reconciled hourly into the `Tokens`
-   meter.
+Each team has one Grove user: the email of the team owner when the team activates LLM Hosting. Central registers it on Grove (`grove.api.provision_user`) and keeps it in `Managed Service.provider_ref`. Team members get no Grove user.
 
-**Important:** no LLM Plan Policy (or one with no tier rows) currently permits all
-published models. Tier changes apply when a site is provisioned; re-enable existing
-sites to apply a changed policy.
+- A team API key is a key of that Grove user. The key title on Grove is the key label.
+- Central registers the Grove user as **Free**. Grove records the usage and its cost for a Free user, and it does not charge or block the user. Central does not bill LLM usage yet.
+- Grove decides which models the Grove user can call: each new Grove user starts in Grove's default **Model Group**. Central does not send the models of the plan or a token limit. The AI page shows the models that Grove reports, or "No models accessible yet."
+- The **Usage** tab of the AI page shows the requests and the cost that Grove reports for a period, in total, for each model, and for each day (`central.services.api.dashboard.get_usage`). The cost is what Grove charged, so it is 0 while the Grove user is Free.
+- A transfer of team ownership does not change the Grove user.
+- One Grove user serves one team. An owner of 2 teams can activate LLM Hosting for one of them only.
+- An operator can add credit to the Grove user, in USD, with `central.services.api.dashboard.add_credit(managed_service, amount, reference)`. No screen calls it, and it charges the team nothing. Credit has no effect on a Free user.
+
+## Billing for LLM Hosting
+
+LLM Hosting needs no billing Plan and no subscription. It is prepaid at Grove, and how a team pays for that credit is not decided yet. A team with `service:manage` activates it directly.
+
+Central keeps no model catalogue and no plan policy for LLM Hosting: Grove decides the models, and Central sends it no model list and no token limit. `Add-on Service.plan_category` is a mandatory field, so the `llm` row still names a category.
 
 ## Setting up LLM Hosting (Grove)
 
@@ -51,7 +48,7 @@ If the install fails with `cannot import name 'ansible_runner'`, fix
 This is the one manual trust seed. Pick a strong random value.
 
 ```
-bench --site <grove-site> set-config control_bootstrap_secret <random-secret>
+bench --site <grove-site> set-config control_secret <random-secret>
 bench --site <grove-site> clear-cache      # required: the running worker caches config at boot
 ```
 
@@ -72,24 +69,18 @@ Desk → **Service Backend** → New:
 1. Set **Service** = `llm` and **Base URL** = the Grove site URL, then **Save**.
 2. Click **Enroll**, paste the bootstrap secret from step 2.
 
-Central calls Grove's `enroll_control_client`, which mints a dedicated
-`central-control` user + `Central Control` role + API key on Grove; Central stores the
-credential (write-only) and marks the backend **Active**. Re-clicking **Rotate
-Credential** issues a fresh key. The bootstrap secret is never stored in Central.
+Central calls Grove's `grove.api.create_control_client` with the bootstrap secret and the email `central@<central-site>`. Grove creates that user with the `Grove Control` role and returns its API key. Central stores the credential (write-only) and marks the backend **Active**. The bootstrap secret is never stored in Central.
 
-### 5. Models and plan policy
+Grove enrolls one email one time. **Rotate Credential** enrolls again, so Grove refuses it until the `central@<central-site>` user is deleted on Grove.
 
-- On Grove, publish models (a `Model` becomes published once it has an active
-  `Model Deployment` on an inference server).
-- In Central, `central.services.llm.sync_models` (daily job, or run manually) imports
-  the published models into `LLM Model`; set each one's **Tier** (Fast/Balanced/Premium).
-- Create an `LLM Plan Policy` per LLM plan and list its **Allowed Tiers**. A plan with
-  no policy grants all published models.
+### 5. Models
+
+On Grove, publish models and tick **Is Default** on one `Model Group` that lists them. Central has nothing to set up.
 
 ### 6. Activate for a team and enable sites (API today)
 
 ```
-central.services.api.dashboard.activate_service(team, "llm")     # needs an active AI Tokens subscription
+central.services.api.dashboard.activate_service(team, "llm")     # registers the team owner as a Free Grove user
 central.services.api.dashboard.enable_site(managed_service, site) # mints the site's Grove key
 ```
 

@@ -2,9 +2,10 @@
 
 ## How it works (one screen)
 Central sells managed LLM inference. Grove runs the models on our GPUs and mints
-API keys; Central records the entitlement, delivers keys, and meters usage onto
-the team's AI-Tokens bill. Central is never in the request path — the caller hits
-`{gateway_url}/v1/chat/completions` directly. Two ways to consume, one meter:
+API keys; Central records the entitlement, registers the team owner on Grove as a
+Free user, and delivers keys. There is no billing plan: LLM Hosting is prepaid at
+Grove, and Central does not bill it yet. Central is never in the request path — the
+caller hits `{gateway_url}/v1/chat/completions` directly. Two ways to consume:
 
 - **On-site:** enable AI on a site → its Grove key is delivered to the site, so
   Builder/Studio work out of the box.
@@ -17,11 +18,11 @@ the team's AI-Tokens bill. Central is never in the request path — the caller h
 
 | Action | Where | Surface |
 |---|---|---|
-| Activate LLM for the team (needs an AI-Tokens subscription) | Central console | `dashboard.activate_service` |
+| Activate LLM for the team (no plan or subscription needed) | Central console | `dashboard.activate_service` |
 | Enable / disable AI on a **site** | Bench (Pilot) admin UI | `pilot.enable` / `pilot.disable` → Central mints |
 | Deliver a site's key to the running site | Bench (Pilot) | `pilot.get_config` |
 | Generate / reveal / revoke **team API keys** | Central console | `dashboard.generate_api_key` / `reveal_api_key` / `revoke_api_key` |
-| Meter usage → team `Tokens` bill | Central (hourly) | `llm.pull_usage` (site keys **and** API keys) |
+| See requests and cost, in total, per model and per day | Central console | `dashboard.get_usage` |
 
 **Pilot → Central contract** (POST, `X-Pilot-Token` auth; team resolved from the
 credential; ownership is team-scoped by the stored credential, not a site mirror):
@@ -33,17 +34,26 @@ credential; ownership is team-scoped by the stored credential, not a site mirror
 ## Ahead
 - **Pilot PR (separate repo):** the bench admin UI that lists local sites and calls
   `pilot.enable` / `disable` / `get_config`.
-- **Grove:** ships its `Central Control` role + permissions so `provision_key` etc.
-  run for the enrolled control user. Central only relies on `enroll_control_client`.
+- **Billing:** Central registers each Grove user as Free and does not bill LLM usage yet.
+
+## Grove contract
+Central calls these `grove.api` methods. All but the first run as the enrolled control
+user, which holds Grove's `Grove Control` role.
+
+| Method | Central sends | Central reads |
+|---|---|---|
+| `create_control_client` | `email`, `token` (the bootstrap secret) | `api_key`, `api_secret` |
+| `provision_user` | `name`, `email`, `free` (always true) | nothing |
+| `provision_key` | `email`, `title` | `gateway_url`, `api_key` |
+| `revoke_key` | `api_key` | nothing |
+| `available_models` | `email` | `name`, `modality` |
+| `usage` | `users`, `period` | `from_date`, `to_date`, `as_of`, `model_summary`, `daily_summary`, `<email>.requests`, `<email>.cost` |
+| `add_credit` (operator only, not used by any screen) | `email`, `amount` (USD), `reference` | `balance` |
 
 ## Production setup
 
 ### Billing engineer (catalog)
-1. `AI Tokens` Plan Category exists (seeded). Pick **settlement mode**:
-   *Postpaid Overage* (recommended — meter & bill, no cap) or *Prepaid Pack*
-   (hard token cap = bundled allowance).
-2. Create an active **Plan** in `AI Tokens` with a `Tokens` **Plan Includes** row
-   + a per-currency **Catalog Rate**. Give it a clear title (shown in the UI).
+Nothing to set up. LLM Hosting needs no Plan and no subscription.
 
 ### Operator — Central
 1. Seed the `Add-on Service`: `service_key=llm`, `title="LLM Hosting"`,
@@ -51,21 +61,17 @@ credential; ownership is team-scoped by the stored credential, not a site mirror
 2. Register a `Service Backend` (service=`llm`, base_url=Grove URL) → **Enroll**
    (paste Grove's bootstrap secret).
 3. Grant `service:view` / `service:manage` capabilities to the right roles.
-4. After Grove has models: run `central.services.llm.sync_models`, set each
-   `LLM Model`'s tier, and (optional) create an `LLM Plan Policy` per plan for
-   tier gating. `pull_usage` runs hourly.
 
 ### Operator — Grove
 1. Deploy Grove with a **Model Deployment** (GPU) so models publish and
    `Grove Settings → Gateway Host` is set. (Without it, key provisioning fails
    with "Gateway Host is not found".)
-2. `bench --site <grove> set-config control_bootstrap_secret <secret>` +
+2. `bench --site <grove> set-config control_secret <secret>` +
    `clear-cache`.
-3. Ensure the `Central Control` role has DocPerms to create Users + API Keys and
-   read Usage/Models (Grove-side).
+3. Tick **Is Default** on one **Model Group**. Each new Grove user starts in it, and a
+   team can call no model without it. The `Grove Control` role ships with Grove.
 
 ### End-to-end check
-Team subscribes to an AI-Tokens plan (Billing) → activates LLM in Central →
-enables a site from the **server dashboard** (or generates an API key in Central)
-→ caller hits `{gateway_url}/v1/chat/completions` → usage appears on the next
-hourly reconciliation and on the team's invoice.
+Team activates LLM in Central → generates an API key in Central → caller hits
+`{gateway_url}/v1/chat/completions` → the requests show on the **Usage** tab within
+the hour.

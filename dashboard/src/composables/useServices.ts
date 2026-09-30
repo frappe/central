@@ -21,7 +21,7 @@ export interface ServiceOffer {
 
 export interface ServiceModel {
 	name: string
-	tier: string
+	modality: string | null
 }
 
 export interface ServiceEnabledSite {

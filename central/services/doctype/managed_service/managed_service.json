@@ -34,11 +34,11 @@
    "search_index": 1
   },
   {
+   "description": "The billing subscription that entitles the add-on. LLM Hosting has none: it is prepaid at Grove.",
    "fieldname": "subscription",
    "fieldtype": "Link",
    "label": "Subscription",
-   "options": "Subscription",
-   "reqd": 1
+   "options": "Subscription"
   },
   {
    "default": "Draft",
@@ -59,7 +59,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-07-15 21:08:26.723548",
+ "modified": "2026-09-30 22:00:00.000000",
  "modified_by": "Administrator",
  "module": "Services",
  "name": "Managed Service",

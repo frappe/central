@@ -47,8 +47,7 @@ def enable_site(managed_service: str, site: str) -> dict:
 		return _config(existing.name, site, stored.gateway_url, stored.get_password("api_key"))
 
 	backend = get_backend(add_on.name)
-	options = provision_options(add_on.handler_key, service.subscription)
-	result = get_driver(add_on.handler_key).provision_site(backend, site, options)
+	result = get_driver(add_on.handler_key).provision_site(backend, site, {})
 
 	credential = (
 		frappe.get_doc("Service Credential", existing.name)
@@ -156,13 +155,3 @@ def get_backend(service: str, region: str | None = None) -> ServiceBackend:
 		frappe.throw(_("No active backend configured for {0}.").format(service))
 
 	return frappe.get_doc("Service Backend", name)
-
-
-def provision_options(handler_key: str, subscription: str) -> dict:
-	# Only the LLM handler derives model/token policy from the plan today.
-	if handler_key != "grove":
-		return {}
-
-	from central.services import llm
-
-	return llm.resolve_provision_options(frappe.db.get_value("Subscription", subscription, "plan"))

@@ -105,7 +105,7 @@ watch(details, (value) => {
 const modelOptions = computed(() =>
 	props.models.length
 		? props.models.map((m) => ({
-				label: `${m.name} (${m.tier})`,
+				label: m.name,
 				value: m.name,
 			}))
 		: [{ label: 'MODEL_ID', value: '' }],

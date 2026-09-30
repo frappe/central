@@ -18,7 +18,7 @@ class ManagedService(Document):
 		add_on_service: DF.Link
 		provider_ref: DF.Data | None
 		status: DF.Literal["Draft", "Provisioning", "Active", "Failed", "Suspended"]
-		subscription: DF.Link
+		subscription: DF.Link | None
 		team: DF.Link
 	# end: auto-generated types
 

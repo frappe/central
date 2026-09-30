@@ -8,58 +8,6 @@ _LLM_SERVICE = "llm"
 _TOKEN_RESOURCE = "Tokens"
 
 
-def sync_models(service: str = _LLM_SERVICE) -> int:
-	"""Refresh the local LLM Model catalog from the backend's published models.
-	The backend owns which models exist; Central only assigns the tier."""
-	driver, backend = _driver_and_backend(service)
-	published = {row["name"]: row.get("display_name") for row in driver.list_models(backend)}
-
-	known = set(frappe.get_all("LLM Model", pluck="name"))
-	for model_key, display_name in published.items():
-		_upsert_model(model_key, display_name, exists=model_key in known)
-
-	# Never delete (it would drop the assigned tier); just unpublish what Grove dropped,
-	# in one statement rather than a write per model.
-	stale = list(known - set(published))
-	if stale:
-		model = frappe.qb.DocType("LLM Model")
-		frappe.qb.update(model).set(model.is_published, 0).where(model.name.isin(stale)).run()
-
-	return len(published)
-
-
-def resolve_provision_options(plan: str | None) -> dict:
-	"""Turn a plan into Grove provisioning options: the concrete allowed-model list
-	(derived from the plan's tiers) and a token cap (prepaid plans only)."""
-	tiers = _allowed_tiers(plan)
-	allowed_models = None
-
-	if tiers:
-		models = frappe.get_all("LLM Model", filters={"tier": ["in", tiers], "is_published": 1}, pluck="name")
-		# An empty allow-list can't be sent to Grove (blank means "all"), so a policy
-		# that resolves to zero models is a misconfiguration — refuse, never grant all.
-		if not models:
-			frappe.throw(
-				frappe._(
-					"Plan {0} grants tiers ({1}) with no published models. Fix the model catalogue."
-				).format(plan, ", ".join(tiers))
-			)
-		allowed_models = ",".join(sorted(models))
-
-	return {"allowed_models": allowed_models, "token_limit": _token_limit(plan)}
-
-
-def included_models(plan: str | None) -> list[dict]:
-	"""Models a plan grants, for display. Non-throwing, unlike resolve_provision_options —
-	an empty result just means nothing is published yet."""
-	filters = {"is_published": 1}
-	tiers = _allowed_tiers(plan)
-	if tiers:
-		filters["tier"] = ["in", tiers]
-
-	return frappe.get_all("LLM Model", filters=filters, fields=["name", "tier"], order_by="tier, name")
-
-
 def pull_usage(service: str = _LLM_SERVICE) -> dict:
 	"""Reconcile Grove's cumulative monthly token usage into billing, per team. AI
 	Tokens is authoritative-metered, so the running total is reported (replaced). One
@@ -87,44 +35,6 @@ def pull_usage(service: str = _LLM_SERVICE) -> dict:
 		)
 
 	return {"teams_reported": reported, "teams_failed": len(failures)}
-
-
-def _upsert_model(model_key: str, display_name: str | None, exists: bool) -> None:
-	if exists:
-		frappe.db.set_value("LLM Model", model_key, {"display_name": display_name, "is_published": 1})
-		return
-
-	frappe.get_doc(
-		{
-			"doctype": "LLM Model",
-			"model_key": model_key,
-			"display_name": display_name,
-			"tier": "Balanced",
-			"is_published": 1,
-		}
-	).insert(ignore_permissions=True)
-
-
-def _allowed_tiers(plan: str | None) -> list[str]:
-	if not plan or not frappe.db.exists("LLM Plan Policy", plan):
-		return []
-
-	return frappe.get_all("LLM Plan Tier", filters={"parent": plan}, pluck="tier")
-
-
-def _token_limit(plan: str | None) -> int | None:
-	# Prepaid plans hard-cap at the bundled allowance; postpaid bills overage, no cap.
-	category = frappe.db.get_value("Plan", plan, "category", cache=True) if plan else None
-	if (
-		not category
-		or frappe.db.get_value("Plan Category", category, "settlement_mode", cache=True) != "Prepaid Pack"
-	):
-		return None
-
-	allowance = frappe.db.get_value(
-		"Plan Includes", {"parent": plan, "resource_type": _TOKEN_RESOURCE}, "quantity"
-	)
-	return int(allowance) if allowance else None
 
 
 def _team_credentials(service: str) -> dict[str, list[str]]:
@@ -195,3 +105,56 @@ def _driver_and_backend(service: str):
 		frappe.throw(frappe._("No active backend configured for {0}.").format(service))
 
 	return get_driver(handler), frappe.get_doc("Service Backend", backend_name)
+
+
+def register_grove_user(team: str, service: str = _LLM_SERVICE) -> str:
+	"""Register the team's owner as its Grove user and return the email. Every key and
+	the usage of the team hang on it. One Grove user serves one team: two teams on it
+	would share one usage record."""
+	owner = frappe.db.get_value("Team", team, "owner_user")
+
+	if frappe.db.exists("Managed Service", {"add_on_service": service, "provider_ref": owner}):
+		frappe.throw(frappe._("{0} already holds the {1} service for another team.").format(owner, service))
+
+	driver, backend = _driver_and_backend(service)
+	driver.provision_user(backend, frappe.db.get_value("User", owner, "full_name"), owner)
+
+	return owner
+
+
+def get_reachable_models(email: str, service: str = _LLM_SERVICE) -> list[dict]:
+	"""The models Grove lets a Grove user call. Grove decides; Central only shows them."""
+	driver, backend = _driver_and_backend(service)
+
+	return [{"name": row["name"], "modality": row.get("modality")} for row in driver.list_models(backend, email)]
+
+
+def get_usage_report(email: str, period: str, service: str = _LLM_SERVICE) -> dict:
+	"""What a Grove user used over a period: requests and cost, in total, per model, and
+	per day for a chart. Grove does the sums; the cost is what Grove charged."""
+	driver, backend = _driver_and_backend(service)
+	usage = driver.fetch_usage(backend, [email], period=period)
+
+	return {
+		"period": period,
+		"from_date": usage["from_date"],
+		"to_date": usage["to_date"],
+		"as_of": usage["as_of"],
+		"totals": usage.get(email) or {"requests": 0, "cost": 0},
+		"models": usage["model_summary"],
+		"daily": _every_day(usage),
+	}
+
+
+def _every_day(usage: dict) -> list[dict]:
+	"""Grove's per-day rows with the quiet days filled in: one row per day of the period
+	and model, zeros where the model was not used, so a chart shows the whole period."""
+	used = {(row["day"], row["model"]): row for row in usage["daily_summary"]}
+	models = [row["model"] for row in usage["model_summary"]]
+	days = frappe.utils.date_diff(usage["to_date"], usage["from_date"]) + 1
+
+	return [
+		used.get((day, model)) or {"day": day, "model": model, "requests": 0, "cost": 0}
+		for day in (str(frappe.utils.add_days(usage["from_date"], offset)) for offset in range(days))
+		for model in models
+	]
