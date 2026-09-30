@@ -202,3 +202,65 @@ class TestRefused(CorrectionsTestCase):
 		inv = self._paid_invoice(paid_at="2024-05-01 10:00:00")  # year to 31 Mar 2025, due by 30 Nov 2025
 		with self.assertRaises(frappe.ValidationError):
 			corrections.cancel_and_refund(inv, "x")
+
+
+class TestDisputeWebhook(CorrectionsTestCase):
+	def _event(self, event_type, status="needs_response", amount=3540):
+		payload = {
+			"id": f"evt_{frappe.generate_hash(length=8)}",
+			"type": event_type,
+			"data": {
+				"object": {
+					"object": "dispute",
+					"id": "dp_1",
+					"payment_intent": "pi_card",
+					"amount": round(amount * 100),
+					"currency": "inr",
+					"status": status,
+					"reason": "fraudulent",
+				}
+			},
+		}
+		event = frappe.get_doc(
+			{
+				"doctype": "Webhook Event",
+				"gateway": "Stripe",
+				"gateway_event_id": payload["id"],
+				"event_type": event_type,
+				"raw_payload": frappe.as_json(payload),
+				"status": "Received",
+			}
+		).insert(ignore_permissions=True)
+		from central.billing.payments.charges import apply_webhook
+
+		return apply_webhook(event.name)
+
+	def _comments(self, invoice):
+		return frappe.get_all(
+			"Comment", {"reference_doctype": "Invoice", "reference_name": invoice}, pluck="content"
+		)
+
+	def test_an_opened_dispute_is_noted(self):
+		inv = self._paid_invoice()
+		self.assertEqual(self._event("charge.dispute.created")["result"], "noted")
+		self.assertEqual(frappe.db.get_value("Invoice", inv, "status"), "Paid")
+		self.assertTrue(any("dp_1 opened" in c for c in self._comments(inv)))
+
+	def test_losing_the_whole_charge_cancels_the_invoice(self):
+		inv = self._paid_invoice()
+		self.assertEqual(self._event("charge.dispute.closed", status="lost")["result"], "cancelled")
+		self.assertEqual(frappe.db.get_value("Invoice", inv, "status"), "Cancelled")
+		lost = self._refund(inv, "Dispute")
+		self.assertEqual((lost.amount, lost.gateway_refund_id), (3540, "dp_1"))
+
+	def test_losing_part_of_the_charge_is_left_for_a_person(self):
+		inv = self._paid_invoice()
+		self.assertEqual(
+			self._event("charge.dispute.closed", status="lost", amount=1000)["result"], "partial_for_a_person"
+		)
+		self.assertEqual(frappe.db.get_value("Invoice", inv, "status"), "Paid")
+
+	def test_a_won_dispute_changes_nothing(self):
+		inv = self._paid_invoice()
+		self.assertEqual(self._event("charge.dispute.closed", status="won")["result"], "won")
+		self.assertEqual(frappe.db.get_value("Invoice", inv, "status"), "Paid")
