@@ -28,6 +28,7 @@ def complete_setup() -> dict:
 		("Account", "Customer Advances - TC"): {},
 		("Account", "Sales - TC"): {},
 		("Account", "Stripe Clearing - TC"): {"account_currency": "INR"},
+		("Account", "Wallet Clearing - TC"): {"account_currency": "INR"},
 		("Cost Center", "Main - TC"): {},
 		("Mode of Payment", "Stripe"): {},
 		("Item", "Cloud Hosting"): {"gst_hsn_code": "998315"},
@@ -40,7 +41,7 @@ def complete_setup() -> dict:
 
 
 SERIES = {
-	"Sales Invoice": "ACC-SINV-.YYYY.-\nB2B/.TFY./.#####\nB2C/.TFY./.#####\nEXP/.TFY./.#####",
+	"Sales Invoice": "ACC-SINV-.YYYY.-\nB2B/.TFY./.#####\nB2C/.TFY./.#####\nEXP/.TFY./.#####\nCN/.TFY./.#####",
 	"Payment Entry": "ACC-PAY-.YYYY.-\nRV/.TFY./.######",
 }
 
@@ -111,7 +112,10 @@ class AccountingSetupTestCase(IntegrationTestCase):
 			}
 		)
 		doc.set("receivable_accounts", [])
-		doc.append("receivable_accounts", {"currency": "INR", "account": "Debtors - TC"})
+		doc.append(
+			"receivable_accounts",
+			{"currency": "INR", "account": "Debtors - TC", "wallet_clearing_account": "Wallet Clearing - TC"},
+		)
 		doc.set("gateways", [])
 		doc.append(
 			"gateways",

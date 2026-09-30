@@ -5,10 +5,11 @@
  "editable_grid": 1,
  "engine": "InnoDB",
  "istable": 1,
- "description": "The receivable account for invoices in one currency.",
+ "description": "The accounts for invoices and wallet credit in one currency.",
  "field_order": [
   "currency",
-  "account"
+  "account",
+  "wallet_clearing_account"
  ],
  "fields": [
   {
@@ -26,11 +27,18 @@
    "reqd": 1,
    "in_list_view": 1,
    "description": "Full account name, in this currency. For example Debtors USD - ABBR."
+  },
+  {
+   "fieldname": "wallet_clearing_account",
+   "fieldtype": "Data",
+   "label": "Wallet Clearing Account",
+   "in_list_view": 1,
+   "description": "Bank-type account in this currency. Credit returned to a wallet passes through it, so no cash moves."
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-09-29 16:00:00.000000",
+ "modified": "2026-09-30 16:00:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Accounting Receivable Account",

@@ -29,3 +29,7 @@ central.patches.v0_0.rename_zero_rating_reasons
 central.patches.v0_0.seed_gst_status_refresh
 # The accounting defaults read blank on a Billing Settings saved before they existed.
 central.patches.v0_0.seed_accounting_defaults
+# Top-ups are paid-in credit; the flag is new, so existing ones are marked.
+central.patches.v0_0.mark_top_ups_paid_in
+# The credit note series reads blank on a Billing Settings saved before it existed.
+central.patches.v0_0.seed_credit_note_series

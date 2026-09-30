@@ -61,6 +61,7 @@
   "column_break_series",
   "series_overseas",
   "series_receipt_voucher",
+  "series_credit_note",
   "section_print",
   "invoice_print_format",
   "invoice_letter_head",
@@ -319,13 +320,13 @@
   {
    "fieldname": "section_receivables",
    "fieldtype": "Section Break",
-   "label": "Receivable Accounts",
-   "description": "An invoice is booked to the receivable in its own currency."
+   "label": "Accounts per Currency",
+   "description": "Each invoice is booked to the receivable in its own currency."
   },
   {
    "fieldname": "receivable_accounts",
    "fieldtype": "Table",
-   "label": "Receivable Accounts",
+   "label": "Accounts per Currency",
    "options": "Accounting Receivable Account"
   },
   {
@@ -407,6 +408,13 @@
    "description": "Numbers the advance received for a wallet top-up."
   },
   {
+   "default": "CN/.TFY./.#####",
+   "description": "Numbers the credit notes for cancelled and refunded invoices.",
+   "fieldname": "series_credit_note",
+   "fieldtype": "Data",
+   "label": "Credit Notes"
+  },
+  {
    "fieldname": "section_print",
    "fieldtype": "Section Break",
    "label": "Print Formats",
@@ -438,7 +446,7 @@
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-09-30 12:00:00.000000",
+ "modified": "2026-09-30 16:00:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Billing Settings",

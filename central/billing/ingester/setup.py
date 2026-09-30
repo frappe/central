@@ -39,6 +39,7 @@ def steps(s) -> list[Step]:
 		_exists("Company", "Company", s.company),
 		Step("Company address", "Address", s.company_address, lambda: _company_address(s)),
 		*[_receivable(row) for row in s.receivable_accounts],
+		*[_wallet_clearing(row) for row in s.receivable_accounts],
 		Step("Advance account", "Account", s.advance_account, lambda: _advance_account(s)),
 		_exists("Income account", "Account", s.income_account),
 		_exists("Cost center", "Cost Center", s.cost_center),
@@ -47,7 +48,9 @@ def steps(s) -> list[Step]:
 		_exists("In-state tax template", "Sales Taxes and Charges Template", s.in_state_template),
 		_exists("Out-of-state tax template", "Sales Taxes and Charges Template", s.out_state_template),
 		Step("Overseas and SEZ supplies", "GST Settings", "GST Settings", _overseas_supplies),
-		_series("Sales Invoice", [s.series_india_b2b, s.series_india_b2c, s.series_overseas]),
+		_series(
+			"Sales Invoice", [s.series_india_b2b, s.series_india_b2c, s.series_overseas, s.series_credit_note]
+		),
 		_series("Payment Entry", [s.series_receipt_voucher]),
 		_print_format(s.invoice_print_format, "Sales Invoice"),
 		_print_format(s.receipt_voucher_print_format, "Payment Entry"),
@@ -90,6 +93,18 @@ def _receivable(row) -> Step:
 		return OK, ""
 
 	return Step(f"{row.currency} receivable account", "Account", row.account, check)
+
+
+def _wallet_clearing(row) -> Step:
+	def check():
+		account = _fetch("Account", row.wallet_clearing_account)
+		if not account:
+			return MISSING, ""
+		if account.get("account_currency") != row.currency:
+			return WRONG, f"It is in {account.get('account_currency')}, not {row.currency}."
+		return OK, ""
+
+	return Step(f"{row.currency} wallet clearing account", "Account", row.wallet_clearing_account, check)
 
 
 def _advance_account(s) -> tuple[str, str]:
