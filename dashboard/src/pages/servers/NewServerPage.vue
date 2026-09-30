@@ -148,6 +148,7 @@ const regionFlags = computed(() =>
 					<section class="space-y-3">
 						<h2 class="text-base-semibold text-ink-gray-8">Image</h2>
 						<TabButtons
+							v-if="snapshotOptions.length > 1 || source === 'snapshot'"
 							v-model="source"
 							:options="[
 								{ label: 'Image', value: 'image' },
