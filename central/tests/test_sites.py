@@ -6,6 +6,7 @@ from frappe.tests import IntegrationTestCase
 from central.api.sites import claim_site, get_site, login_site, onboarding_status, terminate_site
 from central.errors import AtlasResourceGone
 from central.infrastructure.doctype.pilot_credential.pilot_credential import PilotCredential
+from central.infrastructure.doctype.resource_action.resource_action import ResourceAction
 from central.infrastructure.doctype.site.site import on_host
 from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
 from central.integrations.pilot import PilotLoginPending, fetch_site_login_url
@@ -34,7 +35,7 @@ class SiteOnAMachine(IntegrationTestCase):
 		self.team = frappe.get_doc(
 			{"doctype": "Team", "team_name": "Trial", "owner_user": "Administrator"}
 		).insert()
-		region = frappe.get_doc(
+		self.region = frappe.get_doc(
 			{
 				"doctype": "Region",
 				"region": "site-" + frappe.generate_hash(length=8),
@@ -48,7 +49,7 @@ class SiteOnAMachine(IntegrationTestCase):
 				"doctype": "Virtual Machine",
 				"resource_id": "server-" + frappe.generate_hash(length=8),
 				"team": self.team.name,
-				"region": region.name,
+				"region": self.region.name,
 				"atlas_vm_id": "vm-00001",
 				"status": "Provisioning",
 				"has_site": 1,
@@ -78,6 +79,18 @@ class SiteOnAMachine(IntegrationTestCase):
 
 	def site(self):
 		return frappe.get_doc("Site", {"server": self.server.name})
+
+	def record_creation(self, has_site: str) -> None:
+		"""Save the creation request that built this machine from an image with this tag."""
+		ResourceAction.queue(
+			"create",
+			self.team.name,
+			self.region.name,
+			self.server.name,
+			server=self.server.name,
+			request_key="request-" + frappe.generate_hash(length=8),
+			request_payload={"image_tags": {"purpose": "pilot", "has_site": has_site}},
+		)
 
 
 class TestSiteMirror(SiteOnAMachine):
@@ -116,10 +129,47 @@ class TestSiteMirror(SiteOnAMachine):
 		self.enroll()
 		observe_server(self.server)
 		self.server.db_set("has_site", 0)
+		self.record_creation(has_site="0")
 
 		execute()
 
 		self.assertFalse(frappe.db.exists("Site", {"server": self.server.name}))
+
+	def test_the_patch_keeps_a_site_when_no_request_names_the_image(self):
+		from central.patches.v0_0.record_server_has_site import execute
+
+		self.enroll()
+		observe_server(self.server)
+		self.server.db_set("has_site", 0)
+
+		execute()
+
+		self.assertTrue(frappe.db.exists("Site", {"server": self.server.name}))
+		self.assertEqual(self.server.reload().has_site, 1)
+
+	def test_the_patch_keeps_the_domain_of_a_site_it_removes(self):
+		from central.patches.v0_0.record_server_has_site import execute
+
+		self.enroll()
+		observe_server(self.server)
+		frappe.db.set_single_value("Central Settings", "wildcard_domain", "example.test")
+		domain = frappe.get_doc(
+			{
+				"doctype": "Site Domain",
+				"domain": "shop.example.com",
+				"team": self.team.name,
+				"region": self.region.name,
+				"server": self.server.name,
+				"site": self.site().name,
+			}
+		).insert()
+		self.server.db_set("has_site", 0)
+		self.record_creation(has_site="0")
+
+		execute()
+
+		self.assertFalse(frappe.db.exists("Site", {"server": self.server.name}))
+		self.assertIsNone(frappe.db.get_value("Site Domain", domain.name, "site"))
 
 	def test_a_site_reads_its_state_from_the_machine_it_is(self):
 		self.enroll()
