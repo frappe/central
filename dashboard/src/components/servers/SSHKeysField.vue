@@ -47,14 +47,11 @@ function saved(key: TeamSSHKey | null) {
 			:loading="loading"
 			:disabled="!!error"
 			:required="required"
-			:description="
-				required
-					? 'Ubuntu needs a key so you can sign in.'
-					: 'Add a key to sign in over SSH.'
-			"
 			:empty-text="keys.length ? 'No matching keys' : 'No team SSH keys yet'"
 			label="SSH keys"
-			placeholder="Select team SSH keys"
+			:placeholder="
+				required ? 'Select at least one key' : 'Add a key for SSH access'
+			"
 			size="md"
 			class="w-full"
 			@update:model-value="updateSelection"

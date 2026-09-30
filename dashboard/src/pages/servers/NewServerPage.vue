@@ -212,7 +212,7 @@ const regionFlags = computed(() =>
 								region.
 							</p>
 						</template>
-						<div class="grid gap-3 md:grid-cols-2">
+						<div class="grid gap-3 pt-2 md:grid-cols-2">
 							<Select
 								v-if="source === 'image' && imageOptions.length > 1"
 								v-model="imageId"
