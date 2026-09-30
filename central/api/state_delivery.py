@@ -12,6 +12,7 @@ ATLAS = "atlas"
 CARGO = "cargo"
 
 
+# nosemgrep: guest-whitelisted-method -- each handler verifies the region's signature before it reads the body.
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 def receive() -> dict:
 	"""Take one signed report from a region, from whichever plane sent it.

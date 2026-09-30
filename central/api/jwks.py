@@ -18,6 +18,7 @@ def get_jwks() -> Response:
 	return response
 
 
+# nosemgrep: guest-whitelisted-method -- a JWKS holds public keys only, and verifiers fetch it unauthenticated.
 @frappe.whitelist(allow_guest=True, methods=["GET"])
 def get_atlas_jwks() -> Response:
 	"""Serve the public Ed25519 keys accepted by the regional Atlas verifier."""

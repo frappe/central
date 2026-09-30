@@ -697,6 +697,7 @@ def save_billing_profile(**fields) -> dict:
 # ── In-app Billing tab (composed summary + plan options) ──────────────────────
 
 
+# nosemgrep: guest-whitelisted-method -- pilot_credential_auth verifies the caller below.
 @frappe.whitelist(allow_guest=True, methods=["GET"])
 @pilot_credential_auth
 def get_billing_summary() -> dict:

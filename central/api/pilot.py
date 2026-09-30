@@ -83,6 +83,7 @@ def config() -> dict:
 	return {"jwks_url": jwks_url(), "audience_id": credential.audience_id}
 
 
+# nosemgrep: guest-whitelisted-method -- pilot_credential_auth verifies the caller below.
 @frappe.whitelist(allow_guest=True, methods=["GET"])
 @pilot_credential_auth
 def datum_token() -> dict:
@@ -117,6 +118,7 @@ def region_id_of(region: str | None) -> int:
 	return frappe.get_doc("Region", region).get_atlas_region_id()
 
 
+# nosemgrep: guest-whitelisted-method -- pilot_credential_auth verifies the caller below.
 @frappe.whitelist(allow_guest=True, methods=["GET"])
 @pilot_credential_auth
 def domain_records(domain: str) -> dict:
@@ -124,6 +126,7 @@ def domain_records(domain: str) -> dict:
 	return SiteDomain.get_dns_records(frappe.local.pilot_credential, domain)
 
 
+# nosemgrep: guest-whitelisted-method -- pilot_credential_auth verifies the caller below.
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 @pilot_credential_auth
 def register_domain(domain: str) -> None:
@@ -131,6 +134,7 @@ def register_domain(domain: str) -> None:
 	SiteDomain.register(frappe.local.pilot_credential, domain)
 
 
+# nosemgrep: guest-whitelisted-method -- pilot_credential_auth verifies the caller below.
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 @pilot_credential_auth
 def deregister_domain(domain: str) -> None:

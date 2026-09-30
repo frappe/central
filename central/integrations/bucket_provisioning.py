@@ -76,7 +76,7 @@ class BucketProvisioning:
 		service.flags.requested_by = self.requested_by
 		# The authorized provisioning request owns this system-created service record.
 		service.insert(ignore_permissions=True)
-		frappe.db.commit()
+		frappe.db.commit()  # nosemgrep: frappe-manual-commit -- commit inside the lock, so the next request finds this bucket
 
 		return self.read_configuration(service)
 

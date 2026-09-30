@@ -92,7 +92,7 @@ class SiteDomain(Document):
 				client.delete_domain(self.domain)
 		except (ProxyError, httpx.HTTPError) as exception:
 			frappe.throw(
-				_("Could not remove {0} from the proxy: {1}").format(self.domain, exception), ProxyError
+				_("Could not remove {0} from the proxy: {1}").format(self.domain, str(exception)), ProxyError
 			)
 
 	def get_route_type(self) -> str:
@@ -330,7 +330,7 @@ def retry_failed() -> None:
 	)
 	for name in names:
 		frappe.get_doc("Site Domain", name).apply()
-		frappe.db.commit()  # keep each outcome if a later route crashes the job
+		frappe.db.commit()  # nosemgrep: frappe-manual-commit -- keep each outcome if a later route crashes the job
 
 
 def remove_server_routes(server: str) -> None:
@@ -356,7 +356,7 @@ def _resolve(name: str, record_type: str) -> list[str]:
 	except dns.resolver.NXDOMAIN, dns.resolver.NoAnswer:
 		return []
 	except dns.exception.DNSException as exception:
-		frappe.throw(_("Could not look up {0}: {1}").format(name, exception), DomainNotVerifiedError)
+		frappe.throw(_("Could not look up {0}: {1}").format(name, str(exception)), DomainNotVerifiedError)
 
 	if record_type == "TXT":
 		return [b"".join(record.strings).decode() for record in answer]

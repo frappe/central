@@ -339,7 +339,8 @@ def image_shape(includes: list[dict], image: dict) -> dict[str, int]:
 	values = (quantities.get(COMPUTE, 0), quantities.get(MEMORY, 0) * 1024, quantities.get(DISK, 0) * 1024)
 	if any(not math.isfinite(value) or value <= 0 or int(value) != value for value in values):
 		frappe.throw(_("Choose whole virtual CPUs and positive memory and disk sizes in MiB."))
-	shape = dict(zip(("virtual_cpu_count", "memory_mib", "disk_mib"), map(int, values), strict=True))
+	keys = ("virtual_cpu_count", "memory_mib", "disk_mib")
+	shape = {key: int(value) for key, value in zip(keys, values, strict=True)}
 	if shape["virtual_cpu_count"] > 32:
 		frappe.throw(_("Choose at most 32 virtual CPUs."))
 	if shape["disk_mib"] < image["rootfs_size_mib"]:

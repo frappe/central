@@ -167,7 +167,7 @@ def recover_unanswered(request) -> None:
 
 	request.db_set("remote_vm_id", remote_vm_id)
 	request.transition("Sent", notify=False)
-	frappe.db.commit()
+	frappe.db.commit()  # nosemgrep: frappe-manual-commit -- keep the accepted VM id before finalizing
 	_finalize(request)
 
 
@@ -322,7 +322,7 @@ def process_resize(action) -> None:
 			action.transition("Failed", envelope=build_envelope("PERMISSION_DENIED", action="resize"))
 			return
 		action.transition("Dispatching", notify=False)
-		frappe.db.commit()
+		frappe.db.commit()  # nosemgrep: frappe-manual-commit -- record the dispatch before calling Atlas
 
 	configuration = action.get_resize_configuration()
 	target = configuration.shape.model_dump()
@@ -349,7 +349,7 @@ def process_resize(action) -> None:
 		return
 
 	action.transition("Sent", notify=False)
-	frappe.db.commit()
+	frappe.db.commit()  # nosemgrep: frappe-manual-commit -- keep the accepted resize before billing it
 	try:
 		from central.billing.catalog.subscriptions import apply_resize_billing
 
