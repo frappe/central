@@ -39,6 +39,37 @@ export interface ServiceInstance {
 	models: ServiceModel[]
 }
 
+export interface ServiceUsageModel {
+	model: string
+	requests: number
+	cost: number
+}
+
+// One day of one model. Every day of the period is present, zeros included.
+export interface ServiceUsageDay {
+	day: string
+	model: string
+	requests: number
+	cost: number
+}
+
+// What the team used at the provider over a period: requests and cost (USD), in
+// total, per model and per day. The provider does the sums.
+export interface ServiceUsage {
+	period: string
+	from_date: string
+	to_date: string
+	as_of: string | null
+	totals: { requests: number; cost: number }
+	models: ServiceUsageModel[]
+	daily: ServiceUsageDay[]
+}
+
+interface UsageParams {
+	managed_service: string
+	period: string
+}
+
 // A team-level issued key, as listed (no secret).
 export interface ServiceApiKey {
 	name: string
@@ -75,6 +106,13 @@ const managedRef = ref('')
 const instanceCall = useCall<ServiceInstance, { managed_service: string }>({
 	url: method(API.serviceInstance),
 	params: () => ({ managed_service: managedRef.value }),
+	immediate: false,
+})
+
+const usageParams = ref<UsageParams>({ managed_service: '', period: '' })
+const usageCall = useCall<ServiceUsage, UsageParams>({
+	url: method(API.serviceUsage),
+	params: () => usageParams.value,
 	immediate: false,
 })
 
@@ -127,6 +165,14 @@ export function useServices() {
 		loadInstance(managedService: string): Promise<unknown> {
 			managedRef.value = managedService
 			return instanceCall.reload()
+		},
+
+		usage: computed<ServiceUsage | null>(() => usageCall.data ?? null),
+		usageLoading: computed(() => usageCall.loading),
+		usageError: computed(() => usageCall.error),
+		loadUsage(managedService: string, period: string): Promise<unknown> {
+			usageParams.value = { managed_service: managedService, period }
+			return usageCall.reload()
 		},
 
 		// Activate returns the new managed-service name so the caller can render its

@@ -4,6 +4,7 @@ import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import AIApiKeys from '@/components/addons/AIApiKeys.vue'
 import AIOverview from '@/components/addons/AIOverview.vue'
+import AIUsage from '@/components/addons/AIUsage.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import { useBreadcrumbs } from '@/composables/useBreadcrumbs'
 import { useCapabilities } from '@/composables/useCapabilities'
@@ -39,6 +40,7 @@ watch(
 const tab = ref('overview')
 const tabs = [
 	{ label: 'Overview', value: 'overview' },
+	{ label: 'Usage', value: 'usage' },
 	{ label: 'API keys', value: 'keys' },
 ]
 
@@ -103,6 +105,10 @@ const activateService = async (): Promise<void> => {
 
 			<template v-if="managedService">
 				<AIOverview v-if="tab === 'overview'" />
+				<AIUsage
+					v-else-if="tab === 'usage'"
+					:managed-service="managedService"
+				/>
 				<AIApiKeys
 					v-else
 					:managed-service="managedService"

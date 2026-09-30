@@ -43,6 +43,7 @@ export const API = {
 
 	listOffers: 'central.services.api.dashboard.list_offers',
 	serviceInstance: 'central.services.api.dashboard.get_instance',
+	serviceUsage: 'central.services.api.dashboard.get_usage',
 	activateService: 'central.services.api.dashboard.activate_service',
 	generateApiKey: 'central.services.api.dashboard.generate_api_key',
 	listApiKeys: 'central.services.api.dashboard.list_api_keys',
