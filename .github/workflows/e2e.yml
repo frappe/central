@@ -1,13 +1,18 @@
 name: E2E
 
-# No-mock Playwright billing suite (apps/central/e2e). It drives the real
-# dashboard against a real bench and the real Stripe/Razorpay TEST sandboxes, so it
-# needs test-mode gateway keys. Those are repo secrets and aren't exposed to fork
-# PRs, so this runs on push to develop and on manual dispatch — not on PRs.
+# No-mock Playwright suite (apps/central/e2e). It drives the real dashboard against
+# a real bench and the real Stripe/Razorpay TEST sandboxes, so it needs test-mode
+# gateway keys from repo secrets.
 on:
   push:
     branches:
       - develop
+  pull_request:
+    paths:
+      - 'dashboard/**'
+      - 'e2e/**'
+      - 'playwright.config.ts'
+      - '.github/workflows/e2e.yml'
   workflow_dispatch:
 
 concurrency:
@@ -16,6 +21,7 @@ concurrency:
 
 jobs:
   e2e:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     name: Playwright (no mocks)
 

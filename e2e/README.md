@@ -13,13 +13,13 @@ seams stay independent:
 ```
 e2e/
   billing/            # billing dashboard flows (this suite)
-    fixtures.js       # `billing` fixture: seed/login/teardown + finishRazorpay
-    helpers/stripe.js # fill the Stripe card Element
-    *.spec.js
+    fixtures.ts       # `billing` fixture: seed/login/teardown + finishRazorpay
+    helpers/stripe.ts # fill the Stripe card Element
+    *.spec.ts
   # iam/              # (future) IAM flows — its own fixtures + seed endpoint
 ```
 
-Playwright discovers `**/*.spec.js` under `e2e/` recursively, so a new domain is
+Playwright discovers `**/*.spec.ts` under `e2e/` recursively, so a new domain is
 just a new subfolder. Each domain wires its own test-only seed endpoint under
 `central/<domain>/tests/e2e.py`; billing's lives at `central/billing/tests/e2e.py`.
 
@@ -27,22 +27,22 @@ just a new subfolder. Each domain wires its own test-only seed endpoint under
 
 | Spec | Flow | No-mock surface |
 | --- | --- | --- |
-| `onboarding.spec.js` | First-run wizard completes the Billing Profile | real `save_billing_profile` |
-| `topup-stripe.spec.js` | USD wallet top-up via the embedded Stripe card Element | **real Stripe test-mode PaymentIntent** (4242 card) |
-| `topup-razorpay.spec.js` | INR wallet top-up — real Razorpay sheet opens, finished at the gateway boundary | **real Razorpay test order + real signature**, real `confirm_topup` |
-| `invoices.spec.js` | Invoice list + detail (line items, tax block) | real `Invoice` docs |
-| `settlement.spec.js` | Credits-only, partial credits + card, and the "Pay" button | **real credits→card waterfall**, real off-session PaymentIntent, real `apply_webhook` |
-| `mandate-upi.spec.js` | UPI Autopay mandate setup (INR) | **real Razorpay recurring order + real signature**, real `confirm_mandate` |
-| `emandate.spec.js` | INR e-mandate pre-debit notice + the ₹15,000 Action Required fork | **fully real** `schedule_predebit` / `collection_mode` |
-| `dunning.spec.js` | Declined card → Overdue + Past Due after the retry window | **real Stripe decline** + real dunning state machine (simulated clock) |
-| `refunds.spec.js` | Full dispute → source (invoice stays Paid); partial overcharge → wallet | **real Stripe refund** + real credit ledger |
-| `invoice-generation.spec.js` | Provision a price-lock → generate the invoice from it | **real agentless pipeline** (`provision_subscription` → `generate_draft_invoice`), no fabrication |
+| `onboarding.spec.ts` | First-run wizard completes the Billing Profile | real `save_billing_profile` |
+| `topup-stripe.spec.ts` | USD wallet top-up via the embedded Stripe card Element | **real Stripe test-mode PaymentIntent** (4242 card) |
+| `topup-razorpay.spec.ts` | INR wallet top-up — real Razorpay sheet opens, finished at the gateway boundary | **real Razorpay test order + real signature**, real `confirm_topup` |
+| `invoices.spec.ts` | Invoice list + detail (line items, tax block) | real `Invoice` docs |
+| `settlement.spec.ts` | Credits-only, partial credits + card, and the "Pay" button | **real credits→card waterfall**, real off-session PaymentIntent, real `apply_webhook` |
+| `mandate-upi.spec.ts` | UPI Autopay mandate setup (INR) | **real Razorpay recurring order + real signature**, real `confirm_mandate` |
+| `emandate.spec.ts` | INR e-mandate pre-debit notice + the ₹15,000 Action Required fork | **fully real** `schedule_predebit` / `collection_mode` |
+| `dunning.spec.ts` | Declined card → Overdue + Past Due after the retry window | **real Stripe decline** + real dunning state machine (simulated clock) |
+| `refunds.spec.ts` | Full dispute → source (invoice stays Paid); partial overcharge → wallet | **real Stripe refund** + real credit ledger |
+| `invoice-generation.spec.ts` | Provision a price-lock → generate the invoice from it | **real agentless pipeline** (`provision_subscription` → `generate_draft_invoice`), no fabrication |
 
 ### INR rails (e-mandate + UPI Autopay)
 
-`emandate.spec.js` is fully real (no gateway): it drives `schedule_predebit`, asserting
+`emandate.spec.ts` is fully real (no gateway): it drives `schedule_predebit`, asserting
 the **pre-debit notice** for a ≤₹15,000 bill and the **Action Required** banner + the
-prepaid/manual-checkout choice for a bill over the silent-debit ceiling. `mandate-upi.spec.js`
+prepaid/manual-checkout choice for a bill over the silent-debit ceiling. `mandate-upi.spec.ts`
 sets up a UPI Autopay mandate — UPI authorises through Razorpay's hosted recurring sheet
 (same bot protection as the top-up), so it opens the **real recurring order/sheet** from the
 UI and confirms at the gateway boundary (`e2e.py:finish_mandate`: real checkout-callback
@@ -52,7 +52,7 @@ end-to-end for the same reason — it needs a real authorised token.
 
 ### Settlement & the webhook boundary
 
-`settlement.spec.js` runs the real credits-then-card waterfall (`open_and_collect`):
+`settlement.spec.ts` runs the real credits-then-card waterfall (`open_and_collect`):
 credits apply first; if they cover the bill it is `Paid` with no charge, otherwise
 the remainder is charged to a **real Stripe test card** (attached off-session via
 `tok_visa`) through a genuine PaymentIntent. The `Open → Paid` flip is webhook-only
@@ -132,8 +132,8 @@ Each spec provisions its own sandbox through the test-only backend endpoints in
   `profile_pending` → `ready` (complete profile) → `with_invoices`.
 - `teardown(team, email)` deletes everything that spec created.
 
-The `billing` fixture in `billing/fixtures.js` calls these for you
-(`billing.signIn(...)`) and tears down in `afterEach`, so a full run leaves **zero**
+The `users` fixture in `e2e/fixtures.ts` calls these for you
+(`users.signIn(...)`) and tears down after each test, so a full run leaves **zero**
 residue. Seed/teardown run as guest over HTTP and elevate to Administrator behind
 the `allow_tests` gate.
 
@@ -142,7 +142,8 @@ the `allow_tests` gate.
 1. Add a scenario branch to `seed()` in `central/billing/tests/e2e.py` if you need
    new backing data. **Restart the web worker** after editing it (the dev server
    caches imported modules).
-2. Add the spec under `e2e/billing/`. `import { test, expect } from './fixtures'`,
-   call `await billing.signIn({...})`, `page.goto('/dashboard/...')`, and assert on
+2. Add the spec under its area folder, such as `e2e/team/`, and `import { test, expect } from '../fixtures'`.
+   Billing specs import from `./fixtures` instead, which adds the `billing` payment helpers. Then
+   call `await users.signIn({...})`, `page.goto('/dashboard/...')`, and assert on
    user-visible state.
-3. For Stripe card entry, use `fillStripeCard()` from `./helpers/stripe.js`.
+3. For Stripe card entry, use `fillStripeCard()` from `./helpers/stripe.ts`.
