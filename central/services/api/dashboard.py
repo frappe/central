@@ -112,7 +112,7 @@ def list_api_keys(managed_service: str) -> list[dict]:
 	rows = frappe.get_all(
 		"Service Credential",
 		filters={"managed_service": managed_service, "subject_type": "Team"},
-		fields=["name", "label", "status", "gateway_url", "last_usage_total", "creation"],
+		fields=["name", "label", "status", "gateway_url", "creation"],
 		order_by="creation desc",
 	)
 	for row in rows:

@@ -43,8 +43,10 @@ const CATALOG = [
 		icon: 'lucide-sparkles',
 		title: 'AI inference',
 		description:
-			'Open models on Frappe hardware, through an OpenAI-compatible API.',
+			'Our hosted models and leading upstream models, through OpenAI and Anthropic compatible APIs.',
 		noun: 'tokens',
+		// Priced per model, so no single rate to quote.
+		pricing: 'Pay as you go',
 		to: '/addons/ai',
 		flag: 'llm' as const,
 	},
@@ -113,7 +115,7 @@ const cards = computed(() =>
 				? usage
 					? `${number.format(usage)} ${entry.noun} this cycle`
 					: 'No usage this cycle'
-				: rateLabel(rateOf(entry.resourceType), entry.noun),
+				: entry.pricing ?? rateLabel(rateOf(entry.resourceType), entry.noun),
 		}
 	}),
 )

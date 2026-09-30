@@ -58,7 +58,7 @@ Create one `Add-on Service` row (Desk → Add-on Service → New, or CLI):
 
 ```
 frappe-cli doc create "Add-on Service" \
-  --set service_key=llm --set title="LLM Hosting" \
+  --set service_key=llm --set title="AI Inference" \
   --set handler_key=grove --set plan_category="AI Tokens"
 ```
 

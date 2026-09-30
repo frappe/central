@@ -243,13 +243,6 @@ const confirmRevoke = async (): Promise<void> => {
 						</div>
 					</div>
 
-					<div class="shrink-0 text-right">
-						<div class="text-p-sm tabular-nums text-ink-gray-8">
-							{{ Math.round(key.last_usage_total || 0).toLocaleString() }}
-						</div>
-						<div class="text-p-xs text-ink-gray-5">tokens</div>
-					</div>
-
 					<Dropdown
 						v-if="canManage && key.status === 'Active'"
 						:options="rowActions(key)"

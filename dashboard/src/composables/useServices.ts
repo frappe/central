@@ -80,7 +80,6 @@ export interface ServiceApiKey {
 	label: string
 	status: string
 	gateway_url: string | null
-	last_usage_total: number
 	creation: string
 	masked_key: string
 }

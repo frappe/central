@@ -25,7 +25,7 @@ const offer = computed(
 const managedService = computed(() => offer.value?.managed_service ?? null)
 const title = computed(() => offer.value?.title ?? 'Service')
 const description =
-	'Open models on Frappe hardware, through an OpenAI-compatible API.'
+	'Our hosted models and leading upstream models, through OpenAI and Anthropic compatible APIs. Pay as you go.'
 watch(title, (value) => setBreadcrumbs([{ label: value }]), { immediate: true })
 const models = computed(() => instance.value?.models ?? [])
 

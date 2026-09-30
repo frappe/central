@@ -56,7 +56,7 @@ user, which holds Grove's `Grove Control` role.
 Nothing to set up. LLM Hosting needs no Plan and no subscription.
 
 ### Operator — Central
-1. Seed the `Add-on Service`: `service_key=llm`, `title="LLM Hosting"`,
+1. Seed the `Add-on Service`: `service_key=llm`, `title="AI Inference"`,
    `handler_key=grove`, `plan_category="AI Tokens"`.
 2. Register a `Service Backend` (service=`llm`, base_url=Grove URL) → **Enroll**
    (paste Grove's bootstrap secret).
