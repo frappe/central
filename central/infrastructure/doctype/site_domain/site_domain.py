@@ -156,7 +156,7 @@ class SiteDomain(Document):
 			else:
 				client.set_domain(self.domain, address)
 		# ProxyError and missing regional config are both ValidationErrors.
-		except frappe.ValidationError, httpx.HTTPError:
+		except (frappe.ValidationError, httpx.HTTPError):
 			values.update(
 				self.failure_values(
 					_("Central could not update this route. It will retry automatically."),
@@ -353,7 +353,7 @@ def _resolve(name: str, record_type: str) -> list[str]:
 	"""The values of one DNS record set, normalized for comparison. Empty when the name has none."""
 	try:
 		answer = dns.resolver.resolve(name, record_type)
-	except dns.resolver.NXDOMAIN, dns.resolver.NoAnswer:
+	except (dns.resolver.NXDOMAIN, dns.resolver.NoAnswer):
 		return []
 	except dns.exception.DNSException as exception:
 		frappe.throw(_("Could not look up {0}: {1}").format(name, str(exception)), DomainNotVerifiedError)
