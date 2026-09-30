@@ -13,7 +13,7 @@ export const TEST_CARD = { number: '4242424242424242', expiry: '12 / 34', cvc: '
 // Fill the Stripe card Element mounted inside `root` (the dialog/card container).
 // Waits for the iframe to attach, then types each field. Returns once filled so
 // the caller can assert the gateway-confirm step.
-export async function fillStripeCard(root, card = TEST_CARD) {
+export const fillStripeCard = async (root, card = TEST_CARD) => {
   const frame = root.frameLocator('iframe[title*="card"], iframe[name^="__privateStripeFrame"]')
   const number = frame.locator('[name="cardnumber"], [name="number"]').first()
   await expect(number).toBeVisible({ timeout: 20_000 })

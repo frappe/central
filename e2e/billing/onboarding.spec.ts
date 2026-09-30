@@ -1,4 +1,5 @@
-import { test, expect } from './fixtures'
+import { expect } from '@playwright/test'
+import { test } from './fixtures'
 
 // First-run setup: a brand-new team (no billing profile) lands on the onboarding
 // wizard and completes the required Billing Profile step against the real
@@ -8,8 +9,8 @@ import { test, expect } from './fixtures'
 // flow (/onboarding/site), not this billing-profile wizard. Un-skip once
 // console has an equivalent.
 test.describe.skip('Onboarding', () => {
-  test('completes the billing profile step', async ({ page, billing }) => {
-    await billing.signIn({ scenario: 'profile_pending' })
+  test('completes the billing profile step', async ({ page, users }) => {
+    await users.signIn({ scenario: 'profile_pending' })
 
     await page.goto('/legacy-dashboard/onboarding')
     await expect(page.getByRole('heading', { name: 'Set up billing for your team' })).toBeVisible()
