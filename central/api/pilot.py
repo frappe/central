@@ -85,6 +85,22 @@ def config() -> dict:
 
 @frappe.whitelist(allow_guest=True, methods=["GET"])
 @pilot_credential_auth
+def storage_regions() -> dict[str, str]:
+	"""Each region that serves object storage now, mapped to its S3 endpoint. The region
+	name is also the S3 region a client signs with."""
+	return dict(
+		frappe.get_all(
+			"Service Detail",
+			filters={"service": "storage", "status": "Available", "service_endpoint": ("is", "set")},
+			fields=["region", "service_endpoint"],
+			order_by="region",
+			as_list=True,
+		)
+	)
+
+
+@frappe.whitelist(allow_guest=True, methods=["GET"])
+@pilot_credential_auth
 def datum_token() -> dict:
 	"""The JWT this pilot presents to Datum, for metrics and for logs alike.
 

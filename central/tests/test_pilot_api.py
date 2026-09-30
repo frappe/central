@@ -8,7 +8,7 @@ import jwt
 from frappe.tests import IntegrationTestCase
 from frappe.utils import add_to_date, now_datetime, set_request
 
-from central.api.pilot import datum_token, heartbeat
+from central.api.pilot import datum_token, heartbeat, storage_regions
 from central.central.doctype.central_sso_settings.central_sso_settings import CentralSSOSettings
 from central.infrastructure.doctype.pilot_credential.pilot_credential import PilotCredential
 from central.sso import DATUM_SCOPE
@@ -186,3 +186,32 @@ class TestPilotAPI(IntegrationTestCase):
 		no resource id."""
 		with self.assertRaises(frappe.ValidationError):
 			self.call_datum_token(self.token)
+
+	def call_storage_regions(self, token: str | None) -> dict:
+		headers = {"X-Pilot-Token": token} if token is not None else {}
+		set_request(method="GET", path="/api/method/central.api.pilot.storage_regions", headers=headers)
+		return storage_regions()
+
+	def test_storage_regions_lists_only_regions_serving_storage(self):
+		serving = f"s3-{frappe.generate_hash(length=6)}"
+		down = f"s3-{frappe.generate_hash(length=6)}"
+		for region, status in ((serving, "Available"), (down, "Not Available")):
+			ensure_atlas_instance(region, atlas_region_id=str(random.randint(1, 65535)))
+			frappe.get_doc(
+				{
+					"doctype": "Service Detail",
+					"region": region,
+					"service": "storage",
+					"status": status,
+					"service_endpoint": f"https://s3.{region}.example.test",
+				}
+			).insert(ignore_permissions=True)
+
+		regions = self.call_storage_regions(self.token)
+
+		self.assertEqual(regions[serving], f"https://s3.{serving}.example.test")
+		self.assertNotIn(down, regions)
+
+	def test_storage_regions_needs_a_pilot_credential(self):
+		with self.assertRaises(frappe.AuthenticationError):
+			self.call_storage_regions(None)
