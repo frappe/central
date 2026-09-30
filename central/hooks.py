@@ -15,7 +15,7 @@ fixtures = [
 	"Notification Event Type",
 ]
 
-email_css = ["/servers/central/css/email.css"]
+email_css = ["/assets/central/css/email.css"]
 
 # The TypeScript UI owns the product route.
 website_route_rules = [
@@ -35,7 +35,7 @@ website_user_home_page = "dashboard"
 # add_to_apps_screen = [
 # 	{
 # 		"name": "central",
-# 		"logo": "/servers/central/logo.png",
+# 		"logo": "/assets/central/logo.png",
 # 		"title": "Central",
 # 		"route": "/central",
 # 		"has_permission": "central.api.permission.has_app_permission"
@@ -46,12 +46,12 @@ website_user_home_page = "dashboard"
 # ------------------
 
 # include js, css files in header of desk.html
-# app_include_css = "/servers/central/css/central.css"
-# app_include_js = "/servers/central/js/central.js"
+# app_include_css = "/assets/central/css/central.css"
+# app_include_js = "/assets/central/js/central.js"
 
 # include js, css files in header of web template
-# web_include_css = "/servers/central/css/central.css"
-# web_include_js = "/servers/central/js/central.js"
+# web_include_css = "/assets/central/css/central.css"
+# web_include_js = "/assets/central/js/central.js"
 
 # include custom scss in every website theme (without file extension ".scss")
 # website_theme_scss = "central/public/scss/website"
