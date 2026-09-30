@@ -25,21 +25,8 @@ const enabledSites = computed(() => instance.value?.enabled_sites ?? [])
 				<Spinner class="size-5 text-ink-gray-5" />
 			</div>
 
-			<!-- status card: LLM hosting has no billing plan -->
 			<template v-else>
-				<section
-					class="rounded-6 border border-outline-gray-2 bg-surface-base p-5"
-				>
-					<div class="flex h-6 items-center justify-between gap-3">
-						<span class="text-p-sm text-ink-gray-5">Status</span>
-						<Badge
-							:label="instance?.status ?? 'Active'"
-							:theme="instance?.status === 'Active' ? 'green' : 'amber'"
-						/>
-					</div>
-				</section>
-
-				<h2 class="text-base font-semibold text-ink-gray-8 mt-8">
+				<h2 class="text-base font-semibold text-ink-gray-8">
 					Sites with AI enabled
 
 					<span v-if="enabledSites.length" class="font-normal text-ink-gray-5">

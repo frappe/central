@@ -144,14 +144,14 @@ const curlTemplate = computed(() =>
 	dialect.value === 'openai'
 		? `curl ${baseUrl.value}/chat/completions \\
   -H "Content-Type: application/json" \\
-  -H "Authorization: Bearer $LLM_API_KEY" \\
+  -H "Authorization: Bearer $API_KEY" \\
   -d '{
     "model": "${modelId.value}",
     "messages": [{"role": "user", "content": "Hello"}]
   }'`
 		: `curl ${baseUrl.value}/v1/messages \\
   -H "Content-Type: application/json" \\
-  -H "x-api-key: $LLM_API_KEY" \\
+  -H "x-api-key: $API_KEY" \\
   -H "anthropic-version: 2023-06-01" \\
   -d '{
     "model": "${modelId.value}",
@@ -190,8 +190,7 @@ const confirmRevoke = async (): Promise<void> => {
 		<div class="mx-auto w-full max-w-3xl px-6 pb-8 pt-5">
 			<div class="flex items-start justify-between gap-4">
 				<p class="max-w-prose text-p-sm text-ink-gray-5">
-					Central-issued keys for use in your own apps. Usage bills to your
-					team, same as on-site AI.
+					Central-issued keys for use in your own apps.
 				</p>
 
 				<Button
