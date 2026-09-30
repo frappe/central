@@ -20,7 +20,13 @@ from central.billing.payments.settlement import (
 from central.billing.revenue import credits, invoicing
 from central.billing.tests.test_stripe_adapter import make_stripe_gateway
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
-from central.billing.tests.utils import ensure_atlas_instance, ensure_team, make_plan, set_team_tier
+from central.billing.tests.utils import (
+	complete_billing_profile,
+	ensure_atlas_instance,
+	ensure_team,
+	make_plan,
+	set_team_tier,
+)
 
 TEAM = "team-waterfall"
 CLUSTER = "ap-south-1"
@@ -52,6 +58,9 @@ class SettlementTestBase(IntegrationTestCase):
 		make_plan(PLAN)
 		make_stripe_gateway()
 		self._purge()
+		# An invoice can only be issued to a team we can make it out to, so the
+		# waterfall is only reached once the profile is complete (open_and_collect).
+		complete_billing_profile(TEAM)
 
 	def tearDown(self):
 		self._purge()

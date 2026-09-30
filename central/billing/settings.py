@@ -115,6 +115,14 @@ def dunning_retry_days() -> list[int]:
 	return _settings().retry_days()
 
 
+def billing_details_grace_days() -> int:
+	"""Days an invoice may wait for a team's billing details before we escalate."""
+	override = _override("billing_details_grace_days")
+	if override is not _MISSING:
+		return frappe.utils.cint(override)
+	return frappe.utils.cint(_settings().billing_details_grace_days)
+
+
 def suspend_after_days() -> int:
 	"""Days past due before a subscription is suspended."""
 	override = _override("suspend_after_days")

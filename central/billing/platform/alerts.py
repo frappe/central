@@ -8,6 +8,7 @@ itself. Silence is the success case.
 
 import frappe
 
+from central.billing import settings
 from central.billing.platform import invariants, metrics
 
 # A webhook we failed to process is a settlement we have not applied. An hour is long
@@ -70,7 +71,28 @@ def invariant_violations() -> list[dict]:
 	]
 
 
-SOURCES = (invariant_violations, failed_webhooks, stale_attempts)
+def held_invoices() -> list[dict]:
+	"""Bills still unissued long after their period closed — usually a team we have
+	no billing details for.
+
+	This is money we are not collecting on resources that are still running, and
+	nothing else surfaces it: the invoice stays Draft, so dunning never sees it.
+	"""
+	from central.billing.revenue.invoicing.lifecycle import held_drafts
+
+	cutoff = frappe.utils.add_days(frappe.utils.nowdate(), -settings.billing_details_grace_days())
+	return [
+		{
+			"alert": "held_invoice",
+			"subject": i.name,
+			"team": i.team,
+			"detail": f"{i.currency} {i.total} still unissued, period closed {i.period_end}",
+		}
+		for i in held_drafts(held_before=cutoff, limit=100)
+	]
+
+
+SOURCES = (invariant_violations, failed_webhooks, stale_attempts, held_invoices)
 
 
 def collect() -> list[dict]:

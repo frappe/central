@@ -47,15 +47,13 @@ function saved(key: TeamSSHKey | null) {
 			:loading="loading"
 			:disabled="!!error"
 			:required="required"
-			:description="
-				required
-					? 'Select at least one team key to sign in to Ubuntu.'
-					: 'Add a team key if you want SSH access to this server.'
-			"
 			:empty-text="keys.length ? 'No matching keys' : 'No team SSH keys yet'"
 			label="SSH keys"
-			placeholder="Select team SSH keys"
-			class="w-full max-w-xs"
+			:placeholder="
+				required ? 'Select at least one key' : 'Add a key for SSH access'
+			"
+			size="md"
+			class="w-full"
 			@update:model-value="updateSelection"
 		>
 			<template #footer="{ clear, selectedOptions, setOpen }">

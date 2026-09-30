@@ -45,12 +45,22 @@ def get_missing_fields(team: str) -> list[str]:
 	if not frappe.db.exists("Billing Profile", team):
 		return list(REQUIRED_FIELDS)
 
-	profile = frappe.get_doc("Billing Profile", team)
+	return get_missing_fields_of(frappe.get_doc("Billing Profile", team))
+
+
+def get_missing_fields_of(profile) -> list[str]:
+	"""Missing required fields on an already-loaded profile row. No row means all."""
+	if profile is None:
+		return list(REQUIRED_FIELDS)
 	return [field for field in REQUIRED_FIELDS if not str(profile.get(field) or "").strip()]
 
 
+def get_field_labels(fields: list[str]) -> list[str]:
+	return [FIELD_LABELS.get(field, field) for field in fields]
+
+
 def get_missing_field_labels(team: str) -> list[str]:
-	return [FIELD_LABELS.get(field, field) for field in get_missing_fields(team)]
+	return get_field_labels(get_missing_fields(team))
 
 
 def is_complete(team: str) -> bool:
@@ -69,11 +79,38 @@ def require_billing_profile(team: str, action: str) -> None:
 		)
 
 
+def require_billing_profile_or_credit(team: str, new_rate, action: str) -> None:
+	"""Refuse `action` until the billing profile is complete, unless credits fund it.
+
+	`new_rate` is the monthly run-rate `action` adds; None is never funded.
+	"""
+	from central.billing.payments.settlement import wallet_funds
+
+	if wallet_funds(team, new_rate):
+		return
+	require_billing_profile(team, action)
+
+
 class BillingProfile(Document):
 	def validate(self):
 		self.validate_gstin()
 		self.validate_india_state()
 		self.lock_country_and_currency_after_invoicing()
+
+	def on_update(self):
+		self.release_held_invoices()
+
+	def release_held_invoices(self):
+		"""Settle anything held back for these details once they are on file.
+
+		On the doctype rather than one endpoint: the profile is completed from the
+		dashboard, from the bench's own billing tab and from Desk, and an invoice
+		stuck for a missing legal name must not depend on which door it came through.
+		"""
+		from central.billing.revenue.invoicing.run import release_held_drafts
+
+		if is_complete(self.team):
+			release_held_drafts(self.team)
 
 	def lock_country_and_currency_after_invoicing(self):
 		"""Freeze country and currency once the team has been invoiced.

@@ -6,6 +6,7 @@ import ChoiceCards from '@/components/common/ChoiceCards.vue'
 interface ImageChoice {
 	label: string
 	value: string
+	description?: string
 	logo: string | null
 }
 
@@ -17,7 +18,6 @@ defineProps<{
 
 const emit = defineEmits<{ 'update:modelValue': [value: string] }>()
 
-// Offerings Central knows by name ship with a logo even when the catalog has none.
 const defaultLogos: Record<string, string> = {
 	pilot: pilotLogo,
 	ubuntu: ubuntuLogo,
@@ -34,6 +34,7 @@ function logoFor(option: ImageChoice): string | null {
 			:model-value="modelValue"
 			:options="options"
 			:disabled="disabled"
+			:columns="2"
 			label="Select an image"
 			@update:model-value="emit('update:modelValue', $event)"
 		>
@@ -42,12 +43,12 @@ function logoFor(option: ImageChoice): string | null {
 					v-if="logoFor(option as ImageChoice)"
 					:src="logoFor(option as ImageChoice) ?? ''"
 					alt=""
-					class="size-7 object-contain"
+					class="size-7 shrink-0 rounded-4 bg-surface-gray-2 object-contain p-1.5"
 					draggable="false"
 				/>
 				<span
 					v-else
-					class="grid size-7 place-items-center rounded-full bg-surface-gray-3 text-ink-gray-8"
+					class="grid size-7 shrink-0 place-items-center rounded-4 bg-surface-gray-2 text-ink-gray-8"
 					aria-hidden="true"
 					>{{ option.label.charAt(0) }}</span
 				>

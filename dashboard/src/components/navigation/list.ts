@@ -76,7 +76,7 @@ export const sidebarSections = computed<SidebarSection[]>(() => {
 				{
 					label: 'Object storage',
 					icon: 'lucide-archive',
-					to: '/addons/object-storage',
+					to: '/object-storage',
 					condition:
 						features.addons && features.storage && canViewServices.value,
 				},

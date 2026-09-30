@@ -78,7 +78,7 @@ const routes = [
 				meta: { title: 'New server' },
 			},
 			{
-				path: 'addons/object-storage',
+				path: 'object-storage',
 				name: 'ObjectStorage',
 				component: () => import('@/pages/addons/ObjectStorage.vue'),
 				meta: { title: 'Object storage', feature: ['addons', 'storage'] },
@@ -154,6 +154,11 @@ const routes = [
 				name: 'FocusedInvitation',
 				component: () => import('@/pages/team/InvitationsPage.vue'),
 				meta: { title: 'Invitations' },
+			},
+			{
+				path: 'addons',
+				name: 'Addons',
+				redirect: '/object-storage',
 			},
 		],
 	},

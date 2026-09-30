@@ -46,6 +46,19 @@ function latestBuilds(images: RegionalImage[]): RegionalImage[] {
 	return [...latest.values()]
 }
 
+const releaseNumber = (image: RegionalImage): number =>
+	Number(image.tags.frappe_version?.replace('version-', '') ?? 0)
+
+const newestRelease = (images: RegionalImage[]): RegionalImage | undefined =>
+	images
+		.filter((image) => image.tags.frappe_version?.startsWith('version-'))
+		.sort(
+			(a, b) =>
+				releaseNumber(b) - releaseNumber(a) ||
+				Number(hasSite(a)) - Number(hasSite(b)) ||
+				b.created_at - a.created_at,
+		)[0]
+
 function hasSite(image: RegionalImage): boolean {
 	return image.tags.has_site === '1'
 }
@@ -174,10 +187,10 @@ export function useRegionalImages(
 				offset = page.next_offset
 			} while (offset !== null)
 			images.value = builds
-			// One build is not a choice; picking it here saves a required click and lets
-			// the plan step load straight away.
-			if (buildChoices.value.length === 1)
-				imageId.value = buildChoices.value[0].id
+			imageId.value =
+				buildChoices.value.length === 1
+					? buildChoices.value[0].id
+					: (newestRelease(buildChoices.value)?.id ?? '')
 		} catch (failure) {
 			if (current === generation)
 				error.value = getErrorMessage(

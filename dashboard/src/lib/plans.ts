@@ -11,11 +11,9 @@ export function planSpecs(plan: Plan, options?: { disk?: boolean }): string {
 	const parts = plan.includes
 		.filter((inc) => {
 			if (!inc.quantity) return false
-			// Resize rows are CPU and memory. Disk is chosen separately, and
-			// transfer would otherwise read as another disk size.
 			if (options?.disk === false)
 				return inc.resource_type === 'Compute' || inc.resource_type === 'Memory'
-			return true
+			return inc.resource_type in NOUNS
 		})
 		.map((inc) =>
 			`${formatQty(inc.quantity)} ${inc.unit} ${nounFor(inc.resource_type)}`.trim(),
