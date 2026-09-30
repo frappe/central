@@ -78,16 +78,10 @@ const routes = [
 				meta: { title: 'New server' },
 			},
 			{
-				path: 'addons/ai',
-				name: 'AIInference',
-				component: () => import('@/pages/addons/AIInference.vue'),
-				meta: { title: 'Services', feature: ['addons', 'llm'] },
-			},
-			{
 				path: 'object-storage',
 				name: 'ObjectStorage',
 				component: () => import('@/pages/addons/ObjectStorage.vue'),
-				meta: { title: 'Services', feature: ['addons', 'storage'] },
+				meta: { title: 'Object storage', feature: ['addons', 'storage'] },
 			},
 			{
 				path: 'billing',
@@ -161,7 +155,6 @@ const routes = [
 				component: () => import('@/pages/team/InvitationsPage.vue'),
 				meta: { title: 'Invitations' },
 			},
-
 			{
 				path: 'addons',
 				name: 'Addons',
@@ -200,8 +193,7 @@ router.beforeEach((to) => {
 	}
 
 	// A route behind a disabled feature flag doesn't exist for this session.
-	// `feature` may name one flag or several (e.g. the AI page needs both the
-	// Add-ons area and the LLM service); any one off redirects away.
+	// `feature` may name one flag or several; any one off redirects away.
 	if (to.meta.feature) {
 		const required = Array.isArray(to.meta.feature)
 			? to.meta.feature

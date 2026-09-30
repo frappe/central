@@ -39,8 +39,7 @@ export function useCapabilities() {
 		canViewClusters: computed(() => has('cluster:view')),
 		canViewBilling: computed(() => has('billing:view')),
 		canManageBilling: computed(() => has('billing:manage')),
-		// Add-on services (LLM hosting today). View lists offers/sites; manage
-		// activates, enables/disables sites, and reveals per-site keys.
+		// Object storage: view lists buckets and usage; manage creates, rotates and deletes them.
 		canViewServices: computed(() => has('service:view')),
 		canManageServices: computed(() => has('service:manage')),
 		// Team & identity — every active member can view the roster (membership is

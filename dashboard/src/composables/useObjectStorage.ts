@@ -67,9 +67,7 @@ const deleteCall = useCall<{ name: string }, { team: string; name: string }>({
 })
 
 export const bucketLabel = (bucket: StorageBucket): string =>
-	bucket.is_managed
-		? 'Server backups'
-		: bucket.bucket_name.replace(new RegExp(`^\\d+-${bucket.region}-`), '')
+	bucket.bucket_name.replace(new RegExp(`^\\d+-${bucket.region}-`), '')
 
 export const useObjectStorage = () => ({
 	regions: computed(() => storageCall.data?.regions ?? []),

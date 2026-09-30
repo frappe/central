@@ -3,14 +3,18 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING
 
+import boto3
 import frappe
 import requests
+from botocore.config import Config
+from botocore.exceptions import BotoCoreError, ClientError
 from frappe import _
 
 from central.sso import mint_cargo_token
 
 if TYPE_CHECKING:
 	from central.infrastructure.doctype.region.region import Region
+	from central.services.doctype.team_service.team_service import TeamService
 
 
 class ObjectStorageConnectionError(frappe.ValidationError):
@@ -124,7 +128,7 @@ class ObjectStorageClient:
 		try:
 			messages = json.loads(response.json()["_server_messages"])
 			message = json.loads(messages[-1])["message"]
-		except (ValueError, KeyError, IndexError, TypeError):
+		except ValueError, KeyError, IndexError, TypeError:
 			return None
 
 		return frappe.utils.strip_html(message) if isinstance(message, str) else None
@@ -137,9 +141,10 @@ class ObjectStorageClient:
 		"""Delete a bucket."""
 		return self._call("delete_bucket", name)
 
-	def rotate_credentials(self, name: str) -> dict:
-		"""Rotate credentials for a bucket."""
-		return self._call("rotate_credentials", name)
+	def rotate_credentials(self, name: str, access_key: str) -> dict:
+		"""Replace one of a bucket's keys and return the new one. Cargo makes the new key
+		before it deletes `access_key`, so a failed rotation keeps the old key working."""
+		return self._call("rotate_credentials", name, access_key=access_key)
 
 	def get_usage(self, name: str) -> dict:
 		"""What a bucket holds, against its caps."""
@@ -148,3 +153,76 @@ class ObjectStorageClient:
 	def set_quota(self, name: str, size_gib: int, max_objects: int) -> dict:
 		"""Cap a bucket's total size and object count. Zero lifts a cap."""
 		return self._call("set_quota", name, size_gib=size_gib, max_objects=max_objects)
+
+
+class BucketInteractions:
+	"""Read one team bucket over S3 with the bucket's own key. Cargo controls buckets;
+	objects are read from the region's S3 gateway directly."""
+
+	MAXIMUM_PAGE_SIZE = 1000
+	DOWNLOAD_URL_EXPIRY_SECONDS = 300
+
+	def __init__(self, service: TeamService):
+		self.bucket_name = service.bucket_name
+		self.client = boto3.client(
+			"s3",
+			endpoint_url=service.endpoint_url,
+			aws_access_key_id=service.access_key,
+			aws_secret_access_key=service.get_password("secret_access_key"),
+			region_name=service.region,
+			config=Config(
+				signature_version="s3v4",
+				s3={"addressing_style": "path"},
+				connect_timeout=5,
+				read_timeout=20,
+				retries={"max_attempts": 2},
+			),
+		)
+
+	def fetch_objects(self, prefix: str = "", offset: str | None = None, limit: int = 100) -> dict:
+		"""Paginate though the buckets' objects and folders."""
+		arguments = {
+			"Bucket": self.bucket_name,
+			"Prefix": prefix,
+			"Delimiter": "/",
+			"MaxKeys": max(1, min(int(limit), self.MAXIMUM_PAGE_SIZE)),
+		}
+		if offset:
+			arguments["ContinuationToken"] = offset
+
+		page = self._request(self.client.list_objects_v2, **arguments)
+		return {
+			"objects": [
+				{
+					"key": item["Key"],
+					"size_bytes": item["Size"],
+					"last_modified": item["LastModified"].isoformat(),
+					"etag": item["ETag"].strip('"'),
+				}
+				for item in page.get("Contents", [])
+			],
+			"folders": [folder["Prefix"] for folder in page.get("CommonPrefixes", [])],
+			"next_offset": page.get("NextContinuationToken"),
+		}
+
+	def get_object_url(self, key: str) -> str:
+		"""A short-lived download link for one object, so Central never streams its bytes."""
+		# A presigned URL is signed locally, so ask S3 first: a link to nothing is a dead end.
+		self._request(self.client.head_object, Bucket=self.bucket_name, Key=key)
+		return self.client.generate_presigned_url(
+			"get_object",
+			Params={"Bucket": self.bucket_name, "Key": key},
+			ExpiresIn=self.DOWNLOAD_URL_EXPIRY_SECONDS,
+		)
+
+	@staticmethod
+	def _request(call, **arguments) -> dict:
+		try:
+			return call(**arguments)
+		except ClientError as error:
+			code = error.response.get("Error", {}).get("Code")
+			if code in {"NoSuchBucket", "NoSuchKey", "404"}:
+				raise ObjectStorageNotFound(_("The bucket or object does not exist.")) from error
+			raise ObjectStorageRejected(_("Object storage refused the request.")) from error
+		except BotoCoreError as error:
+			raise ObjectStorageConnectionError(_("Object storage could not be reached.")) from error

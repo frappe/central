@@ -7,18 +7,12 @@
 export interface Features {
 	/** The Add-ons area as a whole (nav entry + routes). */
 	addons: boolean
-	/** Per-service rollout switches. Off renders the card as "coming soon". */
-	llm: boolean
-	pdf: boolean
-	email: boolean
+	/** Object storage rollout switch. */
 	storage: boolean
 }
 
 // Defaults match the DocType: the area is on, individual services off until rolled out.
 export const features: Features = {
 	addons: window.features?.addons ?? true,
-	llm: window.features?.llm ?? false,
-	pdf: window.features?.pdf ?? false,
-	email: window.features?.email ?? false,
 	storage: window.features?.storage ?? import.meta.env.DEV,
 }
