@@ -92,9 +92,9 @@ class AtlasClient:
 	def get_vm(self, name: str) -> dict:
 		return self._get(f"virtual-machines/{quote(name, safe='')}")
 
-	def list_vms(self, limit: int = 100) -> list[dict]:
+	def list_vms(self, limit: int = 100, offset: int = 0) -> list[dict]:
 		"""One page of this tenant's servers, newest first."""
-		page = self._get("virtual-machines", params={"offset": 0, "limit": limit})
+		page = self._get("virtual-machines", params={"offset": offset, "limit": limit})
 		items = page.get("items")
 		if not isinstance(items, list):
 			frappe.throw(_("Atlas returned an invalid server page."), AtlasConnectionError)

@@ -12,7 +12,7 @@ from central.billing.tests.utils import make_plan
 from central.errors import AtlasConnectionError, AtlasRequestUncertain
 from central.infrastructure.doctype.resource_action.resource_action import ResourceAction
 from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
-from central.integrations.resource_actions import _process_locked
+from central.integrations.resource_actions import SERVER_PAGE_SIZE, _process_locked
 from central.resource_actions import get_status, submit_request
 
 COMPOSITION = [
@@ -335,6 +335,28 @@ class TestResourceActions(IntegrationTestCase):
 			"AtlasRequestUncertain: lost reply",
 			frappe.db.get_value("Error Log", action.error_log, "error"),
 		)
+		self.client.return_value.create_vm.assert_called_once()
+
+	def test_a_lost_reply_finds_the_machine_on_a_later_page(self):
+		name = self.submit()["action"]
+		self.client.return_value.create_vm.side_effect = AtlasRequestUncertain("lost reply")
+		built = self.built_vm(name)
+		mine = self.client.return_value.get_vm.return_value
+		newer = [
+			{"id": f"vm-other-{index}", "created_at": built["created_at"]}
+			for index in range(SERVER_PAGE_SIZE)
+		]
+		servers = [*newer, built]
+		self.client.return_value.list_vms.side_effect = lambda limit, offset: servers[offset : offset + limit]
+		self.client.return_value.get_vm.side_effect = (
+			lambda vm_id: mine if vm_id == built["id"] else {"id": vm_id}
+		)
+		_process_locked(name)
+
+		action = frappe.get_doc("Resource Action", name)
+		self.assertEqual(action.remote_vm_id, "vm-00009")
+		self.assertEqual(action.status, "Succeeded")
+		self.assertEqual(self.client.return_value.list_vms.call_count, 2)
 		self.client.return_value.create_vm.assert_called_once()
 
 	def test_the_search_reads_dispatch_time_in_the_system_time_zone(self):

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
 from zoneinfo import ZoneInfo
 
 import frappe
@@ -24,6 +25,7 @@ from central.integrations.pilot import get_bootstrap_metadata
 # A region stamps its own clock on a machine, so allow for a little drift when deciding
 # which machines are new enough to have come from this request.
 CLOCK_SKEW_SECONDS = 120
+SERVER_PAGE_SIZE = 100
 # How long one dispatch job may run. Its lock lasts as long, so a second worker never
 # starts while the first still works. A job waits for at most one power change, such as
 # the stop before a final snapshot. A resize waits for a stop and a start.
@@ -184,7 +186,7 @@ def find_created_vm(request) -> str | None:
 	dispatched = frappe.utils.get_datetime(request.dispatched_at or request.creation)
 	started = dispatched.replace(tzinfo=ZoneInfo(frappe.utils.get_system_timezone())).timestamp()
 
-	for row in client.list_vms():
+	for row in _servers_newest_first(client):
 		created_at = row.get("created_at")
 		if not isinstance(created_at, int) or created_at < started - CLOCK_SKEW_SECONDS:
 			break
@@ -197,6 +199,18 @@ def find_created_vm(request) -> str | None:
 			return row["id"]
 
 	return None
+
+
+def _servers_newest_first(client: AtlasClient) -> Iterator[dict]:
+	"""Every server of the tenant, one page at a time. A search that stopped at the first
+	page would call a machine missing when it sits on a later one, and a retry builds another."""
+	offset = 0
+	while True:
+		page = client.list_vms(limit=SERVER_PAGE_SIZE, offset=offset)
+		yield from page
+		if len(page) < SERVER_PAGE_SIZE:
+			return
+		offset += len(page)
 
 
 def _client(request) -> AtlasClient:
