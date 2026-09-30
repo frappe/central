@@ -111,7 +111,12 @@ export function useProvisioningAction(
 		try {
 			const result = await call<ActionStatus>(endpoint, {
 				...values,
-				request_key: crypto.randomUUID(),
+				// crypto.randomUUID needs a secure context; plain-HTTP local sites are not one.
+				request_key:
+					crypto.randomUUID?.() ??
+					Array.from(crypto.getRandomValues(new Uint8Array(16)), (byte) =>
+						byte.toString(16).padStart(2, '0'),
+					).join(''),
 			})
 			if (current !== generation) return
 			action.value = result

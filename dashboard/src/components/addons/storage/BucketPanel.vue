@@ -212,19 +212,14 @@ const remove = async (target: StorageBucket): Promise<void> => {
 					</div>
 				</dl>
 
-				<p v-if="!bucket.is_managed" class="text-p-sm text-ink-gray-5">
+				<p class="text-p-sm text-ink-gray-5">
 					The secret key is shown once, when the bucket is created or its key is
 					rotated.
 				</p>
 			</section>
-
-			<p v-if="bucket.is_managed" class="p-4 text-p-sm text-ink-gray-6">
-				Your servers in this region write their backups here. Frappe Cloud
-				manages its key and limits, so it can't be changed or deleted.
-			</p>
 		</div>
 
-		<template v-if="bucket && canManage && !bucket.is_managed" #footer>
+		<template v-if="bucket && canManage" #footer>
 			<div class="flex flex-wrap gap-2">
 				<Button
 					icon-left="lucide-gauge"
