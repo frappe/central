@@ -163,7 +163,10 @@ class GatewayAdapter(ABC):
 	def charge(self, invoice, payment_method, idempotency_key: str) -> PaymentResult: ...
 
 	@abstractmethod
-	def refund(self, payment_attempt, amount, reason: str) -> RefundResult: ...
+	def refund(
+		self, payment_attempt, amount, reason: str, idempotency_key: str | None = None
+	) -> RefundResult:
+		"""Refund a captured charge. The same key must never refund twice."""
 
 	@abstractmethod
 	def verify_webhook_signature(self, payload: bytes, headers: dict) -> bool: ...

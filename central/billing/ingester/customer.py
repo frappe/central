@@ -11,9 +11,9 @@ id instead of creating the customer again.
 from urllib.parse import quote
 
 import frappe
-from redis.exceptions import LockError
 
 from central.billing.ingester.connection import enabled, get, post, put
+from central.billing.ingester.locks import hold_until_transaction_ends, lock_name
 
 # Changes to these are what the accounting system needs to hear about.
 SYNCED_FIELDS = (
@@ -31,9 +31,6 @@ SYNCED_FIELDS = (
 
 PENDING_BATCH = 100
 
-# Longest one step may hold its team's lock: a request at its timeout, and room.
-LOCK_SECONDS = 5 * 60
-
 
 def enqueue_sync(profile) -> None:
 	"""Queue a sync for a complete, real profile whose synced details changed."""
@@ -50,7 +47,7 @@ def sync_customer_profile(team: str) -> None:
 	The team's lock is taken before anything is read and held until this job's
 	transaction ends, so the next sync to get it sees every id this one wrote.
 	"""
-	if not _lock_until_transaction_ends(team):
+	if not hold_until_transaction_ends(f"customer-sync::{team}"):
 		return  # another step for this team is running and queues what follows
 	profile = frappe.get_doc("Billing Profile", team)
 	if not _should_sync(profile):
@@ -143,27 +140,7 @@ def _release_held_drafts(team: str) -> None:
 
 
 def _lock_name(team: str) -> str:
-	return frappe.cache.make_key(f"customer-sync::{team}")
-
-
-def _lock_until_transaction_ends(team: str) -> bool:
-	"""Take the team's sync lock, released once this transaction commits or rolls back.
-
-	The timeout frees it if the worker dies first.
-	"""
-	lock = frappe.cache.lock(_lock_name(team), timeout=LOCK_SECONDS)
-	if not lock.acquire(blocking=False):
-		return False
-
-	def release():
-		try:
-			lock.release()
-		except LockError:
-			pass  # it outlived its timeout; nothing left to release
-
-	frappe.db.after_commit.add(release)
-	frappe.db.after_rollback.add(release)
-	return True
+	return lock_name(f"customer-sync::{team}")
 
 
 def _pending_teams() -> list[str]:

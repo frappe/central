@@ -46,6 +46,31 @@ class FakeAccountingSystem:
 		]
 
 	def post(self, endpoint, payload):
+		if endpoint.endswith("make_sales_return"):
+			source = self.records[("Sales Invoice", payload["source_name"])]
+			return frappe._dict(
+				doctype="Sales Invoice",
+				is_return=1,
+				return_against=payload["source_name"],
+				items=[dict(i, qty=-1) for i in source.get("items") or []],
+				taxes=source.get("taxes") or [],
+			)
+		if endpoint.endswith("get_payment_entry"):
+			amount = payload["party_amount"]
+			return frappe._dict(
+				doctype="Payment Entry",
+				payment_type="Pay",
+				party_type="Customer",
+				paid_amount=amount,
+				received_amount=amount,
+				references=[
+					{
+						"reference_doctype": "Sales Invoice",
+						"reference_name": payload["dn"],
+						"allocated_amount": -amount,
+					}
+				],
+			)
 		doctype = endpoint.rsplit("/", 1)[1].replace("%20", " ")
 		if doctype in self.fail_on:
 			self.fail_on.discard(doctype)
@@ -109,7 +134,14 @@ def configure_accounting(**values) -> None:
 	)
 	doc.set("receivable_accounts", [])
 	for currency, account in (("INR", "Debtors - TC"), ("USD", "Debtors USD - TC")):
-		doc.append("receivable_accounts", {"currency": currency, "account": account})
+		doc.append(
+			"receivable_accounts",
+			{
+				"currency": currency,
+				"account": account,
+				"wallet_clearing_account": f"Wallet Clearing {currency} - TC",
+			},
+		)
 	doc.set("gateways", [])
 	for currency in ("INR", "USD"):
 		doc.append(

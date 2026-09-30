@@ -102,7 +102,7 @@ def _to_wallet(refund, attempt):
 
 def _to_source(refund, attempt, reason):
 	"""Refund to the gateway via the adapter (symmetric across gateways)."""
-	result = _adapter(attempt.gateway).refund(attempt, refund.amount, reason or "")
+	result = _adapter(attempt.gateway).refund(attempt, refund.amount, reason or "", refund.name)
 	refund.gateway_refund_id = result.gateway_refund_id
 	transition(
 		refund,
