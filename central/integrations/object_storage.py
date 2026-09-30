@@ -128,7 +128,7 @@ class ObjectStorageClient:
 		try:
 			messages = json.loads(response.json()["_server_messages"])
 			message = json.loads(messages[-1])["message"]
-		except ValueError, KeyError, IndexError, TypeError:
+		except (ValueError, KeyError, IndexError, TypeError):
 			return None
 
 		return frappe.utils.strip_html(message) if isinstance(message, str) else None
