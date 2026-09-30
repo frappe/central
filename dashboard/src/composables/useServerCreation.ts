@@ -63,8 +63,6 @@ export function useServerCreation() {
 	const { canCreateServer } = useCapabilities()
 
 	const name = ref('')
-	const subdomain = ref('')
-	const subdomainEdited = ref(false)
 	const selectedProvider = ref<string | null>(null)
 	const selectedRegion = ref<string | null>(null)
 
@@ -87,7 +85,8 @@ export function useServerCreation() {
 	const selectedRegionRow = computed(
 		() => regions.value.find((r) => r.region === selectedRegion.value) ?? null,
 	)
-	function slugifySubdomain(value: string): string {
+	// The guest OS hostname. Nothing routes by it, so the server name is enough.
+	function hostnameFrom(value: string): string {
 		return value
 			.normalize('NFKD')
 			.replace(/[\u0300-\u036f]/g, '')
@@ -97,20 +96,6 @@ export function useServerCreation() {
 			.slice(0, 63)
 			.replace(/-+$/g, '')
 	}
-
-	function editSubdomain(value: string): void {
-		subdomainEdited.value = true
-		subdomain.value = slugifySubdomain(value)
-	}
-
-	function resetSubdomain(): void {
-		subdomainEdited.value = false
-		subdomain.value = slugifySubdomain(name.value)
-	}
-
-	watch(name, (value) => {
-		if (!subdomainEdited.value) subdomain.value = slugifySubdomain(value)
-	})
 
 	function selectProvider(provider: string): void {
 		if (provider === selectedProvider.value) return
@@ -353,7 +338,10 @@ export function useServerCreation() {
 			return [
 				{ type: 'Compute', value: `${config.vcpus}` },
 				{ type: 'Memory', value: `${config.memory_gb} GB` },
-				{ type: 'Disk', value: `${config.disk_gb} ${rateCard.value.Disk?.unit ?? 'GB'}` },
+				{
+					type: 'Disk',
+					value: `${config.disk_gb} ${rateCard.value.Disk?.unit ?? 'GB'}`,
+				},
 			]
 		return (selectedPlanObj.value?.includes ?? [])
 			.filter((inc) => inc.quantity)
@@ -380,7 +368,9 @@ export function useServerCreation() {
 			resources: summaryResources.value,
 			provider: selectedProvider.value,
 			tags: [
-				region ? `${flagEmoji(region.country_code)} ${regionLabel(region)}` : '',
+				region
+					? `${flagEmoji(region.country_code)} ${regionLabel(region)}`
+					: '',
 				offeringTitle,
 				[
 					hasPublicIpv6.value ? 'Public IPv6' : '',
@@ -402,8 +392,7 @@ export function useServerCreation() {
 			!!action.value ||
 			!openActionKnown.value ||
 			!selectedRegion.value ||
-			!name.value.trim() ||
-			!subdomain.value
+			!name.value.trim()
 		)
 			return false
 		if (sshMissing.value) return false
@@ -424,7 +413,7 @@ export function useServerCreation() {
 			team: activeTeam.value,
 			region: selectedRegion.value,
 			title: name.value.trim(),
-			hostname: subdomain.value,
+			hostname: hostnameFrom(name.value),
 			...selection.value,
 			ssh_key_ids: sshKeyIds.value,
 			has_public_ipv6: hasPublicIpv6.value,
@@ -476,15 +465,11 @@ export function useServerCreation() {
 		regions,
 		loading,
 		name,
-		subdomain,
-		subdomainEdited,
 		selectedProvider,
 		selectedRegion,
 		providerOptions,
 		providerRegions,
 		selectedRegionRow,
-		editSubdomain,
-		resetSubdomain,
 		selectProvider,
 		selectRegion,
 		markers,

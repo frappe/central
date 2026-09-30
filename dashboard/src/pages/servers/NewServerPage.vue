@@ -1,12 +1,5 @@
 <script setup lang="ts">
-import {
-	Alert,
-	Button,
-	Select,
-	TabButtons,
-	Tabs,
-	TextInput,
-} from 'frappe-ui'
+import { Alert, Button, Select, TabButtons, Tabs, TextInput } from 'frappe-ui'
 import { computed } from 'vue'
 import ChoiceCards from '@/components/common/ChoiceCards.vue'
 import CreationStatusPanel from '@/components/servers/CreationStatusPanel.vue'
@@ -26,15 +19,11 @@ const {
 	regions,
 	loading,
 	name,
-	subdomain,
-	subdomainEdited,
 	selectedProvider,
 	selectedRegion,
 	providerOptions,
 	providerRegions,
 	selectedRegionRow,
-	editSubdomain,
-	resetSubdomain,
 	selectProvider,
 	selectRegion,
 	markers,
@@ -121,9 +110,7 @@ const regionFlags = computed(() =>
 
 		<div class="flex flex-col-reverse lg:flex-row">
 			<div class="w-full p-4 md:p-6 lg:w-1/2">
-				<p v-if="loading" class="text-p-sm text-ink-gray-5">
-					Loading regions…
-				</p>
+				<p v-if="loading" class="text-p-sm text-ink-gray-5">Loading regions…</p>
 				<p v-else-if="!regions.length" class="text-p-sm text-ink-gray-5">
 					No active regions are available right now.
 				</p>
@@ -139,29 +126,6 @@ const regionFlags = computed(() =>
 							:maxlength="60"
 							autofocus
 						/>
-						<TextInput
-							:model-value="subdomain"
-							label="Hostname"
-							required
-							size="md"
-							placeholder="acme-production"
-							:maxlength="63"
-							autocomplete="off"
-							autocapitalize="off"
-							spellcheck="false"
-							@update:model-value="editSubdomain"
-						>
-							<template v-if="subdomainEdited" #suffix>
-								<Button
-									variant="ghost"
-									size="sm"
-									icon="lucide-rotate-ccw"
-									label="Reset hostname"
-									tooltip="Reset"
-									@click="resetSubdomain"
-								/>
-							</template>
-						</TextInput>
 					</section>
 
 					<section>
@@ -277,7 +241,9 @@ const regionFlags = computed(() =>
 					<section>
 						<div class="mb-3 flex items-center justify-between gap-3">
 							<h2 class="text-base-semibold text-ink-gray-8">Region</h2>
-							<span class="text-xs text-ink-gray-5">Or pick a pin on the map</span>
+							<span class="text-xs text-ink-gray-5"
+								>Or pick a pin on the map</span
+							>
 						</div>
 						<ChoiceCards
 							:model-value="selectedRegion"
@@ -299,11 +265,9 @@ const regionFlags = computed(() =>
 							<span class="text-xs text-ink-gray-5">Resize anytime</span>
 						</div>
 						<p v-if="!image" class="text-p-sm text-ink-gray-5">
-							{{
-								source === 'snapshot'
+							{{ source === 'snapshot'
 									? 'Select a snapshot to see compatible plans.'
-									: 'Select an image build to see compatible plans.'
-							}}
+									: 'Select an image build to see compatible plans.' }}
 						</p>
 						<p v-else-if="plansLoading" class="text-p-sm text-ink-gray-5">
 							Loading plans…
