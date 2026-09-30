@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Badge } from 'frappe-ui'
-import { computed } from 'vue'
+import { computed, nextTick } from 'vue'
 import ConfigDesigner from '@/components/servers/ConfigDesigner.vue'
 import { configSpecs, estimateConfig } from '@/lib/composed'
 import { money } from '@/lib/format'
@@ -39,6 +39,13 @@ const customKey = computed(() =>
 const isCustom = computed(
 	() => !!props.profile && selectedPlan.value === customKey.value,
 )
+
+const pickCustom = async (event: MouseEvent): Promise<void> => {
+	const card = event.currentTarget as HTMLElement
+	selectedPlan.value = customKey.value
+	await nextTick()
+	card.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
 
 const customEstimate = computed<number | null>(() =>
 	composedConfig.value
@@ -119,7 +126,7 @@ const matchingPreset = computed<Plan | null>(() => {
 				type="button"
 				:aria-pressed="isCustom"
 				class="col-span-2 flex items-center gap-4 rounded-6 border border-outline-gray-2 p-4 text-start transition-colors hover:bg-surface-gray-2 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-outline-gray-4 aria-pressed:border-outline-gray-6"
-				@click="selectedPlan = customKey"
+				@click="pickCustom"
 			>
 				<span
 					class="grid size-10 shrink-0 place-items-center rounded-6 bg-surface-gray-3"
