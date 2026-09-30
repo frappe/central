@@ -74,10 +74,11 @@ export const sidebarSections = computed<SidebarSection[]>(() => {
 					condition: canViewServers.value,
 				},
 				{
-					label: 'Services',
-					icon: 'lucide-blocks',
-					to: '/addons',
-					condition: features.addons && canViewServices.value,
+					label: 'Object storage',
+					icon: 'lucide-archive',
+					to: '/addons/object-storage',
+					condition:
+						features.addons && features.storage && canViewServices.value,
 				},
 				// The sent-invitations page (/team/invitations) still exists but has
 				// no sidebar entry — pending invites are managed from the Team page.

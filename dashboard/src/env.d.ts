@@ -25,9 +25,6 @@ interface Window {
 	onboarding_complete?: boolean
 	features?: {
 		addons?: boolean
-		llm?: boolean
-		pdf?: boolean
-		email?: boolean
 		storage?: boolean
 	}
 }

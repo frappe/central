@@ -32,10 +32,10 @@ function cycleCost(row: ServiceRow): number | null {
 	return costBySubject.value.get(row.service_subject) ?? null
 }
 
-// Subscribing happens on the Add-ons page (plan browsing lives there) — this
-// card only reports usage, so both Subscribe actions are links, not a dialog.
-function goToAddons(): void {
-	router.push({ name: 'Addons' })
+// Subscribing happens on the Object storage page — this card only reports
+// usage, so both Subscribe actions are links, not a dialog.
+function goToObjectStorage(): void {
+	router.push({ name: 'ObjectStorage' })
 }
 
 // The title line already names the service — the subtext carries only what's
@@ -44,15 +44,10 @@ function subtitle(row: ServiceRow): string {
 	return row.cluster || ''
 }
 
-// Each add-on family keeps the icon it wears on the Add-ons pages; the gauge
-// is only the unknown-service fallback.
+// Object storage keeps the icon it wears in the sidebar; the gauge is the fallback.
 function serviceIcon(row: ServiceRow): string {
 	const key = `${row.resource_type || ''} ${row.title || ''}`.toLowerCase()
-	if (/token|ai/.test(key)) return 'lucide-sparkles'
-	if (/pdf|print/.test(key)) return 'lucide-file-text'
-	if (/mail/.test(key)) return 'lucide-mail'
-	if (/storage|object/.test(key)) return 'lucide-archive'
-	return 'lucide-gauge'
+	return /storage|object/.test(key) ? 'lucide-archive' : 'lucide-gauge'
 }
 
 // A prepaid pack shows remaining allowance; a postpaid meter shows usage this period.
@@ -80,7 +75,7 @@ function exhausted(row: ServiceRow): boolean {
 <template>
 	<BillingCard
 		title="Metered services"
-		title-info="Team-level services billed by usage (AI tokens, email, PDF, storage). No server required."
+		title-info="Team-level services billed by usage, such as object storage. No server required."
 	>
 		<template v-if="canManageBilling" #action>
 			<Button
@@ -89,7 +84,7 @@ function exhausted(row: ServiceRow): boolean {
 				icon="lucide-plus"
 				title="Subscribe"
 				label="Subscribe"
-				@click="goToAddons"
+				@click="goToObjectStorage"
 			/>
 		</template>
 
@@ -167,10 +162,10 @@ function exhausted(row: ServiceRow): boolean {
 			v-else
 			icon="lucide-gauge"
 			title="No metered services"
-			description="Subscribe to a usage-billed service like AI tokens, email, or PDF rendering."
+			description="Create an object storage bucket to start usage billing."
 		>
 			<template v-if="canManageBilling" #action>
-				<Button label="Subscribe" @click="goToAddons" />
+				<Button label="Subscribe" @click="goToObjectStorage" />
 			</template>
 		</EmptyState>
 	</BillingCard>

@@ -33,8 +33,8 @@ const {
 const visible = computed(() => rows.value.slice(0, VISIBLE))
 const hidden = computed(() => Math.max(0, rows.value.length - VISIBLE))
 
-function goToAddons(): void {
-	router.push({ name: 'Addons' })
+function goToObjectStorage(): void {
+	router.push({ name: 'ObjectStorage' })
 }
 
 function serverTitle(sub: SubscriptionRow): string {
@@ -95,7 +95,7 @@ function serverTitle(sub: SubscriptionRow): string {
 			description="Servers and metered services you're subscribed to will show here with what they cost."
 		>
 			<template v-if="canManageBilling" #action>
-				<Button label="Browse add-ons" @click="goToAddons" />
+				<Button label="Open object storage" @click="goToObjectStorage" />
 			</template>
 		</EmptyState>
 
