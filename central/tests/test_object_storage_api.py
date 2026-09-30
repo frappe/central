@@ -318,7 +318,7 @@ class TestBucketObjects(ObjectStorageTestCase):
 				self.assertEqual(self.s3.list_objects_v2.call_args.kwargs["MaxKeys"], expected)
 
 	def test_download_url_is_signed_for_an_existing_object(self):
-		frappe.set_user(self.viewer)
+		frappe.set_user(self.owner)
 
 		result = api.get_object_url(self.team, self.bucket["name"], "media/a.png")
 
@@ -329,6 +329,14 @@ class TestBucketObjects(ObjectStorageTestCase):
 			Params={"Bucket": self.bucket["bucket_name"], "Key": "media/a.png"},
 			ExpiresIn=300,
 		)
+
+	def test_a_viewer_cannot_download_an_object(self):
+		frappe.set_user(self.viewer)
+
+		with self.assertRaises(frappe.PermissionError):
+			api.get_object_url(self.team, self.bucket["name"], "media/a.png")
+
+		self.s3.generate_presigned_url.assert_not_called()
 
 	def test_a_missing_object_gets_no_download_url(self):
 		self.s3.head_object.side_effect = ClientError({"Error": {"Code": "404"}}, "HeadObject")

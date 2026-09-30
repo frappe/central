@@ -50,8 +50,9 @@ def list_objects(
 	return BucketInteractions(_team_bucket(team, name)).fetch_objects(prefix, offset, limit)
 
 
+# A download link reads the object's contents, which service:view does not grant.
 @frappe.whitelist(methods=["GET"])
-@require_capability("service:view", VIEW_DENIED)
+@require_capability("service:manage", MANAGE_DENIED)
 def get_object_url(team: str | None = None, name: str | None = None, key: str | None = None) -> dict:
 	"""A download link for one object that expires in 5 minutes."""
 	if not key:
