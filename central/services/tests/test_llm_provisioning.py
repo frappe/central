@@ -116,8 +116,6 @@ class TestGroveDriverCalls(IntegrationTestCase):
 					"month": None,
 					"period": "Last 7 Days",
 					"key_hash": None,
-					"from_date": None,
-					"to_date": None,
 				},
 			),
 		)
@@ -337,7 +335,7 @@ class TestLLMProvisioning(IntegrationTestCase):
 
 		self.assertEqual(
 			(fetch_usage.call_args.args[1], fetch_usage.call_args.kwargs),
-			([self.owner], {"period": "Last 30 Days", "key_hash": None, "from_date": None, "to_date": None}),
+			([self.owner], {"period": "Last 30 Days", "key_hash": None}),
 		)
 		self.assertEqual(report["totals"], {"requests": 6, "cost": 1.75})
 		self.assertEqual(report["models"], usage["model_summary"])
@@ -368,33 +366,6 @@ class TestLLMProvisioning(IntegrationTestCase):
 
 		self.assertEqual(report["totals"], {"requests": 0, "cost": 0})
 		self.assertEqual((report["models"], report["daily"]), ([], []))
-
-	def test_a_custom_range_sends_its_dates_instead_of_the_period(self):
-		empty = {
-			"from_date": "2026-09-01",
-			"to_date": "2026-09-03",
-			"as_of": None,
-			"model_summary": [],
-			"daily_summary": [],
-		}
-		with patch.object(GroveDriver, "fetch_usage", return_value=empty) as fetch_usage:
-			dashboard.get_usage(
-				self.managed.name, period="Custom", from_date="2026-09-01", to_date="2026-09-03"
-			)
-
-		self.assertEqual(
-			fetch_usage.call_args.kwargs,
-			{"period": None, "key_hash": None, "from_date": "2026-09-01", "to_date": "2026-09-03"},
-		)
-
-	def test_a_custom_range_needs_both_ends_in_order(self):
-		for dates in ({"from_date": "2026-09-01"}, {"from_date": "2026-09-03", "to_date": "2026-09-01"}):
-			with (
-				patch.object(GroveDriver, "fetch_usage") as fetch_usage,
-				self.assertRaises(frappe.ValidationError),
-			):
-				dashboard.get_usage(self.managed.name, period="Custom", **dates)
-			fetch_usage.assert_not_called()
 
 	def test_usage_of_one_key_sends_its_hash_not_the_key(self):
 		with patch.object(GroveDriver, "provision_key", return_value=_FAKE):

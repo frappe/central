@@ -134,25 +134,13 @@ def get_reachable_models(email: str, service: str = _LLM_SERVICE) -> list[dict]:
 
 
 def get_usage_report(
-	email: str,
-	period: str,
-	service: str = _LLM_SERVICE,
-	key_hash: str | None = None,
-	dates: tuple[str, str] | None = None,
+	email: str, period: str, service: str = _LLM_SERVICE, key_hash: str | None = None
 ) -> dict:
-	"""What a Grove user used over a named period or the `dates` (from, to) range, or one key of
-	theirs by `key_hash`: requests and cost, in total, per model, and per day for a chart. Grove
-	does the sums; the cost is what Grove charged."""
+	"""What a Grove user used over a period, or one key of theirs by `key_hash`: requests and
+	cost, in total, per model, and per day for a chart. Grove does the sums; the cost is what
+	Grove charged."""
 	driver, backend = _driver_and_backend(service)
-	from_date, to_date = dates or (None, None)
-	usage = driver.fetch_usage(
-		backend,
-		[email],
-		period=None if dates else period,
-		key_hash=key_hash,
-		from_date=from_date,
-		to_date=to_date,
-	)
+	usage = driver.fetch_usage(backend, [email], period=period, key_hash=key_hash)
 
 	return {
 		"period": period,

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Button, DateRangePicker, Select } from 'frappe-ui'
+import { Button, Select } from 'frappe-ui'
 import { AreaChart, BarChart, NumberCard } from 'frappe-ui/charts'
 import { computed, ref, watch } from 'vue'
 import { useServices } from '@/composables/useServices'
@@ -13,7 +13,7 @@ const props = defineProps<Props>()
 const { usage, usageLoading, usageError, loadUsage, apiKeys, loadApiKeys } =
 	useServices()
 
-// The periods the provider knows by name, then a custom range of days.
+// The periods the provider knows by name.
 const periodOptions = [
 	{ label: 'Today', value: 'Today' },
 	{ label: 'Yesterday', value: 'Yesterday' },
@@ -21,22 +21,10 @@ const periodOptions = [
 	{ label: 'Last 30 days', value: 'Last 30 Days' },
 	{ label: 'This month', value: 'This Month' },
 	{ label: 'Last month', value: 'Last Month' },
-	{ label: 'Custom', value: 'Custom' },
 ]
 
 const defaultPeriod = 'Last 7 Days'
 const period = ref(defaultPeriod)
-
-// The custom range, [from, to] as YYYY-MM-DD. Picking Custom opens the picker.
-const range = ref<string[]>([])
-const rangeOpen = ref(false)
-const isCustom = computed(() => period.value === 'Custom')
-const today = new Date().toISOString().slice(0, 10)
-
-watch(period, (value) => {
-	if (value === 'Custom') rangeOpen.value = true
-	else range.value = []
-})
 
 // '' is every key. A revoked key keeps its history, so it stays in the list.
 const apiKey = ref('')
@@ -69,20 +57,15 @@ const resetFilters = (): void => {
 	apiKey.value = ''
 }
 
-// Custom waits for both ends of the range; until then the last result stays.
 const reload = (): void => {
-	if (!props.managedService) return
-	const [fromDate, toDate] = range.value
-	if (isCustom.value && !(fromDate && toDate)) return
-	loadUsage(props.managedService, {
-		period: period.value,
-		fromDate,
-		toDate,
-		apiKey: apiKey.value,
-	})
+	if (props.managedService)
+		loadUsage(props.managedService, {
+			period: period.value,
+			apiKey: apiKey.value,
+		})
 }
 
-watch([() => props.managedService, period, range, apiKey], reload, {
+watch([() => props.managedService, period, apiKey], reload, {
 	immediate: true,
 })
 
@@ -165,15 +148,6 @@ const asOf = computed(() =>
 							<span class="text-ink-gray-5">Time</span>
 						</template>
 					</Select>
-					<DateRangePicker
-						v-if="isCustom"
-						v-model="range"
-						v-model:open="rangeOpen"
-						class="w-56"
-						format="D MMM YYYY"
-						placeholder="Pick dates"
-						:max="today"
-					/>
 					<Select
 						v-model="apiKey"
 						:options="keyOptions"

@@ -69,21 +69,16 @@ export interface ServiceUsage {
 	daily: ServiceUsageDay[]
 }
 
-// What to show: a named period, or a custom range of UTC days (YYYY-MM-DD, both
-// included) that wins over it; and one team API key (a Service Credential name),
+// What to show: a named period, and one team API key (a Service Credential name),
 // or every key when absent.
 export interface UsageFilters {
 	period: string
-	fromDate?: string
-	toDate?: string
 	apiKey?: string
 }
 
 interface UsageParams {
 	managed_service: string
 	period: string
-	from_date?: string
-	to_date?: string
 	api_key?: string
 }
 
@@ -193,9 +188,6 @@ export function useServices() {
 			usageParams.value = {
 				managed_service: managedService,
 				period: filters.period,
-				...(filters.fromDate && filters.toDate
-					? { from_date: filters.fromDate, to_date: filters.toDate }
-					: {}),
 				...(filters.apiKey ? { api_key: filters.apiKey } : {}),
 			}
 			return usageCall.reload()
