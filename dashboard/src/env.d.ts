@@ -1,9 +1,13 @@
 /// <reference types="vite/client" />
 
+/** The bench's Socket.IO port, compiled in by vite.config.ts. Null when no bench config
+ *  was found at build time. */
+declare const __SOCKETIO_PORT__: number | null
+
 declare module '*.vue' {
 	import type { DefineComponent } from 'vue'
 
-	const component: DefineComponent<{}, {}, any>
+	const component: DefineComponent<Record<string, unknown>>
 	export default component
 }
 
@@ -16,12 +20,11 @@ interface Window {
 	provider_logins?: import('@/types/api').ProviderLogin[]
 	site_name?: string
 	socketio_port?: number
+	/** Site timezone Frappe stores naive datetimes in. See dashboard.py. */
+	system_timezone?: string
 	onboarding_complete?: boolean
 	features?: {
 		addons?: boolean
-		llm?: boolean
-		pdf?: boolean
-		email?: boolean
 		storage?: boolean
 	}
 }

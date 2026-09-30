@@ -71,7 +71,7 @@ class TestAITokensBilling(IntegrationTestCase):
 		for sub in frappe.get_all("Subscription", {"team": self.TEAM}, pluck="name"):
 			frappe.db.delete("Subscription Change", {"subscription": sub})
 			frappe.db.delete("Subscription", {"name": sub})
-		frappe.db.delete("Asset", {"team": self.TEAM})
+		frappe.db.delete("Virtual Machine", {"team": self.TEAM})
 		frappe.db.commit()
 
 	def _meter(self, qty):

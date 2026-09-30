@@ -33,6 +33,11 @@ def get_context(context):
 	if frappe.conf.developer_mode:
 		boot["socketio_port"] = frappe.conf.socketio_port
 	boot["site_name"] = frappe.local.site
+	# Frappe stores datetimes as a naive clock in this zone. The dashboard parses
+	# them here, then shows the viewer's local time. Asia/Calcutta is the old name
+	# for Asia/Kolkata, and browsers do not know the old one.
+	zone = frappe.utils.get_system_timezone()
+	boot["system_timezone"] = "Asia/Kolkata" if zone == "Asia/Calcutta" else zone
 	context.boot = boot
 	return context
 
@@ -50,7 +55,7 @@ def build_auth_context() -> dict:
 
 
 def _onboarding_complete() -> bool:
-	"""True once the user's team owns a live site — the signal the SPA uses to keep a
+	"""True once the user's team completed a site login handoff — the signal the SPA uses to keep a
 	brand-new user inside the onboarding funnel (and let a returning one skip it).
 	A first-run user (no team or no site yet) is still onboarding."""
 	user = frappe.session.user
@@ -59,7 +64,15 @@ def _onboarding_complete() -> bool:
 	teams = get_user_team_names(user)
 	if not teams:
 		return False
-	return bool(frappe.db.exists("Site", {"team": ["in", teams], "status": ["!=", "Terminated"]}))
+
+	return bool(
+		frappe.get_list(
+			"Site",
+			filters={"team": ["in", teams], "claimed_at": ["is", "set"]},
+			pluck="name",
+			limit=1,
+		)
+	)
 
 
 def _provider_logins() -> list[dict[str, str]]:

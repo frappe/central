@@ -1,8 +1,14 @@
 import frappe
 from frappe.tests import IntegrationTestCase
 
-from central.iam import can, expand_capabilities, get_effective_permissions, get_fc_teams_claim
-from central.oauth import install_oauth_claim_patch
+from central.iam import (
+	can,
+	expand_capabilities,
+	get_effective_permissions,
+	get_user_team_names,
+	resolve_team,
+	resolve_user_grants,
+)
 
 
 def ensure_user(email: str) -> str:
@@ -46,10 +52,10 @@ class TestCentralIAM(IntegrationTestCase):
 		return team
 
 	def test_fixtures_create_capability_catalog_and_system_roles(self):
-		# 15 capabilities across two live planes: central (7) + atlas (8). v3 makes
-		# server the atomic unit — the bench plane and asset:view are dropped.
-		self.assertEqual(frappe.db.count("Capability"), 15)
-		self.assertEqual(frappe.db.count("Capability", {"plane": "central"}), 7)
+		# 16 capabilities across two live planes: central (8) + atlas (8). v5 merges
+		# server:open into server:view. The bench plane remains deferred.
+		self.assertEqual(frappe.db.count("Capability"), 16)
+		self.assertEqual(frappe.db.count("Capability", {"plane": "central"}), 8)
 		self.assertEqual(frappe.db.count("Capability", {"plane": "atlas"}), 8)
 		self.assertEqual(frappe.db.count("Capability", {"plane": "bench"}), 0)
 		# The retired roles are gone; the five-rung ladder is all that remains.
@@ -70,8 +76,9 @@ class TestCentralIAM(IntegrationTestCase):
 				"server:power",
 				"server:resize",
 				"server:snapshot",
+				"server:ssh-key",
 				"server:terminate",
-				"server:open",
+				"server:console",
 			):
 				self.assertIn(cap, caps)
 		# Team management is Owner/Admin; deleting the team is Owner-only.
@@ -100,13 +107,7 @@ class TestCentralIAM(IntegrationTestCase):
 			},
 		)
 
-		# server:open is the console gate; the read-only Viewer and Billing lack it.
-		for caps in (owner_caps, admin_caps, developer_caps):
-			self.assertIn("server:open", caps)
-		for caps in (viewer_caps, billing_caps):
-			self.assertNotIn("server:open", caps)
-
-		# Every system role can still see servers and the cluster they live in.
+		# Every system role can view and open servers, and see the cluster they live in.
 		for caps in (owner_caps, admin_caps, developer_caps, viewer_caps, billing_caps):
 			self.assertIn("cluster:view", caps)
 			self.assertIn("server:view", caps)
@@ -117,20 +118,53 @@ class TestCentralIAM(IntegrationTestCase):
 		expanded = set(expand_capabilities(["server:create"]))
 		self.assertEqual(expanded, {"server:create", "server:view", "cluster:view"})
 
-		self.assertIn("server:view", expand_capabilities(["server:open"]))
-
 		# Already-closed sets are returned unchanged (order preserved, no dupes).
 		closed = ["server:view", "cluster:view"]
 		self.assertEqual(expand_capabilities(closed), closed)
+
+	def test_central_user_can_read_capability_catalog(self):
+		frappe.set_user(self.viewer)
+		names = frappe.get_list("Capability", pluck="name")
+
+		self.assertIn("server:view", names)
+		self.assertTrue(frappe.has_permission("Capability", "read", "server:view"))
+		self.assertFalse(frappe.has_permission("Capability", "write", "server:view"))
+
+	def test_multiple_roles_in_one_team_resolve_one_default_team(self):
+		member = f"iam.multi.{frappe.generate_hash(length=8)}@example.test"
+		frappe.get_doc(
+			{
+				"doctype": "User",
+				"email": member,
+				"first_name": "Multi Role",
+				"enabled": 0,
+				"send_welcome_email": 0,
+			}
+		).insert()
+		team = frappe.get_doc(
+			{
+				"doctype": "Team",
+				"team_name": "IAM Multi Role Team",
+				"owner_user": self.owner,
+				"members": [
+					{"user": self.owner, "role": "Owner", "status": "Active"},
+					{"user": member, "role": "Viewer", "status": "Active"},
+					{"user": member, "role": "Billing", "status": "Active"},
+				],
+			}
+		).insert()
+
+		self.assertEqual(get_user_team_names(member), [team.name])
+		self.assertEqual(resolve_team(member), team.name)
 
 	def test_user_claim_is_team_scoped(self):
 		team_a = self.make_team("IAM Team A", self.viewer, "Viewer")
 		team_b = self.make_team("IAM Team B", self.developer, "Developer")
 
-		viewer_claim = get_fc_teams_claim(self.viewer)
+		viewer_grants = resolve_user_grants(self.viewer)
 
-		self.assertIn(team_a.name, viewer_claim)
-		self.assertNotIn(team_b.name, viewer_claim)
+		self.assertIn(team_a.name, viewer_grants)
+		self.assertNotIn(team_b.name, viewer_grants)
 		self.assertTrue(can(self.viewer, team_a.name, "server:view"))
 		self.assertFalse(can(self.viewer, team_a.name, "server:terminate"))
 
@@ -142,7 +176,7 @@ class TestCentralIAM(IntegrationTestCase):
 		self.assertFalse(can(self.developer, team.name, "team:manage_members"))
 		self.assertFalse(can(self.developer, team.name, "billing:manage"))
 
-	def test_effective_permissions_shape_matches_fc_teams_claim(self):
+	def test_effective_permissions_shape_matches_resolved_grants(self):
 		team = self.make_team("IAM Effective Team", self.viewer, "Viewer")
 
 		effective = get_effective_permissions(self.viewer, team.name)
@@ -168,17 +202,6 @@ class TestCentralIAM(IntegrationTestCase):
 
 		self.assertFalse(probe.allowed)
 		self.assertIn(team.name, probe.resolved_grants)
-
-	def test_oauth_userinfo_patch_adds_fc_teams(self):
-		team = self.make_team("IAM OAuth Team", self.viewer, "Viewer")
-		install_oauth_claim_patch()
-
-		import frappe.oauth as frappe_oauth
-
-		userinfo = frappe_oauth.get_userinfo(frappe.get_doc("User", self.viewer))
-
-		self.assertIn("fc_teams", userinfo)
-		self.assertIn(team.name, userinfo["fc_teams"])
 
 	def test_new_user_gets_default_owner_team(self):
 		email = f"iam.signup.{frappe.generate_hash(length=8)}@example.test"
@@ -212,7 +235,7 @@ class TestCentralIAM(IntegrationTestCase):
 		self.assertEqual(team.members[0].role, "Owner")
 		self.assertEqual(team.members[0].status, "Active")
 
-		claim = get_fc_teams_claim(email)
-		self.assertIn(team.name, claim)
+		grants = resolve_user_grants(email)
+		self.assertIn(team.name, grants)
 		self.assertTrue(can(email, team.name, "team:manage_members"))
 		self.assertTrue(can(email, team.name, "server:terminate"))

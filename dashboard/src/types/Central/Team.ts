@@ -15,8 +15,12 @@ export interface Team {
 	naming_series: 'TEAM-.#####'
 	/**	Team Name : Data	*/
 	team_name: string
+	/**	Team Logo : Attach Image	*/
+	team_logo?: string
 	/**	Owner User : Link - User	*/
 	owner_user: string
+	/**	Tenant ID : Int - Permanent numeric network identity shared by this Team. Assigned by Central.	*/
+	tenant_id?: number
 	/**	Status : Select	*/
 	status: 'Active' | 'Suspended'
 	/**	Staging Trial : Check - Staging trials: create servers on free welcome credits without a full billing profile.	*/

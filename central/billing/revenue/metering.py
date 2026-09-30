@@ -89,7 +89,7 @@ def _locked_terms(resource_id: str, resource_type: str):
 	"""Resolve the locked allowance + per-unit rate for a metered resource.
 
 	Keyed off the resource's open billing segment (ADR 0010 — the ledger is the lock),
-	which carries the team, currency and base plan; the cluster comes from its Asset.
+	which carries the team, currency and base plan; the cluster comes from its Virtual Machine.
 	The allowance is the base plan's included quantity for the resource_type
 	(grandfathered via the plan's immutable identity); the rate is the matching metered
 	single-resource Plan's per-unit rate for that currency + cluster. Returns None when

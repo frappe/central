@@ -6,13 +6,13 @@ Provisioning is allowed while the wallet funds it; the invoice is held until the
 details arrive.
 """
 
-import threading
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import frappe
 
-from central.api import servers
+from central import resource_actions
 from central.billing import settings
+from central.billing.catalog.subscriptions import create_subscription
 from central.billing.payments import profile, settlement
 from central.billing.platform import alerts as billing_alerts
 from central.billing.revenue import credits, invoicing
@@ -27,18 +27,26 @@ from central.billing.tests.utils import (
 	run_enqueued_inline,
 	set_team_tier,
 )
+from central.infrastructure.doctype.resource_action.resource_action import ResourceAction
 
 TEAM = "team-credit-funded"
 REGION = "ap-south-1"
 PLAN = "bundle-credit-funded"
 RATE = 1500.0
+COMPOSITION = [
+	{"resource_type": "Compute", "quantity": 2, "unit": "vCPU"},
+	{"resource_type": "Memory", "quantity": 4, "unit": "GB"},
+	{"resource_type": "Disk", "quantity": 40, "unit": "GB"},
+]
 
 
 class CreditFundedTestBase(IntegrationTestCase):
 	def setUp(self):
 		ensure_team(TEAM)
 		ensure_atlas_instance(REGION)
-		self.plan = make_plan(PLAN, rates=[{"cluster": "", "currency": "INR", "rate": RATE}])
+		self.plan = make_plan(
+			PLAN, includes=COMPOSITION, rates=[{"cluster": "", "currency": "INR", "rate": RATE}]
+		)
 		self._purge()
 		# A signup-shaped profile: the country and the currency it implies, and
 		# nothing else — exactly what provision_signup_billing stamps from the IP.
@@ -55,14 +63,13 @@ class CreditFundedTestBase(IntegrationTestCase):
 			"Billing Profile",
 			"Billing Notification Log",
 			"Team Notification",
+			"Resource Action",
 		):
 			frappe.db.delete(dt, {"team": TEAM})
 		frappe.db.delete("Credit Wallet", {"team": TEAM})
 		for sub in frappe.get_all("Subscription", {"team": TEAM}, pluck="name"):
 			frappe.db.delete("Subscription Change", {"subscription": sub})
 			frappe.db.delete("Subscription", {"name": sub})
-		for asset in frappe.get_all("Asset", {"team": TEAM}, pluck="name"):
-			frappe.db.delete("Asset", {"name": asset})
 
 	def _grant(self, amount):
 		credits.grant_promotional_credits(TEAM, amount, "INR")
@@ -87,37 +94,20 @@ class CreditFundedTestBase(IntegrationTestCase):
 			.name
 		)
 
-	def _create_server(self, vm_id="vm-credit-funded"):
-		"""Call the endpoint with Atlas stubbed, returning the created VM id."""
-		client = MagicMock()
-		client.create_vm.return_value = {
-			"name": vm_id,
-			"team": TEAM,
-			"title": "web-1",
-			"status": "Running",
-			"vcpus": 2,
-			"memory_megabytes": 4096,
-			"disk_gigabytes": 40,
-		}
-		with patch.object(servers.AtlasClient, "for_region", return_value=client):
-			return servers.create_server(
-				team=TEAM,
-				region=REGION,
-				title="web-1",
-				plan=self.plan,
-				vcpus=2,
-				memory_megabytes=4096,
-				disk_gigabytes=40,
-			)
+	def _purchase(self):
+		"""Run the purchase check a create request passes, returning the rate it reserves."""
+		return resource_actions.validate_purchase(TEAM, REGION, self.plan, None, None)[1]
+
+	def _run_server(self, resource_id="res-credit-funded"):
+		"""Open billing for a server the region accepted and started."""
+		create_subscription(TEAM, REGION, plan=self.plan, resource_id=resource_id).enable()
 
 
 class TestCreditFundedProvisioning(CreditFundedTestBase):
 	def test_credits_create_a_server_without_billing_details(self):
 		self._grant(5000)
 
-		out = self._create_server()
-
-		self.assertTrue(out["subscription"])
+		self.assertEqual(self._purchase(), RATE)
 		# Still no legal name or address on file — and nothing asked for one.
 		self.assertFalse(frappe.db.get_value("Billing Profile", TEAM, "legal_name"))
 
@@ -125,35 +115,39 @@ class TestCreditFundedProvisioning(CreditFundedTestBase):
 		self._grant(500)  # a third of the plan's monthly rate
 
 		with self.assertRaises(frappe.ValidationError) as caught:
-			self._create_server()
+			self._purchase()
 
 		self.assertIn("legal name", str(caught.exception))
 
 	def test_no_credits_asks_for_details_as_before(self):
 		with self.assertRaises(frappe.ValidationError):
-			self._create_server()
+			self._purchase()
 
 	def test_headroom_shrinks_as_credits_fund_running_resources(self):
 		self._grant(2000)  # covers one server at 1500, not two
 
-		self._create_server(vm_id="vm-credit-funded-1")
+		self._run_server()
 		with self.assertRaises(frappe.ValidationError):
-			self._create_server(vm_id="vm-credit-funded-2")
+			self._purchase()
+
+	def test_pending_requests_count_against_credits(self):
+		# A request the region has not answered holds no subscription yet, but its
+		# reserved rate is already promised against the same credits.
+		self._grant(2000)
+
+		with patch.object(resource_actions, "reserved_rate", return_value=RATE):
+			with self.assertRaises(frappe.ValidationError):
+				self._purchase()
 
 	def test_a_complete_profile_needs_no_credits(self):
 		complete_billing_profile(TEAM)
 
-		self.assertTrue(self._create_server()["subscription"])
+		self.assertEqual(self._purchase(), RATE)
 
-	def test_an_unpriceable_plan_is_never_treated_as_funded(self):
-		# A plan with no rate in the team's currency cannot be shown to fit the
-		# wallet, so the request falls through to the full requirement.
+	def test_an_unpriceable_rate_is_never_treated_as_funded(self):
 		self._grant(50000)
-		unpriced = make_plan(
-			"bundle-credit-funded-usd", rates=[{"cluster": "", "currency": "USD", "rate": 20}]
-		)
 
-		self.assertFalse(settlement.wallet_funds(TEAM, servers._plan_rate(TEAM, unpriced, REGION)))
+		self.assertFalse(settlement.wallet_funds(TEAM, None))
 
 
 class TestConcurrentFunding(CreditFundedTestBase):
@@ -161,50 +155,36 @@ class TestConcurrentFunding(CreditFundedTestBase):
 
 	def _purge_committed(self):
 		# The workers commit, so the test rollback cannot undo them.
-		for sub in frappe.get_all("Subscription", {"team": TEAM}, pluck="name"):
-			frappe.db.delete("Subscription Change", {"subscription": sub})
-			frappe.db.delete("Subscription", {"name": sub})
-		frappe.db.delete("Asset", {"team": TEAM})
+		frappe.db.delete("Resource Action", {"team": TEAM})
 		frappe.db.delete("Credit Ledger Entry", {"team": TEAM})
 		frappe.db.delete("Credit Wallet", {"team": TEAM})
 		frappe.db.commit()
+
+	def _request(self, index):
+		"""The locked part of a create request: check the purchase, then reserve its rate."""
+		frappe.db.get_value("Team", TEAM, "name", for_update=True)
+		rate = self._purchase()
+		ResourceAction.queue(
+			"create",
+			TEAM,
+			REGION,
+			f"web-{index}",
+			request_key=f"race-{index}-{frappe.generate_hash(length=8)}",
+			reserved_monthly_rate=rate,
+		)
 
 	def test_only_one_of_four_racing_creates_is_funded(self):
 		# Credit for one server at RATE, four callers asking at the same moment.
 		self._grant(RATE + 500)
 		frappe.db.commit()  # the workers are on their own connections
 
-		vm_ids = iter([f"vm-race-{i}" for i in range(4)])
-		lock = threading.Lock()
-
-		def create_vm(**kwargs):
-			with lock:
-				vm_id = next(vm_ids)
-			return {
-				"name": vm_id,
-				"team": TEAM,
-				"title": vm_id,
-				"status": "Running",
-				"vcpus": 2,
-				"memory_megabytes": 4096,
-				"disk_gigabytes": 40,
-			}
-
-		client = MagicMock()
-		client.create_vm.side_effect = create_vm
 		try:
-			with patch.object(servers.AtlasClient, "for_region", return_value=client):
-				results = run_workers(
-					4,
-					lambda i: servers.create_server(
-						team=TEAM, region=REGION, title=f"web-{i}", plan=self.plan
-					),
-				)
+			results = run_workers(4, self._request)
 
 			frappe.db.rollback()  # refresh this connection's snapshot
 			funded = [r for r in results.values() if r == "ok"]
 			self.assertEqual(len(funded), 1, results)
-			self.assertEqual(frappe.db.count("Subscription", {"team": TEAM}), 1)
+			self.assertEqual(frappe.db.count("Resource Action", {"team": TEAM}), 1)
 		finally:
 			self._purge_committed()
 
@@ -340,7 +320,7 @@ class TestBillingDetailsEscalation(CreditFundedTestBase):
 
 		self.assertEqual(settlement.credit_funded_headroom(TEAM), 0)
 		with self.assertRaises(frappe.ValidationError):
-			self._create_server()
+			self._purchase()
 
 	def test_a_bill_still_inside_the_grace_period_funds_as_before(self):
 		self._grant(5000)
@@ -370,14 +350,14 @@ class TestBillingDetailsReminder(CreditFundedTestBase):
 
 	def test_a_billable_team_without_details_is_asked(self):
 		self._grant(5000)
-		self._create_server()
+		self._run_server()
 
 		self.assertEqual(settlement.remind_team_page([TEAM]), 1)
 		self.assertEqual(self._log_count(), 1)
 
 	def test_a_team_with_details_is_left_alone(self):
 		complete_billing_profile(TEAM)
-		self._create_server()
+		self._run_server()
 
 		self.assertEqual(settlement.remind_team_page([TEAM]), 0)
 		self.assertEqual(self._log_count(), 0)
@@ -386,7 +366,7 @@ class TestBillingDetailsReminder(CreditFundedTestBase):
 		# The engine only suppresses a repeat for an hour, so a daily sweep would
 		# mail every member of the team every day about the same missing field.
 		self._grant(5000)
-		self._create_server()
+		self._run_server()
 		settlement.remind_team_page([TEAM])
 
 		self.assertEqual(settlement.remind_team_page([TEAM]), 0)
@@ -394,7 +374,7 @@ class TestBillingDetailsReminder(CreditFundedTestBase):
 
 	def test_a_team_asked_long_enough_ago_is_asked_again(self):
 		self._grant(5000)
-		self._create_server()
+		self._run_server()
 		settlement.remind_team_page([TEAM])
 		stale = frappe.utils.add_days(frappe.utils.now_datetime(), -settlement.REMINDER_EVERY_DAYS - 1)
 		frappe.db.set_value(
@@ -405,7 +385,7 @@ class TestBillingDetailsReminder(CreditFundedTestBase):
 
 	def test_the_sweep_queues_a_team_that_is_running_something(self):
 		self._grant(5000)
-		self._create_server()
+		self._run_server()
 
 		self.assertIn(TEAM, self._queued_teams())
 
@@ -413,7 +393,7 @@ class TestBillingDetailsReminder(CreditFundedTestBase):
 		# Its subscriptions are all disabled: no bill is coming, so there is nothing
 		# to ask for. Asking anyway is a nag about an invoice that never arrives.
 		self._grant(5000)
-		self._create_server()
+		self._run_server()
 		frappe.db.set_value("Subscription", {"team": TEAM}, "enabled", 0)
 
 		self.assertNotIn(TEAM, self._queued_teams())

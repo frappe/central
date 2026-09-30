@@ -3,15 +3,19 @@
 Central is the signing authority. It mints short-lived RS256 assertions; benches verify them
 offline against Central's published JWKS. Atlas is not in the login path.
 
+## Regional authentication
+
+Atlas regional requests use a separate Ed25519 key and public endpoint. Pilot login uses RSA. Read [Signing keys](../central/central/doctype/central_sso_settings/SPEC.md) for initialization, token authority, and verifier checks.
+
 ## Flows
 
 **Bench (console) login** — `central.api.sso.get_bench_link`
 1. Central mints `mint_bench_login(aud)` — `scope=bench`, 5 min, single jti.
 2. Browser → `{gateway}/?sid=<jwt>`; the bench SPA exchanges it for a local session cookie.
 
-**Site login** — `central.api.sites.get_site` → `_pilot_site_login_url`
+**Site login** — `central.api.sites.login_site` → `_pilot_site_login_url`
 1. Central resolves the site's hosting bench (audience + gateway) from `Site.pilot_credential_id`
-   → `Pilot Credential` → `Asset.gateway_url`, then mints `mint_site_login(aud, site)` —
+   → `Pilot Credential` → `VirtualMachine.gateway_url`, then mints `mint_site_login(aud, site)` —
    `scope=site`, `site` claim, 5 min.
 2. Central POSTs it to `{gateway}/api/v1/sites/<site>/login` as the `Bearer`
    (`central.integrations.pilot.fetch_site_login_url`).
@@ -28,7 +32,7 @@ The console (bench) login stays browser-carried; only the site login is a Centra
 
 | What | Stored | Notes |
 |------|--------|-------|
-| Central signing key | `Central SSO Settings` — `private_key` (Password, encrypted), `public_key`, `kid` | Signs every assertion + bootstrap token |
+| Central signing key | `Central SSO Settings` — `rsa_private_key` (Password, encrypted), `rsa_public_key`, `rsa_key_id` | Signs RSA login, service, and bootstrap tokens |
 | Bench durable credential | `Pilot Credential.token_hash` (SHA-256) | Plaintext bearer returned once at enroll, never stored |
 | Site → bench binding | `Site.pilot_credential_id` | A reference, not a token |
 | Bench/site login assertions | **nowhere** | Stateless JWTs — minted on demand, handed off, forgotten |
@@ -63,11 +67,24 @@ Central mints three token types with the same RS256 key, separated **only** by t
 | --- | --- | --- | --- | --- |
 | `bench` / `site` | `mint_bench_login` / `mint_site_login` | bench's `pilot_credential_id` | 5 min | the bench (login SID) |
 | `enroll` | `mint_bootstrap_token` | `pilot_credential_id` | 30 min | Central (`verify_bootstrap_token`, asserts `scope == enroll`) |
-| `datum` | `mint_metrics_token` | `pilot_credential_id` | **7 days** | Datum's vmauth metrics gateway |
+| `datum` | `mint_datum_token` | `pilot_credential_id` | **7 days** | Datum, for metrics and logs alike |
 
-The `datum` token carries a vmauth-specific claim: `vm_access.metrics_extra_labels =
-["resource_id=<id>"]`. vmauth turns those into labels the metrics store applies over
-whatever the producer sent, so a pilot can only write metrics attributed to its own
-resource — it cannot spoof another. There is **no revocation list**; the short TTL plus
-the pilot's re-fetch on 401 / near expiry (`api/pilot.py`) is the bound. `verify_bootstrap_token`
-requires `scope`, so a `bench`/`datum` token can never be accepted as an enrollment token.
+One `datum` token serves both write paths, handed out by one route,
+`central.api.pilot.datum_token`. Datum is one service that tells metrics from logs by the
+route the pilot posts to, not by the credential it presents, so a second token would carry
+the same `resource_id` and the same authority. It is signed with the **regional Ed25519 key**, not the RSA key the
+bench and enrollment tokens use, because datum verifies against the merged key set Atlas
+publishes and that set carries Ed25519 keys only. `iss` is the literal `central`, and the
+key id is namespaced `central:`, which is how datum binds one to the other.
+
+The token carries `resource_id` and `access: ["write"]` as top-level claims, which
+`Identity.from_claims` reads directly. Datum stamps every row with `resource_id`, so a
+pilot cannot write as another resource, and it serves no reads at all.
+
+There is **no revocation list**; the 7-day TTL plus the pilot's re-fetch on 401 / near
+expiry (`api/pilot.py`) is the bound. `verify_bootstrap_token` requires `scope`, so a
+`bench` token can never be accepted as an enrollment token; a `datum` token is refused
+earlier still, on its algorithm.
+
+`mint_datum_token` needs the Atlas signing key to exist, so an operator must initialize it
+in Central SSO Settings before any pilot can ship telemetry.

@@ -1,151 +1,48 @@
 from __future__ import annotations
 
-import re
-import unicodedata
-
 import frappe
 from frappe import _
 
-from central.central.doctype.resource_action.resource_action import ResourceAction, open_action
-from central.errors import resource_action, throw_action_error
-from central.iam import can, resolve_team
-from central.integrations.atlas import AtlasClient, AtlasResourceGone, reconcile
+from central.errors import handle_resource_operation
+from central.iam import get_server_capabilities
+from central.infrastructure.doctype.resource_action.resource_action import ResourceAction
+from central.integrations.servers import reconcile
+from central.utils.guards import require_capability
 
-# Server endpoints for the console. Reads come from the Asset mirror; commands go
+# Server endpoints for the console. Reads come from the VirtualMachine mirror; commands go
 # to Atlas as the operator (Atlas stays policy-unaware — capability gating happens
 # here). Every call resolves and authorizes a team first.
 
-# `list_instances` merges an Active Atlas Instance's liveness with its Region's
-# display metadata. Only these non-secret Atlas Instance fields are ever read —
-# the credentials/tunnel internals (api_key/api_secret/base_url/tunnel_*/peer_*/
-# service_user) now sit apart from the map metadata, which lives on Region.
-INSTANCE_LIVENESS_FIELDS = ("region", "status", "reachable")
-REGION_DISPLAY_FIELDS = ("display_name", "provider", "country_code", "latitude", "longitude")
-
-# Fallback version list for the new-server form when no Atlas is reachable. The
-# authoritative set is derived live from Atlas's active bench images (which token
-# maps to which image is Atlas's concern) — see `frappe_versions`.
-FALLBACK_FRAPPE_VERSIONS = ("v16", "v15", "nightly")
-ASSET_TITLE_MAX_LENGTH = 140
-RESERVED_SERVER_ADDRESSES = frozenset(
-	{"www", "admin", "api", "proxy", "app", "dashboard", "mail", "ns", "root"}
+# `list_instances` reads only these non-secret Region fields — base_url, atlas_region_id
+# and webhook_secret never leave this allowlist for a non-operator caller.
+REGION_LIST_FIELDS = (
+	"region",
+	"status",
+	"reachable",
+	"display_name",
+	"provider",
+	"country_code",
+	"latitude",
+	"longitude",
 )
 
-# Staging trials: a team flagged `is_staging_trial` provisions on its free welcome credits
-# without a full billing profile, up to TRIAL_SERVER_LIMIT servers. Size and price come
-# from the chosen catalog plan (the same as a normal create); which plans a trial may
-# pick — the entry tiers — is a front-end concern in the New Server form.
-TRIAL_SERVER_LIMIT = 3
-
-
-def _available_versions(region: str | None = None) -> list[str]:
-	"""The versions Atlas can provision in `region` (its active bench images). Regions
-	can expose different images, so this must be scoped to the region the user picked —
-	validating against a different region would reject valid creates or pass ones the
-	target can't provision. Falls back to the first Active region when none is given
-	(the picker's initial load), and to the static set when no Atlas is reachable."""
-	target = region or frappe.db.get_value(
-		"Atlas Instance", {"status": "Active"}, "name", order_by="region asc"
-	)
-	if target:
-		try:
-			versions = AtlasClient.for_region(target).available_frappe_versions()
-			if versions:
-				return versions
-		except Exception:
-			frappe.log_error(title="frappe_versions: Atlas unreachable, using fallback")
-	return list(FALLBACK_FRAPPE_VERSIONS)
-
-
-def _validate_frappe_version(frappe_version: str | None, region: str | None = None) -> None:
-	# Validate against the CHOSEN region's images, not a random active one.
-	if not frappe_version:
-		return
-	versions = _available_versions(region)
-	# The client value never goes back into the message — frappe.throw renders HTML in
-	# desk, so reflecting input is an XSS habit not worth having.
-	if frappe_version not in versions:
-		frappe.throw(
-			_("Unknown Frappe version. Choose one of: {0}.").format(", ".join(versions)),
-			frappe.ValidationError,
-		)
-
-
-def _stamp_frappe_version(resource_id: str | None, frappe_version: str | None) -> None:
-	"""Record on the Pending Asset the version Atlas actually provisioned (echoed in
-	the create reply / events), not merely what was requested. `Asset._stamp` keeps it
-	current from later events."""
-	if resource_id and frappe_version and frappe.db.exists("Asset", resource_id):
-		frappe.db.set_value("Asset", resource_id, "frappe_version", frappe_version)
-
-
-def _server_names(title: str | None, subdomain: str | None) -> tuple[str, str]:
-	"""Return the Central label and Atlas-safe address for a new server."""
-	friendly_title = (title or "").strip()
-	if len(friendly_title) > ASSET_TITLE_MAX_LENGTH:
-		frappe.throw(
-			_("Server name must be at most {0} characters.").format(ASSET_TITLE_MAX_LENGTH),
-			frappe.ValidationError,
-		)
-	address_source = friendly_title or "server" if subdomain is None else subdomain
-	atlas_title = _slugify_subdomain(address_source)
-	if atlas_title in RESERVED_SERVER_ADDRESSES:
-		frappe.throw(_("Server address is reserved. Choose another."), frappe.ValidationError)
-	return friendly_title or atlas_title, atlas_title
-
-
-def _slugify_subdomain(value: str | None) -> str:
-	"""Convert user input into one DNS label accepted by Atlas."""
-	text = unicodedata.normalize("NFKD", value or "").encode("ascii", "ignore").decode().lower()
-	slug = re.sub(r"[^a-z0-9]+", "-", text).strip("-")[:63].rstrip("-")
-	if not slug:
-		frappe.throw(
-			_("Server address must include at least one letter or number."),
-			frappe.ValidationError,
-		)
-	return slug
-
-
-def _mirror_provisioned_vm(region: str, vm: dict, friendly_title: str) -> str | None:
-	"""Mirror Atlas's reply while retaining Central's user-facing server name."""
-	resource_id = vm.get("name")
-	if not resource_id:
-		return None
-	from central.central.doctype.asset.asset import Asset
-
-	Asset.mirror_vm(region, vm, friendly_title=friendly_title)
-	_stamp_frappe_version(resource_id, vm.get("frappe_version"))
-	return resource_id
-
 
 @frappe.whitelist(methods=["GET"])
-def frappe_versions(region: str | None = None) -> list[str]:
-	"""Versions offered on the new-server form for `region` — derived from that
-	region's active bench images, so the picker never drifts from what can actually
-	be provisioned there. The form passes the picked region and refetches on change."""
-	return _available_versions(region)
-
-
-@frappe.whitelist(methods=["GET"])
+@require_capability("server:view", "You can't view this team's servers.")
 def registry(team: str | None = None) -> dict:
-	"""List a team's VMs — servers (the Asset mirror) and self-serve sites (the Site
+	"""List a team's VMs — servers (the VirtualMachine mirror) and self-serve sites (the Site
 	mirror, each a 1:1-backed VM) — in one read, so the console's map/panel unify them
 	from a single call. A pure read; gated on `server:view`. Terminated sites are gone,
-	not a state to render, so they're excluded here (Terminated assets are filtered by
+	not a state to render, so they're excluded here (Terminated servers are filtered by
 	the map feed client-side)."""
-	user = frappe.session.user
-	team = resolve_team(user, team)
-	if not can(user, team, "server:view"):
-		frappe.throw(_("You can't view this team's servers."), frappe.PermissionError)
-
-	assets = frappe.get_all(
-		"Asset",
+	servers = frappe.get_list(
+		"Virtual Machine",
 		filters={"team": team},
 		fields=[
 			"name",
 			"resource_id",
 			"title",
-			"cluster",
+			"region",
 			"status",
 			"plan",
 			"frappe_version",
@@ -154,129 +51,187 @@ def registry(team: str | None = None) -> dict:
 			"disk_gigabytes",
 			"ipv6_address",
 			"public_ipv4",
+			"public_ipv6",
+			"image_offering",
 			"gateway_url",
-			"resize_in_progress",
-			"last_synced_at",
+			"state_observed_at",
 		],
-		order_by="cluster asc, resource_id asc",
+		order_by="region asc, resource_id asc",
+		limit_page_length=0,
 	)
 	# Overlay the transitional label of any in-flight action, so a just-clicked
 	# start/stop/terminate (or a still-provisioning create) reads as "…ing" until the
 	# mirror catches up — instead of looking like nothing happened.
 	pending = ResourceAction.pending_labels(team)
-	for asset in assets:
-		asset["pending_action"] = pending.get(asset["resource_id"])
+	for server in servers:
+		server["pending_action"] = pending.get(server["resource_id"])
+		server["capabilities"] = get_server_capabilities(frappe.session.user, team, server["name"])
 
-	# A site is a VM too — flat and uncapped, symmetric with servers. `name` is the FQDN
-	# (the stable id + terminate key); `subdomain` is the user-entered display name.
-	sites = frappe.get_all(
-		"Site",
-		filters={"team": team, "status": ["!=", "Terminated"]},
-		fields=["name", "subdomain", "status", "url", "region"],
-		order_by="subdomain asc",
+	# A creation has no server row until the region accepts it, so it cannot be overlaid
+	# like the pending actions above. It rides here as its own list: the console picks its
+	# own request back up after a reload, and the fleet can show what is still building.
+	creations = ResourceAction.open_creations(team)
+
+	rows = frappe.get_list(
+		"Site", filters={"team": team}, fields=["name", "server"], order_by="name asc", limit_page_length=0
 	)
-	# Same overlay for sites; a VM id and a site FQDN never collide, so one map covers both.
-	for site in sites:
-		site["pending_action"] = pending.get(site["name"])
+	return {"team": team, "servers": servers, "sites": _sites(rows, servers, pending), "creations": creations}
 
-	return {"team": team, "assets": assets, "sites": sites}
+
+def _sites(rows: list[dict], servers: list[dict], pending: dict[str, str]) -> list[dict]:
+	"""A site is a VM too, so it lists beside the servers and reads the same way.
+
+	Its address is its name and its state is its machine's, so both are read here from the
+	machines this call already loaded. A terminated machine is gone, not a state to render,
+	so its site goes with it."""
+	machines = {server["name"]: server for server in servers}
+	return [
+		{
+			"name": row["name"],
+			"subdomain": row["name"].split(".")[0],
+			"server": row["server"],
+			"url": f"https://{row['name']}",
+			"status": machine["status"],
+			"region": machine["region"],
+			# A site's actions run against its machine, so its in-flight label is the machine's.
+			"pending_action": pending.get(row["server"]),
+		}
+		for row in rows
+		if (machine := machines.get(row["server"])) and machine["status"] != "Terminated"
+	]
 
 
 @frappe.whitelist(methods=["GET"])
+@require_capability("server:view", "You can't view this team's servers.", server="resource_id")
 def server_overview(team: str | None = None, resource_id: str | None = None) -> dict:
 	"""Return one server's Central mirror plus Pilot's cached operational metrics."""
-	user = frappe.session.user
-	team = resolve_team(user, team)
-	if not can(user, team, "server:view"):
-		frappe.throw(_("You can't view this team's servers."), frappe.PermissionError)
 	if not resource_id:
 		frappe.throw(_("resource_id is required."), frappe.ValidationError)
 
-	row = _overview_asset_row(resource_id, team)
+	row = _overview_server_row(resource_id, team)
 	if not row:
 		frappe.throw(_("No server '{0}' for this team.").format(resource_id), frappe.DoesNotExistError)
 
-	asset = frappe._dict(
+	server = frappe._dict(
 		{
 			"resource_id": row.resource_id,
 			"title": row.title,
-			"cluster": row.cluster,
+			"region": row.region,
 			"status": row.status,
 			"plan": row.plan,
 			"frappe_version": row.frappe_version,
+			"image_offering": row.image_offering,
 			"vcpus": row.vcpus,
 			"memory_megabytes": row.memory_megabytes,
 			"disk_gigabytes": row.disk_gigabytes,
 			"ipv6_address": row.ipv6_address,
 			"public_ipv4": row.public_ipv4,
+			"public_ipv6": row.public_ipv6,
+			"has_public_ipv6": row.has_public_ipv6,
+			"is_firewall_enabled": row.is_firewall_enabled,
+			"ssh_command": _ssh_command(row),
 			"gateway_url": row.gateway_url,
 			"creation": row.creation,
 		}
 	)
 	return {
 		"server": {
-			**asset,
-			**_overview_plan(asset, team),
+			**server,
+			**_overview_plan(server, team),
 			"team_name": row.team_name or team,
-			"region": {
-				"display_name": row.region_display_name or asset.cluster,
+			"region_details": {
+				"display_name": row.region_display_name or server.region,
 				"provider": row.region_provider,
 				"country_code": row.region_country_code,
 			},
 		},
-		"monitoring": _server_monitoring(asset, audience_id=row.audience_id),
+		"monitoring": _server_monitoring(server, audience_id=row.audience_id),
 	}
 
 
-def _overview_asset_row(resource_id: str, team: str):
-	"""Asset + region + team + active Pilot audience in one query."""
-	asset = frappe.qb.DocType("Asset")
+@frappe.whitelist(methods=["GET"])
+@require_capability("server:view", "You can't view this team's servers.", server="resource_id")
+def server_hostnames(team: str | None = None, resource_id: str | None = None) -> list[dict]:
+	"""The site and custom-domain hostnames a server answers. They stop working when the
+	server is terminated, so the console lists them before it asks. Gated on `server:view`."""
+	server = frappe.db.get_value("Virtual Machine", {"team": team, "resource_id": resource_id}, "name")
+	if not server:
+		frappe.throw(_("No server '{0}' for this team.").format(resource_id), frappe.DoesNotExistError)
+
+	sites = frappe.get_list("Site", filters={"team": team, "server": server}, pluck="name")
+	routes = frappe.get_list(
+		"Site Domain",
+		filters={"team": team, "server": server},
+		fields=["domain", "route_type"],
+		order_by="domain asc",
+	)
+	hostnames = [{"hostname": site, "kind": "Site"} for site in sites]
+	hostnames += [
+		{"hostname": route.domain, "kind": "Site" if route.route_type == "Site" else "Custom domain"}
+		for route in routes
+		if route.domain not in sites
+	]
+	return hostnames
+
+
+def _overview_server_row(resource_id: str, team: str):
+	"""VirtualMachine + region + team + active Pilot audience in one query."""
+	server = frappe.qb.DocType("Virtual Machine")
 	region = frappe.qb.DocType("Region")
 	team_table = frappe.qb.DocType("Team")
 	pilot = frappe.qb.DocType("Pilot Credential")
 	rows = (
-		frappe.qb.from_(asset)
-		# Asset.cluster links to Atlas Instance, and an Atlas Instance is autonamed
-		# after its region (autoname: field:region), so its name IS the Region name —
-		# hence Region.name == Asset.cluster. This invariant (one Atlas per region,
-		# named for it) is what lets us skip the Asset→Atlas Instance→Region hop.
+		frappe.qb.from_(server)
+		# VirtualMachine.region links straight to Region.
 		.left_join(region)
-		.on(region.name == asset.cluster)
+		.on(region.name == server.region)
 		.left_join(team_table)
-		.on(team_table.name == asset.team)
+		.on(team_table.name == server.team)
 		.left_join(pilot)
-		.on((pilot.asset == asset.name) & (pilot.status == "Active"))
+		.on((pilot.server == server.name) & (pilot.status == "Active"))
 		.select(
-			asset.resource_id,
-			asset.title,
-			asset.cluster,
-			asset.status,
-			asset.plan,
-			asset.frappe_version,
-			asset.vcpus,
-			asset.memory_megabytes,
-			asset.disk_gigabytes,
-			asset.ipv6_address,
-			asset.public_ipv4,
-			asset.gateway_url,
-			asset.creation,
+			server.resource_id,
+			server.title,
+			server.region,
+			server.status,
+			server.plan,
+			server.frappe_version,
+			server.image_offering,
+			server.vcpus,
+			server.memory_megabytes,
+			server.disk_gigabytes,
+			server.ipv6_address,
+			server.public_ipv4,
+			server.public_ipv6,
+			server.has_public_ipv6,
+			server.is_firewall_enabled,
+			server.gateway_url,
+			server.creation,
 			region.display_name.as_("region_display_name"),
 			region.provider.as_("region_provider"),
 			region.country_code.as_("region_country_code"),
 			team_table.team_name.as_("team_name"),
 			pilot.audience_id.as_("audience_id"),
 		)
-		.where((asset.resource_id == resource_id) & (asset.team == team))
+		.where((server.resource_id == resource_id) & (server.team == team))
 		.limit(1)
 		.run(as_dict=True)
 	)
 	return rows[0] if rows else None
 
 
-def _overview_plan(asset: dict, team: str) -> dict:
-	"""Tier name + billed rate — scoped to this asset, not the team's full run-rate.
+def _ssh_command(row) -> str | None:
+	"""The command that signs in to an Ubuntu server over its public address."""
+	address = row.public_ipv6 or row.public_ipv4
+	if row.image_offering != "ubuntu" or not address:
+		return None
+	return f"ssh root@{address}"
 
-	Reads the asset's open priced segment through the billing seam
+
+def _overview_plan(server: dict, team: str) -> dict:
+	"""Tier name + billed rate — scoped to this server, not the team's full run-rate.
+
+	Reads the server's open priced segment through the billing seam
 	(`active_segment_for_resource`) rather than querying Subscription / Subscription
 	Change and re-deriving the ledger's open-segment rule here — servers does not own
 	how a segment resolves from the billing ledger."""
@@ -286,12 +241,12 @@ def _overview_plan(asset: dict, team: str) -> dict:
 	billing_cycle = "Monthly"
 	title = None
 	rate = None
-	plan_name = asset.plan
+	plan_name = server.plan
 
-	segment = active_segment_for_resource(asset.resource_id)
+	segment = active_segment_for_resource(server.resource_id)
 	if segment:
 		plan_name = segment.plan or plan_name
-		# Only adopt the segment's currency/rate once a plan is attached: an Asset can
+		# Only adopt the segment's currency/rate once a plan is attached: a Virtual Machine can
 		# open a Subscription during bootstrap before a plan exists, and that segment
 		# has no meaningful price to show (keep the profile-default currency then).
 		if plan_name:
@@ -308,9 +263,9 @@ def _overview_plan(asset: dict, team: str) -> dict:
 			billing_cycle = plan.billing_cycle or "Monthly"
 			if rate is None:
 				# Local import: Plan.get_rate pulls billing catalog; keep servers import-light.
-				rate = frappe.get_cached_doc("Plan", plan_name).get_rate(currency, asset.cluster)
+				rate = frappe.get_cached_doc("Plan", plan_name).get_rate(currency, server.region)
 	else:
-		# Asset bootstrap may open a Subscription before a plan is attached — no rate to show.
+		# VirtualMachine bootstrap may open a Subscription before a plan is attached — no rate to show.
 		rate = None
 
 	return {
@@ -321,370 +276,222 @@ def _overview_plan(asset: dict, team: str) -> dict:
 	}
 
 
-def _server_monitoring(asset: dict, audience_id: str | None = None) -> dict:
+def _server_monitoring(server: dict, audience_id: str | None = None) -> dict:
 	"""Pilot metrics are meaningful only for a live, enrolled bench VM."""
-	if asset.status != "Running" or not asset.gateway_url or not audience_id:
+	if server.status != "Running" or not server.gateway_url or not audience_id:
 		return {"available": False}
 
 	from central.integrations.pilot import get_cached_monitoring
 
-	return get_cached_monitoring(asset.resource_id, asset.gateway_url, audience_id)
+	return get_cached_monitoring(server.resource_id, server.gateway_url, audience_id)
 
 
 @frappe.whitelist(methods=["GET"])
+@require_capability("cluster:view", "You can't view clusters for this team.")
 def list_instances(team: str | None = None) -> list[dict]:
-	"""List the regions a team can place servers in — every Active Atlas Instance.
+	"""List the regions a team can place servers in — every Active Region.
 	A pure read for the console's New Server region picker. Gated on `cluster:view`
 	(same scope as `registry`); the team only resolves the gate, the region set is
 	team-agnostic."""
-	user = frappe.session.user
-	team = resolve_team(user, team)
-	if not can(user, team, "cluster:view"):
-		frappe.throw(_("You can't view clusters for this team."), frappe.PermissionError)
-	# Atlas Instance is global infrastructure holding per-instance API credentials,
+	# Region carries Atlas's credentials (base_url, webhook_secret, atlas_region_id),
 	# so the DocType is locked to System Manager. `cluster:view` already authorizes
-	# this read, so we bypass DocType RBAC and read only the non-secret liveness
-	# fields — otherwise a Central User (e.g. a team Owner) gets an empty list.
-	instances = frappe.get_all(
-		"Atlas Instance",
+	# this read, so we bypass DocType RBAC and read only the non-secret allowlist —
+	# otherwise a Central User (e.g. a team Owner) gets an empty list.
+	return frappe.get_all(
+		"Region",
 		filters={"status": "Active"},
-		fields=list(INSTANCE_LIVENESS_FIELDS),
+		fields=list(REGION_LIST_FIELDS),
 		order_by="region asc",
 	)
-	# Merge each region's display metadata (kept on Region, away from the secrets).
-	display = {
-		row.name: row
-		for row in frappe.get_all(
-			"Region",
-			filters={"name": ["in", [i.region for i in instances]]},
-			fields=["name", *REGION_DISPLAY_FIELDS],
-		)
-	}
-	for instance in instances:
-		meta = display.get(instance.region)
-		for field in REGION_DISPLAY_FIELDS:
-			instance[field] = meta.get(field) if meta else None
-	return instances
 
 
 @frappe.whitelist(methods=["POST"])
-def refresh_assets(team: str | None = None) -> dict:
+@require_capability("server:view", "You can't refresh this team's servers.")
+def refresh_servers(team: str | None = None) -> dict:
 	"""Manually reconcile this team's mirror from every Active Atlas — the on-demand
 	twin of the scheduled reconcile. Gated on `server:view`."""
-	user = frappe.session.user
-	team = resolve_team(user, team)
-
-	if not can(user, team, "server:view"):
-		frappe.throw(_("You can't refresh this team's servers."), frappe.PermissionError)
 	return reconcile(team)
 
 
-def _is_staging_trial_team(team: str) -> bool:
-	return bool(frappe.db.get_value("Team", team, "is_staging_trial"))
+@frappe.whitelist(methods=["POST"])
+@handle_resource_operation
+@require_capability("server:console", "You can't open this server's console.", server="resource_id")
+def open_console(team: str | None = None, resource_id: str | None = None) -> dict:
+	"""Return a single-use web console URL for one server. Gated on `server:console`."""
+	from central.integrations.servers import get_console_url
 
-
-def _plan_rate(team: str, plan: str | None, region: str | None):
-	"""Monthly rate of a preset plan for this team, or None when it can't be priced."""
-	from central.billing.catalog.pricing import resolve_plan_rate
-
-	currency = frappe.db.get_value("Billing Profile", team, "currency")
-	if not (plan and currency):
-		return None
-	return resolve_plan_rate(plan, currency, region)
-
-
-def _require_trial_provisioning(team: str, plan: str | None) -> None:
-	"""Trial teams provision on free welcome credits instead of a full billing profile:
-	they need a billing currency, an allow-listed plan (so usage meters at that plan's
-	rate), unspent credits, and room under the server cap. The VM size is taken from the
-	plan, never the caller (see `_plan_resources`), so a request can't over-allocate at a
-	cheap plan's rate; the trial allow-list (Plan.available_on_trial) is re-checked here,
-	not only when the menu is listed, so a crafted request can't pick a plan outside it.
-
-	Locks the team row up front so two concurrent creates can't both pass the cap check
-	before either's Pending Asset is committed (the lock is held to end-of-request, by
-	which point the first create's Asset is visible to the second's count)."""
-	from central.billing.catalog.trials import trial_plan_names
-	from central.billing.revenue.credits import get_balance
-
-	frappe.db.get_value("Team", team, "name", for_update=True)  # serialize this team's creates
-
-	if not plan:
-		frappe.throw(_("Pick a plan to create a trial server."), frappe.ValidationError)
-	allowed = trial_plan_names()
-	if allowed is not None and plan not in allowed:
-		frappe.throw(_("That plan isn't available on a trial."), frappe.ValidationError)
-	if not frappe.db.get_value("Billing Profile", team, "currency"):
-		frappe.throw(
-			_("Set up your team's billing currency before creating servers."), frappe.ValidationError
-		)
-	if get_balance(team).get("balance", 0) <= 0:
-		frappe.throw(
-			_("Your trial credits are used up. Add a payment method to keep creating servers."),
-			frappe.ValidationError,
-		)
-	running = frappe.db.count("Asset", {"team": team, "status": ["!=", "Terminated"]})
-	if running >= TRIAL_SERVER_LIMIT:
-		frappe.throw(
-			_("Trial teams can run up to {0} servers.").format(TRIAL_SERVER_LIMIT), frappe.ValidationError
-		)
-
-
-def _plan_resources(plan: str) -> dict:
-	"""The VM size a plan bundles, from its `includes` — a trial provisions exactly what
-	the plan sells, never caller-supplied dimensions. Mirrors the composed path's
-	includes → create_vm mapping (memory in GB → MB; a sub-1 vCPU bundle keeps its
-	fractional bandwidth cap)."""
-	from central.billing.catalog.composition import COMPUTE, DISK, MEMORY, composition_quantities
-
-	qty = composition_quantities(frappe.get_doc("Plan", plan).includes)
-	compute = qty.get(COMPUTE, 0)
-	return {
-		"vcpus": int(compute) or 1,
-		"memory_megabytes": int(qty.get(MEMORY, 0) * 1024) or 512,
-		"disk_gigabytes": int(qty.get(DISK, 0)) or 10,
-		"cpu_max_cores": compute if 0 < compute < 1 else None,
-	}
+	server = frappe.get_doc("Virtual Machine", {"team": team, "resource_id": resource_id})
+	return {"url": get_console_url(server)}
 
 
 @frappe.whitelist(methods=["POST"])
-@resource_action
-def create_server(
-	team: str | None = None,
-	region: str | None = None,
-	title: str | None = None,
-	plan: str | None = None,
-	vcpus: int | None = None,
-	memory_megabytes: int | None = None,
-	disk_gigabytes: int | None = None,
-	cpu_max_cores: float | None = None,
-	frappe_version: str | None = None,
-	subdomain: str | None = None,
-) -> dict:
-	"""Provision a new server for a team in a region from a preset bundle Plan. Gated
-	on `server:create`.
-
-	`region` is an Atlas Instance (one Atlas = one region), which is also how we
-	route the provision call. Atlas owns placement/image/lifecycle; we pass the team
-	(the tenant key) and the chosen size.
-
-	Once the VM is created we record the billing Subscription for `plan` — the same
-	way `create_composed_server` records a composed one — so the bundle a server was
-	provisioned from is captured and its price-lock opened (ADR 0006/0010). That
-	writes a Pending Asset keyed on the VM's id; the `vm.created` event Atlas emits
-	then reconciles that same Asset (keyed on `resource_id`) instead of racing to
-	create a second one.
-
-	Billing details are asked for only when the team's credits stop covering the bill.
-	Trial teams (staging) skip that gate and pay from free credits; size and price come
-	from the chosen plan either way."""
-	from central.billing.catalog.subscriptions import provision_subscription
-
-	user = frappe.session.user
-	team = resolve_team(user, team)
-	if not can(user, team, "server:create"):
-		throw_action_error("PERMISSION_DENIED", exc=frappe.PermissionError, action="create")
-	if not region:
-		throw_action_error("INPUT_REQUIRED", exc=frappe.ValidationError, field="Region")
-	if _is_staging_trial_team(team):
-		# Trial: free credits fund it, no full profile. Size comes from the plan, not the
-		# caller, so the VM matches what the plan sells (and its rate).
-		_require_trial_provisioning(team, plan)
-		size = _plan_resources(plan)
-		vcpus, memory_megabytes = size["vcpus"], size["memory_megabytes"]
-		disk_gigabytes, cpu_max_cores = size["disk_gigabytes"], size["cpu_max_cores"]
-	else:
-		# A server bills the team, but only needs billing details once credits run out.
-		from central.billing.api.dashboard._shared import require_billing_profile_or_credit
-
-		require_billing_profile_or_credit(team, _plan_rate(team, plan, region), "create servers")
-	_validate_frappe_version(frappe_version, region)
-	friendly_title, atlas_title = _server_names(title, subdomain)
-
-	client = AtlasClient.for_region(region)
-
-	# create is the one async path (boot→deploy→mint runs on Atlas after this returns).
-	# A rejection surfaces as an envelope and leaves no row; we open the tracking action
-	# only once Atlas has accepted, so its "Provisioning…" state and eventual outcome ride
-	# the request's own commit.
-	correlation_id = frappe.generate_hash()
-	vm = client.create_vm(
-		team=team,
-		title=atlas_title,
-		vcpus=int(vcpus or 1),
-		memory_megabytes=int(memory_megabytes or 512),
-		disk_gigabytes=int(disk_gigabytes or 10),
-		cpu_max_cores=cpu_max_cores,
-		frappe_version=frappe_version,
-		correlation_id=correlation_id,
-	)
-
-	resource_id = vm.get("name")
-	# Record the contract for the bundle. Guarded so a raw-size call (no plan) still
-	# provisions a VM without a subscription, as before.
-	subscription = None
-	if plan:
-		subscription = provision_subscription(team, region, plan, resource_id=resource_id).get("subscription")
-	# Mirror the VM Atlas returned even when billing already inserted the Pending
-	# Asset. Otherwise preset creates render the UUID/Pending shell until the next
-	# reconcile, instead of the user-facing title/status Atlas already returned.
-	resource_id = _mirror_provisioned_vm(region, vm, friendly_title)
-	open_action("Server", "create", team=team, resource_id=resource_id, correlation_id=correlation_id)
-
-	return {"resource_id": resource_id, "server": vm, "subscription": subscription, "action": correlation_id}
-
-
-@frappe.whitelist(methods=["POST"])
-@resource_action
-def create_composed_server(
-	team: str | None = None,
-	region: str | None = None,
-	title: str | None = None,
-	includes: list | str | None = None,
-	sub_category: str | None = None,
-	frappe_version: str | None = None,
-	subdomain: str | None = None,
-) -> dict:
-	"""Provision a design-your-own config end-to-end (#84): create the Atlas VM from
-	the chosen composition, then record the composed Subscription (#80) that bills it
-	from its parts. The server is the gate — composition, profile bounds, and headroom
-	are re-validated server-side (#81/#83) *before* the VM is created, so a request the
-	client lets through is still refused and never leaves an orphan VM."""
-	from central.billing.api.dashboard._shared import require_billing_profile_or_credit
-	from central.billing.catalog.composition import (
-		COMPUTE,
-		DISK,
-		MEMORY,
-		composition_quantities,
-		validate_composition,
-	)
-	from central.billing.catalog.pricing import resolve_config_rate
-	from central.billing.catalog.subscriptions import (
-		enforce_headroom,
-		provision_composed_subscription,
-	)
-
-	user = frappe.session.user
-	team = resolve_team(user, team)
-	if not can(user, team, "server:create"):
-		throw_action_error("PERMISSION_DENIED", exc=frappe.PermissionError, action="create")
-	if not region:
-		throw_action_error("INPUT_REQUIRED", exc=frappe.ValidationError, field="Region")
-	if isinstance(includes, str):
-		includes = frappe.parse_json(includes)
-	_validate_frappe_version(frappe_version, region)
-	friendly_title, atlas_title = _server_names(title, subdomain)
-
-	# Validate the shape + cost before touching Atlas. One price answers both questions:
-	# do the team's credits fund it, and does it fit the trust-tier headroom.
-	validate_composition(sub_category, includes)
-	currency = frappe.db.get_value("Billing Profile", team, "currency")
-	rate = resolve_config_rate(includes, currency, region)
-	require_billing_profile_or_credit(team, rate, "create servers")
-	enforce_headroom(team, rate, for_update=True)
-
-	qty = composition_quantities(includes)
-	client = AtlasClient.for_region(region)
-
-	correlation_id = frappe.generate_hash()
-	vm = client.create_vm(
-		team=team,
-		title=atlas_title,
-		vcpus=int(qty.get(COMPUTE, 1)) or 1,
-		memory_megabytes=int(qty.get(MEMORY, 0) * 1024) or 512,
-		disk_gigabytes=int(qty.get(DISK, 0)) or 10,
-		frappe_version=frappe_version,
-		correlation_id=correlation_id,
-	)
-
-	resource_id = vm.get("name")
-	provision_composed_subscription(team, region, includes, sub_category, resource_id=resource_id)
-	resource_id = _mirror_provisioned_vm(region, vm, friendly_title)
-	open_action("Server", "create", team=team, resource_id=resource_id, correlation_id=correlation_id)
-
-	return {"resource_id": resource_id, "server": vm, "action": correlation_id}
-
-
-@frappe.whitelist(methods=["POST"])
-@resource_action
+@handle_resource_operation
 def start_server(team: str | None = None, resource_id: str | None = None) -> dict:
 	"""Start a stopped server. Gated on `server:power`."""
-	return _run_command("start", "server:power", "start", team, resource_id)
+	return _run_command("start", team, resource_id)
 
 
 @frappe.whitelist(methods=["POST"])
-@resource_action
+@handle_resource_operation
 def stop_server(team: str | None = None, resource_id: str | None = None) -> dict:
 	"""Stop a running server. Gated on `server:power`."""
-	return _run_command("stop", "server:power", "stop", team, resource_id)
+	return _run_command("stop", team, resource_id)
 
 
 @frappe.whitelist(methods=["POST"])
-@resource_action
-def terminate_server(team: str | None = None, resource_id: str | None = None) -> dict:
-	"""Terminate a server. Gated on `server:terminate`."""
-	return _run_command("terminate", "server:terminate", "terminate", team, resource_id)
+@handle_resource_operation
+def restart_server(team: str | None = None, resource_id: str | None = None) -> dict:
+	"""Restart a running server. Gated on `server:power`."""
+	return _run_command("restart", team, resource_id)
 
 
-def _run_command(
-	action: str, capability: str, atlas_method: str, team: str | None, resource_id: str | None
+@frappe.whitelist(methods=["POST"])
+@handle_resource_operation
+@require_capability("server:resize", "You can't resize this team's servers.", server="resource_id")
+def resize_server(
+	team: str | None = None,
+	resource_id: str | None = None,
+	plan: str | None = None,
+	includes: list | str | None = None,
+	sub_category: str | None = None,
+	disk_gigabytes: int | None = None,
 ) -> dict:
-	"""Shared lifecycle path (start/stop/terminate): gate on `capability`, confirm
-	the asset belongs to the team, call Atlas, return the Task handle."""
-	user = frappe.session.user
-	team = resolve_team(user, team)
-	if not can(user, team, capability):
-		throw_action_error("PERMISSION_DENIED", exc=frappe.PermissionError, action=action)
+	"""Resize a server's CPU, memory, and disk.
+
+	Gated on `server:resize`. Billing re-locks the rate and Atlas applies the
+	shape: a compute change stops the server first, a larger disk does not, and
+	a smaller disk is refused. Atlas moves the server if this host cannot fit it."""
 	if not resource_id:
-		throw_action_error("INPUT_REQUIRED", exc=frappe.ValidationError, field="A server")
+		frappe.throw(_("A server is required."))
 
-	# The asset must be in this team's mirror — also how we route to its Atlas.
-	asset = frappe.db.get_value(
-		"Asset",
-		{"resource_id": resource_id, "team": team},
-		["cluster", "resize_in_progress"],
-		as_dict=True,
+	server = frappe.db.get_value("Virtual Machine", {"team": team, "resource_id": resource_id}, "name")
+	if not server:
+		frappe.throw(_("Server {0} was not found.").format(resource_id), frappe.DoesNotExistError)
+	subscription = frappe.db.get_value("Subscription", {"team": team, "server_id": server}, "name")
+	if not subscription:
+		frappe.throw(_("This server has no subscription to resize."))
+
+	from central.billing.catalog.subscriptions import begin_resize
+
+	if isinstance(includes, str):
+		includes = frappe.parse_json(includes)
+	if disk_gigabytes is not None and disk_gigabytes != "":
+		disk_gigabytes = frappe.utils.cint(disk_gigabytes)
+	else:
+		disk_gigabytes = None
+	result = begin_resize(
+		subscription,
+		plan=plan or None,
+		includes=includes,
+		sub_category=sub_category or None,
+		disk_gigabytes=disk_gigabytes,
 	)
-	if not asset:
-		throw_action_error("SERVER_NOT_FOUND", exc=frappe.DoesNotExistError, resource_id=resource_id)
+	return {"subscription": subscription, **result}
 
-	# A resize power-cycles the VM in the background; a manual start/stop mid-flight would
-	# race it. Terminate is still allowed — the user may want to abandon the machine.
-	if asset.resize_in_progress and action in ("start", "stop"):
-		throw_action_error("SERVER_BUSY_RESIZING", action=action)
 
-	instance = frappe.get_doc("Atlas Instance", asset.cluster)
+@frappe.whitelist(methods=["POST"])
+@handle_resource_operation
+def terminate_server(
+	team: str | None = None, resource_id: str | None = None, take_snapshot: bool | int | str = False
+) -> dict:
+	"""Terminate a server. Gated on `server:terminate`. With `take_snapshot`, it first takes
+	a final snapshot, which also needs `server:snapshot`."""
+	return _run_command("terminate", team, resource_id, take_snapshot=bool(frappe.utils.cint(take_snapshot)))
 
-	# Open the tracking action only once Atlas accepts the command. A rejection surfaces as
-	# an envelope (via the endpoint's @resource_action) and leaves no row to strand.
-	correlation_id = frappe.generate_hash()
-	try:
-		task = AtlasClient(instance).vm_action(resource_id, atlas_method, correlation_id=correlation_id)
-	except AtlasResourceGone:
-		# The VM is already gone on Atlas. Terminate is idempotent — reflect it and record a
-		# Succeeded action; start/stop of a vanished server is a real (clean) error, surfaced.
-		if action == "terminate":
-			from central.central.doctype.asset.asset import Asset
 
-			Asset.mark_terminated(resource_id, last_event_at=frappe.utils.now_datetime())
-			open_action(
-				"Server",
-				action,
-				team=team,
-				resource_id=resource_id,
-				correlation_id=correlation_id,
-				status="Succeeded",
-			)
-			return {"resource_id": resource_id, "task": None, "action": correlation_id}
-		raise
+def _run_command(action: str, team: str | None, resource_id: str | None, take_snapshot: bool = False) -> dict:
+	from central.resource_actions import submit_command
 
-	open_action(
-		"Server",
-		action,
+	return submit_command(action, team, resource_id, take_snapshot=take_snapshot)
+
+
+@frappe.whitelist(methods=["POST"])
+@handle_resource_operation
+def create_server(
+	team: str,
+	region: str,
+	title: str,
+	request_key: str,
+	plan: str,
+	offering: str = "",
+	image_id: str = "",
+	hostname: str | None = None,
+	ssh_keys: list[str] | None = None,
+	ssh_key_ids: list[str] | None = None,
+	has_public_ipv6: bool = False,
+	is_firewall_enabled: bool = False,
+	snapshot: str | None = None,
+) -> dict:
+	"""Create a server from an image, or restore one from a `snapshot`."""
+	from central.resource_actions import submit_request
+
+	return submit_request(
 		team=team,
-		resource_id=resource_id,
-		correlation_id=correlation_id,
-		atlas_task=task,
+		region=region,
+		title=title,
+		offering=offering,
+		image_id=image_id,
+		request_key=request_key,
+		plan=plan,
+		hostname=hostname,
+		ssh_keys=ssh_keys,
+		ssh_key_ids=ssh_key_ids,
+		has_public_ipv6=has_public_ipv6,
+		is_firewall_enabled=is_firewall_enabled,
+		snapshot=snapshot,
 	)
 
-	return {"resource_id": resource_id, "task": task, "action": correlation_id}
+
+@frappe.whitelist(methods=["POST"])
+@handle_resource_operation
+def create_composed_server(
+	team: str,
+	region: str,
+	title: str,
+	request_key: str,
+	includes: list[dict],
+	sub_category: str,
+	offering: str = "",
+	image_id: str = "",
+	hostname: str | None = None,
+	ssh_keys: list[str] | None = None,
+	ssh_key_ids: list[str] | None = None,
+	has_public_ipv6: bool = False,
+	is_firewall_enabled: bool = False,
+	snapshot: str | None = None,
+) -> dict:
+	"""Create a custom-sized server from an image, or restore one from a `snapshot`."""
+	from central.resource_actions import submit_request
+
+	return submit_request(
+		team=team,
+		region=region,
+		title=title,
+		offering=offering,
+		image_id=image_id,
+		request_key=request_key,
+		includes=includes,
+		sub_category=sub_category,
+		hostname=hostname,
+		ssh_keys=ssh_keys,
+		ssh_key_ids=ssh_key_ids,
+		has_public_ipv6=has_public_ipv6,
+		is_firewall_enabled=is_firewall_enabled,
+		snapshot=snapshot,
+	)
+
+
+@frappe.whitelist(methods=["GET"])
+def action_status(name: str) -> dict:
+	from central.resource_actions import get_status
+
+	return get_status(name)
+
+
+@frappe.whitelist(methods=["POST"])
+@handle_resource_operation
+def retry_action(name: str) -> dict:
+	"""Send a failed creation again on its own record. Gated on `server:create`."""
+	from central.resource_actions import retry
+
+	return retry(name)

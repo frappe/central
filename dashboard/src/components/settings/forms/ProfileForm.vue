@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { Avatar, Button, TextInput, useCall } from 'frappe-ui'
+import { Alert, Avatar, Button, TextInput, useCall } from 'frappe-ui'
 import { computed, nextTick, ref, watch } from 'vue'
 import { API, method } from '@/api/methods'
 import { useMyProfile } from '@/composables/useMyProfile'
 import { useTeamMembers } from '@/composables/useTeamMembers'
-import { errorToast, successToast } from '@/lib/toast'
+import { getErrorMessage, successToast } from '@/lib/feedback'
 
 // The signed-in user's own profile — photo, display name, password. Chrome-free
 // on purpose: the settings dialog wraps it in a panel, mobile renders it as a
@@ -29,6 +29,8 @@ const saveCall = useCall<{ full_name: string }, { full_name: string }>({
 	immediate: false,
 })
 const saving = ref(false)
+const nameError = ref('')
+watch(name, () => (nameError.value = ''))
 
 async function onSave(): Promise<void> {
 	if (!changed.value) return
@@ -39,7 +41,7 @@ async function onSave(): Promise<void> {
 		await Promise.all([reloadProfile(), reloadMembers()])
 		successToast('Name updated')
 	} catch (e) {
-		errorToast(e)
+		nameError.value = getErrorMessage(e, "Your name couldn't be updated.")
 	} finally {
 		saving.value = false
 	}
@@ -54,6 +56,8 @@ const editingPassword = ref(false)
 const oldPassword = ref('')
 const newPassword = ref('')
 const changingPassword = ref(false)
+const passwordError = ref('')
+watch([oldPassword, newPassword], () => (passwordError.value = ''))
 
 // Revealing the fields should put the cursor where the work starts.
 const currentPasswordRef = ref<{ $el?: HTMLElement } | null>(null)
@@ -87,7 +91,10 @@ async function onChangePassword(): Promise<void> {
 		resetPassword()
 		successToast('Password changed. Your other sessions were signed out')
 	} catch (e) {
-		errorToast(e)
+		passwordError.value = getErrorMessage(
+			e,
+			"Your password couldn't be changed.",
+		)
 	} finally {
 		changingPassword.value = false
 	}
@@ -97,6 +104,7 @@ function resetPassword(): void {
 	editingPassword.value = false
 	oldPassword.value = ''
 	newPassword.value = ''
+	passwordError.value = ''
 }
 </script>
 
@@ -131,6 +139,7 @@ function resetPassword(): void {
 			</div>
 		</div>
 
+		<Alert v-if="nameError" class="mb-3" theme="red" :title="nameError" />
 		<div class="flex items-end gap-2">
 			<TextInput
 				v-model="name"
@@ -161,6 +170,7 @@ function resetPassword(): void {
 				@click="editingPassword = true"
 			/>
 			<div v-else class="space-y-3">
+				<Alert v-if="passwordError" theme="red" :title="passwordError" />
 				<TextInput
 					ref="currentPasswordRef"
 					v-model="oldPassword"

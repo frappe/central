@@ -20,8 +20,8 @@ import {
 import { useCall } from 'frappe-ui'
 import { ref } from 'vue'
 import { API, method } from '@/api/methods'
+import { getErrorMessage, successToast } from '@/lib/feedback'
 import { capitalise } from '@/lib/format'
-import { errorToast, successToast } from '@/lib/toast'
 
 interface CardSetupOrder {
 	client_secret?: string
@@ -55,6 +55,7 @@ export function useAddStripeCard({
 	})
 	const complete = ref(false) // the card field is filled in and valid
 	const submitting = ref(false)
+	const error = ref('')
 
 	let stripe: Stripe | null = null
 	let card: StripeCardElement | null = null
@@ -68,6 +69,7 @@ export function useAddStripeCard({
 		el: string | HTMLElement,
 		{ team, publishableKey }: MountOptions,
 	): Promise<void> {
+		error.value = ''
 		if (!publishableKey) throw new Error('Stripe publishable key missing.')
 		stripe = await loadStripe(publishableKey)
 		if (!stripe) throw new Error('Stripe.js failed to load.')
@@ -80,7 +82,10 @@ export function useAddStripeCard({
 			.then(() => initiate.data)
 			.catch(() => null)
 		card = stripe.elements().create('card', { hidePostalCode: true })
-		card.on('change', (e) => (complete.value = !!e.complete))
+		card.on('change', (e) => {
+			complete.value = !!e.complete
+			error.value = e.error?.message ?? ''
+		})
 		card.mount(el)
 	}
 
@@ -88,6 +93,7 @@ export function useAddStripeCard({
 	async function submit(): Promise<ConfirmCardResult | undefined> {
 		if (!stripe || !card || !orderPromise) return
 		submitting.value = true
+		error.value = ''
 		try {
 			const order = await orderPromise // usually already resolved by now
 			if (!order?.client_secret)
@@ -120,16 +126,17 @@ export function useAddStripeCard({
 				gateway_mandate_id: mandateId(setupIntent),
 				card_network: c?.brand,
 			})
+			if (confirm.error) throw confirm.error
 			const res = confirm.data
 			if (!res || res.status !== 'Active') {
-				errorToast("Couldn't verify that card. Try a different one")
+				error.value = "Couldn't verify that card. Try a different one"
 				return
 			}
 			successToast('Card added')
 			onDone?.(res)
 			return res
 		} catch (e) {
-			errorToast(e, 'Could not add card')
+			error.value = getErrorMessage(e, 'Could not add card')
 		} finally {
 			submitting.value = false
 		}
@@ -140,9 +147,10 @@ export function useAddStripeCard({
 		card = null
 		orderPromise = null
 		complete.value = false
+		error.value = ''
 	}
 
-	return { mount, submit, destroy, complete, submitting }
+	return { mount, submit, destroy, complete, submitting, error }
 }
 
 // India mandates come back on the SetupIntent, either expanded or as a bare id.

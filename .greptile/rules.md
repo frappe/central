@@ -2,7 +2,7 @@
 
 ## How to review
 
-Review the change in context of the repository. Every rule below applies to lines this pull request adds or rewrites.
+Review the change in context of the PR. Every rule below applies to lines this pull request adds or rewrites.
 
 - Do not flag pre-existing code that the change only moves, reindents, renames, or happens to sit next to.
 - Do not comment when the code is correct. A rule is a reason to look, not a quota to fill.
@@ -38,8 +38,8 @@ Central is in active development and is not deployed to production. Do not ask f
 ## Boundaries
 
 - Flag an outbound call to Atlas, Pilot, or Cargo made outside `central/integrations/`.
-- Flag a write to the `Asset` or `Site` mirror from outside the integration layer. Mirror upserts belong in `central/mirror.py`.
-- Flag token minting or verification added outside `central/sso.py` and `central/oauth.py`.
+- Flag a write to the `Virtual Machine` or `Site` mirror from outside the integration layer. Mirror upserts belong in `central/mirror.py`.
+- Flag token minting or verification added outside `central/sso.py`.
 - Flag domain logic added to a `central/api/` route or a `hooks.py` entry. Those layers parse input, authorize, delegate, and return.
 - Flag a Team Member, Team Role, or Role Capability row read directly in a controller, an API route, a page, or a service. Those reads belong in `central/iam.py`.
 
@@ -56,7 +56,7 @@ Central scopes access by Team capability. A user holds a role in a Team, the rol
 - Flag a new or changed permission rule with no test in `central/tests/`, including the denial case.
 - Flag a whitelisted API method without type annotations.
 - Flag `frappe.get_all` in a read that runs on behalf of a signed-in user and returns team-owned records, where `frappe.get_list` would apply the query conditions. This rule does not apply to `central/iam.py`, `central/permissions.py`, a patch, a scheduled task, a background job, the integration layer, demo or developer setup, or a test. Those run as the system, and the permission layer itself must not call back into permissions.
-- Flag a new DocType that stores per-team records and has no indexed `team` link field. Do not apply this to a Single, a system or catalog DocType such as Capability, Region, or an Atlas Instance, or a child table scoped through its parent.
+- Flag a new DocType that stores per-team records and has no indexed `team` link field. Do not apply this to a Single, a system or catalog DocType such as Capability or Region, or a child table scoped through its parent.
 
 ## Python
 

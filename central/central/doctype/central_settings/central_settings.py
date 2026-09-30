@@ -18,12 +18,14 @@ class CentralSettings(Document):
 	if TYPE_CHECKING:
 		from frappe.types import DF
 
+		central_id: DF.Int
 		enable_addons: DF.Check
 		enable_email_delivery_service: DF.Check
 		enable_llm_service: DF.Check
 		enable_object_storage_service: DF.Check
 		enable_pdf_print_service: DF.Check
-		host_task_retention_days: DF.Int
+		trial_idle_shutdown_minutes: DF.Int
+		wildcard_domain: DF.Data | None
 	# end: auto-generated types
 
 	def feature_flags(self) -> dict[str, bool]:

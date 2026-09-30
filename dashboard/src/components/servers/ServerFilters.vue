@@ -39,6 +39,7 @@ const regionSelection = defineModel<string>('regionSelection', {
 			trigger="button"
 			variant="outline"
 			size="md"
+			hide-search
 			:options="regionOptions"
 		/>
 	</div>

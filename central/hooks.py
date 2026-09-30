@@ -115,7 +115,9 @@ website_user_home_page = "dashboard"
 # only in a patch would exist on migrated sites and be silently ABSENT on fresh ones.
 # The money invariants are a property of the schema, not of a site's history (ADR 0018).
 after_install = [
+	"central.infrastructure.doctype.image_offering.image_offering.ensure_default_offerings",
 	"central.billing.catalog.taxonomy_setup.ensure_catalog_masters",
+	"central.billing.settings.ensure_snapshot_settings",
 	"central.billing.platform.constraints.ensure_constraints",
 	"central.billing.settings.ensure_welcome_credit_amounts",
 	"central.billing.gateways.setup.ensure_gateway_records",
@@ -187,18 +189,29 @@ doc_events = {
 # ---------------
 
 scheduler_events = {
+	"all": ["central.integrations.resource_actions.recover_requests"],
 	"cron": {
-		# Asset mirror: reconcile against every Active Atlas every 10 minutes — the
-		# backstop that corrects drift the event push (central.api.atlas.event) missed.
-		"*/10 * * * *": ["central.integrations.atlas.reconcile"],
-		# Resource actions: resolve any action stuck in flight because its confirming event
-		# was lost — mark it Succeeded if the mirror already reached the goal, else Timed Out.
-		"*/5 * * * *": ["central.central.doctype.resource_action.resource_action.sweep_stale"],
+		"*/10 * * * *": [
+			# Repair observed state through scoped regional reads.
+			"central.integrations.servers.reconcile",
+			"central.infrastructure.doctype.region.cargo_connection.register_pending_cargo",
+		],
+		# Retry proxy routes that failed or never ran, up to the attempt limit.
+		"*/5 * * * *": [
+			"central.infrastructure.doctype.site_domain.site_domain.retry_failed",
+			# Snapshots have no region event, so Central reads each one until it settles.
+			"central.infrastructure.doctype.vm_snapshot.vm_snapshot.sync_pending_snapshots",
+		],
 	},
+	# Maintenance jobs run once per period at a time Frappe spreads across sites.
+	"hourly_maintenance": [
+		"central.infrastructure.doctype.vm_snapshot.vm_snapshot.delete_expired_snapshots",
+	],
+	"daily_long": [
+		"central.infrastructure.doctype.vm_snapshot.vm_snapshot.take_automatic_snapshots",
+	],
 	"daily": [
-		"central.central.doctype.team_invitation.team_invitation.expire_pending_invitations",
-		# Central: prune finished Host Task rows (unbounded stdout/stderr longtext).
-		"central.host_task.prune_host_tasks",
+		"central.identity.doctype.team_invitation.team_invitation.expire_pending_invitations",
 		# Billing (module): retry/dunning + staged suspension for unpaid invoices,
 		# and pruning Payment Attempt / Webhook Event logs.
 		"central.billing.revenue.dunning.run_dunning",
@@ -206,7 +219,7 @@ scheduler_events = {
 		"central.billing.projection.batch.prune",
 		# E-mandate (INR ≤₹15k): send the pre-debit notice, then debit after 24h.
 		"central.billing.payments.emandate.run_emandate_cycle",
-		# Backfill Subscriptions for any Running Asset missing an active one.
+		# Backfill Subscriptions for any Running VirtualMachine missing an active one.
 		"central.billing.catalog.subscriptions.backfill_missing_subscriptions",
 		# Ask teams running on credits for the billing details their invoice will
 		# need, so the hold at issue time is never the first they hear of it.
@@ -216,8 +229,6 @@ scheduler_events = {
 		# today's invoice before it is swept, so the customer gets the full benefit
 		# of the last day they were given.
 		"central.billing.revenue.credits.run_credit_expiry",
-		# Services (LLM): refresh the model catalog from the Grove backend.
-		"central.services.llm.sync_models",
 		# Assert the money invariants that no DB constraint can hold (they span
 		# tables): wallet == its ledger, invoice == its lines, captured == amount_paid.
 		# Silence is the success case; a violation is logged with its team and amount.
@@ -227,8 +238,6 @@ scheduler_events = {
 	"hourly": [
 		# Billing: ERPNext sync retries whose backoff window has elapsed.
 		"central.billing.revenue.erpnext_sync.retry_failed_syncs",
-		# Services (LLM): reconcile Grove's cumulative token usage into billing.
-		"central.services.llm.pull_usage",
 		# A charge whose outcome we don't know is money in the air: ask the gateway and
 		# settle it. It waits 30 minutes for the webhook first, so a daily sweep left it
 		# hanging for up to a day — and the key it needs to re-send safely expires in
@@ -256,6 +265,7 @@ scheduler_events = {
 # for someone to notice the balance went negative (ADR 0018).
 after_migrate = [
 	"central.billing.catalog.taxonomy_setup.ensure_catalog_masters",
+	"central.billing.settings.ensure_snapshot_settings",
 	"central.billing.platform.constraints.ensure_constraints",
 	"central.billing.gateways.setup.ensure_gateway_records",
 	"central.billing.navigation.ensure_workspace_sidebars",
@@ -268,6 +278,7 @@ after_migrate = [
 # fixtures depend on — and apply the money constraints — before the suite runs.
 before_tests = [
 	"central.billing.catalog.taxonomy_setup.ensure_catalog_masters",
+	"central.billing.settings.ensure_snapshot_settings",
 	"central.billing.platform.constraints.ensure_constraints",
 	"central.billing.settings.ensure_welcome_credit_amounts",
 	"central.billing.gateways.setup.ensure_gateway_records",
@@ -310,8 +321,6 @@ override_doctype_dashboards = {
 
 # Request Events
 # ----------------
-# TODO: This needs to be removed once we have a first-class claim hook in Frappe framework.
-before_request = ["central.oauth.install_oauth_claim_patch"]
 # after_request = ["central.utils.after_request"]
 
 # Job Events
@@ -346,28 +355,39 @@ before_request = ["central.oauth.install_oauth_claim_patch"]
 # Authentication and authorization
 
 permission_query_conditions = {
-	"Asset": "central.permissions.asset_query_conditions",
+	"Team SSH Key": "central.permissions.team_ssh_key_query_conditions",
+	"Virtual Machine": "central.permissions.server_query_conditions",
 	"IAM Permission Probe": "central.permissions.iam_permission_probe_query_conditions",
+	"Pilot Credential": "central.permissions.pilot_credential_query_conditions",
 	"Resource Action": "central.permissions.resource_action_query_conditions",
 	"Site": "central.permissions.site_query_conditions",
+	"Site Domain": "central.permissions.site_domain_query_conditions",
 	"Team": "central.permissions.team_query_conditions",
 	"Team Invitation": "central.permissions.team_invitation_query_conditions",
+	"Team Notification": "central.permissions.team_notification_query_conditions",
 	"Team Role": "central.permissions.team_role_query_conditions",
+	"Team Service": "central.permissions.team_service_query_conditions",
+	"User Notification Preference": "central.permissions.user_notification_preference_query_conditions",
+	"VM Snapshot": "central.permissions.vm_snapshot_query_conditions",
 }
 
 has_permission = {
-	"Asset": "central.permissions.asset_has_permission",
+	"Team SSH Key": "central.permissions.team_ssh_key_has_permission",
+	"Virtual Machine": "central.permissions.server_has_permission",
 	"IAM Permission Probe": "central.permissions.iam_permission_probe_has_permission",
+	"Pilot Credential": "central.permissions.pilot_credential_has_permission",
 	"Resource Action": "central.permissions.resource_action_has_permission",
 	"Site": "central.permissions.site_has_permission",
+	"Site Domain": "central.permissions.site_domain_has_permission",
 	"Team": "central.permissions.team_has_permission",
 	"Team Invitation": "central.permissions.team_invitation_has_permission",
+	"Team Notification": "central.permissions.team_notification_has_permission",
 	"Team Role": "central.permissions.team_role_has_permission",
+	"Team Service": "central.permissions.team_service_has_permission",
+	"User Notification Preference": "central.permissions.user_notification_preference_has_permission",
+	"VM Snapshot": "central.permissions.vm_snapshot_has_permission",
 }
 
-override_whitelisted_methods = {
-	"frappe.integrations.oauth2.openid_profile": "central.oauth.openid_profile",
-}
 # --------------------------------
 
 # auth_hooks = [

@@ -11,11 +11,11 @@
 // (useAddStripeCard); this covers the Razorpay/INR recurring path.
 
 import { useCall } from 'frappe-ui'
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { API, method } from '@/api/methods'
 import { useSession } from '@/composables/useSession'
+import { getErrorMessage, successToast } from '@/lib/feedback'
 import { openRazorpayCheckout, type RazorpayOrder } from '@/lib/gateway'
-import { errorToast, successToast } from '@/lib/toast'
 
 interface MethodResult {
 	payment_method: string
@@ -38,6 +38,7 @@ export function useAddPaymentMethod({
 		method: 'POST',
 		immediate: false,
 	})
+	const error = ref('')
 
 	async function run(
 		methodType: string,
@@ -45,6 +46,7 @@ export function useAddPaymentMethod({
 		instrument?: string,
 		afterDecline = false,
 	): Promise<MethodResult | undefined> {
+		error.value = ''
 		try {
 			const params: Record<string, unknown> = {
 				team: activeTeam.value,
@@ -72,15 +74,21 @@ export function useAddPaymentMethod({
 				description: methodType === 'Card' ? 'Save card' : 'Set up UPI Autopay',
 			})
 			await confirm.submit({ payment_method: order.payment_method, ...handles })
+			if (confirm.error) throw confirm.error
 			const res = confirm.data ?? undefined
 			successToast(`${methodType} added`)
 			onDone?.(res)
 			return res
 		} catch (e) {
 			if ((e as Error)?.message === 'cancelled') return
-			errorToast(e, `Could not add ${methodType}`)
+			error.value = getErrorMessage(e, `Could not add ${methodType}`)
 		}
 	}
 
-	return { run, loading: computed(() => setup.loading || confirm.loading) }
+	return {
+		run,
+		loading: computed(() => setup.loading || confirm.loading),
+		error,
+		clearError: () => (error.value = ''),
+	}
 }

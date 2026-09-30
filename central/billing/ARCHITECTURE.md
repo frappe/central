@@ -112,7 +112,7 @@ Resource Type
 Plan Category ──allowed_resource_types─→ [C]Plan Category Resource Type ─→ Resource Type
 Plan Sub-Category ──category─→ Plan Category
 Plan ──category─→ Plan Category, ──sub_category─→ Plan Sub-Category, ──includes─→ [C]Plan Includes ─→ Resource Type
-Catalog Rate ──priced_doctype─→ DocType, ──priced_for─(dynamic)→, ──cluster─→ Atlas Instance, ──currency
+Catalog Rate ──priced_doctype─→ DocType, ──priced_for─(dynamic)→, ──cluster─→ Region, ──currency
 Plan Configurator ─→ Category, Sub-Category, [C]base_rates, [C]rungs(─→Plan), [C]simple_plans(─→Plan)
 ```
 
@@ -320,10 +320,12 @@ workers can make them block each other. Credit Wallet *is* locked `FOR UPDATE`, 
 key is (team, currency): a team only ever contends with its own concurrent top-up.
 
 Provisioning is the one path that does lock those tables: deciding whether credit covers
-a new server is a read the caller then acts on, so it takes the wallet anchor and reads
-Subscription + Subscription Change `FOR UPDATE` behind it — otherwise two creates clear
-the same balance. Both reads are index ranges scoped to the one team, and the order is
-always wallet first. The run is unaffected: a plain consistent read never waits on them.
+a new server is a read the caller then acts on. A create request holds the Team row, reads
+its pending Resource Action reservations `FOR UPDATE`, then takes the wallet anchor and
+reads Subscription + Subscription Change `FOR UPDATE` behind it. Otherwise two creates
+clear the same balance. Every read is an index range scoped to the one team, and the order
+is always Team, pending requests, wallet. The run is unaffected: a plain consistent read
+never waits on them.
 
 There is exactly one **global** lock in the run, and it is not a data table. Every
 Invoice insert calls `make_autoname("INV-YYYY-MM-.#####")`, which takes the `tabSeries`
@@ -396,7 +398,7 @@ api/dashboard/catalog.provision_composed_config
       → creates Subscription (intent) + Subscription Change row (carries locked_rate)
       → cluster-manager API provisions the Asset
 ```
-Resize: `resize_composed_config → resize_composed_subscription` → new Subscription Change (re-prices).
+Resize: `central.api.servers.resize_server → Resource Action → Atlas observation → resize_composed_subscription` → new Subscription Change (re-prices).
 
 ### B. Bill a period (draft → open → collect)
 ```mermaid
@@ -542,7 +544,7 @@ get_team_caps resolves caps live (no per-team Trust Tier doctype — dropped)
 
 **`api/dashboard/`** (customer, team-scoped)
 - `account.py`: whoami, get/save_billing_profile, billing_geo, get/save_billing_settings, get/set_collection_status/mode, team_overview, trust_tier, switchable_teams, notifications + preferences.
-- `catalog.py`: get_eligible_plans, provision/get/resize_composed_config.
+- `catalog.py`: get_eligible_plans and provision/get_composed_config.
 - `invoices.py`: get_forecast, list/pause/resume_subscription, list/get_invoice, payment_attempts, credit_balance/ledger, purchase_credits, pay_invoice(+checkout/confirm), topup order/confirm.
 - `methods.py`: list/options, card setup + confirm, add_demo_card, fallback-order setup/confirm/reorder, set_default, remove.
 

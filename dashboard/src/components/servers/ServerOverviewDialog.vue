@@ -1,33 +1,40 @@
 <script setup lang="ts">
 import { Badge, Button, Dialog, useCall } from 'frappe-ui'
 import { computed, defineAsyncComponent, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { API, method } from '@/api/methods'
 import ListViewState from '@/components/common/list-view/ListViewState.vue'
 import OverviewSkeleton from '@/components/servers/overview/OverviewSkeleton.vue'
 import ResourceUsageCard from '@/components/servers/overview/ResourceUsageCard.vue'
+import ServerConnectCard from '@/components/servers/overview/ServerConnectCard.vue'
 import ServerInfoCard from '@/components/servers/overview/ServerInfoCard.vue'
 import ProviderAvatar from '@/components/servers/ProviderAvatar.vue'
+import ServerSnapshotRows from '@/components/snapshots/ServerSnapshotRows.vue'
 import { useRegions } from '@/composables/useRegions'
-import type { AssetRow } from '@/composables/useServers'
+import { useServers, type VirtualMachineRow } from '@/composables/useServers'
 import { useSession } from '@/composables/useSession'
+import { getErrorMessage } from '@/lib/feedback'
 import type { LoadPoint } from '@/lib/loadChart'
 import { formatPlanLabel } from '@/lib/planLabel'
 import { statusVisual } from '@/lib/serverMap'
-import { getErrorMessage } from '@/lib/toast'
 
 const LoadAverageCard = defineAsyncComponent(
 	() => import('@/components/servers/overview/LoadAverageCard.vue'),
 )
 
 type Overview = {
-	server: AssetRow & {
+	server: VirtualMachineRow & {
 		creation: string
 		plan_title: string | null
 		plan_rate: number | null
 		plan_currency: string | null
 		plan_billing_cycle: string | null
 		team_name: string
-		region: { display_name?: string | null; provider?: string | null }
+		image_offering: string | null
+		ssh_command?: string | null
+		has_public_ipv6: 0 | 1
+		is_firewall_enabled: 0 | 1
+		region_details: { display_name?: string | null; provider?: string | null }
 	}
 	monitoring: {
 		available: boolean
@@ -43,19 +50,35 @@ type Overview = {
 }
 
 const props = defineProps<{
-	server: AssetRow | null
+	server: VirtualMachineRow | null
 	canOpen: boolean
 	canResize?: boolean
+	/** This machine carries a site. Open goes there instead of the bench. */
+	opensSite?: boolean
+	canSnapshot?: boolean
+	canOpenConsole?: boolean
 }>()
 
 const emit = defineEmits<{
-	open: [server: AssetRow]
-	resize: [server: AssetRow]
+	open: [server: VirtualMachineRow]
+	resize: [server: VirtualMachineRow]
 }>()
 
 const open = defineModel<boolean>('open', { required: true })
+const router = useRouter()
+
+// The Snapshots page opens searched to this server; clearing the search shows them all.
+function viewSnapshots() {
+	const title = props.server?.title || props.server?.resource_id
+	open.value = false
+	router.push({
+		path: '/servers/snapshots',
+		query: title ? { search: title } : {},
+	})
+}
 const { activeTeam } = useSession()
 const { regions } = useRegions()
+const { openConsole, opening } = useServers()
 const overview = ref<Overview | null>(null)
 const hasLoaded = ref(false)
 const overviewError = ref('')
@@ -115,6 +138,11 @@ function expandStorage(): void {
 }
 
 const server = computed(() => overview.value?.server)
+const consoleUnavailableReason = computed(() =>
+	server.value?.status === 'Running'
+		? null
+		: 'Start the server to open its console.',
+)
 const current = computed(() => overview.value?.monitoring.current)
 const loadPoints = computed(
 	() => overview.value?.monitoring.history?.system?.points ?? [],
@@ -124,23 +152,26 @@ const visual = computed(() => {
 	return row ? statusVisual(row) : null
 })
 const provider = computed(() => {
-	if (server.value?.region.provider) return server.value.region.provider
-	const cluster = props.server?.cluster
-	if (!cluster) return null
+	if (server.value?.region_details.provider)
+		return server.value.region_details.provider
+	const regionName = props.server?.region
+	if (!regionName) return null
 	return (
-		regions.value.find((region) => region.region === cluster)?.provider || null
+		regions.value.find((region) => region.region === regionName)?.provider ||
+		null
 	)
 })
 const locationLine = computed(() => {
 	if (server.value) {
-		const location = server.value.region.display_name || server.value.cluster
-		const name = server.value.region.provider
+		const location =
+			server.value.region_details.display_name || server.value.region
+		const name = server.value.region_details.provider
 		return name ? `${location} · ${name}` : location
 	}
-	const cluster = props.server?.cluster
-	if (!cluster) return ''
-	const region = regions.value.find((entry) => entry.region === cluster)
-	const location = region?.display_name || cluster
+	const regionName = props.server?.region
+	if (!regionName) return ''
+	const region = regions.value.find((entry) => entry.region === regionName)
+	const location = region?.display_name || regionName
 	return region?.provider ? `${location} · ${region.provider}` : location
 })
 const title = computed(
@@ -161,7 +192,7 @@ const planLabel = computed(() =>
 </script>
 
 <template>
-	<Dialog v-model:open="open" size="3xl" bare>
+	<Dialog v-model:open="open" size="5xl" bare>
 		<div class="bg-surface-elevation-1 px-6 pb-6 pt-5">
 			<header class="mb-5 flex items-start justify-between gap-4">
 				<div class="flex min-w-0 items-start gap-3">
@@ -213,16 +244,38 @@ const planLabel = computed(() =>
 
 				<div class="grid gap-4 md:grid-cols-2">
 					<ServerInfoCard
-						:hosted-on="server.region.display_name || server.cluster || '—'"
-						:provider="server.region.provider"
+						:hosted-on="server.region_details.display_name || server.region || '—'"
+						:provider="server.region_details.provider"
 						:plan="planLabel"
-						:inbound-ip="server.public_ipv4 || '—'"
+						:public-ipv4="server.public_ipv4"
+						:public-ipv6="server.public_ipv6"
+						:is-firewall-enabled="!!server.is_firewall_enabled"
+						:is-ubuntu="server.image_offering === 'ubuntu'"
 						:frappe-version="server.frappe_version || '—'"
 						:created-on="server.creation"
 						:owned-by="server.team_name"
+					>
+						<ServerSnapshotRows
+							v-if="props.server"
+							:resource-id="props.server.resource_id"
+							:can-manage="!!canSnapshot"
+							@view-all="viewSnapshots"
+						/>
+					</ServerInfoCard>
+					<LoadAverageCard
+						:points="loadPoints"
+						:available="overview.monitoring.available"
 					/>
-					<LoadAverageCard :points="loadPoints" />
 				</div>
+
+				<ServerConnectCard
+					v-if="server.image_offering === 'ubuntu'"
+					:ssh-command="server.ssh_command"
+					:can-open-console="canOpenConsole"
+					:console-unavailable-reason="consoleUnavailableReason"
+					:opening-console="opening === server.resource_id"
+					@open-console="openConsole(server)"
+				/>
 			</div>
 
 			<ListViewState
@@ -237,7 +290,7 @@ const planLabel = computed(() =>
 				<Button label="Close" @click="close" />
 				<Button
 					v-if="props.server && canOpen"
-					label="Open server"
+					:label="opensSite ? 'Visit site' : 'Open server'"
 					icon-right="lucide-arrow-up-right"
 					@click="openServer"
 				/>

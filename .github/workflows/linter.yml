@@ -19,11 +19,22 @@ jobs:
 
     steps:
       - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: yarn
+          cache-dependency-path: dashboard/yarn.lock
       - uses: actions/setup-python@v6
         with:
           python-version: '3.14'
           cache: pip
       - uses: pre-commit/action@v3.0.0
+
+      - name: Check dashboard
+        run: |
+          yarn --cwd dashboard install --frozen-lockfile
+          yarn --cwd dashboard type-check
+          yarn --cwd dashboard lint
 
       - name: Download Semgrep rules
         run: git clone --depth 1 https://github.com/frappe/semgrep-rules.git frappe-semgrep-rules

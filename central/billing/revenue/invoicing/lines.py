@@ -19,7 +19,7 @@ from datetime import datetime, time, timedelta
 
 import frappe
 
-from central.billing.catalog.subscriptions import _asset_clusters
+from central.billing.catalog.subscriptions import _server_clusters
 
 CHURN_WINDOW_HOURS = 24
 
@@ -53,11 +53,13 @@ def compute_line_items(
 	run bills a whole team at once and uses `team_line_items` instead, which reads the
 	team's subscriptions once rather than once per cluster.
 	"""
-	subscriptions = frappe.get_all("Subscription", filters={"team": team}, fields=["name", "asset_id"])
-	# Resolve every asset's cluster in one query (not a get_value per subscription),
-	# then keep only the subs whose asset runs in this cluster.
-	clusters = _asset_clusters([s.asset_id for s in subscriptions])
-	subscriptions = [s for s in subscriptions if clusters.get(s.asset_id) == cluster]
+	subscriptions = frappe.get_all(
+		"Subscription", filters={"team": team}, fields=["name", "server_id", "vm_snapshot"]
+	)
+	# Resolve every subscription's cluster in one query per kind (not a get_value per
+	# subscription), then keep only the subs that bill in this cluster.
+	clusters = _subscription_clusters(subscriptions)
+	subscriptions = [s for s in subscriptions if clusters.get(s.name) == cluster]
 	if not subscriptions:
 		return []
 
@@ -77,27 +79,44 @@ def compute_line_items(
 
 def team_line_items(team: str, period_start, period_end, explain: bool = False, changes=None) -> list[dict]:
 	"""Every fixed line item for a team across all the clusters it runs in, from ONE
-	read of its subscriptions, their asset clusters and their changes.
+	read of its subscriptions, their server clusters and their changes.
 
 	The monthly run bills a team as one consolidated invoice, so it wants all the
 	team's lines together. Looping clusters and calling `compute_line_items` per cluster
 	re-reads the whole team once per cluster; this reads it once and tags each line with
 	its own subscription's cluster. The union of lines is identical either way.
 	"""
-	subscriptions = frappe.get_all("Subscription", filters={"team": team}, fields=["name", "asset_id"])
-	clusters = _asset_clusters([s.asset_id for s in subscriptions])
+	subscriptions = frappe.get_all(
+		"Subscription", filters={"team": team}, fields=["name", "server_id", "vm_snapshot"]
+	)
+	clusters = _subscription_clusters(subscriptions)
 	changes_by_sub = _resolve_changes([s.name for s in subscriptions], changes)
 
 	bounds = _period_bounds(period_start, period_end)
 	lines = []
 	for sub in subscriptions:
-		cluster = clusters.get(sub.asset_id)
+		cluster = clusters.get(sub.name)
 		if not cluster:
-			continue  # no live asset cluster — nothing to bill this subscription against
+			continue  # no live server cluster — nothing to bill this subscription against
 		lines += _subscription_lines(sub, cluster, changes_by_sub.get(sub.name, []), bounds, explain)
 	# Assembled per subscription in whatever order the query returned them, which is
 	# creation-desc — so a team's newest machine printed first and its oldest last.
 	return _ordered(lines)
+
+
+def _subscription_clusters(subscriptions: list) -> dict[str, str]:
+	"""Map each subscription to the cluster it bills in: its server's, or its snapshot's.
+	A service subscription has neither and bills only through metered usage."""
+	from central.billing.catalog.snapshots import snapshot_regions
+
+	servers = _server_clusters([s.server_id for s in subscriptions])
+	snapshots = snapshot_regions([s.vm_snapshot for s in subscriptions])
+	clusters = {}
+	for sub in subscriptions:
+		cluster = servers.get(sub.server_id) or snapshots.get(sub.vm_snapshot)
+		if cluster:
+			clusters[sub.name] = cluster
+	return clusters
 
 
 def _ordered(lines: list[dict]) -> list[dict]:
@@ -169,7 +188,7 @@ def _subscription_lines(sub, cluster: str, changes: list, b, explain: bool = Fal
 				"opened_at": seg_start_dt,
 				"rate": frappe.utils.flt(change.locked_rate),
 				"plan": change.new_value,
-				"asset": sub.asset_id,
+				"server": sub.server_id,
 				"cluster": cluster,
 				"churn": held_hours < CHURN_WINDOW_HOURS,
 			}
@@ -271,7 +290,7 @@ def _changes_by_subscription(subscription_names: list[str]) -> dict:
 
 def _daily_line(seg: dict, days: int, day_units: int, explain: bool = False, billed_dates=None) -> dict:
 	line = {
-		"subscription_resource": seg["asset"],
+		"subscription_resource": seg["server"],
 		"plan": seg["plan"],
 		"cluster": seg["cluster"],
 		"resource_type": "bundle",
@@ -315,7 +334,7 @@ def _hourly_line(
 	window=None,
 ) -> dict:
 	line = {
-		"subscription_resource": seg["asset"],
+		"subscription_resource": seg["server"],
 		"plan": seg["plan"],
 		"cluster": seg["cluster"],
 		"resource_type": "bundle",

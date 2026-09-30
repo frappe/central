@@ -1,28 +1,23 @@
 import frappe
 from frappe.tests import IntegrationTestCase
 
-from central.api.servers import INSTANCE_LIVENESS_FIELDS, REGION_DISPLAY_FIELDS, list_instances, registry
-from central.central.doctype.asset.asset import Asset
+from central.api.servers import REGION_LIST_FIELDS, list_instances, registry
 from central.tests.test_iam import ensure_user
 
-# The exact key set list_instances returns: an Active Atlas Instance's liveness
-# merged with its Region's display metadata.
-PUBLIC_FIELDS = INSTANCE_LIVENESS_FIELDS + REGION_DISPLAY_FIELDS
+# The exact key set list_instances returns: the non-secret fields of an Active Region.
+PUBLIC_FIELDS = REGION_LIST_FIELDS
 
-# Fields that must never leave the server. `list_instances` bypasses DocType
-# RBAC (Atlas Instance is System Manager-only), so reading only the non-secret
-# liveness fields is what keeps the Atlas admin credentials off the wire.
+# Fields that must never leave the server. `list_instances` bypasses DocType RBAC
+# (Region is System Manager-only), so reading only the allowlist above is what
+# keeps Atlas's admin credentials off the wire.
 SECRET_FIELDS = (
-	"api_key",
-	"api_secret",
 	"base_url",
-	"skip_tunnel",
-	"tunnel_status",
-	"tunnel_ip",
-	"tunnel_url",
-	"service_user",
-	"peer_public_key",
-	"peer_endpoint",
+	"atlas_region_id",
+	"proxy_domain",
+	"webhook_secret",
+	"connection_checked_at",
+	"connection_error",
+	"last_synced_at",
 )
 
 
@@ -56,21 +51,12 @@ class TestListInstances(IntegrationTestCase):
 					"country_code": "IN",
 					"latitude": 19.07,
 					"longitude": 72.87,
-				}
-			).insert()
-		if not frappe.db.exists("Atlas Instance", region):
-			frappe.get_doc(
-				{
-					"doctype": "Atlas Instance",
-					"region": region,
 					"base_url": f"https://{region}.atlas.example.test",
 					"status": status,
-					"api_key": "admin-key",
-					"api_secret": "admin-secret",
 				}
 			).insert()
 		else:
-			frappe.db.set_value("Atlas Instance", region, "status", status)
+			frappe.db.set_value("Region", region, "status", status)
 		return region
 
 	def test_returns_exactly_the_public_allowlist(self):
@@ -102,24 +88,25 @@ class TestListInstances(IntegrationTestCase):
 			list_instances(team=self.team.name)
 
 	def test_registry_returns_console_fields(self):
-		Asset.mirror_vm(
-			self.active_region,
+		frappe.get_doc(
 			{
-				"name": "li-registry-vm",
+				"doctype": "Virtual Machine",
+				"resource_id": "li-registry-vm",
 				"team": self.team.name,
+				"region": self.active_region,
 				"title": "registry-vm",
 				"status": "Stopped",
 				"vcpus": 2,
 				"memory_megabytes": 4096,
 				"disk_gigabytes": 40,
 				"frappe_version": "v15",
-			},
-		)
+			}
+		).insert(ignore_permissions=True)
 		frappe.set_user(self.owner)
-		assets = registry(team=self.team.name)["assets"]
+		servers = registry(team=self.team.name)["servers"]
 
-		self.assertEqual(len(assets), 1)
-		for field in ("name", "resource_id", "plan", "resize_in_progress", "status", "cluster"):
-			self.assertIn(field, assets[0])
-		self.assertEqual(assets[0].name, assets[0].resource_id)
-		self.assertEqual(assets[0].frappe_version, "v15")
+		self.assertEqual(len(servers), 1)
+		for field in ("name", "resource_id", "plan", "status", "region"):
+			self.assertIn(field, servers[0])
+		self.assertEqual(servers[0].name, servers[0].resource_id)
+		self.assertEqual(servers[0].frappe_version, "v15")

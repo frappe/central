@@ -44,7 +44,7 @@ def backfill_open_locks_into_ledger(locks=None) -> int:
 def _ensure_segment_for_lock(lock) -> bool:
 	"""Write a `Created` segment mirroring `lock` when its resource's subscription has
 	no open segment. A no-op when the subscription is missing or already open."""
-	subscription = frappe.db.get_value("Subscription", {"asset_id": lock.get("resource_id")}, "name")
+	subscription = frappe.db.get_value("Subscription", {"server_id": lock.get("resource_id")}, "name")
 	if not subscription:
 		return False
 

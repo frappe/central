@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Button } from 'frappe-ui'
+import { Alert, Button } from 'frappe-ui'
 import EmptyState from '@/components/common/EmptyState.vue'
 
 const props = defineProps<{
@@ -21,19 +21,25 @@ const icons = {
 </script>
 
 <template>
+	<div
+		v-if="kind === 'error'"
+		class="flex min-h-64 items-center justify-center px-6"
+	>
+		<Alert
+			class="w-full max-w-xl"
+			theme="red"
+			:title="title"
+			:description="description"
+			:primary-action="{ label: 'Try again', onClick: () => $emit('retry') }"
+		/>
+	</div>
 	<EmptyState
+		v-else
 		:icon="icons[props.kind]"
 		:title="title"
 		:description="description"
 	>
-		<template v-if="kind === 'error'" #action>
-			<Button
-				label="Try again"
-				icon-left="lucide-refresh-cw"
-				@click="$emit('retry')"
-			/>
-		</template>
-		<template v-else-if="kind === 'filtered'" #action>
+		<template v-if="kind === 'filtered'" #action>
 			<Button label="Clear" @click="$emit('clear')" />
 		</template>
 		<template v-else-if="$slots.action" #action>

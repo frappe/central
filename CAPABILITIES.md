@@ -17,14 +17,14 @@ A capability is named `resource:action` and belongs to exactly one **plane**:
 | `atlas` | Atlas | Atlas API (when wired) |
 | `bench` | each bench | bench `admin/backend/auth.py` (`BENCH_CAPS`) |
 
-## Server is the atomic unit (model v3)
+## Server is the atomic unit (model v5)
 
 Role capabilities live at the **team** and **server** level only. A team manages
 servers; a server *is* a bench host. The **bench plane** — site-level capabilities
 plus the bench-internal `server:config` — is **deferred**: the plane, the
 `bench`-caps SSO mint, and the implication map all remain, so site capabilities can
 return under the bench plane later with no change to the token contract or to any
-deployed bench. `asset:view` was dropped as redundant — the Asset registry is gated
+deployed bench. `asset:view` was dropped as redundant — the Virtual Machine registry is gated
 on `server:view`.
 
 ## Vocabulary vs. roles
@@ -38,9 +38,9 @@ The distinction matters:
   a new capability string, so a bench always understands the result. Teams can
   create as many custom roles as they like without affecting this contract.
 
-## The 13 capabilities
+## The 16 capabilities
 
-### `central` plane (5)
+### `central` plane (8)
 
 | Capability | Meaning |
 | --- | --- |
@@ -49,19 +49,22 @@ The distinction matters:
 | `team:edit` | Edit team metadata. |
 | `team:manage_members` | Invite, suspend, and change team members. |
 | `team:delete` | Delete a team. |
+| `service:view` | View managed service configuration. |
+| `service:manage` | Configure managed services and credentials. |
+| `server:ssh-key` | Add, rotate, and remove Team SSH keys for selected servers. |
 
 ### `atlas` plane (8)
 
 | Capability | Meaning |
 | --- | --- |
 | `cluster:view` | View clusters the team can place servers in. |
-| `server:view` | List servers; view status, specs, and metrics. |
+| `server:view` | List and open servers and sites; view status, specs, and metrics. |
 | `server:create` | Provision a new server. |
 | `server:power` | Start, stop, and restart a server. |
 | `server:resize` | Resize or rebuild a server. |
 | `server:snapshot` | Create and restore server snapshots. |
 | `server:terminate` | Destroy a server. |
-| `server:open` | Open a server's console (bench admin) via signed-token SSO. |
+| `server:console` | Open the web console of an Ubuntu server. |
 
 ### `bench` plane (0 — deferred)
 
@@ -77,13 +80,18 @@ under these implications before it is asserted or evaluated
 
 | Capability | Implies |
 | --- | --- |
-| `server:open` | `server:view` |
 | `server:create` | `server:view`, `cluster:view` |
 | `server:power` / `resize` / `snapshot` / `terminate` | `server:view` |
+| `server:ssh-key` | `server:view` |
+| `server:console` | `server:view` |
 
 The role builder can let a user tick `server:create` without remembering
 `server:view`/`cluster:view`, and a grant hand-crafted through the API cannot
 bypass the closure either.
+
+## Scoped grants
+
+A role grant can apply to one server or site instead of the whole team. A scoped grant carries only these capabilities, on that server: `server:view`, `server:power`, `server:resize`, `server:snapshot`, `server:terminate`, and `server:console`. Every other capability is team-wide and comes only from a team-wide grant. For example, Developer on one server can stop that server, but cannot create a server or change the Team SSH keys. See [IAM resource scope](spec/IAM.md#resource-scope).
 
 ## The 5 system roles
 
@@ -103,10 +111,13 @@ all teams. Teams may also define custom roles scoped to themselves.
 | `server:power` | ✓ | ✓ | ✓ | | |
 | `server:resize` | ✓ | ✓ | ✓ | | |
 | `server:snapshot` | ✓ | ✓ | ✓ | | |
+| `server:ssh-key` | ✓ | ✓ | ✓ | | |
 | `server:terminate` | ✓ | ✓ | ✓ | | |
-| `server:open` | ✓ | ✓ | ✓ | | |
+| `server:console` | ✓ | ✓ | ✓ | | |
+| `service:view` | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `service:manage` | ✓ | ✓ | ✓ | | ✓ |
 
-Totals: Owner 13, Admin 12, Developer 8, Viewer 2, Billing 4.
+Totals: Owner 16, Admin 15, Developer 11, Viewer 3, Billing 6.
 
 The ladder reads top to bottom: **Viewer** (look) → **Billing** (look + pay) →
 **Developer** (operate servers) → **Admin** (Developer + run the team) → **Owner**

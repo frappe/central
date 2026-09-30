@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { Button, Dialog, Select, useCall } from 'frappe-ui'
+import { Alert, Button, Dialog, Select, useCall } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import { API, method } from '@/api/methods'
 import RowActionsMenu from '@/components/common/RowActionsMenu.vue'
 import { useBillingOverview } from '@/composables/useBillingOverview'
-import { errorToast, successToast } from '@/lib/toast'
+import { getErrorMessage, successToast } from '@/lib/feedback'
 import type { Project, SubscriptionRow } from '@/types/billing'
 
 // Which servers show under a Project's heading in the cost breakdown — the other
@@ -37,9 +37,14 @@ const candidates = computed(() =>
 
 const NONE = ''
 const toAdd = ref(NONE)
+const formError = ref('')
 watch(open, (isOpen) => {
-	if (isOpen) toAdd.value = NONE
+	if (isOpen) {
+		toAdd.value = NONE
+		formError.value = ''
+	}
 })
+watch(toAdd, () => (formError.value = ''))
 
 function serverTitle(sub: SubscriptionRow): string {
 	return sub.server || sub.plan_title || sub.name
@@ -70,7 +75,7 @@ async function addMember(): Promise<void> {
 		reloadSubscriptionGrouping()
 		emit('changed')
 	} catch (e) {
-		errorToast(e)
+		formError.value = getErrorMessage(e, "The server couldn't be added.")
 	} finally {
 		busy.value = ''
 	}
@@ -85,7 +90,7 @@ async function removeMember(sub: SubscriptionRow): Promise<void> {
 		reloadSubscriptionGrouping()
 		emit('changed')
 	} catch (e) {
-		errorToast(e)
+		formError.value = getErrorMessage(e, "The server couldn't be removed.")
 	} finally {
 		busy.value = ''
 	}
@@ -96,6 +101,7 @@ async function removeMember(sub: SubscriptionRow): Promise<void> {
 	<Dialog v-model="open" :title="project ? `${project.title} — servers` : ''">
 		<template #default>
 			<div class="space-y-4">
+				<Alert v-if="formError" theme="red" :title="formError" />
 				<div v-if="members.length" class="divide-y divide-outline-gray-1">
 					<div
 						v-for="sub in members"

@@ -137,13 +137,13 @@ def details_overdue(team: str) -> bool:
 	period that promise has not been kept, so the team funds nothing new until it
 	is — what is already running is left alone.
 	"""
-	from central.billing.api.dashboard._shared import _missing_profile_fields
+	from central.billing.doctype.billing_profile.billing_profile import get_missing_fields
 	from central.billing.revenue.invoicing.lifecycle import held_drafts
 
 	cutoff = frappe.utils.add_days(frappe.utils.nowdate(), -settings.billing_details_grace_days())
 	if not held_drafts(team, held_before=cutoff, limit=1):
 		return False
-	return bool(_missing_profile_fields(team))
+	return bool(get_missing_fields(team))
 
 
 def wallet_funds(team: str, new_rate) -> bool:
@@ -267,10 +267,10 @@ def _ask_for_details(team: str, missing: list[str]) -> int:
 
 def _teams_missing_details(teams: list[str]) -> dict[str, list[str]]:
 	"""Which of these teams still owe us billing details, and which ones."""
-	from central.billing.api.dashboard._shared import (
-		_REQUIRED_PROFILE_FIELDS,
-		missing_profile_fields_in,
-		profile_field_labels,
+	from central.billing.doctype.billing_profile.billing_profile import (
+		REQUIRED_FIELDS,
+		get_field_labels,
+		get_missing_fields_of,
 	)
 
 	profiles = {
@@ -278,8 +278,8 @@ def _teams_missing_details(teams: list[str]) -> dict[str, list[str]]:
 		for row in frappe.get_all(
 			"Billing Profile",
 			filters={"team": ["in", teams]},
-			fields=["team", *_REQUIRED_PROFILE_FIELDS],
+			fields=["team", *REQUIRED_FIELDS],
 		)
 	}
-	missing = {team: missing_profile_fields_in(profiles.get(team)) for team in teams}
-	return {team: profile_field_labels(fields) for team, fields in missing.items() if fields}
+	missing = {team: get_missing_fields_of(profiles.get(team)) for team in teams}
+	return {team: get_field_labels(fields) for team, fields in missing.items() if fields}

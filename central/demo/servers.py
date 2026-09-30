@@ -1,25 +1,24 @@
 """Dev-only demo fleet for the console's map-based server list.
 
-On a local bench there is no Atlas, so the Asset / Atlas Instance mirrors that
-normally fill from Atlas events stay empty and the servers map has nothing to
-show. This module seeds a small fleet through the same write paths Atlas uses
-(`Asset.mirror_vm`, the developer_setup Atlas Instance upsert) so the console
-exercises the real endpoints end-to-end. When a real Atlas is wired up, run
-`teardown` and delete this module — nothing else depends on it.
+On a local bench there is no Atlas, so no server is ever provisioned and the
+servers map has nothing to show. This module seeds a small fleet the same way
+provisioning does, so the console exercises the real endpoints end-to-end. When
+a real Atlas is wired up, run `teardown` and delete this module. Nothing else
+depends on it.
 
     bench --site central.localhost execute central.demo.servers.seed
     bench --site central.localhost execute central.demo.servers.summary
     bench --site central.localhost execute central.demo.servers.teardown
 
 Notes:
-- Never makes a network call: instances are saved with `skip_tunnel` and are
-  never registered; base_urls point at an unroutable local name, so power
-  actions (start/stop/terminate) fail with a connection error toast — expected.
+- Never makes a network call: `base_url` points at an unroutable local name,
+  so power actions (start/stop/terminate) fail with a connection error toast
+  — expected.
 - Idempotent: resource_ids are uuid5 of a fixed namespace, so re-running seed
   upserts the same rows and `teardown` can recompute exactly what it owns.
-- Running assets mint a Subscription via `Asset.on_update`; teardown removes
-  those too (Subscription Change -> Subscription -> Asset -> Atlas Instance,
-  in Link-integrity order).
+- Running servers mint a Subscription via `VirtualMachine.on_update`; teardown removes
+  those too (Subscription Change -> Subscription -> VirtualMachine -> Region, in
+  Link-integrity order).
 """
 
 from __future__ import annotations
@@ -32,7 +31,6 @@ from frappe import _
 from frappe.utils import now_datetime
 
 from central.api.developer_setup import _require_developer_mode
-from central.central.doctype.asset.asset import Asset
 
 # Fixed namespace so resource_ids are stable across runs (pure upserts) and
 # teardown can derive the exact set of seed-owned rows without bookkeeping.
@@ -40,7 +38,7 @@ SEED_NAMESPACE = uuid.UUID("2f9c31d4-7b6a-4d0e-9c1f-5a8e2d4b6c80")
 
 # region, provider, display_name, country_code, latitude, longitude, status.
 # Coordinates match the FC V2 mockup catalog. Deliberate edge case: sa-jeddah
-# is Draining, so list_instances hides it while its assets remain (exercises
+# is Draining, so list_instances hides it while its servers remain (exercises
 # the console's unlisted-region fallback). A region saved without coordinates
 # (0/0 = "not placed") lists but never pins — any hand-made instance covers it.
 REGIONS = (
@@ -54,11 +52,11 @@ REGIONS = (
 	("us-nyc", "DigitalOcean", "New York, USA", "US", 40.71, -74.01, "Active"),
 )
 
-# slug, team index (clamped to available teams), cluster, status, vcpus,
+# slug, team index (clamped to available teams), region, status, vcpus,
 # memory_megabytes, disk_gigabytes, frappe_version. Statuses cover every console
 # visual: Running (green), Pending (setting up), Stopped/Paused (gray), Failed
 # (broken, red pulse) and one Terminated row that must never render.
-ASSETS = (
+SERVERS = (
 	("web-01", 0, "in-mumbai", "Running", 4, 8192, 75, "v15"),
 	("web-02", 0, "in-mumbai", "Running", 2, 4096, 40, "v15"),
 	("worker-01", 0, "in-navimumbai", "Pending", 2, 4096, 40, "v16"),
@@ -87,14 +85,11 @@ def seed() -> dict:
 	_require_developer_mode()
 
 	teams = _demo_teams()
-	synced_at = now_datetime()
-	# Region first — Atlas Instance.region links it (one Atlas = one Region).
+	observed_at = now_datetime()
 	for region in REGIONS:
 		_upsert_region(region)
-	for region in REGIONS:
-		_upsert_instance(region)
-	for index, asset in enumerate(ASSETS):
-		_mirror_asset(index, asset, teams, synced_at)
+	for index, server in enumerate(SERVERS):
+		_seed_server(index, server, teams, observed_at)
 
 	frappe.db.commit()  # nosemgrep: frappe-manual-commit -- command-style local seed persists demo rows.
 	return summary()
@@ -106,12 +101,11 @@ def summary() -> dict:
 	regions = [region for region, *_ in REGIONS]
 	return {
 		"regions": frappe.db.count("Region", {"name": ["in", regions]}),
-		"atlas_instances": frappe.db.count("Atlas Instance", {"name": ["in", regions]}),
-		"assets": frappe.db.count("Asset", {"name": ["in", resource_ids]}),
-		"assets_by_status": dict(
-			Counter(frappe.get_all("Asset", filters={"name": ["in", resource_ids]}, pluck="status"))
+		"servers": frappe.db.count("Virtual Machine", {"name": ["in", resource_ids]}),
+		"servers_by_status": dict(
+			Counter(frappe.get_all("Virtual Machine", filters={"name": ["in", resource_ids]}, pluck="status"))
 		),
-		"subscriptions": frappe.db.count("Subscription", {"asset_id": ["in", resource_ids]}),
+		"subscriptions": frappe.db.count("Subscription", {"server_id": ["in", resource_ids]}),
 	}
 
 
@@ -120,19 +114,16 @@ def teardown() -> dict:
 	_require_developer_mode()
 
 	resource_ids = _seed_resource_ids()
-	subscriptions = frappe.get_all("Subscription", filters={"asset_id": ["in", resource_ids]}, pluck="name")
+	subscriptions = frappe.get_all("Subscription", filters={"server_id": ["in", resource_ids]}, pluck="name")
 	changes = frappe.get_all(
 		"Subscription Change", filters={"subscription": ["in", subscriptions]}, pluck="name"
 	)
 	removed = {
 		"subscription_changes": _delete_all("Subscription Change", changes),
 		"subscriptions": _delete_all("Subscription", subscriptions),
-		"assets": _delete_all("Asset", [r for r in resource_ids if frappe.db.exists("Asset", r)]),
-		"atlas_instances": _delete_all(
-			"Atlas Instance",
-			[region for region, *_ in REGIONS if frappe.db.exists("Atlas Instance", region)],
+		"servers": _delete_all(
+			"Virtual Machine", [r for r in resource_ids if frappe.db.exists("Virtual Machine", r)]
 		),
-		# After the instances that link them.
 		"regions": _delete_all(
 			"Region",
 			[region for region, *_ in REGIONS if frappe.db.exists("Region", region)],
@@ -152,7 +143,7 @@ def _demo_teams() -> list[str]:
 
 
 def _upsert_region(region_row: tuple) -> None:
-	region, provider, display_name, country_code, latitude, longitude, _status = region_row
+	region, provider, display_name, country_code, latitude, longitude, status = region_row
 	doc = frappe.get_doc("Region", region) if frappe.db.exists("Region", region) else frappe.new_doc("Region")
 	doc.region = region
 	doc.display_name = display_name
@@ -160,34 +151,25 @@ def _upsert_region(region_row: tuple) -> None:
 	doc.country_code = country_code
 	doc.latitude = latitude
 	doc.longitude = longitude
+	# Unroutable on purpose; the seed never dials out, so no call ever leaves this machine.
+	doc.base_url = f"http://{region}.atlas.localhost:9999"
+	doc.status = status
 	doc.save(ignore_permissions=True)
 
 
-def _upsert_instance(region_row: tuple) -> None:
-	region, *_, status = region_row
-	if frappe.db.exists("Atlas Instance", region):
-		instance = frappe.get_doc("Atlas Instance", region)
-	else:
-		instance = frappe.new_doc("Atlas Instance")
-		instance.region = region
-	# Unroutable on purpose; the seed never registers a tunnel, so no call
-	# ever leaves this machine. The dummy secret is a placeholder, not a credential.
-	instance.base_url = f"http://{region}.atlas.localhost:9999"
-	instance.api_key = "dev-seed-key"
-	instance.api_secret = "dev-seed-secret"
-	instance.skip_tunnel = 1
-	instance.status = status
-	instance.save(ignore_permissions=True)
+def _seed_server(index: int, server_row: tuple, teams: list[str], observed_at) -> None:
+	slug, team_index, region, status, vcpus, memory_megabytes, disk_gigabytes, frappe_version = server_row
+	resource_id = _resource_id(slug)
+	if frappe.db.exists("Virtual Machine", resource_id):
+		return
 
-
-def _mirror_asset(index: int, asset_row: tuple, teams: list[str], synced_at) -> None:
-	slug, team_index, cluster, status, vcpus, memory_megabytes, disk_gigabytes, frappe_version = asset_row
-	# mirror_vm is the mirror's sole sanctioned writer — same path Atlas events take.
-	Asset.mirror_vm(
-		cluster,
+	# Seeds stand in for servers Central provisioned, so they take the provisioning path.
+	frappe.get_doc(
 		{
-			"name": _resource_id(slug),
+			"doctype": "Virtual Machine",
+			"resource_id": resource_id,
 			"team": teams[min(team_index, len(teams) - 1)],
+			"region": region,
 			"title": slug,
 			"status": status,
 			"vcpus": vcpus,
@@ -196,9 +178,9 @@ def _mirror_asset(index: int, asset_row: tuple, teams: list[str], synced_at) -> 
 			"frappe_version": frappe_version,
 			"public_ipv4": f"192.0.2.{10 + index}",  # TEST-NET-1, never routable
 			"ipv6_address": f"2001:db8::{10 + index:x}",  # documentation range
-		},
-		synced_at=synced_at,
-	)
+			"state_observed_at": observed_at,
+		}
+	).insert(ignore_permissions=True)
 
 
 def _resource_id(slug: str) -> str:
@@ -206,7 +188,7 @@ def _resource_id(slug: str) -> str:
 
 
 def _seed_resource_ids() -> list[str]:
-	return [_resource_id(slug) for slug, *_ in ASSETS]
+	return [_resource_id(slug) for slug, *_ in SERVERS]
 
 
 def _delete_all(doctype: str, names: list[str]) -> int:

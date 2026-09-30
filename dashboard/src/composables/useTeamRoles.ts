@@ -1,14 +1,9 @@
-import { useCall } from 'frappe-ui'
+import { useCall, useList } from 'frappe-ui'
 import { computed } from 'vue'
 import { API, method } from '@/api/methods'
 import { teamParams, whenTeamReady } from '@/composables/useTeamScope'
+import { getErrorMessage, isAbortError, successToast } from '@/lib/feedback'
 import { submitOrThrow } from '@/lib/frappeCall'
-import {
-	errorToast,
-	getErrorMessage,
-	isAbortError,
-	successToast,
-} from '@/lib/toast'
 import type { CapabilityInfo, TeamRoleRow } from '@/types/api'
 
 // Roles available on the active team (system + this team's custom roles), each
@@ -24,8 +19,11 @@ const rolesCall = useCall<TeamRoleRow[], { team: string }>({
 })
 
 // The palette is team-independent — every capability in the system.
-const capabilitiesCall = useCall<CapabilityInfo[]>({
-	url: method(API.listCapabilities),
+const capabilitiesCall = useList<CapabilityInfo>({
+	doctype: 'Capability',
+	fields: ['name', 'plane', 'resource', 'description'],
+	orderBy: 'name asc',
+	limit: 100,
 	immediate: false,
 })
 
@@ -73,29 +71,19 @@ export function useTeamRoles() {
 		roleName: string,
 		capabilities: string[],
 	): Promise<void> {
-		try {
-			await submitOrThrow(createRoleCall, {
-				team: teamParams().team,
-				role_name: roleName,
-				capabilities: JSON.stringify(capabilities),
-			})
-			successToast(`Created role “${roleName}”`)
-			rolesCall.reload()
-		} catch (e) {
-			errorToast(e)
-			throw e
-		}
+		await submitOrThrow(createRoleCall, {
+			team: teamParams().team,
+			role_name: roleName,
+			capabilities: JSON.stringify(capabilities),
+		})
+		successToast(`Created role “${roleName}”`)
+		rolesCall.reload()
 	}
 
 	async function deleteRole(role: string, roleName: string): Promise<void> {
-		try {
-			await submitOrThrow(deleteRoleCall, { role })
-			successToast(`Deleted role “${roleName}”`)
-			rolesCall.reload()
-		} catch (e) {
-			errorToast(e)
-			throw e
-		}
+		await submitOrThrow(deleteRoleCall, { role })
+		successToast(`Deleted role “${roleName}”`)
+		rolesCall.reload()
 	}
 
 	// System roles first, then by breadth of access (capability count, descending),

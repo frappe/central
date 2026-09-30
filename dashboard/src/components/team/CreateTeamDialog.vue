@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { Avatar, Dialog, TextInput } from 'frappe-ui'
+import { Alert, Avatar, Dialog, TextInput } from 'frappe-ui'
 import { computed, watch } from 'vue'
 import { useCreateTeam } from '@/composables/useCreateTeam'
 
 const open = defineModel<boolean>('open', { default: false })
 
-const { teamName, name, duplicate, canSubmit, saving, submit, reset } =
+const { teamName, name, duplicate, canSubmit, saving, error, submit, reset } =
 	useCreateTeam()
 
 watch(open, (isOpen) => {
@@ -29,6 +29,7 @@ const actions = computed(() => [
 
 <template>
 	<Dialog v-model="open" title="Create a team" size="sm" :actions="actions">
+		<Alert v-if="error" class="mb-4" theme="red" :title="error" />
 		<div>
 			<label for="team-name" class="block text-xs text-ink-gray-5">
 				Team name

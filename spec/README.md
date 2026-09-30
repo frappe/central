@@ -1,30 +1,40 @@
 # Central Spec
 
-## IAM
+## v0.2 staging milestone
 
-- [IAM](IAM.md): architecture, identity, permissions, OAuth, and Atlas enforcement.
-- [Execution Plan](EXECUTION_PLAN.md): ordered implementation and verification work.
+- [Rewrite scope](REWRITE_SCOPE.md): Friday signup and server lifecycle, later work, ownership, and recovery.
+- [Delivery](DELIVERY.md): phase PRs into `v0.2` and their acceptance checks.
+- [Validation](LOCAL_ENVIRONMENT.md): contract tests, populated migrations, and real-region evidence.
 
-Central authors identity and Team permissions. Each Atlas cluster consumes those
-grants through OAuth and enforces them locally.
+Friday covers trial signup, Pilot server creation and access, plain Ubuntu creation, and server power actions. Custom domains and Cargo registration follow this milestone. Site rename and TLS stay with Pilot.
 
-## Tunnel
+The v0.2 documents distinguish the proposed design from the verified baseline. Each implementation phase updates the current module specifications when its behavior lands.
 
-- [Tunnel](TUNNEL.md): Central as the WireGuard hub, the `Register Atlas`
-  orchestration, the per-Atlas scoped service user, and the host-exec runner for the
-  hub scripts. Pairs with [atlas/spec/21-tunnel.md](../../atlas/spec/21-tunnel.md)
-  (the Atlas-side lockdown + lockout-safe handshake).
+## Current module specifications
 
-Each Atlas management plane is reachable only over the tunnel; Central firewalls each
-Atlas's public interface during a lockout-safe, Central-initiated registration.
+- [Team network identity](../central/identity/doctype/team/SPEC.md): allocation, immutability, and migration of tenant IDs.
+
+- [Signing keys](../central/central/doctype/central_sso_settings/SPEC.md): separate Atlas and Pilot trust, operator initialization, and token verification.
+
+- [Regional configuration](../central/infrastructure/doctype/region/SPEC.md): signed connection checks, tenant selection, and regional identity.
+- [Image offerings](../central/infrastructure/doctype/image_offering/SPEC.md): presentation records and on-demand regional System image discovery.
+- [Proxy routes](../central/infrastructure/doctype/site_domain/SPEC.md): site and custom-domain routes on the regional proxy, with retry and delete.
+- [Trial sites](../central/infrastructure/doctype/site/SPEC.md): the site a Pilot image carries, its predictable address, and the signup handoff.
+- [VM snapshots](../central/infrastructure/doctype/vm_snapshot/SPEC.md): the free-snapshot pricing rule, daily snapshots, terminate with a snapshot, and restore.
+
+## Existing specifications
+
+- [IAM](IAM.md): Central identity and permission model.
+- [Capabilities](../CAPABILITIES.md): the capability vocabulary and fixtures contract.
+- [SSO](SSO.md): token flows and consumer contracts to check before the signing cutover.
+- [Atlas coordination](ATLAS_COORDINATION.md): earlier regional contracts that need replacement during the rewrite.
+- [Inbound webhooks](WEBHOOKS.md): the contract a region signs and sends its reports with. Share it with Atlas and Cargo.
+- [Cleanup plan](refactor_todo.md): the ordered cleanup of the backend and the dashboard.
+
+The earlier [execution plan](EXECUTION_PLAN.md) does not define the v0.2 delivery order. Do not use its Atlas OAuth or VM capability assumptions for the new integration. Use the verified contracts in [Rewrite scope](REWRITE_SCOPE.md).
 
 ## Billing
 
-- [Atlas Integration](../../v2-billing-specs/atlas-integration/README.md): the
-  Atlas → Billing Agent → Central workflow — lifecycle events, entitlement
-  enforcement, metering, and the sync spine.
+- [Billing documentation](../central/billing/docs/README.md): billing domain rules.
 
-Atlas resources emit billing events to the per-cluster `press_billing_agent`
-(in-process), which pushes them to Central's `billing` module where prices are
-locked and invoices computed. The billing domain and the integration workflow
-are both specced in [v2-billing-specs](../../v2-billing-specs/README.md).
+The rewrite preserves billing domain logic. Required resource references and integration changes carry their own tests and data patches.

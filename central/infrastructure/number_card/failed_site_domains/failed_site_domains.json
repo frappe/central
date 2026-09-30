@@ -1,0 +1,22 @@
+{
+ "creation": "2026-09-21 00:00:00.000000",
+ "docstatus": 0,
+ "doctype": "Number Card",
+ "document_type": "Site Domain",
+ "dynamic_filters_json": "[]",
+ "filters_json": "[[\"Site Domain\", \"status\", \"=\", \"Failed\"]]",
+ "function": "Count",
+ "idx": 0,
+ "is_public": 1,
+ "is_standard": 1,
+ "label": "Failed Site Domains",
+ "modified": "2026-09-21 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Infrastructure",
+ "name": "Failed Site Domains",
+ "owner": "Administrator",
+ "show_percentage_stats": 0,
+ "stats_time_interval": "Daily",
+ "type": "Document Type",
+ "color": "#CB2929"
+}

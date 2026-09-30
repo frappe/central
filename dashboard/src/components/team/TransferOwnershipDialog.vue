@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Dialog, TextInput } from 'frappe-ui'
+import { Alert, Dialog, TextInput } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import { useSession } from '@/composables/useSession'
 import { useTeamMembers } from '@/composables/useTeamMembers'
@@ -13,14 +13,16 @@ interface Props {
 const props = defineProps<Props>()
 const open = defineModel<boolean>('open', { default: false })
 
-const { transferOwnership, saving } = useTeamSettings()
+const { transferOwnership, saving, error, clearError } = useTeamSettings()
 const { reload } = useTeamMembers()
 const { activeTeamLabel } = useSession()
 
 const typed = ref('')
 watch(open, (isOpen) => {
 	if (isOpen) typed.value = ''
+	clearError()
 })
+watch(typed, clearError)
 
 const expected = computed(() => props.member?.full_name ?? '')
 const confirmed = computed(
@@ -65,6 +67,7 @@ const dialogOptions = computed(() => ({
 		:actions="dialogOptions.actions"
 	>
 		<div class="space-y-4">
+			<Alert v-if="error" theme="red" :title="error" />
 			<p class="text-p-base text-ink-gray-7">
 				<span class="font-medium text-ink-gray-9">{{ expected }}</span>
 				becomes the owner of

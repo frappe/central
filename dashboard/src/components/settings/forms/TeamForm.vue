@@ -1,5 +1,12 @@
 <script setup lang="ts">
-import { Avatar, Button, Dialog, SettingsRow, TextInput } from 'frappe-ui'
+import {
+	Alert,
+	Avatar,
+	Button,
+	Dialog,
+	SettingsRow,
+	TextInput,
+} from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useCapabilities } from '@/composables/useCapabilities'
@@ -9,7 +16,7 @@ import { useTeamSettings } from '@/composables/useTeamSettings'
 
 const router = useRouter()
 const { activeTeamLabel, activeTeamLogo } = useSession()
-const { saving, rename, deleteTeam } = useTeamSettings()
+const { saving, error, clearError, rename, deleteTeam } = useTeamSettings()
 
 const { canEditTeam, canDeleteTeam } = useCapabilities()
 
@@ -25,6 +32,7 @@ async function onSave(): Promise<void> {
 	if (!changed.value) return
 	await rename(name.value.trim())
 }
+watch(name, clearError)
 
 const confirmDelete = ref(false)
 const deleteOptions = computed(() => ({
@@ -53,6 +61,7 @@ async function onDelete(): Promise<void> {
 <template>
 	<div class="mt-6">
 		<div class="space-y-6">
+			<Alert v-if="error && !confirmDelete" theme="red" :title="error" />
 			<div v-if="canEditTeam">
 				<p class="block text-base text-ink-gray-5">Logo</p>
 				<div class="mt-1.5 flex items-center gap-3">
@@ -118,6 +127,8 @@ async function onDelete(): Promise<void> {
 			:title="deleteOptions.title"
 			:message="deleteOptions.message"
 			:actions="deleteOptions.actions"
-		/>
+		>
+			<Alert v-if="error" theme="red" :title="error" />
+		</Dialog>
 	</div>
 </template>

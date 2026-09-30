@@ -6,15 +6,14 @@ from jwt.algorithms import RSAAlgorithm
 from central.api.jwks import jwks_document
 from central.api.sso import get_bench_link
 from central.central.doctype.central_sso_settings.central_sso_settings import ALGORITHM
-from central.central.doctype.pilot_credential.pilot_credential import PilotCredential
+from central.infrastructure.doctype.pilot_credential.pilot_credential import PilotCredential
 from central.sso import central_url
 from central.tests.test_iam import ensure_user
-from central.tests.utils import ensure_region
 
-# Open-in-bench for a real VM (asset) now hands back a Central-signed admin SID as
+# Open-in-bench for a real VM (server) now hands back a Central-signed admin SID as
 # `{gateway}/?sid=<jwt>`. Central mints it locally against its RSA key, scoped to the bench's
 # audience id (its pilot_credential_id); the bench verifies it offline against the JWKS. No
-# Atlas round-trip: opening a Running VM on an Active cluster just needs a gateway + an
+# Atlas round-trip: opening a Running VM in an active region just needs a gateway + an
 # enrolled pilot. The SID is single-use (jti + short TTL), so a fresh one is minted on every Open.
 
 GATEWAY = "https://vm-open-1.blr1.frappe.dev"
@@ -28,23 +27,26 @@ class TestOpenBench(IntegrationTestCase):
 		self.viewer = ensure_user("open.viewer@example.test")
 		self.team = self._team()
 		self.cluster = self._cluster("blr-open")
-		self.asset = self._asset("vm-open-1", "Running")
+		self.server = self._server("vm-open-1", "Running")
 		self.pcid = "pcred-open-1"
 		self._credential(self.pcid, "vm-open-1")
 
 	def tearDown(self):
 		frappe.set_user("Administrator")
+		self._clear_team(self.team.name)
+		frappe.delete_doc("Team", self.team.name, force=True, ignore_permissions=True)
 
 	def _credential(self, pcid, rid):
 		"""An enrolled pilot bound to the VM — its audience_id is what SIDs are minted for."""
 		if frappe.db.exists("Pilot Credential", pcid):
 			frappe.delete_doc("Pilot Credential", pcid, force=True)
-		PilotCredential.mint(team=self.team.name, pilot_credential_id=pcid, asset=rid, audience_id=pcid)
+		PilotCredential.mint(team=self.team.name, pilot_credential_id=pcid, server=rid, audience_id=pcid)
 
 	def _team(self):
 		name = "Open Bench Team"
 		existing = frappe.db.get_value("Team", {"team_name": name})
 		if existing:
+			self._clear_team(existing)
 			frappe.delete_doc("Team", existing, force=True, ignore_permissions=True)
 		return frappe.get_doc(
 			{
@@ -59,31 +61,36 @@ class TestOpenBench(IntegrationTestCase):
 			}
 		).insert()
 
+	def _clear_team(self, team):
+		for credential in frappe.get_all("Pilot Credential", filters={"team": team}, pluck="name"):
+			frappe.delete_doc("Pilot Credential", credential, force=True, ignore_permissions=True)
+		for site in frappe.get_all("Site", filters={"team": team}, pluck="name"):
+			frappe.delete_doc("Site", site, force=True, ignore_permissions=True)
+		for server in frappe.get_all("Virtual Machine", filters={"team": team}, pluck="name"):
+			frappe.delete_doc("Virtual Machine", server, force=True, ignore_permissions=True)
+
 	def _cluster(self, region):
-		ensure_region(region)
-		if frappe.db.exists("Atlas Instance", region):
-			frappe.delete_doc("Atlas Instance", region, force=True)
+		if frappe.db.exists("Region", region):
+			frappe.delete_doc("Region", region, force=True)
 		frappe.get_doc(
 			{
-				"doctype": "Atlas Instance",
+				"doctype": "Region",
 				"region": region,
 				"base_url": "https://atlas.example.test",
 				"status": "Active",
-				"api_key": "k",
-				"api_secret": "s",
 			}
 		).insert()
 		return region
 
-	def _asset(self, rid, status, *, gateway=GATEWAY):
-		if frappe.db.exists("Asset", rid):
-			frappe.delete_doc("Asset", rid, force=True, ignore_permissions=True)
+	def _server(self, rid, status, *, gateway=GATEWAY):
+		if frappe.db.exists("Virtual Machine", rid):
+			frappe.delete_doc("Virtual Machine", rid, force=True, ignore_permissions=True)
 		return frappe.get_doc(
 			{
-				"doctype": "Asset",
+				"doctype": "Virtual Machine",
 				"resource_id": rid,
 				"team": self.team.name,
-				"cluster": self.cluster,
+				"region": self.cluster,
 				"status": status,
 				"gateway_url": gateway or None,
 			}
@@ -100,7 +107,7 @@ class TestOpenBench(IntegrationTestCase):
 		"""Opening a Running VM returns a Central-signed SID at the VM's gateway, scoped to
 		the bench's audience id (its pilot_credential_id) — verifiable against the JWKS, with
 		no Atlas call."""
-		link = self._open(self.dev, asset="vm-open-1")
+		link = self._open(self.dev, server="vm-open-1")
 		self.assertTrue(link["url"].startswith(f"{GATEWAY}/?sid="))
 
 		public_key = RSAAlgorithm.from_jwk(jwks_document()["keys"][0])
@@ -119,23 +126,23 @@ class TestOpenBench(IntegrationTestCase):
 		rather than minting a SID no bench would accept."""
 		frappe.delete_doc("Pilot Credential", self.pcid, force=True)
 		with self.assertRaises(frappe.ValidationError):
-			self._open(self.dev, asset="vm-open-1")
+			self._open(self.dev, server="vm-open-1")
 
-	def test_viewer_without_vm_open_is_blocked(self):
-		with self.assertRaises(frappe.PermissionError):
-			self._open(self.viewer, asset="vm-open-1")
+	def test_viewer_with_server_view_can_open(self):
+		link = self._open(self.viewer, server="vm-open-1")
+		self.assertTrue(link["url"].startswith(f"{GATEWAY}/?sid="))
 
 	def test_stopped_vm_refused(self):
-		self._asset("vm-open-1", "Stopped")
+		self._server("vm-open-1", "Stopped")
 		with self.assertRaises(frappe.ValidationError):
-			self._open(self.dev, asset="vm-open-1")
+			self._open(self.dev, server="vm-open-1")
 
 	def test_missing_gateway_refused(self):
-		self._asset("vm-open-1", "Running", gateway=None)
+		self._server("vm-open-1", "Running", gateway=None)
 		with self.assertRaises(frappe.ValidationError):
-			self._open(self.dev, asset="vm-open-1")
+			self._open(self.dev, server="vm-open-1")
 
 	def test_disabled_cluster_refused(self):
-		frappe.db.set_value("Atlas Instance", self.cluster, "status", "Disabled")
+		frappe.db.set_value("Region", self.cluster, "status", "Disabled")
 		with self.assertRaises(frappe.ValidationError):
-			self._open(self.dev, asset="vm-open-1")
+			self._open(self.dev, server="vm-open-1")

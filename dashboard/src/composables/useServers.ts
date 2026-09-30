@@ -1,21 +1,32 @@
 import { useCall } from 'frappe-ui'
 import { computed, ref } from 'vue'
 import { API, method } from '@/api/methods'
+import signingInHtml from '@/assets/signing-in.html?raw'
+import { useBusyRunner } from '@/composables/useBusyRunner'
 import { useSession } from '@/composables/useSession'
-import { errorToast, successToast } from '@/lib/toast'
+import type { ServerAccess } from '@/lib/capabilities'
+import { reportError } from '@/lib/feedback'
+import { submitOrThrow } from '@/lib/frappeCall'
 import type { RefreshResponse } from '@/types/api'
-import type { Asset } from '@/types/Central/Asset'
+import type { VirtualMachine } from '@/types/Infrastructure/VirtualMachine'
 
-type BenchLinkResponse = {
-	url: string
+type BenchLinkResponse = { url: string }
+type SiteLinkResponse = { url: string | null; login_url: string | null }
+type TeamParams = { team: string }
+type CommandParams = {
+	team: string
+	resource_id: string
+	take_snapshot?: number
 }
 
-export type AssetRow = Pick<
-	Asset,
+export type ServerCommand = 'start' | 'stop' | 'restart' | 'terminate'
+
+export type VirtualMachineRow = Pick<
+	VirtualMachine,
 	| 'name'
 	| 'resource_id'
 	| 'title'
-	| 'cluster'
+	| 'region'
 	| 'status'
 	| 'plan'
 	| 'frappe_version'
@@ -24,211 +35,206 @@ export type AssetRow = Pick<
 	| 'disk_gigabytes'
 	| 'ipv6_address'
 	| 'public_ipv4'
+	| 'public_ipv6'
+	| 'image_offering'
 	| 'gateway_url'
-	| 'resize_in_progress'
-	| 'last_synced_at'
-> & {
-	// Transitional label ("Terminating"/"Provisioning"/…) while an action is in flight.
-	// Overlaid by central.api.servers.registry from the active Resource Action, not an
-	// Asset field — so the row reads as "…ing" until the mirror catches up.
-	pending_action?: string | null
-}
-
-// The server lifecycle command path (create / power / terminate / open-in-bench /
-// mirror refresh). The fleet *list* is read separately through useServerMapData;
-// callers reload that after a command, since a command's effect lands on the next
-// mirror refresh (Atlas event push + reconcile pull), not synchronously.
+	| 'state_observed_at'
+> &
+	ServerAccess & {
+		pending_action?: string | null
+	}
 
 const { activeTeam } = useSession()
+const { busy, run, runOrThrow } = useBusyRunner()
+const opening = ref('')
 
-// Param shapes for the lifecycle/SSO methods (central/api/servers.py, central/sso.py).
-type TeamParams = { team: string }
-type CommandParams = { team: string; resource_id: string }
-
-// Re-pulls the mirror from every Active Atlas.
-const refresh = useCall<RefreshResponse, TeamParams>({
-	url: method(API.refreshAssets),
+const refreshCall = useCall<RefreshResponse, TeamParams>({
+	url: method(API.refreshServers),
 	method: 'POST',
 	immediate: false,
 })
 
-type CreateParams = {
-	team: string
-	region: string
-	title: string
-	subdomain: string
-	plan: string
-	vcpus: number
-	memory_megabytes: number
-	disk_gigabytes: number
-	cpu_max_cores?: number
-	frappe_version?: string
+const startCall = commandCall(API.startServer)
+const stopCall = commandCall(API.stopServer)
+const restartCall = commandCall(API.restartServer)
+const terminateCall = commandCall(API.terminateServer)
+const commandCalls = {
+	start: startCall,
+	stop: stopCall,
+	restart: restartCall,
+	terminate: terminateCall,
 }
-const createCall = useCall<{ resource_id: string }, CreateParams>({
-	url: method(API.createServer),
-	method: 'POST',
-	immediate: false,
-})
 
-// Design-your-own (composed) provision: the server is built from a composition
-// (qty per resource) + its optimisation profile, billed à la carte (#80/#84).
-type ComposedInclude = { resource_type: string; quantity: number; unit: string }
-type CreateComposedParams = {
-	team: string
-	region: string
-	title: string
-	subdomain: string
-	includes: ComposedInclude[]
-	sub_category: string
-	frappe_version?: string
-}
-const createComposedCall = useCall<
-	{ resource_id: string },
-	CreateComposedParams
->({
-	url: method(API.createComposedServer),
-	method: 'POST',
-	immediate: false,
-})
-
-const startCall = useCall<unknown, CommandParams>({
-	url: method(API.startServer),
-	method: 'POST',
-	immediate: false,
-})
-const stopCall = useCall<unknown, CommandParams>({
-	url: method(API.stopServer),
-	method: 'POST',
-	immediate: false,
-})
-const terminateCall = useCall<unknown, CommandParams>({
-	url: method(API.terminateServer),
-	method: 'POST',
-	immediate: false,
-})
-const benchLink = useCall<BenchLinkResponse, { asset: string }>({
+const benchLinkCall = useCall<BenchLinkResponse, { server: string }>({
 	url: method(API.getBenchLink),
 	immediate: false,
 })
+const consoleCall = useCall<{ url: string }, CommandParams>({
+	url: method(API.openConsole),
+	method: 'POST',
+	immediate: false,
+})
+const siteLinkCall = useCall<SiteLinkResponse, { name: string }>({
+	url: method(API.loginSite),
+	method: 'POST',
+	immediate: false,
+})
 
-// One row mutates at a time; `busy` holds its resource_id so the row can show a
-// spinner and gate its own menu. `opening` does the same for open-in-bench.
-const busy = ref<string>('')
-const opening = ref<string>('')
+function commandCall(url: string) {
+	return useCall<unknown, CommandParams>({
+		url: method(url),
+		method: 'POST',
+		immediate: false,
+	})
+}
 
-type Verb = 'Start' | 'Stop' | 'Terminate'
+function commandLabel(command: ServerCommand): string {
+	return `${command[0].toUpperCase()}${command.slice(1)}`
+}
+
+interface CommandOptions {
+	takeSnapshot?: boolean
+	throwOnError?: boolean
+}
 
 async function runCommand(
-	call: typeof startCall,
-	server: AssetRow,
-	verb: Verb,
-	// A quick, reversible power action toasts on failure; a destructive one (terminate)
-	// throws so the caller can hold its confirm dialog open and show the reason inline.
-	surface: 'toast' | 'throw' = 'toast',
-): Promise<void> {
-	busy.value = server.resource_id
-	try {
-		// useCall surfaces HTTP failures on `.error` rather than throwing.
-		await call.submit({
-			team: activeTeam.value!,
+	command: ServerCommand,
+	server: VirtualMachineRow,
+	options: CommandOptions = {},
+): Promise<boolean> {
+	const team = activeTeam.value
+	if (!team) return false
+
+	const submit = () =>
+		submitOrThrow(commandCalls[command], {
+			team,
 			resource_id: server.resource_id,
+			...(command === 'terminate'
+				? { take_snapshot: options.takeSnapshot ? 1 : 0 }
+				: {}),
 		})
-		if (call.error) throw call.error
-		if (surface === 'toast')
-			successToast(
-				`${verb} requested for ${server.title || server.resource_id}`,
-			)
-	} catch (e) {
-		if (surface === 'throw') throw e
-		errorToast(e)
-	} finally {
-		busy.value = ''
+	const message = `${commandLabel(command)} requested for ${server.title || server.resource_id}`
+
+	if (options.throwOnError) {
+		await runOrThrow(submit, null, server.resource_id)
+		return true
+	}
+	return run(submit, message, server.resource_id)
+}
+
+async function refreshServers(): Promise<boolean> {
+	const team = activeTeam.value
+	if (!team) return false
+	try {
+		await submitOrThrow(refreshCall, { team })
+		return true
+	} catch (error) {
+		reportError(error, { title: "Couldn't refresh servers" })
+		return false
 	}
 }
 
+// Open the window inside the click, before any await, or the browser blocks it.
+function openLoadingTab(
+	target = '_blank',
+	features = '',
+): { tab: Window | null; loadingUrl: string } {
+	const loadingUrl = URL.createObjectURL(
+		new Blob([signingInHtml], { type: 'text/html' }),
+	)
+	return { tab: window.open(loadingUrl, target, features), loadingUrl }
+}
+
+async function openBench(server: VirtualMachineRow): Promise<void> {
+	if (opening.value) return
+	opening.value = server.resource_id
+	const { tab, loadingUrl } = openLoadingTab()
+	try {
+		await submitOrThrow(benchLinkCall, { server: server.resource_id })
+		openResolvedUrl(benchLinkCall.data?.url, tab, 'server')
+	} catch (error) {
+		tab?.close()
+		reportError(error, {
+			title: `Couldn't open ${server.title || server.resource_id}`,
+		})
+	} finally {
+		URL.revokeObjectURL(loadingUrl)
+		opening.value = ''
+	}
+}
+
+/** Open the server's Atlas web console in a popup. Atlas spends a token on first
+ *  use, so every request mints a new one. One window per server: a second request
+ *  replaces the session in that window. */
+async function openConsole(server: VirtualMachineRow): Promise<void> {
+	const team = activeTeam.value
+	if (!team || opening.value) return
+	opening.value = server.resource_id
+	const { tab, loadingUrl } = openLoadingTab(
+		`console-${server.resource_id}`,
+		'popup,width=960,height=640',
+	)
+	try {
+		await submitOrThrow(consoleCall, { team, resource_id: server.resource_id })
+		openResolvedUrl(consoleCall.data?.url, tab, 'console')
+	} catch (error) {
+		tab?.close()
+		reportError(error, { title: "Couldn't open the console" })
+	} finally {
+		URL.revokeObjectURL(loadingUrl)
+		opening.value = ''
+	}
+}
+
+async function openSite(name: string): Promise<void> {
+	if (opening.value) return
+	opening.value = name
+	const { tab, loadingUrl } = openLoadingTab()
+	try {
+		await submitOrThrow(siteLinkCall, { name })
+		const url = siteLinkCall.data?.login_url || siteLinkCall.data?.url
+		openResolvedUrl(url, tab, 'site')
+	} catch (error) {
+		tab?.close()
+		reportError(error, { title: "Couldn't open this site" })
+	} finally {
+		URL.revokeObjectURL(loadingUrl)
+		opening.value = ''
+	}
+}
+
+function openResolvedUrl(
+	url: string | null | undefined,
+	tab: Window | null,
+	target: 'server' | 'site' | 'console',
+) {
+	if (url && tab) {
+		tab.location.href = url
+		return
+	}
+	if (url) {
+		window.location.href = url
+		return
+	}
+
+	tab?.close()
+	reportError(undefined, {
+		title: `Couldn't open this ${target}`,
+		fallback: 'It may not be ready yet. Try again in a moment.',
+	})
+}
+
 export function useServers() {
-	async function refreshAssets(): Promise<void> {
-		try {
-			await refresh.submit({ team: activeTeam.value! })
-			if (refresh.error) throw refresh.error
-		} catch (e) {
-			errorToast(e)
-		}
-	}
-
-	function start(server: AssetRow) {
-		return runCommand(startCall, server, 'Start')
-	}
-	function stop(server: AssetRow) {
-		return runCommand(stopCall, server, 'Stop')
-	}
-	function terminate(server: AssetRow) {
-		return runCommand(terminateCall, server, 'Terminate', 'throw')
-	}
-
-	// Open the VM's bench via a scoped SSO assertion. The tab is opened
-	// synchronously inside the click so it isn't popup-blocked, then pointed at the
-	// minted URL once it resolves.
-	async function open(server: AssetRow): Promise<void> {
-		opening.value = server.resource_id
-		const tab = window.open('', '_blank')
-		try {
-			await benchLink.submit({ asset: server.resource_id })
-			if (benchLink.error) throw benchLink.error
-			const url = benchLink.data?.url
-			if (url && tab) tab.location.href = url
-			else if (url) window.location.href = url
-			else tab?.close()
-		} catch (e) {
-			tab?.close()
-			errorToast(e)
-		} finally {
-			opening.value = ''
-		}
-	}
-
-	// Provision a new server in a region. Returns the new resource_id on success
-	// (so the caller can navigate), throws on failure (so it can surface the error).
-	async function create(params: Omit<CreateParams, 'team'>): Promise<string> {
-		await createCall.submit({ team: activeTeam.value!, ...params })
-		// useCall surfaces HTTP failures on `.error` rather than throwing — surface
-		// it and re-throw so the page keeps the user on the form.
-		if (createCall.error) {
-			errorToast(createCall.error)
-			throw createCall.error
-		}
-		successToast(`Creating ${params.title} in ${params.region}`)
-		return createCall.data?.resource_id ?? ''
-	}
-
-	// Provision a design-your-own (composed) server. Same contract as create().
-	async function createComposed(
-		params: Omit<CreateComposedParams, 'team'>,
-	): Promise<string> {
-		await createComposedCall.submit({ team: activeTeam.value!, ...params })
-		if (createComposedCall.error) {
-			errorToast(createComposedCall.error)
-			throw createComposedCall.error
-		}
-		successToast(`Creating ${params.title} in ${params.region}`)
-		return createComposedCall.data?.resource_id ?? ''
-	}
-
 	return {
-		refreshing: computed(() => refresh.loading),
-		creating: computed(() => createCall.loading),
-		creatingComposed: computed(() => createComposedCall.loading),
-		// Atlas instances that couldn't be reached on the last refresh — their rows
-		// show last-known data.
-		stale: computed<string[]>(() => refresh.data?.stale ?? []),
+		refreshing: computed(() => refreshCall.loading),
+		stale: computed<string[]>(() => refreshCall.data?.stale ?? []),
 		busy,
 		opening,
-		refreshAssets,
-		create,
-		createComposed,
-		start,
-		stop,
-		terminate,
-		open,
+		refreshServers,
+		runCommand,
+		open: openBench,
+		openBench,
+		openConsole,
+		openSite,
 	}
 }

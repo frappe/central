@@ -56,7 +56,7 @@ from central.billing.demo._factory import (
 	_tier,
 	_tiers,
 	_wipe_all,
-	activate_team_assets,
+	activate_team_servers,
 	add_composed_subscription,
 	arm_emandate,
 	backdate_credit_debits,
@@ -251,7 +251,7 @@ def seed() -> dict:
 		results[slug] = _build_team(team, slug, tier, currency, state, resources, resize)
 
 	# Populate the in-app notification feed so the console bell/inbox is demoable —
-	# emitted through the REAL writers (the billing sender + the Asset-failed hook),
+	# emitted through the REAL writers (the billing sender + the VirtualMachine-failed hook),
 	# never hand-injected rows.
 	_seed_notification_feed(slug_to_team)
 
@@ -287,7 +287,7 @@ def _seed_notification_feed(slug_to_team: dict):
 
 	Billing events go through the real `notifications.notify` sender (which records a
 	Team Notification via the wired feed); Server Failed is triggered by flipping a
-	real Asset to Failed (the `on_update` hook emits it); Resize Failed and
+	real VirtualMachine to Failed (the `on_update` hook emits it); Resize Failed and
 	Cluster Degraded use `engine.dispatch` — the same writer the real hooks use.
 	The overdue team already emits Invoice Overdue + Server Suspended via real dunning.
 	"""
@@ -323,28 +323,18 @@ def _seed_notification_feed(slug_to_team: dict):
 			reference_name=inv,
 		)
 
-	# Server Failed — flip one real Running Asset to Failed; the on_update hook fires.
+	# Server Failed — flip one real Running VirtualMachine to Failed; the on_update hook fires.
 	nw = slug_to_team.get("northwind")
 	if nw:
-		asset = frappe.db.get_value("Asset", {"team": nw, "status": "Running"}, "name")
-		if asset:
-			doc = frappe.get_doc("Asset", asset)
+		server = frappe.db.get_value("Virtual Machine", {"team": nw, "status": "Running"}, "name")
+		if server:
+			doc = frappe.get_doc("Virtual Machine", server)
 			doc.status = "Failed"
 			doc.save(ignore_permissions=True)
 
 	# Resize Failed + Cluster Degraded — the same writer the real hooks use.
 	acme = slug_to_team.get("acme-corp")
 	if acme:
-		engine.ensure_event_type(
-			"resize_failed",
-			category="Server",
-			severity="Error",
-			required_cap="server:view",
-			in_app_title="Resize failed: {{ reference_name }}",
-			in_app_body="Server resize failed for {{ reference_name }}: {{ message }}",
-			action_label="View server",
-			action_route="/servers",
-		)
 		engine.dispatch(
 			acme,
 			"resize_failed",
@@ -353,22 +343,12 @@ def _seed_notification_feed(slug_to_team: dict):
 		)
 	umbrella = slug_to_team.get("umbrella")
 	if umbrella:
-		engine.ensure_event_type(
-			"cluster_degraded",
-			category="Server",
-			severity="Warning",
-			required_cap="server:view",
-			in_app_title="Region unavailable: {{ reference_name }}",
-			in_app_body="Region {{ reference_name }}: {{ message }}",
-			action_label="View servers",
-			action_route="/servers",
-		)
 		engine.dispatch(
 			umbrella,
 			"cluster_degraded",
 			message="Central couldn't reach in-mumbai on the last sync. Your servers keep running; "
 			"their status in the console may be delayed until the region recovers.",
-			reference_doctype="Atlas Instance",
+			reference_doctype="Region",
 			reference_name="in-mumbai",
 		)
 
@@ -516,7 +496,7 @@ def _build_team(team, slug, tier, currency, state, resources, resize):
 	for cluster, plan_key in resources:
 		idx += 1
 		plan = plan_name(plan_key)  # logical key -> the configurator-minted Plan name
-		# Production names an Asset by its resource_id, which is a hash — the id the
+		# Production names a Virtual Machine by its resource_id, which is a hash — the id the
 		# cluster, support and the invoice all know the machine by. A demo using
 		# "srv-acme-corp-1" hides that the grouping key is an opaque id, so it is
 		# shaped like the real thing (deterministic, so re-seeds are stable).
@@ -535,8 +515,8 @@ def _build_team(team, slug, tier, currency, state, resources, resize):
 		).name
 		# A readable name, so a receipt that groups by machine has a heading worth
 		# reading rather than the raw resource id.
-		if frappe.db.exists("Asset", resource):
-			frappe.db.set_value("Asset", resource, "title", f"{slug}-{idx}", update_modified=False)
+		if frappe.db.exists("Virtual Machine", resource):
+			frappe.db.set_value("Virtual Machine", resource, "title", f"{slug}-{idx}", update_modified=False)
 		opening = frappe.db.get_value(
 			"Subscription Change", {"subscription": sub, "change_type": "Created"}, "name"
 		)
@@ -554,8 +534,8 @@ def _build_team(team, slug, tier, currency, state, resources, resize):
 	if slug in _COMPOSED_TEAMS:
 		add_composed_subscription(team, resources[0][0], currency, first_start, pm, gateway, f"cmp-{slug}")
 
-	# Take every VM/composed Asset Running so its subscription enables (the real path).
-	activate_team_assets(team)
+	# Take every VM/composed VirtualMachine Running so its subscription enables (the real path).
+	activate_team_servers(team)
 
 	# Metered consumer services (AI tokens / email / PDF): subscribe + report this
 	# month's usage; overage past the bundled allowance bills on the current invoice.

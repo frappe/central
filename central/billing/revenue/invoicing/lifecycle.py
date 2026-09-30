@@ -129,12 +129,13 @@ def open_and_collect(invoice: str, collect: bool = True) -> dict:
 def _hold_for_billing_details(doc) -> bool:
 	"""Whether this invoice must wait for billing details, asking for them if so.
 
-	The ask references the invoice, so it is deduped per invoice, not per sweep.
+	The engine dedupes the ask for an hour only, so each retry of the held draft asks
+	again. The monthly billing run is the only retry that finds details still missing.
 	"""
-	from central.billing.api.dashboard._shared import _missing_profile_labels
+	from central.billing.doctype.billing_profile.billing_profile import get_missing_field_labels
 	from central.billing.platform import notifications
 
-	missing = _missing_profile_labels(doc.team)
+	missing = get_missing_field_labels(doc.team)
 	if not missing:
 		return False
 	notifications.notify(

@@ -1,0 +1,409 @@
+{
+ "actions": [],
+ "autoname": "field:resource_id",
+ "creation": "2026-06-16 00:00:00",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "overview_tab",
+  "identity_section",
+  "resource_id",
+  "title",
+  "team",
+  "region",
+  "identity_column",
+  "plan",
+  "atlas_vm_id",
+  "frappe_version",
+  "status",
+  "configuration_tab",
+  "capacity_section",
+  "vcpus",
+  "memory_megabytes",
+  "disk_gigabytes",
+  "capacity_column",
+  "image_offering",
+  "has_site",
+  "skip_automatic_snapshot",
+  "access_tab",
+  "network_section",
+  "ipv6_address",
+  "public_ipv4",
+  "public_ipv6",
+  "network_column",
+  "gateway_url",
+  "has_public_ipv6",
+  "is_firewall_enabled",
+  "ssh_keys_section",
+  "ssh_keys",
+  "diagnostics_tab",
+  "admin_domain_section",
+  "admin_domain_task",
+  "admin_domain_error",
+  "admin_domain_error_log",
+  "regional_section",
+  "atlas_image_id",
+  "regional_column",
+  "state_observed_at",
+  "last_reported_at"
+ ],
+ "fields": [
+  {
+   "fieldname": "overview_tab",
+   "fieldtype": "Tab Break",
+   "label": "Overview"
+  },
+  {
+   "fieldname": "identity_section",
+   "fieldtype": "Section Break",
+   "label": "Identity"
+  },
+  {
+   "description": "The VM identifier in Atlas (the source of truth).",
+   "fieldname": "resource_id",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Resource ID",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "description": "Human label. Central-created servers retain the user-provided name; discovered servers use the Atlas VM title (resource_id is a UUID).",
+   "fieldname": "title",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Title",
+   "read_only": 1
+  },
+  {
+   "description": "Owning Central team (mirrored from Atlas).",
+   "fieldname": "team",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Team",
+   "options": "Team",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "description": "The region this VM lives in.",
+   "fieldname": "region",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Region",
+   "options": "Region",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "identity_column",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "plan",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Plan",
+   "options": "Plan"
+  },
+  {
+   "description": "Frappe version the VM was provisioned with \u2014 requested at create, resolved to a bench image and echoed back by Atlas (an unbuilt version falls back to the default).",
+   "fieldname": "frappe_version",
+   "fieldtype": "Data",
+   "label": "Frappe Version",
+   "read_only": 1
+  },
+  {
+   "default": "Pending",
+   "description": "Mirrors the Atlas-reported status verbatim (raw VM, or Site/Pilot front-door status for bench/site VMs).",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Status",
+   "options": "Pending\nProvisioning\nDeploying\nRunning\nPaused\nStopped\nFailed\nTerminated",
+   "read_only": 1
+  },
+  {
+   "fieldname": "configuration_tab",
+   "fieldtype": "Tab Break",
+   "label": "Configuration"
+  },
+  {
+   "fieldname": "capacity_section",
+   "fieldtype": "Section Break",
+   "label": "Capacity"
+  },
+  {
+   "fieldname": "vcpus",
+   "fieldtype": "Int",
+   "label": "vCPUs",
+   "read_only": 1
+  },
+  {
+   "fieldname": "memory_megabytes",
+   "fieldtype": "Int",
+   "label": "Memory (MB)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "disk_gigabytes",
+   "fieldtype": "Float",
+   "label": "Disk (GB)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "capacity_column",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "image_offering",
+   "fieldtype": "Link",
+   "label": "Image Offering",
+   "options": "Image Offering",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "description": "The server's image carries a site.",
+   "fieldname": "has_site",
+   "fieldtype": "Check",
+   "label": "Has Site",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "description": "The customer turned off the daily free snapshot for this server.",
+   "fieldname": "skip_automatic_snapshot",
+   "fieldtype": "Check",
+   "label": "Skip Automatic Snapshot"
+  },
+  {
+   "fieldname": "access_tab",
+   "fieldtype": "Tab Break",
+   "label": "Access"
+  },
+  {
+   "fieldname": "network_section",
+   "fieldtype": "Section Break",
+   "label": "Network"
+  },
+  {
+   "description": "The private WireGuard mesh address. Only the region reaches it.",
+   "fieldname": "ipv6_address",
+   "fieldtype": "Data",
+   "label": "Mesh IPv6",
+   "read_only": 1
+  },
+  {
+   "fieldname": "public_ipv4",
+   "fieldtype": "Data",
+   "label": "Public IPv4",
+   "read_only": 1
+  },
+  {
+   "description": "The public IPv6 address Atlas reports for the guest.",
+   "fieldname": "public_ipv6",
+   "fieldtype": "Data",
+   "label": "Public IPv6",
+   "read_only": 1
+  },
+  {
+   "fieldname": "network_column",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "The URL a bench VM is fronted at, reported by Atlas; empty for a non-bench VM.",
+   "fieldname": "gateway_url",
+   "fieldtype": "Data",
+   "label": "Gateway URL",
+   "options": "URL",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "description": "The customer asked for a public IPv6 address at creation. Anyone on the internet can reach the machine at that address.",
+   "fieldname": "has_public_ipv6",
+   "fieldtype": "Check",
+   "label": "Public IPv6 Requested",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "description": "The customer turned on the Atlas firewall at creation. It allows the mesh, ICMP, SSH, HTTP, and HTTPS.",
+   "fieldname": "is_firewall_enabled",
+   "fieldtype": "Check",
+   "label": "Firewall Enabled",
+   "read_only": 1
+  },
+  {
+   "fieldname": "ssh_keys_section",
+   "fieldtype": "Section Break",
+   "label": "SSH Keys"
+  },
+  {
+   "description": "Team public keys selected for this server.",
+   "fieldname": "ssh_keys",
+   "fieldtype": "Table",
+   "label": "SSH Keys",
+   "options": "Server SSH Key",
+   "read_only": 1
+  },
+  {
+   "fieldname": "diagnostics_tab",
+   "fieldtype": "Tab Break",
+   "label": "Diagnostics"
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "admin_domain_section",
+   "fieldtype": "Section Break",
+   "label": "Admin Domain"
+  },
+  {
+   "description": "The Pilot task that changed the local admin domain to the routed gateway hostname.",
+   "fieldname": "admin_domain_task",
+   "fieldtype": "Data",
+   "label": "Admin Domain Task",
+   "read_only": 1
+  },
+  {
+   "description": "A safe summary of the latest admin hostname failure.",
+   "fieldname": "admin_domain_error",
+   "fieldtype": "Small Text",
+   "label": "Admin Domain Error",
+   "read_only": 1
+  },
+  {
+   "description": "The Error Log for the latest admin hostname failure.",
+   "fieldname": "admin_domain_error_log",
+   "fieldtype": "Link",
+   "label": "Admin Domain Error Log",
+   "options": "Error Log",
+   "read_only": 1
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "regional_section",
+   "fieldtype": "Section Break",
+   "label": "Regional State"
+  },
+  {
+   "description": "VM identifier within the linked Atlas region.",
+   "fieldname": "atlas_vm_id",
+   "fieldtype": "Data",
+   "label": "Atlas VM ID",
+   "read_only": 1
+  },
+  {
+   "fieldname": "atlas_image_id",
+   "fieldtype": "Data",
+   "label": "Atlas Image ID",
+   "read_only": 1
+  },
+  {
+   "fieldname": "regional_column",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "When Central last recorded this server's state.",
+   "fieldname": "state_observed_at",
+   "fieldtype": "Datetime",
+   "label": "State Observed At",
+   "read_only": 1
+  },
+  {
+   "description": "The region's observed_at of the last applied report; a report that is not newer is ignored.",
+   "fieldname": "last_reported_at",
+   "fieldtype": "Datetime",
+   "label": "Last Reported At",
+   "read_only": 1
+  }
+ ],
+ "links": [
+  {
+   "link_doctype": "Resource Action",
+   "link_fieldname": "server"
+  },
+  {
+   "link_doctype": "Pilot Credential",
+   "link_fieldname": "server"
+  },
+  {
+   "link_doctype": "Site Domain",
+   "link_fieldname": "server"
+  },
+  {
+   "link_doctype": "VM Snapshot",
+   "link_fieldname": "server"
+  }
+ ],
+ "modified": "2026-09-30 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Infrastructure",
+ "name": "Virtual Machine",
+ "naming_rule": "By fieldname",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "export": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Central User"
+  }
+ ],
+ "row_format": "Dynamic",
+ "search_fields": "title,resource_id,atlas_vm_id,public_ipv4",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [
+  {
+   "color": "Gray",
+   "title": "Pending"
+  },
+  {
+   "color": "Blue",
+   "title": "Provisioning"
+  },
+  {
+   "color": "Blue",
+   "title": "Deploying"
+  },
+  {
+   "color": "Green",
+   "title": "Running"
+  },
+  {
+   "color": "Orange",
+   "title": "Paused"
+  },
+  {
+   "color": "Gray",
+   "title": "Stopped"
+  },
+  {
+   "color": "Red",
+   "title": "Failed"
+  },
+  {
+   "color": "Gray",
+   "title": "Terminated"
+  }
+ ],
+ "title_field": "title"
+}

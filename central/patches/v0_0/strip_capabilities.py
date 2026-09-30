@@ -4,7 +4,7 @@
 
 v3 makes the server the atomic unit: role capabilities live at the team and
 server level only. The bench plane (every `site:*` cap plus `server:config`) and
-the redundant `asset:view` (the Asset registry is gated on `server:view`) are
+the redundant `asset:view` (the Virtual Machine registry is gated on `server:view`) are
 dropped, and the system roles collapse from eight back to five — Operator, Site
 Manager and Support only existed to slice the now-removed site granularity.
 

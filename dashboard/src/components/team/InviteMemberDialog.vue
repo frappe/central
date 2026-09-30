@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import { Dialog, Select, TextInput, useCall } from 'frappe-ui'
+import { Alert, Dialog, Select, TextInput, useCall } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import { API, method } from '@/api/methods'
 import { useRegions } from '@/composables/useRegions'
 import { useSession } from '@/composables/useSession'
 import { useTeamRoles } from '@/composables/useTeamRoles'
 import { teamParams } from '@/composables/useTeamScope'
-import { errorToast, successToast } from '@/lib/toast'
+import { getErrorMessage, successToast } from '@/lib/feedback'
 import type { ResourceType, TeamRegistry } from '@/types/api'
 
 const props = defineProps<{ open: boolean }>()
@@ -25,6 +25,7 @@ const email = ref('')
 const role = ref('')
 const resource = ref('*::')
 const expiresInDays = ref(7)
+const formError = ref('')
 
 const registryCall = useCall<TeamRegistry, { team: string }>({
 	url: method(API.registry),
@@ -49,14 +50,14 @@ const regionLabel = (
 }
 
 const resourceOptions = computed(() => {
-	const assets = registryCall.data?.assets ?? []
+	const servers = registryCall.data?.servers ?? []
 	const sites = registryCall.data?.sites ?? []
 	return [
 		{ label: 'All resources', value: '*::' },
-		...assets.map((a) => ({
+		...servers.map((a) => ({
 			label: a.title || a.resource_id,
 			value: `Server::${a.name}`,
-			description: regionLabel(a.cluster),
+			description: regionLabel(a.region),
 		})),
 		...sites.map((s) => ({
 			label: s.subdomain || s.name,
@@ -72,9 +73,11 @@ watch(open, (isOpen) => {
 		role.value = ''
 		resource.value = '*::'
 		expiresInDays.value = 7
+		formError.value = ''
 		if (!registryCall.data) registryCall.reload()
 	}
 })
+watch([email, role, resource, expiresInDays], () => (formError.value = ''))
 
 type InviteParams = {
 	team: string
@@ -134,7 +137,7 @@ async function submit() {
 		emit('invited')
 		open.value = false
 	} catch (e) {
-		errorToast(e)
+		formError.value = getErrorMessage(e, "The invitation couldn't be sent.")
 	}
 }
 </script>
@@ -148,6 +151,7 @@ async function submit() {
 	>
 		<template #default>
 			<div class="space-y-4">
+				<Alert v-if="formError" theme="red" :title="formError" />
 				<TextInput
 					v-model="email"
 					type="email"

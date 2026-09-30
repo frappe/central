@@ -81,9 +81,8 @@ class BillingTestCase(IntegrationTestCase):
 		"Team Role",
 		"Catalog Rate",
 		"Plan",
-		"Asset",
+		"Virtual Machine",
 		"Team",
-		"Atlas Instance",
 		"Region",
 		"User",
 		"Webhook Event",
@@ -212,9 +211,9 @@ DEFAULT_INCLUDES = [
 def ensure_atlas_instance(region):
 	"""The cluster a billing test bills against.
 
-	Both Asset.cluster and Catalog Rate.cluster are required Links to Atlas Instance,
-	so any test that creates a subscription or a per-region rate needs the instance
-	(and its Region) to exist first."""
+	Both VirtualMachine.region and Catalog Rate.cluster are required Links to Region, so any
+	test that creates a subscription or a per-region rate needs the region to exist
+	first, connection-configured."""
 	from central.tests.utils import ensure_atlas_instance as _ensure_atlas_instance
 
 	return _ensure_atlas_instance(region)
@@ -294,7 +293,7 @@ def make_plan(name, rates=None, includes=None, **kwargs):
 
 
 def _ensure_rate_instances(rates):
-	"""Seed the Atlas Instance behind every non-blank cluster a rate row references."""
+	"""Seed the region behind every non-blank cluster a rate row references."""
 	for cluster in {(r.get("cluster") or "").strip() for r in rates}:
 		if cluster:
 			ensure_atlas_instance(cluster)
@@ -435,9 +434,10 @@ def complete_billing_profile(team, currency="INR"):
 
 
 def make_billing_subscription(team, cluster, plan, start_date=None, clear_changes=True, **kwargs):
-	"""Provision a billable subscription for billing tests under the Asset model:
-	ensure the cluster's Atlas Instance + the team's Billing Profile currency, create
-	the Asset (carrying the region) + linked Subscription, and (by default) clear the
+	"""Provision a billable subscription for billing tests under the VirtualMachine model:
+	ensure the cluster's Region is connection-configured, and the team's Billing
+	Profile currency, create
+	the VirtualMachine (carrying the region) + linked Subscription, and (by default) clear the
 	auto 'Created' segment so the test can author its own Subscription Change timeline
 	with `add_segment`. Returns the Subscription name."""
 	from central.billing.catalog import subscriptions
@@ -459,7 +459,7 @@ def seed_running_resource(
 	team, resource_id, cluster, plan, rate=1000, currency="INR", effective_at="2026-06-01 00:00:00"
 ):
 	"""Seed a provisioned, running resource on the Subscription Change ledger (ADR 0010):
-	its Asset (named by `resource_id`) + Subscription + an open `Created` segment at
+	its VirtualMachine (named by `resource_id`) + Subscription + an open `Created` segment at
 	`rate`/`currency`. The ledger replacement for the retired price-lock event seeding
 	(#86) — metering and every 'what is running' reader resolve the resource through this
 	open segment. Returns the Subscription name."""
@@ -485,11 +485,28 @@ def add_segment(subscription, change_type, rate, effective_at, plan=None, curren
 	).insert(ignore_permissions=True)
 
 
+def ensure_trust_tier_level(level="t1"):
+	"""Create the link target used when a billing test pins a team's trust tier."""
+	if not frappe.db.exists("Trust Tier Level", level):
+		frappe.get_doc(
+			{
+				"doctype": "Trust Tier Level",
+				"__newname": level,
+				"tier": level,
+				"sequence": 0,
+				"max_resource_count": 50,
+			}
+		).insert(ignore_permissions=True)
+	return level
+
+
 def set_team_tier(team, level="t1", max_spend=None, manual_override=1):
 	"""Pin a team's trust tier on its Billing Profile — the per-team tier carrier
-	since the standalone Trust Tier doctype was folded in (#62). Ensures a profile
-	exists; an explicit `max_spend` is stored as a bespoke `override_max_spend` so
-	get_team_caps returns exactly it regardless of the level's currency thresholds."""
+	since the standalone Trust Tier doctype was folded in (#62). Ensures the level
+	and profile exist; an explicit `max_spend` is stored as a bespoke
+	`override_max_spend` so get_team_caps returns exactly it regardless of the
+	level's currency thresholds."""
+	ensure_trust_tier_level(level)
 	if not frappe.db.exists("Billing Profile", team):
 		frappe.get_doc({"doctype": "Billing Profile", "team": team, "currency": "INR"}).insert(
 			ignore_permissions=True
@@ -566,3 +583,13 @@ def make_custom_role_team(user, capabilities, team_name=None):
 	team.append("members", {"user": user, "role": role.name, "status": "Active"})
 	team.save(ignore_permissions=True)
 	return team
+
+
+def isolate_trial_plans(case) -> None:
+	"""Take every plan already flagged Available on Trial out of a test's way.
+
+	The trial menu narrows on a global flag, so a plan an operator flagged on this site
+	would otherwise decide what the test sees. Restored on cleanup."""
+	for name in frappe.get_all("Plan", filters={"available_on_trial": 1}, pluck="name"):
+		frappe.db.set_value("Plan", name, "available_on_trial", 0)
+		case.addCleanup(frappe.db.set_value, "Plan", name, "available_on_trial", 1)
