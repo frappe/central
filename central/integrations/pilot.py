@@ -10,7 +10,6 @@ import requests
 from central.api.jwks import jwks_document
 from central.api.pilot import get_telemetry_base_url, region_id_of
 from central.infrastructure.doctype.pilot_credential.pilot_credential import PilotCredential
-from central.integrations.bucket_provisioning import BucketProvisioning
 from central.sso import central_url, jwks_url, mint_bench_login, mint_datum_token, mint_site_login
 
 METRICS_CACHE_TTL_SECONDS = 30
@@ -39,12 +38,6 @@ def get_bootstrap_metadata(action) -> dict[str, str]:
 
 	# Metal caps each metadata value at 1 KiB, so each optional block gets its own key.
 	metadata = {"pilot-central": json.dumps(bootstrap)}
-
-	# Object storage and telemetry are optional for a Pilot, so a failure must not block the creation.
-	try:
-		metadata["pilot-storage"] = json.dumps(BucketProvisioning(action).get_configuration())
-	except Exception:
-		action.record_diagnostic(frappe.get_traceback(), "Pilot object storage provisioning failed")
 
 	try:
 		metadata["pilot-telemetry"] = json.dumps(get_telemetry_configuration(action))
