@@ -54,7 +54,9 @@ const newestRelease = (images: RegionalImage[]): RegionalImage | undefined =>
 		.filter((image) => image.tags.frappe_version?.startsWith('version-'))
 		.sort(
 			(a, b) =>
-				releaseNumber(b) - releaseNumber(a) || b.created_at - a.created_at,
+				releaseNumber(b) - releaseNumber(a) ||
+				Number(hasSite(a)) - Number(hasSite(b)) ||
+				b.created_at - a.created_at,
 		)[0]
 
 function hasSite(image: RegionalImage): boolean {
