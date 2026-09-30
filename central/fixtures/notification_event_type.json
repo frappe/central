@@ -415,6 +415,22 @@
   "severity": "Error"
  },
  {
+  "action_label": "Add billing details",
+  "action_route": "/billing",
+  "category": "Billing",
+  "create_in_app": 1,
+  "direct_recipients": "None",
+  "docstatus": 0,
+  "doctype": "Notification Event Type",
+  "event_type": "billing_details_required",
+  "in_app_body": "We need your billing details before we can issue your invoice. Missing: {{ message }}.",
+  "in_app_title": "Billing details needed",
+  "modified": "2026-09-30 00:00:00",
+  "name": "billing_details_required",
+  "required_cap": "billing:view",
+  "severity": "Warning"
+ },
+ {
   "name": "server_action_required",
   "event_type": "server_action_required",
   "category": "Server",

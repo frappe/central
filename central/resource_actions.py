@@ -23,7 +23,7 @@ from central.billing.catalog.pricing import resolve_config_rate
 from central.billing.catalog.server_plans import get_server_plans
 from central.billing.doctype.billing_profile.billing_profile import (
 	get_team_currency,
-	require_billing_profile,
+	require_billing_profile_or_credit,
 )
 from central.iam import can, resolve_team
 from central.infrastructure.doctype.resource_action.resource_action import (
@@ -275,8 +275,6 @@ def validate_purchase(
 	trial = bool(frappe.db.get_value("Team", team, "is_staging_trial"))
 	if trial:
 		validate_trial(team)
-	else:
-		require_billing_profile(team, "create servers")
 
 	catalog = get_server_plans(team, cluster=region)
 	if plan:
@@ -296,12 +294,18 @@ def validate_purchase(
 		composition = includes
 		rate = float(resolve_config_rate(includes, catalog["currency"], region))
 
-	if not trial and rate + reserved_rate(team) > catalog["available"]:
-		frappe.throw(_("Pending server requests and this plan exceed your spending limit."))
+	if not trial:
+		# Billing details are asked for only once credits stop covering the bill.
+		committed_rate = rate + reserved_rate(team)
+		require_billing_profile_or_credit(team, committed_rate, "create servers")
+		if committed_rate > catalog["available"]:
+			frappe.throw(_("Pending server requests and this plan exceed your spending limit."))
 	return composition, float(rate)
 
 
 def reserved_rate(team: str) -> float:
+	# A locking read sees requests committed after this transaction's snapshot, so a
+	# create that waited on the Team lock counts the one that went first.
 	request = frappe.qb.DocType("Resource Action")
 	rows = (
 		frappe.qb.from_(request)
@@ -311,6 +315,7 @@ def reserved_rate(team: str) -> float:
 			& request.status.isin(PENDING_STATES)
 			& (request.server.isnull() | (request.server == ""))
 		)
+		.for_update()
 	).run()
 	return float(rows[0][0] or 0)
 
