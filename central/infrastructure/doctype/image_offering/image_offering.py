@@ -75,7 +75,7 @@ def on_doctype_update() -> None:
 def ensure_default_offerings() -> None:
 	"""Create default product choices without replacing an operator's configuration."""
 	for key, title, flow, description, tags in (
-		("pilot", "Pilot", "Both", "Pilot with a Frappe bench and one prepared site.", {"purpose": "pilot"}),
+		("pilot", "Pilot", "Both", "Pilot with a Frappe bench.", {"purpose": "pilot"}),
 		(
 			"ubuntu",
 			"Ubuntu",

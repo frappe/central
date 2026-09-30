@@ -2,7 +2,7 @@
 
 ## Purpose
 
-A `Site` record is the site a Pilot image already carries, on the machine that runs it. Central builds no site: [Cargo](../../../../../cargo/docs/image.md) bakes one bench and one site into every image, and the image answers for it on a `site-*` hostname alias. Starting a trial therefore starts a machine, and nothing else.
+A `Site` record is the site a Pilot image already carries, on the machine that runs it. Central builds no site: [Cargo](../../../../../cargo/docs/image.md) bakes one bench into every Pilot image, and one site into an image tagged `has_site=1`. That image answers for the site on a `site-*` hostname alias. A bench-only image, tagged `has_site=0`, has no site and gets no `Site` record. Starting a trial therefore starts a machine, and nothing else.
 
 That is why a trial is one record and not two. A trial customer buys a site, the site is the machine, and the console shows one row for the pair.
 
@@ -40,7 +40,7 @@ The regional proxy decodes a VM's mesh address from the hostname label, so Centr
 create_trial_site(subdomain) --> queued Resource Action holds the name --> warm image restores
                                                                          |
 observe_server --> VirtualMachine.claim_admin_hostname     (every Pilot machine, once)
-               --> Site.ensure_for                (carries the requested name)
+               --> Site.create_once_addressable   (site images only; carries the requested name)
                                                                          |
 onboarding_status --> GET <url>/api/method/ping --> ready
                                                                          |
@@ -52,7 +52,8 @@ get_site --> read readiness only
 login_site --> mint a fresh login for site.local
 ```
 
-- `Site.ensure_for` runs on every report a region makes about a machine, because the address arrives on one of them and nothing says which. It writes once. A machine that already has a site, runs no Pilot, or has no address yet is left alone.
+- `Site.create_once_addressable` runs on every report a region makes about a machine, because the address arrives on one of them and nothing says which. It writes once. A machine that already has a site, has `has_site` off, runs no Pilot, or has no address yet is left alone.
+- `Virtual Machine.has_site` records whether the machine's image carries a site. `VirtualMachine.create_from_action` sets it from the image's `has_site` tag. The machine owns this fact. The Resource Action is only the request.
 - The requested name rides on the `Resource Action`, because the site it will rename does not exist until the region answers.
 - `VirtualMachine.claim_admin_hostname` tells Pilot to replace its local `admin.local` name with the `admin-vm-*` hostname that the regional proxy already routes. Central does not create or change a proxy route. TLS stays off because the regional proxy terminates it. A machine that is not running, a failed request, or a response without a task ID leaves the marker empty, so the next report tries again.
 - A successful claim records `claimed_at`, returns the login URL, and enqueues the rename after the database commit. The response does not wait for Pilot to accept or finish the rename.

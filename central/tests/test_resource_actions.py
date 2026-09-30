@@ -277,6 +277,32 @@ class TestResourceActions(IntegrationTestCase):
 		_process_locked(name)
 		self.client.return_value.create_vm.assert_called_once()
 
+	def test_the_server_records_whether_its_image_carries_a_site(self):
+		for tag, expected in (("1", 1), ("0", 0)):
+			self.image["tags"] = {"purpose": "pilot", "has_site": tag}
+			self.client.return_value.create_vm.return_value = {
+				"id": f"vm-0000{tag}",
+				"tenant_id": self.team.tenant_id,
+			}
+			name = self.submit(request_key=f"request-key-has-site-{tag}", title=f"Server {tag}")["action"]
+			_process_locked(name)
+
+			server = frappe.get_doc("Resource Action", name).server
+			self.assertEqual(frappe.db.get_value("Virtual Machine", server, "has_site"), expected)
+
+	def test_the_patch_records_a_site_from_the_creation_request(self):
+		from central.patches.v0_0.record_server_has_site import execute
+
+		self.image["tags"] = {"purpose": "pilot", "has_site": "1"}
+		name = self.submit()["action"]
+		_process_locked(name)
+		server = frappe.get_doc("Resource Action", name).server
+		frappe.db.set_value("Virtual Machine", server, "has_site", 0)
+
+		execute()
+
+		self.assertEqual(frappe.db.get_value("Virtual Machine", server, "has_site"), 1)
+
 	def lose_the_reply(self, built: list[dict] | None = None) -> str:
 		"""Dispatch a creation whose reply never arrives, and say what the region holds."""
 		name = self.submit()["action"]

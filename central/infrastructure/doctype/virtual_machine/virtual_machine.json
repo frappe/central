@@ -23,6 +23,7 @@
   "disk_gigabytes",
   "capacity_column",
   "image_offering",
+  "has_site",
   "skip_automatic_snapshot",
   "access_tab",
   "network_section",
@@ -163,6 +164,14 @@
    "fieldtype": "Link",
    "label": "Image Offering",
    "options": "Image Offering",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "description": "The server's image carries a site.",
+   "fieldname": "has_site",
+   "fieldtype": "Check",
+   "label": "Has Site",
    "read_only": 1
   },
   {
@@ -332,7 +341,7 @@
    "link_fieldname": "server"
   }
  ],
- "modified": "2026-09-24 18:28:13.015331",
+ "modified": "2026-09-30 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Infrastructure",
  "name": "Virtual Machine",
