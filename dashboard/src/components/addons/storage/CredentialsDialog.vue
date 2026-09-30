@@ -70,6 +70,7 @@ const copy = async (value: string, label: string): Promise<void> => {
 				:label="field.label"
 				:model-value="field.value"
 				readonly
+				class="field"
 			>
 				<template #suffix>
 					<Button
@@ -83,7 +84,12 @@ const copy = async (value: string, label: string): Promise<void> => {
 				</template>
 			</TextInput>
 
-			<TextInput label="Secret key" :model-value="maskedSecret" readonly>
+			<TextInput
+				label="Secret key"
+				:model-value="maskedSecret"
+				readonly
+				class="field secret"
+			>
 				<template #suffix>
 					<Button
 						variant="ghost"
@@ -115,3 +121,13 @@ const copy = async (value: string, label: string): Promise<void> => {
 		</div>
 	</Dialog>
 </template>
+
+<style scoped>
+.field :deep(input) {
+	@apply pe-10 text-ellipsis;
+}
+
+.secret :deep(input) {
+	@apply pe-16;
+}
+</style>
