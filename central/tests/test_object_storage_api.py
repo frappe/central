@@ -295,8 +295,10 @@ class TestBucketObjects(ObjectStorageTestCase):
 				credentials["endpoint_url"],
 				credentials["aws_access_key_id"],
 				credentials["aws_secret_access_key"],
+				credentials["region_name"],
 			),
-			(ENDPOINT, "access", "secret"),
+			# Garage checks the SigV4 signature against the region Cargo installed it with.
+			(ENDPOINT, "access", "secret", self.region),
 		)
 
 	def test_the_last_page_has_no_offset(self):

@@ -169,8 +169,7 @@ class BucketInteractions:
 			endpoint_url=service.endpoint_url,
 			aws_access_key_id=service.access_key,
 			aws_secret_access_key=service.get_password("secret_access_key"),
-			# Garage names its region "garage" and serves buckets by path, not subdomain.
-			region_name="garage",
+			egion_name=service.region,
 			config=Config(
 				signature_version="s3v4",
 				s3={"addressing_style": "path"},
