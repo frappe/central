@@ -26,6 +26,7 @@ class VirtualMachine(Document):
 		frappe_version: DF.Data | None
 		gateway_url: DF.Data | None
 		has_public_ipv6: DF.Check
+		has_site: DF.Check
 		image_offering: DF.Link | None
 		ipv6_address: DF.Data | None
 		is_firewall_enabled: DF.Check
@@ -70,6 +71,7 @@ class VirtualMachine(Document):
 				"memory_megabytes": configuration.memory_mib,
 				"disk_gigabytes": configuration.disk_mib / 1024,
 				"frappe_version": configuration.image_tags.get("frappe_version"),
+				"has_site": configuration.image_tags.get("has_site") == "1",
 				"ssh_keys": [{"team_ssh_key": key} for key in configuration.ssh_key_ids],
 				"has_public_ipv6": configuration.has_public_ipv6,
 				"is_firewall_enabled": configuration.is_firewall_enabled,

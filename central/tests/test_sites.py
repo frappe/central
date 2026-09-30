@@ -51,6 +51,7 @@ class SiteOnAMachine(IntegrationTestCase):
 				"region": region.name,
 				"atlas_vm_id": "vm-00001",
 				"status": "Provisioning",
+				"has_site": 1,
 			}
 		).insert()
 		self.client = self.enterContext(patch("central.integrations.servers.AtlasClient")).return_value
@@ -99,6 +100,24 @@ class TestSiteMirror(SiteOnAMachine):
 
 	def test_a_machine_with_no_enrolled_pilot_has_no_site(self):
 		observe_server(self.server)
+
+		self.assertFalse(frappe.db.exists("Site", {"server": self.server.name}))
+
+	def test_a_machine_whose_image_has_no_site_has_no_site(self):
+		self.server.db_set("has_site", 0)
+		self.enroll()
+		observe_server(self.server)
+
+		self.assertFalse(frappe.db.exists("Site", {"server": self.server.name}))
+
+	def test_the_patch_removes_a_site_its_machine_never_carried(self):
+		from central.patches.v0_0.record_server_has_site import execute
+
+		self.enroll()
+		observe_server(self.server)
+		self.server.db_set("has_site", 0)
+
+		execute()
 
 		self.assertFalse(frappe.db.exists("Site", {"server": self.server.name}))
 
