@@ -6,13 +6,10 @@ from frappe import _
 from frappe.model.document import Document
 
 from central.billing.catalog.subscriptions import end_subscription, provision_service_subscription
-from central.integrations.bucket_provisioning import (
-	STORAGE_SERVICE,
-	get_backup_bucket_name,
-	get_storage_endpoint_url,
-	get_storage_plan,
-)
 from central.integrations.object_storage import ObjectStorageClient, ObjectStorageNotFound
+from central.services.doctype.service_detail.service_detail import ServiceDetail
+
+STORAGE_SERVICE = "storage"
 
 
 class TeamService(Document):
@@ -40,10 +37,6 @@ class TeamService(Document):
 	@property
 	def is_bucket(self) -> bool:
 		return self.add_on_service == STORAGE_SERVICE
-
-	def is_backup_bucket(self) -> bool:
-		"""The bucket this team's servers in the region back up to, managed by Central."""
-		return self.is_bucket and self.bucket_name == get_backup_bucket_name(self.team, self.region)
 
 	def before_insert(self) -> None:
 		"""Create the bucket, bill it, then let the record save. Cargo answers first, so a
@@ -137,6 +130,41 @@ class TeamService(Document):
 			frappe.throw(
 				_("Team {0} already has a service for bucket {1}.").format(self.team, self.bucket_name)
 			)
+
+
+def get_bucket_name(team: str, region: str, name: str) -> str:
+	"""The bucket a team names `name`. Bucket names are shared by every team in a region,
+	so the tenant and region prefix keeps teams apart."""
+	tenant_id = frappe.db.get_value("Team", team, "tenant_id")
+	if not tenant_id:
+		frappe.throw(_("This team has no tenant ID."))
+
+	return f"{tenant_id}-{region.casefold()}-{name}"
+
+
+def get_storage_endpoint_url(region: str) -> str:
+	endpoint_url = ServiceDetail.endpoint_for(region, STORAGE_SERVICE)
+	if not endpoint_url:
+		frappe.throw(_("Object storage is not available in region {0}.").format(region))
+
+	return endpoint_url
+
+
+def get_storage_plan() -> str:
+	plan = frappe.db.get_value(
+		"Plan",
+		{
+			"title": "Object Storage Plan",
+			"category": "Remote Storage",
+			"sub_category": "Backups",
+			"is_active": 1,
+		},
+		"name",
+	)
+	if not plan:
+		frappe.throw(_("The Object Storage Plan is not configured."))
+
+	return plan
 
 
 def on_doctype_update():
