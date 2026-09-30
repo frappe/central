@@ -60,7 +60,7 @@ button {
 		@apply bg-surface-gray-2;
 	}
 
-	&[aria-checked='true'] {
+	&[aria-checked="true"] {
 		@apply border-outline-gray-6;
 	}
 

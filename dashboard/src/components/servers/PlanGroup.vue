@@ -97,9 +97,9 @@ const matchingPreset = computed<Plan | null>(() => {
 				@click="selectedPlan = plan.plan"
 			>
 				<span class="flex items-center justify-between gap-2">
-					<span class="truncate text-sm-medium text-ink-gray-7">{{
-						plan.title.split(' · ')[0]
-					}}</span>
+					<span class="truncate text-sm-medium text-ink-gray-7"
+						>{{ plan.title.split(' · ')[0] }}</span
+					>
 					<Badge
 						v-if="currentPlan === plan.plan"
 						label="Current"
@@ -110,13 +110,11 @@ const matchingPreset = computed<Plan | null>(() => {
 				</span>
 				<span class="mt-2 block text-2xl-semibold text-ink-gray-9">
 					{{ money(plan.rate, plan.currency, { trimTrailingZeros: true }) }}
-					<span class="text-sm text-ink-gray-5">{{
-						plan.billing_cycle === 'Annual' ? '/yr' : '/mo'
-					}}</span>
+					<span class="text-sm text-ink-gray-5"
+						>{{ plan.billing_cycle === 'Annual' ? '/yr' : '/mo' }}</span
+					>
 				</span>
-				<span
-					class="mt-2 block text-p-sm text-ink-gray-5"
-				>
+				<span class="mt-2 block text-p-sm text-ink-gray-5">
 					{{ planSpecs(plan, { disk: !omitDisk }) }}
 				</span>
 			</button>
@@ -146,11 +144,11 @@ const matchingPreset = computed<Plan | null>(() => {
 					<span v-else class="block text-lg-semibold text-ink-gray-9">
 						Build your own
 					</span>
-					<span class="block truncate text-sm text-ink-gray-5">{{
-						isCustom && customSpec
+					<span class="block truncate text-sm text-ink-gray-5"
+						>{{ isCustom && customSpec
 							? customSpec
-							: 'Pick exactly the vCPU, memory and disk you need'
-					}}</span>
+							: 'Pick exactly the vCPU, memory and disk you need' }}</span
+					>
 				</span>
 			</button>
 		</div>
@@ -171,9 +169,9 @@ const matchingPreset = computed<Plan | null>(() => {
 			/>
 			<p v-if="matchingPreset" class="mt-3 text-p-xs text-ink-gray-5">
 				The
-				<span class="font-medium text-ink-gray-7">{{
-					matchingPreset.title
-				}}</span>
+				<span class="font-medium text-ink-gray-7"
+					>{{ matchingPreset.title }}</span
+				>
 				preset offers this exact shape. It may be cheaper than building it à la
 				carte.
 			</p>
