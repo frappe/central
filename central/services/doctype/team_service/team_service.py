@@ -97,7 +97,9 @@ class TeamService(Document):
 
 	def rotate_credentials(self) -> None:
 		"""Replace the bucket's key. The old key stops working at once."""
-		receipt = ObjectStorageClient.from_region(self.region).rotate_credentials(self.bucket_name)
+		receipt = ObjectStorageClient.from_region(self.region).rotate_credentials(
+			self.bucket_name, self.access_key
+		)
 		self.set_credentials(receipt["credentials"])
 		self.save()
 

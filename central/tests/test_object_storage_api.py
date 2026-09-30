@@ -36,7 +36,7 @@ class ObjectStorageTestCase(IntegrationTestCase):
 
 		self.cargo = Mock()
 		self.cargo.create_bucket.side_effect = receipt
-		self.cargo.rotate_credentials.side_effect = lambda name: receipt(name, "rotated")
+		self.cargo.rotate_credentials.side_effect = lambda name, access_key: receipt(name, "rotated")
 		self.cargo.get_usage.return_value = {"usage": {"used_bytes": 2048, "object_count": 3}}
 		client = self.enterContext(patch(f"{CONTROLLER}.ObjectStorageClient"))
 		client.from_region.return_value = self.cargo
@@ -230,6 +230,8 @@ class TestObjectStorageApi(ObjectStorageTestCase):
 
 		self.assertEqual(rotated["access_key"], "rotated")
 		self.assertEqual(frappe.db.get_value("Team Service", bucket["name"], "access_key"), "rotated")
+		# Cargo replaces the key it is named, so Central names the one it holds.
+		self.cargo.rotate_credentials.assert_called_once_with(bucket["bucket_name"], "access")
 
 	def test_quota_is_set_in_cargo(self):
 		bucket = self._create()

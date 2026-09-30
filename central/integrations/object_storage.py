@@ -141,9 +141,10 @@ class ObjectStorageClient:
 		"""Delete a bucket."""
 		return self._call("delete_bucket", name)
 
-	def rotate_credentials(self, name: str) -> dict:
-		"""Rotate credentials for a bucket."""
-		return self._call("rotate_credentials", name)
+	def rotate_credentials(self, name: str, access_key: str) -> dict:
+		"""Replace one of a bucket's keys and return the new one. Cargo makes the new key
+		before it deletes `access_key`, so a failed rotation keeps the old key working."""
+		return self._call("rotate_credentials", name, access_key=access_key)
 
 	def get_usage(self, name: str) -> dict:
 		"""What a bucket holds, against its caps."""
