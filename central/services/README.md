@@ -20,7 +20,7 @@ Each team has one Grove user: the email of the team owner when the team activate
 - A team API key is a key of that Grove user. The key title on Grove is the key label.
 - Central registers the Grove user as **Free**. Grove records the usage and its cost for a Free user, and it does not charge or block the user. Central does not bill LLM usage yet.
 - Grove decides which models the Grove user can call: each new Grove user starts in Grove's default **Model Group**. Central does not send the models of the plan or a token limit. The AI page shows the models that Grove reports, or "No models accessible yet."
-- The **Usage** tab of the AI page shows the requests and the cost that Grove reports for a period, in total, for each model, and for each day (`central.services.api.dashboard.get_usage`). The cost is what Grove charged, so it is 0 while the Grove user is Free.
+- The **Usage** tab of the AI page shows the requests and the cost that Grove reports for a period, in total, for each model, and for each day (`central.services.api.dashboard.get_usage`). The period is a named one or a custom range of days. The user can show one API key only. Central sends Grove the sha256 of that key, not the key. The cost is what Grove charged, so it is 0 while the Grove user is Free.
 - A transfer of team ownership does not change the Grove user.
 - One Grove user serves one team. An owner of 2 teams can activate LLM Hosting for one of them only.
 - An operator can add credit to the Grove user, in USD, with `central.services.api.dashboard.add_credit(managed_service, amount, reference)`. No screen calls it, and it charges the team nothing. Credit has no effect on a Free user.

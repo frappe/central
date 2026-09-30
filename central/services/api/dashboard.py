@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import hashlib
+
 import frappe
 from frappe import _
+from frappe.utils import getdate
 from frappe.utils.password import get_decrypted_password
 
 from central.services import provisioning
@@ -280,15 +283,51 @@ def get_instance(managed_service: str) -> dict:
 
 @frappe.whitelist(methods=["GET"])
 @require_service_capability("service:view")
-def get_usage(managed_service: str, period: str = "Last 7 Days") -> dict:
-	"""What the team used at Grove over a period: requests and cost, in total, per model,
-	and per day. service:view."""
+def get_usage(
+	managed_service: str,
+	period: str = "Last 7 Days",
+	api_key: str | None = None,
+	from_date: str | None = None,
+	to_date: str | None = None,
+) -> dict:
+	"""What the team used at Grove over a named period or a `from_date`..`to_date` range (UTC
+	days, both included), or through one of its API keys: requests and cost, in total, per
+	model, and per day. service:view."""
 	instance = provisioning.get_managed_service(managed_service)
 	_assert_grove(instance.add_on_service)
 
 	from central.services import llm
 
-	return llm.get_usage_report(_grove_user(managed_service), period, instance.add_on_service)
+	dates = _usage_dates(from_date, to_date) if (from_date or to_date) else None
+	key_hash = _team_key_hash(managed_service, api_key) if api_key else None
+	return llm.get_usage_report(
+		_grove_user(managed_service), period, instance.add_on_service, key_hash, dates
+	)
+
+
+def _usage_dates(from_date: str | None, to_date: str | None) -> tuple[str, str]:
+	"""A custom range needs both ends, in order."""
+	if not (from_date and to_date):
+		frappe.throw(_("A custom range needs a start and an end date."))
+
+	start, end = getdate(from_date), getdate(to_date)
+	if start > end:
+		frappe.throw(_("The start date is after the end date."))
+
+	return str(start), str(end)
+
+
+def _team_key_hash(managed_service: str, api_key: str) -> str:
+	"""The sha256 Grove knows a team key by, so the secret itself is never sent. Only a key of
+	this managed service: another team's key must not reveal its usage."""
+	credential = frappe.db.get_value(
+		"Service Credential", {"name": api_key, "managed_service": managed_service, "subject_type": "Team"}
+	)
+	if not credential:
+		frappe.throw(_("Unknown API key."), frappe.DoesNotExistError)
+
+	secret = get_decrypted_password("Service Credential", credential, "api_key")
+	return hashlib.sha256(secret.encode()).hexdigest()
 
 
 @frappe.whitelist(methods=["POST"])

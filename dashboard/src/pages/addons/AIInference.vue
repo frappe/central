@@ -95,12 +95,14 @@ const activateService = async (): Promise<void> => {
 					</div>
 				</div>
 
-				<TabButtons
+				<!-- One row: the tabs, then the open tab's own controls (teleported in). -->
+				<div
 					v-if="managedService"
-					v-model="tab"
-					:options="tabs"
-					class="mt-6"
-				/>
+					class="mt-6 flex flex-wrap items-center justify-between gap-2"
+				>
+					<TabButtons v-model="tab" :options="tabs" />
+					<div id="ai-tab-controls" class="contents" />
+				</div>
 			</div>
 
 			<template v-if="managedService">

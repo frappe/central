@@ -56,9 +56,25 @@ class GroveDriver:
 		return self._call(backend, "grove.api.available_models", {"email": email}) or []
 
 	def fetch_usage(
-		self, backend, emails: list[str], month: str | None = None, period: str | None = None
+		self,
+		backend,
+		emails: list[str],
+		month: str | None = None,
+		period: str | None = None,
+		key_hash: str | None = None,
+		from_date: str | None = None,
+		to_date: str | None = None,
 	) -> dict:
-		body = {"users": emails, "month": month, "period": period}
+		# `key_hash` narrows the usage to one key: its sha256, so the secret never leaves.
+		# `from_date`/`to_date`, when given, win over `period` at Grove.
+		body = {
+			"users": emails,
+			"month": month,
+			"period": period,
+			"key_hash": key_hash,
+			"from_date": from_date,
+			"to_date": to_date,
+		}
 		return self._call(backend, "grove.api.usage", body)
 
 	def add_credit(self, backend, email: str, amount: float, reference: str | None = None) -> dict:

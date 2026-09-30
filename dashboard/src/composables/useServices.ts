@@ -69,9 +69,22 @@ export interface ServiceUsage {
 	daily: ServiceUsageDay[]
 }
 
+// What to show: a named period, or a custom range of UTC days (YYYY-MM-DD, both
+// included) that wins over it; and one team API key (a Service Credential name),
+// or every key when absent.
+export interface UsageFilters {
+	period: string
+	fromDate?: string
+	toDate?: string
+	apiKey?: string
+}
+
 interface UsageParams {
 	managed_service: string
 	period: string
+	from_date?: string
+	to_date?: string
+	api_key?: string
 }
 
 // A team-level issued key, as listed (no secret).
@@ -173,8 +186,18 @@ export function useServices() {
 		usage: computed<ServiceUsage | null>(() => usageCall.data ?? null),
 		usageLoading: computed(() => usageCall.loading),
 		usageError: computed(() => usageCall.error),
-		loadUsage(managedService: string, period: string): Promise<unknown> {
-			usageParams.value = { managed_service: managedService, period }
+		loadUsage(
+			managedService: string,
+			filters: UsageFilters,
+		): Promise<unknown> {
+			usageParams.value = {
+				managed_service: managedService,
+				period: filters.period,
+				...(filters.fromDate && filters.toDate
+					? { from_date: filters.fromDate, to_date: filters.toDate }
+					: {}),
+				...(filters.apiKey ? { api_key: filters.apiKey } : {}),
+			}
 			return usageCall.reload()
 		},
 

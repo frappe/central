@@ -1,6 +1,7 @@
 # Copyright (c) 2026, frappe and Contributors
 # See license.txt
 
+import hashlib
 from contextlib import contextmanager
 from unittest.mock import Mock, patch
 
@@ -108,7 +109,17 @@ class TestGroveDriverCalls(IntegrationTestCase):
 
 		self.assertEqual(
 			self.sent(post),
-			("grove.api.usage", {"users": ["owner@example.com"], "month": None, "period": "Last 7 Days"}),
+			(
+				"grove.api.usage",
+				{
+					"users": ["owner@example.com"],
+					"month": None,
+					"period": "Last 7 Days",
+					"key_hash": None,
+					"from_date": None,
+					"to_date": None,
+				},
+			),
 		)
 
 	def test_add_credit_sends_the_amount_under_a_reference(self):
@@ -326,7 +337,7 @@ class TestLLMProvisioning(IntegrationTestCase):
 
 		self.assertEqual(
 			(fetch_usage.call_args.args[1], fetch_usage.call_args.kwargs),
-			([self.owner], {"period": "Last 30 Days"}),
+			([self.owner], {"period": "Last 30 Days", "key_hash": None, "from_date": None, "to_date": None}),
 		)
 		self.assertEqual(report["totals"], {"requests": 6, "cost": 1.75})
 		self.assertEqual(report["models"], usage["model_summary"])
@@ -357,6 +368,63 @@ class TestLLMProvisioning(IntegrationTestCase):
 
 		self.assertEqual(report["totals"], {"requests": 0, "cost": 0})
 		self.assertEqual((report["models"], report["daily"]), ([], []))
+
+	def test_a_custom_range_sends_its_dates_instead_of_the_period(self):
+		empty = {
+			"from_date": "2026-09-01",
+			"to_date": "2026-09-03",
+			"as_of": None,
+			"model_summary": [],
+			"daily_summary": [],
+		}
+		with patch.object(GroveDriver, "fetch_usage", return_value=empty) as fetch_usage:
+			dashboard.get_usage(
+				self.managed.name, period="Custom", from_date="2026-09-01", to_date="2026-09-03"
+			)
+
+		self.assertEqual(
+			fetch_usage.call_args.kwargs,
+			{"period": None, "key_hash": None, "from_date": "2026-09-01", "to_date": "2026-09-03"},
+		)
+
+	def test_a_custom_range_needs_both_ends_in_order(self):
+		for dates in ({"from_date": "2026-09-01"}, {"from_date": "2026-09-03", "to_date": "2026-09-01"}):
+			with (
+				patch.object(GroveDriver, "fetch_usage") as fetch_usage,
+				self.assertRaises(frappe.ValidationError),
+			):
+				dashboard.get_usage(self.managed.name, period="Custom", **dates)
+			fetch_usage.assert_not_called()
+
+	def test_usage_of_one_key_sends_its_hash_not_the_key(self):
+		with patch.object(GroveDriver, "provision_key", return_value=_FAKE):
+			key = dashboard.generate_api_key(self.managed.name, "app")
+
+		empty = {
+			"from_date": "2026-09-30",
+			"to_date": "2026-09-30",
+			"as_of": None,
+			"model_summary": [],
+			"daily_summary": [],
+		}
+		with patch.object(GroveDriver, "fetch_usage", return_value=empty) as fetch_usage:
+			dashboard.get_usage(self.managed.name, api_key=key["name"])
+
+		sent = fetch_usage.call_args.kwargs["key_hash"]
+		self.assertEqual(sent, hashlib.sha256(_FAKE["api_key"].encode()).hexdigest())
+		self.assertNotIn(_FAKE["api_key"], str(fetch_usage.call_args))
+
+	def test_usage_refuses_a_key_that_is_not_a_team_key_of_this_service(self):
+		with patch.object(GroveDriver, "provision_site", return_value=_FAKE):
+			site_key = provisioning.enable_site(self.managed.name, self.site)["credential"]
+
+		for api_key in (site_key, "no-such-key"):
+			with (
+				patch.object(GroveDriver, "fetch_usage") as fetch_usage,
+				self.assertRaises(frappe.DoesNotExistError),
+			):
+				dashboard.get_usage(self.managed.name, api_key=api_key)
+			fetch_usage.assert_not_called()
 
 	def test_reveal_and_revoke_api_key(self):
 		with patch.object(GroveDriver, "provision_key", return_value=_FAKE):
