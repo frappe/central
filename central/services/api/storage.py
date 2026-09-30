@@ -4,6 +4,7 @@ import frappe
 from frappe import _
 from frappe.query_builder import DocType
 
+from central.integrations.object_storage import BucketInteractions
 from central.services.doctype.team_service.team_service import STORAGE_SERVICE, TeamService, get_bucket_name
 from central.utils.guards import require_capability
 
@@ -33,6 +34,30 @@ def get_bucket_usage(team: str | None = None, name: str | None = None) -> dict:
 	"""What one bucket holds, against its caps: `used_bytes`, `object_count`,
 	`quota_bytes` and `quota_objects`. A None cap means uncapped."""
 	return _team_bucket(team, name).get_usage()
+
+
+@frappe.whitelist(methods=["GET"])
+@require_capability("service:view", VIEW_DENIED)
+def list_objects(
+	team: str | None = None,
+	name: str | None = None,
+	prefix: str = "",
+	offset: str | None = None,
+	limit: int = 100,
+) -> dict:
+	"""One page of a bucket's objects and folders under `prefix`. Pass `next_offset` back
+	as `offset` for the next page."""
+	return BucketInteractions(_team_bucket(team, name)).fetch_objects(prefix, offset, limit)
+
+
+@frappe.whitelist(methods=["GET"])
+@require_capability("service:view", VIEW_DENIED)
+def get_object_url(team: str | None = None, name: str | None = None, key: str | None = None) -> dict:
+	"""A download link for one object that expires in 5 minutes."""
+	if not key:
+		frappe.throw(_("Choose an object to download."))
+
+	return {"url": BucketInteractions(_team_bucket(team, name)).get_object_url(key)}
 
 
 @frappe.whitelist(methods=["POST"])
