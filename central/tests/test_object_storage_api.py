@@ -64,21 +64,6 @@ class ObjectStorageTestCase(IntegrationTestCase):
 		frappe.set_user(self.owner)
 		return api.create_bucket(team or self.team, bucket_name, self.region)
 
-	def _create_backup_bucket(self) -> str:
-		"""The bucket server provisioning makes; customers cannot name one like it."""
-		frappe.set_user("Administrator")
-		service = frappe.get_doc(
-			{
-				"doctype": "Team Service",
-				"team": self.team,
-				"add_on_service": "storage",
-				"region": self.region,
-				"bucket_name": f"team-{self._tenant_id(self.team)}-{self.region}-backups",
-			}
-		).insert(ignore_permissions=True)
-		frappe.set_user(self.owner)
-		return service.name
-
 	def _tenant_id(self, team: str) -> int:
 		return frappe.db.get_value("Team", team, "tenant_id")
 
@@ -149,15 +134,13 @@ class TestObjectStorageApi(ObjectStorageTestCase):
 			{"doctype": "Service Detail", "region": self.region, "service": "storage", "status": "Available"}
 		).insert(ignore_permissions=True)
 		mine = self._create()
-		backup = self._create_backup_bucket()
 		self._create(self.other_team)
 
 		frappe.set_user(self.viewer)
 		storage = api.get_object_storage(self.team)
 
 		self.assertIn(self.region, [region.region for region in storage["regions"]])
-		managed = {bucket.name: bucket.is_managed for bucket in storage["buckets"]}
-		self.assertEqual(managed, {mine["name"]: False, backup: True})
+		self.assertEqual([bucket.name for bucket in storage["buckets"]], [mine["name"]])
 		self.assertNotIn("secret_access_key", storage["buckets"][0])
 
 	def test_two_teams_can_use_the_same_bucket_name(self):
@@ -167,13 +150,12 @@ class TestObjectStorageApi(ObjectStorageTestCase):
 		self.assertEqual(mine["bucket_name"], f"{self._tenant_id(self.team)}-{self.region}-media")
 		self.assertEqual(theirs["bucket_name"], f"{self._tenant_id(self.other_team)}-{self.region}-media")
 
-	def test_a_customer_cannot_name_another_teams_backup_bucket(self):
-		other_backup = f"team-{self._tenant_id(self.other_team)}-{self.region}-backups"
+	def test_a_customer_cannot_name_another_teams_bucket(self):
+		other_bucket = f"{self._tenant_id(self.other_team)}-{self.region}-media"
 
-		bucket = self._create(bucket_name=other_backup)
+		bucket = self._create(bucket_name=other_bucket)
 
-		self.assertNotEqual(bucket["bucket_name"], other_backup)
-		self.assertTrue(bucket["bucket_name"].startswith(f"{self._tenant_id(self.team)}-"))
+		self.assertEqual(bucket["bucket_name"], f"{self._tenant_id(self.team)}-{self.region}-{other_bucket}")
 
 	def test_a_bucket_needs_a_name_and_a_region(self):
 		frappe.set_user(self.owner)
@@ -245,18 +227,6 @@ class TestObjectStorageApi(ObjectStorageTestCase):
 
 		self.assertEqual(rotated["access_key"], "rotated")
 		self.assertEqual(frappe.db.get_value("Team Service", bucket["name"], "access_key"), "rotated")
-
-	def test_the_backup_bucket_cannot_be_rotated_or_deleted(self):
-		backup = self._create_backup_bucket()
-
-		for call in (api.rotate_credentials, api.delete_bucket, api.set_bucket_quota):
-			with self.subTest(call=call.__name__):
-				with self.assertRaisesRegex(frappe.ValidationError, "backup bucket"):
-					call(self.team, backup)
-
-		self.cargo.rotate_credentials.assert_not_called()
-		self.cargo.delete_bucket.assert_not_called()
-		self.cargo.set_quota.assert_not_called()
 
 	def test_quota_is_set_in_cargo(self):
 		bucket = self._create()
