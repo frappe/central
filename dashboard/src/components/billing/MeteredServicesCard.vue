@@ -7,6 +7,7 @@ import EmptyState from '@/components/common/EmptyState.vue'
 import { useBillingOverview } from '@/composables/useBillingOverview'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { useMeteredServices } from '@/composables/useMeteredServices'
+import { features } from '@/lib/features'
 import { money } from '@/lib/format'
 import type { ServiceRow } from '@/types/billing'
 
@@ -33,7 +34,11 @@ function cycleCost(row: ServiceRow): number | null {
 }
 
 // Subscribing happens on the Object storage page — this card only reports
-// usage, so both Subscribe actions are links, not a dialog.
+// usage, so both Subscribe actions are links, not a dialog. They show only while
+// that page exists: a disabled flag redirects its route away.
+const canSubscribe = computed(
+	() => canManageBilling.value && features.addons && features.storage,
+)
 function goToObjectStorage(): void {
 	router.push({ name: 'ObjectStorage' })
 }
@@ -77,7 +82,7 @@ function exhausted(row: ServiceRow): boolean {
 		title="Metered services"
 		title-info="Team-level services billed by usage, such as object storage. No server required."
 	>
-		<template v-if="canManageBilling" #action>
+		<template v-if="canSubscribe" #action>
 			<Button
 				variant="ghost"
 				size="xs"
@@ -162,9 +167,13 @@ function exhausted(row: ServiceRow): boolean {
 			v-else
 			icon="lucide-gauge"
 			title="No metered services"
-			description="Create an object storage bucket to start usage billing."
+			:description="
+				features.addons && features.storage
+					? 'Create an object storage bucket to start usage billing.'
+					: 'This team is not billed for any service by usage.'
+			"
 		>
-			<template v-if="canManageBilling" #action>
+			<template v-if="canSubscribe" #action>
 				<Button label="Subscribe" @click="goToObjectStorage" />
 			</template>
 		</EmptyState>
