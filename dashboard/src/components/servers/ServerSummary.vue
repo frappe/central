@@ -44,7 +44,7 @@ const tiles = [
 		</div>
 
 		<dl
-			class="grid grid-cols-2 divide-outline-gray-2 rounded-6 border border-outline-gray-2 sm:grid-cols-4 sm:divide-x"
+			class="grid grid-cols-2 divide-outline-gray-2 rounded-6 border border-outline-gray-2 md:grid-cols-4 md:divide-x"
 		>
 			<div
 				v-for="tile in tiles"

@@ -116,7 +116,7 @@ const regionFlags = computed(() =>
 				</p>
 
 				<div v-else class="space-y-8">
-					<section class="grid gap-3 sm:grid-cols-2">
+					<section class="grid gap-3 md:grid-cols-2">
 						<TextInput
 							v-model="name"
 							label="Name"
@@ -212,7 +212,7 @@ const regionFlags = computed(() =>
 								region.
 							</p>
 						</template>
-						<div class="grid gap-3 sm:grid-cols-2">
+						<div class="grid gap-3 md:grid-cols-2">
 							<Select
 								v-if="source === 'image' && imageOptions.length > 1"
 								v-model="imageId"
