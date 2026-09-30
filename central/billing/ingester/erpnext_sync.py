@@ -202,8 +202,22 @@ def _advances(inv) -> tuple[list[dict], float]:
 		],
 		limit=1,
 	)
+	returning = frappe.get_all(
+		"Refund",
+		filters={
+			"team": inv.team,
+			"destination": "Wallet",
+			"status": "Completed",
+			"advance_id": ["is", "not set"],
+		},
+		pluck="invoice",
+	)
+	if returning and frappe.get_all(
+		"Invoice", filters={"name": ["in", returning], "erpnext_invoice": ["is", "set"]}, limit=1
+	):
+		pending = True  # credit given back from a cancelled invoice is not an advance yet
 	if pending:
-		raise RuntimeError(f"a top-up of team {inv.team} has no advance yet; its sync is queued")
+		raise RuntimeError(f"a wallet credit of team {inv.team} has no advance yet; its sync is queued")
 
 	rows = []
 	for advance_id in frappe.get_all(

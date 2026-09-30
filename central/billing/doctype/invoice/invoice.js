@@ -10,6 +10,16 @@ frappe.ui.form.on("Invoice", {
 				ask_reason(frm, __("Cancel Invoice"), "cancel_invoice", __("Invoice cancelled"))
 			);
 		}
+		if (frm.doc.status === "Paid" && frm.doc.invoice_type === "Billable") {
+			frm.add_custom_button(__("Cancel and Refund"), () =>
+				ask_reason(
+					frm,
+					__("Cancel and Refund"),
+					"cancel_and_refund",
+					__("Cancelled. Refunds and the credit note are under way.")
+				)
+			);
+		}
 	},
 });
 
