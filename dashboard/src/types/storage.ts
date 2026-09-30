@@ -18,7 +18,6 @@ export interface StorageBucket {
 	endpoint_url: string
 	access_key: string
 	creation: string
-	is_managed: boolean
 }
 
 export interface BucketCredentials {

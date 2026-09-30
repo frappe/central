@@ -31,10 +31,7 @@ defineEmits<{ select: [] }>()
 				class="grid size-9 shrink-0 place-items-center rounded-4 bg-surface-gray-2 text-ink-gray-6 group-hover:bg-surface-gray-3"
 				aria-hidden="true"
 			>
-				<span
-					:class="bucket.is_managed ? 'lucide-shield-check' : 'lucide-archive'"
-					class="size-4"
-				/>
+				<span class="lucide-archive size-4" />
 			</span>
 
 			<span class="min-w-0 flex-1 truncate text-base-semibold text-ink-gray-9">

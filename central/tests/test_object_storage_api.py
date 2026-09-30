@@ -1,9 +1,12 @@
+from datetime import UTC, datetime
 from unittest.mock import Mock, patch
 
 import frappe
+from botocore.exceptions import ClientError, EndpointConnectionError
 from frappe.tests import IntegrationTestCase
 
 from central.integrations.object_storage import (
+	ObjectStorageConnectionError,
 	ObjectStorageNotFound,
 	ObjectStorageRejected,
 	ObjectStorageRequestUncertain,
@@ -33,7 +36,7 @@ class ObjectStorageTestCase(IntegrationTestCase):
 
 		self.cargo = Mock()
 		self.cargo.create_bucket.side_effect = receipt
-		self.cargo.rotate_credentials.side_effect = lambda name: receipt(name, "rotated")
+		self.cargo.rotate_credentials.side_effect = lambda name, access_key: receipt(name, "rotated")
 		self.cargo.get_usage.return_value = {"usage": {"used_bytes": 2048, "object_count": 3}}
 		client = self.enterContext(patch(f"{CONTROLLER}.ObjectStorageClient"))
 		client.from_region.return_value = self.cargo
@@ -63,21 +66,6 @@ class ObjectStorageTestCase(IntegrationTestCase):
 	def _create(self, team: str | None = None, bucket_name: str = "media") -> dict:
 		frappe.set_user(self.owner)
 		return api.create_bucket(team or self.team, bucket_name, self.region)
-
-	def _create_backup_bucket(self) -> str:
-		"""The bucket server provisioning makes; customers cannot name one like it."""
-		frappe.set_user("Administrator")
-		service = frappe.get_doc(
-			{
-				"doctype": "Team Service",
-				"team": self.team,
-				"add_on_service": "storage",
-				"region": self.region,
-				"bucket_name": f"team-{self._tenant_id(self.team)}-{self.region}-backups",
-			}
-		).insert(ignore_permissions=True)
-		frappe.set_user(self.owner)
-		return service.name
 
 	def _tenant_id(self, team: str) -> int:
 		return frappe.db.get_value("Team", team, "tenant_id")
@@ -149,15 +137,13 @@ class TestObjectStorageApi(ObjectStorageTestCase):
 			{"doctype": "Service Detail", "region": self.region, "service": "storage", "status": "Available"}
 		).insert(ignore_permissions=True)
 		mine = self._create()
-		backup = self._create_backup_bucket()
 		self._create(self.other_team)
 
 		frappe.set_user(self.viewer)
 		storage = api.get_object_storage(self.team)
 
 		self.assertIn(self.region, [region.region for region in storage["regions"]])
-		managed = {bucket.name: bucket.is_managed for bucket in storage["buckets"]}
-		self.assertEqual(managed, {mine["name"]: False, backup: True})
+		self.assertEqual([bucket.name for bucket in storage["buckets"]], [mine["name"]])
 		self.assertNotIn("secret_access_key", storage["buckets"][0])
 
 	def test_two_teams_can_use_the_same_bucket_name(self):
@@ -167,13 +153,12 @@ class TestObjectStorageApi(ObjectStorageTestCase):
 		self.assertEqual(mine["bucket_name"], f"{self._tenant_id(self.team)}-{self.region}-media")
 		self.assertEqual(theirs["bucket_name"], f"{self._tenant_id(self.other_team)}-{self.region}-media")
 
-	def test_a_customer_cannot_name_another_teams_backup_bucket(self):
-		other_backup = f"team-{self._tenant_id(self.other_team)}-{self.region}-backups"
+	def test_a_customer_cannot_name_another_teams_bucket(self):
+		other_bucket = f"{self._tenant_id(self.other_team)}-{self.region}-media"
 
-		bucket = self._create(bucket_name=other_backup)
+		bucket = self._create(bucket_name=other_bucket)
 
-		self.assertNotEqual(bucket["bucket_name"], other_backup)
-		self.assertTrue(bucket["bucket_name"].startswith(f"{self._tenant_id(self.team)}-"))
+		self.assertEqual(bucket["bucket_name"], f"{self._tenant_id(self.team)}-{self.region}-{other_bucket}")
 
 	def test_a_bucket_needs_a_name_and_a_region(self):
 		frappe.set_user(self.owner)
@@ -245,18 +230,8 @@ class TestObjectStorageApi(ObjectStorageTestCase):
 
 		self.assertEqual(rotated["access_key"], "rotated")
 		self.assertEqual(frappe.db.get_value("Team Service", bucket["name"], "access_key"), "rotated")
-
-	def test_the_backup_bucket_cannot_be_rotated_or_deleted(self):
-		backup = self._create_backup_bucket()
-
-		for call in (api.rotate_credentials, api.delete_bucket, api.set_bucket_quota):
-			with self.subTest(call=call.__name__):
-				with self.assertRaisesRegex(frappe.ValidationError, "backup bucket"):
-					call(self.team, backup)
-
-		self.cargo.rotate_credentials.assert_not_called()
-		self.cargo.delete_bucket.assert_not_called()
-		self.cargo.set_quota.assert_not_called()
+		# Cargo replaces the key it is named, so Central names the one it holds.
+		self.cargo.rotate_credentials.assert_called_once_with(bucket["bucket_name"], "access")
 
 	def test_quota_is_set_in_cargo(self):
 		bucket = self._create()
@@ -264,3 +239,129 @@ class TestObjectStorageApi(ObjectStorageTestCase):
 		api.set_bucket_quota(self.team, bucket["name"], 50, 1000)
 
 		self.cargo.set_quota.assert_called_once_with(bucket["bucket_name"], 50, 1000)
+
+
+class TestBucketObjects(ObjectStorageTestCase):
+	def setUp(self):
+		super().setUp()
+		self.bucket = self._create()
+		self.s3 = Mock()
+		self.s3.generate_presigned_url.return_value = "https://s3.example.test/signed"
+		self.boto3 = self.enterContext(patch("central.integrations.object_storage.boto3"))
+		self.boto3.client.return_value = self.s3
+
+	def test_lists_one_page_of_objects_and_folders_with_the_buckets_key(self):
+		self.s3.list_objects_v2.return_value = {
+			"Contents": [
+				{
+					"Key": "media/a.png",
+					"Size": 2048,
+					"LastModified": datetime(2026, 9, 30, tzinfo=UTC),
+					"ETag": '"abc"',
+				}
+			],
+			"CommonPrefixes": [{"Prefix": "media/thumbnails/"}],
+			"NextContinuationToken": "page-2",
+		}
+		frappe.set_user(self.viewer)
+
+		page = api.list_objects(self.team, self.bucket["name"], prefix="media/", offset="page-1", limit=50)
+
+		self.assertEqual(
+			page,
+			{
+				"objects": [
+					{
+						"key": "media/a.png",
+						"size_bytes": 2048,
+						"last_modified": "2026-09-30T00:00:00+00:00",
+						"etag": "abc",
+					}
+				],
+				"folders": ["media/thumbnails/"],
+				"next_offset": "page-2",
+			},
+		)
+		self.s3.list_objects_v2.assert_called_once_with(
+			Bucket=self.bucket["bucket_name"],
+			Prefix="media/",
+			Delimiter="/",
+			MaxKeys=50,
+			ContinuationToken="page-1",
+		)
+		credentials = self.boto3.client.call_args.kwargs
+		self.assertEqual(
+			(
+				credentials["endpoint_url"],
+				credentials["aws_access_key_id"],
+				credentials["aws_secret_access_key"],
+				credentials["region_name"],
+			),
+			# Garage checks the SigV4 signature against the region Cargo installed it with.
+			(ENDPOINT, "access", "secret", self.region),
+		)
+
+	def test_the_last_page_has_no_offset(self):
+		self.s3.list_objects_v2.return_value = {}
+
+		page = api.list_objects(self.team, self.bucket["name"])
+
+		self.assertEqual(page, {"objects": [], "folders": [], "next_offset": None})
+		self.assertNotIn("ContinuationToken", self.s3.list_objects_v2.call_args.kwargs)
+
+	def test_page_size_is_capped_at_the_s3_maximum(self):
+		self.s3.list_objects_v2.return_value = {}
+
+		for limit, expected in ((5000, 1000), (0, 1)):
+			with self.subTest(limit=limit):
+				api.list_objects(self.team, self.bucket["name"], limit=limit)
+				self.assertEqual(self.s3.list_objects_v2.call_args.kwargs["MaxKeys"], expected)
+
+	def test_download_url_is_signed_for_an_existing_object(self):
+		frappe.set_user(self.viewer)
+
+		result = api.get_object_url(self.team, self.bucket["name"], "media/a.png")
+
+		self.assertEqual(result, {"url": "https://s3.example.test/signed"})
+		self.s3.head_object.assert_called_once_with(Bucket=self.bucket["bucket_name"], Key="media/a.png")
+		self.s3.generate_presigned_url.assert_called_once_with(
+			"get_object",
+			Params={"Bucket": self.bucket["bucket_name"], "Key": "media/a.png"},
+			ExpiresIn=300,
+		)
+
+	def test_a_missing_object_gets_no_download_url(self):
+		self.s3.head_object.side_effect = ClientError({"Error": {"Code": "404"}}, "HeadObject")
+
+		with self.assertRaises(ObjectStorageNotFound):
+			api.get_object_url(self.team, self.bucket["name"], "gone.png")
+
+		self.s3.generate_presigned_url.assert_not_called()
+
+	def test_s3_failures_map_to_object_storage_errors(self):
+		cases = (
+			(ClientError({"Error": {"Code": "NoSuchBucket"}}, "ListObjectsV2"), ObjectStorageNotFound),
+			(ClientError({"Error": {"Code": "AccessDenied"}}, "ListObjectsV2"), ObjectStorageRejected),
+			(EndpointConnectionError(endpoint_url=ENDPOINT), ObjectStorageConnectionError),
+		)
+		for error, expected in cases:
+			with self.subTest(error=type(error).__name__):
+				self.s3.list_objects_v2.side_effect = error
+				with self.assertRaises(expected):
+					api.list_objects(self.team, self.bucket["name"])
+
+	def test_cannot_read_another_teams_bucket(self):
+		other = self._create(self.other_team)
+		frappe.set_user(self.owner)
+
+		for call in (api.list_objects, lambda team, name: api.get_object_url(team, name, "a.png")):
+			with self.assertRaises(frappe.DoesNotExistError):
+				call(self.team, other["name"])
+
+		self.boto3.client.assert_not_called()
+
+	def test_a_non_member_cannot_list_objects(self):
+		frappe.set_user(self.viewer)
+
+		with self.assertRaises(frappe.PermissionError):
+			api.list_objects(self.other_team, self.bucket["name"])

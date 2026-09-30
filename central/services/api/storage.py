@@ -4,12 +4,8 @@ import frappe
 from frappe import _
 from frappe.query_builder import DocType
 
-from central.integrations.bucket_provisioning import (
-	STORAGE_SERVICE,
-	get_backup_bucket_name,
-	get_customer_bucket_name,
-)
-from central.services.doctype.team_service.team_service import TeamService
+from central.integrations.object_storage import BucketInteractions
+from central.services.doctype.team_service.team_service import STORAGE_SERVICE, TeamService, get_bucket_name
 from central.utils.guards import require_capability
 
 BUCKET_FIELDS = ("name", "bucket_name", "region", "status", "endpoint_url", "access_key", "creation")
@@ -20,8 +16,7 @@ MANAGE_DENIED = "You can't manage this team's object storage."
 @frappe.whitelist(methods=["GET"])
 @require_capability("service:view", VIEW_DENIED)
 def get_object_storage(team: str | None = None) -> dict:
-	"""The regions that serve object storage and the team's buckets, without secrets.
-	`is_managed` marks a server backup bucket, which the team cannot rotate or delete."""
+	"""The regions that serve object storage and the team's buckets, without secrets."""
 	# Team Service is operator-only because it holds secrets; this route redacts them.
 	buckets = frappe.get_all(
 		"Team Service",
@@ -29,10 +24,6 @@ def get_object_storage(team: str | None = None) -> dict:
 		fields=list(BUCKET_FIELDS),
 		order_by="creation desc",
 	)
-
-	backup_names = {get_backup_bucket_name(team, region) for region in {bucket.region for bucket in buckets}}
-	for bucket in buckets:
-		bucket.is_managed = bucket.bucket_name in backup_names
 
 	return {"regions": get_storage_regions(), "buckets": buckets}
 
@@ -43,6 +34,30 @@ def get_bucket_usage(team: str | None = None, name: str | None = None) -> dict:
 	"""What one bucket holds, against its caps: `used_bytes`, `object_count`,
 	`quota_bytes` and `quota_objects`. A None cap means uncapped."""
 	return _team_bucket(team, name).get_usage()
+
+
+@frappe.whitelist(methods=["GET"])
+@require_capability("service:view", VIEW_DENIED)
+def list_objects(
+	team: str | None = None,
+	name: str | None = None,
+	prefix: str = "",
+	offset: str | None = None,
+	limit: int = 100,
+) -> dict:
+	"""One page of a bucket's objects and folders under `prefix`. Pass `next_offset` back
+	as `offset` for the next page."""
+	return BucketInteractions(_team_bucket(team, name)).fetch_objects(prefix, offset, limit)
+
+
+@frappe.whitelist(methods=["GET"])
+@require_capability("service:view", VIEW_DENIED)
+def get_object_url(team: str | None = None, name: str | None = None, key: str | None = None) -> dict:
+	"""A download link for one object that expires in 5 minutes."""
+	if not key:
+		frappe.throw(_("Choose an object to download."))
+
+	return {"url": BucketInteractions(_team_bucket(team, name)).get_object_url(key)}
 
 
 @frappe.whitelist(methods=["POST"])
@@ -60,7 +75,7 @@ def create_bucket(team: str | None = None, bucket_name: str | None = None, regio
 			"team": team,
 			"add_on_service": STORAGE_SERVICE,
 			"region": region,
-			"bucket_name": get_customer_bucket_name(team, region, bucket_name),
+			"bucket_name": get_bucket_name(team, region, bucket_name),
 		}
 	)
 	# The route checked service:manage; Team Service is operator-only because it holds secrets.
@@ -72,7 +87,7 @@ def create_bucket(team: str | None = None, bucket_name: str | None = None, regio
 @require_capability("service:manage", MANAGE_DENIED)
 def rotate_credentials(team: str | None = None, name: str | None = None) -> dict:
 	"""Replace a bucket's key and return the new secret once. The old key stops at once."""
-	service = _customer_bucket(team, name)
+	service = _team_bucket(team, name, for_update=True)
 	# The route checked service:manage; Team Service is operator-only because it holds secrets.
 	service.flags.ignore_permissions = True
 	service.rotate_credentials()
@@ -83,7 +98,7 @@ def rotate_credentials(team: str | None = None, name: str | None = None) -> dict
 @require_capability("service:manage", MANAGE_DENIED)
 def delete_bucket(team: str | None = None, name: str | None = None) -> dict:
 	"""Delete an empty bucket and its key. Cargo refuses a bucket that still holds objects."""
-	service = _customer_bucket(team, name)
+	service = _team_bucket(team, name, for_update=True)
 	# The route checked service:manage; Team Service is operator-only because it holds secrets.
 	service.delete(ignore_permissions=True)
 	return {"name": service.name}
@@ -96,7 +111,7 @@ def set_bucket_quota(
 ) -> dict:
 	"""Cap a bucket's total size in GiB and its object count. Zero lifts a cap. Read the
 	caps back from `get_bucket_usage`."""
-	_customer_bucket(team, name).set_quota(size_gib, max_objects)
+	_team_bucket(team, name, for_update=True).set_quota(size_gib, max_objects)
 	return {"name": name, "size_gib": size_gib, "max_objects": max_objects}
 
 
@@ -130,16 +145,6 @@ def _team_bucket(team: str, name: str | None, for_update: bool = False) -> TeamS
 		frappe.throw(_("No bucket '{0}' for this team.").format(name), frappe.DoesNotExistError)
 
 	return frappe.get_doc("Team Service", name, for_update=for_update)
-
-
-def _customer_bucket(team: str, name: str | None) -> TeamService:
-	"""A bucket this team may change. The backup bucket is refused: the team's servers in
-	that region write to it with the current key."""
-	service = _team_bucket(team, name, for_update=True)
-	if service.is_backup_bucket():
-		frappe.throw(_("The server backup bucket is managed by Frappe Cloud."))
-
-	return service
 
 
 def _credentials(service: TeamService) -> dict:
