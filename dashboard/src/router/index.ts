@@ -84,7 +84,7 @@ const routes = [
 				meta: { title: 'Services', feature: ['addons', 'llm'] },
 			},
 			{
-				path: 'addons/object-storage',
+				path: 'object-storage',
 				name: 'ObjectStorage',
 				component: () => import('@/pages/addons/ObjectStorage.vue'),
 				meta: { title: 'Services', feature: ['addons', 'storage'] },
@@ -165,8 +165,7 @@ const routes = [
 			{
 				path: 'addons',
 				name: 'Addons',
-				component: () => import('@/pages/addons/Page.vue'),
-				meta: { title: 'Services', feature: 'addons' },
+				redirect: '/object-storage',
 			},
 		],
 	},
