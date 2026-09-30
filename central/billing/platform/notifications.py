@@ -72,6 +72,9 @@ def notify(
 	queued = result.get("emails_queued", 0)
 	failed = result.get("email_failed", 0)
 	status = "Failed" if failed else "Queued" if queued else "Suppressed"
+	# A deduped ask is still logged, but does not comment on the document again:
+	# a sweep that passes the same held invoice every month would otherwise bury it.
+	duplicate = result.get("reason") == "duplicate"
 	log = frappe.get_doc(
 		{
 			"doctype": "Billing Notification Log",
@@ -89,7 +92,7 @@ def notify(
 	# This internal audit row records the engine result on behalf of the billing operation.
 	log.insert(ignore_permissions=True)
 
-	if reference_doctype and ref:
+	if reference_doctype and ref and not duplicate:
 		try:
 			frappe.get_doc(reference_doctype, ref).add_comment(
 				"Info",
