@@ -1,19 +1,19 @@
 <script setup lang="ts">
-// A row of equal picture-and-label cards for one choice: providers, images, anything
-// else the creation form asks for. One component so every such row keeps the same card
-// size — they drift apart as soon as the markup is copied.
 export interface Choice {
 	label: string
 	value: string
+	description?: string
 }
 
-defineProps<{
+interface Props {
 	modelValue: string | null
 	options: Choice[]
-	/** Names the group for assistive technology; the step heading shows it on screen. */
 	label: string
+	columns?: 2 | 3
 	disabled?: boolean
-}>()
+}
+
+withDefaults(defineProps<Props>(), { columns: 3 })
 
 const emit = defineEmits<{ 'update:modelValue': [value: string] }>()
 </script>
@@ -21,26 +21,55 @@ const emit = defineEmits<{ 'update:modelValue': [value: string] }>()
 <template>
 	<fieldset
 		:disabled="disabled"
-		class="grid grid-cols-3 gap-2 sm:grid-cols-5"
+		:class="[
+			'grid gap-3',
+			columns === 2 ? 'md:grid-cols-2' : 'grid-cols-2 md:grid-cols-3',
+		]"
+		role="radiogroup"
 		:aria-label="label"
 	>
 		<button
 			v-for="option in options"
 			:key="option.value"
 			type="button"
-			:aria-pressed="modelValue === option.value"
-			:class="[
-				'flex w-full flex-col items-center gap-1 rounded-6 border p-2 transition-colors',
-				'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-outline-gray-4',
-				'disabled:cursor-not-allowed disabled:opacity-50',
-				modelValue === option.value
-					? 'border-outline-gray-4 bg-surface-gray-1'
-					: 'border-outline-gray-2 hover:bg-surface-gray-1',
-			]"
+			role="radio"
+			:aria-checked="modelValue === option.value"
 			@click="emit('update:modelValue', option.value)"
 		>
 			<slot name="icon" :option="option" />
-			<span class="truncate text-xs text-ink-gray-7">{{ option.label }}</span>
+			<span class="min-w-0">
+				<span class="block truncate text-base-medium text-ink-gray-8">
+					{{ option.label }}
+				</span>
+				<span
+					v-if="option.description"
+					class="block truncate text-p-xs text-ink-gray-5"
+				>
+					{{ option.description }}
+				</span>
+			</span>
 		</button>
 	</fieldset>
 </template>
+
+<style scoped>
+button {
+	@apply flex w-full items-center gap-3 rounded-6 border border-outline-gray-2 px-3 py-2 text-start transition-colors;
+
+	&:hover {
+		@apply bg-surface-gray-2;
+	}
+
+	&[aria-checked="true"] {
+		@apply border-outline-gray-6;
+	}
+
+	&:focus-visible {
+		@apply outline-none ring-1 ring-outline-gray-4;
+	}
+
+	&:disabled {
+		@apply cursor-not-allowed opacity-50;
+	}
+}
+</style>

@@ -63,11 +63,8 @@ export function useServerCreation() {
 	const { canCreateServer } = useCapabilities()
 
 	const name = ref('')
-	const subdomain = ref('')
-	const subdomainEdited = ref(false)
 	const selectedProvider = ref<string | null>(null)
 	const selectedRegion = ref<string | null>(null)
-	const hoverRegion = ref<string | null>(null)
 
 	// — Provider / region steps. A region with no provider files under "Other".
 	function providerOf(region: Region): string {
@@ -88,7 +85,8 @@ export function useServerCreation() {
 	const selectedRegionRow = computed(
 		() => regions.value.find((r) => r.region === selectedRegion.value) ?? null,
 	)
-	function slugifySubdomain(value: string): string {
+	// The guest OS hostname. Nothing routes by it, so the server name is enough.
+	function hostnameFrom(value: string): string {
 		return value
 			.normalize('NFKD')
 			.replace(/[\u0300-\u036f]/g, '')
@@ -98,20 +96,6 @@ export function useServerCreation() {
 			.slice(0, 63)
 			.replace(/-+$/g, '')
 	}
-
-	function editSubdomain(value: string): void {
-		subdomainEdited.value = true
-		subdomain.value = slugifySubdomain(value)
-	}
-
-	function resetSubdomain(): void {
-		subdomainEdited.value = false
-		subdomain.value = slugifySubdomain(name.value)
-	}
-
-	watch(name, (value) => {
-		if (!subdomainEdited.value) subdomain.value = slugifySubdomain(value)
-	})
 
 	function selectProvider(provider: string): void {
 		if (provider === selectedProvider.value) return
@@ -198,10 +182,6 @@ export function useServerCreation() {
 			value: item.name,
 			logo: item.logo,
 		})),
-	)
-	const offeringDescription = computed(
-		() =>
-			offerings.value.find((item) => item.name === offering.value)?.description,
 	)
 	const sshKeyIds = ref<string[]>([])
 	watch(activeTeam, () => {
@@ -340,7 +320,6 @@ export function useServerCreation() {
 		}
 	})
 
-	// — Submit. The header CTA carries the monthly price once a plan is picked.
 	const price = computed<string | null>(() => {
 		if (
 			isCustom.value &&
@@ -352,9 +331,55 @@ export function useServerCreation() {
 		}
 		return selectedPlanObj.value ? planPrice(selectedPlanObj.value) : null
 	})
-	const ctaLabel = computed(() =>
-		price.value ? `Create server · ${price.value}` : 'Create server',
-	)
+	const summaryResources = computed(() => {
+		const config = composedConfig.value
+		if (isCustom.value && config)
+			return [
+				{ type: 'Compute', value: `${config.vcpus}` },
+				{ type: 'Memory', value: `${config.memory_gb} GB` },
+				{
+					type: 'Disk',
+					value: `${config.disk_gb} ${rateCard.value.Disk?.unit ?? 'GB'}`,
+				},
+			]
+		return (selectedPlanObj.value?.includes ?? [])
+			.filter((inc) => inc.quantity)
+			.map((inc) => ({
+				type: inc.resource_type,
+				value:
+					inc.resource_type === 'Compute'
+						? `${inc.quantity}`
+						: `${inc.quantity} ${inc.unit}`,
+			}))
+	})
+	const summary = computed(() => {
+		const region = selectedRegionRow.value
+		const offeringTitle = offeringOptions.value.find(
+			(option) => option.value === offering.value,
+		)?.label
+		return {
+			plan: isCustom.value
+				? 'Custom'
+				: selectedPlanObj.value?.title.split(' · ')[0],
+			server: name.value.trim() || 'Untitled server',
+			price: price.value?.split(' / ')[0] ?? '—',
+			cycle: price.value?.split(' / ')[1],
+			resources: summaryResources.value,
+			provider: selectedProvider.value,
+			tags: [
+				region
+					? `${flagEmoji(region.country_code)} ${regionLabel(region)}`
+					: '',
+				offeringTitle,
+				[
+					hasPublicIpv6.value ? 'Public IPv6' : '',
+					isFirewallEnabled.value ? 'Firewall on' : '',
+				]
+					.filter(Boolean)
+					.join(' · '),
+			].filter((tag): tag is string => !!tag),
+		}
+	})
 
 	const canSubmit = computed(() => {
 		if (
@@ -366,8 +391,7 @@ export function useServerCreation() {
 			!!action.value ||
 			!openActionKnown.value ||
 			!selectedRegion.value ||
-			!name.value.trim() ||
-			!subdomain.value
+			!name.value.trim()
 		)
 			return false
 		if (sshMissing.value) return false
@@ -388,7 +412,7 @@ export function useServerCreation() {
 			team: activeTeam.value,
 			region: selectedRegion.value,
 			title: name.value.trim(),
-			hostname: subdomain.value,
+			hostname: hostnameFrom(name.value),
 			...selection.value,
 			ssh_key_ids: sshKeyIds.value,
 			has_public_ipv6: hasPublicIpv6.value,
@@ -440,16 +464,11 @@ export function useServerCreation() {
 		regions,
 		loading,
 		name,
-		subdomain,
-		subdomainEdited,
 		selectedProvider,
 		selectedRegion,
-		hoverRegion,
 		providerOptions,
 		providerRegions,
 		selectedRegionRow,
-		editSubdomain,
-		resetSubdomain,
 		selectProvider,
 		selectRegion,
 		markers,
@@ -472,12 +491,11 @@ export function useServerCreation() {
 		nothingToShow,
 		regionFull,
 		bracketExhausted,
-		ctaLabel,
+		summary,
 		canSubmit,
 		submit,
 		offering,
 		offeringOptions,
-		offeringDescription,
 		imageId,
 		image,
 		imageOptions,
