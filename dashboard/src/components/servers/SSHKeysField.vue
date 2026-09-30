@@ -49,8 +49,8 @@ function saved(key: TeamSSHKey | null) {
 			:required="required"
 			:description="
 				required
-					? 'Select at least one team key to sign in to Ubuntu.'
-					: 'Add a team key if you want SSH access to this server.'
+					? 'Ubuntu needs a key so you can sign in.'
+					: 'Add a key to sign in over SSH.'
 			"
 			:empty-text="keys.length ? 'No matching keys' : 'No team SSH keys yet'"
 			label="SSH keys"

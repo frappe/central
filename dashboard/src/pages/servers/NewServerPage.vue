@@ -173,9 +173,7 @@ const regionFlags = computed(() =>
 								v-else-if="snapshotOptions.length < 2"
 								class="text-p-sm text-ink-gray-5"
 							>
-								No snapshot in this region can be restored. A snapshot restores
-								only in the region it was taken in, and a Pilot server snapshot
-								cannot be restored yet.
+								No snapshots are available in this region.
 							</p>
 							<Select
 								v-else

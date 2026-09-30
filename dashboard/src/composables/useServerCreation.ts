@@ -180,7 +180,6 @@ export function useServerCreation() {
 		offerings.value.map((item) => ({
 			label: item.title,
 			value: item.name,
-			description: item.description ?? undefined,
 			logo: item.logo,
 		})),
 	)
