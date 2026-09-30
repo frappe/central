@@ -2,9 +2,13 @@
 import { Badge, Button, Spinner } from 'frappe-ui'
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { useServices } from '@/composables/useServices'
+import { type ServiceDialect, useServices } from '@/composables/useServices'
 
 const router = useRouter()
+const dialectLabels: Record<ServiceDialect, string> = {
+	openai: 'OpenAI',
+	anthropic: 'Anthropic',
+}
 const { instance, instanceLoading } = useServices()
 
 const models = computed(() => instance.value?.models ?? [])
@@ -85,7 +89,7 @@ const enabledSites = computed(() => instance.value?.enabled_sites ?? [])
 				</h2>
 
 				<p class="mt-0.5 text-p-sm text-ink-gray-5">
-					The models your keys can call.
+					The models your keys can call, and the APIs each one answers on.
 				</p>
 
 				<table v-if="models.length" class="mt-3 w-full border-collapse">
@@ -95,6 +99,16 @@ const enabledSites = computed(() => instance.value?.enabled_sites ?? [])
 								class="py-3 pr-3 font-mono text-sm font-medium text-ink-gray-9"
 							>
 								{{ model.name }}
+							</td>
+
+							<td class="py-3 pr-3">
+								<div class="flex justify-end gap-1.5">
+									<Badge
+										v-for="dialect in model.dialects"
+										:key="dialect"
+										:label="dialectLabels[dialect]"
+									/>
+								</div>
 							</td>
 
 							<td class="py-3 text-right text-p-sm text-ink-gray-5">

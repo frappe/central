@@ -6,6 +6,7 @@ import {
 	Dropdown,
 	type DropdownOptions,
 	Select,
+	TabButtons,
 	TextInput,
 } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
@@ -14,6 +15,7 @@ import EmptyState from '@/components/common/EmptyState.vue'
 import type {
 	RevealedKey,
 	ServiceApiKey,
+	ServiceDialect,
 	ServiceModel,
 } from '@/composables/useServices'
 import { useServices } from '@/composables/useServices'
@@ -97,18 +99,30 @@ const details = ref<RevealedKey | null>(null)
 const secretRevealed = ref(false)
 const selectedModel = ref('')
 
-watch(details, (value) => {
+// One key serves both: the gateway takes either SDK's auth header.
+const dialect = ref<ServiceDialect>('openai')
+const dialects = [
+	{ label: 'OpenAI compatible', value: 'openai' },
+	{ label: 'Anthropic compatible', value: 'anthropic' },
+]
+
+// Only the models that answer on the chosen surface.
+const dialectModels = computed(() =>
+	props.models.filter((m) => m.dialects.includes(dialect.value)),
+)
+
+watch(details, () => {
 	secretRevealed.value = false
-	selectedModel.value = value ? (props.models[0]?.name ?? '') : ''
+	dialect.value = 'openai'
+})
+
+watch([details, dialectModels], () => {
+	const names = dialectModels.value.map((m) => m.name)
+	if (!names.includes(selectedModel.value)) selectedModel.value = names[0] ?? ''
 })
 
 const modelOptions = computed(() =>
-	props.models.length
-		? props.models.map((m) => ({
-				label: m.name,
-				value: m.name,
-			}))
-		: [{ label: 'MODEL_ID', value: '' }],
+	dialectModels.value.map((m) => ({ label: m.name, value: m.name })),
 )
 const modelId = computed(() => selectedModel.value || 'MODEL_ID')
 
@@ -119,12 +133,29 @@ const maskedKey = computed(() => {
 		: `${details.value.api_key.slice(0, 6)}${'•'.repeat(24)}${details.value.api_key.slice(-4)}`
 })
 
-const curlTemplate = computed(
-	() => `curl ${details.value?.gateway_url}/v1/chat/completions \\
+// What each SDK takes as its base URL.
+const baseUrl = computed(() =>
+	dialect.value === 'openai'
+		? `${details.value?.gateway_url}/v1`
+		: `${details.value?.gateway_url}/anthropic`,
+)
+
+const curlTemplate = computed(() =>
+	dialect.value === 'openai'
+		? `curl ${baseUrl.value}/chat/completions \\
   -H "Content-Type: application/json" \\
   -H "Authorization: Bearer $LLM_API_KEY" \\
   -d '{
     "model": "${modelId.value}",
+    "messages": [{"role": "user", "content": "Hello"}]
+  }'`
+		: `curl ${baseUrl.value}/v1/messages \\
+  -H "Content-Type: application/json" \\
+  -H "x-api-key: $LLM_API_KEY" \\
+  -H "anthropic-version: 2023-06-01" \\
+  -d '{
+    "model": "${modelId.value}",
+    "max_tokens": 1024,
     "messages": [{"role": "user", "content": "Hello"}]
   }'`,
 )
@@ -299,24 +330,6 @@ const confirmRevoke = async (): Promise<void> => {
 
 				<div>
 					<label class="mb-1 block text-p-sm font-medium text-ink-gray-7">
-						Gateway URL
-					</label>
-					<div class="flex items-center gap-2">
-						<code
-							class="min-w-0 flex-1 truncate rounded-5 border border-outline-gray-2 bg-surface-gray-1 px-3 py-2 font-mono text-sm text-ink-gray-8"
-						>
-							{{ details.gateway_url }}
-						</code>
-						<Button
-							icon="lucide-copy"
-							label="Copy gateway URL"
-							@click="copy(details.gateway_url, 'Gateway URL')"
-						/>
-					</div>
-				</div>
-
-				<div>
-					<label class="mb-1 block text-p-sm font-medium text-ink-gray-7">
 						API Key
 					</label>
 					<div class="flex items-center gap-2">
@@ -337,8 +350,29 @@ const confirmRevoke = async (): Promise<void> => {
 						/>
 					</div>
 					<p class="mt-2 text-xs text-ink-gray-5">
-						Treat it like a password. Revocable on its own.
+						Treat it like a password. Revocable on its own. The same key works
+						on both endpoints.
 					</p>
+				</div>
+
+				<TabButtons v-model="dialect" :options="dialects" />
+
+				<div>
+					<label class="mb-1 block text-p-sm font-medium text-ink-gray-7">
+						Base URL
+					</label>
+					<div class="flex items-center gap-2">
+						<code
+							class="min-w-0 flex-1 truncate rounded-5 border border-outline-gray-2 bg-surface-gray-1 px-3 py-2 font-mono text-sm text-ink-gray-8"
+						>
+							{{ baseUrl }}
+						</code>
+						<Button
+							icon="lucide-copy"
+							label="Copy base URL"
+							@click="copy(baseUrl, 'Base URL')"
+						/>
+					</div>
 				</div>
 
 				<!-- example codeblock -->
@@ -347,7 +381,7 @@ const confirmRevoke = async (): Promise<void> => {
 						Example request
 					</label>
 					<Select
-						v-if="models.length"
+						v-if="dialectModels.length"
 						v-model="selectedModel"
 						:options="modelOptions"
 						variant="outline"

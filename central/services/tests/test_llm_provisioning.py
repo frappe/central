@@ -430,13 +430,23 @@ class TestLLMProvisioning(IntegrationTestCase):
 			provisioning.enable_site(self.managed.name, self.site)
 
 		# The models are the ones Grove lets the team's Grove user call.
-		reachable = [{"name": "frappe/m-fast", "model_id": "m-fast", "modality": "text"}]
+		reachable = [
+			{
+				"name": "frappe/m-fast",
+				"model_id": "m-fast",
+				"modality": "text",
+				"dialects": ["openai", "anthropic"],
+			}
+		]
 		with patch.object(GroveDriver, "list_models", return_value=reachable) as list_models:
 			instance = dashboard.get_instance(self.managed.name)
 
 		self.assertEqual(instance["status"], "Active")
 		self.assertIn(self.site, [row["site"] for row in instance["enabled_sites"]])
-		self.assertEqual(instance["models"], [{"name": "frappe/m-fast", "modality": "text"}])
+		self.assertEqual(
+			instance["models"],
+			[{"name": "frappe/m-fast", "modality": "text", "dialects": ["openai", "anthropic"]}],
+		)
 		self.assertEqual(list_models.call_args.args[1], self.owner)
 
 	def test_reads_require_capability(self):

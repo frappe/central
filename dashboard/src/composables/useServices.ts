@@ -19,9 +19,13 @@ export interface ServiceOffer {
 	managed_service: string | null
 }
 
+export type ServiceDialect = 'openai' | 'anthropic'
+
 export interface ServiceModel {
 	name: string
 	modality: string | null
+	// The API surfaces this model answers on.
+	dialects: ServiceDialect[]
 }
 
 export interface ServiceEnabledSite {

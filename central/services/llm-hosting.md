@@ -46,7 +46,7 @@ user, which holds Grove's `Grove Control` role.
 | `provision_user` | `name`, `email`, `free` (always true) | nothing |
 | `provision_key` | `email`, `title` | `gateway_url`, `api_key` |
 | `revoke_key` | `api_key` | nothing |
-| `available_models` | `email` | `name`, `modality` |
+| `available_models` | `email` | `name`, `modality`, `dialects` (`openai`, `anthropic`) |
 | `usage` | `users`, `period` | `from_date`, `to_date`, `as_of`, `model_summary`, `daily_summary`, `<email>.requests`, `<email>.cost` |
 | `add_credit` (operator only, not used by any screen) | `email`, `amount` (USD), `reference` | `balance` |
 

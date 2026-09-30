@@ -123,10 +123,14 @@ def register_grove_user(team: str, service: str = _LLM_SERVICE) -> str:
 
 
 def get_reachable_models(email: str, service: str = _LLM_SERVICE) -> list[dict]:
-	"""The models Grove lets a Grove user call. Grove decides; Central only shows them."""
+	"""The models Grove lets a Grove user call, and the API surfaces (openai, anthropic) each
+	answers on. Grove decides; Central only shows them."""
 	driver, backend = _driver_and_backend(service)
 
-	return [{"name": row["name"], "modality": row.get("modality")} for row in driver.list_models(backend, email)]
+	return [
+		{"name": row["name"], "modality": row.get("modality"), "dialects": row["dialects"]}
+		for row in driver.list_models(backend, email)
+	]
 
 
 def get_usage_report(email: str, period: str, service: str = _LLM_SERVICE) -> dict:
