@@ -83,6 +83,7 @@ def config() -> dict:
 	return {"jwks_url": jwks_url(), "audience_id": credential.audience_id}
 
 
+# nosemgrep: guest-whitelisted-method -- pilot_credential_auth verifies the caller below.
 @frappe.whitelist(allow_guest=True, methods=["GET"])
 @pilot_credential_auth
 def storage_regions() -> dict[str, str]:

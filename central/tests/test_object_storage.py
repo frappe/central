@@ -63,9 +63,9 @@ class TestObjectStorageClient(TestCase):
 		)
 
 	def test_delete_and_rotate_use_the_named_cargo_methods(self):
-		for operation, method in (
-			("delete_bucket", "delete_bucket"),
-			("rotate_credentials", "rotate_credentials"),
+		for operation, method, arguments in (
+			("delete_bucket", "delete_bucket", {}),
+			("rotate_credentials", "rotate_credentials", {"access_key": "old-access"}),
 		):
 			with self.subTest(operation=operation):
 				response = Mock(status_code=200)
@@ -77,12 +77,15 @@ class TestObjectStorageClient(TestCase):
 					patch("central.integrations.object_storage.mint_cargo_token", return_value="cargo-token"),
 					patch("central.integrations.object_storage.requests.post", return_value=response) as post,
 				):
-					result = getattr(self.client(), operation)("pilot-action-1")
+					result = getattr(self.client(), operation)("pilot-action-1", **arguments)
 
 				self.assertEqual(result, message)
 				self.assertEqual(
 					post.call_args.args[0],
 					f"https://cargo.par-2.example.test/api/method/cargo.object_storage.api.bucket.{method}",
+				)
+				self.assertEqual(
+					post.call_args.kwargs["json"], {"name": "pilot-action-1", "region": "par-2", **arguments}
 				)
 
 	def test_from_region_reads_the_cargo_url_of_a_region_with_available_storage(self):
@@ -236,7 +239,7 @@ class TestObjectStorageClient(TestCase):
 			),
 			self.assertRaises(ObjectStorageNotFound) as caught,
 		):
-			self.client().rotate_credentials("pilot-action-1")
+			self.client().rotate_credentials("pilot-action-1", "old-access")
 
 		self.assertEqual(str(caught.exception), "The bucket does not exist.")
 
@@ -281,7 +284,7 @@ class TestObjectStorageClient(TestCase):
 					),
 					self.assertRaises(ObjectStorageRequestUncertain),
 				):
-					self.client().rotate_credentials("pilot-action-1")
+					self.client().rotate_credentials("pilot-action-1", "old-access")
 
 	@staticmethod
 	def credentials() -> dict:

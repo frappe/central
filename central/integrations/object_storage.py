@@ -128,7 +128,7 @@ class ObjectStorageClient:
 		try:
 			messages = json.loads(response.json()["_server_messages"])
 			message = json.loads(messages[-1])["message"]
-		except (ValueError, KeyError, IndexError, TypeError):
+		except ValueError, KeyError, IndexError, TypeError:
 			return None
 
 		return frappe.utils.strip_html(message) if isinstance(message, str) else None
@@ -169,7 +169,7 @@ class BucketInteractions:
 			endpoint_url=service.endpoint_url,
 			aws_access_key_id=service.access_key,
 			aws_secret_access_key=service.get_password("secret_access_key"),
-			egion_name=service.region,
+			region_name=service.region,
 			config=Config(
 				signature_version="s3v4",
 				s3={"addressing_style": "path"},
