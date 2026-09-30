@@ -151,7 +151,7 @@ def _reported_at(report: dict):
 		return None
 	try:
 		return frappe.utils.get_datetime(value)
-	except TypeError, ValueError:
+	except (TypeError, ValueError):
 		return None
 
 
