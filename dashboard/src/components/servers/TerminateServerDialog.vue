@@ -41,14 +41,14 @@ watch(
 		takeSnapshot.value = false
 	},
 )
-const { rate, currency, freePerServer } = useSnapshotPricing(
+const { rate, currency } = useSnapshotPricing(
 	computed(() => props.target?.region ?? null),
 )
 const snapshotNote = computed(() => {
 	if (rate.value == null)
 		return 'Snapshot storage has no price in this region yet.'
 	const perGb = money(rate.value, currency.value, { trimTrailingZeros: true })
-	return `The server stops first. The snapshot is free while it is one of this server's ${freePerServer.value} newest snapshots. After that it costs ${perGb} per GB per month until you delete it.`
+	return `The first two snapshots are free. After that it costs ${perGb} per GB per month until you delete it.`
 })
 </script>
 

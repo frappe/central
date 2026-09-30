@@ -70,14 +70,14 @@ class Site(Document):
 		A region reports on a machine repeatedly and this runs on every report, because
 		the address arrives on one of them and nothing says which. It writes once: a
 		machine that already has a site, runs no Pilot, or has no address yet is left
-		alone."""
+		alone, and so is one whose image has no site."""
 		if frappe.db.exists("Site", {"server": server}):
 			return
 
 		machine = frappe.db.get_value(
-			"Virtual Machine", server, ["team", "region", "ipv6_address"], as_dict=True
+			"Virtual Machine", server, ["team", "region", "ipv6_address", "has_site"], as_dict=True
 		)
-		if not machine or not machine.ipv6_address:
+		if not machine or not machine.has_site or not machine.ipv6_address:
 			return
 		if not frappe.db.exists("Pilot Credential", {"server": server, "status": "Active"}):
 			return
