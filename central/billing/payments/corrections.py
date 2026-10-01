@@ -14,6 +14,7 @@ next one starts:
   4. Each refund is recorded there as a payment out, against the credit note.
      Paid-in wallet credit is booked again as an advance with its GST, because the
      accounting system does not restore the GST on an advance for a credit note.
+     Promotional credit's settlement is reversed against the credit note.
 """
 
 import frappe
@@ -101,6 +102,14 @@ def _next_step(doc, accounting: bool):
 	for refund in refunds:
 		if refund.status == "Completed" and not refund.payment_record_id and _money_to_record(doc, refund):
 			return lambda r=refund: _record_payment(doc, r)
+	for refund in refunds:
+		if (
+			refund.destination == "Wallet"
+			and refund.status == "Completed"
+			and doc.promotional_record_id
+			and not refund.promotional_record_id
+		):
+			return lambda r=refund: _reverse_promotional(doc, r)
 	return None
 
 
@@ -197,6 +206,22 @@ def _record_payment(doc, refund) -> None:
 	refund.db_set("payment_record_id", payment)
 	if refund.destination == "Wallet":
 		refund.db_set("advance_id", _advance_again(doc, refund, amount))
+
+
+def _reverse_promotional(doc, refund) -> None:
+	"""Take back the promotional account's payment, against the credit note."""
+	from central.billing.ingester.erpnext_sync import _promotional_part, promotional_journal
+
+	customer = frappe.db.get_value("Billing Profile", doc.team, "profile_id")
+	name = promotional_journal(
+		doc,
+		customer,
+		doc.credit_note_id,
+		_promotional_part(doc),
+		f"{doc.name}-promotional-return",
+		reverse=True,
+	)
+	frappe.db.set_value("Refund", refund.name, "promotional_record_id", name)
 
 
 def _pay_out(doc, refund, amount: float) -> str:
@@ -322,6 +347,7 @@ def _refunds(invoice: str) -> list:
 			"gateway_refund_id",
 			"payment_record_id",
 			"advance_id",
+			"promotional_record_id",
 		],
 		order_by="creation asc",
 	)

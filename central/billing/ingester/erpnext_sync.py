@@ -46,7 +46,7 @@ def sync_invoice(invoice: str) -> dict:
 		return {"skipped": "not_billable"}  # cost_report is not a statutory sale
 	if inv.status != "Paid":
 		return {"skipped": "not_paid"}
-	if inv.erpnext_invoice and (inv.payment_record_id or not _card_attempt(inv)):
+	if inv.erpnext_invoice and _settled_there(inv):
 		return {"skipped": "already_synced"}
 
 	attempt = (inv.erpnext_sync_attempts or 0) + 1
@@ -55,7 +55,12 @@ def sync_invoice(invoice: str) -> dict:
 		if not inv.erpnext_invoice:
 			inv.erpnext_invoice = _issue(inv, customer)
 			frappe.db.set_value("Invoice", invoice, "erpnext_invoice", inv.erpnext_invoice)
-		payment = _record_card_payment(inv, customer)
+		if _card_attempt(inv) and not inv.payment_record_id:
+			inv.payment_record_id = _record_card_payment(inv, customer)
+			frappe.db.set_value("Invoice", invoice, "payment_record_id", inv.payment_record_id)
+		if _promotional_part(inv) and not inv.promotional_record_id:
+			inv.promotional_record_id = _settle_promotional(inv, customer)
+			frappe.db.set_value("Invoice", invoice, "promotional_record_id", inv.promotional_record_id)
 	except Exception as e:
 		return _handle_failure(invoice, attempt, _error_text(e))
 
@@ -63,14 +68,30 @@ def sync_invoice(invoice: str) -> dict:
 		"Invoice",
 		invoice,
 		{
-			"payment_record_id": payment,
 			"erpnext_sync_status": "Synced",
 			"erpnext_sync_attempts": attempt,
 			"erpnext_sync_error": None,
 			"erpnext_next_retry_at": None,
 		},
 	)
-	return {"synced": inv.erpnext_invoice, "payment": payment, "attempt": attempt}
+	return {
+		"synced": inv.erpnext_invoice,
+		"payment": inv.payment_record_id,
+		"promotional": inv.promotional_record_id,
+		"attempt": attempt,
+	}
+
+
+def _settled_there(inv) -> bool:
+	"""Every part of how the invoice was paid is recorded in the accounting system."""
+	card_done = inv.payment_record_id or not _card_attempt(inv)
+	promotional_done = inv.promotional_record_id or not _promotional_part(inv)
+	return bool(card_done and promotional_done)
+
+
+def _promotional_part(inv) -> float:
+	"""Wallet credit on this invoice that no advance backs: promotional credit."""
+	return frappe.utils.flt(frappe.utils.flt(inv.credit_applied) - frappe.utils.flt(inv.advance_applied), 2)
 
 
 def _handle_failure(invoice: str, attempt: int, error: str) -> dict:
@@ -138,7 +159,7 @@ def _build_sales_invoice(inv, customer: str) -> dict:
 	advances, unbacked = _advances(inv)
 	remarks = _marker(inv)
 	if unbacked:
-		remarks += f". Wallet credit not backed by an advance: {unbacked}"
+		remarks += f". Promotional credit used: {unbacked}"
 	return {
 		"doctype": "Sales Invoice",
 		"docstatus": 1,
@@ -276,7 +297,9 @@ def _record_card_payment(inv, customer: str) -> str | None:
 	if attempt.currency != inv.currency:
 		raise RuntimeError(f"{inv.name} is in {inv.currency} but was paid in {attempt.currency}")
 	sales_invoice = connection.fetch("Sales Invoice", inv.erpnext_invoice)
-	owed = frappe.utils.flt(sales_invoice.outstanding_amount)
+	# What the card took, not what is outstanding: promotional credit on the same
+	# invoice is settled on its own, and is not card money.
+	owed = min(frappe.utils.flt(attempt.amount), frappe.utils.flt(sales_invoice.outstanding_amount))
 	# The receivable and the clearing account are both in the invoice's currency.
 	rate = frappe.utils.flt(sales_invoice.conversion_rate) or 1
 	payload = {
@@ -306,6 +329,62 @@ def _record_card_payment(inv, customer: str) -> str | None:
 		"remarks": f"{attempt.gateway} payment {attempt.gateway_transaction_id} for {_marker(inv)}",
 	}
 	return connection.post("api/resource/Payment Entry", payload).name
+
+
+def _settle_promotional(inv, customer: str) -> str:
+	"""A journal entry that pays the promotional part of the invoice from the promotional account."""
+	return promotional_journal(
+		inv, customer, inv.erpnext_invoice, _promotional_part(inv), f"{inv.name}-promotional"
+	)
+
+
+def promotional_journal(inv, customer: str, against: str, amount: float, marker: str, reverse=False) -> str:
+	"""Settle (or, with `reverse`, unsettle) promotional credit against a Sales Invoice or credit note.
+
+	Found by `marker` if it was made before.
+	"""
+	existing = connection.find("Journal Entry", [["cheque_no", "=", marker], ["docstatus", "=", 1]], ["name"])
+	if existing:
+		return existing[0].name
+	settings = accounting_settings()
+	if not settings.promotional_credit_account:
+		raise RuntimeError("Billing Settings has no promotional credit account")
+	document = connection.fetch("Sales Invoice", against) or {}
+	rate = frappe.utils.flt(document.get("conversion_rate")) or 1
+	expense = {
+		"account": settings.promotional_credit_account,
+		"cost_center": settings.cost_center,
+		"exchange_rate": 1,
+	}
+	party = {
+		"account": document.get("debit_to") or receivable_account(inv.currency),
+		"party_type": "Customer",
+		"party": customer,
+		"exchange_rate": rate,
+		"reference_type": "Sales Invoice",
+		"reference_name": against,
+	}
+	if reverse:
+		expense["credit_in_account_currency"] = frappe.utils.flt(amount * rate, 2)
+		party["debit_in_account_currency"] = amount
+	else:
+		expense["debit_in_account_currency"] = frappe.utils.flt(amount * rate, 2)
+		party["credit_in_account_currency"] = amount
+	return connection.post(
+		"api/resource/Journal Entry",
+		{
+			"doctype": "Journal Entry",
+			"docstatus": 1,
+			"voucher_type": "Journal Entry",
+			"company": settings.company,
+			"posting_date": frappe.utils.nowdate(),
+			"cheque_no": marker,
+			"cheque_date": frappe.utils.nowdate(),
+			"multi_currency": int(rate != 1),
+			"user_remark": f"Promotional credit {'given back' if reverse else 'used'} on Central invoice {inv.name}",
+			"accounts": [expense, party],
+		},
+	).name
 
 
 def _gateway_row(settings, gateway: str, currency: str):
