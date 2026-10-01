@@ -8,12 +8,15 @@ from unittest.mock import patch
 import frappe
 from frappe.tests import IntegrationTestCase
 
+from central.api.jwks import jwks_document
 from central.billing.tests.utils import make_plan
+from central.central.doctype.central_sso_settings.central_sso_settings import CentralSSOSettings
 from central.errors import AtlasConnectionError, AtlasRequestUncertain
 from central.infrastructure.doctype.resource_action.resource_action import ResourceAction
 from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
 from central.integrations.resource_actions import SERVER_PAGE_SIZE, _process_locked
 from central.resource_actions import get_status, submit_request
+from central.tests.test_sso_keys import reset_signing_key
 
 COMPOSITION = [
 	{"resource_type": "Compute", "quantity": 1, "unit": "vCPU"},
@@ -74,6 +77,7 @@ class TestResourceActions(IntegrationTestCase):
 		)
 		self.client.return_value.tenant_id = self.team.tenant_id
 		self.client.return_value.create_vm.return_value = {"id": "vm-00001", "tenant_id": self.team.tenant_id}
+		CentralSSOSettings.instance().initialize_signing_key("pilot")
 
 	def submit(self, **changes):
 		values = dict(
@@ -109,7 +113,19 @@ class TestResourceActions(IntegrationTestCase):
 		payload = self.client.return_value.create_vm.call_args.args[0]
 		self.assertEqual(payload["sleep_after_idle_seconds"], 0)
 		credentials = json.loads(payload["metadata"]["pilot-central"])
-		self.assertIn("keys", credentials["initial_jwks_cache"])
+		self.assertEqual(credentials["initial_jwks_cache"], jwks_document())
+		self.assertTrue(credentials["initial_jwks_cache"]["keys"])
+
+	def test_a_pilot_server_without_the_pilot_key_fails_before_dispatch(self):
+		reset_signing_key("pilot")
+		name = self.submit()["action"]
+		_process_locked(name)
+
+		action = frappe.get_doc("Resource Action", name)
+		self.assertEqual(action.status, "Failed")
+		self.assertIn("Pilot signing key", action.error_message)
+		self.assertFalse(action.credential)
+		self.client.return_value.create_vm.assert_not_called()
 
 	def test_a_trial_server_sleeps_after_the_configured_idle_time(self):
 		frappe.db.set_value("Team", self.team.name, "is_staging_trial", 1)

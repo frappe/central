@@ -34,7 +34,7 @@ class TestPilotAPI(IntegrationTestCase):
 		)
 		self.token = PilotCredential.mint(team=self.team, pilot_credential_id="api-pilot-1")
 		# A datum token is signed with the regional key, which an operator initializes once.
-		CentralSSOSettings.instance().initialize_atlas_signing_key()
+		CentralSSOSettings.instance().initialize_signing_key("atlas")
 
 	def call_heartbeat(self, token: str | None) -> dict:
 		"""Invoke the endpoint as a bench would: an X-Pilot-Token header, or none."""

@@ -1,11 +1,10 @@
 # SSO — Central-minted login
 
-Central is the signing authority. It mints short-lived RS256 assertions; benches verify them
-offline against Central's published JWKS. Atlas is not in the login path.
+Central is the signing authority. It mints short-lived EdDSA assertions with its Pilot key, and benches verify them offline against Central's published JWKS. Atlas is not in the login path.
 
 ## Regional authentication
 
-Atlas regional requests use a separate Ed25519 key and public endpoint. Pilot login uses RSA. Read [Signing keys](../central/central/doctype/central_sso_settings/SPEC.md) for initialization, token authority, and verifier checks.
+Atlas regional requests use a separate Ed25519 key and public endpoint. Pilot login uses the Pilot Ed25519 key. Read [Signing keys](../central/central/doctype/central_sso_settings/SPEC.md) for initialization, token authority, and verifier checks.
 
 ## Flows
 
@@ -32,7 +31,7 @@ The console (bench) login stays browser-carried; only the site login is a Centra
 
 | What | Stored | Notes |
 |------|--------|-------|
-| Central signing key | `Central SSO Settings` — `rsa_private_key` (Password, encrypted), `rsa_public_key`, `rsa_key_id` | Signs RSA login, service, and bootstrap tokens |
+| Pilot signing key | `Central SSO Settings`: `pilot_private_key` (Password, encrypted), `pilot_public_key`, `pilot_key_id` | Signs bench login, site login, and bootstrap tokens. An operator initializes it. |
 | Bench durable credential | `Pilot Credential.token_hash` (SHA-256) | Plaintext bearer returned once at enroll, never stored |
 | Site → bench binding | `Site.pilot_credential_id` | A reference, not a token |
 | Bench/site login assertions | **nowhere** | Stateless JWTs — minted on demand, handed off, forgotten |
@@ -45,7 +44,7 @@ the real site session id lives in the Frappe site's own session store.
 
 ## Contract
 
-- **RS256 + JWKS**, verified offline. Benches hold only the public key.
+- **EdDSA (Ed25519) + JWKS**, verified offline. Benches hold only the public key.
 - **`aud` = the bench's `pilot_credential_id`**, assigned by Central. A SID for bench A is
   rejected by bench B; a pilot cannot self-declare its audience.
 - **5-minute TTL.** The bench login SID is browser-carried and single-use (jti tracked at the
@@ -60,7 +59,7 @@ the real site session id lives in the Frappe site's own session store.
 
 ## Token scopes (one signing key, three purposes)
 
-Central mints three token types with the same RS256 key, separated **only** by the
+Central mints three token types with the same Pilot key, separated **only** by the
 `scope` claim, which `_mint` now sets as a required first-class claim on every token:
 
 | scope | minter | `aud` | TTL | consumed by |
@@ -72,9 +71,9 @@ Central mints three token types with the same RS256 key, separated **only** by t
 One `datum` token serves both write paths, handed out by one route,
 `central.api.pilot.datum_token`. Datum is one service that tells metrics from logs by the
 route the pilot posts to, not by the credential it presents, so a second token would carry
-the same `resource_id` and the same authority. It is signed with the **regional Ed25519 key**, not the RSA key the
+the same `resource_id` and the same authority. It is signed with the **Atlas key**, not the Pilot key that the
 bench and enrollment tokens use, because datum verifies against the merged key set Atlas
-publishes and that set carries Ed25519 keys only. `iss` is the literal `central`, and the
+publishes. `iss` is the literal `central`, and the
 key id is namespaced `central:`, which is how datum binds one to the other.
 
 The token carries `resource_id` and `access: ["write"]` as top-level claims, which
@@ -84,7 +83,8 @@ pilot cannot write as another resource, and it serves no reads at all.
 There is **no revocation list**; the 7-day TTL plus the pilot's re-fetch on 401 / near
 expiry (`api/pilot.py`) is the bound. `verify_bootstrap_token` requires `scope`, so a
 `bench` token can never be accepted as an enrollment token; a `datum` token is refused
-earlier still, on its algorithm.
+earlier still, on its signature.
 
 `mint_datum_token` needs the Atlas signing key to exist, so an operator must initialize it
-in Central SSO Settings before any pilot can ship telemetry.
+in Central SSO Settings before any pilot can ship telemetry. The Pilot tokens need the Pilot
+signing key in the same way, and a server creation fails before dispatch without it.

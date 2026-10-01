@@ -7,7 +7,7 @@ from central.iam import can, resolve_team
 from central.sso import bench_gateway, mint_bench_login
 
 # Open-in-bench: hand the signed-in user a one-click link into their bench. Central mints a
-# short-lived admin SID signed with its RSA key; the bench verifies it offline against the
+# short-lived admin SID signed with its Pilot key; the bench verifies it offline against the
 # JWKS (no Atlas round-trip, no per-bench secret). The SID rides `{gateway}/?sid=`, which the
 # bench SPA consumes and exchanges at POST /api/login. `aud` is the bench's audience id (its
 # pilot_credential_id), so a SID minted for one bench is rejected by any other. The SID is

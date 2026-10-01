@@ -8,7 +8,6 @@ from frappe import _
 
 from central.central.doctype.central_sso_settings.central_sso_settings import (
 	ALGORITHM,
-	ATLAS_ALGORITHM,
 	CentralSSOSettings,
 )
 
@@ -62,7 +61,7 @@ def _mint_regional_token(
 	if type(region_id) is not int or not 0 <= region_id <= 65535:
 		frappe.throw(_("The Atlas region ID must be a whole number from 0 to 65535."))
 
-	private_key, key_id = CentralSSOSettings.instance().atlas_signing_key()
+	private_key, key_id = CentralSSOSettings.instance().get_signing_key("atlas")
 	# JWT needs epoch seconds; Frappe helpers return naive datetimes or discard the time of day.
 	now = int(time.time())
 	claims = {
@@ -76,7 +75,7 @@ def _mint_regional_token(
 		**(extra or {}),
 	}
 
-	return jwt.encode(claims, private_key, algorithm=ATLAS_ALGORITHM, headers={"kid": key_id})
+	return jwt.encode(claims, private_key, algorithm=ALGORITHM, headers={"kid": key_id})
 
 
 def central_url() -> str:
@@ -122,15 +121,11 @@ def verify_bootstrap_token(token: str) -> dict:
 	"""Validate an enrollment token with Central's own public key and return the grant it
 	carries: ``{team, pcid, jti}`` (pcid = the `aud`). Raises on a bad/expired/wrong-scope
 	token."""
-	from cryptography.hazmat.primitives.serialization import load_pem_public_key
-
-	settings = CentralSSOSettings.instance()
-	if not settings.rsa_public_key:
-		frappe.throw(_("Central signing key is not initialised."), frappe.ValidationError)
+	public_key = CentralSSOSettings.instance().get_public_key("pilot")
 	try:
 		claims = jwt.decode(
 			token,
-			load_pem_public_key(settings.rsa_public_key.encode()),
+			public_key,
 			algorithms=[ALGORITHM],
 			options={"verify_aud": False, "require": ["exp", "aud", "jti", "scope"]},
 		)
@@ -146,7 +141,7 @@ def _mint(audience: str, scope: str, ttl: int, extra: dict | None = None) -> str
 	in `extra`) so every token declares its purpose and verifiers can assert it —
 	bench-login, enroll, and metrics tokens all share this key, and the scope is what
 	keeps one from being accepted as another."""
-	private_pem, kid = CentralSSOSettings.instance().signing_key()
+	private_pem, kid = CentralSSOSettings.instance().get_signing_key("pilot")
 	now = int(time.time())
 	payload = {
 		"iss": central_url(),

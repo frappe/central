@@ -1,17 +1,16 @@
 import frappe
 import jwt
 from frappe.tests import IntegrationTestCase
-from jwt.algorithms import RSAAlgorithm
 
 from central.api.jwks import jwks_document
 from central.api.sso import get_bench_link
-from central.central.doctype.central_sso_settings.central_sso_settings import ALGORITHM
+from central.central.doctype.central_sso_settings.central_sso_settings import ALGORITHM, CentralSSOSettings
 from central.infrastructure.doctype.pilot_credential.pilot_credential import PilotCredential
 from central.sso import central_url
 from central.tests.test_iam import ensure_user
 
 # Open-in-bench for a real VM (server) now hands back a Central-signed admin SID as
-# `{gateway}/?sid=<jwt>`. Central mints it locally against its RSA key, scoped to the bench's
+# `{gateway}/?sid=<jwt>`. Central mints it locally against its Pilot key, scoped to the bench's
 # audience id (its pilot_credential_id); the bench verifies it offline against the JWKS. No
 # Atlas round-trip: opening a Running VM in an active region just needs a gateway + an
 # enrolled pilot. The SID is single-use (jti + short TTL), so a fresh one is minted on every Open.
@@ -30,6 +29,7 @@ class TestOpenBench(IntegrationTestCase):
 		self.server = self._server("vm-open-1", "Running")
 		self.pcid = "pcred-open-1"
 		self._credential(self.pcid, "vm-open-1")
+		CentralSSOSettings.instance().initialize_signing_key("pilot")
 
 	def tearDown(self):
 		frappe.set_user("Administrator")
@@ -110,7 +110,7 @@ class TestOpenBench(IntegrationTestCase):
 		link = self._open(self.dev, server="vm-open-1")
 		self.assertTrue(link["url"].startswith(f"{GATEWAY}/?sid="))
 
-		public_key = RSAAlgorithm.from_jwk(jwks_document()["keys"][0])
+		public_key = jwt.PyJWK.from_dict(jwks_document()["keys"][0]).key
 		claims = jwt.decode(
 			link["url"].split("sid=", 1)[1],
 			public_key,

@@ -7,8 +7,8 @@ from central.central.doctype.central_sso_settings.central_sso_settings import Ce
 
 
 def jwks_document() -> dict:
-	"""The JSON Web Key Set of Central's active signing key(s): ``{"keys": [...]}``."""
-	return CentralSSOSettings.instance().jwks()
+	"""The public Ed25519 keys that Pilot accepts: ``{"keys": [...]}``."""
+	return CentralSSOSettings.instance().get_jwks("pilot")
 
 
 @frappe.whitelist(allow_guest=True, methods=["GET"])
@@ -22,7 +22,7 @@ def get_jwks() -> Response:
 @frappe.whitelist(allow_guest=True, methods=["GET"])
 def get_atlas_jwks() -> Response:
 	"""Serve the public Ed25519 keys accepted by the regional Atlas verifier."""
-	document = CentralSSOSettings.instance().atlas_jwks()
+	document = CentralSSOSettings.instance().get_jwks("atlas")
 
 	# Verifiers expect the raw JWKS document, without the Framework response envelope.
 	return Response(frappe.as_json(document), mimetype="application/json")
