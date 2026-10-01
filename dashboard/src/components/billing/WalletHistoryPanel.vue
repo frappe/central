@@ -9,7 +9,6 @@ import { useCapabilities } from '@/composables/useCapabilities'
 import { infoToast } from '@/lib/feedback'
 import { money, signedMoney } from '@/lib/format'
 import { downloadReceipt } from '@/lib/invoicePdf'
-import { infoToast } from '@/lib/toast'
 import type { CreditLedgerEntry } from '@/types/billing'
 
 // Wallet history — a docked side panel (like the invoice detail tray), opened
