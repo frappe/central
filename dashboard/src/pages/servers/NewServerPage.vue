@@ -5,7 +5,6 @@ import ChoiceCards from '@/components/common/ChoiceCards.vue'
 import CreationStatusPanel from '@/components/servers/CreationStatusPanel.vue'
 import ImageOfferingSelector from '@/components/servers/ImageOfferingSelector.vue'
 import PlanGroup from '@/components/servers/PlanGroup.vue'
-import ProviderAvatar from '@/components/servers/ProviderAvatar.vue'
 import ServerMap from '@/components/servers/ServerMap.vue'
 import ServerNetworkOptions from '@/components/servers/ServerNetworkOptions.vue'
 import ServerSummary from '@/components/servers/ServerSummary.vue'
@@ -19,12 +18,8 @@ const {
 	regions,
 	loading,
 	name,
-	selectedProvider,
 	selectedRegion,
-	providerOptions,
-	providerRegions,
 	selectedRegionRow,
-	selectProvider,
 	selectRegion,
 	markers,
 	selectedPlan,
@@ -89,7 +84,7 @@ const selectedRegionName = computed(() =>
 )
 
 const regionOptions = computed(() =>
-	providerRegions.value.map((r) => ({
+	regions.value.map((r) => ({
 		label: regionLabel(r),
 		value: r.region,
 		description: r.reachable ? undefined : 'Unreachable',
@@ -97,7 +92,7 @@ const regionOptions = computed(() =>
 )
 const regionFlags = computed(() =>
 	Object.fromEntries(
-		providerRegions.value.map((r) => [r.region, flagEmoji(r.country_code)]),
+		regions.value.map((r) => [r.region, flagEmoji(r.country_code)]),
 	),
 )
 </script>
@@ -126,23 +121,6 @@ const regionFlags = computed(() =>
 							:maxlength="60"
 							autofocus
 						/>
-					</section>
-
-					<section>
-						<h2 class="mb-3 text-base-semibold text-ink-gray-8">Provider</h2>
-						<ChoiceCards
-							:model-value="selectedProvider"
-							:options="providerOptions"
-							label="Provider"
-							@update:model-value="selectProvider"
-						>
-							<template #icon="{ option }">
-								<ProviderAvatar
-									:provider="option.value === 'Other' ? null : option.value"
-									:size="24"
-								/>
-							</template>
-						</ChoiceCards>
 					</section>
 
 					<section class="space-y-3">
@@ -213,7 +191,7 @@ const regionFlags = computed(() =>
 								region.
 							</p>
 						</template>
-						<div class="grid gap-3 pt-2 md:grid-cols-2">
+						<div class="grid gap-3 md:grid-cols-2">
 							<Select
 								v-if="source === 'image' && imageOptions.length > 1"
 								v-model="imageId"

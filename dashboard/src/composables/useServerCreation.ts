@@ -23,7 +23,6 @@ import {
 	regionLabel,
 } from '@/lib/serverMap'
 import type { ComposedConfig, Plan, Profile } from '@/types/api'
-import type { Region } from '@/types/Region'
 
 export function useServerCreation() {
 	const router = useRouter()
@@ -63,25 +62,8 @@ export function useServerCreation() {
 	const { canCreateServer } = useCapabilities()
 
 	const name = ref('')
-	const selectedProvider = ref<string | null>(null)
 	const selectedRegion = ref<string | null>(null)
 
-	// — Provider / region steps. A region with no provider files under "Other".
-	function providerOf(region: Region): string {
-		return region.provider || 'Other'
-	}
-	const providers = computed(() => {
-		const names = [...new Set(regions.value.map(providerOf))]
-		return names.sort((a, b) =>
-			a === 'Other' ? 1 : b === 'Other' ? -1 : a.localeCompare(b),
-		)
-	})
-	const providerOptions = computed(() =>
-		providers.value.map((provider) => ({ label: provider, value: provider })),
-	)
-	const providerRegions = computed(() =>
-		regions.value.filter((r) => providerOf(r) === selectedProvider.value),
-	)
 	const selectedRegionRow = computed(
 		() => regions.value.find((r) => r.region === selectedRegion.value) ?? null,
 	)
@@ -97,23 +79,13 @@ export function useServerCreation() {
 			.replace(/-+$/g, '')
 	}
 
-	function selectProvider(provider: string): void {
-		if (provider === selectedProvider.value) return
-		selectedProvider.value = provider
-		// Land on the first region that's actually reachable, else the first one.
-		const list = providerRegions.value
-		selectedRegion.value =
-			(list.find((r) => r.reachable) ?? list[0])?.region ?? null
-	}
 	function selectRegion(id: string): void {
-		const region = regions.value.find((r) => r.region === id)
-		if (!region) return
-		selectedProvider.value = providerOf(region)
+		if (!regions.value.some((r) => r.region === id)) return
 		selectedRegion.value = id
 	}
 
-	// Deep link from the servers map (+ spot → ?region=, or just ?provider=), once
-	// regions load; otherwise land on the first provider so the map has a frame.
+	// Deep link from the servers map (+ spot → ?region=), once regions load;
+	// otherwise land on the first reachable region, else the first one.
 	// Each distinct ?region= applies exactly once — a data reload never stomps a
 	// pick the user made after landing, but a fresh in-app link still wins.
 	let appliedQueryRegion = ''
@@ -132,19 +104,15 @@ export function useServerCreation() {
 				return selectRegion(wanted)
 			}
 			if (selectedRegion.value) return
-			const provider =
-				typeof route.query.provider === 'string' ? route.query.provider : ''
-			selectProvider(
-				providers.value.includes(provider) ? provider : providers.value[0],
-			)
+			selectedRegion.value = (list.find((r) => r.reachable) ?? list[0]).region
 		},
 		{ immediate: true },
 	)
 
-	// The static map frames the chosen provider's placed regions; clicking a dot
+	// The static map frames every placed region; clicking a dot
 	// picks that region (0/0 coords = unplaced, listed in chips only).
 	const markers = computed<MapSpot[]>(() =>
-		providerRegions.value.filter(hasMapCoords).map((r) => ({
+		regions.value.filter(hasMapCoords).map((r) => ({
 			id: r.region,
 			lat: r.latitude!,
 			lng: r.longitude!,
@@ -365,7 +333,6 @@ export function useServerCreation() {
 			price: price.value?.split(' / ')[0] ?? '—',
 			cycle: price.value?.split(' / ')[1],
 			resources: summaryResources.value,
-			provider: selectedProvider.value,
 			tags: [
 				region
 					? `${flagEmoji(region.country_code)} ${regionLabel(region)}`
@@ -464,12 +431,8 @@ export function useServerCreation() {
 		regions,
 		loading,
 		name,
-		selectedProvider,
 		selectedRegion,
-		providerOptions,
-		providerRegions,
 		selectedRegionRow,
-		selectProvider,
 		selectRegion,
 		markers,
 		selectedPlan,
