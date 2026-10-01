@@ -296,3 +296,21 @@ class TestRetryFailedRefund(CorrectionsTestCase):
 		corrections.cancel_and_refund(inv, "customer asked")
 		self._run_all(inv)
 		self.assertEqual(corrections.retry_failed_refunds(inv), 0)
+
+
+class TestPromotionalReturn(CorrectionsTestCase):
+	def test_cancelling_reverses_the_promotional_settlement(self):
+		inv = self._paid_invoice()
+		frappe.db.set_value(
+			"Invoice", inv, {"credit_applied": 2500, "promotional_record_id": "JE-PROMO"}
+		)  # 500 of the wallet part was promotional
+		corrections.cancel_and_refund(inv, "customer asked")
+		self._run_all(inv)
+		journal = self.remote.posts("Journal Entry")[-1]
+		expense, party = journal["accounts"]
+		self.assertEqual(journal["cheque_no"], f"{inv}-promotional-return")
+		self.assertEqual(
+			(expense["credit_in_account_currency"], party["debit_in_account_currency"]), (500, 500)
+		)
+		self.assertEqual(party["reference_name"], frappe.db.get_value("Invoice", inv, "credit_note_id"))
+		self.assertTrue(self._refund(inv, "Wallet").promotional_record_id)

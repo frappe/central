@@ -127,6 +127,7 @@ def configure_accounting(**values) -> None:
 			"advance_account": "Customer Advances - TC",
 			"income_account": "Sales - TC",
 			"cost_center": "Main - TC",
+			"promotional_credit_account": "Promotional Credit - TC",
 			"in_state_template": IN_STATE,
 			"out_state_template": OUT_STATE,
 			**values,

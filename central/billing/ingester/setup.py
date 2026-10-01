@@ -43,6 +43,7 @@ def steps(s) -> list[Step]:
 		Step("Advance account", "Account", s.advance_account, lambda: _advance_account(s)),
 		_exists("Income account", "Account", s.income_account),
 		_exists("Cost center", "Cost Center", s.cost_center),
+		_exists("Promotional credit account", "Account", s.promotional_credit_account),
 		*[step for row in s.gateways for step in _gateway(row)],
 		Step("Service item", "Item", s.service_item, lambda: _service_item(s.service_item)),
 		_exists("In-state tax template", "Sales Taxes and Charges Template", s.in_state_template),

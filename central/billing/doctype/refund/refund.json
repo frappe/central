@@ -21,6 +21,7 @@
   "gateway_refund_id",
   "payment_record_id",
   "advance_id",
+  "promotional_record_id",
   "column_break_result",
   "created_at",
   "completed_at",
@@ -114,6 +115,13 @@
    "read_only": 1
   },
   {
+   "description": "For promotional credit given back: the journal entry that reverses its settlement.",
+   "fieldname": "promotional_record_id",
+   "fieldtype": "Data",
+   "label": "Promotional Credit Record ID",
+   "read_only": 1
+  },
+  {
    "fieldname": "column_break_result",
    "fieldtype": "Column Break"
   },
@@ -139,7 +147,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-10-01 12:00:00.000000",
+ "modified": "2026-10-01 14:00:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Refund",

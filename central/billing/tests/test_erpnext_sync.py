@@ -147,11 +147,11 @@ class TestAdvances(SyncTestCase):
 		rows = [(a["reference_name"], a["allocated_amount"]) for a in self._sales_invoice()["advances"]]
 		self.assertEqual(rows, [("RV-1", 1000), ("RV-2", 7000)])
 
-	def test_promotional_credit_is_noted_as_not_backed(self):
+	def test_promotional_credit_is_noted_on_the_invoice(self):
 		billing_team(TEAM, gstin=GSTIN)
 		self._top_up()
 		erpnext_sync.sync_invoice(self._invoice(credit=9000, advance=8000))
-		self.assertIn("not backed by an advance: 1000", self._sales_invoice()["remarks"])
+		self.assertIn("Promotional credit used: 1000", self._sales_invoice()["remarks"])
 
 	def test_waits_for_a_top_up_whose_advance_has_not_synced(self):
 		billing_team(TEAM, gstin=GSTIN)
@@ -266,3 +266,47 @@ class TestWhenItSyncs(SyncTestCase):
 		with patch("central.billing.ingester.erpnext_sync.enqueue_invoice_sync") as enqueue:
 			self.assertEqual(open_and_collect(inv)["status"], "Paid")
 		enqueue.assert_called_once_with(inv)
+
+
+class TestPromotionalCredit(SyncTestCase):
+	def _mixed(self):
+		"""1,000 + 180 GST: 500 promotional credit, 680 by card."""
+		billing_team(TEAM, gstin=GSTIN)
+		inv = self._invoice(subtotal=1000, tax=180, credit=500, paid=680)
+		frappe.get_doc(
+			{
+				"doctype": "Payment Attempt",
+				"invoice": inv,
+				"team": TEAM,
+				"gateway": "Stripe",
+				"amount": 680,
+				"currency": "INR",
+				"status": "Captured",
+				"gateway_transaction_id": "pi_mixed",
+			}
+		).insert(ignore_permissions=True)
+		return inv
+
+	def test_the_card_records_only_what_it_took(self):
+		inv = self._mixed()
+		erpnext_sync.sync_invoice(inv)
+		payment = self.remote.posts("Payment Entry")[-1]
+		self.assertEqual((payment["paid_amount"], payment["references"][0]["allocated_amount"]), (680, 680))
+
+	def test_promotional_credit_is_settled_on_its_own(self):
+		inv = self._mixed()
+		out = erpnext_sync.sync_invoice(inv)
+		journal = self.remote.posts("Journal Entry")[-1]
+		expense, party = journal["accounts"]
+		self.assertEqual(
+			(expense["account"], expense["debit_in_account_currency"]), ("Promotional Credit - TC", 500)
+		)
+		self.assertEqual((party["credit_in_account_currency"], party["reference_name"]), (500, out["synced"]))
+		self.assertEqual(frappe.db.get_value("Invoice", inv, "promotional_record_id"), out["promotional"])
+
+	def test_without_a_promotional_account_the_sync_waits(self):
+		inv = self._mixed()
+		frappe.db.set_single_value("Billing Settings", "promotional_credit_account", None)
+		frappe.clear_document_cache("Billing Settings", "Billing Settings")
+		self.assertTrue(erpnext_sync.sync_invoice(inv)["retry_scheduled"])
+		self.assertEqual(self.remote.posts("Journal Entry"), [])

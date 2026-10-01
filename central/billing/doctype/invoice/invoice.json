@@ -45,6 +45,7 @@
   "section_break_ext",
   "erpnext_invoice",
   "payment_record_id",
+  "promotional_record_id",
   "credit_note_id",
   "erpnext_sync_status",
   "erpnext_sync_attempts",
@@ -296,6 +297,13 @@
    "read_only": 1
   },
   {
+   "description": "The journal entry that settles the promotional credit used on this invoice, in the accounting system.",
+   "fieldname": "promotional_record_id",
+   "fieldtype": "Data",
+   "label": "Promotional Credit Record ID",
+   "read_only": 1
+  },
+  {
    "description": "The credit note that reversed this invoice in the accounting system.",
    "fieldname": "credit_note_id",
    "fieldtype": "Data",
@@ -362,7 +370,7 @@
    "link_fieldname": "invoice"
   }
  ],
- "modified": "2026-09-30 16:00:00.000000",
+ "modified": "2026-10-01 14:00:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Invoice",
