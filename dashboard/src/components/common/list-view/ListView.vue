@@ -165,7 +165,9 @@ const table = useVueTable({
 	// an infinite update loop that freezes the tab. Server-side lists dodge this
 	// only because manualPagination already disables auto-reset.
 	autoResetPageIndex: false,
-	enableRowSelection: props.selectable,
+	get enableRowSelection() {
+		return props.selectable
+	},
 	manualFiltering: props.serverSide,
 	manualPagination: props.serverSide,
 	manualSorting: props.serverSide,

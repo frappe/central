@@ -29,13 +29,14 @@ const bucket = computed(() =>
 )
 
 watch(
-	bucket,
-	(current) => {
+	() => bucket.value?.name,
+	(name) => {
 		setBreadcrumbs([
 			{ label: 'Object storage', route: { path: '/object-storage' } },
-			{ label: current ? bucketLabel(current) : 'Bucket' },
+			{ label: bucket.value ? bucketLabel(bucket.value) : 'Bucket' },
 		])
-		if (current) loadUsage(current.name)
+
+		if (name) loadUsage(name)
 	},
 	{ immediate: true },
 )
@@ -86,7 +87,7 @@ const copyEndpoint = async (endpoint: string): Promise<void> => {
 <template>
 	<div class="flex h-full flex-col">
 		<div
-			class="mx-auto flex min-h-0 w-full max-w-4xl flex-1 flex-col p-3 md:p-4"
+			class="mx-auto flex min-h-0 w-full max-w-4xl flex-1 flex-col p-3 md:p-4 lg:pt-8"
 		>
 			<div v-if="loading" class="space-y-3" aria-busy="true">
 				<div class="h-8 w-48 animate-pulse rounded-4 bg-surface-gray-2" />

@@ -1,10 +1,9 @@
 <script setup lang="ts">
-import { Button } from 'frappe-ui'
+import { Badge, Button } from 'frappe-ui'
 import { computed, ref } from 'vue'
 import BucketQuotaDialog from '@/components/addons/storage/BucketQuotaDialog.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import SettingsSection from '@/components/common/SettingsSection.vue'
-import UsageMeter from '@/components/servers/overview/UsageMeter.vue'
 import { bucketLabel, useObjectStorage } from '@/composables/useObjectStorage'
 import { copyToClipboard } from '@/lib/clipboard'
 import { getErrorMessage, reportError, successToast } from '@/lib/feedback'
@@ -40,29 +39,34 @@ const formatBytes = (bytes: number): string => {
 	return `${value.toFixed(value < 10 && exponent ? 1 : 0)} ${units[exponent]}`
 }
 
+const percentOf = (used: number, limit: number | null): number | null =>
+	limit ? Math.min(Math.round((used / limit) * 100), 100) : null
+
+const usageTheme = (percent: number): 'gray' | 'amber' | 'red' => {
+	if (percent >= 90) return 'red'
+	if (percent >= 75) return 'amber'
+
+	return 'gray'
+}
+
 const meters = computed(() => {
 	const current = usage.value
 	if (!current) return []
 
-	const count = current.object_count.toLocaleString()
 	return [
 		{
 			label: 'Stored',
-			value: current.quota_bytes
-				? `${formatBytes(current.used_bytes)} of ${formatBytes(current.quota_bytes)}`
-				: formatBytes(current.used_bytes),
-			percent: current.quota_bytes
-				? Math.min((current.used_bytes / current.quota_bytes) * 100, 100)
-				: null,
+			icon: 'lucide-hard-drive',
+			used: formatBytes(current.used_bytes),
+			limit: current.quota_bytes && formatBytes(current.quota_bytes),
+			percent: percentOf(current.used_bytes, current.quota_bytes),
 		},
 		{
 			label: 'Objects',
-			value: current.quota_objects
-				? `${count} of ${current.quota_objects.toLocaleString()}`
-				: count,
-			percent: current.quota_objects
-				? Math.min((current.object_count / current.quota_objects) * 100, 100)
-				: null,
+			icon: 'lucide-files',
+			used: current.object_count.toLocaleString(),
+			limit: current.quota_objects?.toLocaleString(),
+			percent: percentOf(current.object_count, current.quota_objects),
 		},
 	]
 })
@@ -152,25 +156,45 @@ const remove = async (target: StorageBucket): Promise<void> => {
 			</div>
 
 			<div v-else class="grid gap-3 md:grid-cols-2 md:gap-4">
-				<template v-for="meter in meters" :key="meter.label">
-					<UsageMeter
-						v-if="meter.percent !== null"
-						:label="meter.label"
-						:value="meter.value"
-						:percent="meter.percent"
-						class="rounded-6 bg-surface-gray-1 p-4"
-					/>
+				<div
+					v-for="meter in meters"
+					:key="meter.label"
+					class="space-y-4 rounded-6 bg-surface-gray-1 p-4"
+				>
+					<div class="flex items-center justify-between gap-3">
+						<span class="flex items-center gap-2 text-sm text-ink-gray-6">
+							<span :class="meter.icon" class="size-4 text-ink-gray-5" />
 
-					<p
-						v-else
-						class="flex items-center justify-between gap-4 rounded-6 bg-surface-gray-1 p-4 text-sm text-ink-gray-6"
-					>
-						{{ meter.label }}
-						<span class="text-sm-medium tabular-nums text-ink-gray-9">
-							{{ meter.value }}
+							{{ meter.label }}
+						</span>
+
+						<Badge
+							v-if="meter.percent !== null"
+							:label="`${meter.percent}% used`"
+							:theme="usageTheme(meter.percent)"
+						/>
+					</div>
+
+					<p class="flex items-baseline gap-1.5">
+						<span class="text-2xl-semibold tabular-nums text-ink-gray-9">
+							{{ meter.used }}
+						</span>
+
+						<span v-if="meter.limit" class="text-sm text-ink-gray-5">
+							of {{ meter.limit }}
 						</span>
 					</p>
-				</template>
+
+					<div
+						v-if="meter.percent !== null"
+						class="h-1.5 overflow-hidden rounded-full bg-surface-gray-3"
+					>
+						<div
+							class="h-full rounded-full bg-surface-gray-9"
+							:style="{ width: `${meter.percent}%` }"
+						/>
+					</div>
+				</div>
 			</div>
 		</SettingsSection>
 
