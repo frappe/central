@@ -68,7 +68,7 @@ bench --site mumbai.atlas.localhost install-app atlas
 bench --site mumbai.atlas.localhost migrate
 ```
 
-Initialize Central's Atlas signing key and configure its public key URL in Atlas Settings. Read the numeric region ID from Atlas Settings, then save the regional connection in Central:
+Initialize Central's Atlas and Pilot signing keys in Central SSO Settings, and configure the Atlas public key URL in Atlas Settings. Read the numeric region ID from Atlas Settings, then save the regional connection in Central:
 
 ```bash
 pilot frappe --site central.localhost execute central.api.developer_setup.setup_local \

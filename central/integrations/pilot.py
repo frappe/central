@@ -6,6 +6,7 @@ from urllib.parse import quote, urlparse
 
 import frappe
 import requests
+from frappe import _
 
 from central.api.jwks import jwks_document
 from central.api.pilot import get_telemetry_base_url, region_id_of
@@ -23,6 +24,11 @@ SITE_PING_TIMEOUT_SECONDS = 4
 
 def get_bootstrap_metadata(action) -> dict[str, str]:
 	"""Mint the credential for a Pilot creation and return its guest metadata values."""
+	# A Pilot seeded with an empty key set could never verify a Central login.
+	initial_jwks = jwks_document()
+	if not initial_jwks["keys"]:
+		frappe.throw(_("Initialize the Pilot signing key in Central SSO Settings before creating a server."))
+
 	credential = f"pilot-{action.name}"
 	token = PilotCredential.mint(action.team, credential, audience_id=credential)
 	action.db_set("credential", credential)
@@ -33,7 +39,7 @@ def get_bootstrap_metadata(action) -> dict[str, str]:
 		"jwks_audience_id": credential,
 		# The keys travel with the credential, so the first token needs no fetch and a boot
 		# before Central is reachable still verifies.
-		"initial_jwks_cache": jwks_document(),
+		"initial_jwks_cache": initial_jwks,
 	}
 
 	# Metal caps each metadata value at 1 KiB, so each optional block gets its own key.

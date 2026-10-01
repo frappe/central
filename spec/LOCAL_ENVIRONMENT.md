@@ -26,7 +26,7 @@ Use Pilot for Frappe commands. Use the commands in CLAUDE.md for lint, tests, an
 
 ## Stage 0C regional configuration
 
-Configure the verified Atlas numeric region ID and direct base URL. Initialize the Atlas signing key and configure regional trust before using **Test Connection**.
+Configure the verified Atlas numeric region ID and direct base URL. Initialize the Atlas signing key and configure regional trust before using **Test Connection**. Initialize the Pilot signing key before you create a server.
 
 Run `central.tests.test_regional_configuration` and `central.tests.test_image_offerings`. Verify customer read access, operator-only edits, cross-Team denial, pagination, disabled offerings, unavailable images, and malformed regional responses.
 

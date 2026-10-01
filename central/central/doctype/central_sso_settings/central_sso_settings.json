@@ -7,14 +7,14 @@
  "field_order": [
   "issuer_section",
   "issuer_url",
-  "rsa_signing_section",
-  "rsa_key_id",
-  "rsa_public_key",
-  "rsa_private_key",
   "atlas_signing_section",
   "atlas_key_id",
   "atlas_public_key",
-  "atlas_private_key"
+  "atlas_private_key",
+  "pilot_signing_section",
+  "pilot_key_id",
+  "pilot_public_key",
+  "pilot_private_key"
  ],
  "fields": [
   {
@@ -23,7 +23,7 @@
    "label": "Issuer"
   },
   {
-   "description": "Public Central URL used as the RSA token issuer and to build the Pilot public-key URL. Leave blank to use the site URL. Atlas tokens use the fixed issuer central.",
+   "description": "Public Central URL used as the Pilot token issuer and to build the Pilot public-key URL. Leave blank to use the site URL. Atlas tokens use the fixed issuer central.",
    "fieldname": "issuer_url",
    "fieldtype": "Data",
    "label": "Central Public URL"
@@ -60,29 +60,33 @@
    "read_only": 1
   },
   {
-   "fieldname": "rsa_signing_section",
+   "collapsible": 1,
+   "description": "Ed25519 key for Pilot login, site login, and enrollment tokens. Initialize once before creating servers.",
+   "fieldname": "pilot_signing_section",
    "fieldtype": "Section Break",
-   "label": "Pilot and Service Signing Key"
+   "label": "Pilot Signing Key (Ed25519)"
   },
   {
-   "description": "Identifies the RSA key used for Pilot and service tokens. Published with the public key.",
-   "fieldname": "rsa_key_id",
+   "description": "Public key identifier in the central: namespace.",
+   "fieldname": "pilot_key_id",
    "fieldtype": "Data",
-   "label": "RSA Key ID",
+   "label": "Pilot Key ID",
+   "no_copy": 1,
    "read_only": 1
   },
   {
-   "description": "PEM public key benches verify Central-minted tokens against. Published (as a JWK) at the JWKS endpoint.",
-   "fieldname": "rsa_public_key",
+   "description": "Public Ed25519 verification key published for Pilot.",
+   "fieldname": "pilot_public_key",
    "fieldtype": "Code",
-   "label": "RSA Public Key (PEM)",
+   "label": "Pilot Public Key (Ed25519 PEM)",
+   "no_copy": 1,
    "read_only": 1
   },
   {
-   "description": "PEM private key Central signs with. Encrypted at rest; never leaves Central.",
-   "fieldname": "rsa_private_key",
+   "description": "Encrypted signing key. Never sent to Pilot.",
+   "fieldname": "pilot_private_key",
    "fieldtype": "Password",
-   "label": "RSA Private Key (PEM)",
+   "label": "Pilot Private Key (Ed25519 PEM)",
    "no_copy": 1,
    "read_only": 1
   }
@@ -91,7 +95,7 @@
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-09-16 14:13:28.011884",
+ "modified": "2026-10-01 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Central",
  "name": "Central SSO Settings",

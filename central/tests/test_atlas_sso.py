@@ -35,7 +35,7 @@ class TestAtlasSSO(IntegrationTestCase):
 
 	def initialize(self) -> CentralSSOSettings:
 		settings = CentralSSOSettings.instance()
-		settings.initialize_atlas_signing_key()
+		settings.initialize_signing_key("atlas")
 		return settings
 
 	def test_public_read_does_not_initialize_keys(self):
@@ -55,14 +55,14 @@ class TestAtlasSSO(IntegrationTestCase):
 		self.addCleanup(frappe.set_user, "Administrator")
 
 		with self.assertRaises(frappe.PermissionError):
-			settings.initialize_atlas_signing_key()
+			settings.initialize_signing_key("atlas")
 
 	def test_stale_initializer_keeps_existing_key(self):
 		stale = CentralSSOSettings.instance()
 		settings = self.initialize()
 
-		self.assertEqual(stale.initialize_atlas_signing_key(), settings.atlas_key_id)
-		self.assertEqual(stale.atlas_signing_key(), settings.atlas_signing_key())
+		self.assertEqual(stale.initialize_signing_key("atlas"), settings.atlas_key_id)
+		self.assertEqual(stale.get_signing_key("atlas"), settings.get_signing_key("atlas"))
 
 	def test_incomplete_key_is_not_overwritten(self):
 		frappe.db.set_single_value("Central SSO Settings", "atlas_public_key", "incomplete")
@@ -82,7 +82,7 @@ class TestAtlasSSO(IntegrationTestCase):
 
 	def test_token_has_regional_authority_and_short_expiry(self):
 		settings = self.initialize()
-		key = jwt.PyJWK.from_dict(settings.atlas_jwks()["keys"][0])
+		key = jwt.PyJWK.from_dict(settings.get_jwks("atlas")["keys"][0])
 		claims = jwt.decode(
 			mint_atlas_token(42), key.key, algorithms=["EdDSA"], audience="atlas-admin:42", issuer="central"
 		)
@@ -92,7 +92,7 @@ class TestAtlasSSO(IntegrationTestCase):
 
 	def test_proxy_token_has_route_authority_for_one_region(self):
 		settings = self.initialize()
-		key = jwt.PyJWK.from_dict(settings.atlas_jwks()["keys"][0])
+		key = jwt.PyJWK.from_dict(settings.get_jwks("atlas")["keys"][0])
 		token = mint_proxy_token(42)
 		claims = jwt.decode(token, key.key, algorithms=["EdDSA"], audience="atlas-proxy:42", issuer="central")
 
@@ -103,7 +103,7 @@ class TestAtlasSSO(IntegrationTestCase):
 
 	def test_cargo_token_has_bucket_authority_for_one_region(self):
 		settings = self.initialize()
-		key = jwt.PyJWK.from_dict(settings.atlas_jwks()["keys"][0])
+		key = jwt.PyJWK.from_dict(settings.get_jwks("atlas")["keys"][0])
 		token = mint_cargo_token(42)
 		claims = jwt.decode(token, key.key, algorithms=["EdDSA"], audience="atlas-cargo:42", issuer="central")
 
@@ -115,7 +115,7 @@ class TestAtlasSSO(IntegrationTestCase):
 	def test_cargo_token_carries_every_claim_cargo_requires(self):
 		"""Cargo refuses a token missing any of these, and reads the issuer off the key id."""
 		settings = self.initialize()
-		key = jwt.PyJWK.from_dict(settings.atlas_jwks()["keys"][0])
+		key = jwt.PyJWK.from_dict(settings.get_jwks("atlas")["keys"][0])
 		token = mint_cargo_token(42)
 
 		self.assertTrue(jwt.get_unverified_header(token)["kid"].startswith("central:"))
@@ -134,19 +134,24 @@ class TestAtlasSSO(IntegrationTestCase):
 			with self.subTest(value=value), self.assertRaises(frappe.ValidationError):
 				mint_atlas_token(value)
 
-	def test_pilot_keeps_its_rsa_contract(self):
-		self.initialize()
+	def test_pilot_token_is_signed_with_the_pilot_key(self):
+		atlas_key = jwt.PyJWK.from_dict(self.initialize().get_jwks("atlas")["keys"][0])
+		CentralSSOSettings.instance().initialize_signing_key("pilot")
 		token = mint_bench_login("pilot-audience")
-		key = jwt.PyJWK.from_dict(jwks_document()["keys"][0])
-		self.assertEqual(jwt.get_unverified_header(token)["alg"], "RS256")
-		claims = jwt.decode(token, key.key, algorithms=["RS256"], audience="pilot-audience")
+		pilot_key = jwt.PyJWK.from_dict(jwks_document()["keys"][0])
+
+		self.assertEqual(jwt.get_unverified_header(token)["alg"], "EdDSA")
+		claims = jwt.decode(token, pilot_key.key, algorithms=["EdDSA"], audience="pilot-audience")
 		self.assertEqual(claims["scope"], "bench")
+		with self.assertRaises(jwt.InvalidSignatureError):
+			jwt.decode(token, atlas_key.key, algorithms=["EdDSA"], audience="pilot-audience")
 
 	@skipUnless(importlib.util.find_spec("admin"), "Requires the pinned Pilot checkout on PYTHONPATH")
 	def test_real_pilot_verifier_accepts_login_and_rejects_wrong_audience(self):
 		from admin.backend.internal.jwks_cache import JwksCache
 		from admin.backend.internal.session import Session
 
+		CentralSSOSettings.instance().initialize_signing_key("pilot")
 		token = mint_bench_login("pilot-audience")
 		with TemporaryDirectory() as directory:
 			configuration = SimpleNamespace(
@@ -169,7 +174,8 @@ class TestAtlasSSO(IntegrationTestCase):
 		from atlas.auth.token import TokenValidator
 
 		settings = self.initialize()
-		keys = validate_central_jwks(settings.atlas_jwks())
+		settings.initialize_signing_key("pilot")
+		keys = validate_central_jwks(settings.get_jwks("atlas"))
 		trusted = TrustedKeys(
 			document={"keys": keys}, keys={key["kid"]: jwt.PyJWK.from_dict(key) for key in keys}
 		)

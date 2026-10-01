@@ -1,11 +1,10 @@
 import frappe
 import jwt
 from frappe.tests import IntegrationTestCase
-from jwt.algorithms import RSAAlgorithm
 
 from central.api.jwks import jwks_document
 from central.api.sso import DEV_AUDIENCE, get_bench_link
-from central.central.doctype.central_sso_settings.central_sso_settings import ALGORITHM
+from central.central.doctype.central_sso_settings.central_sso_settings import ALGORITHM, CentralSSOSettings
 from central.sso import central_url
 from central.tests.test_iam import ensure_user
 
@@ -16,6 +15,7 @@ class TestCentralSSO(IntegrationTestCase):
 		self.owner = ensure_user("sso.owner@example.test")
 		self.developer = ensure_user("sso.developer@example.test")
 		self.viewer = ensure_user("sso.viewer@example.test")
+		CentralSSOSettings.instance().initialize_signing_key("pilot")
 
 	def tearDown(self):
 		frappe.set_user("Administrator")
@@ -36,7 +36,7 @@ class TestCentralSSO(IntegrationTestCase):
 	def _verify_like_bench(self, token: str, audience: str) -> dict:
 		"""Verify exactly as a bench would: reconstruct the public key from Central's JWKS
 		and check the signature, audience, and issuer."""
-		public_key = RSAAlgorithm.from_jwk(jwks_document()["keys"][0])
+		public_key = jwt.PyJWK.from_dict(jwks_document()["keys"][0]).key
 		return jwt.decode(
 			token,
 			public_key,
@@ -66,10 +66,7 @@ class TestCentralSSO(IntegrationTestCase):
 	def test_bootstrap_verifier_rejects_other_scopes(self):
 		# scope is an asserted claim, not a convention: bench-login is signed with this
 		# same key, so only the scope check stops it being accepted as an enrollment
-		# token. A datum token is refused earlier, on its algorithm.
-		from central.central.doctype.central_sso_settings.central_sso_settings import (
-			CentralSSOSettings,
-		)
+		# token. A datum token is refused on its signature, because the Atlas key signs it.
 		from central.sso import (
 			mint_bench_login,
 			mint_bootstrap_token,
@@ -77,7 +74,7 @@ class TestCentralSSO(IntegrationTestCase):
 			verify_bootstrap_token,
 		)
 
-		CentralSSOSettings.instance().initialize_atlas_signing_key()
+		CentralSSOSettings.instance().initialize_signing_key("atlas")
 		enroll = mint_bootstrap_token("team-x", "pcred-x")
 		self.assertEqual(verify_bootstrap_token(enroll)["team"], "team-x")
 

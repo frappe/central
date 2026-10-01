@@ -8,6 +8,7 @@ from frappe.tests import IntegrationTestCase
 from frappe.utils import set_request
 
 from central.api.pilot import config, enroll
+from central.central.doctype.central_sso_settings.central_sso_settings import CentralSSOSettings
 from central.infrastructure.doctype.pilot_credential.pilot_credential import PilotCredential
 from central.sso import jwks_url, mint_bootstrap_token
 from central.tests.test_iam import ensure_user
@@ -32,6 +33,7 @@ class TestEnrollment(IntegrationTestCase):
 		self.pcid = "pcred-enroll-1"
 		if frappe.db.exists("Pilot Credential", self.pcid):
 			frappe.delete_doc("Pilot Credential", self.pcid, force=True)
+		CentralSSOSettings.instance().initialize_signing_key("pilot")
 
 	def _token(self) -> str:
 		return mint_bootstrap_token(team=self.team, pilot_credential_id=self.pcid)
