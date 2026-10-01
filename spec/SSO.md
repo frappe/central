@@ -4,7 +4,7 @@ Central is the signing authority. It mints short-lived EdDSA login assertions wi
 
 ## Regional authentication
 
-Atlas regional requests use a separate Ed25519 key and public endpoint. Pilot login and enrollment use the Pilot Ed25519 key. Read [Signing keys](../central/central/doctype/central_sso_settings/SPEC.md) for initialization, token authority, and verifier checks.
+Atlas regional requests use a separate Ed25519 key. The shared `central.api.jwks.get_jwks` endpoint publishes both Pilot and Atlas public keys. Pilot login and enrollment use the Pilot Ed25519 key. Read [Signing keys](../central/central/doctype/central_sso_settings/SPEC.md) for initialization, token authority, and verifier checks.
 
 ## How does a member log in?
 

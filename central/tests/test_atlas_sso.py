@@ -11,7 +11,7 @@ import jwt
 from frappe.tests import IntegrationTestCase
 from frappe.utils.password import remove_encrypted_password
 
-from central.api.jwks import get_atlas_jwks, jwks_document
+from central.api.jwks import get_jwks, jwks_document
 from central.central.doctype.central_sso_settings.central_sso_settings import CentralSSOSettings
 from central.sso import (
 	ATLAS_TOKEN_TTL,
@@ -20,6 +20,7 @@ from central.sso import (
 	mint_cargo_token,
 	mint_proxy_token,
 )
+from central.tests.test_sso_keys import reset_signing_key
 
 
 class TestAtlasSSO(IntegrationTestCase):
@@ -32,6 +33,7 @@ class TestAtlasSSO(IntegrationTestCase):
 			{"atlas_key_id": None, "atlas_public_key": None, "atlas_private_key": None},
 		)
 		remove_encrypted_password("Central SSO Settings", "Central SSO Settings", "atlas_private_key")
+		reset_signing_key("pilot")
 
 	def initialize(self) -> CentralSSOSettings:
 		settings = CentralSSOSettings.instance()
@@ -42,7 +44,7 @@ class TestAtlasSSO(IntegrationTestCase):
 		frappe.set_user("Guest")
 		self.addCleanup(frappe.set_user, "Administrator")
 
-		self.assertEqual(json.loads(get_atlas_jwks().get_data()), {"keys": []})
+		self.assertEqual(json.loads(get_jwks().get_data()), {"keys": []})
 		self.assertFalse(CentralSSOSettings.instance().atlas_key_id)
 
 	def test_mint_requires_operator_initialization(self):
@@ -70,15 +72,15 @@ class TestAtlasSSO(IntegrationTestCase):
 		with self.assertRaises(frappe.ValidationError):
 			self.initialize()
 
-	def test_atlas_key_publication_is_separate_and_public_only(self):
+	def test_atlas_key_publication_is_public_only(self):
 		settings = self.initialize()
-		key = json.loads(get_atlas_jwks().get_data())["keys"][0]
+		key = json.loads(get_jwks().get_data())["keys"][0]
 
 		self.assertEqual(key["kid"], settings.atlas_key_id)
 		self.assertTrue(key["kid"].startswith("central:"))
 		self.assertEqual((key["kty"], key["crv"], key["alg"]), ("OKP", "Ed25519", "EdDSA"))
 		self.assertNotIn("d", key)
-		self.assertNotIn(key["kid"], [key["kid"] for key in jwks_document()["keys"]])
+		self.assertIn(key["kid"], [key["kid"] for key in jwks_document()["keys"]])
 
 	def test_token_has_regional_authority_and_short_expiry(self):
 		settings = self.initialize()
@@ -151,6 +153,7 @@ class TestAtlasSSO(IntegrationTestCase):
 		from admin.backend.internal.jwks_cache import JwksCache
 		from admin.backend.internal.session import Session
 
+		self.initialize()
 		CentralSSOSettings.instance().initialize_signing_key("pilot")
 		token = mint_bench_login("pilot-audience")
 		with TemporaryDirectory() as directory:
@@ -175,7 +178,7 @@ class TestAtlasSSO(IntegrationTestCase):
 
 		settings = self.initialize()
 		settings.initialize_signing_key("pilot")
-		keys = validate_central_jwks(settings.get_jwks("atlas"))
+		keys = validate_central_jwks(jwks_document())
 		trusted = TrustedKeys(
 			document={"keys": keys}, keys={key["kid"]: jwt.PyJWK.from_dict(key) for key in keys}
 		)

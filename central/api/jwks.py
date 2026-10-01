@@ -7,8 +7,9 @@ from central.central.doctype.central_sso_settings.central_sso_settings import Ce
 
 
 def jwks_document() -> dict:
-	"""The public Ed25519 keys that Pilot accepts: ``{"keys": [...]}``."""
-	return CentralSSOSettings.instance().get_jwks("pilot")
+	"""Publish the initialized Pilot and Atlas public Ed25519 keys."""
+	settings = CentralSSOSettings.instance()
+	return {"keys": settings.get_jwks("pilot")["keys"] + settings.get_jwks("atlas")["keys"]}
 
 
 @frappe.whitelist(allow_guest=True, methods=["GET"])
@@ -16,13 +17,3 @@ def get_jwks() -> Response:
 	response = Response(mimetype="application/json")
 	response.data = frappe.as_json(jwks_document())
 	return response
-
-
-# nosemgrep: guest-whitelisted-method -- a JWKS holds public keys only, and verifiers fetch it unauthenticated.
-@frappe.whitelist(allow_guest=True, methods=["GET"])
-def get_atlas_jwks() -> Response:
-	"""Serve the public Ed25519 keys accepted by the regional Atlas verifier."""
-	document = CentralSSOSettings.instance().get_jwks("atlas")
-
-	# Verifiers expect the raw JWKS document, without the Framework response envelope.
-	return Response(frappe.as_json(document), mimetype="application/json")
