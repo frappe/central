@@ -7,24 +7,15 @@ import type { StorageBucket } from '@/types/storage'
 interface Props {
 	bucket: StorageBucket
 	region: string
-	active: boolean
 }
 
 defineProps<Props>()
-defineEmits<{ select: [] }>()
 </script>
 
 <template>
-	<button
-		type="button"
-		class="group flex w-full flex-col gap-5 rounded-6 border p-4 text-left transition-colors hover:bg-surface-gray-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-outline-gray-3"
-		:class="
-			active
-				? 'border-outline-gray-4 bg-surface-gray-1'
-				: 'border-outline-gray-2'
-		"
-		:aria-pressed="active"
-		@click="$emit('select')"
+	<router-link
+		:to="{ name: 'Bucket', params: { name: bucket.name } }"
+		class="group flex w-full flex-col gap-5 rounded-6 border border-outline-gray-2 p-4 text-left transition-colors hover:bg-surface-gray-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-outline-gray-3"
 	>
 		<div class="flex w-full items-start gap-3">
 			<span
@@ -57,5 +48,5 @@ defineEmits<{ select: [] }>()
 			</span>
 			<span class="shrink-0">{{ timeAgo(bucket.creation) }}</span>
 		</span>
-	</button>
+	</router-link>
 </template>

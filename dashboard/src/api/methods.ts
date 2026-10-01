@@ -75,6 +75,8 @@ export const API = {
 	rotateBucketCredentials: 'central.services.api.storage.rotate_credentials',
 	setBucketQuota: 'central.services.api.storage.set_bucket_quota',
 	deleteBucket: 'central.services.api.storage.delete_bucket',
+	listBucketObjects: 'central.services.api.storage.list_objects',
+	bucketObjectUrl: 'central.services.api.storage.get_object_url',
 
 	signUp: 'central.api.auth.sign_up',
 	verifySignup: 'central.api.auth.verify_signup',

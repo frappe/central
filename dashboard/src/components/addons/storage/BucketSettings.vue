@@ -1,24 +1,25 @@
 <script setup lang="ts">
 import { Button } from 'frappe-ui'
-import { computed, ref, watch } from 'vue'
+import { computed, ref } from 'vue'
 import BucketQuotaDialog from '@/components/addons/storage/BucketQuotaDialog.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
-import SidePanel from '@/components/common/SidePanel.vue'
+import SettingsCard from '@/components/common/SettingsCard.vue'
 import UsageMeter from '@/components/servers/overview/UsageMeter.vue'
 import { bucketLabel, useObjectStorage } from '@/composables/useObjectStorage'
 import { copyToClipboard } from '@/lib/clipboard'
 import { getErrorMessage, reportError, successToast } from '@/lib/feedback'
-import { formatDate } from '@/lib/format'
 import type { BucketCredentials, StorageBucket } from '@/types/storage'
 
 interface Props {
-	region: string
+	bucket: StorageBucket
 	canManage: boolean
 }
 
-defineProps<Props>()
-const bucket = defineModel<StorageBucket | null>({ required: true })
-const emit = defineEmits<{ rotated: [credentials: BucketCredentials] }>()
+const props = defineProps<Props>()
+const emit = defineEmits<{
+	rotated: [credentials: BucketCredentials]
+	deleted: []
+}>()
 
 const {
 	usage,
@@ -28,12 +29,6 @@ const {
 	rotateCredentials,
 	deleteBucket,
 } = useObjectStorage()
-
-watch(
-	() => bucket.value?.name,
-	(name) => name && loadUsage(name),
-	{ immediate: true },
-)
 
 const formatBytes = (bytes: number): string => {
 	const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB']
@@ -72,14 +67,16 @@ const meters = computed(() => {
 	]
 })
 
-const connection = computed(() =>
-	bucket.value
-		? [
-				{ label: 'Endpoint', value: bucket.value.endpoint_url },
-				{ label: 'Bucket', value: bucket.value.bucket_name },
-				{ label: 'Access key', value: bucket.value.access_key },
-			]
-		: [],
+const connection = computed(() => [
+	{ label: 'Endpoint', value: props.bucket.endpoint_url },
+	{ label: 'Bucket', value: props.bucket.bucket_name },
+	{ label: 'Access key', value: props.bucket.access_key },
+])
+
+const quotaSummary = computed(() =>
+	usage.value?.quota_bytes
+		? `Quota: ${formatBytes(usage.value.quota_bytes)} · ${usage.value.quota_objects?.toLocaleString() ?? 'any number of'} objects`
+		: 'No quota. The bucket grows as you upload.',
 )
 
 const copy = async (value: string, label: string): Promise<void> => {
@@ -116,7 +113,7 @@ const remove = async (target: StorageBucket): Promise<void> => {
 	try {
 		await deleteBucket(target.name)
 		deleteTarget.value = null
-		bucket.value = null
+		emit('deleted')
 	} catch (e) {
 		actionError.value = getErrorMessage(e, "The bucket couldn't be deleted.")
 	} finally {
@@ -126,45 +123,30 @@ const remove = async (target: StorageBucket): Promise<void> => {
 </script>
 
 <template>
-	<SidePanel
-		:open="!!bucket"
-		@update:open="(open: boolean) => !open && (bucket = null)"
-	>
-		<template #title>
-			<p v-if="bucket" class="truncate text-base-semibold text-ink-gray-9">
-				{{ bucketLabel(bucket) }}
-			</p>
-		</template>
-		<template #subtitle>
-			<p v-if="bucket" class="truncate text-p-sm text-ink-gray-5">
-				{{ region }}
-				· Created {{ formatDate(bucket.creation) }}
-			</p>
-		</template>
-
-		<div v-if="bucket" class="divide-y divide-outline-gray-1">
-			<section class="space-y-4 p-4" :aria-busy="usageLoading">
-				<h3 class="text-sm-medium text-ink-gray-5">Usage</h3>
-
-				<template v-if="usageLoading && !usage">
-					<div class="h-7 animate-pulse rounded-4 bg-surface-gray-2" />
-					<div class="h-7 animate-pulse rounded-4 bg-surface-gray-2" />
-				</template>
-
-				<div
-					v-else-if="usageError"
-					class="flex items-center justify-between gap-3 text-p-sm text-ink-gray-5"
-				>
-					Usage couldn't load.
-					<Button
-						variant="ghost"
-						size="sm"
-						label="Retry"
-						@click="loadUsage(bucket.name)"
-					/>
-				</div>
-
-				<template v-for="meter in meters" v-else :key="meter.label">
+	<div class="space-y-6">
+		<SettingsCard
+			title="Quota"
+			description="Cap how much this bucket can hold."
+			:aria-busy="usageLoading"
+		>
+			<div
+				v-if="usageLoading && !usage"
+				class="h-9 animate-pulse rounded-4 bg-surface-gray-2"
+			/>
+			<div
+				v-else-if="usageError"
+				class="flex items-center justify-between gap-3 text-sm text-ink-gray-5"
+			>
+				Usage couldn't load.
+				<Button
+					variant="ghost"
+					size="sm"
+					label="Retry"
+					@click="loadUsage(bucket.name)"
+				/>
+			</div>
+			<div v-else class="grid gap-5 md:grid-cols-2 md:gap-8">
+				<template v-for="meter in meters" :key="meter.label">
 					<UsageMeter
 						v-if="meter.percent !== null"
 						:label="meter.label"
@@ -176,108 +158,107 @@ const remove = async (target: StorageBucket): Promise<void> => {
 						class="flex items-center justify-between gap-4 text-sm text-ink-gray-6"
 					>
 						{{ meter.label }}
-						<span class="font-medium tabular-nums text-ink-gray-9">
+						<span class="text-sm-medium tabular-nums text-ink-gray-9">
 							{{ meter.value }}
 						</span>
 					</p>
 				</template>
-			</section>
+			</div>
 
-			<section class="space-y-3 p-4">
-				<h3 class="text-sm-medium text-ink-gray-5">Connection</h3>
+			<template v-if="canManage" #footer>
+				<p class="text-p-sm text-ink-gray-5">{{ quotaSummary }}</p>
+				<Button label="Set quota" @click="quotaTarget = bucket" />
+			</template>
+		</SettingsCard>
 
-				<dl class="space-y-1">
-					<div
-						v-for="row in connection"
-						:key="row.label"
-						class="group -mx-2 flex items-center gap-3 rounded-4 px-2 py-1.5 hover:bg-surface-gray-2"
-					>
-						<dt class="w-20 shrink-0 text-sm text-ink-gray-5">
-							{{ row.label }}
-						</dt>
-						<dd
-							class="min-w-0 flex-1 truncate font-mono text-sm text-ink-gray-8"
-						>
-							{{ row.value }}
-						</dd>
-						<Button
-							variant="ghost"
-							size="sm"
-							icon="lucide-copy"
-							:label="`Copy ${row.label.toLowerCase()}`"
-							tooltip="Copy"
-							class="opacity-0 group-focus-within:opacity-100 group-hover:opacity-100"
-							@click="copy(row.value, row.label)"
-						/>
-					</div>
-				</dl>
+		<SettingsCard
+			title="Connection"
+			description="Point any S3 client at these."
+		>
+			<dl class="space-y-1">
+				<div
+					v-for="row in connection"
+					:key="row.label"
+					class="flex items-center gap-3"
+				>
+					<dt class="w-24 shrink-0 text-sm text-ink-gray-5">
+						{{ row.label }}
+					</dt>
+					<dd class="min-w-0 flex-1 truncate font-mono text-sm text-ink-gray-8">
+						{{ row.value }}
+					</dd>
+					<Button
+						variant="ghost"
+						icon="lucide-copy"
+						:label="`Copy ${row.label.toLowerCase()}`"
+						tooltip="Copy"
+						@click="copy(row.value, row.label)"
+					/>
+				</div>
+			</dl>
 
+			<template v-if="canManage" #footer>
 				<p class="text-p-sm text-ink-gray-5">
-					The secret key is shown once, when the bucket is created or its key is
-					rotated.
+					The secret key is shown once. Lost it? Rotate the key.
 				</p>
-			</section>
-		</div>
+				<Button label="Rotate key" @click="rotateTarget = bucket" />
+			</template>
+		</SettingsCard>
 
-		<template v-if="bucket && canManage" #footer>
-			<div class="flex flex-wrap gap-2">
+		<SettingsCard
+			v-if="canManage"
+			title="Delete bucket"
+			description="Removes the bucket and its key for good."
+		>
+			<template #footer>
+				<p class="text-p-sm text-ink-gray-6">
+					Empty it first: a bucket that still holds objects can't be deleted.
+				</p>
 				<Button
-					icon-left="lucide-gauge"
-					label="Set quota"
-					@click="quotaTarget = bucket"
-				/>
-				<Button
-					icon-left="lucide-refresh-cw"
-					label="Rotate key"
-					@click="rotateTarget = bucket"
-				/>
-				<Button
-					class="ml-auto"
 					theme="red"
-					icon-left="lucide-trash-2"
-					label="Delete"
+					label="Delete bucket"
 					@click="deleteTarget = bucket"
 				/>
-			</div>
-		</template>
-	</SidePanel>
+			</template>
+		</SettingsCard>
 
-	<BucketQuotaDialog v-model="quotaTarget" :usage="usage" />
+		<BucketQuotaDialog v-model="quotaTarget" :usage="usage" />
 
-	<ConfirmDialog
-		v-model:target="rotateTarget"
-		title="Rotate key"
-		confirm-label="Rotate key"
-		size="md"
-		:loading="busy"
-		:error="actionError"
-		@confirm="rotate"
-		@after-leave="actionError = ''"
-	>
-		<p v-if="rotateTarget" class="text-p-base text-ink-gray-7">
-			Issue a new key for
-			<span class="text-base-semibold text-ink-gray-9"
-				>{{ bucketLabel(rotateTarget) }}</span
-			>? Anything that uses the current key stops working at once.
-		</p>
-	</ConfirmDialog>
+		<ConfirmDialog
+			v-model:target="rotateTarget"
+			title="Rotate key"
+			confirm-label="Rotate key"
+			size="md"
+			:loading="busy"
+			:error="actionError"
+			@confirm="rotate"
+			@after-leave="actionError = ''"
+		>
+			<p v-if="rotateTarget" class="text-p-base text-ink-gray-7">
+				Issue a new key for
+				<span class="text-base-semibold text-ink-gray-9"
+					>{{ bucketLabel(rotateTarget) }}</span
+				>? Anything that uses the current key stops working at once.
+			</p>
+		</ConfirmDialog>
 
-	<ConfirmDialog
-		v-model:target="deleteTarget"
-		title="Delete bucket"
-		confirm-label="Delete bucket"
-		theme="red"
-		size="md"
-		:loading="busy"
-		:error="actionError"
-		@confirm="remove"
-		@after-leave="actionError = ''"
-	>
-		<p v-if="deleteTarget" class="text-p-base text-ink-gray-7">
-			Delete
-			<span class="text-base-semibold text-ink-gray-9"
-				>{{ bucketLabel(deleteTarget) }}</span
-			>? Empty it first: a bucket that still holds objects can't be deleted.
-		</p>
-	</ConfirmDialog>
+		<ConfirmDialog
+			v-model:target="deleteTarget"
+			title="Delete bucket"
+			confirm-label="Delete bucket"
+			theme="red"
+			size="md"
+			:loading="busy"
+			:error="actionError"
+			@confirm="remove"
+			@after-leave="actionError = ''"
+		>
+			<p v-if="deleteTarget" class="text-p-base text-ink-gray-7">
+				Delete
+				<span class="text-base-semibold text-ink-gray-9"
+					>{{ bucketLabel(deleteTarget) }}</span
+				>? Empty it first: a bucket that still holds objects can't be deleted.
+			</p>
+		</ConfirmDialog>
+	</div>
 </template>
