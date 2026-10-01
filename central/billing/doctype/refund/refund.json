@@ -17,6 +17,7 @@
   "destination",
   "section_break_result",
   "status",
+  "attempts",
   "gateway_refund_id",
   "payment_record_id",
   "advance_id",
@@ -85,6 +86,14 @@
    "options": "Initiated\nCompleted\nFailed"
   },
   {
+   "default": "0",
+   "description": "Times this refund was tried again after the gateway refused it.",
+   "fieldname": "attempts",
+   "fieldtype": "Int",
+   "label": "Retries",
+   "read_only": 1
+  },
+  {
    "fieldname": "gateway_refund_id",
    "fieldtype": "Data",
    "label": "Gateway Refund ID",
@@ -130,7 +139,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-09-30 16:00:00.000000",
+ "modified": "2026-10-01 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Refund",

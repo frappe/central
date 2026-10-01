@@ -36,6 +36,13 @@ class Invoice(Document):
 		month = frappe.utils.getdate(self.period_end or frappe.utils.nowdate())
 		self.name = make_autoname(f"INV-{month.year:04d}-{month.month:02d}-.#####")
 
+	def onload(self):
+		# The form offers a retry when a gateway refused one of this invoice's refunds.
+		self.set_onload(
+			"failed_refunds",
+			frappe.db.count("Refund", {"invoice": self.name, "status": "Failed", "destination": "Source"}),
+		)
+
 	def validate(self):
 		self.set_period_key()
 

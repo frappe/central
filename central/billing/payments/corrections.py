@@ -60,6 +60,21 @@ def cancel_and_refund(invoice: str, reason: str, dispute: dict | None = None) ->
 	return {"invoice": invoice, "refunds": _refunds(invoice)}
 
 
+def retry_failed_refunds(invoice: str) -> int:
+	"""Try again the card or UPI refunds the gateway refused. Returns how many."""
+	failed = frappe.get_all(
+		"Refund", filters={"invoice": invoice, "status": "Failed", "destination": "Source"}, pluck="name"
+	)
+	for name in failed:
+		refund = frappe.get_doc("Refund", name)
+		refund.attempts = (refund.attempts or 0) + 1
+		transition(refund, _UNDER_WAY, actor=frappe.session.user, correlation=invoice)
+		refund.save(ignore_permissions=True)
+	if failed:
+		_enqueue(invoice)
+	return len(failed)
+
+
 def run_cancellation(invoice: str) -> None:
 	"""Background job: take the next step of this invoice's cancellation."""
 	from central.billing.ingester.connection import enabled
@@ -107,7 +122,9 @@ def _settle(doc, refund) -> None:
 		attempt.save(ignore_permissions=True)
 	else:
 		attempt = frappe.get_doc("Payment Attempt", refund.payment_attempt)
-		result = _adapter(attempt.gateway).refund(attempt, refund.amount, refund.reason or "", refund.name)
+		# A retry needs its own key: the gateway would replay the refused answer.
+		key = f"{refund.name}-{refund.attempts}" if refund.attempts else refund.name
+		result = _adapter(attempt.gateway).refund(attempt, refund.amount, refund.reason or "", key)
 		refund.gateway_refund_id = result.gateway_refund_id
 		_finish(refund, "Completed" if result.success else "Failed")
 		if result.success:
@@ -301,6 +318,7 @@ def _refunds(invoice: str) -> list:
 			"amount",
 			"status",
 			"payment_attempt",
+			"attempts",
 			"gateway_refund_id",
 			"payment_record_id",
 			"advance_id",
