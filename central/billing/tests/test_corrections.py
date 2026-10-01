@@ -264,3 +264,35 @@ class TestDisputeWebhook(CorrectionsTestCase):
 		inv = self._paid_invoice()
 		self.assertEqual(self._event("charge.dispute.closed", status="won")["result"], "won")
 		self.assertEqual(frappe.db.get_value("Invoice", inv, "status"), "Paid")
+
+
+class TestRetryFailedRefund(CorrectionsTestCase):
+	def test_a_refused_refund_is_retried_with_a_new_key(self):
+		self.gateway.refund.return_value = RefundResult(
+			success=False, status="failed", gateway_refund_id=None, raw={}
+		)
+		inv = self._paid_invoice()
+		corrections.cancel_and_refund(inv, "customer asked")
+		self._run_all(inv)
+		card = self._refund(inv, "Source")
+		self.assertEqual(card.status, "Failed")
+
+		from central.billing.platform import alerts
+
+		self.assertIn(inv, [a["subject"] for a in alerts.failed_refunds()])
+
+		self.gateway.refund.return_value = RefundResult(
+			success=True, status="Completed", gateway_refund_id="re_2", raw={}
+		)
+		self.assertEqual(corrections.retry_failed_refunds(inv), 1)
+		self._run_all(inv)
+		card.reload()
+		self.assertEqual((card.status, card.attempts, card.gateway_refund_id), ("Completed", 1, "re_2"))
+		self.assertEqual(self.gateway.refund.call_args.args[3], f"{card.name}-1")
+		self.assertTrue(card.payment_record_id)  # now recorded in the accounting system
+
+	def test_nothing_to_retry(self):
+		inv = self._paid_invoice()
+		corrections.cancel_and_refund(inv, "customer asked")
+		self._run_all(inv)
+		self.assertEqual(corrections.retry_failed_refunds(inv), 0)

@@ -20,6 +20,23 @@ frappe.ui.form.on("Invoice", {
 				)
 			);
 		}
+		if (frm.doc.__onload?.failed_refunds) {
+			frm.add_custom_button(__("Retry Failed Refunds"), () =>
+				frappe
+					.call({
+						method: `${CORRECTIONS_API}.retry_failed_refunds`,
+						args: { invoice: frm.doc.name },
+						freeze: true,
+					})
+					.then(({ message }) => {
+						frappe.show_alert({
+							message: __("Trying {0} refund(s) again", [message.retried]),
+							indicator: "blue",
+						});
+						frm.reload_doc();
+					})
+			);
+		}
 	},
 });
 

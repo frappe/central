@@ -92,7 +92,25 @@ def held_invoices() -> list[dict]:
 	]
 
 
-SOURCES = (invariant_violations, failed_webhooks, stale_attempts, held_invoices)
+def failed_refunds() -> list[dict]:
+	"""Refunds a gateway refused. The invoice is cancelled but the customer is still owed."""
+	return [
+		{
+			"alert": "failed_refund",
+			"subject": r.invoice,
+			"team": r.team,
+			"detail": f"{r.currency} {r.amount} not refunded ({r.name}); retry it from the invoice",
+		}
+		for r in frappe.get_all(
+			"Refund",
+			filters={"status": "Failed"},
+			fields=["name", "invoice", "team", "currency", "amount"],
+			limit=100,
+		)
+	]
+
+
+SOURCES = (invariant_violations, failed_webhooks, stale_attempts, held_invoices, failed_refunds)
 
 
 def collect() -> list[dict]:

@@ -89,7 +89,7 @@ REFUND = StateMachine(
 	{
 		"Initiated": {"Completed", "Failed"},
 		"Completed": set(),  # terminal
-		"Failed": set(),  # terminal
+		"Failed": {"Initiated"},  # an operator tries again
 	},
 )
 

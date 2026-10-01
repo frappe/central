@@ -29,3 +29,12 @@ def cancel_and_refund(invoice: str, reason: str) -> dict:
 	if not (reason or "").strip():
 		frappe.throw(_("Give a reason for the cancellation."), frappe.ValidationError)
 	return cancel(invoice, reason.strip())
+
+
+@frappe.whitelist(methods=["POST"])
+def retry_failed_refunds(invoice: str) -> dict:
+	"""Try again the card or UPI refunds a gateway refused for this invoice."""
+	authz.require_operator()
+	from central.billing.payments.corrections import retry_failed_refunds as retry
+
+	return {"invoice": invoice, "retried": retry(invoice)}
