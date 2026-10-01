@@ -115,9 +115,9 @@ def get_gstin_details(gstin: str) -> frappe._dict | None:
 
 def _should_sync(profile) -> bool:
 	"""Only complete profiles of real customers; staging trials carry placeholders."""
-	from central.billing.api.dashboard._shared import missing_profile_fields_in
+	from central.billing.doctype.billing_profile.billing_profile import get_missing_fields_of
 
-	if not enabled() or missing_profile_fields_in(profile):
+	if not enabled() or get_missing_fields_of(profile):
 		return False
 	return not frappe.db.get_value("Team", profile.team, "is_staging_trial")
 
@@ -145,7 +145,7 @@ def _lock_name(team: str) -> str:
 
 def _pending_teams() -> list[str]:
 	"""Complete profiles of real teams that are missing a record id."""
-	from central.billing.api.dashboard._shared import _REQUIRED_PROFILE_FIELDS
+	from central.billing.doctype.billing_profile.billing_profile import REQUIRED_FIELDS
 
 	profile = frappe.qb.DocType("Billing Profile")
 	team = frappe.qb.DocType("Team")
@@ -157,7 +157,7 @@ def _pending_teams() -> list[str]:
 		.where(team.is_staging_trial == 0)
 		.where(_blank(profile.profile_id) | _blank(profile.address_id) | _blank(profile.contact_id))
 	)
-	for field in _REQUIRED_PROFILE_FIELDS:
+	for field in REQUIRED_FIELDS:
 		query = query.where(~_blank(profile[field]))
 	return query.orderby(profile.modified).limit(PENDING_BATCH).run(pluck=True)
 
