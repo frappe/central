@@ -112,7 +112,7 @@ See [`e2e/README.md`](e2e/README.md) for setup and commands.
 - [Agent and contributor rules](CLAUDE.md)
 - [IAM](spec/IAM.md)
 - [Capabilities](CAPABILITIES.md)
-- [Execution plan](spec/EXECUTION_PLAN.md)
+- [Specification router](spec/README.md)
 
 ## Related projects
 

@@ -42,19 +42,17 @@ Central runs today:
 
 - Identity and access: teams, members, invitations, team roles, capabilities, and the permission probe.
 - Tokens: SSO and OAuth minting for Atlas, for a Pilot bench, and for Cargo, Datum and for any other future services, plus site login.
-- Regions: Atlas instance registration.
+- Regions: each Region holds its Atlas connection and its Cargo connection.
 - Resources: `Virtual Machine` for a provisioned server, `Site` for a self-serve site. Only the integration layer records observed state on them.
-- Provisioning: provisioning requests and resource actions against Atlas and Pilot.
-- Managed services: add-on catalog, LLM models and plan policies, storage backends, and service credentials.
+- Provisioning: durable `Resource Action` records that Central processes against Atlas and Pilot.
+- Managed services: add-on catalog, team services and service details, LLM models and plan policies, and object storage.
 - Notifications: event types, team notifications, user preferences, and the delivery engine.
 - Billing: catalog, subscriptions, invoicing, payments, credits, and projections.
-- Partners: partner membership, passport registration, and Connect credentials.
 - The console in `dashboard/`.
 
 Central plans to add:
 
 - One `SPEC.md` per module, written as each module is rewritten.
-- The remaining capability and enforcement work in [`spec/EXECUTION_PLAN.md`](spec/EXECUTION_PLAN.md).
 - A repository layout redesigned from first principles, to match the current Atlas and Pilot boundaries.
 
 `central/billing/**` is out of scope for the rewrite. Change it only when the task names it, and keep the change as small as the task needs.
@@ -99,7 +97,7 @@ Document (.team field) -------------------------------------+
 
 ### Enforce in both layers
 
-Every team-scoped DocType needs a `permission_query_conditions` entry and a `has_permission` entry, wired in `hooks.py` and named `<doctype>_query_conditions` and `<doctype>_has_permission`. A query condition alone still leaks a single document by name. A `has_permission` alone still leaks the list. Reuse `_team_field_query_conditions` and `_team_field_has_permission` instead of writing a new pair by hand.
+Every team-scoped DocType needs a `permission_query_conditions` entry and a `has_permission` entry, wired in `hooks.py` and named `<doctype>_query_conditions` and `<doctype>_has_permission`. Virtual Machine uses the `server_` prefix. A query condition alone still leaks a single document by name. A `has_permission` alone still leaks the list. Reuse `_team_field_query_conditions` and `_team_field_has_permission` instead of writing a new pair by hand.
 
 An API route may still check `can(...)` before it acts, because a route must fail with a clear message and must gate writes. That check is a second layer, not the only one. Do not let it become the only thing standing between a user and another team's data.
 
@@ -224,7 +222,7 @@ Organise components in three tiers, and group a feature by domain folder instead
 
 ```text
 dashboard/src/components/common/      Domain-agnostic primitives: avatar, loader, skeleton, form field
-dashboard/src/components/layout/      Structural chrome: sidebar, drawer, heading, empty state, banner
+dashboard/src/components/navigation/  Structural chrome: sidebar and navigation lists
 dashboard/src/components/<feature>/   Feature components, one folder per domain
 ```
 

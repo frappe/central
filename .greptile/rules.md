@@ -38,7 +38,7 @@ Central is in active development and is not deployed to production. Do not ask f
 ## Boundaries
 
 - Flag an outbound call to Atlas, Pilot, or Cargo made outside `central/integrations/`.
-- Flag a write to the `Virtual Machine` or `Site` mirror from outside the integration layer. Mirror upserts belong in `central/mirror.py`.
+- Flag a write of observed state to `Virtual Machine` or `Site` from outside `central/integrations/`. Observed state goes through `VirtualMachine.record_observed_state`.
 - Flag token minting or verification added outside `central/sso.py`.
 - Flag domain logic added to a `central/api/` route or a `hooks.py` entry. Those layers parse input, authorize, delegate, and return.
 - Flag a Team Member, Team Role, or Role Capability row read directly in a controller, an API route, a page, or a service. Those reads belong in `central/iam.py`.
@@ -104,7 +104,7 @@ Desk is the operator surface. Apply this section to a new DocType, and to an exi
 
 - Flag a new component that hand-builds something Frappe UI already provides.
 - Flag a raw Tailwind class used for layout, spacing, color, or typography that the design system already covers, and a text size or line height off the Frappe UI scale.
-- Flag a new component placed by name prefix instead of in the common, layout, or feature folder that owns it.
+- Flag a new component placed by name prefix instead of in the common, navigation, or feature folder that owns it.
 - Flag a table action, confirmation dialog, empty state, or mutation runner duplicated from one that already exists.
 - Flag data fetching or domain logic added to a page where it belongs in a composable.
 - Flag a new component without typed props, and `any` where a concrete type is practical.
