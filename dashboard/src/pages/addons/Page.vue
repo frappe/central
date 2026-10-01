@@ -2,6 +2,7 @@
 import { Badge, useCall } from 'frappe-ui'
 import { computed } from 'vue'
 import { API, method } from '@/api/methods'
+import { useServices } from '@/composables/useServices'
 import { useSession } from '@/composables/useSession'
 import { whenTeamReady } from '@/composables/useTeamScope'
 import { features } from '@/lib/features'
@@ -25,6 +26,7 @@ interface MeteredServices {
 }
 
 const { activeTeam } = useSession()
+const { offers } = useServices()
 
 const metered = useCall<MeteredServices, { team: string }>({
 	url: method(API.meteredServices),
@@ -49,6 +51,8 @@ const CATALOG = [
 		pricing: 'Pay as you go',
 		to: '/addons/ai',
 		flag: 'llm' as const,
+		// Enabled through Grove, not a billing subscription.
+		offer: 'llm',
 	},
 	{
 		resourceType: null,
@@ -110,7 +114,9 @@ const cards = computed(() =>
 			...entry,
 			to: live ? entry.to : '',
 			live,
-			on: !!subscribed,
+			on: entry.offer
+				? !!offers.value.find((o) => o.name === entry.offer)?.managed_service
+				: !!subscribed,
 			meta: subscribed
 				? usage
 					? `${number.format(usage)} ${entry.noun} this cycle`
