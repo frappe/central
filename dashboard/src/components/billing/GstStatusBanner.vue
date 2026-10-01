@@ -5,7 +5,7 @@ import { API, method } from '@/api/methods'
 import { useBillingOverview } from '@/composables/useBillingOverview'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { useSession } from '@/composables/useSession'
-import { errorToast, successToast } from '@/lib/toast'
+import { reportError, successToast } from '@/lib/feedback'
 
 // Shown when the GST portal says the team's GSTIN is not active. Invoices still
 // go out, but without the GSTIN, so the customer can't claim input tax credit.
@@ -25,13 +25,15 @@ const recheck = useCall<
 	url: method(API.recheckGstStatus),
 	method: 'POST',
 	immediate: false,
-	onError: (e: unknown) => errorToast(e, 'Could not check your GSTIN'),
 })
 
 async function checkAgain(): Promise<void> {
 	const result = await recheck.submit({ team: activeTeam.value! })
-	// submit() resolves on a server error too; onError has already said so.
-	if (recheck.error) return
+	// submit() resolves on a server error too, so the error is checked here.
+	if (recheck.error) {
+		reportError(recheck.error, { title: 'Could not check your GSTIN' })
+		return
+	}
 	successToast(
 		result?.gst_lapsed
 			? `The GST portal still shows your GSTIN as ${(result.gst_status || 'not active').toLowerCase()}`
