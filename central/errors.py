@@ -227,6 +227,9 @@ def handle_resource_operation(func):
 				raise
 
 			envelope = to_error_response(exc)
+			# The user sees only generic copy, so keep the traceback for the operator.
+			if envelope["code"] == "UNEXPECTED":
+				frappe.log_error(title="Unexpected server-action error")
 			_reraise_with_envelope(exc, envelope)
 
 	return wrapper
