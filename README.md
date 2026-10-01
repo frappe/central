@@ -40,21 +40,15 @@ bench start
 Open Central at <http://central.localhost:8000/app> and sign in as
 `Administrator` with password `admin`.
 
-### Seed demo data
+### Seed demo data (optional)
 
-Enable developer mode before running the local bootstrap. It creates sample
-teams, users, billing records, and catalog data.
-
-```bash
-pilot frappe --site central.localhost execute central.api.developer_setup.setup_local
-```
-
-To seed demo data without a regional connection check:
+The billing demo creates ten sample teams with users, catalog, billing records, and invoices. It deletes all existing billing data first, so run it only on a local site.
 
 ```bash
-pilot frappe --site central.localhost execute central.api.developer_setup.setup_local \
-  --kwargs '{"check_connection": 0}'
+pilot frappe --site central.localhost execute central.billing.demo.demo_scenarios.seed
 ```
+
+See the [billing demo](central/billing/demo/README.md) for the teams it creates.
 
 ### Run Atlas locally (optional)
 
@@ -68,14 +62,13 @@ bench --site mumbai.atlas.localhost install-app atlas
 bench --site mumbai.atlas.localhost migrate
 ```
 
-Initialize Central's Atlas and Pilot signing keys in Central SSO Settings, and configure the Atlas public key URL in Atlas Settings. Read the numeric region ID from Atlas Settings, then save the regional connection in Central:
+Initialize Central's Atlas and Pilot signing keys in Central SSO Settings, and configure the Atlas public key URL in Atlas Settings. Read the numeric region ID from Atlas Settings. Then, in Central's Desk, open or create the Region (for example `in-mumbai`):
 
-```bash
-pilot frappe --site central.localhost execute central.api.developer_setup.setup_local \
-  --kwargs '{"region":"in-mumbai","atlas_base_url":"http://mumbai.atlas.localhost:8000","atlas_region_id":"0","seed_demo_data":0}'
-```
+1. Set **Base URL** to `http://mumbai.atlas.localhost:8000` and **Atlas Region ID** to the verified region ID.
+2. Set **Status** to Active and save.
+3. Click **Test Connection**, then **Enroll Atlas**.
 
-Replace `0` with the verified Atlas region ID. Local VM tests require an active Metal Server and available System images. Installing Atlas alone does not provide VM capacity. See the [regional configuration](central/infrastructure/doctype/region/SPEC.md) and [validation requirements](spec/LOCAL_ENVIRONMENT.md).
+Central accepts plain `http` only for a `localhost` host while developer mode is on. Local VM tests require an active Metal Server and available System images. Installing Atlas alone does not provide VM capacity. See the [regional configuration](central/infrastructure/doctype/region/SPEC.md) and [validation requirements](spec/LOCAL_ENVIRONMENT.md).
 
 ## Frontend development
 
@@ -99,15 +92,17 @@ bench build --app central
 Run the Python test suite from the Bench root:
 
 ```bash
-bench --site central.localhost run-tests --app central
+bench --site central-test.localhost run-tests --app central
 ```
 
-Run the focused local bootstrap tests:
+Run one module while you work:
 
 ```bash
-bench --site central.localhost run-tests \
-  --app central --module central.tests.test_developer_setup
+bench --site central-test.localhost run-tests \
+  --app central --module central.tests.test_resource_actions
 ```
+
+Run tests on a separate test site. Some billing tests commit their data.
 
 The end-to-end suite requires a running Bench and payment-gateway test keys.
 See [`e2e/README.md`](e2e/README.md) for setup and commands.
