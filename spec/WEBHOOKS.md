@@ -115,12 +115,13 @@ An ignored report is authentic and readable. Central has nothing to do with it. 
 | `unknown server` | Atlas | No Virtual Machine in this region carries that VM ID |
 | `unsupported event '<value>'` | Atlas | The event is not `vm.state` |
 | `unsupported status '<value>'` | Atlas | The status is not `running`, `stopped`, or `paused` |
+| `invalid observed_at` | Atlas | `observed_at` is missing or is not a timestamp |
 | `no change` | Atlas | Central already records this state |
-| `already terminated` | Atlas | Central already recorded this server as gone |
+| `stale report` | Atlas | `observed_at` is not newer than the last report Central applied |
 | `unsupported service '<value>'` | Cargo | The service is not `telemetry` or `storage` |
 | `unsupported status '<value>'` | Cargo | The status is not `Available` or `Not Available` |
 
-A region may report on a timer instead of on change. Central answers `no change` and writes nothing, so a timer costs one row read.
+A region may report on a timer instead of on change. When a same-state report has a newer `observed_at`, Central advances `Virtual Machine.last_reported_at` and answers `no change`. This stops an older state change that arrives later from changing the server.
 
 ## Retries
 

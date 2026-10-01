@@ -50,17 +50,11 @@ There are no per-user capability overrides. A Team owner is an active
 | Admin | Day-to-day team, server, and billing operations, excluding team deletion and ownership transfer |
 | Developer | Full server operations |
 | Viewer | Read-only server access |
-| Billing | Billing and read-only server access |
+| Billing | Billing, add-on services, and read-only server access |
 
 A member can hold several role grants in a Team. Each grant is team-wide or scoped to one server or site. Create a custom Team role when a member needs a combination such as administration and billing.
 
-Server is the atomic unit (capability model v3): role capabilities live at the
-team and server level only. Server capabilities are `server:view`,
-`server:create`, `server:power`, `server:resize`, `server:snapshot`,
-`server:terminate`, `server:ssh-key`, `server:console`, plus `cluster:view` for placement. `server:view` also permits
-opening a server or site. The
-site-level (bench-plane) capabilities are deferred; see
-[`CAPABILITIES.md`](../CAPABILITIES.md) for the full taxonomy.
+Server is the atomic unit (capability model v5). Role capabilities live at the team and server level only. Server capabilities are `server:view`, `server:create`, `server:power`, `server:resize`, `server:snapshot`, `server:terminate`, `server:ssh-key`, and `server:console`, plus `cluster:view` for placement. `server:view` also permits opening a server or site. There are no site-level (bench-plane) capabilities. See [`CAPABILITIES.md`](../CAPABILITIES.md) for the full taxonomy.
 
 ## Resource Scope
 

@@ -51,13 +51,13 @@ Central builds the automatic management address itself. The regional proxy decod
 
 See [Resource Action](../central/infrastructure/doctype/resource_action/SPEC.md) for states, authorization, recovery, accepted quotes, and customer responses.
 
-## Delivery dependencies
+## What does creation depend on?
 
 The current creation flow requires the Atlas VM API and automatic management hostname. Staging also needs current schema, key trust, a healthy host, available images, and wildcard DNS.
 
-Framework webhook ingestion, signup readiness, and restart completion remain subsequent phases. Their delivery order is in [Delivery](DELIVERY.md). Resize uses the Atlas resize API, which moves a VM to another host when its host cannot fit the new size. Framework state webhooks will supplement repair reads. They must not replace durable intent or make a callback the only recovery path.
+Central receives signed state reports at `central.api.state_delivery.receive`. See [Inbound webhooks](WEBHOOKS.md) for the contract. State reports supplement repair reads. They do not replace durable intent, and a callback is never the only recovery path. Resize uses the Atlas resize API, which moves a VM to another host when its host cannot fit the new size.
 
-Domain and TLS operations belong to Atlas and Pilot. Central will authorize and track those operations when the domain phase starts.
+Central verifies domain ownership and owns the proxy route through [Site Domain](../central/infrastructure/doctype/site_domain/SPEC.md). The regional proxy terminates TLS for a regional name. For a custom domain, the proxy passes TLS to the VM, and Pilot holds the certificate. Central does not issue or store certificates.
 
 ## Validation
 
