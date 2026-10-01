@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { Badge } from 'frappe-ui'
-import ProviderAvatar from '@/components/servers/ProviderAvatar.vue'
 
 interface Resource {
 	type: string
@@ -13,7 +12,6 @@ interface Props {
 	price: string
 	cycle?: string
 	resources: Resource[]
-	provider: string | null
 	tags: string[]
 }
 
@@ -67,11 +65,6 @@ const tiles = [
 		</dl>
 
 		<div class="flex flex-wrap gap-2">
-			<Badge v-if="provider" :label="provider" variant="outline" size="lg">
-				<template #prefix>
-					<ProviderAvatar :provider="provider" :size="14" />
-				</template>
-			</Badge>
 			<Badge
 				v-for="tag in tags"
 				:key="tag"
