@@ -10,6 +10,7 @@ from frappe.tests import IntegrationTestCase
 from frappe.utils.password import remove_encrypted_password
 
 from central.api.state_delivery import REGION_HEADER, SOURCE_HEADER, receive
+from central.infrastructure.doctype.pilot_credential.pilot_credential import PilotCredential
 from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
 from central.integrations.state_delivery import (
 	accept_atlas_report,
@@ -233,6 +234,48 @@ class TestStateDelivery(IntegrationTestCase):
 
 	def test_a_body_that_is_not_an_object_is_ignored(self):
 		self.assertEqual(self.deliver(["vm-00007"]), {"queued": False, "ignored": "unreadable body"})
+
+	# — A deleted server
+
+	def test_a_deletion_is_queued_and_terminates_the_server(self):
+		report = self.state_report(event="vm.state.deleted", status="stopped")
+		self.assertEqual(self.deliver(report), {"queued": True, "resource_id": self.server.name})
+
+		self.apply(report)
+		self.assertEqual(self.server.reload().status, "Terminated")
+
+	def test_a_deletion_ignores_the_ordering_watermark(self):
+		"""The body repeats the last cached report, so its observed_at is never newer
+		than the one Central already holds."""
+		observed_at = "2026-06-01 00:00:00"
+		self.apply(self.state_report(status="running", observed_at=observed_at))
+
+		report = self.state_report(event="vm.state.deleted", status="running", observed_at=observed_at)
+		self.assertEqual(self.deliver(report), {"queued": True, "resource_id": self.server.name})
+		self.apply(report)
+		self.assertEqual(self.server.reload().status, "Terminated")
+
+	def test_a_deletion_of_a_terminated_server_is_ignored(self):
+		self.server.db_set("status", "Terminated")
+
+		report = self.state_report(event="vm.state.deleted")
+		self.assertEqual(self.deliver(report), {"queued": False, "ignored": "no change"})
+		self.queued.assert_not_called()
+
+	def test_a_deletion_revokes_the_server_pilot_credential(self):
+		credential = "credential-" + frappe.generate_hash(length=8)
+		token = PilotCredential.mint(
+			self.team.name, credential, server=self.server.name, audience_id=credential
+		)
+
+		self.apply(self.state_report(event="vm.state.deleted"))
+		self.assertIsNone(PilotCredential.verify(token))
+
+	def test_a_deletion_completes_a_waiting_terminate(self):
+		action = self._action("terminate")
+
+		self.apply(self.state_report(event="vm.state.deleted"))
+		self.assertEqual(frappe.db.get_value("Resource Action", action, "status"), "Succeeded")
 
 	# — The action waiting on the report
 

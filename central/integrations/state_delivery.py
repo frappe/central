@@ -11,6 +11,7 @@ from frappe.utils.password import get_decrypted_password
 
 from central.infrastructure.doctype.resource_action.resource_action import ResourceAction
 from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
+from central.integrations import servers
 from central.services.doctype.service_detail.service_detail import ServiceDetail
 
 # Webhooks are ordered by the region's own `observed_at` (stored as `last_reported_at`):
@@ -22,6 +23,7 @@ from central.services.doctype.service_detail.service_detail import ServiceDetail
 STATUS_FROM_REPORT = {"running": "Running", "stopped": "Stopped", "paused": "Paused"}
 
 STATE_REPORTED = "vm.state"
+STATE_DELETED = "vm.state.deleted"
 
 # What a region may report about itself. Central records these two words and no others.
 SERVICES = ("telemetry", "storage")
@@ -86,21 +88,38 @@ def apply_atlas_report(region: str, report: dict) -> None:
 	if not server:
 		return
 
+	if report.get("event") == STATE_DELETED:
+		_apply_deletion(server.name)
+	else:
+		_apply_state(server.name, report)
+
+
+def _apply_deletion(name: str) -> None:
+	"""Record the server as gone. Termination is final, so there is no ordering check."""
+	server = frappe.get_doc("Virtual Machine", name, for_update=True)
+	if server.status == "Terminated":
+		return
+
+	servers.mark_terminated(server)
+	ResourceAction.confirm_observed_status(server.name, "Terminated")
+
+
+def _apply_state(name: str, report: dict) -> None:
 	status = STATUS_FROM_REPORT.get(report.get("status"))
 	if not status or not _reported_at(report):
 		return
 	if not VirtualMachine.record_observed_state(
-		server.name, frappe.utils.now_datetime(), {"status": status}, reported_at=report.get("observed_at")
+		name, frappe.utils.now_datetime(), {"status": status}, reported_at=report.get("observed_at")
 	):
 		return
 
-	ResourceAction.confirm_observed_status(server.name, status)
+	ResourceAction.confirm_observed_status(name, status)
 	if status == "Running":
 		frappe.enqueue(
 			"central.integrations.servers.refresh_server",
-			name=server.name,
+			name=name,
 			enqueue_after_commit=True,
-			job_id=f"server-refresh:{server.name}",
+			job_id=f"server-refresh:{name}",
 			deduplicate=True,
 		)
 
@@ -108,6 +127,8 @@ def apply_atlas_report(region: str, report: dict) -> None:
 def _decide(report: dict, server: frappe._dict) -> dict | None:
 	"""Return the reply for a report Central will not queue, or None to queue it."""
 	event = report.get("event")
+	if event == STATE_DELETED:
+		return _ignored("no change") if server.status == "Terminated" else None
 	if event != STATE_REPORTED:
 		return _ignored(f"unsupported event '{event}'")
 
