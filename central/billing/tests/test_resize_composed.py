@@ -284,7 +284,8 @@ class TestResizeComposed(IntegrationTestCase):
 		self.assertEqual(len(self._segments(sub)), 2)  # re-priced once the job landed
 
 	def test_begin_resize_onto_a_preset_with_a_larger_disk(self):
-		"""A preset's CPU and memory pass even off the profile ratio, since the preset sells them."""
+		"""A preset's CPU and memory pass even off the profile ratio, since the preset sells them.
+		The preset's transfer allowance stays on the composed shape."""
 		sub = self._provision()
 		self._ready(sub)
 		plan = make_plan(
@@ -294,6 +295,7 @@ class TestResizeComposed(IntegrationTestCase):
 				{"resource_type": "Compute", "quantity": 6, "unit": "vCPU"},
 				{"resource_type": "Memory", "quantity": 6, "unit": "GB"},
 				{"resource_type": "Disk", "quantity": 40, "unit": "GB"},
+				{"resource_type": "Transfer", "quantity": 200, "unit": "GB"},
 			],
 			sub_category="General",
 		)
@@ -307,7 +309,34 @@ class TestResizeComposed(IntegrationTestCase):
 		self.assertIsNone(frappe.db.get_value("Virtual Machine", doc.server_id, "plan"))
 		self.assertEqual(
 			{row.resource_type: row.quantity for row in doc.includes},
-			{"Compute": 6, "Memory": 6, "Disk": 80},
+			{"Compute": 6, "Memory": 6, "Disk": 80, "Transfer": 200},
+		)
+
+	def test_begin_resize_onto_a_preset_keeping_the_current_disk(self):
+		"""The console sends the current disk on a plain plan change. A plan with a larger disk
+		then resizes CPU and memory only, and keeps its transfer allowance."""
+		sub = self._provision()
+		self._ready(sub)
+		plan = make_plan(
+			"resize-preset-keep-disk",
+			rates=[{"cluster": "", "currency": "INR", "rate": 5000}],
+			includes=[
+				{"resource_type": "Compute", "quantity": 4, "unit": "vCPU"},
+				{"resource_type": "Memory", "quantity": 16, "unit": "GB"},
+				{"resource_type": "Disk", "quantity": 80, "unit": "GB"},
+				{"resource_type": "Transfer", "quantity": 400, "unit": "GB"},
+			],
+			sub_category="General",
+		)
+
+		with patch("frappe.enqueue", side_effect=run_enqueued_inline):
+			result = subscriptions.begin_resize(sub, plan=plan, disk_gigabytes=40)
+
+		self.assertTrue(result["queued"])
+		self.resize_server.assert_called_once()
+		self.assertEqual(
+			{row.resource_type: row.quantity for row in frappe.get_doc("Subscription", sub).includes},
+			{"Compute": 4, "Memory": 16, "Disk": 40, "Transfer": 400},
 		)
 
 	def test_begin_resize_is_a_noop_on_the_same_config(self):
