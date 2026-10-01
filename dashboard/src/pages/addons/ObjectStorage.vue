@@ -44,7 +44,7 @@ const canCreate = computed(
 			/>
 		</Teleport>
 
-		<div class="mx-auto w-full max-w-5xl p-3 md:p-4 lg:pt-8">
+		<div class="mx-auto w-full max-w-5xl p-3 md:p-4">
 			<div v-if="loading" class="grid gap-3 md:grid-cols-2" aria-busy="true">
 				<div
 					v-for="index in 4"

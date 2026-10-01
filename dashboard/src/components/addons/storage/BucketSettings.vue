@@ -3,7 +3,7 @@ import { Button } from 'frappe-ui'
 import { computed, ref } from 'vue'
 import BucketQuotaDialog from '@/components/addons/storage/BucketQuotaDialog.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
-import SettingsCard from '@/components/common/SettingsCard.vue'
+import SettingsSection from '@/components/common/SettingsSection.vue'
 import UsageMeter from '@/components/servers/overview/UsageMeter.vue'
 import { bucketLabel, useObjectStorage } from '@/composables/useObjectStorage'
 import { copyToClipboard } from '@/lib/clipboard'
@@ -75,8 +75,8 @@ const connection = computed(() => [
 
 const quotaSummary = computed(() =>
 	usage.value?.quota_bytes
-		? `Quota: ${formatBytes(usage.value.quota_bytes)} · ${usage.value.quota_objects?.toLocaleString() ?? 'any number of'} objects`
-		: 'No quota. The bucket grows as you upload.',
+		? `Current quota: ${formatBytes(usage.value.quota_bytes)} · ${usage.value.quota_objects?.toLocaleString() ?? 'any number of'} objects`
+		: 'No quota is set, so the bucket grows as you upload.',
 )
 
 const copy = async (value: string, label: string): Promise<void> => {
@@ -123,16 +123,21 @@ const remove = async (target: StorageBucket): Promise<void> => {
 </script>
 
 <template>
-	<div class="space-y-6">
-		<SettingsCard
+	<div class="divide-y divide-outline-gray-1">
+		<SettingsSection
 			title="Quota"
-			description="Cap how much this bucket can hold."
+			:help="`Cap how much this bucket can hold. ${quotaSummary}`"
 			:aria-busy="usageLoading"
 		>
+			<template v-if="canManage" #actions>
+				<Button label="Set quota" @click="quotaTarget = bucket" />
+			</template>
+
 			<div
 				v-if="usageLoading && !usage"
 				class="h-9 animate-pulse rounded-4 bg-surface-gray-2"
 			/>
+
 			<div
 				v-else-if="usageError"
 				class="flex items-center justify-between gap-3 text-sm text-ink-gray-5"
@@ -145,17 +150,20 @@ const remove = async (target: StorageBucket): Promise<void> => {
 					@click="loadUsage(bucket.name)"
 				/>
 			</div>
-			<div v-else class="grid gap-5 md:grid-cols-2 md:gap-8">
+
+			<div v-else class="grid gap-3 md:grid-cols-2 md:gap-4">
 				<template v-for="meter in meters" :key="meter.label">
 					<UsageMeter
 						v-if="meter.percent !== null"
 						:label="meter.label"
 						:value="meter.value"
 						:percent="meter.percent"
+						class="rounded-6 bg-surface-gray-1 p-4"
 					/>
+
 					<p
 						v-else
-						class="flex items-center justify-between gap-4 text-sm text-ink-gray-6"
+						class="flex items-center justify-between gap-4 rounded-6 bg-surface-gray-1 p-4 text-sm text-ink-gray-6"
 					>
 						{{ meter.label }}
 						<span class="text-sm-medium tabular-nums text-ink-gray-9">
@@ -164,17 +172,16 @@ const remove = async (target: StorageBucket): Promise<void> => {
 					</p>
 				</template>
 			</div>
+		</SettingsSection>
 
-			<template v-if="canManage" #footer>
-				<p class="text-p-sm text-ink-gray-5">{{ quotaSummary }}</p>
-				<Button label="Set quota" @click="quotaTarget = bucket" />
-			</template>
-		</SettingsCard>
-
-		<SettingsCard
+		<SettingsSection
 			title="Connection"
-			description="Point any S3 client at these."
+			help="Point any S3 client at these. The secret key is shown once, when the bucket is created or its key is rotated."
 		>
+			<template v-if="canManage" #actions>
+				<Button label="Rotate key" @click="rotateTarget = bucket" />
+			</template>
+
 			<dl class="space-y-1">
 				<div
 					v-for="row in connection"
@@ -184,9 +191,11 @@ const remove = async (target: StorageBucket): Promise<void> => {
 					<dt class="w-24 shrink-0 text-sm text-ink-gray-5">
 						{{ row.label }}
 					</dt>
+
 					<dd class="min-w-0 flex-1 truncate font-mono text-sm text-ink-gray-8">
 						{{ row.value }}
 					</dd>
+
 					<Button
 						variant="ghost"
 						icon="lucide-copy"
@@ -196,31 +205,21 @@ const remove = async (target: StorageBucket): Promise<void> => {
 					/>
 				</div>
 			</dl>
+		</SettingsSection>
 
-			<template v-if="canManage" #footer>
-				<p class="text-p-sm text-ink-gray-5">
-					The secret key is shown once. Lost it? Rotate the key.
-				</p>
-				<Button label="Rotate key" @click="rotateTarget = bucket" />
-			</template>
-		</SettingsCard>
-
-		<SettingsCard
+		<SettingsSection
 			v-if="canManage"
 			title="Delete bucket"
-			description="Removes the bucket and its key for good."
+			help="Removes the bucket and its key for good. Empty it first: a bucket that still holds objects can't be deleted."
 		>
-			<template #footer>
-				<p class="text-p-sm text-ink-gray-6">
-					Empty it first: a bucket that still holds objects can't be deleted.
-				</p>
+			<template #actions>
 				<Button
 					theme="red"
 					label="Delete bucket"
 					@click="deleteTarget = bucket"
 				/>
 			</template>
-		</SettingsCard>
+		</SettingsSection>
 
 		<BucketQuotaDialog v-model="quotaTarget" :usage="usage" />
 
