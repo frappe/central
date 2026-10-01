@@ -792,6 +792,9 @@ def create_topup_order(
 	# is held to pay the GST of the invoices the credit is used for.
 	gst = credits.top_up_gst(team, amount)
 	total = frappe.utils.flt(amount + gst, 2)
+	# The split rides with the order, so the wallet gets what was ordered even if the
+	# tax rate changes before the payment is captured.
+	notes["credit"] = str(amount)
 	handles = adapter.create_order(total, currency, receipt, notes=notes, customer=customer_id)
 	# The SPA branches on adapter_key: Stripe → PaymentIntent Element, Razorpay → hosted
 	# sheet, Paypal → PayPal Buttons against the returned order_id (ADR 0007). For a
@@ -836,6 +839,7 @@ def confirm_topup(
 
 	gw_doc = frappe.get_doc("Payment Gateway", gateway)
 	adapter = get_adapter(gw_doc)
+	credit = None  # the wallet credit the order was made for, when the gateway kept it
 	if gw_doc.adapter_key == "Razorpay":
 		# The callback signature binds order_id|payment_id, NOT the amount — so the
 		# request figure can't be trusted. Fetch the payment server-side and credit
@@ -857,6 +861,7 @@ def confirm_topup(
 				# one must not fall through to the client-supplied figure.
 				frappe.throw(_("Razorpay reported no amount for this payment."), frappe.ValidationError)
 			amount = frappe.utils.flt(minor) / 100
+			credit = (payment.get("notes") or {}).get("credit")
 			if payment.get("currency"):
 				currency = payment["currency"].upper()
 	elif gw_doc.adapter_key == "Paypal":
@@ -881,6 +886,7 @@ def confirm_topup(
 		if minor is None:
 			frappe.throw(_("Stripe reported no amount for this payment intent."), frappe.ValidationError)
 		amount = frappe.utils.flt(minor) / 100
+		credit = (intent.get("metadata") or {}).get("credit")
 		if intent.get("currency"):
 			currency = intent["currency"].upper()
 	if not ok:
@@ -893,4 +899,5 @@ def confirm_topup(
 		note=f"Wallet top-up ({reference})",
 		gateway_payment_id=reference,
 		gateway=gw_doc.adapter_key,
+		credit=credit,
 	)

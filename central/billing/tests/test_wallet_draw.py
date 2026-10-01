@@ -139,3 +139,40 @@ class TestCancelUnpaid(WalletDrawTestCase):
 		).insert(ignore_permissions=True)
 		with self.assertRaises(frappe.ValidationError):
 			self._cancel(inv)
+
+
+class TestTopUpSplit(WalletDrawTestCase):
+	def _purchase(self, paid, credit=None):
+		entry = credits.purchase(
+			TEAM,
+			paid,
+			"INR",
+			gateway_payment_id=frappe.generate_hash(length=8),
+			gateway="Stripe",
+			credit=credit,
+		)["ledger_entry"]
+		return frappe.db.get_value("Credit Ledger Entry", entry, ["amount", "tax_amount"], as_dict=True)
+
+	def test_the_ordered_credit_holds_when_the_rate_changes(self):
+		frappe.db.set_value("Tax Profile", TEAM, "output_tax_rate", 12)  # changed after the order
+		row = self._purchase(11800, credit="10000")
+		self.assertEqual((row.amount, row.tax_amount), (10000, 1800))
+
+	def test_without_the_order_the_rate_decides(self):
+		row = self._purchase(11800)
+		self.assertEqual((row.amount, row.tax_amount), (10000, 1800))
+
+	def test_a_webhook_carries_the_ordered_credit(self):
+		from central.billing.payments.charges import _extract_topup
+
+		payload = {
+			"data": {
+				"object": {
+					"id": "pi_1",
+					"amount_received": 1180000,
+					"currency": "inr",
+					"metadata": {"purpose": "wallet_topup", "team": TEAM, "credit": "10000"},
+				}
+			}
+		}
+		self.assertEqual(_extract_topup("Stripe", payload)["credit"], "10000")
