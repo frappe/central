@@ -13,6 +13,13 @@ export interface LoginResponse {
 	user?: string
 }
 
+/** The server's attempt policy for sign-in codes. */
+export interface LoginCodeResponse {
+	message: string
+	max_attempts: number
+	lockout_minutes: number
+}
+
 const currentUser = ref<string | null>(initialUser())
 const providerLogins = ref<ProviderLogin[]>(window.provider_logins ?? [])
 const isLoading = ref(false)
@@ -36,12 +43,12 @@ export function useAuth() {
 	}
 }
 
-async function requestLoginCode(email: string): Promise<void> {
-	await frappeRequest({
+async function requestLoginCode(email: string): Promise<LoginCodeResponse> {
+	return (await frappeRequest({
 		url: '/api/method/central.api.auth.request_login_code',
 		method: 'POST',
 		params: { email },
-	})
+	})) as LoginCodeResponse
 }
 
 async function verifyLoginCode(

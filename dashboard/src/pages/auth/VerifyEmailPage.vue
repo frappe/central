@@ -1,11 +1,20 @@
 <script setup lang="ts">
 import { Button, ErrorMessage } from 'frappe-ui'
-import { computed, ref } from 'vue'
+import { computed, nextTick, ref } from 'vue'
 import { type LocationQueryRaw, useRoute, useRouter } from 'vue-router'
 import { API } from '@/api/methods'
 import AuthShell from '@/components/auth/AuthShell.vue'
 import OtpInput from '@/components/common/OtpInput.vue'
-import { frappeErrorMessage, methodUrl, postFrappe } from '@/lib/auth'
+import {
+	frappeErrorMessage,
+	frappeErrorType,
+	methodUrl,
+	postFrappe,
+	queryString,
+} from '@/lib/auth'
+
+// The pending signup is gone or locked; only a fresh signup can issue a code.
+const RESTART_ERRORS = new Set(['SignupCodeExpiredError', 'SignupLockedError'])
 
 const route = useRoute()
 const router = useRouter()
@@ -15,14 +24,20 @@ const isProductSignup = computed(() => Boolean(product.value))
 const signupSteps = computed(() => (isProductSignup.value ? 4 : 2))
 
 const otp = ref('')
+const otpInput = ref<InstanceType<typeof OtpInput> | null>(null)
 const loading = ref(false)
 const redirecting = ref(false)
 const resent = ref(false)
 const error = ref('')
+const needsRestart = ref(false)
+
+// Without an email there is no pending signup to verify.
+if (!email) router.replace({ path: '/signup', query: signupQuery() })
 
 async function verify() {
-	if (loading.value || otp.value.length !== 6) return
+	if (loading.value || needsRestart.value || otp.value.length !== 6) return
 	loading.value = true
+	resent.value = false
 	error.value = ''
 	try {
 		await postFrappe(methodUrl(API.verifySignup), { email, code: otp.value })
@@ -32,18 +47,16 @@ async function verify() {
 		redirecting.value = true
 		window.location.replace(signupDestination())
 	} catch (exception) {
-		error.value = frappeErrorMessage(
-			exception,
-			'That code did not work. Please try again.',
-		)
+		showError(exception, 'That code did not work. Please try again.')
 		otp.value = ''
 	} finally {
 		if (!redirecting.value) loading.value = false
+		focusCode()
 	}
 }
 
 async function resend() {
-	if (loading.value || !email) return
+	if (loading.value || needsRestart.value) return
 	loading.value = true
 	resent.value = false
 	error.value = ''
@@ -51,10 +64,27 @@ async function resend() {
 		await postFrappe(methodUrl(API.resendSignupCode), { email })
 		resent.value = true
 	} catch (exception) {
-		error.value = frappeErrorMessage(exception, 'Could not resend the code.')
+		showError(exception, 'Could not resend the code.')
 	} finally {
 		loading.value = false
+		focusCode()
 	}
+}
+
+function showError(exception: unknown, fallback: string) {
+	error.value = frappeErrorMessage(exception, fallback)
+	needsRestart.value = RESTART_ERRORS.has(frappeErrorType(exception) ?? '')
+}
+
+function focusCode() {
+	if (!needsRestart.value) nextTick(() => otpInput.value?.focus())
+}
+
+function startAgain() {
+	router.push({
+		path: '/signup',
+		query: { ...signupQuery(), ...(email ? { email } : {}) },
+	})
 }
 
 function signupDestination(): string {
@@ -63,15 +93,8 @@ function signupDestination(): string {
 		: '/dashboard/servers'
 }
 
-function signupQuery(): LocationQueryRaw | undefined {
-	if (!isProductSignup.value) return undefined
-	return { product: product.value }
-}
-
-function queryString(value: unknown): string {
-	if (typeof value === 'string') return value
-	if (Array.isArray(value)) return queryString(value[0])
-	return ''
+function signupQuery(): LocationQueryRaw {
+	return isProductSignup.value ? { product: product.value } : {}
 }
 </script>
 
@@ -80,16 +103,15 @@ function queryString(value: unknown): string {
 		<h1 class="text-2xl font-semibold text-ink-gray-9">Verify your email</h1>
 		<p class="mt-2 text-p-base text-ink-gray-5">
 			Enter the 6-digit code we sent to
-			<span class="font-medium text-ink-gray-8"
-				>{{ email || 'your email address' }}</span
-			>.
+			<span class="font-medium text-ink-gray-8">{{ email }}</span>.
 		</p>
 
 		<form class="mt-8 space-y-4" @submit.prevent="verify">
 			<OtpInput
+				ref="otpInput"
 				v-model="otp"
 				label="Verification code"
-				:disabled="loading"
+				:disabled="loading || needsRestart"
 				autofocus
 				@complete="verify"
 			/>
@@ -102,6 +124,16 @@ function queryString(value: unknown): string {
 			<ErrorMessage v-if="error" :message="error" />
 
 			<Button
+				v-if="needsRestart"
+				variant="solid"
+				size="md"
+				class="w-full"
+				@click="startAgain"
+			>
+				Start again
+			</Button>
+			<Button
+				v-else
 				type="submit"
 				variant="solid"
 				size="md"
@@ -122,6 +154,7 @@ function queryString(value: unknown): string {
 				Use a different email
 			</button>
 			<button
+				v-if="!needsRestart"
 				type="button"
 				class="font-medium text-ink-gray-8 hover:text-ink-gray-9 disabled:opacity-50"
 				:disabled="loading"
