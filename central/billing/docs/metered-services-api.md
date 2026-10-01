@@ -52,7 +52,7 @@ allowed to touch.
 
 - **URL** — `https://<site>/api/v2/method/<dotted.path>`
 - **Params** — `GET` → query string; `POST` → JSON body with `Content-Type: application/json`.
-- **Success** — HTTP 200, body `{ "message": <payload> }`. Payloads below are the *inner* value.
+- **Success**: HTTP 200, body `{ "data": <payload> }` on `/api/v2/method/<path>`. The v1 route `/api/method/<path>` returns `{ "message": <payload> }` instead. This document uses v2. Payloads below are the *inner* value.
 
 ---
 
@@ -98,7 +98,7 @@ curl -s '.../central.billing.api.billing_api.list_service_plans' \
   -H 'X-Pilot-Token: <token>'
 ```
 ```jsonc
-{ "message": {
+{ "data": {
   "currency": "INR",
   "plans": [{
     "plan": "meter-tokens", "title": "AI Tokens", "billing_type": "Metered",
@@ -125,7 +125,7 @@ curl -s -X POST '.../central.billing.api.billing_api.subscribe_service' \
   -d '{"plan":"meter-tokens"}'
 ```
 ```jsonc
-{ "message": {
+{ "data": {
   "subscription": "a1b2c3", "service_subject": "svc-9f3a1c7e2b4d6a80",
   "reused": false, "upgraded": false, "locked_rate": 5.0, "currency": "INR"
 } }
@@ -141,7 +141,7 @@ curl -s '.../central.billing.api.billing_api.get_service_subscription' \
   -H 'X-Pilot-Token: <token>'
 ```
 ```jsonc
-{ "message": {
+{ "data": {
   "services": [{
     "subscription": "a1b2c3", "service_subject": "svc-9f3a…", "plan": "meter-tokens",
     "title": "AI Tokens", "cluster": null, "currency": "INR", "locked_rate": 5.0,
@@ -166,12 +166,12 @@ curl -s '.../central.billing.api.billing_api.check_service_allowance?service=Tok
   -H 'X-Pilot-Token: <token>'
 ```
 ```jsonc
-{ "message": {
+{ "data": {
   "exists": true, "service_subject": "svc-9f3a…", "plan": "meter-tokens",
   "settlement_mode": "Prepaid Pack", "unit": "1M tokens",
   "allowance": 1000.0, "used": 1000.0, "remaining": 0.0, "blocked": true
 } }
-// not subscribed → { "message": { "exists": false } }
+// not subscribed → { "data": { "exists": false } }
 ```
 
 ### `POST` report_usage
@@ -197,7 +197,7 @@ curl -s -X POST '.../central.billing.api.billing_api.report_usage' \
 # authoritative:  {"service":"Tokens","quantity":500}
 ```
 ```jsonc
-{ "message": { "recorded": true, "service_subject": "svc-9f3a1c7e2b4d6a80" } }
+{ "data": { "recorded": true, "service_subject": "svc-9f3a1c7e2b4d6a80" } }
 // recorded=false → no open billing segment yet for the subject (not an error)
 ```
 
@@ -221,7 +221,7 @@ the console's Metered services card.
 curl -s '.../central.billing.api.dashboard.get_metered_services' -b 'sid=<session>'
 ```
 ```jsonc
-{ "message": {
+{ "data": {
   "currency": "INR",
   "services": [ /* as get_service_subscription */ ],
   "available_plans": [ /* as list_service_plans */ ]
@@ -264,7 +264,7 @@ Any team's metered footprint plus the catalog it can subscribe to.
 curl -s '.../central.billing.api.admin.services.get_team_services?team=acme' -b 'sid=<operator>'
 ```
 ```jsonc
-{ "message": { "team": "acme", "currency": "INR", "services": [ … ], "available_plans": [ … ] } }
+{ "data": { "team": "acme", "currency": "INR", "services": [ … ], "available_plans": [ … ] } }
 ```
 
 ### `POST` subscribe_team_service

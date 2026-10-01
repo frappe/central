@@ -1,10 +1,6 @@
 # Billing demo dataset
 
-A comprehensive, self-consistent billing dataset for demoing the console, the Desk
-Catalog Administration workspace, and the eleven billing reports. Everything is authored
-through the **real** code paths (Plan Configurator, provisioning, invoicing, settlement,
-dunning, refunds, notifications) so the demo exercises production logic rather than
-hand-injected rows.
+A comprehensive, self-consistent billing dataset for demoing the console, the Desk Billing workspace, and the billing reports. Everything is authored through the **real** code paths (Plan Configurator, provisioning, invoicing, settlement, dunning, refunds, notifications) so the demo exercises production logic rather than hand-injected rows.
 
 ```bash
 # build (wipes ALL billing data first, then rebuilds the ten teams)
@@ -17,7 +13,7 @@ bench --site demo-billing.local execute central.billing.demo.demo_scenarios.summ
 - `demo_scenarios.py` — orchestration: the ten teams, their terminal states, the seed/summary entrypoints.
 - `_factory.py` — the catalog shape (clusters, plans, tiers, gateways) and the idempotent record builders.
 
-The current (open) billing month is **June 2026** (`ANCHOR = 2026-06-01`); "today" is 2026-07-05.
+The current (open) billing month is the month the seed runs in. `ANCHOR` is the first day of that month. The seed backdates the historical months before it.
 
 ---
 
@@ -25,7 +21,7 @@ The current (open) billing month is **June 2026** (`ANCHOR = 2026-06-01`); "toda
 
 | Who | Email | Password | Where |
 | --- | --- | --- | --- |
-| Operator (billing admin) | `billing_admin@example.com` | `Billing@2026` | Desk — Catalog Administration workspace, Plan Configurator, reports |
+| Operator (billing admin) | `billing_admin@example.com` | `Billing@2026` | Desk: Billing workspace, Plan Configurator, reports |
 | Team owners | `owner-<slug>@example.com` | `abc@123` | Console (`/dashboard`) |
 
 Each team also carries a roster (created disabled so they don't bootstrap their own teams):
@@ -44,8 +40,9 @@ Authored through real **Plan Configurator** documents (`_vm_plans`, `_component_
 
 | Cluster | Label | Currency | Cost multiplier |
 | --- | --- | --- | --- |
-| `in-mumbai` | India — Mumbai | INR | 1.00× |
-| `me-dubai` | Middle East — Dubai | USD | 1.15× |
+| `in-bengaluru` | India, Bengaluru | INR | 1.00× |
+| `in-mumbai` | India, Mumbai | INR | 1.00× |
+| `me-dubai` | Middle East, Dubai | USD | 1.15× |
 
 **VM bundle ladder** (flat-rate plans; base price is monthly INR):
 
@@ -54,8 +51,7 @@ Authored through real **Plan Configurator** documents (`_vm_plans`, `_component_
 | `plan-1vcpu` | Starter | 1 / 2 GB / 25 GB | 100 GB | 1,500 |
 | `plan-2vcpu` | Basic | 2 / 4 GB / 50 GB | 200 GB | 3,000 |
 | `plan-4vcpu` | Standard | 4 / 8 GB / 100 GB | 400 GB | 6,000 |
-| `plan-8vcpu` | Pro | 8 / 16 GB / 200 GB | 800 GB | 12,000 |
-| `plan-16vcpu` | Enterprise | 16 / 32 GB / 400 GB | 1,600 GB | 24,000 |
+| `plan-8vcpu` | Business | 8 / 16 GB / 200 GB | 800 GB | 12,000 |
 
 **À-la-carte component rate card** (ADR 0009 — powers the "design your own" selector; INR base per unit/mo):
 Compute **1,200**/vCPU · Memory **400**/GB · Disk **30**/GB. A composed config prices as
@@ -70,9 +66,7 @@ allowance **0** = pure pay-per-use, so every reported unit bills):
 | `svc-emails` | Emails | Nos | 0.007 | 0.00009 |
 | `svc-pdf` | PDF Generation | Nos | 0.018 | 0.00022 |
 
-**Gateways**: Stripe (INR), Stripe (USD, default card rail), Razorpay (INR, supports e-mandates),
-PayPal (USD, non-default opt-in rail — ADR 0007). Demo keys are placeholders; credential
-validation and webhook registration are skipped so the seed runs offline.
+**Gateways**: one Stripe row (INR and USD; the default card rail for USD), Razorpay (INR default, supports e-mandates), and PayPal (USD, non-default opt-in rail, ADR 0007). Demo keys are placeholders. The seed skips credential validation and webhook registration, so it runs offline.
 
 **Tax** (place of supply = billing currency): INR → GST 18%, USD → VAT 5%.
 
@@ -103,7 +97,7 @@ terminal (current-month) settlement/refund/dunning path, plus its historical mon
 | `soylent` | t1 | USD | `dispute` | 2vCPU | — | Auto Charge | — |
 | `globex` | t1 | USD | `fallback` | 2vCPU | — | Auto Charge | — |
 | `harbor` | t0 | USD | `credits_full` | 1vCPU | same day | Prepaid | — |
-| `acme-corp` | t3 | INR | `grandfathered` | 8+2+1 vCPU (Mumbai) | within 24h | Auto Charge | AI 280k, Email 90k |
+| `acme-corp` | t3 | INR | `grandfathered` | 4+2+1 vCPU (Mumbai) | within 24h | Auto Charge | AI 280k, Email 90k |
 | `umbrella` | t2 | INR | `overdue` | 4vCPU + 2vCPU (+ composed) | — | Manual Checkout | PDF 75k |
 | `stark-ind` | t1 | INR | `retry` | 2vCPU | — | Manual Checkout | Email 90k |
 | `hooli` | t1 | INR | `refund_wallet` | 1vCPU | — | Manual Checkout | — |
@@ -116,7 +110,7 @@ the component rate card).
 
 ## Current-month scenarios
 
-Each team's June invoice lands in one terminal state (`_finish_current_month`):
+Each team's current-month invoice lands in one terminal state (`_finish_current_month`):
 
 | State | Team(s) | What the current invoice shows |
 | --- | --- | --- |
@@ -150,8 +144,7 @@ Matches `billing/payments/refunds.py`:
 
 ## Historical months
 
-Each tier carries N closed months of consolidated invoices before June (t1 = 2, t2 = 5, t3 = 9),
-all settled to Paid. Coverage seeded across the history:
+Each tier carries N closed months of consolidated invoices before the current month (t1 = 2, t2 = 5, t3 = 9), all settled to Paid. Coverage seeded across the history:
 
 - **Credits-then-card waterfall** — non-credit-kept teams draw their welcome credit on their
   first bill, then the card settles the remainder.
@@ -179,8 +172,7 @@ both categories:
 
 - **Billing** (via `notifications.notify`): Payment Success/Failure, Card Expiry, Credit Low,
   Mandate Reauth, Pre-debit Notice — one representative event per team, matched to its scenario.
-- **Server**: Server Failed (a real `Asset` flipped to `Failed` fires the `on_update` hook),
-  Resize Failed and Cluster Degraded (via `create_notification`, the same writer the real hooks call).
+- **Server**: Server Failed (a real Virtual Machine flipped to `Failed` fires the `on_update` hook), Resize Failed and Cluster Degraded (via `central.notification.engine.dispatch`, the same writer the real hooks call).
 - The `overdue` team already emits Invoice Overdue + Server Suspended through real dunning.
 
 ---
