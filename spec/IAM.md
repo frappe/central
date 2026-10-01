@@ -76,6 +76,8 @@ A role grant applies to all resources (`resource_type = "*"`) or to one resource
 
 ## User And Invitation Flow
 
+Signup sends a verification code to the normalized email address. Central limits code sends to five per supplied email value and 20 signup requests per IP in ten minutes. A pending signup permits five incorrect codes in total, including after a new code is sent. The pending signup expires ten minutes after the last code send or incorrect attempt.
+
 ```mermaid
 flowchart TD
     U[User created] --> R[Assign Central User role]

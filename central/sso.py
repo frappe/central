@@ -89,12 +89,6 @@ def jwks_url() -> str:
 	return f"{central_url()}/api/method/central.api.jwks.get_jwks"
 
 
-def bench_gateway() -> str:
-	"""The dev bench's gateway base, used when opening by explicit gateway (no Virtual Machine). The
-	SID rides `/?sid=`, which the bench SPA consumes and exchanges at POST /api/login."""
-	return (frappe.conf.get("bench_sso_redirect") or "http://localhost:3030").rstrip("/")
-
-
 def mint_bench_login(audience: str) -> str:
 	"""A single-use admin SID that opens a bench. The bench verifies it against the JWKS
 	and checks `aud` equals its own audience id."""

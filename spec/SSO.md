@@ -10,7 +10,7 @@ Atlas regional requests use a separate Ed25519 key and public endpoint. Pilot lo
 
 **Bench (console) login**: `central.api.sso.get_bench_link`
 
-1. Central resolves the server's `gateway_url` and the `audience_id` of its Active `Pilot Credential`.
+1. The caller supplies a server. Central checks access to that server and resolves its `gateway_url` and the `audience_id` of its Active `Pilot Credential`. A local server uses the same path with its local gateway URL.
 2. Central mints `mint_bench_login(audience)`: `scope=bench`, 60 minutes, single-use `jti`.
 3. The browser opens `{gateway}/?sid=<jwt>`. The bench SPA exchanges it for a local session cookie.
 

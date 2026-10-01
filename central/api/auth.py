@@ -23,6 +23,15 @@ MAX_OTP_ATTEMPTS = 5
 
 # nosemgrep: guest-whitelisted-method -- signup requires guest access and enforces the site signup limit.
 @frappe.whitelist(allow_guest=True, methods=["POST"])
+@rate_limit(limit=20, seconds=OTP_TTL_SECONDS, methods="POST")
+@rate_limit(
+	key="email",
+	ip_based=False,
+	endpoint="central.signup.code_send",
+	limit=5,
+	seconds=OTP_TTL_SECONDS,
+	methods="POST",
+)
 def sign_up(email: str, full_name: str) -> tuple[int, str]:
 	"""Start an SMB signup: email a verification code, hold the pending signup in
 	cache. The User is created only on `verify_signup`."""
@@ -36,19 +45,32 @@ def sign_up(email: str, full_name: str) -> tuple[int, str]:
 		return (0, _("Already Registered")) if existing_user else (0, _("Registered but disabled"))
 
 	_enforce_signup_limit()
-	_send_signup_code(email, full_name)
+	pending = frappe.cache.get_value(_otp_key(email))
+	if pending and pending.get("attempts", 0) >= MAX_OTP_ATTEMPTS:
+		frappe.throw(_("Too many incorrect codes. Please try again later."), frappe.ValidationError)
+	_send_signup_code(email, full_name, attempts=pending.get("attempts", 0) if pending else 0)
 	return 1, _("Please check your email for your verification code")
 
 
 # nosemgrep: guest-whitelisted-method -- a pending signup and route rate limit constrain resends.
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 @rate_limit(limit=5, seconds=OTP_TTL_SECONDS, methods="POST")
+@rate_limit(
+	key="email",
+	ip_based=False,
+	endpoint="central.signup.code_send",
+	limit=5,
+	seconds=OTP_TTL_SECONDS,
+	methods="POST",
+)
 def resend_signup_code(email: str) -> tuple[int, str]:
 	"""Re-issue a fresh code for a pending signup."""
 	email = email.strip().lower()
 	pending = frappe.cache.get_value(_otp_key(email))
 	if not pending:
 		frappe.throw(_("Start the signup again — your session expired."), frappe.ValidationError)
+	if pending.get("attempts", 0) >= MAX_OTP_ATTEMPTS:
+		frappe.throw(_("Too many incorrect codes. Please try again later."), frappe.ValidationError)
 	_send_signup_code(email, pending["full_name"], attempts=pending.get("attempts", 0))
 	return 1, _("A new verification code is on its way")
 
@@ -64,13 +86,14 @@ def verify_signup(email: str, code: str) -> dict:
 
 	if not pending:
 		frappe.throw(_("Your verification code expired. Please sign up again."), frappe.ValidationError)
+	if pending.get("attempts", 0) >= MAX_OTP_ATTEMPTS:
+		frappe.throw(_("Too many incorrect codes. Please try again later."), frappe.ValidationError)
 
 	if not secrets.compare_digest(str(pending.get("code", "")), code):
 		pending["attempts"] = pending.get("attempts", 0) + 1
-		if pending["attempts"] >= MAX_OTP_ATTEMPTS:
-			frappe.cache.delete_value(_otp_key(email))
-			frappe.throw(_("Too many incorrect codes. Please sign up again."), frappe.ValidationError)
 		frappe.cache.set_value(_otp_key(email), pending, expires_in_sec=OTP_TTL_SECONDS)
+		if pending["attempts"] >= MAX_OTP_ATTEMPTS:
+			frappe.throw(_("Too many incorrect codes. Please try again later."), frappe.ValidationError)
 		frappe.throw(_("That code is incorrect — try again."), frappe.ValidationError)
 
 	user = _create_verified_user(email, pending["full_name"])

@@ -1,9 +1,17 @@
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import frappe
 from frappe.tests import IntegrationTestCase
 
-from central.api.auth import OTP_TTL_SECONDS, _otp_key, _send_signup_code, sign_up, verify_signup
+from central.api.auth import (
+	OTP_TTL_SECONDS,
+	_otp_key,
+	_send_signup_code,
+	resend_signup_code,
+	sign_up,
+	verify_signup,
+)
 from central.www.dashboard import build_auth_context
 
 
@@ -160,3 +168,43 @@ class TestAuth(IntegrationTestCase):
 			_send_signup_code("attempts@example.test", "Attempts Test", attempts=3)
 
 		self.assertEqual(set_value.call_args.args[1]["attempts"], 3)
+
+	def test_signup_and_resend_share_a_send_limit_for_email(self):
+		email = f"limit.{frappe.generate_hash(length=8)}@example.test"
+		self.addCleanup(frappe.cache.delete_value, _otp_key(email))
+
+		with (
+			patch.object(frappe.local, "request", SimpleNamespace(method="POST"), create=True),
+			patch.object(frappe.local, "form_dict", {"email": email}, create=True),
+			patch.object(frappe.local, "request_ip", f"test-{frappe.generate_hash(length=8)}", create=True),
+			patch("central.api.auth.frappe.sendmail") as sendmail,
+		):
+			for _ in range(4):
+				sign_up(email, "Limit Test")
+			resend_signup_code(email)
+			with self.assertRaises(frappe.RateLimitExceededError):
+				sign_up(email, "Limit Test")
+
+		self.assertEqual(sendmail.call_count, 5)
+
+	def test_new_signup_code_does_not_reset_failed_attempts(self):
+		email = f"attempts.{frappe.generate_hash(length=8)}@example.test"
+		self.addCleanup(frappe.cache.delete_value, _otp_key(email))
+
+		with patch("central.api.auth.frappe.sendmail"):
+			sign_up(email, "Attempt Test")
+			for _ in range(4):
+				with self.assertRaises(frappe.ValidationError):
+					verify_signup(email, "000000")
+
+			sign_up(email, "Attempt Test")
+			self.assertEqual(frappe.cache.get_value(_otp_key(email))["attempts"], 4)
+			with self.assertRaises(frappe.ValidationError):
+				verify_signup(email, "000000")
+			with self.assertRaises(frappe.ValidationError):
+				sign_up(email, "Attempt Test")
+			with self.assertRaises(frappe.ValidationError):
+				resend_signup_code(email)
+			code = frappe.cache.get_value(_otp_key(email))["code"]
+			with self.assertRaises(frappe.ValidationError):
+				verify_signup(email, code)
