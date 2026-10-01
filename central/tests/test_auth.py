@@ -97,17 +97,30 @@ class TestAuth(IntegrationTestCase):
 			)
 		)
 
-	def test_developer_otp_bypass_still_requires_a_pending_signup(self):
+	def test_verify_without_a_pending_signup_is_refused(self):
 		frappe.set_user("Guest")
 		email = "central-missing-signup-test@example.test"
 		self.addCleanup(frappe.cache.delete_value, _otp_key(email))
-		original_developer_mode = frappe.conf.developer_mode
-		frappe.conf.developer_mode = 1
-		self.addCleanup(setattr, frappe.conf, "developer_mode", original_developer_mode)
 
 		with self.assertRaises(frappe.ValidationError):
 			with patch("frappe.local.login_manager", create=True):
 				verify_signup(email, "123456")
+
+		self.assertFalse(frappe.db.exists("User", email))
+
+	@IntegrationTestCase.change_settings("Website Settings", disable_signup=1)
+	def test_a_wrong_code_is_refused_in_developer_mode(self):
+		frappe.set_user("Guest")
+		email = "central-wrong-code-test@example.test"
+		self.addCleanup(frappe.cache.delete_value, _otp_key(email))
+		sign_up(email, "Wrong Code Test")
+		code = frappe.cache.get_value(_otp_key(email))["code"]
+		wrong = "000000" if code != "000000" else "111111"
+
+		with patch.dict(frappe.conf, {"developer_mode": 1}):
+			with self.assertRaises(frappe.ValidationError):
+				with patch("frappe.local.login_manager", create=True):
+					verify_signup(email, wrong)
 
 		self.assertFalse(frappe.db.exists("User", email))
 

@@ -65,7 +65,7 @@ def verify_signup(email: str, code: str) -> dict:
 	if not pending:
 		frappe.throw(_("Your verification code expired. Please sign up again."), frappe.ValidationError)
 
-	if not _code_matches(pending, code):
+	if not secrets.compare_digest(str(pending.get("code", "")), code):
 		pending["attempts"] = pending.get("attempts", 0) + 1
 		if pending["attempts"] >= MAX_OTP_ATTEMPTS:
 			frappe.cache.delete_value(_otp_key(email))
@@ -121,14 +121,6 @@ def _send_signup_code(email: str, full_name: str, attempts: int = 0) -> None:
 		)
 	except Exception:
 		frappe.log_error(title="Signup verification email failed")
-
-
-def _code_matches(pending: dict, code: str) -> bool:
-	# Demo/dev convenience: any 6-digit code passes (mirrors the UI hint). Fails
-	# closed in production.
-	if frappe.conf.developer_mode and len(code) == 6 and code.isdigit():
-		return True
-	return secrets.compare_digest(str(pending.get("code", "")), code)
 
 
 def _create_verified_user(email: str, full_name: str):

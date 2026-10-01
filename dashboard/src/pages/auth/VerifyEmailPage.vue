@@ -19,7 +19,6 @@ const loading = ref(false)
 const redirecting = ref(false)
 const resent = ref(false)
 const error = ref('')
-const devHint = import.meta.env.DEV
 
 async function verify() {
 	if (loading.value || otp.value.length !== 6) return
@@ -94,10 +93,6 @@ function queryString(value: unknown): string {
 				autofocus
 				@complete="verify"
 			/>
-			<p v-if="devHint" class="text-p-sm text-ink-gray-5">
-				Demo: any 6 digits work.
-			</p>
-
 			<p
 				v-if="resent"
 				class="rounded-4 bg-surface-green-2 px-3 py-2 text-p-sm text-ink-green-2"
