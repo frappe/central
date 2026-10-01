@@ -40,11 +40,30 @@ export function requiredError(label: string) {
 		value.trim() ? '' : `${label} is required.`
 }
 
+type FrappeError = Error & {
+	messages?: unknown[]
+	status?: number
+	exc_type?: string
+}
+
 export function frappeErrorMessage(error: unknown, fallback: string): string {
 	if (!(error instanceof Error)) return fallback
-	const messages = (error as Error & { messages?: unknown[] }).messages
-	const message = messages?.find(
+	const frappeError = error as FrappeError
+	// Frappe's own rate-limit copy gives the user no next step.
+	if (frappeError.status === 429)
+		return 'Too many attempts. Wait a few minutes, then try again.'
+	const message = frappeError.messages?.find(
 		(item): item is string => typeof item === 'string' && Boolean(item),
 	)
 	return message || error.message || fallback
+}
+
+export function frappeErrorType(error: unknown): string | undefined {
+	return error instanceof Error ? (error as FrappeError).exc_type : undefined
+}
+
+export function queryString(value: unknown): string {
+	if (typeof value === 'string') return value
+	if (Array.isArray(value)) return queryString(value[0])
+	return ''
 }

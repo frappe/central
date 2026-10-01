@@ -10,16 +10,18 @@ import {
 	emailError,
 	frappeErrorMessage,
 	postFrappe,
+	queryString,
 	requiredError,
 } from '@/lib/auth'
 
 const route = useRoute()
 const router = useRouter()
 const fullName = ref('')
-const email = ref('')
+const email = ref(queryString(route.query.email))
 const submitted = ref(false)
 const loading = ref(false)
 const error = ref('')
+const hasExistingAccount = ref(false)
 
 const { providerLogins } = useAuth()
 const product = computed(() => queryString(route.query.product))
@@ -28,12 +30,13 @@ const signupSteps = computed(() => (isProductSignup.value ? 4 : 2))
 const subheading = computed(() =>
 	isProductSignup.value
 		? 'A couple of minutes from here to naming your first site.'
-		: 'Verify your email to start managing Central instances.',
+		: 'Verify your email to start managing your servers.',
 )
 
 async function signup() {
 	submitted.value = true
 	error.value = ''
+	hasExistingAccount.value = false
 	if (requiredError('Full name')(fullName.value) || emailError(email.value))
 		return
 
@@ -49,6 +52,7 @@ async function signup() {
 		const [status, message] = response ?? [0, 'Unable to create your account.']
 		if (status !== 1) {
 			error.value = message
+			hasExistingAccount.value = Boolean(response)
 			return
 		}
 		await router.push({
@@ -72,15 +76,13 @@ function verificationQuery(): LocationQueryRaw {
 	}
 }
 
-function loginQuery(): LocationQueryRaw | undefined {
-	if (!isProductSignup.value) return undefined
-	return { 'redirect-to': '/dashboard/onboarding/site' }
-}
-
-function queryString(value: unknown): string {
-	if (typeof value === 'string') return value
-	if (Array.isArray(value)) return queryString(value[0])
-	return ''
+function loginQuery(): LocationQueryRaw {
+	return {
+		...(email.value.trim() ? { email: email.value.trim() } : {}),
+		...(isProductSignup.value
+			? { 'redirect-to': '/dashboard/onboarding/site' }
+			: {}),
+	}
 }
 </script>
 
@@ -111,7 +113,16 @@ function queryString(value: unknown): string {
 				:submitted="submitted"
 			/>
 
-			<ErrorMessage v-if="error" :message="error" />
+			<div v-if="error" class="space-y-1">
+				<ErrorMessage :message="error" />
+				<RouterLink
+					v-if="hasExistingAccount"
+					class="text-p-sm font-medium text-ink-gray-8 hover:text-ink-gray-9"
+					:to="{ path: '/login', query: loginQuery() }"
+				>
+					Sign in with this email
+				</RouterLink>
+			</div>
 			<Button
 				type="submit"
 				variant="solid"
