@@ -52,7 +52,7 @@ On the Snapshots page, a member with `server:snapshot` selects a Running, Stoppe
 insert --> after_insert job --> send_to_region() --> Atlas image (tagged with the snapshot name)
 sync_pending_snapshots (every 5 minutes) --> sync() --> Available + size | Failed + reason
 status becomes Available or Deleted --> apply_free_allowance(server) --> each snapshot free or billed
-take_automatic_snapshots (daily maintenance) --> one Automatic snapshot per running server
+take_automatic_snapshots (daily, long queue) --> one Automatic snapshot per running server
 delete_expired_snapshots (hourly maintenance) --> delete_from_region() --> Deleted
 ```
 

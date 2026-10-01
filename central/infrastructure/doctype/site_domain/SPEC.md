@@ -2,7 +2,7 @@
 
 ## Purpose
 
-A `Site Domain` record routes one domain to the IPv6 address of a VM through the regional Atlas HTTP proxy. Central owns the record. The proxy holds the route map. See the proxy [control daemon API](../../../../../atlas/services/http-proxy/docs/control-daemon.md) for the map rules.
+A `Site Domain` record routes one domain to the IPv6 address of a VM through the regional Atlas HTTP proxy. Central owns the record. The proxy holds the route map. See the proxy [control daemon API](../../../../../atlas/docs/networking/http-proxy/control-daemon.md) for the map rules.
 
 ## Configuration
 
@@ -23,7 +23,7 @@ Central reaches each regional service at `<service>.<region>.<wildcard domain>`,
 | `erp.in-mumbai.frappe.dev` | Site | `erp`, in `/v1/sites` |
 | `www.example.com` | Domain | `www.example.com`, in `/v1/domains` |
 
-Central refuses the regional zone itself, a name 2 or more labels below the zone, a wildcard, and the reserved site names `proxy`, `proxy-*`, `atlas`, and `cargo`. The server must belong to the team and the region of the record.
+Central refuses the regional zone itself, a name 2 or more labels below the zone, a wildcard, and the reserved site names `proxy`, `proxy-*`, `atlas`, and `cargo`. The server must belong to the team and the region of the record. The optional `site` link must belong to the team. A Pilot registration fills it from the Site on the server of the Pilot. The `record_server_has_site` patch clears this link before it removes a Site from a bench-only server. The route stays, because it targets the server. See [Trial sites](../site/SPEC.md#migration).
 
 ## Routed names
 
@@ -55,7 +55,7 @@ server Terminated --> remove_server_routes job --> remove() each route --> recor
 - A delete fails when the proxy call fails. The record stays, so the route and the record cannot drift apart. Fix the cause and delete again.
 - When a server becomes Terminated, `Virtual Machine.on_update` queues `remove_server_routes`. It removes every route of that server. A removal that fails stays on the record as Failed with its reason.
 - `apply()` on a route of a Terminated server removes the route instead of sending it. So `retry_failed` and the **Retry** button also finish a failed removal.
-- A route of a Terminated server that is still Active means the removal job did not run. The **Remove routes** button on the Virtual Machine form queues it again. Only a System Manager sees it.
+- A route of a Terminated server that is still Active means the removal job did not run. The **Remove routes** button on the Virtual Machine form queues it again. It needs write permission on the Virtual Machine, so only a System Manager can run it.
 
 ## Pilot registration
 
