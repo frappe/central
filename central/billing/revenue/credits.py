@@ -331,6 +331,7 @@ def purchase(
 	note: str | None = None,
 	gateway_payment_id: str | None = None,
 	gateway: str | None = None,
+	credit=None,
 ) -> dict:
 	"""Top-up: book a credit entry for purchased credits.
 
@@ -345,13 +346,14 @@ def purchase(
 
 	`amount` is what the customer paid. For a team that pays GST on top of its
 	top-ups, the wallet is credited without the GST, which is kept on the entry to
-	pay the GST of the invoices this credit is later used for.
+	pay the GST of the invoices this credit is later used for. `credit` is the wallet
+	credit the order was made for, when the gateway kept it.
 	"""
-	credit, gst = split_top_up(team, amount) if gateway_payment_id else (amount, 0)
+	wallet, gst = _top_up_split(team, amount, credit) if gateway_payment_id else (amount, 0)
 	entry, new_balance = _book_entry(
 		team,
 		"Credit",
-		credit,
+		wallet,
 		currency,
 		reference_type="Payment Method" if payment_method else "Top-up",
 		reference_name=payment_method or reference_name,
@@ -377,6 +379,14 @@ def top_up_gst_rate(team: str) -> float:
 def top_up_gst(team: str, credit) -> float:
 	"""GST to charge on top of a top-up of `credit`."""
 	return frappe.utils.flt(frappe.utils.flt(credit) * top_up_gst_rate(team), 2)
+
+
+def _top_up_split(team: str, paid, ordered=None) -> tuple[float, float]:
+	"""Credit and GST of a captured top-up: as ordered when known, else at today's rate."""
+	ordered = frappe.utils.flt(ordered)
+	if 0 < ordered <= frappe.utils.flt(paid):
+		return ordered, frappe.utils.flt(frappe.utils.flt(paid) - ordered, 2)
+	return split_top_up(team, paid)
 
 
 def split_top_up(team: str, paid) -> tuple[float, float]:
