@@ -138,6 +138,7 @@ def _book_entry(
 	note: str | None = None,
 	gateway_payment_id: str | None = None,
 	expires_on=None,
+	extra: dict | None = None,
 ):
 	"""Append one ledger entry under the per-wallet lock, retrying on deadlock.
 
@@ -174,6 +175,7 @@ def _book_entry(
 				note,
 				gateway_payment_id,
 				expires_on,
+				extra,
 			)
 		except frappe.QueryDeadlockError:
 			# The transaction is already rolled back by InnoDB; sync Frappe's state
@@ -201,6 +203,7 @@ def _book_entry_once(
 	note: str | None,
 	gateway_payment_id: str | None = None,
 	expires_on=None,
+	extra: dict | None = None,
 ):
 	"""One booking attempt under the per-wallet lock; returns (doc, new_balance)."""
 	_ensure_wallet(team, currency)
@@ -228,6 +231,7 @@ def _book_entry_once(
 		note=note,
 		gateway_payment_id=gateway_payment_id,
 		expires_on=expires_on,
+		extra=extra,
 	)
 
 
@@ -242,6 +246,7 @@ def _post_entry(
 	note: str | None = None,
 	gateway_payment_id: str | None = None,
 	expires_on=None,
+	extra: dict | None = None,
 ):
 	"""Append one entry against an already-locked wallet; returns (doc, new_balance).
 
@@ -282,6 +287,7 @@ def _post_entry(
 			"expires_on": expires_on,
 			"note": note,
 			"created_at": frappe.utils.now_datetime(),
+			**(extra or {}),
 		}
 	).insert(ignore_permissions=True)
 	return entry, new_balance
@@ -336,18 +342,65 @@ def purchase(
 	payment, and the unique-key + under-lock guard ensure it books one credit.
 	`gateway` (the provider/adapter key) namespaces that id so ids only unique within
 	a gateway can't collide across gateways — see `_namespaced_payment_id`.
+
+	`amount` is what the customer paid. For a team that pays GST on top of its
+	top-ups, the wallet is credited without the GST, which is kept on the entry to
+	pay the GST of the invoices this credit is later used for.
 	"""
+	credit, gst = split_top_up(team, amount) if gateway_payment_id else (amount, 0)
 	entry, new_balance = _book_entry(
 		team,
 		"Credit",
-		amount,
+		credit,
 		currency,
 		reference_type="Payment Method" if payment_method else "Top-up",
 		reference_name=payment_method or reference_name,
 		note=note or "Credit top-up",
 		gateway_payment_id=_namespaced_payment_id(gateway, gateway_payment_id),
+		extra={"tax_amount": gst, "paid_in": 1 if gateway_payment_id else 0},
 	)
+	if gateway_payment_id:
+		# Money received, so the accounting system books it as an advance.
+		from central.billing.ingester import advance
+
+		advance.enqueue_sync(entry.name)
 	return {"ledger_entry": entry.name, "new_balance": new_balance}
+
+
+def top_up_gst_rate(team: str) -> float:
+	"""The GST rate added on top of this team's top-ups, as a fraction. 0 if none."""
+	from central.billing.revenue.tax import resolve_tax
+
+	return frappe.utils.flt(resolve_tax(team, 100)["output_tax_amount"]) / 100
+
+
+def top_up_gst(team: str, credit) -> float:
+	"""GST to charge on top of a top-up of `credit`."""
+	return frappe.utils.flt(frappe.utils.flt(credit) * top_up_gst_rate(team), 2)
+
+
+def split_top_up(team: str, paid) -> tuple[float, float]:
+	"""What a customer paid for a top-up, split into wallet credit and GST."""
+	credit = frappe.utils.flt(frappe.utils.flt(paid) / (1 + top_up_gst_rate(team)), 2)
+	return credit, frappe.utils.flt(frappe.utils.flt(paid) - credit, 2)
+
+
+def advance_gst_balance(team: str, currency: str) -> float:
+	"""GST paid with top-ups that no invoice has used yet."""
+	cle = frappe.qb.DocType("Credit Ledger Entry")
+	paid = (
+		frappe.qb.from_(cle)
+		.select(Sum(cle.tax_amount))
+		.where((cle.team == team) & (cle.currency == currency) & (cle.entry_type == "Credit"))
+	).run()[0][0]
+	inv = frappe.qb.DocType("Invoice")
+	# Cancelled invoices count too: what one gives back is booked again as credit.
+	used = (
+		frappe.qb.from_(inv)
+		.select(Sum(inv.advance_tax_applied))
+		.where((inv.team == team) & (inv.currency == currency))
+	).run()[0][0]
+	return frappe.utils.flt(frappe.utils.flt(paid) - frappe.utils.flt(used), 2)
 
 
 def apply_credit(team, amount, currency=None, reference_type=None, reference_name=None, note=None) -> dict:
@@ -374,6 +427,36 @@ def refund_to_wallet(
 		reference_type,
 		reference_name,
 		note or "Refund to wallet",
+	)
+	return {"ledger_entry": entry.name, "new_balance": new_balance}
+
+
+def return_credit(
+	team: str,
+	amount,
+	currency: str,
+	reference_type: str,
+	reference_name: str,
+	note: str,
+	paid_in: bool = False,
+	tax_amount: float = 0,
+	advance_id: str | None = None,
+) -> dict:
+	"""Give credit back to the wallet, as the kind of credit it was when it was spent.
+
+	Paid-in credit comes back with the GST paid on it, so it pays invoice GST again.
+	Promotional credit comes back with a fresh expiry.
+	"""
+	entry, new_balance = _book_entry(
+		team,
+		"Credit",
+		amount,
+		currency,
+		reference_type=reference_type,
+		reference_name=reference_name,
+		note=note,
+		expires_on=None if paid_in else promotional_expiry_date(),
+		extra={"paid_in": int(paid_in), "tax_amount": tax_amount, "advance_id": advance_id},
 	)
 	return {"ledger_entry": entry.name, "new_balance": new_balance}
 
@@ -513,7 +596,7 @@ def credit_lots(team: str, currency: str) -> list[dict]:
 	cle = frappe.qb.DocType("Credit Ledger Entry")
 	rows = (
 		frappe.qb.from_(cle)
-		.select(cle.name, cle.entry_type, cle.amount, cle.expires_on, cle.creation)
+		.select(cle.name, cle.entry_type, cle.amount, cle.expires_on, cle.creation, cle.paid_in)
 		.where((cle.team == team) & (cle.currency == currency))
 		.orderby(cle.creation)
 		.run(as_dict=True)

@@ -31,6 +31,10 @@ const address = computed(() => {
 const country = computed(() => profile.data?.country || '')
 const gstin = computed(() => profile.data?.gstin || '')
 const isIndia = computed(() => country.value === 'India')
+const gstStatus = computed(() => profile.data?.gst_status || '')
+const gstTheme = computed(() =>
+	gstStatus.value === 'Active' ? 'green' : 'red',
+)
 </script>
 
 <template>
@@ -81,8 +85,9 @@ const isIndia = computed(() => country.value === 'India')
 			</div>
 			<div v-if="isIndia" class="flex items-center justify-between gap-3">
 				<dt class="text-ink-gray-5">GSTIN</dt>
-				<dd v-if="gstin" class="text-right font-mono text-ink-gray-8">
-					{{ gstin }}
+				<dd v-if="gstin" class="flex items-center gap-2 text-right">
+					<Badge v-if="gstStatus" :label="gstStatus" :theme="gstTheme" />
+					<span class="font-mono text-ink-gray-8">{{ gstin }}</span>
 				</dd>
 				<Badge v-else label="Not set" />
 			</div>

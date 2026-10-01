@@ -217,7 +217,7 @@ def check_invoice_line_sum() -> list[Violation]:
 
 
 def check_paid_invoice_is_covered() -> list[Violation]:
-	"""A `Paid` invoice was covered: `amount_paid` + `credit_applied` >= `total` − TDS.
+	"""A `Paid` invoice was covered: card + credit + advance GST >= `total` − TDS.
 
 	Covers both settlement routes: the card path stamps `amount_paid`, the
 	credits-cover-it-in-full path leaves it at zero and stamps `credit_applied`. An
@@ -228,10 +228,24 @@ def check_paid_invoice_is_covered() -> list[Violation]:
 	for inv in frappe.get_all(
 		"Invoice",
 		filters={"status": "Paid", "invoice_type": ["!=", "Cost Report"]},
-		fields=["name", "team", "currency", "total", "tds_amount", "amount_paid", "credit_applied"],
+		fields=[
+			"name",
+			"team",
+			"currency",
+			"total",
+			"tds_amount",
+			"amount_paid",
+			"credit_applied",
+			"advance_tax_applied",
+		],
 	):
 		owed = frappe.utils.flt(inv.total) - frappe.utils.flt(inv.tds_amount)
-		settled = frappe.utils.flt(inv.amount_paid) + frappe.utils.flt(inv.credit_applied)
+		# GST paid with top-ups is part of what settled it, beside the card and the credit.
+		settled = (
+			frappe.utils.flt(inv.amount_paid)
+			+ frappe.utils.flt(inv.credit_applied)
+			+ frappe.utils.flt(inv.advance_tax_applied)
+		)
 		if settled + TOLERANCE < owed:
 			violations.append(
 				Violation(

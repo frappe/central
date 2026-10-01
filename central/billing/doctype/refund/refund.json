@@ -18,6 +18,8 @@
   "section_break_result",
   "status",
   "gateway_refund_id",
+  "payment_record_id",
+  "advance_id",
   "column_break_result",
   "created_at",
   "completed_at",
@@ -31,8 +33,7 @@
    "in_list_view": 1,
    "label": "Payment Attempt",
    "options": "Payment Attempt",
-   "reqd": 1,
-   "description": "The original charge being corrected"
+   "description": "The card or UPI charge refunded. Blank for credit given back to the wallet."
   },
   {
    "fieldname": "invoice",
@@ -68,8 +69,8 @@
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Destination",
-   "options": "Source\nWallet",
-   "description": "source = gateway (full dispute); wallet = credit ledger (partial overcharge)"
+   "options": "Source\nWallet\nDispute",
+   "description": "Source: back to the card or UPI. Wallet: back to the wallet. Dispute: lost to a chargeback, nothing is sent."
   },
   {
    "fieldname": "section_break_result",
@@ -88,6 +89,20 @@
    "fieldtype": "Data",
    "label": "Gateway Refund ID",
    "description": "Set for source refunds; blank for wallet credits"
+  },
+  {
+   "description": "The refund or dispute payment in the accounting system.",
+   "fieldname": "payment_record_id",
+   "fieldtype": "Data",
+   "label": "Payment Record ID",
+   "read_only": 1
+  },
+  {
+   "description": "For credit given back to the wallet: the new advance that holds it.",
+   "fieldname": "advance_id",
+   "fieldtype": "Data",
+   "label": "Advance ID",
+   "read_only": 1
   },
   {
    "fieldname": "column_break_result",
@@ -115,7 +130,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-06-03 00:00:00.000000",
+ "modified": "2026-09-30 16:00:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Refund",
