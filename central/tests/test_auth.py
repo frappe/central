@@ -6,16 +6,88 @@ from frappe.tests import IntegrationTestCase
 
 from central.api.auth import (
 	OTP_TTL_SECONDS,
+	_login_otp_key,
 	_otp_key,
 	_send_signup_code,
+	request_login_code,
 	resend_signup_code,
 	sign_up,
+	verify_login_code,
 	verify_signup,
 )
 from central.www.dashboard import build_auth_context
 
 
 class TestAuth(IntegrationTestCase):
+	def test_email_code_signs_in_once_without_a_password(self):
+		email = frappe.db.get_value("User", "Administrator", "email").lower()
+		self.addCleanup(frappe.cache.delete_value, _login_otp_key(email))
+		frappe.set_user("Guest")
+
+		with patch("central.api.auth.frappe.sendmail") as sendmail:
+			response = request_login_code(email)
+		self.assertIn("If this email", response["message"])
+		self.assertEqual(sendmail.call_args.kwargs["recipients"], [email])
+		code = frappe.cache.get_value(_login_otp_key(email))["code"]
+
+		with patch("frappe.local.login_manager", create=True) as login_manager:
+			login_manager.login_as.side_effect = frappe.set_user
+			self.assertEqual(verify_login_code(email, code)["user"], "Administrator")
+			login_manager.login_as.assert_called_once_with("Administrator")
+			with self.assertRaises(frappe.ValidationError):
+				verify_login_code(email, code)
+
+	def test_login_does_not_disclose_an_unknown_or_disabled_account(self):
+		frappe.set_user("Guest")
+		with patch("central.api.auth.frappe.sendmail") as sendmail:
+			unknown = request_login_code("missing-login@example.test")
+			with patch("central.api.auth.frappe.db.get_value", return_value=0):
+				disabled = request_login_code("disabled@example.test")
+		self.assertEqual(unknown, disabled)
+		sendmail.assert_not_called()
+
+	def test_login_code_keeps_failed_attempts_across_resends(self):
+		email = frappe.db.get_value("User", "Administrator", "email").lower()
+		self.addCleanup(frappe.cache.delete_value, _login_otp_key(email))
+		frappe.set_user("Guest")
+		with patch("central.api.auth.frappe.sendmail"):
+			request_login_code(email)
+			for _ in range(4):
+				with self.assertRaises(frappe.ValidationError):
+					verify_login_code(email, "000000")
+			request_login_code(email)
+		self.assertEqual(frappe.cache.get_value(_login_otp_key(email))["attempts"], 4)
+		with self.assertRaises(frappe.ValidationError):
+			verify_login_code(email, "000000")
+		with self.assertRaises(frappe.ValidationError):
+			verify_login_code(email, frappe.cache.get_value(_login_otp_key(email))["code"])
+
+	def test_disabling_account_after_code_send_blocks_login(self):
+		email = frappe.db.get_value("User", "Administrator", "email").lower()
+		self.addCleanup(frappe.cache.delete_value, _login_otp_key(email))
+		frappe.set_user("Guest")
+		with patch("central.api.auth.frappe.sendmail"):
+			request_login_code(email)
+		code = frappe.cache.get_value(_login_otp_key(email))["code"]
+		with (
+			patch(
+				"central.api.auth.frappe.db.get_value",
+				return_value=frappe._dict(name="Administrator", enabled=0),
+			),
+			patch("frappe.local.login_manager", create=True) as login_manager,
+		):
+			with self.assertRaises(frappe.ValidationError):
+				verify_login_code(email, code)
+			login_manager.login_as.assert_not_called()
+
+	def test_login_rejects_malformed_email_and_code(self):
+		with self.assertRaises(frappe.ValidationError):
+			request_login_code("not-an-email")
+		with self.assertRaises(frappe.ValidationError):
+			request_login_code("one@example.test,two@example.test")
+		with self.assertRaises(frappe.ValidationError):
+			verify_login_code("valid@example.test", "12345x")
+
 	def test_guest_context(self):
 		frappe.set_user("Guest")
 

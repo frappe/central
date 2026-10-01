@@ -5,7 +5,7 @@ import secrets
 import frappe
 from frappe import _
 from frappe.rate_limiter import rate_limit
-from frappe.utils import cint, escape_html, random_string
+from frappe.utils import cint, escape_html, random_string, validate_email_address
 
 from central.iam import get_user_team_names
 from central.users import CENTRAL_USER_ROLE
@@ -19,6 +19,91 @@ from central.utils.inputs import require_secret
 
 OTP_TTL_SECONDS = 10 * 60
 MAX_OTP_ATTEMPTS = 5
+
+
+# nosemgrep: guest-whitelisted-method -- login requires an emailed code and limits requests by IP and email.
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+@rate_limit(limit=20, seconds=OTP_TTL_SECONDS, methods="POST")
+@rate_limit(
+	key="email",
+	ip_based=False,
+	endpoint="central.login.code_send",
+	limit=5,
+	seconds=OTP_TTL_SECONDS,
+	methods="POST",
+)
+def request_login_code(email: str) -> dict:
+	"""Send a sign-in code to an enabled account without revealing whether it exists."""
+	email = _login_email(email)
+	if frappe.db.get_value("User", {"email": email}, "enabled"):
+		pending = frappe.cache.get_value(_login_otp_key(email))
+		if not pending or pending.get("attempts", 0) < MAX_OTP_ATTEMPTS:
+			_send_login_code(email, attempts=pending.get("attempts", 0) if pending else 0)
+	return {"message": _("If this email has an active account, we sent a sign-in code.")}
+
+
+# nosemgrep: guest-whitelisted-method -- a short-lived code and attempt limit authenticate the user.
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+@rate_limit(limit=20, seconds=OTP_TTL_SECONDS, methods="POST")
+@rate_limit(
+	key="email",
+	ip_based=False,
+	endpoint="central.login.code_verify",
+	limit=10,
+	seconds=OTP_TTL_SECONDS,
+	methods="POST",
+)
+def verify_login_code(email: str, code: str) -> dict:
+	"""Consume a valid email code and create the user's session."""
+	email = _login_email(email)
+	if not isinstance(code, str) or len(code) != 6 or not code.isascii() or not code.isdigit():
+		frappe.throw(_("Invalid or expired sign-in code."), frappe.ValidationError)
+	lock_key = frappe.cache.make_key(f"login:otp:verify:{email}")
+	with frappe.cache.lock(lock_key, timeout=10):
+		user = _consume_login_code(email, code)
+	frappe.local.login_manager.login_as(user.name)
+	return {"user": user.name}
+
+
+def _consume_login_code(email: str, code: str):
+	"""Check attempts and remove a code while its email is locked."""
+	pending = frappe.cache.get_value(_login_otp_key(email), use_local_cache=False)
+	if not pending or pending.get("attempts", 0) >= MAX_OTP_ATTEMPTS:
+		frappe.throw(_("Invalid or expired sign-in code."), frappe.ValidationError)
+
+	if not secrets.compare_digest(str(pending["code"]), code):
+		pending["attempts"] += 1
+		frappe.cache.set_value(_login_otp_key(email), pending, expires_in_sec=OTP_TTL_SECONDS)
+		frappe.throw(_("Invalid or expired sign-in code."), frappe.ValidationError)
+
+	user = frappe.db.get_value("User", {"email": email}, ["name", "enabled"], as_dict=True)
+	if not user or not user.enabled:
+		frappe.throw(_("Invalid or expired sign-in code."), frappe.ValidationError)
+	frappe.cache.delete_value(_login_otp_key(email))
+	return user
+
+
+def _login_otp_key(email: str) -> str:
+	return f"login:otp:{email}"
+
+
+def _login_email(email: str) -> str:
+	if not isinstance(email, str) or len(email) > 254:
+		frappe.throw(_("Enter a valid email address."), frappe.ValidationError)
+	email = email.strip().lower()
+	if validate_email_address(email, throw=True) != email:
+		frappe.throw(_("Enter a valid email address."), frappe.ValidationError)
+	return email
+
+
+def _send_login_code(email: str, attempts: int) -> None:
+	_send_code(
+		email,
+		_login_otp_key(email),
+		{"attempts": attempts},
+		_("Your Frappe Cloud sign-in code"),
+		"Sign-in verification email failed",
+	)
 
 
 # nosemgrep: guest-whitelisted-method -- signup requires guest access and enforces the site signup limit.
@@ -126,24 +211,32 @@ def _otp_key(email: str) -> str:
 
 
 def _send_signup_code(email: str, full_name: str, attempts: int = 0) -> None:
+	_send_code(
+		email,
+		_otp_key(email),
+		{"full_name": full_name, "attempts": attempts},
+		_("Your Frappe Cloud verification code"),
+		"Signup verification email failed",
+	)
+
+
+def _send_code(email: str, key: str, pending: dict, subject: str, failure_title: str) -> None:
 	code = f"{secrets.randbelow(900000) + 100000}"
 	frappe.cache.set_value(
-		_otp_key(email),
-		{"full_name": full_name, "code": code, "attempts": attempts},
+		key,
+		{**pending, "code": code},
 		expires_in_sec=OTP_TTL_SECONDS,
 	)
-	# A delivery failure (for example, no outgoing account in development)
-	# is logged, never fatal — the code is already cached, so signup can proceed.
 	try:
 		frappe.sendmail(
 			recipients=[email],
-			subject=_("Your Frappe Cloud verification code"),
+			subject=subject,
 			template="verification_code",
 			args={"code": code, "expires_minutes": OTP_TTL_SECONDS // 60},
 			now=True,
 		)
 	except Exception:
-		frappe.log_error(title="Signup verification email failed")
+		frappe.log_error(title=failure_title)
 
 
 def _create_verified_user(email: str, full_name: str):

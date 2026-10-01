@@ -2,33 +2,15 @@ import { frappeRequest } from 'frappe-ui'
 import { computed, readonly, ref } from 'vue'
 import type { ProviderLogin } from '@/types/api'
 
-// Auth for the console/dashboard app a single reactive `currentUser` plus `login` / `logout` / `updateCurrentUser` that wrap
-// Frappe's native endpoints. Module-level singletons so every screen shares one session state.
+// Auth for the console/dashboard app uses one reactive `currentUser` and the login,
+// logout, and session endpoints. Module-level state is shared by every screen.
 // Boot data (window.user, injected by central/www/dashboard.py) seeds the initial value, so the first paint already knows who is signed in.
-
-export interface PasswordCredentials {
-	username: string
-	password: string
-}
-
-/** Second factor: the login endpoint returns a `tmp_id` to replay with the OTP. */
-export interface OtpCredentials {
-	tmp_id: string
-	otp: string
-}
-
-export type AuthCredentials = PasswordCredentials | OtpCredentials
 
 export interface LoginResponse {
 	message?: string
 	home_page?: string
 	redirect_to?: string
-	tmp_id?: string
-	verification?: {
-		method: 'Email' | 'SMS' | 'OTP App'
-		setup: boolean
-		prompt?: string
-	}
+	user?: string
 }
 
 const currentUser = ref<string | null>(initialUser())
@@ -46,25 +28,34 @@ export function useAuth() {
 		isLoading: readonly(isLoading),
 		isValidating: readonly(isValidating),
 		error: readonly(error),
-		login,
+		requestLoginCode,
+		verifyLoginCode,
 		logout,
 		updateCurrentUser,
 		getUserCookie,
 	}
 }
 
-async function login(credentials: AuthCredentials): Promise<LoginResponse> {
+async function requestLoginCode(email: string): Promise<void> {
+	await frappeRequest({
+		url: '/api/method/central.api.auth.request_login_code',
+		method: 'POST',
+		params: { email },
+	})
+}
+
+async function verifyLoginCode(
+	email: string,
+	code: string,
+): Promise<LoginResponse> {
 	error.value = null
 	try {
 		const response = (await frappeRequest({
-			url: '/api/method/login',
+			url: '/api/method/central.api.auth.verify_login_code',
 			method: 'POST',
-			params: loginParams(credentials),
+			params: { email, code },
 		})) as LoginResponse
-
-		// No `verification` means the password (or OTP) round-trip logged us in:
-		// "Logged In" for desk users, "No App" for the Website Users Central creates.
-		if (!response.verification) getUserCookie()
+		getUserCookie()
 		return response
 	} catch (exception) {
 		error.value = exception
@@ -132,11 +123,4 @@ function readUserCookie(): string | null {
 		? decodeURIComponent(cookie.split('=').slice(1).join('='))
 		: null
 	return user && user !== 'Guest' ? user : null
-}
-
-function loginParams(credentials: AuthCredentials): Record<string, string> {
-	if ('username' in credentials) {
-		return { usr: credentials.username, pwd: credentials.password }
-	}
-	return { tmp_id: credentials.tmp_id, otp: credentials.otp }
 }

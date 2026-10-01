@@ -102,6 +102,10 @@ Example: John and Jane each have a personal Team. If John invites Jane to
 John's Team, there are still two Teams. Jane owns Jane's Team and is also a
 member of John's Team.
 
+## Console Login
+
+Console login sends a six-digit code to an enabled user's email. The request response does not disclose whether the account exists. Central limits sends to five per supplied email value and 20 per IP in ten minutes. A pending code expires ten minutes after the last send or incorrect attempt and permits five incorrect attempts. Verification consumes the code before it creates a session. The console login form uses only this email code flow.
+
 ## Deferred Scope
 
 - Resource groups
