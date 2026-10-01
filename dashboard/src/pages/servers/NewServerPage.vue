@@ -318,28 +318,6 @@ const regionFlags = computed(() =>
 							v-model:composed-config="composedConfig"
 						/>
 					</section>
-
-					<section v-if="action || submitError">
-						<CreationStatusPanel
-							v-if="action"
-							:action="action"
-							:region-label="selectedRegionName"
-							:checking="checking"
-							:retrying="submitting"
-							:stalled="stalled"
-							:last-checked-at="lastCheckedAt"
-							:check-error="submitError"
-							@check="checkNow"
-							@retry="retry"
-							@edit="editSettings"
-						/>
-						<Alert
-							v-else
-							theme="red"
-							title="We couldn't create this server"
-							:description="submitError"
-						/>
-					</section>
 				</div>
 			</div>
 
@@ -357,16 +335,37 @@ const regionFlags = computed(() =>
 					/>
 				</div>
 				<ServerSummary v-bind="summary">
-					<Button
-						v-if="!action"
-						variant="solid"
-						size="md"
-						label="Create server"
-						class="w-full"
-						:loading="submitting"
-						:disabled="!canSubmit"
-						@click="submit"
+					<CreationStatusPanel
+						v-if="action"
+						class="border-t border-outline-gray-1 pt-5"
+						:action="action"
+						:region-label="selectedRegionName"
+						:checking="checking"
+						:retrying="submitting"
+						:stalled="stalled"
+						:last-checked-at="lastCheckedAt"
+						:check-error="submitError"
+						@check="checkNow"
+						@retry="retry"
+						@edit="editSettings"
 					/>
+					<div v-else class="space-y-3">
+						<Alert
+							v-if="submitError"
+							theme="red"
+							title="We couldn't create this server"
+							:description="submitError"
+						/>
+						<Button
+							variant="solid"
+							size="md"
+							label="Create server"
+							class="w-full"
+							:loading="submitting"
+							:disabled="!canSubmit"
+							@click="submit"
+						/>
+					</div>
 				</ServerSummary>
 			</div>
 		</div>
