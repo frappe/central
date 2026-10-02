@@ -250,6 +250,8 @@ class TestTeamManagement(IntegrationTestCase):
 				{"email": "bulk.one@example.test", "role": "Developer"},
 				{"email": "not-an-email", "role": "Developer"},
 				{"email": self.admin, "role": "Viewer"},
+				{"role": "Developer"},
+				{"email": "bulk.norole@example.test"},
 			],
 		)
 
@@ -257,6 +259,8 @@ class TestTeamManagement(IntegrationTestCase):
 		self.assertIsNone(results[0]["error"])
 		self.assertTrue(results[1]["error"])
 		self.assertTrue(results[2]["error"])
+		self.assertEqual(results[3]["error"], "Email and role are required.")
+		self.assertEqual(results[4]["error"], "Email and role are required.")
 		self.assertEqual(frappe.db.count("Team Invitation", {"team": self.team.name, "status": "Pending"}), 1)
 		self.assertEqual(frappe.get_message_log(), [])
 

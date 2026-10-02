@@ -171,6 +171,9 @@ class Team(Document):
 
 	def _invite_one_of_many(self, row: dict) -> dict:
 		email = row.get("email")
+		if not isinstance(email, str) or not email.strip() or not row.get("role"):
+			return {"email": email, "invitation": None, "error": _("Email and role are required.")}
+
 		frappe.db.savepoint("team_invitation")
 		try:
 			name = self.invite_member(
