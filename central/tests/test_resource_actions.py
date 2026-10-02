@@ -364,8 +364,8 @@ class TestResourceActions(IntegrationTestCase):
 		]
 		servers = [*newer, built]
 		self.client.return_value.list_vms.side_effect = lambda limit, offset: servers[offset : offset + limit]
-		self.client.return_value.get_vm.side_effect = (
-			lambda vm_id: mine if vm_id == built["id"] else {"id": vm_id}
+		self.client.return_value.get_vm.side_effect = lambda vm_id: (
+			mine if vm_id == built["id"] else {"id": vm_id}
 		)
 		_process_locked(name)
 

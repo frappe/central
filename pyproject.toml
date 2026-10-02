@@ -26,7 +26,8 @@ build-backend = "flit_core.buildapi"
 
 # These dependencies are only installed when developer mode is enabled
 [tool.bench.dev-dependencies]
-# package_name = "~=1.1.0"
+# Keep in step with the ruff-pre-commit rev in .pre-commit-config.yaml.
+ruff = "==0.16.10"
 [tool.bench.frappe-dependencies]
 frappe = ">=16.0.0,<=17.0.0-dev"
 
@@ -36,7 +37,9 @@ packages = []
 
 [tool.ruff]
 line-length = 110
-target-version = "py314"
+# The app runs on 3.14 (requires-python). A py313 target keeps `except (A, B):`
+# parenthesized, because ruff drops those parentheses for a py314 target (PEP 758).
+target-version = "py313"
 
 [tool.ruff.lint]
 select = [
@@ -81,6 +84,8 @@ typing-modules = ["frappe.types.DF"]
 "central/billing/**" = ["F401"]
 
 [tool.ruff.format]
+# Ruff formats Python blocks inside Markdown with the code's tab indent. Keep docs as written.
+exclude = ["*.md"]
 quote-style = "double"
 indent-style = "tab"
 docstring-code-format = true
