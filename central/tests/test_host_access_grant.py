@@ -101,6 +101,7 @@ class TestHostAccessGrant(IntegrationTestCase):
 			grant.submit()
 
 		self.assertIn((("User", OPERATOR, "name"), True), calls)
+		self.assertIn("Host Access Grant", [args[0] for args, for_update in calls if for_update])
 
 	def test_an_atlas_refusal_stops_the_submit(self) -> None:
 		self.atlas.grant_host_access.side_effect = AtlasRejected("This region has no Warpgate.")

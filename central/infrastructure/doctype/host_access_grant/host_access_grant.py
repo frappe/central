@@ -80,7 +80,8 @@ class HostAccessGrant(Document):
 		# An all-hosts grant overlaps every grant in the region. A one-host grant overlaps its host and all hosts.
 		if self.host != ALL_HOSTS:
 			filters["host"] = ["in", [self.host, ALL_HOSTS]]
-		active = frappe.db.exists("Host Access Grant", filters)
+		# A locking read sees grants that committed while this submission waited for the lock.
+		active = frappe.db.get_value("Host Access Grant", filters, "name", for_update=True)
 		if active:
 			frappe.throw(
 				_("{0} already gives access to this host. Cancel or amend it instead.").format(active)
