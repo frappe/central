@@ -71,6 +71,20 @@ class TestHostAccessGrant(IntegrationTestCase):
 		with self.assertRaisesRegex(frappe.ValidationError, "already gives this access"):
 			self.make_grant().insert().submit()
 
+	def test_the_active_grant_check_runs_under_a_lock_on_the_person(self) -> None:
+		grant = self.make_grant().insert()
+		calls = []
+		get_value = frappe.db.get_value
+
+		def record(*args, **kwargs):
+			calls.append((args[:3], kwargs.get("for_update")))
+			return get_value(*args, **kwargs)
+
+		with patch.object(frappe.db, "get_value", side_effect=record):
+			grant.submit()
+
+		self.assertIn((("User", OPERATOR, "name"), True), calls)
+
 	def test_an_atlas_refusal_stops_the_submit(self) -> None:
 		self.atlas.grant_host_access.side_effect = AtlasRejected("This region has no Warpgate.")
 

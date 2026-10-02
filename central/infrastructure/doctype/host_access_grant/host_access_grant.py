@@ -68,6 +68,8 @@ class HostAccessGrant(Document):
 
 	def validate_no_active_grant(self) -> None:
 		"""One Warpgate role per person and host, so a second grant would end with the first."""
+		# Lock the person, so two grants submitted together cannot both pass this check.
+		frappe.db.get_value("User", self.user, "name", for_update=True)
 		active = frappe.db.exists(
 			"Host Access Grant",
 			{
