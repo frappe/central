@@ -107,7 +107,7 @@ Example: Jane signs up without an invitation and creates Acme in onboarding, so 
 |---|---|---|
 | Trial flag | `Team.before_insert` | `is_staging_trial` follows Billing Settings, Provision Teams as Trial. The caller cannot choose it. The field is permission level 1, so only a System Manager can change it later. |
 | Onboarding steps | `Team.before_insert` | One `Team Onboarding Step` row each for `invite`, `billing` and `start`, all `Pending`. A staging trial gets no `billing` row, because its billing profile is filled with placeholders. |
-| Billing | `Team.create_for_current_user` | The user's first Team gets a Billing Profile from the request country (India gives INR, any other country gives USD), and the welcome credits. A later Team gets its billing when its owner completes the billing profile. |
+| Billing | `Team.create_for_current_user` | The user's first Team gets a Billing Profile from the request country (India gives INR, any other country gives USD), and the welcome credits. A later Team gets its billing when its owner completes the billing profile. Welcome credits are granted once per owner across all their Teams, and the grant locks the owner's User row, so two Teams created at the same time cannot both get them. |
 
 The console shows the onboarding dialog in two cases:
 

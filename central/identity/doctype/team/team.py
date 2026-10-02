@@ -47,8 +47,9 @@ class Team(Document):
 	def create_for_current_user(cls, team_name: str) -> "Team":
 		"""Create a team the signed-in user owns.
 
-		Only the user's first team gets billing provisioned with welcome credits. A
-		later team gets its billing when its owner completes the billing profile."""
+		Only the user's first team gets billing provisioned when it is created. A later
+		team gets its billing when its owner completes the billing profile. Welcome
+		credits are granted once per owner, in grant_welcome_credits."""
 		is_first_team = not frappe.db.exists("Team", {"owner_user": frappe.session.user})
 		team = frappe.get_doc({"doctype": "Team", "team_name": team_name}).insert()
 		if is_first_team:
