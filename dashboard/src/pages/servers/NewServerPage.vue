@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Alert, Button, Select, TabButtons, Tabs, TextInput } from 'frappe-ui'
-import { computed } from 'vue'
+import { computed, useTemplateRef, watch } from 'vue'
 import ChoiceCards from '@/components/common/ChoiceCards.vue'
 import CreationStatusPanel from '@/components/servers/CreationStatusPanel.vue'
 import ImageOfferingSelector from '@/components/servers/ImageOfferingSelector.vue'
@@ -94,6 +94,10 @@ const regionFlags = computed(() =>
 		regions.value.map((r) => [r.region, flagEmoji(r.country_code)]),
 	),
 )
+
+// The form mounts after regions load, which is too late for the autofocus attribute.
+const nameInput = useTemplateRef<{ focus: () => void }>('nameInput')
+watch(nameInput, (input) => input?.focus())
 </script>
 
 <template>
@@ -112,13 +116,13 @@ const regionFlags = computed(() =>
 				<div v-else class="space-y-8">
 					<section class="grid gap-3 md:grid-cols-2">
 						<TextInput
+							ref="nameInput"
 							v-model="name"
 							label="Name"
 							required
 							size="md"
 							placeholder="e.g. Acme Production"
 							:maxlength="60"
-							autofocus
 						/>
 					</section>
 
