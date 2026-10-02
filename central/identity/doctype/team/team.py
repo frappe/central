@@ -16,6 +16,8 @@ from central.identity.doctype.team.tenant import (
 
 # The order the console shows them in lives in dashboard/src/components/onboarding/steps.ts.
 ONBOARDING_STEPS = ("invite", "billing", "start")
+# Each invitation sends an email, so one request may send only this many.
+MAX_INVITATIONS_PER_REQUEST = 10
 
 
 class Team(Document):
@@ -154,6 +156,37 @@ class Team(Document):
 		)
 		invitation.insert()
 		return invitation.name
+
+	# Internal; the HTTP surface is central.api.teams.invite_team_member with `invitations`.
+	def invite_members(self, invitations: list[dict]) -> list[dict]:
+		"""Invite up to MAX_INVITATIONS_PER_REQUEST people, one invitation each.
+
+		A refused row returns its error, and the other rows are still invited."""
+		self._require_capability("team:manage_members")
+		if not invitations:
+			frappe.throw(_("Add at least one person to invite."))
+		if len(invitations) > MAX_INVITATIONS_PER_REQUEST:
+			frappe.throw(_("You can invite up to {0} people at a time.").format(MAX_INVITATIONS_PER_REQUEST))
+		return [self._invite_one_of_many(row) for row in invitations]
+
+	def _invite_one_of_many(self, row: dict) -> dict:
+		email = row.get("email")
+		frappe.db.savepoint("team_invitation")
+		try:
+			name = self.invite_member(
+				email,
+				row.get("role"),
+				resource_type=row.get("resource_type") or "*",
+				resource_name=row.get("resource_name"),
+			)
+		except frappe.ValidationError as error:
+			frappe.db.rollback(save_point="team_invitation")
+			# The refusal is returned on its row, so it must not also show as a message.
+			frappe.clear_last_message()
+			return {"email": email, "invitation": None, "error": str(error)}
+
+		frappe.db.release_savepoint("team_invitation")
+		return {"email": email, "invitation": name, "error": None}
 
 	# Internal; the HTTP surface is central.api.teams.set_team_member_roles.
 	def set_member_roles(self, user: str, roles: list[dict]) -> None:
