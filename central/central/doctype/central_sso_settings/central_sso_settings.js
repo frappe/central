@@ -1,6 +1,7 @@
 const SIGNING_KEYS = [
 	{ plane: 'atlas', key_id: 'atlas_key_id', label: __('Initialize Atlas Signing Key') },
 	{ plane: 'pilot', key_id: 'pilot_key_id', label: __('Initialize Pilot Signing Key') },
+	{ plane: 'oidc', key_id: 'oidc_key_id', label: __('Initialize OIDC Signing Key') },
 ]
 
 frappe.ui.form.on('Central SSO Settings', {

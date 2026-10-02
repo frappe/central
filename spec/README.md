@@ -14,7 +14,7 @@ Each module specification below describes current behavior. Update it in the sam
 ## Module specifications
 
 - [Team network identity](../central/identity/doctype/team/SPEC.md): allocation, immutability, and migration of tenant IDs.
-- [Signing keys](../central/central/doctype/central_sso_settings/SPEC.md): separate Atlas and Pilot trust, operator initialization, and token verification.
+- [Signing keys](../central/central/doctype/central_sso_settings/SPEC.md): separate Atlas, Pilot, and OIDC trust, operator initialization, and token verification.
 - [Regional configuration](../central/infrastructure/doctype/region/SPEC.md): signed connection checks, tenant selection, and regional identity.
 - [Image offerings](../central/infrastructure/doctype/image_offering/SPEC.md): presentation records and on-demand regional System image discovery.
 - [Resource actions](../central/infrastructure/doctype/resource_action/SPEC.md): durable intent, states, authorization, and recovery for server operations.
