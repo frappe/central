@@ -68,8 +68,25 @@ class TestHostAccessGrant(IntegrationTestCase):
 	def test_a_second_active_grant_for_the_same_host_is_refused(self) -> None:
 		self.make_grant().insert().submit()
 
-		with self.assertRaisesRegex(frappe.ValidationError, "already gives this access"):
+		with self.assertRaisesRegex(frappe.ValidationError, "already gives access"):
 			self.make_grant().insert().submit()
+
+	def test_one_host_and_all_hosts_grants_cannot_overlap(self) -> None:
+		for first, second in (({"scope": "All hosts"}, {}), ({}, {"scope": "All hosts"})):
+			with self.subTest(first=first):
+				grant = self.make_grant(**first).insert()
+				grant.submit()
+
+				with self.assertRaisesRegex(frappe.ValidationError, "already gives access"):
+					self.make_grant(**second).insert().submit()
+				grant.cancel()
+
+	def test_grants_for_different_hosts_can_be_active_together(self) -> None:
+		self.make_grant().insert().submit()
+
+		self.make_grant(host="another-host", host_title="node-par-2-00002").insert().submit()
+
+		self.assertEqual(self.atlas.grant_host_access.call_count, 2)
 
 	def test_the_active_grant_check_runs_under_a_lock_on_the_person(self) -> None:
 		grant = self.make_grant().insert()

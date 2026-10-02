@@ -67,22 +67,24 @@ class HostAccessGrant(Document):
 		self.get_atlas_client().revoke_host_access(self.host, self.email)
 
 	def validate_no_active_grant(self) -> None:
-		"""One Warpgate role per person and host, so a second grant would end with the first."""
+		"""One active grant opens a host to a person, so cancelling it always ends that access."""
 		# Lock the person, so two grants submitted together cannot both pass this check.
 		frappe.db.get_value("User", self.user, "name", for_update=True)
-		active = frappe.db.exists(
-			"Host Access Grant",
-			{
-				"docstatus": 1,
-				"user": self.user,
-				"region": self.region,
-				"host": self.host,
-				"expires_at": [">", now_datetime()],
-				"name": ["!=", self.name],
-			},
-		)
+		filters = {
+			"docstatus": 1,
+			"user": self.user,
+			"region": self.region,
+			"expires_at": [">", now_datetime()],
+			"name": ["!=", self.name],
+		}
+		# An all-hosts grant overlaps every grant in the region. A one-host grant overlaps its host and all hosts.
+		if self.host != ALL_HOSTS:
+			filters["host"] = ["in", [self.host, ALL_HOSTS]]
+		active = frappe.db.exists("Host Access Grant", filters)
 		if active:
-			frappe.throw(_("{0} already gives this access. Cancel or amend it instead.").format(active))
+			frappe.throw(
+				_("{0} already gives access to this host. Cancel or amend it instead.").format(active)
+			)
 
 	@property
 	def email(self) -> str:

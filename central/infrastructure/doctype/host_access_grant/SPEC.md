@@ -29,8 +29,8 @@ Both roles are fixtures. Add both roles to the Allowed Roles of the Warpgate OAu
 4. Select **Show SSH Command** and run the command. Warpgate prints a link. Open it, sign in with Central, and approve the login.
 5. Cancel the grant to end the access before `expires_at`. Revoking twice is safe.
 
-A person can hold one active grant for a host. Cancel it and amend it to change the duration. The list shows Active, Expired, or Revoked from the document state and `expires_at`. No scheduled job runs.
+One active grant opens a host to a person, so a cancel always ends that access. An all-hosts grant overlaps every host of the region. Cancel a grant and amend it to change the duration or the scope. The list shows Active, Expired, or Revoked from the document state and `expires_at`. No scheduled job runs.
 
 ## Validation
 
-`central.tests.test_host_access_grant` checks the role check, the host requirement, grant on submit with the stored end time, all hosts, revoke on cancel, a second active grant, an Atlas refusal, and the SSH command.
+`central.tests.test_host_access_grant` checks the role check, the host requirement, grant on submit with the stored end time, all hosts, revoke on cancel, overlapping grants, the lock on the person, an Atlas refusal, and the SSH command.

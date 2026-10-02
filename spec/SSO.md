@@ -72,13 +72,15 @@ Central is an OpenID Connect provider for internal tools such as Warpgate. It us
 
 | Item | Value |
 |---|---|
-| Issuer | `https://<central>/oidc` |
+| Issuer | `<Central URL>/oidc`. The Central URL is **Issuer URL** in Central SSO Settings, or the site URL when it is empty. |
 | Discovery | `https://<central>/oidc/.well-known/openid-configuration` |
 | Token endpoint | `/api/method/central.api.oidc.get_token`, with `client_secret_basic` or `client_secret_post` |
 | JWKS | `/api/method/central.api.oidc.get_jwks` |
 | Signing key | The OIDC key in Central SSO Settings |
 
 The issuer is under `/oidc`, because Frappe serves `/.well-known/openid-configuration` itself.
+
+An ID token always carries `sub`. The `email` scope adds `email`. The `profile` scope adds `name`, `given_name`, `family_name`, `picture`, and `roles`. Warpgate reads `roles` to find its admins.
 
 To add a client:
 

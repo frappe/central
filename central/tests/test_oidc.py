@@ -28,8 +28,10 @@ class TestOIDCProvider(IntegrationTestCase):
 		reset_signing_key("oidc")
 		CentralSSOSettings.instance().initialize_signing_key("oidc")
 
-		for target in ("central.oidc.get_url", "frappe.oauth.get_server_url"):
-			self.enterContext(patch(target, return_value=SERVER_URL))
+		frappe.db.set_single_value("Central SSO Settings", "issuer_url", SERVER_URL)
+		frappe.clear_document_cache("Central SSO Settings", "Central SSO Settings")
+		self.addCleanup(frappe.clear_document_cache, "Central SSO Settings", "Central SSO Settings")
+		self.enterContext(patch("frappe.oauth.get_server_url", return_value=SERVER_URL))
 
 		if not frappe.db.exists("User", TEST_USER):
 			frappe.get_doc({"doctype": "User", "email": TEST_USER, "first_name": "OIDC"}).insert()
@@ -49,6 +51,28 @@ class TestOIDCProvider(IntegrationTestCase):
 		self.assertEqual(claims["sub"], user.get_social_login_userid("frappe"))
 		self.assertEqual(claims["email"], TEST_USER)
 		self.assertEqual(claims["nonce"], "nonce")
+
+	def test_the_issuer_is_the_configured_central_url(self) -> None:
+		configuration = get_openid_configuration()
+
+		self.assertEqual(configuration["issuer"], f"{SERVER_URL}/oidc")
+		self.assertTrue(configuration["jwks_uri"].startswith(SERVER_URL))
+		self.assertNotEqual(frappe.utils.get_url(), SERVER_URL)
+
+	def test_an_openid_only_token_carries_no_user_claims(self) -> None:
+		claims = jwt.decode(self.issue_id_token(scopes=["openid"]), options={"verify_signature": False})
+
+		self.assertNotIn("email", claims)
+		self.assertNotIn("roles", claims)
+		self.assertIn("sub", claims)
+
+	def test_the_profile_scope_carries_the_roles(self) -> None:
+		claims = jwt.decode(
+			self.issue_id_token(scopes=["openid", "profile"]), options={"verify_signature": False}
+		)
+
+		self.assertIn("roles", claims)
+		self.assertNotIn("email", claims)
 
 	def test_id_token_header_names_the_oidc_key(self) -> None:
 		header = jwt.get_unverified_header(self.issue_id_token())
@@ -118,9 +142,9 @@ class TestOIDCProvider(IntegrationTestCase):
 		self.assertTrue(DiscoveryPage("/oidc/.well-known/openid-configuration").can_render())
 		self.assertFalse(DiscoveryPage("/.well-known/openid-configuration").can_render())
 
-	def issue_id_token(self, user: str = TEST_USER) -> str:
+	def issue_id_token(self, user: str = TEST_USER, scopes: list[str] | None = None) -> str:
 		request = Request("https://client.example/callback")
-		request.user, request.scopes, request.nonce = user, ["openid"], "nonce"
+		request.user, request.scopes, request.nonce = user, scopes or ["openid", "email", "profile"], "nonce"
 		id_token = {"aud": "client", "iat": int(time.time())}
 		return OIDCRequestValidator().finalize_id_token(id_token, {"expires_in": 3600}, None, request)
 

@@ -8,7 +8,6 @@ import frappe
 import jwt
 from frappe.integrations.oauth2 import ENDPOINTS
 from frappe.oauth import OAuthWebRequestValidator, get_url_delimiter, get_userinfo
-from frappe.utils import get_url
 from frappe.website.page_renderers.base_renderer import BaseRenderer
 from werkzeug import Response
 from werkzeug.datastructures import Authorization
@@ -17,12 +16,19 @@ from central.central.doctype.central_sso_settings.central_sso_settings import (
 	OIDC_ALGORITHM,
 	CentralSSOSettings,
 )
+from central.sso import central_url
 
 # Frappe serves /.well-known/openid-configuration itself, so this issuer lives under a sub-path.
 ISSUER_PATH = "oidc"
 DISCOVERY_PATH = f"{ISSUER_PATH}/.well-known/openid-configuration"
 TOKEN_PATH = "/api/method/central.api.oidc.get_token"
 JWKS_PATH = "/api/method/central.api.oidc.get_jwks"
+# OpenID Connect gives each claim with its scope. Warpgate maps admins from `roles` and asks only for
+# the standard scopes, so `roles` comes with `profile`.
+SCOPE_CLAIMS = {
+	"email": ("email",),
+	"profile": ("name", "given_name", "family_name", "picture", "roles"),
+}
 
 
 class DiscoveryPage(BaseRenderer):
@@ -36,11 +42,11 @@ class DiscoveryPage(BaseRenderer):
 
 
 def get_issuer() -> str:
-	return f"{get_url()}/{ISSUER_PATH}"
+	return f"{central_url()}/{ISSUER_PATH}"
 
 
 def get_openid_configuration() -> dict:
-	server_url = get_url()
+	server_url = central_url()
 	return {
 		"issuer": get_issuer(),
 		"authorization_endpoint": f"{server_url}{ENDPOINTS['authorization_endpoint']}",
@@ -87,11 +93,13 @@ class OIDCRequestValidator(OAuthWebRequestValidator):
 			id_token["nonce"] = request.nonce
 
 		id_token["exp"] = id_token["iat"] + token["expires_in"]
-		if "openid" in request.scopes:
-			id_token.update(get_userinfo(frappe.get_doc("User", request.user)))
+		userinfo = get_userinfo(frappe.get_doc("User", request.user))
+		for scope, claims in SCOPE_CLAIMS.items():
+			if scope in request.scopes:
+				id_token.update({claim: userinfo[claim] for claim in claims})
 
 		# Frappe gives Administrator no OIDC user ID. The user name is stable and unique.
-		id_token["sub"] = id_token.get("sub") or request.user
+		id_token["sub"] = userinfo.sub or request.user
 		id_token["iss"] = get_issuer()
 
 		private_key, key_id = CentralSSOSettings.instance().get_signing_key("oidc")
