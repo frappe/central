@@ -112,9 +112,10 @@ class TestResourceOperationDecorator(IntegrationTestCase):
 		def boom():
 			raise KeyError("internal detail")
 
-		with patch("central.errors.frappe.log_error"):
+		with patch("central.errors.frappe.log_error") as log_error:
 			with self.assertRaises(ResourceActionError) as caught:
 				boom()
+		log_error.assert_called_once()
 		self.assertEqual(caught.exception.envelope["code"], "UNEXPECTED")
 		# The raw exception text must never surface to the user.
 		self.assertNotIn("internal detail", caught.exception.envelope["message"])
@@ -124,8 +125,10 @@ class TestResourceOperationDecorator(IntegrationTestCase):
 		def bad():
 			frappe.throw("Region is required.", frappe.ValidationError)
 
-		with self.assertRaises(frappe.ValidationError) as caught:
-			bad()
+		with patch("central.errors.frappe.log_error") as log_error:
+			with self.assertRaises(frappe.ValidationError) as caught:
+				bad()
+		log_error.assert_not_called()
 		self.assertEqual(caught.exception.envelope["code"], "VALIDATION_ERROR")
 		self.assertIn("Region is required", str(caught.exception))
 
