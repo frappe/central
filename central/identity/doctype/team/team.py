@@ -4,13 +4,18 @@
 import frappe
 from frappe import _
 from frappe.model.document import Document
+from frappe.utils import now_datetime
 
+from central.billing import settings as billing_settings
 from central.iam import can, clear_grants_cache, user_has_operator_bypass
 from central.identity.doctype.team.tenant import (
 	allocate_tenant_id,
 	prepare_tenant_id_series,
 	validate_tenant_id,
 )
+
+# The order the console shows them in lives in dashboard/src/components/onboarding/steps.ts.
+ONBOARDING_STEPS = ("invite", "billing", "start")
 
 
 class Team(Document):
@@ -23,16 +28,46 @@ class Team(Document):
 		from frappe.types import DF
 
 		from central.identity.doctype.team_member.team_member import TeamMember
+		from central.identity.doctype.team_onboarding_step.team_onboarding_step import (
+			TeamOnboardingStep,
+		)
 
 		is_staging_trial: DF.Check
 		members: DF.Table[TeamMember]
 		naming_series: DF.Literal["TEAM-.#####"]
+		onboarding_steps: DF.Table[TeamOnboardingStep]
 		owner_user: DF.Link
 		status: DF.Literal["Active", "Suspended"]
 		team_logo: DF.AttachImage | None
 		team_name: DF.Data
 		tenant_id: DF.Int
 	# end: auto-generated types
+
+	@classmethod
+	def create_for_current_user(cls, team_name: str) -> "Team":
+		"""Create a team the signed-in user owns.
+
+		Only the user's first team gets billing provisioned when it is created. A later
+		team gets its billing when its owner completes the billing profile. Welcome
+		credits are granted once per owner, in grant_welcome_credits."""
+		is_first_team = not frappe.db.exists("Team", {"owner_user": frappe.session.user})
+		team = frappe.get_doc({"doctype": "Team", "team_name": team_name}).insert()
+		if is_first_team:
+			team.provision_billing()
+		return team
+
+	def provision_billing(self) -> None:
+		"""Seed the billing currency from the request IP and grant the welcome credits.
+
+		A failure is logged and is not fatal. The owner can still complete the billing
+		profile in the console, which provisions the same way."""
+		from central.billing.payments.provisioning import provision_signup_billing
+		from central.geo import get_country_from_ip
+
+		try:
+			provision_signup_billing(self.name, get_country_from_ip())
+		except Exception:
+			frappe.log_error(title="Team billing provisioning failed")
 
 	def before_validate(self) -> None:
 		if not self.is_new():
@@ -45,8 +80,20 @@ class Team(Document):
 			)
 
 	def before_insert(self) -> None:
-		# A caller cannot choose another customer's network identity.
+		# A caller cannot choose another customer's network identity or a free trial.
 		self.tenant_id = allocate_tenant_id()
+		self.is_staging_trial = int(billing_settings.provision_teams_as_trial())
+		# The trial flag is System Manager only (permlevel 1), and Frappe would reset it to its
+		# default for any other creator. Central sets it here, so the creator's level does not apply.
+		self.flags.ignore_permlevel_for_fields = ["is_staging_trial"]
+		self._add_onboarding_steps()
+
+	def _add_onboarding_steps(self) -> None:
+		# A staging trial gets a placeholder billing profile, so it has no billing step.
+		for step in ONBOARDING_STEPS:
+			if step == "billing" and self.is_staging_trial:
+				continue
+			self.append("onboarding_steps", {"step": step, "status": "Pending"})
 
 	def validate(self) -> None:
 		self._validate_tenant_id_unchangeable()
@@ -243,6 +290,32 @@ class Team(Document):
 			message=user,
 		)
 
+	def set_onboarding_step(self, step: str, status: str) -> None:
+		"""Record that the owner finished or skipped one onboarding step."""
+		self._require_current_owner()
+		if status not in {"Done", "Skipped"}:
+			frappe.throw(_("Invalid onboarding step status."))
+		row = next((row for row in self.onboarding_steps if row.step == step), None)
+		if not row:
+			frappe.throw(_("This team has no onboarding step {0}.").format(step))
+
+		self._update_onboarding_step(row, status)
+		self.save()
+
+	def skip_onboarding(self) -> None:
+		"""Skip every onboarding step the owner has not answered yet."""
+		self._require_current_owner()
+		for row in self.onboarding_steps:
+			if row.status == "Pending":
+				self._update_onboarding_step(row, "Skipped")
+		self.save()
+
+	@staticmethod
+	def _update_onboarding_step(row, status: str) -> None:
+		row.status = status
+		row.updated_by = frappe.session.user
+		row.updated_on = now_datetime()
+
 	def _absorb_wildcard_grants(self) -> None:
 		"""A role granted on all resources ("*") subsumes the same role on any
 		specific resource, so holding both is contradictory — the narrow row
@@ -311,12 +384,7 @@ class Team(Document):
 
 	def _validate_changes(self) -> None:
 		if self.is_new() or self.flags.from_team_invitation or self._is_operator():
-			if (
-				self.is_new()
-				and not self.flags.from_user_bootstrap
-				and not self._is_operator()
-				and self.owner_user != frappe.session.user
-			):
+			if self.is_new() and not self._is_operator() and self.owner_user != frappe.session.user:
 				frappe.throw(_("A new team must be owned by the user creating it."), frappe.PermissionError)
 			return
 
@@ -326,6 +394,8 @@ class Team(Document):
 
 		if self._metadata_changed(previous):
 			self._require_capability("team:edit")
+		if self._onboarding_state(self) != self._onboarding_state(previous):
+			self._require_current_owner(previous.owner_user)
 		if self._members_changed(previous) and not self._is_self_removal(previous):
 			self._require_capability("team:manage_members")
 			self._validate_sensitive_member_changes(previous)
@@ -405,6 +475,10 @@ class Team(Document):
 	def _require_current_owner(self, owner_user: str | None = None) -> None:
 		if not self._is_operator() and frappe.session.user != (owner_user or self.owner_user):
 			frappe.throw(_("Only the current team owner can do this."), frappe.PermissionError)
+
+	@staticmethod
+	def _onboarding_state(doc) -> list[tuple[str, str]]:
+		return [(row.step, row.status) for row in doc.onboarding_steps]
 
 	@staticmethod
 	def _member_state(doc) -> list[tuple[str, str, str, str, str]]:

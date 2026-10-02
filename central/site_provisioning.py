@@ -6,7 +6,8 @@ import frappe
 from frappe import _
 
 from central.billing.catalog.server_plans import get_server_plans
-from central.iam import resolve_team
+from central.iam import get_user_team_names, resolve_team
+from central.identity.doctype.team.team import Team
 from central.integrations.images import list_images
 from central.resource_actions import submit_request
 
@@ -42,6 +43,18 @@ def create_trial_site(team: str | None, subdomain: str, request_key: str) -> dic
 		subdomain=subdomain,
 		**configuration,
 	)
+
+
+def create_trial_team(user: str) -> str | None:
+	"""Create the first team of a user who starts the trial funnel with none.
+
+	The funnel cannot ask for a team name, so the team is named after the user. A
+	user who already has a team keeps it, and nothing is created."""
+	if get_user_team_names(user):
+		return None
+
+	full_name = frappe.db.get_value("User", user, "full_name") or user
+	return Team.create_for_current_user(_("{0}'s Team").format(full_name)).name
 
 
 def validated_subdomain(subdomain: str) -> str:

@@ -158,6 +158,7 @@ def _resolve_context(team, event_type, context, reference_name, reference_doctyp
 	"""Build the template context dict shared by all Jinja renders."""
 	ctx = {
 		"team": team,
+		"team_name": frappe.db.get_value("Team", team, "team_name") or team,
 		"event_type": event_type,
 		"reference_name": reference_name or "",
 		"reference_doctype": reference_doctype or "",
@@ -336,19 +337,17 @@ def _notification_email(event, ctx, message=None) -> tuple[str, str]:
 	Renders templates/emails/notification.html from the fields the event already
 	carries, so a newly added event type is styled without a new template.
 	"""
+	# The email says the same sentence as the in-app notification. A body may use
+	# `message` anywhere in it, so it is never split out of the sentence.
+	ctx = {**ctx, "message": message or ctx.get("message") or ""}
 	subject = _render_template(event.in_app_title, ctx) or event.event_type
-	# The reason gets its own line in email rather than trailing the sentence after
-	# a colon, so the body is rendered with it blanked out.
-	reason = message or ctx.get("message") or ""
-	text = _render_template(event.in_app_body, {**ctx, "message": ""}) or ""
-	text = text.strip().rstrip(":").strip()
+	text = (_render_template(event.in_app_body, ctx) or "").strip()
 	route = _render_template(event.action_route, ctx) if event.action_route else None
 	body = frappe.render_template(
 		"templates/emails/notification.html",
 		{
 			"title": subject,
 			"body": text,
-			"reason": reason,
 			"action_label": event.action_label,
 			"action_url": f"{frappe.utils.get_url()}/dashboard{route}" if route else None,
 		},

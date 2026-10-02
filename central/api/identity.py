@@ -44,7 +44,8 @@ def my_capabilities(team: str | None = None) -> list[str]:
 def my_teams() -> list[dict[str, Any]]:
 	"""Teams the signed-in user can switch between in the console — the teams they
 	are an active member of, each with a display label, the owner email, the
-	caller's own role, how many people are in it, and when it was created."""
+	caller's own role, how many people are in it, when it was created, and the
+	onboarding steps the caller still has to answer as its owner."""
 	user = frappe.session.user
 	if not user or user == "Guest":
 		return []
@@ -103,7 +104,31 @@ def my_teams() -> list[dict[str, Any]]:
 	for row in counts:
 		teams[row.parent]["members"] = row.members
 
+	for entry in teams.values():
+		entry["onboarding"] = []
+	owned_teams = [name for name, entry in teams.items() if entry["owner"] == user]
+	for row in _pending_onboarding_steps(owned_teams):
+		teams[row.parent]["onboarding"].append(row.step)
+
 	return list(teams.values())
+
+
+def _pending_onboarding_steps(teams: list[str]) -> list[dict[str, Any]]:
+	if not teams:
+		return []
+
+	step = frappe.qb.DocType("Team Onboarding Step")
+	return (
+		frappe.qb.from_(step)
+		.select(step.parent, step.step)
+		.where(
+			(step.parenttype == "Team")
+			& (step.parentfield == "onboarding_steps")
+			& (step.status == "Pending")
+			& step.parent.isin(teams)
+		)
+		.orderby(step.idx)
+	).run(as_dict=True)
 
 
 # Owner outranks Admin, and any named role outranks none.

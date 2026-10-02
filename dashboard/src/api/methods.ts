@@ -19,6 +19,8 @@ export const API = {
 	listTeamMembers: 'central.api.teams.list_team_members',
 	listTeamRoles: 'central.api.teams.list_team_roles',
 	createTeam: 'central.api.teams.create_team',
+	setOnboardingStep: 'central.api.teams.set_onboarding_step',
+	skipOnboarding: 'central.api.teams.skip_onboarding',
 	renameTeam: 'central.api.teams.rename_team',
 	setTeamLogo: 'central.api.teams.set_team_logo',
 	myProfile: 'central.api.identity.my_profile',
@@ -88,6 +90,7 @@ export const API = {
 
 	siteDomain: 'central.api.sites.site_domain',
 	checkSubdomain: 'central.api.sites.check_subdomain',
+	createTrialTeam: 'central.api.sites.create_trial_team',
 	createTrialSite: 'central.api.sites.create_trial_site',
 	onboardingStatus: 'central.api.sites.onboarding_status',
 	claimSite: 'central.api.sites.claim_site',

@@ -7,6 +7,7 @@ from frappe.utils.oauth import get_oauth2_authorize_url, get_oauth_keys
 from frappe.utils.password import get_decrypted_password
 
 from central.iam import get_user_team_names
+from central.identity.doctype.team_invitation.team_invitation import get_expiry_days
 
 no_cache = 1
 
@@ -29,6 +30,7 @@ def get_context(context):
 	boot["csrf_token"] = get_csrf_token()
 	boot["user_type"] = getattr(frappe.session.data, "user_type", None)
 	boot["features"] = frappe.get_cached_doc("Central Settings").feature_flags()
+	boot["invitation_expiry_days"] = get_expiry_days()
 	boot.update(build_auth_context())
 	# Development benches expose Socket.IO directly; production proxies it.
 	if frappe.conf.developer_mode:

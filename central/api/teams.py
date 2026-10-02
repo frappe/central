@@ -8,6 +8,7 @@ from frappe.query_builder import Order
 from frappe.rate_limiter import rate_limit
 
 from central.iam import expand_capabilities, get_all_capabilities
+from central.identity.doctype.team.team import Team
 from central.identity.doctype.team_invitation.team_invitation import get_invitation_by_token
 from central.utils.guards import require_capability, require_team_member
 from central.utils.inputs import require_attached_file
@@ -98,8 +99,22 @@ def list_team_roles(team: str) -> list[dict[str, Any]]:
 def create_team(team_name: str) -> dict[str, Any]:
 	"""Create a new team owned by the caller. The Team doc seeds the active Owner
 	membership; team_has_permission gates creation to Central Users."""
-	team = frappe.get_doc({"doctype": "Team", "team_name": team_name}).insert()
+	team = Team.create_for_current_user(team_name)
 	return {"name": team.name, "team_name": team.team_name}
+
+
+@frappe.whitelist(methods=["POST"])
+def set_onboarding_step(team: str, step: str, status: str) -> dict[str, Any]:
+	"""Record that the owner finished or skipped one onboarding step. Owner only."""
+	frappe.get_doc("Team", team).set_onboarding_step(step, status)
+	return {"step": step, "status": status}
+
+
+@frappe.whitelist(methods=["POST"])
+def skip_onboarding(team: str) -> dict[str, Any]:
+	"""Skip every onboarding step the owner has not answered yet. Owner only."""
+	frappe.get_doc("Team", team).skip_onboarding()
+	return {"skipped": True}
 
 
 @frappe.whitelist(methods=["POST"])

@@ -1,256 +1,27 @@
 <script setup lang="ts">
-import {
-	Alert,
-	Button,
-	Combobox,
-	Dialog,
-	LoadingText,
-	TextInput,
-	useCall,
-} from 'frappe-ui'
-import { computed, reactive, ref, watch } from 'vue'
-import { API, method } from '@/api/methods'
-import { useBillingOverview } from '@/composables/useBillingOverview'
-import { useBillingSetup } from '@/composables/useBillingSetup'
-import { useSession } from '@/composables/useSession'
-import { whenTeamReady } from '@/composables/useTeamScope'
-import { emailError as validateEmail } from '@/lib/auth'
-import { getErrorMessage, successToast } from '@/lib/feedback'
-import type { BillingGeo } from '@/types/billing'
+import { Button, Dialog } from 'frappe-ui'
+import { computed, ref } from 'vue'
+import BillingProfileForm from '@/components/billing/BillingProfileForm.vue'
 
-// Edit the billing profile — currency (locked after activity), contact, address,
-// and India GSTIN — shared by the Billing contact and Tax & compliance cards.
+// Edit the billing profile, shared by the Billing contact and Tax & compliance cards.
 const open = defineModel<boolean>({ default: false })
-const { activeTeam } = useSession()
-const { currencyLocked, reload: reloadSetup } = useBillingSetup()
-// The billing profile is the shared singleton (it reloads on team change and
-// after a save via reloadProfile) — no second fetch of the same payload here.
-const { profile, reloadProfile } = useBillingOverview()
+const form = ref<InstanceType<typeof BillingProfileForm> | null>(null)
+const saving = computed(() => form.value?.saving ?? false)
 
-const geo = useCall<BillingGeo>({
-	url: method(API.billingGeo),
-	immediate: false,
-})
-whenTeamReady(() => {
-	geo.reload()
-})
-
-const FIELDS = [
-	'currency',
-	'legal_name',
-	'email',
-	'phone',
-	'gstin',
-	'address_line1',
-	'address_line2',
-	'city',
-	'state',
-	'country',
-	'pincode',
-] as const
-const form = reactive<Record<string, string>>({})
-
-function resetForm(): void {
-	if (!profile.data) return
-	const row = profile.data as unknown as Record<string, unknown>
-	for (const field of FIELDS) form[field] = row[field]?.toString() ?? ''
-}
-
-watch(() => profile.data, resetForm, { immediate: true })
-
-const countryOptions = computed(() =>
-	(geo.data?.countries ?? []).map((c) => ({ label: c, value: c })),
-)
-const stateOptions = computed(() => geo.data?.india_states ?? [])
-const isIndia = computed(() => form.country === 'India')
-
-// Currency follows the country (India → INR, else USD) — the backend derives it
-// on save; we mirror that here so the read-only field updates as they pick a
-// country. Never overridden once the currency is locked by billing activity.
-const currencyForCountry = (country: string) =>
-	country === 'India' ? 'INR' : 'USD'
-watch(
-	() => form.country,
-	(country) => {
-		if (!currencyLocked.value) form.currency = currencyForCountry(country ?? '')
-	},
-)
-
-// Inline, as-you-type: an entered email must be well-formed (empty is fine —
-// the field is optional).
-const emailIssue = computed(() =>
-	form.email?.trim() ? validateEmail(form.email) : '',
-)
-
-// India's term for it is "PIN code"; everywhere else says postal code.
-const postalLabel = computed(() => (isIndia.value ? 'PIN code' : 'Postal code'))
-
-const requiredFields = [
-	['legal_name', 'Legal name'],
-	['address_line1', 'Address line 1'],
-	['city', 'City'],
-	['country', 'Country'],
-] as const
-const missingRequired = computed(() =>
-	requiredFields
-		.filter(([field]) => !form[field]?.trim())
-		.map(([, label]) => label),
-)
-const formError = ref('')
-const submitted = ref(false)
-
-function requiredError(field: string, label: string): string {
-	return submitted.value && !form[field]?.trim() ? `${label} is required.` : ''
-}
-
-watch(form, () => (formError.value = ''), { deep: true })
-watch(open, (isOpen) => {
-	formError.value = ''
-	submitted.value = false
-	if (isOpen) resetForm()
-})
-
-type SaveBillingProfileResponse = {
-	setup_complete?: boolean
-	missing_labels?: string[]
-}
-const save = useCall<SaveBillingProfileResponse, Record<string, unknown>>({
-	url: method(API.saveBillingProfile),
-	method: 'POST',
-	immediate: false,
-})
-async function submit(): Promise<void> {
-	submitted.value = true
-	if (missingRequired.value.length || emailIssue.value) return
-	try {
-		await save.submit({ team: activeTeam.value, ...form })
-		if (save.error) throw save.error
-		await reloadSetup()
-		reloadProfile()
-		if (save.data?.setup_complete === false) {
-			const missing =
-				save.data.missing_labels?.join(', ') || 'the required fields'
-			formError.value = `Saved, but these fields are still required: ${missing}.`
-			return
-		}
-		successToast('Billing details saved')
-		open.value = false
-	} catch (e) {
-		formError.value = getErrorMessage(e)
-	}
+async function save(): Promise<void> {
+	if (await form.value?.submit()) open.value = false
 }
 </script>
 
 <template>
-	<Dialog v-model:open="open" title="Billing details" size="2xl">
+	<Dialog v-model:open="open" title="Billing details" size="xl">
 		<template #default>
-			<LoadingText v-if="profile.loading && !profile.data" :lines="6" />
-
-			<div v-else class="space-y-6">
-				<Alert v-if="formError" theme="red" :title="formError" />
-				<div class="space-y-3">
-					<h3 class="text-sm-medium text-ink-gray-8">Contact</h3>
-					<div class="grid gap-4 sm:grid-cols-2">
-						<TextInput
-							v-model="form.legal_name"
-							label="Legal name"
-							placeholder="Acme Technologies Pvt. Ltd."
-							:error="requiredError('legal_name', 'Legal name')"
-							required
-						/>
-						<div>
-							<TextInput
-								v-model="form.email"
-								type="email"
-								label="Billing email"
-								placeholder="billing@company.com"
-							/>
-							<p v-if="emailIssue" class="mt-1 text-p-xs text-ink-red-7">
-								{{ emailIssue }}
-							</p>
-						</div>
-						<TextInput
-							v-model="form.phone"
-							label="Phone"
-							placeholder="+91 98765 43210"
-						/>
-					</div>
-				</div>
-
-				<!-- Country leads: it decides the state field, the postal label, the
-             tax section — and, until locked, the billing currency. Currency is
-             a consequence, not a field, so it's stated in the description
-             instead of rendered as a dead select. -->
-				<div class="space-y-3">
-					<h3 class="text-sm-medium text-ink-gray-8">Address</h3>
-					<div class="grid gap-4 sm:grid-cols-2">
-						<div class="sm:col-span-2">
-							<Combobox
-								v-model="form.country"
-								label="Country"
-								placeholder="Select country"
-								:options="countryOptions"
-								:error="requiredError('country', 'Country')"
-								required
-							/>
-							<p class="mt-1 text-p-xs text-ink-gray-5">
-								{{ currencyLocked
-										? `Billed in ${form.currency}: locked, your team already has billing activity.`
-										: `Sets your billing currency (${form.currency || 'USD'}).` }}
-							</p>
-						</div>
-						<TextInput
-							v-model="form.address_line1"
-							label="Address line 1"
-							placeholder="Street address"
-							:error="requiredError('address_line1', 'Address line 1')"
-							required
-						/>
-						<TextInput
-							v-model="form.address_line2"
-							label="Address line 2"
-							placeholder="Suite, floor (optional)"
-						/>
-						<TextInput
-							v-model="form.city"
-							label="City"
-							:error="requiredError('city', 'City')"
-							required
-						/>
-						<Combobox
-							v-if="isIndia"
-							v-model="form.state"
-							label="State"
-							placeholder="Select state"
-							:options="stateOptions"
-						/>
-						<TextInput v-else v-model="form.state" label="State" />
-						<TextInput v-model="form.pincode" :label="postalLabel" />
-					</div>
-				</div>
-
-				<div v-if="isIndia" class="space-y-3">
-					<h3 class="text-sm-medium text-ink-gray-8">Tax</h3>
-					<div class="sm:max-w-[calc(50%-0.5rem)]">
-						<TextInput
-							v-model="form.gstin"
-							label="GSTIN"
-							placeholder="22AAAAA0000A1Z5"
-							description="Its first two digits must match the selected state."
-						/>
-					</div>
-				</div>
-			</div>
+			<BillingProfileForm ref="form" />
 		</template>
 		<template #actions>
 			<div class="flex items-center justify-end gap-2">
 				<Button label="Cancel" @click="open = false" />
-				<Button
-					variant="solid"
-					label="Save"
-					:loading="save.loading"
-					@click="submit"
-				/>
+				<Button variant="solid" label="Save" :loading="saving" @click="save" />
 			</div>
 		</template>
 	</Dialog>

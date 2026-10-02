@@ -39,6 +39,13 @@ let debounce: ReturnType<typeof setTimeout> | undefined
 
 onMounted(async () => {
 	try {
+		// A user who starts here with no team needs one before any team-scoped call.
+		await postFrappe(methodUrl(API.createTrialTeam), {})
+	} catch (exception) {
+		error.value = frappeErrorMessage(exception, 'Could not set up your team.')
+		return
+	}
+	try {
 		const status = await getFrappe<{
 			site: unknown
 			creation: CreationStatus | null

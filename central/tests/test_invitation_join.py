@@ -107,16 +107,12 @@ class TestInvitationJoin(IntegrationTestCase):
 			sign_up(self.email, "Code Invitee")
 		code = frappe.cache.get_value(_otp_key(self.email))["code"]
 
-		with (
-			patch("frappe.local.login_manager", create=True) as login_manager,
-			patch("central.api.auth._provision_signup_billing") as provision_billing,
-		):
+		with patch("frappe.local.login_manager", create=True) as login_manager:
 			login_manager.login_as.side_effect = frappe.set_user
-			result = verify_signup(self.email, code)
+			verify_signup(self.email, code)
 
-		self.assertIsNone(result["team"])
 		self.assertEqual(get_user_team_names(self.email), [self.team.name])
-		provision_billing.assert_not_called()
+		self.assertFalse(frappe.db.exists("Team", {"owner_user": self.email}))
 
 	def _invite(self, email: str):
 		frappe.set_user(self.owner)

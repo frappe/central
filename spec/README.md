@@ -30,6 +30,7 @@ Each module specification below describes current behavior. Update it in the sam
 - [SSO](SSO.md): login flows, token types, and consumer contracts.
 - [Atlas coordination](ATLAS_COORDINATION.md): the current regional contracts with Atlas, Pilot, and Cargo.
 - [Inbound webhooks](WEBHOOKS.md): the contract a region signs and sends its reports with. Share it with Atlas and Cargo.
+- [Frappe Connect](CONNECT.md): the planned contract for partner teams and partner links. Share it with the Connect developers.
 - [Refactor backlog](refactor_todo.md): the cleanup work that is still open.
 
 ## Billing
