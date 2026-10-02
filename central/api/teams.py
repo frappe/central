@@ -156,17 +156,23 @@ def delete_team(team: str) -> dict[str, Any]:
 @frappe.whitelist(methods=["POST"])
 def invite_team_member(
 	team: str,
-	email: str,
-	role: str,
+	email: str | None = None,
+	role: str | None = None,
 	resource_type: str = "*",
 	resource_name: str | None = None,
-) -> str:
-	return frappe.get_doc("Team", team).invite_member(
-		email,
-		role,
-		resource_type=resource_type or "*",
-		resource_name=resource_name,
-	)
+	invitations: list[dict] | None = None,
+) -> str | list[dict[str, Any]]:
+	"""Invite one person, or up to 10 with `invitations`: rows of {email, role,
+	resource_type, resource_name}.
+
+	One person returns the invitation name. Rows return one result each, with the
+	invitation name or the error that refused that row."""
+	doc = frappe.get_doc("Team", team)
+	if invitations is not None:
+		return doc.invite_members(invitations)
+	if not email or not role:
+		frappe.throw(_("Email and role are required."))
+	return doc.invite_member(email, role, resource_type=resource_type or "*", resource_name=resource_name)
 
 
 # nosemgrep: guest-whitelisted-method -- the random emailed token is the key, and the IP rate limit applies.

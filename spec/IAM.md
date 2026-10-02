@@ -95,6 +95,7 @@ flowchart TD
 - A user who is a member of no Team creates one in console onboarding. The trial-site funnel creates the Team itself, named after the user, before it asks for a site name.
 - Existing users must explicitly accept invitations.
 - Invitations cannot grant the `Owner` role.
+- `invite_team_member` invites one person, or up to 10 people in one request with `invitations`, because each invitation sends an email. It invites each row on its own: a refused row returns its error, and the other rows are still invited.
 - An invitation stays open for the days set in Central Settings, Invitation Expiry (Days). The default is 14. Resending an invitation starts the count again and issues a new link, so the link in the earlier email stops working.
 
 Example: Jane signs up without an invitation and creates Acme in onboarding, so Jane owns Acme. If John later invites Jane to John's Team, Jane accepts and is a member of both Teams. If John invites Jane before she has an account, Jane joins John's Team only and sees no onboarding.

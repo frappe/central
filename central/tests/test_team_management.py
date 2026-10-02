@@ -241,6 +241,53 @@ class TestTeamManagement(IntegrationTestCase):
 		self.assertEqual(frappe.db.get_value("Team Invitation", invitation_name, "status"), "Pending")
 		self.assertEqual(get_user_team_names(email), [])
 
+	def test_bulk_invite_sends_each_row_and_returns_the_refused_ones(self):
+		frappe.set_user(self.owner)
+		frappe.clear_messages()
+		results = invite_team_member(
+			self.team.name,
+			invitations=[
+				{"email": "bulk.one@example.test", "role": "Developer"},
+				{"email": "not-an-email", "role": "Developer"},
+				{"email": self.admin, "role": "Viewer"},
+				{"role": "Developer"},
+				{"email": "bulk.norole@example.test"},
+			],
+		)
+
+		self.assertTrue(results[0]["invitation"])
+		self.assertIsNone(results[0]["error"])
+		self.assertTrue(results[1]["error"])
+		self.assertTrue(results[2]["error"])
+		self.assertEqual(results[3]["error"], "Email and role are required.")
+		self.assertEqual(results[4]["error"], "Email and role are required.")
+		self.assertEqual(frappe.db.count("Team Invitation", {"team": self.team.name, "status": "Pending"}), 1)
+		self.assertEqual(frappe.get_message_log(), [])
+
+	def test_bulk_invite_is_limited_to_ten_people(self):
+		frappe.set_user(self.owner)
+		rows = [{"email": f"bulk.{n}@example.test", "role": "Developer"} for n in range(11)]
+
+		with self.assertRaises(frappe.ValidationError):
+			invite_team_member(self.team.name, invitations=rows)
+		with self.assertRaises(frappe.ValidationError):
+			invite_team_member(self.team.name, invitations=[])
+		self.assertFalse(frappe.db.exists("Team Invitation", {"email": "bulk.0@example.test"}))
+
+	def test_invite_without_an_email_or_rows_is_refused(self):
+		frappe.set_user(self.owner)
+
+		with self.assertRaises(frappe.ValidationError):
+			invite_team_member(self.team.name, role="Developer")
+
+	def test_bulk_invite_needs_manage_members(self):
+		frappe.set_user(self.viewer)
+
+		with self.assertRaises(frappe.PermissionError):
+			invite_team_member(
+				self.team.name, invitations=[{"email": "bulk.viewer@example.test", "role": "Viewer"}]
+			)
+
 	def test_resend_issues_a_new_token(self):
 		frappe.set_user(self.owner)
 		name = invite_team_member(self.team.name, self.invitee, "Developer")

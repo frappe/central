@@ -1,15 +1,17 @@
 <script setup lang="ts">
 import { Button, Select, TextInput } from 'frappe-ui'
+import {
+	ALL_RESOURCES,
+	type InviteRow,
+	MAX_INVITATIONS,
+} from '@/composables/useBulkInvite'
 
-export interface InviteRow {
-	email: string
-	role: string
-	/** The server's answer for this row, shown under it. */
-	error: string
-}
+type Option = { label: string; value: string; description?: string }
 
 interface InviteRowsProps {
-	roleOptions: { label: string; value: string }[]
+	roleOptions: Option[]
+	/** Shows a Resource column when given. Without it, every row covers the whole team. */
+	resourceOptions?: Option[]
 	/** The role a new row starts with. */
 	defaultRole: string
 	disabled?: boolean
@@ -19,7 +21,12 @@ const props = defineProps<InviteRowsProps>()
 const rows = defineModel<InviteRow[]>('rows', { required: true })
 
 function addRow(): void {
-	rows.value.push({ email: '', role: props.defaultRole, error: '' })
+	rows.value.push({
+		email: '',
+		role: props.defaultRole,
+		resource: ALL_RESOURCES,
+		error: '',
+	})
 }
 
 // The list always keeps one row, so removing the last one clears it instead.
@@ -35,8 +42,9 @@ function removeRow(index: number): void {
 			class="mb-1.5 flex gap-2 text-sm-medium text-ink-gray-8"
 			aria-hidden="true"
 		>
-			<span class="min-w-0 flex-1">Email address</span>
+			<span class="min-w-0 flex-1">Email</span>
 			<span class="w-36 shrink-0">Role</span>
+			<span v-if="resourceOptions" class="w-44 shrink-0">Resource</span>
 			<span class="w-7 shrink-0" />
 		</div>
 
@@ -48,7 +56,7 @@ function removeRow(index: number): void {
 						class="min-w-0 flex-1"
 						type="email"
 						placeholder="teammate@company.com"
-						:aria-label="`Email address ${index + 1}`"
+						:aria-label="`Email ${index + 1}`"
 						:disabled="disabled"
 						@update:model-value="row.error = ''"
 					/>
@@ -58,6 +66,14 @@ function removeRow(index: number): void {
 						:options="roleOptions"
 						placeholder="Role"
 						:aria-label="`Role ${index + 1}`"
+						:disabled="disabled"
+					/>
+					<Select
+						v-if="resourceOptions"
+						v-model="row.resource"
+						class="w-44 shrink-0"
+						:options="resourceOptions"
+						:aria-label="`Resource ${index + 1}`"
 						:disabled="disabled"
 					/>
 					<Button
@@ -74,13 +90,20 @@ function removeRow(index: number): void {
 			</div>
 		</div>
 
-		<Button
-			class="mt-3"
-			variant="subtle"
-			icon-left="lucide-plus"
-			label="Add another"
-			:disabled="disabled"
-			@click="addRow"
-		/>
+		<div class="mt-3 flex items-center gap-3">
+			<Button
+				variant="subtle"
+				icon-left="lucide-plus"
+				label="Add another"
+				:disabled="disabled || rows.length >= MAX_INVITATIONS"
+				@click="addRow"
+			/>
+			<p
+				v-if="rows.length >= MAX_INVITATIONS"
+				class="text-p-sm text-ink-gray-5"
+			>
+				You can invite up to {{ MAX_INVITATIONS }} people at a time.
+			</p>
+		</div>
 	</div>
 </template>

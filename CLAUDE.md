@@ -163,6 +163,7 @@ The console serves customers. Desk serves the operator who has to answer a page 
 
 - Target Python 3.14 and Frappe v16.
 - Keep domain behavior in the DocType controller, service module, or task that owns it. Keep `central/api/` routes and `hooks.py` entries thin.
+- Do not add a second API for a variant of an operation that an existing API does. Add an argument to the existing API, for example `invite_team_member(team, invitations=[...])` for many people, not a new `invite_team_members`. The functions behind the one API can differ.
 - Use type hints for public functions and important data structures.
 - Raise specific exceptions. Handle only errors that the code can recover from. Use `central/errors.py` for a failure that a person reads.
 - Prefer standard Frappe APIs and built-in DocTypes over custom machinery. Use `frappe.db` and `frappe.qb` instead of raw SQL.
