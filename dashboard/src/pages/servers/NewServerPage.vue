@@ -59,7 +59,6 @@ const {
 	imagesError,
 	reloadImages,
 	sshKeyIds,
-	sshRequired,
 	hasPublicIpv6,
 	isFirewallEnabled,
 	action,
@@ -199,11 +198,7 @@ const regionFlags = computed(() =>
 								size="md"
 								:options="imageOptions"
 							/>
-							<SSHKeysField
-								v-if="image"
-								v-model="sshKeyIds"
-								:required="sshRequired"
-							/>
+							<SSHKeysField v-if="image" v-model="sshKeyIds" />
 						</div>
 					</section>
 

@@ -26,7 +26,7 @@ Atlas must return the following fields with each build:
 | Enabled flag and availability state | Show only usable builds. |
 | Root filesystem size in MiB | Reject plans whose disk cannot hold the image. |
 
-Cargo's current Pilot image contains `default-bench` and `site.local`. Server and signup flows use that image layout. Ubuntu uses a base image and requires SSH keys. See [Image Offering](../central/infrastructure/doctype/image_offering/SPEC.md) for selectors and pagination.
+Cargo's current Pilot image contains `default-bench` and `site.local`. Server and signup flows use that image layout. Ubuntu uses a base image. SSH keys are optional. See [Image Offering](../central/infrastructure/doctype/image_offering/SPEC.md) for selectors and pagination.
 
 Server creation has two customer options, stored on `Virtual Machine` as `has_public_ipv6` and `is_firewall_enabled`. Central sends an option to Atlas only when the customer selects it:
 

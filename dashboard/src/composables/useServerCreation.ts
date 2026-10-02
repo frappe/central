@@ -155,15 +155,8 @@ export function useServerCreation() {
 	watch(activeTeam, () => {
 		sshKeyIds.value = []
 	})
-	const isPilotImage = computed(() => image.value?.tags.purpose === 'pilot')
-	// Only a non-Pilot image needs a key; Pilot hands the user its web admin instead.
-	const sshRequired = computed(() => !!image.value && !isPilotImage.value)
 	const hasPublicIpv6 = ref(true)
 	const isFirewallEnabled = ref(false)
-	// The picker explains the required key while Create stays disabled.
-	const sshMissing = computed(
-		() => sshRequired.value && !sshKeyIds.value.length,
-	)
 	watch(selection, () => {
 		selectedPlan.value = null
 		composedConfig.value = null
@@ -361,7 +354,6 @@ export function useServerCreation() {
 			!name.value.trim()
 		)
 			return false
-		if (sshMissing.value) return false
 		if (regionFull.value) return false // the region can't seat a new server right now
 		if (bracketExhausted.value) return false // nothing here fits the budget
 		return isCustom.value ? !!composedConfig.value : !!selectedPlanObj.value
@@ -466,7 +458,6 @@ export function useServerCreation() {
 		imagesError,
 		reloadImages,
 		sshKeyIds,
-		sshRequired,
 		hasPublicIpv6,
 		isFirewallEnabled,
 		action,

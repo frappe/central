@@ -16,7 +16,7 @@ Customer -> authorized service -> Resource Action -> queued integration worker
 
 ## Request contract
 
-The server APIs accept a Team, region, display name, image offering, regional image ID, and request key. A preset request adds a plan. A composed request adds a profile and resource quantities. Guest hostname, public IPv6, firewall, and SSH keys are separate inputs. A request selects saved [Team SSH Keys](../team_ssh_key/SPEC.md) in `ssh_key_ids` or pastes public keys in `ssh_keys`, not both. An image that is not a Pilot image needs at least one key. Each list can contain at most 20 keys, and each pasted key can contain at most 16,384 characters. A `snapshot` input replaces the offering and image with the source of the snapshot.
+The server APIs accept a Team, region, display name, image offering, regional image ID, and request key. A preset request adds a plan. A composed request adds a profile and resource quantities. Guest hostname, public IPv6, firewall, and SSH keys are separate inputs. A request selects saved [Team SSH Keys](../team_ssh_key/SPEC.md) in `ssh_key_ids` or pastes public keys in `ssh_keys`, not both. Keys are optional for every image. Each list can contain at most 20 keys, and each pasted key can contain at most 16,384 characters. A `snapshot` input replaces the offering and image with the source of the snapshot.
 
 Central checks the capability, current image selector, image availability, plan eligibility, resource sizes, and billing policy before saving the action. It locks the Team while reserving budget. Pending requests count toward the trial server limit and paid spending limit. A server can use from 1 through 32 whole virtual CPUs. Memory and disk must resolve to positive whole MiB values. The disk must fit the image.
 
@@ -88,7 +88,7 @@ A Pilot creation needs the Pilot signing key. Without it, the action fails befor
 
 An accepted Pilot VM is linked to its credential during local finalization. Its management gateway is `https://admin-vm-<label>.<Region.proxy_domain>`, which `Region.get_vm_gateway_url` builds. A running VM does not prove that Pilot or a site is ready. See [Trial sites](../site/SPEC.md) for site readiness and signup.
 
-Ubuntu receives its SSH keys and guest hostname. It does not receive a Pilot credential or wait for a site.
+Every image receives its selected SSH keys and guest hostname. Ubuntu does not receive a Pilot credential or wait for a site.
 
 ## Idle sleep
 

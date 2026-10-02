@@ -45,8 +45,7 @@ class TestServerProvisioningShapes(IntegrationTestCase):
 		self.assertEqual([profile["sub_category"] for profile in profiles], ["mixed"])
 		self.assertEqual(profiles[0]["vcpu_steps"], [1, 2])
 
-	def test_saved_keys_are_checked_but_only_their_ids_are_stored(self):
-		"""Dispatch reads the key text, so a rotation before a retry sends the current key."""
+	def build_ubuntu_configuration(self, ssh_key_ids: list[str], resolved_keys: list[str]):
 		server_input = CreateServerInput.model_validate(
 			{
 				"team": "team-a",
@@ -56,7 +55,7 @@ class TestServerProvisioningShapes(IntegrationTestCase):
 				"image_id": "image-a",
 				"request_key": "request-key-00000001",
 				"plan": "plan-a",
-				"ssh_key_ids": ["key-a"],
+				"ssh_key_ids": ssh_key_ids,
 			}
 		)
 		image = {"tags": {"os": "Ubuntu"}, "rootfs_size_mib": 8192}
@@ -73,14 +72,24 @@ class TestServerProvisioningShapes(IntegrationTestCase):
 					10.0,
 				),
 			),
-			patch(
-				"central.resource_actions.resolve_team_ssh_keys", return_value=["ssh-ed25519 AAAA"]
-			) as resolve,
+			patch("central.resource_actions.resolve_team_ssh_keys", return_value=resolved_keys) as resolve,
 			patch("central.resource_actions.get_team_currency", return_value="USD"),
 			patch("central.resource_actions.frappe.db.get_value", return_value="Monthly"),
 		):
 			configuration, _rate = _build_server_configuration(server_input, None)
 
-		resolve.assert_called_once_with("team-a", ["key-a"])
+		resolve.assert_called_once_with("team-a", ssh_key_ids)
+		return configuration
+
+	def test_saved_keys_are_checked_but_only_their_ids_are_stored(self):
+		"""Dispatch reads the key text, so a rotation before a retry sends the current key."""
+		configuration = self.build_ubuntu_configuration(["key-a"], ["ssh-ed25519 AAAA"])
+
 		self.assertEqual(configuration.ssh_key_ids, ["key-a"])
+		self.assertEqual(configuration.ssh_keys, [])
+
+	def test_ubuntu_server_needs_no_ssh_key(self):
+		configuration = self.build_ubuntu_configuration([], [])
+
+		self.assertEqual(configuration.ssh_key_ids, [])
 		self.assertEqual(configuration.ssh_keys, [])
