@@ -40,7 +40,7 @@ async function load_hosts(frm) {
 }
 
 async function show_ssh_command(frm) {
-	const { message } = await frm.call({ method: 'get_ssh_command', type: 'GET' })
+	const { message } = await frm.call({ method: 'get_ssh_command', doc: frm.doc, type: 'GET' })
 	const dialog = new frappe.ui.Dialog({
 		title: __('SSH Command'),
 		fields: [
