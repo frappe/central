@@ -119,7 +119,7 @@ Console login sends a six-digit code to an enabled user's email. The request res
 ## Deferred Scope
 
 - Resource groups
-- Partner and reseller access
+- Partner access. [Frappe Connect](CONNECT.md) holds the planned design.
 - Bench authorization
 - Billing enforcement
 - Delegated custom-role administration
