@@ -7,6 +7,7 @@ from frappe.tests import IntegrationTestCase
 
 from central.errors import AtlasConnectionError
 from central.integrations.images import list_images, list_offerings
+from central.patches.v0_0.rename_pilot_offering_to_frappe import execute as rename_pilot_offering
 from central.patches.v0_0.seed_image_offerings import execute as seed_offerings
 
 
@@ -159,6 +160,15 @@ class TestImageOfferings(IntegrationTestCase):
 		self.assertEqual(
 			frappe.get_doc("Image Offering", "ubuntu").get_image_tags(), {"purpose": "base", "os": "Ubuntu"}
 		)
+
+	def test_rename_shows_frappe_but_keeps_operator_changes(self):
+		seed_offerings()
+		frappe.db.set_value("Image Offering", "pilot", "title", "Pilot")
+		frappe.db.set_value("Image Offering", "ubuntu", "description", "Our Ubuntu.")
+		rename_pilot_offering()
+
+		self.assertEqual(frappe.db.get_value("Image Offering", "pilot", "title"), "Frappe")
+		self.assertEqual(frappe.db.get_value("Image Offering", "ubuntu", "description"), "Our Ubuntu.")
 
 	def test_customer_can_read_catalog_but_not_edit_or_preview_as_operator(self):
 		user = frappe.get_doc(

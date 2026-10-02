@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import pilotLogo from '@/assets/images/pilot-logo.svg'
+import frappeLogo from '@/assets/images/frappe-logo.svg'
 import ubuntuLogo from '@/assets/images/ubuntu.svg'
 import ChoiceCards from '@/components/common/ChoiceCards.vue'
 
@@ -19,7 +19,7 @@ defineProps<{
 const emit = defineEmits<{ 'update:modelValue': [value: string] }>()
 
 const defaultLogos: Record<string, string> = {
-	pilot: pilotLogo,
+	pilot: frappeLogo,
 	ubuntu: ubuntuLogo,
 }
 
@@ -43,12 +43,12 @@ function logoFor(option: ImageChoice): string | null {
 					v-if="logoFor(option as ImageChoice)"
 					:src="logoFor(option as ImageChoice) ?? ''"
 					alt=""
-					class="size-7 shrink-0 rounded-4 bg-surface-gray-2 object-contain p-1.5"
+					class="size-6 shrink-0 object-contain"
 					draggable="false"
 				/>
 				<span
 					v-else
-					class="grid size-7 shrink-0 place-items-center rounded-4 bg-surface-gray-2 text-ink-gray-8"
+					class="grid size-6 shrink-0 place-items-center rounded-4 bg-surface-gray-2 text-ink-gray-8"
 					aria-hidden="true"
 					>{{ option.label.charAt(0) }}</span
 				>
