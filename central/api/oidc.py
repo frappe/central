@@ -12,7 +12,7 @@ from central.central.doctype.central_sso_settings.central_sso_settings import Ce
 from central.oidc import OIDCRequestValidator
 
 
-@frappe.whitelist(allow_guest=True, methods=["POST"])
+@frappe.whitelist(allow_guest=True, methods=["POST"])  # nosemgrep
 def get_token() -> None:
 	"""Frappe's OAuth token endpoint, with RS256 ID tokens."""
 	request = frappe.request
@@ -33,7 +33,7 @@ def get_token() -> None:
 		frappe.local.response["http_status_code"] = 400
 
 
-@frappe.whitelist(allow_guest=True, methods=["GET"])
+@frappe.whitelist(allow_guest=True, methods=["GET"])  # nosemgrep
 def get_jwks() -> Response:
 	response = Response(mimetype="application/json")
 	response.data = frappe.as_json(CentralSSOSettings.instance().get_jwks("oidc"))

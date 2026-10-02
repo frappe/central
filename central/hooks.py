@@ -11,7 +11,11 @@ fixtures = [
 	# promotion thresholds — reference data every team's caps resolve against.
 	"Trust Tier Level",
 	{"dt": "Team Role", "filters": [["is_system", "=", 1]]},
-	{"dt": "Role", "filters": [["name", "in", ["Central User"]]]},
+	# Warpgate signs in through the Central OpenID Connect provider and checks these roles.
+	{
+		"dt": "Role",
+		"filters": [["name", "in", ["Central User", "Atlas Host Access", "Atlas Warpgate Admin"]]],
+	},
 	"Notification Event Type",
 ]
 

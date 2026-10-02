@@ -13,6 +13,8 @@ from central.identity.doctype.team.tenant import validate_tenant_id
 from central.sso import central_url, mint_atlas_token
 
 if TYPE_CHECKING:
+	from datetime import datetime
+
 	from central.infrastructure.doctype.region.region import Region
 
 
@@ -22,6 +24,8 @@ SNAPSHOT_TAG = "central_snapshot"
 MAXIMUM_METADATA_ENTRIES = 64
 MAXIMUM_METADATA_KEY_BYTES = 128
 MAXIMUM_METADATA_VALUE_BYTES = 1024
+# The largest page that the Atlas list routes return.
+HOST_PAGE_SIZE = 100
 
 
 class AtlasClient:
@@ -99,6 +103,27 @@ class AtlasClient:
 		if not isinstance(items, list):
 			frappe.throw(_("Atlas returned an invalid server page."), AtlasConnectionError)
 		return items
+
+	def list_hosts(self) -> list[dict]:
+		"""Every Metal host of the region, in title order."""
+		hosts: list[dict] = []
+		while True:
+			page = self._get("hosts", params={"offset": len(hosts), "limit": HOST_PAGE_SIZE})
+			items = page.get("items")
+			if not isinstance(items, list):
+				frappe.throw(_("Atlas returned an invalid host page."), AtlasConnectionError)
+			hosts += items
+			if not page.get("has_more"):
+				return hosts
+
+	def grant_host_access(self, host_id: str, email: str, expires_at: datetime) -> dict:
+		"""Open one host, or every host for `all`, to one person. A repeated grant moves the end time."""
+		path = f"hosts/{quote(host_id, safe='')}/access/grant"
+		return self._request("POST", path, payload={"email": email, "expires_at": expires_at.isoformat()})
+
+	def revoke_host_access(self, host_id: str, email: str) -> None:
+		"""Close one host, or every host for `all`, to one person. Revoking twice is safe."""
+		self._request("POST", f"hosts/{quote(host_id, safe='')}/access/revoke", payload={"email": email})
 
 	def vm_action(self, name: str, action: str) -> dict:
 		path = f"virtual-machines/{quote(name, safe='')}"

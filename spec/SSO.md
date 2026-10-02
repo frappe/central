@@ -87,6 +87,8 @@ To add a client:
 3. Add at least one role to **Allowed Roles**. Frappe refuses a user who has none of these roles.
 4. In the client, set the issuer URL to `https://<central>/oidc`.
 
+Operators give people SSH access to hosts with a [Host Access Grant](../central/infrastructure/doctype/host_access_grant/SPEC.md).
+
 Warpgate example:
 
 ```yaml
