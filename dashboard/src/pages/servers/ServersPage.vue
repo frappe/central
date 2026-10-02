@@ -3,7 +3,6 @@ import { Alert, Button, Spinner } from 'frappe-ui'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
-import EmptyState from '@/components/common/EmptyState.vue'
 import MapHealthStrips from '@/components/servers/MapHealthStrips.vue'
 import ResizeServerDialog from '@/components/servers/ResizeServerDialog.vue'
 import ServerFilters from '@/components/servers/ServerFilters.vue'
@@ -14,7 +13,6 @@ import ServerOverviewDialog from '@/components/servers/ServerOverviewDialog.vue'
 import ServerRowActions from '@/components/servers/ServerRowActions.vue'
 import TerminateServerDialog from '@/components/servers/TerminateServerDialog.vue'
 import TakeSnapshotDialog from '@/components/snapshots/TakeSnapshotDialog.vue'
-import CreateTeamDialog from '@/components/team/CreateTeamDialog.vue'
 import { useServerFleet } from '@/composables/useServerFleet'
 import { useServerNavigation } from '@/composables/useServerNavigation'
 import type { VirtualMachineRow } from '@/composables/useServers'
@@ -43,7 +41,6 @@ const {
 	canViewServers,
 	canCreateServer,
 	activeTeam,
-	sessionLoading,
 	rows,
 	query: q,
 	statusFilter,
@@ -66,11 +63,6 @@ const {
 	runCommand,
 	openConsole,
 } = useServers()
-
-// A user in no team can't own servers/billing/regions — offer team creation
-// instead of the (empty, error-prone) map until a team exists.
-const createTeamOpen = ref(false)
-const hasNoTeam = computed(() => !sessionLoading.value && !activeTeam.value)
 
 // First-run onboarding nudge — shown until the team has a server or the user
 // dismisses it (remembered across visits so it never nags).
@@ -241,27 +233,9 @@ const overviewOpen = computed({
 			/>
 		</Teleport>
 
-		<!-- No team at all: create one before anything else can be provisioned. -->
-		<div v-if="hasNoTeam" class="flex flex-1 items-center justify-center p-8">
-			<EmptyState
-				icon="lucide-users"
-				title="No team yet"
-				description="Create a team before provisioning servers. The team becomes the owner boundary for permissions, billing, and Atlas resources."
-			>
-				<template #action>
-					<Button
-						variant="solid"
-						label="Create team"
-						icon-left="lucide-plus"
-						@click="createTeamOpen = true"
-					/>
-				</template>
-			</EmptyState>
-		</div>
-
 		<!-- The map is the page. Everything else floats above it. `isolate` keeps
          the overlays' z-indexes from leaking above body-portaled menus. -->
-		<div v-else class="relative isolate flex-1 overflow-hidden">
+		<div class="relative isolate flex-1 overflow-hidden">
 			<ServerMap
 				class="absolute inset-0"
 				:pins="pins"
@@ -419,6 +393,5 @@ const overviewOpen = computed({
 			@open="openServer"
 			@resize="openResize"
 		/>
-		<CreateTeamDialog v-model:open="createTeamOpen" />
 	</div>
 </template>

@@ -177,7 +177,6 @@ export function useServerFleet() {
 		...fleet,
 		...capabilities,
 		activeTeam: session.activeTeam,
-		sessionLoading: session.loading,
 		rows,
 		query,
 		statusFilter,

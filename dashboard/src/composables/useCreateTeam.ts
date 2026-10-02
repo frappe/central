@@ -2,8 +2,8 @@ import { computed, ref } from 'vue'
 import { useSession } from '@/composables/useSession'
 import { useTeamSettings } from '@/composables/useTeamSettings'
 
-// Naming and creating a team, shared by the two places that offer it: the
-// servers page's dialog and the Teams tab of settings. The rule that a name
+// Naming and creating a team, shared by the places that offer it: the create
+// team dialog and the first step of console onboarding. The rule that a name
 // must be unique among your teams lives here so both can't drift apart on it.
 export function useCreateTeam() {
 	const { saving, error, clearError, createTeam } = useTeamSettings()

@@ -232,9 +232,14 @@ class TeamInvitation(Document):
 
 
 def get_expiry_date() -> str:
+	return add_days(today(), get_expiry_days())
+
+
+def get_expiry_days() -> int:
+	"""How many days a new invitation stays open."""
 	# A site saved before the setting existed reads it as empty.
 	days = frappe.get_cached_value("Central Settings", "Central Settings", "invitation_expiry_days")
-	return add_days(today(), days or DEFAULT_EXPIRY_DAYS)
+	return days or DEFAULT_EXPIRY_DAYS
 
 
 def get_invitation_by_token(token: str) -> TeamInvitation:

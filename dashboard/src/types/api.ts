@@ -13,6 +13,9 @@ export interface RefreshResponse {
 }
 
 /** central.api.identity.my_teams item. */
+/** A console onboarding step that a team stores. Mirrors Team Onboarding Step.step. */
+export type OnboardingStepKey = 'invite' | 'billing' | 'start'
+
 export interface Team {
 	name: string
 	label: string
@@ -22,6 +25,8 @@ export interface Team {
 	role: string | null
 	members: number
 	created: string | null
+	/** The steps the caller still has to answer as owner. Empty for a team they do not own. */
+	onboarding: OnboardingStepKey[]
 }
 
 export type MemberStatus = 'Active' | 'Suspended'

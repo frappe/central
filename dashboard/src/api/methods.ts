@@ -19,6 +19,8 @@ export const API = {
 	listTeamMembers: 'central.api.teams.list_team_members',
 	listTeamRoles: 'central.api.teams.list_team_roles',
 	createTeam: 'central.api.teams.create_team',
+	setOnboardingStep: 'central.api.teams.set_onboarding_step',
+	skipOnboarding: 'central.api.teams.skip_onboarding',
 	renameTeam: 'central.api.teams.rename_team',
 	setTeamLogo: 'central.api.teams.set_team_logo',
 	myProfile: 'central.api.identity.my_profile',
