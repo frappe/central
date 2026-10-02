@@ -16,7 +16,17 @@
   "enable_llm_service",
   "enable_pdf_print_service",
   "enable_email_delivery_service",
-  "enable_object_storage_service"
+  "enable_object_storage_service",
+  "pilot_rollout_tab",
+  "pilot_rollout_progress",
+  "pilot_release_section",
+  "pilot_release_tag",
+  "pilot_rollout_halted",
+  "pilot_release_column",
+  "pilot_rollout_percent",
+  "pilot_auto_release_section",
+  "pilot_auto_release_percent",
+  "pilot_auto_release_column"
  ],
  "fields": [
   {
@@ -90,13 +100,70 @@
    "fieldtype": "Int",
    "label": "Central ID",
    "non_negative": 1
+  },
+  {
+   "fieldname": "pilot_rollout_tab",
+   "fieldtype": "Tab Break",
+   "label": "Pilot Rollout"
+  },
+  {
+   "fieldname": "pilot_rollout_progress",
+   "fieldtype": "HTML",
+   "label": "Pilot Rollout Progress"
+  },
+  {
+   "fieldname": "pilot_release_section",
+   "fieldtype": "Section Break",
+   "label": "Release"
+  },
+  {
+   "description": "The Pilot release tag servers may update to, e.g. v0.0.50-pre-alpha. Empty means Pilot offers the newest GitHub release, as before.",
+   "fieldname": "pilot_release_tag",
+   "fieldtype": "Data",
+   "label": "Pilot Release Tag"
+  },
+  {
+   "default": "0",
+   "description": "Kill switch. Stops offering the tag to anyone who has not updated yet. Servers already on it stay on it.",
+   "fieldname": "pilot_rollout_halted",
+   "fieldtype": "Check",
+   "label": "Pilot Rollout Halted"
+  },
+  {
+   "fieldname": "pilot_release_column",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "0",
+   "description": "Percent of servers offered the tag. Servers set to early always get it, late only at 100. Set 100 to release to everyone.",
+   "fieldname": "pilot_rollout_percent",
+   "fieldtype": "Int",
+   "label": "Pilot Rollout Percent",
+   "non_negative": 1
+  },
+  {
+   "fieldname": "pilot_auto_release_section",
+   "fieldtype": "Section Break",
+   "label": "Auto Release"
+  },
+  {
+   "default": "95",
+   "description": "Once this percent of the first group runs the tag, Central sets the rollout to 100 for everyone. 0 turns this off, so only an admin releases to everyone.",
+   "fieldname": "pilot_auto_release_percent",
+   "fieldtype": "Int",
+   "label": "Auto Release At Percent",
+   "non_negative": 1
+  },
+  {
+   "fieldname": "pilot_auto_release_column",
+   "fieldtype": "Column Break"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-09-17 12:00:00.000000",
+ "modified": "2026-09-30 16:10:00.000000",
  "modified_by": "Administrator",
  "module": "Central",
  "name": "Central Settings",

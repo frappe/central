@@ -22,6 +22,9 @@ class PilotCredential(Document):
 		expires_at: DF.Datetime | None
 		last_used_at: DF.Datetime | None
 		pilot_credential_id: DF.Data
+		pilot_update_channel: DF.Data | None
+		pilot_update_error: DF.SmallText | None
+		pilot_version: DF.Data | None
 		server: DF.Link | None
 		status: DF.Literal["Active", "Revoked"]
 		team: DF.Link
@@ -137,6 +140,12 @@ class PilotCredential(Document):
 		if self.status != "Revoked":
 			self.db_set("status", "Revoked")
 
+	def record_pilot_update(self, version: str, error: str | None = None) -> None:
+		"""What this pilot runs after an update, and why it failed if it did. A success can
+		be the one that releases the rollout to everyone."""
+		self.db_set({"pilot_version": version, "pilot_update_error": error})
+		frappe.get_cached_doc("Central Settings").release_pilot_to_everyone_if_ready()
+
 	# --- lifecycle joins: driven by the Atlas VM events once they echo the id back ---
 
 	@classmethod
@@ -175,3 +184,4 @@ class PilotCredential(Document):
 
 def on_doctype_update() -> None:
 	frappe.db.add_index("Pilot Credential", ["team"])
+	frappe.db.add_index("Pilot Credential", ["pilot_update_channel"])

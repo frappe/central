@@ -1,14 +1,22 @@
 # Copyright (c) 2026, frappe and Contributors
 # See license.txt
 
+import math
 import random
+from unittest.mock import MagicMock, patch
 
 import frappe
 import jwt
 from frappe.tests import IntegrationTestCase
 from frappe.utils import add_to_date, now_datetime, set_request
 
-from central.api.pilot import datum_token, heartbeat, storage_regions
+from central.api.pilot import (
+	datum_token,
+	heartbeat,
+	pilot_release,
+	report_pilot_update,
+	storage_regions,
+)
 from central.central.doctype.central_sso_settings.central_sso_settings import CentralSSOSettings
 from central.infrastructure.doctype.pilot_credential.pilot_credential import PilotCredential
 from central.sso import DATUM_SCOPE
@@ -215,3 +223,145 @@ class TestPilotAPI(IntegrationTestCase):
 	def test_storage_regions_needs_a_pilot_credential(self):
 		with self.assertRaises(frappe.AuthenticationError):
 			self.call_storage_regions(None)
+
+	def set_rollout(
+		self, tag: str = "", percent: int = 0, halted: bool = False, assets=("pilot.tar.gz",)
+	) -> None:
+		"""Save the rollout as an operator would; GitHub answers with a release holding `assets`,
+		or a 404 when `assets` is None."""
+		github = MagicMock(ok=assets is not None)
+		github.json.return_value = {"assets": [{"name": name} for name in assets or ()]}
+		settings = frappe.get_single("Central Settings")
+		settings.update(
+			{"pilot_release_tag": tag, "pilot_rollout_percent": percent, "pilot_rollout_halted": halted}
+		)
+		with patch(
+			"central.central.doctype.central_settings.central_settings.requests.get", return_value=github
+		):
+			settings.save()
+
+	def call_pilot_release(self, channel: str = "normal") -> dict:
+		set_request(
+			method="GET",
+			path="/api/method/central.api.pilot.pilot_release",
+			headers={"X-Pilot-Token": self.token},
+		)
+		return pilot_release(channel=channel)
+
+	def test_no_tag_leaves_the_pilot_on_github(self):
+		self.set_rollout()
+		self.assertEqual(self.call_pilot_release(), {"tag": None})
+
+	def test_percent_zero_and_full_release(self):
+		self.set_rollout("v1", percent=0)
+		self.assertEqual(self.call_pilot_release(), {"tag": "v1", "allowed": False})
+
+		self.set_rollout("v1", percent=100)
+		self.assertEqual(self.call_pilot_release(), {"tag": "v1", "allowed": True})
+
+	def test_early_goes_first_and_late_waits(self):
+		self.set_rollout("v1", percent=50)
+		self.assertTrue(self.call_pilot_release("early")["allowed"])
+		self.assertFalse(self.call_pilot_release("late")["allowed"])
+
+	def test_halt_stops_everyone(self):
+		self.set_rollout("v1", percent=100, halted=True)
+		for channel in ("early", "normal", "late"):
+			self.assertFalse(self.call_pilot_release(channel)["allowed"])
+
+	def test_the_group_is_stable_per_tag_and_reshuffles_per_release(self):
+		settings = frappe.get_single("Central Settings")
+		settings.pilot_rollout_percent = 50
+		pilots = [f"pcred-{number}" for number in range(200)]
+
+		settings.pilot_release_tag = "v1"
+		first = [settings.is_pilot_release_allowed(pilot, "normal") for pilot in pilots]
+		self.assertEqual(first, [settings.is_pilot_release_allowed(pilot, "normal") for pilot in pilots])
+
+		settings.pilot_release_tag = "v2"
+		self.assertNotEqual(first, [settings.is_pilot_release_allowed(pilot, "normal") for pilot in pilots])
+
+	def test_a_tag_that_is_not_a_pilot_release_is_refused(self):
+		for assets in (None, ["source.zip"]):
+			with self.assertRaises(frappe.ValidationError):
+				self.set_rollout("v9.9.9", assets=assets)
+
+	def call_report_pilot_update(self, version: str, error: str | None = None, token: str = "") -> None:
+		set_request(
+			method="POST",
+			path="/api/method/central.api.pilot.report_pilot_update",
+			headers={"X-Pilot-Token": token or self.token},
+		)
+		report_pilot_update(version=version, error=error)
+
+	def test_a_failed_report_is_cleared_by_the_next_success(self):
+		self.set_rollout("v2", percent=10)
+		self.call_report_pilot_update("v1", "Pilot update failed: disk full")
+		self.call_report_pilot_update("v2")
+		credential = frappe.get_doc("Pilot Credential", "api-pilot-1")
+		self.assertEqual((credential.pilot_version, credential.pilot_update_error), ("v2", None))
+
+	def test_a_new_release_forgets_the_last_rollouts_failures(self):
+		self.set_rollout("v2", percent=10)
+		self.call_report_pilot_update("v1", "Pilot update failed: disk full")
+		self.set_rollout("v3", percent=10)
+		self.assertIsNone(frappe.db.get_value("Pilot Credential", "api-pilot-1", "pilot_update_error"))
+
+	def test_asking_for_a_release_records_the_channel(self):
+		self.set_rollout("v1", percent=10)
+		self.call_pilot_release("late")
+		self.assertEqual(
+			frappe.db.get_value("Pilot Credential", "api-pilot-1", "pilot_update_channel"), "late"
+		)
+
+	def mock_rollout(self, servers: int = 100, percent: int = 30) -> list[str]:
+		"""A v2 rollout to `percent` of `servers` fresh pilots, each other pilot revoked.
+		Returns the tokens of the first group."""
+		frappe.db.set_value("Pilot Credential", {"status": "Active"}, "status", "Revoked")
+		self.set_rollout("v2", percent=percent)
+		settings = frappe.get_single("Central Settings")
+		tokens = {
+			f"roll-{n}": PilotCredential.mint(team=self.team, pilot_credential_id=f"roll-{n}")
+			for n in range(servers)
+		}
+		return [token for pilot, token in tokens.items() if settings.in_pilot_rollout_group(pilot, "normal")]
+
+	def rollout_percent(self) -> int:
+		return frappe.get_single("Central Settings").pilot_rollout_percent
+
+	def test_95_percent_of_the_group_updated_releases_to_everyone(self):
+		group = self.mock_rollout()
+		needed = math.ceil(len(group) * 0.95)
+		for token in group[needed:]:
+			self.call_report_pilot_update("v1", "Pilot update failed: disk full", token)
+		for token in group[: needed - 1]:
+			self.call_report_pilot_update("v2", token=token)
+
+		self.assertEqual(
+			frappe.get_single("Central Settings").pilot_rollout_counts(),
+			{"group": len(group), "updated": needed - 1, "failed": len(group) - needed},
+		)
+		self.assertEqual(self.rollout_percent(), 30)
+
+		self.call_report_pilot_update("v2", token=group[needed - 1])
+		self.assertEqual(self.rollout_percent(), 100)
+		self.assertTrue(
+			frappe.db.exists(
+				"Comment",
+				{"reference_doctype": "Central Settings", "content": ("like", "Released v2 to everyone%")},
+			)
+		)
+
+	def test_no_auto_release_while_halted_or_turned_off(self):
+		for field in ("pilot_rollout_halted", "pilot_auto_release_percent"):
+			group = self.mock_rollout()
+			frappe.db.set_single_value("Central Settings", field, 1 if field == "pilot_rollout_halted" else 0)
+			for token in group:
+				self.call_report_pilot_update("v2", token=token)
+			self.assertEqual(self.rollout_percent(), 30)
+
+	def test_late_pilots_never_count_toward_the_group(self):
+		group = self.mock_rollout(servers=10, percent=50)
+		frappe.db.set_value("Pilot Credential", {"status": "Active"}, "pilot_update_channel", "late")
+		self.assertEqual(frappe.get_single("Central Settings").pilot_rollout_counts()["group"], 0)
+		self.assertTrue(group)

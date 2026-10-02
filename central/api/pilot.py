@@ -72,6 +72,33 @@ def heartbeat() -> dict:
 
 @frappe.whitelist(allow_guest=True, methods=["GET"])
 @pilot_credential_auth
+def pilot_release(channel: str = "normal") -> dict:
+	"""The Pilot release this pilot may update to. No tag means Central has no rollout
+	running, and the pilot takes the newest GitHub release."""
+	settings = frappe.get_cached_doc("Central Settings")
+	if not settings.pilot_release_tag:
+		return {"tag": None}
+
+	credential: PilotCredential = frappe.local.pilot_credential
+	if credential.pilot_update_channel != channel:
+		# A GET is not committed unless asked; the rollout bar needs each pilot's channel.
+		credential.db_set("pilot_update_channel", channel)
+		frappe.local.flags.commit = True
+	return {
+		"tag": settings.pilot_release_tag,
+		"allowed": settings.is_pilot_release_allowed(credential.pilot_credential_id, channel),
+	}
+
+
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+@pilot_credential_auth
+def report_pilot_update(version: str, error: str | None = None) -> None:
+	"""What a pilot runs after an update, and why it failed if it did."""
+	frappe.local.pilot_credential.record_pilot_update(version, error)
+
+
+@frappe.whitelist(allow_guest=True, methods=["GET"])
+@pilot_credential_auth
 def config() -> dict:
 	"""Discovery the pilot pulls on boot (and refreshes on a TTL): where Central's JWKS
 	lives and this deployment's audience id — all a bench needs to verify minted tokens.
