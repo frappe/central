@@ -1,4 +1,4 @@
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { useMyProfile } from '@/composables/useMyProfile'
@@ -23,6 +23,8 @@ import {
 	regionLabel,
 } from '@/lib/serverMap'
 import type { ComposedConfig, Plan, Profile } from '@/types/api'
+
+const SUCCESS_HOLD_MS = 900
 
 export function useServerCreation() {
 	const router = useRouter()
@@ -155,15 +157,8 @@ export function useServerCreation() {
 	watch(activeTeam, () => {
 		sshKeyIds.value = []
 	})
-	const isPilotImage = computed(() => image.value?.tags.purpose === 'pilot')
-	// Only a non-Pilot image needs a key; Pilot hands the user its web admin instead.
-	const sshRequired = computed(() => !!image.value && !isPilotImage.value)
 	const hasPublicIpv6 = ref(true)
 	const isFirewallEnabled = ref(false)
-	// The picker explains the required key while Create stays disabled.
-	const sshMissing = computed(
-		() => sshRequired.value && !sshKeyIds.value.length,
-	)
 	watch(selection, () => {
 		selectedPlan.value = null
 		composedConfig.value = null
@@ -361,7 +356,6 @@ export function useServerCreation() {
 			!name.value.trim()
 		)
 			return false
-		if (sshMissing.value) return false
 		if (regionFull.value) return false // the region can't seat a new server right now
 		if (bracketExhausted.value) return false // nothing here fits the budget
 		return isCustom.value ? !!composedConfig.value : !!selectedPlanObj.value
@@ -407,16 +401,23 @@ export function useServerCreation() {
 	}
 
 	// A created server belongs in the fleet, not on this form. The list opens on it.
+	let successTimer: ReturnType<typeof setTimeout> | undefined
+	onBeforeUnmount(() => clearTimeout(successTimer))
 	watch(
 		() => action.value?.status,
 		(status) => {
+			// A team switch or reset clears the action, so a pending redirect no longer applies.
+			clearTimeout(successTimer)
 			if (status !== 'Succeeded') return
 			const created = action.value?.resource_id
-			operation.reset()
-			router.replace({
-				path: '/servers',
-				query: created ? { created } : {},
-			})
+			// Let the finished progress register before the page changes.
+			successTimer = setTimeout(() => {
+				operation.reset()
+				router.replace({
+					path: '/servers',
+					query: created ? { created } : {},
+				})
+			}, SUCCESS_HOLD_MS)
 		},
 	)
 
@@ -466,7 +467,6 @@ export function useServerCreation() {
 		imagesError,
 		reloadImages,
 		sshKeyIds,
-		sshRequired,
 		hasPublicIpv6,
 		isFirewallEnabled,
 		action,

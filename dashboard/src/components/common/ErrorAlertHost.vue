@@ -29,20 +29,27 @@ watch(
 <template>
 	<Teleport to="body">
 		<div
-			v-if="error"
-			class="pointer-events-none fixed inset-x-0 top-4 z-[200] flex justify-center px-4"
+			class="pointer-events-none fixed inset-x-4 bottom-4 z-[200] flex justify-end"
 			aria-live="assertive"
 		>
-			<Alert
-				:key="error.id"
-				class="pointer-events-auto w-full max-w-xl shadow-sm"
-				theme="red"
-				:title="error.title"
-				:description="error.description"
-				:primary-action="primaryAction"
-				dismissible
-				@dismiss="dismissError(error.id)"
-			/>
+			<Transition
+				enter-active-class="transition duration-200 ease-out"
+				enter-from-class="translate-y-2 opacity-0"
+				leave-active-class="transition duration-150 ease-in"
+				leave-to-class="opacity-0"
+			>
+				<Alert
+					v-if="error"
+					:key="error.id"
+					class="pointer-events-auto w-full max-w-sm shadow-lg"
+					theme="red"
+					:title="error.title"
+					:description="error.description"
+					:primary-action="primaryAction"
+					dismissible
+					@dismiss="dismissError(error.id)"
+				/>
+			</Transition>
 		</div>
 	</Teleport>
 </template>

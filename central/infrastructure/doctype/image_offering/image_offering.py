@@ -75,12 +75,12 @@ def on_doctype_update() -> None:
 def ensure_default_offerings() -> None:
 	"""Create default product choices without replacing an operator's configuration."""
 	for key, title, flow, description, tags in (
-		("pilot", "Pilot", "Both", "Pilot with a Frappe bench.", {"purpose": "pilot"}),
+		("pilot", "Frappe", "Both", "A Frappe bench, ready for your apps.", {"purpose": "pilot"}),
 		(
 			"ubuntu",
 			"Ubuntu",
 			"Server",
-			"A plain Ubuntu server without Pilot.",
+			"A plain Ubuntu server.",
 			{"purpose": "base", "os": "Ubuntu"},
 		),
 	):

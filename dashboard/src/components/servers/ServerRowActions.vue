@@ -87,7 +87,7 @@ const options = computed(() => {
 			disabled: props.server.status !== 'Running' || !props.server.gateway_url,
 			onClick: () => emit('pilot', props.server),
 		})
-	if (allowed.value.console && props.server.image_offering === 'ubuntu')
+	if (allowed.value.console)
 		items.push({
 			label: 'Web console',
 			icon: 'lucide-terminal',

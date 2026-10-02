@@ -147,8 +147,9 @@ const current = computed(() => overview.value?.monitoring.current)
 const loadPoints = computed(
 	() => overview.value?.monitoring.history?.system?.points ?? [],
 )
+// The list row carries the in-flight action; the overview reply does not.
 const visual = computed(() => {
-	const row = server.value ?? props.server
+	const row = props.server ?? server.value
 	return row ? statusVisual(row) : null
 })
 const provider = computed(() => {
@@ -198,10 +199,10 @@ const planLabel = computed(() =>
 				<div class="flex min-w-0 items-start gap-3">
 					<ProviderAvatar :provider="provider" :size="40" />
 					<div class="min-w-0">
-						<div class="flex flex-wrap items-center gap-2">
+						<div class="flex h-6 items-center gap-2">
 							<Dialog.Title as-child>
 								<h2
-									class="truncate text-xl font-semibold leading-6 text-ink-gray-9"
+									class="min-w-0 truncate text-xl font-semibold text-ink-gray-9"
 								>
 									{{ title }}
 								</h2>
@@ -211,9 +212,10 @@ const planLabel = computed(() =>
 								:label="visual.label"
 								:theme="visual.badgeTheme"
 								size="sm"
+								class="shrink-0"
 							/>
 						</div>
-						<p class="mt-0.5 truncate text-sm text-ink-gray-5">
+						<p class="mt-1 truncate text-sm text-ink-gray-5">
 							{{ locationLine || '—' }}
 						</p>
 					</div>
@@ -269,7 +271,6 @@ const planLabel = computed(() =>
 				</div>
 
 				<ServerConnectCard
-					v-if="server.image_offering === 'ubuntu'"
 					:ssh-command="server.ssh_command"
 					:can-open-console="canOpenConsole"
 					:console-unavailable-reason="consoleUnavailableReason"

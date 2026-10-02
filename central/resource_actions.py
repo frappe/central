@@ -222,9 +222,7 @@ def _build_server_configuration(
 	validate_guest_input(server_input, image)
 	# Check the saved keys now so the form shows the error. Dispatch reads their text, which a
 	# rotation can change before a retry.
-	selected_keys = resolve_team_ssh_keys(server_input.team, server_input.ssh_key_ids)
-	if image["tags"].get("purpose") != "pilot" and not (selected_keys or server_input.ssh_keys):
-		frappe.throw(_("Select an SSH key for this server."))
+	resolve_team_ssh_keys(server_input.team, server_input.ssh_key_ids)
 
 	configuration = ServerCreation(
 		offering=server_input.offering,

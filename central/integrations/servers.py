@@ -5,7 +5,7 @@ import time
 import frappe
 from frappe import _
 
-from central.errors import AtlasConnectionError, AtlasResourceGone
+from central.errors import AtlasConnectionError, AtlasRejected, AtlasResourceGone
 from central.iam import can_on_any_server
 from central.infrastructure.doctype.pilot_credential.pilot_credential import PilotCredential
 from central.infrastructure.doctype.resource_action.resource_action import ResourceAction
@@ -162,15 +162,18 @@ def reconcile(team: str | None = None) -> dict:
 
 
 def get_console_url(server: VirtualMachine) -> str:
-	"""Return a single-use Atlas web console URL for a running Ubuntu server.
+	"""Return a single-use Atlas web console URL for a running server.
 
-	Atlas opens the session over SSH with a key it pushes for that session only."""
-	if server.image_offering != "ubuntu":
-		frappe.throw(_("The web console is available only for Ubuntu servers."))
+	Atlas opens the session over SSH with a key it pushes for that session only. If Atlas
+	definitely refuses SSH, the console opens on the serial TTY, which every guest has."""
 	if server.status != "Running":
 		frappe.throw(_("Start the server before you open its console."))
 
-	return get_client(server).get_console_url(server.atlas_vm_id, mode="ssh")
+	client = get_client(server)
+	try:
+		return client.get_console_url(server.atlas_vm_id, mode="ssh")
+	except AtlasRejected:
+		return client.get_console_url(server.atlas_vm_id, mode="tty")
 
 
 def refresh_server(name: str) -> None:

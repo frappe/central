@@ -58,6 +58,10 @@ class CentralSSOSettings(Document):
 	def instance(cls) -> "CentralSSOSettings":
 		return frappe.get_single("Central SSO Settings")
 
+	def before_validate(self) -> None:
+		if self.issuer_url:
+			self.issuer_url = self.issuer_url.strip().rstrip("/")
+
 	@frappe.whitelist(methods=["POST"])
 	def initialize_signing_key(self, plane: SigningPlane) -> str:
 		"""Create the signing key for one plane once, under an operator-held database lock."""

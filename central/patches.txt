@@ -182,6 +182,7 @@ central.patches.v0_0.merge_server_open_into_view
 central.patches.v0_0.rename_region_fields
 central.patches.v0_0.record_server_has_site
 central.patches.v0_0.shorten_pilot_offering_description
+central.patches.v0_0.rename_pilot_offering_to_frappe
 # A Single doesn't pick up a new field's default once it has been saved, and a
 # zero grace would page the operators about every held invoice on day one.
 central.patches.v0_0.seed_billing_details_grace
