@@ -7,6 +7,7 @@
  "field_order": [
   "general_tab",
   "trial_idle_shutdown_minutes",
+  "invitation_expiry_days",
   "wildcard_domain",
   "central_id",
   "feature_flags_tab",
@@ -78,6 +79,14 @@
    "non_negative": 1
   },
   {
+   "default": "14",
+   "description": "Days a team invitation stays open. Resending it starts the count again.",
+   "fieldname": "invitation_expiry_days",
+   "fieldtype": "Int",
+   "label": "Invitation Expiry (Days)",
+   "non_negative": 1
+  },
+  {
    "description": "Base domain of every regional service. Central reaches proxy.<region>.<wildcard domain>, atlas.<region>.<wildcard domain>, and cargo.<region>.<wildcard domain>. Example: frappe.dev",
    "fieldname": "wildcard_domain",
    "fieldtype": "Data",
@@ -96,7 +105,7 @@
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-09-17 12:00:00.000000",
+ "modified": "2026-10-02 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Central",
  "name": "Central Settings",

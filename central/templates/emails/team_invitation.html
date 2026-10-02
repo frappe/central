@@ -4,17 +4,22 @@
 {% block content %}
 <tr>
 	<td class="fc-body">
-		{{ ui.heading(_("Join {0}").format(team_name) | e) }}
-		{{ ui.paragraph(_("{0} invited you to join their team in Central.").format(invited_by) | e) }}
+		{{ ui.heading(_("Join {0} on Frappe Cloud").format(team_name) | e) }}
+		{{ ui.paragraph(_("{0} invited you to join the {1} team as {2}.").format(invited_by, team_name, role) | e) }}
 
-		{{ ui.table([_("Role"), _("Expires")], [[role | e, expires_on | e]]) }}
-
-		{{ ui.button(_("View invitation"), invitation_url | e) }}
+		{{ ui.button(_("Accept invitation"), invitation_url | e) }}
 
 		<p class="fc-muted pt-6">
+			{{ _("This invitation expires on {0}. If you did not expect it, you can ignore this email.").format(expires_on) | e }}
+		</p>
+		<p class="fc-muted pt-4">
 			{{ _("If the button does not work, open this link:") }}<br />
 			{{ ui.link(invitation_url | e, invitation_url | e) }}
 		</p>
 	</td>
 </tr>
+{% endblock %}
+
+{% block footer %}
+<b>{{ _("Note") }}:</b> {{ _("You are receiving this because someone invited this email address to a Frappe Cloud team.") }}
 {% endblock %}

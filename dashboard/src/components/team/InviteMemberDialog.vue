@@ -24,7 +24,6 @@ const open = computed({
 const email = ref('')
 const role = ref('')
 const resource = ref('*::')
-const expiresInDays = ref(7)
 const formError = ref('')
 
 const registryCall = useCall<TeamRegistry, { team: string }>({
@@ -72,18 +71,16 @@ watch(open, (isOpen) => {
 		email.value = ''
 		role.value = ''
 		resource.value = '*::'
-		expiresInDays.value = 7
 		formError.value = ''
 		if (!registryCall.data) registryCall.reload()
 	}
 })
-watch([email, role, resource, expiresInDays], () => (formError.value = ''))
+watch([email, role, resource], () => (formError.value = ''))
 
 type InviteParams = {
 	team: string
 	email: string
 	role: string
-	expires_in_days: number
 	resource_type: ResourceType
 	resource_name: string | null
 }
@@ -128,7 +125,6 @@ async function submit() {
 			team: activeTeam.value!,
 			email: email.value.trim().toLowerCase(),
 			role: role.value,
-			expires_in_days: expiresInDays.value,
 			resource_type: scope.resource_type,
 			resource_name: scope.resource_name,
 		})
@@ -175,13 +171,6 @@ async function submit() {
 						class="min-w-0 flex-1"
 					/>
 				</div>
-				<TextInput
-					v-model.number="expiresInDays"
-					type="number"
-					label="Invitation expires in (days)"
-					:min="1"
-					:max="30"
-				/>
 			</div>
 		</template>
 	</Dialog>

@@ -36,6 +36,8 @@ export const API = {
 	revokeInvitation: 'central.api.teams.revoke_invitation',
 	acceptInvitation: 'central.api.teams.accept_invitation',
 	declineInvitation: 'central.api.teams.decline_invitation',
+	getInvitation: 'central.api.teams.get_invitation',
+	signUpWithInvitation: 'central.api.auth.sign_up_with_invitation',
 
 	registry: 'central.api.servers.registry',
 	listInstances: 'central.api.servers.list_instances',

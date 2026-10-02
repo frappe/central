@@ -91,7 +91,6 @@ class Team(Document):
 		self,
 		email: str,
 		role: str,
-		expires_in_days: int = 7,
 		resource_type: str = "*",
 		resource_name: str | None = None,
 	) -> str:
@@ -102,7 +101,6 @@ class Team(Document):
 				"team": self.name,
 				"email": email,
 				"role": role,
-				"expires_in_days": expires_in_days,
 				"resource_type": resource_type or "*",
 				"resource_name": resource_name,
 			}

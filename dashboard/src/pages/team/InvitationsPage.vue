@@ -1,16 +1,13 @@
 <script setup lang="ts">
 import { Tabs } from 'frappe-ui'
 import { computed, ref } from 'vue'
-import { useRoute } from 'vue-router'
 import ReceivedInvitationsPanel from '@/components/team/ReceivedInvitationsPanel.vue'
 import SentInvitationsPanel from '@/components/team/SentInvitationsPanel.vue'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { useMyInvitations } from '@/composables/useMyInvitations'
 
 // Sent (invitations this team issued — managers only) and Received (invitations
-// addressed to you) are one screen behind tabs. An email deep-link
-// (/invitations/:name) and non-managers land on Received.
-const route = useRoute()
+// addressed to you) are one screen behind tabs. Non-managers land on Received.
 const { canManageMembers } = useCapabilities()
 const { count } = useMyInvitations()
 
@@ -29,9 +26,7 @@ const tabs = computed(() => {
 		: [received]
 })
 
-// Managers default to Sent; everyone else (or an email deep-link) opens Received.
-const wantReceived = !!route.params.name || !canManageMembers.value
-const activeTab = ref(wantReceived ? 'received' : 'sent')
+const activeTab = ref(canManageMembers.value ? 'sent' : 'received')
 </script>
 
 <template>
