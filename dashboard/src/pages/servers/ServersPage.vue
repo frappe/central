@@ -180,8 +180,17 @@ const openResize = (server: VirtualMachineRow): void => {
 	resizeOpen.value = true
 }
 const pendingSnapshot = ref<VirtualMachineRow | null>(null)
+// The list keeps polling, so an open overview follows the latest copy of its row.
+const liveOverviewServer = computed(() => {
+	const selected = overviewServer.value
+	if (!selected) return null
+	return (
+		rows.value.find((row) => row.server?.resource_id === selected.resource_id)
+			?.server ?? selected
+	)
+})
 const overviewOpensSite = computed(
-	() => !!overviewServer.value && !!siteFor(overviewServer.value),
+	() => !!liveOverviewServer.value && !!siteFor(liveOverviewServer.value),
 )
 // A member can be scoped to some servers, so each dialog follows the server it shows.
 const teamActions = computed<ServerActions>(() => ({
@@ -196,7 +205,7 @@ const terminateActions = computed(() =>
 	getServerActions(pendingTerminate.value, teamActions.value),
 )
 const overviewActions = computed(() =>
-	getServerActions(overviewServer.value, teamActions.value),
+	getServerActions(liveOverviewServer.value, teamActions.value),
 )
 const overviewOpen = computed({
 	get: () => !!overviewServer.value,
@@ -401,7 +410,7 @@ const overviewOpen = computed({
 		/>
 		<ServerOverviewDialog
 			v-model:open="overviewOpen"
-			:server="overviewServer"
+			:server="liveOverviewServer"
 			:can-open="overviewActions.open"
 			:can-resize="overviewActions.resize"
 			:opens-site="overviewOpensSite"
