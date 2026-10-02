@@ -147,7 +147,7 @@ class AtlasClient:
 		)
 
 	def get_console_url(self, name: str, mode: str) -> str:
-		"""Return the Atlas console page for a single-use token. The token expires in 60 seconds.
+		"""Return the Atlas console page for a single-use token. The token expires in 30 seconds.
 
 		The token goes in the URL fragment, so the browser never sends it to a server."""
 		response = self._request(

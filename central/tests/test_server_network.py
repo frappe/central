@@ -6,7 +6,7 @@ import frappe
 from frappe.tests import IntegrationTestCase
 
 from central.api.servers import open_console, server_overview
-from central.errors import AtlasRejected, AtlasResourceGone
+from central.errors import AtlasConnectionError, AtlasRejected, AtlasResourceGone
 from central.integrations.resource_actions import MESH_NETWORK, _create_payload
 from central.tests.test_iam import ensure_user
 from central.tests.utils import ensure_atlas_instance
@@ -121,12 +121,18 @@ class TestServerConsole(IntegrationTestCase):
 			[call("vm-00001", mode="ssh"), call("vm-00001", mode="tty")],
 		)
 
-	def test_console_does_not_fall_back_for_a_missing_server(self):
-		self.get_console_url.side_effect = AtlasResourceGone("The server does not exist.")
+	def test_console_does_not_fall_back_unless_atlas_refuses_ssh(self):
+		for error in (
+			AtlasResourceGone("The server does not exist."),
+			AtlasConnectionError("Atlas rejected Central authentication."),
+		):
+			with self.subTest(error=type(error).__name__):
+				self.get_console_url.reset_mock()
+				self.get_console_url.side_effect = error
 
-		with self.assertRaises(AtlasResourceGone):
-			self.open_as(self.owner)
-		self.get_console_url.assert_called_once_with("vm-00001", mode="ssh")
+				with self.assertRaises(type(error)):
+					self.open_as(self.owner)
+				self.get_console_url.assert_called_once_with("vm-00001", mode="ssh")
 
 	def test_viewer_cannot_open_the_console(self):
 		with self.assertRaises(frappe.PermissionError):

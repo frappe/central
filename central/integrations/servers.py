@@ -5,7 +5,7 @@ import time
 import frappe
 from frappe import _
 
-from central.errors import AtlasConnectionError, AtlasResourceGone
+from central.errors import AtlasConnectionError, AtlasRejected, AtlasResourceGone
 from central.iam import can_on_any_server
 from central.infrastructure.doctype.pilot_credential.pilot_credential import PilotCredential
 from central.infrastructure.doctype.resource_action.resource_action import ResourceAction
@@ -165,19 +165,14 @@ def get_console_url(server: VirtualMachine) -> str:
 	"""Return a single-use Atlas web console URL for a running server.
 
 	Atlas opens the session over SSH with a key it pushes for that session only. If Atlas
-	refuses an SSH token, the console opens on the serial TTY, which every guest has."""
+	definitely refuses SSH, the console opens on the serial TTY, which every guest has."""
 	if server.status != "Running":
 		frappe.throw(_("Start the server before you open its console."))
 
 	client = get_client(server)
-	message_count = len(frappe.local.message_log)
 	try:
 		return client.get_console_url(server.atlas_vm_id, mode="ssh")
-	except AtlasResourceGone:
-		raise
-	except AtlasConnectionError:
-		# A token request is safe to repeat. Drop the SSH error so a working TTY does not report it.
-		del frappe.local.message_log[message_count:]
+	except AtlasRejected:
 		return client.get_console_url(server.atlas_vm_id, mode="tty")
 
 
