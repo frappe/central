@@ -7,8 +7,8 @@ from frappe import _
 from frappe.rate_limiter import rate_limit
 from frappe.utils import cint, escape_html, random_string, validate_email_address
 
-from central.iam import get_user_team_names
-from central.users import CENTRAL_USER_ROLE
+from central.identity.doctype.team_invitation.team_invitation import get_invitation_by_token
+from central.users import CENTRAL_USER_ROLE, get_pending_invitations
 from central.utils.inputs import require_secret
 
 # Signup is OTP-based: `sign_up` emails a 6-digit code and caches the pending
@@ -211,11 +211,41 @@ def verify_signup(email: str, code: str) -> dict:
 	frappe.cache.delete_value(_otp_key(email))
 	frappe.local.login_manager.login_as(user.name)
 
-	teams = get_user_team_names(user.name)
-	team = teams[0] if teams else None
+	for name in get_pending_invitations(user.name):
+		frappe.get_doc("Team Invitation", name).accept()
+
+	# An invited user owns no team to provision.
+	team = frappe.db.get_value("Team", {"owner_user": user.name})
 	if team:
 		_provision_signup_billing(team)
 	return {"user": user.name, "team": team}
+
+
+# nosemgrep: guest-whitelisted-method -- the emailed token verifies the address, and the IP rate limit applies.
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+@rate_limit(limit=10, seconds=OTP_TTL_SECONDS, methods="POST")
+def sign_up_with_invitation(token: str, full_name: str) -> dict:
+	"""Create the invited user's account and join the team.
+
+	The emailed token verifies the address. An existing account must sign in instead."""
+	full_name = full_name.strip() if isinstance(full_name, str) else ""
+	if not full_name:
+		frappe.throw(_("Full name is required."), frappe.ValidationError)
+
+	invitation = get_invitation_by_token(token)
+	if not invitation.is_pending:
+		frappe.throw(_("This invitation is no longer valid."), frappe.ValidationError)
+	if frappe.db.exists("User", invitation.email):
+		frappe.throw(
+			_("An account with this email already exists. Sign in to accept."), frappe.ValidationError
+		)
+
+	_enforce_signup_limit()
+	user = _create_verified_user(invitation.email, full_name)
+	frappe.local.login_manager.login_as(user.name)
+	# Only this invitation: the others for the email stay pending for the user to answer.
+	invitation.accept()
+	return {"user": user.name, "team": invitation.team}
 
 
 def _provision_signup_billing(team: str) -> None:

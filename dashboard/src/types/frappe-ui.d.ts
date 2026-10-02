@@ -16,6 +16,13 @@ export interface DropdownOption {
 
 export type DropdownOptions = DropdownOption[]
 
+/** The File record `upload_file` returns. */
+export interface UploadedFile {
+	name: string
+	file_name: string
+	file_url: string
+}
+
 export interface UseCallOptions<TResponse, TParams> {
 	url: string | Ref<string>
 	method?: 'GET' | 'POST' | 'PUT' | 'DELETE'
@@ -216,6 +223,7 @@ export const Dialog: Component & {
 }
 export const Dropdown: Component
 export const ErrorMessage: Component
+export const FileUploader: Component
 export const FormControl: Component
 export const KeyboardShortcut: Component
 export const LoadingIndicator: Component

@@ -12,7 +12,7 @@ from central.iam import (
 	resolve_user_grants,
 	user_has_operator_bypass,
 )
-from central.utils.inputs import require_text
+from central.utils.inputs import require_attached_file, require_text
 
 # Identity and capability reads for the console. Always scoped to the signed-in
 # user — safe for any logged-in member.
@@ -190,3 +190,13 @@ def update_profile(full_name: str) -> dict[str, Any]:
 	doc.last_name = None
 	doc.save(ignore_permissions=True)
 	return {"full_name": doc.full_name}
+
+
+@frappe.whitelist(methods=["POST"])
+def set_profile_photo(file_url: str | None = None) -> dict[str, Any]:
+	"""Set the signed-in user's photo to an uploaded image, or clear it."""
+	user = _require_signed_in()
+	doc = frappe.get_doc("User", user)
+	doc.user_image = require_attached_file("User", user, "user_image", file_url) if file_url else None
+	doc.save()
+	return {"user_image": doc.user_image}

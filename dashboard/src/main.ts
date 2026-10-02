@@ -13,6 +13,7 @@ app.use(router)
 app.use(FrappeUI)
 
 if (window.system_timezone) setConfig('systemTimezone', window.system_timezone)
+if (window.max_file_size) setConfig('maxFileSize', window.max_file_size)
 
 // Where Socket.IO listens: what Frappe put on the page when it served it, else the
 // bench's own `socketio_port`, compiled in by vite.config.ts. Never a guess — a wrong

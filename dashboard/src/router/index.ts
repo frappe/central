@@ -30,6 +30,13 @@ const routes = [
 		meta: { public: true },
 	},
 	{
+		// Emailed invitation link, open to guests and signed-in users.
+		path: '/join/:token',
+		name: 'JoinTeam',
+		component: () => import('@/pages/team/JoinTeamPage.vue'),
+		meta: { public: true, allowSignedIn: true },
+	},
+	{
 		path: '/onboarding/site',
 		name: 'OnboardingSite',
 		component: () => import('@/pages/onboarding/SiteNamePage.vue'),
@@ -147,17 +154,10 @@ const routes = [
 				component: () => import('@/pages/team/InvitationsPage.vue'),
 				meta: { title: 'Invitations' },
 			},
-			// Personal invitation inbox + the email deep-link both open the Invitations
-			// page on its Received tab.
+			// Personal invitation inbox: opens the Invitations page on its Received tab.
 			{
 				path: 'invitations',
 				name: 'MyInvitations',
-				component: () => import('@/pages/team/InvitationsPage.vue'),
-				meta: { title: 'Invitations' },
-			},
-			{
-				path: 'invitations/:name',
-				name: 'FocusedInvitation',
 				component: () => import('@/pages/team/InvitationsPage.vue'),
 				meta: { title: 'Invitations' },
 			},
@@ -185,7 +185,7 @@ router.beforeEach((to) => {
 	const onboardingComplete = window.onboarding_complete ?? false
 
 	if (to.meta.public) {
-		if (isGuest.value) return true
+		if (isGuest.value || to.meta.allowSignedIn) return true
 		// Logged in but on an auth page — e.g. browser-Back after verifying. Don't dump
 		// them into the dashboard mid-onboarding: resume the funnel until it's finished.
 		return onboardingComplete ? '/servers' : '/onboarding/site'

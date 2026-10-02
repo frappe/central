@@ -5,9 +5,12 @@ from typing import Any
 import frappe
 from frappe import _
 from frappe.query_builder import Order
+from frappe.rate_limiter import rate_limit
 
 from central.iam import expand_capabilities, get_all_capabilities
+from central.identity.doctype.team_invitation.team_invitation import get_invitation_by_token
 from central.utils.guards import require_capability, require_team_member
+from central.utils.inputs import require_attached_file
 
 # Team-roster reads + role management for the console's Team screens. Visibility
 # is "being a member" (any capability on the team); mutations delegate to the Team
@@ -110,6 +113,16 @@ def rename_team(team: str, team_name: str) -> dict[str, Any]:
 
 
 @frappe.whitelist(methods=["POST"])
+@require_capability("team:edit", "You can't change this team's logo.")
+def set_team_logo(team: str, file_url: str | None = None) -> dict[str, Any]:
+	"""Set the team logo to an uploaded image, or clear it. Team.validate re-checks team:edit."""
+	doc = frappe.get_doc("Team", team)
+	doc.team_logo = require_attached_file("Team", team, "team_logo", file_url) if file_url else None
+	doc.save()
+	return {"team_logo": doc.team_logo}
+
+
+@frappe.whitelist(methods=["POST"])
 @require_team_member
 def transfer_team_ownership(team: str, user: str) -> dict[str, Any]:
 	"""Hand the Owner role to another active member. Current-owner only."""
@@ -130,17 +143,23 @@ def invite_team_member(
 	team: str,
 	email: str,
 	role: str,
-	expires_in_days: int = 7,
 	resource_type: str = "*",
 	resource_name: str | None = None,
 ) -> str:
 	return frappe.get_doc("Team", team).invite_member(
 		email,
 		role,
-		expires_in_days,
 		resource_type=resource_type or "*",
 		resource_name=resource_name,
 	)
+
+
+# nosemgrep: guest-whitelisted-method -- the random emailed token is the key, and the IP rate limit applies.
+@frappe.whitelist(allow_guest=True, methods=["GET"])
+@rate_limit(limit=30, seconds=60, methods="GET")
+def get_invitation(token: str) -> dict[str, Any]:
+	"""The invitation behind an emailed join link."""
+	return get_invitation_by_token(token).get_summary()
 
 
 @frappe.whitelist(methods=["POST"])

@@ -81,26 +81,36 @@ Signup sends a verification code to the normalized email address. Central limits
 ```mermaid
 flowchart TD
     U[User created] --> R[Assign Central User role]
-    R --> PT[Create personal Team]
+    R --> P{Pending invitations?}
+    P -->|Yes| S[No personal Team]
+    P -->|No| PT[Create personal Team]
     PT --> OM[Add active Owner membership]
-    OM --> P{Pending invitations?}
-    P -->|No| D[Done]
-    P -->|Yes| A[Accept matching invitations]
-    A --> IM[Add invited Team memberships]
+    S --> V{Which signup?}
+    V -->|Email code| A[Accept every pending invitation]
+    V -->|Invitation link| ONE[Accept only that invitation]
 ```
 
-- Every non-guest user receives a personal Team.
-- Team creation always creates an active Owner membership.
+- A new user with pending invitations gets no personal Team. The signup that created the user accepts the invitations, after it signs the user in.
+- The email code signup accepts every pending invitation for the email. The invitation link signup accepts only the invitation in the link. The others stay pending until the user answers them.
+- A new user without invitations gets a personal Team with an active Owner membership.
 - Existing users must explicitly accept invitations.
-- For a newly created user, invitations sent to the same email are accepted
-  after the personal Team has been created.
 - Invitations cannot grant the `Owner` role.
-- Accepting an invitation adds or activates membership in the inviting Team; it
-  does not replace the user's personal Team.
+- An invitation stays open for the days set in Central Settings, Invitation Expiry (Days). The default is 14. Resending an invitation starts the count again and issues a new link, so the link in the earlier email stops working.
 
-Example: John and Jane each have a personal Team. If John invites Jane to
-John's Team, there are still two Teams. Jane owns Jane's Team and is also a
-member of John's Team.
+Example: Jane signs up without an invitation, so Jane owns Jane's Team. If John later invites Jane to John's Team, Jane accepts and is a member of both Teams. If John invites Jane before she has an account, Jane joins John's Team only.
+
+### Invitation email and join link
+
+Central sends the invitation email directly, not through notification preferences, because the invitee is not a member yet. The email names the inviter, the Team, and the role. It links to `/dashboard/join/<token>`. The token is a random value on the Team Invitation, and it is the only key the join page reads.
+
+| Visitor | Join page action |
+|---|---|
+| Signed in as the invited email | Accept or decline. |
+| Signed in as another user | Switch account. |
+| Guest with an existing account | Sign in with the email code, then return to the join page. |
+| Guest without an account | Enter a full name. Central creates the account, joins the Team, and signs the user in. |
+
+The emailed token verifies the address, so a new invitee does not need a second email code. A token never signs in to an existing account.
 
 ## Console Login
 

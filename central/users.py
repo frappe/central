@@ -12,7 +12,10 @@ DEFAULT_TEAM_ROLE = "Owner"
 
 
 def bootstrap_user_team(doc, method: str | None = None) -> None:
-	"""Provision Central access for a newly created user."""
+	"""Provision Central access for a newly created user.
+
+	A user with pending invitations gets no personal team; the signup that created
+	them accepts the invitations. Anyone else gets a personal team."""
 	if _should_skip_bootstrap(doc):
 		return
 
@@ -21,38 +24,33 @@ def bootstrap_user_team(doc, method: str | None = None) -> None:
 	if not frappe.db.exists("Team Role", DEFAULT_TEAM_ROLE):
 		frappe.throw(_("Cannot bootstrap user team because the Owner Team Role fixture is missing."))
 
-	if not get_user_team_names(doc.name):
-		team = frappe.get_doc(
-			{
-				"doctype": "Team",
-				"team_name": _default_team_name(doc),
-				"owner_user": doc.name,
-				"is_staging_trial": 1 if billing_settings.provision_teams_as_trial() else 0,
-				"members": [
-					{
-						"user": doc.name,
-						"role": DEFAULT_TEAM_ROLE,
-						"status": "Active",
-					}
-				],
-			}
-		)
-		team.flags.from_user_bootstrap = True
-		# User.after_insert runs as Guest during self-signup; this is trusted
-		# provisioning of the user's own team, gated upstream by OTP verification.
-		team.insert(ignore_permissions=True)
-
-	_accept_pending_invitations(doc.name)
+	if not get_pending_invitations(doc.name) and not get_user_team_names(doc.name):
+		_create_personal_team(doc)
 
 
-def _accept_pending_invitations(user: str) -> None:
-	for name in frappe.get_all(
+def _create_personal_team(user) -> None:
+	team = frappe.get_doc(
+		{
+			"doctype": "Team",
+			"team_name": _default_team_name(user),
+			"owner_user": user.name,
+			"is_staging_trial": 1 if billing_settings.provision_teams_as_trial() else 0,
+			"members": [{"user": user.name, "role": DEFAULT_TEAM_ROLE, "status": "Active"}],
+		}
+	)
+	team.flags.from_user_bootstrap = True
+	# User.after_insert runs as Guest during self-signup; this is trusted
+	# provisioning of the user's own team, gated upstream by email verification.
+	team.insert(ignore_permissions=True)
+
+
+def get_pending_invitations(user: str) -> list[str]:
+	return frappe.get_all(
 		"Team Invitation",
 		filters={"email": user, "status": "Pending", "expires_on": [">=", today()]},
 		pluck="name",
 		order_by="creation asc",
-	):
-		frappe.get_doc("Team Invitation", name).accept_for_user(user)
+	)
 
 
 def _should_skip_bootstrap(doc) -> bool:

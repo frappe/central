@@ -107,6 +107,18 @@ export interface MyInvitation {
 	creation: string
 }
 
+/** An invitation as the join page reads it by its emailed token. */
+export interface InvitationSummary {
+	name: string
+	email: string
+	status: 'Pending' | 'Accepted' | 'Expired' | 'Revoked' | 'Declined'
+	team_name: string
+	invited_by: string
+	role: string
+	expires_on: string
+	has_account: boolean
+}
+
 /** One bundled resource in a plan (central Plan Includes). */
 export interface PlanInclude {
 	resource_type: 'Compute' | 'Memory' | 'Disk' | 'Transfer' | 'IP' | 'Snapshot'

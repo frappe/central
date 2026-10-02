@@ -16,12 +16,13 @@ from central.api.teams import (
 	rename_team,
 	resend_invitation,
 	revoke_invitation,
+	set_team_logo,
 	set_team_member_roles,
 	transfer_team_ownership,
 )
-from central.iam import can, resolve_user_grants
+from central.iam import can, get_user_team_names, resolve_user_grants
 from central.identity.doctype.team_invitation.team_invitation import expire_pending_invitations
-from central.tests.utils import ensure_server
+from central.tests.utils import ensure_server, upload_test_image
 
 
 def create_user(email: str) -> str:
@@ -77,11 +78,10 @@ class TestTeamManagement(IntegrationTestCase):
 			}
 		).insert()
 
-		_ensure_event_type(
-			"member_invited",
-			direct_recipients="Affected User",
-			in_app_body="You have been invited to join {{ context.team_name }}.\n\nView invitation: {{ context.invitation_url }}",
-		)
+		# Test sites have no outgoing email account.
+		sendmail = patch("central.identity.doctype.team_invitation.team_invitation.frappe.sendmail")
+		sendmail.start()
+		self.addCleanup(sendmail.stop)
 		_ensure_event_type("role_change", direct_recipients="Affected User")
 		_ensure_event_type("member_joined")
 		self.server = ensure_server("srv-x", self.team.name)
@@ -168,16 +168,19 @@ class TestTeamManagement(IntegrationTestCase):
 		self.assertEqual(invitation.status, "Accepted")
 		self.assertEqual(invitation.accepted_by, self.invitee)
 
-	def test_invitation_uses_email_template(self):
+	def test_invitation_email_links_the_join_page(self):
 		frappe.set_user(self.owner)
 
-		with patch("central.notification.engine.frappe.sendmail") as sendmail:
+		with patch("central.identity.doctype.team_invitation.team_invitation.frappe.sendmail") as sendmail:
 			invitation_name = frappe.get_doc("Team", self.team.name).invite_member(self.invitee, "Developer")
 
-		message = sendmail.call_args.kwargs["message"]
-		self.assertIn("You have been invited to join Managed Team", message)
-		self.assertIn(f"/dashboard/invitations/{invitation_name}", message)
-		self.assertIn("View invitation:", message)
+		token = frappe.db.get_value("Team Invitation", invitation_name, "token")
+		email = sendmail.call_args.kwargs
+		self.assertEqual(email["recipients"], [self.invitee])
+		self.assertEqual(email["template"], "team_invitation")
+		self.assertIn("Managed Team", email["subject"])
+		self.assertEqual(email["args"]["role"], "Developer")
+		self.assertTrue(email["args"]["invitation_url"].endswith(f"/dashboard/join/{token}"))
 
 	def test_admin_can_invite_but_viewer_cannot(self):
 		frappe.set_user(self.admin)
@@ -226,7 +229,8 @@ class TestTeamManagement(IntegrationTestCase):
 		with self.assertRaises(frappe.PermissionError):
 			invitation.save()
 
-	def test_new_user_automatically_accepts_pending_invitation(self):
+	def test_new_user_with_a_pending_invitation_gets_no_personal_team(self):
+		# Creating the user accepts nothing: the signup that created them decides.
 		email = f"team.new.{frappe.generate_hash(length=8)}@example.test"
 		frappe.set_user(self.owner)
 		invitation_name = frappe.get_doc("Team", self.team.name).invite_member(email, "Viewer")
@@ -234,10 +238,31 @@ class TestTeamManagement(IntegrationTestCase):
 		frappe.set_user("Administrator")
 		create_user(email)
 
-		invitation = frappe.get_doc("Team Invitation", invitation_name)
-		self.assertEqual(invitation.status, "Accepted")
-		self.assertTrue(can(email, self.team.name, "server:view"))
-		self.assertFalse(can(email, self.team.name, "server:terminate"))
+		self.assertEqual(frappe.db.get_value("Team Invitation", invitation_name, "status"), "Pending")
+		self.assertEqual(get_user_team_names(email), [])
+
+	def test_resend_issues_a_new_token(self):
+		frappe.set_user(self.owner)
+		name = invite_team_member(self.team.name, self.invitee, "Developer")
+		# An invitation from before tokens existed has none.
+		frappe.db.set_value("Team Invitation", name, "token", None)
+
+		resend_invitation(name)
+
+		self.assertTrue(frappe.db.get_value("Team Invitation", name, "token"))
+
+	def test_team_logo_needs_team_edit_and_a_file_uploaded_to_the_team(self):
+		frappe.set_user(self.owner)
+		file_url = upload_test_image("Team", self.team.name, "team_logo")
+		self.assertEqual(set_team_logo(self.team.name, file_url)["team_logo"], file_url)
+		self.assertIsNone(set_team_logo(self.team.name, None)["team_logo"])
+
+		with self.assertRaises(frappe.ValidationError):
+			set_team_logo(self.team.name, "/files/somewhere-else.png")
+
+		frappe.set_user(self.viewer)
+		with self.assertRaises(frappe.PermissionError):
+			set_team_logo(self.team.name, file_url)
 
 	def test_team_changes_follow_capabilities(self):
 		frappe.set_user(self.owner)
@@ -412,6 +437,7 @@ class TestTeamManagement(IntegrationTestCase):
 		self.assertEqual(grant.resource_type, "Server")
 		self.assertEqual(grant.resource_name, self.server)
 
+	@IntegrationTestCase.change_settings("Central Settings", invitation_expiry_days=10)
 	def test_resend_invitation_extends_expiry_and_re_emails(self):
 		frappe.set_user(self.owner)
 		name = invite_team_member(self.team.name, self.invitee, "Developer")
@@ -421,7 +447,7 @@ class TestTeamManagement(IntegrationTestCase):
 			result = resend_invitation(name)
 
 		sendmail.assert_called_once()
-		self.assertEqual(str(result["expires_on"]), add_days(today(), 7))
+		self.assertEqual(str(result["expires_on"]), add_days(today(), 10))
 
 	def test_revoke_invitation_blocks_further_acceptance(self):
 		frappe.set_user(self.owner)
