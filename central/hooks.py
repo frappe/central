@@ -321,7 +321,11 @@ override_doctype_dashboards = {
 
 # Request Events
 # ----------------
+before_request = ["central.oidc.take_client_credentials"]
 # after_request = ["central.utils.after_request"]
+
+# The OpenID Connect discovery document of the Central issuer.
+page_renderer = ["central.oidc.DiscoveryPage"]
 
 # Job Events
 # ----------

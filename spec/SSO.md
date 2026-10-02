@@ -65,3 +65,38 @@ The token carries `resource_id` and `access: ["write"]` as top-level claims, whi
 There is no revocation list. The 7-day TTL and the Pilot's re-fetch on 401 or near expiry (`api/pilot.py`) are the bound. `verify_bootstrap_token` requires `scope`, so Central never accepts a `bench` token as an enrollment token. Central refuses a `datum` token earlier, on its signature.
 
 `mint_datum_token` needs the Atlas signing key, so an operator must initialize it in Central SSO Settings before any Pilot can send telemetry. The Pilot tokens need the Pilot signing key in the same way. A server creation fails before dispatch without it.
+
+## OpenID Connect provider
+
+Central is an OpenID Connect provider for internal tools such as Warpgate. It uses Frappe's OAuth clients, authorization endpoint, and userinfo endpoint. It adds RS256 ID tokens, a JWKS, and a discovery document. [`central/oidc.py`](../central/oidc.py) owns the behavior.
+
+| Item | Value |
+|---|---|
+| Issuer | `https://<central>/oidc` |
+| Discovery | `https://<central>/oidc/.well-known/openid-configuration` |
+| Token endpoint | `/api/method/central.api.oidc.get_token`, with `client_secret_basic` or `client_secret_post` |
+| JWKS | `/api/method/central.api.oidc.get_jwks` |
+| Signing key | The OIDC key in Central SSO Settings |
+
+The issuer is under `/oidc`, because Frappe serves `/.well-known/openid-configuration` itself.
+
+To add a client:
+
+1. Initialize the OIDC signing key in Central SSO Settings.
+2. Create an **OAuth Client** with the scopes `openid email profile`, the Authorization Code grant type, and the redirect URI of the client.
+3. Add at least one role to **Allowed Roles**. Frappe refuses a user who has none of these roles.
+4. In the client, set the issuer URL to `https://<central>/oidc`.
+
+Warpgate example:
+
+```yaml
+sso_providers:
+  - name: central
+    label: Frappe Central
+    provider:
+      type: custom
+      issuer_url: https://<central>/oidc
+      client_id: <OAuth Client ID>
+      client_secret: <OAuth Client secret>
+      scopes: [openid, email, profile]
+```
