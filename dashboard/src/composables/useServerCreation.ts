@@ -406,6 +406,8 @@ export function useServerCreation() {
 	watch(
 		() => action.value?.status,
 		(status) => {
+			// A team switch or reset clears the action, so a pending redirect no longer applies.
+			clearTimeout(successTimer)
 			if (status !== 'Succeeded') return
 			const created = action.value?.resource_id
 			// Let the finished progress register before the page changes.
