@@ -84,6 +84,12 @@ const routes = [
 				meta: { title: 'Object storage', feature: ['addons', 'storage'] },
 			},
 			{
+				path: 'object-storage/:name',
+				name: 'Bucket',
+				component: () => import('@/pages/addons/BucketPage.vue'),
+				meta: { title: 'Object storage', feature: ['addons', 'storage'] },
+			},
+			{
 				path: 'billing',
 				name: 'Billing',
 				component: () => import('@/pages/billing/BillingOverviewPage.vue'),

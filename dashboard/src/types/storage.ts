@@ -40,3 +40,16 @@ export interface ObjectStorage {
 	regions: StorageRegion[]
 	buckets: StorageBucket[]
 }
+
+export interface BucketObject {
+	key: string
+	size_bytes: number
+	last_modified: string
+	etag: string
+}
+
+export interface BucketObjectPage {
+	objects: BucketObject[]
+	folders: string[]
+	next_offset: string | null
+}

@@ -12,7 +12,7 @@ defineEmits<{ action: [] }>()
 
 <template>
 	<div>
-		<div class="mb-2 flex items-center justify-between gap-4 text-sm">
+		<div class="mb-3 flex items-center justify-between gap-4 text-sm">
 			<span class="flex items-center gap-1.5 text-ink-gray-6">
 				{{ label }}
 				<button
