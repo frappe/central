@@ -37,6 +37,8 @@ The regional proxy decodes a VM's mesh address from the hostname label, so Centr
 
 ## Operation
 
+The funnel first calls `central.api.sites.create_trial_team`. A user with no team gets one named after them. A user with a team keeps it.
+
 ```text
 create_trial_site(subdomain) --> queued Resource Action holds the name --> warm image restores
                                                                          |

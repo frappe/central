@@ -81,23 +81,40 @@ Signup sends a verification code to the normalized email address. Central limits
 ```mermaid
 flowchart TD
     U[User created] --> R[Assign Central User role]
-    R --> P{Pending invitations?}
-    P -->|Yes| S[No personal Team]
-    P -->|No| PT[Create personal Team]
-    PT --> OM[Add active Owner membership]
-    S --> V{Which signup?}
+    R --> V{Which signup?}
     V -->|Email code| A[Accept every pending invitation]
     V -->|Invitation link| ONE[Accept only that invitation]
+    A --> T{Member of a Team?}
+    ONE --> T
+    T -->|Yes| C[Console]
+    T -->|No| O[Console onboarding: create a Team]
 ```
 
-- A new user with pending invitations gets no personal Team. The signup that created the user accepts the invitations, after it signs the user in.
+- A new user gets the Central User role and no Team. The signup that created the user accepts the invitations, after it signs the user in.
 - The email code signup accepts every pending invitation for the email. The invitation link signup accepts only the invitation in the link. The others stay pending until the user answers them.
-- A new user without invitations gets a personal Team with an active Owner membership.
+- A user who is a member of no Team creates one in console onboarding. The trial-site funnel creates the Team itself, named after the user, before it asks for a site name.
 - Existing users must explicitly accept invitations.
 - Invitations cannot grant the `Owner` role.
 - An invitation stays open for the days set in Central Settings, Invitation Expiry (Days). The default is 14. Resending an invitation starts the count again and issues a new link, so the link in the earlier email stops working.
 
-Example: Jane signs up without an invitation, so Jane owns Jane's Team. If John later invites Jane to John's Team, Jane accepts and is a member of both Teams. If John invites Jane before she has an account, Jane joins John's Team only.
+Example: Jane signs up without an invitation and creates Acme in onboarding, so Jane owns Acme. If John later invites Jane to John's Team, Jane accepts and is a member of both Teams. If John invites Jane before she has an account, Jane joins John's Team only and sees no onboarding.
+
+### Team creation and console onboarding
+
+`Team.create_for_current_user` is the path for every Team that a person creates: the console and the trial-site funnel.
+
+| Step | Where | Result |
+|---|---|---|
+| Trial flag | `Team.before_insert` | `is_staging_trial` follows Billing Settings, Provision Teams as Trial. The caller cannot choose it. The field is permission level 1, so only a System Manager can change it later. |
+| Onboarding steps | `Team.before_insert` | One `Team Onboarding Step` row each for `invite`, `billing` and `start`, all `Pending`. A staging trial gets no `billing` row, because its billing profile is filled with placeholders. |
+| Billing | `Team.create_for_current_user` | The user's first Team gets a Billing Profile from the request country (India gives INR, any other country gives USD), and the welcome credits. A later Team gets its billing when its owner completes the billing profile. |
+
+The console shows the onboarding dialog in two cases:
+
+1. The user is a member of no Team. The dialog asks for a Team name. This step cannot be skipped.
+2. The user owns the active Team, and the Team has a `Pending` onboarding step. `my_teams` returns these steps as `onboarding`.
+
+The owner answers each step with `set_onboarding_step` (`Done` or `Skipped`), or all at once with `skip_onboarding`. Only the current owner can answer. A Team created before onboarding existed has no rows, so its owner never sees the dialog.
 
 ### Invitation email and join link
 

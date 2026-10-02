@@ -1,47 +1,21 @@
 from __future__ import annotations
 
 import frappe
-from frappe import _
 from frappe.utils import today
 
-from central.billing import settings as billing_settings
-from central.iam import get_user_team_names
-
 CENTRAL_USER_ROLE = "Central User"
-DEFAULT_TEAM_ROLE = "Owner"
 
 
-def bootstrap_user_team(doc, method: str | None = None) -> None:
-	"""Provision Central access for a newly created user.
+def grant_central_user_role(doc, method: str | None = None) -> None:
+	"""Give a newly created user the Central User role.
 
-	A user with pending invitations gets no personal team; the signup that created
-	them accepts the invitations. Anyone else gets a personal team."""
-	if _should_skip_bootstrap(doc):
+	A new user gets no team here. An invited user joins the invited team when the
+	signup accepts the invitation. Anyone else creates a team in console onboarding."""
+	if _should_skip_role_grant(doc):
 		return
 
-	_ensure_central_user_role(doc)
-
-	if not frappe.db.exists("Team Role", DEFAULT_TEAM_ROLE):
-		frappe.throw(_("Cannot bootstrap user team because the Owner Team Role fixture is missing."))
-
-	if not get_pending_invitations(doc.name) and not get_user_team_names(doc.name):
-		_create_personal_team(doc)
-
-
-def _create_personal_team(user) -> None:
-	team = frappe.get_doc(
-		{
-			"doctype": "Team",
-			"team_name": _default_team_name(user),
-			"owner_user": user.name,
-			"is_staging_trial": 1 if billing_settings.provision_teams_as_trial() else 0,
-			"members": [{"user": user.name, "role": DEFAULT_TEAM_ROLE, "status": "Active"}],
-		}
-	)
-	team.flags.from_user_bootstrap = True
-	# User.after_insert runs as Guest during self-signup; this is trusted
-	# provisioning of the user's own team, gated upstream by email verification.
-	team.insert(ignore_permissions=True)
+	if CENTRAL_USER_ROLE not in {row.role for row in doc.roles}:
+		doc.add_roles(CENTRAL_USER_ROLE)
 
 
 def get_pending_invitations(user: str) -> list[str]:
@@ -53,7 +27,7 @@ def get_pending_invitations(user: str) -> list[str]:
 	)
 
 
-def _should_skip_bootstrap(doc) -> bool:
+def _should_skip_role_grant(doc) -> bool:
 	if not doc.enabled:
 		return True
 	if getattr(frappe.flags, "in_install", False) or getattr(frappe.flags, "in_migrate", False):
@@ -61,15 +35,3 @@ def _should_skip_bootstrap(doc) -> bool:
 	if not frappe.db.exists("Role", CENTRAL_USER_ROLE):
 		return True
 	return False
-
-
-def _ensure_central_user_role(user) -> None:
-	if CENTRAL_USER_ROLE in {row.role for row in user.roles}:
-		return
-
-	user.add_roles(CENTRAL_USER_ROLE)
-
-
-def _default_team_name(doc) -> str:
-	label = doc.full_name or doc.first_name or doc.email or doc.name
-	return f"{label}'s Team"

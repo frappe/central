@@ -176,7 +176,7 @@ after_install = [
 
 doc_events = {
 	"User": {
-		"after_insert": "central.users.bootstrap_user_team",
+		"after_insert": "central.users.grant_central_user_role",
 	},
 	"Team": {
 		# Keep a staging-trial team's billing profile complete so it can create servers

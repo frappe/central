@@ -34,6 +34,14 @@ def check_subdomain(subdomain: str, team: str | None = None) -> dict:
 
 
 @frappe.whitelist(methods=["POST"])
+def create_trial_team() -> dict:
+	"""Give a caller with no team a team before the trial funnel asks for a site name."""
+	from central.site_provisioning import create_trial_team as create
+
+	return {"team": create(frappe.session.user)}
+
+
+@frappe.whitelist(methods=["POST"])
 @handle_resource_operation
 def create_trial_site(subdomain: str, request_key: str, team: str | None = None) -> dict:
 	"""Start a trial site under a name the customer chose. Gated on `server:create`."""

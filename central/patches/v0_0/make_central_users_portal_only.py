@@ -9,7 +9,7 @@ def execute():
 	The "Central User" role no longer grants desk access, so every user who
 	carries it is recomputed to the right `user_type`: Website User unless some
 	*other* role still grants them desk access. New users get this for free via
-	`central.users.bootstrap_user_team`; this patch back-fills existing ones.
+	`central.users.grant_central_user_role`; this patch back-fills existing ones.
 	"""
 	if not frappe.db.exists("Role", "Central User"):
 		return

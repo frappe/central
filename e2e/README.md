@@ -134,9 +134,9 @@ Specs run in parallel: 4 workers locally and 2 in CI. Each spec seeds its own us
 Each spec provisions its own sandbox through the test-only backend endpoints in
 `central/billing/tests/e2e.py`:
 
-- `seed(scenario, currency)` creates a fresh user (known password) and seeds data
-  onto the personal team Central bootstraps for them — so they own exactly one
-  team and it is the deterministic `whoami` default. Scenarios:
+- `seed(scenario, currency)` creates a fresh user (known password) and one team
+  they own, with its console onboarding skipped. The team is the deterministic
+  `whoami` default. Scenarios:
   `profile_pending` → `ready` (complete profile) → `with_invoices`.
 - `teardown(team, email)` deletes everything that spec created.
 

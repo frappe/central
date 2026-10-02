@@ -2,7 +2,7 @@
 import { Alert, Button, SettingsRow, Switch, useCall } from 'frappe-ui'
 import { computed, reactive, ref, watch } from 'vue'
 import { API, method } from '@/api/methods'
-import { teamParams } from '@/composables/useTeamScope'
+import { teamParams, whenTeamReady } from '@/composables/useTeamScope'
 import { getErrorMessage, successToast } from '@/lib/feedback'
 
 // Per-user notification preferences, one row per category. Email delivery and the
@@ -65,9 +65,10 @@ watch(state, () => (formError.value = ''), { deep: true })
 const load = useCall<{ preferences: Preference[] }, { team: string }>({
 	url: method(API.notificationPreferences),
 	params: teamParams,
-	immediate: true,
+	immediate: false,
 	refetch: true,
 })
+whenTeamReady(() => load.reload())
 
 watch(
 	() => load.data,

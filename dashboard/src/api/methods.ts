@@ -88,6 +88,7 @@ export const API = {
 
 	siteDomain: 'central.api.sites.site_domain',
 	checkSubdomain: 'central.api.sites.check_subdomain',
+	createTrialTeam: 'central.api.sites.create_trial_team',
 	createTrialSite: 'central.api.sites.create_trial_site',
 	onboardingStatus: 'central.api.sites.onboarding_status',
 	claimSite: 'central.api.sites.claim_site',

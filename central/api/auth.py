@@ -13,9 +13,8 @@ from central.utils.inputs import require_secret
 
 # Signup is OTP-based: `sign_up` emails a 6-digit code and caches the pending
 # signup (no User yet, so an abandoned signup leaves nothing behind — simpler than
-# a holding DocType). `verify_signup` creates the User on a correct code — which
-# fires `bootstrap_user_team` (central/users.py) to provision the Central role and
-# personal Team — then logs the new user in so onboarding continues authenticated.
+# a holding DocType). `verify_signup` creates the User on a correct code, then logs
+# the new user in so onboarding continues authenticated.
 
 OTP_TTL_SECONDS = 10 * 60
 MAX_OTP_ATTEMPTS = 5
@@ -189,8 +188,8 @@ def resend_signup_code(email: str) -> tuple[int, str]:
 # nosemgrep: guest-whitelisted-method -- the one-time code and attempt limit authenticate the signup.
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 def verify_signup(email: str, code: str) -> dict:
-	"""Verify the code, create the User (which bootstraps the personal Team), and
-	log the user in so onboarding continues authenticated."""
+	"""Verify the code, create the User, accept the pending invitations, and log the
+	user in. A user with no team creates one in console onboarding."""
 	email = _validated_email(email)
 	code = (code or "").strip()
 	pending = frappe.cache.get_value(_otp_key(email))
@@ -213,12 +212,7 @@ def verify_signup(email: str, code: str) -> dict:
 
 	for name in get_pending_invitations(user.name):
 		frappe.get_doc("Team Invitation", name).accept()
-
-	# An invited user owns no team to provision.
-	team = frappe.db.get_value("Team", {"owner_user": user.name})
-	if team:
-		_provision_signup_billing(team)
-	return {"user": user.name, "team": team}
+	return {"user": user.name}
 
 
 # nosemgrep: guest-whitelisted-method -- the emailed token verifies the address, and the IP rate limit applies.
@@ -246,20 +240,6 @@ def sign_up_with_invitation(token: str, full_name: str) -> dict:
 	# Only this invitation: the others for the email stay pending for the user to answer.
 	invitation.accept()
 	return {"user": user.name, "team": invitation.team}
-
-
-def _provision_signup_billing(team: str) -> None:
-	"""Seed the new team's billing currency from its signup IP and grant the
-	matching welcome credits. Best-effort: a geolocation or provisioning hiccup is
-	logged, never fatal — the user can still complete their profile from the
-	dashboard, which provisions the same way."""
-	try:
-		from central.billing.payments.provisioning import provision_signup_billing
-		from central.geo import get_country_from_ip
-
-		provision_signup_billing(team, get_country_from_ip())
-	except Exception:
-		frappe.log_error(title="Signup billing provisioning failed")
 
 
 def _otp_key(email: str) -> str:
