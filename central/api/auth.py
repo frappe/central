@@ -8,7 +8,7 @@ from frappe.rate_limiter import rate_limit
 from frappe.utils import cint, escape_html, random_string, validate_email_address
 
 from central.identity.doctype.team_invitation.team_invitation import get_invitation_by_token
-from central.users import CENTRAL_USER_ROLE
+from central.users import CENTRAL_USER_ROLE, get_pending_invitations
 from central.utils.inputs import require_secret
 
 # Signup is OTP-based: `sign_up` emails a 6-digit code and caches the pending
@@ -211,6 +211,9 @@ def verify_signup(email: str, code: str) -> dict:
 	frappe.cache.delete_value(_otp_key(email))
 	frappe.local.login_manager.login_as(user.name)
 
+	for name in get_pending_invitations(user.name):
+		frappe.get_doc("Team Invitation", name).accept()
+
 	# An invited user owns no team to provision.
 	team = frappe.db.get_value("Team", {"owner_user": user.name})
 	if team:
@@ -240,6 +243,8 @@ def sign_up_with_invitation(token: str, full_name: str) -> dict:
 	_enforce_signup_limit()
 	user = _create_verified_user(invitation.email, full_name)
 	frappe.local.login_manager.login_as(user.name)
+	# Only this invitation: the others for the email stay pending for the user to answer.
+	invitation.accept()
 	return {"user": user.name, "team": invitation.team}
 
 

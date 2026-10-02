@@ -57,6 +57,27 @@ class TestInvitationJoin(IntegrationTestCase):
 		self.assertTrue(can(self.email, self.team.name, "server:create"))
 		self.assertEqual(frappe.db.get_value("Team Invitation", self.invitation.name, "status"), "Accepted")
 
+	def test_token_joins_only_its_own_team(self):
+		other_team = frappe.get_doc(
+			{
+				"doctype": "Team",
+				"team_name": "Other Inviting Team",
+				"owner_user": self.owner,
+				"members": [{"user": self.owner, "role": "Owner", "status": "Active"}],
+			}
+		).insert()
+		frappe.set_user(self.owner)
+		with patch("central.identity.doctype.team_invitation.team_invitation.frappe.sendmail"):
+			other = frappe.get_doc("Team", other_team.name).invite_member(self.email, "Viewer")
+
+		frappe.set_user("Guest")
+		with patch("frappe.local.login_manager", create=True) as login_manager:
+			login_manager.login_as.side_effect = frappe.set_user
+			sign_up_with_invitation(self.invitation.token, "New Invitee")
+
+		self.assertEqual(get_user_team_names(self.email), [self.team.name])
+		self.assertEqual(frappe.db.get_value("Team Invitation", other, "status"), "Pending")
+
 	def test_token_never_signs_in_an_existing_account(self):
 		create_user(self.email)
 		frappe.set_user("Guest")

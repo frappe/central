@@ -101,9 +101,7 @@ class TeamInvitation(Document):
 
 	# Internal; the HTTP surface is central.api.teams.accept_invitation.
 	def accept(self) -> dict:
-		return self.accept_for_user(frappe.session.user)
-
-	def accept_for_user(self, user: str) -> dict:
+		user = frappe.session.user
 		if self.status == "Accepted" and self.accepted_by == user:
 			return {"team": self.team, "role": self.role, "accepted": False}
 		if self.email != user:
@@ -125,8 +123,7 @@ class TeamInvitation(Document):
 		self.accepted_by = user
 		self.accepted_at = now()
 		self.flags.from_invitation_action = True
-		# The email check authorizes this. A user who just signed up is still Guest here.
-		self.save(ignore_permissions=True)
+		self.save()
 		return {"team": self.team, "role": self.role, "accepted": True}
 
 	# Internal; the HTTP surface is central.api.teams.revoke_invitation.
@@ -146,6 +143,8 @@ class TeamInvitation(Document):
 		self._require_manager()
 		if self.status != "Pending":
 			frappe.throw(_("Only a pending invitation can be resent."))
+		# A new token also cancels the link in the earlier email.
+		self.token = frappe.generate_hash(length=32)
 		self.expires_on = get_expiry_date()
 		self.flags.from_invitation_action = True
 		self.save()

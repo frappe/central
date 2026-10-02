@@ -14,7 +14,8 @@ DEFAULT_TEAM_ROLE = "Owner"
 def bootstrap_user_team(doc, method: str | None = None) -> None:
 	"""Provision Central access for a newly created user.
 
-	An invited user joins the inviting teams. Anyone else gets a personal team."""
+	A user with pending invitations gets no personal team; the signup that created
+	them accepts the invitations. Anyone else gets a personal team."""
 	if _should_skip_bootstrap(doc):
 		return
 
@@ -23,11 +24,7 @@ def bootstrap_user_team(doc, method: str | None = None) -> None:
 	if not frappe.db.exists("Team Role", DEFAULT_TEAM_ROLE):
 		frappe.throw(_("Cannot bootstrap user team because the Owner Team Role fixture is missing."))
 
-	invitations = _get_pending_invitations(doc.name)
-	for name in invitations:
-		frappe.get_doc("Team Invitation", name).accept_for_user(doc.name)
-
-	if not invitations and not get_user_team_names(doc.name):
+	if not get_pending_invitations(doc.name) and not get_user_team_names(doc.name):
 		_create_personal_team(doc)
 
 
@@ -47,7 +44,7 @@ def _create_personal_team(user) -> None:
 	team.insert(ignore_permissions=True)
 
 
-def _get_pending_invitations(user: str) -> list[str]:
+def get_pending_invitations(user: str) -> list[str]:
 	return frappe.get_all(
 		"Team Invitation",
 		filters={"email": user, "status": "Pending", "expires_on": [">=", today()]},

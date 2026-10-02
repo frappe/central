@@ -20,7 +20,7 @@ from central.api.teams import (
 	set_team_member_roles,
 	transfer_team_ownership,
 )
-from central.iam import can, resolve_user_grants
+from central.iam import can, get_user_team_names, resolve_user_grants
 from central.identity.doctype.team_invitation.team_invitation import expire_pending_invitations
 from central.tests.utils import ensure_server, upload_test_image
 
@@ -229,7 +229,8 @@ class TestTeamManagement(IntegrationTestCase):
 		with self.assertRaises(frappe.PermissionError):
 			invitation.save()
 
-	def test_new_user_automatically_accepts_pending_invitation(self):
+	def test_new_user_with_a_pending_invitation_gets_no_personal_team(self):
+		# Creating the user accepts nothing: the signup that created them decides.
 		email = f"team.new.{frappe.generate_hash(length=8)}@example.test"
 		frappe.set_user(self.owner)
 		invitation_name = frappe.get_doc("Team", self.team.name).invite_member(email, "Viewer")
@@ -237,10 +238,18 @@ class TestTeamManagement(IntegrationTestCase):
 		frappe.set_user("Administrator")
 		create_user(email)
 
-		invitation = frappe.get_doc("Team Invitation", invitation_name)
-		self.assertEqual(invitation.status, "Accepted")
-		self.assertTrue(can(email, self.team.name, "server:view"))
-		self.assertFalse(can(email, self.team.name, "server:terminate"))
+		self.assertEqual(frappe.db.get_value("Team Invitation", invitation_name, "status"), "Pending")
+		self.assertEqual(get_user_team_names(email), [])
+
+	def test_resend_issues_a_new_token(self):
+		frappe.set_user(self.owner)
+		name = invite_team_member(self.team.name, self.invitee, "Developer")
+		# An invitation from before tokens existed has none.
+		frappe.db.set_value("Team Invitation", name, "token", None)
+
+		resend_invitation(name)
+
+		self.assertTrue(frappe.db.get_value("Team Invitation", name, "token"))
 
 	def test_team_logo_needs_team_edit_and_a_file_uploaded_to_the_team(self):
 		frappe.set_user(self.owner)

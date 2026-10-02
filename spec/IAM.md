@@ -82,17 +82,20 @@ Signup sends a verification code to the normalized email address. Central limits
 flowchart TD
     U[User created] --> R[Assign Central User role]
     R --> P{Pending invitations?}
-    P -->|Yes| A[Accept matching invitations]
-    A --> IM[Add invited Team memberships]
+    P -->|Yes| S[No personal Team]
     P -->|No| PT[Create personal Team]
     PT --> OM[Add active Owner membership]
+    S --> V{Which signup?}
+    V -->|Email code| A[Accept every pending invitation]
+    V -->|Invitation link| ONE[Accept only that invitation]
 ```
 
-- A new user with pending invitations joins the inviting Teams and gets no personal Team.
+- A new user with pending invitations gets no personal Team. The signup that created the user accepts the invitations, after it signs the user in.
+- The email code signup accepts every pending invitation for the email. The invitation link signup accepts only the invitation in the link. The others stay pending until the user answers them.
 - A new user without invitations gets a personal Team with an active Owner membership.
 - Existing users must explicitly accept invitations.
 - Invitations cannot grant the `Owner` role.
-- An invitation stays open for the days set in Central Settings, Invitation Expiry (Days). The default is 14. Resending an invitation starts the count again.
+- An invitation stays open for the days set in Central Settings, Invitation Expiry (Days). The default is 14. Resending an invitation starts the count again and issues a new link, so the link in the earlier email stops working.
 
 Example: Jane signs up without an invitation, so Jane owns Jane's Team. If John later invites Jane to John's Team, Jane accepts and is a member of both Teams. If John invites Jane before she has an account, Jane joins John's Team only.
 
