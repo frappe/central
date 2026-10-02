@@ -23,6 +23,8 @@ interface Window {
 	/** Site timezone Frappe stores naive datetimes in. See dashboard.py. */
 	system_timezone?: string
 	onboarding_complete?: boolean
+	/** Upload limit in bytes, from System Settings. */
+	max_file_size?: number
 	features?: {
 		addons?: boolean
 		storage?: boolean

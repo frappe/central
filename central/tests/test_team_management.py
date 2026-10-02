@@ -16,12 +16,13 @@ from central.api.teams import (
 	rename_team,
 	resend_invitation,
 	revoke_invitation,
+	set_team_logo,
 	set_team_member_roles,
 	transfer_team_ownership,
 )
 from central.iam import can, resolve_user_grants
 from central.identity.doctype.team_invitation.team_invitation import expire_pending_invitations
-from central.tests.utils import ensure_server
+from central.tests.utils import ensure_server, upload_test_image
 
 
 def create_user(email: str) -> str:
@@ -240,6 +241,19 @@ class TestTeamManagement(IntegrationTestCase):
 		self.assertEqual(invitation.status, "Accepted")
 		self.assertTrue(can(email, self.team.name, "server:view"))
 		self.assertFalse(can(email, self.team.name, "server:terminate"))
+
+	def test_team_logo_needs_team_edit_and_a_file_uploaded_to_the_team(self):
+		frappe.set_user(self.owner)
+		file_url = upload_test_image("Team", self.team.name, "team_logo")
+		self.assertEqual(set_team_logo(self.team.name, file_url)["team_logo"], file_url)
+		self.assertIsNone(set_team_logo(self.team.name, None)["team_logo"])
+
+		with self.assertRaises(frappe.ValidationError):
+			set_team_logo(self.team.name, "/files/somewhere-else.png")
+
+		frappe.set_user(self.viewer)
+		with self.assertRaises(frappe.PermissionError):
+			set_team_logo(self.team.name, file_url)
 
 	def test_team_changes_follow_capabilities(self):
 		frappe.set_user(self.owner)

@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { Alert, Avatar, Button, TextInput, useCall } from 'frappe-ui'
+import { Alert, Button, TextInput, useCall } from 'frappe-ui'
 import { computed, nextTick, ref, watch } from 'vue'
 import { API, method } from '@/api/methods'
+import ImageUpload from '@/components/common/ImageUpload.vue'
 import { useMyProfile } from '@/composables/useMyProfile'
 import { useTeamMembers } from '@/composables/useTeamMembers'
 import { getErrorMessage, successToast } from '@/lib/feedback'
@@ -9,7 +10,7 @@ import { getErrorMessage, successToast } from '@/lib/feedback'
 // The signed-in user's own profile — photo, display name, password. Chrome-free
 // on purpose: the settings dialog wraps it in a panel, mobile renders it as a
 // page, and neither layout leaks in here.
-const { profile, reload: reloadProfile } = useMyProfile()
+const { profile, savingPhoto, reload: reloadProfile, setPhoto } = useMyProfile()
 // The roster renders member photos, so it repaints after a change too.
 const { reload: reloadMembers } = useTeamMembers()
 
@@ -47,8 +48,18 @@ async function onSave(): Promise<void> {
 	}
 }
 
-// — Photo. The row is here but inert: the upload endpoint is held back for a
-// follow-up PR, so the control shows what's coming without pretending to work.
+const photoError = ref('')
+
+async function onPhotoChange(fileUrl: string | null): Promise<void> {
+	photoError.value = ''
+	try {
+		await setPhoto(fileUrl)
+		await reloadMembers()
+		successToast(fileUrl ? 'Photo updated' : 'Photo removed')
+	} catch (e) {
+		photoError.value = getErrorMessage(e, "Your photo couldn't be updated.")
+	}
+}
 
 // — Password. The fields stay out of the way until asked for: most visits here
 // are about the photo or name.
@@ -110,33 +121,20 @@ function resetPassword(): void {
 
 <template>
 	<div class="mt-6 space-y-6">
-		<div>
-			<p class="block text-base text-ink-gray-5">Photo</p>
-			<div class="mt-1.5 flex items-center gap-3">
-				<Avatar
-					:image="profile?.user_image ?? undefined"
-					:label="name.trim() || profile?.full_name || profile?.user || ''"
-					size="3xl"
-					class="size-12 shrink-0"
-				/>
-				<div class="flex flex-col items-start gap-1">
-					<Button
-						size="xs"
-						icon-left="lucide-upload"
-						:label="profile?.user_image ? 'Change' : 'Upload'"
-						disabled
-					/>
-					<Button
-						v-if="profile?.user_image"
-						size="xs"
-						variant="ghost"
-						theme="red"
-						icon-left="lucide-trash-2"
-						label="Delete"
-						disabled
-					/>
-				</div>
-			</div>
+		<div v-if="profile">
+			<Alert v-if="photoError" class="mb-3" theme="red" :title="photoError" />
+			<ImageUpload
+				label="Photo"
+				:name="name.trim() || profile.full_name || profile.user"
+				:image="profile.user_image"
+				:attach-to="{
+					doctype: 'User',
+					docname: profile.user,
+					fieldname: 'user_image',
+				}"
+				:busy="savingPhoto"
+				@change="onPhotoChange"
+			/>
 		</div>
 
 		<Alert v-if="nameError" class="mb-3" theme="red" :title="nameError" />

@@ -4,7 +4,8 @@ from frappe.utils import today
 from frappe.utils.password import check_password, update_password
 
 from central.api.auth import change_password
-from central.api.identity import my_profile, update_profile
+from central.api.identity import my_profile, set_profile_photo, update_profile
+from central.tests.utils import upload_test_image
 
 OLD_PASSWORD = "OldPass@12345"
 NEW_PASSWORD = "NewPass@67890"
@@ -48,6 +49,22 @@ class TestProfile(IntegrationTestCase):
 		result = update_profile("North<b>wind</b>")
 		self.assertNotIn("<b>", result["full_name"])
 		self.assertIn("&lt;b&gt;", frappe.db.get_value("User", self.user, "first_name"))
+
+	def test_photo_is_set_from_an_upload_and_cleared(self):
+		file_url = upload_test_image("User", self.user, "user_image")
+
+		self.assertEqual(set_profile_photo(file_url)["user_image"], file_url)
+		self.assertEqual(frappe.db.get_value("User", self.user, "user_image"), file_url)
+		self.assertIsNone(set_profile_photo(None)["user_image"])
+
+	def test_photo_refuses_a_file_not_uploaded_to_the_users_photo(self):
+		frappe.set_user("Administrator")
+		other_file = upload_test_image("User", "Administrator", "user_image")
+		frappe.set_user(self.user)
+
+		for file_url in (other_file, "https://example.com/tracker.png"):
+			with self.assertRaises(frappe.ValidationError):
+				set_profile_photo(file_url)
 
 	def test_update_profile_rejects_empty(self):
 		with self.assertRaises(frappe.ValidationError):

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import frappe
+from frappe.core.api.file import get_max_file_size
 from frappe.sessions import get_csrf_token
 from frappe.utils.oauth import get_oauth2_authorize_url, get_oauth_keys
 from frappe.utils.password import get_decrypted_password
@@ -33,6 +34,7 @@ def get_context(context):
 	if frappe.conf.developer_mode:
 		boot["socketio_port"] = frappe.conf.socketio_port
 	boot["site_name"] = frappe.local.site
+	boot["max_file_size"] = get_max_file_size()
 	# Frappe stores datetimes as a naive clock in this zone. The dashboard parses
 	# them here, then shows the viewer's local time. Asia/Calcutta is the old name
 	# for Asia/Kolkata, and browsers do not know the old one.

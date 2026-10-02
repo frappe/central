@@ -24,3 +24,19 @@ def require_secret(value, message: str) -> str:
 	if not isinstance(value, str) or not value:
 		frappe.throw(message, frappe.ValidationError)
 	return value
+
+
+def require_attached_file(doctype: str, name: str, fieldname: str, file_url) -> str:
+	"""`file_url` if it is a File uploaded to that document field, else a validation error."""
+	is_attached = isinstance(file_url, str) and frappe.db.exists(
+		"File",
+		{
+			"file_url": file_url,
+			"attached_to_doctype": doctype,
+			"attached_to_name": name,
+			"attached_to_field": fieldname,
+		},
+	)
+	if not is_attached:
+		frappe.throw(frappe._("Upload the image again."), frappe.ValidationError)
+	return file_url
