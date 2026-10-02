@@ -162,12 +162,10 @@ def reconcile(team: str | None = None) -> dict:
 
 
 def get_console_url(server: VirtualMachine) -> str:
-	"""Return a single-use Atlas web console URL for a running Ubuntu server.
+	"""Return a single-use Atlas web console URL for a running server.
 
 	Atlas opens the session over SSH with a key it pushes for that session only. If Atlas
 	refuses an SSH token, the console opens on the serial TTY, which every guest has."""
-	if server.image_offering != "ubuntu":
-		frappe.throw(_("The web console is available only for Ubuntu servers."))
 	if server.status != "Running":
 		frappe.throw(_("Start the server before you open its console."))
 

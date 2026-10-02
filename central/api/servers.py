@@ -221,9 +221,9 @@ def _overview_server_row(resource_id: str, team: str):
 
 
 def _ssh_command(row) -> str | None:
-	"""The command that signs in to an Ubuntu server over its public address."""
+	"""The command that signs in to a server over its public address."""
 	address = row.public_ipv6 or row.public_ipv4
-	if row.image_offering != "ubuntu" or not address:
+	if not address:
 		return None
 	return f"ssh root@{address}"
 

@@ -269,7 +269,6 @@ const planLabel = computed(() =>
 				</div>
 
 				<ServerConnectCard
-					v-if="server.image_offering === 'ubuntu'"
 					:ssh-command="server.ssh_command"
 					:can-open-console="canOpenConsole"
 					:console-unavailable-reason="consoleUnavailableReason"

@@ -49,7 +49,7 @@ The distinction matters:
 | `server:resize` | Resize or rebuild a server. |
 | `server:snapshot` | Create and restore server snapshots. |
 | `server:terminate` | Destroy a server. |
-| `server:console` | Open the web console of an Ubuntu server. |
+| `server:console` | Open the web console of a running server. |
 
 ### `bench` plane (0)
 

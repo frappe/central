@@ -141,15 +141,16 @@ class TestServerConsole(IntegrationTestCase):
 			self.open_as(self.outsider, team=self.other_team.name)
 		self.get_console_url.assert_not_called()
 
-	def test_console_needs_a_running_ubuntu_server(self):
+	def test_console_needs_a_running_server(self):
 		self.server.db_set("status", "Stopped")
 		with self.assertRaises(frappe.ValidationError):
 			self.open_as(self.owner)
-
-		self.server.db_set({"status": "Running", "image_offering": "pilot"})
-		with self.assertRaises(frappe.ValidationError):
-			self.open_as(self.owner)
 		self.get_console_url.assert_not_called()
+
+	def test_pilot_server_opens_the_console(self):
+		self.server.db_set("image_offering", "pilot")
+
+		self.assertEqual(self.open_as(self.owner), {"url": CONSOLE_URL})
 
 	def test_overview_signs_in_over_public_ipv6_first(self):
 		frappe.set_user(self.viewer)
