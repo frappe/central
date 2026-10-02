@@ -164,13 +164,23 @@ def reconcile(team: str | None = None) -> dict:
 def get_console_url(server: VirtualMachine) -> str:
 	"""Return a single-use Atlas web console URL for a running Ubuntu server.
 
-	Atlas opens the session over SSH with a key it pushes for that session only."""
+	Atlas opens the session over SSH with a key it pushes for that session only. If Atlas
+	refuses an SSH token, the console opens on the serial TTY, which every guest has."""
 	if server.image_offering != "ubuntu":
 		frappe.throw(_("The web console is available only for Ubuntu servers."))
 	if server.status != "Running":
 		frappe.throw(_("Start the server before you open its console."))
 
-	return get_client(server).get_console_url(server.atlas_vm_id, mode="ssh")
+	client = get_client(server)
+	message_count = len(frappe.local.message_log)
+	try:
+		return client.get_console_url(server.atlas_vm_id, mode="ssh")
+	except AtlasResourceGone:
+		raise
+	except AtlasConnectionError:
+		# A token request is safe to repeat. Drop the SSH error so a working TTY does not report it.
+		del frappe.local.message_log[message_count:]
+		return client.get_console_url(server.atlas_vm_id, mode="tty")
 
 
 def refresh_server(name: str) -> None:

@@ -1,11 +1,12 @@
 from types import SimpleNamespace
 from unittest import TestCase
-from unittest.mock import patch
+from unittest.mock import call, patch
 
 import frappe
 from frappe.tests import IntegrationTestCase
 
 from central.api.servers import open_console, server_overview
+from central.errors import AtlasRejected, AtlasResourceGone
 from central.integrations.resource_actions import MESH_NETWORK, _create_payload
 from central.tests.test_iam import ensure_user
 from central.tests.utils import ensure_atlas_instance
@@ -109,6 +110,22 @@ class TestServerConsole(IntegrationTestCase):
 
 	def test_owner_gets_a_single_use_ssh_console_url(self):
 		self.assertEqual(self.open_as(self.owner), {"url": CONSOLE_URL})
+		self.get_console_url.assert_called_once_with("vm-00001", mode="ssh")
+
+	def test_console_falls_back_to_tty_when_atlas_refuses_ssh(self):
+		self.get_console_url.side_effect = [AtlasRejected("SSH is unavailable."), CONSOLE_URL]
+
+		self.assertEqual(self.open_as(self.owner), {"url": CONSOLE_URL})
+		self.assertEqual(
+			self.get_console_url.call_args_list,
+			[call("vm-00001", mode="ssh"), call("vm-00001", mode="tty")],
+		)
+
+	def test_console_does_not_fall_back_for_a_missing_server(self):
+		self.get_console_url.side_effect = AtlasResourceGone("The server does not exist.")
+
+		with self.assertRaises(AtlasResourceGone):
+			self.open_as(self.owner)
 		self.get_console_url.assert_called_once_with("vm-00001", mode="ssh")
 
 	def test_viewer_cannot_open_the_console(self):
