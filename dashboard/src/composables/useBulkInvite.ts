@@ -99,6 +99,7 @@ export function useBulkInvite() {
 
 	function reset(): void {
 		rows.value = [newRow()]
+		requestError.value = ''
 	}
 
 	// The server invites each row on its own, so one refusal does not stop the others.
