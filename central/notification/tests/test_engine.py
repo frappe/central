@@ -319,6 +319,25 @@ class TestEmailFanout(EngineTestBase):
 		team.save(ignore_permissions=True)
 
 	@patch("central.notification.engine.frappe.sendmail")
+	def test_email_says_the_in_app_sentence_with_the_team_name(self, mock_sendmail):
+		self._ensure_event_type(
+			"member_joined",
+			category="Billing",
+			required_cap="billing:view",
+			in_app_title="New team member",
+			in_app_body="{{ message }} has joined {{ team_name }}.",
+		)
+
+		from central.notification.engine import dispatch
+
+		dispatch(TEAM, "member_joined", message="new.member@example.test")
+
+		body = mock_sendmail.call_args.kwargs["message"]
+		team_name = frappe.db.get_value("Team", TEAM, "team_name")
+		self.assertIn(f"new.member@example.test has joined {team_name}.", body)
+		self.assertNotIn("Reason", body)
+
+	@patch("central.notification.engine.frappe.sendmail")
 	def test_emails_qualified_members(self, mock_sendmail):
 		"""All active members with the required capability receive an email."""
 		self._ensure_event_type(
