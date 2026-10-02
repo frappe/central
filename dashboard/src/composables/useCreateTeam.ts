@@ -21,9 +21,6 @@ export function useCreateTeam() {
 	)
 	const canSubmit = computed(() => name.value.length > 0 && !duplicate.value)
 
-	// A logo can't be set yet: the upload endpoint lands in a follow-up PR, so
-	// the picker beside the name is present but inert.
-
 	const reset = (): void => {
 		teamName.value = ''
 		clearError()
