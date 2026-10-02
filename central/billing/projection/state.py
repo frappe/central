@@ -76,9 +76,9 @@ class ProjectedWallet:
 		import datetime
 
 		self.lots.sort(
-			key=lambda lot: frappe.utils.getdate(lot["expires_on"])
-			if lot["expires_on"]
-			else datetime.date.max
+			key=lambda lot: (
+				frappe.utils.getdate(lot["expires_on"]) if lot["expires_on"] else datetime.date.max
+			)
 		)
 
 
