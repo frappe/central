@@ -1,6 +1,7 @@
 import type { InvitationStatus } from '@/types/api'
 import type { PaymentAttempt } from '@/types/billing'
 import type { VirtualMachine } from '@/types/Infrastructure/VirtualMachine'
+import type { ActionStatus } from '@/types/serverCreation'
 
 // The DocType statuses plus Central's own derived display state (see displayStatus).
 export type VirtualMachineStatus =
@@ -145,4 +146,19 @@ export function attemptStory(attempts: PaymentAttempt[]): AttemptStory {
 		failed: failures.length,
 		failedBeforeCapture,
 	}
+}
+
+const CREATION_STAGE: Partial<Record<ActionStatus['status'], number>> = {
+	Queued: 0,
+	Dispatching: 1,
+	Sent: 1,
+	'In Progress': 2,
+	Succeeded: 3,
+}
+
+/** The step a creation is on, from 0. Null once it stopped without succeeding. */
+export function getCreationStage(
+	status: ActionStatus['status'],
+): number | null {
+	return CREATION_STAGE[status] ?? null
 }

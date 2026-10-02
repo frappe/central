@@ -1,4 +1,4 @@
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { useMyProfile } from '@/composables/useMyProfile'
@@ -23,6 +23,8 @@ import {
 	regionLabel,
 } from '@/lib/serverMap'
 import type { ComposedConfig, Plan, Profile } from '@/types/api'
+
+const SUCCESS_HOLD_MS = 900
 
 export function useServerCreation() {
 	const router = useRouter()
@@ -399,16 +401,21 @@ export function useServerCreation() {
 	}
 
 	// A created server belongs in the fleet, not on this form. The list opens on it.
+	let successTimer: ReturnType<typeof setTimeout> | undefined
+	onBeforeUnmount(() => clearTimeout(successTimer))
 	watch(
 		() => action.value?.status,
 		(status) => {
 			if (status !== 'Succeeded') return
 			const created = action.value?.resource_id
-			operation.reset()
-			router.replace({
-				path: '/servers',
-				query: created ? { created } : {},
-			})
+			// Let the finished progress register before the page changes.
+			successTimer = setTimeout(() => {
+				operation.reset()
+				router.replace({
+					path: '/servers',
+					query: created ? { created } : {},
+				})
+			}, SUCCESS_HOLD_MS)
 		},
 	)
 
