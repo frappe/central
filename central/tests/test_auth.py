@@ -121,7 +121,6 @@ class TestAuth(IntegrationTestCase):
 		context = build_auth_context()
 
 		self.assertEqual(context["user"], "Guest")
-		self.assertIsInstance(context["provider_logins"], list)
 		self.assertFalse(context["onboarding_complete"])
 
 	@IntegrationTestCase.change_settings("Website Settings", disable_signup=1)

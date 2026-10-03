@@ -26,7 +26,6 @@ export const API = {
 	myProfile: 'central.api.identity.my_profile',
 	updateProfile: 'central.api.identity.update_profile',
 	setProfilePhoto: 'central.api.identity.set_profile_photo',
-	changePassword: 'central.api.auth.change_password',
 	transferOwnership: 'central.api.teams.transfer_team_ownership',
 	deleteTeam: 'central.api.teams.delete_team',
 	leaveTeam: 'central.api.teams.leave_team',

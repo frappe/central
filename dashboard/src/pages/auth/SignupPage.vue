@@ -3,9 +3,7 @@ import { Button, ErrorMessage } from 'frappe-ui'
 import { computed, ref } from 'vue'
 import { type LocationQueryRaw, useRoute, useRouter } from 'vue-router'
 import AuthShell from '@/components/auth/AuthShell.vue'
-import SocialLoginButtons from '@/components/auth/SocialLoginButtons.vue'
 import ValidatedFormControl from '@/components/common/formComponents/ValidatedFormControl.vue'
-import { useAuth } from '@/composables/useAuth'
 import {
 	emailError,
 	frappeErrorMessage,
@@ -23,7 +21,6 @@ const loading = ref(false)
 const error = ref('')
 const hasExistingAccount = ref(false)
 
-const { providerLogins } = useAuth()
 const product = computed(() => queryString(route.query.product))
 const isProductSignup = computed(() => Boolean(product.value))
 const signupSteps = computed(() => (isProductSignup.value ? 4 : 2))
@@ -133,8 +130,6 @@ function loginQuery(): LocationQueryRaw {
 				Continue
 			</Button>
 		</form>
-
-		<SocialLoginButtons :providers="providerLogins" prefix="Continue with" />
 
 		<p class="mt-6 text-center text-p-sm text-ink-gray-5">
 			Already have an account?

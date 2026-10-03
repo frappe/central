@@ -1,10 +1,3 @@
-export interface ProviderLogin {
-	name: string
-	label: string
-	icon: string
-	auth_url: string
-}
-
 /** central.api.servers.refresh_servers response (the reconcile result). */
 export interface RefreshResponse {
 	synced: string[]

@@ -17,7 +17,6 @@ interface Window {
 	csrf_token?: string
 	user?: string
 	user_type?: string
-	provider_logins?: import('@/types/api').ProviderLogin[]
 	site_name?: string
 	socketio_port?: number
 	/** Site timezone Frappe stores naive datetimes in. See dashboard.py. */

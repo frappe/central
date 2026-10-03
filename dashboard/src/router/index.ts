@@ -24,12 +24,6 @@ const routes = [
 		meta: { public: true },
 	},
 	{
-		path: '/forgot-password',
-		name: 'ForgotPassword',
-		component: () => import('@/pages/auth/ForgotPasswordPage.vue'),
-		meta: { public: true },
-	},
-	{
 		// Emailed invitation link, open to guests and signed-in users.
 		path: '/join/:token',
 		name: 'JoinTeam',

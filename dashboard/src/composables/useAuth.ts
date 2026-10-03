@@ -1,6 +1,5 @@
 import { frappeRequest } from 'frappe-ui'
 import { computed, readonly, ref } from 'vue'
-import type { ProviderLogin } from '@/types/api'
 
 // Auth for the console/dashboard app uses one reactive `currentUser` and the login,
 // logout, and session endpoints. Module-level state is shared by every screen.
@@ -21,7 +20,6 @@ export interface LoginCodeResponse {
 }
 
 const currentUser = ref<string | null>(initialUser())
-const providerLogins = ref<ProviderLogin[]>(window.provider_logins ?? [])
 const isLoading = ref(false)
 const isValidating = ref(false)
 const error = ref<unknown>(null)
@@ -31,7 +29,6 @@ export function useAuth() {
 		currentUser: readonly(currentUser),
 		isLoggedIn: computed(() => currentUser.value !== null),
 		isGuest: computed(() => currentUser.value === null),
-		providerLogins: readonly(providerLogins),
 		isLoading: readonly(isLoading),
 		isValidating: readonly(isValidating),
 		error: readonly(error),
