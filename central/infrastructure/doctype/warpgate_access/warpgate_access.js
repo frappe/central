@@ -7,6 +7,7 @@ frappe.ui.form.on('Warpgate Access', {
 			frm.add_custom_button(__('Show SSH Command'), () => show_ssh_command(frm))
 		}
 		load_hosts(frm)
+		set_durations(frm)
 	},
 
 	region(frm) {
@@ -17,6 +18,7 @@ frappe.ui.form.on('Warpgate Access', {
 
 	access_type(frm) {
 		load_hosts(frm)
+		set_durations(frm)
 	},
 
 	host_title(frm) {
@@ -24,6 +26,17 @@ frappe.ui.form.on('Warpgate Access', {
 		frm.set_value('host', host ? host.id : null)
 	},
 })
+
+const HOST_DURATIONS = ['1 hour', '3 hours', '6 hours', '12 hours', '1 day']
+const ADMIN_DURATIONS = ['1 hour', '6 hours', '12 hours', '1 day', '7 days', '30 days', 'Never']
+
+function set_durations(frm) {
+	const durations = frm.doc.access_type === 'Admin' ? ADMIN_DURATIONS : HOST_DURATIONS
+	frm.set_df_property('duration', 'options', durations)
+	if (frm.doc.docstatus === 0 && !durations.includes(frm.doc.duration)) {
+		frm.set_value('duration', durations[0])
+	}
+}
 
 async function load_hosts(frm) {
 	const field = frm.fields_dict.host_title

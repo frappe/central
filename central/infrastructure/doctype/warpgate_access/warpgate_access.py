@@ -161,7 +161,7 @@ def get_hosts(region: str) -> list[dict]:
 
 def get_warpgate_regions() -> list:
 	names = frappe.get_all(
-		"Region", filters={"base_url": ["is", "set"], "status": ["!=", "Disabled"]}, pluck="name"
+		"Region", filters={"base_url": ["is", "set"]}, pluck="name"
 	)
 	return [frappe.get_doc("Region", name) for name in names]
 
