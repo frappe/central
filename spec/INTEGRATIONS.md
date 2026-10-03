@@ -1,47 +1,10 @@
-# Central baseline scope
+# Integrations with Atlas, Pilot, and Cargo
 
 ## Purpose
 
-This document states what the v0.2 baseline covers, who owns each part, and the contracts between Central, Atlas, Pilot, and Cargo. [Delivery](DELIVERY.md) lists the open work. [Validation](LOCAL_ENVIRONMENT.md) defines the evidence required.
+Central owns identity, Team capabilities, catalog policy, and billing. Atlas owns regional images, virtual machines, placement, and proxy routing. Pilot owns the benches and sites inside a server. Cargo builds the prepared images.
 
-Follow [CLAUDE.md](../CLAUDE.md), [agent tooling](../llm/README.md), and [review rules](../.greptile/rules.md). Do not use `frappe-app-dev`.
-
-## What does the baseline cover?
-
-| Area | Limit |
-|---|---|
-| Customer identity | Each signup customer has a Central Team and an immutable, nonzero tenant ID. |
-| Trial signup | One trial site per sleeping VM from one approved, prepared Pilot image, through site login. |
-| Pilot server | Create a server from the approved Pilot image and open its Pilot admin. |
-| Ubuntu server | Create a plain Ubuntu VM with the requested approved size and SSH keys. Pilot is not required. |
-| Server lifecycle | Create, read, start, stop, restart, resize, snapshot, console, and delete. Show supported controls and confirmed results. |
-| Regional integration | Region holds the Atlas, proxy, and Cargo connection for each region. |
-| Bootstrap and login | Metadata credential delivery, automatic site and admin names, site discovery, and login. |
-| State updates | Signed Atlas and Cargo reports at one receiver, bounded operation checks, and a repair scan. |
-| Cargo | Central registers each region's Cargo and records service availability. |
-| Rename and domains | Central asks Pilot to rename the trial site and the admin domain. A Pilot registers site and custom-domain routes through Central. |
-| Cleanup | Confirm VM deletion, revoke credentials, and remove owned routes safely. |
-| Interface | The dashboard and Desk show progress, error, stale, and retry states. |
-| Data | Patches cover required changes to existing data. |
-| Billing | Existing eligibility and resource references are preserved. Only necessary integration calls change. |
-
-Keep `Virtual Machine` as Central's persisted server record. Keep its commercial identity and subscription links.
-
-Use existing provisioning and action records where they fit. Add only the state and remote references needed for correctness.
-
-## Which external sources does Central rely on?
-
-These references describe source code. They do not prove that a deployed service runs that revision or has the required configuration.
-
-| Source | Behavior |
-|---|---|
-| [Atlas state writer](../../atlas/atlas/vm/core/vm_state.py) | Saves Virtual Machine State documents and commits each write. |
-| [Atlas state schema](../../atlas/atlas/vm/doctype/virtual_machine_state/virtual_machine_state.json) | Holds VM ID, observed status, and synchronization time. |
-| [Framework webhook hooks](../../frappe/frappe/integrations/doctype/webhook/__init__.py) | Queues supported document events after commit. |
-| [Framework webhook delivery](../../frappe/frappe/integrations/doctype/webhook/webhook.py) | Signs JSON, records delivery, and supports configured retries. |
-| [Proxy data plane](../../atlas/docs/networking/http-proxy/openresty.md) | Regional wildcard TLS terminates at the proxy. Customer-domain TLS terminates on the VM. |
-
-Sibling links assume the standard bench layout. Use the named checkout when you review from a separate worktree.
+Central reaches each service through `central/integrations/`. Team authorization follows [IAM](IAM.md) and [Capabilities](../CAPABILITIES.md).
 
 ## Who owns what?
 
@@ -65,7 +28,15 @@ Central owns authorization and the customer-visible result. It verifies that a r
 
 The customer Team owns the trial before and after a paid upgrade. A Team can own several VMs with the same network tenant ID.
 
-## Foundation
+## Regional authentication
+
+Region stores the direct regional URL and numeric region ID, alongside its geography and display identity. Central signs a short-lived token for that region. Each request carries the Team tenant ID in `X-Tenant-ID`. Atlas verifies the token and enforces the tenant boundary.
+
+System images form a shared regional catalog. The tenant header identifies the authorized caller. It does not make those images Team-owned. Operator connection checks use the system tenant.
+
+See [Regional configuration](../central/infrastructure/doctype/region/SPEC.md) for trust setup and connection checks.
+
+## How are tenants and regional keys managed?
 
 Allocate unique, immutable, unsigned 32-bit Team tenant IDs through a persistent sequence. Reserve tenant zero for infrastructure. Preserve verified existing mappings and reject ambiguous data.
 
@@ -88,6 +59,43 @@ Publish keys before use and verify consumer acceptance. Serialize first-use key 
 A public key-set read must not rotate keys. Keep private keys and bootstrap credentials out of customer responses.
 
 Region is the single owner of regional identity and connection configuration.
+
+## Image contract
+
+Central fetches available System images when the customer selects a region and Image Offering. An offering contains presentation fields, allowed flows, and required tags. It does not store regional builds.
+
+Atlas must return the following fields with each build:
+
+| Field | Central use |
+|---|---|
+| ID, title, tags, and architecture | Identify and describe the selected build. |
+| Enabled flag and availability state | Show only usable builds. |
+| Root filesystem size in MiB | Reject plans whose disk cannot hold the image. |
+
+Cargo's current Pilot image contains `default-bench` and `site.local`. Server and signup flows use that image layout. Ubuntu uses a base image. SSH keys are optional. See [Image Offering](../central/infrastructure/doctype/image_offering/SPEC.md) for selectors and pagination.
+
+Server creation has two customer options, stored on `Virtual Machine` as `has_public_ipv6` and `is_firewall_enabled`. Central sends an option to Atlas only when the customer selects it:
+
+| Option | Atlas create field |
+| --- | --- |
+| Public IPv6 | `public_ipv6: "auto"` |
+| Firewall | `firewall.enabled: true` with the rules below |
+
+The firewall allows all inbound traffic from the mesh prefix `fdaa::/16`, because an enabled Atlas firewall also filters mesh traffic and the regional gateway reaches a machine over the mesh. It also allows inbound ICMP, inbound TCP ports 22, 80, and 443, and all outbound traffic. Without the option, Central sends `firewall.enabled: false`, which permits all traffic.
+
+Atlas reports the guest public IPv6 as a `/128` prefix. Central stores the address without the prefix length in `public_ipv6`, and stores `public_ipv4` as reported. The overview shows `ssh root@<address>` for every image and uses the IPv6 address first. See [Team SSH Key](../central/infrastructure/doctype/team_ssh_key/SPEC.md) for selected keys and rotation.
+
+A member with `server:console` can open the web console of a running server of any image. Central asks Atlas for a single-use console token in `ssh` mode through `POST /virtual-machines/{id}/actions/console-token`. If Atlas definitely refuses the `ssh` token, Central asks for a `tty` token instead, because every guest has a serial console. Central does not fall back when it cannot authenticate, reach Atlas, or confirm the result, or when the VM does not exist. Central returns `<region base URL>/vm_console#token=<token>`. The dashboard asks for a new token each time a member opens the console from the overview or the server actions, because Atlas spends the token on first use. It opens the Atlas URL in one popup window per server, so a second request replaces the session in that window. The token expires after 30 seconds and stays in the URL fragment, so the browser does not send it to a server.
+
+## Server operation contract
+
+Central stores each authorized operation in Resource Action before dispatch. Atlas receives one create or power request. Central saves the accepted VM identity before local finalization. A lost mutation response remains uncertain and must not trigger another remote mutation.
+
+Scoped regional reads confirm VM state and repair interrupted local finalization. A failed read does not prove deletion. A scoped not-found response can confirm deletion and trigger local credential and billing cleanup.
+
+Central builds the automatic management address itself. The regional proxy decodes a VM's mesh address from its hostname label, so Central encodes the same label from the observed mesh address and the region's proxy domain. The tenant API does not publish the regional zone, so an operator sets `proxy_domain` on [Region](../central/infrastructure/doctype/region/SPEC.md). A management address alone does not prove Pilot readiness. Pilot creation also receives credential-bound `pilot-central` metadata and `pilot-telemetry` metadata when the region has a telemetry host. The region's host refuses guest metadata with more than 64 entries, a key longer than 128 bytes, or a value longer than 1024 bytes. `AtlasClient.create_vm` refuses the same metadata before it calls Atlas, because Atlas saves a draft machine before the host rejects the request.
+
+See [Resource Action](../central/infrastructure/doctype/resource_action/SPEC.md) for states, authorization, recovery, accepted quotes, and customer responses.
 
 ## How does the trial flow work?
 
@@ -141,6 +149,14 @@ Display supported network and SSH information for a plain Ubuntu server. Do not 
 
 Delete only after the customer confirms the action. Confirm remote absence, revoke any Pilot credential, and preserve existing billing cancellation behavior.
 
+## What does creation depend on?
+
+The current creation flow requires the Atlas VM API and automatic management hostname. Staging also needs current schema, key trust, a healthy host, available images, and wildcard DNS.
+
+Central receives signed state reports at `central.api.state_delivery.receive`. See [Inbound webhooks](WEBHOOKS.md) for the contract. State reports supplement repair reads. They do not replace durable intent, and a callback is never the only recovery path. Resize uses the Atlas resize API, which moves a VM to another host when its host cannot fit the new size.
+
+Central verifies domain ownership and owns the proxy route through [Site Domain](../central/infrastructure/doctype/site_domain/SPEC.md). The regional proxy terminates TLS for a regional name. For a custom domain, the proxy passes TLS to the VM, and Pilot holds the certificate. Central does not issue or store certificates.
+
 ## How does state delivery work?
 
 Atlas uses Framework's Webhook DocType to send reports. Do not rebuild an Atlas event service or a generic message platform.
@@ -167,7 +183,7 @@ Central validates the source, fields, status, and resource mapping. It rejects u
 
 Central orders Atlas reports by the region's `observed_at`, stored as `Virtual Machine.last_reported_at`. It ignores a report that is not newer. A signature authenticates the body but does not prevent replay. Monotonic ordering prevents state regression.
 
-Central does not persist a receipt and does not deduplicate by payload digest. A queued job holds the accepted report. These gaps are listed in [Delivery](DELIVERY.md).
+Central does not persist a receipt and does not deduplicate by payload digest. A queued job holds the accepted report.
 
 Do not run provisioning, billing, or remote calls in the HTTP receiver. Do not put bearer tokens, passwords, or private keys in payloads or delivery logs.
 
@@ -201,7 +217,7 @@ Routine synchronization must not call the guest. Signup readiness and user-reque
 
 Central registers each region's Cargo after a health check. `cargo_connection.register_cargo` calls `CargoClient.configure_webhooks`, which sends Central's receiver URL and a fresh secret. Central stores the secret in `Region.cargo_webhook_secret` and sets `cargo_status` to `Registered`. **Enroll Cargo** on the Region form runs this on demand. `register_pending_cargo` retries Draft regions every 10 minutes.
 
-Cargo reports `service`, `status`, and `service_endpoint`. Central records availability in Service Detail. Do not label a service healthy from a provisioning event. Live health reporting and new service ordering are later work.
+Cargo reports `service`, `status`, and `service_endpoint`. Central records availability in Service Detail. Do not label a service healthy from a provisioning event.
 
 ## How do rename, routes, and TLS work?
 
@@ -228,24 +244,6 @@ Wildcard or shared-proxy DNS resolution alone does not prove customer ownership.
 
 The proxy forwards customer HTTPS as TLS with PROXY protocol v2 to VM port 443. Certificates and renewal stay in Pilot. Central stores the domain record, the operation result, and useful failure information.
 
-## Patches and cutover
+## Validation
 
-A staging deployment permits a maintenance window and coordinated service updates. It does not permit silent data loss.
-
-Add patches for required fields, data backfills, and references. Keep indexes and constraints in controller hooks, with valid migration ordering.
-
-Back up the database and private files before cutover. Pause affected mutations and workers. Validate records and regional calls before you resume them.
-
-Remove obsolete regional mutation paths when their replacements land. Do not leave a dashboard control that calls a removed endpoint or reports false success.
-
-## What is later work?
-
-| Area | Later work |
-|---|---|
-| API surface | Reusable typed core, OpenAPI, and generated Central clients. |
-| Images | Private machine image selection and additional application bundles. |
-| Products | Multi-site products. |
-| Services | New service ordering and live service health. |
-| Partners | Partner flows. |
-
-Keep billing calculations and its public API outside the rewrite. Review every necessary billing integration change with focused and full billing tests.
+Run the shared contract tests before deployment. Complete the live journeys in [Staging validation](STAGING_VALIDATION.md) against the actual staging revisions. Mocked responses do not prove VM startup, Pilot login, SSH access, or webhook delivery.

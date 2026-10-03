@@ -15,8 +15,7 @@ Read the [README](README.md) for setup and local development. Read [`spec/README
 
 - [IAM](spec/IAM.md): identity, permissions, and Atlas enforcement.
 - [Capabilities](CAPABILITIES.md): the authorization vocabulary and its plane split.
-- [Atlas coordination](spec/ATLAS_COORDINATION.md): the cross-repository contract.
-- [Refactor backlog](spec/refactor_todo.md): the remaining pre-1.0 cleanup work.
+- [Integrations](spec/INTEGRATIONS.md): the contracts with Atlas, Pilot, and Cargo.
 
 ## System boundaries
 
@@ -64,18 +63,17 @@ Central plans to add:
 - Build the minimum working change, then iterate. Delete before you add when existing code can be simplified.
 - For a bug fix, find the root cause before you change code.
 - Do not change unrelated dirty files, generated artifacts, or local data.
-- Do not add plan files such as `plan_*.md`. Put planned work in `spec/`.
+- Do not add plan files such as `plan_*.md`. Track planned work in GitHub issues.
 - Do not commit secrets, private keys, tokens, `.env` content, or production credentials.
 - Use `git mv` when you intentionally move or rename a tracked file.
 
-## Temporary rules
+## Compatibility
 
-Central is in active development and is not deployed to production.
+Central runs as an internal release. Keep backward compatibility minimal.
 
-- Do not preserve backward compatibility unless the task or specification requires it.
-- Prefer the target design over compatibility layers, migration shims, deprecated aliases, or fallback behavior.
+- Add a data patch for a change to stored data. Do not leave old data behind a new schema.
+- Do not add compatibility layers, deprecated aliases, or fallback behavior unless the task or specification requires them.
 - Do not design for rolling upgrades, mixed-version deployments, or zero-downtime migration unless required.
-- Revisit these rules before the first production deployment.
 
 ## Permissions
 

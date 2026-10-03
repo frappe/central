@@ -1,8 +1,8 @@
-# Staging integration validation
+# Staging validation
 
 ## Purpose
 
-Prove the [baseline scope](REWRITE_SCOPE.md) against the deployed Atlas, Pilot, and Cargo revisions. Source inspection does not replace a real staging run.
+Prove the [integration contracts](INTEGRATIONS.md) against the deployed Atlas, Pilot, and Cargo revisions. Source inspection does not replace a real staging run.
 
 Record the actual staging versions. Verify that the image contains the expected aliases, proxy configuration, and Pilot APIs.
 
@@ -138,9 +138,7 @@ Do not put credentials, private keys, or raw credential metadata in fixtures, sc
 
 Staging must have the matching Atlas schema and API, a verified region ID, Central key trust, a healthy Metal Server, available Pilot and Ubuntu System images, and working wildcard DNS. When these are ready, run creation, start, stop, Pilot access, Ubuntu access, and deletion with the same customer Team.
 
-## Local connection notes
-
-On macOS, start the local bench with `NO_PROXY='*' pilot start`. This prevents the Python system proxy lookup from stopping a forked background worker before an Atlas request is sent. This setting applies to the local development process only.
+## Operational notes
 
 If a worker stops while an action is Dispatching, do not repeat creation based only on an empty VM list. Inspect the worker failure and check Atlas. Requeue only when evidence proves the request was not sent. Otherwise, use the uncertain-action resolution flow.
 

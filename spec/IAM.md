@@ -13,7 +13,7 @@ flowchart LR
 ```
 
 - Central is the global authority for users, Teams, roles, and capabilities. Every `server:*` decision is made here, before any regional call.
-- A region never sees a capability. Central signs a short-lived, tenant-scoped token for the call it is about to make; the region checks only that the token's tenant matches the resource's tenant. See [Atlas coordination](ATLAS_COORDINATION.md).
+- A region never sees a capability. Central signs a short-lived, tenant-scoped token for the call it is about to make; the region checks only that the token's tenant matches the resource's tenant. See [Integrations](INTEGRATIONS.md).
 - `System Manager` is the only authorization bypass.
 
 ## Permission Model
