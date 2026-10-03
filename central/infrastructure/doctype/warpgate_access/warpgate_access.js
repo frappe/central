@@ -6,37 +6,40 @@ frappe.ui.form.on('Warpgate Access', {
 		if (frm.doc.docstatus === 1 && frm.doc.status === 'Active' && frm.doc.access_type !== 'Admin') {
 			frm.add_custom_button(__('Show SSH Command'), () => show_ssh_command(frm))
 		}
+		load_hosts(frm)
 	},
 
 	region(frm) {
 		frm.hosts = null
 		frm.set_value({ host: null, host_title: null })
-		frm.set_df_property('host_title', 'options', [])
+		load_hosts(frm)
+	},
+
+	access_type(frm) {
+		load_hosts(frm)
 	},
 
 	host_title(frm) {
 		const host = (frm.hosts || []).find((item) => item.title === frm.doc.host_title)
 		frm.set_value('host', host ? host.id : null)
 	},
-
-	onload_post_render(frm) {
-		frm.fields_dict.host_title.$input?.on('focus', () => load_hosts(frm))
-	},
 })
 
 async function load_hosts(frm) {
-	if (!frm.doc.region || frm.hosts) return
-	const { message } = await frappe.call({
-		method: 'central.infrastructure.doctype.warpgate_access.warpgate_access.get_hosts',
-		args: { region: frm.doc.region },
-		type: 'GET',
-	})
-	frm.hosts = message || []
-	frm.set_df_property(
-		'host_title',
-		'options',
-		frm.hosts.map((host) => host.title)
-	)
+	const field = frm.fields_dict.host_title
+	if (frm.doc.docstatus !== 0 || frm.doc.access_type !== 'One host' || !frm.doc.region) {
+		field.set_data([])
+		return
+	}
+	if (!frm.hosts) {
+		const { message } = await frappe.call({
+			method: 'central.infrastructure.doctype.warpgate_access.warpgate_access.get_hosts',
+			args: { region: frm.doc.region },
+			type: 'GET',
+		})
+		frm.hosts = message || []
+	}
+	field.set_data(frm.hosts.map((host) => ({ label: host.title, value: host.title, description: host.status })))
 }
 
 async function show_ssh_command(frm) {
