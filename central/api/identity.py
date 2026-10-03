@@ -208,7 +208,7 @@ def update_profile(full_name: str) -> dict[str, Any]:
 	# escape_html below would raise an unhandled error on one.
 	full_name = require_text(full_name, frappe._("Enter a name."))
 	doc = frappe.get_doc("User", user)
-	# Escaped at write time, matching the signup path (_create_verified_user):
+	# Escaped at write time, matching the signup path (central.users.create_user):
 	# full_name reaches HTML contexts outside this SPA (frappe emails, desk).
 	doc.first_name = escape_html(full_name)
 	doc.middle_name = None

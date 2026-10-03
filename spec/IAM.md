@@ -76,7 +76,18 @@ A role grant applies to all resources (`resource_type = "*"`) or to one resource
 
 ## User And Invitation Flow
 
-Signup sends a verification code to the normalized email address. Central limits code sends to five per supplied email value and 20 signup requests per IP in ten minutes. A pending signup permits five incorrect codes in total, including after a new code is sent. The pending signup expires ten minutes after the last code send or incorrect attempt.
+Sign-in and signup use one door: an emailed 6-digit code. There is no password.
+
+| Step | Endpoint | Behavior |
+|---|---|---|
+| Send | `central.api.auth.send_code(email, full_name=None)` | Sends a code to every email. An existing account gets a sign-in code. A new email gets a code to create an account. A disabled account gets an error and no code. |
+| Verify | `central.api.auth.verify_code(email, code, full_name=None)` | Signs in an existing account. Creates a new account with the name from the send or the verify step. A new email without a name returns `needs_name` and keeps the code valid. |
+
+- The signup page sends the name with the email. The sign-in page sends only the email, so a new email gives its name after the code.
+- `central.identity.email_code.EmailCode` owns the code. It holds one cache entry per email, checks and spends a code under a lock, and expires it ten minutes after the last send or incorrect attempt.
+- An email permits five incorrect codes in total, including after a new code is sent. After that, send and verify refuse until the entry expires.
+- Central limits code sends to five per email and 20 per IP in ten minutes, and verifies to ten per email and 20 per IP. New accounts also follow System Settings, Max Signups Allowed Per Hour.
+- Website Settings, Disable Signup, does not apply. It turns off Frappe's own signup page, not Central's.
 
 ```mermaid
 flowchart TD

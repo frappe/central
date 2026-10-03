@@ -4,289 +4,179 @@ from unittest.mock import patch
 import frappe
 from frappe.tests import IntegrationTestCase
 
-from central.api.auth import (
-	MAX_OTP_ATTEMPTS,
-	OTP_TTL_SECONDS,
-	SignupCodeExpiredError,
-	SignupLockedError,
-	_login_otp_key,
-	_otp_key,
-	_send_signup_code,
-	request_login_code,
-	resend_signup_code,
-	sign_up,
-	verify_login_code,
-	verify_signup,
-)
+from central.api.auth import send_code, verify_code
+from central.identity.email_code import EmailCode, EmailCodeError
+from central.tests.test_team_management import create_user
 from central.www.dashboard import build_auth_context
+
+SENDMAIL = "central.identity.email_code.frappe.sendmail"
 
 
 class TestAuth(IntegrationTestCase):
-	def test_email_code_signs_in_once_without_a_password(self):
-		email = frappe.db.get_value("User", "Administrator", "email").lower()
-		self.addCleanup(frappe.cache.delete_value, _login_otp_key(email))
+	def setUp(self):
+		frappe.set_user("Guest")
+		self.email = f"auth.{frappe.generate_hash(length=8)}@example.test"
+		self.addCleanup(EmailCode(self.email).discard)
+
+	def tearDown(self):
+		frappe.set_user("Administrator")
+
+	def test_a_new_email_gets_an_account_when_its_code_is_verified(self):
+		with patch(SENDMAIL) as sendmail:
+			send_code(self.email, "New Person")
+		self.assertIn("signup code", sendmail.call_args.kwargs["subject"])
+		self.assertEqual(sendmail.call_args.kwargs["args"]["heading"], "Create your Frappe Cloud account")
+		self.assertFalse(frappe.db.exists("User", self.email))
+
+		result = self._verify(self._code())
+
+		self.assertEqual(result, {"user": self.email})
+		self.assertEqual(frappe.session.user, self.email)
+		self.assertEqual(frappe.db.get_value("User", self.email, "user_type"), "Website User")
+		self.assertEqual(frappe.db.get_value("User", self.email, "full_name"), "New Person")
+		self.assertIn("Central User", frappe.get_roles(self.email))
+		self.assertIsNone(EmailCode(self.email).pending)
+
+	def test_a_new_email_without_a_name_keeps_its_code_until_the_name_arrives(self):
+		with patch(SENDMAIL):
+			send_code(self.email)
+		code = self._code()
+
+		self.assertEqual(self._verify(code), {"needs_name": True})
+		self.assertFalse(frappe.db.exists("User", self.email))
+
+		self.assertEqual(self._verify(code, full_name="Late Name"), {"user": self.email})
+		self.assertEqual(frappe.db.get_value("User", self.email, "full_name"), "Late Name")
+
+	def test_an_existing_email_signs_in_and_keeps_its_name(self):
+		frappe.set_user("Administrator")
+		create_user(self.email)
 		frappe.set_user("Guest")
 
-		with patch("central.api.auth.frappe.sendmail") as sendmail:
-			response = request_login_code(email)
-		self.assertIn("If this email", response["message"])
-		self.assertEqual(sendmail.call_args.kwargs["recipients"], [email])
-		code = frappe.cache.get_value(_login_otp_key(email))["code"]
+		with patch(SENDMAIL) as sendmail:
+			response = send_code(self.email, "Another Name")
+		self.assertIn("sign-in code", sendmail.call_args.kwargs["subject"])
+		self.assertEqual(sendmail.call_args.kwargs["args"]["heading"], "Sign in to Frappe Cloud")
 
-		with patch("frappe.local.login_manager", create=True) as login_manager:
-			login_manager.login_as.side_effect = frappe.set_user
-			self.assertEqual(verify_login_code(email, code)["user"], "Administrator")
-			login_manager.login_as.assert_called_once_with("Administrator")
+		self.assertEqual(self._verify(self._code()), {"user": self.email})
+		self.assertEqual(frappe.db.get_value("User", self.email, "first_name"), self.email.split("@")[0])
+		self.assertEqual(response, {"message": f"We sent a code to {self.email}."})
+
+	def test_a_code_signs_in_once(self):
+		with patch(SENDMAIL):
+			send_code(self.email, "Once Only")
+		code = self._code()
+		self._verify(code)
+
+		with self.assertRaises(EmailCodeError):
+			self._verify(code)
+
+	def test_wrong_codes_lock_the_email_and_a_resend_does_not_unlock_it(self):
+		with patch(SENDMAIL):
+			send_code(self.email, "Locked Out")
+			code = self._code()
+			wrong = "000000" if code != "000000" else "111111"
+			for _ in range(EmailCode.MAX_ATTEMPTS):
+				with self.assertRaises(EmailCodeError):
+					self._verify(wrong)
+
+			with self.assertRaises(EmailCodeError) as resend:
+				send_code(self.email)
+			with self.assertRaises(EmailCodeError):
+				self._verify(code)
+
+		self.assertIn("Too many incorrect codes", str(resend.exception))
+		self.assertFalse(frappe.db.exists("User", self.email))
+
+	def test_a_code_that_was_never_sent_is_refused(self):
+		with self.assertRaises(EmailCodeError) as refused:
+			self._verify("123456")
+
+		self.assertIn("expired", str(refused.exception))
+
+	def test_a_disabled_account_gets_no_code_and_cannot_use_one(self):
+		frappe.set_user("Administrator")
+		create_user(self.email)
+		frappe.set_user("Guest")
+		with patch(SENDMAIL):
+			send_code(self.email)
+		code = self._code()
+		frappe.db.set_value("User", self.email, "enabled", 0)
+
+		with patch(SENDMAIL) as sendmail:
 			with self.assertRaises(frappe.ValidationError):
-				verify_login_code(email, code)
+				send_code(self.email)
+		with self.assertRaises(frappe.ValidationError):
+			self._verify(code)
 
-	def test_login_does_not_disclose_an_unknown_or_disabled_account(self):
-		frappe.set_user("Guest")
-		with patch("central.api.auth.frappe.sendmail") as sendmail:
-			unknown = request_login_code("missing-login@example.test")
-			with patch("central.api.auth.frappe.db.get_value", return_value=0):
-				disabled = request_login_code("disabled@example.test")
-		self.assertEqual(unknown, disabled)
+		sendmail.assert_not_called()
+		self.assertEqual(frappe.session.user, "Guest")
+
+	def test_a_code_that_could_not_be_mailed_is_reported(self):
+		with patch(SENDMAIL, side_effect=Exception("SMTP down")):
+			with self.assertRaises(frappe.ValidationError) as refused:
+				send_code(self.email, "Unsent")
+
+		self.assertIn("could not send a code", str(refused.exception))
+
+	def test_malformed_input_is_refused_before_anything_is_sent(self):
+		with patch(SENDMAIL) as sendmail:
+			for email in ("not-an-email", "one@example.test,two@example.test", "jane@example..com", []):
+				with self.assertRaises(frappe.ValidationError):
+					send_code(email)
+			for name in ("   ", "x" * 141, ["list"]):
+				with self.assertRaises(frappe.ValidationError):
+					send_code(self.email, name)
+			with self.assertRaises(frappe.ValidationError):
+				verify_code(self.email, "12345x")
+
 		sendmail.assert_not_called()
 
-	def test_login_code_response_states_the_attempt_policy(self):
-		frappe.set_user("Guest")
-		with patch("central.api.auth.frappe.sendmail"):
-			response = request_login_code("missing-policy@example.test")
+	def test_the_email_states_the_code_and_its_expiry(self):
+		with patch(SENDMAIL) as sendmail:
+			send_code(self.email, "Template Person")
 
-		self.assertEqual(response["max_attempts"], MAX_OTP_ATTEMPTS)
-		self.assertEqual(response["lockout_minutes"], OTP_TTL_SECONDS // 60)
+		html = frappe.render_template(
+			"templates/emails/verification_code.html", sendmail.call_args.kwargs["args"]
+		)
+		self.assertIn(self._code(), html)
+		self.assertIn(self._code(), sendmail.call_args.kwargs["subject"])
+		self.assertIn("Create your Frappe Cloud account", html)
+		self.assertIn("It expires in 10 minutes.", html)
 
-	def test_login_refuses_unknown_and_wrong_codes_with_one_message(self):
-		email = frappe.db.get_value("User", "Administrator", "email").lower()
-		self.addCleanup(frappe.cache.delete_value, _login_otp_key(email))
-		frappe.set_user("Guest")
-		with patch("central.api.auth.frappe.sendmail"):
-			request_login_code(email)
-		code = frappe.cache.get_value(_login_otp_key(email))["code"]
-
-		with self.assertRaises(frappe.ValidationError) as wrong_code:
-			verify_login_code(email, "000000" if code != "000000" else "111111")
-		with self.assertRaises(frappe.ValidationError) as unknown_account:
-			verify_login_code("missing-login@example.test", "000000")
-
-		self.assertEqual(str(wrong_code.exception), str(unknown_account.exception))
-		self.assertIn("request a new code", str(wrong_code.exception))
-
-	def test_login_code_keeps_failed_attempts_across_resends(self):
-		email = frappe.db.get_value("User", "Administrator", "email").lower()
-		self.addCleanup(frappe.cache.delete_value, _login_otp_key(email))
-		frappe.set_user("Guest")
-		with patch("central.api.auth.frappe.sendmail"):
-			request_login_code(email)
-			for _ in range(4):
-				with self.assertRaises(frappe.ValidationError):
-					verify_login_code(email, "000000")
-			request_login_code(email)
-		self.assertEqual(frappe.cache.get_value(_login_otp_key(email))["attempts"], 4)
-		with self.assertRaises(frappe.ValidationError):
-			verify_login_code(email, "000000")
-		with self.assertRaises(frappe.ValidationError):
-			verify_login_code(email, frappe.cache.get_value(_login_otp_key(email))["code"])
-
-	def test_disabling_account_after_code_send_blocks_login(self):
-		email = frappe.db.get_value("User", "Administrator", "email").lower()
-		self.addCleanup(frappe.cache.delete_value, _login_otp_key(email))
-		frappe.set_user("Guest")
-		with patch("central.api.auth.frappe.sendmail"):
-			request_login_code(email)
-		code = frappe.cache.get_value(_login_otp_key(email))["code"]
+	def test_sending_is_limited_per_email(self):
 		with (
-			patch(
-				"central.api.auth.frappe.db.get_value",
-				return_value=frappe._dict(name="Administrator", enabled=0),
-			),
-			patch("frappe.local.login_manager", create=True) as login_manager,
+			patch.object(frappe.local, "request", SimpleNamespace(method="POST"), create=True),
+			patch.object(frappe.local, "form_dict", {"email": self.email}, create=True),
+			patch.object(frappe.local, "request_ip", f"test-{frappe.generate_hash(length=8)}", create=True),
+			patch(SENDMAIL) as sendmail,
 		):
-			with self.assertRaises(frappe.ValidationError):
-				verify_login_code(email, code)
-			login_manager.login_as.assert_not_called()
+			for _ in range(5):
+				send_code(self.email, "Limit Test")
+			with self.assertRaises(frappe.RateLimitExceededError):
+				send_code(self.email, "Limit Test")
 
-	def test_login_rejects_malformed_email_and_code(self):
-		with self.assertRaises(frappe.ValidationError):
-			request_login_code("not-an-email")
-		with self.assertRaises(frappe.ValidationError):
-			request_login_code("one@example.test,two@example.test")
-		with self.assertRaises(frappe.ValidationError):
-			verify_login_code("valid@example.test", "12345x")
+		self.assertEqual(sendmail.call_count, 5)
+
+	def test_the_hourly_signup_cap_refuses_a_new_account(self):
+		with patch(SENDMAIL):
+			send_code(self.email, "Over The Cap")
+
+		with patch("central.users.frappe.db.get_creation_count", return_value=300):
+			with self.assertRaises(frappe.TooManyRequestsError):
+				self._verify(self._code())
+		self.assertIsNotNone(EmailCode(self.email).pending)
 
 	def test_guest_context(self):
-		frappe.set_user("Guest")
-
 		context = build_auth_context()
 
 		self.assertEqual(context["user"], "Guest")
 		self.assertFalse(context["onboarding_complete"])
 
-	@IntegrationTestCase.change_settings("Website Settings", disable_signup=1)
-	def test_signup_is_otp_verified_then_creates_a_website_user(self):
-		frappe.set_user("Guest")
-		email = "central-signup-test@example.test"
-		self.addCleanup(frappe.cache.delete_value, _otp_key(email))
+	def _code(self) -> str:
+		return EmailCode(self.email).pending["code"]
 
-		# Step 1: sign_up emails a code and holds the pending signup in cache —
-		# no User exists until the code is verified.
-		with patch("central.api.auth.frappe.sendmail"):
-			status, _message = sign_up(email, "Central Signup Test")
-		self.assertEqual(status, 1)
-		self.assertFalse(frappe.db.exists("User", email))
-
-		# Step 2: the cached code creates the Website User with its Central role and logs
-		# it in. The user creates a team in console onboarding. login_manager only
-		# exists on a real request, so stub the session transition here.
-		code = frappe.cache.get_value(_otp_key(email))["code"]
+	def _verify(self, code: str, full_name: str | None = None) -> dict:
 		with patch("frappe.local.login_manager", create=True) as login_manager:
 			login_manager.login_as.side_effect = frappe.set_user
-			result = verify_signup(email, code)
-
-		self.assertEqual(result, {"user": email})
-		self.assertEqual(frappe.session.user, email)
-		self.assertEqual(frappe.db.get_value("User", email, "user_type"), "Website User")
-		self.assertIn("Central User", frappe.get_roles(email))
-		self.assertFalse(frappe.db.exists("Team", {"owner_user": email}))
-		self.assertIsNone(frappe.cache.get_value(_otp_key(email)))
-
-	def test_verify_without_a_pending_signup_is_refused(self):
-		frappe.set_user("Guest")
-		email = "central-missing-signup-test@example.test"
-		self.addCleanup(frappe.cache.delete_value, _otp_key(email))
-
-		with self.assertRaises(frappe.ValidationError):
-			with patch("frappe.local.login_manager", create=True):
-				verify_signup(email, "123456")
-
-		self.assertFalse(frappe.db.exists("User", email))
-
-	@IntegrationTestCase.change_settings("Website Settings", disable_signup=1)
-	def test_a_wrong_code_is_refused_in_developer_mode(self):
-		frappe.set_user("Guest")
-		email = "central-wrong-code-test@example.test"
-		self.addCleanup(frappe.cache.delete_value, _otp_key(email))
-		with patch("central.api.auth.frappe.sendmail"):
-			sign_up(email, "Wrong Code Test")
-		code = frappe.cache.get_value(_otp_key(email))["code"]
-		wrong = "000000" if code != "000000" else "111111"
-
-		with patch.dict(frappe.conf, {"developer_mode": 1}):
-			with self.assertRaises(frappe.ValidationError):
-				with patch("frappe.local.login_manager", create=True):
-					verify_signup(email, wrong)
-
-		self.assertFalse(frappe.db.exists("User", email))
-
-	def test_signup_points_an_existing_user_to_sign_in(self):
-		with patch("central.api.auth.frappe.db.get_value", return_value=1):
-			status, message = sign_up("existing-signup@example.test", "Existing Test")
-
-		self.assertEqual(status, 0)
-		self.assertIn("already exists", message)
-
-	def test_signup_refuses_a_disabled_account_with_a_next_step(self):
-		with patch("central.api.auth.frappe.db.get_value", return_value=0):
-			with self.assertRaises(frappe.ValidationError) as refused:
-				sign_up("disabled-signup@example.test", "Disabled Test")
-
-		self.assertIn("Contact support", str(refused.exception))
-
-	def test_signup_rejects_an_undeliverable_email_before_sending(self):
-		with patch("central.api.auth.frappe.sendmail") as sendmail:
-			with self.assertRaises(frappe.ValidationError):
-				sign_up("jane@example..com", "Typo Test")
-
-		sendmail.assert_not_called()
-		self.assertIsNone(frappe.cache.get_value(_otp_key("jane@example..com")))
-
-	def test_signup_reports_a_code_that_could_not_be_sent(self):
-		email = f"unsent.{frappe.generate_hash(length=8)}@example.test"
-		self.addCleanup(frappe.cache.delete_value, _otp_key(email))
-
-		with patch("central.api.auth.frappe.sendmail", side_effect=Exception("SMTP down")):
-			with self.assertRaises(frappe.ValidationError) as refused:
-				sign_up(email, "Unsent Test")
-
-		self.assertIn("could not send a code", str(refused.exception))
-
-	def test_expired_signup_asks_the_user_to_start_again(self):
-		email = f"expired.{frappe.generate_hash(length=8)}@example.test"
-
-		with self.assertRaises(SignupCodeExpiredError):
-			resend_signup_code(email)
-		with self.assertRaises(SignupCodeExpiredError):
-			with patch("frappe.local.login_manager", create=True):
-				verify_signup(email, "123456")
-
-	def test_signup_code_uses_the_documented_ten_minute_expiry(self):
-		with (
-			patch("central.api.auth.frappe.cache.set_value") as set_value,
-			patch("central.api.auth.frappe.sendmail"),
-		):
-			_send_signup_code("expiry@example.test", "Expiry Test")
-
-		self.assertEqual(OTP_TTL_SECONDS, 10 * 60)
-		self.assertEqual(set_value.call_args.kwargs["expires_in_sec"], 10 * 60)
-
-	def test_signup_email_states_the_code_and_its_expiry(self):
-		with patch("central.api.auth.frappe.sendmail") as sendmail:
-			_send_signup_code("template@example.test", "Template Test")
-
-		code = frappe.cache.get_value(_otp_key("template@example.test"))["code"]
-		html = frappe.render_template(
-			"templates/emails/verification_code.html", sendmail.call_args.kwargs["args"]
-		)
-		self.assertEqual(sendmail.call_args.kwargs["template"], "verification_code")
-		self.assertIn(code, html)
-		self.assertIn("It expires in 10 minutes.", html)
-
-	def test_resending_a_code_preserves_failed_attempts(self):
-		with (
-			patch("central.api.auth.frappe.cache.set_value") as set_value,
-			patch("central.api.auth.frappe.sendmail"),
-		):
-			_send_signup_code("attempts@example.test", "Attempts Test", attempts=3)
-
-		self.assertEqual(set_value.call_args.args[1]["attempts"], 3)
-
-	def test_signup_and_resend_share_a_send_limit_for_email(self):
-		email = f"limit.{frappe.generate_hash(length=8)}@example.test"
-		self.addCleanup(frappe.cache.delete_value, _otp_key(email))
-
-		with (
-			patch.object(frappe.local, "request", SimpleNamespace(method="POST"), create=True),
-			patch.object(frappe.local, "form_dict", {"email": email}, create=True),
-			patch.object(frappe.local, "request_ip", f"test-{frappe.generate_hash(length=8)}", create=True),
-			patch("central.api.auth.frappe.sendmail") as sendmail,
-		):
-			for _ in range(4):
-				sign_up(email, "Limit Test")
-			resend_signup_code(email)
-			with self.assertRaises(frappe.RateLimitExceededError):
-				sign_up(email, "Limit Test")
-
-		self.assertEqual(sendmail.call_count, 5)
-
-	def test_new_signup_code_does_not_reset_failed_attempts(self):
-		email = f"attempts.{frappe.generate_hash(length=8)}@example.test"
-		self.addCleanup(frappe.cache.delete_value, _otp_key(email))
-
-		with patch("central.api.auth.frappe.sendmail"):
-			sign_up(email, "Attempt Test")
-			for _ in range(4):
-				with self.assertRaises(frappe.ValidationError):
-					verify_signup(email, "000000")
-
-			sign_up(email, "Attempt Test")
-			self.assertEqual(frappe.cache.get_value(_otp_key(email))["attempts"], 4)
-			with self.assertRaises(SignupLockedError):
-				verify_signup(email, "000000")
-			with self.assertRaises(SignupLockedError):
-				sign_up(email, "Attempt Test")
-			with self.assertRaises(SignupLockedError):
-				resend_signup_code(email)
-			code = frappe.cache.get_value(_otp_key(email))["code"]
-			with self.assertRaises(SignupLockedError):
-				verify_signup(email, code)
+			return verify_code(self.email, code, full_name)

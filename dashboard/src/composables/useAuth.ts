@@ -1,109 +1,23 @@
 import { frappeRequest } from 'frappe-ui'
 import { computed, readonly, ref } from 'vue'
 
-// Auth for the console/dashboard app uses one reactive `currentUser` and the login,
-// logout, and session endpoints. Module-level state is shared by every screen.
+// The console's one reactive `currentUser` and logout. Module-level state is shared by every screen.
 // Boot data (window.user, injected by central/www/dashboard.py) seeds the initial value, so the first paint already knows who is signed in.
 
-export interface LoginResponse {
-	message?: string
-	home_page?: string
-	redirect_to?: string
-	user?: string
-}
-
-/** The server's attempt policy for sign-in codes. */
-export interface LoginCodeResponse {
-	message: string
-	max_attempts: number
-	lockout_minutes: number
-}
-
 const currentUser = ref<string | null>(initialUser())
-const isLoading = ref(false)
-const isValidating = ref(false)
-const error = ref<unknown>(null)
 
 export function useAuth() {
 	return {
 		currentUser: readonly(currentUser),
 		isLoggedIn: computed(() => currentUser.value !== null),
 		isGuest: computed(() => currentUser.value === null),
-		isLoading: readonly(isLoading),
-		isValidating: readonly(isValidating),
-		error: readonly(error),
-		requestLoginCode,
-		verifyLoginCode,
 		logout,
-		updateCurrentUser,
-		getUserCookie,
-	}
-}
-
-async function requestLoginCode(email: string): Promise<LoginCodeResponse> {
-	return (await frappeRequest({
-		url: '/api/method/central.api.auth.request_login_code',
-		method: 'POST',
-		params: { email },
-	})) as LoginCodeResponse
-}
-
-async function verifyLoginCode(
-	email: string,
-	code: string,
-): Promise<LoginResponse> {
-	error.value = null
-	try {
-		const response = (await frappeRequest({
-			url: '/api/method/central.api.auth.verify_login_code',
-			method: 'POST',
-			params: { email, code },
-		})) as LoginResponse
-		getUserCookie()
-		return response
-	} catch (exception) {
-		error.value = exception
-		throw exception
 	}
 }
 
 async function logout(): Promise<void> {
-	error.value = null
-	try {
-		await frappeRequest({ url: '/api/method/logout', method: 'POST' })
-		currentUser.value = null
-	} catch (exception) {
-		error.value = exception
-		throw exception
-	}
-}
-
-/** Revalidate against the server — the source of truth when the cookie may be stale. */
-async function updateCurrentUser(): Promise<string | null> {
-	isValidating.value = true
-	isLoading.value = currentUser.value === null
-	error.value = null
-	try {
-		const user = (await frappeRequest({
-			url: '/api/method/frappe.auth.get_logged_user',
-			method: 'GET',
-		})) as string
-		currentUser.value = user && user !== 'Guest' ? user : null
-		return currentUser.value
-	} catch (exception) {
-		currentUser.value = null
-		error.value = exception
-		return null
-	} finally {
-		isLoading.value = false
-		isValidating.value = false
-	}
-}
-
-/** Sync `currentUser` from the `user_id` cookie Frappe sets on login. */
-function getUserCookie(): string | null {
-	currentUser.value = readUserCookie()
-	return currentUser.value
+	await frappeRequest({ url: '/api/method/logout', method: 'POST' })
+	currentUser.value = null
 }
 
 /** Initial session, resolved synchronously so the first paint and the router

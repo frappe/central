@@ -18,7 +18,7 @@ const routes = [
 		meta: { public: true },
 	},
 	{
-		path: '/signup/verify',
+		path: '/verify',
 		name: 'VerifyEmail',
 		component: () => import('@/pages/auth/VerifyEmailPage.vue'),
 		meta: { public: true },
