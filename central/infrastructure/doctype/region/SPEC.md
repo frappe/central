@@ -26,7 +26,7 @@ The regional client requires HTTPS. HTTP is allowed only for localhost addresses
 Central developer mode is enabled. Embedded credentials, queries, and fragments are
 refused. Requests do not follow redirects or retry automatically.
 
-Initialize Central's [Atlas signing key](../central_sso_settings/SPEC.md) and configure its
+Initialize Central's [Atlas signing key](../../../central/doctype/central_sso_settings/SPEC.md) and configure its
 public endpoint in Atlas before testing the connection. Regional reads use the signed
 tenant API at `/api/atlas`. They do not use the admin API key or Central tunnel address.
 
@@ -93,7 +93,7 @@ field.
 timestamp. It does not guess numeric region IDs, rotate keys, or create remote resources.
 Repeating the patch preserves checks with a timestamp.
 
-Region absorbed the connection fields that used to live on separate Atlas Instance and Cargo Instance records. The `merge_atlas_instance_into_region` and `merge_cargo_instance_into_region` patches copy those fields onto Region and then drop the old DocTypes. The Cargo `base_url`, `status`, and `registered_at` values become `cargo_base_url`, `cargo_status`, and `cargo_registered_at`. `Virtual Machine.region` and `Resource Action.region` link directly to Region. Billing keeps its own `cluster` price dimension. There is no second infrastructure record to join through.
+Region holds both the Atlas connection and the Cargo connection (`cargo_base_url`, `cargo_status`, and `cargo_registered_at`). `Virtual Machine.region` and `Resource Action.region` link directly to Region. Billing keeps its own `cluster` price dimension. There is no second infrastructure record to join through.
 
 The `rename_region_fields` patch copies values from the former Virtual Machine `cluster` and Resource Action `atlas_instance` columns after schema sync, then removes those columns. A repeat or partially applied run skips each missing source column.
 

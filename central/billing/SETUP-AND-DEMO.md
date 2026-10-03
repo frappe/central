@@ -1,6 +1,6 @@
 # Billing — Setup & Demo Runbook (empty site → working billing)
 
-> How to stand up billing on a **fresh `central.local` site** and demonstrate it, as the
+> How to stand up billing on a **fresh `central.localhost` site** and demonstrate it, as the
 > admin, from scratch. Two paths:
 >
 > - **Path A — Seed** (recommended for a demo): one command builds a rich, self-consistent
@@ -9,35 +9,13 @@
 >   the way a real operator onboards a fresh deployment.
 >
 > Companion docs: [`ARCHITECTURE.md`](./ARCHITECTURE.md) (how the code is wired),
-> `../../spec/README.md` (specs). Paths below are relative to `central/billing/`. Run bench commands from the bench root.
+> [`../../spec/README.md`](../../spec/README.md) (specs). Paths below are relative to `central/billing/`. Run bench commands from the bench root.
 
 ---
 
 ## 0. Prerequisites (both paths)
 
-1. **A bench + site.** App installed on the site (this runs `after_install` →
-   `catalog.taxonomy_setup.ensure_catalog_masters`, which seeds the catalog taxonomy
-   masters — Plan Category / Sub-Category / Resource Type — that nothing else can run
-   without).
-   ```bash
-   bench new-site central.local
-   bench --site central.local install-app central
-   ```
-2. **Gateway test keys** in `sites/common_site_config.json` (never commit these; the
-   adapters read them via `frappe.conf`):
-   ```json
-   {
-     "stripe_secret_key": "sk_test_…",  "stripe_publishable_key": "pk_test_…",
-     "razorpay_key_id": "rzp_test_…",   "razorpay_key_secret": "…"
-   }
-   ```
-   The **seed** path uses placeholder keys (`skip_credential_validation`) and runs offline;
-   only real charges / top-ups / e2e need live test keys.
-3. **Bench running** (node ≥ 24 on PATH or honcho tears the bench down):
-   ```bash
-   PATH="$HOME/.nvm/versions/node/v24.16.0/bin:$PATH" bench start
-   ```
-4. Build the dashboard SPA if you'll click through the UI: `cd apps/central && yarn build`.
+Set up the bench, the site, the gateway test keys, and the billing worker as the [README](../../README.md) describes. The seed path uses placeholder keys (`skip_credential_validation`) and runs offline. Only real charges, top-ups, and e2e need live test keys.
 
 ---
 
@@ -46,17 +24,17 @@
 ```bash
 # Full-spectrum dataset (10 teams: tiers t0–t3, five USD and five INR, every
 # collection mode and terminal state). Wipes all billing data first:
-bench --site central.local execute central.billing.demo.demo_scenarios.seed
+pilot frappe --site central.localhost execute central.billing.demo.demo_scenarios.seed
 
 # Sanity counts proving each criterion is covered:
-bench --site central.local execute central.billing.demo.demo_scenarios.summary
+pilot frappe --site central.localhost execute central.billing.demo.demo_scenarios.summary
 ```
 
 What `seed` builds (in order): trust tiers → catalog (Regions `in-bengaluru`, `in-mumbai`, `me-dubai`; VM plans through the Plan Configurator; the component rate card; the metered services AI Tokens, Email and PDF) → gateways (one Stripe row for INR and USD, Razorpay INR, PayPal USD) → Ed25519 signing key → then per team: members, billing profile, tier, tax, subscriptions, historical Paid invoices, and the current-month invoice in the team's terminal state. The current month is the month the seed runs in (`ANCHOR` is its first day). `seed_all` is a back-compat alias for `seed`.
 
 The seed is **idempotent + destructive**: it `_wipe_all()`s billing data first, so re-run
 freely. Administrator is a System Manager and lands on a team with data — just open
-`http://central.local:8011` and go to the billing dashboard.
+`http://central.localhost:8000` and go to the billing dashboard.
 
 ### What each demo team demonstrates
 See [demo/README.md, The ten teams](./demo/README.md#the-ten-teams).
@@ -110,7 +88,7 @@ currency** (rates live in standalone **Catalog Rate**, not on the Plan).
 ### Step 4 · Customer Team + Billing Profile
 Charging a card needs a **complete Billing Profile**. Its `currency` is the source of truth (gateway-backed, locks after first activity). Credit can fund server creation without a complete profile. The team's invoices are then held at Draft until the billing details arrive. A daily job reminds the team, and operators get an alert after `billing_details_grace_days`.
 ```bash
-bench --site central.local execute central.billing.payments.profile.create_or_update_billing_profile \
+pilot frappe --site central.localhost execute central.billing.payments.profile.create_or_update_billing_profile \
   --kwargs '{"team": "<TEAM>"}'
 ```
 - **UI:** the customer SPA first-run wizard (`api/dashboard/account.save_billing_profile`).
@@ -126,7 +104,7 @@ bench --site central.local execute central.billing.payments.profile.create_or_up
 
 ### Step 6 · Provision a subscription (a "server")
 ```bash
-bench --site central.local execute central.billing.catalog.subscriptions.provision_subscription \
+pilot frappe --site central.localhost execute central.billing.catalog.subscriptions.provision_subscription \
   --kwargs '{"team":"<TEAM>","cluster":"in-mumbai","plan":"<PLAN>","billing_cycle":"Monthly"}'
 ```
 Creates the **Subscription** (intent) and its first **Subscription Change** row carrying the `locked_rate`. It does not create a server: it mints a `res-<hash>` resource id. Pass a real Plan name for `<PLAN>`; Plans are hash-autonamed. Composed configs: `provision_composed_subscription(team, cluster, includes, sub_category, …)` or the UI `api/dashboard/catalog.provision_composed_config`.
@@ -137,10 +115,10 @@ Real servers go through `central.api.servers.create_server` / `create_composed_s
 > Invoice generation runs monthly on the scheduler through `run_monthly_billing`, which drafts and collects inline (see `ARCHITECTURE.md` §3). For a demo, drive it by hand. The calls below do the same work.
 ```bash
 # One team, one period (in arrears):
-bench --site central.local execute central.billing.revenue.invoicing.generate_team_invoice \
+pilot frappe --site central.localhost execute central.billing.revenue.invoicing.generate_team_invoice \
   --kwargs '{"team":"<TEAM>","period_start":"2026-06-01","period_end":"2026-06-30"}'
 # …or all teams for the period (the draft phase, inline):
-bench --site central.local execute central.billing.revenue.invoicing.generate_draft_invoices \
+pilot frappe --site central.localhost execute central.billing.revenue.invoicing.generate_draft_invoices \
   --kwargs '{"period_start":"2026-06-01","period_end":"2026-06-30"}'
 ```
 Lines come from `invoicing/lines.compute_line_items` (day-weighted Subscription Change
@@ -149,7 +127,7 @@ segments) + metered overage + commitment discount + tax. Result: **Invoice (Draf
 ### Step 8 · Open & collect (settle)
 ```bash
 # The collect phase — runs the credits→card waterfall per draft:
-bench --site central.local execute central.billing.revenue.invoicing.open_drafts \
+pilot frappe --site central.localhost execute central.billing.revenue.invoicing.open_drafts \
   --kwargs '{"cutoff":"2026-06-30"}'
 ```
 A Billable draft for a team without billing details stays Draft (`held: billing_details`). It is settled when the team completes its Billing Profile.
@@ -162,7 +140,7 @@ manual demo, the seed path already shows Paid invoices.
 Leave an invoice unpaid and run the daily job to walk the Day 1/3/7 retries → past_due →
 suspend:
 ```bash
-bench --site central.local execute central.billing.revenue.dunning.run_dunning
+pilot frappe --site central.localhost execute central.billing.revenue.dunning.run_dunning
 ```
 
 ---
@@ -171,10 +149,10 @@ bench --site central.local execute central.billing.revenue.dunning.run_dunning
 
 ```bash
 # Re-seeding wipes billing data first, so just re-run the seed to reset:
-bench --site central.local execute central.billing.demo.demo_scenarios.seed
+pilot frappe --site central.localhost execute central.billing.demo.demo_scenarios.seed
 
 # Or wipe billing records only (leaves catalog/gateway config):
-bench --site central.local execute central.billing.demo._factory._wipe_all
+pilot frappe --site central.localhost execute central.billing.demo._factory._wipe_all
 ```
 
 For e2e isolation, each Playwright spec seeds + tears down its own sandbox via

@@ -116,4 +116,4 @@ Resize uses the same action flow. `central.api.servers.resize_server` validates 
 
 ## Validation
 
-The focused suites are `test_resource_actions`, `test_resource_action_migration`, `test_atlas_sync`, `test_server_observation`, `test_server_resize`, `test_pilot_credential_delivery`, `test_atlas_errors`, and the billing create, trial, and resize tests. See [cutover coverage](../../../../spec/CUTOVER_TEST_COVERAGE.md) for the retained requirements and retired interfaces.
+The focused suites are `test_resource_actions`, `test_resource_action_migration`, `test_atlas_sync`, `test_server_observation`, `test_server_resize`, `test_pilot_credential_delivery`, `test_atlas_errors`, and the billing create, trial, and resize tests.

@@ -1,7 +1,7 @@
 # End-to-end suite (no mocks)
 
 Playwright specs that drive the **real** Frappe-UI dashboard against a **running
-`central.local` bench** and the **real gateway test sandboxes**. Nothing is
+`central.localhost` bench** and the **real gateway test sandboxes**. Nothing is
 stubbed: a top-up creates a genuine Stripe test-mode `PaymentIntent`, the wallet is
 credited only after the gateway confirms, and every read renders from real DocTypes.
 
@@ -87,23 +87,10 @@ synthetic, because minting a Razorpay-issued one needs its bot-gated sheet.
 
 ## Prerequisites
 
-- The bench must already be running and serving the dashboard on
-  `http://central.local:8011` (`central.local` is in `/etc/hosts`).
-- `central.local` must have `allow_tests: true` (it does) — this gates the
-  test-only seed endpoints. They are unreachable on any site without it.
-- Real **test-mode** gateway keys in `sites/common_site_config.json`
-  (`stripe_secret_key`/`stripe_publishable_key` = `sk_test_`/`pk_test_`,
-  `razorpay_key_id`/`razorpay_key_secret` = `rzp_test`). Stripe specs need
-  outbound network to `js.stripe.com` and the Stripe API.
-
-### Starting the bench
-
-```bash
-cd ../../..            # the bench root
-# node >= 24 must be on PATH or honcho's `watch` process crashes and tears the
-# whole bench down — prepend the nvm node if your shell defaults to an older one:
-PATH="$HOME/.nvm/versions/node/v24.16.0/bin:$PATH" bench start
-```
+- The bench must already be running and serving the dashboard. The suite targets `http://central.localhost:8000` by default. Set `E2E_BASE_URL` for another site or port. See the [README](../README.md) for the bench setup.
+- The site must have `allow_tests: true`. This gates the test-only seed endpoints. They are unreachable on any site without it.
+- The site needs the catalog and gateway records. Run the demo seed first: `pilot frappe --site central.localhost execute central.billing.demo.demo_scenarios.seed`.
+- Real **test-mode** gateway keys in `sites/common_site_config.json` (`stripe_secret_key`/`stripe_publishable_key` = `sk_test_`/`pk_test_`, `razorpay_key_id`/`razorpay_key_secret` = `rzp_test`). Stripe specs need outbound network to `js.stripe.com` and the Stripe API.
 
 ## CI
 
@@ -124,7 +111,7 @@ yarn test:e2e:headed     # watch it drive a real browser
 yarn test:e2e:report     # open the last HTML report
 
 # target the host explicitly:
-E2E_BASE_URL=http://central.local:8011 npx playwright test
+E2E_BASE_URL=http://central.localhost:8000 npx playwright test
 ```
 
 Specs run in parallel: 4 workers locally and 2 in CI. Each spec seeds its own user and team, so specs do not share data.

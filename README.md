@@ -1,123 +1,80 @@
 # Central
 
-Central is the new control plane for Frappe Cloud v2. It
-manages IAM, billing, add-ons and other services.
-The regional VM runtime is managed and operated by [Atlas](https://github.com/frappe/atlas).
+Central is the control plane for Frappe Cloud V2. It signs people in, decides what each team member can do, creates servers through Atlas, and bills each team. It is a Frappe app with a Vue console in `dashboard/`.
+
+Central does not run servers. [Atlas](https://github.com/frappe/atlas) runs the virtual machines in each region, [Pilot](https://github.com/frappe/pilot) runs the benches and sites on a server, and Cargo builds the server images. See [Integrations](spec/INTEGRATIONS.md) for the contracts.
 
 ## Requirements
 
-- Python 3.14
-- Node.js 24 and Yarn
-- MariaDB 11.8 and Redis 6+
-- [Frappe Bench](https://docs.frappe.io/framework/user/en/installation)
+Python 3.14, Node.js 24 with Yarn, MariaDB 11.8, Redis 6 or later, and [Pilot](https://github.com/frappe/pilot).
 
-The Frappe installation guide covers the system dependencies and Bench setup.
+## Set up a local site
 
-## Local development
-
-The commands below create a fresh Bench and a Central site. Run them from the
-Bench root.
+Run these commands from the bench root:
 
 ```bash
-bench get-app central https://github.com/frappe/central.git
-bench setup requirements --dev
-
-bench new-site central.localhost --admin-password admin
-bench --site central.localhost install-app central
-bench --site central.localhost set-config developer_mode 1
-bench build --app central
+pilot get-app https://github.com/frappe/central.git --branch develop
+pilot new-site central.localhost --admin-password admin
+pilot install-app central.localhost central
+pilot frappe --site central.localhost set-config developer_mode 1
+NO_PROXY='*' pilot start
 ```
 
-If MariaDB requires a root password, add `--db-root-password <password>` to
-`bench new-site`.
+Open the console at `http://central.localhost:<http_port>/dashboard` and Desk at `/app`. The port is `http_port` in `bench.toml`. On macOS, `NO_PROXY='*'` stops the system proxy lookup from killing background workers.
 
-Start the Bench:
+Put gateway and integration keys in `sites/common_site_config.json`. Never commit them.
 
-```bash
-bench start
-```
+| Key | Needed for |
+|---|---|
+| `stripe_secret_key`, `stripe_publishable_key` | Stripe charges and top-ups |
+| `razorpay_key_id`, `razorpay_key_secret` | Razorpay charges and top-ups |
+| `entitlement_private_key` | Signed plan entitlements |
+| `erpnext_url`, `erpnext_api_key`, `erpnext_api_secret` | Invoice sync to ERPNext |
 
-Open Central at <http://central.localhost:8000/app> and sign in as
-`Administrator` with password `admin`.
+To create servers, connect a Region to Atlas. See [Region](central/infrastructure/doctype/region/SPEC.md).
 
-### Seed demo data (optional)
+## Seed demo data
 
-The billing demo creates ten sample teams with users, catalog, billing records, and invoices. It deletes all existing billing data first, so run it only on a local site.
+The demo seed creates ten teams with plans, subscriptions, and invoices. It deletes all billing data and all server records first. Run it only on a local site.
 
 ```bash
 pilot frappe --site central.localhost execute central.billing.demo.demo_scenarios.seed
 ```
 
-See the [billing demo](central/billing/demo/README.md) for the teams it creates.
+See the [billing demo](central/billing/demo/README.md) for the teams and logins.
 
-### Run Atlas locally (optional)
-
-Install Atlas on a second site when you need to test Central-to-Atlas flows:
+## Develop the console
 
 ```bash
-bench get-app atlas https://github.com/frappe/atlas.git
-
-bench new-site mumbai.atlas.localhost --admin-password admin
-bench --site mumbai.atlas.localhost install-app atlas
-bench --site mumbai.atlas.localhost migrate
-```
-
-Initialize Central's Atlas and Pilot signing keys in Central SSO Settings, and configure the Atlas public key URL in Atlas Settings. Read the numeric region ID from Atlas Settings. Then, in Central's Desk, open or create the Region (for example `in-mumbai`):
-
-1. Set **Base URL** to `http://mumbai.atlas.localhost:8000` and **Atlas Region ID** to the verified region ID.
-2. Set **Status** to Active and save.
-3. Click **Test Connection**, then **Enroll Atlas**.
-
-Central accepts plain `http` only for a `localhost` host while developer mode is on. Local VM tests require an active Metal Server and available System images. Installing Atlas alone does not provide VM capacity. See the [regional configuration](central/infrastructure/doctype/region/SPEC.md) and [validation requirements](spec/LOCAL_ENVIRONMENT.md).
-
-## Frontend development
-
-The console lives in `dashboard/`.
-
-```bash
-cd apps/central
 yarn install
 yarn dev
 ```
 
-For a production-style build served by Frappe:
+## Run checks and tests
+
+Run the linters from `apps/central`:
 
 ```bash
-yarn build
-bench build --app central
+../../env/bin/ruff check central
+../../env/bin/ruff format central
+python3 scripts/check_patches.py
+pre-commit run --all-files
 ```
 
-## Tests
-
-Run the Python test suite from the Bench root:
+Run tests on a separate site with `allow_tests` set, because some billing tests commit their data:
 
 ```bash
-bench --site central-test.localhost run-tests --app central
+pilot frappe --site central-test.localhost set-config allow_tests true
+pilot frappe --site central-test.localhost run-tests --app central
 ```
 
-Run one module while you work:
-
-```bash
-bench --site central-test.localhost run-tests \
-  --app central --module central.tests.test_resource_actions
-```
-
-Run tests on a separate test site. Some billing tests commit their data.
-
-The end-to-end suite requires a running Bench and payment-gateway test keys.
-See [`e2e/README.md`](e2e/README.md) for setup and commands.
+See [`e2e/README.md`](e2e/README.md) for the Playwright suite.
 
 ## Documentation
 
-- [Agent and contributor rules](CLAUDE.md)
-- [IAM](spec/IAM.md)
-- [Capabilities](CAPABILITIES.md)
-- [Specification router](spec/README.md)
-
-## Related projects
-
-- [Atlas](https://github.com/frappe/atlas) — regional runtime
-- [Pilot](https://github.com/frappe/pilot) — local and remote Bench management
+- [CLAUDE.md](CLAUDE.md): contributor and agent rules.
+- [Specification router](spec/README.md): every module and cross-cutting specification.
+- [Billing architecture](central/billing/ARCHITECTURE.md): the billing code map.
 
 ## License
 

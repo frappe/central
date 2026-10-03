@@ -1,13 +1,13 @@
 # Central Spec
 
-## What is the v0.2 baseline?
+## What does v0.2 cover?
 
-v0.2 is the shipped baseline. It covers trial signup, Pilot server creation and access, plain Ubuntu creation, server power actions, resize, snapshots, and the web console. Central routes custom domains through Site Domain, registers each region's Cargo, and asks Pilot to rename the trial site and the admin domain. The regional proxy terminates TLS for a regional name. Pilot holds the certificate for a custom domain.
+v0.2 covers trial signup, Pilot server creation and access, plain Ubuntu creation, server power actions, resize, snapshots, and the web console. Central routes custom domains through Site Domain, registers each region's Cargo, and asks Pilot to rename the trial site and the admin domain. The regional proxy terminates TLS for a regional name. Pilot holds the certificate for a custom domain.
 
-- [Baseline scope](REWRITE_SCOPE.md): what the baseline covers, ownership, and the contracts with Atlas, Pilot, and Cargo.
-- [Delivery](DELIVERY.md): the current stage status, known gaps, and the open work in priority order.
-- [Validation](LOCAL_ENVIRONMENT.md): contract tests, region connection, and staging evidence.
-- [Test coverage](CUTOVER_TEST_COVERAGE.md): the test module that owns each integration requirement.
+- [Integrations](INTEGRATIONS.md): ownership and the contracts with Atlas, Pilot, and Cargo.
+- [Staging validation](STAGING_VALIDATION.md): contract tests, region connection, and staging evidence.
+
+Open work is tracked in [GitHub issues](https://github.com/frappe/central/issues).
 
 Each module specification below describes current behavior. Update it in the same change as the behavior.
 
@@ -28,13 +28,10 @@ Each module specification below describes current behavior. Update it in the sam
 - [IAM](IAM.md): Central identity and permission model.
 - [Capabilities](../CAPABILITIES.md): the capability vocabulary and fixtures contract.
 - [SSO](SSO.md): login flows, token types, and consumer contracts.
-- [Atlas coordination](ATLAS_COORDINATION.md): the current regional contracts with Atlas, Pilot, and Cargo.
 - [Inbound webhooks](WEBHOOKS.md): the contract a region signs and sends its reports with. Share it with Atlas and Cargo.
 - [Frappe Connect](CONNECT.md): the planned contract for partner teams and partner links. Share it with the Connect developers.
-- [Refactor backlog](refactor_todo.md): the cleanup work that is still open.
 
 ## Billing
 
-- [Billing documentation](../central/billing/docs/README.md): billing domain rules.
-
-The rewrite preserves billing domain logic. Required resource references and integration changes carry their own tests and data patches.
+- [Billing architecture](../central/billing/ARCHITECTURE.md): the billing code map and domain rules.
+- [Metered services API](../central/billing/docs/metered-services-api.md): usage reporting for metered services.

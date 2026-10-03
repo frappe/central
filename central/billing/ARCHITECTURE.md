@@ -5,7 +5,8 @@
 > jump to the named file. Paths are relative to `central/billing/`.
 >
 > 👉 To **stand up & demonstrate** billing from an empty site, see
-> [`SETUP-AND-DEMO.md`](./SETUP-AND-DEMO.md).
+> [`SETUP-AND-DEMO.md`](./SETUP-AND-DEMO.md). For the metered services API, see
+> [`docs/metered-services-api.md`](./docs/metered-services-api.md).
 
 Billing is a **postpaid, in-arrears** money system: Central provisions resources, records
 the runtime it bills from, draws up an invoice in arrears, settles it (credits → card),
@@ -13,7 +14,6 @@ and chases the unpaid ones. There is **no Subscription Agent** (ADR 0006) — Ce
 provisions/records/enforces directly. Authorisation is Central's capability IAM
 (ADR 0004), not billing-owned roles.
 
-- **44 DocTypes**, **~10 sub-packages**, **130 whitelisted endpoints**.
 - Money is **float `Currency` in major units** (₹10.00 is stored `10.0`). Conversion to gateway minor
   units (Razorpay paise / Stripe cents) happens **only at the gateway boundary**. ADR 0003
   (integer minor units) is **DEPRECATED — it was never implemented**; don't design against it.
@@ -198,8 +198,7 @@ subscriptions, and re-enabling resumes tracking with no retagging needed.
 
 **Deliberately out of scope**: Projects have no relationship to credits or payment
 methods at all — there is one `Credit Wallet` per (team, currency) and one Payment
-Method fallback order per team, neither scoped by Project in any way (an earlier
-per-group credit-budget / card-earmarking design was tried and removed — see §6). A
+Method fallback order per team, neither scoped by Project in any way. A
 team-level Commitment (volume discount) and cost projection both operate on the team's
 whole set of resources; a Project is never a unit either reasons about, only a label
 lines carry.
@@ -360,7 +359,7 @@ monotonic and self-limiting: a successful ask stops pushing, so a broken gateway
 ### Inbound webhooks (`payments/webhooks.py`)
 `@stripe` / `@razorpay` (whitelisted, signature-first) → `process_webhook` → adapter `verify_webhook_signature`/`parse_webhook_event` → `handle_webhook_event` → `charges.apply_webhook` (settle the Payment Attempt). Raw payload persisted to **Webhook Event** for dedupe/replay.
 
-### API entry points (130 `@frappe.whitelist`): see §5 per package.
+### API entry points (`@frappe.whitelist`): see §5 per package.
 
 ---
 
@@ -576,36 +575,7 @@ get_team_caps resolves caps live (no per-team Trust Tier doctype — dropped)
 
 ---
 
-## 6. Retired / moved — don't chase ghosts
-
-- **Price Lock doctype + event log** → removed (ADR 0010). The grandfathered rate lives as `locked_rate` on each **Subscription Change** row. `revenue/pricelock.py` and the Price Lock doctype no longer exist (`central/patches/v0_0/retire_price_lock.py` dropped them).
-- **Subscription Agent / `press_billing_agent`** → gone (ADR 0006, agentless). Central creates servers through `central/resource_actions.py` → Resource Action → Atlas (`central/integrations`).
-- **Per-team Trust Tier doctype** → dropped; caps resolve live via `get_team_caps`.
-- **billing-owned roles + `platform/security.py` + `billing_team` field** → deleted; uses
-  Central capability IAM (`authz.py` → `central.iam`). Team is a `Link(Team)`, not a Data slug.
-- **`billing_mode` field** → removed (v09); Billing Profile currency is the gate.
-- **`Invoice.subscription`** ("the primary subscription", whose payment method funded
-  the auto-charge) → gone. An invoice bills a team, never a subscription. Anything that
-  needs a representative subscription (dunning, charge routing) wants
-  `catalog.subscriptions.anchor_subscription(team)` instead.
-- **`primary_subscription(team)`** (`revenue/invoicing/generate.py`) → deleted;
-  superseded by `anchor_subscription`.
-- **Billing Group — one team, several invoices** (tried, then reverted). An earlier
-  design let a team split its bill into a consolidated invoice plus one invoice per
-  Billing Group, with `Invoice.billing_group` part of the `period_key` grain, a
-  per-group earmarked slice of the credit wallet (`Credit Ledger Entry.billing_group`,
-  `credits.group_budget`/`general_pool_balance`, invariant **C5**), and a per-group
-  earmarked payment method tried first (`Payment Method.billing_group`,
-  `collection.scoped_methods`). All of it — the multi-invoice partitioning
-  (`generate.ALL_SCOPES`/`_scope_lines`/`_active_groups`/`_resource_group_map`/
-  `_team_invoice_groups`), the credit-budget isolation, and the card-earmarking — was
-  removed outright, not renamed. **Project** (§2.1) is the intentionally smaller
-  replacement: a cost-attribution tag + spending-limit guardrail on one invoice, with no
-  relationship to credits or payment methods at all.
-
----
-
-## 7. Debugging cheat-sheet — symptom → where to look
+## 6. Debugging cheat-sheet — symptom → where to look
 
 | Symptom | Start at |
 |---|---|
@@ -633,7 +603,7 @@ get_team_caps resolves caps live (no per-team Trust Tier doctype — dropped)
 
 ---
 
-## 8. Tests & migrations
+## 7. Tests & migrations
 
 - **Tests** live in `tests/` (one `test_<area>.py` per concern) — the fastest way to learn a
   flow is to read its test. `tests/utils.py` (`ensure_team`) + `tests/e2e.py`.

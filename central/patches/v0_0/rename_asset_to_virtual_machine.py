@@ -9,7 +9,7 @@ every Link/Table field's `options` across the schema, renames the physical table
 module no longer existing on disk. Runs pre_model_sync, before the renamed
 doctype's own JSON is synced back onto the now-renamed table.
 
-`Asset.cluster` is not renamed here — see `spec/DELIVERY.md` §5: renaming a field
+`Asset.cluster` is not renamed here: renaming a field
 right after the doctype rename touches the same table twice at once.
 
 Guarded for a fresh site that never had the old doctype.
