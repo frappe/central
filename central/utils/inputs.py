@@ -18,14 +18,6 @@ def require_text(value, message: str) -> str:
 	return value.strip()
 
 
-def require_secret(value, message: str) -> str:
-	"""Same check for a password, left unstripped — leading and trailing
-	whitespace is part of the secret."""
-	if not isinstance(value, str) or not value:
-		frappe.throw(message, frappe.ValidationError)
-	return value
-
-
 def require_attached_file(doctype: str, name: str, fieldname: str, file_url) -> str:
 	"""`file_url` if it is a File uploaded to that document field, else a validation error."""
 	is_attached = isinstance(file_url, str) and frappe.db.exists(

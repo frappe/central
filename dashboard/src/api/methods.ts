@@ -26,7 +26,6 @@ export const API = {
 	myProfile: 'central.api.identity.my_profile',
 	updateProfile: 'central.api.identity.update_profile',
 	setProfilePhoto: 'central.api.identity.set_profile_photo',
-	changePassword: 'central.api.auth.change_password',
 	transferOwnership: 'central.api.teams.transfer_team_ownership',
 	deleteTeam: 'central.api.teams.delete_team',
 	leaveTeam: 'central.api.teams.leave_team',
@@ -84,10 +83,8 @@ export const API = {
 	listBucketObjects: 'central.services.api.storage.list_objects',
 	bucketObjectUrl: 'central.services.api.storage.get_object_url',
 
-	signUp: 'central.api.auth.sign_up',
-	verifySignup: 'central.api.auth.verify_signup',
-	resendSignupCode: 'central.api.auth.resend_signup_code',
-
+	sendCode: 'central.api.auth.send_code',
+	verifyCode: 'central.api.auth.verify_code',
 	siteDomain: 'central.api.sites.site_domain',
 	checkSubdomain: 'central.api.sites.check_subdomain',
 	createTrialTeam: 'central.api.sites.create_trial_team',

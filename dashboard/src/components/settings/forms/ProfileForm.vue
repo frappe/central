@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import { Alert, Button, TextInput, useCall } from 'frappe-ui'
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { API, method } from '@/api/methods'
 import ImageUpload from '@/components/common/ImageUpload.vue'
 import { useMyProfile } from '@/composables/useMyProfile'
 import { useTeamMembers } from '@/composables/useTeamMembers'
 import { getErrorMessage, successToast } from '@/lib/feedback'
 
-// The signed-in user's own profile — photo, display name, password. Chrome-free
+// The signed-in user's own profile: photo and display name. Chrome-free
 // on purpose: the settings dialog wraps it in a panel, mobile renders it as a
 // page, and neither layout leaks in here.
 const { profile, savingPhoto, reload: reloadProfile, setPhoto } = useMyProfile()
@@ -60,63 +60,6 @@ async function onPhotoChange(fileUrl: string | null): Promise<void> {
 		photoError.value = getErrorMessage(e, "Your photo couldn't be updated.")
 	}
 }
-
-// — Password. The fields stay out of the way until asked for: most visits here
-// are about the photo or name.
-const editingPassword = ref(false)
-const oldPassword = ref('')
-const newPassword = ref('')
-const changingPassword = ref(false)
-const passwordError = ref('')
-watch([oldPassword, newPassword], () => (passwordError.value = ''))
-
-// Revealing the fields should put the cursor where the work starts.
-const currentPasswordRef = ref<{ $el?: HTMLElement } | null>(null)
-watch(editingPassword, (editing) => {
-	if (!editing) return
-	nextTick(() => currentPasswordRef.value?.$el?.querySelector('input')?.focus())
-})
-
-const canChangePassword = computed(
-	() => !!oldPassword.value && newPassword.value.length >= 8,
-)
-
-const passwordCall = useCall<
-	{ changed: boolean },
-	{ old_password: string; new_password: string }
->({
-	url: method(API.changePassword),
-	method: 'POST',
-	immediate: false,
-})
-
-async function onChangePassword(): Promise<void> {
-	if (!canChangePassword.value) return
-	changingPassword.value = true
-	try {
-		await passwordCall.submit({
-			old_password: oldPassword.value,
-			new_password: newPassword.value,
-		})
-		if (passwordCall.error) throw passwordCall.error
-		resetPassword()
-		successToast('Password changed. Your other sessions were signed out')
-	} catch (e) {
-		passwordError.value = getErrorMessage(
-			e,
-			"Your password couldn't be changed.",
-		)
-	} finally {
-		changingPassword.value = false
-	}
-}
-
-function resetPassword(): void {
-	editingPassword.value = false
-	oldPassword.value = ''
-	newPassword.value = ''
-	passwordError.value = ''
-}
 </script>
 
 <template>
@@ -158,46 +101,5 @@ function resetPassword(): void {
 		<!-- Identity, not a setting — disabled (not readonly) so it can't be
 		     focused or clicked into at all. -->
 		<TextInput :model-value="profile?.user ?? ''" label="Email" disabled />
-
-		<!-- One button until you mean it; the fields appear in place. The button
-		     and field labels name themselves — no section label. -->
-		<div>
-			<Button
-				v-if="!editingPassword"
-				label="Change password"
-				@click="editingPassword = true"
-			/>
-			<div v-else class="space-y-3">
-				<Alert v-if="passwordError" theme="red" :title="passwordError" />
-				<TextInput
-					ref="currentPasswordRef"
-					v-model="oldPassword"
-					type="password"
-					label="Current password"
-					autocomplete="current-password"
-				/>
-				<TextInput
-					v-model="newPassword"
-					type="password"
-					label="New password"
-					autocomplete="new-password"
-					description="At least 8 characters. Your other sessions will be signed out."
-					@keydown.enter="onChangePassword"
-				/>
-				<!-- Distinct submit label (the trigger already said "Change
-				     password") and a ghost Cancel, so the primary reads as primary
-				     even while disabled. -->
-				<div class="flex items-center gap-2">
-					<Button
-						variant="solid"
-						label="Update password"
-						:loading="changingPassword"
-						:disabled="!canChangePassword"
-						@click="onChangePassword"
-					/>
-					<Button variant="ghost" label="Cancel" @click="resetPassword" />
-				</div>
-			</div>
-		</div>
 	</div>
 </template>

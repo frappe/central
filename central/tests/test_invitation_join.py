@@ -4,9 +4,10 @@ import frappe
 from frappe.tests import IntegrationTestCase
 from frappe.utils import add_days, today
 
-from central.api.auth import _otp_key, sign_up, sign_up_with_invitation, verify_signup
+from central.api.auth import send_code, sign_up_with_invitation, verify_code
 from central.api.teams import get_invitation
 from central.iam import can, get_user_team_names
+from central.identity.email_code import EmailCode
 from central.tests.test_team_management import create_user
 
 
@@ -100,16 +101,16 @@ class TestInvitationJoin(IntegrationTestCase):
 					sign_up_with_invitation(token, "Too Late")
 		self.assertFalse(frappe.db.exists("User", self.email))
 
-	def test_otp_signup_with_a_pending_invitation_joins_that_team(self):
+	def test_email_code_signup_with_a_pending_invitation_joins_that_team(self):
 		frappe.set_user("Guest")
-		self.addCleanup(frappe.cache.delete_value, _otp_key(self.email))
-		with patch("central.api.auth.frappe.sendmail"):
-			sign_up(self.email, "Code Invitee")
-		code = frappe.cache.get_value(_otp_key(self.email))["code"]
+		self.addCleanup(EmailCode(self.email).discard)
+		with patch("central.identity.email_code.frappe.sendmail"):
+			send_code(self.email, "Code Invitee")
+		code = EmailCode(self.email).pending["code"]
 
 		with patch("frappe.local.login_manager", create=True) as login_manager:
 			login_manager.login_as.side_effect = frappe.set_user
-			verify_signup(self.email, code)
+			verify_code(self.email, code)
 
 		self.assertEqual(get_user_team_names(self.email), [self.team.name])
 		self.assertFalse(frappe.db.exists("Team", {"owner_user": self.email}))

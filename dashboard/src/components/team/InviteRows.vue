@@ -37,9 +37,9 @@ function removeRow(index: number): void {
 </script>
 
 <template>
-	<div class="rounded-7 border border-outline-gray-2 p-5">
+	<div>
 		<div
-			class="mb-1.5 flex gap-2 text-sm-medium text-ink-gray-8"
+			class="mb-2 flex gap-3 text-sm-medium text-ink-gray-6"
 			aria-hidden="true"
 		>
 			<span class="min-w-0 flex-1">Email</span>
@@ -48,9 +48,9 @@ function removeRow(index: number): void {
 			<span class="w-7 shrink-0" />
 		</div>
 
-		<div class="space-y-2">
+		<div class="space-y-3">
 			<div v-for="(row, index) in rows" :key="index">
-				<div class="flex items-start gap-2">
+				<div class="flex items-start gap-3">
 					<TextInput
 						v-model="row.email"
 						class="min-w-0 flex-1"
@@ -90,7 +90,7 @@ function removeRow(index: number): void {
 			</div>
 		</div>
 
-		<div class="mt-3 flex items-center gap-3">
+		<div class="mt-4 flex items-center gap-3">
 			<Button
 				variant="subtle"
 				icon-left="lucide-plus"

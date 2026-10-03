@@ -304,6 +304,7 @@ Use `pilot frappe ...` for any Frappe CLI command, such as `migrate` or `clear-c
 - Follow the validation and handover rules before you write the description.
 - State what changed and why it matters. Do not narrate the implementation.
 - Group related changes. Include visual evidence only for visual changes.
+- Avoid words like doors, seam, rule etc.
 
 For a bug fix, use this structure:
 

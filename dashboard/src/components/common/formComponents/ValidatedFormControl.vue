@@ -36,6 +36,11 @@ const error = computed(() =>
 const dirty = computed(() => props.modelValue !== initialValue)
 const valid = computed(() => !props.validator(props.modelValue))
 
+// Leaving an untouched field shows no error, so a click elsewhere does not shift the layout under the pointer.
+function onBlur(): void {
+	if (dirty.value) touched.value = true
+}
+
 function validate(): boolean {
 	touched.value = true
 	return valid.value
@@ -54,7 +59,7 @@ defineExpose({ dirty, valid, validate })
 		v-bind="attrs"
 		:class="attrs.class"
 		@update:model-value="emit('update:modelValue', String($event ?? ''))"
-		@blur="touched = true"
+		@blur="onBlur"
 	>
 		<template
 			v-for="name in Object.keys($slots)"
