@@ -94,22 +94,30 @@ class TestAuth(IntegrationTestCase):
 
 		self.assertIn("expired", str(refused.exception))
 
-	def test_a_disabled_account_gets_no_code_and_cannot_use_one(self):
+	def test_a_disabled_account_looks_like_any_other_email_and_gets_no_code(self):
+		frappe.set_user("Administrator")
+		create_user(self.email)
+		frappe.db.set_value("User", self.email, "enabled", 0)
+		frappe.set_user("Guest")
+
+		with patch(SENDMAIL) as code_mail, patch("central.users.frappe.sendmail") as notice:
+			response = send_code(self.email)
+
+		self.assertEqual(response, {"message": f"We sent a code to {self.email}."})
+		self.assertIn("disabled", notice.call_args.kwargs["subject"])
+		code_mail.assert_not_called()
+		self.assertIsNone(EmailCode(self.email).pending)
+
+	def test_an_account_disabled_after_its_code_was_sent_cannot_sign_in(self):
 		frappe.set_user("Administrator")
 		create_user(self.email)
 		frappe.set_user("Guest")
 		with patch(SENDMAIL):
 			send_code(self.email)
-		code = self._code()
 		frappe.db.set_value("User", self.email, "enabled", 0)
 
-		with patch(SENDMAIL) as sendmail:
-			with self.assertRaises(frappe.ValidationError):
-				send_code(self.email)
 		with self.assertRaises(frappe.ValidationError):
-			self._verify(code)
-
-		sendmail.assert_not_called()
+			self._verify(self._code())
 		self.assertEqual(frappe.session.user, "Guest")
 
 	def test_a_code_that_could_not_be_mailed_is_reported(self):

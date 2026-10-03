@@ -10,12 +10,13 @@ CENTRAL_USER_ROLE = "Central User"
 
 
 def send_sign_in_code(email: str, full_name: str | None = None) -> None:
-	"""Email a code to any address. A new address gets an account when the code is verified."""
+	"""Email a code to any address. A new address gets an account when the code is verified.
+
+	A disabled account gets a notice instead of a code, so the caller cannot tell it apart."""
 	user = _find_user(email)
 	if user and not user.enabled:
-		_throw_disabled()
-
-	if user:
+		_send_disabled_notice(email)
+	elif user:
 		EmailCode(email).send(_("{0} is your Frappe Cloud sign-in code"), _("Sign in to Frappe Cloud"))
 	else:
 		EmailCode(email).send(
@@ -93,6 +94,20 @@ def get_pending_invitations(user: str) -> list[str]:
 
 def _find_user(email: str):
 	return frappe.db.get_value("User", {"email": email}, ["name", "enabled"], as_dict=True)
+
+
+def _send_disabled_notice(email: str) -> None:
+	frappe.sendmail(
+		recipients=[email],
+		subject=_("Your Frappe Cloud account is disabled"),
+		template="notification",
+		args={
+			"title": _("Your account is disabled"),
+			"body": _(
+				"Someone tried to sign in to Frappe Cloud with this email. Contact support to restore access."
+			),
+		},
+	)
 
 
 def _throw_disabled() -> None:

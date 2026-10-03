@@ -76,11 +76,11 @@ A role grant applies to all resources (`resource_type = "*"`) or to one resource
 
 ## User And Invitation Flow
 
-Sign-in and signup use one door: an emailed 6-digit code. There is no password.
+Sign-in and signup use the same emailed 6-digit code. There is no password.
 
 | Step | Endpoint | Behavior |
 |---|---|---|
-| Send | `central.api.auth.send_code(email, full_name=None)` | Sends a code to every email. An existing account gets a sign-in code. A new email gets a code to create an account. A disabled account gets an error and no code. |
+| Send | `central.api.auth.send_code(email, full_name=None)` | Sends a code to every email. An existing account gets a sign-in code. A new email gets a code to create an account. A disabled account gets the same response and no code. Its owner gets an email that says the account is disabled. |
 | Verify | `central.api.auth.verify_code(email, code, full_name=None)` | Signs in an existing account. Creates a new account with the name from the send or the verify step. A new email without a name returns `needs_name` and keeps the code valid. |
 
 - The signup page sends the name with the email. The sign-in page sends only the email, so a new email gives its name after the code.
