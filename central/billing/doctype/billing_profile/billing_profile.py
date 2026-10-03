@@ -7,6 +7,7 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
+from central.billing.catalog.subscriptions import team_active_segments
 from central.billing.india_gst import GST_STATE_CODES, INDIA
 
 # Once a team has been invoiced, these are frozen: invoices are denominated in the
@@ -16,10 +17,78 @@ _INVOICE_LOCKED_FIELDS = {"country": "country", "currency": "currency"}
 
 # GSTIN: 2-digit state + 10-char PAN + entity digit + 'Z' + checksum char.
 GSTIN_RE = re.compile(r"^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$")
+REQUIRED_FIELDS = ("currency", "legal_name", "address_line1", "city", "country")
+FIELD_LABELS = {
+	"currency": "currency",
+	"legal_name": "legal name",
+	"address_line1": "address line 1",
+	"city": "city",
+	"country": "country",
+}
 
 
 def validate_gstin(gstin: str) -> bool:
 	return bool(GSTIN_RE.match((gstin or "").strip().upper()))
+
+
+def get_team_currency(team: str) -> str:
+	"""Return the billing profile currency, with the legacy segment fallback."""
+	currency = frappe.db.get_value("Billing Profile", team, "currency")
+	if currency:
+		return currency
+
+	segment_currency = next((row.currency for row in team_active_segments(team) if row.currency), None)
+	return segment_currency or "INR"
+
+
+def get_missing_fields(team: str) -> list[str]:
+	if not frappe.db.exists("Billing Profile", team):
+		return list(REQUIRED_FIELDS)
+
+	return get_missing_fields_of(frappe.get_doc("Billing Profile", team))
+
+
+def get_missing_fields_of(profile) -> list[str]:
+	"""Missing required fields on an already-loaded profile row. No row means all."""
+	if profile is None:
+		return list(REQUIRED_FIELDS)
+	return [field for field in REQUIRED_FIELDS if not str(profile.get(field) or "").strip()]
+
+
+def get_field_labels(fields: list[str]) -> list[str]:
+	return [FIELD_LABELS.get(field, field) for field in fields]
+
+
+def get_missing_field_labels(team: str) -> list[str]:
+	return get_field_labels(get_missing_fields(team))
+
+
+def is_complete(team: str) -> bool:
+	return not get_missing_fields(team)
+
+
+def require_billing_profile(team: str, action: str) -> None:
+	"""Require a complete legal and currency profile before a billable action."""
+	missing = get_missing_field_labels(team)
+	if missing:
+		frappe.throw(
+			_("Complete your billing profile before you can {0}. Missing: {1}.").format(
+				action, ", ".join(missing)
+			),
+			frappe.ValidationError,
+		)
+
+
+def require_billing_profile_or_credit(team: str, new_rate, action: str) -> None:
+	"""Refuse `action` until the billing profile is complete, unless credits fund it.
+
+	`new_rate` is the monthly run-rate `action` adds; None is never funded.
+	"""
+	from central.billing.payments.settlement import wallet_funds
+
+	if wallet_funds(team, new_rate):
+		return
+	require_billing_profile(team, action)
 
 
 class BillingProfile(Document):
@@ -27,6 +96,21 @@ class BillingProfile(Document):
 		self.validate_gstin()
 		self.validate_india_state()
 		self.lock_country_and_currency_after_invoicing()
+
+	def on_update(self):
+		self.release_held_invoices()
+
+	def release_held_invoices(self):
+		"""Settle anything held back for these details once they are on file.
+
+		On the doctype rather than one endpoint: the profile is completed from the
+		dashboard, from the bench's own billing tab and from Desk, and an invoice
+		stuck for a missing legal name must not depend on which door it came through.
+		"""
+		from central.billing.revenue.invoicing.run import release_held_drafts
+
+		if is_complete(self.team):
+			release_held_drafts(self.team)
 
 	def lock_country_and_currency_after_invoicing(self):
 		"""Freeze country and currency once the team has been invoiced.

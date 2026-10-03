@@ -4,17 +4,12 @@ import { API, method } from '@/api/methods'
 import { useBillingOverview } from '@/composables/useBillingOverview'
 import { useSession } from '@/composables/useSession'
 import { whenTeamReady } from '@/composables/useTeamScope'
-import { errorToast, successToast } from '@/lib/toast'
+import { reportError, successToast } from '@/lib/feedback'
 import type {
 	PayingForItem,
 	ServiceRow,
 	SubscriptionRow,
 } from '@/types/billing'
-
-// Servers + team-level metered services as one ranked list, and the two verbs
-// that act on them. A module singleton so the Overview card and its tray read the
-// same rows and share one in-flight mutation — the card shows the first few, the
-// tray shows all of them, and neither should be able to disagree about a total.
 
 const { activeTeam } = useSession()
 
@@ -39,9 +34,11 @@ const resume = useCall<unknown, { subscription: string }>({
 
 const busy = ref('')
 const pendingPause = ref<SubscriptionRow | null>(null)
+const pendingAssignProject = ref<SubscriptionRow | null>(null)
 
 export function usePayingFor() {
-	const { subscriptions, cycleCosts } = useBillingOverview()
+	const { subscriptions, cycleCosts, reloadSubscriptionGrouping } =
+		useBillingOverview()
 
 	const loading = computed(
 		() =>
@@ -104,7 +101,7 @@ export function usePayingFor() {
 			subscriptions.reload()
 			cycleCosts.reload()
 		} catch (e) {
-			errorToast(e)
+			reportError(e)
 		} finally {
 			busy.value = ''
 		}
@@ -117,6 +114,7 @@ export function usePayingFor() {
 		total,
 		busy,
 		pendingPause,
+		pendingAssignProject,
 		openServer,
 		askPause: (sub: SubscriptionRow) => {
 			pendingPause.value = sub
@@ -127,6 +125,10 @@ export function usePayingFor() {
 		},
 		onResume: (sub: SubscriptionRow) =>
 			runVerb(sub, resume, 'Billing resumed, server starting…'),
+		askAssignProject: (sub: SubscriptionRow) => {
+			pendingAssignProject.value = sub
+		},
+		onAssignedProject: () => reloadSubscriptionGrouping(),
 		reload: () => servicesCall.reload(),
 	}
 }

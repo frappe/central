@@ -16,6 +16,8 @@ type SidebarItem = {
 	class?: string
 	onClick?: () => void
 	component?: Component
+	/** Display combo, e.g. `Mod+K`. */
+	shortcut?: string
 }
 
 type SidebarSection = {
@@ -39,6 +41,7 @@ export const sidebarSections = computed<SidebarSection[]>(() => {
 					icon: 'lucide-search',
 					onClick: openSearch,
 					condition: !isMobile.value,
+					shortcut: 'Mod+K',
 				},
 				{
 					label: 'Notifications',
@@ -59,10 +62,23 @@ export const sidebarSections = computed<SidebarSection[]>(() => {
 					condition: canViewServers.value,
 				},
 				{
-					label: 'Services',
-					icon: 'lucide-blocks',
-					to: '/addons',
-					condition: features.addons && canViewServices.value,
+					label: 'Snapshots',
+					icon: 'lucide-camera',
+					to: '/servers/snapshots',
+					condition: canViewServers.value,
+				},
+				{
+					label: 'SSH Keys',
+					icon: 'lucide-key-round',
+					to: '/servers/ssh-keys',
+					condition: canViewServers.value,
+				},
+				{
+					label: 'Object storage',
+					icon: 'lucide-archive',
+					to: '/object-storage',
+					condition:
+						features.addons && features.storage && canViewServices.value,
 				},
 				// The sent-invitations page (/team/invitations) still exists but has
 				// no sidebar entry — pending invites are managed from the Team page.

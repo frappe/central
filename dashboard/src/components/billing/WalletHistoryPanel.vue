@@ -6,8 +6,8 @@ import TopupDialog from '@/components/TopupDialog.vue'
 import { useBillingOverview } from '@/composables/useBillingOverview'
 import { useBillingSetup } from '@/composables/useBillingSetup'
 import { useCapabilities } from '@/composables/useCapabilities'
+import { infoToast } from '@/lib/feedback'
 import { money, signedMoney } from '@/lib/format'
-import { infoToast } from '@/lib/toast'
 import type { CreditLedgerEntry } from '@/types/billing'
 
 // Wallet history — a docked side panel (like the invoice detail tray), opened
@@ -46,33 +46,34 @@ function isCredit(entry: CreditLedgerEntry): boolean {
 		title="Wallet history"
 		:subtitle="`Balance ${money(balance, currency)}`"
 	>
-		<!-- Auto-recharge — the Switch's own label prop, so clicking the text
-           toggles it too (the label is wired to the control, not beside it). -->
-		<div class="border-b border-outline-gray-1 px-4 pb-3 pt-1.5">
+		<template #actions>
 			<Switch
+				class="mr-1"
 				label="Auto-recharge"
 				:model-value="autoRecharge"
 				:disabled="!canManageBilling"
 				@update:model-value="onAutoRecharge"
 			/>
-		</div>
+		</template>
 
 		<!-- Ledger -->
 		<div class="min-h-0 flex-1 overflow-y-auto">
-			<div v-if="ledger.loading && !ledger.data" class="space-y-3 p-4">
-				<LoadingText :lines="5" />
-			</div>
+			<LoadingText
+				v-if="ledger.loading && !ledger.data"
+				:lines="5"
+				class="p-4"
+			/>
 			<div
 				v-else-if="!ledger.data?.length"
 				class="px-4 py-12 text-center text-p-sm text-ink-gray-5"
 			>
 				No credit activity yet.
 			</div>
-			<ul v-else class="divide-y divide-outline-gray-1">
+			<ul v-else class="divide-y divide-outline-gray-1 px-4">
 				<li
 					v-for="(e, idx) in ledger.data"
 					:key="idx"
-					class="flex items-center gap-3 px-4 py-3"
+					class="flex items-center gap-3 py-3"
 				>
 					<span
 						class="grid size-8 shrink-0 place-items-center rounded-full"
@@ -109,7 +110,6 @@ function isCredit(entry: CreditLedgerEntry): boolean {
 		<template v-if="canManageBilling" #footer>
 			<Button
 				variant="solid"
-				theme="gray"
 				label="Add credit"
 				class="w-full"
 				@click="onAddCredit"

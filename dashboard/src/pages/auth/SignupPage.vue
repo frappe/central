@@ -1,37 +1,30 @@
 <script setup lang="ts">
 import { Button, ErrorMessage } from 'frappe-ui'
-import { computed, ref } from 'vue'
-import { type LocationQueryRaw, useRoute, useRouter } from 'vue-router'
+import { ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import AuthShell from '@/components/auth/AuthShell.vue'
-import SocialLoginButtons from '@/components/auth/SocialLoginButtons.vue'
+import TermsNotice from '@/components/auth/TermsNotice.vue'
 import ValidatedFormControl from '@/components/common/formComponents/ValidatedFormControl.vue'
-import { useAuth } from '@/composables/useAuth'
+import { useEmailSignIn } from '@/composables/useEmailSignIn'
 import {
 	emailError,
 	frappeErrorMessage,
-	postFrappe,
+	queryString,
 	requiredError,
 } from '@/lib/auth'
+import { carriedQuery } from '@/lib/authRedirect'
 
 const route = useRoute()
 const router = useRouter()
+const { sendCode } = useEmailSignIn()
+
 const fullName = ref('')
-const email = ref('')
+const email = ref(queryString(route.query.email))
 const submitted = ref(false)
 const loading = ref(false)
 const error = ref('')
 
-const { providerLogins } = useAuth()
-const product = computed(() => queryString(route.query.product))
-const isProductSignup = computed(() => Boolean(product.value))
-const signupSteps = computed(() => (isProductSignup.value ? 4 : 2))
-const subheading = computed(() =>
-	isProductSignup.value
-		? 'A couple of minutes from here to naming your first site.'
-		: 'Verify your email to start managing Central instances.',
-)
-
-async function signup() {
+async function submit() {
 	submitted.value = true
 	error.value = ''
 	if (requiredError('Full name')(fullName.value) || emailError(email.value))
@@ -39,64 +32,29 @@ async function signup() {
 
 	loading.value = true
 	try {
-		const response = await postFrappe<[number, string]>(
-			'/api/method/central.api.auth.sign_up',
-			{
-				full_name: fullName.value.trim(),
-				email: email.value.trim(),
-			},
-		)
-		const [status, message] = response ?? [0, 'Unable to create your account.']
-		if (status !== 1) {
-			error.value = message
-			return
-		}
+		await sendCode(email.value.trim(), fullName.value.trim())
 		await router.push({
-			path: '/signup/verify',
-			query: verificationQuery(),
+			path: '/verify',
+			query: { ...carriedQuery(route.query), email: email.value.trim() },
 		})
 	} catch (exception) {
-		error.value = frappeErrorMessage(
-			exception,
-			'Unable to create your account.',
-		)
+		error.value = frappeErrorMessage(exception, 'Could not send a code.')
 	} finally {
 		loading.value = false
 	}
 }
-
-function verificationQuery(): LocationQueryRaw {
-	return {
-		email: email.value.trim(),
-		...(product.value ? { product: product.value } : {}),
-	}
-}
-
-function loginQuery(): LocationQueryRaw | undefined {
-	if (!isProductSignup.value) return undefined
-	return { 'redirect-to': '/dashboard/onboarding/site' }
-}
-
-function queryString(value: unknown): string {
-	if (typeof value === 'string') return value
-	if (Array.isArray(value)) return queryString(value[0])
-	return ''
-}
 </script>
 
 <template>
-	<AuthShell show-progress :steps="signupSteps">
-		<h1 class="text-2xl font-semibold text-ink-gray-9">Create your account</h1>
-		<p class="mt-1 text-p-base text-ink-gray-5">
-			{{ subheading }}
-		</p>
+	<AuthShell>
+		<h1 class="text-xl font-semibold text-ink-gray-9">Create your account</h1>
 
-		<form class="mt-8 space-y-4" novalidate @submit.prevent="signup">
+		<form class="mt-6 space-y-4" novalidate @submit.prevent="submit">
 			<ValidatedFormControl
 				v-model="fullName"
 				label="Full name"
 				autocomplete="name"
-				placeholder="Jane Doe"
+				placeholder="Your full name"
 				autofocus
 				:validator="requiredError('Full name')"
 				:submitted="submitted"
@@ -106,11 +64,10 @@ function queryString(value: unknown): string {
 				label="Work email"
 				type="email"
 				autocomplete="email"
-				placeholder="jane@company.com"
+				placeholder="name@company.com"
 				:validator="emailError"
 				:submitted="submitted"
 			/>
-
 			<ErrorMessage v-if="error" :message="error" />
 			<Button
 				type="submit"
@@ -123,16 +80,17 @@ function queryString(value: unknown): string {
 			</Button>
 		</form>
 
-		<SocialLoginButtons :providers="providerLogins" prefix="Continue with" />
-
-		<p class="mt-6 text-center text-p-sm text-ink-gray-5">
-			Already have an account?
-			<RouterLink
-				class="font-medium text-ink-gray-8 hover:text-ink-gray-9"
-				:to="{ path: '/login', query: loginQuery() }"
-			>
-				Sign in
-			</RouterLink>
-		</p>
+		<div class="mt-6 space-y-2 text-center text-p-sm text-ink-gray-5">
+			<p>
+				Already have an account?
+				<RouterLink
+					class="font-medium text-ink-gray-8 hover:underline"
+					:to="{ path: '/login', query: carriedQuery(route.query) }"
+				>
+					Sign in
+				</RouterLink>
+			</p>
+			<TermsNotice />
+		</div>
 	</AuthShell>
 </template>

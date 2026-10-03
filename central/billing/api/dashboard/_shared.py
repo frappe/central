@@ -13,6 +13,22 @@ from frappe import _
 
 from central.billing import authz
 from central.billing.catalog.subscriptions import team_active_segments
+from central.billing.doctype.billing_profile.billing_profile import (
+	get_missing_field_labels as _missing_profile_labels,
+)
+from central.billing.doctype.billing_profile.billing_profile import (
+	get_missing_fields as _missing_profile_fields,
+)
+from central.billing.doctype.billing_profile.billing_profile import (
+	get_team_currency as _team_currency,
+)
+from central.billing.doctype.billing_profile.billing_profile import (
+	is_complete as _profile_complete,
+)
+from central.billing.doctype.billing_profile.billing_profile import (
+	require_billing_profile,
+)
+from central.iam import can
 
 # Tier caps (max_spend) are stored in INR; convert to the team's billing currency
 # so a USD team sees a coherent cap-vs-spend comparison.
@@ -40,6 +56,14 @@ def _resolve_team(team: str | None, require: str = authz.VIEW) -> str:
 	return team
 
 
+def _resolve_resize_team(team: str | None, server: str | None) -> str:
+	"""The team for a read that prices a resize of `server`. A member who may resize the
+	server may see what the resize costs; anyone else needs `billing:view`."""
+	if team and server and can(frappe.session.user, team, "server:resize", server=server):
+		return team
+	return _resolve_team(team)
+
+
 def _require_view(team: str) -> str:
 	"""Gate a read endpoint whose team is derived from a record (e.g. an invoice)."""
 	authz.require_billing_view(team)
@@ -52,6 +76,19 @@ def _require_manage(team: str) -> str:
 	return team
 
 
+def _project_titles(names) -> dict:
+	"""name -> title for a batch of Project ids, one query regardless of how many
+	rows reference them (list_subscriptions resolves its `project` link to a
+	display title this way instead of one lookup per row)."""
+	names = [n for n in set(names) if n]
+	if not names:
+		return {}
+	return {
+		p.name: p.title
+		for p in frappe.get_all("Project", filters={"name": ["in", names]}, fields=["name", "title"])
+	}
+
+
 def _team_resource_count(team: str) -> int:
 	"""How many resources the team is running: its open billing segments (ADR 0010),
 	preset and composed alike (#86)."""
@@ -62,39 +99,6 @@ def _team_clusters(team: str) -> list[str]:
 	return sorted({s.cluster for s in team_active_segments(team) if s.cluster})
 
 
-def _team_currency(team: str) -> str:
-	"""A team bills in a single currency: the one set on its Billing Profile.
-
-	Falls back to an open-segment currency (legacy teams whose profile predates the
-	currency field) then INR, so reads never break before a profile exists."""
-	seg_currency = next((s.currency for s in team_active_segments(team) if s.currency), None)
-	return frappe.db.get_value("Billing Profile", team, "currency") or seg_currency or "INR"
-
-
-# A team must complete its billing profile — currency + legal name + a billing
-# address — before any money moves (top-up, buy credits, add a payment method).
-# Currency is the load-bearing field: wallet, payment methods and invoices are
-# all denominated in it, so it must be chosen first and then held fixed.
-#
-# State and pincode are deliberately NOT required: they're irrelevant for foreign
-# customers, and for India the state is only enforced when a GSTIN is entered
-# (see BillingProfile.validate_india_state).
-_REQUIRED_PROFILE_FIELDS = (
-	"currency",
-	"legal_name",
-	"address_line1",
-	"city",
-	"country",
-)
-_PROFILE_FIELD_LABELS = {
-	"currency": "currency",
-	"legal_name": "legal name",
-	"address_line1": "address line 1",
-	"city": "city",
-	"country": "country",
-}
-
-
 def currency_for_country(country: str | None) -> str:
 	"""Billing currency follows the customer's country: India bills in INR, every
 	other country in USD. Derived, not chosen — so a customer can't pick a currency
@@ -102,39 +106,6 @@ def currency_for_country(country: str | None) -> str:
 	from central.billing.india_gst import INDIA
 
 	return "INR" if (country or "").strip() == INDIA else "USD"
-
-
-def _missing_profile_fields(team: str) -> list[str]:
-	"""Required billing-profile fields the team has not filled in yet."""
-	if not frappe.db.exists("Billing Profile", team):
-		return list(_REQUIRED_PROFILE_FIELDS)
-	doc = frappe.get_doc("Billing Profile", team)
-	return [f for f in _REQUIRED_PROFILE_FIELDS if not str(doc.get(f) or "").strip()]
-
-
-def _profile_complete(team: str) -> bool:
-	return not _missing_profile_fields(team)
-
-
-def _missing_profile_labels(team: str) -> list[str]:
-	return [_PROFILE_FIELD_LABELS.get(field, field) for field in _missing_profile_fields(team)]
-
-
-def require_billing_profile(team: str, action: str):
-	"""Refuse `action` until the team's billing profile is complete.
-
-	Server-side backstop for anything that needs billing set up first (money
-	movement, provisioning a billable resource). The dashboard also blocks these;
-	this guarantees it can't be bypassed. `action` completes the sentence
-	"… before you can {action}"."""
-	missing = _missing_profile_labels(team)
-	if missing:
-		frappe.throw(
-			_("Complete your billing profile before you can {0}. Missing: {1}.").format(
-				action, ", ".join(missing)
-			),
-			frappe.ValidationError,
-		)
 
 
 def _require_billing_setup(team: str):
@@ -258,6 +229,11 @@ def _describe_line(team: str, li) -> dict:
 		# A projected line knows whether its quantity was observed or inferred; a
 		# stored line item is always a fact by the time it reaches an invoice.
 		"basis": li.get("basis") or MEASURED,
+		# Which Project this resource was tagged into, if any — stamped at generation
+		# time on a real Invoice Line Item, or by the same tagging step on a live
+		# forecast line (generate._tag_projects), so both read identically here.
+		"project": li.get("project"),
+		"project_title": li.get("project_title"),
 	}
 	if li.resource_type == "bundle":
 		title = frappe.db.get_value("Plan", li.plan, "title") if li.plan else None
@@ -267,7 +243,7 @@ def _describe_line(team: str, li) -> dict:
 		# sets of lines, and on the same plan they are otherwise indistinguishable —
 		# the plan title alone says what was billed but never what it was billed for.
 		row["server"] = _server_name(li.subscription_resource)
-		# The machine's technical id — what an Asset is actually named by, and what
+		# The machine's technical id — what a Virtual Machine is actually named by, and what
 		# support and the cluster logs know it as. A friendly name is optional and
 		# may be absent or duplicated; this never is.
 		row["server_id"] = li.subscription_resource
@@ -311,7 +287,7 @@ def _server_name(resource_id: str | None) -> str | None:
 	"""The server's own name, falling back to the id metering keys it by."""
 	if not resource_id:
 		return None
-	return frappe.db.get_value("Asset", resource_id, "title") or resource_id
+	return frappe.db.get_value("Virtual Machine", resource_id, "title") or resource_id
 
 
 def _billed_window(li) -> str | None:

@@ -15,6 +15,7 @@ from central.billing.api.dashboard._shared import (
 	_enabled_gateway_for_currency,
 	_gateway_for_currency,
 	_paypal_gateway_for_currency,
+	_project_titles,
 	_require_billing_setup,
 	_require_manage,
 	_require_view,
@@ -131,28 +132,30 @@ def list_subscriptions(team: str | None = None) -> list[dict]:
 			"pricing_mode",
 			"sub_category",
 			"cluster",
-			"asset_id",
+			"server_id",
 			"service_subject",
 			"billing_cycle",
 			"account_standing",
 			"start_date",
 			"enabled",
+			"project",
 		],
 		order_by="creation desc",
 	)
 	currency = _team_currency(team)
-	# Batch the asset lookup so a team with N subscriptions costs one query, not N.
-	asset_ids = list({r.asset_id for r in rows if r.asset_id})
-	assets = (
+	project_titles = _project_titles(r.project for r in rows)
+	# Batch the server lookup so a team with N subscriptions costs one query, not N.
+	server_ids = list({r.server_id for r in rows if r.server_id})
+	servers = (
 		{
 			a.name: a
 			for a in frappe.get_all(
-				"Asset",
-				filters={"name": ["in", asset_ids]},
+				"Virtual Machine",
+				filters={"name": ["in", server_ids]},
 				fields=["name", "title", "gateway_url", "status"],
 			)
 		}
-		if asset_ids
+		if server_ids
 		else {}
 	)
 	# A composed config carries no Plan: its price is the locked rate of its open
@@ -170,7 +173,7 @@ def list_subscriptions(team: str | None = None) -> list[dict]:
 	rate_cache: dict[tuple, float | None] = {}
 	out = []
 	for r in rows:
-		asset = assets.get(r.asset_id) or frappe._dict()
+		server = servers.get(r.server_id) or frappe._dict()
 		if r.pricing_mode == "Composed":
 			plan_title = _composed_label(r.sub_category, includes_by_sub.get(r.name, []))
 			monthly_rate = segment_rate.get(r.name)
@@ -189,18 +192,18 @@ def list_subscriptions(team: str | None = None) -> list[dict]:
 		out.append(
 			{
 				"name": r.name,
-				# What metering and the cycle-cost read key on: an Asset-backed
-				# subscription by its asset, a team-level service by its synthesized
+				# What metering and the cycle-cost read key on: a Virtual Machine-backed
+				# subscription by its server, a team-level service by its synthesized
 				# subject (ADR 0013). Lets the card join a row to what it cost.
-				"resource_id": r.asset_id or r.service_subject,
-				"server": asset.title or None,
-				# Asset-backed = a real server; a subscription without one is a
+				"resource_id": r.server_id or r.service_subject,
+				"server": server.title or None,
+				# VirtualMachine-backed = a real server; a subscription without one is a
 				# team-level metered service (the dashboard lists those separately).
-				"has_server": bool(r.asset_id),
-				"gateway_url": asset.gateway_url or None,
+				"has_server": bool(r.server_id),
+				"gateway_url": server.gateway_url or None,
 				# The VM's operational state (Running/Stopped/Terminated/…) — the list shows
 				# it distinctly from the billing-paused flag, and gates resume on it.
-				"status": asset.status or None,
+				"status": server.status or None,
 				"plan": r.plan,
 				"plan_title": plan_title,
 				"cluster": r.cluster,
@@ -210,6 +213,8 @@ def list_subscriptions(team: str | None = None) -> list[dict]:
 				"enabled": r.enabled,
 				"monthly_rate": monthly_rate,
 				"currency": currency,
+				"project": r.project,
+				"project_title": project_titles.get(r.project),
 			}
 		)
 	return out
@@ -271,11 +276,24 @@ def resume_subscription(subscription: str, team: str | None = None) -> dict:
 	return {"name": doc.name, "enabled": doc.enabled}
 
 
+@frappe.whitelist(methods=["POST"])
+def set_subscription_project(subscription: str, project: str | None = None) -> dict:
+	"""Tag a subscription into a Project, or clear it (`project=None`) back to
+	untagged. `Subscription.validate_project` is the authority on same-team /
+	enabled / spending-limit headroom — this only gates who may call it."""
+	owner = frappe.db.get_value("Subscription", subscription, "team")
+	_require_manage(owner)
+	doc = frappe.get_doc("Subscription", subscription)
+	doc.project = project or None
+	doc.save(ignore_permissions=True)
+	return {"name": doc.name, "project": doc.project}
+
+
 @frappe.whitelist()
 def list_invoices(team: str | None = None) -> list[dict]:
 	"""Invoice history — summary only (no internal/admin fields)."""
 	team = _resolve_team(team)
-	return frappe.get_all(
+	rows = frappe.get_all(
 		"Invoice",
 		filters={"team": team},
 		fields=[
@@ -291,6 +309,7 @@ def list_invoices(team: str | None = None) -> list[dict]:
 		],
 		order_by="period_start desc",
 	)
+	return rows
 
 
 @frappe.whitelist()

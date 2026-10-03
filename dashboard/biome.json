@@ -1,6 +1,9 @@
 {
 	"$schema": "https://biomejs.dev/schemas/2.5.6/schema.json",
 	"root": false,
+	"files": {
+		"includes": ["src/**/*.ts", "src/**/*.vue"]
+	},
 	"formatter": {
 		"enabled": true,
 		"formatWithErrors": false,
@@ -14,7 +17,22 @@
 		"expand": "auto",
 		"useEditorconfig": true
 	},
-	"linter": { "rules": { "preset": "none" } },
+	"linter": {
+		"enabled": true,
+		"rules": {
+			"preset": "none",
+			"correctness": {
+				"noUnreachable": "error",
+				"noUnusedImports": "error",
+				"noUnusedVariables": "error"
+			},
+			"suspicious": {
+				"noDebugger": "error",
+				"noDoubleEquals": "error",
+				"noExplicitAny": "error"
+			}
+		}
+	},
 	"javascript": {
 		"formatter": {
 			"jsxQuoteStyle": "single",

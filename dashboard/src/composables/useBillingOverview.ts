@@ -10,6 +10,7 @@ import type {
 	Forecast,
 	NextPayment,
 	PaymentMethod,
+	Project,
 	SubscriptionRow,
 	TeamOverview,
 } from '@/types/billing'
@@ -63,6 +64,12 @@ const subscriptionsCall = useCall<SubscriptionRow[], { team: string }>({
 	immediate: false,
 	refetch: true,
 })
+const projectsCall = useCall<Project[], { team: string }>({
+	url: method(API.projects),
+	params,
+	immediate: false,
+	refetch: true,
+})
 
 const nextPaymentCall = useCall<NextPayment, { team: string }>({
 	url: method(API.nextPayment),
@@ -85,6 +92,7 @@ whenTeamReady(() => {
 	methodsCall.reload()
 	profileCall.reload()
 	subscriptionsCall.reload()
+	projectsCall.reload()
 	nextPaymentCall.reload()
 	cycleCostsCall.reload()
 })
@@ -98,6 +106,7 @@ export function useBillingOverview() {
 		methods: methodsCall,
 		profile: profileCall,
 		subscriptions: subscriptionsCall,
+		projects: projectsCall,
 		nextPayment: nextPaymentCall,
 		cycleCosts: cycleCostsCall,
 		// The team's billing currency. The Billing Profile is the source of truth
@@ -131,6 +140,15 @@ export function useBillingOverview() {
 		reloadProfile(): void {
 			profileCall.reload()
 			overviewCall.reload()
+		},
+		reloadProjects: () => projectsCall.reload(),
+		// Tagging a subscription into/out of a project changes its cost-breakdown
+		// grouping — both reads carry project state (the subscription's badge, the
+		// project's resource_count/committed_run_rate), so a retag refreshes both
+		// at once.
+		reloadSubscriptionGrouping(): void {
+			subscriptionsCall.reload()
+			projectsCall.reload()
 		},
 	}
 }

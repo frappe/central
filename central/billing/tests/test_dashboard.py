@@ -799,7 +799,6 @@ class TestWriteEndpointsRejectGet(IntegrationTestCase):
 			invoices.confirm_topup,
 			methods.initiate_card_setup,
 			methods.confirm_card,
-			methods.add_demo_card,
 			methods.setup_payment_method_order,
 			methods.confirm_payment_method_order,
 			methods.remove_payment_method,

@@ -41,7 +41,7 @@ class CohortTestBase(IntegrationTestCase):
 			for sub in frappe.get_all("Subscription", {"team": team}, pluck="name"):
 				frappe.db.delete("Subscription Change", {"subscription": sub})
 				frappe.db.delete("Subscription", {"name": sub})
-			frappe.db.delete("Asset", {"team": team})
+			frappe.db.delete("Virtual Machine", {"team": team})
 			frappe.db.delete("Invoice", {"team": team})
 		frappe.db.commit()
 
@@ -192,7 +192,11 @@ class TestTheBatch(CohortTestBase):
 		)
 		self.assertEqual(len(rows), cohort.count({"currency": "INR"}))
 		self.assertTrue(all(r.currency == "INR" for r in rows))
-		self.assertTrue(all(r.projected_total for r in rows))
+		# Only this test's teams are guaranteed a subscription; a shared site holds other
+		# INR teams that legitimately project zero. Scope the non-zero check to our own.
+		mine = [r for r in rows if r.team in self.teams]
+		self.assertEqual(len(mine), 2)
+		self.assertTrue(all(r.projected_total for r in mine))
 
 	def test_the_batch_reports_completion(self):
 		result = self._batch()

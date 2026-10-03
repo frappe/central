@@ -1,11 +1,4 @@
-export interface ProviderLogin {
-	name: string
-	label: string
-	icon: string
-	auth_url: string
-}
-
-/** central.api.servers.refresh_assets response (the reconcile result). */
+/** central.api.servers.refresh_servers response (the reconcile result). */
 export interface RefreshResponse {
 	synced: string[]
 	/** Atlas instances that couldn't be reached this pass; their mirror is stale. */
@@ -13,12 +6,20 @@ export interface RefreshResponse {
 }
 
 /** central.api.identity.my_teams item. */
+/** A console onboarding step that a team stores. Mirrors Team Onboarding Step.step. */
+export type OnboardingStepKey = 'invite' | 'billing' | 'start'
+
 export interface Team {
 	name: string
 	label: string
 	/** Public file URL of the team's logo, or null for the initial-letter tint. */
 	logo: string | null
 	owner: string | null
+	role: string | null
+	members: number
+	created: string | null
+	/** The steps the caller still has to answer as owner. Empty for a team they do not own. */
+	onboarding: OnboardingStepKey[]
 }
 
 export type MemberStatus = 'Active' | 'Suspended'
@@ -58,7 +59,7 @@ export interface TeamRoleRow {
 	capabilities: string[]
 }
 
-/** central.api.teams.list_capabilities item — the palette of authorization atoms. */
+/** Capability document used by the role builder. */
 export interface CapabilityInfo {
 	name: string
 	plane: CapabilityPlane
@@ -69,16 +70,16 @@ export interface CapabilityInfo {
 /** central.api.servers.registry response. */
 export interface TeamRegistry {
 	team: string
-	assets: {
+	servers: {
 		name: string
 		resource_id: string
 		title: string
-		cluster: string
+		region: string
 	}[]
 	sites: { name: string; subdomain: string; region: string }[]
 }
 
-/** central.api.teams.list_team_invitations item (the manager's view). */
+/** Team Invitation document shown in the manager view. */
 export interface InvitationRow {
 	name: string
 	email: string
@@ -102,6 +103,18 @@ export interface MyInvitation {
 	invited_by: string | null
 	expires_on: string | null
 	creation: string
+}
+
+/** An invitation as the join page reads it by its emailed token. */
+export interface InvitationSummary {
+	name: string
+	email: string
+	status: 'Pending' | 'Accepted' | 'Expired' | 'Revoked' | 'Declined'
+	team_name: string
+	invited_by: string
+	role: string
+	expires_on: string
+	has_account: boolean
 }
 
 /** One bundled resource in a plan (central Plan Includes). */
@@ -130,6 +143,7 @@ export interface Plan {
  *  sub-category — keys in canonical order, rows cheapest-first, unset sub-category
  *  folded into "General"; a forbidden cluster yields an empty map. */
 export interface ProvisionablePlans {
+	image_id?: string
 	team: string
 	cluster: string | null
 	currency: string
@@ -157,7 +171,7 @@ export interface LargestVm {
 
 /** Live-capacity summary for the create-server menu (get_eligible_plans). */
 export interface Capacity {
-	/** Whether live capacity narrowed this menu (Atlas Instance.validate_capacity). */
+	/** Whether live capacity narrowed this menu. Capacity is never gated today. */
 	gated: boolean
 	/** Whether the region can seat any new VM right now — False → show "region is full". */
 	available: boolean

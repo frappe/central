@@ -7,12 +7,19 @@ import { useCapabilities } from '@/composables/useCapabilities'
 import { usePayingFor } from '@/composables/usePayingFor'
 import { money } from '@/lib/format'
 
-// Everything being billed this cycle, in full. The card keeps the top few; this
-// is where the long tail goes, so the card never grows its own scrollbar.
 const open = defineModel<boolean>('open', { default: false })
 const { canManageBilling } = useCapabilities()
-const { rows, loading, currency, total, busy, openServer, askPause, onResume } =
-	usePayingFor()
+const {
+	rows,
+	loading,
+	currency,
+	total,
+	busy,
+	openServer,
+	askPause,
+	onResume,
+	askAssignProject,
+} = usePayingFor()
 
 const subtitle = computed(() =>
 	rows.value.length
@@ -22,14 +29,8 @@ const subtitle = computed(() =>
 </script>
 
 <template>
-	<SidePanel
-		v-model:open="open"
-		title="What you're paying for"
-		:subtitle="subtitle"
-	>
-		<div v-if="loading" class="space-y-3 p-4">
-			<LoadingText :lines="6" />
-		</div>
+	<SidePanel v-model:open="open" title="Subscriptions" :subtitle="subtitle">
+		<LoadingText v-if="loading" :lines="6" class="p-4" />
 		<div v-else class="divide-y divide-outline-gray-1 px-4">
 			<PayingForRow
 				v-for="row in rows"
@@ -41,6 +42,7 @@ const subtitle = computed(() =>
 				@open="openServer"
 				@pause="askPause"
 				@resume="onResume"
+				@assign-project="askAssignProject"
 			/>
 		</div>
 	</SidePanel>

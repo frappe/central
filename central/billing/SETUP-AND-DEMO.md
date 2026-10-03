@@ -1,6 +1,6 @@
 # Billing — Setup & Demo Runbook (empty site → working billing)
 
-> How to stand up billing on a **fresh `central.local` site** and demonstrate it, as the
+> How to stand up billing on a **fresh `central.localhost` site** and demonstrate it, as the
 > admin, from scratch. Two paths:
 >
 > - **Path A — Seed** (recommended for a demo): one command builds a rich, self-consistent
@@ -9,74 +9,47 @@
 >   the way a real operator onboards a fresh deployment.
 >
 > Companion docs: [`ARCHITECTURE.md`](./ARCHITECTURE.md) (how the code is wired),
-> `../../spec/README.md` (specs). Paths below are relative to `central/billing/`; bench
-> commands run from the bench root (`cenral-bench/`).
+> [`../../spec/README.md`](../../spec/README.md) (specs). Paths below are relative to `central/billing/`. Run bench commands from the bench root.
 
 ---
 
 ## 0. Prerequisites (both paths)
 
-1. **A bench + site.** App installed on the site (this runs `after_install` →
-   `catalog.taxonomy_setup.ensure_catalog_masters`, which seeds the catalog taxonomy
-   masters — Plan Category / Sub-Category / Resource Type — that nothing else can run
-   without).
-   ```bash
-   bench new-site central.local
-   bench --site central.local install-app central
-   ```
-2. **Gateway test keys** in `sites/common_site_config.json` (never commit these; the
-   adapters read them via `frappe.conf`):
-   ```json
-   {
-     "stripe_secret_key": "sk_test_…",  "stripe_publishable_key": "pk_test_…",
-     "razorpay_key_id": "rzp_test_…",   "razorpay_key_secret": "…"
-   }
-   ```
-   The **seed** path uses placeholder keys (`skip_credential_validation`) and runs offline;
-   only real charges / top-ups / e2e need live test keys.
-3. **Bench running** (node ≥ 24 on PATH or honcho tears the bench down):
-   ```bash
-   PATH="$HOME/.nvm/versions/node/v24.16.0/bin:$PATH" bench start
-   ```
-4. Build the dashboard SPA if you'll click through the UI: `cd apps/central && yarn build`.
+Set up the bench, the site, and the gateway test keys as the [README](../../README.md) describes. The seed path uses placeholder keys (`skip_credential_validation`) and runs offline. Only real charges, top-ups, and e2e need live test keys.
+
+The monthly billing run uses its own `billing` queue. Declare the queue in `sites/common_site_config.json`:
+
+```json
+"workers": {"billing": {"timeout": 3000, "background_workers": 2}}
+```
+
+Then run a worker for it from the bench root:
+
+```bash
+pilot frappe worker --queue billing
+```
 
 ---
 
 ## Path A — Seed a demo in one command
 
 ```bash
-# Rich, full-spectrum dataset (10 teams: tiers t0–t3, INR/EUR/USD, every collection
-# mode + standing — Active, Grandfathered, Overdue, Suspended, Trial, Refund, Credits):
-bench --site central.local execute central.billing.demo.demo_scenarios.seed_all
-
-# …or the compact feature-coverage set (each settlement path exercised once,
-# one 24-instance fleet team to fill the invoice line-item table):
-bench --site central.local execute central.billing.demo.demo_scenarios.seed_demo
+# Full-spectrum dataset (10 teams: tiers t0–t3, five USD and five INR, every
+# collection mode and terminal state). Wipes all billing data first:
+pilot frappe --site central.localhost execute central.billing.demo.demo_scenarios.seed
 
 # Sanity counts proving each criterion is covered:
-bench --site central.local execute central.billing.demo.demo_scenarios.summary
+pilot frappe --site central.localhost execute central.billing.demo.demo_scenarios.summary
 ```
 
-What `seed_all` builds (in order): trust tiers → catalog (Atlas clusters, Plans, rates,
-the metered Bandwidth Overage) → gateways (Stripe per-currency, Razorpay INR, PayPal) →
-Ed25519 signing key → then per team: members, billing profile, tier, tax, subscriptions,
-historical Paid invoices, the current (June) invoice in the team's terminal state.
+What `seed` builds (in order): trust tiers → catalog (Regions `in-bengaluru`, `in-mumbai`, `me-dubai`; VM plans through the Plan Configurator; the component rate card; the metered services AI Tokens, Email and PDF) → gateways (one Stripe row for INR and USD, Razorpay INR, PayPal USD) → Ed25519 signing key → then per team: members, billing profile, tier, tax, subscriptions, historical Paid invoices, and the current-month invoice in the team's terminal state. The current month is the month the seed runs in (`ANCHOR` is its first day). `seed_all` is a back-compat alias for `seed`.
 
 The seed is **idempotent + destructive**: it `_wipe_all()`s billing data first, so re-run
 freely. Administrator is a System Manager and lands on a team with data — just open
-`http://central.local:8011` and go to the billing dashboard.
+`http://central.localhost:8000` and go to the billing dashboard.
 
 ### What each demo team demonstrates
-| Team | Currency | Tier | State | Shows |
-|---|---|---|---|---|
-| acme-corp | INR | t3 | Grandfathered | price-lock / locked rate, e-mandate > ₹15k → Action Required |
-| globex / initech | EUR / USD | t3 / t2 | Active | standard card postpaid, multi-region fleet |
-| umbrella / wayne-ent | INR | t2 | Active | Manual Checkout / e-mandate pre-debit ≤ ₹15k |
-| stark-ind | INR | t1 | Overdue | dunning retry trail → past_due |
-| cyberdyne | EUR | t1 | Suspended | suspension end-state |
-| hooli | INR | t1 | Credits | prepaid wallet settlement |
-| soylent | USD | t1 | Refund | refund to wallet / source |
-| piedpiper | INR | t0 | Trial | entry-tier free-credits model |
+See [demo/README.md, The ten teams](./demo/README.md#the-ten-teams).
 
 ---
 
@@ -99,11 +72,8 @@ flowchart TD
 ```
 
 ### Step 1 · Payment Gateways
-Create a **Payment Gateway** per rail. Required: `title`, `adapter_key`
-(`Stripe` / `Razorpay` / `Paypal`), the secret fields, `is_enabled`, and a **currencies**
-child row with `is_default` set for the currency it serves. Razorpay needs
-`supports_mandates` for UPI Autopay / e-mandate.
-- **UI:** Desk → *Payment Gateway* → New (one per currency for Stripe; one INR Razorpay).
+Each adapter has one **Payment Gateway** row. The row is named after its `adapter_key` (`Stripe` / `Razorpay` / `Paypal`) and has no title field. `gateways.setup.ensure_gateway_records` seeds one disabled, blank row per adapter on install and migrate. To configure a gateway, open its row, fill in `api_key`, `api_secret` and `webhook_secret`, add a **currencies** child row per currency it serves (set `is_default` for the currency it is the default for), and set `is_enabled`. Razorpay needs `supports_mandates` for UPI Autopay / e-mandate.
+- **UI:** Desk → *Payment Gateway* → open the adapter's row (one row per adapter; one Stripe row can serve several currencies).
 - **Admin API:** `api/admin/gateways` → `get_gateways`, `set_default_gateway`,
   `get_effective_routing` (which gateway wins for a currency).
 - Routing rule: `gateways/registry.resolve_gateway_for_currency` picks the default-enabled
@@ -128,18 +98,16 @@ currency** (rates live in standalone **Catalog Rate**, not on the Plan).
   — `revenue/tax.resolve_tax`. India GST codes live in `india_gst.py`.
 
 ### Step 4 · Customer Team + Billing Profile
-Money movement is **gated on a complete Billing Profile** — its `currency` is the source of
-truth (gateway-backed, locks after first activity).
+Charging a card needs a **complete Billing Profile**. Its `currency` is the source of truth (gateway-backed, locks after first activity). Credit can fund server creation without a complete profile. The team's invoices are then held at Draft until the billing details arrive. A daily job reminds the team, and operators get an alert after `billing_details_grace_days`.
 ```bash
-bench --site central.local execute central.billing.payments.profile.create_or_update_billing_profile \
+pilot frappe --site central.localhost execute central.billing.payments.profile.create_or_update_billing_profile \
   --kwargs '{"team": "<TEAM>"}'
 ```
 - **UI:** the customer SPA first-run wizard (`api/dashboard/account.save_billing_profile`).
 - Set currency + country (GST state for INR) before any charge.
 
 ### Step 5 · Payment method or wallet funding
-- **Card:** `api/dashboard/methods.initiate_card_setup` → `confirm_card` (real Stripe
-  SetupIntent), or `add_demo_card` for an offline demo.
+- **Card:** `api/dashboard/methods.initiate_card_setup` → `confirm_card` (real Stripe SetupIntent).
 - **Wallet top-up:** `api/dashboard/invoices.create_topup_order` → `confirm_topup`, or
   programmatically `revenue.credits.purchase(team, amount, currency, …)` → appends a
   **Credit Ledger Entry** and updates the **Credit Wallet**.
@@ -148,24 +116,21 @@ bench --site central.local execute central.billing.payments.profile.create_or_up
 
 ### Step 6 · Provision a subscription (a "server")
 ```bash
-bench --site central.local execute central.billing.catalog.subscriptions.provision_subscription \
-  --kwargs '{"team":"<TEAM>","cluster":"in-mumbai","plan":"plan-2vcpu","billing_cycle":"Monthly"}'
+pilot frappe --site central.localhost execute central.billing.catalog.subscriptions.provision_subscription \
+  --kwargs '{"team":"<TEAM>","cluster":"in-mumbai","plan":"<PLAN>","billing_cycle":"Monthly"}'
 ```
-Creates the **Subscription** (intent) + first **Subscription Change** row carrying the
-`locked_rate`, and provisions the Asset via cluster-manager. Composed configs:
-`provision_composed_subscription(team, cluster, includes, sub_category, …)` or the UI
-`api/dashboard/catalog.provision_composed_config`.
+Creates the **Subscription** (intent) and its first **Subscription Change** row carrying the `locked_rate`. It does not create a server: it mints a `res-<hash>` resource id. Pass a real Plan name for `<PLAN>`; Plans are hash-autonamed. Composed configs: `provision_composed_subscription(team, cluster, includes, sub_category, …)` or the UI `api/dashboard/catalog.provision_composed_config`.
+
+Real servers go through `central.api.servers.create_server` / `create_composed_server` → `central.resource_actions.submit_request`. The Virtual Machine controller creates the Subscription when the server reaches Running.
 
 ### Step 7 · Generate the invoice
-> Invoice generation runs on the scheduler as two ticks on the 1st (see
-> `ARCHITECTURE.md` §3), each fanning work out to workers. For a demo, drive it by hand —
-> the calls below are the same work without the queue.
+> Invoice generation runs monthly on the scheduler through `run_monthly_billing`, which drafts and collects inline (see `ARCHITECTURE.md` §3). For a demo, drive it by hand. The calls below do the same work.
 ```bash
 # One team, one period (in arrears):
-bench --site central.local execute central.billing.revenue.invoicing.generate_team_invoice \
+pilot frappe --site central.localhost execute central.billing.revenue.invoicing.generate_team_invoice \
   --kwargs '{"team":"<TEAM>","period_start":"2026-06-01","period_end":"2026-06-30"}'
 # …or all teams for the period (the draft phase, inline):
-bench --site central.local execute central.billing.revenue.invoicing.generate_draft_invoices \
+pilot frappe --site central.localhost execute central.billing.revenue.invoicing.generate_draft_invoices \
   --kwargs '{"period_start":"2026-06-01","period_end":"2026-06-30"}'
 ```
 Lines come from `invoicing/lines.compute_line_items` (day-weighted Subscription Change
@@ -174,9 +139,10 @@ segments) + metered overage + commitment discount + tax. Result: **Invoice (Draf
 ### Step 8 · Open & collect (settle)
 ```bash
 # The collect phase — runs the credits→card waterfall per draft:
-bench --site central.local execute central.billing.revenue.invoicing.open_drafts \
-  --kwargs '{"period_end":"2026-06-30"}'
+pilot frappe --site central.localhost execute central.billing.revenue.invoicing.open_drafts \
+  --kwargs '{"cutoff":"2026-06-30"}'
 ```
+A Billable draft for a team without billing details stays Draft (`held: billing_details`). It is settled when the team completes its Billing Profile.
 `open_and_collect` applies credits first, charges the card for the remainder, and flips
 Draft → Open → (on webhook) Paid. On a local bench you won't receive a live webhook — the
 e2e suite delivers it via `tests/e2e.py:deliver_webhook` from a real captured txn id; for a
@@ -186,7 +152,7 @@ manual demo, the seed path already shows Paid invoices.
 Leave an invoice unpaid and run the daily job to walk the Day 1/3/7 retries → past_due →
 suspend:
 ```bash
-bench --site central.local execute central.billing.revenue.dunning.run_dunning
+pilot frappe --site central.localhost execute central.billing.revenue.dunning.run_dunning
 ```
 
 ---
@@ -195,10 +161,10 @@ bench --site central.local execute central.billing.revenue.dunning.run_dunning
 
 ```bash
 # Re-seeding wipes billing data first, so just re-run the seed to reset:
-bench --site central.local execute central.billing.demo.demo_scenarios.seed_all
+pilot frappe --site central.localhost execute central.billing.demo.demo_scenarios.seed
 
 # Or wipe billing records only (leaves catalog/gateway config):
-bench --site central.local execute central.billing.demo._factory._wipe_all
+pilot frappe --site central.localhost execute central.billing.demo._factory._wipe_all
 ```
 
 For e2e isolation, each Playwright spec seeds + tears down its own sandbox via
@@ -212,9 +178,9 @@ For e2e isolation, each Playwright spec seeds + tears down its own sandbox via
 | Piece | Auto (on install/migrate) | Manual (admin) |
 |---|---|---|
 | Catalog taxonomy masters | ✅ `ensure_catalog_masters` | — |
-| Payment Gateways + keys | — | ✅ Desk / admin API + `common_site_config.json` |
+| Payment Gateways + keys | ✅ one disabled row per adapter (`ensure_gateway_records`) | ✅ Desk: fill keys and currencies, enable |
 | Plans + rates | — | ✅ Plan Configurator |
 | Trust tiers / Tax profiles | — | ✅ reference data |
 | Billing Profile (per team) | — | ✅ wizard (gates money) |
-| Invoice generation | ✅ two cron ticks on the 1st (draft, then collect) | ✅ `run_monthly_billing` / `generate_*` / `open_drafts` |
+| Invoice generation | ✅ monthly `run_monthly_billing` (draft, then collect, inline) | ✅ `run_monthly_billing` / `generate_*` / `open_drafts` |
 | Dunning / reconciliation / e-mandate / card expiry | ✅ scheduled | — |

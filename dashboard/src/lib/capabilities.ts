@@ -1,3 +1,4 @@
+import { capitalise } from '@/lib/format'
 import type { CapabilityInfo } from '@/types/api'
 
 // Display-only grouping by capability prefix; the slugs sent to the backend are
@@ -10,6 +11,49 @@ const CATEGORY_LABEL: Record<string, string> = {
 	cluster: 'Servers',
 }
 const CATEGORY_ORDER = ['Billing', 'Team', 'Services', 'Servers']
+
+/** The capabilities Central can grant on one server rather than the whole team. */
+export type ServerCapability =
+	| 'server:view'
+	| 'server:power'
+	| 'server:resize'
+	| 'server:snapshot'
+	| 'server:terminate'
+	| 'server:console'
+
+/** A row that carries the caller's capabilities on its own server. */
+export interface ServerAccess {
+	capabilities?: ServerCapability[] | null
+}
+
+/** The server actions the caller may take. */
+export interface ServerActions {
+	open: boolean
+	power: boolean
+	resize: boolean
+	snapshot: boolean
+	terminate: boolean
+	console?: boolean
+}
+
+/** What the caller may do on this row's server. Central sends each row its own
+ *  capabilities, because a member can be scoped to some servers only. A row without
+ *  them, such as a creation in flight, falls back to the team-level actions. */
+export function getServerActions(
+	row: ServerAccess | null | undefined,
+	teamActions: ServerActions,
+): ServerActions {
+	const caps = row?.capabilities
+	if (!caps) return teamActions
+	return {
+		open: caps.includes('server:view'),
+		power: caps.includes('server:power'),
+		resize: caps.includes('server:resize'),
+		snapshot: caps.includes('server:snapshot'),
+		terminate: caps.includes('server:terminate'),
+		console: caps.includes('server:console'),
+	}
+}
 
 export interface CapabilityCategory {
 	label: string
@@ -24,8 +68,7 @@ export function groupCapabilitiesByCategory(
 	const byLabel = new Map<string, CapabilityInfo[]>()
 	for (const cap of palette) {
 		const prefix = cap.name.split(':')[0]
-		const label =
-			CATEGORY_LABEL[prefix] ?? prefix.charAt(0).toUpperCase() + prefix.slice(1)
+		const label = CATEGORY_LABEL[prefix] ?? capitalise(prefix)
 		const list = byLabel.get(label) ?? []
 		list.push(cap)
 		byLabel.set(label, list)

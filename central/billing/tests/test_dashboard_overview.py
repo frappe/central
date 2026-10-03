@@ -45,7 +45,15 @@ class OverviewBase(IntegrationTestCase):
 		self._purge()
 
 	def _purge(self):
-		for dt in ("Invoice", "Credit Ledger Entry", "Payment Method", "Tax Profile", "Billing Profile"):
+		for dt in (
+			"Invoice",
+			"Billing Notification Log",
+			"Credit Ledger Entry",
+			"Payment Method",
+			"Tax Profile",
+			"Billing Profile",
+			"Project",
+		):
 			frappe.db.delete(dt, {"team": TEAM})
 		frappe.db.delete("Credit Wallet", {"team": TEAM})
 		for sub in frappe.get_all("Subscription", {"team": TEAM}, pluck="name"):
@@ -106,6 +114,55 @@ class TestForecastBasis(OverviewBase):
 		self.assertEqual(detail["items"][0]["basis"], "Measured")
 
 
+class TestForecastCarriesProjectTags(OverviewBase):
+	"""Each forecast line says which Project (if any) its resource is tagged into —
+	stamped by the same `_tag_projects` helper a real invoice generation uses, so a
+	forecast and its eventual invoice always agree on the label (#billing-group)."""
+
+	def test_untagged_lines_carry_no_project(self):
+		self._provision(rate=3000)
+
+		fc = dashboard.get_forecast(TEAM)
+
+		self.assertTrue(fc["line_items"])
+		for line in fc["line_items"]:
+			self.assertIsNone(line["project"])
+			self.assertIsNone(line["project_title"])
+
+	def test_a_tagged_lines_project_is_named(self):
+		sub = self._provision(rate=3000)
+		project = frappe.get_doc({"doctype": "Project", "title": "Customer X", "team": TEAM}).insert().name
+		frappe.db.set_value("Subscription", sub, "project", project)
+		frappe.db.commit()
+
+		fc = dashboard.get_forecast(TEAM)
+
+		self.assertTrue(fc["line_items"])
+		for line in fc["line_items"]:
+			self.assertEqual(line["project"], project)
+			self.assertEqual(line["project_title"], "Customer X")
+		# And the total still includes it — there is only ever one consolidated bill.
+		self.assertEqual(fc["subtotal"], 3000.0)
+
+	def test_a_disabled_projects_lines_read_as_untagged(self):
+		# Matches real drafting (generate.py _resource_project_map): a disabled
+		# project's resources go untagged, so the breakdown must not keep showing a
+		# stale project label for a line that will actually bill untagged.
+		sub = self._provision(rate=3000)
+		project = (
+			frappe.get_doc({"doctype": "Project", "title": "Customer X", "team": TEAM, "enabled": 0})
+			.insert()
+			.name
+		)
+		frappe.db.set_value("Subscription", sub, "project", project)
+		frappe.db.commit()
+
+		fc = dashboard.get_forecast(TEAM)
+
+		for line in fc["line_items"]:
+			self.assertIsNone(line["project"])
+
+
 class TestNextPayment(OverviewBase):
 	def test_no_payment_method_is_reported_as_a_blocker(self):
 		self._provision(rate=3000)
@@ -154,6 +211,23 @@ class TestNextPayment(OverviewBase):
 			self.assertIn("date", stage)
 			self.assertIn("stage", stage)
 		self.assertEqual(schedule["notices"], [])
+
+	def test_the_schedule_reports_when_a_notice_was_queued(self):
+		queued_at = frappe.utils.now_datetime()
+		frappe.get_doc(
+			{
+				"doctype": "Billing Notification Log",
+				"team": TEAM,
+				"event_type": "Pre-debit Notice",
+				"status": "Queued",
+				"queued_at": queued_at,
+			}
+		).insert()
+
+		notice = dashboard.get_payment_schedule(TEAM)["notices"][0]
+
+		self.assertEqual(frappe.utils.get_datetime(notice["queued_at"]), queued_at)
+		self.assertEqual(notice["status"], "Queued")
 
 
 class TestCycleCosts(OverviewBase):
@@ -588,9 +662,9 @@ class TestResizeLockDisclosure(OverviewBase):
 		from central.billing.api.dashboard.catalog import get_composed_config
 
 		sub = self._server(2000)
-		asset = frappe.db.get_value("Subscription", sub, "asset_id")
+		server = frappe.db.get_value("Subscription", sub, "server_id")
 
-		config = get_composed_config(asset, TEAM)
+		config = get_composed_config(server, TEAM)
 
 		self.assertTrue(config["resizable"])
 		self.assertEqual(config["lock"]["gives_up"], 1000.0)

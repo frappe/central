@@ -22,6 +22,8 @@ from frappe.query_builder.functions import Count
 
 CATEGORIES = ("Billing", "Server", "Team")
 SEVERITIES = ("Info", "Success", "Warning", "Error")
+# Records that point at one server through their `server` field.
+SERVER_LINKED_DOCTYPES = ("Resource Action", "VM Snapshot", "Site", "Site Domain")
 
 
 def create_notification(
@@ -45,29 +47,49 @@ def create_notification(
 	team (no content), so it never leaks across sockets; the console refetches the
 	feed for the active team when it fires.
 	"""
+	if category not in CATEGORIES:
+		frappe.throw(frappe._("Unsupported notification category {0}.").format(frappe.bold(category)))
+	if severity not in SEVERITIES:
+		frappe.throw(frappe._("Unsupported notification severity {0}.").format(frappe.bold(severity)))
+
 	doc = frappe.get_doc(
 		{
 			"doctype": "Team Notification",
 			"team": team,
-			"category": category if category in CATEGORIES else "Billing",
+			"category": category,
 			"event_type": event_type,
-			"severity": severity if severity in SEVERITIES else "Info",
+			"severity": severity,
 			"required_cap": required_cap,
 			"title": title,
 			"message": message,
 			"reference_doctype": reference_doctype,
 			"reference_name": reference_name,
+			"server": get_reference_server(reference_doctype, reference_name),
 			"action_label": action_label,
 			"action_route": action_route,
 			"is_read": 0,
 		}
-	).insert(ignore_permissions=True)
+	)
+	# Team Notification is an internal delivery record and grants no customer create permission.
+	doc.insert(ignore_permissions=True)
 
 	if publish:
 		from central.notification.engine import publish_team_nudge
 
 		publish_team_nudge(team)
 	return doc
+
+
+def get_reference_server(reference_doctype: str | None, reference_name: str | None) -> str | None:
+	"""The server a notification is about, so the feed can hide it from members scoped
+	to other servers. None for a team-level subject such as an invoice."""
+	if not reference_name:
+		return None
+	if reference_doctype == "Virtual Machine":
+		return reference_name if frappe.db.exists("Virtual Machine", reference_name) else None
+	if reference_doctype in SERVER_LINKED_DOCTYPES:
+		return frappe.db.get_value(reference_doctype, reference_name, "server") or None
+	return None
 
 
 _FEED_FIELDS = (
@@ -92,7 +114,7 @@ def _visible_conditions(tn, team: str, user: str, category: str | None) -> list:
 	category, the per-row capability gate (skipped for operators), and the user's
 	in-app category preferences. ``resolve_user_grants`` is request-cached, so the
 	cap set costs one join per request, not one per row."""
-	from central.iam import resolve_user_grants, user_has_operator_bypass
+	from central.iam import user_has_operator_bypass
 
 	conds = [tn.team == team]
 	if category:
@@ -100,11 +122,7 @@ def _visible_conditions(tn, team: str, user: str, category: str | None) -> list:
 	if user_has_operator_bypass(user):
 		return conds
 
-	caps = sorted({cap for grant in resolve_user_grants(user).get(team, []) for cap in grant.get("caps", [])})
-	cap_gate = tn.required_cap.isnull() | (tn.required_cap == "")
-	if caps:
-		cap_gate = cap_gate | tn.required_cap.isin(caps)
-	conds.append(cap_gate)
+	conds.append(_capability_gate(tn, team, user))
 
 	disabled = frappe.get_all(
 		"User Notification Preference",
@@ -114,6 +132,23 @@ def _visible_conditions(tn, team: str, user: str, category: str | None) -> list:
 	if disabled:
 		conds.append(tn.category.notin(disabled))
 	return conds
+
+
+def _capability_gate(tn, team: str, user: str):
+	"""A row with no required capability is visible to every member. A team-wide grant
+	sees a row it has the capability for. A grant scoped to servers sees a row only when
+	the row is about one of those servers."""
+	from central.iam import ALL_SERVERS, get_allowed_servers, resolve_user_grants
+
+	gate = tn.required_cap.isnull() | (tn.required_cap == "")
+	caps = {cap for grant in resolve_user_grants(user).get(team, []) for cap in grant["caps"]}
+	for cap in sorted(caps):
+		servers = get_allowed_servers(user, cap)[team]
+		if servers == ALL_SERVERS:
+			gate = gate | (tn.required_cap == cap)
+		else:
+			gate = gate | ((tn.required_cap == cap) & tn.server.isin(sorted(servers)))
+	return gate
 
 
 def unread_count(team: str, *, user: str | None = None) -> int:
@@ -132,6 +167,22 @@ def unread_count(team: str, *, user: str | None = None) -> int:
 		.where(Criterion.all(_visible_conditions(tn, team, user, None)))
 		.where(nr.name.isnull())
 	).run()[0][0]
+
+
+def unread_names(team: str, user: str, *, limit: int) -> list[str]:
+	"""Return one bounded batch of visible unread notification names."""
+	tn = frappe.qb.DocType("Team Notification")
+	nr = frappe.qb.DocType("Notification Read")
+	return (
+		frappe.qb.from_(tn)
+		.left_join(nr)
+		.on((nr.notification == tn.name) & (nr.user == user))
+		.select(tn.name)
+		.where(Criterion.all(_visible_conditions(tn, team, user, None)))
+		.where(nr.name.isnull())
+		.orderby(tn.creation, order=Order.desc)
+		.limit(limit)
+	).run(pluck=True)
 
 
 def list_notifications(

@@ -22,12 +22,12 @@ import { useCall } from 'frappe-ui'
 import { computed, ref } from 'vue'
 import { API, method } from '@/api/methods'
 import { useSession } from '@/composables/useSession'
+import { getErrorMessage, successToast } from '@/lib/feedback'
 import {
 	type GatewayOrder,
 	mountPayPalButtons,
 	openRazorpayCheckout,
 } from '@/lib/gateway'
-import { errorToast, successToast } from '@/lib/toast'
 
 interface BeginResult {
 	card?: boolean
@@ -50,6 +50,7 @@ export function useTopup({ onDone }: { onDone?: (res: unknown) => void } = {}) {
 	// Stripe card-phase state — populated only once a Stripe order needs a card.
 	const cardComplete = ref(false)
 	const submitting = ref(false)
+	const error = ref('')
 	let stripe: Stripe | null = null
 	let card: StripeCardElement | null = null
 	let order: GatewayOrder | null = null
@@ -66,6 +67,7 @@ export function useTopup({ onDone }: { onDone?: (res: unknown) => void } = {}) {
 		onSheet?: () => void,
 		instrument?: string,
 	): Promise<BeginResult> {
+		error.value = ''
 		try {
 			await createOrder.submit({
 				team: activeTeam.value,
@@ -100,7 +102,7 @@ export function useTopup({ onDone }: { onDone?: (res: unknown) => void } = {}) {
 			})
 		} catch (e) {
 			if ((e as Error)?.message !== 'cancelled')
-				errorToast(e, 'Top-up could not be completed')
+				error.value = getErrorMessage(e, 'Top-up could not be completed')
 		}
 		return { card: false }
 	}
@@ -130,12 +132,13 @@ export function useTopup({ onDone }: { onDone?: (res: unknown) => void } = {}) {
 						paypal_order_id: paypalOrderId,
 					})
 				} catch (e) {
-					errorToast(e, 'Top-up could not be completed')
+					error.value = getErrorMessage(e, 'Top-up could not be completed')
 				} finally {
 					submitting.value = false
 				}
 			},
-			onError: (e) => errorToast(e, 'PayPal could not start'),
+			onError: (e) =>
+				(error.value = getErrorMessage(e, 'PayPal could not start')),
 		})
 	}
 
@@ -147,7 +150,10 @@ export function useTopup({ onDone }: { onDone?: (res: unknown) => void } = {}) {
 		stripe = await loadStripe(o.publishable_key)
 		if (!stripe) throw new Error('Stripe.js failed to load.')
 		card = stripe.elements().create('card', { hidePostalCode: true })
-		card.on('change', (e) => (cardComplete.value = !!e.complete))
+		card.on('change', (e) => {
+			cardComplete.value = !!e.complete
+			error.value = e.error?.message ?? ''
+		})
 		card.mount(el)
 	}
 
@@ -158,6 +164,7 @@ export function useTopup({ onDone }: { onDone?: (res: unknown) => void } = {}) {
 		if (!stripe || !card || o?.adapter_key !== 'Stripe' || !o.client_secret)
 			return
 		submitting.value = true
+		error.value = ''
 		try {
 			const { paymentIntent, error } = await stripe.confirmCardPayment(
 				o.client_secret,
@@ -177,7 +184,7 @@ export function useTopup({ onDone }: { onDone?: (res: unknown) => void } = {}) {
 			})
 			return confirm.data
 		} catch (e) {
-			errorToast(e, 'Top-up could not be completed')
+			error.value = getErrorMessage(e, 'Top-up could not be completed')
 		} finally {
 			submitting.value = false
 		}
@@ -194,6 +201,7 @@ export function useTopup({ onDone }: { onDone?: (res: unknown) => void } = {}) {
 		stripe = null
 		order = null
 		cardComplete.value = false
+		error.value = ''
 	}
 
 	return {
@@ -204,6 +212,8 @@ export function useTopup({ onDone }: { onDone?: (res: unknown) => void } = {}) {
 		destroy,
 		cardComplete,
 		submitting,
+		error,
+		clearError: () => (error.value = ''),
 		loading: computed(() => createOrder.loading || confirm.loading),
 	}
 }

@@ -1,20 +1,25 @@
-import { useCall } from 'frappe-ui'
+import { dialog, useCall } from 'frappe-ui'
 import { computed, ref } from 'vue'
 import { API, method } from '@/api/methods'
 import { useAuth } from '@/composables/useAuth'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { useSession } from '@/composables/useSession'
-import { errorToast, successToast } from '@/lib/toast'
+import { getErrorMessage, successToast } from '@/lib/feedback'
+import type { Team } from '@/types/api'
 
-// Team-level mutations for the active team: rename (team:edit), transfer ownership
-// (current owner only), delete (team:delete), and create a new team. Each re-pulls
-// the session (team list / labels) and capabilities so the switcher and every gate
-// reflect the change immediately.
 const renameCall = useCall<
 	{ team_name: string },
 	{ team: string; team_name: string }
 >({
 	url: method(API.renameTeam),
+	method: 'POST',
+	immediate: false,
+})
+const logoCall = useCall<
+	{ team_logo: string | null },
+	{ team: string; file_url: string | null }
+>({
+	url: method(API.setTeamLogo),
 	method: 'POST',
 	immediate: false,
 })
@@ -30,6 +35,11 @@ const deleteCall = useCall<{ deleted: boolean }, { team: string }>({
 	method: 'POST',
 	immediate: false,
 })
+const leaveCall = useCall<{ left: boolean }, { team: string }>({
+	url: method(API.leaveTeam),
+	method: 'POST',
+	immediate: false,
+})
 const createCall = useCall<{ name: string }, { team_name: string }>({
 	url: method(API.createTeam),
 	method: 'POST',
@@ -41,6 +51,7 @@ export function useTeamSettings() {
 	const caps = useCapabilities()
 	const { currentUser } = useAuth()
 	const saving = ref(false)
+	const error = ref('')
 	const activeTeam = session.activeTeam
 
 	const isOwner = computed(
@@ -56,6 +67,7 @@ export function useTeamSettings() {
 		ok: string,
 	): Promise<boolean> {
 		saving.value = true
+		error.value = ''
 		try {
 			await call.submit(params)
 			if (call.error) throw call.error
@@ -63,7 +75,7 @@ export function useTeamSettings() {
 			await onDone()
 			return true
 		} catch (e) {
-			errorToast(e)
+			error.value = getErrorMessage(e)
 			return false
 		} finally {
 			saving.value = false
@@ -79,6 +91,15 @@ export function useTeamSettings() {
 		)
 	}
 
+	function setLogo(fileUrl: string | null) {
+		return run(
+			logoCall,
+			{ team: activeTeam.value!, file_url: fileUrl },
+			() => session.reload(),
+			fileUrl ? 'Logo updated' : 'Logo removed',
+		)
+	}
+
 	function transferOwnership(user: string) {
 		return run(
 			transferCall,
@@ -91,10 +112,10 @@ export function useTeamSettings() {
 		)
 	}
 
-	function deleteTeam() {
+	function deleteTeam(team?: string) {
 		return run(
 			deleteCall,
-			{ team: activeTeam.value! },
+			{ team: team ?? activeTeam.value! },
 			async () => {
 				await session.reload()
 				session.setActiveTeam(session.teams.value[0]?.name ?? null)
@@ -102,6 +123,67 @@ export function useTeamSettings() {
 			},
 			'Team deleted',
 		)
+	}
+
+	const leaveTeam = (team: string) => {
+		return run(
+			leaveCall,
+			{ team },
+			async () => {
+				await session.reload()
+				if (activeTeam.value === team) {
+					session.setActiveTeam(session.teams.value[0]?.name ?? null)
+				}
+				caps.reload()
+			},
+			'You left the team',
+		)
+	}
+
+	const teamColumns = [
+		{ key: 'label', label: 'Name', class: 'w-full' },
+		{ key: 'role', label: 'Role' },
+		{ key: 'members', label: 'Members' },
+		{ key: 'created', label: 'Created' },
+		{ key: 'actions', label: '', class: 'w-10' },
+	]
+
+	const confirmLeave = (team: Team): void => {
+		dialog.danger({
+			title: 'Leave team',
+			message: `You'll lose access to everything in “${team.label}”. An admin can invite you back.`,
+			confirmLabel: 'Leave team',
+			onConfirm: async () => {
+				await leaveTeam(team.name)
+			},
+		})
+	}
+
+	const explainOwnerCantLeave = (team: Team): void => {
+		dialog.confirm({
+			title: 'Transfer ownership first',
+			message: `You own “${team.label}”. Hand it to another member before you leave, or delete the team.`,
+			confirmLabel: 'Got it',
+		})
+	}
+
+	const teamRowActions = (team: Team) => {
+		const owned = team.owner === currentUser.value
+		return [
+			{
+				label: 'Switch team',
+				icon: 'lucide-repeat',
+				condition: () => team.name !== activeTeam.value,
+				onClick: () => session.setActiveTeam(team.name),
+			},
+			{
+				label: 'Leave team',
+				icon: 'lucide-log-out',
+				theme: 'red' as const,
+				onClick: () =>
+					owned ? explainOwnerCantLeave(team) : confirmLeave(team),
+			},
+		]
 	}
 
 	function createTeam(teamName: string) {
@@ -120,9 +202,15 @@ export function useTeamSettings() {
 	return {
 		isOwner,
 		saving: computed(() => saving.value),
+		error,
+		clearError: () => (error.value = ''),
 		rename,
+		setLogo,
 		transferOwnership,
 		deleteTeam,
+		leaveTeam,
+		teamColumns,
+		teamRowActions,
 		createTeam,
 	}
 }

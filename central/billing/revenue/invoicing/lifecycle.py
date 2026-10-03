@@ -14,7 +14,7 @@ from frappe import _
 
 from central.billing import settings
 from central.billing.revenue import credits
-from central.billing.revenue.invoicing.generate import generate_draft_invoice
+from central.billing.revenue.invoicing.generate import generate_team_invoice
 from central.billing.states import transition
 
 
@@ -46,6 +46,12 @@ def open_and_collect(invoice: str, collect: bool = True) -> dict:
 
 	doc = frappe.get_doc("Invoice", invoice)
 
+	# An invoice has to be made out to somebody, so a draft is held until the team's
+	# billing details are on file. Completing the profile releases it; the monthly
+	# run picks up anything that release missed.
+	if doc.invoice_type == "Billable" and _hold_for_billing_details(doc):
+		return {"invoice": invoice, "claimed": False, "held": "billing_details"}
+
 	# Free/trial: a cost_report is computed, never collected — no credits, no
 	# charge. It is opened as a record of the subsidy cost.
 	if doc.invoice_type == "Cost Report":
@@ -61,8 +67,8 @@ def open_and_collect(invoice: str, collect: bool = True) -> dict:
 	if collectable > 0:
 		# Draw and debit in the invoice's own currency — a USD team's wallet must be
 		# debited in USD, not the apply_credit default (INR).
-		balance = credits.get_balance(doc.team, doc.currency)["balance"]
-		applied = min(frappe.utils.flt(balance), collectable)
+		available = credits.get_balance(doc.team, doc.currency)["balance"]
+		applied = min(frappe.utils.flt(available), collectable)
 		if applied > 0:
 			credits.apply_credit(
 				doc.team,
@@ -120,6 +126,50 @@ def open_and_collect(invoice: str, collect: bool = True) -> dict:
 	}
 
 
+def _hold_for_billing_details(doc) -> bool:
+	"""Whether this invoice must wait for billing details, asking for them if so.
+
+	The engine dedupes the ask for an hour only, so each retry of the held draft asks
+	again. The monthly billing run is the only retry that finds details still missing.
+	"""
+	from central.billing.doctype.billing_profile.billing_profile import get_missing_field_labels
+	from central.billing.platform import notifications
+
+	missing = get_missing_field_labels(doc.team)
+	if not missing:
+		return False
+	notifications.notify(
+		doc.team,
+		"Billing Details Required",
+		message=", ".join(missing),
+		reference_doctype="Invoice",
+		reference_name=doc.name,
+	)
+	return True
+
+
+def held_drafts(team: str | None = None, held_before=None, limit: int | None = None) -> list[dict]:
+	"""Billable drafts waiting on billing details — one team's, or everybody's.
+
+	`held_before` keeps only those whose period closed on or before that date, which
+	is how long the invoice has been waiting.
+	"""
+	filters = [
+		["status", "=", "Draft"],
+		["invoice_type", "=", "Billable"],
+		["period_end", "<=", held_before or frappe.utils.nowdate()],
+	]
+	if team:
+		filters.append(["team", "=", team])
+	return frappe.get_all(
+		"Invoice",
+		filters=filters,
+		fields=["name", "team", "total", "currency", "period_end"],
+		order_by="period_end asc",
+		limit=limit,
+	)
+
+
 def cancel_invoice(invoice: str, reason: str | None = None) -> str:
 	"""Cancel a pre-payment (Draft/Open/Overdue) invoice.
 
@@ -148,4 +198,4 @@ def reissue_invoice(invoice: str, reason: str | None = None) -> str | None:
 	"""
 	doc = frappe.get_doc("Invoice", invoice)
 	cancel_invoice(invoice, reason=reason)
-	return generate_draft_invoice(doc.subscription, doc.period_start, doc.period_end)
+	return generate_team_invoice(doc.team, doc.period_start, doc.period_end)

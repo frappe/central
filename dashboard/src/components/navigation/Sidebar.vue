@@ -2,21 +2,24 @@
 import {
 	Avatar,
 	Dropdown,
+	KeyboardShortcut,
 	Sidebar,
 	SidebarHeader,
 	SidebarItem,
 	SidebarLabel,
+	useKeyboardShortcut,
 } from 'frappe-ui'
-import { onScopeDispose, ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import frappeCloudLogo from '@/assets/fc-logo.svg'
 import { useAppMenu } from '@/composables/useAppMenu'
+import { useIsMobile } from '@/composables/useIsMobile'
 import { useMyProfile } from '@/composables/useMyProfile'
 import { useSession } from '@/composables/useSession'
+import { isMac } from '@/lib/platform'
 import { sidebarSections } from './list'
 
-const props = defineProps<{ isMobile?: boolean }>()
-
+const isMobile = useIsMobile()
 const { activeTeamLabel } = useSession()
 const { currentUser, headerMenuItems, footerMenuItems } = useAppMenu()
 const { profile } = useMyProfile()
@@ -25,19 +28,42 @@ const { profile } = useMyProfile()
 // there and expanded everywhere else. Only crossing that boundary re-applies
 // the default — toggling by hand sticks while you stay within a section.
 const route = useRoute()
-const inServersSection = (path: string) => path.startsWith('/servers')
+const inServersSection = (path: string) =>
+	path.startsWith('/servers') &&
+	!path.startsWith('/servers/snapshots') &&
+	!path.startsWith('/servers/ssh-keys')
 const sidebarCollapsed = ref(
-	props.isMobile ? false : inServersSection(route.path),
+	isMobile.value ? false : inServersSection(route.path),
 )
 watch(
 	() => route.path,
 	(path, previous) => {
-		if (props.isMobile) return
+		if (isMobile.value) return
 		if (inServersSection(path) !== inServersSection(previous)) {
 			sidebarCollapsed.value = inServersSection(path)
 		}
 	},
 )
+
+useKeyboardShortcut({
+	combo: 'Mod+B',
+	description: 'Toggle sidebar',
+	group: 'General',
+	allowInInput: true,
+	allowInDialog: true,
+	enabled: () => !isMobile.value,
+	handler: () => {
+		sidebarCollapsed.value = !sidebarCollapsed.value
+	},
+})
+const sidebarShortcut = isMac() ? '⌘B' : 'Ctrl+B'
+const toggleLabel = computed(
+	() =>
+		`${sidebarCollapsed.value ? 'Expand' : 'Collapse'} sidebar (${sidebarShortcut})`,
+)
+// KeyboardShortcut's showPlus is not platform-aware. Mac reads as ⌘K;
+// Windows/Linux still need the plus so Ctrl+K doesn't run together.
+const showShortcutPlus = !isMac()
 
 // Composition mode has no built-in per-section collapse (that was a Legacy
 // SidebarSection feature) — track collapsed labelled sections by label here.
@@ -45,23 +71,6 @@ const collapsedSections = ref<Record<string, boolean>>({})
 const toggleSection = (label: string) => {
 	collapsedSections.value[label] = !collapsedSections.value[label]
 }
-
-// The collapse chevron follows the cursor down the sidebar's edge strip.
-// Coalesce mousemove to one update per frame — the ref only drives a CSS offset,
-// so more than one write per paint is wasted work.
-const edgeY = ref(60)
-let pendingEdgeY = 60
-let edgeRaf = 0
-const onEdgeMove = (event: MouseEvent): void => {
-	const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
-	pendingEdgeY = event.clientY - rect.top
-	if (edgeRaf) return
-	edgeRaf = requestAnimationFrame(() => {
-		edgeY.value = pendingEdgeY
-		edgeRaf = 0
-	})
-}
-onScopeDispose(() => cancelAnimationFrame(edgeRaf))
 </script>
 
 <template>
@@ -69,7 +78,7 @@ onScopeDispose(() => cancelAnimationFrame(edgeRaf))
 		v-model:collapsed="sidebarCollapsed"
 		:disable-collapse="isMobile"
 		class="border-r"
-		:class="isMobile ? '!w-full !border-r-0 bg-transparent' : ''"
+		:class="isMobile ? '!w-full !border-r-0 bg-transparent pb-8' : ''"
 	>
 		<SidebarHeader
 			v-if="!isMobile"
@@ -113,10 +122,17 @@ onScopeDispose(() => cancelAnimationFrame(edgeRaf))
 							:to="item.to"
 							:onclick="item.onClick"
 							class="mb-0.5"
-							:class="item.class"
+							:class="[item.class, isMobile ? '!h-10' : '']"
 							:active="!!item.to && item.to === route.path"
 						>
-							<span class="truncate text-sm">{{ item.label }}</span>
+							<span class="truncate md:text-sm">{{ item.label }}</span>
+							<template v-if="item.shortcut" #suffix>
+								<KeyboardShortcut
+									:combo="item.shortcut"
+									:show-plus="showShortcutPlus"
+									class="mr-2"
+								/>
+							</template>
 						</SidebarItem>
 					</template>
 				</template>
@@ -125,12 +141,7 @@ onScopeDispose(() => cancelAnimationFrame(edgeRaf))
 
 		<!-- user profile dropdown -->
 		<div class="mt-auto px-2 pb-2" v-if="!isMobile">
-			<Dropdown
-				:options="footerMenuItems"
-				side="top"
-				align="start"
-				match-trigger-width
-			>
+			<Dropdown :options="footerMenuItems" side="top" match-trigger-width>
 				<template #default="{ open }">
 					<!-- No transition on the button itself: `duration-*` alone animates
 					     ALL properties, so the open state's white card faded in over
@@ -152,7 +163,6 @@ onScopeDispose(() => cancelAnimationFrame(edgeRaf))
 						<Avatar
 							:image="profile?.user_image ?? undefined"
 							:label="profile?.full_name || currentUser || ''"
-							size="md"
 						/>
 						<!-- Name first, email beneath — the email alone reads like a
 						     login prompt, not a person. -->
@@ -185,36 +195,19 @@ onScopeDispose(() => cancelAnimationFrame(edgeRaf))
 		</div>
 	</Sidebar>
 
-	<!-- collapse knob -->
-	<button
-		v-if="!isMobile"
-		class="sb-edge relative z-10 -mx-3 w-6 shrink-0 cursor-pointer"
-		:aria-label="sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'"
-		@mousemove="onEdgeMove"
-		@focus="edgeY = 60"
-		@click="sidebarCollapsed = !sidebarCollapsed"
-	>
-		<span
-			class="sb-edge-knob pointer-events-none absolute left-1/2 top-0 grid size-6 place-items-center rounded-full border border-outline-gray-2 bg-surface-elevation-1 text-ink-gray-6 shadow-sm"
-			:style="{ transform: `translate(-50%, calc(${edgeY}px - 50%))` }"
+	<!-- The collapse knob sits at the middle of the sidebar edge and never moves. It shows
+	     while the edge is hovered or the knob has keyboard focus. -->
+	<div v-if="!isMobile" class="group relative z-10 -mx-3 w-6 shrink-0">
+		<button
+			class="absolute left-1/2 top-1/2 grid size-6 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border border-outline-gray-2 bg-surface-elevation-1 text-ink-gray-6 opacity-0 shadow-sm transition-opacity duration-150 hover:text-ink-gray-8 focus-visible:opacity-100 group-hover:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-outline-gray-3"
+			:aria-label="toggleLabel"
+			:title="toggleLabel"
+			@click="sidebarCollapsed = !sidebarCollapsed"
 		>
 			<lucide-chevron-left
 				class="size-3.5"
-				:class='sidebarCollapsed? "rotate-180" : ""'
+				:class="sidebarCollapsed ? 'rotate-180' : ''"
 			/>
-		</span>
-	</button>
+		</button>
+	</div>
 </template>
-
-<style scoped>
-/* The chevron knob is hidden until the edge is hovered or keyboard-focused;
-   only opacity fades — its vertical position tracks the cursor instantly. */
-.sb-edge-knob {
-	opacity: 0;
-	transition: opacity 150ms ease-out;
-}
-.sb-edge:hover .sb-edge-knob,
-.sb-edge:focus-visible .sb-edge-knob {
-	opacity: 1;
-}
-</style>

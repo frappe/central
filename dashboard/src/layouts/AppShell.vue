@@ -5,14 +5,16 @@ import {
 	DesktopShell,
 	MobileNav,
 	MobileNavItem,
-	MobileShell,
 	ToastProvider,
 } from 'frappe-ui'
 import { computed, defineAsyncComponent, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
+import ErrorAlertHost from '@/components/common/ErrorAlertHost.vue'
 import Sidebar from '@/components/navigation/Sidebar.vue'
 import NotificationsPanel from '@/components/notifications/NotificationsPanel.vue'
+import OnboardingDialog from '@/components/onboarding/OnboardingDialog.vue'
 import SettingsModal from '@/components/settings/SettingsModal.vue'
+import SwitchTeamDialog from '@/components/team/SwitchTeamDialog.vue'
 import { useBreadcrumbs } from '@/composables/useBreadcrumbs'
 import { useIsMobile } from '@/composables/useIsMobile'
 import { useNotificationsRealtime } from '@/composables/useNotifications'
@@ -21,10 +23,9 @@ import {
 	searchOpen,
 	useSearchShortcut,
 } from '@/composables/useSearch'
+import { useSettingsShortcut } from '@/composables/useSettings'
+import { teamSwitcherOpen } from '@/composables/useTeamSwitcher'
 
-// The search palette builds an index off several team-scoped feeds (servers,
-// members, invoices…). Mount it lazily on first open so those fetches never fire
-// for a user who never searches; once mounted it stays, so its close animation runs.
 const SearchDialog = defineAsyncComponent(
 	() => import('@/components/search/SearchDialog.vue'),
 )
@@ -32,8 +33,8 @@ const searchMounted = ref(false)
 
 useNotificationsRealtime()
 useSearchShortcut()
+useSettingsShortcut()
 
-// Keep it mounted once opened so re-opening is instant and the exit transition plays.
 watch(searchOpen, (isOpen) => {
 	if (isOpen) searchMounted.value = true
 })
@@ -51,15 +52,19 @@ watch(
 	},
 )
 
+watch(isMobile, (mobile) => {
+	if (!mobile) mobileNavDrawer.value = false
+})
+
 const breadcrumbs = computed(
 	() => items.value ?? [{ label: (route.meta.title as string) ?? '' }],
 )
 </script>
 
 <template>
-	<MobileShell v-if="isMobile">
+	<div v-if="isMobile" class="fixed inset-0 flex flex-col overflow-hidden">
 		<header
-			class="sticky top-0 z-10 flex h-12 shrink-0 items-center justify-between gap-3 border-b border-outline-gray-1 bg-surface-base px-4"
+			class="flex h-12 shrink-0 items-center justify-between gap-3 border-b border-outline-gray-1 bg-surface-base px-3"
 		>
 			<button class="flex items-center gap-1" @click="mobileNavDrawer = true">
 				<Breadcrumbs :items="breadcrumbs" />
@@ -68,32 +73,22 @@ const breadcrumbs = computed(
 			<div id="header-actions" class="flex shrink-0 items-center gap-2" />
 		</header>
 
-		<main class="h-full overflow-hidden">
+		<main class="min-h-0 flex-1 overflow-hidden">
 			<router-view />
 		</main>
 
-		<template #nav>
-			<MobileNav>
-				<MobileNavItem
-					label="Home"
-					icon="lucide-house"
-					to="/home"
-					:active="route.name === 'Home'"
-				/>
-				<MobileNavItem
-					label="Search"
-					icon="lucide-search"
-					@click="openSearch"
-				/>
-				<NotificationsPanel mobile />
-				<MobileNavItem label="Settings" icon="lucide-settings" to="/settings" />
-			</MobileNav>
-		</template>
-
-		<BottomSheet v-model:open="mobileNavDrawer">
-			<Sidebar is-mobile class="p-4" />
-		</BottomSheet>
-	</MobileShell>
+		<MobileNav>
+			<MobileNavItem
+				label="Home"
+				icon="lucide-house"
+				to="/home"
+				:active="route.name === 'Home'"
+			/>
+			<MobileNavItem label="Search" icon="lucide-search" @click="openSearch" />
+			<NotificationsPanel mobile />
+			<MobileNavItem label="Settings" icon="lucide-settings" to="/settings" />
+		</MobileNav>
+	</div>
 
 	<DesktopShell v-else :scroll="false" class="h-screen">
 		<template #sidebar>
@@ -101,7 +96,7 @@ const breadcrumbs = computed(
 		</template>
 
 		<header
-			class="flex h-12 shrink-0 items-center justify-between gap-3 border-b border-outline-gray-1 px-4 sm:px-6"
+			class="flex h-12 shrink-0 items-center justify-between gap-3 border-b border-outline-gray-1 px-4"
 		>
 			<Breadcrumbs :items="breadcrumbs" />
 			<div id="header-actions" class="flex shrink-0 items-center gap-2" />
@@ -112,9 +107,15 @@ const breadcrumbs = computed(
 		</div>
 	</DesktopShell>
 
+	<BottomSheet v-model:open="mobileNavDrawer" title="Go to">
+		<Sidebar />
+	</BottomSheet>
+
+	<ErrorAlertHost />
+	<!-- Toasts are reserved for short success and non-actionable status updates. -->
 	<ToastProvider />
-	<!-- Desktop only: on mobile the same tabs are pages (/settings/:tab), so the
-	     dialog never mounts there. -->
 	<SettingsModal v-if="!isMobile" />
 	<SearchDialog v-if="searchMounted" v-model:open="searchOpen" />
+	<SwitchTeamDialog v-model:open="teamSwitcherOpen" />
+	<OnboardingDialog />
 </template>

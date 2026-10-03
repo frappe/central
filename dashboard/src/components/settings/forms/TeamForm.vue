@@ -1,21 +1,20 @@
 <script setup lang="ts">
-import { Avatar, Button, Dialog, FormControl } from 'frappe-ui'
+import { Alert, Button, Dialog, SettingsRow, TextInput } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
+import ImageUpload from '@/components/common/ImageUpload.vue'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { useSession } from '@/composables/useSession'
 import { settingsOpen } from '@/composables/useSettings'
 import { useTeamSettings } from '@/composables/useTeamSettings'
 
-// The active team's own settings — rename (team:edit) and the delete row
-// (team:delete). Ownership transfer is NOT here: it lives on the member's ⋯
-// menu in the roster, where the new owner is picked in context.
 const router = useRouter()
-const { activeTeamLabel, activeTeamLogo } = useSession()
-const { saving, rename, deleteTeam } = useTeamSettings()
+const { activeTeam, activeTeamLabel, activeTeamLogo } = useSession()
+const { saving, error, clearError, rename, setLogo, deleteTeam } =
+	useTeamSettings()
+
 const { canEditTeam, canDeleteTeam } = useCapabilities()
 
-// Switching teams while this is open re-points the form at the new team.
 const name = ref(activeTeamLabel.value)
 watch(activeTeamLabel, (label) => {
 	name.value = label
@@ -28,12 +27,8 @@ async function onSave(): Promise<void> {
 	if (!changed.value) return
 	await rename(name.value.trim())
 }
+watch(name, clearError)
 
-// — Logo. The row is here but inert: the upload endpoint is held back for a
-// follow-up PR, so the control shows what's coming without pretending to work.
-
-// — Deleting the team. It sits last, under a rule, and the real friction is
-// the confirm step.
 const confirmDelete = ref(false)
 const deleteOptions = computed(() => ({
 	title: 'Delete team',
@@ -59,41 +54,32 @@ async function onDelete(): Promise<void> {
 </script>
 
 <template>
-	<div>
+	<div class="mt-6">
 		<div class="space-y-6">
-			<!-- Logo row, no label — the avatar speaks for itself. The control is
-			     disabled until the upload endpoint lands. -->
-			<div class="space-y-1.5">
-				<div class="flex items-center gap-3">
-					<!-- Square: this is the organisation, not a person. -->
-					<Avatar
-						:image="activeTeamLogo ?? undefined"
-						:label="name.trim() || activeTeamLabel"
-						size="2xl"
-						shape="square"
-						class="shrink-0"
-					/>
-					<Button
-						v-if="canEditTeam"
-						:label="activeTeamLogo ? 'Change logo' : 'Upload logo'"
-						disabled
-					/>
-				</div>
-				<p v-if="canEditTeam" class="text-p-sm text-ink-gray-5">
-					Logo uploads land in a follow-up.
-				</p>
-			</div>
+			<Alert v-if="error && !confirmDelete" theme="red" :title="error" />
+			<ImageUpload
+				v-if="canEditTeam && activeTeam"
+				label="Logo"
+				:name="name.trim() || activeTeamLabel"
+				:image="activeTeamLogo"
+				:attach-to="{
+					doctype: 'Team',
+					docname: activeTeam,
+					fieldname: 'team_logo',
+				}"
+				shape="square"
+				:busy="saving"
+				@change="setLogo"
+			/>
 
 			<div class="flex items-end gap-2">
-				<FormControl
+				<TextInput
 					v-model="name"
 					label="Team name"
 					class="flex-1"
 					:disabled="!canEditTeam"
 					@keydown.enter="onSave"
 				/>
-				<!-- Save only exists once there's something to save — an
-				     always-there disabled button is just furniture. -->
 				<Button
 					v-if="canEditTeam && changed"
 					variant="solid"
@@ -107,26 +93,13 @@ async function onDelete(): Promise<void> {
 			</p>
 		</div>
 
-		<!-- Deleting is rare and destructive: it goes last, past a rule, on the
-		     line with its own explanation. -->
-		<div
-			v-if="canDeleteTeam"
-			class="mt-10 flex items-start gap-4 border-t border-outline-gray-1 pt-6"
-		>
-			<div class="min-w-0 flex-1">
-				<p class="text-base font-medium text-ink-gray-9">Delete team</p>
-				<p class="mt-0.5 text-p-sm text-ink-gray-5">
-					Permanently removes the team and everyone's access. Servers and sites
-					must be removed first.
-				</p>
-			</div>
-			<Button
-				theme="red"
-				variant="subtle"
-				label="Delete"
-				class="shrink-0"
-				@click="confirmDelete = true"
-			/>
+		<div v-if="canDeleteTeam" class="mt-8 border-t border-outline-gray-1">
+			<SettingsRow
+				title="Delete team"
+				description="Permanently delete this team. Remove its servers and sites first."
+			>
+				<Button theme="red" label="Delete" @click="confirmDelete = true" />
+			</SettingsRow>
 		</div>
 
 		<Dialog
@@ -134,6 +107,8 @@ async function onDelete(): Promise<void> {
 			:title="deleteOptions.title"
 			:message="deleteOptions.message"
 			:actions="deleteOptions.actions"
-		/>
+		>
+			<Alert v-if="error" theme="red" :title="error" />
+		</Dialog>
 	</div>
 </template>

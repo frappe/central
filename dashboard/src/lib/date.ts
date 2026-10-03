@@ -70,6 +70,8 @@ const ordinalSuffix = (day: number): string => {
 	}
 }
 
+export const ordinal = (n: number): string => `${n}${ordinalSuffix(n)}`
+
 /** For example 31st July */
 export const ordinalDate = (d: string | null | undefined): string => {
 	const p = parts(d)

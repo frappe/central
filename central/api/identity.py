@@ -4,6 +4,7 @@ from typing import Any
 
 import frappe
 from frappe.query_builder import Order
+from frappe.query_builder.functions import Count
 from frappe.utils import escape_html
 
 from central.iam import (
@@ -11,7 +12,7 @@ from central.iam import (
 	resolve_user_grants,
 	user_has_operator_bypass,
 )
-from central.utils.inputs import require_text
+from central.utils.inputs import require_attached_file, require_text
 
 # Identity and capability reads for the console. Always scoped to the signed-in
 # user — safe for any logged-in member.
@@ -24,7 +25,9 @@ from central.utils.inputs import require_text
 def my_capabilities(team: str | None = None) -> list[str]:
 	"""Capabilities the signed-in user carries on a team (or any team, if omitted).
 	The console gates every screen on this: reads behind `*:view`, mutations behind
-	`*:manage`. Always the session user, so it is safe for any logged-in member."""
+	`*:manage`. A server capability is listed when the user holds it on any server;
+	each server row then carries its own list. Always the session user, so it is safe
+	for any logged-in member."""
 	user = frappe.session.user
 	if not user or user == "Guest":
 		return []
@@ -40,7 +43,9 @@ def my_capabilities(team: str | None = None) -> list[str]:
 @frappe.whitelist(methods=["GET"])
 def my_teams() -> list[dict[str, Any]]:
 	"""Teams the signed-in user can switch between in the console — the teams they
-	are an active member of, each with a display label + the owner email."""
+	are an active member of, each with a display label, the owner email, the
+	caller's own role, how many people are in it, when it was created, and the
+	onboarding steps the caller still has to answer as its owner."""
 	user = frappe.session.user
 	if not user or user == "Guest":
 		return []
@@ -52,7 +57,7 @@ def my_teams() -> list[dict[str, Any]]:
 		frappe.qb.from_(member)
 		.join(team)
 		.on(team.name == member.parent)
-		.select(team.name, team.team_name, team.team_logo, team.owner_user)
+		.select(team.name, team.team_name, team.team_logo, team.owner_user, team.creation, member.role)
 		.where(
 			(member.parenttype == "Team")
 			& (member.parentfield == "members")
@@ -63,15 +68,77 @@ def my_teams() -> list[dict[str, Any]]:
 		.orderby(team.team_name)
 	).run(as_dict=True)
 
-	return [
-		{
-			"name": r.name,
-			"label": r.team_name or r.owner_user or r.name,
-			"logo": r.team_logo,
-			"owner": r.owner_user,
-		}
-		for r in rows
-	]
+	# One row per role grant, so a member holding two roles in a team lands here
+	# twice. Fold to one entry per team, keeping the strongest role.
+	teams: dict[str, dict[str, Any]] = {}
+	for r in rows:
+		entry = teams.setdefault(
+			r.name,
+			{
+				"name": r.name,
+				"label": r.team_name or r.owner_user or r.name,
+				"logo": r.team_logo,
+				"owner": r.owner_user,
+				"role": r.role,
+				"members": 0,
+				"created": r.creation,
+			},
+		)
+		if _role_rank(r.role) < _role_rank(entry["role"]):
+			entry["role"] = r.role
+
+	if not teams:
+		return []
+
+	counts = (
+		frappe.qb.from_(member)
+		.select(member.parent, Count(member.user).distinct().as_("members"))
+		.where(
+			(member.parenttype == "Team")
+			& (member.parentfield == "members")
+			& (member.status == "Active")
+			& member.parent.isin(list(teams))
+		)
+		.groupby(member.parent)
+	).run(as_dict=True)
+	for row in counts:
+		teams[row.parent]["members"] = row.members
+
+	for entry in teams.values():
+		entry["onboarding"] = []
+	owned_teams = [name for name, entry in teams.items() if entry["owner"] == user]
+	for row in _pending_onboarding_steps(owned_teams):
+		teams[row.parent]["onboarding"].append(row.step)
+
+	return list(teams.values())
+
+
+def _pending_onboarding_steps(teams: list[str]) -> list[dict[str, Any]]:
+	if not teams:
+		return []
+
+	step = frappe.qb.DocType("Team Onboarding Step")
+	return (
+		frappe.qb.from_(step)
+		.select(step.parent, step.step)
+		.where(
+			(step.parenttype == "Team")
+			& (step.parentfield == "onboarding_steps")
+			& (step.status == "Pending")
+			& step.parent.isin(teams)
+		)
+		.orderby(step.idx)
+	).run(as_dict=True)
+
+
+# Owner outranks Admin, and any named role outranks none.
+_ROLE_ORDER = ["Owner", "Admin"]
+
+
+def _role_rank(role: str | None) -> int:
+	if role in _ROLE_ORDER:
+		return _ROLE_ORDER.index(role)
+	return len(_ROLE_ORDER)
 
 
 @frappe.whitelist(methods=["GET"])
@@ -141,10 +208,20 @@ def update_profile(full_name: str) -> dict[str, Any]:
 	# escape_html below would raise an unhandled error on one.
 	full_name = require_text(full_name, frappe._("Enter a name."))
 	doc = frappe.get_doc("User", user)
-	# Escaped at write time, matching the signup path (_create_verified_user):
+	# Escaped at write time, matching the signup path (central.users.create_user):
 	# full_name reaches HTML contexts outside this SPA (frappe emails, desk).
 	doc.first_name = escape_html(full_name)
 	doc.middle_name = None
 	doc.last_name = None
 	doc.save(ignore_permissions=True)
 	return {"full_name": doc.full_name}
+
+
+@frappe.whitelist(methods=["POST"])
+def set_profile_photo(file_url: str | None = None) -> dict[str, Any]:
+	"""Set the signed-in user's photo to an uploaded image, or clear it."""
+	user = _require_signed_in()
+	doc = frappe.get_doc("User", user)
+	doc.user_image = require_attached_file("User", user, "user_image", file_url) if file_url else None
+	doc.save()
+	return {"user_image": doc.user_image}

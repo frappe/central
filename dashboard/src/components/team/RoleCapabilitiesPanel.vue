@@ -28,9 +28,12 @@ watch(role, (value) => {
 			:subtitle="shown ? roleDisplay(shown).description : ''"
 			@update:open="(v: boolean) => !v && (role = null)"
 		>
-			<div v-if="shown" class="p-4">
-				<CapabilityList :caps="shown.capabilities" :palette="capabilities" />
-			</div>
+			<CapabilityList
+				v-if="shown"
+				:caps="shown.capabilities"
+				:palette="capabilities"
+				class="p-4"
+			/>
 		</SidePanel>
 	</Teleport>
 </template>

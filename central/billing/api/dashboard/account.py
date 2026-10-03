@@ -331,26 +331,5 @@ def get_trust_tier(team: str | None = None) -> dict:
 	}
 
 
-@frappe.whitelist()
-def list_switchable_teams() -> list[dict]:
-	"""POC team switcher — teams that have billing data, with their tier/standing."""
-	teams = sorted(
-		t
-		for t in set(frappe.get_all("Subscription", pluck="team"))
-		| set(frappe.get_all("Billing Profile", pluck="team"))
-		if t
-	)
-	out = []
-	for t in teams:
-		out.append(
-			{
-				"team": t,
-				"tier": frappe.db.get_value("Billing Profile", t, "trust_tier"),
-				"standing": frappe.db.get_value("Subscription", {"team": t}, "account_standing") or "Current",
-			}
-		)
-	return out
-
-
 # The in-app notification feed endpoints (list/badge/mark) moved to
 # central.notification.api — billing hosts only the email writer now.

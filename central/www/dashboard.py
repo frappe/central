@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import frappe
+from frappe.core.api.file import get_max_file_size
 from frappe.sessions import get_csrf_token
-from frappe.utils.oauth import get_oauth2_authorize_url, get_oauth_keys
-from frappe.utils.password import get_decrypted_password
 
 from central.iam import get_user_team_names
+from central.identity.doctype.team_invitation.team_invitation import get_expiry_days
 
 no_cache = 1
 
@@ -28,11 +28,18 @@ def get_context(context):
 	boot["csrf_token"] = get_csrf_token()
 	boot["user_type"] = getattr(frappe.session.data, "user_type", None)
 	boot["features"] = frappe.get_cached_doc("Central Settings").feature_flags()
+	boot["invitation_expiry_days"] = get_expiry_days()
 	boot.update(build_auth_context())
 	# Development benches expose Socket.IO directly; production proxies it.
 	if frappe.conf.developer_mode:
 		boot["socketio_port"] = frappe.conf.socketio_port
 	boot["site_name"] = frappe.local.site
+	boot["max_file_size"] = get_max_file_size()
+	# Frappe stores datetimes as a naive clock in this zone. The dashboard parses
+	# them here, then shows the viewer's local time. Asia/Calcutta is the old name
+	# for Asia/Kolkata, and browsers do not know the old one.
+	zone = frappe.utils.get_system_timezone()
+	boot["system_timezone"] = "Asia/Kolkata" if zone == "Asia/Calcutta" else zone
 	context.boot = boot
 	return context
 
@@ -44,13 +51,12 @@ def get_context(context):
 def build_auth_context() -> dict:
 	return {
 		"user": frappe.session.user or "Guest",
-		"provider_logins": _provider_logins(),
 		"onboarding_complete": _onboarding_complete(),
 	}
 
 
 def _onboarding_complete() -> bool:
-	"""True once the user's team owns a live site — the signal the SPA uses to keep a
+	"""True once the user's team completed a site login handoff — the signal the SPA uses to keep a
 	brand-new user inside the onboarding funnel (and let a returning one skip it).
 	A first-run user (no team or no site yet) is still onboarding."""
 	user = frappe.session.user
@@ -59,33 +65,12 @@ def _onboarding_complete() -> bool:
 	teams = get_user_team_names(user)
 	if not teams:
 		return False
-	return bool(frappe.db.exists("Site", {"team": ["in", teams], "status": ["!=", "Terminated"]}))
 
-
-def _provider_logins() -> list[dict[str, str]]:
-	providers = frappe.get_all(
-		"Social Login Key",
-		filters={"enable_social_login": 1},
-		fields=["name", "client_id", "base_url", "provider_name", "icon"],
-		order_by="name",
+	return bool(
+		frappe.get_list(
+			"Site",
+			filters={"team": ["in", teams], "claimed_at": ["is", "set"]},
+			pluck="name",
+			limit=1,
+		)
 	)
-	return [
-		{
-			"name": provider.name,
-			"label": provider.provider_name,
-			"icon": provider.icon or "",
-			"auth_url": get_oauth2_authorize_url(provider.name, "/dashboard/servers"),
-		}
-		for provider in providers
-		if _provider_is_configured(provider)
-	]
-
-
-def _provider_is_configured(provider) -> bool:
-	client_secret = get_decrypted_password(
-		"Social Login Key",
-		provider.name,
-		"client_secret",
-		raise_exception=False,
-	)
-	return bool(provider.client_id and client_secret and provider.base_url and get_oauth_keys(provider.name))

@@ -13,6 +13,7 @@ from central.billing.revenue.invoicing import run
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import (
 	add_segment,
+	ensure_team,
 	make_billing_subscription,
 	make_plan,
 )
@@ -51,7 +52,7 @@ class BillingTestBase(IntegrationTestCase):
 	def setUp(self):
 		make_plan(PLAN)
 		self._purge()
-		# Asset-model subscription; the auto 'Created' segment is cleared so each test
+		# VirtualMachine-model subscription; the auto 'Created' segment is cleared so each test
 		# authors its own run-segment timeline with add_segment.
 		self.sub = make_billing_subscription(TEAM, CLUSTER, PLAN, billing_cycle="Monthly")
 		frappe.db.commit()
@@ -60,7 +61,7 @@ class BillingTestBase(IntegrationTestCase):
 		self._purge()
 
 	def _purge(self):
-		for dt in ("Invoice", "Credit Ledger Entry"):
+		for dt in ("Invoice", "Credit Ledger Entry", "Project"):
 			frappe.db.delete(dt, {"team": TEAM})
 		frappe.db.delete("Credit Wallet", {"team": TEAM})
 		for sub in frappe.get_all("Subscription", {"team": TEAM}, pluck="name"):
@@ -159,7 +160,8 @@ class TestDraftGeneration(BillingTestBase):
 		first = invoicing.generate_draft_invoice(self.sub, "2026-06-01", "2026-06-30")
 		second = invoicing.generate_draft_invoice(self.sub, "2026-06-01", "2026-06-30")
 		self.assertEqual(first, second)
-		self.assertEqual(frappe.db.count("Invoice", {"subscription": self.sub}), 1)
+		team = frappe.db.get_value("Subscription", self.sub, "team")
+		self.assertEqual(frappe.db.count("Invoice", {"team": team}), 1)
 
 	def test_no_runtime_yields_no_invoice(self):
 		name = invoicing.generate_draft_invoice(self.sub, "2026-06-01", "2026-06-30")
@@ -261,7 +263,7 @@ class TestOpenAndCollect(BillingTestBase):
 			"Credit Ledger Entry",
 			"Credit Wallet",
 			"Subscription",
-			"Asset",
+			"Virtual Machine",
 			"Billing Profile",
 			"Invoice",
 		):
@@ -316,20 +318,20 @@ class TestTerminationCancelsBilling(BillingTestBase):
 		self.assertEqual(subscriptions.team_run_rate(TEAM), 0)
 
 	def test_terminate_cancels_segment_and_frees_run_rate(self):
-		asset_id = frappe.db.get_value("Subscription", self.sub, "asset_id")
-		# The VM comes up Running — that enables the subscription (Asset controller).
-		asset = frappe.get_doc("Asset", asset_id)
-		asset.status = "Running"
-		asset.save(ignore_permissions=True)
+		server_id = frappe.db.get_value("Subscription", self.sub, "server_id")
+		# The VM comes up Running — that enables the subscription (VirtualMachine controller).
+		server = frappe.get_doc("Virtual Machine", server_id)
+		server.status = "Running"
+		server.save(ignore_permissions=True)
 		self.assertTrue(frappe.db.get_value("Subscription", self.sub, "enabled"))
 
 		add_segment(self.sub, "Created", 1000, "2026-06-01 00:00:00")
 		self.assertEqual(subscriptions.team_run_rate(TEAM), 1000)  # it counts while alive
 
 		# The mirror flips to Terminated (Atlas vm.terminated / reconcile).
-		asset.reload()
-		asset.status = "Terminated"
-		asset.save(ignore_permissions=True)
+		server.reload()
+		server.status = "Terminated"
+		server.save(ignore_permissions=True)
 
 		# A Cancelled change closed the segment; the sub is disabled and stops counting.
 		changes = frappe.get_all("Subscription Change", {"subscription": self.sub}, pluck="change_type")
@@ -337,36 +339,6 @@ class TestTerminationCancelsBilling(BillingTestBase):
 		self.assertFalse(frappe.db.get_value("Subscription", self.sub, "enabled"))
 		self.assertEqual(subscriptions.current_segment_rate(self.sub), 0)
 		self.assertEqual(subscriptions.team_run_rate(TEAM), 0)  # headroom freed
-
-
-class TestCancelTerminatedPatch(BillingTestBase):
-	"""v26 backfill: close the open segment of VMs terminated before the runtime fix."""
-
-	def test_patch_cancels_open_segment_on_terminated_asset(self):
-		from central.patches.v0_0.cancel_terminated_subscriptions import (
-			cancel_terminated_subscriptions,
-		)
-
-		asset_id = frappe.db.get_value("Subscription", self.sub, "asset_id")
-		frappe.db.set_value("Subscription", self.sub, "enabled", 1)
-		add_segment(self.sub, "Created", 1000, "2026-06-01 00:00:00")
-		# Legacy bug state: the mirror was flipped to Terminated WITHOUT the controller
-		# cancelling — a direct write leaves the segment open.
-		frappe.db.set_value("Asset", asset_id, "status", "Terminated")
-		self.assertEqual(subscriptions.team_run_rate(TEAM), 1000)
-
-		self.assertEqual(cancel_terminated_subscriptions(), 1)
-
-		self.assertEqual(subscriptions.current_segment_rate(self.sub), 0)
-		self.assertEqual(subscriptions.team_run_rate(TEAM), 0)
-		self.assertFalse(frappe.db.get_value("Subscription", self.sub, "enabled"))
-
-		# Idempotent: a second run closes nothing (no duplicate Cancelled).
-		self.assertEqual(cancel_terminated_subscriptions(), 0)
-		cancels = frappe.get_all(
-			"Subscription Change", {"subscription": self.sub, "change_type": "Cancelled"}
-		)
-		self.assertEqual(len(cancels), 1)
 
 
 class TestMonthlyBillingRun(BillingTestBase):
@@ -570,14 +542,19 @@ class TestFanOutRun(IntegrationTestCase):
 	def test_status_shows_a_half_finished_run(self):
 		from central.billing.tests.utils import run_enqueued_inline
 
-		# Drafting only: every invoice is still waiting to be collected.
+		# A shared site may already hold invoices for this period, so measure our own run
+		# against a baseline rather than assuming the period starts empty.
+		before = run.billing_run_status(today="2026-07-01")
+
+		# Drafting only: our teams' invoices are all still waiting to be collected.
 		with patch("frappe.enqueue", side_effect=run_enqueued_inline):
 			run.draft_monthly_invoices(today="2026-07-01")
 		mid = run.billing_run_status(today="2026-07-01")
 		self.assertEqual(mid["period_end"], "2026-06-30")
 		self.assertGreaterEqual(mid["drafted"], len(self.TEAMS))
-		self.assertEqual(mid["pending_collection"], mid["drafted"])
-		self.assertEqual(mid["collected"], 0)
+		self.assertEqual(mid["drafted"] - before["drafted"], len(self.TEAMS))
+		self.assertEqual(mid["pending_collection"] - before["pending_collection"], len(self.TEAMS))
+		self.assertEqual(mid["collected"], before["collected"])
 
 		with patch("frappe.enqueue", side_effect=run_enqueued_inline):
 			run.collect_due_invoices(today="2026-07-01")
@@ -668,7 +645,7 @@ class TestFanOutRun(IntegrationTestCase):
 			) as blocked,
 			patch.object(run, "CONTENTION_BACKOFF", 0),
 		):
-			self.assertIsNone(run.draft_team_invoice("team-fanout-a", "2026-06-01", "2026-06-30"))
+			self.assertEqual(run.draft_team_invoice("team-fanout-a", "2026-06-01", "2026-06-30"), [])
 
 		self.assertEqual(blocked.call_count, run.CONTENTION_RETRIES)
 		self.assertTrue(
@@ -749,3 +726,107 @@ class TestRatingIsSeparableFromWriting(BillingTestBase):
 		)
 		for field in self.MONEY:
 			self.assertEqual(rated.payload[field], inv.get(field), field)
+
+
+class TestProjectValidation(BillingTestBase):
+	OTHER_TEAM = "team-invoice-other"
+
+	def tearDown(self):
+		frappe.db.delete("Project", {"team": self.OTHER_TEAM})
+		frappe.db.commit()
+		super().tearDown()
+
+	def test_cannot_tag_another_teams_project(self):
+		ensure_team(self.OTHER_TEAM)
+		foreign = (
+			frappe.get_doc({"doctype": "Project", "title": "Someone Else", "team": self.OTHER_TEAM})
+			.insert()
+			.name
+		)
+
+		doc = frappe.get_doc("Subscription", self.sub)
+		doc.project = foreign
+		with self.assertRaises(frappe.ValidationError):
+			doc.save()
+
+	def test_cannot_tag_a_disabled_project(self):
+		project = (
+			frappe.get_doc({"doctype": "Project", "title": "Archived", "team": TEAM, "enabled": 0})
+			.insert()
+			.name
+		)
+
+		doc = frappe.get_doc("Subscription", self.sub)
+		doc.project = project
+		with self.assertRaises(frappe.ValidationError):
+			doc.save()
+
+	def test_tagging_an_own_active_project_is_allowed(self):
+		project = frappe.get_doc({"doctype": "Project", "title": "Customer X", "team": TEAM}).insert().name
+
+		doc = frappe.get_doc("Subscription", self.sub)
+		doc.project = project
+		doc.save()
+
+		self.assertEqual(frappe.db.get_value("Subscription", self.sub, "project"), project)
+
+
+class TestProjectSpendingLimit(BillingTestBase):
+	"""A Project's `spending_limit` caps the committed run-rate of the subscriptions
+	tagged into it (`subscriptions.enforce_project_headroom`, via
+	`Subscription.validate_project`). It blocks tagging a NEW server only — an
+	already-tagged subscription is never un-tagged or stopped."""
+
+	def _project(self, spending_limit=0):
+		return (
+			frappe.get_doc(
+				{"doctype": "Project", "title": "Customer X", "team": TEAM, "spending_limit": spending_limit}
+			)
+			.insert()
+			.name
+		)
+
+	def test_tagging_under_the_limit_succeeds(self):
+		# PLAN's locked rate is 3200 INR/mo (DEFAULT_RATES) — comfortably under 5000.
+		project = self._project(spending_limit=5000)
+
+		doc = frappe.get_doc("Subscription", self.sub)
+		doc.project = project
+		doc.save()
+
+		self.assertEqual(frappe.db.get_value("Subscription", self.sub, "project"), project)
+
+	def test_tagging_over_the_limit_raises(self):
+		project = self._project(spending_limit=1000)
+
+		doc = frappe.get_doc("Subscription", self.sub)
+		doc.project = project
+		with self.assertRaises(frappe.ValidationError):
+			doc.save()
+
+		# The refused tag never landed.
+		self.assertIsNone(frappe.db.get_value("Subscription", self.sub, "project"))
+
+	def test_zero_spending_limit_is_unlimited(self):
+		project = self._project(spending_limit=0)
+
+		doc = frappe.get_doc("Subscription", self.sub)
+		doc.project = project
+		doc.save()  # no cap to exceed, regardless of the subscription's rate
+
+		self.assertEqual(frappe.db.get_value("Subscription", self.sub, "project"), project)
+
+	def test_lowering_the_limit_later_does_not_affect_already_tagged_subscriptions(self):
+		project = self._project(spending_limit=5000)
+		doc = frappe.get_doc("Subscription", self.sub)
+		doc.project = project
+		doc.save()
+
+		# Lower the limit well below the already-tagged subscription's committed rate.
+		frappe.db.set_value("Project", project, "spending_limit", 100)
+
+		# Re-saving without changing the tag must not raise or un-tag it — the limit
+		# only gates a NEW tag / a project change, never an untouched existing one.
+		doc.reload()
+		doc.save()
+		self.assertEqual(frappe.db.get_value("Subscription", self.sub, "project"), project)

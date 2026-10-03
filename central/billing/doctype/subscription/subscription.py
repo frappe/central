@@ -15,17 +15,20 @@ class Subscription(Document):
 	if TYPE_CHECKING:
 		from frappe.types import DF
 
+		from central.billing.doctype.plan_includes.plan_includes import PlanIncludes
+
 		account_standing: DF.Literal["Current", "Past Due", "Suspended"]
-		asset_id: DF.Link | None
+		server_id: DF.Link | None
 		billing_cycle: DF.Literal["Monthly", "Annual"]
 		cluster: DF.ReadOnly | None
 		default_payment_method: DF.Link | None
 		enabled: DF.Check
 		gateway: DF.Link | None
-		includes: DF.Table
+		includes: DF.Table[PlanIncludes]
 		plan: DF.Link | None
 		pricing_mode: DF.Literal["Preset", "Composed"]
 		service_subject: DF.Data | None
+		vm_snapshot: DF.Link | None
 		start_date: DF.Date | None
 		sub_category: DF.Link | None
 		team: DF.Link
@@ -34,15 +37,54 @@ class Subscription(Document):
 	def validate(self):
 		self.validate_duplicate_subscription()
 		self.validate_duplicate_service_subject()
+		self.validate_project()
+
+	def validate_project(self):
+		"""A subscription may only be tagged into one of its own team's active projects.
+
+		Generation already filters projects by team, so a foreign project would not
+		misbill anyone — the tag would just be ignored and the server would land
+		untagged on the consolidated invoice. Both checks are here to refuse a tag
+		that would silently mean nothing, rather than let someone believe a server
+		is tracked under a project when it is not. A disabled project is refused for
+		the same reason: disabled means "no longer tracking", so its servers go
+		untagged on the consolidated invoice.
+		"""
+		if not self.project:
+			return
+
+		project = frappe.db.get_value(
+			"Project", self.project, ["team", "enabled", "spending_limit"], as_dict=True
+		)
+		if not project:
+			return  # a broken link — Frappe's own link validation reports it better
+
+		if project.team != self.team:
+			frappe.throw(
+				f"Project {self.project} belongs to team {project.team}, not {self.team}.",
+			)
+		if not project.enabled:
+			frappe.throw(
+				f"Project {self.project} is disabled; its servers bill untagged on "
+				f"{self.team}'s consolidated invoice.",
+			)
+
+		if self.is_new() or self.has_value_changed("project"):
+			from central.billing.catalog.subscriptions import enforce_project_headroom
+
+			rate, _currency = self.resolve_rate_snapshot()
+			enforce_project_headroom(
+				self.team, self.project, rate or 0, exclude=None if self.is_new() else self.name
+			)
 
 	def validate_duplicate_subscription(self):
-		"""Block a second enabled subscription for the same team + asset.
+		"""Block a second enabled subscription for the same team + server.
 
-		A team can hold at most one active subscription per asset; re-subscribing
-		the same asset must go through `change_plan`/`cancel_subscription`, not a
+		A team can hold at most one active subscription per server; re-subscribing
+		the same server must go through `change_plan`/`cancel_subscription`, not a
 		second Subscription doc.
 		"""
-		if not (self.enabled and self.team and self.asset_id):
+		if not (self.enabled and self.team and self.server_id):
 			return
 
 		duplicate = frappe.db.exists(
@@ -50,14 +92,14 @@ class Subscription(Document):
 			{
 				"name": ["!=", self.name],
 				"team": self.team,
-				"asset_id": self.asset_id,
+				"server_id": self.server_id,
 				"enabled": 1,
 			},
 		)
 		if duplicate:
 			frappe.throw(
-				_("Team {0} already has an active subscription ({1}) for asset {2}.").format(
-					self.team, duplicate, self.asset_id
+				_("Team {0} already has an active subscription ({1}) for server {2}.").format(
+					self.team, duplicate, self.server_id
 				),
 				frappe.DuplicateEntryError,
 			)
@@ -93,7 +135,7 @@ class Subscription(Document):
 		The segment opens at the subscription's start_date (when billing begins),
 		not the wall-clock insert time, so a backdated subscription bills its real
 		period."""
-		rate, currency = self.resolve_rate_snapshot()
+		rate, currency = self.flags.opening_quote or self.resolve_rate_snapshot()
 		effective_at = (
 			frappe.utils.get_datetime(self.start_date) if self.start_date else frappe.utils.now_datetime()
 		)
@@ -135,7 +177,9 @@ class Subscription(Document):
 		today's rate (ADR 0010). Used by both a preset plan change and a composed
 		resize / mode switch (#82)."""
 		previous = self.get_doc_before_save()
-		rate, currency = self.resolve_rate_snapshot()
+		# A resize that keeps a preset's bundle price and only adds for extra disk passes the
+		# rate explicitly, since it is not the à-la-carte composition total.
+		rate, currency = self.flags.locked_rate_override or self.resolve_rate_snapshot()
 		frappe.get_doc(
 			{
 				"doctype": "Subscription Change",
@@ -159,6 +203,9 @@ class Subscription(Document):
 		"""A segment's description: the Plan for a preset, the composition for a
 		composed config (e.g. 'Custom: 2 vCPU · 4 GB RAM · 40 GB disk'). Stored on the
 		change row's `new_value`, which the invoice line surfaces as its description."""
+		if doc.get("vm_snapshot"):
+			size = sum(row.quantity for row in doc.includes)
+			return f"Snapshot storage: {size:g} GB"
 		if doc.pricing_mode == "Composed":
 			from central.billing.catalog.composition import config_summary
 
@@ -177,10 +224,10 @@ class Subscription(Document):
 		currency = frappe.db.get_value("Billing Profile", self.team, "currency")
 		if not currency:
 			return None, None
-		# A VM subscription resolves its cluster off the Asset; a team-level service
-		# subject (no Asset) carries its cluster on the Subscription itself (ADR 0013).
+		# A VM subscription resolves its cluster off the VirtualMachine; a team-level service
+		# subject (no VirtualMachine) carries its cluster on the Subscription itself (ADR 0013).
 		cluster = (
-			frappe.db.get_value("Asset", self.asset_id, "cluster") if self.asset_id else None
+			frappe.db.get_value("Virtual Machine", self.server_id, "region") if self.server_id else None
 		) or self.cluster
 
 		if self.pricing_mode == "Composed":
@@ -204,15 +251,15 @@ class Subscription(Document):
 		self.save(ignore_permissions=True)
 
 
-def create_subscription(asset_id: str):
-	"""Create an enabled Subscription for an Asset, using its team + plan."""
-	asset = frappe.get_doc("Asset", asset_id)
+def create_subscription(server_id: str):
+	"""Create an enabled Subscription for a Virtual Machine, using its team + plan."""
+	server = frappe.get_doc("Virtual Machine", server_id)
 	return frappe.get_doc(
 		{
 			"doctype": "Subscription",
-			"team": asset.team,
-			"asset_id": asset.name,
-			"plan": asset.plan,
+			"team": server.team,
+			"server_id": server.name,
+			"plan": server.plan,
 			"enabled": 1,
 		}
 	).insert(ignore_permissions=True)

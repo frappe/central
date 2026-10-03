@@ -1,0 +1,35 @@
+<table class="fc-page" cellpadding="0" cellspacing="0" role="presentation" width="100%">
+	<tr>
+		<td class="fc-page-cell" align="center" valign="top">
+			<table class="fc-card" cellpadding="0" cellspacing="0" role="presentation" width="600">
+				<tbody>
+					<tr>
+						<td class="fc-brand">
+							{% block brand %}
+							<img
+								src="https://cloud.frappe.io/files/cloud9c3ae6.png"
+								width="28"
+								height="28"
+								alt=""
+								class="align-middle"
+								border="0"
+							/>
+							<span class="fc-wordmark">Frappe Cloud</span>
+							{% endblock %}
+						</td>
+					</tr>
+
+					{% block content %}{% endblock %}
+
+					<tr>
+						<td class="fc-footer">
+							{% block footer %}
+							<b>{{ _("Note") }}:</b> {{ _("You are receiving this because you are a member of a Frappe Cloud team.") }}
+							{% endblock %}
+						</td>
+					</tr>
+				</tbody>
+			</table>
+		</td>
+	</tr>
+</table>

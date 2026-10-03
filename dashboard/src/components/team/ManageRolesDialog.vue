@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { Alert, Avatar, Button, Dialog, FormControl, useCall } from 'frappe-ui'
+import { Alert, Avatar, Button, Dialog, Select, useCall } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import { API, method } from '@/api/methods'
 import { useRegions } from '@/composables/useRegions'
 import { useTeamMembers } from '@/composables/useTeamMembers'
 import { useTeamRoles } from '@/composables/useTeamRoles'
 import { teamParams } from '@/composables/useTeamScope'
+import { getErrorMessage } from '@/lib/feedback'
 import type {
 	ResourceType,
 	TeamMemberRoleAssignment,
@@ -13,8 +14,12 @@ import type {
 	TeamRegistry,
 } from '@/types/api'
 
-const props = defineProps<{ member: TeamMemberRow | null }>()
-const emit = defineEmits<{ 'update:member': [member: TeamMemberRow | null] }>()
+interface Props {
+	member: TeamMemberRow | null
+}
+
+const props = defineProps<Props>()
+const open = defineModel<boolean>('open', { default: false })
 
 const { roles } = useTeamRoles()
 const { setRoles } = useTeamMembers()
@@ -30,13 +35,6 @@ const regionLabel = (
 		: region.display_name
 }
 
-const open = computed({
-	get: () => !!props.member,
-	set: (v: boolean) => {
-		if (!v) emit('update:member', null)
-	},
-})
-
 const rows = ref<TeamMemberRoleAssignment[]>([])
 
 const registryCall = useCall<TeamRegistry, { team: string }>({
@@ -45,14 +43,11 @@ const registryCall = useCall<TeamRegistry, { team: string }>({
 	immediate: false,
 })
 
-watch(
-	() => props.member,
-	(member) => {
-		if (!member) return
-		rows.value = member.roles.map((r) => ({ ...r }))
-		if (!registryCall.data) registryCall.reload()
-	},
-)
+watch(open, (isOpen) => {
+	if (!isOpen || !props.member) return
+	rows.value = props.member.roles.map((r) => ({ ...r }))
+	if (!registryCall.data) registryCall.reload()
+})
 
 const roleOptions = computed(() =>
 	roles.value
@@ -70,14 +65,14 @@ const applyResourceKey = (row: TeamMemberRoleAssignment, key: string): void => {
 }
 
 const resourceOptions = computed(() => {
-	const assets = registryCall.data?.assets ?? []
+	const servers = registryCall.data?.servers ?? []
 	const sites = registryCall.data?.sites ?? []
 	return [
 		{ label: 'All resources', value: resourceKey('*', null) },
-		...assets.map((a) => ({
+		...servers.map((a) => ({
 			label: a.title || a.resource_id,
 			value: resourceKey('Server', a.name),
-			description: regionLabel(a.cluster),
+			description: regionLabel(a.region),
 		})),
 		...sites.map((s) => ({
 			label: s.subdomain || s.name,
@@ -102,8 +97,6 @@ const dominatingIndex = computed(() =>
 	rows.value.findIndex((r) => r.role === 'Admin'),
 )
 
-// A role on all resources subsumes the same role on a specific one — flag the
-// narrow rows while editing, and drop them on save (the backend does too).
 const shadowedIndexes = computed(() => {
 	const wildcardRoles = new Set(
 		rows.value
@@ -125,6 +118,8 @@ const canSubmit = computed(
 )
 
 const submitting = ref(false)
+const formError = ref('')
+watch(rows, () => (formError.value = ''), { deep: true })
 
 const submit = async (): Promise<void> => {
 	if (!canSubmit.value || !props.member) return
@@ -132,22 +127,27 @@ const submit = async (): Promise<void> => {
 	const grants = rows.value.filter(
 		(_, index) => !shadowedIndexes.value.has(index),
 	)
-	const ok = await setRoles(props.member.user, grants)
-	submitting.value = false
-	if (ok) open.value = false
+	try {
+		await setRoles(props.member.user, grants, { throwOnError: true })
+		open.value = false
+	} catch (e) {
+		formError.value = getErrorMessage(
+			e,
+			"The member's access couldn't be saved.",
+		)
+	} finally {
+		submitting.value = false
+	}
 }
 
 const dialogOptions = computed(() => ({
-	title: 'Manage access',
 	size: 'lg' as const,
 	actions: [
 		{
-			label: 'Back',
-			variant: 'outline' as const,
-			iconLeft: 'lucide-arrow-left',
-			onClick: () => {
-				open.value = false
-			},
+			label: 'Add role',
+			onClick: addRow,
+			class: 'mr-auto',
+			iconLeft: 'lucide-plus',
 		},
 		{
 			label: 'Save',
@@ -163,19 +163,22 @@ const dialogOptions = computed(() => ({
 <template>
 	<Dialog
 		v-model="open"
-		:title="dialogOptions.title"
+		title="Manage access"
 		:size="dialogOptions.size"
 		:actions="dialogOptions.actions"
 	>
 		<template #default>
-			<div v-if="member" class="space-y-4">
+			<div class="space-y-4">
+				<Alert v-if="formError" theme="red" :title="formError" />
 				<div class="flex items-center gap-3">
-					<Avatar :label="member.full_name" size="md" />
+					<Avatar :label="member?.full_name" size="2xl" />
 					<div class="min-w-0">
 						<p class="truncate font-medium text-ink-gray-9">
-							{{ member.full_name }}
+							{{ member?.full_name }}
 						</p>
-						<p class="truncate text-p-sm text-ink-gray-5">{{ member.user }}</p>
+						<p class="truncate text-p-sm text-ink-gray-5">
+							{{ member?.user }}
+						</p>
 					</div>
 				</div>
 
@@ -202,16 +205,14 @@ const dialogOptions = computed(() => ({
 						class="flex items-center gap-2"
 						:class="{ 'opacity-50': dominatingIndex !== -1 && index !== dominatingIndex }"
 					>
-						<FormControl
-							type="select"
+						<Select
 							v-model="row.role"
 							:options="roleOptions"
 							placeholder="Choose a role"
 							class="min-w-0 flex-1"
 						/>
 						<span class="shrink-0 text-p-sm text-ink-gray-5">on</span>
-						<FormControl
-							type="select"
+						<Select
 							:model-value="resourceKey(row.resource_type, row.resource_name)"
 							:options="resourceOptions"
 							class="min-w-0 flex-1"
@@ -225,13 +226,6 @@ const dialogOptions = computed(() => ({
 						/>
 					</div>
 				</div>
-
-				<Button
-					variant="subtle"
-					icon-left="lucide-plus"
-					label="Add role for a resource"
-					@click="addRow"
-				/>
 			</div>
 		</template>
 	</Dialog>

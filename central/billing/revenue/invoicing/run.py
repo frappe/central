@@ -16,7 +16,7 @@ from frappe.query_builder.functions import Count
 from central.billing.doctype.billing_run.billing_run import snapshot
 from central.billing.platform import metrics
 from central.billing.revenue.invoicing.generate import generate_team_invoice
-from central.billing.revenue.invoicing.lifecycle import open_and_collect
+from central.billing.revenue.invoicing.lifecycle import held_drafts, open_and_collect
 
 # How many teams / invoices one page job is responsible for.
 PAGE_SIZE = 500
@@ -112,13 +112,13 @@ def _tally(counters: dict | None, key: str) -> None:
 		counters[key] = counters.get(key, 0) + 1
 
 
-def draft_team_invoice(team: str, period_start, period_end, counters: dict | None = None) -> str | None:
+def draft_team_invoice(team: str, period_start, period_end, counters: dict | None = None) -> list[str]:
 	"""Draft one team's invoice — the unit of work phase 1 fans out.
 
 	One team = one transaction = one commit, on every path. Failure is contained to
-	the team: a missing rate or a broken tax profile must not take the other 999,999
-	teams' invoices with it. The savepoint undoes only this team's writes, so a
-	caller part-way through a page keeps the teams it already billed.
+	the team: a missing rate or a broken tax profile must not take the other
+	999,999 teams' invoices with it. The savepoint undoes only this team's writes,
+	so a caller part-way through a page keeps the teams it already billed.
 
 	A contained failure is not re-raised, and needn't be: drafting is idempotent per
 	(team, period), so re-running the phase retries exactly the teams that failed.
@@ -133,20 +133,21 @@ def draft_team_invoice(team: str, period_start, period_end, counters: dict | Non
 	for attempt in range(CONTENTION_RETRIES):
 		frappe.db.savepoint(_SAVEPOINT)
 		try:
-			return generate_team_invoice(team, period_start, period_end)
+			name = generate_team_invoice(team, period_start, period_end)
+			return [name] if name else []
 		except _CONTENTION as error:
 			frappe.db.rollback()
 			if attempt == CONTENTION_RETRIES - 1:
 				# Out of patience: record it and let the next tick pick the team up.
 				_contain(unit, "Team", team, error, undo=False)
 				_tally(counters, "failed")
-				return None
+				return []
 			# Jittered, so a whole page of retriers doesn't re-collide in lockstep.
 			time.sleep(CONTENTION_BACKOFF * (attempt + 1) + random.uniform(0, CONTENTION_BACKOFF))
 		except Exception as error:
 			_contain(unit, "Team", team, error, undo=True)
 			_tally(counters, "failed")
-			return None
+			return []
 
 
 def settle_draft(invoice: str, counters: dict | None = None) -> dict | None:
@@ -171,6 +172,40 @@ def settle_draft(invoice: str, counters: dict | None = None) -> dict | None:
 		return None
 
 
+def release_held_drafts(team: str) -> None:
+	"""Queue the settlement of whatever was held for this team's billing details.
+
+	Enqueued, not inline: the customer is waiting on a form, not on a charge. A team
+	with nothing held queues nothing.
+	"""
+	if not held_drafts(team, limit=1):
+		return
+	frappe.enqueue(
+		"central.billing.revenue.invoicing.run.settle_held_drafts",
+		queue=billing_queue(),
+		job_id=f"billing-release::{team}",
+		deduplicate=True,
+		enqueue_after_commit=True,
+		team=team,
+	)
+
+
+def settle_held_drafts(team: str) -> dict:
+	"""Settle the drafts held back for this team's billing details, now they are in.
+
+	One team's invoices, one job, one transaction. Each invoice re-checks the hold
+	itself, so this is safe to call whether or not the profile is really complete.
+	"""
+	settled, held = 0, 0
+	for draft in held_drafts(team):
+		result = settle_draft(draft.name) or {}
+		if result.get("held"):
+			held += 1
+		elif result.get("claimed"):
+			settled += 1
+	return {"team": team, "settled": settled, "held": held}
+
+
 def team_pages(page_size: int = PAGE_SIZE):
 	"""Yield the teams holding a subscription, one bounded page at a time.
 
@@ -179,17 +214,27 @@ def team_pages(page_size: int = PAGE_SIZE):
 	seen`, ordered) walks the `Subscription(team)` index in fixed-size pages, so
 	memory is flat in team count.
 	"""
+	yield from _team_pages(page_size)
+
+
+def active_team_pages(page_size: int = PAGE_SIZE):
+	"""The same pages, narrowed to teams still running something.
+
+	A team whose subscriptions are all disabled has closed periods left to bill but
+	nothing accruing, so anything addressed to teams that are *currently* costing
+	money asks for these.
+	"""
+	yield from _team_pages(page_size, enabled_only=True)
+
+
+def _team_pages(page_size: int, enabled_only: bool = False):
 	sub = frappe.qb.DocType("Subscription")
 	after = ""
 	while True:
-		page = (
-			frappe.qb.from_(sub)
-			.select(sub.team)
-			.distinct()
-			.where(sub.team > after)
-			.orderby(sub.team)
-			.limit(page_size)
-		).run(pluck=True)
+		query = frappe.qb.from_(sub).select(sub.team).distinct().where(sub.team > after)
+		if enabled_only:
+			query = query.where(sub.enabled == 1)
+		page = query.orderby(sub.team).limit(page_size).run(pluck=True)
 		if not page:
 			return
 		yield page
@@ -241,11 +286,11 @@ def draft_team_page(after: str, until: str, period_start, period_end) -> dict:
 
 
 def generate_draft_invoices(period_start, period_end, enqueue: bool = False) -> list[str]:
-	"""Phase-1 orchestrator: ONE consolidated draft per team for the period.
+	"""Phase-1 orchestrator: one consolidated draft invoice per team.
 
 	A team that runs instances across several clusters still gets a single
-	invoice (generate_team_invoice aggregates all its clusters, and picks the
-	team's oldest subscription as the primary that funds the auto-charge).
+	consolidated invoice (generate_team_invoice aggregates all its clusters), broken
+	out by Project on its own line items, not by separate invoices.
 
 	With `enqueue` the orchestrator rates nothing itself, and — just as important —
 	enqueues nothing per team. It hands out **page jobs**: at a million teams, a
@@ -275,9 +320,7 @@ def generate_draft_invoices(period_start, period_end, enqueue: bool = False) -> 
 			after = until
 			continue
 		for team in page:
-			name = draft_team_invoice(team, period_start, period_end)
-			if name:
-				created.append(name)
+			created.extend(draft_team_invoice(team, period_start, period_end))
 			# Inline or fanned out, a team is a transaction. It bounds what a
 			# contention rollback can discard, and it stops the run holding the
 			# `tabSeries` row (taken by every Invoice insert) for a whole page —
@@ -349,9 +392,14 @@ def settle_draft_page(cutoff, after: str, until: str) -> dict:
 	make it faster — it would make it rate-limited.
 	"""
 	with metrics.timed("billing.settle_page", cutoff=str(cutoff)) as counters:
-		counters.update(settled=0, failed=0)
+		counters.update(settled=0, held=0, failed=0)
 		for invoice in drafts_in_range(cutoff, after, until):
-			if settle_draft(invoice, counters):
+			# Only a claimed invoice settled. A held draft stays Draft for the next
+			# run, and one another worker took is neither ours to count nor a failure.
+			result = settle_draft(invoice, counters) or {}
+			if result.get("held"):
+				counters["held"] += 1
+			elif result.get("claimed"):
 				counters["settled"] += 1
 			frappe.db.commit()  # nosemgrep: frappe-manual-commit -- one invoice, one transaction
 		return {"after": after, "until": until, **counters}
@@ -499,11 +547,11 @@ def billing_run_status(today=None) -> dict:
 
 
 def run_monthly_billing(today=None) -> dict:
-	"""Bill the just-closed month end-to-end, inline — the manual/demo/test path.
+	"""Bill the just-closed month end-to-end, inline.
 
-	The scheduler runs the two ticks above instead. This stays as the one-call
-	version for a small site, a demo, or an operator re-running a period by hand:
-	same work, same idempotency, no workers involved.
+	The monthly scheduler event runs this. The two fan-out ticks above are not
+	scheduled; an operator runs them by hand to spread a large run over the billing
+	queue. Same work, same idempotency.
 	"""
 	period_start, period_end = billing_period(today)
 	drafted = generate_draft_invoices(period_start, period_end)

@@ -1,0 +1,148 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "HAG-.#####",
+ "naming_rule": "Expression (old style)",
+ "creation": "2026-10-03 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "target_section",
+  "region",
+  "scope",
+  "host_title",
+  "host",
+  "column_break_target",
+  "user",
+  "duration_hours",
+  "reason",
+  "grant_section",
+  "expires_at",
+  "amended_from"
+ ],
+ "fields": [
+  {
+   "fieldname": "target_section",
+   "fieldtype": "Section Break",
+   "label": "Target"
+  },
+  {
+   "fieldname": "region",
+   "fieldtype": "Link",
+   "label": "Region",
+   "options": "Region",
+   "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "description": "Choose the region first. Its hosts load from it."
+  },
+  {
+   "default": "One host",
+   "fieldname": "scope",
+   "fieldtype": "Select",
+   "label": "Scope",
+   "options": "One host\nAll hosts",
+   "reqd": 1
+  },
+  {
+   "depends_on": "eval:doc.scope == 'One host'",
+   "mandatory_depends_on": "eval:doc.scope == 'One host'",
+   "fieldname": "host_title",
+   "fieldtype": "Autocomplete",
+   "label": "Host",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "description": "The host name that you type in the SSH command."
+  },
+  {
+   "fieldname": "host",
+   "fieldtype": "Data",
+   "label": "Host ID",
+   "hidden": 1,
+   "read_only": 1,
+   "description": "The Atlas host ID, or all."
+  },
+  {
+   "fieldname": "column_break_target",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "__user",
+   "fieldname": "user",
+   "fieldtype": "Link",
+   "label": "User",
+   "options": "User",
+   "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "description": "Needs the Atlas Host Access role to sign in to Warpgate."
+  },
+  {
+   "default": "1",
+   "fieldname": "duration_hours",
+   "fieldtype": "Select",
+   "label": "Duration (hours)",
+   "options": "1\n3\n6\n12\n24",
+   "reqd": 1
+  },
+  {
+   "fieldname": "reason",
+   "fieldtype": "Small Text",
+   "label": "Reason"
+  },
+  {
+   "fieldname": "grant_section",
+   "fieldtype": "Section Break",
+   "label": "Grant"
+  },
+  {
+   "fieldname": "expires_at",
+   "fieldtype": "Datetime",
+   "label": "Expires At",
+   "read_only": 1,
+   "no_copy": 1,
+   "in_list_view": 1,
+   "description": "Set when you submit. Warpgate ends the access at this time."
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "options": "Host Access Grant",
+   "read_only": 1,
+   "no_copy": 1,
+   "print_hide": 1,
+   "search_index": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2026-10-03 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Infrastructure",
+ "name": "Host Access Grant",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "amend": 1,
+   "cancel": 1,
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  }
+ ],
+ "search_fields": "user,host_title",
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "user",
+ "track_changes": 1
+}

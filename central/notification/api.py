@@ -4,9 +4,13 @@
 
 import frappe
 from frappe import _
+from frappe.model.document import bulk_insert
 
 from central.api.pilot import pilot_credential_auth
 from central.iam import is_active_team_member, resolve_team, user_has_operator_bypass
+from central.notification import CATEGORIES
+
+MARK_READ_BATCH_SIZE = 500
 
 
 def _require_member(user: str, team: str) -> None:
@@ -43,10 +47,13 @@ def save_user_preferences(team: str, preferences: list[dict]) -> dict:
 	user = frappe.session.user
 	_require_member(user, team)
 	saved = []
+	# Serialize preference upserts for this team. The unique constraint remains the
+	# final guard when separate requests race.
+	frappe.db.get_value("Team", team, "name", for_update=True)
 	for pref in preferences:
 		category = pref.get("category")
-		if not category:
-			continue
+		if category not in CATEGORIES:
+			frappe.throw(_("Unsupported notification category {0}.").format(frappe.bold(category)))
 		email = bool(frappe.utils.cint(pref.get("email_enabled", 1)))
 		in_app = bool(frappe.utils.cint(pref.get("in_app_enabled", 1)))
 
@@ -56,12 +63,9 @@ def save_user_preferences(team: str, preferences: list[dict]) -> dict:
 			"name",
 		)
 		if existing:
-			frappe.db.set_value(
-				"User Notification Preference",
-				existing,
-				{"email_enabled": int(email), "in_app_enabled": int(in_app)},
-			)
-			name = existing
+			doc = frappe.get_doc("User Notification Preference", existing)
+			doc.update({"email_enabled": int(email), "in_app_enabled": int(in_app)})
+			doc.save()
 		else:
 			doc = frappe.get_doc(
 				{
@@ -72,10 +76,11 @@ def save_user_preferences(team: str, preferences: list[dict]) -> dict:
 					"email_enabled": int(email),
 					"in_app_enabled": int(in_app),
 				}
-			).insert(ignore_permissions=True)
-			name = doc.name
+			).insert()
 
-		saved.append({"category": category, "email_enabled": email, "in_app_enabled": in_app, "name": name})
+		saved.append(
+			{"category": category, "email_enabled": email, "in_app_enabled": in_app, "name": doc.name}
+		)
 
 	return {"saved": True, "preferences": saved}
 
@@ -180,15 +185,12 @@ def mark_notification_read(name: str, team: str | None = None, read: bool = True
 	read = bool(frappe.utils.cint(read))
 
 	if read:
-		if not frappe.db.exists("Notification Read", {"user": user, "notification": name}):
-			frappe.get_doc(
-				{
-					"doctype": "Notification Read",
-					"user": user,
-					"notification": name,
-					"read_at": frappe.utils.now_datetime(),
-				}
-			).insert(ignore_permissions=True)
+		# Read markers are internal rows; this API already checked that the notification is visible.
+		bulk_insert(
+			"Notification Read",
+			[_read_marker(user, name, frappe.utils.now_datetime())],
+			ignore_duplicates=True,
+		)
 	else:
 		frappe.db.delete("Notification Read", {"user": user, "notification": name})
 
@@ -203,22 +205,32 @@ def mark_all_notifications_read(team: str | None = None) -> dict:
 	Per-user ``Notification Read`` records, so one member clearing does not affect
 	others."""
 	team = _member_team(team)
-	from central.notification import list_notifications as _list
+	from central.notification import unread_count, unread_names
 
-	feed = _list(team, user=frappe.session.user, limit=10000)
+	user = frappe.session.user
+	before = unread_count(team, user=user)
 	now = frappe.utils.now_datetime()
-	updated = 0
-	for item in feed["items"]:
-		if not item["is_read"] and not frappe.db.exists(
-			"Notification Read", {"user": frappe.session.user, "notification": item["name"]}
-		):
-			frappe.get_doc(
-				{
-					"doctype": "Notification Read",
-					"user": frappe.session.user,
-					"notification": item["name"],
-					"read_at": now,
-				}
-			).insert(ignore_permissions=True)
-			updated += 1
-	return {"ok": True, "updated": updated, "unread": 0}
+	while names := unread_names(team, user, limit=MARK_READ_BATCH_SIZE):
+		# Read markers are internal rows; the query returns only notifications visible to this user.
+		bulk_insert(
+			"Notification Read",
+			[_read_marker(user, name, now) for name in names],
+			ignore_duplicates=True,
+			chunk_size=MARK_READ_BATCH_SIZE,
+		)
+
+	unread = unread_count(team, user=user)
+	return {"ok": True, "updated": before - unread, "unread": unread}
+
+
+def _read_marker(user: str, notification: str, read_at):
+	doc = frappe.get_doc(
+		{
+			"doctype": "Notification Read",
+			"user": user,
+			"notification": notification,
+			"read_at": read_at,
+		}
+	)
+	doc.set_new_name()
+	return doc

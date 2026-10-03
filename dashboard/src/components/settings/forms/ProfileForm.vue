@@ -1,15 +1,16 @@
 <script setup lang="ts">
-import { Avatar, Button, FormControl, useCall } from 'frappe-ui'
-import { computed, nextTick, ref, watch } from 'vue'
+import { Alert, Button, TextInput, useCall } from 'frappe-ui'
+import { computed, ref, watch } from 'vue'
 import { API, method } from '@/api/methods'
+import ImageUpload from '@/components/common/ImageUpload.vue'
 import { useMyProfile } from '@/composables/useMyProfile'
 import { useTeamMembers } from '@/composables/useTeamMembers'
-import { errorToast, successToast } from '@/lib/toast'
+import { getErrorMessage, successToast } from '@/lib/feedback'
 
-// The signed-in user's own profile — photo, display name, password. Chrome-free
+// The signed-in user's own profile: photo and display name. Chrome-free
 // on purpose: the settings dialog wraps it in a panel, mobile renders it as a
 // page, and neither layout leaks in here.
-const { profile, reload: reloadProfile } = useMyProfile()
+const { profile, savingPhoto, reload: reloadProfile, setPhoto } = useMyProfile()
 // The roster renders member photos, so it repaints after a change too.
 const { reload: reloadMembers } = useTeamMembers()
 
@@ -29,6 +30,8 @@ const saveCall = useCall<{ full_name: string }, { full_name: string }>({
 	immediate: false,
 })
 const saving = ref(false)
+const nameError = ref('')
+watch(name, () => (nameError.value = ''))
 
 async function onSave(): Promise<void> {
 	if (!changed.value) return
@@ -39,91 +42,47 @@ async function onSave(): Promise<void> {
 		await Promise.all([reloadProfile(), reloadMembers()])
 		successToast('Name updated')
 	} catch (e) {
-		errorToast(e)
+		nameError.value = getErrorMessage(e, "Your name couldn't be updated.")
 	} finally {
 		saving.value = false
 	}
 }
 
-// — Photo. The row is here but inert: the upload endpoint is held back for a
-// follow-up PR, so the control shows what's coming without pretending to work.
+const photoError = ref('')
 
-// — Password. The fields stay out of the way until asked for: most visits here
-// are about the photo or name.
-const editingPassword = ref(false)
-const oldPassword = ref('')
-const newPassword = ref('')
-const changingPassword = ref(false)
-
-// Revealing the fields should put the cursor where the work starts.
-const currentPasswordRef = ref<{ $el?: HTMLElement } | null>(null)
-watch(editingPassword, (editing) => {
-	if (!editing) return
-	nextTick(() => currentPasswordRef.value?.$el?.querySelector('input')?.focus())
-})
-
-const canChangePassword = computed(
-	() => !!oldPassword.value && newPassword.value.length >= 8,
-)
-
-const passwordCall = useCall<
-	{ changed: boolean },
-	{ old_password: string; new_password: string }
->({
-	url: method(API.changePassword),
-	method: 'POST',
-	immediate: false,
-})
-
-async function onChangePassword(): Promise<void> {
-	if (!canChangePassword.value) return
-	changingPassword.value = true
+async function onPhotoChange(fileUrl: string | null): Promise<void> {
+	photoError.value = ''
 	try {
-		await passwordCall.submit({
-			old_password: oldPassword.value,
-			new_password: newPassword.value,
-		})
-		if (passwordCall.error) throw passwordCall.error
-		resetPassword()
-		successToast('Password changed. Your other sessions were signed out')
+		await setPhoto(fileUrl)
+		await reloadMembers()
+		successToast(fileUrl ? 'Photo updated' : 'Photo removed')
 	} catch (e) {
-		errorToast(e)
-	} finally {
-		changingPassword.value = false
+		photoError.value = getErrorMessage(e, "Your photo couldn't be updated.")
 	}
-}
-
-function resetPassword(): void {
-	editingPassword.value = false
-	oldPassword.value = ''
-	newPassword.value = ''
 }
 </script>
 
 <template>
-	<div class="space-y-6">
-		<!-- Photo row, no label — the avatar speaks for itself. The control is
-		     disabled until the upload endpoint lands. -->
-		<div class="space-y-1.5">
-			<div class="flex items-center gap-3">
-				<Avatar
-					:image="profile?.user_image ?? undefined"
-					:label="name.trim() || profile?.full_name || profile?.user || ''"
-					size="2xl"
-					class="shrink-0"
-				/>
-				<Button
-					:label="profile?.user_image ? 'Change photo' : 'Upload photo'"
-					disabled
-				/>
-			</div>
-			<p class="text-p-sm text-ink-gray-5">
-				Photo uploads land in a follow-up.
-			</p>
+	<div class="mt-6 space-y-6">
+		<div v-if="profile">
+			<Alert v-if="photoError" class="mb-3" theme="red" :title="photoError" />
+			<ImageUpload
+				label="Photo"
+				:name="name.trim() || profile.full_name || profile.user"
+				:image="profile.user_image"
+				:attach-to="{
+					doctype: 'User',
+					docname: profile.user,
+					fieldname: 'user_image',
+				}"
+				:busy="savingPhoto"
+				@change="onPhotoChange"
+			/>
 		</div>
 
+		<Alert v-if="nameError" class="mb-3" theme="red" :title="nameError" />
 		<div class="flex items-end gap-2">
-			<FormControl
+			<TextInput
 				v-model="name"
 				label="Full name"
 				class="flex-1"
@@ -141,46 +100,6 @@ function resetPassword(): void {
 
 		<!-- Identity, not a setting — disabled (not readonly) so it can't be
 		     focused or clicked into at all. -->
-		<FormControl :model-value="profile?.user ?? ''" label="Email" disabled />
-
-		<!-- One button until you mean it; the fields appear in place. The button
-		     and field labels name themselves — no section label. -->
-		<div>
-			<Button
-				v-if="!editingPassword"
-				label="Change password"
-				@click="editingPassword = true"
-			/>
-			<div v-else class="space-y-3">
-				<FormControl
-					ref="currentPasswordRef"
-					v-model="oldPassword"
-					type="password"
-					label="Current password"
-					autocomplete="current-password"
-				/>
-				<FormControl
-					v-model="newPassword"
-					type="password"
-					label="New password"
-					autocomplete="new-password"
-					description="At least 8 characters. Your other sessions will be signed out."
-					@keydown.enter="onChangePassword"
-				/>
-				<!-- Distinct submit label (the trigger already said "Change
-				     password") and a ghost Cancel, so the primary reads as primary
-				     even while disabled. -->
-				<div class="flex items-center gap-2">
-					<Button
-						variant="solid"
-						label="Update password"
-						:loading="changingPassword"
-						:disabled="!canChangePassword"
-						@click="onChangePassword"
-					/>
-					<Button variant="ghost" label="Cancel" @click="resetPassword" />
-				</div>
-			</div>
-		</div>
+		<TextInput :model-value="profile?.user ?? ''" label="Email" disabled />
 	</div>
 </template>

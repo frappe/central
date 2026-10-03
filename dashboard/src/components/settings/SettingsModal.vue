@@ -35,10 +35,10 @@ const tabs = computed(() =>
 	}),
 )
 
-// What's yours and what's the team's are different kinds of setting, so they
-// get their own sections rather than one long list.
+// What's yours and what the team's are different kinds of setting, so they get
+// their own sections rather than one long list.
 const groups = computed(() => {
-	const order: SettingsTabDef['group'][] = ['Account', 'Team']
+	const order: SettingsTabDef['group'][] = ['Account', 'Administration']
 	return order
 		.map((group) => ({
 			label: group,
@@ -47,8 +47,7 @@ const groups = computed(() => {
 		.filter((group) => group.items.length > 0)
 })
 
-// Switching to a team you don't administer drops the Team settings tab. If that
-// was the open one, land somewhere real instead of an empty content pane.
+// Losing a tab you can no longer reach shouldn't leave an empty content pane.
 watch(tabs, (available) => {
 	if (!available.some((tab) => tab.value === settingsTab.value)) {
 		settingsTab.value = available[0]?.value ?? 'profile'
@@ -61,22 +60,12 @@ watch(tabs, (available) => {
 	     (`defineModel('open')`) and declares no `modelValue`, so a bare v-model
 	     binds a prop nothing reads and the dialog never opens. -->
 	<SettingsDialog v-model:open="settingsOpen" v-model:tab="settingsTab">
-		<SettingsSidebar>
-			<!-- The dialog names itself. aria-hidden because SettingsDialog already
-			     renders a screen-reader-only <h1>Settings</h1> — this is the same
-			     title made visible, not a second one. -->
-			<p
-				aria-hidden="true"
-				class="px-2 pb-1 pt-1 text-base font-semibold text-ink-gray-8"
-			>
-				Settings
-			</p>
+		<SettingsSidebar class="dark:bg-surface-elevation-1">
+			<SettingsNavGroup v-for="group in groups" :key="group.label">
+				<template #label>
+					<span class="text-sm-medium text-ink-gray-5">{{ group.label }}</span>
+				</template>
 
-			<SettingsNavGroup
-				v-for="group in groups"
-				:key="group.label"
-				:label="group.label"
-			>
 				<SettingsNavItem
 					v-for="tab in group.items"
 					:key="tab.value"
@@ -97,15 +86,32 @@ watch(tabs, (available) => {
 			</SettingsNavGroup>
 		</SettingsSidebar>
 
-		<SettingsContent>
+		<SettingsContent class="bg-surface-base">
 			<SettingsPanel v-for="tab in tabs" :key="tab.value" :value="tab.value">
-				<SettingsHeader :title="tab.title" :description="tab.description" />
-				<SettingsBody>
-					<div class="mt-6">
-						<component :is="tab.component" />
-					</div>
+				<SettingsHeader
+					class="!px-10 !pt-9"
+					:title="tab.title"
+					:description="tab.description"
+				/>
+				<SettingsBody viewport-class="px-10 pb-16">
+					<component :is="tab.component" />
 				</SettingsBody>
 			</SettingsPanel>
 		</SettingsContent>
 	</SettingsDialog>
 </template>
+
+<!-- NOTE: revert if this merges https://github.com/frappe/frappe-ui/pull/1126 -->
+<style scoped>
+:deep(.text-lg.font-semibold) {
+	@apply text-lg-semibold;
+}
+
+:deep(.text-base.text-ink-gray-6) {
+	@apply text-p-base;
+}
+
+:deep([data-state="active"]) {
+	@apply text-ink-gray-8;
+}
+</style>

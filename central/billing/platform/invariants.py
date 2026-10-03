@@ -261,7 +261,12 @@ def check_one_live_invoice_per_period() -> list[Violation]:
 	inv = frappe.qb.DocType("Invoice")
 	rows = (
 		frappe.qb.from_(inv)
-		.select(inv.team, inv.period_start, inv.period_end, Count("*").as_("bills"))
+		.select(
+			inv.team,
+			inv.period_start,
+			inv.period_end,
+			Count("*").as_("bills"),
+		)
 		.where(inv.status != "Cancelled")
 		.groupby(inv.team, inv.period_start, inv.period_end)
 		.having(Count("*") > 1)

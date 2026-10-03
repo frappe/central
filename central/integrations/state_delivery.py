@@ -1,0 +1,244 @@
+from __future__ import annotations
+
+import base64
+import hashlib
+import hmac
+from typing import NoReturn
+
+import frappe
+from frappe import _
+from frappe.utils.password import get_decrypted_password
+
+from central.infrastructure.doctype.resource_action.resource_action import ResourceAction
+from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
+from central.integrations import servers
+from central.services.doctype.service_detail.service_detail import ServiceDetail
+
+# Webhooks are ordered by the region's own `observed_at` (stored as `last_reported_at`):
+# a delivery that is not newer is a reorder or a replay and is dropped. A lost delivery
+# is corrected by the scheduled reconcile, which reads regional truth directly.
+
+# What a region calls a state, and what Central records for it. A report carrying
+# anything else is ignored: Central never invents a status it was not told.
+STATUS_FROM_REPORT = {"running": "Running", "stopped": "Stopped", "paused": "Paused"}
+
+STATE_REPORTED = "vm.state"
+STATE_DELETED = "vm.state.deleted"
+
+# What a region may report about itself. Central records these two words and no others.
+SERVICES = ("telemetry", "storage")
+AVAILABILITY = ("Available", "Not Available")
+
+
+def accept_atlas_report(raw_body: bytes, region: str | None, signature: str | None) -> dict:
+	"""Authenticate one Atlas delivery, then queue it when it tells Central something new.
+
+	The reply is the sender's receipt: `queued` when a job will apply the report, and
+	`ignored` with a reason when there is nothing to do. Only an authentication failure
+	raises, because only that is worth a retry."""
+	verified_region = _verified_atlas_region(region, signature, raw_body)
+
+	report = _parsed(raw_body)
+	if report is None:
+		return _ignored("unreadable body")
+
+	server = _atlas_server_for(verified_region, report.get("virtual_machine"))
+	if not server:
+		return _ignored("unknown server")
+
+	decision = _decide(report, server)
+	if decision:
+		return decision
+
+	frappe.enqueue(
+		"central.integrations.state_delivery.apply_atlas_report",
+		queue="short",
+		region=verified_region,
+		report=report,
+	)
+	return {"queued": True, "resource_id": server.name}
+
+
+def accept_cargo_report(raw_body: bytes, region: str | None, signature: str | None) -> dict:
+	"""Record what one region now serves, from a delivery its own secret signed. A repeat
+	still refreshes `last_updated_on`, which reads as "heard from", not as churn."""
+	cargo = _verified_cargo_region(region, signature, raw_body)
+
+	report = _parsed(raw_body)
+	if report is None:
+		return _ignored("unreadable body")
+
+	service = report.get("service")
+	if service not in SERVICES:
+		return _ignored(f"unsupported service '{service}'")
+
+	status = report.get("status")
+	if status not in AVAILABILITY:
+		return _ignored(f"unsupported status '{status}'")
+
+	detail = ServiceDetail.record_report(cargo, service, status, report.get("service_endpoint"))
+	return {"recorded": True, "service_detail": detail}
+
+
+def apply_atlas_report(region: str, report: dict) -> None:
+	"""Record one authenticated report. The handler already found it worth applying;
+	this repeats the checks under a row lock, because another worker may have applied a
+	newer report in between."""
+	server = _atlas_server_for(region, report.get("virtual_machine"))
+	if not server:
+		return
+
+	if report.get("event") == STATE_DELETED:
+		_apply_deletion(server.name)
+	else:
+		_apply_state(server.name, report)
+
+
+def _apply_deletion(name: str) -> None:
+	"""Record the server as gone. Termination is final, so there is no ordering check."""
+	server = frappe.get_doc("Virtual Machine", name, for_update=True)
+	if server.status == "Terminated":
+		return
+
+	servers.mark_terminated(server)
+	ResourceAction.confirm_observed_status(server.name, "Terminated")
+
+
+def _apply_state(name: str, report: dict) -> None:
+	status = STATUS_FROM_REPORT.get(report.get("status"))
+	if not status or not _reported_at(report):
+		return
+	if not VirtualMachine.record_observed_state(
+		name, frappe.utils.now_datetime(), {"status": status}, reported_at=report.get("observed_at")
+	):
+		return
+
+	ResourceAction.confirm_observed_status(name, status)
+	if status == "Running":
+		frappe.enqueue(
+			"central.integrations.servers.refresh_server",
+			name=name,
+			enqueue_after_commit=True,
+			job_id=f"server-refresh:{name}",
+			deduplicate=True,
+		)
+
+
+def _decide(report: dict, server: frappe._dict) -> dict | None:
+	"""Return the reply for a report Central will not queue, or None to queue it."""
+	event = report.get("event")
+	if event == STATE_DELETED:
+		return _ignored("no change") if server.status == "Terminated" else None
+	if event != STATE_REPORTED:
+		return _ignored(f"unsupported event '{event}'")
+
+	status = STATUS_FROM_REPORT.get(report.get("status"))
+	if not status:
+		return _ignored(f"unsupported status '{report.get('status')}'")
+	reported_at = _reported_at(report)
+	if not reported_at:
+		return _ignored("invalid observed_at")
+	if server.status == status:
+		# A same-state report still advances the regional watermark. This prevents an
+		# older state change arriving later from regressing the server.
+		if not server.last_reported_at or reported_at > frappe.utils.get_datetime(server.last_reported_at):
+			VirtualMachine.record_observed_state(
+				server.name,
+				frappe.utils.now_datetime(),
+				{"status": status},
+				reported_at=reported_at,
+			)
+		return _ignored("no change")
+	if server.last_reported_at and reported_at <= frappe.utils.get_datetime(server.last_reported_at):
+		return _ignored("stale report")
+
+	return None
+
+
+def _parsed(raw_body: bytes) -> dict | None:
+	"""The report as an object, or None when the body is not one."""
+	try:
+		report = frappe.parse_json(raw_body.decode() or "{}")
+	except UnicodeDecodeError:
+		return None
+
+	return report if isinstance(report, dict) else None
+
+
+def _reported_at(report: dict):
+	"""Return the source timestamp, or None when Atlas did not send a valid value."""
+	value = report.get("observed_at")
+	if not isinstance(value, str) or not value.strip():
+		return None
+	try:
+		return frappe.utils.get_datetime(value)
+	except (TypeError, ValueError):
+		return None
+
+
+def _atlas_server_for(region: str, virtual_machine: str | None) -> frappe._dict | None:
+	"""The server record this report is about. Ownership comes from Central's own row,
+	never from the report, and the region that signed the delivery scopes the lookup."""
+	if not virtual_machine or not isinstance(virtual_machine, str):
+		return None
+
+	return frappe.db.get_value(
+		"Virtual Machine",
+		{"region": region, "atlas_vm_id": virtual_machine},
+		["name", "status", "last_reported_at"],
+		as_dict=True,
+	)
+
+
+def _verified_atlas_region(region: str | None, signature: str | None, raw_body: bytes) -> str:
+	"""The region whose Atlas secret signed this delivery. `X-FC-Region` only selects which
+	secret to check; it proves nothing on its own."""
+	if not region or not signature:
+		_reject("missing region or signature header")
+	if frappe.db.get_value("Region", region, "status") in (None, "Disabled"):
+		_reject(f"unknown or disabled region '{region}'")
+
+	secret = get_decrypted_password("Region", region, "webhook_secret", raise_exception=False)
+	if not secret:
+		_reject(f"no webhook secret for region '{region}'")
+	if not _signature_matches(secret, raw_body, signature):
+		_reject(f"signature mismatch for region '{region}'")
+
+	return region
+
+
+def _verified_cargo_region(region: str | None, signature: str | None, raw_body: bytes) -> str:
+	"""The region whose Cargo secret signed this delivery. `X-FC-Region` only selects the
+	secret; it proves nothing."""
+	if not region or not signature:
+		_reject("missing region or signature header")
+
+	if frappe.db.get_value("Region", region, "cargo_status") != "Registered":
+		_reject(f"unknown or unregistered Cargo region '{region}'")
+
+	secret = get_decrypted_password("Region", region, "cargo_webhook_secret", raise_exception=False)
+	if not secret:
+		_reject(f"no webhook secret for Cargo region '{region}'")
+	if not _signature_matches(secret, raw_body, signature):
+		_reject(f"signature mismatch for Cargo region '{region}'")
+
+	return region
+
+
+def _signature_matches(secret: str, raw_body: bytes, signature: str) -> bool:
+	"""Frappe's Webhook signs the exact bytes it sends: base64 of an HMAC-SHA256."""
+	expected = base64.b64encode(hmac.new(secret.encode(), raw_body, hashlib.sha256).digest())
+	# Bytes, not str: compare_digest raises TypeError on a non-ASCII string.
+	return hmac.compare_digest(expected, signature.encode())
+
+
+def _reject(reason: str) -> NoReturn:
+	"""Log which check failed, for an operator reading repeated rejections, and answer
+	every caller with the same sentence so none of them can probe for the reason."""
+	frappe.log_error(title="Rejected regional state report", message=reason)
+
+	frappe.throw(_("Invalid signature."), frappe.PermissionError)
+
+
+def _ignored(reason: str) -> dict:
+	return {"queued": False, "ignored": reason}

@@ -27,7 +27,7 @@ def list_payment_methods(team: str | None = None) -> list[dict]:
 	card clears the micro-charge it isn't usable, isn't in the charge order, and
 	would only confuse the list (it has no label/expiry yet)."""
 	team = _resolve_team(team)
-	return frappe.get_all(
+	rows = frappe.get_all(
 		"Payment Method",
 		filters={"team": team, "status": ["not in", ["Cancelled", "Pending Validation"]]},
 		fields=[
@@ -45,6 +45,7 @@ def list_payment_methods(team: str | None = None) -> list[dict]:
 		],
 		order_by="priority asc, creation asc",
 	)
+	return rows
 
 
 @frappe.whitelist()
@@ -144,42 +145,6 @@ def confirm_card(
 		card_network=card_network,
 	)
 	return {"payment_method": method.name, "status": method.status}
-
-
-@frappe.whitelist(methods=["POST"])
-def add_demo_card(
-	team: str | None = None,
-	gateway: str | None = None,
-	display_label: str = "Visa ····4242",
-	expiry_month: int = 12,
-	expiry_year: int = 2030,
-) -> dict:
-	"""Demo convenience: register an active card without a live gateway round-trip.
-	(Production uses initiate_card_setup + confirm_card with the gateway SDK.)"""
-	team = _resolve_team(team, authz.MANAGE)
-	from central.billing.payments import payments
-
-	name = (
-		frappe.get_doc(
-			{
-				"doctype": "Payment Method",
-				"team": team,
-				"gateway": gateway,
-				"method_type": "Card",
-				"status": "Active",
-				"display_label": display_label,
-				"gateway_method_id": f"pm_{frappe.generate_hash(6)}",
-				"gateway_customer_id": f"cus_{team}",
-				"expiry_month": expiry_month,
-				"expiry_year": expiry_year,
-				"validated_at": frappe.utils.now_datetime(),
-			}
-		)
-		.insert(ignore_permissions=True)
-		.name
-	)
-	payments.densify_priorities(team)  # append at the end of the fallback order
-	return {"payment_method": name, "status": "Active"}
 
 
 @frappe.whitelist(methods=["POST"])

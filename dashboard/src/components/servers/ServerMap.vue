@@ -14,7 +14,6 @@ import {
 	computeNodes,
 	MAP_HEIGHT,
 	MAP_WIDTH,
-	MAX_ZOOM,
 	type MapNode,
 	type MapPin,
 	type MapSpot,
@@ -31,7 +30,6 @@ const props = withDefaults(
 		spots?: MapSpot[]
 		/** Region-picker mode: render these as selectable dots instead of pins/spots. */
 		markers?: MapSpot[]
-		/** The picked marker — drawn as the provider-logo pin. */
 		selectedId?: string | null
 		/** Server id hovered elsewhere (the side panel) — bumps its node. */
 		highlightId?: string | null
@@ -43,8 +41,9 @@ const props = withDefaults(
 		allowCreate?: boolean
 		/** Show direct bench-open affordances inside cluster cards. */
 		allowOpen?: boolean
-		/** Site name currently being opened — spins its cluster-card open button. */
-		openingSite?: string | null
+		/** Server resource id or site name currently opening in a new tab. */
+		opening?: string | null
+		compact?: boolean
 	}>(),
 	{
 		pins: () => [],
@@ -56,7 +55,8 @@ const props = withDefaults(
 		interactive: true,
 		allowCreate: false,
 		allowOpen: false,
-		openingSite: null,
+		opening: null,
+		compact: false,
 	},
 )
 
@@ -67,7 +67,7 @@ const emit = defineEmits<{
 	'open-server': [server: NonNullable<MapPin['server']>]
 	/** A site pin/cluster-card row's open-live-site action was chosen. */
 	'open-site': [name: string]
-	/** A + spot was chosen — the Atlas Instance region to create in. */
+	/** A + spot was chosen — the Region to create in. */
 	'new-server': [region: string]
 	/** A cluster was clicked; the page may narrow its list to these servers. */
 	'cluster-open': [payload: { ids: string[]; label: string }]
@@ -79,7 +79,7 @@ const emit = defineEmits<{
 // unchanged. project() and computeNodes() (clustering) live in lib/serverMap.
 const W = MAP_WIDTH
 const H = MAP_HEIGHT
-const MAX_Z = MAX_ZOOM
+const FIT_MAX_Z = 1.8
 // User zoom and pan are retired: the map contain-fits the world and hover
 // cards carry the detail. The implementation stays commented in place rather
 // than deleted, so bringing it back is uncommenting these blocks, the handlers
@@ -275,7 +275,7 @@ function fitMarkers(): void {
 	const bw = Math.max(...xs) - Math.min(...xs) + pad * 2
 	const bh = Math.max(...ys) - Math.min(...ys) + pad * 2
 	const z1 = Math.min(
-		MAX_Z,
+		FIT_MAX_Z,
 		Math.max(1, Math.min(cw.value / bw, ch.value / bh) / base.value),
 	)
 	const wx = (Math.min(...xs) + Math.max(...xs)) / 2
@@ -309,7 +309,12 @@ function closestOf(e: Event, selector: string): Element | null {
 function onDown(e: PointerEvent): void {
 	if (e.button !== 0 || !props.interactive) return
 	// A locked card (its ⋯ menu was opened) closes on any press outside it.
-	if (cardLocked.value && !closestOf(e, '[data-map-card]')) hideCard()
+	// The ⋯ menu is portaled outside the card. A press on it is still the card.
+	if (
+		cardLocked.value &&
+		!closestOf(e, '[data-map-card], [data-slot="content"]')
+	)
+		hideCard()
 	// if (zoom.value <= 1) return
 	// if (closestOf(e, '[data-map-card],[data-map-controls]')) return
 	// drag = {
@@ -463,7 +468,7 @@ function leaveNode(): void {
 	if (cardLocked.value) return
 	window.clearTimeout(showT)
 	window.clearTimeout(hideT)
-	hideT = window.setTimeout(() => (hoverKey.value = null), 140)
+	hideT = window.setTimeout(() => (hoverKey.value = null), 280)
 }
 function cancelHide(): void {
 	window.clearTimeout(hideT)
@@ -663,7 +668,6 @@ function clickNode(n: MapNode): void {
 							</span>
 						</button>
 
-						<!-- Picker marker: a quiet dot; the picked region is the provider pin -->
 						<button
 							v-else-if="n.type === 'marker'"
 							class="group relative block rounded-full outline-none focus-visible:ring-2 focus-visible:ring-outline-gray-4"
@@ -671,14 +675,27 @@ function clickNode(n: MapNode): void {
 							:title="`${n.marker.flag} ${n.marker.regionLabel}`"
 							@click="clickNode(n)"
 						>
-							<span v-if="n.selected" class="relative block rounded-full">
-								<ProviderAvatar :provider="n.marker.provider" :size="36" />
-							</span>
+							<template v-if="n.selected">
+								<span
+									class="block size-3.5 rounded-full ring-8 ring-outline-gray-3"
+									style="background: var(--ink-gray-9)"
+								/>
+								<span
+									v-if="!compact"
+									class="absolute left-full top-1/2 ml-6 -translate-y-1/2 whitespace-nowrap rounded-4 bg-surface-elevation-2 px-2.5 py-1.5 text-start shadow-xl"
+								>
+									<span class="text-sm-medium text-ink-gray-9">
+										{{ n.marker.flag }} {{ n.marker.regionLabel }}
+									</span>
+								</span>
+							</template>
 							<span
 								v-else
-								class="block size-3 rounded-full transition-transform duration-150 ease-out group-hover:scale-125"
-								:class="isHot(n) && 'scale-125'"
-								style="background: var(--ink-gray-9)"
+								class="block rounded-full transition-transform duration-150 ease-out group-hover:scale-125"
+								:class="[compact ? 'size-2' : 'size-3', isHot(n) && 'scale-125']"
+								:style="{
+									background: compact ? 'var(--ink-gray-5)' : 'var(--ink-gray-9)',
+								}"
 							/>
 						</button>
 
@@ -710,13 +727,13 @@ function clickNode(n: MapNode): void {
 				:style="card.style"
 				@mouseenter="cancelHide"
 				@mouseleave="leaveNode"
-				@click.capture="cardLocked = true"
+				@pointerdown.capture="cardLocked = true"
 			>
 				<MapHoverCard
 					:node="card.node"
 					:allow-create="allowCreate"
 					:allow-open="allowOpen"
-					:opening-site="openingSite"
+					:opening="opening"
 					@open="emit('open', $event)"
 					@open-server="emit('open-server', $event)"
 					@open-site="emit('open-site', $event)"

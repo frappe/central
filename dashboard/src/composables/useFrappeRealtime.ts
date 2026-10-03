@@ -67,6 +67,53 @@ export function useFrappeDocTypeEventListener(
 	})
 }
 
+// One document's room is shared by every consumer listening to it, and leaving is a
+// socket-wide act. Counting the consumers keeps one unmounting component from
+// unsubscribing the room out from under another that is still listening.
+const docRoomConsumers = new Map<string, number>()
+
+/** Listen for one event inside a document's room, re-joining when the document
+ *  changes and after a reconnect. Frappe checks read permission on that document
+ *  before it lets a client join, so the room is the authorization boundary: only
+ *  events for documents this user may read ever reach the browser. */
+export function useFrappeDocEventListener<T>(
+	doctype: string,
+	docname: MaybeRefOrGetter<string | null>,
+	eventName: string,
+	callback: (event: T) => void,
+): void {
+	const socket = useFrappeSocket()
+
+	watch(
+		() => toValue(docname),
+		(name, _, onCleanup) => {
+			if (!name) return
+
+			const room = `${doctype}/${name}`
+			const subscribe = () => socket.emit('doc_subscribe', doctype, name)
+			const consumers = (docRoomConsumers.get(room) ?? 0) + 1
+			docRoomConsumers.set(room, consumers)
+
+			socket.on('connect', subscribe)
+			if (socket.connected && consumers === 1) subscribe()
+
+			onCleanup(() => {
+				socket.off('connect', subscribe)
+				const remaining = (docRoomConsumers.get(room) ?? 1) - 1
+				if (remaining > 0) {
+					docRoomConsumers.set(room, remaining)
+					return
+				}
+				docRoomConsumers.delete(room)
+				socket.emit('doc_unsubscribe', doctype, name)
+			})
+		},
+		{ immediate: true },
+	)
+
+	useFrappeEventListener<T>(eventName, callback)
+}
+
 interface ListInvalidationOptions {
 	debounceMs?: number
 }

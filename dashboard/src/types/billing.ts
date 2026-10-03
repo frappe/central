@@ -37,8 +37,14 @@ export interface BillingLine {
 	basis?: 'Measured' | 'Estimated' | 'Assumed' | (string & {})
 	/** The machine this line was billed for — set on plan lines only. */
 	server?: string | null
-	/** Its technical id (what the Asset is named by), for support and logs. */
+	/** Its technical id (what the Virtual Machine is named by), for support and logs. */
 	server_id?: string | null
+	/** Which Project this line's resource is tagged into, for the cost breakdown —
+	 *  set only when the resource is tagged into an enabled Project; null/empty for
+	 *  untagged lines. Purely a display grouping: every line lands on the team's
+	 *  one consolidated invoice regardless. */
+	project?: string | null
+	project_title?: string | null
 }
 
 /** get_forecast — current-cycle projection vs wallet. */
@@ -96,7 +102,7 @@ export interface NextPayment {
 }
 
 export interface PredebitNotice {
-	sent_at: string
+	queued_at: string
 	invoice: string | null
 	subject: string | null
 	status: string | null
@@ -256,14 +262,14 @@ export interface InvoiceDetail {
 /** list_subscriptions row — per-server plan. */
 export interface SubscriptionRow {
 	name: string
-	/** What metering keys on: the Asset for a server, the synthesized subject for a
+	/** What metering keys on: the Virtual Machine for a server, the synthesized subject for a
 	 *  team-level service. Joins a row to what it has cost this cycle. */
 	resource_id: string | null
-	/** Friendly server name (Asset.title), e.g. "atlas-web-01". */
+	/** Friendly server name (VirtualMachine.title), e.g. "atlas-web-01". */
 	server: string | null
-	/** Asset-backed = a real server; false = a team-level metered service. */
+	/** Virtual-Machine-backed = a real server; false = a team-level metered service. */
 	has_server: boolean
-	/** Asset gateway URL for the "Open server" action. */
+	/** Virtual Machine gateway URL for the "Open server" action. */
 	gateway_url: string | null
 	plan: string
 	/** Human plan name (Plan.title), e.g. "Business". */
@@ -273,13 +279,38 @@ export interface SubscriptionRow {
 	region: string | null
 	billing_cycle: string
 	account_standing: string
-	/** The VM's operational state (Running/Stopped/Paused/Terminated/…) from the Asset. */
+	/** The VM's operational state (Running/Stopped/Paused/Terminated/…) from the Virtual Machine. */
 	status: string | null
 	/** 0 when billing is paused. */
 	enabled: boolean | number
 	/** Resolved monthly price for the team's currency + region. */
 	monthly_rate: number | null
 	currency: string
+	/** Project this resource is tagged into, for the cost breakdown; null = untagged. */
+	project: string | null
+	project_title: string | null
+}
+
+/** list_projects row — a team-defined cost-breakdown tag (ARCHITECTURE.md). A
+ *  team's subscriptions tagged into the same Project show grouped under it on the
+ *  invoice/forecast line-item breakdown — the team still gets exactly one
+ *  consolidated invoice; a Project changes nothing about how it's billed. */
+export interface Project {
+	name: string
+	title: string
+	enabled: boolean | number
+	/** How many of the team's active subscriptions are currently tagged into it. */
+	resource_count: number
+	/** Account standing of the subscription(s) tagged into it — null only when
+	 *  nothing has been tagged into it yet. */
+	standing: string | null
+	/** Allowed committed monthly run-rate for resources tagged into this project.
+	 *  0/unset = unlimited. Tagging a NEW resource that would push the project's
+	 *  committed_run_rate over this limit is rejected server-side; it never stops
+	 *  resources already tagged in. */
+	spending_limit: number
+	/** The project's current committed monthly run-rate from its tagged resources. */
+	committed_run_rate: number
 }
 
 export type PaymentMethodType = 'Card' | 'UPI Autopay' | (string & {})
@@ -535,9 +566,26 @@ export interface ServiceRow {
 	cluster: string | null
 	currency: string
 	unit: string | null
+	billing_type?: string | null
 	settlement_mode: string
+	reporting_mode?: string
 	allowance: number
 	period_usage: number
+	locked_rate?: number
+}
+
+export interface MeteredServicePlan {
+	name?: string
+	resource_type: string | null
+	rate: number
+	allowance?: number
+	unit?: string
+}
+
+export interface MeteredServices {
+	currency: string
+	services: ServiceRow[]
+	available_plans: MeteredServicePlan[]
 }
 
 /** One line of "what you're paying for" — a server or a metered service. */

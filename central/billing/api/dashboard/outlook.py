@@ -181,14 +181,14 @@ def _charging_method(team: str) -> dict | None:
 
 
 def _predebit_notices(team: str, limit: int = 12) -> list[dict]:
-	"""The 24-hour notices we sent before debiting an Indian mandate.
+	"""The 24-hour notices we queued before debiting an Indian mandate.
 
 	Written on every notice already (ADR 0005); surfacing them is what makes the
 	record the customer's rather than only ours.
 	"""
 	return [
 		{
-			"sent_at": str(row.sent_at or row.creation),
+			"queued_at": str(row.queued_at or row.creation),
 			"invoice": row.reference_name,
 			"subject": row.subject,
 			"status": row.status,
@@ -196,7 +196,7 @@ def _predebit_notices(team: str, limit: int = 12) -> list[dict]:
 		for row in frappe.get_all(
 			"Billing Notification Log",
 			filters={"team": team, "event_type": "Pre-debit Notice"},
-			fields=["reference_name", "subject", "sent_at", "status", "creation"],
+			fields=["reference_name", "subject", "queued_at", "status", "creation"],
 			order_by="creation desc",
 			limit=limit,
 		)

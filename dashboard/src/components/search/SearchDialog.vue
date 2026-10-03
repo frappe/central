@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Dialog } from 'frappe-ui'
+import { Dialog, KeyboardShortcut } from 'frappe-ui'
 import {
 	ListboxContent,
 	ListboxFilter,
@@ -120,10 +120,7 @@ function select(item: SearchItem): void {
 						</div>
 					</div>
 					<div class="flex items-center gap-1">
-						<kbd>
-							<span class="lucide-command h-3 w-3" />
-							<span class="text-sm">K</span>
-						</kbd>
+						<KeyboardShortcut combo="Mod+K" bg />
 						<span class="ml-1">to open</span>
 					</div>
 				</div>

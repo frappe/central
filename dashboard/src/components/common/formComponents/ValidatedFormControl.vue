@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { FormControl } from 'frappe-ui'
+import { TextInput } from 'frappe-ui'
 import { computed, ref, useAttrs } from 'vue'
 
 defineOptions({ inheritAttrs: false })
@@ -36,6 +36,11 @@ const error = computed(() =>
 const dirty = computed(() => props.modelValue !== initialValue)
 const valid = computed(() => !props.validator(props.modelValue))
 
+// Leaving an untouched field shows no error, so a click elsewhere does not shift the layout under the pointer.
+function onBlur(): void {
+	if (dirty.value) touched.value = true
+}
+
 function validate(): boolean {
 	touched.value = true
 	return valid.value
@@ -45,17 +50,16 @@ defineExpose({ dirty, valid, validate })
 </script>
 
 <template>
-	<FormControl
+	<TextInput
 		:model-value="modelValue"
 		:label="label"
 		:type="type"
 		:error="error"
 		size="md"
-		variant="subtle"
 		v-bind="attrs"
 		:class="attrs.class"
 		@update:model-value="emit('update:modelValue', String($event ?? ''))"
-		@blur="touched = true"
+		@blur="onBlur"
 	>
 		<template
 			v-for="name in Object.keys($slots)"
@@ -64,5 +68,5 @@ defineExpose({ dirty, valid, validate })
 		>
 			<slot :name="name" v-bind="slotProps" />
 		</template>
-	</FormControl>
+	</TextInput>
 </template>

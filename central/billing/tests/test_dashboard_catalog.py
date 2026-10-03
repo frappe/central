@@ -11,6 +11,7 @@ from central.billing.tests.utils import (
 	clear_team_tier,
 	complete_billing_profile,
 	ensure_team,
+	isolate_trial_plans,
 	make_metered_plan,
 	make_plan,
 	set_team_tier,
@@ -74,16 +75,28 @@ class TestEligiblePlans(IntegrationTestCase):
 		make_plan(PRICEY, rates=_rates(5000))
 		# Priced only on CLUSTER (no global INR row) → invisible elsewhere.
 		make_plan(REGIONAL, rates=[{"cluster": CLUSTER, "currency": "INR", "rate": 1500}])
-		# These tests exercise the tier/currency filter, not live capacity — the pricing
-		# above created the CLUSTER Atlas Instance (validate_capacity on by default); turn
-		# it off so get_eligible_plans doesn't reach for the region's capacity API.
-		# The capacity gate has its own suite (test_capacity_filter.py).
-		frappe.db.set_value("Atlas Instance", CLUSTER, "validate_capacity", 0)
 		frappe.set_user("Administrator")
 
 	def _titles(self, cluster=CLUSTER):
 		out = get_eligible_plans(cluster=cluster, team=TEAM)
 		return {p["plan"] for p in _flat(out)}, out
+
+	def test_fractional_cpu_plan_is_not_offered(self):
+		make_plan(
+			"bundle-fractional",
+			includes=[
+				{"resource_type": "Compute", "quantity": 0.5, "unit": "vCPU"},
+				{"resource_type": "Memory", "quantity": 2, "unit": "GB"},
+				{"resource_type": "Disk", "quantity": 20, "unit": "GB"},
+			],
+			rates=_rates(500),
+		)
+		set_team_tier(TEAM, max_spend=100000)
+
+		plans, _ = self._titles()
+		self.assertNotIn("bundle-fractional", plans)
+		self.assertIn(CHEAP, plans)
+		self.assertTrue(frappe.db.get_value("Plan", "bundle-fractional", "is_active"))
 
 	def _provision(self, plan, rate, cluster=CLUSTER):
 		"""A running subscription that consumes the plan's rate of the team's cap (its
@@ -232,6 +245,7 @@ class TestTrialPlanMenu(IntegrationTestCase):
 	server cap, not the tier."""
 
 	def setUp(self):
+		isolate_trial_plans(self)
 		ensure_team(TEAM)
 		frappe.db.set_value("Team", TEAM, "is_staging_trial", 1)
 		self.addCleanup(frappe.db.set_value, "Team", TEAM, "is_staging_trial", 0)
@@ -243,7 +257,6 @@ class TestTrialPlanMenu(IntegrationTestCase):
 		make_plan(CHEAP, rates=_rates(1000))
 		make_plan(MID, rates=_rates(2000))
 		make_plan(PRICEY, rates=_rates(5000))
-		frappe.db.set_value("Atlas Instance", CLUSTER, "validate_capacity", 0)
 		frappe.set_user("Administrator")
 
 	def test_untiered_trial_sees_plans_despite_zero_headroom(self):

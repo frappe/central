@@ -7,9 +7,14 @@ import { money } from '@/lib/format'
 import type { Plan } from '@/types/api'
 
 /** Compact spec line from a plan's bundled resources, e.g. "2 vCPU · 4 GB RAM · 40 GB disk". */
-export function planSpecs(plan: Plan): string {
+export function planSpecs(plan: Plan, options?: { disk?: boolean }): string {
 	const parts = plan.includes
-		.filter((inc) => inc.quantity)
+		.filter((inc) => {
+			if (!inc.quantity) return false
+			if (options?.disk === false)
+				return inc.resource_type === 'Compute' || inc.resource_type === 'Memory'
+			return inc.resource_type in NOUNS
+		})
 		.map((inc) =>
 			`${formatQty(inc.quantity)} ${inc.unit} ${nounFor(inc.resource_type)}`.trim(),
 		)

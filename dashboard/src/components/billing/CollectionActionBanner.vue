@@ -4,13 +4,13 @@ import { Alert, Button, Dialog, useCall } from 'frappe-ui'
 // ₹15,000 silent-debit limit and the customer must choose how to keep paying
 // (ADR 0005 / payments-inr.md). Calm, not alarming: services keep running; this
 // is an invitation to decide. Backend feed: get_collection_status.
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { API, method } from '@/api/methods'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { useSession } from '@/composables/useSession'
 import { whenTeamReady } from '@/composables/useTeamScope'
+import { getErrorMessage, successToast } from '@/lib/feedback'
 import { money } from '@/lib/format'
-import { errorToast, successToast } from '@/lib/toast'
 import type { CollectionStatus } from '@/types/billing'
 
 const { activeTeam } = useSession()
@@ -30,17 +30,26 @@ const currency = computed(() => s.value?.currency || 'INR')
 
 const choosing = ref(false)
 const chosen = ref<string | null>(null) // 'Manual Checkout' | 'Prepaid'
+const formError = ref('')
+watch(chosen, () => (formError.value = ''))
 
 const setMode = useCall<unknown, { team: string; mode: string }>({
 	url: method(API.setCollectionMode),
 	method: 'POST',
 	immediate: false,
-	onError: (e: unknown) => errorToast(e, 'Could not update how you pay'),
 })
 
 async function choose(): Promise<void> {
 	if (!chosen.value) return
+	formError.value = ''
 	await setMode.submit({ team: activeTeam.value!, mode: chosen.value })
+	if (setMode.error) {
+		formError.value = getErrorMessage(
+			setMode.error,
+			'Could not update how you pay',
+		)
+		return
+	}
 	successToast(
 		chosen.value === 'Prepaid'
 			? 'Prepaid wallet on: add credits to cover usage'
@@ -87,6 +96,7 @@ const options = [
 
 	<Dialog v-model:open="choosing" title="How do you want to pay?">
 		<template #default>
+			<Alert v-if="formError" class="mb-4" theme="red" :title="formError" />
 			<div class="grid gap-3 sm:grid-cols-2">
 				<button
 					v-for="o in options"

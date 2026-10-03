@@ -4,7 +4,7 @@ import frappe
 from frappe.tests import IntegrationTestCase
 from frappe.utils import add_days, today
 
-from central.api.identity import my_invitations
+from central.api.identity import my_invitations, my_teams
 from central.api.teams import (
 	create_custom_role,
 	create_team,
@@ -12,15 +12,17 @@ from central.api.teams import (
 	delete_custom_role,
 	delete_team,
 	invite_team_member,
-	list_team_invitations,
+	leave_team,
 	rename_team,
 	resend_invitation,
 	revoke_invitation,
+	set_team_logo,
 	set_team_member_roles,
 	transfer_team_ownership,
 )
-from central.central.doctype.team_invitation.team_invitation import expire_pending_invitations
-from central.iam import can, get_fc_teams_claim
+from central.iam import can, get_user_team_names, resolve_user_grants
+from central.identity.doctype.team_invitation.team_invitation import expire_pending_invitations
+from central.tests.utils import ensure_server, upload_test_image
 
 
 def create_user(email: str) -> str:
@@ -76,13 +78,13 @@ class TestTeamManagement(IntegrationTestCase):
 			}
 		).insert()
 
-		_ensure_event_type(
-			"member_invited",
-			direct_recipients="Affected User",
-			in_app_body="You have been invited to join {{ context.team_name }}.\n\nView invitation: {{ context.invitation_url }}",
-		)
+		# Test sites have no outgoing email account.
+		sendmail = patch("central.identity.doctype.team_invitation.team_invitation.frappe.sendmail")
+		sendmail.start()
+		self.addCleanup(sendmail.stop)
 		_ensure_event_type("role_change", direct_recipients="Affected User")
 		_ensure_event_type("member_joined")
+		self.server = ensure_server("srv-x", self.team.name)
 
 	def tearDown(self):
 		frappe.set_user("Administrator")
@@ -160,22 +162,25 @@ class TestTeamManagement(IntegrationTestCase):
 
 		self.assertTrue(result["accepted"])
 		self.assertTrue(can(self.invitee, self.team.name, "server:create"))
-		self.assertIn(self.team.name, get_fc_teams_claim(self.invitee))
+		self.assertIn(self.team.name, resolve_user_grants(self.invitee))
 
 		invitation = frappe.get_doc("Team Invitation", invitation_name)
 		self.assertEqual(invitation.status, "Accepted")
 		self.assertEqual(invitation.accepted_by, self.invitee)
 
-	def test_invitation_uses_email_template(self):
+	def test_invitation_email_links_the_join_page(self):
 		frappe.set_user(self.owner)
 
-		with patch("central.notification.engine.frappe.sendmail") as sendmail:
+		with patch("central.identity.doctype.team_invitation.team_invitation.frappe.sendmail") as sendmail:
 			invitation_name = frappe.get_doc("Team", self.team.name).invite_member(self.invitee, "Developer")
 
-		message = sendmail.call_args.kwargs["message"]
-		self.assertIn("You have been invited to join Managed Team", message)
-		self.assertIn(f"/dashboard/invitations/{invitation_name}", message)
-		self.assertIn("View invitation:", message)
+		token = frappe.db.get_value("Team Invitation", invitation_name, "token")
+		email = sendmail.call_args.kwargs
+		self.assertEqual(email["recipients"], [self.invitee])
+		self.assertEqual(email["template"], "team_invitation")
+		self.assertIn("Managed Team", email["subject"])
+		self.assertEqual(email["args"]["role"], "Developer")
+		self.assertTrue(email["args"]["invitation_url"].endswith(f"/dashboard/join/{token}"))
 
 	def test_admin_can_invite_but_viewer_cannot(self):
 		frappe.set_user(self.admin)
@@ -224,7 +229,8 @@ class TestTeamManagement(IntegrationTestCase):
 		with self.assertRaises(frappe.PermissionError):
 			invitation.save()
 
-	def test_new_user_automatically_accepts_pending_invitation(self):
+	def test_new_user_with_a_pending_invitation_gets_no_personal_team(self):
+		# Creating the user accepts nothing: the signup that created them decides.
 		email = f"team.new.{frappe.generate_hash(length=8)}@example.test"
 		frappe.set_user(self.owner)
 		invitation_name = frappe.get_doc("Team", self.team.name).invite_member(email, "Viewer")
@@ -232,10 +238,78 @@ class TestTeamManagement(IntegrationTestCase):
 		frappe.set_user("Administrator")
 		create_user(email)
 
-		invitation = frappe.get_doc("Team Invitation", invitation_name)
-		self.assertEqual(invitation.status, "Accepted")
-		self.assertTrue(can(email, self.team.name, "server:view"))
-		self.assertFalse(can(email, self.team.name, "server:terminate"))
+		self.assertEqual(frappe.db.get_value("Team Invitation", invitation_name, "status"), "Pending")
+		self.assertEqual(get_user_team_names(email), [])
+
+	def test_bulk_invite_sends_each_row_and_returns_the_refused_ones(self):
+		frappe.set_user(self.owner)
+		frappe.clear_messages()
+		results = invite_team_member(
+			self.team.name,
+			invitations=[
+				{"email": "bulk.one@example.test", "role": "Developer"},
+				{"email": "not-an-email", "role": "Developer"},
+				{"email": self.admin, "role": "Viewer"},
+				{"role": "Developer"},
+				{"email": "bulk.norole@example.test"},
+			],
+		)
+
+		self.assertTrue(results[0]["invitation"])
+		self.assertIsNone(results[0]["error"])
+		self.assertTrue(results[1]["error"])
+		self.assertTrue(results[2]["error"])
+		self.assertEqual(results[3]["error"], "Email and role are required.")
+		self.assertEqual(results[4]["error"], "Email and role are required.")
+		self.assertEqual(frappe.db.count("Team Invitation", {"team": self.team.name, "status": "Pending"}), 1)
+		self.assertEqual(frappe.get_message_log(), [])
+
+	def test_bulk_invite_is_limited_to_ten_people(self):
+		frappe.set_user(self.owner)
+		rows = [{"email": f"bulk.{n}@example.test", "role": "Developer"} for n in range(11)]
+
+		with self.assertRaises(frappe.ValidationError):
+			invite_team_member(self.team.name, invitations=rows)
+		with self.assertRaises(frappe.ValidationError):
+			invite_team_member(self.team.name, invitations=[])
+		self.assertFalse(frappe.db.exists("Team Invitation", {"email": "bulk.0@example.test"}))
+
+	def test_invite_without_an_email_or_rows_is_refused(self):
+		frappe.set_user(self.owner)
+
+		with self.assertRaises(frappe.ValidationError):
+			invite_team_member(self.team.name, role="Developer")
+
+	def test_bulk_invite_needs_manage_members(self):
+		frappe.set_user(self.viewer)
+
+		with self.assertRaises(frappe.PermissionError):
+			invite_team_member(
+				self.team.name, invitations=[{"email": "bulk.viewer@example.test", "role": "Viewer"}]
+			)
+
+	def test_resend_issues_a_new_token(self):
+		frappe.set_user(self.owner)
+		name = invite_team_member(self.team.name, self.invitee, "Developer")
+		# An invitation from before tokens existed has none.
+		frappe.db.set_value("Team Invitation", name, "token", None)
+
+		resend_invitation(name)
+
+		self.assertTrue(frappe.db.get_value("Team Invitation", name, "token"))
+
+	def test_team_logo_needs_team_edit_and_a_file_uploaded_to_the_team(self):
+		frappe.set_user(self.owner)
+		file_url = upload_test_image("Team", self.team.name, "team_logo")
+		self.assertEqual(set_team_logo(self.team.name, file_url)["team_logo"], file_url)
+		self.assertIsNone(set_team_logo(self.team.name, None)["team_logo"])
+
+		with self.assertRaises(frappe.ValidationError):
+			set_team_logo(self.team.name, "/files/somewhere-else.png")
+
+		frappe.set_user(self.viewer)
+		with self.assertRaises(frappe.PermissionError):
+			set_team_logo(self.team.name, file_url)
 
 	def test_team_changes_follow_capabilities(self):
 		frappe.set_user(self.owner)
@@ -262,23 +336,24 @@ class TestTeamManagement(IntegrationTestCase):
 		self.assertTrue(can(self.viewer, self.team.name, "server:create"))
 
 	def test_member_can_hold_multiple_roles_with_unioned_capabilities(self):
-		# Proves the IAM engine needed no changes: resolve_user_grants already
-		# keys grants by (team, role) and unions capabilities across every
-		# Team Member row a user holds, so adding a second role grant is enough.
+		# A team-wide role and a role scoped to one server combine: the scoped role adds
+		# its server capabilities on that server only, and never a team-wide one.
 		frappe.set_user(self.owner)
 		team = frappe.get_doc("Team", self.team.name)
-		billing_only = create_custom_role(self.team.name, "Billing Only", ["server:view"])["role"]
+		view_only = create_custom_role(self.team.name, "View Only", ["server:view"])["role"]
 
 		team.set_member_roles(
 			self.viewer,
 			[
-				{"role": billing_only, "resource_type": "*"},
-				{"role": "Developer", "resource_type": "Server", "resource_name": "some-server"},
+				{"role": view_only, "resource_type": "*"},
+				{"role": "Developer", "resource_type": "Server", "resource_name": self.server},
 			],
 		)
 
 		self.assertTrue(can(self.viewer, self.team.name, "server:view"))
-		self.assertTrue(can(self.viewer, self.team.name, "server:create"))
+		self.assertTrue(can(self.viewer, self.team.name, "server:power", server=self.server))
+		self.assertFalse(can(self.viewer, self.team.name, "server:power"))
+		self.assertFalse(can(self.viewer, self.team.name, "server:create"))
 
 	def test_duplicate_role_resource_grant_is_rejected(self):
 		frappe.set_user(self.owner)
@@ -314,6 +389,46 @@ class TestTeamManagement(IntegrationTestCase):
 		self.assertEqual(team._get_member(self.admin).role, "Owner")
 		self.assertEqual(team._get_member(self.owner).role, "Admin")
 
+	def test_my_teams_carries_role_member_count_and_created(self):
+		frappe.set_user(self.admin)
+		rows = [row for row in my_teams() if row["name"] == self.team.name]
+
+		self.assertEqual(len(rows), 1)
+		self.assertEqual(rows[0]["role"], "Admin")
+		self.assertEqual(rows[0]["members"], 3)
+		self.assertTrue(rows[0]["created"])
+
+	def test_leave_team_rejects_a_non_member_before_reading_the_team(self):
+		outsider = create_user("team.outsider@example.test")
+		frappe.set_user(outsider)
+
+		with self.assertRaises(frappe.PermissionError):
+			leave_team(self.team.name)
+
+	def test_leaving_cannot_carry_other_member_changes(self):
+		frappe.set_user(self.viewer)
+		team = frappe.get_doc("Team", self.team.name)
+		for row in team._get_member_rows(self.viewer) + team._get_member_rows(self.admin):
+			team.remove(row)
+
+		with self.assertRaises(frappe.PermissionError):
+			team.save(ignore_permissions=True)
+
+	def test_member_leaves_but_owner_cannot(self):
+		frappe.set_user(self.viewer)
+		leave_team(self.team.name)
+
+		team = frappe.get_doc("Team", self.team.name)
+		self.assertFalse(team._get_member_rows(self.viewer))
+		self.assertFalse(can(self.viewer, team.name, "server:view"))
+
+		with self.assertRaises(frappe.PermissionError):
+			leave_team(self.team.name)
+
+		frappe.set_user(self.owner)
+		with self.assertRaises(frappe.ValidationError):
+			leave_team(self.team.name)
+
 	# --- API endpoints (central.api.teams / central.api.identity) ----------------
 
 	def test_create_team_makes_caller_the_owner(self):
@@ -325,18 +440,26 @@ class TestTeamManagement(IntegrationTestCase):
 		self.assertEqual(team._get_member(self.owner).role, "Owner")
 		self.assertTrue(can(self.owner, team.name, "team:delete"))
 
-	def test_list_team_invitations_is_manager_only(self):
+	def test_team_invitation_list_is_manager_only(self):
 		frappe.set_user(self.owner)
-		invite_team_member(self.team.name, self.invitee, "Developer")
+		invitation = invite_team_member(self.team.name, self.invitee, "Developer")
 
-		rows = list_team_invitations(self.team.name)
+		rows = frappe.get_list(
+			"Team Invitation",
+			filters={"team": self.team.name},
+			fields=["name", "email", "status"],
+		)
 		self.assertEqual(len(rows), 1)
+		self.assertEqual(rows[0]["name"], invitation)
 		self.assertEqual(rows[0]["email"], self.invitee)
 		self.assertEqual(rows[0]["status"], "Pending")
 
 		frappe.set_user(self.viewer)
-		with self.assertRaises(frappe.PermissionError):
-			list_team_invitations(self.team.name)
+		self.assertEqual(
+			frappe.get_list("Team Invitation", filters={"team": self.team.name}, pluck="name"),
+			[],
+		)
+		self.assertFalse(frappe.has_permission("Team Invitation", "read", invitation))
 
 	def test_invite_can_scope_role_to_a_resource(self):
 		frappe.set_user(self.owner)
@@ -345,12 +468,12 @@ class TestTeamManagement(IntegrationTestCase):
 			self.invitee,
 			"Developer",
 			resource_type="Server",
-			resource_name="srv-acme",
+			resource_name=self.server,
 		)
 
 		invitation = frappe.get_doc("Team Invitation", name)
 		self.assertEqual(invitation.resource_type, "Server")
-		self.assertEqual(invitation.resource_name, "srv-acme")
+		self.assertEqual(invitation.resource_name, self.server)
 
 		frappe.set_user(self.invitee)
 		invitation.accept()
@@ -359,18 +482,19 @@ class TestTeamManagement(IntegrationTestCase):
 		grant = team._get_member(self.invitee)
 		self.assertEqual(grant.role, "Developer")
 		self.assertEqual(grant.resource_type, "Server")
-		self.assertEqual(grant.resource_name, "srv-acme")
+		self.assertEqual(grant.resource_name, self.server)
 
+	@IntegrationTestCase.change_settings("Central Settings", invitation_expiry_days=10)
 	def test_resend_invitation_extends_expiry_and_re_emails(self):
 		frappe.set_user(self.owner)
 		name = invite_team_member(self.team.name, self.invitee, "Developer")
 		frappe.db.set_value("Team Invitation", name, "expires_on", add_days(today(), 1))
 
-		with patch("central.central.doctype.team_invitation.team_invitation.frappe.sendmail") as sendmail:
+		with patch("central.identity.doctype.team_invitation.team_invitation.frappe.sendmail") as sendmail:
 			result = resend_invitation(name)
 
 		sendmail.assert_called_once()
-		self.assertEqual(str(result["expires_on"]), add_days(today(), 7))
+		self.assertEqual(str(result["expires_on"]), add_days(today(), 10))
 
 	def test_revoke_invitation_blocks_further_acceptance(self):
 		frappe.set_user(self.owner)
@@ -476,13 +600,12 @@ class TestTeamManagement(IntegrationTestCase):
 		self.assertFalse(frappe.db.exists("Team", fresh))
 
 	def test_delete_team_clears_invitations_that_would_block_it(self):
-		# An invitation Links to the Team; without cleanup the delete raised
-		# LinkExistsError. delete_team clears invitations + custom roles first.
+		# The controller owns cleanup, so Desk and API deletion behave the same.
 		frappe.set_user(self.owner)
 		team = create_team("Team With Invite")["name"]
 		invite = invite_team_member(team, "blocks.delete@example.test", "Viewer")
 
-		self.assertTrue(delete_team(team)["deleted"])
+		frappe.delete_doc("Team", team)
 		self.assertFalse(frappe.db.exists("Team", team))
 		self.assertFalse(frappe.db.exists("Team Invitation", invite))
 
@@ -493,8 +616,8 @@ class TestTeamsSurfaceStaysSingleDoor(IntegrationTestCase):
 	double surface (the bug this guards)."""
 
 	def test_delegated_doc_methods_are_not_whitelisted(self):
-		from central.central.doctype.team.team import Team
-		from central.central.doctype.team_invitation.team_invitation import TeamInvitation
+		from central.identity.doctype.team.team import Team
+		from central.identity.doctype.team_invitation.team_invitation import TeamInvitation
 
 		for method in (Team.invite_member, TeamInvitation.accept, TeamInvitation.revoke):
 			with self.subTest(method=method.__qualname__), self.assertRaises(frappe.PermissionError):

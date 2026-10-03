@@ -1,0 +1,20 @@
+{% extends "templates/emails/base.html" %}
+{% import "templates/emails/macros.html" as ui %}
+
+{% block content %}
+<tr>
+	<td class="fc-body">
+		{{ ui.heading(_("Billing needs attention")) }}
+		{% set count = alerts | length %}
+		{{ ui.paragraph(
+			_("1 open alert as of this sweep.") if count == 1
+			else _("{0} open alerts as of this sweep.").format(count)
+		) }}
+
+		{{ ui.table(
+			[_("Kind"), _("Reference"), _("Detail")],
+			alerts | map(attribute='row') | list,
+		) }}
+	</td>
+</tr>
+{% endblock %}

@@ -8,7 +8,9 @@ import { teamParams, whenTeamReady } from '@/composables/useTeamScope'
 // 403 — the server re-checks every call. Re-fetches whenever the active team
 // changes. The lifecycle gates map one-to-one to the server-side checks in
 // central/api/servers.py: power drives start/stop, terminate destroys, open mints the
-// bench SSO link.
+// bench SSO link. Viewing and opening a server use the same authority. A server flag is
+// true when the user holds it on any server; each server row carries its own
+// `capabilities`, which `getServerActions` reads for that row's buttons.
 
 const capsCall = useCall<string[], { team: string }>({
 	url: method(API.myCapabilities),
@@ -29,13 +31,15 @@ export function useCapabilities() {
 		canViewServers: computed(() => has('server:view')),
 		canCreateServer: computed(() => has('server:create')),
 		canPowerServer: computed(() => has('server:power')),
+		canResizeServer: computed(() => has('server:resize')),
 		canTerminateServer: computed(() => has('server:terminate')),
-		canOpenServer: computed(() => has('server:open')),
+		canSnapshotServer: computed(() => has('server:snapshot')),
+		canManageSSHKeys: computed(() => has('server:ssh-key')),
+		canOpenConsole: computed(() => has('server:console')),
 		canViewClusters: computed(() => has('cluster:view')),
 		canViewBilling: computed(() => has('billing:view')),
 		canManageBilling: computed(() => has('billing:manage')),
-		// Add-on services (LLM hosting today). View lists offers/sites; manage
-		// activates, enables/disables sites, and reveals per-site keys.
+		// Object storage: view lists buckets and usage; manage creates, rotates and deletes them.
 		canViewServices: computed(() => has('service:view')),
 		canManageServices: computed(() => has('service:manage')),
 		// Team & identity — every active member can view the roster (membership is

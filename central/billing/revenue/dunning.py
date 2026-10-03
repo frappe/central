@@ -198,7 +198,10 @@ def process_invoice_dunning(invoice_name: str, now=None) -> dict:
 	if policy.retry_days and "Retry" not in reached:
 		return {"invoice": invoice_name, "days_overdue": days, "action": "none"}
 
-	sub = frappe.get_doc("Subscription", inv.subscription) if inv.subscription else None
+	from central.billing.catalog.subscriptions import anchor_subscription
+
+	anchor = anchor_subscription(inv.team)
+	sub = frappe.get_doc("Subscription", anchor) if anchor else None
 	actions = []
 
 	# --- retries: try the next untried method, if any (escalate, don't repeat,
@@ -225,6 +228,7 @@ def process_invoice_dunning(invoice_name: str, now=None) -> dict:
 	if "Overdue" in reached:
 		if inv.status == "Open":
 			transition(inv, "Overdue", reason="dunning: past due window elapsed", actor="scheduler")
+			# The scheduled dunning transition owns this invoice state change.
 			inv.save(ignore_permissions=True)
 			actions.append("overdue")
 			from central.billing.platform import notifications
@@ -238,26 +242,16 @@ def process_invoice_dunning(invoice_name: str, now=None) -> dict:
 				reference_name=invoice_name,
 			)
 		if sub:
-			standing = _advance_standing(inv.subscription, "Past Due")
+			standing = _advance_standing(anchor, "Past Due")
 
 	# --- Day 14: suspend directive -> Agent stops --------------------------
 	if "Suspend" in reached and sub:
-		standing = _advance_standing(inv.subscription, "Suspended")
+		standing = _advance_standing(anchor, "Suspended")
 		if standing == "Suspended" and not _active_directive(sub.team, "suspend"):
 			issue_token(sub.team, {}, suspend=True)
 			_notify(inv, f"Suspended for non-payment (day {days}); resource stopped, data preserved.")
 			from central.notification import engine
 
-			engine.ensure_event_type(
-				"server_suspended",
-				category="Server",
-				severity="Error",
-				required_cap="server:view",
-				in_app_title="Server suspended: {{ reference_name }}",
-				in_app_body="Server {{ reference_name }} suspended for non-payment: {{ message }}",
-				action_label="Pay now",
-				action_route="/billing/invoices",
-			)
 			engine.dispatch(
 				inv.team,
 				"server_suspended",

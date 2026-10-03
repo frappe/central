@@ -45,17 +45,14 @@ export function formatMemory(megabytes: number): string {
 	return `${megabytes} MB`
 }
 
-/** ISO datetime → short relative-ish label. Returns '' when unset. */
-export function formatSyncedAt(value: string | null | undefined): string {
-	if (!value) return ''
-	const date = new Date(value.replace(' ', 'T'))
-	if (Number.isNaN(date.getTime())) return ''
-	return date.toLocaleString(undefined, {
-		month: 'short',
-		day: 'numeric',
-		hour: '2-digit',
-		minute: '2-digit',
-	})
+export { formatDateTime as formatSyncedAt } from '@/lib/datetime'
+
+export function capitalise(s: string | null | undefined): string {
+	return s ? s.charAt(0).toUpperCase() + s.slice(1) : ''
+}
+
+export function plural(n: number, word: string, pluralWord?: string): string {
+	return `${n} ${n === 1 ? word : (pluralWord ?? `${word}s`)}`
 }
 
 /** ISO date (no time) → short label, e.g. "Jul 7, 2026". Returns '' when unset. */
@@ -67,5 +64,18 @@ export function formatDate(value: string | null | undefined): string {
 		month: 'short',
 		day: 'numeric',
 		year: 'numeric',
+	})
+}
+
+/** Unix seconds -> short date and time, e.g. "Sep 17, 10:42 PM". Returns '' when unset. */
+export function formatUnixTime(seconds: number | null | undefined): string {
+	if (!seconds) return ''
+	const date = new Date(seconds * 1000)
+	if (Number.isNaN(date.getTime())) return ''
+	return date.toLocaleString(undefined, {
+		month: 'short',
+		day: 'numeric',
+		hour: '2-digit',
+		minute: '2-digit',
 	})
 }

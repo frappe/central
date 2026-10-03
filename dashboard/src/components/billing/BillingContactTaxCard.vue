@@ -46,11 +46,9 @@ const isIndia = computed(() => country.value === 'India')
 			/>
 		</template>
 
-		<div v-if="loading" class="space-y-3">
-			<LoadingText :lines="4" />
-		</div>
+		<LoadingText v-if="loading" :lines="4" />
 
-		<dl v-else class="space-y-4 pt-1 text-base">
+		<dl v-else class="space-y-4 pt-3 text-base">
 			<div class="flex justify-between gap-3">
 				<dt class="text-ink-gray-5">Billing email</dt>
 				<dd
@@ -86,7 +84,7 @@ const isIndia = computed(() => country.value === 'India')
 				<dd v-if="gstin" class="text-right font-mono text-ink-gray-8">
 					{{ gstin }}
 				</dd>
-				<Badge v-else theme="gray" label="Not set" />
+				<Badge v-else label="Not set" />
 			</div>
 		</dl>
 	</BillingCard>

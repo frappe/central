@@ -209,9 +209,9 @@ function generate_dialog(frm) {
 			{
 				fieldname: "cluster",
 				fieldtype: "Link",
-				options: "Atlas Instance",
-				label: __("Atlas Instance"),
-				description: __("Blank = global rate (every Atlas Instance). Else pick one. Re-run per Atlas Instance."),
+				options: "Region",
+				label: __("Region"),
+				description: __("Blank = global rate (every region). Else pick one. Re-run per region."),
 			},
 			{ fieldname: "sb_cur", fieldtype: "Section Break", label: __("Currencies") },
 			{
@@ -274,9 +274,9 @@ function apply_component_card_dialog(frm) {
 			{
 				fieldname: "cluster",
 				fieldtype: "Link",
-				options: "Atlas Instance",
-				label: __("Atlas Instance"),
-				description: __("Blank = global rate (every Atlas Instance). Else price one region. Re-run per Atlas Instance."),
+				options: "Region",
+				label: __("Region"),
+				description: __("Blank = global rate (every region). Else price one region. Re-run per region."),
 			},
 		],
 		primary_action_label: __("Publish"),

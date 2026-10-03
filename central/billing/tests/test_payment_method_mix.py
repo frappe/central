@@ -40,8 +40,10 @@ class TestPaymentMethodMixCredits(IntegrationTestCase):
 		self._purge()
 
 	def _purge(self):
-		for team in (TEAM_A, TEAM_B):
-			frappe.db.delete("Credit Ledger Entry", {"team": team})
+		# One test runs the report site-wide (team=None), so isolate the whole ledger:
+		# a shared site carries other teams' credits that would skew the mix and counts.
+		# IntegrationTestCase rolls this back with the rest of the test.
+		frappe.db.delete("Credit Ledger Entry")
 
 	def _credit_rows(self, filters=None):
 		"""Run the report and index the credit rows by (source, currency)."""

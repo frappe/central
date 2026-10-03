@@ -5,16 +5,15 @@
 ```mermaid
 flowchart LR
     U[User] --> C[Central]
-    C -->|OAuth identity + fc_teams| A1[Atlas cluster A]
-    C -->|OAuth identity + fc_teams| A2[Atlas cluster B]
-    A1 -->|Session authorization| R1[Cluster A resources]
-    A2 -->|Session authorization| R2[Cluster B resources]
+    C -->|server:* decision| D[Dispatch]
+    D -->|signed token, X-Tenant-ID| A1[Atlas region A]
+    D -->|signed token, X-Tenant-ID| A2[Atlas region B]
+    A1 -->|Tenant boundary only| R1[Region A resources]
+    A2 -->|Tenant boundary only| R2[Region B resources]
 ```
 
-- Central is the global authority for users, Teams, roles, and capabilities.
-- Every cluster runs a separate Atlas site with its own OAuth credentials.
-- Atlas validates the Central OAuth response and stores grants in its local session.
-- Atlas does not call Central for every authorization decision.
+- Central is the global authority for users, Teams, roles, and capabilities. Every `server:*` decision is made here, before any regional call.
+- A region never sees a capability. Central signs a short-lived, tenant-scoped token for the call it is about to make; the region checks only that the token's tenant matches the resource's tenant. See [Integrations](INTEGRATIONS.md).
 - `System Manager` is the only authorization bypass.
 
 ## Permission Model
@@ -51,152 +50,105 @@ There are no per-user capability overrides. A Team owner is an active
 | Admin | Day-to-day team, server, and billing operations, excluding team deletion and ownership transfer |
 | Developer | Full server operations |
 | Viewer | Read-only server access |
-| Billing | Billing and read-only server access |
+| Billing | Billing, add-on services, and read-only server access |
 
-A member has one role per Team. Create a custom Team role when a member needs a
-combination such as administration and billing.
+A member can hold several role grants in a Team. Each grant is team-wide or scoped to one server or site. Create a custom Team role when a member needs a combination such as administration and billing.
 
-Server is the atomic unit (capability model v3): role capabilities live at the
-team and server level only. Server capabilities are `server:view`,
-`server:create`, `server:power`, `server:resize`, `server:snapshot`,
-`server:terminate`, and `server:open`, plus `cluster:view` for placement. The
-site-level (bench-plane) capabilities are deferred; see
-[`CAPABILITIES.md`](../CAPABILITIES.md) for the full taxonomy.
+Server is the atomic unit (capability model v5). Role capabilities live at the team and server level only. Server capabilities are `server:view`, `server:create`, `server:power`, `server:resize`, `server:snapshot`, `server:terminate`, `server:ssh-key`, and `server:console`, plus `cluster:view` for placement. `server:view` also permits opening a server or site. There are no site-level (bench-plane) capabilities. See [`CAPABILITIES.md`](../CAPABILITIES.md) for the full taxonomy.
+
+## Resource Scope
+
+A role grant applies to all resources (`resource_type = "*"`) or to one resource. A grant on a server applies to that server. A grant on a site applies to the server that the site runs on, because each site is one machine.
+
+| Question | What counts |
+| --- | --- |
+| A team-wide action, such as create a server, manage storage, see billing, or manage members | Team-wide grants only |
+| One server, such as power, resize, snapshot, terminate, console, or open | A team-wide grant, or a grant scoped to that server |
+| A list, such as the fleet, snapshots, or notifications | A grant anywhere in the team, then only the rows of the allowed servers |
+
+- Only `server:view`, `server:power`, `server:resize`, `server:snapshot`, `server:terminate`, and `server:console` can be scoped. A scoped grant drops every other capability of its role.
+- A scoped grant must name a server or site of the same Team. The Owner role is always team-wide. A grant whose resource no longer belongs to the Team grants nothing.
+- `iam.can(user, team, capability, server=None)` answers the first two questions. Without `server`, it is the team-wide question. Routes that act on one server pass it. `iam.can_on_any_server` answers the list question.
+- The permission rules for Virtual Machine, Site, VM Snapshot, Resource Action, and Site Domain filter lists by the allowed servers and check the server on each record.
+- Pricing a resize reads the plans and the current configuration of one server. Those two billing reads accept `server:resize` on that server in place of `billing:view`.
+- A notification that is about a server records it in `Team Notification.server`. A scoped member sees and receives only the notifications for its servers.
+- The console reads each server's capabilities from the `capabilities` field on its row, so it shows only the actions that the member can do on that server.
 
 ## User And Invitation Flow
+
+Sign-in and signup use the same emailed 6-digit code. There is no password.
+
+| Step | Endpoint | Behavior |
+|---|---|---|
+| Send | `central.api.auth.send_code(email, full_name=None)` | Sends a code to every email. An existing account gets a sign-in code. A new email gets a code to create an account. A disabled account gets the same response and no code. Its owner gets an email that says the account is disabled. |
+| Verify | `central.api.auth.verify_code(email, code, full_name=None)` | Signs in an existing account. Creates a new account with the name from the send or the verify step. A new email without a name returns `needs_name` and keeps the code valid. |
+
+- The signup page sends the name with the email. The sign-in page sends only the email, so a new email gives its name after the code.
+- `central.identity.email_code.EmailCode` owns the code. It holds one cache entry per email, checks and spends a code under a lock, and expires it ten minutes after the last send or incorrect attempt.
+- An email permits five incorrect codes in total, including after a new code is sent. After that, send and verify refuse until the entry expires.
+- Central limits code sends to five per email and 20 per IP in ten minutes, and verifies to ten per email and 20 per IP. New accounts also follow System Settings, Max Signups Allowed Per Hour.
+- Website Settings, Disable Signup, does not apply. It turns off Frappe's own signup page, not Central's.
 
 ```mermaid
 flowchart TD
     U[User created] --> R[Assign Central User role]
-    R --> PT[Create personal Team]
-    PT --> OM[Add active Owner membership]
-    OM --> P{Pending invitations?}
-    P -->|No| D[Done]
-    P -->|Yes| A[Accept matching invitations]
-    A --> IM[Add invited Team memberships]
+    R --> V{Which signup?}
+    V -->|Email code| A[Accept every pending invitation]
+    V -->|Invitation link| ONE[Accept only that invitation]
+    A --> T{Member of a Team?}
+    ONE --> T
+    T -->|Yes| C[Console]
+    T -->|No| O[Console onboarding: create a Team]
 ```
 
-- Every non-guest user receives a personal Team.
-- Team creation always creates an active Owner membership.
+- A new user gets the Central User role and no Team. The signup that created the user accepts the invitations, after it signs the user in.
+- The email code signup accepts every pending invitation for the email. The invitation link signup accepts only the invitation in the link. The others stay pending until the user answers them.
+- A user who is a member of no Team creates one in console onboarding. The trial-site funnel creates the Team itself, named after the user, before it asks for a site name.
 - Existing users must explicitly accept invitations.
-- For a newly created user, invitations sent to the same email are accepted
-  after the personal Team has been created.
 - Invitations cannot grant the `Owner` role.
-- Accepting an invitation adds or activates membership in the inviting Team; it
-  does not replace the user's personal Team.
+- `invite_team_member` invites one person, or up to 10 people in one request with `invitations`, because each invitation sends an email. It invites each row on its own: a refused row returns its error, and the other rows are still invited.
+- An invitation stays open for the days set in Central Settings, Invitation Expiry (Days). The default is 14. Resending an invitation starts the count again and issues a new link, so the link in the earlier email stops working.
 
-Example: John and Jane each have a personal Team. If John invites Jane to
-John's Team, there are still two Teams. Jane owns Jane's Team and is also a
-member of John's Team.
+Example: Jane signs up without an invitation and creates Acme in onboarding, so Jane owns Acme. If John later invites Jane to John's Team, Jane accepts and is a member of both Teams. If John invites Jane before she has an account, Jane joins John's Team only and sees no onboarding.
 
-## OAuth Contract
+### Team creation and console onboarding
 
-```mermaid
-sequenceDiagram
-    participant U as User
-    participant A as Atlas
-    participant C as Central
+`Team.create_for_current_user` is the path for every Team that a person creates: the console and the trial-site funnel.
 
-    U->>A: Log in with Frappe
-    A->>C: OAuth authorization request
-    C->>U: Authenticate and consent
-    C->>A: Authorization code
-    A->>C: Exchange code
-    C-->>A: Identity and fc_teams grants
-    A->>A: Validate and store session grants
-```
+| Step | Where | Result |
+|---|---|---|
+| Trial flag | `Team.before_insert` | `is_staging_trial` follows Billing Settings, Provision Teams as Trial. The caller cannot choose it. The field is permission level 1, so only a System Manager can change it later. |
+| Onboarding steps | `Team.before_insert` | One `Team Onboarding Step` row each for `invite`, `billing` and `start`, all `Pending`. A staging trial gets no `billing` row, because its billing profile is filled with placeholders. |
+| Billing | `Team.create_for_current_user` | The user's first Team gets a Billing Profile from the request country (India gives INR, any other country gives USD), and the welcome credits. A later Team gets its billing when its owner completes the billing profile. Welcome credits are granted once per owner across all their Teams, and the grant locks the owner's User row, so two Teams created at the same time cannot both get them. |
 
-Atlas uses the canonical Social Login Key `frappe` provider and overrides only
-the Frappe login handler needed to consume Central grants.
+The console shows the onboarding dialog in two cases:
 
-The `fc_teams` claim maps each Team to its grants:
+1. The user is a member of no Team. The dialog asks for a Team name. This step cannot be skipped.
+2. The user owns the active Team, and the Team has a `Pending` onboarding step. `my_teams` returns these steps as `onboarding`.
 
-```json
-{
-  "team-id": [
-    {
-      "role": "Developer",
-      "source": "member",
-      "scope": "*",
-      "caps": ["server:view", "server:power", "server:open"]
-    }
-  ]
-}
-```
+The owner answers each step with `set_onboarding_step` (`Done` or `Skipped`), or all at once with `skip_onboarding`. Only the current owner can answer. A Team created before onboarding existed has no rows, so its owner never sees the dialog.
 
-- Missing, malformed, or untrusted grants provide no authority.
-- A local Atlas user has no Central Team access without valid `fc_teams` grants.
-- Atlas exposes reusable `can`, `require_capabilities`, and
-  `requires_vm_capabilities` authorization helpers.
-- Observe-only endpoints expose current session grants and permission checks.
-  They must not mutate grants or resources.
+### Invitation email and join link
 
-Observe-only endpoints:
+Central sends the invitation email directly, not through notification preferences, because the invitee is not a member yet. The email names the inviter, the Team, and the role. It links to `/dashboard/join/<token>`. The token is a random value on the Team Invitation, and it is the only key the join page reads.
 
-- Central: `central.api.identity.fc_teams`,
-  `central.api.identity.effective_permissions`,
-  `central.api.identity.check_capability`
-- Atlas: `atlas.atlas.api.iam.session_grants`,
-  `atlas.atlas.api.iam.check_session_capability`
+| Visitor | Join page action |
+|---|---|
+| Signed in as the invited email | Accept or decline. |
+| Signed in as another user | Switch account. |
+| Guest with an existing account | Sign in with the email code, then return to the join page. |
+| Guest without an account | Enter a full name. Central creates the account, joins the Team, and signs the user in. |
 
-## Atlas Resource Contract
+The emailed token verifies the address, so a new invitee does not need a second email code. A token never signs in to an existing account.
 
-`Virtual Machine` and `Virtual Machine Snapshot` carry an immutable, indexed
-`team` Data field containing the Central Team identifier.
+## Console Login
 
-```mermaid
-flowchart LR
-    S[Atlas session grants] --> V{team + vm:create?}
-    T[Requested Team] --> V
-    V -->|Yes| VM[Create Virtual Machine]
-    VM --> SN[Snapshot inherits VM Team]
-    V -->|No| X[Deny]
-```
-
-Attribution rules:
-
-- New VMs require an explicit Team and `vm:create` for that Team.
-- Snapshots inherit their VM's Team.
-- Clone and rebuild operations cannot cross Team boundaries.
-- Legacy unattributed resources are operator-only.
-- Resource ownership must never be inferred from the Frappe document owner.
-
-Canonical routes use the Team identifier:
-
-- `/dashboard/t/<team>/machines`
-- `/dashboard/t/<team>/machines/<machine>`
-
-Read rules:
-
-- `System Manager` can read all resources.
-- Other users require `vm:view` for the resource Team.
-- List filters use `permission_query_conditions`; document reads use
-  `has_permission`.
-- Linked operational records, including Tasks, inherit visibility from their VM.
-- An empty or malformed grant set denies access.
-
-| Action | Required capability |
-| --- | --- |
-| Create, provision, retry provision | `vm:create` |
-| Start, resume | `vm:start` |
-| Stop, pause | `vm:stop` |
-| Restart | `vm:stop` and `vm:start` |
-| Resize | `vm:resize` |
-| Snapshot | `vm:snapshot` |
-| Rebuild | `vm:rebuild` |
-| Clone | `vm:view` and `vm:clone` |
-| Terminate | `vm:terminate` |
-
-Loaded-document actions should use the authorization decorator. Creation and
-cross-resource actions should perform explicit checks because no single loaded
-document establishes the authorization boundary.
+Console login sends a six-digit code to an enabled user's email. The request response does not disclose whether the account exists. Central limits sends to five per supplied email value and 20 per IP in ten minutes. A pending code expires ten minutes after the last send or incorrect attempt and permits five incorrect attempts. Verification consumes the code before it creates a session. The console login form uses only this email code flow.
 
 ## Deferred Scope
 
 - Resource groups
-- Partner and reseller access
-- Per-VM ACLs
+- Partner access. [Frappe Connect](CONNECT.md) holds the planned design.
 - Bench authorization
 - Billing enforcement
-- Session grant refresh
 - Delegated custom-role administration

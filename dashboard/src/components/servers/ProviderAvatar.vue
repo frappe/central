@@ -9,7 +9,7 @@ import scalewayBadge from '@/assets/providers/Provider=Scaleway.svg'
 
 const props = withDefaults(
 	defineProps<{
-		/** Atlas Instance `provider` value (e.g. "AWS"); null/unknown → monogram. */
+		/** Region `provider` value (e.g. "AWS"); null/unknown → monogram. */
 		provider?: string | null
 		size?: number
 	}>(),

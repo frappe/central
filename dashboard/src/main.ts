@@ -1,4 +1,4 @@
-import { FrappeUI } from 'frappe-ui'
+import { FrappeUI, setConfig } from 'frappe-ui'
 import { io } from 'socket.io-client'
 import { createApp } from 'vue'
 import App from '@/App.vue'
@@ -12,9 +12,20 @@ const app = createApp(App)
 app.use(router)
 app.use(FrappeUI)
 
+if (window.system_timezone) setConfig('systemTimezone', window.system_timezone)
+if (window.max_file_size) setConfig('maxFileSize', window.max_file_size)
+
+// Where Socket.IO listens: what Frappe put on the page when it served it, else the
+// bench's own `socketio_port`, compiled in by vite.config.ts. Never a guess — a wrong
+// port looks exactly like a working app whose live updates silently never arrive.
+const socketioPort = window.socketio_port ?? __SOCKETIO_PORT__
+if (!socketioPort)
+	console.warn(
+		'No Socket.IO port in the page boot or the bench config. Live updates are off.',
+	)
+
 const host = window.location.hostname
 const siteName = import.meta.env.DEV ? host : window.site_name
-const socketioPort = window.socketio_port || 9000
 const port = window.location.port ? `:${socketioPort}` : ''
 const protocol = port ? 'http' : 'https'
 app.config.globalProperties.$socket = io(

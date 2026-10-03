@@ -21,6 +21,7 @@ defineEmits<{
 	open: [sub: SubscriptionRow]
 	pause: [sub: SubscriptionRow]
 	resume: [sub: SubscriptionRow]
+	assignProject: [sub: SubscriptionRow]
 }>()
 
 type BadgeTheme = 'gray' | 'red' | 'blue' | 'green' | 'amber' | 'violet'
@@ -47,6 +48,12 @@ function statusInfo(
 }
 const isTerminated = (sub: SubscriptionRow): boolean =>
 	sub.status === 'Terminated'
+
+function showRate(row: { cost: number | null; sub: SubscriptionRow }): boolean {
+	if (row.sub.monthly_rate == null || isTerminated(row.sub)) return false
+	if (row.cost == null) return true
+	return Math.abs(row.sub.monthly_rate - row.cost) >= 0.005
+}
 
 function serviceIcon(s: ServiceRow): string {
 	const key = `${s.resource_type || ''} ${s.title || ''}`.toLowerCase()
@@ -94,7 +101,7 @@ function overAllowance(s: ServiceRow): boolean {
 			>
 				<div class="flex items-center gap-2">
 					<span
-						class="lucide-server size-4 shrink-0 text-ink-gray-5"
+						class="lucide-server mt-0.5 size-4 shrink-0 text-ink-gray-5"
 						aria-hidden="true"
 					/>
 					<span
@@ -122,7 +129,7 @@ function overAllowance(s: ServiceRow): boolean {
 						{{ row.cost != null ? money(row.cost, currency) : '—' }}
 					</span>
 					<span
-						v-if="row.sub.monthly_rate != null && !isTerminated(row.sub)"
+						v-if="showRate(row)"
 						class="block text-p-sm tabular-nums text-ink-gray-5"
 					>
 						{{ money(row.sub.monthly_rate, currency, { trimTrailingZeros: true }) }}/mo
@@ -135,6 +142,7 @@ function overAllowance(s: ServiceRow): boolean {
 					@open="$emit('open', $event)"
 					@pause="$emit('pause', $event)"
 					@resume="$emit('resume', $event)"
+					@assign-project="$emit('assignProject', $event)"
 				/>
 			</div>
 		</template>
@@ -144,7 +152,7 @@ function overAllowance(s: ServiceRow): boolean {
 			<div class="min-w-0 flex-1">
 				<div class="flex items-center gap-2">
 					<span
-						class="size-4 shrink-0 text-ink-gray-5"
+						class="mt-0.5 size-4 shrink-0 text-ink-gray-5"
 						:class="serviceIcon(row.service)"
 						aria-hidden="true"
 					/>
@@ -178,12 +186,11 @@ function overAllowance(s: ServiceRow): boolean {
 					</div>
 				</div>
 			</div>
-			<div class="shrink-0 text-right">
-				<span class="block text-sm-medium tabular-nums text-ink-gray-9">
-					{{ money(row.cost ?? 0, currency) }}
-				</span>
-				<span class="block text-p-sm text-ink-gray-5">metered</span>
-			</div>
+			<span
+				class="block shrink-0 text-right text-sm-medium tabular-nums text-ink-gray-9"
+			>
+				{{ money(row.cost ?? 0, currency) }}
+			</span>
 		</template>
 	</div>
 </template>

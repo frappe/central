@@ -2,8 +2,8 @@
 # For license information, please see license.txt
 """Region display metadata.
 
-An Atlas Instance is named by its region slug only (autoname `field:region`), so
-the slug — `ap-south-1`, `in-mumbai`, `blr` — is all we structurally carry. This
+A Region is named by its slug only (autoname `field:region`), so the slug —
+`ap-south-1`, `in-mumbai`, `blr` — is all we structurally carry. This
 map turns a slug into the human label the subscription list shows
 ("Mumbai, India (AWS)"). Unknown slugs fall back to a title-cased slug rather than
 erroring, so a newly-registered region still renders something sensible.

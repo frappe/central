@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { Button, Dialog, FormControl, useCall } from 'frappe-ui'
+import { Alert, Button, Dialog, TextInput, useCall } from 'frappe-ui'
 import { computed, nextTick, type Ref, ref, watch } from 'vue'
 import { API, method } from '@/api/methods'
 import { useSession } from '@/composables/useSession'
 import { useTopup } from '@/composables/useTopup'
+import { getErrorMessage } from '@/lib/feedback'
 import { currencySymbol, money } from '@/lib/format'
-import { errorToast } from '@/lib/toast'
 import type { PaymentInstrument } from '@/types/billing'
 
 // Amount entry → in-app payment. Shared by the wallet card and credits surface.
@@ -27,7 +27,7 @@ const props = withDefaults(
 const open = defineModel<boolean>({ default: false })
 const emit = defineEmits<{ done: [res?: unknown] }>()
 
-const amount = ref<number | null>(null)
+const amount = ref<number>()
 const presets = [1000, 5000, 10000, 25000]
 
 const { activeTeam } = useSession()
@@ -89,12 +89,21 @@ const {
 	cardComplete,
 	submitting,
 	loading,
+	error: paymentError,
+	clearError,
 } = useTopup({
 	onDone: (res) => {
 		completed = true
 		open.value = false
 		emit('done', res)
 	},
+})
+const dialogError = ref('')
+const visibleError = computed(() => dialogError.value || paymentError.value)
+
+watch([amount, instrument, payMethod], () => {
+	dialogError.value = ''
+	clearError()
 })
 
 async function submit(): Promise<void> {
@@ -151,7 +160,7 @@ async function enterPhase(
 	try {
 		await mount(elRef.value!)
 	} catch (e) {
-		errorToast(e, failMsg)
+		dialogError.value = getErrorMessage(e, failMsg)
 		phase.value = false
 	} finally {
 		loadingRef.value = false
@@ -171,7 +180,7 @@ watch(open, (isOpen) => {
 	}
 	if (!isOpen) {
 		destroy()
-		amount.value = null
+		amount.value = undefined
 		instrument.value = null
 		fixed.value = false
 		payMethod.value = 'card'
@@ -179,6 +188,7 @@ watch(open, (isOpen) => {
 		cardLoading.value = false
 		paypalPhase.value = false
 		paypalLoading.value = false
+		dialogError.value = ''
 	}
 })
 </script>
@@ -186,6 +196,12 @@ watch(open, (isOpen) => {
 <template>
 	<Dialog v-model:open="open" title="Top up wallet">
 		<template #default>
+			<Alert
+				v-if="visibleError"
+				class="mb-4"
+				theme="red"
+				:title="visibleError"
+			/>
 			<!-- Stripe card entry: Element renders inside the iframe Stripe hosts. -->
 			<div v-if="cardPhase" class="space-y-3">
 				<p class="text-sm text-ink-gray-8">
@@ -238,7 +254,6 @@ watch(open, (isOpen) => {
 					<Button
 						class="ml-auto"
 						variant="ghost"
-						size="sm"
 						label="Change"
 						@click="fixed = false"
 					/>
@@ -293,7 +308,7 @@ watch(open, (isOpen) => {
 							@click="amount = p"
 						/>
 					</div>
-					<FormControl
+					<TextInput
 						v-model="amount"
 						type="number"
 						label="Amount"

@@ -13,6 +13,8 @@
   "cluster",
   "resource_type",
   "unit",
+  "project",
+  "project_title",
   "column_break_calc",
   "quantity",
   "rate",
@@ -51,6 +53,18 @@
    "fieldname": "unit",
    "fieldtype": "Data",
    "label": "Unit"
+  },
+  {
+   "fieldname": "project",
+   "fieldtype": "Data",
+   "label": "Project",
+   "description": "The Project this line's resource was tagged into at generation time (immutable snapshot, not a live Link). Empty for an untagged resource."
+  },
+  {
+   "fieldname": "project_title",
+   "fieldtype": "Data",
+   "label": "Project Title",
+   "description": "The Project's title at generation time, so the breakdown still reads correctly after a later rename."
   },
   {
    "fieldname": "column_break_calc",

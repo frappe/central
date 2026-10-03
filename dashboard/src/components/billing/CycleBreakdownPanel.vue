@@ -25,10 +25,12 @@ const period = computed(() =>
 </script>
 
 <template>
-	<SidePanel v-model:open="open" title="This cycle" :subtitle="period">
-		<div v-if="loading" class="space-y-3 p-4">
-			<LoadingText :lines="6" />
-		</div>
+	<SidePanel
+		v-model:open="open"
+		title="Breakdown of this cycle"
+		:subtitle="period"
+	>
+		<LoadingText v-if="loading" :lines="6" class="p-4" />
 
 		<div
 			v-else-if="!lines.length"
@@ -38,9 +40,12 @@ const period = computed(() =>
 		</div>
 
 		<template v-else>
-			<div class="p-4">
-				<ChargeBreakdown :lines="lines" :currency="currency" show-basis />
-			</div>
+			<ChargeBreakdown
+				:lines="lines"
+				:currency="currency"
+				show-basis
+				class="p-4"
+			/>
 
 			<div class="border-t border-outline-gray-2 p-4">
 				<div class="flex items-baseline justify-between gap-3 py-1">

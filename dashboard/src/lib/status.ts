@@ -1,52 +1,51 @@
 import type { InvitationStatus } from '@/types/api'
-import type { Asset } from '@/types/Central/Asset'
+import type { PaymentAttempt } from '@/types/billing'
+import type { VirtualMachine } from '@/types/Infrastructure/VirtualMachine'
+import type { ActionStatus } from '@/types/serverCreation'
 
 // The DocType statuses plus Central's own derived display state (see displayStatus).
-export type AssetStatus = NonNullable<Asset['status']> | 'Resizing'
+export type VirtualMachineStatus =
+	| NonNullable<VirtualMachine['status']>
+	| 'Resizing'
 
 export type BadgeTheme = 'green' | 'gray' | 'amber' | 'red' | 'blue' | 'violet'
 
-// A server mid-resize reads as "Resizing" regardless of the raw Atlas status (which
-// flips Running→Stopped→Running under it as the host power-cycles the VM). The flag is
-// Central's own, set for the length of the background reshape job (#84).
-export function isResizing(server: { resize_in_progress?: 0 | 1 }): boolean {
-	return server.resize_in_progress === 1
-}
-
-/** The status to show for a row: a live action's transitional label ("Terminating"…)
- *  takes precedence, then "Resizing" while a reshape job runs, else the mirror status. */
+/** The status to show for a row: a live action's transitional label takes precedence. */
 export function displayStatus(server: {
-	status?: AssetStatus
-	resize_in_progress?: 0 | 1
+	status?: VirtualMachineStatus
 	pending_action?: string | null
 }): string {
 	if (server.pending_action) return server.pending_action
-	return isResizing(server) ? 'Resizing' : (server.status ?? 'Pending')
+	return server.status ?? 'Pending'
 }
 
 /** States a stopped server can be powered on from (mirrors central/api/servers.py). */
-export const POWER_ON_STATES: AssetStatus[] = ['Stopped', 'Paused', 'Failed']
+export const POWER_ON_STATES: VirtualMachineStatus[] = [
+	'Stopped',
+	'Paused',
+	'Failed',
+]
 
-export function canStart(status?: AssetStatus): boolean {
+export function canStart(status?: VirtualMachineStatus): boolean {
 	return status !== undefined && POWER_ON_STATES.includes(status)
 }
 
-export function canStop(status?: AssetStatus): boolean {
+export function canStop(status?: VirtualMachineStatus): boolean {
 	return status === 'Running'
 }
 
-export function isTerminated(status?: AssetStatus): boolean {
+export function isTerminated(status?: VirtualMachineStatus): boolean {
 	return status === 'Terminated'
 }
 
 /** Atlas is still provisioning the VM — power/open/terminate aren't available yet. */
-const SETTING_UP_STATES: AssetStatus[] = [
+const SETTING_UP_STATES: VirtualMachineStatus[] = [
 	'Pending',
 	'Provisioning',
 	'Deploying',
 ]
 
-export function isSettingUp(status?: AssetStatus): boolean {
+export function isSettingUp(status?: VirtualMachineStatus): boolean {
 	return status === undefined || SETTING_UP_STATES.includes(status)
 }
 
@@ -80,6 +79,19 @@ export function invoiceTheme(status: string | null | undefined): BadgeTheme {
 	return INVOICE_THEME[String(status ?? '').toLowerCase()] ?? 'gray'
 }
 
+// Subscription account_standing → Badge theme. Current is the normal state and
+// stays gray; Past Due/Suspended need attention (amber) — matches PayingForRow's
+// inline `statusInfo` check for the same field.
+const STANDING_THEME: Record<string, BadgeTheme> = {
+	current: 'gray',
+	'past due': 'amber',
+	suspended: 'amber',
+}
+
+export function standingTheme(standing: string | null | undefined): BadgeTheme {
+	return STANDING_THEME[String(standing ?? '').toLowerCase()] ?? 'gray'
+}
+
 // Payment Attempt status → what a customer calls it, and its Badge theme. Same
 // doctrine as invoices: the ordinary outcome is grey and colour is spent only on
 // the states worth noticing — in-flight (nobody knows yet) and failed.
@@ -102,4 +114,51 @@ export function paymentAttemptDisplay(status: string | null | undefined): {
 			theme: 'gray',
 		}
 	)
+}
+
+export interface AttemptStory {
+	/** Newest successful capture. */
+	captured: PaymentAttempt | null
+	/** Newest attempt still with the gateway (Initiated/Authorised). */
+	inFlight: PaymentAttempt | null
+	/** Newest refunded attempt. */
+	refunded: PaymentAttempt | null
+	failed: number
+	/** Dunning retries that preceded the capture (all failures when uncaptured). */
+	failedBeforeCapture: number
+}
+
+export function attemptStory(attempts: PaymentAttempt[]): AttemptStory {
+	const sorted = [...attempts].sort((a, b) => b.at.localeCompare(a.at))
+	const captured = sorted.find((a) => a.status === 'Captured') ?? null
+	const inFlight =
+		sorted.find((a) => a.status === 'Initiated' || a.status === 'Authorised') ??
+		null
+	const refunded = sorted.find((a) => a.status === 'Refunded') ?? null
+	const failures = sorted.filter((a) => a.status === 'Failed')
+	const failedBeforeCapture = captured
+		? failures.filter((a) => a.at.localeCompare(captured.at) < 0).length
+		: failures.length
+	return {
+		captured,
+		inFlight,
+		refunded,
+		failed: failures.length,
+		failedBeforeCapture,
+	}
+}
+
+const CREATION_STAGE: Partial<Record<ActionStatus['status'], number>> = {
+	Queued: 0,
+	Dispatching: 1,
+	Sent: 1,
+	'In Progress': 2,
+	Succeeded: 3,
+}
+
+/** The step a creation is on, from 0. Null once it stopped without succeeding. */
+export function getCreationStage(
+	status: ActionStatus['status'],
+): number | null {
+	return CREATION_STAGE[status] ?? null
 }

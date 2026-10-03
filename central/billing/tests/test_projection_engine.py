@@ -37,12 +37,12 @@ class ProjectionTestBase(IntegrationTestCase):
 		self._purge()
 
 	def _purge(self):
-		for dt in ("Invoice", "Usage Rollup"):
+		for dt in ("Invoice", "Usage Rollup", "Project"):
 			frappe.db.delete(dt, {"team": TEAM})
 		for sub in frappe.get_all("Subscription", {"team": TEAM}, pluck="name"):
 			frappe.db.delete("Subscription Change", {"subscription": sub})
 			frappe.db.delete("Subscription", {"name": sub})
-		frappe.db.delete("Asset", {"team": TEAM})
+		frappe.db.delete("Virtual Machine", {"team": TEAM})
 		frappe.db.commit()
 
 
@@ -84,12 +84,42 @@ class TestProjectingAPeriod(ProjectionTestBase):
 		self.assertEqual(out["currency"], "INR")
 
 
+class TestProjectionIncludesProjectTaggedResources(ProjectionTestBase):
+	"""Tagging a resource into a Project is now purely a labelling concern (a
+	Project no longer partitions billing into its own invoice/scope), so its cost
+	must not disappear from the team's one consolidated projection just because
+	it's tagged."""
+
+	def test_a_tagged_resources_cost_still_shows_in_the_teams_projection(self):
+		add_segment(self.sub, "Created", 12000, "2026-06-01 00:00:00")
+		project = frappe.get_doc({"doctype": "Project", "title": "Customer X", "team": TEAM}).insert().name
+		frappe.db.set_value("Subscription", self.sub, "project", project)
+		frappe.db.commit()
+
+		out = engine.project(TEAM, "2026-09-01", "2026-09-30", today="2026-08-06")
+
+		self.assertIsNotNone(out["invoice"])
+		self.assertEqual(out["invoice"]["subtotal"], 12000.0)
+
+	def test_a_mix_of_tagged_and_untagged_resources_are_both_counted(self):
+		add_segment(self.sub, "Created", 12000, "2026-06-01 00:00:00")
+		other = make_billing_subscription(TEAM, CLUSTER, PLAN, billing_cycle="Monthly")
+		project = frappe.get_doc({"doctype": "Project", "title": "Customer X", "team": TEAM}).insert().name
+		frappe.db.set_value("Subscription", other, "project", project)
+		add_segment(other, "Created", 5000, "2026-06-01 00:00:00")
+		frappe.db.commit()
+
+		out = engine.project(TEAM, "2026-09-01", "2026-09-30", today="2026-08-06")
+
+		self.assertEqual(out["invoice"]["subtotal"], 17000.0)
+
+
 class TestEstimatedUsageReachesTheInvoice(ProjectionTestBase):
 	def _rollup(self, month, quantity):
 		frappe.get_doc(
 			{
 				"doctype": "Usage Rollup",
-				"resource_id": frappe.db.get_value("Subscription", self.sub, "asset_id"),
+				"resource_id": frappe.db.get_value("Subscription", self.sub, "server_id"),
 				"team": TEAM,
 				"cluster": CLUSTER,
 				"resource_type": "Transfer",
