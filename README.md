@@ -45,7 +45,10 @@ See the [billing demo](central/billing/demo/README.md) for the teams and logins.
 
 ## Develop the console
 
+Run these commands from `apps/central`:
+
 ```bash
+cd apps/central
 yarn install
 yarn dev
 ```

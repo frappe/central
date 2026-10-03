@@ -15,7 +15,19 @@
 
 ## 0. Prerequisites (both paths)
 
-Set up the bench, the site, the gateway test keys, and the billing worker as the [README](../../README.md) describes. The seed path uses placeholder keys (`skip_credential_validation`) and runs offline. Only real charges, top-ups, and e2e need live test keys.
+Set up the bench, the site, and the gateway test keys as the [README](../../README.md) describes. The seed path uses placeholder keys (`skip_credential_validation`) and runs offline. Only real charges, top-ups, and e2e need live test keys.
+
+The monthly billing run uses its own `billing` queue. Declare the queue in `sites/common_site_config.json`:
+
+```json
+"workers": {"billing": {"timeout": 3000, "background_workers": 2}}
+```
+
+Then run a worker for it from the bench root:
+
+```bash
+pilot frappe worker --queue billing
+```
 
 ---
 
