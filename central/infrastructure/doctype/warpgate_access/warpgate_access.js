@@ -45,11 +45,13 @@ async function load_hosts(frm) {
 		return
 	}
 	if (!frm.hosts) {
+		const region = frm.doc.region
 		const { message } = await frappe.call({
 			method: 'central.infrastructure.doctype.warpgate_access.warpgate_access.get_hosts',
-			args: { region: frm.doc.region },
+			args: { region },
 			type: 'GET',
 		})
+		if (frm.doc.region !== region) return
 		frm.hosts = message || []
 	}
 	field.set_data(frm.hosts.map((host) => ({ label: host.title, value: host.title, description: host.status })))
