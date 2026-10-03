@@ -125,6 +125,10 @@ class AtlasClient:
 		"""Close one host, or every host for `all`, to one person. Revoking twice is safe."""
 		self._request("POST", f"hosts/{quote(host_id, safe='')}/access/revoke", payload={"email": email})
 
+	def close_sessions(self, email: str) -> None:
+		"""End every live Warpgate session of one person in this region. Closing twice is safe."""
+		self._request("POST", "warpgate/sessions/close", payload={"email": email})
+
 	def vm_action(self, name: str, action: str) -> dict:
 		path = f"virtual-machines/{quote(name, safe='')}"
 		if action == "terminate":

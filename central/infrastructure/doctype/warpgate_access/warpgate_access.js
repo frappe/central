@@ -1,9 +1,9 @@
 // Copyright (c) 2026, Frappe and contributors
 // For license information, please see license.txt
 
-frappe.ui.form.on('Host Access Grant', {
+frappe.ui.form.on('Warpgate Access', {
 	refresh(frm) {
-		if (frm.doc.docstatus === 1 && is_active(frm.doc)) {
+		if (frm.doc.docstatus === 1 && frm.doc.status === 'Active' && frm.doc.access_type !== 'Admin') {
 			frm.add_custom_button(__('Show SSH Command'), () => show_ssh_command(frm))
 		}
 	},
@@ -27,7 +27,7 @@ frappe.ui.form.on('Host Access Grant', {
 async function load_hosts(frm) {
 	if (!frm.doc.region || frm.hosts) return
 	const { message } = await frappe.call({
-		method: 'central.infrastructure.doctype.host_access_grant.host_access_grant.get_hosts',
+		method: 'central.infrastructure.doctype.warpgate_access.warpgate_access.get_hosts',
 		args: { region: frm.doc.region },
 		type: 'GET',
 	})
@@ -59,8 +59,4 @@ async function show_ssh_command(frm) {
 		},
 	})
 	dialog.show()
-}
-
-function is_active(doc) {
-	return doc.expires_at && frappe.datetime.str_to_obj(doc.expires_at) > frappe.datetime.system_datetime(true)
 }

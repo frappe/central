@@ -1,22 +1,23 @@
 {
  "actions": [],
  "allow_rename": 0,
- "autoname": "HAG-.#####",
+ "autoname": "WA-.#####",
  "naming_rule": "Expression (old style)",
  "creation": "2026-10-03 00:00:00.000000",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
   "target_section",
+  "access_type",
   "region",
-  "scope",
   "host_title",
   "host",
   "column_break_target",
   "user",
-  "duration_hours",
+  "duration",
   "reason",
   "grant_section",
+  "status",
   "expires_at",
   "amended_from"
  ],
@@ -27,26 +28,29 @@
    "label": "Target"
   },
   {
+   "default": "One host",
+   "fieldname": "access_type",
+   "fieldtype": "Select",
+   "label": "Access Type",
+   "options": "One host\nAll hosts\nAdmin",
+   "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
    "fieldname": "region",
    "fieldtype": "Link",
    "label": "Region",
    "options": "Region",
-   "reqd": 1,
    "in_list_view": 1,
    "in_standard_filter": 1,
-   "description": "Choose the region first. Its hosts load from it."
+   "description": "Choose the region first. Its hosts load from it.",
+   "depends_on": "eval:['One host', 'All hosts'].includes(doc.access_type)",
+   "mandatory_depends_on": "eval:['One host', 'All hosts'].includes(doc.access_type)"
   },
   {
-   "default": "One host",
-   "fieldname": "scope",
-   "fieldtype": "Select",
-   "label": "Scope",
-   "options": "One host\nAll hosts",
-   "reqd": 1
-  },
-  {
-   "depends_on": "eval:doc.scope == 'One host'",
-   "mandatory_depends_on": "eval:doc.scope == 'One host'",
+   "depends_on": "eval:doc.access_type == 'One host'",
+   "mandatory_depends_on": "eval:doc.access_type == 'One host'",
    "fieldname": "host_title",
    "fieldtype": "Autocomplete",
    "label": "Host",
@@ -75,15 +79,16 @@
    "reqd": 1,
    "in_list_view": 1,
    "in_standard_filter": 1,
-   "description": "Needs the Atlas Host Access role to sign in to Warpgate."
+   "description": "Host access needs the Atlas Host Access role."
   },
   {
-   "default": "1",
-   "fieldname": "duration_hours",
+   "default": "1 hour",
+   "fieldname": "duration",
    "fieldtype": "Select",
-   "label": "Duration (hours)",
-   "options": "1\n3\n6\n12\n24",
-   "reqd": 1
+   "label": "Duration",
+   "options": "1 hour\n3 hours\n6 hours\n12 hours\n1 day\n7 days\n30 days\nNever",
+   "reqd": 1,
+   "description": "Host access lasts at most 1 day."
   },
   {
    "fieldname": "reason",
@@ -96,19 +101,29 @@
    "label": "Grant"
   },
   {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "label": "Status",
+   "options": "\nActive\nExpired\nRevoked",
+   "read_only": 1,
+   "no_copy": 1,
+   "allow_on_submit": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
    "fieldname": "expires_at",
    "fieldtype": "Datetime",
    "label": "Expires At",
    "read_only": 1,
    "no_copy": 1,
-   "in_list_view": 1,
-   "description": "Set when you submit. Warpgate ends the access at this time."
+   "description": "Set when you submit. Empty means the access does not expire."
   },
   {
    "fieldname": "amended_from",
    "fieldtype": "Link",
    "label": "Amended From",
-   "options": "Host Access Grant",
+   "options": "Warpgate Access",
    "read_only": 1,
    "no_copy": 1,
    "print_hide": 1,
@@ -118,10 +133,10 @@
  "index_web_pages_for_search": 0,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-10-03 00:00:00.000000",
+ "modified": "2026-10-03 18:00:00.000000",
  "modified_by": "Administrator",
  "module": "Infrastructure",
- "name": "Host Access Grant",
+ "name": "Warpgate Access",
  "owner": "Administrator",
  "permissions": [
   {
