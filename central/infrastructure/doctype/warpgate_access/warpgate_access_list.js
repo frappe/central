@@ -3,7 +3,7 @@
 
 frappe.listview_settings['Warpgate Access'] = {
 	get_indicator(doc) {
-		const colors = { Active: 'green', Expired: 'gray', Revoked: 'red' }
+		const colors = { Active: 'green', Expired: 'gray', Cancelled: 'red' }
 		if (doc.docstatus === 0) return [__('Draft'), 'gray', 'docstatus,=,0']
 		return [__(doc.status), colors[doc.status], `status,=,${doc.status}`]
 	},

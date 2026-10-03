@@ -196,7 +196,7 @@ scheduler_events = {
 	"all": ["central.integrations.resource_actions.recover_requests"],
 	"cron": {
 		"* * * * *": [
-			"central.infrastructure.doctype.warpgate_access.warpgate_access.expire_access",
+			"central.infrastructure.doctype.warpgate_access.warpgate_access.revoke_ended_access",
 		],
 		"*/10 * * * *": [
 			# Repair observed state through scoped regional reads.

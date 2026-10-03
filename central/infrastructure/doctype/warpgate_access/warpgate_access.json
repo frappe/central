@@ -18,6 +18,7 @@
   "reason",
   "grant_section",
   "status",
+  "is_revoked",
   "expires_at",
   "amended_from"
  ],
@@ -104,12 +105,23 @@
    "fieldname": "status",
    "fieldtype": "Select",
    "label": "Status",
-   "options": "\nActive\nExpired\nRevoked",
+   "options": "\nActive\nExpired\nCancelled",
    "read_only": 1,
    "no_copy": 1,
    "allow_on_submit": 1,
    "in_list_view": 1,
    "in_standard_filter": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "is_revoked",
+   "fieldtype": "Check",
+   "label": "Revoked",
+   "read_only": 1,
+   "no_copy": 1,
+   "allow_on_submit": 1,
+   "in_standard_filter": 1,
+   "description": "Set when Atlas has revoked the access and closed the sessions."
   },
   {
    "fieldname": "expires_at",

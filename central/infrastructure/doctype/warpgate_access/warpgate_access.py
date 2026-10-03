@@ -11,6 +11,7 @@ from frappe import _
 from frappe.model.document import Document
 from frappe.utils import convert_utc_to_system_timezone, get_datetime, get_system_timezone, now_datetime
 
+from central.errors import AtlasConnectionError
 from central.integrations.atlas import AtlasClient
 
 ACCESS_ROLE = "Atlas Host Access"
@@ -49,9 +50,10 @@ class WarpgateAccess(Document):
 		expires_at: DF.Datetime | None
 		host: DF.Data | None
 		host_title: DF.Autocomplete | None
+		is_revoked: DF.Check
 		reason: DF.SmallText | None
 		region: DF.Link | None
-		status: DF.Literal["", "Active", "Expired", "Revoked"]
+		status: DF.Literal["", "Active", "Expired", "Cancelled"]
 		user: DF.Link
 	# end: auto-generated types
 
@@ -87,6 +89,7 @@ class WarpgateAccess(Document):
 	def before_submit(self) -> None:
 		self.validate_no_active_access()
 		self.status = "Active"
+		self.is_revoked = 0
 		hours = self.durations[self.duration]
 		self.expires_at = None
 		if hours is not None:
@@ -101,12 +104,17 @@ class WarpgateAccess(Document):
 		self.get_atlas_client().grant_host_access(self.host, self.email, expires_at)
 
 	def on_cancel(self) -> None:
-		self.revoke()
-		self.db_set("status", "Revoked")
+		self.db_set("status", "Cancelled")
+		self.revoke_now()
 
-	def expire(self) -> None:
-		self.revoke()
-		self.db_set("status", "Expired")
+	def revoke_now(self) -> None:
+		"""Revoke, and mark the access revoked. A failed revoke runs again in revoke_ended_access."""
+		try:
+			self.revoke()
+		except AtlasConnectionError:
+			frappe.log_error(title=f"Warpgate Access {self.name} was not revoked")
+			return
+		self.db_set("is_revoked", 1)
 
 	def revoke(self) -> None:
 		"""End the access and every live Warpgate session of the person. Revoking twice is safe."""
@@ -121,7 +129,7 @@ class WarpgateAccess(Document):
 		"""One active access gives a person each permission, so revoking it always ends that permission."""
 		# Lock the person, so two submissions together cannot both pass this check.
 		frappe.db.get_value("User", self.user, "name", for_update=True)
-		filters = {"docstatus": 1, "status": "Active", "user": self.user, "name": ["!=", self.name]}
+		filters = {"docstatus": ["in", [1, 2]], "is_revoked": 0, "user": self.user, "name": ["!=", self.name]}
 		if self.is_admin:
 			filters["access_type"] = ADMIN
 		else:
@@ -133,7 +141,11 @@ class WarpgateAccess(Document):
 		# A locking read sees access that committed while this submission waited for the lock.
 		active = frappe.db.get_value("Warpgate Access", filters, "name", for_update=True)
 		if active:
-			frappe.throw(_("{0} already gives this access. Cancel or amend it instead.").format(active))
+			frappe.throw(
+				_(
+					"{0} already gives this access, or its revoke is pending. Cancel it, or wait a minute."
+				).format(active)
+			)
 
 	@property
 	def email(self) -> str:
@@ -166,17 +178,20 @@ def get_warpgate_regions() -> list:
 	return [frappe.get_doc("Region", name) for name in names]
 
 
-def expire_access() -> None:
-	"""Revoke each active access whose end time passed. A failed revoke runs again on the next run."""
-	names = frappe.get_all(
+def revoke_ended_access() -> None:
+	"""Mark each access whose end time passed, then revoke each ended access that is not revoked yet."""
+	for name in frappe.get_all(
 		"Warpgate Access",
 		filters={"docstatus": 1, "status": "Active", "expires_at": ["<=", now_datetime()]},
 		pluck="name",
-	)
-	for name in names:
-		try:
-			frappe.get_doc("Warpgate Access", name).expire()
-			frappe.db.commit()  # nosemgrep
-		except Exception:
-			frappe.db.rollback()
-			frappe.log_error(title=f"Warpgate Access {name} did not expire")
+	):
+		frappe.db.set_value("Warpgate Access", name, "status", "Expired", update_modified=False)
+	frappe.db.commit()  # nosemgrep
+
+	for name in frappe.get_all(
+		"Warpgate Access",
+		filters={"docstatus": ["in", [1, 2]], "status": ["in", ["Expired", "Cancelled"]], "is_revoked": 0},
+		pluck="name",
+	):
+		frappe.get_doc("Warpgate Access", name).revoke_now()
+		frappe.db.commit()  # nosemgrep

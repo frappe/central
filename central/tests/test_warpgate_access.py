@@ -4,11 +4,11 @@ from unittest.mock import Mock, patch
 import frappe
 from frappe.tests import IntegrationTestCase
 
-from central.errors import AtlasRejected
+from central.errors import AtlasConnectionError, AtlasRejected
 from central.infrastructure.doctype.warpgate_access.warpgate_access import (
 	ACCESS_ROLE,
 	ADMIN_ROLE,
-	expire_access,
+	revoke_ended_access,
 )
 from central.tests.utils import ensure_atlas_instance
 
@@ -69,7 +69,29 @@ class TestWarpgateAccess(IntegrationTestCase):
 		access.cancel()
 
 		self.atlas.revoke_host_access.assert_called_once_with(HOST_ID, OPERATOR)
-		self.assertEqual(access.status, "Revoked")
+		self.assertEqual((access.status, access.is_revoked), ("Cancelled", 1))
+
+	def test_a_cancel_succeeds_when_atlas_is_down_and_the_job_revokes_later(self) -> None:
+		access = self.make_access().insert()
+		access.submit()
+		self.atlas.revoke_host_access.side_effect = AtlasConnectionError("Atlas could not be reached.")
+
+		access.cancel()
+
+		self.assertEqual((access.docstatus, access.status, access.is_revoked), (2, "Cancelled", 0))
+		self.atlas.revoke_host_access.side_effect = None
+		with patch.object(frappe.db, "commit"):
+			revoke_ended_access()
+		self.assertEqual(frappe.db.get_value("Warpgate Access", access.name, "is_revoked"), 1)
+
+	def test_a_pending_revoke_blocks_an_overlapping_access(self) -> None:
+		access = self.make_access().insert()
+		access.submit()
+		self.atlas.revoke_host_access.side_effect = AtlasConnectionError("Atlas could not be reached.")
+		access.cancel()
+
+		with self.assertRaisesRegex(frappe.ValidationError, "revoke is pending"):
+			self.make_access().insert().submit()
 
 	def test_a_second_active_access_for_the_same_host_is_refused(self) -> None:
 		self.make_access().insert().submit()
@@ -127,7 +149,7 @@ class TestWarpgateAccess(IntegrationTestCase):
 
 		self.assertNotIn(ADMIN_ROLE, frappe.get_roles(OPERATOR))
 		self.atlas.close_sessions.assert_called_once_with(OPERATOR)
-		self.assertEqual(access.status, "Revoked")
+		self.assertEqual((access.status, access.is_revoked), ("Cancelled", 1))
 
 	def test_admin_access_can_never_expire(self) -> None:
 		access = self.make_admin_access(duration="Never").insert()
@@ -152,27 +174,29 @@ class TestWarpgateAccess(IntegrationTestCase):
 			access.db_set("expires_at", frappe.utils.add_to_date(None, minutes=-1))
 
 		with patch.object(frappe.db, "commit"):
-			expire_access()
+			revoke_ended_access()
 
 		self.atlas.revoke_host_access.assert_called_once_with(HOST_ID, OPERATOR)
 		self.atlas.close_sessions.assert_called_once_with(OPERATOR)
 		self.assertNotIn(ADMIN_ROLE, frappe.get_roles(OPERATOR))
-		statuses = [
-			frappe.db.get_value("Warpgate Access", access.name, "status")
+		states = [
+			frappe.db.get_value("Warpgate Access", access.name, ["status", "is_revoked"])
 			for access in (host_access, admin_access, current)
 		]
-		self.assertEqual(statuses, ["Expired", "Expired", "Active"])
+		self.assertEqual(states, [("Expired", 1), ("Expired", 1), ("Active", 0)])
 
-	def test_a_failed_expiry_stays_active_for_the_next_run(self) -> None:
+	def test_a_failed_revoke_stays_pending_for_the_next_run(self) -> None:
 		access = self.make_access().insert()
 		access.submit()
 		access.db_set("expires_at", frappe.utils.add_to_date(None, minutes=-1))
 		self.atlas.revoke_host_access.side_effect = AtlasRejected("Warpgate did not answer.")
 
 		with patch.object(frappe.db, "commit"), patch.object(frappe.db, "rollback"):
-			expire_access()
+			revoke_ended_access()
 
-		self.assertEqual(frappe.db.get_value("Warpgate Access", access.name, "status"), "Active")
+		self.assertEqual(
+			frappe.db.get_value("Warpgate Access", access.name, ["status", "is_revoked"]), ("Expired", 0)
+		)
 
 	def test_the_ssh_command_names_the_person_host_and_regional_warpgate(self) -> None:
 		access = self.make_access().insert()
