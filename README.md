@@ -5,7 +5,7 @@ Central is the control plane for Frappe Cloud V2. It signs people in, decides wh
 <img width="3080" height="1954" alt="CleanShot 2026-10-03 at 2 50 02 PM@2x" src="https://github.com/user-attachments/assets/7644da1f-ae09-42e3-9a5e-e0130b409995" />
 
 
-Central does not run servers. [Atlas](https://github.com/frappe/atlas) runs the virtual machines in each region, [Pilot](https://github.com/frappe/pilot) runs the benches and sites on a server, and Cargo builds the server images. See [Integrations](spec/INTEGRATIONS.md) for the contracts.
+Central does not run servers. [Atlas](https://github.com/frappe/atlas) runs the virtual machines in each region, [Pilot](https://github.com/frappe/pilot) runs the benches and sites on a server, and [Cargo](https://github.com/frappe/cargo) builds the server images. See [Integrations](spec/INTEGRATIONS.md) for the contracts.
 
 ## Requirements
 
