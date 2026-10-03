@@ -193,5 +193,7 @@ def revoke_ended_access() -> None:
 		filters={"docstatus": ["in", [1, 2]], "status": ["in", ["Expired", "Cancelled"]], "is_revoked": 0},
 		pluck="name",
 	):
-		frappe.get_doc("Warpgate Access", name).revoke_now()
+		access = frappe.get_doc("Warpgate Access", name, for_update=True)
+		if not access.is_revoked:
+			access.revoke_now()
 		frappe.db.commit()  # nosemgrep

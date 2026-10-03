@@ -185,6 +185,20 @@ class TestWarpgateAccess(IntegrationTestCase):
 		]
 		self.assertEqual(states, [("Expired", 1), ("Expired", 1), ("Active", 0)])
 
+	def test_the_expiry_job_skips_access_revoked_after_it_was_listed(self) -> None:
+		access = self.make_access().insert()
+		access.submit()
+		access.cancel()
+		self.atlas.revoke_host_access.reset_mock()
+
+		with (
+			patch(f"{MODULE}.frappe.get_all", side_effect=[[], [access.name]]),
+			patch.object(frappe.db, "commit"),
+		):
+			revoke_ended_access()
+
+		self.atlas.revoke_host_access.assert_not_called()
+
 	def test_a_failed_revoke_stays_pending_for_the_next_run(self) -> None:
 		access = self.make_access().insert()
 		access.submit()
