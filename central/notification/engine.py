@@ -72,6 +72,8 @@ def dispatch(
 
 	server = server or get_reference_server(reference_doctype, reference_name)
 	ctx = _resolve_context(team, event_type, context, reference_name, reference_doctype)
+	ctx["server_title"] = _get_server_title(server)
+	ctx["reference_title"] = _get_reference_title(team, reference_doctype, reference_name)
 	ctx["message"] = message or ""
 
 	event = _get_event_type(event_type)
@@ -174,6 +176,40 @@ def _resolve_context(team, event_type, context, reference_name, reference_doctyp
 	if context:
 		ctx["context"] = context
 	return ctx
+
+
+# Only these references render a title. A team-owned one must belong to the event's team,
+# because a Pilot names its own reference and could name another team's record.
+REFERENCE_TITLE_FIELDS = {
+	"Virtual Machine": "title",
+	"VM Snapshot": "title",
+	"Site": "site_name",
+	"Region": "display_name",
+}
+TEAM_OWNED_REFERENCES = {"Virtual Machine", "VM Snapshot", "Site"}
+
+
+def _get_server_title(server: str | None) -> str:
+	"""The server's title, or its name when it has none."""
+	if not server:
+		return ""
+	return frappe.db.get_value("Virtual Machine", server, "title") or server
+
+
+def _get_reference_title(team: str, reference_doctype: str | None, reference_name: str | None) -> str:
+	"""The reference's title, or its name when the record is unknown, untitled, or another team's."""
+	if not reference_name:
+		return ""
+	title_field = REFERENCE_TITLE_FIELDS.get(reference_doctype or "")
+	if not title_field:
+		return reference_name
+
+	is_team_owned = reference_doctype in TEAM_OWNED_REFERENCES
+	fields = [title_field, "team"] if is_team_owned else [title_field]
+	row = frappe.db.get_value(reference_doctype, reference_name, fields, as_dict=True)
+	if not row or (is_team_owned and row.team != team):
+		return reference_name
+	return row[title_field] or reference_name
 
 
 def _render_template(template_str: str | None, ctx: dict) -> str | None:

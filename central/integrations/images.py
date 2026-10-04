@@ -139,7 +139,7 @@ def _restorable_snapshot(team: str, snapshot: str):
 	if row.status != "Available":
 		frappe.throw(_("Only an available snapshot can be restored."))
 	if not row.is_restorable or not row.image_offering:
-		frappe.throw(_("A snapshot of a Pilot server cannot be restored yet."))
+		frappe.throw(_("A snapshot of a Frappe server cannot be restored yet."))
 	return row
 
 

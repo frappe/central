@@ -8,7 +8,7 @@ import PayingForRow from '@/components/billing/PayingForRow.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { usePayingFor } from '@/composables/usePayingFor'
-import type { SubscriptionRow } from '@/types/billing'
+import { subscriptionTitle } from '@/lib/subscriptions'
 
 const VISIBLE = 5
 
@@ -35,10 +35,6 @@ const hidden = computed(() => Math.max(0, rows.value.length - VISIBLE))
 
 function goToObjectStorage(): void {
 	router.push({ name: 'ObjectStorage' })
-}
-
-function serverTitle(sub: SubscriptionRow): string {
-	return sub.server || sub.plan_title || sub.name
 }
 </script>
 
@@ -102,7 +98,7 @@ function serverTitle(sub: SubscriptionRow): string {
 		<ConfirmDialog
 			v-model:target="pendingPause"
 			title="Pause billing"
-			:message="`Pause billing for ${pendingPause ? serverTitle(pendingPause) : ''}? This stops the server/VM and the site(s)/services running on it, and stops charges until you resume.`"
+			:message="`Pause billing for ${pendingPause ? subscriptionTitle(pendingPause) : ''}? This stops the server/VM and the site(s)/services running on it, and stops charges until you resume.`"
 			confirm-label="Pause billing"
 			:loading="busy === pendingPause?.name"
 			@confirm="confirmPause"
