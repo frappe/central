@@ -498,7 +498,7 @@ const showListControls = computed(
 				<slot name="filters" />
 			</div>
 			<div
-				v-if="$slots.toolbar && !hasSelection"
+				v-if="$slots.toolbar"
 				class="ml-auto flex shrink-0 items-center gap-3"
 			>
 				<slot name="toolbar" />
