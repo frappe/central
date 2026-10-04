@@ -14,11 +14,13 @@ import ServerRowActions from '@/components/servers/ServerRowActions.vue'
 import TerminateServerDialog from '@/components/servers/TerminateServerDialog.vue'
 import TakeSnapshotDialog from '@/components/snapshots/TakeSnapshotDialog.vue'
 import { useServerFleet } from '@/composables/useServerFleet'
+import { useServerLink } from '@/composables/useServerLink'
 import { useServerNavigation } from '@/composables/useServerNavigation'
 import type { VirtualMachineRow } from '@/composables/useServers'
 import { useServers } from '@/composables/useServers'
 import { getServerActions, type ServerActions } from '@/lib/capabilities'
-import { getErrorMessage } from '@/lib/feedback'
+import { getErrorMessage, infoToast } from '@/lib/feedback'
+import { canChange } from '@/lib/status'
 
 // The servers page: the world map is the list (FC V2). Servers (the Virtual Machine mirror)
 // and sites (the Site mirror — each a 1:1-backed VM) come from one feed and list
@@ -52,6 +54,7 @@ const {
 	pillLabel,
 	pins,
 	spots,
+	servers,
 } = useServerFleet()
 // Actions only — list reads come from useServerMapData.
 const {
@@ -205,6 +208,21 @@ const overviewOpen = computed({
 		if (!isOpen) overviewServer.value = null
 	},
 })
+
+// A link from a server's own dashboard opens that server here.
+useServerLink(
+	{ activeTeam, servers, reload },
+	{
+		overview: (server) => (overviewServer.value = server),
+		resize: (server) => {
+			if (!canChange(server))
+				infoToast("This server can't be resized right now.")
+			else if (!getServerActions(server, teamActions.value).resize)
+				infoToast("You can't resize this server.")
+			else openResize(server)
+		},
+	},
+)
 </script>
 
 <template>
@@ -261,7 +279,6 @@ const overviewOpen = computed({
 						:can-snapshot="canSnapshotServer"
 						:can-open-console="canOpenConsole"
 						:opens-site="!!pin.site"
-						side="right"
 						:busy="busy === pin.server.resource_id"
 						:opening="
 							opening === pin.server.resource_id || opening === pin.site?.name

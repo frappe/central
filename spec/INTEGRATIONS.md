@@ -145,6 +145,8 @@ A repeated running event cannot prove that a restart finished. Resource Action w
 
 Opening Pilot uses a short-lived audience-bound token and the automatic admin name. Deny another Team's access.
 
+Pilot links back to its server in the console with `/dashboard/servers?pilot=<jwks_audience_id>&action=<action>`. The action is `overview` or `resize`; any other value opens the overview. A resize link opens the dialog only when the server can take a change and the user may resize it. The server list returns each server's active audience as `pilot_audience`, and the console matches the link against it. When the active Team does not hold that server, the console shows the server list and a message.
+
 Display supported network and SSH information for a plain Ubuntu server. Do not imply that a private mesh address is publicly reachable.
 
 Delete only after the customer confirms the action. Confirm remote absence, revoke any Pilot credential, and preserve existing billing cancellation behavior.

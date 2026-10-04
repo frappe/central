@@ -49,6 +49,18 @@ export function isSettingUp(status?: VirtualMachineStatus): boolean {
 	return status === undefined || SETTING_UP_STATES.includes(status)
 }
 
+/** A server takes a change (resize, snapshot, terminate) only when set up, not terminated, and idle. */
+export function canChange(server: {
+	status?: VirtualMachineStatus
+	pending_action?: string | null
+}): boolean {
+	return (
+		!server.pending_action &&
+		!isSettingUp(server.status) &&
+		!isTerminated(server.status)
+	)
+}
+
 // Team Invitation status → Badge theme. Pending is in-flight (amber), Accepted is
 // done (green), everything else is inactive/neutral or a hard stop.
 const INVITATION_STATUS_THEME: Record<InvitationStatus, BadgeTheme> = {

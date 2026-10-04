@@ -14,7 +14,15 @@ export interface DropdownOption {
 	submenu?: DropdownOptions
 }
 
-export type DropdownOptions = DropdownOption[]
+/** A run of options shown together; groups are divided by a line. */
+export interface DropdownGroupOption {
+	key?: string | number
+	group: string
+	options: DropdownOption[]
+	hideLabel?: boolean
+}
+
+export type DropdownOptions = Array<DropdownOption | DropdownGroupOption>
 
 /** The File record `upload_file` returns. */
 export interface UploadedFile {

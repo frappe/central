@@ -4,6 +4,10 @@ import ProviderAvatar from '@/components/servers/ProviderAvatar.vue'
 import { formatSyncedAt } from '@/lib/format'
 
 interface ServerInfoCardProps {
+	/** Central's server ID, which support looks a server up by. */
+	serverId: string
+	/** The VM's ID inside its Atlas region. */
+	atlasVmId?: string | null
 	hostedOn: string
 	provider?: string | null
 	plan: string
@@ -66,6 +70,18 @@ defineProps<ServerInfoCardProps>()
 			<div class="flex items-center justify-between gap-4">
 				<dt class="text-ink-gray-5">Created on</dt>
 				<dd class="text-ink-gray-9">{{ formatSyncedAt(createdOn) || '-' }}</dd>
+			</div>
+			<div class="flex items-center justify-between gap-4">
+				<dt class="shrink-0 text-ink-gray-5">Server ID</dt>
+				<dd class="min-w-0">
+					<CopyableValue :value="serverId" label="Server ID" />
+				</dd>
+			</div>
+			<div v-if="atlasVmId" class="flex items-center justify-between gap-4">
+				<dt class="shrink-0 text-ink-gray-5">VM ID</dt>
+				<dd class="min-w-0">
+					<CopyableValue :value="atlasVmId" label="VM ID" />
+				</dd>
 			</div>
 			<div class="flex items-center justify-between gap-4">
 				<dt class="text-ink-gray-5">Owned by</dt>
