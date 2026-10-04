@@ -659,6 +659,49 @@ class TestReportPilotEvent(EngineTestBase):
 			with self.assertRaises(frappe.PermissionError):
 				report_pilot_event(event_type="payment_failure", message="x")
 
+	def test_pilot_resource_alert_is_accepted_with_the_shipped_fixture(self):
+		"""Pilot's sustained resource alert must match a Server-category fixture, and its
+		title must render from the bench name Pilot sends as the reference."""
+		fixture_path = frappe.get_app_path("central", "fixtures", "notification_event_type.json")
+		fixture = next(
+			record
+			for record in frappe.parse_json(frappe.read_file(fixture_path))
+			if record["name"] == "resource_limit_breached"
+		)
+		self._ensure_event_type(
+			"resource_limit_breached",
+			**{
+				field: fixture[field]
+				for field in ("category", "severity", "required_cap", "in_app_title", "in_app_body")
+			},
+		)
+
+		class FakeCredential:
+			team = TEAM
+
+		with (
+			patch("central.api.pilot.PilotCredential.verify", return_value=FakeCredential()),
+			patch("frappe.get_request_header", return_value="fake-token"),
+		):
+			from central.notification.api import report_pilot_event
+
+			out = report_pilot_event(
+				event_type="resource_limit_breached",
+				message="my-bench: cpu_usage_limit at 95.0%",
+				reference_name="my-bench",
+				context={"bench": "my-bench", "breached_limits": []},
+			)
+		self.assertTrue(out["created"])
+
+		row = frappe.get_all(
+			"Team Notification",
+			{"team": TEAM, "event_type": "resource_limit_breached"},
+			["title", "message", "reference_name"],
+		)[0]
+		self.assertEqual(row.title, "Resource limit breached: my-bench")
+		self.assertEqual(row.message, "my-bench: cpu_usage_limit at 95.0%")
+		self.assertEqual(row.reference_name, "my-bench")
+
 
 class TestTemplateContext(EngineTestBase):
 	def test_reference_doctype_in_template_context(self):
