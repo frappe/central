@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import type { DropdownSide } from 'frappe-ui'
+import type { DropdownOption, DropdownOptions } from 'frappe-ui'
 import { computed } from 'vue'
 import RowActionsMenu from '@/components/common/RowActionsMenu.vue'
 import type { VirtualMachineRow } from '@/composables/useServers'
 import { getServerActions } from '@/lib/capabilities'
+import { copyToClipboard } from '@/lib/clipboard'
+import { reportError, successToast } from '@/lib/feedback'
 import { canStart, canStop, isSettingUp, isTerminated } from '@/lib/status'
 
 // The lifecycle menu for one server row. Which actions show is gated by both the
@@ -22,8 +24,6 @@ const props = defineProps<{
 	opening?: boolean
 	/** This machine carries a site. Open goes to that site, not the bench. */
 	opensSite?: boolean
-	/** Where the menu opens. The map card uses `right` so it sits beside the card. */
-	side?: DropdownSide
 }>()
 
 const emit = defineEmits<{
@@ -39,14 +39,6 @@ const emit = defineEmits<{
 	terminate: [server: VirtualMachineRow]
 }>()
 
-interface ActionItem {
-	label: string
-	icon: string
-	theme?: 'red'
-	disabled?: boolean
-	onClick: () => void
-}
-
 const allowed = computed(() =>
 	getServerActions(props.server, {
 		open: props.canOpen,
@@ -58,91 +50,126 @@ const allowed = computed(() =>
 	}),
 )
 
-const options = computed(() => {
-	const items: ActionItem[] = []
-	items.push({
-		label: 'Overview',
-		icon: 'lucide-gauge',
-		onClick: () => emit('overview', props.server),
-	})
-	// An action is in flight (Provisioning/Starting/Terminating/…): offer nothing else until
-	// it settles, mirroring the API which rejects a second command mid-flight.
-	if (props.server.pending_action) return items
-	// Still provisioning — Open/Resize/Terminate wait until the VM leaves Setting up.
-	const settingUp = isSettingUp(props.server.status)
-	if (allowed.value.open && !settingUp)
+// One line support can paste into a ticket to find the VM in Central and in Atlas.
+async function copyServerId(): Promise<void> {
+	const { resource_id, atlas_vm_id, region } = props.server
+	const reference = [resource_id, atlas_vm_id, region]
+		.filter(Boolean)
+		.join(' · ')
+	if (await copyToClipboard(reference)) successToast('Server ID copied')
+	else reportError('Could not copy the server ID.')
+}
+
+function getViewActions(isOnlyReading: boolean): DropdownOption[] {
+	const items: DropdownOption[] = [
+		{
+			label: 'Overview',
+			icon: 'lucide-gauge',
+			onClick: () => emit('overview', props.server),
+		},
+	]
+	const isRunning = props.server.status === 'Running'
+	if (allowed.value.open && !isOnlyReading) {
 		items.push({
 			label: props.opensSite ? 'Visit site' : 'Open server',
 			icon: props.opensSite ? 'lucide-globe' : 'lucide-server',
-			disabled:
-				props.server.status !== 'Running' ||
-				!(props.opensSite || props.server.gateway_url),
+			disabled: !isRunning || !(props.opensSite || props.server.gateway_url),
 			onClick: () => emit('open', props.server),
 		})
-	// On a site server the first entry visits the site, so the server gets its own.
-	if (allowed.value.open && !settingUp && props.opensSite)
-		items.push({
-			label: 'Open server',
-			icon: 'lucide-server',
-			disabled: props.server.status !== 'Running' || !props.server.gateway_url,
-			onClick: () => emit('pilot', props.server),
-		})
-	if (allowed.value.console)
+		// On a site server the first entry visits the site, so the server gets its own.
+		if (props.opensSite)
+			items.push({
+				label: 'Open server',
+				icon: 'lucide-server',
+				disabled: !isRunning || !props.server.gateway_url,
+				onClick: () => emit('pilot', props.server),
+			})
+	}
+	if (allowed.value.console && !props.server.pending_action)
 		items.push({
 			label: 'Web console',
 			icon: 'lucide-terminal',
-			disabled: props.server.status !== 'Running',
+			disabled: !isRunning,
 			onClick: () => emit('console', props.server),
 		})
-	if (allowed.value.power && canStart(props.server.status))
-		items.push({
-			label: 'Start',
-			icon: 'lucide-play',
-			onClick: () => emit('start', props.server),
-		})
-	if (allowed.value.power && canStop(props.server.status))
-		items.push({
+	return items
+}
+
+function getPowerActions(): DropdownOption[] {
+	if (!allowed.value.power) return []
+	if (canStart(props.server.status))
+		return [
+			{
+				label: 'Start',
+				icon: 'lucide-play',
+				onClick: () => emit('start', props.server),
+			},
+		]
+	// Only a running server can stop or restart; the API refuses both otherwise.
+	if (!canStop(props.server.status)) return []
+	return [
+		{
 			label: 'Stop',
 			icon: 'lucide-square',
 			onClick: () => emit('stop', props.server),
-		})
-	// Only a running server can restart, and the API refuses it in any other state.
-	if (allowed.value.power && canStop(props.server.status))
-		items.push({
+		},
+		{
 			label: 'Restart',
 			icon: 'lucide-rotate-ccw',
 			onClick: () => emit('restart', props.server),
-		})
-	// Resize compute; the dialog gates on a Stopped VM and slides a preset onto a
-	// custom config.
-	if (allowed.value.resize && !isTerminated(props.server.status) && !settingUp)
+		},
+	]
+}
+
+function getChangeActions(): DropdownOption[] {
+	const items: DropdownOption[] = []
+	if (allowed.value.resize)
 		items.push({
 			label: 'Resize',
 			icon: 'lucide-sliders-horizontal',
 			onClick: () => emit('resize', props.server),
 		})
-	if (
-		allowed.value.snapshot &&
-		!isTerminated(props.server.status) &&
-		!settingUp
-	)
+	if (allowed.value.snapshot)
 		items.push({
 			label: 'Take snapshot',
 			icon: 'lucide-camera',
 			onClick: () => emit('snapshot', props.server),
 		})
-	if (
-		allowed.value.terminate &&
-		!isTerminated(props.server.status) &&
-		!settingUp
-	)
-		items.push({
-			label: 'Terminate',
-			icon: 'lucide-trash-2',
-			theme: 'red',
-			onClick: () => emit('terminate', props.server),
-		})
 	return items
+}
+
+// Groups run from most to least frequent, so the destructive action sits last and apart.
+const options = computed<DropdownOptions>(() => {
+	// An action in flight (Provisioning/Starting/Terminating/…) or a server still setting
+	// up offers only reads, mirroring the API which rejects a second command mid-flight.
+	const settingUp = isSettingUp(props.server.status)
+	const canChange =
+		!props.server.pending_action &&
+		!settingUp &&
+		!isTerminated(props.server.status)
+	const groups: DropdownOption[][] = [
+		getViewActions(settingUp || !!props.server.pending_action),
+		props.server.pending_action ? [] : getPowerActions(),
+		canChange ? getChangeActions() : [],
+		[{ label: 'Copy server ID', icon: 'lucide-copy', onClick: copyServerId }],
+		canChange && allowed.value.terminate
+			? [
+					{
+						label: 'Terminate',
+						icon: 'lucide-trash-2',
+						theme: 'red',
+						onClick: () => emit('terminate', props.server),
+					},
+				]
+			: [],
+	]
+	return groups
+		.filter((items) => items.length)
+		.map((items, index) => ({
+			group: `${index}`,
+			hideLabel: true,
+			options: items,
+		}))
 })
 </script>
 
@@ -151,7 +178,5 @@ const options = computed(() => {
 		:options="options"
 		label="Server actions"
 		:busy="busy || opening"
-		:side="side"
-		:align="side === 'right' ? 'start' : 'end'"
 	/>
 </template>

@@ -261,7 +261,6 @@ const overviewOpen = computed({
 						:can-snapshot="canSnapshotServer"
 						:can-open-console="canOpenConsole"
 						:opens-site="!!pin.site"
-						side="right"
 						:busy="busy === pin.server.resource_id"
 						:opening="
 							opening === pin.server.resource_id || opening === pin.site?.name
