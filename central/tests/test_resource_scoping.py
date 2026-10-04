@@ -363,8 +363,7 @@ class TestScopedNotifications(ResourceScopingTestCase):
 				event_type=event_type, message="cpu at 95%", reference_name=reference_name
 			)
 
-	def test_a_server_event_names_the_server_by_its_display_name(self):
-		frappe.db.set_value("Virtual Machine", self.mine, "title", "Billing box")
+	def _dispatch_title_event(self, reference_name: str, server: str | None = None) -> dict:
 		frappe.db.delete("Notification Event Type", {"event_type": "scope_title_event"})
 		frappe.get_doc(
 			{
@@ -379,21 +378,31 @@ class TestScopedNotifications(ResourceScopingTestCase):
 				"create_in_app": 0,
 			}
 		).insert(ignore_permissions=True)
-
 		with patch("central.notification.engine._send_member_email", return_value=True):
-			named = dispatch(
-				self.team, "scope_title_event", reference_doctype="Virtual Machine", reference_name=self.mine
-			)
-			unnamed = dispatch(
+			return dispatch(
 				self.team,
 				"scope_title_event",
 				reference_doctype="Virtual Machine",
-				reference_name=self.theirs,
+				reference_name=reference_name,
+				server=server,
 			)
+
+	def test_a_server_event_names_the_server_by_its_display_name(self):
+		frappe.db.set_value("Virtual Machine", self.mine, "title", "Billing box")
+
+		named = self._dispatch_title_event(self.mine)
+		unnamed = self._dispatch_title_event(self.theirs)
 
 		self.assertEqual(named["title"], "Server terminated: Billing box")
 		self.assertEqual(named["body"], "Server Billing box was terminated.")
 		self.assertEqual(unnamed["title"], f"Server terminated: {self.theirs}")
+
+	def test_a_reference_to_another_teams_server_never_shows_its_title(self):
+		frappe.db.set_value("Virtual Machine", self.elsewhere, "title", "Other team box")
+
+		out = self._dispatch_title_event(self.elsewhere, server=self.mine)
+
+		self.assertEqual(out["title"], f"Server terminated: {self.elsewhere}")
 
 	def test_a_pilot_event_without_a_reference_reaches_members_scoped_to_its_server(self):
 		out = self._report_pilot_event(self.mine, "scope_pilot_event", None)
