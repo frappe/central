@@ -203,27 +203,21 @@ def _is_duplicate(team, event_type, reference_name, server=None) -> bool:
 	if not reference_name:
 		return False
 	cutoff = frappe.utils.add_to_date(None, minutes=-DEDUP_WINDOW_MINUTES)
-	filters = {
-		"team": team,
-		"event_type": event_type,
-		"reference_name": reference_name,
-		"creation": (">=", cutoff),
-	}
+	subject = {"team": team, "reference_name": reference_name}
 	if server:
-		filters["server"] = server
-	existing = frappe.db.get_value("Team Notification", filters, "creation")
+		subject["server"] = server
+	existing = frappe.db.get_value(
+		"Team Notification",
+		{**subject, "event_type": event_type, "creation": (">=", cutoff)},
+		"creation",
+	)
 	if not existing:
 		return False
 	# A different event_type for the same reference means state changed
 	# since the first occurrence — allow the new notification through.
 	state_changed = frappe.db.exists(
 		"Team Notification",
-		{
-			"team": team,
-			"reference_name": reference_name,
-			"event_type": ("!=", event_type),
-			"creation": (">", existing),
-		},
+		{**subject, "event_type": ("!=", event_type), "creation": (">", existing)},
 	)
 	return not state_changed
 

@@ -337,12 +337,14 @@ class TestScopedNotifications(ResourceScopingTestCase):
 		self.assertNotIn(self.scoped, recipients[self.theirs])
 		self.assertIn(self.viewer, recipients[self.theirs])
 
-	def test_a_pilot_event_reaches_members_scoped_to_its_server(self):
-		frappe.db.delete("Notification Event Type", {"event_type": "scope_pilot_event"})
+	def _report_pilot_event(self, server: str, event_type: str, reference_name: str | None) -> dict:
+		from central.notification.api import report_pilot_event
+
+		frappe.db.delete("Notification Event Type", {"event_type": event_type})
 		frappe.get_doc(
 			{
 				"doctype": "Notification Event Type",
-				"event_type": "scope_pilot_event",
+				"event_type": event_type,
 				"category": "Server",
 				"severity": "Warning",
 				"required_cap": "server:view",
@@ -352,27 +354,37 @@ class TestScopedNotifications(ResourceScopingTestCase):
 				"create_in_app": 1,
 			}
 		).insert(ignore_permissions=True)
-		from central.notification.api import report_pilot_event
+		credential = frappe._dict(team=self.team, server=server)
+		with (
+			patch("central.api.pilot.PilotCredential.verify", return_value=credential),
+			patch("frappe.get_request_header", return_value="fake-token"),
+		):
+			return report_pilot_event(
+				event_type=event_type, message="cpu at 95%", reference_name=reference_name
+			)
 
-		def report_from(server: str) -> str:
-			credential = frappe._dict(team=self.team, server=server)
-			with (
-				patch("central.api.pilot.PilotCredential.verify", return_value=credential),
-				patch("frappe.get_request_header", return_value="fake-token"),
-			):
-				out = report_pilot_event(
-					event_type="scope_pilot_event", message="cpu at 95%", reference_name="main"
-				)
-			self.assertTrue(out["created"], "the same bench name on another server is not a duplicate")
-			return out["notification"]
+	def test_a_pilot_event_without_a_reference_reaches_members_scoped_to_its_server(self):
+		out = self._report_pilot_event(self.mine, "scope_pilot_event", None)
 
-		mine, theirs = report_from(self.mine), report_from(self.theirs)
+		self.assertEqual(frappe.db.get_value("Team Notification", out["notification"], "server"), self.mine)
+		self.assertIn(out["notification"], self._feed(self.scoped))
 
-		row = frappe.db.get_value("Team Notification", mine, ["server", "reference_name"], as_dict=True)
+	def test_a_pilot_reference_is_kept_and_deduplicated_per_server(self):
+		mine = self._report_pilot_event(self.mine, "scope_pilot_event", "main")
+		theirs = self._report_pilot_event(self.theirs, "scope_pilot_event", "main")
+		self.assertTrue(theirs["created"], "the same bench name on another server is not a duplicate")
+
+		row = frappe.db.get_value(
+			"Team Notification", mine["notification"], ["server", "reference_name"], as_dict=True
+		)
 		self.assertEqual((row.server, row.reference_name), (self.mine, "main"))
 		feed = self._feed(self.scoped)
-		self.assertIn(mine, feed)
-		self.assertNotIn(theirs, feed)
+		self.assertIn(mine["notification"], feed)
+		self.assertNotIn(theirs["notification"], feed)
+
+		self._report_pilot_event(self.theirs, "scope_pilot_recovered", "main")
+		repeat = self._report_pilot_event(self.mine, "scope_pilot_event", "main")
+		self.assertFalse(repeat["created"], "another server's state change does not reopen this one")
 
 
 class TestScopedDispatch(ResourceScopingTestCase):
