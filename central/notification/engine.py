@@ -72,6 +72,8 @@ def dispatch(
 
 	server = server or get_reference_server(reference_doctype, reference_name)
 	ctx = _resolve_context(team, event_type, context, reference_name, reference_doctype)
+	ctx["server_title"] = _get_server_title(server)
+	ctx["reference_title"] = _get_reference_title(reference_doctype, reference_name)
 	ctx["message"] = message or ""
 
 	event = _get_event_type(event_type)
@@ -174,6 +176,25 @@ def _resolve_context(team, event_type, context, reference_name, reference_doctyp
 	if context:
 		ctx["context"] = context
 	return ctx
+
+
+def _get_server_title(server: str | None) -> str:
+	"""The server's display name for templates, so a customer never reads its internal ID."""
+	if not server:
+		return ""
+	return frappe.db.get_value("Virtual Machine", server, "title") or server
+
+
+def _get_reference_title(reference_doctype: str | None, reference_name: str | None) -> str:
+	"""The referenced record's display title, so a template never shows an internal ID it has a name for."""
+	if not reference_name:
+		return ""
+	if not reference_doctype or not frappe.db.exists(reference_doctype, reference_name):
+		return reference_name
+	title_field = frappe.get_meta(reference_doctype).title_field
+	if not title_field:
+		return reference_name
+	return frappe.db.get_value(reference_doctype, reference_name, title_field) or reference_name
 
 
 def _render_template(template_str: str | None, ctx: dict) -> str | None:
