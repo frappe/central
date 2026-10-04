@@ -13,6 +13,15 @@ const { instance, instanceLoading } = useServices()
 
 const models = computed(() => instance.value?.models ?? [])
 const enabledSites = computed(() => instance.value?.enabled_sites ?? [])
+const rateLimits = computed(() => {
+	const limits = instance.value?.rate_limits
+	if (!limits) return []
+
+	return [
+		{ label: 'Requests per minute', value: limits.requests_per_minute },
+		{ label: 'Tokens per minute', value: limits.tokens_per_minute },
+	]
+})
 </script>
 
 <template>
@@ -69,10 +78,35 @@ const enabledSites = computed(() => instance.value?.enabled_sites ?? [])
 					@click="router.push('/servers')"
 				/>
 
+				<template v-if="rateLimits.length">
+					<h2
+						class="text-base font-semibold text-ink-gray-8 mt-8 border-t border-outline-gray-2 pt-8"
+					>
+						Rate limits
+					</h2>
+
+					<p class="mt-0.5 text-p-sm text-ink-gray-5">
+						Shared by every API key of this team.
+					</p>
+
+					<dl class="mt-3 divide-y divide-outline-gray-1">
+						<div
+							v-for="limit in rateLimits"
+							:key="limit.label"
+							class="flex items-center justify-between py-3"
+						>
+							<dt class="text-sm text-ink-gray-8">{{ limit.label }}</dt>
+							<dd class="font-mono text-sm font-medium text-ink-gray-9">
+								{{ limit.value?.toLocaleString() ?? 'No limit' }}
+							</dd>
+						</div>
+					</dl>
+				</template>
+
 				<h2
 					class="text-base font-semibold text-ink-gray-8 mt-8 border-t border-outline-gray-2 pt-8"
 				>
-					Included models
+					Accessible models
 				</h2>
 
 				<p class="mt-0.5 text-p-sm text-ink-gray-5">

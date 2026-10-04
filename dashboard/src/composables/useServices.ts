@@ -33,6 +33,12 @@ export interface ServiceEnabledSite {
 	cluster: string | null
 }
 
+// Per-minute limits counted across every key of the team. null means no limit.
+export interface ServiceRateLimits {
+	requests_per_minute: number | null
+	tokens_per_minute: number | null
+}
+
 export interface ServiceInstance {
 	managed_service: string
 	service: string
@@ -41,6 +47,8 @@ export interface ServiceInstance {
 	plan_title: string | null
 	enabled_sites: ServiceEnabledSite[]
 	models: ServiceModel[]
+	// null for an add-on that has no rate limits.
+	rate_limits: ServiceRateLimits | null
 }
 
 export interface ServiceUsageModel {

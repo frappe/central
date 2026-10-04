@@ -103,6 +103,12 @@ class TestGroveDriverCalls(IntegrationTestCase):
 
 		self.assertEqual(self.sent(post), ("grove.api.available_models", {"email": "owner@example.com"}))
 
+	def test_get_limits_asks_for_a_grove_users_rate_limits(self):
+		with _grove_replies([]) as post:
+			GroveDriver().get_limits(self.backend, "owner@example.com")
+
+		self.assertEqual(self.sent(post), ("grove.api.limits", {"email": "owner@example.com"}))
+
 	def test_fetch_usage_names_a_period(self):
 		with _grove_replies({"model_summary": []}) as post:
 			GroveDriver().fetch_usage(self.backend, ["owner@example.com"], period="Last 7 Days")
@@ -440,6 +446,7 @@ class TestLLMProvisioning(IntegrationTestCase):
 			patch.object(GroveDriver, "provision_user"),
 			patch.object(GroveDriver, "provision_key", return_value=_FAKE),
 			patch.object(GroveDriver, "list_models", return_value=[]),
+			patch.object(GroveDriver, "get_limits", return_value=[]),
 		):
 			out = dashboard.activate_service(self.team, "llm")
 			dashboard.generate_api_key(out["managed_service"], "app")
@@ -477,7 +484,10 @@ class TestLLMProvisioning(IntegrationTestCase):
 				"dialects": ["openai", "anthropic"],
 			}
 		]
-		with patch.object(GroveDriver, "list_models", return_value=reachable) as list_models:
+		with (
+			patch.object(GroveDriver, "list_models", return_value=reachable) as list_models,
+			patch.object(GroveDriver, "get_limits", return_value=[]),
+		):
 			instance = dashboard.get_instance(self.managed.name)
 
 		self.assertEqual(instance["status"], "Active")
@@ -487,6 +497,22 @@ class TestLLMProvisioning(IntegrationTestCase):
 			[{"name": "frappe/m-fast", "modality": "text", "dialects": ["openai", "anthropic"]}],
 		)
 		self.assertEqual(list_models.call_args.args[1], self.owner)
+
+	def test_get_instance_shows_the_per_minute_rate_limits(self):
+		# Only the 1m rows are RPM and TPM. A metric with no 1m row has no limit to show.
+		limits = [
+			{"metric": "requests", "window": "1m", "value": 20},
+			{"metric": "requests", "window": "1h", "value": 500},
+			{"metric": "total_tokens", "window": "1d", "value": 1_000_000},
+		]
+		with (
+			patch.object(GroveDriver, "list_models", return_value=[]),
+			patch.object(GroveDriver, "get_limits", return_value=limits) as get_limits,
+		):
+			instance = dashboard.get_instance(self.managed.name)
+
+		self.assertEqual(instance["rate_limits"], {"requests_per_minute": 20, "tokens_per_minute": None})
+		self.assertEqual(get_limits.call_args.args[1], self.owner)
 
 	def test_reads_require_capability(self):
 		self.addCleanup(frappe.set_user, "Administrator")

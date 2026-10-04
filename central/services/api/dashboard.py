@@ -250,7 +250,8 @@ def list_offers(team: str) -> list[dict]:
 @frappe.whitelist(methods=["GET"])
 @require_service_capability("service:view")
 def get_instance(managed_service: str) -> dict:
-	"""A managed service's status, enabled sites, and the models it may call. service:view.
+	"""A managed service's status, enabled sites, the models it may call, and its per-minute
+	rate limits. service:view.
 	`enabled_sites` are the sites Central has minted keys for — its own record, not a
 	VM scan (the bench owns the authoritative site list)."""
 	instance = provisioning.get_managed_service(managed_service)
@@ -276,7 +277,7 @@ def get_instance(managed_service: str) -> dict:
 		"plan": plan,
 		"plan_title": frappe.db.get_value("Plan", plan, "title") if plan else None,
 		"enabled_sites": [{"site": row.site, "cluster": cluster_by_site.get(row.site)} for row in sites],
-		"models": _reachable_models(instance.add_on_service, managed_service),
+		**_grove_access(instance.add_on_service, managed_service),
 	}
 
 
@@ -322,13 +323,18 @@ def add_credit(managed_service: str, amount: float, reference: str | None = None
 	)
 
 
-def _reachable_models(service: str, managed_service: str) -> list[dict]:
+def _grove_access(service: str, managed_service: str) -> dict:
+	# What Grove lets the team's Grove user do. Another add-on has no models and no limits.
 	if frappe.db.get_value("Add-on Service", service, "handler_key", cache=True) != "grove":
-		return []
+		return {"models": [], "rate_limits": None}
 
 	from central.services import llm
 
-	return llm.get_reachable_models(_grove_user(managed_service), service)
+	email = _grove_user(managed_service)
+	return {
+		"models": llm.get_reachable_models(email, service),
+		"rate_limits": llm.get_rate_limits(email, service),
+	}
 
 
 def _grove_user(managed_service: str) -> str | None:

@@ -133,6 +133,20 @@ def get_reachable_models(email: str, service: str = _LLM_SERVICE) -> list[dict]:
 	]
 
 
+def get_rate_limits(email: str, service: str = _LLM_SERVICE) -> dict:
+	"""The per-minute limits Grove counts across every key of a Grove user. Grove decides;
+	Central only shows them. None means no limit on that metric."""
+	driver, backend = _driver_and_backend(service)
+	per_minute = {
+		row["metric"]: row["value"] for row in driver.get_limits(backend, email) if row["window"] == "1m"
+	}
+
+	return {
+		"requests_per_minute": per_minute.get("requests"),
+		"tokens_per_minute": per_minute.get("total_tokens"),
+	}
+
+
 def get_usage_report(
 	email: str, period: str, service: str = _LLM_SERVICE, key_hash: str | None = None
 ) -> dict:

@@ -55,6 +55,10 @@ class GroveDriver:
 		# Every published model, or with `email` only what that Grove user may call.
 		return self._call(backend, "grove.api.available_models", {"email": email}) or []
 
+	def get_limits(self, backend, email: str) -> list[dict]:
+		# The Grove user's rate limits: rows of `metric`, `window` and `value`.
+		return self._call(backend, "grove.api.limits", {"email": email}) or []
+
 	def fetch_usage(
 		self,
 		backend,
