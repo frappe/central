@@ -14,11 +14,12 @@ import ServerRowActions from '@/components/servers/ServerRowActions.vue'
 import TerminateServerDialog from '@/components/servers/TerminateServerDialog.vue'
 import TakeSnapshotDialog from '@/components/snapshots/TakeSnapshotDialog.vue'
 import { useServerFleet } from '@/composables/useServerFleet'
+import { useServerLink } from '@/composables/useServerLink'
 import { useServerNavigation } from '@/composables/useServerNavigation'
 import type { VirtualMachineRow } from '@/composables/useServers'
 import { useServers } from '@/composables/useServers'
 import { getServerActions, type ServerActions } from '@/lib/capabilities'
-import { getErrorMessage } from '@/lib/feedback'
+import { getErrorMessage, infoToast } from '@/lib/feedback'
 
 // The servers page: the world map is the list (FC V2). Servers (the Virtual Machine mirror)
 // and sites (the Site mirror — each a 1:1-backed VM) come from one feed and list
@@ -52,6 +53,8 @@ const {
 	pillLabel,
 	pins,
 	spots,
+	servers,
+	loaded,
 } = useServerFleet()
 // Actions only — list reads come from useServerMapData.
 const {
@@ -204,6 +207,21 @@ const overviewOpen = computed({
 	set: (isOpen: boolean) => {
 		if (!isOpen) overviewServer.value = null
 	},
+})
+
+// A link from a server's own dashboard opens that server here. It runs last because a
+// loaded fleet calls a handler right away, and the handlers read the state above.
+useServerLink(servers, loaded, {
+	overview: (server) => (overviewServer.value = server),
+	resize: (server) => {
+		if (getServerActions(server, teamActions.value).resize) openResize(server)
+		else infoToast("You can't resize this server.")
+	},
+	snapshots: (server) =>
+		router.push({
+			path: '/servers/snapshots',
+			query: { search: server.title || server.resource_id },
+		}),
 })
 </script>
 

@@ -217,6 +217,28 @@ class TestScopedRoutes(ResourceScopingTestCase):
 		self.assertEqual([server["name"] for server in servers], [self.mine])
 		self.assertEqual(servers[0]["capabilities"], SERVER_CAPABILITIES)
 
+	def test_registry_names_each_server_by_its_active_pilot_audience(self):
+		for credential, server, status in (
+			(f"pilot-mine-{self.suffix}", self.mine, "Active"),
+			(f"pilot-old-{self.suffix}", self.theirs, "Revoked"),
+		):
+			self._insert(
+				{
+					"doctype": "Pilot Credential",
+					"name": credential,
+					"pilot_credential_id": credential,
+					"team": self.team,
+					"server": server,
+					"audience_id": credential,
+					"status": status,
+				}
+			)
+
+		servers = {server["name"]: server for server in registry(self.team)["servers"]}
+
+		self.assertEqual(servers[self.mine]["pilot_audience"], f"pilot-mine-{self.suffix}")
+		self.assertIsNone(servers[self.theirs]["pilot_audience"])
+
 	def test_one_server_routes_refuse_another_server(self):
 		frappe.set_user(self.scoped)
 		for call in (

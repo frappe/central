@@ -43,6 +43,8 @@ export type VirtualMachineRow = Pick<
 > &
 	ServerAccess & {
 		pending_action?: string | null
+		/** The server's Pilot audience, which a link from that Pilot names it by. */
+		pilot_audience?: string | null
 	}
 
 const { activeTeam } = useSession()
