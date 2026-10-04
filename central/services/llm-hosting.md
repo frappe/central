@@ -2,7 +2,7 @@
 
 ## How it works (one screen)
 Central sells managed LLM inference. Grove runs the models on our GPUs and mints
-API keys; Central records the entitlement, registers the team owner on Grove as a
+API keys; Central records the entitlement, registers the team on Grove as a
 Free user, and delivers keys. There is no billing plan: LLM Hosting is prepaid at
 Grove, and Central does not bill it yet. Central is never in the request path — the
 caller hits `{gateway_url}/v1/chat/completions` directly. Two ways to consume:
@@ -43,13 +43,13 @@ user, which holds Grove's `Grove Control` role.
 | Method | Central sends | Central reads |
 |---|---|---|
 | `create_control_client` | `email`, `token` (the bootstrap secret) | `api_key`, `api_secret` |
-| `provision_user` | `name`, `email`, `free` (always true) | nothing |
-| `provision_key` | `email`, `title` | `gateway_url`, `api_key` |
+| `provision_user` | `user` (the team id), `email` (the team owner), `free` (true on activation, false on a change of owner) | nothing |
+| `provision_key` | `user`, `title` | `gateway_url`, `api_key` |
 | `revoke_key` | `api_key` | nothing |
-| `available_models` | `email` | `name`, `modality`, `dialects` (`openai`, `anthropic`) |
-| `limits` | `email` | `metric` (`requests`, `total_tokens`), `window`, `value`. Central shows the `1m` rows as RPM and TPM. |
-| `usage` | `users`, `period`, `key_hash` (sha256 of one team key, optional) | `from_date`, `to_date`, `as_of`, `model_summary`, `daily_summary`, `<email>.requests`, `<email>.cost` |
-| `add_credit` (operator only, not used by any screen) | `email`, `amount` (USD), `reference` | `balance` |
+| `available_models` | `user` | `name`, `modality`, `dialects` (`openai`, `anthropic`) |
+| `limits` | `user` | `metric` (`requests`, `total_tokens`), `window`, `value`. Central shows the `1m` rows as RPM and TPM. |
+| `usage` | `users`, `period`, `key_hash` (sha256 of one team key, optional) | `from_date`, `to_date`, `as_of`, `model_summary`, `daily_summary`, `<user>.requests`, `<user>.cost` |
+| `add_credit` (operator only, not used by any screen) | `user`, `amount` (USD), `reference` | `balance` |
 
 ## Production setup
 

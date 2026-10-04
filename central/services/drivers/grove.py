@@ -17,15 +17,18 @@ class GroveDriver:
 		# A site's key is just a key whose Grove identity is derived from the site.
 		return self.provision_key(backend, site, self._service_email(site), options)
 
-	def provision_user(self, backend, name: str, email: str) -> None:
-		# Register a Grove user. Grove upserts by email, so a repeat is safe. Free for
-		# now: Grove records the usage and its cost, and charges and gates nothing.
-		self._call(backend, "grove.api.provision_user", {"name": name, "email": email, "free": True})
+	def provision_user(self, backend, user: str, email: str, free: bool = False) -> None:
+		# Register a Grove user, or send its new email. `user` is Central's id for it: the
+		# team id. Grove upserts by `user`, so a repeat is safe. `email` is the address for
+		# alerts, not a login. With `free`, Grove records the usage and its cost, and charges
+		# and gates nothing. Without it, Grove keeps the setting that it has.
+		self._call(backend, "grove.api.provision_user", {"user": user, "email": email, "free": free})
 
 	def provision_key(self, backend, name: str, email: str, options: dict) -> dict:
-		# Mint a key for the Grove user `email`, titled `name`. Grove decides the models
-		# and the limits, so `options` is not sent.
-		result = self._call(backend, "grove.api.provision_key", {"email": email, "title": name})
+		# Mint a key for a Grove user, titled `name`. The shared driver interface names the
+		# argument `email`. For Grove it holds the id of the Grove user: the team id. Grove
+		# decides the models and the limits, so `options` is not sent.
+		result = self._call(backend, "grove.api.provision_key", {"user": email, "title": name})
 
 		return {
 			"gateway_url": result["gateway_url"],
@@ -51,30 +54,30 @@ class GroveDriver:
 
 		return response.json().get("message", {})
 
-	def list_models(self, backend, email: str | None = None) -> list[dict]:
-		# Every published model, or with `email` only what that Grove user may call.
-		return self._call(backend, "grove.api.available_models", {"email": email}) or []
+	def list_models(self, backend, user: str | None = None) -> list[dict]:
+		# Every published model, or with `user` only what that Grove user may call.
+		return self._call(backend, "grove.api.available_models", {"user": user}) or []
 
-	def get_limits(self, backend, email: str) -> list[dict]:
+	def get_limits(self, backend, user: str) -> list[dict]:
 		# The Grove user's rate limits: rows of `metric`, `window` and `value`.
-		return self._call(backend, "grove.api.limits", {"email": email}) or []
+		return self._call(backend, "grove.api.limits", {"user": user}) or []
 
 	def fetch_usage(
 		self,
 		backend,
-		emails: list[str],
+		users: list[str],
 		month: str | None = None,
 		period: str | None = None,
 		key_hash: str | None = None,
 	) -> dict:
 		# `key_hash` narrows the usage to one key: its sha256, so the secret never leaves.
-		body = {"users": emails, "month": month, "period": period, "key_hash": key_hash}
+		body = {"users": users, "month": month, "period": period, "key_hash": key_hash}
 		return self._call(backend, "grove.api.usage", body)
 
-	def add_credit(self, backend, email: str, amount: float, reference: str | None = None) -> dict:
+	def add_credit(self, backend, user: str, amount: float, reference: str | None = None) -> dict:
 		# USD, onto the Grove user's ledger. Grove books one `reference` once, so a call
 		# with no answer can be sent again under it.
-		body = {"email": email, "amount": amount, "reference": reference}
+		body = {"user": user, "amount": amount, "reference": reference}
 		return self._call(backend, "grove.api.add_credit", body)
 
 	# A stable, valid synthetic address keeps Grove's provision_key idempotent per

@@ -26,7 +26,7 @@ from central.services.permissions import assert_operator, require_service_capabi
 def activate_service(team: str, service: str) -> dict:
 	"""Activate a team's add-on (idempotent). Needs an active billing subscription in
 	the service's plan category, except LLM Hosting: it is prepaid at Grove and has no
-	billing plan. LLM registers the team owner as the team's Grove user."""
+	billing plan. LLM registers the team as a Grove user, with the email of the team owner."""
 	add_on = provisioning.get_active_service(service)
 
 	subscription = _resolve_subscription(team, add_on)
@@ -80,8 +80,8 @@ def generate_api_key(managed_service: str, label: str) -> dict:
 	# minted for the team's Grove user, so its usage is the team's. No plan options go
 	# with it: Grove decides the models. If insert dies after minting, the key's secret
 	# is never disclosed, so it's inert.
-	email = _grove_user(managed_service)
-	result = get_driver(add_on.handler_key).provision_key(backend, label, email, {})
+	grove_user = _grove_user(managed_service)
+	result = get_driver(add_on.handler_key).provision_key(backend, label, grove_user, {})
 
 	doc = frappe.new_doc("Service Credential")
 	doc.update(
@@ -91,7 +91,7 @@ def generate_api_key(managed_service: str, label: str) -> dict:
 			"label": label,
 			"status": "Active",
 			"gateway_url": result["gateway_url"],
-			"provider_ref": result.get("provider_ref", email),
+			"provider_ref": result.get("provider_ref", grove_user),
 			"api_key": result["api_key"],
 		}
 	)
@@ -330,20 +330,20 @@ def _grove_access(service: str, managed_service: str) -> dict:
 
 	from central.services import llm
 
-	email = _grove_user(managed_service)
+	grove_user = _grove_user(managed_service)
 	return {
-		"models": llm.get_reachable_models(email, service),
-		"rate_limits": llm.get_rate_limits(email, service),
+		"models": llm.get_reachable_models(grove_user, service),
+		"rate_limits": llm.get_rate_limits(grove_user, service),
 	}
 
 
 def _grove_user(managed_service: str) -> str | None:
-	# The team's Grove user: its owner's email, kept from the time the team activated.
+	# The team's Grove user: Central's id for it at Grove, which is the team id.
 	return frappe.db.get_value("Managed Service", managed_service, "provider_ref")
 
 
 def _register_at_provider(add_on, team: str) -> str | None:
-	# Only the LLM handler has a team-level identity at the provider: the team owner,
+	# Only the LLM handler has a team-level identity at the provider: the team,
 	# registered as a Grove user.
 	if add_on.handler_key != "grove":
 		return None

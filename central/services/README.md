@@ -10,19 +10,19 @@ billing links; the executor (Grove) owns the runtime and mints the credentials.
 | --- | --- | --- |
 | **Add-on Service** | A service offered by Central, such as `llm`. | Links the service to the Plan Category that pays for it. |
 | **Service Backend** | An enrolled provider endpoint and Central's control credential. | None; it is runtime configuration. |
-| **Managed Service** | A team's activated add-on and the subscription that entitles it. For LLM Hosting, `provider_ref` is the team's Grove user. | Requires an active subscription in the service's Plan Category. LLM Hosting needs none. |
+| **Managed Service** | A team's activated add-on and the subscription that entitles it. For LLM Hosting, `provider_ref` is the id of the team's Grove user: the team id. | Requires an active subscription in the service's Plan Category. LLM Hosting needs none. |
 | **Service Credential** | A provider credential under a managed service, either per-`Site` (bench-delivered) or a team-level API key (`Team`, with a `label`), set by `subject_type`. | Provider usage is grouped through active credentials of both subject types and reported to Billing. |
 
 ## LLM Hosting and the Grove user
 
-Each team has one Grove user: the email of the team owner when the team activates LLM Hosting. Central registers it on Grove (`grove.api.provision_user`) and keeps it in `Managed Service.provider_ref`. Team members get no Grove user.
+Each team has one Grove user. Its id on Grove is the team id. Central registers it on Grove (`grove.api.provision_user`) when the team activates LLM Hosting, and keeps the id in `Managed Service.provider_ref`. Central also sends the email of the team owner. Grove uses the email for alerts only: it is not a login on Grove. Team members get no Grove user.
 
 - A team API key is a key of that Grove user. The key title on Grove is the key label.
 - Central registers the Grove user as **Free**. Grove records the usage and its cost for a Free user, and it does not charge or block the user. Central does not bill LLM usage yet.
 - Grove decides which models the Grove user can call: each new Grove user starts in Grove's default **Model Group**. Central does not send the models of the plan or a token limit. The AI page shows the models that Grove reports, or "No models accessible yet."
 - The **Usage** tab of the AI page shows the requests and the cost that Grove reports for a period, in total, for each model, and for each day (`central.services.api.dashboard.get_usage`). The user can show one API key only. Central sends Grove the sha256 of that key, not the key. The cost is what Grove charged, so it is 0 while the Grove user is Free.
-- A transfer of team ownership does not change the Grove user.
-- One Grove user serves one team. An owner of 2 teams can activate LLM Hosting for one of them only.
+- A transfer of team ownership sends the email of the new owner to Grove in a background job (`central.services.llm.on_team_update`). The Grove user, its keys, its usage, and its balance stay. If Grove does not answer, Grove keeps the old email until the next transfer.
+- One Grove user serves one team. An owner of 2 teams has one Grove user for each team.
 - An operator can add credit to the Grove user, in USD, with `central.services.api.dashboard.add_credit(managed_service, amount, reference)`. No screen calls it, and it charges the team nothing. Credit has no effect on a Free user.
 
 ## Billing for LLM Hosting
@@ -80,7 +80,7 @@ On Grove, publish models and tick **Is Default** on one `Model Group` that lists
 ### 6. Activate for a team and enable sites (API today)
 
 ```
-central.services.api.dashboard.activate_service(team, "llm")     # registers the team owner as a Free Grove user
+central.services.api.dashboard.activate_service(team, "llm")     # registers the team as a Free Grove user
 central.services.api.dashboard.enable_site(managed_service, site) # mints the site's Grove key
 ```
 

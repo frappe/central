@@ -72,13 +72,13 @@ class TestGroveDriverCalls(IntegrationTestCase):
 
 	def test_provision_user_registers_a_free_grove_user(self):
 		with _grove_replies({"geography": "Main"}) as post:
-			GroveDriver().provision_user(self.backend, "Owner Person", "owner@example.com")
+			GroveDriver().provision_user(self.backend, "TEAM-1", "owner@example.com", free=True)
 
 		self.assertEqual(
 			self.sent(post),
 			(
 				"grove.api.provision_user",
-				{"name": "Owner Person", "email": "owner@example.com", "free": True},
+				{"user": "TEAM-1", "email": "owner@example.com", "free": True},
 			),
 		)
 		self.assertEqual(
@@ -88,37 +88,37 @@ class TestGroveDriverCalls(IntegrationTestCase):
 	def test_provision_key_mints_for_the_grove_user_under_a_title(self):
 		with _grove_replies(_FAKE) as post:
 			result = GroveDriver().provision_key(
-				self.backend, "n8n prod", "owner@example.com", {"token_limit": 5}
+				self.backend, "n8n prod", "TEAM-1", {"token_limit": 5}
 			)
 
 		# The plan options are not sent: Grove decides the models and the limits.
 		self.assertEqual(
-			self.sent(post), ("grove.api.provision_key", {"email": "owner@example.com", "title": "n8n prod"})
+			self.sent(post), ("grove.api.provision_key", {"user": "TEAM-1", "title": "n8n prod"})
 		)
-		self.assertEqual(result["provider_ref"], "owner@example.com")
+		self.assertEqual(result["provider_ref"], "TEAM-1")
 
 	def test_list_models_asks_for_what_a_grove_user_may_call(self):
 		with _grove_replies([{"name": "frappe/m-fast", "modality": "text"}]) as post:
-			GroveDriver().list_models(self.backend, "owner@example.com")
+			GroveDriver().list_models(self.backend, "TEAM-1")
 
-		self.assertEqual(self.sent(post), ("grove.api.available_models", {"email": "owner@example.com"}))
+		self.assertEqual(self.sent(post), ("grove.api.available_models", {"user": "TEAM-1"}))
 
 	def test_get_limits_asks_for_a_grove_users_rate_limits(self):
 		with _grove_replies([]) as post:
-			GroveDriver().get_limits(self.backend, "owner@example.com")
+			GroveDriver().get_limits(self.backend, "TEAM-1")
 
-		self.assertEqual(self.sent(post), ("grove.api.limits", {"email": "owner@example.com"}))
+		self.assertEqual(self.sent(post), ("grove.api.limits", {"user": "TEAM-1"}))
 
 	def test_fetch_usage_names_a_period(self):
 		with _grove_replies({"model_summary": []}) as post:
-			GroveDriver().fetch_usage(self.backend, ["owner@example.com"], period="Last 7 Days")
+			GroveDriver().fetch_usage(self.backend, ["TEAM-1"], period="Last 7 Days")
 
 		self.assertEqual(
 			self.sent(post),
 			(
 				"grove.api.usage",
 				{
-					"users": ["owner@example.com"],
+					"users": ["TEAM-1"],
 					"month": None,
 					"period": "Last 7 Days",
 					"key_hash": None,
@@ -128,11 +128,11 @@ class TestGroveDriverCalls(IntegrationTestCase):
 
 	def test_add_credit_sends_the_amount_under_a_reference(self):
 		with _grove_replies({"balance": 5}) as post:
-			result = GroveDriver().add_credit(self.backend, "owner@example.com", 5, "ref-1")
+			result = GroveDriver().add_credit(self.backend, "TEAM-1", 5, "ref-1")
 
 		self.assertEqual(
 			self.sent(post),
-			("grove.api.add_credit", {"email": "owner@example.com", "amount": 5, "reference": "ref-1"}),
+			("grove.api.add_credit", {"user": "TEAM-1", "amount": 5, "reference": "ref-1"}),
 		)
 		self.assertEqual(result, {"balance": 5})
 
@@ -175,7 +175,7 @@ class TestLLMProvisioning(IntegrationTestCase):
 				"add_on_service": "llm",
 				"subscription": subscription[0],
 				"status": "Active",
-				"provider_ref": self.owner,
+				"provider_ref": self.team,
 			}
 		).insert()
 
@@ -263,9 +263,9 @@ class TestLLMProvisioning(IntegrationTestCase):
 		with patch.object(GroveDriver, "provision_key", return_value=_FAKE) as provision_key:
 			dashboard.generate_api_key(self.managed.name, "n8n prod")
 
-		self.assertEqual(provision_key.call_args.args[1:3], ("n8n prod", self.owner))
+		self.assertEqual(provision_key.call_args.args[1:3], ("n8n prod", self.team))
 
-	def test_activation_registers_the_team_owner_as_its_grove_user(self):
+	def test_activation_registers_the_team_as_a_free_grove_user_with_the_owners_email(self):
 		# As the owner, who holds the team capability and no Desk role.
 		subscription = self.managed.subscription
 		frappe.delete_doc("Managed Service", self.managed.name)
@@ -281,13 +281,14 @@ class TestLLMProvisioning(IntegrationTestCase):
 			key = dashboard.generate_api_key(out["managed_service"], "app")
 
 		self.assertEqual(out["status"], "Active")
-		self.assertEqual(provision_user.call_args.args[2], self.owner)
+		self.assertEqual(provision_user.call_args.args[1:], (self.team, self.owner))
+		self.assertEqual(provision_user.call_args.kwargs, {"free": True})
 		self.assertEqual(
-			frappe.db.get_value("Managed Service", out["managed_service"], "provider_ref"), self.owner
+			frappe.db.get_value("Managed Service", out["managed_service"], "provider_ref"), self.team
 		)
 		self.assertEqual(key["status"], "Active")
 
-	def test_one_grove_user_serves_one_team(self):
+	def test_an_owner_of_two_teams_registers_a_grove_user_for_each(self):
 		from central.services import llm
 
 		second = frappe.get_doc(
@@ -299,18 +300,67 @@ class TestLLMProvisioning(IntegrationTestCase):
 			}
 		).insert()
 
-		with (
-			patch.object(GroveDriver, "provision_user") as provision_user,
-			self.assertRaisesRegex(frappe.ValidationError, "already holds the llm service"),
-		):
-			llm.register_grove_user(second.name, "llm")
+		with patch.object(GroveDriver, "provision_user") as provision_user:
+			self.assertEqual(llm.register_grove_user(second.name, "llm"), second.name)
 
-		provision_user.assert_not_called()
+		self.assertEqual(provision_user.call_args.args[1:], (second.name, self.owner))
+
+	def test_a_new_team_owner_is_sent_to_grove_under_the_same_grove_user(self):
+		from central.services import llm
+
+		team = frappe.get_doc("Team", self.team)
+		with (
+			patch.object(team, "has_value_changed", return_value=True),
+			patch.object(frappe, "enqueue") as enqueue,
+		):
+			llm.on_team_update(team)
+
+		enqueue.assert_called_once_with(
+			"central.services.llm.register_grove_user",
+			team=self.team,
+			free=False,
+			enqueue_after_commit=True,
+		)
+
+		# What the job sends: the email of the owner, and no change to Free at Grove.
+		with patch.object(GroveDriver, "provision_user") as provision_user:
+			llm.register_grove_user(self.team, free=False)
+
+		self.assertEqual(provision_user.call_args.args[1:], (self.team, self.owner))
+		self.assertEqual(provision_user.call_args.kwargs, {"free": False})
+
+	def test_a_team_save_sends_nothing_when_the_owner_stays_or_the_team_has_no_llm(self):
+		from central.services import llm
+
+		team = frappe.get_doc("Team", self.team)
+		with (
+			patch.object(team, "has_value_changed", return_value=False),
+			patch.object(frappe, "enqueue") as enqueue,
+		):
+			llm.on_team_update(team)
+
+		enqueue.assert_not_called()
+
+		# The delete enqueues work of its own, so it stays outside the patch.
+		frappe.delete_doc("Managed Service", self.managed.name)
+		with (
+			patch.object(team, "has_value_changed", return_value=True),
+			patch.object(frappe, "enqueue") as enqueue,
+		):
+			llm.on_team_update(team)
+
+		enqueue.assert_not_called()
+
+	def test_a_team_save_reaches_the_owner_change_hook(self):
+		with patch("central.services.llm.on_team_update") as on_team_update:
+			frappe.get_doc("Team", self.team).save()
+
+		on_team_update.assert_called_once()
 
 	def test_only_an_operator_adds_credit(self):
 		with patch.object(GroveDriver, "add_credit", return_value={"balance": 5}) as add_credit:
 			self.assertEqual(dashboard.add_credit(self.managed.name, 5, "ref-1"), {"balance": 5})
-			self.assertEqual(add_credit.call_args.args[1:], (self.owner, 5, "ref-1"))
+			self.assertEqual(add_credit.call_args.args[1:], (self.team, 5, "ref-1"))
 
 			# It charges the team nothing, so the team itself must not reach it.
 			self.addCleanup(frappe.set_user, "Administrator")
@@ -322,7 +372,7 @@ class TestLLMProvisioning(IntegrationTestCase):
 
 	def test_usage_is_the_teams_requests_and_cost_in_total_per_model_and_per_day(self):
 		usage = {
-			"users": [self.owner],
+			"users": [self.team],
 			"from_date": "2026-09-28",
 			"to_date": "2026-09-30",
 			"as_of": "2026-09-30T10:00:00Z",
@@ -334,14 +384,14 @@ class TestLLMProvisioning(IntegrationTestCase):
 				{"day": "2026-09-28", "model": "frappe/m-fast", "requests": 4, "cost": 0.75},
 				{"day": "2026-09-30", "model": "frappe/m-big", "requests": 2, "cost": 1.0},
 			],
-			self.owner: {"requests": 6, "cost": 1.75},
+			self.team: {"requests": 6, "cost": 1.75},
 		}
 		with patch.object(GroveDriver, "fetch_usage", return_value=usage) as fetch_usage:
 			report = dashboard.get_usage(self.managed.name, period="Last 30 Days")
 
 		self.assertEqual(
 			(fetch_usage.call_args.args[1], fetch_usage.call_args.kwargs),
-			([self.owner], {"period": "Last 30 Days", "key_hash": None}),
+			([self.team], {"period": "Last 30 Days", "key_hash": None}),
 		)
 		self.assertEqual(report["totals"], {"requests": 6, "cost": 1.75})
 		self.assertEqual(report["models"], usage["model_summary"])
@@ -360,7 +410,7 @@ class TestLLMProvisioning(IntegrationTestCase):
 
 	def test_usage_with_nothing_used_is_zeros_not_an_error(self):
 		empty = {
-			"users": [self.owner],
+			"users": [self.team],
 			"from_date": "2026-09-24",
 			"to_date": "2026-09-30",
 			"as_of": None,
@@ -428,9 +478,9 @@ class TestLLMProvisioning(IntegrationTestCase):
 		):
 			dashboard.generate_api_key(self.managed.name, "app")
 
-		emails = llm._team_credentials("llm").get(self.team, [])
-		self.assertIn(_FAKE["provider_ref"], emails)  # the site key
-		self.assertIn("key-abc@svc.frappe.cloud", emails)  # the api key
+		grove_users = llm._team_credentials("llm").get(self.team, [])
+		self.assertIn(_FAKE["provider_ref"], grove_users)  # the site key
+		self.assertIn("key-abc@svc.frappe.cloud", grove_users)  # the api key
 
 	def test_list_offers_marks_activated(self):
 		offers = dashboard.list_offers(self.team)
@@ -496,7 +546,7 @@ class TestLLMProvisioning(IntegrationTestCase):
 			instance["models"],
 			[{"name": "frappe/m-fast", "modality": "text", "dialects": ["openai", "anthropic"]}],
 		)
-		self.assertEqual(list_models.call_args.args[1], self.owner)
+		self.assertEqual(list_models.call_args.args[1], self.team)
 
 	def test_get_instance_shows_the_per_minute_rate_limits(self):
 		# Only the 1m rows are RPM and TPM. A metric with no 1m row has no limit to show.
@@ -512,7 +562,7 @@ class TestLLMProvisioning(IntegrationTestCase):
 			instance = dashboard.get_instance(self.managed.name)
 
 		self.assertEqual(instance["rate_limits"], {"requests_per_minute": 20, "tokens_per_minute": None})
-		self.assertEqual(get_limits.call_args.args[1], self.owner)
+		self.assertEqual(get_limits.call_args.args[1], self.team)
 
 	def test_reads_require_capability(self):
 		self.addCleanup(frappe.set_user, "Administrator")

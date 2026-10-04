@@ -179,7 +179,11 @@ doc_events = {
 	"Team": {
 		# Keep a staging-trial team's billing profile complete so it can create servers
 		# without the setup prompt (the profile gate is otherwise enforced in the console).
-		"on_update": "central.billing.payments.provisioning.on_team_update",
+		"on_update": [
+			"central.billing.payments.provisioning.on_team_update",
+			# A new team owner is the new alert address of the team's Grove user.
+			"central.services.llm.on_team_update",
+		],
 	},
 }
 

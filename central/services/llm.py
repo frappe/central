@@ -15,9 +15,9 @@ def pull_usage(service: str = _LLM_SERVICE) -> dict:
 	driver, backend = _driver_and_backend(service)
 
 	reported, failures, first_traceback = 0, [], None
-	for team, emails in _team_credentials(service).items():
+	for team, users in _team_credentials(service).items():
 		try:
-			usage = driver.fetch_usage(backend, emails)
+			usage = driver.fetch_usage(backend, users)
 			billable = sum(
 				v["billable_tokens"] for v in usage.values() if isinstance(v, dict) and "billable_tokens" in v
 			)
@@ -39,7 +39,7 @@ def pull_usage(service: str = _LLM_SERVICE) -> dict:
 
 def _team_credentials(service: str) -> dict[str, list[str]]:
 	# Every active grove identity the service issued — per-site credentials and team-level
-	# API keys alike — grouped team -> [grove emails]. Both subject types drain the same
+	# API keys alike — grouped team -> [grove users]. Both subject types drain the same
 	# team token meter, so both must be reconciled or a whole channel bills nothing.
 	credential = frappe.qb.DocType("Service Credential")
 	managed = frappe.qb.DocType("Managed Service")
@@ -48,7 +48,7 @@ def _team_credentials(service: str) -> dict[str, list[str]]:
 		frappe.qb.from_(credential)
 		.join(managed)
 		.on(credential.managed_service == managed.name)
-		.select(managed.team.as_("team"), credential.provider_ref.as_("email"))
+		.select(managed.team.as_("team"), credential.provider_ref.as_("grove_user"))
 		.where(
 			(managed.add_on_service == service)
 			& (credential.status == "Active")
@@ -58,7 +58,7 @@ def _team_credentials(service: str) -> dict[str, list[str]]:
 
 	grouped: dict[str, list[str]] = {}
 	for row in rows:
-		grouped.setdefault(row.team, []).append(row.email)
+		grouped.setdefault(row.team, []).append(row.grove_user)
 
 	return grouped
 
@@ -107,38 +107,51 @@ def _driver_and_backend(service: str):
 	return get_driver(handler), frappe.get_doc("Service Backend", backend_name)
 
 
-def register_grove_user(team: str, service: str = _LLM_SERVICE) -> str:
-	"""Register the team's owner as its Grove user and return the email. Every key and
-	the usage of the team hang on it. One Grove user serves one team: two teams on it
-	would share one usage record."""
+def register_grove_user(team: str, service: str = _LLM_SERVICE, free: bool = True) -> str:
+	"""Register the team as a Grove user and return its id at Grove: the team id. Every
+	key and the usage of the team hang on it. Grove gets the email of the team owner for
+	alerts. A repeat sends the email again and changes nothing else at Grove. `free`
+	marks the Grove user as Free; send False to keep the setting that Grove has."""
 	owner = frappe.db.get_value("Team", team, "owner_user")
 
-	if frappe.db.exists("Managed Service", {"add_on_service": service, "provider_ref": owner}):
-		frappe.throw(frappe._("{0} already holds the {1} service for another team.").format(owner, service))
-
 	driver, backend = _driver_and_backend(service)
-	driver.provision_user(backend, frappe.db.get_value("User", owner, "full_name"), owner)
+	driver.provision_user(backend, team, owner, free=free)
 
-	return owner
+	return team
 
 
-def get_reachable_models(email: str, service: str = _LLM_SERVICE) -> list[dict]:
+def on_team_update(doc, method: str | None = None) -> None:
+	"""Send the email of a new team owner to Grove. Fires on every Team save; a no-op
+	when the owner did not change or the team has no LLM Hosting."""
+	if not doc.has_value_changed("owner_user"):
+		return
+
+	if not frappe.db.exists("Managed Service", {"team": doc.name, "add_on_service": _LLM_SERVICE}):
+		return
+
+	# No retry: if Grove is down now, it keeps the old email until the next owner change.
+	frappe.enqueue(
+		"central.services.llm.register_grove_user", team=doc.name, free=False, enqueue_after_commit=True
+	)
+
+
+def get_reachable_models(user: str, service: str = _LLM_SERVICE) -> list[dict]:
 	"""The models Grove lets a Grove user call, and the API surfaces (openai, anthropic) each
 	answers on. Grove decides; Central only shows them."""
 	driver, backend = _driver_and_backend(service)
 
 	return [
 		{"name": row["name"], "modality": row.get("modality"), "dialects": row["dialects"]}
-		for row in driver.list_models(backend, email)
+		for row in driver.list_models(backend, user)
 	]
 
 
-def get_rate_limits(email: str, service: str = _LLM_SERVICE) -> dict:
+def get_rate_limits(user: str, service: str = _LLM_SERVICE) -> dict:
 	"""The per-minute limits Grove counts across every key of a Grove user. Grove decides;
 	Central only shows them. None means no limit on that metric."""
 	driver, backend = _driver_and_backend(service)
 	per_minute = {
-		row["metric"]: row["value"] for row in driver.get_limits(backend, email) if row["window"] == "1m"
+		row["metric"]: row["value"] for row in driver.get_limits(backend, user) if row["window"] == "1m"
 	}
 
 	return {
@@ -148,20 +161,20 @@ def get_rate_limits(email: str, service: str = _LLM_SERVICE) -> dict:
 
 
 def get_usage_report(
-	email: str, period: str, service: str = _LLM_SERVICE, key_hash: str | None = None
+	user: str, period: str, service: str = _LLM_SERVICE, key_hash: str | None = None
 ) -> dict:
 	"""What a Grove user used over a period, or one key of theirs by `key_hash`: requests and
 	cost, in total, per model, and per day for a chart. Grove does the sums; the cost is what
 	Grove charged."""
 	driver, backend = _driver_and_backend(service)
-	usage = driver.fetch_usage(backend, [email], period=period, key_hash=key_hash)
+	usage = driver.fetch_usage(backend, [user], period=period, key_hash=key_hash)
 
 	return {
 		"period": period,
 		"from_date": usage["from_date"],
 		"to_date": usage["to_date"],
 		"as_of": usage["as_of"],
-		"totals": usage.get(email) or {"requests": 0, "cost": 0},
+		"totals": usage.get(user) or {"requests": 0, "cost": 0},
 		"models": usage["model_summary"],
 		"daily": _every_day(usage),
 	}
