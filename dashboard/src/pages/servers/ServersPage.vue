@@ -55,7 +55,6 @@ const {
 	pins,
 	spots,
 	servers,
-	loaded,
 } = useServerFleet()
 // Actions only — list reads come from useServerMapData.
 const {
@@ -210,17 +209,20 @@ const overviewOpen = computed({
 	},
 })
 
-// A link from a server's own dashboard opens that server here. It runs last because a
-// loaded fleet calls a handler right away, and the handlers read the state above.
-useServerLink(servers, loaded, {
-	overview: (server) => (overviewServer.value = server),
-	resize: (server) => {
-		if (!canChange(server)) infoToast("This server can't be resized right now.")
-		else if (!getServerActions(server, teamActions.value).resize)
-			infoToast("You can't resize this server.")
-		else openResize(server)
+// A link from a server's own dashboard opens that server here.
+useServerLink(
+	{ activeTeam, servers, reload },
+	{
+		overview: (server) => (overviewServer.value = server),
+		resize: (server) => {
+			if (!canChange(server))
+				infoToast("This server can't be resized right now.")
+			else if (!getServerActions(server, teamActions.value).resize)
+				infoToast("You can't resize this server.")
+			else openResize(server)
+		},
 	},
-})
+)
 </script>
 
 <template>
