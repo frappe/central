@@ -257,7 +257,7 @@ def apply_free_allowance(server: str) -> None:
 		except frappe.ValidationError as error:
 			# A region with no Snapshot rate cannot bill yet; the next change tries again.
 			snapshot.record_diagnostic(
-				_("Could not update billing for this snapshot. It will retry automatically."),
+				_("Could not update billing for this snapshot."),
 				str(error),
 				"Snapshot billing update failed",
 			)
