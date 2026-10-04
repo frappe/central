@@ -337,6 +337,33 @@ class TestScopedNotifications(ResourceScopingTestCase):
 		self.assertNotIn(self.scoped, recipients[self.theirs])
 		self.assertIn(self.viewer, recipients[self.theirs])
 
+	def test_a_pilot_event_without_a_reference_reaches_members_scoped_to_its_server(self):
+		frappe.db.delete("Notification Event Type", {"event_type": "scope_pilot_event"})
+		frappe.get_doc(
+			{
+				"doctype": "Notification Event Type",
+				"event_type": "scope_pilot_event",
+				"category": "Server",
+				"severity": "Warning",
+				"required_cap": "server:view",
+				"in_app_title": "Scope pilot test",
+				"in_app_body": "{{ message }}",
+				"direct_recipients": "None",
+				"create_in_app": 1,
+			}
+		).insert(ignore_permissions=True)
+		credential = frappe._dict(team=self.team, server=self.mine)
+		with (
+			patch("central.api.pilot.PilotCredential.verify", return_value=credential),
+			patch("frappe.get_request_header", return_value="fake-token"),
+		):
+			from central.notification.api import report_pilot_event
+
+			out = report_pilot_event(event_type="scope_pilot_event", message="cpu at 95%")
+
+		self.assertEqual(frappe.db.get_value("Team Notification", out["notification"], "server"), self.mine)
+		self.assertIn(out["notification"], self._feed(self.scoped))
+
 
 class TestScopedDispatch(ResourceScopingTestCase):
 	def _queue(self, server: str) -> str:

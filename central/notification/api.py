@@ -117,10 +117,16 @@ def report_pilot_event(
 	Billing/Team event types are Central-originated, so refusing them here stops a
 	compromised or buggy bench from fanning out, e.g., a payment_failure email to the
 	whole team. An unknown event type has no category and is refused too.
+
+	An event without a reference is scoped to the credential's server, so members whose
+	access is limited to that server still see it.
 	"""
-	team = frappe.local.pilot_credential.team
+	credential = frappe.local.pilot_credential
+	team = credential.team
 	if frappe.db.get_value("Notification Event Type", event_type, "category") != "Server":
 		frappe.throw(_("This event type cannot be reported by a pilot."), frappe.PermissionError)
+	if not reference_doctype and credential.server:
+		reference_doctype, reference_name = "Virtual Machine", credential.server
 	from central.notification.engine import dispatch
 
 	return dispatch(
