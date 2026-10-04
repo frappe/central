@@ -156,6 +156,8 @@ The console serves customers. Desk serves the operator who has to answer a page 
 - Do not put an explanatory comment at the top of a file. Use a short class or function docstring.
 - Add focused tests for changed behavior and failure cases. Do not add tests only to raise coverage. Keep tests deterministic and independent.
 - Follow DRY, SOLID, and KISS. Apply them to remove real duplication and real coupling, not to add layers.
+- Reduce the layers a reader has to trace. Reduce the state a reader has to hold in their head.
+- Don't abstract for the sake of abstraction, abstract only if you can make a distinct concept from it. Every layer should provide a consistent interface and be part of a single task.
 
 ### Python
 

@@ -64,20 +64,19 @@ const columns = computed<ListViewColumn<VMSnapshotRow>[]>(() => [
 		id: 'snapshot',
 		accessorFn: (row) => `${row.title} ${row.server_title}`,
 		header: 'Snapshot',
-		size: 280,
+		size: 320,
 	},
 	{
 		id: 'type',
 		accessorFn: (row) => row.snapshot_type,
 		header: 'Type',
-		size: 140,
+		size: 100,
 	},
 	{
 		id: 'size',
 		accessorFn: (row) => row.size_mib,
 		header: 'Size',
 		size: 90,
-		meta: { align: 'end' },
 	},
 	{
 		id: 'created',
@@ -90,7 +89,7 @@ const columns = computed<ListViewColumn<VMSnapshotRow>[]>(() => [
 		id: 'cost',
 		accessorFn: (row) => snapshotCostLabel(row, props.currency),
 		header: 'Cost',
-		size: 170,
+		size: 160,
 		enableSorting: false,
 	},
 	{
@@ -141,7 +140,7 @@ function rowActions(row: VMSnapshotRow): SnapshotAction[] {
 	const actions: SnapshotAction[] = []
 	if (props.canRestore && row.status === 'Available' && row.is_restorable)
 		actions.push({
-			label: 'Create server from this',
+			label: 'Restore to a new server',
 			icon: 'lucide-server',
 			onClick: () => emit('restore', row),
 		})
@@ -255,7 +254,10 @@ function rowActions(row: VMSnapshotRow): SnapshotAction[] {
 		</template>
 
 		<template #cost="{ row }">
-			<span class="text-p-sm text-ink-gray-7">
+			<span
+				class="truncate text-p-sm text-ink-gray-7"
+				:title="row.status === 'Available' ? snapshotCostLabel(row, currency) : undefined"
+			>
 				{{ row.status === 'Available' ? snapshotCostLabel(row, currency) : '—' }}
 			</span>
 		</template>
