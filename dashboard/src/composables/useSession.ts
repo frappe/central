@@ -56,7 +56,7 @@ export function useSession() {
 		activeTeamLabel: computed(
 			() =>
 				(teamsCall.data ?? []).find((t) => t.name === activeTeam.value)
-					?.label ?? 'Central',
+					?.label ?? 'Frappe Cloud',
 		),
 		activeTeamLogo: computed(
 			() =>

@@ -279,7 +279,7 @@ class TestSnapshotSchedules(SnapshotTestCase):
 		self.assertEqual(frappe.db.get_value("VM Snapshot", expired.name, "status"), "Available")
 		self.assertEqual(
 			frappe.db.get_value("VM Snapshot", expired.name, "error_detail"),
-			"Central could not delete this expired snapshot.",
+			"Could not delete this expired snapshot. It will retry automatically.",
 		)
 		self.assertIn(
 			"image in use",
