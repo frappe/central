@@ -6,7 +6,7 @@ import type { VirtualMachineRow } from '@/composables/useServers'
 import { getServerActions } from '@/lib/capabilities'
 import { copyToClipboard } from '@/lib/clipboard'
 import { reportError, successToast } from '@/lib/feedback'
-import { canStart, canStop, isSettingUp, isTerminated } from '@/lib/status'
+import { canChange, canStart, canStop, isSettingUp } from '@/lib/status'
 
 // The lifecycle menu for one server row. Which actions show is gated by both the
 // server's status and the user's capabilities on this server — the same rules the API
@@ -142,17 +142,15 @@ function getChangeActions(): DropdownOption[] {
 const options = computed<DropdownOptions>(() => {
 	// An action in flight (Provisioning/Starting/Terminating/…) or a server still setting
 	// up offers only reads, mirroring the API which rejects a second command mid-flight.
-	const settingUp = isSettingUp(props.server.status)
-	const canChange =
-		!props.server.pending_action &&
-		!settingUp &&
-		!isTerminated(props.server.status)
+	const isChangeable = canChange(props.server)
 	const groups: DropdownOption[][] = [
-		getViewActions(settingUp || !!props.server.pending_action),
+		getViewActions(
+			isSettingUp(props.server.status) || !!props.server.pending_action,
+		),
 		props.server.pending_action ? [] : getPowerActions(),
-		canChange ? getChangeActions() : [],
+		isChangeable ? getChangeActions() : [],
 		[{ label: 'Copy server ID', icon: 'lucide-copy', onClick: copyServerId }],
-		canChange && allowed.value.terminate
+		isChangeable && allowed.value.terminate
 			? [
 					{
 						label: 'Terminate',

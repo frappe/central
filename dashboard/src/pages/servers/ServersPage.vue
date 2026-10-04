@@ -20,6 +20,7 @@ import type { VirtualMachineRow } from '@/composables/useServers'
 import { useServers } from '@/composables/useServers'
 import { getServerActions, type ServerActions } from '@/lib/capabilities'
 import { getErrorMessage, infoToast } from '@/lib/feedback'
+import { canChange } from '@/lib/status'
 
 // The servers page: the world map is the list (FC V2). Servers (the Virtual Machine mirror)
 // and sites (the Site mirror — each a 1:1-backed VM) come from one feed and list
@@ -214,14 +215,11 @@ const overviewOpen = computed({
 useServerLink(servers, loaded, {
 	overview: (server) => (overviewServer.value = server),
 	resize: (server) => {
-		if (getServerActions(server, teamActions.value).resize) openResize(server)
-		else infoToast("You can't resize this server.")
+		if (!canChange(server)) infoToast("This server can't be resized right now.")
+		else if (!getServerActions(server, teamActions.value).resize)
+			infoToast("You can't resize this server.")
+		else openResize(server)
 	},
-	snapshots: (server) =>
-		router.push({
-			path: '/servers/snapshots',
-			query: { search: server.title || server.resource_id },
-		}),
 })
 </script>
 

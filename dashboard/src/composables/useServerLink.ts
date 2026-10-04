@@ -3,7 +3,7 @@ import { useRoute, useRouter } from 'vue-router'
 import type { VirtualMachineRow } from '@/composables/useServers'
 import { infoToast } from '@/lib/feedback'
 
-export type ServerLinkAction = 'overview' | 'resize' | 'snapshots'
+export type ServerLinkAction = 'overview' | 'resize'
 
 type ServerLinkHandlers = Record<
 	ServerLinkAction,
