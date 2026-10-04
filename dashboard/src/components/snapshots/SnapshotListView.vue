@@ -89,7 +89,7 @@ const columns = computed<ListViewColumn<VMSnapshotRow>[]>(() => [
 		id: 'cost',
 		accessorFn: (row) => snapshotCostLabel(row, props.currency),
 		header: 'Cost',
-		size: 120,
+		size: 160,
 		enableSorting: false,
 	},
 	{
@@ -254,7 +254,10 @@ function rowActions(row: VMSnapshotRow): SnapshotAction[] {
 		</template>
 
 		<template #cost="{ row }">
-			<span class="text-p-sm text-ink-gray-7">
+			<span
+				class="truncate text-p-sm text-ink-gray-7"
+				:title="row.status === 'Available' ? snapshotCostLabel(row, currency) : undefined"
+			>
 				{{ row.status === 'Available' ? snapshotCostLabel(row, currency) : '—' }}
 			</span>
 		</template>
