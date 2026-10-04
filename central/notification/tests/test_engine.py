@@ -612,6 +612,7 @@ class TestReportPilotEvent(EngineTestBase):
 
 		class FakeCredential:
 			team = TEAM
+			server = None
 
 		fake = FakeCredential()
 

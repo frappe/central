@@ -48,6 +48,7 @@ def dispatch(
 	context: dict | None = None,
 	reference_doctype: str | None = None,
 	reference_name: str | None = None,
+	server: str | None = None,
 	affected_user: str | None = None,
 ) -> dict:
 	"""Dispatch a notification event for *team*.
@@ -64,7 +65,12 @@ def dispatch(
 
 	The result always includes creation and email queue counts. A duplicate returns
 	``reason="duplicate"`` with zero email attempts.
+
+	*server* scopes the event when the reference does not name one.
 	"""
+	from central.notification import get_reference_server
+
+	server = server or get_reference_server(reference_doctype, reference_name)
 	ctx = _resolve_context(team, event_type, context, reference_name, reference_doctype)
 	ctx["message"] = message or ""
 
@@ -77,7 +83,7 @@ def dispatch(
 
 	# Deduplication: suppress if an unread notification with the same
 	# event_type and reference_name already exists for this team.
-	if _is_duplicate(team, event_type, reference_name):
+	if _is_duplicate(team, event_type, reference_name, server):
 		return {
 			"created": False,
 			"reason": "duplicate",
@@ -107,6 +113,7 @@ def dispatch(
 			message=body,
 			reference_doctype=reference_doctype,
 			reference_name=reference_name,
+			server=server,
 			action_label=event.action_label,
 			action_route=_render_template(event.action_route, ctx) if event.action_route else None,
 			publish=True,
@@ -119,6 +126,7 @@ def dispatch(
 		message=message,
 		reference_doctype=reference_doctype,
 		reference_name=reference_name,
+		server=server,
 		affected_user=affected_user,
 	)
 
@@ -179,7 +187,7 @@ def _render_template(template_str: str | None, ctx: dict) -> str | None:
 DEDUP_WINDOW_MINUTES = 60
 
 
-def _is_duplicate(team, event_type, reference_name) -> bool:
+def _is_duplicate(team, event_type, reference_name, server=None) -> bool:
 	"""True if a Team Notification for the same event+ref was created recently.
 
 	Uses a time window instead of ``is_read`` because read state is now
@@ -189,20 +197,21 @@ def _is_duplicate(team, event_type, reference_name) -> bool:
 	When a different event type for the same reference was created after the
 	first occurrence (e.g., ``site_recovered`` after ``backup_failure``), the
 	state has changed and a new notification is allowed through.
+
+	A known *server* narrows the match, so equal names on two servers stay distinct.
 	"""
 	if not reference_name:
 		return False
 	cutoff = frappe.utils.add_to_date(None, minutes=-DEDUP_WINDOW_MINUTES)
-	existing = frappe.db.get_value(
-		"Team Notification",
-		{
-			"team": team,
-			"event_type": event_type,
-			"reference_name": reference_name,
-			"creation": (">=", cutoff),
-		},
-		"creation",
-	)
+	filters = {
+		"team": team,
+		"event_type": event_type,
+		"reference_name": reference_name,
+		"creation": (">=", cutoff),
+	}
+	if server:
+		filters["server"] = server
+	existing = frappe.db.get_value("Team Notification", filters, "creation")
 	if not existing:
 		return False
 	# A different event_type for the same reference means state changed
@@ -220,7 +229,15 @@ def _is_duplicate(team, event_type, reference_name) -> bool:
 
 
 def _fan_out_emails(
-	team, event, ctx, *, message=None, reference_doctype=None, reference_name=None, affected_user=None
+	team,
+	event,
+	ctx,
+	*,
+	message=None,
+	reference_doctype=None,
+	reference_name=None,
+	server=None,
+	affected_user=None,
 ) -> dict:
 	"""Send individual emails to each qualified team member.
 
@@ -238,10 +255,8 @@ def _fan_out_emails(
 	Returns ``{"queued": N, "attempted": N, "failed": N}``.
 	"""
 	from central.iam import can
-	from central.notification import get_reference_server
 
 	result = {"queued": 0, "attempted": 0, "failed": 0}
-	server = get_reference_server(reference_doctype, reference_name)
 
 	if event.direct_recipients == "Affected User":
 		if affected_user and _email_enabled(affected_user, team, event.category):

@@ -337,7 +337,7 @@ class TestScopedNotifications(ResourceScopingTestCase):
 		self.assertNotIn(self.scoped, recipients[self.theirs])
 		self.assertIn(self.viewer, recipients[self.theirs])
 
-	def test_a_pilot_event_without_a_reference_reaches_members_scoped_to_its_server(self):
+	def test_a_pilot_event_reaches_members_scoped_to_its_server(self):
 		frappe.db.delete("Notification Event Type", {"event_type": "scope_pilot_event"})
 		frappe.get_doc(
 			{
@@ -352,17 +352,27 @@ class TestScopedNotifications(ResourceScopingTestCase):
 				"create_in_app": 1,
 			}
 		).insert(ignore_permissions=True)
-		credential = frappe._dict(team=self.team, server=self.mine)
-		with (
-			patch("central.api.pilot.PilotCredential.verify", return_value=credential),
-			patch("frappe.get_request_header", return_value="fake-token"),
-		):
-			from central.notification.api import report_pilot_event
+		from central.notification.api import report_pilot_event
 
-			out = report_pilot_event(event_type="scope_pilot_event", message="cpu at 95%")
+		def report_from(server: str) -> str:
+			credential = frappe._dict(team=self.team, server=server)
+			with (
+				patch("central.api.pilot.PilotCredential.verify", return_value=credential),
+				patch("frappe.get_request_header", return_value="fake-token"),
+			):
+				out = report_pilot_event(
+					event_type="scope_pilot_event", message="cpu at 95%", reference_name="main"
+				)
+			self.assertTrue(out["created"], "the same bench name on another server is not a duplicate")
+			return out["notification"]
 
-		self.assertEqual(frappe.db.get_value("Team Notification", out["notification"], "server"), self.mine)
-		self.assertIn(out["notification"], self._feed(self.scoped))
+		mine, theirs = report_from(self.mine), report_from(self.theirs)
+
+		row = frappe.db.get_value("Team Notification", mine, ["server", "reference_name"], as_dict=True)
+		self.assertEqual((row.server, row.reference_name), (self.mine, "main"))
+		feed = self._feed(self.scoped)
+		self.assertIn(mine, feed)
+		self.assertNotIn(theirs, feed)
 
 
 class TestScopedDispatch(ResourceScopingTestCase):
