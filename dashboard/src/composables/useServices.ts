@@ -23,7 +23,9 @@ export type ServiceDialect = 'openai' | 'anthropic'
 
 export interface ServiceModel {
 	name: string
-	modality: string | null
+	// What the model takes and what it gives: text, image, embeddings, ...
+	input_modalities: string[]
+	output_modalities: string[]
 	// The API surfaces this model answers on.
 	dialects: ServiceDialect[]
 }

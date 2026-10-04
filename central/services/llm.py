@@ -136,12 +136,17 @@ def on_team_update(doc, method: str | None = None) -> None:
 
 
 def get_reachable_models(user: str, service: str = _LLM_SERVICE) -> list[dict]:
-	"""The models Grove lets a Grove user call, and the API surfaces (openai, anthropic) each
-	answers on. Grove decides; Central only shows them."""
+	"""The models Grove lets a Grove user call: what each takes and gives, and the API surfaces
+	(openai, anthropic) it answers on. Grove decides; Central only shows them."""
 	driver, backend = _driver_and_backend(service)
 
 	return [
-		{"name": row["name"], "modality": row.get("modality"), "dialects": row["dialects"]}
+		{
+			"name": row["name"],
+			"input_modalities": row.get("input_modalities", []),
+			"output_modalities": row.get("output_modalities", []),
+			"dialects": row["dialects"],
+		}
 		for row in driver.list_models(backend, user)
 	]
 

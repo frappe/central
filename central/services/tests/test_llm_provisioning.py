@@ -98,7 +98,7 @@ class TestGroveDriverCalls(IntegrationTestCase):
 		self.assertEqual(result["provider_ref"], "TEAM-1")
 
 	def test_list_models_asks_for_what_a_grove_user_may_call(self):
-		with _grove_replies([{"name": "frappe/m-fast", "modality": "text"}]) as post:
+		with _grove_replies([{"name": "frappe/m-fast", "input_modalities": ["text"], "output_modalities": ["text"]}]) as post:
 			GroveDriver().list_models(self.backend, "TEAM-1")
 
 		self.assertEqual(self.sent(post), ("grove.api.available_models", {"user": "TEAM-1"}))
@@ -530,7 +530,8 @@ class TestLLMProvisioning(IntegrationTestCase):
 			{
 				"name": "frappe/m-fast",
 				"model_id": "m-fast",
-				"modality": "text",
+				"input_modalities": ["text", "image"],
+				"output_modalities": ["text"],
 				"dialects": ["openai", "anthropic"],
 			}
 		]
@@ -544,7 +545,10 @@ class TestLLMProvisioning(IntegrationTestCase):
 		self.assertIn(self.site, [row["site"] for row in instance["enabled_sites"]])
 		self.assertEqual(
 			instance["models"],
-			[{"name": "frappe/m-fast", "modality": "text", "dialects": ["openai", "anthropic"]}],
+			[{
+				"name": "frappe/m-fast", "input_modalities": ["text", "image"], "output_modalities": ["text"],
+				"dialects": ["openai", "anthropic"],
+			}],
 		)
 		self.assertEqual(list_models.call_args.args[1], self.team)
 

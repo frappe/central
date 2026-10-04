@@ -133,7 +133,7 @@ const rateLimits = computed(() => {
 							</td>
 
 							<td class="py-3 text-right text-p-sm text-ink-gray-5">
-								{{ model.modality }}
+								{{ model.input_modalities.join(', ') }} → {{ model.output_modalities.join(', ') }}
 							</td>
 						</tr>
 					</tbody>
