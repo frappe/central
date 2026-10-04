@@ -478,5 +478,21 @@
   "doctype": "Notification Event Type",
   "docstatus": 0,
   "modified": "2026-09-23 00:00:00"
+ },
+ {
+  "name": "resource_limit_breached",
+  "event_type": "resource_limit_breached",
+  "category": "Server",
+  "severity": "Warning",
+  "required_cap": "server:view",
+  "direct_recipients": "None",
+  "create_in_app": 1,
+  "in_app_title": "Resource limit breached: {{ context.bench }}",
+  "in_app_body": "{{ message }}",
+  "action_label": "View server",
+  "action_route": "/servers",
+  "doctype": "Notification Event Type",
+  "docstatus": 0,
+  "modified": "2026-10-04 00:00:00"
  }
 ]
