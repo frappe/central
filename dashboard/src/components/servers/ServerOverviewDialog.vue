@@ -246,6 +246,8 @@ const planLabel = computed(() =>
 
 				<div class="grid gap-4 md:grid-cols-2">
 					<ServerInfoCard
+						:server-id="server.resource_id"
+						:atlas-vm-id="server.atlas_vm_id"
 						:hosted-on="server.region_details.display_name || server.region || '—'"
 						:provider="server.region_details.provider"
 						:plan="planLabel"

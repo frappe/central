@@ -41,6 +41,7 @@ def registry(team: str | None = None) -> dict:
 		fields=[
 			"name",
 			"resource_id",
+			"atlas_vm_id",
 			"title",
 			"region",
 			"status",
@@ -115,6 +116,7 @@ def server_overview(team: str | None = None, resource_id: str | None = None) -> 
 	server = frappe._dict(
 		{
 			"resource_id": row.resource_id,
+			"atlas_vm_id": row.atlas_vm_id,
 			"title": row.title,
 			"region": row.region,
 			"status": row.status,
@@ -191,6 +193,7 @@ def _overview_server_row(resource_id: str, team: str):
 		.on((pilot.server == server.name) & (pilot.status == "Active"))
 		.select(
 			server.resource_id,
+			server.atlas_vm_id,
 			server.title,
 			server.region,
 			server.status,

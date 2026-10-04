@@ -25,6 +25,7 @@ export type VirtualMachineRow = Pick<
 	VirtualMachine,
 	| 'name'
 	| 'resource_id'
+	| 'atlas_vm_id'
 	| 'title'
 	| 'region'
 	| 'status'
