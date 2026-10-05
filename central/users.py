@@ -4,6 +4,7 @@ import frappe
 from frappe import _
 from frappe.utils import cint, escape_html, random_string, today
 
+from central.geo import warm_country_cache
 from central.identity.email_code import EmailCode
 
 CENTRAL_USER_ROLE = "Central User"
@@ -22,6 +23,7 @@ def send_sign_in_code(email: str, full_name: str | None = None) -> None:
 		EmailCode(email).send(
 			_("{0} is your Frappe Cloud signup code"), _("Create your Frappe Cloud account"), full_name
 		)
+		warm_country_cache()
 
 
 def sign_in_with_code(email: str, code: str, full_name: str | None = None) -> dict:
