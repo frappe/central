@@ -44,7 +44,7 @@ Central runs today:
 - Regions: each Region holds its Atlas connection and its Cargo connection.
 - Resources: `Virtual Machine` for a provisioned server, `Site` for a self-serve site. Only the integration layer records observed state on them.
 - Provisioning: durable `Resource Action` records that Central processes against Atlas and Pilot.
-- Managed services: add-on catalog, team services and service details, LLM models and plan policies, and object storage.
+- Managed services: team services and service details, LLM models and plan policies, and object storage.
 - Notifications: event types, team notifications, user preferences, and the delivery engine.
 - Billing: catalog, subscriptions, invoicing, payments, credits, and projections.
 - The console in `dashboard/`.
@@ -158,6 +158,7 @@ The console serves customers. Desk serves the operator who has to answer a page 
 - Follow DRY, SOLID, and KISS. Apply them to remove real duplication and real coupling, not to add layers.
 - Reduce the layers a reader has to trace. Reduce the state a reader has to hold in their head.
 - Don't abstract for the sake of abstraction, abstract only if you can make a distinct concept from it. Every layer should provide a consistent interface and be part of a single task.
+- Review every test for it's necessity. If the type system covers it, remove the test. If an existing end to end / integration test covers it, remove it.
 
 ### Python
 
