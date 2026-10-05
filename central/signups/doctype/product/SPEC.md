@@ -52,3 +52,16 @@ Central sends one Pulse event at each signup step with `frappe.utils.telemetry.c
 `send_code` and `verify_code` take an optional `product` only to label these events. An unknown product is dropped.
 
 When a new email asks for a code, Central also looks up the request's country in a background job, so the team created after verification reads its billing country from the cache instead of waiting on the lookup.
+
+## Signup attribution
+
+A team created at signup keeps how its owner first found Frappe Cloud. The browser remembers the first public page a guest opens: `utm_source`, `utm_medium`, `utm_campaign` and `product` from its address, and the referring page when it is another site. It sends them with `central.api.sites.create_trial_team`. Central writes them in the same insert as the team, in the collapsed **Signup Attribution** section of Team. Nothing changes them later.
+
+| Team field | Source |
+|---|---|
+| UTM Source, UTM Medium, UTM Campaign | The first page's query, trimmed to 140 characters |
+| Landing Product | The first page's `product`, when that product exists |
+| Referrer | The page that linked to the first page, trimmed to 1,000 characters |
+
+A bad or unknown value is dropped and the team is still created. Join these fields with invoices to measure revenue by campaign. Pulse holds the funnel counts.
+

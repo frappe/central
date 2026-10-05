@@ -16,7 +16,14 @@
   "is_staging_trial",
   "members",
   "onboarding_section",
-  "onboarding_steps"
+  "onboarding_steps",
+  "attribution_section",
+  "utm_source",
+  "utm_medium",
+  "utm_campaign",
+  "column_break_attribution",
+  "landing_product",
+  "referrer"
  ],
  "fields": [
   {
@@ -99,6 +106,50 @@
    "fieldtype": "Table",
    "label": "Onboarding Steps",
    "options": "Team Onboarding Step",
+   "read_only": 1
+  },
+  {
+   "collapsible": 1,
+   "description": "How the owner first found Frappe Cloud. Written once when the team is created at signup.",
+   "fieldname": "attribution_section",
+   "fieldtype": "Section Break",
+   "label": "Signup Attribution"
+  },
+  {
+   "fieldname": "utm_source",
+   "fieldtype": "Data",
+   "label": "UTM Source",
+   "read_only": 1
+  },
+  {
+   "fieldname": "utm_medium",
+   "fieldtype": "Data",
+   "label": "UTM Medium",
+   "read_only": 1
+  },
+  {
+   "fieldname": "utm_campaign",
+   "fieldtype": "Data",
+   "label": "UTM Campaign",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_attribution",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "The product whose signup link the owner first used.",
+   "fieldname": "landing_product",
+   "fieldtype": "Link",
+   "label": "Landing Product",
+   "options": "Product",
+   "read_only": 1
+  },
+  {
+   "description": "The page that linked to the first signup page.",
+   "fieldname": "referrer",
+   "fieldtype": "Small Text",
+   "label": "Referrer",
    "read_only": 1
   }
  ],
@@ -224,7 +275,7 @@
    "link_fieldname": "team"
   }
  ],
- "modified": "2026-10-02 18:00:00.000000",
+ "modified": "2026-10-06 00:59:08.657647",
  "modified_by": "Administrator",
  "module": "Identity",
  "name": "Team",

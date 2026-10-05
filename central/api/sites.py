@@ -34,11 +34,25 @@ def check_subdomain(subdomain: str, team: str | None = None) -> dict:
 
 
 @frappe.whitelist(methods=["POST"])
-def create_trial_team() -> dict:
-	"""Give a caller with no team a team before the trial funnel asks for a site name."""
+def create_trial_team(
+	utm_source: str | None = None,
+	utm_medium: str | None = None,
+	utm_campaign: str | None = None,
+	referrer: str | None = None,
+	product: str | None = None,
+) -> dict:
+	"""Give a caller with no team a team before the trial funnel asks for a site name. The
+	browser sends how the signup first arrived, which the new team keeps."""
 	from central.site_provisioning import create_trial_team as create
 
-	return {"team": create(frappe.session.user)}
+	attribution = {
+		"utm_source": utm_source,
+		"utm_medium": utm_medium,
+		"utm_campaign": utm_campaign,
+		"referrer": referrer,
+		"product": product,
+	}
+	return {"team": create(frappe.session.user, attribution)}
 
 
 @frappe.whitelist(methods=["POST"])

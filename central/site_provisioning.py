@@ -59,7 +59,7 @@ def create_trial_site(
 	)
 
 
-def create_trial_team(user: str) -> str | None:
+def create_trial_team(user: str, attribution: dict | None = None) -> str | None:
 	"""Create the first team of a user who starts the trial funnel with none.
 
 	The funnel cannot ask for a team name, so the team is named after the user. A
@@ -68,7 +68,30 @@ def create_trial_team(user: str) -> str | None:
 		return None
 
 	full_name = frappe.db.get_value("User", user, "full_name") or user
-	return Team.create_for_current_user(_("{0}'s Team").format(full_name)).name
+	team_name = _("{0}'s Team").format(full_name)
+	return Team.create_for_current_user(team_name, first_touch(**(attribution or {}))).name
+
+
+def first_touch(
+	utm_source: str | None = None,
+	utm_medium: str | None = None,
+	utm_campaign: str | None = None,
+	referrer: str | None = None,
+	product: str | None = None,
+) -> dict:
+	"""How the signup first found us, trimmed to fit the team. It only labels the team,
+	so a bad value is dropped instead of refusing the signup."""
+	return {
+		"utm_source": _clip(utm_source, 140),
+		"utm_medium": _clip(utm_medium, 140),
+		"utm_campaign": _clip(utm_campaign, 140),
+		"referrer": _clip(referrer, 1000),
+		"landing_product": product if product and frappe.db.exists("Product", product) else None,
+	}
+
+
+def _clip(value: str | None, length: int) -> str | None:
+	return (value.strip()[:length] or None) if isinstance(value, str) else None
 
 
 def validated_subdomain(subdomain: str) -> str:

@@ -2,6 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import { useAuth } from '@/composables/useAuth'
 import { useSession } from '@/composables/useSession'
 import { fetchBillingSetup } from '@/data/billingSetup'
+import { rememberFirstTouch } from '@/lib/attribution'
 import { carriedQuery } from '@/lib/authRedirect'
 import { features } from '@/lib/features'
 
@@ -180,6 +181,7 @@ router.beforeEach((to) => {
 	const onboardingComplete = window.onboarding_complete ?? false
 
 	if (to.meta.public) {
+		if (isGuest.value) rememberFirstTouch(to.query)
 		if (isGuest.value || to.meta.allowSignedIn) return true
 		// Logged in but on an auth page — e.g. browser-Back after verifying. Don't dump
 		// them into the dashboard mid-onboarding: resume the funnel until it's finished.

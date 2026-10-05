@@ -6,6 +6,7 @@ import { API } from '@/api/methods'
 import AuthShell from '@/components/auth/AuthShell.vue'
 import ProductLogo from '@/components/auth/ProductLogo.vue'
 import { useProduct } from '@/composables/useProduct'
+import { forgetFirstTouch, readFirstTouch } from '@/lib/attribution'
 import {
 	frappeErrorMessage,
 	getFrappe,
@@ -49,7 +50,8 @@ let debounce: ReturnType<typeof setTimeout> | undefined
 onMounted(async () => {
 	try {
 		// A user who starts here with no team needs one before any team-scoped call.
-		await postFrappe(methodUrl(API.createTrialTeam), {})
+		await postFrappe(methodUrl(API.createTrialTeam), readFirstTouch() ?? {})
+		forgetFirstTouch()
 	} catch (exception) {
 		error.value = frappeErrorMessage(exception, 'Could not set up your team.')
 		return

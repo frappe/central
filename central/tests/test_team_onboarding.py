@@ -1,7 +1,7 @@
 from unittest.mock import patch
 
 import frappe
-from frappe.tests import IntegrationTestCase
+from frappe.tests import IntegrationTestCase, set_user
 
 from central.api.identity import my_teams
 from central.api.teams import create_team, set_onboarding_step, skip_onboarding
@@ -94,6 +94,35 @@ class TestTeamCreation(IntegrationTestCase):
 		self.assertEqual(frappe.db.get_value("Team", team, "owner_user"), self.owner)
 		self.assertIsNone(create_trial_team(self.owner))
 		self.assertEqual(frappe.db.count("Team", {"owner_user": self.owner}), 1)
+
+	def test_the_trial_team_keeps_how_the_signup_first_arrived(self):
+		with set_user("Administrator"):
+			frappe.get_doc(
+				{"doctype": "Product", "product_key": "raven-touch", "title": "Raven", "signup_app": "raven"}
+			).insert()
+
+		team = create_trial_team(
+			self.owner,
+			{
+				"utm_source": " linkedin ",
+				"utm_campaign": "x" * 300,
+				"referrer": "https://frappe.io/raven",
+				"product": "raven-touch",
+			},
+		)
+
+		values = frappe.db.get_value(
+			"Team", team, ["utm_source", "utm_campaign", "referrer", "landing_product"], as_dict=True
+		)
+		self.assertEqual(values.utm_source, "linkedin")
+		self.assertEqual(len(values.utm_campaign), 140)
+		self.assertEqual(values.referrer, "https://frappe.io/raven")
+		self.assertEqual(values.landing_product, "raven-touch")
+
+	def test_an_unknown_landing_product_does_not_stop_the_team(self):
+		team = create_trial_team(self.owner, {"product": "no-such-product"})
+
+		self.assertIsNone(frappe.db.get_value("Team", team, "landing_product"))
 
 
 class TestOnboardingSteps(IntegrationTestCase):
