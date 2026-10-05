@@ -50,7 +50,7 @@ async function submit() {
 				type="email"
 				autocomplete="email"
 				placeholder="name@company.com"
-				autofocus
+				v-focus
 				:validator="emailError"
 				:submitted="submitted"
 			/>

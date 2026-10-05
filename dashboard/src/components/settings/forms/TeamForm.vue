@@ -75,6 +75,7 @@ async function onDelete(): Promise<void> {
 			<div class="flex items-end gap-2">
 				<TextInput
 					v-model="name"
+					v-focus="canEditTeam"
 					label="Team name"
 					class="flex-1"
 					:disabled="!canEditTeam"

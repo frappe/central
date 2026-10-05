@@ -84,6 +84,7 @@ async function onPhotoChange(fileUrl: string | null): Promise<void> {
 		<div class="flex items-end gap-2">
 			<TextInput
 				v-model="name"
+				v-focus
 				label="Full name"
 				class="flex-1"
 				@keydown.enter="onSave"

@@ -1,4 +1,4 @@
-import type { Component, Plugin, Ref } from 'vue'
+import type { Component, Directive, Plugin, Ref } from 'vue'
 
 export type ColorScheme = 'light' | 'dark' | 'system'
 export type DropdownAlign = 'start' | 'center' | 'end'
@@ -143,6 +143,8 @@ export const dayjs: typeof import('dayjs').default
 export const dayjsLocal: typeof import('dayjs').default
 export const FrappeUI: Plugin
 export function setConfig(key: string, value: unknown): void
+/** Focuses the first focusable descendant on mount. `false` skips it. */
+export const vFocus: Directive<HTMLElement, boolean | undefined>
 
 export const toast: {
 	success(message: string): void

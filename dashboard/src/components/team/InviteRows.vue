@@ -55,6 +55,7 @@ function removeRow(index: number): void {
 						v-model="row.email"
 						class="min-w-0 flex-1"
 						type="email"
+						v-focus="index === 0"
 						placeholder="teammate@company.com"
 						:aria-label="`Email ${index + 1}`"
 						:disabled="disabled"

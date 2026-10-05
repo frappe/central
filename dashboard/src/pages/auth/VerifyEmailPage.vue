@@ -106,7 +106,7 @@ onBeforeUnmount(() => clearInterval(resendTimer))
 					label="Full name"
 					autocomplete="name"
 					placeholder="Your full name"
-					autofocus
+					v-focus
 					:validator="requiredError('Full name')"
 					:submitted="nameSubmitted"
 				/>
