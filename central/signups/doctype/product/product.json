@@ -1,0 +1,110 @@
+{
+ "actions": [],
+ "allow_bulk_edit": 1,
+ "allow_rename": 1,
+ "autoname": "field:product_key",
+ "creation": "2026-10-05 23:50:56.013445",
+ "description": "An app customers can sign up for from its own page, such as frappe.io/raven.",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "product_key",
+  "title",
+  "column_break_identity",
+  "enabled",
+  "signup_page_section",
+  "logo",
+  "subtitle",
+  "image_section",
+  "signup_app"
+ ],
+ "fields": [
+  {
+   "description": "The value in the signup link, such as raven in /signup?product=raven. It cannot change after creation.",
+   "fieldname": "product_key",
+   "fieldtype": "Data",
+   "label": "Product Key",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "fieldname": "title",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Title",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_identity",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "1",
+   "description": "A disabled product refuses new signups. Its existing sites keep running.",
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Enabled"
+  },
+  {
+   "fieldname": "signup_page_section",
+   "fieldtype": "Section Break",
+   "label": "Signup Page"
+  },
+  {
+   "fieldname": "logo",
+   "fieldtype": "Attach Image",
+   "label": "Logo"
+  },
+  {
+   "description": "Shown under the heading on the signup and login pages. Leave empty to show no subtitle.",
+   "fieldname": "subtitle",
+   "fieldtype": "Small Text",
+   "label": "Subtitle"
+  },
+  {
+   "fieldname": "image_section",
+   "fieldtype": "Section Break",
+   "label": "Trial Image"
+  },
+  {
+   "description": "The app Cargo installs on this product's image, such as raven. A trial starts the newest signup image whose app tag has this value.",
+   "fieldname": "signup_app",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Signup App",
+   "reqd": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-10-05 23:51:46.910135",
+ "modified_by": "Administrator",
+ "module": "Signups",
+ "name": "Product",
+ "naming_rule": "By fieldname",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "export": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "search_fields": "title,signup_app",
+ "show_title_field_in_link": 1,
+ "sort_field": "title",
+ "sort_order": "ASC",
+ "states": [],
+ "title_field": "title"
+}
