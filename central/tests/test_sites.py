@@ -688,3 +688,32 @@ class TestTrialCreationIsQueued(IntegrationTestCase):
 				).insert(ignore_permissions=True)
 
 		self.assertEqual(enqueue.call_count, 2)
+
+
+class TestTrialFunnelEvents(SiteOnAMachine):
+	"""A trial's create request sends its funnel step once, with the product it named."""
+
+	def queue(self, resource_type: str):
+		return ResourceAction.queue(
+			"create",
+			self.team.name,
+			self.region.name,
+			self.server.name,
+			resource_type=resource_type,
+			request_key="request-" + frappe.generate_hash(length=8),
+			request_payload={"image_tags": {"purpose": "pilot"}, "site": {"product": "raven"}},
+		)
+
+	def test_a_trial_request_is_sent_once_with_its_product(self):
+		with patch("frappe.utils.telemetry.capture") as capture:
+			self.queue("Site")
+
+		capture.assert_called_once()
+		self.assertEqual(capture.call_args.args[0], "trial_requested")
+		self.assertEqual(capture.call_args.kwargs["properties"]["product"], "raven")
+
+	def test_a_server_request_sends_no_trial_event(self):
+		with patch("frappe.utils.telemetry.capture") as capture:
+			self.queue("Server")
+
+		capture.assert_not_called()

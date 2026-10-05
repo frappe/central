@@ -35,3 +35,20 @@ Operators have two Desk actions on a saved product:
 The trial request saves a `site` part in the Resource Action payload with the product. The Site copies the product when the region creates it. See [Trial sites](../../../infrastructure/doctype/site/SPEC.md#what-the-record-holds).
 
 A Product needs a Cargo image of type Apps for its signup app in the region. Without one, the signup stops with "No trial image is available right now."
+
+## Signup funnel
+
+Central sends one Pulse event at each signup step with `frappe.utils.telemetry.capture`. Each event goes to a Redis queue in the request and is sent to Pulse later, so it adds no network call to the step. Events are sent only when Central has a Pulse key and telemetry is on. Pulse stores the user as a salted hash, so use Central records, not Pulse, to look up one customer.
+
+| Event | Sent when | Properties |
+|---|---|---|
+| `signup_code_sent` | A new email asks for a code | `product` |
+| `signup_verified` | A new email verifies its code and gets an account | `product` |
+| `trial_requested` | Central saves a new trial request. A repeated request with the same key sends nothing. | `product`, `region` |
+| `trial_failed` | The trial's create Resource Action fails or times out | `product`, `status`, `error_code` |
+| `trial_ready` | The site first answers its readiness probe | `product`, `seconds_to_ready` |
+| `trial_claimed` | The customer first opens the site | `product` |
+
+`send_code` and `verify_code` take an optional `product` only to label these events. An unknown product is dropped.
+
+When a new email asks for a code, Central also looks up the request's country in a background job, so the team created after verification reads its billing country from the cache instead of waiting on the lookup.

@@ -24,10 +24,10 @@ FULL_NAME_MAX_LENGTH = 140
 	seconds=EmailCode.TTL_SECONDS,
 	methods="POST",
 )
-def send_code(email: str, full_name: str | None = None) -> dict:
+def send_code(email: str, full_name: str | None = None, product: str | None = None) -> dict:
 	"""Email a sign-in code. A new email gets a code too, and the account is made on verify."""
 	email = _validated_email(email)
-	send_sign_in_code(email, _optional_full_name(full_name))
+	send_sign_in_code(email, _optional_full_name(full_name), _known_product(product))
 	return {"message": _("We sent a code to {0}.").format(email)}
 
 
@@ -42,13 +42,13 @@ def send_code(email: str, full_name: str | None = None) -> dict:
 	seconds=EmailCode.TTL_SECONDS,
 	methods="POST",
 )
-def verify_code(email: str, code: str, full_name: str | None = None) -> dict:
+def verify_code(email: str, code: str, full_name: str | None = None, product: str | None = None) -> dict:
 	"""Sign in with an emailed code. Returns `needs_name` when a new account has no name yet."""
 	email = _validated_email(email)
 	if not isinstance(code, str) or len(code) != 6 or not code.isascii() or not code.isdigit():
 		frappe.throw(_("Enter the 6-digit code from your email."), frappe.ValidationError)
 
-	return sign_in_with_code(email, code, _optional_full_name(full_name))
+	return sign_in_with_code(email, code, _optional_full_name(full_name), _known_product(product))
 
 
 # nosemgrep: guest-whitelisted-method -- the emailed token verifies the address, and the IP rate limit applies.
@@ -92,3 +92,8 @@ def _required_full_name(full_name: str) -> str:
 	if len(full_name) > FULL_NAME_MAX_LENGTH:
 		frappe.throw(_("Use a shorter name."), frappe.ValidationError)
 	return full_name
+
+
+def _known_product(product: str | None) -> str | None:
+	"""A guest names the product only to label funnel events, so an unknown one is dropped."""
+	return product if product and frappe.db.exists("Product", product) else None

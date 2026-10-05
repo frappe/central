@@ -139,6 +139,8 @@ class ResourceAction(Document):
 	def after_insert(self) -> None:
 		if self.status == "Queued":
 			self.enqueue()
+		if self.is_trial_creation:
+			self.capture_trial_event("trial_requested", region=self.region)
 
 	def enqueue(self) -> None:
 		from central.integrations.resource_actions import get_job_timeout_seconds
@@ -202,6 +204,8 @@ class ResourceAction(Document):
 			if self.action == "create" and not self.remote_vm_id:
 				PilotCredential.revoke_by_id(self.credential)
 			self.queue_attention_notification(envelope)
+			if self.is_trial_creation:
+				self.capture_trial_event("trial_failed", status=status, error_code=self.error_code)
 
 	def fail(self, error: Exception, title: str) -> None:
 		"""Record a failed dispatch. An uncertain Atlas reply stays pending for recovery."""
@@ -235,6 +239,22 @@ class ResourceAction(Document):
 		started = self.dispatched_at or self.creation
 		return (
 			frappe.utils.time_diff_in_seconds(frappe.utils.now_datetime(), started) > COMMAND_TIMEOUT_SECONDS
+		)
+
+	@property
+	def is_trial_creation(self) -> bool:
+		return self.action == "create" and self.resource_type == "Site"
+
+	def capture_trial_event(self, event: str, **properties) -> None:
+		"""Send this trial's step to the signup funnel, once per action."""
+		from frappe.utils.telemetry import capture
+
+		site = self.get_site_creation()
+		capture(
+			event,
+			"central",
+			user=self.requested_by,
+			properties={"product": site.product if site else None, **properties},
 		)
 
 	def queue_attention_notification(self, envelope: dict | None) -> None:

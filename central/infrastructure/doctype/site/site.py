@@ -5,6 +5,7 @@ from urllib.parse import urlsplit, urlunsplit
 import frappe
 from frappe import _
 from frappe.model.document import Document
+from frappe.utils.telemetry import capture
 
 IMAGE_SITE_NAME = "site.local"
 
@@ -111,6 +112,7 @@ class Site(Document):
 		"""Record the first successful login handoff and schedule the optional rename."""
 		if not self.claimed_at:
 			self.db_set("claimed_at", frappe.utils.now_datetime())
+			capture("trial_claimed", "central", properties={"product": self.product})
 
 		self.enqueue_subdomain_rename()
 
@@ -120,6 +122,7 @@ class Site(Document):
 			return
 
 		self.db_set("ready_at", frappe.utils.now_datetime())
+		self.capture_ready()
 		from central.notification.engine import queue_event
 
 		queue_event(
@@ -127,6 +130,21 @@ class Site(Document):
 			"site_ready",
 			reference_doctype=self.doctype,
 			reference_name=self.name,
+		)
+
+	def capture_ready(self) -> None:
+		"""Send the ready trial to the signup funnel, with how long the customer waited."""
+		requested_at = frappe.db.get_value(
+			"Resource Action", {"server": self.server, "action": "create"}, "creation"
+		)
+		capture(
+			"trial_ready",
+			"central",
+			user=frappe.get_cached_value("Team", self.team, "owner_user"),
+			properties={
+				"product": self.product,
+				"seconds_to_ready": (self.ready_at - requested_at).total_seconds() if requested_at else None,
+			},
 		)
 
 	def enqueue_subdomain_rename(self) -> None:
