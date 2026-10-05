@@ -211,18 +211,22 @@ class Site(Document):
 		self.enqueue_subdomain_rename()
 
 	def get_login_url(self) -> str | None:
-		"""A one-click Administrator session, on the address the customer can reach.
+		"""A one-click Administrator session, on the address the customer can reach. The
+		public name is Central's, so putting the session onto that address is Central's to do.
 
-		Pilot mints against the stable image alias. The public name is Central's, so putting
-		the session onto that address is Central's to do."""
+		Pilot only accepts a token for the name the site has on the bench. That is the
+		customer's name once the rename ran, and the stable image alias before it."""
 		from central.integrations.pilot import fetch_site_login_url
 
 		gateway, audience = self.get_pilot_access()
 		if not gateway or not audience:
 			return None
 
-		minted = fetch_site_login_url(gateway, audience, IMAGE_SITE_NAME)
-		return on_host(minted, self.name) if minted else None
+		pilot_names = [self.rename_target, IMAGE_SITE_NAME] if self.rename_task else [IMAGE_SITE_NAME]
+		for pilot_name in pilot_names:
+			if minted := fetch_site_login_url(gateway, audience, pilot_name):
+				return on_host(minted, self.name)
+		return None
 
 	def get_pilot_access(self) -> tuple[str | None, str | None]:
 		"""The machine's gateway and the audience its Pilot verifies tokens against.

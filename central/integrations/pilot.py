@@ -108,8 +108,9 @@ class PilotMonitoringClient:
 
 def fetch_site_login_url(gateway_url: str, audience_id: str, site: str) -> str | None:
 	"""Relay a Central-signed site assertion to the bench's login endpoint and return the desk
-	URL it mints (a fresh local session). A 401 is retryable while Pilot finishes starting. Other
-	failures return None and are logged so a consistently-failing bench or Central is diagnosable."""
+	URL it mints (a fresh local session). A 401 is retryable while Pilot finishes starting. A
+	404 means the bench has no site by that name. Other failures return None and are logged so
+	a consistently-failing bench or Central is diagnosable."""
 	try:
 		response = requests.post(
 			f"{_gateway_url(gateway_url)}/api/v1/sites/{site}/login",
@@ -119,6 +120,8 @@ def fetch_site_login_url(gateway_url: str, audience_id: str, site: str) -> str |
 		)
 		if response.status_code == 401:
 			raise PilotLoginPending
+		if response.status_code == 404:
+			return None
 		response.raise_for_status()
 		payload = response.json()
 		url = payload.get("url") if isinstance(payload, dict) else None

@@ -521,6 +521,18 @@ class TestSiteNaming(SiteOnAMachine):
 		observe_server(self.server)
 		self.site().db_set("subdomain", "acme")
 
+	def test_a_renamed_site_signs_in_under_its_new_name(self):
+		site = self.site()
+		site.db_set("rename_task", "task-2")
+
+		with patch(
+			"central.integrations.pilot.fetch_site_login_url",
+			side_effect=[None, "https://site.local/desk?sid=abc"],
+		) as login:
+			self.assertTrue(site.get_login_url())
+
+		self.assertEqual([call.args[2] for call in login.call_args_list], [site.rename_target, "site.local"])
+
 	def test_the_address_stays_ours_and_theirs_is_only_a_rename_target(self):
 		site = self.site()
 
