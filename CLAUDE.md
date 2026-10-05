@@ -158,6 +158,7 @@ The console serves customers. Desk serves the operator who has to answer a page 
 - Follow DRY, SOLID, and KISS. Apply them to remove real duplication and real coupling, not to add layers.
 - Reduce the layers a reader has to trace. Reduce the state a reader has to hold in their head.
 - Don't abstract for the sake of abstraction, abstract only if you can make a distinct concept from it. Every layer should provide a consistent interface and be part of a single task.
+- Review every test for it's necessity. If the type system covers it, remove the test. If an existing end to end / integration test covers it, remove it.
 
 ### Python
 
