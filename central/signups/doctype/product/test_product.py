@@ -73,6 +73,22 @@ class IntegrationTestProduct(IntegrationTestCase):
 		self.assertEqual(get_product("raven-test").subtitle, "Chat for your team")
 		self.assertIsNone(get_product("raven-off"))
 
+	def test_the_operator_preview_asks_the_region_for_the_product_app(self):
+		product = self.product("raven-test")
+
+		with (
+			patch("central.site_provisioning.signup_offering", return_value="pilot"),
+			patch("central.integrations.images.preview_images") as preview,
+		):
+			product.preview_images("par-2")
+
+		preview.assert_called_once_with(
+			"pilot",
+			"par-2",
+			0,
+			extra_tags={"has_site": "1", "frappe_version": "develop", "app": "raven"},
+		)
+
 	def test_a_product_key_is_a_lowercase_slug(self):
 		with self.assertRaises(frappe.ValidationError):
 			self.product("Raven App")

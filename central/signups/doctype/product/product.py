@@ -41,6 +41,17 @@ class Product(Document):
 		if not APP_NAME_PATTERN.fullmatch(self.signup_app or ""):
 			frappe.throw(_("Use the app's module name for the signup app, such as raven."))
 
+	@frappe.whitelist(methods=["POST"])
+	def preview_images(self, region: str, offset: int = 0) -> dict:
+		"""1. Require operator write access before previewing the region's trial images."""
+		from central.integrations.images import preview_images
+		from central.site_provisioning import product_image_tags, signup_offering
+
+		self.check_permission("write")
+		return preview_images(
+			signup_offering(), region, offset, extra_tags=product_image_tags(self.signup_app)
+		)
+
 
 def get_signup_product(product_key: str) -> Product:
 	"""The enabled product a signup names, or a refusal the customer can read."""
