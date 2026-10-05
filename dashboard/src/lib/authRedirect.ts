@@ -8,7 +8,9 @@ const PRODUCT_ONBOARDING = '/dashboard/onboarding/site'
 export function signInDestination(query: LocationQuery): string {
 	const requested = dashboardPath(queryString(query['redirect-to']))
 	if (requested) return requested
-	return queryString(query.product) ? PRODUCT_ONBOARDING : DEFAULT_DASHBOARD
+	const product = queryString(query.product)
+	if (!product) return DEFAULT_DASHBOARD
+	return `${PRODUCT_ONBOARDING}?${new URLSearchParams({ product })}`
 }
 
 /** The intent that must survive every step between the auth pages. */

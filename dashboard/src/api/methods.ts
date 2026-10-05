@@ -83,6 +83,7 @@ export const API = {
 	listBucketObjects: 'central.services.api.storage.list_objects',
 	bucketObjectUrl: 'central.services.api.storage.get_object_url',
 
+	getProduct: 'central.api.signups.get_product',
 	sendCode: 'central.api.auth.send_code',
 	verifyCode: 'central.api.auth.verify_code',
 	siteDomain: 'central.api.sites.site_domain',

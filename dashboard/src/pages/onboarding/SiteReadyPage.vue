@@ -1,15 +1,17 @@
 <script setup lang="ts">
 import { Alert, Button, ErrorMessage, Spinner } from 'frappe-ui'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { API } from '@/api/methods'
 import AuthShell from '@/components/auth/AuthShell.vue'
+import ProductLogo from '@/components/auth/ProductLogo.vue'
 import {
 	frappeErrorMessage,
 	getFrappe,
 	methodUrl,
 	postFrappe,
 } from '@/lib/auth'
+import { carriedQuery } from '@/lib/authRedirect'
 
 type SiteState = {
 	name: string
@@ -39,6 +41,7 @@ const LOGIN_RETRY_DELAYS_MS = [
 
 const status = ref<OnboardingStatus | null>(null)
 const error = ref('')
+const route = useRoute()
 const router = useRouter()
 let timer: ReturnType<typeof setTimeout> | undefined
 let loginRetryIndex = 0
@@ -151,19 +154,25 @@ onUnmounted(() => clearTimeout(timer))
 		</template>
 
 		<template v-else-if="isFailed">
-			<h1 class="text-2xl font-semibold text-ink-gray-9">
+			<h1
+				class="flex items-center gap-2 text-2xl font-semibold text-ink-gray-9"
+			>
+				<ProductLogo />
 				Setup didn't finish
 			</h1>
 			<Alert
 				class="mt-6"
 				theme="red"
 				:title="creation?.error?.message || `We couldn't finish setting up your site.`"
-				:primary-action="{ label: 'Try again', onClick: () => router.push('/onboarding/site') }"
+				:primary-action="{ label: 'Try again', onClick: () => router.push({ path: '/onboarding/site', query: carriedQuery(route.query) }) }"
 			/>
 		</template>
 
 		<template v-else>
-			<h1 class="text-2xl font-semibold text-ink-gray-9">
+			<h1
+				class="flex items-center gap-2 text-2xl font-semibold text-ink-gray-9"
+			>
+				<ProductLogo />
 				Setting up your site…
 			</h1>
 			<p class="mt-2 text-p-base text-ink-gray-5">

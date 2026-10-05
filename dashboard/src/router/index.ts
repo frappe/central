@@ -2,6 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import { useAuth } from '@/composables/useAuth'
 import { useSession } from '@/composables/useSession'
 import { fetchBillingSetup } from '@/data/billingSetup'
+import { carriedQuery } from '@/lib/authRedirect'
 import { features } from '@/lib/features'
 
 const routes = [
@@ -182,7 +183,9 @@ router.beforeEach((to) => {
 		if (isGuest.value || to.meta.allowSignedIn) return true
 		// Logged in but on an auth page — e.g. browser-Back after verifying. Don't dump
 		// them into the dashboard mid-onboarding: resume the funnel until it's finished.
-		return onboardingComplete ? '/servers' : '/onboarding/site'
+		return onboardingComplete
+			? '/servers'
+			: { path: '/onboarding/site', query: carriedQuery(to.query) }
 	}
 
 	if (isGuest.value) {

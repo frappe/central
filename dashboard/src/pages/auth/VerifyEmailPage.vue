@@ -3,6 +3,7 @@ import { Button, ErrorMessage } from 'frappe-ui'
 import { computed, nextTick, onBeforeUnmount, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AuthShell from '@/components/auth/AuthShell.vue'
+import ProductLogo from '@/components/auth/ProductLogo.vue'
 import TermsNotice from '@/components/auth/TermsNotice.vue'
 import ValidatedFormControl from '@/components/common/formComponents/ValidatedFormControl.vue'
 import OtpInput from '@/components/common/OtpInput.vue'
@@ -95,7 +96,10 @@ onBeforeUnmount(() => clearInterval(resendTimer))
 <template>
 	<AuthShell>
 		<template v-if="needsName">
-			<h1 class="text-xl font-semibold text-ink-gray-9">Set up your profile</h1>
+			<h1 class="flex items-center gap-2 text-xl font-semibold text-ink-gray-9">
+				<ProductLogo />
+				Set up your profile
+			</h1>
 			<p class="mt-1 text-p-base text-ink-gray-5">
 				This is how you appear in Frappe Cloud.
 			</p>
@@ -125,7 +129,10 @@ onBeforeUnmount(() => clearInterval(resendTimer))
 		</template>
 
 		<template v-else>
-			<h1 class="text-xl font-semibold text-ink-gray-9">Check your email</h1>
+			<h1 class="flex items-center gap-2 text-xl font-semibold text-ink-gray-9">
+				<ProductLogo />
+				Check your email
+			</h1>
 			<p class="mt-1 text-p-base text-ink-gray-5">
 				We sent a 6-digit code to
 				<span class="font-medium text-ink-gray-8">{{ email }}</span>. If it is
