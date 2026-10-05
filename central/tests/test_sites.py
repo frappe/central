@@ -442,15 +442,17 @@ class TestTrialImage(IntegrationTestCase):
 	"""A trial is the site the image carries, so the region is asked for that image alone."""
 
 	def images(self, count: int) -> dict:
-		return {"items": [{"id": f"image-{index}", "created_at": index} for index in range(count)]}
+		return {
+			"items": [{"id": f"image-{index}", "created_at": index, "tags": {}} for index in range(count)]
+		}
 
-	def resolve(self, page: dict) -> tuple[dict, dict]:
+	def resolve(self, page: dict, signup_app: str | None = None) -> tuple[dict, dict]:
 		with (
 			patch("central.site_provisioning.signup_offering", return_value="pilot"),
 			patch("central.site_provisioning.trial_region_and_plan", return_value=("par-2", "plan-trial")),
 			patch("central.site_provisioning.list_images", return_value=page) as list_images,
 		):
-			return trial_configuration("any-team"), list_images.call_args.kwargs
+			return trial_configuration("any-team", signup_app), list_images.call_args.kwargs
 
 	def test_the_region_is_asked_for_a_site_image_on_the_signup_version(self):
 		"""The tags ride the regional query, so a page of other images cannot hide a match."""
@@ -462,6 +464,29 @@ class TestTrialImage(IntegrationTestCase):
 		configuration, _ = self.resolve(self.images(3))
 
 		self.assertEqual(configuration["image_id"], "image-2")
+
+	def test_an_image_with_a_signup_app_is_never_chosen(self):
+		"""The newest build can be one with an app on its site, which a trial must not get."""
+		page = self.images(2)
+		page["items"].append({"id": "image-erpnext", "created_at": 5, "tags": {"app": "erpnext"}})
+
+		configuration, _ = self.resolve(page)
+
+		self.assertEqual(configuration["image_id"], "image-1")
+
+	def test_a_product_trial_asks_the_region_for_its_app(self):
+		page = {"items": [{"id": "image-raven", "created_at": 1, "tags": {"app": "raven"}}]}
+
+		configuration, asked = self.resolve(page, signup_app="raven")
+
+		self.assertEqual(asked["extra_tags"], {"has_site": "1", "frappe_version": "develop", "app": "raven"})
+		self.assertEqual(configuration["image_id"], "image-raven")
+
+	def test_a_region_with_only_app_images_stops_the_trial(self):
+		page = {"items": [{"id": "image-crm", "created_at": 1, "tags": {"app": "crm"}}]}
+
+		with self.assertRaises(frappe.ValidationError):
+			self.resolve(page)
 
 	def test_a_region_that_offers_none_stops_the_trial(self):
 		with self.assertRaises(frappe.ValidationError):

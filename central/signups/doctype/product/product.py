@@ -40,3 +40,11 @@ class Product(Document):
 
 		if not APP_NAME_PATTERN.fullmatch(self.signup_app or ""):
 			frappe.throw(_("Use the app's module name for the signup app, such as raven."))
+
+
+def get_signup_product(product_key: str) -> Product:
+	"""The enabled product a signup names, or a refusal the customer can read."""
+	if not frappe.db.exists("Product", {"name": product_key, "enabled": 1}):
+		frappe.throw(_("This product is not available for signup."))
+
+	return frappe.get_cached_doc("Product", product_key)
