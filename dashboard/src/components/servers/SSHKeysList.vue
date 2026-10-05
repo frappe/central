@@ -89,7 +89,7 @@ function actions(key: TeamSSHKey) {
 		:show-count="false"
 		:empty-state="{
 			title: 'No SSH Keys yet',
-			description: 'Add a public key, then add it when creating servers.',
+			description: 'Add a public key, then use it when creating servers.',
 		}"
 		@retry="emit('retryLoad')"
 	>
