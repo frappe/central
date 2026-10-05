@@ -22,7 +22,7 @@ class TeamService(Document):
 		from frappe.types import DF
 
 		access_key: DF.Data | None
-		add_on_service: DF.Link
+		add_on_service: DF.Literal["storage"]
 		bucket_name: DF.Data | None
 		endpoint_url: DF.Data | None
 		region: DF.Link

@@ -44,7 +44,7 @@ Central runs today:
 - Regions: each Region holds its Atlas connection and its Cargo connection.
 - Resources: `Virtual Machine` for a provisioned server, `Site` for a self-serve site. Only the integration layer records observed state on them.
 - Provisioning: durable `Resource Action` records that Central processes against Atlas and Pilot.
-- Managed services: add-on catalog, team services and service details, LLM models and plan policies, and object storage.
+- Managed services: team services and service details, LLM models and plan policies, and object storage.
 - Notifications: event types, team notifications, user preferences, and the delivery engine.
 - Billing: catalog, subscriptions, invoicing, payments, credits, and projections.
 - The console in `dashboard/`.
