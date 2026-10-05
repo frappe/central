@@ -159,7 +159,7 @@ defineExpose({ submit, saving: computed(() => save.loading) })
 				placeholder="Acme Technologies Pvt. Ltd."
 				:error="requiredError('legal_name', 'Legal name')"
 				required
-				v-focus
+				autofocus
 			/>
 			<div>
 				<TextInput
