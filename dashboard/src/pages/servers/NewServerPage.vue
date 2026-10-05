@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Alert, Button, Select, TabButtons, Tabs, TextInput } from 'frappe-ui'
-import { computed, ref, useTemplateRef, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import ChoiceCards from '@/components/common/ChoiceCards.vue'
 import CreateServerButton from '@/components/servers/CreateServerButton.vue'
 import CreationStatusPanel from '@/components/servers/CreationStatusPanel.vue'
@@ -112,10 +112,6 @@ watch(
 	},
 	{ immediate: true },
 )
-
-// The form mounts after regions load, which is too late for the autofocus attribute.
-const nameInput = useTemplateRef<{ focus: () => void }>('nameInput')
-watch(nameInput, (input) => input?.focus())
 </script>
 
 <template>
@@ -134,7 +130,7 @@ watch(nameInput, (input) => input?.focus())
 				<div v-else class="space-y-8">
 					<section class="grid gap-3 md:grid-cols-2">
 						<TextInput
-							ref="nameInput"
+							v-focus
 							v-model="name"
 							label="Name"
 							required

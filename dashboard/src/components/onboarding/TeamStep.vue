@@ -32,7 +32,7 @@ const hint = computed(() =>
 				size="md"
 				placeholder="e.g. Acme"
 				autocomplete="off"
-				autofocus
+				v-focus
 				@keyup.enter="$emit('submit')"
 			/>
 			<p

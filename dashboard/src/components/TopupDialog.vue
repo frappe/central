@@ -310,6 +310,7 @@ watch(open, (isOpen) => {
 					</div>
 					<TextInput
 						v-model="amount"
+						autofocus
 						type="number"
 						label="Amount"
 						:placeholder="`Enter amount in ${currency}`"

@@ -149,6 +149,7 @@ function resetRequestKey() {
 			<TextInput
 				id="subdomain"
 				v-model="subdomain"
+				v-focus
 				label="Site address"
 				size="md"
 				placeholder="yourcompany"

@@ -78,6 +78,7 @@ const dialogOptions = computed(() => ({
 				<Alert v-if="formError" theme="red" :title="formError" />
 				<TextInput
 					v-model="title"
+					autofocus
 					label="Title"
 					placeholder="e.g. Acme Corp"
 					description="Subscriptions tagged into this project show grouped under it in your cost breakdown."

@@ -146,7 +146,7 @@ function submitSignUp() {
 						label="Full name"
 						autocomplete="name"
 						placeholder="Jane Doe"
-						autofocus
+						v-focus
 						:validator="requiredError('Full name')"
 						:submitted="submitted"
 					/>

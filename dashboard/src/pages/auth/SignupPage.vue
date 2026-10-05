@@ -55,7 +55,7 @@ async function submit() {
 				label="Full name"
 				autocomplete="name"
 				placeholder="Your full name"
-				autofocus
+				v-focus
 				:validator="requiredError('Full name')"
 				:submitted="submitted"
 			/>
