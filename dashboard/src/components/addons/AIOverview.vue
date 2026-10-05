@@ -1,13 +1,36 @@
 <script setup lang="ts">
-import { Badge, Button, Spinner } from 'frappe-ui'
-import { computed } from 'vue'
+import { Badge, Button, Spinner, Tooltip } from 'frappe-ui'
+import { type Component, computed } from 'vue'
 import { useRouter } from 'vue-router'
+import LucideAudioLines from '~icons/lucide/audio-lines'
+import LucideBinary from '~icons/lucide/binary'
+import LucideCaptions from '~icons/lucide/captions'
+import LucideCircleHelp from '~icons/lucide/circle-help'
+import LucideFileText from '~icons/lucide/file-text'
+import LucideImage from '~icons/lucide/image'
+import LucideType from '~icons/lucide/type'
+import LucideVideo from '~icons/lucide/video'
 import { type ServiceDialect, useServices } from '@/composables/useServices'
 
 const router = useRouter()
 const dialectLabels: Record<ServiceDialect, string> = {
 	openai: 'OpenAI',
 	anthropic: 'Anthropic',
+}
+// Keyed by Grove's Modality names, which it sends lowercased. An unknown one falls
+// back to a help icon.
+const modalityIcons: Record<string, Component> = {
+	text: LucideType,
+	image: LucideImage,
+	audio: LucideAudioLines,
+	video: LucideVideo,
+	file: LucideFileText,
+	embeddings: LucideBinary,
+	transcription: LucideCaptions,
+}
+
+function modalityLabel(modality: string): string {
+	return modality.charAt(0).toUpperCase() + modality.slice(1)
 }
 const { instance, instanceLoading } = useServices()
 
@@ -110,10 +133,20 @@ const rateLimits = computed(() => {
 				</h2>
 
 				<p class="mt-0.5 text-p-sm text-ink-gray-5">
-					The models your keys can call, and the APIs each one answers on.
+					The models your keys can call, what each one takes and gives, and the
+					APIs it answers on.
 				</p>
 
 				<table v-if="models.length" class="mt-3 w-full border-collapse">
+					<thead>
+						<tr class="border-b border-outline-gray-2 text-p-xs text-ink-gray-5">
+							<th scope="col" class="py-2 pr-3 text-left font-normal">Model</th>
+							<th scope="col" class="py-2 pr-3 text-left font-normal">Input</th>
+							<th scope="col" class="py-2 pr-3 text-left font-normal">Output</th>
+							<th scope="col" class="py-2 text-right font-normal">API</th>
+						</tr>
+					</thead>
+
 					<tbody class="divide-y divide-outline-gray-1">
 						<tr v-for="model in models" :key="model.name">
 							<td
@@ -122,7 +155,28 @@ const rateLimits = computed(() => {
 								{{ model.name }}
 							</td>
 
-							<td class="py-3 pr-3">
+							<td
+								v-for="(modalities, side) in [model.input_modalities, model.output_modalities]"
+								:key="side"
+								class="py-3 pr-3"
+							>
+								<div class="flex items-center gap-1.5 text-ink-gray-6">
+									<Tooltip
+										v-for="modality in modalities"
+										:key="modality"
+										:text="modalityLabel(modality)"
+									>
+										<component
+											:is="modalityIcons[modality] ?? LucideCircleHelp"
+											class="size-4"
+											role="img"
+											:aria-label="modalityLabel(modality)"
+										/>
+									</Tooltip>
+								</div>
+							</td>
+
+							<td class="py-3">
 								<div class="flex justify-end gap-1.5">
 									<Badge
 										v-for="dialect in model.dialects"
@@ -130,10 +184,6 @@ const rateLimits = computed(() => {
 										:label="dialectLabels[dialect]"
 									/>
 								</div>
-							</td>
-
-							<td class="py-3 text-right text-p-sm text-ink-gray-5">
-								{{ model.input_modalities.join(', ') }} → {{ model.output_modalities.join(', ') }}
 							</td>
 						</tr>
 					</tbody>
