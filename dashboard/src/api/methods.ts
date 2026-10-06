@@ -74,6 +74,13 @@ export const API = {
 	deleteSnapshots: 'central.api.snapshots.delete_snapshots',
 	setAutomaticSnapshots: 'central.api.snapshots.set_automatic_snapshots',
 
+	ai: 'central.services.api.ai.get_ai',
+	enableAI: 'central.services.api.ai.enable_ai',
+	aiUsage: 'central.services.api.ai.get_usage',
+	aiApiKeys: 'central.services.api.ai.list_api_keys',
+	createAIApiKey: 'central.services.api.ai.create_api_key',
+	revokeAIApiKey: 'central.services.api.ai.revoke_api_key',
+
 	objectStorage: 'central.services.api.storage.get_object_storage',
 	bucketUsage: 'central.services.api.storage.get_bucket_usage',
 	createBucket: 'central.services.api.storage.create_bucket',

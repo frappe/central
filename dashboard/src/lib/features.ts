@@ -9,10 +9,13 @@ export interface Features {
 	addons: boolean
 	/** Object storage rollout switch. */
 	storage: boolean
+	/** AI rollout switch. */
+	llm: boolean
 }
 
 // Defaults match the DocType: the area is on, individual services off until rolled out.
 export const features: Features = {
 	addons: window.features?.addons ?? true,
 	storage: window.features?.storage ?? import.meta.env.DEV,
+	llm: window.features?.llm ?? import.meta.env.DEV,
 }

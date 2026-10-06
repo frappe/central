@@ -30,5 +30,6 @@ interface Window {
 	features?: {
 		addons?: boolean
 		storage?: boolean
+		llm?: boolean
 	}
 }

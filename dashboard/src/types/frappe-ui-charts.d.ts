@@ -7,6 +7,7 @@ export interface ChartTooltipItem {
 	[key: string]: unknown
 }
 
+export const AreaChart: Component
 export const BarChart: Component
 export const ChartTooltip: Component
 export const DonutChart: Component

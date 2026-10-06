@@ -74,6 +74,12 @@ export const sidebarSections = computed<SidebarSection[]>(() => {
 					condition: canViewServers.value,
 				},
 				{
+					label: 'AI',
+					icon: 'lucide-sparkles',
+					to: '/ai',
+					condition: features.addons && features.llm && canViewServices.value,
+				},
+				{
 					label: 'Object storage',
 					icon: 'lucide-archive',
 					to: '/object-storage',

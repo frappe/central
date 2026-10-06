@@ -2,16 +2,10 @@
 import { Button, Select } from 'frappe-ui'
 import { AreaChart, BarChart, NumberCard } from 'frappe-ui/charts'
 import { computed, ref, watch } from 'vue'
-import { useServices } from '@/composables/useServices'
-
-interface Props {
-	managedService: string
-}
-
-const props = defineProps<Props>()
+import { useAI } from '@/composables/useAI'
 
 const { usage, usageLoading, usageError, loadUsage, apiKeys, loadApiKeys } =
-	useServices()
+	useAI()
 
 // The periods the provider knows by name.
 const periodOptions = [
@@ -31,22 +25,12 @@ const apiKey = ref('')
 const keyOptions = computed(() => [
 	{ label: 'All', value: '' },
 	...apiKeys.value.map((key) => ({
-		label:
-			key.status === 'Active'
-				? key.label
-				: `${key.label} (${key.status.toLowerCase()})`,
+		label: key.status === 'active' ? key.title : `${key.title} (revoked)`,
 		value: key.name,
 	})),
 ])
 
-watch(
-	() => props.managedService,
-	(managed) => {
-		apiKey.value = ''
-		if (managed) loadApiKeys(managed)
-	},
-	{ immediate: true },
-)
+loadApiKeys()
 
 const isFiltered = computed(
 	() => period.value !== defaultPeriod || apiKey.value !== '',
@@ -58,16 +42,10 @@ const resetFilters = (): void => {
 }
 
 const reload = (): void => {
-	if (props.managedService)
-		loadUsage(props.managedService, {
-			period: period.value,
-			apiKey: apiKey.value,
-		})
+	loadUsage({ period: period.value, key: apiKey.value })
 }
 
-watch([() => props.managedService, period, apiKey], reload, {
-	immediate: true,
-})
+watch([period, apiKey], reload, { immediate: true })
 
 const totals = computed(() => usage.value?.totals ?? null)
 const models = computed(() => usage.value?.models ?? [])
@@ -169,7 +147,6 @@ const asOf = computed(() =>
 					</button>
 				</div>
 			</Teleport>
-
 
 			<div class="flex flex-wrap gap-4">
 				<NumberCard
