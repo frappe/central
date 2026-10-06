@@ -41,7 +41,7 @@ class TestPilotBootstrapMetadata(TestCase):
 			payload = _create_payload(request)
 
 		metadata = payload["metadata"]
-		self.assertEqual(json.loads(metadata["pilot-telemetry"]), TELEMETRY_CONFIG)
+		self.assertEqual(json.loads(metadata["pilot-common-config"]), {"telemetry": TELEMETRY_CONFIG})
 		self.assertTrue(
 			all(len(value.encode()) <= MAXIMUM_METADATA_VALUE_BYTES for value in metadata.values()),
 			"Metal refuses a guest metadata value over 1 KiB.",
@@ -54,5 +54,5 @@ class TestPilotBootstrapMetadata(TestCase):
 		with patch(f"{PILOT}.get_telemetry_base_url", return_value=None):
 			payload = _create_payload(request)
 
-		self.assertNotIn("pilot-telemetry", payload["metadata"])
+		self.assertNotIn("pilot-common-config", payload["metadata"])
 		request.record_diagnostic.assert_called_once()
