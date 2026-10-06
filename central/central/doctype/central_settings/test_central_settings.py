@@ -39,3 +39,16 @@ class IntegrationTestCentralSettings(IntegrationTestCase):
 		self._set(enable_llm_service=1)
 		self.assertIs(frappe.get_cached_doc("Central Settings").feature_flags()["llm"], True)
 		self.assertIs(frappe.get_cached_doc("Central Settings").feature_flags()["pdf"], False)
+
+	def test_common_site_config_must_be_a_json_object_that_fits_in_metadata(self):
+		self.addCleanup(frappe.db.set_single_value, "Central Settings", "common_site_config", None)
+
+		for value in ('["a"]', "not json", f'{{"key": "{"x" * 1024}"}}'):
+			settings = frappe.get_doc("Central Settings")
+			settings.common_site_config = value
+			with self.assertRaises(frappe.ValidationError):
+				settings.save()
+
+		settings = frappe.get_doc("Central Settings")
+		settings.common_site_config = '{"raven_push_notification_server_url": "https://relay.test"}'
+		settings.save()
