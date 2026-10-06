@@ -43,6 +43,14 @@ class CreateServerInput(BaseModel):
 	is_firewall_enabled: bool = False
 
 
+class SiteCreation(BaseModel):
+	"""What a trial site needs beyond its machine: the product it is for."""
+
+	model_config = ConfigDict(extra="forbid", strict=True)
+
+	product: str | None = None
+
+
 class ServerCreation(BaseModel):
 	"""Validated, non-secret creation inputs saved on Resource Action."""
 
@@ -61,6 +69,7 @@ class ServerCreation(BaseModel):
 	has_public_ipv6: bool = False
 	is_firewall_enabled: bool = False
 	image_tags: dict[str, str]
+	site: SiteCreation | None = None
 	virtual_cpu_count: int = Field(gt=0, le=32)
 	memory_mib: PositiveInt
 	disk_mib: PositiveInt

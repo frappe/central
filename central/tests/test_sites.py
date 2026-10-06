@@ -111,6 +111,25 @@ class TestSiteMirror(SiteOnAMachine):
 		self.assertEqual(self.server.reload().gateway_url, "https://admin-vm-1z141z4.par-2.example.test")
 		self.assertEqual(self.site().url, "https://site-1z141z4.par-2.example.test")
 
+	def test_the_site_is_for_the_product_its_trial_request_named(self):
+		frappe.get_doc(
+			{"doctype": "Product", "product_key": "raven-site", "title": "Raven", "signup_app": "raven"}
+		).insert()
+		ResourceAction.queue(
+			"create",
+			self.team.name,
+			self.region.name,
+			self.server.name,
+			server=self.server.name,
+			resource_type="Site",
+			request_key="request-" + frappe.generate_hash(length=8),
+			request_payload={"image_tags": {"purpose": "pilot"}, "site": {"product": "raven-site"}},
+		)
+		self.enroll()
+		observe_server(self.server)
+
+		self.assertEqual(self.site().product, "raven-site")
+
 	def test_a_machine_with_no_enrolled_pilot_has_no_site(self):
 		observe_server(self.server)
 

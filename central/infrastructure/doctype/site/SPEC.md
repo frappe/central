@@ -16,6 +16,7 @@ Only what belongs to the site. Its address is its name and its state is the mach
 | `team` | the owning team |
 | `server` | the Virtual Machine the site runs on |
 | `subdomain` | the name the customer chose, copied from the create Resource Action; the rename target |
+| `product` | the [Product](../../../signups/doctype/product/SPEC.md) the trial request named, copied from the create Resource Action; empty for a plain trial |
 | `ready_at` | the first successful public readiness probe |
 | `claimed_at` | the first successful login handoff |
 | `rename_task` | the Pilot task that accepted the requested rename |

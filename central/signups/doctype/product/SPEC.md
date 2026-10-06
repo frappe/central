@@ -32,4 +32,6 @@ Operators have two Desk actions on a saved product:
 - **Preview Trial Images** lists the region's trial images that have the signup app installed, with the app version. Use it to check that Cargo built an image before you share the signup link.
 - **Open Signup Page** opens `/dashboard/signup?product=<product key>`. It shows only on an enabled product.
 
+The trial request saves a `site` part in the Resource Action payload with the product. The Site copies the product when the region creates it. See [Trial sites](../../../infrastructure/doctype/site/SPEC.md#what-the-record-holds).
+
 A Product needs a Cargo image of type Apps for its signup app in the region. Without one, the signup stops with "No trial image is available right now."

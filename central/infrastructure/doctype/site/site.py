@@ -28,12 +28,13 @@ class Site(Document):
 	if TYPE_CHECKING:
 		from frappe.types import DF
 
-		server: DF.Link
 		claimed_at: DF.Datetime | None
+		product: DF.Link | None
 		ready_at: DF.Datetime | None
 		rename_error: DF.SmallText | None
 		rename_error_log: DF.Link | None
 		rename_task: DF.Data | None
+		server: DF.Link
 		site_name: DF.Data
 		subdomain: DF.Data | None
 		team: DF.Link
@@ -86,15 +87,20 @@ class Site(Document):
 		if not host:
 			return
 
+		# An imported machine has no create request, so no name or product either.
+		action_name = frappe.db.get_value("Resource Action", {"server": server, "action": "create"})
+		action = frappe.get_doc("Resource Action", action_name) if action_name else None
+		intent = action.get_site_creation() if action else None
+		product = intent.product if intent else None
 		# The verified region authorizes this record, the same way it authorizes the machine's.
 		site = frappe.get_doc(
 			{
 				"doctype": "Site",
 				"site_name": host,
-				"subdomain": frappe.db.get_value(
-					"Resource Action", {"server": server, "action": "create"}, "subdomain"
-				),
+				"subdomain": action.subdomain if action else None,
 				"team": machine.team,
+				# A product deleted since the request must not stop the site's record.
+				"product": product if product and frappe.db.exists("Product", product) else None,
 				"server": server,
 			}
 		)
@@ -224,3 +230,4 @@ def on_host(url: str, host: str) -> str:
 def on_doctype_update():
 	# The fleet reads a team's sites, then drops the machine each one already stands for.
 	frappe.db.add_index("Site", ["team", "server"])
+	frappe.db.add_index("Site", ["product"])

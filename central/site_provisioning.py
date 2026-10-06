@@ -10,6 +10,7 @@ from central.iam import get_user_team_names, resolve_team
 from central.identity.doctype.team.team import Team
 from central.integrations.images import list_images
 from central.resource_actions import submit_request
+from central.server_models import SiteCreation
 from central.signups.doctype.product.product import get_signup_product
 
 SIGNUP_FLOW = "Signup"
@@ -26,7 +27,12 @@ SUBDOMAIN_PATTERN = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?")
 RESERVED_SUBDOMAINS = frozenset({"admin", "atlas", "cargo", "proxy", "site", "www"})
 
 
-def create_trial_site(team: str | None, subdomain: str, request_key: str, product: str | None = None) -> dict:
+def create_trial_site(
+	team: str | None,
+	subdomain: str,
+	request_key: str,
+	product: str | None = None,
+) -> dict:
 	"""Start the machine a new customer's trial site lives on, under the name they chose.
 
 	The image already carries a built site, so the only work is to start the machine.
@@ -41,12 +47,14 @@ def create_trial_site(team: str | None, subdomain: str, request_key: str, produc
 	signup_app = get_signup_product(product).signup_app if product else None
 	subdomain = validated_subdomain(subdomain)
 	configuration = trial_configuration(team, signup_app)
+	site = SiteCreation(product=product or None)
 	return submit_request(
 		team=team,
 		request_key=request_key,
 		title=subdomain,
 		resource_type="Site",
 		subdomain=subdomain,
+		site=site,
 		**configuration,
 	)
 

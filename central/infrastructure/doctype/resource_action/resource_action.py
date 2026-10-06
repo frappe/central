@@ -7,7 +7,7 @@ from frappe.model.document import Document
 from central.errors import AtlasConnectionError, AtlasRequestUncertain, build_envelope, to_error_response
 from central.iam import can
 from central.infrastructure.doctype.pilot_credential.pilot_credential import PilotCredential
-from central.server_models import ActionStatus, ResizeConfiguration, ServerCreation
+from central.server_models import ActionStatus, ResizeConfiguration, ServerCreation, SiteCreation
 
 PENDING_STATES = ("Queued", "Dispatching", "Sent", "In Progress", "Uncertain")
 PENDING_LABEL = {
@@ -155,6 +155,11 @@ class ResourceAction(Document):
 
 	def get_configuration(self) -> ServerCreation:
 		return ServerCreation.model_validate(frappe.parse_json(self.request_payload))
+
+	def get_site_creation(self) -> SiteCreation | None:
+		"""The trial site part of a creation request. Older requests carry none."""
+		site = (frappe.parse_json(self.request_payload or "{}") or {}).get("site")
+		return SiteCreation.model_validate(site) if site else None
 
 	def get_resize_configuration(self) -> ResizeConfiguration:
 		return ResizeConfiguration.model_validate(frappe.parse_json(self.request_payload))
