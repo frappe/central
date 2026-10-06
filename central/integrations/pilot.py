@@ -42,11 +42,12 @@ def get_bootstrap_metadata(action) -> dict[str, str]:
 		"initial_jwks_cache": initial_jwks,
 	}
 
-	# Metal caps each metadata value at 1 KiB, so each optional block gets its own key.
+	# Metal caps each metadata value at 1 KiB. Pilot merges pilot-common-config into
+	# common_config.toml at bootstrap.
 	metadata = {"pilot-central": json.dumps(bootstrap)}
 
 	try:
-		metadata["pilot-telemetry"] = json.dumps(get_telemetry_configuration(action))
+		metadata["pilot-common-config"] = json.dumps({"telemetry": get_telemetry_configuration(action)})
 	except Exception:
 		action.record_diagnostic(frappe.get_traceback(), "Pilot telemetry configuration failed")
 
