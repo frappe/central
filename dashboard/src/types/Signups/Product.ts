@@ -21,4 +21,6 @@ export interface Product {
 	subtitle?: string
 	/**	Signup App : Data - The app Cargo installs on this product's image, such as raven. A trial starts the newest signup image whose app tag has this value.	*/
 	signup_app: string
+	/**	Landing Route : Data - Where the owner lands after signing in to a trial site, such as /raven, so the app can run its own setup. Leave empty to open Desk.	*/
+	landing_route?: string
 }

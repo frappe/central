@@ -18,6 +18,7 @@ System Managers create and edit products in Desk. Nobody else can read the DocTy
 | Logo | Shown next to the heading on the signup, login, verification, site name and setup pages. |
 | Subtitle | Optional. Shown under the heading on the signup and login pages. |
 | Signup App | The app module name, such as `raven`. Cargo tags the image that has this app installed with `app=<signup app>`. |
+| Landing Route | Optional. Where the owner lands after signing in to a trial site, such as `/raven`, so the app runs its own setup. Empty opens Desk, which shows Frappe's setup wizard. |
 
 Example: Product Key `raven`, Title `Raven`, Signup App `raven`. The signup link is `/dashboard/signup?product=raven`.
 

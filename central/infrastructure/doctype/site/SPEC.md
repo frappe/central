@@ -73,7 +73,11 @@ Nothing is provisioned during signup, so readiness is not a build finishing. `ce
 
 ## Sign-in
 
-Central mints the session and puts the returned session on `Site.url`, because the public name is Central's. The token names the site by the name Pilot has for it: the customer's name once the rename task was accepted, then the image name `site.local` when Pilot does not know the new name yet. A Pilot token for one name does not reach a site that now answers to that name under another one, so Central must ask for the current name. A Pilot 401 leaves the site unclaimed and tells the console to retry with bounded backoff for up to 120 seconds. Other login failures return no URL and use the manual sign-in fallback. Central waits up to 120 seconds for each login request.
+Central mints the session and puts the returned session on `Site.url`, because the public name is Central's. The token names the site by the name Pilot has for it: the customer's name once the rename task was accepted, then the image name `site.local` when Pilot does not know the new name yet. A Pilot token for one name does not reach a site that now answers to that name under another one, so Central must ask for the current name.
+
+On a trial site, a member of the site's team signs in as their own user. Pilot creates the user as a System Manager the first time they open the site, so they can finish the app's own setup. An operator outside the team, and every other site, signs in as Administrator.
+
+A Pilot 401 leaves the site unclaimed and tells the console to retry with bounded backoff for up to 120 seconds. Other login failures return no URL and use the manual sign-in fallback. Central waits up to 120 seconds for each login request.
 
 ## Migration
 

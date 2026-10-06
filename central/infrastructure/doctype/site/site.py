@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
 from urllib.parse import urlsplit, urlunsplit
 
 import frappe
 from frappe import _
 from frappe.model.document import Document
 from frappe.utils.telemetry import capture
+
+if TYPE_CHECKING:
+	from central.infrastructure.doctype.resource_action.resource_action import ResourceAction
 
 IMAGE_SITE_NAME = "site.local"
 
@@ -210,9 +214,10 @@ class Site(Document):
 		self.db_set({"rename_error": None, "rename_error_log": None})
 		self.enqueue_subdomain_rename()
 
-	def get_login_url(self) -> str | None:
-		"""A one-click Administrator session, on the address the customer can reach. The
-		public name is Central's, so putting the session onto that address is Central's to do.
+	def get_login_url(self, user: str | None = None) -> str | None:
+		"""A one-click session for `user`, or for Administrator, on the address the customer
+		can reach. The public name is Central's, so putting the session onto that address is
+		Central's to do.
 
 		Pilot only accepts a token for the name the site has on the bench. That is the
 		customer's name once the rename ran, and the stable image alias before it."""
@@ -222,11 +227,36 @@ class Site(Document):
 		if not gateway or not audience:
 			return None
 
+		login_user, full_name = self.get_login_user(user)
 		pilot_names = [self.rename_target, IMAGE_SITE_NAME] if self.rename_task else [IMAGE_SITE_NAME]
 		for pilot_name in pilot_names:
-			if minted := fetch_site_login_url(gateway, audience, pilot_name):
-				return on_host(minted, self.name)
+			if minted := fetch_site_login_url(gateway, audience, pilot_name, login_user, full_name):
+				return on_host(minted, self.name, self.get_landing_route())
 		return None
+
+	def get_landing_route(self) -> str | None:
+		"""The product's page, where the app runs its own setup, instead of Desk."""
+		return frappe.db.get_value("Product", self.product, "landing_route") if self.product else None
+
+	def get_login_user(self, user: str | None) -> tuple[str | None, str | None]:
+		"""Who `user` signs in as: themselves on a trial site of their team, otherwise
+		Administrator, shown as (None, None).
+
+		1. Only a trial site is for its owner. Others, such as a bought server's, keep Administrator.
+		2. An operator outside the team never gets a user on a customer's site."""
+		from central.iam import get_user_team_names
+
+		if not user or not self.is_trial() or self.team not in get_user_team_names(user):
+			return None, None
+		return user, frappe.db.get_value("User", user, "full_name")
+
+	def is_trial(self) -> bool:
+		request = self.get_creation_request()
+		return bool(request and request.get_site_creation())
+
+	def get_creation_request(self) -> ResourceAction | None:
+		name = frappe.db.get_value("Resource Action", {"server": self.server, "action": "create"})
+		return frappe.get_doc("Resource Action", name) if name else None
 
 	def get_pilot_access(self) -> tuple[str | None, str | None]:
 		"""The machine's gateway and the audience its Pilot verifies tokens against.
@@ -242,11 +272,12 @@ class Site(Document):
 		return (gateway.rstrip("/") if gateway else None), audience
 
 
-def on_host(url: str, host: str) -> str:
-	"""The same request on another host. The scheme is always https, because the public
-	name exists only behind the regional proxy, which terminates TLS."""
+def on_host(url: str, host: str, path: str | None = None) -> str:
+	"""The same request on another host, and on `path` when given. The scheme is always
+	https, because the public name exists only behind the regional proxy, which terminates
+	TLS. Frappe reads the session from the query on any path."""
 	minted = urlsplit(url)
-	return urlunsplit(("https", host, minted.path, minted.query, minted.fragment))
+	return urlunsplit(("https", host, path or minted.path, minted.query, minted.fragment))
 
 
 def on_doctype_update():

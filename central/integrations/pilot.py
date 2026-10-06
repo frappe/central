@@ -106,15 +106,22 @@ class PilotMonitoringClient:
 		return payload
 
 
-def fetch_site_login_url(gateway_url: str, audience_id: str, site: str) -> str | None:
+def fetch_site_login_url(
+	gateway_url: str,
+	audience_id: str,
+	site: str,
+	user: str | None = None,
+	full_name: str | None = None,
+) -> str | None:
 	"""Relay a Central-signed site assertion to the bench's login endpoint and return the desk
-	URL it mints (a fresh local session). A 401 is retryable while Pilot finishes starting. A
-	404 means the bench has no site by that name. Other failures return None and are logged so
-	a consistently-failing bench or Central is diagnosable."""
+	URL it mints (a fresh local session) for `user`, or Administrator. A 401 is retryable while
+	Pilot finishes starting. A 404 means the bench has no site by that name. Other failures
+	return None and are logged so a consistently-failing bench or Central is diagnosable."""
 	try:
+		token = mint_site_login(audience_id, site, user, full_name)
 		response = requests.post(
 			f"{_gateway_url(gateway_url)}/api/v1/sites/{site}/login",
-			headers={"Authorization": f"Bearer {mint_site_login(audience_id, site)}"},
+			headers={"Authorization": f"Bearer {token}"},
 			timeout=SITE_LOGIN_TIMEOUT_SECONDS,
 			allow_redirects=False,
 		)

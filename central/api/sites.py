@@ -160,7 +160,7 @@ def site_state(site: Site, with_login: bool = True) -> dict:
 	login_pending = False
 	if ready and with_login:
 		try:
-			login_url = site.get_login_url()
+			login_url = site.get_login_url(frappe.session.user)
 		except PilotLoginPending:
 			login_pending = True
 

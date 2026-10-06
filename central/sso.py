@@ -95,10 +95,14 @@ def mint_bench_login(audience: str) -> str:
 	return _mint(audience, "bench", BENCH_LOGIN_TTL, {"sub": "admin"})
 
 
-def mint_site_login(audience: str, site: str) -> str:
-	"""A one-time assertion the site's pilot exchanges for an Administrator session, scoped to
-	one site. `aud` is the hosting bench's audience id; the pilot verifies it against the JWKS."""
-	return _mint(audience, "site", SITE_LOGIN_TTL, {"sub": "admin", "site": site})
+def mint_site_login(audience: str, site: str, user: str | None = None, full_name: str | None = None) -> str:
+	"""A one-time assertion the site's pilot exchanges for a session, scoped to one site. It
+	signs `user` in, created on the site when missing, or Administrator when no user is
+	named. `aud` is the hosting bench's audience id; the pilot verifies it against the JWKS."""
+	claims = {"sub": user or "admin", "site": site}
+	if user and full_name:
+		claims["name"] = full_name
+	return _mint(audience, "site", SITE_LOGIN_TTL, claims)
 
 
 def mint_bootstrap_token(team: str, pilot_credential_id: str) -> str:

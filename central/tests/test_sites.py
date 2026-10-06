@@ -269,6 +269,28 @@ class TestSiteRoutes(SiteOnAMachine):
 		self.assertEqual(login.call_args.args[2], "site.local")
 		self.assertEqual(state["login_url"], "https://site-1z141z4.par-2.example.test/desk?sid=abc")
 
+	def test_a_product_site_lands_on_the_products_page(self):
+		product = frappe.get_doc(
+			{
+				"doctype": "Product",
+				"product_key": "raven",
+				"title": "Raven",
+				"signup_app": "raven",
+				"landing_route": "/raven",
+			}
+		).insert(ignore_if_duplicate=True)
+		self.site().db_set("product", product.name)
+		with (
+			patch("central.api.sites.is_site_reachable", return_value=True),
+			patch(
+				"central.integrations.pilot.fetch_site_login_url",
+				return_value="https://site.local/desk?sid=abc",
+			),
+		):
+			state = login_site(self.site().name)
+
+		self.assertEqual(state["login_url"], "https://site-1z141z4.par-2.example.test/raven?sid=abc")
+
 	def test_a_site_is_ready_before_the_machine_reports_running(self):
 		"""The mirrored status still says Provisioning: only the site's own answer gates readiness."""
 		self.server.db_set("status", "Provisioning")
@@ -399,6 +421,19 @@ class TestSiteHandoff(IntegrationTestCase):
 			self.assertRaises(PilotLoginPending),
 		):
 			fetch_site_login_url("https://pilot.example.test", "pilot-1", "site.local")
+
+	def test_a_login_token_names_the_user_or_administrator(self):
+		from central.sso import mint_site_login
+
+		with patch("central.sso._mint") as mint:
+			mint_site_login("pilot-1", "site.local", "asha@example.test", "Asha Rao")
+			mint_site_login("pilot-1", "site.local")
+
+		self.assertEqual(
+			mint.call_args_list[0].args[3],
+			{"sub": "asha@example.test", "site": "site.local", "name": "Asha Rao"},
+		)
+		self.assertEqual(mint.call_args_list[1].args[3], {"sub": "admin", "site": "site.local"})
 
 	def test_a_minted_session_moves_onto_the_public_address(self):
 		self.assertEqual(
@@ -729,3 +764,33 @@ class TestTrialFunnelEvents(SiteOnAMachine):
 			self.queue("Server")
 
 		capture.assert_not_called()
+
+
+class TestTrialSignIn(SiteOnAMachine):
+	"""A member of the team signs in to their trial site as themselves."""
+
+	def setUp(self):
+		super().setUp()
+		ResourceAction.queue(
+			"create",
+			self.team.name,
+			self.region.name,
+			self.server.name,
+			server=self.server.name,
+			resource_type="Site",
+			request_key="request-" + frappe.generate_hash(length=8),
+			request_payload={"image_tags": {"purpose": "pilot"}, "site": {"product": None}},
+		)
+		self.enroll()
+		observe_server(self.server)
+
+	def test_a_team_member_signs_in_as_themselves_and_an_outsider_as_administrator(self):
+		site = self.site()
+
+		self.assertEqual(site.get_login_user("Administrator")[0], "Administrator")
+		self.assertEqual(site.get_login_user("outsider@example.test"), (None, None))
+
+	def test_a_site_that_is_not_a_trial_keeps_administrator(self):
+		frappe.db.delete("Resource Action", {"server": self.server.name})
+
+		self.assertEqual(self.site().get_login_user("Administrator"), (None, None))

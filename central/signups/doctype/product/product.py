@@ -9,6 +9,8 @@ from frappe.model.document import Document
 
 PRODUCT_KEY_PATTERN = re.compile(r"[a-z][a-z0-9-]*")
 # A Frappe app's module name, which Cargo writes as the image's app tag.
+# A path on the site itself, never another host.
+LANDING_ROUTE_PATTERN = re.compile(r"/[A-Za-z0-9_/-]*")
 APP_NAME_PATTERN = re.compile(r"[a-z][a-z0-9_]*")
 
 
@@ -22,6 +24,7 @@ class Product(Document):
 		from frappe.types import DF
 
 		enabled: DF.Check
+		landing_route: DF.Data | None
 		logo: DF.AttachImage | None
 		product_key: DF.Data
 		signup_app: DF.Data
@@ -40,6 +43,9 @@ class Product(Document):
 
 		if not APP_NAME_PATTERN.fullmatch(self.signup_app or ""):
 			frappe.throw(_("Use the app's module name for the signup app, such as raven."))
+
+		if self.landing_route and not LANDING_ROUTE_PATTERN.fullmatch(self.landing_route):
+			frappe.throw(_("Use a path on the site for the landing route, such as /raven."))
 
 	@frappe.whitelist(methods=["POST"])
 	def preview_images(self, region: str, offset: int = 0) -> dict:

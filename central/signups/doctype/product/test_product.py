@@ -89,6 +89,14 @@ class IntegrationTestProduct(IntegrationTestCase):
 			extra_tags={"has_site": "1", "frappe_version": "develop", "app": "raven"},
 		)
 
+	def test_the_landing_route_is_a_path_on_the_site(self):
+		product = self.product("raven-landing")
+
+		for route in ("https://evil.example.test", "raven", "/raven?next=x"):
+			product.landing_route = route
+			with self.assertRaises(frappe.ValidationError):
+				product.save()
+
 	def test_a_product_key_is_a_lowercase_slug(self):
 		with self.assertRaises(frappe.ValidationError):
 			self.product("Raven App")

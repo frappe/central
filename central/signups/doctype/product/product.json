@@ -17,7 +17,8 @@
   "logo",
   "subtitle",
   "image_section",
-  "signup_app"
+  "signup_app",
+  "landing_route"
  ],
  "fields": [
   {
@@ -77,12 +78,18 @@
    "in_standard_filter": 1,
    "label": "Signup App",
    "reqd": 1
+  },
+  {
+   "description": "Where the owner lands after signing in to a trial site, such as /raven, so the app can run its own setup. Leave empty to open Desk.",
+   "fieldname": "landing_route",
+   "fieldtype": "Data",
+   "label": "Landing Route"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-10-05 23:51:46.910135",
+ "modified": "2026-10-07 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Signups",
  "name": "Product",
