@@ -1,701 +1,388 @@
 <script setup lang="ts">
-import {
-	Alert,
-	Badge,
-	Button,
-	Select,
-	Tabs,
-	TextInput,
-	useCall,
-} from 'frappe-ui'
+import { Alert, Button, Select, TabButtons, Tabs, TextInput } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
-import { API, method } from '@/api/methods'
+import ChoiceCards from '@/components/common/ChoiceCards.vue'
+import CreateServerButton from '@/components/servers/CreateServerButton.vue'
+import CreationStatusPanel from '@/components/servers/CreationStatusPanel.vue'
+import ImageOfferingSelector from '@/components/servers/ImageOfferingSelector.vue'
 import PlanGroup from '@/components/servers/PlanGroup.vue'
-import ProviderAvatar from '@/components/servers/ProviderAvatar.vue'
 import ServerMap from '@/components/servers/ServerMap.vue'
-import { useBillingSetup } from '@/composables/useBillingSetup'
-import { useCapabilities } from '@/composables/useCapabilities'
-import { usePlans } from '@/composables/usePlans'
-import { useRegions } from '@/composables/useRegions'
-import { useServers } from '@/composables/useServers'
-import {
-	configIncludes,
-	estimateConfig,
-	ramFor,
-	rateCardComplete,
-} from '@/lib/composed'
-import { money } from '@/lib/format'
-import { planPrice, planResources } from '@/lib/plans'
-import {
-	flagEmoji,
-	hasMapCoords,
-	type MapSpot,
-	regionLabel,
-} from '@/lib/serverMap'
-import { infoToast } from '@/lib/toast'
-import type { ComposedConfig, Plan, Profile } from '@/types/api'
-import type { Region } from '@/types/Region'
+import ServerNetworkOptions from '@/components/servers/ServerNetworkOptions.vue'
+import ServerSummary from '@/components/servers/ServerSummary.vue'
+import SSHKeysField from '@/components/servers/SSHKeysField.vue'
+import { useBreadcrumbs } from '@/composables/useBreadcrumbs'
+import { useServerCreation } from '@/composables/useServerCreation'
+import { flagEmoji, regionLabel } from '@/lib/serverMap'
+import { getCreationStage } from '@/lib/status'
+import type { ActionStatus } from '@/types/serverCreation'
 
-// New server, the FC V2 way: a stepped form (name → provider → region → plan →
-// version) beside the same world map the servers list uses — static here, framing
-// the chosen provider's regions and taking clicks as region picks. Providers are
-// derived from the real regions (Atlas Instances); plans come from the billing
-// catalog (usePlans) priced within the team's headroom. A preset routes through
-// create_server; a composed config through create_composed_server.
-const router = useRouter()
-const route = useRoute()
-const { regions, loading } = useRegions()
-const { create, createComposed, creating, creatingComposed } = useServers()
-const { canCreateServer } = useCapabilities()
-const { requireSetup } = useBillingSetup()
-
-const name = ref('')
-const subdomain = ref('')
-const subdomainEdited = ref(false)
-const selectedProvider = ref<string | null>(null)
-const selectedRegion = ref<string | null>(null)
-const hoverRegion = ref<string | null>(null)
-
-// — Provider / region steps. A region with no provider files under "Other".
-function providerOf(region: Region): string {
-	return region.provider || 'Other'
-}
-const providers = computed(() => {
-	const names = [...new Set(regions.value.map(providerOf))]
-	return names.sort((a, b) =>
-		a === 'Other' ? 1 : b === 'Other' ? -1 : a.localeCompare(b),
-	)
-})
-const providerRegions = computed(() =>
-	regions.value.filter((r) => providerOf(r) === selectedProvider.value),
-)
-const selectedRegionRow = computed(
-	() => regions.value.find((r) => r.region === selectedRegion.value) ?? null,
-)
-const serverDomain = ref('')
-const serverDomainCall = useCall<{ domain: string }, { region: string }>({
-	url: method(API.siteDomain),
-	params: () => ({ region: selectedRegion.value! }),
-	immediate: false,
-})
-
-function slugifySubdomain(value: string): string {
-	return value
-		.normalize('NFKD')
-		.replace(/[\u0300-\u036f]/g, '')
-		.toLowerCase()
-		.replace(/[^a-z0-9]+/g, '-')
-		.replace(/^-+|-+$/g, '')
-		.slice(0, 63)
-		.replace(/-+$/g, '')
-}
-
-function editSubdomain(value: string): void {
-	subdomainEdited.value = true
-	subdomain.value = slugifySubdomain(value)
-}
-
-function resetSubdomain(): void {
-	subdomainEdited.value = false
-	subdomain.value = slugifySubdomain(name.value)
-}
-
-watch(name, (value) => {
-	if (!subdomainEdited.value) subdomain.value = slugifySubdomain(value)
-})
-
-watch(
-	selectedRegion,
-	async (region) => {
-		serverDomain.value = ''
-		if (!region) return
-		await serverDomainCall.reload()
-		if (selectedRegion.value === region) {
-			serverDomain.value = serverDomainCall.data?.domain ?? ''
-		}
-	},
-	{ immediate: true },
-)
-
-function selectProvider(provider: string): void {
-	if (provider === selectedProvider.value) return
-	selectedProvider.value = provider
-	// Land on the first region that's actually reachable, else the first one.
-	const list = providerRegions.value
-	selectedRegion.value =
-		(list.find((r) => r.reachable) ?? list[0])?.region ?? null
-}
-function selectRegion(id: string): void {
-	const region = regions.value.find((r) => r.region === id)
-	if (!region) return
-	selectedProvider.value = providerOf(region)
-	selectedRegion.value = id
-}
-
-// Deep link from the servers map (+ spot → ?region=, or just ?provider=), once
-// regions load; otherwise land on the first provider so the map has a frame.
-// Each distinct ?region= applies exactly once — a data reload never stomps a
-// pick the user made after landing, but a fresh in-app link still wins.
-let appliedQueryRegion = ''
-watch(
-	[regions, () => route.query.region],
-	([list]) => {
-		if (!list.length) return
-		const wanted =
-			typeof route.query.region === 'string' ? route.query.region : ''
-		if (
-			wanted &&
-			wanted !== appliedQueryRegion &&
-			list.some((r) => r.region === wanted)
-		) {
-			appliedQueryRegion = wanted
-			return selectRegion(wanted)
-		}
-		if (selectedRegion.value) return
-		const provider =
-			typeof route.query.provider === 'string' ? route.query.provider : ''
-		selectProvider(
-			providers.value.includes(provider) ? provider : providers.value[0],
-		)
-	},
-	{ immediate: true },
-)
-
-// The static map frames the chosen provider's placed regions; clicking a dot
-// picks that region (0/0 coords = unplaced, listed in chips only).
-const markers = computed<MapSpot[]>(() =>
-	providerRegions.value.filter(hasMapCoords).map((r) => ({
-		id: r.region,
-		lat: r.latitude!,
-		lng: r.longitude!,
-		provider: r.provider || null,
-		regionLabel: regionLabel(r),
-		flag: flagEmoji(r.country_code),
-	})),
-)
-
-// — Plan step (unchanged mechanics: presets + scoped Custom, tabs per profile).
-// A preset name, or `custom:<profile>` for a designed config in that profile.
-const selectedPlan = ref<string | null>(null)
-const composedConfig = ref<ComposedConfig | null>(null)
 const {
-	plans,
+	router,
+	regions,
+	loading,
+	name,
+	selectedRegion,
+	selectedRegionRow,
+	selectRegion,
+	markers,
+	selectedPlan,
+	composedConfig,
 	groups,
-	classes,
 	rateCard,
-	profiles,
 	available,
 	currency,
 	capacity,
-	loading: plansLoading,
-} = usePlans(selectedRegion)
+	plansLoading,
+	plansError,
+	reloadPlans,
+	hasTabs,
+	classTabs,
+	activeTab,
+	flatPresets,
+	flatProfile,
+	designableProfile,
+	nothingToShow,
+	regionFull,
+	bracketExhausted,
+	summary,
+	canSubmit,
+	submit,
+	source,
+	snapshotName,
+	snapshotOptions,
+	snapshotsLoading,
+	snapshotsError,
+	reloadSnapshots,
+	offering,
+	offeringOptions,
+	imageId,
+	image,
+	imageOptions,
+	imagesLoading,
+	imagesError,
+	reloadImages,
+	sshKeyIds,
+	hasPublicIpv6,
+	isFirewallEnabled,
+	action,
+	retry,
+	editSettings,
+	checkNow,
+	checking,
+	lastCheckedAt,
+	stalled,
+	submitting,
+	submitError,
+} = useServerCreation()
 
-const canDesign = computed(
-	() => rateCardComplete(rateCard.value) && profiles.value.length > 0,
-)
-const isCustom = computed(() =>
-	(selectedPlan.value ?? '').startsWith('custom:'),
-)
-const selectedPlanObj = computed<Plan | null>(
-	() => plans.value.find((p) => p.plan === selectedPlan.value) ?? null,
-)
+const { setBreadcrumbs } = useBreadcrumbs()
+setBreadcrumbs([
+	{ label: 'Servers', route: { path: '/servers' } },
+	{ label: 'New server' },
+])
 
-function profileFor(cls: string): Profile | null {
-	return profiles.value.find((p) => p.sub_category === cls) ?? null
-}
-
-// Tabs when the region's presets span more than one profile; flat otherwise.
-const hasTabs = computed(() => classes.value.length > 1)
-const classTabs = computed(() =>
-	classes.value.map((label) => ({ label, value: label })),
-)
-const activeTab = ref('')
-
-// Flat layout: the sole preset class, or General when a region offers only a designer.
-const soleClass = computed(() => classes.value[0] ?? 'General')
-const flatPresets = computed<Plan[]>(() => groups.value[soleClass.value] ?? [])
-// Custom is only offered where the region actually prices every component (else the
-// estimate would be a $0 dead-end) — so a profile is "designable" only when canDesign.
-const flatProfile = computed<Profile | null>(() =>
-	canDesign.value
-		? (profileFor(soleClass.value) ??
-			profiles.value.find((p) => p.sub_category === 'General') ??
-			profiles.value[0] ??
-			null)
-		: null,
-)
-function designableProfile(cls: string): Profile | null {
-	return canDesign.value ? profileFor(cls) : null
-}
-const nothingToShow = computed(
-	() => !hasTabs.value && !flatPresets.value.length && !flatProfile.value,
-)
-
-// The cheapest config a profile can be dragged to: its smallest vCPU rung (with the
-// RAM that ratio implies) on its smallest disk rung.
-function floorConfigCost(profile: Profile): number {
-	const vcpus = [...(profile.vcpu_steps ?? [])].sort((a, b) => a - b)[0] ?? 0
-	const diskGb = [...(profile.disk_steps ?? [])].sort((a, b) => a - b)[0] ?? 0
-	return estimateConfig(
-		{
-			sub_category: profile.sub_category,
-			vcpus,
-			memory_gb: ramFor(vcpus, profile),
-			disk_gb: diskGb,
-		},
-		rateCard.value,
-	)
-}
-const cheapestDesignCost = computed<number>(() =>
-	canDesign.value && profiles.value.length
-		? Math.min(...profiles.value.map(floorConfigCost))
-		: Infinity,
+const selectedRegionName = computed(() =>
+	selectedRegionRow.value ? regionLabel(selectedRegionRow.value) : '',
 )
 
-// Tier bracket exhausted: a region is picked, no preset fits the remaining headroom
-// (the menu is already headroom-filtered server-side), and even the smallest custom
-// config is over the limit. Show a dead-end message rather than a Custom slider the
-// user can only ever drag into red.
-const availableHeadroom = computed(() => available.value ?? 0)
-const bracketExhausted = computed(
-	() =>
-		!!selectedRegion.value &&
-		!plansLoading.value &&
-		!plans.value.length &&
-		canDesign.value &&
-		cheapestDesignCost.value > availableHeadroom.value,
+const regionOptions = computed(() =>
+	regions.value.map((r) => ({
+		label: regionLabel(r),
+		value: r.region,
+		description: r.reachable ? undefined : 'Unreachable',
+	})),
+)
+const regionFlags = computed(() =>
+	Object.fromEntries(
+		regions.value.map((r) => [r.region, flagEmoji(r.country_code)]),
+	),
 )
 
-// The region itself is full: capacity gating is on and Atlas can't seat any new VM
-// right now. A capacity dead-end, not a budget one — show a distinct message (and it
-// takes priority, since there's nothing to provision here at any size).
-const regionFull = computed(
-	() =>
-		!!selectedRegion.value &&
-		!plansLoading.value &&
-		capacity.value.gated &&
-		!capacity.value.available,
+// A stopped request hands the button's place to the alert with its next step.
+const isCreationMoving = computed(
+	() => !action.value || getCreationStage(action.value.status) !== null,
 )
-
-// Switching region re-prices the menu: reset the tab and drop a selection the new
-// region no longer offers (a preset that's gone, or a custom profile it lacks).
-watch(classes, () => {
-	activeTab.value = ''
-})
-watch([plans, canDesign], () => {
-	const sel = selectedPlan.value
-	if (!sel) return
-	if (sel.startsWith('custom:')) {
-		if (!profileFor(sel.slice('custom:'.length))) selectedPlan.value = null
-	} else if (!plans.value.some((p) => p.plan === sel)) {
-		selectedPlan.value = null
-	}
-})
-
-// — Version step. Options come from the server (central.api.servers.frappe_versions)
-//   for the PICKED region — images can differ per region, so refetch on change so
-//   the form can't offer something create_server would refuse for that region.
-const versionsCall = useCall<string[], { region: string }>({
-	url: method(API.frappeVersions),
-	params: () => ({ region: selectedRegion.value! }),
-	immediate: false,
-})
+// The button fades out after a request stops, so it keeps the last moving status.
+const movingStatus = ref<ActionStatus['status'] | null>(null)
 watch(
-	selectedRegion,
-	(region) => {
-		if (region) versionsCall.reload()
+	() => action.value?.status ?? null,
+	(status) => {
+		if (!status || getCreationStage(status) !== null)
+			movingStatus.value = status
 	},
 	{ immediate: true },
 )
-const VERSION_LABELS: Record<string, string> = {
-	v15: 'Version 15: stable, what most teams run',
-	v16: 'Version 16: latest features, newest apps',
-	v14: 'Version 14: older, for apps that need it',
-	nightly: 'Nightly: develop branch, for testing only',
-}
-// Versions offered in the picker for now — only v16; others stay hidden until we're
-// ready to provision them. Widen this list to bring them back.
-const OFFERED_VERSIONS = ['v16']
-const version = ref('')
-const versionOptions = computed(() =>
-	(versionsCall.data ?? [])
-		.filter((v) => OFFERED_VERSIONS.includes(v))
-		.map((v) => ({
-			label: VERSION_LABELS[v] ?? v,
-			value: v,
-		})),
-)
-// Keep the selection valid: default to the first option, and reset if the picked
-// region no longer offers the current choice.
-watch(versionOptions, (options) => {
-	const values = options.map((o) => o.value)
-	if (!values.includes(version.value)) version.value = values[0] ?? ''
-})
-
-// — Submit. The header CTA carries the monthly price once a plan is picked.
-const price = computed<string | null>(() => {
-	if (
-		isCustom.value &&
-		composedConfig.value &&
-		rateCardComplete(rateCard.value)
-	) {
-		const monthly = estimateConfig(composedConfig.value, rateCard.value)
-		return `${money(monthly, currency.value ?? 'USD', { trimTrailingZeros: true })} / mo`
-	}
-	return selectedPlanObj.value ? planPrice(selectedPlanObj.value) : null
-})
-const ctaLabel = computed(() =>
-	price.value ? `Create server - ${price.value}` : 'Create server',
-)
-// `price` unformatted: the run-rate this create adds, which the credit gate checks.
-const monthlyRate = computed<number | null>(() => {
-	if (
-		isCustom.value &&
-		composedConfig.value &&
-		rateCardComplete(rateCard.value)
-	)
-		return estimateConfig(composedConfig.value, rateCard.value)
-	return selectedPlanObj.value?.rate ?? null
-})
-
-const submitting = computed(() => creating.value || creatingComposed.value)
-const canSubmit = computed(() => {
-	if (
-		!canCreateServer.value ||
-		!selectedRegion.value ||
-		!name.value.trim() ||
-		!subdomain.value
-	)
-		return false
-	if (regionFull.value) return false // the region can't seat a new server right now
-	if (bracketExhausted.value) return false // nothing here fits the budget
-	return isCustom.value ? !!composedConfig.value : !!selectedPlanObj.value
-})
-
-async function submit() {
-	if (!canSubmit.value || !selectedRegion.value) return
-	// A server needs billing details only once credits stop covering it, hence the
-	// rate. If they don't, send them to Billing, where the flagged dialog opens; the
-	// toast is local because this is a cross-page jump.
-	if (!requireSetup(monthlyRate.value)) {
-		infoToast('Add your billing details to continue')
-		router.push({ name: 'Billing' })
-		return
-	}
-	try {
-		let createdId = ''
-		if (isCustom.value && composedConfig.value) {
-			createdId = await createComposed({
-				region: selectedRegion.value,
-				title: name.value.trim(),
-				subdomain: subdomain.value,
-				includes: configIncludes(composedConfig.value),
-				sub_category: composedConfig.value.sub_category,
-				frappe_version: version.value || undefined,
-			})
-		} else if (selectedPlanObj.value) {
-			createdId = await create({
-				region: selectedRegion.value,
-				title: name.value.trim(),
-				subdomain: subdomain.value,
-				plan: selectedPlanObj.value.plan,
-				...planResources(selectedPlanObj.value),
-				frappe_version: version.value || undefined,
-			})
-		}
-		// Hand the new server's id to the map so it can reload the fleet and open the
-		// list on its provisioning row, instead of landing on a stale, empty map.
-		router.push({
-			path: '/servers',
-			query: createdId ? { created: createdId } : {},
-		})
-	} catch {
-		// create() already surfaced the error; stay on the form.
-	}
-}
 </script>
 
 <template>
-	<div class="flex h-full flex-col">
+	<div class="scrollbar-none h-full overflow-y-auto">
 		<Teleport defer to="#header-actions">
 			<Button label="Cancel" @click="router.push('/servers')" />
 		</Teleport>
 
-		<div class="flex min-h-0 flex-1 flex-col-reverse lg:flex-row">
-			<!-- Stepped form (left) -->
-			<div class="w-full overflow-y-auto p-3 md:p-4 lg:w-[40rem] lg:shrink-0">
+		<div class="flex flex-col-reverse lg:flex-row">
+			<div class="w-full p-4 md:p-6 lg:w-1/2">
 				<p v-if="loading" class="text-p-sm text-ink-gray-5">Loading regions…</p>
 				<p v-else-if="!regions.length" class="text-p-sm text-ink-gray-5">
 					No active regions are available right now.
 				</p>
 
-				<div v-else>
-					<!-- Step: name -->
-					<div class="flex gap-4">
-						<div class="flex flex-col items-center pt-1">
-							<span
-								class="size-2.5 shrink-0 rounded-full bg-[var(--ink-gray-9)]"
-							/>
-							<span class="mt-1.5 w-px grow bg-[var(--outline-gray-2)]" />
-						</div>
-						<div class="min-w-0 flex-1 pb-5">
-							<div class="text-sm font-medium text-ink-gray-7">
-								Name the server
-							</div>
-							<TextInput
-								v-model="name"
-								placeholder="e.g. Acme Production"
-								:maxlength="60"
-								class="mt-2 max-w-xs auto-f"
-								autofocus
-							/>
-							<div class="mt-3 max-w-xs">
-								<div class="flex items-center justify-between">
-									<label for="subdomain" class="text-p-sm text-ink-gray-7">
-										Server address
-									</label>
-									<button
-										v-if="subdomainEdited"
-										type="button"
-										class="text-p-sm text-ink-gray-5 hover:text-ink-gray-7"
-										@click="resetSubdomain"
-									>
-										Reset
-									</button>
-								</div>
-								<TextInput
-									id="subdomain"
-									:model-value="subdomain"
-									placeholder="acme-production"
-									:maxlength="63"
-									autocomplete="off"
-									autocapitalize="off"
-									spellcheck="false"
-									class="mt-1"
-									@update:model-value="editSubdomain"
-								>
-									<template v-if="serverDomain" #suffix>
-										<span class="text-p-sm text-ink-gray-5">
-											.{{ serverDomain }}
-										</span>
-									</template>
-								</TextInput>
-							</div>
-						</div>
-					</div>
+				<div v-else class="space-y-8">
+					<section class="grid gap-3 md:grid-cols-2">
+						<TextInput
+							v-focus
+							v-model="name"
+							label="Name"
+							required
+							size="md"
+							placeholder="e.g. Acme Production"
+							:maxlength="60"
+						/>
+					</section>
 
-					<!-- Step: provider -->
-					<div class="flex gap-4">
-						<div class="flex flex-col items-center pt-1">
-							<span
-								class="size-2.5 shrink-0 rounded-full bg-[var(--ink-gray-9)]"
-							/>
-							<span class="mt-1.5 w-px grow bg-[var(--outline-gray-2)]" />
-						</div>
-						<div class="min-w-0 flex-1 pb-5">
-							<div class="text-sm font-medium text-ink-gray-7">
-								Select a provider
-							</div>
-							<div class="mt-2 grid grid-cols-3 gap-2 sm:grid-cols-5">
-								<button
-									v-for="p in providers"
-									:key="p"
-									:class="
-										[
-											'flex w-full flex-col items-center gap-1 rounded-6 border p-2 transition-colors',
-											'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-outline-gray-4',
-											p === selectedProvider
-												? 'border-outline-gray-4 bg-surface-gray-1'
-												: 'border-outline-gray-2 hover:bg-surface-gray-1',
-										]
-									"
-									@click="selectProvider(p)"
-								>
-									<ProviderAvatar
-										:provider="p === 'Other' ? null : p"
-										:size="28"
-									/>
-									<span class="truncate text-xs text-ink-gray-7">{{ p }}</span>
-								</button>
-							</div>
-						</div>
-					</div>
-
-					<!-- Step: region -->
-					<div class="flex gap-4">
-						<div class="flex flex-col items-center pt-1">
-							<span
-								class="size-2.5 shrink-0 rounded-full bg-[var(--ink-gray-9)]"
-							/>
-							<span class="mt-1.5 w-px grow bg-[var(--outline-gray-2)]" />
-						</div>
-						<div class="min-w-0 flex-1 pb-5">
-							<div class="text-sm font-medium text-ink-gray-7">
-								Select a region
-							</div>
-							<div class="mt-2 flex flex-wrap gap-2">
-								<Button
-									v-for="r in providerRegions"
-									:key="r.region"
-									variant="outline"
-									:class="[
-										'!rounded-6 focus-visible:!ring-1 focus-visible:!ring-outline-gray-4',
-										r.region === selectedRegion
-											? '!border-outline-gray-4 !bg-surface-gray-1 font-medium !text-ink-gray-9'
-											: '',
-									]"
-									@click="selectRegion(r.region)"
-									@mouseenter="hoverRegion = r.region"
-									@mouseleave="hoverRegion = null"
-								>
-									<span class="mr-0.5 text-sm leading-none"
-										>{{ flagEmoji(r.country_code) }}</span
-									>
-									{{ regionLabel(r) }}
-									<Badge v-if="!r.reachable" label="Unreachable" class="ml-1" />
-								</Button>
-							</div>
-						</div>
-					</div>
-
-					<!-- Step: plan (presets + a scoped Custom row, tabs by profile when needed) -->
-					<div class="flex gap-4">
-						<div class="flex flex-col items-center pt-1">
-							<span
-								class="size-2.5 shrink-0 rounded-full bg-[var(--ink-gray-9)]"
-							/>
-							<span class="mt-1.5 w-px grow bg-[var(--outline-gray-2)]" />
-						</div>
-						<div class="min-w-0 flex-1 pb-5">
-							<div class="mb-2 text-sm font-medium text-ink-gray-7">
-								Select a plan
-							</div>
-
-							<p v-if="!selectedRegion" class="text-p-sm text-ink-gray-5">
-								Pick a region to see the plans available there.
-							</p>
-							<p v-else-if="plansLoading" class="text-p-sm text-ink-gray-5">
-								Loading plans…
-							</p>
-
-							<Alert
-								v-else-if="regionFull"
-								theme="amber"
-								title="This region is at capacity"
-								:description="
-									[
-										`${selectedRegion} can't fit a new server right now.`,
-										'Try another region, or check back shortly.',
-										'Capacity frees up as machines are removed.',
-									].join(' ')
-								"
-							/>
-
-							<div
-								v-else-if="bracketExhausted"
-								class="rounded-6 border border-outline-gray-2 bg-surface-gray-1 px-4 py-3"
+					<section class="space-y-3">
+						<h2 class="text-base-semibold text-ink-gray-8">Image</h2>
+						<TabButtons
+							v-if="snapshotOptions.length > 1 || source === 'snapshot'"
+							v-model="source"
+							:options="[
+								{ label: 'Image', value: 'image' },
+								{ label: 'Snapshot', value: 'snapshot' },
+							]"
+						/>
+						<template v-if="source === 'snapshot'">
+							<p
+								v-if="snapshotsLoading"
+								role="status"
+								class="text-p-sm text-ink-gray-5"
 							>
-								<p class="text-p-sm font-medium text-ink-gray-8">
-									You've reached your spending limit
-								</p>
-								<p class="mt-1 text-p-sm text-ink-gray-5">
-									No plans (preset or custom) fit your remaining headroom in
-									this region. Remove a server to free some up, or contact
-									support to raise your limit.
-								</p>
-							</div>
-
-							<p v-else-if="nothingToShow" class="text-p-sm text-ink-gray-5">
-								No plans are available for this region within your current
-								spending limit.
+								Loading snapshots…
 							</p>
-
-							<Tabs v-else-if="hasTabs" v-model="activeTab" :tabs="classTabs">
-								<template #tab-panel="{ tab }">
-									<PlanGroup
-										class="pt-4"
-										:presets="groups[tab.value] ?? []"
-										:profile="designableProfile(String(tab.value))"
-										:rate-card="rateCard"
-										:available="available ?? 0"
-										:currency="currency ?? 'USD'"
-										:capacity="capacity"
-										v-model:selected-plan="selectedPlan"
-										v-model:composed-config="composedConfig"
-									/>
-								</template>
-							</Tabs>
-
-							<PlanGroup
-								v-else
-								:presets="flatPresets"
-								:profile="flatProfile"
-								:rate-card="rateCard"
-								:available="available ?? 0"
-								:currency="currency ?? 'USD'"
-								:capacity="capacity"
-								v-model:selected-plan="selectedPlan"
-								v-model:composed-config="composedConfig"
-							/>
-						</div>
-					</div>
-
-					<!-- Step: version (last — no connector) -->
-					<div class="flex gap-4">
-						<div class="flex flex-col items-center pt-1">
-							<span
-								class="size-2.5 shrink-0 rounded-full bg-[var(--ink-gray-9)]"
-							/>
-						</div>
-						<div class="min-w-0 flex-1">
-							<Select
-								label="Frappe version"
-								v-model="version"
-								:options="versionOptions"
-								class="max-w-xs"
+							<Alert
+								v-else-if="snapshotsError"
+								theme="red"
+								title="Couldn't load snapshots"
+								:description="snapshotsError"
+								:primary-action="{ label: 'Retry snapshots', onClick: reloadSnapshots }"
 							/>
 							<p
-								v-if="selectedRegionRow"
-								class="mt-3 flex items-center gap-1.5 text-p-sm leading-5 text-ink-gray-5"
+								v-else-if="snapshotOptions.length < 2"
+								class="text-p-sm text-ink-gray-5"
 							>
-								<span
-									class="lucide-map-pin size-4 shrink-0"
-									aria-hidden="true"
-								/>
-								<span>
-									Runs in {{ regionLabel(selectedRegionRow) }} · Your data lives
-									here.
-								</span>
+								No snapshots are available in this region.
 							</p>
-							<Button
-								class="mt-5"
-								variant="solid"
-								:label="ctaLabel"
-								icon-left="lucide-plus"
-								:loading="submitting"
-								:disabled="!canSubmit"
-								@click="submit"
+							<Select
+								v-else
+								v-model="snapshotName"
+								label="Snapshot"
+								size="md"
+								:options="snapshotOptions"
 							/>
+						</template>
+						<template v-else>
+							<ImageOfferingSelector
+								v-if="offeringOptions.length || (!imagesLoading && !imagesError)"
+								v-model="offering"
+								:options="offeringOptions"
+								:disabled="imagesLoading || !selectedRegion"
+							/>
+							<p
+								v-if="imagesLoading"
+								role="status"
+								class="text-p-sm text-ink-gray-5"
+							>
+								Loading regional images…
+							</p>
+							<Alert
+								v-else-if="imagesError"
+								theme="red"
+								title="Couldn't load images"
+								:description="imagesError"
+								:primary-action="{ label: 'Retry images', onClick: reloadImages }"
+							/>
+							<p
+								v-else-if="imageOptions.length < 2"
+								class="text-p-sm text-ink-gray-5"
+							>
+								This image has no build in this region. Select another image or
+								region.
+							</p>
+						</template>
+						<div class="grid gap-3 md:grid-cols-2">
+							<Select
+								v-if="source === 'image' && imageOptions.length > 1"
+								v-model="imageId"
+								label="Image build"
+								size="md"
+								:options="imageOptions"
+							/>
+							<SSHKeysField v-if="image" v-model="sshKeyIds" />
 						</div>
-					</div>
+					</section>
+
+					<section v-if="image">
+						<h2 class="mb-3 text-base-semibold text-ink-gray-8">Network</h2>
+						<ServerNetworkOptions
+							v-model:has-public-ipv6="hasPublicIpv6"
+							v-model:is-firewall-enabled="isFirewallEnabled"
+						/>
+					</section>
+
+					<section>
+						<div class="mb-3 flex items-center justify-between gap-3">
+							<h2 class="text-base-semibold text-ink-gray-8">Region</h2>
+							<span class="text-xs text-ink-gray-5"
+								>Or pick a pin on the map</span
+							>
+						</div>
+						<ChoiceCards
+							:model-value="selectedRegion"
+							:options="regionOptions"
+							label="Region"
+							@update:model-value="selectRegion"
+						>
+							<template #icon="{ option }">
+								<span class="text-xl leading-none" aria-hidden="true">
+									{{ regionFlags[option.value] }}
+								</span>
+							</template>
+						</ChoiceCards>
+					</section>
+
+					<section>
+						<div class="mb-3 flex items-center justify-between gap-3">
+							<h2 class="text-base-semibold text-ink-gray-8">Plan</h2>
+							<span class="text-xs text-ink-gray-5">Resize anytime</span>
+						</div>
+						<p v-if="!image" class="text-p-sm text-ink-gray-5">
+							{{ source === 'snapshot'
+									? 'Select a snapshot to see compatible plans.'
+									: 'Select an image build to see compatible plans.' }}
+						</p>
+						<p v-else-if="plansLoading" class="text-p-sm text-ink-gray-5">
+							Loading plans…
+						</p>
+
+						<Alert
+							v-else-if="plansError"
+							theme="red"
+							title="Plans aren't available for this image"
+							:description="plansError"
+							:primary-action="{ label: 'Retry plans', onClick: reloadPlans }"
+						/>
+
+						<Alert
+							v-else-if="regionFull"
+							theme="amber"
+							title="This region is at capacity"
+							:description="
+								[
+									`${selectedRegionName} can't fit a new server right now.`,
+									'Try another region, or check back shortly.',
+									'Capacity frees up as machines are removed.',
+								].join(' ')
+							"
+						/>
+
+						<div
+							v-else-if="bracketExhausted"
+							class="rounded-6 border border-outline-gray-2 bg-surface-gray-1 px-4 py-3"
+						>
+							<p class="text-p-sm font-medium text-ink-gray-8">
+								You've reached your spending limit
+							</p>
+							<p class="mt-1 text-p-sm text-ink-gray-5">
+								No plans (preset or custom) fit your remaining headroom in this
+								region. Remove a server to free some up, or contact support to
+								raise your limit.
+							</p>
+						</div>
+
+						<p v-else-if="nothingToShow" class="text-p-sm text-ink-gray-5">
+							No plans are available for this region within your current
+							spending limit.
+						</p>
+
+						<Tabs v-else-if="hasTabs" v-model="activeTab" :tabs="classTabs">
+							<template #tab-panel="{ tab }">
+								<PlanGroup
+									class="pt-4"
+									:presets="groups[tab.value] ?? []"
+									:profile="designableProfile(String(tab.value))"
+									:rate-card="rateCard"
+									:available="available ?? 0"
+									:currency="currency ?? 'USD'"
+									:capacity="capacity"
+									v-model:selected-plan="selectedPlan"
+									v-model:composed-config="composedConfig"
+								/>
+							</template>
+						</Tabs>
+
+						<PlanGroup
+							v-else
+							:presets="flatPresets"
+							:profile="flatProfile"
+							:rate-card="rateCard"
+							:available="available ?? 0"
+							:currency="currency ?? 'USD'"
+							:capacity="capacity"
+							v-model:selected-plan="selectedPlan"
+							v-model:composed-config="composedConfig"
+						/>
+					</section>
 				</div>
 			</div>
 
-			<!-- Region map (right): the servers map in picker mode — no pan/zoom, it
-           frames the provider's regions and takes clicks as picks. -->
-			<div class="p-4 lg:flex-1">
+			<div
+				class="flex flex-col border-b border-outline-gray-1 lg:sticky lg:top-0 lg:h-[calc(100dvh-3rem)] lg:w-1/2 lg:self-start lg:border-b-0 lg:border-l"
+			>
 				<div
-					class="relative h-72 w-full overflow-hidden rounded-7 border border-outline-gray-2 lg:h-full"
+					class="relative m-6 h-72 overflow-hidden rounded-7 border border-outline-gray-2 lg:h-auto lg:flex-1"
 				>
 					<ServerMap
 						:interactive="false"
 						:markers="markers"
 						:selected-id="selectedRegion"
-						:highlight-id="hoverRegion"
 						@select="selectRegion"
 					/>
 				</div>
+				<ServerSummary v-bind="summary">
+					<div class="space-y-3">
+						<Alert
+							v-if="submitError && !action"
+							theme="red"
+							title="We couldn't create this server"
+							:description="submitError"
+						/>
+						<div class="relative">
+							<Transition
+								leave-active-class="transition duration-150 ease-out"
+								leave-to-class="scale-[0.98] opacity-0 blur-[2px]"
+							>
+								<CreateServerButton
+									v-if="isCreationMoving"
+									:status="movingStatus"
+									:region-label="selectedRegionName"
+									:submitting="submitting && !action"
+									:disabled="!canSubmit"
+									@create="submit"
+								/>
+							</Transition>
+							<CreationStatusPanel
+								:action="action"
+								:checking="checking"
+								:retrying="submitting"
+								:stalled="stalled"
+								:last-checked-at="lastCheckedAt"
+								:check-error="submitError"
+								@check="checkNow"
+								@retry="retry"
+								@edit="editSettings"
+							/>
+						</div>
+					</div>
+				</ServerSummary>
 			</div>
 		</div>
 	</div>

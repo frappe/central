@@ -37,10 +37,6 @@
 		@apply m-0 mb-4 text-sm leading-relaxed text-neutral-700;
 	}
 
-	.fc-text-tight {
-		@apply m-0 mb-1 text-sm leading-relaxed text-neutral-700;
-	}
-
 	.fc-muted {
 		@apply m-0 text-xs leading-relaxed text-neutral-500;
 	}

@@ -1,0 +1,10 @@
+{
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": ["team_ssh_key"],
+ "fields": [{"fieldname": "team_ssh_key", "fieldtype": "Link", "label": "Team SSH Key", "options": "Team SSH Key", "reqd": 1, "in_list_view": 1}],
+ "istable": 1,
+ "module": "Infrastructure",
+ "name": "Server SSH Key",
+ "permissions": []
+}

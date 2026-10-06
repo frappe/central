@@ -16,7 +16,10 @@
 		"noUnusedParameters": true,
 		"noFallthroughCasesInSwitch": true,
 		"paths": {
-			"@/*": ["./src/*"]
+			"@/*": ["./src/*"],
+			"frappe-ui": ["./src/types/frappe-ui"],
+			"frappe-ui/charts": ["./src/types/frappe-ui-charts"],
+			"frappe-ui/experimental": ["./src/types/frappe-ui-experimental"]
 		},
 		"types": ["vite/client"]
 	},

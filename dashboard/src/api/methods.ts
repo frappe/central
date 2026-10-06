@@ -2,6 +2,15 @@ export function method(path: string): string {
 	return `/api/v2/method/${path}`
 }
 
+/** The v1 method URL, for a raw `frappeRequest`.
+ *
+ *  `frappeRequest` returns `data.message`, which only a v1 response carries: v2 answers
+ *  `{data: ...}` and the call silently resolves to undefined. Use `method()` for the
+ *  data-fetching composables, and this for anything that calls `frappeRequest` itself. */
+export function methodV1(path: string): string {
+	return `/api/method/${path}`
+}
+
 export const API = {
 	myTeams: 'central.api.identity.my_teams',
 	myCapabilities: 'central.api.identity.my_capabilities',
@@ -9,13 +18,14 @@ export const API = {
 
 	listTeamMembers: 'central.api.teams.list_team_members',
 	listTeamRoles: 'central.api.teams.list_team_roles',
-	listCapabilities: 'central.api.teams.list_capabilities',
-	listTeamInvitations: 'central.api.teams.list_team_invitations',
 	createTeam: 'central.api.teams.create_team',
+	setOnboardingStep: 'central.api.teams.set_onboarding_step',
+	skipOnboarding: 'central.api.teams.skip_onboarding',
 	renameTeam: 'central.api.teams.rename_team',
+	setTeamLogo: 'central.api.teams.set_team_logo',
 	myProfile: 'central.api.identity.my_profile',
 	updateProfile: 'central.api.identity.update_profile',
-	changePassword: 'central.api.auth.change_password',
+	setProfilePhoto: 'central.api.identity.set_profile_photo',
 	transferOwnership: 'central.api.teams.transfer_team_ownership',
 	deleteTeam: 'central.api.teams.delete_team',
 	leaveTeam: 'central.api.teams.leave_team',
@@ -29,48 +39,66 @@ export const API = {
 	revokeInvitation: 'central.api.teams.revoke_invitation',
 	acceptInvitation: 'central.api.teams.accept_invitation',
 	declineInvitation: 'central.api.teams.decline_invitation',
+	getInvitation: 'central.api.teams.get_invitation',
+	signUpWithInvitation: 'central.api.auth.sign_up_with_invitation',
 
 	registry: 'central.api.servers.registry',
 	listInstances: 'central.api.servers.list_instances',
-	refreshAssets: 'central.api.servers.refresh_assets',
+	refreshServers: 'central.api.servers.refresh_servers',
+	actionStatus: 'central.api.servers.action_status',
+	retryAction: 'central.api.servers.retry_action',
 	createServer: 'central.api.servers.create_server',
 	createComposedServer: 'central.api.servers.create_composed_server',
-	frappeVersions: 'central.api.servers.frappe_versions',
 	startServer: 'central.api.servers.start_server',
 	stopServer: 'central.api.servers.stop_server',
+	restartServer: 'central.api.servers.restart_server',
+	openConsole: 'central.api.servers.open_console',
+	resizeServer: 'central.api.servers.resize_server',
 	terminateServer: 'central.api.servers.terminate_server',
 	serverOverview: 'central.api.servers.server_overview',
+	serverHostnames: 'central.api.servers.server_hostnames',
+	listImageOfferings: 'central.api.images.list_offerings',
+	listRegionalImages: 'central.api.images.list_images',
+	listTeamSSHKeys: 'central.api.ssh_keys.list_team_ssh_keys',
+	createTeamSSHKey: 'central.api.ssh_keys.create_team_ssh_key',
+	rotateTeamSSHKey: 'central.api.ssh_keys.rotate_team_ssh_key',
+	retryTeamSSHKeySync: 'central.api.ssh_keys.retry_team_ssh_key_sync',
+	deleteTeamSSHKey: 'central.api.ssh_keys.delete_team_ssh_key',
 
-	listOffers: 'central.services.api.dashboard.list_offers',
-	serviceInstance: 'central.services.api.dashboard.get_instance',
-	serviceUsage: 'central.services.api.dashboard.get_usage',
-	activateService: 'central.services.api.dashboard.activate_service',
-	generateApiKey: 'central.services.api.dashboard.generate_api_key',
-	listApiKeys: 'central.services.api.dashboard.list_api_keys',
-	revealApiKey: 'central.services.api.dashboard.reveal_api_key',
-	revokeApiKey: 'central.services.api.dashboard.revoke_api_key',
-	listBuckets: 'central.services.api.dashboard.list_buckets',
-	createBucket: 'central.services.api.dashboard.create_bucket',
-	revealBucketKey: 'central.services.api.dashboard.reveal_bucket_key',
-	revokeBucketKey: 'central.services.api.dashboard.revoke_bucket_key',
+	// ── Snapshots (central.api.snapshots) ──
+	// server:view reads them and their price; server:snapshot takes, keeps and deletes.
+	listSnapshots: 'central.api.snapshots.list_snapshots',
+	snapshotPricing: 'central.api.snapshots.snapshot_pricing',
+	takeSnapshot: 'central.api.snapshots.take_snapshot',
+	keepSnapshot: 'central.api.snapshots.keep_snapshot',
+	deleteSnapshots: 'central.api.snapshots.delete_snapshots',
+	setAutomaticSnapshots: 'central.api.snapshots.set_automatic_snapshots',
 
-	signUp: 'central.api.auth.sign_up',
-	verifySignup: 'central.api.auth.verify_signup',
-	resendSignupCode: 'central.api.auth.resend_signup_code',
+	objectStorage: 'central.services.api.storage.get_object_storage',
+	bucketUsage: 'central.services.api.storage.get_bucket_usage',
+	createBucket: 'central.services.api.storage.create_bucket',
+	rotateBucketCredentials: 'central.services.api.storage.rotate_credentials',
+	setBucketQuota: 'central.services.api.storage.set_bucket_quota',
+	deleteBucket: 'central.services.api.storage.delete_bucket',
+	listBucketObjects: 'central.services.api.storage.list_objects',
+	bucketObjectUrl: 'central.services.api.storage.get_object_url',
 
-	checkSubdomain: 'central.api.sites.check_subdomain',
+	sendCode: 'central.api.auth.send_code',
+	verifyCode: 'central.api.auth.verify_code',
 	siteDomain: 'central.api.sites.site_domain',
-	createSite: 'central.api.sites.create_site',
+	checkSubdomain: 'central.api.sites.check_subdomain',
+	createTrialTeam: 'central.api.sites.create_trial_team',
+	createTrialSite: 'central.api.sites.create_trial_site',
+	onboardingStatus: 'central.api.sites.onboarding_status',
+	claimSite: 'central.api.sites.claim_site',
 	getSite: 'central.api.sites.get_site',
+	loginSite: 'central.api.sites.login_site',
 	terminateSite: 'central.api.sites.terminate_site',
 
 	getBenchLink: 'central.api.sso.get_bench_link',
 
 	eligiblePlans: 'central.billing.api.dashboard.catalog.get_eligible_plans',
 	composedConfig: 'central.billing.api.dashboard.catalog.get_composed_config',
-	resizeComposedConfig:
-		'central.billing.api.dashboard.catalog.resize_composed_config',
-	resizeServer: 'central.billing.api.dashboard.catalog.resize_server',
 
 	teamOverview: 'central.billing.api.dashboard.get_team_overview',
 	forecast: 'central.billing.api.dashboard.get_forecast',

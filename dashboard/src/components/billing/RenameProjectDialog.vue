@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { Dialog, TextInput, useCall } from 'frappe-ui'
+import { Alert, Dialog, TextInput, useCall } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import { API, method } from '@/api/methods'
-import { errorToast } from '@/lib/toast'
+import { getErrorMessage } from '@/lib/feedback'
 import type { Project } from '@/types/billing'
 
 // Edit a Project: its title and its spending_limit are the only two knobs a
@@ -27,15 +27,18 @@ const open = computed({
 
 const title = ref('')
 const spendingLimit = ref<number>()
+const formError = ref('')
 watch(
 	() => props.project,
 	(project) => {
+		formError.value = ''
 		if (project) {
 			title.value = project.title
 			spendingLimit.value = project.spending_limit || undefined
 		}
 	},
 )
+watch([title, spendingLimit], () => (formError.value = ''))
 
 const titleChanged = computed(
 	() =>
@@ -80,7 +83,7 @@ async function submit(): Promise<void> {
 		emit('update:project', null)
 		emit('saved')
 	} catch (e) {
-		errorToast(e)
+		formError.value = getErrorMessage(e, "The project couldn't be saved.")
 	}
 }
 
@@ -106,7 +109,13 @@ const dialogOptions = computed(() => ({
 	>
 		<template #default>
 			<div class="space-y-4">
-				<TextInput v-model="title" label="Title" @keyup.enter="submit" />
+				<Alert v-if="formError" theme="red" :title="formError" />
+				<TextInput
+					v-model="title"
+					label="Title"
+					autofocus
+					@keyup.enter="submit"
+				/>
 				<TextInput
 					v-model="spendingLimit"
 					type="number"

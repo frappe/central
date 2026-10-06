@@ -28,7 +28,10 @@ const cpuLabel = computed(() => {
 	<section class="rounded-7 border border-outline-gray-2 p-5">
 		<div class="mb-5 flex items-center justify-between gap-3">
 			<h3 class="text-base font-semibold text-ink-gray-9">Resource usage</h3>
-			<span class="flex items-center gap-1.5 text-sm text-ink-gray-5">
+			<span
+				v-if="available"
+				class="flex items-center gap-1.5 text-sm text-ink-gray-5"
+			>
 				<span
 					class="size-1.5 rounded-full bg-surface-green-7"
 					aria-hidden="true"

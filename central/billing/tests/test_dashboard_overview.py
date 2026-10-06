@@ -47,6 +47,7 @@ class OverviewBase(IntegrationTestCase):
 	def _purge(self):
 		for dt in (
 			"Invoice",
+			"Billing Notification Log",
 			"Credit Ledger Entry",
 			"Payment Method",
 			"Tax Profile",
@@ -210,6 +211,23 @@ class TestNextPayment(OverviewBase):
 			self.assertIn("date", stage)
 			self.assertIn("stage", stage)
 		self.assertEqual(schedule["notices"], [])
+
+	def test_the_schedule_reports_when_a_notice_was_queued(self):
+		queued_at = frappe.utils.now_datetime()
+		frappe.get_doc(
+			{
+				"doctype": "Billing Notification Log",
+				"team": TEAM,
+				"event_type": "Pre-debit Notice",
+				"status": "Queued",
+				"queued_at": queued_at,
+			}
+		).insert()
+
+		notice = dashboard.get_payment_schedule(TEAM)["notices"][0]
+
+		self.assertEqual(frappe.utils.get_datetime(notice["queued_at"]), queued_at)
+		self.assertEqual(notice["status"], "Queued")
 
 
 class TestCycleCosts(OverviewBase):
@@ -644,9 +662,9 @@ class TestResizeLockDisclosure(OverviewBase):
 		from central.billing.api.dashboard.catalog import get_composed_config
 
 		sub = self._server(2000)
-		asset = frappe.db.get_value("Subscription", sub, "asset_id")
+		server = frappe.db.get_value("Subscription", sub, "server_id")
 
-		config = get_composed_config(asset, TEAM)
+		config = get_composed_config(server, TEAM)
 
 		self.assertTrue(config["resizable"])
 		self.assertEqual(config["lock"]["gives_up"], 1000.0)

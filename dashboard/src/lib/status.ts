@@ -1,54 +1,64 @@
 import type { InvitationStatus } from '@/types/api'
 import type { PaymentAttempt } from '@/types/billing'
-import type { Asset } from '@/types/Central/Asset'
+import type { VirtualMachine } from '@/types/Infrastructure/VirtualMachine'
+import type { ActionStatus } from '@/types/serverCreation'
 
 // The DocType statuses plus Central's own derived display state (see displayStatus).
-export type AssetStatus = NonNullable<Asset['status']> | 'Resizing'
+export type VirtualMachineStatus =
+	| NonNullable<VirtualMachine['status']>
+	| 'Resizing'
 
 export type BadgeTheme = 'green' | 'gray' | 'amber' | 'red' | 'blue' | 'violet'
 
-// A server mid-resize reads as "Resizing" regardless of the raw Atlas status (which
-// flips Running→Stopped→Running under it as the host power-cycles the VM). The flag is
-// Central's own, set for the length of the background reshape job (#84).
-export function isResizing(server: { resize_in_progress?: 0 | 1 }): boolean {
-	return server.resize_in_progress === 1
-}
-
-/** The status to show for a row: a live action's transitional label ("Terminating"…)
- *  takes precedence, then "Resizing" while a reshape job runs, else the mirror status. */
+/** The status to show for a row: a live action's transitional label takes precedence. */
 export function displayStatus(server: {
-	status?: AssetStatus
-	resize_in_progress?: 0 | 1
+	status?: VirtualMachineStatus
 	pending_action?: string | null
 }): string {
 	if (server.pending_action) return server.pending_action
-	return isResizing(server) ? 'Resizing' : (server.status ?? 'Pending')
+	return server.status ?? 'Pending'
 }
 
 /** States a stopped server can be powered on from (mirrors central/api/servers.py). */
-export const POWER_ON_STATES: AssetStatus[] = ['Stopped', 'Paused', 'Failed']
+export const POWER_ON_STATES: VirtualMachineStatus[] = [
+	'Stopped',
+	'Paused',
+	'Failed',
+]
 
-export function canStart(status?: AssetStatus): boolean {
+export function canStart(status?: VirtualMachineStatus): boolean {
 	return status !== undefined && POWER_ON_STATES.includes(status)
 }
 
-export function canStop(status?: AssetStatus): boolean {
+export function canStop(status?: VirtualMachineStatus): boolean {
 	return status === 'Running'
 }
 
-export function isTerminated(status?: AssetStatus): boolean {
+export function isTerminated(status?: VirtualMachineStatus): boolean {
 	return status === 'Terminated'
 }
 
 /** Atlas is still provisioning the VM — power/open/terminate aren't available yet. */
-const SETTING_UP_STATES: AssetStatus[] = [
+const SETTING_UP_STATES: VirtualMachineStatus[] = [
 	'Pending',
 	'Provisioning',
 	'Deploying',
 ]
 
-export function isSettingUp(status?: AssetStatus): boolean {
+export function isSettingUp(status?: VirtualMachineStatus): boolean {
 	return status === undefined || SETTING_UP_STATES.includes(status)
+}
+
+/** A server takes a change (resize, snapshot, terminate) only when set up, not terminated, and idle. */
+export function canChange(server: {
+	status?: VirtualMachineStatus
+	pending_action?: string | null
+}): boolean {
+	return (
+		!server.pending_action &&
+		!isSettingUp(server.status) &&
+		!isTerminated(server.status)
+	)
 }
 
 // Team Invitation status → Badge theme. Pending is in-flight (amber), Accepted is
@@ -148,4 +158,19 @@ export function attemptStory(attempts: PaymentAttempt[]): AttemptStory {
 		failed: failures.length,
 		failedBeforeCapture,
 	}
+}
+
+const CREATION_STAGE: Partial<Record<ActionStatus['status'], number>> = {
+	Queued: 0,
+	Dispatching: 1,
+	Sent: 1,
+	'In Progress': 2,
+	Succeeded: 3,
+}
+
+/** The step a creation is on, from 0. Null once it stopped without succeeding. */
+export function getCreationStage(
+	status: ActionStatus['status'],
+): number | null {
+	return CREATION_STAGE[status] ?? null
 }

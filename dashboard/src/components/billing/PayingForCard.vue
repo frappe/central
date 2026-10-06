@@ -8,7 +8,7 @@ import PayingForRow from '@/components/billing/PayingForRow.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { usePayingFor } from '@/composables/usePayingFor'
-import type { SubscriptionRow } from '@/types/billing'
+import { subscriptionTitle } from '@/lib/subscriptions'
 
 const VISIBLE = 5
 
@@ -33,12 +33,8 @@ const {
 const visible = computed(() => rows.value.slice(0, VISIBLE))
 const hidden = computed(() => Math.max(0, rows.value.length - VISIBLE))
 
-function goToAddons(): void {
-	router.push({ name: 'Addons' })
-}
-
-function serverTitle(sub: SubscriptionRow): string {
-	return sub.server || sub.plan_title || sub.name
+function goToObjectStorage(): void {
+	router.push({ name: 'ObjectStorage' })
 }
 </script>
 
@@ -95,14 +91,14 @@ function serverTitle(sub: SubscriptionRow): string {
 			description="Servers and metered services you're subscribed to will show here with what they cost."
 		>
 			<template v-if="canManageBilling" #action>
-				<Button label="Browse add-ons" @click="goToAddons" />
+				<Button label="Open object storage" @click="goToObjectStorage" />
 			</template>
 		</EmptyState>
 
 		<ConfirmDialog
 			v-model:target="pendingPause"
 			title="Pause billing"
-			:message="`Pause billing for ${pendingPause ? serverTitle(pendingPause) : ''}? This stops the server/VM and the site(s)/services running on it, and stops charges until you resume.`"
+			:message="`Pause billing for ${pendingPause ? subscriptionTitle(pendingPause) : ''}? This stops the server/VM and the site(s)/services running on it, and stops charges until you resume.`"
 			confirm-label="Pause billing"
 			:loading="busy === pendingPause?.name"
 			@confirm="confirmPause"

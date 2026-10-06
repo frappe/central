@@ -10,7 +10,7 @@
 import { useCall } from 'frappe-ui'
 import { computed } from 'vue'
 import { API, method } from '@/api/methods'
-import { errorToast, infoToast, successToast } from '@/lib/toast'
+import { reportError, successToast } from '@/lib/feedback'
 
 interface PayResult {
 	charged?: boolean
@@ -27,7 +27,8 @@ export function usePayInvoice({
 		url: method(API.payInvoice),
 		method: 'POST',
 		immediate: false,
-		onError: (e: unknown) => errorToast(e, 'Could not start the payment'),
+		onError: (e: unknown) =>
+			reportError(e, { fallback: 'Could not start the payment' }),
 	})
 
 	async function run(invoice: string): Promise<PayResult | undefined> {
@@ -40,7 +41,9 @@ export function usePayInvoice({
 				nothing_due: 'This invoice has nothing left to pay.',
 				not_open: 'This invoice is no longer open.',
 			}
-			infoToast((res.reason && reasons[res.reason]) || 'No payment was started')
+			reportError(
+				(res.reason && reasons[res.reason]) || 'No payment was started',
+			)
 		} else if (res) {
 			successToast(
 				'Payment initiated. The invoice updates once the gateway confirms.',

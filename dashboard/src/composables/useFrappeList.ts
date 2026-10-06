@@ -3,7 +3,7 @@ import { computed, type MaybeRefOrGetter, toValue } from 'vue'
 import { method } from '@/api/methods'
 import type { ListViewQuery } from '@/components/common/list-view'
 import { useFrappeListInvalidation } from '@/composables/useFrappeRealtime'
-import { isAbortError } from '@/lib/toast'
+import { isAbortError } from '@/lib/feedback'
 
 type FilterValue = string | number | boolean | null
 export type FrappeListFilter = [string, string, FilterValue]

@@ -17,8 +17,10 @@ const props = withDefaults(
 		theme?: 'red'
 		loading?: boolean
 		error?: string
+		/** Widen it when the body holds more than a sentence, such as a list. */
+		size?: 'sm' | 'md' | 'lg'
 	}>(),
-	{ confirmLabel: 'Confirm' },
+	{ confirmLabel: 'Confirm', size: 'sm' },
 )
 
 const emit = defineEmits<{
@@ -51,7 +53,7 @@ const actions = computed(() => [
 		v-model="open"
 		:title="title"
 		:message="message"
-		size="sm"
+		:size="size"
 		:actions="actions"
 	>
 		<slot />

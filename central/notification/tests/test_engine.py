@@ -18,7 +18,6 @@ _FIXTURE_FIELDS = [
 	"severity",
 	"required_cap",
 	"direct_recipients",
-	"email_template",
 	"in_app_title",
 	"in_app_body",
 	"action_label",
@@ -68,6 +67,8 @@ class EngineTestBase(IntegrationTestCase):
 		in_app_body="Something broke",
 		direct_recipients="None",
 		create_in_app=True,
+		action_label=None,
+		action_route=None,
 	):
 		if frappe.db.exists("Notification Event Type", event_type):
 			original = frappe.db.get_value(
@@ -90,6 +91,8 @@ class EngineTestBase(IntegrationTestCase):
 				"in_app_body": in_app_body,
 				"direct_recipients": direct_recipients,
 				"create_in_app": int(create_in_app),
+				"action_label": action_label,
+				"action_route": action_route,
 			}
 		).insert(ignore_permissions=True)
 		self.__class__._created_event_types.add(event_type)
@@ -97,6 +100,32 @@ class EngineTestBase(IntegrationTestCase):
 
 
 class TestDispatchCreatesFeedEntry(EngineTestBase):
+	def test_resource_event_is_queued_after_commit_and_deduplicated(self):
+		from central.notification.engine import dispatch, queue_event
+
+		with patch("central.notification.engine.frappe.enqueue") as enqueue:
+			queue_event(
+				TEAM,
+				"backup_failure",
+				reference_doctype="Site",
+				reference_name="my-site",
+			)
+
+		enqueue.assert_called_once_with(
+			dispatch,
+			team=TEAM,
+			event_type="backup_failure",
+			message=None,
+			context=None,
+			reference_doctype="Site",
+			reference_name="my-site",
+			affected_user=None,
+			queue="short",
+			enqueue_after_commit=True,
+			job_id="notification:backup_failure:my-site",
+			deduplicate=True,
+		)
+
 	def test_dispatch_creates_team_notification_with_required_cap(self):
 		"""dispatch() writes a Team Notification whose required_cap matches the Event Type registry."""
 		self._ensure_event_type("backup_failure")
@@ -294,6 +323,25 @@ class TestEmailFanout(EngineTestBase):
 		team.save(ignore_permissions=True)
 
 	@patch("central.notification.engine.frappe.sendmail")
+	def test_email_says_the_in_app_sentence_with_the_team_name(self, mock_sendmail):
+		self._ensure_event_type(
+			"member_joined",
+			category="Billing",
+			required_cap="billing:view",
+			in_app_title="New team member",
+			in_app_body="{{ message }} has joined {{ team_name }}.",
+		)
+
+		from central.notification.engine import dispatch
+
+		dispatch(TEAM, "member_joined", message="new.member@example.test")
+
+		body = mock_sendmail.call_args.kwargs["message"]
+		team_name = frappe.db.get_value("Team", TEAM, "team_name")
+		self.assertIn(f"new.member@example.test has joined {team_name}.", body)
+		self.assertNotIn("Reason", body)
+
+	@patch("central.notification.engine.frappe.sendmail")
 	def test_emails_qualified_members(self, mock_sendmail):
 		"""All active members with the required capability receive an email."""
 		self._ensure_event_type(
@@ -478,6 +526,15 @@ class TestSaveUserPreferences(EngineTestBase):
 		self.assertEqual(len(out["preferences"]), 1)
 		self.assertEqual(out["preferences"][0]["category"], "Billing")
 
+	def test_rejects_an_unsupported_category(self):
+		from central.notification.api import save_user_preferences
+
+		with self.assertRaises(frappe.ValidationError):
+			save_user_preferences(
+				team=TEAM,
+				preferences=[{"category": "Other", "email_enabled": 1, "in_app_enabled": 1}],
+			)
+
 
 class TestCapabilityFilteredList(EngineTestBase):
 	def setUp(self):
@@ -555,6 +612,7 @@ class TestReportPilotEvent(EngineTestBase):
 
 		class FakeCredential:
 			team = TEAM
+			server = None
 
 		fake = FakeCredential()
 
@@ -605,6 +663,45 @@ class TestReportPilotEvent(EngineTestBase):
 
 			with self.assertRaises(frappe.PermissionError):
 				report_pilot_event(event_type="payment_failure", message="x")
+
+	def test_pilot_resource_alert_is_accepted_with_the_shipped_fixture(self):
+		"""Pilot's sustained resource alert must match a Server-category fixture, and the
+		shipped settings must render a feed entry from Pilot's payload."""
+		fixture_path = frappe.get_app_path("central", "fixtures", "notification_event_type.json")
+		fixture = next(
+			record
+			for record in frappe.parse_json(frappe.read_file(fixture_path))
+			if record["name"] == "resource_limit_breached"
+		)
+		self._ensure_event_type(
+			"resource_limit_breached", **{field: fixture[field] for field in _FIXTURE_FIELDS}
+		)
+
+		class FakeCredential:
+			team = TEAM
+			server = None
+
+		with (
+			patch("central.api.pilot.PilotCredential.verify", return_value=FakeCredential()),
+			patch("frappe.get_request_header", return_value="fake-token"),
+		):
+			from central.notification.api import report_pilot_event
+
+			out = report_pilot_event(
+				event_type="resource_limit_breached",
+				message="my-bench: cpu_usage_limit at 95.0%",
+				context={"bench": "my-bench", "breached_limits": []},
+			)
+		self.assertTrue(out["created"])
+
+		row = frappe.get_all(
+			"Team Notification",
+			{"team": TEAM, "event_type": "resource_limit_breached"},
+			["title", "message", "action_label", "action_route"],
+		)[0]
+		self.assertEqual(row.title, "Resource limit breached: my-bench")
+		self.assertEqual(row.message, "my-bench: cpu_usage_limit at 95.0%")
+		self.assertEqual((row.action_label, row.action_route), ("View server", "/servers"))
 
 
 class TestTemplateContext(EngineTestBase):
@@ -754,11 +851,14 @@ class TestDirectRecipientsAffectedUser(EngineTestBase):
 
 		from central.notification.engine import dispatch
 
-		dispatch(
+		result = dispatch(
 			TEAM, "server_down2", message="Server is down", reference_doctype="Server", reference_name="srv-2"
 		)
 
-		self.assertEqual(mock_sendmail.call_count, 0)
+		# Assert on the dispatch's own accounting, not the global sendmail mock: Frappe
+		# core Notification fixtures can call frappe.sendmail during the same request.
+		self.assertEqual(result["email_attempted"], 0)
+		self.assertEqual(result["emails_queued"], 0)
 
 	@patch("central.notification.engine.frappe.sendmail")
 	def test_affected_user_bypasses_capability(self, mock_sendmail):

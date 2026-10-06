@@ -6,6 +6,7 @@ import { useRegions } from '@/composables/useRegions'
 import { useTeamMembers } from '@/composables/useTeamMembers'
 import { useTeamRoles } from '@/composables/useTeamRoles'
 import { teamParams } from '@/composables/useTeamScope'
+import { getErrorMessage } from '@/lib/feedback'
 import type {
 	ResourceType,
 	TeamMemberRoleAssignment,
@@ -64,14 +65,14 @@ const applyResourceKey = (row: TeamMemberRoleAssignment, key: string): void => {
 }
 
 const resourceOptions = computed(() => {
-	const assets = registryCall.data?.assets ?? []
+	const servers = registryCall.data?.servers ?? []
 	const sites = registryCall.data?.sites ?? []
 	return [
 		{ label: 'All resources', value: resourceKey('*', null) },
-		...assets.map((a) => ({
+		...servers.map((a) => ({
 			label: a.title || a.resource_id,
 			value: resourceKey('Server', a.name),
-			description: regionLabel(a.cluster),
+			description: regionLabel(a.region),
 		})),
 		...sites.map((s) => ({
 			label: s.subdomain || s.name,
@@ -117,6 +118,8 @@ const canSubmit = computed(
 )
 
 const submitting = ref(false)
+const formError = ref('')
+watch(rows, () => (formError.value = ''), { deep: true })
 
 const submit = async (): Promise<void> => {
 	if (!canSubmit.value || !props.member) return
@@ -124,9 +127,17 @@ const submit = async (): Promise<void> => {
 	const grants = rows.value.filter(
 		(_, index) => !shadowedIndexes.value.has(index),
 	)
-	const ok = await setRoles(props.member.user, grants)
-	submitting.value = false
-	if (ok) open.value = false
+	try {
+		await setRoles(props.member.user, grants, { throwOnError: true })
+		open.value = false
+	} catch (e) {
+		formError.value = getErrorMessage(
+			e,
+			"The member's access couldn't be saved.",
+		)
+	} finally {
+		submitting.value = false
+	}
 }
 
 const dialogOptions = computed(() => ({
@@ -158,6 +169,7 @@ const dialogOptions = computed(() => ({
 	>
 		<template #default>
 			<div class="space-y-4">
+				<Alert v-if="formError" theme="red" :title="formError" />
 				<div class="flex items-center gap-3">
 					<Avatar :label="member?.full_name" size="2xl" />
 					<div class="min-w-0">

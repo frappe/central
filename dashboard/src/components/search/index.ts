@@ -28,14 +28,13 @@ export function useSearchIndex() {
 	const {
 		canCreateServer,
 		canViewServers,
-		canOpenServer,
 		canViewBilling,
 		canManageMembers,
 		isMember,
 	} = useCapabilities()
 
 	const { open: openServer } = useServers()
-	const { assets } = useServerMapData()
+	const { servers } = useServerMapData()
 	const { members } = useTeamMembers()
 	const { invoices } = useInvoices()
 	const { themeOptions } = useAppMenu()
@@ -105,14 +104,14 @@ export function useSearchIndex() {
 
 		// Records, not menu entries: searchable, but they'd bury the verbs above
 		// if the whole fleet/roster/ledger listed on every open.
-		if (canViewServers.value && assets.value.length) {
+		if (canViewServers.value && servers.value.length) {
 			groups.Servers = {
 				searchOnly: true,
-				items: assets.value.map((server) => ({
+				items: servers.value.map((server) => ({
 					name: server.title || server.resource_id,
-					description: server.cluster,
+					description: server.region,
 					icon: 'lucide-server',
-					onSelect: canOpenServer.value ? () => openServer(server) : undefined,
+					onSelect: canViewServers.value ? () => openServer(server) : undefined,
 				})),
 			}
 		}

@@ -9,8 +9,8 @@ import frappe
 from central.billing.api.admin._shared import (
 	_STANDING_RANK,
 	_active_segments,
-	_asset_cluster_map,
 	_plan_monthly_inr,
+	_server_cluster_map,
 	_team_currency,
 	_to_inr,
 )
@@ -19,11 +19,11 @@ from central.billing.revenue import credits
 
 
 def _with_cluster(subs: list[dict]) -> list[dict]:
-	"""Stamp each subscription row with its region, resolved through its asset_id
-	(cluster lives on the Asset now, not the Subscription)."""
-	clusters = _asset_cluster_map([s.asset_id for s in subs])
+	"""Stamp each subscription row with its region, resolved through its server_id
+	(cluster lives on the Virtual Machine now, not the Subscription)."""
+	clusters = _server_cluster_map([s.server_id for s in subs])
 	for s in subs:
-		s.cluster = clusters.get(s.asset_id)
+		s.cluster = clusters.get(s.server_id)
 	return subs
 
 
@@ -44,7 +44,7 @@ def get_team_billing(team: str) -> dict:
 			frappe.get_all(
 				"Subscription",
 				filters={"team": team},
-				fields=["name", "plan", "asset_id", "account_standing"],
+				fields=["name", "plan", "server_id", "account_standing"],
 			)
 		),
 		"invoices": frappe.get_all(
@@ -109,7 +109,7 @@ def get_metrics() -> dict:
 	require_operator()
 	subs = _with_cluster(
 		frappe.get_all(
-			"Subscription", fields=["team", "plan", "asset_id", "account_standing", "billing_cycle"]
+			"Subscription", fields=["team", "plan", "server_id", "account_standing", "billing_cycle"]
 		)
 	)
 	teams, mrr = {}, 0.0
@@ -143,7 +143,7 @@ def list_teams() -> list[dict]:
 	teams = {}
 	for s in _with_cluster(
 		frappe.get_all(
-			"Subscription", fields=["team", "plan", "asset_id", "account_standing", "billing_cycle"]
+			"Subscription", fields=["team", "plan", "server_id", "account_standing", "billing_cycle"]
 		)
 	):
 		t = teams.setdefault(

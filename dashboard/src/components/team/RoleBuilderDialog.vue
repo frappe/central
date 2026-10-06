@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { Checkbox, Dialog, TextInput } from 'frappe-ui'
+import { Alert, Checkbox, Dialog, TextInput } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import { useTeamRoles } from '@/composables/useTeamRoles'
 import {
 	capabilityLabel,
 	groupCapabilitiesByCategory,
 } from '@/lib/capabilities'
+import { getErrorMessage } from '@/lib/feedback'
 
 const props = defineProps<{ open: boolean }>()
 const emit = defineEmits<{ 'update:open': [v: boolean]; created: [] }>()
@@ -19,13 +20,16 @@ const open = computed({
 
 const roleName = ref('')
 const picked = ref<string[]>([])
+const formError = ref('')
 
 watch(open, (isOpen) => {
 	if (isOpen) {
 		roleName.value = ''
 		picked.value = []
+		formError.value = ''
 	}
 })
+watch([roleName, picked], () => (formError.value = ''), { deep: true })
 
 const groups = computed(() => groupCapabilitiesByCategory(capabilities.value))
 
@@ -61,8 +65,8 @@ async function submit() {
 		await createRole(roleName.value.trim(), picked.value)
 		emit('created')
 		open.value = false
-	} catch {
-		/* toast already surfaced in the composable */
+	} catch (e) {
+		formError.value = getErrorMessage(e, "The role couldn't be created.")
 	}
 }
 </script>
@@ -76,8 +80,10 @@ async function submit() {
 	>
 		<template #default>
 			<div class="space-y-5">
+				<Alert v-if="formError" theme="red" :title="formError" />
 				<TextInput
 					v-model="roleName"
+					autofocus
 					label="Role name"
 					placeholder="e.g. Release Manager"
 				/>

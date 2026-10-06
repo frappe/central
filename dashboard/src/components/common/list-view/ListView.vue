@@ -165,7 +165,9 @@ const table = useVueTable({
 	// an infinite update loop that freezes the tab. Server-side lists dodge this
 	// only because manualPagination already disables auto-reset.
 	autoResetPageIndex: false,
-	enableRowSelection: props.selectable,
+	get enableRowSelection() {
+		return props.selectable
+	},
 	manualFiltering: props.serverSide,
 	manualPagination: props.serverSide,
 	manualSorting: props.serverSide,
@@ -235,8 +237,17 @@ const countText = computed(() => {
 const showPagination = computed(
 	() => props.paginated && resultCount.value > 0 && table.getPageCount() > 1,
 )
-const showFooter = computed(
-	() => (props.showCount && resultCount.value > 0) || showPagination.value,
+// A short list is counted at a glance, so the count only shows from this size.
+const MINIMUM_ROWS_FOR_COUNT = 5
+const showCountText = computed(
+	() => props.showCount && resultCount.value >= MINIMUM_ROWS_FOR_COUNT,
+)
+const showFooter = computed(() => showCountText.value || showPagination.value)
+const selectedRows = computed(() =>
+	table.getSelectedRowModel().rows.map((row) => row.original),
+)
+const hasSelection = computed(
+	() => props.selectable && selectedRows.value.length > 0,
 )
 const pagination = computed(() => table.getState().pagination)
 const gridTemplateColumns = computed(() =>
@@ -419,11 +430,33 @@ const showListControls = computed(
 <template>
 	<section class="min-w-0">
 		<div
-			v-if="showListControls || $slots.toolbar || $slots['controls-start']"
+			v-if="showListControls || $slots.toolbar || $slots['controls-start'] || hasSelection"
 			class="flex flex-wrap items-center justify-between gap-3 pb-3"
 		>
+			<!-- Selection takes over the controls row, so the table never shifts. -->
 			<div
-				v-if="showListControls || $slots['controls-start']"
+				v-if="hasSelection"
+				class="flex min-w-0 flex-1 items-center justify-between gap-3"
+			>
+				<p class="text-sm-medium text-ink-gray-8 tabular-nums">
+					{{ selectedRows.length }}
+					selected
+				</p>
+				<div class="flex items-center gap-2">
+					<slot
+						name="selection-actions"
+						:rows="selectedRows"
+						:clear="table.resetRowSelection"
+					/>
+					<Button
+						label="Clear"
+						variant="ghost"
+						@click="table.resetRowSelection()"
+					/>
+				</div>
+			</div>
+			<div
+				v-else-if="showListControls || $slots['controls-start']"
 				class="flex min-w-0 flex-1 flex-wrap items-center gap-2"
 			>
 				<!-- Page-owned controls ahead of search — e.g. a view switcher that
@@ -472,28 +505,6 @@ const showListControls = computed(
 			</div>
 		</div>
 
-		<div
-			v-if="selectable && table.getSelectedRowModel().rows.length"
-			class="mb-2 flex flex-wrap items-center justify-between gap-3 rounded-4 bg-surface-blue-1 px-3 py-2"
-		>
-			<p class="text-p-sm font-medium text-ink-blue-7">
-				{{ table.getSelectedRowModel().rows.length }}
-				selected
-			</p>
-			<div class="flex items-center gap-2">
-				<slot
-					name="selection-actions"
-					:rows="table.getSelectedRowModel().rows.map((row) => row.original)"
-					:clear="table.resetRowSelection"
-				/>
-				<Button
-					label="Clear"
-					variant="ghost"
-					@click="table.resetRowSelection()"
-				/>
-			</div>
-		</div>
-
 		<Alert
 			v-if="error && hasRows"
 			theme="red"
@@ -529,21 +540,22 @@ const showListControls = computed(
 						<button
 							v-if="!header.isPlaceholder && header.column.getCanSort()"
 							type="button"
-							class="inline-flex min-w-0 items-center gap-2 truncate outline-none hover:text-ink-gray-8 focus-visible:ring-2 focus-visible:ring-outline-blue-2"
+							class="group inline-flex min-w-0 items-center gap-1.5 truncate outline-none hover:text-ink-gray-8 focus-visible:ring-2 focus-visible:ring-outline-blue-2"
 							@click="header.column.getToggleSortingHandler()?.($event)"
 						>
 							<FlexRender
 								:render="header.column.columnDef.header"
 								:props="header.getContext()"
 							/>
+							<!-- Only the sorted column keeps its arrow; others reveal it on hover or focus. -->
 							<span
 								:class="[
                 header.column.getIsSorted() === 'asc'
-                  ? 'lucide-arrow-up'
+                  ? 'lucide-arrow-up text-ink-gray-8'
                   : header.column.getIsSorted() === 'desc'
-                    ? 'lucide-arrow-down'
-                    : 'lucide-arrow-up-down opacity-60',
-  'size-3.5 shrink-0',
+                    ? 'lucide-arrow-down text-ink-gray-8'
+                    : 'lucide-arrow-up-down opacity-0 group-hover:opacity-60 group-focus-visible:opacity-60',
+  'size-3.5 shrink-0 transition-opacity',
 ]"
 								aria-hidden="true"
 							/>
@@ -631,20 +643,23 @@ const showListControls = computed(
 					</div>
 				</div>
 
-				<div v-else role="rowgroup">
+				<!-- pt-1 keeps the first row's rounded highlight off the header border. -->
+				<div v-else role="rowgroup" class="pt-1">
 					<!-- Hairline lives in the gap above each row (a straight ::before, not a
-					     border-top, which would trace the rounded-6 corners into hooks). The
-					     row's small top margin keeps the rounded hover/active highlight clear
-					     of the line, so nothing has to be hidden on hover. -->
+					     border-top, which would trace the rounded-6 corners into hooks). A
+					     highlighted row hides the hairline above it and the one below it, so
+					     the rounded highlight reads as one clean shape. -->
 					<div
 						v-for="row in pageRows"
 						:key="row.id"
 						role="row"
-						class="relative mt-1 grid items-center gap-4 rounded-6 px-2 text-sm transition-colors duration-150 ease-in-out first:mt-0 before:pointer-events-none before:absolute before:inset-x-0 before:-top-0.5 before:h-px before:bg-[var(--outline-gray-1)] before:content-[''] first:before:hidden"
+						:data-highlighted="row.getIsSelected() || activeKey === row.id || undefined"
+						class="relative mt-1 grid items-center gap-4 rounded-6 px-2 text-sm transition-colors duration-150 ease-in-out first:mt-0 before:pointer-events-none before:absolute before:inset-x-0 before:-top-0.5 before:h-px before:bg-[var(--outline-gray-1)] before:transition-opacity before:content-[''] first:before:hidden data-[highlighted]:bg-surface-gray-2 data-[highlighted]:before:opacity-0 [&[data-highlighted]+[role=row]]:before:opacity-0"
 						:class="[
               rowClass,
-              interactive ? 'cursor-pointer hover:bg-surface-gray-1' : 'cursor-default',
-              row.getIsSelected() || activeKey === row.id ? 'bg-surface-gray-2' : '',
+              interactive
+                ? 'cursor-pointer hover:bg-surface-gray-1 hover:before:opacity-0 [&:hover+[role=row]]:before:opacity-0'
+                : 'cursor-default',
             ]"
 						:style="{ gridTemplateColumns }"
 						@click="handleRowClick(row)"
@@ -685,7 +700,7 @@ const showListControls = computed(
 		<ListViewPagination
 			v-if="showFooter"
 			:paginated="showPagination"
-			:show-count="showCount"
+			:show-count="showCountText"
 			:count-text="countText"
 			:count-loading="countLoading"
 			:page="pagination.pageIndex + 1"

@@ -4,7 +4,7 @@ import { API, method } from '@/api/methods'
 import { useBillingOverview } from '@/composables/useBillingOverview'
 import { useSession } from '@/composables/useSession'
 import { whenTeamReady } from '@/composables/useTeamScope'
-import { errorToast, successToast } from '@/lib/toast'
+import { reportError, successToast } from '@/lib/feedback'
 import type {
 	PayingForItem,
 	ServiceRow,
@@ -101,7 +101,7 @@ export function usePayingFor() {
 			subscriptions.reload()
 			cycleCosts.reload()
 		} catch (e) {
-			errorToast(e)
+			reportError(e)
 		} finally {
 			busy.value = ''
 		}

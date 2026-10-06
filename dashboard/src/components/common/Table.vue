@@ -16,7 +16,7 @@ interface Props {
 defineProps<Props>()
 
 defineSlots<{
-	[key: string]: (props: { row: Row; column: Column; index: number }) => any
+	[key: string]: (props: { row: Row; column: Column; index: number }) => unknown
 }>()
 </script>
 

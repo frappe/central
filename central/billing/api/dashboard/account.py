@@ -40,8 +40,6 @@ def get_billing_profile(team: str | None = None) -> dict:
 	- `complete` — required fields (currency + legal name + address) all filled;
 	  the gate for top-ups / buying credits / adding a payment method.
 	- `missing` — required fields still blank.
-	- `credit_headroom` — monthly run-rate the team's credits still fund; a resource
-	  that fits inside it needs no billing details yet.
 	- `currency_locked` — true once a wallet credit, payment method, or invoice
 	  exists, so the UI disables the currency picker.
 	- `supported_currencies` — the allowed set (gateway-backed; not stored on the
@@ -51,7 +49,6 @@ def get_billing_profile(team: str | None = None) -> dict:
 	the doc for the edit forms; the derived fields drive routing and locking.
 	"""
 	from central.billing.gateways.registry import supported_currencies
-	from central.billing.payments.settlement import credit_funded_headroom
 
 	team = _resolve_team(team)
 	profile = (
@@ -65,7 +62,6 @@ def get_billing_profile(team: str | None = None) -> dict:
 			"complete": not missing,
 			"missing": missing,
 			"missing_labels": _missing_profile_labels(team),
-			"credit_headroom": credit_funded_headroom(team),
 			"currency_locked": _has_money_activity(team),
 			"supported_currencies": supported_currencies(),
 		}
@@ -333,27 +329,6 @@ def get_trust_tier(team: str | None = None) -> dict:
 		},
 		"all_levels": [level_view(l) for l in levels],
 	}
-
-
-@frappe.whitelist()
-def list_switchable_teams() -> list[dict]:
-	"""POC team switcher — teams that have billing data, with their tier/standing."""
-	teams = sorted(
-		t
-		for t in set(frappe.get_all("Subscription", pluck="team"))
-		| set(frappe.get_all("Billing Profile", pluck="team"))
-		if t
-	)
-	out = []
-	for t in teams:
-		out.append(
-			{
-				"team": t,
-				"tier": frappe.db.get_value("Billing Profile", t, "trust_tier"),
-				"standing": frappe.db.get_value("Subscription", {"team": t}, "account_standing") or "Current",
-			}
-		)
-	return out
 
 
 # The in-app notification feed endpoints (list/badge/mark) moved to

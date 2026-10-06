@@ -6,7 +6,7 @@ const switchTo = async (page, role) => {
 	await page.getByRole('menuitem', { name: 'Switch team' }).click()
 
 	const dialog = page.getByRole('dialog')
-	await expect(dialog.getByRole('row').filter({ hasText: "Cust's Team" })).toHaveCount(2)
+	await expect(dialog.getByRole('row').filter({ hasText: 'E2E Team' })).toHaveCount(2)
 
 	const row = dialog.getByRole('row').filter({ hasText: role })
 

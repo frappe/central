@@ -141,11 +141,12 @@ def grant_welcome_credits(team: str) -> None:
 	"""Grant the one-time welcome credits in the team's currency, if not already.
 
 	Needs a currency (so the credit is booked in the right one) and grants only
-	once — guarded on any prior Promotion entry for the team. The amount comes from
+	once per owner — guarded on any prior Promotion entry for any team the owner
+	owns, so a second team does not earn a second grant. The amount comes from
 	Billing Settings, so it can be changed, or the grant switched off entirely,
 	without a release; a currency with no configured amount gets no grant (rather
 	than a wrong-currency one). What a team has already been granted is never
-	revisited — the guard makes this a one-shot per team.
+	revisited.
 	"""
 	currency = frappe.db.get_value("Billing Profile", team, "currency")
 	if not currency:
@@ -153,9 +154,20 @@ def grant_welcome_credits(team: str) -> None:
 	amount = settings.welcome_credit_amount(currency)
 	if not amount:
 		return
-	if frappe.db.exists("Credit Ledger Entry", {"team": team, "reference_type": "Promotion"}):
+	if has_owner_received_welcome_credits(team):
 		return
 
 	from central.billing.revenue import credits
 
 	credits.grant_promotional_credits(team, amount, currency)
+
+
+def has_owner_received_welcome_credits(team: str) -> bool:
+	"""Whether any team of this team's owner already holds a Promotion grant."""
+	owner = frappe.db.get_value("Team", team, "owner_user")
+	# Lock the owner so two of their teams provisioning at once cannot both pass this check.
+	frappe.db.get_value("User", owner, "name", for_update=True)
+	owned_teams = frappe.get_all("Team", filters={"owner_user": owner}, pluck="name")
+	return bool(
+		frappe.db.exists("Credit Ledger Entry", {"team": ["in", owned_teams], "reference_type": "Promotion"})
+	)

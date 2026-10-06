@@ -1,30 +1,85 @@
 {
  "app": "central",
  "charts": [],
- "content": "[{\"id\":\"central_team\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Team\",\"col\":3}},{\"id\":\"central_team_invitation\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Team Invitation\",\"col\":3}},{\"id\":\"central_team_role\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Team Role\",\"col\":3}},{\"id\":\"central_capability\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Capability\",\"col\":3}},{\"id\":\"central_iam_probe\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"IAM Permission Probe\",\"col\":3}}]",
- "creation": "2026-06-08 00:00:00.000000",
+ "content": "[{\"id\": \"ov-h\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Overall health</b></span>\", \"col\": 12}}, {\"id\": \"ov-nc0\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Virtual Machines Running\", \"col\": 3}}, {\"id\": \"ov-nc1\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Virtual Machines Failed\", \"col\": 3}}, {\"id\": \"ov-nc2\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Resource Actions Needing Attention\", \"col\": 3}}, {\"id\": \"ov-nc3\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Active Regions\", \"col\": 3}}, {\"id\": \"ov-nc4\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Active Teams\", \"col\": 3}}, {\"id\": \"ov-nc5\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Open Invoices\", \"col\": 3}}, {\"id\": \"ov-nc6\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Overdue Invoices\", \"col\": 3}}, {\"id\": \"ov-nc7\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Failed Payments (24h)\", \"col\": 3}}, {\"id\": \"ov-sp\", \"type\": \"spacer\", \"data\": {\"col\": 12}}, {\"id\": \"ov-set-h\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Settings</b></span>\", \"col\": 12}}, {\"id\": \"ov-sc-set\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Central Settings\", \"col\": 3}}, {\"id\": \"ov-sc-sso\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Central SSO Settings\", \"col\": 3}}]",
+ "creation": "2026-09-21 00:00:00.000000",
  "custom_blocks": [],
  "docstatus": 0,
  "doctype": "Workspace",
  "for_user": "",
  "hide_custom": 0,
- "icon": "users",
+ "icon": "compass",
  "idx": 0,
  "is_hidden": 0,
  "label": "Central",
  "links": [
-  {"hidden": 0, "is_query_report": 0, "label": "IAM", "link_count": 5, "onboard": 0, "type": "Card Break"},
-  {"hidden": 0, "is_query_report": 0, "label": "Team", "link_count": 0, "link_to": "Team", "link_type": "DocType", "onboard": 0, "type": "Link"},
-  {"hidden": 0, "is_query_report": 0, "label": "Team Invitation", "link_count": 0, "link_to": "Team Invitation", "link_type": "DocType", "onboard": 0, "type": "Link"},
-  {"hidden": 0, "is_query_report": 0, "label": "Team Role", "link_count": 0, "link_to": "Team Role", "link_type": "DocType", "onboard": 0, "type": "Link"},
-  {"hidden": 0, "is_query_report": 0, "label": "Capability", "link_count": 0, "link_to": "Capability", "link_type": "DocType", "onboard": 0, "type": "Link"},
-  {"hidden": 0, "is_query_report": 0, "label": "IAM Permission Probe", "link_count": 0, "link_to": "IAM Permission Probe", "link_type": "DocType", "onboard": 0, "type": "Link"}
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Settings",
+   "link_count": 2,
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Central Settings",
+   "link_count": 0,
+   "link_to": "Central Settings",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Central SSO Settings",
+   "link_count": 0,
+   "link_to": "Central SSO Settings",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  }
  ],
- "modified": "2026-06-08 00:00:00.000000",
+ "modified": "2026-09-21 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Central",
  "name": "Central",
- "number_cards": [],
+ "number_cards": [
+  {
+   "label": "Virtual Machines Running",
+   "number_card_name": "Virtual Machines Running"
+  },
+  {
+   "label": "Virtual Machines Failed",
+   "number_card_name": "Virtual Machines Failed"
+  },
+  {
+   "label": "Resource Actions Needing Attention",
+   "number_card_name": "Resource Actions Needing Attention"
+  },
+  {
+   "label": "Active Regions",
+   "number_card_name": "Active Regions"
+  },
+  {
+   "label": "Active Teams",
+   "number_card_name": "Active Teams"
+  },
+  {
+   "label": "Open Invoices",
+   "number_card_name": "Open Invoices"
+  },
+  {
+   "label": "Overdue Invoices",
+   "number_card_name": "Overdue Invoices"
+  },
+  {
+   "label": "Failed Payments (24h)",
+   "number_card_name": "Failed Payments (24h)"
+  }
+ ],
  "owner": "Administrator",
  "parent_page": "",
  "public": 1,
@@ -33,11 +88,20 @@
  "roles": [],
  "sequence_id": 1.0,
  "shortcuts": [
-  {"color": "Grey", "doc_view": "List", "label": "Team", "link_to": "Team", "type": "DocType"},
-  {"color": "Grey", "doc_view": "List", "label": "Team Invitation", "link_to": "Team Invitation", "type": "DocType"},
-  {"color": "Grey", "doc_view": "List", "label": "Team Role", "link_to": "Team Role", "type": "DocType"},
-  {"color": "Grey", "doc_view": "List", "label": "Capability", "link_to": "Capability", "type": "DocType"},
-  {"color": "Grey", "doc_view": "List", "label": "IAM Permission Probe", "link_to": "IAM Permission Probe", "type": "DocType"}
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Central Settings",
+   "link_to": "Central Settings",
+   "type": "DocType"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Central SSO Settings",
+   "link_to": "Central SSO Settings",
+   "type": "DocType"
+  }
  ],
  "title": "Central",
  "type": "Workspace"

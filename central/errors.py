@@ -1,4 +1,4 @@
-"""User-facing error envelopes for server-flow actions.
+"""Customer-safe errors and operator diagnostics for console APIs.
 
 A failed action must tell the user what happened and what to do about it — never a
 FrappeException or a raw traceback. Every server-action failure is shaped into a small
@@ -9,8 +9,8 @@ switches on; `message`/`remediation` are the words a person reads (see the Wix "
 better error messages" guidance: plain language, cause, reassurance, next step).
 
 Wire this at the two ends of the Server flow: `throw_action_error` where Central raises a
-known failure, and the `@resource_action` decorator on the whitelisted endpoints so nothing
-— not even an unexpected bug — reaches the user as a bare exception.
+known failure, and the `@handle_resource_operation` decorator on the whitelisted endpoints so
+nothing, including an unexpected bug, reaches the user as a bare exception.
 """
 
 from __future__ import annotations
@@ -28,9 +28,29 @@ class ResourceActionError(frappe.ValidationError):
 	"""A server-flow failure already shaped into a user-facing envelope."""
 
 
+class AtlasConnectionError(frappe.ValidationError):
+	"""A regional read or authentication/configuration check failed."""
+
+
+class AtlasRejected(AtlasConnectionError):
+	"""Atlas explicitly rejected a mutation before accepting it."""
+
+
+class AtlasResourceGone(AtlasConnectionError):
+	"""A correctly scoped regional resource was not found."""
+
+
+class AtlasRequestUncertain(AtlasConnectionError):
+	"""A remote mutation may have succeeded without a confirmed response."""
+
+
+class CargoConnectionError(frappe.ValidationError):
+	"""A regional Cargo health check or webhook configuration call failed."""
+
+
 # code -> user-facing copy. Templates are formatted with the call's context (action,
 # region, resource_id, field); a missing placeholder renders empty rather than crashing
-# the error path. `message` may be overridden at the call site (e.g. Atlas's own sentence).
+# the error path. `message` may be overridden when Central owns customer-safe copy.
 ERROR_CATALOG: dict[str, dict] = {
 	"PERMISSION_DENIED": {
 		"title": "You don't have access",
@@ -57,34 +77,64 @@ ERROR_CATALOG: dict[str, dict] = {
 		"retriable": True,
 	},
 	"REGION_UNAVAILABLE": {
-		"title": "Region isn't responding",
-		"message": "We couldn't {action} — the region ({region}) isn't responding right now, and nothing was changed.",
-		"remediation": "This is usually temporary. Please try again in a moment; if it keeps happening, contact support.",
+		"title": "This region is temporarily unavailable",
+		"message": "We couldn't reach the selected region.",
+		"remediation": "Try again in a few minutes. If the problem continues, contact support.",
 		"retriable": True,
 	},
 	"ATLAS_REJECTED": {
-		"title": "Couldn't {action}",
-		"message": "The region couldn't complete this request.",
-		"remediation": "",
+		"title": "This request couldn't be completed",
+		"message": "The selected region couldn't complete this request.",
+		"remediation": "Review your selections and try again. If the problem continues, contact support.",
 		"retriable": False,
 	},
 	"RESOURCE_GONE": {
-		"title": "No longer exists",
-		"message": "This server no longer exists in its region — it may already have been removed.",
-		"remediation": "Refresh your list to see the current state.",
+		"title": "This server is no longer available",
+		"message": "The server may already have been removed.",
+		"remediation": "Refresh your server list to see the current state.",
 		"retriable": False,
 	},
 	"ACTION_FAILED": {
 		"title": "The {action} didn't complete",
 		"message": "Your server reported a failure while trying to {action}, and it's now in a failed state.",
-		"remediation": "Try the action again. If it keeps failing, contact support so we can look into it.",
-		"retriable": True,
+		"remediation": "Review the existing server and contact support before submitting another operation.",
+		"retriable": False,
 	},
 	"ACTION_TIMED_OUT": {
 		"title": "The {action} is taking too long",
 		"message": "We haven't heard back that the {action} finished. It may still complete on its own.",
 		"remediation": "Refresh your server list in a few minutes. If it still looks stuck, contact support.",
+		"retriable": False,
+	},
+	"CREATE_NOT_ACCEPTED": {
+		"title": "The server wasn't created",
+		"message": "The selected region did not accept the request. No server was created.",
+		"remediation": "Try again, or select another region if the problem continues.",
 		"retriable": True,
+	},
+	"SNAPSHOT_FAILED": {
+		"title": "The final snapshot didn't complete",
+		"message": "The snapshot failed, so the server was not removed. The server is stopped.",
+		"remediation": "Start the server again, or terminate it without a snapshot.",
+		"retriable": True,
+	},
+	"OUTCOME_UNKNOWN": {
+		"title": "We're still confirming this request",
+		"message": "We couldn't confirm whether the selected region accepted it.",
+		"remediation": "We'll keep checking. Don't submit the request again.",
+		"retriable": False,
+	},
+	"REFRESH_FAILED": {
+		"title": "Progress isn't available yet",
+		"message": "Your request was accepted, but we couldn't load its latest status.",
+		"remediation": "We'll check again automatically. Don't submit another request.",
+		"retriable": False,
+	},
+	"FINALIZATION_FAILED": {
+		"title": "Setup needs support",
+		"message": "The selected region accepted the request, but setup did not finish.",
+		"remediation": "Don't submit another request. Contact support with this action ID.",
+		"retriable": False,
 	},
 	"VALIDATION_ERROR": {
 		"title": "Please check and try again",
@@ -93,10 +143,10 @@ ERROR_CATALOG: dict[str, dict] = {
 		"retriable": False,
 	},
 	"UNEXPECTED": {
-		"title": "Something went wrong on our end",
-		"message": "We hit an unexpected problem completing that action, and nothing was changed.",
-		"remediation": "Please try again in a moment. If it keeps happening, contact support so we can look into it.",
-		"retriable": True,
+		"title": "We couldn't complete that",
+		"message": "Something went wrong while we were processing your request.",
+		"remediation": "Check its status before trying again. If the result is unclear, contact support.",
+		"retriable": False,
 	},
 }
 
@@ -121,10 +171,8 @@ def build_envelope(
 	return {
 		"code": code if code in ERROR_CATALOG else "UNEXPECTED",
 		"title": _(entry["title"]).format_map(source),
-		"message": (message or _(entry["message"])).format_map(source),
-		"remediation": (remediation if remediation is not None else _(entry["remediation"])).format_map(
-			source
-		),
+		"message": message if message is not None else _(entry["message"]).format_map(source),
+		"remediation": remediation if remediation is not None else _(entry["remediation"]).format_map(source),
 		"retriable": entry["retriable"],
 	}
 
@@ -142,11 +190,18 @@ def throw_action_error(code: str, *, exc: type[Exception] = ResourceActionError,
 
 
 def to_error_response(exc: Exception) -> dict:
-	"""Shape an already-raised exception into an envelope. A message the user was meant to
-	see (any frappe exception) is preserved verbatim; a genuinely unexpected error is logged
-	for operators and shown a generic, honest message instead of its internals."""
+	"""Shape an already-raised exception into a customer-safe envelope."""
 	if getattr(exc, "envelope", None):
 		return exc.envelope
+
+	if isinstance(exc, AtlasRequestUncertain):
+		return build_envelope("OUTCOME_UNKNOWN")
+	if isinstance(exc, AtlasResourceGone):
+		return build_envelope("RESOURCE_GONE")
+	if isinstance(exc, AtlasRejected):
+		return build_envelope("ATLAS_REJECTED")
+	if isinstance(exc, AtlasConnectionError):
+		return build_envelope("REGION_UNAVAILABLE")
 
 	if isinstance(exc, frappe.PermissionError):
 		return build_envelope("PERMISSION_DENIED", message=str(exc) or None)
@@ -157,14 +212,11 @@ def to_error_response(exc: Exception) -> dict:
 	if isinstance(exc, frappe.ValidationError):
 		return build_envelope("VALIDATION_ERROR", message=str(exc) or None)
 
-	frappe.log_error(title="Unexpected server-action error", message=frappe.get_traceback())
 	return build_envelope("UNEXPECTED")
 
 
-def resource_action(func):
-	"""Guarantee a whitelisted action endpoint fails as a clean envelope, never a bare
-	exception. An error already shaped by `throw_action_error` passes through untouched;
-	anything else is converted, preserving the user's message and the exception's status."""
+def handle_resource_operation(func):
+	"""Return customer-safe errors from a resource endpoint."""
 
 	@functools.wraps(func)
 	def wrapper(*args, **kwargs):
@@ -175,6 +227,9 @@ def resource_action(func):
 				raise
 
 			envelope = to_error_response(exc)
+			# The user sees only generic copy, so keep the traceback for the operator.
+			if envelope["code"] == "UNEXPECTED":
+				frappe.log_error(title="Unexpected server-action error")
 			_reraise_with_envelope(exc, envelope)
 
 	return wrapper

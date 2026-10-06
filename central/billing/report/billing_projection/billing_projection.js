@@ -9,7 +9,7 @@ frappe.query_reports["Billing Projection"] = {
 		  options: ["1", "3", "6", "12"], default: "1" },
 		{ fieldname: "currency", label: __("Currency"), fieldtype: "Link", options: "Currency" },
 		{ fieldname: "country", label: __("Country"), fieldtype: "Link", options: "Country" },
-		{ fieldname: "cluster", label: __("Cluster"), fieldtype: "Link", options: "Atlas Instance" },
+		{ fieldname: "cluster", label: __("Cluster"), fieldtype: "Link", options: "Region" },
 		{ fieldname: "collection_mode", label: __("Collection mode"), fieldtype: "Select",
 		  options: ["", "Auto Charge", "Manual Checkout", "Prepaid", "Action Required"] },
 		{ fieldname: "outcome", label: __("Outcome contains"), fieldtype: "Data" },

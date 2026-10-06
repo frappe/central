@@ -6,25 +6,76 @@ import frappe
 import jwt
 from frappe import _
 
-from central.central.doctype.central_sso_settings.central_sso_settings import ALGORITHM, CentralSSOSettings
+from central.central.doctype.central_sso_settings.central_sso_settings import (
+	ALGORITHM,
+	CentralSSOSettings,
+)
 
-# Central signs every downward token — the bench-login SID and the first-boot enrollment
-# token — with its single RSA key. Benches verify offline against the published JWKS, so a
-# compromised bench (holding only the public key) can forge nothing. `aud` scopes a token to
-# one deployment (its VM resource_id), so a SID minted for bench A is rejected by bench B.
-
-BENCH_LOGIN_TTL = 5 * 60  # a short-lived, single-use admin SID
+# Pilot ends an admin session when its login token expires, so this is the session length.
+BENCH_LOGIN_TTL = 60 * 60
+SITE_LOGIN_TTL = 5 * 60  # a single-use assertion that a site exchanges for its own session
 BOOTSTRAP_TTL = 30 * 60  # the first-boot enrollment window
-METRICS_TTL = 7 * 24 * 60 * 60  # short: no revocation list, and the pilot re-fetches on 401 / near expiry
-LOG_TTL = METRICS_TTL
-CARGO_TTL = 365 * 24 * 60 * 60  # long-lived: Cargo is infrastructure, not a session
+DATUM_TTL = 7 * 24 * 60 * 60  # short: no revocation list, and the pilot re-fetches on 401 / near expiry
 ENROLL_SCOPE = "enroll"
-CARGO_BOOTSTRAPPING_SCOPE = "cargo:bootstrap"
-CARGO_CENTRAL_SCOPE = "cargo:central"
-CARGO_ATLAS_SCOPE = "cargo:atlas"
-METRICS_SCOPE = "datum"
-LOG_SCOPE = "logs"
-LOG_ACCESS = ["write"]  # Fluent Bit only writes; reads come through the admin path, not a shipper
+DATUM_SCOPE = "datum"
+DATUM_ACCESS = ["write"]  # datum serves no reads at all; every caller is a producer
+ATLAS_TOKEN_TTL = 5 * 60
+
+
+def mint_atlas_token(region_id: int) -> str:
+	"""Mint an internal regional credential after the integration caller authorizes its operation."""
+	return _mint_regional_token(region_id, f"atlas-admin:{region_id}", "*", {"tenant": "*"})
+
+
+def mint_proxy_token(region_id: int) -> str:
+	"""Mint a credential for the site and domain routes of one regional proxy."""
+	return _mint_regional_token(region_id, f"atlas-proxy:{region_id}", "site:* domain:*")
+
+
+def mint_cargo_token(region_id: int) -> str:
+	"""Mint a credential for the object storage routes of one regional Cargo host."""
+	return _mint_regional_token(region_id, f"atlas-cargo:{region_id}", "bucket:*")
+
+
+def mint_datum_token(region_id: int, resource_id: str) -> str:
+	"""The token a pilot presents to its region's datum, for metrics and logs alike. The
+	audience names one region, so every other region refuses it."""
+	if not resource_id:
+		frappe.throw(
+			_("This pilot has no resource yet; a datum token would be unattributable."),
+			frappe.ValidationError,
+		)
+
+	return _mint_regional_token(
+		region_id,
+		f"atlas-datum:{region_id}",
+		DATUM_SCOPE,
+		{"resource_id": resource_id, "access": DATUM_ACCESS},
+		ttl=DATUM_TTL,
+	)
+
+
+def _mint_regional_token(
+	region_id: int, audience: str, scope: str, extra: dict | None = None, ttl: int = ATLAS_TOKEN_TTL
+) -> str:
+	if type(region_id) is not int or not 0 <= region_id <= 65535:
+		frappe.throw(_("The Atlas region ID must be a whole number from 0 to 65535."))
+
+	private_key, key_id = CentralSSOSettings.instance().get_signing_key("atlas")
+	# JWT needs epoch seconds; Frappe helpers return naive datetimes or discard the time of day.
+	now = int(time.time())
+	claims = {
+		"iss": "central",
+		"sub": "central",
+		"aud": audience,
+		"scope": scope,
+		"iat": now,
+		"exp": now + ttl,
+		"jti": frappe.generate_hash(length=16),
+		**(extra or {}),
+	}
+
+	return jwt.encode(claims, private_key, algorithm=ALGORITHM, headers={"kid": key_id})
 
 
 def central_url() -> str:
@@ -38,14 +89,8 @@ def jwks_url() -> str:
 	return f"{central_url()}/api/method/central.api.jwks.get_jwks"
 
 
-def bench_gateway() -> str:
-	"""The dev bench's gateway base, used when opening by explicit gateway (no Asset). The
-	SID rides `/?sid=`, which the bench SPA consumes and exchanges at POST /api/login."""
-	return (frappe.conf.get("bench_sso_redirect") or "http://localhost:3030").rstrip("/")
-
-
 def mint_bench_login(audience: str) -> str:
-	"""A short-lived admin SID that opens a bench. The bench verifies it against the JWKS
+	"""A single-use admin SID that opens a bench. The bench verifies it against the JWKS
 	and checks `aud` equals its own audience id."""
 	return _mint(audience, "bench", BENCH_LOGIN_TTL, {"sub": "admin"})
 
@@ -53,7 +98,7 @@ def mint_bench_login(audience: str) -> str:
 def mint_site_login(audience: str, site: str) -> str:
 	"""A one-time assertion the site's pilot exchanges for an Administrator session, scoped to
 	one site. `aud` is the hosting bench's audience id; the pilot verifies it against the JWKS."""
-	return _mint(audience, "site", BENCH_LOGIN_TTL, {"sub": "admin", "site": site})
+	return _mint(audience, "site", SITE_LOGIN_TTL, {"sub": "admin", "site": site})
 
 
 def mint_bootstrap_token(team: str, pilot_credential_id: str) -> str:
@@ -70,15 +115,11 @@ def verify_bootstrap_token(token: str) -> dict:
 	"""Validate an enrollment token with Central's own public key and return the grant it
 	carries: ``{team, pcid, jti}`` (pcid = the `aud`). Raises on a bad/expired/wrong-scope
 	token."""
-	from cryptography.hazmat.primitives.serialization import load_pem_public_key
-
-	settings = CentralSSOSettings.instance()
-	if not settings.public_key:
-		frappe.throw(_("Central signing key is not initialised."), frappe.ValidationError)
+	public_key = CentralSSOSettings.instance().get_public_key("pilot")
 	try:
 		claims = jwt.decode(
 			token,
-			load_pem_public_key(settings.public_key.encode()),
+			public_key,
 			algorithms=[ALGORITHM],
 			options={"verify_aud": False, "require": ["exp", "aud", "jti", "scope"]},
 		)
@@ -89,133 +130,12 @@ def verify_bootstrap_token(token: str) -> dict:
 	return {"team": claims["team"], "pcid": claims["aud"], "jti": claims["jti"]}
 
 
-def mint_cargo_bootstrapping_token(instance: str) -> str:
-	"""A short-lived token a new Cargo host presents once, to collect its real ones.
-
-	`aud` is the Cargo Instance it was minted for, so Central knows which host is calling
-	without the host having to say."""
-	return _mint(instance, CARGO_BOOTSTRAPPING_SCOPE, BOOTSTRAP_TTL)
-
-
-def verify_cargo_bootstrapping_token(token: str) -> str:
-	"""Validate an enrolment token and return the Cargo Instance it names."""
-	from cryptography.hazmat.primitives.serialization import load_pem_public_key
-
-	settings = CentralSSOSettings.instance()
-	if not settings.public_key:
-		frappe.throw(_("Central signing key is not initialised."), frappe.ValidationError)
-
-	try:
-		claims = jwt.decode(
-			token,
-			load_pem_public_key(settings.public_key.encode()),
-			algorithms=[ALGORITHM],
-			options={"verify_aud": False, "require": ["exp", "aud", "jti", "scope"]},
-		)
-	except jwt.InvalidTokenError as exc:
-		frappe.throw(_("Invalid bootstrapping token: {0}").format(exc), frappe.AuthenticationError)
-
-	if claims.get("scope") != CARGO_BOOTSTRAPPING_SCOPE:
-		frappe.throw(_("Not a Cargo bootstrapping token."), frappe.AuthenticationError)
-
-	return claims["aud"]
-
-
-def mint_cargo_access_tokens(instance: str) -> dict[str, str]:
-	"""The two tokens a Cargo host carries, one per upstream.
-
-	Both identify Cargo, and both are verified against Central's public keys -- Central
-	verifies its own signature, Atlas fetches the JWKS. `instance` is the Cargo Instance
-	the tokens are minted for, and it is what binds a host to its own region."""
-	if not instance:
-		frappe.throw(_("Cargo tokens must name the host they are minted for."), frappe.ValidationError)
-	return {
-		"central_access_token": _mint("central", CARGO_CENTRAL_SCOPE, CARGO_TTL, {"instance": instance}),
-		"atlas_access_token": _mint("atlas", CARGO_ATLAS_SCOPE, CARGO_TTL, {"instance": instance}),
-	}
-
-
-def verify_cargo_access_token(token: str) -> dict:
-	"""Validate the token Cargo presents to Central.
-
-	The scope check is what stops Cargo's Atlas token -- signed by this same key -- from
-	being replayed here. `instance` is required, so a token minted before hosts were
-	identified is refused rather than treated as belonging to every region."""
-	from cryptography.hazmat.primitives.serialization import load_pem_public_key
-
-	settings = CentralSSOSettings.instance()
-	if not settings.public_key:
-		frappe.throw(_("Central signing key is not initialised."), frappe.ValidationError)
-
-	try:
-		claims = jwt.decode(
-			token,
-			load_pem_public_key(settings.public_key.encode()),
-			algorithms=[ALGORITHM],
-			audience="central",
-			options={"require": ["exp", "aud", "jti", "scope", "instance"]},
-		)
-	except jwt.InvalidTokenError as exc:
-		frappe.throw(_("Invalid Cargo token: {0}").format(exc), frappe.AuthenticationError)
-
-	if claims.get("scope") != CARGO_CENTRAL_SCOPE:
-		frappe.throw(_("Not a Cargo token for Central."), frappe.AuthenticationError)
-
-	return claims
-
-
-def mint_metrics_token(audience: str, resource_id: str) -> str:
-	"""A token the pilot presents to Datum's metrics gateway.
-
-	`scope` keeps bench and enrollment tokens — signed with this same key — from
-	writing metrics. vmauth turns `metrics_extra_labels` into labels the store
-	applies over whatever the producer sent, so a pilot cannot write as another
-	resource."""
-	if not resource_id:
-		frappe.throw(
-			_("This pilot has no resource yet; a metrics token would be unattributable."),
-			frappe.ValidationError,
-		)
-	return _mint(
-		audience,
-		METRICS_SCOPE,
-		METRICS_TTL,
-		{"vm_access": {"metrics_extra_labels": [f"resource_id={resource_id}"]}},
-	)
-
-
-def mint_log_token(audience: str, resource_id: str) -> str:
-	"""A token the pilot presents to Datum's logs gateway.
-
-	Unlike the metrics token, this carries `resource_id` and `access` as
-	top-level claims Datum reads directly (``Identity.from_claims`` looks for
-	``resource_id`` and ``access``) — there is no vmauth bridge in front of
-	the logs path. `scope` keeps bench and enrollment tokens, signed with this
-	same key, from writing logs. Fluent Bit only writes, so `access` is
-	``["write"]``; reads come through the admin-facing path, not from a shipper.
-	"""
-	if not resource_id:
-		frappe.throw(
-			_("This pilot has no resource yet; a log token would be unattributable."),
-			frappe.ValidationError,
-		)
-	return _mint(
-		audience,
-		LOG_SCOPE,
-		LOG_TTL,
-		{
-			"resource_id": resource_id,
-			"access": LOG_ACCESS,
-		},
-	)
-
-
 def _mint(audience: str, scope: str, ttl: int, extra: dict | None = None) -> str:
 	"""Mint a signed assertion. `scope` is a required, first-class claim (not buried
 	in `extra`) so every token declares its purpose and verifiers can assert it —
 	bench-login, enroll, and metrics tokens all share this key, and the scope is what
 	keeps one from being accepted as another."""
-	private_pem, kid = CentralSSOSettings.instance().signing_key()
+	private_pem, kid = CentralSSOSettings.instance().get_signing_key("pilot")
 	now = int(time.time())
 	payload = {
 		"iss": central_url(),

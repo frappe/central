@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { PinInputInput, PinInputRoot } from 'reka-ui'
-import { computed, nextTick, onMounted } from 'vue'
+import { computed, nextTick, onMounted, ref } from 'vue'
 
 const props = withDefaults(
 	defineProps<{
@@ -23,6 +23,8 @@ const emit = defineEmits<{
 	complete: [value: string]
 }>()
 
+const root = ref<HTMLFieldSetElement | null>(null)
+
 const digits = computed({
 	get: () => props.modelValue.split('').slice(0, props.length).map(Number),
 	set: (value: number[]) => emit('update:modelValue', value.join('')),
@@ -32,16 +34,19 @@ function complete(value: number[]) {
 	emit('complete', value.join(''))
 }
 
+function focus() {
+	root.value?.querySelector<HTMLInputElement>('[data-otp-input]')?.focus()
+}
+
 onMounted(() => {
-	if (!props.autofocus) return
-	nextTick(() =>
-		document.querySelector<HTMLInputElement>('[data-otp-input]')?.focus(),
-	)
+	if (props.autofocus) nextTick(focus)
 })
+
+defineExpose({ focus })
 </script>
 
 <template>
-	<fieldset class="w-full space-y-1.5" :disabled="disabled">
+	<fieldset ref="root" class="w-full space-y-1.5" :disabled="disabled">
 		<legend class="text-p-sm-medium text-ink-gray-7">{{ label }}</legend>
 		<PinInputRoot
 			v-model="digits"

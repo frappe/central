@@ -1,43 +1,24 @@
 <script setup lang="ts">
-import { Badge, Button, useCall } from 'frappe-ui'
+import { Badge, Button } from 'frappe-ui'
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { API, method } from '@/api/methods'
 import BillingCard from '@/components/billing/BillingCard.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import { useBillingOverview } from '@/composables/useBillingOverview'
 import { useCapabilities } from '@/composables/useCapabilities'
-import { useSession } from '@/composables/useSession'
-import { whenTeamReady } from '@/composables/useTeamScope'
+import { useMeteredServices } from '@/composables/useMeteredServices'
+import { features } from '@/lib/features'
 import { money } from '@/lib/format'
+import type { ServiceRow } from '@/types/billing'
 
 // Metered services (ADR 0015) — the team-level services it has subscribed to (AI
 // tokens, email, PDF, storage), each with its allowance draw-down / usage this
 // period, plus a subscribe/upgrade action. A metered service has no VM: it is a
 // synthesized subject billed off the same rollup + price-lock spine as a server.
-interface ServiceRow {
-	service_subject: string
-	plan: string
-	title: string | null
-	resource_type: string | null
-	cluster: string | null
-	currency: string
-	unit: string | null
-	billing_type: string | null
-	settlement_mode: string
-	reporting_mode: string
-	allowance: number
-	period_usage: number
-}
-interface MeteredServices {
-	currency: string
-	services: ServiceRow[]
-}
-
 const { canManageBilling } = useCapabilities()
-const { activeTeam } = useSession()
 const router = useRouter()
 const { cycleCosts, currency } = useBillingOverview()
+const { services: rows, loading } = useMeteredServices()
 
 // A metered service showed its draw-down but never what it had cost — the one
 // question the card was silent on. Joined on service_subject, which is the
@@ -52,21 +33,14 @@ function cycleCost(row: ServiceRow): number | null {
 	return costBySubject.value.get(row.service_subject) ?? null
 }
 
-const data = useCall<MeteredServices, { team: string }>({
-	url: method(API.meteredServices),
-	params: () => ({ team: activeTeam.value! }),
-	immediate: false,
-	refetch: true,
-})
-whenTeamReady(() => data.reload())
-
-const loading = computed(() => data.loading && !data.data)
-const rows = computed(() => data.data?.services ?? [])
-
-// Subscribing happens on the Add-ons page (plan browsing lives there) — this
-// card only reports usage, so both Subscribe actions are links, not a dialog.
-function goToAddons(): void {
-	router.push({ name: 'Addons' })
+// Subscribing happens on the Object storage page — this card only reports
+// usage, so both Subscribe actions are links, not a dialog. They show only while
+// that page exists: a disabled flag redirects its route away.
+const canSubscribe = computed(
+	() => canManageBilling.value && features.addons && features.storage,
+)
+function goToObjectStorage(): void {
+	router.push({ name: 'ObjectStorage' })
 }
 
 // The title line already names the service — the subtext carries only what's
@@ -75,15 +49,10 @@ function subtitle(row: ServiceRow): string {
 	return row.cluster || ''
 }
 
-// Each add-on family keeps the icon it wears on the Add-ons pages; the gauge
-// is only the unknown-service fallback.
+// Object storage keeps the icon it wears in the sidebar; the gauge is the fallback.
 function serviceIcon(row: ServiceRow): string {
 	const key = `${row.resource_type || ''} ${row.title || ''}`.toLowerCase()
-	if (/token|ai/.test(key)) return 'lucide-sparkles'
-	if (/pdf|print/.test(key)) return 'lucide-file-text'
-	if (/mail/.test(key)) return 'lucide-mail'
-	if (/storage|object/.test(key)) return 'lucide-archive'
-	return 'lucide-gauge'
+	return /storage|object/.test(key) ? 'lucide-archive' : 'lucide-gauge'
 }
 
 // A prepaid pack shows remaining allowance; a postpaid meter shows usage this period.
@@ -111,16 +80,16 @@ function exhausted(row: ServiceRow): boolean {
 <template>
 	<BillingCard
 		title="Metered services"
-		title-info="Team-level services billed by usage (AI tokens, email, PDF, storage). No server required."
+		title-info="Team-level services billed by usage, such as object storage. No server required."
 	>
-		<template v-if="canManageBilling" #action>
+		<template v-if="canSubscribe" #action>
 			<Button
 				variant="ghost"
 				size="xs"
 				icon="lucide-plus"
 				title="Subscribe"
 				label="Subscribe"
-				@click="goToAddons"
+				@click="goToObjectStorage"
 			/>
 		</template>
 
@@ -198,10 +167,14 @@ function exhausted(row: ServiceRow): boolean {
 			v-else
 			icon="lucide-gauge"
 			title="No metered services"
-			description="Subscribe to a usage-billed service like AI tokens, email, or PDF rendering."
+			:description="
+				features.addons && features.storage
+					? 'Create an object storage bucket to start usage billing.'
+					: 'This team is not billed for any service by usage.'
+			"
 		>
-			<template v-if="canManageBilling" #action>
-				<Button label="Subscribe" @click="goToAddons" />
+			<template v-if="canSubscribe" #action>
+				<Button label="Subscribe" @click="goToObjectStorage" />
 			</template>
 		</EmptyState>
 	</BillingCard>

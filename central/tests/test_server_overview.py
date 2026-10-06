@@ -4,10 +4,10 @@ import frappe
 from frappe.tests import IntegrationTestCase
 
 from central.api.servers import server_overview
-from central.central.doctype.pilot_credential.pilot_credential import PilotCredential
+from central.infrastructure.doctype.pilot_credential.pilot_credential import PilotCredential
 from central.integrations.pilot import PilotMonitoringClient, get_cached_monitoring
 from central.tests.test_iam import ensure_user
-from central.tests.utils import ensure_region
+from central.tests.utils import ensure_atlas_instance
 
 
 class TestServerOverview(IntegrationTestCase):
@@ -29,29 +29,18 @@ class TestServerOverview(IntegrationTestCase):
 		self.addCleanup(self.team.delete, ignore_permissions=True, force=True)
 
 		self.region = "blr-overview"
-		ensure_region(self.region)
-		if not frappe.db.exists("Atlas Instance", self.region):
-			frappe.get_doc(
-				{
-					"doctype": "Atlas Instance",
-					"region": self.region,
-					"base_url": "https://atlas.example.test",
-					"status": "Active",
-					"api_key": "k",
-					"api_secret": "s",
-				}
-			).insert()
+		ensure_atlas_instance(self.region)
 
 		self.resource_id = f"vm-overview-{frappe.generate_hash(length=8)}"
 		self.gateway_url = f"https://{self.resource_id}.example.test"
 		self.audience_id = f"pcred-{self.resource_id}"
-		self.asset = frappe.get_doc(
+		self.server = frappe.get_doc(
 			{
-				"doctype": "Asset",
+				"doctype": "Virtual Machine",
 				"resource_id": self.resource_id,
 				"title": "Overview server",
 				"team": self.team.name,
-				"cluster": self.region,
+				"region": self.region,
 				"status": "Running",
 				"vcpus": 2,
 				"memory_megabytes": 4096,
@@ -60,17 +49,21 @@ class TestServerOverview(IntegrationTestCase):
 				"gateway_url": self.gateway_url,
 			}
 		).insert()
-		self.addCleanup(self.asset.delete, ignore_permissions=True, force=True)
+		self.addCleanup(self.server.delete, ignore_permissions=True, force=True)
 
 		PilotCredential.mint(
 			team=self.team.name,
 			pilot_credential_id=self.audience_id,
-			asset=self.asset.name,
+			server=self.server.name,
 			audience_id=self.audience_id,
 		)
 		self.addCleanup(
-			lambda: frappe.db.exists("Pilot Credential", self.audience_id)
-			and frappe.delete_doc("Pilot Credential", self.audience_id, ignore_permissions=True, force=True)
+			lambda: (
+				frappe.db.exists("Pilot Credential", self.audience_id)
+				and frappe.delete_doc(
+					"Pilot Credential", self.audience_id, ignore_permissions=True, force=True
+				)
+			)
 		)
 		frappe.cache.delete_value(f"pilot:monitoring:{self.resource_id}")
 		self.addCleanup(frappe.cache.delete_value, f"pilot:monitoring:{self.resource_id}")
@@ -83,11 +76,13 @@ class TestServerOverview(IntegrationTestCase):
 		frappe.set_user(self.viewer)
 		try:
 			with patch("central.integrations.pilot.get_cached_monitoring", return_value=monitoring) as get:
-				result = server_overview(team=self.team.name, resource_id=self.asset.name)
+				result = server_overview(team=self.team.name, resource_id=self.server.name)
 		finally:
 			frappe.set_user("Administrator")
 
 		self.assertEqual(result["server"]["title"], "Overview server")
+		self.assertEqual(result["server"]["region"], self.region)
+		self.assertEqual(result["server"]["region_details"]["display_name"], self.region)
 		self.assertEqual(result["server"]["public_ipv4"], "203.0.113.10")
 		self.assertIsNone(result["server"]["plan_title"])
 		self.assertIsNone(result["server"]["plan_rate"])
@@ -96,11 +91,11 @@ class TestServerOverview(IntegrationTestCase):
 		get.assert_called_once_with(self.resource_id, self.gateway_url, self.audience_id)
 
 	def test_stopped_server_returns_static_data_without_calling_pilot(self):
-		self.asset.db_set("status", "Stopped")
+		self.server.db_set("status", "Stopped")
 		frappe.set_user(self.viewer)
 		try:
 			with patch("central.integrations.pilot.get_cached_monitoring") as get:
-				result = server_overview(team=self.team.name, resource_id=self.asset.name)
+				result = server_overview(team=self.team.name, resource_id=self.server.name)
 		finally:
 			frappe.set_user("Administrator")
 

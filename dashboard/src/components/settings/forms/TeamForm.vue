@@ -1,15 +1,17 @@
 <script setup lang="ts">
-import { Avatar, Button, Dialog, SettingsRow, TextInput } from 'frappe-ui'
+import { Alert, Button, Dialog, SettingsRow, TextInput } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
+import ImageUpload from '@/components/common/ImageUpload.vue'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { useSession } from '@/composables/useSession'
 import { settingsOpen } from '@/composables/useSettings'
 import { useTeamSettings } from '@/composables/useTeamSettings'
 
 const router = useRouter()
-const { activeTeamLabel, activeTeamLogo } = useSession()
-const { saving, rename, deleteTeam } = useTeamSettings()
+const { activeTeam, activeTeamLabel, activeTeamLogo } = useSession()
+const { saving, error, clearError, rename, setLogo, deleteTeam } =
+	useTeamSettings()
 
 const { canEditTeam, canDeleteTeam } = useCapabilities()
 
@@ -25,6 +27,7 @@ async function onSave(): Promise<void> {
 	if (!changed.value) return
 	await rename(name.value.trim())
 }
+watch(name, clearError)
 
 const confirmDelete = ref(false)
 const deleteOptions = computed(() => ({
@@ -53,39 +56,26 @@ async function onDelete(): Promise<void> {
 <template>
 	<div class="mt-6">
 		<div class="space-y-6">
-			<div v-if="canEditTeam">
-				<p class="block text-base text-ink-gray-5">Logo</p>
-				<div class="mt-1.5 flex items-center gap-3">
-					<Avatar
-						:image="activeTeamLogo ?? undefined"
-						:label="name.trim() || activeTeamLabel"
-						size="3xl"
-						shape="square"
-						class="size-12 shrink-0"
-					/>
-					<div class="flex flex-col items-start gap-1">
-						<Button
-							size="xs"
-							icon-left="lucide-upload"
-							:label="activeTeamLogo ? 'Change' : 'Upload'"
-							disabled
-						/>
-						<Button
-							v-if="activeTeamLogo"
-							size="xs"
-							variant="ghost"
-							theme="red"
-							icon-left="lucide-trash-2"
-							label="Delete"
-							disabled
-						/>
-					</div>
-				</div>
-			</div>
+			<Alert v-if="error && !confirmDelete" theme="red" :title="error" />
+			<ImageUpload
+				v-if="canEditTeam && activeTeam"
+				label="Logo"
+				:name="name.trim() || activeTeamLabel"
+				:image="activeTeamLogo"
+				:attach-to="{
+					doctype: 'Team',
+					docname: activeTeam,
+					fieldname: 'team_logo',
+				}"
+				shape="square"
+				:busy="saving"
+				@change="setLogo"
+			/>
 
 			<div class="flex items-end gap-2">
 				<TextInput
 					v-model="name"
+					v-focus="canEditTeam"
 					label="Team name"
 					class="flex-1"
 					:disabled="!canEditTeam"
@@ -118,6 +108,8 @@ async function onDelete(): Promise<void> {
 			:title="deleteOptions.title"
 			:message="deleteOptions.message"
 			:actions="deleteOptions.actions"
-		/>
+		>
+			<Alert v-if="error" theme="red" :title="error" />
+		</Dialog>
 	</div>
 </template>

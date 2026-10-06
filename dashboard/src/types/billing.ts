@@ -37,7 +37,7 @@ export interface BillingLine {
 	basis?: 'Measured' | 'Estimated' | 'Assumed' | (string & {})
 	/** The machine this line was billed for — set on plan lines only. */
 	server?: string | null
-	/** Its technical id (what the Asset is named by), for support and logs. */
+	/** Its technical id (what the Virtual Machine is named by), for support and logs. */
 	server_id?: string | null
 	/** Which Project this line's resource is tagged into, for the cost breakdown —
 	 *  set only when the resource is tagged into an enabled Project; null/empty for
@@ -102,7 +102,7 @@ export interface NextPayment {
 }
 
 export interface PredebitNotice {
-	sent_at: string
+	queued_at: string
 	invoice: string | null
 	subject: string | null
 	status: string | null
@@ -262,14 +262,14 @@ export interface InvoiceDetail {
 /** list_subscriptions row — per-server plan. */
 export interface SubscriptionRow {
 	name: string
-	/** What metering keys on: the Asset for a server, the synthesized subject for a
+	/** What metering keys on: the Virtual Machine for a server, the synthesized subject for a
 	 *  team-level service. Joins a row to what it has cost this cycle. */
 	resource_id: string | null
-	/** Friendly server name (Asset.title), e.g. "atlas-web-01". */
+	/** Friendly server name (VirtualMachine.title), e.g. "atlas-web-01". */
 	server: string | null
-	/** Asset-backed = a real server; false = a team-level metered service. */
+	/** Virtual-Machine-backed = a real server; false = a team-level metered service. */
 	has_server: boolean
-	/** Asset gateway URL for the "Open server" action. */
+	/** Virtual Machine gateway URL for the "Open server" action. */
 	gateway_url: string | null
 	plan: string
 	/** Human plan name (Plan.title), e.g. "Business". */
@@ -279,7 +279,7 @@ export interface SubscriptionRow {
 	region: string | null
 	billing_cycle: string
 	account_standing: string
-	/** The VM's operational state (Running/Stopped/Paused/Terminated/…) from the Asset. */
+	/** The VM's operational state (Running/Stopped/Paused/Terminated/…) from the Virtual Machine. */
 	status: string | null
 	/** 0 when billing is paused. */
 	enabled: boolean | number
@@ -385,8 +385,6 @@ export interface BillingProfile {
 	complete: boolean
 	missing: string[]
 	missing_labels?: string[]
-	/** Monthly run-rate the team's credits still fund. */
-	credit_headroom?: number
 	currency_locked: boolean
 	supported_currencies: Currency[]
 }
@@ -568,9 +566,26 @@ export interface ServiceRow {
 	cluster: string | null
 	currency: string
 	unit: string | null
+	billing_type?: string | null
 	settlement_mode: string
+	reporting_mode?: string
 	allowance: number
 	period_usage: number
+	locked_rate?: number
+}
+
+export interface MeteredServicePlan {
+	name?: string
+	resource_type: string | null
+	rate: number
+	allowance?: number
+	unit?: string
+}
+
+export interface MeteredServices {
+	currency: string
+	services: ServiceRow[]
+	available_plans: MeteredServicePlan[]
 }
 
 /** One line of "what you're paying for" — a server or a metered service. */

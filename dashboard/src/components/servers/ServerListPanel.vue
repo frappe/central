@@ -3,46 +3,51 @@ import { Badge, Button, TextInput } from 'frappe-ui'
 import EmptyState from '@/components/common/EmptyState.vue'
 import ProviderAvatar from '@/components/servers/ProviderAvatar.vue'
 import ServerRowActions from '@/components/servers/ServerRowActions.vue'
-import SiteRowActions from '@/components/servers/SiteRowActions.vue'
-import type { AssetRow } from '@/composables/useServers'
+import type { VirtualMachineRow } from '@/composables/useServers'
 import type { ResourceRow } from '@/lib/serverMap'
 
 // The "Your servers" floating card: the pill IS the panel, collapsed. Opening
 // morphs it in place (see <style>). Renders both kinds indistinguishably — a site
 // is a 1:1-backed VM, so it wears the same provider avatar and lists in the same
-// sorted stream as a server; only its ⋯ actions differ. Presentational.
+// sorted stream as a server, and carries that machine's ⋯ actions. Presentational.
 export type { ResourceRow }
 
-const props = defineProps<{
+defineProps<{
 	pillLabel: string
 	rows: ResourceRow[]
 	hasRows: boolean
 	locationFilter: { ids: string[]; label: string } | null
 	canOpen: boolean
 	canPower: boolean
+	canResize: boolean
 	canTerminate: boolean
+	canSnapshot?: boolean
+	canOpenConsole?: boolean
+	canCreate: boolean
 	busy: string | null
 	opening: string | null
-	openingSite: string | null
 }>()
 
 defineEmits<{
 	/** Row click — the page opens the resource itself (bench/site/overview). */
 	openRow: [row: ResourceRow]
 	clearLocation: []
-	overview: [server: AssetRow]
-	open: [server: AssetRow]
-	start: [server: AssetRow]
-	stop: [server: AssetRow]
-	resize: [server: AssetRow]
-	terminate: [server: AssetRow]
-	openSite: [name: string]
-	terminateSite: [name: string]
+	overview: [server: VirtualMachineRow]
+	open: [server: VirtualMachineRow]
+	pilot: [server: VirtualMachineRow]
+	start: [server: VirtualMachineRow]
+	stop: [server: VirtualMachineRow]
+	restart: [server: VirtualMachineRow]
+	resize: [server: VirtualMachineRow]
+	snapshot: [server: VirtualMachineRow]
+	console: [server: VirtualMachineRow]
+	terminate: [server: VirtualMachineRow]
+	create: []
 }>()
 
 const open = defineModel<boolean>('open', { required: true })
 const query = defineModel<string>('query', { required: true })
-const hoverId = defineModel<string | null>('hoverId', { required: true })
+const _hoverId = defineModel<string | null>('hoverId', { required: true })
 </script>
 
 <template>
@@ -54,7 +59,16 @@ const hoverId = defineModel<string | null>('hoverId', { required: true })
 		@keydown.esc="open = false"
 	>
 		<button class="sp-float-pill text-base" :inert="open" @click="open = true">
-			<span class="truncate">{{ pillLabel }}</span>
+			<span class="flex min-w-0 items-center gap-1.5">
+				<span class="truncate">{{ pillLabel }}</span>
+				<Badge
+					class="shrink-0"
+					:label="rows.length"
+					theme="gray"
+					variant="subtle"
+					size="sm"
+				/>
+			</span>
 			<span class="lucide-maximize-2 size-3.5 shrink-0 text-ink-gray-6" />
 		</button>
 
@@ -66,8 +80,17 @@ const hoverId = defineModel<string | null>('hoverId', { required: true })
 			<div
 				class="flex shrink-0 items-center justify-between gap-2 px-4 pb-2 pt-3"
 			>
-				<h2 class="truncate text-base font-semibold text-ink-gray-9">
-					{{ pillLabel }}
+				<h2
+					class="flex min-w-0 items-center gap-1.5 text-base font-semibold text-ink-gray-9"
+				>
+					<span class="truncate">{{ pillLabel }}</span>
+					<Badge
+						class="shrink-0"
+						:label="rows.length"
+						theme="gray"
+						variant="subtle"
+						size="sm"
+					/>
 				</h2>
 				<Button
 					variant="ghost"
@@ -116,8 +139,8 @@ const hoverId = defineModel<string | null>('hoverId', { required: true })
 						class="sp-row group flex cursor-pointer items-center gap-3 rounded-6 px-2.5 py-2.5 transition-colors"
 						:style="{ animationDelay: `${Math.min(i * 25, 200)}ms` }"
 						@click="$emit('openRow', row)"
-						@mouseenter="hoverId = row.id"
-						@mouseleave="hoverId = null"
+						@mouseenter="_hoverId = row.id"
+						@mouseleave="_hoverId = null"
 					>
 						<span class="relative shrink-0">
 							<ProviderAvatar :provider="row.provider" :size="32" />
@@ -127,7 +150,7 @@ const hoverId = defineModel<string | null>('hoverId', { required: true })
 							/>
 						</span>
 						<span class="min-w-0 flex-1">
-							<span class="flex items-center gap-1.5">
+							<span class="flex h-5 items-center gap-1.5">
 								<span class="truncate text-sm font-medium text-ink-gray-9"
 									>{{ row.name }}</span
 								>
@@ -136,40 +159,42 @@ const hoverId = defineModel<string | null>('hoverId', { required: true })
 									:label="row.visual.label"
 									:theme="row.visual.badgeTheme"
 									size="sm"
+									class="shrink-0"
 								/>
 							</span>
-							<span class="block truncate text-sm text-ink-gray-5"
+							<span class="mt-0.5 block truncate text-sm text-ink-gray-5"
 								>{{ row.specs || row.regionLabel }}</span
 							>
 						</span>
 						<span
 							class="sp-row-actions"
-							:class="{ 'sp-row-actions-active': busy === row.id || opening === row.id || openingSite === row.id }"
+							:class="{ 'sp-row-actions-active': busy === row.id || opening === row.id }"
 							@click.stop
 						>
 							<ServerRowActions
-								v-if="row.kind === 'server' && row.asset"
-								:server="row.asset"
+								v-if="row.server"
+								:server="row.server"
 								:can-open="canOpen"
 								:can-power="canPower"
+								:can-resize="canResize"
 								:can-terminate="canTerminate"
-								:busy="busy === row.id"
-								:opening="opening === row.id"
+								:can-snapshot="canSnapshot"
+								:can-open-console="canOpenConsole"
+								:opens-site="!!row.site"
+								:busy="busy === row.server.resource_id"
+								:opening="
+								opening === row.server.resource_id || opening === row.site?.name
+								"
 								@overview="$emit('overview', $event)"
 								@open="$emit('open', $event)"
+								@pilot="$emit('pilot', $event)"
 								@start="$emit('start', $event)"
 								@stop="$emit('stop', $event)"
+								@restart="$emit('restart', $event)"
 								@resize="$emit('resize', $event)"
+								@snapshot="$emit('snapshot', $event)"
+								@console="$emit('console', $event)"
 								@terminate="$emit('terminate', $event)"
-							/>
-							<SiteRowActions
-								v-else-if="row.site"
-								:site="row.site"
-								:can-open="canOpen"
-								:can-terminate="canTerminate"
-								:busy="busy === row.id || openingSite === row.id"
-								@open="$emit('openSite', $event)"
-								@terminate="$emit('terminateSite', $event)"
 							/>
 						</span>
 					</div>
@@ -185,7 +210,16 @@ const hoverId = defineModel<string | null>('hoverId', { required: true })
 							? 'Try a different search or clear the filters.'
 							: 'Create your first server to host your sites.'
 					"
-				/>
+				>
+					<template v-if="canCreate && !hasRows" #action>
+						<Button
+							variant="solid"
+							label="New server"
+							icon-left="lucide-plus"
+							@click="$emit('create')"
+						/>
+					</template>
+				</EmptyState>
 			</div>
 		</div>
 	</section>
@@ -196,7 +230,7 @@ const hoverId = defineModel<string | null>('hoverId', { required: true })
    story — the pill grows into the panel in place. The two faces crossfade inside. */
 .sp-float {
 	--sp-ease: cubic-bezier(0.23, 1, 0.32, 1);
-	width: 10.5rem;
+	width: 12rem;
 	height: 2rem;
 	border-radius: 0.5rem;
 	box-shadow: var(--shadow-sm, 0 1px 2px rgb(0 0 0 / 0.05));
@@ -223,7 +257,7 @@ const hoverId = defineModel<string | null>('hoverId', { required: true })
 	top: 0;
 	display: flex;
 	height: 2rem;
-	width: 10.5rem;
+	width: 12rem;
 	align-items: center;
 	justify-content: space-between;
 	gap: 0.625rem;

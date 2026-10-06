@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { Dialog, TextInput, useCall } from 'frappe-ui'
+import { Alert, Dialog, TextInput, useCall } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import { API, method } from '@/api/methods'
 import { useSession } from '@/composables/useSession'
-import { errorToast } from '@/lib/toast'
+import { getErrorMessage } from '@/lib/feedback'
 
 // Create a new Project for the active team — a tag it can attach to
 // subscriptions so they show grouped under it in the invoice/forecast cost
@@ -16,12 +16,15 @@ const { activeTeam } = useSession()
 
 const title = ref('')
 const spendingLimit = ref<number>()
+const formError = ref('')
 watch(open, (isOpen) => {
 	if (isOpen) {
 		title.value = ''
 		spendingLimit.value = undefined
+		formError.value = ''
 	}
 })
+watch([title, spendingLimit], () => (formError.value = ''))
 
 const canSubmit = computed(() => title.value.trim().length > 0)
 
@@ -46,7 +49,7 @@ async function submit(): Promise<void> {
 		open.value = false
 		emit('created', create.data!.name)
 	} catch (e) {
-		errorToast(e)
+		formError.value = getErrorMessage(e, "The project couldn't be created.")
 	}
 }
 
@@ -72,8 +75,10 @@ const dialogOptions = computed(() => ({
 	>
 		<template #default>
 			<div class="space-y-4">
+				<Alert v-if="formError" theme="red" :title="formError" />
 				<TextInput
 					v-model="title"
+					autofocus
 					label="Title"
 					placeholder="e.g. Acme Corp"
 					description="Subscriptions tagged into this project show grouped under it in your cost breakdown."

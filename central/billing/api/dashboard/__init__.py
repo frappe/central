@@ -20,7 +20,6 @@ from central.billing.api.dashboard.account import (
 	get_collection_status,
 	get_team_overview,
 	get_trust_tier,
-	list_switchable_teams,
 	save_billing_profile,
 	save_billing_settings,
 	set_collection_mode,
@@ -49,7 +48,6 @@ from central.billing.api.dashboard.invoices import (
 	set_subscription_project,
 )
 from central.billing.api.dashboard.methods import (
-	add_demo_card,
 	confirm_card,
 	confirm_payment_method_order,
 	get_payment_method_options,
@@ -87,7 +85,6 @@ from central.billing.api.dashboard.spend import (
 )
 
 __all__ = [
-	"add_demo_card",
 	"confirm_card",
 	"confirm_invoice_checkout",
 	"confirm_payment_method_order",
@@ -123,7 +120,6 @@ __all__ = [
 	"list_projects",
 	"list_refunds",
 	"list_subscriptions",
-	"list_switchable_teams",
 	"pause_subscription",
 	"pay_invoice",
 	"pay_invoice_checkout",

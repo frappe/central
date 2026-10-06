@@ -18,16 +18,17 @@ const routes = [
 		meta: { public: true },
 	},
 	{
-		path: '/signup/verify',
+		path: '/verify',
 		name: 'VerifyEmail',
 		component: () => import('@/pages/auth/VerifyEmailPage.vue'),
 		meta: { public: true },
 	},
 	{
-		path: '/forgot-password',
-		name: 'ForgotPassword',
-		component: () => import('@/pages/auth/ForgotPasswordPage.vue'),
-		meta: { public: true },
+		// Emailed invitation link, open to guests and signed-in users.
+		path: '/join/:token',
+		name: 'JoinTeam',
+		component: () => import('@/pages/team/JoinTeamPage.vue'),
+		meta: { public: true, allowSignedIn: true },
 	},
 	{
 		path: '/onboarding/site',
@@ -35,7 +36,9 @@ const routes = [
 		component: () => import('@/pages/onboarding/SiteNamePage.vue'),
 	},
 	{
-		path: '/onboarding/provisioning/:name',
+		// No name in the path: the site's address follows from a machine that does not
+		// exist yet, so the wait asks about the team instead.
+		path: '/onboarding/provisioning',
 		name: 'OnboardingProvisioning',
 		component: () => import('@/pages/onboarding/SiteReadyPage.vue'),
 	},
@@ -58,22 +61,34 @@ const routes = [
 				meta: { title: 'Servers' },
 			},
 			{
+				path: 'servers/snapshots',
+				name: 'Snapshots',
+				component: () => import('@/pages/servers/SnapshotsPage.vue'),
+				meta: { title: 'Snapshots' },
+			},
+			{
+				path: 'servers/ssh-keys',
+				name: 'SSHKeys',
+				component: () => import('@/pages/servers/SSHKeysPage.vue'),
+				meta: { title: 'SSH keys' },
+			},
+			{
 				path: 'servers/new',
 				name: 'NewServer',
 				component: () => import('@/pages/servers/NewServerPage.vue'),
 				meta: { title: 'New server' },
 			},
 			{
-				path: 'addons/ai',
-				name: 'AIInference',
-				component: () => import('@/pages/addons/AIInference.vue'),
-				meta: { title: 'Services', feature: ['addons', 'llm'] },
-			},
-			{
-				path: 'addons/object-storage',
+				path: 'object-storage',
 				name: 'ObjectStorage',
 				component: () => import('@/pages/addons/ObjectStorage.vue'),
-				meta: { title: 'Services', feature: ['addons', 'storage'] },
+				meta: { title: 'Object storage', feature: ['addons', 'storage'] },
+			},
+			{
+				path: 'object-storage/:name',
+				name: 'Bucket',
+				component: () => import('@/pages/addons/BucketPage.vue'),
+				meta: { title: 'Object storage', feature: ['addons', 'storage'] },
 			},
 			{
 				path: 'billing',
@@ -133,8 +148,7 @@ const routes = [
 				component: () => import('@/pages/team/InvitationsPage.vue'),
 				meta: { title: 'Invitations' },
 			},
-			// Personal invitation inbox + the email deep-link both open the Invitations
-			// page on its Received tab.
+			// Personal invitation inbox: opens the Invitations page on its Received tab.
 			{
 				path: 'invitations',
 				name: 'MyInvitations',
@@ -142,17 +156,9 @@ const routes = [
 				meta: { title: 'Invitations' },
 			},
 			{
-				path: 'invitations/:name',
-				name: 'FocusedInvitation',
-				component: () => import('@/pages/team/InvitationsPage.vue'),
-				meta: { title: 'Invitations' },
-			},
-
-			{
 				path: 'addons',
 				name: 'Addons',
-				component: () => import('@/pages/addons/Page.vue'),
-				meta: { title: 'Services', feature: 'addons' },
+				redirect: '/object-storage',
 			},
 		],
 	},
@@ -173,7 +179,7 @@ router.beforeEach((to) => {
 	const onboardingComplete = window.onboarding_complete ?? false
 
 	if (to.meta.public) {
-		if (isGuest.value) return true
+		if (isGuest.value || to.meta.allowSignedIn) return true
 		// Logged in but on an auth page — e.g. browser-Back after verifying. Don't dump
 		// them into the dashboard mid-onboarding: resume the funnel until it's finished.
 		return onboardingComplete ? '/servers' : '/onboarding/site'
@@ -187,8 +193,7 @@ router.beforeEach((to) => {
 	}
 
 	// A route behind a disabled feature flag doesn't exist for this session.
-	// `feature` may name one flag or several (e.g. the AI page needs both the
-	// Add-ons area and the LLM service); any one off redirects away.
+	// `feature` may name one flag or several; any one off redirects away.
 	if (to.meta.feature) {
 		const required = Array.isArray(to.meta.feature)
 			? to.meta.feature

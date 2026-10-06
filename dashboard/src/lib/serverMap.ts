@@ -1,11 +1,11 @@
-import type { AssetRow } from '@/composables/useServers'
+import type { VirtualMachineRow } from '@/composables/useServers'
 import { formatMemory } from '@/lib/format'
-import { displayStatus, isResizing } from '@/lib/status'
+import { displayStatus } from '@/lib/status'
 import type { Region } from '@/types/Region'
 
-// Display mapping for the servers map: one place that turns an Asset's mirror
+// Display mapping for the servers map: one place that turns a Virtual Machine's mirror
 // status into what the map shows (label, badge, dot colour, pulse). Terminated
-// assets never reach the map — useServerMapData filters them out.
+// servers never reach the map — useServerMapData filters them out.
 
 type BadgeTheme = 'green' | 'gray' | 'amber' | 'red' | 'blue'
 
@@ -77,10 +77,12 @@ const STATUS_VISUAL: Record<string, ServerVisual> = {
 	Failed: VISUALS.broken,
 }
 
-export function statusVisual(server: AssetRow): ServerVisual {
+export function statusVisual(server: VirtualMachineRow): ServerVisual {
 	// A live action wins: show its transitional label, pulsing to read as "working now",
 	// from the click until the mirror confirms — so the row never looks like nothing happened.
 	if (server.pending_action) {
+		if (server.pending_action === 'Resizing')
+			return { ...VISUALS.resizing, pulse: true }
 		return {
 			key: 'settingUp',
 			label: server.pending_action,
@@ -89,7 +91,6 @@ export function statusVisual(server: AssetRow): ServerVisual {
 			pulse: true,
 		}
 	}
-	if (isResizing(server)) return VISUALS.resizing
 	return STATUS_VISUAL[displayStatus(server)] ?? VISUALS.settingUp
 }
 
@@ -104,7 +105,7 @@ export const STATUS_FILTERS: ServerVisual[] = [
 ]
 
 /** "4 vCPU, 8 GB RAM, 75 GB Disk" from the mirror's raw size fields. */
-export function specLine(server: AssetRow): string {
+export function specLine(server: VirtualMachineRow): string {
 	const parts: string[] = []
 	if (server.vcpus) parts.push(`${server.vcpus} vCPU`)
 	if (server.memory_megabytes)
@@ -176,15 +177,15 @@ export interface MapPin {
 	publicIpv4?: string | null
 	plan?: string | null
 	frappeVersion?: string | null
-	/** The raw asset row, for the server actions menu the page wires in. */
-	server?: AssetRow
+	/** The raw server row, for the server actions menu the page wires in. */
+	server?: VirtualMachineRow
 	// — Site-only (undefined on server pins) —
 	site?: { name: string; url: string | null; pending_action?: string | null }
 }
 
 /** A server or site decorated into one list/map shape. A site is a 1:1-backed VM,
  *  so it wears the same provider avatar and lists in the same sorted stream as a
- *  server; only its `asset`/`site` payload and ⋯ actions differ. */
+ *  server; only its `server`/`site` payload and ⋯ actions differ. */
 export interface ResourceRow {
 	kind: 'server' | 'site'
 	id: string
@@ -196,13 +197,13 @@ export interface ResourceRow {
 	regionLabel: string
 	flag: string
 	provider: string | null
-	asset?: AssetRow
+	server?: VirtualMachineRow
 	site?: { name: string; url: string | null; pending_action?: string | null }
 }
 
 /** An empty Active region — a "+" affordance on the map. */
 export interface MapSpot {
-	/** The Atlas Instance region code (what new-server routes on). */
+	/** The Region code (what new-server routes on). */
 	id: string
 	lat: number
 	lng: number
@@ -215,7 +216,7 @@ export interface MapSpot {
 //   viewport (pan/zoom/RAF); everything here is deterministic from its inputs.
 
 // Equirectangular projection matching the WorldDots asset, generated on this exact
-// frame — lat/lng from Atlas Instances line up with the dots.
+// frame — lat/lng from Regions line up with the dots.
 export const MAP_WIDTH = 879
 export const MAP_HEIGHT = 443
 const LAT_TOP = 83
@@ -442,7 +443,7 @@ export function computeNodes({
 }
 
 // A site's status mapped onto the shared server visual vocabulary, so the unified
-// assets list (and its status filter) can treat a site like the VM it is.
+// servers list (and its status filter) can treat a site like the VM it is.
 export function siteVisual(
 	status: string,
 	pendingAction?: string | null,
@@ -456,27 +457,6 @@ export function siteVisual(
 			dot: 'var(--ink-amber-6)',
 			pulse: true,
 		}
-	if (status === 'Running')
-		return {
-			key: 'active',
-			label: 'Running',
-			badgeTheme: 'green',
-			dot: 'var(--ink-green-6)',
-			pulse: false,
-		}
-	if (status === 'Failed')
-		return {
-			key: 'broken',
-			label: 'Failed',
-			badgeTheme: 'red',
-			dot: 'var(--ink-red-6)',
-			pulse: true,
-		}
-	return {
-		key: 'settingUp',
-		label: status,
-		badgeTheme: 'amber',
-		dot: 'var(--ink-amber-6)',
-		pulse: false,
-	}
+	// A site mirrors its machine's status, so the two share one vocabulary.
+	return STATUS_VISUAL[status] ?? VISUALS.settingUp
 }

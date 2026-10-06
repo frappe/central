@@ -547,11 +547,11 @@ def billing_run_status(today=None) -> dict:
 
 
 def run_monthly_billing(today=None) -> dict:
-	"""Bill the just-closed month end-to-end, inline — the manual/demo/test path.
+	"""Bill the just-closed month end-to-end, inline.
 
-	The scheduler runs the two ticks above instead. This stays as the one-call
-	version for a small site, a demo, or an operator re-running a period by hand:
-	same work, same idempotency, no workers involved.
+	The monthly scheduler event runs this. The two fan-out ticks above are not
+	scheduled; an operator runs them by hand to spread a large run over the billing
+	queue. Same work, same idempotency.
 	"""
 	period_start, period_end = billing_period(today)
 	drafted = generate_draft_invoices(period_start, period_end)

@@ -1,12 +1,15 @@
 # Copyright (c) 2026, frappe and Contributors
 # See license.txt
 
+from unittest.mock import patch
+
 import frappe
 from frappe.tests import IntegrationTestCase
 from frappe.utils import set_request
 
 from central.api.pilot import config, enroll
-from central.central.doctype.pilot_credential.pilot_credential import PilotCredential
+from central.central.doctype.central_sso_settings.central_sso_settings import CentralSSOSettings
+from central.infrastructure.doctype.pilot_credential.pilot_credential import PilotCredential
 from central.sso import jwks_url, mint_bootstrap_token
 from central.tests.test_iam import ensure_user
 
@@ -30,6 +33,7 @@ class TestEnrollment(IntegrationTestCase):
 		self.pcid = "pcred-enroll-1"
 		if frappe.db.exists("Pilot Credential", self.pcid):
 			frappe.delete_doc("Pilot Credential", self.pcid, force=True)
+		CentralSSOSettings.instance().initialize_signing_key("pilot")
 
 	def _token(self) -> str:
 		return mint_bootstrap_token(team=self.team, pilot_credential_id=self.pcid)
@@ -51,6 +55,15 @@ class TestEnrollment(IntegrationTestCase):
 		enroll(token)
 		with self.assertRaises(frappe.AuthenticationError):
 			enroll(token)
+
+	def test_failed_enrollment_releases_the_replay_claim(self):
+		token = self._token()
+		with patch.object(PilotCredential, "issue_for", side_effect=frappe.ValidationError("failed")):
+			with self.assertRaises(frappe.ValidationError):
+				enroll(token)
+
+		result = enroll(token)
+		self.assertEqual(result["audience_id"], self.pcid)
 
 	def test_a_non_enrollment_token_is_rejected(self):
 		from central.sso import mint_bench_login

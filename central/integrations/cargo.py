@@ -1,114 +1,68 @@
 from __future__ import annotations
 
-import functools
-import inspect
-from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 import frappe
+import requests
 from frappe import _
 
-from central.sso import verify_cargo_access_token
+from central.errors import CargoConnectionError
+from central.sso import central_url, mint_cargo_token
 
-TOKEN_HEADER = "X-Cargo-Token"
-BOOTSTRAP_HEADER = "X-Cargo-Bootstrapping-Token"
+if TYPE_CHECKING:
+	from central.infrastructure.doctype.region.region import Region
 
-
-def verify_cargo_request(func: Callable) -> Callable:
-	"""Authenticates Cargo's signed token before the handler runs, stashing the verified
-	claims on frappe.local, and refuses a host asking about a region that is not its own.
-	functools.wraps is required — Frappe maps request args off the wrapped signature."""
-
-	@functools.wraps(func)
-	def wrapper(*args, **kwargs):
-		frappe.local.cargo_request = _authenticate_cargo_request()
-		_assert_own_region(func, args, kwargs)
-		return func(*args, **kwargs)
-
-	return wrapper
+PING_PATH = "/api/method/ping"
+CONFIGURE_WEBHOOKS_PATH = "/api/method/cargo.api.webhooks.configure"
+TOKEN_HEADER = "X-Cargo-Access-Token"
 
 
-def verify_cargo_bootstrapping_request(func: Callable) -> Callable:
-	"""Authenticates a host enrolling for the first time, stashing the Cargo Instance it
-	named on frappe.local. functools.wraps is required -- Frappe maps request args off the
-	wrapped signature."""
+class CargoClient:
+	"""Central's outbound calls to one region's Cargo host: a readiness check and the
+	one-time handoff of the secret Cargo signs its own reports with. Cargo has no
+	polled connection test of its own — see `cargo_connection.py` — so this client only
+	ever runs as part of enrollment, never on demand from an operator."""
 
-	@functools.wraps(func)
-	def wrapper(*args, **kwargs):
-		frappe.local.cargo_instance = _authenticate_bootstrapping_request()
-		return func(*args, **kwargs)
+	def __init__(self, instance: Region):
+		self.instance = instance
 
-	return wrapper
+	def is_answering(self) -> bool:
+		"""Whether this region's Cargo answers Frappe's own liveness check yet."""
+		try:
+			response = requests.get(f"{self._base_url()}{PING_PATH}", timeout=(5, 10))
+		except requests.RequestException:
+			return False
 
+		try:
+			body = response.json()
+		except requests.exceptions.JSONDecodeError:
+			return False
 
-def _authenticate_bootstrapping_request() -> str:
-	"""The Cargo Instance the presented token was minted for.
+		return response.status_code == 200 and body.get("message") == "pong"
 
-	Spent tokens are refused: a host enrols once per token, so a leaked one cannot be
-	replayed to collect a second set of credentials. The row is locked for the rest of the
-	request, which is what makes "once" hold when the replay arrives concurrently."""
-	from central.sso import verify_cargo_bootstrapping_token
+	def configure_webhooks(self, webhook_secret: str) -> None:
+		"""Hand Cargo the secret it will sign its own service reports with, and where to
+		send them. Cargo authenticates the call itself, against Central's JWKS."""
+		region_id = self.instance.get_atlas_region_id()
+		payload = {
+			"request_url": f"{central_url()}/api/method/central.api.state_delivery.receive",
+			"webhook_secret": webhook_secret,
+			"enabled": True,
+		}
+		headers = {TOKEN_HEADER: mint_cargo_token(region_id), "Accept": "application/json"}
 
-	token = (frappe.get_request_header(BOOTSTRAP_HEADER) or "").strip()
-	if not token:
-		frappe.throw(_("A Cargo bootstrapping token is required."), frappe.AuthenticationError)
+		try:
+			response = requests.post(
+				f"{self._base_url()}{CONFIGURE_WEBHOOKS_PATH}", headers=headers, json=payload, timeout=(5, 20)
+			)
+		except requests.RequestException:
+			frappe.throw(_("Cargo could not be reached to configure its webhooks."), CargoConnectionError)
 
-	instance = verify_cargo_bootstrapping_token(token)
-	status = _lock_awaiting_enrolment(instance)
+		if response.status_code not in (200, 201):
+			frappe.throw(
+				_("Cargo rejected webhook configuration (HTTP {0}).").format(response.status_code),
+				CargoConnectionError,
+			)
 
-	stored = frappe.utils.password.get_decrypted_password(
-		"Cargo Instance", instance, "bootstrapping_token", raise_exception=False
-	)
-	# Draft with a different token means the operator re-issued one; this one is stale.
-	if status != "Draft" or stored != token:
-		frappe.throw(_("This bootstrapping token has already been used."), frappe.AuthenticationError)
-
-	return instance
-
-
-def _lock_awaiting_enrolment(instance: str) -> str:
-	"""Just take a lock"""
-	status = frappe.db.get_value("Cargo Instance", instance, "status", for_update=True)
-	if not status:
-		frappe.throw(_("This token names no known Cargo host."), frappe.AuthenticationError)
-
-	return status
-
-
-def _authenticate_cargo_request() -> frappe._dict:
-	"""Central signed the token, so it verifies its own signature -- no shared secret.
-
-	The token rides its own header: Frappe rejects any two-part `Authorization` header
-	that does not resolve to a user, before a guest endpoint is ever reached.
-
-	The claims come back carrying the region of the Cargo Instance the token names, which
-	is the region the caller is allowed to act on."""
-	token = (frappe.get_request_header(TOKEN_HEADER) or "").strip()
-	if not token:
-		frappe.throw(_("A Cargo token is required."), frappe.AuthenticationError)
-
-	claims = frappe._dict(verify_cargo_access_token(token))
-	instance = frappe.db.get_value("Cargo Instance", claims.instance, ["region", "status"], as_dict=True)
-	if not instance:
-		frappe.throw(_("This token names no known Cargo host."), frappe.AuthenticationError)
-	if instance.status == "Disabled":
-		frappe.throw(_("This Cargo host is disabled."), frappe.AuthenticationError)
-
-	claims.region = instance.region
-
-	return claims
-
-
-def _assert_own_region(func: Callable, args: tuple, kwargs: dict) -> None:
-	"""A Cargo host acts on one region: the one its token was minted for.
-
-	The region still arrives as an argument so a host pointed at the wrong region fails
-	loudly instead of silently operating on another cluster's secrets and endpoints."""
-	if "region" not in inspect.signature(func).parameters:
-		return
-
-	requested = inspect.signature(func).bind_partial(*args, **kwargs).arguments.get("region")
-	if requested != frappe.local.cargo_request.region:
-		frappe.throw(
-			_("This Cargo token is not for region {0}.").format(requested or "(none)"),
-			frappe.PermissionError,
-		)
+	def _base_url(self) -> str:
+		return self.instance.get_cargo_url()
