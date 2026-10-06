@@ -61,7 +61,7 @@ login_site --> mint a fresh login for site.local
 - The requested name rides on the `Resource Action`, because the site it will rename does not exist until the region answers.
 - `VirtualMachine.claim_admin_hostname` tells Pilot to replace its local `admin.local` name with the `admin-vm-*` hostname that the regional proxy already routes. Central does not create or change a proxy route. TLS stays off because the regional proxy terminates it. A machine that is not running, a failed request, or a response without a task ID leaves the marker empty, so the next report tries again.
 - A successful claim records `claimed_at`, returns the login URL, and enqueues the rename after the database commit. The response does not wait for Pilot to accept or finish the rename.
-- `Site.apply_subdomain` creates one Pilot rename task. Pilot keeps the automatic hostname serving while the requested hostname comes up.
+- `Site.apply_subdomain` creates one Pilot rename task. Pilot keeps the automatic hostname serving while the requested hostname comes up, and makes the requested hostname the site's `host_name`, so the links the site and its apps build use the customer's name.
 - A rename failure stays on the Site with a safe reason and an Error Log link. A System Manager can use **Retry Site Rename** until Pilot accepts a task.
 - Terminating the machine terminates the site, with nothing to write: the site reads its state from the machine.
 

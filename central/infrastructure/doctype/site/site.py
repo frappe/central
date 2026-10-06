@@ -178,7 +178,7 @@ class Site(Document):
 			return
 
 		try:
-			task = rename_site(self.server, IMAGE_SITE_NAME, self.rename_target)
+			task = rename_site(self.server, IMAGE_SITE_NAME, self.rename_target, make_primary=True)
 		# This worker boundary records every failure so an operator can retry it safely.
 		except Exception:
 			self.record_rename_failure(

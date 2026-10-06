@@ -174,11 +174,17 @@ def rename_admin_domain(server: str, base_url: str | None = None, tls: bool = Tr
 
 
 def rename_site(
-	server: str, site: str, new_name: str, keep_old_hostname: bool = True, base_url: str | None = None
+	server: str,
+	site: str,
+	new_name: str,
+	keep_old_hostname: bool = True,
+	make_primary: bool = False,
+	base_url: str | None = None,
 ) -> dict:
-	"""Ask a server's pilot to rename one of its sites. Pilot queues the rename as a task."""
+	"""Ask a server's pilot to rename one of its sites. Pilot queues the rename as a task.
+	`make_primary` makes the new name the site's `host_name`, so its links use it."""
 	base_url = base_url or _expected_gateway_url(frappe.get_doc("Virtual Machine", server))
-	payload = {"new_name": new_name, "keep_old_hostname": keep_old_hostname}
+	payload = {"new_name": new_name, "keep_old_hostname": keep_old_hostname, "make_primary": make_primary}
 	return _post_to_pilot(server, base_url, f"/api/v1/sites/{quote(site, safe='')}/actions/rename", payload)
 
 

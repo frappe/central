@@ -579,7 +579,9 @@ class TestSiteNaming(SiteOnAMachine):
 			self.site().apply_subdomain()
 			self.site().apply_subdomain()
 
-		rename.assert_called_once_with(self.server.name, "site.local", "acme.par-2.example.test")
+		rename.assert_called_once_with(
+			self.server.name, "site.local", "acme.par-2.example.test", make_primary=True
+		)
 		self.assertEqual(self.site().rename_task, "task-1")
 
 	def test_a_site_nobody_named_is_never_renamed(self):
