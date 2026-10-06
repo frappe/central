@@ -3,85 +3,19 @@ import { computed, ref } from 'vue'
 import { API, method } from '@/api/methods'
 import { useSession } from '@/composables/useSession'
 import { teamParams, whenTeamReady } from '@/composables/useTeamScope'
-import { reportError, successToast } from '@/lib/feedback'
+import { successToast } from '@/lib/feedback'
 import { submitOrThrow } from '@/lib/frappeCall'
+import type {
+	AIApiKey,
+	AIState,
+	AIUsage,
+	MintedKey,
+	UsageFilters,
+} from '@/types/ai'
 
-// The team's AI, served by Grove. Grove owns the keys: Central lists them masked, and a
-// key's secret is shown once, in the answer that mints it. One module-level composable
-// so the page and its tabs share one fetch; the server re-checks every capability.
-
-export type AIDialect = 'openai' | 'anthropic'
-
-export interface AIModel {
-	name: string
-	// What the model takes and what it gives: text, image, embeddings, ...
-	input_modalities: string[]
-	output_modalities: string[]
-	// The API surfaces this model answers on.
-	dialects: AIDialect[]
-}
-
-// Per-minute limits counted across every key of the team. null means no limit.
-export interface AIRateLimits {
-	requests_per_minute: number | null
-	tokens_per_minute: number | null
-}
-
-export interface AIState {
-	enabled: boolean
-	models?: AIModel[]
-	rate_limits?: AIRateLimits
-}
-
-export interface AIUsageModel {
-	model: string
-	requests: number
-	cost: number
-}
-
-// One day of one model. Every day of the period is present, zeros included.
-export interface AIUsageDay {
-	day: string
-	model: string
-	requests: number
-	cost: number
-}
-
-// What the team used over a period: requests and cost (USD), in total, per model and
-// per day. Grove does the sums.
-export interface AIUsage {
-	period: string
-	from_date: string
-	to_date: string
-	as_of: string | null
-	totals: { requests: number; cost: number }
-	models: AIUsageModel[]
-	daily: AIUsageDay[]
-}
-
-// A named period, and one API key by name, or every key when absent.
-export interface UsageFilters {
-	period: string
-	key?: string
-}
-
-// A key as listed: never its secret.
-export interface AIApiKey {
-	name: string
-	title: string
-	status: 'active' | 'revoked'
-	creation: string
-	masked: string
-	can_read_balance: number
-}
-
-// A key just minted: the only answer that carries its secret.
-export interface MintedKey {
-	name: string
-	label: string
-	gateway_url: string
-	api_key: string
-}
+// The team's AI, served by Grove. One module-level composable so the page and its
+// tabs share one fetch; the server re-checks every capability. Mutations throw, so
+// the caller shows the result (a minted secret, an inline error) itself.
 
 const { activeTeam } = useSession()
 
@@ -128,6 +62,15 @@ const revokeKeyCall = useCall<{ name: string }, { team: string; key: string }>({
 	immediate: false,
 })
 
+const balanceAccessCall = useCall<
+	{ name: string; can_read_balance: boolean },
+	{ team: string; key: string; can_read_balance: boolean }
+>({
+	url: method(API.setAIApiKeyBalanceAccess),
+	method: 'POST',
+	immediate: false,
+})
+
 // Row-level busy: the key currently mutating, so its control alone spins.
 const busyKey = ref('')
 
@@ -135,9 +78,10 @@ export function useAI() {
 	return {
 		ai: computed<AIState | null>(() => aiCall.data ?? null),
 		aiLoading: computed(() => aiCall.loading),
+		aiError: computed(() => aiCall.error),
+		reloadAI: (): Promise<unknown> => aiCall.reload(),
 		models: computed(() => aiCall.data?.models ?? []),
 
-		// Errors bubble so the caller decides how to show them.
 		async enable(): Promise<void> {
 			await submitOrThrow(enableCall, { team: activeTeam.value! })
 			await aiCall.reload()
@@ -157,14 +101,28 @@ export function useAI() {
 
 		apiKeys: computed(() => apiKeysCall.data ?? []),
 		apiKeysLoading: computed(() => apiKeysCall.loading),
+		apiKeysError: computed(() => apiKeysCall.error),
 		busyKey: computed(() => busyKey.value),
 		loadApiKeys: (): Promise<unknown> => apiKeysCall.reload(),
 
-		// Throws so the caller can show the secret, or an inline error, itself.
 		async createApiKey(label: string): Promise<MintedKey> {
 			await submitOrThrow(createKeyCall, { team: activeTeam.value!, label })
 			await apiKeysCall.reload()
 			return createKeyCall.data!
+		},
+
+		async setBalanceAccess(key: string, allowed: boolean): Promise<void> {
+			busyKey.value = key
+			try {
+				await submitOrThrow(balanceAccessCall, {
+					team: activeTeam.value!,
+					key,
+					can_read_balance: allowed,
+				})
+				await apiKeysCall.reload()
+			} finally {
+				busyKey.value = ''
+			}
 		},
 
 		async revokeApiKey(key: string): Promise<void> {
@@ -175,8 +133,6 @@ export function useAI() {
 					'API key revoked. It can take a few minutes to stop working.',
 				)
 				await apiKeysCall.reload()
-			} catch (e) {
-				reportError(e)
 			} finally {
 				busyKey.value = ''
 			}

@@ -1,168 +1,149 @@
 <script setup lang="ts">
 import {
+	Alert,
 	Badge,
 	Button,
 	Dialog,
-	Dropdown,
 	type DropdownOptions,
-	Select,
-	TabButtons,
+	dayjs,
+	Switch,
 	TextInput,
+	Tooltip,
 } from 'frappe-ui'
-import { computed, ref, watch } from 'vue'
+import { computed, ref } from 'vue'
 
+import AIQuickstart from '@/components/addons/ai/AIQuickstart.vue'
+import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
+import CopyableValue from '@/components/common/CopyableValue.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
-import type {
-	AIApiKey,
-	AIDialect,
-	AIModel,
-	MintedKey,
-} from '@/composables/useAI'
+import RowActionsMenu from '@/components/common/RowActionsMenu.vue'
 import { useAI } from '@/composables/useAI'
-import { copyToClipboard } from '@/lib/clipboard'
-import { reportError, successToast } from '@/lib/feedback'
+import { getErrorMessage, reportError } from '@/lib/feedback'
+import type { AIApiKey, AIModel, MintedKey } from '@/types/ai'
 
-const props = defineProps<{
+interface Props {
 	models: AIModel[]
 	canManage: boolean
-}>()
+}
+
+defineProps<Props>()
 
 const {
+	ai,
 	apiKeys,
 	apiKeysLoading,
+	apiKeysError,
 	busyKey,
 	loadApiKeys,
 	createApiKey,
+	setBalanceAccess,
 	revokeApiKey,
 } = useAI()
 
 loadApiKeys()
 
-const rowActions = (key: AIApiKey): DropdownOptions => {
-	return [
-		{
-			label: 'Revoke',
-			icon: 'lucide-trash-2',
-			theme: 'red',
-			onClick: () => (pendingRevoke.value = key),
-		},
-	]
+const setBalance = async (key: AIApiKey, allowed: boolean): Promise<void> => {
+	try {
+		await setBalanceAccess(key.name, allowed)
+	} catch (e) {
+		reportError(e)
+	}
 }
 
-const generateOpen = ref(false)
+// Grove refuses to revoke a key before `revocable_at`; the dialog says so and asks nothing.
+const isRevocable = (key: AIApiKey): boolean =>
+	new Date(key.revocable_at) <= new Date()
+const revocableFrom = (key: AIApiKey): string =>
+	dayjs(key.revocable_at).format('MMM D, h:mm A')
+
+const rowActions = (key: AIApiKey): DropdownOptions => [
+	{
+		label: 'Revoke',
+		icon: 'lucide-trash-2',
+		theme: 'red',
+		onClick: () => (revokeTarget.value = key),
+	},
+]
+
+// ── Create ──
+const createOpen = ref(false)
 const newLabel = ref('')
-const generating = ref(false)
+const creating = ref(false)
+const createError = ref('')
 
-const openGenerate = (): void => {
+const openCreate = (): void => {
 	newLabel.value = ''
-	generateOpen.value = true
+	createError.value = ''
+	createOpen.value = true
 }
 
-const generate = async (): Promise<void> => {
+const create = async (): Promise<void> => {
 	const label = newLabel.value.trim()
 	if (!label) return
 
-	generating.value = true
-
+	creating.value = true
+	createError.value = ''
 	try {
-		details.value = await createApiKey(label)
-		generateOpen.value = false
+		minted.value = await createApiKey(label)
+		createOpen.value = false
 	} catch (e) {
-		reportError(e)
+		createError.value = getErrorMessage(e)
 	} finally {
-		generating.value = false
+		creating.value = false
 	}
 }
 
-const details = ref<MintedKey | null>(null)
-const secretRevealed = ref(false)
-const selectedModel = ref('')
+// The one time the secret is shown.
+const minted = ref<MintedKey | null>(null)
 
-// One key serves both: the gateway takes either SDK's auth header.
-const dialect = ref<AIDialect>('openai')
-const dialects = [
-	{ label: 'OpenAI compatible', value: 'openai' },
-	{ label: 'Anthropic compatible', value: 'anthropic' },
-]
-
-// Only the models that answer on the chosen surface.
-const dialectModels = computed(() =>
-	props.models.filter((m) => m.dialects.includes(dialect.value)),
-)
-
-watch(details, () => {
-	secretRevealed.value = false
-	dialect.value = 'openai'
+// The same examples with $API_KEY in place of a secret, for any key made earlier.
+const helpOpen = ref(false)
+// Grove's limits as the abbreviations a 429 uses: 20 RPM, 100K TPM, 1M TPD.
+const METRIC_LETTERS: Record<string, string> = {
+	requests: 'R',
+	total_tokens: 'T',
+}
+const WINDOW_LETTERS: Record<string, string> = {
+	'1m': 'PM',
+	'1h': 'PH',
+	'1d': 'PD',
+	'1M': 'PMo',
+}
+const METRIC_WORDS: Record<string, string> = {
+	requests: 'requests',
+	total_tokens: 'tokens',
+}
+const WINDOW_WORDS: Record<string, string> = {
+	'1m': 'per minute',
+	'1h': 'per hour',
+	'1d': 'per day',
+	'1M': 'per month',
+}
+const compact = new Intl.NumberFormat(undefined, {
+	notation: 'compact',
+	maximumFractionDigits: 1,
 })
-
-watch([details, dialectModels], () => {
-	const names = dialectModels.value.map((m) => m.name)
-	if (!names.includes(selectedModel.value)) selectedModel.value = names[0] ?? ''
-})
-
-const modelOptions = computed(() =>
-	dialectModels.value.map((m) => ({ label: m.name, value: m.name })),
-)
-const modelId = computed(() => selectedModel.value || 'MODEL_ID')
-
-const maskedKey = computed(() => {
-	if (!details.value) return ''
-	return secretRevealed.value
-		? details.value.api_key
-		: `${details.value.api_key.slice(0, 6)}${'•'.repeat(24)}${details.value.api_key.slice(-4)}`
-})
-
-// What each SDK takes as its base URL.
-const baseUrl = computed(() =>
-	dialect.value === 'openai'
-		? `${details.value?.gateway_url}/v1`
-		: `${details.value?.gateway_url}/anthropic`,
+const limitChips = computed(() =>
+	(ai.value?.rate_limits ?? []).map((limit) => ({
+		key: `${limit.metric}:${limit.window}`,
+		label: `${compact.format(limit.value)} ${METRIC_LETTERS[limit.metric] ?? limit.metric}${WINDOW_LETTERS[limit.window] ?? ''}`,
+		text: `${limit.value.toLocaleString()} ${METRIC_WORDS[limit.metric] ?? limit.metric} ${WINDOW_WORDS[limit.window] ?? limit.window}`,
+	})),
 )
 
-const curlTemplate = computed(() =>
-	dialect.value === 'openai'
-		? `curl ${baseUrl.value}/chat/completions \\
-  -H "Content-Type: application/json" \\
-  -H "Authorization: Bearer $API_KEY" \\
-  -d '{
-    "model": "${modelId.value}",
-    "messages": [{"role": "user", "content": "Hello"}]
-  }'`
-		: `curl ${baseUrl.value}/v1/messages \\
-  -H "Content-Type: application/json" \\
-  -H "x-api-key: $API_KEY" \\
-  -H "anthropic-version: 2023-06-01" \\
-  -d '{
-    "model": "${modelId.value}",
-    "max_tokens": 1024,
-    "messages": [{"role": "user", "content": "Hello"}]
-  }'`,
-)
+// ── Revoke ──
+const revokeTarget = ref<AIApiKey | null>(null)
+const revokeError = ref('')
 
-const copy = async (value: string, label: string): Promise<void> => {
-	if (await copyToClipboard(value)) {
-		successToast(`${label} copied`)
-		return
+const revoke = async (key: AIApiKey): Promise<void> => {
+	if (!isRevocable(key)) return
+	revokeError.value = ''
+	try {
+		await revokeApiKey(key.name)
+		revokeTarget.value = null
+	} catch (e) {
+		revokeError.value = getErrorMessage(e)
 	}
-
-	reportError(
-		new Error(`${label} could not be copied. Select it and copy by hand.`),
-	)
-}
-
-const copyCurl = (): void => {
-	if (!details.value) return
-	void copy(
-		curlTemplate.value.replace('$API_KEY', details.value.api_key),
-		'Command',
-	)
-}
-
-const pendingRevoke = ref<AIApiKey | null>(null)
-const confirmRevoke = async (): Promise<void> => {
-	const key = pendingRevoke.value
-	pendingRevoke.value = null
-	if (key) await revokeApiKey(key.name)
 }
 </script>
 
@@ -172,16 +153,38 @@ const confirmRevoke = async (): Promise<void> => {
 			<div class="flex items-start justify-between gap-4">
 				<p class="max-w-prose text-p-sm text-ink-gray-5">
 					Keys for use in your own apps. A key's secret is shown once, when it
-					is created.
+					is created. A key that reads balance can fetch the team's remaining
+					credit from the gateway; the first key starts with that on.
 				</p>
 
-				<Button
-					v-if="canManage"
-					label="Generate key"
-					icon-left="lucide-plus"
-					class="shrink-0"
-					@click="openGenerate"
-				/>
+				<div class="flex shrink-0 items-center gap-2">
+					<Button
+						v-if="ai?.gateway_url"
+						variant="ghost"
+						icon="lucide-circle-help"
+						label="How to call the models"
+						tooltip="How to call the models"
+						@click="helpOpen = true"
+					/>
+					<Button
+						v-if="canManage"
+						label="Create key"
+						icon-left="lucide-plus"
+						@click="openCreate"
+					/>
+				</div>
+			</div>
+
+			<div
+				v-if="limitChips.length"
+				class="mt-3 flex flex-wrap items-center justify-end gap-2"
+			>
+				<span class="text-p-xs text-ink-gray-5">
+					Rate limits, shared by every key of the team
+				</span>
+				<Tooltip v-for="chip in limitChips" :key="chip.key" :text="chip.text">
+					<Badge :label="chip.label" theme="gray" size="md" class="font-mono" />
+				</Tooltip>
 			</div>
 
 			<div
@@ -191,6 +194,18 @@ const confirmRevoke = async (): Promise<void> => {
 				<span class="text-p-sm text-ink-gray-5">Loading…</span>
 			</div>
 
+			<EmptyState
+				v-else-if="apiKeysError && !apiKeys.length"
+				class="mt-3"
+				icon="lucide-cloud-off"
+				title="Keys couldn't load"
+				:description="getErrorMessage(apiKeysError, 'Try again in a moment.')"
+			>
+				<template #action>
+					<Button label="Retry" @click="loadApiKeys" />
+				</template>
+			</EmptyState>
+
 			<div
 				v-else-if="apiKeys.length"
 				class="mt-3 divide-y divide-outline-gray-1 border-t border-outline-gray-1"
@@ -199,7 +214,6 @@ const confirmRevoke = async (): Promise<void> => {
 					v-for="key in apiKeys"
 					:key="key.name"
 					class="flex items-center gap-3 py-2.5"
-					:class="key.status === 'active' && canManage ? 'cursor-pointer' : ''"
 				>
 					<span
 						class="grid size-8 shrink-0 place-items-center rounded-6 bg-surface-gray-2 text-ink-gray-6"
@@ -207,12 +221,11 @@ const confirmRevoke = async (): Promise<void> => {
 						<lucide-key-round class="size-4" />
 					</span>
 
-					<!-- masked key -->
 					<div class="min-w-0 flex-1">
 						<div class="flex items-center gap-2">
-							<span class="truncate text-sm font-medium text-ink-gray-9"
-								>{{ key.title }}</span
-							>
+							<span class="truncate text-sm font-medium text-ink-gray-9">
+								{{ key.title }}
+							</span>
 							<Badge
 								:theme="key.status === 'active' ? 'green' : 'gray'"
 								size="sm"
@@ -224,21 +237,28 @@ const confirmRevoke = async (): Promise<void> => {
 						</div>
 					</div>
 
-					<Dropdown
+					<template v-if="key.status === 'active'">
+						<Switch
+							v-if="canManage"
+							:model-value="!!key.can_read_balance"
+							label="Reads balance"
+							:disabled="busyKey === key.name"
+							@update:model-value="(allowed: boolean) => setBalance(key, allowed)"
+						/>
+						<span
+							v-else-if="key.can_read_balance"
+							class="text-p-xs text-ink-gray-5"
+						>
+							Reads balance
+						</span>
+					</template>
+
+					<RowActionsMenu
 						v-if="canManage && key.status === 'active'"
 						:options="rowActions(key)"
-						align="end"
-					>
-						<template #trigger>
-							<Button
-								variant="ghost"
-								icon="lucide-ellipsis-vertical"
-								:loading="busyKey === key.name"
-								label="API key actions"
-								@click.stop
-							/>
-						</template>
-					</Dropdown>
+						label="API key actions"
+						:busy="busyKey === key.name"
+					/>
 					<span v-else class="w-6 shrink-0" />
 				</div>
 			</div>
@@ -248,29 +268,45 @@ const confirmRevoke = async (): Promise<void> => {
 				class="mt-3"
 				icon="lucide-key-round"
 				title="No API keys yet"
-				description="Generate a key to call our models from your own apps."
+				description="Create a key to call our models from your own apps."
 			>
 				<template v-if="canManage" #action>
 					<Button
-						label="Generate key"
+						label="Create key"
 						icon-left="lucide-plus"
-						@click="openGenerate"
+						@click="openCreate"
 					/>
 				</template>
 			</EmptyState>
 		</div>
 	</div>
 
+	<Dialog v-model="helpOpen" title="Calling the models" size="2xl">
+		<template #default>
+			<div class="space-y-4">
+				<p class="text-p-sm text-ink-gray-6">
+					One key works on both surfaces: point the OpenAI or the Anthropic SDK
+					at the base URL below and use it as you would with the vendor.
+				</p>
+				<AIQuickstart
+					v-if="ai?.gateway_url"
+					:gateway-url="ai.gateway_url"
+					:models="models"
+				/>
+			</div>
+		</template>
+	</Dialog>
+
 	<Dialog
-		v-model="generateOpen"
-		title="Generate API key"
+		v-model="createOpen"
+		title="Create API key"
 		:actions="[
 			{
-				label: 'Generate',
+				label: 'Create',
 				variant: 'solid',
-				loading: generating,
+				loading: creating,
 				disabled: !newLabel.trim(),
-				onClick: generate,
+				onClick: create,
 			},
 		]"
 	>
@@ -279,128 +315,72 @@ const confirmRevoke = async (): Promise<void> => {
 				v-model="newLabel"
 				label="Label"
 				placeholder="e.g. n8n prod"
-				description="A name to recognise this key by. You can revoke it independently. New keys can take a few minutes to start working."
-				@keyup.enter="generate"
+				description="A name to recognise this key by. New keys can take a few minutes to start working."
+				@keyup.enter="create"
 			/>
+			<p v-if="createError" class="mt-2 text-p-sm text-ink-red-6">
+				{{ createError }}
+			</p>
 		</template>
 	</Dialog>
 
 	<Dialog
-		:model-value="!!details"
-		:title="details ? `API key - ${details.label}` : ''"
+		:model-value="!!minted"
+		:title="minted ? `API key - ${minted.label}` : ''"
 		size="2xl"
-		@update:model-value="
-			(v: boolean) => {
-				if (!v) details = null
-			}
-		"
+		@update:model-value="(open: boolean) => !open && (minted = null)"
 	>
 		<template #default>
-			<div v-if="details" class="space-y-5">
-				<p class="text-p-sm font-medium text-ink-orange-4">
-					Copy this key now. It will not be shown again.
-				</p>
+			<div v-if="minted" class="space-y-5">
+				<Alert
+					theme="amber"
+					title="The key is shown only now"
+					description="Copy it somewhere safe. If you lose it, revoke it and create another."
+				/>
 
 				<div>
 					<label class="mb-1 block text-p-sm font-medium text-ink-gray-7">
-						API Key
+						API key
 					</label>
-					<div class="flex items-center gap-2">
-						<code
-							class="min-w-0 flex-1 truncate rounded-5 border border-outline-gray-2 bg-surface-gray-1 px-3 py-2 font-mono text-sm text-ink-gray-8"
-						>
-							{{ maskedKey }}
-						</code>
-						<Button
-							:icon="secretRevealed ? 'lucide-eye-off' : 'lucide-eye'"
-							:label="secretRevealed ? 'Hide key' : 'Reveal key'"
-							@click="secretRevealed = !secretRevealed"
-						/>
-						<Button
-							icon="lucide-copy"
-							label="Copy API key"
-							@click="copy(details.api_key, 'API key')"
-						/>
-					</div>
-					<p class="mt-2 text-xs text-ink-gray-5">
-						Treat it like a password. Revocable on its own. The same key works
-						on both endpoints.
-					</p>
+					<CopyableValue :value="minted.api_key" label="API key" block />
 				</div>
 
-				<TabButtons v-model="dialect" :options="dialects" />
-
-				<div>
-					<label class="mb-1 block text-p-sm font-medium text-ink-gray-7">
-						Base URL
-					</label>
-					<div class="flex items-center gap-2">
-						<code
-							class="min-w-0 flex-1 truncate rounded-5 border border-outline-gray-2 bg-surface-gray-1 px-3 py-2 font-mono text-sm text-ink-gray-8"
-						>
-							{{ baseUrl }}
-						</code>
-						<Button
-							icon="lucide-copy"
-							label="Copy base URL"
-							@click="copy(baseUrl, 'Base URL')"
-						/>
-					</div>
-				</div>
-
-				<!-- example codeblock -->
-				<div class="mb-1 flex items-center justify-between gap-2">
-					<label class="text-p-sm font-medium text-ink-gray-7">
-						Example request
-					</label>
-					<Select
-						v-if="dialectModels.length"
-						v-model="selectedModel"
-						:options="modelOptions"
-						variant="outline"
-					/>
-				</div>
-
-				<div
-					class="flex border border-outline-gray-2 bg-surface-gray-2 rounded-4"
-				>
-					<pre
-						class="flex overflow-x-auto rounded-5  p-3 font-mono text-xs leading-relaxed text-ink-gray-8"
-					>{{ curlTemplate }}</pre>
-
-					<Button
-						icon="lucide-copy"
-						class="sticky top-0 right-0 ml-auto"
-						label="Copy command"
-						@click="copyCurl"
-					/>
-				</div>
-
-				<p class="mt-1 text-xs text-ink-gray-5">
-					Copy runs with your key filled in; the shown command keeps it as
-					<code class="font-mono">$API_KEY</code>.
-				</p>
+				<!-- The examples carry the key, so what is copied runs as is. -->
+				<AIQuickstart
+					:gateway-url="minted.gateway_url"
+					:models="models"
+					:api-key="minted.api_key"
+				/>
 			</div>
 		</template>
 	</Dialog>
 
-	<Dialog
-		:model-value="!!pendingRevoke"
+	<ConfirmDialog
+		v-model:target="revokeTarget"
 		title="Revoke API key"
-		:message="`Revoke ${pendingRevoke?.title}? Any app using it will stop working within a few minutes. This can't be undone.`"
-		:actions="[
-			{
-				label: 'Revoke',
-				variant: 'solid',
-				theme: 'red',
-				loading: busyKey === pendingRevoke?.name,
-				onClick: confirmRevoke,
-			},
-		]"
-		@update:model-value="
-			(v: boolean) => {
-				if (!v) pendingRevoke = null
-			}
-		"
-	/>
+		confirm-label="Revoke"
+		theme="red"
+		:loading="busyKey === revokeTarget?.name"
+		:disabled="!!revokeTarget && !isRevocable(revokeTarget)"
+		:error="revokeError"
+		@confirm="revoke"
+		@after-leave="revokeError = ''"
+	>
+		<template v-if="revokeTarget">
+			<p v-if="!isRevocable(revokeTarget)" class="text-p-base text-ink-gray-7">
+				<span class="text-base-semibold text-ink-gray-9"
+					>{{ revokeTarget.title }}</span
+				>
+				can be revoked from {{ revocableFrom(revokeTarget) }}, six hours after
+				it was created.
+			</p>
+			<p v-else class="text-p-base text-ink-gray-7">
+				Revoke
+				<span class="text-base-semibold text-ink-gray-9"
+					>{{ revokeTarget.title }}</span
+				>? Any app using it stops working within a few minutes. This can't be
+				undone.
+			</p>
+		</template>
+	</ConfirmDialog>
 </template>

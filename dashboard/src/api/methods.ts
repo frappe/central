@@ -80,6 +80,8 @@ export const API = {
 	aiApiKeys: 'central.services.api.ai.list_api_keys',
 	createAIApiKey: 'central.services.api.ai.create_api_key',
 	revokeAIApiKey: 'central.services.api.ai.revoke_api_key',
+	setAIApiKeyBalanceAccess:
+		'central.services.api.ai.set_api_key_balance_access',
 
 	objectStorage: 'central.services.api.storage.get_object_storage',
 	bucketUsage: 'central.services.api.storage.get_bucket_usage',

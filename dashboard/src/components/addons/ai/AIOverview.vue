@@ -1,7 +1,10 @@
 <script setup lang="ts">
-import { Badge, Spinner, Tooltip } from 'frappe-ui'
-import { type Component, computed } from 'vue'
-import { type AIDialect, useAI } from '@/composables/useAI'
+import { Badge, Button, Spinner, Tooltip } from 'frappe-ui'
+import { NumberCard } from 'frappe-ui/charts'
+import { type Component, computed, ref } from 'vue'
+import { useAI } from '@/composables/useAI'
+import { formatDateTime } from '@/lib/datetime'
+import type { AIDialect } from '@/types/ai'
 import LucideAudioLines from '~icons/lucide/audio-lines'
 import LucideBinary from '~icons/lucide/binary'
 import LucideCaptions from '~icons/lucide/captions'
@@ -32,15 +35,18 @@ function modalityLabel(modality: string): string {
 }
 const { ai, aiLoading, models } = useAI()
 
-const rateLimits = computed(() => {
-	const limits = ai.value?.rate_limits
-	if (!limits) return []
+const usage = computed(() => ai.value?.usage ?? null)
+const balance = computed(() => ai.value?.balance ?? null)
 
-	return [
-		{ label: 'Requests per minute', value: limits.requests_per_minute },
-		{ label: 'Tokens per minute', value: limits.tokens_per_minute },
-	]
-})
+// A model call often costs a fraction of a cent, so small amounts keep 4 places.
+const usdPrecision = (value: number): number => (value > 0 && value < 1 ? 4 : 2)
+
+// The table starts short; the rest unfolds in place.
+const SHOWN = 6
+const showAll = ref(false)
+const shownModels = computed(() =>
+	showAll.value ? models.value : models.value.slice(0, SHOWN),
+)
 </script>
 
 <template>
@@ -51,26 +57,40 @@ const rateLimits = computed(() => {
 			</div>
 
 			<template v-else>
-				<template v-if="rateLimits.length">
-					<h2 class="text-base font-semibold text-ink-gray-8">Rate limits</h2>
+				<h2 class="text-base font-semibold text-ink-gray-8">This month</h2>
 
-					<p class="mt-0.5 text-p-sm text-ink-gray-5">
-						Shared by every API key of this team.
-					</p>
+				<p class="mt-0.5 text-p-sm text-ink-gray-5">
+					Across every key of the team, as of
+					{{ usage?.as_of ? formatDateTime(usage.as_of) : 'the last count' }}.
+				</p>
 
-					<dl class="mt-3 divide-y divide-outline-gray-1">
-						<div
-							v-for="limit in rateLimits"
-							:key="limit.label"
-							class="flex items-center justify-between py-3"
-						>
-							<dt class="text-sm text-ink-gray-8">{{ limit.label }}</dt>
-							<dd class="font-mono text-sm font-medium text-ink-gray-9">
-								{{ limit.value?.toLocaleString() ?? 'No limit' }}
-							</dd>
-						</div>
-					</dl>
-				</template>
+				<div class="mt-3 grid grid-cols-2 gap-4 md:grid-cols-4">
+					<NumberCard title="Requests" :value="usage?.requests ?? null" />
+					<NumberCard title="Tokens" :value="usage?.tokens ?? null">
+						<template #actions>
+							<Tooltip
+								text="Prompt and completion tokens together, across every model and key."
+							>
+								<lucide-circle-help
+									class="size-4 text-ink-gray-5"
+									aria-label="What counts as a token"
+								/>
+							</Tooltip>
+						</template>
+					</NumberCard>
+					<NumberCard
+						title="Spent"
+						:value="usage?.cost ?? null"
+						prefix="$"
+						:precision="usdPrecision(usage?.cost ?? 0)"
+					/>
+					<NumberCard
+						title="Balance"
+						:value="balance?.balance ?? null"
+						prefix="$"
+						:precision="usdPrecision(balance?.balance ?? 0)"
+					/>
+				</div>
 
 				<h2
 					class="text-base font-semibold text-ink-gray-8 mt-8 border-t border-outline-gray-2 pt-8"
@@ -98,7 +118,7 @@ const rateLimits = computed(() => {
 					</thead>
 
 					<tbody class="divide-y divide-outline-gray-1">
-						<tr v-for="model in models" :key="model.name">
+						<tr v-for="model in shownModels" :key="model.name">
 							<td
 								class="py-3 pr-3 font-mono text-sm font-medium text-ink-gray-9"
 							>
@@ -142,6 +162,15 @@ const rateLimits = computed(() => {
 				<p v-else class="mt-3 text-p-sm text-ink-gray-5">
 					No models accessible yet.
 				</p>
+
+				<Button
+					v-if="models.length > SHOWN"
+					class="-ml-2 mt-3"
+					variant="ghost"
+					:label="showAll ? 'Show fewer' : `Show all ${models.length}`"
+					:icon-right="showAll ? 'lucide-chevron-up' : 'lucide-chevron-down'"
+					@click="showAll = !showAll"
+				/>
 			</template>
 		</div>
 	</div>

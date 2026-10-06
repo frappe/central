@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Button, Select } from 'frappe-ui'
-import { AreaChart, BarChart, NumberCard } from 'frappe-ui/charts'
+import { AreaChart, BarChart } from 'frappe-ui/charts'
 import { computed, ref, watch } from 'vue'
 import { useAI } from '@/composables/useAI'
 
@@ -76,12 +76,6 @@ const modelSeries = computed(() =>
 	),
 )
 
-// A model call often costs a fraction of a cent, so small amounts keep 4 places.
-const costPrecision = computed(() => {
-	const cost = totals.value?.cost ?? 0
-	return cost > 0 && cost < 1 ? 4 : 2
-})
-
 const usd = (value: number): string =>
 	new Intl.NumberFormat(undefined, {
 		style: 'currency',
@@ -147,23 +141,6 @@ const asOf = computed(() =>
 					</button>
 				</div>
 			</Teleport>
-
-			<div class="flex flex-wrap gap-4">
-				<NumberCard
-					class="min-w-40 flex-1"
-					title="Cost"
-					:value="totals?.cost ?? null"
-					prefix="$"
-					:precision="costPrecision"
-					:loading="usageLoading"
-				/>
-				<NumberCard
-					class="min-w-40 flex-1"
-					title="API requests"
-					:value="totals?.requests ?? null"
-					:loading="usageLoading"
-				/>
-			</div>
 
 			<div
 				v-if="usageError"
