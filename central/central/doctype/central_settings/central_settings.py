@@ -3,6 +3,10 @@
 
 from __future__ import annotations
 
+import json
+
+import frappe
+from frappe import _
 from frappe.model.document import Document
 
 # Central's console feature flags. One Single, one Check per flag, read at page
@@ -19,6 +23,7 @@ class CentralSettings(Document):
 		from frappe.types import DF
 
 		central_id: DF.Int
+		common_site_config: DF.JSON | None
 		enable_addons: DF.Check
 		enable_email_delivery_service: DF.Check
 		enable_llm_service: DF.Check
@@ -28,6 +33,21 @@ class CentralSettings(Document):
 		trial_idle_shutdown_minutes: DF.Int
 		wildcard_domain: DF.Data | None
 	# end: auto-generated types
+
+	def validate(self) -> None:
+		from central.integrations.atlas import MAXIMUM_METADATA_VALUE_BYTES
+
+		try:
+			config = self.get_common_site_config()
+		except ValueError:
+			config = None
+		if not isinstance(config, dict):
+			frappe.throw(_('Common Site Config must be a JSON object, such as {"key": "value"}.'))
+		if len(json.dumps(config).encode()) > MAXIMUM_METADATA_VALUE_BYTES:
+			frappe.throw(_("Common Site Config must fit in {0} bytes.").format(MAXIMUM_METADATA_VALUE_BYTES))
+
+	def get_common_site_config(self) -> dict:
+		return json.loads(self.common_site_config or "{}")
 
 	def feature_flags(self) -> dict[str, bool]:
 		"""The console's feature flags as a plain {name: bool} map for window boot.

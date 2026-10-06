@@ -56,3 +56,16 @@ class TestPilotBootstrapMetadata(TestCase):
 
 		self.assertNotIn("pilot-common-config", payload["metadata"])
 		request.record_diagnostic.assert_called_once()
+
+	def test_every_server_gets_the_common_site_config(self):
+		relay = {"raven_push_notification_server_url": "https://relay.example.test"}
+		with (
+			patch(f"{PILOT}.get_telemetry_base_url", return_value=None),
+			patch(
+				"central.central.doctype.central_settings.central_settings.CentralSettings.get_common_site_config",
+				return_value=relay,
+			),
+		):
+			metadata = _create_payload(pilot_request())["metadata"]
+
+		self.assertEqual(json.loads(metadata["pilot-common-site-config"]), relay)

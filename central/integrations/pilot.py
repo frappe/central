@@ -43,8 +43,10 @@ def get_bootstrap_metadata(action) -> dict[str, str]:
 	}
 
 	# Metal caps each metadata value at 1 KiB. Pilot merges pilot-common-config into
-	# common_config.toml at bootstrap.
+	# common_config.toml and pilot-common-site-config into common_site_config.json at bootstrap.
 	metadata = {"pilot-central": json.dumps(bootstrap)}
+	if common_site_config := frappe.get_cached_doc("Central Settings").get_common_site_config():
+		metadata["pilot-common-site-config"] = json.dumps(common_site_config)
 
 	try:
 		metadata["pilot-common-config"] = json.dumps({"telemetry": get_telemetry_configuration(action)})

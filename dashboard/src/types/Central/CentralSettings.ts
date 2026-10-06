@@ -9,6 +9,8 @@ export interface CentralSettings {
 	parentfield?: string
 	parenttype?: string
 	idx?: number
+	/**	Common Site Config : JSON - A JSON object that every server Central creates merges into its sites/common_site_config.json, such as {"raven_push_notification_server_url": "https://cloud.ravenchat.ai"}. The customer can read it, so never put a secret here. A server keeps what it got when it was created.	*/
+	common_site_config?: string
 	/**	Enable Add-ons : Check - Show the Add-ons area (LLM / storage services) in the console. Off hides its nav entry and blocks its routes.	*/
 	enable_addons?: 0 | 1
 	/**	Enable LLM Service : Check	*/
