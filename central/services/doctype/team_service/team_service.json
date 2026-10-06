@@ -37,7 +37,7 @@
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Service",
-   "options": "storage",
+   "options": "storage\nai",
    "reqd": 1,
    "search_index": 1
   },
@@ -64,8 +64,8 @@
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Region",
+   "mandatory_depends_on": "eval:doc.add_on_service == 'storage'",
    "options": "Region",
-   "reqd": 1,
    "search_index": 1
   },
   {
@@ -110,7 +110,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-10-05 18:00:00.000000",
+ "modified": "2026-10-06 18:00:00.000000",
  "modified_by": "Administrator",
  "module": "Services",
  "name": "Team Service",

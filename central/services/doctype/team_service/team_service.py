@@ -10,6 +10,7 @@ from central.integrations.object_storage import ObjectStorageClient, ObjectStora
 from central.services.doctype.service_detail.service_detail import ServiceDetail
 
 STORAGE_SERVICE = "storage"
+AI_SERVICE = "ai"
 
 
 class TeamService(Document):
@@ -22,10 +23,10 @@ class TeamService(Document):
 		from frappe.types import DF
 
 		access_key: DF.Data | None
-		add_on_service: DF.Literal["storage"]
+		add_on_service: DF.Literal["storage", "ai"]
 		bucket_name: DF.Data | None
 		endpoint_url: DF.Data | None
-		region: DF.Link
+		region: DF.Link | None
 		secret_access_key: DF.Password | None
 		status: DF.Literal["Active", "Suspended"]
 		subscription: DF.Link | None
@@ -38,9 +39,19 @@ class TeamService(Document):
 	def is_bucket(self) -> bool:
 		return self.add_on_service == STORAGE_SERVICE
 
+	@property
+	def is_ai(self) -> bool:
+		return self.add_on_service == AI_SERVICE
+
 	def before_insert(self) -> None:
 		"""Create the bucket, bill it, then let the record save. Cargo answers first, so a
-		record always names a bucket that exists."""
+		record always names a bucket that exists. AI registers the team at Grove first."""
+		if self.is_ai:
+			from central.services.ai import register_grove_user
+
+			register_grove_user(self.team)
+			return
+
 		if not self.is_bucket:
 			return
 
@@ -108,10 +119,25 @@ class TeamService(Document):
 		self.secret_access_key = credentials["secret_access_key"]
 
 	def validate(self) -> None:
-		if self.status == "Active" and not self.subscription:
+		# AI is prepaid at Grove, so it has no subscription here.
+		if self.status == "Active" and not self.subscription and not self.is_ai:
 			frappe.throw(_("An active service must have a subscription."))
 
+		# The form asks for it through mandatory_depends_on, which the server does not check.
+		if self.is_bucket and not self.region:
+			frappe.throw(_("A bucket needs a region."), frappe.MandatoryError)
+
 		self.validate_bucket_is_unclaimed()
+		self.validate_one_ai_service()
+
+	def validate_one_ai_service(self) -> None:
+		"""A team is one Grove user, so it has one AI service."""
+		if not self.is_ai:
+			return
+
+		others = {"team": self.team, "add_on_service": AI_SERVICE, "name": ("!=", self.name or "")}
+		if frappe.db.exists(self._DOCTYPE_NAME, others):
+			frappe.throw(_("Team {0} already has AI.").format(self.team))
 
 	def validate_bucket_is_unclaimed(self) -> None:
 		"""A readable error ahead of the unique constraint, which is what enforces this.
