@@ -1,0 +1,399 @@
+from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier
+from types import SimpleNamespace
+from unittest.mock import Mock, patch
+from uuid import uuid4
+
+import frappe
+from frappe.tests import IntegrationTestCase
+from frappe.utils import add_to_date, now_datetime
+
+from central.errors import AtlasRequestUncertain, AtlasResourceGone
+from central.infrastructure import runway
+from central.integrations import runway as regional
+from central.permissions import runner_lease_has_permission, runner_lease_query_conditions
+
+
+class TestRunway(IntegrationTestCase):
+	def setUp(self):
+		super().setUp()
+		frappe.set_user("Administrator")
+		self.team = frappe.get_doc(
+			{"doctype": "Team", "team_name": f"Runway test {uuid4()}", "owner_user": "Administrator"}
+		).insert()
+		self.region = frappe.get_doc(
+			{
+				"doctype": "Region",
+				"region": f"test-{uuid4().hex[:12]}",
+				"atlas_region_id": str(int(uuid4().hex[:4], 16)),
+				"base_url": "https://atlas.example.test",
+				"status": "Active",
+			}
+		).insert()
+		from cryptography.hazmat.primitives import serialization
+		from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+		key = (
+			Ed25519PrivateKey.generate()
+			.public_key()
+			.public_bytes(serialization.Encoding.OpenSSH, serialization.PublicFormat.OpenSSH)
+			.decode()
+		)
+		self.pool = frappe.get_doc(
+			{
+				"doctype": "Runner Pool",
+				"title": "Runway integration test",
+				"team": self.team.name,
+				"region": self.region.name,
+				"controller_user": "Administrator",
+				"repository_url": "https://github.com/example/ci",
+				"scale_set_id": 1,
+				"image_id": "test-image",
+				"status": "Active",
+				"max_concurrency": 1,
+				"cpu_millicores": 1000,
+				"memory_mib": 2048,
+				"disk_mib": 4096,
+				"max_job_seconds": 600,
+				"ssh_public_key": key,
+			}
+		).insert()
+		self.owner = str(uuid4())
+		self.fence = runway.claim_pool(self.pool.name, self.owner)["fence"]
+		frappe.db.commit()
+		self.addCleanup(self.cleanup_records)
+
+	def cleanup_records(self):
+		frappe.set_user("Administrator")
+		frappe.db.rollback()
+		# Tests own disposable fixtures, including immutable lease audit rows.
+		frappe.db.delete("Runner Lease", {"pool": self.pool.name})
+		frappe.db.delete("Runner Pool", {"name": self.pool.name})
+		frappe.db.delete("Region", {"name": self.region.name})
+		frappe.db.delete("Team Member", {"parent": self.team.name})
+		frappe.db.delete("Team", {"name": self.team.name})
+		frappe.db.commit()
+
+	def reserve(self):
+		return runway.reserve_lease(self.pool.name, self.owner, self.fence, str(uuid4()))
+
+	def test_duplicate_reservation_cannot_bypass_capacity(self):
+		lease = self.reserve()
+		self.assertEqual(
+			runway.reserve_lease(self.pool.name, self.owner, self.fence, lease["id"])["id"], lease["id"]
+		)
+		with self.assertRaises(frappe.ValidationError):
+			self.reserve()
+		self.assertEqual(len(runway.active_leases(pool=self.pool.name)), 1)
+
+	def test_concurrent_reservations_share_one_capacity_slot(self):
+		site, sites_path = frappe.local.site, frappe.local.sites_path
+		pool, owner, fence = self.pool.name, self.owner, self.fence
+		barrier = Barrier(2)
+		frappe.db.commit()
+
+		def reserve_concurrently():
+			frappe.init(site=site, sites_path=sites_path)
+			frappe.connect()
+			frappe.set_user("Administrator")
+			try:
+				barrier.wait(timeout=10)
+				runway.reserve_lease(pool, owner, fence, str(uuid4()))
+				frappe.db.commit()
+				return "reserved"
+			except frappe.ValidationError:
+				frappe.db.rollback()
+				return "full"
+			finally:
+				frappe.destroy()
+
+		with ThreadPoolExecutor(max_workers=2) as executor:
+			results = list(executor.map(lambda _: reserve_concurrently(), range(2)))
+		self.assertCountEqual(results, ["reserved", "full"])
+
+	def test_pool_identity_stays_frozen_until_github_cleanup(self):
+		lease = self.reserve()
+		frappe.db.set_value("Runner Lease", lease["id"], {"phase": "deleted", "jit_state": "ready"})
+		self.pool.reload()
+		self.pool.repository_url = "https://github.com/other/repository"
+		with self.assertRaises(frappe.ValidationError):
+			self.pool.save()
+
+	def test_reclaim_fences_old_controller(self):
+		new = runway.claim_pool(self.pool.name, self.owner)
+		self.assertGreater(new["fence"], self.fence)
+		with self.assertRaises(frappe.PermissionError):
+			self.reserve()
+
+	def test_controller_requires_pool_assignment_and_capabilities(self):
+		with (
+			patch.object(runway, "user_has_operator_bypass", return_value=False),
+			patch.object(runway, "can", return_value=True),
+		):
+			pool = SimpleNamespace(controller_user="someone-else", team=self.team.name)
+			with self.assertRaises(frappe.PermissionError):
+				runway.authorize(pool)
+		with (
+			patch.object(runway, "user_has_operator_bypass", return_value=False),
+			patch.object(runway, "can", return_value=False),
+		):
+			with self.assertRaises(frappe.PermissionError):
+				runway.authorize(self.pool)
+
+	def test_lease_access_denies_cross_team_and_direct_writes(self):
+		with (
+			patch("central.permissions.user_has_operator_bypass", return_value=False),
+			patch(
+				"central.permissions.can", side_effect=lambda user, team, capability: team == self.team.name
+			),
+			patch("central.permissions.get_user_team_names_with_capability", return_value=[]),
+		):
+			self.assertTrue(
+				runner_lease_has_permission(SimpleNamespace(team=self.team.name), "reader", "read")
+			)
+			self.assertFalse(runner_lease_has_permission(SimpleNamespace(team="other"), "reader", "read"))
+			self.assertFalse(
+				runner_lease_has_permission(SimpleNamespace(team=self.team.name), "reader", "write")
+			)
+			self.assertEqual(runner_lease_query_conditions("outsider"), "1 = 0")
+		lease = self.reserve()
+		with self.assertRaises(frappe.PermissionError):
+			runway.scoped_lease(SimpleNamespace(name="other-pool", team=self.team.name), lease["id"])
+
+	def test_uncertain_create_is_not_repeated_and_can_be_discovered(self):
+		lease = self.reserve()
+		client = Mock()
+		client.create_vm.side_effect = AtlasRequestUncertain("lost reply")
+		client.list_vms.return_value = []
+		with patch.object(regional, "client_for_pool", return_value=client):
+			first = regional.ensure_vm(self.pool.name, self.owner, self.fence, lease["id"])
+			self.assertEqual(first["phase"], "uncertain")
+			regional.ensure_vm(self.pool.name, self.owner, self.fence, lease["id"])
+			client.create_vm.assert_called_once()
+			client.list_vms.return_value = [
+				{"id": "vm-42", "tags": {"runway_pool": self.pool.name, "runway_lease": lease["id"]}}
+			]
+			client.get_vm.return_value = {"current_state": "running", "network": {"mesh_ipv6": "fdaa::42"}}
+			found = regional.ensure_vm(self.pool.name, self.owner, self.fence, lease["id"])
+			self.assertEqual(found["vm_id"], "vm-42")
+			self.assertEqual(found["phase"], "vm_ready")
+			client.create_vm.assert_called_once()
+
+	def test_uncertain_create_preserves_concurrent_cleanup_intent(self):
+		lease = self.reserve()
+		client = Mock()
+
+		def concurrent_cleanup(_payload):
+			frappe.db.set_value("Runner Lease", lease["id"], "phase", "deleting")
+			frappe.db.commit()
+			return {}
+
+		client.create_vm.side_effect = concurrent_cleanup
+		client.list_vms.return_value = []
+		with patch.object(regional, "client_for_pool", return_value=client):
+			result = regional.ensure_vm(self.pool.name, self.owner, self.fence, lease["id"])
+		self.assertEqual(result["phase"], "deleting")
+
+	def test_expired_vm_requires_scoped_absence_and_github_cleanup(self):
+		lease = self.reserve()
+		frappe.db.set_value(
+			"Runner Lease",
+			lease["id"],
+			{
+				"vm_id": "vm-42",
+				"phase": "running",
+				"jit_state": "ready",
+				"deadline": add_to_date(now_datetime(), seconds=-1),
+			},
+		)
+		frappe.db.commit()
+		client = Mock()
+		client.get_vm.return_value = {"current_state": "running", "network": {}}
+		with patch.object(regional, "client_for_pool", return_value=client):
+			regional.reconcile_lease(self.pool, lease["id"])
+			self.assertEqual(frappe.db.get_value("Runner Lease", lease["id"], "phase"), "deleting")
+			client.vm_action.assert_called_once_with("vm-42", "terminate")
+			client.get_vm.side_effect = AtlasResourceGone("scoped 404")
+			regional.reconcile_lease(self.pool, lease["id"])
+			self.assertEqual(frappe.db.get_value("Runner Lease", lease["id"], "phase"), "deleted")
+			self.assertEqual(len(runway.active_leases(pool=self.pool.name)), 1)
+			runway.update_lease(self.pool.name, self.owner, self.fence, lease["id"], "runner_removed")
+			self.assertEqual(runway.active_leases(pool=self.pool.name), [])
+
+	def test_delete_reply_does_not_overwrite_concurrent_runner_cleanup(self):
+		lease = self.reserve()
+		frappe.db.set_value(
+			"Runner Lease", lease["id"], {"phase": "deleting", "vm_id": "vm-42", "jit_state": "ready"}
+		)
+		client = Mock()
+		client.get_vm.return_value = {"current_state": "running", "network": {}}
+
+		def report_github_cleanup(*_):
+			frappe.db.set_value("Runner Lease", lease["id"], "jit_state", "removed")
+			frappe.db.commit()
+
+		client.vm_action.side_effect = report_github_cleanup
+		with patch.object(regional, "client_for_pool", return_value=client):
+			regional.reconcile_lease(self.pool, lease["id"])
+		self.assertEqual(frappe.db.get_value("Runner Lease", lease["id"], "jit_state"), "removed")
+
+	def test_retirement_reason_survives_runner_removed_and_cleanup(self):
+		lease = self.reserve()
+		frappe.db.set_value("Runner Lease", lease["id"], {"vm_id": "vm-42", "phase": "running"})
+		frappe.db.commit()
+		reason = "JIT registration outcome uncertain; registration requires cleanup"
+		retirement = runway.update_lease(
+			self.pool.name, self.owner, self.fence, lease["id"], "failed", error=reason
+		)
+		self.assertEqual(retirement["phase"], "deleting")
+		self.assertEqual(retirement["last_error"], reason)
+		client = Mock()
+		client.get_vm.return_value = {"current_state": "running", "network": {}}
+		with patch.object(regional, "client_for_pool", return_value=client):
+			regional.reconcile_lease(self.pool, lease["id"])
+			client.get_vm.side_effect = AtlasResourceGone("scoped 404")
+			regional.reconcile_lease(self.pool, lease["id"])
+		self.assertEqual(frappe.db.get_value("Runner Lease", lease["id"], "phase"), "deleted")
+		self.assertEqual(frappe.db.get_value("Runner Lease", lease["id"], "last_error"), reason)
+		removed = runway.update_lease(self.pool.name, self.owner, self.fence, lease["id"], "runner_removed")
+		self.assertEqual(removed["jit_state"], "removed")
+		self.assertEqual(removed["last_error"], reason)
+
+	def test_completion_diagnostic_failure_survives_runner_removed(self):
+		lease = self.reserve()
+		reason = "Job log upload failed; diagnostics are incomplete"
+		completed = runway.update_lease(
+			self.pool.name,
+			self.owner,
+			self.fence,
+			lease["id"],
+			"completed",
+			result="success",
+			error=reason,
+		)
+		self.assertEqual(completed["last_error"], reason)
+		removed = runway.update_lease(self.pool.name, self.owner, self.fence, lease["id"], "runner_removed")
+		self.assertEqual(removed["jit_state"], "removed")
+		self.assertEqual(removed["last_error"], reason)
+		# A later error is new evidence, so it replaces the stored diagnostic failure.
+		replaced = runway.update_lease(
+			self.pool.name,
+			self.owner,
+			self.fence,
+			lease["id"],
+			"failed",
+			error="Runner cleanup verification timed out",
+		)
+		self.assertEqual(replaced["last_error"], "Runner cleanup verification timed out")
+
+	def test_reaper_locks_pool_before_lease_like_the_rpc_path(self):
+		"""The scheduler reaper and the controller RPC must take row locks in one order.
+
+		The RPC path locks the pool, then the lease. If the reaper locks the lease
+		first it holds that lock across Atlas calls, and the two transactions
+		deadlock, which Frappe reports to the controller as HTTP 508.
+		"""
+		lease = self.reserve()
+		order = []
+
+		original_get_doc = frappe.get_doc
+
+		def tracked_get_doc(doctype, name=None, *args, **kwargs):
+			if doctype == "Runner Pool" and kwargs.get("for_update"):
+				order.append("pool")
+			elif doctype == "Runner Lease" and kwargs.get("for_update"):
+				order.append("lease")
+			return original_get_doc(doctype, name, *args, **kwargs)
+
+		with patch.object(regional.frappe, "get_doc", side_effect=tracked_get_doc):
+			client = Mock()
+			client.list_vms.return_value = []
+			with patch.object(regional, "client_for_pool", return_value=client):
+				regional.reconcile_lease(self.pool, lease["id"])
+
+		self.assertEqual(order[:2], ["pool", "lease"], f"reaper locked {order}, expected pool before lease")
+
+	def test_reaper_and_rpc_do_not_deadlock_under_concurrency(self):
+		"""A concurrent reaper sweep and controller RPC must both complete.
+
+		Inconsistent lock order between these two paths is the reported cause of
+		HTTP 508 renewals that stop the controller while the pool stays active.
+		The reaper runs the real sweep, including its pool and lease pre-reads,
+		because those reads open the transaction the locks are taken in.
+		"""
+		lease = self.reserve()
+		frappe.db.set_value("Runner Lease", lease["id"], {"phase": "deleting", "vm_state": "running"})
+		site, sites_path = frappe.local.site, frappe.local.sites_path
+		pool, owner, fence = self.pool.name, self.owner, self.fence
+		barrier = Barrier(2)
+		failures = []
+		frappe.db.commit()
+
+		def reap():
+			frappe.init(site=site, sites_path=sites_path)
+			frappe.connect()
+			frappe.set_user("Administrator")
+			try:
+				barrier.wait(timeout=10)
+				client = Mock()
+				client.get_vm.return_value = {"current_state": "running"}
+				client.list_vms.return_value = []
+				with patch.object(regional, "client_for_pool", return_value=client):
+					# Run the real sweep, including its pool and lease pre-reads,
+					# because those reads open the transaction the locks are taken in.
+					# This test owns the only pool on the site, so sweep touches nothing else.
+					regional.sweep()
+			except Exception as error:  # noqa: BLE001 - the assertion reports the type
+				failures.append(f"reap: {type(error).__name__}: {error}")
+			finally:
+				frappe.db.rollback()
+				frappe.destroy()
+
+		def controller():
+			frappe.init(site=site, sites_path=sites_path)
+			frappe.connect()
+			frappe.set_user("Administrator")
+			try:
+				barrier.wait(timeout=10)
+				regional.request_delete(pool, owner, fence, lease["id"])
+			except Exception as error:  # noqa: BLE001 - the assertion reports the type
+				failures.append(f"rpc: {type(error).__name__}: {error}")
+			finally:
+				frappe.db.rollback()
+				frappe.destroy()
+
+		with ThreadPoolExecutor(max_workers=2) as executor:
+			for future in [executor.submit(reap), executor.submit(controller)]:
+				future.result()
+
+		self.assertEqual(failures, [], f"concurrent reaper and RPC failed with {failures}")
+
+	def test_unknown_create_cannot_be_declared_deleted(self):
+		lease = self.reserve()
+		frappe.db.set_value(
+			"Runner Lease", lease["id"], {"phase": "deleting", "create_dispatched_at": now_datetime()}
+		)
+		client = Mock()
+		client.list_vms.return_value = []
+		with patch.object(regional, "client_for_pool", return_value=client):
+			regional.reconcile_lease(self.pool, lease["id"])
+		self.assertEqual(frappe.db.get_value("Runner Lease", lease["id"], "phase"), "deleting")
+		client.create_vm.assert_not_called()
+
+	def test_orphan_cleanup_requires_owned_tags(self):
+		client = Mock()
+		client.list_vms.return_value = [
+			{
+				"id": "orphan",
+				"tags": {
+					"runway_pool": self.pool.name,
+					"runway_lease": str(uuid4()),
+					"team": self.team.name,
+					"role": "ci",
+				},
+			},
+			{"id": "unrelated", "tags": {"runway_pool": self.pool.name}},
+		]
+		with patch.object(regional, "client_for_pool", return_value=client):
+			regional.remove_orphans(self.pool)
+		client.vm_action.assert_called_once_with("orphan", "terminate")
