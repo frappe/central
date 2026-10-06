@@ -187,9 +187,13 @@ doc_events = {
 		# without the setup prompt (the profile gate is otherwise enforced in the console).
 		"on_update": [
 			"central.billing.payments.provisioning.on_team_update",
-			# A new team owner is the new alert address of the team's Grove user.
-			"central.services.ai.on_team_update", #TODO: we dont really need to do this - we need to update the notification email (if there is a concept of that) - we'll keep the team ref/id as is
+			# A new owner may be the new alert address of the team's Grove user.
+			"central.services.ai.on_alert_address_update",
 		],
+	},
+	"Billing Profile": {
+		# Its email is the alert address of the team's Grove user when set.
+		"on_update": "central.services.ai.on_alert_address_update",
 	},
 }
 
@@ -249,8 +253,6 @@ scheduler_events = {
 	"hourly": [
 		# Billing: ERPNext sync retries whose backoff window has elapsed.
 		"central.billing.revenue.erpnext_sync.retry_failed_syncs",
-		# AI: reconcile Grove's monthly billable tokens into billing.
-		"central.services.ai.pull_usage",
 		# A charge whose outcome we don't know is money in the air: ask the gateway and
 		# settle it. It waits 30 minutes for the webhook first, so a daily sweep left it
 		# hanging for up to a day — and the key it needs to re-send safely expires in

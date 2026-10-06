@@ -49,7 +49,8 @@ class TeamService(Document):
 		if self.is_ai:
 			from central.services.ai import register_grove_user
 
-			register_grove_user(self.team)
+			self.validate_one_ai_service()
+			self.endpoint_url = register_grove_user(self.team).get("gateway_url")
 			return
 
 		if not self.is_bucket:

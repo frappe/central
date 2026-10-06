@@ -5,6 +5,8 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
+from central.integrations.grove import GroveClient
+
 
 class AISettings(Document):
 	"""Where Grove is and the control credential Central calls it with."""
@@ -25,20 +27,34 @@ class AISettings(Document):
 	def validate(self) -> None:
 		self.base_url = (self.base_url or "").strip().rstrip("/")
 
-	@frappe.whitelist()
-	def enroll(self) -> None:
-		"""Exchange a bootstrap secret for Central's own control credential at Grove. The secret
-		is popped from the raw request, so it is never logged as a whitelisted argument."""
-		from central.integrations.grove import GroveClient
-
-		frappe.only_for("System Manager")
-		secret = frappe.local.form_dict.pop("bootstrap_secret", None)
-		if not secret:
-			frappe.throw(_("Bootstrap secret is required."))
-		if not self.base_url:
-			frappe.throw(_("Set the Grove URL first."))
-
-		credentials = GroveClient.enroll(self.base_url, secret)
-		self.control_api_key = credentials["api_key"]
-		self.control_api_secret = credentials["api_secret"]
+	def set_credential(self, credential: dict) -> None:
+		self.control_api_key = credential["api_key"]
+		self.control_api_secret = credential["api_secret"]
 		self.save()
+
+
+# Plain whitelisted calls, not doc methods: a form's doc method gets its arguments nested
+# under `args`, where a secret cannot be popped from the request before it is logged.
+
+
+@frappe.whitelist(methods=["POST"])
+def enroll() -> None:
+	"""Desk button: exchange the bootstrap secret Grove was given for Central's own control
+	credential. The secret is popped from the raw request, so it is never logged."""
+	frappe.only_for("System Manager")
+	secret = frappe.local.form_dict.pop("bootstrap_secret", None)
+	if not secret:
+		frappe.throw(_("Bootstrap secret is required."))
+
+	settings = frappe.get_single("AI Settings")
+	if not settings.base_url:
+		frappe.throw(_("Set the Grove URL first."))
+
+	settings.set_credential(GroveClient.enroll(settings.base_url, secret))
+
+
+@frappe.whitelist(methods=["POST"])
+def rotate_credential() -> None:
+	"""Desk button: a new control secret from Grove. The old one stops at once."""
+	frappe.only_for("System Manager")
+	frappe.get_single("AI Settings").set_credential(GroveClient.from_settings().rotate_control_key())

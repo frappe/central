@@ -9,7 +9,7 @@ from central.utils.guards import require_capability
 
 VIEW_DENIED = "You can't view this team's AI."
 MANAGE_DENIED = "You can't manage this team's AI."
-KEY_FIELDS = ("name", "title", "status", "creation", "masked", "can_read_balance")
+KEY_FIELDS = ("name", "title", "status", "creation", "revocable_at", "masked", "can_read_balance")
 
 # Grove owns the keys. Central keeps none: a secret is shown once, in the answer that mints it.
 
@@ -22,11 +22,7 @@ def get_ai(team: str | None = None) -> dict:
 	if not ai.get_ai_service(team):
 		return {"enabled": False}
 
-	return {
-		"enabled": True,
-		"models": ai.get_reachable_models(team),
-		"rate_limits": ai.get_rate_limits(team),
-	}
+	return {"enabled": True, "gateway_url": ai.get_gateway_url(team), **ai.get_overview(team)}
 
 
 @frappe.whitelist(methods=["POST"])
@@ -70,6 +66,18 @@ def revoke_api_key(team: str | None = None, key: str | None = None) -> dict:
 	require_ai(team)
 	GroveClient.from_settings().revoke_key(team, key)
 	return {"name": key}
+
+
+@frappe.whitelist(methods=["POST"])
+@require_capability("service:manage", MANAGE_DENIED)
+def set_api_key_balance_access(
+	team: str | None = None, key: str | None = None, can_read_balance: bool = False
+) -> dict:
+	"""Let one of the team's keys read the team's credit at the gateway, or stop it. A team's
+	first key starts with it."""
+	require_ai(team)
+	allowed = bool(frappe.utils.sbool(can_read_balance))
+	return {"name": key, **GroveClient.from_settings().set_key_balance_access(team, key, allowed)}
 
 
 @frappe.whitelist(methods=["GET"])

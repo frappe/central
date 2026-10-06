@@ -13,9 +13,9 @@
   "region",
   "status",
   "subscription",
+  "endpoint_url",
   "storage_section",
   "bucket_name",
-  "endpoint_url",
   "credentials_section",
   "access_key",
   "secret_access_key"
@@ -47,6 +47,14 @@
    "fieldtype": "Link",
    "label": "Subscription",
    "options": "Subscription"
+  },
+  {
+   "fieldname": "endpoint_url",
+   "fieldtype": "Data",
+   "label": "Endpoint URL",
+   "options": "URL",
+   "read_only": 1,
+   "description": "What the service is called at: the gateway a team's AI keys call, or a bucket's S3 endpoint."
   },
   {
    "fieldname": "status",
@@ -81,13 +89,6 @@
    "read_only": 1
   },
   {
-   "fieldname": "endpoint_url",
-   "fieldtype": "Data",
-   "label": "Endpoint URL",
-   "options": "URL",
-   "read_only": 1
-  },
-  {
    "collapsible": 1,
    "depends_on": "eval:doc.add_on_service == 'storage'",
    "fieldname": "credentials_section",
@@ -110,7 +111,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-10-06 18:00:00.000000",
+ "modified": "2026-10-06 19:00:00.000000",
  "modified_by": "Administrator",
  "module": "Services",
  "name": "Team Service",

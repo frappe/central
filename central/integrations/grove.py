@@ -4,7 +4,8 @@ import frappe
 import requests
 from frappe import _
 
-TIMEOUT = 30
+# Connect, read: a dashboard call must not hang on a Grove that is down.
+TIMEOUT = (30, 90)
 
 
 class GroveClient:
@@ -31,6 +32,10 @@ class GroveClient:
 		)
 		return read(response)
 
+	def rotate_control_key(self) -> dict:
+		"""A new secret for Central's own control user; the old one stops at once."""
+		return self.call("grove.api.create_control_client_key")
+
 	def provision_user(self, user: str, email: str, free: bool = False) -> dict:
 		"""Register `user`, or send its new `email` (an alert address, not a login). Grove upserts
 		by `user` and pins it to its default geography. With `free`, Grove charges and gates
@@ -47,9 +52,19 @@ class GroveClient:
 	def revoke_key(self, user: str, key: str) -> None:
 		self.call("grove.api.revoke_key", user=user, key=key)
 
+	def set_key_balance_access(self, user: str, key: str, can_read_balance: bool) -> dict:
+		"""Let one of the user's keys read their credit at the gateway's /v1/credits, or stop it."""
+		return self.call(
+			"grove.api.set_key_balance_access", user=user, key=key, can_read_balance=can_read_balance
+		)
+
 	def list_models(self, user: str | None = None) -> list[dict]:
 		"""Every published model, or with `user` only what that Grove user may call."""
 		return self.call("grove.api.available_models", user=user) or []
+
+	def get_balance(self, user: str) -> dict:
+		"""`balance` and `spent` in USD as of Grove's last pull, and `is_free_user`."""
+		return self.call("grove.api.balance", user=user)
 
 	def get_limits(self, user: str) -> list[dict]:
 		"""Rows of `metric`, `window` and `value`."""
