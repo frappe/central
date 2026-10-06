@@ -8,8 +8,13 @@ import jwt
 from frappe.tests import IntegrationTestCase
 from frappe.utils import add_to_date, now_datetime, set_request
 
-from central.api.pilot import datum_token, heartbeat, storage_regions
-from central.central.doctype.central_sso_settings.central_sso_settings import CentralSSOSettings
+from central.api.pilot import (
+	datum_token,
+	get_team_identity_token,
+	heartbeat,
+	storage_regions,
+)
+from central.central.doctype.central_sso_settings.central_sso_settings import ALGORITHM, CentralSSOSettings
 from central.infrastructure.doctype.pilot_credential.pilot_credential import PilotCredential
 from central.sso import DATUM_SCOPE
 from central.tests.test_iam import ensure_user
@@ -215,3 +220,29 @@ class TestPilotAPI(IntegrationTestCase):
 	def test_storage_regions_needs_a_pilot_credential(self):
 		with self.assertRaises(frappe.AuthenticationError):
 			self.call_storage_regions(None)
+
+	def call_get_team_identity_token(self, token: str | None, audience: str) -> dict:
+		headers = {"X-Pilot-Token": token} if token is not None else {}
+		set_request(
+			method="POST", path="/api/method/central.api.pilot.get_team_identity_token", headers=headers
+		)
+		return get_team_identity_token(audience)
+
+	def test_identity_token_names_the_team_for_the_service(self):
+		result = self.call_get_team_identity_token(self.token, "https://relay.example.test")
+
+		public_key = CentralSSOSettings.instance().get_public_key("pilot")
+		claims = jwt.decode(
+			result["token"], public_key, algorithms=[ALGORITHM], audience="https://relay.example.test"
+		)
+		self.assertEqual(claims["sub"], self.team)
+		self.assertEqual(claims["team_name"], "Bench API Team")
+		self.assertEqual(claims["scope"], "team-identity")
+
+	def test_identity_token_audience_must_be_a_url(self):
+		with self.assertRaises(frappe.ValidationError):
+			self.call_get_team_identity_token(self.token, "api-pilot-1")
+
+	def test_identity_token_needs_a_pilot_credential(self):
+		with self.assertRaises(frappe.AuthenticationError):
+			self.call_get_team_identity_token(None, "https://relay.example.test")
