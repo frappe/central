@@ -1,0 +1,257 @@
+{
+ "doctype": "DocType",
+ "name": "Runner Lease",
+ "module": "Infrastructure",
+ "autoname": "hash",
+ "engine": "InnoDB",
+ "field_order": [
+  "pool",
+  "team",
+  "phase",
+  "deadline",
+  "attempt_id",
+  "fence",
+  "runner_name",
+  "runner_id",
+  "jit_state",
+  "vm_section",
+  "vm_id",
+  "vm_state",
+  "mesh_address",
+  "create_dispatched_at",
+  "delete_requested_at",
+  "job_section",
+  "job_id",
+  "workflow_run_id",
+  "result",
+  "started_at",
+  "completed_at",
+  "deleted_at",
+  "last_error",
+  "request_id",
+  "acquire_state"
+ ],
+ "fields": [
+  {
+   "fieldname": "pool",
+   "label": "Pool",
+   "fieldtype": "Link",
+   "options": "Runner Pool",
+   "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "team",
+   "label": "Team",
+   "fieldtype": "Link",
+   "options": "Team",
+   "reqd": 1,
+   "set_only_once": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "phase",
+   "label": "Phase",
+   "fieldtype": "Select",
+   "options": "reserved\nprovisioning\nuncertain\nvm_ready\njit_pending\njit_ready\nrunning\ndeleting\ndeleted",
+   "read_only": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "deadline",
+   "label": "Deadline",
+   "fieldtype": "Datetime",
+   "read_only": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "attempt_id",
+   "label": "Attempt Id",
+   "fieldtype": "Data",
+   "read_only": 1
+  },
+  {
+   "fieldname": "fence",
+   "label": "Fence",
+   "fieldtype": "Int",
+   "read_only": 1
+  },
+  {
+   "fieldname": "runner_name",
+   "label": "Runner Name",
+   "fieldtype": "Data",
+   "read_only": 1
+  },
+  {
+   "fieldname": "runner_id",
+   "label": "Runner Id",
+   "fieldtype": "Int",
+   "read_only": 1
+  },
+  {
+   "fieldname": "jit_state",
+   "label": "Jit State",
+   "fieldtype": "Select",
+   "options": "none\npending\nready\nremoved",
+   "read_only": 1
+  },
+  {
+   "fieldname": "vm_section",
+   "label": "Regional VM",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "vm_id",
+   "label": "Vm Id",
+   "fieldtype": "Data",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "vm_state",
+   "label": "Vm State",
+   "fieldtype": "Data",
+   "read_only": 1
+  },
+  {
+   "fieldname": "mesh_address",
+   "label": "Mesh Address",
+   "fieldtype": "Data",
+   "read_only": 1
+  },
+  {
+   "fieldname": "create_dispatched_at",
+   "label": "Create Dispatched At",
+   "fieldtype": "Datetime",
+   "read_only": 1
+  },
+  {
+   "fieldname": "delete_requested_at",
+   "label": "Delete Requested At",
+   "fieldtype": "Datetime",
+   "read_only": 1
+  },
+  {
+   "fieldname": "job_section",
+   "label": "Job result",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "repository",
+   "fieldtype": "Data",
+   "label": "Repository",
+   "read_only": 1,
+   "description": "The repository the job came from, as owner/name. Recorded at acquisition so a pool's image can be checked against it before a guest is created."
+  },
+  {
+   "fieldname": "column_break_request",
+   "fieldtype": "Column Break",
+   "label": ""
+  },
+  {
+   "fieldname": "request_labels",
+   "fieldtype": "Small Text",
+   "read_only": 1,
+   "description": "The labels the job asked for, one per line. Kept so the shape a job was given can be explained later without depending on a label that may have changed."
+  },
+  {
+   "fieldname": "resolved_cpu_millicores",
+   "fieldtype": "Int",
+   "label": "Resolved CPU (m)",
+   "read_only": 1,
+   "description": "The CPU this job was given, resolved from its labels at acquisition. Recorded so cost and slowness can be explained without depending on a label that may have changed."
+  },
+  {
+   "fieldname": "resolved_memory_mib",
+   "fieldtype": "Int",
+   "label": "Resolved Memory (MiB)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "resolved_disk_mib",
+   "fieldtype": "Int",
+   "label": "Resolved Disk (MiB)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "job_id",
+   "label": "Job Id",
+   "fieldtype": "Data",
+   "read_only": 1
+  },
+  {
+   "fieldname": "workflow_run_id",
+   "label": "Workflow Run Id",
+   "fieldtype": "Data",
+   "read_only": 1
+  },
+  {
+   "fieldname": "result",
+   "label": "Result",
+   "fieldtype": "Data",
+   "read_only": 1
+  },
+  {
+   "fieldname": "started_at",
+   "label": "Started At",
+   "fieldtype": "Datetime",
+   "read_only": 1
+  },
+  {
+   "fieldname": "completed_at",
+   "label": "Completed At",
+   "fieldtype": "Datetime",
+   "read_only": 1
+  },
+  {
+   "fieldname": "deleted_at",
+   "label": "Deleted At",
+   "fieldtype": "Datetime",
+   "read_only": 1
+  },
+  {
+   "fieldname": "last_error",
+   "label": "Last Error",
+   "fieldtype": "Small Text",
+   "read_only": 1
+  },
+  {
+   "fieldname": "request_id",
+   "fieldtype": "Data",
+   "label": "Request Id",
+   "read_only": 1
+  },
+  {
+   "fieldname": "acquire_state",
+   "fieldtype": "Select",
+   "label": "Acquire State",
+   "read_only": 1,
+   "options": "none\npending\nacquired"
+  }
+ ],
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1,
+   "report": 1
+  },
+  {
+   "role": "Central User",
+   "read": 1,
+   "report": 1
+  }
+ ],
+ "title_field": "runner_name",
+ "search_fields": "runner_name,vm_id,job_id",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "links": []
+}

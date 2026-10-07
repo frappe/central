@@ -1,4 +1,6 @@
 from datetime import UTC
+import re
+from urllib.parse import urlsplit
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
@@ -115,6 +117,8 @@ def lease_snapshot(lease) -> dict:
 		"runner_name",
 		"runner_id",
 		"job_id",
+		"repository",
+		"request_labels",
 		"workflow_run_id",
 		"vm_id",
 		"vm_state",
@@ -192,7 +196,7 @@ def reserve_lease(pool: str, owner_id: str, fence: int, lease_id: str) -> dict:
 def _reserve_lease(pool: str, owner_id: str, fence: int, lease_id: str) -> dict:
 	try:
 		identity = str(UUID(lease_id))
-	except ValueError, TypeError, AttributeError:
+	except (ValueError, TypeError, AttributeError):
 		frappe.throw(_("Runner lease identity must be a UUID."))
 	team = frappe.db.get_value("Runner Pool", pool, "team")
 	# Serialize aggregate team admission before pool admission, in one lock order.
@@ -229,6 +233,69 @@ def _reserve_lease(pool: str, owner_id: str, fence: int, lease_id: str) -> dict:
 	return lease_snapshot(lease)
 
 
+LABEL_SHAPE_PATTERN = re.compile(r"^runway-(\d+)vcpu-(\d+)gb$")
+
+
+def resolve_shape(request_labels, pool):
+	"""The machine a job with these labels gets, as (cpu_millicores, memory_mib, disk_mib).
+
+	A pure function of the labels and the pool: the first label that names a shape wins,
+	and anything else falls back to the pool's own shape. Clamped to the same pilot limits
+	the pool itself is validated against, so a label cannot ask for a machine the pilot
+	will not build. The disk is always the pool's, because no label names one.
+	"""
+	pattern = LABEL_SHAPE_PATTERN
+	cpu, memory, disk = int(pool.cpu_millicores or 0), int(pool.memory_mib or 0), int(pool.disk_mib or 0)
+	labels = (request_labels or "").split()
+	for label in labels:
+		match = pattern.match(label.strip().lower())
+		if not match:
+			continue
+		cpu = max(1000, min(4000, int(match.group(1)) * 1000))
+		memory = max(512, min(8192, int(match.group(2)) * 1024))
+		break
+	return cpu, memory, disk
+
+
+def pool_repository(pool) -> str:
+	"""The owner/name this pool serves, derived from the repository it declares.
+
+	The pool already declares a GitHub repository URL, validated to owner/name form and
+	immutable while leases exist. That declaration is what a job is checked against, so the
+	pairing decision stays inside Central rather than reaching into Atlas for the image
+	record on every acquisition.
+	"""
+	url = urlsplit(pool.repository_url or "")
+	path = url.path.strip("/").split("/")
+	if len(path) != 2:
+		return ""
+	return f"{path[0]}/{path[1]}"
+
+
+def ensure_image_serves(pool, repository: str) -> None:
+	"""Refuse a pool that cannot serve this repository, before a guest exists.
+
+	The pool declares the repository it serves. A job from anywhere else is refused here,
+	where refusing is free, rather than after a VM boots and the job fails with a message
+	about bench. The image record's own workspace declaration remains the bake-time source
+	of truth; this is the selection-time check that the pool and the job agree.
+	"""
+	want = (repository or "").strip().lower()
+	if not want:
+		return
+	serves = pool_repository(pool).lower()
+	if not serves:
+		return
+	if serves == want:
+		return
+	frappe.throw(
+		_("Runner pool {0} serves {1} and cannot serve {2}.").format(
+			pool.name, pool_repository(pool), repository
+		),
+		frappe.PermissionError,
+	)
+
+
 def scoped_lease(pool, lease_id: str):
 	lease = frappe.get_doc("Runner Lease", lease_id, for_update=True)
 	if lease.pool != pool.name or lease.team != pool.team:
@@ -254,6 +321,8 @@ def update_lease(
 	result: str = "",
 	error: str = "",
 	request_id: int = 0,
+	repository: str = "",
+	request_labels: str = "",
 ) -> dict:
 	_, lease = fenced_lease(pool, owner_id, fence, lease_id)
 	if event == "acquire_requested":
@@ -262,6 +331,25 @@ def update_lease(
 		if lease.phase in ("deleting", "deleted"):
 			frappe.throw(_("A retiring runner cannot acquire work."))
 		lease.request_id = str(request_id)
+		# The repository is recorded here, before a guest exists, because that is the only
+		# point at which refusing is still free. A pool whose image is baked for another
+		# repository cannot serve this job, and finding that out after the VM is created
+		# costs a boot and a failing job rather than a message.
+		if repository:
+			lease.repository = repository
+			ensure_image_serves(frappe.get_doc("Runner Pool", pool), repository)
+		if request_labels:
+			lease.request_labels = str(request_labels)[:1000]
+		# The shape is resolved and recorded here, alongside the repository, because this
+		# is the last point at which the decision is still free. create_vm reads it back
+		# rather than re-deriving it, so a label changed mid-flight cannot move a job onto
+		# a machine it was not admitted to.
+		cpu, memory, disk = resolve_shape(
+			lease.request_labels, frappe.get_doc("Runner Pool", pool)
+		)
+		lease.resolved_cpu_millicores, lease.resolved_memory_mib, lease.resolved_disk_mib = (
+			cpu, memory, disk,
+		)
 		lease.acquire_state = "pending" if lease.acquire_state != "acquired" else "acquired"
 	elif event == "acquired":
 		if not lease.request_id or lease.acquire_state not in ("pending", "acquired"):

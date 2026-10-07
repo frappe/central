@@ -77,6 +77,66 @@ class TestRunway(IntegrationTestCase):
 	def reserve(self):
 		return runway.reserve_lease(self.pool.name, self.owner, self.fence, str(uuid4()))
 
+	def test_a_pool_serves_the_repository_it_declares(self) -> None:
+		"""The pool's own repository URL is what a job is checked against."""
+		pool = SimpleNamespace(
+			name="test-pool", repository_url="https://github.com/BreadGenie/frappe"
+		)
+		self.assertEqual(runway.pool_repository(pool), "BreadGenie/frappe")
+		# Checked case-insensitively: GitHub and an operator may capitalise differently.
+		runway.ensure_image_serves(pool, "breadgenie/frappe")
+		runway.ensure_image_serves(pool, "BreadGenie/frappe")
+
+	def test_a_pool_refuses_a_repository_it_does_not_serve(self) -> None:
+		"""Refused before a guest exists, where refusing is still free."""
+		pool = SimpleNamespace(
+			name="test-pool", repository_url="https://github.com/BreadGenie/frappe"
+		)
+		with self.assertRaises(frappe.PermissionError) as raised:
+			runway.ensure_image_serves(pool, "someone-elses/repo")
+		self.assertIn("cannot serve", str(raised.exception))
+
+	def test_an_empty_repository_is_not_a_decision(self) -> None:
+		"""A job that names no repository passes through; the pairing needs both sides."""
+		pool = SimpleNamespace(
+			name="test-pool", repository_url="https://github.com/BreadGenie/frappe"
+		)
+		runway.ensure_image_serves(pool, "")
+		runway.ensure_image_serves(pool, None)
+
+	def test_a_shape_label_resolves_to_that_machine(self) -> None:
+		"""The label is the only thing a repository writes, so it states the whole machine."""
+		pool = SimpleNamespace(cpu_millicores=3000, memory_mib=6144, disk_mib=14336)
+		self.assertEqual(
+			runway.resolve_shape("self-hosted\nrunway-4vcpu-8gb", pool), (4000, 8192, 14336)
+		)
+		# The first shape label wins; the disk is always the pool's, because no label names one.
+		self.assertEqual(
+			runway.resolve_shape("runway-2vcpu-4gb\nrunway-4vcpu-16gb", pool), (2000, 4096, 14336)
+		)
+
+	def test_a_label_that_names_no_shape_keeps_the_pool(self) -> None:
+		"""A pool created before labels keeps booting exactly what it always did."""
+		pool = SimpleNamespace(cpu_millicores=3000, memory_mib=6144, disk_mib=14336)
+		for labels in ("self-hosted", "runway-dogfood", "", None, "runway-huge"):
+			with self.subTest(labels=labels):
+				self.assertEqual(runway.resolve_shape(labels, pool), (3000, 6144, 14336))
+
+	def test_a_shape_label_is_clamped_to_what_the_pilot_builds(self) -> None:
+		"""A label cannot ask for a machine outside the pilot's own limits."""
+		pool = SimpleNamespace(cpu_millicores=3000, memory_mib=6144, disk_mib=14336)
+		self.assertEqual(
+			runway.resolve_shape("runway-64vcpu-512gb", pool), (4000, 8192, 14336)
+		)
+		self.assertEqual(runway.resolve_shape("runway-0vcpu-0gb", pool), (1000, 512, 14336))
+
+	def test_the_shape_resolution_fails_when_removed(self) -> None:
+		"""A lookup that cannot fail is not a lookup."""
+		pool = SimpleNamespace(cpu_millicores=3000, memory_mib=6144, disk_mib=14336)
+		self.assertNotEqual(
+			runway.resolve_shape("runway-4vcpu-8gb", pool), (3000, 6144, 14336)
+		)
+
 	def test_duplicate_reservation_cannot_bypass_capacity(self):
 		lease = self.reserve()
 		self.assertEqual(
