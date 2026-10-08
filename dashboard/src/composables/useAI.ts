@@ -70,6 +70,16 @@ const updateKeyCall = useCall<
 	immediate: false,
 })
 
+const modelsParams = ref<{ team: string; geography: string }>({
+	team: '',
+	geography: '',
+})
+const modelsCall = useCall<AIModel[], typeof modelsParams.value>({
+	url: method(API.aiModels),
+	params: () => modelsParams.value,
+	immediate: false,
+})
+
 const keyModelsParams = ref<{ team: string; key: string }>({
 	team: '',
 	key: '',
@@ -138,6 +148,15 @@ export function useAI() {
 			} finally {
 				busyKey.value = ''
 			}
+		},
+
+		// What a key in one geography starts with: the published models of its default group.
+		models: computed<AIModel[]>(() => modelsCall.data ?? []),
+		modelsLoading: computed(() => modelsCall.loading),
+		modelsError: computed(() => modelsCall.error),
+		loadModels(geography: string): Promise<unknown> {
+			modelsParams.value = { team: activeTeam.value!, geography }
+			return modelsCall.reload()
 		},
 
 		// What one key may call, as its geography serves them: fetched when asked for.

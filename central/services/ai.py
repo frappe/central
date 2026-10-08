@@ -76,10 +76,19 @@ def get_month_usage(team: str) -> dict:
 	}
 
 
+def get_models(geography: str | None = None) -> list[dict]:
+	"""What a new key in `geography` (Grove's default when None) starts with: the published
+	models of its default group, what each takes and gives, and the API surfaces it answers on."""
+	return shape_models(GroveClient.from_settings().list_models(geography=geography))
+
+
 def get_key_models(team: str, key: str) -> list[dict]:
-	"""The models Grove lets one key call, as its geography serves them: what each takes and
-	gives, and the API surfaces (openai, anthropic) it answers on. Grove decides; Central only
-	shows them."""
+	"""The models Grove lets one key call, as its geography serves them. Grove decides; Central
+	only shows them."""
+	return shape_models(GroveClient.from_settings().list_models(team, key))
+
+
+def shape_models(rows: list[dict]) -> list[dict]:
 	return [
 		{
 			"name": row["name"],
@@ -87,7 +96,7 @@ def get_key_models(team: str, key: str) -> list[dict]:
 			"output_modalities": row.get("output_modalities", []),
 			"dialects": row["dialects"],
 		}
-		for row in GroveClient.from_settings().list_models(team, key)
+		for row in rows
 	]
 
 

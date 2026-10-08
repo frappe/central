@@ -213,14 +213,14 @@ const asOf = computed(() =>
 							class="h-72 rounded-6 border border-outline-gray-2 bg-surface-base p-5"
 						>
 							<BarChart
-								title="Cost (USD)"
-								:subtitle="usd(selected.cost)"
+								title="Tokens"
+								:subtitle="selected.tokens.toLocaleString()"
 								:data="selectedDays"
 								x="day"
-								y="cost"
-								:series-config="{ cost: { label: 'Cost' } }"
+								y="tokens"
+								:series-config="{ tokens: { label: 'Tokens' } }"
 								:x-axis="dayAxis"
-								:y-axis="{ format: usd }"
+								:y-axis="{ min: 0, format: compact }"
 								:loading="usageLoading"
 							/>
 						</div>

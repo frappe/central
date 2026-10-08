@@ -80,6 +80,7 @@ export const API = {
 	aiApiKeys: 'central.services.api.ai.list_api_keys',
 	createAIApiKey: 'central.services.api.ai.create_api_key',
 	updateAIApiKey: 'central.services.api.ai.update_api_key',
+	aiModels: 'central.services.api.ai.get_models',
 	aiApiKeyModels: 'central.services.api.ai.get_api_key_models',
 	revokeAIApiKey: 'central.services.api.ai.revoke_api_key',
 

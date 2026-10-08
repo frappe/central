@@ -116,7 +116,11 @@ class TestGroveClientCalls(IntegrationTestCase):
 		calls = [
 			(
 				lambda: self.client.list_models("TEAM-1", "k1"),
-				("grove.api.available_models", {"team": "TEAM-1", "key": "k1"}),
+				("grove.api.available_models", {"team": "TEAM-1", "key": "k1", "geography": None}),
+			),
+			(
+				lambda: self.client.list_models(geography="eu"),
+				("grove.api.available_models", {"team": None, "key": None, "geography": "eu"}),
 			),
 			(lambda: self.client.list_geographies(), ("grove.api.geographies", {})),
 			(lambda: self.client.get_balance("TEAM-1"), ("grove.api.balance", {"team": "TEAM-1"})),
@@ -278,12 +282,20 @@ class TestAI(IntegrationTestCase):
 			api.revoke_api_key(self.team, "k1")
 		revoke_key.assert_called_once_with(self.team, "k1")
 
-	def test_a_keys_models_are_read_from_grove(self):
+	def test_a_keys_models_and_a_geographys_models_are_read_from_grove(self):
 		self.enabled()
 		with patch.object(GroveClient, "list_models", return_value=MODELS) as list_models:
 			[model] = api.get_api_key_models(self.team, "k1")
 		list_models.assert_called_once_with(self.team, "k1")
 		self.assertEqual((model["name"], model["dialects"], model["input_modalities"]), ("m", ["openai"], []))
+
+		with patch.object(GroveClient, "list_models", return_value=MODELS) as list_models:
+			[model] = api.get_models(self.team, "eu")
+			api.get_models(self.team, "")
+		self.assertEqual(
+			[call.kwargs for call in list_models.call_args_list], [{"geography": "eu"}, {"geography": None}]
+		)
+		self.assertEqual(model["name"], "m")
 
 	def test_usage_of_one_key_sends_its_hash_and_an_unknown_key_is_refused(self):
 		self.enabled()

@@ -61,10 +61,12 @@ class GroveClient:
 	def revoke_key(self, team: str, key: str) -> None:
 		self.call("grove.api.revoke_key", team=team, key=key)
 
-	def list_models(self, team: str | None = None, key: str | None = None) -> list[dict]:
-		"""Every published model in Grove's default geography, or with `team` and `key` only
-		what that key may call, as its geography serves them."""
-		return self.call("grove.api.available_models", team=team, key=key) or []
+	def list_models(
+		self, team: str | None = None, key: str | None = None, geography: str | None = None
+	) -> list[dict]:
+		"""What a new key in `geography` (Grove's default when None) starts with: the published
+		models of its default group. With `team` and `key`, what that one key may call."""
+		return self.call("grove.api.available_models", team=team, key=key, geography=geography) or []
 
 	def list_geographies(self) -> list[dict]:
 		"""Where a key may be minted: `name`, `label`, `endpoint`, `is_default`."""

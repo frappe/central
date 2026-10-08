@@ -92,6 +92,14 @@ def update_api_key(team: str | None = None, key: str | None = None, cap: float |
 
 @frappe.whitelist(methods=["GET"])
 @require_capability("service:view", VIEW_DENIED)
+def get_models(team: str | None = None, geography: str | None = None) -> list[dict]:
+	"""What a key in `geography` (Grove's default when none) starts with: its default group."""
+	require_ai(team)
+	return ai.get_models(geography or None)
+
+
+@frappe.whitelist(methods=["GET"])
+@require_capability("service:view", VIEW_DENIED)
 def get_api_key_models(team: str | None = None, key: str | None = None) -> list[dict]:
 	"""The models one of the team's keys may call."""
 	require_ai(team)
