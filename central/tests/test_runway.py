@@ -104,38 +104,41 @@ class TestRunway(IntegrationTestCase):
 		runway.ensure_image_serves(pool, "")
 		runway.ensure_image_serves(pool, None)
 
-	def test_a_shape_label_resolves_to_that_machine(self) -> None:
-		"""The label is the only thing a repository writes, so it states the whole machine."""
-		pool = SimpleNamespace(cpu_millicores=3000, memory_mib=6144, disk_mib=14336)
+	def test_a_shape_label_for_this_pool_is_accepted(self) -> None:
+		"""A pool is one machine class, and the label that names it is accepted."""
+		pool = SimpleNamespace(cpu_millicores=4000, memory_mib=8192, disk_mib=14336)
 		self.assertEqual(
 			runway.resolve_shape("self-hosted\nrunway-4vcpu-8gb", pool), (4000, 8192, 14336)
 		)
-		# The first shape label wins; the disk is always the pool's, because no label names one.
+		# The first shape label decides; the disk is always the pool's, because no label names one.
 		self.assertEqual(
-			runway.resolve_shape("runway-2vcpu-4gb\nrunway-4vcpu-16gb", pool), (2000, 4096, 14336)
+			runway.resolve_shape("runway-4vcpu-8gb\nrunway-2vcpu-4gb", pool), (4000, 8192, 14336)
 		)
 
 	def test_a_label_that_names_no_shape_keeps_the_pool(self) -> None:
 		"""A pool created before labels keeps booting exactly what it always did."""
 		pool = SimpleNamespace(cpu_millicores=3000, memory_mib=6144, disk_mib=14336)
-		for labels in ("self-hosted", "runway-dogfood", "", None, "runway-huge"):
+		for labels in ("self-hosted", "runway-dogfood", "runway", "runway-huge", "", None, "gpu", "linux"):
 			with self.subTest(labels=labels):
 				self.assertEqual(runway.resolve_shape(labels, pool), (3000, 6144, 14336))
 
-	def test_a_shape_label_is_clamped_to_what_the_pilot_builds(self) -> None:
-		"""A label cannot ask for a machine outside the pilot's own limits."""
+	def test_a_shape_label_the_pool_does_not_serve_is_refused(self) -> None:
+		"""A job never runs on a machine its own label did not ask for."""
 		pool = SimpleNamespace(cpu_millicores=3000, memory_mib=6144, disk_mib=14336)
-		self.assertEqual(
-			runway.resolve_shape("runway-64vcpu-512gb", pool), (4000, 8192, 14336)
-		)
-		self.assertEqual(runway.resolve_shape("runway-0vcpu-0gb", pool), (1000, 512, 14336))
+		for label in ("runway-4vcpu-8gb", "runway-2vcpu-4gb", "runway-64vcpu-512gb"):
+			with self.subTest(label=label):
+				with self.assertRaises(frappe.ValidationError) as caught:
+					runway.resolve_shape(label, pool)
+				self.assertIn("this pool serves 3 vCPU and 6 GiB", str(caught.exception))
 
-	def test_the_shape_resolution_fails_when_removed(self) -> None:
-		"""A lookup that cannot fail is not a lookup."""
+	def test_a_malformed_shape_label_is_refused_with_the_form(self) -> None:
+		"""A typo names a shape badly, which is a mistake worth reporting."""
 		pool = SimpleNamespace(cpu_millicores=3000, memory_mib=6144, disk_mib=14336)
-		self.assertNotEqual(
-			runway.resolve_shape("runway-4vcpu-8gb", pool), (3000, 6144, 14336)
-		)
+		for label in ("runway-4vcup-8gb", "runway-8gb-4vcpu", "runway-4vcpu", "runway-64vcpu"):
+			with self.subTest(label=label):
+				with self.assertRaises(frappe.ValidationError) as caught:
+					runway.resolve_shape(label, pool)
+				self.assertIn("not a runner shape", str(caught.exception))
 
 	def test_duplicate_reservation_cannot_bypass_capacity(self):
 		lease = self.reserve()

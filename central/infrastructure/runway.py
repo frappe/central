@@ -233,28 +233,60 @@ def _reserve_lease(pool: str, owner_id: str, fence: int, lease_id: str) -> dict:
 	return lease_snapshot(lease)
 
 
+# A label that carries a machine shape, like runway-4vcpu-8gb. The label is the only
+# thing a repository writes, so it has to state the whole machine: whole vCPUs and whole
+# GiB. Anything that does not parse is left to the pool, which is how a pool created before
+# labels keeps working.
 LABEL_SHAPE_PATTERN = re.compile(r"^runway-(\d+)vcpu-(\d+)gb$")
+# A label beginning runway- followed by a digit has claimed to be a shape. One that fails
+# to parse did not mean to name no shape, so it is a mistake and gets reported.
+LABEL_SHAPE_CLAIM = re.compile(r"^runway-\d")
 
 
 def resolve_shape(request_labels, pool):
 	"""The machine a job with these labels gets, as (cpu_millicores, memory_mib, disk_mib).
 
-	A pure function of the labels and the pool: the first label that names a shape wins,
-	and anything else falls back to the pool's own shape. Clamped to the same pilot limits
-	the pool itself is validated against, so a label cannot ask for a machine the pilot
-	will not build. The disk is always the pool's, because no label names one.
+	A scale set's runners are homogeneous, so a pool is one machine class. That makes a
+	shape label a guard rather than a scheduler: it either names exactly the machine this
+	pool serves, or names no shape at all and takes the pool's own. It cannot quietly ask
+	for a different one, because a job written against the wrong label would then run on a
+	machine it was never admitted to, which is the same silent mismatch as a bench restored
+	into the wrong workspace.
+
+	So three outcomes, and only the middle one is a guess:
+
+	- runway-4vcpu-8gb on a pool serving exactly that: accepted.
+	- self-hosted, runway-dogfood, or no shape: the pool's own machine.
+	- anything else that claimed to be a shape: refused, naming the pool's shape, so the
+	  job never runs on a machine different from the one its label asked for.
 	"""
-	pattern = LABEL_SHAPE_PATTERN
-	cpu, memory, disk = int(pool.cpu_millicores or 0), int(pool.memory_mib or 0), int(pool.disk_mib or 0)
 	labels = (request_labels or "").split()
 	for label in labels:
-		match = pattern.match(label.strip().lower())
-		if not match:
-			continue
-		cpu = max(1000, min(4000, int(match.group(1)) * 1000))
-		memory = max(512, min(8192, int(match.group(2)) * 1024))
-		break
-	return cpu, memory, disk
+		label = label.strip().lower()
+		match = LABEL_SHAPE_PATTERN.match(label)
+		if match:
+			want = (int(match.group(1)) * 1000, int(match.group(2)) * 1024)
+			serves = (int(pool.cpu_millicores or 0), int(pool.memory_mib or 0))
+			if want == serves:
+				return serves[0], serves[1], int(pool.disk_mib or 0)
+			frappe.throw(
+				_("Label {0} asks for {1} vCPU and {2} GiB, but this pool serves {3} vCPU and {4} GiB.").format(
+					label,
+					want[0] // 1000,
+					want[1] // 1024,
+					serves[0] // 1000,
+					serves[1] // 1024,
+				),
+				frappe.ValidationError,
+			)
+		if LABEL_SHAPE_CLAIM.match(label):
+			frappe.throw(
+				_("Label {0} is not a runner shape. Use runway-<vcpu>vcpu-<memory>gb, such as runway-4vcpu-8gb.").format(
+					label
+				),
+				frappe.ValidationError,
+			)
+	return int(pool.cpu_millicores or 0), int(pool.memory_mib or 0), int(pool.disk_mib or 0)
 
 
 def pool_repository(pool) -> str:
