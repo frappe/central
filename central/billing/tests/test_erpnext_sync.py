@@ -14,6 +14,7 @@ from central.billing.tests.accounting_fake import (
 	FakeAccountingSystem,
 	billing_team,
 	configure_accounting,
+	requires_accounting_system,
 )
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
@@ -21,6 +22,7 @@ TEAM = "team-erp"
 GSTIN = "27AABCT1111T1Z5"
 
 
+@requires_accounting_system
 class SyncTestCase(IntegrationTestCase):
 	def setUp(self):
 		conf = patch.dict(frappe.local.conf, {"enable_erpnext_sync": 1})

@@ -10,13 +10,19 @@ from central.billing.gateways.base import RefundResult
 from central.billing.ingester.locks import lock_name
 from central.billing.payments import corrections
 from central.billing.revenue import credits
-from central.billing.tests.accounting_fake import FakeAccountingSystem, billing_team, configure_accounting
+from central.billing.tests.accounting_fake import (
+	FakeAccountingSystem,
+	billing_team,
+	configure_accounting,
+	requires_accounting_system,
+)
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
 TEAM = "team-corrections"
 SALES_INVOICE = "SINV-ORIGINAL"
 
 
+@requires_accounting_system
 class CorrectionsTestCase(IntegrationTestCase):
 	def setUp(self):
 		conf = patch.dict(frappe.local.conf, {"enable_erpnext_sync": 1})

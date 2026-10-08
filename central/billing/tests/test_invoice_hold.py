@@ -7,6 +7,11 @@ from unittest.mock import patch
 import frappe
 
 from central.billing.revenue import gst_status, invoicing
+from central.billing.tests.accounting_fake import (
+	FakeAccountingSystem,
+	configure_accounting,
+	requires_accounting_system,
+)
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import (
 	add_segment,
@@ -24,6 +29,7 @@ CUSTOMER_SYNC = "central.billing.ingester.customer._enqueue"
 GSTIN_LOOKUP = "central.billing.revenue.gst_status._enqueue_refresh"
 
 
+@requires_accounting_system
 class InvoiceHoldTestCase(IntegrationTestCase):
 	def setUp(self):
 		make_plan(PLAN)
@@ -33,6 +39,9 @@ class InvoiceHoldTestCase(IntegrationTestCase):
 		self.invoice = invoicing.generate_draft_invoice(sub, "2026-06-01", "2026-06-30")
 		self._conf = patch.dict(frappe.local.conf, {"enable_erpnext_sync": 1})
 		self._conf.start()
+		# Reads such as the company's GSTIN come from a fake accounting system, never a real one.
+		configure_accounting()
+		self.enterContext(patch("central.billing.ingester.connection.fetch", FakeAccountingSystem().fetch))
 		self._release = patch("central.billing.revenue.invoicing.run.release_held_drafts")
 		self._release.start()
 

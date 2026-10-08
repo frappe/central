@@ -8,6 +8,11 @@ import frappe
 
 from central.billing.ingester import customer
 from central.billing.payments.provisioning import apply_gst_category, ensure_tax_profile
+from central.billing.tests.accounting_fake import (
+	FakeAccountingSystem,
+	configure_accounting,
+	requires_accounting_system,
+)
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import complete_billing_profile, ensure_team
 
@@ -21,12 +26,16 @@ def created(*names):
 	return [frappe._dict(name=n) for n in names]
 
 
+@requires_accounting_system
 class CustomerSyncTestCase(IntegrationTestCase):
 	def setUp(self):
 		ensure_team(TEAM)
 		complete_billing_profile(TEAM)
 		self._conf = patch.dict(frappe.local.conf, {"enable_erpnext_sync": 1})
 		self._conf.start()
+		# Reads such as the company's GSTIN come from a fake accounting system, never a real one.
+		configure_accounting()
+		self.enterContext(patch("central.billing.ingester.connection.fetch", FakeAccountingSystem().fetch))
 
 	def tearDown(self):
 		self._end_job()

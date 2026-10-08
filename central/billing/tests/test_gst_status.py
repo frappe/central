@@ -7,6 +7,7 @@ from unittest.mock import patch
 import frappe
 
 from central.billing.revenue import gst_status
+from central.billing.tests.accounting_fake import requires_accounting_system
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import complete_billing_profile, ensure_team
 
@@ -30,6 +31,7 @@ def profile_with_gstin(team, status=None, checked_days_ago=None):
 	return team
 
 
+@requires_accounting_system
 class GstStatusTestCase(IntegrationTestCase):
 	def setUp(self):
 		self._conf = patch.dict(frappe.local.conf, {"enable_erpnext_sync": 1})

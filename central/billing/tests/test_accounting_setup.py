@@ -10,6 +10,7 @@ import frappe
 from central.billing.api.dashboard import invoices as dashboard_invoices
 from central.billing.ingester import connection, setup
 from central.billing.ingester import settings as accounting
+from central.billing.tests.accounting_fake import requires_accounting_system
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import complete_billing_profile, ensure_team, make_user
 
@@ -74,6 +75,7 @@ class FakeAccountingSystem:
 		self.writes.append(args)
 
 
+@requires_accounting_system
 class AccountingSetupTestCase(IntegrationTestCase):
 	def setUp(self):
 		self._conf = patch.dict(frappe.local.conf, {"enable_erpnext_sync": 1})

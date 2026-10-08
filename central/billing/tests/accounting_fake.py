@@ -2,6 +2,7 @@
 # For license information, please see license.txt
 """An in-memory accounting system, and the settings that point at it, for tests."""
 
+import unittest
 from contextlib import ExitStack
 from unittest.mock import patch
 
@@ -20,6 +21,17 @@ GST_ROWS = {
 	],
 	OUT_STATE: [{"account_head": "Output Tax IGST - TC", "rate": 18, "description": "IGST"}],
 }
+
+
+def requires_accounting_system(cls):
+	"""Skip a test class on a site with no accounting system configured, such as CI.
+
+	The tests fake every call, but they exercise an integration the site does not use.
+	"""
+	configured = frappe.conf.get("erpnext_url") or frappe.conf.get("enable_erpnext_sync")
+	return unittest.skipUnless(
+		configured, "no accounting system configured (erpnext_url, enable_erpnext_sync)"
+	)(cls)
 
 
 class FakeAccountingSystem:
