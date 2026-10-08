@@ -261,7 +261,7 @@ const terminate = async (
 					@terminate="pendingTerminate = server"
 				/>
 
-				<Tabs v-model="activeTab" class="mt-6">
+				<Tabs v-model="activeTab" class="mt-4">
 					<TabList variant="browser-tab" size="md">
 						<TabTrigger
 							v-for="tab in TABS"
@@ -275,14 +275,14 @@ const terminate = async (
 				<SnapshotsPanel
 					v-if="activeTab === 'snapshots'"
 					:server="server"
-					class="mt-6"
+					class="mt-4"
 				/>
 
 				<SettingsTab
 					v-else-if="activeTab === 'settings'"
 					:server="server"
 					:actions="actions"
-					class="mt-6"
+					class="mt-4"
 					@resize="resizing = true"
 					@terminate="pendingTerminate = server"
 				/>
@@ -292,14 +292,14 @@ const terminate = async (
 					icon="lucide-cloud-off"
 					title="Details couldn't load"
 					:description="overviewError"
-					class="mt-6"
+					class="mt-4"
 				>
 					<template #action>
 						<Button label="Retry" @click="reloadOverview" />
 					</template>
 				</EmptyState>
 
-				<div v-else-if="!details" class="mt-6 space-y-4" aria-busy="true">
+				<div v-else-if="!details" class="mt-4 space-y-4" aria-busy="true">
 					<div class="h-5 w-24 animate-pulse rounded-4 bg-surface-gray-2" />
 					<div class="grid gap-3 md:grid-cols-3 md:gap-4">
 						<div
@@ -313,15 +313,16 @@ const terminate = async (
 				<OverviewTab
 					v-else-if="activeTab === 'overview'"
 					v-model:range="metricsRange"
+					@refresh="reloadOverview"
 					:overview="details"
-					class="mt-6"
+					class="mt-4"
 				/>
 
 				<NetworkingTab
 					v-else-if="activeTab === 'networking'"
 					:server="server"
 					:overview="details"
-					class="mt-6"
+					class="mt-4"
 				/>
 
 				<AccessTab
@@ -330,7 +331,7 @@ const terminate = async (
 					:overview="details"
 					:actions="actions"
 					:opening="isOpening"
-					class="mt-6"
+					class="mt-4"
 					@console="openConsole(server)"
 					@open="open"
 				/>

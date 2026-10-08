@@ -69,6 +69,15 @@ export const getChartSummary = (chart: MetricChart): string => {
 	return `Now ${now} · Peak ${peak}`
 }
 
+export const formatSampleInterval = (seconds: number): string => {
+	if (seconds % 3600 === 0)
+		return seconds === 3600 ? 'hour' : `${seconds / 3600} hours`
+
+	if (seconds % 60 === 0) return `${seconds / 60} min`
+
+	return `${seconds} sec`
+}
+
 export const METRIC_PERIODS = [
 	{ label: '24 hours', short: '24h', value: '24h' },
 	{ label: '7 days', short: '7d', value: '7d' },
@@ -76,16 +85,6 @@ export const METRIC_PERIODS = [
 	{ label: '30 days', short: '30d', value: '30d' },
 	{ label: 'Custom', short: null, value: 'custom' },
 ]
-
-export const formatSampleInterval = (seconds: number): string => {
-	if (seconds % 3600 === 0)
-		return seconds === 3600 ? 'hour' : `${seconds / 3600} hours`
-
-	if (seconds % 60 === 0)
-		return seconds === 60 ? 'minute' : `${seconds / 60} minutes`
-
-	return `${seconds} seconds`
-}
 
 export const getChartTimeGrain = (points: MetricPoint[]) => {
 	const span = points.length

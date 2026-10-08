@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import { DateTimePicker, dayjs, Select } from 'frappe-ui'
+import { Button, DateTimePicker, dayjs, Select } from 'frappe-ui'
 import { AreaChart, ChartCard, useChartTokens } from 'frappe-ui/charts'
 import { computed, ref } from 'vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import UsageCard from '@/components/common/UsageCard.vue'
 import { usePlans } from '@/composables/usePlans'
 import { formatBytes, usagePercent } from '@/lib/bytes'
-import { formatDateTime } from '@/lib/datetime'
+import { timeAgo } from '@/lib/datetime'
 import {
 	formatSampleInterval,
 	getChartSummary,
@@ -25,6 +25,8 @@ const props = defineProps<Props>()
 
 const range = defineModel<MetricsRange>('range', { required: true })
 
+const emit = defineEmits<{ refresh: [] }>()
+
 const server = computed(() => props.overview.server)
 const monitoring = computed(() => props.overview.monitoring)
 const points = computed(() => monitoring.value.points ?? [])
@@ -37,6 +39,14 @@ const period = computed(() =>
 const setRange = (change: Partial<MetricsRange>): void => {
 	range.value = { ...range.value, ...change }
 }
+
+const freshness = computed(() => {
+	const interval = monitoring.value.sample_interval_seconds
+	const last = points.value[points.value.length - 1]
+	if (!interval || !last) return null
+
+	return `Every ${formatSampleInterval(interval)} · Updated ${timeAgo(Math.min(last.time, Date.now() / 1000))}`
+})
 
 const SITE_CLOCK = 'YYYY-MM-DD HH:mm:ss'
 
@@ -56,20 +66,6 @@ const choosePeriod = (value: string): void => {
 		end: now.format(SITE_CLOCK),
 	})
 }
-
-const caption = computed(() => {
-	const { start, end } = range.value
-	if (isCustom.value && (!start || !end)) return 'Pick a start and an end.'
-
-	const span = isCustom.value
-		? `From ${formatDateTime(start)} to ${formatDateTime(end)}`
-		: `The last ${period.value?.label}`
-	const interval = monitoring.value.sample_interval_seconds
-
-	return interval
-		? `${span}, measured by the region every ${formatSampleInterval(interval)}.`
-		: `${span}.`
-})
 
 const timeGrain = computed(() => getChartTimeGrain(points.value))
 
@@ -162,9 +158,7 @@ const usage = computed(() => {
 			badge: null,
 		},
 		{
-			label: period.value?.short
-				? `Network · ${period.value.short}`
-				: 'Network',
+			label: isCustom.value ? 'Network' : `Network · ${period.value?.short}`,
 			icon: 'lucide-arrow-down-up',
 			used: formatBytes(transferredBytes.value),
 			limit: transferQuota.value
@@ -189,7 +183,7 @@ const usage = computed(() => {
 		</div>
 
 		<div class="flex flex-wrap items-center gap-2">
-			<p class="mr-auto text-p-sm text-ink-gray-5">{{ caption }}</p>
+			<h2 class="mr-auto text-lg-semibold text-ink-gray-8">Usage</h2>
 
 			<template v-if="isCustom">
 				<DateTimePicker
@@ -217,6 +211,13 @@ const usage = computed(() => {
 				aria-label="Duration"
 				class="w-32"
 				@update:model-value="choosePeriod"
+			/>
+
+			<Button
+				icon="lucide-refresh-cw"
+				label="Refresh"
+				:tooltip="freshness ?? undefined"
+				@click="emit('refresh')"
 			/>
 		</div>
 
