@@ -81,6 +81,12 @@ const routes = [
 				meta: { title: 'New server' },
 			},
 			{
+				path: 'ai',
+				name: 'AI',
+				component: () => import('@/pages/addons/AIInference.vue'),
+				meta: { title: 'AI', feature: ['addons', 'llm'] },
+			},
+			{
 				path: 'object-storage',
 				name: 'ObjectStorage',
 				component: () => import('@/pages/addons/ObjectStorage.vue'),

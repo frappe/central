@@ -1,4 +1,5 @@
 /// <reference types="vite/client" />
+/// <reference types="unplugin-icons/types/vue" />
 
 /** The bench's Socket.IO port, compiled in by vite.config.ts. Null when no bench config
  *  was found at build time. */
@@ -29,5 +30,6 @@ interface Window {
 	features?: {
 		addons?: boolean
 		storage?: boolean
+		llm?: boolean
 	}
 }
