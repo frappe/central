@@ -98,7 +98,7 @@ class TestSiteDomain(IntegrationTestCase):
 		self.assertEqual((route.status, route.attempts), ("Failed", 1))
 		self.assertEqual(
 			route.failure_reason,
-			"Central could not update this route. It will retry automatically.",
+			"Could not update this route. It will retry automatically.",
 		)
 		self.assertIn("HTTP 503", frappe.db.get_value("Error Log", route.error_log, "error"))
 		self.assertEqual(
@@ -193,7 +193,7 @@ class TestSiteDomain(IntegrationTestCase):
 		self.assertEqual((route.status, route.attempts), ("Failed", 1))
 		self.assertEqual(
 			route.failure_reason,
-			"Central could not remove this route. It will retry automatically.",
+			"Could not remove this route. It will retry automatically.",
 		)
 		self.assertIn("HTTP 503", frappe.db.get_value("Error Log", route.error_log, "error"))
 

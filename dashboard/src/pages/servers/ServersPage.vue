@@ -3,7 +3,6 @@ import { Alert, Button, Spinner } from 'frappe-ui'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
-import EmptyState from '@/components/common/EmptyState.vue'
 import MapHealthStrips from '@/components/servers/MapHealthStrips.vue'
 import ResizeServerDialog from '@/components/servers/ResizeServerDialog.vue'
 import ServerFilters from '@/components/servers/ServerFilters.vue'
@@ -13,13 +12,14 @@ import ServerOnboarding from '@/components/servers/ServerOnboarding.vue'
 import ServerRowActions from '@/components/servers/ServerRowActions.vue'
 import TerminateServerDialog from '@/components/servers/TerminateServerDialog.vue'
 import TakeSnapshotDialog from '@/components/snapshots/TakeSnapshotDialog.vue'
-import CreateTeamDialog from '@/components/team/CreateTeamDialog.vue'
 import { useServerFleet } from '@/composables/useServerFleet'
+import { useServerLink } from '@/composables/useServerLink'
 import { useServerNavigation } from '@/composables/useServerNavigation'
 import type { VirtualMachineRow } from '@/composables/useServers'
 import { useServers } from '@/composables/useServers'
 import { getServerActions, type ServerActions } from '@/lib/capabilities'
-import { getErrorMessage } from '@/lib/feedback'
+import { getErrorMessage, infoToast } from '@/lib/feedback'
+import { canChange } from '@/lib/status'
 
 // The servers page: the world map is the list (FC V2). Servers (the Virtual Machine mirror)
 // and sites (the Site mirror — each a 1:1-backed VM) come from one feed and list
@@ -42,7 +42,6 @@ const {
 	canViewServers,
 	canCreateServer,
 	activeTeam,
-	sessionLoading,
 	rows,
 	query: q,
 	statusFilter,
@@ -54,6 +53,7 @@ const {
 	pillLabel,
 	pins,
 	spots,
+	servers,
 } = useServerFleet()
 // Actions only — list reads come from useServerMapData.
 const {
@@ -65,11 +65,6 @@ const {
 	runCommand,
 	openConsole,
 } = useServers()
-
-// A user in no team can't own servers/billing/regions — offer team creation
-// instead of the (empty, error-prone) map until a team exists.
-const createTeamOpen = ref(false)
-const hasNoTeam = computed(() => !sessionLoading.value && !activeTeam.value)
 
 // First-run onboarding nudge — shown until the team has a server or the user
 // dismisses it (remembered across visits so it never nags).
@@ -190,6 +185,21 @@ const teamActions = computed<ServerActions>(() => ({
 const terminateActions = computed(() =>
 	getServerActions(pendingTerminate.value, teamActions.value),
 )
+
+// A link from a server's own dashboard opens that server here.
+useServerLink(
+	{ activeTeam, servers, reload },
+	{
+		overview: showServer,
+		resize: (server) => {
+			if (!canChange(server))
+				infoToast("This server can't be resized right now.")
+			else if (!getServerActions(server, teamActions.value).resize)
+				infoToast("You can't resize this server.")
+			else openResize(server)
+		},
+	},
+)
 </script>
 
 <template>
@@ -218,27 +228,9 @@ const terminateActions = computed(() =>
 			/>
 		</Teleport>
 
-		<!-- No team at all: create one before anything else can be provisioned. -->
-		<div v-if="hasNoTeam" class="flex flex-1 items-center justify-center p-8">
-			<EmptyState
-				icon="lucide-users"
-				title="No team yet"
-				description="Create a team before provisioning servers. The team becomes the owner boundary for permissions, billing, and Atlas resources."
-			>
-				<template #action>
-					<Button
-						variant="solid"
-						label="Create team"
-						icon-left="lucide-plus"
-						@click="createTeamOpen = true"
-					/>
-				</template>
-			</EmptyState>
-		</div>
-
 		<!-- The map is the page. Everything else floats above it. `isolate` keeps
          the overlays' z-indexes from leaking above body-portaled menus. -->
-		<div v-else class="relative isolate flex-1 overflow-hidden">
+		<div class="relative isolate flex-1 overflow-hidden">
 			<ServerMap
 				class="absolute inset-0"
 				:pins="pins"
@@ -264,7 +256,6 @@ const terminateActions = computed(() =>
 						:can-snapshot="canSnapshotServer"
 						:can-open-console="canOpenConsole"
 						:opens-site="!!pin.site"
-						side="right"
 						:busy="busy === pin.server.resource_id"
 						:opening="
 							opening === pin.server.resource_id || opening === pin.site?.name
@@ -385,6 +376,5 @@ const terminateActions = computed(() =>
 			:server="pendingResize"
 			@resized="reloadAll"
 		/>
-		<CreateTeamDialog v-model:open="createTeamOpen" />
 	</div>
 </template>

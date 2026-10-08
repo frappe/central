@@ -67,6 +67,8 @@ class EngineTestBase(IntegrationTestCase):
 		in_app_body="Something broke",
 		direct_recipients="None",
 		create_in_app=True,
+		action_label=None,
+		action_route=None,
 	):
 		if frappe.db.exists("Notification Event Type", event_type):
 			original = frappe.db.get_value(
@@ -89,6 +91,8 @@ class EngineTestBase(IntegrationTestCase):
 				"in_app_body": in_app_body,
 				"direct_recipients": direct_recipients,
 				"create_in_app": int(create_in_app),
+				"action_label": action_label,
+				"action_route": action_route,
 			}
 		).insert(ignore_permissions=True)
 		self.__class__._created_event_types.add(event_type)
@@ -317,6 +321,25 @@ class TestEmailFanout(EngineTestBase):
 		for u in users:
 			team.append("members", {"user": u, "role": "Billing", "status": "Active"})
 		team.save(ignore_permissions=True)
+
+	@patch("central.notification.engine.frappe.sendmail")
+	def test_email_says_the_in_app_sentence_with_the_team_name(self, mock_sendmail):
+		self._ensure_event_type(
+			"member_joined",
+			category="Billing",
+			required_cap="billing:view",
+			in_app_title="New team member",
+			in_app_body="{{ message }} has joined {{ team_name }}.",
+		)
+
+		from central.notification.engine import dispatch
+
+		dispatch(TEAM, "member_joined", message="new.member@example.test")
+
+		body = mock_sendmail.call_args.kwargs["message"]
+		team_name = frappe.db.get_value("Team", TEAM, "team_name")
+		self.assertIn(f"new.member@example.test has joined {team_name}.", body)
+		self.assertNotIn("Reason", body)
 
 	@patch("central.notification.engine.frappe.sendmail")
 	def test_emails_qualified_members(self, mock_sendmail):
@@ -589,6 +612,7 @@ class TestReportPilotEvent(EngineTestBase):
 
 		class FakeCredential:
 			team = TEAM
+			server = None
 
 		fake = FakeCredential()
 
@@ -639,6 +663,45 @@ class TestReportPilotEvent(EngineTestBase):
 
 			with self.assertRaises(frappe.PermissionError):
 				report_pilot_event(event_type="payment_failure", message="x")
+
+	def test_pilot_resource_alert_is_accepted_with_the_shipped_fixture(self):
+		"""Pilot's sustained resource alert must match a Server-category fixture, and the
+		shipped settings must render a feed entry from Pilot's payload."""
+		fixture_path = frappe.get_app_path("central", "fixtures", "notification_event_type.json")
+		fixture = next(
+			record
+			for record in frappe.parse_json(frappe.read_file(fixture_path))
+			if record["name"] == "resource_limit_breached"
+		)
+		self._ensure_event_type(
+			"resource_limit_breached", **{field: fixture[field] for field in _FIXTURE_FIELDS}
+		)
+
+		class FakeCredential:
+			team = TEAM
+			server = None
+
+		with (
+			patch("central.api.pilot.PilotCredential.verify", return_value=FakeCredential()),
+			patch("frappe.get_request_header", return_value="fake-token"),
+		):
+			from central.notification.api import report_pilot_event
+
+			out = report_pilot_event(
+				event_type="resource_limit_breached",
+				message="my-bench: cpu_usage_limit at 95.0%",
+				context={"bench": "my-bench", "breached_limits": []},
+			)
+		self.assertTrue(out["created"])
+
+		row = frappe.get_all(
+			"Team Notification",
+			{"team": TEAM, "event_type": "resource_limit_breached"},
+			["title", "message", "action_label", "action_route"],
+		)[0]
+		self.assertEqual(row.title, "Resource limit breached: my-bench")
+		self.assertEqual(row.message, "my-bench: cpu_usage_limit at 95.0%")
+		self.assertEqual((row.action_label, row.action_route), ("View server", "/servers"))
 
 
 class TestTemplateContext(EngineTestBase):

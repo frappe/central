@@ -83,6 +83,7 @@ async function submit() {
 				<Alert v-if="formError" theme="red" :title="formError" />
 				<TextInput
 					v-model="roleName"
+					autofocus
 					label="Role name"
 					placeholder="e.g. Release Manager"
 				/>

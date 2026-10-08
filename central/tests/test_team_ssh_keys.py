@@ -27,8 +27,8 @@ class TestTeamSSHKeys(TestCase):
 	@patch("central.permissions.can")
 	def test_read_and_write_permissions_are_separate(self, can, on_any_server, _operator) -> None:
 		# Reading needs server:view on any server of the team; writing needs server:ssh-key team-wide.
-		on_any_server.side_effect = (
-			lambda user, team, capability: team == "team-a" and capability == "server:view"
+		on_any_server.side_effect = lambda user, team, capability: (
+			team == "team-a" and capability == "server:view"
 		)
 		can.return_value = False
 		doc = SimpleNamespace(team="team-a")

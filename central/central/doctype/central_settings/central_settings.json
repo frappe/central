@@ -7,6 +7,7 @@
  "field_order": [
   "general_tab",
   "trial_idle_shutdown_minutes",
+  "invitation_expiry_days",
   "wildcard_domain",
   "central_id",
   "feature_flags_tab",
@@ -16,7 +17,9 @@
   "enable_llm_service",
   "enable_pdf_print_service",
   "enable_email_delivery_service",
-  "enable_object_storage_service"
+  "enable_object_storage_service",
+  "servers_tab",
+  "common_site_config"
  ],
  "fields": [
   {
@@ -78,6 +81,14 @@
    "non_negative": 1
   },
   {
+   "default": "14",
+   "description": "Days a team invitation stays open. Resending it starts the count again.",
+   "fieldname": "invitation_expiry_days",
+   "fieldtype": "Int",
+   "label": "Invitation Expiry (Days)",
+   "non_negative": 1
+  },
+  {
    "description": "Base domain of every regional service. Central reaches proxy.<region>.<wildcard domain>, atlas.<region>.<wildcard domain>, and cargo.<region>.<wildcard domain>. Example: frappe.dev",
    "fieldname": "wildcard_domain",
    "fieldtype": "Data",
@@ -90,13 +101,24 @@
    "fieldtype": "Int",
    "label": "Central ID",
    "non_negative": 1
+  },
+  {
+   "fieldname": "servers_tab",
+   "fieldtype": "Tab Break",
+   "label": "Servers"
+  },
+  {
+   "description": "A JSON object that every server Central creates merges into its sites/common_site_config.json, such as {\"raven_push_notification_server_url\": \"https://cloud.ravenchat.ai\"}. The customer can read it, so never put a secret here. A server keeps what it got when it was created.",
+   "fieldname": "common_site_config",
+   "fieldtype": "JSON",
+   "label": "Common Site Config"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-09-17 12:00:00.000000",
+ "modified": "2026-10-07 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Central",
  "name": "Central Settings",

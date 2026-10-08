@@ -11,7 +11,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from frappe.tests import IntegrationTestCase
 from frappe.utils.password import remove_encrypted_password
 
-from central.api.jwks import get_atlas_jwks, get_jwks, jwks_document
+from central.api.jwks import get_jwks, jwks_document
 from central.central.doctype.central_sso_settings.central_sso_settings import ALGORITHM, CentralSSOSettings
 from central.sso import mint_bench_login
 
@@ -32,6 +32,7 @@ class TestPilotSigningKey(IntegrationTestCase):
 		frappe.set_user("Administrator")
 		self.addCleanup(frappe.db.rollback)
 		reset_signing_key("pilot")
+		reset_signing_key("atlas")
 
 	def initialize(self) -> CentralSSOSettings:
 		settings = CentralSSOSettings.instance()
@@ -75,7 +76,7 @@ class TestPilotSigningKey(IntegrationTestCase):
 		with self.assertRaises(frappe.ValidationError):
 			self.initialize()
 
-	def test_endpoint_publishes_only_the_pilot_public_key(self):
+	def test_endpoint_publishes_the_initialized_pilot_public_key(self):
 		"""Pilot's JWKS cache reads `keys` at the top level, without the message envelope."""
 		settings = self.initialize()
 		body = json.loads(get_jwks().get_data())
@@ -89,15 +90,40 @@ class TestPilotSigningKey(IntegrationTestCase):
 		)
 		self.assertNotIn("d", key)
 
-	def test_pilot_and_atlas_keys_are_separate(self):
-		reset_signing_key("atlas")
-		self.initialize()
-		CentralSSOSettings.instance().initialize_signing_key("atlas")
+	def test_endpoint_publishes_both_public_keys_without_rotating_them(self):
+		settings = self.initialize()
+		settings.initialize_signing_key("atlas")
+		frappe.set_user("Guest")
+		self.addCleanup(frappe.set_user, "Administrator")
 
-		atlas_kids = [key["kid"] for key in json.loads(get_atlas_jwks().get_data())["keys"]]
-		pilot_kids = [key["kid"] for key in jwks_document()["keys"]]
-		self.assertTrue(atlas_kids and pilot_kids)
-		self.assertFalse(set(atlas_kids) & set(pilot_kids))
+		body = json.loads(get_jwks().get_data())
+		self.assertNotEqual(settings.pilot_key_id, settings.atlas_key_id)
+		self.assertNotIn("message", body)
+		self.assertEqual([key["kid"] for key in body["keys"]], [settings.pilot_key_id, settings.atlas_key_id])
+		for key in body["keys"]:
+			self.assertEqual(
+				(key["kty"], key["crv"], key["alg"], key["use"]), ("OKP", "Ed25519", ALGORITHM, "sig")
+			)
+			self.assertNotIn("d", key)
+		self.assertEqual(jwks_document(), body)
+		saved = CentralSSOSettings.instance()
+		self.assertEqual(
+			(saved.pilot_key_id, saved.atlas_key_id), (settings.pilot_key_id, settings.atlas_key_id)
+		)
+
+	def test_endpoint_publishes_atlas_when_pilot_is_uninitialized(self):
+		settings = CentralSSOSettings.instance()
+		settings.initialize_signing_key("atlas")
+
+		self.assertEqual(json.loads(get_jwks().get_data()), settings.get_jwks("atlas"))
+		self.assertFalse(CentralSSOSettings.instance().pilot_key_id)
+
+	def test_endpoint_rejects_an_incomplete_atlas_key(self):
+		self.initialize()
+		frappe.db.set_single_value(DOCTYPE, "atlas_key_id", "central:incomplete")
+
+		with self.assertRaises(frappe.ValidationError):
+			get_jwks()
 
 	def test_token_signed_by_central_verifies_against_published_jwks(self):
 		self.initialize()
@@ -123,3 +149,15 @@ class TestPilotSigningKey(IntegrationTestCase):
 		key = jwt.PyJWK.from_dict(jwks_document()["keys"][0])
 		with self.assertRaises(jwt.InvalidSignatureError):
 			jwt.decode(token, key.key, algorithms=[ALGORITHM], options={"verify_aud": False})
+
+
+class TestIssuerURL(IntegrationTestCase):
+	def test_issuer_url_drops_trailing_slashes(self):
+		# Cleanups run last first: roll back, then drop the cached copy of the saved value.
+		self.addCleanup(frappe.clear_document_cache, DOCTYPE, DOCTYPE)
+		self.addCleanup(frappe.db.rollback)
+		settings = CentralSSOSettings.instance()
+		settings.issuer_url = " https://central.example.test// "
+		settings.save()
+
+		self.assertEqual(settings.issuer_url, "https://central.example.test")

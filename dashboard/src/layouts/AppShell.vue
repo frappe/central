@@ -12,6 +12,7 @@ import { useRoute } from 'vue-router'
 import ErrorAlertHost from '@/components/common/ErrorAlertHost.vue'
 import Sidebar from '@/components/navigation/Sidebar.vue'
 import NotificationsPanel from '@/components/notifications/NotificationsPanel.vue'
+import OnboardingDialog from '@/components/onboarding/OnboardingDialog.vue'
 import SettingsModal from '@/components/settings/SettingsModal.vue'
 import SwitchTeamDialog from '@/components/team/SwitchTeamDialog.vue'
 import { useBreadcrumbs } from '@/composables/useBreadcrumbs'
@@ -116,4 +117,5 @@ const breadcrumbs = computed(
 	<SettingsModal v-if="!isMobile" />
 	<SearchDialog v-if="searchMounted" v-model:open="searchOpen" />
 	<SwitchTeamDialog v-model:open="teamSwitcherOpen" />
+	<OnboardingDialog />
 </template>

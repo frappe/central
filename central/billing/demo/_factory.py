@@ -392,8 +392,7 @@ def _profile(team, slug, currency, cluster):
 
 # (suffix, system role, member status) — a roster with role AND status variety so
 # the Members & Roles screen shows the full spread. Roster users are created
-# DISABLED so User.after_insert never bootstraps a personal team for them; they
-# exist only as members of the demo team.
+# DISABLED; they exist only as members of the demo team.
 # Owner comes from the team's owner_user; these are the other four system roles,
 # so Acme demos one member per role (owner + admin + developer + billing + viewer).
 _MEMBER_ROSTER = [
@@ -442,8 +441,7 @@ def _custom_role(team):
 
 
 def _ensure_member_user(email, full_name):
-	"""Roster-only user, created DISABLED so the after_insert hook doesn't bootstrap
-	a personal team (central.users.bootstrap_user_team skips disabled users)."""
+	"""Roster-only user, created DISABLED so it cannot sign in to the console."""
 	if frappe.db.exists("User", email):
 		return email
 	first, _, last = full_name.partition(" ")
@@ -727,11 +725,8 @@ def _ensure_signing_key():
 def _ensure_demo_team(slug):
 	"""Resolve a demo slug to a real Central `Team`, ONE per owner.
 
-	Creating the owner user fires `bootstrap_user_team` (User.after_insert),
-	which already provisions that user's default Team *with* proper Owner
-	membership. We reuse that team rather than minting a second, member-less one
-	(which is what produced two teams per email). Idempotent by `owner_user`:
-	`_wipe_all` leaves Teams intact, so a re-seed reuses the same team."""
+	Idempotent by `owner_user`: `_wipe_all` leaves Teams intact, so a re-seed
+	reuses the same team."""
 	owner = f"owner-{slug}@example.com"
 	if not frappe.db.exists("User", owner):
 		frappe.get_doc(
@@ -749,11 +744,6 @@ def _ensure_demo_team(slug):
 	existing = frappe.db.get_value("Team", {"owner_user": owner}, "name")
 	if existing:
 		return existing
-	# bootstrap_user_team should have created the team on user insert; fall back
-	# to an explicit one only if bootstrap was skipped.
-	team = frappe.db.get_value("Team", {"owner_user": owner}, "name")
-	if team:
-		return team
 	return (
 		frappe.get_doc(
 			{

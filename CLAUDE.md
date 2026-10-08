@@ -15,8 +15,7 @@ Read the [README](README.md) for setup and local development. Read [`spec/README
 
 - [IAM](spec/IAM.md): identity, permissions, and Atlas enforcement.
 - [Capabilities](CAPABILITIES.md): the authorization vocabulary and its plane split.
-- [Atlas coordination](spec/ATLAS_COORDINATION.md): the cross-repository contract.
-- [Refactor backlog](spec/refactor_todo.md): the remaining pre-1.0 cleanup work.
+- [Integrations](spec/INTEGRATIONS.md): the contracts with Atlas, Pilot, and Cargo.
 
 ## System boundaries
 
@@ -42,19 +41,17 @@ Central runs today:
 
 - Identity and access: teams, members, invitations, team roles, capabilities, and the permission probe.
 - Tokens: SSO and OAuth minting for Atlas, for a Pilot bench, and for Cargo, Datum and for any other future services, plus site login.
-- Regions: Atlas instance registration.
+- Regions: each Region holds its Atlas connection and its Cargo connection.
 - Resources: `Virtual Machine` for a provisioned server, `Site` for a self-serve site. Only the integration layer records observed state on them.
-- Provisioning: provisioning requests and resource actions against Atlas and Pilot.
-- Managed services: add-on catalog, LLM models and plan policies, storage backends, and service credentials.
+- Provisioning: durable `Resource Action` records that Central processes against Atlas and Pilot.
+- Managed services: team services and service details, LLM models and plan policies, and object storage.
 - Notifications: event types, team notifications, user preferences, and the delivery engine.
 - Billing: catalog, subscriptions, invoicing, payments, credits, and projections.
-- Partners: partner membership, passport registration, and Connect credentials.
 - The console in `dashboard/`.
 
 Central plans to add:
 
 - One `SPEC.md` per module, written as each module is rewritten.
-- The remaining capability and enforcement work in [`spec/EXECUTION_PLAN.md`](spec/EXECUTION_PLAN.md).
 - A repository layout redesigned from first principles, to match the current Atlas and Pilot boundaries.
 
 `central/billing/**` is out of scope for the rewrite. Change it only when the task names it, and keep the change as small as the task needs.
@@ -66,18 +63,17 @@ Central plans to add:
 - Build the minimum working change, then iterate. Delete before you add when existing code can be simplified.
 - For a bug fix, find the root cause before you change code.
 - Do not change unrelated dirty files, generated artifacts, or local data.
-- Do not add plan files such as `plan_*.md`. Put planned work in `spec/`.
+- Do not add plan files such as `plan_*.md`. Track planned work in GitHub issues.
 - Do not commit secrets, private keys, tokens, `.env` content, or production credentials.
 - Use `git mv` when you intentionally move or rename a tracked file.
 
-## Temporary rules
+## Compatibility
 
-Central is in active development and is not deployed to production.
+Central runs as an internal release. Keep backward compatibility minimal.
 
-- Do not preserve backward compatibility unless the task or specification requires it.
-- Prefer the target design over compatibility layers, migration shims, deprecated aliases, or fallback behavior.
+- Add a data patch for a change to stored data. Do not leave old data behind a new schema.
+- Do not add compatibility layers, deprecated aliases, or fallback behavior unless the task or specification requires them.
 - Do not design for rolling upgrades, mixed-version deployments, or zero-downtime migration unless required.
-- Revisit these rules before the first production deployment.
 
 ## Permissions
 
@@ -99,7 +95,7 @@ Document (.team field) -------------------------------------+
 
 ### Enforce in both layers
 
-Every team-scoped DocType needs a `permission_query_conditions` entry and a `has_permission` entry, wired in `hooks.py` and named `<doctype>_query_conditions` and `<doctype>_has_permission`. A query condition alone still leaks a single document by name. A `has_permission` alone still leaks the list. Reuse `_team_field_query_conditions` and `_team_field_has_permission` instead of writing a new pair by hand.
+Every team-scoped DocType needs a `permission_query_conditions` entry and a `has_permission` entry, wired in `hooks.py` and named `<doctype>_query_conditions` and `<doctype>_has_permission`. Virtual Machine uses the `server_` prefix. A query condition alone still leaks a single document by name. A `has_permission` alone still leaks the list. Reuse `_team_field_query_conditions` and `_team_field_has_permission` instead of writing a new pair by hand.
 
 An API route may still check `can(...)` before it acts, because a route must fail with a clear message and must gate writes. That check is a second layer, not the only one. Do not let it become the only thing standing between a user and another team's data.
 
@@ -160,11 +156,15 @@ The console serves customers. Desk serves the operator who has to answer a page 
 - Do not put an explanatory comment at the top of a file. Use a short class or function docstring.
 - Add focused tests for changed behavior and failure cases. Do not add tests only to raise coverage. Keep tests deterministic and independent.
 - Follow DRY, SOLID, and KISS. Apply them to remove real duplication and real coupling, not to add layers.
+- Reduce the layers a reader has to trace. Reduce the state a reader has to hold in their head.
+- Don't abstract for the sake of abstraction, abstract only if you can make a distinct concept from it. Every layer should provide a consistent interface and be part of a single task.
+- Review every test for it's necessity. If the type system covers it, remove the test. If an existing end to end / integration test covers it, remove it.
 
 ### Python
 
 - Target Python 3.14 and Frappe v16.
 - Keep domain behavior in the DocType controller, service module, or task that owns it. Keep `central/api/` routes and `hooks.py` entries thin.
+- Do not add a second API for a variant of an operation that an existing API does. Add an argument to the existing API, for example `invite_team_member(team, invitations=[...])` for many people, not a new `invite_team_members`. The functions behind the one API can differ.
 - Use type hints for public functions and important data structures.
 - Raise specific exceptions. Handle only errors that the code can recover from. Use `central/errors.py` for a failure that a person reads.
 - Prefer standard Frappe APIs and built-in DocTypes over custom machinery. Use `frappe.db` and `frappe.qb` instead of raw SQL.
@@ -224,7 +224,7 @@ Organise components in three tiers, and group a feature by domain folder instead
 
 ```text
 dashboard/src/components/common/      Domain-agnostic primitives: avatar, loader, skeleton, form field
-dashboard/src/components/layout/      Structural chrome: sidebar, drawer, heading, empty state, banner
+dashboard/src/components/navigation/  Structural chrome: sidebar and navigation lists
 dashboard/src/components/<feature>/   Feature components, one folder per domain
 ```
 
@@ -235,7 +235,7 @@ dashboard/src/components/<feature>/   Feature components, one folder per domain
 - Give every component typed props with a named props interface.
 - Always handle the loading, empty, error, and disabled states. The user must never reach a dead end.
 - Use a toast for short success feedback or a non-actionable background status. Use `backgroundErrorToast` only when the failure happened outside the user's current task.
-- Use `reportError` for an API or action failure. It shows one persistent alert at the top center of the viewport. Give it an action-specific title when the automatic error category does not identify the failed task.
+- Use `reportError` for an API or action failure. It shows one persistent alert at the bottom right of the viewport, where toasts also appear. Give it an action-specific title when the automatic error category does not identify the failed task.
 - Keep a form or dialog failure inside that form or dialog, before the fields or actions it affects. Put a field validation message directly below its field. Keep a page or list loading failure in its content area.
 - Use Frappe UI components and semantic classes for layout, spacing, color, and typography. Use a raw Tailwind class only for what the design system does not cover.
 - Do not mix ad hoc Tailwind values with design-system tokens. Inconsistent class usage is a defect.
@@ -305,6 +305,7 @@ Use `pilot frappe ...` for any Frappe CLI command, such as `migrate` or `clear-c
 - Follow the validation and handover rules before you write the description.
 - State what changed and why it matters. Do not narrate the implementation.
 - Group related changes. Include visual evidence only for visual changes.
+- Avoid words like doors, seam, rule etc.
 
 For a bug fix, use this structure:
 

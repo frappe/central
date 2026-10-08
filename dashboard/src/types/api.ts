@@ -1,10 +1,3 @@
-export interface ProviderLogin {
-	name: string
-	label: string
-	icon: string
-	auth_url: string
-}
-
 /** central.api.servers.refresh_servers response (the reconcile result). */
 export interface RefreshResponse {
 	synced: string[]
@@ -13,6 +6,9 @@ export interface RefreshResponse {
 }
 
 /** central.api.identity.my_teams item. */
+/** A console onboarding step that a team stores. Mirrors Team Onboarding Step.step. */
+export type OnboardingStepKey = 'invite' | 'billing' | 'start'
+
 export interface Team {
 	name: string
 	label: string
@@ -22,6 +18,8 @@ export interface Team {
 	role: string | null
 	members: number
 	created: string | null
+	/** The steps the caller still has to answer as owner. Empty for a team they do not own. */
+	onboarding: OnboardingStepKey[]
 }
 
 export type MemberStatus = 'Active' | 'Suspended'
@@ -105,6 +103,18 @@ export interface MyInvitation {
 	invited_by: string | null
 	expires_on: string | null
 	creation: string
+}
+
+/** An invitation as the join page reads it by its emailed token. */
+export interface InvitationSummary {
+	name: string
+	email: string
+	status: 'Pending' | 'Accepted' | 'Expired' | 'Revoked' | 'Declined'
+	team_name: string
+	invited_by: string
+	role: string
+	expires_on: string
+	has_account: boolean
 }
 
 /** One bundled resource in a plan (central Plan Includes). */

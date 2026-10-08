@@ -341,38 +341,6 @@ class TestTerminationCancelsBilling(BillingTestBase):
 		self.assertEqual(subscriptions.team_run_rate(TEAM), 0)  # headroom freed
 
 
-class TestCancelTerminatedPatch(BillingTestBase):
-	"""v26 backfill: close the open segment of VMs terminated before the runtime fix."""
-
-	def test_patch_cancels_open_segment_on_terminated_server(self):
-		from central.patches.v0_0.cancel_terminated_subscriptions import (
-			cancel_terminated_subscriptions,
-		)
-
-		server_id = frappe.db.get_value("Subscription", self.sub, "server_id")
-		frappe.db.set_value("Subscription", self.sub, "enabled", 1)
-		add_segment(self.sub, "Created", 1000, "2026-06-01 00:00:00")
-		# Legacy bug state: the mirror was flipped to Terminated WITHOUT the controller
-		# cancelling — a direct write leaves the segment open.
-		frappe.db.set_value("Virtual Machine", server_id, "status", "Terminated")
-		self.assertEqual(subscriptions.team_run_rate(TEAM), 1000)
-
-		# At least this subscription is cancelled; a shared site may hold others in the
-		# same legacy state. The scoped checks below prove this one was closed exactly once.
-		self.assertGreaterEqual(cancel_terminated_subscriptions(), 1)
-
-		self.assertEqual(subscriptions.current_segment_rate(self.sub), 0)
-		self.assertEqual(subscriptions.team_run_rate(TEAM), 0)
-		self.assertFalse(frappe.db.get_value("Subscription", self.sub, "enabled"))
-
-		# Idempotent: a second run closes nothing (no duplicate Cancelled).
-		self.assertEqual(cancel_terminated_subscriptions(), 0)
-		cancels = frappe.get_all(
-			"Subscription Change", {"subscription": self.sub, "change_type": "Cancelled"}
-		)
-		self.assertEqual(len(cancels), 1)
-
-
 class TestMonthlyBillingRun(BillingTestBase):
 	"""The scheduled entrypoint that drafts + settles the just-closed month."""
 

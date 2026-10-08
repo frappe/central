@@ -110,7 +110,12 @@ const dialogOptions = computed(() => ({
 		<template #default>
 			<div class="space-y-4">
 				<Alert v-if="formError" theme="red" :title="formError" />
-				<TextInput v-model="title" label="Title" @keyup.enter="submit" />
+				<TextInput
+					v-model="title"
+					label="Title"
+					autofocus
+					@keyup.enter="submit"
+				/>
 				<TextInput
 					v-model="spendingLimit"
 					type="number"

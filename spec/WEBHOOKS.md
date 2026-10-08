@@ -56,14 +56,14 @@ Atlas reports one virtual machine per delivery.
 
 | Field | Required | Value |
 |---|---|---|
-| `event` | Yes | `vm.state` |
+| `event` | Yes | `vm.state` or `vm.state.deleted` |
 | `virtual_machine` | Yes | The Atlas VM ID. Central matches it to a Virtual Machine in the signing region. |
 | `status` | For `vm.state` | `running`, `stopped`, or `paused` |
-| `observed_at` | Yes | The region's own timestamp. Central orders reports by it and drops one that is not newer. |
+| `observed_at` | For `vm.state` | The region's own timestamp. Central orders reports by it and drops one that is not newer. |
 
-Central records `running` as `Running`, `stopped` as `Stopped`, and `paused` as `Paused`. Central never records a status it was not told.
+For `vm.state`, Central records `running` as `Running`, `stopped` as `Stopped`, and `paused` as `Paused`. Central never records a status it was not told.
 
-Central takes no deletion event. A host reports only a live state, and a removed machine has none, so absence is not something a report can carry. Central learns that a machine is gone from a correctly scoped read that answers not found. See [resource actions](../central/infrastructure/doctype/resource_action/SPEC.md).
+Atlas sends `vm.state.deleted` after Metal confirms that the machine is absent. Central records the server as `Terminated`, closes its billing, revokes its Pilot credentials, and completes a waiting terminate action. Termination is final, so Central ignores `status` and `observed_at` on this event and does no ordering check. A lost deletion is corrected by a scoped read that answers not found. See [resource actions](../central/infrastructure/doctype/resource_action/SPEC.md).
 
 An accepted report is applied by a background job, not in the request. The reply is a receipt, not a confirmation.
 
@@ -113,14 +113,15 @@ An ignored report is authentic and readable. Central has nothing to do with it. 
 |---|---|---|
 | `unreadable body` | Both | The body is not a JSON object |
 | `unknown server` | Atlas | No Virtual Machine in this region carries that VM ID |
-| `unsupported event '<value>'` | Atlas | The event is not `vm.state` |
-| `unsupported status '<value>'` | Atlas | The status is not `running`, `stopped`, or `paused` |
-| `no change` | Atlas | Central already records this state |
-| `already terminated` | Atlas | Central already recorded this server as gone |
+| `unsupported event '<value>'` | Atlas | The event is not `vm.state` or `vm.state.deleted` |
+| `unsupported status '<value>'` | Atlas | The status of a `vm.state` report is not `running`, `stopped`, or `paused` |
+| `invalid observed_at` | Atlas | `observed_at` of a `vm.state` report is missing or is not a timestamp |
+| `no change` | Atlas | Central already records this state, or the server of a `vm.state.deleted` report is already `Terminated` |
+| `stale report` | Atlas | `observed_at` is not newer than the last report Central applied |
 | `unsupported service '<value>'` | Cargo | The service is not `telemetry` or `storage` |
 | `unsupported status '<value>'` | Cargo | The status is not `Available` or `Not Available` |
 
-A region may report on a timer instead of on change. Central answers `no change` and writes nothing, so a timer costs one row read.
+A region may report on a timer instead of on change. When a same-state report has a newer `observed_at`, Central advances `Virtual Machine.last_reported_at` and answers `no change`. This stops an older state change that arrives later from changing the server.
 
 ## Retries
 

@@ -3,8 +3,8 @@ from __future__ import annotations
 import frappe
 from frappe import _
 
-from central.iam import can, resolve_team
-from central.sso import bench_gateway, mint_bench_login
+from central.iam import can
+from central.sso import mint_bench_login
 
 # Open-in-bench: hand the signed-in user a one-click link into their bench. Central mints a
 # short-lived admin SID signed with its Pilot key; the bench verifies it offline against the
@@ -13,29 +13,17 @@ from central.sso import bench_gateway, mint_bench_login
 # pilot_credential_id), so a SID minted for one bench is rejected by any other. The SID is
 # single-use (jti + short TTL), so each Open mints a fresh one.
 
-DEV_AUDIENCE = "local-bench"  # audience for the explicit-gateway dev shortcut (no VirtualMachine)
-
 
 @frappe.whitelist(methods=["GET"])
-def get_bench_link(
-	server: str | None = None, team: str | None = None, gateway_url: str | None = None
-) -> dict:
+def get_bench_link(server: str, team: str | None = None) -> dict:
 	"""Return the URL to open a bench at, as ``{gateway}/sso?sid=<jwt>``.
 
 	Pass `server` (a VM resource_id) to open that server: `server:view` on that server is the
-	gate, and the VM must be Running with
-	a bench gateway in an active region. `gateway_url` (no server) is the dev shortcut: open
-	an explicit gateway, minting against a fixed dev audience."""
+	gate, and the VM must be Running with a bench gateway in an active region."""
 	user = frappe.session.user
 	if not user or user == "Guest":
 		frappe.throw(_("Sign in first."), frappe.PermissionError)
-	if server:
-		return _server_login_link(server, team, user)
-	team = resolve_team(user, team)
-	if not can(user, team, "server:view"):
-		frappe.throw(_("You can't open servers for this team."), frappe.PermissionError)
-	target = gateway_url.rstrip("/") if gateway_url else bench_gateway()
-	return {"url": f"{target}/?sid={mint_bench_login(DEV_AUDIENCE)}"}
+	return _server_login_link(server, team, user)
 
 
 def _server_login_link(server: str, team: str | None, user: str) -> dict:

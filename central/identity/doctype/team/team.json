@@ -14,7 +14,16 @@
   "tenant_id",
   "status",
   "is_staging_trial",
-  "members"
+  "members",
+  "onboarding_section",
+  "onboarding_steps",
+  "attribution_section",
+  "utm_source",
+  "utm_medium",
+  "utm_campaign",
+  "column_break_attribution",
+  "landing_product",
+  "referrer"
  ],
  "fields": [
   {
@@ -63,10 +72,11 @@
   },
   {
    "default": "0",
-   "description": "Staging trials: create servers on free welcome credits without a full billing profile.",
+   "description": "Staging trials: create servers on free welcome credits without a full billing profile. Central sets it from Billing Settings when the team is created. Only a System Manager can change it.",
    "fieldname": "is_staging_trial",
    "fieldtype": "Check",
-   "label": "Staging Trial"
+   "label": "Staging Trial",
+   "permlevel": 1
   },
   {
    "fieldname": "members",
@@ -82,6 +92,64 @@
    "label": "Tenant ID",
    "length": 20,
    "no_copy": 1,
+   "read_only": 1
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "onboarding_section",
+   "fieldtype": "Section Break",
+   "label": "Onboarding"
+  },
+  {
+   "description": "The console onboarding steps of this team, and what the owner did with each. Set when the team is created.",
+   "fieldname": "onboarding_steps",
+   "fieldtype": "Table",
+   "label": "Onboarding Steps",
+   "options": "Team Onboarding Step",
+   "read_only": 1
+  },
+  {
+   "collapsible": 1,
+   "description": "How the owner first found Frappe Cloud. Written once when the team is created at signup.",
+   "fieldname": "attribution_section",
+   "fieldtype": "Section Break",
+   "label": "Signup Attribution"
+  },
+  {
+   "fieldname": "utm_source",
+   "fieldtype": "Data",
+   "label": "UTM Source",
+   "read_only": 1
+  },
+  {
+   "fieldname": "utm_medium",
+   "fieldtype": "Data",
+   "label": "UTM Medium",
+   "read_only": 1
+  },
+  {
+   "fieldname": "utm_campaign",
+   "fieldtype": "Data",
+   "label": "UTM Campaign",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_attribution",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "The product whose signup link the owner first used.",
+   "fieldname": "landing_product",
+   "fieldtype": "Link",
+   "label": "Landing Product",
+   "options": "Product",
+   "read_only": 1
+  },
+  {
+   "description": "The page that linked to the first signup page.",
+   "fieldname": "referrer",
+   "fieldtype": "Small Text",
+   "label": "Referrer",
    "read_only": 1
   }
  ],
@@ -207,7 +275,7 @@
    "link_fieldname": "team"
   }
  ],
- "modified": "2026-09-17 12:00:00.000000",
+ "modified": "2026-10-06 00:59:08.657647",
  "modified_by": "Administrator",
  "module": "Identity",
  "name": "Team",
@@ -231,6 +299,12 @@
    "read": 1,
    "report": 1,
    "role": "Central User",
+   "write": 1
+  },
+  {
+   "permlevel": 1,
+   "read": 1,
+   "role": "System Manager",
    "write": 1
   }
  ],

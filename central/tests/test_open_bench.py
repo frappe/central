@@ -132,6 +132,21 @@ class TestOpenBench(IntegrationTestCase):
 		link = self._open(self.viewer, server="vm-open-1")
 		self.assertTrue(link["url"].startswith(f"{GATEWAY}/?sid="))
 
+	def test_local_gateway_uses_the_servers_pilot_audience(self):
+		self._server("vm-open-1", "Running", gateway="http://localhost:3030")
+		link = self._open(self.dev, server="vm-open-1")
+		self.assertTrue(link["url"].startswith("http://localhost:3030/?sid="))
+
+		public_key = jwt.PyJWK.from_dict(jwks_document()["keys"][0]).key
+		claims = jwt.decode(
+			link["url"].split("sid=", 1)[1],
+			public_key,
+			algorithms=[ALGORITHM],
+			audience=self.pcid,
+			issuer=central_url(),
+		)
+		self.assertEqual(claims["aud"], self.pcid)
+
 	def test_stopped_vm_refused(self):
 		self._server("vm-open-1", "Stopped")
 		with self.assertRaises(frappe.ValidationError):

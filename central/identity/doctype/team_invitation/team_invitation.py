@@ -6,6 +6,7 @@ from frappe import _
 from frappe.model.document import Document
 from frappe.utils import (
 	add_days,
+	get_fullname,
 	get_url,
 	getdate,
 	now,
@@ -15,6 +16,8 @@ from frappe.utils import (
 
 from central.iam import can, user_has_operator_bypass
 from central.identity.doctype.team_member.team_member import validate_resource_scope
+
+DEFAULT_EXPIRY_DAYS = 14
 
 
 class TeamInvitation(Document):
@@ -36,21 +39,18 @@ class TeamInvitation(Document):
 		role: DF.Link
 		status: DF.Literal["Pending", "Accepted", "Expired", "Revoked", "Declined"]
 		team: DF.Link
+		token: DF.Data | None
 	# end: auto-generated types
-
-	expires_in_days: int = 7
 
 	def before_insert(self) -> None:
 		self.email = self.email.strip().lower()
 		self.status = "Pending"
 		self.invited_by = frappe.session.user
+		self.token = frappe.generate_hash(length=32)
 		self.resource_type = self.resource_type or "*"
 		if self.resource_type == "*":
 			self.resource_name = None
-		expires_in_days = int(self.expires_in_days or 7)
-		if not 1 <= expires_in_days <= 30:
-			frappe.throw(_("Invitation expiry must be between 1 and 30 days."))
-		self.expires_on = add_days(today(), expires_in_days)
+		self.expires_on = get_expiry_date()
 		self.accepted_by = None
 		self.accepted_at = None
 
@@ -65,33 +65,43 @@ class TeamInvitation(Document):
 		self._validate_update()
 
 	def after_insert(self) -> None:
-		self._send_invitation_notification()
+		self.send_email()
 
-	def _send_invitation_notification(self) -> None:
-		from central.notification.engine import dispatch
-
+	def send_email(self) -> None:
+		# Not a notification: the invitee is not a team member yet.
 		team_name = frappe.db.get_value("Team", self.team, "team_name")
-		invitation_url = get_url(f"/dashboard/invitations/{self.name}")
-
-		dispatch(
-			team=self.team,
-			event_type="member_invited",
-			context={
+		invited_by = get_fullname(self.invited_by)
+		frappe.sendmail(
+			recipients=[self.email],
+			subject=_("{0} invited you to join {1} on Frappe Cloud").format(invited_by, team_name),
+			template="team_invitation",
+			args={
 				"team_name": team_name,
-				"invitation_url": invitation_url,
-				"role": self.role,
-				"expires_on": str(self.expires_on),
+				"invited_by": invited_by,
+				"role": self.role_name,
+				"expires_on": frappe.format(self.expires_on, "Date"),
+				"invitation_url": get_url(f"/dashboard/join/{self.token}"),
 			},
 			reference_doctype=self.doctype,
 			reference_name=self.name,
-			affected_user=self.email,
 		)
+
+	def get_summary(self) -> dict:
+		"""What the join page shows."""
+		return {
+			"name": self.name,
+			"email": self.email,
+			"status": "Expired" if self.status == "Pending" and self._is_expired() else self.status,
+			"team_name": frappe.db.get_value("Team", self.team, "team_name"),
+			"invited_by": get_fullname(self.invited_by),
+			"role": self.role_name,
+			"expires_on": self.expires_on,
+			"has_account": bool(frappe.db.exists("User", self.email)),
+		}
 
 	# Internal; the HTTP surface is central.api.teams.accept_invitation.
 	def accept(self) -> dict:
-		return self.accept_for_user(frappe.session.user)
-
-	def accept_for_user(self, user: str) -> dict:
+		user = frappe.session.user
 		if self.status == "Accepted" and self.accepted_by == user:
 			return {"team": self.team, "role": self.role, "accepted": False}
 		if self.email != user:
@@ -133,10 +143,12 @@ class TeamInvitation(Document):
 		self._require_manager()
 		if self.status != "Pending":
 			frappe.throw(_("Only a pending invitation can be resent."))
-		self.expires_on = add_days(today(), int(self.expires_in_days or 7))
+		# A new token also cancels the link in the earlier email.
+		self.token = frappe.generate_hash(length=32)
+		self.expires_on = get_expiry_date()
 		self.flags.from_invitation_action = True
 		self.save()
-		self._send_invitation_notification()
+		self.send_email()
 		return {"name": self.name, "expires_on": self.expires_on}
 
 	# Internal; the HTTP surface is central.api.teams.decline_invitation.
@@ -198,6 +210,7 @@ class TeamInvitation(Document):
 			"expires_on",
 			"accepted_by",
 			"accepted_at",
+			"token",
 		)
 		if any(self.get(field) != previous.get(field) for field in fields):
 			frappe.throw(_("Use the invitation actions to change its status."), frappe.PermissionError)
@@ -206,8 +219,38 @@ class TeamInvitation(Document):
 		if not user_has_operator_bypass() and not can(frappe.session.user, self.team, "team:manage_members"):
 			frappe.throw(_("Not permitted to manage members for this team."), frappe.PermissionError)
 
+	@property
+	def role_name(self) -> str:
+		return frappe.db.get_value("Team Role", self.role, "role_name") or self.role
+
+	@property
+	def is_pending(self) -> bool:
+		return self.status == "Pending" and not self._is_expired()
+
 	def _is_expired(self) -> bool:
 		return bool(self.expires_on and getdate(self.expires_on) < getdate(today()))
+
+
+def get_expiry_date() -> str:
+	return add_days(today(), get_expiry_days())
+
+
+def get_expiry_days() -> int:
+	"""How many days a new invitation stays open."""
+	# A site saved before the setting existed reads it as empty.
+	days = frappe.get_cached_value("Central Settings", "Central Settings", "invitation_expiry_days")
+	return days or DEFAULT_EXPIRY_DAYS
+
+
+def get_invitation_by_token(token: str) -> TeamInvitation:
+	name = frappe.db.get_value("Team Invitation", {"token": token}) if token else None
+	if not name:
+		frappe.throw(_("This invitation link is not valid."), frappe.DoesNotExistError)
+	return frappe.get_doc("Team Invitation", name)
+
+
+def on_doctype_update() -> None:
+	frappe.db.add_unique("Team Invitation", ["token"])
 
 
 def expire_pending_invitations() -> None:

@@ -79,7 +79,7 @@ async function take(server: VirtualMachineRow) {
 		@confirm="take"
 	>
 		<div class="space-y-3">
-			<FormControl v-model="title" label="Name" type="text" />
+			<FormControl v-model="title" label="Name" type="text" autofocus />
 			<p class="text-p-sm text-ink-gray-7">
 				The server keeps running. The snapshot is kept until you delete it. The
 				{{ freePerServer }}

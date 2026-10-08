@@ -63,6 +63,8 @@ Central additions for Espresso layout and responsive visibility.
 
 Listen to `@row-click` for row activation; it emits the row's original data.
 
+When rows are selected, the `#selection-actions` slot replaces the search and filter controls, and the toolbar stays, so the table does not move. The footer shows the row count only from 5 rows, because a shorter list is counted at a glance. Size a column by its content: `size` is a share of the free width, so give the main column the largest share and keep short values, such as a date or a badge, narrow.
+
 For DocTypes, pair `server-side` with `useFrappeList`. It translates the same
 query object into Desk's permission-aware `frappe.desk.reportview.get_list` and
 `get_count` calls. Without `server-side`, TanStack applies the query to the

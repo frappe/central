@@ -1,6 +1,6 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
-"""Fold `Atlas Instance` into `Region` (spec/DELIVERY.md model cleanup).
+"""Fold `Atlas Instance` into `Region`.
 
 An Atlas Instance was always `autoname:field:region`, so its name was already the
 Region it belonged to — one record for the connection, one for the geography, of

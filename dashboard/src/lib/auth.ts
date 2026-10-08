@@ -35,16 +35,47 @@ export function emailError(value: string): string {
 	return ''
 }
 
+/** A starting name from the email, e.g. "jane.doe42@acme.com" gives "Jane Doe". */
+export function nameFromEmail(email: string): string {
+	return email
+		.split('@')[0]
+		.replace(/[\d_.+-]+/g, ' ')
+		.trim()
+		.split(/\s+/)
+		.filter(Boolean)
+		.map((word) => word[0].toUpperCase() + word.slice(1))
+		.join(' ')
+}
+
 export function requiredError(label: string) {
 	return (value: string): string =>
 		value.trim() ? '' : `${label} is required.`
 }
 
+type FrappeError = Error & {
+	messages?: unknown[]
+	status?: number
+	exc_type?: string
+}
+
 export function frappeErrorMessage(error: unknown, fallback: string): string {
 	if (!(error instanceof Error)) return fallback
-	const messages = (error as Error & { messages?: unknown[] }).messages
-	const message = messages?.find(
+	const frappeError = error as FrappeError
+	// Frappe's own rate-limit copy gives the user no next step.
+	if (frappeError.status === 429)
+		return 'Too many attempts. Wait a few minutes, then try again.'
+	const message = frappeError.messages?.find(
 		(item): item is string => typeof item === 'string' && Boolean(item),
 	)
 	return message || error.message || fallback
+}
+
+export function frappeErrorType(error: unknown): string | undefined {
+	return error instanceof Error ? (error as FrappeError).exc_type : undefined
+}
+
+export function queryString(value: unknown): string {
+	if (typeof value === 'string') return value
+	if (Array.isArray(value)) return queryString(value[0])
+	return ''
 }

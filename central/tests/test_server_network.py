@@ -1,11 +1,12 @@
 from types import SimpleNamespace
 from unittest import TestCase
-from unittest.mock import patch
+from unittest.mock import call, patch
 
 import frappe
 from frappe.tests import IntegrationTestCase
 
 from central.api.servers import open_console, server_overview
+from central.errors import AtlasConnectionError, AtlasRejected, AtlasResourceGone
 from central.integrations.resource_actions import MESH_NETWORK, _create_payload
 from central.tests.test_iam import ensure_user
 from central.tests.utils import ensure_atlas_instance
@@ -111,6 +112,28 @@ class TestServerConsole(IntegrationTestCase):
 		self.assertEqual(self.open_as(self.owner), {"url": CONSOLE_URL})
 		self.get_console_url.assert_called_once_with("vm-00001", mode="ssh")
 
+	def test_console_falls_back_to_tty_when_atlas_refuses_ssh(self):
+		self.get_console_url.side_effect = [AtlasRejected("SSH is unavailable."), CONSOLE_URL]
+
+		self.assertEqual(self.open_as(self.owner), {"url": CONSOLE_URL})
+		self.assertEqual(
+			self.get_console_url.call_args_list,
+			[call("vm-00001", mode="ssh"), call("vm-00001", mode="tty")],
+		)
+
+	def test_console_does_not_fall_back_unless_atlas_refuses_ssh(self):
+		for error in (
+			AtlasResourceGone("The server does not exist."),
+			AtlasConnectionError("Atlas rejected Central authentication."),
+		):
+			with self.subTest(error=type(error).__name__):
+				self.get_console_url.reset_mock()
+				self.get_console_url.side_effect = error
+
+				with self.assertRaises(type(error)):
+					self.open_as(self.owner)
+				self.get_console_url.assert_called_once_with("vm-00001", mode="ssh")
+
 	def test_viewer_cannot_open_the_console(self):
 		with self.assertRaises(frappe.PermissionError):
 			self.open_as(self.viewer)
@@ -124,20 +147,22 @@ class TestServerConsole(IntegrationTestCase):
 			self.open_as(self.outsider, team=self.other_team.name)
 		self.get_console_url.assert_not_called()
 
-	def test_console_needs_a_running_ubuntu_server(self):
+	def test_console_needs_a_running_server(self):
 		self.server.db_set("status", "Stopped")
-		with self.assertRaises(frappe.ValidationError):
-			self.open_as(self.owner)
-
-		self.server.db_set({"status": "Running", "image_offering": "pilot"})
 		with self.assertRaises(frappe.ValidationError):
 			self.open_as(self.owner)
 		self.get_console_url.assert_not_called()
 
+	def test_pilot_server_opens_the_console(self):
+		self.server.db_set("image_offering", "pilot")
+
+		self.assertEqual(self.open_as(self.owner), {"url": CONSOLE_URL})
+
 	def test_overview_signs_in_over_public_ipv6_first(self):
 		frappe.set_user(self.viewer)
 		try:
-			server = server_overview(team=self.team.name, resource_id=self.server.name)["server"]
+			with patch("central.api.servers.get_cached_metrics", return_value={"available": False}):
+				server = server_overview(team=self.team.name, resource_id=self.server.name)["server"]
 		finally:
 			frappe.set_user("Administrator")
 

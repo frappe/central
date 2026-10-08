@@ -14,7 +14,11 @@
   "pilot_signing_section",
   "pilot_key_id",
   "pilot_public_key",
-  "pilot_private_key"
+  "pilot_private_key",
+  "oidc_signing_section",
+  "oidc_key_id",
+  "oidc_public_key",
+  "oidc_private_key"
  ],
  "fields": [
   {
@@ -89,13 +93,44 @@
    "label": "Pilot Private Key (Ed25519 PEM)",
    "no_copy": 1,
    "read_only": 1
+  },
+  {
+   "collapsible": 1,
+   "description": "RS256 key for OpenID Connect ID tokens, such as Warpgate sign-in. Initialize once before you register an OIDC client.",
+   "fieldname": "oidc_signing_section",
+   "fieldtype": "Section Break",
+   "label": "OIDC Signing Key (RS256)"
+  },
+  {
+   "description": "Public key identifier in the central: namespace.",
+   "fieldname": "oidc_key_id",
+   "fieldtype": "Data",
+   "label": "OIDC Key ID",
+   "no_copy": 1,
+   "read_only": 1
+  },
+  {
+   "description": "Public RSA verification key published at the OIDC JWKS endpoint.",
+   "fieldname": "oidc_public_key",
+   "fieldtype": "Code",
+   "label": "OIDC Public Key (RSA PEM)",
+   "no_copy": 1,
+   "read_only": 1
+  },
+  {
+   "description": "Encrypted signing key. Never sent to an OIDC client.",
+   "fieldname": "oidc_private_key",
+   "fieldtype": "Password",
+   "label": "OIDC Private Key (RSA PEM)",
+   "no_copy": 1,
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-10-01 12:00:00.000000",
+ "modified": "2026-10-03 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Central",
  "name": "Central SSO Settings",

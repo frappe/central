@@ -2,24 +2,25 @@
 
 ## Purpose
 
-Central SSO Settings owns the private keys used by Central. It holds two Ed25519 keys, one for each plane that verifies Central tokens:
+Central SSO Settings owns the private keys used by Central. It holds one key for each plane that verifies Central tokens:
 
-| Key | Signs | Published at |
-|---|---|---|
-| Atlas | Atlas admin, proxy, Cargo, and Datum tokens | `<central-url>/api/method/central.api.jwks.get_atlas_jwks` |
-| Pilot | Bench login, site login, and Pilot enrollment tokens | `<central-url>/api/method/central.api.jwks.get_jwks` |
+| Key | Algorithm | Signs | Published at |
+|---|---|---|---|
+| Atlas | `EdDSA` | Atlas admin, proxy, Cargo, and Datum tokens | `<central-url>/api/method/central.api.jwks.get_jwks` |
+| Pilot | `EdDSA` | Bench login, site login, and Pilot enrollment tokens | `<central-url>/api/method/central.api.jwks.get_jwks` |
+| OIDC | `RS256` | OpenID Connect ID tokens, such as Warpgate sign-in | `<central-url>/api/method/central.api.oidc.get_jwks` |
 
-The keys are separate so that a key that leaks compromises one plane only. Both use the `EdDSA` algorithm and a key identifier in the `central:` namespace.
+Central uses a separate signing key for each plane. The shared endpoint publishes the Atlas and Pilot public keys, so consumers must also enforce issuer, audience, and token purpose. The OIDC key has its own endpoint, because OpenID Connect clients accept only RS256 keys. Every key identifier is in the `central:` namespace.
 
 ## Configuration
 
-A System Manager opens Central SSO Settings and selects **Initialize Atlas Signing Key** and **Initialize Pilot Signing Key**. Each button shows only while its key does not exist. Each action calls `initialize_signing_key(plane)` with `atlas` or `pilot`. It creates one encrypted private key, one public key, and an identifier. Repeated or concurrent requests keep the same key. An incomplete saved configuration blocks initialization rather than replacing a key that a verifier may already trust.
+A System Manager opens Central SSO Settings and selects **Initialize Atlas Signing Key**, **Initialize Pilot Signing Key**, and **Initialize OIDC Signing Key**. Each button shows only while its key does not exist. Each action calls `initialize_signing_key(plane)` with `atlas`, `pilot`, or `oidc`. It creates one encrypted private key, one public key, and an identifier. Repeated or concurrent requests keep the same key. An incomplete saved configuration blocks initialization rather than replacing a key that a verifier may already trust.
 
-Configure Atlas `central_jwks_url` with the Atlas endpoint. Initialize the Atlas key before Atlas fetches this URL. Atlas rejects an empty trust set.
+Configure Atlas `central_jwks_url` with the shared `central.api.jwks.get_jwks` endpoint. Initialize the Atlas key before Atlas fetches this URL. Atlas rejects an empty trust set.
 
-Central gives each Pilot the Pilot endpoint at enrollment and seeds the Pilot key set into a new server. Initialize the Pilot key before you create a server.
+Central gives each Pilot the shared endpoint at enrollment and seeds the shared key set into a new server. Initialize the Pilot key before you create a server.
 
-Both endpoints return raw JWKS documents. They return an empty key set before initialization. Neither endpoint generates keys or exposes private key material. No automatic key initialization runs on migration. Operators must initialize both keys explicitly on each Central deployment.
+The endpoint returns a raw JWKS document. `get_jwks` publishes both initialized Pilot and Atlas public keys. An uninitialized plane contributes no key. An incomplete saved key blocks publication. The endpoint does not generate keys or expose private key material. No automatic key initialization runs on migration. Operators must initialize both keys explicitly on each Central deployment.
 
 ## Operation
 
@@ -43,6 +44,6 @@ Key rotation and automatic recovery of damaged signing material are not implemen
 
 ## Validation
 
-`central.tests.test_sso_keys` checks the Pilot key: initialization permissions, an unknown plane, repeated initialization, partial configuration, public-only discovery, separate Atlas and Pilot key sets, token verification, and a forged token. `central.tests.test_atlas_sso` checks the same rules for the Atlas key, plus token claims and invalid region IDs.
+`central.tests.test_oidc` checks the OIDC key and the provider: ID token signature, issuer and key ID, the uninitialized key, client secret checks, and the discovery path. `central.tests.test_sso_keys` checks the Pilot key: initialization permissions, an unknown plane, repeated initialization, partial configuration, public-only discovery, combined public discovery, token verification, and a forged token. `central.tests.test_atlas_sso` checks the same rules for the Atlas key, plus token claims and invalid region IDs.
 
 `central.tests.test_atlas_sso` can also run the actual local Atlas and Pilot verifier implementations. Atlas must be installed in the validation bench. Add the pinned Pilot checkout to `PYTHONPATH` to include its verifier. The tests reject a token for another region or Pilot audience. Missing consumer checkouts cause those tests to skip, so a passing suite alone does not prove consumer validation ran.

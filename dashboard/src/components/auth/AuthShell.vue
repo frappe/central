@@ -1,34 +1,22 @@
 <script setup lang="ts">
 import frappeCloudLogo from '@/assets/fc-logo.svg'
 
-withDefaults(
-	defineProps<{
-		step?: number
-		steps?: number
-		showProgress?: boolean
-	}>(),
-	{
-		step: 1,
-		steps: 4,
-		showProgress: false,
-	},
-)
+interface AuthShellProps {
+	step?: number
+	steps?: number
+	showProgress?: boolean
+}
+
+withDefaults(defineProps<AuthShellProps>(), {
+	step: 1,
+	steps: 4,
+	showProgress: false,
+})
 </script>
 
 <template>
-	<main
-		class="flex min-h-screen justify-center bg-surface-base px-4 pb-12 pt-12 sm:pt-16"
-	>
-		<section class="w-full max-w-[384px]">
-			<header class="mb-8 flex items-center justify-center gap-2">
-				<img
-					:src="frappeCloudLogo"
-					alt="Frappe Cloud Logo"
-					class="h-8 w-8 rounded-4 object-contain"
-				/>
-				<span class="text-xl font-semibold text-ink-gray-9">Frappe Cloud</span>
-			</header>
-
+	<main class="flex min-h-screen flex-col bg-surface-base px-4">
+		<section class="mx-auto w-full max-w-[384px] flex-1 pb-12 pt-16 sm:pt-24">
 			<div
 				v-if="showProgress"
 				class="mb-12 flex gap-2"
@@ -44,5 +32,14 @@ withDefaults(
 
 			<slot />
 		</section>
+
+		<footer class="flex items-center justify-center gap-2 py-8">
+			<img
+				:src="frappeCloudLogo"
+				alt=""
+				class="h-6 w-6 rounded-4 object-contain"
+			/>
+			<span class="text-base font-semibold text-ink-gray-8">Frappe Cloud</span>
+		</footer>
 	</main>
 </template>

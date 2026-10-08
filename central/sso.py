@@ -89,22 +89,20 @@ def jwks_url() -> str:
 	return f"{central_url()}/api/method/central.api.jwks.get_jwks"
 
 
-def bench_gateway() -> str:
-	"""The dev bench's gateway base, used when opening by explicit gateway (no Virtual Machine). The
-	SID rides `/?sid=`, which the bench SPA consumes and exchanges at POST /api/login."""
-	return (frappe.conf.get("bench_sso_redirect") or "http://localhost:3030").rstrip("/")
-
-
 def mint_bench_login(audience: str) -> str:
 	"""A single-use admin SID that opens a bench. The bench verifies it against the JWKS
 	and checks `aud` equals its own audience id."""
 	return _mint(audience, "bench", BENCH_LOGIN_TTL, {"sub": "admin"})
 
 
-def mint_site_login(audience: str, site: str) -> str:
-	"""A one-time assertion the site's pilot exchanges for an Administrator session, scoped to
-	one site. `aud` is the hosting bench's audience id; the pilot verifies it against the JWKS."""
-	return _mint(audience, "site", SITE_LOGIN_TTL, {"sub": "admin", "site": site})
+def mint_site_login(audience: str, site: str, user: str | None = None, full_name: str | None = None) -> str:
+	"""A one-time assertion the site's pilot exchanges for a session, scoped to one site. It
+	signs `user` in, created on the site when missing, or Administrator when no user is
+	named. `aud` is the hosting bench's audience id; the pilot verifies it against the JWKS."""
+	claims = {"sub": user or "admin", "site": site}
+	if user and full_name:
+		claims["name"] = full_name
+	return _mint(audience, "site", SITE_LOGIN_TTL, claims)
 
 
 def mint_bootstrap_token(team: str, pilot_credential_id: str) -> str:
@@ -115,6 +113,14 @@ def mint_bootstrap_token(team: str, pilot_credential_id: str) -> str:
 	up front (the VM's resource_id isn't known until Atlas provisions), so it doubles as the
 	audience every downward token to this bench will carry."""
 	return _mint(pilot_credential_id, ENROLL_SCOPE, BOOTSTRAP_TTL, {"team": team})
+
+
+def mint_team_identity_token(audience: str, team: str, team_name: str) -> str:
+	"""Proves a team to an outside service. 5 minutes is enough for one exchange."""
+	if not frappe.utils.validate_url(audience, valid_schemes=["http", "https"]):
+		frappe.throw(_("The audience must be the URL of the service."), frappe.ValidationError)
+
+	return _mint(audience, "team-identity", 5 * 60, {"sub": team, "team_name": team_name})
 
 
 def verify_bootstrap_token(token: str) -> dict:

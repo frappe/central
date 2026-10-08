@@ -5,9 +5,13 @@ from typing import Any
 import frappe
 from frappe import _
 from frappe.query_builder import Order
+from frappe.rate_limiter import rate_limit
 
 from central.iam import expand_capabilities, get_all_capabilities
+from central.identity.doctype.team.team import Team
+from central.identity.doctype.team_invitation.team_invitation import get_invitation_by_token
 from central.utils.guards import require_capability, require_team_member
+from central.utils.inputs import require_attached_file
 
 # Team-roster reads + role management for the console's Team screens. Visibility
 # is "being a member" (any capability on the team); mutations delegate to the Team
@@ -95,8 +99,22 @@ def list_team_roles(team: str) -> list[dict[str, Any]]:
 def create_team(team_name: str) -> dict[str, Any]:
 	"""Create a new team owned by the caller. The Team doc seeds the active Owner
 	membership; team_has_permission gates creation to Central Users."""
-	team = frappe.get_doc({"doctype": "Team", "team_name": team_name}).insert()
+	team = Team.create_for_current_user(team_name)
 	return {"name": team.name, "team_name": team.team_name}
+
+
+@frappe.whitelist(methods=["POST"])
+def set_onboarding_step(team: str, step: str, status: str) -> dict[str, Any]:
+	"""Record that the owner finished or skipped one onboarding step. Owner only."""
+	frappe.get_doc("Team", team).set_onboarding_step(step, status)
+	return {"step": step, "status": status}
+
+
+@frappe.whitelist(methods=["POST"])
+def skip_onboarding(team: str) -> dict[str, Any]:
+	"""Skip every onboarding step the owner has not answered yet. Owner only."""
+	frappe.get_doc("Team", team).skip_onboarding()
+	return {"skipped": True}
 
 
 @frappe.whitelist(methods=["POST"])
@@ -107,6 +125,16 @@ def rename_team(team: str, team_name: str) -> dict[str, Any]:
 	doc.team_name = team_name
 	doc.save()
 	return {"name": doc.name, "team_name": doc.team_name}
+
+
+@frappe.whitelist(methods=["POST"])
+@require_capability("team:edit", "You can't change this team's logo.")
+def set_team_logo(team: str, file_url: str | None = None) -> dict[str, Any]:
+	"""Set the team logo to an uploaded image, or clear it. Team.validate re-checks team:edit."""
+	doc = frappe.get_doc("Team", team)
+	doc.team_logo = require_attached_file("Team", team, "team_logo", file_url) if file_url else None
+	doc.save()
+	return {"team_logo": doc.team_logo}
 
 
 @frappe.whitelist(methods=["POST"])
@@ -128,19 +156,31 @@ def delete_team(team: str) -> dict[str, Any]:
 @frappe.whitelist(methods=["POST"])
 def invite_team_member(
 	team: str,
-	email: str,
-	role: str,
-	expires_in_days: int = 7,
+	email: str | None = None,
+	role: str | None = None,
 	resource_type: str = "*",
 	resource_name: str | None = None,
-) -> str:
-	return frappe.get_doc("Team", team).invite_member(
-		email,
-		role,
-		expires_in_days,
-		resource_type=resource_type or "*",
-		resource_name=resource_name,
-	)
+	invitations: list[dict] | None = None,
+) -> str | list[dict[str, Any]]:
+	"""Invite one person, or up to 10 with `invitations`: rows of {email, role,
+	resource_type, resource_name}.
+
+	One person returns the invitation name. Rows return one result each, with the
+	invitation name or the error that refused that row."""
+	doc = frappe.get_doc("Team", team)
+	if invitations is not None:
+		return doc.invite_members(invitations)
+	if not email or not role:
+		frappe.throw(_("Email and role are required."))
+	return doc.invite_member(email, role, resource_type=resource_type or "*", resource_name=resource_name)
+
+
+# nosemgrep: guest-whitelisted-method -- the random emailed token is the key, and the IP rate limit applies.
+@frappe.whitelist(allow_guest=True, methods=["GET"])
+@rate_limit(limit=30, seconds=60, methods="GET")
+def get_invitation(token: str) -> dict[str, Any]:
+	"""The invitation behind an emailed join link."""
+	return get_invitation_by_token(token).get_summary()
 
 
 @frappe.whitelist(methods=["POST"])

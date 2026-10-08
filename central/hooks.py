@@ -11,7 +11,11 @@ fixtures = [
 	# promotion thresholds — reference data every team's caps resolve against.
 	"Trust Tier Level",
 	{"dt": "Team Role", "filters": [["is_system", "=", 1]]},
-	{"dt": "Role", "filters": [["name", "in", ["Central User"]]]},
+	# Warpgate signs in through the Central OpenID Connect provider and checks these roles.
+	{
+		"dt": "Role",
+		"filters": [["name", "in", ["Central User", "Atlas Host Access", "Atlas Warpgate Admin"]]],
+	},
 	"Notification Event Type",
 ]
 
@@ -176,12 +180,20 @@ after_install = [
 
 doc_events = {
 	"User": {
-		"after_insert": "central.users.bootstrap_user_team",
+		"after_insert": "central.users.grant_central_user_role",
 	},
 	"Team": {
 		# Keep a staging-trial team's billing profile complete so it can create servers
 		# without the setup prompt (the profile gate is otherwise enforced in the console).
-		"on_update": "central.billing.payments.provisioning.on_team_update",
+		"on_update": [
+			"central.billing.payments.provisioning.on_team_update",
+			# A new owner may be the new alert address of the team's Grove user.
+			"central.services.ai.on_alert_address_update",
+		],
+	},
+	"Billing Profile": {
+		# Its email is the alert address of the team's Grove user when set.
+		"on_update": "central.services.ai.on_alert_address_update",
 	},
 }
 
@@ -191,6 +203,9 @@ doc_events = {
 scheduler_events = {
 	"all": ["central.integrations.resource_actions.recover_requests"],
 	"cron": {
+		"* * * * *": [
+			"central.infrastructure.doctype.warpgate_access.warpgate_access.revoke_ended_access",
+		],
 		"*/10 * * * *": [
 			# Repair observed state through scoped regional reads.
 			"central.integrations.servers.reconcile",
@@ -321,7 +336,11 @@ override_doctype_dashboards = {
 
 # Request Events
 # ----------------
+before_request = ["central.oidc.take_client_credentials"]
 # after_request = ["central.utils.after_request"]
+
+# The OpenID Connect discovery document of the Central issuer.
+page_renderer = ["central.oidc.DiscoveryPage"]
 
 # Job Events
 # ----------

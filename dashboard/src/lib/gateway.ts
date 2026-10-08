@@ -101,7 +101,7 @@ function loadScript(src: string): Promise<void> {
 export async function openRazorpayCheckout(
 	order: RazorpayOrder,
 	{
-		name = 'Central',
+		name = 'Frappe Cloud',
 		description = '',
 		displayPayPal = false,
 	}: RazorpayOptions = {},

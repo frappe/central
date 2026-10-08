@@ -34,7 +34,7 @@ const consoleNote = computed(() =>
 
 <template>
 	<div class="divide-y divide-outline-gray-1">
-		<SettingsSection v-if="isUbuntu && actions.console" title="Web console">
+		<SettingsSection v-if="actions.console" title="Web console">
 			<template #actions>
 				<Button
 					icon-left="lucide-terminal"
@@ -48,7 +48,7 @@ const consoleNote = computed(() =>
 			<p class="text-p-sm text-ink-gray-6">{{ consoleNote }}</p>
 		</SettingsSection>
 
-		<SettingsSection v-if="isUbuntu" title="SSH">
+		<SettingsSection title="SSH">
 			<template v-if="sshCommand">
 				<div class="flex items-center gap-3">
 					<code class="min-w-0 truncate font-mono text-sm text-ink-gray-8">
@@ -69,7 +69,7 @@ const consoleNote = computed(() =>
 			</p>
 		</SettingsSection>
 
-		<SettingsSection v-else-if="actions.open" title="Pilot">
+		<SettingsSection v-if="!isUbuntu && actions.open" title="Pilot">
 			<template #actions>
 				<Button
 					icon-right="lucide-arrow-up-right"

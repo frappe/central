@@ -43,6 +43,7 @@ def registry(team: str | None = None) -> dict:
 		fields=[
 			"name",
 			"resource_id",
+			"atlas_vm_id",
 			"title",
 			"region",
 			"status",
@@ -65,8 +66,10 @@ def registry(team: str | None = None) -> dict:
 	# start/stop/terminate (or a still-provisioning create) reads as "…ing" until the
 	# mirror catches up — instead of looking like nothing happened.
 	pending = ResourceAction.pending_labels(team)
+	audiences = _pilot_audiences(team)
 	for server in servers:
 		server["pending_action"] = pending.get(server["resource_id"])
+		server["pilot_audience"] = audiences.get(server["name"])
 		server["capabilities"] = get_server_capabilities(frappe.session.user, team, server["name"])
 
 	# A creation has no server row until the region accepts it, so it cannot be overlaid
@@ -78,6 +81,17 @@ def registry(team: str | None = None) -> dict:
 		"Site", filters={"team": team}, fields=["name", "server"], order_by="name asc", limit_page_length=0
 	)
 	return {"team": team, "servers": servers, "sites": _sites(rows, servers, pending), "creations": creations}
+
+
+def _pilot_audiences(team: str) -> dict[str, str]:
+	"""Each server's active Pilot audience, so a link from that Pilot can name its server."""
+	# Credentials are system records; the team filter scopes this read.
+	rows = frappe.get_all(
+		"Pilot Credential",
+		filters={"team": team, "status": "Active", "server": ["is", "set"]},
+		fields=["server", "audience_id"],
+	)
+	return {row.server: row.audience_id for row in rows}
 
 
 def _sites(rows: list[dict], servers: list[dict], pending: dict[str, str]) -> list[dict]:
@@ -126,6 +140,7 @@ def server_overview(
 	server = frappe._dict(
 		{
 			"resource_id": row.resource_id,
+			"atlas_vm_id": row.atlas_vm_id,
 			"title": row.title,
 			"region": row.region,
 			"status": row.status,
@@ -231,9 +246,9 @@ def _overview_server_row(resource_id: str, team: str):
 
 
 def _ssh_command(row) -> str | None:
-	"""The command that signs in to an Ubuntu server over its public address."""
+	"""The command that signs in to a server over its public address."""
 	address = row.public_ipv6 or row.public_ipv4
-	if row.image_offering != "ubuntu" or not address:
+	if not address:
 		return None
 	return f"ssh root@{address}"
 

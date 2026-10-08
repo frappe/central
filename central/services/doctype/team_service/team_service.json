@@ -13,9 +13,9 @@
   "region",
   "status",
   "subscription",
+  "endpoint_url",
   "storage_section",
   "bucket_name",
-  "endpoint_url",
   "credentials_section",
   "access_key",
   "secret_access_key"
@@ -33,11 +33,11 @@
   },
   {
    "fieldname": "add_on_service",
-   "fieldtype": "Link",
+   "fieldtype": "Select",
    "in_list_view": 1,
    "in_standard_filter": 1,
-   "label": "Add-on Service",
-   "options": "Add-on Service",
+   "label": "Service",
+   "options": "storage\nai",
    "reqd": 1,
    "search_index": 1
   },
@@ -47,6 +47,14 @@
    "fieldtype": "Link",
    "label": "Subscription",
    "options": "Subscription"
+  },
+  {
+   "fieldname": "endpoint_url",
+   "fieldtype": "Data",
+   "label": "Endpoint URL",
+   "options": "URL",
+   "read_only": 1,
+   "description": "What the service is called at: the gateway a team's AI keys call, or a bucket's S3 endpoint."
   },
   {
    "fieldname": "status",
@@ -64,8 +72,8 @@
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Region",
+   "mandatory_depends_on": "eval:doc.add_on_service == 'storage'",
    "options": "Region",
-   "reqd": 1,
    "search_index": 1
   },
   {
@@ -78,13 +86,6 @@
    "fieldname": "bucket_name",
    "fieldtype": "Data",
    "label": "Bucket Name",
-   "read_only": 1
-  },
-  {
-   "fieldname": "endpoint_url",
-   "fieldtype": "Data",
-   "label": "Endpoint URL",
-   "options": "URL",
    "read_only": 1
   },
   {
@@ -110,7 +111,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-09-22 15:20:45.896244",
+ "modified": "2026-10-06 19:00:00.000000",
  "modified_by": "Administrator",
  "module": "Services",
  "name": "Team Service",

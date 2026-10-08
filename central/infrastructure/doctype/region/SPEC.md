@@ -26,7 +26,7 @@ The regional client requires HTTPS. HTTP is allowed only for localhost addresses
 Central developer mode is enabled. Embedded credentials, queries, and fragments are
 refused. Requests do not follow redirects or retry automatically.
 
-Initialize Central's [Atlas signing key](../central_sso_settings/SPEC.md) and configure its
+Initialize Central's [Atlas signing key](../../../central/doctype/central_sso_settings/SPEC.md) and configure its
 public endpoint in Atlas before testing the connection. Regional reads use the signed
 tenant API at `/api/atlas`. They do not use the admin API key or Central tunnel address.
 
@@ -40,11 +40,13 @@ configuration. A timeout, rejected credential, invalid response, or missing regi
 configuration leaves a readable failure on the record. The saved configuration is locked
 during the check so another edit cannot receive a stale result.
 
-**Enroll Atlas** is a separate operator action, shown only on the Atlas tab. It points
-Atlas's virtual-machine-state deliveries at Central's receiver (`PUT /api/atlas/webhooks`),
-minting `webhook_secret` the first time it runs and reusing it after. The payload's
+**Enroll Atlas** is a separate operator action, shown only on the Atlas tab.
+`Region.enroll_atlas` calls `PUT /api/atlas/webhooks`, the Atlas configuration endpoint for
+deliveries. It points the virtual-machine-state deliveries of Atlas at the Central receiver
+`central.api.state_delivery.receive`. It mints `webhook_secret` the first time it runs and
+reuses it after. The payload's
 `central_id` comes from `Central Settings.central_id` (default 1) and is only worth
-raising where more than one Central environment shares an Atlas — Atlas itself refuses
+raising where more than one Central environment shares an Atlas. Atlas itself refuses
 anything but 1 outside developer mode. Run it after Test Connection succeeds; it does not
 itself prove Atlas is reachable. A failure raises and shows in the Desk like any other
 action; nothing about it is recorded on the record itself. After Atlas is enrolled, it registers the region's Cargo when Cargo already answers. See [Registration](#registration).
@@ -91,14 +93,15 @@ field.
 timestamp. It does not guess numeric region IDs, rotate keys, or create remote resources.
 Repeating the patch preserves checks with a timestamp.
 
-Region absorbed the connection fields that used to live on separate Atlas Instance and Cargo Instance records. `Virtual Machine.region` and `Resource Action.region` link directly to Region. Billing keeps its own `cluster` price dimension. There is no second infrastructure record to join through.
+Region holds both the Atlas connection and the Cargo connection (`cargo_base_url`, `cargo_status`, and `cargo_registered_at`). `Virtual Machine.region` and `Resource Action.region` link directly to Region. Billing keeps its own `cluster` price dimension. There is no second infrastructure record to join through.
 
 The `rename_region_fields` patch copies values from the former Virtual Machine `cluster` and Resource Action `atlas_instance` columns after schema sync, then removes those columns. A repeat or partially applied run skips each missing source column.
 
 ## Scope and validation
 
 The signed client in `central.integrations.atlas` owns regional image reads, VM creation,
-VM reads, and power operations. [Resource Action](../resource_action/SPEC.md) owns their
+VM reads, power, resize, disk and SSH key operations, console URLs, snapshot images, and
+webhook configuration. [Resource Action](../resource_action/SPEC.md) owns their
 durable request and recovery state.
 
 Run `central.tests.test_regional_configuration` for request headers, tenant boundaries,

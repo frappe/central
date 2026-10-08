@@ -19,13 +19,15 @@ frappe.ui.form.on("Team", {
 				],
 				primary_action_label: __("Invite"),
 				primary_action(values) {
-					frm.call("invite_member", values).then(() => {
-						dialog.hide();
-						frappe.show_alert({
-							message: __("Invitation created"),
-							indicator: "green",
+					frappe
+						.call("central.api.teams.invite_team_member", { team: frm.doc.name, ...values })
+						.then(() => {
+							dialog.hide();
+							frappe.show_alert({
+								message: __("Invitation created"),
+								indicator: "green",
+							});
 						});
-					});
 				},
 			});
 			dialog.show();

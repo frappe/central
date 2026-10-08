@@ -1,0 +1,175 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "WA-.#####",
+ "naming_rule": "Expression (old style)",
+ "creation": "2026-10-03 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "target_section",
+  "access_type",
+  "region",
+  "host_title",
+  "host",
+  "column_break_target",
+  "user",
+  "duration",
+  "reason",
+  "grant_section",
+  "status",
+  "is_revoked",
+  "expires_at",
+  "amended_from"
+ ],
+ "fields": [
+  {
+   "fieldname": "target_section",
+   "fieldtype": "Section Break",
+   "label": "Target"
+  },
+  {
+   "default": "One host",
+   "fieldname": "access_type",
+   "fieldtype": "Select",
+   "label": "Access Type",
+   "options": "One host\nAll hosts\nAdmin",
+   "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "region",
+   "fieldtype": "Link",
+   "label": "Region",
+   "options": "Region",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "description": "Choose the region first. Its hosts load from it.",
+   "depends_on": "eval:['One host', 'All hosts'].includes(doc.access_type)",
+   "mandatory_depends_on": "eval:['One host', 'All hosts'].includes(doc.access_type)"
+  },
+  {
+   "depends_on": "eval:doc.access_type == 'One host'",
+   "mandatory_depends_on": "eval:doc.access_type == 'One host'",
+   "fieldname": "host_title",
+   "fieldtype": "Autocomplete",
+   "label": "Host",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "description": "The host name that you type in the SSH command."
+  },
+  {
+   "fieldname": "host",
+   "fieldtype": "Data",
+   "label": "Host ID",
+   "hidden": 1,
+   "read_only": 1,
+   "description": "The Atlas host ID, or all."
+  },
+  {
+   "fieldname": "column_break_target",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "__user",
+   "fieldname": "user",
+   "fieldtype": "Link",
+   "label": "User",
+   "options": "User",
+   "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "description": "Host access needs the Atlas Host Access role."
+  },
+  {
+   "default": "1 hour",
+   "fieldname": "duration",
+   "fieldtype": "Select",
+   "label": "Duration",
+   "options": "1 hour\n3 hours\n6 hours\n12 hours\n1 day\n7 days\n30 days\nNever",
+   "reqd": 1,
+   "description": "Host access lasts at most 1 day."
+  },
+  {
+   "fieldname": "reason",
+   "fieldtype": "Small Text",
+   "label": "Reason"
+  },
+  {
+   "fieldname": "grant_section",
+   "fieldtype": "Section Break",
+   "label": "Grant"
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "label": "Status",
+   "options": "\nActive\nExpired\nCancelled",
+   "read_only": 1,
+   "no_copy": 1,
+   "allow_on_submit": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "is_revoked",
+   "fieldtype": "Check",
+   "label": "Revoked",
+   "read_only": 1,
+   "no_copy": 1,
+   "allow_on_submit": 1,
+   "in_standard_filter": 1,
+   "description": "Set when Atlas has revoked the access and closed the sessions."
+  },
+  {
+   "fieldname": "expires_at",
+   "fieldtype": "Datetime",
+   "label": "Expires At",
+   "read_only": 1,
+   "no_copy": 1,
+   "description": "Set when you submit. Empty means the access does not expire."
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "options": "Warpgate Access",
+   "read_only": 1,
+   "no_copy": 1,
+   "print_hide": 1,
+   "search_index": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2026-10-03 18:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Infrastructure",
+ "name": "Warpgate Access",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "amend": 1,
+   "cancel": 1,
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  }
+ ],
+ "search_fields": "user,host_title",
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "user",
+ "track_changes": 1
+}

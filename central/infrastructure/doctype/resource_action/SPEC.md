@@ -16,7 +16,7 @@ Customer -> authorized service -> Resource Action -> queued integration worker
 
 ## Request contract
 
-The server APIs accept a Team, region, display name, image offering, regional image ID, and request key. A preset request adds a plan. A composed request adds a profile and resource quantities. Guest hostname and SSH public keys are separate inputs. Ubuntu requires an SSH key. One request can contain at most 20 SSH keys, and each key can contain at most 16,384 characters.
+The server APIs accept a Team, region, display name, image offering, regional image ID, and request key. A preset request adds a plan. A composed request adds a profile and resource quantities. Guest hostname, public IPv6, firewall, and SSH keys are separate inputs. A request selects saved [Team SSH Keys](../team_ssh_key/SPEC.md) in `ssh_key_ids` or pastes public keys in `ssh_keys`, not both. Keys are optional for every image. Each list can contain at most 20 keys, and each pasted key can contain at most 16,384 characters. A `snapshot` input replaces the offering and image with the source of the snapshot.
 
 Central checks the capability, current image selector, image availability, plan eligibility, resource sizes, and billing policy before saving the action. It locks the Team while reserving budget. Pending requests count toward the trial server limit and paid spending limit. A server can use from 1 through 32 whole virtual CPUs. Memory and disk must resolve to positive whole MiB values. The disk must fit the image.
 
@@ -59,7 +59,7 @@ The worker saves the remote VM identity before billing or local finalization. A 
 
 The scheduled recovery job selects old actions that have not finished. Redis and database locks serialize workers. A dispatch job and its Redis lock share one timeout: 20 minutes, or 35 minutes for a resize, which waits for a stop and a start. So a second worker cannot start while the first still works. Customer retries cannot change an existing action's payload. A power, resize, or terminate request cannot start while another action is pending for the same server. `ResourceAction.get_pending` owns this rule: it returns the pending action when the request repeats it, and refuses a different one. `ResourceAction.queue` saves every new action, and `ResourceAction.is_allowed` rechecks the requester before dispatch against the one `ACTION_CAPABILITIES` map. `ResourceAction.fail` records an Atlas or validation error: an uncertain reply becomes Uncertain and any other error becomes Failed. `ResourceAction.finish` settles a create or a command from the observed server status and `GOAL_STATUS`.
 
-A creation the region never answered settles itself. Central stamps its action ID into the guest metadata of every create, so it asks the region what that request built. The region lists newest first, and the search stops at the first machine older than the dispatch. A machine counts only when its tenant, image and action marker all match, so another request's machine is never adopted.
+A creation the region never answered settles itself. Central stamps its action ID into the guest metadata of every create, so it asks the region what that request built. The region lists newest first, and the search stops at the first machine older than the dispatch. Central reads every page of the tenant's servers, 100 at a time (`SERVER_PAGE_SIZE`), so it also finds a machine on a later page. A machine counts only when its tenant, image and action marker all match, so another request's machine is never adopted.
 
 | Search result | Outcome |
 |---|---|
@@ -84,15 +84,15 @@ A retry requires `server:create` and re-checks the plan, the trial limit and the
 
 ## Pilot and Ubuntu
 
-A Pilot creation needs the Pilot signing key. Without it, the action fails before Central issues a credential or calls the region. A Pilot creation issues one credential before dispatch. `get_bootstrap_metadata` in `central/integrations/pilot.py` mints it and builds two guest metadata values. `pilot-central` holds the Central configuration. `pilot-telemetry` holds the region's Datum endpoint and token. It is optional: a failure leaves the value out and records a diagnostic. Atlas receives `pilot-central` with the Central endpoint, bearer token, public-key endpoint, audience ID, and the signing key set itself. The keys travel with the credential so the Pilot's first token needs no fetch, and a boot before Central is reachable still verifies. Central stores the token hash, not its plaintext, and keeps credentials outside the saved request payload and customer status. A creation that fails before the region accepts a machine revokes this credential. An Uncertain creation keeps it until a completed search settles the request.
+A Pilot creation needs the Pilot signing key. Without it, the action fails before Central issues a credential or calls the region. A Pilot creation issues one credential before dispatch. `get_bootstrap_metadata` in `central/integrations/pilot.py` mints it and builds two guest metadata values. `pilot-central` holds the Central configuration. `pilot-common-config` holds the region's Datum endpoint and token as `{"telemetry": {"endpoint": ..., "token": ...}}`. Pilot merges it into `common_config.toml` at bootstrap. It is optional: a failure leaves the value out and records a diagnostic. Atlas receives `pilot-central` with the Central endpoint, bearer token, public-key endpoint, audience ID, and the signing key set itself. The keys travel with the credential so the Pilot's first token needs no fetch, and a boot before Central is reachable still verifies. Central stores the token hash, not its plaintext, and keeps credentials outside the saved request payload and customer status. A creation that fails before the region accepts a machine revokes this credential. An Uncertain creation keeps it until a completed search settles the request.
 
-An accepted Pilot VM is linked to its credential during local finalization. Its management gateway uses Atlas's `proxy_hostname_suffix`. A running VM does not prove that Pilot or a site is ready. Site readiness and signup belong to the next phase.
+An accepted Pilot VM is linked to its credential during local finalization. Its management gateway is `https://admin-vm-<label>.<Region.proxy_domain>`, which `Region.get_vm_gateway_url` builds. A running VM does not prove that Pilot or a site is ready. See [Trial sites](../site/SPEC.md) for site readiness and signup.
 
-Ubuntu receives its SSH keys and guest hostname. It does not receive a Pilot credential or wait for a site.
+Every image receives its selected SSH keys and guest hostname. Ubuntu does not receive a Pilot credential or wait for a site.
 
 ## Idle sleep
 
-A trial server sleeps after the idle time on Central Settings, which is 30 minutes by default. Customer traffic wakes it. Zero minutes keeps trial servers awake.
+A trial server sleeps after the idle time on Central Settings, which is 10 minutes by default. Customer traffic wakes it. Zero minutes keeps trial servers awake.
 
 A paid server never sleeps. A resize ends sleep for good, because a server its owner has resized has outgrown the hobby comfort. Atlas takes the idle timeout on its own while the server runs, so ending sleep never stops it.
 
@@ -112,8 +112,8 @@ A scoped not-found response records the server as terminated, applies the billin
 
 The console selects region, offering, exact build, and compatible plan. It keeps no copy of the request: `central.api.servers.registry` returns the team's unfinished creations, and the form picks up the one this user started. A page reload, a second tab and a lost reply all reach the same record instead of starting another. Switching Teams clears the visible action and ignores late responses from the previous Team.
 
-Resize uses the same action flow. `central.api.servers.resize_server` validates the target and inserts the action. The integration grows a disk online when CPU and memory stay the same. When CPU or memory changes, it stops the VM and sends the full CPU, memory, and disk target. A server with idle sleep on also receives a resize call that changes only the idle time, which turns sleep off. The integration starts the VM, records the observed shape, and then asks billing to reprice. A billing failure leaves the action at Sent, so recovery can finish the local change without repeating a confirmed remote resize.
+Resize uses the same action flow. `central.api.servers.resize_server` validates the target and inserts the action. The integration grows a disk online when CPU and memory stay the same. When CPU or memory changes, it stops the VM and sends the full CPU, memory, and disk target. This call also sets the idle time to zero. On a disk-only grow, a server with idle sleep on also receives a separate resize call that changes only the idle time. So both paths turn sleep off. The integration starts the VM, records the observed shape, and then asks billing to reprice. A billing failure leaves the action at Sent, so recovery can finish the local change without repeating a confirmed remote resize.
 
 ## Validation
 
-The focused suites are `test_resource_actions`, `test_resource_action_migration`, `test_atlas_sync`, `test_server_observation`, `test_server_resize`, `test_pilot_credential_delivery`, `test_atlas_errors`, and the billing create, trial, and resize tests. See [cutover coverage](../../../../spec/CUTOVER_TEST_COVERAGE.md) for the retained requirements and retired interfaces.
+The focused suites are `test_resource_actions`, `test_resource_action_migration`, `test_atlas_sync`, `test_server_observation`, `test_server_resize`, `test_pilot_credential_delivery`, `test_atlas_errors`, and the billing create, trial, and resize tests.

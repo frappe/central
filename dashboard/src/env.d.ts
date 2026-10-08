@@ -1,4 +1,5 @@
 /// <reference types="vite/client" />
+/// <reference types="unplugin-icons/types/vue" />
 
 /** The bench's Socket.IO port, compiled in by vite.config.ts. Null when no bench config
  *  was found at build time. */
@@ -17,14 +18,18 @@ interface Window {
 	csrf_token?: string
 	user?: string
 	user_type?: string
-	provider_logins?: import('@/types/api').ProviderLogin[]
 	site_name?: string
 	socketio_port?: number
 	/** Site timezone Frappe stores naive datetimes in. See dashboard.py. */
 	system_timezone?: string
 	onboarding_complete?: boolean
+	/** Days a new team invitation stays open, from Central Settings. */
+	invitation_expiry_days?: number
+	/** Upload limit in bytes, from System Settings. */
+	max_file_size?: number
 	features?: {
 		addons?: boolean
 		storage?: boolean
+		llm?: boolean
 	}
 }

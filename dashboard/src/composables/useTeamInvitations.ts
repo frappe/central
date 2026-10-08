@@ -46,7 +46,7 @@ watch(canManageMembers, (can, was) => {
 })
 
 // Losing the capability — a demotion, or a switch to a team you don't manage —
-// has to take the fetched rows with it: they carry invitees' email addresses,
+// has to take the fetched rows with it: they carry invitees' emails,
 // roles and resource scopes, and this call's data outlives any one page. Every
 // read below is gated on the live capability rather than on what was fetched
 // while it still held.

@@ -34,13 +34,21 @@ class CreateServerInput(BaseModel):
 	image_id: str = Field(min_length=1)
 	request_key: str = Field(pattern=r"^[A-Za-z0-9-]{16,100}$")
 	plan: str | None = None
-	includes: list[ResourceQuantity] = Field(default_factory=list, max_length=3)
+	includes: list[ResourceQuantity] = Field(default_factory=list, max_length=4)
 	sub_category: str | None = None
 	hostname: str = Field(default="", max_length=63)
 	ssh_keys: list[SSHKey] = Field(default_factory=list, max_length=20)
 	ssh_key_ids: list[str] = Field(default_factory=list, max_length=20)
 	has_public_ipv6: bool = False
 	is_firewall_enabled: bool = False
+
+
+class SiteCreation(BaseModel):
+	"""What a trial site needs beyond its machine: the product it is for."""
+
+	model_config = ConfigDict(extra="forbid", strict=True)
+
+	product: str | None = None
 
 
 class ServerCreation(BaseModel):
@@ -61,6 +69,7 @@ class ServerCreation(BaseModel):
 	has_public_ipv6: bool = False
 	is_firewall_enabled: bool = False
 	image_tags: dict[str, str]
+	site: SiteCreation | None = None
 	virtual_cpu_count: int = Field(gt=0, le=32)
 	memory_mib: PositiveInt
 	disk_mib: PositiveInt
@@ -81,7 +90,7 @@ class ResizeConfiguration(BaseModel):
 
 	subscription: str = Field(min_length=1)
 	plan: str | None = None
-	includes: list[ResourceQuantity] = Field(default_factory=list, max_length=3)
+	includes: list[ResourceQuantity] = Field(default_factory=list, max_length=4)
 	sub_category: str | None = None
 	override_rate: float | None = Field(default=None, ge=0, allow_inf_nan=False)
 	preset_plan: str | None = None

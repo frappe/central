@@ -33,7 +33,7 @@ from central.infrastructure.doctype.resource_action.resource_action import (
 	ResourceAction,
 )
 from central.integrations.images import selected_image, snapshot_image, snapshot_source
-from central.server_models import ActionStatus, CreateServerInput, ServerCreation
+from central.server_models import ActionStatus, CreateServerInput, ServerCreation, SiteCreation
 
 
 def submit_request(
@@ -55,11 +55,12 @@ def submit_request(
 	resource_type: str = "Server",
 	subdomain: str | None = None,
 	snapshot: str | None = None,
+	site: SiteCreation | None = None,
 ) -> dict:
 	"""Authorize and persist intent before any remote mutation.
 
 	Server and site requests use the same queued action. A restore passes `snapshot`;
-	its offering and image come from the snapshot."""
+	its offering and image come from the snapshot. A trial site passes `site`."""
 	if snapshot:
 		offering, image_id = snapshot_source(team, snapshot)
 
@@ -89,6 +90,7 @@ def submit_request(
 		return existing.customer_status()
 
 	configuration, rate = _build_server_configuration(server_input, snapshot)
+	configuration.site = site
 	return ResourceAction.queue(
 		"create",
 		server_input.team,
@@ -222,9 +224,7 @@ def _build_server_configuration(
 	validate_guest_input(server_input, image)
 	# Check the saved keys now so the form shows the error. Dispatch reads their text, which a
 	# rotation can change before a retry.
-	selected_keys = resolve_team_ssh_keys(server_input.team, server_input.ssh_key_ids)
-	if image["tags"].get("purpose") != "pilot" and not (selected_keys or server_input.ssh_keys):
-		frappe.throw(_("Select an SSH key for this server."))
+	resolve_team_ssh_keys(server_input.team, server_input.ssh_key_ids)
 
 	configuration = ServerCreation(
 		offering=server_input.offering,
