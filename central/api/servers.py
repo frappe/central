@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+from datetime import datetime
+
 import frappe
 from frappe import _
 
 from central.errors import handle_resource_operation
 from central.iam import get_server_capabilities
 from central.infrastructure.doctype.resource_action.resource_action import ResourceAction
-from central.integrations.servers import reconcile
+from central.integrations.servers import get_cached_metrics, get_metrics_window, reconcile
 from central.utils.guards import require_capability
 
 # Server endpoints for the console. Reads come from the VirtualMachine mirror; commands go
@@ -103,10 +105,19 @@ def _sites(rows: list[dict], servers: list[dict], pending: dict[str, str]) -> li
 
 @frappe.whitelist(methods=["GET"])
 @require_capability("server:view", "You can't view this team's servers.", server="resource_id")
-def server_overview(team: str | None = None, resource_id: str | None = None) -> dict:
-	"""Return one server's Central mirror plus Pilot's cached operational metrics."""
+def server_overview(
+	team: str | None = None,
+	resource_id: str | None = None,
+	period: str = "24h",
+	start: str | None = None,
+	end: str | None = None,
+) -> dict:
+	"""Return one server's Central mirror plus its region's cached metrics over a preset
+	`period`, or from `start` to `end` when `period` is custom."""
 	if not resource_id:
 		frappe.throw(_("resource_id is required."), frappe.ValidationError)
+
+	window = get_metrics_window(period, start, end)
 
 	row = _overview_server_row(resource_id, team)
 	if not row:
@@ -145,7 +156,7 @@ def server_overview(team: str | None = None, resource_id: str | None = None) -> 
 				"country_code": row.region_country_code,
 			},
 		},
-		"monitoring": _server_monitoring(server, audience_id=row.audience_id),
+		"monitoring": _server_monitoring(row, *window),
 	}
 
 
@@ -175,11 +186,10 @@ def server_hostnames(team: str | None = None, resource_id: str | None = None) ->
 
 
 def _overview_server_row(resource_id: str, team: str):
-	"""VirtualMachine + region + team + active Pilot audience in one query."""
+	"""VirtualMachine + region + team in one query."""
 	server = frappe.qb.DocType("Virtual Machine")
 	region = frappe.qb.DocType("Region")
 	team_table = frappe.qb.DocType("Team")
-	pilot = frappe.qb.DocType("Pilot Credential")
 	rows = (
 		frappe.qb.from_(server)
 		# VirtualMachine.region links straight to Region.
@@ -187,9 +197,10 @@ def _overview_server_row(resource_id: str, team: str):
 		.on(region.name == server.region)
 		.left_join(team_table)
 		.on(team_table.name == server.team)
-		.left_join(pilot)
-		.on((pilot.server == server.name) & (pilot.status == "Active"))
 		.select(
+			server.name,
+			server.team,
+			server.atlas_vm_id,
 			server.resource_id,
 			server.title,
 			server.region,
@@ -211,7 +222,6 @@ def _overview_server_row(resource_id: str, team: str):
 			region.provider.as_("region_provider"),
 			region.country_code.as_("region_country_code"),
 			team_table.team_name.as_("team_name"),
-			pilot.audience_id.as_("audience_id"),
 		)
 		.where((server.resource_id == resource_id) & (server.team == team))
 		.limit(1)
@@ -276,14 +286,12 @@ def _overview_plan(server: dict, team: str) -> dict:
 	}
 
 
-def _server_monitoring(server: dict, audience_id: str | None = None) -> dict:
-	"""Pilot metrics are meaningful only for a live, enrolled bench VM."""
-	if server.status != "Running" or not server.gateway_url or not audience_id:
+def _server_monitoring(row: dict, start: datetime, end: datetime | None) -> dict:
+	"""The region measures a VM only while it runs."""
+	if row.status != "Running" or not row.atlas_vm_id:
 		return {"available": False}
 
-	from central.integrations.pilot import get_cached_monitoring
-
-	return get_cached_monitoring(server.resource_id, server.gateway_url, audience_id)
+	return get_cached_metrics(row, start, end)
 
 
 @frappe.whitelist(methods=["GET"])
