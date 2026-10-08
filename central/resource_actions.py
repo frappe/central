@@ -350,7 +350,7 @@ def image_shape(includes: list[dict], image: dict) -> dict[str, int]:
 
 def validate_guest_input(server_input: CreateServerInput, image: dict) -> None:
 	if server_input.ssh_key_ids and server_input.ssh_keys:
-		frappe.throw(_("Choose saved SSH keys or enter public keys, not both."))
+		frappe.throw(_("Choose saved SSH Keys or enter public keys, not both."))
 	if server_input.hostname and not re.fullmatch(
 		r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", server_input.hostname
 	):
@@ -365,7 +365,7 @@ def validate_guest_input(server_input: CreateServerInput, image: dict) -> None:
 def resolve_team_ssh_keys(team: str, names: list[str]) -> list[str]:
 	"""Resolve only public keys owned by the authorized Team."""
 	if len(names) != len(set(names)):
-		frappe.throw(_("Select each SSH key only once."))
+		frappe.throw(_("Select each SSH Key only once."))
 	if not names:
 		return []
 	rows = frappe.get_list(
@@ -373,5 +373,5 @@ def resolve_team_ssh_keys(team: str, names: list[str]) -> list[str]:
 	)
 	keys = {row.name: row.public_key for row in rows}
 	if len(keys) != len(names):
-		frappe.throw(_("One selected SSH key is unavailable to this Team."), frappe.PermissionError)
+		frappe.throw(_("One selected SSH Key is unavailable to this Team."), frappe.PermissionError)
 	return [keys[name] for name in names]

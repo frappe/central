@@ -34,6 +34,7 @@ export interface ServerOverview {
 		plan_billing_cycle: string | null
 		team_name: string
 		ssh_command: string | null
+		ssh_keys: { title: string; fingerprint: string }[]
 		has_public_ipv6: 0 | 1
 		is_firewall_enabled: 0 | 1
 		region_details: {

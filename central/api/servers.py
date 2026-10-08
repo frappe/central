@@ -151,6 +151,7 @@ def server_overview(team: str | None = None, resource_id: str | None = None) -> 
 			"has_public_ipv6": row.has_public_ipv6,
 			"is_firewall_enabled": row.is_firewall_enabled,
 			"ssh_command": _ssh_command(row),
+			"ssh_keys": _server_ssh_keys(resource_id, team),
 			"gateway_url": row.gateway_url,
 			"creation": row.creation,
 		}
@@ -246,6 +247,24 @@ def server_hostnames(team: str | None = None, resource_id: str | None = None) ->
 		if route.domain not in sites
 	]
 	return hostnames
+
+
+def _server_ssh_keys(resource_id: str, team: str) -> list[dict]:
+	"""The team keys a server was created with, by title."""
+	server = frappe.qb.DocType("Virtual Machine")
+	link = frappe.qb.DocType("Server SSH Key")
+	key = frappe.qb.DocType("Team SSH Key")
+	return (
+		frappe.qb.from_(link)
+		.join(server)
+		.on((server.name == link.parent) & (link.parenttype == "Virtual Machine"))
+		.join(key)
+		.on(key.name == link.team_ssh_key)
+		.select(key.title, key.fingerprint)
+		.where((server.resource_id == resource_id) & (server.team == team))
+		.orderby(key.title)
+		.run(as_dict=True)
+	)
 
 
 def _overview_server_row(resource_id: str, team: str):

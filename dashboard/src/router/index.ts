@@ -69,12 +69,6 @@ const routes = [
 				meta: { title: 'Snapshots' },
 			},
 			{
-				path: 'servers/ssh-keys',
-				name: 'SSHKeys',
-				component: () => import('@/pages/servers/SSHKeysPage.vue'),
-				meta: { title: 'SSH keys' },
-			},
-			{
 				path: 'servers/new',
 				name: 'NewServer',
 				component: () => import('@/pages/servers/NewServerPage.vue'),

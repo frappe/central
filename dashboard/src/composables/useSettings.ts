@@ -16,8 +16,16 @@ const PreferencesForm = defineAsyncComponent(
 const TeamForm = defineAsyncComponent(
 	() => import('@/components/settings/forms/TeamForm.vue'),
 )
+const SSHKeysForm = defineAsyncComponent(
+	() => import('@/components/settings/forms/SSHKeysForm.vue'),
+)
 
-export type SettingsTab = 'profile' | 'notifications' | 'preferences' | 'team'
+export type SettingsTab =
+	| 'profile'
+	| 'notifications'
+	| 'preferences'
+	| 'team'
+	| 'ssh-keys'
 
 export interface SettingsTabDef {
 	value: SettingsTab
@@ -76,6 +84,16 @@ export const SETTINGS_TABS: SettingsTabDef[] = [
 		title: 'Team',
 		description: 'Your teams, and settings for the active one.',
 		component: TeamForm,
+	},
+	{
+		value: 'ssh-keys',
+		group: 'Administration',
+		label: 'SSH Keys',
+		icon: 'lucide-key-round',
+		title: 'SSH Keys',
+		description: 'Team keys that sign in to your servers.',
+		component: SSHKeysForm,
+		requires: 'member',
 	},
 ]
 
