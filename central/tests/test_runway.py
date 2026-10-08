@@ -126,7 +126,7 @@ class TestRunway(IntegrationTestCase):
 	def test_a_shape_label_the_pool_does_not_serve_is_refused(self) -> None:
 		"""A job never runs on a machine its own label did not ask for."""
 		pool = SimpleNamespace(cpu_millicores=3000, memory_mib=6144, disk_mib=14336)
-		for label in ("runway-4vcpu-8gb", "runway-2vcpu-4gb", "runway-64vcpu-512gb"):
+		for label in ("runway-4vcpu-8gb", "runway-2vcpu-4gb", "runway-4vcpu-9gb"):
 			with self.subTest(label=label):
 				with self.assertRaises(frappe.ValidationError) as caught:
 					runway.resolve_shape(label, pool)
@@ -178,6 +178,22 @@ class TestRunway(IntegrationTestCase):
 			runway.shape_from_scale_set_name("runway-4vcpu-8gb"), (4000, 8192)
 		)
 		self.assertIsNone(runway.shape_from_scale_set_name("runway-dogfood"))
+
+	def test_the_largest_permitted_shape_is_accepted(self) -> None:
+		"""4 vCPU and 9 GiB is a shape a pool may declare, and name, once hardware exists."""
+		self.pool.scale_set_name = "runway-4vcpu-9gb"
+		self.pool.cpu_millicores = 4000
+		self.pool.memory_mib = 9216
+		self.pool.validate()
+
+	def test_a_shape_beyond_the_policy_is_refused(self) -> None:
+		"""The limit is policy, so a pool above it is refused before any host is asked."""
+		self.pool.scale_set_name = "runway-16vcpu-64gb"
+		self.pool.cpu_millicores = 16000
+		self.pool.memory_mib = 65536
+		with self.assertRaises(frappe.ValidationError) as caught:
+			self.pool.validate()
+		self.assertIn("outside pilot limits", str(caught.exception))
 
 	def test_duplicate_reservation_cannot_bypass_capacity(self):
 		lease = self.reserve()

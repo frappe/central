@@ -6,6 +6,8 @@ from frappe.model.document import Document
 
 from central.infrastructure.doctype.team_ssh_key.team_ssh_key import fingerprint
 from central.infrastructure.runway import (
+	MAX_CPU_MILLICORES,
+	MAX_MEMORY_MIB,
 	SCALE_SET_NAME_PATTERN,
 	leases_blocking_pool_change,
 	shape_from_scale_set_name,
@@ -25,8 +27,8 @@ class RunnerPool(Document):
 			frappe.throw(_("Use one HTTPS github.com repository URL."))
 		for field, minimum, maximum in (
 			("max_concurrency", 1, 4),
-			("cpu_millicores", 1000, 4000),
-			("memory_mib", 512, 8192),
+			("cpu_millicores", 1000, MAX_CPU_MILLICORES),
+			("memory_mib", 512, MAX_MEMORY_MIB),
 			("disk_mib", 1024, 16384),
 			("max_job_seconds", 60, 3600),
 		):

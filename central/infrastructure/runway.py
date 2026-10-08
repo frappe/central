@@ -238,6 +238,13 @@ def _reserve_lease(pool: str, owner_id: str, fence: int, lease_id: str) -> dict:
 # GiB. Anything that does not parse is left to the pool, which is how a pool created before
 # labels keeps working.
 LABEL_SHAPE_PATTERN = re.compile(r"^runway-(\d+)vcpu-(\d+)gb$")
+# What a pool may ask for. These are policy, not hardware: Atlas decides whether a host can
+# hold a shape and refuses with its own reason when it cannot, so raising this does not
+# promise that a machine exists. They are named limits rather than literals in the pool's
+# validation so the size a label may name and the size a pool may declare stay one decision.
+MAX_CPU_MILLICORES = 8000
+MAX_MEMORY_MIB = 16384
+
 # The scale set's name is the label a workflow writes, and a name is more constrained than
 # a label: it must be routable as a scale set name. This mirrors the rule the runway CLI
 # enforces when creating one.
