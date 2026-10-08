@@ -148,9 +148,6 @@ class TestAI(IntegrationTestCase):
 		settings.save()
 		frappe.db.delete("Team Service", {"add_on_service": "ai"})
 		self.addCleanup(frappe.set_user, "Administrator")
-		# Redis is not rolled back with the rest.
-		frappe.cache.delete_value(f"ai:overview:{self.team}")
-		self.addCleanup(frappe.cache.delete_value, f"ai:overview:{self.team}")
 
 	def enabled(self):
 		pinned = {"geography": "Main", "gateway_url": "https://grove.test"}
@@ -213,20 +210,19 @@ class TestAI(IntegrationTestCase):
 		with self.assertRaises(frappe.ValidationError):
 			api.list_api_keys(self.team)
 
-	def test_the_overview_is_asked_of_grove_once_in_five_minutes(self):
+	def test_the_overview_carries_models_limits_balance_and_this_months_usage(self):
 		self.enabled()
 		models = [{"name": "m", "dialects": ["openai"]}]
 		limits = [{"metric": "requests", "window": "1m", "value": 20}]
 		balance = {"balance": 12.5, "spent": 7.5, "is_free_user": False}
 		month = {**EMPTY_USAGE, self.team: {"requests": 6, "tokens": 900, "cost": 7.5}}
 		with (
-			patch.object(GroveClient, "list_models", return_value=models) as list_models,
+			patch.object(GroveClient, "list_models", return_value=models),
 			patch.object(GroveClient, "get_limits", return_value=limits),
 			patch.object(GroveClient, "get_balance", return_value=balance),
 			patch.object(GroveClient, "get_usage", return_value=month) as get_usage,
 		):
 			first = api.get_ai(self.team)
-			self.assertEqual(api.get_ai(self.team), first)
 
 		self.assertIn("gateway_url", first)
 		self.assertEqual(first["models"][0]["name"], "m")
@@ -235,8 +231,6 @@ class TestAI(IntegrationTestCase):
 		self.assertEqual(first["usage"]["tokens"], 900)
 		self.assertEqual(first["usage"]["to_date"], EMPTY_USAGE["to_date"])
 		self.assertEqual(get_usage.call_args.kwargs["period"], "This Month")
-		self.assertEqual((list_models.call_count, get_usage.call_count), (1, 1))
-		self.assertLessEqual(frappe.cache.ttl(f"ai:overview:{self.team}"), ai.OVERVIEW_CACHE_SECONDS)
 
 	def test_a_key_secret_is_returned_once_and_listed_masked(self):
 		self.enabled()

@@ -5,9 +5,6 @@ import frappe
 from central.integrations.grove import GroveClient
 from central.services.doctype.team_service.team_service import AI_SERVICE
 
-# Every page open asks for the overview, and Grove's own figures move hourly, at its pull.
-OVERVIEW_CACHE_SECONDS = 5 * 60
-
 
 def get_ai_service(team: str) -> str | None:
 	"""The team's AI Team Service, None while AI is off for it."""
@@ -66,20 +63,13 @@ def on_alert_address_update(doc, method: str | None = None) -> None:
 
 
 def get_overview(team: str) -> dict:
-	"""The team's AI at a glance: `models`, `rate_limits`, `balance` and this month's `usage`,
-	held for OVERVIEW_CACHE_SECONDS so a page open is not four Grove calls. A change at Grove
-	shows within that."""
-	key = f"ai:overview:{team}"
-	if (overview := frappe.cache.get_value(key)) is None:
-		client = GroveClient.from_settings()
-		overview = {
-			"models": get_reachable_models(team),
-			"rate_limits": get_rate_limits(team),
-			"balance": client.get_balance(team),
-			"usage": get_month_usage(team),
-		}
-		frappe.cache.set_value(key, overview, expires_in_sec=OVERVIEW_CACHE_SECONDS)
-	return overview
+	"""The team's AI at a glance: `models`, `rate_limits`, `balance` and this month's `usage`."""
+	return {
+		"models": get_reachable_models(team),
+		"rate_limits": get_rate_limits(team),
+		"balance": GroveClient.from_settings().get_balance(team),
+		"usage": get_month_usage(team),
+	}
 
 
 def get_month_usage(team: str) -> dict:
