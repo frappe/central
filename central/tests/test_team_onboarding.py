@@ -4,7 +4,13 @@ import frappe
 from frappe.tests import IntegrationTestCase, set_user
 
 from central.api.identity import my_teams
-from central.api.teams import create_team, set_onboarding_step, skip_onboarding
+from central.api.teams import (
+	accept_invitation,
+	create_team,
+	invite_team_member,
+	set_onboarding_step,
+	skip_onboarding,
+)
 from central.site_provisioning import create_trial_team
 
 
@@ -94,6 +100,38 @@ class TestTeamCreation(IntegrationTestCase):
 		self.assertEqual(frappe.db.get_value("Team", team, "owner_user"), self.owner)
 		self.assertIsNone(create_trial_team(self.owner))
 		self.assertEqual(frappe.db.count("Team", {"owner_user": self.owner}), 1)
+
+	@patch("frappe.sendmail")
+	def test_invited_member_reuses_the_team_without_another_welcome_grant(self, _sendmail):
+		team = create_team("Inviting Team")["name"]
+		with set_user("Administrator"):
+			member = create_user("invitee")
+		invitation = invite_team_member(team, member, "Admin")
+		credits_before = frappe.get_all("Credit Ledger Entry", filters={"team": team}, pluck="name")
+
+		with set_user(member):
+			self.assertEqual(accept_invitation(invitation)["team"], team)
+			self.assertIsNone(create_trial_team(member))
+
+		self.assertFalse(frappe.db.exists("Team", {"owner_user": member}))
+		self.assertCountEqual(
+			frappe.get_all("Credit Ledger Entry", filters={"team": team}, pluck="name"), credits_before
+		)
+
+	@patch("frappe.sendmail")
+	def test_invited_member_can_get_welcome_credits_for_their_own_first_team(self, _sendmail):
+		team = create_team("Inviting Team")["name"]
+		with set_user("Administrator"):
+			member = create_user("invitee")
+		invitation = invite_team_member(team, member, "Admin")
+
+		with set_user(member):
+			accept_invitation(invitation)
+			personal_team = create_team("Personal Team")["name"]
+
+		self.assertTrue(
+			frappe.db.exists("Credit Ledger Entry", {"team": personal_team, "reference_type": "Promotion"})
+		)
 
 	def test_the_trial_team_keeps_how_the_signup_first_arrived(self):
 		with set_user("Administrator"):

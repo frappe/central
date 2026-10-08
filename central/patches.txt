@@ -23,3 +23,4 @@ central.patches.v0_0.record_server_has_site
 central.patches.v0_0.shorten_pilot_offering_description
 central.patches.v0_0.rename_pilot_offering_to_frappe
 central.patches.v0_0.seed_billing_details_grace
+central.patches.v0_0.record_trial_action_product

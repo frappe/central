@@ -106,12 +106,18 @@ watch(panelOpen, (isOpen) => {
 // server's provisioning row is visible right away, not hidden behind the collapsed pill.
 const cameFromCreate =
 	typeof route.query.created === 'string' && !!route.query.created
+const returningSite =
+	typeof route.query.site === 'string' ? route.query.site : ''
 
 // Opening the map shows the current fleet. The feed is a shared singleton that only
 // reloads on team-ready or a live event, so a server created while this page was
 // unmounted (the New server flow) wouldn't be here yet — reload on every entry.
 onMounted(() => {
 	if (activeTeam.value) reload()
+	if (returningSite) {
+		q.value = returningSite
+		panelOpen.value = true
+	}
 	if (cameFromCreate) {
 		panelOpen.value = true
 		// Drop the flag so a back/refresh doesn't reopen the panel.
