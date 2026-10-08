@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import frappe
 from frappe import _
+from frappe.utils import flt
 
 from central.integrations.grove import GroveClient
 from central.services import ai
@@ -9,7 +10,19 @@ from central.utils.guards import require_capability
 
 VIEW_DENIED = "You can't view this team's AI."
 MANAGE_DENIED = "You can't manage this team's AI."
-KEY_FIELDS = ("name", "title", "status", "creation", "revocable_at", "masked", "can_read_balance")
+KEY_FIELDS = (
+	"name",
+	"title",
+	"status",
+	"creation",
+	"revocable_at",
+	"masked",
+	"geography",
+	"gateway_url",
+	"cap",
+	"spent",
+	"limits",
+)
 
 # Grove owns the keys. Central keeps none: a secret is shown once, in the answer that mints it.
 
@@ -17,12 +30,12 @@ KEY_FIELDS = ("name", "title", "status", "creation", "revocable_at", "masked", "
 @frappe.whitelist(methods=["GET"])
 @require_capability("service:view", VIEW_DENIED)
 def get_ai(team: str | None = None) -> dict:
-	"""Whether AI is on for the team and, when it is, the models it may call and its
-	per-minute rate limits."""
+	"""Whether AI is on for the team and, when it is, its balance, this month's usage and the
+	geographies a key may be minted in."""
 	if not ai.get_ai_service(team):
 		return {"enabled": False}
 
-	return {"enabled": True, "gateway_url": ai.get_gateway_url(team), **ai.get_overview(team)}
+	return {"enabled": True, **ai.get_overview(team)}
 
 
 @frappe.whitelist(methods=["POST"])
@@ -35,7 +48,8 @@ def enable_ai(team: str | None = None) -> dict:
 @frappe.whitelist(methods=["GET"])
 @require_capability("service:view", VIEW_DENIED)
 def list_api_keys(team: str | None = None) -> list[dict]:
-	"""The team's keys, newest first, masked."""
+	"""The team's keys, newest first, masked, each with its geography and the gateway it
+	calls, its cap and spend, and its rate limits."""
 	require_ai(team)
 	keys = GroveClient.from_settings().list_keys(team)
 	return [{field: row.get(field) for field in KEY_FIELDS} for row in keys]
@@ -43,20 +57,45 @@ def list_api_keys(team: str | None = None) -> list[dict]:
 
 @frappe.whitelist(methods=["POST"])
 @require_capability("service:manage", MANAGE_DENIED)
-def create_api_key(team: str | None = None, label: str | None = None) -> dict:
-	"""Mint a key for the team and return its secret. This is the only time it is shown."""
+def create_api_key(
+	team: str | None = None, label: str | None = None, geography: str | None = None, cap: float | None = None
+) -> dict:
+	"""Mint a key for the team in `geography` (Grove's default when none) with `cap` USD to
+	spend (a prepaid team's key needs one above zero), and return its secret. This is the only
+	time it is shown. `models` is what it may call, for the quickstart."""
 	require_ai(team)
 	label = (label or "").strip()
 	if not label:
 		frappe.throw(_("A label is required."))
 
-	key = GroveClient.from_settings().provision_key(team, label)
+	client = GroveClient.from_settings()
+	key = client.provision_key(team, label, geography or None, flt(cap) if cap is not None else None)
 	return {
 		"name": key["name"],
 		"label": label,
+		"geography": key["geography"],
 		"gateway_url": key["gateway_url"],
 		"api_key": key["api_key"],
+		"models": ai.get_key_models(team, key["name"]),
 	}
+
+
+@frappe.whitelist(methods=["POST"])
+@require_capability("service:manage", MANAGE_DENIED)
+def update_api_key(team: str | None = None, key: str | None = None, cap: float | None = None) -> dict:
+	"""Change what one of the team's keys may spend. Grove refuses a cap the balance cannot
+	cover, and another team's key."""
+	require_ai(team)
+	row = GroveClient.from_settings().update_key(team, key, flt(cap))
+	return {field: row.get(field) for field in KEY_FIELDS}
+
+
+@frappe.whitelist(methods=["GET"])
+@require_capability("service:view", VIEW_DENIED)
+def get_api_key_models(team: str | None = None, key: str | None = None) -> list[dict]:
+	"""The models one of the team's keys may call."""
+	require_ai(team)
+	return ai.get_key_models(team, key)
 
 
 @frappe.whitelist(methods=["POST"])
@@ -66,18 +105,6 @@ def revoke_api_key(team: str | None = None, key: str | None = None) -> dict:
 	require_ai(team)
 	GroveClient.from_settings().revoke_key(team, key)
 	return {"name": key}
-
-
-@frappe.whitelist(methods=["POST"])
-@require_capability("service:manage", MANAGE_DENIED)
-def set_api_key_balance_access(
-	team: str | None = None, key: str | None = None, can_read_balance: bool = False
-) -> dict:
-	"""Let one of the team's keys read the team's credit at the gateway, or stop it. A team's
-	first key starts with it."""
-	require_ai(team)
-	allowed = bool(frappe.utils.sbool(can_read_balance))
-	return {"name": key, **GroveClient.from_settings().set_key_balance_access(team, key, allowed)}
 
 
 @frappe.whitelist(methods=["GET"])

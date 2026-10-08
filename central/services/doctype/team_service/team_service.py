@@ -45,12 +45,13 @@ class TeamService(Document):
 
 	def before_insert(self) -> None:
 		"""Create the bucket, bill it, then let the record save. Cargo answers first, so a
-		record always names a bucket that exists. AI registers the team at Grove first."""
+		record always names a bucket that exists. AI registers the team at Grove first; its keys
+		each call their own geography's gateway, so an AI row has no endpoint."""
 		if self.is_ai:
-			from central.services.ai import register_grove_user
+			from central.services.ai import register_team
 
 			self.validate_one_ai_service()
-			self.endpoint_url = register_grove_user(self.team).get("gateway_url")
+			register_team(self.team)
 			return
 
 		if not self.is_bucket:
@@ -132,7 +133,7 @@ class TeamService(Document):
 		self.validate_one_ai_service()
 
 	def validate_one_ai_service(self) -> None:
-		"""A team is one Grove user, so it has one AI service."""
+		"""A team is one Central Team at Grove, so it has one AI service."""
 		if not self.is_ai:
 			return
 

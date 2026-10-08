@@ -11,11 +11,6 @@ def get_ai_service(team: str) -> str | None:
 	return frappe.db.get_value("Team Service", {"team": team, "add_on_service": AI_SERVICE})
 
 
-def get_gateway_url(team: str) -> str | None:
-	"""Where the team's keys call, as Grove answered when the team was registered."""
-	return frappe.db.get_value("Team Service", {"team": team, "add_on_service": AI_SERVICE}, "endpoint_url")
-
-
 def enable(team: str) -> str:
 	"""Turn AI on for a team. Safe to repeat. The record registers the team at Grove before it
 	saves, so a refusal there leaves no row here."""
@@ -42,11 +37,10 @@ def get_alert_email(team: str) -> str:
 	return frappe.db.get_value("User", owner, "email")
 
 
-def register_grove_user(team: str, free: bool = True) -> dict:
-	"""Register the team as a Grove user named by the team id, with its alert email. Grove picks
-	its geography and answers with it and its `gateway_url`. A repeat sends the email again and
-	changes nothing else; `free=False` keeps the Free setting Grove already has."""
-	return GroveClient.from_settings().provision_user(team, get_alert_email(team), free=free) or {}
+def register_team(team: str, free: bool = True) -> dict:
+	"""Register the team at Grove under the team id, with its alert email. A repeat sends the
+	email again and changes nothing else; `free=False` keeps the Free setting Grove already has."""
+	return GroveClient.from_settings().provision_team(team, get_alert_email(team), free=free) or {}
 
 
 def on_alert_address_update(doc, method: str | None = None) -> None:
@@ -57,18 +51,17 @@ def on_alert_address_update(doc, method: str | None = None) -> None:
 		return
 
 	# No retry: if Grove is down now, it keeps the old address until the next change.
-	frappe.enqueue(
-		"central.services.ai.register_grove_user", team=doc.name, free=False, enqueue_after_commit=True
-	)
+	frappe.enqueue("central.services.ai.register_team", team=doc.name, free=False, enqueue_after_commit=True)
 
 
 def get_overview(team: str) -> dict:
-	"""The team's AI at a glance: `models`, `rate_limits`, `balance` and this month's `usage`."""
+	"""The team's AI at a glance: `balance`, this month's `usage`, and the `geographies` a key
+	may be minted in. What a key may call and how fast is the key's own: see `list_api_keys`."""
+	client = GroveClient.from_settings()
 	return {
-		"models": get_reachable_models(team),
-		"rate_limits": get_rate_limits(team),
-		"balance": GroveClient.from_settings().get_balance(team),
+		"balance": client.get_balance(team),
 		"usage": get_month_usage(team),
+		"geographies": client.list_geographies(),
 	}
 
 
@@ -83,9 +76,10 @@ def get_month_usage(team: str) -> dict:
 	}
 
 
-def get_reachable_models(team: str) -> list[dict]:
-	"""The models Grove lets the team call: what each takes and gives, and the API surfaces
-	(openai, anthropic) it answers on. Grove decides; Central only shows them."""
+def get_key_models(team: str, key: str) -> list[dict]:
+	"""The models Grove lets one key call, as its geography serves them: what each takes and
+	gives, and the API surfaces (openai, anthropic) it answers on. Grove decides; Central only
+	shows them."""
 	return [
 		{
 			"name": row["name"],
@@ -93,15 +87,8 @@ def get_reachable_models(team: str) -> list[dict]:
 			"output_modalities": row.get("output_modalities", []),
 			"dialects": row["dialects"],
 		}
-		for row in GroveClient.from_settings().list_models(team)
+		for row in GroveClient.from_settings().list_models(team, key)
 	]
-
-
-def get_rate_limits(team: str) -> list[dict]:
-	"""The limits Grove counts across every key of the team: rows of `metric` (requests,
-	total_tokens), `window` (1m, 1h, 1d, 1M) and `value`. No rows is no limit."""
-	rows = GroveClient.from_settings().get_limits(team)
-	return [{"metric": row["metric"], "window": row["window"], "value": row["value"]} for row in rows]
 
 
 def get_usage_report(team: str, period: str, key_hash: str | None = None) -> dict:

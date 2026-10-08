@@ -7,9 +7,11 @@ import { successToast } from '@/lib/feedback'
 import { submitOrThrow } from '@/lib/frappeCall'
 import type {
 	AIApiKey,
+	AIModel,
 	AIState,
 	AIUsage,
 	MintedKey,
+	NewKey,
 	UsageFilters,
 } from '@/types/ai'
 
@@ -50,23 +52,36 @@ const apiKeysCall = useCall<AIApiKey[], { team: string }>({
 	immediate: false,
 })
 
-const createKeyCall = useCall<MintedKey, { team: string; label: string }>({
+const createKeyCall = useCall<
+	MintedKey,
+	{ team: string; label: string; geography: string; cap?: number }
+>({
 	url: method(API.createAIApiKey),
 	method: 'POST',
 	immediate: false,
 })
 
-const revokeKeyCall = useCall<{ name: string }, { team: string; key: string }>({
-	url: method(API.revokeAIApiKey),
+const updateKeyCall = useCall<
+	AIApiKey,
+	{ team: string; key: string; cap: number }
+>({
+	url: method(API.updateAIApiKey),
 	method: 'POST',
 	immediate: false,
 })
 
-const balanceAccessCall = useCall<
-	{ name: string; can_read_balance: boolean },
-	{ team: string; key: string; can_read_balance: boolean }
->({
-	url: method(API.setAIApiKeyBalanceAccess),
+const keyModelsParams = ref<{ team: string; key: string }>({
+	team: '',
+	key: '',
+})
+const keyModelsCall = useCall<AIModel[], typeof keyModelsParams.value>({
+	url: method(API.aiApiKeyModels),
+	params: () => keyModelsParams.value,
+	immediate: false,
+})
+
+const revokeKeyCall = useCall<{ name: string }, { team: string; key: string }>({
+	url: method(API.revokeAIApiKey),
 	method: 'POST',
 	immediate: false,
 })
@@ -80,7 +95,6 @@ export function useAI() {
 		aiLoading: computed(() => aiCall.loading),
 		aiError: computed(() => aiCall.error),
 		reloadAI: (): Promise<unknown> => aiCall.reload(),
-		models: computed(() => aiCall.data?.models ?? []),
 
 		async enable(): Promise<void> {
 			await submitOrThrow(enableCall, { team: activeTeam.value! })
@@ -105,24 +119,33 @@ export function useAI() {
 		busyKey: computed(() => busyKey.value),
 		loadApiKeys: (): Promise<unknown> => apiKeysCall.reload(),
 
-		async createApiKey(label: string): Promise<MintedKey> {
-			await submitOrThrow(createKeyCall, { team: activeTeam.value!, label })
-			await apiKeysCall.reload()
+		async createApiKey(key: NewKey): Promise<MintedKey> {
+			await submitOrThrow(createKeyCall, { team: activeTeam.value!, ...key })
+			// A cap moves what is unallocated, so the overview reloads with the list.
+			await Promise.all([apiKeysCall.reload(), aiCall.reload()])
 			return createKeyCall.data!
 		},
 
-		async setBalanceAccess(key: string, allowed: boolean): Promise<void> {
+		async setCap(key: string, cap: number): Promise<void> {
 			busyKey.value = key
 			try {
-				await submitOrThrow(balanceAccessCall, {
+				await submitOrThrow(updateKeyCall, {
 					team: activeTeam.value!,
 					key,
-					can_read_balance: allowed,
+					cap,
 				})
-				await apiKeysCall.reload()
+				await Promise.all([apiKeysCall.reload(), aiCall.reload()])
 			} finally {
 				busyKey.value = ''
 			}
+		},
+
+		// What one key may call, as its geography serves them: fetched when asked for.
+		keyModels: computed<AIModel[]>(() => keyModelsCall.data ?? []),
+		keyModelsLoading: computed(() => keyModelsCall.loading),
+		loadKeyModels(key: string): Promise<unknown> {
+			keyModelsParams.value = { team: activeTeam.value!, key }
+			return keyModelsCall.reload()
 		},
 
 		async revokeApiKey(key: string): Promise<void> {
@@ -132,7 +155,7 @@ export function useAI() {
 				successToast(
 					'API key revoked. It can take a few minutes to stop working.',
 				)
-				await apiKeysCall.reload()
+				await Promise.all([apiKeysCall.reload(), aiCall.reload()])
 			} finally {
 				busyKey.value = ''
 			}

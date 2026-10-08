@@ -9,8 +9,9 @@ TIMEOUT = (30, 90)
 
 
 class GroveClient:
-	"""Calls Grove's control API (`grove.api`) as Central. A team is one Grove user, named by the
-	team id. Grove owns the keys, models and limits; Central never proxies inference."""
+	"""Calls Grove's control API (`grove.api`) as Central. A team is one Central Team at Grove,
+	named by the team id; each of its keys carries its own geography, models, rate limits and
+	cap. Grove owns the keys; Central never proxies inference."""
 
 	def __init__(self, base_url: str, api_key: str, api_secret: str):
 		self.base_url = base_url
@@ -36,53 +37,56 @@ class GroveClient:
 		"""A new secret for Central's own control user; the old one stops at once."""
 		return self.call("grove.api.create_control_client_key")
 
-	def provision_user(self, user: str, email: str, free: bool = False) -> dict:
-		"""Register `user`, or send its new `email` (an alert address, not a login). Grove upserts
-		by `user` and pins it to its default geography. With `free`, Grove charges and gates
-		nothing; without it, Grove keeps the setting it has."""
-		return self.call("grove.api.provision_user", user=user, email=email, free=free)
+	def provision_team(self, team: str, email: str, free: bool = False) -> dict:
+		"""Register `team`, or send its new `email` (an alert address, not a login). Grove upserts
+		by `team`. With `free`, Grove charges and gates nothing; without it, Grove keeps the
+		setting it has. → `team` and `max_keys`, how many live keys it may hold."""
+		return self.call("grove.api.provision_team", team=team, email=email, free=free)
 
-	def provision_key(self, user: str, title: str) -> dict:
-		"""Mint a key: its `name`, `gateway_url` and `api_key`. The secret is never sent again."""
-		return self.call("grove.api.provision_key", user=user, title=title)
+	def provision_key(
+		self, team: str, title: str, geography: str | None = None, cap: float | None = None
+	) -> dict:
+		"""Mint a key in `geography` (Grove's default when None) with `cap` USD to spend (required
+		above zero on a prepaid team): its `name`, `geography`, `gateway_url` and `api_key`. The
+		secret is never sent again."""
+		return self.call("grove.api.provision_key", team=team, title=title, geography=geography, cap=cap)
 
-	def list_keys(self, user: str) -> list[dict]:
-		return self.call("grove.api.keys", user=user) or []
+	def update_key(self, team: str, key: str, cap: float | None = None) -> dict:
+		"""Change what a key may spend. → the key as `list_keys` lists it."""
+		return self.call("grove.api.update_key", team=team, key=key, cap=cap)
 
-	def revoke_key(self, user: str, key: str) -> None:
-		self.call("grove.api.revoke_key", user=user, key=key)
+	def list_keys(self, team: str) -> list[dict]:
+		return self.call("grove.api.keys", team=team) or []
 
-	def set_key_balance_access(self, user: str, key: str, can_read_balance: bool) -> dict:
-		"""Let one of the user's keys read their credit at the gateway's /v1/credits, or stop it."""
-		return self.call(
-			"grove.api.set_key_balance_access", user=user, key=key, can_read_balance=can_read_balance
-		)
+	def revoke_key(self, team: str, key: str) -> None:
+		self.call("grove.api.revoke_key", team=team, key=key)
 
-	def list_models(self, user: str | None = None) -> list[dict]:
-		"""Every published model, or with `user` only what that Grove user may call."""
-		return self.call("grove.api.available_models", user=user) or []
+	def list_models(self, team: str | None = None, key: str | None = None) -> list[dict]:
+		"""Every published model in Grove's default geography, or with `team` and `key` only
+		what that key may call, as its geography serves them."""
+		return self.call("grove.api.available_models", team=team, key=key) or []
 
-	def get_balance(self, user: str) -> dict:
-		"""`balance` and `spent` in USD as of Grove's last pull, and `is_free_user`."""
-		return self.call("grove.api.balance", user=user)
+	def list_geographies(self) -> list[dict]:
+		"""Where a key may be minted: `name`, `label`, `endpoint`, `is_default`."""
+		return self.call("grove.api.geographies") or []
 
-	def get_limits(self, user: str) -> list[dict]:
-		"""Rows of `metric`, `window` and `value`."""
-		return self.call("grove.api.limits", user=user) or []
+	def get_balance(self, team: str) -> dict:
+		"""`balance`, `spent` and `unallocated` in USD as of Grove's last pull, and `is_free_user`."""
+		return self.call("grove.api.balance", team=team)
 
 	def get_usage(
 		self,
-		users: list[str],
+		teams: list[str],
 		month: str | None = None,
 		period: str | None = None,
 		key_hash: str | None = None,
 	) -> dict:
-		return self.call("grove.api.usage", users=users, month=month, period=period, key_hash=key_hash)
+		return self.call("grove.api.usage", teams=teams, month=month, period=period, key_hash=key_hash)
 
-	def add_credit(self, user: str, amount: float, reference: str | None = None) -> dict:
-		"""USD onto the Grove user's ledger. Grove books one `reference` once, so a call with no
+	def add_credit(self, team: str, amount: float, reference: str | None = None) -> dict:
+		"""USD onto the team's ledger. Grove books one `reference` once, so a call with no
 		answer can be sent again under it."""
-		return self.call("grove.api.add_credit", user=user, amount=amount, reference=reference)
+		return self.call("grove.api.add_credit", team=team, amount=amount, reference=reference)
 
 	def call(self, method: str, **body) -> dict | list:
 		response = requests.post(

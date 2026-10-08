@@ -1,5 +1,5 @@
-// What central.services.api.ai answers with. Grove owns the keys: Central lists them
-// masked, and a key's secret is shown once, in the answer that mints it.
+// What central.services.api.ai answers with. Grove owns the keys and each key's policy:
+// Central lists them masked, and a key's secret is shown once, in the answer that mints it.
 
 export type AIDialect = 'openai' | 'anthropic'
 
@@ -12,18 +12,28 @@ export interface AIModel {
 	dialects: AIDialect[]
 }
 
-// One limit Grove counts across every key of the team: a metric over a window.
+// One limit Grove counts for one key: a metric over a window.
 export interface AIRateLimit {
 	metric: 'requests' | 'total_tokens' | string
 	window: '1m' | '1h' | '1d' | '1M' | string
 	value: number
 }
 
-// USD, as of Grove's last pull. A free team is never charged: `spent` stays at zero.
+// USD, as of Grove's last pull. `unallocated` is what no key's cap has claimed yet. A free
+// team is never charged: `spent` stays at zero and caps do not apply.
 export interface AIBalance {
 	balance: number
 	spent: number
+	unallocated: number
 	is_free_user: boolean
+}
+
+// Where a key may be minted, and the gateway its keys call.
+export interface AIGeography {
+	name: string
+	label: string
+	endpoint: string
+	is_default: boolean
 }
 
 // This month so far, with the window and when Grove last counted.
@@ -38,12 +48,9 @@ export interface AIMonthUsage {
 
 export interface AIState {
 	enabled: boolean
-	// Where the team's keys call: the base for both API surfaces.
-	gateway_url?: string | null
-	models?: AIModel[]
-	rate_limits?: AIRateLimit[]
 	balance?: AIBalance
 	usage?: AIMonthUsage
+	geographies?: AIGeography[]
 }
 
 export interface AIUsageModel {
@@ -80,7 +87,7 @@ export interface UsageFilters {
 	key?: string
 }
 
-// A key as listed: never its secret.
+// A key as listed: never its secret. Its geography never changes; its cap may.
 export interface AIApiKey {
 	name: string
 	title: string
@@ -89,13 +96,28 @@ export interface AIApiKey {
 	// UTC; Grove refuses to revoke a key before this, so the console does not ask.
 	revocable_at: string
 	masked: string
-	can_read_balance: number
+	geography: string
+	// The base URL for both API surfaces, of the key's own geography.
+	gateway_url: string
+	// USD: what the key may spend out of the team's balance, and what it has.
+	cap: number
+	spent: number
+	limits: AIRateLimit[]
 }
 
-// A key just minted: the only answer that carries its secret.
+// What a new key is minted with.
+export interface NewKey {
+	label: string
+	geography: string
+	cap?: number
+}
+
+// A key just minted: the only answer that carries its secret, with what it may call.
 export interface MintedKey {
 	name: string
 	label: string
+	geography: string
 	gateway_url: string
 	api_key: string
+	models: AIModel[]
 }

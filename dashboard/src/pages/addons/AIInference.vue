@@ -13,7 +13,7 @@ import { getErrorMessage, reportError } from '@/lib/feedback'
 
 const { canManageServices } = useCapabilities()
 const { activeTeam } = useSession()
-const { ai, aiLoading, aiError, reloadAI, models, enable } = useAI()
+const { ai, aiLoading, aiError, reloadAI, enable } = useAI()
 useBreadcrumbs().setBreadcrumbs([{ label: 'AI' }])
 
 const tab = ref('overview')
@@ -88,7 +88,7 @@ const enableAI = async (): Promise<void> => {
 		<template v-else-if="ai?.enabled" :key="activeTeam">
 			<AIOverview v-if="tab === 'overview'" />
 			<AIUsage v-else-if="tab === 'usage'" />
-			<AIApiKeys v-else :models="models" :can-manage="canManageServices" />
+			<AIApiKeys v-else :can-manage="canManageServices" />
 		</template>
 
 		<div v-else class="flex flex-1 items-center justify-center p-8">
