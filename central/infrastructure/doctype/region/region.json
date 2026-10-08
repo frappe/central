@@ -22,6 +22,7 @@
   "column_break_kufp",
   "atlas_region_id",
   "proxy_domain",
+  "mail_service",
   "connection_section",
   "reachable",
   "connection_checked_at",
@@ -123,6 +124,13 @@
    "fieldname": "proxy_domain",
    "fieldtype": "Data",
    "label": "Proxy Domain"
+  },
+  {
+   "description": "Gives each new server in this region a mailbox from this service's pool, for Pilot and site mail. Leave blank to give servers no mailbox.",
+   "fieldname": "mail_service",
+   "fieldtype": "Link",
+   "label": "Mail Service",
+   "options": "Mail Service"
   },
   {
    "fieldname": "connection_section",
@@ -257,7 +265,7 @@
    "link_fieldname": "region"
   }
  ],
- "modified": "2026-09-25 17:33:51.962673",
+ "modified": "2026-10-08 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Infrastructure",
  "name": "Region",
