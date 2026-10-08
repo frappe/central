@@ -78,6 +78,12 @@ const routes = [
 				meta: { title: 'New server' },
 			},
 			{
+				path: 'servers/:id/:tab(networking|access|snapshots|settings)?',
+				name: 'Server',
+				component: () => import('@/pages/servers/ServerPage.vue'),
+				meta: { title: 'Servers' },
+			},
+			{
 				path: 'object-storage',
 				name: 'ObjectStorage',
 				component: () => import('@/pages/addons/ObjectStorage.vue'),

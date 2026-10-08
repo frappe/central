@@ -1,12 +1,13 @@
 <script setup lang="ts">
-import { Badge, Button } from 'frappe-ui'
+import { Button } from 'frappe-ui'
 import { computed, ref } from 'vue'
 import BucketQuotaDialog from '@/components/addons/storage/BucketQuotaDialog.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
+import CopyButton from '@/components/common/CopyButton.vue'
 import SettingsSection from '@/components/common/SettingsSection.vue'
+import UsageCard from '@/components/common/UsageCard.vue'
 import { bucketLabel, useObjectStorage } from '@/composables/useObjectStorage'
-import { copyToClipboard } from '@/lib/clipboard'
-import { getErrorMessage, reportError, successToast } from '@/lib/feedback'
+import { getErrorMessage } from '@/lib/feedback'
 import type { BucketCredentials, StorageBucket } from '@/types/storage'
 
 interface Props {
@@ -42,13 +43,6 @@ const formatBytes = (bytes: number): string => {
 const percentOf = (used: number, limit: number | null): number | null =>
 	limit ? Math.min(Math.round((used / limit) * 100), 100) : null
 
-const usageTheme = (percent: number): 'gray' | 'amber' | 'red' => {
-	if (percent >= 90) return 'red'
-	if (percent >= 75) return 'amber'
-
-	return 'gray'
-}
-
 const meters = computed(() => {
 	const current = usage.value
 	if (!current) return []
@@ -58,7 +52,7 @@ const meters = computed(() => {
 			label: 'Stored',
 			icon: 'lucide-hard-drive',
 			used: formatBytes(current.used_bytes),
-			limit: current.quota_bytes && formatBytes(current.quota_bytes),
+			limit: current.quota_bytes ? formatBytes(current.quota_bytes) : null,
 			percent: percentOf(current.used_bytes, current.quota_bytes),
 		},
 		{
@@ -82,15 +76,6 @@ const quotaSummary = computed(() =>
 		? `Current quota: ${formatBytes(usage.value.quota_bytes)} · ${usage.value.quota_objects?.toLocaleString() ?? 'any number of'} objects`
 		: 'No quota is set, so the bucket grows as you upload.',
 )
-
-const copy = async (value: string, label: string): Promise<void> => {
-	if (await copyToClipboard(value)) {
-		successToast(`${label} copied`)
-		return
-	}
-
-	reportError(`${label} could not be copied. Select it and copy by hand.`)
-}
 
 const quotaTarget = ref<StorageBucket | null>(null)
 const rotateTarget = ref<StorageBucket | null>(null)
@@ -156,45 +141,7 @@ const remove = async (target: StorageBucket): Promise<void> => {
 			</div>
 
 			<div v-else class="grid gap-3 md:grid-cols-2 md:gap-4">
-				<div
-					v-for="meter in meters"
-					:key="meter.label"
-					class="space-y-4 rounded-6 bg-surface-gray-1 p-4"
-				>
-					<div class="flex items-center justify-between gap-3">
-						<span class="flex items-center gap-2 text-sm text-ink-gray-6">
-							<span :class="meter.icon" class="size-4 text-ink-gray-5" />
-
-							{{ meter.label }}
-						</span>
-
-						<Badge
-							v-if="meter.percent !== null"
-							:label="`${meter.percent}% used`"
-							:theme="usageTheme(meter.percent)"
-						/>
-					</div>
-
-					<p class="flex items-baseline gap-1.5">
-						<span class="text-2xl-semibold tabular-nums text-ink-gray-9">
-							{{ meter.used }}
-						</span>
-
-						<span v-if="meter.limit" class="text-sm text-ink-gray-5">
-							of {{ meter.limit }}
-						</span>
-					</p>
-
-					<div
-						v-if="meter.percent !== null"
-						class="h-1.5 overflow-hidden rounded-full bg-surface-gray-3"
-					>
-						<div
-							class="h-full rounded-full bg-surface-gray-9"
-							:style="{ width: `${meter.percent}%` }"
-						/>
-					</div>
-				</div>
+				<UsageCard v-for="meter in meters" :key="meter.label" v-bind="meter" />
 			</div>
 		</SettingsSection>
 
@@ -212,21 +159,13 @@ const remove = async (target: StorageBucket): Promise<void> => {
 					:key="row.label"
 					class="flex items-center gap-3"
 				>
-					<dt class="w-24 shrink-0 text-sm text-ink-gray-5">
-						{{ row.label }}
-					</dt>
+					<dt class="w-24 shrink-0 text-sm text-ink-gray-5">{{ row.label }}</dt>
 
-					<dd class="min-w-0 flex-1 truncate font-mono text-sm text-ink-gray-8">
+					<dd class="min-w-0 truncate font-mono text-sm text-ink-gray-8">
 						{{ row.value }}
 					</dd>
 
-					<Button
-						variant="ghost"
-						icon="lucide-copy"
-						:label="`Copy ${row.label.toLowerCase()}`"
-						tooltip="Copy"
-						@click="copy(row.value, row.label)"
-					/>
+					<CopyButton :text="row.value" />
 				</div>
 			</dl>
 		</SettingsSection>

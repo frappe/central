@@ -10,7 +10,6 @@ import ServerFilters from '@/components/servers/ServerFilters.vue'
 import ServerListPanel from '@/components/servers/ServerListPanel.vue'
 import ServerMap from '@/components/servers/ServerMap.vue'
 import ServerOnboarding from '@/components/servers/ServerOnboarding.vue'
-import ServerOverviewDialog from '@/components/servers/ServerOverviewDialog.vue'
 import ServerRowActions from '@/components/servers/ServerRowActions.vue'
 import TerminateServerDialog from '@/components/servers/TerminateServerDialog.vue'
 import TakeSnapshotDialog from '@/components/snapshots/TakeSnapshotDialog.vue'
@@ -90,9 +89,8 @@ function dismissOnboarding(): void {
 
 const hoverId = ref<string | null>(null)
 const panelOpen = ref(false)
-const overviewServer = ref<VirtualMachineRow | null>(null)
-const { siteFor, openServer, openResource, openById, openBench, openSite } =
-	useServerNavigation(rows, sites, canViewServers, overviewServer)
+const { showServer, openServer, openResource, openById, openBench, openSite } =
+	useServerNavigation(rows, sites)
 
 // — Wiring. Pin / cluster-row clicks go straight to the live site or server.
 //   If the side panel is open, keep its location filter in step.
@@ -180,9 +178,6 @@ const openResize = (server: VirtualMachineRow): void => {
 	resizeOpen.value = true
 }
 const pendingSnapshot = ref<VirtualMachineRow | null>(null)
-const overviewOpensSite = computed(
-	() => !!overviewServer.value && !!siteFor(overviewServer.value),
-)
 // A member can be scoped to some servers, so each dialog follows the server it shows.
 const teamActions = computed<ServerActions>(() => ({
 	open: canViewServers.value,
@@ -195,15 +190,6 @@ const teamActions = computed<ServerActions>(() => ({
 const terminateActions = computed(() =>
 	getServerActions(pendingTerminate.value, teamActions.value),
 )
-const overviewActions = computed(() =>
-	getServerActions(overviewServer.value, teamActions.value),
-)
-const overviewOpen = computed({
-	get: () => !!overviewServer.value,
-	set: (isOpen: boolean) => {
-		if (!isOpen) overviewServer.value = null
-	},
-})
 </script>
 
 <template>
@@ -283,7 +269,7 @@ const overviewOpen = computed({
 						:opening="
 							opening === pin.server.resource_id || opening === pin.site?.name
 						"
-						@overview="overviewServer = $event"
+						@overview="showServer"
 						@open="openServer"
 						@pilot="openBench"
 						@start="doStart"
@@ -330,7 +316,7 @@ const overviewOpen = computed({
 				:opening="opening"
 				@open-row="openResource"
 				@clear-location="locationFilter = null"
-				@overview="overviewServer = $event"
+				@overview="showServer"
 				@open="openServer"
 				@pilot="openBench"
 				@start="doStart"
@@ -398,17 +384,6 @@ const overviewOpen = computed({
 			v-model:open="resizeOpen"
 			:server="pendingResize"
 			@resized="reloadAll"
-		/>
-		<ServerOverviewDialog
-			v-model:open="overviewOpen"
-			:server="overviewServer"
-			:can-open="overviewActions.open"
-			:can-resize="overviewActions.resize"
-			:opens-site="overviewOpensSite"
-			:can-snapshot="overviewActions.snapshot"
-			:can-open-console="overviewActions.console"
-			@open="openServer"
-			@resize="openResize"
 		/>
 		<CreateTeamDialog v-model:open="createTeamOpen" />
 	</div>

@@ -29,6 +29,7 @@ interface SnapshotListViewProps {
 	freePerServer: number
 	/** Search to open with, such as the server a link came from. */
 	initialSearch?: string
+	serverScoped?: boolean
 }
 
 // Presentational: emits what the customer chose; the page owns the dialogs and calls.
@@ -59,7 +60,20 @@ const monthlyTotal = computed(() => {
 		: 'All free'
 })
 
-const columns = computed<ListViewColumn<VMSnapshotRow>[]>(() => [
+const searchPlaceholder = computed(() =>
+	props.serverScoped ? 'Search snapshots' : 'Search by snapshot or server name',
+)
+
+const SERVER_SCOPED_HIDDEN = ['type', 'cost']
+
+const columns = computed<ListViewColumn<VMSnapshotRow>[]>(() =>
+	allColumns.value.filter(
+		(column) =>
+			!props.serverScoped || !SERVER_SCOPED_HIDDEN.includes(column.id ?? ''),
+	),
+)
+
+const allColumns = computed<ListViewColumn<VMSnapshotRow>[]>(() => [
 	{
 		id: 'snapshot',
 		accessorFn: (row) => `${row.title} ${row.server_title}`,
@@ -107,6 +121,12 @@ const columns = computed<ListViewColumn<VMSnapshotRow>[]>(() => [
 		meta: { align: 'end' },
 	},
 ])
+
+const visibleFilters = computed(() =>
+	props.serverScoped
+		? filters.filter((filter) => filter.key !== 'type')
+		: filters,
+)
 
 const filters: ListViewFilter[] = [
 	{
@@ -169,10 +189,11 @@ function rowActions(row: VMSnapshotRow): SnapshotAction[] {
 		:row-key="(row) => row.name"
 		:loading="loading"
 		:error="error"
-		:filters="snapshots.length ? filters : []"
+		:filters="snapshots.length ? visibleFilters : []"
 		:selectable="canManage"
 		:searchable="snapshots.length > 0"
-		search-placeholder="Search by snapshot or server name"
+		:search-placeholder="searchPlaceholder"
+		:show-count="!serverScoped"
 		item-label="snapshot"
 		row-class="min-h-12 py-1.5"
 		:empty-state="{
@@ -229,7 +250,7 @@ function rowActions(row: VMSnapshotRow): SnapshotAction[] {
 		<template #snapshot="{ row }">
 			<div class="min-w-0">
 				<p class="truncate text-sm-medium text-ink-gray-8">{{ row.title }}</p>
-				<p class="truncate text-p-sm text-ink-gray-5">
+				<p v-if="!serverScoped" class="truncate text-p-sm text-ink-gray-5">
 					{{ row.server_title }}
 					· {{ row.region }}
 				</p>
