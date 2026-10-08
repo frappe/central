@@ -161,8 +161,7 @@ class TestServerConsole(IntegrationTestCase):
 	def test_overview_signs_in_over_public_ipv6_first(self):
 		frappe.set_user(self.viewer)
 		try:
-			with patch("central.api.servers.get_cached_metrics", return_value={"available": False}):
-				server = server_overview(team=self.team.name, resource_id=self.server.name)["server"]
+			server = server_overview(team=self.team.name, resource_id=self.server.name)["server"]
 		finally:
 			frappe.set_user("Administrator")
 

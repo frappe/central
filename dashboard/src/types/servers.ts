@@ -15,7 +15,6 @@ export interface MetricPoint {
 
 export interface ServerMonitoring {
 	available: boolean
-	current?: MetricPoint | null
 	points?: MetricPoint[]
 	sample_interval_seconds?: number
 }
@@ -43,5 +42,4 @@ export interface ServerOverview {
 			country_code: string | null
 		}
 	}
-	monitoring: ServerMonitoring
 }

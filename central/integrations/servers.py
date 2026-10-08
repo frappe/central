@@ -1,13 +1,11 @@
 from __future__ import annotations
 
 import time
-from datetime import UTC, datetime, timedelta
+from datetime import datetime
 from itertools import pairwise
-from zoneinfo import ZoneInfo
 
 import frappe
 from frappe import _
-from frappe.utils import get_system_timezone
 
 from central.errors import AtlasConnectionError, AtlasRejected, AtlasResourceGone
 from central.iam import can_on_any_server
@@ -21,8 +19,6 @@ from central.integrations.atlas import AtlasClient
 POWER_WAIT_SECONDS = 15 * 60
 POWER_POLL_SECONDS = 5
 METRICS_CACHE_SECONDS = 60
-METRICS_PERIOD_DAYS = {"24h": 1, "7d": 7, "14d": 14, "30d": 30}
-METRICS_MAXIMUM_DAYS = 30
 MIB = 1024 * 1024
 
 
@@ -210,32 +206,6 @@ def mark_terminated(server: VirtualMachine) -> None:
 		PilotCredential.revoke_by_id(name)
 
 
-def get_metrics_window(period: str, start: str | None, end: str | None) -> tuple[datetime, datetime | None]:
-	"""A preset period runs until now. A custom window reads `start` and `end` as the site's
-	clock, the way the console's date pickers send them."""
-	if period in METRICS_PERIOD_DAYS:
-		now = datetime.now(UTC).replace(second=0, microsecond=0)
-		return now - timedelta(days=METRICS_PERIOD_DAYS[period]), None
-
-	if period != "custom" or not start or not end:
-		frappe.throw(_("Choose a metrics period or a start and end."), frappe.ValidationError)
-
-	timezone = ZoneInfo(get_system_timezone())
-	try:
-		window_start = datetime.fromisoformat(start).replace(tzinfo=timezone)
-		window_end = datetime.fromisoformat(end).replace(tzinfo=timezone)
-	except ValueError:
-		frappe.throw(_("The start or end is not a valid date and time."), frappe.ValidationError)
-
-	if window_end <= window_start:
-		frappe.throw(_("The end must be after the start."), frappe.ValidationError)
-
-	if window_end - window_start > timedelta(days=METRICS_MAXIMUM_DAYS):
-		frappe.throw(_("Choose {0} days or less.").format(METRICS_MAXIMUM_DAYS), frappe.ValidationError)
-
-	return window_start, window_end
-
-
 def get_cached_metrics(server: VirtualMachine, start: datetime, end: datetime | None = None) -> dict:
 	"""The server's samples from `start` to `end` or now as its region measures them, cached for a minute."""
 	key = f"atlas:metrics:{server.name}:{int(start.timestamp())}:{int(end.timestamp()) if end else 'now'}"
@@ -244,15 +214,12 @@ def get_cached_metrics(server: VirtualMachine, start: datetime, end: datetime | 
 
 	try:
 		payload = get_client(server).get_vm_metrics(server.atlas_vm_id, start, end)
-		points = get_metric_points(payload.get("samples") or [], server.vcpus)
 		metrics = {
 			"available": True,
-			"current": points[-1] if points else None,
-			"points": points,
+			"points": get_metric_points(payload["samples"], server.vcpus),
 			"sample_interval_seconds": payload["sample_interval_seconds"],
 		}
-	except (AtlasConnectionError, AtlasRejected, AtlasResourceGone, KeyError, TypeError):
-		# A missing field means Atlas sent a shape this reader does not know.
+	except (AtlasConnectionError, AtlasRejected, AtlasResourceGone):
 		frappe.log_error(title=f"Atlas metrics unavailable: {server.name}")
 		metrics = {"available": False}
 

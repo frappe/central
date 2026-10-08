@@ -6,9 +6,9 @@ import frappe
 from frappe.tests import IntegrationTestCase
 from frappe.utils import get_system_timezone
 
-from central.api.servers import server_overview
+from central.api.servers import _metrics_window, server_metrics, server_overview
 from central.errors import AtlasConnectionError
-from central.integrations.servers import get_cached_metrics, get_metric_points, get_metrics_window
+from central.integrations.servers import get_cached_metrics, get_metric_points
 from central.tests.test_iam import ensure_user
 from central.tests.utils import ensure_atlas_instance
 
@@ -62,12 +62,10 @@ class TestServerOverview(IntegrationTestCase):
 	def tearDown(self):
 		frappe.set_user("Administrator")
 
-	def test_viewer_gets_static_server_data_and_region_metrics(self):
-		monitoring = {"available": True, "current": {"cpu_percent": 18}, "points": []}
+	def test_viewer_gets_static_server_data(self):
 		frappe.set_user(self.viewer)
 		try:
-			with patch("central.api.servers.get_cached_metrics", return_value=monitoring) as get:
-				result = server_overview(team=self.team.name, resource_id=self.server.name)
+			result = server_overview(team=self.team.name, resource_id=self.server.name)
 		finally:
 			frappe.set_user("Administrator")
 
@@ -78,20 +76,31 @@ class TestServerOverview(IntegrationTestCase):
 		self.assertIsNone(result["server"]["plan_title"])
 		self.assertIsNone(result["server"]["plan_rate"])
 		self.assertEqual(result["server"]["plan_currency"], "INR")
-		self.assertEqual(result["monitoring"], monitoring)
+		self.assertNotIn("monitoring", result)
+
+	def test_viewer_gets_region_metrics(self):
+		metrics = {"available": True, "points": [], "sample_interval_seconds": 300}
+		frappe.set_user(self.viewer)
+		try:
+			with patch("central.api.servers.get_cached_metrics", return_value=metrics) as get:
+				result = server_metrics(team=self.team.name, resource_id=self.server.name)
+		finally:
+			frappe.set_user("Administrator")
+
+		self.assertEqual(result, metrics)
 		self.assertEqual(get.call_args.args[0].atlas_vm_id, self.atlas_vm_id)
 		self.assertIsNone(get.call_args.args[2])
 
-	def test_stopped_server_returns_static_data_without_calling_atlas(self):
+	def test_stopped_server_has_no_metrics_and_skips_atlas(self):
 		self.server.db_set("status", "Stopped")
 		frappe.set_user(self.viewer)
 		try:
 			with patch("central.api.servers.get_cached_metrics") as get:
-				result = server_overview(team=self.team.name, resource_id=self.server.name)
+				result = server_metrics(team=self.team.name, resource_id=self.server.name)
 		finally:
 			frappe.set_user("Administrator")
 
-		self.assertFalse(result["monitoring"]["available"])
+		self.assertEqual(result, {"available": False})
 		get.assert_not_called()
 
 	def test_metrics_cache_avoids_a_second_atlas_request(self):
@@ -110,7 +119,7 @@ class TestServerOverview(IntegrationTestCase):
 		get_client.return_value.get_vm_metrics.assert_called_once()
 
 	def test_preset_period_runs_until_now(self):
-		start, end = get_metrics_window("7d", None, None)
+		start, end = _metrics_window("7d", None, None)
 
 		self.assertAlmostEqual(
 			(datetime.now(UTC) - start).total_seconds(), timedelta(days=7).total_seconds(), delta=60
@@ -118,7 +127,7 @@ class TestServerOverview(IntegrationTestCase):
 		self.assertIsNone(end)
 
 	def test_custom_window_reads_the_site_clock(self):
-		start, end = get_metrics_window("custom", "2026-10-08 10:00:00", "2026-10-08 11:00:00")
+		start, end = _metrics_window("custom", "2026-10-08 10:00:00", "2026-10-08 11:00:00")
 
 		timezone = ZoneInfo(get_system_timezone())
 		self.assertEqual(start, datetime(2026, 10, 8, 10, tzinfo=timezone))
@@ -133,10 +142,10 @@ class TestServerOverview(IntegrationTestCase):
 			("custom", "yesterday", "2026-10-08 00:00:00"),
 		]:
 			with self.subTest(period=period, start=start), self.assertRaises(frappe.ValidationError):
-				get_metrics_window(period, start, end)
+				_metrics_window(period, start, end)
 
 	def test_custom_window_is_sent_to_atlas(self):
-		start, end = get_metrics_window("custom", "2026-10-08 10:00:00", "2026-10-08 11:00:00")
+		start, end = _metrics_window("custom", "2026-10-08 10:00:00", "2026-10-08 11:00:00")
 		self.addCleanup(
 			frappe.cache.delete_value,
 			f"atlas:metrics:{self.server.name}:{int(start.timestamp())}:{int(end.timestamp())}",
@@ -159,7 +168,7 @@ class TestServerOverview(IntegrationTestCase):
 				patch("central.api.servers.get_cached_metrics") as get,
 				self.assertRaises(frappe.ValidationError),
 			):
-				server_overview(team=self.team.name, resource_id=self.server.name, period="1y")
+				server_metrics(team=self.team.name, resource_id=self.server.name, period="1y")
 		finally:
 			frappe.set_user("Administrator")
 
@@ -176,6 +185,15 @@ class TestServerOverview(IntegrationTestCase):
 
 		self.assertEqual(result, {"available": False})
 		log_error.assert_called_once()
+
+	def test_unknown_atlas_response_fails_loudly(self):
+		with (
+			patch("central.integrations.servers.get_client") as get_client,
+			self.assertRaises(KeyError),
+		):
+			get_client.return_value.get_vm_metrics.return_value = {"points": []}
+
+			get_cached_metrics(self.server, START)
 
 	def test_metric_points_turn_counters_into_rates(self):
 		# 2 vCPUs busy for half of 300 seconds is 300 million CPU microseconds.

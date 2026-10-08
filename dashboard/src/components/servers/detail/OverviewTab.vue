@@ -15,10 +15,16 @@ import {
 	METRIC_PERIODS,
 	type MetricChart,
 } from '@/lib/serverMetrics'
-import type { MetricsRange, ServerOverview } from '@/types/servers'
+import type {
+	MetricsRange,
+	ServerMonitoring,
+	ServerOverview,
+} from '@/types/servers'
 
 interface Props {
 	overview: ServerOverview
+	metrics: ServerMonitoring | null
+	metricsError: string
 }
 
 const props = defineProps<Props>()
@@ -28,7 +34,9 @@ const range = defineModel<MetricsRange>('range', { required: true })
 const emit = defineEmits<{ refresh: [] }>()
 
 const server = computed(() => props.overview.server)
-const monitoring = computed(() => props.overview.monitoring)
+const monitoring = computed(
+	() => props.metrics ?? { available: false, points: [] },
+)
 const points = computed(() => monitoring.value.points ?? [])
 
 const isCustom = computed(() => range.value.period === 'custom')
@@ -124,10 +132,12 @@ const transferredBytes = computed(
 )
 
 const usage = computed(() => {
-	const now = props.overview.monitoring.current
+	const now = points.value[points.value.length - 1]
 	if (!now) return []
 
 	const memoryTotal = (server.value.memory_megabytes ?? 0) * 1024 * 1024
+	const memory = Math.min(now.memory_bytes, memoryTotal)
+
 	const cpu = Math.round(now.cpu_percent ?? 0)
 
 	return [
@@ -142,9 +152,9 @@ const usage = computed(() => {
 		{
 			label: 'Memory',
 			icon: 'lucide-memory-stick',
-			used: formatBytes(now.memory_bytes),
+			used: formatBytes(memory),
 			limit: formatBytes(memoryTotal),
-			percent: Math.round(usagePercent(now.memory_bytes, memoryTotal)),
+			percent: Math.round(usagePercent(memory, memoryTotal)),
 			badge: null,
 		},
 		{
@@ -174,7 +184,30 @@ const usage = computed(() => {
 </script>
 
 <template>
-	<div v-if="monitoring.available" class="space-y-4">
+	<EmptyState
+		v-if="metricsError"
+		icon="lucide-cloud-off"
+		title="Usage couldn't load"
+		:description="metricsError"
+	>
+		<template #action>
+			<Button label="Retry" @click="emit('refresh')" />
+		</template>
+	</EmptyState>
+
+	<div
+		v-else-if="!metrics"
+		class="grid gap-3 md:grid-cols-2 md:gap-4 lg:grid-cols-4"
+		aria-busy="true"
+	>
+		<div
+			v-for="index in 4"
+			:key="index"
+			class="h-28 animate-pulse rounded-6 bg-surface-gray-1"
+		/>
+	</div>
+
+	<div v-else-if="monitoring.available" class="space-y-4">
 		<div
 			v-if="usage.length"
 			class="grid gap-3 md:grid-cols-2 md:gap-4 lg:grid-cols-4"

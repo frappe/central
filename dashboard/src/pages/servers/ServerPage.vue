@@ -91,8 +91,11 @@ const metricsRange = computed<MetricsRange>({
 
 const {
 	overview,
+	metrics,
+	metricsError,
 	error: overviewError,
 	reload: reloadOverview,
+	reloadMetrics,
 } = useServerOverview(resourceId, metricsRange)
 
 const details = computed(() =>
@@ -313,8 +316,10 @@ const terminate = async (
 				<OverviewTab
 					v-else-if="activeTab === 'overview'"
 					v-model:range="metricsRange"
-					@refresh="reloadOverview"
 					:overview="details"
+					:metrics="metrics"
+					:metrics-error="metricsError"
+					@refresh="reloadMetrics"
 					class="mt-4"
 				/>
 
