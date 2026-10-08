@@ -105,6 +105,19 @@ class TestRunway(IntegrationTestCase):
 		runway.ensure_image_serves(pool, "")
 		runway.ensure_image_serves(pool, None)
 
+	def test_the_lease_snapshot_reports_the_shape_a_job_was_given(self) -> None:
+		"""The resolved shape is recorded so cost can be explained without the label."""
+		from central.infrastructure.runway import lease_snapshot
+		lease = frappe._dict(
+			name="lease-shape", pool="pool", phase="running", repository="BreadGenie/frappe",
+			request_labels="runway-4vcpu-8gb", resolved_cpu_millicores=4000,
+			resolved_memory_mib=8192, resolved_disk_mib=14336, runner_name="r",
+		)
+		snap = lease_snapshot(lease)
+		self.assertEqual(snap["resolved_cpu_millicores"], 4000)
+		self.assertEqual(snap["resolved_memory_mib"], 8192)
+		self.assertEqual(snap["resolved_disk_mib"], 14336)
+
 	def test_a_shape_label_for_this_pool_is_accepted(self) -> None:
 		"""A pool is one machine class, and the label that names it is accepted."""
 		pool = SimpleNamespace(cpu_millicores=4000, memory_mib=8192, disk_mib=14336)
