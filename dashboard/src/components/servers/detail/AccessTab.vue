@@ -4,6 +4,7 @@ import { computed } from 'vue'
 import CopyButton from '@/components/common/CopyButton.vue'
 import SettingsSection from '@/components/common/SettingsSection.vue'
 import type { VirtualMachineRow } from '@/composables/useServers'
+import { openSettings } from '@/composables/useSettings'
 import type { ServerActions } from '@/lib/capabilities'
 import type { ServerOverview } from '@/types/servers'
 
@@ -24,6 +25,7 @@ const emit = defineEmits<{
 const isUbuntu = computed(() => props.server.image_offering === 'ubuntu')
 const isRunning = computed(() => props.server.status === 'Running')
 const sshCommand = computed(() => props.overview.server.ssh_command)
+const sshKeys = computed(() => props.overview.server.ssh_keys)
 
 const consoleNote = computed(() =>
 	isRunning.value
@@ -88,14 +90,27 @@ const consoleNote = computed(() =>
 			</p>
 		</SettingsSection>
 
-		<SettingsSection title="SSH keys">
+		<SettingsSection title="SSH Keys">
 			<template #actions>
-				<Button label="Manage keys" route="/servers/ssh-keys" />
+				<Button label="Manage keys" @click="openSettings('ssh-keys')" />
 			</template>
 
-			<p class="text-p-sm text-ink-gray-6">
-				Keys belong to the team and are added to a server when you create it.
-				Add or rotate them on the SSH keys page.
+			<ul v-if="sshKeys.length" class="divide-y divide-outline-gray-1">
+				<li
+					v-for="key in sshKeys"
+					:key="key.fingerprint"
+					class="space-y-1 py-2.5 first:pt-0 last:pb-0"
+				>
+					<p class="truncate text-base text-ink-gray-8">{{ key.title }}</p>
+					<p class="truncate font-mono text-sm text-ink-gray-5">
+						{{ key.fingerprint }}
+					</p>
+				</li>
+			</ul>
+
+			<p v-else class="text-p-sm text-ink-gray-5">
+				This server was created without a team key. Use the web console to sign
+				in.
 			</p>
 		</SettingsSection>
 	</div>

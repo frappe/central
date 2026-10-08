@@ -30,7 +30,7 @@ export function useTeamSSHKeys() {
 			if (current === generation) keys.value = rows
 		} catch (failure) {
 			if (current === generation)
-				error.value = getErrorMessage(failure, "SSH keys couldn't be loaded.")
+				error.value = getErrorMessage(failure, "SSH Keys couldn't be loaded.")
 		} finally {
 			if (current === generation) loading.value = false
 		}

@@ -3,6 +3,8 @@ from unittest.mock import patch
 from zoneinfo import ZoneInfo
 
 import frappe
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 from frappe.tests import IntegrationTestCase
 from frappe.utils import get_system_timezone
 
@@ -77,6 +79,29 @@ class TestServerOverview(IntegrationTestCase):
 		self.assertIsNone(result["server"]["plan_rate"])
 		self.assertEqual(result["server"]["plan_currency"], "INR")
 		self.assertNotIn("monitoring", result)
+
+	def test_overview_lists_the_keys_the_server_was_created_with(self):
+		with patch("central.infrastructure.doctype.team_ssh_key.team_ssh_key.TeamSSHKey.queue_sync"):
+			key = frappe.get_doc(
+				{
+					"doctype": "Team SSH Key",
+					"team": self.team.name,
+					"title": "Laptop",
+					"public_key": make_public_key(),
+				}
+			).insert()
+		self.server.append("ssh_keys", {"team_ssh_key": key.name})
+		self.server.save()
+		self.addCleanup(key.delete, ignore_permissions=True, force=True)
+		self.addCleanup(frappe.db.delete, "Server SSH Key", {"parent": self.server.name})
+
+		frappe.set_user(self.viewer)
+		try:
+			keys = server_overview(team=self.team.name, resource_id=self.server.name)["server"]["ssh_keys"]
+		finally:
+			frappe.set_user("Administrator")
+
+		self.assertEqual(keys, [{"title": "Laptop", "fingerprint": key.fingerprint}])
 
 	def test_viewer_gets_region_metrics(self):
 		metrics = {"available": True, "points": [], "sample_interval_seconds": 300}
@@ -230,3 +255,8 @@ def make_sample(timestamp: int, cpu_microseconds: int, received_bytes: int, up: 
 		},
 		"network": {"received_bytes": received_bytes, "sent_bytes": 0},
 	}
+
+
+def make_public_key() -> str:
+	public_key = Ed25519PrivateKey.generate().public_key()
+	return public_key.public_bytes(Encoding.OpenSSH, PublicFormat.OpenSSH).decode()
