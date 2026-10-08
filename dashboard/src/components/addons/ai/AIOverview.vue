@@ -108,7 +108,7 @@ const shownModels = computed(() =>
 							<Tooltip
 								:text="
 									prepaid
-										? `$${(balance?.unallocated ?? 0).toFixed(2)} not yet handed to any key's cap. Raise a key's cap on the API keys tab to spend it.`
+										? `$${(balance?.unallocated ?? 0).toFixed(2)} not yet handed to any key's spend limit. Raise a key's spend limit on the API keys tab to spend it.`
 										: 'This is a free team: usage is counted but never charged, so no balance is needed.'
 								"
 							>
@@ -160,8 +160,8 @@ const shownModels = computed(() =>
 						</Select>
 					</div>
 					<p class="mt-0.5 text-p-sm text-ink-gray-5">
-						What a key in this geography can call, what each model takes and
-						gives, and the APIs it answers on.
+						What a key in this geography can generally call, what each model
+						takes and gives, and the APIs it answers on.
 					</p>
 				</div>
 
