@@ -44,7 +44,7 @@ class Region(AtlasConnectionMixin, CargoConnectionMixin, Document):
 		last_synced_at: DF.Datetime | None
 		latitude: DF.Float
 		longitude: DF.Float
-		mail_service: DF.Link | None
+		frappemail_service: DF.Link | None
 		provider: DF.Literal[
 			"", "AWS", "Hetzner", "Frappe", "OCI", "DigitalOcean", "Scaleway", "Self-Managed", "Fake"
 		]

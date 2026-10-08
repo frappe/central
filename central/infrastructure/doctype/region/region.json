@@ -22,7 +22,7 @@
   "column_break_kufp",
   "atlas_region_id",
   "proxy_domain",
-  "mail_service",
+  "frappemail_service",
   "connection_section",
   "reachable",
   "connection_checked_at",
@@ -127,10 +127,10 @@
   },
   {
    "description": "Gives each new server in this region a mailbox from this service's pool, for Pilot and site mail. Leave blank to give servers no mailbox.",
-   "fieldname": "mail_service",
+   "fieldname": "frappemail_service",
    "fieldtype": "Link",
-   "label": "Mail Service",
-   "options": "Mail Service"
+   "label": "FrappeMail Service",
+   "options": "FrappeMail Service"
   },
   {
    "fieldname": "connection_section",

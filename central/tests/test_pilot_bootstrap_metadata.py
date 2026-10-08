@@ -80,7 +80,7 @@ class TestPilotBootstrapMetadata(TestCase):
 				"central.central.doctype.central_settings.central_settings.CentralSettings.get_common_site_config",
 				return_value=relay,
 			),
-			patch(f"{PILOT}.ServerMailbox.assign", return_value=mailbox),
+			patch(f"{PILOT}.UserMailAccount.assign", return_value=mailbox),
 		):
 			metadata = _create_payload(pilot_request())["metadata"]
 

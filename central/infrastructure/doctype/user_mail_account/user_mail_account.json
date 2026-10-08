@@ -8,7 +8,7 @@
  "engine": "InnoDB",
  "field_order": [
   "email",
-  "mail_service",
+  "frappemail_service",
   "status",
   "password",
   "assignment_section",
@@ -29,11 +29,11 @@
    "unique": 1
   },
   {
-   "fieldname": "mail_service",
+   "fieldname": "frappemail_service",
    "fieldtype": "Link",
    "in_standard_filter": 1,
-   "label": "Mail Service",
-   "options": "Mail Service",
+   "label": "FrappeMail Service",
+   "options": "FrappeMail Service",
    "read_only": 1,
    "reqd": 1,
    "search_index": 1
@@ -101,7 +101,7 @@
  "modified": "2026-10-08 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Infrastructure",
- "name": "Server Mailbox",
+ "name": "User Mail Account",
  "naming_rule": "By fieldname",
  "owner": "Administrator",
  "permissions": [
