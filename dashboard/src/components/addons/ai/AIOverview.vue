@@ -65,6 +65,18 @@ const shownModels = computed(() =>
 				</p>
 
 				<div class="mt-3 grid grid-cols-2 gap-4 md:grid-cols-4">
+					<NumberCard
+						title="Balance"
+						:value="balance?.balance ?? null"
+						prefix="$"
+						:precision="usdPrecision(balance?.balance ?? 0)"
+					/>
+					<NumberCard
+						title="Spent"
+						:value="usage?.cost ?? null"
+						prefix="$"
+						:precision="usdPrecision(usage?.cost ?? 0)"
+					/>
 					<NumberCard title="Requests" :value="usage?.requests ?? null" />
 					<NumberCard title="Tokens" :value="usage?.tokens ?? null">
 						<template #actions>
@@ -78,18 +90,6 @@ const shownModels = computed(() =>
 							</Tooltip>
 						</template>
 					</NumberCard>
-					<NumberCard
-						title="Spent"
-						:value="usage?.cost ?? null"
-						prefix="$"
-						:precision="usdPrecision(usage?.cost ?? 0)"
-					/>
-					<NumberCard
-						title="Balance"
-						:value="balance?.balance ?? null"
-						prefix="$"
-						:precision="usdPrecision(balance?.balance ?? 0)"
-					/>
 				</div>
 
 				<h2
