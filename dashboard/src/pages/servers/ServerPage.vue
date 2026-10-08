@@ -282,7 +282,7 @@ const terminate = async (
 					v-else-if="activeTab === 'settings'"
 					:server="server"
 					:actions="actions"
-					class="mt-4"
+					class="mt-6"
 					@resize="resizing = true"
 					@terminate="pendingTerminate = server"
 				/>
@@ -322,7 +322,7 @@ const terminate = async (
 					v-else-if="activeTab === 'networking'"
 					:server="server"
 					:overview="details"
-					class="mt-4"
+					class="mt-6"
 				/>
 
 				<AccessTab
@@ -331,7 +331,7 @@ const terminate = async (
 					:overview="details"
 					:actions="actions"
 					:opening="isOpening"
-					class="mt-4"
+					class="mt-6"
 					@console="openConsole(server)"
 					@open="open"
 				/>

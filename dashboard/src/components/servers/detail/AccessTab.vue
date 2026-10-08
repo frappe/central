@@ -50,7 +50,9 @@ const consoleNote = computed(() =>
 
 		<SettingsSection title="SSH">
 			<template v-if="sshCommand">
-				<div class="flex items-center gap-3">
+				<div
+					class="flex items-center justify-between gap-3 rounded-4 bg-surface-gray-2 py-1 pl-3 pr-1"
+				>
 					<code class="min-w-0 truncate font-mono text-sm text-ink-gray-8">
 						{{ sshCommand }}
 					</code>
