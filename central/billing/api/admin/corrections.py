@@ -38,3 +38,14 @@ def retry_failed_refunds(invoice: str) -> dict:
 	from central.billing.payments.corrections import retry_failed_refunds as retry
 
 	return {"invoice": invoice, "retried": retry(invoice)}
+
+
+@frappe.whitelist(methods=["POST"])
+def refund_part(invoice: str, amount: float, destination: str, reason: str) -> dict:
+	"""Give back part of a paid invoice, to the wallet or to the card or UPI that paid it."""
+	authz.require_operator()
+	from central.billing.payments.corrections import refund_part as refund
+
+	if not (reason or "").strip():
+		frappe.throw(_("Give a reason for the refund."), frappe.ValidationError)
+	return refund(invoice, amount, reason.strip(), destination=destination)

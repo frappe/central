@@ -5,8 +5,7 @@
 An opened dispute is noted on the invoice for a person to answer. A lost dispute
 over the whole charge cancels the invoice: a credit note, the wallet part given
 back, and no refund, because the gateway has already taken the money back. A lost
-dispute over part of a charge is left to a person, since it needs a credit note
-for that part only.
+dispute over part of a charge gets a credit note for that part only.
 """
 
 import frappe
@@ -36,16 +35,17 @@ def apply_dispute(event, payload: dict) -> dict:
 		return {"handled": True, "result": dispute.get("status")}
 	if invoice.status != "Paid":
 		return {"handled": True, "result": "already_settled", "invoice_status": invoice.status}
-	if amount + 0.005 < frappe.utils.flt(attempt.amount):
-		_note(invoice, f"Card dispute {dispute.get('id')} lost for part of the charge: {amount}.")
-		frappe.log_error(
-			title=f"Partial dispute lost: {invoice.name}",
-			message=f"Dispute {dispute.get('id')} took back {amount} of {attempt.amount}. "
-			"Issue a credit note for that part by hand.",
-		)
-		return {"handled": True, "result": "partial_for_a_person"}
-
 	from central.billing.payments import corrections
+
+	if amount + 0.005 < frappe.utils.flt(attempt.amount):
+		# Part of the charge: a credit note for that part, and nothing refunded.
+		corrections.refund_part(
+			invoice.name,
+			amount,
+			f"Card dispute lost for part of the charge ({reason})",
+			dispute={"id": dispute.get("id"), "payment_intent": dispute.get("payment_intent")},
+		)
+		return {"handled": True, "result": "partly_refunded", "invoice": invoice.name}
 
 	corrections.cancel_and_refund(
 		invoice.name,

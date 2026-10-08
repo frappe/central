@@ -15,10 +15,14 @@
   "amount",
   "currency",
   "destination",
+  "partial",
+  "net_amount",
+  "tax_amount",
   "section_break_result",
   "status",
   "attempts",
   "gateway_refund_id",
+  "credit_note_id",
   "payment_record_id",
   "advance_id",
   "promotional_record_id",
@@ -75,6 +79,30 @@
    "description": "Source: back to the card or UPI. Wallet: back to the wallet. Dispute: lost to a chargeback, nothing is sent."
   },
   {
+   "default": "0",
+   "description": "Gives back part of the invoice, which stays Paid. A full cancellation is not partial.",
+   "fieldname": "partial",
+   "fieldtype": "Check",
+   "label": "Partial",
+   "read_only": 1
+  },
+  {
+   "description": "The part of the amount before GST.",
+   "fieldname": "net_amount",
+   "fieldtype": "Currency",
+   "label": "Net Amount",
+   "options": "currency",
+   "read_only": 1
+  },
+  {
+   "description": "The GST in the amount.",
+   "fieldname": "tax_amount",
+   "fieldtype": "Currency",
+   "label": "GST",
+   "options": "currency",
+   "read_only": 1
+  },
+  {
    "fieldname": "section_break_result",
    "fieldtype": "Section Break"
   },
@@ -99,6 +127,13 @@
    "fieldtype": "Data",
    "label": "Gateway Refund ID",
    "description": "Set for source refunds; blank for wallet credits"
+  },
+  {
+   "description": "For a partial refund: its own credit note in the accounting system.",
+   "fieldname": "credit_note_id",
+   "fieldtype": "Data",
+   "label": "Credit Note ID",
+   "read_only": 1
   },
   {
    "description": "The refund or dispute payment in the accounting system.",
@@ -147,7 +182,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-10-01 14:00:00.000000",
+ "modified": "2026-10-08 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Refund",

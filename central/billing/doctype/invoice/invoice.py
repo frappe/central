@@ -42,6 +42,11 @@ class Invoice(Document):
 			"failed_refunds",
 			frappe.db.count("Refund", {"invoice": self.name, "status": "Failed", "destination": "Source"}),
 		)
+		if self.status == "Paid":
+			from central.billing.payments.corrections import card_refundable, refundable
+
+			self.set_onload("refundable", refundable(self))
+			self.set_onload("card_refundable", card_refundable(self.name))
 
 	def validate(self):
 		self.set_period_key()
