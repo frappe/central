@@ -34,20 +34,40 @@ def check_subdomain(subdomain: str, team: str | None = None) -> dict:
 
 
 @frappe.whitelist(methods=["POST"])
-def create_trial_team() -> dict:
-	"""Give a caller with no team a team before the trial funnel asks for a site name."""
+def create_trial_team(
+	utm_source: str | None = None,
+	utm_medium: str | None = None,
+	utm_campaign: str | None = None,
+	referrer: str | None = None,
+	product: str | None = None,
+) -> dict:
+	"""Give a caller with no team a team before the trial funnel asks for a site name. The
+	browser sends how the signup first arrived, which the new team keeps."""
 	from central.site_provisioning import create_trial_team as create
 
-	return {"team": create(frappe.session.user)}
+	attribution = {
+		"utm_source": utm_source,
+		"utm_medium": utm_medium,
+		"utm_campaign": utm_campaign,
+		"referrer": referrer,
+		"product": product,
+	}
+	return {"team": create(frappe.session.user, attribution)}
 
 
 @frappe.whitelist(methods=["POST"])
 @handle_resource_operation
-def create_trial_site(subdomain: str, request_key: str, team: str | None = None) -> dict:
-	"""Start a trial site under a name the customer chose. Gated on `server:create`."""
+def create_trial_site(
+	subdomain: str,
+	request_key: str,
+	team: str | None = None,
+	product: str | None = None,
+) -> dict:
+	"""Start a trial site under a name the customer chose, with the product's app when one is
+	named. Gated on `server:create`."""
 	from central.site_provisioning import create_trial_site as start
 
-	return start(team, subdomain, request_key)
+	return start(team, subdomain, request_key, product)
 
 
 @frappe.whitelist(methods=["POST"])
@@ -140,7 +160,7 @@ def site_state(site: Site, with_login: bool = True) -> dict:
 	login_pending = False
 	if ready and with_login:
 		try:
-			login_url = site.get_login_url()
+			login_url = site.get_login_url(frappe.session.user)
 		except PilotLoginPending:
 			login_pending = True
 

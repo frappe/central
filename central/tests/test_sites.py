@@ -111,6 +111,25 @@ class TestSiteMirror(SiteOnAMachine):
 		self.assertEqual(self.server.reload().gateway_url, "https://admin-vm-1z141z4.par-2.example.test")
 		self.assertEqual(self.site().url, "https://site-1z141z4.par-2.example.test")
 
+	def test_the_site_is_for_the_product_its_trial_request_named(self):
+		frappe.get_doc(
+			{"doctype": "Product", "product_key": "raven-site", "title": "Raven", "signup_app": "raven"}
+		).insert()
+		ResourceAction.queue(
+			"create",
+			self.team.name,
+			self.region.name,
+			self.server.name,
+			server=self.server.name,
+			resource_type="Site",
+			request_key="request-" + frappe.generate_hash(length=8),
+			request_payload={"image_tags": {"purpose": "pilot"}, "site": {"product": "raven-site"}},
+		)
+		self.enroll()
+		observe_server(self.server)
+
+		self.assertEqual(self.site().product, "raven-site")
+
 	def test_a_machine_with_no_enrolled_pilot_has_no_site(self):
 		observe_server(self.server)
 
@@ -250,6 +269,28 @@ class TestSiteRoutes(SiteOnAMachine):
 		self.assertEqual(login.call_args.args[2], "site.local")
 		self.assertEqual(state["login_url"], "https://site-1z141z4.par-2.example.test/desk?sid=abc")
 
+	def test_a_product_site_lands_on_the_products_page(self):
+		product = frappe.get_doc(
+			{
+				"doctype": "Product",
+				"product_key": "raven",
+				"title": "Raven",
+				"signup_app": "raven",
+				"landing_route": "/raven",
+			}
+		).insert(ignore_if_duplicate=True)
+		self.site().db_set("product", product.name)
+		with (
+			patch("central.api.sites.is_site_reachable", return_value=True),
+			patch(
+				"central.integrations.pilot.fetch_site_login_url",
+				return_value="https://site.local/desk?sid=abc",
+			),
+		):
+			state = login_site(self.site().name)
+
+		self.assertEqual(state["login_url"], "https://site-1z141z4.par-2.example.test/raven?sid=abc")
+
 	def test_a_site_is_ready_before_the_machine_reports_running(self):
 		"""The mirrored status still says Provisioning: only the site's own answer gates readiness."""
 		self.server.db_set("status", "Provisioning")
@@ -381,6 +422,19 @@ class TestSiteHandoff(IntegrationTestCase):
 		):
 			fetch_site_login_url("https://pilot.example.test", "pilot-1", "site.local")
 
+	def test_a_login_token_names_the_user_or_administrator(self):
+		from central.sso import mint_site_login
+
+		with patch("central.sso._mint") as mint:
+			mint_site_login("pilot-1", "site.local", "asha@example.test", "Asha Rao")
+			mint_site_login("pilot-1", "site.local")
+
+		self.assertEqual(
+			mint.call_args_list[0].args[3],
+			{"sub": "asha@example.test", "site": "site.local", "name": "Asha Rao"},
+		)
+		self.assertEqual(mint.call_args_list[1].args[3], {"sub": "admin", "site": "site.local"})
+
 	def test_a_minted_session_moves_onto_the_public_address(self):
 		self.assertEqual(
 			on_host("http://site.local/desk?sid=abc", "site-1z1.par-2.example.test"),
@@ -442,15 +496,17 @@ class TestTrialImage(IntegrationTestCase):
 	"""A trial is the site the image carries, so the region is asked for that image alone."""
 
 	def images(self, count: int) -> dict:
-		return {"items": [{"id": f"image-{index}", "created_at": index} for index in range(count)]}
+		return {
+			"items": [{"id": f"image-{index}", "created_at": index, "tags": {}} for index in range(count)]
+		}
 
-	def resolve(self, page: dict) -> tuple[dict, dict]:
+	def resolve(self, page: dict, signup_app: str | None = None) -> tuple[dict, dict]:
 		with (
 			patch("central.site_provisioning.signup_offering", return_value="pilot"),
 			patch("central.site_provisioning.trial_region_and_plan", return_value=("par-2", "plan-trial")),
 			patch("central.site_provisioning.list_images", return_value=page) as list_images,
 		):
-			return trial_configuration("any-team"), list_images.call_args.kwargs
+			return trial_configuration("any-team", signup_app), list_images.call_args.kwargs
 
 	def test_the_region_is_asked_for_a_site_image_on_the_signup_version(self):
 		"""The tags ride the regional query, so a page of other images cannot hide a match."""
@@ -462,6 +518,29 @@ class TestTrialImage(IntegrationTestCase):
 		configuration, _ = self.resolve(self.images(3))
 
 		self.assertEqual(configuration["image_id"], "image-2")
+
+	def test_an_image_with_a_signup_app_is_never_chosen(self):
+		"""The newest build can be one with an app on its site, which a trial must not get."""
+		page = self.images(2)
+		page["items"].append({"id": "image-erpnext", "created_at": 5, "tags": {"app": "erpnext"}})
+
+		configuration, _ = self.resolve(page)
+
+		self.assertEqual(configuration["image_id"], "image-1")
+
+	def test_a_product_trial_asks_the_region_for_its_app(self):
+		page = {"items": [{"id": "image-raven", "created_at": 1, "tags": {"app": "raven"}}]}
+
+		configuration, asked = self.resolve(page, signup_app="raven")
+
+		self.assertEqual(asked["extra_tags"], {"has_site": "1", "frappe_version": "develop", "app": "raven"})
+		self.assertEqual(configuration["image_id"], "image-raven")
+
+	def test_a_region_with_only_app_images_stops_the_trial(self):
+		page = {"items": [{"id": "image-crm", "created_at": 1, "tags": {"app": "crm"}}]}
+
+		with self.assertRaises(frappe.ValidationError):
+			self.resolve(page)
 
 	def test_a_region_that_offers_none_stops_the_trial(self):
 		with self.assertRaises(frappe.ValidationError):
@@ -477,6 +556,18 @@ class TestSiteNaming(SiteOnAMachine):
 		observe_server(self.server)
 		self.site().db_set("subdomain", "acme")
 
+	def test_a_renamed_site_signs_in_under_its_new_name(self):
+		site = self.site()
+		site.db_set("rename_task", "task-2")
+
+		with patch(
+			"central.integrations.pilot.fetch_site_login_url",
+			side_effect=[None, "https://site.local/desk?sid=abc"],
+		) as login:
+			self.assertTrue(site.get_login_url())
+
+		self.assertEqual([call.args[2] for call in login.call_args_list], [site.rename_target, "site.local"])
+
 	def test_the_address_stays_ours_and_theirs_is_only_a_rename_target(self):
 		site = self.site()
 
@@ -488,7 +579,9 @@ class TestSiteNaming(SiteOnAMachine):
 			self.site().apply_subdomain()
 			self.site().apply_subdomain()
 
-		rename.assert_called_once_with(self.server.name, "site.local", "acme.par-2.example.test")
+		rename.assert_called_once_with(
+			self.server.name, "site.local", "acme.par-2.example.test", make_primary=True
+		)
 		self.assertEqual(self.site().rename_task, "task-1")
 
 	def test_a_site_nobody_named_is_never_renamed(self):
@@ -644,3 +737,62 @@ class TestTrialCreationIsQueued(IntegrationTestCase):
 				).insert(ignore_permissions=True)
 
 		self.assertEqual(enqueue.call_count, 2)
+
+
+class TestTrialFunnelEvents(SiteOnAMachine):
+	"""A trial's create request sends its funnel step once, with the product it named."""
+
+	def queue(self, resource_type: str):
+		return ResourceAction.queue(
+			"create",
+			self.team.name,
+			self.region.name,
+			self.server.name,
+			resource_type=resource_type,
+			request_key="request-" + frappe.generate_hash(length=8),
+			request_payload={"image_tags": {"purpose": "pilot"}, "site": {"product": "raven"}},
+		)
+
+	def test_a_trial_request_is_sent_once_with_its_product(self):
+		with patch("frappe.utils.telemetry.capture") as capture:
+			self.queue("Site")
+
+		capture.assert_called_once()
+		self.assertEqual(capture.call_args.args[0], "trial_requested")
+		self.assertEqual(capture.call_args.kwargs["properties"]["product"], "raven")
+
+	def test_a_server_request_sends_no_trial_event(self):
+		with patch("frappe.utils.telemetry.capture") as capture:
+			self.queue("Server")
+
+		capture.assert_not_called()
+
+
+class TestTrialSignIn(SiteOnAMachine):
+	"""A member of the team signs in to their trial site as themselves."""
+
+	def setUp(self):
+		super().setUp()
+		ResourceAction.queue(
+			"create",
+			self.team.name,
+			self.region.name,
+			self.server.name,
+			server=self.server.name,
+			resource_type="Site",
+			request_key="request-" + frappe.generate_hash(length=8),
+			request_payload={"image_tags": {"purpose": "pilot"}, "site": {"product": None}},
+		)
+		self.enroll()
+		observe_server(self.server)
+
+	def test_a_team_member_signs_in_as_themselves_and_an_outsider_as_administrator(self):
+		site = self.site()
+
+		self.assertEqual(site.get_login_user("Administrator")[0], "Administrator")
+		self.assertEqual(site.get_login_user("outsider@example.test"), (None, None))
+
+	def test_a_site_that_is_not_a_trial_keeps_administrator(self):
+		frappe.db.delete("Resource Action", {"server": self.server.name})
+
+		self.assertEqual(self.site().get_login_user("Administrator"), (None, None))

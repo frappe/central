@@ -3,14 +3,17 @@ import { Button, ErrorMessage } from 'frappe-ui'
 import { ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AuthShell from '@/components/auth/AuthShell.vue'
+import ProductLogo from '@/components/auth/ProductLogo.vue'
 import ValidatedFormControl from '@/components/common/formComponents/ValidatedFormControl.vue'
 import { useEmailSignIn } from '@/composables/useEmailSignIn'
+import { useProduct } from '@/composables/useProduct'
 import { emailError, frappeErrorMessage, queryString } from '@/lib/auth'
 import { carriedQuery } from '@/lib/authRedirect'
 
 const route = useRoute()
 const router = useRouter()
 const { sendCode } = useEmailSignIn()
+const { product } = useProduct()
 
 const email = ref(queryString(route.query.email))
 const submitted = ref(false)
@@ -39,9 +42,13 @@ async function submit() {
 
 <template>
 	<AuthShell>
-		<h1 class="text-xl font-semibold text-ink-gray-9">
+		<h1 class="flex items-center gap-2 text-xl font-semibold text-ink-gray-9">
+			<ProductLogo />
 			Sign in to Frappe Cloud
 		</h1>
+		<p v-if="product?.subtitle" class="mt-1 text-p-base text-ink-gray-5">
+			{{ product.subtitle }}
+		</p>
 
 		<form class="mt-6 space-y-4" novalidate @submit.prevent="submit">
 			<ValidatedFormControl

@@ -30,30 +30,33 @@ class Team(Document):
 		from frappe.types import DF
 
 		from central.identity.doctype.team_member.team_member import TeamMember
-		from central.identity.doctype.team_onboarding_step.team_onboarding_step import (
-			TeamOnboardingStep,
-		)
+		from central.identity.doctype.team_onboarding_step.team_onboarding_step import TeamOnboardingStep
 
 		is_staging_trial: DF.Check
+		landing_product: DF.Link | None
 		members: DF.Table[TeamMember]
 		naming_series: DF.Literal["TEAM-.#####"]
 		onboarding_steps: DF.Table[TeamOnboardingStep]
 		owner_user: DF.Link
+		referrer: DF.SmallText | None
 		status: DF.Literal["Active", "Suspended"]
 		team_logo: DF.AttachImage | None
 		team_name: DF.Data
 		tenant_id: DF.Int
+		utm_campaign: DF.Data | None
+		utm_medium: DF.Data | None
+		utm_source: DF.Data | None
 	# end: auto-generated types
 
 	@classmethod
-	def create_for_current_user(cls, team_name: str) -> "Team":
-		"""Create a team the signed-in user owns.
+	def create_for_current_user(cls, team_name: str, attribution: dict | None = None) -> "Team":
+		"""Create a team the signed-in user owns, with the signup's first-touch attribution.
 
 		Only the user's first team gets billing provisioned when it is created. A later
 		team gets its billing when its owner completes the billing profile. Welcome
 		credits are granted once per owner, in grant_welcome_credits."""
 		is_first_team = not frappe.db.exists("Team", {"owner_user": frappe.session.user})
-		team = frappe.get_doc({"doctype": "Team", "team_name": team_name}).insert()
+		team = frappe.get_doc({"doctype": "Team", "team_name": team_name, **(attribution or {})}).insert()
 		if is_first_team:
 			team.provision_billing()
 		return team

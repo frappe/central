@@ -108,19 +108,29 @@ class PilotMonitoringClient:
 		return payload
 
 
-def fetch_site_login_url(gateway_url: str, audience_id: str, site: str) -> str | None:
+def fetch_site_login_url(
+	gateway_url: str,
+	audience_id: str,
+	site: str,
+	user: str | None = None,
+	full_name: str | None = None,
+) -> str | None:
 	"""Relay a Central-signed site assertion to the bench's login endpoint and return the desk
-	URL it mints (a fresh local session). A 401 is retryable while Pilot finishes starting. Other
-	failures return None and are logged so a consistently-failing bench or Central is diagnosable."""
+	URL it mints (a fresh local session) for `user`, or Administrator. A 401 is retryable while
+	Pilot finishes starting. A 404 means the bench has no site by that name. Other failures
+	return None and are logged so a consistently-failing bench or Central is diagnosable."""
 	try:
+		token = mint_site_login(audience_id, site, user, full_name)
 		response = requests.post(
 			f"{_gateway_url(gateway_url)}/api/v1/sites/{site}/login",
-			headers={"Authorization": f"Bearer {mint_site_login(audience_id, site)}"},
+			headers={"Authorization": f"Bearer {token}"},
 			timeout=SITE_LOGIN_TIMEOUT_SECONDS,
 			allow_redirects=False,
 		)
 		if response.status_code == 401:
 			raise PilotLoginPending
+		if response.status_code == 404:
+			return None
 		response.raise_for_status()
 		payload = response.json()
 		url = payload.get("url") if isinstance(payload, dict) else None
@@ -166,11 +176,17 @@ def rename_admin_domain(server: str, base_url: str | None = None, tls: bool = Tr
 
 
 def rename_site(
-	server: str, site: str, new_name: str, keep_old_hostname: bool = True, base_url: str | None = None
+	server: str,
+	site: str,
+	new_name: str,
+	keep_old_hostname: bool = True,
+	make_primary: bool = False,
+	base_url: str | None = None,
 ) -> dict:
-	"""Ask a server's pilot to rename one of its sites. Pilot queues the rename as a task."""
+	"""Ask a server's pilot to rename one of its sites. Pilot queues the rename as a task.
+	`make_primary` makes the new name the site's `host_name`, so its links use it."""
 	base_url = base_url or _expected_gateway_url(frappe.get_doc("Virtual Machine", server))
-	payload = {"new_name": new_name, "keep_old_hostname": keep_old_hostname}
+	payload = {"new_name": new_name, "keep_old_hostname": keep_old_hostname, "make_primary": make_primary}
 	return _post_to_pilot(server, base_url, f"/api/v1/sites/{quote(site, safe='')}/actions/rename", payload)
 
 

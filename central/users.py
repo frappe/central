@@ -3,16 +3,19 @@ from __future__ import annotations
 import frappe
 from frappe import _
 from frappe.utils import cint, escape_html, random_string, today
+from frappe.utils.telemetry import capture
 
+from central.geo import warm_country_cache
 from central.identity.email_code import EmailCode
 
 CENTRAL_USER_ROLE = "Central User"
 
 
-def send_sign_in_code(email: str, full_name: str | None = None) -> None:
+def send_sign_in_code(email: str, full_name: str | None = None, product: str | None = None) -> None:
 	"""Email a code to any address. A new address gets an account when the code is verified.
 
-	A disabled account gets a notice instead of a code, so the caller cannot tell it apart."""
+	A disabled account gets a notice instead of a code, so the caller cannot tell it apart.
+	`product` only labels the signup funnel event."""
 	user = _find_user(email)
 	if user and not user.enabled:
 		_send_disabled_notice(email)
@@ -22,9 +25,13 @@ def send_sign_in_code(email: str, full_name: str | None = None) -> None:
 		EmailCode(email).send(
 			_("{0} is your Frappe Cloud signup code"), _("Create your Frappe Cloud account"), full_name
 		)
+		capture("signup_code_sent", "central", user=email, properties={"product": product})
+		warm_country_cache()
 
 
-def sign_in_with_code(email: str, code: str, full_name: str | None = None) -> dict:
+def sign_in_with_code(
+	email: str, code: str, full_name: str | None = None, product: str | None = None
+) -> dict:
 	"""Sign in with a verified code, creating the account for a new address.
 
 	A new address needs a name. Without one the code stays valid, so the person can add it."""
@@ -44,6 +51,7 @@ def sign_in_with_code(email: str, code: str, full_name: str | None = None) -> di
 
 	frappe.local.login_manager.login_as(name)
 	if not user:
+		capture("signup_verified", "central", user=name, properties={"product": product})
 		for invitation in get_pending_invitations(name):
 			frappe.get_doc("Team Invitation", invitation).accept()
 	return {"user": name}

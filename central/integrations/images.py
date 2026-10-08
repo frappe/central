@@ -49,13 +49,15 @@ def list_images(
 	return client.list_system_images({**document.get_image_tags(), **(extra_tags or {})}, offset)
 
 
-def preview_images(offering: str, region: str, offset: int = 0) -> dict:
+def preview_images(
+	offering: str, region: str, offset: int = 0, extra_tags: dict[str, str] | None = None
+) -> dict:
 	"""Check an operator's saved selector without creating a regional resource."""
 	instance = frappe.get_doc("Region", region)
 	client = AtlasClient.for_operator(instance)
 	document = frappe.get_doc("Image Offering", offering)
 	document.check_permission("write")
-	return client.list_system_images(document.get_image_tags(), offset)
+	return client.list_system_images({**document.get_image_tags(), **(extra_tags or {})}, offset)
 
 
 def validate_catalog_access(team: str, flow: str) -> None:

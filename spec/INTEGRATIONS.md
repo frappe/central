@@ -97,6 +97,22 @@ Central builds the automatic management address itself. The regional proxy decod
 
 See [Resource Action](../central/infrastructure/doctype/resource_action/SPEC.md) for states, authorization, recovery, accepted quotes, and customer responses.
 
+## How does a site prove its team to an outside service?
+
+An app on a site, such as Raven, asks Central for a token through Pilot's Central proxy: `central.api.pilot.get_team_identity_token(audience)`. Pilot's credential names the team, so a site cannot get a token for another team.
+
+`get_team_identity_token` returns a token that Central signs with its Pilot key. The token is valid for 5 minutes. Central stores no account and no secret for the outside service.
+
+| Claim | Value |
+|---|---|
+| `iss` | Central's issuer URL |
+| `aud` | The service URL that the site gave as `audience` |
+| `sub` | The team, such as `TEAM-00042` |
+| `team_name` | The team's name |
+| `scope` | `team-identity` |
+
+The service gets Central's public keys from `central.api.jwks.get_jwks` and verifies the signature, `iss`, `aud`, `exp` and `scope`. Then the service decides what access the team gets, for example a team account and its API keys. The Pilot credential names the team, so a site cannot get a token for another team. A Pilot refuses a `team-identity` token as a login token.
+
 ## How does the trial flow work?
 
 1. Authenticate the customer and resolve the Team.

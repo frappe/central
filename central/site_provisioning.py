@@ -10,18 +10,29 @@ from central.iam import get_user_team_names, resolve_team
 from central.identity.doctype.team.team import Team
 from central.integrations.images import list_images
 from central.resource_actions import submit_request
+from central.server_models import SiteCreation
+from central.signups.doctype.product.product import get_signup_product
 
 SIGNUP_FLOW = "Signup"
 # A trial is a site the image already carries, on the Frappe version a signup runs. The
 # region tags what an image holds, and it matches a tag exactly, so an image that carries
 # no tag is never taken for a yes.
 SIGNUP_IMAGE_TAGS = {"has_site": "1", "frappe_version": "develop"}
+# Cargo tags an image with the signup app installed on its site. A product trial asks for
+# its app. A plain trial starts on the bare site, and the region cannot filter on a missing
+# tag, so Central drops tagged images itself.
+SIGNUP_APP_TAG = "app"
 # One DNS label: what a customer may name a site, and all the proxy will route.
 SUBDOMAIN_PATTERN = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?")
 RESERVED_SUBDOMAINS = frozenset({"admin", "atlas", "cargo", "proxy", "site", "www"})
 
 
-def create_trial_site(team: str | None, subdomain: str, request_key: str) -> dict:
+def create_trial_site(
+	team: str | None,
+	subdomain: str,
+	request_key: str,
+	product: str | None = None,
+) -> dict:
 	"""Start the machine a new customer's trial site lives on, under the name they chose.
 
 	The image already carries a built site, so the only work is to start the machine.
@@ -33,19 +44,22 @@ def create_trial_site(team: str | None, subdomain: str, request_key: str) -> dic
 	return to the same action while Central finishes or recovers the operation."""
 
 	team = resolve_team(frappe.session.user, team)
+	signup_app = get_signup_product(product).signup_app if product else None
 	subdomain = validated_subdomain(subdomain)
-	configuration = trial_configuration(team)
+	configuration = trial_configuration(team, signup_app)
+	site = SiteCreation(product=product or None)
 	return submit_request(
 		team=team,
 		request_key=request_key,
 		title=subdomain,
 		resource_type="Site",
 		subdomain=subdomain,
+		site=site,
 		**configuration,
 	)
 
 
-def create_trial_team(user: str) -> str | None:
+def create_trial_team(user: str, attribution: dict | None = None) -> str | None:
 	"""Create the first team of a user who starts the trial funnel with none.
 
 	The funnel cannot ask for a team name, so the team is named after the user. A
@@ -54,7 +68,30 @@ def create_trial_team(user: str) -> str | None:
 		return None
 
 	full_name = frappe.db.get_value("User", user, "full_name") or user
-	return Team.create_for_current_user(_("{0}'s Team").format(full_name)).name
+	team_name = _("{0}'s Team").format(full_name)
+	return Team.create_for_current_user(team_name, first_touch(**(attribution or {}))).name
+
+
+def first_touch(
+	utm_source: str | None = None,
+	utm_medium: str | None = None,
+	utm_campaign: str | None = None,
+	referrer: str | None = None,
+	product: str | None = None,
+) -> dict:
+	"""How the signup first found us, trimmed to fit the team. It only labels the team,
+	so a bad value is dropped instead of refusing the signup."""
+	return {
+		"utm_source": _clip(utm_source, 140),
+		"utm_medium": _clip(utm_medium, 140),
+		"utm_campaign": _clip(utm_campaign, 140),
+		"referrer": _clip(referrer, 1000),
+		"landing_product": product if product and frappe.db.exists("Product", product) else None,
+	}
+
+
+def _clip(value: str | None, length: int) -> str | None:
+	return (value.strip()[:length] or None) if isinstance(value, str) else None
 
 
 def validated_subdomain(subdomain: str) -> str:
@@ -108,7 +145,7 @@ def trial_regions() -> list[str]:
 	)
 
 
-def trial_configuration(team: str) -> dict:
+def trial_configuration(team: str, signup_app: str | None = None) -> dict:
 	"""The one region, image and plan a trial site starts on.
 
 	The plan should hold the shape the Pilot image was baked at. A region restores a
@@ -116,12 +153,27 @@ def trial_configuration(team: str) -> dict:
 	that misses the shape cold-boots instead."""
 	offering = signup_offering()
 	region, plan = trial_region_and_plan(team)
-	images = list_images(team, region, offering, SIGNUP_FLOW, extra_tags=SIGNUP_IMAGE_TAGS)["items"]
+	images = trial_images(team, region, offering, signup_app)
 	if not images:
 		frappe.throw(_("No trial image is available right now. Please try again shortly."))
 
 	newest = max(images, key=lambda image: image["created_at"])
 	return {"region": region, "offering": offering, "image_id": newest["id"], "plan": plan}
+
+
+def trial_images(team: str, region: str, offering: str, signup_app: str | None) -> list[dict]:
+	"""The region's trial images with the signup app installed, or with no app at all."""
+	if signup_app:
+		tags = product_image_tags(signup_app)
+		return list_images(team, region, offering, SIGNUP_FLOW, extra_tags=tags)["items"]
+
+	images = list_images(team, region, offering, SIGNUP_FLOW, extra_tags=SIGNUP_IMAGE_TAGS)["items"]
+	return [image for image in images if SIGNUP_APP_TAG not in image["tags"]]
+
+
+def product_image_tags(signup_app: str) -> dict[str, str]:
+	"""The tags of a trial image that has the product's app installed."""
+	return {**SIGNUP_IMAGE_TAGS, SIGNUP_APP_TAG: signup_app}
 
 
 def signup_offering() -> str:

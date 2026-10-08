@@ -1,14 +1,14 @@
 {
  "actions": [],
- "allow_rename": 0,
  "autoname": "field:site_name",
- "creation": "2026-06-25 00:00:00.000000",
+ "creation": "2026-06-25 00:00:00",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
   "site_name",
   "subdomain",
   "team",
+  "product",
   "server",
   "ready_at",
   "claimed_at",
@@ -96,6 +96,15 @@
    "label": "Rename Error Log",
    "options": "Error Log",
    "read_only": 1
+  },
+  {
+   "description": "The product the customer signed up for. Empty for a plain trial.",
+   "fieldname": "product",
+   "fieldtype": "Link",
+   "in_standard_filter": 1,
+   "label": "Product",
+   "options": "Product",
+   "read_only": 1
   }
  ],
  "links": [
@@ -105,7 +114,7 @@
    "link_fieldname": "site"
   }
  ],
- "modified": "2026-06-25 00:00:00.000000",
+ "modified": "2026-10-06 00:49:09.895480",
  "modified_by": "Administrator",
  "module": "Infrastructure",
  "name": "Site",
@@ -131,8 +140,10 @@
    "role": "Central User"
   }
  ],
+ "row_format": "Dynamic",
  "search_fields": "server,team",
  "sort_field": "site_name",
  "sort_order": "ASC",
+ "states": [],
  "title_field": "site_name"
 }
