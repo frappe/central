@@ -9,7 +9,7 @@ import {
 	SidebarLabel,
 	useKeyboardShortcut,
 } from 'frappe-ui'
-import { computed, ref, watch } from 'vue'
+import { computed, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import frappeCloudLogo from '@/assets/fc-logo.svg'
 import { useAppMenu } from '@/composables/useAppMenu'
@@ -24,24 +24,19 @@ const { activeTeamLabel } = useSession()
 const { currentUser, headerMenuItems, footerMenuItems } = useAppMenu()
 const { profile } = useMyProfile()
 
-// The map pages want the full viewport, so the sidebar defaults collapsed
-// there and expanded everywhere else. Only crossing that boundary re-applies
-// the default — toggling by hand sticks while you stay within a section.
 const route = useRoute()
-const inServersSection = (path: string) =>
-	path === '/servers' || path.startsWith('/servers/new')
-const sidebarCollapsed = ref(
-	isMobile.value ? false : inServersSection(route.path),
+
+const activePath = computed(
+	() =>
+		sidebarSections.value
+			.flatMap((section) => section.items.map((item) => item.to ?? ''))
+			.filter(
+				(to) => to && (route.path === to || route.path.startsWith(`${to}/`)),
+			)
+			.sort((a, b) => b.length - a.length)[0],
 )
-watch(
-	() => route.path,
-	(path, previous) => {
-		if (isMobile.value) return
-		if (inServersSection(path) !== inServersSection(previous)) {
-			sidebarCollapsed.value = inServersSection(path)
-		}
-	},
-)
+
+const sidebarCollapsed = ref(false)
 
 useKeyboardShortcut({
 	combo: 'Mod+B',
@@ -88,19 +83,22 @@ const toggleSection = (label: string) => {
 
 		<nav class="flex-1 overflow-y-auto px-2 pt-2">
 			<template
-				v-for="section in sidebarSections"
-				:key="section.label || 'main'"
+				v-for="(section, index) in sidebarSections"
+				:key="section.label || index"
 			>
 				<SidebarLabel
-					v-if="section.label"
+					v-if="
+						section.label &&
+						section.items.some((item) => item.condition !== false)
+					"
 					class="mt-2"
 					:class="section.collapsible ? 'cursor-pointer' : ''"
 					@click="section.collapsible ? toggleSection(section.label) : undefined"
 				>
 					{{ section.label }}
 					<span
-						v-if="section.collapsible"
-						class="lucide-chevron-right ml-1 inline-block size-3 transition-transform"
+						v-if="section.collapsible && !sidebarCollapsed"
+						class="lucide-chevron-right absolute right-1 top-1.5 size-4 text-ink-gray-4 transition-transform"
 						:class="!collapsedSections[section.label] ? 'rotate-90' : ''"
 					/>
 				</SidebarLabel>
@@ -121,7 +119,7 @@ const toggleSection = (label: string) => {
 							:onclick="item.onClick"
 							class="mb-0.5"
 							:class="[item.class, isMobile ? '!h-10' : '']"
-							:active="!!item.to && item.to === route.path"
+							:active="!!item.to && item.to === activePath"
 						>
 							<span class="truncate md:text-sm">{{ item.label }}</span>
 							<template v-if="item.shortcut" #suffix>

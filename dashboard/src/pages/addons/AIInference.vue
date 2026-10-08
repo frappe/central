@@ -14,7 +14,7 @@ import { getErrorMessage, reportError } from '@/lib/feedback'
 const { canManageServices } = useCapabilities()
 const { activeTeam } = useSession()
 const { ai, aiLoading, aiError, reloadAI, models, enable } = useAI()
-useBreadcrumbs().setBreadcrumbs([{ label: 'AI' }])
+useBreadcrumbs().setBreadcrumbs([{ label: 'LLM' }])
 
 const tab = ref('overview')
 const tabs = [
@@ -43,10 +43,10 @@ const enableAI = async (): Promise<void> => {
 				<span
 					class="grid size-10 shrink-0 place-items-center rounded-6 bg-surface-gray-2 text-ink-gray-7"
 				>
-					<lucide-sparkles class="size-5" />
+					<lucide-bot class="size-6" />
 				</span>
 				<div class="min-w-0">
-					<h1 class="text-xl font-semibold text-ink-gray-9">AI</h1>
+					<h1 class="text-xl font-semibold text-ink-gray-9">LLM</h1>
 					<p class="mt-0.5 text-p-base text-ink-gray-5">
 						Our hosted models and leading upstream models, through OpenAI and
 						Anthropic compatible APIs.
@@ -75,7 +75,7 @@ const enableAI = async (): Promise<void> => {
 		>
 			<EmptyState
 				icon="lucide-cloud-off"
-				title="AI couldn't load"
+				title="LLM couldn't load"
 				:description="getErrorMessage(aiError, 'Try again in a moment.')"
 			>
 				<template #action>
@@ -93,9 +93,9 @@ const enableAI = async (): Promise<void> => {
 
 		<div v-else class="flex flex-1 items-center justify-center p-8">
 			<EmptyState
-				icon="lucide-sparkles"
-				title="Set up AI"
-				description="Turn AI on for your team, then create API keys to call the models from your own apps."
+				icon="lucide-bot"
+				title="Set up LLM"
+				description="Turn LLM on for your team, then create API keys to call the models from your own apps."
 			>
 				<template v-if="canManageServices" #action>
 					<Button
