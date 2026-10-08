@@ -238,6 +238,28 @@ def _reserve_lease(pool: str, owner_id: str, fence: int, lease_id: str) -> dict:
 # GiB. Anything that does not parse is left to the pool, which is how a pool created before
 # labels keeps working.
 LABEL_SHAPE_PATTERN = re.compile(r"^runway-(\d+)vcpu-(\d+)gb$")
+# The scale set's name is the label a workflow writes, and a name is more constrained than
+# a label: it must be routable as a scale set name. This mirrors the rule the runway CLI
+# enforces when creating one.
+SCALE_SET_NAME_PATTERN = re.compile(r"^runway-[a-z0-9-]{1,56}$")
+# A scale set name that states a shape, like runway-4vcpu-8gb. Matching on the shape alone
+# keeps pool validation and label resolution reading the same string.
+SHAPE_SUFFIX_PATTERN = re.compile(r"^runway-(\d+)vcpu-(\d+)gb$")
+
+
+def shape_from_scale_set_name(name: str) -> tuple[int, int] | None:
+	"""The (cpu_millicores, memory_mib) a scale set name claims, or None if it claims none."""
+	match = SHAPE_SUFFIX_PATTERN.match(name or "")
+	if not match:
+		return None
+	return int(match.group(1)) * 1000, int(match.group(2)) * 1024
+
+
+def scale_label_for_shape(cpu_millicores: int, memory_mib: int) -> str:
+	"""The scale set name that states this machine, which is what a workflow then targets."""
+	return f"runway-{int(cpu_millicores) // 1000}vcpu-{int(memory_mib) // 1024}gb"
+
+
 # A label beginning runway- followed by a digit has claimed to be a shape. One that fails
 # to parse did not mean to name no shape, so it is a mistake and gets reported.
 LABEL_SHAPE_CLAIM = re.compile(r"^runway-\d")

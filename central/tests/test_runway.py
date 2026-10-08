@@ -48,6 +48,7 @@ class TestRunway(IntegrationTestCase):
 				"controller_user": "Administrator",
 				"repository_url": "https://github.com/example/ci",
 				"scale_set_id": 1,
+				"scale_set_name": "runway-1vcpu-2gb",
 				"image_id": "test-image",
 				"status": "Active",
 				"max_concurrency": 1,
@@ -139,6 +140,44 @@ class TestRunway(IntegrationTestCase):
 				with self.assertRaises(frappe.ValidationError) as caught:
 					runway.resolve_shape(label, pool)
 				self.assertIn("not a runner shape", str(caught.exception))
+
+	def test_a_scale_set_name_may_name_no_shape(self) -> None:
+		"""A legacy name like runway-dogfood states nothing to check against the pool."""
+		for name in ("runway-dogfood", "runway-frappe", "runway-1vcpu-2gb-x"):
+			with self.subTest(name=name):
+				self.pool.scale_set_name = name
+				self.pool.validate()
+
+	def test_a_scale_set_name_that_states_this_pool_is_accepted(self) -> None:
+		"""The shape in the name is the shape the pool builds."""
+		self.pool.scale_set_name = "runway-1vcpu-2gb"
+		self.pool.validate()
+
+	def test_a_scale_set_name_contradicting_the_pool_is_refused(self) -> None:
+		"""Otherwise a workflow asking for 8 GiB is admitted by the name and handed 2."""
+		self.pool.scale_set_name = "runway-4vcpu-8gb"
+		with self.assertRaises(frappe.ValidationError) as caught:
+			self.pool.validate()
+		self.assertIn(
+			"states 4 vCPU and 8 GiB, but this pool serves 1 vCPU and 2 GiB", str(caught.exception)
+		)
+
+	def test_a_scale_set_name_that_is_not_routable_is_refused(self) -> None:
+		"""A name that could never be a scale set name would leave no way to reach this pool."""
+		for name in ("dogfood", "Runway-1vcpu-2gb", "runway_1vcpu_2gb", "runway-1VCPU-2GB", "", "runway"):
+			with self.subTest(name=name):
+				self.pool.scale_set_name = name
+				with self.assertRaises(frappe.ValidationError):
+					self.pool.validate()
+
+	def test_the_shape_label_matches_the_scale_set_name(self) -> None:
+		"""The label a pool hands out is the name that routes to it."""
+		self.assertEqual(runway.scale_label_for_shape(4000, 8192), "runway-4vcpu-8gb")
+		self.assertEqual(runway.scale_label_for_shape(1000, 2048), "runway-1vcpu-2gb")
+		self.assertEqual(
+			runway.shape_from_scale_set_name("runway-4vcpu-8gb"), (4000, 8192)
+		)
+		self.assertIsNone(runway.shape_from_scale_set_name("runway-dogfood"))
 
 	def test_duplicate_reservation_cannot_bypass_capacity(self):
 		lease = self.reserve()

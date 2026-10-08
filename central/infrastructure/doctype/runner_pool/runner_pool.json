@@ -1,0 +1,198 @@
+{
+ "doctype": "DocType",
+ "name": "Runner Pool",
+ "module": "Infrastructure",
+ "autoname": "hash",
+ "engine": "InnoDB",
+ "field_order": [
+  "title",
+  "team",
+  "status",
+  "region",
+  "controller_user",
+  "repository_url",
+  "scale_set_id",
+  "image_id",
+  "capacity_section",
+  "max_concurrency",
+  "cpu_millicores",
+  "memory_mib",
+  "disk_mib",
+  "max_job_seconds",
+  "ssh_public_key",
+  "ownership_section",
+  "controller_owner",
+  "fence",
+  "owner_expires_at",
+  "last_error"
+ ],
+ "fields": [
+  {
+   "fieldname": "title",
+   "label": "Title",
+   "fieldtype": "Data",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "team",
+   "label": "Team",
+   "fieldtype": "Link",
+   "options": "Team",
+   "reqd": 1,
+   "set_only_once": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "status",
+   "label": "Status",
+   "fieldtype": "Select",
+   "options": "Active\nPaused",
+   "default": "Paused",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "region",
+   "label": "Region",
+   "fieldtype": "Link",
+   "options": "Region",
+   "reqd": 1
+  },
+  {
+   "fieldname": "controller_user",
+   "label": "Controller User",
+   "fieldtype": "Link",
+   "options": "User",
+   "reqd": 1
+  },
+  {
+   "fieldname": "repository_url",
+   "label": "Repository Url",
+   "fieldtype": "Data",
+   "reqd": 1
+  },
+  {
+   "fieldname": "scale_set_id",
+   "label": "Scale Set Id",
+   "fieldtype": "Int",
+   "reqd": 1
+  },
+  {
+   "fieldname": "scale_set_name",
+   "fieldtype": "Data",
+   "label": "Scale Set Name",
+   "reqd": 1,
+   "description": "The scale set's own name, which is the label a workflow targets. A name that names a shape must agree with this pool's CPU and memory, so a workflow cannot reach a machine different from the one this pool builds."
+  },
+  {
+   "fieldname": "image_id",
+   "label": "Image Id",
+   "fieldtype": "Data",
+   "reqd": 1
+  },
+  {
+   "fieldname": "capacity_section",
+   "label": "Capacity and deadlines",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "max_concurrency",
+   "label": "Max Concurrency",
+   "fieldtype": "Int",
+   "default": "1",
+   "reqd": 1
+  },
+  {
+   "fieldname": "cpu_millicores",
+   "label": "Cpu Millicores",
+   "fieldtype": "Int",
+   "default": "1000",
+   "reqd": 1
+  },
+  {
+   "fieldname": "memory_mib",
+   "label": "Memory Mib",
+   "fieldtype": "Int",
+   "default": "2048",
+   "reqd": 1
+  },
+  {
+   "fieldname": "disk_mib",
+   "label": "Disk Mib",
+   "fieldtype": "Int",
+   "default": "4096",
+   "reqd": 1
+  },
+  {
+   "fieldname": "max_job_seconds",
+   "label": "Max Job Seconds",
+   "fieldtype": "Int",
+   "default": "1200",
+   "reqd": 1,
+   "description": "Total lease lifetime from reservation, including VM provisioning and guest bootstrap. Match the guest runtime limit."
+  },
+  {
+   "fieldname": "ssh_public_key",
+   "label": "Ssh Public Key",
+   "fieldtype": "Long Text",
+   "reqd": 1
+  },
+  {
+   "fieldname": "ownership_section",
+   "label": "Controller ownership",
+   "fieldtype": "Section Break",
+   "collapsible": 1
+  },
+  {
+   "fieldname": "controller_owner",
+   "label": "Controller Owner",
+   "fieldtype": "Data",
+   "read_only": 1
+  },
+  {
+   "fieldname": "fence",
+   "label": "Fence",
+   "fieldtype": "Int",
+   "read_only": 1
+  },
+  {
+   "fieldname": "owner_expires_at",
+   "label": "Owner Expires At",
+   "fieldtype": "Datetime",
+   "read_only": 1
+  },
+  {
+   "fieldname": "last_error",
+   "label": "Last Error",
+   "fieldtype": "Small Text",
+   "read_only": 1
+  }
+ ],
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1,
+   "report": 1
+  },
+  {
+   "role": "Central User",
+   "read": 1,
+   "report": 1
+  }
+ ],
+ "title_field": "title",
+ "search_fields": "title,repository_url",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "links": [
+  {
+   "link_doctype": "Runner Lease",
+   "link_fieldname": "pool"
+  }
+ ]
+}
