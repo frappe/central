@@ -196,7 +196,7 @@ def mark_terminated(server: VirtualMachine) -> None:
 	"""Record a server as gone, revoke the pilot credentials bound to it, and remove its mailbox."""
 	server.status = "Terminated"
 	VirtualMachine.mark_terminated(server.name)
-	UserMailAccount.queue_removal(server.name)
+	UserMailAccount.queue_removal(server=server.name)
 	credentials = frappe.get_all(
 		"Pilot Credential", filters={"team": server.team, "server": server.name}, pluck="name"
 	)

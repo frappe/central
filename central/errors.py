@@ -142,6 +142,12 @@ ERROR_CATALOG: dict[str, dict] = {
 		"remediation": "",
 		"retriable": False,
 	},
+	"MAILBOX_POOL_EMPTY": {
+		"title": "The server wasn't created",
+		"message": "This region has no mailbox ready for a new server. No server was created.",
+		"remediation": "Try again in a few minutes.",
+		"retriable": True,
+	},
 	"UNEXPECTED": {
 		"title": "We couldn't complete that",
 		"message": "Something went wrong while we were processing your request.",

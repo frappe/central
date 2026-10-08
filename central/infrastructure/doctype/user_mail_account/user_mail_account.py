@@ -7,9 +7,10 @@ import secrets
 from typing import TYPE_CHECKING
 
 import frappe
-from frappe import _
 from frappe.model.document import Document
 from frappe.utils import add_to_date, now_datetime
+
+from central.errors import throw_action_error
 
 if TYPE_CHECKING:
 	from central.infrastructure.doctype.frappemail_service.frappemail_service import FrappeMailService
@@ -17,6 +18,8 @@ if TYPE_CHECKING:
 # A mailbox still Pending after this long belongs to a refill run that did not finish.
 PENDING_TIMEOUT_MINUTES = 15
 SMTP_STARTTLS_PORT = 587
+# Room the mailbox keys take in pilot-common-site-config, next to the Central Settings keys.
+MAILBOX_CONFIG_BYTES = 400
 
 
 class MailboxPoolEmpty(frappe.ValidationError):
@@ -73,7 +76,11 @@ class UserMailAccount(Document):
 			pluck="name",
 		)
 		for name in stale:
-			frappe.get_doc("User Mail Account", name).remove_from_suite_site()
+			try:
+				frappe.get_doc("User Mail Account", name).remove_from_suite_site()
+			except Exception:
+				# The record stays Pending, so the next run retries it.
+				frappe.log_error(title=f"Removing pending mailbox {name} failed")
 
 	@classmethod
 	def assign(cls, action) -> UserMailAccount | None:
@@ -94,10 +101,7 @@ class UserMailAccount(Document):
 			skip_locked=True,
 		)
 		if not name:
-			frappe.throw(
-				_("Mail service {0} has no mailbox ready. Try again in a few minutes.").format(service),
-				MailboxPoolEmpty,
-			)
+			throw_action_error("MAILBOX_POOL_EMPTY", exc=MailboxPoolEmpty)
 
 		mailbox = frappe.get_doc("User Mail Account", name)
 		mailbox.db_set(
@@ -129,9 +133,10 @@ class UserMailAccount(Document):
 		frappe.db.set_value("User Mail Account", {"resource_action": resource_action}, "server", server)
 
 	@classmethod
-	def queue_removal(cls, server: str) -> None:
+	def queue_removal(cls, **filters) -> None:
+		"""Remove the assigned mailboxes that match, such as those of one server or one failed creation."""
 		for name in frappe.get_all(
-			"User Mail Account", filters={"server": server, "status": "Assigned"}, pluck="name"
+			"User Mail Account", filters={**filters, "status": "Assigned"}, pluck="name"
 		):
 			frappe.enqueue(
 				"central.infrastructure.doctype.user_mail_account.user_mail_account.remove_mailbox",

@@ -73,7 +73,9 @@ class FrappeMailService(Document):
 			timeout=TIMEOUT_SECONDS,
 			allow_redirects=False,
 		)
-		response.raise_for_status()
+		# A redirect is not a success: with redirects off it would otherwise pass as one.
+		if not 200 <= response.status_code < 300:
+			raise requests.HTTPError(f"{response.status_code} from {method}", response=response)
 
 	@property
 	def available_mailbox_count(self) -> int:
@@ -98,4 +100,8 @@ class FrappeMailService(Document):
 
 def refill_mailboxes() -> None:
 	for name in frappe.get_all("FrappeMail Service", filters={"enabled": 1}, pluck="name"):
-		frappe.get_doc("FrappeMail Service", name).refill()
+		try:
+			frappe.get_doc("FrappeMail Service", name).refill()
+		except Exception:
+			# One service's failure must not stop the refill of the others.
+			frappe.log_error(title=f"Mailbox refill failed for {name}")

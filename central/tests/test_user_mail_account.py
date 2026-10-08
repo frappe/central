@@ -103,8 +103,10 @@ class TestServerMailbox(IntegrationTestCase):
 		mailbox = self.pending_mailbox()
 		self.post.return_value = response(403, '{"exception": "Not permitted"}')
 
-		with self.assertRaises(requests.HTTPError):
+		with patch(f"{MAILBOX}.frappe.log_error") as log_error:
 			UserMailAccount.clean_up_pending(self.service)
+
+		log_error.assert_called_once()
 
 		self.assertEqual(mailbox.reload().status, "Pending")
 
@@ -154,7 +156,7 @@ class TestServerMailbox(IntegrationTestCase):
 		UserMailAccount.link_server("action-1", "server-1")
 
 		with patch(f"{MAILBOX}.frappe.enqueue") as enqueue:
-			UserMailAccount.queue_removal("server-1")
+			UserMailAccount.queue_removal(server="server-1")
 
 		self.assertTrue(enqueue.call_args.kwargs["enqueue_after_commit"])
 
