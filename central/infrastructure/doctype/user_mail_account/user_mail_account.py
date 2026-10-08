@@ -118,7 +118,7 @@ class UserMailAccount(Document):
 		"""The common_site_config keys that make Pilot and every site send through this mailbox."""
 		return {
 			"mail_server": frappe.db.get_value("FrappeMail Service", self.frappemail_service, "smtp_server"),
-			# A site reads its mail account from common_site_config, which can only use STARTTLS.
+			# Fixed to 587 with STARTTLS for now; later this follows the endpoints the mail server publishes.
 			"mail_port": SMTP_STARTTLS_PORT,
 			"use_tls": 1,
 			"mail_login": self.email,
