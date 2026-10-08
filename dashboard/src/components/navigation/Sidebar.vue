@@ -29,9 +29,7 @@ const { profile } = useMyProfile()
 // the default — toggling by hand sticks while you stay within a section.
 const route = useRoute()
 const inServersSection = (path: string) =>
-	path.startsWith('/servers') &&
-	!path.startsWith('/servers/snapshots') &&
-	!path.startsWith('/servers/ssh-keys')
+	path === '/servers' || path.startsWith('/servers/new')
 const sidebarCollapsed = ref(
 	isMobile.value ? false : inServersSection(route.path),
 )

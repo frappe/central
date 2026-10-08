@@ -81,6 +81,12 @@ const routes = [
 				meta: { title: 'New server' },
 			},
 			{
+				path: 'servers/:id/:tab(networking|access|snapshots|settings)?',
+				name: 'Server',
+				component: () => import('@/pages/servers/ServerPage.vue'),
+				meta: { title: 'Servers' },
+			},
+			{
 				path: 'ai',
 				name: 'AI',
 				component: () => import('@/pages/addons/AIInference.vue'),

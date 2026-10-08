@@ -62,12 +62,6 @@ export const sidebarSections = computed<SidebarSection[]>(() => {
 					condition: canViewServers.value,
 				},
 				{
-					label: 'Snapshots',
-					icon: 'lucide-camera',
-					to: '/servers/snapshots',
-					condition: canViewServers.value,
-				},
-				{
 					label: 'SSH Keys',
 					icon: 'lucide-key-round',
 					to: '/servers/ssh-keys',

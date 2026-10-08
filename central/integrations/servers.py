@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import time
+from datetime import datetime
+from itertools import pairwise
 
 import frappe
 from frappe import _
@@ -16,6 +18,8 @@ from central.integrations.atlas import AtlasClient
 # A resize may move the VM to another host, so the wait is generous enough to cover a migration.
 POWER_WAIT_SECONDS = 15 * 60
 POWER_POLL_SECONDS = 5
+METRICS_CACHE_SECONDS = 60
+MIB = 1024 * 1024
 
 
 def observe_server(server: VirtualMachine) -> str:
@@ -200,3 +204,60 @@ def mark_terminated(server: VirtualMachine) -> None:
 	)
 	for name in credentials:
 		PilotCredential.revoke_by_id(name)
+
+
+def get_cached_metrics(server: VirtualMachine, start: datetime, end: datetime | None = None) -> dict:
+	"""The server's samples from `start` to `end` or now as its region measures them, cached for a minute."""
+	key = f"atlas:metrics:{server.name}:{int(start.timestamp())}:{int(end.timestamp()) if end else 'now'}"
+	if cached := frappe.cache.get_value(key):
+		return cached
+
+	try:
+		payload = get_client(server).get_vm_metrics(server.atlas_vm_id, start, end)
+		metrics = {
+			"available": True,
+			"points": get_metric_points(payload["samples"], server.vcpus),
+			"sample_interval_seconds": payload["sample_interval_seconds"],
+		}
+	except (AtlasConnectionError, AtlasRejected, AtlasResourceGone):
+		frappe.log_error(title=f"Atlas metrics unavailable: {server.name}")
+		metrics = {"available": False}
+
+	frappe.cache.set_value(key, metrics, expires_in_sec=METRICS_CACHE_SECONDS)
+	return metrics
+
+
+def get_metric_points(samples: list[dict], vcpus: int) -> list[dict]:
+	"""Atlas counts CPU time and network bytes from boot, so each point is the rate between
+	two neighbouring samples. A pair that spans a down sample or a reboot has no rate."""
+	return [
+		get_metric_point(previous, sample, vcpus)
+		for previous, sample in pairwise(samples)
+		if sample["timestamp"] > previous["timestamp"]
+	]
+
+
+def get_metric_point(previous: dict, sample: dict, vcpus: int) -> dict:
+	seconds = sample["timestamp"] - previous["timestamp"]
+	is_up = previous["up"] and sample["up"]
+	compute, disk = sample["compute"], sample["disk"]
+
+	def rate(section: str, key: str) -> float | None:
+		change = sample[section][key] - previous[section][key]
+		return change / seconds if is_up and change >= 0 else None
+
+	cpu_microseconds_per_second = rate("compute", "cpu_microseconds")
+	return {
+		"time": sample["timestamp"],
+		"is_up": sample["up"],
+		"cpu_percent": None
+		if cpu_microseconds_per_second is None
+		else min(100, cpu_microseconds_per_second / 10_000 / max(vcpus, 1)),
+		"memory_bytes": compute["memory_bytes"],
+		"disk_used_bytes": disk["used_mib"] * MIB,
+		"disk_total_bytes": disk["size_mib"] * MIB,
+		"disk_read_bytes_per_second": disk["read_bytes_per_second"],
+		"disk_write_bytes_per_second": disk["write_bytes_per_second"],
+		"received_bytes_per_second": rate("network", "received_bytes"),
+		"sent_bytes_per_second": rate("network", "sent_bytes"),
+	}

@@ -9,7 +9,6 @@ import ServerFilters from '@/components/servers/ServerFilters.vue'
 import ServerListPanel from '@/components/servers/ServerListPanel.vue'
 import ServerMap from '@/components/servers/ServerMap.vue'
 import ServerOnboarding from '@/components/servers/ServerOnboarding.vue'
-import ServerOverviewDialog from '@/components/servers/ServerOverviewDialog.vue'
 import ServerRowActions from '@/components/servers/ServerRowActions.vue'
 import TerminateServerDialog from '@/components/servers/TerminateServerDialog.vue'
 import TakeSnapshotDialog from '@/components/snapshots/TakeSnapshotDialog.vue'
@@ -85,9 +84,8 @@ function dismissOnboarding(): void {
 
 const hoverId = ref<string | null>(null)
 const panelOpen = ref(false)
-const overviewServer = ref<VirtualMachineRow | null>(null)
-const { siteFor, openServer, openResource, openById, openBench, openSite } =
-	useServerNavigation(rows, sites, canViewServers, overviewServer)
+const { showServer, openServer, openResource, openById, openBench, openSite } =
+	useServerNavigation(rows, sites)
 
 // — Wiring. Pin / cluster-row clicks go straight to the live site or server.
 //   If the side panel is open, keep its location filter in step.
@@ -175,18 +173,6 @@ const openResize = (server: VirtualMachineRow): void => {
 	resizeOpen.value = true
 }
 const pendingSnapshot = ref<VirtualMachineRow | null>(null)
-// The list keeps polling, so an open overview follows the latest copy of its row.
-const liveOverviewServer = computed(() => {
-	const selected = overviewServer.value
-	if (!selected) return null
-	return (
-		rows.value.find((row) => row.server?.resource_id === selected.resource_id)
-			?.server ?? selected
-	)
-})
-const overviewOpensSite = computed(
-	() => !!liveOverviewServer.value && !!siteFor(liveOverviewServer.value),
-)
 // A member can be scoped to some servers, so each dialog follows the server it shows.
 const teamActions = computed<ServerActions>(() => ({
 	open: canViewServers.value,
@@ -199,21 +185,12 @@ const teamActions = computed<ServerActions>(() => ({
 const terminateActions = computed(() =>
 	getServerActions(pendingTerminate.value, teamActions.value),
 )
-const overviewActions = computed(() =>
-	getServerActions(liveOverviewServer.value, teamActions.value),
-)
-const overviewOpen = computed({
-	get: () => !!overviewServer.value,
-	set: (isOpen: boolean) => {
-		if (!isOpen) overviewServer.value = null
-	},
-})
 
 // A link from a server's own dashboard opens that server here.
 useServerLink(
 	{ activeTeam, servers, reload },
 	{
-		overview: (server) => (overviewServer.value = server),
+		overview: showServer,
 		resize: (server) => {
 			if (!canChange(server))
 				infoToast("This server can't be resized right now.")
@@ -283,7 +260,7 @@ useServerLink(
 						:opening="
 							opening === pin.server.resource_id || opening === pin.site?.name
 						"
-						@overview="overviewServer = $event"
+						@overview="showServer"
 						@open="openServer"
 						@pilot="openBench"
 						@start="doStart"
@@ -330,7 +307,7 @@ useServerLink(
 				:opening="opening"
 				@open-row="openResource"
 				@clear-location="locationFilter = null"
-				@overview="overviewServer = $event"
+				@overview="showServer"
 				@open="openServer"
 				@pilot="openBench"
 				@start="doStart"
@@ -398,17 +375,6 @@ useServerLink(
 			v-model:open="resizeOpen"
 			:server="pendingResize"
 			@resized="reloadAll"
-		/>
-		<ServerOverviewDialog
-			v-model:open="overviewOpen"
-			:server="liveOverviewServer"
-			:can-open="overviewActions.open"
-			:can-resize="overviewActions.resize"
-			:opens-site="overviewOpensSite"
-			:can-snapshot="overviewActions.snapshot"
-			:can-open-console="overviewActions.console"
-			@open="openServer"
-			@resize="openResize"
 		/>
 	</div>
 </template>
