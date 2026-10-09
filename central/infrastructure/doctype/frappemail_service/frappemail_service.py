@@ -42,12 +42,13 @@ class FrappeMailService(Document):
 		return frappe.db.count("User Mail Account", {"frappemail_service": self.name, "status": "Available"})
 
 	def refill(self) -> None:
-		"""Finish interrupted work, then add a batch when the pool is below its minimum."""
+		"""Finish interrupted work, then create the mailboxes the pool is missing, up to one batch."""
 		UserMailAccount.clean_up_unfinished(self)
-		if not self.enabled or self.available_mailbox_count >= self.minimum_available_mailboxes:
+		if not self.enabled:
 			return
 
-		for _attempt in range(REFILL_BATCH_SIZE):
+		missing = self.minimum_available_mailboxes - self.available_mailbox_count
+		for _attempt in range(min(missing, REFILL_BATCH_SIZE)):
 			try:
 				UserMailAccount.provision(self)
 			except Exception:

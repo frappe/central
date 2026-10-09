@@ -63,24 +63,22 @@ class TestServerMailbox(IntegrationTestCase):
 			"User Mail Account", filters={"frappemail_service": self.service.name}, pluck="status"
 		)
 
-	def test_refill_creates_a_whole_batch_below_the_minimum(self):
-		with patch(f"{FRAPPEMAIL_SERVICE}.REFILL_BATCH_SIZE", 5):
-			self.service.refill()
+	def test_refill_creates_only_the_missing_mailboxes(self):
+		self.available_mailbox()
 
-		self.assertEqual(self.statuses(), ["Available"] * 5)
+		self.service.refill()
+
+		self.assertEqual(self.statuses(), ["Available"] * 3)
 		payload = self.post.call_args.kwargs["json"]
 		self.assertTrue(payload["username"].startswith("notifications-"))
 		self.assertTrue(payload["disable_receiving"])
 		self.assertFalse(payload["send_invite"])
 
-	def test_refill_does_nothing_at_the_minimum(self):
-		with patch(f"{FRAPPEMAIL_SERVICE}.REFILL_BATCH_SIZE", 3):
+	def test_refill_creates_at_most_one_batch(self):
+		with patch(f"{FRAPPEMAIL_SERVICE}.REFILL_BATCH_SIZE", 2):
 			self.service.refill()
-		self.post.reset_mock()
 
-		self.service.refill()
-
-		self.post.assert_not_called()
+		self.assertEqual(self.statuses(), ["Available"] * 2)
 
 	def test_a_failed_creation_stops_the_batch_and_stays_pending(self):
 		self.post.return_value = response(500)
