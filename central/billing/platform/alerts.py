@@ -72,8 +72,8 @@ def invariant_violations() -> list[dict]:
 
 
 def held_invoices() -> list[dict]:
-	"""Bills still unissued long after their period closed — usually a team we have
-	no billing details for.
+	"""Bills still unissued long after their period closed — missing billing details,
+	accounting records that never synced, or a GSTIN never checked.
 
 	This is money we are not collecting on resources that are still running, and
 	nothing else surfaces it: the invoice stays Draft, so dunning never sees it.
@@ -86,13 +86,31 @@ def held_invoices() -> list[dict]:
 			"alert": "held_invoice",
 			"subject": i.name,
 			"team": i.team,
-			"detail": f"{i.currency} {i.total} still unissued, period closed {i.period_end}",
+			"detail": f"{i.currency} {i.total} still unissued ({i.hold_reason or 'not opened'}), period closed {i.period_end}",
 		}
 		for i in held_drafts(held_before=cutoff, limit=100)
 	]
 
 
-SOURCES = (invariant_violations, failed_webhooks, stale_attempts, held_invoices)
+def failed_refunds() -> list[dict]:
+	"""Refunds a gateway refused. The invoice is cancelled but the customer is still owed."""
+	return [
+		{
+			"alert": "failed_refund",
+			"subject": r.invoice,
+			"team": r.team,
+			"detail": f"{r.currency} {r.amount} not refunded ({r.name}); retry it from the invoice",
+		}
+		for r in frappe.get_all(
+			"Refund",
+			filters={"status": "Failed"},
+			fields=["name", "invoice", "team", "currency", "amount"],
+			limit=100,
+		)
+	]
+
+
+SOURCES = (invariant_violations, failed_webhooks, stale_attempts, held_invoices, failed_refunds)
 
 
 def collect() -> list[dict]:

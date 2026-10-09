@@ -60,7 +60,8 @@ class TestPilotSigningKey(IntegrationTestCase):
 			settings.initialize_signing_key("pilot")
 
 	def test_unknown_plane_is_rejected(self):
-		with self.assertRaises(frappe.ValidationError):
+		# Newer Frappe rejects a value outside the Literal before the method runs.
+		with self.assertRaises((frappe.ValidationError, frappe.FrappeTypeError)):
 			CentralSSOSettings.instance().initialize_signing_key("billing")
 
 	def test_stale_initializer_keeps_existing_key(self):

@@ -188,8 +188,13 @@ export interface ExpiringCredit {
 
 /** credit_ledger row — append-only wallet movement (ADR 0006). */
 export interface CreditLedgerEntry {
+	name: string
 	entry_type: 'Credit' | 'Debit'
 	amount: number
+	/** GST paid on top of a top-up; it later pays invoice GST. */
+	tax_amount: number
+	/** A top-up booked in the accounting system, so its receipt can be downloaded. */
+	has_receipt: boolean
 	running_balance: number
 	currency: Currency
 	note: string | null
@@ -219,6 +224,8 @@ export interface InvoiceSummary {
 	amount_paid: number
 	currency: Currency
 	due_date: string | null
+	/** Issued in the accounting system, so its PDF can be downloaded. */
+	has_pdf: boolean
 }
 
 /** One event in an invoice's lifecycle timeline (issued → credits → payment → settled). */
@@ -248,6 +255,8 @@ export interface InvoiceDetail {
 	zero_rating_reason: string | null
 	total: number
 	credit_applied: number
+	/** GST paid with the top-ups the credit came from, so not charged again. */
+	advance_tax_applied: number
 	expected_collection: number
 	amount_paid: number
 	due_date: string | null
@@ -375,6 +384,10 @@ export interface BillingProfile {
 	email?: string | null
 	phone?: string | null
 	gstin?: string | null
+	/** As the GST portal last reported it; blank until checked. */
+	gst_status?: GstStatus | null
+	gst_category?: string | null
+	gst_status_checked_at?: string | null
 	address_line1?: string | null
 	address_line2?: string | null
 	city?: string | null
@@ -387,7 +400,16 @@ export interface BillingProfile {
 	missing_labels?: string[]
 	currency_locked: boolean
 	supported_currencies: Currency[]
+	/** GSTIN on file but not Active: invoices go out as unregistered. */
+	gst_lapsed?: boolean
 }
+
+export type GstStatus =
+	| 'Active'
+	| 'Inactive'
+	| 'Suspended'
+	| 'Cancelled'
+	| 'Invalid'
 
 /** get_billing_geo — dropdown feeds for the address form. */
 export interface BillingGeo {

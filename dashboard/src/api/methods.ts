@@ -11,6 +11,11 @@ export function methodV1(path: string): string {
 	return `/api/method/${path}`
 }
 
+/** A download link for a method that answers with a file. */
+export function download(path: string, params: Record<string, string>): string {
+	return `/api/method/${path}?${new URLSearchParams(params)}`
+}
+
 export const API = {
 	myTeams: 'central.api.identity.my_teams',
 	myCapabilities: 'central.api.identity.my_capabilities',
@@ -118,6 +123,8 @@ export const API = {
 	creditLedger: 'central.billing.api.dashboard.credit_ledger',
 	invoices: 'central.billing.api.dashboard.list_invoices',
 	invoice: 'central.billing.api.dashboard.get_invoice',
+	invoicePdf: 'central.billing.api.dashboard.download_invoice_pdf',
+	topupReceipt: 'central.billing.api.dashboard.download_topup_receipt',
 	paymentAttempts: 'central.billing.api.dashboard.list_payment_attempts',
 	paymentMethods: 'central.billing.api.dashboard.list_payment_methods',
 	paymentMethodOptions:
@@ -158,6 +165,7 @@ export const API = {
 		'central.billing.api.dashboard.set_default_payment_method',
 	reorderPaymentMethods:
 		'central.billing.api.dashboard.reorder_payment_methods',
+	recheckGstStatus: 'central.billing.api.dashboard.recheck_gst_status',
 	removePaymentMethod: 'central.billing.api.dashboard.remove_payment_method',
 	saveBillingProfile: 'central.billing.api.dashboard.save_billing_profile',
 	saveBillingSettings: 'central.billing.api.dashboard.save_billing_settings',
