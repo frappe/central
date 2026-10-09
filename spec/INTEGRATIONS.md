@@ -110,8 +110,9 @@ An app on a site, such as Raven, asks Central for a token through Pilot's Centra
 | `sub` | The team, such as `TEAM-00042` |
 | `team_name` | The team's name |
 | `scope` | `team-identity` |
+| `hosts` | The hostnames of the team's sites on the Pilot's server: each site's own address and its active Site Domain records. Empty when the credential has no server. |
 
-The service gets Central's public keys from `central.api.jwks.get_jwks` and verifies the signature, `iss`, `aud`, `exp` and `scope`. Then the service decides what access the team gets, for example a team account and its API keys. The Pilot credential names the team, so a site cannot get a token for another team. A Pilot refuses a `team-identity` token as a login token.
+The service gets Central's public keys from `central.api.jwks.get_jwks` and verifies the signature, `iss`, `aud`, `exp` and `scope`. Then the service decides what access the team gets, for example a team account and its API keys. The Pilot credential names the team and its server, so a site cannot get a token for another team or for a hostname that the team does not serve. A service uses `hosts` to accept a site's hostname as the team's. A Pilot refuses a `team-identity` token as a login token.
 
 ## How does the trial flow work?
 

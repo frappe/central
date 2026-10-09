@@ -205,9 +205,11 @@ def enroll(bootstrap_token: str) -> dict:
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 @pilot_credential_auth
 def get_team_identity_token(audience: str) -> dict:
-	"""Proves the pilot's team to the service at `audience`."""
+	"""Proves the pilot's team, and the hostnames of its server's sites, to the service at `audience`."""
+	from central.infrastructure.doctype.site.site import get_server_hostnames
 	from central.sso import mint_team_identity_token
 
-	team = frappe.local.pilot_credential.team
-	team_name = frappe.db.get_value("Team", team, "team_name")
-	return {"token": mint_team_identity_token(audience, team, team_name)}
+	credential = frappe.local.pilot_credential
+	team_name = frappe.db.get_value("Team", credential.team, "team_name")
+	hosts = get_server_hostnames(credential.team, credential.server)
+	return {"token": mint_team_identity_token(audience, credential.team, team_name, hosts)}

@@ -280,6 +280,18 @@ def on_host(url: str, host: str, path: str | None = None) -> str:
 	return urlunsplit(("https", host, path or minted.path, minted.query, minted.fragment))
 
 
+def get_server_hostnames(team: str, server: str | None) -> list[str]:
+	"""Every hostname the team's sites on `server` answer on: each site's own address and its
+	routed domains. The console's `server_hostnames` also lists routes that are not active."""
+	if not server:
+		return []
+
+	filters = {"team": team, "server": server}
+	sites = frappe.get_all("Site", filters=filters, pluck="name")
+	domains = frappe.get_all("Site Domain", filters={**filters, "status": "Active"}, pluck="name")
+	return sorted({*sites, *domains})
+
+
 def on_doctype_update():
 	# The fleet reads a team's sites, then drops the machine each one already stands for.
 	frappe.db.add_index("Site", ["team", "server"])
