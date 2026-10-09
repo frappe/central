@@ -388,7 +388,10 @@ def update_lease(
 	repository: str = "",
 	request_labels: str = "",
 ) -> dict:
-	_, lease = fenced_lease(pool, owner_id, fence, lease_id)
+	# Not `_`: that name is the Frappe translation function, and every frappe.throw below
+	# uses it. Binding the discarded tuple element to `_` turned each of those into a
+	# TypeError, so a real refusal surfaced as an internal error instead of its message.
+	_pool_row, lease = fenced_lease(pool, owner_id, fence, lease_id)
 	if event == "acquire_requested":
 		if not 0 < int(request_id) < 2**63 or (lease.request_id and int(lease.request_id) != int(request_id)):
 			frappe.throw(_("Job acquisition identity must remain a positive request ID."))
@@ -399,21 +402,10 @@ def update_lease(
 		# point at which refusing is still free. A pool whose image is baked for another
 		# repository cannot serve this job, and finding that out after the VM is created
 		# costs a boot and a failing job rather than a message.
-		if repository:
-			lease.repository = repository
-			ensure_image_serves(frappe.get_doc("Runner Pool", pool), repository)
-		if request_labels:
-			lease.request_labels = str(request_labels)[:1000]
-		# The shape is resolved and recorded here, alongside the repository, because this
-		# is the last point at which the decision is still free. create_vm reads it back
-		# rather than re-deriving it, so a label changed mid-flight cannot move a job onto
-		# a machine it was not admitted to.
-		cpu, memory, disk = resolve_shape(
-			lease.request_labels, frappe.get_doc("Runner Pool", pool)
-		)
-		lease.resolved_cpu_millicores, lease.resolved_memory_mib, lease.resolved_disk_mib = (
-			cpu, memory, disk,
-		)
+		# The refusal happens here, before a guest exists, because that is the only point at
+		# which refusing is still free: a pool whose image is baked for another repository
+		# costs a boot and a failing job rather than a message once the VM is up.
+		ensure_image_serves(frappe.get_doc("Runner Pool", pool), repository)
 		lease.acquire_state = "pending" if lease.acquire_state != "acquired" else "acquired"
 	elif event == "acquired":
 		if not lease.request_id or lease.acquire_state not in ("pending", "acquired"):
@@ -448,6 +440,25 @@ def update_lease(
 			if lease.get(field) and str(lease.get(field)) != str(value):
 				frappe.throw(_("Runner job identity changed within a lease."))
 			lease.set(field, value)
+	# The job's repository and labels are recorded on whichever event carries them. GitHub
+	# sends no JobAvailable offer to the listener in this design -- it dispatches directly to
+	# the runner registered from the VM -- so the first event carrying them is the job start,
+	# not the acquisition. Writing them only in the acquisition branch left them NULL on every
+	# live lease, which meant the pairing check never saw a job and the shape was never
+	# resolved. Recording is first-write-wins, and a differing second value is refused.
+	for field, value in (("repository", repository), ("request_labels", request_labels)):
+		if value:
+			if lease.get(field) and str(lease.get(field)) != str(value):
+				frappe.throw(_("Runner job identity changed within a lease."))
+			lease.set(field, value)
+	# The shape is resolved once the job's labels are known and recorded on the lease, so
+	# create_vm reads back the machine the job was admitted to rather than re-deriving it from
+	# a label that may since have changed.
+	if lease.request_labels and not lease.resolved_cpu_millicores:
+		cpu, memory, disk = resolve_shape(lease.request_labels, frappe.get_doc("Runner Pool", pool))
+		lease.resolved_cpu_millicores, lease.resolved_memory_mib, lease.resolved_disk_mib = (
+			cpu, memory, disk,
+		)
 	# The lease is a durable audit record. An event that carries no new error must keep the
 	# recorded retirement reason or the failure to collect job diagnostics.
 	if error:
