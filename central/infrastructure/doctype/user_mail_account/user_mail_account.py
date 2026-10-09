@@ -19,7 +19,8 @@ if TYPE_CHECKING:
 
 # A Pending or Removing mailbox older than this belongs to a run that did not finish.
 UNFINISHED_TIMEOUT_MINUTES = 15
-SMTP_STARTTLS_PORT = 587
+# Supported SMTP submission ports and whether each uses SSL/TLS, in order of preference.
+SMTP_PORTS = {587: False, 465: True}
 
 
 class MailboxPoolEmpty(frappe.ValidationError):
@@ -119,11 +120,21 @@ class UserMailAccount(Document):
 
 	def get_site_config(self) -> dict:
 		"""The common_site_config keys that send Pilot and site mail through this mailbox."""
+		server, port = frappe.db.get_value(
+			"FrappeMail Service", self.frappemail_service, ["smtp_server", "smtp_port"]
+		)
+		if not server or port not in SMTP_PORTS:
+			frappe.throw(
+				_("FrappeMail Service {0} has no valid SMTP endpoint. Use Refresh SMTP Info.").format(
+					self.frappemail_service
+				)
+			)
+		is_ssl = SMTP_PORTS[port]
 		return {
-			"mail_server": frappe.db.get_value("FrappeMail Service", self.frappemail_service, "smtp_server"),
-			# Fixed for now; later this follows the endpoints the mail server publishes.
-			"mail_port": SMTP_STARTTLS_PORT,
-			"use_tls": 1,
+			"mail_server": server,
+			"mail_port": port,
+			"use_ssl": int(is_ssl),
+			"use_tls": int(not is_ssl),
 			"mail_login": self.email,
 			"mail_password": self.get_password(),
 			"auto_email_id": self.email,
