@@ -35,7 +35,7 @@ class CentralSettings(Document):
 	# end: auto-generated types
 
 	def validate(self) -> None:
-		from central.integrations.atlas import MAXIMUM_METADATA_VALUE_BYTES
+		from central.integrations.atlas import MAXIMUM_METADATA_BYTES
 
 		try:
 			config = self.get_common_site_config()
@@ -43,8 +43,8 @@ class CentralSettings(Document):
 			config = None
 		if not isinstance(config, dict):
 			frappe.throw(_('Common Site Config must be a JSON object, such as {"key": "value"}.'))
-		if len(json.dumps(config).encode()) > MAXIMUM_METADATA_VALUE_BYTES:
-			frappe.throw(_("Common Site Config must fit in {0} bytes.").format(MAXIMUM_METADATA_VALUE_BYTES))
+		if len(json.dumps(config).encode()) > MAXIMUM_METADATA_BYTES:
+			frappe.throw(_("Common Site Config must fit in {0} bytes.").format(MAXIMUM_METADATA_BYTES))
 
 	def get_common_site_config(self) -> dict:
 		return json.loads(self.common_site_config or "{}")

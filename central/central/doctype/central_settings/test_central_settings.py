@@ -4,6 +4,8 @@
 import frappe
 from frappe.tests import IntegrationTestCase
 
+from central.integrations.atlas import MAXIMUM_METADATA_BYTES
+
 FLAG_FIELDS = {
 	"addons": "enable_addons",
 	"llm": "enable_llm_service",
@@ -43,7 +45,7 @@ class IntegrationTestCentralSettings(IntegrationTestCase):
 	def test_common_site_config_must_be_a_json_object_that_fits_in_metadata(self):
 		self.addCleanup(frappe.db.set_single_value, "Central Settings", "common_site_config", None)
 
-		for value in ('["a"]', "not json", f'{{"key": "{"x" * 1024}"}}'):
+		for value in ('["a"]', "not json", f'{{"key": "{"x" * MAXIMUM_METADATA_BYTES}"}}'):
 			settings = frappe.get_doc("Central Settings")
 			settings.common_site_config = value
 			with self.assertRaises(frappe.ValidationError):

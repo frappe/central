@@ -1,0 +1,136 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "field:service_name",
+ "creation": "2026-10-08 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "service_name",
+  "enabled",
+  "domain",
+  "column_break_pool",
+  "smtp_server",
+  "minimum_available_mailboxes",
+  "suite_section",
+  "site_url",
+  "api_key",
+  "api_secret",
+  "backup_email"
+ ],
+ "fields": [
+  {
+   "fieldname": "service_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Service Name",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "default": "1",
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Enabled"
+  },
+  {
+   "description": "Mailbox domain, such as notifications.blr.frappe.cloud. It must exist on the Suite site.",
+   "fieldname": "domain",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Domain",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_pool",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "SMTP host on port 587, such as mail.c3.frappemail.com.",
+   "fieldname": "smtp_server",
+   "fieldtype": "Data",
+   "label": "SMTP Server",
+   "reqd": 1
+  },
+  {
+   "default": "200",
+   "description": "Unassigned mailboxes to keep ready.",
+   "fieldname": "minimum_available_mailboxes",
+   "fieldtype": "Int",
+   "label": "Minimum Available Mailboxes",
+   "non_negative": 1
+  },
+  {
+   "fieldname": "suite_section",
+   "fieldtype": "Section Break",
+   "label": "Suite Site"
+  },
+  {
+   "fieldname": "site_url",
+   "fieldtype": "Data",
+   "label": "Site URL",
+   "options": "URL",
+   "reqd": 1
+  },
+  {
+   "description": "API key of a Suite Admin on the Suite site.",
+   "fieldname": "api_key",
+   "fieldtype": "Data",
+   "label": "API Key",
+   "reqd": 1
+  },
+  {
+   "fieldname": "api_secret",
+   "fieldtype": "Password",
+   "label": "API Secret",
+   "reqd": 1
+  },
+  {
+   "description": "Backup address the Suite site requires for each mailbox. Use an operator address.",
+   "fieldname": "backup_email",
+   "fieldtype": "Data",
+   "label": "Backup Email",
+   "options": "Email",
+   "reqd": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "links": [
+  {
+   "link_doctype": "User Mail Account",
+   "link_fieldname": "frappemail_service"
+  },
+  {
+   "link_doctype": "Region",
+   "link_fieldname": "frappemail_service"
+  }
+ ],
+ "modified": "2026-10-09 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Infrastructure",
+ "name": "FrappeMail Service",
+ "naming_rule": "By fieldname",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

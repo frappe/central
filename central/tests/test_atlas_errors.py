@@ -12,7 +12,12 @@ from central.errors import (
 	AtlasResourceGone,
 	to_error_response,
 )
-from central.integrations.atlas import AtlasClient
+from central.integrations.atlas import (
+	MAXIMUM_METADATA_BYTES,
+	MAXIMUM_METADATA_ENTRIES,
+	MAXIMUM_METADATA_KEY_BYTES,
+	AtlasClient,
+)
 
 
 class TestAtlasErrors(IntegrationTestCase):
@@ -82,11 +87,11 @@ class TestAtlasErrors(IntegrationTestCase):
 		request.assert_called_once()
 
 	def test_metadata_the_host_would_refuse_is_never_sent(self):
-		"""Metal refuses it only after Atlas saved a draft machine, so Central stops it first."""
+		"""Metal refuses a long key only after Atlas saved a draft machine, so Central stops it first."""
 		oversized = {
-			"too many entries": {f"key-{index}": "value" for index in range(65)},
-			"key too long": {"k" * 129: "value"},
-			"value too long": {"pilot-central": "v" * 1025},
+			"too many entries": {f"key-{index}": "value" for index in range(MAXIMUM_METADATA_ENTRIES + 1)},
+			"key too long": {"k" * (MAXIMUM_METADATA_KEY_BYTES + 1): "value"},
+			"map too large": {"pilot-central": "v" * MAXIMUM_METADATA_BYTES},
 		}
 		for case, metadata in oversized.items():
 			with (
@@ -98,7 +103,9 @@ class TestAtlasErrors(IntegrationTestCase):
 			request.assert_not_called()
 
 	def test_metadata_at_the_limits_is_sent(self):
-		metadata = {f"key-{index}": "value" for index in range(63)} | {"k" * 128: "v" * 1024}
+		long_key = "k" * MAXIMUM_METADATA_KEY_BYTES
+		metadata = {f"key-{index}": "value" for index in range(MAXIMUM_METADATA_ENTRIES - 1)} | {long_key: ""}
+		metadata[long_key] = "v" * (MAXIMUM_METADATA_BYTES - len(json.dumps(metadata, separators=(",", ":"))))
 		with (
 			patch.object(self.client, "_configuration", return_value=("https://atlas.example.test", 1)),
 			patch("central.integrations.atlas.mint_atlas_token", return_value="test-token"),

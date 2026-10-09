@@ -16,6 +16,8 @@
   "column_break_geo",
   "latitude",
   "longitude",
+  "mail_section",
+  "frappemail_service",
   "atlas_tab",
   "status",
   "base_url",
@@ -123,6 +125,18 @@
    "fieldname": "proxy_domain",
    "fieldtype": "Data",
    "label": "Proxy Domain"
+  },
+  {
+   "description": "Gives new servers in this region a mailbox. Leave blank for none.",
+   "fieldname": "frappemail_service",
+   "fieldtype": "Link",
+   "label": "FrappeMail Service",
+   "options": "FrappeMail Service"
+  },
+  {
+   "fieldname": "mail_section",
+   "fieldtype": "Section Break",
+   "label": "Mail"
   },
   {
    "fieldname": "connection_section",
@@ -257,7 +271,7 @@
    "link_fieldname": "region"
   }
  ],
- "modified": "2026-09-25 17:33:51.962673",
+ "modified": "2026-10-09 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Infrastructure",
  "name": "Region",

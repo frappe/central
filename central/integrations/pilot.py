@@ -10,6 +10,7 @@ from frappe import _
 from central.api.jwks import jwks_document
 from central.api.pilot import get_telemetry_base_url, region_id_of
 from central.infrastructure.doctype.pilot_credential.pilot_credential import PilotCredential
+from central.infrastructure.doctype.user_mail_account.user_mail_account import UserMailAccount
 from central.sso import central_url, jwks_url, mint_bench_login, mint_datum_token, mint_site_login
 
 PILOT_TASK_TIMEOUT_SECONDS = 35
@@ -42,7 +43,10 @@ def get_bootstrap_metadata(action) -> dict[str, str]:
 	# Metal caps each metadata value at 1 KiB. Pilot merges pilot-common-config into
 	# common_config.toml and pilot-common-site-config into common_site_config.json at bootstrap.
 	metadata = {"pilot-central": json.dumps(bootstrap)}
-	if common_site_config := frappe.get_cached_doc("Central Settings").get_common_site_config():
+	common_site_config = frappe.get_cached_doc("Central Settings").get_common_site_config()
+	if mailbox := UserMailAccount.assign(action):
+		common_site_config |= mailbox.get_site_config()
+	if common_site_config:
 		metadata["pilot-common-site-config"] = json.dumps(common_site_config)
 
 	try:

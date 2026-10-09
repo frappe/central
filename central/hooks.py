@@ -216,6 +216,7 @@ scheduler_events = {
 			"central.infrastructure.doctype.site_domain.site_domain.retry_failed",
 			# Snapshots have no region event, so Central reads each one until it settles.
 			"central.infrastructure.doctype.vm_snapshot.vm_snapshot.sync_pending_snapshots",
+			"central.infrastructure.doctype.frappemail_service.frappemail_service.refill_mailboxes",
 		],
 	},
 	# Maintenance jobs run once per period at a time Frappe spreads across sites.
