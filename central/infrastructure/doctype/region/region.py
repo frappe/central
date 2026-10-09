@@ -41,10 +41,10 @@ class Region(AtlasConnectionMixin, CargoConnectionMixin, Document):
 		connection_error: DF.SmallText | None
 		country_code: DF.Data | None
 		display_name: DF.Data | None
+		frappemail_service: DF.Link | None
 		last_synced_at: DF.Datetime | None
 		latitude: DF.Float
 		longitude: DF.Float
-		frappemail_service: DF.Link | None
 		provider: DF.Literal[
 			"", "AWS", "Hetzner", "Frappe", "OCI", "DigitalOcean", "Scaleway", "Self-Managed", "Fake"
 		]

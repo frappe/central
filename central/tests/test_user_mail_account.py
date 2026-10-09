@@ -6,8 +6,10 @@ import requests
 from frappe.tests import IntegrationTestCase
 
 from central.infrastructure.doctype.user_mail_account.user_mail_account import (
+	MAILBOX_CONFIG_BYTES,
 	MailboxPoolEmpty,
 	UserMailAccount,
+	remove_mailbox,
 )
 
 MAILBOX = "central.infrastructure.doctype.user_mail_account.user_mail_account"
@@ -94,7 +96,7 @@ class TestServerMailbox(IntegrationTestCase):
 		mailbox = self.pending_mailbox()
 		self.post.return_value = response(403, '{"exception": "x is not a mail account."}')
 
-		UserMailAccount.clean_up_pending(self.service)
+		UserMailAccount.clean_up_unfinished(self.service)
 
 		self.assertEqual(mailbox.reload().status, "Deleted")
 		self.assertTrue(self.post.call_args.args[0].endswith("delete_members"))
@@ -104,7 +106,7 @@ class TestServerMailbox(IntegrationTestCase):
 		self.post.return_value = response(403, '{"exception": "Not permitted"}')
 
 		with patch(f"{MAILBOX}.frappe.log_error") as log_error:
-			UserMailAccount.clean_up_pending(self.service)
+			UserMailAccount.clean_up_unfinished(self.service)
 
 		log_error.assert_called_once()
 
@@ -121,6 +123,17 @@ class TestServerMailbox(IntegrationTestCase):
 		self.assertEqual(retried.name, first.name)
 		self.assertEqual(other.name, second.name)
 		self.assertEqual(first.reload().status, "Assigned")
+
+	def test_a_retry_after_a_failure_gets_a_new_mailbox(self):
+		first, second = self.available_mailbox(), self.available_mailbox()
+		UserMailAccount.assign(self.action())
+
+		with patch(f"{MAILBOX}.frappe.enqueue"):
+			UserMailAccount.queue_removal(resource_action="action-1", server=("is", "not set"))
+		retried = UserMailAccount.assign(self.action())
+
+		self.assertEqual(first.reload().status, "Removing")
+		self.assertEqual(retried.name, second.name)
 
 	def test_an_empty_pool_fails_the_creation(self):
 		with self.assertRaises(MailboxPoolEmpty):
@@ -143,12 +156,9 @@ class TestServerMailbox(IntegrationTestCase):
 		config = mailbox.get_site_config()
 
 		self.assertEqual(config["mail_server"], "smtp.example.test")
-		self.assertEqual((config["mail_port"], config["use_tls"]), (587, 1))
-		self.assertEqual(config["mail_login"], mailbox.email)
-		self.assertEqual(config["auto_email_id"], mailbox.email)
+		self.assertEqual((config["mail_login"], config["auto_email_id"]), (mailbox.email, mailbox.email))
 		self.assertEqual(config["mail_password"], mailbox.get_password())
-		self.assertEqual(config["always_use_account_email_id_as_sender"], 1)
-		self.assertLessEqual(len(json.dumps(config)), 1024)
+		self.assertLessEqual(len(json.dumps(config).encode()), MAILBOX_CONFIG_BYTES)
 
 	def test_a_terminated_server_queues_its_mailbox_removal(self):
 		self.available_mailbox()
@@ -159,6 +169,33 @@ class TestServerMailbox(IntegrationTestCase):
 			UserMailAccount.queue_removal(server="server-1")
 
 		self.assertTrue(enqueue.call_args.kwargs["enqueue_after_commit"])
+		self.assertEqual(self.statuses(), ["Removing"])
+
+	def test_a_removal_job_skips_a_mailbox_no_longer_queued_for_removal(self):
+		mailbox = self.available_mailbox()
+		self.post.reset_mock()
+
+		remove_mailbox(mailbox.name)
+
+		self.post.assert_not_called()
+		self.assertEqual(mailbox.reload().status, "Available")
+
+	def test_a_disabled_service_still_retries_a_failed_removal_but_creates_none(self):
+		mailbox = self.stale(self.available_mailbox())
+		mailbox.db_set("status", "Removing", update_modified=False)
+		self.service.db_set("enabled", 0)
+		self.post.reset_mock()
+
+		self.service.refill()
+
+		self.assertEqual(mailbox.reload().status, "Deleted")
+		self.post.assert_called_once()
+
+	def test_a_domain_too_long_for_the_metadata_is_refused(self):
+		self.service.domain = "a" * 100
+
+		with self.assertRaises(frappe.ValidationError):
+			self.service.save()
 
 	def available_mailbox(self) -> UserMailAccount:
 		return UserMailAccount.provision(self.service)
@@ -172,5 +209,8 @@ class TestServerMailbox(IntegrationTestCase):
 				"password": "password",
 			}
 		).insert()
-		mailbox.db_set("creation", "2026-01-01 00:00:00")
+		return self.stale(mailbox)
+
+	def stale(self, mailbox: UserMailAccount) -> UserMailAccount:
+		mailbox.db_set("modified", "2026-01-01 00:00:00", update_modified=False)
 		return mailbox

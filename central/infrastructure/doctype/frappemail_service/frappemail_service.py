@@ -1,21 +1,29 @@
 # Copyright (c) 2026, frappe and contributors
 # For license information, please see license.txt
 
+import json
+
 import frappe
 import requests
+from frappe import _
 from frappe.model.document import Document
+
+from central.infrastructure.doctype.user_mail_account.user_mail_account import (
+	MAILBOX_CONFIG_BYTES,
+	UserMailAccount,
+)
 
 ADMIN_API = "/api/method/suite.mail.api.admin."
 TIMEOUT_SECONDS = (5, 60)
-# The Suite site refuses an unknown member with the same 403 as a refused caller; only the message differs.
+# The Suite site answers an unknown member and a refused caller with the same 403.
 NOT_A_MEMBER = "is not a mail account"
-
-# A pool below its minimum gets a whole batch, not a top-up of one. One batch per run keeps
-# the job short and the Suite site under its rate limit.
+# One batch per run keeps the job short and the Suite site under its rate limit.
 REFILL_BATCH_SIZE = 50
 
 
 class FrappeMailService(Document):
+	"""A Suite site that holds server mailboxes, and the pool of them Central keeps ready."""
+
 	# begin: auto-generated types
 	# This code is auto-generated. Do not modify anything in this block.
 
@@ -35,6 +43,38 @@ class FrappeMailService(Document):
 		smtp_server: DF.Data
 	# end: auto-generated types
 
+	def validate(self) -> None:
+		# Larger mail settings would make the region refuse every server creation.
+		sample = UserMailAccount.build_site_config(
+			self.smtp_server, *UserMailAccount.generate_credentials(self.domain)
+		)
+		if len(json.dumps(sample).encode()) > MAILBOX_CONFIG_BYTES:
+			frappe.throw(_("Domain and SMTP Server are too long for the server metadata."))
+
+	@property
+	def available_mailbox_count(self) -> int:
+		return frappe.db.count("User Mail Account", {"frappemail_service": self.name, "status": "Available"})
+
+	def refill(self) -> None:
+		"""Finish interrupted work, then add a batch when the pool is below its minimum."""
+		UserMailAccount.clean_up_unfinished(self)
+		if not self.enabled or self.available_mailbox_count >= self.minimum_available_mailboxes:
+			return
+
+		for _attempt in range(REFILL_BATCH_SIZE):
+			try:
+				UserMailAccount.provision(self)
+			except Exception:
+				frappe.log_error(title=f"Mailbox creation failed for {self.name}")
+				break
+
+	@frappe.whitelist(methods=["POST"])
+	def queue_refill(self) -> None:
+		self.check_permission("write")
+		frappe.enqueue_doc(
+			self.doctype, self.name, "refill", job_id=f"mailbox-refill:{self.name}", deduplicate=True
+		)
+
 	def create_send_only_member(self, email: str, password: str) -> None:
 		username, domain = email.split("@", 1)
 		self.post_to_suite_site(
@@ -47,7 +87,6 @@ class FrappeMailService(Document):
 				"backup_email": self.backup_email,
 				"is_admin": False,
 				"send_invite": False,
-				# Nobody reads a server's mailbox, so mail sent to it bounces.
 				"disable_receiving": True,
 			},
 		)
@@ -61,8 +100,7 @@ class FrappeMailService(Document):
 				raise
 
 	def post_to_suite_site(self, method: str, payload: dict) -> None:
-		"""Call the Suite site's admin API as the Suite Admin this service names."""
-		# No redirects: the token must not follow a Location header to another host.
+		# No redirects, so the token never reaches another host. A redirect then counts as a failure.
 		response = requests.post(
 			f"{self.site_url.rstrip('/')}{ADMIN_API}{method}",
 			json=payload,
@@ -73,35 +111,14 @@ class FrappeMailService(Document):
 			timeout=TIMEOUT_SECONDS,
 			allow_redirects=False,
 		)
-		# A redirect is not a success: with redirects off it would otherwise pass as one.
 		if not 200 <= response.status_code < 300:
 			raise requests.HTTPError(f"{response.status_code} from {method}", response=response)
 
-	@property
-	def available_mailbox_count(self) -> int:
-		return frappe.db.count("User Mail Account", {"frappemail_service": self.name, "status": "Available"})
-
-	def refill(self) -> None:
-		"""Create one batch of mailboxes when fewer than the minimum are available."""
-		from central.infrastructure.doctype.user_mail_account.user_mail_account import UserMailAccount
-
-		UserMailAccount.clean_up_pending(self)
-		if self.available_mailbox_count >= self.minimum_available_mailboxes:
-			return
-
-		for _ in range(REFILL_BATCH_SIZE):
-			try:
-				UserMailAccount.provision(self)
-			except Exception:
-				# The next run retries; more calls now would only fail the same way.
-				frappe.log_error(title=f"Mailbox creation failed for {self.name}")
-				break
-
 
 def refill_mailboxes() -> None:
-	for name in frappe.get_all("FrappeMail Service", filters={"enabled": 1}, pluck="name"):
+	"""Scheduler: refill every service. One service's failure does not stop the others."""
+	for name in frappe.get_all("FrappeMail Service", pluck="name"):
 		try:
 			frappe.get_doc("FrappeMail Service", name).refill()
 		except Exception:
-			# One service's failure must not stop the refill of the others.
 			frappe.log_error(title=f"Mailbox refill failed for {name}")

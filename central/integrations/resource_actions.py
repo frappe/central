@@ -49,15 +49,13 @@ def process_request(name: str) -> None:
 		with frappe.cache.lock(f"server-provisioning:{name}", timeout=timeout, blocking_timeout=0):
 			try:
 				_process_locked(name)
-			except Exception as error:
+			except Exception:
 				# A worker crash must leave an actionable record without repeating a mutation.
 				diagnostic = frappe.get_traceback()
 				frappe.db.rollback()
 				action = frappe.get_doc("Resource Action", name, for_update=True)
 				if action.status == "Queued":
-					# A known failure, such as an empty mailbox pool, keeps its own words for the user.
-					envelope = getattr(error, "envelope", None) or build_envelope("UNEXPECTED")
-					action.transition("Failed", envelope=envelope, diagnostic=diagnostic)
+					action.transition("Failed", envelope=build_envelope("UNEXPECTED"), diagnostic=diagnostic)
 				elif action.action == "resize" and action.status == "Dispatching":
 					action.transition(
 						"Uncertain", envelope=build_envelope("OUTCOME_UNKNOWN"), diagnostic=diagnostic
