@@ -61,8 +61,9 @@ class CustomerSyncTestCase(IntegrationTestCase):
 class TestCreate(CustomerSyncTestCase):
 	def test_one_record_per_job_until_all_three_exist(self):
 		with patch(POST, side_effect=created("CUST-1", "ADDR-1", "CONT-1")) as post, patch(PUT) as put:
-			for _ in range(3):
-				self._job().assert_called_once_with(TEAM, job_id=f"customer-sync::{TEAM}::next")
+			# Each step queues the next under its own id, never under the running job's.
+			for following in ("address", "contact", "update"):
+				self._job().assert_called_once_with(TEAM, job_id=f"customer-sync::{TEAM}::{following}")
 			self._job().assert_not_called()  # the last pass only updates
 		self.assertEqual(
 			self._ids(), {"profile_id": "CUST-1", "address_id": "ADDR-1", "contact_id": "CONT-1"}

@@ -54,16 +54,21 @@ def sync_customer_profile(team: str) -> None:
 		return
 	if not profile.profile_id:
 		_create(profile, "profile_id", "Customer", _customer_payload)
+		following = "address"
 	elif not profile.address_id:
 		_create(profile, "address_id", "Address", _address_payload)
+		following = "contact"
 	elif not profile.contact_id:
 		_create(profile, "contact_id", "Contact", _contact_payload)
+		# A last update pass also catches profile edits made while the records were created.
+		following = "update"
 	else:
 		update_customer_profile(profile)
 		_release_held_drafts(team)
 		return
-	# A last update pass also catches profile edits made while the records were created.
-	_enqueue(team, job_id=f"customer-sync::{team}::next")
+	# Each step has its own job id: this job is still running when it queues the next,
+	# and a shared id would be dropped as a duplicate of itself.
+	_enqueue(team, job_id=f"customer-sync::{team}::{following}")
 
 
 def update_customer_profile(profile) -> None:
