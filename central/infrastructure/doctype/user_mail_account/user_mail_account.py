@@ -139,9 +139,11 @@ class UserMailAccount(Document):
 
 	@classmethod
 	def queue_removal(cls, **filters) -> None:
-		"""Mark the matching assigned mailboxes Removing and queue their removal."""
+		"""Mark the matching ready or assigned mailboxes Removing and queue their removal."""
 		for name in frappe.get_all(
-			"User Mail Account", filters={**filters, "status": "Assigned"}, pluck="name"
+			"User Mail Account",
+			filters={**filters, "status": ("in", ("Available", "Assigned"))},
+			pluck="name",
 		):
 			frappe.db.set_value("User Mail Account", name, "status", "Removing")
 			frappe.enqueue(
@@ -153,10 +155,15 @@ class UserMailAccount(Document):
 	@frappe.whitelist(methods=["POST"])
 	def revoke(self) -> None:
 		self.check_permission("write")
-		if self.status != "Assigned":
-			frappe.throw(_("Only an assigned mailbox can be removed."))
+		if self.status not in ("Available", "Assigned"):
+			frappe.throw(_("Only an available or assigned mailbox can be removed."))
 
 		self.queue_removal(name=self.name)
+
+	def on_trash(self) -> None:
+		# A record must outlive its Suite member, so that a failed removal is retried.
+		if self.status != "Deleted":
+			frappe.throw(_("Use Remove Mailbox. Only a deleted mailbox record can be deleted."))
 
 	def remove_from_suite_site(self) -> None:
 		frappe.get_doc("FrappeMail Service", self.frappemail_service).delete_member(self.email)
