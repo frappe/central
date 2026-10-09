@@ -132,8 +132,11 @@ class TestGroveClientCalls(IntegrationTestCase):
 				),
 			),
 			(
-				lambda: self.client.add_credit("TEAM-1", 5, "ref-1"),
-				("grove.api.add_credit", {"team": "TEAM-1", "amount": 5, "reference": "ref-1"}),
+				lambda: self.client.add_credit("TEAM-1", 5, "ref-1", {"k1": 5}),
+				(
+					"grove.api.add_credit",
+					{"team": "TEAM-1", "amount": 5, "reference": "ref-1", "allocations": {"k1": 5}},
+				),
 			),
 		]
 		for call, expected in calls:
@@ -336,13 +339,14 @@ class TestAI(IntegrationTestCase):
 
 	def test_only_an_operator_adds_credit(self):
 		self.enabled()
-		with patch.object(GroveClient, "add_credit", return_value={"balance": 5}) as add_credit:
-			self.assertEqual(api.add_credit(self.team, 5, "ref-1"), {"balance": 5})
+		handed = {"balance": 5, "allocations": [{"key": "k1", "amount": 5}]}
+		with patch.object(GroveClient, "add_credit", return_value=handed) as add_credit:
+			self.assertEqual(api.add_credit(self.team, 5, "ref-1"), handed)
 			frappe.set_user("Guest")
 			with self.assertRaises(frappe.PermissionError):
 				api.add_credit(self.team, 5, "ref-2")
 
-		add_credit.assert_called_once_with(self.team, 5, "ref-1")
+		add_credit.assert_called_once_with(self.team, 5, "ref-1", None)
 
 	def test_a_changed_alert_address_is_sent_to_grove_only_when_ai_is_on(self):
 		team = frappe.get_doc("Team", self.team)

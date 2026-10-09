@@ -61,8 +61,8 @@ def create_api_key(
 	team: str | None = None, label: str | None = None, geography: str | None = None, cap: float | None = None
 ) -> dict:
 	"""Mint a key for the team in `geography` (Grove's default when none) with `cap` USD to
-	spend (a prepaid team's key needs one above zero), and return its secret. This is the only
-	time it is shown. `models` is what it may call, for the quickstart."""
+	spend (none on a prepaid team: the key is refused until it gets one), and return its secret.
+	This is the only time it is shown. `models` is what it may call, for the quickstart."""
 	require_ai(team)
 	label = (label or "").strip()
 	if not label:
@@ -125,12 +125,16 @@ def get_usage(team: str | None = None, period: str = "Last 7 Days", key: str | N
 
 
 @frappe.whitelist(methods=["POST"])
-def add_credit(team: str, amount: float, reference: str | None = None) -> dict:
+def add_credit(
+	team: str, amount: float, reference: str | None = None, allocations: dict[str, float] | None = None
+) -> dict:
 	"""Add USD credit to the team's balance at Grove. Operator only: nothing is charged to the
-	team for it. A repeat with the same `reference` adds nothing. Returns the balance after."""
+	team for it. A repeat with the same `reference` adds nothing. Grove spreads it over the
+	team's keys' spend limits, or as `allocations` ({key: USD}) says. Returns the balance after
+	and the split."""
 	frappe.only_for("System Manager")
 	require_ai(team)
-	return GroveClient.from_settings().add_credit(team, amount, reference)
+	return GroveClient.from_settings().add_credit(team, amount, reference, allocations)
 
 
 def require_ai(team: str) -> None:

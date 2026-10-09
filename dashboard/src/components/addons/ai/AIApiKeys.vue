@@ -220,9 +220,9 @@ const revoke = async (key: AIApiKey): Promise<void> => {
 		<div class="mx-auto w-full max-w-3xl px-6 pb-8 pt-5">
 			<div class="flex items-start justify-between gap-4">
 				<p class="max-w-prose text-p-sm text-ink-gray-5">
-					Keys for use in your own apps. A key's secret is shown once,
-					when it is created. Each key works in one geography and has
-					its own rate limits<template v-if="prepaid">
+					Keys for use in your own apps. A key's secret is shown once, when it
+					is created. Each key works in one geography and has its own rate
+					limits<template v-if="prepaid">
 						and spend limit: the part of the balance it may spend</template
 					>.
 				</p>
@@ -281,9 +281,7 @@ const revoke = async (key: AIApiKey): Promise<void> => {
 
 					<div class="min-w-0 flex-1">
 						<div class="flex flex-wrap items-center gap-2">
-							<span
-								class="truncate text-sm font-medium text-ink-gray-9"
-							>
+							<span class="truncate text-sm font-medium text-ink-gray-9">
 								{{ key.title }}
 							</span>
 							<Badge
@@ -302,10 +300,14 @@ const revoke = async (key: AIApiKey): Promise<void> => {
 						<div
 							class="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-ink-gray-5"
 						>
-							<span class="truncate font-mono"
-								>{{ key.masked }}</span
+							<span class="truncate font-mono">{{ key.masked }}</span>
+							<Tooltip
+								v-if="prepaid && !key.cap"
+								text="Refused until it gets a spend limit. A top-up passes it by until then."
 							>
-							<span v-if="prepaid">
+								<Badge size="sm" theme="orange" label="No spend limit yet" />
+							</Tooltip>
+							<span v-else-if="prepaid">
 								{{ usd(key.spent) }}
 								of {{ usd(key.cap) }} spend limit
 							</span>
@@ -370,9 +372,9 @@ const revoke = async (key: AIApiKey): Promise<void> => {
 		<template #default>
 			<div v-if="helpTarget" class="space-y-4">
 				<p class="text-p-sm text-ink-gray-6">
-					One key works on both surfaces: point the OpenAI or the
-					Anthropic SDK at the base URL below and use it as you would
-					with the vendor. The models are what this key may call in
+					One key works on both surfaces: point the OpenAI or the Anthropic SDK
+					at the base URL below and use it as you would with the vendor. The
+					models are what this key may call in
 					{{ geographyLabel(helpTarget.geography) }}.
 				</p>
 				<div v-if="keyModelsLoading" class="flex justify-center py-8">
@@ -395,10 +397,7 @@ const revoke = async (key: AIApiKey): Promise<void> => {
 				label: 'Create',
 				variant: 'solid',
 				loading: creating,
-				disabled:
-					!newLabel.trim() ||
-					!newGeography ||
-					(prepaid && !(Number(newCap) > 0)),
+				disabled: !newLabel.trim() || !newGeography,
 				onClick: create,
 			},
 		]"
@@ -426,7 +425,7 @@ const revoke = async (key: AIApiKey): Promise<void> => {
 					step="0.01"
 					label="Spend limit (USD)"
 					placeholder="0"
-					:description="`Required: what this key may spend. ${usd(unallocated)} of the balance is not yet handed to any key.`"
+					:description="`What this key may spend. Leave it at 0 to set it later: the key is refused until it has a limit. ${usd(unallocated)} of the balance is not yet handed to any key.`"
 					@keyup.enter="create"
 				/>
 			</div>
@@ -461,7 +460,8 @@ const revoke = async (key: AIApiKey): Promise<void> => {
 				@keyup.enter="saveCap"
 			/>
 			<p class="mt-1 text-p-sm text-ink-gray-5">
-				{{ usd(unallocated) }} of the balance is free to hand out.
+				{{ usd(unallocated) }}
+				of the balance is free to hand out.
 			</p>
 			<p v-if="capError" class="mt-2 text-p-sm text-ink-red-6">
 				{{ capError }}
@@ -484,16 +484,10 @@ const revoke = async (key: AIApiKey): Promise<void> => {
 				/>
 
 				<div>
-					<label
-						class="mb-1 block text-p-sm font-medium text-ink-gray-7"
-					>
+					<label class="mb-1 block text-p-sm font-medium text-ink-gray-7">
 						API key
 					</label>
-					<CopyableValue
-						:value="minted.api_key"
-						label="API key"
-						block
-					/>
+					<CopyableValue :value="minted.api_key" label="API key" block />
 				</div>
 
 				<!-- The examples carry the key and its own gateway, so what is copied runs as is. -->
@@ -518,15 +512,12 @@ const revoke = async (key: AIApiKey): Promise<void> => {
 		@after-leave="revokeError = ''"
 	>
 		<template v-if="revokeTarget">
-			<p
-				v-if="!isRevocable(revokeTarget)"
-				class="text-p-base text-ink-gray-7"
-			>
+			<p v-if="!isRevocable(revokeTarget)" class="text-p-base text-ink-gray-7">
 				<span class="text-base-semibold text-ink-gray-9"
 					>{{ revokeTarget.title }}</span
 				>
-				can be revoked from {{ revocableFrom(revokeTarget) }}, six hours
-				after it was created.
+				can be revoked from {{ revocableFrom(revokeTarget) }}, six hours after
+				it was created.
 			</p>
 			<p v-else class="text-p-base text-ink-gray-7">
 				Revoke

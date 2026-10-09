@@ -85,10 +85,20 @@ class GroveClient:
 	) -> dict:
 		return self.call("grove.api.usage", teams=teams, month=month, period=period, key_hash=key_hash)
 
-	def add_credit(self, team: str, amount: float, reference: str | None = None) -> dict:
+	def add_credit(
+		self,
+		team: str,
+		amount: float,
+		reference: str | None = None,
+		allocations: dict[str, float] | None = None,
+	) -> dict:
 		"""USD onto the team's ledger. Grove books one `reference` once, so a call with no
-		answer can be sent again under it."""
-		return self.call("grove.api.add_credit", team=team, amount=amount, reference=reference)
+		answer can be sent again under it. `allocations`, {key: USD}, says how much of it each
+		key may spend; none spreads it over the live keys in proportion to their spend limits.
+		→ `balance` after, and the `allocations` made."""
+		return self.call(
+			"grove.api.add_credit", team=team, amount=amount, reference=reference, allocations=allocations
+		)
 
 	def call(self, method: str, **body) -> dict | list:
 		response = requests.post(

@@ -108,7 +108,7 @@ const shownModels = computed(() =>
 							<Tooltip
 								:text="
 									prepaid
-										? `$${(balance?.unallocated ?? 0).toFixed(2)} not yet handed to any key's spend limit. Raise a key's spend limit on the API keys tab to spend it.`
+										? `$${(balance?.unallocated ?? 0).toFixed(2)} not yet handed to any key's spend limit. A top-up is spread over the keys' spend limits in proportion; raise a limit on the API keys tab to hand out the rest.`
 										: 'This is a free team: usage is counted but never charged, so no balance is needed.'
 								"
 							>
