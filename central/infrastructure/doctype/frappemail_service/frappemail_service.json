@@ -1,23 +1,23 @@
 {
  "actions": [],
- "allow_rename": 0,
  "autoname": "field:service_name",
- "creation": "2026-10-08 00:00:00.000000",
+ "creation": "2026-10-08 00:00:00",
  "doctype": "DocType",
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
-  "service_name",
   "enabled",
+  "service_name",
   "domain",
   "column_break_pool",
   "smtp_server",
   "minimum_available_mailboxes",
   "suite_section",
   "site_url",
+  "backup_email",
+  "column_break_tibk",
   "api_key",
-  "api_secret",
-  "backup_email"
+  "api_secret"
  ],
  "fields": [
   {
@@ -60,7 +60,8 @@
    "fieldname": "minimum_available_mailboxes",
    "fieldtype": "Int",
    "label": "Minimum Available Mailboxes",
-   "non_negative": 1
+   "non_negative": 1,
+   "show_description_on_click": 1
   },
   {
    "fieldname": "suite_section",
@@ -75,7 +76,6 @@
    "reqd": 1
   },
   {
-   "description": "API key of a Suite Admin on the Suite site.",
    "fieldname": "api_key",
    "fieldtype": "Data",
    "label": "API Key",
@@ -94,6 +94,10 @@
    "label": "Backup Email",
    "options": "Email",
    "reqd": 1
+  },
+  {
+   "fieldname": "column_break_tibk",
+   "fieldtype": "Column Break"
   }
  ],
  "grid_page_length": 50,
@@ -107,7 +111,7 @@
    "link_fieldname": "frappemail_service"
   }
  ],
- "modified": "2026-10-09 12:00:00.000000",
+ "modified": "2026-10-09 19:43:19.830838",
  "modified_by": "Administrator",
  "module": "Infrastructure",
  "name": "FrappeMail Service",

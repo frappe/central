@@ -166,6 +166,26 @@ class TestServerMailbox(IntegrationTestCase):
 		self.assertTrue(enqueue.call_args.kwargs["enqueue_after_commit"])
 		self.assertEqual(self.statuses(), ["Removing"])
 
+	def test_an_operator_can_remove_an_available_mailbox(self):
+		mailbox = self.available_mailbox()
+
+		with patch(f"{MAILBOX}.frappe.enqueue") as enqueue:
+			mailbox.revoke()
+
+		enqueue.assert_called_once()
+		self.assertEqual(mailbox.reload().status, "Removing")
+
+	def test_a_mailbox_is_deleted_only_after_its_removal(self):
+		mailbox = self.available_mailbox()
+
+		with self.assertRaises(frappe.ValidationError):
+			mailbox.delete()
+
+		mailbox.db_set("status", "Deleted")
+		mailbox.delete()
+
+		self.assertFalse(frappe.db.exists("User Mail Account", mailbox.name))
+
 	def test_a_removal_job_skips_a_mailbox_no_longer_queued_for_removal(self):
 		mailbox = self.available_mailbox()
 		self.post.reset_mock()

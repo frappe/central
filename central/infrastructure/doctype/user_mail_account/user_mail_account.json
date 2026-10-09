@@ -1,19 +1,20 @@
 {
  "actions": [],
- "allow_rename": 0,
  "autoname": "field:email",
- "creation": "2026-10-08 00:00:00.000000",
+ "creation": "2026-10-08 00:00:00",
  "doctype": "DocType",
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
-  "email",
-  "frappemail_service",
   "status",
+  "email",
+  "column_break_ryld",
+  "frappemail_service",
   "assignment_section",
-  "resource_action",
   "team",
   "server",
+  "column_break_yayg",
+  "resource_action",
   "assigned_at",
   "credentials_section",
   "password"
@@ -100,11 +101,19 @@
    "fieldtype": "Password",
    "label": "Password",
    "read_only": 1
+  },
+  {
+   "fieldname": "column_break_ryld",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "column_break_yayg",
+   "fieldtype": "Column Break"
   }
  ],
  "grid_page_length": 50,
  "links": [],
- "modified": "2026-10-09 12:00:00.000000",
+ "modified": "2026-10-09 19:42:12.504799",
  "modified_by": "Administrator",
  "module": "Infrastructure",
  "name": "User Mail Account",
@@ -113,7 +122,6 @@
  "permissions": [
   {
    "create": 1,
-   "delete": 1,
    "email": 1,
    "export": 1,
    "print": 1,
