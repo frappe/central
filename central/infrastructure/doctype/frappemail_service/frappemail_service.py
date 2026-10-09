@@ -3,11 +3,13 @@
 
 import frappe
 import requests
+from frappe import _
 from frappe.model.document import Document
 
-from central.infrastructure.doctype.user_mail_account.user_mail_account import UserMailAccount
+from central.infrastructure.doctype.user_mail_account.user_mail_account import SMTP_PORTS, UserMailAccount
 
 ADMIN_API = "/api/method/suite.mail.api.admin."
+CLIENT_CONFIG_API = "/api/method/suite.mail.api.account.get_mail_client_config"
 TIMEOUT_SECONDS = (5, 60)
 # The Suite site answers an unknown member and a refused caller with the same 403.
 NOT_A_MEMBER = "is not a mail account"
@@ -34,8 +36,40 @@ class FrappeMailService(Document):
 		minimum_available_mailboxes: DF.Int
 		service_name: DF.Data
 		site_url: DF.Data
-		smtp_server: DF.Data
+		smtp_port: DF.Int
+		smtp_server: DF.Data | None
 	# end: auto-generated types
+
+	def before_insert(self) -> None:
+		if not (self.smtp_server and self.smtp_port):
+			self.set_smtp_endpoint()
+
+	def validate(self) -> None:
+		if self.smtp_port and self.smtp_port not in SMTP_PORTS:
+			frappe.throw(_("SMTP Port must be 465 (SSL/TLS) or 587 (STARTTLS)."))
+
+	@frappe.whitelist(methods=["POST"])
+	def refresh_smtp_info(self) -> None:
+		self.check_permission("write")
+		self.set_smtp_endpoint()
+		self.save()
+
+	def set_smtp_endpoint(self) -> None:
+		"""Take the SMTP endpoint the Suite site publishes. STARTTLS wins, as every Frappe version supports it."""
+		endpoints = {
+			endpoint["port"]: endpoint["hostname"]
+			for endpoint in self.get_from_suite_site(CLIENT_CONFIG_API)
+			if endpoint.get("protocol") == "SMTP"
+		}
+		port = next((port for port in SMTP_PORTS if port in endpoints), None)
+		if not port:
+			frappe.throw(
+				_(
+					"The Suite site publishes no SMTP endpoint on port 587 or 465. "
+					"Turn on the mail client configuration in its Mail Settings."
+				)
+			)
+		self.smtp_server, self.smtp_port = endpoints[port], port
 
 	@property
 	def available_mailbox_count(self) -> int:
@@ -96,15 +130,30 @@ class FrappeMailService(Document):
 		response = requests.post(
 			f"{self.site_url.rstrip('/')}{ADMIN_API}{method}",
 			json=payload,
-			headers={
-				"Authorization": f"token {self.api_key}:{self.get_password('api_secret')}",
-				"Accept": "application/json",
-			},
+			headers=self.suite_site_headers,
 			timeout=TIMEOUT_SECONDS,
 			allow_redirects=False,
 		)
 		if not 200 <= response.status_code < 300:
 			raise requests.HTTPError(f"{response.status_code} from {method}", response=response)
+
+	def get_from_suite_site(self, path: str) -> list | dict:
+		response = requests.get(
+			f"{self.site_url.rstrip('/')}{path}",
+			headers=self.suite_site_headers,
+			timeout=TIMEOUT_SECONDS,
+			allow_redirects=False,
+		)
+		if not 200 <= response.status_code < 300:
+			raise requests.HTTPError(f"{response.status_code} from {path}", response=response)
+		return response.json()["message"]
+
+	@property
+	def suite_site_headers(self) -> dict:
+		return {
+			"Authorization": f"token {self.api_key}:{self.get_password('api_secret')}",
+			"Accept": "application/json",
+		}
 
 
 def refill_mailboxes() -> None:

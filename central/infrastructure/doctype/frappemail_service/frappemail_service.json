@@ -11,6 +11,7 @@
   "domain",
   "column_break_pool",
   "smtp_server",
+  "smtp_port",
   "minimum_available_mailboxes",
   "suite_section",
   "site_url",
@@ -48,11 +49,16 @@
    "fieldtype": "Column Break"
   },
   {
-   "description": "SMTP host on port 587, such as mail.c3.frappemail.com.",
+   "description": "SMTP host, such as mail.c3.frappemail.com. Filled from the Suite site.",
    "fieldname": "smtp_server",
    "fieldtype": "Data",
-   "label": "SMTP Server",
-   "reqd": 1
+   "label": "SMTP Server"
+  },
+  {
+   "description": "465 (SSL/TLS) or 587 (STARTTLS). Filled from the Suite site.",
+   "fieldname": "smtp_port",
+   "fieldtype": "Int",
+   "label": "SMTP Port"
   },
   {
    "default": "200",
@@ -111,7 +117,7 @@
    "link_fieldname": "frappemail_service"
   }
  ],
- "modified": "2026-10-09 19:43:19.830838",
+ "modified": "2026-10-09 23:10:20.147110",
  "modified_by": "Administrator",
  "module": "Infrastructure",
  "name": "FrappeMail Service",

@@ -3,7 +3,15 @@
 
 frappe.ui.form.on("FrappeMail Service", {
 	refresh(frm) {
-		if (frm.is_new() || !frm.doc.enabled) return;
+		if (frm.is_new()) return;
+
+		frm.add_custom_button(__("Refresh SMTP Info"), () =>
+			frm.call({ doc: frm.doc, method: "refresh_smtp_info", freeze: true }).then((r) => {
+				if (r.exc) return;
+				frm.reload_doc();
+			}),
+		);
+		if (!frm.doc.enabled) return;
 
 		frm.add_custom_button(__("Refill Now"), () =>
 			frm.call({ doc: frm.doc, method: "queue_refill", freeze: true }).then((r) => {

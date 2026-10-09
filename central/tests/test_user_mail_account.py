@@ -1,3 +1,4 @@
+import json
 from unittest.mock import Mock, patch
 
 import frappe
@@ -21,6 +22,10 @@ def response(status: int, text: str = "") -> requests.Response:
 	return reply
 
 
+def suite_reply(message) -> requests.Response:
+	return response(200, json.dumps({"message": message}))
+
+
 class TestServerMailbox(IntegrationTestCase):
 	def setUp(self):
 		super().setUp()
@@ -37,6 +42,7 @@ class TestServerMailbox(IntegrationTestCase):
 				"service_name": frappe.generate_hash(length=8),
 				"domain": "notifications.example.test",
 				"smtp_server": "smtp.example.test",
+				"smtp_port": 587,
 				"minimum_available_mailboxes": 3,
 				"site_url": "https://suite.example.test",
 				"api_key": "key",
@@ -152,8 +158,54 @@ class TestServerMailbox(IntegrationTestCase):
 		config = mailbox.get_site_config()
 
 		self.assertEqual(config["mail_server"], "smtp.example.test")
+		self.assertEqual((config["mail_port"], config["use_tls"], config["use_ssl"]), (587, 1, 0))
 		self.assertEqual((config["mail_login"], config["auto_email_id"]), (mailbox.email, mailbox.email))
 		self.assertEqual(config["mail_password"], mailbox.get_password())
+
+	def test_sites_send_over_ssl_on_port_465(self):
+		self.service.db_set("smtp_port", 465)
+
+		config = self.available_mailbox().get_site_config()
+
+		self.assertEqual((config["mail_port"], config["use_tls"], config["use_ssl"]), (465, 0, 1))
+
+	def test_a_new_service_takes_the_starttls_endpoint_from_the_suite_site(self):
+		endpoints = [
+			{"protocol": "IMAP", "hostname": "imap.example.test", "port": 993},
+			{"protocol": "SMTP", "hostname": "ssl.example.test", "port": 465},
+			{"protocol": "SMTP", "hostname": "tls.example.test", "port": 587},
+		]
+		with patch(f"{FRAPPEMAIL_SERVICE}.requests.get", return_value=suite_reply(endpoints)):
+			service = self.new_service()
+
+		self.assertEqual((service.smtp_server, service.smtp_port), ("tls.example.test", 587))
+
+	def test_a_new_service_fails_without_a_published_smtp_endpoint(self):
+		endpoints = [{"protocol": "SMTP", "hostname": "smtp.example.test", "port": 2525}]
+		with (
+			patch(f"{FRAPPEMAIL_SERVICE}.requests.get", return_value=suite_reply(endpoints)),
+			self.assertRaisesRegex(frappe.ValidationError, "no SMTP endpoint"),
+		):
+			self.new_service()
+
+	def test_an_unsupported_smtp_port_is_refused(self):
+		self.service.smtp_port = 2525
+
+		with self.assertRaisesRegex(frappe.ValidationError, "465 .* or 587"):
+			self.service.save()
+
+	def new_service(self):
+		return frappe.get_doc(
+			{
+				"doctype": "FrappeMail Service",
+				"service_name": frappe.generate_hash(length=8),
+				"domain": "notifications.example.test",
+				"site_url": "https://suite.example.test",
+				"api_key": "key",
+				"api_secret": "secret",
+				"backup_email": "ops@example.test",
+			}
+		).insert()
 
 	def test_a_terminated_server_queues_its_mailbox_removal(self):
 		self.available_mailbox()
