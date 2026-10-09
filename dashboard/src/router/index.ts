@@ -180,13 +180,14 @@ router.beforeEach((to) => {
 	// Seeded with `window.user` (central/www/dashboard.py). A brand-new user has no
 	// live site yet, so they belong in the onboarding funnel, not the dashboard.
 	const onboardingComplete = window.onboarding_complete ?? false
+	const productSignup = Boolean(carriedQuery(to.query).product)
 
 	if (to.meta.public) {
 		if (isGuest.value) rememberFirstTouch(to.query)
 		if (isGuest.value || to.meta.allowSignedIn) return true
 		// Logged in but on an auth page — e.g. browser-Back after verifying. Don't dump
 		// them into the dashboard mid-onboarding: resume the funnel until it's finished.
-		return onboardingComplete
+		return onboardingComplete && !productSignup
 			? '/servers'
 			: { path: '/onboarding/site', query: carriedQuery(to.query) }
 	}
@@ -208,8 +209,8 @@ router.beforeEach((to) => {
 			return '/servers'
 	}
 
-	// A finished user has no reason to re-enter onboarding.
-	if (to.path.startsWith('/onboarding') && onboardingComplete) return '/servers'
+	if (to.path.startsWith('/onboarding') && onboardingComplete && !productSignup)
+		return '/servers'
 
 	// Warm the billing-profile completeness cache for the active team, non-blocking
 	// (mirrors the legacy guard): money-moving actions gate on it via

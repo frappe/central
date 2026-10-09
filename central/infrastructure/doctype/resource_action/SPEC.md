@@ -22,6 +22,8 @@ Central checks the capability, current image selector, image availability, plan 
 
 The request key is unique within a Team. Reusing it with identical inputs returns the same action. Reusing it with changed inputs fails. The saved configuration contains the accepted shape, image identity, currency, and billing cycle. The reserved rate becomes the opening subscription price even if the catalog changes while the request waits.
 
+A trial creation records its Product in a read-only link field as well as its saved site configuration. Onboarding filters this field to resume the selected product before a Site exists. The `record_trial_action_product` patch copies products from existing trial payloads.
+
 A repeat under a new key is also answered with the saved action, when the same requester sent the same settings and no region has returned a VM identity yet. Central saves the request before it calls a region, so a lost reply leaves the record while the caller keeps nothing. A request that already holds a VM identity never matches, so a deliberate second server is still a second record. The request digest covers the settings only, not the key.
 
 API routes remain thin. `central/server_models.py` defines input and saved-configuration models. `central/resource_actions.py` owns intake: creation policy and command authorization. `central/integrations/resource_actions.py` owns dispatch, recovery and completion. `central/integrations/servers.py` holds the plain Atlas server calls. Billing catalog modules own purchase and repricing policy. Remote calls and observed-state writes belong to `central/integrations/`. Resource Action queues every server and trial-site operation after the request transaction commits.

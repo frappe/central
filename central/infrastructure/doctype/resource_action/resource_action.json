@@ -15,6 +15,7 @@
   "server",
   "resource_id",
   "subdomain",
+  "product",
   "column_break_main",
   "status",
   "requested_by",
@@ -40,6 +41,16 @@
   "error_log"
  ],
  "fields": [
+  {
+   "depends_on": "eval:doc.resource_type=='Site'",
+   "description": "The product this trial starts, used to resume the correct product signup.",
+   "fieldname": "product",
+   "fieldtype": "Link",
+   "in_standard_filter": 1,
+   "label": "Product",
+   "options": "Product",
+   "read_only": 1
+  },
   {
    "fieldname": "resource_type",
    "fieldtype": "Select",

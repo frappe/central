@@ -5,31 +5,10 @@ import { useRoute, useRouter } from 'vue-router'
 import { API } from '@/api/methods'
 import AuthShell from '@/components/auth/AuthShell.vue'
 import ProductLogo from '@/components/auth/ProductLogo.vue'
-import {
-	frappeErrorMessage,
-	getFrappe,
-	methodUrl,
-	postFrappe,
-} from '@/lib/auth'
+import { useTrialOnboarding } from '@/composables/useTrialOnboarding'
+import { frappeErrorMessage, methodUrl, postFrappe } from '@/lib/auth'
 import { carriedQuery } from '@/lib/authRedirect'
-
-type SiteState = {
-	name: string
-	status: string
-	url: string | null
-	ready: boolean
-	login_url: string | null
-	login_pending: boolean
-}
-
-type Creation = {
-	action: string
-	status: string
-	title: string
-	error: { message: string } | null
-}
-
-type OnboardingStatus = { site: SiteState | null; creation: Creation | null }
+import type { TrialOnboardingStatus, TrialSiteState } from '@/types/api'
 
 const POLL_MS = 1000
 // A new Pilot accepts Central seconds after it finishes its bootstrap, so the
@@ -39,10 +18,11 @@ const LOGIN_RETRY_DELAYS_MS = [
 	15000, 15000, 15000, 20000,
 ]
 
-const status = ref<OnboardingStatus | null>(null)
+const status = ref<TrialOnboardingStatus | null>(null)
 const error = ref('')
 const route = useRoute()
 const router = useRouter()
+const { readStatus } = useTrialOnboarding()
 let timer: ReturnType<typeof setTimeout> | undefined
 let loginRetryIndex = 0
 
@@ -59,9 +39,7 @@ const waitingOn = computed(
 
 async function poll() {
 	try {
-		status.value = await getFrappe<OnboardingStatus>(
-			methodUrl(API.onboardingStatus),
-		)
+		status.value = await readStatus()
 		if (isReady.value) return claim()
 		if (isFailed.value) return
 	} catch (exception) {
@@ -79,7 +57,7 @@ async function poll() {
 // briefly, so only that state is retried without starting the rename.
 async function claim() {
 	try {
-		const claimed = await postFrappe<SiteState>(methodUrl(API.claimSite), {
+		const claimed = await postFrappe<TrialSiteState>(methodUrl(API.claimSite), {
 			name: site.value!.name,
 		})
 		if (claimed.login_pending) {

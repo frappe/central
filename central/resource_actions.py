@@ -98,6 +98,7 @@ def submit_request(
 		server_input.title,
 		resource_type=resource_type,
 		subdomain=subdomain,
+		product=site.product if site else None,
 		request_payload=configuration.model_dump(),
 		request_key=server_input.request_key,
 		request_digest=digest,

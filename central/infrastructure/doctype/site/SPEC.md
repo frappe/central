@@ -69,7 +69,7 @@ login_site --> mint a fresh login for site.local
 
 Nothing is provisioned during signup, so readiness is not a build finishing. `central.api.sites.get_site` reports `ready` when one request to `<url>/api/method/ping` answers. The first successful probe records `ready_at`, queues one `site_ready` notification after commit, and sends the `trial_ready` [funnel event](../../../signups/doctype/product/SPEC.md#signup-funnel). It does not create a login session. The console polls this read and calls the POST-only `central.api.sites.login_site` operation when the user opens the site.
 
-`central.api.sites.onboarding_status` follows the latest Site creation requested by the current user. It does not adopt a normal server creation or another team member's request. A Running state report schedules a full server refresh, so the Site record does not wait for the periodic reconciliation job.
+`central.api.sites.onboarding_status(team, product)` first finds the selected product's non-terminated Site that the caller can view in the Team. If none exists, it follows the latest matching Site creation requested by the caller. A plain signup follows only creations without a product. It does not adopt a normal server creation or another team member's pending request. The response reports whether the site was claimed, so a returning customer can find it in the resource list. A Running state report schedules a full server refresh, so the Site record does not wait for the periodic reconciliation job.
 
 ## Sign-in
 
