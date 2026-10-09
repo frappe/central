@@ -207,3 +207,23 @@ export interface ComposedConfig {
 	memory_gb: number
 	disk_gb: number
 }
+
+export interface TrialSiteState {
+	name: string
+	status: string
+	url: string | null
+	ready: boolean
+	claimed: boolean
+	login_url: string | null
+	login_pending: boolean
+}
+
+export interface TrialOnboardingStatus {
+	site: TrialSiteState | null
+	creation: {
+		action: string
+		status: string
+		title: string
+		error: { message: string } | null
+	} | null
+}

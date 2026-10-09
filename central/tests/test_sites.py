@@ -392,12 +392,86 @@ class TestSiteRoutes(SiteOnAMachine):
 			self.site().db_set("claimed_at", frappe.utils.now_datetime())
 			self.assertTrue(_onboarding_complete())
 
-	def creation_action(self, resource_type: str) -> str:
+	def test_another_product_does_not_resume_the_existing_site(self):
+		raven = self.signup_product("raven-return")
+		crm = self.signup_product("crm-return")
+		self.site().db_set("product", raven)
+		self.creation_action("Site", raven)
+
+		self.assertEqual(onboarding_status(self.team.name, crm), {"site": None, "creation": None})
+
+	def test_a_claimed_product_site_is_found_without_a_new_login(self):
+		product = self.signup_product("raven-return")
+		self.site().db_set({"product": product, "claimed_at": frappe.utils.now_datetime()})
+		with patch("central.api.sites.is_site_reachable", return_value=False):
+			state = onboarding_status(self.team.name, product)
+
+		self.assertEqual(state["site"]["name"], self.site().name)
+		self.assertTrue(state["site"]["claimed"])
+		self.assertIsNone(state["site"]["login_url"])
+
+	def test_a_product_resumes_its_pending_action_before_a_site_exists(self):
+		product = self.signup_product("crm-return")
+		action = self.creation_action("Site", product)
+		frappe.db.set_value("Resource Action", action, {"server": None, "status": "Queued"})
+		self.creation_action("Site", self.signup_product("raven-return"))
+
+		state = onboarding_status(self.team.name, product)
+
+		self.assertIsNone(state["site"])
+		self.assertEqual(state["creation"]["action"], action)
+
+	def test_a_plain_signup_does_not_resume_a_product_trial(self):
+		self.creation_action("Site", self.signup_product("raven-return"))
+
+		self.assertEqual(onboarding_status(self.team.name), {"site": None, "creation": None})
+
+	def test_a_terminated_product_site_does_not_block_a_new_trial(self):
+		product = self.signup_product("raven-return")
+		self.site().db_set("product", product)
+		self.creation_action("Site", product)
+		self.server.db_set("status", "Terminated")
+
+		self.assertEqual(onboarding_status(self.team.name, product), {"site": None, "creation": None})
+
+	def test_another_team_cannot_resume_a_product_site(self):
+		product = self.signup_product("raven-return")
+		self.site().db_set("product", product)
+		user = frappe.get_doc(
+			{"doctype": "User", "email": "product-outsider@example.test", "first_name": "Outsider"}
+		).insert()
+		frappe.set_user(user.name)
+
+		with self.assertRaises(frappe.PermissionError):
+			onboarding_status(self.team.name, product)
+
+	def test_the_patch_records_the_product_of_existing_trial_actions(self):
+		from central.patches.v0_0.record_trial_action_product import execute
+
+		product = self.signup_product("raven-return")
+		action = self.creation_action("Site")
+		frappe.db.set_value(
+			"Resource Action", action, "request_payload", frappe.as_json({"site": {"product": product}})
+		)
+
+		execute()
+
+		self.assertEqual(frappe.db.get_value("Resource Action", action, "product"), product)
+
+	def signup_product(self, key: str) -> str:
+		return (
+			frappe.get_doc({"doctype": "Product", "product_key": key, "title": key, "signup_app": "raven"})
+			.insert()
+			.name
+		)
+
+	def creation_action(self, resource_type: str, product: str | None = None) -> str:
 		return (
 			frappe.get_doc(
 				{
 					"doctype": "Resource Action",
 					"resource_type": resource_type,
+					"product": product,
 					"action": "create",
 					"team": self.team.name,
 					"server": self.server.name,

@@ -32,7 +32,7 @@ watch(
 	() => bucket.value?.name,
 	(name) => {
 		setBreadcrumbs([
-			{ label: 'Object storage', route: { path: '/object-storage' } },
+			{ label: 'Object Storage', route: { path: '/object-storage' } },
 			{ label: bucket.value ? bucketLabel(bucket.value) : 'Bucket' },
 		])
 
@@ -112,7 +112,7 @@ const copyEndpoint = async (endpoint: string): Promise<void> => {
 				description="It may have been deleted, or it belongs to another team."
 			>
 				<template #action>
-					<Button label="Back to object storage" route="/object-storage" />
+					<Button label="Back to Object Storage" route="/object-storage" />
 				</template>
 			</EmptyState>
 

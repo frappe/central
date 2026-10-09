@@ -69,28 +69,34 @@ const routes = [
 				meta: { title: 'Snapshots' },
 			},
 			{
-				path: 'servers/ssh-keys',
-				name: 'SSHKeys',
-				component: () => import('@/pages/servers/SSHKeysPage.vue'),
-				meta: { title: 'SSH keys' },
-			},
-			{
 				path: 'servers/new',
 				name: 'NewServer',
 				component: () => import('@/pages/servers/NewServerPage.vue'),
 				meta: { title: 'New server' },
 			},
 			{
+				path: 'servers/:id/:tab(networking|access|snapshots|settings)?',
+				name: 'Server',
+				component: () => import('@/pages/servers/ServerPage.vue'),
+				meta: { title: 'Servers' },
+			},
+			{
+				path: 'llm',
+				name: 'LLM',
+				component: () => import('@/pages/addons/AIInference.vue'),
+				meta: { title: 'LLM', feature: ['addons', 'llm'] },
+			},
+			{
 				path: 'object-storage',
 				name: 'ObjectStorage',
 				component: () => import('@/pages/addons/ObjectStorage.vue'),
-				meta: { title: 'Object storage', feature: ['addons', 'storage'] },
+				meta: { title: 'Object Storage', feature: ['addons', 'storage'] },
 			},
 			{
 				path: 'object-storage/:name',
 				name: 'Bucket',
 				component: () => import('@/pages/addons/BucketPage.vue'),
-				meta: { title: 'Object storage', feature: ['addons', 'storage'] },
+				meta: { title: 'Object Storage', feature: ['addons', 'storage'] },
 			},
 			{
 				path: 'billing',
@@ -157,11 +163,6 @@ const routes = [
 				component: () => import('@/pages/team/InvitationsPage.vue'),
 				meta: { title: 'Invitations' },
 			},
-			{
-				path: 'addons',
-				name: 'Addons',
-				redirect: '/object-storage',
-			},
 		],
 	},
 ]
@@ -179,13 +180,14 @@ router.beforeEach((to) => {
 	// Seeded with `window.user` (central/www/dashboard.py). A brand-new user has no
 	// live site yet, so they belong in the onboarding funnel, not the dashboard.
 	const onboardingComplete = window.onboarding_complete ?? false
+	const productSignup = Boolean(carriedQuery(to.query).product)
 
 	if (to.meta.public) {
 		if (isGuest.value) rememberFirstTouch(to.query)
 		if (isGuest.value || to.meta.allowSignedIn) return true
 		// Logged in but on an auth page — e.g. browser-Back after verifying. Don't dump
 		// them into the dashboard mid-onboarding: resume the funnel until it's finished.
-		return onboardingComplete
+		return onboardingComplete && !productSignup
 			? '/servers'
 			: { path: '/onboarding/site', query: carriedQuery(to.query) }
 	}
@@ -207,8 +209,8 @@ router.beforeEach((to) => {
 			return '/servers'
 	}
 
-	// A finished user has no reason to re-enter onboarding.
-	if (to.path.startsWith('/onboarding') && onboardingComplete) return '/servers'
+	if (to.path.startsWith('/onboarding') && onboardingComplete && !productSignup)
+		return '/servers'
 
 	// Warm the billing-profile completeness cache for the active team, non-blocking
 	// (mirrors the legacy guard): money-moving actions gate on it via

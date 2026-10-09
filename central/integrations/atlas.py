@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from typing import TYPE_CHECKING
 from urllib.parse import quote, urlsplit
 
@@ -14,8 +15,6 @@ from central.identity.doctype.team.tenant import validate_tenant_id
 from central.sso import central_url, mint_atlas_token
 
 if TYPE_CHECKING:
-	from datetime import datetime
-
 	from central.infrastructure.doctype.region.region import Region
 
 
@@ -96,6 +95,15 @@ class AtlasClient:
 
 	def get_vm(self, name: str) -> dict:
 		return self._get(f"virtual-machines/{quote(name, safe='')}")
+
+	def get_vm_metrics(self, name: str, start: datetime, end: datetime | None = None) -> dict:
+		"""The host's samples of a VM from `start` to `end` or now, one every `sample_interval_seconds`.
+		Atlas widens the interval as the window grows."""
+		params = {"start": start.isoformat()}
+		if end:
+			params["end"] = end.isoformat()
+
+		return self._get(f"virtual-machines/{quote(name, safe='')}/metrics", params)
 
 	def list_vms(self, limit: int = 100, offset: int = 0) -> list[dict]:
 		"""One page of this tenant's servers, newest first."""

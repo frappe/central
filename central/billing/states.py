@@ -51,7 +51,7 @@ INVOICE = StateMachine(
 		"Draft": {"Open", "Paid", "Cancelled"},  # opened, or settled outright by credits
 		"Open": {"Paid", "Overdue", "Cancelled", "Waived"},
 		"Overdue": {"Paid", "Cancelled", "Waived"},
-		"Paid": set(),  # terminal — corrections are cancel+reissue (pre-pay) or refund
+		"Paid": {"Cancelled"},  # only by cancel-and-refund, which issues a credit note
 		"Cancelled": set(),  # terminal
 		"Waived": set(),  # terminal
 	},
@@ -89,7 +89,7 @@ REFUND = StateMachine(
 	{
 		"Initiated": {"Completed", "Failed"},
 		"Completed": set(),  # terminal
-		"Failed": set(),  # terminal
+		"Failed": {"Initiated"},  # an operator tries again
 	},
 )
 

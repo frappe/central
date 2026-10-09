@@ -61,8 +61,9 @@ Read top-to-bottom — each layer calls the one below it.
 | **API, admin** | `api/admin/` | Billing-Admin views: `catalog`, `revenue` (cost-explorer), `teams`, `gateways`, `projection`, `rerating`, `services`. |
 | **API, pilot** | `api/billing_api.py` | X-Pilot-Token facade for a bench: payment methods, plans, metered services, credits, checkout. |
 | **Catalog** | `catalog/` | The product & pricing authority: taxonomy masters, Plan Configurator, composed-config pricing, rate resolution, subscriptions (intent + state), trust tiers, entitlement signing. |
-| **Revenue** | `revenue/` | Turning usage into money: `invoicing/` (draft→open→collect; `lifecycle` holds a draft until the team has billing details), `metering`, `credits`, `tax`, `dunning`, `rerating`, `erpnext_sync`. The commitment discount is in `catalog/commitments.py`. |
+| **Revenue** | `revenue/` | Turning usage into money: `invoicing/` (draft→open→collect), `metering`, `credits`, `tax`, `commitments` discount, `dunning`, `pricelock`. |
 | **Payments** | `payments/` | Moving the money: `charges`, `collection` (fallback), `collection_mode` (INR ₹15k gate), `mandates` (UPI), `emandate` (RBI), `payments` (cards), `webhooks`, `reconciliation`, `refunds`, `settlement`, `profile`. |
+| **Ingester** | `ingester/` | Every sync with the accounting system: `connection` (HTTP client), `customer` (customer, address, contact), `erpnext_sync` (Sales Invoice push). |
 | **Gateways** | `gateways/` | The adapter seam: `base.GatewayAdapter` + `stripe`/`razorpay`/`paypal` + `registry`. |
 | **Platform** | `platform/` | `notifications` (sole sender), `sync` (record the runtime billed from), `alerts` (operator alerts, including `held_invoices`), `invariants` (money audit), `constraints` (DB constraints), `metrics`. |
 | **Projection** | `projection/` | Cost projection and scenario engine for the admin `projection` API. |
@@ -253,10 +254,10 @@ flowchart LR
 | daily | `payments.settlement.run_billing_details_reminder` | ask credit-funded teams for the billing details their invoice will need |
 | daily | `revenue.credits.run_credit_expiry` | write off expired promotional credit |
 | daily | `platform.invariants.run_invariant_audit` | audit the cross-table money invariants |
-| hourly | `revenue.erpnext_sync.retry_failed_syncs` | retry Sales Invoice push (backoff window elapsed) |
 | hourly | `payments.reconciliation.run_reconciliation` | charged-but-never-webhooked gateway scan |
 | hourly | `platform.alerts.run_operator_alerts` | page operators (invariants, failed webhooks, stale attempts, held invoices) |
 | monthly | `revenue.invoicing.run_monthly_billing` | bill the just-closed month inline: draft, then open and collect |
+| hourly | `ingester.erpnext_sync.retry_failed_syncs` | retry Sales Invoice push (backoff window elapsed) |
 | monthly | `payments.payments.expire_payment_methods` | flip cards past their printed month |
 
 `draft_monthly_invoices` and `collect_due_invoices` are the fan-out variants of the two phases. They are not in `scheduler_events`. Run them by hand to fan a run out over the `billing` queue.
@@ -568,7 +569,7 @@ get_team_caps resolves caps live (no per-team Trust Tier doctype — dropped)
 - `rerating.py`: preview_rerating, apply_rerating, correct_rollup_terms.
 - `services.py`: get_team_services, subscribe_team_service.
 
-**Other whitelisted**: `api/billing_api.py` (pilot endpoints: `allow_guest` plus `pilot_credential_auth`), `payments/webhooks.py` (stripe, razorpay), `doctype/payment_gateway` (revalidate_and_register_webhook), and `doctype/plan_configurator` (controller methods).
+**Other whitelisted**: `catalog/plans.py` (create_configured_plan, get_plan_pricing), `revenue/credits.py` (purchase, adjust_credits, get_balance), `ingester/erpnext_sync.py` (sync_invoice), `payments/charges.py` (pay_invoice), `payments/payments.py` (initiate/confirm payment method, set_default, reorder, delete), `payments/webhooks.py` (stripe, razorpay), `india_gst.py`, and the `payment_gateway` / `plan_configurator` doctype controllers.
 
 > **Gotcha:** dashboard *mutations* must declare `methods=["POST"]` — frappe-ui `useCall`
 > defaults to GET, and Frappe rolls back writes on GET (the toast lies, nothing persists).

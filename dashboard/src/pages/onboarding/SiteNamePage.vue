@@ -6,7 +6,7 @@ import { API } from '@/api/methods'
 import AuthShell from '@/components/auth/AuthShell.vue'
 import ProductLogo from '@/components/auth/ProductLogo.vue'
 import { useProduct } from '@/composables/useProduct'
-import { forgetFirstTouch, readFirstTouch } from '@/lib/attribution'
+import { useTrialOnboarding } from '@/composables/useTrialOnboarding'
 import {
 	frappeErrorMessage,
 	getFrappe,
@@ -30,6 +30,8 @@ type Availability = {
 const route = useRoute()
 const router = useRouter()
 const { productKey } = useProduct()
+const { team, requestKey, prepareTeam, readStatus, resetRequestKey } =
+	useTrialOnboarding()
 const provisioning = {
 	path: '/onboarding/provisioning',
 	query: carriedQuery(route.query),
@@ -41,36 +43,42 @@ const creating = ref(false)
 const availability = ref<Availability | null>(null)
 const error = ref('')
 
-const REQUEST_KEY_STORAGE = 'central:onboarding-site-request-key'
-
-let requestKey = savedRequestKey()
-
 let debounce: ReturnType<typeof setTimeout> | undefined
 
 onMounted(async () => {
 	try {
-		// A user who starts here with no team needs one before any team-scoped call.
-		await postFrappe(methodUrl(API.createTrialTeam), readFirstTouch() ?? {})
-		forgetFirstTouch()
+		await prepareTeam()
 	} catch (exception) {
 		error.value = frappeErrorMessage(exception, 'Could not set up your team.')
 		return
 	}
 	try {
-		const status = await getFrappe<{
-			site: unknown
-			creation: CreationStatus | null
-		}>(methodUrl(API.onboardingStatus))
-		if (status.site || (status.creation && status.creation.status !== 'Failed'))
+		const status = await readStatus()
+		if (status.site?.claimed)
+			return router.replace({
+				path: '/servers',
+				query: { site: status.site.name },
+			})
+		if (
+			status.site ||
+			(status.creation &&
+				!['Failed', 'Timed Out'].includes(status.creation.status))
+		)
 			return router.replace(provisioning)
-		if (status.creation?.status === 'Failed') resetRequestKey()
-	} catch {
-		// Non-fatal: the form below starts one, and a repeat is answered with the
-		// request already running.
+		if (
+			status.creation?.status === 'Failed' ||
+			status.creation?.status === 'Timed Out'
+		)
+			resetRequestKey()
+	} catch (exception) {
+		error.value = frappeErrorMessage(exception, 'Could not find your trial.')
+		requestKey.value = ''
+		return
 	}
 	try {
 		const result = await getFrappe<{ domain: string }>(
 			methodUrl(API.siteDomain),
+			{ team: team.value || undefined },
 		)
 		domain.value = result.domain
 	} catch {
@@ -94,7 +102,7 @@ async function check(value: string) {
 	try {
 		const result = await getFrappe<Availability>(
 			methodUrl(API.checkSubdomain),
-			{ subdomain: value },
+			{ subdomain: value, team: team.value || undefined },
 		)
 		// Ignore a stale response if the user kept typing — and leave `checking` alone:
 		// a newer request is in flight and owns the spinner.
@@ -120,7 +128,8 @@ async function createSite() {
 			methodUrl(API.createTrialSite),
 			{
 				subdomain: subdomain.value.trim(),
-				request_key: requestKey,
+				request_key: requestKey.value,
+				team: team.value || undefined,
 				product: productKey.value || undefined,
 			},
 		)
@@ -135,20 +144,6 @@ async function createSite() {
 		error.value = frappeErrorMessage(exception, 'Could not create your site.')
 		creating.value = false
 	}
-}
-
-function savedRequestKey() {
-	const saved = localStorage.getItem(REQUEST_KEY_STORAGE)
-	if (saved) return saved
-
-	const generated = crypto.randomUUID()
-	localStorage.setItem(REQUEST_KEY_STORAGE, generated)
-	return generated
-}
-
-function resetRequestKey() {
-	localStorage.removeItem(REQUEST_KEY_STORAGE)
-	requestKey = savedRequestKey()
 }
 </script>
 
@@ -199,7 +194,7 @@ function resetRequestKey() {
 				class="w-full"
 				label="Create my site"
 				:loading="creating"
-				:disabled="creating || !availability?.available"
+				:disabled="creating || !requestKey || !availability?.available"
 			/>
 			<ErrorMessage v-if="error" :message="error" />
 		</form>

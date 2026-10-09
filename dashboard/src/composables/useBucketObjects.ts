@@ -6,11 +6,11 @@ import { getErrorMessage } from '@/lib/feedback'
 import type { BucketObject, BucketObjectPage } from '@/types/storage'
 
 const STORAGE_ERRORS: Record<string, string> = {
-	ObjectStorageNotFound: "This bucket doesn't exist in object storage.",
+	ObjectStorageNotFound: "This bucket doesn't exist in Object Storage.",
 	ObjectStorageRejected:
-		"Object storage refused the request. The bucket's key may be out of date.",
+		"Object Storage refused the request. The bucket's key may be out of date.",
 	ObjectStorageConnectionError:
-		"Object storage couldn't be reached. Try again in a moment.",
+		"Object Storage couldn't be reached. Try again in a moment.",
 }
 
 const storageError = (failure: unknown): string =>

@@ -80,7 +80,7 @@ function exhausted(row: ServiceRow): boolean {
 <template>
 	<BillingCard
 		title="Metered services"
-		title-info="Team-level services billed by usage, such as object storage. No server required."
+		title-info="Team-level services billed by usage, such as Object Storage. No server required."
 	>
 		<template v-if="canSubscribe" #action>
 			<Button
@@ -169,7 +169,7 @@ function exhausted(row: ServiceRow): boolean {
 			title="No metered services"
 			:description="
 				features.addons && features.storage
-					? 'Create an object storage bucket to start usage billing.'
+					? 'Create an Object Storage bucket to start usage billing.'
 					: 'This team is not billed for any service by usage.'
 			"
 		>

@@ -14,7 +14,7 @@ import { regionLabel } from '@/lib/serverMap'
 import type { BucketCredentials } from '@/types/storage'
 
 const { setBreadcrumbs } = useBreadcrumbs()
-setBreadcrumbs([{ label: 'Object storage' }])
+setBreadcrumbs([{ label: 'Object Storage' }])
 
 const { canManageServices } = useCapabilities()
 const { regions, buckets, loading, error, reload } = useObjectStorage()
@@ -71,7 +71,7 @@ const canCreate = computed(
 				:description="
 					regions.length
 						? 'Create a bucket in a region near your servers. You get an S3 endpoint and a key that opens only that bucket.'
-						: 'Object storage is not available in any region yet.'
+						: 'Object Storage is not available in any region yet.'
 				"
 			>
 				<template v-if="canCreate" #action>

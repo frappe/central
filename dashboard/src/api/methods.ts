@@ -11,6 +11,11 @@ export function methodV1(path: string): string {
 	return `/api/method/${path}`
 }
 
+/** A download link for a method that answers with a file. */
+export function download(path: string, params: Record<string, string>): string {
+	return `/api/method/${path}?${new URLSearchParams(params)}`
+}
+
 export const API = {
 	myTeams: 'central.api.identity.my_teams',
 	myCapabilities: 'central.api.identity.my_capabilities',
@@ -56,6 +61,7 @@ export const API = {
 	resizeServer: 'central.api.servers.resize_server',
 	terminateServer: 'central.api.servers.terminate_server',
 	serverOverview: 'central.api.servers.server_overview',
+	serverMetrics: 'central.api.servers.server_metrics',
 	serverHostnames: 'central.api.servers.server_hostnames',
 	listImageOfferings: 'central.api.images.list_offerings',
 	listRegionalImages: 'central.api.images.list_images',
@@ -73,6 +79,15 @@ export const API = {
 	keepSnapshot: 'central.api.snapshots.keep_snapshot',
 	deleteSnapshots: 'central.api.snapshots.delete_snapshots',
 	setAutomaticSnapshots: 'central.api.snapshots.set_automatic_snapshots',
+
+	ai: 'central.services.api.ai.get_ai',
+	enableAI: 'central.services.api.ai.enable_ai',
+	aiUsage: 'central.services.api.ai.get_usage',
+	aiApiKeys: 'central.services.api.ai.list_api_keys',
+	createAIApiKey: 'central.services.api.ai.create_api_key',
+	revokeAIApiKey: 'central.services.api.ai.revoke_api_key',
+	setAIApiKeyBalanceAccess:
+		'central.services.api.ai.set_api_key_balance_access',
 
 	objectStorage: 'central.services.api.storage.get_object_storage',
 	bucketUsage: 'central.services.api.storage.get_bucket_usage',
@@ -108,6 +123,8 @@ export const API = {
 	creditLedger: 'central.billing.api.dashboard.credit_ledger',
 	invoices: 'central.billing.api.dashboard.list_invoices',
 	invoice: 'central.billing.api.dashboard.get_invoice',
+	invoicePdf: 'central.billing.api.dashboard.download_invoice_pdf',
+	topupReceipt: 'central.billing.api.dashboard.download_topup_receipt',
 	paymentAttempts: 'central.billing.api.dashboard.list_payment_attempts',
 	paymentMethods: 'central.billing.api.dashboard.list_payment_methods',
 	paymentMethodOptions:
@@ -148,6 +165,7 @@ export const API = {
 		'central.billing.api.dashboard.set_default_payment_method',
 	reorderPaymentMethods:
 		'central.billing.api.dashboard.reorder_payment_methods',
+	recheckGstStatus: 'central.billing.api.dashboard.recheck_gst_status',
 	removePaymentMethod: 'central.billing.api.dashboard.remove_payment_method',
 	saveBillingProfile: 'central.billing.api.dashboard.save_billing_profile',
 	saveBillingSettings: 'central.billing.api.dashboard.save_billing_settings',

@@ -115,12 +115,13 @@ def mint_bootstrap_token(team: str, pilot_credential_id: str) -> str:
 	return _mint(pilot_credential_id, ENROLL_SCOPE, BOOTSTRAP_TTL, {"team": team})
 
 
-def mint_team_identity_token(audience: str, team: str, team_name: str) -> str:
-	"""Proves a team to an outside service. 5 minutes is enough for one exchange."""
+def mint_team_identity_token(audience: str, team: str, team_name: str, hosts: list[str]) -> str:
+	"""Proves a team, and the hostnames it serves, to an outside service. 5 minutes is enough
+	for one exchange."""
 	if not frappe.utils.validate_url(audience, valid_schemes=["http", "https"]):
 		frappe.throw(_("The audience must be the URL of the service."), frappe.ValidationError)
 
-	return _mint(audience, "team-identity", 5 * 60, {"sub": team, "team_name": team_name})
+	return _mint(audience, "team-identity", 5 * 60, {"sub": team, "team_name": team_name, "hosts": hosts})
 
 
 def verify_bootstrap_token(token: str) -> dict:

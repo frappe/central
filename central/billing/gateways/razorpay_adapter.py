@@ -179,13 +179,20 @@ class RazorpayAdapter(GatewayAdapter):
 			raw=dict(payment),
 		)
 
-	def refund(self, payment_attempt, amount, reason: str) -> RefundResult:
+	def refund(
+		self, payment_attempt, amount, reason: str, idempotency_key: str | None = None
+	) -> RefundResult:
+		"""Refund to the source. A UPI payment goes back to the bank account behind the UPI ID.
+
+		Razorpay has no idempotency key for refunds; the receipt carries ours so a
+		refund can be matched to the request that made it.
+		"""
 		client = self._client()
+		body = {"amount": round((amount or 0) * 100)}
+		if idempotency_key:
+			body["receipt"] = idempotency_key
 		try:
-			refund = client.payment.refund(
-				payment_attempt.gateway_transaction_id,
-				{"amount": round((amount or 0) * 100)},
-			)
+			refund = client.payment.refund(payment_attempt.gateway_transaction_id, body)
 		except _TRANSIENT as e:
 			raise GatewayTimeout(str(e)) from e
 

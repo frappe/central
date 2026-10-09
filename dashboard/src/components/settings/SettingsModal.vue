@@ -86,13 +86,17 @@ watch(tabs, (available) => {
 			</SettingsNavGroup>
 		</SettingsSidebar>
 
-		<SettingsContent class="bg-surface-base">
+		<SettingsContent class="min-w-0 bg-surface-base">
 			<SettingsPanel v-for="tab in tabs" :key="tab.value" :value="tab.value">
 				<SettingsHeader
 					class="!px-10 !pt-9"
 					:title="tab.title"
 					:description="tab.description"
-				/>
+				>
+					<template #actions>
+						<div :id="`settings-actions-${tab.value}`" class="contents" />
+					</template>
+				</SettingsHeader>
 				<SettingsBody viewport-class="px-10 pb-16">
 					<component :is="tab.component" />
 				</SettingsBody>

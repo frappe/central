@@ -23,18 +23,18 @@ class TeamSSHKey(Document):
 		self.title = (self.title or "").strip()
 		self.public_key = (self.public_key or "").strip()
 		if not self.title:
-			frappe.throw(_("Enter a name for the SSH key."))
+			frappe.throw(_("Enter a name for the SSH Key."))
 		if len(self.title) > 140:
-			frappe.throw(_("Use a shorter SSH key name."))
+			frappe.throw(_("Use a shorter SSH Key name."))
 		if not self.is_new() and self.has_value_changed("team"):
-			frappe.throw(_("An SSH key cannot move to another Team."))
+			frappe.throw(_("An SSH Key cannot move to another Team."))
 		if self.has_value_changed("public_key"):
 			self.last_sync_error = None
 		self.fingerprint = fingerprint(self.public_key)
 		if frappe.db.exists(
 			"Team SSH Key", {"team": self.team, "fingerprint": self.fingerprint, "name": ["!=", self.name]}
 		):
-			frappe.throw(_("This SSH key already belongs to the Team."))
+			frappe.throw(_("This SSH Key already belongs to the Team."))
 
 	def on_update(self) -> None:
 		if self.has_value_changed("public_key"):

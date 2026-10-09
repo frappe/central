@@ -49,14 +49,18 @@ watch(
 <template>
 	<div v-if="tab && allowed" class="h-full overflow-y-auto">
 		<div class="mx-auto max-w-2xl p-3 md:p-4">
-			<header>
-				<h1 class="text-lg-semibold text-ink-gray-8">{{ tab.title }}</h1>
-				<p
-					v-if="tab.description"
-					class="mt-1 max-w-md text-p-base text-ink-gray-6"
-				>
-					{{ tab.description }}
-				</p>
+			<header class="flex items-start justify-between gap-4">
+				<div class="min-w-0">
+					<h1 class="text-lg-semibold text-ink-gray-8">{{ tab.title }}</h1>
+					<p
+						v-if="tab.description"
+						class="mt-1 max-w-md text-p-base text-ink-gray-6"
+					>
+						{{ tab.description }}
+					</p>
+				</div>
+
+				<div :id="`settings-actions-${tab.value}`" class="contents" />
 			</header>
 
 			<component :is="tab.component" />

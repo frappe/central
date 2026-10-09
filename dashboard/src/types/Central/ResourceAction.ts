@@ -13,6 +13,8 @@ export interface ResourceAction {
 	title?: string
 	/**	Resource Type : Select	*/
 	resource_type: 'Server' | 'Site'
+	/** Product : Link - Product */
+	product?: string
 	/**	Action : Select	*/
 	action: 'create' | 'start' | 'stop' | 'terminate' | 'resize'
 	/**	Team : Link - Team	*/

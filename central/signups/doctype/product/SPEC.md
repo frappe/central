@@ -35,6 +35,12 @@ Operators have two Desk actions on a saved product:
 
 The trial request saves a `site` part in the Resource Action payload with the product. The Site copies the product when the region creates it. See [Trial sites](../../../infrastructure/doctype/site/SPEC.md#what-the-record-holds).
 
+A returning customer can start another product on the selected Team. Product signup links remain accessible after the customer has claimed a site. Onboarding reads only the selected product's site or creation. A claimed site opens the existing resource list with its address in the search field. An unfinished creation resumes its wait. A terminated site does not prevent a new signup. The browser stores a separate request key for each user, Team, and product.
+
+Another product signup reuses the Team's billing profile and credit balance. It grants no additional welcome credits and does not extend their expiry.
+
+An accepted invitation lets the member use the selected Team's balance when their role permits site creation. It grants no additional welcome credits. Membership does not consume the member's welcome-credit eligibility as an owner. If the member creates their own first Team, that Team can receive the configured welcome credits.
+
 A Product needs a Cargo image of type Apps for its signup app in the region. Without one, the signup stops with "No trial image is available right now."
 
 ## Signup funnel
@@ -65,4 +71,3 @@ A team created at signup keeps how its owner first found Frappe Cloud. The brows
 | Referrer | The page that linked to the first page, trimmed to 1,000 characters |
 
 A bad or unknown value is dropped and the team is still created. Join these fields with invoices to measure revenue by campaign. Pulse holds the funnel counts.
-
