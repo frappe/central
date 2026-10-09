@@ -111,14 +111,22 @@ def refresh(team: str) -> str | None:
 	return frappe.db.get_value("Billing Profile", team, "gst_status")
 
 
-def recheck(team: str) -> str | None:
-	"""A customer's "check again". Repeats inside the cooldown cost no lookup."""
-	checked_at, status = frappe.db.get_value(
-		"Billing Profile", team, ["gst_status_checked_at", "gst_status"]
-	) or (None, None)
+def recheck(team: str) -> bool:
+	"""A customer's "check again": queue a lookup. Returns whether one was queued.
+
+	The lookup runs in the background, because the GST portal can take its time.
+	Repeats inside the cooldown are answered from the store and cost no lookup.
+	"""
+	gstin, checked_at = frappe.db.get_value("Billing Profile", team, ["gstin", "gst_status_checked_at"]) or (
+		None,
+		None,
+	)
+	if not gstin or not lookups_enabled():
+		return False
 	if checked_at and _seconds_since(checked_at) < RECHECK_COOLDOWN_SECONDS:
-		return status
-	return refresh(team)
+		return False
+	_enqueue_refresh(team)
+	return True
 
 
 def forget(profile) -> None:

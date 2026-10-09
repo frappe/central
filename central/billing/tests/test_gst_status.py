@@ -178,14 +178,23 @@ class TestSweep(GstStatusTestCase):
 class TestRecheck(GstStatusTestCase):
 	def test_recent_check_is_answered_from_the_store(self):
 		team = profile_with_gstin("team-gst-recheck", "Cancelled", checked_days_ago=0)
-		with patch(LOOKUP) as lookup:
-			self.assertEqual(gst_status.recheck(team), "Cancelled")
-		lookup.assert_not_called()
+		with patch("central.billing.revenue.gst_status._enqueue_refresh") as enqueue:
+			self.assertFalse(gst_status.recheck(team))
+		enqueue.assert_not_called()
 
-	def test_old_check_asks_the_portal(self):
+	def test_old_check_is_queued_not_asked_in_the_request(self):
 		team = profile_with_gstin("team-gst-recheck", "Cancelled", checked_days_ago=1)
-		with patch(LOOKUP, return_value={"status": "Active"}):
-			self.assertEqual(gst_status.recheck(team), "Active")
+		with patch("central.billing.revenue.gst_status._enqueue_refresh") as enqueue, patch(LOOKUP) as lookup:
+			self.assertTrue(gst_status.recheck(team))
+		enqueue.assert_called_once_with(team)
+		lookup.assert_not_called()  # the portal is asked by the job, not the request
+
+	def test_no_gstin_nothing_to_check(self):
+		team = profile_with_gstin("team-gst-recheck", "Cancelled", checked_days_ago=1)
+		frappe.db.set_value("Billing Profile", team, "gstin", None)
+		with patch("central.billing.revenue.gst_status._enqueue_refresh") as enqueue:
+			self.assertFalse(gst_status.recheck(team))
+		enqueue.assert_not_called()
 
 
 class TestGstinChange(GstStatusTestCase):

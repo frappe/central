@@ -75,10 +75,19 @@ def get_billing_profile(team: str | None = None) -> dict:
 @frappe.whitelist(methods=["POST"])
 @rate_limit(limit=5, seconds=60 * 60, methods="POST")
 def recheck_gst_status(team: str | None = None) -> dict:
-	"""Ask the GST portal about the team's GSTIN again, e.g. after reactivating it."""
+	"""Ask the GST portal about the team's GSTIN again, e.g. after reactivating it.
+
+	The lookup runs in the background; `queued` says whether one was started. The
+	profile carries the answer once it is in.
+	"""
 	team = _resolve_team(team, authz.MANAGE)
-	status = gst_status.recheck(team)
-	return {"team": team, "gst_status": status, "gst_lapsed": gst_status.standing(team).lapsed}
+	queued = gst_status.recheck(team)
+	return {
+		"team": team,
+		"queued": queued,
+		"gst_status": frappe.db.get_value("Billing Profile", team, "gst_status"),
+		"gst_lapsed": gst_status.standing(team).lapsed,
+	}
 
 
 @frappe.whitelist()
