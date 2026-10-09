@@ -20,8 +20,6 @@ if TYPE_CHECKING:
 # A Pending or Removing mailbox older than this belongs to a run that did not finish.
 UNFINISHED_TIMEOUT_MINUTES = 15
 SMTP_STARTTLS_PORT = 587
-# The share of pilot-common-site-config that the mailbox keys may take.
-MAILBOX_CONFIG_BYTES = 400
 
 
 class MailboxPoolEmpty(frappe.ValidationError):
@@ -52,7 +50,8 @@ class UserMailAccount(Document):
 	@classmethod
 	def provision(cls, service: FrappeMailService) -> UserMailAccount:
 		"""Create a mailbox on the Suite site and add it to the pool."""
-		email, password = cls.generate_credentials(service.domain)
+		email = f"notifications-{secrets.token_hex(6)}@{service.domain}"
+		password = secrets.token_urlsafe(24)
 		mailbox = frappe.get_doc(
 			{
 				"doctype": "User Mail Account",
@@ -67,10 +66,6 @@ class UserMailAccount(Document):
 		service.create_send_only_member(email, password)
 		mailbox.db_set("status", "Available", commit=True)
 		return mailbox
-
-	@staticmethod
-	def generate_credentials(domain: str) -> tuple[str, str]:
-		return f"notifications-{secrets.token_hex(6)}@{domain}", secrets.token_urlsafe(24)
 
 	@classmethod
 	def clean_up_unfinished(cls, service: FrappeMailService) -> None:
@@ -124,19 +119,14 @@ class UserMailAccount(Document):
 
 	def get_site_config(self) -> dict:
 		"""The common_site_config keys that send Pilot and site mail through this mailbox."""
-		smtp_server = frappe.db.get_value("FrappeMail Service", self.frappemail_service, "smtp_server")
-		return self.build_site_config(smtp_server, self.email, self.get_password())
-
-	@staticmethod
-	def build_site_config(smtp_server: str, email: str, password: str) -> dict:
 		return {
-			"mail_server": smtp_server,
+			"mail_server": frappe.db.get_value("FrappeMail Service", self.frappemail_service, "smtp_server"),
 			# Fixed for now; later this follows the endpoints the mail server publishes.
 			"mail_port": SMTP_STARTTLS_PORT,
 			"use_tls": 1,
-			"mail_login": email,
-			"mail_password": password,
-			"auto_email_id": email,
+			"mail_login": self.email,
+			"mail_password": self.get_password(),
+			"auto_email_id": self.email,
 			# The mail server refuses a sender that is not the login.
 			"always_use_account_email_id_as_sender": 1,
 		}

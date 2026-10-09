@@ -1,4 +1,3 @@
-import json
 from unittest.mock import Mock, patch
 
 import frappe
@@ -6,7 +5,6 @@ import requests
 from frappe.tests import IntegrationTestCase
 
 from central.infrastructure.doctype.user_mail_account.user_mail_account import (
-	MAILBOX_CONFIG_BYTES,
 	MailboxPoolEmpty,
 	UserMailAccount,
 	remove_mailbox,
@@ -158,7 +156,6 @@ class TestServerMailbox(IntegrationTestCase):
 		self.assertEqual(config["mail_server"], "smtp.example.test")
 		self.assertEqual((config["mail_login"], config["auto_email_id"]), (mailbox.email, mailbox.email))
 		self.assertEqual(config["mail_password"], mailbox.get_password())
-		self.assertLessEqual(len(json.dumps(config).encode()), MAILBOX_CONFIG_BYTES)
 
 	def test_a_terminated_server_queues_its_mailbox_removal(self):
 		self.available_mailbox()
@@ -190,12 +187,6 @@ class TestServerMailbox(IntegrationTestCase):
 
 		self.assertEqual(mailbox.reload().status, "Deleted")
 		self.post.assert_called_once()
-
-	def test_a_domain_too_long_for_the_metadata_is_refused(self):
-		self.service.domain = "a" * 100
-
-		with self.assertRaises(frappe.ValidationError):
-			self.service.save()
 
 	def available_mailbox(self) -> UserMailAccount:
 		return UserMailAccount.provision(self.service)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING
 from urllib.parse import quote, urlsplit
 
@@ -20,10 +21,11 @@ if TYPE_CHECKING:
 
 # The tag that ties a region's Machine image to the Central snapshot it holds.
 SNAPSHOT_TAG = "central_snapshot"
-# The region's host (Metal) refuses guest metadata beyond these limits.
-MAXIMUM_METADATA_ENTRIES = 64
+# Atlas and the region's host (Metal) refuse guest metadata beyond these limits.
+# Atlas measures the whole map as compact JSON.
+MAXIMUM_METADATA_ENTRIES = 16
 MAXIMUM_METADATA_KEY_BYTES = 128
-MAXIMUM_METADATA_VALUE_BYTES = 1024
+MAXIMUM_METADATA_BYTES = 48 * 1024
 # The largest page that the Atlas list routes return.
 HOST_PAGE_SIZE = 100
 
@@ -76,22 +78,21 @@ class AtlasClient:
 
 	@staticmethod
 	def _validate_metadata(metadata: dict[str, str]) -> None:
-		"""Metal refuses these only after Atlas saved a draft machine."""
+		"""Metal refuses a long key only after Atlas saved a draft machine."""
 		if len(metadata) > MAXIMUM_METADATA_ENTRIES:
 			frappe.throw(_("Guest metadata has more than {0} entries.").format(MAXIMUM_METADATA_ENTRIES))
-		for key, value in metadata.items():
+		for key in metadata:
 			if len(key.encode()) > MAXIMUM_METADATA_KEY_BYTES:
 				frappe.throw(
 					_("Guest metadata key {0} is longer than {1} bytes.").format(
 						key, MAXIMUM_METADATA_KEY_BYTES
 					)
 				)
-			if len(value.encode()) > MAXIMUM_METADATA_VALUE_BYTES:
-				frappe.throw(
-					_("Guest metadata {0} is longer than {1} bytes.").format(
-						key, MAXIMUM_METADATA_VALUE_BYTES
-					)
-				)
+		if (
+			len(json.dumps(metadata, ensure_ascii=False, separators=(",", ":")).encode())
+			> MAXIMUM_METADATA_BYTES
+		):
+			frappe.throw(_("Guest metadata is larger than {0} bytes.").format(MAXIMUM_METADATA_BYTES))
 
 	def get_vm(self, name: str) -> dict:
 		return self._get(f"virtual-machines/{quote(name, safe='')}")

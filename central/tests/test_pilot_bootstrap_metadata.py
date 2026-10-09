@@ -2,7 +2,7 @@ import json
 from unittest import TestCase
 from unittest.mock import Mock, patch
 
-from central.integrations.atlas import MAXIMUM_METADATA_VALUE_BYTES
+from central.integrations.atlas import MAXIMUM_METADATA_BYTES
 from central.integrations.resource_actions import _create_payload
 
 PILOT = "central.integrations.pilot"
@@ -42,10 +42,7 @@ class TestPilotBootstrapMetadata(TestCase):
 
 		metadata = payload["metadata"]
 		self.assertEqual(json.loads(metadata["pilot-common-config"]), {"telemetry": TELEMETRY_CONFIG})
-		self.assertTrue(
-			all(len(value.encode()) <= MAXIMUM_METADATA_VALUE_BYTES for value in metadata.values()),
-			"Metal refuses a guest metadata value over 1 KiB.",
-		)
+		self.assertLessEqual(len(json.dumps(metadata).encode()), MAXIMUM_METADATA_BYTES)
 		# The server does not exist yet, so the token names the one this request creates.
 		mint.assert_called_once_with(7, "server-action-1")
 

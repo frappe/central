@@ -1,17 +1,11 @@
 # Copyright (c) 2026, frappe and contributors
 # For license information, please see license.txt
 
-import json
-
 import frappe
 import requests
-from frappe import _
 from frappe.model.document import Document
 
-from central.infrastructure.doctype.user_mail_account.user_mail_account import (
-	MAILBOX_CONFIG_BYTES,
-	UserMailAccount,
-)
+from central.infrastructure.doctype.user_mail_account.user_mail_account import UserMailAccount
 
 ADMIN_API = "/api/method/suite.mail.api.admin."
 TIMEOUT_SECONDS = (5, 60)
@@ -43,14 +37,6 @@ class FrappeMailService(Document):
 		smtp_server: DF.Data
 	# end: auto-generated types
 
-	def validate(self) -> None:
-		# Larger mail settings would make the region refuse every server creation.
-		sample = UserMailAccount.build_site_config(
-			self.smtp_server, *UserMailAccount.generate_credentials(self.domain)
-		)
-		if len(json.dumps(sample).encode()) > MAILBOX_CONFIG_BYTES:
-			frappe.throw(_("Domain and SMTP Server are too long for the server metadata."))
-
 	@property
 	def available_mailbox_count(self) -> int:
 		return frappe.db.count("User Mail Account", {"frappemail_service": self.name, "status": "Available"})
@@ -72,7 +58,12 @@ class FrappeMailService(Document):
 	def queue_refill(self) -> None:
 		self.check_permission("write")
 		frappe.enqueue_doc(
-			self.doctype, self.name, "refill", job_id=f"mailbox-refill:{self.name}", deduplicate=True
+			self.doctype,
+			self.name,
+			"refill",
+			job_id=f"mailbox-refill:{self.name}",
+			deduplicate=True,
+			enqueue_after_commit=True,
 		)
 
 	def create_send_only_member(self, email: str, password: str) -> None:
