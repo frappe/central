@@ -46,11 +46,15 @@ def open_and_collect(invoice: str, collect: bool = True) -> dict:
 
 	doc = frappe.get_doc("Invoice", invoice)
 
-	# An invoice has to be made out to somebody, so a draft is held until the team's
-	# billing details are on file. Completing the profile releases it; the monthly
-	# run picks up anything that release missed.
-	if doc.invoice_type == "Billable" and _hold_for_billing_details(doc):
-		return {"invoice": invoice, "claimed": False, "held": "billing_details"}
+	# A billable draft waits until it can become a correct statutory invoice. Whatever
+	# clears the hold releases it; the monthly run picks up anything a release missed.
+	if doc.invoice_type == "Billable":
+		hold = _hold_reason(doc)
+		if hold:
+			_mark_held(doc, hold)
+			return {"invoice": invoice, "claimed": False, "held": HOLD_KEYS[hold]}
+		# Re-read now, not at drafting: a GSTIN checked since then changes the tax.
+		_retax(doc)
 
 	# Free/trial: a cost_report is computed, never collected — no credits, no
 	# charge. It is opened as a record of the subsidy cost.
@@ -62,28 +66,24 @@ def open_and_collect(invoice: str, collect: bool = True) -> dict:
 		return {"invoice": invoice, "claimed": True, "cost_report": True, "expected_collection": 0}
 
 	# Leg 1 — credits first (only against the collectable amount, gross less TDS).
-	applied = 0
 	collectable = frappe.utils.flt(doc.total) - frappe.utils.flt(doc.tds_amount)
-	if collectable > 0:
-		# Draw and debit in the invoice's own currency — a USD team's wallet must be
-		# debited in USD, not the apply_credit default (INR).
-		available = credits.get_balance(doc.team, doc.currency)["balance"]
-		applied = min(frappe.utils.flt(available), collectable)
-		if applied > 0:
-			credits.apply_credit(
-				doc.team,
-				applied,
-				doc.currency,
-				reference_type="Invoice",
-				reference_name=invoice,
-				note=f"Credit applied to {invoice}",
-			)
-
-	doc.credit_applied = applied
-	# Auto-charge target = gross total, less withheld TDS, less credits applied.
-	doc.expected_collection = frappe.utils.flt(
-		frappe.utils.flt(doc.total) - frappe.utils.flt(doc.tds_amount) - applied, 2
-	)
+	draw = _draw_wallet(doc, collectable) if collectable > 0 else frappe._dict(wallet=0, advance=0, gst=0)
+	if draw.wallet > 0:
+		credits.apply_credit(
+			doc.team,
+			draw.wallet,
+			doc.currency,
+			reference_type="Invoice",
+			reference_name=invoice,
+			note=f"Credit applied to {invoice}",
+		)
+	applied = draw.wallet
+	doc.credit_applied = draw.wallet
+	doc.advance_applied = draw.advance
+	doc.advance_tax_applied = draw.gst
+	# Auto-charge target = gross total, less withheld TDS, less credits and the GST
+	# already paid with the top-ups those credits came from.
+	doc.expected_collection = frappe.utils.flt(collectable - draw.wallet - draw.gst, 2)
 	# Both dates are set from *today*, not from the period end: an invoice the run
 	# opened three days late is due three days later, and its dunning ladder starts
 	# three days later. A backlog delays collection; it never shortens the customer's
@@ -97,6 +97,9 @@ def open_and_collect(invoice: str, collect: bool = True) -> dict:
 		doc.paid_at = frappe.utils.now_datetime()
 		transition(doc, "Paid", reason="credits covered in full", actor="scheduler", amount=applied)
 		doc.save(ignore_permissions=True)
+		from central.billing.ingester.erpnext_sync import enqueue_invoice_sync
+
+		enqueue_invoice_sync(doc.name)
 		return {
 			"invoice": invoice,
 			"claimed": True,
@@ -126,6 +129,84 @@ def open_and_collect(invoice: str, collect: bool = True) -> dict:
 	}
 
 
+# Hold Reason values, and the keys callers of `open_and_collect` see.
+HOLD_KEYS = {
+	"Billing Details": "billing_details",
+	"Accounting Sync": "accounting_sync",
+	"GSTIN Check": "gstin_check",
+}
+
+
+def _draw_wallet(doc, collectable: float) -> frappe._dict:
+	"""What the wallet pays of `collectable`, in the order it is spent.
+
+	Credit with GST already paid on it (a top-up) pays the invoice's net amount, and
+	that GST pays the GST on it. Any other credit (promotional, a refund) pays the
+	invoice as it stands, GST included. The wallet stays locked until this commits.
+	"""
+	credits.lock_team_wallet(doc.team, doc.currency)
+	gst_due = frappe.utils.flt(doc.output_tax_amount)
+	net_due = collectable - gst_due
+	gst_per_net = gst_due / net_due if gst_due and net_due > 0 else 0
+	gst_left = credits.advance_gst_balance(doc.team, doc.currency)
+
+	owed, wallet, advance, gst = collectable, 0.0, 0.0, 0.0
+	for lot in credits.credit_lots(doc.team, doc.currency):
+		if owed <= 0.005:
+			break
+		if lot.remaining <= 0:
+			continue
+		if lot.paid_in and gst_per_net:
+			net = min(lot.remaining, owed / (1 + gst_per_net))
+			tax = min(net * gst_per_net, max(gst_left - gst, 0))
+			wallet, advance, gst, owed = wallet + net, advance + net, gst + tax, owed - net - tax
+		else:
+			use = min(lot.remaining, owed)
+			wallet, owed = wallet + use, owed - use
+			if lot.paid_in:
+				advance += use
+	return frappe._dict(
+		wallet=frappe.utils.flt(wallet, 2), advance=frappe.utils.flt(advance, 2), gst=frappe.utils.flt(gst, 2)
+	)
+
+
+def _hold_reason(doc) -> str | None:
+	"""Why this billable draft must wait, or None when it may be issued.
+
+	Each check also starts whatever clears it.
+	"""
+	from central.billing.ingester import customer
+	from central.billing.revenue import gst_status
+
+	if _hold_for_billing_details(doc):
+		return "Billing Details"
+	if customer.awaiting_records(doc.team):
+		return "Accounting Sync"
+	if gst_status.awaiting_check(doc.team):
+		return "GSTIN Check"
+	return None
+
+
+def _mark_held(doc, hold: str) -> None:
+	if doc.hold_reason != hold:
+		frappe.db.set_value("Invoice", doc.name, "hold_reason", hold, update_modified=False)
+
+
+def _retax(doc) -> None:
+	"""Recompute the draft's tax block from the team's current tax standing."""
+	from central.billing.revenue.tax import resolve_tax
+
+	base = frappe.utils.flt(
+		frappe.utils.flt(doc.subtotal)
+		- frappe.utils.flt(doc.commitment_discount)
+		+ frappe.utils.flt(doc.commitment_clawback),
+		2,
+	)
+	doc.update(resolve_tax(doc.team, base))
+	doc.total = frappe.utils.flt(base + frappe.utils.flt(doc.output_tax_amount), 2)
+	doc.hold_reason = None
+
+
 def _hold_for_billing_details(doc) -> bool:
 	"""Whether this invoice must wait for billing details, asking for them if so.
 
@@ -149,7 +230,7 @@ def _hold_for_billing_details(doc) -> bool:
 
 
 def held_drafts(team: str | None = None, held_before=None, limit: int | None = None) -> list[dict]:
-	"""Billable drafts waiting on billing details — one team's, or everybody's.
+	"""Billable drafts still waiting to be issued — one team's, or everybody's.
 
 	`held_before` keeps only those whose period closed on or before that date, which
 	is how long the invoice has been waiting.
@@ -164,30 +245,60 @@ def held_drafts(team: str | None = None, held_before=None, limit: int | None = N
 	return frappe.get_all(
 		"Invoice",
 		filters=filters,
-		fields=["name", "team", "total", "currency", "period_end"],
+		fields=["name", "team", "total", "currency", "period_end", "hold_reason"],
 		order_by="period_end asc",
 		limit=limit,
 	)
 
 
 def cancel_invoice(invoice: str, reason: str | None = None) -> str:
-	"""Cancel a pre-payment (Draft/Open/Overdue) invoice.
+	"""Cancel an invoice that is not paid yet (Draft, Open or Overdue).
 
 	Issued line items are never mutated — a correction cancels the whole invoice
-	and reissues a fresh one. A Paid invoice cannot be cancelled (use a refund).
+	and reissues a fresh one. What the invoice drew from the wallet goes back to it.
+	A paid invoice is cancelled with a refund instead.
 	"""
 	doc = frappe.get_doc("Invoice", invoice)
 	if doc.status == "Paid":
 		frappe.throw(
-			_("A paid invoice cannot be cancelled — issue a refund instead."), frappe.ValidationError
+			_("A paid invoice cannot be cancelled on its own — cancel and refund it instead."),
+			frappe.ValidationError,
 		)
 	if doc.status == "Cancelled":
 		return invoice
+	if frappe.db.exists(
+		"Payment Attempt", {"invoice": invoice, "status": ["in", ["Initiated", "Authorised", "Captured"]]}
+	):
+		frappe.throw(
+			_("A card or UPI payment for this invoice is under way or taken. Settle or refund it first."),
+			frappe.ValidationError,
+		)
 	transition(doc, "Cancelled", reason=reason, actor=frappe.session.user)
 	doc.save(ignore_permissions=True)
+	give_back_wallet(doc)
 	if reason:
 		doc.add_comment("Info", f"Cancelled: {reason}")
 	return invoice
+
+
+def give_back_wallet(doc) -> None:
+	"""Return what the invoice drew from the wallet, each part as the credit it was."""
+	paid_in = frappe.utils.flt(doc.advance_applied)
+	promotional = frappe.utils.flt(frappe.utils.flt(doc.credit_applied) - paid_in, 2)
+	note = f"Returned from cancelled invoice {doc.name}"
+	if paid_in > 0:
+		credits.return_credit(
+			doc.team,
+			paid_in,
+			doc.currency,
+			"Invoice",
+			doc.name,
+			note,
+			paid_in=True,
+			tax_amount=frappe.utils.flt(doc.advance_tax_applied),
+		)
+	if promotional > 0:
+		credits.return_credit(doc.team, promotional, doc.currency, "Invoice", doc.name, note)
 
 
 def reissue_invoice(invoice: str, reason: str | None = None) -> str | None:

@@ -16,6 +16,8 @@ const props = withDefaults(
 		/** Set 'red' for a destructive action; omit for a neutral solid confirm. */
 		theme?: 'red'
 		loading?: boolean
+		/** Keep the confirm button off, with the reason in the body. */
+		disabled?: boolean
 		error?: string
 		/** Widen it when the body holds more than a sentence, such as a list. */
 		size?: 'sm' | 'md' | 'lg'
@@ -41,6 +43,7 @@ const actions = computed(() => [
 		variant: 'solid' as const,
 		theme: props.theme,
 		loading: props.loading,
+		disabled: props.disabled,
 		onClick: () => {
 			if (props.target !== null) emit('confirm', props.target)
 		},

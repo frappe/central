@@ -91,7 +91,7 @@ function goToObjectStorage(): void {
 			description="Servers and metered services you're subscribed to will show here with what they cost."
 		>
 			<template v-if="canManageBilling" #action>
-				<Button label="Open object storage" @click="goToObjectStorage" />
+				<Button label="Open Object Storage" @click="goToObjectStorage" />
 			</template>
 		</EmptyState>
 

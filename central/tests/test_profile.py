@@ -64,6 +64,8 @@ class TestProfile(IntegrationTestCase):
 	def test_non_string_input_is_a_validation_error(self):
 		# A JSON body can put a list or a dict where a string is expected; that has
 		# to come back as a controlled error, not an unhandled server error.
+		# Newer Frappe checks the argument type before the function runs (FrappeTypeError,
+		# a 417); older Frappe leaves it to the function's own check.
 		for value in ([], {"a": 1}, None):
-			with self.assertRaises(frappe.ValidationError):
+			with self.assertRaises((frappe.ValidationError, frappe.FrappeTypeError)):
 				update_profile(value)

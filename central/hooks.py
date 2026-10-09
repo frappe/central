@@ -185,7 +185,15 @@ doc_events = {
 	"Team": {
 		# Keep a staging-trial team's billing profile complete so it can create servers
 		# without the setup prompt (the profile gate is otherwise enforced in the console).
-		"on_update": "central.billing.payments.provisioning.on_team_update",
+		"on_update": [
+			"central.billing.payments.provisioning.on_team_update",
+			# A new owner may be the new alert address of the team's Grove user.
+			"central.services.ai.on_alert_address_update",
+		],
+	},
+	"Billing Profile": {
+		# Its email is the alert address of the team's Grove user when set.
+		"on_update": "central.services.ai.on_alert_address_update",
 	},
 }
 
@@ -236,6 +244,12 @@ scheduler_events = {
 		# today's invoice before it is swept, so the customer gets the full benefit
 		# of the last day they were given.
 		"central.billing.revenue.credits.run_credit_expiry",
+		# Keep stored GSTIN statuses fresh for invoicing, a paced and capped batch a day.
+		"central.billing.revenue.gst_status.run_gst_status_refresh",
+		# Retry billing profiles whose customer records never finished syncing.
+		"central.billing.ingester.customer.sync_pending_profiles",
+		# Retry wallet top-ups whose advance never reached the accounting system.
+		"central.billing.ingester.advance.sync_pending_advances",
 		# Assert the money invariants that no DB constraint can hold (they span
 		# tables): wallet == its ledger, invoice == its lines, captured == amount_paid.
 		# Silence is the success case; a violation is logged with its team and amount.
@@ -244,7 +258,7 @@ scheduler_events = {
 	],
 	"hourly": [
 		# Billing: ERPNext sync retries whose backoff window has elapsed.
-		"central.billing.revenue.erpnext_sync.retry_failed_syncs",
+		"central.billing.ingester.erpnext_sync.retry_failed_syncs",
 		# A charge whose outcome we don't know is money in the air: ask the gateway and
 		# settle it. It waits 30 minutes for the webhook first, so a daily sweep left it
 		# hanging for up to a day — and the key it needs to re-send safely expires in

@@ -20,6 +20,8 @@ is 0 at launch (no team self-declares yet).
 import frappe
 from frappe import _
 
+from central.billing.revenue import gst_status
+
 _ZERO_BLOCK = {
 	"output_tax_type": "None",
 	"output_tax_rate": 0,
@@ -28,6 +30,7 @@ _ZERO_BLOCK = {
 	"tds_applicable": 0,
 	"tds_rate": 0,
 	"tds_amount": 0,
+	"customer_gstin": None,
 }
 
 
@@ -35,18 +38,21 @@ def resolve_tax(team: str, subtotal) -> dict:
 	"""The invoice tax block for a team's taxable subtotal.
 
 	Reads the team's Tax Profile; a team with no profile is untaxed (the launch
-	default — output tax 0, no withholding).
+	default — output tax 0, no withholding). A GSTIN the GST portal calls lapsed
+	is left off, and the team is billed as unregistered.
 	"""
 	subtotal = frappe.utils.flt(subtotal)
+	gst = gst_status.standing(team)
+	block = dict(_ZERO_BLOCK, customer_gstin=gst.gstin)
 	if not frappe.db.exists("Tax Profile", team):
-		return dict(_ZERO_BLOCK)
+		return block
 
 	p = frappe.get_doc("Tax Profile", team)
-	block = dict(_ZERO_BLOCK)
 	block["output_tax_type"] = p.output_tax_type or "None"
 	block["output_tax_rate"] = frappe.utils.flt(p.output_tax_rate)
 
-	if p.zero_rated:
+	# An SEZ supply is zero-rated only to a live GSTIN; a lapsed one is taxed.
+	if p.zero_rated and not (gst.lapsed and p.zero_rating_reason == "SEZ"):
 		# Zero-rated WITH a reason — the tax is 0 but auditable.
 		if not p.zero_rating_reason:
 			frappe.throw(_("Zero-rated team has no zero-rating reason."), frappe.ValidationError)

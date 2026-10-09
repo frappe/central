@@ -37,6 +37,8 @@ const props = withDefaults(
 		filters?: ListViewFilter[]
 		selectable?: boolean
 		paginated?: boolean
+		/** Hide the 10/20/50 choice when the page owns the page size. */
+		showPageSize?: boolean
 		serverSide?: boolean
 		totalRows?: number
 		countLoading?: boolean
@@ -64,6 +66,7 @@ const props = withDefaults(
 		filters: () => [],
 		selectable: false,
 		paginated: true,
+		showPageSize: true,
 		serverSide: false,
 		totalRows: 0,
 		countLoading: false,
@@ -700,6 +703,7 @@ const showListControls = computed(
 		<ListViewPagination
 			v-if="showFooter"
 			:paginated="showPagination"
+			:show-page-size="showPageSize"
 			:show-count="showCountText"
 			:count-text="countText"
 			:count-loading="countLoading"

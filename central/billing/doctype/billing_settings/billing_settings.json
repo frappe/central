@@ -5,6 +5,7 @@
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
+  "tab_billing",
   "section_break_credits",
   "grant_welcome_credits",
   "promotional_credit_validity_days",
@@ -31,9 +32,49 @@
   "section_break_routing",
   "enable_gateway_fallback",
   "section_break_tax",
-  "default_gst_rate"
+  "default_gst_rate",
+  "gst_status_refresh_days",
+  "gst_status_daily_limit",
+  "tab_accounting",
+  "section_company",
+  "company",
+  "company_address",
+  "column_break_company",
+  "section_accounts",
+  "advance_account",
+  "column_break_accounts",
+  "income_account",
+  "cost_center",
+  "promotional_credit_account",
+  "section_receivables",
+  "receivable_accounts",
+  "section_gateways",
+  "gateways",
+  "section_item",
+  "service_item",
+  "section_tax",
+  "in_state_template",
+  "column_break_tax",
+  "out_state_template",
+  "section_series",
+  "series_india_b2b",
+  "series_india_b2c",
+  "column_break_series",
+  "series_overseas",
+  "series_receipt_voucher",
+  "series_credit_note",
+  "section_print",
+  "invoice_print_format",
+  "invoice_letter_head",
+  "column_break_print",
+  "receipt_voucher_print_format"
  ],
  "fields": [
+  {
+   "fieldname": "tab_billing",
+   "fieldtype": "Tab Break",
+   "label": "Billing"
+  },
   {
    "fieldname": "section_break_credits",
    "fieldtype": "Section Break",
@@ -206,12 +247,213 @@
    "fieldname": "default_gst_rate",
    "fieldtype": "Percent",
    "label": "Default GST Rate"
+  },
+  {
+   "default": "7",
+   "description": "How old a GSTIN status may get before the daily sweep asks the GST portal again. Invoicing only reads the stored status.",
+   "fieldname": "gst_status_refresh_days",
+   "fieldtype": "Int",
+   "label": "GSTIN Status Refresh (Days)",
+   "non_negative": 1
+  },
+  {
+   "default": "500",
+   "description": "Most GSTIN lookups the daily sweep makes. Keeps the GST portal and ERPNext out of harm's way.",
+   "fieldname": "gst_status_daily_limit",
+   "fieldtype": "Int",
+   "label": "GSTIN Lookups per Day",
+   "non_negative": 1
+  },
+  {
+   "fieldname": "tab_accounting",
+   "fieldtype": "Tab Break",
+   "label": "Accounting",
+   "depends_on": "eval:doc.__onload && doc.__onload.accounting_sync_enabled",
+   "description": "Names Central reads from the accounting system. Central does not create them."
+  },
+  {
+   "fieldname": "section_company",
+   "fieldtype": "Section Break",
+   "label": "Company"
+  },
+  {
+   "fieldname": "company",
+   "fieldtype": "Data",
+   "label": "Company",
+   "description": "The company's name in the accounting system."
+  },
+  {
+   "fieldname": "company_address",
+   "fieldtype": "Data",
+   "label": "Company Address",
+   "description": "The company's address in the accounting system. It carries the company GSTIN."
+  },
+  {
+   "fieldname": "column_break_company",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "section_accounts",
+   "fieldtype": "Section Break",
+   "label": "Accounts",
+   "description": "Full account names, for example Debtors - ABBR."
+  },
+  {
+   "fieldname": "advance_account",
+   "fieldtype": "Data",
+   "label": "Advance Account",
+   "description": "Where customer advances are booked. The company must book advances in a separate account, this one."
+  },
+  {
+   "fieldname": "column_break_accounts",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "income_account",
+   "fieldtype": "Data",
+   "label": "Income Account"
+  },
+  {
+   "fieldname": "cost_center",
+   "fieldtype": "Data",
+   "label": "Cost Center"
+  },
+  {
+   "description": "Pays for promotional credit spent on invoices, for example a marketing expense or discount account, in the company currency.",
+   "fieldname": "promotional_credit_account",
+   "fieldtype": "Data",
+   "label": "Promotional Credit Account"
+  },
+  {
+   "fieldname": "section_receivables",
+   "fieldtype": "Section Break",
+   "label": "Accounts per Currency",
+   "description": "Each invoice is booked to the receivable in its own currency."
+  },
+  {
+   "fieldname": "receivable_accounts",
+   "fieldtype": "Table",
+   "label": "Accounts per Currency",
+   "options": "Accounting Receivable Account"
+  },
+  {
+   "fieldname": "section_gateways",
+   "fieldtype": "Section Break",
+   "label": "Gateways"
+  },
+  {
+   "fieldname": "gateways",
+   "fieldtype": "Table",
+   "label": "Gateway Accounts",
+   "options": "Accounting Gateway Account"
+  },
+  {
+   "fieldname": "section_item",
+   "fieldtype": "Section Break",
+   "label": "Service Item"
+  },
+  {
+   "fieldname": "service_item",
+   "fieldtype": "Data",
+   "label": "Service Item",
+   "default": "Cloud Hosting",
+   "description": "The item on every invoice line. Its SAC code comes from the accounting system."
+  },
+  {
+   "fieldname": "section_tax",
+   "fieldtype": "Section Break",
+   "label": "Tax",
+   "description": "Supplies outside India and to SEZ units are zero-rated and use no template."
+  },
+  {
+   "fieldname": "in_state_template",
+   "fieldtype": "Data",
+   "label": "In-State Tax Template"
+  },
+  {
+   "fieldname": "column_break_tax",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "out_state_template",
+   "fieldtype": "Data",
+   "label": "Out-of-State Tax Template"
+  },
+  {
+   "fieldname": "section_series",
+   "fieldtype": "Section Break",
+   "label": "Naming Series",
+   "description": "A GST invoice number has 16 characters or fewer: letters, digits, / and -."
+  },
+  {
+   "fieldname": "series_india_b2b",
+   "fieldtype": "Data",
+   "label": "India B2B Invoices",
+   "default": "B2B/.TFY./.#####"
+  },
+  {
+   "fieldname": "series_india_b2c",
+   "fieldtype": "Data",
+   "label": "India B2C Invoices",
+   "default": "B2C/.TFY./.#####"
+  },
+  {
+   "fieldname": "column_break_series",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "series_overseas",
+   "fieldtype": "Data",
+   "label": "Overseas Invoices",
+   "default": "EXP/.TFY./.#####"
+  },
+  {
+   "fieldname": "series_receipt_voucher",
+   "fieldtype": "Data",
+   "label": "Receipt Vouchers",
+   "default": "RV/.TFY./.######",
+   "description": "Numbers the advance received for a wallet top-up."
+  },
+  {
+   "default": "CN/.TFY./.#####",
+   "description": "Numbers the credit notes for cancelled and refunded invoices.",
+   "fieldname": "series_credit_note",
+   "fieldtype": "Data",
+   "label": "Credit Notes"
+  },
+  {
+   "fieldname": "section_print",
+   "fieldtype": "Section Break",
+   "label": "Print Formats",
+   "description": "Print formats in the accounting system. Invoice PDFs are rendered with them."
+  },
+  {
+   "fieldname": "invoice_print_format",
+   "fieldtype": "Data",
+   "label": "Invoice Print Format",
+   "default": "Cloud Tax Invoice"
+  },
+  {
+   "description": "Letter head in the accounting system for invoice PDFs. Blank prints none.",
+   "fieldname": "invoice_letter_head",
+   "fieldtype": "Data",
+   "label": "Invoice Letter Head"
+  },
+  {
+   "fieldname": "column_break_print",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "receipt_voucher_print_format",
+   "fieldtype": "Data",
+   "label": "Receipt Voucher Print Format",
+   "default": "Cloud Receipt Voucher"
   }
  ],
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-09-23 12:00:00.000000",
+ "modified": "2026-10-01 14:00:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Billing Settings",

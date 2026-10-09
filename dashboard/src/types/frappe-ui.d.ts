@@ -240,6 +240,7 @@ export const LoadingIndicator: Component
 export const LoadingText: Component
 export const MobileNav: Component
 export const MobileNavItem: Component
+export const DateTimePicker: Component
 export const MultiSelect: Component
 export const Popover: Component
 export const Select: Component
@@ -261,7 +262,9 @@ export const Slider: Component
 export const Spinner: Component
 export const Switch: Component
 export const TabButtons: Component
+export const TabList: Component
 export const Tabs: Component
+export const TabTrigger: Component
 export const TextInput: Component
 export const ToastProvider: Component
 export const Tooltip: Component

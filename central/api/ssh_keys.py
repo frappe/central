@@ -10,7 +10,7 @@ def require_access(team: str, capability: str) -> None:
 	# The key library is team-wide, so viewing any server of the team reads it. Changing
 	# keys needs server:ssh-key, which a grant cannot scope, so it stays team-wide.
 	if not can_on_any_server(frappe.session.user, team, capability):
-		frappe.throw(_("You cannot manage SSH keys for this Team."), frappe.PermissionError)
+		frappe.throw(_("You cannot manage SSH Keys for this Team."), frappe.PermissionError)
 
 
 @frappe.whitelist(methods=["GET"])
@@ -58,9 +58,9 @@ def rotate_team_ssh_key(team: str, name: str, public_key: str) -> dict:
 	require_access(team, "server:ssh-key")
 	key = frappe.get_doc("Team SSH Key", name)
 	if key.team != team:
-		frappe.throw(_("This SSH key does not belong to the Team."), frappe.PermissionError)
+		frappe.throw(_("This SSH Key does not belong to the Team."), frappe.PermissionError)
 	if public_key.strip() == key.public_key:
-		frappe.throw(_("The replacement SSH key must be different."))
+		frappe.throw(_("The replacement SSH Key must be different."))
 	key.public_key = public_key
 	key.save()
 	return {"name": key.name, "fingerprint": key.fingerprint}
@@ -72,7 +72,7 @@ def retry_team_ssh_key_sync(team: str, name: str) -> None:
 	require_access(team, "server:ssh-key")
 	key = frappe.get_doc("Team SSH Key", name)
 	if key.team != team:
-		frappe.throw(_("This SSH key does not belong to the Team."), frappe.PermissionError)
+		frappe.throw(_("This SSH Key does not belong to the Team."), frappe.PermissionError)
 	key.queue_sync()
 
 
@@ -82,5 +82,5 @@ def delete_team_ssh_key(team: str, name: str) -> None:
 	require_access(team, "server:ssh-key")
 	key = frappe.get_doc("Team SSH Key", name)
 	if key.team != team:
-		frappe.throw(_("This SSH key does not belong to the Team."), frappe.PermissionError)
+		frappe.throw(_("This SSH Key does not belong to the Team."), frappe.PermissionError)
 	key.delete()

@@ -11,6 +11,7 @@ import { usePayInvoice } from '@/composables/usePayInvoice'
 import { usePayInvoiceCheckout } from '@/composables/usePayInvoiceCheckout'
 import { billingPeriod, shortDate } from '@/lib/date'
 import { money } from '@/lib/format'
+import { downloadInvoice } from '@/lib/invoicePdf'
 import { invoiceTheme } from '@/lib/status'
 import type { InvoiceSummary } from '@/types/billing'
 
@@ -131,8 +132,8 @@ const eventDate = (at: string | null): string => String(at ?? '').split(',')[0]
 		<!-- Docked receipt panel — the shared SidePanel, slides in beside the
          list, never over it. Header carries all invoice identity: number +
          status together, so the body never needs a labelled "Status" row.
-         GROUNDING GAP (#70): no email-invoice / download-PDF endpoints yet,
-         so both header actions stay disabled until the backend lands them. -->
+         GROUNDING GAP (#70): no email-invoice endpoint yet, so that action
+         stays disabled. -->
 		<SidePanel
 			:open="!!selected"
 			@update:open="(v: boolean) => !v && (selected = null)"
@@ -166,9 +167,10 @@ const eventDate = (at: string | null): string => String(at ?? '').split(',')[0]
 				<Button
 					variant="ghost"
 					icon="lucide-download"
-					:disabled="true"
-					title="Download PDF (coming soon)"
+					:disabled="!shown?.has_pdf"
+					:title="shown?.has_pdf ? 'Download PDF' : 'The PDF is ready once the invoice is issued'"
 					label="Download PDF"
+					@click="shown && downloadInvoice(shown.name)"
 				/>
 			</template>
 
@@ -237,6 +239,15 @@ const eventDate = (at: string | null): string => String(at ?? '').split(',')[0]
 							<dt class="text-ink-green-5">Credits applied</dt>
 							<dd class="tabular-nums text-ink-green-5">
 								−{{ money(detail.data.credit_applied, detail.data.currency) }}
+							</dd>
+						</div>
+						<div
+							v-if="detail.data.advance_tax_applied"
+							class="flex justify-between gap-3"
+						>
+							<dt class="text-ink-green-5">GST paid with top-ups</dt>
+							<dd class="tabular-nums text-ink-green-5">
+								−{{ money(detail.data.advance_tax_applied, detail.data.currency) }}
 							</dd>
 						</div>
 						<div

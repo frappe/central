@@ -45,8 +45,8 @@ function saved(key: TeamSSHKey | null) {
 			:options="options"
 			:loading="loading"
 			:disabled="!!error"
-			:empty-text="keys.length ? 'No matching keys' : 'No team SSH keys yet'"
-			label="SSH keys"
+			:empty-text="keys.length ? 'No matching keys' : 'No team SSH Keys yet'"
+			label="SSH Keys"
 			placeholder="Add a key for SSH access"
 			size="md"
 			class="w-full"
@@ -69,7 +69,7 @@ function saved(key: TeamSSHKey | null) {
 						variant="ghost"
 						size="sm"
 						icon-left="lucide-plus"
-						label="Add SSH key"
+						label="Add SSH Key"
 						class="ml-auto"
 						@click="addKey(setOpen)"
 					/>
@@ -79,7 +79,7 @@ function saved(key: TeamSSHKey | null) {
 		<Alert
 			v-if="error"
 			theme="red"
-			title="Couldn't load SSH keys"
+			title="Couldn't load SSH Keys"
 			:description="error"
 			:primary-action="{ label: 'Retry', onClick: reload }"
 		/>
