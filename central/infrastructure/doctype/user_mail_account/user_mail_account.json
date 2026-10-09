@@ -10,12 +10,13 @@
   "email",
   "frappemail_service",
   "status",
-  "password",
   "assignment_section",
   "resource_action",
   "team",
   "server",
-  "assigned_at"
+  "assigned_at",
+  "credentials_section",
+  "password"
  ],
  "fields": [
   {
@@ -40,7 +41,6 @@
   },
   {
    "default": "Pending",
-   "description": "Pending: the Suite site may not have the mailbox yet. Available: ready to assign. Assigned: given to a server. Removing: queued for removal from the Suite site. Deleted: removed from the Suite site.",
    "fieldname": "status",
    "fieldtype": "Select",
    "in_list_view": 1,
@@ -49,12 +49,6 @@
    "options": "Pending\nAvailable\nAssigned\nRemoving\nDeleted",
    "read_only": 1,
    "search_index": 1
-  },
-  {
-   "fieldname": "password",
-   "fieldtype": "Password",
-   "label": "Password",
-   "read_only": 1
   },
   {
    "fieldname": "assignment_section",
@@ -94,12 +88,23 @@
    "fieldtype": "Datetime",
    "label": "Assigned At",
    "read_only": 1
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "credentials_section",
+   "fieldtype": "Section Break",
+   "label": "Credentials"
+  },
+  {
+   "fieldname": "password",
+   "fieldtype": "Password",
+   "label": "Password",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,
- "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-10-08 00:00:00.000000",
+ "modified": "2026-10-09 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Infrastructure",
  "name": "User Mail Account",

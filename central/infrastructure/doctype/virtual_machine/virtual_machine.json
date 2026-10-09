@@ -339,9 +339,13 @@
   {
    "link_doctype": "VM Snapshot",
    "link_fieldname": "server"
+  },
+  {
+   "link_doctype": "User Mail Account",
+   "link_fieldname": "server"
   }
  ],
- "modified": "2026-09-30 12:00:00.000000",
+ "modified": "2026-10-09 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Infrastructure",
  "name": "Virtual Machine",
