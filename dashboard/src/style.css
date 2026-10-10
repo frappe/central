@@ -18,6 +18,12 @@ body {
 	}
 }
 
+/* Inter's descenders reach below Frappe UI's 1.15 line heights, so `truncate` clipping both
+   axes cuts "g" and "y". Clip only the inline axis; the ellipsis still applies. */
+.truncate {
+	overflow: clip visible;
+}
+
 .dialog-content,
 .dialog-content .bg-surface-elevation-1 {
 	@apply bg-surface-base;
