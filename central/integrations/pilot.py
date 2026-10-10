@@ -64,6 +64,7 @@ def get_telemetry_configuration(action) -> dict:
 		frappe.throw(frappe._("Region {0} has no telemetry host yet.").format(action.region))
 
 	token = mint_datum_token(region_id_of(action.region), action.server_id)
+
 	return {"endpoint": endpoint, "token": token}
 
 
@@ -110,6 +111,7 @@ def fetch_site_login_url(
 			title=f"Site login relay returned no URL: {site}", message=f"{gateway_url}: {response.text}"
 		)
 		return None
+
 	return url
 
 
@@ -135,6 +137,7 @@ def rename_admin_domain(server: str, base_url: str | None = None, tls: bool = Tr
 	Pilot queues the change as a task and returns it."""
 	expected = _expected_gateway_url(frappe.get_doc("Virtual Machine", server))
 	payload = {"domain": urlparse(expected).hostname, "tls": tls}
+
 	return _post_to_pilot(server, base_url or expected, "/api/v1/settings/admin-domain", payload)
 
 
@@ -150,6 +153,7 @@ def rename_site(
 	`make_primary` makes the new name the site's `host_name`, so its links use it."""
 	base_url = base_url or _expected_gateway_url(frappe.get_doc("Virtual Machine", server))
 	payload = {"new_name": new_name, "keep_old_hostname": keep_old_hostname, "make_primary": make_primary}
+
 	return _post_to_pilot(server, base_url, f"/api/v1/sites/{quote(site, safe='')}/actions/rename", payload)
 
 
@@ -157,6 +161,7 @@ def _expected_gateway_url(server) -> str:
 	url = frappe.get_cached_doc("Region", server.region).get_vm_gateway_url(server.ipv6_address)
 	if not url:
 		frappe.throw(frappe._("Server {0} has no proxy hostname.").format(server.name))
+
 	return url
 
 
@@ -175,6 +180,7 @@ def _post_to_pilot(server: str, base_url: str, path: str, payload: dict) -> dict
 		allow_redirects=False,
 	)
 	response.raise_for_status()
+
 	return response.json()
 
 
@@ -182,4 +188,5 @@ def _gateway_url(value: str) -> str:
 	parsed = urlparse(value)
 	if parsed.scheme not in {"http", "https"} or not parsed.netloc:
 		frappe.throw(_("The Pilot gateway URL is not valid."))
+
 	return value.rstrip("/")

@@ -102,16 +102,14 @@ def mint_site_login(audience: str, site: str, user: str | None = None, full_name
 	claims = {"sub": user or "admin", "site": site}
 	if user and full_name:
 		claims["name"] = full_name
+
 	return _mint(audience, "site", SITE_LOGIN_TTL, claims)
 
 
 def mint_bootstrap_token(team: str, pilot_credential_id: str) -> str:
-	"""A single-use enrollment token seeded into a VM at create time. The pilot presents it
-	once to `central.api.pilot.enroll` to fetch its long-lived credential.
-
-	`aud` is the `pilot_credential_id` — the per-deployment audience id. Central controls it
-	up front (the VM's resource_id isn't known until Atlas provisions), so it doubles as the
-	audience every downward token to this bench will carry."""
+	"""A single-use enrollment token for a new VM. The Pilot presents it once to
+	`central.api.pilot.enroll` for its long-lived credential. `aud` is the `pilot_credential_id`,
+	which every later token to this bench carries."""
 	return _mint(pilot_credential_id, ENROLL_SCOPE, BOOTSTRAP_TTL, {"team": team})
 
 
@@ -140,6 +138,7 @@ def verify_bootstrap_token(token: str) -> dict:
 		frappe.throw(_("Invalid enrollment token: {0}").format(exc), frappe.AuthenticationError)
 	if claims.get("scope") != ENROLL_SCOPE:
 		frappe.throw(_("Not an enrollment token."), frappe.AuthenticationError)
+
 	return {"team": claims["team"], "pcid": claims["aud"], "jti": claims["jti"]}
 
 
@@ -159,4 +158,5 @@ def _mint(audience: str, scope: str, ttl: int, extra: dict | None = None) -> str
 		"scope": scope,
 		**(extra or {}),
 	}
+
 	return jwt.encode(payload, private_pem, algorithm=ALGORITHM, headers={"kid": kid})

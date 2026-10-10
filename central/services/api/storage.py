@@ -1,14 +1,15 @@
 import frappe
 from frappe import _
 from frappe.query_builder import DocType
+from frappe.utils.translations import _lt
 
 from central.integrations.object_storage import BucketInteractions
 from central.services.doctype.team_service.team_service import STORAGE_SERVICE, TeamService, get_bucket_name
 from central.utils.guards import require_capability
 
 BUCKET_FIELDS = ("name", "bucket_name", "region", "status", "endpoint_url", "access_key", "creation")
-VIEW_DENIED = "You can't view this team's object storage."
-MANAGE_DENIED = "You can't manage this team's object storage."
+VIEW_DENIED = _lt("You can't view this team's object storage.")
+MANAGE_DENIED = _lt("You can't manage this team's object storage.")
 
 
 @frappe.whitelist(methods=["GET"])
@@ -79,6 +80,7 @@ def create_bucket(team: str | None = None, bucket_name: str | None = None, regio
 	)
 	# The route checked service:manage; Team Service is operator-only because it holds secrets.
 	service.insert(ignore_permissions=True)
+
 	return _credentials(service)
 
 
@@ -90,6 +92,7 @@ def rotate_credentials(team: str | None = None, name: str | None = None) -> dict
 	# The route checked service:manage; Team Service is operator-only because it holds secrets.
 	service.flags.ignore_permissions = True
 	service.rotate_credentials()
+
 	return _credentials(service)
 
 
@@ -100,6 +103,7 @@ def delete_bucket(team: str | None = None, name: str | None = None) -> dict:
 	service = _team_bucket(team, name, for_update=True)
 	# The route checked service:manage; Team Service is operator-only because it holds secrets.
 	service.delete(ignore_permissions=True)
+
 	return {"name": service.name}
 
 
@@ -118,6 +122,7 @@ def get_storage_regions() -> list[dict]:
 	"""Regions where Cargo reports object storage as available, with what the map needs."""
 	detail = DocType("Service Detail")
 	region = DocType("Region")
+
 	return (
 		frappe.qb.from_(detail)
 		.join(region)

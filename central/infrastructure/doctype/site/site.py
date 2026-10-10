@@ -13,15 +13,8 @@ IMAGE_SITE_NAME = "site.local"
 
 
 class Site(Document):
-	"""The site a Pilot image already carries, on the machine that runs it.
-
-	Central builds no site. Cargo bakes one bench and one site into every image, and the
-	image answers for it on a `site-*` hostname alias, so a machine with an enrolled
-	Pilot always has exactly one site, at an address its own mesh address decides.
-
-	This record therefore holds only what belongs to the site: which machine it is, and
-	the name that machine knows it by. Its address is its name and its state is the
-	machine's, so neither is copied here, where the two could drift apart."""
+	"""The one site that a Pilot image carries, on the machine that runs it.
+	Its address is its name and its state is the machine's, so neither is copied here."""
 
 	# begin: auto-generated types
 	# This code is auto-generated. Do not modify anything in this block.
@@ -45,21 +38,15 @@ class Site(Document):
 
 	@property
 	def rename_target(self) -> str:
-		"""The hostname the customer chose, which the bench is renamed onto.
-
-		It is only ever a rename target. Nothing reads it and nothing is sent to it, because
-		it does not serve until the rename lands. Their name and ours share the regional
-		zone, and the site's own name already carries it, so this is built from ours."""
+		"""The hostname the customer chose, which the bench is renamed onto. Nothing is sent to it
+		before the rename lands."""
 		_, zone = self.name.split(".", 1)
 		return f"{self.subdomain}.{zone}"
 
 	@property
 	def url(self) -> str:
-		"""The site's address: the one the region derives from the machine itself.
-
-		It answers before the customer has chosen a name and after the bench is renamed
-		onto theirs, so it is what every reader, probe and sign-in uses. The proxy
-		terminates TLS in front of it."""
+		"""The address the region derives from the machine. It answers before and after the rename,
+		so every probe and sign-in uses it."""
 		return f"https://{self.name}"
 
 	@property
@@ -69,12 +56,9 @@ class Site(Document):
 
 	@classmethod
 	def create_once_addressable(cls, server: str) -> None:
-		"""Write down the site of a machine that has reached a routable address.
-
-		A region reports on a machine repeatedly and this runs on every report, because
-		the address arrives on one of them and nothing says which. It writes once: a
-		machine that already has a site, runs no Pilot, or has no address yet is left
-		alone, and so is one whose image has no site."""
+		"""Record the site of a machine that has a routable address. It runs on every report and
+		writes once; a machine with a site, without Pilot, without an address, or whose image has no
+		site is left alone."""
 		if frappe.db.exists("Site", {"server": server}):
 			return
 
@@ -165,11 +149,8 @@ class Site(Document):
 		)
 
 	def apply_subdomain(self) -> None:
-		"""Move the bench onto the name the customer chose, once and never again.
-
-		Pilot renames on its own task, so this returns as soon as the rename is accepted
-		rather than finished. Both hostnames keep serving throughout, which is what lets
-		the customer be signed in at our address while theirs is still coming up."""
+		"""Rename the bench onto the customer's chosen name, once. It returns when Pilot accepts
+		the rename, and both hostnames serve until it finishes."""
 		from central.integrations.pilot import rename_site
 
 		if not self.subdomain or self.rename_task:
@@ -213,12 +194,9 @@ class Site(Document):
 		self.enqueue_subdomain_rename()
 
 	def get_login_url(self, user: str | None = None) -> str | None:
-		"""A one-click session for `user`, or for Administrator, on the address the customer
-		can reach. The public name is Central's, so putting the session onto that address is
-		Central's to do.
-
-		Pilot only accepts a token for the name the site has on the bench. That is the
-		customer's name once the rename ran, and the stable image alias before it."""
+		"""A one-click session for `user`, or for Administrator, on the site's public address.
+		Pilot accepts a token only for the site's name on the bench: the customer's name after the
+		rename, the image alias before it."""
 		from central.integrations.pilot import fetch_site_login_url
 
 		gateway, audience = self.get_pilot_access()
@@ -230,6 +208,7 @@ class Site(Document):
 		for pilot_name in pilot_names:
 			if minted := fetch_site_login_url(gateway, audience, pilot_name, login_user, full_name):
 				return on_host(minted, self.name, self.get_landing_route())
+
 		return None
 
 	def get_landing_route(self) -> str | None:
@@ -246,6 +225,7 @@ class Site(Document):
 
 		if not user or not self.is_trial() or self.team not in get_user_team_names(user):
 			return None, None
+
 		return user, frappe.db.get_value("User", user, "full_name")
 
 	def is_trial(self) -> bool:
@@ -267,6 +247,7 @@ class Site(Document):
 		audience = frappe.db.get_value(
 			"Pilot Credential", {"server": self.server, "team": self.team, "status": "Active"}, "audience_id"
 		)
+
 		return (gateway.rstrip("/") if gateway else None), audience
 
 
@@ -287,6 +268,7 @@ def get_server_hostnames(team: str, server: str | None) -> list[str]:
 	filters = {"team": team, "server": server}
 	sites = frappe.get_all("Site", filters=filters, pluck="name")
 	domains = frappe.get_all("Site Domain", filters={**filters, "status": "Active"}, pluck="name")
+
 	return sorted({*sites, *domains})
 
 

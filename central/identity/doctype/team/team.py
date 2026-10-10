@@ -50,15 +50,13 @@ class Team(Document):
 
 	@classmethod
 	def create_for_current_user(cls, team_name: str, attribution: dict | None = None) -> "Team":
-		"""Create a team the signed-in user owns, with the signup's first-touch attribution.
-
-		Only the user's first team gets billing provisioned when it is created. A later
-		team gets its billing when its owner completes the billing profile. Welcome
-		credits are granted once per owner, in grant_welcome_credits."""
+		"""Create a team that the session user owns, with the signup's first-touch attribution.
+		Only the user's first team gets billing provisioned at creation."""
 		is_first_team = not frappe.db.exists("Team", {"owner_user": frappe.session.user})
 		team = frappe.get_doc({"doctype": "Team", "team_name": team_name, **(attribution or {})}).insert()
 		if is_first_team:
 			team.provision_billing()
+
 		return team
 
 	def provision_billing(self) -> None:
@@ -77,6 +75,7 @@ class Team(Document):
 	def before_validate(self) -> None:
 		if not self.is_new():
 			return
+
 		self.owner_user = self.owner_user or frappe.session.user
 		if not any(member.user == self.owner_user for member in self.members):
 			self.append(
@@ -183,6 +182,7 @@ class Team(Document):
 			}
 		)
 		invitation.insert()
+
 		return invitation.name
 
 	# Internal; the HTTP surface is central.api.teams.invite_team_member with `invitations`.
@@ -195,6 +195,7 @@ class Team(Document):
 			frappe.throw(_("Add at least one person to invite."))
 		if len(invitations) > MAX_INVITATIONS_PER_REQUEST:
 			frappe.throw(_("You can invite up to {0} people at a time.").format(MAX_INVITATIONS_PER_REQUEST))
+
 		return [self._invite_one_of_many(row) for row in invitations]
 
 	def _invite_one_of_many(self, row: dict) -> dict:
@@ -217,6 +218,7 @@ class Team(Document):
 			return {"email": email, "invitation": None, "error": str(error)}
 
 		frappe.db.release_savepoint("team_invitation")
+
 		return {"email": email, "invitation": name, "error": None}
 
 	# Internal; the HTTP surface is central.api.teams.set_team_member_roles.
@@ -332,6 +334,7 @@ class Team(Document):
 	) -> None:
 		if any(member.user == user for member in self.members):
 			return
+
 		self.append(
 			"members",
 			{
@@ -495,6 +498,7 @@ class Team(Document):
 		if user not in before or user in after:
 			return False
 		del before[user]
+
 		return before == after
 
 	def _validate_sensitive_member_changes(self, previous) -> None:
@@ -522,6 +526,7 @@ class Team(Document):
 			grants.setdefault(member.user, set()).add(
 				(member.role, member.resource_type, member.resource_name, member.status)
 			)
+
 		return {user: frozenset(rows) for user, rows in grants.items()}
 
 	def _validate_member_change_target(self, user: str) -> None:

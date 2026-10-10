@@ -16,11 +16,8 @@ REGIONAL_SERVICES = ("proxy", "atlas", "cargo")
 
 
 class Region(AtlasConnectionMixin, CargoConnectionMixin, Document):
-	"""One region. Its own identity and geography live here; its connection to each
-	regional service is a clearly separated half, mixed in from that service's own
-	module — `AtlasConnectionMixin` (atlas_connection.py) and `CargoConnectionMixin`
-	(cargo_connection.py). The Proxy is not a third peer: it is Atlas's own component,
-	reachable by convention (`get_service_url`), with no connection state of its own."""
+	"""One region: its identity and geography. Its Atlas and Cargo connections are mixed in from
+	`atlas_connection.py` and `cargo_connection.py`."""
 
 	# begin: auto-generated types
 	# This code is auto-generated. Do not modify anything in this block.
@@ -70,6 +67,7 @@ class Region(AtlasConnectionMixin, CargoConnectionMixin, Document):
 		wildcard_domain = frappe.db.get_single_value("Central Settings", "wildcard_domain")
 		if not wildcard_domain:
 			frappe.throw(_("Set the Wildcard Domain in Central Settings."))
+
 		return f"{region}.{wildcard_domain.strip().strip('.').lower()}"
 
 	@staticmethod

@@ -2,6 +2,7 @@ import math
 
 import frappe
 from frappe import _
+from frappe.utils.translations import _lt
 
 from central.billing.catalog.snapshots import get_snapshot_rate
 from central.billing.doctype.billing_profile.billing_profile import get_team_currency
@@ -31,7 +32,7 @@ SNAPSHOT_FIELDS = (
 
 
 @frappe.whitelist(methods=["GET"])
-@require_capability("server:view", "You can't view this team's snapshots.", server="resource_id")
+@require_capability("server:view", _lt("You can't view this team's snapshots."), server="resource_id")
 def list_snapshots(team: str | None = None, resource_id: str | None = None) -> dict:
 	"""The team's snapshots, newest first, each with what it costs. Pass `resource_id` for
 	one server's snapshots and its automatic setting. Gated on `server:view`."""
@@ -61,11 +62,12 @@ def list_snapshots(team: str | None = None, resource_id: str | None = None) -> d
 	}
 	if resource_id:
 		result["server"] = _automatic_setting(team, resource_id)
+
 	return result
 
 
 @frappe.whitelist(methods=["GET"])
-@require_capability("server:view", "You can't view this team's snapshots.")
+@require_capability("server:view", _lt("You can't view this team's snapshots."))
 def snapshot_pricing(team: str | None = None, region: str | None = None) -> dict:
 	"""The price per GB-month of a snapshot in `region`, shown before the customer commits."""
 	rate, currency = get_snapshot_rate(team, region)
@@ -73,7 +75,7 @@ def snapshot_pricing(team: str | None = None, region: str | None = None) -> dict
 
 
 @frappe.whitelist(methods=["POST"])
-@require_capability("server:snapshot", "You can't manage this team's snapshots.", server="resource_id")
+@require_capability("server:snapshot", _lt("You can't manage this team's snapshots."), server="resource_id")
 def take_snapshot(team: str | None = None, resource_id: str | None = None, title: str | None = None) -> dict:
 	"""Take a paid snapshot of a server now. Gated on `server:snapshot`."""
 	server = _team_server(team, resource_id)
@@ -88,11 +90,12 @@ def take_snapshot(team: str | None = None, resource_id: str | None = None, title
 	)
 	# The capability and team are checked above; the DocType grants no team write.
 	snapshot.insert(ignore_permissions=True)
+
 	return {"name": snapshot.name}
 
 
 @frappe.whitelist(methods=["POST"])
-@require_capability("server:snapshot", "You can't manage this team's snapshots.")
+@require_capability("server:snapshot", _lt("You can't manage this team's snapshots."))
 def keep_snapshot(team: str | None = None, name: str | None = None) -> dict:
 	"""Keep a daily snapshot past its deletion time. Gated on `server:snapshot`."""
 	_team_snapshot(team, name).keep()
@@ -100,7 +103,7 @@ def keep_snapshot(team: str | None = None, name: str | None = None) -> dict:
 
 
 @frappe.whitelist(methods=["POST"])
-@require_capability("server:snapshot", "You can't manage this team's snapshots.")
+@require_capability("server:snapshot", _lt("You can't manage this team's snapshots."))
 def delete_snapshots(team: str | None = None, names: list[str] | str | None = None) -> dict:
 	"""Delete snapshots from their region. One failure does not stop the others; each
 	reason comes back by name. Gated on `server:snapshot`."""
@@ -116,17 +119,19 @@ def delete_snapshots(team: str | None = None, names: list[str] | str | None = No
 			deleted.append(name)
 		except frappe.ValidationError as error:
 			failed[name] = str(error)
+
 	return {"deleted": deleted, "failed": failed}
 
 
 @frappe.whitelist(methods=["POST"])
-@require_capability("server:snapshot", "You can't manage this team's snapshots.", server="resource_id")
+@require_capability("server:snapshot", _lt("You can't manage this team's snapshots."), server="resource_id")
 def set_automatic_snapshots(
 	team: str | None = None, resource_id: str | None = None, enabled: bool | int | str = True
 ) -> dict:
 	"""Turn the daily free snapshot of one server on or off. Gated on `server:snapshot`."""
 	server = _team_server(team, resource_id)
 	server.db_set("skip_automatic_snapshot", 0 if frappe.utils.cint(enabled) else 1)
+
 	return _automatic_setting(team, resource_id)
 
 
@@ -141,6 +146,7 @@ def _team_snapshot(team: str, name: str | None) -> VMSnapshot:
 		frappe.throw(_("No snapshot '{0}' for this team.").format(name), frappe.DoesNotExistError)
 	if not can(frappe.session.user, team, "server:snapshot", server=row.server):
 		frappe.throw(_("You can't manage snapshots of this server."), frappe.PermissionError)
+
 	return frappe.get_doc("VM Snapshot", name)
 
 
@@ -160,6 +166,7 @@ def _server_titles(team: str, servers: list[str]) -> dict[str, str]:
 	rows = frappe.get_list(
 		"Virtual Machine", filters={"team": team, "name": ["in", names]}, fields=["name", "title"], limit=0
 	)
+
 	return {row.name: row.title or row.name for row in rows}
 
 
@@ -178,6 +185,7 @@ def _snapshot_row(row, servers: dict[str, str], rates: dict[str, float | None]) 
 	"""One snapshot as the console shows it: what it is, and what it costs a month when billed."""
 	size_gib = math.ceil((row.size_mib or 0) / 1024)
 	rate = rates.get(row.region)
+
 	return {
 		**{field: row[field] for field in SNAPSHOT_FIELDS if field != "subscription"},
 		"server_title": servers.get(row.server, row.server),

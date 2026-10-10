@@ -55,6 +55,7 @@ def sign_in_with_code(
 		capture("signup_verified", "central", user=name, properties={"product": product})
 		for invitation in get_pending_invitations(name):
 			frappe.get_doc("Team Invitation", invitation).accept()
+
 	return {"user": name}
 
 
@@ -77,6 +78,7 @@ def create_user(email: str, full_name: str):
 	user.flags.no_welcome_mail = True
 	# A guest creates the account, and a guest has no User create permission.
 	user.insert(ignore_permissions=True)
+
 	return user
 
 
@@ -157,4 +159,5 @@ def _should_skip_role_grant(doc) -> bool:
 		return True
 	if not frappe.db.exists("Role", CENTRAL_USER_ROLE):
 		return True
+
 	return False

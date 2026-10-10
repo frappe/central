@@ -130,6 +130,7 @@ class TeamInvitation(Document):
 		self.accepted_at = now()
 		self.flags.from_invitation_action = True
 		self.save()
+
 		return {"team": self.team, "role": self.role, "accepted": True}
 
 	# Internal; the HTTP surface is central.api.teams.revoke_invitation.
@@ -142,6 +143,7 @@ class TeamInvitation(Document):
 		self.status = "Revoked"
 		self.flags.from_invitation_action = True
 		self.save()
+
 		return True
 
 	# Internal; the HTTP surface is central.api.teams.resend_invitation.
@@ -164,6 +166,7 @@ class TeamInvitation(Document):
 		self.flags.from_invitation_action = True
 		self.save()
 		self.send_email()
+
 		return {"name": self.name, "expires_on": self.expires_on}
 
 	# Internal; the HTTP surface is central.api.teams.decline_invitation.
@@ -172,14 +175,17 @@ class TeamInvitation(Document):
 			frappe.throw(_("This invitation belongs to another user."), frappe.PermissionError)
 		if self.status != "Pending":
 			frappe.throw(_("Only a pending invitation can be declined."))
+
 		self.status = "Declined"
 		self.flags.from_invitation_action = True
 		self.save()
+
 		return True
 
 	def _validate_send_rate(self) -> None:
 		if user_has_operator_bypass():
 			return
+
 		sent = frappe.db.count(
 			"Team Invitation",
 			{"invited_by": frappe.session.user, "creation": (">", add_to_date(None, hours=-1))},
@@ -190,6 +196,7 @@ class TeamInvitation(Document):
 	def _validate_role(self) -> None:
 		if self.role == "Owner":
 			frappe.throw(_("Owner cannot be assigned through an invitation."))
+
 		role_team, is_system = frappe.db.get_value("Team Role", self.role, ["team", "is_system"]) or (None, 0)
 		if not is_system and role_team != self.team:
 			frappe.throw(_("Team Role {0} does not belong to this team.").format(self.role))
@@ -200,6 +207,7 @@ class TeamInvitation(Document):
 	def _validate_user(self) -> None:
 		if not self.is_new():
 			return
+
 		enabled = frappe.db.get_value("User", self.email, "enabled")
 		if enabled == 0:
 			frappe.throw(_("Disabled users cannot be invited."))
@@ -209,6 +217,7 @@ class TeamInvitation(Document):
 	def _validate_duplicate(self) -> None:
 		if not self.is_new():
 			return
+
 		existing = frappe.db.exists(
 			"Team Invitation",
 			{"team": self.team, "email": self.email, "status": "Pending"},
@@ -271,6 +280,7 @@ def get_invitation_by_token(token: str) -> TeamInvitation:
 	name = frappe.db.get_value("Team Invitation", {"token": token}) if token else None
 	if not name:
 		frappe.throw(_("This invitation link is not valid."), frappe.DoesNotExistError)
+
 	return frappe.get_doc("Team Invitation", name)
 
 

@@ -74,6 +74,7 @@ class ObjectStorageClient:
 
 		result = self._read_response(response)
 		self._validate_receipt(method, name, result)
+
 		return result
 
 	def _validate_receipt(self, method: str, name: str, receipt: dict) -> None:
@@ -191,6 +192,7 @@ class BucketInteractions:
 			arguments["ContinuationToken"] = offset
 
 		page = self._request(self.client.list_objects_v2, **arguments)
+
 		return {
 			"objects": [
 				{

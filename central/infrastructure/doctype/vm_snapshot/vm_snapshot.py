@@ -77,6 +77,7 @@ class VMSnapshot(Document):
 	def on_update(self) -> None:
 		if not self.has_value_changed("status"):
 			return
+
 		if self.status in ("Failed", "Deleted"):
 			self.stop_billing()
 		if self.status in ("Available", "Deleted"):

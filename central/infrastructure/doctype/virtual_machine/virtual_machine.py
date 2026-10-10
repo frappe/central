@@ -60,6 +60,7 @@ class VirtualMachine(Document):
 		name = frappe.db.get_value("Virtual Machine", {"team": team, "resource_id": resource_id}, "name")
 		if not name:
 			frappe.throw(_("No server '{0}' for this team.").format(resource_id), frappe.DoesNotExistError)
+
 		return name
 
 	@classmethod
@@ -91,6 +92,7 @@ class VirtualMachine(Document):
 				"is_firewall_enabled": configuration.is_firewall_enabled,
 			}
 		)
+
 		# The authorized Resource Action permits this system-owned mirror write.
 		return server.insert(ignore_permissions=True)
 
@@ -179,13 +181,9 @@ class VirtualMachine(Document):
 			subscription.insert(ignore_permissions=True)
 
 	def disable_active_subscription(self):
-		"""Terminated: cancel the team's active subscription for this server, if any.
-
-		Termination is an END, not a billing pause — so we record a `Cancelled`
-		Subscription Change to CLOSE the open billing segment (ADR 0010). That drops the
-		subscription from the team's run-rate and frees its trust-tier headroom, so the
-		bill estimate stops counting a dead VM and the team can provision again. Then we
-		disable it (the `enabled: 1` filter makes this idempotent on a repeated event)."""
+		"""Cancel and disable the team's active subscription for this terminated server.
+		The Cancelled change closes the billing segment, so the estimate stops counting the server and
+		its headroom is freed. It is safe to repeat."""
 		existing = frappe.db.get_value(
 			"Subscription", {"team": self.team, "server_id": self.name, "enabled": 1}, "name"
 		)
@@ -233,6 +231,7 @@ class VirtualMachine(Document):
 		doc.save(ignore_permissions=True, ignore_version=not changed)
 		if changed:
 			doc.publish_state_change()
+
 		return True
 
 	@frappe.whitelist(methods=["POST"])
@@ -247,11 +246,8 @@ class VirtualMachine(Document):
 
 	@frappe.whitelist(methods=["POST"])
 	def sync_state(self) -> dict:
-		"""Ask the region what this server is doing now, and record the answer.
-
-		The scheduled reconcile does this on a timer and a region reports changes as they
-		happen. This is the operator's way to ask directly when a record looks stale or a
-		report was missed."""
+		"""Read this server's state from the region now. The operator's way to refresh a record
+		that looks stale."""
 		from central.integrations.servers import observe_server
 
 		self.check_permission("read")
@@ -284,12 +280,8 @@ class VirtualMachine(Document):
 		return f"{gateway}/?sid={mint_bench_login(audience)}"
 
 	def publish_state_change(self) -> None:
-		"""Tell this team's consoles that one of its servers moved.
-
-		The payload is identity only. Every consumer re-reads through the team-scoped
-		API, so the socket never becomes a second source of truth for state. The room is
-		this server's Team document, and Frappe checks Team read permission before a
-		client may join it, so one team's traffic never reaches another's console."""
+		"""Tell this team's consoles that one of its servers changed. The payload is identity only,
+		and the room is the server's Team, which Frappe checks read permission on before a join."""
 		frappe.publish_realtime(
 			"server_state_changed",
 			{"resource_id": self.name},
@@ -371,6 +363,7 @@ class VirtualMachine(Document):
 		# save(), not db_set(): `on_update` closes the billing segment for a dead server.
 		doc.save(ignore_permissions=True)
 		doc.publish_state_change()
+
 		return True
 
 

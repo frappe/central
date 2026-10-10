@@ -1,12 +1,5 @@
 # Copyright (c) 2026, frappe and contributors
 # For license information, please see license.txt
-"""Everything about a region's Atlas that only Atlas cares about.
-
-Mixed into `Region` (see `region.py`). Nothing here is Cargo's concern: Cargo has no
-VMs to gateway to, and checks its own reachability a different way (a self-report,
-not a polled connection). Keep Cargo-specific fields and logic in `cargo_connection.py`
-instead of here.
-"""
 
 import ipaddress
 
@@ -111,6 +104,7 @@ class AtlasConnectionMixin:
 				"connection_error": result["error"],
 			}
 		)
+
 		return result
 
 	@frappe.whitelist(methods=["POST"])

@@ -95,6 +95,7 @@ class PilotCredential(Document):
 		doc.pilot_credential_id = pilot_credential_id
 		doc.team = team
 		doc.audience_id = audience_id
+
 		return doc._issue_token()
 
 	@classmethod

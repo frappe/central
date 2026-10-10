@@ -150,6 +150,7 @@ class ResourceAction(Document):
 		)
 		# Customers have read-only access, so the authorized service inserts for them.
 		document.insert(ignore_permissions=True)
+
 		return document
 
 	@classmethod
@@ -164,6 +165,7 @@ class ResourceAction(Document):
 		pending = frappe.get_doc("Resource Action", name)
 		if pending.action != action:
 			frappe.throw(_("Another action is still pending for this server."))
+
 		return pending
 
 	def is_allowed(self) -> bool:
@@ -171,6 +173,7 @@ class ResourceAction(Document):
 		server = self.server or None
 		if not can(self.requested_by, self.team, ACTION_CAPABILITIES[self.action], server=server):
 			return False
+
 		return not self.take_snapshot or can(self.requested_by, self.team, "server:snapshot", server=server)
 
 	def after_insert(self) -> None:
@@ -345,6 +348,7 @@ class ResourceAction(Document):
 			return False
 
 		self.transition("Succeeded")
+
 		return True
 
 	@frappe.whitelist(methods=["POST"])
@@ -357,13 +361,9 @@ class ResourceAction(Document):
 
 	@frappe.whitelist(methods=["POST"])
 	def retry(self) -> ActionStatus:
-		"""Send this creation again, on the record that already holds its validated intent.
-
-		A retry never opens a second record, so the request key, the saved configuration
-		and the accepted quote all stay the same. It is refused once the region has
-		answered with a machine: that identity is the receipt, and a second dispatch would
-		build a second server. Other actions are repeated from the server itself, which
-		opens a fresh record."""
+		"""Send this creation again on the same record, with the same request key, configuration
+		and quote. Refused once the region answered with a machine, because a second dispatch would
+		build a second server."""
 		self.check_permission("read")
 		if self.action != "create":
 			frappe.throw(_("Only a server creation can be retried. Run this action again from the server."))
@@ -382,14 +382,12 @@ class ResourceAction(Document):
 		self.revalidate_purchase()
 		self.transition("Queued")
 		self.enqueue()
+
 		return self.customer_status()
 
 	def revalidate_purchase(self) -> None:
-		"""Check the saved configuration against today's catalog and budget.
-
-		A failed request holds no budget, so a retry is a new decision to spend. The
-		reserved rate stays as it was accepted; only the team's remaining headroom, plan
-		eligibility and trial limits are checked again."""
+		"""Check the saved configuration against today's catalog and budget before a retry.
+		The reserved rate stays as accepted; headroom, plan eligibility and trial limits are checked again."""
 		from central.resource_actions import validate_purchase
 
 		frappe.db.get_value("Team", self.team, "name", for_update=True)
@@ -404,12 +402,8 @@ class ResourceAction(Document):
 
 	@classmethod
 	def open_creations(cls, team: str) -> list[dict]:
-		"""The team's creations that have not finished yet.
-
-		A creation has no server record until the region accepts it, so there is no row
-		for `pending_labels` to mark and no other way for a console to find a request it
-		started. `requested_by` lets a console pick up its own request without adopting a
-		teammate's."""
+		"""The team's unfinished creations. A creation has no server record until the region
+		accepts it, so this is how a console finds its own request."""
 		rows = frappe.get_list(
 			"Resource Action",
 			filters={"team": team, "action": "create", "status": ["in", PENDING_STATES]},

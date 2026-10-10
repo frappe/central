@@ -66,6 +66,7 @@ class WarpgateAccess(Document):
 	def validate(self) -> None:
 		if self.duration not in self.durations:
 			frappe.throw(_("{0} access cannot last {1}.").format(self.access_type, self.duration))
+
 		if self.is_admin:
 			self.region = self.host = self.host_title = None
 			return
@@ -162,6 +163,7 @@ class WarpgateAccess(Document):
 		if not proxy_domain:
 			frappe.throw(_("Region {0} has no proxy domain.").format(self.region))
 		target = self.host_title or "<host>"
+
 		return f"ssh -p {WARPGATE_SSH_PORT} {self.email}:{target}@warpgate.{proxy_domain}"
 
 

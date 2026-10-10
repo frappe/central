@@ -25,6 +25,7 @@ def send_code(email: str, full_name: str | None = None, product: str | None = No
 	"""Email a sign-in code. A new email gets a code too, and the account is made on verify."""
 	email = _validated_email(email)
 	send_sign_in_code(email, _optional_full_name(full_name), _known_product(product))
+
 	return {"message": _("We sent a code to {0}.").format(email)}
 
 
@@ -68,15 +69,18 @@ def sign_up_with_invitation(token: str, full_name: str) -> dict:
 	frappe.local.login_manager.login_as(user.name)
 	# Only this invitation: the others for the email stay pending for the user to answer.
 	invitation.accept()
+
 	return {"user": user.name, "team": invitation.team}
 
 
 def _validated_email(email: str) -> str:
 	if len(email) > 254:
 		frappe.throw(_("Enter a valid email address."), frappe.ValidationError)
+
 	email = email.strip().lower()
 	if validate_email_address(email, throw=True) != email:
 		frappe.throw(_("Enter a valid email address."), frappe.ValidationError)
+
 	return email
 
 
@@ -92,6 +96,7 @@ def _required_full_name(full_name: str) -> str:
 	full_name = full_name.strip()
 	if len(full_name) > FULL_NAME_MAX_LENGTH:
 		frappe.throw(_("Use a shorter name."), frappe.ValidationError)
+
 	return full_name
 
 

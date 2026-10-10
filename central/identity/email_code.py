@@ -74,6 +74,7 @@ class EmailCode:
 			pending["attempts"] += 1
 			self._store(pending)
 			frappe.throw(_("That code is incorrect. Check your latest email and try again."), EmailCodeError)
+
 		return pending
 
 	def discard(self) -> None:

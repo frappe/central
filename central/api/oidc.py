@@ -33,4 +33,5 @@ def get_token() -> None:
 def get_jwks() -> Response:
 	response = Response(mimetype="application/json")
 	response.data = frappe.as_json(CentralSSOSettings.instance().get_jwks("oidc"))
+
 	return response

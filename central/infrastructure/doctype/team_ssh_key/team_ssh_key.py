@@ -58,6 +58,7 @@ class TeamSSHKey(Document):
 	def on_trash(self) -> None:
 		if frappe.db.exists("Server SSH Key", {"team_ssh_key": self.name}):
 			frappe.throw(_("Remove this key from its servers before deleting it."))
+
 		requests = frappe.get_all(
 			"Resource Action",
 			filters={
@@ -107,6 +108,7 @@ def fingerprint(public_key: str) -> str:
 			raise ValueError
 	except (ValueError, TypeError, binascii.Error, UnsupportedAlgorithm):
 		frappe.throw(_("Enter one valid OpenSSH public key. Private keys are not accepted."))
+
 	return "SHA256:" + base64.b64encode(hashlib.sha256(blob).digest()).decode().rstrip("=")
 
 

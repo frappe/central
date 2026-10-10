@@ -52,6 +52,7 @@ class Product(Document):
 		from central.site_provisioning import product_image_tags, signup_offering
 
 		self.check_permission("write")
+
 		return preview_images(
 			signup_offering(), region, offset, extra_tags=product_image_tags(self.signup_app)
 		)

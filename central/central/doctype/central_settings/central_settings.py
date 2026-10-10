@@ -9,11 +9,10 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
-# Central's console feature flags. One Single, one Check per flag, read at page
-# boot (get_context) so the SPA can hide a whole area before its routes mount.
-
 
 class CentralSettings(Document):
+	"""Console feature flags, one Check each, read at page boot so the console can hide an area."""
+
 	# begin: auto-generated types
 	# This code is auto-generated. Do not modify anything in this block.
 

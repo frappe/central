@@ -51,6 +51,7 @@ class UserMailAccount(Document):
 		"""Create a mailbox on the Suite site and add it to the pool."""
 		email = f"notifications-{secrets.token_hex(6)}@{service.domain}"
 		password = secrets.token_urlsafe(24)
+		# The system fills the pool for a FrappeMail Service; no customer creates a mailbox.
 		mailbox = frappe.get_doc(
 			{
 				"doctype": "User Mail Account",
@@ -64,6 +65,7 @@ class UserMailAccount(Document):
 
 		service.create_send_only_member(email, password)
 		mailbox.db_set("status", "Available", commit=True)
+
 		return mailbox
 
 	@classmethod
@@ -114,6 +116,7 @@ class UserMailAccount(Document):
 				"assigned_at": now_datetime(),
 			}
 		)
+
 		return mailbox
 
 	def get_site_config(self) -> dict:
@@ -128,6 +131,7 @@ class UserMailAccount(Document):
 				)
 			)
 		is_ssl = SMTP_PORTS[port]
+
 		return {
 			"mail_server": server,
 			"mail_port": port,

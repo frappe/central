@@ -23,6 +23,7 @@ class ResourceQuantity(BaseModel):
 		units = {"Compute": "vCPU", "Memory": "GB", "Disk": "GB", "Transfer": "GB"}
 		if self.unit != units[self.resource_type]:
 			raise ValueError("The unit must match the selected resource type.")
+
 		return self
 
 

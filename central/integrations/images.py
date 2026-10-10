@@ -45,6 +45,7 @@ def list_images(
 	instance.ensure_accepts_new_servers()
 
 	client = AtlasClient.for_team(instance, team)
+
 	return client.list_system_images({**document.get_image_tags(), **(extra_tags or {})}, offset)
 
 
@@ -56,6 +57,7 @@ def preview_images(
 	client = AtlasClient.for_operator(instance)
 	document = frappe.get_doc("Image Offering", offering)
 	document.check_permission("write")
+
 	return client.list_system_images({**document.get_image_tags(), **(extra_tags or {})}, offset)
 
 
@@ -139,6 +141,7 @@ def _restorable_snapshot(team: str, snapshot: str):
 		frappe.throw(_("Only an available snapshot can be restored."))
 	if not row.is_restorable or not row.image_offering:
 		frappe.throw(_("A snapshot of a Frappe server cannot be restored yet."))
+
 	return row
 
 

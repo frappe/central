@@ -14,4 +14,5 @@ def jwks_document() -> dict:
 def get_jwks() -> Response:
 	response = Response(mimetype="application/json")
 	response.data = frappe.as_json(jwks_document())
+
 	return response

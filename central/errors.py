@@ -1,18 +1,3 @@
-"""Customer-safe errors and operator diagnostics for console APIs.
-
-A failed action must tell the user what happened and what to do about it — never a
-FrappeException or a raw traceback. Every server-action failure is shaped into a small
-envelope ({code, title, message, remediation, retriable}) built from `ERROR_CATALOG`,
-and carried to the client on the message it raises (Frappe serializes each message-log
-entry, extra keys included, into `_server_messages`). The stable `code` is what the UI
-switches on; `message`/`remediation` are the words a person reads (see the Wix "write
-better error messages" guidance: plain language, cause, reassurance, next step).
-
-Wire this at the two ends of the Server flow: `throw_action_error` where Central raises a
-known failure, and the `@handle_resource_operation` decorator on the whitelisted endpoints so
-nothing, including an unexpected bug, reaches the user as a bare exception.
-"""
-
 from __future__ import annotations
 
 import functools
@@ -237,7 +222,8 @@ def to_error_response(exc: Exception) -> dict:
 
 
 def handle_resource_operation(func):
-	"""Return customer-safe errors from a resource endpoint."""
+	"""Return customer-safe errors from a resource endpoint: a catalog envelope with a stable
+	`code` the console switches on, never a bare exception or a traceback."""
 
 	@functools.wraps(func)
 	def wrapper(*args, **kwargs):

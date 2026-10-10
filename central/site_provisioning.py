@@ -30,21 +30,15 @@ def create_trial_site(
 	request_key: str,
 	product: str | None = None,
 ) -> dict:
-	"""Start the machine a new customer's trial site lives on, under the name they chose.
-
-	The image already carries a built site, so the only work is to start the machine.
-	That runs through the same creation path a bought server takes, which is what gives a
-	trial the same record, retry and error handling. The name rides on the request,
-	because the site it will rename does not exist until the region answers.
-
-	The durable action queues the regional work after the request commits. The customer can
-	return to the same action while Central finishes or recovers the operation."""
+	"""Start the machine for a new trial site, under the name the customer chose. It takes the
+	same creation path as a bought server, so a trial gets the same record, retry and errors."""
 
 	team = resolve_team(frappe.session.user, team)
 	signup_app = get_signup_product(product).signup_app if product else None
 	subdomain = validated_subdomain(subdomain)
 	configuration = trial_configuration(team, signup_app)
 	site = SiteCreation(product=product or None)
+
 	return submit_request(
 		team=team,
 		request_key=request_key,
@@ -66,6 +60,7 @@ def create_trial_team(user: str, attribution: dict | None = None) -> str | None:
 
 	full_name = frappe.db.get_value("User", user, "full_name") or user
 	team_name = _("{0}'s Team").format(full_name)
+
 	return Team.create_for_current_user(team_name, first_touch(**(attribution or {}))).name
 
 
@@ -143,11 +138,8 @@ def trial_regions() -> list[str]:
 
 
 def trial_configuration(team: str, signup_app: str | None = None) -> dict:
-	"""The one region, image and plan a trial site starts on.
-
-	The plan should hold the shape the Pilot image was baked at. A region restores a
-	warm image from memory only when the vCPU, memory and disk all match, and a trial
-	that misses the shape cold-boots instead."""
+	"""The region, image and plan a trial site starts on. The plan must match the shape the
+	image was baked at, or the region cold-boots instead of restoring a warm image."""
 	offering = signup_offering()
 	region, plan = trial_region_and_plan(team)
 	images = trial_images(team, region, offering, signup_app)
@@ -155,6 +147,7 @@ def trial_configuration(team: str, signup_app: str | None = None) -> dict:
 		frappe.throw(_("No trial image is available right now. Please try again shortly."))
 
 	newest = max(images, key=lambda image: image["created_at"])
+
 	return {"region": region, "offering": offering, "image_id": newest["id"], "plan": plan}
 
 
@@ -165,6 +158,7 @@ def trial_images(team: str, region: str, offering: str, signup_app: str | None) 
 		return list_images(team, region, offering, SIGNUP_FLOW, extra_tags=tags)["items"]
 
 	images = list_images(team, region, offering, SIGNUP_FLOW, extra_tags=SIGNUP_IMAGE_TAGS)["items"]
+
 	return [image for image in images if SIGNUP_APP_TAG not in image["tags"]]
 
 
@@ -188,6 +182,7 @@ def signup_offering() -> str:
 		frappe.throw(_("No signup image offering is configured."))
 
 	dedicated = [row for row in offerings if row.available_in == SIGNUP_FLOW]
+
 	return (dedicated or offerings)[0].name
 
 

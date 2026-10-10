@@ -97,12 +97,14 @@ class CentralSSOSettings(Document):
 		self.add_comment(
 			"Info", _("Initialized {0} signing key {1}.").format(fields.label, self.get(fields.key_id))
 		)
+
 		return self.get(fields.key_id)
 
 	def get_signing_key(self, plane: SigningPlane) -> tuple[str, str]:
 		"""The PEM private key and `kid` for one plane. A missing key blocks signing."""
 		fields = get_signing_key_fields(plane)
 		self._require_key_id(fields)
+
 		return self._get_private_key(fields), self.get(fields.key_id)
 
 	def get_public_key(self, plane: SigningPlane) -> Ed25519PublicKey | RSAPublicKey:
@@ -113,6 +115,7 @@ class CentralSSOSettings(Document):
 		self._require_key_id(fields)
 		if not self.get(fields.public_key):
 			throw_incomplete_signing_key(fields)
+
 		return load_pem_public_key(self.get(fields.public_key).encode())
 
 	def get_jwks(self, plane: SigningPlane) -> dict:
@@ -127,6 +130,7 @@ class CentralSSOSettings(Document):
 		encoder = RSAAlgorithm if fields.algorithm == OIDC_ALGORITHM else OKPAlgorithm
 		key = encoder.to_jwk(self.get_public_key(plane), as_dict=True)
 		key.update({"kid": key_id, "use": "sig", "alg": fields.algorithm})
+
 		return {"keys": [key]}
 
 	def _require_key_id(self, fields: SigningKeyFields) -> None:
@@ -141,6 +145,7 @@ class CentralSSOSettings(Document):
 		private_key = self.get_password(fields.private_key, raise_exception=False)
 		if not self.get(fields.public_key) or not private_key:
 			throw_incomplete_signing_key(fields)
+
 		return private_key
 
 	def _generate_keypair(self, fields: SigningKeyFields) -> None:

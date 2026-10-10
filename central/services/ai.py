@@ -29,6 +29,7 @@ def enable(team: str) -> str:
 	)
 	# The route checked service:manage; Team Service is operator-only because it holds secrets.
 	service.insert(ignore_permissions=True)
+
 	return service.name
 
 
@@ -38,6 +39,7 @@ def get_alert_email(team: str) -> str:
 		return email
 
 	owner = frappe.db.get_value("Team", team, "owner_user")
+
 	# The User's name is not always an address: Administrator is not one.
 	return frappe.db.get_value("User", owner, "email")
 

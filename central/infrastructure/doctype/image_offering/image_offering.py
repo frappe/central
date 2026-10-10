@@ -65,6 +65,7 @@ class ImageOffering(Document):
 		from central.integrations.images import preview_images
 
 		self.check_permission("write")
+
 		return preview_images(self.name, region, offset)
 
 

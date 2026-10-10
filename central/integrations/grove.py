@@ -23,6 +23,7 @@ class GroveClient:
 		settings = frappe.get_cached_doc("AI Settings")
 		if not settings.base_url or not settings.control_api_key:
 			frappe.throw(_("AI is not set up: enroll Central at Grove in AI Settings."))
+
 		return cls(settings.base_url, settings.control_api_key, settings.get_password("control_api_secret"))
 
 	@staticmethod
@@ -32,6 +33,7 @@ class GroveClient:
 		response = requests.post(
 			f"{base_url}/api/method/grove.api.create_control_client", json=body, timeout=TIMEOUT
 		)
+
 		return read(response)
 
 	def rotate_control_key(self) -> dict:

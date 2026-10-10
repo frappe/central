@@ -11,6 +11,7 @@ def allocate_tenant_id() -> int:
 	"""Allocate under the Framework series lock, in the Team's transaction."""
 	tenant_id = int(getseries(TENANT_ID_SERIES, 10))
 	validate_tenant_id(tenant_id)
+
 	return tenant_id
 
 
