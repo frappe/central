@@ -35,7 +35,6 @@ Central owns:
 - `Role Capability`
 - `Capability`
 - `Team Invitation`
-- `IAM Permission Probe`
 
 A member receives capabilities through one path:
 

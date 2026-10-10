@@ -39,7 +39,7 @@ Pilot      server runtime: benches, sites, apps on a single server.
 
 Central runs today:
 
-- Identity and access: teams, members, invitations, team roles, capabilities, and the permission probe.
+- Identity and access: teams, members, invitations, team roles, and capabilities.
 - Tokens: SSO and OAuth minting for Atlas, for a Pilot bench, and for Cargo, Datum and for any other future services, plus site login.
 - Regions: each Region holds its Atlas connection and its Cargo connection.
 - Resources: `Virtual Machine` for a provisioned server, `Site` for a self-serve site. Only the integration layer records observed state on them.

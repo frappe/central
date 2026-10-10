@@ -53,11 +53,6 @@
    "link_fieldname": "capability",
    "parent_doctype": "Team Role",
    "table_fieldname": "capabilities"
-  },
-  {
-   "group": "Diagnostics",
-   "link_doctype": "IAM Permission Probe",
-   "link_fieldname": "capability"
   }
  ],
  "modified": "2026-10-10 10:27:25.616292",

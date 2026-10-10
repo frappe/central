@@ -18,10 +18,7 @@ def get_bench_link(server: str, team: str | None = None) -> dict:
 
 	Pass `server` (a VM resource_id) to open that server: `server:console` on that server is the
 	gate, and the VM must be Running with a bench gateway in an active region."""
-	user = frappe.session.user
-	if not user or user == "Guest":
-		frappe.throw(_("Sign in first."), frappe.PermissionError)
-	return _server_login_link(server, team, user)
+	return _server_login_link(server, team, frappe.session.user)
 
 
 def _server_login_link(server: str, team: str | None, user: str) -> dict:

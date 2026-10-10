@@ -31,8 +31,9 @@ class TestProfile(IntegrationTestCase):
 
 	def test_guest_is_rejected(self):
 		frappe.set_user("Guest")
-		with self.assertRaises(frappe.PermissionError):
-			my_profile()
+		for method in (my_profile, update_profile, set_profile_photo):
+			with self.subTest(method=method.__name__), self.assertRaises(frappe.PermissionError):
+				frappe.is_whitelisted(method)
 
 	def test_update_profile_escapes_html(self):
 		# Same write-time escaping as the signup path: full_name reaches HTML

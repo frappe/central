@@ -32,8 +32,6 @@ class Product(Document):
 		title: DF.Data
 	# end: auto-generated types
 
-	_DOCTYPE_NAME = "Product"
-
 	def validate(self) -> None:
 		if not PRODUCT_KEY_PATTERN.fullmatch(self.product_key or ""):
 			frappe.throw(_("Use lowercase letters, numbers and hyphens for the product key."))

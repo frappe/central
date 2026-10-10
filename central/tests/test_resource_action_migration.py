@@ -1,5 +1,3 @@
-from unittest.mock import patch
-
 import frappe
 from frappe.tests import IntegrationTestCase
 
@@ -29,11 +27,10 @@ class TestResourceActionMigration(IntegrationTestCase):
 				).insert()
 			)
 
-		with patch("frappe.reload_doc"):
-			execute()
-			first = [action.reload().as_dict() for action in actions]
-			execute()
-			self.assertEqual(first, [action.reload().as_dict() for action in actions])
+		execute()
+		first = [action.reload().as_dict() for action in actions]
+		execute()
+		self.assertEqual(first, [action.reload().as_dict() for action in actions])
 
 		self.assertEqual(
 			[action.status for action in actions], ["Uncertain", "Uncertain", "Succeeded", "Failed"]

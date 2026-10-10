@@ -33,8 +33,6 @@ class TeamService(Document):
 		team: DF.Link
 	# end: auto-generated types
 
-	_DOCTYPE_NAME = "Team Service"
-
 	@property
 	def is_bucket(self) -> bool:
 		return self.add_on_service == STORAGE_SERVICE
@@ -97,7 +95,7 @@ class TeamService(Document):
 			return
 
 		others = {"subscription": self.subscription, "name": ("!=", self.name)}
-		if not frappe.db.exists(self._DOCTYPE_NAME, others):
+		if not frappe.db.exists(self.doctype, others):
 			end_subscription(self.subscription)
 
 	def get_usage(self) -> dict:
@@ -140,7 +138,7 @@ class TeamService(Document):
 			return
 
 		others = {"team": self.team, "add_on_service": AI_SERVICE, "name": ("!=", self.name or "")}
-		if frappe.db.exists(self._DOCTYPE_NAME, others):
+		if frappe.db.exists(self.doctype, others):
 			frappe.throw(_("Team {0} already has AI.").format(self.team))
 
 	def validate_bucket_is_unclaimed(self) -> None:
@@ -150,7 +148,7 @@ class TeamService(Document):
 			return
 
 		duplicate = frappe.db.exists(
-			self._DOCTYPE_NAME,
+			self.doctype,
 			{
 				"team": self.team,
 				"bucket_name": self.bucket_name,

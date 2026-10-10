@@ -56,8 +56,6 @@ class Region(AtlasConnectionMixin, CargoConnectionMixin, Document):
 		webhook_secret: DF.Password | None
 	# end: auto-generated types
 
-	_DOCTYPE_NAME = "Region"
-
 	def validate(self) -> None:
 		self.validate_atlas_connection()
 		self.validate_cargo_connection()

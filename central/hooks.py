@@ -319,6 +319,9 @@ before_tests = [
 # Overriding Methods
 # ------------------------------
 #
+# override_whitelisted_methods = {
+# 	"frappe.desk.doctype.event.event.get_events": "central.event.get_events"
+# }
 override_whitelisted_methods = {
 	"frappe.realtime.has_permission": "central.permissions.realtime_has_permission",
 }
@@ -384,7 +387,6 @@ page_renderer = ["central.oidc.DiscoveryPage"]
 permission_query_conditions = {
 	"Team SSH Key": "central.permissions.team_ssh_key_query_conditions",
 	"Virtual Machine": "central.permissions.server_query_conditions",
-	"IAM Permission Probe": "central.permissions.iam_permission_probe_query_conditions",
 	"Pilot Credential": "central.permissions.pilot_credential_query_conditions",
 	"Resource Action": "central.permissions.resource_action_query_conditions",
 	"Site": "central.permissions.site_query_conditions",
@@ -401,7 +403,6 @@ permission_query_conditions = {
 has_permission = {
 	"Team SSH Key": "central.permissions.team_ssh_key_has_permission",
 	"Virtual Machine": "central.permissions.server_has_permission",
-	"IAM Permission Probe": "central.permissions.iam_permission_probe_has_permission",
 	"Pilot Credential": "central.permissions.pilot_credential_has_permission",
 	"Resource Action": "central.permissions.resource_action_has_permission",
 	"Site": "central.permissions.site_has_permission",
