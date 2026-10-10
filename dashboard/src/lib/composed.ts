@@ -3,6 +3,12 @@
 // composition, bounds, and headroom); these helpers just keep the slider on-shape
 // and inside headroom so the customer can't drag into a config they can't afford.
 
+import {
+	formatGb,
+	formatMemory,
+	formatVcpu,
+	gigabytesToMegabytes,
+} from '@/lib/units'
 import type { Capacity, ComposedConfig, Profile, RateCard } from '@/types/api'
 
 /** RAM follows vCPU by the profile's ratio — never independently chosen, so an
@@ -133,27 +139,12 @@ export function clamp(value: number, min: number, max: number): number {
 	return Math.min(max, Math.max(min, value))
 }
 
-/** A vCPU count as the configurator shows it: 1/8 → '⅛', 1/2 → '½', else the number. */
-const VCPU_FRACTIONS: Record<string, string> = {
-	'0.125': '⅛',
-	'0.25': '¼',
-	'0.5': '½',
-}
-export function formatVcpu(vcpus: number): string {
-	return VCPU_FRACTIONS[String(vcpus)] ?? formatGb(vcpus)
-}
-
-/** Trim trailing zeros: 2 → '2', 0.25 → '0.25'. */
-export function formatGb(value: number): string {
-	return Number.isInteger(value) ? `${value}` : `${value}`.replace(/\.?0+$/, '')
-}
-
 /** Compact spec line for a composed config, matching the preset spec style. The disk
  *  unit is driven from the Disk resource's unit on the rate card (single-sourced, #89);
  *  "SSD" stays a literal (storage is single-type today). Defaults to 'GB' when the rate
  *  card isn't loaded yet. */
 export function configSpecs(config: ComposedConfig, diskUnit = 'GB'): string {
-	return `${formatVcpu(config.vcpus)} vCPU · ${formatGb(config.memory_gb)} GB RAM · ${formatGb(config.disk_gb)} ${diskUnit} SSD`
+	return `${formatVcpu(config.vcpus)} vCPU · ${formatMemory(gigabytesToMegabytes(config.memory_gb))} RAM · ${formatGb(config.disk_gb)} ${diskUnit} SSD`
 }
 
 /** The composition payload the provision/resize endpoints take (Plan Includes shape). */

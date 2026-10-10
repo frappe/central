@@ -17,7 +17,7 @@ CONSOLE_URL = "https://atlas.example.test/vm_console#token=one-time"
 def creation_request(purpose: str = "base", **options) -> SimpleNamespace:
 	configuration = SimpleNamespace(
 		image_id="ubuntu-image",
-		virtual_cpu_count=2,
+		cpu_millicores=2000,
 		memory_mib=2048,
 		disk_mib=20480,
 		hostname="worker",

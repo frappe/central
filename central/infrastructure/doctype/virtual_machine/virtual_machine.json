@@ -139,7 +139,7 @@
   },
   {
    "fieldname": "vcpus",
-   "fieldtype": "Int",
+   "fieldtype": "Float",
    "label": "vCPUs",
    "read_only": 1
   },

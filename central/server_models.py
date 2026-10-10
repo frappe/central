@@ -70,7 +70,7 @@ class ServerCreation(BaseModel):
 	is_firewall_enabled: bool = False
 	image_tags: dict[str, str]
 	site: SiteCreation | None = None
-	virtual_cpu_count: int = Field(gt=0, le=32)
+	cpu_millicores: int = Field(ge=100, le=32000)
 	memory_mib: PositiveInt
 	disk_mib: PositiveInt
 
@@ -78,7 +78,7 @@ class ServerCreation(BaseModel):
 class ServerShape(BaseModel):
 	model_config = ConfigDict(extra="forbid", strict=True)
 
-	vcpus: int = Field(gt=0, le=32)
+	vcpus: float = Field(gt=0, le=32)
 	memory_megabytes: PositiveInt
 	disk_gigabytes: PositiveInt
 

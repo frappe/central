@@ -15,6 +15,7 @@ import {
 	METRIC_PERIODS,
 	type MetricChart,
 } from '@/lib/serverMetrics'
+import { formatVcpu } from '@/lib/units'
 import type {
 	MetricsRange,
 	ServerMonitoring,
@@ -145,7 +146,9 @@ const usage = computed(() => {
 			label: 'CPU',
 			icon: 'lucide-cpu',
 			used: `${cpu}%`,
-			limit: server.value.vcpus ? `${server.value.vcpus} vCPU` : null,
+			limit: server.value.vcpus
+				? `${formatVcpu(server.value.vcpus)} vCPU`
+				: null,
 			percent: cpu,
 			badge: null,
 		},

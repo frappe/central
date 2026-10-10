@@ -160,7 +160,7 @@ def _server_shape(includes) -> dict:
 
 	qty = composition_quantities(includes)
 	return {
-		"vcpus": int(qty.get(COMPUTE, 0)),
+		"vcpus": qty.get(COMPUTE, 0),
 		"memory_megabytes": int(qty.get(MEMORY, 0) * 1024),
 		"disk_gigabytes": int(qty.get(DISK, 0)),
 	}

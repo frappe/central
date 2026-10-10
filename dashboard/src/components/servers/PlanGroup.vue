@@ -4,7 +4,8 @@ import { computed, nextTick } from 'vue'
 import ConfigDesigner from '@/components/servers/ConfigDesigner.vue'
 import { configSpecs, estimateConfig } from '@/lib/composed'
 import { money } from '@/lib/format'
-import { planQuantity, planSpecs } from '@/lib/plans'
+import { planAllowances, planQuantity, planSize } from '@/lib/plans'
+import { formatMemory, formatVcpu, gigabytesToMegabytes } from '@/lib/units'
 import type {
 	Capacity,
 	ComposedConfig,
@@ -56,7 +57,7 @@ const customSpec = computed<string>(() => {
 	const config = composedConfig.value
 	if (!config) return ''
 	if (!props.omitDisk) return configSpecs(config, props.rateCard.Disk?.unit)
-	return `${config.vcpus} vCPU · ${config.memory_gb} GB RAM`
+	return `${formatVcpu(config.vcpus)} vCPU · ${formatMemory(gigabytesToMegabytes(config.memory_gb))} RAM`
 })
 
 function diskTooSmall(plan: Plan): boolean {
@@ -93,7 +94,7 @@ const matchingPreset = computed<Plan | null>(() => {
 			>
 				<span class="flex items-center justify-between gap-2">
 					<span class="truncate text-sm-medium text-ink-gray-7"
-						>{{ plan.title.split(' · ')[0] }}</span
+						>{{ planSize(plan) }}</span
 					>
 					<Badge
 						v-if="currentPlan === plan.plan"
@@ -110,7 +111,7 @@ const matchingPreset = computed<Plan | null>(() => {
 					>
 				</span>
 				<span class="mt-2 block text-p-sm text-ink-gray-5">
-					{{ planSpecs(plan, { disk: !omitDisk }) }}
+					{{ planAllowances(plan, { disk: !omitDisk }) }}
 				</span>
 				<span
 					v-if="diskTooSmall(plan)"

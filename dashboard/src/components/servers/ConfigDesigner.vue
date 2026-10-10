@@ -6,14 +6,13 @@ import {
 	capacityLimits,
 	clamp,
 	estimateConfig,
-	formatGb,
-	formatVcpu,
 	maxAffordableDisk,
 	maxAffordableVcpu,
 	maxDiskForCapacity,
 	maxVcpuForCapacity,
 	ramFor,
 } from '@/lib/composed'
+import { formatGb, formatVcpu } from '@/lib/units'
 import type { Capacity, ComposedConfig, Profile, RateCard } from '@/types/api'
 
 // Design-your-own config controls (#84). Compute and Storage are both discrete

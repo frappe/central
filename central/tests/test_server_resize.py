@@ -122,6 +122,19 @@ class TestServerResize(UnitTestCase):
 		)
 		self.client.resize.assert_called_once_with("vm-00001", 2000, 4096, 51200)
 
+	def test_a_fractional_vcpu_is_sent_as_whole_millicores(self):
+		"""Atlas accepts only integer millicores, and 1/8 vCPU is 125."""
+		self.client.get_vm.side_effect = [
+			self.remote("stopped"),
+			self.remote("stopped"),
+			self.remote("running"),
+		]
+
+		resize_server(self.server, {"vcpus": 0.125, "memory_megabytes": 512, "disk_gigabytes": 10})
+
+		self.client.resize.assert_called_once_with("vm-00001", 125, 512, 10240)
+		self.assertIsInstance(self.client.resize.call_args.args[1], int)
+
 	def test_a_refused_resize_starts_a_running_server_again(self):
 		"""Atlas keeps the old shape when no host has room, so the server must not stay stopped."""
 		self.client.get_vm.side_effect = [

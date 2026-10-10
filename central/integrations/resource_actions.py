@@ -228,7 +228,7 @@ def _create_payload(request) -> dict:
 		configuration.ssh_keys = resolve_team_ssh_keys(request.team, configuration.ssh_key_ids)
 	payload = {
 		"image_id": configuration.image_id,
-		"cpu_millicores": configuration.virtual_cpu_count * 1000,
+		"cpu_millicores": configuration.cpu_millicores,
 		"memory_mib": configuration.memory_mib,
 		"disk_mib": configuration.disk_mib,
 		"hostname": configuration.hostname or "",

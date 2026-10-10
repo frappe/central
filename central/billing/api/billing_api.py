@@ -59,10 +59,10 @@ def _money(amount, currency: str) -> str:
 
 def _server_specs(server_row) -> dict:
 	"""The three meter labels from the provisioned VM's live specs."""
-	ram_gb = round(frappe.utils.flt(server_row.memory_megabytes) / 1024)
+	ram_gb = frappe.utils.flt(server_row.memory_megabytes) / 1024
 	return {
-		"cpu": f"{int(frappe.utils.flt(server_row.vcpus))} vCPU",
-		"memory": f"{ram_gb} GB RAM",
+		"cpu": f"{frappe.utils.flt(server_row.vcpus):g} vCPU",
+		"memory": f"{ram_gb:g} GB RAM",
 		"storage": f"{int(frappe.utils.flt(server_row.disk_gigabytes))} GB SSD",
 	}
 

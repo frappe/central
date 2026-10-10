@@ -11,8 +11,8 @@ import { computed, toRef } from 'vue'
 import PlanGroup from '@/components/servers/PlanGroup.vue'
 import { useResizeServer } from '@/composables/useResizeServer'
 import type { VirtualMachineRow } from '@/composables/useServers'
-import { formatGb } from '@/lib/composed'
 import { money } from '@/lib/format'
+import { formatGb } from '@/lib/units'
 
 interface Props {
 	server: VirtualMachineRow | null

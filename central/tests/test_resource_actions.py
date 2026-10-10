@@ -97,7 +97,7 @@ class TestResourceActions(IntegrationTestCase):
 		self.assertEqual(result["status"], "Queued")
 		self.client.return_value.create_vm.assert_not_called()
 		action = frappe.get_doc("Resource Action", result["action"])
-		self.assertEqual(action.get_configuration().virtual_cpu_count, 1)
+		self.assertEqual(action.get_configuration().cpu_millicores, 1000)
 		self.assertNotIn("central_auth_token", action.request_payload)
 
 	def test_a_trial_records_its_product_before_a_site_exists(self):

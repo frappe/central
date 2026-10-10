@@ -5,6 +5,8 @@ from frappe import _
 from frappe.model.document import Document
 from requests import RequestException
 
+from central.utils.units import mebibytes_to_gigabytes, millicores_to_vcpus
+
 
 class VirtualMachine(Document):
 	# begin: auto-generated types
@@ -45,7 +47,7 @@ class VirtualMachine(Document):
 		]
 		team: DF.Link
 		title: DF.Data | None
-		vcpus: DF.Int
+		vcpus: DF.Float
 	# end: auto-generated types
 
 	@classmethod
@@ -67,9 +69,9 @@ class VirtualMachine(Document):
 				"atlas_image_id": configuration.image_id,
 				"image_offering": configuration.offering,
 				"plan": configuration.plan,
-				"vcpus": configuration.virtual_cpu_count,
+				"vcpus": millicores_to_vcpus(configuration.cpu_millicores),
 				"memory_megabytes": configuration.memory_mib,
-				"disk_gigabytes": configuration.disk_mib / 1024,
+				"disk_gigabytes": mebibytes_to_gigabytes(configuration.disk_mib),
 				"frappe_version": configuration.image_tags.get("frappe_version"),
 				"has_site": configuration.image_tags.get("has_site") == "1",
 				"ssh_keys": [{"team_ssh_key": key} for key in configuration.ssh_key_ids],
