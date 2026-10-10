@@ -9,6 +9,7 @@ import Header from '@/components/servers/detail/Header.vue'
 import NetworkingTab from '@/components/servers/detail/NetworkingTab.vue'
 import OverviewTab from '@/components/servers/detail/OverviewTab.vue'
 import SettingsTab from '@/components/servers/detail/SettingsTab.vue'
+import RenameServerDialog from '@/components/servers/RenameServerDialog.vue'
 import ResizeServerDialog from '@/components/servers/ResizeServerDialog.vue'
 import TerminateServerDialog from '@/components/servers/TerminateServerDialog.vue'
 import SnapshotsPanel from '@/components/snapshots/SnapshotsPanel.vue'
@@ -193,6 +194,7 @@ const command = async (name: PowerCommand): Promise<void> => {
 }
 
 const resizing = ref(false)
+const renaming = ref(false)
 const pendingSnapshot = ref<VirtualMachineRow | null>(null)
 
 const pendingTerminate = ref<VirtualMachineRow | null>(null)
@@ -215,6 +217,28 @@ const terminate = async (
 		)
 	}
 }
+
+// Search sends people here with ?action= to finish an action that needs this page's
+// dialog or confirmation. The server routes still check every action.
+const linkedActions: Record<string, (target: VirtualMachineRow) => void> = {
+	start: () => command('start'),
+	stop: () => command('stop'),
+	restart: () => command('restart'),
+	resize: () => (resizing.value = true),
+	snapshot: (target) => (pendingSnapshot.value = target),
+	terminate: (target) => (pendingTerminate.value = target),
+}
+
+watch(
+	[() => route.query.action, server],
+	([action, target]) => {
+		if (typeof action !== 'string' || !target) return
+
+		linkedActions[action]?.(target)
+		router.replace({ query: { ...route.query, action: undefined } })
+	},
+	{ immediate: true },
+)
 </script>
 
 <template>
@@ -258,7 +282,10 @@ const terminate = async (
 					:opening="isOpening"
 					:busy="busy === server.resource_id"
 					@open="open"
+					@pilot="openBench(server)"
 					@command="command"
+					@console="openConsole(server)"
+					@rename="renaming = true"
 					@snapshot="pendingSnapshot = server"
 					@resize="resizing = true"
 					@terminate="pendingTerminate = server"
@@ -278,7 +305,7 @@ const terminate = async (
 				<SnapshotsPanel
 					v-if="activeTab === 'snapshots'"
 					:server="server"
-					class="mt-4"
+					class="mt-6"
 				/>
 
 				<SettingsTab
@@ -295,14 +322,14 @@ const terminate = async (
 					icon="lucide-cloud-off"
 					title="Details couldn't load"
 					:description="overviewError"
-					class="mt-4"
+					class="mt-6"
 				>
 					<template #action>
 						<Button label="Retry" @click="reloadOverview" />
 					</template>
 				</EmptyState>
 
-				<div v-else-if="!details" class="mt-4 space-y-4" aria-busy="true">
+				<div v-else-if="!details" class="mt-6 space-y-4" aria-busy="true">
 					<div class="h-5 w-24 animate-pulse rounded-4 bg-surface-gray-2" />
 					<div class="grid gap-3 md:grid-cols-3 md:gap-4">
 						<div
@@ -320,7 +347,7 @@ const terminate = async (
 					:metrics="metrics"
 					:metrics-error="metricsError"
 					@refresh="reloadMetrics"
-					class="mt-4"
+					class="mt-6"
 				/>
 
 				<NetworkingTab
@@ -330,16 +357,7 @@ const terminate = async (
 					class="mt-6"
 				/>
 
-				<AccessTab
-					v-else
-					:server="server"
-					:overview="details"
-					:actions="actions"
-					:opening="isOpening"
-					class="mt-6"
-					@console="openConsole(server)"
-					@open="open"
-				/>
+				<AccessTab v-else :overview="details" class="mt-6" />
 			</template>
 		</div>
 
@@ -362,6 +380,13 @@ const terminate = async (
 		/>
 
 		<TakeSnapshotDialog v-model:server="pendingSnapshot" />
+
+		<RenameServerDialog
+			v-if="server"
+			v-model:open="renaming"
+			:server="server"
+			@renamed="reload"
+		/>
 
 		<ResizeServerDialog
 			v-model:open="resizing"

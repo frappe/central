@@ -180,6 +180,7 @@ after_install = [
 
 doc_events = {
 	"User": {
+		"validate": "central.users.validate_user_image",
 		"after_insert": "central.users.grant_central_user_role",
 	},
 	"Team": {

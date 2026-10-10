@@ -160,7 +160,7 @@ def _server_shape(includes) -> dict:
 
 	qty = composition_quantities(includes)
 	return {
-		"vcpus": int(qty.get(COMPUTE, 0)),
+		"vcpus": qty.get(COMPUTE, 0),
 		"memory_megabytes": int(qty.get(MEMORY, 0) * 1024),
 		"disk_gigabytes": int(qty.get(DISK, 0)),
 	}
@@ -428,7 +428,7 @@ def begin_resize(
 	# A plan's own disk is what a new server is created with. Resize keeps the
 	# current disk, or grows it, and refuses a plan whose disk is smaller.
 	original_plan = plan
-	plan, includes, sub_category = _resize_disk_choice(doc, plan, includes, sub_category, disk_gigabytes)
+	plan, includes, sub_category = _resize_disk_choice(plan, includes, sub_category, disk_gigabytes)
 	# A preset grown past its own disk is now billed as a composed shape, but keeps the bundle
 	# price plus the disk rate for the extra GB — never the cheaper à-la-carte total.
 	preset_plan = original_plan if original_plan and plan is None else None
@@ -531,41 +531,25 @@ def _plan_resize(doc, server, plan, includes, sub_category, override_rate=None) 
 	return shape
 
 
-def _resize_disk_choice(doc, plan, includes, sub_category, disk_gigabytes):
+def _resize_disk_choice(plan, includes, sub_category, disk_gigabytes):
 	"""Apply the console's disk choice to a preset target.
 
 	`disk_gigabytes` is omitted for an unchanged plan bundle. When it differs from
 	the plan's disk, the resize becomes the plan's CPU and memory plus that disk,
-	so a kept disk is not grown in passing and a grown disk is not stuck on the
-	bundle price. A plan with less disk than the server already has is refused:
-	storage cannot shrink, so that plan is no longer a resize target."""
+	so a kept disk is neither grown nor shrunk by the plan. This is how a server
+	moves to a smaller plan. `_guard_disk_shrink` still refuses a smaller disk."""
 	if not plan or disk_gigabytes is None:
 		return plan, includes, sub_category
+
 	disk_gigabytes = frappe.utils.cint(disk_gigabytes)
-	plan_disk = _plan_shape(plan)["disk_gigabytes"]
-	current_disk = (
-		frappe.utils.cint(frappe.db.get_value("Virtual Machine", doc.server_id, "disk_gigabytes"))
-		if doc.server_id
-		else 0
-	)
-	if plan_disk < current_disk:
-		frappe.throw(
-			frappe._(
-				"Disk can't shrink: this server has a {0} GB disk, so it cannot move to a smaller plan."
-			).format(current_disk)
-		)
-	if disk_gigabytes == plan_disk:
+	if disk_gigabytes == _plan_shape(plan)["disk_gigabytes"]:
 		return plan, includes, sub_category
-	rows = _plan_includes(plan)
-	replaced = False
-	for row in rows:
-		if row["resource_type"] == "Disk":
-			row["quantity"] = disk_gigabytes
-			replaced = True
-	if not replaced:
-		rows.append({"resource_type": "Disk", "quantity": disk_gigabytes, "unit": "GB"})
+
+	rows = [dict(row) for row in _plan_includes(plan) if row["resource_type"] != "Disk"]
+	rows.append({"resource_type": "Disk", "quantity": disk_gigabytes, "unit": "GB"})
+
 	profile = frappe.db.get_value("Plan", plan, "sub_category") or sub_category
-	return None, [dict(row) for row in rows], profile
+	return None, rows, profile
 
 
 def _plan_includes(plan: str) -> list:

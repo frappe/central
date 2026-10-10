@@ -34,6 +34,7 @@ from central.infrastructure.doctype.resource_action.resource_action import (
 )
 from central.integrations.images import selected_image, snapshot_image, snapshot_source
 from central.server_models import ActionStatus, CreateServerInput, ServerCreation, SiteCreation
+from central.utils.units import MIB_PER_GIB, MILLICORES_PER_VCPU
 
 
 def submit_request(
@@ -336,16 +337,26 @@ def validate_trial(team: str) -> None:
 
 
 def image_shape(includes: list[dict], image: dict) -> dict[str, int]:
+	"""The Atlas shape for a composition. Atlas takes CPU in millicores, so a fraction of a
+	vCPU, such as 1/8, is a CPU quota on one guest vCPU."""
 	quantities = composition_quantities(includes)
-	values = (quantities.get(COMPUTE, 0), quantities.get(MEMORY, 0) * 1024, quantities.get(DISK, 0) * 1024)
+	values = (
+		quantities.get(COMPUTE, 0) * MILLICORES_PER_VCPU,
+		quantities.get(MEMORY, 0) * MIB_PER_GIB,
+		quantities.get(DISK, 0) * MIB_PER_GIB,
+	)
 	if any(not math.isfinite(value) or value <= 0 or int(value) != value for value in values):
-		frappe.throw(_("Choose whole virtual CPUs and positive memory and disk sizes in MiB."))
-	keys = ("virtual_cpu_count", "memory_mib", "disk_mib")
+		frappe.throw(_("Choose CPU in whole millicores and positive memory and disk sizes in MiB."))
+
+	keys = ("cpu_millicores", "memory_mib", "disk_mib")
 	shape = {key: int(value) for key, value in zip(keys, values, strict=True)}
-	if shape["virtual_cpu_count"] > 32:
-		frappe.throw(_("Choose at most 32 virtual CPUs."))
+
+	if not 100 <= shape["cpu_millicores"] <= 32000:
+		frappe.throw(_("Choose between 0.1 and 32 virtual CPUs."))
+
 	if shape["disk_mib"] < image["rootfs_size_mib"]:
 		frappe.throw(_("This plan's disk is smaller than the selected image."))
+
 	return shape
 
 

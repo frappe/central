@@ -15,6 +15,12 @@ from central.infrastructure.doctype.site.site import Site
 from central.infrastructure.doctype.user_mail_account.user_mail_account import UserMailAccount
 from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
 from central.integrations.atlas import AtlasClient
+from central.utils.units import (
+	gigabytes_to_mebibytes,
+	mebibytes_to_gigabytes,
+	millicores_to_vcpus,
+	vcpus_to_millicores,
+)
 
 # A resize may move the VM to another host, so the wait is generous enough to cover a migration.
 POWER_WAIT_SECONDS = 15 * 60
@@ -70,9 +76,9 @@ def observe_server(server: VirtualMachine) -> str:
 		frappe.utils.now_datetime(),
 		{
 			"status": status,
-			"vcpus": compute["cpu_millicores"] // 1000,
+			"vcpus": millicores_to_vcpus(compute["cpu_millicores"]),
 			"memory_megabytes": compute["memory_mib"],
-			"disk_gigabytes": disk["size_mib"] / 1024,
+			"disk_gigabytes": mebibytes_to_gigabytes(disk["size_mib"]),
 			"ipv6_address": network.get("mesh_ipv6"),
 			"public_ipv4": network.get("public_ipv4"),
 			# Atlas reports the guest's public IPv6 as a prefix. A /128 is one address.
@@ -103,17 +109,26 @@ def resize_server(server: VirtualMachine, shape: dict) -> None:
 	client = get_client(server)
 	remote = client.get_vm(server.atlas_vm_id)
 	compute, disk = remote.get("compute") or {}, remote.get("disk") or {}
-	cpu_millicores = shape["vcpus"] * 1000
-	memory_mib = shape["memory_megabytes"]
-	disk_mib = shape["disk_gigabytes"] * 1024
 
-	reshaping = (compute.get("cpu_millicores"), compute.get("memory_mib")) != (cpu_millicores, memory_mib)
-	if reshaping:
+	cpu_millicores = vcpus_to_millicores(shape["vcpus"])
+	memory_mib = shape["memory_megabytes"]
+	disk_mib = gigabytes_to_mebibytes(shape["disk_gigabytes"])
+
+	is_reshaping = (compute.get("cpu_millicores"), compute.get("memory_mib")) != (cpu_millicores, memory_mib)
+	if is_reshaping:
 		wait_for_power_state(client, server.atlas_vm_id, "stop", "stopped")
-		client.resize(server.atlas_vm_id, cpu_millicores, memory_mib, disk_mib)
+
+		try:
+			client.resize(server.atlas_vm_id, cpu_millicores, memory_mib, disk_mib)
+		except AtlasRejected:
+			# Atlas kept the old shape. Restore the power state before reporting the refusal.
+			if remote.get("current_state") != "stopped":
+				wait_for_power_state(client, server.atlas_vm_id, "start", "running")
+			raise
 	else:
 		if disk_mib > (disk.get("size_mib") or 0):
 			client.update_disk(server.atlas_vm_id, disk_mib)
+
 		if compute.get("sleep_after_idle_seconds"):
 			client.disable_idle_shutdown(server.atlas_vm_id)
 
@@ -229,7 +244,7 @@ def get_cached_metrics(server: VirtualMachine, start: datetime, end: datetime | 
 	return metrics
 
 
-def get_metric_points(samples: list[dict], vcpus: int) -> list[dict]:
+def get_metric_points(samples: list[dict], vcpus: float) -> list[dict]:
 	"""Atlas counts CPU time and network bytes from boot, so each point is the rate between
 	two neighbouring samples. A pair that spans a down sample or a reboot has no rate."""
 	return [
@@ -239,7 +254,7 @@ def get_metric_points(samples: list[dict], vcpus: int) -> list[dict]:
 	]
 
 
-def get_metric_point(previous: dict, sample: dict, vcpus: int) -> dict:
+def get_metric_point(previous: dict, sample: dict, vcpus: float) -> dict:
 	seconds = sample["timestamp"] - previous["timestamp"]
 	is_up = previous["up"] and sample["up"]
 	compute, disk = sample["compute"], sample["disk"]
@@ -254,7 +269,7 @@ def get_metric_point(previous: dict, sample: dict, vcpus: int) -> dict:
 		"is_up": sample["up"],
 		"cpu_percent": None
 		if cpu_microseconds_per_second is None
-		else min(100, cpu_microseconds_per_second / 10_000 / max(vcpus, 1)),
+		else min(100, cpu_microseconds_per_second / 10_000 / (vcpus or 1)),
 		"memory_bytes": compute["memory_bytes"],
 		"disk_used_bytes": disk["used_mib"] * MIB,
 		"disk_total_bytes": disk["size_mib"] * MIB,

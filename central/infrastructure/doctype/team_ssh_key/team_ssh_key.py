@@ -17,24 +17,39 @@ from central.infrastructure.doctype.resource_action.resource_action import (
 
 
 class TeamSSHKey(Document):
+	# begin: auto-generated types
+	# This code is auto-generated. Do not modify anything in this block.
+
+	from typing import TYPE_CHECKING
+
+	if TYPE_CHECKING:
+		from frappe.types import DF
+
+		fingerprint: DF.Data | None
+		last_sync_error: DF.SmallText | None
+		public_key: DF.LongText
+		team: DF.Link
+		title: DF.Data
+	# end: auto-generated types
+
 	"""One public login key owned by a Team and selected by individual servers."""
 
 	def validate(self) -> None:
 		self.title = (self.title or "").strip()
 		self.public_key = (self.public_key or "").strip()
 		if not self.title:
-			frappe.throw(_("Enter a name for the SSH Key."))
+			frappe.throw(_("Enter a name for the SSH key."))
 		if len(self.title) > 140:
-			frappe.throw(_("Use a shorter SSH Key name."))
+			frappe.throw(_("Use a shorter SSH key name."))
 		if not self.is_new() and self.has_value_changed("team"):
-			frappe.throw(_("An SSH Key cannot move to another Team."))
+			frappe.throw(_("An SSH key cannot move to another team."))
 		if self.has_value_changed("public_key"):
 			self.last_sync_error = None
 		self.fingerprint = fingerprint(self.public_key)
 		if frappe.db.exists(
 			"Team SSH Key", {"team": self.team, "fingerprint": self.fingerprint, "name": ["!=", self.name]}
 		):
-			frappe.throw(_("This SSH Key already belongs to the Team."))
+			frappe.throw(_("This SSH key already belongs to the team."))
 
 	def on_update(self) -> None:
 		if self.has_value_changed("public_key"):

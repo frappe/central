@@ -46,7 +46,7 @@ The distinction matters:
 | `server:view` | List and open servers and sites; view status, specs, and metrics. |
 | `server:create` | Provision a new server. |
 | `server:power` | Start, stop, and restart a server. |
-| `server:resize` | Resize or rebuild a server. |
+| `server:resize` | Resize, rebuild, or rename a server. |
 | `server:snapshot` | Create and restore server snapshots. |
 | `server:terminate` | Destroy a server. |
 | `server:console` | Open the web console of a running server. |

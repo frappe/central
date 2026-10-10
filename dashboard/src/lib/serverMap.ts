@@ -1,6 +1,6 @@
 import type { VirtualMachineRow } from '@/composables/useServers'
-import { formatMemory } from '@/lib/format'
 import { displayStatus } from '@/lib/status'
+import { formatMemory } from '@/lib/units'
 import type { Region } from '@/types/Region'
 
 // Display mapping for the servers map: one place that turns a Virtual Machine's mirror

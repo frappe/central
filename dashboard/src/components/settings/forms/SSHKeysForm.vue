@@ -128,12 +128,12 @@ const closeRotation = (open: boolean): void => {
 		<EmptyState
 			v-else-if="!loading && !keys.length"
 			icon="lucide-key-round"
-			title="No SSH Keys yet"
+			title="No SSH keys yet"
 			description="Add a public key, then use it when you create servers."
 		>
 			<template v-if="canManageSSHKeys" #action>
 				<Button
-					label="Add SSH Key"
+					label="Add SSH key"
 					icon-left="lucide-plus"
 					@click="adding = true"
 				/>
@@ -169,7 +169,7 @@ const closeRotation = (open: boolean): void => {
 				</template>
 
 				<template #actions="{ row }">
-					<RowActionsMenu :options="getActions(row)" label="SSH Key actions" />
+					<RowActionsMenu :options="getActions(row)" label="SSH key actions" />
 				</template>
 			</Table>
 		</template>
@@ -177,7 +177,7 @@ const closeRotation = (open: boolean): void => {
 		<SSHKeyDialog
 			v-model="adding"
 			:save="create"
-			@saved="successToast('SSH Key added')"
+			@saved="successToast('SSH key added')"
 		/>
 
 		<SSHKeyDialog

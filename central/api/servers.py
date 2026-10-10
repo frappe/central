@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -467,6 +465,17 @@ def resize_server(
 		disk_gigabytes=disk_gigabytes,
 	)
 	return {"subscription": subscription, **result}
+
+
+@frappe.whitelist(methods=["POST"])
+@require_capability("server:resize", "You can't rename this server.", server="resource_id")
+def rename_server(team: str | None = None, resource_id: str | None = None, title: str = "") -> dict:
+	"""Rename one server. Gated on `server:resize`, the capability to change a server."""
+	server = frappe.get_doc("Virtual Machine", {"team": team, "resource_id": resource_id}, for_update=True)
+	server.title = title
+	# Customers cannot write a Virtual Machine; this route checks server:resize.
+	server.save(ignore_permissions=True)
+	return {"title": server.title}
 
 
 @frappe.whitelist(methods=["POST"])

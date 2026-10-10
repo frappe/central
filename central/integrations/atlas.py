@@ -403,12 +403,17 @@ class AtlasClient:
 
 	def _error_message(self, response: requests.Response) -> str | None:
 		"""The `error.message` an Atlas error body carries, escaped and bounded, or None."""
+		message = self._error_field(response, "message")
+		return frappe.utils.escape_html(message[:1000]) if message else None
+
+	def _error_field(self, response: requests.Response, field: str) -> str | None:
 		try:
 			error = response.json().get("error", {})
 		except (ValueError, AttributeError):
 			return None
-		message = error.get("message") if isinstance(error, dict) else None
-		return frappe.utils.escape_html(message[:1000]) if isinstance(message, str) else None
+
+		value = error.get(field) if isinstance(error, dict) else None
+		return value if isinstance(value, str) else None
 
 	def _read_response(self, response: requests.Response, method: str = "GET") -> dict:
 		if response.status_code in (401, 403):
@@ -425,7 +430,7 @@ class AtlasClient:
 		if response.status_code == 503:
 			reason = self._error_message(response)
 			if reason:
-				raise AtlasRejected(reason)
+				raise AtlasRejected(reason, self._error_field(response, "code"))
 
 		if method != "GET" and response.status_code >= 500:
 			raise AtlasRequestUncertain(_("Atlas could not confirm the operation result."))
@@ -438,10 +443,13 @@ class AtlasClient:
 			)
 			if method != "GET" and response.status_code < 400:
 				error_type = AtlasRequestUncertain
-			raise error_type(
-				self._error_message(response)
-				or _("Atlas returned HTTP {0} for the regional request.").format(response.status_code)
-			)
+
+			message = self._error_message(response) or _(
+				"Atlas returned HTTP {0} for the regional request."
+			).format(response.status_code)
+			if error_type is AtlasRejected:
+				raise AtlasRejected(message, self._error_field(response, "code"))
+			raise error_type(message)
 
 		if response.status_code == 204:
 			return {}

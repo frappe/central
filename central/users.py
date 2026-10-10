@@ -91,6 +91,24 @@ def grant_central_user_role(doc, method: str | None = None) -> None:
 		doc.add_roles(CENTRAL_USER_ROLE)
 
 
+def validate_user_image(doc, method: str | None = None) -> None:
+	"""A profile photo must be a file uploaded to that user's photo field, not any URL."""
+	if not doc.user_image or not doc.has_value_changed("user_image"):
+		return
+
+	is_uploaded = frappe.db.exists(
+		"File",
+		{
+			"file_url": doc.user_image,
+			"attached_to_doctype": "User",
+			"attached_to_name": doc.name,
+			"attached_to_field": "user_image",
+		},
+	)
+	if not is_uploaded:
+		frappe.throw(_("Upload the image again."))
+
+
 def get_pending_invitations(user: str) -> list[str]:
 	return frappe.get_all(
 		"Team Invitation",

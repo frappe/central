@@ -49,12 +49,12 @@
    "options": "Subscription"
   },
   {
+   "description": "What the service is called at: the gateway a team's AI keys call, or a bucket's S3 endpoint.",
    "fieldname": "endpoint_url",
    "fieldtype": "Data",
    "label": "Endpoint URL",
    "options": "URL",
-   "read_only": 1,
-   "description": "What the service is called at: the gateway a team's AI keys call, or a bucket's S3 endpoint."
+   "read_only": 1
   },
   {
    "fieldname": "status",
@@ -111,7 +111,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-10-06 19:00:00.000000",
+ "modified": "2026-10-10 10:11:10.484991",
  "modified_by": "Administrator",
  "module": "Services",
  "name": "Team Service",
@@ -135,5 +135,6 @@
  "rows_threshold_for_grid_search": 20,
  "sort_field": "modified",
  "sort_order": "DESC",
- "states": []
+ "states": [],
+ "track_changes": 1
 }

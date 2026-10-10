@@ -49,7 +49,7 @@ async function submit() {
 		emit('saved', key ?? null)
 		open.value = false
 	} catch (failure) {
-		error.value = getErrorMessage(failure, "The SSH Key couldn't be saved.")
+		error.value = getErrorMessage(failure, "The SSH key couldn't be saved.")
 	} finally {
 		busy.value = false
 	}
@@ -59,7 +59,7 @@ async function submit() {
 <template>
 	<Dialog
 		v-model="open"
-		:title="keyToRotate ? 'Rotate SSH Key' : 'Add SSH Key'"
+		:title="keyToRotate ? 'Rotate SSH key' : 'Add SSH key'"
 		size="lg"
 	>
 		<div class="flex flex-col gap-5">

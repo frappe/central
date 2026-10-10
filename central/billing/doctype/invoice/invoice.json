@@ -370,7 +370,7 @@
    "link_fieldname": "invoice"
   }
  ],
- "modified": "2026-10-01 14:00:00.000000",
+ "modified": "2026-10-10 10:27:25.616292",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Invoice",
@@ -392,5 +392,6 @@
  ],
  "sort_field": "creation",
  "sort_order": "DESC",
- "states": []
+ "states": [],
+ "track_changes": 1
 }

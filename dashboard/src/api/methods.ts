@@ -59,6 +59,7 @@ export const API = {
 	restartServer: 'central.api.servers.restart_server',
 	openConsole: 'central.api.servers.open_console',
 	resizeServer: 'central.api.servers.resize_server',
+	renameServer: 'central.api.servers.rename_server',
 	terminateServer: 'central.api.servers.terminate_server',
 	serverOverview: 'central.api.servers.server_overview',
 	serverMetrics: 'central.api.servers.server_metrics',

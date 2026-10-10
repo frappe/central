@@ -14,7 +14,7 @@ def pilot_request():
 	request.name = "action-1"
 	request.get_configuration.return_value = Mock(
 		image_id="image-1",
-		virtual_cpu_count=2,
+		cpu_millicores=2000,
 		memory_mib=4096,
 		disk_mib=10240,
 		hostname="pilot-1",

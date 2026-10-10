@@ -54,18 +54,30 @@ class TestAtlasErrors(IntegrationTestCase):
 			)
 		self.assertNotIn("host", to_error_response(caught.exception)["message"])
 
-	def test_capacity_503_is_a_definite_refusal(self):
-		"""A 503 that names why (out_of_capacity) is Atlas refusing the shape, not an
-		uncertain outcome."""
+	def test_capacity_refusal_says_the_region_has_no_room(self):
+		"""A capacity code from Atlas is a definite refusal, not an uncertain outcome, and
+		tells the customer to pick a smaller size."""
+		for status, code in (
+			(503, "out_of_capacity"),
+			(503, "affinity_unsatisfied"),
+			(409, "insufficient_capacity"),
+		):
+			with self.subTest(code=code), self.assertRaises(AtlasRejected) as caught:
+				self.client._read_response(
+					self.response(status, {"error": {"code": code, "message": "No host has capacity."}}),
+					"POST",
+				)
+			envelope = to_error_response(caught.exception)
+			self.assertEqual(envelope["code"], "REGION_AT_CAPACITY")
+			self.assertNotIn("host", envelope["message"])
+
+	def test_other_refusal_stays_generic(self):
 		with self.assertRaises(AtlasRejected) as caught:
 			self.client._read_response(
-				self.response(
-					503, {"error": {"code": "out_of_capacity", "message": "No host has capacity."}}
-				),
+				self.response(503, {"error": {"code": "placement_busy", "message": "Placement is busy."}}),
 				"POST",
 			)
 		self.assertEqual(to_error_response(caught.exception)["code"], "ATLAS_REJECTED")
-		self.assertNotIn("host", to_error_response(caught.exception)["message"])
 
 	def test_read_failure_does_not_claim_mutation_acceptance(self):
 		with self.assertRaises(AtlasConnectionError) as caught:

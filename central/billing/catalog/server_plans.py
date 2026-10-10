@@ -2,8 +2,6 @@
 # For license information, please see license.txt
 """Server plans available under a Team billing policy and spending limit."""
 
-import math
-
 import frappe
 
 from central.billing.catalog.composition import (
@@ -128,11 +126,7 @@ def get_server_plans(
 		# Trials aren't tier-gated — spend is bounded by credits + the server cap, not headroom.
 		if not is_staging_trial and frappe.utils.flt(rate) > available:
 			continue  # would push the team past its remaining trust-tier headroom
-		row = _plan_row(p, currency, cluster, rate, includes_by_plan.get(p.name, []))
-		if not _has_whole_virtual_cpus(row["includes"]):
-			continue
-
-		plans.append(row)
+		plans.append(_plan_row(p, currency, cluster, rate, includes_by_plan.get(p.name, [])))
 
 	# Cheapest first; the title-ordered iteration above is a stable tiebreaker.
 	plans.sort(key=lambda p: frappe.utils.flt(p["rate"]))
@@ -169,9 +163,7 @@ def _profiles(server_categories: list[str]) -> list[dict]:
 		{
 			"sub_category": r.name,
 			"ram_ratio": r.ram_ratio,
-			"vcpu_steps": [
-				step for step in parse_vcpu_steps(r.vcpu_steps) if _is_whole_virtual_cpu_count(step)
-			],
+			"vcpu_steps": parse_vcpu_steps(r.vcpu_steps),
 			"disk_steps": disk_steps_for(r.disk_min, r.disk_max),
 			"disk_min": r.disk_min,
 			"disk_max": r.disk_max,
@@ -179,15 +171,6 @@ def _profiles(server_categories: list[str]) -> list[dict]:
 		for r in rows
 	]
 	return [profile for profile in profiles if profile["vcpu_steps"]]
-
-
-def _has_whole_virtual_cpus(includes: list[dict]) -> bool:
-	return _is_whole_virtual_cpu_count(composition_quantities(includes).get(COMPUTE, 0))
-
-
-def _is_whole_virtual_cpu_count(value: float) -> bool:
-	# Atlas allocates whole vCPUs; rounding would change the resources behind the price.
-	return math.isfinite(value) and value > 0 and value == math.floor(value)
 
 
 def _rates_by_plan(names: list[str]) -> dict[str, list]:

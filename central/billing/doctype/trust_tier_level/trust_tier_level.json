@@ -107,7 +107,7 @@
    "link_fieldname": "trust_tier_level"
   }
  ],
- "modified": "2026-06-17 00:00:00.000000",
+ "modified": "2026-10-10 10:27:25.616292",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Trust Tier Level",
@@ -129,5 +129,6 @@
  ],
  "sort_field": "sequence",
  "sort_order": "ASC",
- "states": []
+ "states": [],
+ "track_changes": 1
 }

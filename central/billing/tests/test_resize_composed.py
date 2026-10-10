@@ -339,6 +339,31 @@ class TestResizeComposed(IntegrationTestCase):
 			{"Compute": 4, "Memory": 16, "Disk": 40, "Transfer": 400},
 		)
 
+	def test_begin_resize_onto_a_smaller_preset_keeps_the_larger_disk(self):
+		"""CPU and memory only: a plan with less disk than the server still fits, because
+		the server keeps its own disk."""
+		sub = self._provision()  # SMALL, 40 GB disk
+		self._ready(sub)
+		plan = make_plan(
+			"resize-preset-smaller-disk",
+			rates=[{"cluster": "", "currency": "INR", "rate": 500}],
+			includes=[
+				{"resource_type": "Compute", "quantity": 1, "unit": "vCPU"},
+				{"resource_type": "Memory", "quantity": 4, "unit": "GB"},
+				{"resource_type": "Disk", "quantity": 20, "unit": "GB"},
+			],
+			sub_category="General",
+		)
+
+		with patch("frappe.enqueue", side_effect=run_enqueued_inline):
+			result = subscriptions.begin_resize(sub, plan=plan, disk_gigabytes=40)
+
+		self.assertTrue(result["queued"])
+		self.assertEqual(
+			{row.resource_type: row.quantity for row in frappe.get_doc("Subscription", sub).includes},
+			{"Compute": 1, "Memory": 4, "Disk": 40},
+		)
+
 	def test_begin_resize_is_a_noop_on_the_same_config(self):
 		sub = self._provision()
 		self._ready(sub)
