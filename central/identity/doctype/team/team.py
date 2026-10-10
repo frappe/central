@@ -425,12 +425,19 @@ class Team(Document):
 		frappe.throw(_("A team must have exactly one active Owner member matching Owner User."))
 
 	def _validate_role_scope(self) -> None:
-		for member in self.members:
-			role_team, is_system = frappe.db.get_value("Team Role", member.role, ["team", "is_system"]) or (
-				None,
-				0,
+		names = {member.role for member in self.members}
+		if not names:
+			return
+
+		roles = {
+			role.name: role
+			for role in frappe.get_all(
+				"Team Role", filters={"name": ("in", names)}, fields=["name", "team", "is_system"]
 			)
-			if not is_system and role_team != self.name:
+		}
+		for member in self.members:
+			role = roles.get(member.role)
+			if not role or (not role.is_system and role.team != self.name):
 				frappe.throw(_("Team Role {0} does not belong to this team.").format(member.role))
 
 	def _validate_member_resources(self) -> None:

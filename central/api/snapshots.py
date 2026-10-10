@@ -3,10 +3,11 @@ import math
 import frappe
 from frappe import _
 
-from central.billing.api.dashboard._shared import _team_currency
 from central.billing.catalog.snapshots import get_snapshot_rate
+from central.billing.doctype.billing_profile.billing_profile import get_team_currency
 from central.billing.settings import daily_snapshot_retention_hours, free_snapshots_per_server
 from central.iam import can, get_server_capabilities
+from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
 from central.infrastructure.doctype.vm_snapshot.vm_snapshot import VMSnapshot
 from central.utils.guards import require_capability
 
@@ -54,7 +55,7 @@ def list_snapshots(team: str | None = None, resource_id: str | None = None) -> d
 
 	result = {
 		"snapshots": snapshots,
-		"currency": _team_currency(team),
+		"currency": get_team_currency(team),
 		"rates": rates,
 		**_allowance(),
 	}
@@ -130,10 +131,7 @@ def set_automatic_snapshots(
 
 
 def _team_server(team: str, resource_id: str | None):
-	name = frappe.db.get_value("Virtual Machine", {"team": team, "resource_id": resource_id}, "name")
-	if not name:
-		frappe.throw(_("No server '{0}' for this team.").format(resource_id), frappe.DoesNotExistError)
-	return frappe.get_doc("Virtual Machine", name)
+	return frappe.get_doc("Virtual Machine", VirtualMachine.get_team_server_name(team, resource_id))
 
 
 def _team_snapshot(team: str, name: str | None) -> VMSnapshot:

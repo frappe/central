@@ -3,13 +3,13 @@ from __future__ import annotations
 import hashlib
 import json
 import math
-import re
 
 import frappe
 from cryptography.exceptions import UnsupportedAlgorithm
 from cryptography.hazmat.primitives.serialization import load_ssh_public_key
 from frappe import _
 from frappe.query_builder.functions import Count, Sum
+from frappe.utils import flt
 from pydantic import ValidationError
 
 from central.billing.catalog.composition import (
@@ -33,7 +33,7 @@ from central.infrastructure.doctype.resource_action.resource_action import (
 	ResourceAction,
 )
 from central.integrations.images import selected_image, snapshot_image, snapshot_source
-from central.server_models import ActionStatus, CreateServerInput, ServerCreation, SiteCreation
+from central.server_models import DNS_LABEL, ActionStatus, CreateServerInput, ServerCreation, SiteCreation
 from central.utils.units import MIB_PER_GIB, MILLICORES_PER_VCPU
 
 
@@ -319,7 +319,7 @@ def reserved_rate(team: str) -> float:
 		)
 		.for_update()
 	).run()
-	return float(rows[0][0] or 0)
+	return flt(rows[0][0])
 
 
 def validate_trial(team: str) -> None:
@@ -384,9 +384,7 @@ def image_shape(includes: list[dict], image: dict) -> dict[str, int]:
 def validate_guest_input(server_input: CreateServerInput) -> None:
 	if server_input.ssh_key_ids and server_input.ssh_keys:
 		frappe.throw(_("Choose saved SSH Keys or enter public keys, not both."))
-	if server_input.hostname and not re.fullmatch(
-		r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", server_input.hostname
-	):
+	if server_input.hostname and not DNS_LABEL.fullmatch(server_input.hostname):
 		frappe.throw(_("Use a valid lowercase guest hostname."))
 	for key in server_input.ssh_keys:
 		try:

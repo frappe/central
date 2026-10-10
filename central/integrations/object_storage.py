@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from typing import TYPE_CHECKING
 
 import boto3
@@ -10,6 +9,7 @@ from botocore.config import Config
 from botocore.exceptions import BotoCoreError, ClientError
 from frappe import _
 
+from central.integrations.cargo import TOKEN_HEADER
 from central.sso import mint_cargo_token
 
 if TYPE_CHECKING:
@@ -65,7 +65,7 @@ class ObjectStorageClient:
 			response = requests.post(
 				f"{self.cargo_endpoint}/api/method/cargo.object_storage.api.bucket.{method}",
 				json={"name": name, "region": self.region, **arguments},
-				headers={"X-Cargo-Access-Token": mint_cargo_token(self.region_id)},
+				headers={TOKEN_HEADER: mint_cargo_token(self.region_id)},
 				timeout=(5, 20),
 				allow_redirects=False,
 			)
@@ -126,8 +126,8 @@ class ObjectStorageClient:
 			return None
 
 		try:
-			messages = json.loads(response.json()["_server_messages"])
-			message = json.loads(messages[-1])["message"]
+			messages = frappe.parse_json(response.json()["_server_messages"])
+			message = frappe.parse_json(messages[-1])["message"]
 		except (ValueError, KeyError, IndexError, TypeError):
 			return None
 

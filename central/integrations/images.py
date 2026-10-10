@@ -42,8 +42,7 @@ def list_images(
 		frappe.throw(_("This image offering is not available for this flow."))
 
 	instance = frappe.get_doc("Region", region)
-	if instance.status != "Active":
-		frappe.throw(_("This region is not accepting new servers."))
+	instance.ensure_accepts_new_servers()
 
 	client = AtlasClient.for_team(instance, team)
 	return client.list_system_images({**document.get_image_tags(), **(extra_tags or {})}, offset)
@@ -83,8 +82,7 @@ def selected_image(
 		frappe.throw(_("This offering is not available for server creation."))
 
 	instance = frappe.get_doc("Region", region)
-	if instance.status != "Active":
-		frappe.throw(_("This region is not accepting new servers."))
+	instance.ensure_accepts_new_servers()
 
 	client = AtlasClient.for_team(instance, team, capability)
 	image = client.read_system_image(client.get_image(image_id), document.get_image_tags())
@@ -109,8 +107,7 @@ def snapshot_image(team: str, region: str, snapshot: str, capability: str = "ser
 		frappe.throw(_("A snapshot restores only in the region it was taken in."))
 
 	instance = frappe.get_doc("Region", region)
-	if instance.status != "Active":
-		frappe.throw(_("This region is not accepting new servers."))
+	instance.ensure_accepts_new_servers()
 
 	image = AtlasClient.for_team(instance, team, capability).get_machine_image(row.atlas_image_id)
 	if not image.get("enabled") or image.get("status") != "available":

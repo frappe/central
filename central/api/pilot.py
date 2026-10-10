@@ -164,7 +164,6 @@ def enroll(bootstrap_token: str) -> dict:
 	pilot's long-lived credential plus its discovery config — in one call. The bootstrap
 	token (signed by Central, short-lived, single-use) is the only authentication; the
 	pilot has no credential yet."""
-	from central.infrastructure.doctype.pilot_credential.pilot_credential import PilotCredential
 	from central.sso import BOOTSTRAP_TTL, central_url, jwks_url, verify_bootstrap_token
 
 	grant = verify_bootstrap_token(bootstrap_token)

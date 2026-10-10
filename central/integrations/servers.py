@@ -228,7 +228,7 @@ def get_cached_metrics(server: VirtualMachine, start: datetime, end: datetime | 
 			"points": get_metric_points(payload["samples"], server.vcpus),
 			"sample_interval_seconds": payload["sample_interval_seconds"],
 		}
-	except (AtlasConnectionError, AtlasRejected, AtlasResourceGone):
+	except AtlasConnectionError:
 		# No frame locals: they hold the Atlas bearer token.
 		frappe.log_error(title=f"Atlas metrics unavailable: {server.name}", message=frappe.get_traceback())
 		metrics = {"available": False}

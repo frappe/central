@@ -81,7 +81,7 @@ class VMSnapshot(Document):
 			self.stop_billing()
 		if self.status in ("Available", "Deleted"):
 			apply_free_allowance(self.server)
-		if self.has_value_changed("status") and self.status == "Failed":
+		if self.status == "Failed":
 			self.queue_failure_notification()
 
 	def queue_failure_notification(self) -> None:

@@ -47,7 +47,7 @@ class CentralSettings(Document):
 			frappe.throw(_("Common Site Config must fit in {0} bytes.").format(MAXIMUM_METADATA_BYTES))
 
 	def get_common_site_config(self) -> dict:
-		return json.loads(self.common_site_config or "{}")
+		return frappe.parse_json(self.common_site_config or "{}")
 
 	def feature_flags(self) -> dict[str, bool]:
 		"""The console's feature flags as a plain {name: bool} map for window boot.

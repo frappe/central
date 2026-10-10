@@ -5,6 +5,7 @@ from zoneinfo import ZoneInfo
 
 import frappe
 from frappe import _
+from frappe.utils import cint
 from redis.exceptions import LockError, LockNotOwnedError
 
 from central.errors import (
@@ -278,7 +279,7 @@ def idle_shutdown_seconds(team: str) -> int:
 		return 0
 
 	minutes = frappe.get_cached_value("Central Settings", "Central Settings", "trial_idle_shutdown_minutes")
-	return max(0, int(minutes or 0)) * 60
+	return max(0, cint(minutes)) * 60
 
 
 def _finalize(request) -> None:
@@ -505,13 +506,12 @@ def recover_requests() -> None:
 	Nothing here repeats a create: an accepted machine is read, and an unanswered request
 	is looked up by its action marker."""
 	cutoff = frappe.utils.add_to_date(frappe.utils.now_datetime(), minutes=-3)
-	action = frappe.qb.DocType("Resource Action")
-	rows = (
-		frappe.qb.from_(action)
-		.select(action.name)
-		.where((action.modified < cutoff) & action.status.isin(PENDING_STATES))
-		.orderby(action.modified)
-		.limit(100)
-	).run(as_dict=True)
-	for row in rows:
-		frappe.get_doc("Resource Action", row.name).enqueue()
+	names = frappe.get_all(
+		"Resource Action",
+		filters={"modified": ("<", cutoff), "status": ("in", PENDING_STATES)},
+		order_by="modified asc",
+		limit=100,
+		pluck="name",
+	)
+	for name in names:
+		frappe.get_doc("Resource Action", name).enqueue()

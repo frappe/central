@@ -237,10 +237,10 @@ class ResourceAction(Document):
 
 		self.db_set(values, notify=notify)
 		if status != previous_status and status in ("Failed", "Timed Out"):
-			# A creation the region never accepted leaves no machine to use its credential.
-			if self.action == "create" and not self.remote_vm_id:
-				PilotCredential.revoke_by_id(self.credential)
 			if self.action == "create":
+				# A creation the region never accepted leaves no machine to use its credential.
+				if not self.remote_vm_id:
+					PilotCredential.revoke_by_id(self.credential)
 				# No server will ever link the mailbox, so termination would not remove it.
 				UserMailAccount.queue_removal(resource_action=self.name, server=("is", "not set"))
 			self.queue_attention_notification(envelope)

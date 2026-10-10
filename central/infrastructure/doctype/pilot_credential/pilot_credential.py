@@ -101,9 +101,11 @@ class PilotCredential(Document):
 	def verify(cls, token: str) -> "PilotCredential | None":
 		"""Resolve a bearer token to its usable credential, stamping last_used_at. The
 		auth surface turns a None here into a 401."""
-		token_hash = cls._hash(token) if token else None
-		name = frappe.db.get_value(cls._DOCTYPE_NAME, {"token_hash": token_hash}) if token_hash else None
+		if not token:
+			return None
 
+		token_hash = cls._hash(token)
+		name = frappe.db.get_value(cls._DOCTYPE_NAME, {"token_hash": token_hash})
 		if not name:
 			return None
 

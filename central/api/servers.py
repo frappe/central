@@ -8,6 +8,7 @@ from frappe.utils import get_system_timezone
 from central.errors import handle_resource_operation
 from central.iam import get_server_capabilities
 from central.infrastructure.doctype.resource_action.resource_action import ResourceAction
+from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
 from central.integrations.servers import get_cached_metrics, reconcile
 from central.utils.guards import require_capability
 
@@ -227,10 +228,7 @@ def _metrics_window(period: str, start: str | None, end: str | None) -> tuple[da
 def server_hostnames(team: str | None = None, resource_id: str | None = None) -> list[dict]:
 	"""The site and custom-domain hostnames a server answers. They stop working when the
 	server is terminated, so the console lists them before it asks. Gated on `server:view`."""
-	server = frappe.db.get_value("Virtual Machine", {"team": team, "resource_id": resource_id}, "name")
-	if not server:
-		frappe.throw(_("No server '{0}' for this team.").format(resource_id), frappe.DoesNotExistError)
-
+	server = VirtualMachine.get_team_server_name(team, resource_id)
 	sites = frappe.get_list("Site", filters={"team": team, "server": server}, pluck="name")
 	routes = frappe.get_list(
 		"Site Domain",
@@ -442,9 +440,7 @@ def resize_server(
 	if not resource_id:
 		frappe.throw(_("A server is required."))
 
-	server = frappe.db.get_value("Virtual Machine", {"team": team, "resource_id": resource_id}, "name")
-	if not server:
-		frappe.throw(_("Server {0} was not found.").format(resource_id), frappe.DoesNotExistError)
+	server = VirtualMachine.get_team_server_name(team, resource_id)
 	subscription = frappe.db.get_value("Subscription", {"team": team, "server_id": server}, "name")
 	if not subscription:
 		frappe.throw(_("This server has no subscription to resize."))

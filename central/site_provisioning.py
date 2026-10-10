@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import re
-
 import frappe
 from frappe import _
 
@@ -10,7 +8,7 @@ from central.iam import get_user_team_names, resolve_team
 from central.identity.doctype.team.team import Team
 from central.integrations.images import list_images
 from central.resource_actions import submit_request
-from central.server_models import SiteCreation
+from central.server_models import DNS_LABEL, SiteCreation
 from central.signups.doctype.product.product import get_signup_product
 
 SIGNUP_FLOW = "Signup"
@@ -23,7 +21,6 @@ SIGNUP_IMAGE_TAGS = {"has_site": "1", "frappe_version": "develop"}
 # tag, so Central drops tagged images itself.
 SIGNUP_APP_TAG = "app"
 # One DNS label: what a customer may name a site, and all the proxy will route.
-SUBDOMAIN_PATTERN = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?")
 RESERVED_SUBDOMAINS = frozenset({"admin", "atlas", "cargo", "proxy", "site", "www"})
 
 
@@ -109,7 +106,7 @@ def subdomain_availability(subdomain: str) -> dict:
 	zone = trial_zone()
 	answer = {"subdomain": subdomain, "domain": zone, "fqdn": f"{subdomain}.{zone}"}
 
-	if not SUBDOMAIN_PATTERN.fullmatch(subdomain):
+	if not DNS_LABEL.fullmatch(subdomain):
 		reason = _("Use lowercase letters, numbers and hyphens, starting and ending with one.")
 	elif subdomain in RESERVED_SUBDOMAINS:
 		reason = _("That name is reserved. Please choose another.")

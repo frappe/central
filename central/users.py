@@ -153,7 +153,7 @@ def _enforce_signup_limit() -> None:
 def _should_skip_role_grant(doc) -> bool:
 	if not doc.enabled:
 		return True
-	if getattr(frappe.flags, "in_install", False) or getattr(frappe.flags, "in_migrate", False):
+	if frappe.flags.in_install or frappe.flags.in_migrate:
 		return True
 	if not frappe.db.exists("Role", CENTRAL_USER_ROLE):
 		return True

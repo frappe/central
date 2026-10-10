@@ -54,6 +54,14 @@ class VirtualMachine(Document):
 		vcpus: DF.Float
 	# end: auto-generated types
 
+	@staticmethod
+	def get_team_server_name(team: str, resource_id: str | None) -> str:
+		"""The server `resource_id` of `team`, or a not-found error."""
+		name = frappe.db.get_value("Virtual Machine", {"team": team, "resource_id": resource_id}, "name")
+		if not name:
+			frappe.throw(_("No server '{0}' for this team.").format(resource_id), frappe.DoesNotExistError)
+		return name
+
 	@classmethod
 	def create_from_action(cls, action, resource_id: str) -> Self:
 		"""Create Central's server record from one accepted creation action."""

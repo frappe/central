@@ -181,12 +181,13 @@ def get_warpgate_regions() -> list:
 
 def revoke_ended_access() -> None:
 	"""Mark each access whose end time passed, then revoke each ended access that is not revoked yet."""
-	for name in frappe.get_all(
+	frappe.db.set_value(
 		"Warpgate Access",
-		filters={"docstatus": 1, "status": "Active", "expires_at": ["<=", now_datetime()]},
-		pluck="name",
-	):
-		frappe.db.set_value("Warpgate Access", name, "status", "Expired", update_modified=False)
+		{"docstatus": 1, "status": "Active", "expires_at": ["<=", now_datetime()]},
+		"status",
+		"Expired",
+		update_modified=False,
+	)
 	frappe.db.commit()  # nosemgrep
 
 	for name in frappe.get_all(
