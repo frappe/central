@@ -8,8 +8,6 @@ and after that Cargo reports itself in by webhook. Keep Atlas-specific fields an
 logic in `atlas_connection.py` instead of here.
 """
 
-from __future__ import annotations
-
 import frappe
 from frappe import _
 from frappe.utils.password import set_encrypted_password

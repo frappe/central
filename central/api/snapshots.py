@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import math
 
 import frappe
@@ -105,8 +103,7 @@ def keep_snapshot(team: str | None = None, name: str | None = None) -> dict:
 def delete_snapshots(team: str | None = None, names: list[str] | str | None = None) -> dict:
 	"""Delete snapshots from their region. One failure does not stop the others; each
 	reason comes back by name. Gated on `server:snapshot`."""
-	if isinstance(names, str):
-		names = frappe.parse_json(names)
+	names = frappe.parse_json(names)
 	if not names:
 		frappe.throw(_("Select at least one snapshot."))
 

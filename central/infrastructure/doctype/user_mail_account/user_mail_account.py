@@ -1,10 +1,8 @@
 # Copyright (c) 2026, frappe and contributors
 # For license information, please see license.txt
 
-from __future__ import annotations
-
 import secrets
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Self
 
 import frappe
 from frappe import _
@@ -49,7 +47,7 @@ class UserMailAccount(Document):
 	# end: auto-generated types
 
 	@classmethod
-	def provision(cls, service: FrappeMailService) -> UserMailAccount:
+	def provision(cls, service: FrappeMailService) -> Self:
 		"""Create a mailbox on the Suite site and add it to the pool."""
 		email = f"notifications-{secrets.token_hex(6)}@{service.domain}"
 		password = secrets.token_urlsafe(24)
@@ -86,7 +84,7 @@ class UserMailAccount(Document):
 				frappe.log_error(title=f"Mailbox removal failed for {name}")
 
 	@classmethod
-	def assign(cls, action: ResourceAction) -> UserMailAccount | None:
+	def assign(cls, action: ResourceAction) -> Self | None:
 		"""Take a mailbox from the region's pool. A retried creation keeps its mailbox."""
 		service = frappe.db.get_value("Region", action.region, "frappemail_service")
 		if not service or not frappe.db.get_value("FrappeMail Service", service, "enabled"):

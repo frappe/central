@@ -1,8 +1,6 @@
 # Copyright (c) 2026, frappe and contributors
 # For license information, please see license.txt
 
-from __future__ import annotations
-
 from typing import TYPE_CHECKING
 
 import dns.exception
@@ -204,7 +202,7 @@ class SiteDomain(Document):
 		}
 
 	@staticmethod
-	def new_for_pilot(credential: PilotCredential, domain: str) -> SiteDomain:
+	def new_for_pilot(credential: PilotCredential, domain: str) -> "SiteDomain":
 		"""An unsaved route to the Pilot's own server. The server never comes from the request.
 
 		A Pilot only knows its machine, so the site comes from the machine: one machine runs

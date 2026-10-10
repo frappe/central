@@ -1,4 +1,4 @@
-from __future__ import annotations
+from typing import Self
 
 import frappe
 from frappe import _
@@ -51,7 +51,7 @@ class VirtualMachine(Document):
 	# end: auto-generated types
 
 	@classmethod
-	def create_from_action(cls, action, resource_id: str) -> VirtualMachine:
+	def create_from_action(cls, action, resource_id: str) -> Self:
 		"""Create Central's server record from one accepted creation action."""
 		if frappe.db.exists("Virtual Machine", resource_id):
 			return frappe.get_doc("Virtual Machine", resource_id)

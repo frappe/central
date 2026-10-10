@@ -204,8 +204,7 @@ def decline_invitation(invitation: str) -> dict[str, Any]:
 
 @frappe.whitelist(methods=["POST"])
 def set_team_member_roles(team: str, user: str, roles: list[dict] | str) -> dict:
-	if isinstance(roles, str):
-		roles = frappe.parse_json(roles)  # the console posts a JSON-encoded array
+	roles = frappe.parse_json(roles)
 	frappe.get_doc("Team", team).set_member_roles(user, roles)
 	return {"team": team, "user": user, "roles": roles}
 
@@ -233,8 +232,7 @@ def leave_team(team: str) -> dict:
 @require_capability("team:manage_members", "You can't manage roles for this team.")
 def create_custom_role(team: str, role_name: str, capabilities: list | str) -> dict:
 	"""Create a team-scoped custom Team Role granting exactly `capabilities`."""
-	if isinstance(capabilities, str):
-		capabilities = frappe.parse_json(capabilities)  # the console posts a JSON-encoded array
+	capabilities = frappe.parse_json(capabilities)  # the console posts a JSON-encoded array
 	valid = set(get_all_capabilities())
 	picked = [c for c in dict.fromkeys(capabilities) if c in valid]
 	if not picked:

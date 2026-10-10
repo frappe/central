@@ -148,13 +148,18 @@ class TestAuth(IntegrationTestCase):
 		self.assertNotIn(code, logged.error)
 
 	def test_malformed_input_is_refused_before_anything_is_sent(self):
+		# Keyword arguments, as a request sends them: Frappe type-checks those.
 		with patch(SENDMAIL) as sendmail:
-			for email in ("not-an-email", "one@example.test,two@example.test", "jane@example..com", []):
+			for email in ("not-an-email", "one@example.test,two@example.test", "jane@example..com"):
 				with self.assertRaises(frappe.ValidationError):
-					send_code(email)
-			for name in ("   ", "x" * 141, ["list"]):
+					send_code(email=email)
+			for name in ("   ", "x" * 141):
 				with self.assertRaises(frappe.ValidationError):
-					send_code(self.email, name)
+					send_code(email=self.email, full_name=name)
+			with self.assertRaises(frappe.FrappeTypeError):
+				send_code(email=[])
+			with self.assertRaises(frappe.FrappeTypeError):
+				send_code(email=self.email, full_name=["list"])
 			with self.assertRaises(frappe.ValidationError):
 				verify_code(self.email, "12345x")
 

@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import frappe
 from frappe import _
 from frappe.realtime import has_permission as has_realtime_permission
@@ -186,22 +184,6 @@ def vm_snapshot_has_permission(doc, user: str | None = None, ptype: str | None =
 	4. Create, write, and delete are denied. Customers change snapshots through the API,
 	   which checks server:snapshot."""
 	return _server_scoped_has_permission(doc, "server", user, ptype)
-
-
-def iam_permission_probe_query_conditions(user: str | None = None) -> str:
-	user = user or frappe.session.user
-	if user_has_operator_bypass(user):
-		return ""
-	return f"`tabIAM Permission Probe`.`user` = {frappe.db.escape(user)}"
-
-
-def iam_permission_probe_has_permission(
-	doc, user: str | None = None, ptype: str | None = None, **kwargs
-) -> bool:
-	user = user or frappe.session.user
-	if user_has_operator_bypass(user):
-		return True
-	return doc.user == user
 
 
 def user_notification_preference_query_conditions(user: str | None = None) -> str:

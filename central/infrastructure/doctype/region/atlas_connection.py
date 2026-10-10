@@ -8,8 +8,6 @@ not a polled connection). Keep Cargo-specific fields and logic in `cargo_connect
 instead of here.
 """
 
-from __future__ import annotations
-
 import ipaddress
 
 import frappe

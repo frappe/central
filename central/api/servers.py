@@ -451,12 +451,7 @@ def resize_server(
 
 	from central.billing.catalog.subscriptions import begin_resize
 
-	if isinstance(includes, str):
-		includes = frappe.parse_json(includes)
-	if disk_gigabytes is not None and disk_gigabytes != "":
-		disk_gigabytes = frappe.utils.cint(disk_gigabytes)
-	else:
-		disk_gigabytes = None
+	includes = frappe.parse_json(includes)
 	result = begin_resize(
 		subscription,
 		plan=plan or None,

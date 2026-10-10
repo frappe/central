@@ -1,8 +1,6 @@
 # Copyright (c) 2026, frappe and contributors
 # For license information, please see license.txt
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 

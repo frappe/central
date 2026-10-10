@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import frappe
 from werkzeug.wrappers import Response
 

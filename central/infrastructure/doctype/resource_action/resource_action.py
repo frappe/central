@@ -1,4 +1,4 @@
-from __future__ import annotations
+from typing import Self
 
 import frappe
 from frappe import _
@@ -129,7 +129,7 @@ class ResourceAction(Document):
 		remote_vm_id: str | None = None,
 		requested_by: str | None = None,
 		**fields,
-	) -> ResourceAction:
+	) -> Self:
 		"""Save one authorized request as a Queued action."""
 		document = frappe.get_doc(
 			{
@@ -153,7 +153,7 @@ class ResourceAction(Document):
 		return document
 
 	@classmethod
-	def get_pending(cls, server: str, action: str) -> ResourceAction | None:
+	def get_pending(cls, server: str, action: str) -> Self | None:
 		"""Return the same pending action, or refuse when a different one is pending."""
 		name = frappe.db.get_value(
 			"Resource Action", {"resource_id": server, "status": ["in", PENDING_STATES]}

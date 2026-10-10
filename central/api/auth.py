@@ -10,9 +10,17 @@ from central.users import create_user, send_sign_in_code, sign_in_with_code
 FULL_NAME_MAX_LENGTH = 140
 
 
-# nosemgrep: guest-whitelisted-method -- sending is limited by IP, and by email in EmailCode.
+# nosemgrep: guest-whitelisted-method -- sending is limited by IP and by email.
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 @rate_limit(limit=20, seconds=EmailCode.TTL_SECONDS, methods="POST")
+@rate_limit(
+	key="email",
+	ip_based=False,
+	endpoint="central.auth.code_send",
+	limit=5,
+	seconds=EmailCode.TTL_SECONDS,
+	methods="POST",
+)
 def send_code(email: str, full_name: str | None = None, product: str | None = None) -> dict:
 	"""Email a sign-in code. A new email gets a code too, and the account is made on verify."""
 	email = _validated_email(email)
@@ -23,10 +31,18 @@ def send_code(email: str, full_name: str | None = None, product: str | None = No
 # nosemgrep: guest-whitelisted-method -- a short-lived code and an attempt limit authenticate the user.
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 @rate_limit(limit=20, seconds=EmailCode.TTL_SECONDS, methods="POST")
+@rate_limit(
+	key="email",
+	ip_based=False,
+	endpoint="central.auth.code_verify",
+	limit=10,
+	seconds=EmailCode.TTL_SECONDS,
+	methods="POST",
+)
 def verify_code(email: str, code: str, full_name: str | None = None, product: str | None = None) -> dict:
 	"""Sign in with an emailed code. Returns `needs_name` when a new account has no name yet."""
 	email = _validated_email(email)
-	if not isinstance(code, str) or len(code) != 6 or not code.isascii() or not code.isdigit():
+	if len(code) != 6 or not code.isascii() or not code.isdigit():
 		frappe.throw(_("Enter the 6-digit code from your email."), frappe.ValidationError)
 
 	return sign_in_with_code(email, code, _optional_full_name(full_name), _known_product(product))
@@ -56,7 +72,7 @@ def sign_up_with_invitation(token: str, full_name: str) -> dict:
 
 
 def _validated_email(email: str) -> str:
-	if not isinstance(email, str) or len(email) > 254:
+	if len(email) > 254:
 		frappe.throw(_("Enter a valid email address."), frappe.ValidationError)
 	email = email.strip().lower()
 	if validate_email_address(email, throw=True) != email:
@@ -69,9 +85,8 @@ def _optional_full_name(full_name: str | None) -> str | None:
 
 
 def _required_full_name(full_name: str) -> str:
-	# The rate limiter hides these endpoints' signatures from Frappe's type check, and no
-	# User exists yet to validate, so the name is checked here.
-	if not isinstance(full_name, str) or not full_name.strip():
+	# No User exists yet to validate, so the name is checked here.
+	if not full_name.strip():
 		frappe.throw(_("Enter your full name."), frappe.ValidationError)
 
 	full_name = full_name.strip()
