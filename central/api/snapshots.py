@@ -79,7 +79,7 @@ def take_snapshot(team: str | None = None, resource_id: str | None = None, title
 	snapshot = frappe.get_doc(
 		{
 			"doctype": "VM Snapshot",
-			"title": (title or "").strip() or _("{0} snapshot").format(server.title or server.name),
+			"title": title,
 			"team": team,
 			"server": server.name,
 			"snapshot_type": "Manual",

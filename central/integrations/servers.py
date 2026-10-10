@@ -9,10 +9,8 @@ from frappe import _
 
 from central.errors import AtlasConnectionError, AtlasRejected, AtlasResourceGone
 from central.iam import can_on_any_server
-from central.infrastructure.doctype.pilot_credential.pilot_credential import PilotCredential
 from central.infrastructure.doctype.resource_action.resource_action import ResourceAction
 from central.infrastructure.doctype.site.site import Site
-from central.infrastructure.doctype.user_mail_account.user_mail_account import UserMailAccount
 from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
 from central.integrations.atlas import AtlasClient
 from central.utils.units import (
@@ -212,15 +210,9 @@ def get_client(server: VirtualMachine) -> AtlasClient:
 
 
 def mark_terminated(server: VirtualMachine) -> None:
-	"""Record a server as gone, revoke the pilot credentials bound to it, and remove its mailbox."""
+	"""Record a server as gone. Its on_update revokes its Pilot and removes its mailbox."""
 	server.status = "Terminated"
 	VirtualMachine.mark_terminated(server.name)
-	UserMailAccount.queue_removal(server=server.name)
-	credentials = frappe.get_all(
-		"Pilot Credential", filters={"team": server.team, "server": server.name}, pluck="name"
-	)
-	for name in credentials:
-		PilotCredential.revoke_by_id(name)
 
 
 def get_cached_metrics(server: VirtualMachine, start: datetime, end: datetime | None = None) -> dict:

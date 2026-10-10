@@ -4,6 +4,8 @@ import frappe
 from frappe.tests import IntegrationTestCase
 
 from central.billing.tests.utils import make_plan
+from central.infrastructure.doctype.pilot_credential.pilot_credential import PilotCredential
+from central.infrastructure.doctype.user_mail_account.user_mail_account import UserMailAccount
 from central.tests.test_iam import ensure_user
 from central.tests.utils import ensure_atlas_instance
 
@@ -46,6 +48,20 @@ class TestVirtualMachine(IntegrationTestCase):
 
 		enqueue.assert_called_once()
 		self.assertEqual(enqueue.call_args.kwargs["server"], server.name)
+
+	def test_termination_revokes_the_pilot_and_removes_the_mailbox(self):
+		server = self._server("vm-ends", "Running")
+		credential = "pcred-vm-ends"
+		PilotCredential.mint(
+			team=self.team.name, pilot_credential_id=credential, server=server.name, audience_id=credential
+		)
+
+		with patch.object(UserMailAccount, "queue_removal") as queue_removal, patch("frappe.enqueue"):
+			server.status = "Terminated"
+			server.save()
+
+		self.assertEqual(frappe.db.get_value("Pilot Credential", credential, "status"), "Revoked")
+		queue_removal.assert_called_once_with(server=server.name)
 
 	def test_route_removal_is_refused_for_a_live_server(self):
 		server = self._server("vm-routes-live", "Running")

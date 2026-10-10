@@ -5,6 +5,10 @@ from frappe import _
 from frappe.model.document import Document
 from requests import RequestException
 
+from central.iam import can
+from central.infrastructure.doctype.pilot_credential.pilot_credential import PilotCredential
+from central.infrastructure.doctype.user_mail_account.user_mail_account import UserMailAccount
+from central.sso import mint_bench_login
 from central.utils.units import mebibytes_to_gigabytes, millicores_to_vcpus
 
 
@@ -91,11 +95,22 @@ class VirtualMachine(Document):
 	def on_update(self):
 		if self.has_value_changed("status") or self.has_value_changed("plan"):
 			self.sync_subscription_on_status_change()
+
 		if self.has_value_changed("status") and self.status == "Failed":
 			self.queue_status_notification("server_failed")
+
 		if self.has_value_changed("status") and self.status == "Terminated":
 			self.enqueue_route_removal()
+			self.revoke_pilot_credentials()
+			UserMailAccount.queue_removal(server=self.name)
 			self.queue_status_notification("server_terminated")
+
+	def revoke_pilot_credentials(self) -> None:
+		"""A terminated server's Pilot must not reach Central again."""
+		for name in frappe.get_all(
+			"Pilot Credential", filters={"team": self.team, "server": self.name}, pluck="name"
+		):
+			PilotCredential.revoke_by_id(name)
 
 	def enqueue_route_removal(self) -> None:
 		"""A terminated server serves nothing, so its site and custom-domain routes go too."""
@@ -234,6 +249,31 @@ class VirtualMachine(Document):
 		self.check_permission("read")
 
 		return {"status": observe_server(self)}
+
+	def get_bench_login_url(self, user: str) -> str:
+		"""A login URL for a Running server in an active region, gated on `server:console`.
+
+		The SID is single-use and its audience is this bench's own, so it opens no other bench."""
+		if not can(user, self.team, "server:console", server=self.name):
+			frappe.throw(_("You can't open servers for this team."), frappe.PermissionError)
+
+		if self.status != "Running":
+			frappe.throw(_("Server is {0}, not running.").format(self.status.lower()), frappe.ValidationError)
+		if frappe.db.get_value("Region", self.region, "status") != "Active":
+			frappe.throw(_("That region is not active."), frappe.ValidationError)
+
+		gateway = (self.gateway_url or "").rstrip("/")
+		if not gateway:
+			frappe.throw(_("This server has no bench gateway yet."), frappe.ValidationError)
+
+		# The bench verifies the SID against its own audience id, which its Pilot Credential holds.
+		audience = frappe.db.get_value(
+			"Pilot Credential", {"server": self.resource_id, "status": "Active"}, "audience_id"
+		)
+		if not audience:
+			frappe.throw(_("This server's pilot hasn't enrolled yet."), frappe.ValidationError)
+
+		return f"{gateway}/?sid={mint_bench_login(audience)}"
 
 	def publish_state_change(self) -> None:
 		"""Tell this team's consoles that one of its servers moved.

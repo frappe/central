@@ -128,9 +128,16 @@ class Team(Document):
 			frappe.throw(_("Upload the image again."))
 
 	def on_update(self) -> None:
+		from central.billing.payments.provisioning import on_team_update
+		from central.services.ai import on_alert_address_update
+
 		# Team and member-row edits change resolved capabilities; drop the request-cached
 		# grants so later checks in this request see the new state.
 		clear_grants_cache()
+		# A staging-trial team keeps a complete billing profile, so it can create servers.
+		on_team_update(self)
+		# A new owner may be the new alert address of the team's Grove user.
+		on_alert_address_update(self)
 
 	def on_trash(self) -> None:
 		self._require_capability("team:delete")

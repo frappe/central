@@ -9,6 +9,9 @@ from frappe.model.document import bulk_insert
 from central.api.pilot import pilot_credential_auth
 from central.iam import is_active_team_member, resolve_team, user_has_operator_bypass
 from central.notification import CATEGORIES
+from central.notification.doctype.user_notification_preference.user_notification_preference import (
+	UserNotificationPreference,
+)
 
 MARK_READ_BATCH_SIZE = 500
 
@@ -57,27 +60,7 @@ def save_user_preferences(team: str, preferences: list[dict]) -> dict:
 		email = bool(frappe.utils.cint(pref.get("email_enabled", 1)))
 		in_app = bool(frappe.utils.cint(pref.get("in_app_enabled", 1)))
 
-		existing = frappe.db.get_value(
-			"User Notification Preference",
-			{"user": user, "team": team, "category": category},
-			"name",
-		)
-		if existing:
-			doc = frappe.get_doc("User Notification Preference", existing)
-			doc.update({"email_enabled": int(email), "in_app_enabled": int(in_app)})
-			doc.save()
-		else:
-			doc = frappe.get_doc(
-				{
-					"doctype": "User Notification Preference",
-					"user": user,
-					"team": team,
-					"category": category,
-					"email_enabled": int(email),
-					"in_app_enabled": int(in_app),
-				}
-			).insert()
-
+		doc = UserNotificationPreference.upsert(user, team, category, email, in_app)
 		saved.append(
 			{"category": category, "email_enabled": email, "in_app_enabled": in_app, "name": doc.name}
 		)
