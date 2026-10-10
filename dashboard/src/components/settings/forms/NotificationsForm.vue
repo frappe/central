@@ -4,6 +4,7 @@ import { computed, reactive, ref, watch } from 'vue'
 import { API, method } from '@/api/methods'
 import { teamParams, whenTeamReady } from '@/composables/useTeamScope'
 import { getErrorMessage, successToast } from '@/lib/feedback'
+import { submitOrThrow } from '@/lib/frappeCall'
 
 // Per-user notification preferences, one row per category. Email delivery and the
 // in-app feed toggle independently. Opt-out model: a category with no saved row is
@@ -107,8 +108,7 @@ async function onSave(): Promise<void> {
 			email_enabled: state[key].email ? 1 : 0,
 			in_app_enabled: state[key].in_app ? 1 : 0,
 		}))
-		await save.submit({ ...teamParams(), preferences })
-		if (save.error) throw save.error
+		await submitOrThrow(save, { ...teamParams(), preferences })
 		await load.reload()
 		successToast('Notification preferences saved')
 	} catch (e) {

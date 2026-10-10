@@ -304,7 +304,6 @@ const revoke = async (key: AIApiKey): Promise<void> => {
 			{
 				label: 'Create',
 				variant: 'solid',
-				loading: creating,
 				disabled: !newLabel.trim(),
 				onClick: create,
 			},

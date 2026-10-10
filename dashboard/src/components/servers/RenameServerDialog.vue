@@ -68,7 +68,6 @@ async function save(): Promise<void> {
 			{
 				label: 'Save',
 				variant: 'solid',
-				loading: renameCall.loading,
 				disabled: !canSave,
 				onClick: save,
 			},

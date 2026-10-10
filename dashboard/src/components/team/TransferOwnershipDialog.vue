@@ -13,7 +13,7 @@ interface Props {
 const props = defineProps<Props>()
 const open = defineModel<boolean>('open', { default: false })
 
-const { transferOwnership, saving, error, clearError } = useTeamSettings()
+const { transferOwnership, error, clearError } = useTeamSettings()
 const { reload } = useTeamMembers()
 const { activeTeamLabel } = useSession()
 
@@ -51,7 +51,6 @@ const dialogOptions = computed(() => ({
 			label: 'Transfer ownership',
 			variant: 'solid' as const,
 			theme: 'red' as const,
-			loading: saving.value,
 			disabled: !confirmed.value,
 			onClick: confirm,
 		},

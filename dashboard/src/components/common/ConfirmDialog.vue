@@ -1,5 +1,5 @@
 <script setup lang="ts" generic="T">
-import { Dialog, ErrorMessage } from 'frappe-ui'
+import { Button, Dialog, ErrorMessage } from 'frappe-ui'
 import { computed } from 'vue'
 
 // One confirm dialog for the "hold a pending target, ask before acting" pattern.
@@ -37,29 +37,29 @@ const open = computed({
 	},
 })
 
-const actions = computed(() => [
-	{
-		label: props.confirmLabel,
-		variant: 'solid' as const,
-		theme: props.theme,
-		loading: props.loading,
-		disabled: props.disabled,
-		onClick: () => {
-			if (props.target !== null) emit('confirm', props.target)
-		},
-	},
-])
+// Dialog's `actions` prop resets each action's `loading`, so the button is rendered here
+// to show the caller's :loading while the mutation runs.
+function confirm(): void {
+	if (props.target !== null) emit('confirm', props.target)
+}
 </script>
 
 <template>
-	<Dialog
-		v-model="open"
-		:title="title"
-		:message="message"
-		:size="size"
-		:actions="actions"
-	>
+	<Dialog v-model="open" :title="title" :message="message" :size="size">
 		<slot />
 		<ErrorMessage v-if="error" class="mt-2" :message="error" />
+		<template #actions>
+			<div :class="size === 'lg' ? 'flex justify-end' : ''">
+				<Button
+					:class="size === 'lg' ? '' : 'w-full'"
+					variant="solid"
+					:theme="theme"
+					:label="confirmLabel"
+					:loading="loading"
+					:disabled="disabled"
+					@click="confirm"
+				/>
+			</div>
+		</template>
 	</Dialog>
 </template>

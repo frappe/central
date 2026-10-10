@@ -1,5 +1,6 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { API } from '@/api/methods'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { useMyProfile } from '@/composables/useMyProfile'
 import { usePlans } from '@/composables/usePlans'
@@ -380,13 +381,13 @@ export function useServerCreation() {
 			is_firewall_enabled: isFirewallEnabled.value,
 		}
 		if (isCustom.value && composedConfig.value) {
-			await operation.submit('central.api.servers.create_composed_server', {
+			await operation.submit(API.createComposedServer, {
 				...values,
 				includes: configIncludes(composedConfig.value),
 				sub_category: composedConfig.value.sub_category,
 			})
 		} else if (selectedPlanObj.value) {
-			await operation.submit('central.api.servers.create_server', {
+			await operation.submit(API.createServer, {
 				...values,
 				plan: selectedPlanObj.value.plan,
 			})
