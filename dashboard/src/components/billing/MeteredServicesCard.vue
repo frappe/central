@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Badge, Button } from 'frappe-ui'
+import { Badge, Button, Skeleton } from 'frappe-ui'
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import BillingCard from '@/components/billing/BillingCard.vue'
@@ -95,16 +95,10 @@ function exhausted(row: ServiceRow): boolean {
 
 		<div v-if="loading" class="space-y-3 py-1">
 			<div v-for="i in 2" :key="i" class="flex items-center gap-3">
-				<span
-					class="size-4 shrink-0 animate-pulse rounded-4 bg-surface-gray-2"
-				/>
+				<Skeleton class="size-4 shrink-0 rounded-4" />
 				<div class="flex-1 space-y-1.5">
-					<span
-						class="block h-3.5 w-40 animate-pulse rounded-4 bg-surface-gray-2"
-					/>
-					<span
-						class="block h-3 w-28 animate-pulse rounded-4 bg-surface-gray-2"
-					/>
+					<Skeleton class="h-3.5 w-40 rounded-4" />
+					<Skeleton class="h-3 w-28 rounded-4" />
 				</div>
 			</div>
 		</div>

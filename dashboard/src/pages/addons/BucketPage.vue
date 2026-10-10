@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Button, TabButtons } from 'frappe-ui'
+import { Button, Skeleton, TabButtons } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import BucketFiles from '@/components/addons/storage/BucketFiles.vue'
@@ -90,8 +90,8 @@ const copyEndpoint = async (endpoint: string): Promise<void> => {
 			class="mx-auto flex min-h-0 w-full max-w-4xl flex-1 flex-col p-3 md:p-4 lg:pt-8"
 		>
 			<div v-if="loading" class="space-y-3" aria-busy="true">
-				<div class="h-8 w-48 animate-pulse rounded-4 bg-surface-gray-2" />
-				<div class="h-5 w-72 animate-pulse rounded-4 bg-surface-gray-2" />
+				<Skeleton class="h-8 w-48 rounded-4" />
+				<Skeleton class="h-5 w-72 rounded-4" />
 			</div>
 
 			<EmptyState
