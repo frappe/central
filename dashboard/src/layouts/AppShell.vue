@@ -73,7 +73,10 @@ const breadcrumbs = computed(
 			<div id="header-actions" class="flex shrink-0 items-center gap-2" />
 		</header>
 
-		<main class="min-h-0 flex-1 overflow-hidden">
+		<main
+			class="min-h-0 flex-1 overflow-hidden"
+			style="view-transition-name: page"
+		>
 			<router-view />
 		</main>
 
@@ -102,7 +105,10 @@ const breadcrumbs = computed(
 			<div id="header-actions" class="flex shrink-0 items-center gap-2" />
 		</header>
 
-		<div class="min-h-0 flex-1 overflow-hidden">
+		<div
+			class="min-h-0 flex-1 overflow-hidden"
+			style="view-transition-name: page"
+		>
 			<router-view />
 		</div>
 	</DesktopShell>
