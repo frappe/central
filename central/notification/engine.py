@@ -144,7 +144,7 @@ def dispatch(
 
 
 def _get_event_type(event_type: str):
-	"""Fetch the Event Type registry row (cached per request)."""
+	"""Fetch the Event Type registry row."""
 	return frappe.db.get_value(
 		"Notification Event Type",
 		event_type,
@@ -385,7 +385,7 @@ def _notification_email(event, ctx, message=None) -> tuple[str, str]:
 	# The email says the same sentence as the in-app notification. A body may use
 	# `message` anywhere in it, so it is never split out of the sentence.
 	ctx = {**ctx, "message": message or ctx.get("message") or ""}
-	subject = _render_template(event.in_app_title, ctx) or event.event_type
+	subject = _render_template(event.in_app_title, ctx) or event.name
 	text = (_render_template(event.in_app_body, ctx) or "").strip()
 	route = _render_template(event.action_route, ctx) if event.action_route else None
 	body = frappe.render_template(
@@ -425,5 +425,5 @@ def _send_member_email(
 	except Exception:
 		# Best-effort delivery, but never fail silently — a missing outgoing account
 		# or a send error must leave a trace to diagnose (retry/backoff is a later phase).
-		frappe.log_error(title=f"Notification email send failed: {event.event_type} -> {user}")
+		frappe.log_error(title=f"Notification email send failed: {event.name} -> {user}")
 		return False

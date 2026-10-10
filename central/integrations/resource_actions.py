@@ -192,10 +192,12 @@ def find_created_vm(request) -> str | None:
 		if not isinstance(created_at, int) or created_at < started - CLOCK_SKEW_SECONDS:
 			break
 		remote = client.get_vm(row["id"])
+		# Atlas sends null for a guest it has not booted yet.
+		metadata = (remote.get("guest") or {}).get("metadata") or {}
 		if (
 			remote.get("tenant_id") == client.tenant_id
 			and remote.get("image_id") == configuration.image_id
-			and remote.get("guest", {}).get("metadata", {}).get("central_action_id") == request.name
+			and metadata.get("central_action_id") == request.name
 		):
 			return row["id"]
 

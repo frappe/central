@@ -58,6 +58,7 @@ class TeamService(Document):
 
 		if not self.bucket_name:
 			frappe.throw(_("A bucket needs a name."))
+		self.validate_bucket_region()
 		self.validate_bucket_is_unclaimed()
 
 		# Read everything that can refuse first, so a refusal leaves no bucket in Cargo.
@@ -124,12 +125,14 @@ class TeamService(Document):
 		if self.status == "Active" and not self.subscription and not self.is_ai:
 			frappe.throw(_("An active service must have a subscription."))
 
-		# The form asks for it through mandatory_depends_on, which the server does not check.
-		if self.is_bucket and not self.region:
-			frappe.throw(_("A bucket needs a region."), frappe.MandatoryError)
-
+		self.validate_bucket_region()
 		self.validate_bucket_is_unclaimed()
 		self.validate_one_ai_service()
+
+	def validate_bucket_region(self) -> None:
+		"""The form asks for it through mandatory_depends_on, which the server does not check."""
+		if self.is_bucket and not self.region:
+			frappe.throw(_("A bucket needs a region."), frappe.MandatoryError)
 
 	def validate_one_ai_service(self) -> None:
 		"""A team is one Grove user, so it has one AI service."""

@@ -366,6 +366,14 @@ class TestResourceActions(IntegrationTestCase):
 		)
 		self.client.return_value.create_vm.assert_called_once()
 
+	def test_a_lost_reply_skips_a_machine_with_no_guest_yet(self):
+		name = self.submit()["action"]
+		self.client.return_value.create_vm.side_effect = AtlasRequestUncertain("lost reply")
+		self.client.return_value.list_vms.return_value = [self.built_vm(name, guest=None)]
+		_process_locked(name)
+
+		self.assertFalse(frappe.db.get_value("Resource Action", name, "remote_vm_id"))
+
 	def test_a_lost_reply_finds_the_machine_on_a_later_page(self):
 		name = self.submit()["action"]
 		self.client.return_value.create_vm.side_effect = AtlasRequestUncertain("lost reply")
