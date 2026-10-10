@@ -11,6 +11,8 @@ one ``Team Notification`` per event, and fans out emails per qualified team memb
 import frappe
 from frappe import _
 
+from central.sso import central_url
+
 
 def queue_event(
 	team: str,
@@ -394,7 +396,7 @@ def _notification_email(event, ctx, message=None) -> tuple[str, str]:
 			"title": subject,
 			"body": text,
 			"action_label": event.action_label,
-			"action_url": f"{frappe.utils.get_url()}/dashboard{route}" if route else None,
+			"action_url": f"{central_url()}/dashboard{route}" if route else None,
 		},
 	)
 	return subject, body

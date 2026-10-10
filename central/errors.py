@@ -250,7 +250,8 @@ def handle_resource_operation(func):
 			envelope = to_error_response(exc)
 			# The user sees only generic copy, so keep the traceback for the operator.
 			if envelope["code"] == "UNEXPECTED":
-				frappe.log_error(title="Unexpected server-action error")
+				# No frame locals: a remote call's frames hold its bearer token.
+				frappe.log_error(title="Unexpected server-action error", message=frappe.get_traceback())
 			_reraise_with_envelope(exc, envelope)
 
 	return wrapper

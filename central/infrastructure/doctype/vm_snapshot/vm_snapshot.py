@@ -315,7 +315,8 @@ def _take_automatic_snapshot(server) -> None:
 		frappe.db.commit()  # nosemgrep: frappe-manual-commit -- keep each snapshot if a later server fails
 	except frappe.ValidationError:
 		frappe.db.rollback()
-		frappe.log_error(title=f"Automatic snapshot failed: {server.name}")
+		# No frame locals: they hold the Atlas bearer token.
+		frappe.log_error(title=f"Automatic snapshot failed: {server.name}", message=frappe.get_traceback())
 
 
 def sync_pending_snapshots() -> None:

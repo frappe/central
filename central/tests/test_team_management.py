@@ -2,7 +2,7 @@ from unittest.mock import patch
 
 import frappe
 from frappe.tests import IntegrationTestCase
-from frappe.utils import add_days, today
+from frappe.utils import add_days, add_to_date, today
 
 from central.api.identity import my_invitations, my_teams
 from central.api.teams import (
@@ -22,7 +22,15 @@ from central.api.teams import (
 )
 from central.iam import can, get_user_team_names, resolve_user_grants
 from central.identity.doctype.team_invitation.team_invitation import expire_pending_invitations
+from central.sso import central_url
 from central.tests.utils import ensure_server, upload_test_image
+
+
+def _age_invitation(name: str) -> None:
+	"""Move an invitation past the resend cooldown."""
+	frappe.db.set_value(
+		"Team Invitation", name, "modified", add_to_date(None, minutes=-10), update_modified=False
+	)
 
 
 def create_user(email: str) -> str:
@@ -293,6 +301,7 @@ class TestTeamManagement(IntegrationTestCase):
 		name = invite_team_member(self.team.name, self.invitee, "Developer")
 		# An invitation from before tokens existed has none.
 		frappe.db.set_value("Team Invitation", name, "token", None)
+		_age_invitation(name)
 
 		resend_invitation(name)
 
@@ -516,12 +525,46 @@ class TestTeamManagement(IntegrationTestCase):
 		frappe.set_user(self.owner)
 		name = invite_team_member(self.team.name, self.invitee, "Developer")
 		frappe.db.set_value("Team Invitation", name, "expires_on", add_days(today(), 1))
+		_age_invitation(name)
 
 		with patch("central.identity.doctype.team_invitation.team_invitation.frappe.sendmail") as sendmail:
 			result = resend_invitation(name)
 
 		sendmail.assert_called_once()
 		self.assertEqual(str(result["expires_on"]), add_days(today(), 10))
+
+	def test_an_invitation_cannot_be_resent_straight_away(self):
+		frappe.set_user(self.owner)
+		name = invite_team_member(self.team.name, self.invitee, "Developer")
+
+		with self.assertRaisesRegex(frappe.ValidationError, "less than 5 minutes ago"):
+			resend_invitation(name)
+
+	def test_a_person_can_send_only_so_many_invitations_an_hour(self):
+		frappe.set_user(self.owner)
+		with patch(
+			"central.identity.doctype.team_invitation.team_invitation.INVITATIONS_PER_HOUR",
+			frappe.db.count(
+				"Team Invitation",
+				{"invited_by": self.owner, "creation": (">", add_to_date(None, hours=-1))},
+			)
+			+ 1,
+		):
+			invite_team_member(self.team.name, self.invitee, "Developer")
+			with self.assertRaisesRegex(frappe.ValidationError, "too many invitations"):
+				invite_team_member(self.team.name, "another.invitee@example.test", "Developer")
+
+	def test_the_invitation_link_ignores_the_request_host(self):
+		frappe.set_user(self.owner)
+		with (
+			patch("frappe.utils.data.get_host_name_from_request", return_value="https://evil.example"),
+			patch("central.identity.doctype.team_invitation.team_invitation.frappe.sendmail") as sendmail,
+		):
+			invite_team_member(self.team.name, self.invitee, "Developer")
+
+		url = sendmail.call_args.kwargs["args"]["invitation_url"]
+		self.assertNotIn("evil.example", url)
+		self.assertTrue(url.startswith(central_url()))
 
 	def test_revoke_invitation_blocks_further_acceptance(self):
 		frappe.set_user(self.owner)

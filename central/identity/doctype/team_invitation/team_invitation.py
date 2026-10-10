@@ -6,8 +6,9 @@ from frappe import _
 from frappe.model.document import Document
 from frappe.utils import (
 	add_days,
+	add_to_date,
+	get_datetime,
 	get_fullname,
-	get_url,
 	getdate,
 	now,
 	today,
@@ -16,8 +17,12 @@ from frappe.utils import (
 
 from central.iam import can, user_has_operator_bypass
 from central.identity.doctype.team_member.team_member import validate_resource_scope
+from central.sso import central_url
 
 DEFAULT_EXPIRY_DAYS = 14
+# Invitations are platform-branded mail to any address, so a person cannot send without limit.
+INVITATIONS_PER_HOUR = 50
+RESEND_COOLDOWN_MINUTES = 5
 
 
 class TeamInvitation(Document):
@@ -58,6 +63,7 @@ class TeamInvitation(Document):
 		validate_email_address(self.email, throw=True)
 		if self.is_new():
 			self._require_manager()
+			self._validate_send_rate()
 		self._validate_role()
 		self._validate_resource()
 		self._validate_user()
@@ -80,7 +86,7 @@ class TeamInvitation(Document):
 				"invited_by": invited_by,
 				"role": self.role_name,
 				"expires_on": frappe.format(self.expires_on, "Date"),
-				"invitation_url": get_url(f"/dashboard/join/{self.token}"),
+				"invitation_url": f"{central_url()}/dashboard/join/{self.token}",
 			},
 			reference_doctype=self.doctype,
 			reference_name=self.name,
@@ -143,6 +149,15 @@ class TeamInvitation(Document):
 		self._require_manager()
 		if self.status != "Pending":
 			frappe.throw(_("Only a pending invitation can be resent."))
+		if not user_has_operator_bypass() and get_datetime(self.modified) > add_to_date(
+			None, minutes=-RESEND_COOLDOWN_MINUTES
+		):
+			frappe.throw(
+				_("This invitation was sent less than {0} minutes ago. Try again later.").format(
+					RESEND_COOLDOWN_MINUTES
+				)
+			)
+
 		# A new token also cancels the link in the earlier email.
 		self.token = frappe.generate_hash(length=32)
 		self.expires_on = get_expiry_date()
@@ -161,6 +176,16 @@ class TeamInvitation(Document):
 		self.flags.from_invitation_action = True
 		self.save()
 		return True
+
+	def _validate_send_rate(self) -> None:
+		if user_has_operator_bypass():
+			return
+		sent = frappe.db.count(
+			"Team Invitation",
+			{"invited_by": frappe.session.user, "creation": (">", add_to_date(None, hours=-1))},
+		)
+		if sent >= INVITATIONS_PER_HOUR:
+			frappe.throw(_("You have sent too many invitations. Try again in an hour."))
 
 	def _validate_role(self) -> None:
 		if self.role == "Owner":

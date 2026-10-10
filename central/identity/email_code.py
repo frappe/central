@@ -16,6 +16,7 @@ class EmailCode:
 
 	TTL_SECONDS = 10 * 60
 	MAX_ATTEMPTS = 5
+	MAX_SENDS = 5
 
 	def __init__(self, email: str) -> None:
 		self.email = email
@@ -27,14 +28,33 @@ class EmailCode:
 
 	def send(self, subject: str, heading: str, full_name: str | None = None) -> None:
 		"""Email a fresh code. Failed attempts carry over, so a resend cannot reset the lock."""
-		pending = self.pending or {}
-		attempts = pending.get("attempts", 0)
-		if attempts >= self.MAX_ATTEMPTS:
-			self._throw_locked()
-
+		pending = self._next_pending()
 		code = f"{secrets.randbelow(900_000) + 100_000}"
-		self._store({"code": code, "attempts": attempts, "full_name": full_name or pending.get("full_name")})
+		self._store({**pending, "code": code, "full_name": full_name or pending["full_name"]})
 		self._mail(code, subject.format(code), heading)
+
+	def hold(self) -> None:
+		"""Store a code that never matches, so an address that may not sign in answers like any other."""
+		self._store({**self._next_pending(), "code": secrets.token_hex(16)})
+
+	def _next_pending(self) -> dict:
+		"""The entry for one more send. Sends and failed attempts carry over until the entry expires."""
+		pending = self.pending or {}
+		if pending.get("attempts", 0) >= self.MAX_ATTEMPTS:
+			self._throw_locked()
+		if pending.get("sends", 0) >= self.MAX_SENDS:
+			frappe.throw(
+				_("Too many codes requested. Wait {0} minutes, then try again.").format(
+					self.TTL_SECONDS // 60
+				),
+				EmailCodeError,
+			)
+
+		return {
+			"attempts": pending.get("attempts", 0),
+			"sends": pending.get("sends", 0) + 1,
+			"full_name": pending.get("full_name"),
+		}
 
 	@contextmanager
 	def lock(self):
@@ -72,7 +92,8 @@ class EmailCode:
 				now=True,
 			)
 		except Exception:
-			frappe.log_error(title="Email code could not be sent")
+			# No frame locals: they hold the code.
+			frappe.log_error(title="Email code could not be sent", message=frappe.get_traceback())
 			# A mail error can queue its own message. The user reads only ours.
 			frappe.clear_messages()
 			frappe.throw(_("We could not send a code to this email. Check the address and try again."))

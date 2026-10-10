@@ -112,7 +112,10 @@ class WarpgateAccess(Document):
 		try:
 			self.revoke()
 		except AtlasConnectionError:
-			frappe.log_error(title=f"Warpgate Access {self.name} was not revoked")
+			# No frame locals: they hold the Atlas bearer token.
+			frappe.log_error(
+				title=f"Warpgate Access {self.name} was not revoked", message=frappe.get_traceback()
+			)
 			return
 		self.db_set("is_revoked", 1)
 

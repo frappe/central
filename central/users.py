@@ -18,6 +18,7 @@ def send_sign_in_code(email: str, full_name: str | None = None, product: str | N
 	`product` only labels the signup funnel event."""
 	user = _find_user(email)
 	if user and not user.enabled:
+		EmailCode(email).hold()
 		_send_disabled_notice(email)
 	elif user:
 		EmailCode(email).send(_("{0} is your Frappe Cloud sign-in code"), _("Sign in to Frappe Cloud"))

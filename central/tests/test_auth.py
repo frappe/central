@@ -1,4 +1,3 @@
-from types import SimpleNamespace
 from unittest.mock import patch
 
 import frappe
@@ -106,7 +105,24 @@ class TestAuth(IntegrationTestCase):
 		self.assertEqual(response, {"message": f"We sent a code to {self.email}."})
 		self.assertIn("disabled", notice.call_args.kwargs["subject"])
 		code_mail.assert_not_called()
-		self.assertIsNone(EmailCode(self.email).pending)
+
+	def test_a_disabled_account_and_an_unknown_email_answer_a_wrong_code_alike(self):
+		frappe.set_user("Administrator")
+		create_user(self.email)
+		frappe.db.set_value("User", self.email, "enabled", 0)
+		unknown = f"unknown.{frappe.generate_hash(length=8)}@example.test"
+		self.addCleanup(EmailCode(unknown).discard)
+		frappe.set_user("Guest")
+
+		answers = []
+		with patch(SENDMAIL), patch("central.users.frappe.sendmail"):
+			for email in (self.email, unknown):
+				send_code(email)
+				with self.assertRaises(EmailCodeError) as wrong:
+					verify_code(email, "000000")
+				answers.append(str(wrong.exception))
+
+		self.assertEqual(answers[0], answers[1])
 
 	def test_an_account_disabled_after_its_code_was_sent_cannot_sign_in(self):
 		frappe.set_user("Administrator")
@@ -126,6 +142,10 @@ class TestAuth(IntegrationTestCase):
 				send_code(self.email, "Unsent")
 
 		self.assertIn("could not send a code", str(refused.exception))
+		code = EmailCode(self.email).pending["code"]
+		logged = frappe.get_last_doc("Error Log", filters={"method": "Email code could not be sent"})
+		self.assertIn("SMTP down", logged.error)
+		self.assertNotIn(code, logged.error)
 
 	def test_malformed_input_is_refused_before_anything_is_sent(self):
 		with patch(SENDMAIL) as sendmail:
@@ -152,19 +172,19 @@ class TestAuth(IntegrationTestCase):
 		self.assertIn("Create your Frappe Cloud account", html)
 		self.assertIn("It expires in 10 minutes.", html)
 
-	def test_sending_is_limited_per_email(self):
-		with (
-			patch.object(frappe.local, "request", SimpleNamespace(method="POST"), create=True),
-			patch.object(frappe.local, "form_dict", {"email": self.email}, create=True),
-			patch.object(frappe.local, "request_ip", f"test-{frappe.generate_hash(length=8)}", create=True),
-			patch(SENDMAIL) as sendmail,
-		):
-			for _ in range(5):
-				send_code(self.email, "Limit Test")
-			with self.assertRaises(frappe.RateLimitExceededError):
-				send_code(self.email, "Limit Test")
+	def test_sending_is_limited_per_email_whatever_its_spelling(self):
+		spellings = [self.email, self.email.upper(), f" {self.email} ", self.email.title(), self.email]
+		other = f"other.{frappe.generate_hash(length=8)}@example.test"
+		self.addCleanup(EmailCode(other).discard)
 
-		self.assertEqual(sendmail.call_count, 5)
+		with patch(SENDMAIL) as sendmail:
+			for spelling in spellings:
+				send_code(spelling, "Limit Test")
+			with self.assertRaisesRegex(EmailCodeError, "Too many codes requested"):
+				send_code(self.email.upper(), "Limit Test")
+			send_code(other, "Someone Else")
+
+		self.assertEqual(sendmail.call_count, 6)
 
 	def test_the_hourly_signup_cap_refuses_a_new_account(self):
 		with patch(SENDMAIL):

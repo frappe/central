@@ -10,17 +10,9 @@ from central.users import create_user, send_sign_in_code, sign_in_with_code
 FULL_NAME_MAX_LENGTH = 140
 
 
-# nosemgrep: guest-whitelisted-method -- sending is limited by IP and by email.
+# nosemgrep: guest-whitelisted-method -- sending is limited by IP, and by email in EmailCode.
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 @rate_limit(limit=20, seconds=EmailCode.TTL_SECONDS, methods="POST")
-@rate_limit(
-	key="email",
-	ip_based=False,
-	endpoint="central.auth.code_send",
-	limit=5,
-	seconds=EmailCode.TTL_SECONDS,
-	methods="POST",
-)
 def send_code(email: str, full_name: str | None = None, product: str | None = None) -> dict:
 	"""Email a sign-in code. A new email gets a code too, and the account is made on verify."""
 	email = _validated_email(email)
@@ -31,14 +23,6 @@ def send_code(email: str, full_name: str | None = None, product: str | None = No
 # nosemgrep: guest-whitelisted-method -- a short-lived code and an attempt limit authenticate the user.
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 @rate_limit(limit=20, seconds=EmailCode.TTL_SECONDS, methods="POST")
-@rate_limit(
-	key="email",
-	ip_based=False,
-	endpoint="central.auth.code_verify",
-	limit=10,
-	seconds=EmailCode.TTL_SECONDS,
-	methods="POST",
-)
 def verify_code(email: str, code: str, full_name: str | None = None, product: str | None = None) -> dict:
 	"""Sign in with an emailed code. Returns `needs_name` when a new account has no name yet."""
 	email = _validated_email(email)

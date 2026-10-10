@@ -143,6 +143,19 @@ class TestServerOverview(IntegrationTestCase):
 		self.assertEqual(second, first)
 		get_client.return_value.get_vm_metrics.assert_called_once()
 
+	def test_an_unavailable_metrics_log_holds_no_frame_locals(self):
+		def refuse(*args, **kwargs):
+			headers = {"Authorization": "Bearer bearer-marker-" + frappe.generate_hash(length=8)}
+			raise AtlasConnectionError(f"down {len(headers)}")
+
+		with patch("central.integrations.servers.get_client") as get_client:
+			get_client.return_value.get_vm_metrics.side_effect = refuse
+			self.assertEqual(get_cached_metrics(self.server, START), {"available": False})
+
+		logged = frappe.get_last_doc("Error Log", filters={"method": ("like", "Atlas metrics unavailable:%")})
+		self.assertIn("AtlasConnectionError", logged.error)
+		self.assertNotIn("bearer-marker-", logged.error)
+
 	def test_preset_period_runs_until_now(self):
 		start, end = _metrics_window("7d", None, None)
 
