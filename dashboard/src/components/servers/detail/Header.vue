@@ -8,7 +8,8 @@ import { copyToClipboard } from '@/lib/clipboard'
 import { reportError, successToast } from '@/lib/feedback'
 import { formatPlanLabel } from '@/lib/planLabel'
 import { statusVisual } from '@/lib/serverMap'
-import { canStart, canStop, isSettingUp } from '@/lib/status'
+import { getServerMenu, type ServerMenuVerb } from '@/lib/serverMenu'
+import { isSettingUp } from '@/lib/status'
 import type { ServerOverview } from '@/types/servers'
 
 interface Props {
@@ -24,7 +25,9 @@ const props = defineProps<Props>()
 
 const emit = defineEmits<{
 	open: []
+	pilot: []
 	command: [command: Exclude<ServerCommand, 'terminate'>]
+	console: []
 	snapshot: []
 	resize: []
 	terminate: []
@@ -34,9 +37,6 @@ const visual = computed(() => statusVisual(props.server))
 const isLocked = computed(() => !!props.server.pending_action)
 const isRunning = computed(() => props.server.status === 'Running')
 const isUbuntu = computed(() => props.server.image_offering === 'ubuntu')
-const isReady = computed(
-	() => !isLocked.value && !isSettingUp(props.server.status),
-)
 
 const address = computed(
 	() => props.server.public_ipv6 || props.server.public_ipv4,
@@ -89,55 +89,24 @@ const canOpen = computed(
 		(!!props.siteUrl || !!props.server.gateway_url),
 )
 
-const menu = computed(() => {
-	const power = props.actions.power && !isLocked.value
-	const status = props.server.status
+// Overview and Open are the page itself and its primary button, so the menu omits them.
+const handlers: Partial<Record<ServerMenuVerb, () => void>> = {
+	pilot: () => emit('pilot'),
+	start: () => emit('command', 'start'),
+	stop: () => emit('command', 'stop'),
+	restart: () => emit('command', 'restart'),
+	resize: () => emit('resize'),
+	snapshot: () => emit('snapshot'),
+	console: () => emit('console'),
+	terminate: () => emit('terminate'),
+}
 
-	return [
-		power &&
-			canStart(status) && {
-				label: 'Start',
-				icon: 'lucide-play',
-				onClick: () => emit('command', 'start'),
-			},
-		power &&
-			canStop(status) && {
-				label: 'Restart',
-				icon: 'lucide-rotate-ccw',
-				onClick: () => emit('command', 'restart'),
-			},
-		power &&
-			canStop(status) && {
-				label: 'Stop',
-				icon: 'lucide-square',
-				onClick: () => emit('command', 'stop'),
-			},
-		props.actions.snapshot &&
-			isReady.value && {
-				label: 'Take snapshot',
-				icon: 'lucide-camera',
-				onClick: () => emit('snapshot'),
-			},
-		props.actions.resize &&
-			isReady.value && {
-				label: 'Resize',
-				icon: 'lucide-sliders-horizontal',
-				onClick: () => emit('resize'),
-			},
-		{
-			label: 'Copy server ID',
-			icon: 'lucide-copy',
-			onClick: () => copy(props.server.resource_id, 'Server ID'),
-		},
-		props.actions.terminate &&
-			isReady.value && {
-				label: 'Terminate',
-				icon: 'lucide-trash-2',
-				theme: 'red',
-				onClick: () => emit('terminate'),
-			},
-	].filter(Boolean)
-})
+const menu = computed(() =>
+	getServerMenu(props.server, props.actions, (verb) => handlers[verb]?.(), {
+		opensSite: !!props.siteUrl,
+		isOnServerPage: true,
+	}),
+)
 </script>
 
 <template>

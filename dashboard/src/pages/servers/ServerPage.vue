@@ -258,7 +258,9 @@ const terminate = async (
 					:opening="isOpening"
 					:busy="busy === server.resource_id"
 					@open="open"
+					@pilot="openBench(server)"
 					@command="command"
+					@console="openConsole(server)"
 					@snapshot="pendingSnapshot = server"
 					@resize="resizing = true"
 					@terminate="pendingTerminate = server"
@@ -278,7 +280,7 @@ const terminate = async (
 				<SnapshotsPanel
 					v-if="activeTab === 'snapshots'"
 					:server="server"
-					class="mt-4"
+					class="mt-6"
 				/>
 
 				<SettingsTab
@@ -295,14 +297,14 @@ const terminate = async (
 					icon="lucide-cloud-off"
 					title="Details couldn't load"
 					:description="overviewError"
-					class="mt-4"
+					class="mt-6"
 				>
 					<template #action>
 						<Button label="Retry" @click="reloadOverview" />
 					</template>
 				</EmptyState>
 
-				<div v-else-if="!details" class="mt-4 space-y-4" aria-busy="true">
+				<div v-else-if="!details" class="mt-6 space-y-4" aria-busy="true">
 					<div class="h-5 w-24 animate-pulse rounded-4 bg-surface-gray-2" />
 					<div class="grid gap-3 md:grid-cols-3 md:gap-4">
 						<div
@@ -320,7 +322,7 @@ const terminate = async (
 					:metrics="metrics"
 					:metrics-error="metricsError"
 					@refresh="reloadMetrics"
-					class="mt-4"
+					class="mt-6"
 				/>
 
 				<NetworkingTab
@@ -330,16 +332,7 @@ const terminate = async (
 					class="mt-6"
 				/>
 
-				<AccessTab
-					v-else
-					:server="server"
-					:overview="details"
-					:actions="actions"
-					:opening="isOpening"
-					class="mt-6"
-					@console="openConsole(server)"
-					@open="open"
-				/>
+				<AccessTab v-else :overview="details" class="mt-6" />
 			</template>
 		</div>
 
