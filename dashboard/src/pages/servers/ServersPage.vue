@@ -55,7 +55,7 @@ const {
 } = useServerFleet()
 
 const MAP_VIEW_OPTIONS = [
-	{ label: 'Your regions', value: 'fleet' },
+	{ label: 'My regions', value: 'fleet' },
 	{ label: 'World', value: 'world' },
 ]
 const { refreshing, stale, busy, opening, openConsole } = useServers()
