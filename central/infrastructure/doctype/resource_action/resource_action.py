@@ -38,10 +38,6 @@ GOAL_STATUS = {
 	"restart": "Running",
 	"terminate": "Terminated",
 }
-# A restart begins and ends at Running, so arriving at Running proves nothing on its own.
-# The region publishes no restart counter, so the action waits until it reports the server
-# away from the goal once. That report is what shows the restart really began.
-ROUND_TRIP_ACTIONS = ("restart",)
 # A command that has not reached its goal this long after dispatch has timed out.
 COMMAND_TIMEOUT_SECONDS = 10 * 60
 TERMINAL_STATES = ("Succeeded", "Failed", "Timed Out")
@@ -270,7 +266,7 @@ class ResourceAction(Document):
 			self.transition("Failed", envelope=build_envelope("ACTION_FAILED", action=self.action))
 		elif self.action != "create" and self.is_overdue:
 			self.transition("Timed Out", envelope=build_envelope("ACTION_TIMED_OUT", action=self.action))
-		elif self.action not in ROUND_TRIP_ACTIONS:
+		else:
 			self.transition("In Progress", notify=False)
 
 	@property
@@ -345,13 +341,7 @@ class ResourceAction(Document):
 		if self.action == "resize":
 			return False
 
-		goal = GOAL_STATUS[self.action]
-		if self.action in ROUND_TRIP_ACTIONS and self.status != "In Progress":
-			if status != goal:
-				self.transition("In Progress", notify=False)
-			return False
-
-		if status != goal:
+		if status != GOAL_STATUS[self.action]:
 			return False
 
 		self.transition("Succeeded")

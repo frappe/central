@@ -158,7 +158,7 @@ Record each operation separately from observed state and show a useful error on 
 
 An explicit stop sets the desired state to stopped. It is different from idle sleep, where desired state stays running. Customer traffic must not undo an explicit stop.
 
-A repeated running event cannot prove that a restart finished. Resource Action waits for one observed state change away from Running before Running can complete a restart. The region publishes no restart counter. An upstream restart-completion contract is open work. Do not mark false success.
+A restart completes when the region accepts it and Central then reads the server as Running. The host stores the restart before Atlas replies, and the region never reports a state other than running during a restart. A failed restart shows as an error on the server, which Central records as Failed.
 
 Opening Pilot uses a short-lived audience-bound token and the automatic admin name. Deny another Team's access.
 
