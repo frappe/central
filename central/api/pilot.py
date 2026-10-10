@@ -66,6 +66,7 @@ def heartbeat() -> dict:
 	}
 
 
+# nosemgrep: guest-whitelisted-method -- pilot_credential_auth verifies the caller below.
 @frappe.whitelist(allow_guest=True, methods=["GET"])
 @pilot_credential_auth
 def config() -> dict:

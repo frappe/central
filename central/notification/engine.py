@@ -339,6 +339,7 @@ def _notification_email(event, ctx, message=None) -> tuple[str, str]:
 	subject = _render_template(event.in_app_title, ctx) or event.name
 	text = (_render_template(event.in_app_body, ctx) or "").strip()
 	route = _render_template(event.action_route, ctx) if event.action_route else None
+	# nosemgrep: frappe-ssti -- a fixed template that ships with the app, filled only with values.
 	body = frappe.render_template(
 		"templates/emails/notification.html",
 		{
