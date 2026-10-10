@@ -28,3 +28,198 @@ body {
 .dialog-content .bg-surface-elevation-1 {
 	@apply bg-surface-base;
 }
+
+:root {
+	--route-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+	--route-ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+}
+
+/* Servers <-> New server. Both pages name their map card alike, so the browser morphs it
+   between them; the list, form, and summary enter and leave on their own. Names apply only
+   during this transition, because a named element leaves the page snapshot of every other one. */
+html[data-route-transition^="server-create"] .vt-server-map {
+	view-transition-name: server-map;
+}
+html[data-route-transition^="server-create"] .vt-server-list {
+	view-transition-name: server-list;
+}
+html[data-route-transition^="server-create"] .vt-server-form {
+	view-transition-name: server-form;
+}
+html[data-route-transition^="server-create"] .vt-server-summary {
+	view-transition-name: server-summary;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+	/* Named pieces own the motion. Fading the leftover page fights them and leaves a hole
+	   under the map (the summary) for the rest of the morph. */
+	html[data-route-transition^="server-create"]::view-transition-old(page),
+	html[data-route-transition^="server-create"]::view-transition-new(page) {
+		animation: none;
+	}
+
+	/* The map moves on screen, so it eases in and out. Both snapshots crossfade through a
+	   light blur so a growing box does not read as a stretched still of the old map. */
+	::view-transition-group(server-map) {
+		overflow: hidden;
+		animation-duration: 340ms;
+		animation-timing-function: var(--route-ease-in-out);
+	}
+	html[data-route-transition="server-create-back"]::view-transition-group(server-map) {
+		animation-duration: 240ms;
+		animation-timing-function: var(--route-ease-out);
+	}
+	::view-transition-old(server-map),
+	::view-transition-new(server-map) {
+		height: 100%;
+		object-fit: cover;
+		mix-blend-mode: normal;
+	}
+	::view-transition-old(server-map) {
+		animation: 180ms var(--route-ease-out) both route-blur-out;
+	}
+	::view-transition-new(server-map) {
+		animation: 340ms var(--route-ease-in-out) both route-blur-in;
+	}
+	html[data-route-transition="server-create-back"]::view-transition-old(server-map) {
+		animation-duration: 140ms;
+	}
+	html[data-route-transition="server-create-back"]::view-transition-new(server-map) {
+		animation: 240ms var(--route-ease-out) both route-blur-in;
+	}
+
+	/* Open: list clears, form settles. Cancel is a dismiss, so the form leaves faster than
+	   it arrived and the list follows once the map has started moving. */
+	html[data-route-transition="server-create"]::view-transition-old(server-list) {
+		animation: 160ms var(--route-ease-out) both route-slide-out-right;
+	}
+	html[data-route-transition="server-create"]::view-transition-new(server-form) {
+		animation: 240ms var(--route-ease-out) 60ms both route-slide-in-right;
+	}
+	html[data-route-transition="server-create-back"]::view-transition-old(server-form) {
+		animation: 140ms var(--route-ease-out) both route-slide-out-right;
+	}
+	html[data-route-transition="server-create-back"]::view-transition-new(server-list) {
+		animation: 220ms var(--route-ease-out) 40ms both route-slide-in-right;
+	}
+	html[data-route-transition="server-create"]::view-transition-new(server-summary) {
+		animation: 220ms var(--route-ease-out) 80ms both route-fade-slide-up;
+	}
+	html[data-route-transition="server-create-back"]::view-transition-old(server-summary) {
+		animation: 140ms var(--route-ease-out) both route-fade-slide-down;
+	}
+}
+
+/* Servers <-> Server. The detail is the moving page; the fleet only eases a little so the
+   map does not skate. Back is a dismiss: the detail leaves faster than it arrived. */
+@media (prefers-reduced-motion: no-preference) {
+	html[data-route-transition^="server-open"]::view-transition-image-pair(page) {
+		overflow: hidden;
+	}
+	html[data-route-transition^="server-open"]::view-transition-old(page),
+	html[data-route-transition^="server-open"]::view-transition-new(page) {
+		height: 100%;
+		width: 100%;
+		mix-blend-mode: normal;
+		background-color: var(--surface-base);
+	}
+	html[data-route-transition="server-open"]::view-transition-old(page) {
+		animation: 260ms var(--route-ease-out) both route-page-push-back;
+	}
+	html[data-route-transition="server-open"]::view-transition-new(page) {
+		z-index: 1;
+		animation: 280ms var(--route-ease-out) both route-page-slide-in;
+	}
+	html[data-route-transition="server-open-back"]::view-transition-old(page) {
+		z-index: 1;
+		animation: 220ms var(--route-ease-out) both route-page-slide-out;
+	}
+	html[data-route-transition="server-open-back"]::view-transition-new(page) {
+		animation: 240ms var(--route-ease-out) both route-page-return;
+	}
+}
+
+/* Reduced motion keeps a short crossfade on every route transition, so the change still
+   reads but nothing moves. Named pieces fade in place instead of morphing or sliding. */
+@media (prefers-reduced-motion: reduce) {
+	html[data-route-transition]::view-transition-group(*) {
+		animation: none;
+	}
+	html[data-route-transition]::view-transition-old(*),
+	html[data-route-transition]::view-transition-old(page) {
+		animation: 150ms ease-out both route-fade-out;
+	}
+	html[data-route-transition]::view-transition-new(*),
+	html[data-route-transition]::view-transition-new(page) {
+		animation: 150ms ease-out both route-fade-in;
+	}
+}
+
+@keyframes route-page-slide-in {
+	from {
+		transform: translateX(100%);
+	}
+}
+@keyframes route-page-slide-out {
+	to {
+		transform: translateX(100%);
+	}
+}
+@keyframes route-page-push-back {
+	to {
+		transform: translateX(-8%);
+	}
+}
+@keyframes route-page-return {
+	from {
+		opacity: 0.88;
+		filter: blur(2px);
+		transform: translateX(-8%);
+	}
+}
+@keyframes route-blur-in {
+	from {
+		opacity: 0;
+		filter: blur(2px);
+	}
+}
+@keyframes route-blur-out {
+	to {
+		opacity: 0;
+		filter: blur(2px);
+	}
+}
+@keyframes route-fade-slide-up {
+	from {
+		opacity: 0;
+		transform: translateY(8px);
+	}
+}
+@keyframes route-fade-slide-down {
+	to {
+		opacity: 0;
+		transform: translateY(8px);
+	}
+}
+@keyframes route-fade-in {
+	from {
+		opacity: 0;
+	}
+}
+@keyframes route-fade-out {
+	to {
+		opacity: 0;
+	}
+}
+@keyframes route-slide-in-right {
+	from {
+		opacity: 0;
+		transform: translateX(24px);
+	}
+}
+@keyframes route-slide-out-right {
+	to {
+		opacity: 0;
+		transform: translateX(24px);
+	}
+}

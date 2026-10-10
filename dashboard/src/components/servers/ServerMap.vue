@@ -366,7 +366,7 @@ function clickNode(node: MapNode): void {
 
 /* Merged or split nodes scale in from something, never from nothing. */
 .smn-enter-from .sm-centre {
-	transform: translate(-50%, -50%) scale(0.6);
+	transform: translate(-50%, -50%) scale(0.9);
 	opacity: 0;
 }
 .smn-leave-active {

@@ -15,7 +15,7 @@ interface MapPoint {
 }
 
 const MAX_FIT_ZOOM = 1.8
-const GLIDE_MS = 600
+const GLIDE_MS = 500
 
 /**
  * The map's viewport: contain-fits the world into `element`, then frames `getFrame()`.
@@ -101,6 +101,9 @@ export function useMapViewport(
 	// One continuous move: zoom interpolates in log space so the path never swings.
 	function glideTo(x: number, y: number, nextZoom: number): void {
 		cancelGlide()
+		// The glide is pure movement, so reduced motion reframes in place.
+		if (matchMedia('(prefers-reduced-motion: reduce)').matches)
+			return centreOn(x, y, nextZoom)
 		const startZoom = zoom.value
 		const from = {
 			x: x * scale.value + offsetX.value,

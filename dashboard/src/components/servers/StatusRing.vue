@@ -65,7 +65,7 @@ defineProps<StatusRingProps>()
 
 .status-ring-settled {
 	border: 2px solid var(--ink-green-6);
-	animation: status-ring-settled 900ms cubic-bezier(0.23, 1, 0.32, 1) forwards;
+	animation: status-ring-settled 600ms cubic-bezier(0.23, 1, 0.32, 1) forwards;
 }
 @keyframes status-ring-settled {
 	from {
@@ -75,6 +75,12 @@ defineProps<StatusRingProps>()
 	to {
 		opacity: 0;
 		transform: scale(1.4);
+	}
+}
+
+@keyframes status-ring-settled-fade {
+	to {
+		opacity: 0;
 	}
 }
 
@@ -89,8 +95,7 @@ defineProps<StatusRingProps>()
 		opacity: 0.6;
 	}
 	.status-ring-settled {
-		animation: none;
-		opacity: 0.6;
+		animation-name: status-ring-settled-fade;
 	}
 }
 </style>

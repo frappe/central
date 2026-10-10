@@ -9,7 +9,7 @@ defineEmits<{ retry: [] }>()
 
 <template>
 	<div
-		class="pointer-events-none absolute inset-x-0 top-4 flex justify-center px-4"
+		class="pointer-events-none absolute inset-x-0 top-2 flex justify-center px-2"
 	>
 		<Alert
 			v-if="stale.length"
