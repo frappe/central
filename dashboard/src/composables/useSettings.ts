@@ -89,9 +89,9 @@ export const SETTINGS_TABS: SettingsTabDef[] = [
 	{
 		value: 'ssh-keys',
 		group: 'Administration',
-		label: 'SSH Keys',
+		label: 'SSH keys',
 		icon: 'lucide-key-round',
-		title: 'SSH Keys',
+		title: 'SSH keys',
 		description: 'Team keys that sign in to your servers.',
 		component: SSHKeysForm,
 		requires: 'member',
