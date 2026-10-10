@@ -132,7 +132,9 @@ export function useSearchIndex() {
 					name: server.title || server.resource_id,
 					description: server.region,
 					icon: 'lucide-server',
-					onSelect: canViewServers.value ? () => openServer(server) : undefined,
+					onSelect: canOpenConsole.value
+						? () => openServer(server)
+						: () => void router.push(`/servers/${server.resource_id}`),
 				})),
 			}
 		}
@@ -142,7 +144,7 @@ export function useSearchIndex() {
 		const serverActions = servers.value.flatMap((server) => {
 			const site = sites.value.find((row) => row.server === server.name)
 			const allowed = getServerActions(server, {
-				open: canViewServers.value,
+				open: canOpenConsole.value,
 				power: canPowerServer.value,
 				resize: canResizeServer.value,
 				snapshot: canSnapshotServer.value,

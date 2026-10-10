@@ -82,7 +82,8 @@ const create = async (): Promise<void> => {
 		v-model="open"
 		title="Create bucket"
 		size="lg"
-		:options="{ backdropDismiss: !creating, showCloseButton: !creating }"
+		:dismissible="!creating"
+		:show-close-button="!creating"
 		@after-leave="reset"
 	>
 		<form class="space-y-5" @submit.prevent="create">

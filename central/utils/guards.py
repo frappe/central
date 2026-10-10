@@ -15,10 +15,6 @@ from central.iam import (
 	user_has_operator_bypass,
 )
 
-# Authorization decorators for the whitelisted Team endpoints — the guard runs
-# before the handler body. Ordered under @frappe.whitelist (which stays outermost);
-# functools.wraps keeps the original signature so Frappe still maps request args.
-
 
 @functools.cache
 def _signature(func: Callable) -> inspect.Signature:
@@ -40,6 +36,7 @@ def _call_arg(func: Callable, args: tuple, kwargs: dict, name: str):
 def _resolve_team_call(func: Callable, args: tuple, kwargs: dict) -> inspect.BoundArguments:
 	bound = _bound_call(func, args, kwargs)
 	bound.arguments["team"] = resolve_team(frappe.session.user, bound.arguments.get("team"))
+
 	return bound
 
 
@@ -52,13 +49,16 @@ def require_team_member(func: Callable) -> Callable:
 		team = bound.arguments["team"]
 		if not user_has_operator_bypass() and not is_active_team_member(frappe.session.user, team):
 			frappe.throw(_("You are not a member of this team."), frappe.PermissionError)
+
 		return func(*bound.args, **bound.kwargs)
 
 	return wrapper
 
 
 def require_capability(capability: str, message: str, server: str | None = None) -> Callable:
-	"""Gate an endpoint on `capability` for the `team` argument; operators bypass.
+	"""Gate an endpoint on `capability` for the `team` argument; operators bypass. Place it
+	under @frappe.whitelist. Pass `message` as `_lt(...)`: the decorator runs at import, before
+	a request has a language.
 
 	1. When the argument named by `server` holds a server, the user needs the capability
 	   on that server.
@@ -76,7 +76,8 @@ def require_capability(capability: str, message: str, server: str | None = None)
 			else:
 				allowed = can_on_any_server(frappe.session.user, team, capability)
 			if not allowed:
-				frappe.throw(_(message), frappe.PermissionError)
+				frappe.throw(str(message), frappe.PermissionError)
+
 			return func(*bound.args, **bound.kwargs)
 
 		return wrapper
@@ -95,6 +96,7 @@ def require_self_or_operator(func: Callable) -> Callable:
 			frappe.throw(
 				_("Only System Manager can inspect another user's permissions"), frappe.PermissionError
 			)
+
 		return func(*args, **kwargs)
 
 	return wrapper

@@ -31,11 +31,8 @@ AVAILABILITY = ("Available", "Not Available")
 
 
 def accept_atlas_report(raw_body: bytes, region: str | None, signature: str | None) -> dict:
-	"""Authenticate one Atlas delivery, then queue it when it tells Central something new.
-
-	The reply is the sender's receipt: `queued` when a job will apply the report, and
-	`ignored` with a reason when there is nothing to do. Only an authentication failure
-	raises, because only that is worth a retry."""
+	"""Authenticate one Atlas delivery, then queue it when it holds something new.
+	Only an authentication failure raises, because only that is worth a retry."""
 	verified_region = _verified_atlas_region(region, signature, raw_body)
 
 	report = _parsed(raw_body)
@@ -56,6 +53,7 @@ def accept_atlas_report(raw_body: bytes, region: str | None, signature: str | No
 		region=verified_region,
 		report=report,
 	)
+
 	return {"queued": True, "resource_id": server.name}
 
 
@@ -77,6 +75,7 @@ def accept_cargo_report(raw_body: bytes, region: str | None, signature: str | No
 		return _ignored(f"unsupported status '{status}'")
 
 	detail = ServiceDetail.record_report(cargo, service, status, report.get("service_endpoint"))
+
 	return {"recorded": True, "service_detail": detail}
 
 
@@ -233,9 +232,12 @@ def _signature_matches(secret: str, raw_body: bytes, signature: str) -> bool:
 
 
 def _reject(reason: str) -> NoReturn:
-	"""Log which check failed, for an operator reading repeated rejections, and answer
-	every caller with the same sentence so none of them can probe for the reason."""
-	frappe.log_error(title="Rejected regional state report", message=reason)
+	"""Log which check failed, at most once per caller per window, and answer every caller
+	with the same sentence so none of them can probe for the reason."""
+	logged_key = f"state-delivery:rejected:{frappe.local.request_ip}"
+	if not frappe.cache.get_value(logged_key):
+		frappe.log_error(title="Rejected regional state report", message=reason[:200])
+		frappe.cache.set_value(logged_key, 1, expires_in_sec=10 * 60)
 
 	frappe.throw(_("Invalid signature."), frappe.PermissionError)
 

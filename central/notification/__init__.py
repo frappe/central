@@ -1,20 +1,5 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
-"""The team-facing in-app notification feed — the console's unified inbox.
-
-One writer, ``create_notification``, records a ``Team Notification`` and nudges the
-console over realtime so the bell badge updates live. Every subsystem (billing,
-server/infra) funnels through here, so the feed is one queryable source of truth —
-distinct from *email* delivery (billing's ``platform.notifications``, which records a
-``Billing Notification Log`` and honours the team's email preferences).
-
-An in-app notification is NOT gated by email preferences: a failure or warning
-belongs in the dashboard regardless of whether the team wants an email about it.
-
-Read state is per-user: each member tracks which notifications they have read via
-the ``Notification Read`` doctype rather than mutating the shared ``is_read`` flag
-on ``Team Notification``.
-"""
 
 import frappe
 from frappe.query_builder import Criterion, Order
@@ -42,12 +27,9 @@ def create_notification(
 	action_route: str | None = None,
 	publish: bool = True,
 ):
-	"""Record one in-app notification for a team and nudge the console.
-
-	Returns the inserted ``Team Notification``. The realtime nudge carries only the
-	team (no content), so it never leaks across sockets; the console refetches the
-	feed for the active team when it fires.
-	"""
+	"""Record one in-app notification for a team and nudge the console. Email preferences do
+	not apply: a failure belongs in the feed whether or not the team wants an email. The nudge
+	carries only the team, so it leaks nothing across sockets."""
 	if category not in CATEGORIES:
 		frappe.throw(frappe._("Unsupported notification category {0}.").format(frappe.bold(category)))
 	if severity not in SEVERITIES:
@@ -78,6 +60,7 @@ def create_notification(
 		from central.notification.engine import publish_team_nudge
 
 		publish_team_nudge(team)
+
 	return doc
 
 
@@ -90,6 +73,7 @@ def get_reference_server(reference_doctype: str | None, reference_name: str | No
 		return reference_name if frappe.db.exists("Virtual Machine", reference_name) else None
 	if reference_doctype in SERVER_LINKED_DOCTYPES:
 		return frappe.db.get_value(reference_doctype, reference_name, "server") or None
+
 	return None
 
 
@@ -110,11 +94,8 @@ _FEED_FIELDS = (
 
 
 def _visible_conditions(tn, team: str, user: str, category: str | None) -> list:
-	"""WHERE criteria for the notifications a user may see in a team's feed — shared
-	by the list and the unread count so they never disagree: the team, an optional
-	category, the per-row capability gate (skipped for operators), and the user's
-	in-app category preferences. ``resolve_user_grants`` is request-cached, so the
-	cap set costs one join per request, not one per row."""
+	"""Conditions for the notifications a user may see in a team's feed. The list and the
+	unread count share them, so the two never disagree."""
 	from central.iam import user_has_operator_bypass
 
 	conds = [tn.team == team]
@@ -132,6 +113,7 @@ def _visible_conditions(tn, team: str, user: str, category: str | None) -> list:
 	)
 	if disabled:
 		conds.append(tn.category.notin(disabled))
+
 	return conds
 
 
@@ -149,6 +131,7 @@ def _capability_gate(tn, team: str, user: str):
 			gate = gate | (tn.required_cap == cap)
 		else:
 			gate = gate | ((tn.required_cap == cap) & tn.server.isin(sorted(servers)))
+
 	return gate
 
 
@@ -160,6 +143,7 @@ def unread_count(team: str, *, user: str | None = None) -> int:
 	user = user or frappe.session.user
 	tn = frappe.qb.DocType("Team Notification")
 	nr = frappe.qb.DocType("Notification Read")
+
 	return (
 		frappe.qb.from_(tn)
 		.left_join(nr)
@@ -174,6 +158,7 @@ def unread_names(team: str, user: str, *, limit: int) -> list[str]:
 	"""Return one bounded batch of visible unread notification names."""
 	tn = frappe.qb.DocType("Team Notification")
 	nr = frappe.qb.DocType("Notification Read")
+
 	return (
 		frappe.qb.from_(tn)
 		.left_join(nr)
@@ -195,12 +180,8 @@ def list_notifications(
 	category: str | None = None,
 	unread_only: bool = False,
 ) -> dict:
-	"""One page of the team's notification feed, filtered per-user, newest first.
-
-	One indexed query: the visible-notification filter (team, per-row capability,
-	in-app category preference) is pushed into SQL, LEFT JOINed to the per-user
-	``Notification Read`` for read state. Operators see everything. Reads one row
-	past ``limit`` to report ``has_next_page`` without a second COUNT."""
+	"""One page of the team's feed for the user, newest first, with read state. Reads one row
+	past ``limit`` to report ``has_next_page`` without a count."""
 	user = user or frappe.session.user
 	start = max(0, frappe.utils.cint(start))
 	limit = max(1, frappe.utils.cint(limit))

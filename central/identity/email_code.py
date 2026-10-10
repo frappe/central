@@ -5,6 +5,7 @@ from contextlib import contextmanager
 
 import frappe
 from frappe import _
+from frappe.utils import cint
 
 
 class EmailCodeError(frappe.ValidationError):
@@ -14,12 +15,24 @@ class EmailCodeError(frappe.ValidationError):
 class EmailCode:
 	"""A one-time code that proves the holder reads one mailbox."""
 
-	TTL_SECONDS = 10 * 60
-	MAX_ATTEMPTS = 5
-
 	def __init__(self, email: str) -> None:
 		self.email = email
 		self.cache_key = f"auth:email-code:{email}"
+
+	@staticmethod
+	def get_expiry_seconds() -> int:
+		"""Frappe's email-link login expiry, which treats an unset value as 10 minutes."""
+		return (cint(frappe.get_system_settings("login_with_email_link_expiry")) or 10) * 60
+
+	@staticmethod
+	def get_max_attempts() -> int:
+		return cint(frappe.get_cached_value("Central Settings", "Central Settings", "sign_in_code_attempts"))
+
+	@staticmethod
+	def get_max_sends() -> int:
+		return cint(
+			frappe.get_cached_value("Central Settings", "Central Settings", "sign_in_codes_per_email")
+		)
 
 	@property
 	def pending(self) -> dict | None:
@@ -27,14 +40,33 @@ class EmailCode:
 
 	def send(self, subject: str, heading: str, full_name: str | None = None) -> None:
 		"""Email a fresh code. Failed attempts carry over, so a resend cannot reset the lock."""
-		pending = self.pending or {}
-		attempts = pending.get("attempts", 0)
-		if attempts >= self.MAX_ATTEMPTS:
-			self._throw_locked()
-
+		pending = self._next_pending()
 		code = f"{secrets.randbelow(900_000) + 100_000}"
-		self._store({"code": code, "attempts": attempts, "full_name": full_name or pending.get("full_name")})
+		self._store({**pending, "code": code, "full_name": full_name or pending["full_name"]})
 		self._mail(code, subject.format(code), heading)
+
+	def hold(self) -> None:
+		"""Store a code that never matches, so an address that may not sign in answers like any other."""
+		self._store({**self._next_pending(), "code": secrets.token_hex(16)})
+
+	def _next_pending(self) -> dict:
+		"""The entry for one more send. Sends and failed attempts carry over until the entry expires."""
+		pending = self.pending or {}
+		if pending.get("attempts", 0) >= self.get_max_attempts():
+			self._throw_locked()
+		if pending.get("sends", 0) >= self.get_max_sends():
+			frappe.throw(
+				_("Too many codes requested. Wait {0} minutes, then try again.").format(
+					self.get_expiry_seconds() // 60
+				),
+				EmailCodeError,
+			)
+
+		return {
+			"attempts": pending.get("attempts", 0),
+			"sends": pending.get("sends", 0) + 1,
+			"full_name": pending.get("full_name"),
+		}
 
 	@contextmanager
 	def lock(self):
@@ -47,20 +79,21 @@ class EmailCode:
 		pending = self.pending
 		if not pending:
 			frappe.throw(_("That code has expired. Request a new code."), EmailCodeError)
-		if pending["attempts"] >= self.MAX_ATTEMPTS:
+		if pending["attempts"] >= self.get_max_attempts():
 			self._throw_locked()
 
 		if not secrets.compare_digest(pending["code"], code):
 			pending["attempts"] += 1
 			self._store(pending)
 			frappe.throw(_("That code is incorrect. Check your latest email and try again."), EmailCodeError)
+
 		return pending
 
 	def discard(self) -> None:
 		frappe.cache.delete_value(self.cache_key)
 
 	def _store(self, pending: dict) -> None:
-		frappe.cache.set_value(self.cache_key, pending, expires_in_sec=self.TTL_SECONDS)
+		frappe.cache.set_value(self.cache_key, pending, expires_in_sec=self.get_expiry_seconds())
 
 	def _mail(self, code: str, subject: str, heading: str) -> None:
 		try:
@@ -68,11 +101,12 @@ class EmailCode:
 				recipients=[self.email],
 				subject=subject,
 				template="verification_code",
-				args={"code": code, "heading": heading, "expires_minutes": self.TTL_SECONDS // 60},
+				args={"code": code, "heading": heading, "expires_minutes": self.get_expiry_seconds() // 60},
 				now=True,
 			)
 		except Exception:
-			frappe.log_error(title="Email code could not be sent")
+			# No frame locals: they hold the code.
+			frappe.log_error(title="Email code could not be sent", message=frappe.get_traceback())
 			# A mail error can queue its own message. The user reads only ours.
 			frappe.clear_messages()
 			frappe.throw(_("We could not send a code to this email. Check the address and try again."))
@@ -80,7 +114,7 @@ class EmailCode:
 	def _throw_locked(self) -> None:
 		frappe.throw(
 			_("Too many incorrect codes. Wait {0} minutes, then request a new code.").format(
-				self.TTL_SECONDS // 60
+				self.get_expiry_seconds() // 60
 			),
 			EmailCodeError,
 		)

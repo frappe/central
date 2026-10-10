@@ -14,7 +14,7 @@ The server creation form lists the active Team's keys. The Add SSH key action cr
 
 ## Rotation
 
-Changing a public key queues synchronization for each live server that selected it. The integration layer sends the complete selected key list through Atlas `PUT /virtual-machines/{id}/ssh-keys`. It serializes updates for one server and reads the latest public values before each PUT. The key record shows the names of servers that failed, and an operator or key manager can retry. Delete is refused while a server, a pending creation, or a failed creation that can still be retried selects the key.
+Changing a public key queues synchronization for each live server that selected it. The integration layer sends the complete selected key list through Atlas `PUT /virtual-machines/{id}/ssh-keys`. It serializes updates for one server and reads the latest public values before each PUT. The key record shows the names of servers that failed, and an operator or key manager can retry. In Desk, **Retry Sync** on the key queues the synchronization again. Delete is refused while a server, a pending creation, or a failed creation that can still be retried selects the key.
 
 ## Validation
 

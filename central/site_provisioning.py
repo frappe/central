@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import re
-
 import frappe
 from frappe import _
 
@@ -10,7 +8,7 @@ from central.iam import get_user_team_names, resolve_team
 from central.identity.doctype.team.team import Team
 from central.integrations.images import list_images
 from central.resource_actions import submit_request
-from central.server_models import SiteCreation
+from central.server_models import DNS_LABEL, SiteCreation
 from central.signups.doctype.product.product import get_signup_product
 
 SIGNUP_FLOW = "Signup"
@@ -23,7 +21,6 @@ SIGNUP_IMAGE_TAGS = {"has_site": "1", "frappe_version": "develop"}
 # tag, so Central drops tagged images itself.
 SIGNUP_APP_TAG = "app"
 # One DNS label: what a customer may name a site, and all the proxy will route.
-SUBDOMAIN_PATTERN = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?")
 RESERVED_SUBDOMAINS = frozenset({"admin", "atlas", "cargo", "proxy", "site", "www"})
 
 
@@ -33,21 +30,15 @@ def create_trial_site(
 	request_key: str,
 	product: str | None = None,
 ) -> dict:
-	"""Start the machine a new customer's trial site lives on, under the name they chose.
-
-	The image already carries a built site, so the only work is to start the machine.
-	That runs through the same creation path a bought server takes, which is what gives a
-	trial the same record, retry and error handling. The name rides on the request,
-	because the site it will rename does not exist until the region answers.
-
-	The durable action queues the regional work after the request commits. The customer can
-	return to the same action while Central finishes or recovers the operation."""
+	"""Start the machine for a new trial site, under the name the customer chose. It takes the
+	same creation path as a bought server, so a trial gets the same record, retry and errors."""
 
 	team = resolve_team(frappe.session.user, team)
 	signup_app = get_signup_product(product).signup_app if product else None
 	subdomain = validated_subdomain(subdomain)
 	configuration = trial_configuration(team, signup_app)
 	site = SiteCreation(product=product or None)
+
 	return submit_request(
 		team=team,
 		request_key=request_key,
@@ -69,6 +60,7 @@ def create_trial_team(user: str, attribution: dict | None = None) -> str | None:
 
 	full_name = frappe.db.get_value("User", user, "full_name") or user
 	team_name = _("{0}'s Team").format(full_name)
+
 	return Team.create_for_current_user(team_name, first_touch(**(attribution or {}))).name
 
 
@@ -109,7 +101,7 @@ def subdomain_availability(subdomain: str) -> dict:
 	zone = trial_zone()
 	answer = {"subdomain": subdomain, "domain": zone, "fqdn": f"{subdomain}.{zone}"}
 
-	if not SUBDOMAIN_PATTERN.fullmatch(subdomain):
+	if not DNS_LABEL.fullmatch(subdomain):
 		reason = _("Use lowercase letters, numbers and hyphens, starting and ending with one.")
 	elif subdomain in RESERVED_SUBDOMAINS:
 		reason = _("That name is reserved. Please choose another.")
@@ -146,11 +138,8 @@ def trial_regions() -> list[str]:
 
 
 def trial_configuration(team: str, signup_app: str | None = None) -> dict:
-	"""The one region, image and plan a trial site starts on.
-
-	The plan should hold the shape the Pilot image was baked at. A region restores a
-	warm image from memory only when the vCPU, memory and disk all match, and a trial
-	that misses the shape cold-boots instead."""
+	"""The region, image and plan a trial site starts on. The plan must match the shape the
+	image was baked at, or the region cold-boots instead of restoring a warm image."""
 	offering = signup_offering()
 	region, plan = trial_region_and_plan(team)
 	images = trial_images(team, region, offering, signup_app)
@@ -158,6 +147,7 @@ def trial_configuration(team: str, signup_app: str | None = None) -> dict:
 		frappe.throw(_("No trial image is available right now. Please try again shortly."))
 
 	newest = max(images, key=lambda image: image["created_at"])
+
 	return {"region": region, "offering": offering, "image_id": newest["id"], "plan": plan}
 
 
@@ -168,6 +158,7 @@ def trial_images(team: str, region: str, offering: str, signup_app: str | None) 
 		return list_images(team, region, offering, SIGNUP_FLOW, extra_tags=tags)["items"]
 
 	images = list_images(team, region, offering, SIGNUP_FLOW, extra_tags=SIGNUP_IMAGE_TAGS)["items"]
+
 	return [image for image in images if SIGNUP_APP_TAG not in image["tags"]]
 
 
@@ -191,6 +182,7 @@ def signup_offering() -> str:
 		frappe.throw(_("No signup image offering is configured."))
 
 	dedicated = [row for row in offerings if row.available_in == SIGNUP_FLOW]
+
 	return (dedicated or offerings)[0].name
 
 

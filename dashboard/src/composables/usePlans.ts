@@ -48,9 +48,7 @@ export function usePlans(
 			image_id?: string
 		}
 	>({
-		url: method(
-			imageSelection ? 'central.api.images.eligible_plans' : API.eligiblePlans,
-		),
+		url: method(imageSelection ? API.imageEligiblePlans : API.eligiblePlans),
 		params: () => ({
 			team: activeTeam.value!,
 			...(imageSelection

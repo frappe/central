@@ -152,7 +152,6 @@ const dialogOptions = computed(() => ({
 		{
 			label: 'Save',
 			variant: 'solid' as const,
-			loading: submitting.value,
 			disabled: !canSubmit.value,
 			onClick: submit,
 		},

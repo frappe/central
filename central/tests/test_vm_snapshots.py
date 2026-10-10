@@ -316,6 +316,18 @@ class TestSnapshotAccess(SnapshotTestCase):
 		self.assertNotIn(other.name, names)
 		self.assertFalse(frappe.has_permission("VM Snapshot", doc=other.name, user=self.viewer))
 
+	def test_an_untitled_snapshot_is_named_after_its_server(self):
+		snapshot = frappe.get_doc(
+			{
+				"doctype": "VM Snapshot",
+				"team": self.team,
+				"server": self.server.name,
+				"snapshot_type": "Manual",
+			}
+		).insert(ignore_permissions=True)
+
+		self.assertEqual(snapshot.title, f"{self.server.title or self.server.name} snapshot")
+
 	def test_a_viewer_cannot_take_or_delete_a_snapshot(self):
 		snapshot = self._available()
 

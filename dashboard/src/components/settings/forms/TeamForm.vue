@@ -38,7 +38,6 @@ const deleteOptions = computed(() => ({
 			label: 'Delete team',
 			variant: 'solid' as const,
 			theme: 'red' as const,
-			loading: saving.value,
 			onClick: onDelete,
 		},
 	],

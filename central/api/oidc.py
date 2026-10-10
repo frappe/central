@@ -1,7 +1,3 @@
-from __future__ import annotations
-
-import json
-
 import frappe
 from frappe.oauth import generate_json_error_response
 from oauthlib.oauth2 import FatalClientError, OAuth2Error
@@ -28,7 +24,7 @@ def get_token() -> None:
 	except (FatalClientError, OAuth2Error) as error:
 		return generate_json_error_response(error)
 
-	frappe.local.response = frappe._dict(json.loads(body))
+	frappe.local.response = frappe.parse_json(body)
 	if frappe.local.response.error:
 		frappe.local.response["http_status_code"] = 400
 
@@ -37,4 +33,5 @@ def get_token() -> None:
 def get_jwks() -> Response:
 	response = Response(mimetype="application/json")
 	response.data = frappe.as_json(CentralSSOSettings.instance().get_jwks("oidc"))
+
 	return response

@@ -32,8 +32,6 @@ class Product(Document):
 		title: DF.Data
 	# end: auto-generated types
 
-	_DOCTYPE_NAME = "Product"
-
 	def validate(self) -> None:
 		if not PRODUCT_KEY_PATTERN.fullmatch(self.product_key or ""):
 			frappe.throw(_("Use lowercase letters, numbers and hyphens for the product key."))
@@ -54,6 +52,7 @@ class Product(Document):
 		from central.site_provisioning import product_image_tags, signup_offering
 
 		self.check_permission("write")
+
 		return preview_images(
 			signup_offering(), region, offset, extra_tags=product_image_tags(self.signup_app)
 		)

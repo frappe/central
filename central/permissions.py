@@ -1,6 +1,6 @@
-from __future__ import annotations
-
 import frappe
+from frappe import _
+from frappe.realtime import has_permission as has_realtime_permission
 
 from central.iam import (
 	ALL_SERVERS,
@@ -20,30 +20,43 @@ def _team_filter(user: str) -> str:
 	teams = get_user_team_names(user)
 	if not teams:
 		return "1 = 0"
+
 	return f"`tabTeam`.`name` in ({_escape_values(teams)})"
 
 
 def team_query_conditions(user: str | None = None) -> str:
+	"""1. An operator sees every team.
+	2. A user sees each team they are an active member of, and no other."""
 	user = user or frappe.session.user
 	if user_has_operator_bypass(user):
 		return ""
+
 	return _team_filter(user)
 
 
 def team_has_permission(doc, user: str | None = None, ptype: str | None = None, **kwargs) -> bool:
+	"""1. An operator may do anything.
+	2. Create: a new team may hold only its creator, as Owner. Others join by invitation.
+	3. Write: `team:edit` or `team:manage_members`.
+	4. Delete: `team:delete`.
+	5. Read: an active member."""
 	user = user or frappe.session.user
 	if user_has_operator_bypass(user):
 		return True
 	if ptype == "create":
-		return True
+		return all(member.user == user and member.role == "Owner" for member in doc.members)
 	if ptype == "write":
 		return can(user, doc.name, "team:edit") or can(user, doc.name, "team:manage_members")
 	if ptype == "delete":
 		return can(user, doc.name, "team:delete")
+
 	return doc.name in get_user_team_names(user)
 
 
 def team_role_query_conditions(user: str | None = None) -> str:
+	"""1. An operator sees every role.
+	2. A user sees the system roles.
+	3. A user sees the custom roles of each team they are a member of."""
 	user = user or frappe.session.user
 	if user_has_operator_bypass(user):
 		return ""
@@ -56,13 +69,21 @@ def team_role_query_conditions(user: str | None = None) -> str:
 
 
 def team_role_has_permission(doc, user: str | None = None, ptype: str | None = None, **kwargs) -> bool:
+	"""1. An operator may do anything.
+	2. A system role is allowed to everyone.
+	3. A custom role is allowed to members of its team. Writes go through the API, which
+	   checks `team:manage_members`, and the DocType grants customers no write."""
 	user = user or frappe.session.user
 	if user_has_operator_bypass(user):
 		return True
+
 	return bool(doc.is_system) or doc.team in get_user_team_names(user)
 
 
 def team_invitation_query_conditions(user: str | None = None) -> str:
+	"""1. An operator sees every invitation.
+	2. A user sees invitations addressed to their email.
+	3. A user sees the invitations of each team where they hold `team:manage_members`."""
 	user = user or frappe.session.user
 	if user_has_operator_bypass(user):
 		return ""
@@ -71,15 +92,20 @@ def team_invitation_query_conditions(user: str | None = None) -> str:
 	teams = get_user_team_names_with_capability(user, "team:manage_members")
 	if teams:
 		conditions.append(f"`tabTeam Invitation`.`team` in ({_escape_values(teams)})")
+
 	return f"({' or '.join(conditions)})"
 
 
 def team_invitation_has_permission(doc, user: str | None = None, ptype: str | None = None, **kwargs) -> bool:
+	"""1. An operator may do anything.
+	2. Create: `team:manage_members` on the team.
+	3. Anything else: the invitee, or `team:manage_members` on the team."""
 	user = user or frappe.session.user
 	if user_has_operator_bypass(user):
 		return True
 	if ptype == "create":
 		return can(user, doc.team, "team:manage_members")
+
 	return doc.email == user or can(user, doc.team, "team:manage_members")
 
 
@@ -115,6 +141,7 @@ def team_ssh_key_has_permission(doc, user: str | None = None, ptype: str | None 
 	user = user or frappe.session.user
 	if ptype in MUTATING_PERMISSION_TYPES or user_has_operator_bypass(user):
 		return _team_field_has_permission(doc, (), ("server:ssh-key",), user, ptype)
+
 	return bool(doc.team) and can_on_any_server(user, doc.team, "server:view")
 
 
@@ -181,22 +208,6 @@ def vm_snapshot_has_permission(doc, user: str | None = None, ptype: str | None =
 	return _server_scoped_has_permission(doc, "server", user, ptype)
 
 
-def iam_permission_probe_query_conditions(user: str | None = None) -> str:
-	user = user or frappe.session.user
-	if user_has_operator_bypass(user):
-		return ""
-	return f"`tabIAM Permission Probe`.`user` = {frappe.db.escape(user)}"
-
-
-def iam_permission_probe_has_permission(
-	doc, user: str | None = None, ptype: str | None = None, **kwargs
-) -> bool:
-	user = user or frappe.session.user
-	if user_has_operator_bypass(user):
-		return True
-	return doc.user == user
-
-
 def user_notification_preference_query_conditions(user: str | None = None) -> str:
 	"""1. A System Manager sees every preference.
 	2. A user sees only preferences owned by that user.
@@ -204,6 +215,7 @@ def user_notification_preference_query_conditions(user: str | None = None) -> st
 	user = user or frappe.session.user
 	if user_has_operator_bypass(user):
 		return ""
+
 	return f"`tabUser Notification Preference`.`user` = {frappe.db.escape(user)}"
 
 
@@ -217,6 +229,7 @@ def user_notification_preference_has_permission(
 	user = user or frappe.session.user
 	if user_has_operator_bypass(user):
 		return True
+
 	return doc.user == user and bool(doc.team) and is_active_team_member(user, doc.team)
 
 
@@ -262,6 +275,17 @@ def team_service_has_permission(doc, user: str | None = None, ptype: str | None 
 	2. Customers have no direct permission because the record contains service credentials.
 	"""
 	return user_has_operator_bypass(user or frappe.session.user)
+
+
+@frappe.whitelist(allow_guest=True)  # nosemgrep -- same surface as frappe.realtime.has_permission
+def realtime_has_permission(doctype: str, name: str, ptype: str = "read") -> bool:
+	"""1. A doctype room of a team-scoped DocType is for operators only: it carries every team's changes.
+	2. Everything else follows Frappe's own check."""
+	is_team_scoped = doctype in frappe.get_hooks("has_permission")
+	if not name and is_team_scoped and not user_has_operator_bypass(frappe.session.user):
+		frappe.throw(_("Not permitted"), frappe.PermissionError)
+
+	return has_realtime_permission(doctype, name, ptype)
 
 
 def _operator_only_query_conditions(user: str | None = None) -> str:

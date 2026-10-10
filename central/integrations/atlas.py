@@ -65,6 +65,7 @@ class AtlasClient:
 
 		tenant_id = frappe.db.get_value("Team", team, "tenant_id")
 		validate_tenant_id(tenant_id)
+
 		return cls(instance, tenant_id)
 
 	def _get(self, path: str, params: dict | None = None) -> dict:
@@ -80,6 +81,7 @@ class AtlasClient:
 		"""Metal refuses a long key only after Atlas saved a draft machine."""
 		if len(metadata) > MAXIMUM_METADATA_ENTRIES:
 			frappe.throw(_("Guest metadata has more than {0} entries.").format(MAXIMUM_METADATA_ENTRIES))
+
 		for key in metadata:
 			if len(key.encode()) > MAXIMUM_METADATA_KEY_BYTES:
 				frappe.throw(
@@ -111,6 +113,7 @@ class AtlasClient:
 		items = page.get("items")
 		if not isinstance(items, list):
 			frappe.throw(_("Atlas returned an invalid server page."), AtlasConnectionError)
+
 		return items
 
 	def list_hosts(self) -> list[dict]:
@@ -198,6 +201,7 @@ class AtlasClient:
 			frappe.throw(_("Atlas returned an invalid console token."), AtlasConnectionError)
 
 		base_url, _region_id = self._configuration()
+
 		return f"{base_url}/vm_console#token={quote(token, safe='')}"
 
 	def check_connection(self) -> None:
@@ -244,6 +248,7 @@ class AtlasClient:
 		items = page.get("items")
 		if not isinstance(items, list):
 			frappe.throw(_("Atlas returned an invalid image page."), AtlasConnectionError)
+
 		return items[0] if items else None
 
 	def get_machine_image(self, image_id: str) -> dict:
@@ -413,6 +418,7 @@ class AtlasClient:
 			return None
 
 		value = error.get(field) if isinstance(error, dict) else None
+
 		return value if isinstance(value, str) else None
 
 	def _read_response(self, response: requests.Response, method: str = "GET") -> dict:

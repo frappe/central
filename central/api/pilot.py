@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import functools
 from collections.abc import Callable
 
@@ -12,12 +10,6 @@ from central.services.doctype.service_detail.service_detail import ServiceDetail
 
 TELEMETRY = "telemetry"
 
-# The pilot→Central surface. The pilot (the on-VM agent, ~/pilot) authenticates with
-# the opaque token Central minted for it (stored in the bench's bench.toml).
-# The token rides an X-Pilot-Token header, NOT Authorization: Frappe's validate_auth()
-# claims the Authorization header and 401s any scheme it can't map to a real user,
-# before an allow_guest endpoint runs. The decorator resolves the token to its Pilot
-# Credential and exposes it on frappe.local so handlers know who they serve.
 
 TOKEN_HEADER = "X-Pilot-Token"
 
@@ -25,7 +17,10 @@ TOKEN_HEADER = "X-Pilot-Token"
 def pilot_credential_auth(func: Callable) -> Callable:
 	"""Authenticate a pilot by its X-Pilot-Token. Exposes the resolved credential on
 	frappe.local.pilot_credential; rejects a missing/unknown/revoked/expired token with
-	401. Sits under @frappe.whitelist(allow_guest=True)."""
+	401. Sits under @frappe.whitelist(allow_guest=True).
+
+	Not the Authorization header: Frappe claims it and refuses any scheme it cannot map
+	to a user before an allow_guest endpoint runs."""
 
 	@functools.wraps(func)
 	def wrapper(*args, **kwargs):
@@ -33,6 +28,7 @@ def pilot_credential_auth(func: Callable) -> Callable:
 		if not credential:
 			frappe.throw(_("Invalid or expired pilot credential."), frappe.AuthenticationError)
 		frappe.local.pilot_credential = credential
+
 		return func(*args, **kwargs)
 
 	return wrapper
@@ -70,6 +66,7 @@ def heartbeat() -> dict:
 	}
 
 
+# nosemgrep: guest-whitelisted-method -- pilot_credential_auth verifies the caller below.
 @frappe.whitelist(allow_guest=True, methods=["GET"])
 @pilot_credential_auth
 def config() -> dict:
@@ -80,6 +77,7 @@ def config() -> dict:
 	from central.sso import jwks_url
 
 	credential = frappe.local.pilot_credential
+
 	return {"jwks_url": jwks_url(), "audience_id": credential.audience_id}
 
 
@@ -104,11 +102,9 @@ def storage_regions() -> dict[str, str]:
 @frappe.whitelist(allow_guest=True, methods=["GET"])
 @pilot_credential_auth
 def datum_token() -> dict:
-	"""The JWT this pilot presents to Datum, for metrics and for logs alike.
-
-	Separate from `config` because it expires: the pilot re-fetches on a 401 or when
-	the expiry nears. Refused until Atlas binds the VirtualMachine, since the rows would carry
-	no resource id."""
+	"""The JWT this Pilot presents to Datum for metrics and logs.
+	It expires, so the Pilot fetches it again on a 401. It is refused until Atlas binds the
+	Virtual Machine, because rows without a resource ID cannot be attributed."""
 	from central.sso import DATUM_TTL, mint_datum_token
 
 	credential: PilotCredential = frappe.local.pilot_credential
@@ -166,7 +162,6 @@ def enroll(bootstrap_token: str) -> dict:
 	pilot's long-lived credential plus its discovery config — in one call. The bootstrap
 	token (signed by Central, short-lived, single-use) is the only authentication; the
 	pilot has no credential yet."""
-	from central.infrastructure.doctype.pilot_credential.pilot_credential import PilotCredential
 	from central.sso import BOOTSTRAP_TTL, central_url, jwks_url, verify_bootstrap_token
 
 	grant = verify_bootstrap_token(bootstrap_token)
@@ -212,4 +207,5 @@ def get_team_identity_token(audience: str) -> dict:
 	credential = frappe.local.pilot_credential
 	team_name = frappe.db.get_value("Team", credential.team, "team_name")
 	hosts = get_server_hostnames(credential.team, credential.server)
+
 	return {"token": mint_team_identity_token(audience, credential.team, team_name, hosts)}

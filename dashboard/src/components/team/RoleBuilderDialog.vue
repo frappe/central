@@ -11,7 +11,7 @@ import { getErrorMessage } from '@/lib/feedback'
 const props = defineProps<{ open: boolean }>()
 const emit = defineEmits<{ 'update:open': [v: boolean]; created: [] }>()
 
-const { capabilities, creating, createRole } = useTeamRoles()
+const { capabilities, createRole } = useTeamRoles()
 
 const open = computed({
 	get: () => props.open,
@@ -52,7 +52,6 @@ const dialogOptions = computed(() => ({
 		{
 			label: 'Create role',
 			variant: 'solid' as const,
-			loading: creating.value,
 			disabled: !canSubmit.value,
 			onClick: submit,
 		},

@@ -4,6 +4,7 @@ import { API, method } from '@/api/methods'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { useSession } from '@/composables/useSession'
 import { reportError, successToast } from '@/lib/feedback'
+import { submitOrThrow } from '@/lib/frappeCall'
 import type { MyInvitation } from '@/types/api'
 
 // The signed-in user's pending invitations across teams — the invitee's inbox.
@@ -47,8 +48,7 @@ export function useMyInvitations() {
 	async function accept(invitation: MyInvitation): Promise<void> {
 		busy.value = invitation.name
 		try {
-			await acceptCall.submit({ invitation: invitation.name })
-			if (acceptCall.error) throw acceptCall.error
+			await submitOrThrow(acceptCall, { invitation: invitation.name })
 			successToast(`You joined ${invitation.team_name}`)
 			await session.reload()
 			session.setActiveTeam(invitation.team)
@@ -64,8 +64,7 @@ export function useMyInvitations() {
 	async function decline(invitation: MyInvitation): Promise<void> {
 		busy.value = invitation.name
 		try {
-			await declineCall.submit({ invitation: invitation.name })
-			if (declineCall.error) throw declineCall.error
+			await submitOrThrow(declineCall, { invitation: invitation.name })
 			successToast(`Declined the invite to ${invitation.team_name}`)
 			invitationsCall.reload()
 		} catch (e) {

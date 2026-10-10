@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import frappe
 from frappe import _
 
@@ -33,6 +31,7 @@ def list_team_ssh_keys(team: str) -> list[dict]:
 	)
 	for key in keys:
 		key["server_count"] = len({link.parent for link in links if link.team_ssh_key == key.name})
+
 	return keys
 
 
@@ -43,6 +42,7 @@ def create_team_ssh_key(team: str, title: str, public_key: str) -> dict:
 	key = frappe.get_doc(
 		{"doctype": "Team SSH Key", "team": team, "title": title, "public_key": public_key}
 	).insert()
+
 	return {
 		"name": key.name,
 		"title": key.title,
@@ -63,6 +63,7 @@ def rotate_team_ssh_key(team: str, name: str, public_key: str) -> dict:
 		frappe.throw(_("The replacement SSH key must be different."))
 	key.public_key = public_key
 	key.save()
+
 	return {"name": key.name, "fingerprint": key.fingerprint}
 
 

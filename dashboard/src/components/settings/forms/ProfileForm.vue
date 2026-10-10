@@ -6,6 +6,7 @@ import ImageUpload from '@/components/common/ImageUpload.vue'
 import { useMyProfile } from '@/composables/useMyProfile'
 import { useTeamMembers } from '@/composables/useTeamMembers'
 import { getErrorMessage, successToast } from '@/lib/feedback'
+import { submitOrThrow } from '@/lib/frappeCall'
 
 // The signed-in user's own profile: photo and display name. Chrome-free
 // on purpose: the settings dialog wraps it in a panel, mobile renders it as a
@@ -37,8 +38,7 @@ async function onSave(): Promise<void> {
 	if (!changed.value) return
 	saving.value = true
 	try {
-		await saveCall.submit({ full_name: name.value.trim() })
-		if (saveCall.error) throw saveCall.error
+		await submitOrThrow(saveCall, { full_name: name.value.trim() })
 		await Promise.all([reloadProfile(), reloadMembers()])
 		successToast('Name updated')
 	} catch (e) {

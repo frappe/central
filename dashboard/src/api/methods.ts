@@ -66,6 +66,7 @@ export const API = {
 	serverHostnames: 'central.api.servers.server_hostnames',
 	listImageOfferings: 'central.api.images.list_offerings',
 	listRegionalImages: 'central.api.images.list_images',
+	imageEligiblePlans: 'central.api.images.eligible_plans',
 	listTeamSSHKeys: 'central.api.ssh_keys.list_team_ssh_keys',
 	createTeamSSHKey: 'central.api.ssh_keys.create_team_ssh_key',
 	rotateTeamSSHKey: 'central.api.ssh_keys.rotate_team_ssh_key',

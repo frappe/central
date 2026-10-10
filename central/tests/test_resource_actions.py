@@ -15,9 +15,10 @@ from central.errors import AtlasConnectionError, AtlasRequestUncertain
 from central.infrastructure.doctype.resource_action.resource_action import ResourceAction
 from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
 from central.integrations.resource_actions import SERVER_PAGE_SIZE, _process_locked
-from central.resource_actions import get_status, submit_request
+from central.resource_actions import get_status, submit_request, trial_server_count, validate_trial
 from central.server_models import SiteCreation
 from central.tests.test_sso_keys import reset_signing_key
+from central.tests.utils import central_limit
 
 COMPOSITION = [
 	{"resource_type": "Compute", "quantity": 1, "unit": "vCPU"},
@@ -365,6 +366,31 @@ class TestResourceActions(IntegrationTestCase):
 			frappe.db.get_value("Error Log", action.error_log, "error"),
 		)
 		self.client.return_value.create_vm.assert_called_once()
+
+	def test_the_trial_cap_follows_central_settings(self):
+		with (
+			patch("central.billing.revenue.credits.get_balance", return_value={"balance": 10}),
+			patch("central.resource_actions.trial_server_count", return_value=1),
+			central_limit("trial_servers_per_team", 1),
+			self.assertRaisesRegex(frappe.ValidationError, "at most 1 active or pending servers"),
+		):
+			validate_trial(self.team.name)
+
+	def test_the_trial_cap_counts_with_locking_reads(self):
+		with patch.object(frappe.db, "sql", wraps=frappe.db.sql) as sql:
+			trial_server_count(self.team.name)
+
+		self.assertEqual(len(sql.call_args_list), 2)
+		for call in sql.call_args_list:
+			self.assertIn("FOR UPDATE", str(call.args[0]).upper())
+
+	def test_a_lost_reply_skips_a_machine_with_no_guest_yet(self):
+		name = self.submit()["action"]
+		self.client.return_value.create_vm.side_effect = AtlasRequestUncertain("lost reply")
+		self.client.return_value.list_vms.return_value = [self.built_vm(name, guest=None)]
+		_process_locked(name)
+
+		self.assertFalse(frappe.db.get_value("Resource Action", name, "remote_vm_id"))
 
 	def test_a_lost_reply_finds_the_machine_on_a_later_page(self):
 		name = self.submit()["action"]

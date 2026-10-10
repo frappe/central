@@ -1,14 +1,13 @@
-from __future__ import annotations
-
 import frappe
 from frappe import _
+from frappe.utils.translations import _lt
 
 from central.integrations.grove import GroveClient
 from central.services import ai
 from central.utils.guards import require_capability
 
-VIEW_DENIED = "You can't view this team's AI."
-MANAGE_DENIED = "You can't manage this team's AI."
+VIEW_DENIED = _lt("You can't view this team's AI.")
+MANAGE_DENIED = _lt("You can't manage this team's AI.")
 KEY_FIELDS = ("name", "title", "status", "creation", "revocable_at", "masked", "can_read_balance")
 
 # Grove owns the keys. Central keeps none: a secret is shown once, in the answer that mints it.
@@ -38,6 +37,7 @@ def list_api_keys(team: str | None = None) -> list[dict]:
 	"""The team's keys, newest first, masked."""
 	require_ai(team)
 	keys = GroveClient.from_settings().list_keys(team)
+
 	return [{field: row.get(field) for field in KEY_FIELDS} for row in keys]
 
 
@@ -51,6 +51,7 @@ def create_api_key(team: str | None = None, label: str | None = None) -> dict:
 		frappe.throw(_("A label is required."))
 
 	key = GroveClient.from_settings().provision_key(team, label)
+
 	return {
 		"name": key["name"],
 		"label": label,
@@ -65,6 +66,7 @@ def revoke_api_key(team: str | None = None, key: str | None = None) -> dict:
 	"""Revoke one of the team's keys. Grove refuses another team's key."""
 	require_ai(team)
 	GroveClient.from_settings().revoke_key(team, key)
+
 	return {"name": key}
 
 
@@ -77,6 +79,7 @@ def set_api_key_balance_access(
 	first key starts with it."""
 	require_ai(team)
 	allowed = bool(frappe.utils.sbool(can_read_balance))
+
 	return {"name": key, **GroveClient.from_settings().set_key_balance_access(team, key, allowed)}
 
 
@@ -95,6 +98,7 @@ def add_credit(team: str, amount: float, reference: str | None = None) -> dict:
 	team for it. A repeat with the same `reference` adds nothing. Returns the balance after."""
 	frappe.only_for("System Manager")
 	require_ai(team)
+
 	return GroveClient.from_settings().add_credit(team, amount, reference)
 
 

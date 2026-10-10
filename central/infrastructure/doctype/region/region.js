@@ -1,6 +1,7 @@
 frappe.ui.form.on("Region", {
 	refresh(frm) {
 		if (frm.is_new()) return;
+		if (frm.doc.connection_error) frm.set_intro(frappe.utils.escape_html(frm.doc.connection_error), "red");
 		if (!frappe.user.has_role("System Manager")) return;
 
 		frm.add_custom_button(__("Test Connection"), async () => {

@@ -50,7 +50,6 @@ const dialogOptions = computed(() => ({
 			label: 'Remove',
 			variant: 'solid' as const,
 			theme: 'red' as const,
-			loading: removing.value,
 			onClick: confirmRemove,
 		},
 	],

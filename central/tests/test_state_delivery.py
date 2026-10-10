@@ -115,6 +115,24 @@ class TestStateDelivery(IntegrationTestCase):
 			self.deliver(self.state_report(), region="no-such-region")
 		self.assertEqual(str(wrong_secret.exception), str(unknown_region.exception))
 
+	def test_repeated_refusals_from_one_caller_are_logged_once(self):
+		ip = f"test-{frappe.generate_hash(length=8)}"
+		before = frappe.db.count("Error Log", {"method": "Rejected regional state report"})
+
+		with patch.object(frappe.local, "request_ip", ip, create=True):
+			for _ in range(3):
+				with self.assertRaises(frappe.PermissionError):
+					self.deliver(self.state_report(), region="x" * 5000)
+
+		logged = frappe.get_all(
+			"Error Log", filters={"method": "Rejected regional state report"}, pluck="error", limit=0
+		)
+		self.assertEqual(len(logged), before + 1)
+		self.assertLessEqual(
+			len(frappe.get_last_doc("Error Log", filters={"method": "Rejected regional state report"}).error),
+			200,
+		)
+
 	# — What Central does with an authenticated report
 
 	def test_a_new_state_is_queued_and_applied(self):

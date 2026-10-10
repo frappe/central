@@ -1,8 +1,6 @@
 # Copyright (c) 2026, frappe and contributors
 # For license information, please see license.txt
 
-from __future__ import annotations
-
 from typing import TYPE_CHECKING
 
 import dns.exception
@@ -110,6 +108,7 @@ class SiteDomain(Document):
 			frappe.throw(_("A site must be one label below {0}.").format(zone))
 		if label in REGIONAL_SERVICES or label.startswith("proxy-"):
 			frappe.throw(_("The site name {0} is reserved.").format(label))
+
 		return "Site"
 
 	def validate_targets(self) -> None:
@@ -130,6 +129,7 @@ class SiteDomain(Document):
 		instance = frappe.get_cached_doc("Region", self.region)
 		address = frappe.db.get_value("Virtual Machine", self.server, "ipv6_address")
 		hosts = (instance.get_vm_admin_host(address), instance.get_vm_site_host(address))
+
 		return {host for host in hosts if host}
 
 	def validate_auto_routed_host(self) -> None:
@@ -197,6 +197,7 @@ class SiteDomain(Document):
 		"""Build a safe failure and linked traceback for this route."""
 		diagnostic = frappe.get_traceback(with_context=False)
 		error_log = self.log_error(title=title, message=diagnostic)
+
 		return {
 			"status": "Failed",
 			"failure_reason": reason,
@@ -204,7 +205,7 @@ class SiteDomain(Document):
 		}
 
 	@staticmethod
-	def new_for_pilot(credential: PilotCredential, domain: str) -> SiteDomain:
+	def new_for_pilot(credential: PilotCredential, domain: str) -> "SiteDomain":
 		"""An unsaved route to the Pilot's own server. The server never comes from the request.
 
 		A Pilot only knows its machine, so the site comes from the machine: one machine runs
@@ -223,6 +224,7 @@ class SiteDomain(Document):
 			}
 		)
 		route.route_type = route.get_route_type()
+
 		return route
 
 	@staticmethod
@@ -313,7 +315,7 @@ class SiteDomain(Document):
 				DomainNotVerifiedError,
 			)
 
-	@frappe.whitelist()
+	@frappe.whitelist(methods=["POST"])
 	def retry(self) -> None:
 		"""Operator action: reset the attempt count and send the route again."""
 		self.check_permission("write")
@@ -360,6 +362,7 @@ def _resolve(name: str, record_type: str) -> list[str]:
 
 	if record_type == "TXT":
 		return [b"".join(record.strings).decode() for record in answer]
+
 	return [record.to_text().rstrip(".").lower() for record in answer]
 
 

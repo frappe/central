@@ -1,6 +1,5 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
-"""Notification dashboard API — customer-facing endpoints for preferences and events."""
 
 import frappe
 from frappe import _
@@ -9,6 +8,9 @@ from frappe.model.document import bulk_insert
 from central.api.pilot import pilot_credential_auth
 from central.iam import is_active_team_member, resolve_team, user_has_operator_bypass
 from central.notification import CATEGORIES
+from central.notification.doctype.user_notification_preference.user_notification_preference import (
+	UserNotificationPreference,
+)
 
 MARK_READ_BATCH_SIZE = 500
 
@@ -31,19 +33,14 @@ def _member_team(team: str | None) -> str:
 	user = frappe.session.user
 	team = resolve_team(user, team)
 	_require_member(user, team)
+
 	return team
 
 
 @frappe.whitelist(methods=["POST"])
 def save_user_preferences(team: str, preferences: list[dict]) -> dict:
-	"""Create or update the calling user's notification preferences for *team*.
-
-	``preferences`` is a list of dicts, each with:
-	  - ``category``: Billing | Server | Team
-	  - ``email_enabled``: 0 | 1
-	  - ``in_app_enabled``: 0 | 1
-
-	Upserts per (user, team, category). Returns the saved preferences."""
+	"""Save the caller's notification preferences for *team*, one per category. Each row
+	holds ``category``, ``email_enabled`` and ``in_app_enabled``."""
 	user = frappe.session.user
 	_require_member(user, team)
 	saved = []
@@ -57,27 +54,7 @@ def save_user_preferences(team: str, preferences: list[dict]) -> dict:
 		email = bool(frappe.utils.cint(pref.get("email_enabled", 1)))
 		in_app = bool(frappe.utils.cint(pref.get("in_app_enabled", 1)))
 
-		existing = frappe.db.get_value(
-			"User Notification Preference",
-			{"user": user, "team": team, "category": category},
-			"name",
-		)
-		if existing:
-			doc = frappe.get_doc("User Notification Preference", existing)
-			doc.update({"email_enabled": int(email), "in_app_enabled": int(in_app)})
-			doc.save()
-		else:
-			doc = frappe.get_doc(
-				{
-					"doctype": "User Notification Preference",
-					"user": user,
-					"team": team,
-					"category": category,
-					"email_enabled": int(email),
-					"in_app_enabled": int(in_app),
-				}
-			).insert()
-
+		doc = UserNotificationPreference.upsert(user, team, category, email, in_app)
 		saved.append(
 			{"category": category, "email_enabled": email, "in_app_enabled": in_app, "name": doc.name}
 		)
@@ -95,6 +72,7 @@ def get_user_preferences(team: str) -> dict:
 		filters={"user": user, "team": team},
 		fields=["category", "email_enabled", "in_app_enabled"],
 	)
+
 	return {"preferences": rows}
 
 
@@ -108,19 +86,9 @@ def report_pilot_event(
 	reference_name: str | None = None,
 	context: dict | None = None,
 ) -> dict:
-	"""Inbound event from a Pilot instance (authenticated via X-Pilot-Token).
-
-	Delegates to the notification engine. The team is resolved from the
-	authenticated pilot credential — never from the request body.
-
-	A pilot may only raise Server-domain events (the infra events a bench observes).
-	Billing/Team event types are Central-originated, so refusing them here stops a
-	compromised or buggy bench from fanning out, e.g., a payment_failure email to the
-	whole team. An unknown event type has no category and is refused too.
-
-	The event is scoped to the credential's server, so members whose access is limited
-	to that server still see it. The caller's reference is kept as sent.
-	"""
+	"""Raise a Server event from a Pilot. The team and server come from the Pilot's
+	credential, never from the body. Billing and Team events are refused, so a compromised bench
+	cannot email a whole team."""
 	credential = frappe.local.pilot_credential
 	team = credential.team
 	if frappe.db.get_value("Notification Event Type", event_type, "category") != "Server":
@@ -138,11 +106,7 @@ def report_pilot_event(
 	)
 
 
-# ── In-app notification feed ─────────────────────────────────────────────────
-# The team's unified feed (Team Notification) across billing and server events.
-# Moved here from billing so the reader lives with the notification domain; billing
-# only imports the writer. Gated on team membership + per-row capability, NOT on
-# billing:view (which used to hide the whole feed from non-billing members).
+# The team's feed of billing and server events, gated on membership and on each row's capability.
 
 
 @frappe.whitelist()
@@ -153,11 +117,8 @@ def list_notifications(
 	category: str | None = None,
 	unread_only: bool = False,
 ) -> dict:
-	"""One page of the team's in-app notification feed — billing and server events —
-	newest first. Returns ``has_next_page`` so the console can page with ``start``.
-
-	Capability-filtered: operators see everything; a member only sees notifications
-	whose ``required_cap`` they hold."""
+	"""One page of the team's feed, newest first, with ``has_next_page``. A member sees only
+	the notifications whose capability they hold."""
 	from central.notification import list_notifications as _list
 
 	return _list(
@@ -190,7 +151,7 @@ def mark_notification_read(name: str, team: str | None = None, read: bool = True
 	read = bool(frappe.utils.cint(read))
 
 	if read:
-		# Read markers are internal rows; this API already checked that the notification is visible.
+		# A read marker is the caller's own internal row; the check above keeps it to this team.
 		bulk_insert(
 			"Notification Read",
 			[_read_marker(user, name, frappe.utils.now_datetime())],
@@ -225,6 +186,7 @@ def mark_all_notifications_read(team: str | None = None) -> dict:
 		)
 
 	unread = unread_count(team, user=user)
+
 	return {"ok": True, "updated": before - unread, "unread": unread}
 
 
@@ -238,4 +200,5 @@ def _read_marker(user: str, notification: str, read_at):
 		}
 	)
 	doc.set_new_name()
+
 	return doc

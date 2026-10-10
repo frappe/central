@@ -5,6 +5,7 @@ from zoneinfo import ZoneInfo
 
 import frappe
 from frappe import _
+from frappe.utils import cint
 from redis.exceptions import LockError, LockNotOwnedError
 
 from central.errors import (
@@ -146,13 +147,9 @@ def _process_locked(name: str) -> None:
 
 
 def recover_unanswered(request) -> None:
-	"""Settle a creation the region never answered, by asking it what it built.
-
-	Central marks every create with its action ID, so the region can say whether this
-	request produced a machine. Finding one binds it and the creation carries on. Only a
-	search that completed can say no, and that is a plain failure the customer can send
-	again. A region Central cannot reach proves nothing, so the request stays open for
-	the next sweep."""
+	"""Settle a creation the region never answered by asking what it built.
+	A machine with this action's marker is bound. Only a completed search can say no; an
+	unreachable region proves nothing, so the request stays open for the next sweep."""
 	try:
 		remote_vm_id = find_created_vm(request)
 	except AtlasConnectionError:
@@ -175,11 +172,8 @@ def recover_unanswered(request) -> None:
 
 
 def find_created_vm(request) -> str | None:
-	"""The machine this creation built, or None when the region holds none.
-
-	The region lists newest first, so the search stops at the first machine older than
-	the dispatch. A candidate counts only when its tenant, image and action marker all
-	match, which is what keeps another request's machine from being adopted."""
+	"""The machine this creation built, or None. A candidate counts only when its tenant,
+	image and action marker all match, so another request's machine is never adopted."""
 	client = _client(request)
 	configuration = request.get_configuration()
 	# Central stores naive times in its system time zone, and `timestamp()` would read them in
@@ -192,10 +186,12 @@ def find_created_vm(request) -> str | None:
 		if not isinstance(created_at, int) or created_at < started - CLOCK_SKEW_SECONDS:
 			break
 		remote = client.get_vm(row["id"])
+		# Atlas sends null for a guest it has not booted yet.
+		metadata = (remote.get("guest") or {}).get("metadata") or {}
 		if (
 			remote.get("tenant_id") == client.tenant_id
 			and remote.get("image_id") == configuration.image_id
-			and remote.get("guest", {}).get("metadata", {}).get("central_action_id") == request.name
+			and metadata.get("central_action_id") == request.name
 		):
 			return row["id"]
 
@@ -217,6 +213,7 @@ def _servers_newest_first(client: AtlasClient) -> Iterator[dict]:
 def _client(request) -> AtlasClient:
 	instance = frappe.get_doc("Region", request.region)
 	tenant_id = frappe.db.get_value("Team", request.team, "tenant_id")
+
 	return AtlasClient(instance, tenant_id)
 
 
@@ -267,16 +264,14 @@ def firewall_configuration(configuration) -> dict:
 
 
 def idle_shutdown_seconds(team: str) -> int:
-	"""How long a machine may sit idle before its region puts it to sleep.
-
-	Sleep is a hobby comfort: a trial server costs nothing while nobody uses it, and
-	customer traffic wakes it. A paid server stays up, and so does every server once its
-	owner resizes it."""
+	"""How long a trial machine may sit idle before its region puts it to sleep. A paid
+	server, or one its owner resized, never sleeps."""
 	if not frappe.db.get_value("Team", team, "is_staging_trial"):
 		return 0
 
 	minutes = frappe.get_cached_value("Central Settings", "Central Settings", "trial_idle_shutdown_minutes")
-	return max(0, int(minutes or 0)) * 60
+
+	return max(0, cint(minutes)) * 60
 
 
 def _finalize(request) -> None:
@@ -494,6 +489,7 @@ def is_final_snapshot_ready(action, server: VirtualMachine, client: AtlasClient)
 	# The terminate already checked server:snapshot for the requester.
 	snapshot.insert(ignore_permissions=True)
 	action.db_set({"vm_snapshot": snapshot.name, "last_checked_at": frappe.utils.now_datetime()})
+
 	return False
 
 
@@ -503,13 +499,12 @@ def recover_requests() -> None:
 	Nothing here repeats a create: an accepted machine is read, and an unanswered request
 	is looked up by its action marker."""
 	cutoff = frappe.utils.add_to_date(frappe.utils.now_datetime(), minutes=-3)
-	action = frappe.qb.DocType("Resource Action")
-	rows = (
-		frappe.qb.from_(action)
-		.select(action.name)
-		.where((action.modified < cutoff) & action.status.isin(PENDING_STATES))
-		.orderby(action.modified)
-		.limit(100)
-	).run(as_dict=True)
-	for row in rows:
-		frappe.get_doc("Resource Action", row.name).enqueue()
+	names = frappe.get_all(
+		"Resource Action",
+		filters={"modified": ("<", cutoff), "status": ("in", PENDING_STATES)},
+		order_by="modified asc",
+		limit=100,
+		pluck="name",
+	)
+	for name in names:
+		frappe.get_doc("Resource Action", name).enqueue()

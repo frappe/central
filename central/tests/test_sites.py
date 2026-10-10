@@ -17,6 +17,7 @@ from central.site_provisioning import (
 	trial_configuration,
 	trial_region_and_plan,
 )
+from central.tests.test_iam import ensure_user
 from central.www.dashboard import _onboarding_complete
 
 
@@ -370,6 +371,55 @@ class TestSiteRoutes(SiteOnAMachine):
 			get_site(self.site().name)
 		with self.assertRaises(frappe.PermissionError):
 			login_site(self.site().name)
+
+	def test_a_viewer_reads_a_site_but_cannot_sign_in_as_administrator(self):
+		viewer = ensure_user("site.viewer@example.test")
+		self.team.append("members", {"user": viewer, "role": "Viewer", "status": "Active"})
+		self.team.save()
+		frappe.set_user(viewer)
+
+		with patch("central.api.sites.is_site_reachable", return_value=False):
+			self.assertEqual(get_site(self.site().name)["name"], self.site().name)
+		with self.assertRaises(frappe.PermissionError):
+			login_site(self.site().name)
+		with self.assertRaises(frappe.PermissionError):
+			claim_site(self.site().name)
+
+	def test_an_operator_opens_a_site_and_both_records_note_it(self):
+		site = self.site()
+		with patch.object(type(site), "get_login_url", return_value="https://site.example.test/desk?sid=x"):
+			self.assertEqual(site.open_as_administrator(), "https://site.example.test/desk?sid=x")
+
+		for doctype, name in (("Site", site.name), ("Virtual Machine", site.server)):
+			self.assertTrue(
+				frappe.db.exists(
+					"Comment",
+					{
+						"reference_doctype": doctype,
+						"reference_name": name,
+						"content": ("like", "%as Administrator%"),
+					},
+				)
+			)
+
+		frappe.set_user(ensure_user("site.member@example.test"))
+		with self.assertRaises(frappe.PermissionError):
+			site.open_as_administrator()
+
+	def test_an_operator_checks_readiness_and_it_is_recorded(self):
+		site = self.site()
+		with patch("central.integrations.pilot.is_site_reachable", return_value=True):
+			self.assertTrue(site.check_readiness())
+		self.assertTrue(site.reload().ready_at)
+
+	def test_a_missing_site_and_a_foreign_site_answer_alike(self):
+		frappe.set_user(ensure_user("outsider@example.test"))
+
+		with self.assertRaises(frappe.PermissionError) as foreign:
+			get_site(self.site().name)
+		with self.assertRaises(frappe.PermissionError) as missing:
+			get_site("no-such-site.example.test")
+		self.assertEqual(str(foreign.exception), str(missing.exception))
 
 	def test_status_is_get_and_login_is_post_only(self):
 		self.assertEqual(frappe.allowed_http_methods_for_whitelisted_func[get_site], ("GET", "QUERY"))

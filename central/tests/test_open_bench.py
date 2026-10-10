@@ -121,6 +121,26 @@ class TestOpenBench(IntegrationTestCase):
 		self.assertEqual(claims["sub"], "admin")
 		self.assertEqual(claims["scope"], "bench")
 
+	def test_an_operator_opens_the_bench_and_the_server_records_it(self):
+		url = frappe.get_doc("Virtual Machine", "vm-open-1").open_bench_as_administrator()
+
+		self.assertTrue(url.startswith(f"{GATEWAY}/?sid="))
+		self.assertTrue(
+			frappe.db.exists(
+				"Comment",
+				{
+					"reference_doctype": "Virtual Machine",
+					"reference_name": "vm-open-1",
+					"content": ("like", "%as Administrator%"),
+				},
+			)
+		)
+
+	def test_only_an_operator_opens_the_bench_from_desk(self):
+		frappe.set_user(self.owner)
+		with self.assertRaises(frappe.PermissionError):
+			frappe.get_doc("Virtual Machine", "vm-open-1").open_bench_as_administrator()
+
 	def test_unenrolled_vm_refused(self):
 		"""A Running VM whose pilot hasn't enrolled has no audience id yet — Open is refused
 		rather than minting a SID no bench would accept."""
@@ -128,9 +148,9 @@ class TestOpenBench(IntegrationTestCase):
 		with self.assertRaises(frappe.ValidationError):
 			self._open(self.dev, server="vm-open-1")
 
-	def test_viewer_with_server_view_can_open(self):
-		link = self._open(self.viewer, server="vm-open-1")
-		self.assertTrue(link["url"].startswith(f"{GATEWAY}/?sid="))
+	def test_a_viewer_cannot_open_the_bench_as_admin(self):
+		with self.assertRaises(frappe.PermissionError):
+			self._open(self.viewer, server="vm-open-1")
 
 	def test_local_gateway_uses_the_servers_pilot_audience(self):
 		self._server("vm-open-1", "Running", gateway="http://localhost:3030")

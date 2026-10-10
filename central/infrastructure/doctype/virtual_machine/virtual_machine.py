@@ -1,10 +1,14 @@
-from __future__ import annotations
+from typing import Self
 
 import frappe
 from frappe import _
 from frappe.model.document import Document
 from requests import RequestException
 
+from central.iam import can
+from central.infrastructure.doctype.pilot_credential.pilot_credential import PilotCredential
+from central.infrastructure.doctype.user_mail_account.user_mail_account import UserMailAccount
+from central.sso import mint_bench_login
 from central.utils.units import mebibytes_to_gigabytes, millicores_to_vcpus
 
 
@@ -50,8 +54,17 @@ class VirtualMachine(Document):
 		vcpus: DF.Float
 	# end: auto-generated types
 
+	@staticmethod
+	def get_team_server_name(team: str, resource_id: str | None) -> str:
+		"""The server `resource_id` of `team`, or a not-found error."""
+		name = frappe.db.get_value("Virtual Machine", {"team": team, "resource_id": resource_id}, "name")
+		if not name:
+			frappe.throw(_("No server '{0}' for this team.").format(resource_id), frappe.DoesNotExistError)
+
+		return name
+
 	@classmethod
-	def create_from_action(cls, action, resource_id: str) -> VirtualMachine:
+	def create_from_action(cls, action, resource_id: str) -> Self:
 		"""Create Central's server record from one accepted creation action."""
 		if frappe.db.exists("Virtual Machine", resource_id):
 			return frappe.get_doc("Virtual Machine", resource_id)
@@ -79,6 +92,7 @@ class VirtualMachine(Document):
 				"is_firewall_enabled": configuration.is_firewall_enabled,
 			}
 		)
+
 		# The authorized Resource Action permits this system-owned mirror write.
 		return server.insert(ignore_permissions=True)
 
@@ -91,11 +105,48 @@ class VirtualMachine(Document):
 	def on_update(self):
 		if self.has_value_changed("status") or self.has_value_changed("plan"):
 			self.sync_subscription_on_status_change()
+
 		if self.has_value_changed("status") and self.status == "Failed":
 			self.queue_status_notification("server_failed")
+
 		if self.has_value_changed("status") and self.status == "Terminated":
 			self.enqueue_route_removal()
+			self.revoke_pilot_credentials()
+			UserMailAccount.queue_removal(server=self.name)
 			self.queue_status_notification("server_terminated")
+
+	def revoke_pilot_credentials(self) -> None:
+		"""A terminated server's Pilot must not reach Central again."""
+		for name in frappe.get_all(
+			"Pilot Credential", filters={"team": self.team, "server": self.name}, pluck="name"
+		):
+			PilotCredential.revoke_by_id(name)
+
+	@frappe.whitelist(methods=["POST"])
+	def open_bench_as_administrator(self) -> str:
+		"""Operator action: a one-click Administrator login to this bench, recorded on the server."""
+		frappe.only_for("System Manager")
+		url = self.get_bench_login_url(frappe.session.user)
+		self.add_comment("Info", _("{0} opened the bench as Administrator.").format(frappe.session.user))
+		return url
+
+	@frappe.whitelist(methods=["POST"])
+	def retry_admin_domain(self) -> None:
+		"""Operator action: ask Pilot for the admin hostname again after it failed."""
+		self.check_permission("write")
+		if not self.admin_domain_error:
+			frappe.throw(_("The admin hostname has no failure to retry."))
+
+		self.claim_admin_hostname()
+
+	@frappe.whitelist(methods=["POST"])
+	def revoke_pilot_access(self) -> None:
+		"""Operator action: stop this server's Pilot from reaching Central, recorded on the server."""
+		frappe.only_for("System Manager")
+		self.revoke_pilot_credentials()
+		self.add_comment(
+			"Info", _("{0} revoked the Pilot credentials of this server.").format(frappe.session.user)
+		)
 
 	def enqueue_route_removal(self) -> None:
 		"""A terminated server serves nothing, so its site and custom-domain routes go too."""
@@ -156,13 +207,9 @@ class VirtualMachine(Document):
 			subscription.insert(ignore_permissions=True)
 
 	def disable_active_subscription(self):
-		"""Terminated: cancel the team's active subscription for this server, if any.
-
-		Termination is an END, not a billing pause — so we record a `Cancelled`
-		Subscription Change to CLOSE the open billing segment (ADR 0010). That drops the
-		subscription from the team's run-rate and frees its trust-tier headroom, so the
-		bill estimate stops counting a dead VM and the team can provision again. Then we
-		disable it (the `enabled: 1` filter makes this idempotent on a repeated event)."""
+		"""Cancel and disable the team's active subscription for this terminated server.
+		The Cancelled change closes the billing segment, so the estimate stops counting the server and
+		its headroom is freed. It is safe to repeat."""
 		existing = frappe.db.get_value(
 			"Subscription", {"team": self.team, "server_id": self.name, "enabled": 1}, "name"
 		)
@@ -210,6 +257,7 @@ class VirtualMachine(Document):
 		doc.save(ignore_permissions=True, ignore_version=not changed)
 		if changed:
 			doc.publish_state_change()
+
 		return True
 
 	@frappe.whitelist(methods=["POST"])
@@ -224,24 +272,42 @@ class VirtualMachine(Document):
 
 	@frappe.whitelist(methods=["POST"])
 	def sync_state(self) -> dict:
-		"""Ask the region what this server is doing now, and record the answer.
-
-		The scheduled reconcile does this on a timer and a region reports changes as they
-		happen. This is the operator's way to ask directly when a record looks stale or a
-		report was missed."""
+		"""Read this server's state from the region now. The operator's way to refresh a record
+		that looks stale."""
 		from central.integrations.servers import observe_server
 
 		self.check_permission("read")
 
 		return {"status": observe_server(self)}
 
-	def publish_state_change(self) -> None:
-		"""Tell this team's consoles that one of its servers moved.
+	def get_bench_login_url(self, user: str) -> str:
+		"""A login URL for a Running server in an active region, gated on `server:console`.
 
-		The payload is identity only. Every consumer re-reads through the team-scoped
-		API, so the socket never becomes a second source of truth for state. The room is
-		this server's Team document, and Frappe checks Team read permission before a
-		client may join it, so one team's traffic never reaches another's console."""
+		The SID is single-use and its audience is this bench's own, so it opens no other bench."""
+		if not can(user, self.team, "server:console", server=self.name):
+			frappe.throw(_("You can't open servers for this team."), frappe.PermissionError)
+
+		if self.status != "Running":
+			frappe.throw(_("Server is {0}, not running.").format(self.status.lower()), frappe.ValidationError)
+		if frappe.db.get_value("Region", self.region, "status") != "Active":
+			frappe.throw(_("That region is not active."), frappe.ValidationError)
+
+		gateway = (self.gateway_url or "").rstrip("/")
+		if not gateway:
+			frappe.throw(_("This server has no bench gateway yet."), frappe.ValidationError)
+
+		# The bench verifies the SID against its own audience id, which its Pilot Credential holds.
+		audience = frappe.db.get_value(
+			"Pilot Credential", {"server": self.resource_id, "status": "Active"}, "audience_id"
+		)
+		if not audience:
+			frappe.throw(_("This server's pilot hasn't enrolled yet."), frappe.ValidationError)
+
+		return f"{gateway}/?sid={mint_bench_login(audience)}"
+
+	def publish_state_change(self) -> None:
+		"""Tell this team's consoles that one of its servers changed. The payload is identity only,
+		and the room is the server's Team, which Frappe checks read permission on before a join."""
 		frappe.publish_realtime(
 			"server_state_changed",
 			{"resource_id": self.name},
@@ -323,6 +389,7 @@ class VirtualMachine(Document):
 		# save(), not db_set(): `on_update` closes the billing segment for a dead server.
 		doc.save(ignore_permissions=True)
 		doc.publish_state_change()
+
 		return True
 
 

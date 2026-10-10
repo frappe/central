@@ -250,11 +250,6 @@
    "link_fieldname": "team"
   },
   {
-   "group": "Access",
-   "link_doctype": "IAM Permission Probe",
-   "link_fieldname": "team"
-  },
-  {
    "group": "Notifications",
    "link_doctype": "Team Notification",
    "link_fieldname": "team"

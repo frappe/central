@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import math
 
 import frappe
@@ -50,7 +48,7 @@ class VMSnapshot(Document):
 		server = frappe.db.get_value(
 			"Virtual Machine",
 			self.server,
-			["team", "region", "status", "atlas_vm_id", "image_offering"],
+			["team", "title", "region", "status", "atlas_vm_id", "image_offering"],
 			as_dict=True,
 		)
 		if not server or server.team != self.team:
@@ -62,6 +60,7 @@ class VMSnapshot(Document):
 		if frappe.db.exists("VM Snapshot", {"server": self.server, "status": "Pending"}):
 			frappe.throw(_("A snapshot of this server is already in progress."))
 
+		self.title = (self.title or "").strip() or _("{0} snapshot").format(server.title or self.server)
 		self.region = server.region
 		self.image_offering = server.image_offering
 		self.is_restorable = not is_pilot_offering(server.image_offering)
@@ -78,11 +77,12 @@ class VMSnapshot(Document):
 	def on_update(self) -> None:
 		if not self.has_value_changed("status"):
 			return
+
 		if self.status in ("Failed", "Deleted"):
 			self.stop_billing()
 		if self.status in ("Available", "Deleted"):
 			apply_free_allowance(self.server)
-		if self.has_value_changed("status") and self.status == "Failed":
+		if self.status == "Failed":
 			self.queue_failure_notification()
 
 	def queue_failure_notification(self) -> None:
@@ -315,7 +315,8 @@ def _take_automatic_snapshot(server) -> None:
 		frappe.db.commit()  # nosemgrep: frappe-manual-commit -- keep each snapshot if a later server fails
 	except frappe.ValidationError:
 		frappe.db.rollback()
-		frappe.log_error(title=f"Automatic snapshot failed: {server.name}")
+		# No frame locals: they hold the Atlas bearer token.
+		frappe.log_error(title=f"Automatic snapshot failed: {server.name}", message=frappe.get_traceback())
 
 
 def sync_pending_snapshots() -> None:

@@ -4,6 +4,7 @@ import { API, method } from '@/api/methods'
 import { useAuth } from '@/composables/useAuth'
 import { useSession } from '@/composables/useSession'
 import { getErrorMessage } from '@/lib/feedback'
+import { submitOrThrow } from '@/lib/frappeCall'
 import type { InvitationSummary } from '@/types/api'
 
 /** What the join page asks the visitor to do next. */
@@ -98,8 +99,7 @@ export function useJoinTeam(token: string) {
 
 	const decline = () =>
 		run(async () => {
-			await declineCall.submit({ invitation: invitation.value!.name })
-			if (declineCall.error) throw declineCall.error
+			await submitOrThrow(declineCall, { invitation: invitation.value!.name })
 			await invitationCall.reload()
 		}, "We couldn't decline the invitation.")
 

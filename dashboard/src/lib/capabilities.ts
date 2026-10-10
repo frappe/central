@@ -28,6 +28,7 @@ export interface ServerAccess {
 
 /** The server actions the caller may take. */
 export interface ServerActions {
+	/** Sign in to the server's bench or site, which is an Administrator session. */
 	open: boolean
 	power: boolean
 	resize: boolean
@@ -46,7 +47,7 @@ export function getServerActions(
 	const caps = row?.capabilities
 	if (!caps) return teamActions
 	return {
-		open: caps.includes('server:view'),
+		open: caps.includes('server:console'),
 		power: caps.includes('server:power'),
 		resize: caps.includes('server:resize'),
 		snapshot: caps.includes('server:snapshot'),

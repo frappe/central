@@ -295,6 +295,7 @@
    "description": "VM identifier within the linked Atlas region.",
    "fieldname": "atlas_vm_id",
    "fieldtype": "Data",
+   "in_standard_filter": 1,
    "label": "Atlas VM ID",
    "read_only": 1
   },
@@ -345,7 +346,7 @@
    "link_fieldname": "server"
   }
  ],
- "modified": "2026-10-10 10:07:58.752401",
+ "modified": "2026-10-11 10:00:00.000000",
  "modified_by": "Administrator",
  "module": "Infrastructure",
  "name": "Virtual Machine",

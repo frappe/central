@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import frappe
 from werkzeug.wrappers import Response
 
@@ -12,8 +10,10 @@ def jwks_document() -> dict:
 	return {"keys": settings.get_jwks("pilot")["keys"] + settings.get_jwks("atlas")["keys"]}
 
 
+# nosemgrep: guest-whitelisted-method -- a JWKS is public by design: it holds only public keys.
 @frappe.whitelist(allow_guest=True, methods=["GET"])
 def get_jwks() -> Response:
 	response = Response(mimetype="application/json")
 	response.data = frappe.as_json(jwks_document())
+
 	return response

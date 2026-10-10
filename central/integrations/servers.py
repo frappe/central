@@ -9,10 +9,8 @@ from frappe import _
 
 from central.errors import AtlasConnectionError, AtlasRejected, AtlasResourceGone
 from central.iam import can_on_any_server
-from central.infrastructure.doctype.pilot_credential.pilot_credential import PilotCredential
 from central.infrastructure.doctype.resource_action.resource_action import ResourceAction
 from central.infrastructure.doctype.site.site import Site
-from central.infrastructure.doctype.user_mail_account.user_mail_account import UserMailAccount
 from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
 from central.integrations.atlas import AtlasClient
 from central.utils.units import (
@@ -94,18 +92,14 @@ def observe_server(server: VirtualMachine) -> str:
 	# A Pilot machine carries a site, and this report is where its address arrives.
 	Site.create_once_addressable(server.name)
 	ResourceAction.confirm_observed_status(server.name, status)
+
 	return status
 
 
 def resize_server(server: VirtualMachine, shape: dict) -> None:
-	"""Apply a new size on Atlas, then start the server.
-
-	A CPU or memory change needs a stopped VM and may move it to a host that fits (a
-	`migrating` state during the wait), so it stops the VM and sends CPU, memory and disk in
-	one resize. A disk-only grow uses the online disk API, because the resize API needs a
-	stopped VM for a disk change too. Every call sets absolute values, so repeating the
-	resize is safe. A resized server has outgrown the hobby idle shutdown, so both paths
-	turn it off."""
+	"""Apply a new size on Atlas, then start the server. Safe to repeat: every call sets
+	absolute values. A CPU or memory change stops the server first; a disk-only grow does not.
+	Either path turns off the trial idle shutdown."""
 	client = get_client(server)
 	remote = client.get_vm(server.atlas_vm_id)
 	compute, disk = remote.get("compute") or {}, remote.get("disk") or {}
@@ -208,19 +202,14 @@ def get_client(server: VirtualMachine) -> AtlasClient:
 
 	instance = frappe.get_cached_doc("Region", server.region)
 	tenant_id = frappe.db.get_value("Team", server.team, "tenant_id")
+
 	return AtlasClient(instance, tenant_id)
 
 
 def mark_terminated(server: VirtualMachine) -> None:
-	"""Record a server as gone, revoke the pilot credentials bound to it, and remove its mailbox."""
+	"""Record a server as gone. Its on_update revokes its Pilot and removes its mailbox."""
 	server.status = "Terminated"
 	VirtualMachine.mark_terminated(server.name)
-	UserMailAccount.queue_removal(server=server.name)
-	credentials = frappe.get_all(
-		"Pilot Credential", filters={"team": server.team, "server": server.name}, pluck="name"
-	)
-	for name in credentials:
-		PilotCredential.revoke_by_id(name)
 
 
 def get_cached_metrics(server: VirtualMachine, start: datetime, end: datetime | None = None) -> dict:
@@ -236,11 +225,13 @@ def get_cached_metrics(server: VirtualMachine, start: datetime, end: datetime | 
 			"points": get_metric_points(payload["samples"], server.vcpus),
 			"sample_interval_seconds": payload["sample_interval_seconds"],
 		}
-	except (AtlasConnectionError, AtlasRejected, AtlasResourceGone):
-		frappe.log_error(title=f"Atlas metrics unavailable: {server.name}")
+	except AtlasConnectionError:
+		# No frame locals: they hold the Atlas bearer token.
+		frappe.log_error(title=f"Atlas metrics unavailable: {server.name}", message=frappe.get_traceback())
 		metrics = {"available": False}
 
 	frappe.cache.set_value(key, metrics, expires_in_sec=METRICS_CACHE_SECONDS)
+
 	return metrics
 
 
@@ -264,6 +255,7 @@ def get_metric_point(previous: dict, sample: dict, vcpus: float) -> dict:
 		return change / seconds if is_up and change >= 0 else None
 
 	cpu_microseconds_per_second = rate("compute", "cpu_microseconds")
+
 	return {
 		"time": sample["timestamp"],
 		"is_up": sample["up"],

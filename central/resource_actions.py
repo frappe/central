@@ -3,13 +3,13 @@ from __future__ import annotations
 import hashlib
 import json
 import math
-import re
 
 import frappe
 from cryptography.exceptions import UnsupportedAlgorithm
 from cryptography.hazmat.primitives.serialization import load_ssh_public_key
 from frappe import _
-from frappe.query_builder.functions import Sum
+from frappe.query_builder.functions import Count, Sum
+from frappe.utils import cint, flt
 from pydantic import ValidationError
 
 from central.billing.catalog.composition import (
@@ -33,7 +33,7 @@ from central.infrastructure.doctype.resource_action.resource_action import (
 	ResourceAction,
 )
 from central.integrations.images import selected_image, snapshot_image, snapshot_source
-from central.server_models import ActionStatus, CreateServerInput, ServerCreation, SiteCreation
+from central.server_models import DNS_LABEL, ActionStatus, CreateServerInput, ServerCreation, SiteCreation
 from central.utils.units import MIB_PER_GIB, MILLICORES_PER_VCPU
 
 
@@ -92,6 +92,7 @@ def submit_request(
 
 	configuration, rate = _build_server_configuration(server_input, snapshot)
 	configuration.site = site
+
 	return ResourceAction.queue(
 		"create",
 		server_input.team,
@@ -141,12 +142,14 @@ def submit_command(
 		remote_vm_id=server.atlas_vm_id,
 		take_snapshot=int(take_snapshot),
 	)
+
 	return document.customer_status()
 
 
 def get_status(name: str) -> ActionStatus:
 	document = frappe.get_doc("Resource Action", name)
 	document.check_permission("read")
+
 	return document.customer_status()
 
 
@@ -174,12 +177,14 @@ def _validate_server_input(**values) -> CreateServerInput:
 		frappe.throw(_("Choose either a plan or a custom configuration."))
 	if len({row.resource_type for row in server_input.includes}) != len(server_input.includes):
 		frappe.throw(_("Each resource type must occur once."))
+
 	return server_input
 
 
 def _request_digest(server_input: CreateServerInput, resource_type: str, subdomain: str | None) -> str:
 	settings = server_input.model_dump(exclude={"request_key"})
 	settings.update(resource_type=resource_type, subdomain=subdomain)
+
 	return hashlib.sha256(json.dumps(settings, sort_keys=True).encode()).hexdigest()
 
 
@@ -197,6 +202,7 @@ def _repeated_request(server_input: CreateServerInput, digest: str):
 		return action
 
 	name = unanswered_request(server_input.team, digest)
+
 	return frappe.get_doc("Resource Action", name) if name else None
 
 
@@ -223,7 +229,7 @@ def _build_server_configuration(
 		includes,
 		server_input.sub_category,
 	)
-	validate_guest_input(server_input, image)
+	validate_guest_input(server_input)
 	# Check the saved keys now so the form shows the error. Dispatch reads their text, which a
 	# rotation can change before a retry.
 	resolve_team_ssh_keys(server_input.team, server_input.ssh_key_ids)
@@ -246,18 +252,13 @@ def _build_server_configuration(
 		image_tags=image["tags"],
 		**image_shape(composition, image),
 	)
+
 	return configuration, rate
 
 
 def unanswered_request(team: str, digest: str) -> str | None:
-	"""The creation this requester already sent with these settings, that no region has
-	answered yet.
-
-	Central saves a request before it calls a region, so a lost reply leaves the record
-	behind while the browser keeps nothing. Answering the repeat with that record is what
-	stops one click, or one click and a reload, from building two servers. A request that
-	already holds a VM identity has been answered and never matches, so a deliberate
-	second server is still a second record."""
+	"""The creation this requester already sent with these settings that no region answered.
+	Returning it stops a repeated click or a reload from building two servers."""
 	return frappe.db.get_value(
 		"Resource Action",
 		{
@@ -302,6 +303,7 @@ def validate_purchase(
 		require_billing_profile_or_credit(team, committed_rate, "create servers")
 		if committed_rate > catalog["available"]:
 			frappe.throw(_("Pending server requests and this plan exceed your spending limit."))
+
 	return composition, float(rate)
 
 
@@ -319,7 +321,8 @@ def reserved_rate(team: str) -> float:
 		)
 		.for_update()
 	).run()
-	return float(rows[0][0] or 0)
+
+	return flt(rows[0][0])
 
 
 def validate_trial(team: str) -> None:
@@ -327,13 +330,35 @@ def validate_trial(team: str) -> None:
 
 	if get_balance(team).get("balance", 0) <= 0:
 		frappe.throw(_("Your trial credits are used up. Add a payment method to continue."))
-	servers = frappe.db.count("Virtual Machine", {"team": team, "status": ["!=", "Terminated"]})
-	pending = frappe.db.count(
-		"Resource Action",
-		{"team": team, "status": ["in", PENDING_STATES], "server": ["is", "not set"]},
-	)
-	if servers + pending >= 3:
-		frappe.throw(_("Trial Teams can have at most three active or pending servers."))
+	limit = cint(frappe.get_cached_value("Central Settings", "Central Settings", "trial_servers_per_team"))
+	if trial_server_count(team) >= limit:
+		frappe.throw(_("Trial Teams can have at most {0} active or pending servers.").format(limit))
+
+
+def trial_server_count(team: str) -> int:
+	"""Active servers plus pending creations. Locking reads, for the same reason as reserved_rate."""
+	machine = frappe.qb.DocType("Virtual Machine")
+	request = frappe.qb.DocType("Resource Action")
+
+	servers = (
+		frappe.qb.from_(machine)
+		.select(Count("*"))
+		.where((machine.team == team) & (machine.status != "Terminated"))
+		.for_update()
+	).run()
+
+	pending = (
+		frappe.qb.from_(request)
+		.select(Count("*"))
+		.where(
+			(request.team == team)
+			& request.status.isin(PENDING_STATES)
+			& (request.server.isnull() | (request.server == ""))
+		)
+		.for_update()
+	).run()
+
+	return servers[0][0] + pending[0][0]
 
 
 def image_shape(includes: list[dict], image: dict) -> dict[str, int]:
@@ -360,13 +385,12 @@ def image_shape(includes: list[dict], image: dict) -> dict[str, int]:
 	return shape
 
 
-def validate_guest_input(server_input: CreateServerInput, image: dict) -> None:
+def validate_guest_input(server_input: CreateServerInput) -> None:
 	if server_input.ssh_key_ids and server_input.ssh_keys:
 		frappe.throw(_("Choose saved SSH Keys or enter public keys, not both."))
-	if server_input.hostname and not re.fullmatch(
-		r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", server_input.hostname
-	):
+	if server_input.hostname and not DNS_LABEL.fullmatch(server_input.hostname):
 		frappe.throw(_("Use a valid lowercase guest hostname."))
+
 	for key in server_input.ssh_keys:
 		try:
 			load_ssh_public_key(key.strip().encode())
@@ -380,10 +404,12 @@ def resolve_team_ssh_keys(team: str, names: list[str]) -> list[str]:
 		frappe.throw(_("Select each SSH Key only once."))
 	if not names:
 		return []
+
 	rows = frappe.get_list(
 		"Team SSH Key", filters={"team": team, "name": ["in", names]}, fields=["name", "public_key"], limit=20
 	)
 	keys = {row.name: row.public_key for row in rows}
 	if len(keys) != len(names):
 		frappe.throw(_("One selected SSH Key is unavailable to this Team."), frappe.PermissionError)
+
 	return [keys[name] for name in names]

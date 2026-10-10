@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import re
 from typing import Annotated, Literal, TypedDict
 
 from pydantic import BaseModel, ConfigDict, Field, PositiveInt, model_validator
 
 SSHKey = Annotated[str, Field(min_length=1, max_length=16_384)]
+
+
+DNS_LABEL = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?")
 
 
 class ResourceQuantity(BaseModel):
@@ -19,6 +23,7 @@ class ResourceQuantity(BaseModel):
 		units = {"Compute": "vCPU", "Memory": "GB", "Disk": "GB", "Transfer": "GB"}
 		if self.unit != units[self.resource_type]:
 			raise ValueError("The unit must match the selected resource type.")
+
 		return self
 
 

@@ -9,19 +9,11 @@ from frappe.utils.caching import request_cache
 
 OPERATOR_BYPASS_ROLE = "System Manager"
 
-# Bumped whenever the capability taxonomy changes. Stamped into the SSO assertion
-# (`cap_version`) so a bench can detect drift from its own `BENCH_CAPS` mirror.
-# v3: server is the atomic unit — the bench plane (site:* + server:config) and the
-# redundant server:view are dropped; role capabilities live at team + server level
-# only. The plane field and the bench-caps SSO mint stay, so site caps can return
-# under the bench plane later with no contract change.
+# The revision of the capability taxonomy. Bump it with every change (see CAPABILITIES.md).
 CAPABILITY_VERSION = 5
 
-# Capability implications: granting the key implies every cap in the value. Acting
-# on a resource is meaningless without seeing it, so we close every grant under
-# these before it is asserted or evaluated — the role builder can let a user tick
-# `server:create` without also remembering `server:view`/`cluster:view`, and a grant
-# hand-crafted through the API can't bypass it either.
+# Granting a key implies each capability in its value, because acting on a resource needs
+# seeing it. Every grant is closed under these before it is checked.
 CAP_IMPLICATIONS = {
 	"server:create": ("server:view", "cluster:view"),
 	"server:terminate": ("server:view",),
@@ -60,6 +52,7 @@ def expand_capabilities(caps: list[str]) -> list[str]:
 				have.add(implied)
 				pending.append(implied)
 	extra = sorted(have.difference(caps))
+
 	return list(caps) + extra
 
 
@@ -136,9 +129,11 @@ def resolve_team(user: str, team: str | None = None) -> str:
 	zero or many teams and none specified, the caller must pick one."""
 	if team:
 		return team
+
 	teams = get_user_team_names(user)
 	if len(teams) != 1:
 		frappe.throw(_("Specify a team."), frappe.ValidationError)
+
 	return teams[0]
 
 
@@ -200,11 +195,8 @@ def _get_membership_capability_rows(user: str) -> list[dict[str, Any]]:
 
 @request_cache
 def resolve_user_grants(user: str) -> dict[str, list[dict[str, Any]]]:
-	"""Resolve Team Member -> Team Role -> Capability into token-ready grants.
-
-	Request-cached: `can()` (via permission_query_conditions on every Virtual Machine/Site/
-	Team Invitation list query) and the notification feed call this per row/member,
-	so within one request the 4-table join runs once per user, not per call."""
+	"""The user's grants per team: Team Member, then Team Role, then Capability.
+	Cached per request, because permission checks call it once per row."""
 	grants_by_team: dict[str, list[dict[str, Any]]] = defaultdict(list)
 
 	if user_has_operator_bypass(user):
@@ -259,14 +251,13 @@ def _get_grant_scope(row) -> str | None:
 		return row.server or None
 	if row.resource_type == "Site":
 		return row.site_server or None
+
 	return None
 
 
 def clear_grants_cache() -> None:
-	"""Drop the request-cached IAM grants after a Team write, so later capability checks
-	in the same request see the new membership. This also isolates test methods, which
-	share one request while each rebuilds its team under a fresh name. Clearing the whole
-	request cache is safe — it is transparent, and Team writes are rare."""
+	"""Drop the request-cached grants after a Team write, so later checks in the same request
+	see the new membership."""
 	cache = getattr(frappe.local, "request_cache", None)
 	if cache is not None:
 		cache.clear()
@@ -278,11 +269,8 @@ def can(user: str, team: str, capability: str, server: str | None = None) -> boo
 	1. An operator always does.
 	2. With no `server`, only a team-wide grant counts: this is the team-level question.
 	3. With a `server`, a team-wide grant or a grant scoped to that server counts."""
-	# No pre-flight db.exists probes: resolve_user_grants only returns Active teams
-	# (the join filters team.status), so an inactive/unknown team yields no grants,
-	# and an unknown capability simply won't match any grant's caps — both fall
-	# through to False without a separate round-trip. resolve_user_grants is
-	# request-cached, so the per-row/per-member callers pay one join, not N.
+	# Grants cover only Active teams and are cached per request, so an unknown team or
+	# capability is False with no extra query.
 	if user_has_operator_bypass(user):
 		return True
 
@@ -310,6 +298,7 @@ def get_allowed_servers(user: str, capability: str) -> dict[str, str | frozenset
 			allowed[team] = ALL_SERVERS
 		elif scopes:
 			allowed[team] = frozenset(scopes)
+
 	return allowed
 
 

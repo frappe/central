@@ -18,6 +18,7 @@ def send_sign_in_code(email: str, full_name: str | None = None, product: str | N
 	`product` only labels the signup funnel event."""
 	user = _find_user(email)
 	if user and not user.enabled:
+		EmailCode(email).hold()
 		_send_disabled_notice(email)
 	elif user:
 		EmailCode(email).send(_("{0} is your Frappe Cloud sign-in code"), _("Sign in to Frappe Cloud"))
@@ -54,6 +55,7 @@ def sign_in_with_code(
 		capture("signup_verified", "central", user=name, properties={"product": product})
 		for invitation in get_pending_invitations(name):
 			frappe.get_doc("Team Invitation", invitation).accept()
+
 	return {"user": name}
 
 
@@ -76,6 +78,7 @@ def create_user(email: str, full_name: str):
 	user.flags.no_welcome_mail = True
 	# A guest creates the account, and a guest has no User create permission.
 	user.insert(ignore_permissions=True)
+
 	return user
 
 
@@ -152,8 +155,9 @@ def _enforce_signup_limit() -> None:
 def _should_skip_role_grant(doc) -> bool:
 	if not doc.enabled:
 		return True
-	if getattr(frappe.flags, "in_install", False) or getattr(frappe.flags, "in_migrate", False):
+	if frappe.flags.in_install or frappe.flags.in_migrate:
 		return True
 	if not frappe.db.exists("Role", CENTRAL_USER_ROLE):
 		return True
+
 	return False

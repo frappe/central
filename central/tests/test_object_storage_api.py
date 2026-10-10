@@ -12,7 +12,7 @@ from central.integrations.object_storage import (
 	ObjectStorageRequestUncertain,
 )
 from central.services.api import storage as api
-from central.services.doctype.team_service.team_service import TeamService
+from central.services.doctype.team_service.team_service import STORAGE_SERVICE, TeamService
 from central.tests.test_iam import ensure_user
 from central.tests.utils import ensure_region
 
@@ -109,6 +109,21 @@ class TestTeamServiceLifecycle(ObjectStorageTestCase):
 			self.assertRaises(frappe.ValidationError),
 		):
 			self._create()
+
+		self.cargo.create_bucket.assert_not_called()
+
+	def test_a_bucket_without_a_region_is_refused_before_cargo(self):
+		service = frappe.get_doc(
+			{
+				"doctype": "Team Service",
+				"team": self.team,
+				"add_on_service": STORAGE_SERVICE,
+				"bucket_name": "media",
+			}
+		)
+
+		with self.assertRaisesRegex(frappe.MandatoryError, "A bucket needs a region."):
+			service.insert(ignore_permissions=True)
 
 		self.cargo.create_bucket.assert_not_called()
 

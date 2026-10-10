@@ -183,15 +183,6 @@ doc_events = {
 		"validate": "central.users.validate_user_image",
 		"after_insert": "central.users.grant_central_user_role",
 	},
-	"Team": {
-		# Keep a staging-trial team's billing profile complete so it can create servers
-		# without the setup prompt (the profile gate is otherwise enforced in the console).
-		"on_update": [
-			"central.billing.payments.provisioning.on_team_update",
-			# A new owner may be the new alert address of the team's Grove user.
-			"central.services.ai.on_alert_address_update",
-		],
-	},
 	"Billing Profile": {
 		# Its email is the alert address of the team's Grove user when set.
 		"on_update": "central.services.ai.on_alert_address_update",
@@ -322,6 +313,9 @@ before_tests = [
 # override_whitelisted_methods = {
 # 	"frappe.desk.doctype.event.event.get_events": "central.event.get_events"
 # }
+override_whitelisted_methods = {
+	"frappe.realtime.has_permission": "central.permissions.realtime_has_permission",
+}
 #
 # each overriding function accepts a `data` argument;
 # generated from the base implementation of the doctype dashboard,
@@ -384,7 +378,6 @@ page_renderer = ["central.oidc.DiscoveryPage"]
 permission_query_conditions = {
 	"Team SSH Key": "central.permissions.team_ssh_key_query_conditions",
 	"Virtual Machine": "central.permissions.server_query_conditions",
-	"IAM Permission Probe": "central.permissions.iam_permission_probe_query_conditions",
 	"Pilot Credential": "central.permissions.pilot_credential_query_conditions",
 	"Resource Action": "central.permissions.resource_action_query_conditions",
 	"Site": "central.permissions.site_query_conditions",
@@ -401,7 +394,6 @@ permission_query_conditions = {
 has_permission = {
 	"Team SSH Key": "central.permissions.team_ssh_key_has_permission",
 	"Virtual Machine": "central.permissions.server_has_permission",
-	"IAM Permission Probe": "central.permissions.iam_permission_probe_has_permission",
 	"Pilot Credential": "central.permissions.pilot_credential_has_permission",
 	"Resource Action": "central.permissions.resource_action_has_permission",
 	"Site": "central.permissions.site_has_permission",

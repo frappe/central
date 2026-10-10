@@ -3,24 +3,30 @@ from __future__ import annotations
 import frappe
 from frappe import _
 
-from central.errors import AtlasConnectionError, AtlasRejected, AtlasRequestUncertain, AtlasResourceGone
+from central.errors import AtlasConnectionError
 from central.integrations.atlas import AtlasClient
 
 
 def sync_team_ssh_key(name: str) -> None:
 	"""Replace the complete key set on every live VM that selected this key."""
 	key = frappe.get_doc("Team SSH Key", name)
-	links = frappe.get_all("Server SSH Key", filters={"team_ssh_key": name}, fields=["parent"])
-	errors: list[str] = []
-	for link in links:
-		server = frappe.db.get_value(
-			"Virtual Machine", link.parent, ["name", "team", "region", "atlas_vm_id", "status"], as_dict=True
+	parents = frappe.get_all("Server SSH Key", filters={"team_ssh_key": name}, pluck="parent")
+	servers = {
+		server.name: server
+		for server in frappe.get_all(
+			"Virtual Machine",
+			filters={"name": ("in", parents or [""])},
+			fields=["name", "team", "region", "atlas_vm_id", "status"],
 		)
+	}
+	errors: list[str] = []
+	for parent in parents:
+		server = servers.get(parent)
 		if not server or server.team != key.team or not server.atlas_vm_id or server.status == "Terminated":
 			continue
 		try:
 			_sync_server(server)
-		except (AtlasConnectionError, AtlasRejected, AtlasRequestUncertain, AtlasResourceGone, ValueError):
+		except (AtlasConnectionError, ValueError):
 			frappe.log_error(title=f"SSH key sync failed for {server.name}", message=frappe.get_traceback())
 			errors.append(server.name)
 	key.db_set(

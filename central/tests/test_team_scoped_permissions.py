@@ -5,6 +5,7 @@ from frappe.tests import IntegrationTestCase
 from central.permissions import (
 	pilot_credential_has_permission,
 	pilot_credential_query_conditions,
+	realtime_has_permission,
 	team_notification_has_permission,
 	team_notification_query_conditions,
 	team_service_has_permission,
@@ -26,6 +27,20 @@ class TestTeamScopedPermissions(IntegrationTestCase):
 	def tearDown(self):
 		frappe.set_user("Administrator")
 
+	def test_realtime_doctype_rooms_are_for_operators_only(self):
+		mine = self._team("Realtime Mine", self.viewer, "Viewer")
+		theirs = self._team("Realtime Theirs", self.other_user, "Viewer")
+
+		frappe.set_user(self.viewer)
+		with self.assertRaises(frappe.PermissionError):
+			realtime_has_permission("Site", "")
+		self.assertTrue(realtime_has_permission("Team", mine.name))
+		with self.assertRaises(frappe.PermissionError):
+			realtime_has_permission("Team", theirs.name)
+
+		frappe.set_user("Administrator")
+		self.assertTrue(realtime_has_permission("Site", ""))
+
 	def test_desk_list_apis_are_team_scoped(self):
 		team_a = self._team("Team Scoped A", self.viewer, "Viewer")
 		team_b = self._team("Team Scoped B", self.owner, "Owner")
@@ -43,22 +58,6 @@ class TestTeamScopedPermissions(IntegrationTestCase):
 		self.assertTrue(frappe.has_permission("Site", "read", site_a.name))
 		self.assertFalse(frappe.has_permission("Site", "read", site_b.name))
 		self.assertFalse(frappe.has_permission("Site", "write", site_a.name))
-
-	def test_permission_probe_lists_are_self_scoped(self):
-		team = self._team("Probe Scoped", self.viewer, "Viewer")
-		viewer_probe = self._probe(self.viewer, team.name, "server:view")
-		other_probe = self._probe(self.other_user, team.name, "server:view")
-
-		frappe.set_user(self.viewer)
-		list_names = set(frappe.get_list("IAM Permission Probe", pluck="name"))
-		reportview_names = {row.name for row in reportview_execute("IAM Permission Probe", fields=["name"])}
-
-		self.assertIn(viewer_probe.name, list_names)
-		self.assertNotIn(other_probe.name, list_names)
-		self.assertIn(viewer_probe.name, reportview_names)
-		self.assertNotIn(other_probe.name, reportview_names)
-		self.assertTrue(frappe.has_permission("IAM Permission Probe", "read", viewer_probe.name))
-		self.assertFalse(frappe.has_permission("IAM Permission Probe", "read", other_probe.name))
 
 	def test_notification_preferences_are_owned_and_team_scoped(self):
 		team = self._team("Preference Scoped", self.viewer, "Viewer")
@@ -155,15 +154,5 @@ class TestTeamScopedPermissions(IntegrationTestCase):
 				"site_name": f"{label}-{self.suffix}.example.test",
 				"team": team,
 				"server": machine.name,
-			}
-		).insert(ignore_permissions=True)
-
-	def _probe(self, user: str, team: str, capability: str):
-		return frappe.get_doc(
-			{
-				"doctype": "IAM Permission Probe",
-				"user": user,
-				"team": team,
-				"capability": capability,
 			}
 		).insert(ignore_permissions=True)

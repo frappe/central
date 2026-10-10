@@ -33,7 +33,6 @@ const {
 	canTerminateServer,
 	canSnapshotServer,
 	canOpenConsole,
-	canViewServers,
 	canCreateServer,
 	activeTeam,
 	rows,
@@ -101,7 +100,7 @@ const {
 
 // A member can be scoped to some servers, so each dialog follows the server it shows.
 const teamActions = computed<ServerActions>(() => ({
-	open: canViewServers.value,
+	open: canOpenConsole.value,
 	power: canPowerServer.value,
 	resize: canResizeServer.value,
 	snapshot: canSnapshotServer.value,
@@ -159,7 +158,7 @@ useServerLink(
 				:has-rows="rows.length > 0"
 				:location-filter="locationFilter"
 				:settled-ids="settledIds"
-				:can-open="canViewServers"
+				:can-open="canOpenConsole"
 				:can-power="canPowerServer"
 				:can-resize="canResizeServer"
 				:can-terminate="canTerminateServer"
@@ -197,7 +196,7 @@ useServerLink(
 					:label-spots="isFleetEmpty"
 					:highlight-id="hoverId"
 					:allow-create="canCreateServer"
-					:allow-open="canViewServers"
+					:allow-open="canOpenConsole"
 					:opening="opening"
 					@open="openById"
 					@open-server="openBench"
@@ -209,7 +208,7 @@ useServerLink(
 						<ServerRowActions
 							v-if="pin.server"
 							:server="pin.server"
-							:can-open="canViewServers"
+							:can-open="canOpenConsole"
 							:can-power="canPowerServer"
 							:can-resize="canResizeServer"
 							:can-terminate="canTerminateServer"
