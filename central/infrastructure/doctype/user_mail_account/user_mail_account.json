@@ -113,7 +113,7 @@
  ],
  "grid_page_length": 50,
  "links": [],
- "modified": "2026-10-09 19:42:12.504799",
+ "modified": "2026-10-10 10:27:25.616292",
  "modified_by": "Administrator",
  "module": "Infrastructure",
  "name": "User Mail Account",
@@ -136,5 +136,6 @@
  "rows_threshold_for_grid_search": 20,
  "sort_field": "creation",
  "sort_order": "DESC",
- "states": []
+ "states": [],
+ "track_changes": 1
 }
