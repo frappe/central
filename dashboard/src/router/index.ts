@@ -1,3 +1,4 @@
+import { nextTick } from 'vue'
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuth } from '@/composables/useAuth'
 import { useSession } from '@/composables/useSession'
@@ -170,6 +171,29 @@ const routes = [
 export const router = createRouter({
 	history: createWebHistory('/dashboard/'),
 	routes,
+})
+
+router.beforeResolve((to, from) => {
+	if (
+		!document.startViewTransition ||
+		to.name !== 'Server' ||
+		from.name !== 'Servers'
+	)
+		return
+
+	return new Promise<void>((resolve) => {
+		document.startViewTransition(
+			() =>
+				new Promise<void>((rendered) => {
+					const stop = router.afterEach(() => {
+						stop()
+						nextTick(rendered)
+					})
+
+					resolve()
+				}),
+		)
+	})
 })
 
 // Session state is seeded synchronously from boot data (window.user), so the

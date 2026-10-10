@@ -406,3 +406,39 @@ watch(
 	@apply border-x-outline-gray-2 border-t-outline-gray-2;
 }
 </style>
+
+<style>
+::view-transition-image-pair(page) {
+	overflow: hidden;
+}
+
+::view-transition-old(page),
+::view-transition-new(page) {
+	mix-blend-mode: normal;
+	background-color: var(--surface-base);
+	animation: 300ms cubic-bezier(0.23, 1, 0.32, 1) both page-push-back;
+}
+
+::view-transition-new(page) {
+	animation-name: page-slide-in;
+}
+
+@keyframes page-slide-in {
+	from {
+		transform: translateX(100%);
+	}
+}
+
+@keyframes page-push-back {
+	to {
+		transform: translateX(-30%);
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	::view-transition-old(page),
+	::view-transition-new(page) {
+		animation: none;
+	}
+}
+</style>
