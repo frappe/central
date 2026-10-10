@@ -29,11 +29,26 @@ class CentralSettings(Document):
 		enable_object_storage_service: DF.Check
 		enable_pdf_print_service: DF.Check
 		invitation_expiry_days: DF.Int
+		invitation_resend_cooldown_minutes: DF.Int
+		invitations_per_hour: DF.Int
+		sign_in_code_attempts: DF.Int
+		sign_in_codes_per_email: DF.Int
 		trial_idle_shutdown_minutes: DF.Int
+		trial_servers_per_team: DF.Int
 		wildcard_domain: DF.Data | None
 	# end: auto-generated types
 
 	def validate(self) -> None:
+		self.validate_limits()
+		self.validate_common_site_config()
+
+	def validate_limits(self) -> None:
+		"""A zero would refuse every invitation, every sign-in code, or every wrong code at once."""
+		for fieldname in ("invitations_per_hour", "sign_in_code_attempts", "sign_in_codes_per_email"):
+			if self.get(fieldname) < 1:
+				frappe.throw(_("{0} must be at least 1.").format(_(self.meta.get_label(fieldname))))
+
+	def validate_common_site_config(self) -> None:
 		from central.integrations.atlas import MAXIMUM_METADATA_BYTES
 
 		try:

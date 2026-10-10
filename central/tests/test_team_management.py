@@ -23,7 +23,7 @@ from central.api.teams import (
 from central.iam import can, get_user_team_names, resolve_user_grants
 from central.identity.doctype.team_invitation.team_invitation import expire_pending_invitations
 from central.sso import central_url
-from central.tests.utils import ensure_server, upload_test_image
+from central.tests.utils import central_limit, ensure_server, upload_test_image
 
 
 def _age_invitation(name: str) -> None:
@@ -542,17 +542,20 @@ class TestTeamManagement(IntegrationTestCase):
 
 	def test_a_person_can_send_only_so_many_invitations_an_hour(self):
 		frappe.set_user(self.owner)
-		with patch(
-			"central.identity.doctype.team_invitation.team_invitation.INVITATIONS_PER_HOUR",
-			frappe.db.count(
-				"Team Invitation",
-				{"invited_by": self.owner, "creation": (">", add_to_date(None, hours=-1))},
-			)
-			+ 1,
-		):
+		sent = frappe.db.count(
+			"Team Invitation", {"invited_by": self.owner, "creation": (">", add_to_date(None, hours=-1))}
+		)
+		with central_limit("invitations_per_hour", sent + 1):
 			invite_team_member(self.team.name, self.invitee, "Developer")
 			with self.assertRaisesRegex(frappe.ValidationError, "too many invitations"):
 				invite_team_member(self.team.name, "another.invitee@example.test", "Developer")
+
+	def test_the_resend_cooldown_follows_the_setting(self):
+		frappe.set_user(self.owner)
+		name = invite_team_member(self.team.name, self.invitee, "Developer")
+
+		with central_limit("invitation_resend_cooldown_minutes", 0):
+			resend_invitation(name)
 
 	def test_the_invitation_link_ignores_the_request_host(self):
 		frappe.set_user(self.owner)

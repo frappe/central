@@ -5,6 +5,7 @@ from contextlib import contextmanager
 
 import frappe
 from frappe import _
+from frappe.utils import cint
 
 
 class EmailCodeError(frappe.ValidationError):
@@ -14,13 +15,24 @@ class EmailCodeError(frappe.ValidationError):
 class EmailCode:
 	"""A one-time code that proves the holder reads one mailbox."""
 
-	TTL_SECONDS = 10 * 60
-	MAX_ATTEMPTS = 5
-	MAX_SENDS = 5
-
 	def __init__(self, email: str) -> None:
 		self.email = email
 		self.cache_key = f"auth:email-code:{email}"
+
+	@staticmethod
+	def get_expiry_seconds() -> int:
+		"""Frappe's email-link login expiry, which treats an unset value as 10 minutes."""
+		return (cint(frappe.get_system_settings("login_with_email_link_expiry")) or 10) * 60
+
+	@staticmethod
+	def get_max_attempts() -> int:
+		return cint(frappe.get_cached_value("Central Settings", "Central Settings", "sign_in_code_attempts"))
+
+	@staticmethod
+	def get_max_sends() -> int:
+		return cint(
+			frappe.get_cached_value("Central Settings", "Central Settings", "sign_in_codes_per_email")
+		)
 
 	@property
 	def pending(self) -> dict | None:
@@ -40,12 +52,12 @@ class EmailCode:
 	def _next_pending(self) -> dict:
 		"""The entry for one more send. Sends and failed attempts carry over until the entry expires."""
 		pending = self.pending or {}
-		if pending.get("attempts", 0) >= self.MAX_ATTEMPTS:
+		if pending.get("attempts", 0) >= self.get_max_attempts():
 			self._throw_locked()
-		if pending.get("sends", 0) >= self.MAX_SENDS:
+		if pending.get("sends", 0) >= self.get_max_sends():
 			frappe.throw(
 				_("Too many codes requested. Wait {0} minutes, then try again.").format(
-					self.TTL_SECONDS // 60
+					self.get_expiry_seconds() // 60
 				),
 				EmailCodeError,
 			)
@@ -67,7 +79,7 @@ class EmailCode:
 		pending = self.pending
 		if not pending:
 			frappe.throw(_("That code has expired. Request a new code."), EmailCodeError)
-		if pending["attempts"] >= self.MAX_ATTEMPTS:
+		if pending["attempts"] >= self.get_max_attempts():
 			self._throw_locked()
 
 		if not secrets.compare_digest(pending["code"], code):
@@ -81,7 +93,7 @@ class EmailCode:
 		frappe.cache.delete_value(self.cache_key)
 
 	def _store(self, pending: dict) -> None:
-		frappe.cache.set_value(self.cache_key, pending, expires_in_sec=self.TTL_SECONDS)
+		frappe.cache.set_value(self.cache_key, pending, expires_in_sec=self.get_expiry_seconds())
 
 	def _mail(self, code: str, subject: str, heading: str) -> None:
 		try:
@@ -89,7 +101,7 @@ class EmailCode:
 				recipients=[self.email],
 				subject=subject,
 				template="verification_code",
-				args={"code": code, "heading": heading, "expires_minutes": self.TTL_SECONDS // 60},
+				args={"code": code, "heading": heading, "expires_minutes": self.get_expiry_seconds() // 60},
 				now=True,
 			)
 		except Exception:
@@ -102,7 +114,7 @@ class EmailCode:
 	def _throw_locked(self) -> None:
 		frappe.throw(
 			_("Too many incorrect codes. Wait {0} minutes, then request a new code.").format(
-				self.TTL_SECONDS // 60
+				self.get_expiry_seconds() // 60
 			),
 			EmailCodeError,
 		)

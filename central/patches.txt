@@ -34,3 +34,4 @@ central.patches.v0_0.seed_accounting_defaults
 central.patches.v0_0.mark_top_ups_paid_in
 # The credit note series reads blank on a Billing Settings saved before it existed.
 central.patches.v0_0.seed_credit_note_series
+central.patches.v0_0.seed_central_limits

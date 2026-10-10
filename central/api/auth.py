@@ -8,17 +8,19 @@ from central.identity.email_code import EmailCode
 from central.users import create_user, send_sign_in_code, sign_in_with_code
 
 FULL_NAME_MAX_LENGTH = 140
+# The rate limit key holds its window, so the window cannot follow a setting.
+RATE_LIMIT_WINDOW_SECONDS = 10 * 60
 
 
 # nosemgrep: guest-whitelisted-method -- sending is limited by IP and by email.
 @frappe.whitelist(allow_guest=True, methods=["POST"])
-@rate_limit(limit=20, seconds=EmailCode.TTL_SECONDS, methods="POST")
+@rate_limit(limit=20, seconds=RATE_LIMIT_WINDOW_SECONDS, methods="POST")
 @rate_limit(
 	key="email",
 	ip_based=False,
 	endpoint="central.auth.code_send",
-	limit=5,
-	seconds=EmailCode.TTL_SECONDS,
+	limit=EmailCode.get_max_sends,
+	seconds=RATE_LIMIT_WINDOW_SECONDS,
 	methods="POST",
 )
 def send_code(email: str, full_name: str | None = None, product: str | None = None) -> dict:
@@ -31,13 +33,13 @@ def send_code(email: str, full_name: str | None = None, product: str | None = No
 
 # nosemgrep: guest-whitelisted-method -- a short-lived code and an attempt limit authenticate the user.
 @frappe.whitelist(allow_guest=True, methods=["POST"])
-@rate_limit(limit=20, seconds=EmailCode.TTL_SECONDS, methods="POST")
+@rate_limit(limit=20, seconds=RATE_LIMIT_WINDOW_SECONDS, methods="POST")
 @rate_limit(
 	key="email",
 	ip_based=False,
 	endpoint="central.auth.code_verify",
 	limit=10,
-	seconds=EmailCode.TTL_SECONDS,
+	seconds=RATE_LIMIT_WINDOW_SECONDS,
 	methods="POST",
 )
 def verify_code(email: str, code: str, full_name: str | None = None, product: str | None = None) -> dict:
@@ -51,7 +53,7 @@ def verify_code(email: str, code: str, full_name: str | None = None, product: st
 
 # nosemgrep: guest-whitelisted-method -- the emailed token verifies the address, and the IP rate limit applies.
 @frappe.whitelist(allow_guest=True, methods=["POST"])
-@rate_limit(limit=10, seconds=EmailCode.TTL_SECONDS, methods="POST")
+@rate_limit(limit=10, seconds=RATE_LIMIT_WINDOW_SECONDS, methods="POST")
 def sign_up_with_invitation(token: str, full_name: str) -> dict:
 	"""Create the invited user's account and join the team.
 

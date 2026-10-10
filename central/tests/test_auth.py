@@ -6,6 +6,7 @@ from frappe.tests import IntegrationTestCase
 from central.api.auth import send_code, verify_code
 from central.identity.email_code import EmailCode, EmailCodeError
 from central.tests.test_team_management import create_user
+from central.tests.utils import central_limit
 from central.www.dashboard import build_auth_context
 
 SENDMAIL = "central.identity.email_code.frappe.sendmail"
@@ -75,7 +76,7 @@ class TestAuth(IntegrationTestCase):
 			send_code(self.email, "Locked Out")
 			code = self._code()
 			wrong = "000000" if code != "000000" else "111111"
-			for _ in range(EmailCode.MAX_ATTEMPTS):
+			for _ in range(EmailCode.get_max_attempts()):
 				with self.assertRaises(EmailCodeError):
 					self._verify(wrong)
 
@@ -105,6 +106,24 @@ class TestAuth(IntegrationTestCase):
 		self.assertEqual(response, {"message": f"We sent a code to {self.email}."})
 		self.assertIn("disabled", notice.call_args.kwargs["subject"])
 		code_mail.assert_not_called()
+
+	def test_the_code_limits_follow_central_settings(self):
+		with patch(SENDMAIL), central_limit("sign_in_codes_per_email", 1):
+			send_code(self.email, "One Code")
+			with self.assertRaisesRegex(EmailCodeError, "Too many codes requested"):
+				send_code(self.email, "One Code")
+
+		with central_limit("sign_in_code_attempts", 1):
+			with self.assertRaisesRegex(EmailCodeError, "incorrect"):
+				self._verify("000000")
+			with self.assertRaisesRegex(EmailCodeError, "Too many incorrect codes"):
+				self._verify(self._code())
+
+	def test_a_code_expires_after_the_system_settings_expiry(self):
+		with patch("central.identity.email_code.frappe.get_system_settings", return_value=3):
+			self.assertEqual(EmailCode.get_expiry_seconds(), 180)
+		with patch("central.identity.email_code.frappe.get_system_settings", return_value=0):
+			self.assertEqual(EmailCode.get_expiry_seconds(), 600)
 
 	def test_a_disabled_account_and_an_unknown_email_answer_a_wrong_code_alike(self):
 		frappe.set_user("Administrator")

@@ -19,7 +19,16 @@
   "enable_email_delivery_service",
   "enable_object_storage_service",
   "servers_tab",
-  "common_site_config"
+  "common_site_config",
+  "limits_tab",
+  "invitations_section",
+  "invitations_per_hour",
+  "invitation_resend_cooldown_minutes",
+  "sign_in_section",
+  "sign_in_code_attempts",
+  "sign_in_codes_per_email",
+  "trials_section",
+  "trial_servers_per_team"
  ],
  "fields": [
   {
@@ -112,13 +121,74 @@
    "fieldname": "common_site_config",
    "fieldtype": "JSON",
    "label": "Common Site Config"
+  },
+  {
+   "fieldname": "limits_tab",
+   "fieldtype": "Tab Break",
+   "label": "Limits"
+  },
+  {
+   "fieldname": "invitations_section",
+   "fieldtype": "Section Break",
+   "label": "Invitations"
+  },
+  {
+   "default": "50",
+   "description": "Invitations one person may send in an hour. Operators are not limited.",
+   "fieldname": "invitations_per_hour",
+   "fieldtype": "Int",
+   "label": "Invitations per Hour",
+   "non_negative": 1
+  },
+  {
+   "default": "5",
+   "description": "Minutes before a pending invitation can be sent again.",
+   "fieldname": "invitation_resend_cooldown_minutes",
+   "fieldtype": "Int",
+   "label": "Invitation Resend Cooldown (Minutes)",
+   "non_negative": 1
+  },
+  {
+   "description": "A code expires after System Settings > Login with email link expiry.",
+   "fieldname": "sign_in_section",
+   "fieldtype": "Section Break",
+   "label": "Sign-in Codes"
+  },
+  {
+   "default": "5",
+   "description": "Wrong codes an email may enter before it is locked until the code expires.",
+   "fieldname": "sign_in_code_attempts",
+   "fieldtype": "Int",
+   "label": "Code Attempts",
+   "non_negative": 1
+  },
+  {
+   "default": "5",
+   "description": "Codes one email may request before the code expires.",
+   "fieldname": "sign_in_codes_per_email",
+   "fieldtype": "Int",
+   "label": "Codes per Email",
+   "non_negative": 1
+  },
+  {
+   "fieldname": "trials_section",
+   "fieldtype": "Section Break",
+   "label": "Trials"
+  },
+  {
+   "default": "3",
+   "description": "Active and pending servers a trial team may hold.",
+   "fieldname": "trial_servers_per_team",
+   "fieldtype": "Int",
+   "label": "Trial Servers per Team",
+   "non_negative": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-10-10 10:27:25.616292",
+ "modified": "2026-10-11 10:00:00.000000",
  "modified_by": "Administrator",
  "module": "Central",
  "name": "Central Settings",

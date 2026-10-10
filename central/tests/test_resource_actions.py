@@ -15,9 +15,10 @@ from central.errors import AtlasConnectionError, AtlasRequestUncertain
 from central.infrastructure.doctype.resource_action.resource_action import ResourceAction
 from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
 from central.integrations.resource_actions import SERVER_PAGE_SIZE, _process_locked
-from central.resource_actions import get_status, submit_request, trial_server_count
+from central.resource_actions import get_status, submit_request, trial_server_count, validate_trial
 from central.server_models import SiteCreation
 from central.tests.test_sso_keys import reset_signing_key
+from central.tests.utils import central_limit
 
 COMPOSITION = [
 	{"resource_type": "Compute", "quantity": 1, "unit": "vCPU"},
@@ -365,6 +366,15 @@ class TestResourceActions(IntegrationTestCase):
 			frappe.db.get_value("Error Log", action.error_log, "error"),
 		)
 		self.client.return_value.create_vm.assert_called_once()
+
+	def test_the_trial_cap_follows_central_settings(self):
+		with (
+			patch("central.billing.revenue.credits.get_balance", return_value={"balance": 10}),
+			patch("central.resource_actions.trial_server_count", return_value=1),
+			central_limit("trial_servers_per_team", 1),
+			self.assertRaisesRegex(frappe.ValidationError, "at most 1 active or pending servers"),
+		):
+			validate_trial(self.team.name)
 
 	def test_the_trial_cap_counts_with_locking_reads(self):
 		with patch.object(frappe.db, "sql", wraps=frappe.db.sql) as sql:

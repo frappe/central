@@ -107,6 +107,7 @@ flowchart TD
 - Invitations cannot grant the `Owner` role.
 - `invite_team_member` invites one person, or up to 10 people in one request with `invitations`, because each invitation sends an email. It invites each row on its own: a refused row returns its error, and the other rows are still invited.
 - An invitation stays open for the days set in Central Settings, Invitation Expiry (Days). The default is 14. Resending an invitation starts the count again and issues a new link, so the link in the earlier email stops working.
+- One person can send Invitations per Hour invitations (default 50), and can resend an invitation after Invitation Resend Cooldown (default 5 minutes). Both are on the Limits tab of Central Settings. Operators are not limited.
 
 Example: Jane signs up without an invitation and creates Acme in onboarding, so Jane owns Acme. If John later invites Jane to John's Team, Jane accepts and is a member of both Teams. If John invites Jane before she has an account, Jane joins John's Team only and sees no onboarding.
 
@@ -142,7 +143,7 @@ The emailed token verifies the address, so a new invitee does not need a second 
 
 ## Console Login
 
-Console login sends a six-digit code to an enabled user's email. The request response does not disclose whether the account exists. Central limits sends to five per supplied email value and 20 per IP in ten minutes. A pending code expires ten minutes after the last send or incorrect attempt and permits five incorrect attempts. Verification consumes the code before it creates a session. The console login form uses only this email code flow.
+Console login sends a six-digit code to an enabled user's email. The request response does not disclose whether the account exists. Central limits sends to 20 per IP in ten minutes, and per email to Codes per Email on the Limits tab of Central Settings (default 5). A pending code expires after System Settings, Login with email link expiry (default 10 minutes), counted from the last send or incorrect attempt. It permits Code Attempts incorrect attempts (default 5). Verification consumes the code before it creates a session. The console login form uses only this email code flow.
 
 ## Deferred Scope
 

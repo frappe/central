@@ -2,6 +2,8 @@
 # For license information, please see license.txt
 """Shared fixtures for central tests."""
 
+from contextlib import contextmanager
+
 import frappe
 
 
@@ -62,3 +64,16 @@ def upload_test_image(doctype: str, name: str, fieldname: str) -> str:
 		}
 	).insert()
 	return file.file_url
+
+
+@contextmanager
+def central_limit(fieldname: str, value: int):
+	"""Set one Central Settings limit for the block, then put the old value back."""
+	previous = frappe.db.get_single_value("Central Settings", fieldname)
+	frappe.db.set_single_value("Central Settings", fieldname, value)
+	frappe.clear_document_cache("Central Settings", "Central Settings")
+	try:
+		yield
+	finally:
+		frappe.db.set_single_value("Central Settings", fieldname, previous)
+		frappe.clear_document_cache("Central Settings", "Central Settings")

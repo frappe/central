@@ -7,6 +7,7 @@ from frappe.model.document import Document
 from frappe.utils import (
 	add_days,
 	add_to_date,
+	cint,
 	get_datetime,
 	get_fullname,
 	getdate,
@@ -20,9 +21,6 @@ from central.identity.doctype.team_member.team_member import validate_resource_s
 from central.sso import central_url
 
 DEFAULT_EXPIRY_DAYS = 14
-# Invitations are platform-branded mail to any address, so a person cannot send without limit.
-INVITATIONS_PER_HOUR = 50
-RESEND_COOLDOWN_MINUTES = 5
 
 
 class TeamInvitation(Document):
@@ -151,13 +149,16 @@ class TeamInvitation(Document):
 		self._require_manager()
 		if self.status != "Pending":
 			frappe.throw(_("Only a pending invitation can be resent."))
+		cooldown = cint(
+			frappe.get_cached_value(
+				"Central Settings", "Central Settings", "invitation_resend_cooldown_minutes"
+			)
+		)
 		if not user_has_operator_bypass() and get_datetime(self.modified) > add_to_date(
-			None, minutes=-RESEND_COOLDOWN_MINUTES
+			None, minutes=-cooldown
 		):
 			frappe.throw(
-				_("This invitation was sent less than {0} minutes ago. Try again later.").format(
-					RESEND_COOLDOWN_MINUTES
-				)
+				_("This invitation was sent less than {0} minutes ago. Try again later.").format(cooldown)
 			)
 
 		# A new token also cancels the link in the earlier email.
@@ -190,7 +191,10 @@ class TeamInvitation(Document):
 			"Team Invitation",
 			{"invited_by": frappe.session.user, "creation": (">", add_to_date(None, hours=-1))},
 		)
-		if sent >= INVITATIONS_PER_HOUR:
+		# Invitations are platform-branded mail to any address, so one person cannot send without limit.
+		if sent >= cint(
+			frappe.get_cached_value("Central Settings", "Central Settings", "invitations_per_hour")
+		):
 			frappe.throw(_("You have sent too many invitations. Try again in an hour."))
 
 	def _validate_role(self) -> None:
