@@ -3,7 +3,11 @@ import { computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useBreadcrumbs } from '@/composables/useBreadcrumbs'
 import { useCapabilities } from '@/composables/useCapabilities'
-import { SETTINGS_TABS, type SettingsTab } from '@/composables/useSettings'
+import {
+	SETTINGS_TABS,
+	type SettingsTab,
+	useSettingsTabs,
+} from '@/composables/useSettings'
 
 // One settings tab as a full page. Mobile has no room for a dialog with a
 // sidebar, so the tabs become routes: /settings lists them, /settings/:tab is
@@ -11,7 +15,8 @@ import { SETTINGS_TABS, type SettingsTab } from '@/composables/useSettings'
 const route = useRoute()
 const router = useRouter()
 const { setBreadcrumbs } = useBreadcrumbs()
-const { loading, isMember, canEditTeam, canDeleteTeam } = useCapabilities()
+const { loading } = useCapabilities()
+const { isAvailable } = useSettingsTabs()
 
 const tab = computed(() =>
 	SETTINGS_TABS.find((t) => t.value === (route.params.tab as SettingsTab)),
@@ -19,13 +24,7 @@ const tab = computed(() =>
 
 // An unknown tab, or one this member can't reach, belongs back at the list
 // rather than on a blank page.
-const allowed = computed(() => {
-	if (!tab.value) return false
-	if (tab.value.requires === 'member') return isMember.value
-	if (tab.value.requires === 'teamAdmin')
-		return canEditTeam.value || canDeleteTeam.value
-	return true
-})
+const allowed = computed(() => !!tab.value && isAvailable(tab.value))
 
 watch(
 	[tab, allowed, loading],
