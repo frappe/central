@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { Badge, Button, TextInput } from 'frappe-ui'
+import { onBeforeUnmount, ref, watch } from 'vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import ProviderAvatar from '@/components/servers/ProviderAvatar.vue'
 import ServerRowActions from '@/components/servers/ServerRowActions.vue'
@@ -29,7 +30,7 @@ interface ServerListPanelProps {
 	opening: string | null
 }
 
-defineProps<ServerListPanelProps>()
+const props = defineProps<ServerListPanelProps>()
 
 defineEmits<{
 	/** Row click — the page opens the resource itself (bench/site/overview). */
@@ -50,6 +51,21 @@ defineEmits<{
 
 const query = defineModel<string>('query', { required: true })
 const _hoverId = defineModel<string | null>('hoverId', { required: true })
+
+// Rows cascade in once, when the list first fills. Rows a search or filter brings back appear
+// at once: typing is a keyboard action, and animating its result makes it feel slow. A route
+// transition already brings the whole list in, so it skips the cascade.
+const isCascading = ref(!document.documentElement.dataset.routeTransition)
+let cascadeTimer: number | undefined
+watch(
+	() => props.rows.length > 0,
+	(hasRows) => {
+		if (!hasRows || !isCascading.value) return
+		cascadeTimer = window.setTimeout(() => (isCascading.value = false), 500)
+	},
+	{ immediate: true },
+)
+onBeforeUnmount(() => window.clearTimeout(cascadeTimer))
 </script>
 
 <template>
@@ -105,7 +121,8 @@ const _hoverId = defineModel<string | null>('hoverId', { required: true })
 				v-for="(row, i) in rows"
 				:key="row.id"
 				class="sp-row group flex cursor-pointer items-center gap-3 rounded-6 px-2.5 py-2.5 transition-colors"
-				:style="{ animationDelay: `${Math.min(i * 25, 200)}ms` }"
+				:class="isCascading && 'sp-row-enter'"
+				:style="isCascading ? { animationDelay: `${Math.min(i * 30, 180)}ms` } : undefined"
 				@click="$emit('openRow', row)"
 				@mouseenter="_hoverId = row.id"
 				@mouseleave="_hoverId = null"
@@ -202,8 +219,7 @@ const _hoverId = defineModel<string | null>('hoverId', { required: true })
 </template>
 
 <style scoped>
-/* Rows cascade in on first render — brief, then out of the way. */
-.sp-row {
+.sp-row-enter {
 	animation: sp-row-in 250ms cubic-bezier(0.23, 1, 0.32, 1) both;
 }
 .sp-row:hover:not(:has(.sp-row-actions:hover)),
@@ -235,9 +251,15 @@ const _hoverId = defineModel<string | null>('hoverId', { required: true })
 	}
 }
 
+/* Reduced motion keeps the fade and drops the movement. */
 @media (prefers-reduced-motion: reduce) {
-	.sp-row {
-		animation: none;
+	.sp-row-enter {
+		animation-name: sp-row-fade-in;
+	}
+}
+@keyframes sp-row-fade-in {
+	from {
+		opacity: 0;
 	}
 }
 

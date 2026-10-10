@@ -173,16 +173,23 @@ export const router = createRouter({
 	routes,
 })
 
-router.beforeResolve((to, from) => {
-	if (
-		!document.startViewTransition ||
-		to.name !== 'Server' ||
-		from.name !== 'Servers'
-	)
-		return
+// Route pairs that animate, keyed by the name their CSS selects on (see style.css).
+const ROUTE_TRANSITIONS: Record<string, string> = {
+	'Servers>Server': 'server-open',
+	'Server>Servers': 'server-open-back',
+	'Servers>NewServer': 'server-create',
+	'NewServer>Servers': 'server-create-back',
+}
 
+router.beforeResolve((to, from) => {
+	const transition =
+		ROUTE_TRANSITIONS[`${String(from.name)}>${String(to.name)}`]
+	if (!document.startViewTransition || !transition) return
+
+	const root = document.documentElement
+	root.dataset.routeTransition = transition
 	return new Promise<void>((resolve) => {
-		document.startViewTransition(
+		const viewTransition = document.startViewTransition(
 			() =>
 				new Promise<void>((rendered) => {
 					const stop = router.afterEach(() => {
@@ -193,6 +200,7 @@ router.beforeResolve((to, from) => {
 					resolve()
 				}),
 		)
+		viewTransition.finished.finally(() => delete root.dataset.routeTransition)
 	})
 })
 

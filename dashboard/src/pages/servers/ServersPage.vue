@@ -148,10 +148,10 @@ useServerLink(
 			/>
 		</Teleport>
 
-		<!-- The list is always in view beside the map. Below lg, the list stacks over a short map. -->
-		<div class="flex min-h-0 flex-1 flex-col lg:flex-row">
+		<!-- The list stays in view on the right. Below lg, it stacks over a short map. -->
+		<div class="flex min-h-0 flex-1 flex-col lg:flex-row-reverse">
 			<ServerListPanel
-				class="min-h-0 flex-1 overflow-hidden border-b border-outline-gray-1 lg:w-96 lg:flex-none lg:border-b-0 lg:border-r"
+				class="vt-server-list min-h-0 flex-1 overflow-hidden border-b border-outline-gray-1 lg:w-96 lg:flex-none lg:border-b-0 lg:border-l"
 				v-model:query="q"
 				v-model:hover-id="hoverId"
 				:title="listTitle"
@@ -186,7 +186,7 @@ useServerLink(
 			<!-- The map card, inset beside the list. Filters and alerts float above it;
 			     `isolate` keeps their z-indexes from leaking above body-portaled menus. -->
 			<div
-				class="relative isolate m-2 h-72 shrink-0 overflow-hidden rounded-6 border border-outline-gray-1 lg:h-auto lg:flex-1"
+				class="vt-server-map relative isolate m-2 h-72 shrink-0 overflow-hidden rounded-6 border border-outline-gray-1 lg:h-auto lg:flex-1"
 			>
 				<ServerMap
 					class="absolute inset-0"
@@ -218,8 +218,9 @@ useServerLink(
 							:opens-site="!!pin.site"
 							:busy="busy === pin.server.resource_id"
 							:opening="
-							opening === pin.server.resource_id || opening === pin.site?.name
-						"
+								opening === pin.server.resource_id ||
+								opening === pin.site?.name
+							"
 							@overview="showServer"
 							@open="openServer"
 							@pilot="openBench"
@@ -251,7 +252,7 @@ useServerLink(
 				<!-- Names what the map frames, so a fleet in one region is a choice, not a hidden crop. -->
 				<div
 					v-if="hasMapViewChoice"
-					class="absolute bottom-3 right-3 rounded-5 border border-outline-gray-2 bg-surface-base"
+					class="absolute bottom-2 right-2 rounded-5 border border-outline-gray-2 bg-surface-base"
 				>
 					<TabButtons
 						v-model="mapView"
