@@ -56,7 +56,7 @@ const {
 	resizeLabel,
 	changed,
 	confirm,
-} = useResizeServer(toRef(props, 'server'), {
+} = useResizeServer(toRef(props, 'server'), model, {
 	close: () => (model.value = false),
 	resized: () => emit('resized'),
 })

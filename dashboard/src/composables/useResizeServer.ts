@@ -21,6 +21,7 @@ interface ResizeCallbacks {
 
 export function useResizeServer(
 	server: Readonly<Ref<VirtualMachineRow | null>>,
+	isOpen: Readonly<Ref<boolean>>,
 	callbacks: ResizeCallbacks,
 ) {
 	const { activeTeam } = useSession()
@@ -83,14 +84,6 @@ export function useResizeServer(
 		capacity,
 		loading: plansLoading,
 	} = usePlans(region, subscription)
-
-	const open = computed({
-		get: () => Boolean(server.value),
-		set: (v: boolean) => {
-			// Don't let a stray close (Esc / backdrop) abandon an in-flight resize.
-			if (!v && !resizeCall.loading) callbacks.close()
-		},
-	})
 
 	// A preset name, or `custom:<profile>` for a designed config in that profile — the
 	// exact shape PlanGroup speaks (matching the New Server flow).
@@ -174,15 +167,23 @@ export function useResizeServer(
 		}
 	})
 
-	// Reset when the dialog opens on a different server.
-	watch(server, (value) => {
-		selectedPlan.value = null
-		composedConfig.value = null
-		activeTab.value = ''
-		growDisk.value = false
-		selectedDisk.value = null
-		if (value && activeTeamId.value) configCall.reload()
-	})
+	// Start clean on every open. Keyed on the server id, so a refetch of the same
+	// server while the dialog is open keeps the selection.
+	watch(
+		[isOpen, () => server.value?.resource_id],
+		([opened, serverId]) => {
+			if (!opened || !serverId) return
+
+			selectedPlan.value = null
+			composedConfig.value = null
+			activeTab.value = ''
+			growDisk.value = false
+			selectedDisk.value = null
+
+			if (activeTeamId.value) configCall.reload()
+		},
+		{ immediate: true },
+	)
 
 	const currentPlanKey = computed(() => {
 		const cfg = configCall.data
@@ -373,12 +374,11 @@ export function useResizeServer(
 					: `Resized ${name}.`,
 			)
 			callbacks.resized()
-			open.value = false
+			callbacks.close()
 		}
 	}
 
 	return {
-		open,
 		configCall,
 		resizeCall,
 		plansLoading,
