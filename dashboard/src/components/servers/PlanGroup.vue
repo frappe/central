@@ -4,7 +4,7 @@ import { computed, nextTick } from 'vue'
 import ConfigDesigner from '@/components/servers/ConfigDesigner.vue'
 import { configSpecs, estimateConfig } from '@/lib/composed'
 import { money } from '@/lib/format'
-import { planSpecs } from '@/lib/plans'
+import { planQuantity, planSpecs } from '@/lib/plans'
 import type {
 	Capacity,
 	ComposedConfig,
@@ -59,13 +59,8 @@ const customSpec = computed<string>(() => {
 	return `${config.vcpus} vCPU · ${config.memory_gb} GB RAM`
 })
 
-function bundledDisk(plan: Plan): number {
-	return (
-		plan.includes.find((inc) => inc.resource_type === 'Disk')?.quantity ?? 0
-	)
-}
 function diskTooSmall(plan: Plan): boolean {
-	return props.minDisk != null && bundledDisk(plan) < props.minDisk
+	return props.minDisk != null && planQuantity(plan, 'Disk') < props.minDisk
 }
 
 const matchingPreset = computed<Plan | null>(() => {
@@ -116,6 +111,12 @@ const matchingPreset = computed<Plan | null>(() => {
 				</span>
 				<span class="mt-2 block text-p-sm text-ink-gray-5">
 					{{ planSpecs(plan, { disk: !omitDisk }) }}
+				</span>
+				<span
+					v-if="diskTooSmall(plan)"
+					class="mt-1 block text-p-xs text-ink-gray-5"
+				>
+					Disk too small
 				</span>
 			</button>
 

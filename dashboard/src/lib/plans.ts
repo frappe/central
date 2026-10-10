@@ -27,24 +27,11 @@ export function planPrice(plan: Plan): string {
 	return `${money(plan.rate, plan.currency, { trimTrailingZeros: true })} / ${cycle}`
 }
 
-/** A plan's bundled resources as the raw size create_server takes (Atlas owns the
- *  catalog of names; we pass concrete vcpus/memory/disk). Memory is stored in
- *  megabytes; sub-1-vCPU bundles also carry a fractional CPU bandwidth cap. */
-export function planResources(plan: Plan): {
-	vcpus: number
-	memory_megabytes: number
-	disk_gigabytes: number
-	cpu_max_cores?: number
-} {
-	const qty = (type: string) =>
-		plan.includes.find((inc) => inc.resource_type === type)?.quantity ?? 0
-	const vcpu = qty('Compute')
-	return {
-		vcpus: Math.max(1, Math.ceil(vcpu)),
-		memory_megabytes: Math.round(qty('Memory') * 1024),
-		disk_gigabytes: Math.round(qty('Disk')),
-		cpu_max_cores: vcpu > 0 && vcpu < 1 ? vcpu : undefined,
-	}
+export function planQuantity(plan: Plan, resourceType: string): number {
+	return (
+		plan.includes.find((inc) => inc.resource_type === resourceType)?.quantity ??
+		0
+	)
 }
 
 // The resource types that map to a server's core spec line get a friendly noun;

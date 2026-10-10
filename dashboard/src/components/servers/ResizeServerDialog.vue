@@ -11,7 +11,7 @@ import { computed, toRef } from 'vue'
 import PlanGroup from '@/components/servers/PlanGroup.vue'
 import { useResizeServer } from '@/composables/useResizeServer'
 import type { VirtualMachineRow } from '@/composables/useServers'
-import { formatGb, formatVcpu } from '@/lib/composed'
+import { formatGb } from '@/lib/composed'
 import { money } from '@/lib/format'
 
 interface Props {
@@ -47,13 +47,10 @@ const {
 	composedConfig,
 	flatPresets,
 	flatProfile,
-	growDisk,
-	largerDisks,
-	selectedDisk,
-	priceForDisk,
-	totalShape,
+	computeOnly,
+	currentPrice,
 	totalPrice,
-	resizeLabel,
+	downtimeNote,
 	changed,
 	confirm,
 } = useResizeServer(toRef(props, 'server'), model, {
@@ -96,7 +93,7 @@ const open = computed({
 			>
 				This server can't be resized right now.
 			</p>
-			<div v-else class="space-y-5">
+			<div v-else class="space-y-4">
 				<Alert v-if="resizeError" theme="red" :title="resizeError" />
 				<Alert
 					v-if="losesLockedRate && lock"
@@ -104,125 +101,75 @@ const open = computed({
 					title="Resizing will change your rate"
 					:description="`You pay ${money(lock.locked_rate, lock.currency)}/mo for this size; it now lists at ${money(lock.list_rate, lock.currency)}/mo. Any resize is priced at today's rates, and the old rate doesn't come back, including if you resize to this size again later.`"
 				/>
-				<div class="space-y-3">
-					<p class="text-p-sm text-ink-gray-6">
-						Changing CPU or memory restarts the server.
-					</p>
 
-					<Tabs v-if="hasTabs" v-model="activeTab" :tabs="classTabs">
-						<template #tab-panel="{ tab }">
-							<PlanGroup
-								class="pt-4"
-								omit-disk
-								:min-disk="currentDisk"
-								:current-plan="currentPlanKey"
-								:presets="groups[tab.value] ?? []"
-								:profile="designableProfile(String(tab.value))"
-								:rate-card="rateCard"
-								:available="available ?? 0"
-								:currency="currency ?? 'USD'"
-								:capacity="capacity"
-								:initial="initialFor(designableProfile(String(tab.value)))"
-								v-model:selected-plan="selectedPlan"
-								v-model:composed-config="composedConfig"
-							/>
-						</template>
-					</Tabs>
-					<PlanGroup
-						v-else
-						omit-disk
-						:min-disk="currentDisk"
-						:current-plan="currentPlanKey"
-						:presets="flatPresets"
-						:profile="flatProfile"
-						:rate-card="rateCard"
-						:available="available ?? 0"
-						:currency="currency ?? 'USD'"
-						:capacity="capacity"
-						:initial="initialFor(flatProfile)"
-						v-model:selected-plan="selectedPlan"
-						v-model:composed-config="composedConfig"
-					/>
+				<div class="space-y-2 text-p-base text-ink-gray-7">
+					<p>
+						You can change CPU and memory only, or grow the disk too. You can
+						only move to a smaller size later if you keep the disk as it is.
+					</p>
+					<p>{{ downtimeNote }}</p>
 				</div>
 
-				<div class="space-y-3 border-t border-outline-gray-2 pt-4">
+				<div class="rounded-6 border border-outline-gray-2 px-3 py-2.5">
 					<Checkbox
-						v-model="growDisk"
-						label="Grow the disk"
-						:description="
-							largerDisks.length
-								? 'Storage can only be increased. If you increase it, you cannot resize to a smaller plan later.'
-								: 'No larger disk is available.'
-						"
-						:disabled="!largerDisks.length"
+						v-model="computeOnly"
+						label="CPU and memory only"
+						:description="`Keeps the ${formatGb(currentDisk)} GB disk as it is.`"
 					/>
-					<div v-if="growDisk" class="space-y-1.5">
-						<label
-							v-for="gb in largerDisks"
-							:key="gb"
-							:class="[
-								'relative flex cursor-pointer items-center gap-3 rounded-6 border px-3 py-2.5 text-p-sm',
-								selectedDisk === gb
-									? 'border-outline-gray-4 bg-surface-gray-1'
-									: 'border-outline-gray-2 hover:border-outline-gray-3',
-							]"
-						>
-							<input
-								v-model="selectedDisk"
-								type="radio"
-								name="disk"
-								class="peer sr-only"
-								:value="gb"
-							/>
-							<span
-								aria-hidden="true"
-								class="size-3.5 shrink-0 rounded-full border border-outline-gray-4 peer-checked:border-4 peer-checked:border-outline-gray-5"
-							/>
-							<span class="font-medium text-ink-gray-9"
-								>{{ formatGb(gb) }}
-								GB</span
-							>
-							<span
-								v-if="priceForDisk(gb)"
-								class="ml-auto text-p-sm font-medium text-ink-gray-9"
-								>{{ priceForDisk(gb) }}</span
-							>
-						</label>
-					</div>
 				</div>
 
-				<div
-					v-if="totalShape"
-					class="flex items-center justify-between gap-6 rounded-6 border border-outline-gray-2 bg-surface-gray-1 px-4 py-3"
-				>
-					<div class="min-w-0">
-						<p class="text-p-sm font-medium text-ink-gray-9">Monthly total</p>
-						<p class="text-p-sm text-ink-gray-6">
-							{{ formatVcpu(totalShape.vcpus) }}
-							vCPU ·
-							{{ formatGb(totalShape.memory_gb) }}
-							GB RAM ·
-							{{ formatGb(totalShape.disk_gb) }}
-							GB disk
-						</p>
-					</div>
-					<p
-						v-if="totalPrice"
-						class="shrink-0 text-p-base font-medium text-ink-gray-9"
-					>
-						{{ totalPrice }}
-					</p>
-				</div>
+				<Tabs v-if="hasTabs" v-model="activeTab" :tabs="classTabs">
+					<template #tab-panel="{ tab }">
+						<PlanGroup
+							class="pt-4"
+							:omit-disk="computeOnly"
+							:min-disk="computeOnly ? undefined : currentDisk"
+							:current-plan="currentPlanKey"
+							:presets="groups[tab.value] ?? []"
+							:profile="designableProfile(String(tab.value))"
+							:rate-card="rateCard"
+							:available="available ?? 0"
+							:currency="currency ?? 'USD'"
+							:capacity="capacity"
+							:initial="initialFor(designableProfile(String(tab.value)))"
+							v-model:selected-plan="selectedPlan"
+							v-model:composed-config="composedConfig"
+						/>
+					</template>
+				</Tabs>
+				<PlanGroup
+					v-else
+					:omit-disk="computeOnly"
+					:min-disk="computeOnly ? undefined : currentDisk"
+					:current-plan="currentPlanKey"
+					:presets="flatPresets"
+					:profile="flatProfile"
+					:rate-card="rateCard"
+					:available="available ?? 0"
+					:currency="currency ?? 'USD'"
+					:capacity="capacity"
+					:initial="initialFor(flatProfile)"
+					v-model:selected-plan="selectedPlan"
+					v-model:composed-config="composedConfig"
+				/>
 			</div>
 		</template>
 		<template #actions>
 			<div
 				v-if="resizable && !resizeCall.loading"
-				class="flex items-center justify-end"
+				class="flex items-center justify-end gap-4"
 			>
+				<p v-if="totalPrice" class="text-p-sm text-ink-gray-6">
+					{{ currentPrice }}
+					<span
+						class="lucide-arrow-right mx-1 inline-block size-3.5 align-[-2px]"
+						aria-label="to"
+					/>
+					<span class="font-medium text-ink-gray-9">{{ totalPrice }}</span>
+				</p>
 				<Button
 					variant="solid"
-					:label="resizeLabel"
+					label="Resize"
 					:disabled="!changed"
 					@click="confirm"
 				/>
