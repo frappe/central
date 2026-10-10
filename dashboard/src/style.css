@@ -88,16 +88,16 @@ html[data-route-transition^="server-create"] .vt-server-summary {
 		animation: 240ms var(--route-ease-out) both route-blur-in;
 	}
 
-	/* Open: list clears, form settles. Cancel is a dismiss, so the form leaves faster than
-	   it arrived and the list follows once the map has started moving. */
+	/* The list lives on the right; the form lives on the left after the map swaps. Cancel
+	   is a dismiss, so the form leaves faster than it arrived. */
 	html[data-route-transition="server-create"]::view-transition-old(server-list) {
 		animation: 160ms var(--route-ease-out) both route-slide-out-right;
 	}
 	html[data-route-transition="server-create"]::view-transition-new(server-form) {
-		animation: 240ms var(--route-ease-out) 60ms both route-slide-in-right;
+		animation: 240ms var(--route-ease-out) 60ms both route-slide-in-left;
 	}
 	html[data-route-transition="server-create-back"]::view-transition-old(server-form) {
-		animation: 140ms var(--route-ease-out) both route-slide-out-right;
+		animation: 140ms var(--route-ease-out) both route-slide-out-left;
 	}
 	html[data-route-transition="server-create-back"]::view-transition-new(server-list) {
 		animation: 220ms var(--route-ease-out) 40ms both route-slide-in-right;
@@ -221,5 +221,17 @@ html[data-route-transition^="server-create"] .vt-server-summary {
 	to {
 		opacity: 0;
 		transform: translateX(24px);
+	}
+}
+@keyframes route-slide-in-left {
+	from {
+		opacity: 0;
+		transform: translateX(-24px);
+	}
+}
+@keyframes route-slide-out-left {
+	to {
+		opacity: 0;
+		transform: translateX(-24px);
 	}
 }

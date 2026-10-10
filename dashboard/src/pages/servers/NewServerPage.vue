@@ -120,7 +120,7 @@ watch(
 			<Button label="Cancel" @click="router.push('/servers')" />
 		</Teleport>
 
-		<div class="flex flex-col-reverse lg:flex-row-reverse">
+		<div class="flex flex-col-reverse lg:flex-row">
 			<div class="vt-server-form w-full p-4 md:p-6 lg:w-1/2">
 				<p v-if="loading" class="text-p-sm text-ink-gray-5">Loading regions…</p>
 				<p v-else-if="!regions.length" class="text-p-sm text-ink-gray-5">
@@ -335,7 +335,7 @@ watch(
 			</div>
 
 			<div
-				class="flex flex-col border-b border-outline-gray-1 lg:sticky lg:top-0 lg:h-[calc(100dvh-3rem)] lg:w-1/2 lg:self-start lg:border-b-0 lg:border-r"
+				class="flex flex-col border-b border-outline-gray-1 lg:sticky lg:top-0 lg:h-[calc(100dvh-3rem)] lg:w-1/2 lg:self-start lg:border-b-0 lg:border-l"
 			>
 				<div
 					class="vt-server-map relative m-2 h-72 overflow-hidden rounded-6 border border-outline-gray-1 lg:h-auto lg:flex-1"
