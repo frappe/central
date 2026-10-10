@@ -34,7 +34,7 @@ const emit = defineEmits<{
 	terminate: [server: VirtualMachineRow]
 }>()
 
-const handlers: Record<ServerMenuVerb, () => void> = {
+const handlers: Partial<Record<ServerMenuVerb, () => void>> = {
 	overview: () => emit('overview', props.server),
 	open: () => emit('open', props.server),
 	pilot: () => emit('pilot', props.server),
@@ -58,7 +58,7 @@ const options = computed(() =>
 			terminate: props.canTerminate,
 			console: !!props.canOpenConsole,
 		}),
-		(verb: ServerMenuVerb) => handlers[verb](),
+		(verb: ServerMenuVerb) => handlers[verb]?.(),
 		{ opensSite: props.opensSite },
 	),
 )

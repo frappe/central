@@ -5,7 +5,10 @@ from frappe import _
 from frappe.model.document import Document
 from requests import RequestException
 
+from central.utils.inputs import require_text
 from central.utils.units import mebibytes_to_gigabytes, millicores_to_vcpus
+
+MAXIMUM_TITLE_LENGTH = 140
 
 
 class VirtualMachine(Document):
@@ -282,6 +285,15 @@ class VirtualMachine(Document):
 				"Pilot admin domain rename returned no task",
 				frappe.as_json(task),
 			)
+
+	def rename(self, title: str) -> str:
+		"""Set the server's display name. Central owns the title, so Atlas is not told."""
+		title = require_text(title, _("Enter a server name."))
+		if len(title) > MAXIMUM_TITLE_LENGTH:
+			frappe.throw(_("Use a server name of at most {0} characters.").format(MAXIMUM_TITLE_LENGTH))
+
+		self.db_set("title", title)
+		return title
 
 	def record_admin_domain_failure(self, reason: str, title: str, diagnostic: str) -> None:
 		"""Keep the admin-hostname failure beside the server a Desk operator opens."""

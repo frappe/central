@@ -28,6 +28,7 @@ const emit = defineEmits<{
 	pilot: []
 	command: [command: Exclude<ServerCommand, 'terminate'>]
 	console: []
+	rename: []
 	snapshot: []
 	resize: []
 	terminate: []
@@ -98,6 +99,7 @@ const handlers: Partial<Record<ServerMenuVerb, () => void>> = {
 	resize: () => emit('resize'),
 	snapshot: () => emit('snapshot'),
 	console: () => emit('console'),
+	rename: () => emit('rename'),
 	terminate: () => emit('terminate'),
 }
 

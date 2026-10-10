@@ -9,6 +9,7 @@ import Header from '@/components/servers/detail/Header.vue'
 import NetworkingTab from '@/components/servers/detail/NetworkingTab.vue'
 import OverviewTab from '@/components/servers/detail/OverviewTab.vue'
 import SettingsTab from '@/components/servers/detail/SettingsTab.vue'
+import RenameServerDialog from '@/components/servers/RenameServerDialog.vue'
 import ResizeServerDialog from '@/components/servers/ResizeServerDialog.vue'
 import TerminateServerDialog from '@/components/servers/TerminateServerDialog.vue'
 import SnapshotsPanel from '@/components/snapshots/SnapshotsPanel.vue'
@@ -193,6 +194,7 @@ const command = async (name: PowerCommand): Promise<void> => {
 }
 
 const resizing = ref(false)
+const renaming = ref(false)
 const pendingSnapshot = ref<VirtualMachineRow | null>(null)
 
 const pendingTerminate = ref<VirtualMachineRow | null>(null)
@@ -261,6 +263,7 @@ const terminate = async (
 					@pilot="openBench(server)"
 					@command="command"
 					@console="openConsole(server)"
+					@rename="renaming = true"
 					@snapshot="pendingSnapshot = server"
 					@resize="resizing = true"
 					@terminate="pendingTerminate = server"
@@ -355,6 +358,13 @@ const terminate = async (
 		/>
 
 		<TakeSnapshotDialog v-model:server="pendingSnapshot" />
+
+		<RenameServerDialog
+			v-if="server"
+			v-model:open="renaming"
+			:server="server"
+			@renamed="reload"
+		/>
 
 		<ResizeServerDialog
 			v-model:open="resizing"

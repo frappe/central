@@ -470,6 +470,14 @@ def resize_server(
 
 
 @frappe.whitelist(methods=["POST"])
+@require_capability("server:resize", "You can't rename this server.", server="resource_id")
+def rename_server(team: str | None = None, resource_id: str | None = None, title: str | None = None) -> dict:
+	"""Rename one server. Gated on `server:resize`, the capability to change a server."""
+	server = frappe.get_doc("Virtual Machine", {"team": team, "resource_id": resource_id})
+	return {"title": server.rename(title)}
+
+
+@frappe.whitelist(methods=["POST"])
 @handle_resource_operation
 def terminate_server(
 	team: str | None = None, resource_id: str | None = None, take_snapshot: bool | int | str = False

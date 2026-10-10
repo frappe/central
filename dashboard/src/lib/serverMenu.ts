@@ -15,6 +15,7 @@ export type ServerMenuVerb =
 	| 'resize'
 	| 'snapshot'
 	| 'console'
+	| 'rename'
 	| 'terminate'
 
 export interface ServerMenuOptions {
@@ -50,6 +51,10 @@ export function getServerMenu(
 		isBusy ? [] : getPowerItems(server, allowed, entry),
 		isChangeable ? getChangeItems(allowed, entry) : [],
 		[
+			// Renaming is rare, so it lives on the server page only.
+			...(options.isOnServerPage && allowed.resize
+				? [entry('rename', 'Rename', 'lucide-pencil')]
+				: []),
 			{
 				label: 'Copy server ID',
 				icon: 'lucide-copy',
