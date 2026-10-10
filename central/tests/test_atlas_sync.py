@@ -82,20 +82,13 @@ class TestServerActions(IntegrationTestCase):
 		self.server.db_set("status", "Running")
 		self.assertEqual(self.submit("restart")["status"], "Queued")
 
-	def test_restart_needs_evidence_that_it_left_running(self):
+	def test_restart_succeeds_on_running_after_the_region_accepts_it(self):
+		"""The region reports running for the whole restart, so it never reports a change."""
 		self.server.db_set("status", "Running")
 		name = self.submit("restart")["action"]
 
 		_process_locked(name)
 		self.client.vm_action.assert_called_once_with("vm-00001", "restart")
-		self.assertEqual(get_status(name)["status"], "Sent")
-
-		_process_locked(name)
-		self.client.vm_action.assert_called_once()
-		self.assertEqual(get_status(name)["status"], "Sent")
-
-		frappe.get_doc("Resource Action", name).record_observed_status("Stopped")
-		_process_locked(name)
 		self.assertEqual(get_status(name)["status"], "Succeeded")
 
 	def test_an_operator_can_ask_the_region_for_the_current_state(self):
