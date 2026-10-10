@@ -38,7 +38,7 @@ export function useSearchIndex() {
 	const { members } = useTeamMembers()
 	const { invoices } = useInvoices()
 	const { themeOptions } = useAppMenu()
-	const { setColorScheme } = useColorScheme()
+	const { colorScheme, setColorScheme } = useColorScheme()
 
 	return computed((): SearchGroups => {
 		// Insertion order is the display order: verbs first, then destinations.
@@ -97,6 +97,7 @@ export function useSearchIndex() {
 		groups.Theme = {
 			items: themeOptions.map((theme) => ({
 				name: theme.label,
+				description: colorScheme.value === theme.value ? 'Current' : undefined,
 				icon: theme.icon,
 				onSelect: () => setColorScheme(theme.value),
 			})),
