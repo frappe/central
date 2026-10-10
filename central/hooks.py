@@ -319,9 +319,9 @@ before_tests = [
 # Overriding Methods
 # ------------------------------
 #
-# override_whitelisted_methods = {
-# 	"frappe.desk.doctype.event.event.get_events": "central.event.get_events"
-# }
+override_whitelisted_methods = {
+	"frappe.realtime.has_permission": "central.permissions.realtime_has_permission",
+}
 #
 # each overriding function accepts a `data` argument;
 # generated from the base implementation of the doctype dashboard,

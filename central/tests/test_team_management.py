@@ -335,6 +335,33 @@ class TestTeamManagement(IntegrationTestCase):
 		team.set_member_roles(self.viewer, [{"role": "Developer", "resource_type": "*"}])
 		self.assertTrue(can(self.viewer, self.team.name, "server:create"))
 
+	def test_a_role_cannot_carry_a_capability_its_creator_lacks(self):
+		frappe.set_user(self.admin)
+		with self.assertRaisesRegex(frappe.PermissionError, "team:delete"):
+			create_custom_role(self.team.name, "Deleter", ["team:delete"])
+
+		role = create_custom_role(self.team.name, "Viewer Twice", ["server:view", "server:view"])["role"]
+		self.assertEqual(
+			frappe.get_all("Role Capability", {"parent": role}, pluck="capability"), ["server:view"]
+		)
+
+		frappe.set_user(self.owner)
+		create_custom_role(self.team.name, "Owner Deleter", ["team:delete"])
+
+	def test_a_new_team_cannot_enrol_other_people(self):
+		invitee_teams = get_user_team_names(self.invitee)
+		frappe.set_user(self.viewer)
+		team = {"doctype": "Team", "team_name": "Not Theirs"}
+
+		with self.assertRaises(frappe.PermissionError):
+			frappe.get_doc(
+				{**team, "members": [{"user": self.invitee, "role": "Admin", "status": "Active"}]}
+			).insert()
+		self.assertEqual(get_user_team_names(self.invitee), invitee_teams)
+
+		created = frappe.get_doc(team).insert()
+		self.assertEqual([(row.user, row.role) for row in created.members], [(self.viewer, "Owner")])
+
 	def test_member_can_hold_multiple_roles_with_unioned_capabilities(self):
 		# A team-wide role and a role scoped to one server combine: the scoped role adds
 		# its server capabilities on that server only, and never a team-wide one.

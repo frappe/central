@@ -43,13 +43,13 @@ The distinction matters:
 | Capability | Meaning |
 | --- | --- |
 | `cluster:view` | View clusters the team can place servers in. |
-| `server:view` | List and open servers and sites; view status, specs, and metrics. |
+| `server:view` | List servers and sites; view status, specs, and metrics. |
 | `server:create` | Provision a new server. |
 | `server:power` | Start, stop, and restart a server. |
 | `server:resize` | Resize, rebuild, or rename a server. |
 | `server:snapshot` | Create and restore server snapshots. |
 | `server:terminate` | Destroy a server. |
-| `server:console` | Open the web console of a running server. |
+| `server:console` | Open the web console of a running server, and sign in to its bench or site as Administrator. |
 
 ### `bench` plane (0)
 

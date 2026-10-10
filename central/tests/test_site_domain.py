@@ -180,6 +180,9 @@ class TestSiteDomain(IntegrationTestCase):
 		proxy.delete_domain.assert_called_once_with(domain.domain)
 		self.assertFalse(frappe.db.exists("Site Domain", {"server": self.server.name}))
 
+	def test_retry_is_post_only(self):
+		self.assertEqual(frappe.allowed_http_methods_for_whitelisted_func[SiteDomain.retry], ("POST",))
+
 	def test_a_failed_route_removal_stays_until_a_retry_removes_it(self):
 		route = self._route(f"stuck-{self.suffix}.com")
 		self.server.db_set("status", "Terminated")

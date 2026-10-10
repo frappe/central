@@ -43,7 +43,6 @@ const router = useRouter()
 const { setBreadcrumbs } = useBreadcrumbs()
 
 const {
-	canViewServers,
 	canPowerServer,
 	canResizeServer,
 	canSnapshotServer,
@@ -111,7 +110,7 @@ const site = computed(() =>
 
 const actions = computed(() =>
 	getServerActions(server.value, {
-		open: canViewServers.value,
+		open: canOpenConsole.value,
 		power: canPowerServer.value,
 		resize: canResizeServer.value,
 		snapshot: canSnapshotServer.value,

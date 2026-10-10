@@ -81,7 +81,7 @@ def claim_site(name: str) -> dict:
 
 	Nothing here touches the machine's admin hostname. The region routes `admin-vm-*`
 	statically and refuses to register it, so there is nothing for Central to claim."""
-	site = authorized_site(name, "server:view")
+	site = authorized_site(name, "server:console")
 	state = site_state(site)
 
 	if state["login_url"]:
@@ -97,8 +97,8 @@ def get_site(name: str) -> dict:
 
 @frappe.whitelist(methods=["POST"])
 def login_site(name: str) -> dict:
-	"""Create a one-time site login for a caller who can view the site."""
-	return site_state(authorized_site(name, "server:view"), with_login=True)
+	"""Create a one-time site login. It signs in as Administrator, so it needs `server:console`."""
+	return site_state(authorized_site(name, "server:console"), with_login=True)
 
 
 @frappe.whitelist(methods=["GET"])
@@ -196,9 +196,8 @@ def site_state(site: Site, with_login: bool = True) -> dict:
 def authorized_site(name: str, capability: str) -> Site:
 	"""The Site document, once the caller holds `capability` on the server the site runs on."""
 	row = frappe.db.get_value("Site", name, ["team", "server"], as_dict=True)
-	if not row or not row.team:
-		frappe.throw(_("No site '{0}'.").format(name), frappe.DoesNotExistError)
-	if not can(frappe.session.user, row.team, capability, server=row.server):
+	# One answer for a missing site and a foreign one, so a name cannot be probed.
+	if not row or not row.team or not can(frappe.session.user, row.team, capability, server=row.server):
 		frappe.throw(_("You can't manage this site."), frappe.PermissionError)
 
 	site = frappe.get_doc("Site", name)

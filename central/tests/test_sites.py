@@ -17,6 +17,7 @@ from central.site_provisioning import (
 	trial_configuration,
 	trial_region_and_plan,
 )
+from central.tests.test_iam import ensure_user
 from central.www.dashboard import _onboarding_complete
 
 
@@ -370,6 +371,28 @@ class TestSiteRoutes(SiteOnAMachine):
 			get_site(self.site().name)
 		with self.assertRaises(frappe.PermissionError):
 			login_site(self.site().name)
+
+	def test_a_viewer_reads_a_site_but_cannot_sign_in_as_administrator(self):
+		viewer = ensure_user("site.viewer@example.test")
+		self.team.append("members", {"user": viewer, "role": "Viewer", "status": "Active"})
+		self.team.save()
+		frappe.set_user(viewer)
+
+		with patch("central.api.sites.is_site_reachable", return_value=False):
+			self.assertEqual(get_site(self.site().name)["name"], self.site().name)
+		with self.assertRaises(frappe.PermissionError):
+			login_site(self.site().name)
+		with self.assertRaises(frappe.PermissionError):
+			claim_site(self.site().name)
+
+	def test_a_missing_site_and_a_foreign_site_answer_alike(self):
+		frappe.set_user(ensure_user("outsider@example.test"))
+
+		with self.assertRaises(frappe.PermissionError) as foreign:
+			get_site(self.site().name)
+		with self.assertRaises(frappe.PermissionError) as missing:
+			get_site("no-such-site.example.test")
+		self.assertEqual(str(foreign.exception), str(missing.exception))
 
 	def test_status_is_get_and_login_is_post_only(self):
 		self.assertEqual(frappe.allowed_http_methods_for_whitelisted_func[get_site], ("GET", "QUERY"))

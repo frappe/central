@@ -9,7 +9,7 @@ import frappe
 from cryptography.exceptions import UnsupportedAlgorithm
 from cryptography.hazmat.primitives.serialization import load_ssh_public_key
 from frappe import _
-from frappe.query_builder.functions import Sum
+from frappe.query_builder.functions import Count, Sum
 from pydantic import ValidationError
 
 from central.billing.catalog.composition import (
@@ -327,13 +327,34 @@ def validate_trial(team: str) -> None:
 
 	if get_balance(team).get("balance", 0) <= 0:
 		frappe.throw(_("Your trial credits are used up. Add a payment method to continue."))
-	servers = frappe.db.count("Virtual Machine", {"team": team, "status": ["!=", "Terminated"]})
-	pending = frappe.db.count(
-		"Resource Action",
-		{"team": team, "status": ["in", PENDING_STATES], "server": ["is", "not set"]},
-	)
-	if servers + pending >= 3:
+	if trial_server_count(team) >= 3:
 		frappe.throw(_("Trial Teams can have at most three active or pending servers."))
+
+
+def trial_server_count(team: str) -> int:
+	"""Active servers plus pending creations. Locking reads, for the same reason as reserved_rate."""
+	machine = frappe.qb.DocType("Virtual Machine")
+	request = frappe.qb.DocType("Resource Action")
+
+	servers = (
+		frappe.qb.from_(machine)
+		.select(Count("*"))
+		.where((machine.team == team) & (machine.status != "Terminated"))
+		.for_update()
+	).run()
+
+	pending = (
+		frappe.qb.from_(request)
+		.select(Count("*"))
+		.where(
+			(request.team == team)
+			& request.status.isin(PENDING_STATES)
+			& (request.server.isnull() | (request.server == ""))
+		)
+		.for_update()
+	).run()
+
+	return servers[0][0] + pending[0][0]
 
 
 def image_shape(includes: list[dict], image: dict) -> dict[str, int]:

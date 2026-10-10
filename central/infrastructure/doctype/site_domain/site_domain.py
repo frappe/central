@@ -313,7 +313,7 @@ class SiteDomain(Document):
 				DomainNotVerifiedError,
 			)
 
-	@frappe.whitelist()
+	@frappe.whitelist(methods=["POST"])
 	def retry(self) -> None:
 		"""Operator action: reset the attempt count and send the route again."""
 		self.check_permission("write")

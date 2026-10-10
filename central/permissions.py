@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import frappe
+from frappe import _
+from frappe.realtime import has_permission as has_realtime_permission
 
 from central.iam import (
 	ALL_SERVERS,
@@ -31,11 +33,16 @@ def team_query_conditions(user: str | None = None) -> str:
 
 
 def team_has_permission(doc, user: str | None = None, ptype: str | None = None, **kwargs) -> bool:
+	"""1. An operator may do anything.
+	2. Create: a new team may hold only its creator, as Owner. Others join by invitation.
+	3. Write: `team:edit` or `team:manage_members`.
+	4. Delete: `team:delete`.
+	5. Read: an active member."""
 	user = user or frappe.session.user
 	if user_has_operator_bypass(user):
 		return True
 	if ptype == "create":
-		return True
+		return all(member.user == user and member.role == "Owner" for member in doc.members)
 	if ptype == "write":
 		return can(user, doc.name, "team:edit") or can(user, doc.name, "team:manage_members")
 	if ptype == "delete":
@@ -262,6 +269,16 @@ def team_service_has_permission(doc, user: str | None = None, ptype: str | None 
 	2. Customers have no direct permission because the record contains service credentials.
 	"""
 	return user_has_operator_bypass(user or frappe.session.user)
+
+
+@frappe.whitelist(allow_guest=True)  # nosemgrep -- same surface as frappe.realtime.has_permission
+def realtime_has_permission(doctype: str, name: str, ptype: str = "read") -> bool:
+	"""1. A doctype room of a team-scoped DocType is for operators only: it carries every team's changes.
+	2. Everything else follows Frappe's own check."""
+	is_team_scoped = doctype in frappe.get_hooks("has_permission")
+	if not name and is_team_scoped and not user_has_operator_bypass(frappe.session.user):
+		frappe.throw(_("Not permitted"), frappe.PermissionError)
+	return has_realtime_permission(doctype, name, ptype)
 
 
 def _operator_only_query_conditions(user: str | None = None) -> str:

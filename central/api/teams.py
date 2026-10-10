@@ -5,7 +5,7 @@ from frappe import _
 from frappe.query_builder import Order
 from frappe.rate_limiter import rate_limit
 
-from central.iam import expand_capabilities, get_all_capabilities
+from central.iam import can, expand_capabilities, get_all_capabilities
 from central.identity.doctype.team.team import Team
 from central.identity.doctype.team_invitation.team_invitation import get_invitation_by_token
 from central.utils.guards import require_capability, require_team_member
@@ -236,12 +236,22 @@ def create_custom_role(team: str, role_name: str, capabilities: list | str) -> d
 	if isinstance(capabilities, str):
 		capabilities = frappe.parse_json(capabilities)  # the console posts a JSON-encoded array
 	valid = set(get_all_capabilities())
-	picked = [c for c in capabilities if c in valid]
+	picked = [c for c in dict.fromkeys(capabilities) if c in valid]
 	if not picked:
 		frappe.throw(_("Pick at least one capability."), frappe.ValidationError)
+
 	# Persist the implied dependencies too (e.g. server:create pulls in server:view +
 	# cluster:view), so the saved role is usable and matches what enforcement grants.
-	rows = [{"capability": c} for c in expand_capabilities(picked) if c in valid]
+	granted = [c for c in expand_capabilities(picked) if c in valid]
+	# A role cannot carry more than its creator holds, or it would hand out what they lack.
+	missing = [c for c in granted if not can(frappe.session.user, team, c)]
+	if missing:
+		frappe.throw(
+			_("You can't grant {0}, because you don't hold it.").format(", ".join(missing)),
+			frappe.PermissionError,
+		)
+
+	rows = [{"capability": c} for c in granted]
 	# Authorized by the decorator; Team Role grants create only to System Manager, so bypass doc perms.
 	role = frappe.get_doc(
 		{

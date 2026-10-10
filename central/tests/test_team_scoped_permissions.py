@@ -5,6 +5,7 @@ from frappe.tests import IntegrationTestCase
 from central.permissions import (
 	pilot_credential_has_permission,
 	pilot_credential_query_conditions,
+	realtime_has_permission,
 	team_notification_has_permission,
 	team_notification_query_conditions,
 	team_service_has_permission,
@@ -25,6 +26,20 @@ class TestTeamScopedPermissions(IntegrationTestCase):
 
 	def tearDown(self):
 		frappe.set_user("Administrator")
+
+	def test_realtime_doctype_rooms_are_for_operators_only(self):
+		mine = self._team("Realtime Mine", self.viewer, "Viewer")
+		theirs = self._team("Realtime Theirs", self.other_user, "Viewer")
+
+		frappe.set_user(self.viewer)
+		with self.assertRaises(frappe.PermissionError):
+			realtime_has_permission("Site", "")
+		self.assertTrue(realtime_has_permission("Team", mine.name))
+		with self.assertRaises(frappe.PermissionError):
+			realtime_has_permission("Team", theirs.name)
+
+		frappe.set_user("Administrator")
+		self.assertTrue(realtime_has_permission("Site", ""))
 
 	def test_desk_list_apis_are_team_scoped(self):
 		team_a = self._team("Team Scoped A", self.viewer, "Viewer")

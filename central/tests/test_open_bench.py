@@ -128,9 +128,9 @@ class TestOpenBench(IntegrationTestCase):
 		with self.assertRaises(frappe.ValidationError):
 			self._open(self.dev, server="vm-open-1")
 
-	def test_viewer_with_server_view_can_open(self):
-		link = self._open(self.viewer, server="vm-open-1")
-		self.assertTrue(link["url"].startswith(f"{GATEWAY}/?sid="))
+	def test_a_viewer_cannot_open_the_bench_as_admin(self):
+		with self.assertRaises(frappe.PermissionError):
+			self._open(self.viewer, server="vm-open-1")
 
 	def test_local_gateway_uses_the_servers_pilot_audience(self):
 		self._server("vm-open-1", "Running", gateway="http://localhost:3030")
