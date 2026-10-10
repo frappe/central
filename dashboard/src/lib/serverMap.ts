@@ -1,23 +1,33 @@
+import type { CSSProperties } from 'vue'
 import type { VirtualMachineRow } from '@/composables/useServers'
 import { displayStatus } from '@/lib/status'
 import { formatMemory } from '@/lib/units'
 import type { Region } from '@/types/Region'
 
 // Display mapping for the servers map: one place that turns a Virtual Machine's mirror
-// status into what the map shows (label, badge, dot colour, pulse). Terminated
+// status into what the map shows (label, badge, dot colour, motion). Terminated
 // servers never reach the map — useServerMapData filters them out.
 
 type BadgeTheme = 'green' | 'gray' | 'amber' | 'red' | 'blue'
 
+/** How a status moves: `progress` is work under way, `alert` needs a person. */
+export type ServerMotion = 'none' | 'progress' | 'alert'
+
 export interface ServerVisual {
 	/** Stable key the status filter matches on. */
-	key: 'active' | 'settingUp' | 'paused' | 'stopped' | 'broken' | 'resizing'
+	key:
+		| 'active'
+		| 'settingUp'
+		| 'paused'
+		| 'stopped'
+		| 'broken'
+		| 'resizing'
+		| 'terminating'
 	label: string
 	badgeTheme: BadgeTheme
-	/** CSS variable for the status dot on pins and rows. */
+	/** CSS variable for the status dot, and for the motion ring around a pin. */
 	dot: string
-	/** Failed servers pulse red on the map. */
-	pulse: boolean
+	motion: ServerMotion
 }
 
 const VISUALS: Record<ServerVisual['key'], ServerVisual> = {
@@ -26,43 +36,79 @@ const VISUALS: Record<ServerVisual['key'], ServerVisual> = {
 		label: 'Active',
 		badgeTheme: 'green',
 		dot: 'var(--ink-green-6)',
-		pulse: false,
+		motion: 'none',
 	},
 	settingUp: {
 		key: 'settingUp',
 		label: 'Setting up',
 		badgeTheme: 'amber',
 		dot: 'var(--ink-amber-6)',
-		pulse: false,
+		motion: 'progress',
 	},
 	paused: {
 		key: 'paused',
 		label: 'Paused',
 		badgeTheme: 'gray',
 		dot: 'var(--ink-gray-5)',
-		pulse: false,
+		motion: 'none',
 	},
 	stopped: {
 		key: 'stopped',
 		label: 'Stopped',
 		badgeTheme: 'gray',
 		dot: 'var(--ink-gray-5)',
-		pulse: false,
+		motion: 'none',
 	},
 	broken: {
 		key: 'broken',
 		label: 'Broken',
 		badgeTheme: 'red',
 		dot: 'var(--ink-red-6)',
-		pulse: true,
+		motion: 'alert',
 	},
 	resizing: {
 		key: 'resizing',
 		label: 'Resizing',
 		badgeTheme: 'amber',
 		dot: 'var(--ink-amber-6)',
-		pulse: false,
+		motion: 'progress',
 	},
+	terminating: {
+		key: 'terminating',
+		label: 'Terminating',
+		badgeTheme: 'red',
+		dot: 'var(--ink-red-6)',
+		motion: 'progress',
+	},
+}
+
+// Higher wins when a cluster shows one member's motion for the whole group.
+const MOTION_SEVERITY: Record<ServerMotion, number> = {
+	none: 0,
+	progress: 1,
+	alert: 3,
+}
+
+function severityOf(visual: ServerVisual): number {
+	// Destructive work outranks routine work, but not a failure.
+	return MOTION_SEVERITY[visual.motion] + (visual.key === 'terminating' ? 1 : 0)
+}
+
+/** The member visual a cluster shows: the most severe motion, or null when all are idle. */
+function getClusterActivity(visuals: ServerVisual[]): ServerVisual | null {
+	const top = visuals.reduce<ServerVisual | null>(
+		(best, visual) =>
+			!best || severityOf(visual) > severityOf(best) ? visual : best,
+		null,
+	)
+	return top && top.motion !== 'none' ? top : null
+}
+
+/** A live action's transitional label, shown from the click until the mirror confirms. */
+function pendingVisual(label: string): ServerVisual {
+	if (label === 'Resizing') return VISUALS.resizing
+	if (label === 'Terminating') return VISUALS.terminating
+	return { ...VISUALS.settingUp, label }
 }
 
 // Mirror status → visual. Keyed by string because Atlas can report statuses
@@ -78,19 +124,8 @@ const STATUS_VISUAL: Record<string, ServerVisual> = {
 }
 
 export function statusVisual(server: VirtualMachineRow): ServerVisual {
-	// A live action wins: show its transitional label, pulsing to read as "working now",
-	// from the click until the mirror confirms — so the row never looks like nothing happened.
-	if (server.pending_action) {
-		if (server.pending_action === 'Resizing')
-			return { ...VISUALS.resizing, pulse: true }
-		return {
-			key: 'settingUp',
-			label: server.pending_action,
-			badgeTheme: 'amber',
-			dot: 'var(--ink-amber-6)',
-			pulse: true,
-		}
-	}
+	// A live action wins, so the row never looks like nothing happened.
+	if (server.pending_action) return pendingVisual(server.pending_action)
 	return STATUS_VISUAL[displayStatus(server)] ?? VISUALS.settingUp
 }
 
@@ -212,27 +247,21 @@ export interface MapSpot {
 	flag: string
 }
 
-// — Map geometry & clustering. Pure: the ServerMap component owns the stateful
-//   viewport (pan/zoom/RAF); everything here is deterministic from its inputs.
+/** An empty region on the fleet map, with what its create card needs. */
+export interface RegionSpot extends MapSpot {
+	/** False while Central can't reach the region; it takes no new servers then. */
+	isReachable: boolean
+}
 
-// Equirectangular projection matching the WorldDots asset, generated on this exact
-// frame — lat/lng from Regions line up with the dots.
+// — Map geometry, clustering and card placement. Pure; useMapViewport owns the viewport.
+
+// The equirectangular frame the WorldDots asset was generated on.
 export const MAP_WIDTH = 879
 export const MAP_HEIGHT = 443
 const LAT_TOP = 83
 const LAT_BOTTOM = -56
-// User zoom is gone (hover cards carry the detail); this caps how far picker
-// mode may zoom while framing its marker set.
-export const MAX_ZOOM = 5
-// export const ZOOM_STEP = 1.7 // restored with the map's zoom controls
-// Past this zoom, servers sharing a spot stop counting ("3") and fan out into
-// an overlapping avatar stack — only reachable via the picker's marker fit.
-export const STACK_ZOOM = 2.8
-
-// Greedy proximity-cluster thresholds in SCREEN pixels (divided by scale k), so
-// groups split apart naturally as you zoom in.
+// Clustering thresholds, in screen pixels.
 const SERVER_CLUSTER_PX = 46
-const STACK_FAN_PX = 24
 const SPOT_UNDER_SERVER_PX = 36
 const SPOT_CLUSTER_PX = 30
 
@@ -255,8 +284,6 @@ export interface ServerNode {
 	x: number
 	y: number
 	pin: PlacedPin
-	stacked?: boolean
-	stackZ?: number
 }
 export interface ClusterNode {
 	type: 'cluster'
@@ -265,7 +292,8 @@ export interface ClusterNode {
 	y: number
 	members: PlacedPin[]
 	provider: string | null
-	broken: boolean
+	/** The most severe member visual, so the group moves like its worst server. */
+	activity: ServerVisual | null
 	title: string
 }
 export interface PlusNode {
@@ -273,7 +301,7 @@ export interface PlusNode {
 	key: string
 	x: number
 	y: number
-	targets: PlacedSpot[]
+	targets: (RegionSpot & { wx: number; wy: number })[]
 	title: string
 }
 export interface MarkerNode {
@@ -340,24 +368,21 @@ function dominantProvider(members: PlacedPin[]): string | null {
 
 export interface ComputeNodesInput {
 	pins: MapPin[]
-	spots: MapSpot[]
+	spots: RegionSpot[]
 	markers: MapSpot[]
 	selectedId: string | null
-	/** Current screen scale (base × zoom); cluster thresholds divide by it. */
-	k: number
-	zoom: number
+	/** Screen pixels per map unit; cluster thresholds divide by it. */
+	scale: number
 }
 
-/** Cluster the map's pins/spots (or lay out picker markers) into positioned
- *  nodes. Greedy proximity clustering in world units, thresholds fixed in screen
- *  pixels so groups split as you zoom in. */
+/** Cluster pins and spots (or lay out picker markers) into positioned nodes.
+ *  Thresholds are in screen pixels, so groups split as the map zooms in. */
 export function computeNodes({
 	pins,
 	spots,
 	markers,
 	selectedId,
-	k,
-	zoom,
+	scale: k,
 }: ComputeNodesInput): MapNode[] {
 	if (!k) return []
 	// Picker mode: every marker is its own node (a handful of regions — no
@@ -387,19 +412,6 @@ export function computeNodes({
 				y: group.y,
 				pin: group.members[0],
 			})
-		} else if (zoom >= STACK_ZOOM) {
-			const gap = STACK_FAN_PX / k
-			group.members.forEach((m, i) => {
-				out.push({
-					type: 'server',
-					key: `s-${m.id}`,
-					x: group.x + (i - (group.members.length - 1) / 2) * gap,
-					y: group.y,
-					pin: m,
-					stacked: true,
-					stackZ: group.members.length - i,
-				})
-			})
 		} else {
 			out.push({
 				type: 'cluster',
@@ -411,7 +423,7 @@ export function computeNodes({
 				y: group.y,
 				members: group.members,
 				provider: dominantProvider(group.members),
-				broken: group.members.some((m) => m.visual.pulse),
+				activity: getClusterActivity(group.members.map((m) => m.visual)),
 				title: locationLabel(group.members.map((m) => m.regionLabel)),
 			})
 		}
@@ -442,21 +454,56 @@ export function computeNodes({
 	return out
 }
 
+const CARD_MARGIN = 12
+
+function clamp(value: number, min: number, max: number): number {
+	return Math.min(Math.max(value, min), Math.max(min, max))
+}
+
+/** Place the hover card beside its node, on the side with room, inside the map. */
+export function placeHoverCard(
+	node: MapNode,
+	at: { x: number; y: number },
+	bounds: { width: number; height: number },
+): CSSProperties {
+	const width = node.type === 'server' ? 320 : 288
+	const nodeRadius =
+		node.type === 'cluster' ? 28 : node.type === 'server' ? 24 : 18
+	const gap = nodeRadius + CARD_MARGIN
+	const isOnLeft = at.x + gap + width > bounds.width - CARD_MARGIN
+	const left = clamp(
+		isOnLeft ? at.x - gap - width : at.x + gap,
+		CARD_MARGIN,
+		bounds.width - width - CARD_MARGIN,
+	)
+	// An estimate, only to keep a tall card off the bottom edge.
+	const estimatedHeight =
+		node.type === 'server'
+			? 220
+			: node.type === 'cluster'
+				? 40 + node.members.length * 48
+				: 160
+	const top = clamp(
+		at.y - 36,
+		CARD_MARGIN,
+		bounds.height - estimatedHeight - CARD_MARGIN,
+	)
+	return {
+		left: `${left}px`,
+		top: `${top}px`,
+		width: `${width}px`,
+		transformOrigin: isOnLeft ? 'right 44px' : 'left 44px',
+		'--smc-dx': isOnLeft ? '6px' : '-6px',
+	} as CSSProperties
+}
+
 // A site's status mapped onto the shared server visual vocabulary, so the unified
 // servers list (and its status filter) can treat a site like the VM it is.
 export function siteVisual(
 	status: string,
 	pendingAction?: string | null,
 ): ServerVisual {
-	// A live site action wins, same as servers — show its label, pulsing, until the mirror confirms.
-	if (pendingAction)
-		return {
-			key: 'settingUp',
-			label: pendingAction,
-			badgeTheme: 'amber',
-			dot: 'var(--ink-amber-6)',
-			pulse: true,
-		}
+	if (pendingAction) return pendingVisual(pendingAction)
 	// A site mirrors its machine's status, so the two share one vocabulary.
 	return STATUS_VISUAL[status] ?? VISUALS.settingUp
 }

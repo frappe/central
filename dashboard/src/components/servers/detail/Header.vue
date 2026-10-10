@@ -131,7 +131,7 @@ const menu = computed(() =>
 					<Badge
 						:label="visual.label"
 						:theme="visual.badgeTheme"
-						:class="{ 'animate-pulse': visual.pulse }"
+						:class="{ 'animate-pulse': visual.motion !== 'none' }"
 					/>
 				</div>
 

@@ -1,4 +1,4 @@
-import { computed, ref } from 'vue'
+import { computed, onScopeDispose, type Ref, ref, watch } from 'vue'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { useFleetRows } from '@/composables/useFleetRows'
 import { useRegions } from '@/composables/useRegions'
@@ -8,11 +8,13 @@ import {
 	flagEmoji,
 	hasMapCoords,
 	type MapPin,
-	type MapSpot,
+	type RegionSpot,
+	type ResourceRow,
 	regionLabel,
 	type ServerVisual,
 	STATUS_FILTERS,
 } from '@/lib/serverMap'
+import type { Region } from '@/types/Region'
 
 export function useServerFleet() {
 	const fleet = useServerMapData()
@@ -20,6 +22,8 @@ export function useServerFleet() {
 	const capabilities = useCapabilities()
 	const session = useSession()
 	const { rows } = useFleetRows(fleet.servers, fleet.sites, regions)
+
+	const settledIds = useSettledIds(rows)
 
 	const query = ref('')
 	const statusFilter = ref<ServerVisual['key'] | ''>('')
@@ -110,7 +114,7 @@ export function useServerFleet() {
 		)
 	})
 
-	const pillLabel = computed(() => {
+	const listTitle = computed(() => {
 		const filtered =
 			statusFilter.value ||
 			regionFilter.value.provider ||
@@ -148,7 +152,7 @@ export function useServerFleet() {
 			}),
 	)
 
-	const spots = computed<MapSpot[]>(() => {
+	const spots = computed<RegionSpot[]>(() => {
 		if (!capabilities.canCreateServer.value) return []
 		const occupied = new Set(fleet.servers.value.map((server) => server.region))
 		return regions.value
@@ -170,24 +174,100 @@ export function useServerFleet() {
 				provider: region.provider || null,
 				regionLabel: regionLabel(region),
 				flag: flagEmoji(region.country_code),
+				isReachable: !!region.reachable,
 			}))
 	})
+
+	// Frames read the unfiltered fleet, so a filter never moves the map.
+	const placedRegions = computed(() => regions.value.filter(hasMapCoords))
+	const usedRegions = computed(() => [
+		...new Map(
+			rows.value
+				.filter((row) => row.region && hasMapCoords(row.region))
+				.map((row) => [row.cluster, row.region!]),
+		).values(),
+	])
+	// The two views only differ when some regions hold none of the team's servers.
+	const hasMapViewChoice = computed(
+		() =>
+			usedRegions.value.length > 0 &&
+			usedRegions.value.length < placedRegions.value.length,
+	)
+	const mapView = ref<MapView>(
+		localStorage.getItem(MAP_VIEW_KEY) === 'world' ? 'world' : 'fleet',
+	)
+	watch(mapView, (view) => localStorage.setItem(MAP_VIEW_KEY, view))
+	const frame = computed(() =>
+		(hasMapViewChoice.value && mapView.value === 'fleet'
+			? usedRegions.value
+			: placedRegions.value
+		).map(toMapPoint),
+	)
 
 	return {
 		...fleet,
 		...capabilities,
 		activeTeam: session.activeTeam,
 		rows,
+		settledIds,
+		frame,
+		mapView,
+		hasMapViewChoice,
 		query,
 		statusFilter,
 		regionSelection,
 		locationFilter,
 		statusOptions,
 		regionOptions,
-		filteredRows,
 		panelRows,
-		pillLabel,
+		listTitle,
 		pins,
 		spots,
 	}
+}
+
+/** What the map frames: the regions the team uses, or every region. */
+type MapView = 'fleet' | 'world'
+const MAP_VIEW_KEY = 'central.console.serverMapView'
+
+function toMapPoint(region: Region): { lat: number; lng: number } {
+	return { lat: region.latitude!, lng: region.longitude! }
+}
+
+const SETTLED_MS = 1600
+
+/** Ids whose in-progress work just finished without failing, held briefly so the UI confirms it once. */
+function useSettledIds(rows: Ref<ResourceRow[]>): Ref<Set<string>> {
+	const settledIds = ref(new Set<string>())
+	const timers = new Set<number>()
+
+	watch(rows, (next, previous) => {
+		if (!previous) return
+		const wasInProgress = new Set(
+			previous
+				.filter((row) => row.visual.motion === 'progress')
+				.map((row) => row.id),
+		)
+		const finished = next
+			.filter(
+				(row) => wasInProgress.has(row.id) && row.visual.motion === 'none',
+			)
+			.map((row) => row.id)
+		if (!finished.length) return
+
+		settledIds.value = new Set([...settledIds.value, ...finished])
+		const timer = window.setTimeout(() => {
+			timers.delete(timer)
+			const remaining = new Set(settledIds.value)
+			for (const id of finished) remaining.delete(id)
+			settledIds.value = remaining
+		}, SETTLED_MS)
+		timers.add(timer)
+	})
+
+	onScopeDispose(() => {
+		for (const timer of timers) window.clearTimeout(timer)
+	})
+
+	return settledIds
 }
