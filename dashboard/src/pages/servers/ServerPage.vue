@@ -23,8 +23,8 @@ import {
 	useServers,
 	type VirtualMachineRow,
 } from '@/composables/useServers'
+import { useTerminateServer } from '@/composables/useTerminateServer'
 import { getServerActions } from '@/lib/capabilities'
-import { getErrorMessage } from '@/lib/feedback'
 import { METRIC_PERIODS } from '@/lib/serverMetrics'
 import type { MetricsRange } from '@/types/servers'
 
@@ -197,26 +197,11 @@ const resizing = ref(false)
 const renaming = ref(false)
 const pendingSnapshot = ref<VirtualMachineRow | null>(null)
 
-const pendingTerminate = ref<VirtualMachineRow | null>(null)
-const terminateError = ref('')
-
-const terminate = async (
-	target: VirtualMachineRow,
-	takeSnapshot: boolean,
-): Promise<void> => {
-	terminateError.value = ''
-
-	try {
-		await runCommand('terminate', target, { takeSnapshot, throwOnError: true })
-		pendingTerminate.value = null
-		router.push('/servers')
-	} catch (failure) {
-		terminateError.value = getErrorMessage(
-			failure,
-			"We couldn't terminate this server.",
-		)
-	}
-}
+const {
+	pendingTerminate,
+	terminateError,
+	confirmTerminate: terminate,
+} = useTerminateServer(() => router.push('/servers'))
 
 // Search sends people here with ?action= to finish an action that needs this page's
 // dialog or confirmation. The server routes still check every action.
