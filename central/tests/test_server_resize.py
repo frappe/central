@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, call, patch
 import frappe
 from frappe.tests import UnitTestCase
 
-from central.errors import AtlasConnectionError
+from central.errors import AtlasConnectionError, AtlasRejected
 from central.integrations.servers import resize_server
 
 SHAPE = {"vcpus": 2, "memory_megabytes": 4096, "disk_gigabytes": 50}
@@ -121,6 +121,34 @@ class TestServerResize(UnitTestCase):
 			self.client.vm_action.call_args_list, [call("vm-00001", "stop"), call("vm-00001", "start")]
 		)
 		self.client.resize.assert_called_once_with("vm-00001", 2000, 4096, 51200)
+
+	def test_a_refused_resize_starts_a_running_server_again(self):
+		"""Atlas keeps the old shape when no host has room, so the server must not stay stopped."""
+		self.client.get_vm.side_effect = [
+			self.remote("running"),
+			self.remote("running"),
+			self.remote("stopped"),
+			self.remote("stopped"),
+			self.remote("running"),
+		]
+		self.client.resize.side_effect = AtlasRejected("No host has capacity.", "out_of_capacity")
+
+		with self.assertRaises(AtlasRejected):
+			resize_server(self.server, SHAPE)
+
+		self.assertEqual(
+			self.client.vm_action.call_args_list, [call("vm-00001", "stop"), call("vm-00001", "start")]
+		)
+		self.observe.assert_not_called()
+
+	def test_a_refused_resize_leaves_a_stopped_server_stopped(self):
+		self.client.get_vm.side_effect = [self.remote("stopped"), self.remote("stopped")]
+		self.client.resize.side_effect = AtlasRejected("No host has capacity.", "out_of_capacity")
+
+		with self.assertRaises(AtlasRejected):
+			resize_server(self.server, SHAPE)
+
+		self.client.vm_action.assert_not_called()
 
 	def test_server_that_never_stops_times_out(self):
 		self.client.get_vm.return_value = self.remote("running")

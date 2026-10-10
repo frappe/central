@@ -33,7 +33,16 @@ class AtlasConnectionError(frappe.ValidationError):
 
 
 class AtlasRejected(AtlasConnectionError):
-	"""Atlas explicitly rejected a mutation before accepting it."""
+	"""Atlas explicitly rejected a mutation before accepting it. `code` is Atlas's own
+	error code, when the reply names one."""
+
+	def __init__(self, message: str | None = None, code: str | None = None):
+		super().__init__(message)
+		self.code = code
+
+
+# Atlas codes for "no host has room for this shape".
+ATLAS_CAPACITY_CODES = frozenset({"out_of_capacity", "affinity_unsatisfied", "insufficient_capacity"})
 
 
 class AtlasResourceGone(AtlasConnectionError):
@@ -87,6 +96,12 @@ ERROR_CATALOG: dict[str, dict] = {
 		"message": "The selected region couldn't complete this request.",
 		"remediation": "Review your selections and try again. If the problem continues, contact support.",
 		"retriable": False,
+	},
+	"REGION_AT_CAPACITY": {
+		"title": "No room for this size",
+		"message": "The selected region has no room for this server size right now.",
+		"remediation": "Choose a smaller size, or try again later.",
+		"retriable": True,
 	},
 	"RESOURCE_GONE": {
 		"title": "This server is no longer available",
@@ -205,7 +220,7 @@ def to_error_response(exc: Exception) -> dict:
 	if isinstance(exc, AtlasResourceGone):
 		return build_envelope("RESOURCE_GONE")
 	if isinstance(exc, AtlasRejected):
-		return build_envelope("ATLAS_REJECTED")
+		return build_envelope("REGION_AT_CAPACITY" if exc.code in ATLAS_CAPACITY_CODES else "ATLAS_REJECTED")
 	if isinstance(exc, AtlasConnectionError):
 		return build_envelope("REGION_UNAVAILABLE")
 

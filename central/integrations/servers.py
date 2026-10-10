@@ -103,17 +103,26 @@ def resize_server(server: VirtualMachine, shape: dict) -> None:
 	client = get_client(server)
 	remote = client.get_vm(server.atlas_vm_id)
 	compute, disk = remote.get("compute") or {}, remote.get("disk") or {}
+
 	cpu_millicores = shape["vcpus"] * 1000
 	memory_mib = shape["memory_megabytes"]
 	disk_mib = shape["disk_gigabytes"] * 1024
 
-	reshaping = (compute.get("cpu_millicores"), compute.get("memory_mib")) != (cpu_millicores, memory_mib)
-	if reshaping:
+	is_reshaping = (compute.get("cpu_millicores"), compute.get("memory_mib")) != (cpu_millicores, memory_mib)
+	if is_reshaping:
 		wait_for_power_state(client, server.atlas_vm_id, "stop", "stopped")
-		client.resize(server.atlas_vm_id, cpu_millicores, memory_mib, disk_mib)
+
+		try:
+			client.resize(server.atlas_vm_id, cpu_millicores, memory_mib, disk_mib)
+		except AtlasRejected:
+			# Atlas kept the old shape. Restore the power state before reporting the refusal.
+			if remote.get("current_state") != "stopped":
+				wait_for_power_state(client, server.atlas_vm_id, "start", "running")
+			raise
 	else:
 		if disk_mib > (disk.get("size_mib") or 0):
 			client.update_disk(server.atlas_vm_id, disk_mib)
+
 		if compute.get("sleep_after_idle_seconds"):
 			client.disable_idle_shutdown(server.atlas_vm_id)
 
