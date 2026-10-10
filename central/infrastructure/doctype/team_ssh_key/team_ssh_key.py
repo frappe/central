@@ -17,6 +17,21 @@ from central.infrastructure.doctype.resource_action.resource_action import (
 
 
 class TeamSSHKey(Document):
+	# begin: auto-generated types
+	# This code is auto-generated. Do not modify anything in this block.
+
+	from typing import TYPE_CHECKING
+
+	if TYPE_CHECKING:
+		from frappe.types import DF
+
+		fingerprint: DF.Data | None
+		last_sync_error: DF.SmallText | None
+		public_key: DF.LongText
+		team: DF.Link
+		title: DF.Data
+	# end: auto-generated types
+
 	"""One public login key owned by a Team and selected by individual servers."""
 
 	def validate(self) -> None:

@@ -79,6 +79,46 @@ def action_status(row) -> ActionStatus:
 
 
 class ResourceAction(Document):
+	# begin: auto-generated types
+	# This code is auto-generated. Do not modify anything in this block.
+
+	from typing import TYPE_CHECKING
+
+	if TYPE_CHECKING:
+		from frappe.types import DF
+
+		action: DF.Literal["create", "start", "stop", "restart", "terminate", "resize"]
+		completed_at: DF.Datetime | None
+		correlation_id: DF.Data
+		credential: DF.Link | None
+		dispatched_at: DF.Datetime | None
+		error_code: DF.Data | None
+		error_log: DF.Link | None
+		error_message: DF.SmallText | None
+		last_checked_at: DF.Datetime | None
+		product: DF.Link | None
+		region: DF.Link | None
+		remediation: DF.SmallText | None
+		remote_vm_id: DF.Data | None
+		request_digest: DF.Data | None
+		request_key: DF.Data | None
+		request_payload: DF.JSON | None
+		requested_by: DF.Link | None
+		reserved_monthly_rate: DF.Currency
+		resource_id: DF.Data | None
+		resource_type: DF.Literal["Server", "Site"]
+		retriable: DF.Check
+		server: DF.Link | None
+		status: DF.Literal[
+			"Queued", "Dispatching", "Sent", "In Progress", "Succeeded", "Failed", "Uncertain", "Timed Out"
+		]
+		subdomain: DF.Data | None
+		take_snapshot: DF.Check
+		team: DF.Link
+		title: DF.Data | None
+		vm_snapshot: DF.Link | None
+	# end: auto-generated types
+
 	"""One durable resource operation, from validated intent to confirmed outcome."""
 
 	@classmethod
