@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Button } from 'frappe-ui'
+import { Button, Skeleton } from 'frappe-ui'
 import { computed, ref } from 'vue'
 import BucketQuotaDialog from '@/components/addons/storage/BucketQuotaDialog.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
@@ -122,10 +122,7 @@ const remove = async (target: StorageBucket): Promise<void> => {
 				<Button label="Set quota" @click="quotaTarget = bucket" />
 			</template>
 
-			<div
-				v-if="usageLoading && !usage"
-				class="h-9 animate-pulse rounded-4 bg-surface-gray-2"
-			/>
+			<Skeleton v-if="usageLoading && !usage" class="h-9 rounded-4" />
 
 			<div
 				v-else-if="usageError"

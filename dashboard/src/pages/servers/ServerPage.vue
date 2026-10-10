@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Button, TabList, Tabs, TabTrigger } from 'frappe-ui'
+import { Button, Skeleton, TabList, Tabs, TabTrigger } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
@@ -230,10 +230,8 @@ watch(
 	<div class="h-full overflow-y-auto">
 		<div class="mx-auto w-full max-w-5xl p-3 md:p-4 xl:pt-8">
 			<div v-if="!loaded && !fleetError" class="space-y-6" aria-busy="true">
-				<div class="h-24 animate-pulse rounded-6 bg-surface-gray-2" />
-				<div
-					class="h-7 w-96 max-w-full animate-pulse rounded-4 bg-surface-gray-2"
-				/>
+				<Skeleton class="h-24 rounded-6" />
+				<Skeleton class="h-7 w-96 max-w-full rounded-4" />
 			</div>
 
 			<EmptyState
@@ -315,13 +313,9 @@ watch(
 				</EmptyState>
 
 				<div v-else-if="!details" class="mt-6 space-y-4" aria-busy="true">
-					<div class="h-5 w-24 animate-pulse rounded-4 bg-surface-gray-2" />
+					<Skeleton class="h-5 w-24 rounded-4" />
 					<div class="grid gap-3 md:grid-cols-3 md:gap-4">
-						<div
-							v-for="index in 3"
-							:key="index"
-							class="h-32 animate-pulse rounded-6 bg-surface-gray-1"
-						/>
+						<Skeleton v-for="index in 3" :key="index" class="h-32 rounded-6" />
 					</div>
 				</div>
 

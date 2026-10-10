@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Badge, Button } from 'frappe-ui'
+import { Badge, Button, Skeleton } from 'frappe-ui'
 import { computed } from 'vue'
 import CopyButton from '@/components/common/CopyButton.vue'
 import SettingsSection from '@/components/common/SettingsSection.vue'
@@ -80,8 +80,8 @@ const firewallNote = computed(() =>
 			help="The site and custom domains this server answers. They stop working if the server is terminated."
 		>
 			<div v-if="loading" class="space-y-2" aria-busy="true">
-				<div class="h-9 animate-pulse rounded-4 bg-surface-gray-2" />
-				<div class="h-9 w-2/3 animate-pulse rounded-4 bg-surface-gray-2" />
+				<Skeleton class="h-9 rounded-4" />
+				<Skeleton class="h-9 w-2/3 rounded-4" />
 			</div>
 
 			<p v-else-if="error" class="text-p-sm text-ink-gray-5">{{ error }}</p>
