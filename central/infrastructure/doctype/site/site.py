@@ -193,6 +193,28 @@ class Site(Document):
 		self.db_set({"rename_error": None, "rename_error_log": None})
 		self.enqueue_subdomain_rename()
 
+	@frappe.whitelist(methods=["POST"])
+	def open_as_administrator(self) -> str | None:
+		"""Operator action: a one-click login to this site, recorded on the site and its server."""
+		frappe.only_for("System Manager")
+		url = self.get_login_url(frappe.session.user)
+		note = _("{0} opened site {1} as Administrator.").format(frappe.session.user, self.name)
+		self.add_comment("Info", note)
+		frappe.get_doc("Virtual Machine", self.server).add_comment("Info", note)
+		return url
+
+	@frappe.whitelist(methods=["POST"])
+	def check_readiness(self) -> bool:
+		"""Operator action: probe the site's address now, and record readiness when it answers."""
+		from central.integrations.pilot import is_site_reachable
+
+		self.check_permission("read")
+		is_ready = is_site_reachable(self.url)
+		if is_ready:
+			self.record_ready()
+
+		return is_ready
+
 	def get_login_url(self, user: str | None = None) -> str | None:
 		"""A one-click session for `user`, or for Administrator, on the site's public address.
 		Pilot accepts a token only for the site's name on the bench: the customer's name after the

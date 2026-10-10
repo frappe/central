@@ -73,6 +73,12 @@ class TeamSSHKey(Document):
 		if any(_creation_holds_key(self.name, row) for row in requests if _creation_can_be_retried(row)):
 			frappe.throw(_("A failed server creation can still be retried with this key."))
 
+	@frappe.whitelist(methods=["POST"])
+	def retry_sync(self) -> None:
+		"""Operator action: send this key to its servers again after a failed sync."""
+		self.check_permission("write")
+		self.queue_sync()
+
 	def queue_sync(self) -> None:
 		frappe.enqueue(
 			"central.integrations.ssh_keys.sync_team_ssh_key",

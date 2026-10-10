@@ -4,6 +4,7 @@
 import hashlib
 
 import frappe
+from frappe import _
 from frappe.model.document import Document
 
 TOKEN_LENGTH = 48  # hex chars of the opaque bearer token (~192 bits of entropy)
@@ -139,6 +140,13 @@ class PilotCredential(Document):
 	def revoke(self) -> None:
 		if self.status != "Revoked":
 			self.db_set("status", "Revoked")
+
+	@frappe.whitelist(methods=["POST"])
+	def revoke_from_desk(self) -> None:
+		"""Operator action: stop this token from reaching Central, recorded on the credential."""
+		frappe.only_for("System Manager")
+		self.revoke()
+		self.add_comment("Info", _("{0} revoked this credential.").format(frappe.session.user))
 
 	# --- lifecycle joins: driven by the Atlas VM events once they echo the id back ---
 

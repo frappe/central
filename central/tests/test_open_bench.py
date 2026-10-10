@@ -121,6 +121,26 @@ class TestOpenBench(IntegrationTestCase):
 		self.assertEqual(claims["sub"], "admin")
 		self.assertEqual(claims["scope"], "bench")
 
+	def test_an_operator_opens_the_bench_and_the_server_records_it(self):
+		url = frappe.get_doc("Virtual Machine", "vm-open-1").open_bench_as_administrator()
+
+		self.assertTrue(url.startswith(f"{GATEWAY}/?sid="))
+		self.assertTrue(
+			frappe.db.exists(
+				"Comment",
+				{
+					"reference_doctype": "Virtual Machine",
+					"reference_name": "vm-open-1",
+					"content": ("like", "%as Administrator%"),
+				},
+			)
+		)
+
+	def test_only_an_operator_opens_the_bench_from_desk(self):
+		frappe.set_user(self.owner)
+		with self.assertRaises(frappe.PermissionError):
+			frappe.get_doc("Virtual Machine", "vm-open-1").open_bench_as_administrator()
+
 	def test_unenrolled_vm_refused(self):
 		"""A Running VM whose pilot hasn't enrolled has no audience id yet — Open is refused
 		rather than minting a SID no bench would accept."""

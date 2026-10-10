@@ -122,6 +122,32 @@ class VirtualMachine(Document):
 		):
 			PilotCredential.revoke_by_id(name)
 
+	@frappe.whitelist(methods=["POST"])
+	def open_bench_as_administrator(self) -> str:
+		"""Operator action: a one-click Administrator login to this bench, recorded on the server."""
+		frappe.only_for("System Manager")
+		url = self.get_bench_login_url(frappe.session.user)
+		self.add_comment("Info", _("{0} opened the bench as Administrator.").format(frappe.session.user))
+		return url
+
+	@frappe.whitelist(methods=["POST"])
+	def retry_admin_domain(self) -> None:
+		"""Operator action: ask Pilot for the admin hostname again after it failed."""
+		self.check_permission("write")
+		if not self.admin_domain_error:
+			frappe.throw(_("The admin hostname has no failure to retry."))
+
+		self.claim_admin_hostname()
+
+	@frappe.whitelist(methods=["POST"])
+	def revoke_pilot_access(self) -> None:
+		"""Operator action: stop this server's Pilot from reaching Central, recorded on the server."""
+		frappe.only_for("System Manager")
+		self.revoke_pilot_credentials()
+		self.add_comment(
+			"Info", _("{0} revoked the Pilot credentials of this server.").format(frappe.session.user)
+		)
+
 	def enqueue_route_removal(self) -> None:
 		"""A terminated server serves nothing, so its site and custom-domain routes go too."""
 		frappe.enqueue(

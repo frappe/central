@@ -79,6 +79,15 @@ On a trial site, a member of the site's team signs in as their own user. Pilot c
 
 A Pilot 401 leaves the site unclaimed and tells the console to retry with bounded backoff for up to 120 seconds. Other login failures return no URL and use the manual sign-in fallback. Central waits up to 120 seconds for each login request.
 
+## Operator actions
+
+A System Manager has two actions on the Site form in Desk:
+
+| Action | Effect |
+| --- | --- |
+| **Open as Administrator** | Opens a one-click session on the site. Central records it as a Comment on the Site and on its server. |
+| **Check Readiness** | Probes the site's address now, and records readiness when the site answers. |
+
 ## Migration
 
 The `record_server_has_site` patch backfills `Virtual Machine.has_site` from the create request of each server. It sets `has_site` when the requested image tags have `has_site = 1` or the request was a trial.

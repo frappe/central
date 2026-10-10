@@ -63,6 +63,53 @@ class TestVirtualMachine(IntegrationTestCase):
 		self.assertEqual(frappe.db.get_value("Pilot Credential", credential, "status"), "Revoked")
 		queue_removal.assert_called_once_with(server=server.name)
 
+	def test_an_operator_revokes_a_servers_pilot_access(self):
+		server = self._server("vm-revoke", "Running")
+		credential = "pcred-vm-revoke"
+		PilotCredential.mint(
+			team=self.team.name, pilot_credential_id=credential, server=server.name, audience_id=credential
+		)
+
+		frappe.set_user(self.owner)
+		with self.assertRaises(frappe.PermissionError):
+			server.revoke_pilot_access()
+		frappe.set_user("Administrator")
+		server.revoke_pilot_access()
+
+		self.assertEqual(frappe.db.get_value("Pilot Credential", credential, "status"), "Revoked")
+		self.assertTrue(
+			frappe.db.exists("Comment", {"reference_name": server.name, "content": ("like", "%revoked%")})
+		)
+
+	def test_an_operator_revokes_one_credential(self):
+		credential = "pcred-one"
+		PilotCredential.mint(team=self.team.name, pilot_credential_id=credential, audience_id=credential)
+		doc = frappe.get_doc("Pilot Credential", credential)
+
+		frappe.set_user(self.owner)
+		with self.assertRaises(frappe.PermissionError):
+			doc.revoke_from_desk()
+		frappe.set_user("Administrator")
+		doc.revoke_from_desk()
+
+		self.assertEqual(frappe.db.get_value("Pilot Credential", credential, "status"), "Revoked")
+
+	def test_admin_domain_retry_needs_a_failure_and_asks_pilot_again(self):
+		server = self._server("vm-admin-domain", "Running")
+		with self.assertRaisesRegex(frappe.ValidationError, "no failure to retry"):
+			server.retry_admin_domain()
+
+		server.db_set("admin_domain_error", "Pilot did not accept the admin hostname change.")
+		with patch.object(type(server), "claim_admin_hostname") as claim:
+			server.retry_admin_domain()
+		claim.assert_called_once()
+
+	def test_an_operator_retries_a_failed_ssh_key_sync(self):
+		key = frappe.get_doc({"doctype": "Team SSH Key", "team": self.team.name, "title": "Ops"})
+		with patch.object(type(key), "queue_sync") as queue_sync:
+			key.retry_sync()
+		queue_sync.assert_called_once()
+
 	def test_route_removal_is_refused_for_a_live_server(self):
 		server = self._server("vm-routes-live", "Running")
 

@@ -385,6 +385,33 @@ class TestSiteRoutes(SiteOnAMachine):
 		with self.assertRaises(frappe.PermissionError):
 			claim_site(self.site().name)
 
+	def test_an_operator_opens_a_site_and_both_records_note_it(self):
+		site = self.site()
+		with patch.object(type(site), "get_login_url", return_value="https://site.example.test/desk?sid=x"):
+			self.assertEqual(site.open_as_administrator(), "https://site.example.test/desk?sid=x")
+
+		for doctype, name in (("Site", site.name), ("Virtual Machine", site.server)):
+			self.assertTrue(
+				frappe.db.exists(
+					"Comment",
+					{
+						"reference_doctype": doctype,
+						"reference_name": name,
+						"content": ("like", "%as Administrator%"),
+					},
+				)
+			)
+
+		frappe.set_user(ensure_user("site.member@example.test"))
+		with self.assertRaises(frappe.PermissionError):
+			site.open_as_administrator()
+
+	def test_an_operator_checks_readiness_and_it_is_recorded(self):
+		site = self.site()
+		with patch("central.integrations.pilot.is_site_reachable", return_value=True):
+			self.assertTrue(site.check_readiness())
+		self.assertTrue(site.reload().ready_at)
+
 	def test_a_missing_site_and_a_foreign_site_answer_alike(self):
 		frappe.set_user(ensure_user("outsider@example.test"))
 

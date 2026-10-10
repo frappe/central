@@ -1,6 +1,7 @@
 frappe.ui.form.on("Resource Action", {
 	refresh(frm) {
 		if (frm.is_new()) return;
+		if (frm.doc.error_message) frm.set_intro(frappe.utils.escape_html(frm.doc.error_message), "red");
 		if (["Queued", "Dispatching", "Sent", "In Progress", "Uncertain"].includes(frm.doc.status)) {
 			frm.add_custom_button(__("Check Progress"), async () => {
 				await frm.call("check_status");
