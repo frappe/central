@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from typing import Any
 
 import frappe
@@ -12,7 +10,6 @@ from central.iam import (
 	resolve_user_grants,
 	user_has_operator_bypass,
 )
-from central.utils.inputs import require_attached_file, require_text
 
 # Identity and capability reads for the console. Always scoped to the signed-in
 # user — safe for any logged-in member.
@@ -204,13 +201,10 @@ def update_profile(full_name: str) -> dict[str, Any]:
 	session user — there is no user parameter to abuse. The whole string goes
 	into first_name (frappe recomputes full_name from the parts)."""
 	user = _require_signed_in()
-	# Typed at the trust boundary: a JSON body can put a list or dict here, and
-	# escape_html below would raise an unhandled error on one.
-	full_name = require_text(full_name, frappe._("Enter a name."))
 	doc = frappe.get_doc("User", user)
 	# Escaped at write time, matching the signup path (central.users.create_user):
 	# full_name reaches HTML contexts outside this SPA (frappe emails, desk).
-	doc.first_name = escape_html(full_name)
+	doc.first_name = escape_html(full_name.strip())
 	doc.middle_name = None
 	doc.last_name = None
 	doc.save(ignore_permissions=True)
@@ -222,6 +216,6 @@ def set_profile_photo(file_url: str | None = None) -> dict[str, Any]:
 	"""Set the signed-in user's photo to an uploaded image, or clear it."""
 	user = _require_signed_in()
 	doc = frappe.get_doc("User", user)
-	doc.user_image = require_attached_file("User", user, "user_image", file_url) if file_url else None
+	doc.user_image = file_url or None
 	doc.save()
 	return {"user_image": doc.user_image}

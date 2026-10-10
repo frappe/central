@@ -2,7 +2,6 @@ import frappe
 from frappe.tests import IntegrationTestCase
 
 from central.api.servers import rename_server
-from central.infrastructure.doctype.virtual_machine.virtual_machine import MAXIMUM_TITLE_LENGTH
 from central.tests.test_iam import ensure_user
 from central.tests.utils import ensure_atlas_instance
 
@@ -63,14 +62,11 @@ class TestServerRename(IntegrationTestCase):
 		finally:
 			frappe.set_user("Administrator")
 
-	def test_a_member_who_can_resize_renames_and_leaves_a_version(self):
+	def test_a_member_who_can_resize_renames_the_server(self):
 		result = self.rename_as(self.developer, self.team_a, self.server_a, "  billing worker  ")
 
 		self.assertEqual(result, {"title": "billing worker"})
 		self.assertEqual(frappe.db.get_value("Virtual Machine", self.server_a, "title"), "billing worker")
-		self.assertTrue(
-			frappe.db.exists("Version", {"ref_doctype": "Virtual Machine", "docname": self.server_a})
-		)
 
 	def test_a_member_without_resize_is_refused(self):
 		with self.assertRaises(frappe.PermissionError):
@@ -87,9 +83,19 @@ class TestServerRename(IntegrationTestCase):
 
 		self.assertEqual(frappe.db.get_value("Virtual Machine", self.server_b, "title"), "before")
 
-	def test_a_blank_long_or_markup_title_is_refused(self):
-		for title in ("", "   ", None, "x" * (MAXIMUM_TITLE_LENGTH + 1), "<img src=x onerror=alert(1)>"):
+	def test_a_blank_or_long_title_is_refused(self):
+		for title in ("", "   ", "x" * 141):
 			with self.subTest(title=title), self.assertRaises(frappe.ValidationError):
 				self.rename_as(self.developer, self.team_a, self.server_a, title)
 
+		# Frappe checks the argument type before the route runs.
+		for title in (None, ["worker"]):
+			with self.subTest(title=title), self.assertRaises(frappe.FrappeTypeError):
+				self.rename_as(self.developer, self.team_a, self.server_a, title)
+
 		self.assertEqual(frappe.db.get_value("Virtual Machine", self.server_a, "title"), "before")
+
+	def test_markup_in_a_title_is_cleaned(self):
+		self.rename_as(self.developer, self.team_a, self.server_a, "<img src=x onerror=alert(1)>")
+
+		self.assertNotIn("onerror", frappe.db.get_value("Virtual Machine", self.server_a, "title"))

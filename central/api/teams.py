@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from typing import Any
 
 import frappe
@@ -11,7 +9,6 @@ from central.iam import expand_capabilities, get_all_capabilities
 from central.identity.doctype.team.team import Team
 from central.identity.doctype.team_invitation.team_invitation import get_invitation_by_token
 from central.utils.guards import require_capability, require_team_member
-from central.utils.inputs import require_attached_file
 
 # Team-roster reads + role management for the console's Team screens. Visibility
 # is "being a member" (any capability on the team); mutations delegate to the Team
@@ -132,7 +129,7 @@ def rename_team(team: str, team_name: str) -> dict[str, Any]:
 def set_team_logo(team: str, file_url: str | None = None) -> dict[str, Any]:
 	"""Set the team logo to an uploaded image, or clear it. Team.validate re-checks team:edit."""
 	doc = frappe.get_doc("Team", team)
-	doc.team_logo = require_attached_file("Team", team, "team_logo", file_url) if file_url else None
+	doc.team_logo = file_url or None
 	doc.save()
 	return {"team_logo": doc.team_logo}
 

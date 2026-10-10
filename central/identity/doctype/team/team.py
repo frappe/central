@@ -108,6 +108,24 @@ class Team(Document):
 		self._validate_role_scope()
 		self._validate_member_resources()
 		self._validate_changes()
+		self._validate_team_logo()
+
+	def _validate_team_logo(self) -> None:
+		"""The logo must be a file uploaded to this team's logo field, not any URL."""
+		if not self.team_logo or not self.has_value_changed("team_logo"):
+			return
+
+		is_uploaded = frappe.db.exists(
+			"File",
+			{
+				"file_url": self.team_logo,
+				"attached_to_doctype": "Team",
+				"attached_to_name": self.name,
+				"attached_to_field": "team_logo",
+			},
+		)
+		if not is_uploaded:
+			frappe.throw(_("Upload the image again."))
 
 	def on_update(self) -> None:
 		# Team and member-row edits change resolved capabilities; drop the request-cached

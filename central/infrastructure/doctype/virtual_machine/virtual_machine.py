@@ -5,10 +5,7 @@ from frappe import _
 from frappe.model.document import Document
 from requests import RequestException
 
-from central.utils.inputs import require_text
 from central.utils.units import mebibytes_to_gigabytes, millicores_to_vcpus
-
-MAXIMUM_TITLE_LENGTH = 140
 
 
 class VirtualMachine(Document):
@@ -84,6 +81,12 @@ class VirtualMachine(Document):
 		)
 		# The authorized Resource Action permits this system-owned mirror write.
 		return server.insert(ignore_permissions=True)
+
+	def validate(self):
+		self.title = (self.title or "").strip() or None
+		# A discovered server may have no title, but a rename must name it.
+		if not self.is_new() and self.has_value_changed("title") and not self.title:
+			frappe.throw(_("Enter a server name."))
 
 	def on_update(self):
 		if self.has_value_changed("status") or self.has_value_changed("plan"):
@@ -286,21 +289,6 @@ class VirtualMachine(Document):
 				"Pilot admin domain rename returned no task",
 				frappe.as_json(task),
 			)
-
-	def rename(self, title: str) -> str:
-		"""Set the server's display name. Central owns the title, so Atlas is not told."""
-		title = require_text(title, _("Enter a server name."))
-		if len(title) > MAXIMUM_TITLE_LENGTH:
-			frappe.throw(_("Use a server name of at most {0} characters.").format(MAXIMUM_TITLE_LENGTH))
-
-		# The dashboard shows the name in places that render HTML, so markup is refused.
-		if "<" in title or ">" in title:
-			frappe.throw(_("A server name cannot contain < or >."))
-
-		self.title = title
-		# Customers cannot write a Virtual Machine; the rename route checks server:resize.
-		self.save(ignore_permissions=True, ignore_version=False)
-		return self.title
 
 	def record_admin_domain_failure(self, reason: str, title: str, diagnostic: str) -> None:
 		"""Keep the admin-hostname failure beside the server a Desk operator opens."""

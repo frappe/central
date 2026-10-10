@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import frappe
 from frappe import _
 from frappe.rate_limiter import rate_limit
@@ -8,7 +6,6 @@ from frappe.utils import validate_email_address
 from central.identity.doctype.team_invitation.team_invitation import get_invitation_by_token
 from central.identity.email_code import EmailCode
 from central.users import create_user, send_sign_in_code, sign_in_with_code
-from central.utils.inputs import require_text
 
 FULL_NAME_MAX_LENGTH = 140
 
@@ -88,7 +85,12 @@ def _optional_full_name(full_name: str | None) -> str | None:
 
 
 def _required_full_name(full_name: str) -> str:
-	full_name = require_text(full_name, _("Enter your full name."))
+	# The rate limiter hides these endpoints' signatures from Frappe's type check, and no
+	# User exists yet to validate, so the name is checked here.
+	if not isinstance(full_name, str) or not full_name.strip():
+		frappe.throw(_("Enter your full name."), frappe.ValidationError)
+
+	full_name = full_name.strip()
 	if len(full_name) > FULL_NAME_MAX_LENGTH:
 		frappe.throw(_("Use a shorter name."), frappe.ValidationError)
 	return full_name
