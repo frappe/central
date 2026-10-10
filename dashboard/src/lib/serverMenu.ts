@@ -27,15 +27,15 @@ export interface ServerMenuOptions {
 
 type Run = (verb: ServerMenuVerb) => void
 
-/** One server's action menu, grouped from most to least frequent so Terminate sits
+/** One server's actions in groups, from most to least frequent so Terminate sits
  *  last and apart. Status and capability gate each item the way the API does, so the
- *  menu never offers a call that would fail. */
-export function getServerMenu(
+ *  menu never offers a call that would fail. Empty groups are left out. */
+export function getServerMenuGroups(
 	server: VirtualMachineRow,
 	allowed: ServerActions,
 	run: Run,
 	options: ServerMenuOptions = {},
-): DropdownOptions {
+): DropdownOption[][] {
 	const entry = (verb: ServerMenuVerb, label: string, icon: string) => ({
 		label,
 		icon,
@@ -66,13 +66,19 @@ export function getServerMenu(
 			: [],
 	]
 
-	return groups
-		.filter((items) => items.length)
-		.map((items, index) => ({
-			group: `${index}`,
-			hideLabel: true,
-			options: items,
-		}))
+	return groups.filter((items) => items.length)
+}
+
+/** The same actions as a frappe-ui Dropdown, one unlabelled section per group. */
+export function getServerMenu(
+	server: VirtualMachineRow,
+	allowed: ServerActions,
+	run: Run,
+	options: ServerMenuOptions = {},
+): DropdownOptions {
+	return getServerMenuGroups(server, allowed, run, options).map(
+		(items, index) => ({ group: `${index}`, hideLabel: true, options: items }),
+	)
 }
 
 type Entry = (

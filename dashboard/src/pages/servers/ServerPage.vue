@@ -217,6 +217,28 @@ const terminate = async (
 		)
 	}
 }
+
+// Search sends people here with ?action= to finish an action that needs this page's
+// dialog or confirmation. The server routes still check every action.
+const linkedActions: Record<string, (target: VirtualMachineRow) => void> = {
+	start: () => command('start'),
+	stop: () => command('stop'),
+	restart: () => command('restart'),
+	resize: () => (resizing.value = true),
+	snapshot: (target) => (pendingSnapshot.value = target),
+	terminate: (target) => (pendingTerminate.value = target),
+}
+
+watch(
+	[() => route.query.action, server],
+	([action, target]) => {
+		if (typeof action !== 'string' || !target) return
+
+		linkedActions[action]?.(target)
+		router.replace({ query: { ...route.query, action: undefined } })
+	},
+	{ immediate: true },
+)
 </script>
 
 <template>
