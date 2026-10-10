@@ -41,7 +41,7 @@
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-10-06 00:00:00.000000",
+ "modified": "2026-10-10 10:10:36.894590",
  "modified_by": "Administrator",
  "module": "Services",
  "name": "AI Settings",
@@ -61,5 +61,6 @@
  "row_format": "Dynamic",
  "sort_field": "creation",
  "sort_order": "DESC",
- "states": []
+ "states": [],
+ "track_changes": 1
 }

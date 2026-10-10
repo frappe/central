@@ -114,7 +114,7 @@
    "link_fieldname": "site"
   }
  ],
- "modified": "2026-10-06 00:49:09.895480",
+ "modified": "2026-10-10 10:08:08.649701",
  "modified_by": "Administrator",
  "module": "Infrastructure",
  "name": "Site",
@@ -145,5 +145,6 @@
  "sort_field": "site_name",
  "sort_order": "ASC",
  "states": [],
- "title_field": "site_name"
+ "title_field": "site_name",
+ "track_changes": 1
 }

@@ -233,11 +233,11 @@
   },
   {
    "default": "0",
+   "description": "A terminate that takes a final snapshot first. The server is not destroyed unless the snapshot is Available.",
    "fieldname": "take_snapshot",
    "fieldtype": "Check",
    "label": "Take Snapshot",
-   "read_only": 1,
-   "description": "A terminate that takes a final snapshot first. The server is not destroyed unless the snapshot is Available."
+   "read_only": 1
   },
   {
    "fieldname": "vm_snapshot",
@@ -284,7 +284,7 @@
    "link_fieldname": "resource_action"
   }
  ],
- "modified": "2026-10-09 12:00:00.000000",
+ "modified": "2026-10-10 10:09:37.374070",
  "modified_by": "Administrator",
  "module": "Infrastructure",
  "name": "Resource Action",
@@ -346,5 +346,6 @@
    "title": "Timed Out"
   }
  ],
- "title_field": "title"
+ "title_field": "title",
+ "track_changes": 1
 }

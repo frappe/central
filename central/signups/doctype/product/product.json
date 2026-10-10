@@ -89,7 +89,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-10-07 12:00:00.000000",
+ "modified": "2026-10-10 10:11:22.909804",
  "modified_by": "Administrator",
  "module": "Signups",
  "name": "Product",
@@ -113,5 +113,6 @@
  "sort_field": "title",
  "sort_order": "ASC",
  "states": [],
- "title_field": "title"
+ "title_field": "title",
+ "track_changes": 1
 }

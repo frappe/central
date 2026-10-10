@@ -345,7 +345,7 @@
    "link_fieldname": "server"
   }
  ],
- "modified": "2026-10-09 12:00:00.000000",
+ "modified": "2026-10-10 10:07:58.752401",
  "modified_by": "Administrator",
  "module": "Infrastructure",
  "name": "Virtual Machine",
@@ -409,5 +409,6 @@
    "title": "Terminated"
   }
  ],
- "title_field": "title"
+ "title_field": "title",
+ "track_changes": 1
 }
