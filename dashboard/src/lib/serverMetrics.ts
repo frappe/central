@@ -9,6 +9,7 @@ export interface MetricChart {
 	colors: number[]
 	format: (value: number) => string
 	rows: MetricRow[]
+	max?: number
 }
 
 const RATE_UNITS = ['B/s', 'KB/s', 'MB/s', 'GB/s']
@@ -95,13 +96,17 @@ export const getChartTimeGrain = (points: MetricPoint[]) => {
 	return span <= 7 * 86400 ? 'hour' : 'day'
 }
 
-export const getMetricCharts = (points: MetricPoint[]): MetricChart[] => [
+export const getMetricCharts = (
+	points: MetricPoint[],
+	memoryGigabytes: number,
+): MetricChart[] => [
 	{
 		key: 'cpu',
 		title: 'CPU',
 		series: ['CPU'],
 		colors: [1],
 		format: (value) => `${Number(value.toFixed(1))}%`,
+		max: 100,
 		rows: points.map((point) => ({
 			time: toDate(point.time),
 			CPU: point.cpu_percent,
@@ -113,9 +118,10 @@ export const getMetricCharts = (points: MetricPoint[]): MetricChart[] => [
 		series: ['Used'],
 		colors: [5],
 		format: (value) => `${Number(value.toFixed(2))} GB`,
+		max: memoryGigabytes,
 		rows: points.map((point) => ({
 			time: toDate(point.time),
-			Used: point.memory_bytes / 1024 ** 3,
+			Used: Math.min(point.memory_bytes / 1024 ** 3, memoryGigabytes),
 		})),
 	},
 	getRateChart('network', 'Network', points, [3, 9], {

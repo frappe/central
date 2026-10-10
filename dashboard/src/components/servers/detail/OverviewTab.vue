@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Button, DateTimePicker, dayjs, Select } from 'frappe-ui'
+import { Button, DateTimePicker, dayjs, Select, Skeleton } from 'frappe-ui'
 import { AreaChart, ChartCard, useChartTokens } from 'frappe-ui/charts'
 import { computed, ref } from 'vue'
 import EmptyState from '@/components/common/EmptyState.vue'
@@ -78,8 +78,14 @@ const choosePeriod = (value: string): void => {
 
 const timeGrain = computed(() => getChartTimeGrain(points.value))
 
+const memoryTotal = computed(
+	() => (server.value.memory_megabytes ?? 0) * 1024 * 1024,
+)
+
 const charts = computed(() =>
-	points.value.length > 1 ? getMetricCharts(points.value) : [],
+	points.value.length > 1
+		? getMetricCharts(points.value, memoryTotal.value / 1024 ** 3)
+		: [],
 )
 
 const GRID = {
@@ -136,8 +142,7 @@ const usage = computed(() => {
 	const now = points.value[points.value.length - 1]
 	if (!now) return []
 
-	const memoryTotal = (server.value.memory_megabytes ?? 0) * 1024 * 1024
-	const memory = Math.min(now.memory_bytes, memoryTotal)
+	const memory = Math.min(now.memory_bytes, memoryTotal.value)
 
 	const cpu = Math.round(now.cpu_percent ?? 0)
 
@@ -156,8 +161,8 @@ const usage = computed(() => {
 			label: 'Memory',
 			icon: 'lucide-memory-stick',
 			used: formatBytes(memory),
-			limit: formatBytes(memoryTotal),
-			percent: Math.round(usagePercent(memory, memoryTotal)),
+			limit: formatBytes(memoryTotal.value),
+			percent: Math.round(usagePercent(memory, memoryTotal.value)),
 			badge: null,
 		},
 		{
@@ -198,16 +203,18 @@ const usage = computed(() => {
 		</template>
 	</EmptyState>
 
-	<div
-		v-else-if="!metrics"
-		class="grid gap-3 md:grid-cols-2 md:gap-4 lg:grid-cols-4"
-		aria-busy="true"
-	>
-		<div
-			v-for="index in 4"
-			:key="index"
-			class="h-28 animate-pulse rounded-6 bg-surface-gray-1"
-		/>
+	<div v-else-if="!metrics" class="space-y-4" aria-busy="true">
+		<div class="grid gap-3 md:grid-cols-2 md:gap-4 lg:grid-cols-4">
+			<Skeleton v-for="index in 4" :key="index" class="h-28 rounded-6" />
+		</div>
+
+		<div class="flex h-7 items-center">
+			<h2 class="text-lg-semibold text-ink-gray-8">Usage</h2>
+		</div>
+
+		<div class="grid gap-3 md:grid-cols-2 md:gap-4">
+			<Skeleton v-for="index in 4" :key="index" class="h-64 rounded-6" />
+		</div>
 	</div>
 
 	<div v-else-if="monitoring.available" class="space-y-4">
@@ -278,6 +285,7 @@ const usage = computed(() => {
 					}"
 					:y-axis="{
 						min: 0,
+						max: chart.max,
 						format: chart.format,
 						echartOptions: { splitLine: GRID },
 					}"
