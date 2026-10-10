@@ -41,6 +41,7 @@ class Region(AtlasConnectionMixin, CargoConnectionMixin, Document):
 		connection_error: DF.SmallText | None
 		country_code: DF.Data | None
 		display_name: DF.Data | None
+		frappemail_service: DF.Link | None
 		last_synced_at: DF.Datetime | None
 		latitude: DF.Float
 		longitude: DF.Float
@@ -50,9 +51,9 @@ class Region(AtlasConnectionMixin, CargoConnectionMixin, Document):
 		proxy_domain: DF.Data | None
 		reachable: DF.Check
 		region: DF.Data
+		region_id: DF.Int
 		status: DF.Literal["Active", "Draining", "Disabled"]
 		webhook_secret: DF.Password | None
-		region_id: DF.Int
 	# end: auto-generated types
 
 	_DOCTYPE_NAME = "Region"

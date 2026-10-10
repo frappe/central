@@ -48,6 +48,7 @@ def dispatch(
 	context: dict | None = None,
 	reference_doctype: str | None = None,
 	reference_name: str | None = None,
+	server: str | None = None,
 	affected_user: str | None = None,
 ) -> dict:
 	"""Dispatch a notification event for *team*.
@@ -64,8 +65,15 @@ def dispatch(
 
 	The result always includes creation and email queue counts. A duplicate returns
 	``reason="duplicate"`` with zero email attempts.
+
+	*server* scopes the event when the reference does not name one.
 	"""
+	from central.notification import get_reference_server
+
+	server = server or get_reference_server(reference_doctype, reference_name)
 	ctx = _resolve_context(team, event_type, context, reference_name, reference_doctype)
+	ctx["server_title"] = _get_server_title(server)
+	ctx["reference_title"] = _get_reference_title(team, reference_doctype, reference_name)
 	ctx["message"] = message or ""
 
 	event = _get_event_type(event_type)
@@ -77,7 +85,7 @@ def dispatch(
 
 	# Deduplication: suppress if an unread notification with the same
 	# event_type and reference_name already exists for this team.
-	if _is_duplicate(team, event_type, reference_name):
+	if _is_duplicate(team, event_type, reference_name, server):
 		return {
 			"created": False,
 			"reason": "duplicate",
@@ -107,6 +115,7 @@ def dispatch(
 			message=body,
 			reference_doctype=reference_doctype,
 			reference_name=reference_name,
+			server=server,
 			action_label=event.action_label,
 			action_route=_render_template(event.action_route, ctx) if event.action_route else None,
 			publish=True,
@@ -119,6 +128,7 @@ def dispatch(
 		message=message,
 		reference_doctype=reference_doctype,
 		reference_name=reference_name,
+		server=server,
 		affected_user=affected_user,
 	)
 
@@ -158,6 +168,7 @@ def _resolve_context(team, event_type, context, reference_name, reference_doctyp
 	"""Build the template context dict shared by all Jinja renders."""
 	ctx = {
 		"team": team,
+		"team_name": frappe.db.get_value("Team", team, "team_name") or team,
 		"event_type": event_type,
 		"reference_name": reference_name or "",
 		"reference_doctype": reference_doctype or "",
@@ -165,6 +176,40 @@ def _resolve_context(team, event_type, context, reference_name, reference_doctyp
 	if context:
 		ctx["context"] = context
 	return ctx
+
+
+# Only these references render a title. A team-owned one must belong to the event's team,
+# because a Pilot names its own reference and could name another team's record.
+REFERENCE_TITLE_FIELDS = {
+	"Virtual Machine": "title",
+	"VM Snapshot": "title",
+	"Site": "site_name",
+	"Region": "display_name",
+}
+TEAM_OWNED_REFERENCES = {"Virtual Machine", "VM Snapshot", "Site"}
+
+
+def _get_server_title(server: str | None) -> str:
+	"""The server's title, or its name when it has none."""
+	if not server:
+		return ""
+	return frappe.db.get_value("Virtual Machine", server, "title") or server
+
+
+def _get_reference_title(team: str, reference_doctype: str | None, reference_name: str | None) -> str:
+	"""The reference's title, or its name when the record is unknown, untitled, or another team's."""
+	if not reference_name:
+		return ""
+	title_field = REFERENCE_TITLE_FIELDS.get(reference_doctype or "")
+	if not title_field:
+		return reference_name
+
+	is_team_owned = reference_doctype in TEAM_OWNED_REFERENCES
+	fields = [title_field, "team"] if is_team_owned else [title_field]
+	row = frappe.db.get_value(reference_doctype, reference_name, fields, as_dict=True)
+	if not row or (is_team_owned and row.team != team):
+		return reference_name
+	return row[title_field] or reference_name
 
 
 def _render_template(template_str: str | None, ctx: dict) -> str | None:
@@ -178,7 +223,7 @@ def _render_template(template_str: str | None, ctx: dict) -> str | None:
 DEDUP_WINDOW_MINUTES = 60
 
 
-def _is_duplicate(team, event_type, reference_name) -> bool:
+def _is_duplicate(team, event_type, reference_name, server=None) -> bool:
 	"""True if a Team Notification for the same event+ref was created recently.
 
 	Uses a time window instead of ``is_read`` because read state is now
@@ -188,18 +233,18 @@ def _is_duplicate(team, event_type, reference_name) -> bool:
 	When a different event type for the same reference was created after the
 	first occurrence (e.g., ``site_recovered`` after ``backup_failure``), the
 	state has changed and a new notification is allowed through.
+
+	A known *server* narrows the match, so equal names on two servers stay distinct.
 	"""
 	if not reference_name:
 		return False
 	cutoff = frappe.utils.add_to_date(None, minutes=-DEDUP_WINDOW_MINUTES)
+	subject = {"team": team, "reference_name": reference_name}
+	if server:
+		subject["server"] = server
 	existing = frappe.db.get_value(
 		"Team Notification",
-		{
-			"team": team,
-			"event_type": event_type,
-			"reference_name": reference_name,
-			"creation": (">=", cutoff),
-		},
+		{**subject, "event_type": event_type, "creation": (">=", cutoff)},
 		"creation",
 	)
 	if not existing:
@@ -208,18 +253,21 @@ def _is_duplicate(team, event_type, reference_name) -> bool:
 	# since the first occurrence — allow the new notification through.
 	state_changed = frappe.db.exists(
 		"Team Notification",
-		{
-			"team": team,
-			"reference_name": reference_name,
-			"event_type": ("!=", event_type),
-			"creation": (">", existing),
-		},
+		{**subject, "event_type": ("!=", event_type), "creation": (">", existing)},
 	)
 	return not state_changed
 
 
 def _fan_out_emails(
-	team, event, ctx, *, message=None, reference_doctype=None, reference_name=None, affected_user=None
+	team,
+	event,
+	ctx,
+	*,
+	message=None,
+	reference_doctype=None,
+	reference_name=None,
+	server=None,
+	affected_user=None,
 ) -> dict:
 	"""Send individual emails to each qualified team member.
 
@@ -237,10 +285,8 @@ def _fan_out_emails(
 	Returns ``{"queued": N, "attempted": N, "failed": N}``.
 	"""
 	from central.iam import can
-	from central.notification import get_reference_server
 
 	result = {"queued": 0, "attempted": 0, "failed": 0}
-	server = get_reference_server(reference_doctype, reference_name)
 
 	if event.direct_recipients == "Affected User":
 		if affected_user and _email_enabled(affected_user, team, event.category):
@@ -336,19 +382,17 @@ def _notification_email(event, ctx, message=None) -> tuple[str, str]:
 	Renders templates/emails/notification.html from the fields the event already
 	carries, so a newly added event type is styled without a new template.
 	"""
+	# The email says the same sentence as the in-app notification. A body may use
+	# `message` anywhere in it, so it is never split out of the sentence.
+	ctx = {**ctx, "message": message or ctx.get("message") or ""}
 	subject = _render_template(event.in_app_title, ctx) or event.event_type
-	# The reason gets its own line in email rather than trailing the sentence after
-	# a colon, so the body is rendered with it blanked out.
-	reason = message or ctx.get("message") or ""
-	text = _render_template(event.in_app_body, {**ctx, "message": ""}) or ""
-	text = text.strip().rstrip(":").strip()
+	text = (_render_template(event.in_app_body, ctx) or "").strip()
 	route = _render_template(event.action_route, ctx) if event.action_route else None
 	body = frappe.render_template(
 		"templates/emails/notification.html",
 		{
 			"title": subject,
 			"body": text,
-			"reason": reason,
 			"action_label": event.action_label,
 			"action_url": f"{frappe.utils.get_url()}/dashboard{route}" if route else None,
 		},

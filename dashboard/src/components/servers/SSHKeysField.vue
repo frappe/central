@@ -8,7 +8,6 @@ import type { TeamSSHKey } from '@/types/sshKeys'
 
 interface Props {
 	modelValue: string[]
-	required: boolean
 }
 
 const props = defineProps<Props>()
@@ -46,12 +45,9 @@ function saved(key: TeamSSHKey | null) {
 			:options="options"
 			:loading="loading"
 			:disabled="!!error"
-			:required="required"
 			:empty-text="keys.length ? 'No matching keys' : 'No team SSH keys yet'"
 			label="SSH keys"
-			:placeholder="
-				required ? 'Select at least one key' : 'Add a key for SSH access'
-			"
+			placeholder="Add a key for SSH access"
 			size="md"
 			class="w-full"
 			@update:model-value="updateSelection"

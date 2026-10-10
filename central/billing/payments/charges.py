@@ -378,6 +378,13 @@ def apply_webhook(event_name: str) -> dict:
 	adapter_key = frappe.db.get_value("Payment Gateway", event.gateway, "adapter_key")
 	payload = frappe.parse_json(event.raw_payload) if event.raw_payload else {}
 
+	from central.billing.payments import disputes
+
+	if disputes.is_dispute(event.event_type):
+		result = disputes.apply_dispute(event, payload)
+		_mark_event(event, "Processed" if result.get("handled") else "Ignored")
+		return result
+
 	txn_id = _extract_transaction_id(adapter_key, payload)
 	is_authorised = event.event_type in _AUTHORISED_EVENTS
 	is_success = event.event_type in _SUCCESS_EVENTS
@@ -509,7 +516,7 @@ def _mark_invoice_paid(invoice: str, amount) -> bool:
 	)
 
 	# Async, one-way, non-blocking push to the statutory SOR (#17).
-	from central.billing.revenue.erpnext_sync import enqueue_invoice_sync
+	from central.billing.ingester.erpnext_sync import enqueue_invoice_sync
 
 	enqueue_invoice_sync(inv.name)
 	return True
@@ -667,6 +674,7 @@ def _extract_topup(adapter_key: str, payload: dict):
 			"payment_id": entity.get("id"),
 			"team": notes.get("team"),
 			"amount": frappe.utils.flt(minor) / 100 if minor is not None else None,
+			"credit": notes.get("credit"),
 			"currency": (entity.get("currency") or "").upper() or None,
 			"gateway": adapter_key,
 		}
@@ -680,6 +688,7 @@ def _extract_topup(adapter_key: str, payload: dict):
 			"payment_id": obj.get("payment_intent") or obj.get("id"),
 			"team": notes.get("team"),
 			"amount": frappe.utils.flt(minor) / 100 if minor is not None else None,
+			"credit": notes.get("credit"),
 			"currency": (obj.get("currency") or "").upper() or None,
 			"gateway": adapter_key,
 		}
@@ -748,6 +757,7 @@ def _credit_topup(event, topup: dict) -> dict:
 		note=f"Wallet top-up ({topup['payment_id']})",
 		gateway_payment_id=topup["payment_id"],
 		gateway=topup.get("gateway"),
+		credit=topup.get("credit"),
 	)
 	_mark_event(event, "Processed")
 	return {

@@ -46,7 +46,7 @@ class ObjectStorageTestCase(IntegrationTestCase):
 		self.enterContext(patch(f"{CONTROLLER}.get_storage_plan", return_value="storage-plan"))
 		self.enterContext(patch(f"{CONTROLLER}.get_storage_endpoint_url", return_value=ENDPOINT))
 		self.end_subscription = self.enterContext(patch(f"{CONTROLLER}.end_subscription"))
-		# The storage add-on, plan and subscription are billing fixtures this suite does not need.
+		# The plan and subscription are billing fixtures this suite does not need.
 		self.enterContext(patch.object(TeamService, "_validate_links"))
 
 	def tearDown(self):
@@ -205,23 +205,6 @@ class TestObjectStorageApi(ObjectStorageTestCase):
 		for call in (api.rotate_credentials, api.delete_bucket, api.get_bucket_usage):
 			with self.subTest(call=call.__name__), self.assertRaises(frappe.DoesNotExistError):
 				call(self.team, other["name"])
-
-	def test_a_service_that_is_not_a_bucket_is_not_reachable(self):
-		frappe.set_user("Administrator")
-		service = frappe.get_doc(
-			{
-				"doctype": "Team Service",
-				"team": self.team,
-				"add_on_service": "telemetry",
-				"region": self.region,
-			}
-		)
-		service.status = "Suspended"
-		service.insert(ignore_permissions=True)
-		frappe.set_user(self.owner)
-
-		with self.assertRaises(frappe.DoesNotExistError):
-			api.rotate_credentials(self.team, service.name)
 
 	def test_rotate_returns_the_new_key_once(self):
 		bucket = self._create()

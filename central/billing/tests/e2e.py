@@ -18,7 +18,6 @@ from frappe import _
 from frappe.utils.password import update_password
 
 from central.billing.tests.utils import complete_billing_profile, make_user
-from central.iam import get_user_team_names
 
 # Shared login secret for every seeded user — the spec gets it back from seed() and
 # logs in with it. Not a real credential; only valid on an allow_tests bench.
@@ -55,16 +54,17 @@ def seed(scenario: str = "profile_pending", currency: str = "INR") -> dict:
 	Pass `currency="USD"` for the Stripe top-up spec: USD's default gateway is
 	Stripe, so the top-up deterministically routes to the Stripe card Element.
 
-	The seeded user owns exactly one team — the personal team Central bootstraps on
-	user creation (`central.users.bootstrap_user_team`), where they are Owner with
-	full billing capability. We seed onto *that* team so it is the deterministic
-	whoami default; the spec never has to switch teams.
+	The seeded user owns exactly one team, as Owner with full billing capability, so
+	it is the deterministic whoami default and the spec never has to switch teams.
+	Its onboarding is skipped, because the specs test the billing screens.
 	"""
 	_enter_test_mode()
 
 	member = make_user(f"e2e-{frappe.generate_hash(8)}@example.com")
 	update_password(member, E2E_PASSWORD)
-	team = get_user_team_names(member)[0]
+	seeded_team = frappe.get_doc({"doctype": "Team", "team_name": "E2E Team", "owner_user": member}).insert()
+	seeded_team.skip_onboarding()
+	team = seeded_team.name
 
 	if scenario in ("ready", "with_invoices"):
 		complete_billing_profile(team, currency=currency)

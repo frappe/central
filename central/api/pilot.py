@@ -199,3 +199,17 @@ def enroll(bootstrap_token: str) -> dict:
 		"jwks_url": jwks_url(),
 		"audience_id": grant["pcid"],
 	}
+
+
+# nosemgrep: guest-whitelisted-method -- the pilot credential authenticates the caller.
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+@pilot_credential_auth
+def get_team_identity_token(audience: str) -> dict:
+	"""Proves the pilot's team, and the hostnames of its server's sites, to the service at `audience`."""
+	from central.infrastructure.doctype.site.site import get_server_hostnames
+	from central.sso import mint_team_identity_token
+
+	credential = frappe.local.pilot_credential
+	team_name = frappe.db.get_value("Team", credential.team, "team_name")
+	hosts = get_server_hostnames(credential.team, credential.server)
+	return {"token": mint_team_identity_token(audience, credential.team, team_name, hosts)}

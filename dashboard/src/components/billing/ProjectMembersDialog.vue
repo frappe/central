@@ -5,6 +5,7 @@ import { API, method } from '@/api/methods'
 import RowActionsMenu from '@/components/common/RowActionsMenu.vue'
 import { useBillingOverview } from '@/composables/useBillingOverview'
 import { getErrorMessage, successToast } from '@/lib/feedback'
+import { subscriptionTitle } from '@/lib/subscriptions'
 import type { Project, SubscriptionRow } from '@/types/billing'
 
 // Which servers show under a Project's heading in the cost breakdown — the other
@@ -32,7 +33,7 @@ const members = computed<SubscriptionRow[]>(() =>
 const candidates = computed(() =>
 	(subscriptions.data ?? [])
 		.filter((s) => s.has_server && s.project !== props.project?.name)
-		.map((s) => ({ label: s.server || s.name, value: s.name })),
+		.map((s) => ({ label: subscriptionTitle(s), value: s.name })),
 )
 
 const NONE = ''
@@ -45,10 +46,6 @@ watch(open, (isOpen) => {
 	}
 })
 watch(toAdd, () => (formError.value = ''))
-
-function serverTitle(sub: SubscriptionRow): string {
-	return sub.server || sub.plan_title || sub.name
-}
 
 const assign = useCall<
 	unknown,
@@ -86,7 +83,7 @@ async function removeMember(sub: SubscriptionRow): Promise<void> {
 	try {
 		await assign.submit({ subscription: sub.name, project: null })
 		if (assign.error) throw assign.error
-		successToast(`${serverTitle(sub)} removed from this project.`)
+		successToast(`${subscriptionTitle(sub)} removed from this project.`)
 		reloadSubscriptionGrouping()
 		emit('changed')
 	} catch (e) {
@@ -109,7 +106,7 @@ async function removeMember(sub: SubscriptionRow): Promise<void> {
 						class="flex items-center justify-between gap-3 py-2.5"
 					>
 						<span class="truncate text-sm text-ink-gray-8">
-							{{ serverTitle(sub) }}
+							{{ subscriptionTitle(sub) }}
 						</span>
 						<RowActionsMenu
 							:options="[

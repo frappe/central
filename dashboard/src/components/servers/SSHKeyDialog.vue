@@ -71,12 +71,14 @@ async function submit() {
 			<Alert v-if="error" theme="red" :title="error" />
 			<FormControl
 				v-if="!keyToRotate"
+				autofocus
 				v-model="title"
 				label="Name"
 				placeholder="Work laptop"
 			/>
 			<FormControl
 				v-model="publicKey"
+				:autofocus="!!keyToRotate"
 				type="textarea"
 				label="SSH public key"
 				placeholder="ssh-ed25519 AAAA…"

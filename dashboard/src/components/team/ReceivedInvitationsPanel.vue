@@ -1,32 +1,12 @@
 <script setup lang="ts">
 import { Avatar, Button, Skeleton } from 'frappe-ui'
-import { computed } from 'vue'
-import { useRoute } from 'vue-router'
 import EmptyState from '@/components/common/EmptyState.vue'
-import ListViewState from '@/components/common/list-view/ListViewState.vue'
 import { useMyInvitations } from '@/composables/useMyInvitations'
 import { formatDate } from '@/lib/format'
-import type { MyInvitation } from '@/types/api'
 
-// The signed-in user's pending invitations across teams. Reached from the
-// Invitations tab or an email link (/invitations/:name focuses one invite).
+// The signed-in user's pending invitations across teams.
 // Accepting joins the team and switches to it; declining clears the invite.
-const route = useRoute()
 const { invitations, loading, busy, accept, decline } = useMyInvitations()
-
-const focusedName = computed(
-	() => (route.params.name as string | undefined) ?? null,
-)
-
-const shown = computed<MyInvitation[]>(() =>
-	focusedName.value
-		? invitations.value.filter((i) => i.name === focusedName.value)
-		: invitations.value,
-)
-
-const focusedMissing = computed(
-	() => !!focusedName.value && !loading.value && shown.value.length === 0,
-)
 </script>
 
 <template>
@@ -35,22 +15,15 @@ const focusedMissing = computed(
 			<Skeleton v-for="n in 2" :key="n" class="h-24 rounded-6" />
 		</div>
 
-		<ListViewState
-			v-else-if="focusedMissing"
-			kind="empty"
-			title="This invitation isn't available"
-			description="It may have been accepted, declined, revoked, expired, or sent to a different account."
-		/>
-
 		<EmptyState
-			v-else-if="!shown.length"
+			v-else-if="!invitations.length"
 			title="No invitations"
 			description="Invitations sent to you will appear here."
 		/>
 
 		<div v-else class="mx-auto max-w-2xl space-y-4">
 			<article
-				v-for="invite in shown"
+				v-for="invite in invitations"
 				:key="invite.name"
 				class="rounded-6 border border-outline-gray-2 bg-surface-elevation-1 p-5"
 			>

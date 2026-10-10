@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import quote, urlparse
 
 import frappe
@@ -11,10 +10,9 @@ from frappe import _
 from central.api.jwks import jwks_document
 from central.api.pilot import get_telemetry_base_url, region_id_of
 from central.infrastructure.doctype.pilot_credential.pilot_credential import PilotCredential
+from central.infrastructure.doctype.user_mail_account.user_mail_account import UserMailAccount
 from central.sso import central_url, jwks_url, mint_bench_login, mint_datum_token, mint_site_login
 
-METRICS_CACHE_TTL_SECONDS = 30
-PILOT_TIMEOUT_SECONDS = 3
 PILOT_TASK_TIMEOUT_SECONDS = 35
 # Minting a session can start a cold Frappe process on the machine. Central waits long
 # enough for that process rather than discarding a session the machine creates later.
@@ -42,11 +40,17 @@ def get_bootstrap_metadata(action) -> dict[str, str]:
 		"initial_jwks_cache": initial_jwks,
 	}
 
-	# Metal caps each metadata value at 1 KiB, so each optional block gets its own key.
+	# Metal caps each metadata value at 1 KiB. Pilot merges pilot-common-config into
+	# common_config.toml and pilot-common-site-config into common_site_config.json at bootstrap.
 	metadata = {"pilot-central": json.dumps(bootstrap)}
+	common_site_config = frappe.get_cached_doc("Central Settings").get_common_site_config()
+	if mailbox := UserMailAccount.assign(action):
+		common_site_config |= mailbox.get_site_config()
+	if common_site_config:
+		metadata["pilot-common-site-config"] = json.dumps(common_site_config)
 
 	try:
-		metadata["pilot-telemetry"] = json.dumps(get_telemetry_configuration(action))
+		metadata["pilot-common-config"] = json.dumps({"telemetry": get_telemetry_configuration(action)})
 	except Exception:
 		action.record_diagnostic(frappe.get_traceback(), "Pilot telemetry configuration failed")
 
@@ -67,57 +71,29 @@ class PilotLoginPending(Exception):
 	"""Pilot has not accepted Central authentication for a site login yet."""
 
 
-class PilotMonitoringClient:
-	"""Read a bench's existing, Central-JWKS-authenticated monitoring endpoints."""
-
-	def __init__(self, gateway_url: str, audience_id: str):
-		self.gateway_url = _gateway_url(gateway_url)
-		self.token = mint_bench_login(audience_id)
-
-	def get_metrics(self) -> dict:
-		return self._get("/api/v1/metrics")
-
-	def get_history(self, window: str = "24h") -> dict:
-		return self._get("/api/v1/monitor/history", params={"window": window})
-
-	def get_overview(self) -> dict:
-		"""Live snapshot + 24h history in parallel — one token, two round-trips overlapped."""
-		with ThreadPoolExecutor(max_workers=2) as pool:
-			metrics = pool.submit(self.get_metrics)
-			history = pool.submit(self.get_history)
-			return {"current": metrics.result(), "history": history.result()}
-
-	def _get(self, path: str, params: dict | None = None) -> dict:
-		try:
-			response = requests.get(
-				f"{self.gateway_url}{path}",
-				headers={"Authorization": f"Bearer {self.token}"},
-				params=params,
-				timeout=PILOT_TIMEOUT_SECONDS,
-				allow_redirects=False,
-			)
-			response.raise_for_status()
-			payload = response.json()
-		except (requests.RequestException, ValueError) as exc:
-			raise PilotMonitoringError from exc
-		if not isinstance(payload, dict):
-			raise PilotMonitoringError
-		return payload
-
-
-def fetch_site_login_url(gateway_url: str, audience_id: str, site: str) -> str | None:
+def fetch_site_login_url(
+	gateway_url: str,
+	audience_id: str,
+	site: str,
+	user: str | None = None,
+	full_name: str | None = None,
+) -> str | None:
 	"""Relay a Central-signed site assertion to the bench's login endpoint and return the desk
-	URL it mints (a fresh local session). A 401 is retryable while Pilot finishes starting. Other
-	failures return None and are logged so a consistently-failing bench or Central is diagnosable."""
+	URL it mints (a fresh local session) for `user`, or Administrator. A 401 is retryable while
+	Pilot finishes starting. A 404 means the bench has no site by that name. Other failures
+	return None and are logged so a consistently-failing bench or Central is diagnosable."""
 	try:
+		token = mint_site_login(audience_id, site, user, full_name)
 		response = requests.post(
 			f"{_gateway_url(gateway_url)}/api/v1/sites/{site}/login",
-			headers={"Authorization": f"Bearer {mint_site_login(audience_id, site)}"},
+			headers={"Authorization": f"Bearer {token}"},
 			timeout=SITE_LOGIN_TIMEOUT_SECONDS,
 			allow_redirects=False,
 		)
 		if response.status_code == 401:
 			raise PilotLoginPending
+		if response.status_code == 404:
+			return None
 		response.raise_for_status()
 		payload = response.json()
 		url = payload.get("url") if isinstance(payload, dict) else None
@@ -163,11 +139,17 @@ def rename_admin_domain(server: str, base_url: str | None = None, tls: bool = Tr
 
 
 def rename_site(
-	server: str, site: str, new_name: str, keep_old_hostname: bool = True, base_url: str | None = None
+	server: str,
+	site: str,
+	new_name: str,
+	keep_old_hostname: bool = True,
+	make_primary: bool = False,
+	base_url: str | None = None,
 ) -> dict:
-	"""Ask a server's pilot to rename one of its sites. Pilot queues the rename as a task."""
+	"""Ask a server's pilot to rename one of its sites. Pilot queues the rename as a task.
+	`make_primary` makes the new name the site's `host_name`, so its links use it."""
 	base_url = base_url or _expected_gateway_url(frappe.get_doc("Virtual Machine", server))
-	payload = {"new_name": new_name, "keep_old_hostname": keep_old_hostname}
+	payload = {"new_name": new_name, "keep_old_hostname": keep_old_hostname, "make_primary": make_primary}
 	return _post_to_pilot(server, base_url, f"/api/v1/sites/{quote(site, safe='')}/actions/rename", payload)
 
 
@@ -196,29 +178,8 @@ def _post_to_pilot(server: str, base_url: str, path: str, payload: dict) -> dict
 	return response.json()
 
 
-class PilotMonitoringError(Exception):
-	"""Pilot is unavailable or returned an unexpected monitoring response."""
-
-
-def get_cached_monitoring(resource_id: str, gateway_url: str, audience_id: str) -> dict:
-	"""Return one server's live snapshot and 24-hour history from a short Central cache."""
-	key = f"pilot:monitoring:{resource_id}"
-	if cached := frappe.cache.get_value(key):
-		return cached
-
-	try:
-		payload = PilotMonitoringClient(gateway_url, audience_id).get_overview()
-		monitoring = {"available": True, **payload}
-	except PilotMonitoringError:
-		frappe.log_error(title=f"Pilot monitoring unavailable: {resource_id}")
-		monitoring = {"available": False}
-
-	frappe.cache.set_value(key, monitoring, expires_in_sec=METRICS_CACHE_TTL_SECONDS)
-	return monitoring
-
-
 def _gateway_url(value: str) -> str:
 	parsed = urlparse(value)
 	if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-		raise PilotMonitoringError
+		frappe.throw(_("The Pilot gateway URL is not valid."))
 	return value.rstrip("/")

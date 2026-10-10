@@ -50,11 +50,13 @@ export function useSession() {
 	return {
 		teams: computed<Team[]>(() => teamsCall.data ?? []),
 		loading: computed(() => teamsCall.loading),
+		// False until my_teams answers, so "no teams" is never read from a pending call.
+		isLoaded: computed(() => teamsCall.data != null),
 		activeTeam,
 		activeTeamLabel: computed(
 			() =>
 				(teamsCall.data ?? []).find((t) => t.name === activeTeam.value)
-					?.label ?? 'Central',
+					?.label ?? 'Frappe Cloud',
 		),
 		activeTeamLogo: computed(
 			() =>

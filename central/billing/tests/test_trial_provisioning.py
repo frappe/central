@@ -113,7 +113,8 @@ class TestTrialProvisioning(IntegrationTestCase):
 
 	def test_requires_a_plan_so_it_is_metered(self):
 		self._fund()
-		with self.assertRaises(frappe.ValidationError):
+		# Newer Frappe rejects the missing plan by its type before create_server runs.
+		with self.assertRaises((frappe.ValidationError, frappe.FrappeTypeError)):
 			self._create(None)
 
 	def test_rejects_when_credits_are_used_up(self):

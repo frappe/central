@@ -116,14 +116,14 @@ def assign_entry_tier(team: str) -> None:
 	profile.save(ignore_permissions=True)
 
 
-def ensure_tax_profile(team: str) -> None:
+def ensure_tax_profile(team: str):
 	"""Create the team's Tax Profile if absent.
 
 	India is GST at the rate on Billing Settings; everywhere else ships an untaxed
 	profile (output tax None) — a real row an admin can edit, rather than the
 	implicit no-profile default."""
 	if frappe.db.exists("Tax Profile", team):
-		return
+		return frappe.get_doc("Tax Profile", team)
 
 	profile = (
 		frappe.db.get_value("Billing Profile", team, ["country", "currency"], as_dict=True) or frappe._dict()
@@ -134,18 +134,33 @@ def ensure_tax_profile(team: str) -> None:
 		if india
 		else {"output_tax_type": "None", "output_tax_rate": 0}
 	)
-	frappe.get_doc({"doctype": "Tax Profile", "team": team, **values}).insert(ignore_permissions=True)
+	return frappe.get_doc({"doctype": "Tax Profile", "team": team, **values}).insert(ignore_permissions=True)
+
+
+def apply_gst_category(team: str, category: str | None) -> None:
+	"""Zero-rate an SEZ team, and undo it once its GST category is no longer SEZ."""
+	is_sez = category == "SEZ"
+	if not is_sez and not frappe.db.exists("Tax Profile", team):
+		return
+	profile = ensure_tax_profile(team)
+	was_sez = bool(profile.zero_rated) and profile.zero_rating_reason == "SEZ"
+	if is_sez == was_sez:
+		return
+	profile.zero_rated = int(is_sez)
+	profile.zero_rating_reason = "SEZ" if is_sez else None
+	profile.save(ignore_permissions=True)
 
 
 def grant_welcome_credits(team: str) -> None:
 	"""Grant the one-time welcome credits in the team's currency, if not already.
 
 	Needs a currency (so the credit is booked in the right one) and grants only
-	once — guarded on any prior Promotion entry for the team. The amount comes from
+	once per owner — guarded on any prior Promotion entry for any team the owner
+	owns, so a second team does not earn a second grant. The amount comes from
 	Billing Settings, so it can be changed, or the grant switched off entirely,
 	without a release; a currency with no configured amount gets no grant (rather
 	than a wrong-currency one). What a team has already been granted is never
-	revisited — the guard makes this a one-shot per team.
+	revisited.
 	"""
 	currency = frappe.db.get_value("Billing Profile", team, "currency")
 	if not currency:
@@ -153,9 +168,20 @@ def grant_welcome_credits(team: str) -> None:
 	amount = settings.welcome_credit_amount(currency)
 	if not amount:
 		return
-	if frappe.db.exists("Credit Ledger Entry", {"team": team, "reference_type": "Promotion"}):
+	if has_owner_received_welcome_credits(team):
 		return
 
 	from central.billing.revenue import credits
 
 	credits.grant_promotional_credits(team, amount, currency)
+
+
+def has_owner_received_welcome_credits(team: str) -> bool:
+	"""Whether any team of this team's owner already holds a Promotion grant."""
+	owner = frappe.db.get_value("Team", team, "owner_user")
+	# Lock the owner so two of their teams provisioning at once cannot both pass this check.
+	frappe.db.get_value("User", owner, "name", for_update=True)
+	owned_teams = frappe.get_all("Team", filters={"owner_user": owner}, pluck="name")
+	return bool(
+		frappe.db.exists("Credit Ledger Entry", {"team": ["in", owned_teams], "reference_type": "Promotion"})
+	)

@@ -1,6 +1,7 @@
 import { useKeyboardShortcut } from 'frappe-ui'
 import type { Component } from 'vue'
-import { defineAsyncComponent, ref } from 'vue'
+import { computed, defineAsyncComponent, ref } from 'vue'
+import { useCapabilities } from '@/composables/useCapabilities'
 import { MOBILE_BREAKPOINT } from '@/composables/useIsMobile'
 import { router } from '@/router'
 
@@ -16,8 +17,16 @@ const PreferencesForm = defineAsyncComponent(
 const TeamForm = defineAsyncComponent(
 	() => import('@/components/settings/forms/TeamForm.vue'),
 )
+const SSHKeysForm = defineAsyncComponent(
+	() => import('@/components/settings/forms/SSHKeysForm.vue'),
+)
 
-export type SettingsTab = 'profile' | 'notifications' | 'preferences' | 'team'
+export type SettingsTab =
+	| 'profile'
+	| 'notifications'
+	| 'preferences'
+	| 'team'
+	| 'ssh-keys'
 
 export interface SettingsTabDef {
 	value: SettingsTab
@@ -77,7 +86,34 @@ export const SETTINGS_TABS: SettingsTabDef[] = [
 		description: 'Your teams, and settings for the active one.',
 		component: TeamForm,
 	},
+	{
+		value: 'ssh-keys',
+		group: 'Administration',
+		label: 'SSH keys',
+		icon: 'lucide-key-round',
+		title: 'SSH keys',
+		description: 'Team keys that sign in to your servers.',
+		component: SSHKeysForm,
+		requires: 'member',
+	},
 ]
+
+/** The settings tabs this member can open on the active team. */
+export function useSettingsTabs() {
+	const { isMember, canEditTeam, canDeleteTeam } = useCapabilities()
+
+	const isAvailable = (tab: SettingsTabDef): boolean => {
+		if (tab.requires === 'member') return isMember.value
+		if (tab.requires === 'teamAdmin')
+			return canEditTeam.value || canDeleteTeam.value
+		return true
+	}
+
+	return {
+		isAvailable,
+		availableTabs: computed(() => SETTINGS_TABS.filter(isAvailable)),
+	}
+}
 
 export const settingsOpen = ref(false)
 export const settingsTab = ref<SettingsTab>('profile')

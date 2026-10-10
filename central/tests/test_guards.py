@@ -15,7 +15,9 @@ class TestCapabilityGuard(IntegrationTestCase):
 	def setUp(self):
 		frappe.set_user("Administrator")
 		self.user = ensure_user(f"guard.{frappe.generate_hash(length=8)}@example.test")
-		self.team = frappe.get_doc("Team", {"owner_user": self.user})
+		self.team = frappe.get_doc(
+			{"doctype": "Team", "team_name": f"Guard {self.user}", "owner_user": self.user}
+		).insert()
 
 	def tearDown(self):
 		frappe.set_user("Administrator")

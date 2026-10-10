@@ -2,28 +2,22 @@
 import { Button } from 'frappe-ui'
 import { computed } from 'vue'
 import { useAppMenu } from '@/composables/useAppMenu'
-import { useCapabilities } from '@/composables/useCapabilities'
 import { useSession } from '@/composables/useSession'
 import {
 	openSettings,
-	SETTINGS_TABS,
 	type SettingsTabDef,
+	useSettingsTabs,
 } from '@/composables/useSettings'
 
 // Mobile's settings hub: the same tabs the desktop dialog lists in its sidebar,
 // in the same sections, as rows that push a page. Sign out stays here at the bottom — it ends the
 // session rather than settling into a tab.
 const { activeTeamLabel } = useSession()
-const { isMember, canEditTeam, canDeleteTeam } = useCapabilities()
+const { availableTabs } = useSettingsTabs()
 const { currentUser, logoutAndRedirect } = useAppMenu()
 
 const available = computed(() =>
-	SETTINGS_TABS.filter((tab) => {
-		if (tab.requires === 'member') return isMember.value
-		if (tab.requires === 'teamAdmin')
-			return canEditTeam.value || canDeleteTeam.value
-		return true
-	}).map((tab) => ({
+	availableTabs.value.map((tab) => ({
 		tab,
 		// A row that can show what it's currently set to, does. It saves a tap
 		// for the two things people check without changing.

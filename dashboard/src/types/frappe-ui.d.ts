@@ -1,4 +1,4 @@
-import type { Component, Plugin, Ref } from 'vue'
+import type { Component, Directive, Plugin, Ref } from 'vue'
 
 export type ColorScheme = 'light' | 'dark' | 'system'
 export type DropdownAlign = 'start' | 'center' | 'end'
@@ -14,7 +14,22 @@ export interface DropdownOption {
 	submenu?: DropdownOptions
 }
 
-export type DropdownOptions = DropdownOption[]
+/** A run of options shown together; groups are divided by a line. */
+export interface DropdownGroupOption {
+	key?: string | number
+	group: string
+	options: DropdownOption[]
+	hideLabel?: boolean
+}
+
+export type DropdownOptions = Array<DropdownOption | DropdownGroupOption>
+
+/** The File record `upload_file` returns. */
+export interface UploadedFile {
+	name: string
+	file_name: string
+	file_url: string
+}
 
 export interface UseCallOptions<TResponse, TParams> {
 	url: string | Ref<string>
@@ -128,6 +143,8 @@ export const dayjs: typeof import('dayjs').default
 export const dayjsLocal: typeof import('dayjs').default
 export const FrappeUI: Plugin
 export function setConfig(key: string, value: unknown): void
+/** Focuses the first focusable descendant on mount. `false` skips it. */
+export const vFocus: Directive<HTMLElement, boolean | undefined>
 
 export const toast: {
 	success(message: string): void
@@ -216,12 +233,14 @@ export const Dialog: Component & {
 }
 export const Dropdown: Component
 export const ErrorMessage: Component
+export const FileUploader: Component
 export const FormControl: Component
 export const KeyboardShortcut: Component
 export const LoadingIndicator: Component
 export const LoadingText: Component
 export const MobileNav: Component
 export const MobileNavItem: Component
+export const DateTimePicker: Component
 export const MultiSelect: Component
 export const Popover: Component
 export const Select: Component
@@ -243,7 +262,9 @@ export const Slider: Component
 export const Spinner: Component
 export const Switch: Component
 export const TabButtons: Component
+export const TabList: Component
 export const Tabs: Component
+export const TabTrigger: Component
 export const TextInput: Component
 export const ToastProvider: Component
 export const Tooltip: Component

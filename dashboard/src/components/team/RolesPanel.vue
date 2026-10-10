@@ -100,6 +100,7 @@ const { selectedKey, selected, select, clear } = useTeamRowSelection(
 		search-placeholder="Search roles..."
 		item-label="role"
 		row-class="min-h-12 py-1.5"
+		:show-page-size="false"
 		:show-count="false"
 		:active-key="selectedKey"
 		:empty-state="{ title: 'No roles yet', description: 'Create a role to grant capabilities to members.' }"

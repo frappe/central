@@ -8,7 +8,7 @@ from unittest.mock import patch
 import frappe
 from frappe.tests import IntegrationTestCase
 
-from central.geo import IP_COUNTRY_TTL_SECONDS, _clean_public_ip, get_country_from_ip
+from central.geo import IP_COUNTRY_TTL_SECONDS, _clean_public_ip, get_country_from_ip, warm_country_cache
 
 
 class TestCleanPublicIP(IntegrationTestCase):
@@ -80,3 +80,26 @@ class TestCountryLookup(IntegrationTestCase):
 			self.assertIsNone(get_country_from_ip("127.0.0.1"))
 
 		lookup.assert_not_called()
+
+
+class TestWarmCountryCache(IntegrationTestCase):
+	"""Signup looks the country up in the background, before the team needs it."""
+
+	def test_an_uncached_public_ip_is_looked_up_in_the_background(self):
+		frappe.cache.delete_value("ip_country:49.207.0.1")
+
+		with patch("frappe.enqueue") as enqueue:
+			warm_country_cache("49.207.0.1")
+
+		enqueue.assert_called_once()
+		self.assertEqual(enqueue.call_args.kwargs["ip"], "49.207.0.1")
+
+	def test_a_cached_or_private_ip_queues_nothing(self):
+		frappe.cache.set_value("ip_country:49.207.0.2", {"country": "India"}, expires_in_sec=60)
+		self.addCleanup(frappe.cache.delete_value, "ip_country:49.207.0.2")
+
+		with patch("frappe.enqueue") as enqueue:
+			warm_country_cache("49.207.0.2")
+			warm_country_cache("10.0.0.1")
+
+		enqueue.assert_not_called()

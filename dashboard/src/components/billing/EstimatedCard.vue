@@ -386,6 +386,7 @@ async function submitAlert(): Promise<void> {
 				<Alert v-if="formError" class="mb-4" theme="red" :title="formError" />
 				<TextInput
 					v-model="draft"
+					autofocus
 					type="number"
 					:label="`Alert me above (${currencySymbol(currency)})`"
 					min="0"

@@ -279,7 +279,9 @@ class StripeAdapter(GatewayAdapter):
 			raw=intent,
 		)
 
-	def refund(self, payment_attempt, amount, reason: str) -> RefundResult:
+	def refund(
+		self, payment_attempt, amount, reason: str, idempotency_key: str | None = None
+	) -> RefundResult:
 		"""Refund a captured charge to source. Symmetric across gateways."""
 		self._configure()
 		try:
@@ -287,6 +289,7 @@ class StripeAdapter(GatewayAdapter):
 				stripe.Refund.create(
 					payment_intent=payment_attempt.gateway_transaction_id,
 					amount=round((amount or 0) * 100),
+					idempotency_key=idempotency_key,
 				)
 			)
 		except (stripe.error.APIConnectionError, stripe.error.RateLimitError) as e:

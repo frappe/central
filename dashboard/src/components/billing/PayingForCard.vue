@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Button } from 'frappe-ui'
+import { Button, Skeleton } from 'frappe-ui'
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import AssignProjectDialog from '@/components/billing/AssignProjectDialog.vue'
@@ -8,7 +8,7 @@ import PayingForRow from '@/components/billing/PayingForRow.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { usePayingFor } from '@/composables/usePayingFor'
-import type { SubscriptionRow } from '@/types/billing'
+import { subscriptionTitle } from '@/lib/subscriptions'
 
 const VISIBLE = 5
 
@@ -36,26 +36,16 @@ const hidden = computed(() => Math.max(0, rows.value.length - VISIBLE))
 function goToObjectStorage(): void {
 	router.push({ name: 'ObjectStorage' })
 }
-
-function serverTitle(sub: SubscriptionRow): string {
-	return sub.server || sub.plan_title || sub.name
-}
 </script>
 
 <template>
 	<BillingCard title="Subscriptions">
 		<div v-if="loading" class="space-y-3 py-1">
 			<div v-for="i in 3" :key="i" class="flex items-center gap-3">
-				<span
-					class="size-4 shrink-0 animate-pulse rounded-4 bg-surface-gray-2"
-				/>
+				<Skeleton class="size-4 shrink-0 rounded-4" />
 				<div class="flex-1 space-y-1.5">
-					<span
-						class="block h-3.5 w-40 animate-pulse rounded-4 bg-surface-gray-2"
-					/>
-					<span
-						class="block h-3 w-28 animate-pulse rounded-4 bg-surface-gray-2"
-					/>
+					<Skeleton class="h-3.5 w-40 rounded-4" />
+					<Skeleton class="h-3 w-28 rounded-4" />
 				</div>
 			</div>
 		</div>
@@ -95,14 +85,14 @@ function serverTitle(sub: SubscriptionRow): string {
 			description="Servers and metered services you're subscribed to will show here with what they cost."
 		>
 			<template v-if="canManageBilling" #action>
-				<Button label="Open object storage" @click="goToObjectStorage" />
+				<Button label="Open Object Storage" @click="goToObjectStorage" />
 			</template>
 		</EmptyState>
 
 		<ConfirmDialog
 			v-model:target="pendingPause"
 			title="Pause billing"
-			:message="`Pause billing for ${pendingPause ? serverTitle(pendingPause) : ''}? This stops the server/VM and the site(s)/services running on it, and stops charges until you resume.`"
+			:message="`Pause billing for ${pendingPause ? subscriptionTitle(pendingPause) : ''}? This stops the server/VM and the site(s)/services running on it, and stops charges until you resume.`"
 			confirm-label="Pause billing"
 			:loading="busy === pendingPause?.name"
 			@confirm="confirmPause"

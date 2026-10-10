@@ -2,8 +2,8 @@
 <h1 class="fc-heading">{{ text }}</h1>
 {% endmacro %}
 
-{% macro paragraph(text, tight=false) %}
-<p class="{{ 'fc-text-tight' if tight else 'fc-text' }}">{{ text }}</p>
+{% macro paragraph(text) %}
+<p class="fc-text">{{ text }}</p>
 {% endmacro %}
 
 {% macro button(label, link, primary=true) %}

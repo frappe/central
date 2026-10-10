@@ -82,7 +82,8 @@ class TestCreateServerRecordsSubscription(BillingTestCase):
 			self.create(title="a" * 141)
 
 	def test_unpriced_raw_server_is_rejected(self):
-		with self.assertRaises(frappe.ValidationError):
+		# Newer Frappe rejects the missing plan by its type before create_server runs.
+		with self.assertRaises((frappe.ValidationError, frappe.FrappeTypeError)):
 			create_billed_server(self.team, REGION, None)
 
 	def test_refused_without_a_complete_billing_profile(self):

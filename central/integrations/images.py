@@ -49,13 +49,15 @@ def list_images(
 	return client.list_system_images({**document.get_image_tags(), **(extra_tags or {})}, offset)
 
 
-def preview_images(offering: str, region: str, offset: int = 0) -> dict:
+def preview_images(
+	offering: str, region: str, offset: int = 0, extra_tags: dict[str, str] | None = None
+) -> dict:
 	"""Check an operator's saved selector without creating a regional resource."""
 	instance = frappe.get_doc("Region", region)
 	client = AtlasClient.for_operator(instance)
 	document = frappe.get_doc("Image Offering", offering)
 	document.check_permission("write")
-	return client.list_system_images(document.get_image_tags(), offset)
+	return client.list_system_images({**document.get_image_tags(), **(extra_tags or {})}, offset)
 
 
 def validate_catalog_access(team: str, flow: str) -> None:
@@ -139,7 +141,7 @@ def _restorable_snapshot(team: str, snapshot: str):
 	if row.status != "Available":
 		frappe.throw(_("Only an available snapshot can be restored."))
 	if not row.is_restorable or not row.image_offering:
-		frappe.throw(_("A snapshot of a Pilot server cannot be restored yet."))
+		frappe.throw(_("A snapshot of a Frappe server cannot be restored yet."))
 	return row
 
 

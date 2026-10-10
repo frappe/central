@@ -34,12 +34,40 @@ def check_subdomain(subdomain: str, team: str | None = None) -> dict:
 
 
 @frappe.whitelist(methods=["POST"])
+def create_trial_team(
+	utm_source: str | None = None,
+	utm_medium: str | None = None,
+	utm_campaign: str | None = None,
+	referrer: str | None = None,
+	product: str | None = None,
+) -> dict:
+	"""Give a caller with no team a team before the trial funnel asks for a site name. The
+	browser sends how the signup first arrived, which the new team keeps."""
+	from central.site_provisioning import create_trial_team as create
+
+	attribution = {
+		"utm_source": utm_source,
+		"utm_medium": utm_medium,
+		"utm_campaign": utm_campaign,
+		"referrer": referrer,
+		"product": product,
+	}
+	return {"team": create(frappe.session.user, attribution)}
+
+
+@frappe.whitelist(methods=["POST"])
 @handle_resource_operation
-def create_trial_site(subdomain: str, request_key: str, team: str | None = None) -> dict:
-	"""Start a trial site under a name the customer chose. Gated on `server:create`."""
+def create_trial_site(
+	subdomain: str,
+	request_key: str,
+	team: str | None = None,
+	product: str | None = None,
+) -> dict:
+	"""Start a trial site under a name the customer chose, with the product's app when one is
+	named. Gated on `server:create`."""
 	from central.site_provisioning import create_trial_site as start
 
-	return start(team, subdomain, request_key)
+	return start(team, subdomain, request_key, product)
 
 
 @frappe.whitelist(methods=["POST"])
@@ -75,12 +103,24 @@ def login_site(name: str) -> dict:
 
 @frappe.whitelist(methods=["GET"])
 @require_capability("server:view", "You can't view this team's sites.")
-def onboarding_status(team: str | None = None) -> dict:
-	"""What the signup funnel waits on: the team's site, or the creation still building it.
+def onboarding_status(team: str | None = None, product: str | None = None) -> dict:
+	"""Resume this product's site or creation within the authorized team."""
+	if product:
+		if not frappe.db.exists("Product", product):
+			frappe.throw(_("This product is not available for signup."))
+		sites = frappe.get_list(
+			"Site",
+			filters={"team": team, "product": product, "server.status": ["!=", "Terminated"]},
+			pluck="name",
+			order_by="creation desc",
+			limit=1,
+		)
+		if sites:
+			return {
+				"site": site_state(authorized_site(sites[0], "server:view"), with_login=False),
+				"creation": None,
+			}
 
-	The funnel cannot name the site it waits for, because the address follows from a
-	machine the region has not built yet. So it asks about the team instead, which also
-	lets a customer who reloads, or comes back later, rejoin the same wait."""
 	rows = frappe.get_list(
 		"Resource Action",
 		filters={
@@ -88,6 +128,7 @@ def onboarding_status(team: str | None = None) -> dict:
 			"requested_by": frappe.session.user,
 			"resource_type": "Site",
 			"action": "create",
+			"product": product or ["is", "not set"],
 		},
 		fields=[*STATUS_FIELDS, "server"],
 		order_by="creation desc",
@@ -99,11 +140,16 @@ def onboarding_status(team: str | None = None) -> dict:
 	creation = rows[0]
 	name = frappe.db.get_value("Site", {"server": creation.server}, "name") if creation.server else None
 	if name:
-		return {"site": site_state(frappe.get_doc("Site", name), with_login=False), "creation": None}
+		site = authorized_site(name, "server:view")
+		if site.status == "Terminated":
+			return {"site": None, "creation": None}
+		return {"site": site_state(site, with_login=False), "creation": None}
 
 	return {
 		"site": None,
-		"creation": action_status(creation) if creation.status in (*PENDING_STATES, "Failed") else None,
+		"creation": action_status(creation)
+		if creation.status in (*PENDING_STATES, "Failed", "Timed Out")
+		else None,
 	}
 
 
@@ -132,7 +178,7 @@ def site_state(site: Site, with_login: bool = True) -> dict:
 	login_pending = False
 	if ready and with_login:
 		try:
-			login_url = site.get_login_url()
+			login_url = site.get_login_url(frappe.session.user)
 		except PilotLoginPending:
 			login_pending = True
 
@@ -143,6 +189,7 @@ def site_state(site: Site, with_login: bool = True) -> dict:
 		"ready": ready,
 		"login_url": login_url,
 		"login_pending": login_pending,
+		"claimed": bool(site.claimed_at),
 	}
 
 

@@ -159,7 +159,7 @@ class SiteDomain(Document):
 		except (frappe.ValidationError, httpx.HTTPError):
 			values.update(
 				self.failure_values(
-					_("Central could not update this route. It will retry automatically."),
+					_("Could not update this route. It will retry automatically."),
 					"Site route update failed",
 				)
 			)
@@ -185,7 +185,7 @@ class SiteDomain(Document):
 			self.db_set(
 				{
 					**self.failure_values(
-						_("Central could not remove this route. It will retry automatically."),
+						_("Could not remove this route. It will retry automatically."),
 						"Site route removal failed",
 					),
 					"attempts": self.attempts + 1,

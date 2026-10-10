@@ -53,7 +53,7 @@ export function useProvisioningAction(
 			// A read this code cannot understand must not erase the request on screen.
 			// Treat it as a failed read, which keeps the panel and says so.
 			if (!result?.status)
-				throw new Error('Central returned no status for this request.')
+				throw new Error('No status came back for this request.')
 			action.value = result
 			error.value = ''
 		} catch (failure) {

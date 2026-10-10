@@ -14,25 +14,31 @@ from central.iam import user_has_operator_bypass
 
 if TYPE_CHECKING:
 	from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+	from cryptography.hazmat.primitives.asymmetric.rsa import RSAPublicKey
 
 ALGORITHM = "EdDSA"
+OIDC_ALGORITHM = "RS256"
+RSA_KEY_BITS = 2048
 
-SigningPlane = Literal["atlas", "pilot"]
+SigningPlane = Literal["atlas", "pilot", "oidc"]
 
 
 @dataclass(frozen=True)
 class SigningKeyFields:
-	"""The fields that hold one plane's Ed25519 signing key."""
+	"""The fields that hold one plane's signing key, and the algorithm of that key."""
 
 	label: str
 	key_id: str
 	public_key: str
 	private_key: str
+	algorithm: str = ALGORITHM
 
 
 SIGNING_KEYS: dict[str, SigningKeyFields] = {
 	"atlas": SigningKeyFields("Atlas", "atlas_key_id", "atlas_public_key", "atlas_private_key"),
 	"pilot": SigningKeyFields("Pilot", "pilot_key_id", "pilot_public_key", "pilot_private_key"),
+	# OpenID Connect clients such as Warpgate accept RS256 ID tokens, not EdDSA.
+	"oidc": SigningKeyFields("OIDC", "oidc_key_id", "oidc_public_key", "oidc_private_key", OIDC_ALGORITHM),
 }
 
 
@@ -49,6 +55,9 @@ class CentralSSOSettings(Document):
 		atlas_private_key: DF.Password | None
 		atlas_public_key: DF.Code | None
 		issuer_url: DF.Data | None
+		oidc_key_id: DF.Data | None
+		oidc_private_key: DF.Password | None
+		oidc_public_key: DF.Code | None
 		pilot_key_id: DF.Data | None
 		pilot_private_key: DF.Password | None
 		pilot_public_key: DF.Code | None
@@ -57,6 +66,10 @@ class CentralSSOSettings(Document):
 	@classmethod
 	def instance(cls) -> "CentralSSOSettings":
 		return frappe.get_single("Central SSO Settings")
+
+	def before_validate(self) -> None:
+		if self.issuer_url:
+			self.issuer_url = self.issuer_url.strip().rstrip("/")
 
 	@frappe.whitelist(methods=["POST"])
 	def initialize_signing_key(self, plane: SigningPlane) -> str:
@@ -94,8 +107,8 @@ class CentralSSOSettings(Document):
 		self._require_key_id(fields)
 		return self._get_private_key(fields), self.get(fields.key_id)
 
-	def get_public_key(self, plane: SigningPlane) -> Ed25519PublicKey:
-		"""The Ed25519 public key that verifies one plane's tokens."""
+	def get_public_key(self, plane: SigningPlane) -> Ed25519PublicKey | RSAPublicKey:
+		"""The public key that verifies one plane's tokens."""
 		from cryptography.hazmat.primitives.serialization import load_pem_public_key
 
 		fields = get_signing_key_fields(plane)
@@ -106,14 +119,16 @@ class CentralSSOSettings(Document):
 
 	def get_jwks(self, plane: SigningPlane) -> dict:
 		"""Publish one plane's public key, without creating or rotating keys."""
-		from jwt.algorithms import OKPAlgorithm
+		from jwt.algorithms import OKPAlgorithm, RSAAlgorithm
 
-		key_id = self.get(get_signing_key_fields(plane).key_id)
+		fields = get_signing_key_fields(plane)
+		key_id = self.get(fields.key_id)
 		if not key_id:
 			return {"keys": []}
 
-		key = OKPAlgorithm.to_jwk(self.get_public_key(plane), as_dict=True)
-		key.update({"kid": key_id, "use": "sig", "alg": ALGORITHM})
+		encoder = RSAAlgorithm if fields.algorithm == OIDC_ALGORITHM else OKPAlgorithm
+		key = encoder.to_jwk(self.get_public_key(plane), as_dict=True)
+		key.update({"kid": key_id, "use": "sig", "alg": fields.algorithm})
 		return {"keys": [key]}
 
 	def _require_key_id(self, fields: SigningKeyFields) -> None:
@@ -132,9 +147,13 @@ class CentralSSOSettings(Document):
 
 	def _generate_keypair(self, fields: SigningKeyFields) -> None:
 		from cryptography.hazmat.primitives import serialization
+		from cryptography.hazmat.primitives.asymmetric import rsa
 		from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
-		key = Ed25519PrivateKey.generate()
+		if fields.algorithm == OIDC_ALGORITHM:
+			key = rsa.generate_private_key(public_exponent=65537, key_size=RSA_KEY_BITS)
+		else:
+			key = Ed25519PrivateKey.generate()
 		private_key = key.private_bytes(
 			serialization.Encoding.PEM,
 			serialization.PrivateFormat.PKCS8,

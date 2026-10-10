@@ -11,29 +11,19 @@ import {
 	SettingsSidebar,
 } from 'frappe-ui'
 import { computed, watch } from 'vue'
-import { useCapabilities } from '@/composables/useCapabilities'
 import { useMyProfile } from '@/composables/useMyProfile'
 import {
-	SETTINGS_TABS,
 	type SettingsTabDef,
 	settingsOpen,
 	settingsTab,
+	useSettingsTabs,
 } from '@/composables/useSettings'
 
 // Desktop's settings surface: every tab in one dialog, so nothing is a dead end
 // — you can fix your photo, switch teams and rename one without closing
 // anything. Mobile renders the same tabs as pages (see SettingsDetailPage).
 const { profile } = useMyProfile()
-const { isMember, canEditTeam, canDeleteTeam } = useCapabilities()
-
-const tabs = computed(() =>
-	SETTINGS_TABS.filter((tab) => {
-		if (tab.requires === 'member') return isMember.value
-		if (tab.requires === 'teamAdmin')
-			return canEditTeam.value || canDeleteTeam.value
-		return true
-	}),
-)
+const { availableTabs: tabs } = useSettingsTabs()
 
 // What's yours and what the team's are different kinds of setting, so they get
 // their own sections rather than one long list.
@@ -86,13 +76,17 @@ watch(tabs, (available) => {
 			</SettingsNavGroup>
 		</SettingsSidebar>
 
-		<SettingsContent class="bg-surface-base">
+		<SettingsContent class="min-w-0 bg-surface-base">
 			<SettingsPanel v-for="tab in tabs" :key="tab.value" :value="tab.value">
 				<SettingsHeader
 					class="!px-10 !pt-9"
 					:title="tab.title"
 					:description="tab.description"
-				/>
+				>
+					<template #actions>
+						<div :id="`settings-actions-${tab.value}`" class="contents" />
+					</template>
+				</SettingsHeader>
 				<SettingsBody viewport-class="px-10 pb-16">
 					<component :is="tab.component" />
 				</SettingsBody>

@@ -15,6 +15,14 @@ const renameCall = useCall<
 	method: 'POST',
 	immediate: false,
 })
+const logoCall = useCall<
+	{ team_logo: string | null },
+	{ team: string; file_url: string | null }
+>({
+	url: method(API.setTeamLogo),
+	method: 'POST',
+	immediate: false,
+})
 const transferCall = useCall<{ owner: string }, { team: string; user: string }>(
 	{
 		url: method(API.transferOwnership),
@@ -80,6 +88,15 @@ export function useTeamSettings() {
 			{ team: activeTeam.value!, team_name: teamName },
 			() => session.reload(),
 			'Team renamed',
+		)
+	}
+
+	function setLogo(fileUrl: string | null) {
+		return run(
+			logoCall,
+			{ team: activeTeam.value!, file_url: fileUrl },
+			() => session.reload(),
+			fileUrl ? 'Logo updated' : 'Logo removed',
 		)
 	}
 
@@ -188,6 +205,7 @@ export function useTeamSettings() {
 		error,
 		clearError: () => (error.value = ''),
 		rename,
+		setLogo,
 		transferOwnership,
 		deleteTeam,
 		leaveTeam,

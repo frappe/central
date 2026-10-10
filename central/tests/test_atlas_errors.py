@@ -12,7 +12,12 @@ from central.errors import (
 	AtlasResourceGone,
 	to_error_response,
 )
-from central.integrations.atlas import AtlasClient
+from central.integrations.atlas import (
+	MAXIMUM_METADATA_BYTES,
+	MAXIMUM_METADATA_ENTRIES,
+	MAXIMUM_METADATA_KEY_BYTES,
+	AtlasClient,
+)
 
 
 class TestAtlasErrors(IntegrationTestCase):
@@ -49,18 +54,30 @@ class TestAtlasErrors(IntegrationTestCase):
 			)
 		self.assertNotIn("host", to_error_response(caught.exception)["message"])
 
-	def test_capacity_503_is_a_definite_refusal(self):
-		"""A 503 that names why (out_of_capacity) is Atlas refusing the shape, not an
-		uncertain outcome."""
+	def test_capacity_refusal_says_the_region_has_no_room(self):
+		"""A capacity code from Atlas is a definite refusal, not an uncertain outcome, and
+		tells the customer to pick a smaller size."""
+		for status, code in (
+			(503, "out_of_capacity"),
+			(503, "affinity_unsatisfied"),
+			(409, "insufficient_capacity"),
+		):
+			with self.subTest(code=code), self.assertRaises(AtlasRejected) as caught:
+				self.client._read_response(
+					self.response(status, {"error": {"code": code, "message": "No host has capacity."}}),
+					"POST",
+				)
+			envelope = to_error_response(caught.exception)
+			self.assertEqual(envelope["code"], "REGION_AT_CAPACITY")
+			self.assertNotIn("host", envelope["message"])
+
+	def test_other_refusal_stays_generic(self):
 		with self.assertRaises(AtlasRejected) as caught:
 			self.client._read_response(
-				self.response(
-					503, {"error": {"code": "out_of_capacity", "message": "No host has capacity."}}
-				),
+				self.response(503, {"error": {"code": "placement_busy", "message": "Placement is busy."}}),
 				"POST",
 			)
 		self.assertEqual(to_error_response(caught.exception)["code"], "ATLAS_REJECTED")
-		self.assertNotIn("host", to_error_response(caught.exception)["message"])
 
 	def test_read_failure_does_not_claim_mutation_acceptance(self):
 		with self.assertRaises(AtlasConnectionError) as caught:
@@ -82,11 +99,11 @@ class TestAtlasErrors(IntegrationTestCase):
 		request.assert_called_once()
 
 	def test_metadata_the_host_would_refuse_is_never_sent(self):
-		"""Metal refuses it only after Atlas saved a draft machine, so Central stops it first."""
+		"""Metal refuses a long key only after Atlas saved a draft machine, so Central stops it first."""
 		oversized = {
-			"too many entries": {f"key-{index}": "value" for index in range(65)},
-			"key too long": {"k" * 129: "value"},
-			"value too long": {"pilot-central": "v" * 1025},
+			"too many entries": {f"key-{index}": "value" for index in range(MAXIMUM_METADATA_ENTRIES + 1)},
+			"key too long": {"k" * (MAXIMUM_METADATA_KEY_BYTES + 1): "value"},
+			"map too large": {"pilot-central": "v" * MAXIMUM_METADATA_BYTES},
 		}
 		for case, metadata in oversized.items():
 			with (
@@ -98,7 +115,9 @@ class TestAtlasErrors(IntegrationTestCase):
 			request.assert_not_called()
 
 	def test_metadata_at_the_limits_is_sent(self):
-		metadata = {f"key-{index}": "value" for index in range(63)} | {"k" * 128: "v" * 1024}
+		long_key = "k" * MAXIMUM_METADATA_KEY_BYTES
+		metadata = {f"key-{index}": "value" for index in range(MAXIMUM_METADATA_ENTRIES - 1)} | {long_key: ""}
+		metadata[long_key] = "v" * (MAXIMUM_METADATA_BYTES - len(json.dumps(metadata, separators=(",", ":"))))
 		with (
 			patch.object(self.client, "_configuration", return_value=("https://atlas.example.test", 1)),
 			patch("central.integrations.atlas.mint_atlas_token", return_value="test-token"),

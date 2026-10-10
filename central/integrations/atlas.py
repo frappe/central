@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+from datetime import datetime
 from typing import TYPE_CHECKING
 from urllib.parse import quote, urlsplit
 
@@ -18,10 +20,13 @@ if TYPE_CHECKING:
 
 # The tag that ties a region's Machine image to the Central snapshot it holds.
 SNAPSHOT_TAG = "central_snapshot"
-# The region's host (Metal) refuses guest metadata beyond these limits.
-MAXIMUM_METADATA_ENTRIES = 64
+# Atlas and the region's host (Metal) refuse guest metadata beyond these limits.
+# Atlas measures the whole map as compact JSON.
+MAXIMUM_METADATA_ENTRIES = 16
 MAXIMUM_METADATA_KEY_BYTES = 128
-MAXIMUM_METADATA_VALUE_BYTES = 1024
+MAXIMUM_METADATA_BYTES = 48 * 1024
+# The largest page that the Atlas list routes return.
+HOST_PAGE_SIZE = 100
 
 
 class AtlasClient:
@@ -72,25 +77,33 @@ class AtlasClient:
 
 	@staticmethod
 	def _validate_metadata(metadata: dict[str, str]) -> None:
-		"""Metal refuses these only after Atlas saved a draft machine."""
+		"""Metal refuses a long key only after Atlas saved a draft machine."""
 		if len(metadata) > MAXIMUM_METADATA_ENTRIES:
 			frappe.throw(_("Guest metadata has more than {0} entries.").format(MAXIMUM_METADATA_ENTRIES))
-		for key, value in metadata.items():
+		for key in metadata:
 			if len(key.encode()) > MAXIMUM_METADATA_KEY_BYTES:
 				frappe.throw(
 					_("Guest metadata key {0} is longer than {1} bytes.").format(
 						key, MAXIMUM_METADATA_KEY_BYTES
 					)
 				)
-			if len(value.encode()) > MAXIMUM_METADATA_VALUE_BYTES:
-				frappe.throw(
-					_("Guest metadata {0} is longer than {1} bytes.").format(
-						key, MAXIMUM_METADATA_VALUE_BYTES
-					)
-				)
+		if (
+			len(json.dumps(metadata, ensure_ascii=False, separators=(",", ":")).encode())
+			> MAXIMUM_METADATA_BYTES
+		):
+			frappe.throw(_("Guest metadata is larger than {0} bytes.").format(MAXIMUM_METADATA_BYTES))
 
 	def get_vm(self, name: str) -> dict:
 		return self._get(f"virtual-machines/{quote(name, safe='')}")
+
+	def get_vm_metrics(self, name: str, start: datetime, end: datetime | None = None) -> dict:
+		"""The host's samples of a VM from `start` to `end` or now, one every `sample_interval_seconds`.
+		Atlas widens the interval as the window grows."""
+		params = {"start": start.isoformat()}
+		if end:
+			params["end"] = end.isoformat()
+
+		return self._get(f"virtual-machines/{quote(name, safe='')}/metrics", params)
 
 	def list_vms(self, limit: int = 100, offset: int = 0) -> list[dict]:
 		"""One page of this tenant's servers, newest first."""
@@ -99,6 +112,31 @@ class AtlasClient:
 		if not isinstance(items, list):
 			frappe.throw(_("Atlas returned an invalid server page."), AtlasConnectionError)
 		return items
+
+	def list_hosts(self) -> list[dict]:
+		"""Every Metal host of the region, in title order."""
+		hosts: list[dict] = []
+		while True:
+			page = self._get("hosts", params={"offset": len(hosts), "limit": HOST_PAGE_SIZE})
+			items = page.get("items")
+			if not isinstance(items, list):
+				frappe.throw(_("Atlas returned an invalid host page."), AtlasConnectionError)
+			hosts += items
+			if not page.get("has_more"):
+				return hosts
+
+	def grant_host_access(self, host_id: str, email: str, expires_at: datetime) -> dict:
+		"""Open one host, or every host for `all`, to one person. A repeated grant moves the end time."""
+		path = f"hosts/{quote(host_id, safe='')}/access/grant"
+		return self._request("POST", path, payload={"email": email, "expires_at": expires_at.isoformat()})
+
+	def revoke_host_access(self, host_id: str, email: str) -> None:
+		"""Close one host, or every host for `all`, to one person. Revoking twice is safe."""
+		self._request("POST", f"hosts/{quote(host_id, safe='')}/access/revoke", payload={"email": email})
+
+	def close_sessions(self, email: str) -> None:
+		"""End every live Warpgate session of one person in this region. Closing twice is safe."""
+		self._request("POST", "warpgate/sessions/close", payload={"email": email})
 
 	def vm_action(self, name: str, action: str) -> dict:
 		path = f"virtual-machines/{quote(name, safe='')}"
@@ -147,7 +185,7 @@ class AtlasClient:
 		)
 
 	def get_console_url(self, name: str, mode: str) -> str:
-		"""Return the Atlas console page for a single-use token. The token expires in 60 seconds.
+		"""Return the Atlas console page for a single-use token. The token expires in 30 seconds.
 
 		The token goes in the URL fragment, so the browser never sends it to a server."""
 		response = self._request(
@@ -365,12 +403,17 @@ class AtlasClient:
 
 	def _error_message(self, response: requests.Response) -> str | None:
 		"""The `error.message` an Atlas error body carries, escaped and bounded, or None."""
+		message = self._error_field(response, "message")
+		return frappe.utils.escape_html(message[:1000]) if message else None
+
+	def _error_field(self, response: requests.Response, field: str) -> str | None:
 		try:
 			error = response.json().get("error", {})
 		except (ValueError, AttributeError):
 			return None
-		message = error.get("message") if isinstance(error, dict) else None
-		return frappe.utils.escape_html(message[:1000]) if isinstance(message, str) else None
+
+		value = error.get(field) if isinstance(error, dict) else None
+		return value if isinstance(value, str) else None
 
 	def _read_response(self, response: requests.Response, method: str = "GET") -> dict:
 		if response.status_code in (401, 403):
@@ -387,7 +430,7 @@ class AtlasClient:
 		if response.status_code == 503:
 			reason = self._error_message(response)
 			if reason:
-				raise AtlasRejected(reason)
+				raise AtlasRejected(reason, self._error_field(response, "code"))
 
 		if method != "GET" and response.status_code >= 500:
 			raise AtlasRequestUncertain(_("Atlas could not confirm the operation result."))
@@ -400,10 +443,13 @@ class AtlasClient:
 			)
 			if method != "GET" and response.status_code < 400:
 				error_type = AtlasRequestUncertain
-			raise error_type(
-				self._error_message(response)
-				or _("Atlas returned HTTP {0} for the regional request.").format(response.status_code)
-			)
+
+			message = self._error_message(response) or _(
+				"Atlas returned HTTP {0} for the regional request."
+			).format(response.status_code)
+			if error_type is AtlasRejected:
+				raise AtlasRejected(message, self._error_field(response, "code"))
+			raise error_type(message)
 
 		if response.status_code == 204:
 			return {}

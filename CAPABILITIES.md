@@ -46,10 +46,10 @@ The distinction matters:
 | `server:view` | List and open servers and sites; view status, specs, and metrics. |
 | `server:create` | Provision a new server. |
 | `server:power` | Start, stop, and restart a server. |
-| `server:resize` | Resize or rebuild a server. |
+| `server:resize` | Resize, rebuild, or rename a server. |
 | `server:snapshot` | Create and restore server snapshots. |
 | `server:terminate` | Destroy a server. |
-| `server:console` | Open the web console of an Ubuntu server. |
+| `server:console` | Open the web console of a running server. |
 
 ### `bench` plane (0)
 
@@ -106,7 +106,7 @@ Stored grants, fixtures, and the dashboard depend on the vocabulary. Adding, rem
 
 1. Edit the fixtures (`fixtures/capability.json`, `fixtures/team_role.json`) and run `bench export-fixtures --app central` to regenerate them from the DB.
 2. Bump `CAPABILITY_VERSION` in `central/iam.py` to record the taxonomy revision.
-3. Add a migration patch to delete removed records. Fixture sync only upserts. It never deletes (see `central/patches/v0_0/strip_capabilities.py`).
+3. Add a migration patch to delete removed records. Fixture sync only upserts. It never deletes.
 4. Update this document.
 
 **Never rename a capability in place.** Stored grants and every consumer keep the old string, and the result authorizes the wrong thing without an error. Add the new capability, migrate grants to it, then retire the old one.

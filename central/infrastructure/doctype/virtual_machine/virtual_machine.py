@@ -5,6 +5,8 @@ from frappe import _
 from frappe.model.document import Document
 from requests import RequestException
 
+from central.utils.units import mebibytes_to_gigabytes, millicores_to_vcpus
+
 
 class VirtualMachine(Document):
 	# begin: auto-generated types
@@ -45,7 +47,7 @@ class VirtualMachine(Document):
 		]
 		team: DF.Link
 		title: DF.Data | None
-		vcpus: DF.Int
+		vcpus: DF.Float
 	# end: auto-generated types
 
 	@classmethod
@@ -67,9 +69,9 @@ class VirtualMachine(Document):
 				"atlas_image_id": configuration.image_id,
 				"image_offering": configuration.offering,
 				"plan": configuration.plan,
-				"vcpus": configuration.virtual_cpu_count,
+				"vcpus": millicores_to_vcpus(configuration.cpu_millicores),
 				"memory_megabytes": configuration.memory_mib,
-				"disk_gigabytes": configuration.disk_mib / 1024,
+				"disk_gigabytes": mebibytes_to_gigabytes(configuration.disk_mib),
 				"frappe_version": configuration.image_tags.get("frappe_version"),
 				"has_site": configuration.image_tags.get("has_site") == "1",
 				"ssh_keys": [{"team_ssh_key": key} for key in configuration.ssh_key_ids],
@@ -79,6 +81,12 @@ class VirtualMachine(Document):
 		)
 		# The authorized Resource Action permits this system-owned mirror write.
 		return server.insert(ignore_permissions=True)
+
+	def validate(self):
+		self.title = (self.title or "").strip() or None
+		# A discovered server may have no title, but a rename must name it.
+		if not self.is_new() and self.has_value_changed("title") and not self.title:
+			frappe.throw(_("Enter a server name."))
 
 	def on_update(self):
 		if self.has_value_changed("status") or self.has_value_changed("plan"):
@@ -198,7 +206,8 @@ class VirtualMachine(Document):
 		doc.state_observed_at = observed_at
 		if reported_at is not None:
 			doc.last_reported_at = reported_at
-		doc.save(ignore_permissions=True)
+		# Every report moves the observation clock, so keep a Version only for a real change.
+		doc.save(ignore_permissions=True, ignore_version=not changed)
 		if changed:
 			doc.publish_state_change()
 		return True

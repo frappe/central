@@ -35,7 +35,7 @@ def get_country_from_ip(ip: str | None = None) -> str | None:
 	# Per-IP key with a TTL rather than one ever-growing `ip_country_map` hash: a
 	# hash field never expires, so it accreted a row per distinct signup IP forever.
 	# Only `set_value` takes a TTL, so the read and the write stay separate here.
-	key = f"ip_country:{ip}"
+	key = _country_cache_key(ip)
 	info = frappe.cache.get_value(key)
 	if info is None:
 		# A failed lookup is not cached, so a rate-limited answer is not pinned for a month.
@@ -44,6 +44,29 @@ def get_country_from_ip(ip: str | None = None) -> str | None:
 			frappe.cache.set_value(key, info, expires_in_sec=IP_COUNTRY_TTL_SECONDS)
 
 	return (info or {}).get("country")
+
+
+def warm_country_cache(ip: str | None = None) -> None:
+	"""Look up the request's country in a background job when it is not cached yet.
+
+	A signup sends its code a minute or more before its team is created, so the team's
+	billing then reads the country from the cache instead of waiting on the lookup."""
+	ip = _clean_public_ip(ip or getattr(frappe.local, "request_ip", None))
+	if not ip or frappe.cache.get_value(_country_cache_key(ip)) is not None:
+		return
+
+	frappe.enqueue(
+		"central.geo.get_country_from_ip",
+		ip=ip,
+		queue="short",
+		enqueue_after_commit=True,
+		job_id=f"ip-country:{ip}",
+		deduplicate=True,
+	)
+
+
+def _country_cache_key(ip: str) -> str:
+	return f"ip_country:{ip}"
 
 
 def _clean_public_ip(raw: str | None) -> str | None:
@@ -91,7 +114,7 @@ def _lookup_ip(ip: str) -> dict:
 		url = f"http://ip-api.com/json/{ip}?fields=status,country,countryCode"
 
 	try:
-		data = requests.get(url, timeout=5).json()
+		data = requests.get(url, timeout=2).json()
 		if data.get("status") != "fail":
 			return data
 	except Exception:

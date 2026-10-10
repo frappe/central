@@ -11,6 +11,11 @@ export function methodV1(path: string): string {
 	return `/api/method/${path}`
 }
 
+/** A download link for a method that answers with a file. */
+export function download(path: string, params: Record<string, string>): string {
+	return `/api/method/${path}?${new URLSearchParams(params)}`
+}
+
 export const API = {
 	myTeams: 'central.api.identity.my_teams',
 	myCapabilities: 'central.api.identity.my_capabilities',
@@ -19,10 +24,13 @@ export const API = {
 	listTeamMembers: 'central.api.teams.list_team_members',
 	listTeamRoles: 'central.api.teams.list_team_roles',
 	createTeam: 'central.api.teams.create_team',
+	setOnboardingStep: 'central.api.teams.set_onboarding_step',
+	skipOnboarding: 'central.api.teams.skip_onboarding',
 	renameTeam: 'central.api.teams.rename_team',
+	setTeamLogo: 'central.api.teams.set_team_logo',
 	myProfile: 'central.api.identity.my_profile',
 	updateProfile: 'central.api.identity.update_profile',
-	changePassword: 'central.api.auth.change_password',
+	setProfilePhoto: 'central.api.identity.set_profile_photo',
 	transferOwnership: 'central.api.teams.transfer_team_ownership',
 	deleteTeam: 'central.api.teams.delete_team',
 	leaveTeam: 'central.api.teams.leave_team',
@@ -36,6 +44,8 @@ export const API = {
 	revokeInvitation: 'central.api.teams.revoke_invitation',
 	acceptInvitation: 'central.api.teams.accept_invitation',
 	declineInvitation: 'central.api.teams.decline_invitation',
+	getInvitation: 'central.api.teams.get_invitation',
+	signUpWithInvitation: 'central.api.auth.sign_up_with_invitation',
 
 	registry: 'central.api.servers.registry',
 	listInstances: 'central.api.servers.list_instances',
@@ -49,8 +59,10 @@ export const API = {
 	restartServer: 'central.api.servers.restart_server',
 	openConsole: 'central.api.servers.open_console',
 	resizeServer: 'central.api.servers.resize_server',
+	renameServer: 'central.api.servers.rename_server',
 	terminateServer: 'central.api.servers.terminate_server',
 	serverOverview: 'central.api.servers.server_overview',
+	serverMetrics: 'central.api.servers.server_metrics',
 	serverHostnames: 'central.api.servers.server_hostnames',
 	listImageOfferings: 'central.api.images.list_offerings',
 	listRegionalImages: 'central.api.images.list_images',
@@ -69,19 +81,30 @@ export const API = {
 	deleteSnapshots: 'central.api.snapshots.delete_snapshots',
 	setAutomaticSnapshots: 'central.api.snapshots.set_automatic_snapshots',
 
+	ai: 'central.services.api.ai.get_ai',
+	enableAI: 'central.services.api.ai.enable_ai',
+	aiUsage: 'central.services.api.ai.get_usage',
+	aiApiKeys: 'central.services.api.ai.list_api_keys',
+	createAIApiKey: 'central.services.api.ai.create_api_key',
+	revokeAIApiKey: 'central.services.api.ai.revoke_api_key',
+	setAIApiKeyBalanceAccess:
+		'central.services.api.ai.set_api_key_balance_access',
+
 	objectStorage: 'central.services.api.storage.get_object_storage',
 	bucketUsage: 'central.services.api.storage.get_bucket_usage',
 	createBucket: 'central.services.api.storage.create_bucket',
 	rotateBucketCredentials: 'central.services.api.storage.rotate_credentials',
 	setBucketQuota: 'central.services.api.storage.set_bucket_quota',
 	deleteBucket: 'central.services.api.storage.delete_bucket',
+	listBucketObjects: 'central.services.api.storage.list_objects',
+	bucketObjectUrl: 'central.services.api.storage.get_object_url',
 
-	signUp: 'central.api.auth.sign_up',
-	verifySignup: 'central.api.auth.verify_signup',
-	resendSignupCode: 'central.api.auth.resend_signup_code',
-
+	getProduct: 'central.api.signups.get_product',
+	sendCode: 'central.api.auth.send_code',
+	verifyCode: 'central.api.auth.verify_code',
 	siteDomain: 'central.api.sites.site_domain',
 	checkSubdomain: 'central.api.sites.check_subdomain',
+	createTrialTeam: 'central.api.sites.create_trial_team',
 	createTrialSite: 'central.api.sites.create_trial_site',
 	onboardingStatus: 'central.api.sites.onboarding_status',
 	claimSite: 'central.api.sites.claim_site',
@@ -101,6 +124,8 @@ export const API = {
 	creditLedger: 'central.billing.api.dashboard.credit_ledger',
 	invoices: 'central.billing.api.dashboard.list_invoices',
 	invoice: 'central.billing.api.dashboard.get_invoice',
+	invoicePdf: 'central.billing.api.dashboard.download_invoice_pdf',
+	topupReceipt: 'central.billing.api.dashboard.download_topup_receipt',
 	paymentAttempts: 'central.billing.api.dashboard.list_payment_attempts',
 	paymentMethods: 'central.billing.api.dashboard.list_payment_methods',
 	paymentMethodOptions:
@@ -141,6 +166,7 @@ export const API = {
 		'central.billing.api.dashboard.set_default_payment_method',
 	reorderPaymentMethods:
 		'central.billing.api.dashboard.reorder_payment_methods',
+	recheckGstStatus: 'central.billing.api.dashboard.recheck_gst_status',
 	removePaymentMethod: 'central.billing.api.dashboard.remove_payment_method',
 	saveBillingProfile: 'central.billing.api.dashboard.save_billing_profile',
 	saveBillingSettings: 'central.billing.api.dashboard.save_billing_settings',

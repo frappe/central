@@ -11,12 +11,14 @@ withDefaults(
 		canPrevious: boolean
 		canNext: boolean
 		paginated?: boolean
+		showPageSize?: boolean
 		showCount?: boolean
 		countText?: string
 		countLoading?: boolean
 	}>(),
 	{
 		paginated: true,
+		showPageSize: true,
 		showCount: true,
 		countText: '',
 		countLoading: false,
@@ -43,6 +45,7 @@ defineEmits<{
 
 		<div v-if="paginated" class="flex flex-wrap items-center gap-3 sm:ml-auto">
 			<TabButtons
+				v-if="showPageSize"
 				:model-value="pageSize"
 				:options="pageSizeOptions.map((value) => ({ label: String(value), value }))"
 				@update:model-value="$emit('pageSizeChange', Number($event))"

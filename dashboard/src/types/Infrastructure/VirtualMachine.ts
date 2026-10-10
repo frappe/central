@@ -35,7 +35,7 @@ export interface VirtualMachine {
 		| 'Stopped'
 		| 'Failed'
 		| 'Terminated'
-	/**	vCPUs : Int	*/
+	/**	vCPUs : Float	*/
 	vcpus?: number
 	/**	Memory (MB) : Int	*/
 	memory_megabytes?: number
@@ -43,6 +43,8 @@ export interface VirtualMachine {
 	disk_gigabytes?: number
 	/**	Image Offering : Link - Image Offering	*/
 	image_offering?: string
+	/**	Has Site : Check - The server's image carries a site.	*/
+	has_site?: 0 | 1
 	/**	Skip Automatic Snapshot : Check - The customer turned off the daily free snapshot for this server.	*/
 	skip_automatic_snapshot?: 0 | 1
 	/**	Mesh IPv6 : Data - The private WireGuard mesh address. Only the region reaches it.	*/

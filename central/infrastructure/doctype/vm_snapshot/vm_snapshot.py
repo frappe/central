@@ -257,7 +257,7 @@ def apply_free_allowance(server: str) -> None:
 		except frappe.ValidationError as error:
 			# A region with no Snapshot rate cannot bill yet; the next change tries again.
 			snapshot.record_diagnostic(
-				_("Central could not update billing for this snapshot."),
+				_("Could not update billing for this snapshot."),
 				str(error),
 				"Snapshot billing update failed",
 			)
@@ -351,7 +351,7 @@ def _delete_expired(name: str) -> None:
 	except frappe.ValidationError as error:
 		frappe.db.rollback()
 		frappe.get_doc("VM Snapshot", name).record_diagnostic(
-			_("Central could not delete this expired snapshot."),
+			_("Could not delete this expired snapshot. It will retry automatically."),
 			str(error),
 			"Expired snapshot deletion failed",
 		)

@@ -18,7 +18,7 @@ const regionSelection = defineModel<string>('regionSelection', {
 </script>
 
 <template>
-	<div class="absolute right-4 top-4 flex items-center gap-2">
+	<div class="absolute right-2 top-2 flex items-center gap-2">
 		<Combobox
 			v-model="statusFilter"
 			trigger="button"

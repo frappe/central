@@ -60,7 +60,8 @@ class TestPilotSigningKey(IntegrationTestCase):
 			settings.initialize_signing_key("pilot")
 
 	def test_unknown_plane_is_rejected(self):
-		with self.assertRaises(frappe.ValidationError):
+		# Newer Frappe rejects a value outside the Literal before the method runs.
+		with self.assertRaises((frappe.ValidationError, frappe.FrappeTypeError)):
 			CentralSSOSettings.instance().initialize_signing_key("billing")
 
 	def test_stale_initializer_keeps_existing_key(self):
@@ -149,3 +150,15 @@ class TestPilotSigningKey(IntegrationTestCase):
 		key = jwt.PyJWK.from_dict(jwks_document()["keys"][0])
 		with self.assertRaises(jwt.InvalidSignatureError):
 			jwt.decode(token, key.key, algorithms=[ALGORITHM], options={"verify_aud": False})
+
+
+class TestIssuerURL(IntegrationTestCase):
+	def test_issuer_url_drops_trailing_slashes(self):
+		# Cleanups run last first: roll back, then drop the cached copy of the saved value.
+		self.addCleanup(frappe.clear_document_cache, DOCTYPE, DOCTYPE)
+		self.addCleanup(frappe.db.rollback)
+		settings = CentralSSOSettings.instance()
+		settings.issuer_url = " https://central.example.test// "
+		settings.save()
+
+		self.assertEqual(settings.issuer_url, "https://central.example.test")

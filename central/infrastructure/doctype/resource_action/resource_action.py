@@ -7,7 +7,8 @@ from frappe.model.document import Document
 from central.errors import AtlasConnectionError, AtlasRequestUncertain, build_envelope, to_error_response
 from central.iam import can
 from central.infrastructure.doctype.pilot_credential.pilot_credential import PilotCredential
-from central.server_models import ActionStatus, ResizeConfiguration, ServerCreation
+from central.infrastructure.doctype.user_mail_account.user_mail_account import UserMailAccount
+from central.server_models import ActionStatus, ResizeConfiguration, ServerCreation, SiteCreation
 
 PENDING_STATES = ("Queued", "Dispatching", "Sent", "In Progress", "Uncertain")
 PENDING_LABEL = {
@@ -37,10 +38,6 @@ GOAL_STATUS = {
 	"restart": "Running",
 	"terminate": "Terminated",
 }
-# A restart begins and ends at Running, so arriving at Running proves nothing on its own.
-# The region publishes no restart counter, so the action waits until it reports the server
-# away from the goal once. That report is what shows the restart really began.
-ROUND_TRIP_ACTIONS = ("restart",)
 # A command that has not reached its goal this long after dispatch has timed out.
 COMMAND_TIMEOUT_SECONDS = 10 * 60
 TERMINAL_STATES = ("Succeeded", "Failed", "Timed Out")
@@ -78,6 +75,46 @@ def action_status(row) -> ActionStatus:
 
 
 class ResourceAction(Document):
+	# begin: auto-generated types
+	# This code is auto-generated. Do not modify anything in this block.
+
+	from typing import TYPE_CHECKING
+
+	if TYPE_CHECKING:
+		from frappe.types import DF
+
+		action: DF.Literal["create", "start", "stop", "restart", "terminate", "resize"]
+		completed_at: DF.Datetime | None
+		correlation_id: DF.Data
+		credential: DF.Link | None
+		dispatched_at: DF.Datetime | None
+		error_code: DF.Data | None
+		error_log: DF.Link | None
+		error_message: DF.SmallText | None
+		last_checked_at: DF.Datetime | None
+		product: DF.Link | None
+		region: DF.Link | None
+		remediation: DF.SmallText | None
+		remote_vm_id: DF.Data | None
+		request_digest: DF.Data | None
+		request_key: DF.Data | None
+		request_payload: DF.JSON | None
+		requested_by: DF.Link | None
+		reserved_monthly_rate: DF.Currency
+		resource_id: DF.Data | None
+		resource_type: DF.Literal["Server", "Site"]
+		retriable: DF.Check
+		server: DF.Link | None
+		status: DF.Literal[
+			"Queued", "Dispatching", "Sent", "In Progress", "Succeeded", "Failed", "Uncertain", "Timed Out"
+		]
+		subdomain: DF.Data | None
+		take_snapshot: DF.Check
+		team: DF.Link
+		title: DF.Data | None
+		vm_snapshot: DF.Link | None
+	# end: auto-generated types
+
 	"""One durable resource operation, from validated intent to confirmed outcome."""
 
 	@classmethod
@@ -139,6 +176,8 @@ class ResourceAction(Document):
 	def after_insert(self) -> None:
 		if self.status == "Queued":
 			self.enqueue()
+		if self.is_trial_creation:
+			self.capture_trial_event("trial_requested", region=self.region)
 
 	def enqueue(self) -> None:
 		from central.integrations.resource_actions import get_job_timeout_seconds
@@ -155,6 +194,11 @@ class ResourceAction(Document):
 
 	def get_configuration(self) -> ServerCreation:
 		return ServerCreation.model_validate(frappe.parse_json(self.request_payload))
+
+	def get_site_creation(self) -> SiteCreation | None:
+		"""The trial site part of a creation request. Older requests carry none."""
+		site = (frappe.parse_json(self.request_payload or "{}") or {}).get("site")
+		return SiteCreation.model_validate(site) if site else None
 
 	def get_resize_configuration(self) -> ResizeConfiguration:
 		return ResizeConfiguration.model_validate(frappe.parse_json(self.request_payload))
@@ -196,7 +240,12 @@ class ResourceAction(Document):
 			# A creation the region never accepted leaves no machine to use its credential.
 			if self.action == "create" and not self.remote_vm_id:
 				PilotCredential.revoke_by_id(self.credential)
+			if self.action == "create":
+				# No server will ever link the mailbox, so termination would not remove it.
+				UserMailAccount.queue_removal(resource_action=self.name, server=("is", "not set"))
 			self.queue_attention_notification(envelope)
+			if self.is_trial_creation:
+				self.capture_trial_event("trial_failed", status=status, error_code=self.error_code)
 
 	def fail(self, error: Exception, title: str) -> None:
 		"""Record a failed dispatch. An uncertain Atlas reply stays pending for recovery."""
@@ -217,7 +266,7 @@ class ResourceAction(Document):
 			self.transition("Failed", envelope=build_envelope("ACTION_FAILED", action=self.action))
 		elif self.action != "create" and self.is_overdue:
 			self.transition("Timed Out", envelope=build_envelope("ACTION_TIMED_OUT", action=self.action))
-		elif self.action not in ROUND_TRIP_ACTIONS:
+		else:
 			self.transition("In Progress", notify=False)
 
 	@property
@@ -230,6 +279,22 @@ class ResourceAction(Document):
 		started = self.dispatched_at or self.creation
 		return (
 			frappe.utils.time_diff_in_seconds(frappe.utils.now_datetime(), started) > COMMAND_TIMEOUT_SECONDS
+		)
+
+	@property
+	def is_trial_creation(self) -> bool:
+		return self.action == "create" and self.resource_type == "Site"
+
+	def capture_trial_event(self, event: str, **properties) -> None:
+		"""Send this trial's step to the signup funnel, once per action."""
+		from frappe.utils.telemetry import capture
+
+		site = self.get_site_creation()
+		capture(
+			event,
+			"central",
+			user=self.requested_by,
+			properties={"product": site.product if site else None, **properties},
 		)
 
 	def queue_attention_notification(self, envelope: dict | None) -> None:
@@ -276,13 +341,7 @@ class ResourceAction(Document):
 		if self.action == "resize":
 			return False
 
-		goal = GOAL_STATUS[self.action]
-		if self.action in ROUND_TRIP_ACTIONS and self.status != "In Progress":
-			if status != goal:
-				self.transition("In Progress", notify=False)
-			return False
-
-		if status != goal:
+		if status != GOAL_STATUS[self.action]:
 			return False
 
 		self.transition("Succeeded")
@@ -375,5 +434,6 @@ class ResourceAction(Document):
 def on_doctype_update() -> None:
 	frappe.db.add_unique("Resource Action", ["team", "request_key"])
 	frappe.db.add_index("Resource Action", ["team", "status"])
+	frappe.db.add_index("Resource Action", ["team", "requested_by", "product", "creation"])
 	frappe.db.add_index("Resource Action", ["resource_id", "status"])
 	frappe.db.add_index("Resource Action", ["status", "modified"])

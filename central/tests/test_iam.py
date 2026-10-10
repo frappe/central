@@ -203,7 +203,7 @@ class TestCentralIAM(IntegrationTestCase):
 		self.assertFalse(probe.allowed)
 		self.assertIn(team.name, probe.resolved_grants)
 
-	def test_new_user_gets_default_owner_team(self):
+	def test_new_user_gets_the_central_user_role_and_no_team(self):
 		email = f"iam.signup.{frappe.generate_hash(length=8)}@example.test"
 		user = frappe.get_doc(
 			{
@@ -217,25 +217,7 @@ class TestCentralIAM(IntegrationTestCase):
 		user.insert()
 
 		user.reload()
-		teams = frappe.get_all(
-			"Team",
-			filters={"owner_user": email},
-			fields=["name", "team_name", "status"],
-			order_by="creation asc",
-		)
-
 		self.assertIn("Central User", {row.role for row in user.roles})
 		self.assertEqual(user.user_type, "Website User")
-		self.assertEqual(len(teams), 1)
-		self.assertEqual(teams[0].status, "Active")
-
-		team = frappe.get_doc("Team", teams[0].name)
-		self.assertEqual(len(team.members), 1)
-		self.assertEqual(team.members[0].user, email)
-		self.assertEqual(team.members[0].role, "Owner")
-		self.assertEqual(team.members[0].status, "Active")
-
-		grants = resolve_user_grants(email)
-		self.assertIn(team.name, grants)
-		self.assertTrue(can(email, team.name, "team:manage_members"))
-		self.assertTrue(can(email, team.name, "server:terminate"))
+		self.assertFalse(frappe.db.exists("Team", {"owner_user": email}))
+		self.assertEqual(resolve_user_grants(email), {})

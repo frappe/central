@@ -6,6 +6,7 @@ import CollectionActionBanner from '@/components/billing/CollectionActionBanner.
 import CycleBreakdownPanel from '@/components/billing/CycleBreakdownPanel.vue'
 import EditBillingProfileDialog from '@/components/billing/EditBillingProfileDialog.vue'
 import EstimatedCard from '@/components/billing/EstimatedCard.vue'
+import GstStatusBanner from '@/components/billing/GstStatusBanner.vue'
 import NextPaymentCard from '@/components/billing/NextPaymentCard.vue'
 import PayingForCard from '@/components/billing/PayingForCard.vue'
 import PayingForPanel from '@/components/billing/PayingForPanel.vue'
@@ -72,6 +73,7 @@ const advancedOpen = ref(false)
 			/>
 
 			<CollectionActionBanner />
+			<GstStatusBanner @edit="setupDialogOpen = true" />
 			<!-- The cycle figure is the page's headline, so it gets the full
                width; what happens to it next sits in the pair beneath. -->
 			<EstimatedCard

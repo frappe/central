@@ -35,6 +35,18 @@ export function emailError(value: string): string {
 	return ''
 }
 
+/** A starting name from the email, e.g. "jane.doe42@acme.com" gives "Jane Doe". */
+export function nameFromEmail(email: string): string {
+	return email
+		.split('@')[0]
+		.replace(/[\d_.+-]+/g, ' ')
+		.trim()
+		.split(/\s+/)
+		.filter(Boolean)
+		.map((word) => word[0].toUpperCase() + word.slice(1))
+		.join(' ')
+}
+
 export function requiredError(label: string) {
 	return (value: string): string =>
 		value.trim() ? '' : `${label} is required.`

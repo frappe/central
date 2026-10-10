@@ -4,10 +4,10 @@ A comprehensive, self-consistent billing dataset for demoing the console, the De
 
 ```bash
 # build (wipes ALL billing data first, then rebuilds the ten teams)
-bench --site demo-billing.local execute central.billing.demo.demo_scenarios.seed
+pilot frappe --site central.localhost execute central.billing.demo.demo_scenarios.seed
 
 # post-seed roll-up (per-team scenario summary + aggregate counts)
-bench --site demo-billing.local execute central.billing.demo.demo_scenarios.summary
+pilot frappe --site central.localhost execute central.billing.demo.demo_scenarios.summary
 ```
 
 - `demo_scenarios.py` — orchestration: the ten teams, their terminal states, the seed/summary entrypoints.

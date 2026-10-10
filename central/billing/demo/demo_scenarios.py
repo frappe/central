@@ -335,11 +335,13 @@ def _seed_notification_feed(slug_to_team: dict):
 	# Resize Failed + Cluster Degraded — the same writer the real hooks use.
 	acme = slug_to_team.get("acme-corp")
 	if acme:
+		server = frappe.db.get_value("Virtual Machine", {"team": acme}, "title") or "acme-corp"
 		engine.dispatch(
 			acme,
 			"resize_failed",
 			message="A background resize could not be applied and was rolled "
 			"back. Billing stayed on the previous plan. You can retry the resize.",
+			context={"action": "resize", "title": server},
 		)
 	umbrella = slug_to_team.get("umbrella")
 	if umbrella:

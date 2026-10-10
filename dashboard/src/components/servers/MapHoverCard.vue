@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { Badge, Button } from 'frappe-ui'
+import { computed } from 'vue'
 import ProviderAvatar from '@/components/servers/ProviderAvatar.vue'
 import type { MapNode, MapPin } from '@/lib/serverMap'
 
@@ -24,6 +25,10 @@ const emit = defineEmits<{
 	'open-site': [name: string]
 	'new-server': [region: string]
 }>()
+
+const hasManyTargets = computed(
+	() => props.node.type === 'plus' && props.node.targets.length > 1,
+)
 
 function canOpenBench(server: NonNullable<MapPin['server']>): boolean {
 	return props.allowOpen && server.status === 'Running' && !!server.gateway_url
@@ -126,7 +131,7 @@ function canOpenBench(server: NonNullable<MapPin['server']>): boolean {
 					<span class="block truncate text-sm font-medium text-ink-gray-8"
 						>{{ m.name }}</span
 					>
-					<span class="block truncate text-xs text-ink-gray-5"
+					<span class="mt-0.5 block truncate text-xs text-ink-gray-5"
 						>{{ m.specs }}</span
 					>
 				</span>
@@ -166,30 +171,54 @@ function canOpenBench(server: NonNullable<MapPin['server']>): boolean {
 		</div>
 	</template>
 
-	<!-- Empty region: a direct path to create (markers never open cards) -->
+	<!-- Empty region: what is offered here, and a direct path to create (markers never open cards).
+	     One region: the button creates. Several: each row creates in its own region. -->
 	<template v-else-if="node.type === 'plus'">
-		<div class="text-base font-semibold text-ink-gray-9">
-			No servers in this region
-		</div>
-		<div class="mt-0.5 text-sm text-ink-gray-5">
+		<div class="truncate text-base font-semibold text-ink-gray-9">
+			{{ node.targets.length === 1 ? node.targets[0].flag : '' }}
 			{{ node.title }}
 		</div>
-		<div class="mt-3 flex items-center gap-2">
-			<span class="text-sm text-ink-gray-6">Providers available</span>
-			<button
-				v-for="t in node.targets"
-				:key="t.id"
-				class="block shrink-0 rounded-full transition-transform duration-150 ease-out hover:scale-110 active:scale-95"
-				:title="`New server in ${t.flag} ${t.regionLabel}`"
-				@click="emit('new-server', t.id)"
+		<div class="mt-0.5 text-sm text-ink-gray-5">No servers here yet</div>
+
+		<div class="-mx-1.5 mt-3 space-y-0.5">
+			<component
+				:is="hasManyTargets ? 'button' : 'div'"
+				v-for="target in node.targets"
+				:key="target.id"
+				class="group flex w-full items-center gap-2.5 rounded-6 p-1.5 text-left"
+				:class="hasManyTargets && 'transition-colors enabled:hover:bg-surface-gray-2 disabled:cursor-not-allowed'"
+				:disabled="hasManyTargets ? !target.isReachable : undefined"
+				:aria-label="hasManyTargets ? `New server in ${target.regionLabel}` : undefined"
+				@click="hasManyTargets && emit('new-server', target.id)"
 			>
-				<ProviderAvatar :provider="t.provider" :size="20" />
-			</button>
+				<ProviderAvatar :provider="target.provider" :size="24" />
+				<span class="min-w-0 flex-1">
+					<span class="block truncate text-sm font-medium text-ink-gray-8">
+						{{ target.provider || target.regionLabel }}
+					</span>
+					<span
+						class="mt-0.5 block truncate text-xs"
+						:class="target.isReachable ? 'text-ink-gray-5' : 'text-ink-amber-6'"
+					>
+						{{ target.isReachable
+							? hasManyTargets ? target.regionLabel : 'Available now'
+							: 'Unreachable right now' }}
+					</span>
+				</span>
+				<span
+					v-if="hasManyTargets && target.isReachable"
+					class="lucide-plus size-3.5 shrink-0 text-ink-gray-5 opacity-0 transition-opacity group-hover:opacity-100"
+				/>
+			</component>
 		</div>
+
 		<Button
-			class="mt-3"
+			v-if="!hasManyTargets"
+			class="mt-3 w-full"
+			variant="solid"
 			label="New server"
 			icon-left="lucide-plus"
+			:disabled="!node.targets[0].isReachable"
 			@click="emit('new-server', node.targets[0].id)"
 		/>
 	</template>

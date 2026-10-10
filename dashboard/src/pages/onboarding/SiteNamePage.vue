@@ -1,15 +1,19 @@
 <script setup lang="ts">
 import { Button, ErrorMessage, TextInput } from 'frappe-ui'
 import { onMounted, onScopeDispose, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { API } from '@/api/methods'
 import AuthShell from '@/components/auth/AuthShell.vue'
+import ProductLogo from '@/components/auth/ProductLogo.vue'
+import { useProduct } from '@/composables/useProduct'
+import { useTrialOnboarding } from '@/composables/useTrialOnboarding'
 import {
 	frappeErrorMessage,
 	getFrappe,
 	methodUrl,
 	postFrappe,
 } from '@/lib/auth'
+import { carriedQuery } from '@/lib/authRedirect'
 
 type CreationStatus = {
 	status: string
@@ -23,7 +27,15 @@ type Availability = {
 	domain: string
 }
 
+const route = useRoute()
 const router = useRouter()
+const { productKey } = useProduct()
+const { team, requestKey, prepareTeam, readStatus, resetRequestKey } =
+	useTrialOnboarding()
+const provisioning = {
+	path: '/onboarding/provisioning',
+	query: carriedQuery(route.query),
+}
 const subdomain = ref('')
 const domain = ref('')
 const checking = ref(false)
@@ -31,28 +43,42 @@ const creating = ref(false)
 const availability = ref<Availability | null>(null)
 const error = ref('')
 
-const REQUEST_KEY_STORAGE = 'central:onboarding-site-request-key'
-
-let requestKey = savedRequestKey()
-
 let debounce: ReturnType<typeof setTimeout> | undefined
 
 onMounted(async () => {
 	try {
-		const status = await getFrappe<{
-			site: unknown
-			creation: CreationStatus | null
-		}>(methodUrl(API.onboardingStatus))
-		if (status.site || (status.creation && status.creation.status !== 'Failed'))
-			return router.replace('/onboarding/provisioning')
-		if (status.creation?.status === 'Failed') resetRequestKey()
-	} catch {
-		// Non-fatal: the form below starts one, and a repeat is answered with the
-		// request already running.
+		await prepareTeam()
+	} catch (exception) {
+		error.value = frappeErrorMessage(exception, 'Could not set up your team.')
+		return
+	}
+	try {
+		const status = await readStatus()
+		if (status.site?.claimed)
+			return router.replace({
+				path: '/servers',
+				query: { site: status.site.name },
+			})
+		if (
+			status.site ||
+			(status.creation &&
+				!['Failed', 'Timed Out'].includes(status.creation.status))
+		)
+			return router.replace(provisioning)
+		if (
+			status.creation?.status === 'Failed' ||
+			status.creation?.status === 'Timed Out'
+		)
+			resetRequestKey()
+	} catch (exception) {
+		error.value = frappeErrorMessage(exception, 'Could not find your trial.')
+		requestKey.value = ''
+		return
 	}
 	try {
 		const result = await getFrappe<{ domain: string }>(
 			methodUrl(API.siteDomain),
+			{ team: team.value || undefined },
 		)
 		domain.value = result.domain
 	} catch {
@@ -76,7 +102,7 @@ async function check(value: string) {
 	try {
 		const result = await getFrappe<Availability>(
 			methodUrl(API.checkSubdomain),
-			{ subdomain: value },
+			{ subdomain: value, team: team.value || undefined },
 		)
 		// Ignore a stale response if the user kept typing — and leave `checking` alone:
 		// a newer request is in flight and owns the spinner.
@@ -100,7 +126,12 @@ async function createSite() {
 		// than stranding the customer on the waiting page.
 		const result = await postFrappe<CreationStatus>(
 			methodUrl(API.createTrialSite),
-			{ subdomain: subdomain.value.trim(), request_key: requestKey },
+			{
+				subdomain: subdomain.value.trim(),
+				request_key: requestKey.value,
+				team: team.value || undefined,
+				product: productKey.value || undefined,
+			},
 		)
 		if (result.error) {
 			error.value = result.error.message
@@ -108,31 +139,20 @@ async function createSite() {
 			creating.value = false
 			return
 		}
-		router.push('/onboarding/provisioning')
+		router.push(provisioning)
 	} catch (exception) {
 		error.value = frappeErrorMessage(exception, 'Could not create your site.')
 		creating.value = false
 	}
 }
-
-function savedRequestKey() {
-	const saved = localStorage.getItem(REQUEST_KEY_STORAGE)
-	if (saved) return saved
-
-	const generated = crypto.randomUUID()
-	localStorage.setItem(REQUEST_KEY_STORAGE, generated)
-	return generated
-}
-
-function resetRequestKey() {
-	localStorage.removeItem(REQUEST_KEY_STORAGE)
-	requestKey = savedRequestKey()
-}
 </script>
 
 <template>
 	<AuthShell show-progress :step="3">
-		<h1 class="text-2xl font-semibold text-ink-gray-9">Name your site</h1>
+		<h1 class="flex items-center gap-2 text-2xl font-semibold text-ink-gray-9">
+			<ProductLogo />
+			Name your site
+		</h1>
 		<p class="mt-2 text-p-base text-ink-gray-5">
 			This is the web address you'll use to reach it. You can connect a custom
 			domain later.
@@ -142,6 +162,7 @@ function resetRequestKey() {
 			<TextInput
 				id="subdomain"
 				v-model="subdomain"
+				v-focus
 				label="Site address"
 				size="md"
 				placeholder="yourcompany"
@@ -173,7 +194,7 @@ function resetRequestKey() {
 				class="w-full"
 				label="Create my site"
 				:loading="creating"
-				:disabled="creating || !availability?.available"
+				:disabled="creating || !requestKey || !availability?.available"
 			/>
 			<ErrorMessage v-if="error" :message="error" />
 		</form>

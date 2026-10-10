@@ -105,13 +105,16 @@ class PayPalAdapter(GatewayAdapter):
 			raw=dict(capture),
 		)
 
-	def refund(self, payment_attempt, amount, reason: str) -> RefundResult:
+	def refund(
+		self, payment_attempt, amount, reason: str, idempotency_key: str | None = None
+	) -> RefundResult:
 		try:
 			refund = self._refund_capture(
 				capture_id=payment_attempt.gateway_transaction_id,
 				amount=frappe_flt(amount),
 				currency=(payment_attempt.get("currency") or "").upper(),
-				request_id=f"refund-{payment_attempt.get('name') or payment_attempt.gateway_transaction_id}",
+				request_id=idempotency_key
+				or f"refund-{payment_attempt.get('name') or payment_attempt.gateway_transaction_id}",
 			)
 		except _TRANSIENT as e:
 			raise GatewayTimeout(str(e)) from e

@@ -1,21 +1,32 @@
 from __future__ import annotations
 
 import time
+from datetime import datetime
+from itertools import pairwise
 
 import frappe
 from frappe import _
 
-from central.errors import AtlasConnectionError, AtlasResourceGone
+from central.errors import AtlasConnectionError, AtlasRejected, AtlasResourceGone
 from central.iam import can_on_any_server
 from central.infrastructure.doctype.pilot_credential.pilot_credential import PilotCredential
 from central.infrastructure.doctype.resource_action.resource_action import ResourceAction
 from central.infrastructure.doctype.site.site import Site
+from central.infrastructure.doctype.user_mail_account.user_mail_account import UserMailAccount
 from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
 from central.integrations.atlas import AtlasClient
+from central.utils.units import (
+	gigabytes_to_mebibytes,
+	mebibytes_to_gigabytes,
+	millicores_to_vcpus,
+	vcpus_to_millicores,
+)
 
 # A resize may move the VM to another host, so the wait is generous enough to cover a migration.
 POWER_WAIT_SECONDS = 15 * 60
 POWER_POLL_SECONDS = 5
+METRICS_CACHE_SECONDS = 60
+MIB = 1024 * 1024
 
 
 def observe_server(server: VirtualMachine) -> str:
@@ -65,9 +76,9 @@ def observe_server(server: VirtualMachine) -> str:
 		frappe.utils.now_datetime(),
 		{
 			"status": status,
-			"vcpus": compute["cpu_millicores"] // 1000,
+			"vcpus": millicores_to_vcpus(compute["cpu_millicores"]),
 			"memory_megabytes": compute["memory_mib"],
-			"disk_gigabytes": disk["size_mib"] / 1024,
+			"disk_gigabytes": mebibytes_to_gigabytes(disk["size_mib"]),
 			"ipv6_address": network.get("mesh_ipv6"),
 			"public_ipv4": network.get("public_ipv4"),
 			# Atlas reports the guest's public IPv6 as a prefix. A /128 is one address.
@@ -98,17 +109,26 @@ def resize_server(server: VirtualMachine, shape: dict) -> None:
 	client = get_client(server)
 	remote = client.get_vm(server.atlas_vm_id)
 	compute, disk = remote.get("compute") or {}, remote.get("disk") or {}
-	cpu_millicores = shape["vcpus"] * 1000
-	memory_mib = shape["memory_megabytes"]
-	disk_mib = shape["disk_gigabytes"] * 1024
 
-	reshaping = (compute.get("cpu_millicores"), compute.get("memory_mib")) != (cpu_millicores, memory_mib)
-	if reshaping:
+	cpu_millicores = vcpus_to_millicores(shape["vcpus"])
+	memory_mib = shape["memory_megabytes"]
+	disk_mib = gigabytes_to_mebibytes(shape["disk_gigabytes"])
+
+	is_reshaping = (compute.get("cpu_millicores"), compute.get("memory_mib")) != (cpu_millicores, memory_mib)
+	if is_reshaping:
 		wait_for_power_state(client, server.atlas_vm_id, "stop", "stopped")
-		client.resize(server.atlas_vm_id, cpu_millicores, memory_mib, disk_mib)
+
+		try:
+			client.resize(server.atlas_vm_id, cpu_millicores, memory_mib, disk_mib)
+		except AtlasRejected:
+			# Atlas kept the old shape. Restore the power state before reporting the refusal.
+			if remote.get("current_state") != "stopped":
+				wait_for_power_state(client, server.atlas_vm_id, "start", "running")
+			raise
 	else:
 		if disk_mib > (disk.get("size_mib") or 0):
 			client.update_disk(server.atlas_vm_id, disk_mib)
+
 		if compute.get("sleep_after_idle_seconds"):
 			client.disable_idle_shutdown(server.atlas_vm_id)
 
@@ -162,15 +182,18 @@ def reconcile(team: str | None = None) -> dict:
 
 
 def get_console_url(server: VirtualMachine) -> str:
-	"""Return a single-use Atlas web console URL for a running Ubuntu server.
+	"""Return a single-use Atlas web console URL for a running server.
 
-	Atlas opens the session over SSH with a key it pushes for that session only."""
-	if server.image_offering != "ubuntu":
-		frappe.throw(_("The web console is available only for Ubuntu servers."))
+	Atlas opens the session over SSH with a key it pushes for that session only. If Atlas
+	definitely refuses SSH, the console opens on the serial TTY, which every guest has."""
 	if server.status != "Running":
 		frappe.throw(_("Start the server before you open its console."))
 
-	return get_client(server).get_console_url(server.atlas_vm_id, mode="ssh")
+	client = get_client(server)
+	try:
+		return client.get_console_url(server.atlas_vm_id, mode="ssh")
+	except AtlasRejected:
+		return client.get_console_url(server.atlas_vm_id, mode="tty")
 
 
 def refresh_server(name: str) -> None:
@@ -189,11 +212,69 @@ def get_client(server: VirtualMachine) -> AtlasClient:
 
 
 def mark_terminated(server: VirtualMachine) -> None:
-	"""Record a server as gone and revoke the pilot credentials bound to it."""
+	"""Record a server as gone, revoke the pilot credentials bound to it, and remove its mailbox."""
 	server.status = "Terminated"
 	VirtualMachine.mark_terminated(server.name)
+	UserMailAccount.queue_removal(server=server.name)
 	credentials = frappe.get_all(
 		"Pilot Credential", filters={"team": server.team, "server": server.name}, pluck="name"
 	)
 	for name in credentials:
 		PilotCredential.revoke_by_id(name)
+
+
+def get_cached_metrics(server: VirtualMachine, start: datetime, end: datetime | None = None) -> dict:
+	"""The server's samples from `start` to `end` or now as its region measures them, cached for a minute."""
+	key = f"atlas:metrics:{server.name}:{int(start.timestamp())}:{int(end.timestamp()) if end else 'now'}"
+	if cached := frappe.cache.get_value(key):
+		return cached
+
+	try:
+		payload = get_client(server).get_vm_metrics(server.atlas_vm_id, start, end)
+		metrics = {
+			"available": True,
+			"points": get_metric_points(payload["samples"], server.vcpus),
+			"sample_interval_seconds": payload["sample_interval_seconds"],
+		}
+	except (AtlasConnectionError, AtlasRejected, AtlasResourceGone):
+		frappe.log_error(title=f"Atlas metrics unavailable: {server.name}")
+		metrics = {"available": False}
+
+	frappe.cache.set_value(key, metrics, expires_in_sec=METRICS_CACHE_SECONDS)
+	return metrics
+
+
+def get_metric_points(samples: list[dict], vcpus: float) -> list[dict]:
+	"""Atlas counts CPU time and network bytes from boot, so each point is the rate between
+	two neighbouring samples. A pair that spans a down sample or a reboot has no rate."""
+	return [
+		get_metric_point(previous, sample, vcpus)
+		for previous, sample in pairwise(samples)
+		if sample["timestamp"] > previous["timestamp"]
+	]
+
+
+def get_metric_point(previous: dict, sample: dict, vcpus: float) -> dict:
+	seconds = sample["timestamp"] - previous["timestamp"]
+	is_up = previous["up"] and sample["up"]
+	compute, disk = sample["compute"], sample["disk"]
+
+	def rate(section: str, key: str) -> float | None:
+		change = sample[section][key] - previous[section][key]
+		return change / seconds if is_up and change >= 0 else None
+
+	cpu_microseconds_per_second = rate("compute", "cpu_microseconds")
+	return {
+		"time": sample["timestamp"],
+		"is_up": sample["up"],
+		"cpu_percent": None
+		if cpu_microseconds_per_second is None
+		else min(100, cpu_microseconds_per_second / 10_000 / (vcpus or 1)),
+		"memory_bytes": compute["memory_bytes"],
+		"disk_used_bytes": disk["used_mib"] * MIB,
+		"disk_total_bytes": disk["size_mib"] * MIB,
+		"disk_read_bytes_per_second": disk["read_bytes_per_second"],
+		"disk_write_bytes_per_second": disk["write_bytes_per_second"],
+		"received_bytes_per_second": rate("network", "received_bytes"),
+		"sent_bytes_per_second": rate("network", "sent_bytes"),
+	}

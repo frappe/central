@@ -110,10 +110,7 @@ const roster = computed<RosterRow[]>(() => [
 ])
 
 const query = ref(
-	createListViewQuery({
-		pageSize: 20,
-		sort: { key: 'access', direction: 'asc' },
-	}),
+	createListViewQuery({ sort: { key: 'access', direction: 'asc' } }),
 )
 
 const getRowKey = (row: RosterRow): string => row.key
@@ -187,6 +184,7 @@ const roleFilters = computed<ListViewFilter[]>(() => [
 		:filters="roleFilters"
 		item-label="member"
 		row-class="min-h-12 py-1.5"
+		:show-page-size="false"
 		:show-count="false"
 		:empty-state="{
 			title: 'No members yet',

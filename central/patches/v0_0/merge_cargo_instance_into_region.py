@@ -1,6 +1,6 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
-"""Fold `Cargo Instance` into `Region` (spec/DELIVERY.md model cleanup).
+"""Fold `Cargo Instance` into `Region`.
 
 Cargo Instance already linked to the Region it provisions for through a required,
 unique `region` field — one Cargo per Region, just recorded as a second document.

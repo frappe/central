@@ -1,41 +1,44 @@
-import type { LoginResponse } from '@/composables/useAuth'
+import type { LocationQuery, LocationQueryRaw } from 'vue-router'
+import { queryString } from '@/lib/auth'
 
 const DEFAULT_DASHBOARD = '/dashboard/servers'
+const PRODUCT_ONBOARDING = '/dashboard/onboarding/site'
 
-export function loginDestination(
-	response: LoginResponse,
-	requestedPath?: unknown,
-): string {
-	if (response.message === 'Password Reset' && response.redirect_to) {
-		return sameOriginPath(response.redirect_to, '/update-password')
-	}
-
-	return (
-		dashboardPath(requestedPath) ??
-		dashboardPath(response.redirect_to) ??
-		dashboardPath(response.home_page) ??
-		DEFAULT_DASHBOARD
-	)
+/** Where to land once signed in: the requested page, the product onboarding, or the console. */
+export function signInDestination(query: LocationQuery): string {
+	const requested = dashboardPath(queryString(query['redirect-to']))
+	if (requested) return requested
+	const product = queryString(query.product)
+	if (!product) return DEFAULT_DASHBOARD
+	return `${PRODUCT_ONBOARDING}?${new URLSearchParams({ product })}`
 }
 
-function dashboardPath(value: unknown): string | null {
-	if (typeof value !== 'string' || !value) return null
+/** The intent that must survive every step between the auth pages. */
+export function carriedQuery(query: LocationQuery): LocationQueryRaw {
+	const carried: LocationQueryRaw = {}
+	for (const key of ['product', 'redirect-to']) {
+		const value = queryString(query[key])
+		if (value) carried[key] = value
+	}
+	return carried
+}
+
+function dashboardPath(value: string): string | null {
+	if (!value) return null
 
 	const path = sameOriginPath(value)
 	if (path === '/dashboard') return DEFAULT_DASHBOARD
-	if (!path.startsWith('/dashboard/')) return null
-	if (path === '/dashboard/login' || path.startsWith('/dashboard/signup'))
-		return null
+	if (!path?.startsWith('/dashboard/')) return null
+	if (/^\/dashboard\/(login|signup|verify)\b/.test(path)) return null
 	return path
 }
 
-function sameOriginPath(value: string, fallback = DEFAULT_DASHBOARD): string {
+function sameOriginPath(value: string): string | null {
 	try {
 		const url = new URL(value, window.location.origin)
-		return url.origin === window.location.origin
-			? `${url.pathname}${url.search}${url.hash}`
-			: fallback
+		if (url.origin !== window.location.origin) return null
+		return `${url.pathname}${url.search}${url.hash}`
 	} catch {
-		return fallback
+		return null
 	}
 }

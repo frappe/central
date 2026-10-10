@@ -76,6 +76,7 @@ const dialogOptions = computed(() => ({
 			</p>
 			<TextInput
 				v-model="typed"
+				autofocus
 				label="Type the member's name to confirm"
 				:placeholder="expected"
 				autocomplete="off"

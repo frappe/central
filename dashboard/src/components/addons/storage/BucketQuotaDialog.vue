@@ -58,6 +58,7 @@ const save = async (): Promise<void> => {
 		<div class="space-y-5">
 			<TextInput
 				v-model="sizeGib"
+				autofocus
 				type="number"
 				label="Size limit (GiB)"
 				:min="0"

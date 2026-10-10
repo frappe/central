@@ -33,7 +33,8 @@ from central.infrastructure.doctype.resource_action.resource_action import (
 	ResourceAction,
 )
 from central.integrations.images import selected_image, snapshot_image, snapshot_source
-from central.server_models import ActionStatus, CreateServerInput, ServerCreation
+from central.server_models import ActionStatus, CreateServerInput, ServerCreation, SiteCreation
+from central.utils.units import MIB_PER_GIB, MILLICORES_PER_VCPU
 
 
 def submit_request(
@@ -55,11 +56,12 @@ def submit_request(
 	resource_type: str = "Server",
 	subdomain: str | None = None,
 	snapshot: str | None = None,
+	site: SiteCreation | None = None,
 ) -> dict:
 	"""Authorize and persist intent before any remote mutation.
 
 	Server and site requests use the same queued action. A restore passes `snapshot`;
-	its offering and image come from the snapshot."""
+	its offering and image come from the snapshot. A trial site passes `site`."""
 	if snapshot:
 		offering, image_id = snapshot_source(team, snapshot)
 
@@ -89,6 +91,7 @@ def submit_request(
 		return existing.customer_status()
 
 	configuration, rate = _build_server_configuration(server_input, snapshot)
+	configuration.site = site
 	return ResourceAction.queue(
 		"create",
 		server_input.team,
@@ -96,6 +99,7 @@ def submit_request(
 		server_input.title,
 		resource_type=resource_type,
 		subdomain=subdomain,
+		product=site.product if site else None,
 		request_payload=configuration.model_dump(),
 		request_key=server_input.request_key,
 		request_digest=digest,
@@ -222,9 +226,7 @@ def _build_server_configuration(
 	validate_guest_input(server_input, image)
 	# Check the saved keys now so the form shows the error. Dispatch reads their text, which a
 	# rotation can change before a retry.
-	selected_keys = resolve_team_ssh_keys(server_input.team, server_input.ssh_key_ids)
-	if image["tags"].get("purpose") != "pilot" and not (selected_keys or server_input.ssh_keys):
-		frappe.throw(_("Select an SSH key for this server."))
+	resolve_team_ssh_keys(server_input.team, server_input.ssh_key_ids)
 
 	configuration = ServerCreation(
 		offering=server_input.offering,
@@ -335,22 +337,32 @@ def validate_trial(team: str) -> None:
 
 
 def image_shape(includes: list[dict], image: dict) -> dict[str, int]:
+	"""The Atlas shape for a composition. Atlas takes CPU in millicores, so a fraction of a
+	vCPU, such as 1/8, is a CPU quota on one guest vCPU."""
 	quantities = composition_quantities(includes)
-	values = (quantities.get(COMPUTE, 0), quantities.get(MEMORY, 0) * 1024, quantities.get(DISK, 0) * 1024)
+	values = (
+		quantities.get(COMPUTE, 0) * MILLICORES_PER_VCPU,
+		quantities.get(MEMORY, 0) * MIB_PER_GIB,
+		quantities.get(DISK, 0) * MIB_PER_GIB,
+	)
 	if any(not math.isfinite(value) or value <= 0 or int(value) != value for value in values):
-		frappe.throw(_("Choose whole virtual CPUs and positive memory and disk sizes in MiB."))
-	keys = ("virtual_cpu_count", "memory_mib", "disk_mib")
+		frappe.throw(_("Choose CPU in whole millicores and positive memory and disk sizes in MiB."))
+
+	keys = ("cpu_millicores", "memory_mib", "disk_mib")
 	shape = {key: int(value) for key, value in zip(keys, values, strict=True)}
-	if shape["virtual_cpu_count"] > 32:
-		frappe.throw(_("Choose at most 32 virtual CPUs."))
+
+	if not 100 <= shape["cpu_millicores"] <= 32000:
+		frappe.throw(_("Choose between 0.1 and 32 virtual CPUs."))
+
 	if shape["disk_mib"] < image["rootfs_size_mib"]:
 		frappe.throw(_("This plan's disk is smaller than the selected image."))
+
 	return shape
 
 
 def validate_guest_input(server_input: CreateServerInput, image: dict) -> None:
 	if server_input.ssh_key_ids and server_input.ssh_keys:
-		frappe.throw(_("Choose saved SSH keys or enter public keys, not both."))
+		frappe.throw(_("Choose saved SSH Keys or enter public keys, not both."))
 	if server_input.hostname and not re.fullmatch(
 		r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", server_input.hostname
 	):
@@ -365,7 +377,7 @@ def validate_guest_input(server_input: CreateServerInput, image: dict) -> None:
 def resolve_team_ssh_keys(team: str, names: list[str]) -> list[str]:
 	"""Resolve only public keys owned by the authorized Team."""
 	if len(names) != len(set(names)):
-		frappe.throw(_("Select each SSH key only once."))
+		frappe.throw(_("Select each SSH Key only once."))
 	if not names:
 		return []
 	rows = frappe.get_list(
@@ -373,5 +385,5 @@ def resolve_team_ssh_keys(team: str, names: list[str]) -> list[str]:
 	)
 	keys = {row.name: row.public_key for row in rows}
 	if len(keys) != len(names):
-		frappe.throw(_("One selected SSH key is unavailable to this Team."), frappe.PermissionError)
+		frappe.throw(_("One selected SSH Key is unavailable to this Team."), frappe.PermissionError)
 	return [keys[name] for name in names]

@@ -10,7 +10,7 @@ A `Site Domain` record routes one domain to the IPv6 address of a VM through the
 |---|---|---|
 | Wildcard domain | `Central Settings.wildcard_domain` | `frappe.dev` |
 | Region ID | `Region.atlas_region_id` | `42` |
-| Signing key | [Central SSO Settings](../central_sso_settings/SPEC.md), with **Initialize Atlas Signing Key** | `central:<hash>` |
+| Signing key | [Central SSO Settings](../../../central/doctype/central_sso_settings/SPEC.md), with **Initialize Atlas Signing Key** | `central:<hash>` |
 
 Central reaches each regional service at `<service>.<region>.<wildcard domain>`, such as `https://proxy.in-mumbai.frappe.dev`. `Region.get_service_url(service, region)` builds the URL for `proxy`, `atlas`, and `cargo`. `Region.get_proxy_client(region)` returns a `ProxyClient` with a fresh proxy token from `central.sso.mint_proxy_token`. The token uses the Atlas signing key, the audience `atlas-proxy:<region ID>`, and the scope `site:* domain:*`.
 

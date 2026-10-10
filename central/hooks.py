@@ -11,7 +11,11 @@ fixtures = [
 	# promotion thresholds — reference data every team's caps resolve against.
 	"Trust Tier Level",
 	{"dt": "Team Role", "filters": [["is_system", "=", 1]]},
-	{"dt": "Role", "filters": [["name", "in", ["Central User"]]]},
+	# Warpgate signs in through the Central OpenID Connect provider and checks these roles.
+	{
+		"dt": "Role",
+		"filters": [["name", "in", ["Central User", "Atlas Host Access", "Atlas Warpgate Admin"]]],
+	},
 	"Notification Event Type",
 ]
 
@@ -176,12 +180,21 @@ after_install = [
 
 doc_events = {
 	"User": {
-		"after_insert": "central.users.bootstrap_user_team",
+		"validate": "central.users.validate_user_image",
+		"after_insert": "central.users.grant_central_user_role",
 	},
 	"Team": {
 		# Keep a staging-trial team's billing profile complete so it can create servers
 		# without the setup prompt (the profile gate is otherwise enforced in the console).
-		"on_update": "central.billing.payments.provisioning.on_team_update",
+		"on_update": [
+			"central.billing.payments.provisioning.on_team_update",
+			# A new owner may be the new alert address of the team's Grove user.
+			"central.services.ai.on_alert_address_update",
+		],
+	},
+	"Billing Profile": {
+		# Its email is the alert address of the team's Grove user when set.
+		"on_update": "central.services.ai.on_alert_address_update",
 	},
 }
 
@@ -191,6 +204,9 @@ doc_events = {
 scheduler_events = {
 	"all": ["central.integrations.resource_actions.recover_requests"],
 	"cron": {
+		"* * * * *": [
+			"central.infrastructure.doctype.warpgate_access.warpgate_access.revoke_ended_access",
+		],
 		"*/10 * * * *": [
 			# Repair observed state through scoped regional reads.
 			"central.integrations.servers.reconcile",
@@ -201,6 +217,7 @@ scheduler_events = {
 			"central.infrastructure.doctype.site_domain.site_domain.retry_failed",
 			# Snapshots have no region event, so Central reads each one until it settles.
 			"central.infrastructure.doctype.vm_snapshot.vm_snapshot.sync_pending_snapshots",
+			"central.infrastructure.doctype.frappemail_service.frappemail_service.refill_mailboxes",
 		],
 	},
 	# Maintenance jobs run once per period at a time Frappe spreads across sites.
@@ -229,6 +246,12 @@ scheduler_events = {
 		# today's invoice before it is swept, so the customer gets the full benefit
 		# of the last day they were given.
 		"central.billing.revenue.credits.run_credit_expiry",
+		# Keep stored GSTIN statuses fresh for invoicing, a paced and capped batch a day.
+		"central.billing.revenue.gst_status.run_gst_status_refresh",
+		# Retry billing profiles whose customer records never finished syncing.
+		"central.billing.ingester.customer.sync_pending_profiles",
+		# Retry wallet top-ups whose advance never reached the accounting system.
+		"central.billing.ingester.advance.sync_pending_advances",
 		# Assert the money invariants that no DB constraint can hold (they span
 		# tables): wallet == its ledger, invoice == its lines, captured == amount_paid.
 		# Silence is the success case; a violation is logged with its team and amount.
@@ -237,7 +260,7 @@ scheduler_events = {
 	],
 	"hourly": [
 		# Billing: ERPNext sync retries whose backoff window has elapsed.
-		"central.billing.revenue.erpnext_sync.retry_failed_syncs",
+		"central.billing.ingester.erpnext_sync.retry_failed_syncs",
 		# A charge whose outcome we don't know is money in the air: ask the gateway and
 		# settle it. It waits 30 minutes for the webhook first, so a daily sweep left it
 		# hanging for up to a day — and the key it needs to re-send safely expires in
@@ -321,7 +344,11 @@ override_doctype_dashboards = {
 
 # Request Events
 # ----------------
+before_request = ["central.oidc.take_client_credentials"]
 # after_request = ["central.utils.after_request"]
+
+# The OpenID Connect discovery document of the Central issuer.
+page_renderer = ["central.oidc.DiscoveryPage"]
 
 # Job Events
 # ----------

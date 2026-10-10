@@ -1,7 +1,10 @@
+import { nextTick } from 'vue'
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuth } from '@/composables/useAuth'
 import { useSession } from '@/composables/useSession'
 import { fetchBillingSetup } from '@/data/billingSetup'
+import { rememberFirstTouch } from '@/lib/attribution'
+import { carriedQuery } from '@/lib/authRedirect'
 import { features } from '@/lib/features'
 
 const routes = [
@@ -18,16 +21,17 @@ const routes = [
 		meta: { public: true },
 	},
 	{
-		path: '/signup/verify',
+		path: '/verify',
 		name: 'VerifyEmail',
 		component: () => import('@/pages/auth/VerifyEmailPage.vue'),
 		meta: { public: true },
 	},
 	{
-		path: '/forgot-password',
-		name: 'ForgotPassword',
-		component: () => import('@/pages/auth/ForgotPasswordPage.vue'),
-		meta: { public: true },
+		// Emailed invitation link, open to guests and signed-in users.
+		path: '/join/:token',
+		name: 'JoinTeam',
+		component: () => import('@/pages/team/JoinTeamPage.vue'),
+		meta: { public: true, allowSignedIn: true },
 	},
 	{
 		path: '/onboarding/site',
@@ -66,22 +70,34 @@ const routes = [
 				meta: { title: 'Snapshots' },
 			},
 			{
-				path: 'servers/ssh-keys',
-				name: 'SSHKeys',
-				component: () => import('@/pages/servers/SSHKeysPage.vue'),
-				meta: { title: 'SSH keys' },
-			},
-			{
 				path: 'servers/new',
 				name: 'NewServer',
 				component: () => import('@/pages/servers/NewServerPage.vue'),
 				meta: { title: 'New server' },
 			},
 			{
+				path: 'servers/:id/:tab(networking|access|snapshots|settings)?',
+				name: 'Server',
+				component: () => import('@/pages/servers/ServerPage.vue'),
+				meta: { title: 'Servers' },
+			},
+			{
+				path: 'llm',
+				name: 'LLM',
+				component: () => import('@/pages/addons/AIInference.vue'),
+				meta: { title: 'LLM', feature: ['addons', 'llm'] },
+			},
+			{
 				path: 'object-storage',
 				name: 'ObjectStorage',
 				component: () => import('@/pages/addons/ObjectStorage.vue'),
-				meta: { title: 'Object storage', feature: ['addons', 'storage'] },
+				meta: { title: 'Object Storage', feature: ['addons', 'storage'] },
+			},
+			{
+				path: 'object-storage/:name',
+				name: 'Bucket',
+				component: () => import('@/pages/addons/BucketPage.vue'),
+				meta: { title: 'Object Storage', feature: ['addons', 'storage'] },
 			},
 			{
 				path: 'billing',
@@ -141,24 +157,12 @@ const routes = [
 				component: () => import('@/pages/team/InvitationsPage.vue'),
 				meta: { title: 'Invitations' },
 			},
-			// Personal invitation inbox + the email deep-link both open the Invitations
-			// page on its Received tab.
+			// Personal invitation inbox: opens the Invitations page on its Received tab.
 			{
 				path: 'invitations',
 				name: 'MyInvitations',
 				component: () => import('@/pages/team/InvitationsPage.vue'),
 				meta: { title: 'Invitations' },
-			},
-			{
-				path: 'invitations/:name',
-				name: 'FocusedInvitation',
-				component: () => import('@/pages/team/InvitationsPage.vue'),
-				meta: { title: 'Invitations' },
-			},
-			{
-				path: 'addons',
-				name: 'Addons',
-				redirect: '/object-storage',
 			},
 		],
 	},
@@ -169,6 +173,37 @@ export const router = createRouter({
 	routes,
 })
 
+// Route pairs that animate, keyed by the name their CSS selects on (see style.css).
+const ROUTE_TRANSITIONS: Record<string, string> = {
+	'Servers>Server': 'server-open',
+	'Server>Servers': 'server-open-back',
+	'Servers>NewServer': 'server-create',
+	'NewServer>Servers': 'server-create-back',
+}
+
+router.beforeResolve((to, from) => {
+	const transition =
+		ROUTE_TRANSITIONS[`${String(from.name)}>${String(to.name)}`]
+	if (!document.startViewTransition || !transition) return
+
+	const root = document.documentElement
+	root.dataset.routeTransition = transition
+	return new Promise<void>((resolve) => {
+		const viewTransition = document.startViewTransition(
+			() =>
+				new Promise<void>((rendered) => {
+					const stop = router.afterEach(() => {
+						stop()
+						nextTick(rendered)
+					})
+
+					resolve()
+				}),
+		)
+		viewTransition.finished.finally(() => delete root.dataset.routeTransition)
+	})
+})
+
 // Session state is seeded synchronously from boot data (window.user), so the
 // guard can decide without awaiting. Auth transitions (login/logout) do a full
 // page reload, which re-boots the SPA with a fresh session — no client revalidation needed.
@@ -177,12 +212,16 @@ router.beforeEach((to) => {
 	// Seeded with `window.user` (central/www/dashboard.py). A brand-new user has no
 	// live site yet, so they belong in the onboarding funnel, not the dashboard.
 	const onboardingComplete = window.onboarding_complete ?? false
+	const productSignup = Boolean(carriedQuery(to.query).product)
 
 	if (to.meta.public) {
-		if (isGuest.value) return true
+		if (isGuest.value) rememberFirstTouch(to.query)
+		if (isGuest.value || to.meta.allowSignedIn) return true
 		// Logged in but on an auth page — e.g. browser-Back after verifying. Don't dump
 		// them into the dashboard mid-onboarding: resume the funnel until it's finished.
-		return onboardingComplete ? '/servers' : '/onboarding/site'
+		return onboardingComplete && !productSignup
+			? '/servers'
+			: { path: '/onboarding/site', query: carriedQuery(to.query) }
 	}
 
 	if (isGuest.value) {
@@ -202,8 +241,8 @@ router.beforeEach((to) => {
 			return '/servers'
 	}
 
-	// A finished user has no reason to re-enter onboarding.
-	if (to.path.startsWith('/onboarding') && onboardingComplete) return '/servers'
+	if (to.path.startsWith('/onboarding') && onboardingComplete && !productSignup)
+		return '/servers'
 
 	// Warm the billing-profile completeness cache for the active team, non-blocking
 	// (mirrors the legacy guard): money-moving actions gate on it via

@@ -102,6 +102,7 @@ const create = async (): Promise<void> => {
 
 			<TextInput
 				v-model="name"
+				autofocus
 				label="Name"
 				placeholder="media"
 				description="Lowercase letters, digits, dots and hyphens."

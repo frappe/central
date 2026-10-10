@@ -1,6 +1,7 @@
 import type { InvitationStatus } from '@/types/api'
 import type { PaymentAttempt } from '@/types/billing'
 import type { VirtualMachine } from '@/types/Infrastructure/VirtualMachine'
+import type { ActionStatus } from '@/types/serverCreation'
 
 // The DocType statuses plus Central's own derived display state (see displayStatus).
 export type VirtualMachineStatus =
@@ -46,6 +47,18 @@ const SETTING_UP_STATES: VirtualMachineStatus[] = [
 
 export function isSettingUp(status?: VirtualMachineStatus): boolean {
 	return status === undefined || SETTING_UP_STATES.includes(status)
+}
+
+/** A server takes a change (resize, snapshot, terminate) only when set up, not terminated, and idle. */
+export function canChange(server: {
+	status?: VirtualMachineStatus
+	pending_action?: string | null
+}): boolean {
+	return (
+		!server.pending_action &&
+		!isSettingUp(server.status) &&
+		!isTerminated(server.status)
+	)
 }
 
 // Team Invitation status → Badge theme. Pending is in-flight (amber), Accepted is
@@ -145,4 +158,19 @@ export function attemptStory(attempts: PaymentAttempt[]): AttemptStory {
 		failed: failures.length,
 		failedBeforeCapture,
 	}
+}
+
+const CREATION_STAGE: Partial<Record<ActionStatus['status'], number>> = {
+	Queued: 0,
+	Dispatching: 1,
+	Sent: 1,
+	'In Progress': 2,
+	Succeeded: 3,
+}
+
+/** The step a creation is on, from 0. Null once it stopped without succeeding. */
+export function getCreationStage(
+	status: ActionStatus['status'],
+): number | null {
+	return CREATION_STAGE[status] ?? null
 }

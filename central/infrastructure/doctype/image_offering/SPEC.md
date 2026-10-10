@@ -2,7 +2,7 @@
 
 ## Purpose
 
-An Image Offering is a customer-facing choice, such as Pilot or Ubuntu. Central owns its name, logo, description, allowed flows, and required image tags. Atlas owns regional image builds and availability. Cargo builds the prepared Pilot images.
+An Image Offering is a customer-facing choice, such as Frappe or Ubuntu. Central owns its name, logo, description, allowed flows, and required image tags. Atlas owns regional image builds and availability. Cargo builds the prepared Pilot images.
 
 An offering has no Team, regional image ID, copied software version, resource size, or synchronization job. System images are shared across Teams. Private Machine images are outside this catalog.
 
@@ -10,9 +10,9 @@ An offering has no Team, regional image ID, copied software version, resource si
 
 System Managers can create and edit offerings. Central Users can read them. The stable offering key cannot change after creation. Each required tag has one nonempty key and value. Duplicate keys and query separators are rejected.
 
-The default Pilot offering selects `purpose=pilot` for Server and Signup flows. Every Pilot build has `default-bench`. A build tagged `has_site=1` also has `site.local`. Signup asks for `has_site=1`. The Server flow marks those builds **With site** and hides builds tagged `app`. The Ubuntu offering selects `purpose=base` and `os=Ubuntu` for Server flows only. No layout tag is assumed.
+The default Frappe offering has the key `pilot` and selects `purpose=pilot` for Server and Signup flows. Every Pilot build has `default-bench`. A build tagged `has_site=1` also has `site.local`. Signup asks for `has_site=1`, and a [product](../../../signups/doctype/product/SPEC.md) signup also asks for its `app` tag. The Server flow marks those builds **With site** and hides builds tagged `app`. The Ubuntu offering selects `purpose=base` and `os=Ubuntu` for Server flows only. No layout tag is assumed.
 
-Operators can upload a logo and set a description. The console shows image choices as logo buttons. Uploaded logos take precedence over the bundled Pilot and Ubuntu defaults. Regional versions come from Atlas tags, including `pilot_version` and `frappe_version`. Frappe version 16 and Nightly are Frappe choices, not Pilot release numbers.
+Operators can upload a logo and set a description. The console shows image choices as logo buttons. Uploaded logos take precedence over the bundled Frappe and Ubuntu defaults. Regional versions come from Atlas tags, including `pilot_version` and `frappe_version`. Frappe version 16 and Nightly are Frappe choices, not Pilot release numbers.
 
 ## Operation
 
@@ -30,7 +30,7 @@ The operator's **Preview Regional Images** action uses the saved selector and sy
 
 ## Installation and migration
 
-`ensure_default_offerings` creates missing Pilot and Ubuntu records on installation. The `seed_image_offerings` patch runs the same function on existing sites. Repeated execution preserves operator edits, including disabled offerings.
+`ensure_default_offerings` creates missing Frappe and Ubuntu records on installation. The `seed_image_offerings` patch runs the same function on existing sites. Repeated execution preserves operator edits, including disabled offerings.
 
 ## Dependencies
 

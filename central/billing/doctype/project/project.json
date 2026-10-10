@@ -49,7 +49,7 @@
    "link_fieldname": "project"
   }
  ],
- "modified": "2026-08-28 00:00:00.000000",
+ "modified": "2026-10-10 10:27:25.616292",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Project",
@@ -73,5 +73,6 @@
  "sort_field": "creation",
  "sort_order": "DESC",
  "states": [],
- "title_field": "title"
+ "title_field": "title",
+ "track_changes": 1
 }

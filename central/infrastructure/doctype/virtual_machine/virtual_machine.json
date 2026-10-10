@@ -139,7 +139,7 @@
   },
   {
    "fieldname": "vcpus",
-   "fieldtype": "Int",
+   "fieldtype": "Float",
    "label": "vCPUs",
    "read_only": 1
   },
@@ -339,9 +339,13 @@
   {
    "link_doctype": "VM Snapshot",
    "link_fieldname": "server"
+  },
+  {
+   "link_doctype": "User Mail Account",
+   "link_fieldname": "server"
   }
  ],
- "modified": "2026-09-30 12:00:00.000000",
+ "modified": "2026-10-10 10:07:58.752401",
  "modified_by": "Administrator",
  "module": "Infrastructure",
  "name": "Virtual Machine",
@@ -405,5 +409,6 @@
    "title": "Terminated"
   }
  ],
- "title_field": "title"
+ "title_field": "title",
+ "track_changes": 1
 }

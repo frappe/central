@@ -16,11 +16,13 @@ Customer -> authorized service -> Resource Action -> queued integration worker
 
 ## Request contract
 
-The server APIs accept a Team, region, display name, image offering, regional image ID, and request key. A preset request adds a plan. A composed request adds a profile and resource quantities. Guest hostname, public IPv6, firewall, and SSH keys are separate inputs. A request selects saved [Team SSH Keys](../team_ssh_key/SPEC.md) in `ssh_key_ids` or pastes public keys in `ssh_keys`, not both. An image that is not a Pilot image needs at least one key. Each list can contain at most 20 keys, and each pasted key can contain at most 16,384 characters. A `snapshot` input replaces the offering and image with the source of the snapshot.
+The server APIs accept a Team, region, display name, image offering, regional image ID, and request key. A preset request adds a plan. A composed request adds a profile and resource quantities. Guest hostname, public IPv6, firewall, and SSH keys are separate inputs. A request selects saved [Team SSH Keys](../team_ssh_key/SPEC.md) in `ssh_key_ids` or pastes public keys in `ssh_keys`, not both. Keys are optional for every image. Each list can contain at most 20 keys, and each pasted key can contain at most 16,384 characters. A `snapshot` input replaces the offering and image with the source of the snapshot.
 
 Central checks the capability, current image selector, image availability, plan eligibility, resource sizes, and billing policy before saving the action. It locks the Team while reserving budget. Pending requests count toward the trial server limit and paid spending limit. A server can use from 1 through 32 whole virtual CPUs. Memory and disk must resolve to positive whole MiB values. The disk must fit the image.
 
 The request key is unique within a Team. Reusing it with identical inputs returns the same action. Reusing it with changed inputs fails. The saved configuration contains the accepted shape, image identity, currency, and billing cycle. The reserved rate becomes the opening subscription price even if the catalog changes while the request waits.
+
+A trial creation records its Product in a read-only link field as well as its saved site configuration. Onboarding filters this field to resume the selected product before a Site exists. The `record_trial_action_product` patch copies products from existing trial payloads.
 
 A repeat under a new key is also answered with the saved action, when the same requester sent the same settings and no region has returned a VM identity yet. Central saves the request before it calls a region, so a lost reply leaves the record while the caller keeps nothing. A request that already holds a VM identity never matches, so a deliberate second server is still a second record. The request digest covers the settings only, not the key.
 
@@ -84,11 +86,11 @@ A retry requires `server:create` and re-checks the plan, the trial limit and the
 
 ## Pilot and Ubuntu
 
-A Pilot creation needs the Pilot signing key. Without it, the action fails before Central issues a credential or calls the region. A Pilot creation issues one credential before dispatch. `get_bootstrap_metadata` in `central/integrations/pilot.py` mints it and builds two guest metadata values. `pilot-central` holds the Central configuration. `pilot-telemetry` holds the region's Datum endpoint and token. It is optional: a failure leaves the value out and records a diagnostic. Atlas receives `pilot-central` with the Central endpoint, bearer token, public-key endpoint, audience ID, and the signing key set itself. The keys travel with the credential so the Pilot's first token needs no fetch, and a boot before Central is reachable still verifies. Central stores the token hash, not its plaintext, and keeps credentials outside the saved request payload and customer status. A creation that fails before the region accepts a machine revokes this credential. An Uncertain creation keeps it until a completed search settles the request.
+A Pilot creation needs the Pilot signing key. Without it, the action fails before Central issues a credential or calls the region. A Pilot creation issues one credential before dispatch. `get_bootstrap_metadata` in `central/integrations/pilot.py` mints it and builds two guest metadata values. `pilot-central` holds the Central configuration. `pilot-common-config` holds the region's Datum endpoint and token as `{"telemetry": {"endpoint": ..., "token": ...}}`. Pilot merges it into `common_config.toml` at bootstrap. It is optional: a failure leaves the value out and records a diagnostic. Atlas receives `pilot-central` with the Central endpoint, bearer token, public-key endpoint, audience ID, and the signing key set itself. The keys travel with the credential so the Pilot's first token needs no fetch, and a boot before Central is reachable still verifies. Central stores the token hash, not its plaintext, and keeps credentials outside the saved request payload and customer status. A creation that fails before the region accepts a machine revokes this credential. An Uncertain creation keeps it until a completed search settles the request.
 
 An accepted Pilot VM is linked to its credential during local finalization. Its management gateway is `https://admin-vm-<label>.<Region.proxy_domain>`, which `Region.get_vm_gateway_url` builds. A running VM does not prove that Pilot or a site is ready. See [Trial sites](../site/SPEC.md) for site readiness and signup.
 
-Ubuntu receives its SSH keys and guest hostname. It does not receive a Pilot credential or wait for a site.
+Every image receives its selected SSH keys and guest hostname. Ubuntu does not receive a Pilot credential or wait for a site.
 
 ## Idle sleep
 
@@ -116,4 +118,4 @@ Resize uses the same action flow. `central.api.servers.resize_server` validates 
 
 ## Validation
 
-The focused suites are `test_resource_actions`, `test_resource_action_migration`, `test_atlas_sync`, `test_server_observation`, `test_server_resize`, `test_pilot_credential_delivery`, `test_atlas_errors`, and the billing create, trial, and resize tests. See [cutover coverage](../../../../spec/CUTOVER_TEST_COVERAGE.md) for the retained requirements and retired interfaces.
+The focused suites are `test_resource_actions`, `test_resource_action_migration`, `test_atlas_sync`, `test_server_observation`, `test_server_resize`, `test_pilot_credential_delivery`, `test_atlas_errors`, and the billing create, trial, and resize tests.

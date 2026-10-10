@@ -25,6 +25,7 @@ export type VirtualMachineRow = Pick<
 	VirtualMachine,
 	| 'name'
 	| 'resource_id'
+	| 'atlas_vm_id'
 	| 'title'
 	| 'region'
 	| 'status'
@@ -42,6 +43,8 @@ export type VirtualMachineRow = Pick<
 > &
 	ServerAccess & {
 		pending_action?: string | null
+		/** The server's Pilot audience, which a link from that Pilot names it by. */
+		pilot_audience?: string | null
 	}
 
 const { activeTeam } = useSession()

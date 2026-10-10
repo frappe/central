@@ -16,6 +16,8 @@
   "column_break_geo",
   "latitude",
   "longitude",
+  "mail_section",
+  "frappemail_service",
   "atlas_tab",
   "status",
   "base_url",
@@ -125,6 +127,18 @@
    "label": "Proxy Domain"
   },
   {
+   "description": "Gives new servers in this region a mailbox. Leave blank for none.",
+   "fieldname": "frappemail_service",
+   "fieldtype": "Link",
+   "label": "FrappeMail Service",
+   "options": "FrappeMail Service"
+  },
+  {
+   "fieldname": "mail_section",
+   "fieldtype": "Section Break",
+   "label": "Mail"
+  },
+  {
    "fieldname": "connection_section",
    "fieldtype": "Section Break",
    "label": "Connection status"
@@ -163,10 +177,10 @@
   },
   {
    "default": "0",
+   "description": "Take one free snapshot of each running server every day. Leave it off until the region's hosts and storage can carry the load.",
    "fieldname": "automatic_snapshots",
    "fieldtype": "Check",
-   "label": "Automatic Snapshots",
-   "description": "Take one free snapshot of each running server every day. Leave it off until the region's hosts and storage can carry the load."
+   "label": "Automatic Snapshots"
   },
   {
    "collapsible": 1,
@@ -257,7 +271,7 @@
    "link_fieldname": "region"
   }
  ],
- "modified": "2026-09-25 17:33:51.962673",
+ "modified": "2026-10-10 10:08:25.434103",
  "modified_by": "Administrator",
  "module": "Infrastructure",
  "name": "Region",
@@ -283,5 +297,6 @@
  "sort_field": "region",
  "sort_order": "ASC",
  "states": [],
- "title_field": "display_name"
+ "title_field": "display_name",
+ "track_changes": 1
 }

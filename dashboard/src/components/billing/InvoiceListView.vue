@@ -9,6 +9,7 @@ import {
 } from '@/components/common/list-view'
 import { billingPeriod, shortDate } from '@/lib/date'
 import { money } from '@/lib/format'
+import { downloadInvoice } from '@/lib/invoicePdf'
 import { invoiceTheme } from '@/lib/status'
 import type { InvoiceSummary } from '@/types/billing'
 
@@ -121,17 +122,18 @@ const columns = computed<ListViewColumn<InvoiceSummary>[]>(() => [
 		enableSorting: false,
 		enableGlobalFilter: false,
 		meta: { align: 'end' },
-		// GROUNDING GAP (#70): no download endpoint yet — disabled until the
-		// backend lands it. The wrapper stops a future click from also
-		// selecting the row.
-		cell: () =>
+		// The wrapper stops the click from also selecting the row.
+		cell: ({ row }) =>
 			h('span', { onClick: (e: Event) => e.stopPropagation() }, [
 				h(Button, {
 					variant: 'ghost',
 					icon: 'lucide-download',
-					disabled: true,
-					title: 'Download PDF (coming soon)',
+					disabled: !row.original.has_pdf,
+					title: row.original.has_pdf
+						? 'Download PDF'
+						: 'The PDF is ready once the invoice is issued',
 					label: 'Download invoice',
+					onClick: () => downloadInvoice(row.original.name),
 				}),
 			]),
 	},

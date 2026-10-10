@@ -12,6 +12,7 @@ import { useRoute } from 'vue-router'
 import ErrorAlertHost from '@/components/common/ErrorAlertHost.vue'
 import Sidebar from '@/components/navigation/Sidebar.vue'
 import NotificationsPanel from '@/components/notifications/NotificationsPanel.vue'
+import OnboardingDialog from '@/components/onboarding/OnboardingDialog.vue'
 import SettingsModal from '@/components/settings/SettingsModal.vue'
 import SwitchTeamDialog from '@/components/team/SwitchTeamDialog.vue'
 import { useBreadcrumbs } from '@/composables/useBreadcrumbs'
@@ -72,7 +73,10 @@ const breadcrumbs = computed(
 			<div id="header-actions" class="flex shrink-0 items-center gap-2" />
 		</header>
 
-		<main class="min-h-0 flex-1 overflow-hidden">
+		<main
+			class="min-h-0 flex-1 overflow-hidden"
+			style="view-transition-name: page"
+		>
 			<router-view />
 		</main>
 
@@ -101,7 +105,10 @@ const breadcrumbs = computed(
 			<div id="header-actions" class="flex shrink-0 items-center gap-2" />
 		</header>
 
-		<div class="min-h-0 flex-1 overflow-hidden">
+		<div
+			class="min-h-0 flex-1 overflow-hidden"
+			style="view-transition-name: page"
+		>
 			<router-view />
 		</div>
 	</DesktopShell>
@@ -116,4 +123,5 @@ const breadcrumbs = computed(
 	<SettingsModal v-if="!isMobile" />
 	<SearchDialog v-if="searchMounted" v-model:open="searchOpen" />
 	<SwitchTeamDialog v-model:open="teamSwitcherOpen" />
+	<OnboardingDialog />
 </template>

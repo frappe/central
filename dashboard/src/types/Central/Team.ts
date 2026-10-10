@@ -1,4 +1,5 @@
 import { TeamMember } from './TeamMember'
+import { TeamOnboardingStep } from './TeamOnboardingStep'
 
 export interface Team {
 	name: string
@@ -23,8 +24,10 @@ export interface Team {
 	tenant_id?: number
 	/**	Status : Select	*/
 	status: 'Active' | 'Suspended'
-	/**	Staging Trial : Check - Staging trials: create servers on free welcome credits without a full billing profile.	*/
+	/**	Staging Trial : Check - Staging trials: create servers on free welcome credits without a full billing profile. Central sets it from Billing Settings when the team is created. Only a System Manager can change it.	*/
 	is_staging_trial?: 0 | 1
 	/**	Members : Table - Team Member	*/
 	members?: TeamMember[]
+	/**	Onboarding Steps : Table - Team Onboarding Step - The console onboarding steps of this team, and what the owner did with each. Set when the team is created.	*/
+	onboarding_steps?: TeamOnboardingStep[]
 }

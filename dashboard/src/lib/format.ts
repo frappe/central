@@ -36,15 +36,6 @@ export function signedMoney(
 	return `${sign} ${money(Math.abs(Number(amount ?? 0)), currency)}`
 }
 
-/** MB → human GB/MB. The doctype stores memory in megabytes. */
-export function formatMemory(megabytes: number): string {
-	if (megabytes >= 1024) {
-		const gb = megabytes / 1024
-		return `${Number.isInteger(gb) ? gb : gb.toFixed(1)} GB`
-	}
-	return `${megabytes} MB`
-}
-
 export { formatDateTime as formatSyncedAt } from '@/lib/datetime'
 
 export function capitalise(s: string | null | undefined): string {

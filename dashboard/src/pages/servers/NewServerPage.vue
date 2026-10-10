@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { Alert, Button, Select, TabButtons, Tabs, TextInput } from 'frappe-ui'
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import ChoiceCards from '@/components/common/ChoiceCards.vue'
+import CreateServerButton from '@/components/servers/CreateServerButton.vue'
 import CreationStatusPanel from '@/components/servers/CreationStatusPanel.vue'
 import ImageOfferingSelector from '@/components/servers/ImageOfferingSelector.vue'
 import PlanGroup from '@/components/servers/PlanGroup.vue'
@@ -12,6 +13,8 @@ import SSHKeysField from '@/components/servers/SSHKeysField.vue'
 import { useBreadcrumbs } from '@/composables/useBreadcrumbs'
 import { useServerCreation } from '@/composables/useServerCreation'
 import { flagEmoji, regionLabel } from '@/lib/serverMap'
+import { getCreationStage } from '@/lib/status'
+import type { ActionStatus } from '@/types/serverCreation'
 
 const {
 	router,
@@ -59,7 +62,6 @@ const {
 	imagesError,
 	reloadImages,
 	sshKeyIds,
-	sshRequired,
 	hasPublicIpv6,
 	isFirewallEnabled,
 	action,
@@ -95,6 +97,21 @@ const regionFlags = computed(() =>
 		regions.value.map((r) => [r.region, flagEmoji(r.country_code)]),
 	),
 )
+
+// A stopped request hands the button's place to the alert with its next step.
+const isCreationMoving = computed(
+	() => !action.value || getCreationStage(action.value.status) !== null,
+)
+// The button fades out after a request stops, so it keeps the last moving status.
+const movingStatus = ref<ActionStatus['status'] | null>(null)
+watch(
+	() => action.value?.status ?? null,
+	(status) => {
+		if (!status || getCreationStage(status) !== null)
+			movingStatus.value = status
+	},
+	{ immediate: true },
+)
 </script>
 
 <template>
@@ -104,7 +121,7 @@ const regionFlags = computed(() =>
 		</Teleport>
 
 		<div class="flex flex-col-reverse lg:flex-row">
-			<div class="w-full p-4 md:p-6 lg:w-1/2">
+			<div class="vt-server-form w-full p-4 md:p-6 lg:w-1/2">
 				<p v-if="loading" class="text-p-sm text-ink-gray-5">Loading regions…</p>
 				<p v-else-if="!regions.length" class="text-p-sm text-ink-gray-5">
 					No active regions are available right now.
@@ -113,13 +130,13 @@ const regionFlags = computed(() =>
 				<div v-else class="space-y-8">
 					<section class="grid gap-3 md:grid-cols-2">
 						<TextInput
+							v-focus
 							v-model="name"
 							label="Name"
 							required
 							size="md"
 							placeholder="e.g. Acme Production"
 							:maxlength="60"
-							autofocus
 						/>
 					</section>
 
@@ -199,11 +216,7 @@ const regionFlags = computed(() =>
 								size="md"
 								:options="imageOptions"
 							/>
-							<SSHKeysField
-								v-if="image"
-								v-model="sshKeyIds"
-								:required="sshRequired"
-							/>
+							<SSHKeysField v-if="image" v-model="sshKeyIds" />
 						</div>
 					</section>
 
@@ -325,7 +338,7 @@ const regionFlags = computed(() =>
 				class="flex flex-col border-b border-outline-gray-1 lg:sticky lg:top-0 lg:h-[calc(100dvh-3rem)] lg:w-1/2 lg:self-start lg:border-b-0 lg:border-l"
 			>
 				<div
-					class="relative m-6 h-72 overflow-hidden rounded-7 border border-outline-gray-2 lg:h-auto lg:flex-1"
+					class="vt-server-map relative m-2 h-72 overflow-hidden rounded-6 border border-outline-gray-1 lg:h-auto lg:flex-1"
 				>
 					<ServerMap
 						:interactive="false"
@@ -334,37 +347,40 @@ const regionFlags = computed(() =>
 						@select="selectRegion"
 					/>
 				</div>
-				<ServerSummary v-bind="summary">
-					<CreationStatusPanel
-						v-if="action"
-						class="border-t border-outline-gray-1 pt-5"
-						:action="action"
-						:region-label="selectedRegionName"
-						:checking="checking"
-						:retrying="submitting"
-						:stalled="stalled"
-						:last-checked-at="lastCheckedAt"
-						:check-error="submitError"
-						@check="checkNow"
-						@retry="retry"
-						@edit="editSettings"
-					/>
-					<div v-else class="space-y-3">
+				<ServerSummary class="vt-server-summary" v-bind="summary">
+					<div class="space-y-3">
 						<Alert
-							v-if="submitError"
+							v-if="submitError && !action"
 							theme="red"
 							title="We couldn't create this server"
 							:description="submitError"
 						/>
-						<Button
-							variant="solid"
-							size="md"
-							label="Create server"
-							class="w-full"
-							:loading="submitting"
-							:disabled="!canSubmit"
-							@click="submit"
-						/>
+						<div class="relative">
+							<Transition
+								leave-active-class="transition duration-150 ease-out"
+								leave-to-class="scale-[0.98] opacity-0 blur-[2px]"
+							>
+								<CreateServerButton
+									v-if="isCreationMoving"
+									:status="movingStatus"
+									:region-label="selectedRegionName"
+									:submitting="submitting && !action"
+									:disabled="!canSubmit"
+									@create="submit"
+								/>
+							</Transition>
+							<CreationStatusPanel
+								:action="action"
+								:checking="checking"
+								:retrying="submitting"
+								:stalled="stalled"
+								:last-checked-at="lastCheckedAt"
+								:check-error="submitError"
+								@check="checkNow"
+								@retry="retry"
+								@edit="editSettings"
+							/>
+						</div>
 					</div>
 				</ServerSummary>
 			</div>

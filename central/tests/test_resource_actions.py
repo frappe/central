@@ -16,6 +16,7 @@ from central.infrastructure.doctype.resource_action.resource_action import Resou
 from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
 from central.integrations.resource_actions import SERVER_PAGE_SIZE, _process_locked
 from central.resource_actions import get_status, submit_request
+from central.server_models import SiteCreation
 from central.tests.test_sso_keys import reset_signing_key
 
 COMPOSITION = [
@@ -96,8 +97,20 @@ class TestResourceActions(IntegrationTestCase):
 		self.assertEqual(result["status"], "Queued")
 		self.client.return_value.create_vm.assert_not_called()
 		action = frappe.get_doc("Resource Action", result["action"])
-		self.assertEqual(action.get_configuration().virtual_cpu_count, 1)
+		self.assertEqual(action.get_configuration().cpu_millicores, 1000)
 		self.assertNotIn("central_auth_token", action.request_payload)
+
+	def test_a_trial_records_its_product_before_a_site_exists(self):
+		product = frappe.get_doc(
+			{"doctype": "Product", "product_key": "raven-action", "title": "Raven", "signup_app": "raven"}
+		).insert()
+
+		result = self.submit(resource_type="Site", subdomain="raven", site=SiteCreation(product=product.name))
+		action = frappe.get_doc("Resource Action", result["action"])
+
+		self.assertEqual(action.product, product.name)
+		self.assertEqual(action.get_site_creation().product, product.name)
+		self.assertIsNone(action.server)
 
 	def test_duplicate_key_returns_one_action_and_rejects_changed_input(self):
 		first = self.submit()
@@ -364,8 +377,8 @@ class TestResourceActions(IntegrationTestCase):
 		]
 		servers = [*newer, built]
 		self.client.return_value.list_vms.side_effect = lambda limit, offset: servers[offset : offset + limit]
-		self.client.return_value.get_vm.side_effect = (
-			lambda vm_id: mine if vm_id == built["id"] else {"id": vm_id}
+		self.client.return_value.get_vm.side_effect = lambda vm_id: (
+			mine if vm_id == built["id"] else {"id": vm_id}
 		)
 		_process_locked(name)
 

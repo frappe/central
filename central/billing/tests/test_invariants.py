@@ -191,6 +191,40 @@ class TestPaidNeverExceedsCaptured(InvariantTestBase):
 		self.assertEqual((found[0].expected, found[0].actual), (200, 500))
 
 
+class TestPaidInvoiceIsCovered(InvariantTestBase):
+	"""I5 — a Paid invoice was covered by the card, the wallet and the GST paid with top-ups."""
+
+	def _paid(self, credit, advance_gst):
+		return (
+			frappe.get_doc(
+				{
+					"doctype": "Invoice",
+					"team": TEAM,
+					"invoice_type": "Billable",
+					"status": "Paid",
+					"currency": "INR",
+					"period_start": "2098-04-01",
+					"period_end": "2098-04-30",
+					"subtotal": 8000,
+					"output_tax_amount": 1440,
+					"total": 9440,
+					"credit_applied": credit,
+					"advance_tax_applied": advance_gst,
+				}
+			)
+			.insert(ignore_permissions=True)
+			.name
+		)
+
+	def test_gst_paid_with_top_ups_counts_as_settled(self):
+		self._paid(credit=8000, advance_gst=1440)
+		self.assertEqual(self._mine(invariants.check_paid_invoice_is_covered(), "I5"), [])
+
+	def test_a_shortfall_is_still_caught(self):
+		self._paid(credit=8000, advance_gst=0)
+		self.assertEqual(len(self._mine(invariants.check_paid_invoice_is_covered(), "I5")), 1)
+
+
 class TestAuditRunner(InvariantTestBase):
 	def test_every_registered_check_runs_and_returns_a_list(self):
 		for key, (title, fn) in invariants.CHECKS.items():

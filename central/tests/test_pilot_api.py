@@ -2,15 +2,22 @@
 # See license.txt
 
 import random
+from unittest.mock import patch
 
 import frappe
 import jwt
 from frappe.tests import IntegrationTestCase
 from frappe.utils import add_to_date, now_datetime, set_request
 
-from central.api.pilot import datum_token, heartbeat, storage_regions
-from central.central.doctype.central_sso_settings.central_sso_settings import CentralSSOSettings
+from central.api.pilot import (
+	datum_token,
+	get_team_identity_token,
+	heartbeat,
+	storage_regions,
+)
+from central.central.doctype.central_sso_settings.central_sso_settings import ALGORITHM, CentralSSOSettings
 from central.infrastructure.doctype.pilot_credential.pilot_credential import PilotCredential
+from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
 from central.sso import DATUM_SCOPE
 from central.tests.test_iam import ensure_user
 from central.tests.utils import ensure_atlas_instance
@@ -215,3 +222,75 @@ class TestPilotAPI(IntegrationTestCase):
 	def test_storage_regions_needs_a_pilot_credential(self):
 		with self.assertRaises(frappe.AuthenticationError):
 			self.call_storage_regions(None)
+
+	def call_get_team_identity_token(self, token: str | None, audience: str) -> dict:
+		headers = {"X-Pilot-Token": token} if token is not None else {}
+		set_request(
+			method="POST", path="/api/method/central.api.pilot.get_team_identity_token", headers=headers
+		)
+		return get_team_identity_token(audience)
+
+	def test_identity_token_names_the_team_for_the_service(self):
+		result = self.call_get_team_identity_token(self.token, "https://relay.example.test")
+
+		public_key = CentralSSOSettings.instance().get_public_key("pilot")
+		claims = jwt.decode(
+			result["token"], public_key, algorithms=[ALGORITHM], audience="https://relay.example.test"
+		)
+		self.assertEqual(claims["sub"], self.team)
+		self.assertEqual(claims["team_name"], "Bench API Team")
+		self.assertEqual(claims["scope"], "team-identity")
+
+	def test_identity_token_lists_the_active_hostnames_of_the_pilots_server(self):
+		self.enterContext(patch.object(VirtualMachine, "ensure_subscription_enabled"))
+		frappe.db.set_single_value("Central Settings", "wildcard_domain", "example.test")
+		zone = "identity.example.test"
+		region = ensure_atlas_instance("test-identity-hosts", proxy_domain=zone)
+		server, other_server = (
+			frappe.get_doc(
+				{
+					"doctype": "Virtual Machine",
+					"resource_id": resource_id,
+					"team": self.team,
+					"region": region,
+				}
+			).insert()
+			for resource_id in ("server-identity", "server-identity-other")
+		)
+		site = frappe.get_doc(
+			{"doctype": "Site", "site_name": f"chat.{zone}", "team": self.team, "server": server.name}
+		).insert(ignore_permissions=True)
+		for domain, machine, status in (
+			("chat.example.com", server, "Active"),
+			("old.example.com", server, "Failed"),
+			("other.example.com", other_server, "Active"),
+		):
+			route = frappe.get_doc(
+				{
+					"doctype": "Site Domain",
+					"domain": domain,
+					"team": self.team,
+					"region": region,
+					"server": machine.name,
+				}
+			).insert(ignore_permissions=True)
+			route.db_set("status", status)
+		token = PilotCredential.mint(
+			team=self.team, pilot_credential_id="api-pilot-hosts", server=server.name
+		)
+
+		result = self.call_get_team_identity_token(token, "https://relay.example.test")
+
+		public_key = CentralSSOSettings.instance().get_public_key("pilot")
+		claims = jwt.decode(
+			result["token"], public_key, algorithms=[ALGORITHM], audience="https://relay.example.test"
+		)
+		self.assertEqual(claims["hosts"], sorted([site.name, "chat.example.com"]))
+
+	def test_identity_token_audience_must_be_a_url(self):
+		with self.assertRaises(frappe.ValidationError):
+			self.call_get_team_identity_token(self.token, "api-pilot-1")
+
+	def test_identity_token_needs_a_pilot_credential(self):
+		with self.assertRaises(frappe.AuthenticationError):
+			self.call_get_team_identity_token(None, "https://relay.example.test")

@@ -16,7 +16,8 @@
   "invited_by",
   "expires_on",
   "accepted_by",
-  "accepted_at"
+  "accepted_at",
+  "token"
  ],
  "fields": [
   {
@@ -105,10 +106,18 @@
    "fieldtype": "Datetime",
    "label": "Accepted At",
    "read_only": 1
+  },
+  {
+   "fieldname": "token",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Token",
+   "no_copy": 1,
+   "read_only": 1
   }
  ],
  "links": [],
- "modified": "2026-06-09 00:00:00.000000",
+ "modified": "2026-10-02 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Identity",
  "name": "Team Invitation",

@@ -2,6 +2,7 @@
 import { Badge } from 'frappe-ui'
 import SubscriptionRowActions from '@/components/billing/SubscriptionRowActions.vue'
 import { money } from '@/lib/format'
+import { subscriptionTitle } from '@/lib/subscriptions'
 import type {
 	PayingForItem,
 	ServiceRow,
@@ -26,12 +27,9 @@ defineEmits<{
 
 type BadgeTheme = 'gray' | 'red' | 'blue' | 'green' | 'amber' | 'violet'
 
-function serverTitle(sub: SubscriptionRow): string {
-	return sub.server || sub.plan_title || sub.name
-}
 function serverSubtitle(sub: SubscriptionRow): string {
 	const parts: string[] = []
-	if (sub.plan_title && sub.plan_title !== serverTitle(sub))
+	if (sub.plan_title && sub.plan_title !== subscriptionTitle(sub))
 		parts.push(sub.plan_title)
 	if (sub.region) parts.push(sub.region)
 	return parts.join(' · ') || sub.billing_cycle || 'Monthly'
@@ -108,7 +106,7 @@ function overAllowance(s: ServiceRow): boolean {
 						class="truncate text-base-medium text-ink-gray-9"
 						:class="row.sub.gateway_url ? 'transition-colors group-hover:text-ink-gray-7' : ''"
 					>
-						{{ serverTitle(row.sub) }}
+						{{ subscriptionTitle(row.sub) }}
 					</span>
 					<Badge
 						v-if="statusInfo(row.sub)"
