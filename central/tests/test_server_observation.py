@@ -89,6 +89,17 @@ class TestServerObservation(IntegrationTestCase):
 		self.assertEqual(self.server.public_ipv4, "203.0.113.10")
 		self.assertEqual(self.server.public_ipv6, "2001:db8:5::7")
 
+	def test_only_a_changed_report_keeps_a_version(self):
+		"""Every report moves the observation clock, so an unchanged report must not fill the timeline."""
+		save = self.enterContext(
+			patch.object(VirtualMachine, "save", autospec=True, side_effect=VirtualMachine.save)
+		)
+
+		observe_server(self.server)
+		observe_server(self.server)
+
+		self.assertEqual([call.kwargs["ignore_version"] for call in save.call_args_list], [False, True])
+
 	def test_gateway_waits_for_an_enrolled_pilot(self):
 		self.assertEqual(observe_server(self.server), "Running")
 		self.assertIsNone(self.server.reload().gateway_url)

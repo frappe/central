@@ -203,7 +203,8 @@ class VirtualMachine(Document):
 		doc.state_observed_at = observed_at
 		if reported_at is not None:
 			doc.last_reported_at = reported_at
-		doc.save(ignore_permissions=True)
+		# Every report moves the observation clock, so keep a Version only for a real change.
+		doc.save(ignore_permissions=True, ignore_version=not changed)
 		if changed:
 			doc.publish_state_change()
 		return True
