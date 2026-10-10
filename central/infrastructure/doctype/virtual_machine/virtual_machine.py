@@ -292,8 +292,14 @@ class VirtualMachine(Document):
 		if len(title) > MAXIMUM_TITLE_LENGTH:
 			frappe.throw(_("Use a server name of at most {0} characters.").format(MAXIMUM_TITLE_LENGTH))
 
-		self.db_set("title", title)
-		return title
+		# The dashboard shows the name in places that render HTML, so markup is refused.
+		if "<" in title or ">" in title:
+			frappe.throw(_("A server name cannot contain < or >."))
+
+		self.title = title
+		# Customers cannot write a Virtual Machine; the rename route checks server:resize.
+		self.save(ignore_permissions=True, ignore_version=False)
+		return self.title
 
 	def record_admin_domain_failure(self, reason: str, title: str, diagnostic: str) -> None:
 		"""Keep the admin-hostname failure beside the server a Desk operator opens."""

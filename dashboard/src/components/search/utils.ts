@@ -1,9 +1,24 @@
 import type { SearchGroups } from './index'
 
+const HTML_ENTITIES: Record<string, string> = {
+	'&': '&amp;',
+	'<': '&lt;',
+	'>': '&gt;',
+	'"': '&quot;',
+	"'": '&#39;',
+}
+
+const escapeHtml = (text: string): string =>
+	text.replace(/[&<>"']/g, (character) => HTML_ENTITIES[character])
+
+/** HTML for a result label with the query in <mark>. Names are user data, so the
+ *  text and the query are escaped before the markup is added. */
 export const highlightMatch = (text: string, query: string): string => {
-	if (!query) return text
-	const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-	return text.replace(new RegExp(`(${escaped})`, 'gi'), '<mark>$1</mark>')
+	const safeText = escapeHtml(text)
+	if (!query) return safeText
+
+	const pattern = escapeHtml(query).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+	return safeText.replace(new RegExp(`(${pattern})`, 'gi'), '<mark>$1</mark>')
 }
 
 export const filterIndex = (

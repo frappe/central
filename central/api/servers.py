@@ -473,7 +473,7 @@ def resize_server(
 @require_capability("server:resize", "You can't rename this server.", server="resource_id")
 def rename_server(team: str | None = None, resource_id: str | None = None, title: str | None = None) -> dict:
 	"""Rename one server. Gated on `server:resize`, the capability to change a server."""
-	server = frappe.get_doc("Virtual Machine", {"team": team, "resource_id": resource_id})
+	server = frappe.get_doc("Virtual Machine", {"team": team, "resource_id": resource_id}, for_update=True)
 	return {"title": server.rename(title)}
 
 
