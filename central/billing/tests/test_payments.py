@@ -16,6 +16,11 @@ TEAM = "team-cards"
 GATEWAY = "Stripe"
 
 
+def saved_card(method_id, customer_id="cus_created", mandate_id=None):
+	"""What the gateway reports our SetupIntent saved."""
+	return {"method_id": method_id, "customer_id": customer_id, "mandate_id": mandate_id}
+
+
 @contextmanager
 def stub_adapter(validate=True):
 	"""Resolve a mock GatewayAdapter (no SDK touched)."""
@@ -26,6 +31,7 @@ def stub_adapter(validate=True):
 	}
 	adapter.validate_payment_method.return_value = validate
 	adapter.create_customer.return_value = "cus_created"
+	adapter.setup_outcome.return_value = saved_card("pm_live")
 	with patch("central.billing.gateways.registry.get_adapter", return_value=adapter):
 		yield adapter
 
@@ -39,11 +45,13 @@ class CardTestBase(IntegrationTestCase):
 		frappe.db.delete("Gateway Customer", {"team": TEAM})
 
 	def add_active_card(self, label="Visa ····4242", expiry_month=12, expiry_year=2030):
-		with stub_adapter(validate=True):
+		method_id = f"pm_{frappe.generate_hash(6)}"
+		with stub_adapter(validate=True) as adapter:
+			adapter.setup_outcome.return_value = saved_card(method_id)
 			setup = payments.initiate_payment_method_setup(TEAM, GATEWAY)
 			payments.confirm_payment_method(
 				setup["payment_method"],
-				gateway_method_id=f"pm_{frappe.generate_hash(6)}",
+				gateway_method_id=method_id,
 				display_label=label,
 				expiry_month=expiry_month,
 				expiry_year=expiry_year,
@@ -76,9 +84,41 @@ class TestSetupAndConfirm(CardTestBase):
 	def test_failed_microcharge_leaves_method_failed(self):
 		with stub_adapter(validate=False):
 			setup = payments.initiate_payment_method_setup(TEAM, GATEWAY)
-			method = payments.confirm_payment_method(setup["payment_method"], gateway_method_id="pm_bad")
+			method = payments.confirm_payment_method(setup["payment_method"], gateway_method_id="pm_live")
 		self.assertEqual(method.status, "Failed")
 		self.assertFalse(method.is_default)
+
+
+class TestOnlyOurOwnSetupsAreSaved(CardTestBase):
+	"""Another system shares the Stripe account. A card it saved must never become
+	one of ours, whatever id the browser sends."""
+
+	def _confirm(self, outcome, claimed="pm_live"):
+		with stub_adapter() as adapter:
+			adapter.setup_outcome.return_value = outcome
+			setup = payments.initiate_payment_method_setup(TEAM, GATEWAY)
+			with self.assertRaises(frappe.ValidationError):
+				payments.confirm_payment_method(setup["payment_method"], gateway_method_id=claimed)
+		adapter.validate_payment_method.assert_not_called()
+		return frappe.get_doc("Payment Method", setup["payment_method"])
+
+	def test_a_card_our_setup_did_not_save_is_refused(self):
+		method = self._confirm(saved_card("pm_live"), claimed="pm_from_other_system")
+		self.assertFalse(method.gateway_method_id)
+		self.assertNotEqual(method.status, "Active")
+
+	def test_a_setup_for_another_customer_is_refused(self):
+		self._confirm(saved_card("pm_live", customer_id="cus_other_system"))
+
+	def test_an_unfinished_setup_is_refused(self):
+		self._confirm({})
+
+	def test_the_card_comes_from_the_gateway_not_the_browser(self):
+		with stub_adapter():
+			setup = payments.initiate_payment_method_setup(TEAM, GATEWAY)
+			method = payments.confirm_payment_method(setup["payment_method"])
+		self.assertEqual(method.gateway_method_id, "pm_live")
+		self.assertEqual(method.status, "Active")
 
 
 class TestDefaultAndDelete(CardTestBase):
@@ -99,7 +139,7 @@ class TestDefaultAndDelete(CardTestBase):
 	def test_non_active_method_cannot_be_default(self):
 		with stub_adapter(validate=False):
 			setup = payments.initiate_payment_method_setup(TEAM, GATEWAY)
-			payments.confirm_payment_method(setup["payment_method"], gateway_method_id="pm_bad")
+			payments.confirm_payment_method(setup["payment_method"], gateway_method_id="pm_live")
 		with self.assertRaises(frappe.ValidationError):
 			payments.set_default_payment_method(setup["payment_method"])
 
@@ -160,14 +200,15 @@ class TestStripeTestModeIntegration(CardTestBase):
 
 		# Confirm: the micro-charge succeeds and is auto-refunded -> active.
 		with (
+			patch.object(stripe.SetupIntent, "retrieve") as setup_retrieve,
 			patch.object(stripe.PaymentIntent, "create") as pi_create,
 			patch.object(stripe.Refund, "create") as refund_create,
 		):
+			setup_retrieve.return_value = {"status": "succeeded", "payment_method": "pm_card", "customer": "cus_1"}
 			pi_create.return_value = {"id": "pi_micro", "status": "succeeded"}
 			method = payments.confirm_payment_method(
 				setup["payment_method"],
 				gateway_method_id="pm_card",
-				gateway_customer_id="cus_1",
 				display_label="Visa ····4242",
 			)
 
@@ -204,13 +245,10 @@ class TestIndianCardMandateSetup(CardTestBase):
 		self.assertEqual(adapter.setup_payment_method.call_args.args[1]["max_amount"], 6000.0)
 
 	def test_the_mandate_reference_is_stored_on_confirm(self):
-		with stub_adapter(validate=True):
+		with stub_adapter(validate=True) as adapter:
+			adapter.setup_outcome.return_value = saved_card("pm_india", mandate_id="mandate_india")
 			setup = payments.initiate_payment_method_setup(TEAM, GATEWAY)
-			method = payments.confirm_payment_method(
-				setup["payment_method"],
-				gateway_method_id="pm_india",
-				gateway_mandate_id="mandate_india",
-			)
+			method = payments.confirm_payment_method(setup["payment_method"], gateway_method_id="pm_india")
 		self.assertEqual(method.gateway_mandate_id, "mandate_india")
 		self.assertEqual(method.mandate_max_amount, 15000.0)
 		self.assertEqual(method.mandate_currency, "INR")

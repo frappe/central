@@ -455,6 +455,24 @@ class StripeAdapter(GatewayAdapter):
 			"exp_year": card.get("exp_year"),
 		}
 
+	def setup_outcome(self, setup_reference: str, payment_id: str | None = None) -> dict:
+		"""Read the card from our SetupIntent, or from the one our setup Checkout opened."""
+		self._configure()
+		intent_id = setup_reference
+		if setup_reference.startswith("cs_"):
+			intent_id = _to_dict(stripe.checkout.Session.retrieve(setup_reference)).get("setup_intent")
+		if not intent_id:
+			return {}
+
+		intent = _to_dict(stripe.SetupIntent.retrieve(intent_id))
+		if intent.get("status") != "succeeded" or not intent.get("payment_method"):
+			return {}
+		return {
+			"method_id": intent.get("payment_method"),
+			"customer_id": intent.get("customer"),
+			"mandate_id": intent.get("mandate"),
+		}
+
 	def create_customer(self, team) -> str:
 		self._configure()
 		# Team.owner_user is a Link to User, whose name IS the email address.

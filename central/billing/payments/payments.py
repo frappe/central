@@ -166,14 +166,32 @@ def _discard_abandoned_setups(team: str, gateway: str):
 		frappe.delete_doc("Payment Method", name, ignore_permissions=True, force=True)
 
 
+def saved_by_our_setup(method, adapter, claimed_method_id=None, payment_id=None) -> dict:
+	"""The gateway method our own setup saved for this row.
+
+	The gateway account is shared with other systems, so a method id the browser
+	sends is only a claim. Only what our setup produced, for our customer, is used.
+	"""
+	outcome = {}
+	if method.setup_reference:
+		outcome = adapter.setup_outcome(method.setup_reference, payment_id=payment_id)
+	if (
+		not outcome
+		or outcome.get("customer_id") != method.gateway_customer_id
+		or (claimed_method_id and claimed_method_id != outcome.get("method_id"))
+	):
+		frappe.throw(
+			_("This payment method was not set up here. Please add it again."), frappe.ValidationError
+		)
+	return outcome
+
+
 def confirm_payment_method(
 	payment_method: str,
-	gateway_method_id: str,
+	gateway_method_id: str | None = None,
 	display_label: str | None = None,
 	expiry_month: int | None = None,
 	expiry_year: int | None = None,
-	gateway_customer_id: str | None = None,
-	gateway_mandate_id: str | None = None,
 	card_network: str | None = None,
 ) -> dict:
 	"""Confirm a card the customer authorised on the frontend.
@@ -184,11 +202,10 @@ def confirm_payment_method(
 	team becomes its default.
 	"""
 	method = frappe.get_doc("Payment Method", payment_method)
-	method.gateway_method_id = gateway_method_id
-	if gateway_customer_id:
-		method.gateway_customer_id = gateway_customer_id
-	if gateway_mandate_id:
-		method.gateway_mandate_id = gateway_mandate_id
+	outcome = saved_by_our_setup(method, _adapter(method.gateway), claimed_method_id=gateway_method_id)
+	method.gateway_method_id = outcome["method_id"]
+	if outcome.get("mandate_id"):
+		method.gateway_mandate_id = outcome["mandate_id"]
 	if card_network:
 		# What the gateway reported the card to be. We never read the number ourselves.
 		method.card_network = card_network.title()

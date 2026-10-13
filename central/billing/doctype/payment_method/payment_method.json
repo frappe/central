@@ -127,7 +127,7 @@
    "fieldname": "setup_reference",
    "fieldtype": "Data",
    "label": "Setup Reference",
-   "description": "Gateway setup handle (Stripe SetupIntent id) captured at initiation, for reconcile"
+   "description": "The setup we started at the gateway (Stripe SetupIntent or Checkout session, Razorpay order). Only a method saved by this setup can be confirmed."
   },
   {
    "fieldname": "display_label",
@@ -191,7 +191,7 @@
    "link_fieldname": "default_payment_method"
   }
  ],
- "modified": "2026-06-03 00:00:00.000000",
+ "modified": "2026-10-13 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Payment Method",

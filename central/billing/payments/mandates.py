@@ -201,6 +201,7 @@ def setup_mandate(team: str, gateway: str, customer_id: str | None = None, is_de
 			"mandate_max_amount": cap,
 			"mandate_currency": "INR",
 			"gateway_customer_id": customer_id,
+			"setup_reference": handles.get("order_id"),
 			"is_default": is_default,
 		}
 	).insert(ignore_permissions=True)
@@ -240,6 +241,7 @@ def setup_card(
 			"mandate_currency": "INR",
 			"gateway_customer_id": customer_id,
 			"fallback_reason": fallback_reason,
+			"setup_reference": handles.get("order_id"),
 			"card_network": "RuPay" if fallback_reason == "Rupay" else None,
 		}
 	).insert(ignore_permissions=True)
@@ -265,7 +267,15 @@ def confirm_mandate(payment_method: str, callback: dict):
 		method.save(ignore_permissions=True)
 		frappe.throw(_("Mandate authorisation signature invalid"), frappe.ValidationError)
 
-	method.gateway_method_id = callback.get("razorpay_token_id") or callback.get("token_id")
+	from central.billing.payments import payments
+
+	outcome = payments.saved_by_our_setup(
+		method,
+		adapter,
+		claimed_method_id=callback.get("razorpay_token_id") or callback.get("token_id"),
+		payment_id=callback.get("razorpay_payment_id"),
+	)
+	method.gateway_method_id = outcome["method_id"]
 	transition(method, "Active", actor=frappe.session.user)
 	method.validated_at = frappe.utils.now_datetime()
 	method.reauth_required = 0
@@ -275,8 +285,6 @@ def confirm_mandate(payment_method: str, callback: dict):
 	# (the fallback list, #28), so only retire siblings for UPI mandates.
 	if method.method_type == MANDATE_METHOD:
 		_retire_superseded_mandates(method)
-
-	from central.billing.payments import payments
 
 	payments.densify_priorities(method.team)  # slot the new method into the fallback order
 	method.reload()

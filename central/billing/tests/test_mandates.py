@@ -39,6 +39,7 @@ def stub_adapter(signature_ok=True):
 		"key_id": "rzp_test_key",
 	}
 	adapter.verify_payment_signature.return_value = signature_ok
+	adapter.setup_outcome.return_value = {"method_id": "token_live", "customer_id": "cust_x"}
 	adapter.cancel_mandate.return_value = True
 	adapter.create_customer.return_value = "cust_created"
 	with patch("central.billing.gateways.registry.get_adapter", return_value=adapter):
@@ -94,6 +95,58 @@ class TestMandateSetup(MandateTestBase):
 		self.assertEqual(method.status, "Failed")
 
 
+class TestOnlyOurOwnMandatesAreSaved(MandateTestBase):
+	"""Another system shares the Razorpay account, its signing key, and often the
+	customer. A token it authorised must never become one of ours."""
+
+	def _setup(self):
+		with stub_adapter():
+			return mandates.setup_mandate(TEAM, GATEWAY, customer_id="cust_x")
+
+	def _callback(self, order_id="order_mandate", token_id="token_live"):
+		return {
+			"razorpay_order_id": order_id,
+			"razorpay_payment_id": "pay_1",
+			"razorpay_signature": "s",
+			"razorpay_token_id": token_id,
+		}
+
+	def _real_adapter(self, payment):
+		from central.billing.gateways.razorpay_adapter import RazorpayAdapter
+
+		client = MagicMock()
+		client.payment.fetch.return_value = payment
+		return patch.object(RazorpayAdapter, "_client", return_value=client)
+
+	def test_the_setup_order_is_recorded(self):
+		result = self._setup()
+		self.assertEqual(
+			frappe.db.get_value("Payment Method", result["payment_method"], "setup_reference"),
+			"order_mandate",
+		)
+
+	def test_a_token_from_another_order_is_refused(self):
+		result = self._setup()
+		payment = {"order_id": "order_other_system", "token_id": "token_other", "customer_id": "cust_x"}
+		with self._real_adapter(payment), self.assertRaises(frappe.ValidationError):
+			mandates.confirm_mandate(result["payment_method"], self._callback("order_other_system", "token_other"))
+		self.assertFalse(frappe.db.get_value("Payment Method", result["payment_method"], "gateway_method_id"))
+
+	def test_a_token_the_browser_swapped_in_is_refused(self):
+		result = self._setup()
+		payment = {"order_id": "order_mandate", "token_id": "token_live", "customer_id": "cust_x"}
+		with self._real_adapter(payment), self.assertRaises(frappe.ValidationError):
+			mandates.confirm_mandate(result["payment_method"], self._callback(token_id="token_other_system"))
+
+	def test_the_token_comes_from_our_order(self):
+		result = self._setup()
+		payment = {"order_id": "order_mandate", "token_id": "token_live", "customer_id": "cust_x"}
+		with self._real_adapter(payment):
+			method = mandates.confirm_mandate(result["payment_method"], self._callback())
+		self.assertEqual(method.status, "Active")
+		self.assertEqual(method.gateway_method_id, "token_live")
+
+
 class TestMandateReauthorisation(MandateTestBase):
 	def _active_mandate(self):
 		with stub_adapter(signature_ok=True):
@@ -119,7 +172,8 @@ class TestMandateReauthorisation(MandateTestBase):
 		pm = self._active_mandate()
 		recompute_trust_tier(TEAM, paid_invoice_count=3, cumulative_paid=300)  # cap 300
 
-		with stub_adapter(signature_ok=True):
+		with stub_adapter(signature_ok=True) as adapter:
+			adapter.setup_outcome.return_value = {"method_id": "token_new", "customer_id": "cust_x"}
 			reauth = mandates.reauthorise_mandate(pm)
 			# New mandate order is requested at the raised cap.
 			new_method = frappe.get_doc("Payment Method", reauth["payment_method"])

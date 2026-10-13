@@ -124,13 +124,9 @@ def confirm_card(
 	display_label: str | None = None,
 	expiry_month: int | None = None,
 	expiry_year: int | None = None,
-	gateway_mandate_id: str | None = None,
 	card_network: str | None = None,
 ) -> dict:
-	"""Confirm a card the gateway SDK tokenised — runs the micro-charge validation.
-
-	`gateway_mandate_id` is present where the currency required a mandate at setup
-	(India); later off-session debits quote it."""
+	"""Confirm a card the gateway SDK tokenised — runs the micro-charge validation."""
 	from central.billing.payments import payments
 
 	team = frappe.db.get_value("Payment Method", payment_method, "team")
@@ -141,7 +137,6 @@ def confirm_card(
 		display_label=display_label,
 		expiry_month=expiry_month,
 		expiry_year=expiry_year,
-		gateway_mandate_id=gateway_mandate_id,
 		card_network=card_network,
 	)
 	return {"payment_method": method.name, "status": method.status}

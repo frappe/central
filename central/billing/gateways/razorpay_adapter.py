@@ -326,6 +326,15 @@ class RazorpayAdapter(GatewayAdapter):
 		if fields:
 			self._client().customer.edit(customer_id, fields)
 
+	def setup_outcome(self, setup_reference: str, payment_id: str | None = None) -> dict:
+		"""Read the token from the payment that authorised our mandate order."""
+		if not payment_id:
+			return {}
+		payment = self._client().payment.fetch(payment_id)
+		if payment.get("order_id") != setup_reference or not payment.get("token_id"):
+			return {}
+		return {"method_id": payment.get("token_id"), "customer_id": payment.get("customer_id")}
+
 	def verify_payment_signature(self, data: dict) -> bool:
 		"""Verify a Razorpay Checkout callback (payment_id + order_id + signature).
 

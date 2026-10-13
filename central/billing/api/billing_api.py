@@ -443,13 +443,13 @@ def reconcile_payment_setup() -> dict:
 				"method_type": "Card",
 				"status": "Pending Validation",
 				"gateway_method_id": ["in", [None, ""]],
+				# Only hosted Checkout setups are read back here.
+				"setup_reference": ["like", "cs_%"],
 			},
 			fields=["name", "gateway", "setup_reference"],
 		)
 		activated = 0
 		for row in pending:
-			if not row.setup_reference:
-				continue
 			try:
 				if _activate_setup(row.name, row.gateway, row.setup_reference).get("active"):
 					activated += 1

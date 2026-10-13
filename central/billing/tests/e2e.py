@@ -487,6 +487,7 @@ def finish_mandate(payment_method: str, order_id: str) -> dict:
 	needs the bank/UPI auth flow. Flips the Payment Method to Active."""
 	import hashlib
 	import hmac
+	from unittest.mock import patch
 
 	_enter_test_mode()
 	from central.billing.gateways.registry import get_adapter
@@ -498,15 +499,25 @@ def finish_mandate(payment_method: str, order_id: str) -> dict:
 	payment_id = f"pay_e2e{frappe.generate_hash(length=14)}"
 	signature = hmac.new(secret.encode(), f"{order_id}|{payment_id}".encode(), hashlib.sha256).hexdigest()
 
-	confirmed = mandates.confirm_mandate(
-		payment_method,
-		{
-			"razorpay_order_id": order_id,
-			"razorpay_payment_id": payment_id,
-			"razorpay_signature": signature,
-			"razorpay_token_id": f"token_e2e{frappe.generate_hash(12)}",
-		},
-	)
+	token_id = f"token_e2e{frappe.generate_hash(12)}"
+
+	def setup_outcome(setup_reference, payment_id=None):
+		# The payment and token are synthetic too, so answer for the gateway — but
+		# only for the order we really created.
+		if setup_reference != order_id:
+			return {}
+		return {"method_id": token_id, "customer_id": method.gateway_customer_id}
+
+	with patch.object(type(adapter), "setup_outcome", side_effect=setup_outcome):
+		confirmed = mandates.confirm_mandate(
+			payment_method,
+			{
+				"razorpay_order_id": order_id,
+				"razorpay_payment_id": payment_id,
+				"razorpay_signature": signature,
+				"razorpay_token_id": token_id,
+			},
+		)
 	frappe.db.commit()
 	return {
 		"payment_method": confirmed.name,

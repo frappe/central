@@ -222,6 +222,14 @@ class GatewayAdapter(ABC):
 	def update_customer(self, customer_id: str, info: dict) -> None:
 		raise GatewayUnsupported(f"{type(self).__name__} does not support update_customer")
 
+	def setup_outcome(self, setup_reference: str, payment_id: str | None = None) -> dict:
+		"""The method a finished setup saved, read from the gateway.
+
+		Returns `method_id`, `customer_id` and `mandate_id` (when there is one), or
+		`{}` while the setup is not complete.
+		"""
+		raise GatewayUnsupported(f"{type(self).__name__} does not support setup_outcome")
+
 	def verify_payment_signature(self, data: dict) -> bool:
 		"""Verify a client-side checkout callback signature (distinct from the
 		webhook signature). Razorpay only; Stripe confirms via intent status."""
