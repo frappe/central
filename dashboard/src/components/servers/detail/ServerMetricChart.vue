@@ -51,13 +51,13 @@ const grid = {
 		:card="false"
 		role="group"
 		:aria-label="chart.title"
-		class="server-metric-chart flex flex-col gap-4 rounded-6 border border-outline-gray-2 p-4"
+		class="server-metric-chart flex flex-col gap-3 rounded-6 border border-outline-gray-2 p-3"
 	>
-		<header class="space-y-3">
+		<header class="flex flex-wrap items-start justify-between gap-2">
 			<h3 class="text-base-medium text-ink-gray-8">{{ chart.title }}</h3>
 			<dl
 				v-if="chart.series.length > 1"
-				class="grid grid-cols-2 gap-x-4 gap-y-3"
+				class="grid min-w-64 flex-1 grid-cols-2 gap-x-4 gap-y-3"
 			>
 				<div
 					v-for="summary in summaries"
@@ -108,7 +108,7 @@ const grid = {
 			</dl>
 			<p v-else class="text-sm text-ink-gray-5">{{ getChartSummary(chart) }}</p>
 		</header>
-		<div class="h-44 min-w-0">
+		<div class="server-metric-plot h-44 min-w-0">
 			<AreaChart
 				v-model:hidden-series="hiddenSeries"
 				:echart-options="{ animation: false }"
@@ -138,6 +138,13 @@ const grid = {
 </template>
 
 <style scoped>
+/* Reserve space for the header and usage cards while keeping plots readable. */
+@media (min-width: 1024px) {
+	.server-metric-plot {
+		height: clamp(7rem, calc((100dvh - 34rem) / 2), 11rem);
+	}
+}
+
 /* The summary labels own the series controls, so the plot needs no second legend. */
 .server-metric-chart :deep([data-slot="chart-legend"]) {
 	display: none;

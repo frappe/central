@@ -195,7 +195,7 @@ const usage = computed(() => {
 		</div>
 	</div>
 
-	<div v-else-if="monitoring.available" class="space-y-4">
+	<div v-else-if="monitoring.available" class="space-y-3">
 		<div
 			v-if="usage.length"
 			class="grid gap-3 md:grid-cols-2 md:gap-4 lg:grid-cols-4"
@@ -242,7 +242,7 @@ const usage = computed(() => {
 			/>
 		</div>
 
-		<div v-if="charts.length" class="grid gap-3 md:grid-cols-2 md:gap-4">
+		<div v-if="charts.length" class="grid gap-3 md:grid-cols-2">
 			<ServerMetricChart
 				v-for="chart in charts"
 				:key="chart.key"

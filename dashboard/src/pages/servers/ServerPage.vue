@@ -245,7 +245,7 @@ watch(
 
 <template>
 	<div class="h-full overflow-y-auto" style="scrollbar-gutter: stable">
-		<div class="mx-auto w-full max-w-5xl p-3 md:p-4 xl:pt-8">
+		<div class="mx-auto w-full max-w-5xl p-3 md:p-4">
 			<div v-if="!loaded && !fleetError" class="space-y-6" aria-busy="true">
 				<Skeleton class="h-24 rounded-6" />
 				<Skeleton class="h-7 w-96 max-w-full rounded-4" />
@@ -275,6 +275,7 @@ watch(
 
 			<template v-else>
 				<Header
+					class="md:py-2"
 					:server="server"
 					:details="details?.server ?? null"
 					:actions="actions"
@@ -345,7 +346,7 @@ watch(
 					:metrics="metrics"
 					:metrics-error="metricsError"
 					@refresh="reloadMetrics"
-					class="mt-6"
+					class="mt-4"
 				/>
 
 				<NetworkingTab
