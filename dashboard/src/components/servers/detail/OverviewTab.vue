@@ -186,8 +186,14 @@ const usage = computed(() => {
 		class="space-y-3 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col lg:gap-3 lg:space-y-0"
 		aria-busy="true"
 	>
-		<div class="grid shrink-0 gap-3 md:grid-cols-2 md:gap-4 lg:grid-cols-4">
-			<Skeleton v-for="index in 4" :key="index" class="h-28 rounded-6" />
+		<div
+			class="server-usage-grid grid shrink-0 gap-3 md:grid-cols-2 md:gap-4 lg:grid-cols-4"
+		>
+			<Skeleton
+				v-for="index in 4"
+				:key="index"
+				class="server-usage-placeholder h-28 rounded-6"
+			/>
 		</div>
 
 		<div class="flex h-7 shrink-0 items-center">
@@ -209,9 +215,14 @@ const usage = computed(() => {
 	>
 		<div
 			v-if="usage.length"
-			class="grid shrink-0 gap-3 md:grid-cols-2 md:gap-4 lg:grid-cols-4"
+			class="server-usage-grid grid shrink-0 gap-3 md:grid-cols-2 md:gap-4 lg:grid-cols-4"
 		>
-			<UsageCard v-for="meter in usage" :key="meter.label" v-bind="meter" />
+			<UsageCard
+				v-for="meter in usage"
+				:key="meter.label"
+				v-bind="meter"
+				class="server-usage-card"
+			/>
 		</div>
 
 		<div class="flex shrink-0 flex-wrap items-center gap-2">
@@ -280,3 +291,15 @@ const usage = computed(() => {
 		description="Charts appear while the server runs. The region samples it every 5 minutes."
 	/>
 </template>
+
+<style scoped>
+@media (min-width: 1024px) and (max-height: 740px) {
+	.server-usage-grid :deep(.server-usage-card) {
+		@apply space-y-1 p-2;
+	}
+
+	.server-usage-placeholder {
+		@apply h-16;
+	}
+}
+</style>

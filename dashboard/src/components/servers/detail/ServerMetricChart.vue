@@ -52,13 +52,14 @@ const grid = {
 		<header class="shrink-0 space-y-2">
 			<h3 class="text-base-medium text-ink-gray-8">{{ chart.title }}</h3>
 			<dl
-				class="grid gap-x-0 gap-y-3 xl:gap-x-4"
+				class="server-metric-summaries grid gap-x-0 gap-y-3 xl:gap-x-4"
 				:class="chart.series.length > 1 ? 'grid-cols-2' : 'grid-cols-1'"
 			>
 				<div
 					v-for="summary in summaries"
 					:key="summary.name"
 					class="min-w-0 space-y-1"
+					:class="{ 'server-rate-summary': chart.series.length > 1 }"
 				>
 					<dt :class="{ 'sr-only': chart.series.length === 1 }">
 						<Button
@@ -141,5 +142,38 @@ const grid = {
 /* The summary labels own the series controls, so the plot needs no second legend. */
 .server-metric-chart :deep([data-slot="chart-legend"]) {
 	display: none;
+}
+
+@media (min-width: 1024px) and (max-height: 740px) {
+	.server-metric-chart {
+		@apply grid p-2;
+		grid-template-columns: 9rem minmax(0, 1fr);
+	}
+
+	.server-metric-chart > header {
+		@apply space-y-1;
+	}
+
+	.server-metric-summaries {
+		@apply grid-cols-1 gap-y-1;
+	}
+
+	.server-rate-summary {
+		@apply grid space-y-0;
+		grid-template-columns: auto 1fr;
+	}
+
+	.server-rate-summary dd {
+		display: contents;
+	}
+
+	.server-rate-summary dd > bdi {
+		justify-self: end;
+		align-self: center;
+	}
+
+	.server-rate-summary dd > span {
+		grid-column: 1 / -1;
+	}
 }
 </style>
