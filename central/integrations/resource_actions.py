@@ -227,6 +227,7 @@ def _create_payload(request) -> dict:
 		"disk_mib": configuration.disk_mib,
 		"hostname": configuration.hostname or "",
 		"ssh_keys": configuration.ssh_keys,
+		"user_data": configuration.user_data,
 		"firewall": firewall.get_new_server_firewall(configuration.is_firewall_enabled),
 		"sleep_after_idle_seconds": idle_shutdown_seconds(request.team),
 		"metadata": {"central_action_id": request.name},

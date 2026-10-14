@@ -20,6 +20,7 @@ def pilot_request():
 		hostname="pilot-1",
 		ssh_keys=[],
 		ssh_key_ids=[],
+		user_data="",
 		image_tags={"purpose": "pilot"},
 	)
 	return request

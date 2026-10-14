@@ -36,7 +36,14 @@ from central.infrastructure.doctype.resource_action.resource_action import (
 	ResourceAction,
 )
 from central.integrations.images import selected_image, snapshot_image, snapshot_source
-from central.server_models import DNS_LABEL, ActionStatus, CreateServerInput, ServerCreation, SiteCreation
+from central.server_models import (
+	DNS_LABEL,
+	MAXIMUM_USER_DATA_BYTES,
+	ActionStatus,
+	CreateServerInput,
+	ServerCreation,
+	SiteCreation,
+)
 from central.signups.trial import has_active_payment_method
 from central.utils.units import MIB_PER_GIB, MILLICORES_PER_VCPU
 
@@ -58,6 +65,7 @@ def submit_request(
 	has_public_ipv4: bool = False,
 	has_public_ipv6: bool = False,
 	is_firewall_enabled: bool = False,
+	user_data: str = "",
 	resource_type: str = "Server",
 	subdomain: str | None = None,
 	snapshot: str | None = None,
@@ -86,6 +94,7 @@ def submit_request(
 		has_public_ipv4=has_public_ipv4,
 		has_public_ipv6=has_public_ipv6,
 		is_firewall_enabled=is_firewall_enabled,
+		user_data=user_data,
 	)
 	if not can(frappe.session.user, server_input.team, "server:create"):
 		frappe.throw(
@@ -278,6 +287,7 @@ def _build_server_configuration(
 		has_public_ipv4=server_input.has_public_ipv4,
 		has_public_ipv6=server_input.has_public_ipv6,
 		is_firewall_enabled=server_input.is_firewall_enabled,
+		user_data=server_input.user_data,
 		image_tags=image["tags"],
 		**image_shape(composition, image),
 	)
@@ -522,6 +532,8 @@ def validate_guest_input(server_input: CreateServerInput) -> None:
 		frappe.throw(_("Choose saved SSH Keys or enter public keys, not both."))
 	if server_input.hostname and not DNS_LABEL.fullmatch(server_input.hostname):
 		frappe.throw(_("Use a valid lowercase guest hostname."))
+	if len(server_input.user_data.encode()) > MAXIMUM_USER_DATA_BYTES:
+		frappe.throw(_("Keep the user data under 16 KiB."))
 
 	for key in server_input.ssh_keys:
 		try:

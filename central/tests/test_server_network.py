@@ -9,6 +9,8 @@ from central.api.servers import open_console, server_overview
 from central.errors import AtlasConnectionError, AtlasRejected, AtlasResourceGone
 from central.infrastructure.doctype.virtual_machine.firewall import SYSTEM_INBOUND_RULES
 from central.integrations.resource_actions import _create_payload
+from central.resource_actions import validate_guest_input
+from central.server_models import MAXIMUM_USER_DATA_BYTES, CreateServerInput
 from central.tests.test_iam import ensure_user
 from central.tests.utils import ensure_atlas_instance
 
@@ -28,6 +30,7 @@ def creation_request(purpose: str = "base", **options) -> SimpleNamespace:
 		has_public_ipv4=options.get("has_public_ipv4", False),
 		has_public_ipv6=options.get("has_public_ipv6", False),
 		is_firewall_enabled=options.get("is_firewall_enabled", False),
+		user_data=options.get("user_data", ""),
 	)
 	return SimpleNamespace(name="action-1", team="team-a", get_configuration=lambda: configuration)
 
@@ -59,6 +62,31 @@ class TestCreationNetworkPayload(TestCase):
 			firewall["outbound"], [{"protocol": "any", "ports": "", "cidrs": ["0.0.0.0/0", "::/0"]}]
 		)
 		self.assertTrue(_create_payload(creation_request(is_firewall_enabled=True))["firewall"]["enabled"])
+
+	def test_user_data_reaches_atlas(self, _idle) -> None:
+		script = "#!/bin/sh\necho ready\n"
+
+		self.assertEqual(_create_payload(creation_request())["user_data"], "")
+		self.assertEqual(_create_payload(creation_request(user_data=script))["user_data"], script)
+
+
+class TestGuestInput(TestCase):
+	def test_user_data_over_the_atlas_limit_is_refused(self) -> None:
+		def server_input(user_data: str) -> CreateServerInput:
+			return CreateServerInput(
+				team="team-a",
+				region="region-a",
+				title="Worker",
+				offering="ubuntu",
+				image_id="ubuntu-image",
+				request_key="request-key-0000001",
+				plan="plan-a",
+				user_data=user_data,
+			)
+
+		validate_guest_input(server_input("#!/bin/sh\n" + "x" * 16_000))
+		with self.assertRaises(frappe.ValidationError):
+			validate_guest_input(server_input("#!/bin/sh\n" + "x" * MAXIMUM_USER_DATA_BYTES))
 
 
 class TestServerConsole(IntegrationTestCase):
