@@ -47,20 +47,15 @@ const grid = {
 		:card="false"
 		role="group"
 		:aria-label="chart.title"
-		class="server-metric-chart flex min-h-0 flex-col gap-2 rounded-6 border border-outline-gray-2 p-3"
+		class="server-metric-chart flex min-h-0 flex-col gap-1 rounded-6 border border-outline-gray-2 p-2"
 	>
-		<header class="shrink-0 space-y-2">
-			<h3 class="text-base-medium text-ink-gray-8">{{ chart.title }}</h3>
+		<header class="shrink-0 space-y-1">
+			<h3 class="text-sm-medium text-ink-gray-8">{{ chart.title }}</h3>
 			<dl
-				class="server-metric-summaries grid gap-x-0 gap-y-3 xl:gap-x-4"
+				class="grid gap-x-0 gap-y-3 xl:gap-x-4"
 				:class="chart.series.length > 1 ? 'grid-cols-2' : 'grid-cols-1'"
 			>
-				<div
-					v-for="summary in summaries"
-					:key="summary.name"
-					class="min-w-0 space-y-1"
-					:class="{ 'server-rate-summary': chart.series.length > 1 }"
-				>
+				<div v-for="summary in summaries" :key="summary.name" class="min-w-0">
 					<dt :class="{ 'sr-only': chart.series.length === 1 }">
 						<Button
 							v-if="chart.series.length > 1"
@@ -73,7 +68,7 @@ const grid = {
 							@click="toggleSeries(summary.name)"
 						>
 							<span
-								class="flex items-center gap-1.5 text-sm-medium text-ink-gray-6"
+								class="flex items-center gap-1.5 text-xs-medium text-ink-gray-6"
 							>
 								<span
 									v-if="hiddenSeries.includes(summary.name)"
@@ -97,7 +92,7 @@ const grid = {
 					>
 						<bdi
 							dir="ltr"
-							class="whitespace-nowrap text-lg-medium text-ink-gray-8"
+							class="whitespace-nowrap text-base-medium text-ink-gray-8"
 							>{{ summary.current }}</bdi
 						>
 						<span
@@ -142,38 +137,5 @@ const grid = {
 /* The summary labels own the series controls, so the plot needs no second legend. */
 .server-metric-chart :deep([data-slot="chart-legend"]) {
 	display: none;
-}
-
-@media (min-width: 1024px) and (max-height: 740px) {
-	.server-metric-chart {
-		@apply grid p-2;
-		grid-template-columns: 9rem minmax(0, 1fr);
-	}
-
-	.server-metric-chart > header {
-		@apply space-y-1;
-	}
-
-	.server-metric-summaries {
-		@apply grid-cols-1 gap-y-1;
-	}
-
-	.server-rate-summary {
-		@apply grid space-y-0;
-		grid-template-columns: auto 1fr;
-	}
-
-	.server-rate-summary dd {
-		display: contents;
-	}
-
-	.server-rate-summary dd > bdi {
-		justify-self: end;
-		align-self: center;
-	}
-
-	.server-rate-summary dd > span {
-		grid-column: 1 / -1;
-	}
 }
 </style>
