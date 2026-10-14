@@ -102,19 +102,6 @@ export const getChartSeriesSummaries = (chart: MetricChart) =>
 		}
 	})
 
-// Summarize the first series for single-series charts such as CPU and memory.
-export const getChartSummary = (chart: MetricChart): string => {
-	const values = chart.rows
-		.map((row) => row[chart.series[0]])
-		.filter((value): value is number => typeof value === 'number')
-	if (!values.length) return ''
-
-	const now = chart.format(values[values.length - 1])
-	const peak = chart.format(Math.max(...values))
-
-	return `Now ${now} · Peak ${peak}`
-}
-
 export const formatSampleInterval = (seconds: number): string => {
 	if (seconds % 3600 === 0)
 		return seconds === 3600 ? 'hour' : `${seconds / 3600} hours`

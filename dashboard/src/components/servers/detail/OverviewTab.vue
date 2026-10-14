@@ -181,29 +181,40 @@ const usage = computed(() => {
 		</template>
 	</EmptyState>
 
-	<div v-else-if="!metrics" class="space-y-4" aria-busy="true">
-		<div class="grid gap-3 md:grid-cols-2 md:gap-4 lg:grid-cols-4">
+	<div
+		v-else-if="!metrics"
+		class="space-y-3 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col lg:gap-3 lg:space-y-0"
+		aria-busy="true"
+	>
+		<div class="grid shrink-0 gap-3 md:grid-cols-2 md:gap-4 lg:grid-cols-4">
 			<Skeleton v-for="index in 4" :key="index" class="h-28 rounded-6" />
 		</div>
 
-		<div class="flex h-7 items-center">
+		<div class="flex h-7 shrink-0 items-center">
 			<h2 class="text-lg-semibold text-ink-gray-8">Usage</h2>
 		</div>
 
-		<div class="grid gap-3 md:grid-cols-2 md:gap-4">
-			<Skeleton v-for="index in 4" :key="index" class="h-64 rounded-6" />
+		<div class="grid gap-3 md:grid-cols-2 lg:min-h-0 lg:flex-1 lg:grid-rows-2">
+			<Skeleton
+				v-for="index in 4"
+				:key="index"
+				class="h-64 rounded-6 lg:h-auto lg:min-h-0"
+			/>
 		</div>
 	</div>
 
-	<div v-else-if="monitoring.available" class="space-y-3">
+	<div
+		v-else-if="monitoring.available"
+		class="space-y-3 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col lg:gap-3 lg:space-y-0"
+	>
 		<div
 			v-if="usage.length"
-			class="grid gap-3 md:grid-cols-2 md:gap-4 lg:grid-cols-4"
+			class="grid shrink-0 gap-3 md:grid-cols-2 md:gap-4 lg:grid-cols-4"
 		>
 			<UsageCard v-for="meter in usage" :key="meter.label" v-bind="meter" />
 		</div>
 
-		<div class="flex flex-wrap items-center gap-2">
+		<div class="flex shrink-0 flex-wrap items-center gap-2">
 			<h2 class="mr-auto text-lg-semibold text-ink-gray-8">Usage</h2>
 
 			<template v-if="isCustom">
@@ -242,7 +253,10 @@ const usage = computed(() => {
 			/>
 		</div>
 
-		<div v-if="charts.length" class="grid gap-3 md:grid-cols-2">
+		<div
+			v-if="charts.length"
+			class="grid gap-3 md:grid-cols-2 lg:min-h-0 lg:flex-1 lg:grid-rows-2"
+		>
 			<ServerMetricChart
 				v-for="chart in charts"
 				:key="chart.key"

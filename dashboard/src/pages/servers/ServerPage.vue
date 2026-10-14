@@ -244,8 +244,15 @@ watch(
 </script>
 
 <template>
-	<div class="h-full overflow-y-auto" style="scrollbar-gutter: stable">
-		<div class="mx-auto w-full max-w-5xl p-3 md:p-4">
+	<div
+		class="h-full overflow-y-auto"
+		:class="{ 'lg:overflow-hidden': activeTab === 'overview' }"
+		style="scrollbar-gutter: stable"
+	>
+		<div
+			class="mx-auto w-full max-w-5xl p-3 md:p-4"
+			:class="{ 'lg:flex lg:h-full lg:min-h-0 lg:flex-col': activeTab === 'overview' }"
+		>
 			<div v-if="!loaded && !fleetError" class="space-y-6" aria-busy="true">
 				<Skeleton class="h-24 rounded-6" />
 				<Skeleton class="h-7 w-96 max-w-full rounded-4" />
@@ -275,7 +282,7 @@ watch(
 
 			<template v-else>
 				<Header
-					class="md:py-2"
+					class="shrink-0 md:py-0"
 					:server="server"
 					:details="details?.server ?? null"
 					:actions="actions"
@@ -294,7 +301,7 @@ watch(
 					@protect="protect"
 				/>
 
-				<Tabs v-model="activeTab" class="mt-4">
+				<Tabs v-model="activeTab" class="mt-4 shrink-0">
 					<TabList variant="browser-tab" size="md">
 						<TabTrigger
 							v-for="tab in TABS"
@@ -346,7 +353,7 @@ watch(
 					:metrics="metrics"
 					:metrics-error="metricsError"
 					@refresh="reloadMetrics"
-					class="mt-4"
+					class="mt-3 lg:min-h-0 lg:flex-1"
 				/>
 
 				<NetworkingTab
