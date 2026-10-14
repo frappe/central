@@ -70,23 +70,29 @@ class TestCreationNetworkPayload(TestCase):
 		self.assertEqual(_create_payload(creation_request(user_data=script))["user_data"], script)
 
 
-class TestGuestInput(TestCase):
-	def test_user_data_over_the_atlas_limit_is_refused(self) -> None:
-		def server_input(user_data: str) -> CreateServerInput:
-			return CreateServerInput(
-				team="team-a",
-				region="region-a",
-				title="Worker",
-				offering="ubuntu",
-				image_id="ubuntu-image",
-				request_key="request-key-0000001",
-				plan="plan-a",
-				user_data=user_data,
-			)
+def guest_input(user_data: str) -> CreateServerInput:
+	return CreateServerInput(
+		team="team-a",
+		region="region-a",
+		title="Worker",
+		offering="ubuntu",
+		image_id="ubuntu-image",
+		request_key="request-key-0000001",
+		plan="plan-a",
+		user_data=user_data,
+	)
 
-		validate_guest_input(server_input("#!/bin/sh\n" + "x" * 16_000))
+
+class TestGuestInput(TestCase):
+	def test_user_data_keeps_its_whitespace(self) -> None:
+		script = "#cloud-config\nruncmd: []\n"
+
+		self.assertEqual(guest_input(script).user_data, script)
+
+	def test_user_data_over_the_atlas_limit_is_refused(self) -> None:
+		validate_guest_input(guest_input("#!/bin/sh\n" + "x" * 16_000))
 		with self.assertRaises(frappe.ValidationError):
-			validate_guest_input(server_input("#!/bin/sh\n" + "x" * MAXIMUM_USER_DATA_BYTES))
+			validate_guest_input(guest_input("#!/bin/sh\n" + "x" * MAXIMUM_USER_DATA_BYTES))
 
 
 class TestServerConsole(IntegrationTestCase):
