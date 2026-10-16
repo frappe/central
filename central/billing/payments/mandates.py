@@ -279,8 +279,48 @@ def confirm_mandate(payment_method: str, callback: dict):
 	from central.billing.payments import payments
 
 	payments.densify_priorities(method.team)  # slot the new method into the fallback order
+
+	# Razorpay issues the token only after a real ₹1 payment, so give it back once the method is live.
+	if payment_id := callback.get("razorpay_payment_id"):
+		frappe.enqueue(
+			refund_setup_payment,
+			queue="short",
+			enqueue_after_commit=True,
+			payment_method=method.name,
+			payment_id=payment_id,
+		)
+
 	method.reload()
 	return method
+
+
+def refund_setup_payment(payment_method: str, payment_id: str) -> None:
+	"""Refund the ₹1 that authorised a Razorpay mandate. A failure stays on the Payment Method
+	for the operator, who can refund it from the Razorpay dashboard; it is not retried."""
+	from central.billing.gateways.base import GatewayError
+
+	method = frappe.get_doc("Payment Method", payment_method)
+	try:
+		# The setup payment has no Payment Attempt row; refund() needs only its gateway id.
+		result = _adapter(method.gateway).refund(
+			frappe._dict(gateway_transaction_id=payment_id),
+			amount=1,
+			reason="Payment method setup",
+			idempotency_key=f"setup-{payment_method}",
+		)
+	except GatewayError as error:
+		frappe.log_error(
+			title=f"Setup payment refund failed: {payment_method}", message=frappe.get_traceback()
+		)
+		method.add_comment("Info", f"Could not refund the ₹1 setup payment {payment_id}: {error}")
+		return
+
+	if result.success:
+		method.add_comment(
+			"Info", f"Refunded the ₹1 setup payment {payment_id} ({result.gateway_refund_id})."
+		)
+	else:
+		method.add_comment("Info", f"Could not refund the ₹1 setup payment {payment_id}: {result.status}")
 
 
 def cancel_mandate(payment_method: str):
