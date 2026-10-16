@@ -61,6 +61,13 @@ class Region(AtlasConnectionMixin, CargoConnectionMixin, Document):
 		self.validate_atlas_connection()
 		self.validate_cargo_connection()
 
+	def before_save(self) -> None:
+		# Enrollment once stored these secrets with an empty column, and Frappe deletes the
+		# secret of an empty Password field on save. Only enrollment sets them.
+		self.flags.ignore_save_passwords = [
+			fieldname for fieldname in ("webhook_secret", "cargo_webhook_secret") if not self.get(fieldname)
+		]
+
 	@staticmethod
 	def get_zone(region: str) -> str:
 		"""The DNS zone of one region: `<region>.<wildcard domain>`."""

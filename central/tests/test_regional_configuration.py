@@ -4,6 +4,7 @@ from unittest.mock import patch
 import frappe
 import requests
 from frappe.tests import IntegrationTestCase
+from frappe.utils.password import set_encrypted_password
 
 from central.errors import AtlasConnectionError
 from central.integrations.atlas import AtlasClient
@@ -227,6 +228,12 @@ class TestRegionalConfiguration(IntegrationTestCase):
 		self.instance.save()
 
 		self.assertEqual(self.instance.reload().get_password("webhook_secret"), secret)
+
+	def test_a_secret_stored_without_its_column_survives_a_save(self):
+		set_encrypted_password("Region", self.instance.name, "stored-secret", "webhook_secret")
+		self.instance.reload().save()
+
+		self.assertEqual(self.instance.reload().get_password("webhook_secret"), "stored-secret")
 
 	def test_enroll_atlas_raises_and_does_not_persist_a_rejected_secret(self):
 		self.request.return_value = self.response({}, 403)
