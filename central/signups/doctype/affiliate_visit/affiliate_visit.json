@@ -1,0 +1,122 @@
+{
+ "actions": [],
+ "autoname": "hash",
+ "creation": "2026-10-14 12:00:00",
+ "description": "A click on an affiliate link. Its name is stored in the visitor's cookie. It holds no personal data.",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "affiliate",
+  "link",
+  "product",
+  "country",
+  "last_clicked_on",
+  "utm_section",
+  "utm_source",
+  "utm_medium",
+  "utm_campaign"
+ ],
+ "fields": [
+  {
+   "fieldname": "affiliate",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Affiliate",
+   "options": "Affiliate",
+   "read_only": 1,
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "description": "The named link that was clicked. Empty for the affiliate's main link.",
+   "fieldname": "link",
+   "fieldtype": "Link",
+   "in_standard_filter": 1,
+   "label": "Link",
+   "options": "Affiliate Link",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "product",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Product",
+   "options": "Product",
+   "read_only": 1
+  },
+  {
+   "description": "The visitor's country from their IP address. Central does not keep the address.",
+   "fieldname": "country",
+   "fieldtype": "Data",
+   "in_standard_filter": 1,
+   "label": "Country",
+   "read_only": 1
+  },
+  {
+   "description": "The last click on this link in this browser. The referral window counts from here.",
+   "fieldname": "last_clicked_on",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "Last Clicked On",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "utm_section",
+   "fieldtype": "Section Break",
+   "label": "UTM"
+  },
+  {
+   "fieldname": "utm_source",
+   "fieldtype": "Data",
+   "label": "UTM Source",
+   "length": 140,
+   "read_only": 1
+  },
+  {
+   "fieldname": "utm_medium",
+   "fieldtype": "Data",
+   "label": "UTM Medium",
+   "length": 140,
+   "read_only": 1
+  },
+  {
+   "fieldname": "utm_campaign",
+   "fieldtype": "Data",
+   "label": "UTM Campaign",
+   "length": 140,
+   "read_only": 1
+  }
+ ],
+ "in_create": 1,
+ "links": [
+  {
+   "link_doctype": "Product Referral",
+   "link_fieldname": "visit"
+  }
+ ],
+ "modified": "2026-10-15 21:46:25.025587",
+ "modified_by": "Administrator",
+ "module": "Signups",
+ "name": "Affiliate Visit",
+ "naming_rule": "Random",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "export": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
+}

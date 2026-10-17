@@ -131,6 +131,12 @@ const routes = [
 				component: () => import('@/pages/settings/SettingsDetailPage.vue'),
 				meta: { title: 'Settings' },
 			},
+			{
+				path: 'affiliate',
+				name: 'Affiliate',
+				component: () => import('@/pages/affiliate/AffiliatePage.vue'),
+				meta: { title: 'Affiliate' },
+			},
 			{ path: 'team', redirect: '/team/members' },
 			// Members + roles share one tabbed page. Settings fold into this surface
 			// (rename beside the title, transfer on member rows, delete in team menu).

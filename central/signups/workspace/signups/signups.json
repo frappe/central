@@ -1,7 +1,7 @@
 {
  "app": "central",
  "charts": [],
- "content": "[{\"id\": \"sg-h\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Signups</b></span>\", \"col\": 12}}, {\"id\": \"sg-sc0\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Product\", \"col\": 3}}, {\"id\": \"sg-sc1\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Trial Sites\", \"col\": 3}}]",
+ "content": "[{\"id\": \"sg-h\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Signups</b></span>\", \"col\": 12}}, {\"id\": \"sg-sc0\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Product\", \"col\": 3}}, {\"id\": \"sg-sc1\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Trial Sites\", \"col\": 3}}, {\"id\": \"sg-sc2\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Affiliate\", \"col\": 3}}]",
  "creation": "2026-10-13 12:00:00.000000",
  "custom_blocks": [],
  "docstatus": 0,
@@ -40,9 +40,57 @@
    "link_type": "Report",
    "onboard": 0,
    "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Affiliates",
+   "link_count": 4,
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Affiliate",
+   "link_count": 0,
+   "link_to": "Affiliate",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Affiliate Link",
+   "link_count": 0,
+   "link_to": "Affiliate Link",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Affiliate Visit",
+   "link_count": 0,
+   "link_to": "Affiliate Visit",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Product Referral",
+   "link_count": 0,
+   "link_to": "Product Referral",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
   }
  ],
- "modified": "2026-10-13 12:00:00.000000",
+ "modified": "2026-10-15 21:59:59.713609",
  "modified_by": "Administrator",
  "module": "Signups",
  "name": "Signups",
@@ -67,6 +115,13 @@
    "label": "Trial Sites",
    "link_to": "Trial Sites",
    "type": "Report"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Affiliate",
+   "link_to": "Affiliate",
+   "type": "DocType"
   }
  ],
  "title": "Signups",

@@ -42,3 +42,5 @@ central.patches.v0_0.start_unready_trials
 # A site creation stores whether it started a free trial; older ones are marked from their site.
 central.patches.v0_0.set_free_trial_on_creations
 central.patches.v0_0.select_full_ubuntu_image
+# Affiliate Cookie Days reads 0 on a Central Settings saved before it existed.
+central.patches.v0_0.seed_affiliate_cookie_days

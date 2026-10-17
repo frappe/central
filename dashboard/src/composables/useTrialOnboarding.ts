@@ -15,7 +15,7 @@ export function useTrialOnboarding() {
 		await sessionReady
 		const result = await postFrappe<{ team: string | null }>(
 			methodUrl(API.createTrialTeam),
-			readFirstTouch() ?? {},
+			{ ...readFirstTouch(), signup_product: productKey.value || undefined },
 		)
 		forgetFirstTouch()
 		if (result.team) {

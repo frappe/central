@@ -10,7 +10,8 @@ from central.identity.doctype.team.team import Team
 from central.integrations.images import list_images
 from central.resource_actions import submit_request
 from central.server_models import DNS_LABEL, SiteCreation
-from central.signups.doctype.product.product import get_signup_product
+from central.signups.affiliates.cookie import record_referral
+from central.signups.doctype.product.product import get_enabled_product_key, get_signup_product
 
 SIGNUP_FLOW = "Signup"
 # A trial is a site the image already carries, on the Frappe version a signup runs. The
@@ -23,6 +24,8 @@ SIGNUP_IMAGE_TAGS = {"has_site": "1", "frappe_version": "develop"}
 SIGNUP_APP_TAG = "app"
 # One DNS label: what a customer may name a site, and all the proxy will route.
 RESERVED_SUBDOMAINS = frozenset({"admin", "atlas", "cargo", "proxy", "site", "www"})
+# The length a team keeps of each UTM value.
+UTM_LENGTH = 140
 
 
 def create_trial_site(
@@ -35,12 +38,14 @@ def create_trial_site(
 	same creation path as a bought server, so a trial gets the same record, retry and errors."""
 
 	team = resolve_team(frappe.session.user, team)
-	signup_app = get_signup_product(product).signup_app if product else None
+	signup_product = get_signup_product(product) if product else None
 	subdomain = validated_subdomain(subdomain)
-	configuration = trial_configuration(team, signup_app)
+	configuration = trial_configuration(team, signup_product.signup_app if signup_product else None)
 	site = SiteCreation(product=product or None)
+	# Read before the request, so the trial it starts never counts as an earlier one.
+	is_first_product_trial = bool(signup_product) and not has_product_trial(team, signup_product.name)
 
-	return submit_request(
+	request = submit_request(
 		team=team,
 		request_key=request_key,
 		title=subdomain,
@@ -49,10 +54,17 @@ def create_trial_site(
 		site=site,
 		**configuration,
 	)
+	if is_first_product_trial:
+		record_referral(team, signup_product.name)
+
+	return request
 
 
-def create_trial_team(user: str, attribution: dict | None = None) -> str | None:
-	"""Create the first team of a user who starts the trial funnel with none.
+def create_trial_team(
+	user: str, attribution: dict | None = None, signup_product: str | None = None
+) -> str | None:
+	"""Create the first team of a user who starts the trial funnel with none, and credit the
+	affiliate whose link brought them for the product they sign up for.
 
 	The funnel cannot ask for a team name, so the team is named after the user. A
 	user who already has a team keeps it, and nothing is created."""
@@ -61,8 +73,21 @@ def create_trial_team(user: str, attribution: dict | None = None) -> str | None:
 
 	full_name = frappe.db.get_value("User", user, "full_name") or user
 	team_name = _("{0}'s Team").format(full_name)
+	team = Team.create_for_current_user(team_name, first_touch(**(attribution or {})))
+	# An unknown or disabled product is dropped, so the signup counts for Frappe Cloud, as its click did.
+	record_referral(team.name, get_enabled_product_key(signup_product))
 
-	return Team.create_for_current_user(team_name, first_touch(**(attribution or {}))).name
+	return team.name
+
+
+def has_product_trial(team: str, product: str) -> bool:
+	"""Whether the team already has a site of the product, or asked for one that is not created yet."""
+	return bool(
+		frappe.db.exists("Site", {"team": team, "product": product})
+		or frappe.db.exists(
+			"Resource Action", {"team": team, "resource_type": "Site", "action": "create", "product": product}
+		)
+	)
 
 
 def first_touch(
@@ -75,15 +100,15 @@ def first_touch(
 	"""How the signup first found us, trimmed to fit the team. It only labels the team,
 	so a bad value is dropped instead of refusing the signup."""
 	return {
-		"utm_source": _clip(utm_source, 140),
-		"utm_medium": _clip(utm_medium, 140),
-		"utm_campaign": _clip(utm_campaign, 140),
-		"referrer": _clip(referrer, 1000),
+		"utm_source": clip(utm_source, UTM_LENGTH),
+		"utm_medium": clip(utm_medium, UTM_LENGTH),
+		"utm_campaign": clip(utm_campaign, UTM_LENGTH),
+		"referrer": clip(referrer, 1000),
 		"landing_product": product if product and frappe.db.exists("Product", product) else None,
 	}
 
 
-def _clip(value: str | None, length: int) -> str | None:
+def clip(value: str | None, length: int) -> str | None:
 	return (value.strip()[:length] or None) if isinstance(value, str) else None
 
 

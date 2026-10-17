@@ -314,8 +314,8 @@ override_doctype_dashboards = {
 before_request = ["central.oidc.take_client_credentials"]
 # after_request = ["central.utils.after_request"]
 
-# The OpenID Connect discovery document of the Central issuer.
-page_renderer = ["central.oidc.DiscoveryPage"]
+# The OpenID Connect discovery document of the Central issuer, and affiliate links at /r/<code>.
+page_renderer = ["central.oidc.DiscoveryPage", "central.signups.affiliates.link.AffiliateLinkPage"]
 
 # Job Events
 # ----------
