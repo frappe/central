@@ -94,6 +94,59 @@ class TestMandateSetup(MandateTestBase):
 		self.assertEqual(method.status, "Failed")
 
 
+class TestMandateSetupRefund(MandateTestBase):
+	"""Razorpay takes ₹1 to issue a mandate token; Central gives it back once the method is live."""
+
+	def _confirmed(self, adapter, callback: dict) -> str:
+		result = mandates.setup_mandate(TEAM, GATEWAY, customer_id="cust_x")
+		mandates.confirm_mandate(result["payment_method"], {"razorpay_signature": "s", **callback})
+		return result["payment_method"]
+
+	def _comments(self, payment_method: str) -> list[str]:
+		return frappe.get_all(
+			"Comment",
+			filters={"reference_doctype": "Payment Method", "reference_name": payment_method},
+			pluck="content",
+		)
+
+	def test_a_confirmed_mandate_queues_the_refund(self):
+		with stub_adapter() as adapter, patch.object(mandates.frappe, "enqueue") as enqueue:
+			payment_method = self._confirmed(adapter, {"razorpay_payment_id": "pay_setup"})
+
+		enqueue.assert_called_once()
+		self.assertEqual(enqueue.call_args.kwargs["payment_method"], payment_method)
+		self.assertEqual(enqueue.call_args.kwargs["payment_id"], "pay_setup")
+		self.assertTrue(enqueue.call_args.kwargs["enqueue_after_commit"])
+
+	def test_the_refund_returns_the_setup_payment(self):
+		from central.billing.gateways.base import RefundResult
+
+		with stub_adapter() as adapter, patch.object(mandates.frappe, "enqueue"):
+			payment_method = self._confirmed(adapter, {"razorpay_payment_id": "pay_setup"})
+			adapter.refund.return_value = RefundResult(
+				success=True, status="Completed", gateway_refund_id="rfnd_1", raw={}
+			)
+			mandates.refund_setup_payment(payment_method, "pay_setup")
+
+		(attempt,) = adapter.refund.call_args.args
+		self.assertEqual(attempt.gateway_transaction_id, "pay_setup")
+		self.assertEqual(adapter.refund.call_args.kwargs["amount"], 1)
+		self.assertTrue(any("rfnd_1" in comment for comment in self._comments(payment_method)))
+
+	def test_a_failed_refund_is_left_on_the_payment_method(self):
+		from central.billing.gateways.base import GatewayTimeout
+
+		with stub_adapter() as adapter, patch.object(mandates.frappe, "enqueue"):
+			payment_method = self._confirmed(adapter, {"razorpay_payment_id": "pay_setup"})
+			adapter.refund.side_effect = GatewayTimeout("timed out")
+			with patch.object(mandates.frappe, "log_error") as log_error:
+				mandates.refund_setup_payment(payment_method, "pay_setup")
+
+		log_error.assert_called_once()
+		self.assertTrue(any("Could not refund" in comment for comment in self._comments(payment_method)))
+		self.assertEqual(frappe.db.get_value("Payment Method", payment_method, "status"), "Active")
+
+
 class TestMandateReauthorisation(MandateTestBase):
 	def _active_mandate(self):
 		with stub_adapter(signature_ok=True):
