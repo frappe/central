@@ -18,14 +18,14 @@ from central.infrastructure.doctype.site_domain.site_domain import (
 	remove_server_routes,
 	retry_failed,
 )
-from central.integrations.proxy import ProxyClient, ProxyError
+from central.integrations.proxy import ProxyClient, ProxyError, get_pre_authorized_zone
 from central.tests.test_iam import ensure_user
 from central.tests.utils import ensure_atlas_instance
 
 WILDCARD = "example.test"
 GET_PROXY_CLIENT = "central.infrastructure.doctype.site_domain.site_domain.Region.get_proxy_client"
-RESOLVE = "central.infrastructure.doctype.site_domain.site_domain._resolve"
-IS_APEX = "central.infrastructure.doctype.site_domain.site_domain.is_apex"
+RESOLVE_TXT = "central.infrastructure.doctype.site_domain.site_domain._resolve_txt"
+PRE_AUTHORIZED_ZONE = "central.infrastructure.doctype.site_domain.site_domain.get_pre_authorized_zone"
 
 
 class TestSiteDomain(IntegrationTestCase):
@@ -303,16 +303,13 @@ class TestSiteDomain(IntegrationTestCase):
 		domain = f"www.shop-{self.suffix}.com"
 		records = SiteDomain.get_dns_records(credential, domain)["cname"]
 		token = records[1]["value"]
-		dns = {
-			(f"{VERIFICATION_RECORD}.{domain}", "TXT"): [token],
-			(domain, "CNAME"): [f"proxy.{self.zone}"],
-		}
+		txt = {f"{VERIFICATION_RECORD}.{domain}": [token]}
 
 		self.assertEqual(records[0], {"type": "CNAME", "host": domain, "value": f"proxy.{self.zone}"})
 		self.assertEqual(SiteDomain.get_dns_records(credential, domain)["cname"][1]["value"], token)
 		with (
-			patch(RESOLVE, side_effect=lambda name, record_type: dns.get((name, record_type), [])),
-			patch(IS_APEX, return_value=False),
+			patch(RESOLVE_TXT, side_effect=lambda name: txt.get(name, [])),
+			patch(PRE_AUTHORIZED_ZONE, return_value=self.zone),
 			patch(GET_PROXY_CLIENT, return_value=MagicMock()),
 		):
 			SiteDomain.register(credential, domain)
@@ -327,24 +324,26 @@ class TestSiteDomain(IntegrationTestCase):
 			SiteDomain.register(credential, domain)
 
 		SiteDomain.get_dns_records(credential, domain)
-		with patch(RESOLVE, return_value=[]), self.assertRaises(DomainNotVerifiedError):
+		with patch(RESOLVE_TXT, return_value=[]), self.assertRaises(DomainNotVerifiedError):
 			SiteDomain.register(credential, domain)
 
 		self.assertFalse(frappe.db.exists("Site Domain", domain))
 
-	def test_an_apex_domain_skips_the_cname_check(self):
+	def test_a_domain_that_misses_the_region_proxy_is_refused(self):
 		credential = self._credential(self.server)
-		domain = f"apex-{self.suffix}.com"
+		domain = f"elsewhere-{self.suffix}.com"
 		token = SiteDomain.get_dns_records(credential, domain)["cname"][1]["value"]
 
-		with (
-			patch(RESOLVE, side_effect=lambda name, record_type: [token] if record_type == "TXT" else []),
-			patch(IS_APEX, return_value=True),
-			patch(GET_PROXY_CLIENT, return_value=MagicMock()),
-		):
-			SiteDomain.register(credential, domain)
+		for zone in ("", f"other.{WILDCARD}"):
+			with (
+				self.subTest(zone=zone),
+				patch(RESOLVE_TXT, return_value=[token]),
+				patch(PRE_AUTHORIZED_ZONE, return_value=zone),
+				self.assertRaisesRegex(DomainNotVerifiedError, f"does not point to proxy.{self.zone}"),
+			):
+				SiteDomain.register(credential, domain)
 
-		self.assertTrue(frappe.db.exists("Site Domain", domain))
+		self.assertFalse(frappe.db.exists("Site Domain", domain))
 
 	def test_a_route_of_another_server_is_refused(self):
 		route = self._route(f"taken-{self.suffix}.{self.zone}")
@@ -448,6 +447,22 @@ class TestRegionProxyClient(IntegrationTestCase):
 
 		mint.assert_called_once_with(65001)
 		self.assertEqual(client.base_url, f"https://proxy.{self.region}.{WILDCARD}")
+
+	def test_pre_authorized_zone_is_empty_unless_a_proxy_answers(self):
+		request = httpx.Request("GET", "http://www.example.com")
+		answers = {
+			"mumbai.example.test": httpx.Response(200, text=" Mumbai.Example.Test\n", request=request),
+			"": httpx.Response(301, headers={"Location": "https://www.example.com"}, request=request),
+		}
+		for zone, response in answers.items():
+			with (
+				self.subTest(zone=zone),
+				patch("central.integrations.proxy.httpx.get", return_value=response),
+			):
+				self.assertEqual(get_pre_authorized_zone("www.example.com"), zone)
+
+		with patch("central.integrations.proxy.httpx.get", side_effect=httpx.ConnectError("refused")):
+			self.assertEqual(get_pre_authorized_zone("www.example.com"), "")
 
 	def test_proxy_client_raises_when_a_site_change_is_refused(self):
 		refused = Response(status_code=HTTPStatus.CONFLICT, content=b"reserved", headers={}, parsed=None)
