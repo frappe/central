@@ -1,0 +1,36 @@
+{
+ "actions": [],
+ "autoname": "field:commit",
+ "creation": "2026-10-16 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": ["app", "commit", "released", "column_break_counts", "failed", "total", "held_at", "error_section", "error"],
+ "fields": [
+  {"fieldname": "app", "fieldtype": "Data", "in_list_view": 1, "in_standard_filter": 1, "label": "App", "read_only": 1, "reqd": 1},
+  {"fieldname": "commit", "fieldtype": "Data", "in_list_view": 1, "label": "Commit", "read_only": 1, "reqd": 1, "unique": 1},
+  {"default": "0", "description": "Tick to offer this release again. A later alert does not hold it again.", "fieldname": "released", "fieldtype": "Check", "in_list_view": 1, "in_standard_filter": 1, "label": "Released"},
+  {"fieldname": "column_break_counts", "fieldtype": "Column Break"},
+  {"description": "Servers whose last update to this commit failed.", "fieldname": "failed", "fieldtype": "Int", "in_list_view": 1, "label": "Failed", "read_only": 1},
+  {"description": "Servers that updated to this commit.", "fieldname": "total", "fieldtype": "Int", "in_list_view": 1, "label": "Total", "read_only": 1},
+  {"fieldname": "held_at", "fieldtype": "Datetime", "label": "Held At", "read_only": 1},
+  {"fieldname": "error_section", "fieldtype": "Section Break", "label": "Error"},
+  {"description": "One error from the failed updates.", "fieldname": "error", "fieldtype": "Small Text", "label": "Error", "read_only": 1}
+ ],
+ "links": [],
+ "modified": "2026-10-16 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Central",
+ "name": "App Rollout Hold",
+ "naming_rule": "By fieldname",
+ "owner": "Administrator",
+ "permissions": [
+  {"create": 1, "delete": 1, "export": 1, "read": 1, "report": 1, "role": "System Manager", "share": 1, "write": 1},
+  {"create": 1, "role": "App Rollout Alert"}
+ ],
+ "search_fields": "app",
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "app",
+ "track_changes": 1
+}

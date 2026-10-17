@@ -40,3 +40,5 @@ central.patches.v0_0.seed_trial_settings
 # A trial site recorded before trials started on insert waited for readiness to start.
 central.patches.v0_0.start_unready_trials
 central.patches.v0_0.select_full_ubuntu_image
+# The app rollout steps read 0 on a Central Settings saved before they existed, and Pilot holds every update on 0.
+central.patches.v0_0.seed_app_rollout_settings

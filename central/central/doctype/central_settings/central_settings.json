@@ -43,7 +43,15 @@
   "github_client_secret",
   "github_webhook_secret",
   "column_break_github_secrets",
-  "github_private_key"
+  "github_private_key",
+  "app_rollout_tab",
+  "app_rollout_start_percent",
+  "app_rollout_step_percent",
+  "app_rollout_interval_hours",
+  "app_rollout_max_percent",
+  "app_rollout_hold_section",
+  "app_rollout_failure_percent",
+  "app_rollout_minimum_servers"
  ],
  "fields": [
   {
@@ -283,13 +291,72 @@
    "fieldtype": "Password",
    "label": "Private Key",
    "length": 8192
+  },
+  {
+   "fieldname": "app_rollout_tab",
+   "fieldtype": "Tab Break",
+   "label": "App Rollout"
+  },
+  {
+   "default": "5",
+   "description": "Percent of Pilot servers that see a new app update first.",
+   "fieldname": "app_rollout_start_percent",
+   "fieldtype": "Int",
+   "label": "Start Percent",
+   "non_negative": 1
+  },
+  {
+   "default": "5",
+   "description": "Percent of Pilot servers added after each interval, until all servers see the update.",
+   "fieldname": "app_rollout_step_percent",
+   "fieldtype": "Int",
+   "label": "Step Percent",
+   "non_negative": 1
+  },
+  {
+   "default": "8",
+   "description": "Hours between two steps.",
+   "fieldname": "app_rollout_interval_hours",
+   "fieldtype": "Int",
+   "label": "Interval (Hours)",
+   "non_negative": 1
+  },
+  {
+   "default": "100",
+   "description": "Highest percent of Pilot servers that see an update. Set 0 to stop all rollouts.",
+   "fieldname": "app_rollout_max_percent",
+   "fieldtype": "Int",
+   "label": "Max Percent",
+   "non_negative": 1
+  },
+  {
+   "fieldname": "app_rollout_hold_section",
+   "fieldtype": "Section Break",
+   "label": "Automatic Hold",
+   "description": "An Insights alert sends the update failures of each release. Central holds a release that crosses both limits."
+  },
+  {
+   "default": "20",
+   "description": "Hold a release when more than this percent of the servers that updated to it failed.",
+   "fieldname": "app_rollout_failure_percent",
+   "fieldtype": "Int",
+   "label": "Failure Percent",
+   "non_negative": 1
+  },
+  {
+   "default": "5",
+   "description": "Hold a release only after at least this many servers updated to it.",
+   "fieldname": "app_rollout_minimum_servers",
+   "fieldtype": "Int",
+   "label": "Minimum Servers",
+   "non_negative": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-10-16 00:00:00.000000",
+ "modified": "2026-10-17 10:00:00.000000",
  "modified_by": "Administrator",
  "module": "Central",
  "name": "Central Settings",

@@ -71,14 +71,19 @@ def heartbeat() -> dict:
 @pilot_credential_auth
 def config() -> dict:
 	"""Discovery the pilot pulls on boot (and refreshes on a TTL): where Central's JWKS
-	lives and this deployment's audience id — all a bench needs to verify minted tokens.
+	lives and this deployment's audience id — all a bench needs to verify minted tokens —
+	plus the app update rollout settings.
 	No issuer is returned: it is Central's own URL (the same host the pilot already calls),
 	and the bench binds tokens by signature + audience, not issuer."""
 	from central.sso import jwks_url
 
 	credential = frappe.local.pilot_credential
 
-	return {"jwks_url": jwks_url(), "audience_id": credential.audience_id}
+	return {
+		"jwks_url": jwks_url(),
+		"audience_id": credential.audience_id,
+		"app_rollout": frappe.get_cached_doc("Central Settings").app_rollout(),
+	}
 
 
 # nosemgrep: guest-whitelisted-method -- pilot_credential_auth verifies the caller below.
