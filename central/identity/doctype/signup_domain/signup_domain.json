@@ -33,7 +33,8 @@
    "label": "Status",
    "options": "Blocked\nTrusted",
    "reqd": 1,
-   "description": "Blocked refuses new accounts. Trusted is never blocked automatically."
+   "description": "Blocked refuses new accounts. Trusted is never blocked automatically.",
+   "search_index": 1
   },
   {
    "default": "Manual",
@@ -43,7 +44,8 @@
    "in_standard_filter": 1,
    "label": "Source",
    "options": "Manual\nAutomatic",
-   "read_only": 1
+   "read_only": 1,
+   "search_index": 1
   },
   {
    "fieldname": "column_break_main",
@@ -54,7 +56,8 @@
    "fieldname": "blocked_until",
    "fieldtype": "Datetime",
    "label": "Blocked Until",
-   "description": "Empty blocks the domain until someone removes it."
+   "description": "Empty blocks the domain until someone removes it.",
+   "in_list_view": 1
   },
   {
    "fieldname": "reason",
@@ -65,7 +68,7 @@
  ],
  "index_web_pages_for_search": 0,
  "links": [],
- "modified": "2026-10-18 00:00:00.000000",
+ "modified": "2026-10-19 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Identity",
  "name": "Signup Domain",
@@ -85,6 +88,15 @@
  ],
  "sort_field": "modified",
  "sort_order": "DESC",
- "states": [],
+ "states": [
+  {
+   "color": "Red",
+   "title": "Blocked"
+  },
+  {
+   "color": "Green",
+   "title": "Trusted"
+  }
+ ],
  "track_changes": 1
 }

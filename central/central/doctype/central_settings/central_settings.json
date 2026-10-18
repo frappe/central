@@ -215,7 +215,7 @@
    "fieldtype": "Int",
    "label": "Signup Requests per Minute",
    "non_negative": 1,
-   "description": "New-account code requests one IP address, or one organisation's email domain, may make in a minute. Above it, Central blocks that IP or domain. Public providers such as gmail.com are limited by IP only. 0 turns this off."
+   "description": "Signup code requests one IP address may make in a minute, and new accounts one organisation's email domain may create in a minute. Above it, Central blocks that IP or domain. Public providers such as gmail.com are limited by IP only. 0 turns this off."
   },
   {
    "default": "24",

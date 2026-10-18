@@ -1,11 +1,23 @@
+from __future__ import annotations
+
 import os
+from typing import TYPE_CHECKING
 
 import frappe
 import requests
+import tldextract
 from frappe import _
 from frappe.utils import add_to_date, cint, now_datetime
 
-from central.identity.signup_email import get_domain, get_temporary_domains_path, is_trusted_domain
+from central.identity.signup_email import (
+	get_domain,
+	get_temporary_domains_path,
+	is_trusted_domain,
+	load_temporary_domains,
+)
+
+if TYPE_CHECKING:
+	from central.identity.doctype.signup_domain.signup_domain import SignupDomain
 
 TEMPORARY_DOMAINS_URL = (
 	"https://raw.githubusercontent.com/disposable-email-domains/disposable-email-domains/main/"
@@ -41,7 +53,9 @@ PUBLIC_MAIL_DOMAINS = frozenset(
 		"126.com",
 	)
 )
-SECOND_LEVEL_LABELS = frozenset(("ac", "co", "com", "edu", "gov", "net", "org", "res", "nic"))
+# The Public Suffix List shipped with tldextract, never fetched at runtime. Private suffixes such as
+# github.io count as public, so two users under them are two organisations.
+SUFFIXES = tldextract.TLDExtract(suffix_list_urls=(), cache_dir=None, include_psl_private_domains=True)
 
 
 def watch_signup_ip() -> None:
@@ -60,16 +74,17 @@ def watch_signup_ip() -> None:
 
 
 def watch_signup_domain(email: str) -> None:
-	"""Count a new-account request from the email's organisation, and block one that floods signups.
+	"""Count a verified new account from the email's organisation, and block one that floods signups.
+	Only a verified inbox counts, so a stranger cannot block an organisation by naming its addresses.
 	A public provider is never blocked as a whole."""
 	limit = get_setting("signup_requests_per_minute")
 	domain = get_domain(email)
-	if not limit or domain in PUBLIC_MAIL_DOMAINS or is_trusted_domain(domain):
+	organisation = get_organisation_domain(domain)
+	if not limit or organisation in PUBLIC_MAIL_DOMAINS or is_trusted_domain(domain):
 		return
 
-	organisation = get_organisation_domain(domain)
 	if increment(f"domain:{organisation}:{now_datetime():%Y%m%d%H%M}") > limit:
-		block_automatically(organisation, _("More than {0} signup requests in one minute.").format(limit))
+		block_automatically(organisation, _("More than {0} new accounts in one minute.").format(limit))
 		refuse()
 
 
@@ -95,6 +110,9 @@ def block_automatically(organisation: str, reason: str) -> None:
 
 def save_automatic_block(domain: str, reason: str) -> None:
 	"""Background job: block the domain for the configured hours and tell the operators."""
+	if domain in PUBLIC_MAIL_DOMAINS:
+		return
+
 	blocked_until = add_to_date(now_datetime(), hours=get_block_hours())
 	if frappe.db.exists("Signup Domain", domain):
 		entry = frappe.get_doc("Signup Domain", domain)
@@ -117,7 +135,7 @@ def save_automatic_block(domain: str, reason: str) -> None:
 	notify_operators(entry)
 
 
-def notify_operators(entry) -> None:
+def notify_operators(entry: SignupDomain) -> None:
 	from central.billing.platform.alerts import operators
 
 	recipients = operators()
@@ -136,11 +154,9 @@ def notify_operators(entry) -> None:
 
 
 def get_organisation_domain(domain: str) -> str:
-	"""The domain an organisation registered, so cs.uni.edu and ee.uni.edu count together.
-	Names such as uni.ac.in keep three labels."""
-	labels = domain.split(".")
-	keep = 3 if len(labels) >= 3 and len(labels[-1]) == 2 and labels[-2] in SECOND_LEVEL_LABELS else 2
-	return ".".join(labels[-keep:])
+	"""The domain an organisation registered under its public suffix, so cs.uni.edu and ee.uni.edu
+	count together while school.k12.ca.us stays apart from other schools."""
+	return SUFFIXES(domain).top_domain_under_public_suffix or domain
 
 
 def refresh_temporary_domains() -> None:
@@ -161,6 +177,7 @@ def refresh_temporary_domains() -> None:
 	with open(f"{path}.tmp", "w") as file:
 		file.write("\n".join(sorted(domains)) + "\n")
 	os.replace(f"{path}.tmp", path)
+	load_temporary_domains()
 
 
 def increment(name: str) -> int:

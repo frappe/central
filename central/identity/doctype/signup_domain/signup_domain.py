@@ -39,7 +39,12 @@ class SignupDomain(Document):
 		return not self.blocked_until or get_datetime(self.blocked_until) > now_datetime()
 
 	def on_update(self):
-		clear_signup_domains()
+		self.clear_cache_now_and_after_commit()
 
 	def on_trash(self):
+		self.clear_cache_now_and_after_commit()
+
+	def clear_cache_now_and_after_commit(self):
+		# A signup between the two clears can cache the old rows again.
 		clear_signup_domains()
+		frappe.db.after_commit.add(clear_signup_domains)

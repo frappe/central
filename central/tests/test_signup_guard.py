@@ -1,4 +1,5 @@
-import os
+import tempfile
+from pathlib import Path
 from unittest.mock import Mock, patch
 
 import frappe
@@ -6,7 +7,7 @@ from frappe.tests import IntegrationTestCase
 from frappe.utils import add_to_date, now_datetime
 
 from central.identity import signup_email, signup_watch
-from central.identity.signup_email import validate_signup_email
+from central.identity.signup_email import reserve_gmail_account, validate_signup_email
 from central.identity.signup_watch import (
 	get_organisation_domain,
 	save_automatic_block,
@@ -36,6 +37,11 @@ class TestSignupGuard(IntegrationTestCase):
 
 	def unique_ip(self) -> str:
 		return f"ip-{frappe.generate_hash(length=10)}"
+
+	def add_gmail_user(self, email: str) -> None:
+		frappe.get_doc(
+			{"doctype": "User", "email": email, "first_name": "Gm", "send_welcome_email": 0}
+		).insert()
 
 	def block(self, domain: str, **values) -> None:
 		frappe.get_doc({"doctype": "Signup Domain", "domain": domain, "reason": "Spam", **values}).insert()
@@ -176,14 +182,93 @@ class TestSignupGuard(IntegrationTestCase):
 	def test_departments_count_toward_their_organisation(self):
 		self.assertEqual(get_organisation_domain("cs.uni.edu"), "uni.edu")
 		self.assertEqual(get_organisation_domain("cs.uni.ac.in"), "uni.ac.in")
-		self.assertEqual(get_organisation_domain("uni.ac.in"), "uni.ac.in")
-		self.assertEqual(get_organisation_domain("mail.example.de"), "example.de")
+		self.assertEqual(get_organisation_domain("mail.gmail.com"), "gmail.com")
+
+	def test_unrelated_organisations_under_one_public_suffix_count_apart(self):
+		self.assertEqual(get_organisation_domain("school.k12.ca.us"), "school.k12.ca.us")
+		self.assertEqual(get_organisation_domain("team.github.io"), "team.github.io")
+
+	def test_a_stranger_naming_an_organisations_addresses_cannot_block_it(self):
+		from central.users import send_sign_in_code
+
+		domain = unique_domain()
+		with patch("central.identity.email_code.frappe.sendmail"), patch(ENQUEUE) as enqueue:
+			for index in range(10):
+				with patch.object(frappe.local, "request_ip", self.unique_ip()):
+					send_sign_in_code(f"victim{index}@{domain}", "Victim")
+
+		enqueue.assert_not_called()
+		validate_signup_email(f"real@{domain}")
+
+	def test_a_gmail_subdomain_never_counts_toward_or_blocks_gmail(self):
+		with patch(ENQUEUE) as enqueue:
+			for index in range(10):
+				watch_signup_domain(f"user{index}@mail.gmail.com")
+		enqueue.assert_not_called()
+
+		with patch("central.identity.signup_watch.frappe.sendmail") as sendmail:
+			save_automatic_block("gmail.com", "Burst")
+		self.assertFalse(frappe.db.exists("Signup Domain", "gmail.com"))
+		sendmail.assert_not_called()
+
+	def test_an_existing_plus_alias_account_keeps_its_inbox(self):
+		local = f"john.doe{frappe.generate_hash(length=6)}"
+		self.add_gmail_user(f"{local}+work@gmail.com")
+
+		with self.assertRaisesRegex(frappe.ValidationError, "Aliases"):
+			validate_signup_email(f"{local}@gmail.com")
+
+	def test_two_spellings_of_one_gmail_inbox_cannot_both_be_created(self):
+		local = f"race{frappe.generate_hash(length=6)}"
+		reserve_gmail_account(f"{local[:2]}.{local[2:]}@gmail.com")
+
+		with self.assertRaisesRegex(frappe.ValidationError, "Aliases"):
+			reserve_gmail_account(f"{local}@googlemail.com")
+
+	def test_a_rolled_back_signup_gives_its_gmail_inbox_up(self):
+		local = f"undo{frappe.generate_hash(length=6)}"
+		reserve_gmail_account(f"{local}@gmail.com")
+		frappe.db.rollback()
+
+		reserve_gmail_account(f"{local}@gmail.com")
+
+	def test_a_domain_change_clears_the_cache_again_after_commit(self):
+		domain = unique_domain()
+		self.block(domain)
+		frappe.cache.set_value(signup_email.SIGNUP_DOMAINS_KEY, {})
+
+		frappe.db.after_commit.run()
+
+		self.assertTrue(signup_email.is_blocked_domain(domain))
+
+	def test_only_a_system_manager_can_see_or_change_signup_domains(self):
+		from central.tests.test_team_management import create_user
+
+		domain = unique_domain()
+		self.block(domain)
+		frappe.set_user(create_user(f"member.{frappe.generate_hash(length=6)}@example.test"))
+		self.addCleanup(frappe.set_user, "Administrator")
+
+		self.assertFalse(frappe.has_permission("Signup Domain", "read"))
+		with self.assertRaises(frappe.PermissionError):
+			frappe.get_doc("Signup Domain", domain).check_permission("read")
+		with self.assertRaises(frappe.PermissionError):
+			frappe.get_doc({"doctype": "Signup Domain", "domain": unique_domain(), "reason": "x"}).insert()
 
 
 class TestTemporaryDomainRefresh(IntegrationTestCase):
 	def setUp(self):
-		self.path = signup_email.get_temporary_domains_path()
-		self.addCleanup(lambda: os.path.exists(self.path) and os.remove(self.path))
+		self.enterContext(self.change_settings("Central Settings", refuse_temporary_emails=1))
+		self.addCleanup(frappe.cache.delete_value, signup_email.TEMPORARY_DOMAINS_KEY)
+		folder = self.enterContext(tempfile.TemporaryDirectory())
+		path = str(Path(folder) / "temporary_email_domains.txt")
+		self.enterContext(
+			patch("central.identity.signup_email.get_temporary_domains_path", return_value=path)
+		)
+		self.enterContext(
+			patch("central.identity.signup_watch.get_temporary_domains_path", return_value=path)
+		)
+		frappe.cache.delete_value(signup_email.TEMPORARY_DOMAINS_KEY)
 
 	def refresh(self, domains: list[str]) -> None:
 		response = Mock(text="\n".join(domains))
@@ -191,14 +276,14 @@ class TestTemporaryDomainRefresh(IntegrationTestCase):
 			signup_watch.refresh_temporary_domains()
 
 	def test_a_fresh_list_replaces_the_shipped_one(self):
-		domains = [f"temp{index}.example" for index in range(1200)]
-		self.refresh(domains)
+		self.refresh([f"temp{index}.example" for index in range(1200)])
 
-		self.assertIn("temp7.example", signup_email.get_temporary_domains())
-		self.assertNotIn("mailinator.com", signup_email.get_temporary_domains())
+		self.assertTrue(signup_email.is_temporary_domain("temp7.example"))
+		self.assertFalse(signup_email.is_temporary_domain("mailinator.com"))
 
 	def test_a_list_that_looks_wrong_is_not_saved(self):
 		self.refresh([f"temp{index}.example" for index in range(1200)] + ["gmail.com"])
 		self.refresh(["only.example"])
 
-		self.assertIn("mailinator.com", signup_email.get_temporary_domains())
+		self.assertTrue(signup_email.is_temporary_domain("mailinator.com"))
+		self.assertFalse(signup_email.is_temporary_domain("temp7.example"))

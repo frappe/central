@@ -1,14 +1,20 @@
+from __future__ import annotations
+
 import os
+from typing import TYPE_CHECKING
 
 import frappe
 from frappe import _
 from frappe.utils import cint, get_datetime, now_datetime
 
+if TYPE_CHECKING:
+	from frappe.core.doctype.user.user import User
+
 GMAIL_DOMAINS = ("gmail.com", "googlemail.com")
 BUNDLED_TEMPORARY_DOMAINS = os.path.join(os.path.dirname(__file__), "temporary_email_domains.txt")
 SIGNUP_DOMAINS_KEY = "signup_domains"
 GMAIL_ACCOUNTS_KEY = "signup_gmail_accounts"
-_temporary_domains: dict[str, tuple[float, frozenset[str]]] = {}
+TEMPORARY_DOMAINS_KEY = "signup_temporary_domains"
 
 
 def validate_signup_email(email: str) -> None:
@@ -18,7 +24,11 @@ def validate_signup_email(email: str) -> None:
 		frappe.throw(_("Sign up with a different email address. This email domain is not accepted."))
 
 	if is_alias_email(email):
-		frappe.throw(_("Sign up with your own email address. Aliases such as name+tag are not allowed."))
+		throw_alias()
+
+
+def throw_alias() -> None:
+	frappe.throw(_("Sign up with your own email address. Aliases such as name+tag are not allowed."))
 
 
 def get_domain(email: str) -> str:
@@ -62,12 +72,28 @@ def is_temporary_domain(domain: str) -> bool:
 	if not cint(frappe.get_cached_value("Central Settings", "Central Settings", "refuse_temporary_emails")):
 		return False
 
-	temporary = get_temporary_domains()
-	return any(parent in temporary for parent in get_parent_domains(domain))
+	if not frappe.cache.exists(TEMPORARY_DOMAINS_KEY):
+		load_temporary_domains()
+	return any(frappe.cache.sismember(TEMPORARY_DOMAINS_KEY, parent) for parent in get_parent_domains(domain))
+
+
+def load_temporary_domains() -> None:
+	"""Cache the site's refreshed list when the weekly job has saved one, else the list shipped with the app."""
+	path = get_temporary_domains_path()
+	if not os.path.exists(path):
+		path = BUNDLED_TEMPORARY_DOMAINS
+
+	with open(path) as file:
+		domains = [line.strip() for line in file if line.strip() and not line.startswith("#")]
+	replace_cached_set(TEMPORARY_DOMAINS_KEY, domains)
+
+
+def get_temporary_domains_path() -> str:
+	return frappe.get_site_path("private", "temporary_email_domains.txt")
 
 
 def is_alias_email(email: str) -> bool:
-	"""Whether the address is a plus alias, or a dotted spelling of a Gmail account that already exists."""
+	"""Whether the address is a plus alias, or another spelling of a Gmail account that already exists."""
 	local, _at, domain = email.lower().rpartition("@")
 	if domain in get_alias_domains():
 		return False
@@ -90,49 +116,58 @@ def get_parent_domains(domain: str) -> list[str]:
 	return [".".join(parts[index:]) for index in range(len(parts) - 1)]
 
 
-def get_temporary_domains() -> frozenset[str]:
-	"""The site's refreshed list when the weekly job has saved one, else the list shipped with the app.
-	It is read again only when the file changes."""
-	path = get_temporary_domains_path()
-	if not os.path.exists(path):
-		path = BUNDLED_TEMPORARY_DOMAINS
-
-	modified = os.path.getmtime(path)
-	cached = _temporary_domains.get(path)
-	if not cached or cached[0] != modified:
-		with open(path) as file:
-			domains = frozenset(line.strip() for line in file if line.strip() and not line.startswith("#"))
-		cached = _temporary_domains[path] = (modified, domains)
-	return cached[1]
-
-
-def get_temporary_domains_path() -> str:
-	return frappe.get_site_path("private", "temporary_email_domains.txt")
+def get_gmail_inbox(local: str) -> str:
+	"""Gmail ignores dots and everything after a +, so a.b+work@gmail.com reaches ab@gmail.com."""
+	return local.lower().partition("+")[0].replace(".", "")
 
 
 def has_gmail_account(local: str) -> bool:
-	"""Gmail ignores dots, so a.b@gmail.com and ab@gmail.com reach the same inbox. The known
-	accounts sit in a cached set, filled once from the users and kept up as accounts are made."""
-	if not frappe.cache.exists(GMAIL_ACCOUNTS_KEY):
-		load_gmail_accounts()
-	return bool(frappe.cache.sismember(GMAIL_ACCOUNTS_KEY, local.replace(".", "")))
+	"""Whether a Gmail account already reaches this inbox. The known inboxes sit in a cached set."""
+	ensure_gmail_accounts()
+	return bool(frappe.cache.sismember(GMAIL_ACCOUNTS_KEY, get_gmail_inbox(local)))
 
 
-def load_gmail_accounts() -> None:
+def reserve_gmail_account(email: str) -> None:
+	"""Claim a new Gmail account's inbox before the account is made, so two spellings of one inbox
+	cannot both pass at once. A request that rolls back gives the inbox up again."""
+	local, _at, domain = email.lower().rpartition("@")
+	if domain not in GMAIL_DOMAINS or domain in get_alias_domains():
+		return
+
+	ensure_gmail_accounts()
+	inbox = get_gmail_inbox(local)
+	with frappe.cache.lock(frappe.cache.make_key(f"{GMAIL_ACCOUNTS_KEY}:{inbox}:lock"), timeout=10):
+		if frappe.cache.sismember(GMAIL_ACCOUNTS_KEY, inbox):
+			throw_alias()
+		frappe.cache.sadd(GMAIL_ACCOUNTS_KEY, inbox)
+
+	frappe.db.after_rollback.add(lambda: frappe.cache.srem(GMAIL_ACCOUNTS_KEY, inbox))
+
+
+def ensure_gmail_accounts() -> None:
+	if frappe.cache.exists(GMAIL_ACCOUNTS_KEY):
+		return
+
 	user = frappe.qb.DocType("User")
 	condition = user.name.like(f"%@{GMAIL_DOMAINS[0]}")
 	for domain in GMAIL_DOMAINS[1:]:
 		condition |= user.name.like(f"%@{domain}")
 	emails = frappe.qb.from_(user).select(user.name).where(condition).run(pluck=True)
-	accounts = [email.lower().rpartition("@")[0].replace(".", "") for email in emails]
-	for index in range(0, len(accounts), 1000):
-		frappe.cache.sadd(GMAIL_ACCOUNTS_KEY, *accounts[index : index + 1000])
-	if not accounts:
-		frappe.cache.sadd(GMAIL_ACCOUNTS_KEY, "")
+	replace_cached_set(GMAIL_ACCOUNTS_KEY, [get_gmail_inbox(email.rpartition("@")[0]) for email in emails])
 
 
-def remember_gmail_account(doc, method: str | None = None) -> None:
-	"""Add a new Gmail user to the cached set, once the set exists."""
+def remember_gmail_account(doc: User, method: str | None = None) -> None:
+	"""Add a Gmail user made outside signup, such as from Desk, to the cached set once it exists."""
 	local, _at, domain = doc.name.lower().rpartition("@")
 	if domain in GMAIL_DOMAINS and frappe.cache.exists(GMAIL_ACCOUNTS_KEY):
-		frappe.cache.sadd(GMAIL_ACCOUNTS_KEY, local.replace(".", ""))
+		frappe.cache.sadd(GMAIL_ACCOUNTS_KEY, get_gmail_inbox(local))
+
+
+def replace_cached_set(name: str, members: list[str]) -> None:
+	"""Build the set under a new key and swap it in, so no reader sees it half filled. An empty
+	member marks a set that is loaded but has nothing in it."""
+	building = f"{name}:building:{frappe.generate_hash(length=8)}"
+	members = ["", *members]
+	for index in range(0, len(members), 1000):
+		frappe.cache.sadd(building, *members[index : index + 1000])
+	frappe.cache.rename(frappe.cache.make_key(building), frappe.cache.make_key(name))

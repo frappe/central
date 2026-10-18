@@ -10,7 +10,7 @@ from frappe.utils.telemetry import capture
 
 from central.geo import warm_country_cache
 from central.identity.email_code import EmailCode
-from central.identity.signup_email import validate_signup_email
+from central.identity.signup_email import reserve_gmail_account, validate_signup_email
 from central.identity.signup_watch import watch_signup_domain, watch_signup_ip
 
 if TYPE_CHECKING:
@@ -35,7 +35,6 @@ def send_sign_in_code(email: str, full_name: str | None = None, product: str | N
 	if not user:
 		watch_signup_ip()
 		validate_signup_email(email)
-		watch_signup_domain(email)
 
 	subject, heading, brand = get_code_email(get_email_product(product), is_new_user=not user)
 	EmailCode(email).send(subject, heading, None if user else full_name, brand)
@@ -98,6 +97,8 @@ def create_user(email: str, full_name: str):
 	"""Create a Website User whose email is already verified."""
 	_enforce_signup_limit()
 	validate_signup_email(email)
+	watch_signup_domain(email)
+	reserve_gmail_account(email)
 	roles = {CENTRAL_USER_ROLE, frappe.get_single_value("Portal Settings", "default_role")}
 	user = frappe.get_doc(
 		{
