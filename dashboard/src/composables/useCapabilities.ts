@@ -1,6 +1,7 @@
 import { useCall } from 'frappe-ui'
 import { computed } from 'vue'
 import { API, method } from '@/api/methods'
+import { useSession } from '@/composables/useSession'
 import { teamParams, whenTeamReady } from '@/composables/useTeamScope'
 
 // Mirrors Central's capability IAM (central/iam.my_capabilities). Computed once
@@ -20,6 +21,8 @@ const capsCall = useCall<string[], { team: string }>({
 })
 
 whenTeamReady(() => capsCall.reload())
+
+const { activePartner } = useSession()
 
 function has(cap: string): boolean {
 	return capsCall.data?.includes(cap) ?? false
@@ -45,8 +48,11 @@ export function useCapabilities() {
 		canManageServices: computed(() => has('service:manage')),
 		// Team & identity — every active member can view the roster (membership is
 		// "any capability on the team"); managing members/roles and editing or
-		// deleting the team are the gated mutations.
-		isMember: computed(() => (capsCall.data?.length ?? 0) > 0),
+		// deleting the team are the gated mutations. A partner's staff hold
+		// capabilities on a client without being a member of it.
+		isMember: computed(
+			() => (capsCall.data?.length ?? 0) > 0 && !activePartner.value,
+		),
 		canManageMembers: computed(() => has('team:manage_members')),
 		canEditTeam: computed(() => has('team:edit')),
 		canDeleteTeam: computed(() => has('team:delete')),

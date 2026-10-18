@@ -48,9 +48,14 @@ async function advance(status: 'Done' | 'Skipped'): Promise<void> {
 	error.value = ''
 	try {
 		const step = current.value
-		// A new team brings its own stored steps. The team step itself is not stored.
-		if (step.key === 'team') steps.value = [step, ...pendingSteps.value]
-		else await answerStep(step.key, status)
+		// A new team brings its own stored steps. The team step itself is not stored, and
+		// the partner step saves its answer on the partner's request.
+		if (step.key === 'team')
+			steps.value = [
+				step,
+				...pendingSteps.value.filter((next) => next.key !== 'team'),
+			]
+		else if (step.key !== 'partner') await answerStep(step.key, status)
 
 		if (isLast.value) await finish()
 		else index.value += 1

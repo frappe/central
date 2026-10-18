@@ -51,3 +51,15 @@ export function roleOnResourceLabel(
 ): string {
 	return `${roleLabel} · ${resourceScopeLabel(grant, registry)}`
 }
+
+/** A member's roles on the team itself, and the Client access role they hold on clients. */
+export function splitClientAccess(roles: TeamMemberRoleAssignment[]): {
+	teamRoles: TeamMemberRoleAssignment[]
+	clientRole: string | null
+} {
+	return {
+		teamRoles: roles.filter((grant) => grant.resource_type !== 'Clients'),
+		clientRole:
+			roles.find((grant) => grant.resource_type === 'Clients')?.role ?? null,
+	}
+}

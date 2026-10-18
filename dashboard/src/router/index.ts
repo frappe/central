@@ -34,6 +34,29 @@ const routes = [
 		meta: { public: true, allowSignedIn: true },
 	},
 	{
+		// A partner's own code link, open to guests and signed-in users. Outside AppShell,
+		// so its team-naming dialog doesn't open over it.
+		path: '/partner',
+		name: 'PartnerSetup',
+		component: () => import('@/pages/partner/PartnerSetupPage.vue'),
+		meta: { public: true, allowSignedIn: true },
+	},
+	{
+		// Connect's emailed link for a partner's owner to pick the partner's team.
+		path: '/connect/partner/:token',
+		name: 'PartnerRegistration',
+		component: () => import('@/pages/connect/PartnerRegistrationPage.vue'),
+		meta: { public: true, allowSignedIn: true },
+	},
+	{
+		// Connect's link for a customer to accept the partner they hired. After sign-in the
+		// onboarding dialog asks for the answer.
+		path: '/connect/customer/:token',
+		name: 'PartnerRequest',
+		component: () => import('@/pages/connect/PartnerRequestPage.vue'),
+		meta: { public: true, allowSignedIn: true },
+	},
+	{
 		path: '/onboarding/site',
 		name: 'OnboardingSite',
 		component: () => import('@/pages/onboarding/SiteNamePage.vue'),

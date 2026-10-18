@@ -20,6 +20,9 @@ const TeamForm = defineAsyncComponent(
 const SSHKeysForm = defineAsyncComponent(
 	() => import('@/components/settings/forms/SSHKeysForm.vue'),
 )
+const PartnersForm = defineAsyncComponent(
+	() => import('@/components/settings/forms/PartnersForm.vue'),
+)
 
 export type SettingsTab =
 	| 'profile'
@@ -27,6 +30,7 @@ export type SettingsTab =
 	| 'preferences'
 	| 'team'
 	| 'ssh-keys'
+	| 'partners'
 
 export interface SettingsTabDef {
 	value: SettingsTab
@@ -43,9 +47,9 @@ export interface SettingsTabDef {
 	/**
 	 * Capability gate, resolved by the consumer against useCapabilities:
 	 * 'member' needs any standing on the team, 'teamAdmin' needs team:edit or
-	 * team:delete. Undefined is always available.
+	 * team:delete, 'billing' needs billing:view as a member. Undefined is always available.
 	 */
-	requires?: 'member' | 'teamAdmin'
+	requires?: 'member' | 'teamAdmin' | 'billing'
 }
 
 export const SETTINGS_TABS: SettingsTabDef[] = [
@@ -96,14 +100,28 @@ export const SETTINGS_TABS: SettingsTabDef[] = [
 		component: SSHKeysForm,
 		requires: 'member',
 	},
+	{
+		value: 'partners',
+		group: 'Administration',
+		label: 'Partners',
+		icon: 'lucide-handshake',
+		title: 'Partners',
+		description:
+			'The partner your team works with, and your clients if you are one.',
+		component: PartnersForm,
+		requires: 'billing',
+	},
 ]
 
 /** The settings tabs this member can open on the active team. */
 export function useSettingsTabs() {
-	const { isMember, canEditTeam, canDeleteTeam } = useCapabilities()
+	const { isMember, canEditTeam, canDeleteTeam, canViewBilling } =
+		useCapabilities()
 
 	const isAvailable = (tab: SettingsTabDef): boolean => {
 		if (tab.requires === 'member') return isMember.value
+		if (tab.requires === 'billing')
+			return canViewBilling.value && isMember.value
 		if (tab.requires === 'teamAdmin')
 			return canEditTeam.value || canDeleteTeam.value
 		return true

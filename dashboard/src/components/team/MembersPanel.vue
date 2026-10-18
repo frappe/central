@@ -16,13 +16,18 @@ import TeamMemberRowActions from '@/components/team/TeamMemberRowActions.vue'
 import TransferOwnershipDialog from '@/components/team/TransferOwnershipDialog.vue'
 
 import { useCapabilities } from '@/composables/useCapabilities'
+import { useSession } from '@/composables/useSession'
 import { useTeamInvitations } from '@/composables/useTeamInvitations'
 import { useTeamMembers } from '@/composables/useTeamMembers'
 import { useTeamRoles } from '@/composables/useTeamRoles'
 import { teamParams } from '@/composables/useTeamScope'
 import { useTeamSettings } from '@/composables/useTeamSettings'
 import { formatDate } from '@/lib/format'
-import { resourceScopeLabel, roleOnResourceLabel } from '@/lib/resourceScope'
+import {
+	resourceScopeLabel,
+	roleOnResourceLabel,
+	splitClientAccess,
+} from '@/lib/resourceScope'
 import type {
 	InvitationRow,
 	TeamMemberRoleAssignment,
@@ -54,6 +59,7 @@ const {
 const { roles, roleLabel } = useTeamRoles()
 const { canManageMembers } = useCapabilities()
 const { isOwner } = useTeamSettings()
+const { isPartnerTeam } = useSession()
 
 const registryCall = useCall<TeamRegistry, { team: string }>({
 	url: method(API.registry),
@@ -76,19 +82,25 @@ interface RosterRow {
 	name: string
 	subtitle: string
 	roles: TeamMemberRoleAssignment[]
+	/** The role held on every client that gave this partner team access. */
+	clientRole: string | null
 	member: TeamMemberRow | null
 	invite: InvitationRow | null
 }
 
 const roster = computed<RosterRow[]>(() => [
-	...members.value.map((member) => ({
-		key: member.user,
-		name: member.full_name,
-		subtitle: member.user,
-		roles: member.roles,
-		member,
-		invite: null,
-	})),
+	...members.value.map((member) => {
+		const { teamRoles, clientRole } = splitClientAccess(member.roles)
+		return {
+			key: member.user,
+			name: member.full_name,
+			subtitle: member.user,
+			roles: teamRoles,
+			clientRole,
+			member,
+			invite: null,
+		}
+	}),
 	...invitations.value
 		.filter((invite) => invite.status === 'Pending')
 		.map((invite) => ({
@@ -104,6 +116,7 @@ const roster = computed<RosterRow[]>(() => [
 					resource_name: invite.resource_name ?? null,
 				},
 			],
+			clientRole: null,
 			member: null,
 			invite,
 		})),
@@ -149,6 +162,16 @@ const columns = computed<ListViewColumn<RosterRow>[]>(() => [
 		compare: (a, b) =>
 			memberRank(a) - memberRank(b) || roleNames(a).localeCompare(roleNames(b)),
 	},
+	...(isPartnerTeam.value
+		? [
+				{
+					key: 'client_access',
+					label: 'Client access',
+					value: (row: RosterRow) =>
+						row.clientRole ? roleLabel(row.clientRole) : '',
+				},
+			]
+		: []),
 	{ key: 'actions', label: '', width: '2.5rem', align: 'end' },
 ])
 
@@ -245,6 +268,18 @@ const roleFilters = computed<ListViewFilter[]>(() => [
 					No access grants
 				</p>
 			</div>
+		</template>
+
+		<template #client_access="{ row }">
+			<p
+				v-if="row.clientRole"
+				class="truncate text-p-sm-medium text-ink-gray-8"
+			>
+				{{ roleLabel(row.clientRole) }}
+			</p>
+			<p v-else class="text-p-sm text-ink-gray-5">
+				{{ row.invite ? '' : 'None' }}
+			</p>
 		</template>
 
 		<template #actions="{ row }">

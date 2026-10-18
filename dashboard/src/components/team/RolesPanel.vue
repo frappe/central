@@ -16,6 +16,7 @@ import { useTeamMembers } from '@/composables/useTeamMembers'
 import { useTeamRoles } from '@/composables/useTeamRoles'
 import { useTeamRowSelection } from '@/composables/useTeamRowSelection'
 import { reportError } from '@/lib/feedback'
+import { splitClientAccess } from '@/lib/resourceScope'
 import { roleDisplay } from '@/lib/roles'
 import type { TeamMemberRow, TeamRoleRow } from '@/types/api'
 
@@ -27,11 +28,12 @@ const { canManageMembers } = useCapabilities()
 const query = ref(createListViewQuery())
 const deletingName = ref('')
 
-// Role doc name -> members holding it, for the avatar stack in the Members column.
+// Role doc name -> members holding it on the team, for the avatar stack in the Members column.
 const membersByRole = computed<Record<string, TeamMemberRow[]>>(() => {
 	const map: Record<string, TeamMemberRow[]> = {}
 	for (const member of members.value) {
-		const uniqueRoles = new Set(member.roles.map((grant) => grant.role))
+		const { teamRoles } = splitClientAccess(member.roles)
+		const uniqueRoles = new Set(teamRoles.map((grant) => grant.role))
 		for (const role of uniqueRoles) {
 			;(map[role] ??= []).push(member)
 		}
