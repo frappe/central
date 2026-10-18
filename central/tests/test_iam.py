@@ -58,8 +58,9 @@ class TestCentralIAM(IntegrationTestCase):
 		self.assertEqual(frappe.db.count("Capability", {"plane": "central"}), 8)
 		self.assertEqual(frappe.db.count("Capability", {"plane": "atlas"}), 9)
 		self.assertEqual(frappe.db.count("Capability", {"plane": "bench"}), 0)
-		# The retired roles are gone; the five-rung ladder is all that remains.
-		self.assertEqual(frappe.db.count("Team Role", {"is_system": 1}), 5)
+		# The retired roles are gone: the five-rung ladder, and Partner, which only a partner
+		# team holds on its clients.
+		self.assertEqual(frappe.db.count("Team Role", {"is_system": 1}), 6)
 		for retired in ("Operator", "Site Manager", "Support"):
 			self.assertFalse(frappe.db.exists("Team Role", retired))
 
@@ -68,6 +69,8 @@ class TestCentralIAM(IntegrationTestCase):
 		developer_caps = set(frappe.get_all("Role Capability", {"parent": "Developer"}, pluck="capability"))
 		viewer_caps = set(frappe.get_all("Role Capability", {"parent": "Viewer"}, pluck="capability"))
 		billing_caps = set(frappe.get_all("Role Capability", {"parent": "Billing"}, pluck="capability"))
+		partner_caps = set(frappe.get_all("Role Capability", {"parent": "Partner"}, pluck="capability"))
+		self.assertEqual(partner_caps, developer_caps | {"billing:view", "billing:manage"})
 
 		# Full server lifecycle is shared by Owner, Admin, and Developer.
 		for caps in (owner_caps, admin_caps, developer_caps):

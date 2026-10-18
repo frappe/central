@@ -1,0 +1,200 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "format:PARTNER-{#####}",
+ "creation": "2026-09-10 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "partner_name",
+  "status",
+  "column_break_team",
+  "team",
+  "team_name",
+  "column_break_code",
+  "partner_code",
+  "partner_code_hash",
+  "section_connect",
+  "connect_partner_id",
+  "owner_email",
+  "return_url",
+  "column_break_connect",
+  "expires_on",
+  "token_hash"
+ ],
+ "fields": [
+  {
+   "fieldname": "partner_name",
+   "fieldtype": "Data",
+   "label": "Partner Name",
+   "in_list_view": 1,
+   "reqd": 1,
+   "description": "The partner's display name. It comes from Connect for a Connect registration, and from the team otherwise."
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "label": "Status",
+   "options": "Pending\nCompleted\nExpired",
+   "default": "Completed",
+   "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "read_only": 1,
+   "description": "Pending until the partner's owner picks the team. Only a Completed partner can be linked to customers."
+  },
+  {
+   "fieldname": "column_break_team",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "team",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Team",
+   "options": "Team",
+   "reqd": 0,
+   "unique": 1,
+   "description": "The partner's own team. Customers link to it. A Connect registration gets it when the partner's owner picks it.",
+   "in_standard_filter": 1
+  },
+  {
+   "fetch_from": "team.team_name",
+   "fieldname": "team_name",
+   "fieldtype": "Data",
+   "in_list_view": 0,
+   "label": "Team Name",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_code",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "partner_code",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Partner Code",
+   "read_only": 1,
+   "reqd": 1,
+   "unique": 1,
+   "description": "The code that identifies this partner. Links to the partner carry its hash, not the code."
+  },
+  {
+   "description": "SHA-256 of the partner code. A link to this partner carries it in place of the code, so the customer never sees the code.",
+   "fieldname": "partner_code_hash",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Partner Code Hash",
+   "no_copy": 1,
+   "read_only": 1,
+   "unique": 1
+  },
+  {
+   "fieldname": "section_connect",
+   "fieldtype": "Section Break",
+   "label": "Connect",
+   "collapsible": 1,
+   "depends_on": "eval:doc.connect_partner_id"
+  },
+  {
+   "fieldname": "connect_partner_id",
+   "fieldtype": "Data",
+   "label": "Connect Partner ID",
+   "read_only": 1,
+   "unique": 1,
+   "no_copy": 1,
+   "description": "Connect's ID for this partner. Connect sends it when it registers the partner."
+  },
+  {
+   "fieldname": "owner_email",
+   "fieldtype": "Data",
+   "options": "Email",
+   "label": "Owner Email",
+   "read_only": 1,
+   "description": "Only a user signed in with this email can complete the registration."
+  },
+  {
+   "description": "The Connect page the owner goes back to after picking the team. It must be on the Connect URL in Central Settings.",
+   "fieldname": "return_url",
+   "fieldtype": "Data",
+   "label": "Return URL",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_connect",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "expires_on",
+   "fieldtype": "Date",
+   "label": "Expires On",
+   "read_only": 1,
+   "description": "A Pending registration that nobody completes by this date becomes Expired."
+  },
+  {
+   "fieldname": "token_hash",
+   "fieldtype": "Data",
+   "label": "Token Hash",
+   "hidden": 1,
+   "read_only": 1,
+   "no_copy": 1,
+   "unique": 1,
+   "description": "SHA-256 of the key in the owner's registration link. Central keeps only the hash."
+  }
+ ],
+ "links": [
+  {
+   "group": "Clients",
+   "link_doctype": "Partner Client Link",
+   "link_fieldname": "partner_team"
+  }
+ ],
+ "modified": "2026-10-16 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Central",
+ "name": "Partner Profile",
+ "naming_rule": "Expression (old style)",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "read": 1,
+   "write": 1,
+   "role": "Connect Integration"
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [
+  {
+   "color": "Orange",
+   "title": "Pending"
+  },
+  {
+   "color": "Green",
+   "title": "Completed"
+  },
+  {
+   "color": "Gray",
+   "title": "Expired"
+  }
+ ],
+ "track_changes": 1,
+ "search_fields": "partner_name,team_name,connect_partner_id",
+ "title_field": "partner_name",
+ "show_title_field_in_link": 1
+}

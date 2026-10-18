@@ -6,7 +6,7 @@ from frappe.query_builder import Order
 from frappe.rate_limiter import rate_limit
 from frappe.utils.translations import _lt
 
-from central.iam import can, expand_capabilities, get_all_capabilities
+from central.iam import PARTNER_ROLE, can, expand_capabilities, get_all_capabilities
 from central.identity.doctype.team.team import Team
 from central.identity.doctype.team_invitation.team_invitation import get_invitation_by_token
 from central.utils.guards import require_capability, require_team_member
@@ -65,7 +65,9 @@ def list_team_roles(team: str) -> list[dict[str, Any]]:
 			& (role_capability.parentfield == "capabilities")
 		)
 		.select(role.name, role.role_name, role.is_system, role.team, role_capability.capability)
+		# The Partner role is held by a partner team on its clients, never given to a member.
 		.where((role.is_system == 1) | ((role.team == team) & (role.is_system == 0)))
+		.where(role.name != PARTNER_ROLE)
 		.orderby(role.is_system, order=Order.desc)
 		.orderby(role.role_name)
 		.orderby(role_capability.idx)

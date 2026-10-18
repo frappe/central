@@ -1,0 +1,314 @@
+{
+ "actions": [],
+ "autoname": "format:PCL-{#####}",
+ "creation": "2026-09-10 00:00:00",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "section_link",
+  "partner_team",
+  "partner_team_name",
+  "column_break_link",
+  "client_team",
+  "client_team_name",
+  "column_break_status",
+  "status",
+  "expires_on",
+  "section_request",
+  "source",
+  "source_reference",
+  "project_title",
+  "column_break_source",
+  "requested_by",
+  "customer_email",
+  "return_url",
+  "token_hash",
+  "section_billing",
+  "paid_by_partner",
+  "partner_access",
+  "column_break_billing",
+  "spend_limit",
+  "buffer",
+  "section_end",
+  "ended_by",
+  "ended_on",
+  "column_break_end",
+  "end_reason"
+ ],
+ "fields": [
+  {
+   "fieldname": "section_link",
+   "fieldtype": "Section Break",
+   "label": "Link"
+  },
+  {
+   "description": "The partner's own team. It has a Partner Profile.",
+   "fieldname": "partner_team",
+   "fieldtype": "Link",
+   "in_standard_filter": 1,
+   "label": "Partner Team",
+   "options": "Team",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fetch_from": "partner_team.team_name",
+   "fieldname": "partner_team_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Partner",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_link",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "The customer's team the partner works with. A Connect link gets it when the customer accepts.",
+   "fieldname": "client_team",
+   "fieldtype": "Link",
+   "in_standard_filter": 1,
+   "label": "Client Team",
+   "options": "Team",
+   "reqd": 0,
+   "search_index": 1
+  },
+  {
+   "fetch_from": "client_team.team_name",
+   "fieldname": "client_team_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Client",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_status",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "Requested",
+   "description": "Requested until it is answered. A team has one Requested or Active link at a time. Declined, Expired and Ended are final.",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Status",
+   "options": "Requested\nActive\nDeclined\nExpired\nEnded",
+   "reqd": 1
+  },
+  {
+   "fieldname": "expires_on",
+   "fieldtype": "Date",
+   "label": "Expires On",
+   "read_only": 1,
+   "in_list_view": 1,
+   "description": "A Requested link that nobody answers by this date becomes Expired."
+  },
+  {
+   "fieldname": "section_request",
+   "fieldtype": "Section Break",
+   "label": "Request"
+  },
+  {
+   "description": "How the link started. Partner Code: the customer opened the partner's own link. Connect: Connect asked for it after a confirmed hire.",
+   "fieldname": "source",
+   "fieldtype": "Select",
+   "label": "Source",
+   "read_only": 1,
+   "options": "Partner Code\nConnect",
+   "default": "Partner Code",
+   "reqd": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "description": "Connect's project ID. Connect sends it, and one Connect project has one link.",
+   "fieldname": "source_reference",
+   "fieldtype": "Data",
+   "label": "Connect Project",
+   "read_only": 1,
+   "depends_on": "eval:doc.source=='Connect'"
+  },
+  {
+   "fieldname": "project_title",
+   "fieldtype": "Data",
+   "label": "Project Title",
+   "read_only": 1,
+   "depends_on": "eval:doc.source=='Connect'",
+   "description": "The project name the customer sees."
+  },
+  {
+   "fieldname": "column_break_source",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "The customer team member who asked for a Partner Code link.",
+   "fieldname": "requested_by",
+   "fieldtype": "Link",
+   "label": "Requested By",
+   "options": "User",
+   "read_only": 1,
+   "depends_on": "eval:doc.source=='Partner Code'"
+  },
+  {
+   "fieldname": "customer_email",
+   "fieldtype": "Data",
+   "options": "Email",
+   "label": "Customer Email",
+   "read_only": 1,
+   "depends_on": "eval:doc.source=='Connect'",
+   "description": "Only a user signed in with this email can answer the link."
+  },
+  {
+   "fieldname": "return_url",
+   "fieldtype": "Data",
+   "options": "URL",
+   "label": "Return URL",
+   "read_only": 1,
+   "depends_on": "eval:doc.source=='Connect'",
+   "description": "Where the customer goes back to in Connect. It is always on the Connect URL in Central Settings."
+  },
+  {
+   "fieldname": "token_hash",
+   "fieldtype": "Data",
+   "label": "Token Hash",
+   "hidden": 1,
+   "read_only": 1,
+   "no_copy": 1,
+   "unique": 1,
+   "description": "SHA-256 of the key in the customer's setup link. Central keeps only the hash."
+  },
+  {
+   "fieldname": "section_billing",
+   "fieldtype": "Section Break",
+   "label": "Billing"
+  },
+  {
+   "default": "0",
+   "description": "The customer asked the partner to pay for the client team's hosting.",
+   "fieldname": "paid_by_partner",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Partner Pays"
+  },
+  {
+   "default": "0",
+   "fieldname": "partner_access",
+   "fieldtype": "Check",
+   "label": "Partner Access",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "description": "The partner's staff get the Partner role on the client team. Always on while the partner pays. Otherwise the customer gives or removes it."
+  },
+  {
+   "fieldname": "column_break_billing",
+   "fieldtype": "Column Break"
+  },
+  {
+   "depends_on": "eval:doc.paid_by_partner",
+   "description": "The most the partner pays for the client team in a billing cycle. Set by the partner.",
+   "fieldname": "spend_limit",
+   "fieldtype": "Currency",
+   "label": "Spend Limit"
+  },
+  {
+   "depends_on": "eval:doc.paid_by_partner",
+   "description": "Extra spend the partner allows above the spend limit before Central stops charging the partner. Set by the partner.",
+   "fieldname": "buffer",
+   "fieldtype": "Currency",
+   "label": "Buffer"
+  },
+  {
+   "fieldname": "section_end",
+   "fieldtype": "Section Break",
+   "label": "Ended",
+   "collapsible": 1,
+   "depends_on": "eval:doc.status=='Ended'"
+  },
+  {
+   "fieldname": "ended_by",
+   "fieldtype": "Link",
+   "options": "User",
+   "label": "Ended By",
+   "read_only": 1
+  },
+  {
+   "fieldname": "ended_on",
+   "fieldtype": "Datetime",
+   "label": "Ended On",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_end",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "end_reason",
+   "fieldtype": "Small Text",
+   "label": "End Reason",
+   "read_only": 1
+  }
+ ],
+ "links": [],
+ "modified": "2026-10-15 18:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Central",
+ "name": "Partner Client Link",
+ "naming_rule": "Expression (old style)",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "read": 1,
+   "role": "Central User"
+  },
+  {
+   "create": 1,
+   "read": 1,
+   "write": 1,
+   "role": "Connect Integration"
+  }
+ ],
+ "row_format": "Dynamic",
+ "search_fields": "partner_team_name,client_team_name,source_reference,customer_email",
+ "show_title_field_in_link": 1,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [
+  {
+   "color": "Orange",
+   "title": "Requested"
+  },
+  {
+   "color": "Green",
+   "title": "Active"
+  },
+  {
+   "color": "Red",
+   "title": "Declined"
+  },
+  {
+   "color": "Gray",
+   "title": "Expired"
+  },
+  {
+   "color": "Gray",
+   "title": "Ended"
+  }
+ ],
+ "title_field": "client_team_name",
+ "track_changes": 1
+}

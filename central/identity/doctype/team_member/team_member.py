@@ -5,6 +5,8 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
+from central.iam import CLIENTS_SCOPE, PARTNER_ROLE
+
 # The record each scoped grant names. A site grant applies to the server the site runs on.
 RESOURCE_DOCTYPES = {"Server": "Virtual Machine", "Site": "Site"}
 
@@ -22,18 +24,28 @@ class TeamMember(Document):
 		parentfield: DF.Data
 		parenttype: DF.Data
 		resource_name: DF.Data | None
-		resource_type: DF.Literal["*", "Server", "Site"]
+		resource_type: DF.Literal["*", "Server", "Site", "Clients"]
 		role: DF.Link
 		status: DF.Literal["Active", "Invited", "Suspended"]
 		user: DF.Link
 	# end: auto-generated types
 
 	def validate_resource(self, team: str) -> None:
-		"""A row grants its role on every resource, or on one server or site of `team`.
-		The Owner role is always team-wide."""
+		"""A row grants its role on every resource, on one server or site of `team`, or, on a
+		partner team, on the partner's clients. The Owner role is always team-wide."""
 		if self.role == "Owner" and (self.resource_type or "*") != "*":
 			frappe.throw(_("The Owner role applies to all resources."))
+		if self.role == PARTNER_ROLE:
+			frappe.throw(_("The Partner role belongs to a partner team on its clients, not to a member."))
+		if self.resource_type == CLIENTS_SCOPE:
+			self._validate_client_access(team)
+			return
 		validate_resource_scope(self, team)
+
+	def _validate_client_access(self, team: str) -> None:
+		self.resource_name = None
+		if not frappe.db.exists("Partner Profile", {"team": team, "status": "Completed"}):
+			frappe.throw(_("Only a partner team can give its members access to clients."))
 
 
 def validate_resource_scope(grant, team: str) -> None:
