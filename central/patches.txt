@@ -42,3 +42,5 @@ central.patches.v0_0.start_unready_trials
 # A site creation stores whether it started a free trial; older ones are marked from their site.
 central.patches.v0_0.set_free_trial_on_creations
 central.patches.v0_0.select_full_ubuntu_image
+# The signup checks start with their defaults: staff aliases, temporary emails and the request limit.
+central.patches.v0_0.set_signup_email_defaults

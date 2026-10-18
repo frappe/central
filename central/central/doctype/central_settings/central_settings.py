@@ -21,6 +21,8 @@ class CentralSettings(Document):
 	if TYPE_CHECKING:
 		from frappe.types import DF
 
+		alias_email_domains: DF.SmallText | None
+		automatic_block_hours: DF.Int
 		central_id: DF.Int
 		common_site_config: DF.JSON | None
 		enable_addons: DF.Check
@@ -39,6 +41,8 @@ class CentralSettings(Document):
 		invitations_per_hour: DF.Int
 		sign_in_code_attempts: DF.Int
 		sign_in_codes_per_email: DF.Int
+		signup_requests_per_minute: DF.Int
+		refuse_temporary_emails: DF.Check
 		require_payment_method: DF.Check
 		trial_days: DF.Int
 		trial_deletion_days: DF.Int

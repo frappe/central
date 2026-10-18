@@ -184,7 +184,10 @@ after_install = [
 doc_events = {
 	"User": {
 		"validate": "central.users.validate_user_image",
-		"after_insert": "central.users.grant_central_user_role",
+		"after_insert": [
+			"central.users.grant_central_user_role",
+			"central.identity.signup_email.remember_gmail_account",
+		],
 	},
 	"Billing Profile": {
 		# Its email is the alert address of the team's Grove user when set.
@@ -243,6 +246,9 @@ scheduler_events = {
 		"central.billing.ingester.erpnext_sync.retry_failed_syncs",
 		"central.billing.payments.reconciliation.run_reconciliation",
 		"central.billing.platform.alerts.run_operator_alerts",
+	],
+	"weekly": [
+		"central.identity.signup_watch.refresh_temporary_domains",
 	],
 	"monthly": [
 		"central.billing.revenue.invoicing.run_monthly_billing",
