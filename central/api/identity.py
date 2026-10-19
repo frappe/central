@@ -98,11 +98,7 @@ def my_teams() -> list[dict[str, Any]]:
 	for row in counts:
 		teams[row.parent]["members"] = row.members
 
-	# A system read: which of these teams are partners, and nothing of their profiles.
-	for partner_team in frappe.get_all(
-		"Partner Profile", filters={"team": ["in", list(teams)], "status": "Completed"}, pluck="team"
-	):
-		teams[partner_team]["is_partner"] = True
+	_mark_partner_teams(teams)
 
 	for entry in teams.values():
 		entry["onboarding"] = []
@@ -111,6 +107,14 @@ def my_teams() -> list[dict[str, Any]]:
 		teams[row.parent]["onboarding"].append(row.step)
 
 	return list(teams.values())
+
+
+def _mark_partner_teams(teams: dict[str, dict[str, Any]]) -> None:
+	# A system read: which of these teams are partners, and nothing of their profiles.
+	for partner_team in frappe.get_all(
+		"Partner Profile", filters={"team": ["in", list(teams)], "status": "Completed"}, pluck="team"
+	):
+		teams[partner_team]["is_partner"] = True
 
 
 def _add_client_teams(teams: dict[str, dict[str, Any]], user: str) -> None:

@@ -240,8 +240,7 @@ def resolve_user_grants(user: str) -> dict[str, list[dict[str, Any]]]:
 		if row.capability not in grants_by_key[key]["caps"]:
 			grants_by_key[key]["caps"].append(row.capability)
 
-	for team, grant in _resolve_partner_grants(user):
-		grants_by_team[team].append(grant)
+	_add_partner_grants(grants_by_team, user)
 
 	# Close every grant under the implication rules so enforcement (`can`, the SSO
 	# mint, the capability reads) always sees a self-consistent set — never
@@ -254,6 +253,12 @@ def resolve_user_grants(user: str) -> dict[str, list[dict[str, Any]]]:
 		grant["caps"] = caps
 
 	return dict(grants_by_team)
+
+
+def _add_partner_grants(grants_by_team: dict[str, list[dict[str, Any]]], user: str) -> None:
+	"""Adds the user's grants on the clients of their partner team to their own grants."""
+	for team, grant in _resolve_partner_grants(user):
+		grants_by_team[team].append(grant)
 
 
 def _resolve_partner_grants(user: str) -> list[tuple[str, dict[str, Any]]]:
