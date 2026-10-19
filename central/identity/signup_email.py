@@ -79,19 +79,24 @@ def is_temporary_domain(domain: str) -> bool:
 		return False
 
 	if not frappe.cache.exists(TEMPORARY_DOMAINS_KEY):
-		load_temporary_domains()
+		load_temporary_domains(replace=False)
 	return any(frappe.cache.sismember(TEMPORARY_DOMAINS_KEY, parent) for parent in get_parent_domains(domain))
 
 
-def load_temporary_domains() -> None:
-	"""Cache the site's refreshed list when the weekly job has saved one, else the list shipped with the app."""
-	path = get_temporary_domains_path()
-	if not os.path.exists(path):
-		path = BUNDLED_TEMPORARY_DOMAINS
+def load_temporary_domains(replace: bool = True) -> None:
+	"""Cache the site's refreshed list when the weekly job has saved one, else the list shipped with the app.
+	The lock stops a signup that read the old file from swapping it in after a refresh."""
+	with frappe.cache.lock(frappe.cache.make_key(f"{TEMPORARY_DOMAINS_KEY}:lock"), timeout=30):
+		if not replace and frappe.cache.exists(TEMPORARY_DOMAINS_KEY):
+			return
 
-	with open(path) as file:
-		domains = [line.strip() for line in file if line.strip() and not line.startswith("#")]
-	replace_cached_set(TEMPORARY_DOMAINS_KEY, domains)
+		path = get_temporary_domains_path()
+		if not os.path.exists(path):
+			path = BUNDLED_TEMPORARY_DOMAINS
+
+		with open(path) as file:
+			domains = [line.strip() for line in file if line.strip() and not line.startswith("#")]
+		replace_cached_set(TEMPORARY_DOMAINS_KEY, domains)
 
 
 def get_temporary_domains_path() -> str:

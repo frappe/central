@@ -288,6 +288,14 @@ class TestTemporaryDomainRefresh(IntegrationTestCase):
 		self.assertTrue(signup_email.is_temporary_domain("temp7.example"))
 		self.assertFalse(signup_email.is_temporary_domain("mailinator.com"))
 
+	def test_a_signup_waiting_on_the_lock_keeps_the_refreshed_list(self):
+		self.refresh([f"temp{index}.example" for index in range(1200)])
+
+		with patch("central.identity.signup_email.BUNDLED_TEMPORARY_DOMAINS", "/nonexistent"):
+			signup_email.load_temporary_domains(replace=False)
+
+		self.assertTrue(signup_email.is_temporary_domain("temp7.example"))
+
 	def test_a_list_that_looks_wrong_is_not_saved(self):
 		self.refresh([f"temp{index}.example" for index in range(1200)] + ["gmail.com"])
 		self.refresh(["only.example"])
