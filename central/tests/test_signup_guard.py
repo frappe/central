@@ -241,6 +241,13 @@ class TestSignupGuard(IntegrationTestCase):
 
 		self.assertTrue(signup_email.is_blocked_domain(domain))
 
+	def test_a_stale_copy_of_the_domains_expires(self):
+		frappe.cache.delete_value(signup_email.SIGNUP_DOMAINS_KEY)
+		signup_email.get_signup_domains()
+
+		expiry = frappe.cache.ttl(frappe.cache.make_key(signup_email.SIGNUP_DOMAINS_KEY))
+		self.assertTrue(0 < expiry <= signup_email.SIGNUP_DOMAINS_SECONDS)
+
 	def test_only_a_system_manager_can_see_or_change_signup_domains(self):
 		from central.tests.test_team_management import create_user
 

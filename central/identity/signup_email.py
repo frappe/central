@@ -13,6 +13,7 @@ if TYPE_CHECKING:
 GMAIL_DOMAINS = ("gmail.com", "googlemail.com")
 BUNDLED_TEMPORARY_DOMAINS = os.path.join(os.path.dirname(__file__), "temporary_email_domains.txt")
 SIGNUP_DOMAINS_KEY = "signup_domains"
+SIGNUP_DOMAINS_SECONDS = 5 * 60
 GMAIL_ACCOUNTS_KEY = "signup_gmail_accounts"
 TEMPORARY_DOMAINS_KEY = "signup_temporary_domains"
 
@@ -42,8 +43,13 @@ def get_domain_status(domain: str) -> dict | None:
 
 
 def get_signup_domains() -> dict[str, dict]:
-	"""Every Signup Domain by name, cached until one changes, so a signup reads no table."""
-	return frappe.cache.get_value(SIGNUP_DOMAINS_KEY, generator=load_signup_domains)
+	"""Every Signup Domain by name, cached so a signup reads no table. A change clears the cache, and
+	the expiry bounds a stale copy that a signup read before the change committed."""
+	entries = frappe.cache.get_value(SIGNUP_DOMAINS_KEY, expires=True)
+	if entries is None:
+		entries = load_signup_domains()
+		frappe.cache.set_value(SIGNUP_DOMAINS_KEY, entries, expires_in_sec=SIGNUP_DOMAINS_SECONDS)
+	return entries
 
 
 def load_signup_domains() -> dict[str, dict]:
