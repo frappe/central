@@ -10,6 +10,8 @@
   "invitation_expiry_days",
   "wildcard_domain",
   "central_id",
+  "connect_section",
+  "connect_url",
   "feature_flags_tab",
   "addons_section",
   "enable_addons",
@@ -283,13 +285,25 @@
    "fieldtype": "Password",
    "label": "Private Key",
    "length": 8192
+  },
+  {
+   "fieldname": "connect_section",
+   "fieldtype": "Section Break",
+   "label": "Connect"
+  },
+  {
+   "fieldname": "connect_url",
+   "fieldtype": "Data",
+   "options": "URL",
+   "label": "Connect URL",
+   "description": "The Connect site, for example https://connect.frappe.io. Central sends a customer or partner back to Connect only on this host."
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-10-16 00:00:00.000000",
+ "modified": "2026-10-19 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Central",
  "name": "Central Settings",

@@ -12,11 +12,22 @@ fixtures = [
 	"Trust Tier Level",
 	{"dt": "Team Role", "filters": [["is_system", "=", 1]]},
 	# Warpgate signs in through the Central OpenID Connect provider and checks the Atlas roles.
+	# Connect calls central.api.connect as a user with the Connect Integration role.
 	# Product Operators create and edit products; only System Managers delete them.
 	{
 		"dt": "Role",
 		"filters": [
-			["name", "in", ["Central User", "Atlas Host Access", "Atlas Warpgate Admin", "Product Operator"]]
+			[
+				"name",
+				"in",
+				[
+					"Central User",
+					"Atlas Host Access",
+					"Atlas Warpgate Admin",
+					"Product Operator",
+					"Connect Integration",
+				],
+			]
 		],
 	},
 	"Notification Event Type",
@@ -129,6 +140,7 @@ after_install = [
 	"central.billing.settings.ensure_welcome_credit_amounts",
 	"central.billing.gateways.setup.ensure_gateway_records",
 	"central.billing.navigation.ensure_workspace_sidebars",
+	"central.users.ensure_connect_integration_user",
 ]
 
 # Uninstallation
@@ -227,6 +239,8 @@ scheduler_events = {
 	],
 	"daily": [
 		"central.identity.doctype.team_invitation.team_invitation.expire_pending_invitations",
+		"central.central.doctype.partner_client_link.partner_client_link.expire_requested_links",
+		"central.central.doctype.partner_profile.partner_profile.expire_pending_registrations",
 		"central.signups.trial.run_trials",
 		"central.billing.revenue.dunning.run_dunning",
 		"central.billing.payments.charges.cleanup_payment_logs",
@@ -259,6 +273,7 @@ after_migrate = [
 	"central.billing.navigation.ensure_workspace_sidebars",
 	# The Webhook that carries a team's tier to Grove, so an edit to its spec rolls out.
 	"central.services.doctype.ai_settings.ai_settings.sync_webhook",
+	"central.users.ensure_connect_integration_user",
 ]
 
 # Testing
@@ -352,6 +367,7 @@ page_renderer = ["central.oidc.DiscoveryPage"]
 # Authentication and authorization
 
 permission_query_conditions = {
+	"Partner Client Link": "central.permissions.partner_client_link_query_conditions",
 	"Team SSH Key": "central.permissions.team_ssh_key_query_conditions",
 	"Virtual Machine": "central.permissions.server_query_conditions",
 	"Pilot Credential": "central.permissions.pilot_credential_query_conditions",
@@ -368,6 +384,7 @@ permission_query_conditions = {
 }
 
 has_permission = {
+	"Partner Client Link": "central.permissions.partner_client_link_has_permission",
 	"Team SSH Key": "central.permissions.team_ssh_key_has_permission",
 	"Virtual Machine": "central.permissions.server_has_permission",
 	"Pilot Credential": "central.permissions.pilot_credential_has_permission",

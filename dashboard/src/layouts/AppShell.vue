@@ -14,6 +14,7 @@ import ErrorAlertHost from '@/components/common/ErrorAlertHost.vue'
 import Sidebar from '@/components/navigation/Sidebar.vue'
 import NotificationsPanel from '@/components/notifications/NotificationsPanel.vue'
 import OnboardingDialog from '@/components/onboarding/OnboardingDialog.vue'
+import PartnerAccessBar from '@/components/partner/PartnerAccessBar.vue'
 import SettingsModal from '@/components/settings/SettingsModal.vue'
 import { useBreadcrumbs } from '@/composables/useBreadcrumbs'
 import { useIsMobile } from '@/composables/useIsMobile'
@@ -75,6 +76,7 @@ const breadcrumbs = computed(
 			</button>
 			<div id="header-actions" class="flex shrink-0 items-center gap-2" />
 		</header>
+		<PartnerAccessBar />
 
 		<main
 			class="min-h-0 flex-1 overflow-hidden"
@@ -111,6 +113,7 @@ const breadcrumbs = computed(
 			<Breadcrumbs :items="breadcrumbs" />
 			<div id="header-actions" class="flex shrink-0 items-center gap-2" />
 		</header>
+		<PartnerAccessBar />
 
 		<div
 			class="min-h-0 flex-1 overflow-hidden"

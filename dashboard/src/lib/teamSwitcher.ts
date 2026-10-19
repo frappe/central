@@ -18,8 +18,9 @@ export function getTeamSwitcherRows(teams: Team[]): TeamSwitcherRow[] {
 		const hasUniqueOwner =
 			team.owner &&
 			matches.filter((match) => match.owner === team.owner).length === 1
-		const detail =
+		const sameNameDetail =
 			matches.length > 1 ? (hasUniqueOwner ? team.owner! : team.name) : ''
+		const detail = team.via_partner ? `via ${team.via_partner}` : sameNameDetail
 		return {
 			...team,
 			detail,

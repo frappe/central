@@ -74,33 +74,44 @@ The role builder can let a user tick `server:create` without `server:view` and `
 
 A role grant can apply to one server or site instead of the whole team. A scoped grant carries only these capabilities, on that server: `server:view`, `server:power`, `server:network`, `server:resize`, `server:snapshot`, `server:terminate`, and `server:console`. Every other capability is team-wide and comes only from a team-wide grant. For example, Developer on one server can stop that server, but cannot create a server or change the Team SSH keys. See [IAM resource scope](spec/IAM.md#resource-scope).
 
-## The 5 system roles
+## The 6 system roles
 
 System roles are seeded from `fixtures/team_role.json` and are identical across all teams. Teams may also define custom roles scoped to themselves.
 
-| Capability | Owner | Admin | Developer | Viewer | Billing |
-| --- | :-: | :-: | :-: | :-: | :-: |
-| `team:edit` | ✓ | ✓ | | | |
-| `team:manage_members` | ✓ | ✓ | | | |
-| `team:delete` | ✓ | | | | |
-| `billing:view` | ✓ | ✓ | | | ✓ |
-| `billing:manage` | ✓ | ✓ | | | ✓ |
-| `cluster:view` | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `server:view` | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `server:create` | ✓ | ✓ | ✓ | | |
-| `server:power` | ✓ | ✓ | ✓ | | |
-| `server:network` | ✓ | ✓ | ✓ | | |
-| `server:resize` | ✓ | ✓ | ✓ | | |
-| `server:snapshot` | ✓ | ✓ | ✓ | | |
-| `server:ssh-key` | ✓ | ✓ | ✓ | | |
-| `server:terminate` | ✓ | ✓ | ✓ | | |
-| `server:console` | ✓ | ✓ | ✓ | | |
-| `service:view` | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `service:manage` | ✓ | ✓ | ✓ | | ✓ |
+| Capability | Owner | Admin | Developer | Viewer | Billing | Partner |
+| --- | :-: | :-: | :-: | :-: | :-: | :-: |
+| `team:edit` | ✓ | ✓ | | | | |
+| `team:manage_members` | ✓ | ✓ | | | | |
+| `team:delete` | ✓ | | | | | |
+| `billing:view` | ✓ | ✓ | | | ✓ | ✓ |
+| `billing:manage` | ✓ | ✓ | | | ✓ | ✓ |
+| `cluster:view` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `server:view` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `server:create` | ✓ | ✓ | ✓ | | | ✓ |
+| `server:power` | ✓ | ✓ | ✓ | | | ✓ |
+| `server:network` | ✓ | ✓ | ✓ | | | ✓ |
+| `server:resize` | ✓ | ✓ | ✓ | | | ✓ |
+| `server:snapshot` | ✓ | ✓ | ✓ | | | ✓ |
+| `server:ssh-key` | ✓ | ✓ | ✓ | | | ✓ |
+| `server:terminate` | ✓ | ✓ | ✓ | | | ✓ |
+| `server:console` | ✓ | ✓ | ✓ | | | ✓ |
+| `service:view` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `service:manage` | ✓ | ✓ | ✓ | | ✓ | ✓ |
 
-Totals: Owner 17, Admin 16, Developer 12, Viewer 3, Billing 6.
+Totals: Owner 17, Admin 16, Developer 12, Viewer 3, Billing 6, Partner 14.
 
 The ladder reads top to bottom: **Viewer** (look), **Billing** (look and pay), **Developer** (operate servers), **Admin** (Developer and run the team), **Owner** (Admin and delete the team). A team has exactly one Owner, transferable through Transfer Ownership. For a different mix, such as server operations without billing, create a custom role.
+
+### Partner
+
+A partner team holds the **Partner** role on each client that gives it access. Nobody holds it as a member, and the role pickers do not show it. It is the most that a partner's staff can do on a client:
+
+- Each staff member holds a **Client access** role on the partner team: a Team Member row with the scope `Clients`. Only the partner team's members with `team:manage_members` set it. The role is one of the system roles or a custom role of the partner team.
+- On each client, the staff member holds the capabilities of their Client access role that the Partner role also has. A role with `team:*` capabilities gives them nothing of those.
+- `billing:manage` applies only while the partner pays for the client's hosting. Otherwise the partner has `billing:view` only.
+- Access stops when the client removes it, the link ends, or the staff member's Client access goes.
+
+Example: Tridots is Northwind's partner, with access, and Northwind pays for itself. Meera holds Developer as her Client access role on Tridots. On Northwind she can operate servers, but she cannot manage billing or members.
 
 ## Changing the taxonomy
 

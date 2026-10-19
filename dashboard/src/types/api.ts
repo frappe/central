@@ -20,6 +20,10 @@ export interface Team {
 	created: string | null
 	/** The steps the caller still has to answer as owner. Empty for a team they do not own. */
 	onboarding: OnboardingStepKey[]
+	/** The partner the caller works for on this client team, or null for their own team. */
+	via_partner: string | null
+	/** Whether the team is a registered partner, so its members can get Client access. */
+	is_partner: boolean
 }
 
 export type MemberStatus = 'Active' | 'Suspended'
@@ -32,10 +36,12 @@ export type InvitationStatus =
 	| 'Declined'
 
 export type ResourceType = '*' | 'Server' | 'Site'
+/** A partner team's Client access: the role a member holds on every client that gave the partner access. */
+export type ClientsScope = 'Clients'
 
 export interface TeamMemberRoleAssignment {
 	role: string
-	resource_type: ResourceType
+	resource_type: ResourceType | ClientsScope
 	resource_name: string | null
 }
 
@@ -115,6 +121,100 @@ export interface InvitationSummary {
 	role: string
 	expires_on: string
 	has_account: boolean
+}
+
+/** The partner a partner setup link names, as a guest may read it. */
+export interface LinkPartner {
+	name: string
+	logo: string | null
+}
+
+/** Why a team can't start working with the link's partner. */
+export type PartnerTeamUnavailableReason =
+	| 'partner_team'
+	| 'linked_to_this_partner'
+	| 'linked_to_another_partner'
+	| 'cannot_manage'
+
+/** One of the user's teams, as the partner setup page offers it. */
+export interface PartnerSetupTeam {
+	name: string
+	label: string
+	logo: string | null
+	role: string | null
+	owner: string | null
+	members: number
+	available: boolean
+	reason: PartnerTeamUnavailableReason | null
+	current_partner: string | null
+}
+
+/** The link Connect emailed to a partner's owner, to pick the partner's team.
+ *  (central.api.partners.get_partner_registration) */
+export interface PartnerRegistration {
+	partner_name: string
+	email: string
+	status: 'Pending' | 'Completed' | 'Expired'
+	has_account: boolean
+	expires_on: string | null
+	/** Where "Back to Connect" goes: the page that sent the owner here, or Connect itself. */
+	connect_url: string | null
+}
+
+export type PartnerRequestStatus =
+	| 'Requested'
+	| 'Active'
+	| 'Declined'
+	| 'Expired'
+	| 'Ended'
+
+/** A partner Connect asks the customer to accept, after a confirmed hire.
+ *  (central.api.partners.get_partner_request) */
+export interface PartnerRequest {
+	name: string
+	partner_name: string
+	logo: string | null
+	project_title: string
+	email: string
+	status: PartnerRequestStatus
+	has_account: boolean
+	expires_on: string | null
+	return_url: string
+}
+
+/** A request waiting for the signed-in user, with the teams that can accept it.
+ *  (central.api.partners.my_partner_requests) */
+export interface OpenPartnerRequest extends PartnerRequest {
+	teams: PartnerSetupTeam[]
+}
+
+/** A partner link as a team's Partners tab shows it. */
+export interface TeamPartnerLink {
+	name: string
+	partner_name: string
+	client_name: string
+	project_title: string | null
+	status: PartnerRequestStatus
+	/** A Connect link waits for the customer, a Partner Code link for the partner. */
+	source: 'Connect' | 'Partner Code'
+	paid_by_partner: boolean
+	/** The partner's staff hold the Partner role on the client team. */
+	partner_access: boolean
+	since: string
+}
+
+/** The team's partner, and its clients when the team is a partner.
+ *  (central.api.partners.get_team_partners) */
+export interface TeamPartners {
+	is_partner: boolean
+	partner:
+		| (TeamPartnerLink & {
+				partner_logo: string | null
+				/** How many of the partner's staff can work on this team. */
+				staff_count: number
+		  })
+		| null
+	clients: TeamPartnerLink[]
 }
 
 /** One bundled resource in a plan (central Plan Includes). */

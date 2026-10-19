@@ -145,6 +145,64 @@ def team_ssh_key_has_permission(doc, user: str | None = None, ptype: str | None 
 	return bool(doc.team) and can_on_any_server(user, doc.team, "server:view")
 
 
+def partner_client_link_query_conditions(user: str | None = None) -> str:
+	"""1. Operators see every link.
+	2. The Connect integration user sees the links Connect asked for.
+	3. A user sees the links of each team, partner or client, where they hold billing:view.
+	4. Other users see no links."""
+	user = user or frappe.session.user
+	if user_has_operator_bypass(user):
+		return ""
+	if _is_connect_integration(user):
+		return "`tabPartner Client Link`.`source` = 'Connect'"
+
+	teams = get_user_team_names_with_capability(user, "billing:view")
+	if not teams:
+		return "1 = 0"
+
+	values = _escape_values(teams)
+	return (
+		f"(`tabPartner Client Link`.`client_team` in ({values})"
+		f" or `tabPartner Client Link`.`partner_team` in ({values}))"
+	)
+
+
+def partner_client_link_has_permission(
+	doc, user: str | None = None, ptype: str | None = None, **kwargs
+) -> bool:
+	"""1. Operators may do anything.
+	2. The Connect integration user may create, read and change a Connect link, never delete one.
+	3. Create: a Requested Partner Code link the user asks for, with billing:manage on the client
+	   team. The spend limit and buffer are the partner's to set, so a new link carries neither.
+	4. Write and delete are denied. A link is answered and ended through the API.
+	5. Read: billing:view on the client team or the partner team."""
+	user = user or frappe.session.user
+	if user_has_operator_bypass(user):
+		return True
+
+	if _is_connect_integration(user):
+		return doc.source == "Connect" and ptype != "delete"
+
+	if ptype == "create":
+		return (
+			doc.source == "Partner Code"
+			and doc.status == "Requested"
+			and doc.requested_by in (None, user)
+			and not (doc.spend_limit or doc.buffer)
+			and bool(doc.client_team)
+			and can(user, doc.client_team, "billing:manage")
+		)
+
+	if ptype in MUTATING_PERMISSION_TYPES:
+		return False
+
+	return any(bool(team) and can(user, team, "billing:view") for team in (doc.client_team, doc.partner_team))
+
+
+def _is_connect_integration(user: str) -> bool:
+	return "Connect Integration" in frappe.get_roles(user)
+
+
 def resource_action_query_conditions(user: str | None = None) -> str:
 	"""1. A System Manager sees every action.
 	2. A user sees the actions of a team where the user holds server:view team-wide.

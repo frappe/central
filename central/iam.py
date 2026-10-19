@@ -5,12 +5,13 @@ from typing import Any
 
 import frappe
 from frappe import _
+from frappe.query_builder.functions import Count
 from frappe.utils.caching import request_cache
 
 OPERATOR_BYPASS_ROLE = "System Manager"
 
 # The revision of the capability taxonomy. Bump it with every change (see CAPABILITIES.md).
-CAPABILITY_VERSION = 6
+CAPABILITY_VERSION = 7
 
 # Granting a key implies each capability in its value, because acting on a resource needs
 # seeing it. Every grant is closed under these before it is checked.
@@ -41,6 +42,14 @@ SERVER_CAPABILITIES = frozenset(
 )
 # The scope of a team-wide grant. A scoped grant's scope is its server's name.
 ALL_SERVERS = "*"
+
+# A partner team holds this system role on each client that gave it access. It is the most a
+# partner's staff can do there; each person's Client access role picks from it.
+PARTNER_ROLE = "Partner"
+# The Team Member scope of a partner staff member's Client access role.
+CLIENTS_SCOPE = "Clients"
+# A partner manages a client's billing only while it pays for the client's hosting.
+PARTNER_PAYER_CAPABILITIES = frozenset({"billing:manage"})
 
 
 def expand_capabilities(caps: list[str]) -> list[str]:
@@ -231,6 +240,8 @@ def resolve_user_grants(user: str) -> dict[str, list[dict[str, Any]]]:
 		if row.capability not in grants_by_key[key]["caps"]:
 			grants_by_key[key]["caps"].append(row.capability)
 
+	_add_partner_grants(grants_by_team, user)
+
 	# Close every grant under the implication rules so enforcement (`can`, the SSO
 	# mint, the capability reads) always sees a self-consistent set — never
 	# server:create without the server:view/cluster:view it depends on. A scoped
@@ -242,6 +253,124 @@ def resolve_user_grants(user: str) -> dict[str, list[dict[str, Any]]]:
 		grant["caps"] = caps
 
 	return dict(grants_by_team)
+
+
+def _add_partner_grants(grants_by_team: dict[str, list[dict[str, Any]]], user: str) -> None:
+	"""Adds the user's grants on the clients of their partner team to their own grants."""
+	for team, grant in _resolve_partner_grants(user):
+		grants_by_team[team].append(grant)
+
+
+def _resolve_partner_grants(user: str) -> list[tuple[str, dict[str, Any]]]:
+	"""The grants a partner's staff member holds on its clients: their Client access role,
+	capped by the Partner role, on each client whose link is Active with partner access on.
+	The capabilities are closed under the implications, and capped again after."""
+	ceiling = _get_partner_role_capabilities()
+	grants: dict[tuple[str, str], dict[str, Any]] = {}
+	allowed: dict[tuple[str, str], frozenset[str]] = {}
+	for row in _get_partner_capability_rows(user):
+		if not row.is_system and row.role_team != row.partner_team:
+			continue
+
+		key = (row.client_team, row.role)
+		if key not in grants:
+			allowed[key] = ceiling if row.paid_by_partner else ceiling - PARTNER_PAYER_CAPABILITIES
+			grants[key] = {
+				"role": row.role,
+				"source": "partner",
+				"partner_team": row.partner_team,
+				"scope": ALL_SERVERS,
+				"caps": [],
+			}
+		if row.capability in allowed[key] and row.capability not in grants[key]["caps"]:
+			grants[key]["caps"].append(row.capability)
+
+	for key, grant in grants.items():
+		grant["caps"] = [cap for cap in expand_capabilities(grant["caps"]) if cap in allowed[key]]
+	return [(client_team, grant) for (client_team, _role), grant in grants.items()]
+
+
+@request_cache
+def _get_partner_role_capabilities() -> frozenset[str]:
+	return frozenset(
+		frappe.get_all(
+			"Role Capability",
+			filters={"parent": PARTNER_ROLE, "parenttype": "Team Role", "parentfield": "capabilities"},
+			pluck="capability",
+		)
+	)
+
+
+def _get_partner_capability_rows(user: str) -> list[dict[str, Any]]:
+	"""One row per capability of each Client access role the user holds, for each client of
+	that partner team that gave it access."""
+	member = frappe.qb.DocType("Team Member")
+	partner_team = frappe.qb.DocType("Team")
+	client_team = frappe.qb.DocType("Team").as_("client_team")
+	profile = frappe.qb.DocType("Partner Profile")
+	link = frappe.qb.DocType("Partner Client Link")
+	team_role = frappe.qb.DocType("Team Role")
+	role_capability = frappe.qb.DocType("Role Capability")
+
+	return (
+		frappe.qb.from_(member)
+		.join(partner_team)
+		.on(partner_team.name == member.parent)
+		.join(profile)
+		.on((profile.team == partner_team.name) & (profile.status == "Completed"))
+		.join(link)
+		.on((link.partner_team == partner_team.name) & (link.status == "Active") & (link.partner_access == 1))
+		.join(client_team)
+		.on((client_team.name == link.client_team) & (client_team.status == "Active"))
+		.join(team_role)
+		.on(team_role.name == member.role)
+		.join(role_capability)
+		.on(
+			(role_capability.parent == team_role.name)
+			& (role_capability.parenttype == "Team Role")
+			& (role_capability.parentfield == "capabilities")
+		)
+		.select(
+			client_team.name.as_("client_team"),
+			partner_team.name.as_("partner_team"),
+			member.role,
+			team_role.is_system,
+			team_role.team.as_("role_team"),
+			link.paid_by_partner,
+			role_capability.capability,
+		)
+		.where(
+			(member.parenttype == "Team")
+			& (member.parentfield == "members")
+			& (member.user == user)
+			& (member.status == "Active")
+			& (member.resource_type == CLIENTS_SCOPE)
+			& (partner_team.status == "Active")
+		)
+		.orderby(client_team.name, member.idx, role_capability.idx)
+	).run(as_dict=True)
+
+
+def count_partner_staff(partner_team: str) -> int:
+	"""How many active members of the partner team hold a Client access role, which is how
+	many people reach a client that gave the partner access."""
+	member = frappe.qb.DocType("Team Member")
+	team_role = frappe.qb.DocType("Team Role")
+	rows = (
+		frappe.qb.from_(member)
+		.join(team_role)
+		.on(team_role.name == member.role)
+		.select(Count(member.user).distinct().as_("staff"))
+		.where(
+			(member.parenttype == "Team")
+			& (member.parentfield == "members")
+			& (member.parent == partner_team)
+			& (member.status == "Active")
+			& (member.resource_type == CLIENTS_SCOPE)
+			& ((team_role.is_system == 1) | (team_role.team == partner_team))
+		)
+	).run(as_dict=True)
+	return rows[0].staff if rows else 0
 
 
 def _get_grant_scope(row) -> str | None:

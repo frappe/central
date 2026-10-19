@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+from urllib.parse import urlparse
 
 import frappe
 from frappe import _
@@ -23,6 +24,7 @@ class CentralSettings(Document):
 
 		central_id: DF.Int
 		common_site_config: DF.JSON | None
+		connect_url: DF.Data | None
 		enable_addons: DF.Check
 		enable_email_delivery_service: DF.Check
 		enable_llm_service: DF.Check
@@ -90,3 +92,16 @@ class CentralSettings(Document):
 			"email": bool(self.enable_email_delivery_service),
 			"storage": bool(self.enable_object_storage_service),
 		}
+
+
+def is_connect_url(url: str | None) -> bool:
+	"""Whether `url` is on the Connect site, so a link back to it can't send a person anywhere else."""
+	connect_url = frappe.db.get_single_value("Central Settings", "connect_url")
+	if not (url and connect_url):
+		return False
+
+	target, connect = urlparse(url), urlparse(connect_url)
+	return target.scheme in ("http", "https") and (target.scheme, target.netloc) == (
+		connect.scheme,
+		connect.netloc,
+	)

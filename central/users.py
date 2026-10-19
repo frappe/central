@@ -16,6 +16,11 @@ if TYPE_CHECKING:
 
 CENTRAL_USER_ROLE = "Central User"
 
+# Connect calls central.api.connect with this user's API key, which an operator generates in desk.
+# The reserved .invalid domain never receives mail.
+CONNECT_INTEGRATION_USER = "connect@integration.invalid"
+CONNECT_INTEGRATION_ROLE = "Connect Integration"
+
 
 def send_sign_in_code(email: str, full_name: str | None = None, product: str | None = None) -> None:
 	"""Email a code to any address. A new address gets an account when the code is verified.
@@ -108,6 +113,28 @@ def create_user(email: str, full_name: str):
 	user.insert(ignore_permissions=True)
 
 	return user
+
+
+def ensure_connect_integration_user() -> None:
+	"""The user Connect signs its calls as. It holds only the Connect Integration role and no desk
+	access. Disable it to stop every Connect call at once."""
+	if frappe.db.exists("User", CONNECT_INTEGRATION_USER) or not frappe.db.exists(
+		"Role", CONNECT_INTEGRATION_ROLE
+	):
+		return
+
+	user = frappe.get_doc(
+		{
+			"doctype": "User",
+			"email": CONNECT_INTEGRATION_USER,
+			"first_name": "Connect",
+			"send_welcome_email": 0,
+			"roles": [{"role": CONNECT_INTEGRATION_ROLE}],
+		}
+	)
+	user.flags.no_welcome_mail = True
+	# Runs on install and migrate, as the system.
+	user.insert(ignore_permissions=True)
 
 
 def grant_central_user_role(doc, method: str | None = None) -> None:

@@ -268,9 +268,19 @@
    "group": "Infrastructure",
    "link_doctype": "Site Domain",
    "link_fieldname": "team"
+  },
+  {
+   "group": "Partners",
+   "link_doctype": "Partner Profile",
+   "link_fieldname": "team"
+  },
+  {
+   "group": "Partners",
+   "link_doctype": "Partner Client Link",
+   "link_fieldname": "client_team"
   }
  ],
- "modified": "2026-10-06 00:59:08.657647",
+ "modified": "2026-10-14 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Identity",
  "name": "Team",

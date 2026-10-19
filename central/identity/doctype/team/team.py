@@ -7,7 +7,7 @@ from frappe.model.document import Document
 from frappe.utils import now_datetime
 
 from central.billing import settings as billing_settings
-from central.iam import can, clear_grants_cache, user_has_operator_bypass
+from central.iam import CLIENTS_SCOPE, can, clear_grants_cache, user_has_operator_bypass
 from central.identity.doctype.team.tenant import (
 	allocate_tenant_id,
 	prepare_tenant_id_series,
@@ -225,8 +225,8 @@ class Team(Document):
 		to match the Manage Roles dialog's edit-then-save flow."""
 		self._require_capability("team:manage_members")
 		self._validate_member_change_target(user)
-		if not roles:
-			frappe.throw(_("A member must hold at least one role."))
+		if not any((grant.get("resource_type") or "*") != CLIENTS_SCOPE for grant in roles):
+			frappe.throw(_("A member must hold at least one role on this team."))
 		for grant in roles:
 			if grant.get("role") == "Owner":
 				frappe.throw(_("Use Transfer Ownership to assign the Owner role."))
@@ -396,7 +396,8 @@ class Team(Document):
 
 	@staticmethod
 	def _is_shadowed(row, wildcards: set[tuple[str, str]]) -> bool:
-		return row.resource_type != "*" and (row.user, row.role) in wildcards
+		# A Clients row applies on other teams, so a role on this team never covers it.
+		return row.resource_type not in ("*", CLIENTS_SCOPE) and (row.user, row.role) in wildcards
 
 	@staticmethod
 	def _effective_grants(doc) -> list:

@@ -67,6 +67,10 @@ const teamsCall = useCall<Team[]>({
 // get "Specify a team." from central.iam.resolve_team).
 export const sessionReady = teamsCall.promise
 
+const activeTeamEntry = computed(() =>
+	(teamsCall.data ?? []).find((t) => t.name === activeTeam.value),
+)
+
 export function useSession() {
 	return {
 		teams: computed<Team[]>(() => teamsCall.data ?? []),
@@ -76,15 +80,12 @@ export function useSession() {
 		isLoaded: computed(() => teamsCall.data != null),
 		activeTeam,
 		activeTeamLabel: computed(
-			() =>
-				(teamsCall.data ?? []).find((t) => t.name === activeTeam.value)
-					?.label ?? 'Frappe Cloud',
+			() => activeTeamEntry.value?.label ?? 'Frappe Cloud',
 		),
-		activeTeamLogo: computed(
-			() =>
-				(teamsCall.data ?? []).find((t) => t.name === activeTeam.value)?.logo ??
-				null,
-		),
+		activeTeamLogo: computed(() => activeTeamEntry.value?.logo ?? null),
+		/** The partner the user works for on the active team, when it is one of its clients. */
+		activePartner: computed(() => activeTeamEntry.value?.via_partner ?? null),
+		isPartnerTeam: computed(() => activeTeamEntry.value?.is_partner ?? false),
 		setActiveTeam: switchTeam,
 		reload: () => teamsCall.reload(),
 	}

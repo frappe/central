@@ -6,6 +6,8 @@ from frappe.query_builder.functions import Count
 from frappe.utils import escape_html
 
 from central.iam import (
+	CLIENTS_SCOPE,
+	PARTNER_ROLE,
 	get_all_capabilities,
 	resolve_user_grants,
 	user_has_operator_bypass,
@@ -33,7 +35,9 @@ def my_teams() -> list[dict[str, Any]]:
 	"""Teams the signed-in user can switch between in the console — the teams they
 	are an active member of, each with a display label, the owner email, the
 	caller's own role, how many people are in it, when it was created, and the
-	onboarding steps the caller still has to answer as its owner."""
+	onboarding steps the caller still has to answer as its owner, and whether it is a
+	partner. A partner's staff member also gets the clients they can act on, with
+	`via_partner` naming the partner."""
 	user = frappe.session.user
 
 	team = frappe.qb.DocType("Team")
@@ -49,6 +53,7 @@ def my_teams() -> list[dict[str, Any]]:
 			& (member.parentfield == "members")
 			& (member.user == user)
 			& (member.status == "Active")
+			& (member.resource_type != CLIENTS_SCOPE)
 			& (team.status == "Active")
 		)
 		.orderby(team.team_name)
@@ -68,11 +73,14 @@ def my_teams() -> list[dict[str, Any]]:
 				"role": r.role,
 				"members": 0,
 				"created": r.creation,
+				"via_partner": None,
+				"is_partner": False,
 			},
 		)
 		if _role_rank(r.role) < _role_rank(entry["role"]):
 			entry["role"] = r.role
 
+	_add_client_teams(teams, user)
 	if not teams:
 		return []
 
@@ -90,6 +98,8 @@ def my_teams() -> list[dict[str, Any]]:
 	for row in counts:
 		teams[row.parent]["members"] = row.members
 
+	_mark_partner_teams(teams)
+
 	for entry in teams.values():
 		entry["onboarding"] = []
 	owned_teams = [name for name, entry in teams.items() if entry["owner"] == user]
@@ -97,6 +107,54 @@ def my_teams() -> list[dict[str, Any]]:
 		teams[row.parent]["onboarding"].append(row.step)
 
 	return list(teams.values())
+
+
+def _mark_partner_teams(teams: dict[str, dict[str, Any]]) -> None:
+	# A system read: which of these teams are partners, and nothing of their profiles.
+	for partner_team in frappe.get_all(
+		"Partner Profile", filters={"team": ["in", list(teams)], "status": "Completed"}, pluck="team"
+	):
+		teams[partner_team]["is_partner"] = True
+
+
+def _add_client_teams(teams: dict[str, dict[str, Any]], user: str) -> None:
+	"""The clients a partner's staff member reaches through their Client access. The user is
+	not a member of them, so they hold the Partner role there and answer no onboarding."""
+	partner_of = {
+		team: grant["partner_team"]
+		for team, grants in resolve_user_grants(user).items()
+		for grant in grants
+		if grant["source"] == "partner" and team not in teams
+	}
+	if not partner_of:
+		return
+
+	# A system read: the user reaches these teams through their partner, not as a member.
+	clients = frappe.get_all(
+		"Team",
+		filters={"name": ["in", list(partner_of)]},
+		fields=["name", "team_name", "team_logo", "owner_user", "creation"],
+	)
+	partner_names = dict(
+		frappe.get_all(
+			"Team",
+			filters={"name": ["in", list(set(partner_of.values()))]},
+			fields=["name", "team_name"],
+			as_list=True,
+		)
+	)
+	for row in clients:
+		teams[row.name] = {
+			"name": row.name,
+			"label": row.team_name or row.owner_user or row.name,
+			"logo": row.team_logo,
+			"owner": row.owner_user,
+			"role": PARTNER_ROLE,
+			"members": 0,
+			"created": row.creation,
+			"via_partner": partner_names.get(partner_of[row.name]),
+			"is_partner": False,
+		}
 
 
 def _pending_onboarding_steps(teams: list[str]) -> list[dict[str, Any]]:

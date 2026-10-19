@@ -3,10 +3,12 @@ import { Alert, Avatar, Button, Dialog, Select, useCall } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import { API, method } from '@/api/methods'
 import { useRegions } from '@/composables/useRegions'
+import { useSession } from '@/composables/useSession'
 import { useTeamMembers } from '@/composables/useTeamMembers'
 import { useTeamRoles } from '@/composables/useTeamRoles'
 import { teamParams } from '@/composables/useTeamScope'
 import { getErrorMessage } from '@/lib/feedback'
+import { splitClientAccess } from '@/lib/resourceScope'
 import type {
 	ResourceType,
 	TeamMemberRoleAssignment,
@@ -24,6 +26,7 @@ const open = defineModel<boolean>('open', { default: false })
 const { roles } = useTeamRoles()
 const { setRoles } = useTeamMembers()
 const { regions } = useRegions()
+const { activeTeamLabel, isPartnerTeam } = useSession()
 
 const regionLabel = (
 	regionName: string | null | undefined,
@@ -36,6 +39,8 @@ const regionLabel = (
 }
 
 const rows = ref<TeamMemberRoleAssignment[]>([])
+const NO_CLIENT_ACCESS = 'none'
+const clientRole = ref(NO_CLIENT_ACCESS)
 
 const registryCall = useCall<TeamRegistry, { team: string }>({
 	url: method(API.registry),
@@ -45,7 +50,9 @@ const registryCall = useCall<TeamRegistry, { team: string }>({
 
 watch(open, (isOpen) => {
 	if (!isOpen || !props.member) return
-	rows.value = props.member.roles.map((r) => ({ ...r }))
+	const { teamRoles, clientRole: role } = splitClientAccess(props.member.roles)
+	rows.value = teamRoles.map((r) => ({ ...r }))
+	clientRole.value = role ?? NO_CLIENT_ACCESS
 	if (!registryCall.data) registryCall.reload()
 })
 
@@ -55,8 +62,27 @@ const roleOptions = computed(() =>
 		.map((r) => ({ label: r.role_name, value: r.name })),
 )
 
-const resourceKey = (type: ResourceType, name: string | null): string =>
-	`${type}::${name ?? ''}`
+// Admin's team capabilities never reach a client, so it would read as more than it gives.
+const clientRoleOptions = computed(() => [
+	{ label: 'No client access', value: NO_CLIENT_ACCESS },
+	...roleOptions.value.filter((option) => option.value !== 'Admin'),
+])
+
+const clientGrants = (): TeamMemberRoleAssignment[] =>
+	isPartnerTeam.value && clientRole.value !== NO_CLIENT_ACCESS
+		? [
+				{
+					role: clientRole.value,
+					resource_type: 'Clients',
+					resource_name: null,
+				},
+			]
+		: []
+
+const resourceKey = (
+	type: TeamMemberRoleAssignment['resource_type'],
+	name: string | null,
+): string => `${type}::${name ?? ''}`
 
 const applyResourceKey = (row: TeamMemberRoleAssignment, key: string): void => {
 	const [type, name] = key.split('::') as [ResourceType, string]
@@ -119,14 +145,15 @@ const canSubmit = computed(
 
 const submitting = ref(false)
 const formError = ref('')
-watch(rows, () => (formError.value = ''), { deep: true })
+watch([rows, clientRole], () => (formError.value = ''), { deep: true })
 
 const submit = async (): Promise<void> => {
 	if (!canSubmit.value || !props.member) return
 	submitting.value = true
-	const grants = rows.value.filter(
-		(_, index) => !shadowedIndexes.value.has(index),
-	)
+	const grants = [
+		...rows.value.filter((_, index) => !shadowedIndexes.value.has(index)),
+		...clientGrants(),
+	]
 	try {
 		await setRoles(props.member.user, grants, { throwOnError: true })
 		open.value = false
@@ -224,6 +251,21 @@ const dialogOptions = computed(() => ({
 							@click="removeRow(index)"
 						/>
 					</div>
+				</div>
+
+				<div v-if="isPartnerTeam" class="space-y-2 border-t pt-4">
+					<div>
+						<p class="text-base-medium text-ink-gray-8">Client access</p>
+						<p class="text-p-sm text-ink-gray-5">
+							What they can do for every client that gave {{ activeTeamLabel }}
+							access. A client never gets more than the Partner role.
+						</p>
+					</div>
+					<Select
+						v-model="clientRole"
+						:options="clientRoleOptions"
+						aria-label="Client access"
+					/>
 				</div>
 			</div>
 		</template>
