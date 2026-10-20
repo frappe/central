@@ -59,7 +59,12 @@ const refresh = async (): Promise<void> => {
 
 <template>
 	<div class="flex h-full flex-col">
-		<div class="mx-auto w-full max-w-3xl shrink-0 p-3 md:p-4 lg:mt-6">
+		<!-- The heading, the alert and the tabs belong to a team that has LLM; without it the
+		     page is the set-up card alone, as Object Storage is. -->
+		<div
+			v-if="ai?.enabled"
+			class="mx-auto w-full max-w-3xl shrink-0 p-3 md:p-4 lg:mt-6"
+		>
 			<div class="flex items-start gap-3">
 				<span
 					class="grid size-10 shrink-0 place-items-center rounded-6 bg-surface-gray-2 text-ink-gray-7"
