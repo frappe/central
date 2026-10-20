@@ -64,13 +64,20 @@ class GroveClient:
 		suspended: bool | None = None,
 		tier: str | None = None,
 		observed_at: str | None = None,
+		log_payloads: bool | None = None,
 	) -> dict:
 		"""The name of the team's `tier` at Grove ("" for none: Grove's default tier), whose key
-		count, monthly spend limit and rate limits Grove holds, and whether it is `suspended`,
-		each kept at Grove when None; `observed_at` is when Central read them, and Grove ignores
-		a body not newer than its last. → the team and the limits in force for it."""
+		count, monthly spend limit and rate limits Grove holds, whether it is `suspended`, and
+		whether the gateways store its prompts and outputs (`log_payloads`), each kept at Grove
+		when None; `observed_at` is when Central read them, and Grove ignores a body not newer
+		than its last. → the team, its `log_payloads` and the limits in force for it."""
 		return self.call(
-			"grove.api.teams.update_team", team=team, suspended=suspended, tier=tier, observed_at=observed_at
+			"grove.api.teams.update_team",
+			team=team,
+			suspended=suspended,
+			tier=tier,
+			observed_at=observed_at,
+			log_payloads=log_payloads,
 		)
 
 	def rename_tier(self, old: str, new: str) -> None:

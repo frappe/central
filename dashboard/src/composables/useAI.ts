@@ -96,6 +96,15 @@ const pullCall = useCall<{ sync: string | null }, { team: string }>({
 	immediate: false,
 })
 
+const promptLoggingCall = useCall<
+	{ log_payloads: boolean },
+	{ team: string; enabled: boolean }
+>({
+	url: method(API.setAIPromptLogging),
+	method: 'POST',
+	immediate: false,
+})
+
 // Row-level busy: the key currently mutating, so its control alone spins.
 const busyKey = ref('')
 
@@ -149,6 +158,15 @@ export function useAI() {
 			await Promise.all([apiKeysCall.reload(), aiCall.reload()])
 		},
 		capsSaving: computed(() => capsCall.loading),
+
+		// Grove holds the setting: the overview reads it back after the change.
+		async setPromptLogging(enabled: boolean): Promise<void> {
+			await submitOrThrow(promptLoggingCall, {
+				team: activeTeam.value!,
+				enabled,
+			})
+			await aiCall.reload()
+		},
 
 		// What a key in one geography starts with: the published models of its default group.
 		models: computed<AIModel[]>(() => modelsCall.data ?? []),

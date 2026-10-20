@@ -34,6 +34,8 @@ export interface AISpend {
 	// How many live keys the plan allows; 0 is no limit.
 	max_keys: number
 	suspended: boolean
+	// Whether the gateways keep the team's prompts and outputs for a short time, for support.
+	log_payloads: boolean
 }
 
 // Where a key may be minted, and the gateway its keys call.

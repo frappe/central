@@ -118,6 +118,16 @@ def whole_dollars(cap: int | float | str) -> int:
 
 
 @frappe.whitelist(methods=["POST"])
+@require_capability("service:manage", MANAGE_DENIED)
+def set_prompt_logging(enabled: bool, team: str | None = None) -> dict:
+	"""Whether the gateways store the prompts and outputs of the team's keys, for a short time,
+	so support can look into a request. Grove holds the setting; Central keeps no copy."""
+	require_ai(team)
+	updated = GroveClient.from_settings().update_team(team, log_payloads=enabled)
+	return {"log_payloads": bool(updated["log_payloads"])}
+
+
+@frappe.whitelist(methods=["POST"])
 @require_capability("service:view", VIEW_DENIED)
 def pull_usage(team: str | None = None) -> dict:
 	"""Ask Grove to pull the team's usage from its gateways now (the console's **Refresh usage**),

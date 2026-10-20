@@ -405,6 +405,16 @@ class TestAI(IntegrationTestCase):
 			api.revoke_api_key(self.team, "k1")
 		revoke_key.assert_called_once_with(self.team, "k1")
 
+	def test_prompt_logging_is_set_at_grove_by_a_service_manager_only(self):
+		self.enabled()
+		frappe.set_user(self.owner)
+		with patch.object(GroveClient, "update_team", return_value={"log_payloads": 0}) as update_team:
+			self.assertEqual(api.set_prompt_logging(enabled=False, team=self.team), {"log_payloads": False})
+			frappe.set_user(ensure_user("grove.outsider@example.test"))
+			with self.assertRaises(frappe.PermissionError):
+				api.set_prompt_logging(enabled=True, team=self.team)
+		update_team.assert_called_once_with(self.team, log_payloads=False)
+
 	def test_refresh_usage_asks_grove_to_pull_the_team(self):
 		self.enabled()
 		with patch.object(GroveClient, "pull_usage", return_value={"sync": "PS-1"}) as pull_usage:

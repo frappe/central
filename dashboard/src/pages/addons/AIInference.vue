@@ -4,6 +4,7 @@ import { ref } from 'vue'
 import AIApiKeys from '@/components/addons/ai/AIApiKeys.vue'
 import AIOverview from '@/components/addons/ai/AIOverview.vue'
 import AIQuickstart from '@/components/addons/ai/AIQuickstart.vue'
+import AISettings from '@/components/addons/ai/AISettings.vue'
 import AIUsage from '@/components/addons/ai/AIUsage.vue'
 import CopyableValue from '@/components/common/CopyableValue.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
@@ -33,6 +34,7 @@ const tabs = [
 	{ label: 'Overview', value: 'overview' },
 	{ label: 'Usage', value: 'usage' },
 	{ label: 'API keys', value: 'keys' },
+	{ label: 'Settings', value: 'settings' },
 ]
 
 const enabling = ref(false)
@@ -135,7 +137,8 @@ const refresh = async (): Promise<void> => {
 		<template v-else-if="ai?.enabled && !ai.unavailable" :key="activeTeam">
 			<AIOverview v-if="tab === 'overview'" />
 			<AIUsage v-else-if="tab === 'usage'" />
-			<AIApiKeys v-else :can-manage="canManageServices" />
+			<AIApiKeys v-else-if="tab === 'keys'" :can-manage="canManageServices" />
+			<AISettings v-else :can-manage="canManageServices" />
 		</template>
 
 		<div
