@@ -155,6 +155,8 @@ See [Resource Action](../central/infrastructure/doctype/resource_action/SPEC.md)
 
 An app on a site, such as Raven, asks Central for a token through Pilot's Central proxy: `central.api.pilot.get_team_identity_token(audience)`. Pilot's credential names the team, so a site cannot get a token for another team.
 
+Pilot pulls the team's AI keys through `central.api.pilot.ai_keys` on a TTL and merges the answer as `ai_keys` into `sites/common_site_config.json`: every live key of the team with its `name`, `title`, `geography`, `gateway_url` and `api_key`, newest first, so apps on the server pick one by title. A key minted or revoked in the console reaches every server of the team within one TTL. Pilot's credential names the team, so a server only gets its own team's keys. The list is empty while the team has no AI. A failed pull leaves the server's copy as it was. Grove hands the secrets out to Central through `grove.api.keys.secrets`.
+
 `get_team_identity_token` returns a token that Central signs with its Pilot key. The token is valid for 5 minutes. Central stores no account and no secret for the outside service.
 
 | Claim | Value |

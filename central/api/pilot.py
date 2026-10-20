@@ -118,6 +118,19 @@ def datum_token() -> dict:
 	}
 
 
+# nosemgrep: guest-whitelisted-method -- pilot_credential_auth verifies the caller below.
+@frappe.whitelist(allow_guest=True, methods=["GET"])
+@pilot_credential_auth
+def ai_keys() -> dict:
+	"""Every live AI key of this Pilot's team with its secret and the gateway it calls, for
+	`ai_keys` in `common_site_config.json`: apps on the server pick one by title. Pilot pulls it
+	on a TTL, so a key minted or revoked in the console lands within one. Empty while the team
+	has no AI; a failed pull leaves the server's copy as it was."""
+	from central.services.ai import get_server_keys
+
+	return {"ai_keys": get_server_keys(frappe.local.pilot_credential.team)}
+
+
 # TODO: This hack should goaway once region id is integrated into the region doctype
 def region_id_of(region: str | None) -> int:
 	"""The Atlas region id the token's audience names. A pilot with no region yet has no

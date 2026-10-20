@@ -10,6 +10,7 @@ from frappe.tests import IntegrationTestCase
 from frappe.utils import add_to_date, now_datetime, set_request
 
 from central.api.pilot import (
+	ai_keys,
 	datum_token,
 	get_team_identity_token,
 	heartbeat,
@@ -222,6 +223,30 @@ class TestPilotAPI(IntegrationTestCase):
 	def test_storage_regions_needs_a_pilot_credential(self):
 		with self.assertRaises(frappe.AuthenticationError):
 			self.call_storage_regions(None)
+
+	def call_ai_keys(self, token: str | None) -> dict:
+		headers = {"X-Pilot-Token": token} if token is not None else {}
+		set_request(method="GET", path="/api/method/central.api.pilot.ai_keys", headers=headers)
+		return ai_keys()
+
+	def test_ai_keys_are_the_pilots_own_teams(self):
+		keys = [
+			{
+				"name": "k1",
+				"title": "app",
+				"geography": "eu",
+				"gateway_url": "https://eu.llm.frappe.cloud",
+				"api_key": "gr_secret",
+			}
+		]
+		with patch("central.services.ai.get_server_keys", return_value=keys) as get_server_keys:
+			self.assertEqual(self.call_ai_keys(self.token), {"ai_keys": keys})
+
+		get_server_keys.assert_called_once_with(self.team)
+
+	def test_ai_keys_need_a_pilot_credential(self):
+		with self.assertRaises(frappe.AuthenticationError):
+			self.call_ai_keys(None)
 
 	def call_get_team_identity_token(self, token: str | None, audience: str) -> dict:
 		headers = {"X-Pilot-Token": token} if token is not None else {}

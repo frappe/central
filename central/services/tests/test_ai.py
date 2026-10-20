@@ -36,6 +36,13 @@ LISTED = {
 	"cap": 5.0,
 	"limits": LIMITS,
 }
+SERVER_KEY = {
+	"name": "k1",
+	"title": "app",
+	"geography": "eu",
+	"gateway_url": "https://eu.llm.frappe.cloud",
+	"api_key": "gr_testsecret",
+}
 MODELS = [{"name": "acme/m", "provider": "acme", "model_id": "m", "dialects": ["openai"]}]
 GEOGRAPHIES = [
 	{"name": "eu", "label": "Europe", "endpoint": "https://eu.llm.frappe.cloud", "is_default": True}
@@ -215,6 +222,12 @@ class TestGroveClientCalls(IntegrationTestCase):
 				post.return_value.status_code = status
 				with self.assertRaises(GroveUnavailable, msg=status):
 					self.client.get_figures("TEAM-1")
+
+	def test_a_teams_key_secrets_are_asked_for_by_team(self):
+		with grove_replies([SERVER_KEY]) as post:
+			self.assertEqual(self.client.get_key_secrets("TEAM-1"), [SERVER_KEY])
+
+		self.assertEqual(sent(post), ("grove.api.keys.secrets", {"team": "TEAM-1"}))
 
 
 class TestAI(IntegrationTestCase):
@@ -566,3 +579,16 @@ class TestAI(IntegrationTestCase):
 			ai_settings.rotate_credential()
 
 		self.assertEqual(frappe.get_single("AI Settings").get_password("control_api_secret"), "s2")
+
+	def test_a_servers_pull_gets_the_teams_live_keys_with_their_secrets(self):
+		self.enabled()
+		with patch.object(GroveClient, "get_key_secrets", return_value=[SERVER_KEY]) as get_key_secrets:
+			self.assertEqual(ai.get_server_keys(self.team), [SERVER_KEY])
+
+		get_key_secrets.assert_called_once_with(self.team)
+
+	def test_a_team_without_ai_hands_its_servers_no_keys(self):
+		with patch.object(GroveClient, "get_key_secrets") as get_key_secrets:
+			self.assertEqual(ai.get_server_keys(self.team), [])
+
+		get_key_secrets.assert_not_called()

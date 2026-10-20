@@ -93,6 +93,11 @@ class GroveClient:
 	def revoke_key(self, team: str, key: str) -> None:
 		self.call("grove.api.keys.revoke_key", team=team, key=key)
 
+	def get_key_secrets(self, team: str) -> list[dict]:
+		"""Every live key of the team with its secret, for the team's servers to hold: `name`,
+		`title`, `geography`, `gateway_url` and `api_key` each."""
+		return self.call("grove.api.keys.secrets", team=team) or []
+
 	def list_models(
 		self, team: str | None = None, key: str | None = None, geography: str | None = None
 	) -> list[dict]:

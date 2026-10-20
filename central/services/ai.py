@@ -155,3 +155,12 @@ def get_every_day(usage: dict) -> list[dict]:
 		for day in (str(frappe.utils.add_days(usage["from_date"], offset)) for offset in range(days))
 		for model in models
 	]
+
+
+def get_server_keys(team: str) -> list[dict]:
+	"""What every server of the team is handed on each pull: its live keys with their secrets,
+	for `ai_keys` in the server's site config. AI off for the team: none, and the server keeps none.
+	Grove down: the pull fails, and the server keeps what it has."""
+	if not get_ai_service(team):
+		return []
+	return GroveClient.from_settings().get_key_secrets(team)
