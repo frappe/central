@@ -77,10 +77,8 @@ const keyCountLabel = computed(() => {
 	if (max > 0) return `${live} of ${max} keys`
 	return `${live} ${live === 1 ? 'key' : 'keys'}`
 })
-// All keys come in one call; search and page them on the client. Search earns its space
-// only once the list outgrows a glance.
+// All keys come in one call; search and page them on the client.
 const query = ref('')
-const searchable = computed(() => apiKeys.value.length > 6)
 const visibleKeys = computed(() => {
 	const q = query.value.trim().toLowerCase()
 	if (!q) return apiKeys.value
@@ -352,11 +350,11 @@ const revoke = async (key: AIApiKey): Promise<void> => {
 				description="An invoice is unpaid. Every key is refused until it is settled."
 			/>
 			<div
-				v-if="searchable || canSetCaps"
+				v-if="apiKeys.length || canSetCaps"
 				class="mt-4 flex items-center justify-between gap-4"
 			>
 				<TextInput
-					v-if="searchable"
+					v-if="apiKeys.length"
 					v-model="query"
 					class="w-64"
 					size="md"
