@@ -27,6 +27,11 @@
   "sign_in_section",
   "sign_in_code_attempts",
   "sign_in_codes_per_email",
+  "signups_section",
+  "alias_email_domains",
+  "refuse_temporary_emails",
+  "signup_requests_per_minute",
+  "automatic_block_hours",
   "trials_section",
   "require_payment_method",
   "trial_servers_per_team",
@@ -186,6 +191,41 @@
    "non_negative": 1
   },
   {
+   "fieldname": "signups_section",
+   "fieldtype": "Section Break",
+   "label": "Signups"
+  },
+  {
+   "fieldname": "alias_email_domains",
+   "fieldtype": "Small Text",
+   "label": "Domains That Allow Aliases",
+   "default": "erpnext.com\nfrappe.io",
+   "description": "One domain per line. A new account on any other domain cannot use an alias such as name+tag@example.com, because every new owner gets free credit."
+  },
+  {
+   "default": "1",
+   "fieldname": "refuse_temporary_emails",
+   "fieldtype": "Check",
+   "label": "Refuse Temporary Emails",
+   "description": "Refuse a new account on a known temporary email provider. To block another domain, add it to Blocked Email Domain."
+  },
+  {
+   "default": "10",
+   "fieldname": "signup_requests_per_minute",
+   "fieldtype": "Int",
+   "label": "Signup Requests per Minute",
+   "non_negative": 1,
+   "description": "Signup code requests one IP address may make in a minute, and new accounts one organisation's email domain may create in a minute. Above it, Central blocks that IP or domain. Public providers such as gmail.com are limited by IP only. 0 turns this off."
+  },
+  {
+   "default": "24",
+   "fieldname": "automatic_block_hours",
+   "fieldtype": "Int",
+   "label": "Automatic Block Hours",
+   "non_negative": 1,
+   "description": "How long an automatic block lasts. A blocked domain is listed in Signup Domain, and the System Managers get an email."
+  },
+  {
    "fieldname": "trials_section",
    "fieldtype": "Section Break",
    "label": "Trials"
@@ -289,7 +329,7 @@
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-10-16 00:00:00.000000",
+ "modified": "2026-10-18 12:42:11.087757",
  "modified_by": "Administrator",
  "module": "Central",
  "name": "Central Settings",

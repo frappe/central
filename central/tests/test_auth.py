@@ -16,6 +16,9 @@ class TestAuth(IntegrationTestCase):
 	def setUp(self):
 		frappe.set_user("Guest")
 		self.email = f"auth.{frappe.generate_hash(length=8)}@example.test"
+		# These tests send more codes than one IP or domain may in a minute.
+		self.enterContext(patch("central.users.watch_signup_ip"))
+		self.enterContext(patch("central.users.watch_signup_domain"))
 		self.addCleanup(EmailCode(self.email).discard)
 
 	def tearDown(self):
@@ -244,6 +247,47 @@ class TestAuth(IntegrationTestCase):
 			with self.assertRaises(frappe.TooManyRequestsError):
 				self._verify(self._code())
 		self.assertIsNotNone(EmailCode(self.email).pending)
+
+	def test_a_new_account_cannot_use_a_plus_alias(self):
+		alias = f"alias.{frappe.generate_hash(length=8)}+1@example.test"
+		with (
+			self.change_settings("Central Settings", alias_email_domains="frappe.io"),
+			patch(SENDMAIL) as sendmail,
+			self.assertRaisesRegex(frappe.ValidationError, "Aliases"),
+		):
+			send_code(alias, "Alias Person")
+
+		sendmail.assert_not_called()
+
+	def test_an_allowed_domain_can_use_a_plus_alias(self):
+		self.email = f"staff.{frappe.generate_hash(length=8)}+test@frappe.io"
+		self.addCleanup(EmailCode(self.email).discard)
+		with (
+			self.change_settings("Central Settings", alias_email_domains="erpnext.com\nfrappe.io"),
+			patch(SENDMAIL),
+		):
+			send_code(self.email, "Staff Person")
+			self.assertEqual(self._verify(self._code()), {"user": self.email})
+
+	def test_a_new_account_cannot_use_a_dotted_spelling_of_a_gmail_account(self):
+		local = f"gmail{frappe.generate_hash(length=8)}"
+		frappe.set_user("Administrator")
+		create_user(f"{local}@gmail.com")
+		frappe.set_user("Guest")
+
+		with self.assertRaisesRegex(frappe.ValidationError, "Aliases"):
+			send_code(f"{local[:3]}.{local[3:]}@googlemail.com", "Dotted Person")
+
+	def test_an_existing_alias_account_still_signs_in(self):
+		self.email = f"old.{frappe.generate_hash(length=8)}+1@example.test"
+		self.addCleanup(EmailCode(self.email).discard)
+		frappe.set_user("Administrator")
+		create_user(self.email)
+		frappe.set_user("Guest")
+
+		with patch(SENDMAIL):
+			send_code(self.email)
+		self.assertEqual(self._verify(self._code()), {"user": self.email})
 
 	def test_guest_context(self):
 		context = build_auth_context()
