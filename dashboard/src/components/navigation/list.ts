@@ -69,6 +69,12 @@ export const sidebarSections = computed<SidebarSection[]>(() => {
 					to: '/team/members',
 					condition: isMember.value,
 				},
+				// Anyone can apply, so the page is not tied to a team or a capability.
+				{
+					label: 'Affiliate',
+					icon: 'lucide-megaphone',
+					to: '/affiliate',
+				},
 			],
 		},
 

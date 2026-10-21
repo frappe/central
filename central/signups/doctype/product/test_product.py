@@ -104,6 +104,10 @@ class IntegrationTestProduct(IntegrationTestCase):
 		with self.assertRaises(frappe.ValidationError):
 			self.product("Raven App")
 
+	def test_the_frappe_cloud_key_is_reserved(self):
+		with self.assertRaises(frappe.ValidationError):
+			self.product("fc")
+
 
 class TestProductEmailSettings(IntegrationTestCase):
 	"""A product brands its emails only with a public logo, and adds one note per email."""

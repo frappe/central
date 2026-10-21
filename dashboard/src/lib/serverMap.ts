@@ -247,6 +247,19 @@ export interface MapSpot {
 	flag: string
 }
 
+/** A country shaded on the map through the dots that fall in it. */
+export interface MapHighlight {
+	id: string
+	/** The country's dots, in the path format of WorldDots. */
+	path: string
+	color: string
+	/** Where the hover label sits, and what picker mode frames. */
+	lat: number
+	lng: number
+	label: string
+	detail: string
+}
+
 /** An empty region on the fleet map, with what its create card needs. */
 export interface RegionSpot extends MapSpot {
 	/** False while Central can't reach the region; it takes no new servers then. */

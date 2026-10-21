@@ -2,7 +2,7 @@
 
 ## Purpose
 
-The Signups module holds what a new customer gets: the [Product](doctype/product/SPEC.md) they sign up for, the free trial and the welcome credit. Operators start with the [Trials operator guide](../../spec/TRIALS_OPERATOR_GUIDE.md).
+The Signups module holds what a new customer gets: the [Product](doctype/product/SPEC.md) they sign up for, the free trial and the welcome credit. It also holds the [Affiliates](doctype/affiliate/SPEC.md) who bring signups. Operators start with the [Trials operator guide](../../spec/TRIALS_OPERATOR_GUIDE.md).
 
 ## Welcome credit
 

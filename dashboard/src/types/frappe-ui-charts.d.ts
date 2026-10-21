@@ -12,6 +12,7 @@ export const BarChart: Component
 export const ChartCard: Component
 export const ChartTooltip: Component
 export const DonutChart: Component
+export const FunnelChart: Component
 export const LineChart: Component
 export const NumberCard: Component
 

@@ -12,7 +12,7 @@ System Managers and Product Operators create and edit products in Desk. Only a S
 
 | Field | Rule |
 |---|---|
-| Product Key | Lowercase letters, numbers and hyphens. It is the record name and cannot change after creation. |
+| Product Key | Lowercase letters, numbers and hyphens. It is the record name and cannot change after creation. `fc` is reserved for Frappe Cloud itself, see [Affiliates](../affiliate/SPEC.md#product-referral). |
 | Title | The product name. The signup pages use it as the logo's alternative text. |
 | Enabled | A disabled product refuses new signups. Its existing sites keep running. |
 | Logo | Shown with rounded corners next to the heading on the signup, login, verification, site name and setup pages. |
@@ -43,7 +43,7 @@ A person who can edit a saved product has these Desk actions:
 | **Emails > Send Test Email** | Sends the same email to your own address, with "[Test]" in the subject. |
 | **View > Sites**, **View > Trial Sites Report** | Open the product's sites and the trial report. Only a System Manager sees them. |
 
-The **Signups** workspace in Desk links Product and the Trial Sites report.
+The **Signups** workspace in Desk links Product, the Trial Sites report and the [affiliate records](../affiliate/SPEC.md#records).
 
 The trial request saves a `site` part in the Resource Action payload with the product. The Site copies the product when the region creates it. See [Trial sites](../../../infrastructure/doctype/site/SPEC.md#what-the-record-holds).
 
@@ -129,4 +129,4 @@ A team created at signup keeps how its owner first found Frappe Cloud. The brows
 | Landing Product | The first page's `product`, when that product exists |
 | Referrer | The page that linked to the first page, trimmed to 1,000 characters |
 
-A bad or unknown value is dropped and the team is still created. Join these fields with invoices to measure revenue by campaign. Pulse holds the funnel counts.
+A bad or unknown value is dropped and the team is still created. Join these fields with invoices to measure revenue by campaign. Pulse holds the funnel counts. The browser also sends `signup_product`, the product of the current signup, which decides the [affiliate referral](../affiliate/SPEC.md#referral). It does not change these fields.

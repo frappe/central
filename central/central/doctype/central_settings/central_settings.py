@@ -21,6 +21,7 @@ class CentralSettings(Document):
 	if TYPE_CHECKING:
 		from frappe.types import DF
 
+		affiliate_cookie_days: DF.Int
 		central_id: DF.Int
 		common_site_config: DF.JSON | None
 		enable_addons: DF.Check

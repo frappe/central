@@ -8,6 +8,7 @@ import { useMapHoverCard } from '@/composables/useMapHoverCard'
 import { useMapViewport } from '@/composables/useMapViewport'
 import {
 	computeNodes,
+	type MapHighlight,
 	type MapNode,
 	type MapPin,
 	type MapSpot,
@@ -26,6 +27,8 @@ interface ServerMapProps {
 	spots?: RegionSpot[]
 	/** Picker mode: selectable region dots instead of pins and spots. */
 	markers?: MapSpot[]
+	/** Picker mode: countries shaded on the map, labelled on hover. */
+	highlights?: MapHighlight[]
 	/** Fleet mode: the places the map frames. Picker mode frames its markers. */
 	frame?: { lat: number; lng: number }[]
 	selectedId?: string | null
@@ -47,6 +50,7 @@ const props = withDefaults(defineProps<ServerMapProps>(), {
 	pins: () => [],
 	spots: () => [],
 	markers: () => [],
+	highlights: () => [],
 	frame: () => [],
 	selectedId: null,
 	highlightId: null,
@@ -82,7 +86,11 @@ const {
 	toScreen,
 } = useMapViewport(
 	element,
-	() => (props.interactive ? props.frame : props.markers).map(project),
+	() =>
+		(props.interactive
+			? props.frame
+			: [...props.markers, ...props.highlights]
+		).map(project),
 	// The fleet map keeps room for the filters floating over its edges.
 	() => (props.interactive ? 72 : 48),
 )
@@ -137,6 +145,16 @@ function getPositionStyle(node: MapNode): CSSProperties {
 	return { transform: `translate3d(${x}px, ${y}px, 0)` }
 }
 
+const hoveredHighlightId = ref<string | null>(null)
+const highlightLabel = computed(() => {
+	const highlight = props.highlights.find(
+		(each) => each.id === hoveredHighlightId.value,
+	)
+	if (!highlight) return null
+	const { x, y } = toScreen(project(highlight))
+	return { highlight, style: { transform: `translate3d(${x}px, ${y}px, 0)` } }
+})
+
 const card = computed(() => {
 	const node = nodes.value.find((each) => each.key === activeKey.value)
 	if (!node) return null
@@ -183,7 +201,26 @@ function clickNode(node: MapNode): void {
 		<WorldDots
 			class="sm-map sm-position absolute left-0 top-0 block text-[var(--sm-dot)]"
 			:style="mapStyle"
+			:highlights="highlights"
+			@hover="hoveredHighlightId = $event"
 		/>
+
+		<div
+			v-if="highlightLabel"
+			class="pointer-events-none absolute left-0 top-0 z-40"
+			:style="highlightLabel.style"
+		>
+			<div
+				class="-translate-x-1/2 translate-y-3 whitespace-nowrap rounded-4 bg-surface-elevation-2 px-2.5 py-1.5 text-sm shadow-xl"
+			>
+				<p class="text-sm-medium text-ink-gray-9">
+					{{ highlightLabel.highlight.label }}
+				</p>
+				<p class="tabular-nums text-ink-gray-6">
+					{{ highlightLabel.highlight.detail }}
+				</p>
+			</div>
+		</div>
 
 		<TransitionGroup name="smn">
 			<!-- z-index rides this wrapper and the position an inner one: TransitionGroup's

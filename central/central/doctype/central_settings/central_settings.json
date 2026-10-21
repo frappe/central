@@ -33,6 +33,8 @@
   "trial_days",
   "trial_deletion_days",
   "trial_notice_days",
+  "affiliates_section",
+  "affiliate_cookie_days",
   "github_tab",
   "github_app_section",
   "github_app_id",
@@ -227,6 +229,19 @@
    "fieldname": "trial_notice_days",
    "fieldtype": "Int",
    "label": "Trial Notice Days",
+   "non_negative": 1
+  },
+  {
+   "fieldname": "affiliates_section",
+   "fieldtype": "Section Break",
+   "label": "Affiliates"
+  },
+  {
+   "default": "30",
+   "description": "Days an affiliate link click is remembered. A signup after this gets no referral.",
+   "fieldname": "affiliate_cookie_days",
+   "fieldtype": "Int",
+   "label": "Affiliate Cookie Days",
    "non_negative": 1
   },
   {
