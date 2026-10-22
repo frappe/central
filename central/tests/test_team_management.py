@@ -558,9 +558,6 @@ class TestTeamManagement(IntegrationTestCase):
 			resend_invitation(name)
 
 	def test_the_invitation_link_ignores_the_request_host(self):
-		frappe.db.set_single_value("Central SSO Settings", "issuer_url", "https://central.example.test")
-		frappe.clear_document_cache("Central SSO Settings", "Central SSO Settings")
-		self.addCleanup(frappe.clear_document_cache, "Central SSO Settings", "Central SSO Settings")
 		frappe.set_user(self.owner)
 		with (
 			patch("frappe.utils.data.get_host_name_from_request", return_value="https://evil.example"),

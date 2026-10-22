@@ -15,7 +15,6 @@ from central.billing.gateways.base import PaymentResult
 from central.billing.revenue import dunning
 from central.billing.tests.test_stripe_adapter import make_stripe_gateway
 from central.billing.tests.utils import (
-	BillingTestCase,
 	billing_settings,
 	ensure_atlas_instance,
 	ensure_team,
@@ -44,7 +43,7 @@ def day(n):
 	return frappe.utils.add_days(DUE, n)
 
 
-class DunningTestBase(BillingTestCase):
+class DunningTestBase(IntegrationTestCase):
 	def setUp(self):
 		ensure_team(TEAM)
 		ensure_atlas_instance(CLUSTER)
@@ -52,7 +51,23 @@ class DunningTestBase(BillingTestCase):
 		make_stripe_gateway()
 		self._priv, self._pub = generate_keypair()
 		frappe.conf.entitlement_private_key = self._priv
+		self._purge()
 		set_team_tier(TEAM, level="t1", max_spend=50000)
+
+	def tearDown(self):
+		self._purge()
+
+	def _purge(self):
+		for dt in ("Invoice", "Payment Attempt"):
+			frappe.db.delete(dt, {"team": TEAM})
+		for pm in frappe.get_all("Payment Method", {"team": TEAM}, pluck="name"):
+			frappe.db.delete("Payment Method", {"name": pm})
+		frappe.db.delete("Entitlement Token", {"team": TEAM})
+		frappe.db.delete("Billing Profile", {"team": TEAM})
+		for sub in frappe.get_all("Subscription", {"team": TEAM}, pluck="name"):
+			frappe.db.delete("Subscription Change", {"subscription": sub})
+			frappe.db.delete("Subscription", {"name": sub})
+		frappe.db.commit()
 
 	def _card(self):
 		return (

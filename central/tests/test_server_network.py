@@ -169,8 +169,7 @@ class TestServerConsole(IntegrationTestCase):
 		self.assertEqual(raised.exception.envelope["code"], "ATLAS_REJECTED")
 
 	def test_console_rejects_an_unknown_mode(self):
-		# Frappe's own type check refuses it first where it validates Literal annotations.
-		with self.assertRaises((frappe.ValidationError, frappe.exceptions.FrappeTypeError)):
+		with self.assertRaises(frappe.ValidationError):
 			self.open_as(self.owner, mode="vnc")
 		self.get_console_url.assert_not_called()
 

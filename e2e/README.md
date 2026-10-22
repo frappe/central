@@ -155,4 +155,4 @@ E2E_BASE_URL=http://central.localhost:8081 npx playwright test e2e/servers/trial
 
 These specs seed through `central/tests/e2e_trials.py`, which refuses to run without `allow_tests` on the site. Run them on a local or CI bench, never against production. Staging runs them only if its site sets `allow_tests`.
 
-`E2E_SITE_URL` sets the bench address for the progress page preview. The default is `E2E_BASE_URL`. The preview test needs `developer_mode` or `allow_tests` on the site. The live progress page stops at Landing in a test, because a seeded site has no server that answers.
+`E2E_SITE_URL` sets the bench address for the progress page preview. The default is `http://central.localhost:8001`. The preview test needs `developer_mode` on the site. The live progress page stops at Landing in a test, because a seeded site has no server that answers.

@@ -20,11 +20,23 @@ test('Rename yourself', async ({ page, users }) => {
 	await expect(page.getByRole('button', { name: me.email })).toContainText('Sid Duck')
 })
 
+test('Change your password', async ({ page, users }) => {
+	const me = await users.signIn()
+
+	await openSettings(page, me)
+	await page.getByRole('button', { name: 'Change password' }).click()
+	await page.getByLabel('Current password').fill(me.password)
+	await page.getByLabel('New password').fill('a-longer-password')
+	await page.getByRole('button', { name: 'Update password' }).click()
+
+	await expect(page.getByText('Password changed')).toBeVisible()
+})
+
 test('Save notification preferences', async ({ page, users }) => {
 	const me = await users.signIn()
 
 	await openSettings(page, me, 'Notifications')
-	const billingEmails = page.getByRole('switch', { name: 'Email notifications for Billing' })
+	const billingEmails = page.getByLabel('Email notifications for Billing').getByRole('switch')
 	await expect(billingEmails).toBeChecked()
 	await billingEmails.click()
 	await expect(billingEmails).not.toBeChecked()

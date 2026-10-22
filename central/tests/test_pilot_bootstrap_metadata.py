@@ -31,7 +31,6 @@ class TestPilotBootstrapMetadata(TestCase):
 		self.enterContext(patch(f"{PILOT}.PilotCredential.mint", return_value="token"))
 		self.enterContext(patch(f"{PILOT}.central_url", return_value="https://central.test"))
 		self.enterContext(patch(f"{PILOT}.jwks_url", return_value="https://central.test/jwks"))
-		self.enterContext(patch(f"{PILOT}.jwks_document", return_value={"keys": [{"kid": "pilot-key"}]}))
 
 	def test_pilot_payload_contains_the_telemetry_configuration(self):
 		request = pilot_request()

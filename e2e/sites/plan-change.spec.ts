@@ -43,7 +43,7 @@ test('A changed link is not valid', async ({ browser, trials }) => {
 })
 
 test('The preview lands the plane and lets the user stay on the page', async ({ page }) => {
-	await page.goto(`${process.env.E2E_SITE_URL ?? ''}/upgrading?preview=1`)
+	await page.goto(`${progressOrigin()}/upgrading?preview=1`)
 
 	await page.getByLabel('Ready').check()
 
@@ -54,3 +54,8 @@ test('The preview lands the plane and lets the user stay on the page', async ({ 
 	await page.getByRole('button', { name: 'Stay on this page' }).click()
 	await expect(page.getByText('You can open your site when you are ready.')).toBeVisible()
 })
+
+// Central serves the page; the console under test may run on a dev server in front of it.
+function progressOrigin() {
+	return process.env.E2E_SITE_URL || 'http://central.localhost:8001'
+}
