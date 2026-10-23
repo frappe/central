@@ -1,0 +1,146 @@
+{
+ "actions": [],
+ "autoname": "field:grove_key",
+ "creation": "2026-10-24 00:00:00",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "status",
+  "grove_key",
+  "column_break_head",
+  "geography",
+  "gateway_url",
+  "assignment_section",
+  "team",
+  "server",
+  "column_break_assignment",
+  "resource_action",
+  "assigned_at",
+  "credentials_section",
+  "api_key"
+ ],
+ "fields": [
+  {
+   "default": "Available",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Status",
+   "options": "Available\nAssigned\nRevoking\nRevoked",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "description": "The key's name at Grove.",
+   "fieldname": "grove_key",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Grove Key",
+   "read_only": 1,
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "fieldname": "column_break_head",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "geography",
+   "fieldtype": "Data",
+   "in_standard_filter": 1,
+   "label": "Geography",
+   "read_only": 1
+  },
+  {
+   "fieldname": "gateway_url",
+   "fieldtype": "Data",
+   "label": "Gateway URL",
+   "options": "URL",
+   "read_only": 1
+  },
+  {
+   "fieldname": "assignment_section",
+   "fieldtype": "Section Break",
+   "label": "Assignment"
+  },
+  {
+   "fieldname": "team",
+   "fieldtype": "Link",
+   "in_standard_filter": 1,
+   "label": "Team",
+   "options": "Team",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "description": "Set once the server exists.",
+   "fieldname": "server",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Server",
+   "options": "Virtual Machine",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "column_break_assignment",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "The free-trial server creation that took this key.",
+   "fieldname": "resource_action",
+   "fieldtype": "Link",
+   "label": "Resource Action",
+   "options": "Resource Action",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "assigned_at",
+   "fieldtype": "Datetime",
+   "label": "Assigned At",
+   "read_only": 1
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "credentials_section",
+   "fieldtype": "Section Break",
+   "label": "Credentials"
+  },
+  {
+   "fieldname": "api_key",
+   "fieldtype": "Password",
+   "label": "API Key",
+   "read_only": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "links": [],
+ "modified": "2026-10-24 00:00:00",
+ "modified_by": "Administrator",
+ "module": "Services",
+ "name": "AI Trial Key",
+ "naming_rule": "By fieldname",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

@@ -85,11 +85,11 @@ class GroveClient:
 		self.call("grove.api.teams.rename_tier", old=old, new=new)
 
 	def provision_key(
-		self, team: str, title: str, geography: str | None = None, cap: int | None = None
+		self, team: str, title: str | None, geography: str | None = None, cap: int | None = None
 	) -> dict:
 		"""Mint a key in `geography` (Grove's default when None) with `cap` whole USD to spend a
-		month (0 when None: refused until it gets one): its `name`, `geography`, `gateway_url`
-		and `api_key`. The secret is never sent again."""
+		month (0 when None: refused until it gets one), untitled when `title` is None: its `name`,
+		`geography`, `gateway_url` and `api_key`. The secret is never sent again."""
 		return self.call("grove.api.keys.provision_key", team=team, title=title, geography=geography, cap=cap)
 
 	def update_caps(self, team: str, caps: dict[str, int]) -> list[dict]:
