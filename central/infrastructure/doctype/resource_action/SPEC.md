@@ -122,7 +122,7 @@ The resize dialog separates CPU and memory from storage. Keep my disk uses the c
 
 Every preset card shows its effective storage and price. A retained disk beyond the preset allowance adds the extra storage at the current disk rate. A missing required rate or a price above the spending limit prevents submission. The final summary shows the target CPU, memory, storage, price, and power effect. CPU or memory changes require a restart on a running server. A storage increase alone does not. A stopped server starts after a resize. Central validates the target before it queues the action. A failure to load resize options shows an error and a Retry button. Submission stays unavailable until the options load.
 
-The catalog returns `included_transfer_gb` from Central Settings. Every server includes the same monthly transfer, so a plan does not carry a Transfer row. The console shows the value once below the plans and uses it as the network limit on the server overview. Central does not meter or bill transfer.
+The catalog returns `included_transfer_gb` from Central Settings. Every server includes the same monthly transfer. The console shows the value once below the plans and uses it as the network limit on the server overview. The console does not read a plan's Transfer row. Central does not meter or bill transfer.
 
 The catalog returns `spend_limit_enforced` with the available budget. Staging trials are exempt from the spending limit. The console preserves this exemption when it checks the price including retained storage.
 
