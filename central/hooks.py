@@ -273,6 +273,7 @@ scheduler_events = {
 		"central.billing.payments.webhooks.retry_failed_webhooks",
 		"central.billing.platform.alerts.run_operator_alerts",
 		"central.signups.alerts.alert_failed_signups",
+		"central.notification.digest.send_due_digests",
 	],
 	"monthly": [
 		"central.billing.revenue.invoicing.draft_monthly_invoices",

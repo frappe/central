@@ -12,7 +12,13 @@
   "category",
   "column_break_prefs",
   "email_enabled",
-  "in_app_enabled"
+  "in_app_enabled",
+  "section_break_delivery",
+  "frequency",
+  "digest_hour",
+  "last_digest_at",
+  "section_break_events",
+  "events"
  ],
  "fields": [
   {"fieldname": "user", "fieldtype": "Link", "options": "User", "in_list_view": 1, "in_standard_filter": 1, "label": "User", "reqd": 1},
@@ -20,12 +26,18 @@
   {"default": "Billing", "fieldname": "category", "fieldtype": "Select", "in_list_view": 1, "in_standard_filter": 1, "label": "Category", "options": "Billing\nServer\nTeam\nTrial", "reqd": 1},
   {"fieldname": "column_break_prefs", "fieldtype": "Column Break"},
   {"default": "1", "fieldname": "email_enabled", "fieldtype": "Check", "in_list_view": 1, "label": "Email Enabled"},
-  {"default": "1", "fieldname": "in_app_enabled", "fieldtype": "Check", "in_list_view": 1, "label": "In-App Enabled"}
+  {"default": "1", "fieldname": "in_app_enabled", "fieldtype": "Check", "in_list_view": 1, "label": "In-App Enabled"},
+  {"fieldname": "section_break_delivery", "fieldtype": "Section Break", "label": "Email Delivery"},
+  {"default": "Instant", "fieldname": "frequency", "fieldtype": "Select", "in_list_view": 1, "in_standard_filter": 1, "label": "Frequency", "options": "Instant\nDaily\nWeekly", "reqd": 1},
+  {"default": "8", "fieldname": "digest_hour", "fieldtype": "Int", "label": "Digest Hour", "description": "Local hour from 0 to 23 for a daily or weekly digest."},
+  {"fieldname": "last_digest_at", "fieldtype": "Datetime", "label": "Last Digest At", "read_only": 1, "description": "The next digest holds the feed entries created after this time."},
+  {"fieldname": "section_break_events", "fieldtype": "Section Break", "label": "Per-Event Emails"},
+  {"fieldname": "events", "fieldtype": "Table", "label": "Event Emails", "options": "Notification Event Preference", "description": "Only disabled events appear here. Events not listed follow the category setting."}
  ],
  "index_web_pages_for_search": 0,
  "is_submittable": 0,
  "links": [],
- "modified": "2026-10-11 10:00:00.000000",
+ "modified": "2026-10-23 14:26:53.418207",
  "modified_by": "Administrator",
  "module": "Notification",
  "name": "User Notification Preference",

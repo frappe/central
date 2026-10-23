@@ -23,6 +23,8 @@ _FIXTURE_FIELDS = [
 	"action_label",
 	"action_route",
 	"create_in_app",
+	"is_critical",
+	"reportable_by",
 ]
 
 
@@ -42,6 +44,9 @@ class EngineTestBase(IntegrationTestCase):
 
 	def _purge(self):
 		frappe.db.delete("Team Notification", {"team": TEAM})
+		pref_names = frappe.get_all("User Notification Preference", {"team": TEAM}, pluck="name")
+		if pref_names:
+			frappe.db.delete("Notification Event Preference", {"parent": ["in", pref_names]})
 		created = self.__class__._created_event_types
 		if created:
 			frappe.db.delete("Notification Event Type", {"name": ["in", list(created)]})
@@ -69,6 +74,8 @@ class EngineTestBase(IntegrationTestCase):
 		create_in_app=True,
 		action_label=None,
 		action_route=None,
+		is_critical=False,
+		reportable_by="Pilot",
 	):
 		if frappe.db.exists("Notification Event Type", event_type):
 			original = frappe.db.get_value(
@@ -93,6 +100,8 @@ class EngineTestBase(IntegrationTestCase):
 				"create_in_app": int(create_in_app),
 				"action_label": action_label,
 				"action_route": action_route,
+				"is_critical": int(is_critical),
+				"reportable_by": reportable_by,
 			}
 		).insert(ignore_permissions=True)
 		self.__class__._created_event_types.add(event_type)
@@ -487,6 +496,123 @@ class TestSaveUserPreferences(EngineTestBase):
 		team.save(ignore_permissions=True)
 		frappe.set_user(self.user)
 
+	def test_saves_digest_and_event_overrides(self):
+		from central.notification.api import save_user_preferences
+
+		save_user_preferences(
+			team=TEAM,
+			preferences=[
+				{
+					"category": "Billing",
+					"email_enabled": 1,
+					"in_app_enabled": 1,
+					"frequency": "Daily",
+					"digest_hour": 7,
+					"events": [
+						{"event_type": "payment_success", "email_enabled": 0},
+						{"event_type": "payment_failure", "email_enabled": 1},
+					],
+				}
+			],
+		)
+
+		name = frappe.db.get_value(
+			"User Notification Preference",
+			{"user": self.user, "team": TEAM, "category": "Billing"},
+		)
+		pref = frappe.db.get_value(
+			"User Notification Preference", name, ["frequency", "digest_hour"], as_dict=True
+		)
+		self.assertEqual(pref.frequency, "Daily")
+		self.assertEqual(pref.digest_hour, 7)
+		events = frappe.get_all(
+			"Notification Event Preference",
+			filters={"parent": name},
+			fields=["event_type", "email_enabled"],
+		)
+		self.assertEqual(events, [{"event_type": "payment_success", "email_enabled": 0}])
+
+	def test_get_returns_catalog_and_event_overrides(self):
+		from central.notification.api import get_user_preferences, save_user_preferences
+
+		save_user_preferences(
+			team=TEAM,
+			preferences=[
+				{
+					"category": "Billing",
+					"email_enabled": 1,
+					"in_app_enabled": 1,
+					"frequency": "Weekly",
+					"digest_hour": 9,
+					"events": [{"event_type": "payment_success", "email_enabled": 0}],
+				}
+			],
+		)
+
+		out = get_user_preferences(TEAM)
+		billing = next(pref for pref in out["preferences"] if pref["category"] == "Billing")
+		self.assertEqual(billing["frequency"], "Weekly")
+		self.assertEqual(billing["digest_hour"], 9)
+		self.assertEqual(billing["events"], [{"event_type": "payment_success", "email_enabled": 0}])
+		catalog = next(group for group in out["catalog"] if group["category"] == "Billing")
+		events = {event["event_type"]: event for event in catalog["events"]}
+		self.assertFalse(events["payment_success"]["can_receive"])
+		self.assertTrue(events["payment_failure"]["is_critical"])
+		server_catalog = next(group for group in out["catalog"] if group["category"] == "Server")
+		server_events = {event["event_type"]: event for event in server_catalog["events"]}
+		self.assertTrue(server_events["backup_failure"]["can_receive"])
+
+	def test_rejects_event_from_another_category(self):
+		from central.notification.api import save_user_preferences
+
+		with self.assertRaises(frappe.ValidationError):
+			save_user_preferences(
+				team=TEAM,
+				preferences=[
+					{
+						"category": "Server",
+						"email_enabled": 1,
+						"in_app_enabled": 1,
+						"events": [{"event_type": "payment_success", "email_enabled": 0}],
+					}
+				],
+			)
+
+	def test_rejects_duplicate_event_override(self):
+		from central.notification.api import save_user_preferences
+
+		with self.assertRaises(frappe.ValidationError):
+			save_user_preferences(
+				team=TEAM,
+				preferences=[
+					{
+						"category": "Billing",
+						"email_enabled": 1,
+						"in_app_enabled": 1,
+						"events": [
+							{"event_type": "payment_success", "email_enabled": 0},
+							{"event_type": "payment_success", "email_enabled": 0},
+						],
+					}
+				],
+			)
+
+	def test_rejects_an_unsupported_frequency(self):
+		from central.notification.api import save_user_preferences
+
+		with self.assertRaises(frappe.ValidationError):
+			save_user_preferences(
+				team=TEAM,
+				preferences=[
+					{
+						"category": "Billing",
+						"email_enabled": 1,
+						"in_app_enabled": 1,
+						"frequency": "Hourly",
+					}
+				],
+			)
+
 	def test_creates_preferences_for_user(self):
 		"""save_user_preferences creates UserNotificationPreference records."""
 		from central.notification.api import save_user_preferences
@@ -693,6 +819,21 @@ class TestReportPilotEvent(EngineTestBase):
 
 			with self.assertRaises(frappe.PermissionError):
 				report_pilot_event(event_type="payment_failure", message="x")
+
+	def test_pilot_event_refuses_event_without_pilot_flag(self):
+		self._ensure_event_type("event_not_from_pilot", reportable_by="None")
+
+		class FakeCredential:
+			team = TEAM
+
+		with (
+			patch("central.api.pilot.PilotCredential.verify", return_value=FakeCredential()),
+			patch("frappe.get_request_header", return_value="fake-token"),
+		):
+			from central.notification.api import report_pilot_event
+
+			with self.assertRaises(frappe.PermissionError):
+				report_pilot_event(event_type="event_not_from_pilot", message="x")
 
 	def test_pilot_resource_alert_is_accepted_with_the_shipped_fixture(self):
 		"""Pilot's sustained resource alert must match a Server-category fixture, and the

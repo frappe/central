@@ -6,13 +6,14 @@ from frappe import _
 from frappe.model.document import bulk_insert
 
 from central.api.pilot import pilot_credential_auth
-from central.iam import is_active_team_member, resolve_team, user_has_operator_bypass
-from central.notification import CATEGORIES
+from central.iam import can_on_any_server, is_active_team_member, resolve_team, user_has_operator_bypass
+from central.notification import CATEGORIES, FREQUENCIES
 from central.notification.doctype.user_notification_preference.user_notification_preference import (
 	UserNotificationPreference,
 )
 
 MARK_READ_BATCH_SIZE = 500
+PILOT_REPORTABLE_CATEGORIES = ("Server",)
 
 
 def _require_member(user: str, team: str) -> None:
@@ -39,8 +40,7 @@ def _member_team(team: str | None) -> str:
 
 @frappe.whitelist(methods=["POST"])
 def save_user_preferences(team: str, preferences: list[dict]) -> dict:
-	"""Save the caller's notification preferences for *team*, one per category. Each row
-	holds ``category``, ``email_enabled`` and ``in_app_enabled``."""
+	"""Save the caller's notification preferences for *team*, one per category."""
 	user = frappe.session.user
 	_require_member(user, team)
 	saved = []
@@ -51,12 +51,34 @@ def save_user_preferences(team: str, preferences: list[dict]) -> dict:
 		category = pref.get("category")
 		if category not in CATEGORIES:
 			frappe.throw(_("Unsupported notification category {0}.").format(frappe.bold(category)))
+		frequency = pref.get("frequency") or "Instant"
+		if frequency not in FREQUENCIES:
+			frappe.throw(_("Unsupported email frequency {0}.").format(frappe.bold(frequency)))
+		digest_hour = frappe.utils.cint(pref.get("digest_hour", 8))
+		if not 0 <= digest_hour <= 23:
+			frappe.throw(_("Digest hour must be between 0 and 23."))
+
 		email = bool(frappe.utils.cint(pref.get("email_enabled", 1)))
 		in_app = bool(frappe.utils.cint(pref.get("in_app_enabled", 1)))
+		events = [
+			{"event_type": event.get("event_type"), "email_enabled": 0}
+			for event in pref.get("events") or []
+			if not frappe.utils.cint(event.get("email_enabled", 0))
+		]
 
-		doc = UserNotificationPreference.upsert(user, team, category, email, in_app)
+		doc = UserNotificationPreference.upsert(
+			user, team, category, email, in_app, frequency, digest_hour, events
+		)
 		saved.append(
-			{"category": category, "email_enabled": email, "in_app_enabled": in_app, "name": doc.name}
+			{
+				"name": doc.name,
+				"category": category,
+				"email_enabled": email,
+				"in_app_enabled": in_app,
+				"frequency": frequency,
+				"digest_hour": digest_hour,
+				"events": events,
+			}
 		)
 
 	return {"saved": True, "preferences": saved}
@@ -64,16 +86,82 @@ def save_user_preferences(team: str, preferences: list[dict]) -> dict:
 
 @frappe.whitelist()
 def get_user_preferences(team: str) -> dict:
-	"""Return the calling user's notification preferences for *team*."""
+	"""Return the calling user's notification preferences and the event catalog for *team*."""
 	user = frappe.session.user
 	_require_member(user, team)
-	rows = frappe.get_all(
+	rows = frappe.get_list(
 		"User Notification Preference",
 		filters={"user": user, "team": team},
-		fields=["category", "email_enabled", "in_app_enabled"],
+		fields=["name", "category", "email_enabled", "in_app_enabled", "frequency", "digest_hour"],
+		order_by="category asc",
+		limit=0,
 	)
+	child_rows = frappe.get_all(
+		"Notification Event Preference",
+		filters={"parent": ["in", [row.name for row in rows]]},
+		fields=["parent", "event_type", "email_enabled"],
+		order_by="idx asc",
+	)
+	events_by_preference = {}
+	for event in child_rows:
+		events_by_preference.setdefault(event.parent, []).append(
+			{"event_type": event.event_type, "email_enabled": event.email_enabled}
+		)
+	for row in rows:
+		row["frequency"] = row.frequency or "Instant"
+		row["digest_hour"] = 8 if row.digest_hour is None else row.digest_hour
+		row["events"] = events_by_preference.get(row.name, [])
+		row.pop("name")
 
-	return {"preferences": rows}
+	time_zone = frappe.db.get_value("User", user, "time_zone") or frappe.utils.get_system_timezone() or "UTC"
+	return {"time_zone": time_zone, "preferences": rows, "catalog": _event_catalog(user, team)}
+
+
+def _event_catalog(user: str, team: str) -> list[dict]:
+	# The event registry is global, so customers read this catalog without desk permissions.
+	events = frappe.get_all(
+		"Notification Event Type",
+		fields=[
+			"event_type",
+			"category",
+			"severity",
+			"required_cap",
+			"direct_recipients",
+			"in_app_title",
+			"is_critical",
+		],
+		order_by="event_type asc",
+	)
+	capabilities = {
+		event.required_cap
+		for event in events
+		if event.required_cap and event.direct_recipients != "Affected User"
+	}
+	allowed = {capability: can_on_any_server(user, team, capability) for capability in capabilities}
+	by_category = {category: [] for category in CATEGORIES}
+	for event in events:
+		can_receive = (
+			not event.required_cap
+			or event.direct_recipients == "Affected User"
+			or allowed[event.required_cap]
+		)
+		title = event.in_app_title
+		if "{{" in title or "{%" in title:
+			title = frappe.unscrub(event.event_type)
+		by_category[event.category].append(
+			{
+				"event_type": event.event_type,
+				"title": title,
+				"severity": event.severity,
+				"is_critical": event.is_critical,
+				"can_receive": int(can_receive),
+			}
+		)
+	return [
+		{"category": category, "label": category, "events": by_category[category]}
+		for category in CATEGORIES
+		if by_category[category]
+	]
 
 
 # nosemgrep: guest-whitelisted-method -- pilot_credential_auth verifies the caller below.
@@ -86,12 +174,15 @@ def report_pilot_event(
 	reference_name: str | None = None,
 	context: dict | None = None,
 ) -> dict:
-	"""Raise a Server event from a Pilot. The team and server come from the Pilot's
-	credential, never from the body. Billing and Team events are refused, so a compromised bench
-	cannot email a whole team."""
+	"""Raise a server or site event from a Pilot. The team and server come from the
+	Pilot's credential, never from the body. Billing and Team events are refused, so a
+	compromised bench cannot email a whole team."""
 	credential = frappe.local.pilot_credential
 	team = credential.team
-	if frappe.db.get_value("Notification Event Type", event_type, "category") != "Server":
+	event = frappe.db.get_value(
+		"Notification Event Type", event_type, ["category", "reportable_by"], as_dict=True
+	)
+	if not event or event.reportable_by != "Pilot" or event.category not in PILOT_REPORTABLE_CATEGORIES:
 		frappe.throw(_("This event type cannot be reported by a pilot."), frappe.PermissionError)
 	from central.notification.engine import dispatch
 
