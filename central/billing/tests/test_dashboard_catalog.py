@@ -228,6 +228,15 @@ class TestEligiblePlans(IntegrationTestCase):
 		self.assertTrue(all(p["rate"] == 0 for p in plans))
 		self.assertEqual({CHEAP, MID, PRICEY} & {p["plan"] for p in plans}, set())
 
+	def test_menu_carries_the_included_transfer(self):
+		previous = frappe.db.get_single_value("Central Settings", "included_transfer_gb")
+		frappe.db.set_single_value("Central Settings", "included_transfer_gb", 2048)
+		self.addCleanup(frappe.db.set_single_value, "Central Settings", "included_transfer_gb", previous)
+
+		out = get_eligible_plans(cluster=CLUSTER, team=TEAM)
+
+		self.assertEqual(out["included_transfer_gb"], 2048)
+
 	def test_inactive_plan_is_excluded(self):
 		set_team_tier(TEAM, max_spend=6000)
 		make_plan(MID, rates=_rates(2000), is_active=0)

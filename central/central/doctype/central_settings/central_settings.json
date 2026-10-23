@@ -28,6 +28,7 @@
   "servers_tab",
   "server_creation_section",
   "require_payment_method",
+  "included_transfer_gb",
   "server_limits_section",
   "disk_iops",
   "disk_throughput_mibps",
@@ -194,6 +195,14 @@
    "fieldname": "require_payment_method",
    "fieldtype": "Check",
    "label": "Require Payment Method"
+  },
+  {
+   "default": "1024",
+   "description": "The monthly transfer the console shows for every server. Central does not limit or bill it.",
+   "fieldname": "included_transfer_gb",
+   "fieldtype": "Int",
+   "label": "Included Transfer (GB)",
+   "non_negative": 1
   },
   {
    "fieldname": "server_limits_section",

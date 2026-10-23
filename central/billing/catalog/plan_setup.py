@@ -21,15 +21,15 @@ from central.billing.catalog.pricing import get_catalog_rates, set_catalog_rate
 VM_CATEGORY = "VM Plans"
 VM_SUB_CATEGORY = "General"
 
-# (slug, title, vcpu, ram_gb, disk_gb, transfer_gb, {currency: monthly rate}).
+# (slug, title, vcpu, ram_gb, disk_gb, {currency: monthly rate}).
 # Round numbers per currency (not FX-derived at runtime) — admins tune per region.
 # We bill only in INR and USD for now, so each plan ships those two rates.
 STARTER_PLANS = [
-	("plan-1vcpu", "Starter · 1 vCPU / 2 GB", 1, 2, 25, 100, {"INR": 1500, "USD": 18}),
-	("plan-2vcpu", "Basic · 2 vCPU / 4 GB", 2, 4, 50, 200, {"INR": 3000, "USD": 36}),
-	("plan-4vcpu", "Standard · 4 vCPU / 8 GB", 4, 8, 100, 400, {"INR": 6000, "USD": 72}),
-	("plan-8vcpu", "Pro · 8 vCPU / 16 GB", 8, 16, 200, 800, {"INR": 12000, "USD": 145}),
-	("plan-16vcpu", "Enterprise · 16 vCPU / 32 GB", 16, 32, 400, 1600, {"INR": 24000, "USD": 289}),
+	("plan-1vcpu", "Starter · 1 vCPU / 2 GB", 1, 2, 25, {"INR": 1500, "USD": 18}),
+	("plan-2vcpu", "Basic · 2 vCPU / 4 GB", 2, 4, 50, {"INR": 3000, "USD": 36}),
+	("plan-4vcpu", "Standard · 4 vCPU / 8 GB", 4, 8, 100, {"INR": 6000, "USD": 72}),
+	("plan-8vcpu", "Pro · 8 vCPU / 16 GB", 8, 16, 200, {"INR": 12000, "USD": 145}),
+	("plan-16vcpu", "Enterprise · 16 vCPU / 32 GB", 16, 32, 400, {"INR": 24000, "USD": 289}),
 ]
 
 
@@ -41,12 +41,12 @@ def ensure_starter_plans():
 		return
 
 	sub_category = VM_SUB_CATEGORY if frappe.db.exists("Plan Sub-Category", VM_SUB_CATEGORY) else None
-	for slug, title, vcpu, ram, disk, transfer, rates in STARTER_PLANS:
-		_ensure_plan(slug, title, vcpu, ram, disk, transfer, sub_category)
+	for slug, title, vcpu, ram, disk, rates in STARTER_PLANS:
+		_ensure_plan(slug, title, vcpu, ram, disk, sub_category)
 		_ensure_rates(slug, rates)
 
 
-def _ensure_plan(slug, title, vcpu, ram, disk, transfer, sub_category):
+def _ensure_plan(slug, title, vcpu, ram, disk, sub_category):
 	if frappe.db.exists("Plan", slug):
 		return
 	doc = frappe.get_doc(
@@ -61,7 +61,6 @@ def _ensure_plan(slug, title, vcpu, ram, disk, transfer, sub_category):
 				{"resource_type": "Compute", "quantity": vcpu, "unit": "vCPU"},
 				{"resource_type": "Memory", "quantity": ram, "unit": "GB"},
 				{"resource_type": "Disk", "quantity": disk, "unit": "GB"},
-				{"resource_type": "Transfer", "quantity": transfer, "unit": "GB"},
 			],
 		}
 	)

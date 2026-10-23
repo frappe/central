@@ -34,6 +34,7 @@ const {
 	available,
 	currency,
 	capacity,
+	includedTransferGigabytes,
 	plansLoading,
 	plansError,
 	reloadPlans,
@@ -347,6 +348,7 @@ watch(
 									:available="available ?? 0"
 									:currency="currency ?? 'USD'"
 									:capacity="capacity"
+									:included-transfer-gigabytes="includedTransferGigabytes"
 									v-model:selected-plan="selectedPlan"
 									v-model:composed-config="composedConfig"
 								/>
@@ -361,6 +363,7 @@ watch(
 							:available="available ?? 0"
 							:currency="currency ?? 'USD'"
 							:capacity="capacity"
+							:included-transfer-gigabytes="includedTransferGigabytes"
 							v-model:selected-plan="selectedPlan"
 							v-model:composed-config="composedConfig"
 						/>

@@ -153,6 +153,8 @@ export interface ProvisionablePlans {
 	/** Remaining headroom in the team's currency: a plan is offered only if it fits. */
 	available: number
 	spend_limit_enforced: boolean
+	/** The monthly transfer every server includes, from Central Settings. */
+	included_transfer_gb: number
 	plans: Record<string, Plan[]>
 	/** Per-resource component rates for "design your own" (#79). Empty when a
 	 *  component isn't priced for the team's currency — composed configs not offered. */

@@ -77,6 +77,7 @@ def get_server_plans(
 		"current_spend": current_spend,
 		"available": available,
 		"spend_limit_enforced": is_capped,
+		"included_transfer_gb": frappe.db.get_single_value("Central Settings", "included_transfer_gb"),
 		"capacity": {"gated": False, "available": True, "unmeasured": True, "largest_vm": None},
 	}
 	# A "design your own" config needs the same three things the slider does: the
