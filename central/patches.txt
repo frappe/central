@@ -48,5 +48,5 @@ central.patches.v0_0.point_wallets_at_last_ledger_entry
 central.patches.v0_0.repair_billing_audit_findings
 # New servers read their disk and network limits from Central Settings.
 central.patches.v0_0.seed_server_limits
-# Every server shows one included transfer from Central Settings.
-central.patches.v0_0.seed_included_transfer
+# Every server shows one included transfer from Central Settings; existing server plans drop their Transfer rows.
+central.patches.v0_0.move_transfer_to_central_settings
