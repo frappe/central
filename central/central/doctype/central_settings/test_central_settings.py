@@ -69,3 +69,24 @@ class IntegrationTestCentralSettings(IntegrationTestCase):
 		settings = frappe.get_doc("Central Settings")
 		settings.common_site_config = '{"raven_push_notification_server_url": "https://relay.test"}'
 		settings.save()
+
+	def test_app_rollout_rejects_steps_out_of_range(self):
+		for fieldname, value in (
+			("app_rollout_start_percent", 0),
+			("app_rollout_step_percent", 101),
+			("app_rollout_interval_hours", 0),
+			("app_rollout_max_percent", -1),
+			("app_rollout_max_percent", 101),
+			("app_rollout_failure_percent", 0),
+			("app_rollout_failure_percent", 100),
+			("app_rollout_minimum_servers", 0),
+		):
+			settings = frappe.get_doc("Central Settings")
+			settings.set(fieldname, value)
+			with self.subTest(fieldname=fieldname), self.assertRaises(frappe.ValidationError):
+				settings.save()
+
+	def test_app_rollout_accepts_a_max_percent_of_0_to_stop_rollouts(self):
+		settings = frappe.get_doc("Central Settings")
+		settings.app_rollout_max_percent = 0
+		settings.save()

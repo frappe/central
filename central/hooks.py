@@ -16,7 +16,17 @@ fixtures = [
 	{
 		"dt": "Role",
 		"filters": [
-			["name", "in", ["Central User", "Atlas Host Access", "Atlas Warpgate Admin", "Product Operator"]]
+			[
+				"name",
+				"in",
+				[
+					"Central User",
+					"Atlas Host Access",
+					"Atlas Warpgate Admin",
+					"Product Operator",
+					"App Rollout Alert",
+				],
+			]
 		],
 	},
 	"Notification Event Type",

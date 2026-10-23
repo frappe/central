@@ -48,3 +48,5 @@ central.patches.v0_0.point_wallets_at_last_ledger_entry
 central.patches.v0_0.repair_billing_audit_findings
 # New servers read their disk and network limits from Central Settings.
 central.patches.v0_0.seed_server_limits
+# The app rollout steps read 0 on a Central Settings saved before they existed, and Pilot holds every update on 0.
+central.patches.v0_0.seed_app_rollout_settings
