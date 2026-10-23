@@ -11,6 +11,7 @@ from requests import RequestException
 from central.iam import can, user_has_operator_bypass
 from central.infrastructure.doctype.pilot_credential.pilot_credential import PilotCredential
 from central.infrastructure.doctype.user_mail_account.user_mail_account import UserMailAccount
+from central.services.doctype.ai_trial_key.ai_trial_key import AITrialKey
 from central.sso import mint_bench_login
 from central.utils.units import mebibytes_to_gigabytes, millicores_to_vcpus
 
@@ -152,6 +153,7 @@ class VirtualMachine(Document):
 			self.enqueue_route_removal()
 			self.revoke_pilot_credentials()
 			UserMailAccount.queue_removal(server=self.name)
+			AITrialKey.queue_revoke(server=self.name)
 			self.queue_status_notification("server_terminated")
 
 	def close_trial(self) -> None:

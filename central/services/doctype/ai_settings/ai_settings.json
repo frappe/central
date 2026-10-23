@@ -10,8 +10,8 @@
   "control_api_key",
   "control_api_secret",
   "trials_tab",
-  "trial_team",
-  "trial_key_expiry",
+  "trial_key_geography",
+  "trial_pool_size",
   "trial_key_cap"
  ],
  "fields": [
@@ -46,23 +46,21 @@
    "label": "Trials"
   },
   {
-   "default": "Central Trial",
-   "description": "The Grove Team trial keys are minted under, one for every trial, each titled by its Central team.",
-   "fieldname": "trial_team",
+   "description": "The Grove geography the pool's keys are minted in, one of Grove's geography names. A key works from any region and dials this geography's gateway; a key minted earlier keeps its own.",
+   "fieldname": "trial_key_geography",
    "fieldtype": "Data",
-   "label": "Trial Team"
+   "label": "Trial Key Geography"
   },
   {
-   "default": "Never",
-   "description": "When a trial key retires on its own: so many days after the mint, Grove revokes it. Sent with every mint; a change applies to keys minted after it.",
-   "fieldname": "trial_key_expiry",
-   "fieldtype": "Select",
-   "label": "Trial Key Expiry",
-   "options": "Never\n1 Day\n7 Days\n14 Days\n30 Days"
+   "default": "0",
+   "description": "How many trial keys Central keeps minted and ready for free-trial servers, under the Grove Team Central Trial; a job every 5 minutes refills the pool. 0 keeps the pool off: a trial server then gets no key.",
+   "fieldname": "trial_pool_size",
+   "fieldtype": "Int",
+   "label": "Trial Pool Size"
   },
   {
    "default": "2",
-   "description": "What one trial key may spend in all, USD. Sent with every mint; a change applies to keys minted after it.",
+   "description": "What one trial key may spend for its whole life, whole USD. Sent with every mint; a change applies to keys minted after it.",
    "fieldname": "trial_key_cap",
    "fieldtype": "Currency",
    "label": "Trial Key Cap (USD)"
@@ -72,7 +70,7 @@
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-10-23 12:00:00.000000",
+ "modified": "2026-10-24 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Services",
  "name": "AI Settings",

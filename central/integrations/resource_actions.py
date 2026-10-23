@@ -19,6 +19,7 @@ from central.errors import (
 from central.infrastructure.doctype.pilot_credential.pilot_credential import PilotCredential
 from central.infrastructure.doctype.resource_action.resource_action import PENDING_STATES, TERMINAL_STATES
 from central.infrastructure.doctype.user_mail_account.user_mail_account import UserMailAccount
+from central.services.doctype.ai_trial_key.ai_trial_key import AITrialKey
 from central.infrastructure.doctype.virtual_machine import firewall
 from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
 from central.integrations import servers
@@ -270,6 +271,7 @@ def _finalize(request) -> None:
 				create_server_subscription(request, server_id)
 			PilotCredential.link_server(request.credential, server_id)
 			UserMailAccount.link_server(request.name, server_id)
+			AITrialKey.link_server(request.name, server_id)
 			request.db_set({"server": server_id, "resource_id": server_id})
 		# Finalize local ownership and billing together, independently of the next remote read.
 		frappe.db.commit()
