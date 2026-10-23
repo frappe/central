@@ -488,10 +488,34 @@ export interface NotificationFeed {
 	has_next_page: boolean
 }
 
-/** get_notification_preferences — per-event-type delivery toggles (0/1), keyed by event. */
-export interface NotificationPreferences {
-	team: string
-	[event: string]: number | string
+export type NotificationFrequency = 'Instant' | 'Daily' | 'Weekly'
+
+export interface NotificationPreference {
+	category: NotificationCategory
+	email_enabled: boolean | number
+	in_app_enabled: boolean | number
+	frequency: NotificationFrequency
+	digest_hour: number
+	events: { event_type: string; email_enabled: number }[]
+}
+
+export interface NotificationCatalogEvent {
+	event_type: string
+	title: string
+	severity: NotificationSeverity
+	is_critical: 0 | 1
+	can_receive: 0 | 1
+}
+
+/** get_user_preferences: saved rows plus the events each category holds. */
+export interface UserNotificationPreferences {
+	time_zone: string
+	preferences: NotificationPreference[]
+	catalog: {
+		category: NotificationCategory
+		label: string
+		events: NotificationCatalogEvent[]
+	}[]
 }
 
 /** get_spend_history — the period-ranged reads behind Billing → Reports. */
