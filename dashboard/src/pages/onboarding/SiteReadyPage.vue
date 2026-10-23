@@ -44,6 +44,21 @@ const lines = computed(() => {
 		: ['Setting things up…', 'Preparing your workspace…', 'Almost there…']
 })
 
+const failureDetail = computed(() => {
+	const reference = journey.value?.reference
+	return [failure.value, reference && `Reference: ${reference}`]
+		.filter(Boolean)
+		.join(' ')
+})
+
+const supportMailto = computed(() => {
+	const reference = journey.value?.reference
+	const subject = reference
+		? `Site setup failed (${reference})`
+		: 'Site setup failed'
+	return `mailto:cloud@frappe.io?subject=${encodeURIComponent(subject)}`
+})
+
 function tryAgain() {
 	router.push({ path: '/onboarding/site', query: carriedQuery(route.query) })
 }
@@ -87,18 +102,26 @@ function tryAgain() {
 				v-if="isDelayed"
 				class="mt-4"
 				theme="amber"
-				title="This is taking longer than usual. You can keep this page open."
+				title="This is taking longer than usual"
+				description="You can keep this page open. We'll open your site when it's ready."
 			/>
 			<Alert
 				v-if="stage === 'failed'"
 				class="mt-4"
 				theme="red"
-				:title="failure || `We couldn't start your server.`"
-				:description="
-					journey?.reference ? `Reference: ${journey.reference}` : undefined
-				"
+				title="We couldn't start your server"
 				:primary-action="{ label: 'Try again', onClick: tryAgain }"
-			/>
+			>
+				<template #description>
+					<span v-if="failureDetail" class="block">{{ failureDetail }}</span>
+					If this keeps happening, email
+					<a
+						class="text-ink-gray-8 underline underline-offset-2 hover:text-ink-gray-9"
+						:href="supportMailto"
+						>cloud@frappe.io</a
+					>.
+				</template>
+			</Alert>
 			<ErrorMessage v-if="error" class="mt-4" :message="error" />
 		</template>
 	</AuthShell>
