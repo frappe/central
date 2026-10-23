@@ -25,7 +25,7 @@ RETRY_AFTER_MINUTES = 60
 class AITrialKey(Document):
 	"""One Grove key minted ahead under Central Trial and held here with its secret, until a
 	free-trial server takes it in its boot config. Central revokes it when that creation fails or
-	the server is terminated; Grove retires it on its own some days after its first use."""
+	the server is terminated; Grove retires it on its own, Trial Key Expiry after its first use."""
 
 	# begin: auto-generated types
 	# This code is auto-generated. Do not modify anything in this block.
@@ -55,6 +55,9 @@ class AITrialKey(Document):
 			title=None,
 			geography=settings.trial_key_geography,
 			cap=cint(settings.trial_key_cap),
+			expiry=settings.trial_key_expiry,
+			# A key waits in the pool before anyone can use it: its clock starts at its first request.
+			expiry_from_first_use=True,
 		)
 		# The refill job inserts it; no customer makes a trial key.
 		return frappe.get_doc(
