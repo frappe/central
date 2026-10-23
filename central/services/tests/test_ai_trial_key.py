@@ -38,6 +38,7 @@ class TestAITrialKey(IntegrationTestCase):
 			"control_api_key": "control" if enrolled else "",
 			"trial_key_geography": "eu",
 			"trial_pool_size": size,
+			"trial_key_expiry": "7 Days",
 			"trial_key_cap": 2,
 		}
 		for fieldname, value in values.items():
@@ -72,7 +73,14 @@ class TestAITrialKey(IntegrationTestCase):
 		self.assertEqual(self.statuses(), ["Available"] * 3)
 		self.assertEqual(
 			self.grove.provision_key.call_args.kwargs,
-			{"team": TRIAL_TEAM, "title": None, "geography": "eu", "cap": 2},
+			{
+				"team": TRIAL_TEAM,
+				"title": None,
+				"geography": "eu",
+				"cap": 2,
+				"expiry": "7 Days",
+				"expiry_from_first_use": True,
+			},
 		)
 		key = frappe.get_doc("AI Trial Key", frappe.get_all("AI Trial Key", pluck="name")[-1])
 		self.assertEqual((key.gateway_url, key.get_password("api_key")), (GATEWAY, f"gr_{key.grove_key}"))
