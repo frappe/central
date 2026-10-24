@@ -144,6 +144,29 @@ def run_reconciliation(now=None) -> list:
 	results = _reconcile_each(stuck, reconcile_attempt, now)
 	results += _reconcile_each(_captured_unsettled_attempts(cutoff), reconcile_captured_attempt, now)
 	results += reconcile_top_up_orders(now=now)
+	results += reconcile_pending_refunds()
+	return results
+
+
+def reconcile_pending_refunds() -> list[dict]:
+	"""Ask the gateway about every refund it accepted but had not paid out."""
+	from central.billing.gateways.base import GatewayUnsupported
+	from central.billing.payments import corrections
+
+	results = []
+	for name in frappe.get_all(
+		"Refund", filters={"status": "Pending", "gateway_refund_id": ["is", "set"]}, pluck="name"
+	):
+		refund = frappe.get_doc("Refund", name)
+		gateway = frappe.db.get_value("Payment Attempt", refund.payment_attempt, "gateway")
+		try:
+			status = _adapter(gateway).get_refund_status(refund.gateway_refund_id)
+		except GatewayUnsupported:
+			continue
+		if status != "Pending":
+			corrections.settle_gateway_refund(refund, status)
+			corrections.enqueue_steps(refund.invoice)
+		results.append({"refund": name, "status": status})
 	return results
 
 

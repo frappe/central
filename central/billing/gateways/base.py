@@ -93,7 +93,7 @@ class VerifiedPayment:
 @dataclass
 class RefundResult:
 	success: bool
-	status: str  # completed / failed
+	status: str  # Completed / Pending / Failed
 	gateway_refund_id: str | None = None
 	raw: dict = field(default_factory=dict)
 
@@ -306,6 +306,21 @@ class GatewayAdapter(ABC):
 		"""Create, before any money moves, the gateway object an off-session charge runs
 		against, and return its id for the caller to store. None where the charge needs
 		none (Stripe dedupes the charge itself by its idempotency key)."""
+		return None
+
+	def get_refund_status(self, gateway_refund_id: str) -> str:
+		"""Completed, Pending or Failed, as the gateway reports the refund now."""
+		raise GatewayUnsupported(f"{type(self).__name__} does not support get_refund_status")
+
+	@staticmethod
+	def dispute_from_event(payload: dict) -> dict | None:
+		"""`{id, payment_id, amount, reason, status}` of the dispute a verified webhook body
+		carries, or None. `status` is open, won, lost or the gateway's own closing reason."""
+		return None
+
+	@staticmethod
+	def refund_from_event(payload: dict) -> dict | None:
+		"""`{id, status}` of the refund a verified webhook body carries, or None."""
 		return None
 
 	def read_saved_card(self, setup_reference: str) -> dict:

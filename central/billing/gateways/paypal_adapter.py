@@ -122,10 +122,10 @@ class PayPalAdapter(GatewayAdapter):
 		except _TRANSIENT as e:
 			raise GatewayTimeout(str(e)) from e
 
-		done = refund.get("status") in ("COMPLETED", "PENDING")
+		status = _REFUND_STATUS.get(refund.get("status"), "Failed")
 		return RefundResult(
-			success=done,
-			status="Completed" if done else refund.get("status"),
+			success=status != "Failed",
+			status=status,
 			gateway_refund_id=refund.get("id"),
 			raw=dict(refund),
 		)
@@ -307,6 +307,10 @@ class PayPalAdapter(GatewayAdapter):
 		)
 		resp.raise_for_status()
 		return resp.json().get("verification_status") == "SUCCESS"
+
+
+# A pending refund can still fail, so it is not Completed.
+_REFUND_STATUS = {"COMPLETED": "Completed", "PENDING": "Pending", "FAILED": "Failed", "CANCELLED": "Failed"}
 
 
 def frappe_flt(value) -> float:

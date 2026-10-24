@@ -281,18 +281,20 @@ class TestWebhookEventList(IntegrationTestCase):
 			event
 			for event in charges._AUTHORISED_EVENTS | charges._SUCCESS_EVENTS | charges._FAILURE_EVENTS
 			if event.startswith("payment_intent.")
-		} | set(disputes.DISPUTE_EVENTS)
+		} | {event for event in disputes.DISPUTE_EVENTS if event.startswith("charge.")}
+		handled |= {"charge.refund.updated", "refund.failed"}  # webhooks.REFUND_EVENTS on Stripe
 		self.assertLessEqual(handled, set(STRIPE_WEBHOOK_EVENTS))
 
 	def test_razorpay_subscribes_to_every_event_it_handles(self):
 		from central.billing.gateways.razorpay_adapter import RAZORPAY_WEBHOOK_EVENTS
-		from central.billing.payments import charges
+		from central.billing.payments import charges, disputes
 
 		handled = {
 			event
 			for event in charges._AUTHORISED_EVENTS | charges._SUCCESS_EVENTS | charges._FAILURE_EVENTS
 			if event.startswith("payment.")
-		}
+		} | {event for event in disputes.DISPUTE_EVENTS if event.startswith("payment.")}
+		handled |= {"refund.processed", "refund.failed"}  # webhooks.REFUND_EVENTS on Razorpay
 		self.assertLessEqual(handled, set(RAZORPAY_WEBHOOK_EVENTS))
 
 

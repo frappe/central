@@ -36,7 +36,7 @@ _UNDER_WAY = "Initiated"
 def cancel_and_refund(invoice: str, reason: str, dispute: dict | None = None) -> dict:
 	"""Cancel a paid invoice and book what goes back, then start the work.
 
-	`dispute` is a lost chargeback ({id, payment_intent}): that charge is recorded as
+	`dispute` is a lost chargeback ({id, payment_id}): that charge is recorded as
 	lost to the dispute rather than refunded.
 	"""
 	doc = frappe.get_doc("Invoice", invoice)
@@ -50,7 +50,7 @@ def cancel_and_refund(invoice: str, reason: str, dispute: dict | None = None) ->
 		)
 
 	for attempt in _captured_attempts(doc.name):
-		lost = dispute and attempt.gateway_transaction_id == dispute.get("payment_intent")
+		lost = dispute and attempt.gateway_transaction_id == dispute.get("payment_id")
 		_book_refund(
 			doc,
 			"Dispute" if lost else "Source",
@@ -66,7 +66,7 @@ def cancel_and_refund(invoice: str, reason: str, dispute: dict | None = None) ->
 	transition(doc, "Cancelled", reason=reason, actor=frappe.session.user)
 	doc.save(ignore_permissions=True)
 	doc.add_comment("Info", f"Cancelled and refunded: {reason}")
-	_enqueue(invoice)
+	enqueue_steps(invoice)
 	return {"invoice": invoice, "refunds": _refunds(invoice)}
 
 
@@ -80,7 +80,7 @@ def refund_part(
 	"""Give back `amount` (GST included) of a paid invoice, which stays Paid.
 
 	`destination` is Wallet, or Source for the card or UPI that paid it. A lost dispute
-	over part of a charge passes `dispute` ({id, payment_intent}) and is not refunded.
+	over part of a charge passes `dispute` ({id, payment_id}) and is not refunded.
 	"""
 	doc = frappe.get_doc("Invoice", invoice, for_update=True)
 	amount = frappe.utils.flt(amount, 2)
@@ -99,7 +99,7 @@ def refund_part(
 	values = {"partial": 1}
 	if dispute:
 		attempt = frappe.db.get_value(
-			"Payment Attempt", {"gateway_transaction_id": dispute.get("payment_intent")}, "name"
+			"Payment Attempt", {"gateway_transaction_id": dispute.get("payment_id")}, "name"
 		)
 		destination, values["payment_attempt"], values["gateway_refund_id"] = (
 			"Dispute",
@@ -116,7 +116,7 @@ def refund_part(
 
 	_book_refund(doc, destination, amount, reason, **values)
 	doc.add_comment("Info", f"Refunded {amount} to the {destination.lower()}: {reason}")
-	_enqueue(invoice)
+	enqueue_steps(invoice)
 	return {"invoice": invoice, "refunds": _refunds(invoice)}
 
 
@@ -160,7 +160,7 @@ def retry_failed_refunds(invoice: str) -> int:
 		transition(refund, _UNDER_WAY, actor=frappe.session.user, correlation=invoice)
 		refund.save(ignore_permissions=True)
 	if failed:
-		_enqueue(invoice)
+		enqueue_steps(invoice)
 	return len(failed)
 
 
@@ -175,7 +175,7 @@ def run_cancellation(invoice: str) -> None:
 	step = _next_step(doc, enabled())
 	if step:
 		step()
-		_enqueue(invoice)
+		enqueue_steps(invoice)
 
 
 def _next_step(doc, accounting: bool):
@@ -255,14 +255,48 @@ def _settle(doc, refund) -> None:
 		key = f"{refund.name}-{refund.attempts}" if refund.attempts else refund.name
 		result = _adapter(attempt.gateway).refund(attempt, refund.amount, refund.reason or "", key)
 		refund.gateway_refund_id = result.gateway_refund_id
-		_finish(refund, "Completed" if result.success else "Failed")
-		if result.success:
-			_mark_refunded(doc, refund, "refund")
-		else:
-			frappe.log_error(
-				title=f"Refund failed: {doc.name}",
-				message=f"{attempt.gateway} refused refund {refund.name}: {result.status}",
-			)
+		if result.status == "Pending":
+			# Accepted, not paid out. The refund webhook or reconciliation finishes it.
+			transition(refund, "Pending", actor="refund", correlation=refund.invoice, amount=refund.amount)
+			refund.save(ignore_permissions=True)
+			return
+		settle_gateway_refund(refund, result.status)
+
+
+def settle_gateway_refund(refund, status: str) -> None:
+	"""Finish a refund the gateway has answered: Completed marks the charge refunded and
+	moves the cancellation on; Failed is left for an operator to retry."""
+	if refund.status in ("Completed", "Failed") or status == "Pending":
+		return
+	_finish(refund, "Completed" if status == "Completed" else "Failed")
+	doc = frappe.get_doc("Invoice", refund.invoice)
+	if status == "Completed":
+		_mark_refunded(doc, refund, "refund")
+	else:
+		frappe.log_error(
+			title=f"Refund failed: {doc.name}",
+			message=f"The gateway refused refund {refund.name} ({refund.gateway_refund_id}).",
+		)
+
+
+def apply_refund_event(event_name: str) -> dict:
+	"""Finish a pending refund from the gateway's refund webhook."""
+	from central.billing.gateways.registry import adapter_class
+	from central.billing.payments.charges import _mark_event
+
+	event = frappe.get_doc("Webhook Event", event_name)
+	adapter_key = frappe.db.get_value("Payment Gateway", event.gateway, "adapter_key")
+	found = adapter_class(adapter_key).refund_from_event(frappe.parse_json(event.raw_payload or "{}"))
+	name = found and frappe.db.get_value("Refund", {"gateway_refund_id": found["id"]}, "name")
+	if not name:
+		_mark_event(event, "Ignored")  # a refund made outside Central, or not ours
+		return {"handled": False, "reason": "no_matching_refund"}
+	settle_gateway_refund(frappe.get_doc("Refund", name), found["status"])
+	enqueue_steps(
+		frappe.db.get_value("Refund", name, "invoice")
+	)  # the credit note and payment record wait on it
+	_mark_event(event, "Processed")
+	return {"handled": True, "refund": name, "status": found["status"]}
 
 
 def _mark_refunded(doc, refund, actor: str) -> None:
@@ -675,7 +709,8 @@ def _adapter(gateway: str):
 	return get_adapter(frappe.get_doc("Payment Gateway", gateway))
 
 
-def _enqueue(invoice: str) -> None:
+def enqueue_steps(invoice: str) -> None:
+	"""Queue the next step of this invoice's cancellation or refund."""
 	frappe.enqueue(
 		"central.billing.payments.corrections.run_cancellation",
 		queue="short",

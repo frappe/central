@@ -19,6 +19,9 @@ MAX_TRIES = 5
 STALE_RECEIVED_MINUTES = 15
 RETRY_BATCH = 200
 
+# Events that finish (or fail) a refund the gateway accepted as pending.
+REFUND_EVENTS = ("charge.refund.updated", "refund.failed", "refund.processed")
+
 
 @frappe.whitelist(allow_guest=True)
 def stripe() -> dict:
@@ -132,9 +135,11 @@ def _dispatch(event_name: str):
 	"""Charge settlement (Open -> Paid) lives in charges.apply_webhook, mandate
 	lifecycle in mandates.apply_mandate_event, and card events in
 	payments.apply_payment_method_event."""
-	from central.billing.payments import charges, mandates, payments
+	from central.billing.payments import charges, corrections, mandates, payments
 
 	event_type = frappe.db.get_value("Webhook Event", event_name, "event_type") or ""
+	if event_type in REFUND_EVENTS:
+		return corrections.apply_refund_event(event_name)
 	if event_type.startswith("mandate."):
 		return mandates.apply_mandate_event(event_name)
 	if event_type.startswith(("payment_method.", "setup_intent.")):

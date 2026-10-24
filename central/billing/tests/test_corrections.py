@@ -32,7 +32,7 @@ class CorrectionsTestCase(IntegrationTestCase):
 		billing_team(TEAM, gstin="27AABCT1111T1Z5")
 		self.remote = FakeAccountingSystem()
 		self.enterContext(self.remote.patches())
-		self.enterContext(patch("central.billing.payments.corrections._enqueue"))
+		self.enterContext(patch("central.billing.payments.corrections.enqueue_steps"))
 		self.gateway = MagicMock()
 		self.gateway.refund.return_value = RefundResult(
 			success=True, status="Completed", gateway_refund_id="re_1", raw={}
@@ -186,11 +186,75 @@ class TestCancelAndRefund(CorrectionsTestCase):
 
 
 class TestDispute(CorrectionsTestCase):
+	def test_a_pending_refund_is_not_counted_as_given_back(self):
+		self.gateway.refund.return_value = RefundResult(
+			success=True, status="Pending", gateway_refund_id="re_pending", raw={}
+		)
+		inv = self._paid_invoice()
+		corrections.cancel_and_refund(inv, "customer asked")
+		self._run_all(inv)
+
+		card = self._refund(inv, "Source")
+		self.assertEqual(card.status, "Pending")
+		self.assertEqual(frappe.db.get_value("Payment Attempt", card.payment_attempt, "status"), "Captured")
+		self.assertFalse(card.payment_record_id)  # the accounting payment-out waits for the money
+
+	def test_a_pending_refund_completes_on_its_webhook(self):
+		self.gateway.refund.return_value = RefundResult(
+			success=True, status="Pending", gateway_refund_id="re_pending", raw={}
+		)
+		inv = self._paid_invoice()
+		corrections.cancel_and_refund(inv, "customer asked")
+		self._run_all(inv)
+		event = self._refund_event("re_pending", "succeeded")
+
+		out = corrections.apply_refund_event(event)
+
+		card = self._refund(inv, "Source")
+		self.assertEqual((out["status"], card.status), ("Completed", "Completed"))
+		self.assertEqual(frappe.db.get_value("Payment Attempt", card.payment_attempt, "status"), "Refunded")
+
+	def test_a_pending_refund_that_fails_is_kept_for_a_person(self):
+		from central.billing.payments import reconciliation
+
+		self.gateway.refund.return_value = RefundResult(
+			success=True, status="Pending", gateway_refund_id="re_pending", raw={}
+		)
+		self.gateway.get_refund_status.return_value = "Failed"
+		inv = self._paid_invoice()
+		corrections.cancel_and_refund(inv, "customer asked")
+		self._run_all(inv)
+
+		with patch("central.billing.payments.reconciliation._adapter", return_value=self.gateway):
+			reconciliation.reconcile_pending_refunds()
+
+		self.assertEqual(self._refund(inv, "Source").status, "Failed")
+
+	def _refund_event(self, refund_id, status):
+		import json
+
+		payload = {
+			"type": "charge.refund.updated",
+			"data": {"object": {"id": refund_id, "object": "refund", "status": status}},
+		}
+		return (
+			frappe.get_doc(
+				{
+					"doctype": "Webhook Event",
+					"gateway": "Stripe",
+					"gateway_event_id": f"evt_{refund_id}_{status}",
+					"event_type": "charge.refund.updated",
+					"raw_payload": json.dumps(payload),
+					"status": "Received",
+				}
+			)
+			.insert(ignore_permissions=True)
+			.name
+		)
+
 	def test_a_lost_dispute_is_not_refunded_again(self):
 		inv = self._paid_invoice()
-		corrections.cancel_and_refund(
-			inv, "dispute lost", dispute={"id": "dp_1", "payment_intent": "pi_card"}
-		)
+		corrections.cancel_and_refund(inv, "dispute lost", dispute={"id": "dp_1", "payment_id": "pi_card"})
 		self._run_all(inv)
 		self.gateway.refund.assert_not_called()
 		lost = self._refund(inv, "Dispute")
@@ -278,6 +342,35 @@ class TestDisputeWebhook(CorrectionsTestCase):
 		inv = self._paid_invoice()
 		self.assertEqual(self._event("charge.dispute.closed", status="won")["result"], "won")
 		self.assertEqual(frappe.db.get_value("Invoice", inv, "status"), "Paid")
+
+	def test_a_lost_razorpay_dispute_cancels_the_invoice(self):
+		from central.billing.payments.charges import apply_webhook
+		from central.billing.tests.test_razorpay_adapter import make_razorpay_gateway
+
+		inv = self._paid_invoice()
+		payload = {
+			"event": "payment.dispute.lost",
+			"payload": {"dispute": {"entity": {"id": "disp_r1", "payment_id": "pi_card", "amount": 354000}}},
+		}
+		event = frappe.get_doc(
+			{
+				"doctype": "Webhook Event",
+				"gateway": make_razorpay_gateway().name,
+				"gateway_event_id": "evt_disp_r1",
+				"event_type": "payment.dispute.lost",
+				"raw_payload": frappe.as_json(payload),
+				"status": "Received",
+			}
+		).insert(ignore_permissions=True)
+
+		self.assertEqual(apply_webhook(event.name)["result"], "cancelled")
+		self.assertEqual(self._refund(inv, "Dispute").gateway_refund_id, "disp_r1")
+
+	def test_a_dispute_lost_on_a_cancelled_invoice_is_flagged(self):
+		inv = self._paid_invoice()
+		frappe.db.set_value("Invoice", inv, "status", "Cancelled")
+		self.assertEqual(self._event("charge.dispute.closed", status="lost")["result"], "flagged")
+		self.assertTrue(any("dp_1 lost" in c for c in self._comments(inv)))
 
 
 class TestRetryFailedRefund(CorrectionsTestCase):

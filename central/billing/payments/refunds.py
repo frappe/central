@@ -104,6 +104,13 @@ def _to_source(refund, attempt, reason):
 	"""Refund to the gateway via the adapter (symmetric across gateways)."""
 	result = _adapter(attempt.gateway).refund(attempt, refund.amount, reason or "", refund.name)
 	refund.gateway_refund_id = result.gateway_refund_id
+	if result.status == "Pending":
+		# Accepted, not paid out. The refund webhook or reconciliation finishes it.
+		transition(
+			refund, "Pending", actor=frappe.session.user, correlation=attempt.invoice, amount=refund.amount
+		)
+		refund.save(ignore_permissions=True)
+		return refund
 	transition(
 		refund,
 		"Completed" if result.success else "Failed",

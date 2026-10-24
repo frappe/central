@@ -113,7 +113,8 @@
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Status",
-   "options": "Initiated\nCompleted\nFailed"
+   "options": "Initiated\nPending\nCompleted\nFailed",
+   "description": "Pending: the gateway accepted the refund but has not paid it out yet, and it can still fail."
   },
   {
    "default": "0",
@@ -191,7 +192,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-10-21 15:59:02.225269",
+ "modified": "2026-10-24 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Refund",

@@ -36,6 +36,9 @@ STRIPE_WEBHOOK_EVENTS = (
 	"payment_intent.amount_capturable_updated",
 	# Recorded only; refunds made outside Central are not applied yet.
 	"charge.refunded",
+	# A pending refund finishing, or failing after it was accepted.
+	"charge.refund.updated",
+	"refund.failed",
 	"charge.dispute.created",
 	"charge.dispute.closed",
 	# An Indian mandate the customer or their bank revokes — the card stays valid,
@@ -104,6 +107,16 @@ def _predebit_hold(intent: dict) -> str | None:
 	if not completes_at:
 		return None
 	return str(frappe.utils.get_datetime_str(frappe.utils.datetime.datetime.fromtimestamp(completes_at)))
+
+
+# A pending refund (or one waiting on the customer) can still fail, so it is not Completed.
+_REFUND_STATUS = {
+	"succeeded": "Completed",
+	"pending": "Pending",
+	"requires_action": "Pending",
+	"failed": "Failed",
+	"canceled": "Failed",
+}
 
 
 def _verified(intent: dict) -> VerifiedPayment:
@@ -375,13 +388,41 @@ class StripeAdapter(GatewayAdapter):
 		except (stripe.error.APIConnectionError, stripe.error.RateLimitError) as e:
 			raise GatewayTimeout(str(e)) from e
 
-		completed = refund.get("status") in ("succeeded", "pending")
+		status = _REFUND_STATUS.get(refund.get("status"), "Failed")
 		return RefundResult(
-			success=completed,
-			status="Completed" if completed else refund.get("status"),
+			success=status != "Failed",
+			status=status,
 			gateway_refund_id=refund.get("id"),
 			raw=refund,
 		)
+
+	def get_refund_status(self, gateway_refund_id: str) -> str:
+		"""Completed, Pending or Failed, as Stripe reports the refund now."""
+		self._configure()
+		with _stripe_errors():
+			refund = _to_dict(stripe.Refund.retrieve(gateway_refund_id))
+		return _REFUND_STATUS.get(refund.get("status"), "Failed")
+
+	@staticmethod
+	def dispute_from_event(payload: dict) -> dict | None:
+		obj = (payload.get("data") or {}).get("object") or {}
+		if obj.get("object") != "dispute":
+			return None
+		opened = payload.get("type") == "charge.dispute.created"
+		return {
+			"id": obj.get("id"),
+			"payment_id": obj.get("payment_intent"),
+			"amount": frappe.utils.flt(obj.get("amount")) / 100,
+			"reason": obj.get("reason") or "unknown",
+			"status": "open" if opened else obj.get("status"),
+		}
+
+	@staticmethod
+	def refund_from_event(payload: dict) -> dict | None:
+		obj = (payload.get("data") or {}).get("object") or {}
+		if obj.get("object") != "refund":
+			return None
+		return {"id": obj.get("id"), "status": _REFUND_STATUS.get(obj.get("status"), "Failed")}
 
 	def verify_webhook_signature(self, payload: bytes, headers: dict) -> bool:
 		"""HMAC-verify the raw webhook body. No DB writes; first security gate."""

@@ -41,8 +41,13 @@ RAZORPAY_WEBHOOK_EVENTS = (
 	"payment.captured",
 	"payment.failed",
 	"payment.authorized",
-	# Recorded only; refunds made outside Central are not applied yet.
+	# A pending refund finishing, or failing after it was accepted.
 	"refund.processed",
+	"refund.failed",
+	"payment.dispute.created",
+	"payment.dispute.won",
+	"payment.dispute.lost",
+	"payment.dispute.closed",
 )
 
 
@@ -227,13 +232,42 @@ class RazorpayAdapter(GatewayAdapter):
 		except _TRANSIENT as e:
 			raise GatewayTimeout(str(e)) from e
 
-		done = refund.get("status") in ("processed", "pending")
+		status = _REFUND_STATUS.get(refund.get("status"), "Failed")
 		return RefundResult(
-			success=done,
-			status="Completed" if done else refund.get("status"),
+			success=status != "Failed",
+			status=status,
 			gateway_refund_id=refund.get("id"),
 			raw=dict(refund),
 		)
+
+	def get_refund_status(self, gateway_refund_id: str) -> str:
+		"""Completed, Pending or Failed, as Razorpay reports the refund now."""
+		try:
+			refund = self._client().refund.fetch(gateway_refund_id)
+		except _TRANSIENT as e:
+			raise GatewayTimeout(str(e)) from e
+		return _REFUND_STATUS.get(refund.get("status"), "Failed")
+
+	@staticmethod
+	def dispute_from_event(payload: dict) -> dict | None:
+		entity = ((payload.get("payload") or {}).get("dispute") or {}).get("entity")
+		if not entity:
+			return None
+		outcome = (payload.get("event") or "").rsplit(".", 1)[-1]
+		return {
+			"id": entity.get("id"),
+			"payment_id": entity.get("payment_id"),
+			"amount": frappe.utils.flt(entity.get("amount")) / 100,
+			"reason": entity.get("reason_code") or "unknown",
+			"status": {"created": "open", "won": "won", "lost": "lost"}.get(outcome, entity.get("status")),
+		}
+
+	@staticmethod
+	def refund_from_event(payload: dict) -> dict | None:
+		entity = ((payload.get("payload") or {}).get("refund") or {}).get("entity")
+		if not entity:
+			return None
+		return {"id": entity.get("id"), "status": _REFUND_STATUS.get(entity.get("status"), "Failed")}
 
 	def verify_webhook_signature(self, payload: bytes, headers: dict) -> bool:
 		"""HMAC-verify the raw webhook body. No DB writes; first security gate."""
@@ -422,6 +456,10 @@ class RazorpayAdapter(GatewayAdapter):
 
 	def get_mandate_status(self, mandate_reference: str) -> str:
 		return self._client().invoice.fetch(mandate_reference).get("status")
+
+
+# A pending refund can still fail, so it is not Completed.
+_REFUND_STATUS = {"processed": "Completed", "pending": "Pending", "failed": "Failed"}
 
 
 def _verified(payment: dict) -> VerifiedPayment:
