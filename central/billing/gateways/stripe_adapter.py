@@ -27,6 +27,10 @@ from central.billing.gateways.base import (
 	header_value,
 )
 
+# The Stripe API version every request is made with. It matches the stripe-python major
+# pinned in pyproject.toml; move both together, and check webhook payloads when you do.
+STRIPE_API_VERSION = "2026-08-26.dahlia"
+
 # The events the webhook spine consumes (see webhooks.handle_webhook_event).
 STRIPE_WEBHOOK_EVENTS = (
 	"payment_intent.succeeded",
@@ -109,6 +113,18 @@ def _predebit_hold(intent: dict) -> str | None:
 	return str(frappe.utils.get_datetime_str(frappe.utils.datetime.datetime.fromtimestamp(completes_at)))
 
 
+# Stripe may or may not have acted (a network fault, a 5xx, a rate limit, or our own key
+# being wrong): the attempt stays open and a retry with the same key finds out.
+_UNKNOWN_OUTCOME = (
+	stripe.error.APIConnectionError,
+	stripe.error.RateLimitError,
+	stripe.error.APIError,
+	stripe.error.AuthenticationError,
+	stripe.error.PermissionError,
+)
+# Stripe refused the request itself; repeating it will not change the answer.
+_INVALID_REQUEST = (stripe.error.InvalidRequestError, stripe.error.IdempotencyError)
+
 # A pending refund (or one waiting on the customer) can still fail, so it is not Completed.
 _REFUND_STATUS = {
 	"succeeded": "Completed",
@@ -161,16 +177,20 @@ class StripeAdapter(GatewayAdapter):
 	webhook_events = STRIPE_WEBHOOK_EVENTS
 
 	def _configure(self):
-		stripe.api_key = self.get_credential("api_secret")
 		# https://docs.stripe.com/rate-limits#object-lock-timeouts
 		stripe.max_network_retries = 2
 		return stripe
+
+	def _options(self) -> dict:
+		"""Per-request key and API version. A module-global key would be shared by every
+		Stripe gateway and every thread in the worker."""
+		return {"api_key": self.get_credential("api_secret"), "stripe_version": STRIPE_API_VERSION}
 
 	def validate_credentials(self) -> dict:
 		"""Cheapest authed read — retrieve the account the secret key belongs to."""
 		self._configure()
 		try:
-			account = _to_dict(stripe.Account.retrieve())
+			account = _to_dict(stripe.Account.retrieve(**self._options()))
 		except stripe.error.AuthenticationError as e:
 			raise GatewayAuthError(str(e)) from e
 		except (stripe.error.APIConnectionError, stripe.error.RateLimitError) as e:
@@ -188,6 +208,7 @@ class StripeAdapter(GatewayAdapter):
 				stripe.WebhookEndpoint.create(
 					url=callback_url,
 					enabled_events=list(events or STRIPE_WEBHOOK_EVENTS),
+					**self._options(),
 				)
 			)
 		return {"endpoint_id": endpoint.get("id"), "secret": endpoint.get("secret")}
@@ -197,7 +218,7 @@ class StripeAdapter(GatewayAdapter):
 		self._configure()
 		with _stripe_errors():
 			try:
-				endpoint = _to_dict(stripe.WebhookEndpoint.retrieve(endpoint_id))
+				endpoint = _to_dict(stripe.WebhookEndpoint.retrieve(endpoint_id, **self._options()))
 			except stripe.error.InvalidRequestError as e:
 				if getattr(e, "code", None) == "resource_missing":
 					raise WebhookNotFound(endpoint_id) from e
@@ -211,7 +232,7 @@ class StripeAdapter(GatewayAdapter):
 	def update_webhook_events(self, endpoint_id: str, callback_url: str, events: list[str]) -> None:
 		self._configure()
 		with _stripe_errors():
-			stripe.WebhookEndpoint.modify(endpoint_id, enabled_events=list(events))
+			stripe.WebhookEndpoint.modify(endpoint_id, enabled_events=list(events), **self._options())
 
 	def setup_payment_method(self, team, setup_data: dict) -> dict:
 		"""Create an off-session SetupIntent; UI confirms it with the card.
@@ -235,7 +256,7 @@ class StripeAdapter(GatewayAdapter):
 				"card": self._india_mandate_options(currency, setup_data.get("max_amount"))
 			}
 		with _stripe_errors():
-			intent = _to_dict(stripe.SetupIntent.create(**params))
+			intent = _to_dict(stripe.SetupIntent.create(**params, **self._options()))
 		return {"client_secret": intent.get("client_secret"), "setup_intent_id": intent.get("id")}
 
 	def _india_mandate_options(self, currency: str, max_amount) -> dict:
@@ -312,16 +333,16 @@ class StripeAdapter(GatewayAdapter):
 		if shipping:
 			params["shipping"] = shipping
 		try:
-			intent = _to_dict(stripe.PaymentIntent.create(**params))
-		except (stripe.error.CardError, stripe.error.InvalidRequestError) as error:
+			intent = _to_dict(stripe.PaymentIntent.create(**params, **self._options()))
+		except (stripe.error.CardError, *_INVALID_REQUEST) as error:
 			return _declined(error)
-		except (stripe.error.APIConnectionError, stripe.error.RateLimitError) as error:
+		except _UNKNOWN_OUTCOME as error:
 			raise GatewayTimeout(str(error)) from error
 
 		if intent.get("status") != "succeeded":
-			_close_check_charge(intent)
+			_close_check_charge(intent, self._options())
 			return _unfinished_check(intent)
-		_refund_check_charge(intent, params["idempotency_key"])
+		_refund_check_charge(intent, params["idempotency_key"], self._options())
 		return PaymentResult(success=True, status="Validated", gateway_transaction_id=intent.get("id"))
 
 	def charge(self, invoice, payment_method, idempotency_key: str) -> PaymentResult:
@@ -353,11 +374,11 @@ class StripeAdapter(GatewayAdapter):
 		if mandate:
 			params["mandate"] = mandate
 		try:
-			intent = _to_dict(stripe.PaymentIntent.create(**params))
-		except (stripe.error.CardError, stripe.error.InvalidRequestError) as e:
+			intent = _to_dict(stripe.PaymentIntent.create(**params, **self._options()))
+		except (stripe.error.CardError, *_INVALID_REQUEST) as e:
 			# A mandate Stripe refuses mid-billing surfaces here too, as InvalidRequestError.
 			return _declined(e)
-		except (stripe.error.APIConnectionError, stripe.error.RateLimitError) as e:
+		except _UNKNOWN_OUTCOME as e:
 			raise GatewayTimeout(str(e)) from e
 
 		succeeded = intent.get("status") == "succeeded"
@@ -383,10 +404,13 @@ class StripeAdapter(GatewayAdapter):
 					payment_intent=payment_attempt.gateway_transaction_id,
 					amount=round((amount or 0) * 100),
 					idempotency_key=idempotency_key,
+					**self._options(),
 				)
 			)
-		except (stripe.error.APIConnectionError, stripe.error.RateLimitError) as e:
+		except _UNKNOWN_OUTCOME as e:
 			raise GatewayTimeout(str(e)) from e
+		except _INVALID_REQUEST as e:
+			return RefundResult(success=False, status="Failed", raw=getattr(e, "json_body", None) or {})
 
 		status = _REFUND_STATUS.get(refund.get("status"), "Failed")
 		return RefundResult(
@@ -400,7 +424,7 @@ class StripeAdapter(GatewayAdapter):
 		"""Completed, Pending or Failed, as Stripe reports the refund now."""
 		self._configure()
 		with _stripe_errors():
-			refund = _to_dict(stripe.Refund.retrieve(gateway_refund_id))
+			refund = _to_dict(stripe.Refund.retrieve(gateway_refund_id, **self._options()))
 		return _REFUND_STATUS.get(refund.get("status"), "Failed")
 
 	@staticmethod
@@ -444,7 +468,7 @@ class StripeAdapter(GatewayAdapter):
 
 	def get_transaction_status(self, gateway_txn_id: str) -> str:
 		self._configure()
-		return _to_dict(stripe.PaymentIntent.retrieve(gateway_txn_id)).get("status")
+		return _to_dict(stripe.PaymentIntent.retrieve(gateway_txn_id, **self._options())).get("status")
 
 	def create_order(
 		self, amount, currency: str, receipt: str, notes: dict | None = None, customer: str | None = None
@@ -470,7 +494,7 @@ class StripeAdapter(GatewayAdapter):
 		if shipping:
 			params["shipping"] = shipping
 		with _stripe_errors():
-			intent = _to_dict(stripe.PaymentIntent.create(**params))
+			intent = _to_dict(stripe.PaymentIntent.create(**params, **self._options()))
 		return {
 			"client_secret": intent.get("client_secret"),
 			"payment_intent_id": intent.get("id"),
@@ -511,7 +535,7 @@ class StripeAdapter(GatewayAdapter):
 		"""Retrieve a PaymentIntent so a top-up can be confirmed from what Stripe
 		actually charged (status + amount + currency), not a client-supplied figure."""
 		self._configure()
-		return _to_dict(stripe.PaymentIntent.retrieve(payment_intent_id))
+		return _to_dict(stripe.PaymentIntent.retrieve(payment_intent_id, **self._options()))
 
 	def create_checkout_session(
 		self,
@@ -548,7 +572,7 @@ class StripeAdapter(GatewayAdapter):
 		)
 		if customer:
 			params["customer"] = customer
-		session = _to_dict(stripe.checkout.Session.create(**params))
+		session = _to_dict(stripe.checkout.Session.create(**params, **self._options()))
 		return {
 			"checkout_url": session.get("url"),
 			"session_id": session.get("id"),
@@ -557,7 +581,7 @@ class StripeAdapter(GatewayAdapter):
 
 	def get_checkout_session(self, session_id: str) -> dict:
 		self._configure()
-		return _to_dict(stripe.checkout.Session.retrieve(session_id))
+		return _to_dict(stripe.checkout.Session.retrieve(session_id, **self._options()))
 
 	def create_setup_checkout_session(self, customer: str, success_url: str, cancel_url: str) -> dict:
 		"""A hosted Stripe Checkout session in `setup` mode — the hosted "save a card"
@@ -572,6 +596,7 @@ class StripeAdapter(GatewayAdapter):
 				payment_method_types=["card"],
 				success_url=success_url,
 				cancel_url=cancel_url,
+				**self._options(),
 			)
 		)
 
@@ -589,16 +614,18 @@ class StripeAdapter(GatewayAdapter):
 		self._configure()
 		intent_id = setup_reference
 		if setup_reference.startswith("cs_"):
-			intent_id = _to_dict(stripe.checkout.Session.retrieve(setup_reference)).get("setup_intent")
+			intent_id = _to_dict(stripe.checkout.Session.retrieve(setup_reference, **self._options())).get(
+				"setup_intent"
+			)
 			if not intent_id:
 				return {}
 
-		intent = _to_dict(stripe.SetupIntent.retrieve(intent_id))
+		intent = _to_dict(stripe.SetupIntent.retrieve(intent_id, **self._options()))
 		method_id = intent.get("payment_method")
 		if intent.get("status") != "succeeded" or not method_id:
 			return _unfinished_setup(intent)
 
-		card = (_to_dict(stripe.PaymentMethod.retrieve(method_id)).get("card")) or {}
+		card = (_to_dict(stripe.PaymentMethod.retrieve(method_id, **self._options())).get("card")) or {}
 		return {
 			"payment_method": method_id,
 			"customer": intent.get("customer"),
@@ -617,13 +644,14 @@ class StripeAdapter(GatewayAdapter):
 				stripe.Customer.create(
 					name=getattr(team, "name", None),
 					email=team.get("owner_user") if hasattr(team, "get") else None,
+					**self._options(),
 				)
 			)
 		return customer.get("id")
 
 	def get_mandate_status(self, mandate_reference: str) -> str:
 		self._configure()
-		return _to_dict(stripe.Mandate.retrieve(mandate_reference)).get("status")
+		return _to_dict(stripe.Mandate.retrieve(mandate_reference, **self._options())).get("status")
 
 
 def _declined(error: stripe.error.StripeError) -> PaymentResult:
@@ -640,21 +668,21 @@ def _declined(error: stripe.error.StripeError) -> PaymentResult:
 	)
 
 
-def _close_check_charge(intent: dict) -> None:
+def _close_check_charge(intent: dict, options: dict) -> None:
 	"""Leave nothing open that could capture later. Stripe cannot cancel a charge that is
 	processing, so an operator is told to refund it if it settles."""
 	if intent.get("status") == "processing":
 		frappe.log_error(title=f"Card check charge {intent.get('id')} is processing; refund it if it settles")
 		return
 	with _stripe_errors():
-		stripe.PaymentIntent.cancel(intent.get("id"))
+		stripe.PaymentIntent.cancel(intent.get("id"), **options)
 
 
-def _refund_check_charge(intent: dict, key: str) -> None:
+def _refund_check_charge(intent: dict, key: str, options: dict) -> None:
 	"""Give the card check charge back. The card is proven either way, so a failed
 	refund is told to an operator and does not fail the card."""
 	try:
-		stripe.Refund.create(payment_intent=intent.get("id"), idempotency_key=f"{key}:refund")
+		stripe.Refund.create(payment_intent=intent.get("id"), idempotency_key=f"{key}:refund", **options)
 	except stripe.error.StripeError:
 		frappe.log_error(title=f"Card check refund failed for {intent.get('id')}")
 

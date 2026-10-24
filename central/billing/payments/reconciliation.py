@@ -32,7 +32,19 @@ from central.billing.states import transition
 
 _AMBIGUOUS = ("Initiated", "Authorised")
 _GATEWAY_SUCCESS = {"succeeded", "captured", "paid", "completed"}
-_GATEWAY_FAILED = {"failed", "canceled", "cancelled", "declined", "denied", "expired", "voided"}
+# Stripe leaves a declined charge at requires_payment_method; it will not complete. One at
+# requires_action can still complete if the customer authenticates, so it stays open (and
+# alerts after a day) rather than freeing the invoice for a second charge.
+_GATEWAY_FAILED = {
+	"failed",
+	"canceled",
+	"cancelled",
+	"declined",
+	"denied",
+	"expired",
+	"voided",
+	"requires_payment_method",
+}
 # A Captured attempt whose invoice sits in one of these lost its settlement webhook.
 _UNSETTLED_INVOICE = ("Open", "Overdue")
 

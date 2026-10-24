@@ -184,7 +184,12 @@ class TestStripeAdapter(GatewayAdapterContract, IntegrationTestCase):
 		adapter = self.make_adapter()
 		with patch.object(stripe.WebhookEndpoint, "modify") as modify:
 			adapter.update_webhook_events("we_1", "https://site/x", ["payment_intent.canceled"])
-		modify.assert_called_once_with("we_1", enabled_events=["payment_intent.canceled"])
+		modify.assert_called_once()
+		self.assertEqual(modify.call_args.args, ("we_1",))
+		self.assertEqual(modify.call_args.kwargs["enabled_events"], ["payment_intent.canceled"])
+		self.assertEqual(
+			modify.call_args.kwargs["stripe_version"], "2026-08-26.dahlia"
+		)  # per request, pinned
 
 	def test_create_customer_returns_id(self):
 		adapter = self.make_adapter()
@@ -423,7 +428,8 @@ class TestIndiaCardMandate(IntegrationTestCase):
 			patch.object(stripe.PaymentIntent, "cancel") as cancel,
 		):
 			validated = self.adapter.validate_payment_method(method)
-		cancel.assert_called_once_with("pi_x")
+		cancel.assert_called_once()
+		self.assertEqual(cancel.call_args.args, ("pi_x",))
 		self.assertFalse(validated.success)
 		self.assertEqual(validated.failure_code, "check_unfinished")
 
