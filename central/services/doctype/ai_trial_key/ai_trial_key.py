@@ -109,9 +109,6 @@ class AITrialKey(Document):
 		return {
 			"ai_keys": [
 				{
-					"name": self.grove_key,
-					"title": None,
-					"geography": self.geography,
 					"gateway_url": self.gateway_url,
 					"api_key": self.get_password("api_key"),
 				}
