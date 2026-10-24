@@ -17,6 +17,9 @@
   "column_break_assignment",
   "resource_action",
   "assigned_at",
+  "attempts",
+  "revoked",
+  "last_error",
   "credentials_section",
   "api_key"
  ],
@@ -28,7 +31,7 @@
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Status",
-   "options": "Available\nAssigned\nRevoking\nRevoked",
+   "options": "Available\nAssigned\nConverting\nConverted\nConversion Failed\nRevoking\nRevoked",
    "read_only": 1,
    "search_index": 1
   },
@@ -104,6 +107,29 @@
    "read_only": 1
   },
   {
+   "default": "0",
+   "description": "Tries at handing the key to the team after its trial converted; given up at three, and the key revoked.",
+   "fieldname": "attempts",
+   "fieldtype": "Int",
+   "label": "Hand-over Attempts",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "description": "Ticked once the key of a failed hand-over was revoked at Grove; the status keeps the failure.",
+   "fieldname": "revoked",
+   "fieldtype": "Check",
+   "label": "Revoked",
+   "read_only": 1
+  },
+  {
+   "description": "What Grove answered the last hand-over or revoke that failed; cleared once one lands. The Error Log has the traceback.",
+   "fieldname": "last_error",
+   "fieldtype": "Small Text",
+   "label": "Last Error",
+   "read_only": 1
+  },
+  {
    "collapsible": 1,
    "fieldname": "credentials_section",
    "fieldtype": "Section Break",
@@ -118,7 +144,7 @@
  ],
  "grid_page_length": 50,
  "links": [],
- "modified": "2026-10-24 00:00:00",
+ "modified": "2026-10-25 00:00:00",
  "modified_by": "Administrator",
  "module": "Services",
  "name": "AI Trial Key",

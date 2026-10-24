@@ -149,8 +149,14 @@ class Trial:
 			)
 
 	def convert(self) -> None:
-		"""Start billing the site's server, keep it awake, and start it again if the trial stopped it."""
+		"""Start billing the site's server, keep it awake, and start it again if the trial stopped it.
+		The trial's AI key is handed to the team in the background, best effort: its outcome is the
+		AI Trial Key record's; a failure is a comment here and the key is revoked."""
 		self.move_to("Converted", trial_error=None, **self.get_cost())
+		if not AITrialKey.queue_convert(self.site.server):
+			self.site.add_comment(
+				"Info", _("The trial has no live AI key to hand over. The team creates one in the dashboard.")
+			)
 		capture_trial_event(
 			"trial_converted",
 			self.site.team,
@@ -231,7 +237,7 @@ class Trial:
 
 	def extend(self, days: int) -> None:
 		"""Give the trial `days` more from today, or from its end date when that is later. An ended
-		trial runs again and its server starts."""
+		trial runs again and its server starts, without the AI key its end revoked: the Site says so."""
 		if not self.is_open:
 			frappe.throw(_("Only an active or ended trial can be extended."))
 		if days <= 0:
@@ -242,26 +248,12 @@ class Trial:
 		self.move_to(
 			"Active", trial_ends_on=ends_on, trial_deletes_on=None, trial_last_notice=None, trial_error=None
 		)
-		if was_ended:
-			self.queue_server_action("start")
-		self.extend_key(days)
-
-	def extend_key(self, days: int) -> None:
-		"""Best effort: the trial's extension never waits on AI. A trial with no live key (a paid
-		creation, an empty pool, or a key revoked when the trial ended) and a refused extend (the
-		hourly sweep took the key, unseen here, or Grove unreachable) are noted on the site."""
-		# ponytail: one try; a Central-side status with the hourly retry, as Revoking, if a lost
-		# extend ever matters.
-		try:
-			extended = AITrialKey.extend_expiry(self.site.server, days)
-		except Exception:
-			frappe.log_error(
-				"Trial AI key not extended", reference_doctype="Site", reference_name=self.site.name
-			)
-			self.site.add_comment("Info", _("The trial's AI key was not extended; see the Error Log."))
+		if not was_ended:
 			return
-		if not extended:
-			self.site.add_comment("Info", _("The trial has no live AI key to extend."))
+		self.queue_server_action("start")
+		if not frappe.db.exists("AI Trial Key", {"server": self.site.server, "status": "Assigned"}):
+			note = _("The trial's AI key was revoked when it ended. The team creates one in the dashboard.")
+			self.site.add_comment("Info", note)
 
 	def end(self, today) -> None:
 		"""Stop the trial's server, revoke its AI key at Grove and set the day it is terminated. The

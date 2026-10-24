@@ -115,10 +115,12 @@ class GroveClient:
 	def revoke_key(self, team: str, key: str) -> None:
 		self.call("grove.api.keys.revoke_key", team=team, key=key)
 
-	def extend_key(self, team: str, key: str, days: int) -> dict:
-		"""`days` more on the key's expiry, from now or from its moment, whichever is later; a key
-		without one yet is left as it is, a revoked one refused. → the key as `get_figures` lists it."""
-		return self.call("grove.api.keys.extend_key", team=team, key=key, days=days)
+	def transfer_key(self, team: str, key: str, to_team: str, title: str) -> dict:
+		"""Hand a key of `team` to `to_team`, titled `title`: the same credential, the trial's rules
+		gone (the geography's default group, no expiry); cap, geography and rate limits as minted.
+		Grove counts it against `to_team` like a mint and answers a key `to_team` already holds as
+		it is. → the key as `get_figures` lists it."""
+		return self.call("grove.api.keys.transfer_key", team=team, key=key, to_team=to_team, title=title)
 
 	def list_models(
 		self, team: str | None = None, key: str | None = None, geography: str | None = None

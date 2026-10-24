@@ -14,8 +14,7 @@
   "trial_model_group",
   "trial_key_cap",
   "column_break_oabk",
-  "trial_pool_size",
-  "trial_key_expiry"
+  "trial_pool_size"
  ],
  "fields": [
   {
@@ -67,14 +66,7 @@
    "fieldtype": "Int",
    "label": "Trial Pool Size"
   },
-  {
-   "default": "7 Days",
-   "description": "When a trial key retires on its own: so many days after its first request, not after the mint, so a key waiting in the pool does not age. Sent with every mint; a change applies to keys minted after it. Never: pool keys never retire on their own.",
-   "fieldname": "trial_key_expiry",
-   "fieldtype": "Select",
-   "label": "Trial Key Expiry",
-   "options": "Never\n1 Day\n7 Days\n14 Days\n30 Days"
-  },
+
   {
    "default": "2",
    "description": "What one trial key may spend for its whole life, whole USD. Sent with every mint; a change applies to keys minted after it.",
@@ -90,7 +82,7 @@
  "grid_page_length": 50,
  "issingle": 1,
  "links": [],
- "modified": "2026-10-24 18:53:24.115003",
+ "modified": "2026-10-25 00:00:00",
  "modified_by": "Administrator",
  "module": "Services",
  "name": "AI Settings",

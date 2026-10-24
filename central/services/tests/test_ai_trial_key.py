@@ -39,7 +39,6 @@ class TestAITrialKey(IntegrationTestCase):
 			"trial_key_geography": "eu",
 			"trial_model_group": group,
 			"trial_pool_size": size,
-			"trial_key_expiry": "7 Days",
 			"trial_key_cap": 2,
 		}
 		for fieldname, value in values.items():
@@ -80,8 +79,6 @@ class TestAITrialKey(IntegrationTestCase):
 				"geography": "eu",
 				"model_group": "trial-models",
 				"cap": 2,
-				"expiry": "7 Days",
-				"expiry_from_first_use": True,
 			},
 		)
 		key = frappe.get_doc("AI Trial Key", frappe.get_all("AI Trial Key", pluck="name")[-1])
@@ -118,6 +115,18 @@ class TestAITrialKey(IntegrationTestCase):
 		self.assertEqual(self.statuses(), [])
 		self.grove.provision_key.assert_not_called()
 
+	def test_a_pending_revoke_is_retried_with_the_pool_off(self):
+		key = self.available()
+		with patch(f"{MODULE}.frappe.enqueue"):
+			AITrialKey.queue_revoke(name=key.name)
+		self.age(key)
+		self.configure(size=0)
+
+		ai_trial_key.refill_trial_keys()
+
+		self.assertEqual(key.reload().status, "Revoked")
+		self.grove.provision_key.assert_not_called()
+
 	def test_a_free_trial_takes_the_oldest_key_and_a_retry_gets_the_same_one(self):
 		first, second = self.available(), self.available()
 
@@ -141,15 +150,7 @@ class TestAITrialKey(IntegrationTestCase):
 		self.assertEqual(
 			key.get_site_config(),
 			{
-				"ai_keys": [
-					{
-						"name": key.grove_key,
-						"title": None,
-						"geography": "eu",
-						"gateway_url": GATEWAY,
-						"api_key": f"gr_{key.grove_key}",
-					}
-				]
+				"ai_keys": [{"gateway_url": GATEWAY, "api_key": f"gr_{key.grove_key}"}]
 			},
 		)
 
@@ -176,18 +177,6 @@ class TestAITrialKey(IntegrationTestCase):
 
 		self.assertEqual((key.reload().server, key.status), ("server-1", "Revoking"))
 
-	def test_extending_asks_grove_for_the_servers_live_key_and_nothing_for_none(self):
-		key = self.available()
-		AITrialKey.assign(self.action())
-		AITrialKey.link_server("action-1", "server-1")
-
-		self.assertTrue(AITrialKey.extend_expiry("server-1", 3))
-		self.grove.extend_key.assert_called_once_with(TRIAL_TEAM, key.grove_key, 3)
-
-		key.db_set("status", "Revoking")
-		self.grove.extend_key.reset_mock()
-		self.assertFalse(AITrialKey.extend_expiry("server-1", 3))
-		self.grove.extend_key.assert_not_called()
 
 	def test_a_refused_revoke_stays_revoking_and_is_tried_again_once_stale(self):
 		key = self.available()
@@ -195,22 +184,23 @@ class TestAITrialKey(IntegrationTestCase):
 		with patch(f"{MODULE}.frappe.enqueue"):
 			AITrialKey.queue_revoke(name=key.name)
 
-		ai_trial_key.retry_revokes()
+		ai_trial_key.retry_stale()
 		self.grove.revoke_key.assert_not_called()
 
 		self.age(key)
 		with patch(f"{MODULE}.frappe.log_error") as log_error:
-			ai_trial_key.retry_revokes()
+			ai_trial_key.retry_stale()
 		self.assertEqual((key.reload().status, log_error.call_count), ("Revoking", 1))
+		self.assertEqual(key.last_error, "Grove refused")
 		# The failed attempt wrote the record, so the next run waits another hour.
 		self.grove.revoke_key.reset_mock()
-		ai_trial_key.retry_revokes()
+		ai_trial_key.retry_stale()
 		self.grove.revoke_key.assert_not_called()
 
 		self.grove.revoke_key.side_effect = None
 		self.age(key)
-		ai_trial_key.retry_revokes()
-		self.assertEqual(key.reload().status, "Revoked")
+		ai_trial_key.retry_stale()
+		self.assertEqual((key.reload().status, key.last_error), ("Revoked", None))
 
 	def test_only_a_revoked_record_can_be_deleted(self):
 		key = self.available()
@@ -223,3 +213,80 @@ class TestAITrialKey(IntegrationTestCase):
 	def age(self, key: AITrialKey) -> None:
 		stale = add_to_date(now_datetime(), minutes=-ai_trial_key.RETRY_AFTER_MINUTES - 1)
 		frappe.db.set_value("AI Trial Key", key.name, "modified", stale, update_modified=False)
+
+	def converting(self) -> tuple[AITrialKey, str]:
+		"""An assigned key whose trial converted, its hand-over queued: the record and the job's name."""
+		key = self.available()
+		AITrialKey.assign(self.action())
+		AITrialKey.link_server("action-1", "server-1")
+		with patch(f"{MODULE}.frappe.enqueue") as enqueue:
+			self.assertTrue(AITrialKey.queue_convert("server-1"))
+		return key, enqueue.call_args.kwargs["name"]
+
+	def handing_over(self):
+		"""The converted site the hand-over reads, and AI's enable, both out of this test's reach."""
+		site = frappe._dict(name="trial.example.test", team="TEAM-00001")
+		converted = patch.object(AITrialKey, "converted_site", return_value=site)
+		return converted, patch("central.services.ai.enable")
+
+	def test_a_converted_trial_hands_its_key_to_the_team_titled_by_the_site(self):
+		key, name = self.converting()
+		self.assertEqual(key.reload().status, "Converting")
+		self.assertFalse(AITrialKey.queue_convert("server-1"))
+
+		site, enable = self.handing_over()
+		with site, enable as enable:
+			ai_trial_key.convert_trial_key(name)
+
+		enable.assert_called_once_with("TEAM-00001")
+		self.grove.transfer_key.assert_called_once_with(
+			TRIAL_TEAM, key.grove_key, "TEAM-00001", "trial.example.test"
+		)
+		self.assertEqual((key.reload().status, key.team), ("Converted", "TEAM-00001"))
+		# The team's now: its server's termination takes nothing.
+		with patch(f"{MODULE}.frappe.enqueue"):
+			AITrialKey.queue_revoke(server="server-1")
+		self.assertEqual(key.reload().status, "Converted")
+
+	def test_a_refused_hand_over_is_tried_hourly_and_given_up_after_three_then_the_key_is_revoked(self):
+		key, name = self.converting()
+		self.grove.transfer_key.side_effect = Exception("Grove is down")
+		site, enable = self.handing_over()
+		with site, enable, patch(f"{MODULE}.frappe.log_error") as log_error:
+			ai_trial_key.convert_trial_key(name)
+			key.reload()
+			self.assertEqual((key.status, key.attempts, key.last_error), ("Converting", 1, "Grove is down"))
+			ai_trial_key.retry_stale()
+			self.assertEqual(key.reload().attempts, 1)
+			self.age(key)
+			ai_trial_key.retry_stale()
+			self.assertEqual((key.reload().status, key.attempts), ("Converting", 2))
+			self.age(key)
+			with patch(f"{MODULE}.frappe.enqueue") as enqueue:
+				ai_trial_key.retry_stale()
+		self.assertEqual((key.reload().status, key.attempts, key.revoked), ("Conversion Failed", 3, 0))
+		self.assertEqual(log_error.call_count, 3)
+		[comment] = frappe.get_all(
+			"Comment",
+			filters={"reference_doctype": "AI Trial Key", "reference_name": key.name, "comment_type": "Info"},
+			pluck="content",
+		)
+		self.assertIn("Grove's last answer: Grove is down", comment)
+		# The failure queues the revoke; a refused one fails its job and waits its hour; the status
+		# keeps the failure.
+		self.grove.revoke_key.side_effect = Exception("Grove is still down")
+		with self.assertRaisesRegex(Exception, "still down"):
+			ai_trial_key.revoke_trial_key(enqueue.call_args.kwargs["name"])
+		self.assertEqual((key.reload().status, key.revoked), ("Conversion Failed", 0))
+		self.grove.revoke_key.side_effect = None
+		ai_trial_key.retry_stale()
+		self.assertEqual(key.reload().revoked, 0)
+		self.age(key)
+		ai_trial_key.retry_stale()
+		self.grove.revoke_key.assert_called_with(TRIAL_TEAM, key.grove_key)
+		self.assertEqual((key.reload().status, key.revoked, key.last_error), ("Conversion Failed", 1, None))
+		self.age(key)
+		self.grove.revoke_key.reset_mock()
+		ai_trial_key.retry_stale()
+		self.grove.revoke_key.assert_not_called()
+		key.reload().delete()
