@@ -1,6 +1,6 @@
 {
  "actions": [],
- "creation": "2026-10-06 00:00:00",
+ "creation": "2026-10-24 18:38:14.500950",
  "doctype": "DocType",
  "editable_grid": 1,
  "engine": "InnoDB",
@@ -10,9 +10,12 @@
   "control_api_key",
   "control_api_secret",
   "trials_tab",
-  "trial_team",
-  "trial_key_expiry",
-  "trial_key_cap"
+  "trial_key_geography",
+  "trial_model_group",
+  "trial_key_cap",
+  "column_break_oabk",
+  "trial_pool_size",
+  "trial_key_expiry"
  ],
  "fields": [
   {
@@ -46,15 +49,27 @@
    "label": "Trials"
   },
   {
-   "default": "Central Trial",
-   "description": "The Grove Team trial keys are minted under, one for every trial, each titled by its Central team.",
-   "fieldname": "trial_team",
+   "description": "The Grove geography the pool's keys are minted in, one of Grove's geography names. A key works from any region and dials this geography's gateway; a key minted earlier keeps its own.",
+   "fieldname": "trial_key_geography",
    "fieldtype": "Data",
-   "label": "Trial Team"
+   "label": "Trial Key Geography"
   },
   {
-   "default": "Never",
-   "description": "When a trial key retires on its own: so many days after the mint, Grove revokes it. Sent with every mint; a change applies to keys minted after it.",
+   "description": "The Grove Model Group trial keys are minted into: the set of models a trial may call. Empty: that geography's default group. Sent with every mint; a change applies to keys minted after it.",
+   "fieldname": "trial_model_group",
+   "fieldtype": "Data",
+   "label": "Trial Model Group"
+  },
+  {
+   "default": "0",
+   "description": "How many trial keys Central keeps minted and ready for free-trial servers, under the Grove Team Central Trial; a job every 5 minutes refills the pool. 0 keeps the pool off: a trial server then gets no key.",
+   "fieldname": "trial_pool_size",
+   "fieldtype": "Int",
+   "label": "Trial Pool Size"
+  },
+  {
+   "default": "7 Days",
+   "description": "When a trial key retires on its own: so many days after its first request, not after the mint, so a key waiting in the pool does not age. Sent with every mint; a change applies to keys minted after it. Never: pool keys never retire on their own.",
    "fieldname": "trial_key_expiry",
    "fieldtype": "Select",
    "label": "Trial Key Expiry",
@@ -62,17 +77,20 @@
   },
   {
    "default": "2",
-   "description": "What one trial key may spend in all, USD. Sent with every mint; a change applies to keys minted after it.",
+   "description": "What one trial key may spend for its whole life, whole USD. Sent with every mint; a change applies to keys minted after it.",
    "fieldname": "trial_key_cap",
    "fieldtype": "Currency",
    "label": "Trial Key Cap (USD)"
+  },
+  {
+   "fieldname": "column_break_oabk",
+   "fieldtype": "Column Break"
   }
  ],
  "grid_page_length": 50,
- "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-10-23 12:00:00.000000",
+ "modified": "2026-10-24 18:53:24.115003",
  "modified_by": "Administrator",
  "module": "Services",
  "name": "AI Settings",

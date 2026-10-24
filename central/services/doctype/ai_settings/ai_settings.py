@@ -4,6 +4,7 @@
 import frappe
 from frappe import _
 from frappe.model.document import Document
+from frappe.utils import cint
 
 from central.integrations.grove import GroveClient
 
@@ -43,7 +44,9 @@ class AISettings(Document):
 		control_api_secret: DF.Password | None
 		trial_key_cap: DF.Currency
 		trial_key_expiry: DF.Literal["Never", "1 Day", "7 Days", "14 Days", "30 Days"]
-		trial_team: DF.Data | None
+		trial_key_geography: DF.Data | None
+		trial_model_group: DF.Data | None
+		trial_pool_size: DF.Int
 	# end: auto-generated types
 
 	@property
@@ -52,6 +55,10 @@ class AISettings(Document):
 
 	def validate(self) -> None:
 		self.base_url = (self.base_url or "").strip().rstrip("/")
+		if self.trial_key_cap != cint(self.trial_key_cap):
+			frappe.throw(_("Trial Key Cap is whole US dollars."))
+		if self.trial_pool_size and not self.trial_key_geography:
+			frappe.throw(_("Set Trial Key Geography before sizing the pool."))
 
 	def on_update(self) -> None:
 		self.sync_webhook()

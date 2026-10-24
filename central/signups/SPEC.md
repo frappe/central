@@ -42,6 +42,8 @@ Example: Central Settings has Trial Days 7 and Trial Deletion Days 7. Product `r
 
 Central records the site when the region first reports its machine with an address, a few minutes after the request. The trial starts then. It does not wait for the customer to open the site, so a trial that the customer leaves also ends.
 
+A free-trial server also boots with a Grove key from the pool [AI Settings](../services/doctype/ai_settings/SPEC.md) keeps, when the pool has one, so the site's apps can call AI before the team has AI of its own.
+
 | Trial State | When | What Central does |
 |---|---|---|
 | Active | Central records the site and its creation request is a free trial | Sets Trial Ends On. When the Team added a payment method before Central recorded the site, the site converts at once. |
@@ -141,7 +143,7 @@ A Deleted trial is not converted, because its server is gone. Its Trial Cost run
 
 ### Desk
 
-On a Site with an open trial, a System Manager has a **Trial** menu: **Extend Trial** adds days and starts an Ended trial again, **End Trial Now** ends an Active trial today, and **Retry Trial Step** runs today's step again after a Trial Error. On a Converted site, it sends the conversion job again. Each action leaves a comment on the Site. The **Trial Sites** report counts trial sites and their cost by product, month and state.
+On a Site with an open trial, a System Manager has a **Trial** menu: **Extend Trial** adds days, starts an Ended trial again and asks Grove for the same days on the site's AI key (best effort: a trial without a live key is noted on the Site), **End Trial Now** ends an Active trial today and revokes its AI key at Grove, and **Retry Trial Step** runs today's step again after a Trial Error. On a Converted site, it sends the conversion job again. Each action leaves a comment on the Site. The **Trial Sites** report counts trial sites and their cost by product, month and state.
 
 ### Failure
 

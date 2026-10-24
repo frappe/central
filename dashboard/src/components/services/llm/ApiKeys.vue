@@ -329,10 +329,6 @@ const revoke = async (key: AIApiKey): Promise<void> => {
 					</template>
 				</TextInput>
 
-				<span v-if="apiKeys.length" class="text-sm text-ink-gray-5">
-					{{ keyCountTitle }}
-					live keys
-				</span>
 				<Button
 					v-if="canSetCaps"
 					label="Set caps"

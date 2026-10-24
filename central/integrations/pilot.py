@@ -11,9 +11,14 @@ from central.api.jwks import jwks_document
 from central.api.pilot import get_telemetry_base_url, region_id_of
 from central.infrastructure.doctype.pilot_credential.pilot_credential import PilotCredential
 from central.infrastructure.doctype.user_mail_account.user_mail_account import UserMailAccount
+from central.services.doctype.ai_trial_key.ai_trial_key import AITrialKey
 from central.sso import central_url, jwks_url, mint_bench_login, mint_datum_token, mint_site_login
 
 PILOT_TASK_TIMEOUT_SECONDS = 35
+# Metal caps each guest metadata value at 1 KiB. Not checked before a creation: unconfirmed
+# against Metal, and a value this size would already have failed the mail settings. The test on
+# the trial metadata holds pilot-common-site-config under it.
+METADATA_VALUE_BYTES = 1024
 # Minting a session can start a cold Frappe process on the machine. Central waits long
 # enough for that process rather than discarding a session the machine creates later.
 SITE_LOGIN_TIMEOUT_SECONDS = 120
@@ -40,7 +45,7 @@ def get_bootstrap_metadata(action) -> dict[str, str]:
 		"initial_jwks_cache": initial_jwks,
 	}
 
-	# Metal caps each metadata value at 1 KiB. Pilot merges pilot-common-config into
+	# Each value stays under METADATA_VALUE_BYTES. Pilot merges pilot-common-config into
 	# common_config.toml and pilot-common-site-config into common_site_config.json at bootstrap.
 	metadata = {"pilot-central": json.dumps(bootstrap)}
 	# Frappe's Pulse telemetry files a site's events under `fc_team`, so the events of a
@@ -50,6 +55,9 @@ def get_bootstrap_metadata(action) -> dict[str, str]:
 	}
 	if mailbox := UserMailAccount.assign(action):
 		common_site_config |= mailbox.get_site_config()
+	# A free trial boots with a Grove key from the pool: AI works before the team holds any key.
+	if trial_key := AITrialKey.assign(action):
+		common_site_config |= trial_key.get_site_config()
 	metadata["pilot-common-site-config"] = json.dumps(common_site_config)
 
 	try:
