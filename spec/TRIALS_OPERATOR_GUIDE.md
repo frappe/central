@@ -40,8 +40,8 @@ Only a product signup gets a free trial. A direct Central signup adds a card and
 | Task | What to do |
 |---|---|
 | Find trial sites | Open the **Site** list. Filter by **Trial State**. Blue is Active, orange is Ended, green is Converted, gray is Deleted. |
-| Give a customer more time | Open the Site. Click **Trial > Extend Trial** and enter the days. An ended trial starts again. |
-| End a trial now | Open the Site. Click **Trial > End Trial Now**. The server stops today. |
+| Give a customer more time | Open the Site. Click **Trial > Extend Trial** and enter the days. An ended trial starts again, without its AI key; an active trial's AI key gets the same days. |
+| End a trial now | Open the Site. Click **Trial > End Trial Now**. The server stops today and its AI key is revoked. |
 | Fix a failed trial step | The Site shows the error in red at the top. Click **Trial > Retry Trial Step**. If it fails again, open the Error Log named "Trial step failed". |
 | Give a beta user credit | Open the **Team**. Click **Grant Credit**. Enter the amount in the team's currency, the days it is valid, and a note. The team gets no welcome credit after this. |
 | Let a team create servers without a card, for a demo | Turn off **Require Payment Method for Servers** in Central Settings. Turn it on again after the demo. |

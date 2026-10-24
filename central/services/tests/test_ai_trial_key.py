@@ -32,11 +32,12 @@ class TestAITrialKey(IntegrationTestCase):
 		self.grove.provision_key.side_effect = lambda **kwargs: minted(frappe.generate_hash(length=10))
 		self.configure(size=3)
 
-	def configure(self, size: int, enrolled: bool = True) -> None:
+	def configure(self, size: int, enrolled: bool = True, group: str = "trial-models") -> None:
 		values = {
 			"base_url": "https://grove.example.test" if enrolled else "",
 			"control_api_key": "control" if enrolled else "",
 			"trial_key_geography": "eu",
+			"trial_model_group": group,
 			"trial_pool_size": size,
 			"trial_key_expiry": "7 Days",
 			"trial_key_cap": 2,
@@ -77,6 +78,7 @@ class TestAITrialKey(IntegrationTestCase):
 				"team": TRIAL_TEAM,
 				"title": None,
 				"geography": "eu",
+				"model_group": "trial-models",
 				"cap": 2,
 				"expiry": "7 Days",
 				"expiry_from_first_use": True,
@@ -84,6 +86,11 @@ class TestAITrialKey(IntegrationTestCase):
 		)
 		key = frappe.get_doc("AI Trial Key", frappe.get_all("AI Trial Key", pluck="name")[-1])
 		self.assertEqual((key.gateway_url, key.get_password("api_key")), (GATEWAY, f"gr_{key.grove_key}"))
+
+	def test_a_blank_model_group_sends_none(self):
+		self.configure(size=1, group="")
+		ai_trial_key.refill_trial_keys()
+		self.assertIsNone(self.grove.provision_key.call_args.kwargs["model_group"])
 
 	def test_refill_mints_at_most_one_batch(self):
 		self.configure(size=5)
@@ -168,6 +175,19 @@ class TestAITrialKey(IntegrationTestCase):
 			AITrialKey.queue_revoke(server="server-1")
 
 		self.assertEqual((key.reload().server, key.status), ("server-1", "Revoking"))
+
+	def test_extending_asks_grove_for_the_servers_live_key_and_nothing_for_none(self):
+		key = self.available()
+		AITrialKey.assign(self.action())
+		AITrialKey.link_server("action-1", "server-1")
+
+		self.assertTrue(AITrialKey.extend_expiry("server-1", 3))
+		self.grove.extend_key.assert_called_once_with(TRIAL_TEAM, key.grove_key, 3)
+
+		key.db_set("status", "Revoking")
+		self.grove.extend_key.reset_mock()
+		self.assertFalse(AITrialKey.extend_expiry("server-1", 3))
+		self.grove.extend_key.assert_not_called()
 
 	def test_a_refused_revoke_stays_revoking_and_is_tried_again_once_stale(self):
 		key = self.available()

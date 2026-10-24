@@ -69,6 +69,19 @@ class TrialOnAMachine(SiteOnAMachine):
 		plan = make_plan("trial-lifecycle-plan", rates=[{"cluster": "", "currency": "USD", "rate": rate}])
 		frappe.db.set_value("Virtual Machine", self.server.name, "plan", plan)
 
+	def trial_comments(self) -> str:
+		return "\n".join(
+			frappe.get_all(
+				"Comment",
+				filters={
+					"reference_doctype": "Site",
+					"reference_name": self.site().name,
+					"comment_type": "Info",
+				},
+				pluck="content",
+			)
+		)
+
 
 class TestTrialLifecycle(TrialOnAMachine):
 	"""A trial site runs for its days, warns, stops, then is terminated."""
@@ -612,6 +625,36 @@ class TestTrialLifecycle(TrialOnAMachine):
 			self.site().end_trial_now()
 
 		self.assertEqual(self.site().trial_state, "Ended")
+
+	def test_ending_a_trial_revokes_its_ai_key(self):
+		with (
+			patch.object(trial.Trial, "enqueue_job"),
+			patch.object(trial.AITrialKey, "queue_revoke") as revoke,
+		):
+			self.site().end_trial_now()
+
+		revoke.assert_called_once_with(server=self.server.name)
+
+	def test_extending_a_trial_extends_its_ai_key_and_notes_a_trial_without_one(self):
+		with patch.object(trial.AITrialKey, "extend_expiry", return_value=True) as extend:
+			self.site().extend_trial(3)
+		extend.assert_called_once_with(self.server.name, 3)
+		self.assertNotIn("AI key", self.trial_comments())
+
+		with patch.object(trial.AITrialKey, "extend_expiry", return_value=False):
+			self.site().extend_trial(2)
+		self.assertIn("no live AI key", self.trial_comments())
+
+	def test_a_refused_extend_is_logged_and_the_trial_is_extended_all_the_same(self):
+		ends_on = self.site().trial_ends_on
+		with patch.object(trial.AITrialKey, "extend_expiry", side_effect=Exception("Grove is down")), patch(
+			"central.signups.trial.frappe.log_error"
+		) as log_error:
+			self.site().extend_trial(3)
+
+		self.assertEqual(getdate(self.site().trial_ends_on), getdate(add_days(ends_on, 3)))
+		self.assertEqual(log_error.call_count, 1)
+		self.assertIn("not extended", self.trial_comments())
 
 	def test_only_an_operator_changes_a_trial(self):
 		with self.set_user("Guest"), self.assertRaises(frappe.PermissionError):
