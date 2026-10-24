@@ -72,7 +72,7 @@ flowchart TD
 ```
 
 ### Step 1 · Payment Gateways
-Each adapter has one **Payment Gateway** row. The row is named after its `adapter_key` (`Stripe` / `Razorpay` / `Paypal`) and has no title field. `gateways.setup.ensure_gateway_records` seeds one disabled, blank row per adapter on install and migrate. To configure a gateway, open its row, fill in `api_key`, `api_secret` and `webhook_secret`, add a **currencies** child row per currency it serves (set `is_default` for the currency it is the default for), and set `is_enabled`. Razorpay needs `supports_mandates` for UPI Autopay / e-mandate.
+Each adapter has one **Payment Gateway** row. The row is named after its `adapter_key` (`Stripe` / `Razorpay` / `Paypal`) and has no title field. `gateways.setup.ensure_gateway_records` seeds one disabled, blank row per adapter on install and migrate. To configure a gateway, open its row, fill in `api_key`, `api_secret` and `webhook_secret`, add a **currencies** child row per currency it serves (set `is_default` for the currency it is the default for), and set `is_enabled`. Razorpay needs `supports_mandates` for UPI Autopay / e-mandate. Razorpay takes ₹1 to issue a UPI Autopay or card mandate token. Central refunds it in a background job once the Payment Method is active, and adds a comment to the Payment Method with the refund ID. When the refund fails, the comment and the Error Log say so, and the operator refunds it from the Razorpay dashboard.
 - **UI:** Desk → *Payment Gateway* → open the adapter's row (one row per adapter; one Stripe row can serve several currencies).
 - **Admin API:** `api/admin/gateways` → `get_gateways`, `set_default_gateway`,
   `get_effective_routing` (which gateway wins for a currency).

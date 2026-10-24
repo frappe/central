@@ -6,7 +6,7 @@ import { useBillingSetup } from '@/composables/useBillingSetup'
 import { money } from '@/lib/format'
 import type { WelcomeCredit } from '@/types/billing'
 
-const { profile } = useBillingSetup()
+const { profile, currency } = useBillingSetup()
 const flow = ref<InstanceType<typeof PaymentMethodFlow> | null>(null)
 const hasMethod = ref(false)
 
@@ -43,7 +43,11 @@ const steps = computed(() => [
 	{
 		icon: 'lucide-credit-card',
 		title: 'No charge today',
-		text: 'We save it and check that it works.',
+		// Razorpay takes ₹1 to set up UPI Autopay or a card mandate; Central refunds it.
+		text:
+			currency.value === 'INR'
+				? 'We save it and check that it works. UPI and some cards take ₹1 to set up. We refund it.'
+				: 'We save it and check that it works.',
 	},
 	{
 		icon: 'lucide-wallet',
