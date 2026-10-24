@@ -1,6 +1,6 @@
 {
  "actions": [],
- "creation": "2026-10-06 00:00:00",
+ "creation": "2026-10-24 18:38:14.500950",
  "doctype": "DocType",
  "editable_grid": 1,
  "engine": "InnoDB",
@@ -12,9 +12,10 @@
   "trials_tab",
   "trial_key_geography",
   "trial_model_group",
+  "trial_key_cap",
+  "column_break_oabk",
   "trial_pool_size",
-  "trial_key_expiry",
-  "trial_key_cap"
+  "trial_key_expiry"
  ],
  "fields": [
   {
@@ -80,13 +81,16 @@
    "fieldname": "trial_key_cap",
    "fieldtype": "Currency",
    "label": "Trial Key Cap (USD)"
+  },
+  {
+   "fieldname": "column_break_oabk",
+   "fieldtype": "Column Break"
   }
  ],
  "grid_page_length": 50,
- "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-10-24 21:00:00.000000",
+ "modified": "2026-10-24 18:53:24.115003",
  "modified_by": "Administrator",
  "module": "Services",
  "name": "AI Settings",
