@@ -54,6 +54,7 @@ class AITrialKey(Document):
 			team=TRIAL_TEAM,
 			title=None,
 			geography=settings.trial_key_geography,
+			model_group=settings.trial_model_group or None,
 			cap=cint(settings.trial_key_cap),
 			expiry=settings.trial_key_expiry,
 			# A key waits in the pool before anyone can use it: its clock starts at its first request.
@@ -122,6 +123,16 @@ class AITrialKey(Document):
 		frappe.db.set_value(
 			"AI Trial Key", {"resource_action": resource_action, "status": "Assigned"}, "server", server
 		)
+
+	@classmethod
+	def extend_expiry(cls, server: str, days: int) -> bool:
+		"""`days` more on the live key of `server`. False when it has none: a paid creation, a pool
+		that was empty, or a key revoked when the trial ended."""
+		grove_key = frappe.db.get_value("AI Trial Key", {"server": server, "status": "Assigned"}, "grove_key")
+		if not grove_key:
+			return False
+		GroveClient.from_settings().extend_key(TRIAL_TEAM, grove_key, days)
+		return True
 
 	@classmethod
 	def queue_revoke(cls, **filters) -> None:

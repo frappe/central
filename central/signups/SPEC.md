@@ -142,7 +142,7 @@ A Deleted trial is not converted, because its server is gone. Its Trial Cost run
 
 ### Desk
 
-On a Site with an open trial, a System Manager has a **Trial** menu: **Extend Trial** adds days and starts an Ended trial again, **End Trial Now** ends an Active trial today, and **Retry Trial Step** runs today's step again after a Trial Error. On a Converted site, it sends the conversion job again. Each action leaves a comment on the Site. The **Trial Sites** report counts trial sites and their cost by product, month and state.
+On a Site with an open trial, a System Manager has a **Trial** menu: **Extend Trial** adds days, starts an Ended trial again and asks Grove for the same days on the site's AI key (best effort: a trial without a live key is noted on the Site), **End Trial Now** ends an Active trial today and revokes its AI key at Grove, and **Retry Trial Step** runs today's step again after a Trial Error. On a Converted site, it sends the conversion job again. Each action leaves a comment on the Site. The **Trial Sites** report counts trial sites and their cost by product, month and state.
 
 ### Failure
 

@@ -45,6 +45,7 @@ class AISettings(Document):
 		trial_key_cap: DF.Currency
 		trial_key_expiry: DF.Literal["Never", "1 Day", "7 Days", "14 Days", "30 Days"]
 		trial_key_geography: DF.Data | None
+		trial_model_group: DF.Data | None
 		trial_pool_size: DF.Int
 	# end: auto-generated types
 

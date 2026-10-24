@@ -18,6 +18,7 @@ from central.iam import can
 from central.infrastructure.doctype.resource_action.resource_action import PENDING_STATES, ResourceAction
 from central.infrastructure.doctype.site.site import Site
 from central.notification.engine import queue_event
+from central.services.doctype.ai_trial_key.ai_trial_key import AITrialKey
 from central.signups.eligibility import has_active_payment_method
 from central.signups.funnel import capture_trial_event
 
@@ -242,14 +243,34 @@ class Trial:
 		)
 		if was_ended:
 			self.queue_server_action("start")
+		self.extend_key(days)
+
+	def extend_key(self, days: int) -> None:
+		"""Best effort: the trial's extension never waits on AI. A trial with no live key (a paid
+		creation, an empty pool, or a key revoked when the trial ended) and a refused extend (the
+		hourly sweep took the key, unseen here, or Grove unreachable) are noted on the site."""
+		# ponytail: one try; a Central-side status with the hourly retry, as Revoking, if a lost
+		# extend ever matters.
+		try:
+			extended = AITrialKey.extend_expiry(self.site.server, days)
+		except Exception:
+			frappe.log_error(
+				"Trial AI key not extended", reference_doctype="Site", reference_name=self.site.name
+			)
+			self.site.add_comment("Info", _("The trial's AI key was not extended; see the Error Log."))
+			return
+		if not extended:
+			self.site.add_comment("Info", _("The trial has no live AI key to extend."))
 
 	def end(self, today) -> None:
-		"""Stop the trial's server and set the day it is terminated. The stop job tells the team."""
+		"""Stop the trial's server, revoke its AI key at Grove and set the day it is terminated. The
+		stop job tells the team."""
 		if self.state != "Active":
 			frappe.throw(_("Only an active trial can be ended."))
 
 		deletes_on = add_days(today, self.settings.deletion_days)
 		self.move_to("Ended", trial_deletes_on=deletes_on, trial_error=None)
+		AITrialKey.queue_revoke(server=self.site.server)
 		capture_trial_event("trial_ended", self.site.team, self.site.product)
 		self.enqueue_job(stop_server, "trial-stop")
 
