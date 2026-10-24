@@ -243,7 +243,9 @@ def _saved_card_fields(card: dict, method) -> dict:
 		"gateway_method_id": card["payment_method"],
 		"gateway_mandate_id": card.get("mandate") or method.gateway_mandate_id,
 		"card_network": brand,
-		"display_label": f"{brand or 'Card'} ···· {card['last4']}" if card.get("last4") else brand,
+		# A PayPal vault names the account itself; a card is shown by brand and last four digits.
+		"display_label": card.get("label")
+		or (f"{brand or 'Card'} ···· {card['last4']}" if card.get("last4") else brand),
 		"expiry_month": card.get("exp_month"),
 		"expiry_year": card.get("exp_year"),
 	}

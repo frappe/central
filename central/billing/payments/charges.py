@@ -35,14 +35,21 @@ _AUTHORISED_EVENTS = {
 	"payment_intent.amount_capturable_updated",  # Stripe: requires_capture
 	"payment.authorized",  # Razorpay
 	"charge.authorized",
+	"PAYMENT.CAPTURE.PENDING",  # PayPal: held for review or an eCheck; not paid yet
 }
-_SUCCESS_EVENTS = {"payment_intent.succeeded", "charge.succeeded", "payment.captured"}
+_SUCCESS_EVENTS = {
+	"payment_intent.succeeded",
+	"charge.succeeded",
+	"payment.captured",
+	"PAYMENT.CAPTURE.COMPLETED",
+}
 _FAILURE_EVENTS = {
 	"payment_intent.payment_failed",
 	# Stripe cancels an authorisation that expires uncaptured; it will never capture.
 	"payment_intent.canceled",
 	"charge.failed",
 	"payment.failed",
+	"PAYMENT.CAPTURE.DENIED",
 }
 
 _TERMINAL_ATTEMPT = ("Captured", "Failed", "Refunded")

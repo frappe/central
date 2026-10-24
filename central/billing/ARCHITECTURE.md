@@ -372,7 +372,7 @@ When a Raven post fails, or Raven is not configured, the alert goes to the email
 - `override_doctype_dashboards["Currency"]` → `api.dashboard_overrides.currency_dashboard`.
 
 ### Inbound webhooks (`payments/webhooks.py`)
-`@stripe` / `@razorpay` (whitelisted, signature-first) → `process_webhook` → adapter `verify_webhook_signature`/`parse_webhook_event` → `handle_webhook_event`. Raw payload persisted to **Webhook Event** for dedupe/replay.
+`@stripe` / `@razorpay` / `@paypal` (whitelisted, signature-first; PayPal is verified through its verify-webhook-signature API) → `process_webhook` → adapter `verify_webhook_signature`/`parse_webhook_event` → `handle_webhook_event`. Raw payload persisted to **Webhook Event** for dedupe/replay.
 
 `handle_webhook_event` sends each event to one handler. The handler links the Webhook Event to the Payment Attempt or Payment Method it is about, so the record's Connections show its event history.
 
@@ -380,7 +380,7 @@ When a Raven post fails, or Raven is not configured, the alert goes to the email
 
 | Events | Handler | Effect |
 |---|---|---|
-| `payment_intent.*`, `payment.*` | `charges.apply_webhook` | Authorised, Captured or Failed. `payment_intent.canceled` fails the attempt with Stripe's cancellation reason. |
+| `payment_intent.*`, `payment.*`, `PAYMENT.CAPTURE.*` | `charges.apply_webhook` | Authorised, Captured or Failed. `payment_intent.canceled` fails the attempt with Stripe's cancellation reason. A PayPal PENDING capture keeps the attempt open (`gateway_hold_until`) instead of failing it. |
 | `charge.dispute.*`, `payment.dispute.*` | `disputes.apply_dispute` | Note on the invoice; a lost dispute cancels the invoice without a second refund. A lost dispute on an invoice that is no longer Paid is flagged for an operator. |
 | `charge.refund.updated`, `refund.failed`, `refund.processed` | `corrections.apply_refund_event` | Finishes a Pending refund as Completed or Failed. Reconciliation asks the gateway about any Pending refund the webhook missed. |
 | `mandate.updated` | `mandates.apply_mandate_event` | A revoked mandate cancels its Payment Method. |
@@ -396,7 +396,7 @@ When a Raven post fails, or Raven is not configured, the alert goes to the email
 - **Webhook Events → Pull** reads the endpoint from the gateway and fills the Webhook Events table. Each event is OK, Missing (Central needs it, the gateway does not send it) or Not Used.
 - **Webhook Events → Update** sets the endpoint's events to the adapter's list. The signing secret does not change.
 
-When you save new keys, Central reads the stored endpoint with them. If the keys can see it (same account), Central adds any missing events. If they cannot (another account, or Stripe test keys changed to live keys), Central registers a new endpoint. Central never deletes an endpoint at the gateway, because another site can use the same account. A PayPal gateway that settles through Razorpay has no webhook of its own.
+When you save new keys, Central reads the stored endpoint with them. If the keys can see it (same account), Central adds any missing events. If they cannot (another account, or Stripe test keys changed to live keys), Central registers a new endpoint. Central never deletes an endpoint at the gateway, because another site can use the same account. A PayPal gateway that settles through Razorpay has no webhook of its own. PayPal calls go to the sandbox host unless site config `paypal_api_base` is `https://api-m.paypal.com`; no other host is accepted, because the client secret is sent there.
 
 ### API entry points (`@frappe.whitelist`): see §5 per package.
 

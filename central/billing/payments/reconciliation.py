@@ -32,7 +32,7 @@ from central.billing.states import transition
 
 _AMBIGUOUS = ("Initiated", "Authorised")
 _GATEWAY_SUCCESS = {"succeeded", "captured", "paid", "completed"}
-_GATEWAY_FAILED = {"failed", "canceled", "cancelled", "declined", "expired", "voided"}
+_GATEWAY_FAILED = {"failed", "canceled", "cancelled", "declined", "denied", "expired", "voided"}
 # A Captured attempt whose invoice sits in one of these lost its settlement webhook.
 _UNSETTLED_INVOICE = ("Open", "Overdue")
 

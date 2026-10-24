@@ -19,6 +19,8 @@ DISPUTE_EVENTS = (
 	"payment.dispute.won",
 	"payment.dispute.lost",
 	"payment.dispute.closed",
+	"CUSTOMER.DISPUTE.CREATED",
+	"CUSTOMER.DISPUTE.RESOLVED",
 )
 
 

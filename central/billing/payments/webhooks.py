@@ -20,7 +20,7 @@ STALE_RECEIVED_MINUTES = 15
 RETRY_BATCH = 200
 
 # Events that finish (or fail) a refund the gateway accepted as pending.
-REFUND_EVENTS = ("charge.refund.updated", "refund.failed", "refund.processed")
+REFUND_EVENTS = ("charge.refund.updated", "refund.failed", "refund.processed", "PAYMENT.CAPTURE.REFUNDED")
 
 
 @frappe.whitelist(allow_guest=True)
@@ -36,6 +36,15 @@ def stripe() -> dict:
 def razorpay() -> dict:
 	return process_webhook(
 		"Razorpay",
+		frappe.request.get_data(),
+		dict(frappe.request.headers),
+	)
+
+
+@frappe.whitelist(allow_guest=True)
+def paypal() -> dict:
+	return process_webhook(
+		"Paypal",
 		frappe.request.get_data(),
 		dict(frappe.request.headers),
 	)

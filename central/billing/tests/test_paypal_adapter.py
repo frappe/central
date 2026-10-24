@@ -194,3 +194,84 @@ class TestPayPalAdapter(GatewayAdapterContract, IntegrationTestCase):
 		):
 			out = adapter._capture_payment("vault_x", 40.0, "USD", "req-2")
 		self.assertEqual(out, {"id": "cap_9", "status": "COMPLETED", "amount": "40.00", "currency": "USD"})
+
+	def test_a_pending_capture_stays_open(self):
+		"""PayPal may still take the money, so a PENDING capture is not a decline."""
+		adapter = self.make_adapter()
+		invoice, method, key = self.make_charge_inputs()
+		with patch.object(
+			PayPalAdapter, "_capture_payment", return_value={"id": "cap_p", "status": "PENDING"}
+		):
+			result = adapter.charge(invoice, method, key)
+		self.assertEqual(
+			(result.success, result.status, result.gateway_transaction_id), (False, "Pending", "cap_p")
+		)
+		self.assertTrue(result.hold_until)
+
+	def test_a_duplicate_request_is_unknown_not_a_decline(self):
+		from central.billing.gateways.base import GatewayTimeout
+
+		adapter = self.make_adapter()
+		resp = MagicMock(status_code=422)
+		resp.json.return_value = {"name": "DUPLICATE_REQUEST_ID", "message": "in progress"}
+		with (
+			patch.object(PayPalAdapter, "_token", return_value="tok"),
+			patch("central.billing.gateways.paypal_adapter.requests.post", return_value=resp),
+		):
+			with self.assertRaises(GatewayTimeout):
+				adapter._capture_payment("vault_x", 40.0, "USD", "req-dup")
+
+	def test_the_oauth_token_is_reused(self):
+		adapter = self.make_adapter()
+		frappe.cache.delete_value(f"paypal_token::{adapter.gateway.name}")
+		resp = MagicMock(status_code=200)
+		resp.json.return_value = {"access_token": "tok_1", "expires_in": 32400}
+		with patch("central.billing.gateways.paypal_adapter.requests.post", return_value=resp) as post:
+			self.assertEqual((adapter._token(), adapter._token()), ("tok_1", "tok_1"))
+		post.assert_called_once()
+
+	def test_only_paypal_hosts_receive_the_secret(self):
+		from central.billing.gateways.base import GatewayError
+
+		with patch.dict(frappe.local.conf, {"paypal_api_base": "https://attacker.example"}):
+			with self.assertRaises(GatewayError):
+				self.make_adapter()._base()
+		with patch.dict(frappe.local.conf, {"paypal_api_base": "https://api-m.paypal.com"}):
+			self.assertEqual(self.make_adapter()._base(), "https://api-m.paypal.com")
+
+	def test_a_capture_event_binds_by_order_not_custom_id(self):
+		payload = {
+			"event_type": "PAYMENT.CAPTURE.COMPLETED",
+			"resource": {
+				"id": "cap_1",
+				"status": "COMPLETED",
+				"custom_id": "set-by-the-browser",
+				"amount": {"value": "25.00", "currency_code": "USD"},
+				"supplementary_data": {"related_ids": {"order_id": "ORDER-1"}},
+			},
+		}
+		payment = PayPalAdapter.payment_from_event(payload)
+		self.assertEqual((payment.order_id, payment.receipt, payment.amount), ("ORDER-1", None, 25.0))
+
+	def test_a_resolved_dispute_in_the_buyers_favour_is_lost(self):
+		payload = {
+			"event_type": "CUSTOMER.DISPUTE.RESOLVED",
+			"resource": {
+				"dispute_id": "PP-D-1",
+				"disputed_transactions": [{"seller_transaction_id": "cap_1"}],
+				"dispute_amount": {"value": "25.00"},
+				"dispute_outcome": {"outcome_code": "RESOLVED_BUYER_FAVOUR"},
+			},
+		}
+		dispute = PayPalAdapter.dispute_from_event(payload)
+		self.assertEqual(
+			(dispute["payment_id"], dispute["status"], dispute["amount"]), ("cap_1", "lost", 25.0)
+		)
+
+	def test_a_saved_paypal_account_is_read_from_the_vault(self):
+		adapter = self.make_adapter()
+		token = {"id": "vault_tok", "payment_source": {"paypal": {"email_address": "buyer@example.com"}}}
+		with patch.object(PayPalAdapter, "_create_payment_token", return_value=token) as create:
+			card = adapter.read_saved_card("setup_1")
+		create.assert_called_once_with("setup_1")
+		self.assertEqual((card["payment_method"], card["label"]), ("vault_tok", "buyer@example.com"))
