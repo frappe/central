@@ -41,6 +41,7 @@ def razorpay() -> dict:
 	)
 
 
+# nosemgrep: guest-whitelisted-method -- process_webhook verifies PayPal's signature before anything else.
 @frappe.whitelist(allow_guest=True)
 def paypal() -> dict:
 	return process_webhook(

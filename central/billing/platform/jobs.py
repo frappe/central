@@ -30,7 +30,8 @@ def each_isolated(job: str, doctype: str, names, work) -> list:
 			results.append({"name": name, "failed": True})
 			continue
 		if not frappe.in_test:
-			frappe.db.commit()
+			# The per-row boundary is the point: the next row's failure must not undo this one.
+			frappe.db.commit()  # nosemgrep
 	return results
 
 
