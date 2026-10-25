@@ -46,7 +46,7 @@ export function usePublicIpv4Pricing(region: Ref<string | null | undefined>) {
 	}
 }
 
-/** Attaches or detaches a server's public addresses, and turns IPv4 internet access on or off. */
+/** Attaches or detaches a server's public addresses, and turns IPv4 internet and WireGuard access on or off. */
 export function useServerAddresses(resourceId: Ref<string>) {
 	const { activeTeam } = useSession()
 
@@ -65,6 +65,15 @@ export function useServerAddresses(resourceId: Ref<string>) {
 		{ team: string; resource_id: string; enabled: boolean }
 	>({
 		url: method(API.setServerIpv4Internet),
+		method: 'POST',
+		immediate: false,
+	})
+
+	const wireguardCall = useCall<
+		null,
+		{ team: string; resource_id: string; enabled: boolean }
+	>({
+		url: method(API.setServerWireguardAccess),
 		method: 'POST',
 		immediate: false,
 	})
@@ -111,9 +120,27 @@ export function useServerAddresses(resourceId: Ref<string>) {
 			: null
 	}
 
+	/** Returns the error, or null when it changed. */
+	async function setWireguardAccess(enabled: boolean): Promise<string | null> {
+		if (!activeTeam.value) return null
+
+		await wireguardCall.submit({
+			team: activeTeam.value,
+			resource_id: resourceId.value,
+			enabled,
+		})
+		return wireguardCall.error
+			? getErrorMessage(wireguardCall.error, "WireGuard access wasn't changed.")
+			: null
+	}
+
 	return {
 		setPublicIp,
 		setIpv4Internet,
-		isSaving: computed(() => addressCall.loading || internetCall.loading),
+		setWireguardAccess,
+		isSaving: computed(
+			() =>
+				addressCall.loading || internetCall.loading || wireguardCall.loading,
+		),
 	}
 }

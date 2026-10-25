@@ -186,6 +186,7 @@ def server_overview(team: str | None = None, resource_id: str | None = None) -> 
 				"display_name": row.region_display_name or server.region,
 				"provider": row.region_provider,
 				"country_code": row.region_country_code,
+				"has_wireguard_gateway": row.region_has_wireguard_gateway,
 			},
 		},
 	}
@@ -335,6 +336,7 @@ def _overview_server_row(resource_id: str, team: str):
 			region.display_name.as_("region_display_name"),
 			region.provider.as_("region_provider"),
 			region.country_code.as_("region_country_code"),
+			region.has_wireguard_gateway.as_("region_has_wireguard_gateway"),
 			region.base_url.as_("region_base_url"),
 			team_table.team_name.as_("team_name"),
 		)

@@ -41,9 +41,8 @@ const props = defineProps<Props>()
 const emit = defineEmits<{ changed: [] }>()
 
 const { priceLabel } = usePublicIpv4Pricing(computed(() => props.server.region))
-const { setPublicIp, setIpv4Internet, isSaving } = useServerAddresses(
-	computed(() => props.server.resource_id),
-)
+const { setPublicIp, setIpv4Internet, setWireguardAccess, isSaving } =
+	useServerAddresses(computed(() => props.server.resource_id))
 
 const addresses = computed(() =>
 	[
@@ -154,6 +153,17 @@ async function toggleIpv4Internet(enabled: boolean): Promise<void> {
 	)
 	emit('changed')
 }
+
+async function toggleWireguardAccess(enabled: boolean): Promise<void> {
+	const error = await setWireguardAccess(enabled)
+	if (error) {
+		reportError(error, { title: "WireGuard access wasn't changed" })
+		return
+	}
+
+	successToast(enabled ? 'WireGuard access is on' : 'WireGuard access is off')
+	emit('changed')
+}
 </script>
 
 <template>
@@ -219,6 +229,16 @@ async function toggleIpv4Internet(enabled: boolean): Promise<void> {
 			"
 			class="rounded-6 px-2 py-3"
 			@update:model-value="toggleIpv4Internet"
+		/>
+
+		<Switch
+			v-if="server.region_details.has_wireguard_gateway"
+			:model-value="!!server.has_wireguard_access"
+			:disabled="!canEdit || isSaving"
+			label="WireGuard access"
+			description="Lets your team's WireGuard devices reach this server's private address."
+			class="rounded-6 px-2 py-3"
+			@update:model-value="toggleWireguardAccess"
 		/>
 
 		<ConfirmDialog

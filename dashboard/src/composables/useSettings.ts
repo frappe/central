@@ -23,6 +23,9 @@ const InvitationsForm = defineAsyncComponent(
 const SSHKeysForm = defineAsyncComponent(
 	() => import('@/components/settings/forms/SSHKeysForm.vue'),
 )
+const WireGuardForm = defineAsyncComponent(
+	() => import('@/components/settings/forms/WireGuardForm.vue'),
+)
 
 export type SettingsTab =
 	| 'profile'
@@ -31,6 +34,7 @@ export type SettingsTab =
 	| 'team'
 	| 'invitations'
 	| 'ssh-keys'
+	| 'wireguard'
 
 export interface SettingsTabDef {
 	value: SettingsTab
@@ -107,6 +111,17 @@ export const SETTINGS_TABS: SettingsTabDef[] = [
 		title: 'SSH keys',
 		description: 'Team keys that sign in to your servers.',
 		component: SSHKeysForm,
+		requires: 'member',
+	},
+	{
+		value: 'wireguard',
+		group: 'Administration',
+		label: 'WireGuard',
+		icon: 'lucide-shield',
+		title: 'WireGuard',
+		description:
+			'Devices that reach your servers over their private addresses.',
+		component: WireGuardForm,
 		requires: 'member',
 	},
 ]
