@@ -277,7 +277,7 @@ class PaymentGateway(Document):
 
 	# --- admin actions -------------------------------------------------------
 
-	@frappe.whitelist()
+	@frappe.whitelist(methods=["POST"])
 	def pull_webhook_events(self) -> dict:
 		"""Read the endpoint from the gateway and list the events it sends."""
 		self.check_permission("write")
@@ -286,7 +286,7 @@ class PaymentGateway(Document):
 		self.save()
 		return self._webhook_report()
 
-	@frappe.whitelist()
+	@frappe.whitelist(methods=["POST"])
 	def update_webhook_events(self) -> dict:
 		"""Subscribe the endpoint to exactly the events Central needs, then read it back.
 		The signing secret does not change."""
@@ -329,7 +329,7 @@ class PaymentGateway(Document):
 			"expected_url": self.webhook_callback_url(),
 		}
 
-	@frappe.whitelist()
+	@frappe.whitelist(methods=["POST"])
 	def revalidate_and_register_webhook(self) -> dict:
 		"""Re-check the keys and register a new webhook endpoint with a new signing secret.
 

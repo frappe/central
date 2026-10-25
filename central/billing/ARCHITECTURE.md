@@ -615,6 +615,8 @@ get_team_caps resolves caps live (no per-team Trust Tier doctype — dropped)
 
 ## 5. API surface (by package)
 
+**Limits on the payment routes.** Top-up, checkout and their confirms allow 30 calls an hour; card and mandate setup and confirm allow 20, to slow card testing. Console routes count per user, pilot routes per address, and the pilot checkout poll allows 300. A pilot checkout returns the payer only to a site (or custom domain) on the credential's own server, over HTTPS. A pilot usage report cannot be negative, and an Authoritative total cannot go below the one already recorded. CSV exports prefix a cell that starts with `=`, `+`, `-`, `@`, tab or return with a quote. The `tests/e2e.py` endpoints answer only on a site whose own `site_config.json` sets `allow_tests`.
+
 **`api/dashboard/`** (customer, team-scoped)
 - `account.py`: whoami, get/save_billing_profile, get_billing_geo, get/save_billing_settings, get_collection_status, set_collection_mode, get_team_overview, get_trust_tier.
 - `catalog.py`: get_eligible_plans and provision/get_composed_config.

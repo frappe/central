@@ -14,6 +14,7 @@ from contextlib import contextmanager
 
 import frappe
 from frappe import _
+from frappe.rate_limiter import rate_limit
 
 from central.api.pilot import pilot_credential_auth
 from central.billing.api.dashboard._shared import (
@@ -48,6 +49,28 @@ def _as_operator():
 		yield
 	finally:
 		frappe.set_user(user)
+
+
+def _require_own_site_url(url: str) -> str:
+	"""A checkout returns the payer only to a site on the credential's own server, over
+	HTTPS, so the hosted page cannot be used to send them anywhere else."""
+	from urllib.parse import urlparse
+
+	parsed = urlparse(url or "")
+	host = (parsed.hostname or "").lower()
+	local = host == "localhost" or host.endswith(".localhost")
+	if host not in _own_hosts() or not (parsed.scheme == "https" or (local and parsed.scheme == "http")):
+		frappe.throw(_("The return address must be a site on this server."), frappe.ValidationError)
+	return url
+
+
+def _own_hosts() -> set[str]:
+	"""The hosts of the sites on the credential's server, with their custom domains."""
+	if not _server():
+		return set()
+	sites = frappe.get_all("Site", filters={"server": _server()}, pluck="name")
+	domains = frappe.get_all("Site Domain", filters={"site": ["in", sites]}, pluck="domain") if sites else []
+	return {host.lower() for host in [*sites, *domains]}
 
 
 def _server() -> str:
@@ -244,6 +267,7 @@ def get_payment_gateways() -> list[dict]:
 
 # nosemgrep: guest-whitelisted-method -- pilot_credential_auth verifies the caller below.
 @frappe.whitelist(allow_guest=True, methods=["POST"])
+@rate_limit(limit=20, seconds=60 * 60)
 @pilot_credential_auth
 def add_payment_method(
 	method_type: str = "Card", contact: str | None = None, gateway: str | None = None
@@ -285,6 +309,7 @@ def add_payment_method(
 
 # nosemgrep: guest-whitelisted-method -- pilot_credential_auth verifies the caller below.
 @frappe.whitelist(allow_guest=True, methods=["POST"])
+@rate_limit(limit=20, seconds=60 * 60)
 @pilot_credential_auth
 def confirm_payment_method(
 	payment_method: str,
@@ -333,6 +358,7 @@ def create_payment_method_checkout(redirect_url: str, gateway: str | None = None
 	from central.billing.gateways.registry import get_adapter
 	from central.billing.payments import payments
 
+	redirect_url = _require_own_site_url(redirect_url)
 	team = _team()
 	_require_billing_setup(team)
 	currency = _team_currency(team)
@@ -623,6 +649,8 @@ def report_usage(
 		frappe.throw(
 			frappe._("Team is not subscribed to service {0}.").format(service), frappe.ValidationError
 		)
+	if frappe.utils.flt(quantity) < 0:
+		frappe.throw(frappe._("Usage cannot be negative."), frappe.ValidationError)
 
 	# Stamp the subject's authoritative billing context (team + its real cluster +
 	# currency) into the payload. A Live-priced family reads team/cluster/currency
@@ -630,6 +658,7 @@ def report_usage(
 	# without these a Live rollup would land context-less and be missed at invoicing.
 	seg = active_segment_for_resource(subject)
 	period_start, period_end, tag = _billing_period(period)
+	_refuse_a_lower_total(subject, f"{subject}|{service}|{tag}", quantity)
 	key = ingest_rollup(
 		{
 			"resource_id": subject,
@@ -646,6 +675,24 @@ def report_usage(
 		}
 	)
 	return {"recorded": bool(key), "service_subject": subject}
+
+
+def _refuse_a_lower_total(subject: str, idempotency_key: str, quantity) -> None:
+	"""The credential sits on the customer's own server, so a period's reported usage may
+	only go up: an Authoritative total lower than the one recorded is refused. An
+	Incremental delta is already positive, so it can only add."""
+	plan = frappe.db.get_value("Subscription", {"service_subject": subject, "enabled": 1}, "plan")
+	category = plan and frappe.db.get_value("Plan", plan, "category")
+	if category and frappe.get_doc("Plan Category", category).effective_reporting_mode == "Incremental":
+		return
+	recorded = frappe.db.get_value(
+		"Usage Rollup", {"idempotency_key": idempotency_key, "superseded_by": ["is", "not set"]}, "quantity"
+	)
+	if recorded is not None and frappe.utils.flt(quantity) < frappe.utils.flt(recorded):
+		frappe.throw(
+			frappe._("A usage total for this period can only increase ({0} is recorded).").format(recorded),
+			frappe.ValidationError,
+		)
 
 
 def _billing_period(period: str | None) -> tuple[str, str, str]:
@@ -927,6 +974,7 @@ def list_payment_methods() -> list[dict]:
 
 # nosemgrep: guest-whitelisted-method -- pilot_credential_auth verifies the caller below.
 @frappe.whitelist(allow_guest=True, methods=["POST"])
+@rate_limit(limit=30, seconds=60 * 60)
 @pilot_credential_auth
 def create_topup_checkout(amount: float, redirect_url: str) -> dict:
 	"""Start a wallet top-up via hosted checkout. Returns `{checkout_url, reference,
@@ -934,6 +982,7 @@ def create_topup_checkout(amount: float, redirect_url: str) -> dict:
 	from central.billing.api.dashboard._shared import _gateway_for_currency
 	from central.billing.doctype.top_up_order.top_up_order import TopupOrder
 
+	redirect_url = _require_own_site_url(redirect_url)
 	amount = frappe.utils.flt(amount)
 	if amount <= 0:
 		frappe.throw(_("Top-up amount must be greater than zero."), frappe.ValidationError)
@@ -958,6 +1007,7 @@ def create_topup_checkout(amount: float, redirect_url: str) -> dict:
 
 # nosemgrep: guest-whitelisted-method -- pilot_credential_auth verifies the caller below.
 @frappe.whitelist(allow_guest=True, methods=["POST"])
+@rate_limit(limit=30, seconds=60 * 60)
 @pilot_credential_auth
 def create_invoice_checkout(invoice: str, redirect_url: str) -> dict:
 	"""Start an on-session payment of an open invoice via hosted checkout. Returns
@@ -969,6 +1019,7 @@ def create_invoice_checkout(invoice: str, redirect_url: str) -> dict:
 		store_gateway_order,
 	)
 
+	redirect_url = _require_own_site_url(redirect_url)
 	_assert_owns(frappe.db.get_value("Invoice", invoice, "team"))
 	claim = _claim_on_session_attempt(invoice, None)
 	if not claim.get("created"):
@@ -1025,6 +1076,7 @@ def _checkout_handles(gateway, session, purpose, target, amount, currency) -> di
 
 # nosemgrep: guest-whitelisted-method -- pilot_credential_auth verifies the caller below.
 @frappe.whitelist(allow_guest=True, methods=["POST"])
+@rate_limit(limit=300, seconds=60 * 60)
 @pilot_credential_auth
 def get_checkout_status(reference: str) -> dict:
 	"""Poll a hosted checkout. Returns `{status, success, message, ...}`.

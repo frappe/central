@@ -100,7 +100,7 @@ class PlanConfigurator(Document):
 			frappe.throw(_("Add at least one base rate (currency + price)."))
 		return rows
 
-	@frappe.whitelist()
+	@frappe.whitelist(methods=["POST"])
 	def populate_rungs(self) -> dict:
 		"""Fill the editable rungs table from the formula (overwrites the table)."""
 		self.set("rungs", [])
@@ -134,7 +134,7 @@ class PlanConfigurator(Document):
 		Link's quick-create, so it's already a real Plan Sub-Category by the time we read it."""
 		return self.sub_category or None
 
-	@frappe.whitelist()
+	@frappe.whitelist(methods=["POST"])
 	def enqueue_generation(
 		self,
 		cluster: str | None = None,
@@ -234,7 +234,7 @@ class PlanConfigurator(Document):
 	# primitives too, capturing every shipped currency in one place beside the preset
 	# and simple builders — no separate seed + endpoint that could drift half-filled.
 
-	@frappe.whitelist()
+	@frappe.whitelist(methods=["POST"])
 	def seed_component_rows(self) -> dict:
 		"""Fill the component-rate table with every (primitive × shipped currency) pair
 		not already present, so authoring captures all currencies in one place — an
@@ -252,7 +252,7 @@ class PlanConfigurator(Document):
 		self.save(ignore_permissions=True)
 		return {"added": added, "rows": len(self.component_rates)}
 
-	@frappe.whitelist()
+	@frappe.whitelist(methods=["POST"])
 	def apply_component_card(self, cluster: str | None = None) -> dict:
 		"""Write the component-rate table onto the `Catalog Rate` spine for `cluster`
 		(blank = global) through the Configurator's single internal write, then report

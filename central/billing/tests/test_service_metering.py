@@ -512,6 +512,18 @@ class TestServiceAPI(IntegrationTestCase):
 			500,
 		)
 
+	def test_a_lower_total_is_refused(self):
+		"""The credential sits on the customer's server, so a total may only go up."""
+		self.subscribe_service(plan=self.plan, cluster="mumbai")
+		self.report_usage(service="PDF API", quantity=500, cluster="mumbai")
+		with self.assertRaisesRegex(frappe.ValidationError, "only increase"):
+			self.report_usage(service="PDF API", quantity=0, cluster="mumbai")
+
+	def test_negative_usage_is_refused(self):
+		self.subscribe_service(plan=self.plan, cluster="mumbai")
+		with self.assertRaises(frappe.ValidationError):
+			self.report_usage(service="PDF API", quantity=-10, cluster="mumbai")
+
 	def test_global_service_reports_from_any_cluster(self):
 		# A globally-priced service is subscribed once with no cluster; a caller on any
 		# cluster (or none) reports to that one team-wide subject.

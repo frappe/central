@@ -194,7 +194,8 @@ def provision_composed_subscription(
 	# Re-check the config fits the team's remaining headroom (#83) — the client bounds
 	# are a convenience, the server is the gate.
 	currency = frappe.db.get_value("Billing Profile", team, "currency")
-	enforce_headroom(team, resolve_config_rate(includes, currency, cluster))
+	# Locked, so two parallel requests cannot both spend the same headroom.
+	enforce_headroom(team, resolve_config_rate(includes, currency, cluster), for_update=True)
 	resource_id = resource_id or f"res-{frappe.generate_hash(length=10)}"
 	sub = create_subscription(
 		team,
