@@ -354,30 +354,39 @@ def expire_payment_methods(now=None) -> dict:
 	it is no longer chargeable.
 	"""
 	from central.billing.platform import notifications
+	from central.billing.platform.jobs import each_isolated
 
 	today = frappe.utils.getdate(now or frappe.utils.now_datetime())
-	expired = []
-	for m in frappe.get_all(
-		"Payment Method",
-		filters={"method_type": CARD_METHOD, "status": "Active"},
-		fields=["name", "team", "display_label", "expiry_month", "expiry_year"],
-	):
-		if not m.expiry_year or not m.expiry_month:
-			continue
-		month_start = frappe.utils.getdate(f"{int(m.expiry_year):04d}-{int(m.expiry_month):02d}-01")
-		if frappe.utils.get_last_day(month_start) < today:
-			md = frappe.get_doc("Payment Method", m.name)
-			transition(md, "Expired", actor="scheduler", reason="card expiry date passed")
-			md.save(ignore_permissions=True)
-			expired.append(m.name)
-			notifications.notify(
-				m.team,
-				"Card Expiry",
-				context={"label": m.display_label or "Card"},
-				reference_doctype="Payment Method",
-				reference_name=m.name,
-			)
-	return {"expired": expired}
+	due = [
+		m.name
+		for m in frappe.get_all(
+			"Payment Method",
+			filters={"method_type": CARD_METHOD, "status": "Active"},
+			fields=["name", "expiry_month", "expiry_year"],
+		)
+		if m.expiry_year
+		and m.expiry_month
+		and frappe.utils.get_last_day(f"{int(m.expiry_year):04d}-{int(m.expiry_month):02d}-01") < today
+	]
+
+	def expire(name: str) -> str:
+		method = frappe.get_doc("Payment Method", name)
+		transition(method, "Expired", actor="scheduler", reason="card expiry date passed")
+		method.save(ignore_permissions=True)
+		notifications.notify(
+			method.team,
+			"Card Expiry",
+			context={"label": method.display_label or "Card"},
+			reference_doctype="Payment Method",
+			reference_name=name,
+		)
+		return name
+
+	return {
+		"expired": [
+			r for r in each_isolated("Card expiry", "Payment Method", due, expire) if isinstance(r, str)
+		]
+	}
 
 
 CARD_DETACHED_EVENT = "payment_method.detached"

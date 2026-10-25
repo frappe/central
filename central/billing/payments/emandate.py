@@ -22,6 +22,7 @@ the gateway at debit time (an adapter concern, kept out of this orchestration).
 import frappe
 
 from central.billing.payments import collection, collection_mode
+from central.billing.platform.jobs import each_isolated
 
 PREDEBIT_NOTICE_HOURS = 24
 
@@ -107,12 +108,14 @@ def charge_due(now=None) -> list[dict]:
 		],
 		fields=["name", "team"],
 	)
-	out = []
-	for inv in due:
-		if frappe.db.get_value("Billing Profile", inv.team, "collection_mode") != "Auto Charge":
-			continue
-		out.append({"invoice": inv.name, **collection.collect_invoice(inv.name)})
-	return out
+	auto = [
+		inv.name
+		for inv in due
+		if frappe.db.get_value("Billing Profile", inv.team, "collection_mode") == "Auto Charge"
+	]
+	return each_isolated(
+		"E-mandate debit", "Invoice", auto, lambda name: {"invoice": name, **collection.collect_invoice(name)}
+	)
 
 
 def run_emandate_cycle(now=None) -> dict:
@@ -128,5 +131,7 @@ def run_emandate_cycle(now=None) -> dict:
 		],
 		pluck="name",
 	)
-	notified = [schedule_predebit(name, now=now) for name in pending]
+	notified = each_isolated(
+		"Pre-debit notice", "Invoice", pending, lambda name: schedule_predebit(name, now=now)
+	)
 	return {"notified": notified, "charged": charge_due(now=now)}

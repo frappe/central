@@ -242,9 +242,11 @@ flowchart LR
 ```
 
 ### Scheduled (`central/hooks.py` → `scheduler_events`)
+Dunning, reconciliation, the e-mandate cycle, credit expiry, card expiry, accounting-sync retries and the subscription backfill run each row through `platform.jobs.each_isolated`: a savepoint and a commit per row, and a row that fails is logged to the Error Log and skipped, so it does not stop the rows after it.
+
 | Cadence | Entry point | Purpose |
 |---|---|---|
-| daily | `revenue.dunning.run_dunning` | Day 1/3/7 retries → past_due → suspend and stop servers → termination due |
+| daily | `revenue.dunning.run_dunning` | Day 1/3/7 retries → past_due → suspend (stops servers) → termination due (operator) |
 | daily | `payments.charges.cleanup_payment_logs` | prune Payment Attempt / Webhook Event |
 | daily | `projection.batch.prune` | prune old projection batches |
 | daily | `payments.emandate.run_emandate_cycle` | INR ≤₹15k pre-debit notice → debit after 24h |
@@ -252,6 +254,7 @@ flowchart LR
 | daily | `payments.settlement.run_billing_details_reminder` | ask credit-funded teams for the billing details their invoice will need |
 | daily | `revenue.credits.run_credit_expiry` | write off expired promotional credit |
 | daily | `platform.invariants.run_invariant_audit` | audit the cross-table money invariants |
+| hourly | `payments.webhooks.retry_failed_webhooks` | apply again failed and lost webhook events |
 | hourly | `payments.reconciliation.run_reconciliation` | charged-but-never-webhooked gateway scan |
 | hourly | `platform.alerts.run_operator_alerts` | alert operators (invariants, readiness, failed webhooks, stale attempts, unsettled captures, held invoices, failed refunds, failed accounting syncs) |
 | monthly | `revenue.invoicing.draft_monthly_invoices` | waive internal teams' unpaid invoices, then draft the just-closed month as page jobs on the `billing` queue |

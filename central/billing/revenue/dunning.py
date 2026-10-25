@@ -24,6 +24,7 @@ import frappe
 
 from central.billing import settings
 from central.billing.catalog import subscriptions
+from central.billing.platform.jobs import each_isolated
 from central.billing.states import transition
 
 
@@ -301,4 +302,4 @@ def run_dunning(now=None) -> list[dict]:
 	if internal:
 		filters.append(["team", "not in", internal])
 	invoices = frappe.get_all("Invoice", filters=filters, pluck="name")
-	return [process_invoice_dunning(name, now=now) for name in invoices]
+	return each_isolated("Dunning", "Invoice", invoices, lambda name: process_invoice_dunning(name, now=now))

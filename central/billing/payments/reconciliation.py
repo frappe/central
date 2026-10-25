@@ -28,6 +28,7 @@ at the gateway and settles it through the same idempotent path.
 
 import frappe
 
+from central.billing.platform.jobs import each_isolated
 from central.billing.states import transition
 
 _AMBIGUOUS = ("Initiated", "Authorised")
@@ -153,8 +154,14 @@ def run_reconciliation(now=None) -> list:
 		filters=[["status", "in", list(_AMBIGUOUS)], ["initiated_at", "<=", cutoff]],
 		pluck="name",
 	)
-	results = _reconcile_each(stuck, reconcile_attempt, now)
-	results += _reconcile_each(_captured_unsettled_attempts(cutoff), reconcile_captured_attempt, now)
+	results = each_isolated(
+		"Reconciliation", "Payment Attempt", stuck, lambda name: reconcile_attempt(name, now=now)
+	)
+
+	unsettled = _captured_unsettled_attempts(cutoff)
+	results += each_isolated(
+		"Reconciliation", "Payment Attempt", unsettled, lambda name: reconcile_captured_attempt(name, now=now)
+	)
 	results += reconcile_top_up_orders(now=now)
 	results += reconcile_pending_refunds()
 	return results
@@ -162,39 +169,26 @@ def run_reconciliation(now=None) -> list:
 
 def reconcile_pending_refunds() -> list[dict]:
 	"""Ask the gateway about every refund it accepted but had not paid out."""
+	names = frappe.get_all(
+		"Refund", filters={"status": "Pending", "gateway_refund_id": ["is", "set"]}, pluck="name"
+	)
+	return each_isolated("Refund reconciliation", "Refund", names, _reconcile_refund)
+
+
+def _reconcile_refund(name: str) -> dict:
 	from central.billing.gateways.base import GatewayUnsupported
 	from central.billing.payments import corrections
 
-	results = []
-	for name in frappe.get_all(
-		"Refund", filters={"status": "Pending", "gateway_refund_id": ["is", "set"]}, pluck="name"
-	):
-		refund = frappe.get_doc("Refund", name)
-		gateway = frappe.db.get_value("Payment Attempt", refund.payment_attempt, "gateway")
-		try:
-			status = _adapter(gateway).get_refund_status(refund.gateway_refund_id)
-		except GatewayUnsupported:
-			continue
-		if status != "Pending":
-			corrections.settle_gateway_refund(refund, status)
-			corrections.enqueue_steps(refund.invoice)
-		results.append({"refund": name, "status": status})
-	return results
-
-
-def _reconcile_each(names: list[str], reconcile_one, now) -> list[dict]:
-	"""Reconcile each record on its own. A gateway that cannot answer for one record leaves
-	it for the next run. Each record asks the gateway before it writes, so none is half done."""
-	from central.billing.gateways.base import GatewayError
-
-	results = []
-	for name in names:
-		try:
-			results.append(reconcile_one(name, now=now))
-		except GatewayError:
-			frappe.log_error(title=f"Reconciliation could not reach the gateway for {name}")
-			results.append({"record": name, "unresolved": "gateway_error"})
-	return results
+	refund = frappe.get_doc("Refund", name)
+	gateway = frappe.db.get_value("Payment Attempt", refund.payment_attempt, "gateway")
+	try:
+		status = _adapter(gateway).get_refund_status(refund.gateway_refund_id)
+	except GatewayUnsupported:
+		return {"refund": name, "status": "unsupported"}
+	if status != "Pending":
+		corrections.settle_gateway_refund(refund, status)
+		corrections.enqueue_steps(refund.invoice)
+	return {"refund": name, "status": status}
 
 
 def _captured_unsettled_attempts(cutoff) -> list:
@@ -275,7 +269,9 @@ def reconcile_top_up_orders(now=None) -> list[dict]:
 		},
 		pluck="name",
 	)
-	results = _reconcile_each(orders, _reconcile_top_up_order, now)
+	results = each_isolated(
+		"Top-up reconciliation", "Top-up Order", orders, lambda name: _reconcile_top_up_order(name, now)
+	)
 	return [result for result in results if result]
 
 

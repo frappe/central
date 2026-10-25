@@ -741,22 +741,30 @@ def run_credit_expiry(on_date=None) -> dict:
 		.run(as_dict=True)
 	)
 
-	swept, total = 0, 0.0
-	for scope in scopes:
-		# A wallet with nothing in it has nothing to expire; skip before taking a lock.
-		if (
-			frappe.utils.flt(
-				frappe.db.get_value("Credit Wallet", wallet_name(scope.team, scope.currency), "balance")
-			)
-			<= 0
-		):
-			continue
-		for expiry in expire_credits(scope.team, scope.currency, on_date):
-			swept += 1
-			total += expiry["amount"]
-			frappe.logger("billing").info(
-				f"expired {expiry['amount']} {scope.currency} of promotional credit "
-				f"for {scope.team} (grant {expiry['expired_grant']})"
-			)
+	from central.billing.platform.jobs import each_isolated
 
-	return {"wallets": len(scopes), "entries": swept, "amount": total}
+	# A wallet with nothing in it has nothing to expire; skip before taking a lock.
+	wallets = [
+		wallet_name(scope.team, scope.currency)
+		for scope in scopes
+		if frappe.utils.flt(
+			frappe.db.get_value("Credit Wallet", wallet_name(scope.team, scope.currency), "balance")
+		)
+		> 0
+	]
+	results = each_isolated(
+		"Credit expiry", "Credit Wallet", wallets, lambda name: _expire_wallet(name, on_date)
+	)
+	expiries = [expiry for result in results if isinstance(result, list) for expiry in result]
+	return {"wallets": len(scopes), "entries": len(expiries), "amount": sum(e["amount"] for e in expiries)}
+
+
+def _expire_wallet(wallet: str, on_date) -> list[dict]:
+	team, currency = frappe.db.get_value("Credit Wallet", wallet, ["team", "currency"])
+	expiries = expire_credits(team, currency, on_date)
+	for expiry in expiries:
+		frappe.logger("billing").info(
+			f"expired {expiry['amount']} {currency} of promotional credit "
+			f"for {team} (grant {expiry['expired_grant']})"
+		)
+	return expiries

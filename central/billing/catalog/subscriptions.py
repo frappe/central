@@ -1316,10 +1316,14 @@ def backfill_missing_subscriptions():
 	active one (e.g. the VirtualMachine's status was set Running outside the normal flow).
 	"""
 	from central.billing.doctype.subscription.subscription import create_subscription
+	from central.billing.platform.jobs import each_isolated
 	from central.signups.trial import is_billing_deferred
 
 	running_servers = frappe.get_all("Virtual Machine", filters={"status": "Running"}, pluck="name")
-	for server_id in running_servers:
-		has_active_subscription = frappe.db.exists("Subscription", {"server_id": server_id, "enabled": 1})
-		if not has_active_subscription and not is_billing_deferred(server_id):
-			create_subscription(server_id)
+	unbilled = [
+		server_id
+		for server_id in running_servers
+		if not frappe.db.exists("Subscription", {"server_id": server_id, "enabled": 1})
+		and not is_billing_deferred(server_id)
+	]
+	each_isolated("Subscription backfill", "Virtual Machine", unbilled, create_subscription)

@@ -17,6 +17,7 @@ import frappe
 
 from central.billing.ingester import connection, gst
 from central.billing.ingester.settings import accounting_settings, invoice_series, receivable_account
+from central.billing.platform.jobs import each_isolated
 
 MAX_ATTEMPTS = 3
 BACKOFF_BASE_SECONDS = 60  # 60s, 120s, 240s
@@ -128,7 +129,7 @@ def retry_failed_syncs(now=None) -> list:
 		],
 		pluck="name",
 	)
-	return [sync_invoice(name) for name in due]
+	return each_isolated("Accounting sync retry", "Invoice", due, sync_invoice)
 
 
 # --- ERPNext transport ------------------------------------------------------

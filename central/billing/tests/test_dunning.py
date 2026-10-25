@@ -552,3 +552,28 @@ class TestRetryableLater(IntegrationTestCase):
 
 	def test_an_ambiguous_failure_is_not_charged_again(self):
 		self.assertFalse(decline.is_retryable_later("processing_error", None))
+
+
+class TestOneBadInvoiceDoesNotStopTheRun(DunningTestBase):
+	def test_the_next_invoice_is_dunned_after_one_fails(self):
+		sub = self._subscription(with_card=False)
+		broken = self._open_invoice(sub)
+		april = {
+			"period_start": "2026-04-01",
+			"period_end": "2026-04-30",
+			"period_key": f"{TEAM}|2026-04-01|2026-04-30",
+		}
+		frappe.db.set_value("Invoice", broken, april)  # one live invoice per period
+		healthy = self._open_invoice(sub, total=2000)
+		real = dunning.process_invoice_dunning
+
+		def process(name, now=None):
+			if name == broken:
+				raise RuntimeError("bad row")
+			return real(name, now=now)
+
+		with patch.object(dunning, "process_invoice_dunning", side_effect=process):
+			results = dunning.run_dunning(now=day(7))
+
+		self.assertIn({"name": broken, "failed": True}, results)
+		self.assertEqual(frappe.db.get_value("Invoice", healthy, "status"), "Overdue")
