@@ -2,14 +2,17 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import frappe
+import jwt
 from frappe.tests import IntegrationTestCase
 
+from central.central.doctype.central_sso_settings.central_sso_settings import CentralSSOSettings
 from central.infrastructure.doctype.wireguard_device.wireguard_device import (
 	remove_pending_devices,
 	restore_devices,
 )
 from central.integrations.wireguard import WireGuardGatewayClient, WireGuardGatewayError
 from central.permissions import wireguard_device_has_permission, wireguard_device_query_conditions
+from central.sso import mint_wireguard_token
 from central.tests.test_iam import ensure_user
 from central.tests.utils import ensure_atlas_instance
 
@@ -153,3 +156,11 @@ class TestWireGuardAccess(IntegrationTestCase):
 		with self.assertRaisesRegex(WireGuardGatewayError, "already used by another device"):
 			client.register_peer(1, 1, PUBLIC_KEY)
 		self.assertEqual(register.call_count, 2)
+
+	def test_gateway_token_carries_no_tenant(self) -> None:
+		CentralSSOSettings.instance().initialize_signing_key("atlas")
+		claims = jwt.decode(mint_wireguard_token(7), options={"verify_signature": False})
+
+		self.assertEqual(claims["aud"], "atlas-wg-gateway:7")
+		self.assertEqual(claims["scope"].split(), ["peers:read", "peers:update"])
+		self.assertNotIn("tenant", claims)
