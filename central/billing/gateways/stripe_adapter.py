@@ -353,26 +353,7 @@ class StripeAdapter(GatewayAdapter):
 		SAME idempotency key (Stripe dedupes), never double-charging.
 		"""
 		self._configure()
-		amount_minor = round((invoice.amount or 0) * 100)
-		# Required for India-account export charges (see validate_payment_method).
-		params = dict(
-			amount=amount_minor,
-			currency=(invoice.currency or "").lower(),
-			customer=invoice.get("customer_id"),
-			payment_method=payment_method.gateway_method_id,
-			off_session=True,
-			confirm=True,
-			idempotency_key=idempotency_key,
-			description=f"Invoice {invoice.get('name') or ''}".strip(),
-		)
-		shipping = _export_shipping(invoice.get("team") or payment_method.get("team"))
-		if shipping:
-			params["shipping"] = shipping
-		# An Indian mandate debit has to quote the mandate the bank issued at setup;
-		# the card alone is not authority to charge off-session there.
-		mandate = payment_method.get("gateway_mandate_id")
-		if mandate:
-			params["mandate"] = mandate
+		params = _charge_params(invoice, payment_method, idempotency_key)
 		try:
 			intent = _to_dict(stripe.PaymentIntent.create(**params, **self._options()))
 		except (stripe.error.CardError, *_INVALID_REQUEST) as e:
@@ -728,3 +709,27 @@ def _stripe_errors():
 		raise
 	except stripe.error.StripeError as e:
 		raise GatewayError(str(e)) from e
+
+
+def _charge_params(invoice, payment_method, idempotency_key: str) -> dict:
+	"""The off-session PaymentIntent for an invoice charge."""
+	params = dict(
+		amount=round((invoice.amount or 0) * 100),
+		currency=(invoice.currency or "").lower(),
+		customer=invoice.get("customer_id"),
+		payment_method=payment_method.gateway_method_id,
+		off_session=True,
+		confirm=True,
+		idempotency_key=idempotency_key,
+		description=f"Invoice {invoice.get('name') or ''}".strip(),
+	)
+	# Required for India-account export charges (see validate_payment_method).
+	shipping = _export_shipping(invoice.get("team") or payment_method.get("team"))
+	if shipping:
+		params["shipping"] = shipping
+	# An Indian mandate debit has to quote the mandate the bank issued at setup;
+	# the card alone is not authority to charge off-session there.
+	mandate = payment_method.get("gateway_mandate_id")
+	if mandate:
+		params["mandate"] = mandate
+	return params

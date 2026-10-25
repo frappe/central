@@ -419,3 +419,13 @@ class TestFailedWebhookIsKept(IntegrationTestCase):
 			"Webhook Event", self.event.name, {"status": "Failed", "retry_count": webhooks.MAX_TRIES}
 		)
 		self.assertNotIn(self.event.name, webhooks.retry_failed_webhooks())
+
+	def test_an_event_already_applied_is_not_applied_again(self):
+		"""A slow job and the sweep can both reach an event; the one that waits finds it done."""
+		from central.billing.payments import webhooks
+
+		frappe.db.set_value("Webhook Event", self.event.name, "status", "Processed")
+		with patch("central.billing.payments.charges.apply_webhook") as apply:
+			out = webhooks.handle_webhook_event(self.event.name)
+		apply.assert_not_called()
+		self.assertEqual(out["reason"], "already_applied")

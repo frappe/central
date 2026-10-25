@@ -60,12 +60,13 @@ def _failed_methods_for(invoice: str, earlier: set | None = None) -> set:
 	}
 
 
-def next_method_for(invoice: str, team: str, earlier: set | None = None):
+def next_method_for(invoice: str, team: str, earlier: set | None = None, skip: set | None = None):
 	"""The next untried, chargeable method for this invoice, or None if exhausted.
-	`earlier` starts a new round, as in `_failed_methods_for`."""
-	failed = _failed_methods_for(invoice, earlier)
+	`earlier` starts a new round, as in `_failed_methods_for`. `skip` holds methods that
+	cannot be charged in this run."""
+	passed_over = _failed_methods_for(invoice, earlier) | (skip or set())
 	for method in ordered_methods(team):
-		if method.name not in failed:
+		if method.name not in passed_over:
 			return method
 	return None
 
@@ -94,7 +95,7 @@ def _ask_for_another_method(inv) -> None:
 	)
 
 
-def _owes_notice_first(inv, method) -> bool:
+def _is_waiting_for_notice(inv, method) -> bool:
 	"""Whether this rail needs a pre-debit notice (RBI e-mandate rules) whose window has
 	not yet passed for this invoice."""
 	from central.billing.gateways import capabilities
@@ -103,6 +104,18 @@ def _owes_notice_first(inv, method) -> bool:
 		return False
 	charge_after = frappe.db.get_value("Invoice", inv.name, "predebit_charge_after")
 	return not charge_after or frappe.utils.now_datetime() < frappe.utils.get_datetime(charge_after)
+
+
+def _arm_predebit_notice(invoice: str, method) -> dict | None:
+	"""Send the notice for this rail, or find the one already sent. None when the rail
+	cannot debit this invoice now (not on Auto Charge, or over the silent ceiling), so
+	the next method is tried instead of waiting on a window that never opens."""
+	from central.billing.payments import emandate
+
+	notice = emandate.schedule_predebit(invoice, gateway=method.gateway)
+	if notice.get("notified") or notice.get("skipped") == "already_notified":
+		return notice
+	return None
 
 
 def collect_invoice(invoice: str, new_round: bool = False) -> dict:
@@ -119,37 +132,46 @@ def collect_invoice(invoice: str, new_round: bool = False) -> dict:
 	if is_internal_team(inv.team):
 		return {"collected": False, "reason": "internal_team"}
 	earlier = attempts_of(invoice) if new_round else None
-
+	skipped = set()
 	while True:
-		if in_flight := charges.in_flight_attempt(invoice):
-			return {"collected": False, "reason": "attempt_in_flight", "attempt": in_flight}
+		outcome = _charge_next_method(inv, earlier, skipped)
+		if outcome is not None:
+			return outcome
 
-		method = next_method_for(invoice, inv.team, earlier)
-		if not method:
-			# Every method has failed (or there are none) — leave it for dunning, and
-			# ask the customer for another way to pay. Off-session there is nobody to
-			# offer the other rail to in the moment, so the ask has to arrive as a
-			# notification instead (ADR 0022 §5, ADR 0023).
-			_ask_for_another_method(inv)
-			return {"collected": False, "reason": "no_method"}
 
-		if _owes_notice_first(inv, method):
-			# Every off-session debit on this rail waits for its pre-debit notice and window,
-			# whichever path asked for it: the billing run, a dunning retry or a webhook.
-			from central.billing.payments import emandate
+def _charge_next_method(inv, earlier: set | None, skipped: set) -> dict | None:
+	"""Try the next method once. Returns the outcome to stop on, or None to rotate to the
+	next method (a final decline, or a rail that cannot debit now, added to `skipped`)."""
+	if in_flight := charges.in_flight_attempt(inv.name):
+		return {"collected": False, "reason": "attempt_in_flight", "attempt": in_flight}
 
-			notice = emandate.schedule_predebit(invoice, gateway=method.gateway)
+	method = next_method_for(inv.name, inv.team, earlier, skip=skipped)
+	if not method:
+		# Every method has failed (or there are none) — leave it for dunning, and
+		# ask the customer for another way to pay. Off-session there is nobody to
+		# offer the other rail to in the moment, so the ask has to arrive as a
+		# notification instead (ADR 0022 §5, ADR 0023).
+		_ask_for_another_method(inv)
+		return {"collected": False, "reason": "no_method"}
+
+	if _is_waiting_for_notice(inv, method):
+		# Every off-session debit on this rail waits for its pre-debit notice and window,
+		# whichever path asked for it: the billing run, a dunning retry or a webhook.
+		notice = _arm_predebit_notice(inv.name, method)
+		if notice:
 			return {"collected": False, "reason": "awaiting_predebit_window", **notice}
+		skipped.add(method.name)
+		return None
 
-		result = charges.pay_invoice(invoice, method.name, method.gateway)
+	result = charges.pay_invoice(inv.name, method.name, method.gateway)
 
-		# A synchronous decline: rotate to the next method now (immediate fallback) —
-		# but only when the decline is final. An ambiguous failure may still settle at
-		# the gateway, and charging a second method on top of it pays one invoice
-		# twice; reconciliation resolves those instead (ADR 0022).
-		if result.get("status") == "Failed":
-			if not decline.is_terminal(result.get("failure_code")):
-				return {"collected": False, "reason": "ambiguous_failure", "attempt": result.get("attempt")}
-			continue
+	# A synchronous decline: rotate to the next method now (immediate fallback) —
+	# but only when the decline is final. An ambiguous failure may still settle at
+	# the gateway, and charging a second method on top of it pays one invoice
+	# twice; reconciliation resolves those instead (ADR 0022).
+	if result.get("status") != "Failed":
 		# Captured (awaiting webhook), in-flight, or a transient timeout: stop here.
 		return result
+	if not decline.is_terminal(result.get("failure_code")):
+		return {"collected": False, "reason": "ambiguous_failure", "attempt": result.get("attempt")}
+	return None

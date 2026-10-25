@@ -275,3 +275,31 @@ class TestPayPalAdapter(GatewayAdapterContract, IntegrationTestCase):
 			card = adapter.read_saved_card("setup_1")
 		create.assert_called_once_with("setup_1")
 		self.assertEqual((card["payment_method"], card["label"]), ("vault_tok", "buyer@example.com"))
+
+	def test_an_order_is_paid_only_once_captured(self):
+		adapter = self.make_adapter()
+		captured = {
+			"id": "order_7",
+			"status": "COMPLETED",
+			"purchase_units": [
+				{
+					"payments": {
+						"captures": [
+							{
+								"id": "cap_7",
+								"status": "COMPLETED",
+								"amount": {"value": "40.00", "currency_code": "usd"},
+							}
+						]
+					}
+				}
+			],
+		}
+		with patch.object(PayPalAdapter, "_get_order", return_value={"id": "order_7", "status": "APPROVED"}):
+			self.assertIsNone(adapter.find_order_payment("order_7"))
+		with patch.object(PayPalAdapter, "_get_order", return_value=captured):
+			payment = adapter.find_order_payment("order_7")
+		self.assertEqual(
+			(payment.payment_id, payment.amount, payment.currency, payment.order_id),
+			("cap_7", 40.0, "USD", "order_7"),
+		)

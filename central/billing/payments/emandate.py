@@ -39,6 +39,16 @@ def _rail_requires_notice(team: str) -> bool:
 	return bool(gateway and currency and capabilities.requires_predebit_notice(gateway, currency))
 
 
+def _is_notice_required(inv, gateway: str | None) -> bool:
+	"""Whether the rail about to debit owes a notice: `gateway` when the caller names it,
+	otherwise the team's own rail."""
+	from central.billing.gateways import capabilities
+
+	if gateway:
+		return capabilities.requires_predebit_notice(gateway, inv.currency)
+	return _rail_requires_notice(inv.team)
+
+
 def schedule_predebit(invoice: str, now=None, gateway: str | None = None) -> dict:
 	"""Send the pre-debit notice for an e-mandate invoice and arm its debit window.
 	Over the silent ceiling → fork to Action Required rather than promise a debit we
@@ -46,17 +56,10 @@ def schedule_predebit(invoice: str, now=None, gateway: str | None = None) -> dic
 
 	`gateway` is the rail about to debit, when the caller knows it (a fallback onto a
 	second rail); otherwise the team's own rail decides."""
-	from central.billing.gateways import capabilities
-
 	inv = frappe.get_doc("Invoice", invoice)
 	if frappe.db.get_value("Billing Profile", inv.team, "collection_mode") != "Auto Charge":
 		return {"invoice": invoice, "skipped": "not_auto_charge"}
-	owes_notice = (
-		capabilities.requires_predebit_notice(gateway, inv.currency)
-		if gateway
-		else _rail_requires_notice(inv.team)
-	)
-	if not owes_notice:
+	if not _is_notice_required(inv, gateway):
 		# A rail that debits without a notice is collected by the ordinary sweep. Arming
 		# a 24h window here would delay every international charge for nothing.
 		return {"invoice": invoice, "skipped": "no_notice_required"}

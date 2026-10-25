@@ -365,6 +365,31 @@ class TestOneInvoiceIsNeverChargedTwiceAcrossRails(IntegrationTestCase):
 		self.assertEqual(self._charged_gateways(), ["Stripe"])  # Razorpay not debited yet
 		self.assertTrue(frappe.db.get_value("Invoice", self.invoice, "predebit_charge_after"))
 
+	def test_a_mandate_rail_that_cannot_arm_its_notice_passes_to_the_next_method(self):
+		"""Off Auto Charge no notice is sent, so the window never opens; waiting on it would
+		leave the card behind it untried on every retry."""
+		from unittest.mock import MagicMock, patch
+
+		from central.billing.gateways.base import PaymentResult
+		from central.billing.payments import collection
+
+		frappe.db.set_value("Payment Method", self.razorpay_method, "priority", 0)
+		frappe.db.set_value("Payment Method", self.stripe_method, "priority", 1)
+		frappe.db.set_value(
+			"Invoice", self.invoice, {"predebit_notified_at": None, "predebit_charge_after": None}
+		)
+		frappe.db.set_value("Billing Profile", TEAM, "collection_mode", "Prepaid")
+		adapter = MagicMock()
+		adapter.prepare_charge.return_value = None
+		adapter.charge.return_value = PaymentResult(
+			success=True, status="Captured", gateway_transaction_id="pi_ok"
+		)
+		with patch("central.billing.gateways.registry.get_adapter", return_value=adapter):
+			out = collection.collect_invoice(self.invoice)
+
+		self.assertNotEqual(out.get("reason"), "awaiting_predebit_window")
+		self.assertEqual(self._charged_gateways(), ["Stripe"])
+
 	def test_nothing_is_asked_of_a_team_that_never_had_a_method(self):
 		"""Nothing was tried, so there is nothing to report — onboarding and the
 		Action Required banner already carry that conversation."""

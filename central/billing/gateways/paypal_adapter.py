@@ -209,18 +209,17 @@ class PayPalAdapter(GatewayAdapter):
 		"""A capture event. Only the order id binds it: the browser can create a PayPal order
 		and set its custom_id, so that is never read as our receipt."""
 		resource = payload.get("resource") or {}
-		if not (payload.get("event_type") or "").startswith("PAYMENT.CAPTURE.") or not resource.get("id"):
+		event_type = payload.get("event_type") or ""
+		if not event_type.startswith("PAYMENT.CAPTURE.") or event_type == "PAYMENT.CAPTURE.REFUNDED":
 			return None
-		if payload.get("event_type") == "PAYMENT.CAPTURE.REFUNDED":
+		if not resource.get("id"):
 			return None
-		amount = resource.get("amount") or {}
-		related = (resource.get("supplementary_data") or {}).get("related_ids") or {}
 		return VerifiedPayment(
 			payment_id=resource["id"],
 			captured=resource.get("status") == "COMPLETED",
-			amount=frappe_flt(amount.get("value")),
-			currency=(amount.get("currency_code") or "").upper(),
-			order_id=related.get("order_id"),
+			amount=frappe_flt(_dig(resource, "amount", "value")),
+			currency=str(_dig(resource, "amount", "currency_code") or "").upper(),
+			order_id=_dig(resource, "supplementary_data", "related_ids", "order_id"),
 		)
 
 	@staticmethod
@@ -236,12 +235,12 @@ class PayPalAdapter(GatewayAdapter):
 			return None
 		resource = payload.get("resource") or {}
 		transactions = resource.get("disputed_transactions") or [{}]
-		outcome = (resource.get("dispute_outcome") or {}).get("outcome_code")
+		outcome = _dig(resource, "dispute_outcome", "outcome_code")
 		opened = payload.get("event_type") == "CUSTOMER.DISPUTE.CREATED"
 		return {
 			"id": resource.get("dispute_id"),
 			"payment_id": transactions[0].get("seller_transaction_id"),
-			"amount": frappe_flt((resource.get("dispute_amount") or {}).get("value")),
+			"amount": frappe_flt(_dig(resource, "dispute_amount", "value")),
 			"reason": resource.get("reason") or "unknown",
 			"status": "open" if opened else _DISPUTE_OUTCOMES.get(outcome, resource.get("status")),
 		}
@@ -269,6 +268,21 @@ class PayPalAdapter(GatewayAdapter):
 			# PayPal's client id is public (it ships in the browser SDK), unlike the secret.
 			"client_id": self.gateway.get_password("api_key"),
 		}
+
+	def find_order_payment(self, order_id: str) -> VerifiedPayment | None:
+		"""The completed capture on an order Central created, or None. An order the payer
+		only approved holds no money until Central captures it."""
+		capture = _extract_capture(self._get_order(order_id))
+		# Without captures, _extract_capture falls back to the order's own id and status.
+		if capture.get("status") != "COMPLETED" or capture.get("id") == order_id:
+			return None
+		return VerifiedPayment(
+			payment_id=capture["id"],
+			captured=True,
+			amount=frappe_flt(capture.get("amount")),
+			currency=(capture.get("currency") or "").upper(),
+			order_id=order_id,
+		)
 
 	def capture_order(self, order_id: str) -> dict:
 		"""Capture an approved one-time order; returns {id, status, amount, currency}
@@ -407,6 +421,13 @@ class PayPalAdapter(GatewayAdapter):
 		resp.raise_for_status()
 		return resp.json()
 
+	def _get_order(self, order_id) -> dict:
+		resp = requests.get(
+			f"{self._base()}/v2/checkout/orders/{order_id}", headers=self._headers(), timeout=30
+		)
+		resp.raise_for_status()
+		return resp.json()
+
 	def _get_capture(self, capture_id) -> dict:
 		resp = requests.get(
 			f"{self._base()}/v2/payments/captures/{capture_id}", headers=self._headers(), timeout=30
@@ -436,6 +457,13 @@ class PayPalAdapter(GatewayAdapter):
 
 # A pending refund can still fail, so it is not Completed.
 _REFUND_STATUS = {"COMPLETED": "Completed", "PENDING": "Pending", "FAILED": "Failed", "CANCELLED": "Failed"}
+
+
+def _dig(data: dict, *keys):
+	"""A nested value of a PayPal body, or None where any level is missing."""
+	for key in keys:
+		data = data.get(key) if isinstance(data, dict) else None
+	return data
 
 
 def frappe_flt(value) -> float:

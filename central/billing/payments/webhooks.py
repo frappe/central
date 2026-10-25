@@ -126,7 +126,14 @@ def handle_webhook_event(event_name: str):
 	A handler that raises leaves nothing half-written: its work is rolled back, the
 	event is marked Failed with the error, and `retry_failed_webhooks` tries it again.
 	`platform.alerts.failed_webhooks` pages an operator while it stays Failed. It runs as
-	a background job, which commits the Failed mark because this returns normally."""
+	a background job, which commits the Failed mark because this returns normally.
+
+	A slow job and the retry sweep can reach the same event. The row lock makes the
+	second wait, and it then finds the event already applied."""
+	status = frappe.db.get_value("Webhook Event", event_name, "status", for_update=True)
+	if status not in ("Received", "Failed"):
+		return {"handled": False, "reason": "already_applied"}
+
 	save_point = "apply_webhook_event"
 	frappe.db.savepoint(save_point)
 	try:

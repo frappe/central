@@ -135,8 +135,7 @@ class TestGatewaySetupValidation(IntegrationTestCase):
 		self.assertEqual(doc.get_password("webhook_secret"), "whsec_manual")
 
 	def test_unrelated_edit_does_not_revalidate(self):
-		# A local site cannot register its webhook, so the admin types the secret.
-		doc = _new_gateway(webhook_secret="whsec_typed")
+		doc = _new_gateway()
 		with (
 			patch.object(
 				StripeAdapter,
@@ -351,3 +350,13 @@ class TestEnableNeedsAWebhookSecret(IntegrationTestCase):
 		):
 			with self.assertRaisesRegex(frappe.ValidationError, "secret"):
 				doc.save(ignore_permissions=True)
+
+	def test_an_enabled_gateway_without_a_secret_still_takes_an_unrelated_edit(self):
+		frappe.db.set_value(
+			"Payment Gateway", "Stripe", {"is_enabled": 1, "credentials_validated_at": frappe.utils.now()}
+		)
+		doc = frappe.get_doc("Payment Gateway", "Stripe")
+		doc.flags.force_credential_validation = True
+		doc.supports_mandates = 1
+		with patch.object(StripeAdapter, "get_credential", return_value=None):
+			doc.save(ignore_permissions=True)
