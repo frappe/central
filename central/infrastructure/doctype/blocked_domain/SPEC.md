@@ -23,8 +23,8 @@ Central creates these defaults in each configured service zone:
 
 | Name | Match mode |
 |---|---|
-| Common service and account names, such as `admin`, `api`, `login`, `mail`, `root`, `support`, and `www` | Exact |
-| `proxy-`, `s3-svc`, `s3-admin-svc`, `cargo-pilot`, `central` | Prefix |
+| Common service and account names, such as `admin`, `api`, `login`, `mail`, `root`, `support`, `wireguard`, and `www` | Exact |
+| `proxy-`, `wireguard-`, `s3-svc`, `s3-admin-svc`, `cargo-pilot`, `central` | Prefix |
 
 The [default list](defaults.json) includes common service and account names from this [reserved-name list](https://gist.github.com/anburocky3/9bc248a56b377178e5205dcd9ebbcc28). These names use exact matches, so `support-team` remains available.
 

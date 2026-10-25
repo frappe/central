@@ -60,7 +60,7 @@ Central separates token purposes by the required `scope` claim and by the audien
 | `site` | `mint_site_login` | bench's `audience_id` | 5 min | Pilot (Ed25519) | the bench (site login) |
 | `enroll` | `mint_bootstrap_token` | `pilot_credential_id` | 30 min | Pilot (Ed25519) | Central (`verify_bootstrap_token`, asserts `scope == enroll`) |
 | `datum` | `mint_datum_token` | `atlas-datum:<region id>` | 7 days | Atlas (Ed25519) | Datum, for metrics and logs |
-| regional | `mint_atlas_token` / `mint_proxy_token` / `mint_cargo_token` | `atlas-admin:<region id>` / `atlas-proxy:<region id>` / `atlas-cargo:<region id>` | 5 min | Atlas (Ed25519) | Atlas, the regional proxy, Cargo |
+| regional | `mint_atlas_token` / `mint_proxy_token` / `mint_cargo_token` / `mint_wireguard_token` | `atlas-admin:<region id>` / `atlas-proxy:<region id>` / `atlas-cargo:<region id>` / `atlas-wg-gateway:<region id>` | 5 min | Atlas (Ed25519) | Atlas, the regional proxy, Cargo, the WireGuard gateway |
 
 One `datum` token serves both write paths. One route hands it out: `central.api.pilot.datum_token`. Datum tells metrics from logs by the route the Pilot posts to, not by the credential. A second token would carry the same `resource_id` and the same authority. It is signed with the Atlas key, not the Pilot key, because Datum verifies against the merged key set that Atlas publishes. `iss` is the literal `central`, and the key id has the `central:` namespace. Datum uses these two values to bind one to the other. The audience names one region, so every other region refuses the token.
 

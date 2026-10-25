@@ -129,12 +129,14 @@ class Team(TeamLifecycle, Document):
 
 	def on_update(self) -> None:
 		from central.billing.payments.provisioning import on_team_update
+		from central.infrastructure.doctype.wireguard_device.wireguard_device import remove_departed_devices
 
 		# Team and member-row edits change resolved capabilities; drop the request-cached
 		# grants so later checks in this request see the new state.
 		clear_grants_cache()
 		# A staging-trial team keeps a complete billing profile, so it can create servers.
 		on_team_update(self)
+		remove_departed_devices(self)
 
 	def on_trash(self) -> None:
 		self._require_capability("team:delete")

@@ -141,6 +141,17 @@ Atlas applies an attach or detach after it replies. Central waits up to 30 secon
 
 A public IPv4 is billed from the first read that reports it until a read no longer reports it, or the server is terminated. `VirtualMachine.sync_public_ipv4_billing` opens and closes one `Subscription` per server, linked by `public_ip_server`. The price is the Catalog Rate of the `IP` Resource Type for the team's currency, optionally per region. The starter rates are INR 170 and USD 2 per month. Central refuses to attach an IPv4, or to create a server with one, in a region without a rate. IPv6 is free.
 
+## WireGuard gateway
+
+A region with **WireGuard Gateway** on serves customer devices at `https://wireguard.<region zone>`. Central signs a token with audience `atlas-wg-gateway:<region ID>` and scope `peers:read peers:update`, with no tenant claim. Each device is the Team `tenant_id` and a client ID. See [WireGuard Device](../central/infrastructure/doctype/wireguard_device/SPEC.md).
+
+| Operation | Request | Notes |
+| --- | --- | --- |
+| Add a device | `POST /v1/peers` | Central retries once on HTTP 503. HTTP 409 means the key is in use. |
+| Remove a device | `DELETE /v1/peers` | A missing device is not an error, so the retry job is safe. |
+| Restore a region | `GET /v1/peers`, then `PUT /v1/peers` | Operator action on Region. Never retried by itself. |
+| Server access | `PATCH /virtual-machines/{id}/network` with `wireguard_gateway_access` | Needs `server:network`. Off by default. |
+
 ## Termination protection
 
 A member with `server:terminate` can turn termination protection on or off with the lock button in the server header. Central sends `PATCH /virtual-machines/{id}/termination-protection` and stores the `is_termination_protected` value that Atlas returns on the Virtual Machine. Atlas does not report this value in a VM read, so the stored value changes only through this request. Central refuses a terminate request for a protected server before it queues a Resource Action, and Atlas also refuses to delete a protected VM.

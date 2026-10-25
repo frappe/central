@@ -268,9 +268,14 @@
    "group": "Infrastructure",
    "link_doctype": "Site Domain",
    "link_fieldname": "team"
+  },
+  {
+   "group": "Access",
+   "link_doctype": "WireGuard Device",
+   "link_fieldname": "team"
   }
  ],
- "modified": "2026-10-06 00:59:08.657647",
+ "modified": "2026-10-25 17:34:52.163870",
  "modified_by": "Administrator",
  "module": "Identity",
  "name": "Team",
