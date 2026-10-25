@@ -133,5 +133,6 @@
  ],
  "sort_field": "occurred_at",
  "sort_order": "DESC",
- "states": []
+ "states": [],
+ "track_changes": 1
 }

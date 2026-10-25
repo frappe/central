@@ -272,8 +272,11 @@ def cancel_invoice(invoice: str, reason: str | None = None) -> str:
 	Issued line items are never mutated — a correction cancels the whole invoice
 	and reissues a fresh one. What the invoice drew from the wallet goes back to it.
 	A paid invoice is cancelled with a refund instead.
+
+	The invoice row is locked before the checks, the same row a charge locks to claim
+	its attempt, so a charge cannot start between the check and the cancel.
 	"""
-	doc = frappe.get_doc("Invoice", invoice)
+	doc = frappe.get_doc("Invoice", invoice, for_update=True)
 	if doc.status == "Paid":
 		frappe.throw(
 			_("A paid invoice cannot be cancelled on its own — cancel and refund it instead."),

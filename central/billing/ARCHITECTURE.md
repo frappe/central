@@ -143,6 +143,8 @@ Commitment ──team, ──currency              (spend floor)
 Usage Rollup ──team                            (metered aggregation)
 ```
 
+Money records (Invoice, Payment Attempt, Refund, Credit Ledger Entry, Credit Wallet, Usage Rollup, Webhook Event, Billing Event, Top-up Order) are read-only in Desk and keep a change history. `platform.records` refuses an edit or delete that does not come from billing code (which always passes `ignore_permissions`), Administrator included. A person changes them through the action that owns the change: cancel, refund, retry.
+
 **Payment plumbing**
 ```
 Billing Profile ──team, ──currency, ──country, ──trust_tier_level   (currency = source of truth, locks after activity)

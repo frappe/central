@@ -196,6 +196,24 @@ doc_events = {
 	"Payment Method": {
 		"on_update": "central.signups.credit.on_payment_method_update",
 	},
+	# Money records change only through billing code (central/billing/platform/records.py).
+	**{
+		doctype: {
+			"validate": "central.billing.platform.records.refuse_manual_edit",
+			"on_trash": "central.billing.platform.records.refuse_manual_delete",
+		}
+		for doctype in (
+			"Invoice",
+			"Payment Attempt",
+			"Refund",
+			"Credit Ledger Entry",
+			"Credit Wallet",
+			"Usage Rollup",
+			"Webhook Event",
+			"Billing Event",
+			"Top-up Order",
+		)
+	},
 }
 
 # Scheduled Tasks

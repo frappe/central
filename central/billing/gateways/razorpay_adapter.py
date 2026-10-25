@@ -180,6 +180,8 @@ class RazorpayAdapter(GatewayAdapter):
 					"notes": {"invoice": invoice.get("name")},
 				}
 			)
+		except razorpay.errors.BadRequestError as e:
+			raise GatewayError(str(e)) from e
 		except _TRANSIENT as e:
 			raise GatewayTimeout(str(e)) from e
 		return order["id"]

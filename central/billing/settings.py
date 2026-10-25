@@ -168,10 +168,15 @@ def free_snapshots_per_server() -> int:
 	return frappe.utils.cint(_settings().free_snapshots_per_server)
 
 
+# A chargeback can arrive up to about 120 days after the charge, and its handler needs
+# the webhook trail; a shorter window would delete what a dispute is matched against.
+MIN_PAYMENT_LOG_RETENTION_DAYS = 180
+
+
 def payment_log_retention_days() -> int:
 	"""Rolling window (days) the gateway logs — Payment Attempt and Webhook Event —
-	are kept before daily pruning."""
-	return frappe.utils.cint(_settings().payment_log_retention_days)
+	are kept before daily pruning. Never below `MIN_PAYMENT_LOG_RETENTION_DAYS`."""
+	return max(frappe.utils.cint(_settings().payment_log_retention_days), MIN_PAYMENT_LOG_RETENTION_DAYS)
 
 
 def default_gst_rate() -> float:

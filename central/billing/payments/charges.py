@@ -19,7 +19,7 @@ from frappe import _
 
 from central.billing import settings
 from central.billing.doctype.payment_attempt.payment_attempt import idempotency_key
-from central.billing.gateways.base import GatewayTimeout
+from central.billing.gateways.base import GatewayError, GatewayTimeout, PaymentResult
 from central.billing.payments.decline import Failure
 from central.billing.states import transition
 
@@ -184,23 +184,40 @@ def _charge_claimed_attempt(attempt_name: str) -> dict:
 		if not attempt.gateway_order_id:
 			# A gateway without a charge idempotency key (Razorpay) needs its order stored
 			# before the payment is made, so a retry finds that payment instead of a new one.
-			charge_input.order_id = adapter.prepare_charge(charge_input, attempt.name)
+			try:
+				charge_input.order_id = adapter.prepare_charge(charge_input, attempt.name)
+			except GatewayTimeout:
+				raise
+			except GatewayError as e:
+				# The gateway refused to open the charge; nothing was taken.
+				refused = PaymentResult(
+					success=False, status="Failed", failure_code="order_refused", failure_reason=str(e)
+				)
+				return _record_result(attempt, refused)
 			if charge_input.order_id:
 				attempt.db_set("gateway_order_id", charge_input.order_id)
 				_persist()
 		result = adapter.charge(charge_input, method, attempt.idempotency_key)
 	except GatewayTimeout as e:
-		# Transient: leave the attempt initiated so a retry reuses the same key.
-		attempt.failure_reason = str(e)[:140]
-		attempt.save(ignore_permissions=True)
-		# We never reached the customer — a rate limit or a network fault is ours, not
-		# theirs — so their retry ladder must not start ticking on it.
-		from central.billing.revenue.dunning import defer_dunning
+		return _defer(attempt, e)
+	return _record_result(attempt, result)
 
-		defer_dunning(attempt.invoice, f"gateway unreachable: {str(e)[:80]}")
-		_persist()
-		return {"charged": False, "reason": "timeout", "attempt": attempt.name}
 
+def _defer(attempt, e) -> dict:
+	"""Transient: leave the attempt initiated so a retry reuses the same key."""
+	attempt.failure_reason = str(e)[:140]
+	attempt.save(ignore_permissions=True)
+	# We never reached the customer — a rate limit or a network fault is ours, not
+	# theirs — so their retry ladder must not start ticking on it.
+	from central.billing.revenue.dunning import defer_dunning
+
+	defer_dunning(attempt.invoice, f"gateway unreachable: {str(e)[:80]}")
+	_persist()
+	return {"charged": False, "reason": "timeout", "attempt": attempt.name}
+
+
+def _record_result(attempt, result) -> dict:
+	"""Write down what the gateway answered for this attempt, and commit it."""
 	attempt.gateway_transaction_id = result.gateway_transaction_id
 	# The gateway is holding the charge on purpose — Stripe's India pre-debit window,
 	# where the bank notifies the customer first and the money moves a day later. It
@@ -710,13 +727,15 @@ def cleanup_payment_logs(now=None) -> dict:
 
 
 def _prune_payment_attempts(cutoff) -> int:
-	"""Delete terminal attempts older than cutoff, keeping any the audit chain or
-	an open invoice still needs."""
+	"""Delete failed attempts older than cutoff, keeping any an open invoice still needs.
+
+	A Captured or Refunded attempt is never deleted: a later refund or chargeback finds
+	the charge through it, and the money trail must outlive any log window."""
 	# Attempts referenced by a Refund anchor the refund audit chain — never drop.
 	keep = set(frappe.get_all("Refund", pluck="payment_attempt") or [])
 	candidates = frappe.get_all(
 		"Payment Attempt",
-		filters={"status": ["in", _TERMINAL_ATTEMPT], "creation": ["<", cutoff]},
+		filters={"status": "Failed", "creation": ["<", cutoff]},
 		fields=["name", "invoice"],
 	)
 	deleted = 0
