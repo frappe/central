@@ -45,7 +45,8 @@
    "fieldname": "team",
    "fieldtype": "Link",
    "options": "Team",
-   "label": "Team"
+   "label": "Team",
+   "search_index": 1
   },
   {
    "fieldname": "gateway",
@@ -183,7 +184,7 @@
    "link_fieldname": "payment_attempt"
   }
  ],
- "modified": "2026-10-25 12:00:00.000000",
+ "modified": "2026-10-25 13:00:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Payment Attempt",

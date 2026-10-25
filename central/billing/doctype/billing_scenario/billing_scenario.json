@@ -9,7 +9,7 @@
  "engine": "InnoDB",
  "index_web_pages_for_search": 0,
  "links": [],
- "modified": "2026-08-07 00:00:00.000000",
+ "modified": "2026-10-25 13:00:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Billing Scenario",
@@ -44,7 +44,8 @@
    "label": "Team",
    "options": "Team",
    "in_list_view": 1,
-   "description": "Leave blank for a cohort scenario."
+   "description": "Leave blank for a cohort scenario.",
+   "search_index": 1
   },
   {
    "fieldname": "column_break_period",
