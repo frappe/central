@@ -94,6 +94,17 @@ def _ask_for_another_method(inv) -> None:
 	)
 
 
+def _owes_notice_first(inv, method) -> bool:
+	"""Whether this rail needs a pre-debit notice (RBI e-mandate rules) whose window has
+	not yet passed for this invoice."""
+	from central.billing.gateways import capabilities
+
+	if not capabilities.requires_predebit_notice(method.gateway, inv.currency):
+		return False
+	charge_after = frappe.db.get_value("Invoice", inv.name, "predebit_charge_after")
+	return not charge_after or frappe.utils.now_datetime() < frappe.utils.get_datetime(charge_after)
+
+
 def collect_invoice(invoice: str, new_round: bool = False) -> dict:
 	"""Charge the next untried method; rotate immediately on a synchronous decline.
 
@@ -121,6 +132,14 @@ def collect_invoice(invoice: str, new_round: bool = False) -> dict:
 			# notification instead (ADR 0022 §5, ADR 0023).
 			_ask_for_another_method(inv)
 			return {"collected": False, "reason": "no_method"}
+
+		if _owes_notice_first(inv, method):
+			# Every off-session debit on this rail waits for its pre-debit notice and window,
+			# whichever path asked for it: the billing run, a dunning retry or a webhook.
+			from central.billing.payments import emandate
+
+			notice = emandate.schedule_predebit(invoice, gateway=method.gateway)
+			return {"collected": False, "reason": "awaiting_predebit_window", **notice}
 
 		result = charges.pay_invoice(invoice, method.name, method.gateway)
 

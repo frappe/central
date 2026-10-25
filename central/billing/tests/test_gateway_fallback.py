@@ -229,6 +229,11 @@ class TestOneInvoiceIsNeverChargedTwiceAcrossRails(IntegrationTestCase):
 		self.stripe_method = self._method("Stripe", "pm_stripe", priority=0)
 		self.razorpay_method = self._method("Razorpay", "tok_rzp", priority=1)
 		self.invoice = self._invoice()
+		# The Razorpay INR rail owes a pre-debit notice; this invoice's window has passed.
+		yesterday = frappe.utils.add_days(frappe.utils.now_datetime(), -1)
+		frappe.db.set_value(
+			"Invoice", self.invoice, {"predebit_notified_at": yesterday, "predebit_charge_after": yesterday}
+		)
 
 	def _method(self, gateway, handle, priority):
 		return (
@@ -335,6 +340,30 @@ class TestOneInvoiceIsNeverChargedTwiceAcrossRails(IntegrationTestCase):
 		self.assertTrue(
 			frappe.db.exists("Billing Notification Log", {"team": TEAM, "event_type": "Add Payment Method"})
 		)
+
+	def test_a_mandate_rail_waits_for_its_pre_debit_window(self):
+		"""Fallback onto a rail that owes a notice sends the notice and waits, instead of
+		debiting at once."""
+		from unittest.mock import MagicMock, patch
+
+		from central.billing.gateways.base import PaymentResult
+		from central.billing.payments import collection
+
+		frappe.db.set_value(
+			"Invoice", self.invoice, {"predebit_notified_at": None, "predebit_charge_after": None}
+		)
+		frappe.db.set_value("Billing Profile", TEAM, "collection_mode", "Auto Charge")
+		adapter = MagicMock()
+		adapter.prepare_charge.return_value = None
+		adapter.charge.return_value = PaymentResult(
+			success=False, status="Failed", failure_code="card_declined", failure_reason="declined"
+		)
+		with patch("central.billing.gateways.registry.get_adapter", return_value=adapter):
+			out = collection.collect_invoice(self.invoice)
+
+		self.assertEqual(out["reason"], "awaiting_predebit_window")
+		self.assertEqual(self._charged_gateways(), ["Stripe"])  # Razorpay not debited yet
+		self.assertTrue(frappe.db.get_value("Invoice", self.invoice, "predebit_charge_after"))
 
 	def test_nothing_is_asked_of_a_team_that_never_had_a_method(self):
 		"""Nothing was tried, so there is nothing to report — onboarding and the
