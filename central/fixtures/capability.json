@@ -51,10 +51,10 @@
  },
  {
   "capability": "server:network",
-  "description": "Change the firewall and public addresses of servers",
+  "description": "Change the firewall, public addresses, and WireGuard access of servers",
   "docstatus": 0,
   "doctype": "Capability",
-  "modified": "2026-10-11 18:00:00.000000",
+  "modified": "2026-10-25 18:21:36.508417",
   "name": "server:network",
   "plane": "atlas",
   "resource": "server"

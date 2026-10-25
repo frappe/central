@@ -38,6 +38,7 @@
   "is_firewall_enabled",
   "firewall_rules",
   "has_ipv4_internet",
+  "has_wireguard_access",
   "ssh_keys_section",
   "ssh_keys",
   "diagnostics_tab",
@@ -260,6 +261,14 @@
    "read_only": 1
   },
   {
+   "default": "0",
+   "description": "Whether the team's WireGuard devices reach the server through the regional gateway, as Atlas last reported.",
+   "fieldname": "has_wireguard_access",
+   "fieldtype": "Check",
+   "label": "WireGuard Access",
+   "read_only": 1
+  },
+  {
    "description": "The customer's firewall rules, as Atlas last reported, without the rules Central adds.",
    "fieldname": "firewall_rules",
    "fieldtype": "JSON",
@@ -381,7 +390,7 @@
    "link_fieldname": "server"
   }
  ],
- "modified": "2026-10-25 20:00:00.000000",
+ "modified": "2026-10-26 10:42:17.318256",
  "modified_by": "Administrator",
  "module": "Infrastructure",
  "name": "Virtual Machine",

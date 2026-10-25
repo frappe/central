@@ -88,6 +88,7 @@ def observe_server(server: VirtualMachine) -> str:
 			"public_ipv6": (network.get("public_ipv6") or "").removesuffix("/128") or None,
 			"gateway_url": gateway,
 			"has_ipv4_internet": bool(network.get("ipv4_internet_access")),
+			"has_wireguard_access": bool(network.get("wireguard_gateway_access")),
 			**firewall.get_observed_firewall(network),
 		},
 	)
@@ -284,6 +285,12 @@ def set_ipv4_internet(server: VirtualMachine, enabled: bool) -> None:
 	"""Turn IPv4 internet access on or off, then read the result back. Atlas keeps it on while
 	the server has a public IPv4."""
 	get_client(server).update_network(server.atlas_vm_id, {"ipv4_internet_access": enabled})
+	observe_server(server)
+
+
+def set_wireguard_access(server: VirtualMachine, enabled: bool) -> None:
+	"""Let the team's WireGuard devices reach the server or cut them off, then read the result back."""
+	get_client(server).update_network(server.atlas_vm_id, {"wireguard_gateway_access": enabled})
 	observe_server(server)
 
 
