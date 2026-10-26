@@ -106,7 +106,13 @@ watch(
 		>
 			<thead>
 				<tr class="text-sm text-ink-gray-5">
-					<th scope="col" class="pb-2 font-normal">Model</th>
+					<th scope="col" class="hidden pb-2 font-normal md:table-cell">
+						Provider
+					</th>
+					<th scope="col" class="hidden pb-2 font-normal md:table-cell">
+						Model
+					</th>
+					<th scope="col" class="pb-2 font-normal">Model key</th>
 					<th scope="col" class="hidden w-28 pb-2 font-normal md:table-cell">
 						Input
 					</th>
@@ -124,6 +130,14 @@ watch(
 
 			<tbody>
 				<tr v-for="model in models" :key="model.name">
+					<td
+						v-for="(value, column) in [model.provider, model.model_id]"
+						:key="column"
+						class="hidden border-t border-outline-gray-1 py-2.5 pr-3 text-sm text-ink-gray-7 md:table-cell"
+					>
+						{{ value }}
+					</td>
+
 					<td class="border-t border-outline-gray-1 py-2.5 pr-3">
 						<CopyableValue :value="model.name" label="Model key" />
 					</td>

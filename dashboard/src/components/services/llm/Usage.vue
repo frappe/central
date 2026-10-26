@@ -63,7 +63,7 @@ const rows = computed(() => {
 		ranked.length > SHOWN_MODELS + 1 ? ranked.slice(0, SHOWN_MODELS) : ranked
 	const named = shown.map((row, index) => ({
 		...row,
-		label: row.model.split('/').pop() ?? row.model,
+		label: row.model,
 		color: palette.value[index % palette.value.length],
 	}))
 	const tail = ranked.slice(shown.length)
@@ -272,7 +272,7 @@ const isEmpty = computed(() => !usageLoading.value && !rows.value.length)
 			</section>
 
 			<BillingCard
-				title="By model"
+				title="By model key"
 				title-info="Select a model to hide it in the charts. Days are in UTC."
 				class="border-outline-gray-2 md:col-span-2"
 			>
