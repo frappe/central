@@ -147,6 +147,7 @@ def shape_models(rows: list[dict]) -> list[dict]:
 			"name": row["name"],
 			"provider": row.get("provider"),
 			"model_id": row.get("model_id"),
+			"zero_data_retention": bool(row.get("zero_data_retention")),
 			"input_modalities": row.get("input_modalities", []),
 			"output_modalities": row.get("output_modalities", []),
 			"dialects": row["dialects"],

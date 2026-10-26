@@ -69,6 +69,19 @@ class TrialOnAMachine(SiteOnAMachine):
 		plan = make_plan("trial-lifecycle-plan", rates=[{"cluster": "", "currency": "USD", "rate": rate}])
 		frappe.db.set_value("Virtual Machine", self.server.name, "plan", plan)
 
+	def trial_comments(self) -> str:
+		return "\n".join(
+			frappe.get_all(
+				"Comment",
+				filters={
+					"reference_doctype": "Site",
+					"reference_name": self.site().name,
+					"comment_type": "Info",
+				},
+				pluck="content",
+			)
+		)
+
 
 class TestTrialLifecycle(TrialOnAMachine):
 	"""A trial site runs for its days, warns, stops, then is terminated."""
@@ -612,6 +625,32 @@ class TestTrialLifecycle(TrialOnAMachine):
 			self.site().end_trial_now()
 
 		self.assertEqual(self.site().trial_state, "Ended")
+
+	def test_ending_a_trial_revokes_its_ai_key(self):
+		with (
+			patch.object(trial.Trial, "enqueue_job"),
+			patch.object(trial.AITrialKey, "queue_revoke") as revoke,
+		):
+			self.site().end_trial_now()
+
+		revoke.assert_called_once_with(server=self.server.name)
+
+	def test_converting_a_trial_hands_its_ai_key_to_the_team_and_notes_a_trial_without_one(self):
+		with (
+			patch.object(trial.Trial, "enqueue_job"),
+			patch.object(trial.AITrialKey, "queue_convert", return_value=True) as convert,
+		):
+			trial.Trial(self.site()).convert()
+		convert.assert_called_once_with(self.server.name)
+		self.assertNotIn("AI key", self.trial_comments())
+
+		self.site().db_set("trial_state", "Active")
+		with (
+			patch.object(trial.Trial, "enqueue_job"),
+			patch.object(trial.AITrialKey, "queue_convert", return_value=False),
+		):
+			trial.Trial(self.site()).convert()
+		self.assertIn("no live AI key to hand over", self.trial_comments())
 
 	def test_only_an_operator_changes_a_trial(self):
 		with self.set_user("Guest"), self.assertRaises(frappe.PermissionError):

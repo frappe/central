@@ -19,6 +19,7 @@ from central.iam import can
 from central.infrastructure.doctype.resource_action.resource_action import PENDING_STATES, ResourceAction
 from central.infrastructure.doctype.site.site import Site
 from central.notification.engine import queue_event
+from central.services.doctype.ai_trial_key.ai_trial_key import AITrialKey
 from central.signups.eligibility import has_active_payment_method
 from central.signups.funnel import capture_trial_event
 
@@ -148,8 +149,14 @@ class Trial:
 			)
 
 	def convert(self) -> None:
-		"""Start billing the site's server, keep it awake, and start it again if the trial stopped it."""
+		"""Start billing the site's server, keep it awake, and start it again if the trial stopped it.
+		The trial's AI key is handed to the team in the background, best effort: its outcome is the
+		AI Trial Key record's; a failure is a comment here and the key is revoked."""
 		self.move_to("Converted", trial_error=None, **self.get_cost())
+		if not AITrialKey.queue_convert(self.site.server):
+			self.site.add_comment(
+				"Info", _("The trial has no live AI key to hand over. The team creates one in the dashboard.")
+			)
 		capture_trial_event(
 			"trial_converted",
 			self.site.team,
@@ -230,7 +237,7 @@ class Trial:
 
 	def extend(self, days: int) -> None:
 		"""Give the trial `days` more from today, or from its end date when that is later. An ended
-		trial runs again and its server starts."""
+		trial runs again and its server starts without the AI key its end revoked."""
 		if not self.is_open:
 			frappe.throw(_("Only an active or ended trial can be extended."))
 		if days <= 0:
@@ -243,9 +250,11 @@ class Trial:
 		)
 		if was_ended:
 			self.queue_server_action("start")
+		# TODO: if the trial was ended before - the ai trial key would've been revoked, we could assign a new key here?
 
 	def end(self, today) -> None:
-		"""Stop the trial's server and set the day it is terminated. The stop job tells the team."""
+		"""Stop the trial's server, revoke its AI key at Grove and set the day it is terminated. The
+		stop job tells the team."""
 		if self.state != "Active":
 			frappe.throw(_("Only an active trial can be ended."))
 
@@ -253,6 +262,7 @@ class Trial:
 		self.move_to("Ended", trial_deletes_on=deletes_on, trial_error=None)
 		capture_trial_event("trial_ended", self.site.team, self.site.product)
 		self.enqueue_job(stop_server, "trial-stop")
+		AITrialKey.queue_revoke(server=self.site.server)
 
 	def stop_server(self) -> None:
 		"""Stop the ended trial's server, unless the team paid in the meantime. The team hears

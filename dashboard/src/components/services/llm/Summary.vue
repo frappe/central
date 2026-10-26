@@ -220,7 +220,7 @@ const refresh = async (): Promise<void> => {
 					</p>
 				</div>
 				<figure
-					class="pace-chart flex w-fit shrink-0 flex-col gap-2 rounded-5 bg-surface-gray-1 px-3 py-2.5"
+					class="pace-chart flex w-full shrink-0 flex-col gap-2 rounded-5 bg-surface-gray-1 px-3 py-2.5 sm:w-fit"
 				>
 					<div
 						class="h-16"
