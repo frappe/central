@@ -15,7 +15,7 @@ GATEWAY = "https://eu.llm.frappe.cloud"
 
 
 def minted(name: str) -> dict:
-	return {"name": name, "geography": "eu", "gateway_url": GATEWAY, "api_key": f"gr_{name}"}
+	return {"name": name, "geography": "eu", "gateway_url": GATEWAY, "cap": 2, "api_key": f"gr_{name}"}
 
 
 class TestAITrialKey(IntegrationTestCase):
@@ -53,6 +53,7 @@ class TestAITrialKey(IntegrationTestCase):
 				"grove_key": reply["name"],
 				"geography": reply["geography"],
 				"gateway_url": reply["gateway_url"],
+				"cap": reply["cap"],
 				"api_key": reply["api_key"],
 			}
 		).insert()
@@ -136,6 +137,25 @@ class TestAITrialKey(IntegrationTestCase):
 
 		self.assertEqual((taken.name, retried.name, other.name), (first.name, first.name, second.name))
 		self.assertEqual((first.reload().status, first.team, first.resource_action), ("Assigned", "TEAM-00001", "action-1"))
+
+	def test_only_a_running_trials_cap_can_be_raised_and_only_upward(self):
+		key = self.available()
+		with self.assertRaisesRegex(frappe.ValidationError, "running trial"):
+			key.raise_cap(5)
+
+		AITrialKey.assign(self.action())
+		key.reload().raise_cap(5)
+		self.grove.update_caps.assert_called_once_with(TRIAL_TEAM, {key.grove_key: 5})
+		self.assertEqual(key.reload().cap, 5)
+		with self.assertRaisesRegex(frappe.ValidationError, "already"):
+			key.raise_cap(5)
+
+		# A key on its way to the team, or out, is nobody's to raise here.
+		for status in ("Converting", "Converted", "Conversion Failed", "Revoking", "Revoked"):
+			key.db_set("status", status)
+			with self.assertRaisesRegex(frappe.ValidationError, "running trial"):
+				key.reload().raise_cap(9)
+		self.grove.update_caps.assert_called_once()
 
 	def test_a_paid_creation_and_an_empty_pool_get_no_key(self):
 		self.available()

@@ -11,6 +11,7 @@
   "column_break_head",
   "geography",
   "gateway_url",
+  "cap",
   "assignment_section",
   "team",
   "server",
@@ -61,6 +62,13 @@
    "fieldtype": "Data",
    "label": "Gateway URL",
    "options": "URL",
+   "read_only": 1
+  },
+  {
+   "description": "What the key may spend for its life, as Grove minted it from Trial Key Cap; Raise Cap lifts it while the trial runs.",
+   "fieldname": "cap",
+   "fieldtype": "Currency",
+   "label": "Cap (USD)",
    "read_only": 1
   },
   {
@@ -144,7 +152,7 @@
  ],
  "grid_page_length": 50,
  "links": [],
- "modified": "2026-10-25 00:00:00",
+ "modified": "2026-10-26 00:00:00",
  "modified_by": "Administrator",
  "module": "Services",
  "name": "AI Trial Key",

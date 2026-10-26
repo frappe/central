@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Self
 import frappe
 from frappe import _
 from frappe.model.document import Document
-from frappe.utils import add_to_date, cint, now_datetime
+from frappe.utils import add_to_date, cint, flt, now_datetime
 
 from central.integrations.grove import GroveClient
 
@@ -48,6 +48,7 @@ class AITrialKey(Document):
 		api_key: DF.Password | None
 		assigned_at: DF.Datetime | None
 		attempts: DF.Int
+		cap: DF.Currency
 		gateway_url: DF.Data | None
 		geography: DF.Data | None
 		grove_key: DF.Data
@@ -79,6 +80,7 @@ class AITrialKey(Document):
 				"grove_key": minted["name"],
 				"geography": minted["geography"],
 				"gateway_url": minted["gateway_url"],
+				"cap": minted["cap"],
 				"api_key": minted["api_key"],
 			}
 		).insert(ignore_permissions=True)
@@ -224,6 +226,19 @@ class AITrialKey(Document):
 			frappe.throw(_("Only an available or assigned key can be revoked."))
 
 		self.queue_revoke(name=self.name)
+
+	@frappe.whitelist(methods=["POST"])
+	def raise_cap(self, cap: float) -> None:
+		"""Lift the cap of a running trial's key at Grove. Only an Assigned record is one: End,
+		conversion and termination all move it on, and a converted key's cap is the team's to set."""
+		self.check_permission("write")
+		if self.status != "Assigned":
+			frappe.throw(_("Only the key of a running trial can have its cap raised."))
+		if flt(cap) <= flt(self.cap):
+			frappe.throw(_("The cap is {0} USD already; enter more.").format(self.cap))
+
+		GroveClient.from_settings().update_caps(TRIAL_TEAM, {self.grove_key: flt(cap)})
+		self.db_set("cap", flt(cap))
 
 	def on_trash(self) -> None:
 		# A record must outlive its live key, so that a failed revoke is retried.
