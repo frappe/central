@@ -652,23 +652,6 @@ class TestTrialLifecycle(TrialOnAMachine):
 			trial.Trial(self.site()).convert()
 		self.assertIn("no live AI key to hand over", self.trial_comments())
 
-	def test_extending_an_ended_trial_without_a_live_ai_key_says_so_and_an_active_one_says_nothing(self):
-		self.site().extend_trial(3)
-		self.assertNotIn("AI key", self.trial_comments())
-
-		self.site().db_set(
-			{"trial_state": "Ended", "trial_ends_on": nowdate(), "trial_deletes_on": nowdate()}
-		)
-		self.site().extend_trial(2)
-		self.assertIn("had no AI key", self.trial_comments())
-
-		frappe.get_doc(
-			{"doctype": "AI Trial Key", "grove_key": "ended-key", "status": "Revoked", "server": self.server.name}
-		).insert()
-		self.site().db_set({"trial_state": "Ended", "trial_deletes_on": nowdate()})
-		self.site().extend_trial(2)
-		self.assertIn("revoked when it ended", self.trial_comments())
-
 	def test_only_an_operator_changes_a_trial(self):
 		with self.set_user("Guest"), self.assertRaises(frappe.PermissionError):
 			self.site().extend_trial(7)

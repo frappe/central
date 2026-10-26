@@ -237,7 +237,7 @@ class Trial:
 
 	def extend(self, days: int) -> None:
 		"""Give the trial `days` more from today, or from its end date when that is later. An ended
-		trial runs again and its server starts, without the AI key its end revoked: the Site says so."""
+		trial runs again and its server starts without the AI key its end revoked."""
 		if not self.is_open:
 			frappe.throw(_("Only an active or ended trial can be extended."))
 		if days <= 0:
@@ -248,16 +248,9 @@ class Trial:
 		self.move_to(
 			"Active", trial_ends_on=ends_on, trial_deletes_on=None, trial_last_notice=None, trial_error=None
 		)
-		if not was_ended:
-			return
-		self.queue_server_action("start")
-		if frappe.db.exists("AI Trial Key", {"server": self.site.server, "status": "Assigned"}):
-			return
-		if frappe.db.exists("AI Trial Key", {"server": self.site.server}):
-			note = _("The trial's AI key was revoked when it ended. The team creates one in the dashboard.")
-		else:
-			note = _("The trial had no AI key. The team creates one in the dashboard.")
-		self.site.add_comment("Info", note)
+		if was_ended:
+			self.queue_server_action("start")
+		# TODO: if the trial was ended before - the ai trial key would've been revoked, we could assign a new key here?
 
 	def end(self, today) -> None:
 		"""Stop the trial's server, revoke its AI key at Grove and set the day it is terminated. The
@@ -267,9 +260,9 @@ class Trial:
 
 		deletes_on = add_days(today, self.settings.deletion_days)
 		self.move_to("Ended", trial_deletes_on=deletes_on, trial_error=None)
-		AITrialKey.queue_revoke(server=self.site.server)
 		capture_trial_event("trial_ended", self.site.team, self.site.product)
 		self.enqueue_job(stop_server, "trial-stop")
+		AITrialKey.queue_revoke(server=self.site.server)
 
 	def stop_server(self) -> None:
 		"""Stop the ended trial's server, unless the team paid in the meantime. The team hears
