@@ -660,6 +660,13 @@ class TestTrialLifecycle(TrialOnAMachine):
 			{"trial_state": "Ended", "trial_ends_on": nowdate(), "trial_deletes_on": nowdate()}
 		)
 		self.site().extend_trial(2)
+		self.assertIn("had no AI key", self.trial_comments())
+
+		frappe.get_doc(
+			{"doctype": "AI Trial Key", "grove_key": "ended-key", "status": "Revoked", "server": self.server.name}
+		).insert()
+		self.site().db_set({"trial_state": "Ended", "trial_deletes_on": nowdate()})
+		self.site().extend_trial(2)
 		self.assertIn("revoked when it ended", self.trial_comments())
 
 	def test_only_an_operator_changes_a_trial(self):

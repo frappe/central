@@ -268,6 +268,14 @@ class TestAITrialKey(IntegrationTestCase):
 			AITrialKey.queue_revoke(server="server-1")
 		self.assertEqual(key.reload().status, "Converted")
 
+	def test_a_blank_trial_key_cap_is_accepted_and_a_fraction_refused(self):
+		settings = frappe.get_doc("AI Settings")
+		settings.trial_key_cap = None
+		settings.save()
+		settings.trial_key_cap = 2.5
+		with self.assertRaisesRegex(frappe.ValidationError, "whole US dollars"):
+			settings.save()
+
 	def test_a_refused_hand_over_is_tried_hourly_and_given_up_after_three_then_the_key_is_revoked(self):
 		key, name = self.converting()
 		self.grove.transfer_key.side_effect = Exception("Grove is down")

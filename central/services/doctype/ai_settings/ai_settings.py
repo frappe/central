@@ -4,7 +4,7 @@
 import frappe
 from frappe import _
 from frappe.model.document import Document
-from frappe.utils import cint
+from frappe.utils import cint, flt
 
 from central.integrations.grove import GroveClient
 
@@ -54,7 +54,7 @@ class AISettings(Document):
 
 	def validate(self) -> None:
 		self.base_url = (self.base_url or "").strip().rstrip("/")
-		if self.trial_key_cap != cint(self.trial_key_cap):
+		if flt(self.trial_key_cap) != cint(self.trial_key_cap):
 			frappe.throw(_("Trial Key Cap is whole US dollars."))
 		if self.trial_pool_size and not self.trial_key_geography:
 			frappe.throw(_("Set Trial Key Geography before sizing the pool."))

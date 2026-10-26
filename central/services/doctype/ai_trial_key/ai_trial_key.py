@@ -73,7 +73,6 @@ class AITrialKey(Document):
 			model_group=settings.trial_model_group or None,
 			cap=cint(settings.trial_key_cap),
 		)
-		# The refill job inserts it; no customer makes a trial key.
 		return frappe.get_doc(
 			{
 				"doctype": "AI Trial Key",
@@ -83,7 +82,7 @@ class AITrialKey(Document):
 				"cap": minted["cap"],
 				"api_key": minted["api_key"],
 			}
-		).insert(ignore_permissions=True)
+		).insert()
 
 	@classmethod
 	def assign(cls, action: ResourceAction) -> Self | None:
@@ -221,7 +220,6 @@ class AITrialKey(Document):
 
 	@frappe.whitelist(methods=["POST"])
 	def revoke(self) -> None:
-		self.check_permission("write")
 		if self.status not in ("Available", "Assigned"):
 			frappe.throw(_("Only an available or assigned key can be revoked."))
 
@@ -231,7 +229,6 @@ class AITrialKey(Document):
 	def raise_cap(self, cap: float) -> None:
 		"""Lift the cap of a running trial's key at Grove. Only an Assigned record is one: End,
 		conversion and termination all move it on, and a converted key's cap is the team's to set."""
-		self.check_permission("write")
 		if self.status != "Assigned":
 			frappe.throw(_("Only the key of a running trial can have its cap raised."))
 		if flt(cap) <= flt(self.cap):

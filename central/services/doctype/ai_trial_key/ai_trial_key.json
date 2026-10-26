@@ -152,7 +152,7 @@
  ],
  "grid_page_length": 50,
  "links": [],
- "modified": "2026-10-26 00:00:00",
+ "modified": "2026-10-26 00:00:01",
  "modified_by": "Administrator",
  "module": "Services",
  "name": "AI Trial Key",
@@ -173,8 +173,38 @@
  ],
  "row_format": "Dynamic",
  "rows_threshold_for_grid_search": 20,
+ "search_fields": "team,server",
  "sort_field": "creation",
  "sort_order": "DESC",
- "states": [],
+ "states": [
+  {
+   "color": "Blue",
+   "title": "Available"
+  },
+  {
+   "color": "Green",
+   "title": "Assigned"
+  },
+  {
+   "color": "Orange",
+   "title": "Converting"
+  },
+  {
+   "color": "Green",
+   "title": "Converted"
+  },
+  {
+   "color": "Red",
+   "title": "Conversion Failed"
+  },
+  {
+   "color": "Orange",
+   "title": "Revoking"
+  },
+  {
+   "color": "Gray",
+   "title": "Revoked"
+  }
+ ],
  "track_changes": 1
 }

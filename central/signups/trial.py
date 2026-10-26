@@ -251,9 +251,13 @@ class Trial:
 		if not was_ended:
 			return
 		self.queue_server_action("start")
-		if not frappe.db.exists("AI Trial Key", {"server": self.site.server, "status": "Assigned"}):
+		if frappe.db.exists("AI Trial Key", {"server": self.site.server, "status": "Assigned"}):
+			return
+		if frappe.db.exists("AI Trial Key", {"server": self.site.server}):
 			note = _("The trial's AI key was revoked when it ended. The team creates one in the dashboard.")
-			self.site.add_comment("Info", note)
+		else:
+			note = _("The trial had no AI key. The team creates one in the dashboard.")
+		self.site.add_comment("Info", note)
 
 	def end(self, today) -> None:
 		"""Stop the trial's server, revoke its AI key at Grove and set the day it is terminated. The
