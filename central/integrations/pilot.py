@@ -52,10 +52,16 @@ def get_bootstrap_metadata(action) -> dict[str, str]:
 		common_site_config |= mailbox.get_site_config()
 	metadata["pilot-common-site-config"] = json.dumps(common_site_config)
 
+	common_config = {}
+	if action.requested_by:
+		if email := frappe.db.get_value("User", action.requested_by, "email"):
+			common_config["letsencrypt"] = {"email": email}
 	try:
-		metadata["pilot-common-config"] = json.dumps({"telemetry": get_telemetry_configuration(action)})
+		common_config["telemetry"] = get_telemetry_configuration(action)
 	except Exception:
 		action.record_diagnostic(frappe.get_traceback(), "Pilot telemetry configuration failed")
+	if common_config:
+		metadata["pilot-common-config"] = json.dumps(common_config)
 
 	return metadata
 
