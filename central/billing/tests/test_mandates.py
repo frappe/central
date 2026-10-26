@@ -497,3 +497,44 @@ class TestMandateRevokedAtTheGateway(IntegrationTestCase):
 		self.assertEqual(out["result"], "mandate_still_live")
 		self.assertEqual(frappe.db.get_value("Payment Method", self.method, "status"), "Active")
 		self.assertEqual(frappe.db.get_value("Billing Profile", self.TEAM, "collection_mode"), "Auto Charge")
+
+	def test_a_razorpay_mandate_is_found_by_its_recurring_token(self):
+		"""Razorpay has no separate mandate id - its recurring token (gateway_method_id)
+		is the mandate, so a mandate event naming that token must still find the method."""
+		razorpay_method = (
+			frappe.get_doc(
+				{
+					"doctype": "Payment Method",
+					"team": self.TEAM,
+					"gateway": self.gateway,
+					"method_type": "UPI Autopay",
+					"status": "Active",
+					"gateway_method_id": "token_razorpay",
+					"gateway_customer_id": "cus_india",
+					"display_label": "UPI Autopay",
+					"validated_at": frappe.utils.now_datetime(),
+				}
+			)
+			.insert(ignore_permissions=True)
+			.name
+		)
+
+		from central.billing.payments import webhooks
+
+		event = frappe.get_doc(
+			{
+				"doctype": "Webhook Event",
+				"gateway": self.gateway,
+				"gateway_event_id": f"evt_{frappe.generate_hash(8)}",
+				"event_type": "mandate.updated",
+				"status": "Received",
+				"raw_payload": frappe.as_json(
+					{"data": {"object": {"id": "token_razorpay", "status": "cancelled"}}}
+				),
+			}
+		).insert(ignore_permissions=True)
+
+		out = webhooks.handle_webhook_event(event.name)
+
+		self.assertEqual(out["result"], "mandate_revoked")
+		self.assertEqual(frappe.db.get_value("Payment Method", razorpay_method, "status"), "Cancelled")

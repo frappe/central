@@ -421,6 +421,21 @@ def _retire_superseded_mandates(new_method):
 _DEAD_MANDATE_STATUSES = ("inactive", "cancelled", "canceled", "revoked", "expired")
 
 
+def _payment_method_for_mandate(mandate_id: str) -> dict | None:
+	"""The Payment Method a gateway's mandate id refers to. Stripe keeps it in
+	gateway_mandate_id; Razorpay has no separate mandate id and reuses the recurring
+	token, gateway_method_id, for the same purpose."""
+	method = frappe.qb.DocType("Payment Method")
+	row = (
+		frappe.qb.from_(method)
+		.select(method.name, method.team)
+		.where((method.gateway_mandate_id == mandate_id) | (method.gateway_method_id == mandate_id))
+		.limit(1)
+		.run(as_dict=True)
+	)
+	return row[0] if row else None
+
+
 def apply_mandate_event(event_name: str) -> dict:
 	"""Mark the Payment Method a gateway mandate event refers to.
 
@@ -437,13 +452,7 @@ def apply_mandate_event(event_name: str) -> dict:
 	mandate_id = mandate.get("id")
 	status = (mandate.get("status") or "").lower()
 
-	method = (
-		frappe.db.get_value(
-			"Payment Method", {"gateway_mandate_id": mandate_id}, ["name", "team"], as_dict=True
-		)
-		if mandate_id
-		else None
-	)
+	method = _payment_method_for_mandate(mandate_id) if mandate_id else None
 	if not method:
 		charges._mark_event(event, "Ignored")
 		return {"handled": False, "reason": "no_method_for_mandate"}
