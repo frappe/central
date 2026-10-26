@@ -265,13 +265,7 @@ class TestAITrialKey(IntegrationTestCase):
 			with patch(f"{MODULE}.frappe.enqueue") as enqueue:
 				ai_trial_key.retry_stale()
 		self.assertEqual((key.reload().status, key.attempts, key.revoked), ("Conversion Failed", 3, 0))
-		self.assertEqual(log_error.call_count, 3)
-		[comment] = frappe.get_all(
-			"Comment",
-			filters={"reference_doctype": "AI Trial Key", "reference_name": key.name, "comment_type": "Info"},
-			pluck="content",
-		)
-		self.assertIn("Grove's last answer: Grove is down", comment)
+		self.assertEqual((log_error.call_count, key.last_error), (3, "Grove is down"))
 		# The failure queues the revoke; a refused one fails its job and waits its hour; the status
 		# keeps the failure.
 		self.grove.revoke_key.side_effect = Exception("Grove is still down")

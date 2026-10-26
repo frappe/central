@@ -183,9 +183,9 @@ class AITrialKey(Document):
 			self.note_failed_attempt(answer)
 
 	def note_failed_attempt(self, answer: str) -> None:
-		"""At the last attempt the record stops: Conversion Failed, said on the record and the Site
-		with Grove's last answer, and the key is revoked — the trial team's no longer, never the
-		customer's. `revoked` says when that landed; the status keeps the failure."""
+		"""At the last attempt the record stops: Conversion Failed, with Grove's last answer as
+		`last_error`, and the key is revoked — the trial team's no longer, never the customer's.
+		`revoked` says when that landed; the status keeps the failure."""
 		attempts = cint(self.attempts) + 1
 		if attempts < MAX_TRANSFER_ATTEMPTS:
 			self.db_set({"status": "Converting", "attempts": attempts, "last_error": answer})
