@@ -266,9 +266,14 @@ class StripeAdapter(GatewayAdapter):
 		shipping = _export_shipping(payment_method.get("team"))
 		if shipping:
 			params["shipping"] = shipping
+		# An Indian mandate debit has to quote the mandate the bank issued at setup;
+		# the card alone is not authority to charge off-session there (see charge()).
+		mandate = payment_method.get("gateway_mandate_id")
+		if mandate:
+			params["mandate"] = mandate
 		try:
 			intent = _to_dict(stripe.PaymentIntent.create(**params))
-		except stripe.error.CardError:
+		except (stripe.error.CardError, stripe.error.InvalidRequestError):
 			return False
 
 		if intent.get("status") == "succeeded":
@@ -306,10 +311,11 @@ class StripeAdapter(GatewayAdapter):
 			params["mandate"] = mandate
 		try:
 			intent = _to_dict(stripe.PaymentIntent.create(**params))
-		except stripe.error.CardError as e:
+		except (stripe.error.CardError, stripe.error.InvalidRequestError) as e:
 			body = getattr(e, "json_body", None) or {}
 			# `code` for a declined card is almost always "card_declined"; the actual
 			# reason (insufficient_funds, lost_card, stolen_card, …) is the decline_code.
+			# A mandate Stripe refuses mid-billing surfaces here too, as InvalidRequestError.
 			return PaymentResult(
 				success=False,
 				status="Failed",

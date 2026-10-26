@@ -348,3 +348,39 @@ class TestIndiaCardMandate(IntegrationTestCase):
 				"key-2",
 			)
 		self.assertNotIn("mandate", create.call_args.kwargs)
+
+	def test_a_charge_fails_cleanly_when_stripe_rejects_the_mandate(self):
+		method = frappe._dict(gateway_method_id="pm_x", gateway_mandate_id="mandate_x", team="t")
+		error = stripe.error.InvalidRequestError(
+			"The parameter `mandate` is not provided or invalid.", param="mandate"
+		)
+		with patch.object(stripe.PaymentIntent, "create", side_effect=error):
+			result = self.adapter.charge(
+				frappe._dict(name="INV-1", amount=1000, currency="INR", customer_id="cus_x", team="t"),
+				method,
+				"key-3",
+			)
+		self.assertFalse(result.success)
+		self.assertEqual(result.status, "Failed")
+
+	def test_the_validation_micro_charge_quotes_the_mandate(self):
+		intent = stripe.PaymentIntent.construct_from({"id": "pi_x", "status": "succeeded"}, "sk")
+		method = frappe._dict(
+			gateway_method_id="pm_x", gateway_mandate_id="mandate_x", gateway_customer_id="cus_x", team="t"
+		)
+		with (
+			patch.object(stripe.PaymentIntent, "create", return_value=intent) as create,
+			patch.object(stripe.Refund, "create"),
+		):
+			validated = self.adapter.validate_payment_method(method)
+		self.assertEqual(create.call_args.kwargs["mandate"], "mandate_x")
+		self.assertTrue(validated)
+
+	def test_validation_fails_cleanly_when_stripe_rejects_a_missing_mandate(self):
+		method = frappe._dict(gateway_method_id="pm_x", gateway_customer_id="cus_x", team="t")
+		error = stripe.error.InvalidRequestError(
+			"The parameter `mandate` is not provided or invalid.", param="mandate"
+		)
+		with patch.object(stripe.PaymentIntent, "create", side_effect=error):
+			validated = self.adapter.validate_payment_method(method)
+		self.assertFalse(validated)
