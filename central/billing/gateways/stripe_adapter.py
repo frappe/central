@@ -311,10 +311,11 @@ class StripeAdapter(GatewayAdapter):
 			params["mandate"] = mandate
 		try:
 			intent = _to_dict(stripe.PaymentIntent.create(**params))
-		except stripe.error.CardError as e:
+		except (stripe.error.CardError, stripe.error.InvalidRequestError) as e:
 			body = getattr(e, "json_body", None) or {}
 			# `code` for a declined card is almost always "card_declined"; the actual
 			# reason (insufficient_funds, lost_card, stolen_card, …) is the decline_code.
+			# A mandate Stripe refuses mid-billing surfaces here too, as InvalidRequestError.
 			return PaymentResult(
 				success=False,
 				status="Failed",
