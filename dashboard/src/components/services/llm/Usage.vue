@@ -26,7 +26,7 @@ const periodOptions = [
 	{ label: 'Last month', value: 'Last Month' },
 ]
 
-const period = ref('Last 30 Days')
+const period = ref('This Month')
 
 const apiKey = ref('')
 const keyOptions = computed(() => [
