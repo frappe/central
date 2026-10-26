@@ -12,6 +12,7 @@ import LucideCaptions from '~icons/lucide/captions'
 import LucideCircleHelp from '~icons/lucide/circle-help'
 import LucideFileText from '~icons/lucide/file-text'
 import LucideImage from '~icons/lucide/image'
+import LucideShieldCheck from '~icons/lucide/shield-check'
 import LucideType from '~icons/lucide/type'
 import LucideVideo from '~icons/lucide/video'
 
@@ -131,11 +132,27 @@ watch(
 			<tbody>
 				<tr v-for="model in models" :key="model.name">
 					<td
-						v-for="(value, column) in [model.provider, model.model_id]"
-						:key="column"
 						class="hidden border-t border-outline-gray-1 py-2.5 pr-3 text-sm text-ink-gray-7 md:table-cell"
 					>
-						{{ value }}
+						<span class="flex items-center gap-1.5">
+							{{ model.provider }}
+							<Tooltip
+								v-if="model.zero_data_retention"
+								text="Zero data retention: the provider keeps nothing of your requests."
+							>
+								<LucideShieldCheck
+									class="size-4 text-ink-gray-5"
+									role="img"
+									aria-label="Zero data retention"
+								/>
+							</Tooltip>
+						</span>
+					</td>
+
+					<td
+						class="hidden border-t border-outline-gray-1 py-2.5 pr-3 text-sm text-ink-gray-7 md:table-cell"
+					>
+						{{ model.model_id }}
 					</td>
 
 					<td class="border-t border-outline-gray-1 py-2.5 pr-3">

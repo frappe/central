@@ -8,6 +8,8 @@ export interface AIModel {
 	name: string
 	provider: string
 	model_id: string
+	// Whether the provider keeps nothing of a request once it is answered.
+	zero_data_retention: boolean
 	// What the model takes and what it gives: text, image, embeddings, ...
 	input_modalities: string[]
 	output_modalities: string[]
