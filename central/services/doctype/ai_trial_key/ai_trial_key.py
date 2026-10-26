@@ -191,13 +191,6 @@ class AITrialKey(Document):
 			self.db_set({"status": "Converting", "attempts": attempts, "last_error": answer})
 			return
 		self.db_set({"status": "Conversion Failed", "attempts": attempts, "last_error": answer})
-		note = _(
-			"The trial's AI key could not be handed to the team after {0} attempts and is revoked. "
-			"Grove's last answer: {1} The team creates a key in the dashboard; see the Error Log."
-		).format(attempts, answer)
-		self.add_comment("Info", note)
-		if site := frappe.db.get_value("Site", {"server": self.server}):
-			frappe.get_doc("Site", site).add_comment("Info", note)
 		frappe.enqueue(
 			"central.services.doctype.ai_trial_key.ai_trial_key.revoke_trial_key",
 			name=self.name,
