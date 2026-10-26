@@ -66,7 +66,6 @@ class BillingTestCase(IntegrationTestCase):
 	_TRACKED = (
 		"Top-up Order",
 		"Payment Attempt",
-		"Top-up Order",
 		"Refund",
 		"Credit Ledger Entry",
 		"Credit Wallet",

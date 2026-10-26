@@ -616,6 +616,7 @@ def check_service_allowance(service: str, cluster: str | None = None) -> dict:
 	return service_allowance(team, subject)
 
 
+# nosemgrep: guest-whitelisted-method -- pilot_credential_auth verifies the caller below.
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 @pilot_credential_auth
 def report_usage(

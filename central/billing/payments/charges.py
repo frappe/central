@@ -18,7 +18,6 @@ import frappe
 from frappe import _
 
 from central.billing import settings
-from central.billing.doctype.payment_attempt.payment_attempt import idempotency_key
 from central.billing.gateways.base import GatewayError, GatewayTimeout, PaymentResult
 from central.billing.payments.decline import Failure
 from central.billing.states import transition
@@ -148,8 +147,10 @@ def _claim_attempt(invoice: str, payment_method: str | None, gateway: str | None
 		# number, so the same key). They own it; we don't start a second one. Undo
 		# only the failed insert — whatever the caller did before this still stands.
 		frappe.db.rollback(save_point=save_point)
+		# By invoice and retry number, not a recomputed key: a key stored before the site
+		# joined it would not match.
 		owner = frappe.db.get_value(
-			"Payment Attempt", {"idempotency_key": idempotency_key(invoice, retry_number)}, "name"
+			"Payment Attempt", {"invoice": invoice, "retry_number": retry_number}, "name"
 		)
 		return {"charged": False, "reason": "attempt_in_flight", "attempt": owner}
 
@@ -206,6 +207,7 @@ def _charge_claimed_attempt(attempt_name: str) -> dict:
 def _defer(attempt, e) -> dict:
 	"""Transient: leave the attempt initiated so a retry reuses the same key."""
 	attempt.failure_reason = str(e)[:140]
+	# Charges run as the system, from dunning or reconciliation.
 	attempt.save(ignore_permissions=True)
 	# We never reached the customer — a rate limit or a network fault is ours, not
 	# theirs — so their retry ladder must not start ticking on it.

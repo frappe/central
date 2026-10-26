@@ -372,6 +372,7 @@ def expire_payment_methods(now=None) -> dict:
 	def expire(name: str) -> str:
 		method = frappe.get_doc("Payment Method", name)
 		transition(method, "Expired", actor="scheduler", reason="card expiry date passed")
+		# The daily job runs as the system with no session user to check.
 		method.save(ignore_permissions=True)
 		notifications.notify(
 			method.team,

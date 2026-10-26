@@ -1,13 +1,9 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
-"""PayPal GatewayAdapter.
+"""PayPal GatewayAdapter over PayPal's REST API, with no SDK.
 
-Implemented directly against PayPal's REST API over `requests` rather than a
-vendored SDK — adding a gateway is one adapter class, no core changes, and no
-fragile SDK dependency. All gateway I/O goes through small private methods
-(`_token`, `_capture_payment`, `_refund_capture`, ...), which is the seam tests
-stub — exactly as the Stripe/Razorpay adapters stub their SDK client.
-"""
+Every call to PayPal (`_token`, `_capture_payment`, `_get_order`, ...) is a small private
+method, so tests stub those. All of them go to PayPal's own API, not through Pilot."""
 
 import json
 

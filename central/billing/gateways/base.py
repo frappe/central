@@ -334,7 +334,8 @@ class GatewayAdapter(ABC):
 		raise GatewayUnsupported(f"{type(self).__name__} does not support verify_payment")
 
 	def find_order_payment(self, order_id: str) -> VerifiedPayment | None:
-		"""The captured payment on a gateway order Central created, or None while it has none."""
+		"""The captured payment on a gateway order Central created, or None while it has none.
+		A hosted checkout id is accepted too, so reconciliation needs no second lookup."""
 		raise GatewayUnsupported(f"{type(self).__name__} does not support find_order_payment")
 
 	def checkout_payment(self, session_id: str) -> VerifiedPayment | None:
