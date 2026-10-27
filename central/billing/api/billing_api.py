@@ -21,6 +21,7 @@ from central.billing.api.dashboard._shared import (
 	_require_billing_setup,
 	_team_currency,
 )
+from central.billing.gateways import capabilities
 
 
 def _team() -> str:
@@ -148,14 +149,6 @@ def _provider_region(cluster: str | None) -> tuple[str | None, str | None]:
 _GATEWAY_HINT = {"Stripe": "Secure redirect", "Razorpay": "Opens here", "Paypal": "PayPal balance or card"}
 
 
-def is_hosted_card_setup_allowed(adapter_key: str, currency: str) -> bool:
-	"""Hosted Stripe Checkout cannot register an India card mandate, so a card it saves
-	in a regulated currency can never be charged off-session."""
-	from central.billing.gateways import capabilities
-
-	return not (adapter_key == "Stripe" and capabilities.is_regulated_currency(currency))
-
-
 def _gateway_options(currency: str) -> list[dict]:
 	"""Enabled gateways that serve `currency`, one per adapter (Stripe/Razorpay/…),
 	the default first — the 'Pay through' choices the Add-payment card renders."""
@@ -176,7 +169,7 @@ def _gateway_options(currency: str) -> list[dict]:
 		# Only offer a gateway that can actually process a payment — enabled AND its
 		# credentials validated. (In production `enabled` implies validated; this also
 		# filters out seed fixtures that skipped validation with fake keys.)
-		if not (gw and is_hosted_card_setup_allowed(gw.adapter_key, currency)):
+		if not (gw and capabilities.is_hosted_card_setup_allowed(gw.adapter_key, currency)):
 			continue
 		if gw.is_enabled and gw.credentials_validated_at and gw.adapter_key not in seen:
 			seen.add(gw.adapter_key)
@@ -344,7 +337,7 @@ def create_payment_method_checkout(redirect_url: str, gateway: str | None = None
 	gw_doc = frappe.get_doc("Payment Gateway", gw.get("name"))
 	if gw_doc.adapter_key != "Stripe":
 		frappe.throw(frappe._("Hosted card setup is available on Stripe for now."), frappe.ValidationError)
-	if not is_hosted_card_setup_allowed(gw_doc.adapter_key, currency):
+	if not capabilities.is_hosted_card_setup_allowed(gw_doc.adapter_key, currency):
 		frappe.throw(
 			frappe._("To bill in {0}, add your card through Razorpay.").format(currency),
 			frappe.ValidationError,

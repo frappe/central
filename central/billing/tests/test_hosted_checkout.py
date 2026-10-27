@@ -220,3 +220,21 @@ class TestHostedCardSetupInRegulatedCurrency(BillingTestCase):
 
 		self.assertEqual(result["status"], "Failed")
 		self.assertEqual(result["message"], "We could not verify this card. Try another card.")
+
+
+class TestInAppBillingProfile(BillingTestCase):
+	"""The in-app address form picks country and Indian state from lists Central owns."""
+
+	def test_the_profile_carries_the_country_and_india_state_lists(self):
+		from central.billing.india_gst import india_state_options
+
+		team = "team-hosted-profile"
+		ensure_team(team)
+		complete_billing_profile(team, currency="INR")
+		frappe.local.pilot_credential = frappe._dict(team=team)
+
+		profile = inspect.unwrap(billing_api.get_billing_profile)()
+
+		self.assertEqual(profile["legal_name"], f"{team} Ltd")
+		self.assertIn("India", profile["countries"])
+		self.assertEqual(profile["india_states"], india_state_options())
