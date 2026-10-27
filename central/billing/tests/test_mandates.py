@@ -139,6 +139,84 @@ class TestMandateSetup(MandateTestBase):
 		self.assertEqual(method.status, "Failed")
 
 
+class TestAuthorisationRefund(MandateTestBase):
+	"""The authorisation payment registers the mandate and pays no bill, so it goes back."""
+
+	def _confirm(self):
+		result = mandates.setup_mandate(TEAM, GATEWAY, customer_id="cust_x")
+		with patch("frappe.enqueue") as enqueue:
+			method = mandates.confirm_mandate(result["payment_method"], CALLBACK)
+		return method, enqueue
+
+	def test_a_confirmed_mandate_queues_the_refund_of_its_authorisation(self):
+		payment = {
+			"id": "pay_mandate",
+			"order_id": "order_mandate",
+			"status": "captured",
+			"token_id": "token_live",
+			"customer_id": "cust_x",
+			"amount": 100,
+		}
+		with stub_adapter(payment=payment):
+			method, enqueue = self._confirm()
+
+		enqueue.assert_called_once()
+		self.assertEqual(
+			enqueue.call_args.kwargs,
+			{
+				"payment_method": method.name,
+				"payment_id": "pay_mandate",
+				"amount": 1.0,
+				"job_id": "mandate-authorisation-refund::pay_mandate",
+				"deduplicate": True,
+				"enqueue_after_commit": True,
+			},
+		)
+
+	def test_an_authorised_but_uncaptured_payment_is_not_refunded(self):
+		payment = {
+			"id": "pay_mandate",
+			"order_id": "order_mandate",
+			"status": "authorized",
+			"token_id": "token_live",
+			"customer_id": "cust_x",
+		}
+		with stub_adapter(payment=payment):
+			_method, enqueue = self._confirm()
+
+		enqueue.assert_not_called()
+
+	def test_the_refund_is_keyed_on_the_payment(self):
+		with stub_adapter() as adapter:
+			result = mandates.setup_mandate(TEAM, GATEWAY, customer_id="cust_x")
+			adapter.refund.return_value = MagicMock(success=True)
+
+			mandates.refund_authorisation_payment(result["payment_method"], "pay_mandate", 1.0)
+
+		refunded, amount = adapter.refund.call_args.args
+		self.assertEqual(refunded.gateway_transaction_id, "pay_mandate")
+		self.assertEqual(amount, 1.0)
+		self.assertEqual(
+			adapter.refund.call_args.kwargs["idempotency_key"], "mandate-authorisation-pay_mandate"
+		)
+
+	def test_a_failed_refund_is_left_on_the_method_and_fails_the_job(self):
+		with stub_adapter() as adapter:
+			result = mandates.setup_mandate(TEAM, GATEWAY, customer_id="cust_x")
+			adapter.refund.return_value = MagicMock(success=False, status="failed")
+
+			with patch("frappe.db.commit"), self.assertRaises(frappe.ValidationError):
+				mandates.refund_authorisation_payment(result["payment_method"], "pay_mandate", 1.0)
+
+		comment = frappe.db.get_value(
+			"Comment",
+			{"reference_doctype": "Payment Method", "reference_name": result["payment_method"]},
+			"content",
+		)
+		self.assertIn("pay_mandate", comment)
+		self.assertIn("not refunded", comment)
+
+
 class TestMandateReauthorisation(MandateTestBase):
 	def _active_mandate(self):
 		with stub_adapter(signature_ok=True):
