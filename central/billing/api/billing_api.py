@@ -770,13 +770,19 @@ def get_billing_summary(site: str | None = None) -> dict:
 
 
 def _pending_plan_change(server: str) -> dict | None:
-	"""The waiting page of the server's pending resize, such as a converted trial's move to its paid plan."""
+	"""The plan and waiting page of the server's pending resize, such as a converted trial's move
+	to its paid plan."""
 	action = frappe.db.get_value(
 		"Resource Action", {"resource_id": server, "action": "resize", "status": ["in", PENDING_STATES]}
 	)
 	if not action:
 		return None
-	return {"progress_url": _plan_change_url(server, {"queued": True, "action": action})}
+
+	plan = frappe.get_doc("Resource Action", action).get_resize_configuration().plan
+	return {
+		"plan": frappe.db.get_value("Plan", plan, "title") if plan else None,
+		"progress_url": _plan_change_url(server, {"queued": True, "action": action}),
+	}
 
 
 def _estimate_note(forecast: dict) -> str | None:

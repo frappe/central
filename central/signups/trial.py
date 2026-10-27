@@ -131,9 +131,13 @@ class Trial:
 		# A converted server gets its subscription only when it runs its paid plan, so its rate is held here.
 		frappe.db.get_value("Team", team, "name", for_update=True)
 		available = remaining_headroom(team, for_update=True) - get_starting_rate(team)
-		# A site on a trial plan with no paid plan to move to cannot convert.
-		has_no_paid_plan = is_trial_plan(self.get_server_plan()) and not self.get_conversion_plan()
-		if has_no_paid_plan or self.get_monthly_rate() > available:
+		if is_trial_plan(self.get_server_plan()) and not self.get_conversion_plan():
+			self.site.db_set(
+				"trial_error",
+				_("No paid plan is available for this site, or the chosen plan is no longer offered."),
+			)
+			return False
+		if self.get_monthly_rate() > available:
 			self.site.db_set("trial_error", _("The site's plan is above the team's spending limit."))
 			return False
 
@@ -364,26 +368,32 @@ class Trial:
 
 	def get_conversion_plan(self) -> str | None:
 		"""A trial plan is never billed, so the site moves to the paid plan the customer chose,
-		or else the cheapest one it may choose. A site on any other plan converts on it."""
+		or else the cheapest one it may choose. A site on any other plan converts on it. None
+		when the chosen plan is no longer a choice, so the trial holds until the customer chooses again."""
 		plan = self.get_server_plan()
 		if not is_trial_plan(plan):
 			return plan
-		if self.site.conversion_plan:
-			return self.site.conversion_plan
 
-		choices = self.get_plan_choices()
-		return choices[0]["name"] if choices else None
+		choices = [choice["name"] for choice in self.get_plan_choices()]
+		if self.site.conversion_plan:
+			return self.site.conversion_plan if self.site.conversion_plan in choices else None
+		return choices[0] if choices else None
 
 	def get_server_plan(self) -> str | None:
 		return frappe.db.get_value("Virtual Machine", self.site.server, "plan")
 
 	def get_plan_choices(self) -> list[dict]:
-		"""The paid plans the site may move to, cheapest first. None is smaller than its trial plan."""
+		"""The paid plans the site may move to, cheapest first. None is smaller than its trial plan,
+		and none has a smaller disk than its server, because a disk cannot shrink."""
 		from central.billing.catalog.composition import COMPUTE, DISK, MEMORY, composition_quantities
 		from central.billing.catalog.server_plans import get_server_plans
 
-		region = frappe.db.get_value("Virtual Machine", self.site.server, "region")
-		catalog = get_server_plans(self.site.team, cluster=region, for_resize=1, server=self.site.server)
+		server = frappe.db.get_value(
+			"Virtual Machine", self.site.server, ["region", "disk_gigabytes"], as_dict=True
+		)
+		catalog = get_server_plans(
+			self.site.team, cluster=server.region, for_resize=1, server=self.site.server
+		)
 		rows = sorted(
 			(row for rows in catalog["plans"].values() for row in rows), key=lambda row: row["rate"]
 		)
@@ -392,6 +402,8 @@ class Trial:
 		for row in rows:
 			quantities = composition_quantities(row["includes"])
 			specs = (quantities.get(COMPUTE, 0), quantities.get(MEMORY, 0), quantities.get(DISK, 0))
+			if specs[2] < flt(server.disk_gigabytes):
+				continue
 			choices.append(
 				{
 					"name": row["plan"],

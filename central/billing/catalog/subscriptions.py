@@ -575,9 +575,10 @@ def _require_offered_plan(doc, plan: str, region: str | None) -> None:
 
 def apply_resize_billing(action) -> None:
 	"""Re-lock billing after the integration worker confirmed the target shape. A converted
-	trial's move has no subscription to re-lock: the server opens one on its paid plan."""
+	trial's move has no subscription to re-lock: the server opens one on the paid plan it now runs."""
 	configuration = action.get_resize_configuration()
 	if not configuration.subscription:
+		frappe.get_doc("Virtual Machine", action.server).ensure_subscription_enabled()
 		return
 	if configuration.plan:
 		resize_to_plan(

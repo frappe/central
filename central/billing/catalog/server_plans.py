@@ -69,14 +69,8 @@ def get_server_plans(
 	is_staging_trial = bool(frappe.db.get_value("Team", team, "is_staging_trial"))
 	is_capped = not is_internal_team(team)
 	resizing = bool(frappe.utils.cint(for_resize))
-	trial_plans = trial_plan_names()
-	hidden_plans = set()
-	if is_staging_trial and not resizing:
-		if trial_plans is not None:
-			allowed_plans = trial_plans if allowed_plans is None else (allowed_plans & trial_plans)
-	elif not include_trial_plans:
-		# A trial plan is never sold: only a free trial site starts on it.
-		hidden_plans = trial_plans or set()
+	is_trial_menu = is_staging_trial and not resizing
+	allowed_plans, hidden_plans = _scope_trial_plans(allowed_plans, is_trial_menu, include_trial_plans)
 
 	header = {
 		"team": team,
@@ -109,8 +103,8 @@ def get_server_plans(
 	if not server_categories:
 		return empty
 
-	rate_card = {} if is_staging_trial and not resizing else _rate_card(currency, cluster)
-	profiles = [] if is_staging_trial and not resizing else _profiles(server_categories)
+	rate_card = {} if is_trial_menu else _rate_card(currency, cluster)
+	profiles = [] if is_trial_menu else _profiles(server_categories)
 
 	# The whole active catalog (in server families) is wanted on purpose —
 	# currency/cluster/headroom filtering happens in Python below — so opt out of
@@ -150,6 +144,21 @@ def get_server_plans(
 	# Cheapest first; the title-ordered iteration above is a stable tiebreaker.
 	plans.sort(key=lambda p: frappe.utils.flt(p["rate"]))
 	return {**header, "plans": _group_by_sub_category(plans), "rate_card": rate_card, "profiles": profiles}
+
+
+def _scope_trial_plans(
+	allowed_plans: set[str] | None, is_trial_menu: bool, include_trial_plans: bool
+) -> tuple[set[str] | None, set[str]]:
+	"""The allowed and hidden plans once trial plans are applied. A staging trial's menu offers
+	only the trial plans. Every other menu hides them, because a trial plan is never sold: only
+	a free trial site starts on it."""
+	trial_plans = trial_plan_names()
+	if is_trial_menu:
+		if trial_plans is None:
+			return allowed_plans, set()
+		return (trial_plans if allowed_plans is None else allowed_plans & trial_plans), set()
+
+	return allowed_plans, set() if include_trial_plans else (trial_plans or set())
 
 
 def _rate_card(currency: str, cluster: str | None) -> dict:

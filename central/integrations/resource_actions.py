@@ -328,7 +328,9 @@ def process_resize(action) -> None:
 		if not first_dispatch:
 			servers.observe_server(server)
 			server.reload()
-		if not _matches_shape(server, target):
+		# A converted trial's move has no subscription. Only the resize starts its server and turns
+		# idle sleep off, so it runs even when the shape already matches.
+		if not configuration.subscription or not _matches_shape(server, target):
 			servers.resize_server(server, target)
 			server.reload()
 		if not _matches_shape(server, target):
@@ -351,10 +353,8 @@ def process_resize(action) -> None:
 	try:
 		from central.billing.catalog.subscriptions import apply_resize_billing
 
-		apply_resize_billing(action)
 		server.db_set("plan", configuration.plan, notify=False)
-		if not configuration.subscription:
-			server.ensure_subscription_enabled()
+		apply_resize_billing(action)
 	except Exception:
 		diagnostic = frappe.get_traceback()
 		frappe.db.rollback()
