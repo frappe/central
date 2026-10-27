@@ -40,7 +40,7 @@ const startFirstTier = () => {
 	<section
 		class="flex flex-wrap overflow-hidden rounded-6 border border-outline-gray-1 bg-surface-base"
 	>
-		<div class="flex min-w-0 flex-[1_1_18rem] flex-col gap-4 p-5">
+		<div class="flex min-w-0 flex-[1_1_18rem] flex-col gap-4 p-4">
 			<div class="flex items-center gap-2.5">
 				<h2 class="text-base-semibold text-ink-gray-8">Limits</h2>
 				<span
@@ -69,75 +69,80 @@ const startFirstTier = () => {
 				/>
 			</div>
 
-			<dl v-else class="grid grid-cols-2 gap-4">
-				<div>
-					<dt class="text-sm text-ink-gray-5">Spend per cycle</dt>
-					<dd class="mt-1 text-base-medium tabular-nums">
-						<span :class="nearLimit ? 'text-ink-amber-6' : 'text-ink-gray-9'">
-							{{ money(monthlySpend ?? 0, currency, { trimTrailingZeros: true }) }}
-						</span>
-						<span class="text-ink-gray-5">
-							of
-							{{ money(current.max_spend, currency, { trimTrailingZeros: true }) }}
-						</span>
-					</dd>
-					<div class="mt-2 h-1 overflow-hidden rounded-1 bg-surface-gray-2">
-						<div
-							class="h-full"
-							:class="nearLimit ? 'bg-surface-amber-5' : 'bg-surface-gray-10'"
-							:style="{ width: `${cycleRatio * 100}%` }"
-						/>
-					</div>
+			<div
+				v-else
+				class="grid auto-cols-fr grid-flow-col grid-rows-3 gap-x-4 gap-y-1"
+			>
+				<span class="text-sm text-ink-gray-5">Spend per cycle</span>
+
+				<span class="text-base-medium tabular-nums">
+					<span :class="nearLimit ? 'text-ink-amber-6' : 'text-ink-gray-9'">
+						{{ money(monthlySpend ?? 0, currency, { trimTrailingZeros: true }) }}
+					</span>
+					<span class="text-ink-gray-5">
+						of
+						{{ money(current.max_spend, currency, { trimTrailingZeros: true }) }}
+					</span>
+				</span>
+
+				<div class="mt-1 h-1 overflow-hidden rounded-1 bg-surface-gray-2">
+					<div
+						class="h-full"
+						:class="nearLimit ? 'bg-surface-amber-5' : 'bg-surface-gray-10'"
+						:style="{ width: `${cycleRatio * 100}%` }"
+					/>
 				</div>
-				<div v-if="current.max_resource_count != null">
-					<dt class="text-sm text-ink-gray-5">Resources</dt>
-					<dd class="mt-1 text-base-medium tabular-nums text-ink-gray-9">
+
+				<template v-if="current.max_resource_count != null">
+					<span class="text-sm text-ink-gray-5">Resources</span>
+
+					<span class="text-base-medium tabular-nums text-ink-gray-9">
 						{{ resourcesUsed }}
 						<span class="text-ink-gray-5"
 							>of {{ current.max_resource_count }}</span
 						>
-					</dd>
-					<div class="mt-2 h-1 overflow-hidden rounded-1 bg-surface-gray-2">
+					</span>
+
+					<div class="mt-1 h-1 overflow-hidden rounded-1 bg-surface-gray-2">
 						<div
 							class="h-full bg-surface-gray-10"
 							:style="{ width: `${resourceRatio * 100}%` }"
 						/>
 					</div>
-				</div>
-			</dl>
+				</template>
+			</div>
 		</div>
 
 		<div
 			v-if="current"
-			class="-ml-px -mt-px flex min-w-0 flex-[1_1_18rem] flex-col gap-4 border-l border-t border-outline-gray-1 p-5"
+			class="-ml-px -mt-px flex min-w-0 flex-[1_1_18rem] flex-col gap-4 border-l border-t border-outline-gray-1 p-4"
 		>
 			<div class="flex items-center justify-between gap-2.5">
 				<p v-if="nextLevel" class="text-sm text-ink-gray-6">
-					Unlock
+					Upgrade to
 					<span class="text-sm-medium text-ink-gray-8"
 						>{{ nextLevel.tier }}</span
 					>
-					·
-					<span class="tabular-nums">
-						{{ money(nextLevel.max_spend, currency, { trimTrailingZeros: true }) }}
-					</span>
-					limit
 				</p>
 				<p v-else class="text-sm text-ink-gray-6">You're on the highest tier</p>
 				<Button
 					class="-my-1.5"
-					size="sm"
-					label="All tiers"
-					variant="outline"
+					size="xs"
+					label="Tiers"
+					icon-right="lucide-panel-right-open"
 					@click="$emit('openTiers')"
 				/>
 			</div>
 
-			<dl v-if="gates.length" class="grid grid-cols-2 gap-4">
-				<div v-for="gate in gates" :key="gate.label">
-					<dt class="text-sm text-ink-gray-5">{{ gate.label }}</dt>
-					<dd
-						class="mt-1 flex items-center gap-1.5 text-base-medium tabular-nums text-ink-gray-9"
+			<div
+				v-if="gates.length"
+				class="grid auto-cols-fr grid-flow-col grid-rows-3 gap-x-4 gap-y-1"
+			>
+				<template v-for="gate in gates" :key="gate.label">
+					<span class="text-sm text-ink-gray-5">{{ gate.label }}</span>
+
+					<span
+						class="flex items-center gap-1.5 text-base-medium tabular-nums text-ink-gray-9"
 					>
 						<span>
 							{{ gate.have }}
@@ -148,15 +153,16 @@ const startFirstTier = () => {
 							class="lucide-check size-3.5 text-ink-green-6"
 							aria-label="Met"
 						/>
-					</dd>
-					<div class="mt-2 h-1 overflow-hidden rounded-1 bg-surface-gray-2">
+					</span>
+
+					<div class="mt-1 h-1 overflow-hidden rounded-1 bg-surface-gray-2">
 						<div
 							class="h-full bg-surface-gray-10"
 							:style="{ width: `${gate.ratio * 100}%` }"
 						/>
 					</div>
-				</div>
-			</dl>
+				</template>
+			</div>
 		</div>
 	</section>
 

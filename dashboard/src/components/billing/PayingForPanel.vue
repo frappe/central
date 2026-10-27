@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { LoadingText } from 'frappe-ui'
 import { computed } from 'vue'
-import PayingForRow from '@/components/billing/PayingForRow.vue'
+import PayingForTable from '@/components/billing/PayingForTable.vue'
 import SidePanel from '@/components/common/SidePanel.vue'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { usePayingFor } from '@/composables/usePayingFor'
@@ -31,21 +31,17 @@ const subtitle = computed(() =>
 <template>
 	<SidePanel v-model:open="open" title="Subscriptions" :subtitle="subtitle">
 		<LoadingText v-if="loading" :lines="6" class="p-4" />
-		<table v-else class="w-full border-collapse">
-			<tbody class="divide-y divide-outline-gray-1">
-				<PayingForRow
-					v-for="row in rows"
-					:key="row.id"
-					:row="row"
-					:currency="currency"
-					:can-manage="canManageBilling"
-					:busy="busy"
-					@open="openServer"
-					@pause="askPause"
-					@resume="onResume"
-					@assign-project="askAssignProject"
-				/>
-			</tbody>
-		</table>
+		<PayingForTable
+			v-else
+			hide-header
+			:rows="rows"
+			:currency="currency"
+			:can-manage="canManageBilling"
+			:busy="busy"
+			@open="openServer"
+			@pause="askPause"
+			@resume="onResume"
+			@assign-project="askAssignProject"
+		/>
 	</SidePanel>
 </template>
