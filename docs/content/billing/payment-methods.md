@@ -36,7 +36,7 @@ Frappe Cloud validates the card with a small temporary charge, and refunds it at
 
 The dialog can ask for a phone number. A phone number is required to set up automatic card payments, and it is saved to your billing profile.
 
-The options in the dialog depend on your billing currency. Teams billed in INR can also see RuPay Card and UPI Autopay, which you authorise on your bank's page. Amex and Diners cards cannot be charged automatically. Add credit instead.
+The options in the dialog depend on your billing currency. Teams billed in INR can also see RuPay Card and UPI Autopay, which you authorise on your bank's page. To authorise automatic payments, Razorpay charges ₹1. Frappe Cloud refunds it after the authorisation succeeds. Amex and Diners cards cannot be charged automatically. Add credit instead.
 
 ## Change the order
 

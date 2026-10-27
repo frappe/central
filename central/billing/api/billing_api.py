@@ -21,6 +21,7 @@ from central.billing.api.dashboard._shared import (
 	_require_billing_setup,
 	_team_currency,
 )
+from central.billing.gateways import capabilities
 
 
 def _team() -> str:
@@ -168,7 +169,9 @@ def _gateway_options(currency: str) -> list[dict]:
 		# Only offer a gateway that can actually process a payment — enabled AND its
 		# credentials validated. (In production `enabled` implies validated; this also
 		# filters out seed fixtures that skipped validation with fake keys.)
-		if gw and gw.is_enabled and gw.credentials_validated_at and gw.adapter_key not in seen:
+		if not (gw and capabilities.is_hosted_card_setup_allowed(gw.adapter_key, currency)):
+			continue
+		if gw.is_enabled and gw.credentials_validated_at and gw.adapter_key not in seen:
 			seen.add(gw.adapter_key)
 			out.append(
 				{
@@ -334,6 +337,11 @@ def create_payment_method_checkout(redirect_url: str, gateway: str | None = None
 	gw_doc = frappe.get_doc("Payment Gateway", gw.get("name"))
 	if gw_doc.adapter_key != "Stripe":
 		frappe.throw(frappe._("Hosted card setup is available on Stripe for now."), frappe.ValidationError)
+	if not capabilities.is_hosted_card_setup_allowed(gw_doc.adapter_key, currency):
+		frappe.throw(
+			frappe._("To bill in {0}, add your card through Razorpay.").format(currency),
+			frappe.ValidationError,
+		)
 
 	adapter = get_adapter(gw_doc)
 	payments._discard_abandoned_setups(team, gw_doc.name)  # reap prior never-finished attempts
@@ -398,6 +406,8 @@ def confirm_payment_method_checkout(reference: str) -> dict:
 		result = _activate_setup(method_name)
 	if result["status"] == "pending":
 		result["message"] = "Awaiting card entry."
+	elif result["status"] == "Failed":
+		result["message"] = _("We could not verify this card. Try another card.")
 	return result
 
 
@@ -674,14 +684,16 @@ _PROFILE_FIELDS = (
 @pilot_credential_auth
 def get_billing_profile() -> dict:
 	"""The team's billing profile (stored fields plus derived setup state:
-	complete / missing / currency_locked / supported_currencies)."""
+	complete / missing / currency_locked / supported_currencies), plus the `countries`
+	and `india_states` the address form picks from."""
+	from central.billing.api.dashboard.account import get_billing_geo
 	from central.billing.api.dashboard.account import get_billing_profile as _get
 
 	team = _team()
 	# The delegated read gates on the session user's capability; act as operator (team
 	# is fixed from the verified credential).
 	with _as_operator():
-		return _get(team)
+		return {**_get(team), **get_billing_geo()}
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])

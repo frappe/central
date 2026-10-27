@@ -89,6 +89,17 @@ class TestSetupAndConfirm(CardTestBase):
 		self.assertEqual(method.status, "Failed")
 		self.assertFalse(method.is_default)
 
+	def test_a_failed_method_is_not_charged_again(self):
+		with stub_adapter(validate=False) as adapter:
+			setup = payments.initiate_payment_method_setup(TEAM, GATEWAY)
+			payments.confirm_payment_method(setup["payment_method"])
+			adapter.validate_payment_method.reset_mock()
+
+			method = payments.confirm_payment_method(setup["payment_method"])
+
+		adapter.validate_payment_method.assert_not_called()
+		self.assertEqual(method.status, "Failed")
+
 	def test_a_card_not_saved_yet_is_not_confirmed(self):
 		with stub_adapter() as adapter:
 			setup = payments.initiate_payment_method_setup(TEAM, GATEWAY)

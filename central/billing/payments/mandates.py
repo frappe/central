@@ -287,8 +287,51 @@ def confirm_mandate(payment_method: str, callback: dict):
 	from central.billing.payments import payments
 
 	payments.densify_priorities(method.team)  # slot the new method into the fallback order
+	_queue_authorisation_refund(method, payment)
 	method.reload()
 	return method
+
+
+def _queue_authorisation_refund(method, payment: dict) -> None:
+	"""Queue the refund of the authorisation payment. It registers the mandate and pays no bill."""
+	if payment.get("status") != "captured":
+		return
+
+	frappe.enqueue(
+		"central.billing.payments.mandates.refund_authorisation_payment",
+		payment_method=method.name,
+		payment_id=payment["id"],
+		amount=frappe.utils.flt(payment.get("amount")) / 100,
+		job_id=f"mandate-authorisation-refund::{payment['id']}",
+		deduplicate=True,
+		enqueue_after_commit=True,
+	)
+
+
+def refund_authorisation_payment(payment_method: str, payment_id: str, amount: float) -> None:
+	"""Refund the authorisation payment that registered a mandate.
+
+	1. The refund is keyed on the payment, so a retried job never refunds twice.
+	2. A failure leaves a comment on the method for an operator and fails the job.
+	   The mandate stays active either way.
+	"""
+	method = frappe.get_doc("Payment Method", payment_method)
+	try:
+		result = _adapter(method.gateway).refund(
+			frappe._dict(gateway_transaction_id=payment_id),
+			amount,
+			reason="Mandate authorisation",
+			idempotency_key=f"mandate-authorisation-{payment_id}",
+		)
+		if not result.success:
+			raise frappe.ValidationError(f"Gateway refund status: {result.status}")
+	except Exception as error:
+		method.add_comment(
+			"Comment", f"Authorisation payment {payment_id} ({amount} INR) was not refunded: {error}"
+		)
+		# The job's own rollback would drop the comment the operator needs.
+		frappe.db.commit()
+		raise
 
 
 def _is_mandate_payment(method, payment: dict) -> bool:

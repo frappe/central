@@ -64,6 +64,15 @@ def is_regulated_currency(currency: str) -> bool:
 	return currency == "INR"
 
 
+def is_hosted_card_setup_allowed(adapter_key: str, currency: str) -> bool:
+	"""Whether a card saved on the gateway's hosted page can be charged off-session.
+
+	Hosted Stripe Checkout cannot register an India card mandate, so a card it saves
+	in a regulated currency is refused on every later debit.
+	"""
+	return not (adapter_key == "Stripe" and is_regulated_currency(currency))
+
+
 def regulatory_ceiling(currency: str) -> float | None:
 	"""The ceiling the law imposes on this currency, whatever the gateway."""
 	return INR_SILENT_CEILING if is_regulated_currency(currency) else None
