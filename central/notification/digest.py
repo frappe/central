@@ -11,6 +11,9 @@ from frappe.utils import escape_html, format_datetime, get_datetime, get_system_
 
 from central.iam import can, is_active_team_member
 from central.notification import CATEGORIES
+from central.notification.doctype.notification_digest_setting.notification_digest_setting import (
+	NotificationDigestSetting,
+)
 from central.notification.doctype.user_notification_preference.user_notification_preference import (
 	UserNotificationPreference,
 )
@@ -44,15 +47,30 @@ def _due_groups(now: datetime) -> dict[tuple[str, str], list[frappe._dict]]:
 	preferences = frappe.get_all(
 		"User Notification Preference",
 		filters={"frequency": ["in", ["Daily", "Weekly"]], "email_enabled": 1},
-		fields=["name", "user", "team", "category", "frequency", "digest_hour", "last_digest_at"],
+		fields=["name", "user", "team", "category", "frequency", "last_digest_at"],
 		limit=0,
 	)
 	time_zones = get_time_zones(list({preference.user for preference in preferences}))
+	digest_hours = _digest_hours(preferences)
 	due = defaultdict(list)
 	for preference in preferences:
-		if is_digest_due(preference, time_zones.get(preference.user), now):
+		digest_hour = digest_hours[(preference.user, preference.team)]
+		if is_digest_due(preference, time_zones.get(preference.user), digest_hour, now):
 			due[(preference.user, preference.team)].append(preference)
 	return due
+
+
+def _digest_hours(preferences: list[frappe._dict]) -> dict[tuple[str, str], int]:
+	"""Read each team's digest hours in one query per team, not one query per row."""
+	users_by_team = defaultdict(set)
+	for preference in preferences:
+		users_by_team[preference.team].add(preference.user)
+
+	return {
+		(user, team): digest_hour
+		for team, users in users_by_team.items()
+		for user, digest_hour in NotificationDigestSetting.load_for_users(team, list(users)).items()
+	}
 
 
 def _send_group(user: str, team: str, group: list[frappe._dict], now: datetime) -> None:
@@ -85,7 +103,7 @@ def _local_datetime(value: datetime, time_zone: str | None) -> datetime:
 	return value.replace(tzinfo=system).astimezone(_zone_for(time_zone)).replace(tzinfo=None)
 
 
-def is_digest_due(preference: frappe._dict, time_zone: str | None, now: datetime) -> bool:
+def is_digest_due(preference: frappe._dict, time_zone: str | None, digest_hour: int, now: datetime) -> bool:
 	"""Whether the first scheduled digest since the last send has passed."""
 	system = ZoneInfo(get_system_timezone())
 	zone = _zone_for(time_zone)
@@ -94,7 +112,7 @@ def is_digest_due(preference: frappe._dict, time_zone: str | None, now: datetime
 		return True
 
 	last_sent = get_datetime(preference.last_digest_at).replace(tzinfo=system).astimezone(zone)
-	due = last_sent.replace(hour=preference.digest_hour, minute=0, second=0, microsecond=0)
+	due = last_sent.replace(hour=digest_hour, minute=0, second=0, microsecond=0)
 	if preference.frequency == "Weekly":
 		due += timedelta(days=(0 - last_sent.weekday()) % 7)
 		if due <= last_sent:

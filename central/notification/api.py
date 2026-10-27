@@ -8,6 +8,9 @@ from frappe.model.document import bulk_insert
 from central.api.pilot import pilot_credential_auth
 from central.iam import can_on_any_server, is_active_team_member, resolve_team, user_has_operator_bypass
 from central.notification import CATEGORIES
+from central.notification.doctype.notification_digest_setting.notification_digest_setting import (
+	NotificationDigestSetting,
+)
 from central.notification.doctype.user_notification_preference.user_notification_preference import (
 	UserNotificationPreference,
 )
@@ -39,14 +42,16 @@ def _member_team(team: str | None) -> str:
 
 
 @frappe.whitelist(methods=["POST"])
-def save_user_preferences(team: str, preferences: list[dict]) -> dict:
-	"""Save the caller's notification preferences for *team*, one per category."""
+def save_user_preferences(team: str, preferences: list[dict], digest_hour: int | None = None) -> dict:
+	"""Save the caller's notification preferences and one digest hour for *team*."""
 	user = frappe.session.user
 	_require_member(user, team)
 	saved = []
 	# Serialize preference upserts for this team. The unique constraint remains the
 	# final guard when separate requests race.
 	frappe.db.get_value("Team", team, "name", for_update=True)
+	if digest_hour is not None:
+		NotificationDigestSetting.upsert(user, team, digest_hour)
 	for pref in preferences:
 		email = bool(frappe.utils.cint(pref.get("email_enabled", 1)))
 		in_app = bool(frappe.utils.cint(pref.get("in_app_enabled", 1)))
@@ -65,7 +70,6 @@ def save_user_preferences(team: str, preferences: list[dict]) -> dict:
 			email,
 			in_app,
 			pref.get("frequency"),
-			pref.get("digest_hour"),
 			events,
 		)
 		saved.append(
@@ -75,14 +79,17 @@ def save_user_preferences(team: str, preferences: list[dict]) -> dict:
 				"email_enabled": doc.email_enabled,
 				"in_app_enabled": doc.in_app_enabled,
 				"frequency": doc.frequency,
-				"digest_hour": doc.digest_hour,
 				"events": [
 					{"event_type": row.event_type, "email_enabled": row.email_enabled} for row in doc.events
 				],
 			}
 		)
 
-	return {"saved": True, "preferences": saved}
+	return {
+		"saved": True,
+		"digest_hour": NotificationDigestSetting.get_hour(user, team),
+		"preferences": saved,
+	}
 
 
 @frappe.whitelist()
@@ -90,32 +97,31 @@ def get_user_preferences(team: str) -> dict:
 	"""Return the calling user's notification preferences and the event catalog for *team*."""
 	user = frappe.session.user
 	_require_member(user, team)
-	rows = frappe.get_list(
-		"User Notification Preference",
-		filters={"user": user, "team": team},
-		fields=["name", "category", "email_enabled", "in_app_enabled", "frequency", "digest_hour"],
-		order_by="category asc",
-		limit=0,
-	)
-	child_rows = frappe.get_all(
-		"Notification Event Preference",
-		filters={"parent": ["in", [row.name for row in rows]]},
-		fields=["parent", "event_type", "email_enabled"],
-		order_by="idx asc",
-	)
-	events_by_preference = {}
-	for event in child_rows:
-		events_by_preference.setdefault(event.parent, []).append(
-			{"event_type": event.event_type, "email_enabled": event.email_enabled}
+	loaded = UserNotificationPreference.load_for_users(team, [user], user_scoped=True)
+	preferences = [
+		{
+			"category": category,
+			"email_enabled": int(preference["email_enabled"]),
+			"in_app_enabled": int(preference["in_app_enabled"]),
+			"frequency": preference["frequency"],
+			"events": [
+				{"event_type": event_type, "email_enabled": int(email_enabled)}
+				for event_type, email_enabled in preference["events"].items()
+			],
+		}
+		for (loaded_user, category), preference in sorted(
+			loaded.items(), key=lambda item: CATEGORIES.index(item[0][1])
 		)
-	for row in rows:
-		row["frequency"] = row.frequency or "Instant"
-		row["digest_hour"] = 8 if row.digest_hour is None else row.digest_hour
-		row["events"] = events_by_preference.get(row.name, [])
-		row.pop("name")
+		if loaded_user == user
+	]
 
 	time_zone = frappe.db.get_value("User", user, "time_zone") or frappe.utils.get_system_timezone() or "UTC"
-	return {"time_zone": time_zone, "preferences": rows, "catalog": _event_catalog(user, team)}
+	return {
+		"time_zone": time_zone,
+		"digest_hour": NotificationDigestSetting.get_hour(user, team),
+		"preferences": preferences,
+		"catalog": _event_catalog(user, team),
+	}
 
 
 def _event_catalog(user: str, team: str) -> list[dict]:

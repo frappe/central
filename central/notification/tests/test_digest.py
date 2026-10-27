@@ -10,6 +10,9 @@ from frappe.utils import add_to_date, now_datetime
 from central.billing.tests.utils import ensure_team, make_user, run_enqueued_inline
 from central.notification import create_notification
 from central.notification.digest import get_digest_rows, is_digest_due, send_digest, send_due_digests
+from central.notification.doctype.notification_digest_setting.notification_digest_setting import (
+	NotificationDigestSetting,
+)
 from central.notification.engine import _is_emailed_instantly, dispatch
 from central.notification.tests.test_engine import TEAM, EngineTestBase
 
@@ -27,19 +30,21 @@ class TestDigestDelivery(EngineTestBase):
 		team.save(ignore_permissions=True)
 
 	def _daily_preference(self, events=None, user=None):
-		return frappe.get_doc(
+		user = user or self.user
+		preference = frappe.get_doc(
 			{
 				"doctype": "User Notification Preference",
-				"user": user or self.user,
+				"user": user,
 				"team": TEAM,
 				"category": "Server",
 				"email_enabled": 1,
 				"in_app_enabled": 1,
 				"frequency": "Daily",
-				"digest_hour": 7,
 				"events": events or [],
 			}
 		).insert(ignore_permissions=True)
+		NotificationDigestSetting.upsert(user, TEAM, 7)
+		return preference
 
 	def _digest_recipients(self, mock_sendmail):
 		return [call.kwargs["recipients"] for call in mock_sendmail.call_args_list]
@@ -178,22 +183,21 @@ class TestDigestDelivery(EngineTestBase):
 		self.assertIn("1 more update is in your notification feed.", body)
 
 	def test_one_digest_hour_per_user_and_team(self):
-		server = self._daily_preference()
-		billing = frappe.get_doc(
+		self._daily_preference()
+		frappe.get_doc(
 			{
 				"doctype": "User Notification Preference",
 				"user": self.user,
 				"team": TEAM,
 				"category": "Billing",
 				"frequency": "Daily",
-				"digest_hour": 7,
 			}
 		).insert(ignore_permissions=True)
 
-		billing.digest_hour = 17
-		billing.save(ignore_permissions=True)
+		NotificationDigestSetting.upsert(self.user, TEAM, 17)
 
-		self.assertEqual(frappe.db.get_value("User Notification Preference", server.name, "digest_hour"), 17)
+		self.assertEqual(NotificationDigestSetting.get_hour(self.user, TEAM), 17)
+		self.assertEqual(frappe.db.count("Notification Digest Setting", {"user": self.user, "team": TEAM}), 1)
 
 	def test_digest_skips_events_the_member_lacks_the_capability_for(self):
 		self._ensure_event_type("backup_failure", required_cap="server:view")
@@ -332,21 +336,21 @@ class TestDigestSchedule(EngineTestBase):
 		zone = frappe.utils.get_system_timezone()
 		last_monday = frappe.utils.get_datetime("2026-10-19 07:05:00")
 		monday = frappe.utils.get_datetime("2026-10-26 07:05:00")
-		preference = frappe._dict(frequency="Weekly", digest_hour=7, last_digest_at=last_monday)
+		preference = frappe._dict(frequency="Weekly", last_digest_at=last_monday)
 
-		self.assertFalse(is_digest_due(preference, zone, add_to_date(monday, minutes=-10)))
-		self.assertTrue(is_digest_due(preference, zone, monday))
-		self.assertTrue(is_digest_due(preference, zone, add_to_date(monday, days=2)))
+		self.assertFalse(is_digest_due(preference, zone, 7, add_to_date(monday, minutes=-10)))
+		self.assertTrue(is_digest_due(preference, zone, 7, monday))
+		self.assertTrue(is_digest_due(preference, zone, 7, add_to_date(monday, days=2)))
 
 		preference.last_digest_at = monday
-		self.assertFalse(is_digest_due(preference, zone, add_to_date(monday, days=2)))
+		self.assertFalse(is_digest_due(preference, zone, 7, add_to_date(monday, days=2)))
 
 	def test_daily_digest_catches_up_a_missed_hour(self):
 		zone = frappe.utils.get_system_timezone()
 		yesterday = frappe.utils.get_datetime("2026-10-26 07:05:00")
 		today = frappe.utils.get_datetime("2026-10-27 07:05:00")
-		preference = frappe._dict(frequency="Daily", digest_hour=7, last_digest_at=yesterday)
+		preference = frappe._dict(frequency="Daily", last_digest_at=yesterday)
 
-		self.assertFalse(is_digest_due(preference, zone, add_to_date(today, minutes=-10)))
-		self.assertTrue(is_digest_due(preference, zone, today))
-		self.assertTrue(is_digest_due(preference, zone, add_to_date(today, hours=5)))
+		self.assertFalse(is_digest_due(preference, zone, 7, add_to_date(today, minutes=-10)))
+		self.assertTrue(is_digest_due(preference, zone, 7, today))
+		self.assertTrue(is_digest_due(preference, zone, 7, add_to_date(today, hours=5)))

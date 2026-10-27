@@ -7,8 +7,6 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
-from central.notification import CATEGORIES, FREQUENCIES
-
 
 class UserNotificationPreference(Document):
 	# begin: auto-generated types
@@ -24,7 +22,6 @@ class UserNotificationPreference(Document):
 		)
 
 		category: DF.Literal["Billing", "Server", "Team", "Trial"]
-		digest_hour: DF.Int
 		email_enabled: DF.Check
 		events: DF.Table[NotificationEventPreference]
 		frequency: DF.Literal["Instant", "Daily", "Weekly"]
@@ -43,15 +40,12 @@ class UserNotificationPreference(Document):
 		email_enabled: bool,
 		in_app_enabled: bool,
 		frequency: str | None = None,
-		digest_hour: int | None = None,
 		events: list[dict] | None = None,
 	) -> Self:
 		"""Save one preference per user, team and category."""
 		values = {"email_enabled": int(email_enabled), "in_app_enabled": int(in_app_enabled)}
 		if frequency is not None:
 			values["frequency"] = frequency
-		if digest_hour is not None:
-			values["digest_hour"] = digest_hour
 		name = frappe.db.get_value(
 			"User Notification Preference", {"user": user, "team": team, "category": category}
 		)
@@ -62,10 +56,6 @@ class UserNotificationPreference(Document):
 				doc.set("events", events)
 			return doc.save()
 
-		if digest_hour is None:
-			values["digest_hour"] = frappe.db.get_value(
-				"User Notification Preference", {"user": user, "team": team}, "digest_hour"
-			)
 		return frappe.get_doc(
 			{
 				"doctype": "User Notification Preference",
@@ -78,12 +68,19 @@ class UserNotificationPreference(Document):
 		).insert()
 
 	@classmethod
-	def load_for_users(cls, team: str, users: list[str]) -> dict[tuple[str, str], dict]:
-		"""Read preferences for many users in one go. Engine and scheduler share this read."""
+	def load_for_users(
+		cls, team: str, users: list[str], *, user_scoped: bool = False
+	) -> dict[tuple[str, str], dict]:
+		"""Read preferences for many users in one go. Engine and scheduler share this read.
+
+		``user_scoped`` applies DocType permissions for an API read of the caller's own row;
+		the engine must read other members' rows and leaves it off.
+		"""
 		if not users:
 			return {}
 
-		rows = frappe.get_all(
+		reader = frappe.get_list if user_scoped else frappe.get_all
+		rows = reader(
 			"User Notification Preference",
 			filters={"team": team, "user": ["in", users]},
 			fields=[
@@ -93,8 +90,8 @@ class UserNotificationPreference(Document):
 				"email_enabled",
 				"in_app_enabled",
 				"frequency",
-				"digest_hour",
 			],
+			order_by="category asc",
 			limit=0,
 		)
 		children = frappe.get_all(
@@ -104,6 +101,7 @@ class UserNotificationPreference(Document):
 				"parenttype": "User Notification Preference",
 			},
 			fields=["parent", "event_type", "email_enabled"],
+			order_by="idx asc",
 			limit=0,
 		)
 		overrides = {}
@@ -114,32 +112,16 @@ class UserNotificationPreference(Document):
 			(row.user, row.category): {
 				"email_enabled": bool(row.email_enabled),
 				"in_app_enabled": bool(row.in_app_enabled),
-				"frequency": row.frequency or "Instant",
-				"digest_hour": 8 if row.digest_hour is None else row.digest_hour,
+				"frequency": row.frequency,
 				"events": overrides.get(row.name, {}),
 			}
 			for row in rows
 		}
 
 	def validate(self) -> None:
-		self._validate_choices()
 		self._set_digest_cursor()
 		self._validate_events()
 		self._validate_unique()
-
-	def _validate_choices(self) -> None:
-		self.frequency = self.get("frequency") or "Instant"
-		digest_hour = self.get("digest_hour")
-		digest_hour = 8 if digest_hour is None else digest_hour
-		if self.get("category") not in CATEGORIES:
-			frappe.throw(
-				_("Unsupported notification category {0}.").format(frappe.bold(self.get("category")))
-			)
-		if self.frequency not in FREQUENCIES:
-			frappe.throw(_("Unsupported email frequency {0}.").format(frappe.bold(self.frequency)))
-		if not str(digest_hour).isdigit() or int(digest_hour) > 23:
-			frappe.throw(_("Digest hour must be between 0 and 23."))
-		self.digest_hour = int(digest_hour)
 
 	def _set_digest_cursor(self) -> None:
 		if self.frequency == "Instant" or not frappe.utils.cint(self.get("email_enabled", 1)):
@@ -161,14 +143,6 @@ class UserNotificationPreference(Document):
 			frappe.throw(_("Preference for {0} already exists on this team").format(self.category))
 
 	def on_update(self) -> None:
-		if not self.flags.in_insert and self.has_value_changed("digest_hour"):
-			frappe.db.set_value(
-				"User Notification Preference",
-				{"user": self.user, "team": self.team, "name": ["!=", self.name]},
-				"digest_hour",
-				self.digest_hour,
-				update_modified=False,
-			)
 		before = self.get_doc_before_save()
 		if before and before.last_digest_at and self.frequency == "Instant" and self.email_enabled:
 			frappe.enqueue(

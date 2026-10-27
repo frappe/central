@@ -5,6 +5,7 @@ import {
 	Button,
 	Select,
 	SettingsRow,
+	Skeleton,
 	Switch,
 	TimePicker,
 	useCall,
@@ -24,13 +25,12 @@ import type {
 
 // Per-user notification preferences, one row per category. Email delivery and the
 // in-app feed toggle independently. Opt-out model: a category with no saved row is
-// enabled for both (see engine._should_email_now and the feed's in_app filter), so
+// enabled for both (see the notification engine and the feed's in_app filter), so
 // every switch defaults to on and we only persist the user's explicit choices.
 interface Channels {
 	email: boolean
 	in_app: boolean
 	frequency: NotificationFrequency
-	digest_hour: number
 	muted: string[]
 }
 
@@ -70,7 +70,6 @@ function defaults(): Record<Category, Channels> {
 		email: true,
 		in_app: true,
 		frequency: 'Instant' as NotificationFrequency,
-		digest_hour: 8,
 		muted: [],
 	})
 	return {
@@ -90,7 +89,6 @@ function toMap(prefs: Preference[] | undefined): Record<Category, Channels> {
 				email: Boolean(Number(p.email_enabled)),
 				in_app: Boolean(Number(p.in_app_enabled)),
 				frequency: p.frequency,
-				digest_hour: p.digest_hour,
 				muted: p.events
 					.filter((event) => !event.email_enabled)
 					.map((event) => event.event_type),
@@ -101,9 +99,11 @@ function toMap(prefs: Preference[] | undefined): Record<Category, Channels> {
 }
 
 const state = reactive<Record<Category, Channels>>(defaults())
+const digestHour = ref<number | null>(null)
 const formError = ref('')
 const expanded = ref<Category | null>(null)
 watch(state, () => (formError.value = ''), { deep: true })
+watch(digestHour, () => (formError.value = ''))
 
 const load = useCall<UserNotificationPreferences, { team: string }>({
 	url: method(API.notificationPreferences),
@@ -118,13 +118,14 @@ watch(
 	(data) => {
 		const map = toMap(data?.preferences)
 		Object.assign(state, map)
+		digestHour.value = data?.digest_hour ?? null
 	},
 	{ immediate: true },
 )
 
 const save = useCall<
 	{ saved: boolean },
-	{ team: string; preferences: Preference[] }
+	{ team: string; preferences: Preference[]; digest_hour?: number }
 >({
 	url: method(API.saveNotificationPreferences),
 	method: 'POST',
@@ -132,16 +133,14 @@ const save = useCall<
 })
 
 const dirty = computed(
-	() => JSON.stringify(toMap(load.data?.preferences)) !== JSON.stringify(state),
+	() =>
+		JSON.stringify(toMap(load.data?.preferences)) !== JSON.stringify(state) ||
+		digestHour.value !== load.data?.digest_hour,
 )
 
-// one digest hour per user and team, stored on every category row
-const digestHour = computed({
-	get: () => state.Billing.digest_hour,
-	set: (hour: number) => {
-		for (const { key } of CATEGORIES) state[key].digest_hour = hour
-	},
-})
+const digestTime = computed(() =>
+	digestHour.value == null ? '' : formatHour(digestHour.value),
+)
 const usesDigest = computed(() =>
 	CATEGORIES.some(
 		({ key }) => state[key].email && state[key].frequency !== 'Instant',
@@ -157,6 +156,13 @@ function toggleEvent(category: Category, eventType: string, on: boolean) {
 	state[category].muted = on ? muted : [...muted, eventType]
 }
 
+function setDigestHour(value: string) {
+	const hour = Number.parseInt(value, 10)
+	if (Number.isInteger(hour) && hour >= 0 && hour <= 23) {
+		digestHour.value = hour
+	}
+}
+
 async function onSave(): Promise<void> {
 	try {
 		const preferences: Preference[] = CATEGORIES.map(({ key }) => ({
@@ -164,13 +170,17 @@ async function onSave(): Promise<void> {
 			email_enabled: state[key].email ? 1 : 0,
 			in_app_enabled: state[key].in_app ? 1 : 0,
 			frequency: state[key].frequency,
-			digest_hour: state[key].digest_hour,
-			events: state[key].muted.map((event_type) => ({
-				event_type,
-				email_enabled: 0,
-			})),
+			events: state[key].muted
+				.filter((name) =>
+					eventsOf(key).some((event) => event.event_type === name),
+				)
+				.map((event_type) => ({ event_type, email_enabled: 0 })),
 		}))
-		await submitOrThrow(save, { ...teamParams(), preferences })
+		await submitOrThrow(save, {
+			...teamParams(),
+			preferences,
+			digest_hour: digestHour.value ?? undefined,
+		})
 		await load.reload()
 		successToast('Notification preferences saved')
 	} catch (e) {
@@ -195,6 +205,9 @@ async function onSave(): Promise<void> {
 				<Button label="Retry" @click="load.reload()" />
 			</template>
 		</EmptyState>
+		<div v-else-if="!load.data" class="space-y-2">
+			<Skeleton v-for="n in 4" :key="n" class="h-14 rounded-6" />
+		</div>
 		<template v-else>
 			<!-- Column headers, aligned to the switch cells below: with two switches
 			     per row, naming the channel once beats repeating a label against
@@ -210,7 +223,7 @@ async function onSave(): Promise<void> {
 				class="divide-y divide-outline-gray-1 border-t border-outline-gray-1"
 			>
 				<div v-for="cat in CATEGORIES" :key="cat.key">
-					<SettingsRow :title="cat.label" :description="cat.hint" label-for="">
+					<SettingsRow :title="cat.label" :description="cat.hint">
 						<div class="flex items-center gap-6">
 							<span class="flex w-12 justify-center">
 								<Switch
@@ -289,18 +302,22 @@ async function onSave(): Promise<void> {
 					v-if="usesDigest"
 					title="Digest time"
 					:description="`Daily and weekly digests go out at this hour, ${load.data?.time_zone}. Weekly digests go out on Monday.`"
-					label-for=""
 				>
 					<TimePicker
 						class="w-28"
-						:model-value="formatHour(digestHour)"
+						:model-value="digestTime"
 						:interval="60"
 						:typeable="false"
 						aria-label="Digest time"
-						@update:model-value="digestHour = Number.parseInt($event, 10)"
+						@update:model-value="setDigestHour"
 					/>
 				</SettingsRow>
 			</div>
+
+			<p class="mt-3 text-p-sm text-ink-gray-5">
+				Critical events, such as a failed payment or a server that is down, are
+				always emailed, even when a category's email is off.
+			</p>
 
 			<div class="mt-4 flex justify-end">
 				<Button

@@ -100,6 +100,51 @@ class TestTeamScopedPermissions(IntegrationTestCase):
 				}
 			).insert()
 
+	def test_notification_digest_settings_are_owned_and_team_scoped(self):
+		team = self._team("Digest Scoped", self.viewer, "Viewer")
+		other_team = self._team("Other Digest Scoped", self.other_user, "Viewer")
+
+		frappe.set_user(self.viewer)
+		setting = frappe.get_doc(
+			{
+				"doctype": "Notification Digest Setting",
+				"user": self.viewer,
+				"team": team.name,
+			}
+		).insert()
+		other_setting = frappe.get_doc(
+			{
+				"doctype": "Notification Digest Setting",
+				"user": self.other_user,
+				"team": other_team.name,
+			}
+		).insert(ignore_permissions=True)
+
+		self.assertEqual(frappe.get_list("Notification Digest Setting", pluck="name"), [setting.name])
+		self.assertTrue(frappe.has_permission("Notification Digest Setting", "read", setting.name))
+		self.assertFalse(frappe.has_permission("Notification Digest Setting", "read", other_setting.name))
+
+		with self.assertRaises(frappe.PermissionError):
+			frappe.get_doc(
+				{
+					"doctype": "Notification Digest Setting",
+					"user": self.other_user,
+					"team": team.name,
+				}
+			).insert()
+
+		setting.user = self.other_user
+		with self.assertRaises(frappe.PermissionError):
+			setting.save()
+		with self.assertRaises(frappe.PermissionError):
+			frappe.get_doc(
+				{
+					"doctype": "Notification Digest Setting",
+					"user": self.viewer,
+					"team": other_team.name,
+				}
+			).insert()
+
 	def test_internal_team_records_remain_operator_only(self):
 		frappe.set_user(self.viewer)
 		for query_conditions, has_permission in (

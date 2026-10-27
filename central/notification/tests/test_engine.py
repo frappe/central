@@ -44,6 +44,7 @@ class EngineTestBase(IntegrationTestCase):
 
 	def _purge(self):
 		frappe.db.delete("Team Notification", {"team": TEAM})
+		frappe.db.delete("Notification Digest Setting", {"team": TEAM})
 		pref_names = frappe.get_all("User Notification Preference", {"team": TEAM}, pluck="name")
 		if pref_names:
 			frappe.db.delete("Notification Event Preference", {"parent": ["in", pref_names]})
@@ -498,6 +499,9 @@ class TestSaveUserPreferences(EngineTestBase):
 
 	def test_saves_digest_and_event_overrides(self):
 		from central.notification.api import save_user_preferences
+		from central.notification.doctype.notification_digest_setting.notification_digest_setting import (
+			NotificationDigestSetting,
+		)
 
 		save_user_preferences(
 			team=TEAM,
@@ -507,30 +511,36 @@ class TestSaveUserPreferences(EngineTestBase):
 					"email_enabled": 1,
 					"in_app_enabled": 1,
 					"frequency": "Daily",
-					"digest_hour": 7,
 					"events": [
 						{"event_type": "payment_success", "email_enabled": 0},
 						{"event_type": "payment_failure", "email_enabled": 1},
 					],
 				}
 			],
+			digest_hour=7,
 		)
 
 		name = frappe.db.get_value(
 			"User Notification Preference",
 			{"user": self.user, "team": TEAM, "category": "Billing"},
 		)
-		pref = frappe.db.get_value(
-			"User Notification Preference", name, ["frequency", "digest_hour"], as_dict=True
-		)
+		pref = frappe.db.get_value("User Notification Preference", name, ["frequency"], as_dict=True)
 		self.assertEqual(pref.frequency, "Daily")
-		self.assertEqual(pref.digest_hour, 7)
+		self.assertEqual(NotificationDigestSetting.get_hour(self.user, TEAM), 7)
 		events = frappe.get_all(
 			"Notification Event Preference",
 			filters={"parent": name},
 			fields=["event_type", "email_enabled"],
 		)
 		self.assertEqual(events, [{"event_type": "payment_success", "email_enabled": 0}])
+
+	def test_get_returns_the_digest_default_before_the_first_save(self):
+		from central.notification.api import get_user_preferences
+		from central.notification.doctype.notification_digest_setting.notification_digest_setting import (
+			NotificationDigestSetting,
+		)
+
+		self.assertEqual(get_user_preferences(TEAM)["digest_hour"], NotificationDigestSetting.default_hour())
 
 	def test_get_returns_catalog_and_event_overrides(self):
 		from central.notification.api import get_user_preferences, save_user_preferences
@@ -543,16 +553,16 @@ class TestSaveUserPreferences(EngineTestBase):
 					"email_enabled": 1,
 					"in_app_enabled": 1,
 					"frequency": "Weekly",
-					"digest_hour": 9,
 					"events": [{"event_type": "payment_success", "email_enabled": 0}],
 				}
 			],
+			digest_hour=9,
 		)
 
 		out = get_user_preferences(TEAM)
 		billing = next(pref for pref in out["preferences"] if pref["category"] == "Billing")
 		self.assertEqual(billing["frequency"], "Weekly")
-		self.assertEqual(billing["digest_hour"], 9)
+		self.assertEqual(out["digest_hour"], 9)
 		self.assertEqual(billing["events"], [{"event_type": "payment_success", "email_enabled": 0}])
 		catalog = next(group for group in out["catalog"] if group["category"] == "Billing")
 		events = {event["event_type"]: event for event in catalog["events"]}
@@ -621,19 +631,26 @@ class TestSaveUserPreferences(EngineTestBase):
 		)
 		self.assertEqual((server, billing), ("Pilot", "None"))
 
-	def test_a_new_category_takes_the_digest_hour_of_the_others(self):
+	def test_saves_one_digest_hour_for_all_categories(self):
 		from central.notification.api import save_user_preferences
+		from central.notification.doctype.notification_digest_setting.notification_digest_setting import (
+			NotificationDigestSetting,
+		)
 
 		base = {"email_enabled": 1, "in_app_enabled": 1}
-		save_user_preferences(team=TEAM, preferences=[{**base, "category": "Billing", "digest_hour": 14}])
+		save_user_preferences(team=TEAM, preferences=[{**base, "category": "Billing"}], digest_hour=14)
 		save_user_preferences(team=TEAM, preferences=[{**base, "category": "Server"}])
-
-		hour = frappe.db.get_value(
-			"User Notification Preference",
-			{"user": frappe.session.user, "team": TEAM, "category": "Server"},
-			"digest_hour",
+		save_user_preferences(
+			team=TEAM,
+			preferences=[{**base, "category": "Team"}],
+			digest_hour=9,
 		)
-		self.assertEqual(hour, 14)
+
+		self.assertEqual(NotificationDigestSetting.get_hour(frappe.session.user, TEAM), 9)
+		self.assertEqual(
+			frappe.db.count("Notification Digest Setting", {"user": frappe.session.user, "team": TEAM}),
+			1,
+		)
 
 	def test_a_save_without_events_keeps_the_muted_events(self):
 		from central.notification.api import save_user_preferences
@@ -681,23 +698,49 @@ class TestSaveUserPreferences(EngineTestBase):
 
 	def test_a_save_without_frequency_keeps_the_stored_choice(self):
 		from central.notification.api import save_user_preferences
+		from central.notification.doctype.notification_digest_setting.notification_digest_setting import (
+			NotificationDigestSetting,
+		)
 
 		base = {"category": "Billing", "email_enabled": 1, "in_app_enabled": 1}
-		save_user_preferences(team=TEAM, preferences=[{**base, "frequency": "Weekly", "digest_hour": 6}])
+		save_user_preferences(team=TEAM, preferences=[{**base, "frequency": "Weekly"}], digest_hour=6)
 		save_user_preferences(team=TEAM, preferences=[{**base, "email_enabled": 0}])
 
 		saved = frappe.db.get_value(
 			"User Notification Preference",
 			{"user": frappe.session.user, "team": TEAM, "category": "Billing"},
-			["frequency", "digest_hour", "email_enabled"],
+			["frequency", "email_enabled"],
 			as_dict=True,
 		)
-		self.assertEqual((saved.frequency, saved.digest_hour, saved.email_enabled), ("Weekly", 6, 0))
+		self.assertEqual((saved.frequency, saved.email_enabled), ("Weekly", 0))
+		self.assertEqual(NotificationDigestSetting.get_hour(frappe.session.user, TEAM), 6)
+
+	def test_saves_midnight_as_a_digest_hour(self):
+		from central.notification.api import save_user_preferences
+		from central.notification.doctype.notification_digest_setting.notification_digest_setting import (
+			NotificationDigestSetting,
+		)
+
+		save_user_preferences(
+			team=TEAM,
+			preferences=[{"category": "Billing", "email_enabled": 1, "in_app_enabled": 1}],
+			digest_hour=0,
+		)
+
+		self.assertEqual(NotificationDigestSetting.get_hour(self.user, TEAM), 0)
+
+	def test_rejects_a_fractional_digest_hour(self):
+		from central.notification.doctype.notification_digest_setting.notification_digest_setting import (
+			NotificationDigestSetting,
+		)
+
+		with self.assertRaises(frappe.ValidationError):
+			NotificationDigestSetting.upsert(self.user, TEAM, 7.5)
 
 	def test_rejects_a_digest_hour_outside_the_day(self):
 		from central.notification.api import save_user_preferences
 
-		for digest_hour in (24, -1, "abc", 7.5):
+		for digest_hour in (24, -1):
 			with self.subTest(digest_hour=digest_hour), self.assertRaises(frappe.ValidationError):
 				save_user_preferences(
 					team=TEAM,
@@ -707,9 +750,9 @@ class TestSaveUserPreferences(EngineTestBase):
 							"email_enabled": 1,
 							"in_app_enabled": 1,
 							"frequency": "Daily",
-							"digest_hour": digest_hour,
 						}
 					],
+					digest_hour=digest_hour,
 				)
 
 	def test_creates_preferences_for_user(self):

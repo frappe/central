@@ -38,7 +38,7 @@ All categories are on for both channels, and email arrives instantly, until you 
 
 ## Choose how often you get email
 
-Each category can send email instantly, in a daily digest, or in a weekly digest. A digest is one email with all updates since the last digest. A weekly digest arrives on Monday.
+Each category can send email instantly, in a daily digest, or in a weekly digest. A digest is one email with up to 50 updates since the last digest. If more are waiting, the email says so and they stay in your feed. A weekly digest arrives on Monday.
 
 1. In **Notifications**, turn **Email** on for a category.
 2. Choose **Instantly**, **Daily digest**, or **Weekly digest** from the menu under the category.

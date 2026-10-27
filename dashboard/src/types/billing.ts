@@ -495,7 +495,6 @@ export interface NotificationPreference {
 	email_enabled: boolean | number
 	in_app_enabled: boolean | number
 	frequency: NotificationFrequency
-	digest_hour: number
 	events: { event_type: string; email_enabled: number }[]
 }
 
@@ -510,6 +509,7 @@ export interface NotificationCatalogEvent {
 /** get_user_preferences: saved rows plus the events each category holds. */
 export interface UserNotificationPreferences {
 	time_zone: string
+	digest_hour: number
 	preferences: NotificationPreference[]
 	catalog: {
 		category: NotificationCategory
