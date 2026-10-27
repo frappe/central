@@ -1,11 +1,10 @@
 <script setup lang="ts">
 import { Badge, Button, Tooltip } from 'frappe-ui'
 import { computed } from 'vue'
-import { money } from '@/lib/format'
-import { subscriptionTitle } from '@/lib/subscriptions'
-
 import SubscriptionRowActions from '@/components/billing/SubscriptionRowActions.vue'
 import Table from '@/components/common/Table.vue'
+import { money } from '@/lib/format'
+import { subscriptionTitle } from '@/lib/subscriptions'
 
 import type {
 	PayingForItem,

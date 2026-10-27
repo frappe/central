@@ -70,9 +70,25 @@ const goToObjectStorage = () => router.push({ name: 'ObjectStorage' })
 
 		<LoadingText v-if="loading" :lines="3" class="px-4 pb-5" />
 
-		<div v-else-if="rows.length">
+		<div v-else>
+			<div
+				v-if="!rows.length"
+				class="flex flex-wrap items-center justify-between gap-3 border-t border-outline-gray-1 px-4 py-4"
+			>
+				<p class="text-p-sm text-ink-gray-5">
+					Servers and metered services you subscribe to show here with what they
+					cost.
+				</p>
+				<Button
+					v-if="canManageBilling"
+					label="Open Object Storage"
+					@click="goToObjectStorage"
+				/>
+			</div>
+
 			<PayingForTable
 				show-projects
+				:hide-header="!rows.length"
 				:rows="visible"
 				:project-count="projectCount"
 				:currency="currency"
@@ -94,21 +110,6 @@ const goToObjectStorage = () => router.push({ name: 'ObjectStorage' })
 				View all {{ rows.length }}
 				<span class="lucide-arrow-right size-3.5" aria-hidden="true" />
 			</button>
-		</div>
-
-		<div
-			v-else
-			class="flex flex-wrap items-center justify-between gap-3 border-t border-outline-gray-1 px-4 py-4"
-		>
-			<p class="text-p-sm text-ink-gray-5">
-				Servers and metered services you subscribe to show here with what they
-				cost.
-			</p>
-			<Button
-				v-if="canManageBilling"
-				label="Open Object Storage"
-				@click="goToObjectStorage"
-			/>
 		</div>
 
 		<CreateProjectDialog v-model="showCreate" @created="reloadProjects" />
