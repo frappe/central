@@ -14,7 +14,9 @@ const { canManageNetwork } = useCapabilities()
 
 <template>
 	<div class="space-y-2">
-		<p class="text-base-medium text-ink-gray-8">Servers in this region</p>
+		<p class="text-base-medium text-ink-gray-8">
+			Servers this device can reach
+		</p>
 		<p v-if="!servers.length" class="text-p-sm text-ink-gray-5">
 			No servers yet. A new server is reachable once you turn on its WireGuard
 			access.
@@ -29,8 +31,12 @@ const { canManageNetwork } = useCapabilities()
 					<p class="truncate text-base text-ink-gray-8">{{ server.title }}</p>
 					<CopyableValue
 						v-if="server.ipv6_address"
-						:value="server.ipv6_address"
-						label="Private address"
+						:value="
+							server.has_wireguard_access
+								? `ssh root@${server.ipv6_address}`
+								: server.ipv6_address
+						"
+						:label="server.has_wireguard_access ? 'SSH command' : 'Private address'"
 					/>
 				</div>
 				<Badge

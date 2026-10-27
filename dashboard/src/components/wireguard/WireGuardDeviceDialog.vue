@@ -60,6 +60,11 @@ const canSave = computed(
 		!!region.value &&
 		(!hasOwnKey.value || (!!publicKey.value.trim() && !keyProblem.value)),
 )
+const regionServers = computed(() =>
+	props.servers.filter(
+		(server) => server.region === (device.value?.region ?? region.value),
+	),
+)
 const config = computed(() =>
 	device.value
 		? buildConfig(device.value, privateKey.value || '<your private key>')
@@ -77,7 +82,6 @@ watch(open, (value) => {
 		error.value = ''
 		return
 	}
-	device.value = null
 	privateKey.value = ''
 })
 
@@ -124,9 +128,22 @@ async function submit() {
 				title="The private key is shown only now"
 				description="Download the file before you close this. Central never saw the key and can't show it again."
 			/>
-			<p v-else class="text-p-sm text-ink-gray-6">
-				Put the private key of your device in place of the placeholder.
-			</p>
+
+			<ol class="list-decimal space-y-1 pl-5 text-p-sm text-ink-gray-7">
+				<li>
+					Install the
+					<a
+						href="https://www.wireguard.com/install/"
+						target="_blank"
+						rel="noopener"
+						class="text-p-sm-medium text-ink-gray-8 hover:underline"
+						>WireGuard app</a
+					>.
+				</li>
+				<li v-if="privateKey">Download the file and import it.</li>
+				<li v-else>Copy the file, add your private key, and import it.</li>
+				<li>Turn on the tunnel and copy an SSH command below.</li>
+			</ol>
 
 			<div class="relative">
 				<pre
@@ -140,12 +157,11 @@ async function submit() {
 				/>
 			</div>
 
-			<WireGuardServerList
-				:servers="servers.filter((server) => server.region === device?.region)"
-			/>
+			<WireGuardServerList :servers="regionServers" />
 
 			<div class="flex justify-end gap-2">
 				<Button
+					v-if="privateKey"
 					icon-left="lucide-download"
 					label="Download .conf"
 					@click="downloadConfig(device, config)"
@@ -194,6 +210,7 @@ async function submit() {
 			<p v-else class="text-p-sm text-ink-gray-5">
 				Your browser makes the key pair. Only the public key is sent to Central.
 			</p>
+			<WireGuardServerList v-if="region" :servers="regionServers" />
 			<div class="flex justify-end gap-2">
 				<Button label="Cancel" :disabled="busy" @click="open = false" />
 				<Button

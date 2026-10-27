@@ -6,15 +6,15 @@ A WireGuard Device lets one customer device reach the team's servers in one regi
 
 ## Access
 
-`server:view` can list the team's devices. `server:wireguard` can add and remove them. The Owner, Admin, and Developer system roles have `server:wireguard`. A server accepts device traffic only after a member with `server:network` turns on WireGuard access for it.
+`server:wireguard` can list and add the team's devices and remove their own. Only an operator can change a device after it is added. `team:manage_members` can also remove a device of any member. The Owner, Admin, and Developer system roles have `server:wireguard`. A team has at most 100 devices. A server accepts device traffic only after a member with `server:network` turns on WireGuard access for it.
 
 ## Creation
 
-The console makes the key pair in the browser and sends only the public key. A user can also paste a public key from `wg genkey | wg pubkey`. Central gives the device the next free client ID of the team, from 1 to 65535, and registers it with `POST /v1/peers` in `after_insert`. If the gateway refuses, the insert rolls back. The console shows the complete `.conf` file once and does not keep the private key.
+The console makes the key pair in the browser and sends only the public key. A user can also paste a public key from `wg genkey | wg pubkey`. Central gives the device the highest client ID of the team plus one, up to 65535, and registers it with `POST /v1/peers` in `after_insert`. If the gateway refuses, the insert rolls back. The console shows the complete `.conf` file once and does not keep the private key.
 
 ## Removal
 
-Delete sends `DELETE /v1/peers`. If the gateway cannot be reached, the device stays as `Removing` and a job every 5 minutes tries again. In Desk, **Retry Removal** tries at once. When a member leaves the team or is removed, their devices go to `Removing`. When the team is archived, all its devices go to `Removing`. Suspension keeps devices, because the servers stop.
+Delete sends `DELETE /v1/peers`. If the gateway cannot be reached, the device stays as `Removing` and a job every 5 minutes tries again. In Desk, **Remove Device** removes a lost device and **Retry Removal** tries a `Removing` device again at once. When a member loses `server:wireguard`, all of their devices go to `Removing`. This happens when they leave the team, are removed, get a role without it, or their role loses it. A disabled user loses their devices in every team. When the team is archived, all its devices go to `Removing`. Suspension keeps devices, because the servers stop.
 
 ## Restore
 

@@ -8,11 +8,13 @@ from frappe import _
 from frappe.model.document import Document
 from frappe.query_builder.functions import Max
 
+from central.iam import can, get_team_names_with_role
 from central.identity.doctype.team.tenant import validate_tenant_id
 from central.infrastructure.doctype.region.region import Region
 from central.integrations.wireguard import WireGuardGatewayClient, WireGuardGatewayError
 
 MAXIMUM_CLIENT_ID = 65535
+MAXIMUM_TEAM_DEVICES = 100
 
 
 class WireGuardDevice(Document):
@@ -53,20 +55,19 @@ class WireGuardDevice(Document):
 
 	def before_insert(self) -> None:
 		validate_tenant_id(self.tenant_id)
+		if frappe.db.count("WireGuard Device", {"team": self.team}) >= MAXIMUM_TEAM_DEVICES:
+			frappe.throw(
+				_("This team has {0} WireGuard devices. Remove one before you add another.").format(
+					MAXIMUM_TEAM_DEVICES
+				)
+			)
 		self.added_by = frappe.session.user
 		self.status = "Active"
 		self.client_id = get_next_client_id(self.team)
 
 	def after_insert(self) -> None:
 		settings = self.get_client().register_peer(self.tenant_id, self.client_id, self.public_key)
-		self.db_set(
-			{
-				"address": settings["address"],
-				"allowed_ips": "\n".join(settings["allowed_ips"]),
-				"endpoint": settings["endpoint"],
-				"gateway_public_key": settings["public_key"],
-			}
-		)
+		self.db_set(get_gateway_fields(settings))
 
 	def on_trash(self) -> None:
 		self.get_client().remove_peer(self.tenant_id, self.client_id)
@@ -83,8 +84,8 @@ class WireGuardDevice(Document):
 		return True
 
 	@frappe.whitelist(methods=["POST"])
-	def retry_removal(self) -> bool:
-		"""Operator action: try the gateway again for a device stuck in Removing."""
+	def remove_device(self) -> bool:
+		"""Operator action: take a lost device off its gateway or retry one stuck in Removing."""
 		self.check_permission("delete")
 		return self.remove()
 
@@ -96,8 +97,18 @@ class WireGuardDevice(Document):
 		return Region.get_wireguard_client(self.region)
 
 
+def get_gateway_fields(peer: dict) -> dict:
+	"""The device fields that the gateway settings of one peer fill."""
+	return {
+		"address": peer["address"],
+		"allowed_ips": "\n".join(peer["allowed_ips"]),
+		"endpoint": peer["endpoint"],
+		"gateway_public_key": peer["public_key"],
+	}
+
+
 def get_next_client_id(team: str) -> int:
-	# shortcut: deleted device ids are not reused so scan for gaps if a team nears the limit
+	# shortcut: the next id is the highest remaining id plus one so gaps stay unused, scan for gaps if a team nears the limit
 	device = frappe.qb.DocType("WireGuard Device")
 	highest = frappe.qb.from_(device).select(Max(device.client_id)).where(device.team == team).run()[0][0]
 	client_id = (highest or 0) + 1
@@ -107,12 +118,41 @@ def get_next_client_id(team: str) -> int:
 	return client_id
 
 
-def remove_departed_devices(team) -> None:
-	"""Queue removal of devices whose member left and of every device of an archived team."""
-	members = [] if team.status == "Archived" else [m.user for m in team.members if m.status == "Active"]
-	filters = {"team": team.name, "status": "Active"}
-	if members:
-		filters["added_by"] = ("not in", members)
+def remove_departed_devices(team: Document) -> None:
+	"""Queue removal of every device whose owner no longer holds server:wireguard in the team."""
+	# a suspended team keeps its devices because its servers stop and grants come back on unsuspend
+	if team.status == "Suspended":
+		return
+
+	if team.status == "Archived":
+		queue_removal({"team": team.name})
+		return
+
+	users = frappe.get_all(
+		"WireGuard Device", {"team": team.name, "status": "Active"}, pluck="added_by", distinct=True
+	)
+	departed = [user for user in users if not can(user, team.name, "server:wireguard")]
+	if departed:
+		queue_removal({"team": team.name, "added_by": ("in", departed)})
+
+
+def remove_devices_for_role(role: str) -> None:
+	"""Recheck the device owners of every team with a member on a role whose capabilities changed."""
+	teams = frappe.get_all("WireGuard Device", {"status": "Active"}, pluck="team", distinct=True)
+	if not teams:
+		return
+
+	for team in get_team_names_with_role(role, teams):
+		remove_departed_devices(frappe.get_doc("Team", team))
+
+
+def remove_disabled_user_devices(user: Document, method: str | None = None) -> None:
+	if not user.enabled and user.has_value_changed("enabled"):
+		queue_removal({"added_by": user.name})
+
+
+def queue_removal(filters: dict) -> None:
+	filters = {**filters, "status": "Active"}
 	if not frappe.db.exists("WireGuard Device", filters):
 		return
 
@@ -125,7 +165,12 @@ def remove_departed_devices(team) -> None:
 
 def remove_pending_devices() -> None:
 	for name in frappe.get_all("WireGuard Device", {"status": "Removing"}, pluck="name"):
-		frappe.get_doc("WireGuard Device", name).remove()
+		# an overlapping run may have deleted it already
+		try:
+			device = frappe.get_doc("WireGuard Device", name)
+		except frappe.DoesNotExistError:
+			continue
+		device.remove()
 
 
 def restore_devices(region: str) -> int:
@@ -158,15 +203,7 @@ def restore_devices(region: str) -> int:
 	peers = {(peer["tenant_id"], peer["client_id"]): peer for peer in client.list_peers()}
 	for row in rows:
 		peer = peers[(row.tenant_id, row.client_id)]
-		frappe.db.set_value(
-			"WireGuard Device",
-			row.name,
-			{
-				"address": peer["address"],
-				"endpoint": peer["endpoint"],
-				"gateway_public_key": peer["public_key"],
-			},
-		)
+		frappe.db.set_value("WireGuard Device", row.name, get_gateway_fields(peer))
 
 	return len(rows)
 
@@ -174,3 +211,4 @@ def restore_devices(region: str) -> int:
 def on_doctype_update() -> None:
 	frappe.db.add_unique("WireGuard Device", ["team", "client_id"])
 	frappe.db.add_index("WireGuard Device", ["status"])
+	frappe.db.add_index("WireGuard Device", ["region"])

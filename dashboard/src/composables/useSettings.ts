@@ -51,9 +51,9 @@ export interface SettingsTabDef {
 	/**
 	 * Capability gate, resolved by the consumer against useCapabilities:
 	 * 'member' needs any standing on the team, 'teamAdmin' needs team:edit or
-	 * team:delete. Undefined is always available.
+	 * team:delete, 'wireguard' needs server:wireguard. Undefined is always available.
 	 */
-	requires?: 'member' | 'teamAdmin'
+	requires?: 'member' | 'teamAdmin' | 'wireguard'
 }
 
 export const SETTINGS_TABS: SettingsTabDef[] = [
@@ -122,16 +122,18 @@ export const SETTINGS_TABS: SettingsTabDef[] = [
 		description:
 			'Devices that reach your servers over their private addresses.',
 		component: WireGuardForm,
-		requires: 'member',
+		requires: 'wireguard',
 	},
 ]
 
 /** The settings tabs this member can open on the active team. */
 export function useSettingsTabs() {
-	const { isMember, canEditTeam, canDeleteTeam } = useCapabilities()
+	const { isMember, canEditTeam, canDeleteTeam, canManageWireGuard } =
+		useCapabilities()
 
 	const isAvailable = (tab: SettingsTabDef): boolean => {
 		if (tab.requires === 'member') return isMember.value
+		if (tab.requires === 'wireguard') return canManageWireGuard.value
 		if (tab.requires === 'teamAdmin')
 			return canEditTeam.value || canDeleteTeam.value
 		return true

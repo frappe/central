@@ -289,9 +289,14 @@
    "group": "Cargo",
    "link_doctype": "Service Detail",
    "link_fieldname": "region"
+  },
+  {
+   "group": "WireGuard",
+   "link_doctype": "WireGuard Device",
+   "link_fieldname": "region"
   }
  ],
- "modified": "2026-10-25 13:08:41.226097",
+ "modified": "2026-10-27 18:51:33.271906",
  "modified_by": "Administrator",
  "module": "Infrastructure",
  "name": "Region",

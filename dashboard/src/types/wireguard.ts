@@ -5,6 +5,7 @@ export interface WireGuardDevice {
 	region: string
 	status: 'Active' | 'Removing'
 	added_by: string
+	added_by_name?: string
 	public_key: string
 	address: string
 	/** One server range per line. */
@@ -12,6 +13,8 @@ export interface WireGuardDevice {
 	endpoint: string
 	gateway_public_key: string
 	creation: string
+	/** The viewer added the device or can manage members. */
+	can_delete?: boolean
 }
 
 export interface WireGuardRegion {

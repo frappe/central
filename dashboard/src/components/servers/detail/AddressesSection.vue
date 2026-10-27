@@ -10,11 +10,13 @@ import {
 } from '@/components/common/list-view'
 import RowActionsMenu from '@/components/common/RowActionsMenu.vue'
 import SettingsSection from '@/components/common/SettingsSection.vue'
+import { useCapabilities } from '@/composables/useCapabilities'
 import {
 	type IpVersion,
 	usePublicIpv4Pricing,
 	useServerAddresses,
 } from '@/composables/useServerAddresses'
+import { openSettings } from '@/composables/useSettings'
 import { reportError, successToast } from '@/lib/feedback'
 import type { ServerOverview } from '@/types/servers'
 
@@ -40,6 +42,7 @@ interface AddressChange {
 const props = defineProps<Props>()
 const emit = defineEmits<{ changed: [] }>()
 
+const { canManageWireGuard } = useCapabilities()
 const { priceLabel } = usePublicIpv4Pricing(computed(() => props.server.region))
 const { setPublicIp, setIpv4Internet, setWireguardAccess, isSaving } =
 	useServerAddresses(computed(() => props.server.resource_id))
@@ -61,7 +64,9 @@ const addresses = computed(() =>
 		{
 			label: 'Private IPv6',
 			value: props.server.ipv6_address,
-			reach: 'Your servers in this region',
+			reach: props.server.has_wireguard_access
+				? 'Your servers and WireGuard devices'
+				: 'Your servers in this region',
 			version: null,
 		},
 	].filter((row): row is Address => !!row.value),
@@ -236,9 +241,22 @@ async function toggleWireguardAccess(enabled: boolean): Promise<void> {
 			:model-value="!!server.has_wireguard_access"
 			:disabled="!canEdit || isSaving"
 			label="WireGuard access"
-			description="Lets your team's WireGuard devices reach this server's private address."
+			:description="
+				server.has_wireguard_access
+					? 'WireGuard devices of your team reach this server at its private IPv6 address.'
+					: 'Lets WireGuard devices of your team reach the private address of this server.'
+			"
 			class="rounded-6 px-2 py-3"
 			@update:model-value="toggleWireguardAccess"
+		/>
+		<Button
+			v-if="server.region_details.has_wireguard_gateway && canManageWireGuard"
+			size="sm"
+			variant="ghost"
+			icon-left="lucide-shield"
+			label="Manage WireGuard devices"
+			class="mx-2 self-start"
+			@click="openSettings('wireguard')"
 		/>
 
 		<ConfirmDialog

@@ -17,7 +17,7 @@ The **Networking** tab of a server shows its addresses, its firewall, and the do
 | --- | --- | --- |
 | **Public IPv4** | Anyone on the internet | Monthly price for each region. The button shows the price. |
 | **Public IPv6** | Anyone on the internet | Free |
-| **Private IPv6** | Your servers in this region | Free |
+| **Private IPv6** | Your servers in this region, and your WireGuard devices when WireGuard access is on | Free |
 
 Every server gets a private IPv6 address when it finishes setting up. Click an address to copy it.
 
@@ -40,6 +40,10 @@ A detached IPv4 address goes back to the region and its billing stops. You canno
 ### IPv4 internet access
 
 A server without a public IPv4 address cannot reach sites that have only IPv4 addresses. Turn on **IPv4 internet access** to let it reach them. The switch stays on while the server has a public IPv4 address.
+
+### WireGuard access
+
+In a region with a WireGuard gateway, turn on **WireGuard access** to let the team's [WireGuard devices](/servers/wireguard) reach the private IPv6 address of the server. It is off by default. Click **Manage WireGuard devices** to add or delete devices.
 
 ## Firewall
 
@@ -91,5 +95,6 @@ Changing addresses and the firewall needs the **Owner**, **Admin**, or **Develop
 
 - [Create a server](/servers/create)
 - [Connect with SSH](/servers/access)
+- [WireGuard devices](/servers/wireguard)
 - [Regions](/servers/regions)
 - [Domains and SSL](/pilot/domains)

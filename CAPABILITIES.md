@@ -37,7 +37,7 @@ The distinction matters:
 | `service:view` | View managed service configuration. |
 | `service:manage` | Create and delete storage buckets, set bucket quotas, rotate bucket credentials, and download, upload, and delete stored objects. |
 | `server:ssh-key` | Add, rotate, and remove Team SSH keys for selected servers. |
-| `server:wireguard` | Add and remove team WireGuard devices that reach servers through the regional gateway. |
+| `server:wireguard` | See, add, and remove team WireGuard devices that reach servers through the regional gateway. A member removes only their own devices unless they also hold `team:manage_members`. |
 
 ### `atlas` plane (9)
 

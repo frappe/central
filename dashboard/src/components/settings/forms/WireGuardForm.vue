@@ -56,7 +56,7 @@ const getActions = (device: WireGuardDevice) => [
 			viewing.value = device
 		},
 	},
-	...(canManageWireGuard.value && device.status === 'Active'
+	...(device.can_delete && device.status === 'Active'
 		? [
 				{
 					label: 'Delete',
@@ -129,7 +129,7 @@ const getActions = (device: WireGuardDevice) => [
 					</div>
 					<p class="truncate text-sm text-ink-gray-5">
 						{{ row.address }}
-						· added by {{ row.added_by }}
+						· added by {{ row.added_by_name || row.added_by }}
 					</p>
 				</div>
 			</template>

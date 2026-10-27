@@ -147,22 +147,25 @@ def team_ssh_key_has_permission(doc, user: str | None = None, ptype: str | None 
 
 def wireguard_device_query_conditions(user: str | None = None) -> str:
 	"""1. Operators see all devices.
-	2. Users see devices in teams where they can view servers.
+	2. Users see devices in teams where they hold server:wireguard.
 	3. Other users see no devices.
 	"""
-	return _team_field_query_conditions("WireGuard Device", "server:view", user)
+	return _team_field_query_conditions("WireGuard Device", "server:wireguard", user)
 
 
 def wireguard_device_has_permission(doc, user: str | None = None, ptype: str | None = None, **kwargs) -> bool:
 	"""1. Operators may manage devices.
-	2. A user who can view a server of the team may read its devices.
-	3. Members with team-wide server:wireguard may add or remove devices.
+	2. Members with team-wide server:wireguard may read and add devices and remove their own.
+	3. Members with team:manage_members may also remove any device of the team.
+	4. Only operators may change a device after it is added.
 	"""
 	user = user or frappe.session.user
-	if ptype in MUTATING_PERMISSION_TYPES or user_has_operator_bypass(user):
-		return _team_field_has_permission(doc, (), ("server:wireguard",), user, ptype)
+	if user_has_operator_bypass(user):
+		return True
+	if not doc.team or not can(user, doc.team, "server:wireguard") or ptype == "write":
+		return False
 
-	return bool(doc.team) and can_on_any_server(user, doc.team, "server:view")
+	return ptype != "delete" or doc.added_by == user or can(user, doc.team, "team:manage_members")
 
 
 def resource_action_query_conditions(user: str | None = None) -> str:

@@ -1,7 +1,13 @@
 import frappe
 from frappe import _
+from frappe.utils.translations import _lt
 
-from central.iam import can_on_any_server
+from central.permissions import wireguard_device_has_permission
+from central.utils.guards import require_capability
+
+ACCESS_MESSAGE = _lt(
+	"You can't manage WireGuard devices for this team. Ask a team admin to review your access."
+)
 
 DEVICE_FIELDS = (
 	"name",
@@ -18,18 +24,10 @@ DEVICE_FIELDS = (
 )
 
 
-def require_access(team: str, capability: str) -> None:
-	if not can_on_any_server(frappe.session.user, team, capability):
-		frappe.throw(
-			_("You cannot manage WireGuard devices for this team. Ask a team admin to review your access."),
-			frappe.PermissionError,
-		)
-
-
 @frappe.whitelist(methods=["GET"])
+@require_capability("server:wireguard", ACCESS_MESSAGE)
 def list_wireguard_devices(team: str) -> dict:
 	"""Return the team's devices with the gateway regions and the servers a device could reach."""
-	require_access(team, "server:view")
 	devices = frappe.get_list(
 		"WireGuard Device",
 		filters={"team": team},
@@ -57,13 +55,26 @@ def list_wireguard_devices(team: str) -> dict:
 		limit_page_length=0,
 	)
 
+	owners = {
+		user.name: user.full_name
+		for user in frappe.get_all(
+			"User",
+			filters={"name": ("in", list({device.added_by for device in devices}))},
+			fields=["name", "full_name"],
+		)
+	}
+
+	for device in devices:
+		device.added_by_name = owners.get(device.added_by) or device.added_by
+		device.can_delete = wireguard_device_has_permission(frappe._dict(device, team=team), ptype="delete")
+
 	return {"devices": devices, "regions": regions, "servers": servers}
 
 
 @frappe.whitelist(methods=["POST"])
+@require_capability("server:wireguard", ACCESS_MESSAGE)
 def create_wireguard_device(team: str, region: str, title: str, public_key: str) -> dict:
 	"""Register a device with the region's gateway and return its settings."""
-	require_access(team, "server:wireguard")
 	device = frappe.get_doc(
 		{
 			"doctype": "WireGuard Device",
@@ -78,11 +89,16 @@ def create_wireguard_device(team: str, region: str, title: str, public_key: str)
 
 
 @frappe.whitelist(methods=["POST"])
+@require_capability("server:wireguard", ACCESS_MESSAGE)
 def delete_wireguard_device(team: str, name: str) -> dict:
 	"""Remove a device from its gateway. A gateway outage leaves it Removing until a retry works."""
-	require_access(team, "server:wireguard")
 	device = frappe.get_doc("WireGuard Device", name)
 	if device.team != team:
 		frappe.throw(_("This device does not belong to the team."), frappe.PermissionError)
+	if not device.has_permission("delete"):
+		frappe.throw(
+			_("You can remove only your own devices. Ask a team admin to remove this one."),
+			frappe.PermissionError,
+		)
 
 	return {"is_removed": device.remove()}

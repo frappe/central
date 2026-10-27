@@ -27,10 +27,12 @@ The system roles are the same in every team. You cannot change or delete them.
 | Create servers | ✓ | ✓ | ✓ | | |
 | Start, stop, and restart servers | ✓ | ✓ | ✓ | | |
 | Resize, rebuild, or rename servers | ✓ | ✓ | ✓ | | |
-| Change the firewall and public addresses | ✓ | ✓ | ✓ | | |
+| Change the firewall, public addresses, and WireGuard access | ✓ | ✓ | ✓ | | |
 | Create and restore snapshots | ✓ | ✓ | ✓ | | |
 | Terminate servers | ✓ | ✓ | ✓ | | |
 | Manage Team SSH keys | ✓ | ✓ | ✓ | | |
+| See, add, and delete your own [WireGuard devices](/servers/wireguard) | ✓ | ✓ | ✓ | | |
+| Delete the WireGuard device of another member | ✓ | ✓ | | | |
 | Open the server web console | ✓ | ✓ | ✓ | | |
 | View add-on services | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Subscribe to and manage add-on services | ✓ | ✓ | ✓ | ✓ | |

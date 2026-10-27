@@ -187,6 +187,7 @@ doc_events = {
 	"User": {
 		"validate": "central.users.validate_user_image",
 		"after_insert": "central.users.grant_central_user_role",
+		"on_update": "central.infrastructure.doctype.wireguard_device.wireguard_device.remove_disabled_user_devices",
 	},
 	# A Billing Profile's level reaches Grove by the Webhook AI Settings keeps, with retries.
 	"Trust Tier Level": {

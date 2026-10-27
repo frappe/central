@@ -20,6 +20,7 @@ export const sidebar: SidebarSection[] = [
 			{ text: 'Monitor usage', link: '/servers/usage' },
 			{ text: 'Connect with SSH', link: '/servers/access' },
 			{ text: 'Networking and firewall', link: '/servers/networking' },
+			{ text: 'WireGuard devices', link: '/servers/wireguard' },
 			{ text: 'Snapshots', link: '/servers/snapshots' },
 			{ text: 'Resize, stop, and terminate', link: '/servers/lifecycle' },
 		],

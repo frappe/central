@@ -127,6 +127,16 @@ def is_active_team_member(user: str, team: str) -> bool:
 	return bool(query.run())
 
 
+def get_team_names_with_role(role: str, teams: list[str]) -> list[str]:
+	"""The teams among `teams` where at least one member holds `role`."""
+	return frappe.get_all(
+		"Team Member",
+		filters={"parenttype": "Team", "role": role, "parent": ("in", teams)},
+		pluck="parent",
+		distinct=True,
+	)
+
+
 def resolve_team(user: str, team: str | None = None) -> str:
 	"""The team to act on: the one given, else the user's sole active team. With
 	zero or many teams and none specified, the caller must pick one."""

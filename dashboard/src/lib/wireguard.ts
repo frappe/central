@@ -47,7 +47,12 @@ export const buildConfig = (
 export function downloadConfig(device: WireGuardDevice, config: string): void {
 	const link = document.createElement('a')
 	link.href = URL.createObjectURL(new Blob([config], { type: 'text/plain' }))
-	link.download = `${`fc-${device.region}`.slice(0, 15)}.conf`
+	const name = device.title
+		.toLowerCase()
+		.replace(/[^a-z0-9]+/g, '-')
+		.slice(0, 15)
+		.replace(/^-+|-+$/g, '')
+	link.download = `${name || 'wireguard'}.conf`
 	link.click()
 	URL.revokeObjectURL(link.href)
 }
