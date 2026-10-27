@@ -159,7 +159,7 @@ const copyEndpoint = async (endpoint: string): Promise<void> => {
 				<TabButtons
 					v-model="activeTab"
 					:options="tabs"
-					class="mt-6 self-start"
+					class="mt-4 self-start"
 				/>
 
 				<BucketFiles
@@ -173,7 +173,7 @@ const copyEndpoint = async (endpoint: string): Promise<void> => {
 					v-else
 					:bucket="bucket"
 					:can-manage="canManageServices"
-					class="mt-6 min-h-0 overflow-y-auto"
+					class="mt-4 min-h-0 overflow-y-auto"
 					@rotated="credentials = $event"
 					@deleted="router.push('/object-storage')"
 				/>
