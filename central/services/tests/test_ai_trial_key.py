@@ -136,7 +136,9 @@ class TestAITrialKey(IntegrationTestCase):
 		other = AITrialKey.assign(self.action("action-2"))
 
 		self.assertEqual((taken.name, retried.name, other.name), (first.name, first.name, second.name))
-		self.assertEqual((first.reload().status, first.team, first.resource_action), ("Assigned", "TEAM-00001", "action-1"))
+		self.assertEqual(
+			(first.reload().status, first.team, first.resource_action), ("Assigned", "TEAM-00001", "action-1")
+		)
 
 	def test_only_a_running_trials_cap_can_be_raised_and_only_upward(self):
 		key = self.available()
@@ -169,9 +171,7 @@ class TestAITrialKey(IntegrationTestCase):
 
 		self.assertEqual(
 			key.get_site_config(),
-			{
-				"ai_keys": [{"gateway_url": GATEWAY, "api_key": f"gr_{key.grove_key}"}]
-			},
+			{"ai_keys": [{"gateway_url": GATEWAY, "api_key": f"gr_{key.grove_key}"}]},
 		)
 
 	def test_a_failed_creation_releases_its_key_and_a_retry_gets_a_new_one(self):
@@ -196,7 +196,6 @@ class TestAITrialKey(IntegrationTestCase):
 			AITrialKey.queue_revoke(server="server-1")
 
 		self.assertEqual((key.reload().server, key.status), ("server-1", "Revoking"))
-
 
 	def test_a_refused_revoke_stays_revoking_and_is_tried_again_once_stale(self):
 		key = self.available()
