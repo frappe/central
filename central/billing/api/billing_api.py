@@ -691,14 +691,16 @@ _PROFILE_FIELDS = (
 @pilot_credential_auth
 def get_billing_profile() -> dict:
 	"""The team's billing profile (stored fields plus derived setup state:
-	complete / missing / currency_locked / supported_currencies)."""
+	complete / missing / currency_locked / supported_currencies), plus the `countries`
+	and `india_states` the address form picks from."""
+	from central.billing.api.dashboard.account import get_billing_geo
 	from central.billing.api.dashboard.account import get_billing_profile as _get
 
 	team = _team()
 	# The delegated read gates on the session user's capability; act as operator (team
 	# is fixed from the verified credential).
 	with _as_operator():
-		return _get(team)
+		return {**_get(team), **get_billing_geo()}
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
