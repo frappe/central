@@ -41,11 +41,16 @@ def get_server_plans(
 	cluster: str | None = None,
 	exclude_subscription: str | None = None,
 	for_resize: int | str | None = None,
+	server: str | None = None,
+	include_trial_plans: bool = False,
 ) -> dict:
 	"""Return priced server plans and custom profiles authorized for this Team.
 
 	Exclude the named subscription from existing spend when comparing resize options.
-	Atlas performs placement at creation; this catalog does not promise regional capacity.
+	`server` names a trial server that has no subscription yet, so its plan floor applies.
+	Plans marked Available on Trial are left out unless `include_trial_plans` asks for a
+	free trial site's plans. Atlas performs placement at creation; this catalog does not
+	promise regional capacity.
 	"""
 	currency = get_team_currency(team)
 	caps = get_team_caps(team)
@@ -64,10 +69,8 @@ def get_server_plans(
 	is_staging_trial = bool(frappe.db.get_value("Team", team, "is_staging_trial"))
 	is_capped = not is_internal_team(team)
 	resizing = bool(frappe.utils.cint(for_resize))
-	if is_staging_trial and not resizing:
-		trial_plans = trial_plan_names()
-		if trial_plans is not None:
-			allowed_plans = trial_plans if allowed_plans is None else (allowed_plans & trial_plans)
+	is_trial_menu = is_staging_trial and not resizing
+	allowed_plans, hidden_plans = _scope_trial_plans(allowed_plans, is_trial_menu, include_trial_plans)
 
 	header = {
 		"team": team,
@@ -100,8 +103,8 @@ def get_server_plans(
 	if not server_categories:
 		return empty
 
-	rate_card = {} if is_staging_trial and not resizing else _rate_card(currency, cluster)
-	profiles = [] if is_staging_trial and not resizing else _profiles(server_categories)
+	rate_card = {} if is_trial_menu else _rate_card(currency, cluster)
+	profiles = [] if is_trial_menu else _profiles(server_categories)
 
 	# The whole active catalog (in server families) is wanted on purpose —
 	# currency/cluster/headroom filtering happens in Python below — so opt out of
@@ -115,6 +118,7 @@ def get_server_plans(
 	)
 	if allowed_plans is not None:
 		candidates = [p for p in candidates if p.name in allowed_plans]
+	candidates = [p for p in candidates if p.name not in hidden_plans]
 
 	# Bulk-load rates + composition for the whole candidate set up front, so the loop
 	# below is in-memory work — no per-plan query (was an N+1: a rates query and a
@@ -123,7 +127,7 @@ def get_server_plans(
 	rates_by_plan = _rates_by_plan(names)
 	includes_by_plan = _includes_by_plan(names)
 
-	floor = _get_trial_plan_floor(exclude_subscription)
+	floor = _get_trial_plan_floor(server, exclude_subscription)
 
 	plans = []
 	for p in candidates:
@@ -140,6 +144,21 @@ def get_server_plans(
 	# Cheapest first; the title-ordered iteration above is a stable tiebreaker.
 	plans.sort(key=lambda p: frappe.utils.flt(p["rate"]))
 	return {**header, "plans": _group_by_sub_category(plans), "rate_card": rate_card, "profiles": profiles}
+
+
+def _scope_trial_plans(
+	allowed_plans: set[str] | None, is_trial_menu: bool, include_trial_plans: bool
+) -> tuple[set[str] | None, set[str]]:
+	"""The allowed and hidden plans once trial plans are applied. A staging trial's menu offers
+	only the trial plans. Every other menu hides them, because a trial plan is never sold: only
+	a free trial site starts on it."""
+	trial_plans = trial_plan_names()
+	if is_trial_menu:
+		if trial_plans is None:
+			return allowed_plans, set()
+		return (trial_plans if allowed_plans is None else allowed_plans & trial_plans), set()
+
+	return allowed_plans, set() if include_trial_plans else (trial_plans or set())
 
 
 def _rate_card(currency: str, cluster: str | None) -> dict:
@@ -235,10 +254,11 @@ def _current_run_rate(team: str, exclude: str | None = None) -> float:
 	return team_run_rate(team, exclude=exclude)
 
 
-def _get_trial_plan_floor(subscription: str | None) -> dict | None:
+def _get_trial_plan_floor(server: str | None, subscription: str | None) -> dict | None:
 	from central.signups.trial import get_trial_plan_floor
 
-	server = frappe.db.get_value("Subscription", subscription, "server_id") if subscription else None
+	if not server and subscription:
+		server = frappe.db.get_value("Subscription", subscription, "server_id")
 	return get_trial_plan_floor(server) if server else None
 
 

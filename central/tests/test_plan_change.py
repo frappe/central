@@ -132,13 +132,22 @@ class TestPilotPlanChange(PlanChangeCase):
 			patch("central.api.pilot.PilotCredential.verify", return_value=frappe._dict(name="credential"))
 		)
 
-	def test_a_trial_site_must_add_a_payment_method_first(self):
+	def test_a_trial_site_keeps_the_plan_it_moves_to_and_resizes_nothing(self):
 		self.site().db_set(
 			{"trial_state": "Active", "trial_ends_on": frappe.utils.add_days(frappe.utils.nowdate(), 5)}
 		)
+		choices = [{"name": "plan-2vcpu"}]
 
-		with self.assertRaisesRegex(frappe.ValidationError, "Add a payment method"):
-			billing_api.change_plan(plan="plan-2vcpu")
+		with patch("central.signups.trial.Trial.get_plan_choices", return_value=choices):
+			result = billing_api.change_plan(plan="plan-2vcpu")
+			with self.assertRaisesRegex(frappe.ValidationError, "not available for this site"):
+				billing_api.change_plan(plan="plan-8vcpu")
+
+		self.assertFalse(result["queued"])
+		self.assertEqual(self.site().conversion_plan, "plan-2vcpu")
+		self.assertFalse(
+			frappe.db.exists("Resource Action", {"server": self.server.name, "action": "resize"})
+		)
 
 	def test_a_queued_change_returns_its_progress_page(self):
 		action = self.resize()

@@ -9,8 +9,8 @@ from central.iam import can
 from central.infrastructure.doctype.blocked_domain.blocked_domain import BlockedDomain, normalize_domain
 from central.infrastructure.doctype.pilot_credential.pilot_credential import PilotCredential
 from central.infrastructure.doctype.user_mail_account.user_mail_account import UserMailAccount
-from central.services.doctype.ai_trial_key.ai_trial_key import AITrialKey
 from central.server_models import ActionStatus, ResizeConfiguration, ServerCreation, SiteCreation
+from central.services.doctype.ai_trial_key.ai_trial_key import AITrialKey
 
 PENDING_STATES = ("Queued", "Dispatching", "Sent", "In Progress", "Uncertain")
 PENDING_LABEL = {

@@ -26,6 +26,11 @@ def trial_plan_names() -> set[str] | None:
 	return names or None
 
 
+def is_trial_plan(plan: str | None) -> bool:
+	"""Whether `plan` is one a free trial site starts on. It is never billed."""
+	return bool(plan) and plan in (trial_plan_names() or ())
+
+
 def entry_tier() -> str | None:
 	"""The entry/trial rung of the ladder: the default level, else lowest sequence."""
 	default = frappe.get_all("Trust Tier Level", filters={"is_default": 1}, pluck="tier")

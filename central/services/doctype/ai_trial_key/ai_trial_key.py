@@ -91,7 +91,9 @@ class AITrialKey(Document):
 		if not action.is_free_trial:
 			return None
 
-		if name := frappe.db.get_value("AI Trial Key", {"resource_action": action.name, "status": "Assigned"}):
+		if name := frappe.db.get_value(
+			"AI Trial Key", {"resource_action": action.name, "status": "Assigned"}
+		):
 			return frappe.get_doc("AI Trial Key", name)
 
 		name = frappe.db.get_value(
@@ -133,7 +135,6 @@ class AITrialKey(Document):
 		frappe.db.set_value(
 			"AI Trial Key", {"resource_action": resource_action, "status": "Assigned"}, "server", server
 		)
-
 
 	@classmethod
 	def queue_convert(cls, server: str) -> bool:

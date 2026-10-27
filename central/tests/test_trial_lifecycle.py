@@ -6,6 +6,7 @@ from frappe.utils import add_days, getdate, now_datetime, nowdate
 from central.infrastructure.doctype.resource_action.resource_action import ResourceAction
 from central.infrastructure.doctype.site.site import Site
 from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
+from central.integrations.resource_actions import process_resize
 from central.integrations.servers import observe_server
 from central.resource_actions import submit_command, validate_trial_site
 from central.signups import credit, eligibility, trial
@@ -355,6 +356,55 @@ class TestTrialLifecycle(TrialOnAMachine):
 		VirtualMachine.ensure_subscription_enabled.assert_called()
 		self.assert_conversion_queued()
 
+	def test_a_trial_plan_converts_by_moving_to_the_paid_plan_before_it_is_billed(self):
+		from central.billing.tests.utils import make_plan
+
+		self.price_trial(15)
+		frappe.db.set_value("Plan", "trial-lifecycle-plan", "available_on_trial", 1)
+		small, large = make_plan("trial-lifecycle-small"), make_plan("trial-lifecycle-large")
+		choices = [{"name": small}, {"name": large}]
+		plan_choices = self.enterContext(
+			patch("central.signups.trial.Trial.get_plan_choices", return_value=choices)
+		)
+
+		self.assertEqual(trial.Trial(self.site()).get_conversion_plan(), small)
+		self.site().db_set("conversion_plan", large)
+		with patch("central.signups.trial.has_active_payment_method", return_value=True):
+			trial.convert_team(self.team.name)
+
+		# The trial plan is never billed: the subscription opens once the server runs the paid plan.
+		self.assertTrue(trial.is_billing_deferred(self.server.name))
+		# The move goes to the plan checked at conversion, even after the catalog changes.
+		plan_choices.return_value = []
+		trial.finish_conversion(self.site().name)
+		move = frappe.get_doc("Resource Action", {"server": self.server.name, "action": "resize"})
+		configuration = move.get_resize_configuration()
+		self.assertEqual((configuration.plan, configuration.subscription), (large, None))
+
+		# A shape that already matches still runs the resize, which starts the server and ends idle sleep.
+		self.server.db_set(configuration.shape.model_dump())
+		VirtualMachine.ensure_subscription_enabled.reset_mock()
+		with patch("central.integrations.servers.resize_server") as resize_server:
+			process_resize(move)
+
+		resize_server.assert_called_once()
+		VirtualMachine.ensure_subscription_enabled.assert_called_once()
+		self.assertEqual(frappe.db.get_value("Virtual Machine", self.server.name, "plan"), large)
+		self.assertFalse(trial.is_billing_deferred(self.server.name))
+
+	def test_a_chosen_plan_that_is_no_longer_offered_holds_the_trial(self):
+		self.price_trial(15)
+		frappe.db.set_value("Plan", "trial-lifecycle-plan", "available_on_trial", 1)
+		self.site().db_set("conversion_plan", "trial-lifecycle-plan")
+		self.enterContext(patch("central.signups.trial.Trial.get_plan_choices", return_value=[]))
+
+		with patch("central.signups.trial.has_active_payment_method", return_value=True):
+			trial.convert_team(self.team.name)
+
+		site = self.site()
+		self.assertEqual(site.trial_state, "Active")
+		self.assertIn("no longer offered", site.trial_error)
+
 	def test_a_trial_above_the_spending_limit_stays_a_trial_until_the_limit_is_raised(self):
 		self.price_trial(30)
 		self.headroom.return_value = 20
@@ -506,7 +556,13 @@ class TestTrialLifecycle(TrialOnAMachine):
 		)
 		# The reserved rate is older than the catalog; the subscription charges the catalog rate.
 		self.assertEqual(
-			status["plan"], {"title": "trial-lifecycle-plan", "monthly_rate": 40, "currency": "USD"}
+			status["plan"],
+			{
+				"name": "trial-lifecycle-plan",
+				"title": "trial-lifecycle-plan",
+				"monthly_rate": 40,
+				"currency": "USD",
+			},
 		)
 
 	def test_resize_options_say_the_trial_blocks_a_resize(self):

@@ -11,7 +11,9 @@ from central.tests.test_iam import ensure_user
 
 PILOT = "central.integrations.pilot"
 TELEMETRY_CONFIG = {"endpoint": "https://datum.in-mumbai.example.test", "token": "datum-token"}
-COMMON_SITE_CONFIG = "central.central.doctype.central_settings.central_settings.CentralSettings.get_common_site_config"
+COMMON_SITE_CONFIG = (
+	"central.central.doctype.central_settings.central_settings.CentralSettings.get_common_site_config"
+)
 MAIL_CONFIG = {
 	"mail_server": "mail.c3.frappemail.com",
 	"mail_port": 587,
@@ -153,7 +155,9 @@ class TestPilotBootstrapMetadata(IntegrationTestCase):
 			metadata = _create_payload(pilot_request(is_free_trial=1))["metadata"]
 
 		config = metadata["pilot-common-site-config"]
-		self.assertEqual(json.loads(config), relay | {"fc_team": "TEAM-00001"} | MAIL_CONFIG | TRIAL_KEY_CONFIG)
+		self.assertEqual(
+			json.loads(config), relay | {"fc_team": "TEAM-00001"} | MAIL_CONFIG | TRIAL_KEY_CONFIG
+		)
 		self.assertLessEqual(len(config.encode()), METADATA_VALUE_BYTES)
 		self.assertTrue(assign.call_args.args[0].is_free_trial)
 

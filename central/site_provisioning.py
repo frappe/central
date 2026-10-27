@@ -223,7 +223,7 @@ def get_cheapest_trial_plan(team: str, region: str) -> str | None:
 
 	plans = [
 		row
-		for rows in get_server_plans(team, cluster=region)["plans"].values()
+		for rows in get_server_plans(team, cluster=region, include_trial_plans=True)["plans"].values()
 		for row in rows
 		if row["plan"] in trial_plans
 	]
