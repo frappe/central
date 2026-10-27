@@ -157,3 +157,66 @@ class TestHostedCheckout(BillingTestCase):
 			"Payment Attempt", {"gateway_order_id": "cs_inv"}, "gateway_transaction_id"
 		)
 		self.assertEqual(attempt, "pi_cs_inv")  # recorded, so a refund can find the charge
+
+
+class TestHostedCardSetupInRegulatedCurrency(BillingTestCase):
+	"""Hosted Stripe card setup registers no India mandate, so INR teams add cards on Razorpay."""
+
+	def setUp(self):
+		from central.billing.tests.test_razorpay_adapter import make_razorpay_gateway
+
+		validated = {"credentials_validated_at": frappe.utils.now_datetime()}
+		make_stripe_gateway(currencies=(("INR", 1), ("USD", 1)))
+		frappe.db.set_value("Payment Gateway", "Stripe", validated)
+		make_razorpay_gateway(currencies=(("INR", 0),))
+		frappe.db.set_value("Payment Gateway", "Razorpay", validated)
+
+		self.gateways = inspect.unwrap(billing_api.get_payment_gateways)
+		self.create_card_checkout = inspect.unwrap(billing_api.create_payment_method_checkout)
+		self.adapter = MagicMock()
+		self.enterContext(patch("central.billing.gateways.registry.get_adapter", return_value=self.adapter))
+
+	def _act_as(self, currency):
+		team = f"team-hosted-card-{currency.lower()}"
+		ensure_team(team)
+		complete_billing_profile(team, currency=currency)
+		frappe.local.pilot_credential = frappe._dict(team=team)
+
+	def test_an_inr_team_is_offered_razorpay_only(self):
+		self._act_as("INR")
+
+		self.assertEqual([gateway["adapter_key"] for gateway in self.gateways()], ["Razorpay"])
+
+	def test_an_inr_team_cannot_open_a_hosted_stripe_card_setup(self):
+		self._act_as("INR")
+
+		with self.assertRaises(frappe.ValidationError):
+			self.create_card_checkout(redirect_url="https://site", gateway="Stripe")
+		self.adapter.create_setup_checkout_session.assert_not_called()
+
+	def _open_usd_card_setup(self) -> dict:
+		self._act_as("USD")
+		self.adapter.create_customer.return_value = "cus_usd"
+		self.adapter.create_setup_checkout_session.return_value = {
+			"checkout_url": "https://setup",
+			"session_id": "cs_usd",
+		}
+		return self.create_card_checkout(redirect_url="https://site", gateway="Stripe")
+
+	def test_a_usd_team_still_gets_hosted_stripe_card_setup(self):
+		checkout = self._open_usd_card_setup()
+
+		self.assertEqual([gateway["adapter_key"] for gateway in self.gateways()], ["Stripe"])
+		self.assertEqual(checkout["checkout_url"], "https://setup")
+
+	def test_a_card_that_fails_verification_says_so(self):
+		from central.billing.tests.test_payments import saved_card
+
+		reference = self._open_usd_card_setup()["reference"]
+		self.adapter.read_saved_card.return_value = saved_card(customer="cus_usd")
+		self.adapter.validate_payment_method.return_value = False
+
+		result = inspect.unwrap(billing_api.confirm_payment_method_checkout)(reference=reference)
+
+		self.assertEqual(result["status"], "Failed")
+		self.assertEqual(result["message"], "We could not verify this card. Try another card.")
