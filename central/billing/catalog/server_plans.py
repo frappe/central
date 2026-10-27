@@ -41,11 +41,16 @@ def get_server_plans(
 	cluster: str | None = None,
 	exclude_subscription: str | None = None,
 	for_resize: int | str | None = None,
+	server: str | None = None,
+	include_trial_plans: bool = False,
 ) -> dict:
 	"""Return priced server plans and custom profiles authorized for this Team.
 
 	Exclude the named subscription from existing spend when comparing resize options.
-	Atlas performs placement at creation; this catalog does not promise regional capacity.
+	`server` names a trial server that has no subscription yet, so its plan floor applies.
+	Plans marked Available on Trial are left out unless `include_trial_plans` asks for a
+	free trial site's plans. Atlas performs placement at creation; this catalog does not
+	promise regional capacity.
 	"""
 	currency = get_team_currency(team)
 	caps = get_team_caps(team)
@@ -64,10 +69,14 @@ def get_server_plans(
 	is_staging_trial = bool(frappe.db.get_value("Team", team, "is_staging_trial"))
 	is_capped = not is_internal_team(team)
 	resizing = bool(frappe.utils.cint(for_resize))
+	trial_plans = trial_plan_names()
+	hidden_plans = set()
 	if is_staging_trial and not resizing:
-		trial_plans = trial_plan_names()
 		if trial_plans is not None:
 			allowed_plans = trial_plans if allowed_plans is None else (allowed_plans & trial_plans)
+	elif not include_trial_plans:
+		# A trial plan is never sold: only a free trial site starts on it.
+		hidden_plans = trial_plans or set()
 
 	header = {
 		"team": team,
@@ -115,6 +124,7 @@ def get_server_plans(
 	)
 	if allowed_plans is not None:
 		candidates = [p for p in candidates if p.name in allowed_plans]
+	candidates = [p for p in candidates if p.name not in hidden_plans]
 
 	# Bulk-load rates + composition for the whole candidate set up front, so the loop
 	# below is in-memory work — no per-plan query (was an N+1: a rates query and a
@@ -123,7 +133,7 @@ def get_server_plans(
 	rates_by_plan = _rates_by_plan(names)
 	includes_by_plan = _includes_by_plan(names)
 
-	floor = _get_trial_plan_floor(exclude_subscription)
+	floor = _get_trial_plan_floor(server, exclude_subscription)
 
 	plans = []
 	for p in candidates:
@@ -235,10 +245,11 @@ def _current_run_rate(team: str, exclude: str | None = None) -> float:
 	return team_run_rate(team, exclude=exclude)
 
 
-def _get_trial_plan_floor(subscription: str | None) -> dict | None:
+def _get_trial_plan_floor(server: str | None, subscription: str | None) -> dict | None:
 	from central.signups.trial import get_trial_plan_floor
 
-	server = frappe.db.get_value("Subscription", subscription, "server_id") if subscription else None
+	if not server and subscription:
+		server = frappe.db.get_value("Subscription", subscription, "server_id")
 	return get_trial_plan_floor(server) if server else None
 
 

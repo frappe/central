@@ -19,12 +19,12 @@ from central.errors import (
 from central.infrastructure.doctype.pilot_credential.pilot_credential import PilotCredential
 from central.infrastructure.doctype.resource_action.resource_action import PENDING_STATES, TERMINAL_STATES
 from central.infrastructure.doctype.user_mail_account.user_mail_account import UserMailAccount
-from central.services.doctype.ai_trial_key.ai_trial_key import AITrialKey
 from central.infrastructure.doctype.virtual_machine import firewall
 from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
 from central.integrations import servers
 from central.integrations.atlas import AtlasClient
 from central.integrations.pilot import get_bootstrap_metadata
+from central.services.doctype.ai_trial_key.ai_trial_key import AITrialKey
 
 # A region stamps its own clock on a machine, so allow for a little drift when deciding
 # which machines are new enough to have come from this request.
@@ -353,6 +353,8 @@ def process_resize(action) -> None:
 
 		apply_resize_billing(action)
 		server.db_set("plan", configuration.plan, notify=False)
+		if not configuration.subscription:
+			server.ensure_subscription_enabled()
 	except Exception:
 		diagnostic = frappe.get_traceback()
 		frappe.db.rollback()

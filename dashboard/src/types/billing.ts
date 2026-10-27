@@ -652,7 +652,18 @@ export interface ServerTrial {
 }
 
 export interface TrialPlan {
+	name: string
 	title: string
 	monthly_rate: number
 	currency: Currency | null
+}
+
+/** A paid plan a trial site may move to when it converts. */
+export interface TrialPlanChoice {
+	name: string
+	title: string
+	/** For example "0.5 vCPU · 2 GB RAM · 40 GB SSD". */
+	specs: string
+	monthly_rate: number
+	currency: Currency
 }

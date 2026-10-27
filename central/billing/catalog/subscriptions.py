@@ -517,7 +517,7 @@ def _queue_resize(doc, server, target: frappe._dict, shape: dict, changed_by: st
 			"preset_plan": target.preset_plan,
 			"shape": shape,
 			"from_plan": server.plan,
-			"from_shape": _server_resize_shape(server),
+			"from_shape": get_server_shape(server),
 		}
 	)
 	# Billing validated the target and the route already checked server:resize.
@@ -533,7 +533,7 @@ def _queue_resize(doc, server, target: frappe._dict, shape: dict, changed_by: st
 	)
 
 
-def _server_resize_shape(server) -> dict | None:
+def get_server_shape(server) -> dict | None:
 	"""The shape the server runs now, or None while any part of it is unknown."""
 	if not (server.vcpus and server.memory_megabytes and server.disk_gigabytes):
 		return None
@@ -574,8 +574,11 @@ def _require_offered_plan(doc, plan: str, region: str | None) -> None:
 
 
 def apply_resize_billing(action) -> None:
-	"""Re-lock billing after the integration worker confirmed the target shape."""
+	"""Re-lock billing after the integration worker confirmed the target shape. A converted
+	trial's move has no subscription to re-lock: the server opens one on its paid plan."""
 	configuration = action.get_resize_configuration()
+	if not configuration.subscription:
+		return
 	if configuration.plan:
 		resize_to_plan(
 			configuration.subscription,
@@ -604,7 +607,7 @@ def _plan_resize(doc, server, plan, includes, sub_category, override_rate=None) 
 	if plan:
 		if doc.pricing_mode == "Preset" and doc.plan == plan:
 			return None
-		shape = _plan_shape(plan)
+		shape = get_plan_shape(plan)
 		new_rate = frappe.get_doc("Plan", plan).get_rate(currency, cluster)
 	else:
 		from central.billing.catalog.composition import composition_quantities
@@ -659,7 +662,7 @@ def _resize_disk_choice(plan, includes, sub_category, disk_gigabytes):
 		return plan, includes, sub_category
 
 	disk_gigabytes = frappe.utils.cint(disk_gigabytes)
-	if disk_gigabytes == _plan_shape(plan)["disk_gigabytes"]:
+	if disk_gigabytes == get_plan_shape(plan)["disk_gigabytes"]:
 		return plan, includes, sub_category
 
 	rows = [dict(row) for row in _plan_includes(plan) if row["resource_type"] != "Disk"]
@@ -689,7 +692,7 @@ def _preset_plus_disk_rate(doc, plan: str, disk_gigabytes) -> float | None:
 	base = frappe.get_doc("Plan", plan).get_rate(currency, cluster)
 	if base is None:
 		return None
-	extra = max(0, frappe.utils.cint(disk_gigabytes) - _plan_shape(plan)["disk_gigabytes"])
+	extra = max(0, frappe.utils.cint(disk_gigabytes) - get_plan_shape(plan)["disk_gigabytes"])
 	if not extra:
 		return base
 	return base + extra * frappe.utils.flt(resolve_component_rate("Disk", currency, cluster) or 0)
@@ -782,7 +785,7 @@ def resize_to_plan(
 	return change_plan(subscription, new_plan, changed_by=changed_by)
 
 
-def _plan_shape(plan: str) -> dict:
+def get_plan_shape(plan: str) -> dict:
 	"""A preset Plan's bundled size as the _server_shape dict (vcpus/memory/disk)."""
 	includes = frappe.get_all(
 		"Plan Includes",

@@ -22,6 +22,7 @@ from central.billing.api.dashboard._shared import (
 	_team_currency,
 )
 from central.billing.gateways import capabilities
+from central.infrastructure.doctype.resource_action.resource_action import PENDING_STATES
 
 
 def _team() -> str:
@@ -488,16 +489,22 @@ def change_plan(plan: str | None = None) -> dict:
 	the current rate card and queues the VM reshape (stop→resize→start). The server is
 	resolved from the credential — a pilot can only resize its own server, never another
 	server on the same team. Returns `{queued, resized, progress_url}`; `progress_url` is the
-	public page that follows the change when the server runs one site."""
+	public page that follows the change when the server runs one site. On an open trial it keeps
+	the plan the site moves to when the trial converts, and resizes nothing yet."""
 	from central.billing.catalog.subscriptions import begin_resize
-	from central.signups.trial import get_trial_status
+	from central.signups.trial import Trial, is_conversion_starting
 
 	server = _server()
 	if not plan:
 		frappe.throw(frappe._("A plan is required."), frappe.ValidationError)
 	subscription = frappe.db.get_value("Subscription", {"team": _team(), "server_id": server}, "name")
-	if not subscription and get_trial_status(server):
-		frappe.throw(frappe._("Add a payment method to change this site's plan."), frappe.ValidationError)
+	if not subscription and (trial := Trial.find_open(server)):
+		# The server is fixed by the credential; the conversion this can start runs as the system.
+		with _as_operator():
+			Trial.load(trial.site.name, for_update=True).choose_plan(plan)
+		return {"queued": False, "resized": False, "progress_url": None}
+	if not subscription and is_conversion_starting(server):
+		frappe.throw(frappe._("This site is moving to its paid plan. Try again in a few minutes."))
 	if not subscription:
 		frappe.throw(
 			frappe._("No subscription for server {0} on this team.").format(server), frappe.ValidationError
@@ -758,7 +765,18 @@ def get_billing_summary(site: str | None = None) -> dict:
 		"payment_method": {"label": default["label"], "name": default["name"]} if default else None,
 		"profile_complete": _profile_complete(team),
 		"trial": get_trial_status(server, site),
+		"plan_change": _pending_plan_change(server),
 	}
+
+
+def _pending_plan_change(server: str) -> dict | None:
+	"""The waiting page of the server's pending resize, such as a converted trial's move to its paid plan."""
+	action = frappe.db.get_value(
+		"Resource Action", {"resource_id": server, "action": "resize", "status": ["in", PENDING_STATES]}
+	)
+	if not action:
+		return None
+	return {"progress_url": _plan_change_url(server, {"queued": True, "action": action})}
 
 
 def _estimate_note(forecast: dict) -> str | None:
@@ -774,10 +792,15 @@ def _estimate_note(forecast: dict) -> str | None:
 @pilot_credential_auth
 def get_plan_options() -> dict:
 	"""Plans this bench's server can switch to, flattened + priced for the Change-plan
-	list, plus the provider/region header and an insufficient-headroom flag."""
+	list, plus the provider/region header and an insufficient-headroom flag. On an open trial
+	they are the paid plans the site may move to, with `selected` the one it moves to."""
 	from central.billing.api.dashboard.catalog import get_eligible_plans
+	from central.signups.trial import Trial
 
 	team, server = _team(), _server()
+	if trial := Trial.find_open(server):
+		return _trial_plan_options(trial)
+
 	row = (
 		frappe.db.get_value("Virtual Machine", server, ["region", "plan", "disk_gigabytes"], as_dict=True)
 		or frappe._dict()
@@ -845,6 +868,33 @@ def get_plan_options() -> dict:
 		"current": row.plan,
 		"plans": plans,
 		"sufficient": frappe.utils.flt(menu.get("available")) > 0,
+	}
+
+
+def _trial_plan_options(trial) -> dict:
+	with _as_operator():  # team + server fixed by credential
+		choices = trial.get_plan_choices()
+		selected = trial.get_conversion_plan()
+	currency = choices[0]["currency"] if choices else _team_currency(trial.site.team)
+	provider, region = _provider_region(frappe.db.get_value("Virtual Machine", trial.site.server, "region"))
+
+	return {
+		"currency": currency,
+		"provider": provider,
+		"region": region,
+		"current": None,
+		"selected": selected,
+		"plans": [
+			{
+				"name": choice["name"],
+				"title": choice["title"],
+				"subtitle": choice["specs"],
+				"price": frappe._("{0}/mo").format(_money(choice["monthly_rate"], currency)),
+				"is_current": False,
+			}
+			for choice in choices
+		],
+		"sufficient": bool(choices),
 	}
 
 

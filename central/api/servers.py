@@ -498,12 +498,24 @@ def resize_server(
 	disk_gigabytes: int | None = None,
 ) -> dict:
 	"""Resize a server's CPU, memory and disk. Gated on `server:resize`.
-	A compute change stops the server first. A larger disk does not, and a smaller disk is refused."""
+	A compute change stops the server first. A larger disk does not, and a smaller disk is refused.
+	On an open trial it keeps the paid plan the site moves to when the trial converts."""
+	from central.signups.trial import Trial
+
 	if not resource_id:
 		frappe.throw(_("A server is required."))
 
 	server = VirtualMachine.get_team_server_name(team, resource_id)
 	subscription = frappe.db.get_value("Subscription", {"team": team, "server_id": server}, "name")
+	if not subscription and (trial := Trial.find_open(server)):
+		# The chosen plan is what the team pays once the trial converts.
+		if not can(frappe.session.user, team, "billing:manage"):
+			frappe.throw(
+				_("You can't manage this team's billing. Ask a team admin to review your access."),
+				frappe.PermissionError,
+			)
+		Trial.load(trial.site.name, for_update=True).choose_plan(plan)
+		return {"queued": False, "resized": False}
 	if not subscription:
 		frappe.throw(
 			_("This server cannot be resized because its billing subscription is missing. Contact support.")

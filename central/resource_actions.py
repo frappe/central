@@ -373,7 +373,7 @@ def validate_purchase(
 	elif trial:
 		validate_trial(team)
 
-	catalog = get_server_plans(team, cluster=region)
+	catalog = get_server_plans(team, cluster=region, include_trial_plans=is_free_trial)
 	if plan:
 		choices = [row for rows in catalog["plans"].values() for row in rows]
 		selected = next((row for row in choices if row["plan"] == plan), None)
