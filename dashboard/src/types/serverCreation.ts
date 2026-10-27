@@ -15,6 +15,31 @@ export interface RegionalImage {
 	tags: Record<string, string>
 }
 
+/** A ready-to-run application the region's Cargo has built an image of. */
+export interface Template {
+	application: string
+	title: string
+	os_version: string | null
+	information: string | null
+	snapshot_id: string
+}
+
+export interface TemplateInput {
+	name: string
+	label: string
+	type: 'string' | 'email' | 'domain' | 'password'
+	required?: boolean
+	description?: string
+	/** A blank answer gets a generated value at first boot. */
+	generate?: boolean
+}
+
+export interface TemplateRequirements {
+	inputs: TemplateInput[]
+	minimum_size: { cpu_millicores: number; memory_mib: number; disk_mib: number }
+	ports: { port: number; protocol: string }[]
+}
+
 export interface ImageSelection {
 	offering: string
 	image_id: string

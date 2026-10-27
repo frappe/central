@@ -37,7 +37,13 @@ from central.infrastructure.doctype.resource_action.resource_action import (
 	PENDING_STATES,
 	ResourceAction,
 )
-from central.integrations.images import selected_image, snapshot_image, snapshot_source
+from central.integrations.cargo import CargoClient
+from central.integrations.images import (
+	TEMPLATE_PURPOSE,
+	selected_image,
+	snapshot_image,
+	snapshot_source,
+)
 from central.server_models import (
 	DNS_LABEL,
 	MAXIMUM_USER_DATA_BYTES,
@@ -73,6 +79,7 @@ def submit_request(
 	has_public_ipv6: bool = False,
 	is_firewall_enabled: bool = False,
 	user_data: str = "",
+	template_inputs: dict[str, str] | None = None,
 	resource_type: str = "Server",
 	subdomain: str | None = None,
 	snapshot: str | None = None,
@@ -102,6 +109,7 @@ def submit_request(
 		has_public_ipv6=has_public_ipv6,
 		is_firewall_enabled=is_firewall_enabled,
 		user_data=user_data,
+		template_inputs=template_inputs,
 	)
 	if not can(frappe.session.user, server_input.team, "server:create"):
 		frappe.throw(
@@ -245,6 +253,7 @@ def _validate_server_input(**values) -> CreateServerInput:
 	values["hostname"] = values.get("hostname") or ""
 	values["ssh_keys"] = values.get("ssh_keys") or []
 	values["ssh_key_ids"] = values.get("ssh_key_ids") or []
+	values["template_inputs"] = values.get("template_inputs") or {}
 	try:
 		server_input = CreateServerInput.model_validate(values)
 	except ValidationError as error:
@@ -332,12 +341,30 @@ def _build_server_configuration(
 		has_public_ipv4=server_input.has_public_ipv4,
 		has_public_ipv6=server_input.has_public_ipv6,
 		is_firewall_enabled=server_input.is_firewall_enabled,
-		user_data=server_input.user_data,
+		user_data=_get_user_data(server_input, image, snapshot),
 		image_tags=image["tags"],
 		**image_shape(composition, image),
 	)
 
 	return configuration, rate
+
+
+def _get_user_data(server_input: CreateServerInput, image: dict, snapshot: str | None) -> str:
+	"""The user data the server boots with. A template's comes from its region's Cargo, built
+	from the answers to its inputs, and names the application by the image's own tags. A
+	restored snapshot is already set up, so it takes none."""
+	if snapshot or image["tags"].get("purpose") != TEMPLATE_PURPOSE:
+		if server_input.template_inputs:
+			frappe.throw(_("Only a template takes template settings."))
+		return server_input.user_data
+
+	if server_input.user_data:
+		frappe.throw(_("A template server sets its own user data."))
+
+	region = frappe.get_doc("Region", server_input.region)
+	return CargoClient(region).get_template_user_data(
+		image["tags"]["application"], server_input.template_inputs
+	)
 
 
 def unanswered_request(team: str, digest: str) -> str | None:

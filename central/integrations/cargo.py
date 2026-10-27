@@ -15,6 +15,7 @@ if TYPE_CHECKING:
 PING_PATH = "/api/method/ping"
 CONFIGURE_WEBHOOKS_PATH = "/api/method/cargo.api.webhooks.configure"
 ACCEPT_DATUM_TOKEN_PATH = "/api/method/cargo.telemetry.api.auth.accept_datum_token"
+ONE_CLICK_API_PATH = "/api/method/cargo.image_builder.api.one_click_image"
 TOKEN_HEADER = "X-Cargo-Access-Token"
 
 
@@ -88,5 +89,74 @@ class CargoClient:
 				CargoConnectionError,
 			)
 
+	def get_templates(self) -> list[dict]:
+		"""The one-click images this region's Cargo has built, newest per application."""
+		return self._get_one_click("get_supported_one_click_images")
+
+	def get_template_requirements(self, application: str) -> dict:
+		"""The inputs, smallest machine and ports one template needs."""
+		return self._get_one_click("get_one_click_image_requirements", application=application)
+
+	def get_template_user_data(self, application: str, inputs: dict[str, str]) -> str:
+		"""Cloud-init user data carrying the answers to one template's inputs. Cargo checks each
+		answer, so a rejected one comes back as its message."""
+		try:
+			response = requests.post(
+				f"{self._base_url()}{ONE_CLICK_API_PATH}.get_one_click_image_user_data",
+				headers=self._one_click_headers(),
+				json={"application": application, "inputs": inputs},
+				timeout=(5, 20),
+				allow_redirects=False,
+			)
+		except requests.RequestException:
+			frappe.throw(_("Cargo could not be reached for the template's settings."), CargoConnectionError)
+
+		if response.status_code == 417:
+			frappe.throw(_("Check the template settings: {0}").format(_cargo_message(response)))
+		if response.status_code != 200:
+			frappe.throw(
+				_("Cargo could not prepare the template (HTTP {0}).").format(response.status_code),
+				CargoConnectionError,
+			)
+
+		return response.json()["message"]
+
+	def _one_click_headers(self) -> dict[str, str]:
+		return {
+			TOKEN_HEADER: mint_cargo_token(self.instance.get_atlas_region_id()),
+			"Accept": "application/json",
+		}
+
+	def _get_one_click(self, method: str, **params) -> list | dict:
+		try:
+			response = requests.get(
+				f"{self._base_url()}{ONE_CLICK_API_PATH}.{method}",
+				headers=self._one_click_headers(),
+				params=params,
+				timeout=(5, 20),
+				allow_redirects=False,
+			)
+		except requests.RequestException:
+			frappe.throw(_("Cargo could not be reached for templates."), CargoConnectionError)
+
+		if response.status_code != 200:
+			frappe.throw(
+				_("Cargo could not list templates (HTTP {0}).").format(response.status_code),
+				CargoConnectionError,
+			)
+
+		return response.json()["message"]
+
 	def _base_url(self) -> str:
 		return self.instance.get_cargo_url()
+
+
+def _cargo_message(response: requests.Response) -> str:
+	"""The message Cargo threw for a request it found invalid."""
+	try:
+		messages = frappe.parse_json(response.json()["_server_messages"])
+		message = frappe.parse_json(messages[-1])["message"]
+	except (ValueError, KeyError, IndexError, TypeError):
+		return _("Cargo gave no reason.")
+
+	return frappe.utils.strip_html(message) if isinstance(message, str) else _("Cargo gave no reason.")

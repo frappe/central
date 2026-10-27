@@ -80,6 +80,8 @@ export const API = {
 	listImageOfferings: 'central.api.images.list_offerings',
 	listRegionalImages: 'central.api.images.list_images',
 	imageEligiblePlans: 'central.api.images.eligible_plans',
+	listTemplates: 'central.api.images.list_templates',
+	templateRequirements: 'central.api.images.get_template_requirements',
 	listTeamSSHKeys: 'central.api.ssh_keys.list_team_ssh_keys',
 	createTeamSSHKey: 'central.api.ssh_keys.create_team_ssh_key',
 	rotateTeamSSHKey: 'central.api.ssh_keys.rotate_team_ssh_key',

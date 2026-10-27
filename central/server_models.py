@@ -53,6 +53,8 @@ class CreateServerInput(BaseModel):
 	is_firewall_enabled: bool = False
 	# Cloud-init reads the script as sent, so keep its whitespace.
 	user_data: Annotated[str, StringConstraints(strip_whitespace=False)] = ""
+	# The answers to a template's inputs. Its Cargo turns them into the user data.
+	template_inputs: dict[str, str] = Field(default_factory=dict, max_length=20)
 
 
 class SiteCreation(BaseModel):

@@ -12,6 +12,8 @@ import ServerMap from '@/components/servers/ServerMap.vue'
 import ServerNetworkOptions from '@/components/servers/ServerNetworkOptions.vue'
 import ServerSummary from '@/components/servers/ServerSummary.vue'
 import SSHKeysField from '@/components/servers/SSHKeysField.vue'
+import TemplateInputs from '@/components/servers/TemplateInputs.vue'
+import TemplateSelector from '@/components/servers/TemplateSelector.vue'
 import { useBreadcrumbs } from '@/composables/useBreadcrumbs'
 import { useServerCreation } from '@/composables/useServerCreation'
 import { features } from '@/lib/features'
@@ -62,6 +64,14 @@ const {
 	reloadSnapshots,
 	offering,
 	offeringOptions,
+	templates,
+	isTemplate,
+	template,
+	templateRequirements,
+	templateAnswers,
+	templateRequirementsLoading,
+	templateRequirementsError,
+	reloadTemplateRequirements,
 	imageId,
 	image,
 	imageOptions,
@@ -228,6 +238,17 @@ watch(
 								:description="imagesError"
 								:primary-action="{ label: 'Retry images', onClick: reloadImages }"
 							/>
+							<template v-else-if="isTemplate">
+								<p v-if="!templates.length" class="text-p-sm text-ink-gray-5">
+									No templates are available in this region yet. Select another
+									image or region.
+								</p>
+								<TemplateSelector
+									v-else
+									v-model="imageId"
+									:templates="templates"
+								/>
+							</template>
 							<p
 								v-else-if="imageOptions.length < 2"
 								class="text-p-sm text-ink-gray-5"
@@ -238,7 +259,7 @@ watch(
 						</template>
 						<div class="grid gap-3 md:grid-cols-2">
 							<Select
-								v-if="source === 'image' && imageOptions.length > 1"
+								v-if="source === 'image' && !isTemplate && imageOptions.length > 1"
 								v-model="imageId"
 								label="Image build"
 								size="md"
@@ -246,6 +267,41 @@ watch(
 							/>
 							<SSHKeysField v-if="image" v-model="sshKeyIds" />
 						</div>
+					</section>
+
+					<section v-if="template" class="space-y-3">
+						<h2 class="text-base-semibold text-ink-gray-8">
+							{{ template.title }}
+							settings
+						</h2>
+						<p
+							v-if="templateRequirementsLoading"
+							role="status"
+							class="text-p-sm text-ink-gray-5"
+						>
+							Loading template settings…
+						</p>
+						<Alert
+							v-else-if="templateRequirementsError"
+							theme="red"
+							title="Couldn't load template settings"
+							:description="templateRequirementsError"
+							:primary-action="{
+								label: 'Retry settings',
+								onClick: reloadTemplateRequirements,
+							}"
+						/>
+						<p
+							v-else-if="!templateRequirements?.inputs.length"
+							class="text-p-sm text-ink-gray-5"
+						>
+							This template needs no settings.
+						</p>
+						<TemplateInputs
+							v-else
+							v-model="templateAnswers"
+							:inputs="templateRequirements.inputs"
+						/>
 					</section>
 
 					<section
@@ -292,7 +348,9 @@ watch(
 						<p v-if="!image" class="text-p-sm text-ink-gray-5">
 							{{ source === 'snapshot'
 									? 'Select a snapshot to see compatible plans.'
-									: 'Select an image build to see compatible plans.' }}
+									: isTemplate
+										? 'Select a template to see compatible plans.'
+										: 'Select an image build to see compatible plans.' }}
 						</p>
 						<p v-else-if="plansLoading" class="text-p-sm text-ink-gray-5">
 							Loading plans…

@@ -5,6 +5,10 @@ from frappe import _
 
 from central.iam import can
 from central.integrations.atlas import AtlasClient
+from central.integrations.cargo import CargoClient
+
+# The Atlas `purpose` tag of an image a region's Cargo built from a template.
+TEMPLATE_PURPOSE = "one-click"
 
 
 def list_offerings(team: str, flow: str = "Server") -> list[dict]:
@@ -47,6 +51,23 @@ def list_images(
 	client = AtlasClient.for_team(instance, team)
 
 	return client.list_system_images({**document.get_image_tags(), **(extra_tags or {})}, offset)
+
+
+def list_templates(team: str, region: str) -> list[dict]:
+	"""The ready-to-run templates the region's Cargo has built, one per application."""
+	return _template_cargo(team, region).get_templates()
+
+
+def get_template_requirements(team: str, region: str, application: str) -> dict:
+	"""What a server from one template asks the user for and needs to run."""
+	return _template_cargo(team, region).get_template_requirements(application)
+
+
+def _template_cargo(team: str, region: str) -> CargoClient:
+	validate_catalog_access(team, "Server")
+	instance = frappe.get_doc("Region", region)
+	instance.ensure_accepts_new_servers()
+	return CargoClient(instance)
 
 
 def preview_images(

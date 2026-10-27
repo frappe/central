@@ -11,6 +11,7 @@ import { useRegions } from '@/composables/useRegions'
 import { usePublicIpv4Pricing } from '@/composables/useServerAddresses'
 import { useServerMapData } from '@/composables/useServerMapData'
 import { useSession } from '@/composables/useSession'
+import { useTemplateRequirements } from '@/composables/useTemplateRequirements'
 import {
 	configIncludes,
 	estimateConfig,
@@ -143,6 +144,9 @@ export function useServerCreation() {
 		reloadSnapshots,
 		offerings,
 		offering,
+		templates,
+		isTemplate,
+		template,
 		imageId,
 		image,
 		selection,
@@ -154,6 +158,14 @@ export function useServerCreation() {
 		selectedRegion,
 		typeof route.query.snapshot === 'string' ? route.query.snapshot : '',
 	)
+	const {
+		requirements: templateRequirements,
+		answers: templateAnswers,
+		loading: templateRequirementsLoading,
+		error: templateRequirementsError,
+		reload: reloadTemplateRequirements,
+		isComplete: isTemplateComplete,
+	} = useTemplateRequirements(selectedRegion, template)
 	const offeringOptions = computed(() =>
 		offerings.value.map((item) => ({
 			label: item.title,
@@ -374,6 +386,11 @@ export function useServerCreation() {
 		if (paymentMethodRequired.value) return false // the page asks for one instead
 		if (regionFull.value) return false // the region can't seat a new server right now
 		if (bracketExhausted.value) return false // nothing here fits the budget
+		if (
+			template.value &&
+			(!templateRequirements.value || !isTemplateComplete())
+		)
+			return false // the template's required settings are still blank
 		return isCustom.value ? !!composedConfig.value : !!selectedPlanObj.value
 	})
 
@@ -397,6 +414,14 @@ export function useServerCreation() {
 			has_public_ipv4: hasPublicIpv4.value,
 			has_public_ipv6: hasPublicIpv6.value,
 			is_firewall_enabled: isFirewallEnabled.value,
+			// Blank answers are left out: the VM generates or defaults them at first boot.
+			...(template.value && {
+				template_inputs: Object.fromEntries(
+					Object.entries(templateAnswers.value)
+						.map(([key, value]) => [key, value.trim()])
+						.filter(([, value]) => value),
+				),
+			}),
 		}
 		if (isCustom.value && composedConfig.value) {
 			await operation.submit(API.createComposedServer, {
@@ -481,6 +506,14 @@ export function useServerCreation() {
 		welcomeCredit,
 		offering,
 		offeringOptions,
+		templates,
+		isTemplate,
+		template,
+		templateRequirements,
+		templateAnswers,
+		templateRequirementsLoading,
+		templateRequirementsError,
+		reloadTemplateRequirements,
 		imageId,
 		image,
 		imageOptions,

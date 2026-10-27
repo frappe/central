@@ -34,7 +34,7 @@ function logoFor(option: ImageChoice): string | null {
 			:model-value="modelValue"
 			:options="options"
 			:disabled="disabled"
-			:columns="2"
+			:columns="options.length > 2 ? 3 : 2"
 			label="Select an image"
 			@update:model-value="emit('update:modelValue', $event)"
 		>
