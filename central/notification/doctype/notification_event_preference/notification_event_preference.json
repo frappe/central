@@ -18,7 +18,7 @@
    "reqd": 1
   },
   {
-   "default": "1",
+   "default": "0",
    "fieldname": "email_enabled",
    "fieldtype": "Check",
    "in_list_view": 1,

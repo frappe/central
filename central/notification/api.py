@@ -7,7 +7,7 @@ from frappe.model.document import bulk_insert
 
 from central.api.pilot import pilot_credential_auth
 from central.iam import can_on_any_server, is_active_team_member, resolve_team, user_has_operator_bypass
-from central.notification import CATEGORIES, FREQUENCIES
+from central.notification import CATEGORIES
 from central.notification.doctype.user_notification_preference.user_notification_preference import (
 	UserNotificationPreference,
 )
@@ -48,36 +48,37 @@ def save_user_preferences(team: str, preferences: list[dict]) -> dict:
 	# final guard when separate requests race.
 	frappe.db.get_value("Team", team, "name", for_update=True)
 	for pref in preferences:
-		category = pref.get("category")
-		if category not in CATEGORIES:
-			frappe.throw(_("Unsupported notification category {0}.").format(frappe.bold(category)))
-		frequency = pref.get("frequency") or "Instant"
-		if frequency not in FREQUENCIES:
-			frappe.throw(_("Unsupported email frequency {0}.").format(frappe.bold(frequency)))
-		digest_hour = frappe.utils.cint(pref.get("digest_hour", 8))
-		if not 0 <= digest_hour <= 23:
-			frappe.throw(_("Digest hour must be between 0 and 23."))
-
 		email = bool(frappe.utils.cint(pref.get("email_enabled", 1)))
 		in_app = bool(frappe.utils.cint(pref.get("in_app_enabled", 1)))
-		events = [
-			{"event_type": event.get("event_type"), "email_enabled": 0}
-			for event in pref.get("events") or []
-			if not frappe.utils.cint(event.get("email_enabled", 0))
-		]
+		events = None
+		if "events" in pref:
+			events = [
+				{"event_type": event.get("event_type"), "email_enabled": 0}
+				for event in pref["events"] or []
+				if not frappe.utils.cint(event.get("email_enabled", 0))
+			]
 
 		doc = UserNotificationPreference.upsert(
-			user, team, category, email, in_app, frequency, digest_hour, events
+			user,
+			team,
+			pref.get("category"),
+			email,
+			in_app,
+			pref.get("frequency"),
+			pref.get("digest_hour"),
+			events,
 		)
 		saved.append(
 			{
 				"name": doc.name,
-				"category": category,
-				"email_enabled": email,
-				"in_app_enabled": in_app,
-				"frequency": frequency,
-				"digest_hour": digest_hour,
-				"events": events,
+				"category": doc.category,
+				"email_enabled": doc.email_enabled,
+				"in_app_enabled": doc.in_app_enabled,
+				"frequency": doc.frequency,
+				"digest_hour": doc.digest_hour,
+				"events": [
+					{"event_type": row.event_type, "email_enabled": row.email_enabled} for row in doc.events
+				],
 			}
 		)
 
@@ -132,36 +133,40 @@ def _event_catalog(user: str, team: str) -> list[dict]:
 		],
 		order_by="event_type asc",
 	)
-	capabilities = {
-		event.required_cap
-		for event in events
-		if event.required_cap and event.direct_recipients != "Affected User"
-	}
-	allowed = {capability: can_on_any_server(user, team, capability) for capability in capabilities}
+	allowed = _held_capabilities(user, team, events)
 	by_category = {category: [] for category in CATEGORIES}
 	for event in events:
-		can_receive = (
-			not event.required_cap
-			or event.direct_recipients == "Affected User"
-			or allowed[event.required_cap]
-		)
-		title = event.in_app_title
-		if "{{" in title or "{%" in title:
-			title = frappe.unscrub(event.event_type)
-		by_category[event.category].append(
-			{
-				"event_type": event.event_type,
-				"title": title,
-				"severity": event.severity,
-				"is_critical": event.is_critical,
-				"can_receive": int(can_receive),
-			}
-		)
+		by_category[event.category].append(_catalog_entry(event, allowed))
 	return [
 		{"category": category, "label": category, "events": by_category[category]}
 		for category in CATEGORIES
 		if by_category[category]
 	]
+
+
+def _held_capabilities(user: str, team: str, events: list[frappe._dict]) -> dict[str, bool]:
+	capabilities = {
+		event.required_cap
+		for event in events
+		if event.required_cap and event.direct_recipients != "Affected User"
+	}
+	return {capability: can_on_any_server(user, team, capability) for capability in capabilities}
+
+
+def _catalog_entry(event: frappe._dict, allowed: dict[str, bool]) -> dict:
+	can_receive = (
+		not event.required_cap or event.direct_recipients == "Affected User" or allowed[event.required_cap]
+	)
+	title = event.in_app_title
+	if "{{" in title or "{%" in title:
+		title = frappe.unscrub(event.event_type)
+	return {
+		"event_type": event.event_type,
+		"title": title,
+		"severity": event.severity,
+		"is_critical": event.is_critical,
+		"can_receive": int(can_receive),
+	}
 
 
 # nosemgrep: guest-whitelisted-method -- pilot_credential_auth verifies the caller below.

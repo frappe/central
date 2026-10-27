@@ -597,6 +597,72 @@ class TestSaveUserPreferences(EngineTestBase):
 				],
 			)
 
+	def test_critical_event_is_emailed_when_category_email_is_off(self):
+		from central.notification.engine import _is_emailed_instantly
+
+		event = frappe._dict(name="server_failed", is_critical=1, create_in_app=1, direct_recipients="None")
+		preference = {"email_enabled": False, "frequency": "Instant", "events": {}}
+
+		self.assertTrue(_is_emailed_instantly(preference, event))
+		self.assertFalse(_is_emailed_instantly(preference, frappe._dict(event, is_critical=0)))
+
+	def test_pilot_patch_marks_server_events_once_and_leaves_other_categories(self):
+		from central.patches.v0_0.mark_pilot_reportable_events import execute
+
+		self._ensure_event_type("patch_server_event", reportable_by="None")
+		self._ensure_event_type("patch_billing_event", category="Billing", reportable_by="None")
+
+		for _run in range(2):
+			execute()
+
+		server, billing = (
+			frappe.db.get_value("Notification Event Type", name, "reportable_by")
+			for name in ("patch_server_event", "patch_billing_event")
+		)
+		self.assertEqual((server, billing), ("Pilot", "None"))
+
+	def test_a_new_category_takes_the_digest_hour_of_the_others(self):
+		from central.notification.api import save_user_preferences
+
+		base = {"email_enabled": 1, "in_app_enabled": 1}
+		save_user_preferences(team=TEAM, preferences=[{**base, "category": "Billing", "digest_hour": 14}])
+		save_user_preferences(team=TEAM, preferences=[{**base, "category": "Server"}])
+
+		hour = frappe.db.get_value(
+			"User Notification Preference",
+			{"user": frappe.session.user, "team": TEAM, "category": "Server"},
+			"digest_hour",
+		)
+		self.assertEqual(hour, 14)
+
+	def test_a_save_without_events_keeps_the_muted_events(self):
+		from central.notification.api import save_user_preferences
+
+		base = {"category": "Billing", "email_enabled": 1, "in_app_enabled": 1}
+		muted = [{"event_type": "payment_success", "email_enabled": 0}]
+		save_user_preferences(team=TEAM, preferences=[{**base, "events": muted}])
+		save_user_preferences(team=TEAM, preferences=[base])
+
+		name = frappe.db.get_value(
+			"User Notification Preference", {"user": frappe.session.user, "team": TEAM, "category": "Billing"}
+		)
+		self.assertEqual(
+			frappe.get_all("Notification Event Preference", {"parent": name}, pluck="event_type"),
+			["payment_success"],
+		)
+
+	def test_a_non_member_cannot_save_preferences(self):
+		from central.notification.api import save_user_preferences
+
+		outsider = make_user("preference-outsider@example.com")
+		frappe.set_user(outsider)
+		self.addCleanup(frappe.set_user, "Administrator")
+
+		with self.assertRaises(frappe.PermissionError):
+			save_user_preferences(
+				team=TEAM, preferences=[{"category": "Billing", "email_enabled": 1, "in_app_enabled": 1}]
+			)
+
 	def test_rejects_an_unsupported_frequency(self):
 		from central.notification.api import save_user_preferences
 
@@ -612,6 +678,39 @@ class TestSaveUserPreferences(EngineTestBase):
 					}
 				],
 			)
+
+	def test_a_save_without_frequency_keeps_the_stored_choice(self):
+		from central.notification.api import save_user_preferences
+
+		base = {"category": "Billing", "email_enabled": 1, "in_app_enabled": 1}
+		save_user_preferences(team=TEAM, preferences=[{**base, "frequency": "Weekly", "digest_hour": 6}])
+		save_user_preferences(team=TEAM, preferences=[{**base, "email_enabled": 0}])
+
+		saved = frappe.db.get_value(
+			"User Notification Preference",
+			{"user": frappe.session.user, "team": TEAM, "category": "Billing"},
+			["frequency", "digest_hour", "email_enabled"],
+			as_dict=True,
+		)
+		self.assertEqual((saved.frequency, saved.digest_hour, saved.email_enabled), ("Weekly", 6, 0))
+
+	def test_rejects_a_digest_hour_outside_the_day(self):
+		from central.notification.api import save_user_preferences
+
+		for digest_hour in (24, -1, "abc", 7.5):
+			with self.subTest(digest_hour=digest_hour), self.assertRaises(frappe.ValidationError):
+				save_user_preferences(
+					team=TEAM,
+					preferences=[
+						{
+							"category": "Billing",
+							"email_enabled": 1,
+							"in_app_enabled": 1,
+							"frequency": "Daily",
+							"digest_hour": digest_hour,
+						}
+					],
+				)
 
 	def test_creates_preferences_for_user(self):
 		"""save_user_preferences creates UserNotificationPreference records."""

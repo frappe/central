@@ -293,7 +293,7 @@ def _email_recipients(team, event, *, server=None, affected_user=None) -> list[s
 			if not event.required_cap or can(user, team, event.required_cap, server=server)
 		]
 	preferences = UserNotificationPreference.load_for_users(team, users)
-	return [user for user in users if _should_email_now(preferences.get((user, event.category)), event)]
+	return [user for user in users if _is_emailed_instantly(preferences.get((user, event.category)), event)]
 
 
 def send_notification_emails(recipients: list[str], event_type: str, ctx: dict, message=None) -> None:
@@ -331,17 +331,21 @@ def publish_team_nudge(team: str) -> None:
 		)
 
 
-def _should_email_now(preference: dict | None, event) -> bool:
-	"""No preference means yes. A digest event waits for the digest, which reads it from the feed."""
-	if preference is None:
+def _is_emailed_instantly(preference: dict | None, event: frappe._dict) -> bool:
+	"""No preference means yes. A digest event waits for the digest, which reads it from the feed.
+
+	The feed row is team-wide, so an Affected User event cannot wait for the digest."""
+	if preference is None or event.is_critical:
 		return True
 	if not preference["email_enabled"]:
 		return False
-	if event.is_critical:
-		return True
 	if not preference["events"].get(event.name, True):
 		return False
-	return preference["frequency"] == "Instant" or not event.create_in_app
+	return (
+		preference["frequency"] == "Instant"
+		or not event.create_in_app
+		or event.direct_recipients == "Affected User"
+	)
 
 
 def _notification_email(event, ctx, message=None) -> tuple[str, str]:

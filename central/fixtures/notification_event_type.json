@@ -608,7 +608,7 @@
   "in_app_body": "Your {{ context.product }} trial site and its data are deleted. You can start a new free trial at any time.",
   "action_label": "Start a new trial",
   "action_route": "/signup{% if context.product_key %}?product={{ context.product_key }}{% endif %}",
-  "is_critical": 0,
+  "is_critical": 1,
   "reportable_by": "None"
  },
  {
@@ -662,7 +662,7 @@
   "name": "team_impersonated",
   "required_cap": "team:manage_members",
   "severity": "Warning",
-  "is_critical": 0,
+  "is_critical": 1,
   "reportable_by": "None"
  },
  {
@@ -680,7 +680,7 @@
   "name": "team_archived",
   "required_cap": "team:delete",
   "severity": "Info",
-  "is_critical": 0,
+  "is_critical": 1,
   "reportable_by": "None"
  },
  {
@@ -698,7 +698,7 @@
   "severity": "Warning",
   "in_app_title": "Your team is suspended",
   "in_app_body": "Frappe Cloud support suspended {{ team_name }}. Its members cannot open it, its running servers are stopped and its storage bucket keys no longer work. Its data is kept.\n\nTo find out why, or to ask for it back, contact support at support.frappe.io.",
-  "is_critical": 0,
+  "is_critical": 1,
   "reportable_by": "None"
  },
  {
