@@ -328,9 +328,7 @@ def process_resize(action) -> None:
 		if not first_dispatch:
 			servers.observe_server(server)
 			server.reload()
-		# A converted trial's move has no subscription. Only the resize starts its server and turns
-		# idle sleep off, so it runs even when the shape already matches.
-		if not configuration.subscription or not _matches_shape(server, target):
+		if _needs_resize(server, target, configuration):
 			servers.resize_server(server, target)
 			server.reload()
 		if not _matches_shape(server, target):
@@ -368,6 +366,13 @@ def process_resize(action) -> None:
 		return
 
 	action.transition("Succeeded")
+
+
+def _needs_resize(server: VirtualMachine, shape: dict, configuration) -> bool:
+	"""A converted trial's move has no subscription. Only the resize starts its server and turns
+	idle sleep off, so it runs even when the shape already matches. With a matching shape it
+	does not stop the server."""
+	return not configuration.subscription or not _matches_shape(server, shape)
 
 
 def _matches_shape(server: VirtualMachine, shape: dict) -> bool:

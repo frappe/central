@@ -800,12 +800,15 @@ def get_plan_options() -> dict:
 	"""Plans this bench's server can switch to, flattened + priced for the Change-plan
 	list, plus the provider/region header and an insufficient-headroom flag. On an open trial
 	they are the paid plans the site may move to, with `selected` the one it moves to."""
-	from central.billing.api.dashboard.catalog import get_eligible_plans
 	from central.signups.trial import Trial
 
 	team, server = _team(), _server()
-	if trial := Trial.find_open(server):
-		return _trial_plan_options(trial)
+	trial = Trial.find_open(server)
+	return _trial_plan_options(trial) if trial else _paid_plan_options(team, server)
+
+
+def _paid_plan_options(team: str, server: str) -> dict:
+	from central.billing.api.dashboard.catalog import get_eligible_plans
 
 	row = (
 		frappe.db.get_value("Virtual Machine", server, ["region", "plan", "disk_gigabytes"], as_dict=True)

@@ -363,7 +363,9 @@ class TestTrialLifecycle(TrialOnAMachine):
 		frappe.db.set_value("Plan", "trial-lifecycle-plan", "available_on_trial", 1)
 		small, large = make_plan("trial-lifecycle-small"), make_plan("trial-lifecycle-large")
 		choices = [{"name": small}, {"name": large}]
-		self.enterContext(patch("central.signups.trial.Trial.get_plan_choices", return_value=choices))
+		plan_choices = self.enterContext(
+			patch("central.signups.trial.Trial.get_plan_choices", return_value=choices)
+		)
 
 		self.assertEqual(trial.Trial(self.site()).get_conversion_plan(), small)
 		self.site().db_set("conversion_plan", large)
@@ -372,6 +374,8 @@ class TestTrialLifecycle(TrialOnAMachine):
 
 		# The trial plan is never billed: the subscription opens once the server runs the paid plan.
 		self.assertTrue(trial.is_billing_deferred(self.server.name))
+		# The move goes to the plan checked at conversion, even after the catalog changes.
+		plan_choices.return_value = []
 		trial.finish_conversion(self.site().name)
 		move = frappe.get_doc("Resource Action", {"server": self.server.name, "action": "resize"})
 		configuration = move.get_resize_configuration()

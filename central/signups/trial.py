@@ -171,7 +171,10 @@ class Trial:
 		trial stopped it.
 		The trial's AI key is handed to the team in the background, best effort: its outcome is the
 		AI Trial Key record's; a failure is a comment here and the key is revoked."""
-		self.move_to("Converted", trial_error=None, **self.get_cost())
+		# The plan is checked once, here. The move goes to it even if the catalog changes after.
+		self.move_to(
+			"Converted", trial_error=None, conversion_plan=self.get_conversion_plan(), **self.get_cost()
+		)
 		if not AITrialKey.queue_convert(self.site.server):
 			self.site.add_comment(
 				"Info", _("The trial has no live AI key to hand over. The team creates one in the dashboard.")
@@ -373,6 +376,8 @@ class Trial:
 		plan = self.get_server_plan()
 		if not is_trial_plan(plan):
 			return plan
+		if self.state == "Converted":
+			return self.site.conversion_plan
 
 		choices = [choice["name"] for choice in self.get_plan_choices()]
 		if self.site.conversion_plan:
