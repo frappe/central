@@ -154,11 +154,11 @@ const filters: ListViewFilter[] = [
 
 		<template #invoice="{ row }">
 			<div class="min-w-0 py-2.5">
-				<p class="truncate text-p-sm-medium text-ink-gray-8">
+				<p class="truncate text-base-medium text-ink-gray-9">
 					{{ billingPeriod(row.period_start, row.period_end) }}
 				</p>
 				<p
-					class="truncate text-p-sm"
+					class="mt-1 truncate text-sm"
 					:class="isOverdue(row) ? 'text-ink-red-7' : 'text-ink-gray-5'"
 				>
 					{{ isOverdue(row) ? `${row.name} · Due ${shortDate(row.due_date)}` : row.name }}

@@ -1,9 +1,12 @@
 <script setup lang="ts">
-import { Badge, Button, LoadingText, Spinner } from 'frappe-ui'
+import { Badge, Button, LoadingText, Spinner, TabButtons } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import InvoiceListView from '@/components/billing/InvoiceListView.vue'
+import RefundsCard from '@/components/billing/RefundsCard.vue'
+import StatementCard from '@/components/billing/StatementCard.vue'
 import SidePanel from '@/components/common/SidePanel.vue'
+import { useBillingReports } from '@/composables/useBillingReports'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { useInvoiceDetail } from '@/composables/useInvoiceDetail'
 import { useInvoices } from '@/composables/useInvoices'
@@ -21,6 +24,12 @@ import type { InvoiceSummary } from '@/types/billing'
 // raw reportview), so we filter client-side over that list.
 const route = useRoute()
 const { canManageBilling } = useCapabilities()
+const reports = useBillingReports()
+const view = ref('invoices')
+const viewOptions = [
+	{ label: 'All invoices', value: 'invoices', iconLeft: 'lucide-receipt' },
+	{ label: 'Statement', value: 'statement', iconLeft: 'lucide-file-text' },
+]
 const {
 	invoices,
 	loading: invoicesLoading,
@@ -85,6 +94,10 @@ const canPay = computed(
 		hasDue.value,
 )
 
+watch(view, () => {
+	selected.value = null
+})
+
 function refresh(): void {
 	reloadInvoices()
 	reloadDetail(selected.value?.name)
@@ -120,13 +133,33 @@ const eventDate = (at: string | null): string => String(at ?? '').split(',')[0]
 		<!-- LIST — capped and centered so rows stay scannable when the panel is
          closed; the cap matches the Limit tiers page. -->
 		<div class="min-w-0 flex-1 overflow-y-auto">
-			<InvoiceListView
-				:invoices="invoices"
-				:loading="invoicesLoading && !invoices.length"
-				:active-name="selected?.name"
-				class="mx-auto w-full max-w-3xl p-3 md:p-4"
-				@row-click="selectRow"
-			/>
+			<div
+				class="mx-auto flex w-full max-w-3xl flex-col gap-4 p-3 md:p-4 lg:pt-8"
+			>
+				<TabButtons
+					v-model="view"
+					class="self-start"
+					aria-label="Invoice views"
+					:options="viewOptions"
+				/>
+
+				<InvoiceListView
+					v-if="view === 'invoices'"
+					:invoices="invoices"
+					:loading="invoicesLoading && !invoices.length"
+					:active-name="selected?.name"
+					@row-click="selectRow"
+				/>
+
+				<StatementCard
+					v-else
+					:statement="reports.statement.data ?? null"
+					:loading="reports.statementLoading.value"
+					:export-url="reports.exportUrl('statement')"
+				/>
+
+				<RefundsCard v-if="view === 'invoices'" />
+			</div>
 		</div>
 
 		<!-- Docked receipt panel — the shared SidePanel, slides in beside the
