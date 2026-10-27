@@ -9,6 +9,13 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
+# Pilot reads these steps only as whole percents.
+APP_ROLLOUT_STEP_LIMITS = (
+	("app_rollout_start_percent", 1, 100),
+	("app_rollout_step_percent", 1, 100),
+	("app_rollout_max_percent", 0, 100),
+)
+
 
 class CentralSettings(Document):
 	"""Console feature flags, one Check each, read at page boot so the console can hide an area."""
@@ -21,6 +28,12 @@ class CentralSettings(Document):
 	if TYPE_CHECKING:
 		from frappe.types import DF
 
+		app_rollout_failure_percent: DF.Percent
+		app_rollout_interval_hours: DF.Int
+		app_rollout_max_percent: DF.Percent
+		app_rollout_minimum_servers: DF.Int
+		app_rollout_start_percent: DF.Percent
+		app_rollout_step_percent: DF.Percent
 		central_id: DF.Int
 		common_site_config: DF.JSON | None
 		disk_iops: DF.Int
@@ -62,6 +75,7 @@ class CentralSettings(Document):
 	def validate(self) -> None:
 		self.validate_limits()
 		self.validate_common_site_config()
+		self.validate_app_rollout()
 
 	def on_update(self) -> None:
 		from central.infrastructure.doctype.blocked_domain.blocked_domain import seed_regional_domains
@@ -98,8 +112,40 @@ class CentralSettings(Document):
 		if len(json.dumps(config).encode()) > MAXIMUM_METADATA_BYTES:
 			frappe.throw(_("Common Site Config must fit in {0} bytes.").format(MAXIMUM_METADATA_BYTES))
 
+	def validate_app_rollout(self) -> None:
+		# An empty number field stays None on save.
+		for fieldname, lowest, highest in APP_ROLLOUT_STEP_LIMITS:
+			value = self.get(fieldname)
+			if value is None or value != int(value) or not lowest <= value <= highest:
+				label = _(self.meta.get_label(fieldname))
+				frappe.throw(_("{0} must be a whole number from {1} to {2}.").format(label, lowest, highest))
+
+		# A Failure Rate of 100 would never hold, because a release is held only above it.
+		failure_rate = self.app_rollout_failure_percent
+		if failure_rate is None or not 1 <= failure_rate <= 99:
+			label = _(self.meta.get_label("app_rollout_failure_percent"))
+			frappe.throw(_("{0} must be from 1 to 99.").format(label))
+
+		for fieldname in ("app_rollout_interval_hours", "app_rollout_minimum_servers"):
+			value = self.get(fieldname)
+			if value is None or value < 1:
+				frappe.throw(_("{0} must be at least 1.").format(_(self.meta.get_label(fieldname))))
+
 	def get_common_site_config(self) -> dict:
 		return frappe.parse_json(self.common_site_config or "{}")
+
+	def app_rollout(self) -> dict[str, int | list[str]]:
+		"""The steps Pilot uses to offer a new app update to more servers over time, and the
+		releases it must not offer."""
+		from central.central.doctype.app_rollout_hold.app_rollout_hold import AppRolloutHold
+
+		return {
+			"start_percent": int(self.app_rollout_start_percent),
+			"step_percent": int(self.app_rollout_step_percent),
+			"interval_hours": self.app_rollout_interval_hours,
+			"max_percent": int(self.app_rollout_max_percent),
+			"held_commits": AppRolloutHold.get_held_commits(),
+		}
 
 	def feature_flags(self) -> dict[str, bool]:
 		"""The console's feature flags as a plain {name: bool} map for window boot.

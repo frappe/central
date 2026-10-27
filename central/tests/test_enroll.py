@@ -8,6 +8,7 @@ from frappe.tests import IntegrationTestCase
 from frappe.utils import set_request
 
 from central.api.pilot import config, enroll
+from central.central.doctype.app_rollout_hold.app_rollout_hold import AppRolloutHold
 from central.central.doctype.central_sso_settings.central_sso_settings import CentralSSOSettings
 from central.infrastructure.doctype.pilot_credential.pilot_credential import PilotCredential
 from central.sso import jwks_url, mint_bootstrap_token
@@ -83,3 +84,33 @@ class TestEnrollment(IntegrationTestCase):
 		result = config()
 		self.assertEqual(result["audience_id"], self.pcid)
 		self.assertEqual(result["jwks_url"], jwks_url())
+
+	def test_config_reports_the_app_rollout_steps(self):
+		token = enroll(self._token())["auth_token"]
+		steps = {
+			"app_rollout_start_percent": 10,
+			"app_rollout_step_percent": 20,
+			"app_rollout_interval_hours": 4,
+			"app_rollout_max_percent": 50,
+		}
+		# enroll() commits, so a rollback alone would not undo these values.
+		original = {field: frappe.db.get_single_value("Central Settings", field) for field in steps}
+		self.addCleanup(frappe.db.set_single_value, "Central Settings", original)
+		frappe.db.set_single_value("Central Settings", steps)
+		set_request(
+			method="GET", path="/api/method/central.api.pilot.config", headers={"X-Pilot-Token": token}
+		)
+		app_rollout = config()["app_rollout"]
+		self.assertEqual(
+			app_rollout,
+			{
+				"start_percent": 10,
+				"step_percent": 20,
+				"interval_hours": 4,
+				"max_percent": 50,
+				"held_commits": AppRolloutHold.get_held_commits(),
+			},
+		)
+		# A Percent field reads as a float, and Pilot refuses one.
+		for key in ("start_percent", "step_percent", "max_percent"):
+			self.assertIs(type(app_rollout[key]), int)

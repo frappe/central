@@ -59,3 +59,5 @@ central.patches.v0_0.copy_error_logs_to_diagnostics
 central.patches.v0_0.seed_signup_image_minimum_age
 # A card with no mandate carries no mandate currency (it used to default to INR).
 central.patches.v0_0.clear_default_mandate_currency
+# The app rollout steps read 0 on a Central Settings saved before they existed, and Pilot holds every update on 0.
+central.patches.v0_0.seed_app_rollout_settings
