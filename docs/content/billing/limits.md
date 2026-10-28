@@ -8,12 +8,12 @@ You need the Owner, Admin, or Billing role to add credit. All billing roles can 
 
 ## Wallet credits
 
-The wallet holds your prepaid credit. Each invoice uses credit first, before Frappe Cloud charges a payment method. The balance shows as **Wallet** in the summary panel and as **Prepaid credits** on the **Payment methods** card.
+The wallet holds your prepaid credit. Each invoice uses credit first, before Frappe Cloud charges a payment method. The balance shows as **Wallet** in the summary panel and as **Prepaid credits** on the **Methods** card.
 
 ### Add credit
 
 1. Go to **Billing > Overview**.
-2. In the summary panel, click **Add credit**. You can also click **Top up** on the **Payment methods** card.
+2. In the summary panel, click **Add credit**. You can also click **Top up** on the **Methods** card on **Billing > Payments**.
 3. Type an **Amount**, or click a preset amount.
 4. Click **Continue to payment** and complete the payment.
 
