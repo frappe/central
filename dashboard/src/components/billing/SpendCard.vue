@@ -126,6 +126,8 @@ const toSlices = (
 	rows: SpendSlice[],
 	labelFor: (label: string) => string = (label) => label,
 ) => {
+	void tokens.value
+
 	const total = rows.reduce((sum, row) => sum + row.amount, 0)
 
 	if (total <= 0) return { total, slices: [] }

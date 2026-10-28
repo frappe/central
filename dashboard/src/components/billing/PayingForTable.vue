@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Badge, Button, Tooltip } from 'frappe-ui'
+import { Badge, Button } from 'frappe-ui'
 import { computed } from 'vue'
 import SubscriptionRowActions from '@/components/billing/SubscriptionRowActions.vue'
 import Table from '@/components/common/Table.vue'
@@ -143,12 +143,6 @@ const overAllowance = (s: ServiceRow): boolean =>
 					aria-hidden="true"
 				/>
 				<span class="text-base text-ink-gray-9">Projects</span>
-				<Tooltip text="Group subscription costs and set project limits.">
-					<span
-						class="lucide-info size-3.5 text-ink-gray-4"
-						aria-label="About projects"
-					/>
-				</Tooltip>
 				<span class="text-sm text-ink-gray-5">
 					Group invoice costs by customer or environment.
 				</span>

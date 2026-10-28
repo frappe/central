@@ -24,7 +24,7 @@ import type { InvoiceSummary } from '@/types/billing'
 // raw reportview), so we filter client-side over that list.
 const route = useRoute()
 const { canManageBilling } = useCapabilities()
-const reports = useBillingReports()
+const reports = useBillingReports({ statementOnly: true })
 const view = ref('invoices')
 const viewOptions = [
 	{ label: 'All invoices', value: 'invoices', iconLeft: 'lucide-receipt' },
