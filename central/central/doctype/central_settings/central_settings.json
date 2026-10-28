@@ -14,6 +14,8 @@
   "support_ticket_url",
   "column_break_help",
   "feedback_url",
+  "alerts_section",
+  "infra_alert_webhook_url",
   "feature_flags_tab",
   "addons_section",
   "enable_addons",
@@ -125,6 +127,18 @@
    "fieldtype": "Data",
    "label": "Feedback URL",
    "options": "URL"
+  },
+  {
+   "fieldname": "alerts_section",
+   "fieldtype": "Section Break",
+   "label": "Alerts"
+  },
+  {
+   "description": "Raven incoming webhook for infrastructure alerts that the investigator sends.",
+   "fieldname": "infra_alert_webhook_url",
+   "fieldtype": "Password",
+   "label": "Infra Alert Webhook URL",
+   "length": 512
   },
   {
    "fieldname": "feature_flags_tab",
@@ -482,7 +496,7 @@
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-10-24 14:00:00.000000",
+ "modified": "2026-10-28 18:00:00.000000",
  "modified_by": "Administrator",
  "module": "Central",
  "name": "Central Settings",

@@ -23,6 +23,7 @@ TOOLS = [
 	actions.run_desk_action,
 	actions.call_central_api,
 	tools.send_pilot_write_request,
+	tools.send_infra_alert_to_raven,
 ]
 
 INSTRUCTIONS = """You help Central support staff (L1, L2, and L4) with a problem on a server: a Virtual Machine and the benches and sites in it.
