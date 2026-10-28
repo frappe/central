@@ -97,7 +97,7 @@
  },
  {
   "action_label": "Re-authorise",
-  "action_route": "/billing",
+  "action_route": "/billing/payments",
   "category": "Billing",
   "create_in_app": 1,
   "direct_recipients": "None",
@@ -401,7 +401,7 @@
  },
  {
   "action_label": "Add billing details",
-  "action_route": "/billing",
+  "action_route": "/billing/payments",
   "category": "Billing",
   "create_in_app": 1,
   "direct_recipients": "None",
