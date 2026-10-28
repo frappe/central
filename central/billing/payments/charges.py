@@ -497,6 +497,13 @@ def apply_webhook(event_name: str) -> dict:
 	if not attempt_name:
 		return _apply_unmatched_event(event, payment, decline)
 
+	return _apply_attempt_event(event, attempt_name, payment, is_authorised, decline)
+
+
+def _apply_attempt_event(
+	event, attempt_name: str, payment, is_authorised: bool, decline: dict | None
+) -> dict:
+	"""Hold, decline or settle the invoice attempt a charge event belongs to."""
 	attempt = frappe.get_doc("Payment Attempt", attempt_name)
 	attempt.flags.ignore_links = True  # only its status and outcome change here
 	event.payment_attempt = attempt_name
@@ -509,36 +516,8 @@ def apply_webhook(event_name: str) -> dict:
 		_mark_event(event, "Processed")
 		return {"handled": True, "result": "Authorised", "attempt": attempt_name}
 
-	if is_failure:
-		fell_back = None
-		# A failure matters only until the invoice is settled — never undo a Paid
-		# invoice (a sync `captured` attempt isn't final: Paid lands on the success
-		# webhook). Gate on invoice status, not attempt status, and act once.
-		inv_status = frappe.db.get_value("Invoice", attempt.invoice, "status")
-		if inv_status != "Paid" and attempt.status not in ("Failed", "Refunded"):
-			transition(attempt, "Failed", actor="webhook", correlation=attempt.invoice)
-			# Off-session declines surface their real reason here, not on the sync
-			# charge response — pull it off the event so the attempt records why.
-			stamp_failure(attempt, decline)
-			attempt.completed_at = frappe.utils.now_datetime()
-			attempt.save(ignore_permissions=True)
-			from central.billing.platform import notifications
-
-			notifications.notify(
-				attempt.team,
-				"Payment Failure",
-				context={"invoice": attempt.invoice, "reason": attempt.failure_reason or "declined"},
-				reference_doctype="Invoice",
-				reference_name=attempt.invoice,
-			)
-			# Async decline: rotate to the next untried method (#28). No-op once
-			# every method has been exhausted.
-			if inv_status in ("Open", "Overdue"):
-				from central.billing.payments import collection
-
-				fell_back = collection.collect_invoice(attempt.invoice)
-		_mark_event(event, "Processed")
-		return {"handled": True, "result": "Failed", "attempt": attempt_name, "fell_back": fell_back}
+	if decline is not None:
+		return _apply_attempt_failure(event, attempt, decline)
 
 	if attempt.status == "Captured" and attempt.completed_at:
 		_mark_event(event, "Processed")  # already settled, by the callback or a replayed event
@@ -551,6 +530,39 @@ def apply_webhook(event_name: str) -> dict:
 	attempt.save(ignore_permissions=True)
 	_mark_event(event, "Processed")
 	return {"handled": True, "result": "paid", "invoice": attempt.invoice, "settled": settled}
+
+
+def _apply_attempt_failure(event, attempt, decline: dict) -> dict:
+	"""Fail an invoice attempt for its declined payment and try the team's next method."""
+	fell_back = None
+	# A failure matters only until the invoice is settled — never undo a Paid
+	# invoice (a sync `captured` attempt isn't final: Paid lands on the success
+	# webhook). Gate on invoice status, not attempt status, and act once.
+	inv_status = frappe.db.get_value("Invoice", attempt.invoice, "status")
+	if inv_status != "Paid" and attempt.status not in ("Failed", "Refunded"):
+		transition(attempt, "Failed", actor="webhook", correlation=attempt.invoice)
+		# Off-session declines surface their real reason here, not on the sync
+		# charge response — pull it off the event so the attempt records why.
+		stamp_failure(attempt, decline)
+		attempt.completed_at = frappe.utils.now_datetime()
+		attempt.save(ignore_permissions=True)
+		from central.billing.platform import notifications
+
+		notifications.notify(
+			attempt.team,
+			"Payment Failure",
+			context={"invoice": attempt.invoice, "reason": attempt.failure_reason or "declined"},
+			reference_doctype="Invoice",
+			reference_name=attempt.invoice,
+		)
+		# Async decline: rotate to the next untried method (#28). No-op once
+		# every method has been exhausted.
+		if inv_status in ("Open", "Overdue"):
+			from central.billing.payments import collection
+
+			fell_back = collection.collect_invoice(attempt.invoice)
+	_mark_event(event, "Processed")
+	return {"handled": True, "result": "Failed", "attempt": attempt.name, "fell_back": fell_back}
 
 
 def _attempt_for_payment(payment, gateway: str) -> str | None:
