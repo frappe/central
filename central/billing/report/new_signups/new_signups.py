@@ -66,17 +66,21 @@ def get_columns() -> list[dict]:
 
 
 def _earliest_by_team(
-	doctype: str, teams: list[str], extra_filters: dict | None = None, extra_fields: list[str] | None = None
+	doctype: str,
+	teams: list[str],
+	extra_filters: dict | None = None,
+	extra_fields: list[str] | None = None,
+	time_field: str = "creation",
 ) -> dict[str, dict]:
-	"""First (earliest-created) row of `doctype` per team, keyed by team."""
-	conditions = {"team": ["in", teams]}
+	"""Earliest row of `doctype` per team by `time_field`, keyed by team. Its time is `at`."""
+	conditions = {"team": ["in", teams], time_field: ["is", "set"]}
 	if extra_filters:
 		conditions.update(extra_filters)
 	rows = frappe.get_all(
 		doctype,
 		filters=conditions,
-		fields=["team", "creation", *(extra_fields or [])],
-		order_by="creation asc",
+		fields=["team", f"{time_field} as at", *(extra_fields or [])],
+		order_by=f"{time_field} asc",
 	)
 	first: dict[str, dict] = {}
 	for r in rows:
@@ -89,13 +93,18 @@ def _first_payment_by_team(teams: list[str]) -> dict[str, dict]:
 	paid_invoice = {"status": "Paid", "invoice_type": "Billable"}
 	sources = (
 		_earliest_by_team(
-			"Invoice", teams, {**paid_invoice, "amount_paid": [">", 0]}, ["amount_paid as amount", "currency"]
+			"Invoice",
+			teams,
+			{**paid_invoice, "amount_paid": [">", 0]},
+			["amount_paid as amount", "currency"],
+			time_field="paid_at",
 		),
 		_earliest_by_team(
 			"Invoice",
 			teams,
 			{**paid_invoice, "advance_applied": [">", 0]},
 			["advance_applied as amount", "currency"],
+			time_field="paid_at",
 		),
 		_earliest_by_team(
 			"Credit Ledger Entry", teams, {"entry_type": "Credit", "paid_in": 1}, ["amount", "currency"]
@@ -104,7 +113,7 @@ def _first_payment_by_team(teams: list[str]) -> dict[str, dict]:
 	first: dict[str, dict] = {}
 	for source in sources:
 		for team, row in source.items():
-			if team not in first or row.creation < first[team].creation:
+			if team not in first or row.at < first[team].at:
 				first[team] = row
 	return first
 
@@ -152,11 +161,11 @@ def get_data(filters: dict):
 				"team": t.name,
 				"team_name": t.team_name,
 				"signed_up": t.creation,
-				"profile_created": profile.creation if profile else None,
+				"profile_created": profile.at if profile else None,
 				"currency": (profile.currency if profile else None)
 				or (first_paid.currency if first_paid else None),
-				"first_method": method.creation if method else None,
-				"first_paid": first_paid.creation if first_paid else None,
+				"first_method": method.at if method else None,
+				"first_paid": first_paid.at if first_paid else None,
 				"first_payment_amount": flt(first_paid.amount) if first_paid else None,
 				"stage": stage,
 			}

@@ -195,7 +195,7 @@ class TestInvoluntaryChurn(BillingTestCase):
 class TestNewSignupsCountsOnlyMoney(BillingTestCase):
 	"""A signup is activated by money the customer paid, never by welcome credit alone."""
 
-	def _paid_invoice(self, team, amount_paid, credit_applied=0):
+	def _paid_invoice(self, team, amount_paid, credit_applied=0, paid_at="2026-07-03 10:00:00"):
 		frappe.get_doc(
 			{
 				"doctype": "Invoice",
@@ -208,6 +208,7 @@ class TestNewSignupsCountsOnlyMoney(BillingTestCase):
 				"total": 1000,
 				"credit_applied": credit_applied,
 				"amount_paid": amount_paid,
+				"paid_at": paid_at,
 			}
 		).insert(ignore_permissions=True)
 
@@ -234,3 +235,13 @@ class TestNewSignupsCountsOnlyMoney(BillingTestCase):
 			self._stages("team-signup-card", "team-signup-topup"),
 			{"team-signup-card": "Activated", "team-signup-topup": "Activated"},
 		)
+
+	def test_first_paid_is_when_the_invoice_was_paid(self):
+		from central.billing.report.new_signups import new_signups
+
+		ensure_team("team-signup-paid-at")
+		self._paid_invoice("team-signup-paid-at", amount_paid=1000, paid_at="2026-07-03 10:00:00")
+
+		_columns, rows, *_ = new_signups.execute({"from_date": "2026-01-01"})
+		row = next(r for r in rows if r["team"] == "team-signup-paid-at")
+		self.assertEqual(str(row["first_paid"]), "2026-07-03 10:00:00")
