@@ -135,7 +135,7 @@
    "fieldname": "setup_reference",
    "fieldtype": "Data",
    "label": "Setup Reference",
-   "description": "Gateway setup handle (Stripe SetupIntent id) captured at initiation, for reconcile"
+   "description": "The gateway setup handle: the SetupIntent of an in-app setup, or the Checkout Session of a hosted setup."
   },
   {
    "fieldname": "setup_intent_id",
@@ -257,7 +257,7 @@
    "link_fieldname": "payment_method"
   }
  ],
- "modified": "2026-10-28 13:00:00.000000",
+ "modified": "2026-10-28 14:00:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Payment Method",
