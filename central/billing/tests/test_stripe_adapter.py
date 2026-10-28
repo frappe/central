@@ -363,18 +363,61 @@ class TestIndiaCardMandate(IntegrationTestCase):
 		self.assertFalse(result.success)
 		self.assertEqual(result.status, "Failed")
 
-	def test_the_validation_micro_charge_quotes_the_mandate(self):
-		intent = stripe.PaymentIntent.construct_from({"id": "pi_x", "status": "succeeded"}, "sk")
+	def test_a_mandate_card_is_checked_by_its_mandate_not_a_charge(self):
 		method = frappe._dict(
 			gateway_method_id="pm_x", gateway_mandate_id="mandate_x", gateway_customer_id="cus_x", team="t"
 		)
 		with (
-			patch.object(stripe.PaymentIntent, "create", return_value=intent) as create,
-			patch.object(stripe.Refund, "create"),
+			patch.object(stripe.Mandate, "retrieve", return_value=frappe._dict(status="active")),
+			patch.object(stripe.PaymentIntent, "create") as create,
 		):
 			validated = self.adapter.validate_payment_method(method)
-		self.assertEqual(create.call_args.kwargs["mandate"], "mandate_x")
+		create.assert_not_called()
 		self.assertTrue(validated.success)
+
+	def test_an_inactive_mandate_fails_the_card(self):
+		method = frappe._dict(gateway_method_id="pm_x", gateway_mandate_id="mandate_x", team="t")
+		with patch.object(stripe.Mandate, "retrieve", return_value=frappe._dict(status="inactive")):
+			validated = self.adapter.validate_payment_method(method)
+		self.assertFalse(validated.success)
+		self.assertEqual(validated.failure_code, "mandate_inactive")
+
+	def test_the_check_charge_is_keyed_on_the_method_and_refunded(self):
+		intent = stripe.PaymentIntent.construct_from({"id": "pi_x", "status": "succeeded"}, "sk")
+		method = frappe._dict(name="pm-doc", gateway_method_id="pm_x", gateway_customer_id="cus_x", team="t")
+		with (
+			patch.object(stripe.PaymentIntent, "create", return_value=intent) as create,
+			patch.object(stripe.Refund, "create") as refund,
+		):
+			validated = self.adapter.validate_payment_method(method)
+		key = create.call_args.kwargs["idempotency_key"]
+		self.assertTrue(key.endswith(":card-check:pm-doc"))
+		self.assertEqual(refund.call_args.kwargs["idempotency_key"], f"{key}:refund")
+		self.assertTrue(validated.success)
+
+	def test_a_check_charge_waiting_on_the_customer_is_cancelled(self):
+		intent = stripe.PaymentIntent.construct_from({"id": "pi_x", "status": "requires_action"}, "sk")
+		method = frappe._dict(name="pm-doc", gateway_method_id="pm_x", team="t")
+		with (
+			patch.object(stripe.PaymentIntent, "create", return_value=intent),
+			patch.object(stripe.PaymentIntent, "cancel") as cancel,
+		):
+			validated = self.adapter.validate_payment_method(method)
+		cancel.assert_called_once_with("pi_x")
+		self.assertFalse(validated.success)
+		self.assertEqual(validated.failure_code, "requires_action")
+
+	def test_a_failed_check_refund_still_proves_the_card(self):
+		intent = stripe.PaymentIntent.construct_from({"id": "pi_x", "status": "succeeded"}, "sk")
+		method = frappe._dict(name="pm-doc", gateway_method_id="pm_x", team="t")
+		with (
+			patch.object(stripe.PaymentIntent, "create", return_value=intent),
+			patch.object(stripe.Refund, "create", side_effect=stripe.error.APIError("down")),
+			patch.object(frappe, "log_error") as log_error,
+		):
+			validated = self.adapter.validate_payment_method(method)
+		self.assertTrue(validated.success)
+		log_error.assert_called_once()
 
 	def test_validation_fails_cleanly_when_stripe_rejects_a_missing_mandate(self):
 		method = frappe._dict(gateway_method_id="pm_x", gateway_customer_id="cus_x", team="t")
