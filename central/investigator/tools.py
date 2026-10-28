@@ -2,13 +2,16 @@ from __future__ import annotations
 
 import re
 import time
+from datetime import UTC, datetime
 from typing import Annotated, Literal
+from zoneinfo import ZoneInfo
 
 import frappe
 import requests
 from frappe import _
 from frappe.flow import ToolContext, tool
 from frappe.model.document import Document
+from frappe.utils import get_system_timezone
 
 from central.integrations.atlas import AtlasClient
 from central.integrations.pilot import read_pilot, write_pilot
@@ -256,6 +259,18 @@ def get_dashboard_query_result(region: Document, name: str) -> dict:
 		"columns": columns,
 		"rows": frappe.parse_json(frappe.as_json(rows[:MAXIMUM_DASHBOARD_ROWS])),
 		"truncated": len(rows) > MAXIMUM_DASHBOARD_ROWS,
+	}
+
+
+@tool
+def get_current_time(*, ctx: ToolContext) -> dict:
+	"""Return the current time in UTC and in the time zone of this site."""
+	utc = datetime.now(UTC)
+	time_zone = get_system_timezone()
+	return {
+		"utc": utc.isoformat(timespec="seconds"),
+		"local": utc.astimezone(ZoneInfo(time_zone)).isoformat(timespec="seconds"),
+		"time_zone": time_zone,
 	}
 
 
