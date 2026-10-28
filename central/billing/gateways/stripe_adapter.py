@@ -353,6 +353,9 @@ class StripeAdapter(GatewayAdapter):
 		return PaymentResult(
 			success=succeeded,
 			status="Captured" if succeeded else intent.get("status"),
+			# An off-session charge the bank wants the customer to confirm ends as
+			# requires_action with no error; the status is the reason.
+			failure_code=None if succeeded else intent.get("status"),
 			gateway_transaction_id=intent.get("id"),
 			hold_until=_predebit_hold(intent),
 			raw=intent,

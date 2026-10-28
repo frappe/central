@@ -297,7 +297,7 @@ def fail_unopened_order(attempt, error: Exception) -> None:
 	"""The gateway did not open the order, so nothing can be paid against this attempt.
 	Failing it frees the invoice for the next payment."""
 	transition(attempt, "Failed", actor="gateway", correlation=attempt.invoice, reason="order not created")
-	attempt.failure_reason = str(error)[:140]
+	_stamp_failure(attempt, "order_not_created", None, str(error), None)
 	# The paying member reads invoices but cannot write a Payment Attempt.
 	attempt.save(ignore_permissions=True)
 	_persist()
@@ -519,15 +519,13 @@ def apply_webhook(event_name: str) -> dict:
 			transition(attempt, "Failed", actor="webhook", correlation=attempt.invoice)
 			# Off-session declines surface their real reason here, not on the sync
 			# charge response — pull it off the event so the attempt records why.
-			detail = _extract_failure(adapter_key, payload)
-			if detail:
-				_stamp_failure(
-					attempt,
-					detail.get("failure_code"),
-					detail.get("decline_code"),
-					detail.get("failure_reason"),
-					detail.get("raw"),
-				)
+			_stamp_failure(
+				attempt,
+				decline.get("failure_code"),
+				decline.get("decline_code"),
+				decline.get("failure_reason"),
+				decline.get("raw"),
+			)
 			attempt.completed_at = frappe.utils.now_datetime()
 			attempt.save(ignore_permissions=True)
 			from central.billing.platform import notifications
@@ -830,8 +828,9 @@ def _retire_method_if_mandate_failed(attempt, failure_code):
 
 def _stamp_failure(attempt, failure_code, decline_code, failure_reason, raw):
 	"""Record the decline detail on a Payment Attempt. `raw` is stored as JSON on
-	the Code field; failure_reason is trimmed to the Small Text column width."""
-	attempt.failure_code = failure_code
+	the Code field; failure_reason is trimmed to the Small Text column width. A failure
+	the gateway gave no code for still gets one, so every failed attempt can be grouped."""
+	attempt.failure_code = failure_code or "payment_failed"
 	attempt.decline_code = decline_code
 	attempt.failure_reason = (failure_reason or "")[:140] or None
 	if raw:
