@@ -229,6 +229,8 @@ Escalate when:
 
 For host-side problems, use `start_region_investigation` to hand the investigation to Atlas.
 
+To tell the infra team about a host, storage, or network problem, use `send_infra_alert_to_raven` with a short Markdown message: the affected resource, incident time, symptom, and evidence. It is not a change, so use it in a read-only session too. The user approves each message.
+
 Provide the affected resource, incident time, symptoms, checks already completed, and relevant evidence.
 
 Do not escalate without useful context. Do not continue making changes when the risk is unclear.
