@@ -44,7 +44,6 @@ class AISettings(Document):
 		control_api_secret: DF.Password | None
 		trial_key_cap: DF.Currency
 		trial_key_geography: DF.Data | None
-		trial_model_group: DF.Data | None
 		trial_pool_size: DF.Int
 	# end: auto-generated types
 

@@ -32,12 +32,11 @@ class TestAITrialKey(IntegrationTestCase):
 		self.grove.provision_key.side_effect = lambda **kwargs: minted(frappe.generate_hash(length=10))
 		self.configure(size=3)
 
-	def configure(self, size: int, enrolled: bool = True, group: str = "trial-models") -> None:
+	def configure(self, size: int, enrolled: bool = True) -> None:
 		values = {
 			"base_url": "https://grove.example.test" if enrolled else "",
 			"control_api_key": "control" if enrolled else "",
 			"trial_key_geography": "eu",
-			"trial_model_group": group,
 			"trial_pool_size": size,
 			"trial_key_cap": 2,
 		}
@@ -78,17 +77,11 @@ class TestAITrialKey(IntegrationTestCase):
 				"team": TRIAL_TEAM,
 				"title": None,
 				"geography": "eu",
-				"model_group": "trial-models",
 				"cap": 2,
 			},
 		)
 		key = frappe.get_doc("AI Trial Key", frappe.get_all("AI Trial Key", pluck="name")[-1])
 		self.assertEqual((key.gateway_url, key.get_password("api_key")), (GATEWAY, f"gr_{key.grove_key}"))
-
-	def test_a_blank_model_group_sends_none(self):
-		self.configure(size=1, group="")
-		ai_trial_key.refill_trial_keys()
-		self.assertIsNone(self.grove.provision_key.call_args.kwargs["model_group"])
 
 	def test_refill_mints_at_most_one_batch(self):
 		self.configure(size=5)

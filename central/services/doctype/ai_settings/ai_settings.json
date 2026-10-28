@@ -11,7 +11,6 @@
   "control_api_secret",
   "trials_tab",
   "trial_key_geography",
-  "trial_model_group",
   "trial_key_cap",
   "column_break_oabk",
   "trial_pool_size"
@@ -54,12 +53,6 @@
    "label": "Trial Key Geography"
   },
   {
-   "description": "The Grove Model Group trial keys are minted into: the set of models a trial may call. Empty: that geography's default group. Sent with every mint; a change applies to keys minted after it.",
-   "fieldname": "trial_model_group",
-   "fieldtype": "Data",
-   "label": "Trial Model Group"
-  },
-  {
    "default": "0",
    "description": "How many trial keys Central keeps minted and ready for free-trial servers, under the Grove Team Central Trial; a job every 5 minutes refills the pool. 0 keeps the pool off: a trial server then gets no key.",
    "fieldname": "trial_pool_size",
@@ -82,7 +75,7 @@
  "grid_page_length": 50,
  "issingle": 1,
  "links": [],
- "modified": "2026-10-25 00:00:00",
+ "modified": "2026-10-27 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Services",
  "name": "AI Settings",
