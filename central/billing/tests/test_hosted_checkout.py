@@ -219,7 +219,10 @@ class TestHostedCardSetupInRegulatedCurrency(BillingTestCase):
 		result = inspect.unwrap(billing_api.confirm_payment_method_checkout)(reference=reference)
 
 		self.assertEqual(result["status"], "Failed")
-		self.assertEqual(result["message"], "We could not verify this card. Try another card.")
+		self.assertEqual(
+			result["message"],
+			"There wasn't enough balance. Try another card, or add credit to your account instead.",
+		)
 
 
 class TestInAppBillingProfile(BillingTestCase):

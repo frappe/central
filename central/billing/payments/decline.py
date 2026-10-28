@@ -13,6 +13,7 @@ regression — it is a double charge.
 """
 
 import frappe
+from frappe import _
 
 # The card is refused. Nothing about retrying it changes that.
 TERMINAL_CODES = (
@@ -100,6 +101,13 @@ def customer_reason(failure_code: str | None, fallback: str | None = None) -> st
 	# Never surface the gateway's own string: it is written for an operator and
 	# frequently names internals a customer cannot act on.
 	return "We couldn't complete this payment"
+
+
+def card_failure_message(failure_code: str | None, decline_code: str | None = None) -> str:
+	"""Why a card could not be added, and what the customer can do instead. The bank's
+	decline code is the more specific reason, so it is used when we can word it."""
+	code = decline_code if (decline_code or "").lower() in _CUSTOMER_REASON else failure_code
+	return _("{0}. Try another card, or add credit to your account instead.").format(customer_reason(code))
 
 
 def is_mandate_failure(failure_code: str | None) -> bool:

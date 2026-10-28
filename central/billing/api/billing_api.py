@@ -22,6 +22,7 @@ from central.billing.api.dashboard._shared import (
 	_team_currency,
 )
 from central.billing.gateways import capabilities
+from central.billing.payments import decline
 from central.infrastructure.doctype.resource_action.resource_action import PENDING_STATES
 
 
@@ -382,7 +383,10 @@ def _activate_setup(method_name: str) -> dict:
 	except payments.CardNotSaved:
 		frappe.clear_last_message()
 		return {"status": "pending", "active": False}
-	return {"status": method.status, "active": method.status == "Active", "label": method.display_label}
+	result = {"status": method.status, "active": method.status == "Active", "label": method.display_label}
+	if method.status == "Failed":
+		result["message"] = decline.card_failure_message(method.failure_code, method.decline_code)
+	return result
 
 
 # nosemgrep: guest-whitelisted-method -- pilot_credential_auth verifies the caller below.
@@ -407,8 +411,6 @@ def confirm_payment_method_checkout(reference: str) -> dict:
 		result = _activate_setup(method_name)
 	if result["status"] == "pending":
 		result["message"] = "Awaiting card entry."
-	elif result["status"] == "Failed":
-		result["message"] = _("We could not verify this card. Try another card.")
 	return result
 
 

@@ -17,6 +17,7 @@ from central.billing.api.dashboard._shared import (
 	_resolve_team,
 	_team_currency,
 )
+from central.billing.payments import decline
 
 
 @frappe.whitelist()
@@ -130,7 +131,10 @@ def confirm_card(payment_method: str | None = None) -> dict:
 	team = frappe.db.get_value("Payment Method", payment_method, "team")
 	_require_manage(team)
 	method = payments.confirm_payment_method(payment_method)
-	return {"payment_method": method.name, "status": method.status}
+	result = {"payment_method": method.name, "status": method.status}
+	if method.status == "Failed":
+		result["message"] = decline.card_failure_message(method.failure_code, method.decline_code)
+	return result
 
 
 @frappe.whitelist(methods=["POST"])
@@ -185,8 +189,6 @@ def _fallback_reason(team: str, entry: dict | None, after_decline: bool) -> str 
 	field feeds the gateway comparison report, so a wrong value there is a wrong
 	answer to which rail authorises better.
 	"""
-	from central.billing.payments import decline
-
 	instrument_reason = entry["fallback_reason"] if entry else None
 	if not after_decline:
 		return instrument_reason

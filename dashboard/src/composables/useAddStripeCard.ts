@@ -32,6 +32,8 @@ interface CardSetupOrder {
 interface ConfirmCardResult {
 	payment_method: string
 	status: string
+	// Why the card failed its check, and what the customer can do instead.
+	message?: string
 }
 
 interface MountOptions {
@@ -132,7 +134,8 @@ export function useAddStripeCard({
 			if (confirm.error) throw confirm.error
 			const res = confirm.data
 			if (!res || res.status !== 'Active') {
-				error.value = "Couldn't verify that card. Try a different one"
+				error.value =
+					res?.message ?? "Couldn't verify that card. Try a different one"
 				return
 			}
 			successToast('Card added')
