@@ -52,6 +52,13 @@ class PaymentMethod(Document):
 		return result
 
 
+def held_method_filters() -> dict:
+	"""The `or_filters` that keep the methods a team holds. An abandoned setup stays on
+	record as Cancelled with no gateway id, so the setup funnel can count it, but it
+	never held a card or a mandate."""
+	return {"status": ["!=", "Cancelled"], "gateway_method_id": ["is", "set"]}
+
+
 def on_doctype_update() -> None:
 	# The billing run, its dashboards and the money reports filter on these.
 	frappe.db.add_index("Payment Method", ["team", "status"])

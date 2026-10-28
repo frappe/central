@@ -147,6 +147,20 @@ class TestSetupAndConfirm(CardTestBase):
 			frappe.db.exists("Billing Event", {"subject": abandoned, "reason": "setup abandoned"})
 		)
 
+	def test_an_abandoned_setup_is_not_listed_for_the_team(self):
+		from central.billing.api import billing_api
+
+		detached = self.add_active_card()
+		frappe.db.set_value("Payment Method", detached, "status", "Cancelled")
+		with stub_adapter():
+			abandoned = payments.initiate_payment_method_setup(TEAM, GATEWAY)["payment_method"]
+			fresh = payments.initiate_payment_method_setup(TEAM, GATEWAY)["payment_method"]
+
+		listed = {row["name"] for row in billing_api._payment_method_rows(TEAM)}
+
+		self.assertNotIn(abandoned, listed)
+		self.assertEqual(listed, {fresh, detached})
+
 	def test_a_card_not_saved_yet_is_not_confirmed(self):
 		with stub_adapter() as adapter:
 			setup = payments.initiate_payment_method_setup(TEAM, GATEWAY)

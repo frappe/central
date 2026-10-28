@@ -236,6 +236,25 @@ class TestNewSignupsCountsOnlyMoney(BillingTestCase):
 			{"team-signup-card": "Activated", "team-signup-topup": "Activated"},
 		)
 
+	def test_an_abandoned_card_setup_is_not_a_payment_method(self):
+		from central.billing.report.new_signups import new_signups
+
+		ensure_team("team-signup-abandoned")
+		frappe.get_doc(
+			{
+				"doctype": "Payment Method",
+				"team": "team-signup-abandoned",
+				"gateway": make_stripe_gateway().name,
+				"method_type": "Card",
+				"status": "Cancelled",
+			}
+		).db_insert()
+
+		_columns, rows, *_ = new_signups.execute({"from_date": "2026-01-01"})
+		row = next(r for r in rows if r["team"] == "team-signup-abandoned")
+		self.assertIsNone(row["first_method"])
+		self.assertEqual(row["stage"], "Signed Up")
+
 	def test_first_paid_is_when_the_invoice_was_paid(self):
 		from central.billing.report.new_signups import new_signups
 

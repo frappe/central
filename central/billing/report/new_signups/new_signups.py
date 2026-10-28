@@ -22,6 +22,7 @@ import frappe
 from frappe import _
 from frappe.utils import flt
 
+from central.billing.doctype.payment_method.payment_method import held_method_filters
 from central.billing.report._currency import split_currency_columns
 from central.billing.report._paging import first_rows
 
@@ -71,6 +72,7 @@ def _earliest_by_team(
 	extra_filters: dict | None = None,
 	extra_fields: list[str] | None = None,
 	time_field: str = "creation",
+	or_filters: dict | None = None,
 ) -> dict[str, dict]:
 	"""Earliest row of `doctype` per team by `time_field`, keyed by team. Its time is `at`."""
 	conditions = {"team": ["in", teams], time_field: ["is", "set"]}
@@ -81,6 +83,7 @@ def _earliest_by_team(
 		filters=conditions,
 		fields=["team", f"{time_field} as at", *(extra_fields or [])],
 		order_by=f"{time_field} asc",
+		or_filters=or_filters,
 	)
 	first: dict[str, dict] = {}
 	for r in rows:
@@ -138,7 +141,7 @@ def get_data(filters: dict):
 
 	names = [t.name for t in teams]
 	profiles = _earliest_by_team("Billing Profile", names, extra_fields=["currency"])
-	methods = _earliest_by_team("Payment Method", names)
+	methods = _earliest_by_team("Payment Method", names, or_filters=held_method_filters())
 	paid = _first_payment_by_team(names)
 
 	rows = []
