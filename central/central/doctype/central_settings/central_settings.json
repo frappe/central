@@ -16,6 +16,8 @@
   "feedback_url",
   "alerts_section",
   "infra_alert_webhook_url",
+  "column_break_infra_webhooks",
+  "infra_report_webhook_url",
   "feature_flags_tab",
   "addons_section",
   "enable_addons",
@@ -131,13 +133,24 @@
   {
    "fieldname": "alerts_section",
    "fieldtype": "Section Break",
-   "label": "Alerts"
+   "label": "Infra Webhooks"
   },
   {
    "description": "Raven incoming webhook for infrastructure alerts that the investigator sends.",
    "fieldname": "infra_alert_webhook_url",
    "fieldtype": "Password",
    "label": "Infra Alert Webhook URL",
+   "length": 512
+  },
+  {
+   "fieldname": "column_break_infra_webhooks",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "Raven incoming webhook for infrastructure reports that the investigator sends.",
+   "fieldname": "infra_report_webhook_url",
+   "fieldtype": "Password",
+   "label": "Infra Report Webhook URL",
    "length": 512
   },
   {
