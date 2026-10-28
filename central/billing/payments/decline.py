@@ -12,9 +12,21 @@ The distinction is worth its own module because getting it wrong is not a UX
 regression — it is a double charge.
 """
 
+from typing import TypedDict
+
 import frappe
 from frappe import _
 from frappe.utils.translations import _lt
+
+
+class Failure(TypedDict, total=False):
+	"""A decline as a gateway reported it, before a record keeps it."""
+
+	failure_code: str | None
+	decline_code: str | None
+	failure_reason: str | None
+	raw: dict
+
 
 # The card is refused. Nothing about retrying it changes that.
 TERMINAL_CODES = (
@@ -112,7 +124,7 @@ PAYMENT_NOT_AUTHORISED = "payment_not_authorised"
 MANDATE_REFUSALS = (SIGNATURE_INVALID, ORDER_MISMATCH, PAYMENT_NOT_AUTHORISED)
 
 
-def failure_fields(failure: dict) -> dict:
+def failure_fields(failure: Failure) -> dict:
 	"""The failure columns a record keeps, from a decline shaped like `charges._extract_failure`.
 	A failure the gateway gave no code for still gets one, so every failure can be grouped."""
 	return {

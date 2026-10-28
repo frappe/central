@@ -36,7 +36,7 @@ class PaymentMethod(Document):
 				frappe.ValidationError,
 			)
 
-	def record_failure(self, failure: dict) -> None:
+	def record_failure(self, failure: decline.Failure) -> None:
 		"""Keep the gateway's reason for the latest failed setup or check of this method."""
 		self.failed_attempts = frappe.utils.cint(self.failed_attempts) + 1
 		self.last_failed_at = frappe.utils.now_datetime()

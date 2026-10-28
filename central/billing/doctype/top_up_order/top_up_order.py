@@ -86,7 +86,7 @@ class TopupOrder(Document):
 		# Reconciliation runs as the system with no session user to check.
 		self.save(ignore_permissions=True)
 
-	def record_decline(self, failure: dict, gateway_event_id: str) -> None:
+	def record_decline(self, failure: decline.Failure, gateway_event_id: str) -> None:
 		"""Keep why the gateway declined a payment on this order, and log each decline as
 		a Billing Event. The order stays open, because the payer can try again on it.
 

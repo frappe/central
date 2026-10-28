@@ -14,6 +14,8 @@ from typing import ClassVar
 import frappe
 from frappe import _
 
+from central.billing.payments.decline import Failure
+
 
 def header_value(headers: dict, name: str):
 	"""Case-insensitive header lookup (werkzeug preserves sent casing)."""
@@ -42,7 +44,7 @@ class PaymentResult:
 	raw: dict = field(default_factory=dict)
 
 	@property
-	def failure(self) -> dict:
+	def failure(self) -> Failure:
 		return {
 			"failure_code": self.failure_code,
 			"decline_code": self.decline_code,

@@ -20,6 +20,7 @@ from frappe import _
 from central.billing import settings
 from central.billing.doctype.payment_attempt.payment_attempt import idempotency_key
 from central.billing.gateways.base import GatewayTimeout
+from central.billing.payments.decline import Failure
 from central.billing.states import transition
 
 # The unique idempotency key rejected the insert: this charge is already claimed.
@@ -767,7 +768,7 @@ def _apply_unmatched_event(event, payment, decline: dict | None) -> dict:
 	return {"handled": False, "reason": "no_matching_attempt"}
 
 
-def _extract_failure(adapter_key: str, payload: dict) -> dict | None:
+def _extract_failure(adapter_key: str, payload: dict) -> Failure | None:
 	"""Pull the decline detail out of a failure webhook body, normalised to
 	{failure_code, decline_code, failure_reason, raw}. This is where an off-session
 	decline's real reason lives — the sync charge response often can't see it."""
@@ -832,7 +833,7 @@ def _retire_method_if_mandate_failed(attempt, failure_code):
 	collection_mode.trip(attempt.team, "mandate_failed")
 
 
-def stamp_failure(attempt, failure: dict) -> None:
+def stamp_failure(attempt, failure: Failure) -> None:
 	"""Record the decline detail on a Payment Attempt. The gateway's `raw` answer is
 	stored as JSON on the Code field."""
 	from central.billing.payments import decline
