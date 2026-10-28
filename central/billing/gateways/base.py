@@ -42,6 +42,18 @@ class PaymentResult:
 	raw: dict = field(default_factory=dict)
 
 
+def token_check(payment_method) -> PaymentResult:
+	"""The check of a method whose proof is the token the gateway issued on approval."""
+	if payment_method.gateway_method_id:
+		return PaymentResult(success=True, status="Validated")
+	return PaymentResult(
+		success=False,
+		status="Failed",
+		failure_code="token_missing",
+		failure_reason="The gateway issued no token for this method.",
+	)
+
+
 @dataclass(frozen=True)
 class VerifiedPayment:
 	"""A payment as the gateway reports it, from a server-side read or a signed webhook.
@@ -205,8 +217,9 @@ class GatewayAdapter(ABC):
 		...
 
 	@abstractmethod
-	def validate_payment_method(self, payment_method) -> bool:
-		"""Prove the method is live (Stripe micro-charge + auto-refund)."""
+	def validate_payment_method(self, payment_method) -> PaymentResult:
+		"""Prove the method is live (Stripe micro-charge + auto-refund). A failed check
+		carries the gateway's failure_code, decline_code and failure_reason."""
 		...
 
 	# --- charge / refund / webhooks (universal) -----------------------------

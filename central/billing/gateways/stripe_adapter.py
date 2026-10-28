@@ -248,7 +248,7 @@ class StripeAdapter(GatewayAdapter):
 			}
 		}
 
-	def validate_payment_method(self, payment_method) -> bool:
+	def validate_payment_method(self, payment_method) -> PaymentResult:
 		"""Micro-charge (50 minor units) + auto-refund to prove the card is live."""
 		self._configure()
 		# India-based Stripe accounts require a description AND the customer's
@@ -273,13 +273,13 @@ class StripeAdapter(GatewayAdapter):
 			params["mandate"] = mandate
 		try:
 			intent = _to_dict(stripe.PaymentIntent.create(**params))
-		except (stripe.error.CardError, stripe.error.InvalidRequestError):
-			return False
+		except (stripe.error.CardError, stripe.error.InvalidRequestError) as error:
+			return _declined(error)
 
 		if intent.get("status") == "succeeded":
 			stripe.Refund.create(payment_intent=intent.get("id"))
-			return True
-		return False
+			return PaymentResult(success=True, status="Validated", gateway_transaction_id=intent.get("id"))
+		return _unfinished_check(intent)
 
 	def charge(self, invoice, payment_method, idempotency_key: str) -> PaymentResult:
 		"""Off-session charge of a stored payment method. Idempotent per attempt.
@@ -312,18 +312,8 @@ class StripeAdapter(GatewayAdapter):
 		try:
 			intent = _to_dict(stripe.PaymentIntent.create(**params))
 		except (stripe.error.CardError, stripe.error.InvalidRequestError) as e:
-			body = getattr(e, "json_body", None) or {}
-			# `code` for a declined card is almost always "card_declined"; the actual
-			# reason (insufficient_funds, lost_card, stolen_card, …) is the decline_code.
 			# A mandate Stripe refuses mid-billing surfaces here too, as InvalidRequestError.
-			return PaymentResult(
-				success=False,
-				status="Failed",
-				failure_code=getattr(e, "code", None),
-				decline_code=(body.get("error") or {}).get("decline_code"),
-				failure_reason=getattr(e, "user_message", None) or str(e),
-				raw=body,
-			)
+			return _declined(e)
 		except (stripe.error.APIConnectionError, stripe.error.RateLimitError) as e:
 			raise GatewayTimeout(str(e)) from e
 
@@ -555,6 +545,35 @@ class StripeAdapter(GatewayAdapter):
 	def get_mandate_status(self, mandate_reference: str) -> str:
 		self._configure()
 		return _to_dict(stripe.Mandate.retrieve(mandate_reference)).get("status")
+
+
+def _declined(error: stripe.error.StripeError) -> PaymentResult:
+	"""A refused charge, with Stripe's reasons. `code` for a declined card is almost always
+	"card_declined"; the actual reason (insufficient_funds, lost_card, …) is the decline_code."""
+	body = getattr(error, "json_body", None) or {}
+	return PaymentResult(
+		success=False,
+		status="Failed",
+		failure_code=getattr(error, "code", None) or type(error).__name__,
+		decline_code=(body.get("error") or {}).get("decline_code"),
+		failure_reason=getattr(error, "user_message", None) or str(error),
+		raw=body,
+	)
+
+
+def _unfinished_check(intent: dict) -> PaymentResult:
+	"""A card check charge that did not succeed: waiting on the customer, or held."""
+	error = intent.get("last_payment_error") or {}
+	status = intent.get("status")
+	return PaymentResult(
+		success=False,
+		status="Failed",
+		gateway_transaction_id=intent.get("id"),
+		failure_code=error.get("code") or status,
+		decline_code=error.get("decline_code"),
+		failure_reason=error.get("message") or f"The card check charge ended as {status}.",
+		raw=intent,
+	)
 
 
 @contextmanager

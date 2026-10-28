@@ -210,11 +210,11 @@ class TestHostedCardSetupInRegulatedCurrency(BillingTestCase):
 		self.assertEqual(checkout["checkout_url"], "https://setup")
 
 	def test_a_card_that_fails_verification_says_so(self):
-		from central.billing.tests.test_payments import saved_card
+		from central.billing.tests.test_payments import card_check, saved_card
 
 		reference = self._open_usd_card_setup()["reference"]
 		self.adapter.read_saved_card.return_value = saved_card(customer="cus_usd")
-		self.adapter.validate_payment_method.return_value = False
+		self.adapter.validate_payment_method.return_value = card_check(False)
 
 		result = inspect.unwrap(billing_api.confirm_payment_method_checkout)(reference=reference)
 

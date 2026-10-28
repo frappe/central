@@ -30,7 +30,14 @@
   "column_break_mandate",
   "mandate_max_amount",
   "mandate_currency",
-  "validated_at"
+  "validated_at",
+  "section_break_failure",
+  "failed_attempts",
+  "last_failed_at",
+  "column_break_failure",
+  "failure_code",
+  "decline_code",
+  "failure_reason"
  ],
  "fields": [
   {
@@ -175,6 +182,53 @@
    "fieldname": "validated_at",
    "fieldtype": "Datetime",
    "label": "Validated At"
+  },
+  {
+   "collapsible": 1,
+   "collapsible_depends_on": "eval:doc.failed_attempts",
+   "fieldname": "section_break_failure",
+   "fieldtype": "Section Break",
+   "label": "Last Failure"
+  },
+  {
+   "default": "0",
+   "description": "How many times adding or checking this method failed at the gateway.",
+   "fieldname": "failed_attempts",
+   "fieldtype": "Int",
+   "label": "Failed Attempts",
+   "read_only": 1
+  },
+  {
+   "fieldname": "last_failed_at",
+   "fieldtype": "Datetime",
+   "label": "Last Failed At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_failure",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "The gateway's error code, such as card_declined or authentication_required.",
+   "fieldname": "failure_code",
+   "fieldtype": "Data",
+   "in_standard_filter": 1,
+   "label": "Failure Code",
+   "read_only": 1
+  },
+  {
+   "description": "The bank's reason for a decline, such as insufficient_funds.",
+   "fieldname": "decline_code",
+   "fieldtype": "Data",
+   "label": "Decline Code",
+   "read_only": 1
+  },
+  {
+   "description": "The gateway's message for the failure.",
+   "fieldname": "failure_reason",
+   "fieldtype": "Small Text",
+   "label": "Failure Reason",
+   "read_only": 1
   }
  ],
  "index_web_pages_for_search": 1,
@@ -195,7 +249,7 @@
    "link_fieldname": "payment_method"
   }
  ],
- "modified": "2026-10-26 00:00:00.000000",
+ "modified": "2026-10-28 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Payment Method",

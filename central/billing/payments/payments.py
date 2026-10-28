@@ -189,13 +189,14 @@ def confirm_payment_method(payment_method: str) -> Document:
 	if not card:
 		frappe.throw(_("The card has not been saved yet. Finish adding it, then try again."), CardNotSaved)
 	if _is_saved_to_another_customer(card, method):
-		return _fail_method(method, "card saved to another gateway customer")
+		return _fail_method(method, "customer_mismatch", "The card was saved to another gateway customer.")
 
 	method.update(_saved_card_fields(card, method))
 	method.save(ignore_permissions=True)
 
-	if not _adapter(method.gateway).validate_payment_method(method):
-		return _fail_method(method, "validation failed")
+	check = _adapter(method.gateway).validate_payment_method(method)
+	if not check.success:
+		return _fail_method(method, check.failure_code, check.failure_reason, check.decline_code)
 
 	transition(method, "Active", actor=frappe.session.user)
 	method.validated_at = frappe.utils.now_datetime()
@@ -224,8 +225,11 @@ def _saved_card_fields(card: dict, method) -> dict:
 	}
 
 
-def _fail_method(method, reason: str) -> Document:
-	transition(method, "Failed", actor=frappe.session.user, reason=reason)
+def _fail_method(
+	method, failure_code: str | None, failure_reason: str | None, decline_code: str | None = None
+) -> Document:
+	method.record_failure(failure_code, failure_reason, decline_code)
+	transition(method, "Failed", actor=frappe.session.user, reason=failure_code or failure_reason)
 	# Only billing code changes a method's status; the caller checked billing:manage.
 	method.save(ignore_permissions=True)
 	return method

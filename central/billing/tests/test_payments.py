@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import frappe
 
+from central.billing.gateways.base import PaymentResult
 from central.billing.payments import payments
 from central.billing.tests.test_stripe_adapter import make_stripe_gateway
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
@@ -29,6 +30,19 @@ def saved_card(**fields):
 	}
 
 
+def card_check(success: bool) -> PaymentResult:
+	"""What the gateway answers to a card check."""
+	if success:
+		return PaymentResult(success=True, status="Validated")
+	return PaymentResult(
+		success=False,
+		status="Failed",
+		failure_code="card_declined",
+		decline_code="insufficient_funds",
+		failure_reason="Your card has insufficient funds.",
+	)
+
+
 @contextmanager
 def stub_adapter(validate=True, card=None):
 	"""Resolve a mock GatewayAdapter (no SDK touched)."""
@@ -38,7 +52,7 @@ def stub_adapter(validate=True, card=None):
 		"client_secret": "seti_secret_123",
 		"setup_intent_id": "seti_123",
 	}
-	adapter.validate_payment_method.return_value = validate
+	adapter.validate_payment_method.return_value = card_check(validate)
 	adapter.create_customer.return_value = "cus_created"
 	with patch("central.billing.gateways.registry.get_adapter", return_value=adapter):
 		yield adapter
@@ -88,6 +102,20 @@ class TestSetupAndConfirm(CardTestBase):
 			method = payments.confirm_payment_method(setup["payment_method"])
 		self.assertEqual(method.status, "Failed")
 		self.assertFalse(method.is_default)
+
+	def test_a_failed_card_check_keeps_the_gateway_reason(self):
+		with stub_adapter(validate=False):
+			setup = payments.initiate_payment_method_setup(TEAM, GATEWAY)
+			method = payments.confirm_payment_method(setup["payment_method"])
+
+		self.assertEqual((method.failure_code, method.decline_code), ("card_declined", "insufficient_funds"))
+		self.assertEqual(method.failure_reason, "Your card has insufficient funds.")
+		self.assertEqual(method.failed_attempts, 1)
+		self.assertTrue(method.last_failed_at)
+		event_reason = frappe.db.get_value(
+			"Billing Event", {"subject": method.name, "to_state": "Failed"}, "reason"
+		)
+		self.assertEqual(event_reason, "card_declined")
 
 	def test_a_failed_method_is_not_charged_again(self):
 		with stub_adapter(validate=False) as adapter:

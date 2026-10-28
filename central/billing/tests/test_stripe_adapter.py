@@ -374,7 +374,7 @@ class TestIndiaCardMandate(IntegrationTestCase):
 		):
 			validated = self.adapter.validate_payment_method(method)
 		self.assertEqual(create.call_args.kwargs["mandate"], "mandate_x")
-		self.assertTrue(validated)
+		self.assertTrue(validated.success)
 
 	def test_validation_fails_cleanly_when_stripe_rejects_a_missing_mandate(self):
 		method = frappe._dict(gateway_method_id="pm_x", gateway_customer_id="cus_x", team="t")
@@ -383,4 +383,19 @@ class TestIndiaCardMandate(IntegrationTestCase):
 		)
 		with patch.object(stripe.PaymentIntent, "create", side_effect=error):
 			validated = self.adapter.validate_payment_method(method)
-		self.assertFalse(validated)
+		self.assertFalse(validated.success)
+		self.assertIn("mandate", validated.failure_reason)
+
+	def test_a_declined_card_check_carries_the_decline_code(self):
+		method = frappe._dict(gateway_method_id="pm_x", gateway_customer_id="cus_x", team="t")
+		error = stripe.error.CardError(
+			"Your card has insufficient funds.",
+			param=None,
+			code="card_declined",
+			json_body={"error": {"code": "card_declined", "decline_code": "insufficient_funds"}},
+		)
+		with patch.object(stripe.PaymentIntent, "create", side_effect=error):
+			validated = self.adapter.validate_payment_method(method)
+		self.assertEqual(
+			(validated.failure_code, validated.decline_code), ("card_declined", "insufficient_funds")
+		)

@@ -34,6 +34,16 @@ class PaymentMethod(Document):
 				frappe.ValidationError,
 			)
 
+	def record_failure(
+		self, failure_code: str | None, failure_reason: str | None = None, decline_code: str | None = None
+	) -> None:
+		"""Keep the gateway's reason for the latest failed setup or check of this method."""
+		self.failed_attempts = frappe.utils.cint(self.failed_attempts) + 1
+		self.last_failed_at = frappe.utils.now_datetime()
+		self.failure_code = failure_code
+		self.decline_code = decline_code
+		self.failure_reason = (failure_reason or "")[:140] or None
+
 
 def on_doctype_update() -> None:
 	# The billing run, its dashboards and the money reports filter on these.
