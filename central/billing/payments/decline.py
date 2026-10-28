@@ -105,7 +105,10 @@ def customer_reason(failure_code: str | None, fallback: str | None = None) -> st
 
 
 # Why Central refused a mandate confirmation. Nothing about the customer's bank.
-MANDATE_REFUSALS = ("signature_invalid", "order_mismatch", "payment_not_authorised")
+SIGNATURE_INVALID = "signature_invalid"
+ORDER_MISMATCH = "order_mismatch"
+PAYMENT_NOT_AUTHORISED = "payment_not_authorised"
+MANDATE_REFUSALS = (SIGNATURE_INVALID, ORDER_MISMATCH, PAYMENT_NOT_AUTHORISED)
 
 
 def method_failure_message(

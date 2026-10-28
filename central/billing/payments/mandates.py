@@ -15,6 +15,7 @@ through the registry, keeping the gateway seam intact (see gateways/base.py).
 import frappe
 from frappe import _
 
+from central.billing.payments.decline import ORDER_MISMATCH, PAYMENT_NOT_AUTHORISED, SIGNATURE_INVALID
 from central.billing.states import transition
 
 MANDATE_METHOD = "UPI Autopay"
@@ -270,14 +271,12 @@ def confirm_mandate(payment_method: str, callback: dict):
 	adapter = _adapter(method.gateway)
 
 	if not adapter.verify_payment_signature(callback):
-		return _refuse_mandate(method, "signature_invalid", "The checkout signature is invalid.")
+		return _refuse_mandate(method, SIGNATURE_INVALID, "The checkout signature is invalid.")
 	if not method.setup_reference or callback.get("razorpay_order_id") != method.setup_reference:
-		return _refuse_mandate(method, "order_mismatch", "The callback is for another order.")
+		return _refuse_mandate(method, ORDER_MISMATCH, "The callback is for another order.")
 	payment = adapter.get_payment(callback.get("razorpay_payment_id"))
 	if not _is_mandate_payment(method, payment):
-		return _refuse_mandate(
-			method, "payment_not_authorised", "The payment does not authorise this mandate."
-		)
+		return _refuse_mandate(method, PAYMENT_NOT_AUTHORISED, "The payment does not authorise this mandate.")
 
 	method.gateway_method_id = payment["token_id"]
 	transition(method, "Active", actor=frappe.session.user)
