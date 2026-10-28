@@ -363,20 +363,29 @@ def expire_payment_methods(now=None) -> dict:
 	return {"expired": expired}
 
 
+CARD_DETACHED_EVENT = "payment_method.detached"
+CARD_SETUP_FAILED_EVENT = "setup_intent.setup_failed"
+
+
 def apply_payment_method_event(event_name: str) -> dict:
 	"""Record a card event from the gateway on the Payment Method it is about.
 
 	A card detached at the gateway can no longer be charged, so it is cancelled and
 	drops out of the charge order. A failed card setup is recorded on the card with the
 	gateway's reason. The card stays Pending Validation: the customer can retry on the
-	same setup, so one failed try does not fail the card.
+	same setup, so one failed try does not fail the card. Any other card or setup event
+	(created, requires_action, succeeded) is not a failure and is ignored.
 	"""
 	from central.billing.payments import charges
 
 	event = frappe.get_doc("Webhook Event", event_name)
+	if event.event_type not in (CARD_DETACHED_EVENT, CARD_SETUP_FAILED_EVENT):
+		charges._mark_event(event, "Ignored")
+		return {"handled": False, "reason": "not_a_card_failure"}
+
 	payload = frappe.parse_json(event.raw_payload) if event.raw_payload else {}
 	gateway_object = (payload.get("data") or {}).get("object") or {}
-	is_detached = event.event_type == "payment_method.detached"
+	is_detached = event.event_type == CARD_DETACHED_EVENT
 	method = _find_event_method(event.gateway, gateway_object.get("id"), is_detached)
 	if not method:
 		charges._mark_event(event, "Ignored")

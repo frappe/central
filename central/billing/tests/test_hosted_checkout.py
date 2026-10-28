@@ -227,26 +227,28 @@ class TestHostedCardSetupInRegulatedCurrency(BillingTestCase):
 			"There wasn't enough balance. Try another card, or add credit to your account instead.",
 		)
 
-	def test_a_declined_hosted_card_setup_is_kept_on_its_card(self):
-		method = self._open_usd_card_setup()["reference"].split("|")[-1]
-		failure = {"code": "card_declined", "message": "Your card was declined."}
-		payload = {
-			"id": "evt_hosted_setup_failed",
-			"type": "setup_intent.setup_failed",
-			"data": {"object": {"id": "seti_usd", "last_setup_error": failure}},
-		}
+	def _receive_setup_event(self, event_type: str, setup_intent: dict) -> str:
+		payload = {"id": f"evt_{event_type}", "type": event_type, "data": {"object": setup_intent}}
 		event = frappe.get_doc(
 			{
 				"doctype": "Webhook Event",
 				"gateway": "Stripe",
 				"gateway_event_id": payload["id"],
-				"event_type": payload["type"],
+				"event_type": event_type,
 				"raw_payload": json.dumps(payload),
 				"status": "Received",
 			}
 		).insert(ignore_permissions=True)
-
 		webhooks.handle_webhook_event(event.name)
+		return event.name
+
+	def test_a_declined_hosted_card_setup_is_kept_on_its_card(self):
+		method = self._open_usd_card_setup()["reference"].split("|")[-1]
+		failure = {"code": "card_declined", "message": "Your card was declined."}
+
+		self._receive_setup_event(
+			"setup_intent.setup_failed", {"id": "seti_usd", "last_setup_error": failure}
+		)
 
 		failed = frappe.db.get_value(
 			"Payment Method", method, ["status", "failure_code", "failed_attempts"], as_dict=True
@@ -261,6 +263,28 @@ class TestHostedCardSetupInRegulatedCurrency(BillingTestCase):
 				{"subject": method, "event_type": "Payment Method Setup Failed", "reason": "card_declined"},
 			)
 		)
+
+	def test_a_setup_event_that_is_not_a_failure_leaves_the_card_alone(self):
+		method = self._open_usd_card_setup()["reference"].split("|")[-1]
+
+		events = [
+			self._receive_setup_event(event_type, {"id": "seti_usd"})
+			for event_type in (
+				"setup_intent.created",
+				"setup_intent.requires_action",
+				"setup_intent.succeeded",
+			)
+		]
+
+		card = frappe.db.get_value("Payment Method", method, ["status", "failed_attempts"], as_dict=True)
+		self.assertEqual((card.status, card.failed_attempts), ("Pending Validation", 0))
+		self.assertFalse(
+			frappe.db.exists(
+				"Billing Event", {"subject": method, "event_type": "Payment Method Setup Failed"}
+			)
+		)
+		statuses = {frappe.db.get_value("Webhook Event", name, "status") for name in events}
+		self.assertEqual(statuses, {"Ignored"})
 
 
 class TestInAppBillingProfile(BillingTestCase):
