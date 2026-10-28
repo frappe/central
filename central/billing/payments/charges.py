@@ -216,7 +216,7 @@ def _charge_claimed_attempt(attempt_name: str) -> dict:
 		transition(
 			attempt, "Failed", actor="gateway", correlation=attempt.invoice, reason=result.failure_reason
 		)
-		_stamp_failure(attempt, result.failure_code, result.decline_code, result.failure_reason, result.raw)
+		stamp_failure(attempt, result.failure)
 		attempt.completed_at = frappe.utils.now_datetime()
 		_retire_method_if_mandate_failed(attempt, result.failure_code)
 	attempt.save(ignore_permissions=True)
@@ -297,7 +297,7 @@ def fail_unopened_order(attempt, error: Exception) -> None:
 	"""The gateway did not open the order, so nothing can be paid against this attempt.
 	Failing it frees the invoice for the next payment."""
 	transition(attempt, "Failed", actor="gateway", correlation=attempt.invoice, reason="order not created")
-	_stamp_failure(attempt, "order_not_created", None, str(error), None)
+	stamp_failure(attempt, {"failure_code": "order_not_created", "failure_reason": str(error)})
 	# The paying member reads invoices but cannot write a Payment Attempt.
 	attempt.save(ignore_permissions=True)
 	_persist()
@@ -519,13 +519,7 @@ def apply_webhook(event_name: str) -> dict:
 			transition(attempt, "Failed", actor="webhook", correlation=attempt.invoice)
 			# Off-session declines surface their real reason here, not on the sync
 			# charge response — pull it off the event so the attempt records why.
-			_stamp_failure(
-				attempt,
-				decline.get("failure_code"),
-				decline.get("decline_code"),
-				decline.get("failure_reason"),
-				decline.get("raw"),
-			)
+			stamp_failure(attempt, decline)
 			attempt.completed_at = frappe.utils.now_datetime()
 			attempt.save(ignore_permissions=True)
 			from central.billing.platform import notifications
@@ -826,15 +820,14 @@ def _retire_method_if_mandate_failed(attempt, failure_code):
 	collection_mode.trip(attempt.team, "mandate_failed")
 
 
-def _stamp_failure(attempt, failure_code, decline_code, failure_reason, raw):
-	"""Record the decline detail on a Payment Attempt. `raw` is stored as JSON on
-	the Code field; failure_reason is trimmed to the Small Text column width. A failure
-	the gateway gave no code for still gets one, so every failed attempt can be grouped."""
-	attempt.failure_code = failure_code or "payment_failed"
-	attempt.decline_code = decline_code
-	attempt.failure_reason = (failure_reason or "")[:140] or None
-	if raw:
-		attempt.gateway_response = frappe.as_json(raw)
+def stamp_failure(attempt, failure: dict) -> None:
+	"""Record the decline detail on a Payment Attempt. The gateway's `raw` answer is
+	stored as JSON on the Code field."""
+	from central.billing.payments import decline
+
+	attempt.update(decline.failure_fields(failure))
+	if failure.get("raw"):
+		attempt.gateway_response = frappe.as_json(failure["raw"])
 
 
 def _mark_event(event, status: str):

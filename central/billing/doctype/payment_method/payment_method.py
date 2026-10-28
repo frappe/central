@@ -5,6 +5,8 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
+from central.billing.payments import decline
+
 
 class PaymentMethod(Document):
 	def validate(self):
@@ -34,15 +36,11 @@ class PaymentMethod(Document):
 				frappe.ValidationError,
 			)
 
-	def record_failure(
-		self, failure_code: str | None, failure_reason: str | None = None, decline_code: str | None = None
-	) -> None:
+	def record_failure(self, failure: dict) -> None:
 		"""Keep the gateway's reason for the latest failed setup or check of this method."""
 		self.failed_attempts = frappe.utils.cint(self.failed_attempts) + 1
 		self.last_failed_at = frappe.utils.now_datetime()
-		self.failure_code = failure_code
-		self.decline_code = decline_code
-		self.failure_reason = (failure_reason or "")[:140] or None
+		self.update(decline.failure_fields(failure))
 
 
 def on_doctype_update() -> None:

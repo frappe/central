@@ -117,6 +117,14 @@ class TestSetupAndConfirm(CardTestBase):
 		)
 		self.assertEqual(event_reason, "card_declined")
 
+	def test_a_failed_card_check_without_a_code_gets_one(self):
+		with stub_adapter() as adapter:
+			adapter.validate_payment_method.return_value = PaymentResult(success=False, status="Failed")
+			setup = payments.initiate_payment_method_setup(TEAM, GATEWAY)
+			method = payments.confirm_payment_method(setup["payment_method"])
+
+		self.assertEqual(method.failure_code, "payment_failed")
+
 	def test_a_failed_method_is_not_charged_again(self):
 		with stub_adapter(validate=False) as adapter:
 			setup = payments.initiate_payment_method_setup(TEAM, GATEWAY)

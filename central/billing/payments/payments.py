@@ -192,14 +192,20 @@ def confirm_payment_method(payment_method: str) -> Document:
 	if not card:
 		frappe.throw(_("The card has not been saved yet. Finish adding it, then try again."), CardNotSaved)
 	if _is_saved_to_another_customer(card, method):
-		return _fail_method(method, "customer_mismatch", "The card was saved to another gateway customer.")
+		return _fail_method(
+			method,
+			{
+				"failure_code": "customer_mismatch",
+				"failure_reason": "The card was saved to another gateway customer.",
+			},
+		)
 
 	method.update(_saved_card_fields(card, method))
 	method.save(ignore_permissions=True)
 
 	check = _adapter(method.gateway).validate_payment_method(method)
 	if not check.success:
-		return _fail_method(method, check.failure_code, check.failure_reason, check.decline_code)
+		return _fail_method(method, check.failure)
 
 	transition(method, "Active", actor=frappe.session.user)
 	method.validated_at = frappe.utils.now_datetime()
@@ -228,11 +234,14 @@ def _saved_card_fields(card: dict, method) -> dict:
 	}
 
 
-def _fail_method(
-	method, failure_code: str | None, failure_reason: str | None, decline_code: str | None = None
-) -> Document:
-	method.record_failure(failure_code, failure_reason, decline_code)
-	transition(method, "Failed", actor=frappe.session.user, reason=failure_code or failure_reason)
+def _fail_method(method, failure: dict) -> Document:
+	method.record_failure(failure)
+	transition(
+		method,
+		"Failed",
+		actor=frappe.session.user,
+		reason=failure.get("failure_code") or failure.get("failure_reason"),
+	)
 	# Only billing code changes a method's status; the caller checked billing:manage.
 	method.save(ignore_permissions=True)
 	return method
@@ -432,11 +441,7 @@ def _note_setup_failure(payment_method: str, setup_intent: dict) -> str:
 def _record_setup_failure(payment_method: str, decline: dict) -> None:
 	"""Keep a failed try on a setup the customer can still retry, so it stays Pending."""
 	method = frappe.get_doc("Payment Method", payment_method, for_update=True)
-	method.record_failure(
-		decline.get("failure_code") or "payment_failed",
-		decline.get("failure_reason"),
-		decline.get("decline_code"),
-	)
+	method.record_failure(decline)
 	record_event(method, "Payment Method Setup Failed", reason=method.failure_code)
 	# The webhook runs as the system, and only billing code writes a method's failure.
 	method.save(ignore_permissions=True)

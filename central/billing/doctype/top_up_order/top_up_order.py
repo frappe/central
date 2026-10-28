@@ -6,6 +6,7 @@ from frappe import _
 from frappe.model.document import Document
 
 from central.billing.gateways.base import VerifiedPayment
+from central.billing.payments import decline
 from central.billing.states import transition
 
 
@@ -83,16 +84,14 @@ class TopupOrder(Document):
 		# Reconciliation runs as the system with no session user to check.
 		self.save(ignore_permissions=True)
 
-	def record_decline(self, decline: dict) -> None:
+	def record_decline(self, failure: dict) -> None:
 		"""Keep why the gateway declined a payment on this order. The order stays open,
 		because the payer can try again on it. Locked, so two failure webhooks both count."""
 		frappe.db.get_value("Top-up Order", self.name, "name", for_update=True)
 		self.reload()
 		self.failed_attempts = frappe.utils.cint(self.failed_attempts) + 1
 		self.last_failed_at = frappe.utils.now_datetime()
-		self.failure_code = decline.get("failure_code") or "payment_failed"
-		self.decline_code = decline.get("decline_code")
-		self.failure_reason = (decline.get("failure_reason") or "")[:140] or None
+		self.update(decline.failure_fields(failure))
 		# The webhook runs as the system with no session user to check.
 		self.save(ignore_permissions=True)
 

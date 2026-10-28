@@ -351,7 +351,7 @@ def _is_mandate_payment(method, payment: dict) -> bool:
 
 def _refuse_mandate(method, failure_code: str, reason: str):
 	"""Fail the method and return it. It does not raise, so the failure is not rolled back."""
-	method.record_failure(failure_code, reason)
+	method.record_failure({"failure_code": failure_code, "failure_reason": reason})
 	transition(method, "Failed", actor=frappe.session.user, reason=failure_code)
 	# Only billing code changes a method's status; the caller checked billing:manage.
 	method.save(ignore_permissions=True)

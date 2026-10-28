@@ -111,6 +111,16 @@ PAYMENT_NOT_AUTHORISED = "payment_not_authorised"
 MANDATE_REFUSALS = (SIGNATURE_INVALID, ORDER_MISMATCH, PAYMENT_NOT_AUTHORISED)
 
 
+def failure_fields(failure: dict) -> dict:
+	"""The failure columns a record keeps, from a decline shaped like `charges._extract_failure`.
+	A failure the gateway gave no code for still gets one, so every failure can be grouped."""
+	return {
+		"failure_code": failure.get("failure_code") or "payment_failed",
+		"decline_code": failure.get("decline_code"),
+		"failure_reason": (failure.get("failure_reason") or "")[:140] or None,
+	}
+
+
 def method_failure_message(
 	failure_code: str | None, decline_code: str | None = None, method_type: str = "Card"
 ) -> str:

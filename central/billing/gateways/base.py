@@ -41,6 +41,15 @@ class PaymentResult:
 	hold_until: str | None = None
 	raw: dict = field(default_factory=dict)
 
+	@property
+	def failure(self) -> dict:
+		return {
+			"failure_code": self.failure_code,
+			"decline_code": self.decline_code,
+			"failure_reason": self.failure_reason,
+			"raw": self.raw,
+		}
+
 
 def token_check(payment_method) -> PaymentResult:
 	"""The check of a method whose proof is the token the gateway issued on approval."""

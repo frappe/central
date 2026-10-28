@@ -297,7 +297,7 @@ def _resolve_failed(attempt, failure_code: str, reason: str):
 	transition(attempt, "Failed", actor="reconciliation", correlation=attempt.invoice, reason=failure_code)
 	attempt.completed_at = frappe.utils.now_datetime()
 	attempt.resolved_by = "Reconciliation"
-	charges._stamp_failure(attempt, failure_code, None, reason, None)
+	charges.stamp_failure(attempt, {"failure_code": failure_code, "failure_reason": reason})
 	attempt.save(ignore_permissions=True)
 
 
