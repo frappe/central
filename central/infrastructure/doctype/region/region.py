@@ -92,6 +92,17 @@ class Region(AtlasConnectionMixin, CargoConnectionMixin, Document):
 		region_id = frappe.get_doc("Region", region).get_atlas_region_id()
 		return ProxyClient(Region.get_service_url("proxy", region), mint_proxy_token(region_id))
 
+	def run_telemetry_sql(self, sql: str) -> tuple[list[str], list[list]]:
+		"""Columns and rows of one SQL query on this region's Insights telemetry data source."""
+		if not self.telemetry_data_source or "insights" not in frappe.get_installed_apps():
+			frappe.throw(_("Region {0} has no telemetry data source.").format(self.name))
+
+		source = frappe.get_doc("Insights Data Source v3", self.telemetry_data_source)
+		result = source._get_ibis_backend().raw_sql(sql)
+		if hasattr(result, "result_rows"):
+			return list(result.column_names), [list(row) for row in result.result_rows]
+		return [column[0] for column in result.description], [list(row) for row in result.fetchall()]
+
 
 def on_doctype_update() -> None:
 	frappe.db.add_unique("Region", ["atlas_region_id"])
