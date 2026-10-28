@@ -254,6 +254,12 @@ def read_pilot(server: str, path: str, params: dict | None = None) -> dict | lis
 	return _request_pilot("GET", server, base_url, path, params=params)
 
 
+def write_pilot(server: str, method: str, path: str, payload: dict | None = None) -> dict | list | str:
+	"""Run a POST, PUT, or PATCH on a path of a server's pilot Admin API."""
+	base_url = _expected_gateway_url(frappe.get_doc("Virtual Machine", server))
+	return _request_pilot(method, server, base_url, path, payload=payload)
+
+
 def _request_pilot(
 	method: str,
 	server: str,
