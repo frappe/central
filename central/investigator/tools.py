@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import re
 import time
 from datetime import UTC, datetime
@@ -257,9 +258,16 @@ def get_dashboard_query_result(region: Document, name: str) -> dict:
 	return {
 		"title": query.title,
 		"columns": columns,
-		"rows": frappe.parse_json(frappe.as_json(rows[:MAXIMUM_DASHBOARD_ROWS])),
+		"rows": frappe.parse_json(
+			frappe.as_json([[_finite(value) for value in row] for row in rows[:MAXIMUM_DASHBOARD_ROWS]])
+		),
 		"truncated": len(rows) > MAXIMUM_DASHBOARD_ROWS,
 	}
+
+
+def _finite(value):
+	# ClickHouse returns NaN or inf for a division by zero, which JSON cannot hold.
+	return None if isinstance(value, float) and not math.isfinite(value) else value
 
 
 @tool
