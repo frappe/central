@@ -359,7 +359,7 @@ The Central Investigator is a Flow agent for operators. It is defined in `centra
 | --- | --- | --- | --- |
 | Central | `read_records`, `run_report` | `run_desk_action`, `call_central_api` | The permissions of the user. A change runs a whitelisted document method or a `central.api` method. |
 | Pilot | `send_pilot_read_request`, `get_performance_snapshot`, `run_database_query` | `send_pilot_write_request` | Central mints the bench token for each call and attaches it. The agent never sees the token. |
-| Atlas | `start_region_investigation`, `get_region_investigation` | None | `POST /investigations` and `GET /investigations/<id>` with the operator client of the region. |
+| Atlas | `start_region_investigation`, `get_region_investigation_status`, `get_region_investigation` | None | `POST /investigations` and `GET /investigations/<id>` with the operator client of the region. |
 
 A session starts read-only. A change needs these, in order:
 

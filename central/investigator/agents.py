@@ -18,6 +18,7 @@ TOOLS = [
 	tools.get_performance_snapshot,
 	tools.run_database_query,
 	tools.start_region_investigation,
+	tools.get_region_investigation_status,
 	tools.get_region_investigation,
 	actions.switch_to_read_write,
 	actions.run_desk_action,
