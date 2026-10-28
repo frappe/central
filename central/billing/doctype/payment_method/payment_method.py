@@ -62,3 +62,5 @@ def held_method_filters() -> dict:
 def on_doctype_update() -> None:
 	# The billing run, its dashboards and the money reports filter on these.
 	frappe.db.add_index("Payment Method", ["team", "status"])
+	# A failed hosted card setup webhook finds its card by this.
+	frappe.db.add_index("Payment Method", ["setup_intent_id"])

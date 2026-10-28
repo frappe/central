@@ -384,7 +384,7 @@ When a Raven post fails, or Raven is not configured, the alert goes to the email
 | `charge.dispute.*` | `disputes.apply_dispute` | Note on the invoice; a lost dispute cancels the invoice without a second refund. |
 | `mandate.updated` | `mandates.apply_mandate_event` | A revoked mandate cancels its Payment Method. |
 | `payment_method.detached` | `payments.apply_payment_method_event` | The card is cancelled and leaves the charge order. |
-| `setup_intent.setup_failed` | `payments.apply_payment_method_event` | The failure code, decline code and message on the card, its failed attempt count, and a `Payment Method Setup Failed` Billing Event. The card stays Pending Validation, because the customer can retry on the same SetupIntent. |
+| `setup_intent.setup_failed` | `payments.apply_payment_method_event` | The failure code, decline code and message on the card, its failed attempt count, and a `Payment Method Setup Failed` Billing Event. The card stays Pending Validation, because the customer can retry on the same SetupIntent. Central finds the card by the SetupIntent: an in-app setup keeps it as the Setup Reference, and a hosted setup keeps it as the Setup Intent ID. |
 | `charge.refunded`, `refund.processed` | none | Stored only. |
 
 **Subscribed events.** Each adapter's `webhook_events` lists the events Central subscribes to. `test_payment_gateway.TestWebhookEventList` fails when a handled event is not in that list.

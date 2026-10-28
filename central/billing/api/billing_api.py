@@ -363,6 +363,7 @@ def create_payment_method_checkout(redirect_url: str, gateway: str | None = None
 			"status": "Pending Validation",
 			"gateway_customer_id": customer,
 			"setup_reference": session["session_id"],
+			"setup_intent_id": session.get("setup_intent_id"),
 		}
 	).insert(ignore_permissions=True)
 	reference = f"{gw_doc.name}|{session['session_id']}|{method.name}"

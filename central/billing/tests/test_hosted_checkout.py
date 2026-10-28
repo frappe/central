@@ -4,12 +4,14 @@
 only that record, for the credential's own team."""
 
 import inspect
+import json
 from unittest.mock import MagicMock, patch
 
 import frappe
 
 from central.billing.api import billing_api
 from central.billing.gateways.base import VerifiedPayment
+from central.billing.payments import webhooks
 from central.billing.revenue import credits
 from central.billing.tests.test_stripe_adapter import make_stripe_gateway
 from central.billing.tests.utils import BillingTestCase, complete_billing_profile, ensure_team
@@ -200,6 +202,7 @@ class TestHostedCardSetupInRegulatedCurrency(BillingTestCase):
 		self.adapter.create_setup_checkout_session.return_value = {
 			"checkout_url": "https://setup",
 			"session_id": "cs_usd",
+			"setup_intent_id": "seti_usd",
 		}
 		return self.create_card_checkout(redirect_url="https://site", gateway="Stripe")
 
@@ -222,6 +225,41 @@ class TestHostedCardSetupInRegulatedCurrency(BillingTestCase):
 		self.assertEqual(
 			result["message"],
 			"There wasn't enough balance. Try another card, or add credit to your account instead.",
+		)
+
+	def test_a_declined_hosted_card_setup_is_kept_on_its_card(self):
+		method = self._open_usd_card_setup()["reference"].split("|")[-1]
+		failure = {"code": "card_declined", "message": "Your card was declined."}
+		payload = {
+			"id": "evt_hosted_setup_failed",
+			"type": "setup_intent.setup_failed",
+			"data": {"object": {"id": "seti_usd", "last_setup_error": failure}},
+		}
+		event = frappe.get_doc(
+			{
+				"doctype": "Webhook Event",
+				"gateway": "Stripe",
+				"gateway_event_id": payload["id"],
+				"event_type": payload["type"],
+				"raw_payload": json.dumps(payload),
+				"status": "Received",
+			}
+		).insert(ignore_permissions=True)
+
+		webhooks.handle_webhook_event(event.name)
+
+		failed = frappe.db.get_value(
+			"Payment Method", method, ["status", "failure_code", "failed_attempts"], as_dict=True
+		)
+		self.assertEqual(
+			(failed.status, failed.failure_code, failed.failed_attempts),
+			("Pending Validation", "card_declined", 1),
+		)
+		self.assertTrue(
+			frappe.db.exists(
+				"Billing Event",
+				{"subject": method, "event_type": "Payment Method Setup Failed", "reason": "card_declined"},
+			)
 		)
 
 

@@ -534,7 +534,12 @@ class StripeAdapter(GatewayAdapter):
 			)
 		)
 
-		return {"checkout_url": session.get("url"), "session_id": session.get("id")}
+		# Stripe creates the SetupIntent of a setup mode session with the session.
+		return {
+			"checkout_url": session.get("url"),
+			"session_id": session.get("id"),
+			"setup_intent_id": session.get("setup_intent"),
+		}
 
 	def read_saved_card(self, setup_reference: str) -> dict:
 		"""The card a SetupIntent (`seti_`) or a setup Checkout Session (`cs_`) saved, read

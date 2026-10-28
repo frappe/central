@@ -22,6 +22,7 @@
   "gateway_customer_id",
   "gateway_mandate_id",
   "setup_reference",
+  "setup_intent_id",
   "display_label",
   "section_break_card",
   "card_network",
@@ -137,6 +138,13 @@
    "description": "Gateway setup handle (Stripe SetupIntent id) captured at initiation, for reconcile"
   },
   {
+   "fieldname": "setup_intent_id",
+   "fieldtype": "Data",
+   "label": "Setup Intent ID",
+   "read_only": 1,
+   "description": "The Stripe SetupIntent behind a hosted card setup. Central finds the card by it when Stripe reports a failed setup."
+  },
+  {
    "fieldname": "display_label",
    "fieldtype": "Data",
    "label": "Display Label",
@@ -249,7 +257,7 @@
    "link_fieldname": "payment_method"
   }
  ],
- "modified": "2026-10-28 00:00:00.000000",
+ "modified": "2026-10-28 13:00:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Payment Method",

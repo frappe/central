@@ -382,14 +382,7 @@ def apply_payment_method_event(event_name: str) -> dict:
 	payload = frappe.parse_json(event.raw_payload) if event.raw_payload else {}
 	gateway_object = (payload.get("data") or {}).get("object") or {}
 	is_detached = event.event_type == "payment_method.detached"
-	reference = "gateway_method_id" if is_detached else "setup_reference"
-	method = (
-		frappe.db.get_value(
-			"Payment Method", {"gateway": event.gateway, reference: gateway_object["id"]}, "name"
-		)
-		if gateway_object.get("id")
-		else None
-	)
+	method = _find_event_method(event.gateway, gateway_object.get("id"), is_detached)
 	if not method:
 		charges._mark_event(event, "Ignored")
 		return {"handled": False, "reason": "no_matching_method"}
@@ -398,6 +391,19 @@ def apply_payment_method_event(event_name: str) -> dict:
 	result = _cancel_detached(method) if is_detached else _note_setup_failure(method, gateway_object)
 	charges._mark_event(event, "Processed")
 	return {"handled": True, "result": result, "payment_method": method}
+
+
+def _find_event_method(gateway: str, object_id: str | None, is_detached: bool) -> str | None:
+	"""The method a card event is about. A detach names the card. A setup event names
+	the SetupIntent: an in-app setup keeps it as its setup reference, and a hosted setup
+	keeps the Checkout Session there and the SetupIntent apart."""
+	if not object_id:
+		return None
+	if is_detached:
+		return frappe.db.get_value("Payment Method", {"gateway": gateway, "gateway_method_id": object_id})
+	return frappe.db.get_value(
+		"Payment Method", {"gateway": gateway, "setup_reference": object_id}
+	) or frappe.db.get_value("Payment Method", {"gateway": gateway, "setup_intent_id": object_id})
 
 
 def _cancel_detached(payment_method: str) -> str:
