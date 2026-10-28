@@ -1,4 +1,4 @@
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import frappe
 from frappe.flow import ToolContext
@@ -9,6 +9,7 @@ from central.investigator.actions import call_central_api, switch_to_read_write
 from central.investigator.tools import (
 	get_performance_snapshot,
 	run_database_query,
+	send_infra_message_to_raven,
 	send_pilot_read_request,
 	send_pilot_write_request,
 )
@@ -168,3 +169,21 @@ class TestWriteRequests(IntegrationTestCase):
 		with patch("central.investigator.access.frappe.db.get_value", return_value=1):
 			with self.assertRaises(frappe.PermissionError):
 				switch_to_read_write(reason="Test.", ctx=OPERATOR)
+
+
+class TestInfraMessages(IntegrationTestCase):
+	def test_posts_each_kind_to_its_own_webhook(self):
+		urls = {"infra_alert_webhook_url": "https://raven.test/alert", "infra_report_webhook_url": None}
+		settings = Mock(get_password=lambda fieldname, raise_exception: urls[fieldname])
+
+		with (
+			patch("central.investigator.tools.frappe.get_cached_doc", return_value=settings),
+			patch("central.investigator.tools.requests.post") as post,
+		):
+			send_infra_message_to_raven(kind="Alert", markdown_message="Disk full", ctx=OPERATOR)
+			with self.assertRaises(frappe.ValidationError):
+				send_infra_message_to_raven(kind="Report", markdown_message="Weekly", ctx=OPERATOR)
+
+		post.assert_called_once_with(
+			"https://raven.test/alert", json={"message": "Disk full"}, timeout=(5, 10)
+		)
