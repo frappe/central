@@ -135,6 +135,10 @@ class TestMandateSetup(MandateTestBase):
 			result = mandates.setup_mandate(TEAM, GATEWAY, customer_id="cust_x")
 			method = mandates.confirm_mandate(result["payment_method"], {"razorpay_signature": "bad"})
 		self.assertEqual(method.status, "Failed")
+
+		with stub_adapter(signature_ok=True):
+			again = mandates.confirm_mandate(result["payment_method"], CALLBACK)
+		self.assertEqual(again.status, "Failed")  # a refused mandate is not activated by a retry
 		self.assertEqual(method.failure_code, "signature_invalid")
 		self.assertEqual(method.failed_attempts, 1)
 

@@ -261,8 +261,12 @@ def confirm_mandate(payment_method: str, callback: dict):
 	   taken from the browser.
 	A new active mandate retires any sibling active mandate for the same team+gateway
 	(the re-authorisation case), so the higher ceiling cleanly supersedes.
+	A method already past validation is returned as it is, so a repeated callback
+	neither activates a refused mandate nor refunds an authorisation twice.
 	"""
 	method = frappe.get_doc("Payment Method", payment_method)
+	if method.status != "Pending Validation":
+		return method
 	adapter = _adapter(method.gateway)
 
 	if not adapter.verify_payment_signature(callback):
