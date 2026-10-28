@@ -3,13 +3,15 @@
 """New signups & billing activations — the acquisition-to-revenue funnel.
 
 One row per team that signed up in the window, with the billing milestones it has
-crossed: billing profile created, first payment method added, and first paid
-invoice (the activation event that turns a signup into revenue). The stage is
+crossed: billing profile created, first payment method added, and first payment
+(the activation event that turns a signup into revenue). A first payment is money
+the customer paid: an invoice paid by the gateway or by paid-in credit, or a credit
+top-up. An invoice that welcome credit alone covered is not a payment. The stage is
 derived from the furthest milestone reached:
 
   Signed Up  → team exists, no billing profile yet
-  Onboarding → profile and/or a payment method, but no paid invoice
-  Activated  → has at least one paid invoice
+  Onboarding → profile and/or a payment method, but no payment
+  Activated  → has paid money at least once
 
 The summary cards headline signups, activations, and the activation rate over the
 window. "Signup" is the team's creation (top of funnel); the milestones are the
@@ -51,7 +53,7 @@ def get_columns() -> list[dict]:
 			"fieldtype": "Datetime",
 			"width": 160,
 		},
-		{"label": _("First Paid Invoice"), "fieldname": "first_paid", "fieldtype": "Datetime", "width": 160},
+		{"label": _("First Paid"), "fieldname": "first_paid", "fieldtype": "Datetime", "width": 160},
 		{
 			"label": _("First Payment"),
 			"fieldname": "first_payment_amount",
@@ -82,6 +84,31 @@ def _earliest_by_team(
 	return first
 
 
+def _first_payment_by_team(teams: list[str]) -> dict[str, dict]:
+	"""Each team's first money, keyed by team, with its amount and currency."""
+	paid_invoice = {"status": "Paid", "invoice_type": "Billable"}
+	sources = (
+		_earliest_by_team(
+			"Invoice", teams, {**paid_invoice, "amount_paid": [">", 0]}, ["amount_paid as amount", "currency"]
+		),
+		_earliest_by_team(
+			"Invoice",
+			teams,
+			{**paid_invoice, "advance_applied": [">", 0]},
+			["advance_applied as amount", "currency"],
+		),
+		_earliest_by_team(
+			"Credit Ledger Entry", teams, {"entry_type": "Credit", "paid_in": 1}, ["amount", "currency"]
+		),
+	)
+	first: dict[str, dict] = {}
+	for source in sources:
+		for team, row in source.items():
+			if team not in first or row.creation < first[team].creation:
+				first[team] = row
+	return first
+
+
 def get_data(filters: dict):
 	conditions = {}
 	if filters.get("from_date") and filters.get("to_date"):
@@ -103,9 +130,7 @@ def get_data(filters: dict):
 	names = [t.name for t in teams]
 	profiles = _earliest_by_team("Billing Profile", names, extra_fields=["currency"])
 	methods = _earliest_by_team("Payment Method", names)
-	paid = _earliest_by_team(
-		"Invoice", names, {"status": "Paid", "invoice_type": "Billable"}, ["amount_paid", "currency"]
-	)
+	paid = _first_payment_by_team(names)
 
 	rows = []
 	signups = onboarding = activated = 0
@@ -132,7 +157,7 @@ def get_data(filters: dict):
 				or (first_paid.currency if first_paid else None),
 				"first_method": method.creation if method else None,
 				"first_paid": first_paid.creation if first_paid else None,
-				"first_payment_amount": flt(first_paid.amount_paid) if first_paid else None,
+				"first_payment_amount": flt(first_paid.amount) if first_paid else None,
 				"stage": stage,
 			}
 		)

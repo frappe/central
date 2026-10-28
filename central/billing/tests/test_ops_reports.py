@@ -190,3 +190,47 @@ class TestInvoluntaryChurn(BillingTestCase):
 			{"from_date": "2026-06-01", "to_date": "2026-06-30"}
 		)
 		self.assertEqual(_row(rows)["recovered"], 0)
+
+
+class TestNewSignupsCountsOnlyMoney(BillingTestCase):
+	"""A signup is activated by money the customer paid, never by welcome credit alone."""
+
+	def _paid_invoice(self, team, amount_paid, credit_applied=0):
+		frappe.get_doc(
+			{
+				"doctype": "Invoice",
+				"team": team,
+				"status": "Paid",
+				"period_start": "2026-06-01",
+				"period_end": "2026-06-30",
+				"currency": "INR",
+				"subtotal": 1000,
+				"total": 1000,
+				"credit_applied": credit_applied,
+				"amount_paid": amount_paid,
+			}
+		).insert(ignore_permissions=True)
+
+	def _stages(self, *teams):
+		from central.billing.report.new_signups import new_signups
+
+		_columns, rows, *_ = new_signups.execute({"from_date": "2026-01-01"})
+		return {row["team"]: row["stage"] for row in rows if row["team"] in teams}
+
+	def test_an_invoice_welcome_credit_covered_does_not_activate(self):
+		ensure_team("team-signup-credit")
+		self._paid_invoice("team-signup-credit", amount_paid=0, credit_applied=1000)
+		self.assertEqual(self._stages("team-signup-credit"), {"team-signup-credit": "Signed Up"})
+
+	def test_a_paid_invoice_or_a_top_up_activates(self):
+		from central.billing.revenue import credits
+
+		ensure_team("team-signup-card")
+		ensure_team("team-signup-topup")
+		self._paid_invoice("team-signup-card", amount_paid=1000)
+		credits._book_entry("team-signup-topup", "Credit", 500, "INR", extra={"paid_in": 1})
+
+		self.assertEqual(
+			self._stages("team-signup-card", "team-signup-topup"),
+			{"team-signup-card": "Activated", "team-signup-topup": "Activated"},
+		)

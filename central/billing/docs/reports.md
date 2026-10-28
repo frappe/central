@@ -109,7 +109,7 @@ Used CPU, memory, disk and bandwidth come from the region's telemetry. Only serv
 | Credit Wallet Movements | What went in and out of each wallet, and why? |
 | Team Credit Balance | How much credit does each team hold now? |
 | Internal Usage and Waivers | What did our own teams use, and how much was waived? |
-| New Signups | Which teams signed up, and how far did each get: billing profile, payment method, first paid invoice? |
+| New Signups | Which teams signed up, and how far did each get: billing profile, payment method, first payment? A first payment is money the customer paid: an invoice paid by the gateway or by paid-in credit, or a credit top-up. Welcome credit alone does not count. |
 | Trial Sites | How many trial sites started per product and month, how did they end, and what did they cost? |
 
 ## Billing health
