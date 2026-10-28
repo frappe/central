@@ -92,19 +92,16 @@ class GroveClient:
 		cap: int | None = None,
 		expiry: str | None = None,
 		expiry_from_first_use: bool = False,
-		model_group: str | None = None,
 	) -> dict:
 		"""Mint a key in `geography` (Grove's default when None) with `cap` whole USD to spend a
 		month (0 when None: refused until it gets one), untitled when `title` is None, retiring by
 		`expiry` (one of Grove's rules: Never, 1 Day, 7 Days, 14 Days, 30 Days; Never when None)
-		counted from the mint or, with `expiry_from_first_use`, from its first request, in `model_group`
-		(the geography's default group when None): its `name`,
-		`geography`, `gateway_url` and `api_key`. The secret is never sent again."""
+		counted from the mint or, with `expiry_from_first_use`, from its first request; what it may
+		call is the team's, set at Grove: its `name`, `geography`, `gateway_url` and `api_key`. The
+		secret is never sent again."""
 		body = {"team": team, "title": title, "geography": geography, "cap": cap}
 		if expiry:
 			body |= {"expiry": expiry, "expiry_from_first_use": expiry_from_first_use}
-		if model_group:
-			body["model_group"] = model_group
 		return self.call("grove.api.keys.provision_key", **body)
 
 	def update_caps(self, team: str, caps: dict[str, int]) -> list[dict]:
@@ -117,7 +114,7 @@ class GroveClient:
 
 	def transfer_key(self, team: str, key: str, to_team: str, title: str) -> dict:
 		"""Hand a key of `team` to `to_team`, titled `title`: the same credential, the trial's rules
-		gone (the geography's default group, no expiry); cap, geography and rate limits as minted.
+		gone (no expiry; what it may call is `to_team`'s); cap, geography and rate limits as minted.
 		Grove counts it against `to_team` like a mint and answers a key `to_team` already holds as
 		it is. → the key as `get_figures` lists it."""
 		return self.call("grove.api.keys.transfer_key", team=team, key=key, to_team=to_team, title=title)

@@ -70,7 +70,6 @@ class AITrialKey(Document):
 			team=TRIAL_TEAM,
 			title=None,
 			geography=settings.trial_key_geography,
-			model_group=settings.trial_model_group or None,
 			cap=cint(settings.trial_key_cap),
 		)
 		return frappe.get_doc(
