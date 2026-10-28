@@ -248,7 +248,26 @@ def _expected_gateway_url(server) -> str:
 	return url
 
 
-def _request_pilot(method: str, server: str, base_url: str, path: str, payload: dict | None = None) -> dict:
+def read_pilot(server: str, path: str, params: dict | None = None) -> dict | list | str:
+	"""Read a path of a server's pilot Admin API. A plain text response, such as task output, stays text."""
+	base_url = _expected_gateway_url(frappe.get_doc("Virtual Machine", server))
+	return _request_pilot("GET", server, base_url, path, params=params)
+
+
+def write_pilot(server: str, method: str, path: str, payload: dict | None = None) -> dict | list | str:
+	"""Run a POST, PUT, or PATCH on a path of a server's pilot Admin API."""
+	base_url = _expected_gateway_url(frappe.get_doc("Virtual Machine", server))
+	return _request_pilot(method, server, base_url, path, payload=payload)
+
+
+def _request_pilot(
+	method: str,
+	server: str,
+	base_url: str,
+	path: str,
+	payload: dict | None = None,
+	params: dict | None = None,
+) -> dict | list | str:
 	"""Call a server's pilot as the bench, with a token for its own audience."""
 	audience_id = frappe.db.get_value(
 		"Pilot Credential", {"server": server, "status": "Active"}, "audience_id"
@@ -261,11 +280,14 @@ def _request_pilot(method: str, server: str, base_url: str, path: str, payload: 
 		f"{_gateway_url(base_url)}{path}",
 		headers={"Authorization": f"Bearer {mint_bench_login(audience_id)}"},
 		json=payload,
+		params=params,
 		timeout=PILOT_TASK_TIMEOUT_SECONDS,
 		allow_redirects=False,
 	)
 	response.raise_for_status()
 
+	if response.headers.get("Content-Type", "").startswith("text/plain"):
+		return response.text
 	return response.json()
 
 

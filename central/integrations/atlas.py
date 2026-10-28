@@ -241,6 +241,15 @@ class AtlasClient:
 
 		return f"{base_url}/vm_console#token={quote(token, safe='')}"
 
+	def create_investigation(self, problem: str, context: dict | None, requested_by: str | None) -> dict:
+		"""Hand a problem to the region's read-only investigator. Atlas works on it in the background."""
+		payload = {"problem": problem, "context": context, "requested_by": requested_by}
+		return self._request("POST", "investigations", payload=payload)
+
+	def get_investigation(self, investigation_id: str) -> dict:
+		"""The status, report, and scrubbed tool log of one investigation."""
+		return self._get(f"investigations/{quote(investigation_id, safe='')}")
+
 	def check_connection(self) -> None:
 		response = self._get("images", params={"limit": 1})
 		if not isinstance(response.get("items"), list) or type(response.get("has_more")) is not bool:

@@ -351,6 +351,31 @@ Wildcard or shared-proxy DNS resolution alone does not prove customer ownership.
 
 The proxy forwards customer HTTPS as TLS with PROXY protocol v2 to VM port 443. Certificates and renewal stay in Pilot. Central stores the domain record, the operation result, and useful failure information.
 
+## How does the investigator read and change a server?
+
+The Central Investigator is a Flow agent for operators. It is defined in `central/investigator/agents.py` and uses the first enabled Flow Model. It follows the `server-support-guide`, `performance-inspection`, and `virtual-machine-investigation` skills in `skills/`.
+
+| Layer | Read | Change | Contract |
+| --- | --- | --- | --- |
+| Central | `read_records`, `run_report` | `run_desk_action`, `call_central_api` | The permissions of the user. A change runs a whitelisted document method or a `central.api` method. |
+| Pilot | `send_pilot_read_request`, `get_performance_snapshot`, `run_database_query` | `send_pilot_write_request` | Central mints the bench token for each call and attaches it. The agent never sees the token. |
+| Atlas | `start_region_investigation`, `get_region_investigation` | None | `POST /investigations` and `GET /investigations/<id>` with the operator client of the region. |
+
+A session starts read-only. A change needs these, in order:
+
+1. The agent asks the user to switch the session to read-write, and the user approves the `switch_to_read_write` call. The switch lasts one hour.
+2. The user approves each change call.
+
+A session that approves its own tool calls, such as a Trigger session, cannot switch. `central/investigator/access.py` refuses any change that terminates or destroys a resource, or that returns a login, a console, or a secret. The operator does these in Desk.
+
+The agent can read any Pilot `GET` path except those in `PILOT_DENIED_READ_PATHS`, which return a credential, a login, or a backup file. Performance data (database, monitor, metrics, system, storage, and site monitoring) comes back exact, because a scrub changes numbers and query text. Other results are scrubbed. `run_database_query` runs one `SELECT`, `WITH`, `EXPLAIN`, `SHOW`, or `DESCRIBE` statement in a read-only transaction. A `SELECT` stops after 10 seconds. A read-only transaction does not stop DDL, so the tool refuses any other statement. `PILOT_DENIED_WRITE_PATHS` refuses code, credentials, setup, and SQL changes.
+
+The `Central` and `Pilot` knowledge bases hold the Central documents and the Pilot documents from GitHub, including the generated `docs/admin-api-reference.md`. Each migrate reloads the changed documents. If the load fails, for example without GitHub access, the migrate prints the error and continues. To load them without a migrate:
+
+```sh
+pilot --site <site> execute central.investigator.knowledge.load_knowledge_bases
+```
+
 ## Validation
 
 Run the shared contract tests before deployment. Complete the live journeys in [Staging validation](STAGING_VALIDATION.md) against the actual staging revisions. Mocked responses do not prove VM startup, Pilot login, SSH access, or webhook delivery.
