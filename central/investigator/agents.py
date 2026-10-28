@@ -21,6 +21,7 @@ TOOLS = [
 	tools.start_region_investigation,
 	tools.get_region_investigation_status,
 	tools.get_region_investigation,
+	tools.get_current_time,
 	tools.wait,
 	actions.switch_to_read_write,
 	actions.run_desk_action,
