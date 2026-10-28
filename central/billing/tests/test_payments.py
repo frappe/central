@@ -124,6 +124,10 @@ class TestSetupAndConfirm(CardTestBase):
 			method = payments.confirm_payment_method(setup["payment_method"])
 
 		self.assertEqual(method.failure_code, "payment_failed")
+		event_reason = frappe.db.get_value(
+			"Billing Event", {"subject": method.name, "to_state": "Failed"}, "reason"
+		)
+		self.assertEqual(event_reason, "payment_failed")
 
 	def test_a_failed_method_is_not_charged_again(self):
 		with stub_adapter(validate=False) as adapter:

@@ -184,6 +184,10 @@ class TestChargeInvoice(ChargeTestBase):
 		attempt = frappe.get_doc("Payment Attempt", result["attempt"])
 		self.assertEqual(attempt.status, "Failed")
 		self.assertEqual(attempt.failure_code, "card_declined")
+		event_reason = frappe.db.get_value(
+			"Billing Event", {"subject": attempt.name, "to_state": "Failed"}, "reason"
+		)
+		self.assertEqual(event_reason, "card_declined")
 		self.assertEqual(frappe.db.get_value("Invoice", inv, "status"), "Open")
 
 	def test_webhook_settles_invoice_to_paid(self):

@@ -213,10 +213,10 @@ def _charge_claimed_attempt(attempt_name: str) -> dict:
 		# gateway captured; invoice Paid waits on the webhook
 		transition(attempt, "Captured", actor="gateway", correlation=attempt.invoice)
 	else:
-		transition(
-			attempt, "Failed", actor="gateway", correlation=attempt.invoice, reason=result.failure_reason
-		)
 		stamp_failure(attempt, result.failure)
+		transition(
+			attempt, "Failed", actor="gateway", correlation=attempt.invoice, reason=attempt.failure_code
+		)
 		attempt.completed_at = frappe.utils.now_datetime()
 		_retire_method_if_mandate_failed(attempt, result.failure_code)
 	attempt.save(ignore_permissions=True)
