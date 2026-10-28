@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import time
 from typing import Annotated, Literal
 
 import frappe
@@ -36,6 +37,7 @@ READ_QUERY = re.compile(r"\s*(select|with|explain|show|describe|desc)\b", re.IGN
 # A second statement, a file write, or the password table.
 REFUSED_QUERY = re.compile(r";\s*\S|\binto\s+(outfile|dumpfile)\b|__auth", re.IGNORECASE)
 QUERY_TIMEOUT_SECONDS = 10
+MAXIMUM_WAIT_SECONDS = 300
 
 Window = Literal["30m", "1h", "6h", "12h", "24h", "1w"]
 
@@ -188,7 +190,7 @@ def start_region_investigation(
 	"""Hand a host-side problem to the read-only investigator of one region.
 
 	The investigator reads that region's telemetry, records, and Metal hosts, and changes nothing.
-	It takes a few minutes. Poll get_region_investigation_status until the status is completed or failed,
+	It takes a few minutes. Poll get_region_investigation_status, with wait between polls, until the status is completed or failed,
 	then read the report once with get_region_investigation.
 	"""
 	client = AtlasClient.for_operator(frappe.get_doc("Region", region))
@@ -208,6 +210,14 @@ def get_region_investigation_status(
 		investigation_id
 	)
 	return {key: investigation.get(key) for key in ("id", "status", "error")}
+
+
+@tool
+def wait(seconds: Annotated[int, "Seconds to wait, at most 300."], *, ctx: ToolContext) -> dict:
+	"""Wait before the next tool call, such as between polls of a regional investigation."""
+	seconds = max(0, min(seconds, MAXIMUM_WAIT_SECONDS))
+	time.sleep(seconds)
+	return {"waited_seconds": seconds}
 
 
 @tool
