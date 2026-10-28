@@ -4,6 +4,7 @@ import re
 from typing import Annotated, Literal
 
 import frappe
+import requests
 from frappe import _
 from frappe.flow import ToolContext, tool
 
@@ -210,3 +211,30 @@ def get_region_investigation(
 
 def normalize_pilot_path(path: str) -> str:
 	return path.strip().removeprefix("/").removeprefix("api/v1/").strip("/")
+
+
+def _confirm_infra_alert(arguments: dict) -> str:
+	return _("Post this message to the infra alerts Raven channel?\n\n{0}").format(
+		arguments.get("markdown_message")
+	)
+
+
+@tool(requires_confirmation=True, confirm_prompt=_confirm_infra_alert)
+def send_infra_alert_to_raven(
+	markdown_message: Annotated[str, "The alert in Markdown."],
+	*,
+	ctx: ToolContext,
+) -> dict:
+	"""Post an infrastructure alert to the Raven channel that Central Settings names."""
+	require_operator(ctx)
+	url = frappe.get_cached_doc("Central Settings").get_password(
+		"infra_alert_webhook_url", raise_exception=False
+	)
+	if not url:
+		frappe.throw(_("Set the Infra Alert Webhook URL in Central Settings."))
+
+	response = requests.post(
+		url, json={"message": markdown_message[:MAXIMUM_TEXT_CHARACTERS]}, timeout=(5, 10)
+	)
+	response.raise_for_status()
+	return {"status": "sent"}
