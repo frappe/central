@@ -520,7 +520,7 @@ charges.pay_invoice → create_invoice_payment_order (via gateway adapter)
 | Case | Result |
 |---|---|
 | No stored row | Nothing is settled or credited. The event is Ignored. |
-| A declined payment on a Top-up Order | The order keeps the failure code, decline code, message and failed attempt count. It stays Created, because the payer can try again. |
+| A declined payment on a Top-up Order | The order keeps the failure code, decline code, message and failed attempt count of the last decline. Each decline also adds a `Top-up Order Declined` Billing Event with its failure code. A repeated webhook adds no second event. The order stays Created, because the payer can try again. |
 | A declined payment on a mandate authorisation order | The Pending Validation method keeps the failure, and a `Payment Method Setup Failed` Billing Event is added. |
 | Short or another currency | Nothing is settled. The invoice gets a comment and an Error Log entry. |
 | More than is due | The invoice is Paid and the surplus goes to the wallet. |

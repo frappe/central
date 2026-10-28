@@ -132,7 +132,7 @@ A failure is any of these:
 
 - A card setup that failed at the gateway. The Payment Method keeps the code and adds a `Payment Method Setup Failed` Billing Event.
 - A card check or mandate confirmation that failed. The Payment Method moves to Failed with the code.
-- A declined payment on a Top-up Order. The order keeps the code and stays open.
+- A declined payment on a Top-up Order. The order keeps the last code and stays open, and each decline adds a `Top-up Order Declined` Billing Event with its code.
 - A failed Payment Attempt on an invoice.
 
 A payment is money the customer paid: an invoice paid by the gateway or by paid-in credit, or a credit top-up. Welcome credit does not count. An invoice payment is dated by the invoice's `paid_at`. A setup that the customer leaves is kept as a Cancelled Payment Method with the reason "setup abandoned".

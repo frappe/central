@@ -740,7 +740,7 @@ def _prune_webhook_events(cutoff) -> int:
 def _apply_topup_event(event, order, payment, is_success: bool, decline: dict | None) -> dict:
 	"""Credit a top-up for its captured payment, or keep why its payment was declined."""
 	if decline is not None:
-		order.record_decline(decline)
+		order.record_decline(decline, event.gateway_event_id)
 		_mark_event(event, "Processed")
 		return {"handled": True, "result": "topup_declined", "team": order.team}
 	if not is_success:

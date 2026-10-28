@@ -267,14 +267,31 @@ class TestWalletTopupWebhookBackstop(IntegrationTestCase):
 		)
 		self.assertEqual(order.failed_attempts, 1)
 		self.assertEqual(credits.get_balance(TOPUP_TEAM)["balance"], 0)
+		self.assertEqual(self._declined_events(), ["BAD_REQUEST_ERROR"])
+
+	def _declined_events(self):
+		return frappe.get_all(
+			"Billing Event",
+			filters={"subject": self.order.name, "event_type": "Top-up Order Declined"},
+			pluck="reason",
+		)
+
+	def test_a_replayed_decline_counts_once(self):
+		event = self._store_decline("pay_replayed", "order_topup_wh")
+		charges.apply_webhook(event)
+		charges.apply_webhook(event)
+
+		self.assertEqual(frappe.db.get_value("Top-up Order", self.order.name, "failed_attempts"), 1)
+		self.assertEqual(len(self._declined_events()), 1)
 
 	def test_a_decline_counts_on_top_of_what_is_stored(self):
 		stale = frappe.get_doc("Top-up Order", self.order.name)
 		charges.apply_webhook(self._store_decline("pay_first", "order_topup_wh"))
 
-		stale.record_decline({"failure_code": "card_declined"})  # a copy read before the first
+		stale.record_decline({"failure_code": "card_declined"}, "evt_second")  # a copy read before the first
 
 		self.assertEqual(frappe.db.get_value("Top-up Order", self.order.name, "failed_attempts"), 2)
+		self.assertEqual(sorted(self._declined_events()), ["BAD_REQUEST_ERROR", "card_declined"])
 
 	def test_a_declined_mandate_authorisation_is_kept_on_the_method(self):
 		method = frappe.get_doc(
