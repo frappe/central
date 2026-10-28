@@ -488,19 +488,14 @@ def apply_webhook(event_name: str) -> dict:
 	# found by the gateway's own ids. Payment notes are never read: the payer sets them.
 	from central.billing.doctype.top_up_order.top_up_order import TopupOrder
 
+	decline = (_extract_failure(adapter_key, payload) or {}) if is_failure else None
 	order = TopupOrder.for_payment(payment, event.gateway)
 	if order:
-		if not is_success:
-			_mark_event(event, "Ignored")
-			return {"handled": False, "reason": "topup_not_captured"}
-		result = order.credit_wallet(payment)
-		_mark_event(event, "Processed")
-		return {"handled": True, "result": "topup_credited", "team": order.team, **result}
+		return _apply_topup_event(event, order, payment, is_success, decline)
 
 	attempt_name = _attempt_for_payment(payment, event.gateway)
 	if not attempt_name:
-		_mark_event(event, "Ignored")
-		return {"handled": False, "reason": "no_matching_attempt"}
+		return _apply_unmatched_event(event, payment, decline)
 
 	attempt = frappe.get_doc("Payment Attempt", attempt_name)
 	attempt.flags.ignore_links = True  # only its status and outcome change here
@@ -736,6 +731,36 @@ def _prune_webhook_events(cutoff) -> int:
 	for name in stale:
 		frappe.delete_doc("Webhook Event", name, ignore_permissions=True, force=True, delete_permanently=True)
 	return len(stale)
+
+
+def _apply_topup_event(event, order, payment, is_success: bool, decline: dict | None) -> dict:
+	"""Credit a top-up for its captured payment, or keep why its payment was declined."""
+	if decline is not None:
+		order.record_decline(decline)
+		_mark_event(event, "Processed")
+		return {"handled": True, "result": "topup_declined", "team": order.team}
+	if not is_success:
+		_mark_event(event, "Ignored")
+		return {"handled": False, "reason": "topup_not_captured"}
+	result = order.credit_wallet(payment)
+	_mark_event(event, "Processed")
+	return {"handled": True, "result": "topup_credited", "team": order.team, **result}
+
+
+def _apply_unmatched_event(event, payment, decline: dict | None) -> dict:
+	"""A payment with no top-up and no invoice attempt. A declined mandate authorisation
+	is kept on the method it was for; anything else is not ours."""
+	from central.billing.payments import payments
+
+	method = decline is not None and payments.note_setup_payment_failure(
+		event.gateway, payment.order_id, decline
+	)
+	if method:
+		event.payment_method = method
+		_mark_event(event, "Processed")
+		return {"handled": True, "result": "setup_payment_declined", "payment_method": method}
+	_mark_event(event, "Ignored")
+	return {"handled": False, "reason": "no_matching_attempt"}
 
 
 def _extract_failure(adapter_key: str, payload: dict) -> dict | None:

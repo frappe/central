@@ -32,11 +32,15 @@ class TopupOrder(Document):
 
 		credit: DF.Currency
 		currency: DF.Link
+		decline_code: DF.Data | None
+		failed_attempts: DF.Int
+		failure_code: DF.Data | None
 		failure_reason: DF.SmallText | None
 		gateway: DF.Link
 		gateway_order_id: DF.Data | None
 		gateway_payment_id: DF.Data | None
 		gst: DF.Currency
+		last_failed_at: DF.Datetime | None
 		ledger_entry: DF.Link | None
 		status: DF.Literal["Created", "Credited", "Failed", "Expired"]
 		team: DF.Link
@@ -77,6 +81,17 @@ class TopupOrder(Document):
 		"""Stop asking the gateway about an order nobody paid."""
 		transition(self, "Expired", actor="reconciliation", correlation=self.team)
 		# Reconciliation runs as the system with no session user to check.
+		self.save(ignore_permissions=True)
+
+	def record_decline(self, decline: dict) -> None:
+		"""Keep why the gateway declined a payment on this order. The order stays open,
+		because the payer can try again on it."""
+		self.failed_attempts = frappe.utils.cint(self.failed_attempts) + 1
+		self.last_failed_at = frappe.utils.now_datetime()
+		self.failure_code = decline.get("failure_code") or "payment_failed"
+		self.decline_code = decline.get("decline_code")
+		self.failure_reason = (decline.get("failure_reason") or "")[:140] or None
+		# The webhook runs as the system with no session user to check.
 		self.save(ignore_permissions=True)
 
 	def fail(self, reason: str) -> None:

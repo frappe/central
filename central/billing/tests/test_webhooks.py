@@ -176,7 +176,7 @@ class TestWalletTopupWebhookBackstop(IntegrationTestCase):
 		self._purge()
 
 	def _purge(self):
-		for doctype in ("Credit Ledger Entry", "Credit Wallet", "Top-up Order"):
+		for doctype in ("Credit Ledger Entry", "Credit Wallet", "Top-up Order", "Payment Method"):
 			frappe.db.delete(doctype, {"team": TOPUP_TEAM})
 		frappe.db.delete("Webhook Event", {"gateway": self.gateway})
 
@@ -244,6 +244,53 @@ class TestWalletTopupWebhookBackstop(IntegrationTestCase):
 		self.assertEqual(out["reason"], "topup_not_captured")
 		self.assertEqual(len(self._credits_for(pid)), 0)
 		self.assertEqual(frappe.db.get_value("Webhook Event", ev.name, "status"), "Ignored")
+
+	def _store_decline(self, payment_id, order_id):
+		event = self._store_event(payment_id, event_type="payment.failed", order_id=order_id, status="failed")
+		payload = json.loads(event.raw_payload)
+		payload["payload"]["payment"]["entity"].update(
+			error_code="BAD_REQUEST_ERROR",
+			error_reason="insufficient_balance",
+			error_description="The account has insufficient balance.",
+		)
+		event.db_set("raw_payload", json.dumps(payload))
+		return event.name
+
+	def test_a_declined_topup_payment_is_kept_on_the_order(self):
+		out = charges.apply_webhook(self._store_decline("pay_declined", "order_topup_wh"))
+
+		self.assertEqual(out["result"], "topup_declined")
+		order = frappe.get_doc("Top-up Order", self.order.name)
+		self.assertEqual(order.status, "Created")  # the payer can try again on it
+		self.assertEqual(
+			(order.failure_code, order.decline_code), ("BAD_REQUEST_ERROR", "insufficient_balance")
+		)
+		self.assertEqual(order.failed_attempts, 1)
+		self.assertEqual(credits.get_balance(TOPUP_TEAM)["balance"], 0)
+
+	def test_a_declined_mandate_authorisation_is_kept_on_the_method(self):
+		method = frappe.get_doc(
+			{
+				"doctype": "Payment Method",
+				"team": TOPUP_TEAM,
+				"gateway": self.gateway,
+				"method_type": "UPI Autopay",
+				"status": "Pending Validation",
+				"setup_reference": "order_mandate_wh",
+			}
+		).insert(ignore_permissions=True)
+
+		out = charges.apply_webhook(self._store_decline("pay_mandate", "order_mandate_wh"))
+
+		self.assertEqual(out["result"], "setup_payment_declined")
+		method.reload()
+		self.assertEqual(method.status, "Pending Validation")
+		self.assertEqual(method.decline_code, "insufficient_balance")
+		self.assertTrue(
+			frappe.db.exists(
+				"Billing Event", {"subject": method.name, "event_type": "Payment Method Setup Failed"}
+			)
+		)
 
 	def test_notes_naming_a_team_credit_nothing(self):
 		"""Razorpay Checkout lets the payer set payment notes, so they decide nothing."""

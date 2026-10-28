@@ -520,6 +520,8 @@ charges.pay_invoice → create_invoice_payment_order (via gateway adapter)
 | Case | Result |
 |---|---|
 | No stored row | Nothing is settled or credited. The event is Ignored. |
+| A declined payment on a Top-up Order | The order keeps the failure code, decline code, message and failed attempt count. It stays Created, because the payer can try again. |
+| A declined payment on a mandate authorisation order | The Pending Validation method keeps the failure, and a `Payment Method Setup Failed` Billing Event is added. |
 | Short or another currency | Nothing is settled. The invoice gets a comment and an Error Log entry. |
 | More than is due | The invoice is Paid and the surplus goes to the wallet. |
 | The invoice is no longer Open or Overdue | The payment goes to the wallet, once per payment id, and an operator is told. |

@@ -403,13 +403,40 @@ def _cancel_detached(payment_method: str) -> str:
 	return "Cancelled"
 
 
+def note_setup_payment_failure(gateway: str, order_id: str | None, decline: dict) -> str | None:
+	"""Keep a declined authorisation payment (a Razorpay mandate order) on the method it
+	was for. Returns the method, or None when the order is not a setup of ours."""
+	if not order_id:
+		return None
+	name = frappe.db.get_value(
+		"Payment Method", {"gateway": gateway, "setup_reference": order_id, "status": "Pending Validation"}
+	)
+	if name:
+		_record_setup_failure(name, decline)
+	return name
+
+
 def _note_setup_failure(payment_method: str, setup_intent: dict) -> str:
 	error = setup_intent.get("last_setup_error") or {}
+	_record_setup_failure(
+		payment_method,
+		{
+			"failure_code": error.get("code") or "setup_failed",
+			"decline_code": error.get("decline_code"),
+			"failure_reason": error.get("message"),
+		},
+	)
+	return "noted"
+
+
+def _record_setup_failure(payment_method: str, decline: dict) -> None:
+	"""Keep a failed try on a setup the customer can still retry, so it stays Pending."""
 	method = frappe.get_doc("Payment Method", payment_method, for_update=True)
 	method.record_failure(
-		error.get("code") or "setup_failed", error.get("message"), error.get("decline_code")
+		decline.get("failure_code") or "payment_failed",
+		decline.get("failure_reason"),
+		decline.get("decline_code"),
 	)
 	record_event(method, "Payment Method Setup Failed", reason=method.failure_code)
 	# The webhook runs as the system, and only billing code writes a method's failure.
 	method.save(ignore_permissions=True)
-	return "noted"
