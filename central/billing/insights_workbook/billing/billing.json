@@ -1,5 +1,42 @@
 {
  "charts": {
+  "billing-abandoned-payment-setups": {
+   "chart_type": "Number",
+   "config": {
+    "filters": {
+     "filters": [],
+     "logical_operator": "And"
+    },
+    "number_column_options": [
+     {
+      "negative_is_better": true
+     }
+    ],
+    "number_columns": [
+     {
+      "aggregation": "sum",
+      "column_name": "abandoned",
+      "data_type": "Decimal",
+      "id": "Abandoned setups",
+      "measure_name": "Abandoned setups"
+     }
+    ],
+    "number_formats": {
+     "Abandoned setups": {
+      "decimals": 0
+     }
+    },
+    "sparkline": false
+   },
+   "description": null,
+   "folder": null,
+   "info": "Teams that started adding a payment method, never finished, and had no failure.",
+   "name": "billing-abandoned-payment-setups",
+   "query": "billing-first-payment-by-month-query",
+   "sort_order": 93,
+   "title": "Abandoned setups",
+   "workbook": "billing"
+  },
   "billing-accounting-sync-failures": {
    "chart_type": "Number",
    "config": {
@@ -281,6 +318,52 @@
    "title": "Bare metal machines",
    "workbook": "billing"
   },
+  "billing-converted-at-first-payment": {
+   "chart_type": "Number",
+   "config": {
+    "filters": {
+     "filters": [],
+     "logical_operator": "And"
+    },
+    "number_column_options": [
+     {
+      "negative_is_better": false,
+      "progress": true,
+      "target": {
+       "measure": {
+        "aggregation": "sum",
+        "column_name": "teams_tried",
+        "data_type": "Decimal",
+        "measure_name": "Teams that tried"
+       }
+      }
+     }
+    ],
+    "number_columns": [
+     {
+      "aggregation": "sum",
+      "column_name": "converted",
+      "data_type": "Decimal",
+      "id": "Converted",
+      "measure_name": "Converted"
+     }
+    ],
+    "number_formats": {
+     "Converted": {
+      "decimals": 0
+     }
+    },
+    "sparkline": false
+   },
+   "description": null,
+   "folder": null,
+   "info": "Teams that paid, or hold a working payment method, out of the teams that tried.",
+   "name": "billing-converted-at-first-payment",
+   "query": "billing-first-payment-by-month-query",
+   "sort_order": 94,
+   "title": "Converted",
+   "workbook": "billing"
+  },
   "billing-credit-in-wallets-inr": {
    "chart_type": "Number",
    "config": {
@@ -405,6 +488,46 @@
    "query": "billing-cloud-overview-query",
    "sort_order": 73,
    "title": "Customers who pay",
+   "workbook": "billing"
+  },
+  "billing-days-to-recover": {
+   "chart_type": "Bar",
+   "config": {
+    "filters": {
+     "filters": [],
+     "logical_operator": "And"
+    },
+    "limit": 10000,
+    "number_formats": {},
+    "x_axis": {
+     "dimension": {
+      "column_name": "days_to_recover",
+      "data_type": "String",
+      "dimension_name": "Days after the first failure"
+     }
+    },
+    "y_axis": {
+     "series": [
+      {
+       "measure": {
+        "aggregation": "sum",
+        "column_name": "teams",
+        "data_type": "Decimal",
+        "measure_name": "Teams"
+       },
+       "type": "bar"
+      }
+     ],
+     "stack": false
+    }
+   },
+   "description": null,
+   "folder": null,
+   "info": "Days from a team's first failure to its first payment.",
+   "name": "billing-days-to-recover",
+   "query": "billing-first-payment-recoveries-query",
+   "sort_order": 101,
+   "title": "Days to recover",
    "workbook": "billing"
   },
   "billing-disk-used-gib": {
@@ -803,6 +926,52 @@
    "title": "Earned from paying servers",
    "workbook": "billing"
   },
+  "billing-failed-at-first-payment": {
+   "chart_type": "Number",
+   "config": {
+    "filters": {
+     "filters": [],
+     "logical_operator": "And"
+    },
+    "number_column_options": [
+     {
+      "negative_is_better": true,
+      "progress": true,
+      "target": {
+       "measure": {
+        "aggregation": "sum",
+        "column_name": "teams_tried",
+        "data_type": "Decimal",
+        "measure_name": "Teams that tried"
+       }
+      }
+     }
+    ],
+    "number_columns": [
+     {
+      "aggregation": "sum",
+      "column_name": "failed_first",
+      "data_type": "Decimal",
+      "id": "Failed at first payment",
+      "measure_name": "Failed at first payment"
+     }
+    ],
+    "number_formats": {
+     "Failed at first payment": {
+      "decimals": 0
+     }
+    },
+    "sparkline": false
+   },
+   "description": null,
+   "folder": null,
+   "info": "Teams whose first try failed: a card setup, a card check, a top-up or an invoice payment.",
+   "name": "billing-failed-at-first-payment",
+   "query": "billing-first-payment-by-month-query",
+   "sort_order": 89,
+   "title": "Failed at first payment",
+   "workbook": "billing"
+  },
   "billing-failed-payments": {
    "chart_type": "Number",
    "config": {
@@ -892,6 +1061,293 @@
    "query": "billing-payments-last-30-days-query",
    "sort_order": 5,
    "title": "Failed payments, 7 days",
+   "workbook": "billing"
+  },
+  "billing-first-payment-monthly-breakdown": {
+   "chart_type": "Table",
+   "config": {
+    "columns": [],
+    "filters": {
+     "filters": [],
+     "logical_operator": "And"
+    },
+    "limit": 100,
+    "number_formats": {},
+    "rows": [
+     {
+      "column_name": "month",
+      "data_type": "Date",
+      "dimension_name": "Month",
+      "granularity": "month"
+     }
+    ],
+    "show_row_totals": false,
+    "values": [
+     {
+      "aggregation": "sum",
+      "column_name": "teams_tried",
+      "data_type": "Decimal",
+      "measure_name": "Tried"
+     },
+     {
+      "aggregation": "sum",
+      "column_name": "paid_first_time",
+      "data_type": "Decimal",
+      "measure_name": "Paid first time"
+     },
+     {
+      "aggregation": "sum",
+      "column_name": "method_added",
+      "data_type": "Decimal",
+      "measure_name": "Method added"
+     },
+     {
+      "aggregation": "sum",
+      "column_name": "failed_first",
+      "data_type": "Decimal",
+      "measure_name": "Failed first"
+     },
+     {
+      "aggregation": "sum",
+      "column_name": "recovered",
+      "data_type": "Decimal",
+      "measure_name": "Recovered"
+     },
+     {
+      "aggregation": "sum",
+      "column_name": "lost",
+      "data_type": "Decimal",
+      "measure_name": "Lost"
+     },
+     {
+      "aggregation": "sum",
+      "column_name": "window_open",
+      "data_type": "Decimal",
+      "measure_name": "Within 30 days"
+     },
+     {
+      "aggregation": "sum",
+      "column_name": "abandoned",
+      "data_type": "Decimal",
+      "measure_name": "Abandoned"
+     },
+     {
+      "aggregation": "max",
+      "column_name": "converted_share",
+      "data_type": "Decimal",
+      "format": "percent",
+      "measure_name": "Converted"
+     },
+     {
+      "aggregation": "max",
+      "column_name": "recovery_share",
+      "data_type": "Decimal",
+      "format": "percent",
+      "measure_name": "Recovered of failed"
+     }
+    ]
+   },
+   "description": null,
+   "folder": null,
+   "info": null,
+   "name": "billing-first-payment-monthly-breakdown",
+   "query": "billing-first-payment-by-month-query",
+   "sort_order": 103,
+   "title": "First payment monthly breakdown",
+   "workbook": "billing"
+  },
+  "billing-first-payment-outcome-by-month": {
+   "chart_type": "Bar",
+   "config": {
+    "filters": {
+     "filters": [],
+     "logical_operator": "And"
+    },
+    "limit": 10000,
+    "number_formats": {},
+    "x_axis": {
+     "dimension": {
+      "column_name": "month",
+      "data_type": "Date",
+      "dimension_name": "Month",
+      "granularity": "month"
+     }
+    },
+    "y_axis": {
+     "series": [
+      {
+       "measure": {
+        "aggregation": "sum",
+        "column_name": "paid_first_time",
+        "data_type": "Decimal",
+        "measure_name": "Paid first time"
+       },
+       "type": "bar"
+      },
+      {
+       "measure": {
+        "aggregation": "sum",
+        "column_name": "method_added",
+        "data_type": "Decimal",
+        "measure_name": "Method added, not billed yet"
+       },
+       "type": "bar"
+      },
+      {
+       "measure": {
+        "aggregation": "sum",
+        "column_name": "recovered",
+        "data_type": "Decimal",
+        "measure_name": "Failed, then recovered"
+       },
+       "type": "bar"
+      },
+      {
+       "measure": {
+        "aggregation": "sum",
+        "column_name": "lost",
+        "data_type": "Decimal",
+        "measure_name": "Failed, lost"
+       },
+       "type": "bar"
+      },
+      {
+       "measure": {
+        "aggregation": "sum",
+        "column_name": "window_open",
+        "data_type": "Decimal",
+        "measure_name": "Failed, still within 30 days"
+       },
+       "type": "bar"
+      },
+      {
+       "measure": {
+        "aggregation": "sum",
+        "column_name": "abandoned",
+        "data_type": "Decimal",
+        "measure_name": "Abandoned setup"
+       },
+       "type": "bar"
+      },
+      {
+       "measure": {
+        "aggregation": "sum",
+        "column_name": "not_billed_directly",
+        "data_type": "Decimal",
+        "measure_name": "Not billed directly"
+       },
+       "type": "bar"
+      }
+     ],
+     "stack": true
+    }
+   },
+   "description": null,
+   "folder": null,
+   "info": "The parts add up to the teams that tried in that month. A month is final 30 days after it ends.",
+   "name": "billing-first-payment-outcome-by-month",
+   "query": "billing-first-payment-by-month-query",
+   "sort_order": 97,
+   "title": "First payment outcome by month",
+   "workbook": "billing"
+  },
+  "billing-first-payment-rates-by-month": {
+   "chart_type": "Line",
+   "config": {
+    "filters": {
+     "filters": [],
+     "logical_operator": "And"
+    },
+    "limit": 10000,
+    "number_formats": {},
+    "x_axis": {
+     "dimension": {
+      "column_name": "month",
+      "data_type": "Date",
+      "dimension_name": "Month",
+      "granularity": "month"
+     }
+    },
+    "y_axis": {
+     "series": [
+      {
+       "measure": {
+        "aggregation": "max",
+        "column_name": "converted_share",
+        "data_type": "Decimal",
+        "format": "percent",
+        "measure_name": "Converted"
+       },
+       "type": "line"
+      },
+      {
+       "measure": {
+        "aggregation": "max",
+        "column_name": "failed_first_share",
+        "data_type": "Decimal",
+        "format": "percent",
+        "measure_name": "Failed first"
+       },
+       "type": "line"
+      },
+      {
+       "measure": {
+        "aggregation": "max",
+        "column_name": "recovery_share",
+        "data_type": "Decimal",
+        "format": "percent",
+        "measure_name": "Recovered of failed"
+       },
+       "type": "line"
+      }
+     ],
+     "stack": false
+    }
+   },
+   "description": null,
+   "folder": null,
+   "info": "By the month a team first tried. Recovered of failed leaves out teams still within 30 days.",
+   "name": "billing-first-payment-rates-by-month",
+   "query": "billing-first-payment-by-month-query",
+   "sort_order": 96,
+   "title": "First payment rates by month",
+   "workbook": "billing"
+  },
+  "billing-first-payment-still-open": {
+   "chart_type": "Number",
+   "config": {
+    "filters": {
+     "filters": [],
+     "logical_operator": "And"
+    },
+    "number_column_options": [
+     {
+      "negative_is_better": false
+     }
+    ],
+    "number_columns": [
+     {
+      "aggregation": "sum",
+      "column_name": "window_open",
+      "data_type": "Decimal",
+      "id": "Still within 30 days",
+      "measure_name": "Still within 30 days"
+     }
+    ],
+    "number_formats": {
+     "Still within 30 days": {
+      "decimals": 0
+     }
+    },
+    "sparkline": false
+   },
+   "description": null,
+   "folder": null,
+   "info": "Teams that failed first less than 30 days ago and have not recovered yet.",
+   "name": "billing-first-payment-still-open",
+   "query": "billing-first-payment-by-month-query",
+   "sort_order": 92,
+   "title": "Still within 30 days",
    "workbook": "billing"
   },
   "billing-free-trials": {
@@ -1092,6 +1548,34 @@
    "title": "Held for billing details",
    "workbook": "billing"
   },
+  "billing-how-teams-recovered": {
+   "chart_type": "Donut",
+   "config": {
+    "filters": {
+     "filters": [],
+     "logical_operator": "And"
+    },
+    "label_column": {
+     "column_name": "recovered_by",
+     "data_type": "String",
+     "dimension_name": "Recovered by"
+    },
+    "value_column": {
+     "aggregation": "sum",
+     "column_name": "teams",
+     "data_type": "Decimal",
+     "measure_name": "Teams"
+    }
+   },
+   "description": null,
+   "folder": null,
+   "info": "How teams that failed first went on to pay.",
+   "name": "billing-how-teams-recovered",
+   "query": "billing-first-payment-recoveries-query",
+   "sort_order": 100,
+   "title": "How teams recovered",
+   "workbook": "billing"
+  },
   "billing-how-this-month-s-invoices-settled": {
    "chart_type": "Donut",
    "config": {
@@ -1156,6 +1640,55 @@
    "query": "billing-cloud-overview-query",
    "sort_order": 77,
    "title": "Idle bare metal per month",
+   "workbook": "billing"
+  },
+  "billing-invoice-payment-retries": {
+   "chart_type": "Bar",
+   "config": {
+    "filters": {
+     "filters": [],
+     "logical_operator": "And"
+    },
+    "limit": 10000,
+    "number_formats": {},
+    "x_axis": {
+     "dimension": {
+      "column_name": "attempt",
+      "data_type": "String",
+      "dimension_name": "Attempt on the invoice"
+     }
+    },
+    "y_axis": {
+     "series": [
+      {
+       "measure": {
+        "aggregation": "sum",
+        "column_name": "captured",
+        "data_type": "Decimal",
+        "measure_name": "Paid"
+       },
+       "type": "bar"
+      },
+      {
+       "measure": {
+        "aggregation": "sum",
+        "column_name": "failed",
+        "data_type": "Decimal",
+        "measure_name": "Failed"
+       },
+       "type": "bar"
+      }
+     ],
+     "stack": true
+    }
+   },
+   "description": null,
+   "folder": null,
+   "info": "Each attempt on an invoice, by its place in the retry order, in the last 12 months.",
+   "name": "billing-invoice-payment-retries",
+   "query": "billing-payment-retries-query",
+   "sort_order": 102,
+   "title": "Invoice payment retries",
    "workbook": "billing"
   },
   "billing-invoiced-vs-collected-inr": {
@@ -1525,6 +2058,43 @@
    "query": "billing-cloud-overview-query",
    "sort_order": 74,
    "title": "Live servers",
+   "workbook": "billing"
+  },
+  "billing-lost-at-first-payment": {
+   "chart_type": "Number",
+   "config": {
+    "filters": {
+     "filters": [],
+     "logical_operator": "And"
+    },
+    "number_column_options": [
+     {
+      "negative_is_better": true
+     }
+    ],
+    "number_columns": [
+     {
+      "aggregation": "sum",
+      "column_name": "lost",
+      "data_type": "Decimal",
+      "id": "Lost at first payment",
+      "measure_name": "Lost at first payment"
+     }
+    ],
+    "number_formats": {
+     "Lost at first payment": {
+      "decimals": 0
+     }
+    },
+    "sparkline": false
+   },
+   "description": null,
+   "folder": null,
+   "info": "Teams that failed first and did not pay or add a working method within 30 days.",
+   "name": "billing-lost-at-first-payment",
+   "query": "billing-first-payment-by-month-query",
+   "sort_order": 91,
+   "title": "Lost at first payment",
    "workbook": "billing"
   },
   "billing-lost-to-discounts": {
@@ -2278,6 +2848,43 @@
    "title": "Paid by UPI",
    "workbook": "billing"
   },
+  "billing-paid-first-time": {
+   "chart_type": "Number",
+   "config": {
+    "filters": {
+     "filters": [],
+     "logical_operator": "And"
+    },
+    "number_column_options": [
+     {
+      "negative_is_better": false
+     }
+    ],
+    "number_columns": [
+     {
+      "aggregation": "sum",
+      "column_name": "paid_first_time",
+      "data_type": "Decimal",
+      "id": "Paid first time",
+      "measure_name": "Paid first time"
+     }
+    ],
+    "number_formats": {
+     "Paid first time": {
+      "decimals": 0
+     }
+    },
+    "sparkline": false
+   },
+   "description": null,
+   "folder": null,
+   "info": "Teams whose first try paid, with no failure before it.",
+   "name": "billing-paid-first-time",
+   "query": "billing-first-payment-by-month-query",
+   "sort_order": 88,
+   "title": "Paid first time",
+   "workbook": "billing"
+  },
   "billing-paid-in-money-vs-paid-by-credit": {
    "chart_type": "Bar",
    "config": {
@@ -2517,6 +3124,55 @@
    "title": "Payment attempts",
    "workbook": "billing"
   },
+  "billing-payment-failures-by-month": {
+   "chart_type": "Bar",
+   "config": {
+    "filters": {
+     "filters": [],
+     "logical_operator": "And"
+    },
+    "limit": 10000,
+    "number_formats": {},
+    "split_by": {
+     "dimension": {
+      "column_name": "stage",
+      "data_type": "String",
+      "dimension_name": "Stage"
+     },
+     "max_split_values": 20
+    },
+    "x_axis": {
+     "dimension": {
+      "column_name": "month",
+      "data_type": "Date",
+      "dimension_name": "Month",
+      "granularity": "month"
+     }
+    },
+    "y_axis": {
+     "series": [
+      {
+       "measure": {
+        "aggregation": "sum",
+        "column_name": "failures",
+        "data_type": "Decimal",
+        "measure_name": "Failures"
+       },
+       "type": "bar"
+      }
+     ],
+     "stack": true
+    }
+   },
+   "description": null,
+   "folder": null,
+   "info": null,
+   "name": "billing-payment-failures-by-month",
+   "query": "billing-payment-failure-reasons-query",
+   "sort_order": 99,
+   "title": "Payment failures by month",
+   "workbook": "billing"
+  },
   "billing-payment-success-30-days": {
    "chart_type": "Number",
    "config": {
@@ -2675,6 +3331,43 @@
    "query": "billing-region-economics-query",
    "sort_order": 56,
    "title": "Profit or loss per month",
+   "workbook": "billing"
+  },
+  "billing-recovered-after-a-failure": {
+   "chart_type": "Number",
+   "config": {
+    "filters": {
+     "filters": [],
+     "logical_operator": "And"
+    },
+    "number_column_options": [
+     {
+      "negative_is_better": false
+     }
+    ],
+    "number_columns": [
+     {
+      "aggregation": "sum",
+      "column_name": "recovered",
+      "data_type": "Decimal",
+      "id": "Recovered after a failure",
+      "measure_name": "Recovered after a failure"
+     }
+    ],
+    "number_formats": {
+     "Recovered after a failure": {
+      "decimals": 0
+     }
+    },
+    "sparkline": false
+   },
+   "description": null,
+   "folder": null,
+   "info": "Teams that failed first, then paid or added a working method within 30 days.",
+   "name": "billing-recovered-after-a-failure",
+   "query": "billing-first-payment-by-month-query",
+   "sort_order": 90,
+   "title": "Recovered after a failure",
    "workbook": "billing"
   },
   "billing-refunds-and-disputes-by-month": {
@@ -3469,6 +4162,63 @@
    "title": "Stuck webhooks",
    "workbook": "billing"
   },
+  "billing-teams-lost-at-first-payment": {
+   "chart_type": "Table",
+   "config": {
+    "columns": [],
+    "filters": {
+     "filters": [],
+     "logical_operator": "And"
+    },
+    "limit": 500,
+    "number_formats": {},
+    "rows": [
+     {
+      "column_name": "team",
+      "data_type": "String",
+      "dimension_name": "Team"
+     },
+     {
+      "column_name": "team_name",
+      "data_type": "String",
+      "dimension_name": "Team name"
+     },
+     {
+      "column_name": "owner",
+      "data_type": "String",
+      "dimension_name": "Owner"
+     },
+     {
+      "column_name": "first_try",
+      "data_type": "Date",
+      "dimension_name": "First tried",
+      "granularity": "month"
+     },
+     {
+      "column_name": "first_failure_code",
+      "data_type": "String",
+      "dimension_name": "First failure"
+     }
+    ],
+    "show_row_totals": false,
+    "values": [
+     {
+      "aggregation": "sum",
+      "column_name": "failures",
+      "data_type": "Decimal",
+      "measure_name": "Failures"
+     }
+    ]
+   },
+   "description": null,
+   "folder": null,
+   "info": "Teams to contact: they tried to pay, failed, and did not recover within 30 days.",
+   "name": "billing-teams-lost-at-first-payment",
+   "query": "billing-lost-first-payments-query",
+   "sort_order": 104,
+   "title": "Teams lost at first payment",
+   "workbook": "billing"
+  },
   "billing-teams-owing-the-most": {
    "chart_type": "Table",
    "config": {
@@ -3553,6 +4303,43 @@
    "query": "billing-billing-run-query",
    "sort_order": 19,
    "title": "Teams to bill",
+   "workbook": "billing"
+  },
+  "billing-teams-tried-to-pay": {
+   "chart_type": "Number",
+   "config": {
+    "filters": {
+     "filters": [],
+     "logical_operator": "And"
+    },
+    "number_column_options": [
+     {
+      "negative_is_better": false
+     }
+    ],
+    "number_columns": [
+     {
+      "aggregation": "sum",
+      "column_name": "teams_tried",
+      "data_type": "Decimal",
+      "id": "Teams that tried to pay",
+      "measure_name": "Teams that tried to pay"
+     }
+    ],
+    "number_formats": {
+     "Teams that tried to pay": {
+      "decimals": 0
+     }
+    },
+    "sparkline": false
+   },
+   "description": null,
+   "folder": null,
+   "info": "Teams that started a first payment: added a card or mandate, ordered credit, or paid an invoice.",
+   "name": "billing-teams-tried-to-pay",
+   "query": "billing-first-payment-by-month-query",
+   "sort_order": 87,
+   "title": "Teams that tried to pay",
    "workbook": "billing"
   },
   "billing-vcpus-allocated": {
@@ -3644,6 +4431,46 @@
    "title": "vCPUs used",
    "workbook": "billing"
   },
+  "billing-where-first-payments-end-up": {
+   "chart_type": "Row",
+   "config": {
+    "filters": {
+     "filters": [],
+     "logical_operator": "And"
+    },
+    "limit": 10000,
+    "number_formats": {},
+    "x_axis": {
+     "dimension": {
+      "column_name": "outcome",
+      "data_type": "String",
+      "dimension_name": "Outcome"
+     }
+    },
+    "y_axis": {
+     "series": [
+      {
+       "measure": {
+        "aggregation": "sum",
+        "column_name": "teams",
+        "data_type": "Decimal",
+        "measure_name": "Teams"
+       },
+       "type": "row"
+      }
+     ],
+     "stack": false
+    }
+   },
+   "description": null,
+   "folder": null,
+   "info": "Every team that tried to pay, by where it ended up. A team counts once.",
+   "name": "billing-where-first-payments-end-up",
+   "query": "billing-first-payment-journey-query",
+   "sort_order": 95,
+   "title": "Where first payments end up",
+   "workbook": "billing"
+  },
   "billing-where-the-bare-metal-bill-goes": {
    "chart_type": "Bar",
    "config": {
@@ -3715,6 +4542,54 @@
    "query": "billing-servers-by-who-pays-query",
    "sort_order": 67,
    "title": "Who uses our servers",
+   "workbook": "billing"
+  },
+  "billing-why-payments-fail": {
+   "chart_type": "Row",
+   "config": {
+    "filters": {
+     "filters": [],
+     "logical_operator": "And"
+    },
+    "limit": 10000,
+    "number_formats": {},
+    "split_by": {
+     "dimension": {
+      "column_name": "stage",
+      "data_type": "String",
+      "dimension_name": "Stage"
+     },
+     "max_split_values": 20
+    },
+    "x_axis": {
+     "dimension": {
+      "column_name": "failure_code",
+      "data_type": "String",
+      "dimension_name": "Failure code"
+     }
+    },
+    "y_axis": {
+     "series": [
+      {
+       "measure": {
+        "aggregation": "sum",
+        "column_name": "failures",
+        "data_type": "Decimal",
+        "measure_name": "Failures"
+       },
+       "type": "row"
+      }
+     ],
+     "stack": true
+    }
+   },
+   "description": null,
+   "folder": null,
+   "info": "Every failure in the last 12 months, by the gateway's code. Invoice payments show the bank's decline code.",
+   "name": "billing-why-payments-fail",
+   "query": "billing-payment-failure-reasons-query",
+   "sort_order": 98,
+   "title": "Why payments fail",
    "workbook": "billing"
   },
   "billing-yield-cash-revenue-of-potential": {
@@ -4648,6 +5523,228 @@
    ],
    "workbook": "billing"
   },
+  "billing-first-payment": {
+   "items": [
+    {
+     "chart": "billing-teams-tried-to-pay",
+     "layout": {
+      "h": 5,
+      "i": "item-0",
+      "w": 5,
+      "x": 0,
+      "y": 0
+     },
+     "type": "chart"
+    },
+    {
+     "chart": "billing-paid-first-time",
+     "layout": {
+      "h": 5,
+      "i": "item-1",
+      "w": 5,
+      "x": 5,
+      "y": 0
+     },
+     "type": "chart"
+    },
+    {
+     "chart": "billing-failed-at-first-payment",
+     "layout": {
+      "h": 5,
+      "i": "item-2",
+      "w": 5,
+      "x": 10,
+      "y": 0
+     },
+     "type": "chart"
+    },
+    {
+     "chart": "billing-recovered-after-a-failure",
+     "layout": {
+      "h": 5,
+      "i": "item-3",
+      "w": 5,
+      "x": 15,
+      "y": 0
+     },
+     "type": "chart"
+    },
+    {
+     "chart": "billing-lost-at-first-payment",
+     "layout": {
+      "h": 5,
+      "i": "item-4",
+      "w": 5,
+      "x": 0,
+      "y": 5
+     },
+     "type": "chart"
+    },
+    {
+     "chart": "billing-first-payment-still-open",
+     "layout": {
+      "h": 5,
+      "i": "item-5",
+      "w": 5,
+      "x": 5,
+      "y": 5
+     },
+     "type": "chart"
+    },
+    {
+     "chart": "billing-abandoned-payment-setups",
+     "layout": {
+      "h": 5,
+      "i": "item-6",
+      "w": 5,
+      "x": 10,
+      "y": 5
+     },
+     "type": "chart"
+    },
+    {
+     "chart": "billing-converted-at-first-payment",
+     "layout": {
+      "h": 5,
+      "i": "item-7",
+      "w": 5,
+      "x": 15,
+      "y": 5
+     },
+     "type": "chart"
+    },
+    {
+     "layout": {
+      "h": 2,
+      "i": "item-18",
+      "w": 20,
+      "x": 0,
+      "y": 10
+     },
+     "text": "<p>Detail: <a href=\"/desk/query-report/New Signups\">New Signups</a> · <a href=\"/desk/query-report/Failed Payments\">Failed Payments</a> · <a href=\"/desk/query-report/Payment Method Mix\">Payment Method Mix</a> · <a href=\"/desk/query-report/Dunning Recovery\">Dunning Recovery</a> · <a href=\"/desk/query-report/Gateway Payment Success Ratio\">Gateway Payment Success Ratio</a> · <a href=\"/desk/payment-method?failed_attempts=%5B%22%3E%22%2C0%5D\">Payment methods that failed</a> · <a href=\"/desk/top-up-order?failed_attempts=%5B%22%3E%22%2C0%5D\">Declined top-ups</a></p>",
+     "type": "text"
+    },
+    {
+     "chart": "billing-where-first-payments-end-up",
+     "layout": {
+      "h": 12,
+      "i": "item-8",
+      "w": 10,
+      "x": 0,
+      "y": 12
+     },
+     "type": "chart"
+    },
+    {
+     "chart": "billing-first-payment-rates-by-month",
+     "layout": {
+      "h": 12,
+      "i": "item-9",
+      "w": 10,
+      "x": 10,
+      "y": 12
+     },
+     "type": "chart"
+    },
+    {
+     "chart": "billing-first-payment-outcome-by-month",
+     "layout": {
+      "h": 12,
+      "i": "item-10",
+      "w": 20,
+      "x": 0,
+      "y": 24
+     },
+     "type": "chart"
+    },
+    {
+     "chart": "billing-why-payments-fail",
+     "layout": {
+      "h": 12,
+      "i": "item-11",
+      "w": 10,
+      "x": 0,
+      "y": 36
+     },
+     "type": "chart"
+    },
+    {
+     "chart": "billing-payment-failures-by-month",
+     "layout": {
+      "h": 12,
+      "i": "item-12",
+      "w": 10,
+      "x": 10,
+      "y": 36
+     },
+     "type": "chart"
+    },
+    {
+     "chart": "billing-how-teams-recovered",
+     "layout": {
+      "h": 12,
+      "i": "item-13",
+      "w": 10,
+      "x": 0,
+      "y": 48
+     },
+     "type": "chart"
+    },
+    {
+     "chart": "billing-days-to-recover",
+     "layout": {
+      "h": 12,
+      "i": "item-14",
+      "w": 10,
+      "x": 10,
+      "y": 48
+     },
+     "type": "chart"
+    },
+    {
+     "chart": "billing-invoice-payment-retries",
+     "layout": {
+      "h": 10,
+      "i": "item-15",
+      "w": 20,
+      "x": 0,
+      "y": 60
+     },
+     "type": "chart"
+    },
+    {
+     "chart": "billing-first-payment-monthly-breakdown",
+     "layout": {
+      "h": 12,
+      "i": "item-16",
+      "w": 20,
+      "x": 0,
+      "y": 70
+     },
+     "type": "chart"
+    },
+    {
+     "chart": "billing-teams-lost-at-first-payment",
+     "layout": {
+      "h": 14,
+      "i": "item-17",
+      "w": 20,
+      "x": 0,
+      "y": 82
+     },
+     "type": "chart"
+    }
+   ],
+   "name": "billing-first-payment",
+   "title": "First Payment",
+   "vertical_compact_layout": 1,
+   "visible_to_roles": [
+    {
+     "role": "System Manager"
+    }
+   ],
+   "workbook": "billing"
+  },
   "billing-p-l": {
    "items": [
     {
@@ -5066,7 +6163,7 @@
  "folders": [],
  "idx": 0,
  "is_standard": 1,
- "modified": "2026-10-26 12:00:00.000000",
+ "modified": "2026-10-28 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "billing",
@@ -5144,6 +6241,60 @@
    "use_live_connection": 1,
    "workbook": "billing"
   },
+  "billing-first-payment-by-month-query": {
+   "folder": null,
+   "is_builder_query": 0,
+   "is_native_query": 1,
+   "is_script_query": 0,
+   "name": "billing-first-payment-by-month-query",
+   "operations": [
+    {
+     "data_source": "Site DB",
+     "raw_sql": "WITH\ntries AS (\n  SELECT team, creation AS tried_at FROM `tabPayment Method`\n  UNION ALL SELECT team, creation FROM `tabTop-up Order`\n  UNION ALL SELECT team, creation FROM `tabPayment Attempt`\n),\nfirst_try AS (\n  SELECT team, MIN(tried_at) AS first_try FROM tries GROUP BY team\n),\nfailures AS (\n  SELECT team, occurred_at AS failed_at, reason AS failure_code\n  FROM `tabBilling Event`\n  WHERE subject_doctype = 'Payment Method'\n    AND (event_type = 'Payment Method Setup Failed' OR to_state = 'Failed')\n  UNION ALL\n  SELECT team, COALESCE(last_failed_at, creation), failure_code\n  FROM `tabTop-up Order` WHERE failed_attempts > 0\n  UNION ALL\n  SELECT team, COALESCE(completed_at, creation), failure_code\n  FROM `tabPayment Attempt` WHERE status = 'Failed'\n),\nranked_failures AS (\n  SELECT team, failed_at, failure_code,\n    ROW_NUMBER() OVER (PARTITION BY team ORDER BY failed_at) AS position,\n    COUNT(*) OVER (PARTITION BY team) AS failures\n  FROM failures\n),\nfirst_failure AS (\n  SELECT team, failed_at AS first_failure, failure_code, failures\n  FROM ranked_failures WHERE position = 1\n),\nmoney AS (\n  SELECT team, COALESCE(paid_at, modified) AS paid_at, 'Invoice payment' AS method\n  FROM `tabInvoice`\n  WHERE status = 'Paid' AND invoice_type = 'Billable' AND (amount_paid > 0 OR advance_applied > 0)\n  UNION ALL\n  SELECT team, creation, 'Credit top-up'\n  FROM `tabCredit Ledger Entry` WHERE entry_type = 'Credit' AND paid_in = 1\n),\nranked_money AS (\n  SELECT team, paid_at, method, ROW_NUMBER() OVER (PARTITION BY team ORDER BY paid_at) AS position\n  FROM money\n),\nfirst_money AS (\n  SELECT team, paid_at AS first_paid, method FROM ranked_money WHERE position = 1\n),\nfirst_active AS (\n  SELECT team, MIN(validated_at) AS first_active\n  FROM `tabPayment Method` WHERE validated_at IS NOT NULL GROUP BY team\n),\noutcomes AS (\n  SELECT ft.team, ft.first_try, f.first_failure, f.failure_code, IFNULL(f.failures, 0) AS failures,\n    m.first_paid, m.method AS paid_by,\n    CASE\n      WHEN tp.is_internal = 1 THEN 'Not billed directly'\n      WHEN f.first_failure IS NULL\n        OR f.first_failure > LEAST(COALESCE(m.first_paid, '9999-12-31'), COALESCE(a.first_active, '9999-12-31'))\n      THEN CASE\n        WHEN m.first_paid IS NOT NULL THEN 'Paid first time'\n        WHEN a.first_active IS NOT NULL THEN 'Method added, not billed yet'\n        ELSE 'Abandoned setup'\n      END\n      WHEN m.first_paid <= f.first_failure + INTERVAL 30 DAY THEN 'Recovered'\n      WHEN a.first_active <= f.first_failure + INTERVAL 30 DAY THEN 'Fixed method, not billed yet'\n      WHEN f.first_failure > NOW() - INTERVAL 30 DAY THEN 'Window still open'\n      ELSE 'Lost'\n    END AS outcome\n  FROM first_try ft\n  LEFT JOIN first_failure f ON f.team = ft.team\n  LEFT JOIN first_money m ON m.team = ft.team\n  LEFT JOIN first_active a ON a.team = ft.team\n  LEFT JOIN `tabTax Profile` tp ON tp.team = ft.team\n),\njourneys AS (\n  SELECT o.team, t.team_name, t.owner_user AS owner, DATE(o.first_try) AS first_try,\n    CAST(DATE_FORMAT(o.first_try, '%Y-%m-01') AS DATE) AS month, o.outcome, 1 AS teams,\n    o.outcome = 'Paid first time' AS paid_first_time,\n    o.outcome = 'Method added, not billed yet' AS method_added,\n    o.outcome = 'Abandoned setup' AS abandoned,\n    o.outcome IN ('Recovered', 'Fixed method, not billed yet', 'Window still open', 'Lost') AS failed_first,\n    o.outcome IN ('Recovered', 'Fixed method, not billed yet') AS recovered,\n    o.outcome = 'Window still open' AS window_open,\n    o.outcome = 'Lost' AS lost,\n    o.outcome = 'Not billed directly' AS not_billed_directly,\n    o.failure_code AS first_failure_code, o.failures,\n    CASE o.outcome\n      WHEN 'Recovered' THEN o.paid_by\n      WHEN 'Fixed method, not billed yet' THEN 'Verified method added'\n    END AS recovered_by,\n    CASE\n      WHEN o.outcome = 'Fixed method, not billed yet' THEN '5. Not billed yet'\n      WHEN o.outcome != 'Recovered' THEN NULL\n      WHEN DATEDIFF(o.first_paid, o.first_failure) = 0 THEN '1. Same day'\n      WHEN DATEDIFF(o.first_paid, o.first_failure) <= 3 THEN '2. 1 to 3 days'\n      WHEN DATEDIFF(o.first_paid, o.first_failure) <= 7 THEN '3. 4 to 7 days'\n      ELSE '4. 8 to 30 days'\n    END AS days_to_recover,\n    LAST_DAY(o.first_try) + INTERVAL 30 DAY < CURDATE() AS is_month_complete\n  FROM outcomes o\n  JOIN `tabTeam` t ON t.name = o.team\n)\nSELECT month,\n  COUNT(*) AS teams_tried,\n  SUM(paid_first_time) AS paid_first_time,\n  SUM(method_added) AS method_added,\n  SUM(abandoned) AS abandoned,\n  SUM(failed_first) AS failed_first,\n  SUM(recovered) AS recovered,\n  SUM(window_open) AS window_open,\n  SUM(lost) AS lost,\n  SUM(not_billed_directly) AS not_billed_directly,\n  SUM(paid_first_time + method_added + recovered) AS converted,\n  SUM(paid_first_time + method_added + recovered) / COUNT(*) AS converted_share,\n  SUM(failed_first) / COUNT(*) AS failed_first_share,\n  SUM(recovered) / NULLIF(SUM(recovered + lost), 0) AS recovery_share,\n  MIN(is_month_complete) AS is_month_complete\nFROM journeys\nGROUP BY month\nORDER BY month\n",
+     "type": "sql"
+    }
+   ],
+   "sort_order": 28,
+   "title": "First payment by month",
+   "use_live_connection": 1,
+   "workbook": "billing"
+  },
+  "billing-first-payment-journey-query": {
+   "folder": null,
+   "is_builder_query": 0,
+   "is_native_query": 1,
+   "is_script_query": 0,
+   "name": "billing-first-payment-journey-query",
+   "operations": [
+    {
+     "data_source": "Site DB",
+     "raw_sql": "WITH\ntries AS (\n  SELECT team, creation AS tried_at FROM `tabPayment Method`\n  UNION ALL SELECT team, creation FROM `tabTop-up Order`\n  UNION ALL SELECT team, creation FROM `tabPayment Attempt`\n),\nfirst_try AS (\n  SELECT team, MIN(tried_at) AS first_try FROM tries GROUP BY team\n),\nfailures AS (\n  SELECT team, occurred_at AS failed_at, reason AS failure_code\n  FROM `tabBilling Event`\n  WHERE subject_doctype = 'Payment Method'\n    AND (event_type = 'Payment Method Setup Failed' OR to_state = 'Failed')\n  UNION ALL\n  SELECT team, COALESCE(last_failed_at, creation), failure_code\n  FROM `tabTop-up Order` WHERE failed_attempts > 0\n  UNION ALL\n  SELECT team, COALESCE(completed_at, creation), failure_code\n  FROM `tabPayment Attempt` WHERE status = 'Failed'\n),\nranked_failures AS (\n  SELECT team, failed_at, failure_code,\n    ROW_NUMBER() OVER (PARTITION BY team ORDER BY failed_at) AS position,\n    COUNT(*) OVER (PARTITION BY team) AS failures\n  FROM failures\n),\nfirst_failure AS (\n  SELECT team, failed_at AS first_failure, failure_code, failures\n  FROM ranked_failures WHERE position = 1\n),\nmoney AS (\n  SELECT team, COALESCE(paid_at, modified) AS paid_at, 'Invoice payment' AS method\n  FROM `tabInvoice`\n  WHERE status = 'Paid' AND invoice_type = 'Billable' AND (amount_paid > 0 OR advance_applied > 0)\n  UNION ALL\n  SELECT team, creation, 'Credit top-up'\n  FROM `tabCredit Ledger Entry` WHERE entry_type = 'Credit' AND paid_in = 1\n),\nranked_money AS (\n  SELECT team, paid_at, method, ROW_NUMBER() OVER (PARTITION BY team ORDER BY paid_at) AS position\n  FROM money\n),\nfirst_money AS (\n  SELECT team, paid_at AS first_paid, method FROM ranked_money WHERE position = 1\n),\nfirst_active AS (\n  SELECT team, MIN(validated_at) AS first_active\n  FROM `tabPayment Method` WHERE validated_at IS NOT NULL GROUP BY team\n),\noutcomes AS (\n  SELECT ft.team, ft.first_try, f.first_failure, f.failure_code, IFNULL(f.failures, 0) AS failures,\n    m.first_paid, m.method AS paid_by,\n    CASE\n      WHEN tp.is_internal = 1 THEN 'Not billed directly'\n      WHEN f.first_failure IS NULL\n        OR f.first_failure > LEAST(COALESCE(m.first_paid, '9999-12-31'), COALESCE(a.first_active, '9999-12-31'))\n      THEN CASE\n        WHEN m.first_paid IS NOT NULL THEN 'Paid first time'\n        WHEN a.first_active IS NOT NULL THEN 'Method added, not billed yet'\n        ELSE 'Abandoned setup'\n      END\n      WHEN m.first_paid <= f.first_failure + INTERVAL 30 DAY THEN 'Recovered'\n      WHEN a.first_active <= f.first_failure + INTERVAL 30 DAY THEN 'Fixed method, not billed yet'\n      WHEN f.first_failure > NOW() - INTERVAL 30 DAY THEN 'Window still open'\n      ELSE 'Lost'\n    END AS outcome\n  FROM first_try ft\n  LEFT JOIN first_failure f ON f.team = ft.team\n  LEFT JOIN first_money m ON m.team = ft.team\n  LEFT JOIN first_active a ON a.team = ft.team\n  LEFT JOIN `tabTax Profile` tp ON tp.team = ft.team\n),\njourneys AS (\n  SELECT o.team, t.team_name, t.owner_user AS owner, DATE(o.first_try) AS first_try,\n    CAST(DATE_FORMAT(o.first_try, '%Y-%m-01') AS DATE) AS month, o.outcome, 1 AS teams,\n    o.outcome = 'Paid first time' AS paid_first_time,\n    o.outcome = 'Method added, not billed yet' AS method_added,\n    o.outcome = 'Abandoned setup' AS abandoned,\n    o.outcome IN ('Recovered', 'Fixed method, not billed yet', 'Window still open', 'Lost') AS failed_first,\n    o.outcome IN ('Recovered', 'Fixed method, not billed yet') AS recovered,\n    o.outcome = 'Window still open' AS window_open,\n    o.outcome = 'Lost' AS lost,\n    o.outcome = 'Not billed directly' AS not_billed_directly,\n    o.failure_code AS first_failure_code, o.failures,\n    CASE o.outcome\n      WHEN 'Recovered' THEN o.paid_by\n      WHEN 'Fixed method, not billed yet' THEN 'Verified method added'\n    END AS recovered_by,\n    CASE\n      WHEN o.outcome = 'Fixed method, not billed yet' THEN '5. Not billed yet'\n      WHEN o.outcome != 'Recovered' THEN NULL\n      WHEN DATEDIFF(o.first_paid, o.first_failure) = 0 THEN '1. Same day'\n      WHEN DATEDIFF(o.first_paid, o.first_failure) <= 3 THEN '2. 1 to 3 days'\n      WHEN DATEDIFF(o.first_paid, o.first_failure) <= 7 THEN '3. 4 to 7 days'\n      ELSE '4. 8 to 30 days'\n    END AS days_to_recover,\n    LAST_DAY(o.first_try) + INTERVAL 30 DAY < CURDATE() AS is_month_complete\n  FROM outcomes o\n  JOIN `tabTeam` t ON t.name = o.team\n)\nSELECT * FROM journeys\nORDER BY first_try DESC\n",
+     "type": "sql"
+    }
+   ],
+   "sort_order": 27,
+   "title": "First payment journey",
+   "use_live_connection": 1,
+   "workbook": "billing"
+  },
+  "billing-first-payment-recoveries-query": {
+   "folder": null,
+   "is_builder_query": 0,
+   "is_native_query": 1,
+   "is_script_query": 0,
+   "name": "billing-first-payment-recoveries-query",
+   "operations": [
+    {
+     "data_source": "Site DB",
+     "raw_sql": "WITH\ntries AS (\n  SELECT team, creation AS tried_at FROM `tabPayment Method`\n  UNION ALL SELECT team, creation FROM `tabTop-up Order`\n  UNION ALL SELECT team, creation FROM `tabPayment Attempt`\n),\nfirst_try AS (\n  SELECT team, MIN(tried_at) AS first_try FROM tries GROUP BY team\n),\nfailures AS (\n  SELECT team, occurred_at AS failed_at, reason AS failure_code\n  FROM `tabBilling Event`\n  WHERE subject_doctype = 'Payment Method'\n    AND (event_type = 'Payment Method Setup Failed' OR to_state = 'Failed')\n  UNION ALL\n  SELECT team, COALESCE(last_failed_at, creation), failure_code\n  FROM `tabTop-up Order` WHERE failed_attempts > 0\n  UNION ALL\n  SELECT team, COALESCE(completed_at, creation), failure_code\n  FROM `tabPayment Attempt` WHERE status = 'Failed'\n),\nranked_failures AS (\n  SELECT team, failed_at, failure_code,\n    ROW_NUMBER() OVER (PARTITION BY team ORDER BY failed_at) AS position,\n    COUNT(*) OVER (PARTITION BY team) AS failures\n  FROM failures\n),\nfirst_failure AS (\n  SELECT team, failed_at AS first_failure, failure_code, failures\n  FROM ranked_failures WHERE position = 1\n),\nmoney AS (\n  SELECT team, COALESCE(paid_at, modified) AS paid_at, 'Invoice payment' AS method\n  FROM `tabInvoice`\n  WHERE status = 'Paid' AND invoice_type = 'Billable' AND (amount_paid > 0 OR advance_applied > 0)\n  UNION ALL\n  SELECT team, creation, 'Credit top-up'\n  FROM `tabCredit Ledger Entry` WHERE entry_type = 'Credit' AND paid_in = 1\n),\nranked_money AS (\n  SELECT team, paid_at, method, ROW_NUMBER() OVER (PARTITION BY team ORDER BY paid_at) AS position\n  FROM money\n),\nfirst_money AS (\n  SELECT team, paid_at AS first_paid, method FROM ranked_money WHERE position = 1\n),\nfirst_active AS (\n  SELECT team, MIN(validated_at) AS first_active\n  FROM `tabPayment Method` WHERE validated_at IS NOT NULL GROUP BY team\n),\noutcomes AS (\n  SELECT ft.team, ft.first_try, f.first_failure, f.failure_code, IFNULL(f.failures, 0) AS failures,\n    m.first_paid, m.method AS paid_by,\n    CASE\n      WHEN tp.is_internal = 1 THEN 'Not billed directly'\n      WHEN f.first_failure IS NULL\n        OR f.first_failure > LEAST(COALESCE(m.first_paid, '9999-12-31'), COALESCE(a.first_active, '9999-12-31'))\n      THEN CASE\n        WHEN m.first_paid IS NOT NULL THEN 'Paid first time'\n        WHEN a.first_active IS NOT NULL THEN 'Method added, not billed yet'\n        ELSE 'Abandoned setup'\n      END\n      WHEN m.first_paid <= f.first_failure + INTERVAL 30 DAY THEN 'Recovered'\n      WHEN a.first_active <= f.first_failure + INTERVAL 30 DAY THEN 'Fixed method, not billed yet'\n      WHEN f.first_failure > NOW() - INTERVAL 30 DAY THEN 'Window still open'\n      ELSE 'Lost'\n    END AS outcome\n  FROM first_try ft\n  LEFT JOIN first_failure f ON f.team = ft.team\n  LEFT JOIN first_money m ON m.team = ft.team\n  LEFT JOIN first_active a ON a.team = ft.team\n  LEFT JOIN `tabTax Profile` tp ON tp.team = ft.team\n),\njourneys AS (\n  SELECT o.team, t.team_name, t.owner_user AS owner, DATE(o.first_try) AS first_try,\n    CAST(DATE_FORMAT(o.first_try, '%Y-%m-01') AS DATE) AS month, o.outcome, 1 AS teams,\n    o.outcome = 'Paid first time' AS paid_first_time,\n    o.outcome = 'Method added, not billed yet' AS method_added,\n    o.outcome = 'Abandoned setup' AS abandoned,\n    o.outcome IN ('Recovered', 'Fixed method, not billed yet', 'Window still open', 'Lost') AS failed_first,\n    o.outcome IN ('Recovered', 'Fixed method, not billed yet') AS recovered,\n    o.outcome = 'Window still open' AS window_open,\n    o.outcome = 'Lost' AS lost,\n    o.outcome = 'Not billed directly' AS not_billed_directly,\n    o.failure_code AS first_failure_code, o.failures,\n    CASE o.outcome\n      WHEN 'Recovered' THEN o.paid_by\n      WHEN 'Fixed method, not billed yet' THEN 'Verified method added'\n    END AS recovered_by,\n    CASE\n      WHEN o.outcome = 'Fixed method, not billed yet' THEN '5. Not billed yet'\n      WHEN o.outcome != 'Recovered' THEN NULL\n      WHEN DATEDIFF(o.first_paid, o.first_failure) = 0 THEN '1. Same day'\n      WHEN DATEDIFF(o.first_paid, o.first_failure) <= 3 THEN '2. 1 to 3 days'\n      WHEN DATEDIFF(o.first_paid, o.first_failure) <= 7 THEN '3. 4 to 7 days'\n      ELSE '4. 8 to 30 days'\n    END AS days_to_recover,\n    LAST_DAY(o.first_try) + INTERVAL 30 DAY < CURDATE() AS is_month_complete\n  FROM outcomes o\n  JOIN `tabTeam` t ON t.name = o.team\n)\nSELECT recovered_by, days_to_recover, COUNT(*) AS teams\nFROM journeys\nWHERE recovered = 1\nGROUP BY recovered_by, days_to_recover\nORDER BY days_to_recover\n",
+     "type": "sql"
+    }
+   ],
+   "sort_order": 29,
+   "title": "First payment recoveries",
+   "use_live_connection": 1,
+   "workbook": "billing"
+  },
   "billing-how-the-run-settled-query": {
    "folder": null,
    "is_builder_query": 0,
@@ -5195,6 +6346,24 @@
    ],
    "sort_order": 8,
    "title": "Invoiced and collected by month USD",
+   "use_live_connection": 1,
+   "workbook": "billing"
+  },
+  "billing-lost-first-payments-query": {
+   "folder": null,
+   "is_builder_query": 0,
+   "is_native_query": 1,
+   "is_script_query": 0,
+   "name": "billing-lost-first-payments-query",
+   "operations": [
+    {
+     "data_source": "Site DB",
+     "raw_sql": "WITH\ntries AS (\n  SELECT team, creation AS tried_at FROM `tabPayment Method`\n  UNION ALL SELECT team, creation FROM `tabTop-up Order`\n  UNION ALL SELECT team, creation FROM `tabPayment Attempt`\n),\nfirst_try AS (\n  SELECT team, MIN(tried_at) AS first_try FROM tries GROUP BY team\n),\nfailures AS (\n  SELECT team, occurred_at AS failed_at, reason AS failure_code\n  FROM `tabBilling Event`\n  WHERE subject_doctype = 'Payment Method'\n    AND (event_type = 'Payment Method Setup Failed' OR to_state = 'Failed')\n  UNION ALL\n  SELECT team, COALESCE(last_failed_at, creation), failure_code\n  FROM `tabTop-up Order` WHERE failed_attempts > 0\n  UNION ALL\n  SELECT team, COALESCE(completed_at, creation), failure_code\n  FROM `tabPayment Attempt` WHERE status = 'Failed'\n),\nranked_failures AS (\n  SELECT team, failed_at, failure_code,\n    ROW_NUMBER() OVER (PARTITION BY team ORDER BY failed_at) AS position,\n    COUNT(*) OVER (PARTITION BY team) AS failures\n  FROM failures\n),\nfirst_failure AS (\n  SELECT team, failed_at AS first_failure, failure_code, failures\n  FROM ranked_failures WHERE position = 1\n),\nmoney AS (\n  SELECT team, COALESCE(paid_at, modified) AS paid_at, 'Invoice payment' AS method\n  FROM `tabInvoice`\n  WHERE status = 'Paid' AND invoice_type = 'Billable' AND (amount_paid > 0 OR advance_applied > 0)\n  UNION ALL\n  SELECT team, creation, 'Credit top-up'\n  FROM `tabCredit Ledger Entry` WHERE entry_type = 'Credit' AND paid_in = 1\n),\nranked_money AS (\n  SELECT team, paid_at, method, ROW_NUMBER() OVER (PARTITION BY team ORDER BY paid_at) AS position\n  FROM money\n),\nfirst_money AS (\n  SELECT team, paid_at AS first_paid, method FROM ranked_money WHERE position = 1\n),\nfirst_active AS (\n  SELECT team, MIN(validated_at) AS first_active\n  FROM `tabPayment Method` WHERE validated_at IS NOT NULL GROUP BY team\n),\noutcomes AS (\n  SELECT ft.team, ft.first_try, f.first_failure, f.failure_code, IFNULL(f.failures, 0) AS failures,\n    m.first_paid, m.method AS paid_by,\n    CASE\n      WHEN tp.is_internal = 1 THEN 'Not billed directly'\n      WHEN f.first_failure IS NULL\n        OR f.first_failure > LEAST(COALESCE(m.first_paid, '9999-12-31'), COALESCE(a.first_active, '9999-12-31'))\n      THEN CASE\n        WHEN m.first_paid IS NOT NULL THEN 'Paid first time'\n        WHEN a.first_active IS NOT NULL THEN 'Method added, not billed yet'\n        ELSE 'Abandoned setup'\n      END\n      WHEN m.first_paid <= f.first_failure + INTERVAL 30 DAY THEN 'Recovered'\n      WHEN a.first_active <= f.first_failure + INTERVAL 30 DAY THEN 'Fixed method, not billed yet'\n      WHEN f.first_failure > NOW() - INTERVAL 30 DAY THEN 'Window still open'\n      ELSE 'Lost'\n    END AS outcome\n  FROM first_try ft\n  LEFT JOIN first_failure f ON f.team = ft.team\n  LEFT JOIN first_money m ON m.team = ft.team\n  LEFT JOIN first_active a ON a.team = ft.team\n  LEFT JOIN `tabTax Profile` tp ON tp.team = ft.team\n),\njourneys AS (\n  SELECT o.team, t.team_name, t.owner_user AS owner, DATE(o.first_try) AS first_try,\n    CAST(DATE_FORMAT(o.first_try, '%Y-%m-01') AS DATE) AS month, o.outcome, 1 AS teams,\n    o.outcome = 'Paid first time' AS paid_first_time,\n    o.outcome = 'Method added, not billed yet' AS method_added,\n    o.outcome = 'Abandoned setup' AS abandoned,\n    o.outcome IN ('Recovered', 'Fixed method, not billed yet', 'Window still open', 'Lost') AS failed_first,\n    o.outcome IN ('Recovered', 'Fixed method, not billed yet') AS recovered,\n    o.outcome = 'Window still open' AS window_open,\n    o.outcome = 'Lost' AS lost,\n    o.outcome = 'Not billed directly' AS not_billed_directly,\n    o.failure_code AS first_failure_code, o.failures,\n    CASE o.outcome\n      WHEN 'Recovered' THEN o.paid_by\n      WHEN 'Fixed method, not billed yet' THEN 'Verified method added'\n    END AS recovered_by,\n    CASE\n      WHEN o.outcome = 'Fixed method, not billed yet' THEN '5. Not billed yet'\n      WHEN o.outcome != 'Recovered' THEN NULL\n      WHEN DATEDIFF(o.first_paid, o.first_failure) = 0 THEN '1. Same day'\n      WHEN DATEDIFF(o.first_paid, o.first_failure) <= 3 THEN '2. 1 to 3 days'\n      WHEN DATEDIFF(o.first_paid, o.first_failure) <= 7 THEN '3. 4 to 7 days'\n      ELSE '4. 8 to 30 days'\n    END AS days_to_recover,\n    LAST_DAY(o.first_try) + INTERVAL 30 DAY < CURDATE() AS is_month_complete\n  FROM outcomes o\n  JOIN `tabTeam` t ON t.name = o.team\n)\nSELECT team, team_name, owner, first_try, first_failure_code, failures\nFROM journeys\nWHERE lost = 1\nORDER BY first_try DESC\n",
+     "type": "sql"
+    }
+   ],
+   "sort_order": 32,
+   "title": "Teams lost at first payment",
    "use_live_connection": 1,
    "workbook": "billing"
   },
@@ -5303,6 +6472,42 @@
    ],
    "sort_order": 4,
    "title": "Payment attempts by day",
+   "use_live_connection": 1,
+   "workbook": "billing"
+  },
+  "billing-payment-failure-reasons-query": {
+   "folder": null,
+   "is_builder_query": 0,
+   "is_native_query": 1,
+   "is_script_query": 0,
+   "name": "billing-payment-failure-reasons-query",
+   "operations": [
+    {
+     "data_source": "Site DB",
+     "raw_sql": "SELECT CAST(DATE_FORMAT(failed_at, '%Y-%m-01') AS DATE) AS month, stage,\n  COALESCE(NULLIF(failure_code, ''), 'unknown') AS failure_code,\n  COUNT(*) AS failures, COUNT(DISTINCT team) AS teams\nFROM (\n  SELECT team, occurred_at AS failed_at, reason AS failure_code,\n    IF(event_type = 'Payment Method Setup Failed', 'Method setup', 'Method check') AS stage\n  FROM `tabBilling Event`\n  WHERE subject_doctype = 'Payment Method'\n    AND (event_type = 'Payment Method Setup Failed' OR to_state = 'Failed')\n  UNION ALL\n  SELECT team, COALESCE(last_failed_at, creation), failure_code, 'Credit top-up'\n  FROM `tabTop-up Order` WHERE failed_attempts > 0\n  UNION ALL\n  SELECT team, COALESCE(completed_at, creation), COALESCE(NULLIF(decline_code, ''), failure_code), 'Invoice payment'\n  FROM `tabPayment Attempt` WHERE status = 'Failed'\n) failures\nWHERE failed_at >= CURDATE() - INTERVAL 12 MONTH\nGROUP BY month, stage, failure_code\nORDER BY month, failures DESC\n",
+     "type": "sql"
+    }
+   ],
+   "sort_order": 30,
+   "title": "Payment failure reasons",
+   "use_live_connection": 1,
+   "workbook": "billing"
+  },
+  "billing-payment-retries-query": {
+   "folder": null,
+   "is_builder_query": 0,
+   "is_native_query": 1,
+   "is_script_query": 0,
+   "name": "billing-payment-retries-query",
+   "operations": [
+    {
+     "data_source": "Site DB",
+     "raw_sql": "SELECT CONCAT('Attempt ', LEAST(retry_number + 1, 5), IF(retry_number >= 4, ' or later', '')) AS attempt,\n  COUNT(*) AS attempts,\n  SUM(status = 'Captured') AS captured,\n  SUM(status = 'Failed') AS failed,\n  SUM(status = 'Captured') / NULLIF(SUM(status IN ('Captured', 'Failed')), 0) AS success_share\nFROM `tabPayment Attempt`\nWHERE creation >= CURDATE() - INTERVAL 12 MONTH\nGROUP BY attempt\nORDER BY attempt\n",
+     "type": "sql"
+    }
+   ],
+   "sort_order": 31,
+   "title": "Invoice payment retries",
    "use_live_connection": 1,
    "workbook": "billing"
   },

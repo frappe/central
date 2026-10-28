@@ -38,6 +38,7 @@ Used CPU, memory, disk and bandwidth come from the region's telemetry. Only serv
 | P&L | See revenue, bare metal cost, gross profit and margin by month, growth, a 6-month forecast, money against credit, and refunds and disputes. |
 | Unit Economics | See bare metal cost against what servers earn, by region, with a drill-down per machine and per team. |
 | Bare Metal Yield | See what the sellable bare metal could earn at the rate card, what it earns, and how much is not earned because of unsold capacity, servers used free and discounts, and what servers that pay nothing cost in bare metal. |
+| First Payment | See how many teams try to pay for the first time, how many fail, why they fail, how many recover and how, and which teams are lost. It also shows how invoice payment retries succeed. See [How the first payment is tracked](#how-the-first-payment-is-tracked). |
 
 ## Revenue
 
@@ -111,6 +112,32 @@ Used CPU, memory, disk and bandwidth come from the region's telemetry. Only serv
 | Internal Usage and Waivers | What did our own teams use, and how much was waived? |
 | New Signups | Which teams signed up, and how far did each get: billing profile, payment method, first payment? A first payment is money the customer paid: an invoice paid by the gateway or by paid-in credit, or a credit top-up. Welcome credit alone does not count. |
 | Trial Sites | How many trial sites started per product and month, how did they end, and what did they cost? |
+
+### How the first payment is tracked
+
+A team tries to pay when it adds a card or mandate, orders credit, or pays an invoice. The First Payment dashboard groups each team by its first try month and puts it in one outcome:
+
+| Outcome | Rule |
+|---|---|
+| Paid first time | The team paid before any failure. |
+| Method added, not billed yet | The team added a working method before any failure, and has not paid yet. |
+| Abandoned setup | The team started a setup, never finished it, and had no failure. |
+| Recovered | The team failed first, then paid within 30 days of the first failure. |
+| Fixed method, not billed yet | The team failed first, then added a working method within 30 days. The dashboard counts it as recovered. |
+| Window still open | The team failed first less than 30 days ago and has not recovered yet. |
+| Lost | The team failed first and did not recover within 30 days. |
+| Not billed directly | The team is internal (Tax Profile marked internal). |
+
+A failure is any of these:
+
+- A card setup that failed at the gateway. The Payment Method keeps the code and adds a `Payment Method Setup Failed` Billing Event.
+- A card check or mandate confirmation that failed. The Payment Method moves to Failed with the code.
+- A declined payment on a Top-up Order. The order keeps the code and stays open.
+- A failed Payment Attempt on an invoice.
+
+A payment is money the customer paid: an invoice paid by the gateway or by paid-in credit, or a credit top-up. Welcome credit does not count. A setup that the customer leaves is kept as a Cancelled Payment Method with the reason "setup abandoned".
+
+A month is final 30 days after it ends. Every failure keeps the gateway's failure code and, where the bank gives one, its decline code. Use **Payment methods that failed** and **Declined top-ups** in the dashboard's Detail line to open the records.
 
 ## Billing health
 

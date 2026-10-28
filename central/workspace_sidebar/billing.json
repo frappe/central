@@ -502,6 +502,18 @@
    "url": "/insights/dashboards/billing-cloud-overview"
   },
   {
+   "child": 1,
+   "collapsible": 1,
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "First Payment",
+   "link_type": "URL",
+   "open_in_new_tab": 0,
+   "show_arrow": 0,
+   "type": "Link",
+   "url": "/insights/dashboards/billing-first-payment"
+  },
+  {
    "child": 0,
    "collapsible": 1,
    "icon": "chart-column",
