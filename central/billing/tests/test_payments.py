@@ -128,6 +128,17 @@ class TestSetupAndConfirm(CardTestBase):
 		adapter.validate_payment_method.assert_not_called()
 		self.assertEqual(method.status, "Failed")
 
+	def test_a_new_setup_cancels_the_abandoned_one_and_keeps_it(self):
+		with stub_adapter():
+			abandoned = payments.initiate_payment_method_setup(TEAM, GATEWAY)["payment_method"]
+			fresh = payments.initiate_payment_method_setup(TEAM, GATEWAY)["payment_method"]
+
+		self.assertEqual(frappe.db.get_value("Payment Method", abandoned, "status"), "Cancelled")
+		self.assertEqual(frappe.db.get_value("Payment Method", fresh, "status"), "Pending Validation")
+		self.assertTrue(
+			frappe.db.exists("Billing Event", {"subject": abandoned, "reason": "setup abandoned"})
+		)
+
 	def test_a_card_not_saved_yet_is_not_confirmed(self):
 		with stub_adapter() as adapter:
 			setup = payments.initiate_payment_method_setup(TEAM, GATEWAY)

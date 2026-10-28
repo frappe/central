@@ -345,7 +345,7 @@ def create_payment_method_checkout(redirect_url: str, gateway: str | None = None
 		)
 
 	adapter = get_adapter(gw_doc)
-	payments._discard_abandoned_setups(team, gw_doc.name)  # reap prior never-finished attempts
+	payments._cancel_abandoned_setups(team, gw_doc.name)  # close prior never-finished attempts
 	customer = payments.ensure_gateway_customer(team, gw_doc.name, adapter)
 	session = adapter.create_setup_checkout_session(
 		customer, success_url=redirect_url, cancel_url=redirect_url

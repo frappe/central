@@ -457,6 +457,20 @@ class TestBillingCurrency(CustomerDataBase):
 		dashboard.save_billing_profile(TEAM, country="Germany")
 		self.assertEqual(frappe.db.get_value("Billing Profile", TEAM, "currency"), "USD")
 
+	def test_an_abandoned_card_setup_does_not_lock_the_currency(self):
+		dashboard.save_billing_profile(TEAM, currency="INR", legal_name="Acme")
+		frappe.get_doc(
+			{
+				"doctype": "Payment Method",
+				"team": TEAM,
+				"gateway": "Stripe",
+				"method_type": "Card",
+				"status": "Cancelled",
+			}
+		).insert(ignore_permissions=True, ignore_links=True)
+
+		self.assertFalse(dashboard.get_billing_profile(TEAM)["currency_locked"])
+
 	def test_currency_locks_after_money_activity(self):
 		from central.billing.revenue import credits
 		from central.billing.tests.test_razorpay_adapter import make_razorpay_gateway

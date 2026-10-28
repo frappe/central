@@ -100,7 +100,7 @@ def initiate_payment_method_setup(team: str, gateway: str, gateway_customer_id: 
 	Returns the client secret the frontend confirms the card against. No money
 	moves here and the method is not yet usable.
 	"""
-	_discard_abandoned_setups(team, gateway)
+	_cancel_abandoned_setups(team, gateway)
 	adapter = _adapter(gateway)
 	gateway_customer_id = ensure_gateway_customer(team, gateway, adapter, gateway_customer_id)
 	currency = frappe.db.get_value("Billing Profile", team, "currency")
@@ -148,11 +148,11 @@ def mandate_ceiling(team: str, gateway: str, currency: str | None) -> float | No
 	return float(min(ceiling, cap)) if cap else float(ceiling)
 
 
-def _discard_abandoned_setups(team: str, gateway: str):
-	"""Delete the team's never-confirmed card setups on this gateway before a fresh
-	attempt. A Pending Validation method with no gateway_method_id is an abandoned
-	SetupIntent (dialog closed before confirm) — otherwise these pile up in the
-	store. Confirmed methods (any status) are left alone."""
+def _cancel_abandoned_setups(team: str, gateway: str):
+	"""Cancel the team's never-confirmed setups on this gateway before a fresh attempt.
+	A Pending Validation method with no gateway_method_id is an abandoned setup (dialog
+	closed before confirm). It stays on record, so the setup funnel can count it.
+	Confirmed methods (any status) are left alone."""
 	for name in frappe.get_all(
 		"Payment Method",
 		filters={
@@ -163,7 +163,10 @@ def _discard_abandoned_setups(team: str, gateway: str):
 		},
 		pluck="name",
 	):
-		frappe.delete_doc("Payment Method", name, ignore_permissions=True, force=True)
+		method = frappe.get_doc("Payment Method", name)
+		transition(method, "Cancelled", reason="setup abandoned")
+		# Only billing code changes a method's status; the caller checked billing:manage.
+		method.save(ignore_permissions=True)
 
 
 class CardNotSaved(frappe.ValidationError):

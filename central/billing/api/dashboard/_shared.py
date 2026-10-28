@@ -119,7 +119,9 @@ def _has_money_activity(team: str) -> bool:
 	so a wallet can't end up holding mixed-currency value."""
 	return bool(
 		frappe.db.exists("Credit Ledger Entry", {"team": team})
-		or frappe.db.exists("Payment Method", {"team": team})
+		or frappe.db.exists("Payment Method", {"team": team, "status": ["!=", "Cancelled"]})
+		# An abandoned setup is kept Cancelled with no gateway id; it never held money.
+		or frappe.db.exists("Payment Method", {"team": team, "gateway_method_id": ["is", "set"]})
 		or frappe.db.exists("Invoice", {"team": team})
 	)
 
