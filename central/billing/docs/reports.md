@@ -135,7 +135,7 @@ A failure is any of these:
 - A declined payment on a Top-up Order. The order keeps the code and stays open.
 - A failed Payment Attempt on an invoice.
 
-A payment is money the customer paid: an invoice paid by the gateway or by paid-in credit, or a credit top-up. Welcome credit does not count. A setup that the customer leaves is kept as a Cancelled Payment Method with the reason "setup abandoned".
+A payment is money the customer paid: an invoice paid by the gateway or by paid-in credit, or a credit top-up. Welcome credit does not count. An invoice payment is dated by the invoice's `paid_at`. A setup that the customer leaves is kept as a Cancelled Payment Method with the reason "setup abandoned".
 
 A month is final 30 days after it ends. Every failure keeps the gateway's failure code and, where the bank gives one, its decline code. Use **Payment methods that failed** and **Declined top-ups** in the dashboard's Detail line to open the records.
 
