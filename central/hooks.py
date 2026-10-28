@@ -269,6 +269,7 @@ after_migrate = [
 	"central.billing.navigation.ensure_workspace_sidebars",
 	# The Webhook that carries a team's tier to Grove, so an edit to its spec rolls out.
 	"central.services.doctype.ai_settings.ai_settings.sync_webhook",
+	"central.investigator.knowledge.load_knowledge_bases_after_migrate",
 ]
 
 # Testing
@@ -414,3 +415,5 @@ require_type_annotated_api_methods = True
 # ------------
 # List of apps whose translatable strings should be excluded from this app's translations.
 # ignore_translatable_strings_from = []
+
+flow_agents = ["central.investigator.agents.get_agents"]

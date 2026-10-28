@@ -351,6 +351,24 @@ Wildcard or shared-proxy DNS resolution alone does not prove customer ownership.
 
 The proxy forwards customer HTTPS as TLS with PROXY protocol v2 to VM port 443. Certificates and renewal stay in Pilot. Central stores the domain record, the operation result, and useful failure information.
 
+## How does the investigator read a server?
+
+The Central Investigator is a read-only Flow agent for operators. It is defined in `central/investigator/agents.py` and uses the first enabled Flow Model. It follows the `virtual-machine-investigation` skill in `skills/`.
+
+| Layer | Tool | Contract |
+| --- | --- | --- |
+| Central | `read_records`, `run_report` | Flow tools with the permissions of the user. |
+| Pilot | `read_pilot_api` | `GET` on a path in `PILOT_READ_PATHS`. Central mints the bench token for each call and attaches it. The agent never sees the token. Every result is scrubbed. |
+| Atlas | `start_region_investigation`, `get_region_investigation` | `POST /investigations` and `GET /investigations/<id>` with the operator client of the region. |
+
+`PILOT_READ_PATHS` leaves out site configuration, backup download links, the file editor, and the Central proxy, because they return secrets or files. A new Pilot read path needs a change in that list.
+
+The `Central` and `Pilot` knowledge bases hold the Central documents and the Pilot documents from GitHub, including the generated `docs/admin-api-reference.md`. Each migrate reloads the changed documents. If the load fails, for example without GitHub access, the migrate prints the error and continues. To load them without a migrate:
+
+```sh
+pilot --site <site> execute central.investigator.knowledge.load_knowledge_bases
+```
+
 ## Validation
 
 Run the shared contract tests before deployment. Complete the live journeys in [Staging validation](STAGING_VALIDATION.md) against the actual staging revisions. Mocked responses do not prove VM startup, Pilot login, SSH access, or webhook delivery.
