@@ -39,6 +39,11 @@ class TestCardFailureMessage(IntegrationTestCase):
 		self.assertTrue(message.startswith("There wasn't enough balance."))
 		self.assertIn("add credit", message)
 
+	def test_a_mandate_is_not_told_to_try_another_card(self):
+		message = decline.method_failure_message("token_missing", None, "UPI Autopay")
+		self.assertNotIn("card", message)
+		self.assertIn("add credit", message)
+
 	def test_an_unknown_bank_reason_falls_back_to_the_failure_code(self):
 		message = decline.method_failure_message("expired_card", "some_new_reason")
 		self.assertTrue(message.startswith("Your card has expired."))

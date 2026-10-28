@@ -137,7 +137,9 @@ def _confirmation(method) -> dict:
 	"""What a confirm route answers. A failed method says why, in words for the customer."""
 	result = {"payment_method": method.name, "status": method.status}
 	if method.status == "Failed":
-		result["message"] = decline.method_failure_message(method.failure_code, method.decline_code)
+		result["message"] = decline.method_failure_message(
+			method.failure_code, method.decline_code, method.method_type
+		)
 	return result
 
 

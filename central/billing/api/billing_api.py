@@ -314,7 +314,9 @@ def confirm_payment_method(
 
 	result = {"payment_method": method.name, "status": method.status}
 	if method.status == "Failed":
-		result["message"] = decline.method_failure_message(method.failure_code, method.decline_code)
+		result["message"] = decline.method_failure_message(
+			method.failure_code, method.decline_code, method.method_type
+		)
 	return result
 
 
@@ -388,7 +390,9 @@ def _activate_setup(method_name: str) -> dict:
 		return {"status": "pending", "active": False}
 	result = {"status": method.status, "active": method.status == "Active", "label": method.display_label}
 	if method.status == "Failed":
-		result["message"] = decline.method_failure_message(method.failure_code, method.decline_code)
+		result["message"] = decline.method_failure_message(
+			method.failure_code, method.decline_code, method.method_type
+		)
 	return result
 
 
