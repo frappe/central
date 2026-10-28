@@ -17,6 +17,7 @@ TOOLS = [
 	tools.send_pilot_read_request,
 	tools.get_performance_snapshot,
 	tools.run_database_query,
+	tools.run_region_dashboard_queries,
 	tools.start_region_investigation,
 	tools.get_region_investigation_status,
 	tools.get_region_investigation,

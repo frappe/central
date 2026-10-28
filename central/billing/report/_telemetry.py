@@ -81,11 +81,7 @@ class Telemetry:
 		if (cached := frappe.cache.get_value(cache_key)) is not None:
 			return cached
 		try:
-			result = frappe.get_doc("Insights Data Source v3", source)._get_ibis_backend().raw_sql(sql)
-			rows = [
-				list(row)
-				for row in (result.result_rows if hasattr(result, "result_rows") else result.fetchall())
-			]
+			_, rows = frappe.get_doc("Region", region).run_telemetry_sql(sql)
 		except Exception:
 			frappe.log_error(title=f"Billing telemetry unavailable: {region}", message=frappe.get_traceback())
 			self.gaps.append(region)

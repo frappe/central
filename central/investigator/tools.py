@@ -8,6 +8,7 @@ import frappe
 import requests
 from frappe import _
 from frappe.flow import ToolContext, tool
+from frappe.model.document import Document
 
 from central.integrations.atlas import AtlasClient
 from central.integrations.pilot import read_pilot, write_pilot
@@ -38,6 +39,8 @@ READ_QUERY = re.compile(r"\s*(select|with|explain|show|describe|desc)\b", re.IGN
 REFUSED_QUERY = re.compile(r";\s*\S|\binto\s+(outfile|dumpfile)\b|__auth", re.IGNORECASE)
 QUERY_TIMEOUT_SECONDS = 10
 MAXIMUM_WAIT_SECONDS = 300
+DASHBOARD_WORKBOOK = "Atlas"
+MAXIMUM_DASHBOARD_ROWS = 50
 
 Window = Literal["30m", "1h", "6h", "12h", "24h", "1w"]
 
@@ -210,6 +213,50 @@ def get_region_investigation_status(
 		investigation_id
 	)
 	return {key: investigation.get(key) for key in ("id", "status", "error")}
+
+
+@tool
+def run_region_dashboard_queries(
+	region: Annotated[str, "Region name."],
+	queries: Annotated[list[str], "Query names of the Atlas Insights workbook, such as q-region-health."],
+	*,
+	ctx: ToolContext,
+) -> dict:
+	"""Run Atlas dashboard queries on the telemetry of one region. Batch the queries in one call.
+
+	Each query returns its title, columns, and at most 50 rows. A query that fails returns its error.
+	"""
+	require_operator(ctx)
+	region_doc = frappe.get_doc("Region", region)
+	return {name: get_dashboard_query_result(region_doc, name) for name in queries}
+
+
+def get_dashboard_query_result(region: Document, name: str) -> dict:
+	if not frappe.db.exists("Insights Query v3", name):
+		return {"error": _("Query {0} does not exist.").format(name)}
+
+	query = frappe.get_doc("Insights Query v3", name)
+	if frappe.db.get_value("Insights Workbook", query.workbook, "title") != DASHBOARD_WORKBOOK:
+		return {"error": _("{0} is not a query of the {1} workbook.").format(name, DASHBOARD_WORKBOOK)}
+
+	sql = next(
+		(
+			operation.get("raw_sql")
+			for operation in frappe.parse_json(query.operations)
+			if operation.get("raw_sql")
+		),
+		None,
+	)
+	try:
+		columns, rows = region.run_telemetry_sql(sql)
+	except Exception as error:
+		return {"title": query.title, "error": str(error)}
+	return {
+		"title": query.title,
+		"columns": columns,
+		"rows": frappe.parse_json(frappe.as_json(rows[:MAXIMUM_DASHBOARD_ROWS])),
+		"truncated": len(rows) > MAXIMUM_DASHBOARD_ROWS,
+	}
 
 
 @tool
