@@ -22,7 +22,6 @@ from central.billing.api.dashboard._shared import (
 	_team_currency,
 )
 from central.billing.gateways import capabilities
-from central.billing.payments import decline
 from central.infrastructure.doctype.resource_action.resource_action import PENDING_STATES
 
 
@@ -312,12 +311,7 @@ def confirm_payment_method(
 	else:
 		method = payments.confirm_payment_method(payment_method)
 
-	result = {"payment_method": method.name, "status": method.status}
-	if method.status == "Failed":
-		result["message"] = decline.method_failure_message(
-			method.failure_code, method.decline_code, method.method_type
-		)
-	return result
+	return method.get_confirmation()
 
 
 # ── Add a card via hosted setup checkout (Stripe) ─────────────────────────────
@@ -388,12 +382,7 @@ def _activate_setup(method_name: str) -> dict:
 	except payments.CardNotSaved:
 		frappe.clear_last_message()
 		return {"status": "pending", "active": False}
-	result = {"status": method.status, "active": method.status == "Active", "label": method.display_label}
-	if method.status == "Failed":
-		result["message"] = decline.method_failure_message(
-			method.failure_code, method.decline_code, method.method_type
-		)
-	return result
+	return {**method.get_confirmation(), "active": method.status == "Active", "label": method.display_label}
 
 
 # nosemgrep: guest-whitelisted-method -- pilot_credential_auth verifies the caller below.

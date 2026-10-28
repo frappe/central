@@ -42,6 +42,15 @@ class PaymentMethod(Document):
 		self.last_failed_at = frappe.utils.now_datetime()
 		self.update(decline.failure_fields(failure))
 
+	def get_confirmation(self) -> dict:
+		"""What a confirm route answers. A failed method says why, in words for the customer."""
+		result = {"payment_method": self.name, "status": self.status}
+		if self.status == "Failed":
+			result["message"] = decline.method_failure_message(
+				self.failure_code, self.decline_code, self.method_type
+			)
+		return result
+
 
 def on_doctype_update() -> None:
 	# The billing run, its dashboards and the money reports filter on these.

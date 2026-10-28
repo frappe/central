@@ -130,17 +130,7 @@ def confirm_card(payment_method: str | None = None) -> dict:
 
 	team = frappe.db.get_value("Payment Method", payment_method, "team")
 	_require_manage(team)
-	return _confirmation(payments.confirm_payment_method(payment_method))
-
-
-def _confirmation(method) -> dict:
-	"""What a confirm route answers. A failed method says why, in words for the customer."""
-	result = {"payment_method": method.name, "status": method.status}
-	if method.status == "Failed":
-		result["message"] = decline.method_failure_message(
-			method.failure_code, method.decline_code, method.method_type
-		)
-	return result
+	return payments.confirm_payment_method(payment_method).get_confirmation()
 
 
 @frappe.whitelist(methods=["POST"])
@@ -224,7 +214,7 @@ def confirm_payment_method_order(
 			"razorpay_signature": razorpay_signature,
 		},
 	)
-	return _confirmation(method)
+	return method.get_confirmation()
 
 
 @frappe.whitelist(methods=["POST"])
