@@ -405,7 +405,7 @@ class TestIndiaCardMandate(IntegrationTestCase):
 			validated = self.adapter.validate_payment_method(method)
 		cancel.assert_called_once_with("pi_x")
 		self.assertFalse(validated.success)
-		self.assertEqual(validated.failure_code, "requires_action")
+		self.assertEqual(validated.failure_code, "check_unfinished")
 
 	def test_a_processing_check_charge_is_reported_not_cancelled(self):
 		intent = stripe.PaymentIntent.construct_from({"id": "pi_x", "status": "processing"}, "sk")
@@ -419,6 +419,7 @@ class TestIndiaCardMandate(IntegrationTestCase):
 		cancel.assert_not_called()
 		log_error.assert_called_once()
 		self.assertFalse(validated.success)
+		self.assertEqual(validated.failure_code, "check_unfinished")
 
 	def test_a_failed_check_refund_still_proves_the_card(self):
 		intent = stripe.PaymentIntent.construct_from({"id": "pi_x", "status": "succeeded"}, "sk")

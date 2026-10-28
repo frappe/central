@@ -614,14 +614,15 @@ def _refund_check_charge(intent: dict, key: str) -> None:
 
 
 def _unfinished_check(intent: dict) -> PaymentResult:
-	"""A card check charge that did not succeed: waiting on the customer, or held."""
+	"""A card check charge that did not succeed: waiting on the customer, or held. The
+	method fails either way, so the intent status stays in the reason, not the code."""
 	error = intent.get("last_payment_error") or {}
 	status = intent.get("status")
 	return PaymentResult(
 		success=False,
 		status="Failed",
 		gateway_transaction_id=intent.get("id"),
-		failure_code=error.get("code") or status,
+		failure_code=error.get("code") or "check_unfinished",
 		decline_code=error.get("decline_code"),
 		failure_reason=error.get("message") or f"The card check charge ended as {status}.",
 		raw=intent,

@@ -79,6 +79,7 @@ _CUSTOMER_REASON = {
 	"payment_intent_mandate_invalid": _lt("Your auto-pay approval is no longer valid"),
 	"india_recurring_payment_mandate_canceled": _lt("Your auto-pay approval was cancelled"),
 	"transaction_not_approved": _lt("Your bank didn't approve the auto-payment"),
+	"check_unfinished": _lt("The card check didn't finish"),
 }
 
 # Ambiguous failures may still settle. Saying "failed" of one is a lie we would
