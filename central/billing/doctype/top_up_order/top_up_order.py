@@ -85,7 +85,9 @@ class TopupOrder(Document):
 
 	def record_decline(self, decline: dict) -> None:
 		"""Keep why the gateway declined a payment on this order. The order stays open,
-		because the payer can try again on it."""
+		because the payer can try again on it. Locked, so two failure webhooks both count."""
+		frappe.db.get_value("Top-up Order", self.name, "name", for_update=True)
+		self.reload()
 		self.failed_attempts = frappe.utils.cint(self.failed_attempts) + 1
 		self.last_failed_at = frappe.utils.now_datetime()
 		self.failure_code = decline.get("failure_code") or "payment_failed"

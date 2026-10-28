@@ -268,6 +268,14 @@ class TestWalletTopupWebhookBackstop(IntegrationTestCase):
 		self.assertEqual(order.failed_attempts, 1)
 		self.assertEqual(credits.get_balance(TOPUP_TEAM)["balance"], 0)
 
+	def test_a_decline_counts_on_top_of_what_is_stored(self):
+		stale = frappe.get_doc("Top-up Order", self.order.name)
+		charges.apply_webhook(self._store_decline("pay_first", "order_topup_wh"))
+
+		stale.record_decline({"failure_code": "card_declined"})  # a copy read before the first
+
+		self.assertEqual(frappe.db.get_value("Top-up Order", self.order.name, "failed_attempts"), 2)
+
 	def test_a_declined_mandate_authorisation_is_kept_on_the_method(self):
 		method = frappe.get_doc(
 			{
