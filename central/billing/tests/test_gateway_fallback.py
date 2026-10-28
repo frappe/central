@@ -35,12 +35,12 @@ class TestWhichDeclinesAreFinal(IntegrationTestCase):
 
 class TestCardFailureMessage(IntegrationTestCase):
 	def test_the_bank_reason_is_used_when_we_can_word_it(self):
-		message = decline.card_failure_message("card_declined", "insufficient_funds")
+		message = decline.method_failure_message("card_declined", "insufficient_funds")
 		self.assertTrue(message.startswith("There wasn't enough balance."))
 		self.assertIn("add credit", message)
 
 	def test_an_unknown_bank_reason_falls_back_to_the_failure_code(self):
-		message = decline.card_failure_message("expired_card", "some_new_reason")
+		message = decline.method_failure_message("expired_card", "some_new_reason")
 		self.assertTrue(message.startswith("Your card has expired."))
 
 

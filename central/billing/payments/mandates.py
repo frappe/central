@@ -266,12 +266,14 @@ def confirm_mandate(payment_method: str, callback: dict):
 	adapter = _adapter(method.gateway)
 
 	if not adapter.verify_payment_signature(callback):
-		_refuse_mandate(method, "signature_invalid", "The checkout signature is invalid.")
+		return _refuse_mandate(method, "signature_invalid", "The checkout signature is invalid.")
 	if not method.setup_reference or callback.get("razorpay_order_id") != method.setup_reference:
-		_refuse_mandate(method, "order_mismatch", "The callback is for another order.")
+		return _refuse_mandate(method, "order_mismatch", "The callback is for another order.")
 	payment = adapter.get_payment(callback.get("razorpay_payment_id"))
 	if not _is_mandate_payment(method, payment):
-		_refuse_mandate(method, "payment_not_authorised", "The payment does not authorise this mandate.")
+		return _refuse_mandate(
+			method, "payment_not_authorised", "The payment does not authorise this mandate."
+		)
 
 	method.gateway_method_id = payment["token_id"]
 	transition(method, "Active", actor=frappe.session.user)
@@ -344,16 +346,13 @@ def _is_mandate_payment(method, payment: dict) -> bool:
 	)
 
 
-def _refuse_mandate(method, failure_code: str, reason: str) -> None:
+def _refuse_mandate(method, failure_code: str, reason: str):
+	"""Fail the method and return it. It does not raise, so the failure is not rolled back."""
 	method.record_failure(failure_code, reason)
 	transition(method, "Failed", actor=frappe.session.user, reason=failure_code)
 	# Only billing code changes a method's status; the caller checked billing:manage.
 	method.save(ignore_permissions=True)
-	# The refusal below rolls the request back; the failed method must stay on record.
-	frappe.db.commit()  # nosemgrep: frappe-manual-commit -- keep the refusal past the rollback
-	frappe.throw(
-		_("The mandate authorisation could not be confirmed. Try adding it again."), frappe.ValidationError
-	)
+	return method
 
 
 def cancel_mandate(payment_method: str):

@@ -103,9 +103,15 @@ def customer_reason(failure_code: str | None, fallback: str | None = None) -> st
 	return "We couldn't complete this payment"
 
 
-def card_failure_message(failure_code: str | None, decline_code: str | None = None) -> str:
-	"""Why a card could not be added, and what the customer can do instead. The bank's
-	decline code is the more specific reason, so it is used when we can word it."""
+# Why Central refused a mandate confirmation. Nothing about the customer's bank.
+MANDATE_REFUSALS = ("signature_invalid", "order_mismatch", "payment_not_authorised")
+
+
+def method_failure_message(failure_code: str | None, decline_code: str | None = None) -> str:
+	"""Why a payment method could not be added, and what the customer can do instead. The
+	bank's decline code is the more specific reason, so it is used when we can word it."""
+	if failure_code in MANDATE_REFUSALS:
+		return _("The mandate authorisation could not be confirmed. Try adding it again.")
 	code = decline_code if (decline_code or "").lower() in _CUSTOMER_REASON else failure_code
 	return _("{0}. Try another card, or add credit to your account instead.").format(customer_reason(code))
 

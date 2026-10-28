@@ -312,7 +312,10 @@ def confirm_payment_method(
 	else:
 		method = payments.confirm_payment_method(payment_method)
 
-	return {"payment_method": method.name, "status": method.status}
+	result = {"payment_method": method.name, "status": method.status}
+	if method.status == "Failed":
+		result["message"] = decline.method_failure_message(method.failure_code, method.decline_code)
+	return result
 
 
 # ── Add a card via hosted setup checkout (Stripe) ─────────────────────────────
@@ -385,7 +388,7 @@ def _activate_setup(method_name: str) -> dict:
 		return {"status": "pending", "active": False}
 	result = {"status": method.status, "active": method.status == "Active", "label": method.display_label}
 	if method.status == "Failed":
-		result["message"] = decline.card_failure_message(method.failure_code, method.decline_code)
+		result["message"] = decline.method_failure_message(method.failure_code, method.decline_code)
 	return result
 
 
