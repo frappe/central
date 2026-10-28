@@ -199,7 +199,7 @@ Call `start_region_investigation` with:
 - `problem`: Symptom, impact, and incident start time.
 - `context`: `atlas_vm_id`, `atlas_host_id`, server name, and relevant evidence.
 
-Use `get_region_investigation` to check progress until the investigation completes, fails, or cannot make further progress.
+Use `get_region_investigation_status` to check progress until the investigation completes, fails, or cannot make further progress. Then read the report once with `get_region_investigation`.
 
 Do not poll indefinitely.
 

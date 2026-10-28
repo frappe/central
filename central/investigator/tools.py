@@ -188,11 +188,26 @@ def start_region_investigation(
 	"""Hand a host-side problem to the read-only investigator of one region.
 
 	The investigator reads that region's telemetry, records, and Metal hosts, and changes nothing.
-	It takes a few minutes. Poll get_region_investigation until the status is completed or failed.
+	It takes a few minutes. Poll get_region_investigation_status until the status is completed or failed,
+	then read the report once with get_region_investigation.
 	"""
 	client = AtlasClient.for_operator(frappe.get_doc("Region", region))
 	investigation = client.create_investigation(problem, context, ctx.user)
 	return {"region": region, "id": investigation["id"], "status": investigation["status"]}
+
+
+@tool
+def get_region_investigation_status(
+	region: Annotated[str, "Region name."],
+	investigation_id: Annotated[str, "ID from start_region_investigation."],
+	*,
+	ctx: ToolContext,
+) -> dict:
+	"""Read only the status of one regional investigation, and its error when it failed. Use it to poll."""
+	investigation = AtlasClient.for_operator(frappe.get_doc("Region", region)).get_investigation(
+		investigation_id
+	)
+	return {key: investigation.get(key) for key in ("id", "status", "error")}
 
 
 @tool
