@@ -12,16 +12,18 @@ def execute():
 	undated = (invoice.status == "Paid") & invoice.paid_at.isnull()
 
 	captured = (
-		frappe.qb.from_(invoice)
-		.join(attempt)
-		.on(attempt.invoice == invoice.name)
-		.select(invoice.name, Min(attempt.completed_at).as_("captured_at"))
-		.where(undated)
+		frappe.qb.from_(attempt)
+		.select(attempt.invoice, Min(attempt.completed_at).as_("captured_at"))
 		.where(attempt.status.isin(["Captured", "Refunded"]))
 		.where(attempt.completed_at.isnotnull())
-		.groupby(invoice.name)
-	).run(as_dict=True)
-	for row in captured:
-		frappe.db.set_value("Invoice", row.name, "paid_at", row.captured_at, update_modified=False)
+		.groupby(attempt.invoice)
+	).as_("captured")
+	(
+		frappe.qb.update(invoice)
+		.join(captured)
+		.on(captured.invoice == invoice.name)
+		.set(invoice.paid_at, captured.captured_at)
+		.where(undated)
+	).run()
 
 	frappe.qb.update(invoice).set(invoice.paid_at, invoice.modified).where(undated).run()
