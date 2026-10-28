@@ -135,8 +135,12 @@ class TestMandateSetup(MandateTestBase):
 			result = mandates.setup_mandate(TEAM, GATEWAY, customer_id="cust_x")
 			with self.assertRaises(frappe.ValidationError):
 				mandates.confirm_mandate(result["payment_method"], {"razorpay_signature": "bad"})
+		frappe.db.rollback()  # what the request does with the refusal
+
 		method = frappe.get_doc("Payment Method", result["payment_method"])
 		self.assertEqual(method.status, "Failed")
+		self.assertEqual(method.failure_code, "signature_invalid")
+		self.assertEqual(method.failed_attempts, 1)
 
 
 class TestAuthorisationRefund(MandateTestBase):
