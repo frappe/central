@@ -20,7 +20,7 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
-from central.billing.states import transition
+from central.billing.states import record_event, transition
 
 CARD_METHOD = "Card"
 
@@ -360,8 +360,9 @@ def apply_payment_method_event(event_name: str) -> dict:
 	"""Record a card event from the gateway on the Payment Method it is about.
 
 	A card detached at the gateway can no longer be charged, so it is cancelled and
-	drops out of the charge order. A failed card setup is only noted on the card: the
-	customer can retry on the same setup, so one failed try does not fail the card.
+	drops out of the charge order. A failed card setup is recorded on the card with the
+	gateway's reason. The card stays Pending Validation: the customer can retry on the
+	same setup, so one failed try does not fail the card.
 	"""
 	from central.billing.payments import charges
 
@@ -401,8 +402,11 @@ def _cancel_detached(payment_method: str) -> str:
 
 def _note_setup_failure(payment_method: str, setup_intent: dict) -> str:
 	error = setup_intent.get("last_setup_error") or {}
-	reason = error.get("message") or error.get("code") or "no reason given"
-	frappe.get_doc("Payment Method", payment_method).add_comment(
-		"Info", f"Card setup failed at the gateway: {reason}"
+	method = frappe.get_doc("Payment Method", payment_method, for_update=True)
+	method.record_failure(
+		error.get("code") or "setup_failed", error.get("message"), error.get("decline_code")
 	)
+	record_event(method, "Payment Method Setup Failed", reason=method.failure_code)
+	# The webhook runs as the system, and only billing code writes a method's failure.
+	method.save(ignore_permissions=True)
 	return "noted"
