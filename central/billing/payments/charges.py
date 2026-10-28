@@ -750,9 +750,9 @@ def _apply_unmatched_event(event, payment, decline: dict | None) -> dict:
 	is kept on the method it was for; anything else is not ours."""
 	from central.billing.payments import payments
 
-	method = decline is not None and payments.note_setup_payment_failure(
-		event.gateway, payment.order_id, decline
-	)
+	method = None
+	if decline is not None:
+		method = payments.note_setup_payment_failure(event.gateway, payment.order_id, decline)
 	if method:
 		event.payment_method = method
 		_mark_event(event, "Processed")
