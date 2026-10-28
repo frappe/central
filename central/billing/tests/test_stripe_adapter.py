@@ -407,6 +407,19 @@ class TestIndiaCardMandate(IntegrationTestCase):
 		self.assertFalse(validated.success)
 		self.assertEqual(validated.failure_code, "requires_action")
 
+	def test_a_processing_check_charge_is_reported_not_cancelled(self):
+		intent = stripe.PaymentIntent.construct_from({"id": "pi_x", "status": "processing"}, "sk")
+		method = frappe._dict(name="pm-doc", gateway_method_id="pm_x", team="t")
+		with (
+			patch.object(stripe.PaymentIntent, "create", return_value=intent),
+			patch.object(stripe.PaymentIntent, "cancel") as cancel,
+			patch.object(frappe, "log_error") as log_error,
+		):
+			validated = self.adapter.validate_payment_method(method)
+		cancel.assert_not_called()
+		log_error.assert_called_once()
+		self.assertFalse(validated.success)
+
 	def test_a_failed_check_refund_still_proves_the_card(self):
 		intent = stripe.PaymentIntent.construct_from({"id": "pi_x", "status": "succeeded"}, "sk")
 		method = frappe._dict(name="pm-doc", gateway_method_id="pm_x", team="t")

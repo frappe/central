@@ -306,9 +306,7 @@ class StripeAdapter(GatewayAdapter):
 			raise GatewayTimeout(str(error)) from error
 
 		if intent.get("status") != "succeeded":
-			# Waiting on the customer: leave nothing open that could capture later.
-			with _stripe_errors():
-				stripe.PaymentIntent.cancel(intent.get("id"))
+			_close_check_charge(intent)
 			return _unfinished_check(intent)
 		_refund_check_charge(intent, params["idempotency_key"])
 		return PaymentResult(success=True, status="Validated", gateway_transaction_id=intent.get("id"))
@@ -594,6 +592,16 @@ def _declined(error: stripe.error.StripeError) -> PaymentResult:
 		failure_reason=getattr(error, "user_message", None) or str(error),
 		raw=body,
 	)
+
+
+def _close_check_charge(intent: dict) -> None:
+	"""Leave nothing open that could capture later. Stripe cannot cancel a charge that is
+	processing, so an operator is told to refund it if it settles."""
+	if intent.get("status") == "processing":
+		frappe.log_error(title=f"Card check charge {intent.get('id')} is processing; refund it if it settles")
+		return
+	with _stripe_errors():
+		stripe.PaymentIntent.cancel(intent.get("id"))
 
 
 def _refund_check_charge(intent: dict, key: str) -> None:
