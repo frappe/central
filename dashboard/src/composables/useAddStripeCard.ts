@@ -17,6 +17,7 @@ import {
 	loadStripe,
 	type Stripe,
 	type StripeCardElement,
+	type StripeError,
 } from '@stripe/stripe-js'
 import { useCall } from 'frappe-ui'
 import { ref } from 'vue'
@@ -36,6 +37,13 @@ interface ConfirmCardResult {
 	message?: string
 }
 
+// A card the bank refused at setup. The codes only pick Central's wording.
+interface SetupDecline {
+	payment_method: string
+	setup_error_code: string
+	setup_decline_code?: string
+}
+
 interface MountOptions {
 	team: string
 	publishableKey: string | null | undefined
@@ -51,7 +59,10 @@ export function useAddStripeCard({
 		method: 'POST',
 		immediate: false,
 	})
-	const confirm = useCall<ConfirmCardResult, Record<string, unknown>>({
+	const confirm = useCall<
+		ConfirmCardResult,
+		{ payment_method?: string } | SetupDecline
+	>({
 		url: method(API.confirmCard),
 		method: 'POST',
 		immediate: false,
@@ -63,6 +74,26 @@ export function useAddStripeCard({
 	let stripe: Stripe | null = null
 	let card: StripeCardElement | null = null
 	let orderPromise: Promise<CardSetupOrder | null> | null = null
+
+	// A form mistake keeps Stripe's own field text. A bank refusal is explained by
+	// Central, in words it can translate, with the next step to take.
+	async function explainSetupError(
+		setupError: StripeError,
+		paymentMethod: string | undefined,
+	): Promise<string> {
+		const stripeText = setupError.message ?? 'Could not add card'
+		if (setupError.type !== 'card_error' || !paymentMethod) return stripeText
+		// A failed lookup must not hide the refusal, so it falls back to Stripe's text.
+		const explained = await confirm
+			.submit({
+				payment_method: paymentMethod,
+				setup_error_code: setupError.code ?? setupError.type,
+				setup_decline_code: setupError.decline_code,
+			})
+			.then(() => !confirm.error && confirm.data?.message)
+			.catch(() => '')
+		return explained || stripeText
+	}
 
 	// Load Stripe.js and mount the card Element straight away. The SetupIntent (a
 	// server→Stripe round-trip) is kicked off in parallel and awaited only at
@@ -120,7 +151,10 @@ export function useAddStripeCard({
 					type: 'card',
 					card,
 				})
-			if (pmError) throw pmError
+			if (pmError) {
+				error.value = await explainSetupError(pmError, order.payment_method)
+				return
+			}
 
 			const { error: setupError } = await stripe.confirmCardSetup(
 				order.client_secret,
@@ -128,7 +162,10 @@ export function useAddStripeCard({
 					payment_method: paymentMethod.id,
 				},
 			)
-			if (setupError) throw setupError
+			if (setupError) {
+				error.value = await explainSetupError(setupError, order.payment_method)
+				return
+			}
 
 			await confirm.submit({ payment_method: order.payment_method })
 			if (confirm.error) throw confirm.error

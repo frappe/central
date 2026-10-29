@@ -54,6 +54,20 @@ class TestCardFailureMessage(IntegrationTestCase):
 		self.assertTrue(message.startswith("Your card has expired."))
 
 
+class TestCardSetupDeclineMessage(IntegrationTestCase):
+	def test_a_generic_bank_decline_names_the_bank_and_the_next_step(self):
+		message = decline.setup_decline_message("card_declined", "generic_decline")
+		self.assertEqual(
+			message,
+			"Your bank declined the payment. Try another card, or add credit to your account instead.",
+		)
+
+	def test_a_code_the_browser_made_up_gets_the_general_reason(self):
+		message = decline.setup_decline_message("<b>made up</b>", "signature_invalid")
+		self.assertTrue(message.startswith("We couldn't complete this payment."))
+		self.assertNotIn("made up", message)
+
+
 class TestTheOffer(IntegrationTestCase):
 	def setUp(self):
 		from central.billing.tests.test_razorpay_adapter import make_razorpay_gateway

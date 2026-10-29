@@ -202,6 +202,27 @@ class TestCustomerReads(CustomerDataBase):
 		self.assertNotIn("api_key", rows[0])
 		frappe.db.delete("Payment Method", {"team": TEAM})
 
+	def test_a_card_refused_at_setup_is_explained_and_not_recorded(self):
+		from central.billing.tests.test_stripe_adapter import make_stripe_gateway
+
+		method = frappe.get_doc(
+			{
+				"doctype": "Payment Method",
+				"team": TEAM,
+				"gateway": make_stripe_gateway().name,
+				"method_type": "Card",
+				"status": "Pending Validation",
+			}
+		).insert(ignore_permissions=True)
+		out = dashboard.confirm_card(
+			method.name, setup_error_code="card_declined", setup_decline_code="insufficient_funds"
+		)
+		self.assertEqual(out["status"], "Pending Validation")
+		self.assertTrue(out["message"].startswith("There wasn't enough balance."))
+		# The gateway's webhook records the failure, not the browser.
+		self.assertFalse(frappe.db.get_value("Payment Method", method.name, "failure_code"))
+		frappe.db.delete("Payment Method", {"team": TEAM})
+
 	def test_credit_ledger_and_balance(self):
 		credits.purchase(TEAM, 500, "INR")
 		self.assertEqual(dashboard.get_credit_balance(TEAM)["balance"], 500)

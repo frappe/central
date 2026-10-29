@@ -121,15 +121,29 @@ def initiate_card_setup(team: str | None = None, gateway: str | None = None) -> 
 
 
 @frappe.whitelist(methods=["POST"])
-def confirm_card(payment_method: str | None = None) -> dict:
+def confirm_card(
+	payment_method: str | None = None,
+	setup_error_code: str | None = None,
+	setup_decline_code: str | None = None,
+) -> dict:
 	"""Confirm a card the gateway SDK saved — runs the micro-charge validation.
 
 	The card, its label, expiry and any India mandate are read from the gateway by the
-	setup this method was opened with, never taken from the request."""
+	setup this method was opened with, never taken from the request.
+
+	`setup_error_code` says the gateway's card form refused the card at setup. Nothing
+	is confirmed or recorded then: the gateway's webhook records the real failure, and
+	the codes only pick the words the customer reads."""
 	from central.billing.payments import payments
 
 	team = frappe.db.get_value("Payment Method", payment_method, "team")
 	_require_manage(team)
+	if setup_error_code:
+		return {
+			"payment_method": payment_method,
+			"status": frappe.db.get_value("Payment Method", payment_method, "status"),
+			"message": decline.setup_decline_message(setup_error_code, setup_decline_code),
+		}
 	return payments.confirm_payment_method(payment_method).get_confirmation()
 
 
