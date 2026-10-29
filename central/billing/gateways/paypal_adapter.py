@@ -47,7 +47,8 @@ PAYPAL_WEBHOOK_EVENTS = [
 	"CUSTOMER.DISPUTE.RESOLVED",
 ]
 
-_DISPUTE_OUTCOMES = {"RESOLVED_BUYER_FAVOUR": "lost", "RESOLVED_SELLER_FAVOUR": "won"}
+# ACCEPTED means the merchant accepted the claim and PayPal refunded the buyer.
+_DISPUTE_OUTCOMES = {"RESOLVED_BUYER_FAVOUR": "lost", "ACCEPTED": "lost", "RESOLVED_SELLER_FAVOUR": "won"}
 
 
 class PayPalAdapter(GatewayAdapter):

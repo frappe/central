@@ -268,6 +268,18 @@ class TestPayPalAdapter(GatewayAdapterContract, IntegrationTestCase):
 			(dispute["payment_id"], dispute["status"], dispute["amount"]), ("cap_1", "lost", 25.0)
 		)
 
+	def test_a_dispute_the_merchant_accepted_is_lost(self):
+		payload = {
+			"event_type": "CUSTOMER.DISPUTE.RESOLVED",
+			"resource": {
+				"dispute_id": "PP-D-2",
+				"disputed_transactions": [{"seller_transaction_id": "cap_2"}],
+				"dispute_amount": {"value": "25.00"},
+				"dispute_outcome": {"outcome_code": "ACCEPTED"},
+			},
+		}
+		self.assertEqual(PayPalAdapter.dispute_from_event(payload)["status"], "lost")
+
 	def test_a_saved_paypal_account_is_read_from_the_vault(self):
 		adapter = self.make_adapter()
 		token = {"id": "vault_tok", "payment_source": {"paypal": {"email_address": "buyer@example.com"}}}
