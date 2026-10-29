@@ -10,17 +10,21 @@ from central.api.servers import update_server_firewall
 from central.errors import AtlasRejected
 from central.infrastructure.doctype.virtual_machine.firewall import (
 	ANYWHERE,
-	SYSTEM_INBOUND_RULES,
+	LEGACY_DEVICE_RULE,
+	PRIVATE_NETWORK,
 	get_atlas_firewall,
 	get_customer_rules,
 	get_observed_firewall,
+	is_blocking_devices,
 )
 from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
+from central.integrations.servers import remove_legacy_device_rule
 from central.server_models import FirewallChange, FirewallRule
 from central.tests.test_iam import ensure_user
 from central.tests.utils import ensure_atlas_instance
 
 SSH = {"protocol": "tcp", "ports": "22", "cidrs": ANYWHERE}
+PRIVATE = {"protocol": "any", "ports": "", "cidrs": [PRIVATE_NETWORK]}
 ALL_OUT = {"protocol": "any", "ports": "", "cidrs": ANYWHERE}
 
 
@@ -46,13 +50,13 @@ class TestFirewallRules(TestCase):
 		with self.assertRaises(ValidationError):
 			FirewallChange.model_validate({"enabled": True, "inbound": [SSH, SSH]})
 
-	def test_central_rules_come_first_and_survive_a_disabled_firewall(self) -> None:
+	def test_atlas_gets_exactly_the_customer_rules(self) -> None:
 		remote = get_atlas_firewall(
 			FirewallChange.model_validate({"enabled": False, "inbound": [SSH], "outbound": [ALL_OUT]})
 		)
 
 		self.assertFalse(remote["enabled"])
-		self.assertEqual(remote["inbound"], [*SYSTEM_INBOUND_RULES, SSH])
+		self.assertEqual(remote["inbound"], [SSH])
 		self.assertEqual(remote["outbound"], [ALL_OUT])
 
 	def test_a_change_sends_only_its_own_fields(self) -> None:
@@ -63,18 +67,31 @@ class TestFirewallRules(TestCase):
 		with self.assertRaises(ValidationError):
 			FirewallChange.model_validate({})
 
-	def test_the_customer_sees_only_their_own_rules(self) -> None:
-		remote = {"inbound": [*SYSTEM_INBOUND_RULES, {"protocol": "tcp", "ports": "22", "cidrs": ANYWHERE}]}
+	def test_the_customer_sees_every_rule_including_the_defaults(self) -> None:
+		remote = {
+			"inbound": [PRIVATE, LEGACY_DEVICE_RULE, {"protocol": "tcp", "ports": "22", "cidrs": ANYWHERE}]
+		}
 
-		self.assertEqual(get_customer_rules(remote), {"inbound": [SSH], "outbound": []})
+		self.assertEqual(
+			get_customer_rules(remote), {"inbound": [PRIVATE, LEGACY_DEVICE_RULE, SSH], "outbound": []}
+		)
 
 	def test_the_report_fills_the_stored_fields(self) -> None:
-		network = {"firewall": {"enabled": True, "inbound": [*SYSTEM_INBOUND_RULES, SSH]}}
+		network = {"firewall": {"enabled": True, "inbound": [PRIVATE, SSH]}}
 
 		state = get_observed_firewall(network)
 
 		self.assertEqual(state["is_firewall_enabled"], True)
-		self.assertEqual(json.loads(state["firewall_rules"]), {"inbound": [SSH], "outbound": []})
+		self.assertEqual(json.loads(state["firewall_rules"]), {"inbound": [PRIVATE, SSH], "outbound": []})
+
+	def test_an_enabled_firewall_blocks_devices_until_a_rule_names_them(self) -> None:
+		device = {"protocol": "tcp", "ports": "22", "cidrs": ["fdac:1:2:0:2a::1/128"]}
+		ping = {"protocol": "icmp", "ports": "", "cidrs": ANYWHERE}
+
+		self.assertTrue(is_blocking_devices(True, [PRIVATE, ping]))
+		self.assertFalse(is_blocking_devices(True, [PRIVATE, device]))
+		self.assertFalse(is_blocking_devices(True, [SSH]))
+		self.assertFalse(is_blocking_devices(False, []))
 
 
 class TestServerFirewall(IntegrationTestCase):
@@ -124,7 +141,7 @@ class TestServerFirewall(IntegrationTestCase):
 			.name
 		)
 
-	def test_the_firewall_is_sent_with_central_rules_then_read_back(self):
+	def test_the_firewall_is_sent_as_is_then_read_back(self):
 		frappe.set_user(self.developer)
 		firewall = {"enabled": True, "inbound": [SSH], "outbound": [ALL_OUT]}
 
@@ -133,7 +150,7 @@ class TestServerFirewall(IntegrationTestCase):
 		self.assertEqual(result, {self.first: None})
 		self.client.update_network.assert_called_once_with(
 			"vm-first",
-			{"firewall": {"enabled": True, "inbound": [*SYSTEM_INBOUND_RULES, SSH], "outbound": [ALL_OUT]}},
+			{"firewall": {"enabled": True, "inbound": [SSH], "outbound": [ALL_OUT]}},
 		)
 		self.observe.assert_called_once()
 
@@ -174,4 +191,22 @@ class TestServerFirewall(IntegrationTestCase):
 		result = update_server_firewall(self.team, [self.first], firewall={"enabled": True})
 
 		self.assertEqual(result, {self.first: "This server is terminated."})
+		self.client.update_network.assert_not_called()
+
+	def test_the_legacy_device_rule_is_removed_and_the_rest_kept(self):
+		rules = {"inbound": [PRIVATE, LEGACY_DEVICE_RULE, SSH], "outbound": [ALL_OUT]}
+		frappe.db.set_value("Virtual Machine", self.first, "firewall_rules", json.dumps(rules))
+
+		remove_legacy_device_rule(frappe.get_doc("Virtual Machine", self.first))
+
+		self.client.update_network.assert_called_once_with(
+			"vm-first", {"firewall": {"inbound": [PRIVATE, SSH]}}
+		)
+
+	def test_a_server_without_the_legacy_rule_is_left_alone(self):
+		rules = {"inbound": [SSH], "outbound": [ALL_OUT]}
+		frappe.db.set_value("Virtual Machine", self.first, "firewall_rules", json.dumps(rules))
+
+		remove_legacy_device_rule(frappe.get_doc("Virtual Machine", self.first))
+
 		self.client.update_network.assert_not_called()

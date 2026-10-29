@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { Switch } from 'frappe-ui'
 import { computed } from 'vue'
+import { useRouter } from 'vue-router'
 import CopyableValue from '@/components/common/CopyableValue.vue'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { useServerWireGuardAccess } from '@/composables/useServerWireGuardAccess'
+import { settingsOpen } from '@/composables/useSettings'
 import { successToast } from '@/lib/feedback'
 import type { WireGuardServer } from '@/types/wireguard'
 
@@ -18,6 +20,14 @@ const { canManageNetwork } = useCapabilities()
 const { setWireGuardAccess, isSavingAccess } = useServerWireGuardAccess(
 	computed(() => props.server.resource_id),
 )
+
+const router = useRouter()
+
+// The link sits inside the settings dialog, which stays open across a route change.
+function openFirewall(): void {
+	settingsOpen.value = false
+	router.push(`/servers/${props.server.resource_id}/networking`)
+}
 
 async function toggle(enabled: boolean): Promise<void> {
 	if (!(await setWireGuardAccess(enabled))) return
@@ -44,6 +54,23 @@ async function toggle(enabled: boolean): Promise<void> {
 				"
 				:label="server.has_wireguard_access ? 'SSH command' : 'Private address'"
 			/>
+			<p
+				v-if="server.has_wireguard_access && server.is_blocked_by_firewall"
+				class="flex items-center gap-1.5 text-p-sm text-ink-amber-7"
+			>
+				<span
+					class="lucide-triangle-alert size-3.5 shrink-0"
+					aria-hidden="true"
+				/>
+				The firewall blocks every device.
+				<button
+					type="button"
+					class="text-p-sm-medium underline"
+					@click="openFirewall"
+				>
+					Open the firewall
+				</button>
+			</p>
 		</div>
 
 		<Switch

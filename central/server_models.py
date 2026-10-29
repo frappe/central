@@ -147,8 +147,7 @@ class FirewallRule(BaseModel):
 
 
 class FirewallChange(BaseModel):
-	"""A change to a customer's firewall. A field left as None keeps its value on Atlas. Central
-	adds its own rules when it sends the inbound list."""
+	"""A change to a customer's firewall. A field left as None keeps its value on Atlas."""
 
 	model_config = ConfigDict(extra="forbid", strict=True)
 

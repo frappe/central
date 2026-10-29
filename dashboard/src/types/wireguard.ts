@@ -28,6 +28,8 @@ export interface WireGuardServer {
 	region: string
 	ipv6_address: string | null
 	has_wireguard_access: 0 | 1
+	/** The firewall is on and no rule lets a WireGuard VPN device in. */
+	is_blocked_by_firewall: boolean
 }
 
 /** A device shown in its settings dialog. The private key is set only right after the browser made it. */

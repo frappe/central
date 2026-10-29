@@ -6,7 +6,7 @@ A WireGuard Device lets one customer device reach the team's servers in one regi
 
 ## Access
 
-`server:wireguard` can list and add the team's devices and remove their own. Only an operator can change a device after it is added. `team:manage_members` can also remove a device of any member. The Owner, Admin, and Developer system roles have `server:wireguard`. A team has at most 100 devices. A server accepts device traffic only after a member with `server:network` turns on WireGuard access for it.
+`server:wireguard` can list and add the team's devices and remove their own. Only an operator can change a device after it is added. `team:manage_members` can also remove a device of any member. The Owner, Admin, and Developer system roles have `server:wireguard`. A team has at most 100 devices. A server accepts device traffic only after a member with `server:network` turns on WireGuard access for it, and, when its firewall is on, adds a rule that allows the device's address.
 
 ## Creation
 

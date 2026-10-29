@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import time
 from datetime import datetime
 from itertools import pairwise
@@ -250,6 +251,42 @@ def update_firewall(server: VirtualMachine, change: FirewallChange) -> None:
 	"""Change the firewall on Atlas, then read the result back."""
 	get_client(server).update_network(server.atlas_vm_id, {"firewall": firewall.get_atlas_firewall(change)})
 	observe_server(server)
+
+
+def remove_legacy_device_rules() -> None:
+	"""Remove the old rule that let every WireGuard VPN device pass the firewall, from every live
+	server. Safe to run again: a server without the rule is left as it is."""
+	servers = frappe.get_all(
+		"Virtual Machine",
+		filters={"status": ("!=", "Terminated"), "atlas_vm_id": ("is", "set")},
+		pluck="name",
+	)
+	for name in servers:
+		try:
+			remove_legacy_device_rule(frappe.get_doc("Virtual Machine", name))
+			frappe.db.commit()
+		except Exception:
+			# One unreachable region must not stop the rest. The log names the server to retry.
+			frappe.db.rollback()
+			frappe.log_error(
+				title=f"WireGuard VPN firewall rule not removed: {name}",
+				reference_doctype="Virtual Machine",
+				reference_name=name,
+			)
+
+
+def remove_legacy_device_rule(server: VirtualMachine) -> None:
+	"""Read the server's firewall from Atlas, then send it again without the old device rule."""
+	if observe_server(server) == "Terminated":
+		return
+
+	rules = json.loads(frappe.db.get_value("Virtual Machine", server.name, "firewall_rules") or "{}")
+	inbound = rules.get("inbound") or []
+	if firewall.LEGACY_DEVICE_RULE not in inbound:
+		return
+
+	kept = [rule for rule in inbound if rule != firewall.LEGACY_DEVICE_RULE]
+	update_firewall(server, FirewallChange.model_validate({"inbound": kept}))
 
 
 def set_public_ip(server: VirtualMachine, version: int, is_attached: bool) -> bool:

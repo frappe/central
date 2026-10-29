@@ -47,13 +47,17 @@ The firewall controls who can connect to the server and where the server can con
 
 <Screenshot name="servers/firewall" alt="The Firewall section of erp-production. Incoming rules allow SSH from 198.51.100.0/24 and ports 80 and 443 from anyone. The outgoing rule allows all traffic." />
 
-When the firewall is off, every port is open to the internet. When you turn it on, it uses your saved rules. If there are no saved rules, it allows SSH, HTTP, and HTTPS in, and all connections out.
+When the firewall is off, every port is open to the internet. When you turn it on, it uses your saved rules. A new server starts with these incoming rules, and all connections out:
 
-These connections are always allowed, so the web console keeps working:
+| Rule | Why |
+| --- | --- |
+| **All traffic** from **Private network** (`fdaa::/16`) | The web console, the regional proxy that serves your sites, and your other servers in the region connect through it. |
+| **Ping** from anyone | IPv6 needs ICMP to find neighbours and the path size. |
+| **SSH**, **HTTP**, and **HTTPS** from anyone | Sign in, and serve sites directly. |
 
-- Your private network
-- Your VPN devices
-- Ping
+You can remove any of these rules. If you remove **Private network**, the web console and your sites stop working through Frappe Cloud. The console warns you before it applies such a change.
+
+The firewall also filters [WireGuard VPN devices](/servers/wireguard). To let a device in, add a rule and select the device by its name in **Specific addresses**.
 
 ### Change the rules
 
@@ -61,7 +65,7 @@ These connections are always allowed, so the web console keeps working:
 2. Under **Incoming** or **Outgoing**, click **Add incoming rule** or **Add outgoing rule**.
 3. Select a **Service**, such as **SSH**, **HTTPS**, or **Custom TCP**.
 4. For a custom service, type a **Port**. Use one port, a range such as `8000-8005`, or leave it empty for all ports.
-5. In **Allowed from** or **Allowed to**, select **Anyone on the internet**, or select **Specific addresses**. Then type an IP address or range, such as `198.51.100.0/24`, and press Enter.
+5. In **Allowed from** or **Allowed to**, select **Anyone on the internet**, or select **Specific addresses**. Then type an IP address or range, such as `198.51.100.0/24`, or select a WireGuard VPN device. Press Enter.
 6. Click **Apply changes**. Confirm the change.
 
 Click **Undo** to revert the last edit, or **Discard** to drop all unsaved edits. To delete a rule, click its delete icon.
@@ -72,9 +76,9 @@ Click the options button next to the firewall switch:
 
 | Option | Effect |
 | --- | --- |
-| **Use a preset** > **Web server** | Allow SSH, HTTP, and HTTPS from the internet, and all outgoing connections. |
-| **Use a preset** > **SSH only** | Allow SSH from the internet, and all outgoing connections. |
-| **Use a preset** > **Private only** | Block public incoming connections. Allow all outgoing connections. |
+| **Use a preset** > **Web server** | Allow the private network, ping, and SSH, HTTP, and HTTPS from the internet, and all outgoing connections. |
+| **Use a preset** > **SSH only** | Allow the private network, ping, and SSH from the internet, and all outgoing connections. |
+| **Use a preset** > **Private only** | Allow the private network and ping. Block other incoming connections. Allow all outgoing connections. |
 | **Copy to other servers** | Apply the same rules to other servers of your team. |
 
 A preset replaces the rules in the editor. Click **Apply changes** to save them.

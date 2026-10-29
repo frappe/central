@@ -7,7 +7,7 @@ from frappe.tests import IntegrationTestCase
 
 from central.api.servers import open_console, server_overview
 from central.errors import AtlasConnectionError, AtlasRejected, AtlasResourceGone
-from central.infrastructure.doctype.virtual_machine.firewall import SYSTEM_INBOUND_RULES
+from central.infrastructure.doctype.virtual_machine.firewall import DEFAULT_INBOUND_RULES
 from central.integrations.resource_actions import _create_payload
 from central.resource_actions import validate_guest_input
 from central.server_models import MAXIMUM_USER_DATA_BYTES, CreateServerInput
@@ -53,7 +53,9 @@ class TestCreationNetworkPayload(TestCase):
 	def test_every_new_server_gets_the_web_server_rules(self, _idle) -> None:
 		firewall = _create_payload(creation_request())["firewall"]
 
-		self.assertEqual(firewall["inbound"][: len(SYSTEM_INBOUND_RULES)], SYSTEM_INBOUND_RULES)
+		defaults = [rule.model_dump() for rule in DEFAULT_INBOUND_RULES]
+		self.assertEqual(firewall["inbound"][: len(defaults)], defaults)
+		self.assertNotIn({"protocol": "any", "ports": "", "cidrs": ["fdac::/16"]}, firewall["inbound"])
 		self.assertEqual(
 			[rule["ports"] for rule in firewall["inbound"] if rule["protocol"] == "tcp"],
 			["22", "80", "443"],

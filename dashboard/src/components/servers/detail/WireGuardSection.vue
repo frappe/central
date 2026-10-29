@@ -10,6 +10,8 @@ import { successToast } from '@/lib/feedback'
 interface Props {
 	resourceId: string
 	hasAccess: boolean
+	/** The firewall is on and no rule lets a WireGuard VPN device in. */
+	isBlockedByFirewall: boolean
 	/** The viewer holds server:network on this server. */
 	canManageNetwork: boolean
 }
@@ -44,6 +46,24 @@ async function toggle(enabled: boolean): Promise<void> {
 				Manage devices
 			</button>
 		</template>
+
+		<p
+			v-if="hasAccess && isBlockedByFirewall"
+			class="flex items-start gap-1.5 text-p-sm text-ink-amber-7"
+		>
+			<span
+				class="lucide-triangle-alert mt-0.5 size-4 shrink-0"
+				aria-hidden="true"
+			/>
+			<span>
+				The firewall blocks every WireGuard VPN device.
+				<RouterLink
+					:to="`/servers/${resourceId}/networking`"
+					class="text-p-sm-medium underline"
+					>Allow devices in the firewall</RouterLink
+				>
+			</span>
+		</p>
 
 		<template #actions>
 			<Switch
