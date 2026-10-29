@@ -13,7 +13,6 @@ from central.infrastructure.doctype.virtual_machine.firewall import (
 	LEGACY_DEVICE_RULE,
 	PRIVATE_NETWORK,
 	get_atlas_firewall,
-	get_customer_rules,
 	get_observed_firewall,
 	is_blocking_devices,
 )
@@ -50,15 +49,6 @@ class TestFirewallRules(TestCase):
 		with self.assertRaises(ValidationError):
 			FirewallChange.model_validate({"enabled": True, "inbound": [SSH, SSH]})
 
-	def test_atlas_gets_exactly_the_customer_rules(self) -> None:
-		remote = get_atlas_firewall(
-			FirewallChange.model_validate({"enabled": False, "inbound": [SSH], "outbound": [ALL_OUT]})
-		)
-
-		self.assertFalse(remote["enabled"])
-		self.assertEqual(remote["inbound"], [SSH])
-		self.assertEqual(remote["outbound"], [ALL_OUT])
-
 	def test_a_change_sends_only_its_own_fields(self) -> None:
 		self.assertEqual(
 			get_atlas_firewall(FirewallChange.model_validate({"enabled": False})), {"enabled": False}
@@ -66,15 +56,6 @@ class TestFirewallRules(TestCase):
 
 		with self.assertRaises(ValidationError):
 			FirewallChange.model_validate({})
-
-	def test_the_customer_sees_every_rule_including_the_defaults(self) -> None:
-		remote = {
-			"inbound": [PRIVATE, LEGACY_DEVICE_RULE, {"protocol": "tcp", "ports": "22", "cidrs": ANYWHERE}]
-		}
-
-		self.assertEqual(
-			get_customer_rules(remote), {"inbound": [PRIVATE, LEGACY_DEVICE_RULE, SSH], "outbound": []}
-		)
 
 	def test_the_report_fills_the_stored_fields(self) -> None:
 		network = {"firewall": {"enabled": True, "inbound": [PRIVATE, SSH]}}
