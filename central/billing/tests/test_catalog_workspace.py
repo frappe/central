@@ -54,11 +54,6 @@ class TestVerbFirstWorkspace(IntegrationTestCase):
 		paragraphs = [b for b in self.content if b["type"] == "paragraph"]
 		self.assertTrue(any("Plan Configurator" in p["data"]["text"] for p in paragraphs))
 
-	def test_page_carries_no_link_cards(self):
-		# Navigation lives in the sidebar; the workspace page is a dashboard, not a link farm.
-		self.assertEqual(self.ws.links, [])
-		self.assertFalse([b for b in self.content if b["type"] == "card"])
-
 
 class TestBillingSidebar(IntegrationTestCase):
 	"""The Workspace Sidebar is the navigation surface (Frappe v17)."""

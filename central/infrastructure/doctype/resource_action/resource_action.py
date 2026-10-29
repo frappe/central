@@ -6,9 +6,11 @@ from frappe.model.document import Document
 
 from central.errors import AtlasConnectionError, AtlasRequestUncertain, build_envelope, to_error_response
 from central.iam import can
+from central.infrastructure.doctype.blocked_domain.blocked_domain import BlockedDomain, normalize_domain
 from central.infrastructure.doctype.pilot_credential.pilot_credential import PilotCredential
 from central.infrastructure.doctype.user_mail_account.user_mail_account import UserMailAccount
 from central.server_models import ActionStatus, ResizeConfiguration, ServerCreation, SiteCreation
+from central.services.doctype.ai_trial_key.ai_trial_key import AITrialKey
 
 PENDING_STATES = ("Queued", "Dispatching", "Sent", "In Progress", "Uncertain")
 PENDING_LABEL = {
@@ -87,9 +89,9 @@ class ResourceAction(Document):
 		completed_at: DF.Datetime | None
 		correlation_id: DF.Data
 		credential: DF.Link | None
+		diagnostic: DF.Code | None
 		dispatched_at: DF.Datetime | None
 		error_code: DF.Data | None
-		error_log: DF.Link | None
 		error_message: DF.SmallText | None
 		last_checked_at: DF.Datetime | None
 		is_free_trial: DF.Check
@@ -181,7 +183,19 @@ class ResourceAction(Document):
 		if self.status == "Queued":
 			self.enqueue()
 		if self.is_trial_creation:
-			self.capture_trial_event("trial_requested", region=self.region)
+			first_touch = frappe.db.get_value(
+				"Team",
+				self.team,
+				["utm_source", "utm_medium", "utm_campaign", "referrer", "landing_product"],
+				as_dict=True,
+			)
+			self.capture_trial_event("trial_requested", region=self.region, **first_touch)
+
+	def validate(self) -> None:
+		if self.subdomain and (self.has_value_changed("subdomain") or self.has_value_changed("region")):
+			self.subdomain = normalize_domain(self.subdomain)
+			zone = frappe.get_cached_value("Region", self.region, "proxy_domain")
+			BlockedDomain.validate_assignment(f"{self.subdomain}.{zone}")
 
 	def enqueue(self) -> None:
 		from central.integrations.resource_actions import get_job_timeout_seconds
@@ -245,8 +259,9 @@ class ResourceAction(Document):
 				# A creation the region never accepted leaves no machine to use its credential.
 				if not self.remote_vm_id:
 					PilotCredential.revoke_by_id(self.credential)
-				# No server will ever link the mailbox, so termination would not remove it.
+				# No server will ever link the mailbox or trial key, so termination would not release them.
 				UserMailAccount.queue_removal(resource_action=self.name, server=("is", "not set"))
+				AITrialKey.queue_revoke(resource_action=self.name, server=("is", "not set"))
 			self.queue_attention_notification(envelope)
 			if self.is_trial_creation:
 				self.capture_trial_event("trial_failed", status=status, error_code=self.error_code)
@@ -320,8 +335,8 @@ class ResourceAction(Document):
 		self.db_set(self._diagnostic_values(detail, title), notify=True)
 
 	def _diagnostic_values(self, detail: str, title: str) -> dict:
-		error_log = self.log_error(title=title, message=detail)
-		return {"error_log": error_log.name}
+		self.log_error(title=title, message=detail)
+		return {"diagnostic": f"{title}\n\n{detail}"}
 
 	@classmethod
 	def confirm_observed_status(cls, resource_id: str, status: str) -> None:
@@ -356,6 +371,31 @@ class ResourceAction(Document):
 			return
 
 		self.enqueue()
+
+	@frappe.whitelist(methods=["GET"])
+	def get_setup_timeline(self) -> list[dict]:
+		"""Each step a new site takes, with when it happened, so an operator sees where a signup
+		stopped. The page a customer waits on reads the same records."""
+		self.check_permission("read")
+		site = frappe._dict()
+		if self.server:
+			fields = ["creation", "ready_at", "claimed_at", "renamed_at", "rename_error"]
+			site = frappe.db.get_value("Site", {"server": self.server}, fields, as_dict=True) or site
+		failed = self.status in ("Failed", "Timed Out")
+
+		return [
+			{"label": _("Requested"), "at": self.creation},
+			{"label": _("Sent to region"), "at": self.dispatched_at},
+			{
+				"label": _("Server created"),
+				"at": self.completed_at if self.status == "Succeeded" else None,
+				"error": (self.error_message or self.status) if failed else None,
+			},
+			{"label": _("Site addressable"), "at": site.creation},
+			{"label": _("Site answered"), "at": site.ready_at},
+			{"label": _("Signed in"), "at": site.claimed_at},
+			{"label": _("Name applied"), "at": site.renamed_at, "error": site.rename_error},
+		]
 
 	@frappe.whitelist(methods=["POST"])
 	def retry(self) -> ActionStatus:
@@ -430,3 +470,4 @@ def on_doctype_update() -> None:
 	frappe.db.add_index("Resource Action", ["team", "requested_by", "product", "creation"])
 	frappe.db.add_index("Resource Action", ["resource_id", "status"])
 	frappe.db.add_index("Resource Action", ["status", "modified"])
+	frappe.db.add_index("Resource Action", ["server", "action"])

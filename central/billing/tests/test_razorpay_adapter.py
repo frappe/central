@@ -57,21 +57,24 @@ class TestRazorpayAdapter(GatewayAdapterContract, IntegrationTestCase):
 			yield
 
 	def make_charge_inputs(self):
-		invoice = frappe._dict(amount=40.0, currency="INR", customer_id="cust_x", name="INV-1")
+		# The order prepare_charge created and Central stored before charging.
+		invoice = frappe._dict(
+			amount=40.0, currency="INR", customer_id="cust_x", name="INV-1", order_id="order_x"
+		)
 		method = frappe._dict(gateway_method_id="token_x")
 		return invoice, method, "PA-R-001"
 
 	@contextmanager
 	def charge_succeeds(self, txn_id="txn_ok"):
 		with self._client() as c:
-			c.order.create.return_value = {"id": "order_x"}
+			c.order.payments.return_value = {"items": []}
 			c.payment.createRecurring.return_value = {"id": txn_id, "status": "captured"}
 			yield
 
 	@contextmanager
 	def charge_declines(self, code="card_declined"):
 		with self._client() as c:
-			c.order.create.return_value = {"id": "order_x"}
+			c.order.payments.return_value = {"items": []}
 			err = razorpay.errors.BadRequestError("Payment was declined")
 			err.code = code
 			c.payment.createRecurring.side_effect = err
@@ -80,12 +83,73 @@ class TestRazorpayAdapter(GatewayAdapterContract, IntegrationTestCase):
 	@contextmanager
 	def charge_times_out(self):
 		with self._client() as c:
-			c.order.create.side_effect = requests.exceptions.ConnectionError("connection timed out")
+			c.order.payments.side_effect = requests.exceptions.ConnectionError("connection timed out")
 			yield
 
-	def captured_idempotency_key(self):
-		# Razorpay's idempotency carrier is the order receipt.
-		return self._mock.order.create.call_args.args[0]["receipt"]
+	def test_timeout_raises_gateway_timeout_and_forwards_idempotency_key(self):
+		"""Razorpay has no charge idempotency key. Retry safety is the stored order: every
+		charge reads that order's payments before it makes one."""
+		from central.billing.gateways.base import GatewayTimeout
+
+		adapter = self.make_adapter()
+		invoice, method, key = self.make_charge_inputs()
+		with self.charge_times_out():
+			with self.assertRaises(GatewayTimeout):
+				adapter.charge(invoice, method, key)
+		self._mock.order.payments.assert_called_once_with("order_x")
+		self._mock.payment.createRecurring.assert_not_called()
+
+	def test_a_retry_returns_the_payment_the_order_already_has(self):
+		adapter = self.make_adapter()
+		invoice, method, key = self.make_charge_inputs()
+		with self._client() as c:
+			c.order.payments.return_value = {"items": [{"id": "pay_first", "status": "captured"}]}
+			result = adapter.charge(invoice, method, key)
+		self.assertEqual(result.gateway_transaction_id, "pay_first")
+		c.payment.createRecurring.assert_not_called()
+
+	def test_a_retry_waits_for_a_payment_still_in_progress(self):
+		from central.billing.gateways.base import GatewayTimeout
+
+		adapter = self.make_adapter()
+		invoice, method, key = self.make_charge_inputs()
+		with self._client() as c:
+			c.order.payments.return_value = {"items": [{"id": "pay_first", "status": "created"}]}
+			with self.assertRaises(GatewayTimeout):
+				adapter.charge(invoice, method, key)
+		c.payment.createRecurring.assert_not_called()
+
+	def test_prepare_charge_sends_a_receipt_razorpay_accepts(self):
+		adapter = self.make_adapter()
+		invoice, _method, _key = self.make_charge_inputs()
+		with self._client() as c:
+			c.order.create.return_value = {"id": "order_new"}
+			self.assertEqual(adapter.prepare_charge(invoice, "x" * 64), "order_new")
+		self.assertLessEqual(len(c.order.create.call_args.args[0]["receipt"]), 40)
+
+	def test_a_refund_is_sent_with_an_idempotency_header(self):
+		adapter = self.make_adapter()
+		payment_attempt, amount, reason = self.make_refund_inputs()
+		with self.refund_succeeds():
+			adapter.refund(payment_attempt, amount, reason, "REF-0001")
+		header = self._mock.payment.refund.call_args.kwargs["headers"]["X-Refund-Idempotency"]
+		self.assertEqual(len(header), 40)
+
+	def test_the_sdk_sends_the_refund_idempotency_header(self):
+		"""Drives the real SDK client, so a change to its refund signature fails here."""
+		adapter = self.make_adapter()
+		payment_attempt, amount, reason = self.make_refund_inputs()
+		client = razorpay.Client(auth=("rzp_test_key", "rzp_test_secret"))
+		response = MagicMock(status_code=200)
+		response.json.return_value = {"id": "rfnd_sdk", "status": "processed"}
+		with (
+			patch.object(RazorpayAdapter, "_client", return_value=client),
+			patch.object(client.session, "post", return_value=response) as post,
+		):
+			result = adapter.refund(payment_attempt, amount, reason, "REF-0002")
+
+		self.assertEqual(result.gateway_refund_id, "rfnd_sdk")
+		self.assertEqual(len(post.call_args.kwargs["headers"]["X-Refund-Idempotency"]), 40)
 
 	def make_refund_inputs(self):
 		payment_attempt = frappe._dict(gateway_transaction_id="pay_charged")
@@ -100,10 +164,12 @@ class TestRazorpayAdapter(GatewayAdapterContract, IntegrationTestCase):
 	def parse_event_inputs(self):
 		payload = {
 			"event": "payment.captured",
+			"created_at": 1700000000,
 			"payload": {"payment": {"entity": {"id": "pay_x", "order_id": "order_x"}}},
 		}
+		# The header id is outside the signature, so the dedupe id comes from the body.
 		headers = {"X-Razorpay-Event-Id": "evt_r1"}
-		return payload, headers, "evt_r1", "payment.captured"
+		return payload, headers, "payment.captured:1700000000:payment=pay_x", "payment.captured"
 
 	def setup_inputs(self):
 		return "Team-1", {"customer_id": "cust_x", "max_amount": 5000}
@@ -156,6 +222,38 @@ class TestRazorpayAdapter(GatewayAdapterContract, IntegrationTestCase):
 		# Razorpay wants events as {name: 1}, not a list — see register_webhook.
 		self.assertIsInstance(sent["events"], dict)
 		self.assertTrue(all(v == 1 for v in sent["events"].values()))
+
+	def test_get_webhook_reads_events_given_as_a_map(self):
+		adapter = self.make_adapter()
+		with self._client() as c:
+			c.webhook.fetch.return_value = {
+				"url": "https://site/x",
+				"active": True,
+				"events": {"payment.captured": True, "payment.failed": False},
+			}
+			webhook = adapter.get_webhook("wh_1")
+		self.assertEqual(
+			webhook, {"url": "https://site/x", "is_active": True, "events": ["payment.captured"]}
+		)
+
+	def test_a_refused_webhook_read_is_not_found(self):
+		import razorpay
+
+		from central.billing.gateways.base import WebhookNotFound
+
+		adapter = self.make_adapter()
+		with self._client() as c:
+			c.webhook.fetch.side_effect = razorpay.errors.BadRequestError("The id provided does not exist")
+			with self.assertRaises(WebhookNotFound):
+				adapter.get_webhook("wh_old")
+
+	def test_update_webhook_events_sends_the_url_and_event_map(self):
+		adapter = self.make_adapter()
+		with self._client() as c:
+			adapter.update_webhook_events("wh_1", "https://site/x", ["payment.captured"])
+		c.webhook.edit.assert_called_once_with(
+			"wh_1", None, {"url": "https://site/x", "events": {"payment.captured": 1}}
+		)
 
 	def test_create_customer_returns_id(self):
 		adapter = self.make_adapter()

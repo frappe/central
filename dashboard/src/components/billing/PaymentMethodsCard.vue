@@ -317,7 +317,7 @@ const onTopUp = () => {
 
 		<p
 			v-if="!loading"
-			class="mt-auto flex items-start gap-1.5 pt-4 text-p-sm text-ink-gray-5"
+			class="mt-auto flex items-start gap-1.5 pt-4 text-p-sm text-ink-gray-6"
 		>
 			<span
 				class="lucide-arrow-down-wide-narrow mt-0.5 size-3.5 shrink-0 text-ink-gray-4"

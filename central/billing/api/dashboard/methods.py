@@ -6,6 +6,7 @@ setup, and fallback-order management. Gateway secrets are never returned.
 
 import frappe
 from frappe import _
+from frappe.rate_limiter import rate_limit
 
 from central.billing import authz
 from central.billing.api.dashboard._shared import (
@@ -17,6 +18,7 @@ from central.billing.api.dashboard._shared import (
 	_resolve_team,
 	_team_currency,
 )
+from central.billing.payments import decline
 
 
 @frappe.whitelist()
@@ -104,6 +106,7 @@ def get_payment_method_options(team: str | None = None) -> dict:
 
 
 @frappe.whitelist(methods=["POST"])
+@rate_limit(limit=20, seconds=60 * 60, user_based=True)
 def initiate_card_setup(team: str | None = None, gateway: str | None = None) -> dict:
 	"""Begin adding a card (gateway SetupIntent → client_secret). Real PAN is
 	collected client-side by the gateway SDK (PCI), never by our server."""
@@ -120,36 +123,29 @@ def initiate_card_setup(team: str | None = None, gateway: str | None = None) -> 
 
 
 @frappe.whitelist(methods=["POST"])
-def confirm_card(
-	payment_method: str | None = None,
-	gateway_method_id: str | None = None,
-	display_label: str | None = None,
-	expiry_month: int | None = None,
-	expiry_year: int | None = None,
-	gateway_mandate_id: str | None = None,
-	card_network: str | None = None,
-) -> dict:
-	"""Confirm a card the gateway SDK tokenised — runs the micro-charge validation.
+@rate_limit(limit=20, seconds=60 * 60, user_based=True)
+def confirm_card(payment_method: str | None = None) -> dict:
+	"""Confirm a card the customer saved in the console card dialog.
 
-	`gateway_mandate_id` is present where the currency required a mandate at setup
-	(India); later off-session debits quote it."""
+	1. The caller must hold billing manage on the method's team.
+	2. The card, its label, expiry, mandate and any refusal are read from the gateway
+	   by the setup this method was opened with, never taken from the request.
+	3. A saved card runs the micro-charge validation and answers its confirmation.
+	4. A card the bank refused at setup answers why and what to do next, and the
+	   method stays Pending Validation. The setup webhook records the failure."""
 	from central.billing.payments import payments
 
 	team = frappe.db.get_value("Payment Method", payment_method, "team")
 	_require_manage(team)
-	method = payments.confirm_payment_method(
-		payment_method,
-		gateway_method_id=gateway_method_id,
-		display_label=display_label,
-		expiry_month=expiry_month,
-		expiry_year=expiry_year,
-		gateway_mandate_id=gateway_mandate_id,
-		card_network=card_network,
-	)
-	return {"payment_method": method.name, "status": method.status}
+	try:
+		return payments.confirm_payment_method(payment_method).get_confirmation()
+	except payments.CardDeclinedAtSetup as declined:
+		frappe.clear_last_message()  # the reason goes back in the answer, not as a second alert
+		return {"payment_method": payment_method, "status": "Pending Validation", "message": str(declined)}
 
 
 @frappe.whitelist(methods=["POST"])
+@rate_limit(limit=20, seconds=60 * 60, user_based=True)
 def setup_payment_method_order(
 	team: str | None = None,
 	gateway: str | None = None,
@@ -201,8 +197,6 @@ def _fallback_reason(team: str, entry: dict | None, after_decline: bool) -> str 
 	field feeds the gateway comparison report, so a wrong value there is a wrong
 	answer to which rail authorises better.
 	"""
-	from central.billing.payments import decline
-
 	instrument_reason = entry["fallback_reason"] if entry else None
 	if not after_decline:
 		return instrument_reason
@@ -212,15 +206,15 @@ def _fallback_reason(team: str, entry: dict | None, after_decline: bool) -> str 
 
 
 @frappe.whitelist(methods=["POST"])
+@rate_limit(limit=20, seconds=60 * 60, user_based=True)
 def confirm_payment_method_order(
 	payment_method: str | None = None,
 	razorpay_payment_id: str | None = None,
 	razorpay_order_id: str | None = None,
 	razorpay_signature: str | None = None,
-	razorpay_token_id: str | None = None,
 ) -> dict:
-	"""Confirm the Razorpay Checkout callback — verifies the signature, activates
-	the mandate. Real gateway verification, not a stub."""
+	"""Confirm the Razorpay Checkout callback — verifies the signature, reads the token
+	from the payment Razorpay holds for this method's order, and activates the mandate."""
 	team = frappe.db.get_value("Payment Method", payment_method, "team")
 	_require_manage(team)
 	from central.billing.payments import mandates
@@ -231,10 +225,9 @@ def confirm_payment_method_order(
 			"razorpay_payment_id": razorpay_payment_id,
 			"razorpay_order_id": razorpay_order_id,
 			"razorpay_signature": razorpay_signature,
-			"razorpay_token_id": razorpay_token_id,
 		},
 	)
-	return {"payment_method": method.name, "status": method.status}
+	return method.get_confirmation()
 
 
 @frappe.whitelist(methods=["POST"])

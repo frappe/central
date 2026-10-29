@@ -406,14 +406,24 @@ export interface BillingProfile {
 	payment_method_required?: boolean
 	/** What the team's first payment method adds, while the owner has not had it. */
 	welcome_credit?: WelcomeCredit | null
+	/** The team's open free trial, which its first payment method converts. */
+	open_trial?: TeamOpenTrial | null
+}
+
+export interface TeamOpenTrial {
+	state: 'Active' | 'Ended'
+	/** Null when the caller cannot view the server. */
+	server: string | null
+	/** Null for a plain Frappe Cloud trial. */
+	product: string | null
+	product_title: string
+	plan: TrialPlan | null
 }
 
 export interface WelcomeCredit {
 	amount: number
 	currency: Currency
 	validity_days: number
-	/** The last day a trial team can still earn it; null for a team without a trial. */
-	ends_on?: string | null
 }
 
 export type GstStatus =
@@ -637,8 +647,23 @@ export interface ServerTrial {
 	ends_on: string
 	days_left: number
 	deletes_on: string | null
-	/** The welcome credit a card adds before the trial ends, or null. */
-	credit?: WelcomeCredit | null
-	/** Idle minutes before the trial server sleeps. */
-	sleeps_after_minutes?: number
+	/** The plan the site converts to, or null when Central has no creation record. */
+	plan: TrialPlan | null
+}
+
+export interface TrialPlan {
+	name: string
+	title: string
+	monthly_rate: number
+	currency: Currency | null
+}
+
+/** A paid plan a trial site may move to when it converts. */
+export interface TrialPlanChoice {
+	name: string
+	title: string
+	/** For example "0.5 vCPU · 2 GB RAM · 40 GB SSD". */
+	specs: string
+	monthly_rate: number
+	currency: Currency
 }

@@ -2,6 +2,7 @@
 import { Button } from 'frappe-ui'
 import { computed } from 'vue'
 import { useAppMenu } from '@/composables/useAppMenu'
+import { useMyInvitations } from '@/composables/useMyInvitations'
 import { useSession } from '@/composables/useSession'
 import {
 	openSettings,
@@ -15,6 +16,7 @@ import {
 const { activeTeamLabel } = useSession()
 const { availableTabs } = useSettingsTabs()
 const { currentUser, logoutAndRedirect } = useAppMenu()
+const { count: invitationCount } = useMyInvitations()
 
 const available = computed(() =>
 	availableTabs.value.map((tab) => ({
@@ -26,7 +28,9 @@ const available = computed(() =>
 				? currentUser.value
 				: tab.value === 'team'
 					? activeTeamLabel.value
-					: '',
+					: tab.value === 'invitations' && invitationCount.value
+						? `${invitationCount.value} pending`
+						: '',
 	})),
 )
 

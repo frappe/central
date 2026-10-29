@@ -1,7 +1,9 @@
 import { type ColorScheme, useColorScheme } from 'frappe-ui'
 import { computed, h } from 'vue'
 import { useAuth } from '@/composables/useAuth'
+import { useMyInvitations } from '@/composables/useMyInvitations'
 import { openSettings } from '@/composables/useSettings'
+import { useSupport } from '@/composables/useSupport'
 
 const themeOptions: { label: string; icon: string; value: ColorScheme }[] = [
 	{ label: 'System', icon: 'lucide-monitor', value: 'system' },
@@ -12,6 +14,11 @@ const themeOptions: { label: string; icon: string; value: ColorScheme }[] = [
 export const useAppMenu = () => {
 	const { currentUser, logout } = useAuth()
 	const { colorScheme, setColorScheme } = useColorScheme()
+	const { getContactSupportOption, feedbackOption } = useSupport()
+	const { count: invitationCount } = useMyInvitations()
+	const helpMenuItems = [getContactSupportOption(), feedbackOption].filter(
+		(option) => option !== null,
+	)
 
 	const logoutAndRedirect = async () => {
 		await logout()
@@ -39,20 +46,32 @@ export const useAppMenu = () => {
 			icon: 'lucide-user',
 			onClick: () => openSettings('profile'),
 		},
+		// Shown only while an invitation waits, so a signed-in invitee finds it without the email.
+		...(invitationCount.value
+			? [
+					{
+						label: `Invitations (${invitationCount.value})`,
+						icon: 'lucide-mail',
+						onClick: () => openSettings('invitations'),
+					},
+				]
+			: []),
 		{
 			label: 'Theme',
 			icon: 'lucide-sun-moon',
 			submenu: themeMenuItems.value,
-			slots: {
-				suffix: () =>
-					h('span', { class: 'flex size-4 items-center justify-center' }, [
-						h('span', {
-							class: 'lucide-chevron-right size-3.5 text-ink-gray-6',
-							'aria-hidden': 'true',
-						}),
-					]),
-			},
+			slots: { suffix: submenuChevron },
 		},
+		...(helpMenuItems.length
+			? [
+					{
+						label: 'Help',
+						icon: 'lucide-circle-help',
+						submenu: helpMenuItems,
+						slots: { suffix: submenuChevron },
+					},
+				]
+			: []),
 		{ label: 'Sign out', icon: 'lucide-log-out', onClick: logoutAndRedirect },
 	])
 
@@ -62,4 +81,13 @@ export const useAppMenu = () => {
 		currentUser,
 		logoutAndRedirect,
 	}
+}
+
+function submenuChevron() {
+	return h('span', { class: 'flex size-4 items-center justify-center' }, [
+		h('span', {
+			class: 'lucide-chevron-right size-3.5 text-ink-gray-6',
+			'aria-hidden': 'true',
+		}),
+	])
 }

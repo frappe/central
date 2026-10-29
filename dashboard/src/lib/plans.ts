@@ -21,7 +21,7 @@ export function planSize(plan: Plan): string {
 	return `${vcpus} vCPU · ${memory} RAM`
 }
 
-/** The rest of a plan's bundle, e.g. "10 GB disk · 100 GB transfer". */
+/** The rest of a plan's bundle, e.g. "10 GB disk". */
 export function planAllowances(
 	plan: Plan,
 	options?: { disk?: boolean; diskGigabytes?: number },
@@ -56,6 +56,13 @@ export function planPrice(plan: Plan): string {
 	return `${money(plan.rate, plan.currency, { trimTrailingZeros: true })} / ${cycle}`
 }
 
+/** A transfer allowance in its largest whole unit, e.g. 1024 → "1 TB". */
+export function formatTransfer(gigabytes: number): string {
+	return gigabytes >= 1024
+		? `${formatGb(gigabytes / 1024)} TB`
+		: `${formatGb(gigabytes)} GB`
+}
+
 export function planQuantity(plan: Plan, resourceType: string): number {
 	return (
 		plan.includes.find((inc) => inc.resource_type === resourceType)?.quantity ??
@@ -65,5 +72,4 @@ export function planQuantity(plan: Plan, resourceType: string): number {
 
 const ALLOWANCE_NOUNS: Record<string, string> = {
 	Disk: 'disk',
-	Transfer: 'transfer',
 }

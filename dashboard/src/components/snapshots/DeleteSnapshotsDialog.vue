@@ -35,6 +35,7 @@ const title = computed(() =>
 		size="md"
 		:loading="loading"
 		:error="error"
+		:confirm-text="target?.length === 1 ? target[0].title : 'delete'"
 		@confirm="emit('confirm', $event)"
 	>
 		<div v-if="target" class="space-y-2">

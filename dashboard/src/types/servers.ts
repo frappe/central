@@ -49,6 +49,12 @@ export interface ServerOverview {
 		has_ipv4_internet: 0 | 1
 		/** Null until Central first reads the firewall from the region. */
 		firewall_rules: FirewallRules | null
+		/** Set only for a System Manager. */
+		operator_links: {
+			desk_url: string
+			/** Null until the region has an Atlas URL and the server an Atlas ID. */
+			atlas_url: string | null
+		} | null
 		region_details: {
 			display_name: string | null
 			provider: string | null

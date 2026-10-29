@@ -26,7 +26,7 @@
   "is_restorable",
   "column_break_region",
   "error_detail",
-  "error_log"
+  "diagnostic"
  ],
  "fields": [
   {
@@ -184,11 +184,11 @@
    "description": "A safe summary of the current failure."
   },
   {
-   "description": "The Error Log for the latest snapshot failure.",
-   "fieldname": "error_log",
-   "fieldtype": "Link",
-   "label": "Error Log",
-   "options": "Error Log",
+   "description": "The traceback of the latest snapshot failure. Operators only.",
+   "fieldname": "diagnostic",
+   "fieldtype": "Code",
+   "label": "Diagnostic",
+   "permlevel": 1,
    "read_only": 1
   }
  ],
@@ -198,7 +198,7 @@
    "link_fieldname": "vm_snapshot"
   }
  ],
- "modified": "2026-10-11 10:00:00.000000",
+ "modified": "2026-10-25 20:00:00.000000",
  "modified_by": "Administrator",
  "module": "Infrastructure",
  "name": "VM Snapshot",
@@ -222,6 +222,11 @@
    "read": 1,
    "report": 1,
    "role": "Central User"
+  },
+  {
+   "permlevel": 1,
+   "read": 1,
+   "role": "System Manager"
   }
  ],
  "row_format": "Dynamic",

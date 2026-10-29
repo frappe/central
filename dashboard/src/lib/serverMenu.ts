@@ -1,6 +1,7 @@
 import type { DropdownOption, DropdownOptions } from 'frappe-ui'
 import type { VirtualMachineRow } from '@/composables/useServers'
-import type { ServerActions } from '@/lib/capabilities'
+import { useSupport } from '@/composables/useSupport'
+import { ACCESS_LOCKED_REASON, type ServerActions } from '@/lib/capabilities'
 import { copyToClipboard } from '@/lib/clipboard'
 import { reportError, successToast } from '@/lib/feedback'
 import { canChange, canStart, canStop, isSettingUp } from '@/lib/status'
@@ -14,13 +15,14 @@ export type ServerMenuVerb =
 	| 'restart'
 	| 'resize'
 	| 'snapshot'
-	| 'console'
+	| 'ssh-console'
+	| 'tty-console'
 	| 'rename'
 	| 'terminate'
 
 export interface ServerMenuOptions {
-	/** This machine carries a site. Open goes to that site, not the bench. */
-	opensSite?: boolean
+	/** The address of the site this machine carries. Open goes to that site, not the bench. */
+	site?: string | null
 	/** The caller shows Overview and Open itself, and its Settings tab offers Resize
 	 *  and Terminate, as on the server page. */
 	isOnServerPage?: boolean
@@ -37,9 +39,15 @@ export function getServerMenuGroups(
 	run: Run,
 	options: ServerMenuOptions = {},
 ): DropdownOption[][] {
-	const entry = (verb: ServerMenuVerb, label: string, icon: string) => ({
+	const entry = (
+		verb: ServerMenuVerb,
+		label: string,
+		icon: string,
+		description?: string,
+	) => ({
 		label,
 		icon,
+		description,
 		onClick: () => run(verb),
 	})
 
@@ -61,6 +69,7 @@ export function getServerMenuGroups(
 				icon: 'lucide-copy',
 				onClick: () => copyServerId(server),
 			},
+			...getSupportItems(server, options.site),
 		],
 		isChangeable && allowed.terminate && !options.isOnServerPage
 			? [{ ...entry('terminate', 'Terminate', 'lucide-trash-2'), theme: 'red' }]
@@ -82,18 +91,33 @@ export function getServerMenu(
 	)
 }
 
+/** A submenu's items as flat options named "Parent: Child", for a list that cannot nest. */
+export function withSubmenuItems(option: DropdownOption): DropdownOption[] {
+	if (!option.submenu) return [option]
+
+	return option.submenu
+		.filter((item): item is DropdownOption => !('group' in item))
+		.map((item) => ({
+			...item,
+			label: `${option.label}: ${item.label}`,
+			disabled: option.disabled || item.disabled,
+		}))
+}
+
 type Entry = (
 	verb: ServerMenuVerb,
 	label: string,
 	icon: string,
+	description?: string,
 ) => DropdownOption
 
 function getViewItems(
 	server: VirtualMachineRow,
 	allowed: ServerActions,
 	entry: Entry,
-	{ opensSite, isOnServerPage }: ServerMenuOptions,
+	{ site, isOnServerPage }: ServerMenuOptions,
 ): DropdownOption[] {
+	const opensSite = !!site
 	const isRunning = server.status === 'Running'
 	const isBusy = !!server.pending_action
 	const canOpen = allowed.open && !isBusy && !isSettingUp(server.status)
@@ -101,30 +125,75 @@ function getViewItems(
 
 	if (!isOnServerPage) items.push(entry('overview', 'Overview', 'lucide-gauge'))
 
+	// Without a site, Open signs in to Pilot, which a free trial locks.
 	if (canOpen && !isOnServerPage)
-		items.push({
-			...entry(
-				'open',
-				opensSite ? 'Visit site' : 'Open server',
-				opensSite ? 'lucide-globe' : 'lucide-server',
-			),
-			disabled: !isRunning || !(opensSite || server.gateway_url),
-		})
+		items.push(
+			...lockable(allowed, !opensSite, {
+				...entry(
+					'open',
+					opensSite ? 'Visit site' : 'Open server',
+					opensSite ? 'lucide-globe' : 'lucide-server',
+				),
+				disabled: !isRunning || !(opensSite || server.gateway_url),
+			}),
+		)
 
 	// On a site server the primary open visits the site, so the bench gets its own entry.
 	if (canOpen && opensSite)
-		items.push({
-			...entry('pilot', 'Open server', 'lucide-server'),
-			disabled: !isRunning || !server.gateway_url,
-		})
+		items.push(
+			...lockable(allowed, true, {
+				...entry('pilot', 'Open server', 'lucide-server'),
+				disabled: !isRunning || !server.gateway_url,
+			}),
+		)
 
 	if (allowed.console && !isBusy)
-		items.push({
-			...entry('console', 'Web console', 'lucide-terminal'),
-			disabled: !isRunning,
-		})
+		items.push(
+			...lockable(allowed, true, {
+				label: 'Web console',
+				icon: 'lucide-square-terminal',
+				disabled: !isRunning,
+				submenu: [
+					entry(
+						'ssh-console',
+						'SSH session',
+						'lucide-terminal',
+						'Shell as root. No password needed.',
+					),
+					entry(
+						'tty-console',
+						'Serial console (TTY)',
+						'lucide-monitor-cog',
+						'Boot output and login prompt. Needs a user password.',
+					),
+				],
+			}),
+		)
 
 	return items
+}
+
+/** An action a free trial locks stays in the menu, off, with the reason. */
+function lockable(
+	allowed: ServerActions,
+	isServerAccess: boolean,
+	option: DropdownOption,
+): DropdownOption[] {
+	if (!isServerAccess || !allowed.isAccessLocked) return [option]
+
+	// A locked row has nothing to open, so it drops its submenu and the chevron with it.
+	const { submenu: _submenu, ...row } = option as DropdownOption & {
+		submenu?: unknown
+	}
+
+	// Every menu row takes a description, but the option union does not say so.
+	return [
+		{
+			...row,
+			disabled: true,
+			description: ACCESS_LOCKED_REASON,
+		} as DropdownOption,
+	]
 }
 
 function getPowerItems(
@@ -156,9 +225,29 @@ function getChangeItems(
 		items.push(entry('resize', 'Resize', 'lucide-sliders-horizontal'))
 
 	if (allowed.snapshot)
-		items.push(entry('snapshot', 'Take snapshot', 'lucide-camera'))
+		items.push(
+			...lockable(
+				allowed,
+				true,
+				entry('snapshot', 'Take snapshot', 'lucide-camera'),
+			),
+		)
 
 	return items
+}
+
+function getSupportItems(
+	server: VirtualMachineRow,
+	site: string | null | undefined,
+): DropdownOption[] {
+	const reference = server.title
+		? `${server.title} (${server.resource_id})`
+		: server.resource_id
+	const option = useSupport().getContactSupportOption({
+		Server: reference,
+		Site: site,
+	})
+	return option ? [option] : []
 }
 
 // One line support can paste into a ticket to find the VM in Central and in Atlas.

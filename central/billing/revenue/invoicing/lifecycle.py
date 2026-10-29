@@ -13,8 +13,10 @@ import frappe
 from frappe import _
 
 from central.billing import settings
+from central.billing.platform.records import save_billing_record
 from central.billing.revenue import credits
 from central.billing.revenue.invoicing.generate import generate_team_invoice
+from central.billing.revenue.tax import is_internal_team
 from central.billing.states import transition
 
 
@@ -45,10 +47,14 @@ def open_and_collect(invoice: str, collect: bool = True) -> dict:
 		return {"invoice": invoice, "claimed": False}
 
 	doc = frappe.get_doc("Invoice", invoice)
+	# The run changes only status and amounts; the links were checked when it was drafted.
+	doc.flags.ignore_links = True
 
 	# A billable draft waits until it can become a correct statutory invoice. Whatever
 	# clears the hold releases it; the monthly run picks up anything a release missed.
 	if doc.invoice_type == "Billable":
+		if is_internal_team(doc.team):
+			return _waive_internal(doc)
 		hold = _hold_reason(doc)
 		if hold:
 			_mark_held(doc, hold)
@@ -62,7 +68,7 @@ def open_and_collect(invoice: str, collect: bool = True) -> dict:
 		doc.credit_applied = 0
 		doc.expected_collection = 0
 		transition(doc, "Open", reason="cost report opened", actor="scheduler")
-		doc.save(ignore_permissions=True)
+		save_billing_record(doc)
 		return {"invoice": invoice, "claimed": True, "cost_report": True, "expected_collection": 0}
 
 	# Leg 1 — credits first (only against the collectable amount, gross less TDS).
@@ -96,7 +102,7 @@ def open_and_collect(invoice: str, collect: bool = True) -> dict:
 	if doc.expected_collection <= 0:
 		doc.paid_at = frappe.utils.now_datetime()
 		transition(doc, "Paid", reason="credits covered in full", actor="scheduler", amount=applied)
-		doc.save(ignore_permissions=True)
+		save_billing_record(doc)
 		from central.billing.ingester.erpnext_sync import enqueue_invoice_sync
 
 		enqueue_invoice_sync(doc.name)
@@ -109,7 +115,7 @@ def open_and_collect(invoice: str, collect: bool = True) -> dict:
 		}
 
 	transition(doc, "Open", reason="drafted invoice opened for collection", actor="scheduler")
-	doc.save(ignore_permissions=True)
+	save_billing_record(doc)
 
 	# Leg 2 — charge the remainder, walking the team's methods primary→backup
 	# (#28). Credits-only teams (no active method) fall through to dunning.
@@ -127,6 +133,16 @@ def open_and_collect(invoice: str, collect: bool = True) -> dict:
 		"status": "Open",
 		"charge": charge,
 	}
+
+
+def _waive_internal(doc) -> dict:
+	"""Waive an internal team's invoice in full: rated for the record, never collected."""
+	_retax(doc)
+	doc.credit_applied = 0
+	doc.expected_collection = 0
+	transition(doc, "Waived", reason="internal team", actor="scheduler", amount=doc.total)
+	save_billing_record(doc)
+	return {"invoice": doc.name, "claimed": True, "status": "Waived", "waived": doc.total}
 
 
 # Hold Reason values, and the keys callers of `open_and_collect` see.
@@ -257,8 +273,11 @@ def cancel_invoice(invoice: str, reason: str | None = None) -> str:
 	Issued line items are never mutated — a correction cancels the whole invoice
 	and reissues a fresh one. What the invoice drew from the wallet goes back to it.
 	A paid invoice is cancelled with a refund instead.
+
+	The invoice row is locked before the checks, the same row a charge locks to claim
+	its attempt, so a charge cannot start between the check and the cancel.
 	"""
-	doc = frappe.get_doc("Invoice", invoice)
+	doc = frappe.get_doc("Invoice", invoice, for_update=True)
 	if doc.status == "Paid":
 		frappe.throw(
 			_("A paid invoice cannot be cancelled on its own — cancel and refund it instead."),
@@ -274,11 +293,57 @@ def cancel_invoice(invoice: str, reason: str | None = None) -> str:
 			frappe.ValidationError,
 		)
 	transition(doc, "Cancelled", reason=reason, actor=frappe.session.user)
-	doc.save(ignore_permissions=True)
+	save_billing_record(doc)
 	give_back_wallet(doc)
 	if reason:
 		doc.add_comment("Info", f"Cancelled: {reason}")
 	return invoice
+
+
+def waive_for_internal_team(team: str) -> list[str]:
+	"""Waive a team's unpaid invoices once it is internal, and give back what they drew from the wallet.
+
+	An invoice with a card or UPI payment under way or taken is left for an operator."""
+	waived = []
+	for name in frappe.get_all(
+		"Invoice", filters={"team": team, "status": ["in", ["Open", "Overdue"]]}, pluck="name"
+	):
+		# Collectors claim a payment under this lock, so check for one only once it is held.
+		doc = frappe.get_doc("Invoice", name, for_update=True)
+		if doc.status not in ("Open", "Overdue") or frappe.db.exists(
+			"Payment Attempt", {"invoice": name, "status": ["in", ["Initiated", "Authorised", "Captured"]]}
+		):
+			continue
+		transition(doc, "Waived", reason="team marked internal", actor=frappe.session.user, amount=doc.total)
+		save_billing_record(doc)
+		give_back_wallet(doc)
+		waived.append(name)
+	return waived
+
+
+def settle_internal_teams() -> list[str]:
+	"""Waive every internal team's unpaid invoices, so no collection run reaches them."""
+	internal = frappe.get_all("Tax Profile", filters={"is_internal": 1}, pluck="team")
+	if not internal:
+		return []
+	teams = frappe.get_all(
+		"Invoice",
+		filters={"team": ["in", internal], "status": ["in", ["Open", "Overdue"]]},
+		pluck="team",
+		distinct=True,
+	)
+	return [name for team in teams for name in _waive_unless_wallet_drifted(team)]
+
+
+def _waive_unless_wallet_drifted(team: str) -> list[str]:
+	"""A wallet short of its ledger refuses the credit back; leave that team to an operator."""
+	frappe.db.savepoint("waive_internal_team")
+	try:
+		return waive_for_internal_team(team)
+	except credits.WalletDrift:
+		frappe.db.rollback(save_point="waive_internal_team")
+		frappe.log_error(title=f"Unpaid invoices of internal team {team} were not waived")
+		return []
 
 
 def give_back_wallet(doc) -> None:

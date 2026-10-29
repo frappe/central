@@ -23,7 +23,7 @@ Central reaches each regional service at `<service>.<region>.<wildcard domain>`,
 | `erp.in-mumbai.frappe.dev` | Site | `erp`, in `/v1/sites` |
 | `www.example.com` | Domain | `www.example.com`, in `/v1/domains` |
 
-Central refuses the regional zone itself, a name 2 or more labels below the zone, a wildcard, and the reserved site names `proxy`, `proxy-*`, `atlas`, and `cargo`. The server must belong to the team and the region of the record. The optional `site` link must belong to the team. A Pilot registration fills it from the Site on the server of the Pilot. The `record_server_has_site` patch clears this link before it removes a Site from a bench-only server. The route stays, because it targets the server. See [Trial sites](../site/SPEC.md#migration).
+Central refuses the regional zone itself, a name 2 or more labels below the zone, and a wildcard. New assignments also obey the scoped [blocked domains](../blocked_domain/SPEC.md), including custom domains. The server must belong to the team and the region of the record. The optional `site` link must belong to the team. A Pilot registration fills it from the Site on the server of the Pilot. The `record_server_has_site` patch clears this link before it removes a Site from a bench-only server. The route stays, because it targets the server. See [Trial sites](../site/SPEC.md#migration).
 
 ## Routed names
 
@@ -49,7 +49,7 @@ server Terminated --> remove_server_routes job --> remove() each route --> recor
 ```
 
 - `apply()` reads the current Virtual Machine `ipv6_address`, sends it, and stores it in `ipv6_address`. A success resets `attempts` to 0 and clears the previous failure.
-- A failed apply or removal stores a safe `failure_reason` and links the full traceback through Error Log.
+- A failed apply or removal stores a safe `failure_reason` and the full traceback in `diagnostic`, which only a System Manager reads.
 - The desk **Retry** button resets `attempts` and runs `apply()` again. It shows for a record that is not Active.
 - A PATCH and a DELETE are safe to repeat, so a retry never needs cleanup.
 - A delete fails when the proxy call fails. The record stays, so the route and the record cannot drift apart. Fix the cause and delete again.
@@ -67,7 +67,7 @@ A Pilot uses these endpoints from its `bench-domain-provider`. Each endpoint aut
 | `central.api.pilot.register_domain` | POST | `register` |
 | `central.api.pilot.deregister_domain` | POST | `deregister` |
 
-A site needs no DNS records. `register_domain` creates the route when no other server holds the name. For a routed name of the Pilot server, it returns success and creates nothing.
+A site needs no DNS records. `register_domain` creates the route when no other server holds the name. A Site on another server that is not Terminated also holds its chosen `subdomain` before its rename routes it, so Central refuses that label too. For a routed name of the Pilot server, it returns success and creates nothing.
 
 A custom domain needs verification before Central creates a record:
 

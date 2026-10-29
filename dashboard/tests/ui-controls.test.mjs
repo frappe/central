@@ -256,6 +256,7 @@ test('snapshot errors open with their full details and close without a mutation'
 			'@/components/common/RowActionsMenu.vue': {
 				default: stub('RowActionsMenu'),
 			},
+			'@/lib/capabilities': capabilities,
 			'@/lib/format': {
 				formatDate: (value) => value,
 				money: (value) => String(value),

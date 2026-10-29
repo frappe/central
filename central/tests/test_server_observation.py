@@ -188,6 +188,26 @@ class TestServerObservation(IntegrationTestCase):
 			after_commit=True,
 		)
 
+	def test_a_new_server_reaches_the_owning_team_before_its_first_report(self):
+		with patch("frappe.publish_realtime") as published:
+			server = frappe.get_doc(
+				{
+					"doctype": "Virtual Machine",
+					"resource_id": "server-" + frappe.generate_hash(length=8),
+					"team": self.team.name,
+					"region": self.server.region,
+					"status": "Provisioning",
+				}
+			).insert()
+
+		published.assert_any_call(
+			"server_state_changed",
+			{"resource_id": server.name},
+			doctype="Team",
+			docname=self.team.name,
+			after_commit=True,
+		)
+
 	def test_a_report_that_changes_nothing_wakes_no_console(self):
 		now = frappe.utils.now_datetime()
 		self.server.db_set({"last_reported_at": now})

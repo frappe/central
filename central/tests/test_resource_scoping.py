@@ -350,11 +350,11 @@ class TestScopedNotifications(ResourceScopingTestCase):
 
 		recipients = {}
 		for server in (self.mine, self.theirs):
-			with patch("central.notification.engine._send_member_email", return_value=True) as send:
+			with patch("central.notification.engine.frappe.enqueue") as enqueue:
 				dispatch(
 					self.team, "scope_test_event", reference_doctype="Virtual Machine", reference_name=server
 				)
-			recipients[server] = {call.args[0] for call in send.call_args_list}
+			recipients[server] = set(enqueue.call_args.kwargs["recipients"])
 
 		self.assertIn(self.scoped, recipients[self.mine])
 		self.assertNotIn(self.scoped, recipients[self.theirs])
@@ -401,7 +401,7 @@ class TestScopedNotifications(ResourceScopingTestCase):
 				"create_in_app": 0,
 			}
 		).insert(ignore_permissions=True)
-		with patch("central.notification.engine._send_member_email", return_value=True):
+		with patch("central.notification.engine.frappe.enqueue"):
 			return dispatch(
 				self.team,
 				"scope_title_event",

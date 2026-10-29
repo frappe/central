@@ -8,6 +8,14 @@ from frappe.rate_limiter import rate_limit
 def get_product(product: str) -> dict | None:
 	"""The branding the signup pages show for a product. None when it is unknown or disabled."""
 	# A guest reads this before signing in, and it holds nothing but public branding.
-	return frappe.db.get_value(
-		"Product", {"name": product, "enabled": 1}, ["title", "logo", "subtitle"], as_dict=True
+	branding = frappe.db.get_value(
+		"Product",
+		{"name": product, "enabled": 1},
+		["title", "logo", "subtitle", "setup_messages"],
+		as_dict=True,
 	)
+	if branding:
+		branding.setup_messages = [
+			line.strip() for line in (branding.setup_messages or "").splitlines() if line.strip()
+		]
+	return branding

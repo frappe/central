@@ -12,6 +12,7 @@ from central.api.teams import (
 	skip_onboarding,
 )
 from central.billing.payments.provisioning import grant_welcome_credits
+from central.billing.tests.utils import billing_settings
 from central.site_provisioning import create_trial_team
 
 
@@ -128,7 +129,8 @@ class TestTeamCreation(IntegrationTestCase):
 		with set_user(member):
 			accept_invitation(invitation)
 			personal_team = create_team("Personal Team")["name"]
-		grant_welcome_credits(personal_team)
+		with billing_settings(grant_welcome_credits=1):
+			grant_welcome_credits(personal_team)
 
 		self.assertTrue(
 			frappe.db.exists("Credit Ledger Entry", {"team": personal_team, "reference_type": "Promotion"})

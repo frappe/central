@@ -228,6 +228,15 @@ class TestEligiblePlans(IntegrationTestCase):
 		self.assertTrue(all(p["rate"] == 0 for p in plans))
 		self.assertEqual({CHEAP, MID, PRICEY} & {p["plan"] for p in plans}, set())
 
+	def test_menu_carries_the_included_transfer(self):
+		previous = frappe.db.get_single_value("Central Settings", "included_transfer_gb")
+		frappe.db.set_single_value("Central Settings", "included_transfer_gb", 2048)
+		self.addCleanup(frappe.db.set_single_value, "Central Settings", "included_transfer_gb", previous)
+
+		out = get_eligible_plans(cluster=CLUSTER, team=TEAM)
+
+		self.assertEqual(out["included_transfer_gb"], 2048)
+
 	def test_inactive_plan_is_excluded(self):
 		set_team_tier(TEAM, max_spend=6000)
 		make_plan(MID, rates=_rates(2000), is_active=0)
@@ -237,10 +246,8 @@ class TestEligiblePlans(IntegrationTestCase):
 
 class TestTrialPlanMenu(IntegrationTestCase):
 	"""A staging trial team's create-server menu: narrowed to the plans flagged
-	Available on Trial, design-your-own suppressed, and — crucially — NOT gated by the
-	trust-tier spend cap. The team here is deliberately untiered (0 headroom), the state
-	that hid every plan before the fix; a trial's spend is bounded by credits + the
-	server cap, not the tier."""
+	Available on Trial, design-your-own suppressed, and held to its trust-tier
+	spend cap like any other team. Only an internal team skips the cap."""
 
 	def setUp(self):
 		isolate_trial_plans(self)
@@ -248,7 +255,8 @@ class TestTrialPlanMenu(IntegrationTestCase):
 		frappe.db.set_value("Team", TEAM, "is_staging_trial", 1)
 		self.addCleanup(frappe.db.set_value, "Team", TEAM, "is_staging_trial", 0)
 		complete_billing_profile(TEAM, currency="INR")
-		clear_team_tier(TEAM)  # untiered → 0 headroom; trials must still see plans
+		set_team_tier(TEAM, max_spend=10000)
+		self.addCleanup(clear_team_tier, TEAM)
 		for name in frappe.get_all("Subscription", filters={"team": TEAM}, pluck="name"):
 			frappe.db.delete("Subscription Change", {"subscription": name})
 			frappe.delete_doc("Subscription", name, force=True)
@@ -257,13 +265,23 @@ class TestTrialPlanMenu(IntegrationTestCase):
 		make_plan(PRICEY, rates=_rates(5000))
 		frappe.set_user("Administrator")
 
-	def test_untiered_trial_sees_plans_despite_zero_headroom(self):
-		# No plan flagged Available on Trial → no narrowing.
+	def test_trial_is_held_to_its_tier_headroom(self):
+		set_team_tier(TEAM, max_spend=2500)
 		out = get_eligible_plans(cluster=CLUSTER, team=TEAM)
-		self.assertEqual(out["available"], 0)  # untiered: the tier cap would hide everything
-		plans = {p["plan"] for p in _flat(out)}
-		self.assertTrue({CHEAP, MID, PRICEY}.issubset(plans))  # trial bypasses the headroom filter
+		self.assertEqual({p["plan"] for p in _flat(out)} & {CHEAP, MID, PRICEY}, {CHEAP, MID})
 		self.assertEqual(out["profiles"], [])  # composed still suppressed for a trial
+		self.assertTrue(out["spend_limit_enforced"])
+
+	def test_internal_team_sees_plans_despite_zero_headroom(self):
+		clear_team_tier(TEAM)
+		frappe.get_doc(
+			{"doctype": "Tax Profile", "team": TEAM, "is_internal": 1, "internal_reason": "Our own team"}
+		).insert(ignore_permissions=True)
+		self.addCleanup(frappe.db.delete, "Tax Profile", {"team": TEAM})
+
+		out = get_eligible_plans(cluster=CLUSTER, team=TEAM)
+
+		self.assertTrue({CHEAP, MID, PRICEY}.issubset({p["plan"] for p in _flat(out)}))
 		self.assertFalse(out["spend_limit_enforced"])
 
 	def test_menu_limited_to_configured_trial_plans(self):
@@ -278,7 +296,7 @@ class TestTrialPlanMenu(IntegrationTestCase):
 		self.assertEqual(out["rate_card"], {})
 
 	def test_non_trial_untiered_team_still_sees_nothing(self):
-		# The bypass is trial-only: a normal untiered team is still headroom-gated to empty.
+		clear_team_tier(TEAM)
 		frappe.db.set_value("Team", TEAM, "is_staging_trial", 0)
 		out = get_eligible_plans(cluster=CLUSTER, team=TEAM)
 		self.assertEqual({CHEAP, MID, PRICEY} & {p["plan"] for p in _flat(out)}, set())

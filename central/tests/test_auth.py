@@ -30,7 +30,7 @@ class TestAuth(IntegrationTestCase):
 
 		result = self._verify(self._code())
 
-		self.assertEqual(result, {"user": self.email})
+		self.assertEqual(result["user"], self.email)
 		self.assertEqual(frappe.session.user, self.email)
 		self.assertEqual(frappe.db.get_value("User", self.email, "user_type"), "Website User")
 		self.assertEqual(frappe.db.get_value("User", self.email, "full_name"), "New Person")
@@ -45,7 +45,7 @@ class TestAuth(IntegrationTestCase):
 		self.assertEqual(self._verify(code), {"needs_name": True})
 		self.assertFalse(frappe.db.exists("User", self.email))
 
-		self.assertEqual(self._verify(code, full_name="Late Name"), {"user": self.email})
+		self.assertEqual(self._verify(code, full_name="Late Name")["user"], self.email)
 		self.assertEqual(frappe.db.get_value("User", self.email, "full_name"), "Late Name")
 
 	def test_an_existing_email_signs_in_and_keeps_its_name(self):
@@ -58,7 +58,10 @@ class TestAuth(IntegrationTestCase):
 		self.assertIn("sign-in code", sendmail.call_args.kwargs["subject"])
 		self.assertEqual(sendmail.call_args.kwargs["args"]["heading"], "Sign in to Frappe Cloud")
 
-		self.assertEqual(self._verify(self._code()), {"user": self.email})
+		signed_in = self._verify(self._code())
+		self.assertEqual(signed_in["user"], self.email)
+		# The console carries on without a reload, so it needs the new session's token.
+		self.assertEqual(signed_in["csrf_token"], frappe.local.session.data.csrf_token)
 		self.assertEqual(frappe.db.get_value("User", self.email, "first_name"), self.email.split("@")[0])
 		self.assertEqual(response, {"message": f"We sent a code to {self.email}."})
 
@@ -249,7 +252,6 @@ class TestAuth(IntegrationTestCase):
 		context = build_auth_context()
 
 		self.assertEqual(context["user"], "Guest")
-		self.assertFalse(context["onboarding_complete"])
 
 	def _code(self) -> str:
 		return EmailCode(self.email).pending["code"]

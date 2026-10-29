@@ -87,8 +87,10 @@ def snapshot_pricing(team: str | None = None, region: str | None = None) -> dict
 	server="resource_id",
 )
 def take_snapshot(team: str | None = None, resource_id: str | None = None, title: str | None = None) -> dict:
-	"""Take a paid snapshot of a server now. Gated on `server:snapshot`."""
+	"""Take a paid snapshot of a server now. Gated on `server:snapshot`. A free trial has none,
+	because a server made from it gives server access."""
 	server = _team_server(team, resource_id)
+	server.require_server_access()
 	snapshot = frappe.get_doc(
 		{
 			"doctype": "VM Snapshot",

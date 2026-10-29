@@ -40,7 +40,11 @@ def silent_charge_ceiling(gateway: str, currency: str) -> float | None:
 	"""
 	row = currency_row(gateway, currency)
 	configured = frappe.utils.flt(row.max_silent_charge) if row else 0.0
-	return configured or regulatory_ceiling(currency)
+	statutory = regulatory_ceiling(currency)
+	if not configured:
+		return statutory
+	# A stricter number is a business choice; a higher one is never allowed to win.
+	return min(configured, statutory) if statutory is not None else configured
 
 
 def requires_predebit_notice(gateway: str, currency: str) -> bool:
@@ -62,6 +66,15 @@ def self_notifies(gateway: str) -> bool:
 def is_regulated_currency(currency: str) -> bool:
 	"""Currencies whose silent-debit ceiling is set by regulation, not by us."""
 	return currency == "INR"
+
+
+def is_hosted_card_setup_allowed(adapter_key: str, currency: str) -> bool:
+	"""Whether a card saved on the gateway's hosted page can be charged off-session.
+
+	Hosted Stripe Checkout cannot register an India card mandate, so a card it saves
+	in a regulated currency is refused on every later debit.
+	"""
+	return not (adapter_key == "Stripe" and is_regulated_currency(currency))
 
 
 def regulatory_ceiling(currency: str) -> float | None:

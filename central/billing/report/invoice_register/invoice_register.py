@@ -14,6 +14,7 @@ from frappe import _
 from frappe.utils import flt, getdate
 
 from central.billing.report._currency import split_currency_columns
+from central.billing.report._paging import first_rows
 
 STATUS_ORDER = ["Draft", "Open", "Paid", "Overdue", "Waived", "Cancelled"]
 
@@ -27,7 +28,8 @@ def execute(filters: dict | None = None):
 	columns = split_currency_columns(
 		columns, rows, ["total", "credit_applied", "expected_collection", "amount_paid"]
 	)
-	return columns, rows, None, chart, summary
+	rows, message = first_rows(rows)
+	return columns, rows, message, chart, summary
 
 
 def get_columns() -> list[dict]:

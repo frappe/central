@@ -6,6 +6,8 @@ This document is the contract for a region that reports to Central. Atlas report
 
 Central accepts these reports at one endpoint. A sender never calls any other Central route.
 
+Outbound is the other direction and not this contract: the one Webhook Central sends, a team's tier to Grove, is Frappe's own `Webhook` doctype, kept by AI Settings (`central/services/doctype/ai_settings/SPEC.md`).
+
 ```text
 Atlas  ──┐
          ├── POST /api/method/central.api.state_delivery.receive

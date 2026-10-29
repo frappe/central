@@ -405,12 +405,13 @@ CHECKS = {
 }
 
 
-def audit(only: str | None = None) -> list[Violation]:
-	"""Run every registered check (or one) and return the violations, worst drift first."""
-	keys = [only] if only else list(CHECKS)
+def audit(only: str | None = None, checks: dict | None = None) -> list[Violation]:
+	"""Run every check in a registry (or one) and return the violations, worst drift first."""
+	checks = CHECKS if checks is None else checks
+	keys = [only] if only else list(checks)
 	found: list[Violation] = []
 	for key in keys:
-		_title, fn = CHECKS[key]
+		_title, fn = checks[key]
 		try:
 			found.extend(fn())
 		except Exception:
@@ -424,12 +425,14 @@ def audit(only: str | None = None) -> list[Violation]:
 
 
 def run_invariant_audit() -> dict:
-	"""Daily: assert the money invariants and speak up only when one is broken.
+	"""Daily: assert the money invariants and the readiness checks, and speak up only when one is broken.
 
 	Silence is the success case. A violation is logged with its team and amount so it
 	is actionable without opening a dashboard.
 	"""
-	violations = audit()
+	from central.billing.platform import readiness
+
+	violations = audit() + audit(checks=readiness.CHECKS)
 	if not violations:
 		frappe.logger("billing").info("invariant audit clean")
 		return {"violations": 0, "by_check": {}}

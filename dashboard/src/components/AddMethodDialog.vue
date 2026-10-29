@@ -252,14 +252,14 @@ watch(open, (isOpen) => {
 
 			<!-- Stripe card entry: Element renders inside the iframe Stripe hosts. -->
 			<div v-else-if="stripeMode" class="space-y-3">
-				<p v-if="stripeLoading" class="text-p-sm text-ink-gray-5">
+				<p v-if="stripeLoading" class="text-p-sm text-ink-gray-6">
 					Loading secure card field…
 				</p>
 				<div
 					ref="cardEl"
 					class="rounded-4 border border-outline-gray-2 px-3 py-3"
 				/>
-				<p class="text-p-sm text-ink-gray-5">
+				<p class="text-p-sm text-ink-gray-6">
 					<template v-if="stripeSubmitting">
 						Validating your card with a small temporary charge that's refunded
 						right away. This can take a few seconds, so please don't close this
@@ -278,7 +278,7 @@ watch(open, (isOpen) => {
 						class="lucide-lock size-3.5 shrink-0 text-ink-gray-5"
 						aria-hidden="true"
 					/>
-					<p class="text-p-sm text-ink-gray-5">
+					<p class="text-p-sm text-ink-gray-6">
 						Authorised on your bank's page. We never see your
 						{{ hasUpi ? 'card or UPI' : 'card' }}
 						details.
@@ -351,14 +351,14 @@ watch(open, (isOpen) => {
 						class="lucide-info size-3.5 shrink-0 text-ink-gray-4"
 						aria-hidden="true"
 					/>
-					<p class="text-p-sm text-ink-gray-5">
+					<p class="text-p-sm text-ink-gray-6">
 						Amex and Diners can't be auto-charged. Add credit instead.
 					</p>
 				</div>
 			</div>
 
 			<div v-else class="space-y-3">
-				<p class="text-p-sm text-ink-gray-5">Couldn't load payment options.</p>
+				<p class="text-p-sm text-ink-gray-6">Couldn't load payment options.</p>
 				<Button label="Retry" @click="options.reload()" />
 			</div>
 		</template>

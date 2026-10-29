@@ -11,9 +11,14 @@ from central.api.jwks import jwks_document
 from central.api.pilot import get_telemetry_base_url, region_id_of
 from central.infrastructure.doctype.pilot_credential.pilot_credential import PilotCredential
 from central.infrastructure.doctype.user_mail_account.user_mail_account import UserMailAccount
+from central.services.doctype.ai_trial_key.ai_trial_key import AITrialKey
 from central.sso import central_url, jwks_url, mint_bench_login, mint_datum_token, mint_site_login
 
 PILOT_TASK_TIMEOUT_SECONDS = 35
+# Metal caps each guest metadata value at 1 KiB. Not checked before a creation: unconfirmed
+# against Metal, and a value this size would already have failed the mail settings. The test on
+# the trial metadata holds pilot-common-site-config under it.
+METADATA_VALUE_BYTES = 1024
 # Minting a session can start a cold Frappe process on the machine. Central waits long
 # enough for that process rather than discarding a session the machine creates later.
 SITE_LOGIN_TIMEOUT_SECONDS = 120
@@ -40,7 +45,7 @@ def get_bootstrap_metadata(action) -> dict[str, str]:
 		"initial_jwks_cache": initial_jwks,
 	}
 
-	# Metal caps each metadata value at 1 KiB. Pilot merges pilot-common-config into
+	# Each value stays under METADATA_VALUE_BYTES. Pilot merges pilot-common-config into
 	# common_config.toml and pilot-common-site-config into common_site_config.json at bootstrap.
 	metadata = {"pilot-central": json.dumps(bootstrap)}
 	# Frappe's Pulse telemetry files a site's events under `fc_team`, so the events of a
@@ -50,12 +55,21 @@ def get_bootstrap_metadata(action) -> dict[str, str]:
 	}
 	if mailbox := UserMailAccount.assign(action):
 		common_site_config |= mailbox.get_site_config()
+	# A free trial boots with a Grove key from the pool: AI works before the team holds any key.
+	if trial_key := AITrialKey.assign(action):
+		common_site_config |= trial_key.get_site_config()
 	metadata["pilot-common-site-config"] = json.dumps(common_site_config)
 
+	common_config = {}
+	if action.requested_by:
+		if email := frappe.db.get_value("User", action.requested_by, "email"):
+			common_config["letsencrypt"] = {"email": email}
 	try:
-		metadata["pilot-common-config"] = json.dumps({"telemetry": get_telemetry_configuration(action)})
+		common_config["telemetry"] = get_telemetry_configuration(action)
 	except Exception:
 		action.record_diagnostic(frappe.get_traceback(), "Pilot telemetry configuration failed")
+	if common_config:
+		metadata["pilot-common-config"] = json.dumps(common_config)
 
 	return metadata
 
@@ -83,9 +97,10 @@ def fetch_site_login_url(
 	full_name: str | None = None,
 ) -> str | None:
 	"""Relay a Central-signed site assertion to the bench's login endpoint and return the desk
-	URL it mints (a fresh local session) for `user`, or Administrator. A 401 is retryable while
-	Pilot finishes starting. A 404 means the bench has no site by that name. Other failures
-	return None and are logged so a consistently-failing bench or Central is diagnosable."""
+	URL it mints (a fresh local session) for `user`, or Administrator. A 401 while Pilot finishes
+	starting, a rate limit, and a busy or unreachable machine are retryable. A 404 means the bench
+	has no site by that name. Other failures return None and are logged so a consistently-failing
+	bench or Central is diagnosable."""
 	try:
 		token = mint_site_login(audience_id, site, user, full_name)
 		response = requests.post(
@@ -94,7 +109,9 @@ def fetch_site_login_url(
 			timeout=SITE_LOGIN_TIMEOUT_SECONDS,
 			allow_redirects=False,
 		)
-		if response.status_code == 401:
+		# A small machine can time out the login it mints while it is busy. Minting again only
+		# starts another session, so these are safe to retry.
+		if response.status_code in (401, 429) or response.status_code >= 500:
 			raise PilotLoginPending
 		if response.status_code == 404:
 			return None
@@ -103,6 +120,8 @@ def fetch_site_login_url(
 		url = payload.get("url") if isinstance(payload, dict) else None
 	except PilotLoginPending:
 		raise
+	except (requests.ConnectionError, requests.Timeout):
+		raise PilotLoginPending from None
 	except Exception:  # minting (signing key / DB / encode) must also fall back, not 500
 		frappe.log_error(
 			title=f"Site login relay failed: {site}",
@@ -141,7 +160,19 @@ def rename_admin_domain(server: str, base_url: str | None = None, tls: bool = Tr
 	expected = _expected_gateway_url(frappe.get_doc("Virtual Machine", server))
 	payload = {"domain": urlparse(expected).hostname, "tls": tls}
 
-	return _post_to_pilot(server, base_url or expected, "/api/v1/settings/admin-domain", payload)
+	return _request_pilot("POST", server, base_url or expected, "/api/v1/settings/admin-domain", payload)
+
+
+def set_site_primary_domain(server: str, site: str, domain: str) -> dict:
+	"""Attach the customer's primary domain without moving the site's directory."""
+	base_url = _expected_gateway_url(frappe.get_doc("Virtual Machine", server))
+	return _request_pilot(
+		"POST",
+		server,
+		base_url,
+		f"/api/v1/sites/{quote(site, safe='')}/domains",
+		{"domain": domain, "primary": True},
+	)
 
 
 def rename_site(
@@ -157,7 +188,56 @@ def rename_site(
 	base_url = base_url or _expected_gateway_url(frappe.get_doc("Virtual Machine", server))
 	payload = {"new_name": new_name, "keep_old_hostname": keep_old_hostname, "make_primary": make_primary}
 
-	return _post_to_pilot(server, base_url, f"/api/v1/sites/{quote(site, safe='')}/actions/rename", payload)
+	return _request_pilot(
+		"POST", server, base_url, f"/api/v1/sites/{quote(site, safe='')}/actions/rename", payload
+	)
+
+
+def get_site_apps(server: str, site_names: list[str]) -> tuple[str, list[str]]:
+	"""The bench's name for the site, and the apps active on it. The bench may know the site by
+	any of `site_names`, so each is tried in order."""
+	base_url = _expected_gateway_url(frappe.get_doc("Virtual Machine", server))
+	for site in site_names:
+		try:
+			result = _request_pilot("GET", server, base_url, f"/api/v1/sites/{quote(site, safe='')}/apps")
+		except requests.HTTPError as error:
+			# Before its rename lands, the bench knows the site only by its image name.
+			if error.response is not None and error.response.status_code == 404 and site != site_names[-1]:
+				continue
+			raise
+
+		return site, [app["name"] for app in result.get("apps", [])]
+
+	frappe.throw(_("The site has no name that its server knows."))
+
+
+def install_site_app(server: str, site: str, app: str) -> dict:
+	"""Ask a server's pilot to install a marketplace app on one of its sites. Pilot queues a task."""
+	base_url = _expected_gateway_url(frappe.get_doc("Virtual Machine", server))
+	task = _request_pilot(
+		"POST", server, base_url, f"/api/v1/sites/{quote(site, safe='')}/apps", {"app": app}
+	)
+
+	# An app that was installed and disabled is enabled at once, with no task.
+	return {"site": site, "task_id": task.get("task_id"), "status": task.get("status") or "success"}
+
+
+def get_site_task(server: str, site: str, task_id: str) -> dict:
+	"""Read a task that a server's pilot runs for one of its sites."""
+	base_url = _expected_gateway_url(frappe.get_doc("Virtual Machine", server))
+	path = f"/api/v1/sites/{quote(site, safe='')}/tasks/{quote(task_id, safe='')}"
+	return _request_pilot("GET", server, base_url, path)
+
+
+def get_task(server: str, task_id: str) -> dict:
+	"""Read a bench task even after its site's directory has moved."""
+	base_url = _expected_gateway_url(frappe.get_doc("Virtual Machine", server))
+	task = _request_pilot("GET", server, base_url, f"/api/v1/tasks/{quote(task_id, safe='')}")
+	if not isinstance(task, dict) or task.get("task_id") != task_id:
+		raise ValueError("Pilot returned a different task.")
+	if task.get("status") not in {"queued", "running", "success", "failed", "killed"}:
+		raise ValueError("Pilot returned an invalid task status.")
+	return task
 
 
 def _expected_gateway_url(server) -> str:
@@ -168,22 +248,46 @@ def _expected_gateway_url(server) -> str:
 	return url
 
 
-def _post_to_pilot(server: str, base_url: str, path: str, payload: dict) -> dict:
+def read_pilot(server: str, path: str, params: dict | None = None) -> dict | list | str:
+	"""Read a path of a server's pilot Admin API. A plain text response, such as task output, stays text."""
+	base_url = _expected_gateway_url(frappe.get_doc("Virtual Machine", server))
+	return _request_pilot("GET", server, base_url, path, params=params)
+
+
+def write_pilot(server: str, method: str, path: str, payload: dict | None = None) -> dict | list | str:
+	"""Run a POST, PUT, or PATCH on a path of a server's pilot Admin API."""
+	base_url = _expected_gateway_url(frappe.get_doc("Virtual Machine", server))
+	return _request_pilot(method, server, base_url, path, payload=payload)
+
+
+def _request_pilot(
+	method: str,
+	server: str,
+	base_url: str,
+	path: str,
+	payload: dict | None = None,
+	params: dict | None = None,
+) -> dict | list | str:
+	"""Call a server's pilot as the bench, with a token for its own audience."""
 	audience_id = frappe.db.get_value(
 		"Pilot Credential", {"server": server, "status": "Active"}, "audience_id"
 	)
 	if not audience_id:
 		frappe.throw(frappe._("Server {0} has no enrolled pilot.").format(server))
 
-	response = requests.post(
+	response = requests.request(
+		method,
 		f"{_gateway_url(base_url)}{path}",
 		headers={"Authorization": f"Bearer {mint_bench_login(audience_id)}"},
 		json=payload,
+		params=params,
 		timeout=PILOT_TASK_TIMEOUT_SECONDS,
 		allow_redirects=False,
 	)
 	response.raise_for_status()
 
+	if response.headers.get("Content-Type", "").startswith("text/plain"):
+		return response.text
 	return response.json()
 
 

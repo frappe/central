@@ -1,0 +1,27 @@
+{
+  "name": "central-docs",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vitepress dev",
+    "build": "vitepress build",
+    "preview": "vitepress preview",
+    "capture": "node capture/run.mjs"
+  },
+  "devDependencies": {
+    "@dicebear/collection": "9.2.4",
+    "@dicebear/core": "9.2.4",
+    "@playwright/test": "1.61.0",
+    "@shikijs/transformers": "2.5.0",
+    "autoprefixer": "10.5.5",
+    "ffmpeg-static": "5.2.0",
+    "frappe-ui": "github:frappe/frappe-ui#v1.0.1",
+    "postcss": "8.5.9",
+    "reka-ui": "2.10.4",
+    "sharp": "0.34.4",
+    "tailwindcss": "3.4.19",
+    "vitepress": "1.6.4",
+    "vue": "3.5.39",
+    "vue-router": "4.6.4"
+  }
+}

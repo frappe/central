@@ -107,6 +107,8 @@ export const useNotifications = () => {
 			row.is_read = 1
 			const response = await markRead.submit({ ...teamParams(), name })
 			unreadCount.value = response?.unread ?? Math.max(0, unreadCount.value - 1)
+			// An Unread feed fetched before this write still lists the row.
+			if (unreadOnly.value) refresh()
 		},
 		markAllAsRead: async (): Promise<void> => {
 			await markAll.submit(teamParams())

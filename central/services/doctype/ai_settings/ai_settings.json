@@ -1,6 +1,6 @@
 {
  "actions": [],
- "creation": "2026-10-06 00:00:00",
+ "creation": "2026-10-24 18:38:14.500950",
  "doctype": "DocType",
  "editable_grid": 1,
  "engine": "InnoDB",
@@ -8,7 +8,15 @@
   "base_url",
   "control_section",
   "control_api_key",
-  "control_api_secret"
+  "control_api_secret",
+  "trials_tab",
+  "trial_key_geography",
+  "trial_key_cap",
+  "column_break_oabk",
+  "trial_pool_size",
+  "pause_section",
+  "pause_pool_refill",
+  "pause_key_assignment"
  ],
  "fields": [
   {
@@ -35,13 +43,60 @@
    "fieldtype": "Password",
    "label": "Control API Secret",
    "read_only": 1
+  },
+  {
+   "fieldname": "trials_tab",
+   "fieldtype": "Tab Break",
+   "label": "Trials"
+  },
+  {
+   "description": "The Grove geography the pool's keys are minted in, one of Grove's geography names. A key works from any region and dials this geography's gateway; a key minted earlier keeps its own.",
+   "fieldname": "trial_key_geography",
+   "fieldtype": "Data",
+   "label": "Trial Key Geography"
+  },
+  {
+   "default": "0",
+   "description": "How many trial keys Central keeps minted and ready for free-trial servers, under the Grove Team Central Trial; a job every 5 minutes refills the pool. 0 keeps the pool off: a trial server then gets no key.",
+   "fieldname": "trial_pool_size",
+   "fieldtype": "Int",
+   "label": "Trial Pool Size"
+  },
+  {
+   "default": "2",
+   "description": "What one trial key may spend for its whole life, whole USD. Sent with every mint; a change applies to keys minted after it.",
+   "fieldname": "trial_key_cap",
+   "fieldtype": "Currency",
+   "label": "Trial Key Cap (USD)"
+  },
+  {
+   "fieldname": "column_break_oabk",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "pause_section",
+   "fieldtype": "Section Break",
+   "label": "Pause"
+  },
+  {
+   "default": "0",
+   "description": "Stops the 5-minute job from minting new keys. The pool keeps its size and its ready keys; retries of revokes and hand-overs still run.",
+   "fieldname": "pause_pool_refill",
+   "fieldtype": "Check",
+   "label": "Pause Pool Refill"
+  },
+  {
+   "default": "0",
+   "description": "Stops a new free-trial server from taking a key from the pool. It boots without one, as with an empty pool; a server that already holds a key keeps it.",
+   "fieldname": "pause_key_assignment",
+   "fieldtype": "Check",
+   "label": "Pause Key Assignment"
   }
  ],
  "grid_page_length": 50,
- "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-10-10 10:10:36.894590",
+ "modified": "2026-10-29 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Services",
  "name": "AI Settings",

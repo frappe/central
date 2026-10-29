@@ -22,7 +22,7 @@
   "last_attempt_at",
   "column_break_sync",
   "failure_reason",
-  "error_log"
+  "diagnostic"
  ],
  "fields": [
   {
@@ -144,16 +144,16 @@
    "read_only": 1
   },
   {
-   "description": "The Error Log for the latest route failure.",
-   "fieldname": "error_log",
-   "fieldtype": "Link",
-   "label": "Error Log",
-   "options": "Error Log",
+   "description": "The traceback of the latest route failure. Operators only.",
+   "fieldname": "diagnostic",
+   "fieldtype": "Code",
+   "label": "Diagnostic",
+   "permlevel": 1,
    "read_only": 1
   }
  ],
  "links": [],
- "modified": "2026-09-17 12:00:00.000000",
+ "modified": "2026-10-25 20:00:00.000000",
  "modified_by": "Administrator",
  "module": "Infrastructure",
  "name": "Site Domain",
@@ -177,6 +177,11 @@
    "read": 1,
    "report": 1,
    "role": "Central User"
+  },
+  {
+   "permlevel": 1,
+   "read": 1,
+   "role": "System Manager"
   }
  ],
  "row_format": "Dynamic",

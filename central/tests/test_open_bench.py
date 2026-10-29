@@ -3,7 +3,7 @@ import jwt
 from frappe.tests import IntegrationTestCase
 
 from central.api.jwks import jwks_document
-from central.api.sso import get_bench_link
+from central.api.sso import get_bench_link, open_bench
 from central.central.doctype.central_sso_settings.central_sso_settings import ALGORITHM, CentralSSOSettings
 from central.infrastructure.doctype.pilot_credential.pilot_credential import PilotCredential
 from central.sso import central_url
@@ -181,3 +181,25 @@ class TestOpenBench(IntegrationTestCase):
 		frappe.db.set_value("Region", self.cluster, "status", "Disabled")
 		with self.assertRaises(frappe.ValidationError):
 			self._open(self.dev, server="vm-open-1")
+
+	def _redirect(self, user, pilot):
+		frappe.set_user(user)
+		try:
+			open_bench(pilot)
+			return frappe.local.response.location
+		finally:
+			frappe.set_user("Administrator")
+
+	def test_open_bench_redirects_straight_to_the_bench(self):
+		self.assertTrue(self._redirect(self.dev, self.pcid).startswith(f"{GATEWAY}/?sid="))
+
+	def test_open_bench_sends_a_refusal_to_the_dashboard(self):
+		dashboard = f"/dashboard/servers?pilot={self.pcid}&action=open-bench"
+		self.assertEqual(self._redirect(self.viewer, self.pcid), dashboard)
+		self.assertEqual(self._redirect("Guest", self.pcid), dashboard)
+
+	def test_open_bench_sends_an_unknown_pilot_to_the_dashboard(self):
+		self.assertEqual(
+			self._redirect(self.dev, "pcred-missing"),
+			"/dashboard/servers?pilot=pcred-missing&action=open-bench",
+		)

@@ -14,6 +14,7 @@ import PlanGroup from '@/components/servers/PlanGroup.vue'
 import TrialUpgradePanel from '@/components/servers/TrialUpgradePanel.vue'
 import { useResizeServer } from '@/composables/useResizeServer'
 import type { VirtualMachineRow } from '@/composables/useServers'
+import { useTrialConversion } from '@/composables/useTrialConversion'
 import { configSpecs } from '@/lib/composed'
 import { formatGb } from '@/lib/units'
 
@@ -31,6 +32,7 @@ const {
 	plansLoading,
 	resizable,
 	trial,
+	trialPlans,
 	starting,
 	nothingToShow,
 	resizeError,
@@ -68,6 +70,12 @@ const {
 	resized: () => emit('resized'),
 })
 
+const { convertedPlan, awaitConversion } = useTrialConversion(
+	trial,
+	() => configCall.reload(),
+	model,
+)
+
 const trialPanel = ref<InstanceType<typeof TrialUpgradePanel> | null>(null)
 
 const open = computed({
@@ -81,7 +89,7 @@ const open = computed({
 <template>
 	<Dialog
 		v-model="open"
-		:title="trial ? 'Upgrade your site' : 'Resize server'"
+		:title="trial ? 'Upgrade from free trial' : 'Resize server'"
 		size="3xl"
 	>
 		<template #default>
@@ -125,15 +133,16 @@ const open = computed({
 				v-else-if="trial"
 				ref="trialPanel"
 				:trial="trial"
+				:plans="trialPlans"
 				:checking="configCall.loading"
 				:server-id="server?.resource_id ?? ''"
-				@check="configCall.reload()"
+				@check="awaitConversion"
 			/>
 			<Alert
 				v-else-if="starting"
 				theme="blue"
 				title="Your payment method is confirmed"
-				description="We are starting your server on its paid plan. This takes about a minute, then the plans show here."
+				description="We are moving your server to its paid plan. This takes a few minutes, then the plans show here."
 			/>
 			<p
 				v-else-if="!resizable || nothingToShow"
@@ -142,6 +151,12 @@ const open = computed({
 				This server can't be resized right now.
 			</p>
 			<div v-else class="space-y-4">
+				<Alert
+					v-if="convertedPlan"
+					theme="green"
+					:title="`You're on the ${convertedPlan.title} plan`"
+					description="Billing has started. Choose a bigger size below, or close this dialog to stay on this plan."
+				/>
 				<Alert v-if="resizeError" theme="red" :title="resizeError" />
 				<Alert
 					v-if="losesLockedRate && lock"
@@ -157,9 +172,15 @@ const open = computed({
 				<RadioGroup v-model="computeOnly" label="Storage" padded>
 					<Radio
 						:value="true"
-						:label="`Keep ${formatGb(currentDisk)} GB disk`"
+						:label="`Keep current ${formatGb(currentDisk)} GB disk size`"
 					/>
-					<Radio :value="false" label="Increase storage" />
+					<Radio :value="false" label="Increase storage">
+						<template #description>
+							<strong class="text-p-sm-medium text-ink-amber-7">
+								Disk size cannot be decreased later.
+							</strong>
+						</template>
+					</Radio>
 				</RadioGroup>
 				<p class="text-p-sm text-ink-gray-6">Prices include storage.</p>
 
@@ -228,11 +249,20 @@ const open = computed({
 					variant="solid"
 					icon-left="lucide-play"
 					label="Keep this site"
-					:loading="trialPanel?.keeping"
+					:disabled="!trialPanel?.canContinue"
+					:loading="trialPanel?.saving"
 					@click="trialPanel?.keep()"
 				/>
 				<Button
-					v-else-if="trial.held || trialPanel?.methodAdded"
+					v-else-if="trial.held"
+					variant="solid"
+					label="Use this plan"
+					:disabled="!trialPanel?.canContinue"
+					:loading="trialPanel?.saving || configCall.loading"
+					@click="trialPanel?.choosePlan()"
+				/>
+				<Button
+					v-else-if="trialPanel?.methodAdded"
 					label="Check again"
 					:loading="configCall.loading"
 					@click="configCall.reload()"
@@ -242,6 +272,8 @@ const open = computed({
 					variant="solid"
 					icon-left="lucide-credit-card"
 					label="Add payment method"
+					:disabled="!trialPanel?.canContinue"
+					:loading="trialPanel?.saving"
 					@click="trialPanel?.addMethod()"
 				/>
 			</div>

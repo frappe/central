@@ -49,15 +49,21 @@ const {
 	props.server ? computed(() => props.server?.resource_id ?? null) : undefined,
 )
 
+const isAccessLocked = computed(() => !!props.server?.is_access_locked)
+
 const canManage = computed(() =>
 	props.server
-		? !!props.server.capabilities?.includes('server:snapshot')
+		? !!props.server.capabilities?.includes('server:snapshot') &&
+			!isAccessLocked.value
 		: canSnapshotServer.value,
 )
 
+// A free trial server takes no snapshots, so the picker leaves it out.
 const eligibleServers = computed(() =>
-	servers.value.filter((server) =>
-		['Running', 'Stopped', 'Paused'].includes(server.status ?? ''),
+	servers.value.filter(
+		(server) =>
+			['Running', 'Stopped', 'Paused'].includes(server.status ?? '') &&
+			!server.is_access_locked,
 	),
 )
 
@@ -153,7 +159,7 @@ const restore = (row: VMSnapshotRow): void => {
 <template>
 	<div class="space-y-4">
 		<Switch
-			v-if="setting?.region_automatic"
+			v-if="setting?.region_automatic && !isAccessLocked"
 			:model-value="setting.automatic"
 			:disabled="!canManage || savingAutomatic"
 			label="Daily snapshots"
@@ -172,6 +178,7 @@ const restore = (row: VMSnapshotRow): void => {
 			:free-per-server="freePerServer"
 			:initial-search="initialSearch"
 			:server-scoped="!!server"
+			:is-access-locked="isAccessLocked"
 			@retry="reload"
 			@keep="(row) => { keepError = ''; pendingKeep = row }"
 			@delete="(rows) => { deleteError = ''; pendingDelete = rows }"

@@ -8,7 +8,7 @@ import type { TrialOnboardingStatus } from '@/types/api'
 
 export function useTrialOnboarding() {
 	const { productKey } = useProduct()
-	const { activeTeam, setActiveTeam, reload } = useSession()
+	const { activeTeam, adoptNewTeam } = useSession()
 	const requestKey = ref('')
 
 	async function prepareTeam(): Promise<void> {
@@ -18,10 +18,7 @@ export function useTrialOnboarding() {
 			readFirstTouch() ?? {},
 		)
 		forgetFirstTouch()
-		if (result.team) {
-			setActiveTeam(result.team)
-			await reload()
-		}
+		if (result.team) await adoptNewTeam(result.team)
 		requestKey.value = savedRequestKey()
 	}
 

@@ -5,6 +5,7 @@ import ConfigDesigner from '@/components/servers/ConfigDesigner.vue'
 import { configSpecs, estimateConfig } from '@/lib/composed'
 import { money } from '@/lib/format'
 import {
+	formatTransfer,
 	planAllowances,
 	planQuantity,
 	planSize,
@@ -32,6 +33,8 @@ interface Props {
 	minDisk?: number
 	/** The running disk is the minimum for the custom designer in either resize mode. */
 	currentDisk?: number
+	/** Shown once under the plans, since every server includes the same transfer. */
+	includedTransferGigabytes?: number
 }
 
 const props = defineProps<Props>()
@@ -211,5 +214,11 @@ const matchingPreset = computed<Plan | null>(() => {
 				carte.
 			</p>
 		</div>
+
+		<p v-if="includedTransferGigabytes" class="text-p-sm text-ink-gray-5">
+			Every server includes
+			{{ formatTransfer(includedTransferGigabytes) }}
+			of transfer a month.
+		</p>
 	</div>
 </template>

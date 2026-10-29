@@ -141,7 +141,7 @@
  },
  {
   "capability": "team:delete",
-  "description": "Delete the team",
+  "description": "Archive the team",
   "docstatus": 0,
   "doctype": "Capability",
   "modified": "2026-08-07 12:00:00.000000",

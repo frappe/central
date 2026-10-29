@@ -1,16 +1,21 @@
 <script setup lang="ts">
-import { Button, Dropdown, Switch } from 'frappe-ui'
+import { Button, Dropdown, Switch, Tooltip } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
+import EmptyState from '@/components/common/EmptyState.vue'
 import SettingsSection from '@/components/common/SettingsSection.vue'
 import CopyFirewallDialog from '@/components/servers/firewall/CopyFirewallDialog.vue'
 import FirewallRuleRow from '@/components/servers/firewall/FirewallRuleRow.vue'
 import { useServerFirewall } from '@/composables/useServerFirewall'
 import type { VirtualMachineRow } from '@/composables/useServers'
+import { useUndoHistory } from '@/composables/useUndoHistory'
 import { reportError, successToast } from '@/lib/feedback'
 import {
+	ANYWHERE_IPV4,
+	ANYWHERE_IPV6,
 	type Firewall,
 	type FirewallChange,
+	type FirewallRule,
 	type FirewallRules,
 	getFirewallTexts,
 	getRulesError,
@@ -20,6 +25,7 @@ import {
 	PRESETS,
 	SERVICES,
 } from '@/lib/firewall'
+import { isMac } from '@/lib/platform'
 
 type Direction = keyof FirewallRules
 
@@ -51,33 +57,20 @@ const saved = computed<Firewall | null>(() =>
 	props.rules ? { enabled: props.isEnabled, ...props.rules } : null,
 )
 
+const directions: Direction[] = ['inbound', 'outbound']
+
 // Rule edits collect here until Apply, so a swap such as "SSH from the office instead of
 // anywhere" never applies half done.
 const draft = ref<FirewallRules | null>(null)
 const baseline = ref<FirewallRules | null>(null)
-const removedIndices = ref<Record<Direction, number[]>>({
-	inbound: [],
-	outbound: [],
-})
-const effectiveDraft = computed<FirewallRules | null>(
-	() =>
-		draft.value && {
-			inbound: draft.value.inbound.filter(
-				(_, index) => !removedIndices.value.inbound.includes(index),
-			),
-			outbound: draft.value.outbound.filter(
-				(_, index) => !removedIndices.value.outbound.includes(index),
-			),
-		},
-)
 const hasUnsavedRules = computed(
-	() => JSON.stringify(effectiveDraft.value) !== JSON.stringify(baseline.value),
+	() => JSON.stringify(draft.value) !== JSON.stringify(baseline.value),
 )
 const pendingChanges = computed(() => {
-	if (!baseline.value || !effectiveDraft.value) return 0
+	if (!baseline.value || !draft.value) return 0
 	return (['inbound', 'outbound'] as const).reduce((count, direction) => {
 		const before = baseline.value![direction]
-		const after = effectiveDraft.value![direction]
+		const after = draft.value![direction]
 		const removed = before.filter(
 			(rule) => !after.some((other) => isSameRule(rule, other)),
 		).length
@@ -90,13 +83,32 @@ const pendingChanges = computed(() => {
 
 const incomplete = ref<Record<string, boolean>>({})
 const revision = ref(0)
+const isDirty = computed(
+	() => hasUnsavedRules.value || Object.values(incomplete.value).some(Boolean),
+)
+
+// Rows keep local state and are keyed by index, so a restored draft remounts them.
+function replaceDraft(rules: FirewallRules): void {
+	draft.value = rules
+	incomplete.value = {}
+	revision.value++
+}
+
+const history = useUndoHistory<FirewallRules>({
+	restore: replaceDraft,
+	enabled: () => props.canEdit && props.isEnabled && !isSaving.value,
+})
+
+function rememberDraft(source?: string): void {
+	if (draft.value) history.record(clone(draft.value), source)
+}
 
 function resetDraft(rules: FirewallRules | null): void {
 	baseline.value = rules && clone(rules)
 	draft.value = rules && clone(rules)
-	removedIndices.value = { inbound: [], outbound: [] }
 	incomplete.value = {}
 	revision.value++
+	history.clear()
 }
 
 watch(
@@ -111,49 +123,49 @@ watch(
 	{ immediate: true },
 )
 
-function removeRule(direction: Direction, index: number): void {
-	if (isSaving.value) return
-	removedIndices.value[direction].push(index)
-	incomplete.value[`${direction}:${index}`] = false
+function updateRule(
+	direction: Direction,
+	index: number,
+	rule: FirewallRule,
+): void {
+	if (!draft.value) return
+	rememberDraft(`${direction}:${index}`)
+	draft.value[direction][index] = rule
 }
 
-function undoRemoval(direction: Direction, index: number): void {
-	removedIndices.value[direction] = removedIndices.value[direction].filter(
-		(removed) => removed !== index,
-	)
+function removeRule(direction: Direction, index: number): void {
+	if (isSaving.value || !draft.value) return
+	rememberDraft()
+	const rules = clone(draft.value)
+	rules[direction].splice(index, 1)
+	replaceDraft(rules)
 }
 
 function usePreset(rules: FirewallRules): void {
 	presetPreview.value = null
-	draft.value = clone(rules)
-	removedIndices.value = { inbound: [], outbound: [] }
-	incomplete.value = {}
-	revision.value++
+	rememberDraft()
+	replaceDraft(clone(rules))
 }
 
-const directions: Direction[] = ['inbound', 'outbound']
 const staleDraft = computed(
 	() =>
 		!!baseline.value &&
 		(!props.rules || !isSameRules(baseline.value, props.rules)),
 )
 const conflictMessage =
-	'The saved firewall rules changed while you were editing. Reset all pending changes to load the latest rules before applying.'
+	'The saved firewall rules changed while you were editing. Discard your changes to load the latest rules, then edit again.'
 const validation = computed(() => {
 	if (staleDraft.value) return conflictMessage
 	if (Object.values(incomplete.value).some(Boolean))
-		return 'Add or cancel the address you are typing.'
-	if (!effectiveDraft.value) return ''
+		return 'Press Enter to add the address you typed, or clear it.'
+	if (!draft.value) return ''
 	return (
-		getRulesError(effectiveDraft.value.inbound) ||
-		getRulesError(effectiveDraft.value.outbound)
+		getRulesError(draft.value.inbound) || getRulesError(draft.value.outbound)
 	)
 })
 function addRule(direction: Direction): void {
 	if (!draft.value) return
-	const used =
-		effectiveDraft.value?.[direction].map((rule) => getService(rule).label) ??
-		[]
+	const used = draft.value[direction].map((rule) => getService(rule).label)
 	const service =
 		SERVICES.find(
 			(item) =>
@@ -162,6 +174,7 @@ function addRule(direction: Direction): void {
 					: ['All traffic']
 				).includes(item.label) && !used.includes(item.label),
 		) ?? SERVICES.find((item) => item.label === 'Custom TCP')!
+	rememberDraft()
 	draft.value[direction].push({
 		protocol: service.protocol,
 		ports: service.ports ?? '',
@@ -202,20 +215,20 @@ function toggleFirewall(enabled: boolean): void {
 function saveDraftRules(): void {
 	if (
 		!saved.value ||
-		!effectiveDraft.value ||
+		!draft.value ||
 		!hasUnsavedRules.value ||
 		validation.value
 	)
 		return
 
 	confirmIfRisky({
-		change: clone(effectiveDraft.value),
+		change: clone(draft.value),
 		title: 'Apply firewall changes',
 		confirmLabel: 'Apply changes',
 		success: 'Firewall rules saved',
 		warnings: getFirewallTexts(saved.value, {
 			...saved.value,
-			...effectiveDraft.value,
+			...draft.value,
 		}),
 	})
 }
@@ -252,24 +265,18 @@ const isCopying = ref(false)
 const presetPreview = ref<(typeof PRESETS)[number] | null>(null)
 const resetPreview = ref<boolean | null>(null)
 const menuOptions = computed(() => [
-	...(hasUnsavedRules.value
+	...(props.isEnabled
 		? [
 				{
-					label: 'Reset all pending changes',
-					icon: 'lucide-rotate-ccw',
-					onClick: () => (resetPreview.value = true),
+					label: 'Use a preset',
+					icon: 'lucide-list-checks',
+					submenu: PRESETS.map((preset) => ({
+						label: preset.label,
+						onClick: () => (presetPreview.value = preset),
+					})),
 				},
 			]
 		: []),
-	{
-		label: 'Use a preset',
-		disabled: !props.isEnabled,
-		icon: 'lucide-list-checks',
-		submenu: PRESETS.map((preset) => ({
-			label: preset.label,
-			onClick: () => (presetPreview.value = preset),
-		})),
-	},
 	...(props.servers.length
 		? [
 				{
@@ -280,26 +287,42 @@ const menuOptions = computed(() => [
 			]
 		: []),
 ])
+
+const statusText = computed(() => {
+	if (validation.value) return validation.value
+	if (!isDirty.value) return 'No unsaved changes'
+	if (!pendingChanges.value) return 'Unsaved changes'
+	return `${pendingChanges.value} unsaved ${pendingChanges.value === 1 ? 'change' : 'changes'}`
+})
+
+function getAddressOptions(direction: Direction): string[] {
+	return (draft.value?.[direction] ?? [])
+		.flatMap((rule) => rule.cidrs)
+		.filter((cidr) => ![ANYWHERE_IPV4, ANYWHERE_IPV6].includes(cidr))
+}
 </script>
 
 <template>
 	<SettingsSection
 		title="Firewall"
 		help="The region filters traffic before it reaches the server."
-		description="Choose who can connect and which connections the server can open. Your private network, VPN devices and ping stay allowed, so the web console keeps working."
+		description="Choose who can connect to this server and where it can connect. Your private network, VPN devices and ping are always allowed, so the web console keeps working."
 	>
 		<template #actions>
-			<div class="flex items-center gap-3">
-				<Switch
-					v-if="draft"
-					:model-value="isEnabled"
-					:disabled="!canEdit || hasUnsavedRules || isSaving"
-					@update:model-value="toggleFirewall"
+			<div v-if="draft" class="flex shrink-0 items-center gap-2">
+				<Tooltip
+					:text="isDirty ? 'Apply or discard your rule changes first' : undefined"
 				>
-					<template #label><span class="sr-only">Firewall</span></template>
-				</Switch>
+					<Switch
+						:model-value="isEnabled"
+						:disabled="!canEdit || isDirty || isSaving"
+						@update:model-value="toggleFirewall"
+					>
+						<template #label><span class="sr-only">Firewall</span></template>
+					</Switch>
+				</Tooltip>
 				<Dropdown
-					v-if="canEdit && draft && !isSaving"
+					v-if="canEdit && menuOptions.length"
 					:options="menuOptions"
 					align="end"
 				>
@@ -307,83 +330,112 @@ const menuOptions = computed(() => [
 						variant="ghost"
 						icon="lucide-ellipsis"
 						label="Firewall options"
+						:disabled="isSaving"
 					/>
 				</Dropdown>
 			</div>
 		</template>
 
-		<p v-if="!draft" class="text-p-sm text-ink-gray-5">
-			The firewall appears after Central next reads this server from its region,
-			within 10 minutes.
-		</p>
+		<EmptyState
+			v-if="!draft"
+			icon="lucide-shield"
+			title="Firewall not loaded yet"
+			description="It appears after Central next reads this server from its region, within 10 minutes."
+		/>
 
-		<template v-else>
-			<template v-if="isEnabled">
-				<div v-for="direction in directions" :key="direction" class="space-y-1">
-					<div class="flex items-center justify-between gap-3">
-						<h3 class="text-sm-medium text-ink-gray-7">
-							{{ direction === 'inbound' ? 'Incoming' : 'Outgoing' }}
-						</h3>
-						<Button
-							v-if="canEdit"
-							size="sm"
-							icon-left="lucide-plus"
-							label="Add rule"
-							:disabled="isSaving"
-							@click="addRule(direction)"
-						/>
-					</div>
-					<div
-						v-if="draft[direction].length"
-						class="rule-headers gap-3 pt-2 text-p-sm text-ink-gray-5"
-						aria-hidden="true"
-					>
-						<span>Service</span><span>Port</span
-						><span
-							>{{ direction === 'inbound' ? 'Allowed from' : 'Allowed to' }}</span
-						><span />
-					</div>
-					<FirewallRuleRow
-						v-for="(rule, index) in draft[direction]"
-						:key="`${revision}:${index}`"
-						:rule="rule"
-						:index="index"
-						:incoming="direction === 'inbound'"
-						:removed="removedIndices[direction].includes(index)"
-						:disabled="!canEdit || isSaving"
-						:options="effectiveDraft?.[direction].flatMap((item) => item.cidrs).filter((cidr) => !['0.0.0.0/0', '::/0'].includes(cidr)) ?? []"
-						@update="draft[direction][index] = $event"
-						@remove="removeRule(direction, index)"
-						@undo="undoRemoval(direction, index)"
-						@invalid="incomplete[`${direction}:${index}`] = $event"
-					/>
-					<p
-						v-if="!effectiveDraft?.[direction].length"
-						class="py-2 text-p-sm text-ink-gray-6"
-					>
-						{{ hasUnsavedRules ? 'After applying, no public' : 'No public' }}
-						{{ direction === 'inbound' ? 'incoming' : 'outgoing' }}
-						connections
-						{{ hasUnsavedRules ? 'will be allowed.' : 'are allowed.' }}
-					</p>
-				</div>
-			</template>
-			<p v-else class="text-p-sm text-ink-gray-6">
-				{{ draft.inbound.length || draft.outbound.length ? 'Turn on to use your saved rules.' : 'Turn on to allow SSH, HTTP and HTTPS, with all outgoing connections allowed.' }}
-				You can edit the rules after enabling.
-			</p>
+		<EmptyState
+			v-else-if="!isEnabled"
+			icon="lucide-shield-off"
+			title="Firewall is off"
+			:description="
+				draft.inbound.length || draft.outbound.length
+					? 'Every port is open to the internet. Turn it on to use your saved rules again.'
+					: 'Every port is open to the internet. Turn it on to allow SSH, HTTP and HTTPS in, and all connections out.'
+			"
+		/>
 
-			<p v-if="validation" class="text-p-sm text-ink-gray-5">
-				{{ validation }}
-			</p>
-			<div
-				v-if="canEdit && (hasUnsavedRules || removedIndices.inbound.length || removedIndices.outbound.length)"
-				class="flex flex-wrap items-center justify-between gap-3 pt-2"
+		<div v-else class="space-y-6">
+			<section
+				v-for="direction in directions"
+				:key="direction"
+				:aria-label="direction === 'inbound' ? 'Incoming rules' : 'Outgoing rules'"
 			>
-				<p class="text-p-sm text-ink-gray-6" role="status">
-					{{ pendingChanges ? `${pendingChanges} ${pendingChanges === 1 ? 'change' : 'changes'} pending` : 'No changes to apply' }}
+				<h3 class="px-2 pb-1 text-sm-medium text-ink-gray-8">
+					{{ direction === 'inbound' ? 'Incoming' : 'Outgoing' }}
+				</h3>
+
+				<div
+					class="hidden h-8 items-center gap-x-4 px-2 text-sm text-ink-gray-5 sm:grid sm:grid-cols-[9rem_6rem_minmax(0,1fr)_1.75rem]"
+					aria-hidden="true"
+				>
+					<span>Service</span>
+					<span>Port</span>
+					<span
+						>{{ direction === 'inbound' ? 'Allowed from' : 'Allowed to' }}</span
+					>
+				</div>
+
+				<FirewallRuleRow
+					v-for="(rule, index) in draft[direction]"
+					:key="`${revision}:${index}`"
+					:rule="rule"
+					:index="index"
+					:incoming="direction === 'inbound'"
+					:disabled="!canEdit || isSaving"
+					:options="getAddressOptions(direction)"
+					@update="updateRule(direction, index, $event)"
+					@remove="removeRule(direction, index)"
+					@invalid="incomplete[`${direction}:${index}`] = $event"
+				/>
+				<p
+					v-if="!draft[direction].length"
+					class="flex min-h-10 items-center px-2 text-sm text-ink-gray-5"
+				>
+					No public {{ direction === 'inbound' ? 'incoming' : 'outgoing' }}
+					connections are allowed.
+				</p>
+
+				<div v-if="canEdit" class="pt-2">
+					<Button
+						size="sm"
+						variant="ghost"
+						icon-left="lucide-plus"
+						:label="direction === 'inbound' ? 'Add incoming rule' : 'Add outgoing rule'"
+						:disabled="isSaving"
+						@click="addRule(direction)"
+					/>
+				</div>
+			</section>
+
+			<footer
+				v-if="canEdit"
+				class="flex flex-wrap items-center justify-between gap-3 rounded-6 bg-surface-gray-1 py-2 pl-3 pr-2"
+			>
+				<p
+					class="flex min-w-0 flex-1 items-center gap-1.5 text-p-sm text-ink-gray-7"
+					role="status"
+				>
+					<span
+						v-if="validation"
+						class="lucide-circle-alert size-4 shrink-0 text-ink-amber-6"
+						aria-hidden="true"
+					/>
+					{{ statusText }}
 				</p>
 				<div class="flex gap-2">
+					<Button
+						variant="ghost"
+						icon-left="lucide-undo-2"
+						label="Undo"
+						:tooltip="isMac() ? 'Undo (⌘Z)' : 'Undo (Ctrl+Z)'"
+						:disabled="!history.canUndo.value || isSaving"
+						@click="history.undo()"
+					/>
+					<Button
+						label="Discard"
+						:disabled="!isDirty || isSaving"
+						@click="resetPreview = true"
+					/>
 					<Button
 						variant="solid"
 						label="Apply changes"
@@ -392,8 +444,8 @@ const menuOptions = computed(() => [
 						@click="saveDraftRules"
 					/>
 				</div>
-			</div>
-		</template>
+			</footer>
+		</div>
 
 		<ConfirmDialog
 			v-model:target="riskyAction"
@@ -412,23 +464,25 @@ const menuOptions = computed(() => [
 
 		<ConfirmDialog
 			v-model:target="presetPreview"
-			:title="`Use ${presetPreview?.label ?? ''} preset?`"
+			:title="`Use the ${presetPreview?.label ?? ''} preset?`"
 			confirm-label="Use preset"
 			@confirm="(preset) => usePreset(preset.rules)"
 		>
 			<p class="text-p-sm text-ink-gray-7">
 				{{ presetPreview?.label === 'Private only' ? 'Block public incoming connections. Allow all outgoing connections.' : presetPreview?.label === 'SSH only' ? 'Allow SSH from the internet and all outgoing connections.' : 'Allow SSH, HTTP and HTTPS from the internet and all outgoing connections.' }}
-				This replaces your pending draft. Review it before applying.
+				This replaces your unsaved changes. Review the rules before you apply
+				them.
 			</p>
 		</ConfirmDialog>
 		<ConfirmDialog
 			v-model:target="resetPreview"
-			title="Reset all pending changes?"
-			confirm-label="Reset changes"
+			title="Discard unsaved changes?"
+			confirm-label="Discard changes"
+			theme="red"
 			@confirm="resetDraft(rules); resetPreview = null"
 		>
 			<p class="text-p-sm text-ink-gray-7">
-				Restore all saved rules. This clears every pending edit and removal.
+				The rules go back to what the server uses now.
 			</p>
 		</ConfirmDialog>
 		<CopyFirewallDialog
@@ -439,15 +493,3 @@ const menuOptions = computed(() => [
 		/>
 	</SettingsSection>
 </template>
-
-<style scoped>
-.rule-headers {
-	display: none;
-}
-@media (min-width: 560px) {
-	.rule-headers {
-		display: grid;
-		grid-template-columns: 148px 96px minmax(0, 1fr) 72px;
-	}
-}
-</style>

@@ -38,7 +38,7 @@ const open = defineModel<boolean>('open', { default: false })
 						</DialogTitle>
 						<DialogDescription
 							v-if="description"
-							class="mt-1 text-p-sm text-ink-gray-5"
+							class="mt-1 text-p-sm text-ink-gray-6"
 						>
 							{{ description }}
 						</DialogDescription>

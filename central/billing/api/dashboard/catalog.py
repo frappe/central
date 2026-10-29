@@ -102,9 +102,10 @@ def get_composed_config(server: str, team: str | None = None) -> dict:
 	and a preset one, whose shape is read off the mirrored VM; resizing a preset
 	slides it onto a custom config, so `sub_category` is None and the slider defaults
 	to the region's first profile. `{resizable: False}` when there's no live
-	subscription to resize, with the open free trial that explains why, if any. `starting` is
+	subscription to resize, with the open free trial that explains why and the paid plans it
+	may move to, if any. `starting` is
 	true while a converted trial's server starts and has no subscription yet."""
-	from central.signups.trial import get_status, is_conversion_starting
+	from central.signups.trial import Trial, get_trial_status, is_conversion_starting
 
 	team = _resolve_resize_team(team, server)
 	sub = frappe.db.get_value(
@@ -114,10 +115,12 @@ def get_composed_config(server: str, team: str | None = None) -> dict:
 		as_dict=True,
 	)
 	if not sub:
+		trial = Trial.find_open(server)
 		return {
 			"resizable": False,
 			"composed": False,
-			"trial": get_status(server),
+			"trial": get_trial_status(server),
+			"trial_plans": trial.get_plan_choices() if trial else [],
 			"starting": is_conversion_starting(server),
 		}
 
@@ -153,7 +156,9 @@ def get_composed_config(server: str, team: str | None = None) -> dict:
 		"plan": sub.plan,  # the current preset, so the picker can pre-select it
 		"vcpus": vcpus,
 		"memory_gb": memory_gb,
-		"disk_gb": disk_gb,
+		# Atlas reports MiB, so a disk can be fractional GB. Resize takes whole GB, and
+		# rounding up keeps the current disk without asking for a shrink.
+		"disk_gb": frappe.utils.ceil(disk_gb),
 		"available": max(0.0, cap - team_run_rate(team, exclude=sub.name)),
 		# What the resize would cost this server in price terms, so the picker can
 		# say it before the customer commits rather than after.

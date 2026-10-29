@@ -1,4 +1,5 @@
 from datetime import UTC, datetime, timedelta
+from typing import get_args
 from zoneinfo import ZoneInfo
 
 import frappe
@@ -8,12 +9,14 @@ from frappe.utils.translations import _lt
 from pydantic import ValidationError
 
 from central.errors import handle_resource_operation
-from central.iam import can, get_server_capabilities
+from central.iam import can, get_server_capabilities, user_has_operator_bypass
 from central.infrastructure.doctype.resource_action.resource_action import ResourceAction
 from central.infrastructure.doctype.site.site import Site
 from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
-from central.integrations.servers import get_cached_metrics, reconcile
+from central.integrations.atlas import ConsoleMode
+from central.integrations.servers import get_cached_metrics, get_console_url, reconcile
 from central.server_models import FirewallChange
+from central.signups.access import get_locked_servers
 from central.utils.guards import require_capability
 
 METRICS_PERIOD_HOURS = {"1h": 1, "24h": 24, "7d": 168, "14d": 336, "30d": 720}
@@ -69,10 +72,13 @@ def registry(team: str | None = None) -> dict:
 	# mirror catches up — instead of looking like nothing happened.
 	pending = ResourceAction.pending_labels(team)
 	audiences = _pilot_audiences(team)
+	locked = get_locked_servers(team)
 	for server in servers:
 		server["pending_action"] = pending.get(server["resource_id"])
 		server["pilot_audience"] = audiences.get(server["name"])
 		server["capabilities"] = get_server_capabilities(frappe.session.user, team, server["name"])
+		# A free trial gives the site, not the server: the console hides SSH, the console and Pilot.
+		server["is_access_locked"] = server["name"] in locked
 
 	# A creation has no server row until the region accepts it, so it cannot be overlaid
 	# like the pending actions above. It rides here as its own list: the console picks its
@@ -174,6 +180,7 @@ def server_overview(team: str | None = None, resource_id: str | None = None) -> 
 			**server,
 			**_overview_plan(server, team),
 			"team_name": row.team_name or team,
+			"operator_links": _operator_links(row),
 			"region_details": {
 				"display_name": row.region_display_name or server.region,
 				"provider": row.region_provider,
@@ -326,6 +333,7 @@ def _overview_server_row(resource_id: str, team: str):
 			region.display_name.as_("region_display_name"),
 			region.provider.as_("region_provider"),
 			region.country_code.as_("region_country_code"),
+			region.base_url.as_("region_base_url"),
 			team_table.team_name.as_("team_name"),
 		)
 		.where((server.resource_id == resource_id) & (server.team == team))
@@ -334,6 +342,21 @@ def _overview_server_row(resource_id: str, team: str):
 	)
 
 	return rows[0] if rows else None
+
+
+def _operator_links(row) -> dict | None:
+	"""Desk and Atlas form links for an operator. Other users get None, so the region URL stays private."""
+	if not user_has_operator_bypass():
+		return None
+
+	atlas_url = None
+	if row.region_base_url and row.atlas_vm_id:
+		atlas_url = f"{row.region_base_url.rstrip('/')}/desk/virtual-machine/{row.atlas_vm_id}"
+
+	return {
+		"desk_url": frappe.utils.get_url_to_form("Virtual Machine", row.resource_id),
+		"atlas_url": atlas_url,
+	}
 
 
 def _ssh_command(row) -> str | None:
@@ -426,13 +449,16 @@ def refresh_servers(team: str | None = None) -> dict:
 	_lt("You can't open this server's console. Ask a team admin to review your access."),
 	server="resource_id",
 )
-def open_console(team: str | None = None, resource_id: str | None = None) -> dict:
-	"""Return a single-use web console URL for one server. Gated on `server:console`."""
-	from central.integrations.servers import get_console_url
+def open_console(team: str | None = None, resource_id: str | None = None, *, mode: ConsoleMode) -> dict:
+	"""Return a single-use web console URL for one server in SSH or TTY mode.
+	Gated on `server:console`."""
+	# Frappe skips type checks on a Literal of strings, so check the mode here.
+	if mode not in get_args(ConsoleMode):
+		frappe.throw(_("Choose SSH or TTY to open the console."))
 
 	server = frappe.get_doc("Virtual Machine", {"team": team, "resource_id": resource_id})
 
-	return {"url": get_console_url(server)}
+	return {"url": get_console_url(server, mode)}
 
 
 @frappe.whitelist(methods=["POST"])
@@ -472,12 +498,24 @@ def resize_server(
 	disk_gigabytes: int | None = None,
 ) -> dict:
 	"""Resize a server's CPU, memory and disk. Gated on `server:resize`.
-	A compute change stops the server first. A larger disk does not, and a smaller disk is refused."""
+	A compute change stops the server first. A larger disk does not, and a smaller disk is refused.
+	On an open trial it keeps the paid plan the site moves to when the trial converts."""
+	from central.signups.trial import Trial
+
 	if not resource_id:
 		frappe.throw(_("A server is required."))
 
 	server = VirtualMachine.get_team_server_name(team, resource_id)
 	subscription = frappe.db.get_value("Subscription", {"team": team, "server_id": server}, "name")
+	if not subscription and (trial := Trial.find_open(server)):
+		# The chosen plan is what the team pays once the trial converts.
+		if not can(frappe.session.user, team, "billing:manage"):
+			frappe.throw(
+				_("You can't manage this team's billing. Ask a team admin to review your access."),
+				frappe.PermissionError,
+			)
+		Trial.load(trial.site.name, for_update=True).choose_plan(plan)
+		return {"queued": False, "resized": False}
 	if not subscription:
 		frappe.throw(
 			_("This server cannot be resized because its billing subscription is missing. Contact support.")
@@ -628,14 +666,14 @@ def _update_one_firewall(team: str, resource_id: str, change: FirewallChange) ->
 )
 def keep_trial_site(team: str | None = None, resource_id: str | None = None) -> dict:
 	"""Keep the ended trial on a server: it moves to its paid plan and starts again."""
-	from central.signups.trial import keep_site
+	from central.signups.trial import Trial
 
 	server = VirtualMachine.get_team_server_name(team, resource_id)
 	site = frappe.db.get_value("Site", {"team": team, "server": server, "trial_state": "Ended"})
 	if not site:
 		frappe.throw(_("This server has no ended trial to keep."))
 
-	keep_site(frappe.get_doc("Site", site, for_update=True))
+	Trial.load(site, for_update=True).keep()
 	return {"site": site}
 
 

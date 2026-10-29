@@ -190,7 +190,7 @@ def _version_of(idempotency_key: str) -> int:
 	return frappe.utils.cint(tail) if tail.isdigit() else 0
 
 
-def ingest_rollup(meter: dict) -> str | None:
+def ingest_rollup(meter: dict, refuse_lower: bool = False) -> str | None:
 	"""Idempotently store one meter rollup, keyed by the period-identity idempotency_key.
 	Both reporting modes (ADR 0015) land as one Usage Rollup row per period; the locked
 	allowance + rate are stamped once, at first receipt, so the metered terms are
@@ -201,6 +201,9 @@ def ingest_rollup(meter: dict) -> str | None:
 	- **Incremental**: each batch carries a `quantity` delta and a monotonic `sequence`.
 	  A batch is ACCUMULATED (`quantity += delta`) only if its sequence exceeds the last
 	  applied, so a retried/duplicate/out-of-order batch is a no-op.
+
+	`refuse_lower=True` refuses an Authoritative total below the billed row's total. The
+	customer's own server sends that total, so it may only go up.
 
 	Concurrency: an existing row is locked FOR UPDATE while it is applied, so concurrent
 	batches serialize. The FIRST report can't lock a not-yet-existent row, so two
@@ -234,7 +237,7 @@ def ingest_rollup(meter: dict) -> str | None:
 				existing = frappe.db.get_value(
 					"Usage Rollup", head, ["name", "quantity", "sequence"], as_dict=True, for_update=True
 				)
-			_apply_report(existing, mode, qty, seq)
+			_apply_report(existing, mode, qty, seq, refuse_lower)
 			return key
 
 		terms = _resolve_terms(meter)
@@ -267,7 +270,7 @@ def ingest_rollup(meter: dict) -> str | None:
 _INGEST_RACE_RETRIES = 3
 
 
-def _apply_report(existing, mode: str, qty: float, seq: int) -> None:
+def _apply_report(existing, mode: str, qty: float, seq: int, refuse_lower: bool) -> None:
 	"""Apply a report to the already-locked rollup row. Authoritative replaces the period
 	figure; Incremental accumulates only when the sequence advances (else a no-op)."""
 	if mode == "Incremental":
@@ -280,6 +283,13 @@ def _apply_report(existing, mode: str, qty: float, seq: int) -> None:
 		)
 	else:
 		# Authoritative: replace the period figure; the locked terms stay as first stamped.
+		if refuse_lower and qty < frappe.utils.flt(existing.quantity):
+			frappe.throw(
+				_("A usage total for this period can only increase ({0} is recorded).").format(
+					existing.quantity
+				),
+				frappe.ValidationError,
+			)
 		frappe.db.set_value("Usage Rollup", existing.name, "quantity", qty)
 
 

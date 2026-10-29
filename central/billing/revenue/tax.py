@@ -34,6 +34,11 @@ _ZERO_BLOCK = {
 }
 
 
+def is_internal_team(team: str) -> bool:
+	"""Whether the team is one the company runs for itself, marked on its Tax Profile."""
+	return bool(frappe.db.get_value("Tax Profile", team, "is_internal"))
+
+
 def resolve_tax(team: str, subtotal) -> dict:
 	"""The invoice tax block for a team's taxable subtotal.
 
@@ -48,6 +53,9 @@ def resolve_tax(team: str, subtotal) -> dict:
 		return block
 
 	p = frappe.get_doc("Tax Profile", team)
+	# An internal team's usage is waived, not sold, so there is no supply to tax.
+	if p.is_internal:
+		return block
 	block["output_tax_type"] = p.output_tax_type or "None"
 	block["output_tax_rate"] = frappe.utils.flt(p.output_tax_rate)
 

@@ -17,27 +17,29 @@ System Managers and Product Operators create and edit products in Desk. Only a S
 | Enabled | A disabled product refuses new signups. Its existing sites keep running. |
 | Logo | Shown with rounded corners next to the heading on the signup, login, verification, site name and setup pages. |
 | Subtitle | Optional. Shown under the heading on the signup and login pages. |
+| Setup Messages | Optional. One line each, such as `Setting up channels…`. The waiting page shows them one at a time, in a loop, while the product starts. Without them, the page shows general lines. |
 | Signup App | The app module name, such as `raven`. Cargo tags the image that has this app installed with `app=<signup app>`. |
+| Frappe Version | The Frappe branch of the trial image, `develop`, `version-<number>` or `version-<number>-hotfix`, such as `version-16-hotfix`. The default is `develop`. Cargo tags each image with the branch it was built on as `frappe_version=<branch>`. |
 | Landing Route | Optional. Where the owner lands after signing in to a trial site, such as `/raven`, so the app runs its own setup. Empty opens Desk, which shows Frappe's setup wizard. |
 | Trial Days | Days a trial site of this product runs from when Central records its site. 0 uses Central Settings, Trial Days. See [Trials](../../SPEC.md#trials). |
 | Trial Deletion Days | Days a stopped trial site is kept before its server is terminated. 0 uses Central Settings, Trial Deletion Days. |
 | Use Product Branding in Emails | Off uses Frappe Cloud's logo and name in emails. On uses the product's Logo and Title. See [Emails](#emails). |
 | Email Notes | One extra paragraph for each lifecycle email about a site of this product. See [Emails](#emails). |
 
-Example: Product Key `raven`, Title `Raven`, Signup App `raven`. The signup link is `/dashboard/signup?product=raven`.
+Example: Product Key `raven`, Title `Raven`, Signup App `raven`, Frappe Version `version-16`. The signup link is `/dashboard/signup?product=raven`.
 
 ## Operation
 
-`GET central.api.signups.get_product(product)` returns the title, logo and subtitle of an enabled product, or nothing. Guests can call it, limited to 60 calls per minute for each IP address.
+`GET central.api.signups.get_product(product)` returns the title, logo, subtitle and setup messages of an enabled product, or nothing. Guests can call it, limited to 60 calls per minute for each IP address.
 
-The console keeps `?product=` through signup, sign-in, email verification and the onboarding pages. The site name page sends it to `central.api.sites.create_trial_site(subdomain, request_key, team, product)`. Central refuses an unknown or disabled product before it asks the region for an image. See [Trial sites](../../../infrastructure/doctype/site/SPEC.md#configuration) for how the image is chosen.
+The console keeps `?product=` through signup, sign-in, email verification and the onboarding pages. The site name page sends it to `central.api.sites.create_trial_site(subdomain, request_key, product, team)`. The product is required, because only a product signup gets a free trial. Central refuses an unknown or disabled product before it asks the region for an image. See [Trial sites](../../../infrastructure/doctype/site/SPEC.md#configuration) for how the image is chosen.
 
 A person who can edit a saved product has these Desk actions:
 
 | Action | Effect |
 |---|---|
 | **Open Signup Page** | Opens `/dashboard/signup?product=<product key>`. It shows only on an enabled product. |
-| **Preview Trial Images** | Lists the trial images of a region that have the signup app installed, with the app version. Use it to check that Cargo built an image before you share the signup link. Only a System Manager sees it. |
+| **Preview Trial Images** | Lists the trial images of a region that have the signup app installed on the product's Frappe version, with the app version. Use it to check that Cargo built an image before you share the signup link. Only a System Manager sees it. |
 | **Emails > Preview Email** | Shows the signup code email or a lifecycle email as a customer of this product sees it, with sample dates. It uses the unsaved changes on the form, so you can check a note before you save. |
 | **Emails > Send Test Email** | Sends the same email to your own address, with "[Test]" in the subject. |
 | **View > Sites**, **View > Trial Sites Report** | Open the product's sites and the trial report. Only a System Manager sees them. |
@@ -52,7 +54,17 @@ Another product signup reuses the Team's billing profile and credit balance. It 
 
 An accepted invitation lets the member use the selected Team's balance when their role permits site creation. It grants no additional welcome credits. Membership does not consume the member's welcome-credit eligibility as an owner. If the member creates their own first Team, that Team can receive the [welcome credit](../../SPEC.md#welcome-credit).
 
-A Product needs a Cargo image of type Apps for its signup app in the region. Without one, the signup stops with "No trial image is available right now."
+A Product needs a Cargo image of type Apps for its signup app, on its Frappe version, in the region. Without one, the signup stops with "No trial image is available right now."
+
+To move a product to another Frappe version:
+
+1. Add the branch to Cargo Settings, Frappe Branches, and add the app to Signup Apps. Cargo then builds an Apps image of the app's newest stable release that runs on that branch.
+2. On the Product, use **Preview Trial Images** for each trial region, after you set Frappe Version and save. Central cannot read the branches that Cargo builds, so this is the only check.
+3. Revert Frappe Version if a region shows no image.
+
+New trials use the new version. Existing sites stay on the version they started on. The app version is not set on the Product. Cargo builds only the newest stable release for each branch and retires older images, so a pinned version would soon have no image.
+
+A customer can add another product's app to an open trial site. Pilot installs the release of that app that runs on the site's Frappe version, which can differ from the other product's Frappe Version.
 
 ## Access
 
@@ -71,14 +83,15 @@ Central sends the signup code and the [trial lifecycle emails](../../SPEC.md#ope
 
 **Branding.** With **Use Product Branding in Emails** on, the email header shows the product's Logo and Title instead of Frappe Cloud's. The code email also names the product, such as "123456 is your Raven signup code". The lifecycle emails of the product's sites use the same header. The logo must be a public file, because an email client loads it without a session. The footer still says that the person is a member of a Frappe Cloud team.
 
-**Getting started.** With a **Getting Started URL**, the `site_ready` and `trial_unopened` emails show a **Get started** button to that page, above the **View site** button. Use the product's own guide or docs page, so the product team can change it without a change in Central. The address must start with `https://`. The `site_ready` subject also names the product, such as "Your Raven site is ready".
+**Getting started.** With a **Getting Started URL**, the `site_ready` and `trial_unopened` emails show a **Get started** button that opens the site, and a **View docs** button to that page. Use the product's own guide or docs page, so the product team can change it without a change in Central. The address must start with `https://`. The `site_ready` subject also names the product, such as "Your Raven site is ready".
 
 **Action links.** Email actions use the destinations below. Email previews use a sample site URL. In-app actions use the console routes.
 
 | Email | Action destination |
 |---|---|
 | `site_ready`, `trial_unopened` | The created site's public URL and the product's Landing Route. A plain signup opens the site's root URL. |
-| `trial_expiring`, `trial_ended`, `trial_deletion_soon`, `trial_converted` | Frappe Cloud's billing page. |
+| `trial_expiring`, `trial_ended`, `trial_deletion_soon` | The server's Upgrade dialog (`/servers/<server>?action=resize`). |
+| `trial_converted` | Frappe Cloud's billing page. |
 | `trial_deleted` | No action link. |
 
 **Email Notes.** Each row adds text under the standard text of one email, only for sites of this product. Separate paragraphs with a blank line. Use it for product advice, such as what to do first. Central keeps the standard text, the dates and the button, so a note cannot change the trial terms.
@@ -102,7 +115,7 @@ Central sends one Pulse event at each signup step with `frappe.utils.telemetry.c
 |---|---|---|
 | `signup_code_sent` | A new email asks for a code | `product` |
 | `signup_verified` | A new email verifies its code and gets an account | `product` |
-| `trial_requested` | Central saves a new trial request. A repeated request with the same key sends nothing. | `product`, `region` |
+| `trial_requested` | Central saves a new trial request. A repeated request with the same key sends nothing. | `product`, `region`, and the Team's [signup attribution](#signup-attribution): `utm_source`, `utm_medium`, `utm_campaign`, `referrer`, `landing_product` |
 | `trial_failed` | The trial's create Resource Action fails or times out | `product`, `status`, `error_code` |
 | `trial_ready` | Central first records that the site answers. See [Readiness](../../../infrastructure/doctype/site/SPEC.md#readiness). | `product`, `seconds_to_ready` |
 | `trial_claimed` | The customer first opens the site | `product` |
@@ -111,6 +124,8 @@ Central sends one Pulse event at each signup step with `frappe.utils.telemetry.c
 | `trial_deleted` | The ended trial's server is terminated | `product` |
 
 A product app sends its own activation events from the trial site. Central puts `fc_team` in the site config of every Pilot server, so those events name the same Team and join this funnel. See [Integrations](../../../../spec/INTEGRATIONS.md).
+
+A signed-in `verify_code` answer also carries the new session's CSRF token. In a product signup, the console then goes on to the site name page without a page load.
 
 `signup_code_sent` and `signup_verified` happen before the customer has a Team, so Pulse files them under Central's own team. `send_code` and `verify_code` take an optional `product` only to label these events. An unknown product is dropped.
 
@@ -126,4 +141,4 @@ A team created at signup keeps how its owner first found Frappe Cloud. The brows
 | Landing Product | The first page's `product`, when that product exists |
 | Referrer | The page that linked to the first page, trimmed to 1,000 characters |
 
-A bad or unknown value is dropped and the team is still created. Join these fields with invoices to measure revenue by campaign. Pulse holds the funnel counts.
+A bad or unknown value is dropped and the team is still created. Join these fields with invoices to measure revenue by campaign. `trial_requested` carries the same fields, so Pulse can split the trial funnel by campaign.

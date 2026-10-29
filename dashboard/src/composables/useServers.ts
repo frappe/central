@@ -19,6 +19,10 @@ type CommandParams = {
 	take_snapshot?: number
 }
 
+/** SSH opens a root shell. TTY opens the serial console, which asks for a password. */
+export type ConsoleMode = 'ssh' | 'tty'
+type ConsoleParams = CommandParams & { mode: ConsoleMode }
+
 export type ServerCommand = 'start' | 'stop' | 'restart' | 'terminate'
 
 export type VirtualMachineRow = Pick<
@@ -72,7 +76,7 @@ const benchLinkCall = useCall<BenchLinkResponse, { server: string }>({
 	url: method(API.getBenchLink),
 	immediate: false,
 })
-const consoleCall = useCall<{ url: string }, CommandParams>({
+const consoleCall = useCall<{ url: string }, ConsoleParams>({
 	url: method(API.openConsole),
 	method: 'POST',
 	immediate: false,
@@ -175,7 +179,10 @@ async function openBench(
 /** Open the server's Atlas web console in a popup. Atlas spends a token on first
  *  use, so every request mints a new one. One window per server: a second request
  *  replaces the session in that window. */
-async function openConsole(server: VirtualMachineRow): Promise<void> {
+async function openConsole(
+	server: VirtualMachineRow,
+	mode: ConsoleMode,
+): Promise<void> {
 	const team = activeTeam.value
 	if (!team || opening.value) return
 	opening.value = server.resource_id
@@ -184,7 +191,11 @@ async function openConsole(server: VirtualMachineRow): Promise<void> {
 		'popup,width=960,height=640',
 	)
 	try {
-		await submitOrThrow(consoleCall, { team, resource_id: server.resource_id })
+		await submitOrThrow(consoleCall, {
+			team,
+			resource_id: server.resource_id,
+			mode,
+		})
 		openResolvedUrl(consoleCall.data?.url, tab, 'console')
 	} catch (error) {
 		tab?.close()

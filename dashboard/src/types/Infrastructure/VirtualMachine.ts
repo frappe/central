@@ -65,8 +65,8 @@ export interface VirtualMachine {
 	admin_domain_task?: string
 	/**	Admin Domain Error : Small Text - A safe summary of the latest admin hostname failure.	*/
 	admin_domain_error?: string
-	/**	Admin Domain Error Log : Link - Error Log - The Error Log for the latest admin hostname failure.	*/
-	admin_domain_error_log?: string
+	/**	Admin Domain Diagnostic : Code - The detail of the latest admin hostname failure. Operators only.	*/
+	admin_domain_diagnostic?: string
 	/**	Atlas Image ID : Data	*/
 	atlas_image_id?: string
 	/**	State Observed At : Datetime - When Central last recorded this server's state.	*/

@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { Alert, Button, Dialog, SettingsRow, TextInput } from 'frappe-ui'
+import { Alert, Button, SettingsRow, TextInput } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import ImageUpload from '@/components/common/ImageUpload.vue'
+import ArchiveTeamDialog from '@/components/team/ArchiveTeamDialog.vue'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { useSession } from '@/composables/useSession'
 import { settingsOpen } from '@/composables/useSettings'
@@ -10,7 +11,7 @@ import { useTeamSettings } from '@/composables/useTeamSettings'
 
 const router = useRouter()
 const { activeTeam, activeTeamLabel, activeTeamLogo } = useSession()
-const { saving, error, clearError, rename, setLogo, deleteTeam } =
+const { saving, error, clearError, rename, setLogo, archiveTeam } =
 	useTeamSettings()
 
 const { canEditTeam, canDeleteTeam } = useCapabilities()
@@ -29,23 +30,12 @@ async function onSave(): Promise<void> {
 }
 watch(name, clearError)
 
-const confirmDelete = ref(false)
-const deleteOptions = computed(() => ({
-	title: 'Delete team',
-	message: `Permanently delete “${activeTeamLabel.value}”? This can't be undone.`,
-	actions: [
-		{
-			label: 'Delete team',
-			variant: 'solid' as const,
-			theme: 'red' as const,
-			onClick: onDelete,
-		},
-	],
-}))
+const archiveTarget = ref<string | null>(null)
+watch(archiveTarget, clearError)
 
-async function onDelete(): Promise<void> {
-	if (await deleteTeam()) {
-		confirmDelete.value = false
+async function onArchive(): Promise<void> {
+	if (await archiveTeam()) {
+		archiveTarget.value = null
 		settingsOpen.value = false
 		router.push('/servers')
 	}
@@ -55,7 +45,7 @@ async function onDelete(): Promise<void> {
 <template>
 	<div class="mt-6">
 		<div class="space-y-6">
-			<Alert v-if="error && !confirmDelete" theme="red" :title="error" />
+			<Alert v-if="error && !archiveTarget" theme="red" :title="error" />
 			<ImageUpload
 				v-if="canEditTeam && activeTeam"
 				label="Logo"
@@ -95,20 +85,22 @@ async function onDelete(): Promise<void> {
 
 		<div v-if="canDeleteTeam" class="mt-8 border-t border-outline-gray-1">
 			<SettingsRow
-				title="Delete team"
-				description="Permanently delete this team. Remove its servers and sites first."
+				title="Archive team"
+				description="Close this team for every member. Terminate its servers and pay its invoices first."
 			>
-				<Button theme="red" label="Delete" @click="confirmDelete = true" />
+				<Button
+					theme="red"
+					label="Archive"
+					@click="archiveTarget = activeTeam"
+				/>
 			</SettingsRow>
 		</div>
 
-		<Dialog
-			v-model="confirmDelete"
-			:title="deleteOptions.title"
-			:message="deleteOptions.message"
-			:actions="deleteOptions.actions"
-		>
-			<Alert v-if="error" theme="red" :title="error" />
-		</Dialog>
+		<ArchiveTeamDialog
+			v-model:target="archiveTarget"
+			:archiving="saving"
+			:error="error"
+			@archive="onArchive"
+		/>
 	</div>
 </template>

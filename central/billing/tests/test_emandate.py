@@ -112,6 +112,7 @@ class TestEmandatePredebit(IntegrationTestCase):
 		emandate.schedule_predebit(inv, now="2026-06-10 09:00:00")  # window opens 06-11 09:00
 
 		adapter = MagicMock()
+		adapter.prepare_charge.return_value = None  # Stripe-like: no order to store
 		adapter.charge.return_value = PaymentResult(
 			success=True, status="Captured", gateway_transaction_id="pay_e"
 		)

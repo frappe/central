@@ -1,0 +1,21 @@
+{
+ "Exact": [
+  "about", "access", "account", "accounts", "adm", "admin", "administration", "analytics",
+  "api", "app", "apps", "archive", "atlas", "auth", "authentication", "backup", "billing",
+  "blog", "blogs", "bot", "bots", "cache", "cargo", "cdn", "config", "connect", "contact",
+  "dashboard", "db", "dev", "devel", "doc", "docs", "domain", "download", "downloads",
+  "email", "faq", "feed", "feedback", "file", "files", "ftp", "guest", "help", "home",
+  "host", "hosting", "hostname", "http", "httpd", "https", "imap", "info", "intranet",
+  "invite", "job", "jobs", "log", "login", "logout", "logs", "mail", "mail1", "mail2",
+  "mail3", "mail4", "mail5", "mailer", "mailing", "manager", "master", "media", "mx",
+  "mysql", "network", "news", "newsletter", "ns", "ns1", "ns2", "ns3", "ns4", "operator",
+  "panel", "password", "pop", "pop3", "postfix", "postmaster", "profile", "proxy", "public",
+  "register", "registration", "root", "rss", "search", "secure", "security", "service",
+  "setting", "settings", "setup", "signin", "signup", "site", "sites", "sitemap", "smtp",
+  "ssh", "stage", "staging", "stat", "static", "stats", "status", "subdomain", "support",
+  "system", "task", "tasks", "test", "test1", "test2", "test3", "tests", "tmp", "tools",
+  "update", "upload", "usage", "user", "username", "web", "webmail", "webmaster", "website",
+  "websites", "ww", "www", "www1", "www2", "www3", "www4", "www5", "www6", "www7", "wwww"
+ ],
+ "Prefix": ["proxy-", "s3-svc", "s3-admin-svc", "cargo-pilot", "central"]
+}

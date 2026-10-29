@@ -18,9 +18,10 @@
     "test:server-controls": "playwright test --config dashboard/tests/playwright.config.ts",
     "test:e2e:headed": "playwright test --headed",
     "test:e2e:report": "playwright show-report",
-    "docs:dev": "vitepress dev docs",
-    "docs:build": "vitepress build docs",
-    "docs:preview": "vitepress preview docs",
+    "docs:dev": "yarn --cwd docs dev",
+    "docs:build": "yarn --cwd docs build",
+    "docs:preview": "yarn --cwd docs preview",
+    "docs:capture": "yarn --cwd docs capture",
     "build-email-css": "tailwindcss -i scripts/email.css -o central/public/css/email.css -c scripts/email.config.js --minify"
   },
   "version": "0.2.0",

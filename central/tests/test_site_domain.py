@@ -100,9 +100,7 @@ class TestSiteDomain(IntegrationTestCase):
 			route.failure_reason,
 			"Could not update this route. It will retry automatically.",
 		)
-		log = frappe.get_doc("Error Log", route.error_log)
-		self.assertIn("HTTP 503", log.error)
-		self.assertEqual((log.reference_doctype, log.reference_name), ("Site Domain", route.name))
+		self.assertIn("HTTP 503", route.diagnostic)
 
 	def test_apply_records_an_unreachable_proxy(self):
 		route = self._route(f"down-{self.suffix}.com")
@@ -114,7 +112,7 @@ class TestSiteDomain(IntegrationTestCase):
 
 		route.reload()
 		self.assertEqual(route.status, "Failed")
-		self.assertIn("connection refused", frappe.get_doc("Error Log", route.error_log).error)
+		self.assertIn("connection refused", route.diagnostic)
 
 	def test_apply_fails_without_a_server_address(self):
 		server = self._server("c", self.team, None)
@@ -196,7 +194,7 @@ class TestSiteDomain(IntegrationTestCase):
 			route.failure_reason,
 			"Could not remove this route. It will retry automatically.",
 		)
-		self.assertIn("HTTP 503", frappe.get_doc("Error Log", route.error_log).error)
+		self.assertIn("HTTP 503", route.diagnostic)
 
 		proxy.delete_domain.side_effect = None
 		with patch(GET_PROXY_CLIENT, return_value=proxy), patch.object(frappe.db, "commit"):
@@ -356,6 +354,25 @@ class TestSiteDomain(IntegrationTestCase):
 
 		self.assertTrue(frappe.db.exists("Site Domain", route.name))
 
+	def test_a_name_another_server_chose_is_refused(self):
+		"""A Site holds its chosen name before its rename routes it."""
+		self._site(self._server("g", self.team, "2001:db8::21"), subdomain=f"chosen-{self.suffix}")
+		domain = f"chosen-{self.suffix}.{self.zone}"
+
+		with patch(GET_PROXY_CLIENT, return_value=MagicMock()), self.assertRaises(frappe.DuplicateEntryError):
+			SiteDomain.register(self._credential(self.server), domain)
+
+		self.assertFalse(frappe.db.exists("Site Domain", domain))
+
+	def test_a_server_registers_the_name_its_own_site_chose(self):
+		self._site(self.server, subdomain=f"mine-{self.suffix}")
+		domain = f"mine-{self.suffix}.{self.zone}"
+
+		with patch(GET_PROXY_CLIENT, return_value=MagicMock()):
+			SiteDomain.register(self._credential(self.server), domain)
+
+		self.assertEqual(frappe.db.get_value("Site Domain", domain, "status"), "Active")
+
 	def test_deregister_removes_the_route(self):
 		route = self._route(f"bye-{self.suffix}.com")
 		proxy = MagicMock()
@@ -388,6 +405,17 @@ class TestSiteDomain(IntegrationTestCase):
 				"team": team or server.team,
 				"region": self.region,
 				"server": server.name,
+			}
+		).insert(ignore_permissions=True)
+
+	def _site(self, server, subdomain: str):
+		return frappe.get_doc(
+			{
+				"doctype": "Site",
+				"site_name": f"site-{server.name}.{self.zone}",
+				"team": server.team,
+				"server": server.name,
+				"subdomain": subdomain,
 			}
 		).insert(ignore_permissions=True)
 

@@ -49,12 +49,14 @@ const monthly = computed(() =>
 			<span class="text-p-base-semibold text-ink-gray-9"
 				>{{ target.title }}</span
 			>
-			is no longer deleted on its own. It stays free while it is one of this
-			server's
-			{{ freePerServer }}
-			newest snapshots.
+			is no longer deleted on its own.
+			<template v-if="freePerServer"
+				>It stays free while it is one of this server's
+				{{ freePerServer }}
+				newest snapshots.</template
+			>
 			<template v-if="monthly != null">
-				After that it costs
+				{{ freePerServer ? 'After that it costs' : 'It costs' }}
 				<span class="text-p-base-semibold text-ink-gray-9"
 					>{{ format(monthly) }}
 					per month</span

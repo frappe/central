@@ -40,10 +40,11 @@ jobs:
       - name: Download Semgrep rules
         run: git clone --depth 1 https://github.com/frappe/semgrep-rules.git frappe-semgrep-rules
 
+      # The docs site has its own tooling and does not run as part of the app.
       - name: Run Semgrep rules
         run: |
           pip install semgrep
-          semgrep ci --config ./frappe-semgrep-rules/rules --config r/python.lang.correctness
+          semgrep ci --config ./frappe-semgrep-rules/rules --config r/python.lang.correctness --exclude=/docs/
 
   deps-vulnerable-check:
     name: 'Vulnerable Dependency Check'

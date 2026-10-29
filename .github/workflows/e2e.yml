@@ -107,6 +107,8 @@ jobs:
         run: |
           bench --site "$SITE" set-config allow_tests true
           bench --site "$SITE" set-config developer_mode 0
+          # The site has no outgoing email account, so team invitations would fail to send.
+          bench --site "$SITE" set-config mute_emails 1
           bench --site "$SITE" set-config stripe_secret_key "$STRIPE_SECRET_KEY"
           bench --site "$SITE" set-config stripe_publishable_key "$STRIPE_PUBLISHABLE_KEY"
           bench --site "$SITE" set-config razorpay_key_id "$RAZORPAY_KEY_ID"

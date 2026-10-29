@@ -220,7 +220,7 @@ useServerLink(
 							:can-terminate="canTerminateServer"
 							:can-snapshot="canSnapshotServer"
 							:can-open-console="canOpenConsole"
-							:opens-site="!!pin.site"
+							:site="pin.site?.name"
 							:busy="busy === pin.server.resource_id"
 							:opening="
 								opening === pin.server.resource_id ||
@@ -308,7 +308,9 @@ useServerLink(
 			v-model:target="pendingTerminate"
 			:loading="busy === pendingTerminate?.resource_id"
 			:error="terminateError"
-			:can-snapshot="terminateActions.snapshot"
+			:can-snapshot="
+				terminateActions.snapshot && !terminateActions.isAccessLocked
+			"
 			@confirm="confirmTerminate"
 		/>
 		<TakeSnapshotDialog v-model:server="pendingSnapshot" />

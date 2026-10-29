@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Button } from 'frappe-ui'
 import { computed, markRaw, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import {
 	createListViewQuery,
@@ -62,7 +63,20 @@ const {
 	remove,
 } = useBucketObjects()
 
-const prefix = ref('')
+const route = useRoute()
+
+const prefix = computed(() => {
+	const path = route.query.path
+
+	if (typeof path !== 'string' || !path) return ''
+
+	return path.endsWith('/') ? path : `${path}/`
+})
+
+const folderLink = (path: string) => ({
+	query: { ...route.query, path: path || undefined },
+})
+
 const downloading = ref('')
 const fileInput = ref<HTMLInputElement | null>(null)
 const uploads = ref<Upload[]>([])
@@ -252,25 +266,23 @@ const confirmDelete = async (rows: FileRow[]): Promise<void> => {
 			aria-label="Folder"
 			class="flex min-w-0 flex-wrap items-center gap-1 text-sm text-ink-gray-5"
 		>
-			<button
-				type="button"
+			<RouterLink
+				:to="folderLink('')"
 				aria-label="All files"
 				class="grid size-6 place-items-center rounded-4 hover:bg-surface-gray-2 hover:text-ink-gray-8"
-				@click="prefix = ''"
 			>
 				<span class="lucide-house size-4" aria-hidden="true" />
-			</button>
+			</RouterLink>
 
 			<template v-for="crumb in crumbs" :key="crumb.prefix">
 				<span aria-hidden="true">/</span>
 
-				<button
-					type="button"
+				<RouterLink
+					:to="folderLink(crumb.prefix)"
 					class="rounded-4 px-1 hover:bg-surface-gray-2 hover:text-ink-gray-8 last:text-ink-gray-8"
-					@click="prefix = crumb.prefix"
 				>
 					{{ crumb.label }}
-				</button>
+				</RouterLink>
 			</template>
 		</nav>
 
@@ -377,14 +389,14 @@ const confirmDelete = async (rows: FileRow[]): Promise<void> => {
 						class="size-4 shrink-0 text-ink-gray-5"
 					/>
 
-					<button
+					<RouterLink
 						v-if="row.isFolder"
-						type="button"
+						:to="folderLink(row.id)"
 						class="truncate hover:underline"
-						@click.stop="prefix = row.id"
+						@click.stop
 					>
 						{{ row.name }}
-					</button>
+					</RouterLink>
 
 					<span v-else class="truncate">{{ row.name }}</span>
 				</span>

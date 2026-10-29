@@ -1,6 +1,6 @@
 import frappe
 
-from central.signups.trial import start_trial
+from central.signups.trial import Trial
 
 
 def execute() -> None:
@@ -15,6 +15,6 @@ def execute() -> None:
 	}
 	for name in frappe.get_all("Site", filters=filters, pluck="name"):
 		site = frappe.get_doc("Site", name)
-		start_trial(site)
+		Trial(site).start()
 		if site.trial_state:
 			site.db_set({"trial_state": site.trial_state, "trial_ends_on": site.trial_ends_on})

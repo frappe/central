@@ -7,9 +7,11 @@ import { successToast } from '@/lib/feedback'
 import { submitOrThrow } from '@/lib/frappeCall'
 import type {
 	AIApiKey,
+	AIModel,
 	AIState,
 	AIUsage,
 	MintedKey,
+	NewKey,
 	UsageFilters,
 } from '@/types/ai'
 
@@ -50,9 +52,35 @@ const apiKeysCall = useCall<AIApiKey[], { team: string }>({
 	immediate: false,
 })
 
-const createKeyCall = useCall<MintedKey, { team: string; label: string }>({
+const createKeyCall = useCall<
+	MintedKey,
+	{ team: string; label: string; geography: string; cap?: number }
+>({
 	url: method(API.createAIApiKey),
 	method: 'POST',
+	immediate: false,
+})
+
+// The secret of the key just minted, shown once. Kept here, not in the keys tab, so the page
+// shows it from outside the tab area: a reload that comes back unavailable cannot unmount it.
+const minted = ref<MintedKey | null>(null)
+
+const capsCall = useCall<
+	AIApiKey[],
+	{ team: string; caps: Record<string, number> }
+>({
+	url: method(API.setAIApiKeyCaps),
+	method: 'POST',
+	immediate: false,
+})
+
+const modelsParams = ref<{ team: string; geography: string }>({
+	team: '',
+	geography: '',
+})
+const modelsCall = useCall<AIModel[], typeof modelsParams.value>({
+	url: method(API.aiModels),
+	params: () => modelsParams.value,
 	immediate: false,
 })
 
@@ -62,11 +90,17 @@ const revokeKeyCall = useCall<{ name: string }, { team: string; key: string }>({
 	immediate: false,
 })
 
-const balanceAccessCall = useCall<
-	{ name: string; can_read_balance: boolean },
-	{ team: string; key: string; can_read_balance: boolean }
+const pullCall = useCall<{ sync: string | null }, { team: string }>({
+	url: method(API.pullAIUsage),
+	method: 'POST',
+	immediate: false,
+})
+
+const promptLoggingCall = useCall<
+	{ log_payloads: boolean },
+	{ team: string; enabled: boolean }
 >({
-	url: method(API.setAIApiKeyBalanceAccess),
+	url: method(API.setAIPromptLogging),
 	method: 'POST',
 	immediate: false,
 })
@@ -80,7 +114,6 @@ export function useAI() {
 		aiLoading: computed(() => aiCall.loading),
 		aiError: computed(() => aiCall.error),
 		reloadAI: (): Promise<unknown> => aiCall.reload(),
-		models: computed(() => aiCall.data?.models ?? []),
 
 		async enable(): Promise<void> {
 			await submitOrThrow(enableCall, { team: activeTeam.value! })
@@ -105,24 +138,44 @@ export function useAI() {
 		busyKey: computed(() => busyKey.value),
 		loadApiKeys: (): Promise<unknown> => apiKeysCall.reload(),
 
-		async createApiKey(label: string): Promise<MintedKey> {
-			await submitOrThrow(createKeyCall, { team: activeTeam.value!, label })
-			await apiKeysCall.reload()
-			return createKeyCall.data!
+		minted: computed(() => minted.value),
+		dismissMinted(): void {
+			minted.value = null
 		},
 
-		async setBalanceAccess(key: string, allowed: boolean): Promise<void> {
-			busyKey.value = key
-			try {
-				await submitOrThrow(balanceAccessCall, {
-					team: activeTeam.value!,
-					key,
-					can_read_balance: allowed,
-				})
-				await apiKeysCall.reload()
-			} finally {
-				busyKey.value = ''
-			}
+		async createApiKey(key: NewKey): Promise<void> {
+			await submitOrThrow(createKeyCall, { team: activeTeam.value!, ...key })
+			// The secret is on screen before anything else can fail. A cap moves the room left
+			// under the spend limit, so the list and the overview reload after it; a reload that
+			// fails lands in its own error state and takes nothing from the dialog.
+			minted.value = createKeyCall.data!
+			void Promise.all([apiKeysCall.reload(), aiCall.reload()]).catch(() => {})
+		},
+
+		// Every cap in one call: Grove saves all or none, so caps can move between keys.
+		async setCaps(caps: Record<string, number>): Promise<void> {
+			await submitOrThrow(capsCall, { team: activeTeam.value!, caps })
+			await Promise.all([apiKeysCall.reload(), aiCall.reload()])
+		},
+		capsSaving: computed(() => capsCall.loading),
+
+		// Grove holds the setting: the overview reads it back after the change.
+		async setPromptLogging(enabled: boolean): Promise<void> {
+			await submitOrThrow(promptLoggingCall, {
+				team: activeTeam.value!,
+				enabled,
+			})
+			await aiCall.reload()
+		},
+
+		// What a key in one geography starts with: the published models of its default group.
+		models: computed<AIModel[]>(() => modelsCall.data ?? []),
+		modelsGeography: computed(() => modelsParams.value.geography),
+		modelsLoading: computed(() => modelsCall.loading),
+		modelsError: computed(() => modelsCall.error),
+		loadModels(geography: string): Promise<unknown> {
+			modelsParams.value = { team: activeTeam.value!, geography }
+			return modelsCall.reload()
 		},
 
 		async revokeApiKey(key: string): Promise<void> {
@@ -132,10 +185,21 @@ export function useAI() {
 				successToast(
 					'API key revoked. It can take a few minutes to stop working.',
 				)
-				await apiKeysCall.reload()
+				await Promise.all([apiKeysCall.reload(), aiCall.reload()])
 			} finally {
 				busyKey.value = ''
 			}
 		},
+
+		// Grove pulls the team's gateways now, then every "as of" on the page moves.
+		async refreshUsage(): Promise<void> {
+			await submitOrThrow(pullCall, { team: activeTeam.value! })
+			await Promise.all([
+				aiCall.reload(),
+				apiKeysCall.reload(),
+				usageParams.value.team ? usageCall.reload() : null,
+			])
+		},
+		refreshing: computed(() => pullCall.loading),
 	}
 }

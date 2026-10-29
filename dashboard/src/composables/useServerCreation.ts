@@ -17,6 +17,7 @@ import {
 	ramFor,
 	rateCardComplete,
 } from '@/lib/composed'
+import { features } from '@/lib/features'
 import { money } from '@/lib/format'
 import { planPrice } from '@/lib/plans'
 import {
@@ -26,8 +27,6 @@ import {
 	regionLabel,
 } from '@/lib/serverMap'
 import type { ComposedConfig, Plan, Profile } from '@/types/api'
-
-const SUCCESS_HOLD_MS = 900
 
 export function useServerCreation() {
 	const router = useRouter()
@@ -171,7 +170,8 @@ export function useServerCreation() {
 	watch(ipv4PriceLabel, (label) => {
 		if (!label) hasPublicIpv4.value = false
 	})
-	const hasPublicIpv6 = ref(true)
+	// A hidden switch keeps its option off, and Central refuses it while its flag is off.
+	const hasPublicIpv6 = ref(features.publicIpv6)
 	const isFirewallEnabled = ref(false)
 	watch(selection, () => {
 		selectedPlan.value = null
@@ -188,6 +188,7 @@ export function useServerCreation() {
 		available,
 		currency,
 		capacity,
+		includedTransferGigabytes,
 		loading: plansLoading,
 		error: plansError,
 		reload: reloadPlans,
@@ -418,24 +419,22 @@ export function useServerCreation() {
 		operation.reset()
 	}
 
-	// A created server belongs in the fleet, not on this form. The list opens on it.
-	let successTimer: ReturnType<typeof setTimeout> | undefined
-	onBeforeUnmount(() => clearTimeout(successTimer))
+	// A created server opens on its own page. That page looks the server up in the shared
+	// fleet, so the fleet is read again first, or the page would say the server is missing.
+	let isLeaving = false
+	onBeforeUnmount(() => {
+		isLeaving = true
+	})
 	watch(
 		() => action.value?.status,
-		(status) => {
-			// A team switch or reset clears the action, so a pending redirect no longer applies.
-			clearTimeout(successTimer)
+		async (status) => {
 			if (status !== 'Succeeded') return
 			const created = action.value?.resource_id
-			// Let the finished progress register before the page changes.
-			successTimer = setTimeout(() => {
-				operation.reset()
-				router.replace({
-					path: '/servers',
-					query: created ? { created } : {},
-				})
-			}, SUCCESS_HOLD_MS)
+			await fleet.reload()
+			// A team switch or a reset during the read clears the action. Then the redirect no longer applies.
+			if (isLeaving || action.value?.status !== 'Succeeded') return
+			operation.reset()
+			router.replace(created ? `/servers/${created}` : '/servers')
 		},
 	)
 
@@ -461,6 +460,7 @@ export function useServerCreation() {
 		available,
 		currency,
 		capacity,
+		includedTransferGigabytes,
 		plansLoading,
 		plansError,
 		reloadPlans,

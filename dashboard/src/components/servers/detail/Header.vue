@@ -3,7 +3,11 @@ import { Badge, Button, Dropdown, Tooltip } from 'frappe-ui'
 import { computed } from 'vue'
 import CopyableValue from '@/components/common/CopyableValue.vue'
 import ProviderAvatar from '@/components/servers/ProviderAvatar.vue'
-import type { ServerCommand, VirtualMachineRow } from '@/composables/useServers'
+import type {
+	ConsoleMode,
+	ServerCommand,
+	VirtualMachineRow,
+} from '@/composables/useServers'
 import type { ServerActions } from '@/lib/capabilities'
 import { formatPlanLabel } from '@/lib/planLabel'
 import { statusVisual } from '@/lib/serverMap'
@@ -27,7 +31,7 @@ const emit = defineEmits<{
 	open: []
 	pilot: []
 	command: [command: Exclude<ServerCommand, 'terminate'>]
-	console: []
+	console: [mode: ConsoleMode]
 	rename: []
 	snapshot: []
 	resize: []
@@ -107,7 +111,9 @@ const canOpen = computed(
 		props.actions.open &&
 		!isUbuntu.value &&
 		!isSettingUp(props.server.status) &&
-		(!!props.siteUrl || !!props.server.gateway_url),
+		// Without a site, Open signs in to Pilot, which a free trial locks.
+		(!!props.siteUrl ||
+			(!!props.server.gateway_url && !props.actions.isAccessLocked)),
 )
 
 // Overview and Open are the page itself and its primary button, so the menu omits them.
@@ -118,17 +124,53 @@ const handlers: Partial<Record<ServerMenuVerb, () => void>> = {
 	restart: () => emit('command', 'restart'),
 	resize: () => emit('resize'),
 	snapshot: () => emit('snapshot'),
-	console: () => emit('console'),
+	'ssh-console': () => emit('console', 'ssh'),
+	'tty-console': () => emit('console', 'tty'),
 	rename: () => emit('rename'),
 	terminate: () => emit('terminate'),
 }
 
-const menu = computed(() =>
-	getServerMenu(props.server, props.actions, (verb) => handlers[verb]?.(), {
-		opensSite: !!props.siteUrl,
-		isOnServerPage: true,
-	}),
-)
+const operatorItems = computed(() => {
+	const links = props.details?.operator_links
+	if (!links) return []
+
+	const { desk_url: deskUrl, atlas_url: atlasUrl } = links
+	const open = (url: string) => window.open(url, '_blank', 'noopener')
+	return [
+		{
+			label: 'Open in Desk',
+			icon: 'lucide-app-window',
+			onClick: () => open(deskUrl),
+		},
+		...(atlasUrl
+			? [
+					{
+						label: 'Open in Atlas',
+						icon: 'lucide-earth',
+						onClick: () => open(atlasUrl),
+					},
+				]
+			: []),
+	]
+})
+
+const menu = computed(() => {
+	const groups = getServerMenu(
+		props.server,
+		props.actions,
+		(verb) => handlers[verb]?.(),
+		{
+			site: props.siteUrl ? new URL(props.siteUrl).host : null,
+			isOnServerPage: true,
+		},
+	)
+	if (!operatorItems.value.length) return groups
+
+	return [
+		...groups,
+		{ group: 'Operator', hideLabel: true, options: operatorItems.value },
+	]
+})
 </script>
 
 <template>
@@ -183,7 +225,7 @@ const menu = computed(() =>
 
 		<div class="flex shrink-0 gap-2">
 			<Button
-				v-if="details && actions.terminate"
+				v-if="details && actions.terminate && !actions.isAccessLocked"
 				variant="ghost"
 				:icon="isProtected ? 'lucide-lock' : 'lucide-lock-open'"
 				:label="protectionLabel"

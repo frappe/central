@@ -25,7 +25,7 @@ defineProps<{ title: string; description?: string; titleInfo?: string }>()
 						/>
 					</Tooltip>
 				</div>
-				<p v-if="description" class="mt-0.5 text-p-sm text-ink-gray-5">
+				<p v-if="description" class="mt-0.5 text-p-sm text-ink-gray-6">
 					{{ description }}
 				</p>
 			</div>

@@ -20,6 +20,10 @@ export interface Team {
 	created: string | null
 	/** The steps the caller still has to answer as owner. Empty for a team they do not own. */
 	onboarding: OnboardingStepKey[]
+	/** A suspended team is listed so the console can say why it cannot open it. */
+	status: 'Active' | 'Suspended'
+	/** Set when a System Manager opened the console as this team's owner. */
+	is_impersonated?: boolean
 }
 
 export type MemberStatus = 'Active' | 'Suspended'
@@ -100,6 +104,8 @@ export interface MyInvitation {
 	team: string
 	team_name: string
 	role: string
+	/** The role's display name; a custom role's `role` is an opaque record name. */
+	role_name: string
 	invited_by: string | null
 	expires_on: string | null
 	creation: string
@@ -153,6 +159,8 @@ export interface ProvisionablePlans {
 	/** Remaining headroom in the team's currency: a plan is offered only if it fits. */
 	available: number
 	spend_limit_enforced: boolean
+	/** The monthly transfer every server includes, from Central Settings. */
+	included_transfer_gb: number
 	plans: Record<string, Plan[]>
 	/** Per-resource component rates for "design your own" (#79). Empty when a
 	 *  component isn't priced for the team's currency — composed configs not offered. */
@@ -219,6 +227,68 @@ export interface TrialSiteState {
 	login_pending: boolean
 }
 
+/** The owner's open free trial, which a new signup offers before it asks for another site. */
+export interface OpenTrial {
+	state: 'Active' | 'Ended' | 'Setting up'
+	product: string | null
+	product_title: string
+	/** The Product's logo, or null for a plain Frappe Cloud trial. */
+	product_logo?: string | null
+	/** Absent while the site is still being set up. */
+	site?: string
+	server?: string
+	address?: string
+	url?: string
+	ends_on?: string | null
+	deletes_on?: string | null
+}
+
+/** A Pilot task's state while it installs an app on a trial site. */
+export type AppInstallStatus =
+	| 'queued'
+	| 'running'
+	| 'success'
+	| 'failed'
+	| 'killed'
+
+/** The install that `install_trial_app` started: the bench's name for the site and its task. */
+export interface TrialAppInstall {
+	site: string
+	task_id: string | null
+	status: AppInstallStatus
+}
+
+export interface TrialAppInstallProgress {
+	/** `unreachable`: the site did not answer this poll, so the page asks again. */
+	status: AppInstallStatus | 'unreachable'
+	/** Tasks ahead of this one on the server while it is queued. */
+	queue_position: number | null
+	started_at: string | null
+	/** Customer copy for a failed install. The reason is on the Site for operators. */
+	error: string | null
+}
+
+/** The milestone a new site is working towards, as Central reads it. */
+export type SetupPhase = 'booking' | 'server' | 'app' | 'signing' | 'failed'
+
+export interface SetupJourney {
+	phase: SetupPhase
+	subdomain: string | null
+	domain: string | null
+	region: {
+		title: string | null
+		country_code: string | null
+		/** Read with `hasMapCoords`: a region without coordinates reports 0/0. */
+		latitude?: number
+		longitude?: number
+	}
+	started_at: string | null
+	/** The median wait of recent trials in the region, or null with too few of them. */
+	eta_seconds: number | null
+	/** The creation request's name, which support can look up. */
+	reference: string | null
+}
+
 export interface TrialOnboardingStatus {
 	site: TrialSiteState | null
 	creation: {
@@ -227,4 +297,5 @@ export interface TrialOnboardingStatus {
 		title: string
 		error: { message: string } | null
 	} | null
+	journey: SetupJourney | null
 }

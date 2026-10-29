@@ -1,0 +1,59 @@
+name: Documentation
+
+on:
+  push:
+    branches: [develop]
+    paths: ['docs/**', '.github/workflows/docs.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: 'Build'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: docs
+
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '22'
+          cache: yarn
+          cache-dependency-path: docs/yarn.lock
+
+      # The capture tools are not needed to build the site.
+      - run: yarn install --frozen-lockfile
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+      - run: yarn build
+        env:
+          DOCS_BASE: /central/
+
+      - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5
+        with:
+          path: docs/.vitepress/dist
+
+  deploy:
+    name: 'Deploy'
+    needs: build
+    runs-on: ubuntu-latest
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5

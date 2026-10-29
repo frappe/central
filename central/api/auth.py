@@ -1,6 +1,7 @@
 import frappe
 from frappe import _
 from frappe.rate_limiter import rate_limit
+from frappe.sessions import get_csrf_token
 from frappe.utils import validate_email_address
 
 from central.identity.doctype.team_invitation.team_invitation import get_invitation_by_token
@@ -43,12 +44,16 @@ def send_code(email: str, full_name: str | None = None, product: str | None = No
 	methods="POST",
 )
 def verify_code(email: str, code: str, full_name: str | None = None, product: str | None = None) -> dict:
-	"""Sign in with an emailed code. Returns `needs_name` when a new account has no name yet."""
+	"""Sign in with an emailed code. Returns `needs_name` when a new account has no name yet, and
+	the new session's CSRF token once signed in."""
 	email = _validated_email(email)
 	if len(code) != 6 or not code.isascii() or not code.isdigit():
 		frappe.throw(_("Enter the 6-digit code from your email."), frappe.ValidationError)
 
-	return sign_in_with_code(email, code, _optional_full_name(full_name), _known_product(product))
+	result = sign_in_with_code(email, code, _optional_full_name(full_name), _known_product(product))
+	if "user" in result:
+		result["csrf_token"] = get_csrf_token()
+	return result
 
 
 # nosemgrep: guest-whitelisted-method -- the emailed token verifies the address, and the IP rate limit applies.

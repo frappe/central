@@ -33,7 +33,7 @@ The distinction matters:
 | `billing:manage` | Manage billing settings and payment operations. |
 | `team:edit` | Edit team metadata. |
 | `team:manage_members` | Invite, suspend, and change team members. |
-| `team:delete` | Delete a team. |
+| `team:delete` | Archive a team. |
 | `service:view` | View managed service configuration. |
 | `service:manage` | Create and delete storage buckets, set bucket quotas, rotate bucket credentials, and download, upload, and delete stored objects. |
 | `server:ssh-key` | Add, rotate, and remove Team SSH keys for selected servers. |

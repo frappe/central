@@ -46,3 +46,6 @@ class SubscriptionChange(Document):
 				_("Subscription Change is append-only; history cannot be edited."),
 				frappe.ValidationError,
 			)
+		# A negative rate would bill the team a credit on every invoice.
+		if frappe.utils.flt(self.locked_rate) < 0:
+			frappe.throw(_("A subscription rate cannot be negative."), frappe.ValidationError)

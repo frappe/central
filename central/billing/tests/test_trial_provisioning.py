@@ -18,10 +18,12 @@ from central.billing.tests.utils import (
 	BillingTestCase as IntegrationTestCase,
 )
 from central.billing.tests.utils import (
+	clear_team_tier,
 	ensure_atlas_instance,
 	ensure_team,
 	isolate_trial_plans,
 	make_plan,
+	set_team_tier,
 )
 
 TEAM = "team-trial-provisioning"
@@ -39,6 +41,7 @@ class TestTrialProvisioning(IntegrationTestCase):
 		ensure_team(self.team)
 		frappe.db.set_value("Team", self.team, "is_staging_trial", 1)
 		self._minimal_profile(self.team, "INR")
+		set_team_tier(self.team, max_spend=10000)
 		# A 1 vCPU / 2 GB / 10 GB plan — the size the VM must take, whatever the caller asks.
 		self.plan = self._fresh_plan(
 			"trial-starter",
@@ -171,9 +174,36 @@ class TestTrialProvisioning(IntegrationTestCase):
 		self.assertTrue(_profile_complete(self.team))
 
 	def test_non_trial_team_still_needs_full_profile(self):
-		# Same currency-only profile, but not a trial → the billing-profile gate holds.
+		# Same currency-only profile, but not a trial and no credit → the billing-profile gate holds.
 		frappe.db.set_value("Team", self.team, "is_staging_trial", 0)
-		self._fund()
 		with self.assertRaises(frappe.ValidationError):
 			self._create(self.plan)
 		self.assertFalse(frappe.db.exists("Resource Action", {"team": self.team}))
+
+	def test_trial_is_refused_past_its_tier_spend(self):
+		self._fund()
+		set_team_tier(self.team, max_spend=400)
+		with self.assertRaises(frappe.ValidationError):
+			self._create(self.plan)
+
+	def test_server_count_is_capped_by_the_tier(self):
+		frappe.db.set_value("Team", self.team, "is_staging_trial", 0)
+		self._fund()
+		frappe.db.set_value("Trust Tier Level", "t1", "max_resource_count", 1)
+		self.addCleanup(frappe.db.set_value, "Trust Tier Level", "t1", "max_resource_count", 50)
+		self._seed_server("tier-seed")
+
+		with self.assertRaises(frappe.ValidationError) as caught:
+			self._create(self.plan)
+		self.assertEqual(caught.exception.envelope["code"], "TRUST_TIER_LIMIT")
+
+	def test_internal_team_is_not_held_to_a_tier(self):
+		self._fund()
+		clear_team_tier(self.team)
+		frappe.get_doc(
+			{"doctype": "Tax Profile", "team": self.team, "is_internal": 1, "internal_reason": "Our own team"}
+		).insert(ignore_permissions=True)
+
+		action, _ = self._create(self.plan)
+
+		self.assertEqual(action.status, "Succeeded")

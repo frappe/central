@@ -21,6 +21,7 @@ import StatementCard from '@/components/billing/StatementCard.vue'
 import StatementPanel from '@/components/billing/StatementPanel.vue'
 import StopBillingCard from '@/components/billing/StopBillingCard.vue'
 import TiersPanel from '@/components/billing/TiersPanel.vue'
+import TrialBillingBanner from '@/components/billing/TrialBillingBanner.vue'
 import WalletHistoryPanel from '@/components/billing/WalletHistoryPanel.vue'
 import TopupDialog from '@/components/TopupDialog.vue'
 import { useBillingOverview } from '@/composables/useBillingOverview'
@@ -92,6 +93,7 @@ const onAddCredits = () => {
 				:attempts="reports.attempts.data ?? null"
 			/>
 			<CollectionActionBanner />
+			<TrialBillingBanner />
 			<GstStatusBanner @edit="setupDialogOpen = true" />
 
 			<section

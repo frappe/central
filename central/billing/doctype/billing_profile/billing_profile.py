@@ -15,6 +15,9 @@ from central.billing.india_gst import GST_STATE_CODES, INDIA
 # either would desync documents already sent to the customer.
 _INVOICE_LOCKED_FIELDS = {"country": "country", "currency": "currency"}
 
+# What an operator changes to move a team on the trust ladder by hand.
+_TIER_FIELDS = ("trust_tier_level", "override_max_spend")
+
 # GSTIN: 2-digit state + 10-char PAN + entity digit + 'Z' + checksum char.
 GSTIN_RE = re.compile(r"^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$")
 REQUIRED_FIELDS = ("currency", "legal_name", "address_line1", "city", "country")
@@ -124,11 +127,109 @@ class BillingProfile(Document):
 		self.validate_gstin()
 		self.validate_india_state()
 		self.lock_country_and_currency_after_invoicing()
+		self.validate_currency_matches_country()
+		self.keep_mandates_in_the_billing_currency()
+		self.pin_tier_set_by_hand()
+		self.sync_tier_fields()
 
 	def on_update(self):
+		# Before held invoices are released: releasing re-taxes them from the Tax Profile.
+		self.apply_output_tax_on_country_change()
 		self.release_held_invoices()
 		self.refresh_gst_status_on_change()
 		self.enqueue_profile_sync()
+		self.apply_tier_change()
+
+	def validate_currency_matches_country(self):
+		"""India is billed only in INR, and only India is billed in INR."""
+		if not self.country or not self.currency:
+			return
+		if (self.country.strip() == INDIA) == (self.currency == "INR"):
+			return
+		frappe.throw(
+			_("A team in India is billed in INR.")
+			if self.country.strip() == INDIA
+			else _(
+				"Only a team in India is billed in INR. Contact support to move a team billed in INR abroad."
+			),
+			frappe.ValidationError,
+		)
+
+	def keep_mandates_in_the_billing_currency(self):
+		"""Refuse a currency change that would strand a payment method set up in the old one."""
+		if self.is_new() or not self.has_value_changed("currency"):
+			return
+		stranded = frappe.get_all(
+			"Payment Method",
+			filters={
+				"team": self.team,
+				"status": ["!=", "Cancelled"],
+				"mandate_currency": ["not in", ("", self.currency)],
+			},
+			pluck="display_label",
+		)
+		if stranded:
+			frappe.throw(
+				_("Remove the payment methods set up in the old currency before changing it: {0}.").format(
+					", ".join(label or _("unnamed method") for label in stranded)
+				),
+				frappe.ValidationError,
+			)
+
+	def pin_tier_set_by_hand(self):
+		"""Pin a tier or cap an operator sets, and require the reason for it."""
+		if self.is_new() or self.flags.tier_set_by_system:
+			return
+		if not any(self.has_value_changed(field) for field in _TIER_FIELDS):
+			return
+		if not self.has_value_changed("promotion_basis") or not (self.promotion_basis or "").strip():
+			frappe.throw(
+				_("Write why the trust tier or spend cap changed in Tier Change Reason."),
+				frappe.ValidationError,
+			)
+		self.manual_override = 1
+		self.promoted_at = frappe.utils.now_datetime()
+
+	def sync_tier_fields(self):
+		"""Keep the tier name on the level, and drop a bespoke cap once the tier is unpinned."""
+		self.trust_tier = (
+			frappe.get_cached_value("Trust Tier Level", self.trust_tier_level, "tier")
+			if self.trust_tier_level
+			else None
+		)
+		if not self.manual_override:
+			self.override_max_spend = 0
+
+	def apply_tier_change(self):
+		"""Re-check mandate ceilings against the new cap and log who moved the tier."""
+		before = self.get_doc_before_save()
+		if not before or not any(
+			self.has_value_changed(field) for field in (*_TIER_FIELDS, "manual_override")
+		):
+			return
+
+		from central.billing.payments import mandates
+		from central.billing.states import record_event
+
+		mandates.reconcile_mandates_to_cap(self.team)
+		record_event(
+			self,
+			"Trust Tier Changed",
+			from_state=before.trust_tier_level,
+			to_state=self.trust_tier_level,
+			reason=self.promotion_basis,
+			amount=self.override_max_spend,
+		)
+
+	def apply_output_tax_on_country_change(self):
+		"""The output tax follows the country, so a corrected signup country is taxed right."""
+		if not (self.has_value_changed("country") or self.has_value_changed("currency")):
+			return
+		if not frappe.db.exists("Tax Profile", self.team):
+			return  # created with the right values when the profile is provisioned
+		from central.billing.payments.provisioning import apply_output_tax_for_country
+
+		apply_output_tax_for_country(self.team)
 
 	def refresh_gst_status_on_change(self):
 		"""A new GSTIN starts with no status and is looked up in the background."""

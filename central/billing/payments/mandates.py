@@ -15,6 +15,7 @@ through the registry, keeping the gateway seam intact (see gateways/base.py).
 import frappe
 from frappe import _
 
+from central.billing.payments.decline import ORDER_MISMATCH, PAYMENT_NOT_AUTHORISED, SIGNATURE_INVALID
 from central.billing.states import transition
 
 MANDATE_METHOD = "UPI Autopay"
@@ -201,6 +202,7 @@ def setup_mandate(team: str, gateway: str, customer_id: str | None = None, is_de
 			"mandate_max_amount": cap,
 			"mandate_currency": "INR",
 			"gateway_customer_id": customer_id,
+			"setup_reference": handles.get("order_id"),
 			"is_default": is_default,
 		}
 	).insert(ignore_permissions=True)
@@ -241,6 +243,7 @@ def setup_card(
 			"gateway_customer_id": customer_id,
 			"fallback_reason": fallback_reason,
 			"card_network": "RuPay" if fallback_reason == "Rupay" else None,
+			"setup_reference": handles.get("order_id"),
 		}
 	).insert(ignore_permissions=True)
 
@@ -252,20 +255,30 @@ def setup_card(
 def confirm_mandate(payment_method: str, callback: dict):
 	"""Confirm the Razorpay Checkout callback that authorised the mandate.
 
-	Verifies the checkout-callback signature (distinct from the webhook
-	signature), stores the live token, and flips the method to `active`. A new
-	active mandate retires any sibling active mandate for the same team+gateway
+	1. The checkout-callback signature must be valid (it binds the order and payment ids).
+	2. The callback's order must be the authorisation order Central opened for this method.
+	3. The payment, read from Razorpay, must belong to that order and this method's
+	   customer, and must be authorised or captured. The token is read from it, never
+	   taken from the browser.
+	A new active mandate retires any sibling active mandate for the same team+gateway
 	(the re-authorisation case), so the higher ceiling cleanly supersedes.
+	A method already past validation is returned as it is, so a repeated callback
+	neither activates a refused mandate nor refunds an authorisation twice.
 	"""
 	method = frappe.get_doc("Payment Method", payment_method)
+	if method.status != "Pending Validation":
+		return method
 	adapter = _adapter(method.gateway)
 
 	if not adapter.verify_payment_signature(callback):
-		transition(method, "Failed", actor=frappe.session.user, reason="mandate signature invalid")
-		method.save(ignore_permissions=True)
-		frappe.throw(_("Mandate authorisation signature invalid"), frappe.ValidationError)
+		return _refuse_mandate(method, SIGNATURE_INVALID, "The checkout signature is invalid.")
+	if not method.setup_reference or callback.get("razorpay_order_id") != method.setup_reference:
+		return _refuse_mandate(method, ORDER_MISMATCH, "The callback is for another order.")
+	payment = adapter.get_payment(callback.get("razorpay_payment_id"))
+	if not _is_mandate_payment(method, payment):
+		return _refuse_mandate(method, PAYMENT_NOT_AUTHORISED, "The payment does not authorise this mandate.")
 
-	method.gateway_method_id = callback.get("razorpay_token_id") or callback.get("token_id")
+	method.gateway_method_id = payment["token_id"]
 	transition(method, "Active", actor=frappe.session.user)
 	method.validated_at = frappe.utils.now_datetime()
 	method.reauth_required = 0
@@ -279,7 +292,69 @@ def confirm_mandate(payment_method: str, callback: dict):
 	from central.billing.payments import payments
 
 	payments.densify_priorities(method.team)  # slot the new method into the fallback order
+	_queue_authorisation_refund(method, payment)
 	method.reload()
+	return method
+
+
+def _queue_authorisation_refund(method, payment: dict) -> None:
+	"""Queue the refund of the authorisation payment. It registers the mandate and pays no bill."""
+	if payment.get("status") != "captured":
+		return
+
+	frappe.enqueue(
+		"central.billing.payments.mandates.refund_authorisation_payment",
+		payment_method=method.name,
+		payment_id=payment["id"],
+		amount=frappe.utils.flt(payment.get("amount")) / 100,
+		job_id=f"mandate-authorisation-refund::{payment['id']}",
+		deduplicate=True,
+		enqueue_after_commit=True,
+	)
+
+
+def refund_authorisation_payment(payment_method: str, payment_id: str, amount: float) -> None:
+	"""Refund the authorisation payment that registered a mandate.
+
+	1. The refund is keyed on the payment, so a retried job never refunds twice.
+	2. A failure leaves a comment on the method for an operator and fails the job.
+	   The mandate stays active either way.
+	"""
+	method = frappe.get_doc("Payment Method", payment_method)
+	try:
+		result = _adapter(method.gateway).refund(
+			frappe._dict(gateway_transaction_id=payment_id),
+			amount,
+			reason="Mandate authorisation",
+			idempotency_key=f"mandate-authorisation-{payment_id}",
+		)
+		if not result.success:
+			raise frappe.ValidationError(f"Gateway refund status: {result.status}")
+	except Exception as error:
+		method.add_comment(
+			"Comment", f"Authorisation payment {payment_id} ({amount} INR) was not refunded: {error}"
+		)
+		# The job's own rollback would drop the comment the operator needs.
+		frappe.db.commit()
+		raise
+
+
+def _is_mandate_payment(method, payment: dict) -> bool:
+	"""Whether the payment is an authorisation on this method's order and customer, with a token."""
+	return (
+		payment.get("order_id") == method.setup_reference
+		and payment.get("status") in ("authorized", "captured")
+		and bool(payment.get("token_id"))
+		and (not method.gateway_customer_id or payment.get("customer_id") == method.gateway_customer_id)
+	)
+
+
+def _refuse_mandate(method, failure_code: str, reason: str):
+	"""Fail the method and return it. It does not raise, so the failure is not rolled back."""
+	method.record_failure({"failure_code": failure_code, "failure_reason": reason})
+	transition(method, "Failed", actor=frappe.session.user, reason=failure_code)
+	# Only billing code changes a method's status; the caller checked billing:manage.
+	method.save(ignore_permissions=True)
 	return method
 
 
@@ -394,6 +469,21 @@ def _retire_superseded_mandates(new_method):
 _DEAD_MANDATE_STATUSES = ("inactive", "cancelled", "canceled", "revoked", "expired")
 
 
+def _payment_method_for_mandate(mandate_id: str) -> dict | None:
+	"""The Payment Method a gateway's mandate id refers to. Stripe keeps it in
+	gateway_mandate_id; Razorpay has no separate mandate id and reuses the recurring
+	token, gateway_method_id, for the same purpose."""
+	method = frappe.qb.DocType("Payment Method")
+	row = (
+		frappe.qb.from_(method)
+		.select(method.name, method.team)
+		.where((method.gateway_mandate_id == mandate_id) | (method.gateway_method_id == mandate_id))
+		.limit(1)
+		.run(as_dict=True)
+	)
+	return row[0] if row else None
+
+
 def apply_mandate_event(event_name: str) -> dict:
 	"""Mark the Payment Method a gateway mandate event refers to.
 
@@ -410,16 +500,11 @@ def apply_mandate_event(event_name: str) -> dict:
 	mandate_id = mandate.get("id")
 	status = (mandate.get("status") or "").lower()
 
-	method = (
-		frappe.db.get_value(
-			"Payment Method", {"gateway_mandate_id": mandate_id}, ["name", "team"], as_dict=True
-		)
-		if mandate_id
-		else None
-	)
+	method = _payment_method_for_mandate(mandate_id) if mandate_id else None
 	if not method:
 		charges._mark_event(event, "Ignored")
 		return {"handled": False, "reason": "no_method_for_mandate"}
+	event.payment_method = method.name
 	if status not in _DEAD_MANDATE_STATUSES:
 		charges._mark_event(event, "Processed")
 		return {"handled": True, "result": "mandate_still_live", "payment_method": method.name}

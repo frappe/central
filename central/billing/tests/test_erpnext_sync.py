@@ -90,6 +90,7 @@ class TestIssue(SyncTestCase):
 		self.assertEqual(si["items"][0]["item_code"], "Cloud Hosting")
 		self.assertIn(f"Central invoice {inv}", si["remarks"])
 		self.assertEqual(frappe.db.get_value("Invoice", inv, "erpnext_invoice"), out["synced"])
+		self.assertIsNotNone(frappe.db.get_value("Invoice", inv, "erpnext_synced_at"))
 
 	def test_unregistered_team_in_another_state(self):
 		billing_team(TEAM, state="Karnataka")
@@ -149,11 +150,15 @@ class TestAdvances(SyncTestCase):
 		rows = [(a["reference_name"], a["allocated_amount"]) for a in self._sales_invoice()["advances"]]
 		self.assertEqual(rows, [("RV-1", 1000), ("RV-2", 7000)])
 
-	def test_promotional_credit_is_noted_on_the_invoice(self):
+	def test_promotional_credit_is_left_off_the_invoice(self):
+		# 8,000 + 1,440 GST: 1,000 promotional, the rest from a top-up.
 		billing_team(TEAM, gstin=GSTIN)
 		self._top_up()
 		erpnext_sync.sync_invoice(self._invoice(credit=9000, advance=8000))
-		self.assertIn("Promotional credit used: 1000", self._sales_invoice()["remarks"])
+		sales_invoice = self._sales_invoice()
+		self.assertNotIn("romotional", sales_invoice["remarks"])
+		self.assertEqual(sales_invoice["items"][0]["rate"], 8440)
+		self.assertTrue(all(row["included_in_print_rate"] for row in sales_invoice["taxes"]))
 
 	def test_waits_for_a_top_up_whose_advance_has_not_synced(self):
 		billing_team(TEAM, gstin=GSTIN)
@@ -295,20 +300,23 @@ class TestPromotionalCredit(SyncTestCase):
 		payment = self.remote.posts("Payment Entry")[-1]
 		self.assertEqual((payment["paid_amount"], payment["references"][0]["allocated_amount"]), (680, 680))
 
-	def test_promotional_credit_is_settled_on_its_own(self):
-		inv = self._mixed()
-		out = erpnext_sync.sync_invoice(inv)
-		journal = self.remote.posts("Journal Entry")[-1]
-		expense, party = journal["accounts"]
-		self.assertEqual(
-			(expense["account"], expense["debit_in_account_currency"]), ("Promotional Credit - TC", 500)
-		)
-		self.assertEqual((party["credit_in_account_currency"], party["reference_name"]), (500, out["synced"]))
-		self.assertEqual(frappe.db.get_value("Invoice", inv, "promotional_record_id"), out["promotional"])
+	def test_only_the_card_paid_share_is_invoiced(self):
+		erpnext_sync.sync_invoice(self._mixed())
+		self.assertEqual(self._sales_invoice()["items"][0]["rate"], 680)
+		self.assertEqual(self.remote.posts("Journal Entry"), [])
 
-	def test_without_a_promotional_account_the_sync_waits(self):
+	def test_sync_needs_no_promotional_account(self):
 		inv = self._mixed()
 		frappe.db.set_single_value("Billing Settings", "promotional_credit_account", None)
 		frappe.clear_document_cache("Billing Settings", "Billing Settings")
-		self.assertTrue(erpnext_sync.sync_invoice(inv)["retry_scheduled"])
-		self.assertEqual(self.remote.posts("Journal Entry"), [])
+		self.assertTrue(erpnext_sync.sync_invoice(inv)["synced"])
+
+	def test_an_invoice_promotional_credit_pays_in_full_is_not_synced(self):
+		billing_team(TEAM, gstin=GSTIN)
+		inv = self._invoice(subtotal=1000, tax=180, credit=1180)
+
+		out = erpnext_sync.sync_invoice(inv)
+
+		self.assertEqual(out, {"skipped": "free_credit"})
+		self.assertEqual(self.remote.posts("Sales Invoice"), [])
+		self.assertEqual(frappe.db.get_value("Invoice", inv, "erpnext_sync_status"), "Not Required")

@@ -29,11 +29,15 @@ def my_capabilities(team: str | None = None) -> list[str]:
 
 
 @frappe.whitelist(methods=["GET"])
-def my_teams() -> list[dict[str, Any]]:
+def my_teams(view_as: str | None = None) -> list[dict[str, Any]]:
 	"""Teams the signed-in user can switch between in the console — the teams they
 	are an active member of, each with a display label, the owner email, the
 	caller's own role, how many people are in it, when it was created, and the
-	onboarding steps the caller still has to answer as its owner."""
+	onboarding steps the caller still has to answer as its owner. A suspended team is listed with
+	its `status`, so the console can say why it cannot open it.
+
+	An operator who impersonates a team owner passes `view_as`, and that team is added
+	with `is_impersonated` set."""
 	user = frappe.session.user
 
 	team = frappe.qb.DocType("Team")
@@ -43,13 +47,21 @@ def my_teams() -> list[dict[str, Any]]:
 		frappe.qb.from_(member)
 		.join(team)
 		.on(team.name == member.parent)
-		.select(team.name, team.team_name, team.team_logo, team.owner_user, team.creation, member.role)
+		.select(
+			team.name,
+			team.team_name,
+			team.team_logo,
+			team.owner_user,
+			team.creation,
+			team.status,
+			member.role,
+		)
 		.where(
 			(member.parenttype == "Team")
 			& (member.parentfield == "members")
 			& (member.user == user)
 			& (member.status == "Active")
-			& (team.status == "Active")
+			& team.status.isin(("Active", "Suspended"))
 		)
 		.orderby(team.team_name)
 	).run(as_dict=True)
@@ -68,10 +80,14 @@ def my_teams() -> list[dict[str, Any]]:
 				"role": r.role,
 				"members": 0,
 				"created": r.creation,
+				"status": r.status,
 			},
 		)
 		if _role_rank(r.role) < _role_rank(entry["role"]):
 			entry["role"] = r.role
+
+	if view_as and user_has_operator_bypass(user):
+		teams[view_as] = _get_impersonated_team(view_as)
 
 	if not teams:
 		return []
@@ -97,6 +113,21 @@ def my_teams() -> list[dict[str, Any]]:
 		teams[row.parent]["onboarding"].append(row.step)
 
 	return list(teams.values())
+
+
+def _get_impersonated_team(name: str) -> dict[str, Any]:
+	team = frappe.get_doc("Team", name)
+	return {
+		"name": team.name,
+		"label": team.team_name or team.owner_user,
+		"logo": team.team_logo,
+		"owner": team.owner_user,
+		"role": "Owner",
+		"members": 0,
+		"created": team.creation,
+		"status": team.status,
+		"is_impersonated": True,
+	}
 
 
 def _pending_onboarding_steps(teams: list[str]) -> list[dict[str, Any]]:
@@ -131,17 +162,20 @@ def _role_rank(role: str | None) -> int:
 @frappe.whitelist(methods=["GET"])
 def my_invitations() -> list[dict[str, Any]]:
 	"""Pending, unexpired invitations addressed to the signed-in user — the invitee's
-	inbox. Each carries the inviting team's label so the console can render it without
-	a second call."""
+	inbox. Each carries the inviting team's and the role's labels, because a custom role
+	belongs to the inviting team and the console cannot resolve it."""
 	user = frappe.session.user
 
 	invitation = frappe.qb.DocType("Team Invitation")
 	team = frappe.qb.DocType("Team")
+	role = frappe.qb.DocType("Team Role")
 
 	rows = (
 		frappe.qb.from_(invitation)
 		.left_join(team)
 		.on(team.name == invitation.team)
+		.left_join(role)
+		.on(role.name == invitation.role)
 		.select(
 			invitation.name,
 			invitation.team,
@@ -150,6 +184,7 @@ def my_invitations() -> list[dict[str, Any]]:
 			invitation.expires_on,
 			invitation.creation,
 			team.team_name,
+			role.role_name,
 		)
 		.where(
 			(invitation.email == user)
@@ -161,6 +196,7 @@ def my_invitations() -> list[dict[str, Any]]:
 
 	for row in rows:
 		row["team_name"] = row.team_name or row.team
+		row["role_name"] = row.role_name or row.role
 
 	return rows
 

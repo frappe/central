@@ -22,6 +22,11 @@ frappe.ui.form.on("Virtual Machine", {
 				});
 
 		if (frm.doc.admin_domain_error) frm.set_intro(frappe.utils.escape_html(frm.doc.admin_domain_error), "red");
+		else if (frm.doc.__onload?.is_access_locked)
+			frm.set_intro(
+				__("Free trial server. The customer has no SSH, console, Pilot or snapshots until the trial converts. Operators keep access."),
+				"blue",
+			);
 
 		if (frappe.user.has_role("System Manager")) {
 			if (frm.doc.admin_domain_error) {

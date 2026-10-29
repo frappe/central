@@ -15,7 +15,7 @@ from central.errors import AtlasConnectionError, AtlasRequestUncertain
 from central.infrastructure.doctype.resource_action.resource_action import ResourceAction
 from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
 from central.integrations.resource_actions import SERVER_PAGE_SIZE, _process_locked
-from central.resource_actions import get_status, submit_request, trial_server_count, validate_trial
+from central.resource_actions import get_status, server_count, submit_request, validate_trial
 from central.server_models import SiteCreation
 from central.tests.test_sso_keys import reset_signing_key
 from central.tests.utils import central_limit
@@ -82,6 +82,14 @@ class TestResourceActions(IntegrationTestCase):
 		self.client.return_value.tenant_id = self.team.tenant_id
 		self.client.return_value.create_vm.return_value = {"id": "vm-00001", "tenant_id": self.team.tenant_id}
 		CentralSSOSettings.instance().initialize_signing_key("pilot")
+
+	def trial_site(self) -> SiteCreation:
+		"""The site part of a product signup, which a free trial needs."""
+		if not frappe.db.exists("Product", "raven-trial"):
+			frappe.get_doc(
+				{"doctype": "Product", "product_key": "raven-trial", "title": "Raven", "signup_app": "raven"}
+			).insert()
+		return SiteCreation(product="raven-trial")
 
 	def submit(self, **changes):
 		values = dict(
@@ -153,10 +161,15 @@ class TestResourceActions(IntegrationTestCase):
 		payload = self.client.return_value.create_vm.call_args.args[0]
 		self.assertEqual(payload["sleep_after_idle_seconds"], 45 * 60)
 
+	def test_a_site_without_a_product_is_not_a_free_trial(self):
+		name = self.submit(resource_type="Site", subdomain="plain", site=SiteCreation())["action"]
+
+		self.assertFalse(frappe.db.get_value("Resource Action", name, "is_free_trial"))
+
 	def test_a_free_trial_site_sleeps_in_production(self):
 		frappe.db.set_single_value("Central Settings", "trial_idle_shutdown_minutes", 10)
 		frappe.clear_cache(doctype="Central Settings")
-		name = self.submit(resource_type="Site", subdomain="sleepy", site=SiteCreation())["action"]
+		name = self.submit(resource_type="Site", subdomain="sleepy", site=self.trial_site())["action"]
 		_process_locked(name)
 
 		self.assertEqual(
@@ -166,8 +179,8 @@ class TestResourceActions(IntegrationTestCase):
 	def test_a_site_for_a_team_that_pays_never_sleeps(self):
 		frappe.db.set_single_value("Central Settings", "trial_idle_shutdown_minutes", 10)
 		frappe.clear_cache(doctype="Central Settings")
-		with patch("central.signups.trial.has_active_payment_method", return_value=True):
-			name = self.submit(resource_type="Site", subdomain="awake", site=SiteCreation())["action"]
+		with patch("central.signups.eligibility.has_active_payment_method", return_value=True):
+			name = self.submit(resource_type="Site", subdomain="awake", site=self.trial_site())["action"]
 			_process_locked(name)
 
 		self.assertEqual(self.client.return_value.create_vm.call_args.args[0]["sleep_after_idle_seconds"], 0)
@@ -277,7 +290,7 @@ class TestResourceActions(IntegrationTestCase):
 		self.assertEqual(queue_event.call_args.args, (self.team.name, "provision_failure"))
 		self.assertEqual(queue_event.call_args.kwargs["reference_name"], name)
 		action = frappe.get_doc("Resource Action", name)
-		diagnostic = frappe.get_doc("Error Log", action.error_log).error
+		diagnostic = action.diagnostic
 		self.assertIn("Traceback", diagnostic)
 		self.assertIn("AtlasConnectionError: region refused", diagnostic)
 		self.assertNotIn("region refused", action.error_message)
@@ -312,18 +325,20 @@ class TestResourceActions(IntegrationTestCase):
 		self.assertEqual(get_status(name)["status"], "Failed")
 
 	def test_retry_of_a_trial_site_checks_the_trial_limit_not_the_paid_policy(self):
-		name = self.submit(resource_type="Site", subdomain="raven", site=SiteCreation())["action"]
+		name = self.submit(resource_type="Site", subdomain="raven", site=self.trial_site())["action"]
 		self.client.return_value.create_vm.side_effect = AtlasConnectionError("region refused")
 		_process_locked(name)
 
 		self.assertTrue(frappe.db.get_value("Resource Action", name, "is_free_trial"))
-		with patch("central.signups.trial.has_active_payment_method", return_value=True):
+		with patch("central.signups.eligibility.has_active_payment_method", return_value=True):
 			frappe.get_doc("Resource Action", name).retry()
 
 		self.assertTrue(self.purchase.call_args.kwargs["is_free_trial"])
 
 	def test_a_free_trial_site_gets_no_subscription_but_a_paid_server_does(self):
-		_process_locked(self.submit(resource_type="Site", subdomain="raven", site=SiteCreation())["action"])
+		_process_locked(
+			self.submit(resource_type="Site", subdomain="raven", site=self.trial_site())["action"]
+		)
 		self.subscribe.assert_not_called()
 
 		self.client.return_value.create_vm.return_value = {"id": "vm-00002", "tenant_id": self.team.tenant_id}
@@ -403,14 +418,14 @@ class TestResourceActions(IntegrationTestCase):
 		self.assertEqual(action.status, "Succeeded")
 		self.assertIn(
 			"AtlasRequestUncertain: lost reply",
-			frappe.get_doc("Error Log", action.error_log).error,
+			action.diagnostic,
 		)
 		self.client.return_value.create_vm.assert_called_once()
 
 	def test_the_trial_cap_follows_central_settings(self):
 		with (
-			patch("central.billing.revenue.credits.get_balance", return_value={"balance": 10}),
-			patch("central.resource_actions.trial_server_count", return_value=1),
+			patch("central.billing.revenue.credits.lock_team_wallet", return_value=10),
+			patch("central.resource_actions.server_count", return_value=1),
 			central_limit("trial_servers_per_team", 1),
 			self.assertRaisesRegex(frappe.ValidationError, "at most 1 active or pending servers"),
 		):
@@ -418,7 +433,7 @@ class TestResourceActions(IntegrationTestCase):
 
 	def test_the_trial_cap_counts_with_locking_reads(self):
 		with patch.object(frappe.db, "sql", wraps=frappe.db.sql) as sql:
-			trial_server_count(self.team.name)
+			server_count(self.team.name)
 
 		self.assertEqual(len(sql.call_args_list), 2)
 		for call in sql.call_args_list:
@@ -596,6 +611,29 @@ class TestResourceActions(IntegrationTestCase):
 		self.assertIn(queued, names)
 		self.assertIn(unanswered, names)
 
+	def test_the_recovery_sweep_retries_a_failed_refresh_soon(self):
+		"""A failed read is retried after seconds, while other recent requests wait for the stall cutoff."""
+		from central.integrations.resource_actions import recover_requests
+
+		failed_read = self.submit()["action"]
+		recent = self.submit(request_key="second-request-key-002", title="Second server")["action"]
+		moments_ago = frappe.utils.add_to_date(frappe.utils.now_datetime(), seconds=-30)
+		frappe.db.set_value(
+			"Resource Action",
+			failed_read,
+			{"status": "Sent", "error_code": "REFRESH_FAILED", "modified": moments_ago},
+			update_modified=False,
+		)
+		frappe.db.set_value("Resource Action", recent, "modified", moments_ago, update_modified=False)
+		with patch(
+			"central.infrastructure.doctype.resource_action.resource_action.ResourceAction.enqueue",
+			autospec=True,
+		) as enqueue:
+			recover_requests()
+			names = [call.args[0].name for call in enqueue.call_args_list]
+		self.assertIn(failed_read, names)
+		self.assertNotIn(recent, names)
+
 	def test_unexpected_worker_failure_is_recorded_without_redispatch(self):
 		from central.integrations.resource_actions import process_request
 
@@ -611,7 +649,5 @@ class TestResourceActions(IntegrationTestCase):
 		action = frappe.get_doc("Resource Action", name)
 		self.assertEqual(action.status, "Failed")
 		self.assertEqual(action.error_code, "UNEXPECTED")
-		log = frappe.get_doc("Error Log", action.error_log)
-		self.assertIn("RuntimeError: worker failure", log.error)
-		self.assertEqual((log.reference_doctype, log.reference_name), ("Resource Action", action.name))
+		self.assertIn("RuntimeError: worker failure", action.diagnostic)
 		self.client.return_value.create_vm.assert_not_called()

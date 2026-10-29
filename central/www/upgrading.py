@@ -9,10 +9,12 @@ no_cache = 1
 
 def get_context(context):
 	"""The public page that follows a site's plan change, opened from a signed link. A
-	developer bench also serves `?preview=1`, which plays every state with sample data."""
+	developer or test bench also serves `?preview=1`, which plays every state with sample data."""
 	context.no_cache = 1
 	context.build_version = frappe.utils.get_build_version()
-	context.preview = bool(frappe.conf.developer_mode and frappe.form_dict.preview)
+	context.preview = bool(
+		(frappe.conf.developer_mode or frappe.conf.allow_tests) and frappe.form_dict.preview
+	)
 	context.progress = None
 	context.query = ""
 	if context.preview:

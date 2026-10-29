@@ -27,8 +27,8 @@ export interface Site {
 	rename_task?: string
 	/**	Rename Error : Small Text - A safe summary of the latest site rename failure.	*/
 	rename_error?: string
-	/**	Rename Error Log : Link - Error Log - The Error Log for the latest site rename failure.	*/
-	rename_error_log?: string
+	/**	Rename Diagnostic : Code - The traceback of the latest site rename failure. Operators only.	*/
+	rename_diagnostic?: string
 	/**	Trial State : Select - Active runs free until the end date. Ended means the server is stopped and is terminated on the deletion date. Converted means the team added a payment method. Deleted means the trial ended without one. Empty for a site that is not a trial.	*/
 	trial_state?: '' | 'Active' | 'Ended' | 'Converted' | 'Deleted'
 	/**	Trial Ends On : Date - The day the trial ends and its server stops.	*/

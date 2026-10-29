@@ -1,4 +1,3 @@
-import type { InvitationStatus } from '@/types/api'
 import type { PaymentAttempt } from '@/types/billing'
 import type { VirtualMachine } from '@/types/Infrastructure/VirtualMachine'
 import type { ActionStatus } from '@/types/serverCreation'
@@ -59,20 +58,6 @@ export function canChange(server: {
 		!isSettingUp(server.status) &&
 		!isTerminated(server.status)
 	)
-}
-
-// Team Invitation status → Badge theme. Pending is in-flight (amber), Accepted is
-// done (green), everything else is inactive/neutral or a hard stop.
-const INVITATION_STATUS_THEME: Record<InvitationStatus, BadgeTheme> = {
-	Pending: 'amber',
-	Accepted: 'green',
-	Expired: 'gray',
-	Revoked: 'red',
-	Declined: 'gray',
-}
-
-export function invitationStatusTheme(status: InvitationStatus): BadgeTheme {
-	return INVITATION_STATUS_THEME[status] ?? 'gray'
 }
 
 // Invoice status → Badge theme (case-insensitive), keyed by the Invoice DocType's

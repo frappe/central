@@ -11,6 +11,7 @@ id instead of creating the customer again.
 from urllib.parse import quote
 
 import frappe
+from frappe.query_builder.functions import Coalesce
 
 from central.billing.ingester.connection import enabled, get, post, put
 from central.billing.ingester.locks import hold_until_transaction_ends, lock_name
@@ -119,10 +120,11 @@ def get_gstin_details(gstin: str) -> frappe._dict | None:
 
 
 def _should_sync(profile) -> bool:
-	"""Only complete profiles of real customers; staging trials carry placeholders."""
+	"""Only complete profiles of real customers; staging trials carry placeholders and internal teams are never sold to."""
 	from central.billing.doctype.billing_profile.billing_profile import get_missing_fields_of
+	from central.billing.revenue.tax import is_internal_team
 
-	if not enabled() or get_missing_fields_of(profile):
+	if not enabled() or get_missing_fields_of(profile) or is_internal_team(profile.team):
 		return False
 	return not frappe.db.get_value("Team", profile.team, "is_staging_trial")
 
@@ -154,12 +156,16 @@ def _pending_teams() -> list[str]:
 
 	profile = frappe.qb.DocType("Billing Profile")
 	team = frappe.qb.DocType("Team")
+	tax = frappe.qb.DocType("Tax Profile")
 	query = (
 		frappe.qb.from_(profile)
 		.join(team)
 		.on(team.name == profile.team)
+		.left_join(tax)
+		.on(tax.team == profile.team)
 		.select(profile.name)
 		.where(team.is_staging_trial == 0)
+		.where(Coalesce(tax.is_internal, 0) == 0)
 		.where(_blank(profile.profile_id) | _blank(profile.address_id) | _blank(profile.contact_id))
 	)
 	for field in REQUIRED_FIELDS:

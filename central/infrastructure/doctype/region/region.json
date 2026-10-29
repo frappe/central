@@ -38,7 +38,8 @@
   "cargo_base_url",
   "cargo_registered_at",
   "cargo_delivery_section",
-  "cargo_webhook_secret"
+  "cargo_webhook_secret",
+  "telemetry_data_source"
  ],
  "fields": [
   {
@@ -58,7 +59,7 @@
    "label": "Display Name"
   },
   {
-   "description": "Infrastructure provider hosting this region, shown as the pin's brand mark. Display vocabulary only \u2014 distinct from Atlas's Server.provider_type (DigitalOcean/Scaleway/Self-Managed/Fake); reconcile into a shared source if provider identity ever needs to be authoritative.",
+   "description": "Infrastructure provider hosting this region, shown as the pin's brand mark. Display vocabulary only — distinct from Atlas's Server.provider_type (DigitalOcean/Scaleway/Self-Managed/Fake); reconcile into a shared source if provider identity ever needs to be authoritative.",
    "fieldname": "provider",
    "fieldtype": "Select",
    "in_standard_filter": 1,
@@ -238,6 +239,12 @@
    "read_only": 1
   },
   {
+   "fieldname": "telemetry_data_source",
+   "fieldtype": "Data",
+   "label": "Telemetry Data Source",
+   "description": "Name of the Insights data source that reads this region's telemetry (for example mumbai_telemetry). Capacity and usage reports read server and host usage from it."
+  },
+  {
    "fieldname": "column_break_kufp",
    "fieldtype": "Column Break"
   },
@@ -276,7 +283,7 @@
    "link_fieldname": "region"
   }
  ],
- "modified": "2026-10-10 10:08:25.434103",
+ "modified": "2026-10-22 10:00:00.000000",
  "modified_by": "Administrator",
  "module": "Infrastructure",
  "name": "Region",

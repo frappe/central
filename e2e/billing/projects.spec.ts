@@ -6,7 +6,7 @@ test('A new team has no projects', async ({ page, users }) => {
 
 	await page.goto('/dashboard/billing')
 
-	await expect(page.getByText('Split one invoice by customer or environment.')).toBeVisible()
+	await expect(page.getByText('Group invoice costs by customer or environment.')).toBeVisible()
 	await expect(page.getByRole('button', { name: 'View all' })).toHaveCount(0)
 })
 

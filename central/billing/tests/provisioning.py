@@ -3,6 +3,7 @@ from unittest.mock import MagicMock, patch
 import frappe
 
 from central.api.servers import create_server
+from central.central.doctype.central_sso_settings.central_sso_settings import CentralSSOSettings
 from central.integrations.resource_actions import _process_locked
 
 IMAGE = {
@@ -14,6 +15,7 @@ IMAGE = {
 
 def create_billed_server(team, region, plan, **overrides):
 	"""Keep purchase policy and billing real while replacing regional HTTP calls."""
+	CentralSSOSettings.instance().initialize_signing_key("pilot")
 	client = MagicMock()
 	client.tenant_id = frappe.db.get_value("Team", team, "tenant_id")
 	client.create_vm.return_value = {"id": "vm-billing-test", "tenant_id": client.tenant_id}

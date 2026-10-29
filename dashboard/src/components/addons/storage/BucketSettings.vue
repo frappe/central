@@ -207,6 +207,7 @@ const remove = async (target: StorageBucket): Promise<void> => {
 			confirm-label="Delete bucket"
 			theme="red"
 			size="md"
+			:confirm-text="deleteTarget ? bucketLabel(deleteTarget) : undefined"
 			:loading="busy"
 			:error="actionError"
 			@confirm="remove"

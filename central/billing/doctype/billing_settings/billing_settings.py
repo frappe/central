@@ -27,6 +27,38 @@ class BillingSettings(Document):
 		self.validate_retry_days()
 		self.validate_dunning_ladder()
 		self.validate_one_row_per_currency()
+		self.validate_operator_alerts()
+
+	@frappe.whitelist(methods=["POST"])
+	def send_test_alert(self) -> list[str]:
+		"""Send one test alert through the saved settings and return where it went."""
+		from central.billing.platform.alerts import notify_operators
+
+		alert = {
+			"alert": "test",
+			"doctype": self.doctype,
+			"subject": self.name,
+			"team": None,
+			"detail": f"Test alert sent by {frappe.session.user}",
+		}
+		return notify_operators("Billing test alert", [alert])
+
+	def alert_emails(self) -> list[str]:
+		"""The operator alert addresses, one per line or comma separated."""
+		raw = (self.operator_alert_emails or "").replace(",", "\n")
+		return [email.strip() for email in raw.splitlines() if email.strip()]
+
+	def validate_operator_alerts(self):
+		"""Every address is valid, and a channel that includes Email has at least one."""
+		emails = self.alert_emails()
+		for email in emails:
+			frappe.utils.validate_email_address(email, throw=True)
+		if "Email" in self.operator_alert_channel and not emails:
+			frappe.throw(
+				_("Add at least one Alert Email Address, or set the Alert Channel to Raven."),
+				title=_("Missing Alert Email Addresses"),
+			)
+		self.operator_alert_emails = "\n".join(emails)
 
 	def strip_accounting_names(self):
 		"""The accounting names are matched exactly, so a pasted space would miss."""

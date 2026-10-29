@@ -42,3 +42,24 @@ central.patches.v0_0.start_unready_trials
 # A site creation stores whether it started a free trial; older ones are marked from their site.
 central.patches.v0_0.set_free_trial_on_creations
 central.patches.v0_0.select_full_ubuntu_image
+# A credit wallet now records the ledger entry that set its balance.
+central.patches.v0_0.point_wallets_at_last_ledger_entry
+# Repair what the billing audit found: staging teams, currencies, hand-set tiers, unexplained wallets.
+central.patches.v0_0.repair_billing_audit_findings
+# New servers read their disk and network limits from Central Settings.
+central.patches.v0_0.seed_server_limits
+# Every server shows one included transfer from Central Settings; existing server plans drop their Transfer rows.
+central.patches.v0_0.move_transfer_to_central_settings
+# Billing operator alerts go to a Raven channel by default, not to every System Manager.
+central.patches.v0_0.seed_operator_alert_channel
+# Every snapshot is billed: no snapshot of a server is free any more.
+central.patches.v0_0.bill_every_snapshot
+# Failure diagnostics move from Error Log links onto their records, so they outlive Error Log retention.
+central.patches.v0_0.copy_error_logs_to_diagnostics
+central.patches.v0_0.seed_signup_image_minimum_age
+# A card with no mandate carries no mandate currency (it used to default to INR).
+central.patches.v0_0.clear_default_mandate_currency
+# A first payment is dated by paid_at. A Paid invoice from before that field gets one.
+central.patches.v0_0.backfill_invoice_paid_at
+# Report, without changing anything, billing data the October 2026 security fixes would have refused.
+central.patches.v0_0.report_billing_security_findings

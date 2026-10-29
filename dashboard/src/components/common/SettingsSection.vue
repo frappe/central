@@ -28,7 +28,7 @@ defineProps<Props>()
 					</Tooltip>
 				</div>
 
-				<p v-if="description" class="text-p-sm text-ink-gray-5">
+				<p v-if="description" class="text-p-sm text-ink-gray-6">
 					{{ description }}
 				</p>
 			</div>

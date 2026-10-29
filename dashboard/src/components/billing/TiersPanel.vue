@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { LoadingText } from 'frappe-ui'
+import ContactSupportLink from '@/components/common/ContactSupportLink.vue'
 import SideSheet from '@/components/common/SideSheet.vue'
 import { useSpendingLimits } from '@/composables/useSpendingLimits'
 import { money } from '@/lib/format'
@@ -112,12 +113,8 @@ const requirementText = (level: TierLevel) =>
 				<p v-if="record">{{ record }}</p>
 				<p>
 					Need a higher limit now?
-					<a
-						href="https://support.frappe.io"
-						target="_blank"
-						rel="noopener noreferrer"
-						class="text-ink-gray-8 underline underline-offset-2 hover:text-ink-gray-9"
-						>Contact support</a
+					<ContactSupportLink :context="{ Topic: 'Need higher spending limit' }"
+						>Contact support</ContactSupportLink
 					>.
 				</p>
 			</div>

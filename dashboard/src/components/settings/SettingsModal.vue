@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {
 	Avatar,
+	Badge,
 	SettingsBody,
 	SettingsContent,
 	SettingsDialog,
@@ -11,6 +12,7 @@ import {
 	SettingsSidebar,
 } from 'frappe-ui'
 import { computed, watch } from 'vue'
+import { useMyInvitations } from '@/composables/useMyInvitations'
 import { useMyProfile } from '@/composables/useMyProfile'
 import {
 	type SettingsTabDef,
@@ -24,6 +26,7 @@ import {
 // anything. Mobile renders the same tabs as pages (see SettingsDetailPage).
 const { profile } = useMyProfile()
 const { availableTabs: tabs } = useSettingsTabs()
+const { count: invitationCount } = useMyInvitations()
 
 // What's yours and what the team's are different kinds of setting, so they get
 // their own sections rather than one long list.
@@ -72,6 +75,16 @@ watch(tabs, (available) => {
 						<span v-else :class="`${tab.icon} size-4 text-ink-gray-7`" />
 					</template>
 					{{ tab.label }}
+					<template
+						v-if="tab.value === 'invitations' && invitationCount"
+						#suffix
+					>
+						<Badge
+							theme="orange"
+							:label="String(invitationCount)"
+							:aria-label="`${invitationCount} pending`"
+						/>
+					</template>
 				</SettingsNavItem>
 			</SettingsNavGroup>
 		</SettingsSidebar>

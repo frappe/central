@@ -14,6 +14,10 @@ Atlas regional requests use a separate Ed25519 key. The shared `central.api.jwks
 2. Central mints `mint_bench_login(audience)`: `scope=bench`, 60 minutes, single-use `jti`.
 3. The browser opens `{gateway}/?sid=<jwt>`. The bench SPA exchanges it for a local session cookie.
 
+**Bench login from a site**: `central.api.sso.open_bench?pilot=<audience>`
+
+The "Open server" link in a site's cloud settings is a browser GET to this route. Central finds the server by the `audience_id` of its Active `Pilot Credential` and redirects straight to the bench login URL above, with the same access checks. A guest, an unknown audience, or a refused login goes to `/dashboard/servers?pilot=<audience>&action=open-bench`. That page signs the member in or shows why the server does not open.
+
 **Site login**: `central.api.sites.login_site`
 
 1. `login_site` checks `server:view` and calls `Site.get_login_url`.

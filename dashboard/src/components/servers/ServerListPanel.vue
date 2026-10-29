@@ -5,7 +5,7 @@ import EmptyState from '@/components/common/EmptyState.vue'
 import ProviderAvatar from '@/components/servers/ProviderAvatar.vue'
 import ServerRowActions from '@/components/servers/ServerRowActions.vue'
 import StatusRing from '@/components/servers/StatusRing.vue'
-import type { VirtualMachineRow } from '@/composables/useServers'
+import type { ConsoleMode, VirtualMachineRow } from '@/composables/useServers'
 import type { ResourceRow } from '@/lib/serverMap'
 
 // The servers list beside the map, always in view. Renders both kinds indistinguishably —
@@ -44,7 +44,7 @@ defineEmits<{
 	restart: [server: VirtualMachineRow]
 	resize: [server: VirtualMachineRow]
 	snapshot: [server: VirtualMachineRow]
-	console: [server: VirtualMachineRow]
+	console: [server: VirtualMachineRow, mode: ConsoleMode]
 	terminate: [server: VirtualMachineRow]
 	create: []
 }>()
@@ -175,7 +175,7 @@ onBeforeUnmount(() => window.clearTimeout(cascadeTimer))
 						:can-terminate="canTerminate"
 						:can-snapshot="canSnapshot"
 						:can-open-console="canOpenConsole"
-						:opens-site="!!row.site"
+						:site="row.site?.name"
 						:busy="busy === row.server.resource_id"
 						:opening="
 							opening === row.server.resource_id || opening === row.site?.name
@@ -188,7 +188,7 @@ onBeforeUnmount(() => window.clearTimeout(cascadeTimer))
 						@restart="$emit('restart', $event)"
 						@resize="$emit('resize', $event)"
 						@snapshot="$emit('snapshot', $event)"
-						@console="$emit('console', $event)"
+						@console="(server, mode) => $emit('console', server, mode)"
 						@terminate="$emit('terminate', $event)"
 					/>
 				</span>

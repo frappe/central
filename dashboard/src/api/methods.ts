@@ -38,7 +38,8 @@ export const API = {
 	updateProfile: 'central.api.identity.update_profile',
 	setProfilePhoto: 'central.api.identity.set_profile_photo',
 	transferOwnership: 'central.api.teams.transfer_team_ownership',
-	deleteTeam: 'central.api.teams.delete_team',
+	archiveTeam: 'central.api.teams.archive_team',
+	teamArchiveChecks: 'central.api.teams.get_team_archive_checks',
 	leaveTeam: 'central.api.teams.leave_team',
 	inviteTeamMember: 'central.api.teams.invite_team_member',
 	setTeamMemberRoles: 'central.api.teams.set_team_member_roles',
@@ -100,9 +101,11 @@ export const API = {
 	aiUsage: 'central.services.api.ai.get_usage',
 	aiApiKeys: 'central.services.api.ai.list_api_keys',
 	createAIApiKey: 'central.services.api.ai.create_api_key',
+	setAIApiKeyCaps: 'central.services.api.ai.set_api_key_caps',
+	aiModels: 'central.services.api.ai.get_models',
 	revokeAIApiKey: 'central.services.api.ai.revoke_api_key',
-	setAIApiKeyBalanceAccess:
-		'central.services.api.ai.set_api_key_balance_access',
+	pullAIUsage: 'central.services.api.ai.pull_usage',
+	setAIPromptLogging: 'central.services.api.ai.set_prompt_logging',
 
 	objectStorage: 'central.services.api.storage.get_object_storage',
 	bucketUsage: 'central.services.api.storage.get_bucket_usage',
@@ -127,6 +130,9 @@ export const API = {
 	getSite: 'central.api.sites.get_site',
 	loginSite: 'central.api.sites.login_site',
 	terminateSite: 'central.api.sites.terminate_site',
+	getOpenTrial: 'central.api.sites.get_open_trial',
+	installTrialApp: 'central.api.sites.install_trial_app',
+	trialAppInstall: 'central.api.sites.get_trial_app_install',
 
 	getBenchLink: 'central.api.sso.get_bench_link',
 

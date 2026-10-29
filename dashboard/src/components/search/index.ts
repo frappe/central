@@ -13,7 +13,11 @@ import { openTeamSwitcher } from '@/composables/useTeamSwitcher'
 import { getServerActions } from '@/lib/capabilities'
 import { billingPeriod } from '@/lib/date'
 import { money } from '@/lib/format'
-import { getServerMenuGroups, type ServerMenuVerb } from '@/lib/serverMenu'
+import {
+	getServerMenuGroups,
+	type ServerMenuVerb,
+	withSubmenuItems,
+} from '@/lib/serverMenu'
 
 export interface SearchItem {
 	name: string
@@ -132,9 +136,10 @@ export function useSearchIndex() {
 					name: server.title || server.resource_id,
 					description: server.region,
 					icon: 'lucide-server',
-					onSelect: canOpenConsole.value
-						? () => openServer(server)
-						: () => void router.push(`/servers/${server.resource_id}`),
+					onSelect:
+						canOpenConsole.value && !server.is_access_locked
+							? () => openServer(server)
+							: () => void router.push(`/servers/${server.resource_id}`),
 				})),
 			}
 		}
@@ -152,7 +157,8 @@ export function useSearchIndex() {
 				console: canOpenConsole.value,
 			})
 			const run = (verb: ServerMenuVerb): void => {
-				if (verb === 'console') void openConsole(server)
+				if (verb === 'ssh-console') void openConsole(server, 'ssh')
+				else if (verb === 'tty-console') void openConsole(server, 'tty')
 				else if (verb === 'pilot') void openBench(server)
 				else if (verb === 'open')
 					void (site ? openSite(site.name) : openBench(server))
@@ -165,8 +171,10 @@ export function useSearchIndex() {
 			}
 			const title = server.title || server.resource_id
 
-			return getServerMenuGroups(server, allowed, run, { opensSite: !!site })
+			// Locked actions are disabled, and the filter below leaves disabled ones out.
+			return getServerMenuGroups(server, allowed, run, { site: site?.name })
 				.flat()
+				.flatMap(withSubmenuItems)
 				.filter((option) => !option.disabled)
 				.map((option) => ({
 					name: `${option.label} ${title}`,

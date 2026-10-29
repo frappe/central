@@ -1,0 +1,57 @@
+{
+ "actions": [],
+ "creation": "2026-10-24 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 0,
+ "engine": "InnoDB",
+ "field_order": [
+  "event_type",
+  "is_needed",
+  "is_subscribed",
+  "state"
+ ],
+ "fields": [
+  {
+   "fieldname": "event_type",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Event",
+   "read_only": 1
+  },
+  {
+   "fieldname": "is_needed",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Needed by Central",
+   "read_only": 1
+  },
+  {
+   "fieldname": "is_subscribed",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Subscribed at Gateway",
+   "read_only": 1
+  },
+  {
+   "description": "Missing: Central needs the event but the gateway does not send it. Not Used: the gateway sends it and Central ignores it.",
+   "fieldname": "state",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "State",
+   "options": "OK\nMissing\nNot Used",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-10-24 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Billing",
+ "name": "Payment Gateway Webhook Event",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "creation",
+ "sort_order": "ASC",
+ "states": []
+}

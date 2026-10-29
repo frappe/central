@@ -18,6 +18,7 @@
   "partial",
   "net_amount",
   "tax_amount",
+  "promotional_amount",
   "section_break_result",
   "status",
   "attempts",
@@ -53,7 +54,8 @@
    "fieldname": "team",
    "fieldtype": "Link",
    "options": "Team",
-   "label": "Team"
+   "label": "Team",
+   "search_index": 1
   },
   {
    "fieldname": "column_break_amount",
@@ -112,7 +114,8 @@
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Status",
-   "options": "Initiated\nCompleted\nFailed"
+   "options": "Initiated\nPending\nCompleted\nFailed",
+   "description": "Pending: the gateway accepted the refund but has not paid it out yet, and it can still fail."
   },
   {
    "default": "0",
@@ -178,11 +181,19 @@
    "fieldname": "reason",
    "fieldtype": "Small Text",
    "label": "Reason"
+  },
+  {
+   "fieldname": "promotional_amount",
+   "fieldtype": "Currency",
+   "options": "currency",
+   "label": "Promotional Part",
+   "read_only": 1,
+   "description": "Given back as promotional credit. It was never in the accounting system, so it has no credit note."
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-10-10 10:27:25.616292",
+ "modified": "2026-10-25 13:00:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Refund",
@@ -190,8 +201,8 @@
  "owner": "Administrator",
  "permissions": [
   {
-   "create": 1,
-   "delete": 1,
+   "create": 0,
+   "delete": 0,
    "email": 1,
    "export": 1,
    "print": 1,
@@ -199,7 +210,7 @@
    "report": 1,
    "role": "System Manager",
    "share": 1,
-   "write": 1
+   "write": 0
   }
  ],
  "sort_field": "creation",

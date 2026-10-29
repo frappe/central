@@ -67,7 +67,7 @@
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Status",
-   "options": "Active\nSuspended",
+   "options": "Active\nSuspended\nArchived",
    "reqd": 1
   },
   {

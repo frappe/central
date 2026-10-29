@@ -64,6 +64,7 @@ class BillingTestCase(IntegrationTestCase):
 	# raw deletes (frappe.db.delete) need no dependency ordering. Child rows need
 	# explicit cleanup because raw deletes do not run the parent document hooks.
 	_TRACKED = (
+		"Top-up Order",
 		"Payment Attempt",
 		"Refund",
 		"Credit Ledger Entry",
@@ -83,6 +84,7 @@ class BillingTestCase(IntegrationTestCase):
 		"Catalog Rate",
 		"Plan",
 		"Virtual Machine",
+		"Metal Server",
 		"Team",
 		"Region",
 		"User",
@@ -414,6 +416,7 @@ def complete_billing_profile(team, currency="INR"):
 	money-movement gate (_require_billing_setup) passes. Saves the doc directly,
 	bypassing the API's gateway-supported-currency check, so it works regardless of
 	which gateways a given test has configured."""
+	in_india = currency == "INR"
 	values = {
 		"doctype": "Billing Profile",
 		"team": team,
@@ -422,10 +425,10 @@ def complete_billing_profile(team, currency="INR"):
 		"email": "billing@test.example",
 		"phone": "9999999999",
 		"address_line1": "1 Test Street",
-		"city": "Pune",
-		"state": "Maharashtra",
-		"country": "India",
-		"pincode": "411001",
+		"city": "Pune" if in_india else "Austin",
+		"state": "Maharashtra" if in_india else "Texas",
+		"country": "India" if in_india else "United States",
+		"pincode": "411001" if in_india else "73301",
 	}
 	if frappe.db.exists("Billing Profile", team):
 		doc = frappe.get_doc("Billing Profile", team)
@@ -434,6 +437,24 @@ def complete_billing_profile(team, currency="INR"):
 		doc = frappe.get_doc(values)
 	doc.save(ignore_permissions=True)
 	return team
+
+
+def give_team_a_card(team, gateway="Stripe"):
+	"""An active card, so the team passes the payment gate that every purchase runs."""
+	if frappe.db.exists("Payment Method", {"team": team, "status": "Active"}):
+		return
+	frappe.get_doc(
+		{
+			"doctype": "Payment Method",
+			"team": team,
+			"gateway": gateway,
+			"method_type": "Card",
+			"status": "Active",
+			"gateway_method_id": f"pm_{team}",
+			"gateway_customer_id": f"cus_{team}",
+			"is_default": 1,
+		}
+	).insert(ignore_permissions=True)
 
 
 def make_billing_subscription(team, cluster, plan, start_date=None, clear_changes=True, **kwargs):
@@ -596,3 +617,19 @@ def isolate_trial_plans(case) -> None:
 	for name in frappe.get_all("Plan", filters={"available_on_trial": 1}, pluck="name"):
 		frappe.db.set_value("Plan", name, "available_on_trial", 0)
 		case.addCleanup(frappe.db.set_value, "Plan", name, "available_on_trial", 1)
+
+
+def stripe_intent(txn_id, event_type="payment_intent.succeeded", **fields):
+	"""A PaymentIntent as Stripe sends it, for the charge we made under `txn_id`."""
+	attempt = frappe.db.get_value(
+		"Payment Attempt", {"gateway_transaction_id": txn_id}, ["amount", "currency"], as_dict=True
+	) or frappe._dict(amount=0, currency="INR")
+	succeeded = event_type == "payment_intent.succeeded"
+	return {
+		"id": txn_id,
+		"object": "payment_intent",
+		"status": "succeeded" if succeeded else "requires_payment_method",
+		"amount_received": round(frappe.utils.flt(attempt.amount) * 100) if succeeded else 0,
+		"currency": (attempt.currency or "INR").lower(),
+		**fields,
+	}

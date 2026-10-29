@@ -30,7 +30,7 @@ GATEWAY = "Stripe"
 def stub_refund(success=True, refund_id="rfnd_1"):
 	adapter = MagicMock()
 	adapter.refund.return_value = RefundResult(
-		success=success, status="Completed" if success else "Failed", gateway_refund_id=refund_id
+		status="Completed" if success else "Failed", gateway_refund_id=refund_id
 	)
 	with patch("central.billing.gateways.registry.get_adapter", return_value=adapter):
 		yield adapter

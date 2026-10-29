@@ -94,6 +94,32 @@ class TestPlanChange(PlanChangeCase):
 		with patch("central.infrastructure.doctype.site.plan_change.is_site_reachable", return_value=True):
 			self.assertEqual(change.get_progress()["step"], "ready")
 
+	def test_the_page_opens_the_chosen_name_on_the_products_page(self):
+		"""The chosen name answers once its route is active, before a sign-in records the rename."""
+		product = frappe.get_doc(
+			{
+				"doctype": "Product",
+				"product_key": "raven",
+				"title": "Raven",
+				"signup_app": "raven",
+				"landing_route": "/raven",
+			}
+		).insert(ignore_if_duplicate=True)
+		site = self.site()
+		site.db_set({"subdomain": "acme", "product": product.name})
+		with patch(
+			"central.infrastructure.doctype.region.region.Region.get_zone",
+			return_value=self.region.proxy_domain,
+		):
+			site.route_subdomain()
+		frappe.db.set_value("Site Domain", site.rename_target, "status", "Active")
+
+		with patch("central.infrastructure.doctype.site.plan_change.is_site_reachable", return_value=False):
+			progress = PlanChange(self.site(), self.resize()).get_progress()
+
+		self.assertEqual(progress["site"], site.rename_target)
+		self.assertEqual(progress["site_url"], f"https://{site.rename_target}/raven")
+
 
 class TestPilotPlanChange(PlanChangeCase):
 	def setUp(self):
@@ -106,13 +132,22 @@ class TestPilotPlanChange(PlanChangeCase):
 			patch("central.api.pilot.PilotCredential.verify", return_value=frappe._dict(name="credential"))
 		)
 
-	def test_a_trial_site_must_add_a_payment_method_first(self):
+	def test_a_trial_site_keeps_the_plan_it_moves_to_and_resizes_nothing(self):
 		self.site().db_set(
 			{"trial_state": "Active", "trial_ends_on": frappe.utils.add_days(frappe.utils.nowdate(), 5)}
 		)
+		choices = [{"name": "plan-2vcpu"}]
 
-		with self.assertRaisesRegex(frappe.ValidationError, "Add a payment method"):
-			billing_api.change_plan(plan="plan-2vcpu")
+		with patch("central.signups.trial.Trial.get_plan_choices", return_value=choices):
+			result = billing_api.change_plan(plan="plan-2vcpu")
+			with self.assertRaisesRegex(frappe.ValidationError, "not available for this site"):
+				billing_api.change_plan(plan="plan-8vcpu")
+
+		self.assertFalse(result["queued"])
+		self.assertEqual(self.site().conversion_plan, "plan-2vcpu")
+		self.assertFalse(
+			frappe.db.exists("Resource Action", {"server": self.server.name, "action": "resize"})
+		)
 
 	def test_a_queued_change_returns_its_progress_page(self):
 		action = self.resize()
@@ -133,3 +168,26 @@ class TestPilotPlanChange(PlanChangeCase):
 			result = billing_api.change_plan(plan="plan-2vcpu")
 
 		self.assertIn("/upgrading?", result["progress_url"])
+
+	def test_plans_with_a_smaller_disk_are_not_offered(self):
+		"""A plan change takes the plan's own disk, and a server's disk can't shrink."""
+		self.server.db_set({"disk_gigabytes": 25, "plan": None})
+		menu = {
+			"currency": "USD",
+			"plans": {
+				"general": [
+					{
+						"plan": f"plan-{disk}gb",
+						"title": f"{disk} GB",
+						"rate": 10,
+						"includes": [{"resource_type": "Disk", "quantity": disk, "unit": "GB"}],
+					}
+					for disk in (20, 25, 50)
+				]
+			},
+		}
+
+		with patch("central.billing.api.dashboard.catalog.get_eligible_plans", return_value=menu):
+			options = billing_api.get_plan_options()
+
+		self.assertEqual([plan["name"] for plan in options["plans"]], ["plan-25gb", "plan-50gb"])

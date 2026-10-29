@@ -15,6 +15,8 @@ if TYPE_CHECKING:
 
 def sync_team_ssh_key(name: str) -> None:
 	"""Replace the complete key set on every live VM that selected this key."""
+	from central.signups.access import is_server_locked
+
 	key = frappe.get_doc("Team SSH Key", name)
 	parents = frappe.get_all("Server SSH Key", filters={"team_ssh_key": name}, pluck="parent")
 	servers = {
@@ -29,6 +31,9 @@ def sync_team_ssh_key(name: str) -> None:
 	for parent in parents:
 		server = servers.get(parent)
 		if not server or server.team != key.team or not server.atlas_vm_id or server.status == "Terminated":
+			continue
+		# A free trial gives no server access, so its server never gets team keys.
+		if is_server_locked(server.name):
 			continue
 		try:
 			_sync_server(server)

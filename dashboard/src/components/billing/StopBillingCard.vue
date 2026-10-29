@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { Alert, Button, Dialog, TextInput } from 'frappe-ui'
-import { computed, ref, watch } from 'vue'
+import { Button } from 'frappe-ui'
+import { computed, ref } from 'vue'
+import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { useServerMapData } from '@/composables/useServerMapData'
 import { useServers } from '@/composables/useServers'
@@ -23,21 +24,15 @@ const running = computed(() =>
 
 const serverCount = computed(() => plural(running.value.length, 'server'))
 
-const open = ref(false)
-const confirmText = ref('')
+// The servers to stop while the confirmation is open; null closes it.
+const stopTarget = ref<typeof running.value | null>(null)
 const error = ref('')
 const suspending = ref(false)
 
-const confirmed = computed(
-	() => confirmText.value.trim() === activeTeamLabel.value,
-)
-
-watch(open, (isOpen) => {
-	if (!isOpen) return
-
-	confirmText.value = ''
+function openConfirmation(): void {
 	error.value = ''
-})
+	stopTarget.value = running.value
+}
 
 const suspendAll = async () => {
 	suspending.value = true
@@ -62,7 +57,7 @@ const suspendAll = async () => {
 		return
 	}
 
-	open.value = false
+	stopTarget.value = null
 	successToast(`Stop requested for ${serverCount.value}`)
 }
 </script>
@@ -89,40 +84,23 @@ const suspendAll = async () => {
 			theme="red"
 			label="Stop all"
 			:disabled="!running.length"
-			@click="open = true"
+			@click="openConfirmation"
 		/>
 
-		<Dialog
-			v-model:open="open"
+		<ConfirmDialog
+			v-model:target="stopTarget"
 			:title="`Stop ${running.length === 1 ? 'your server' : `all ${serverCount}`}?`"
+			confirm-label="Stop servers"
+			theme="red"
+			:loading="suspending"
+			:error="error"
+			:confirm-text="activeTeamLabel"
+			@confirm="suspendAll"
 		>
-			<template #default>
-				<Alert v-if="error" class="mb-4" theme="red" :title="error" />
-				<p class="text-p-base text-ink-gray-6">
-					Sites on these servers will be unavailable until you restart them.
-					Data, snapshots, and configuration are retained.
-				</p>
-				<TextInput
-					v-model="confirmText"
-					class="mt-4"
-					autocomplete="off"
-					:label="`Type ${activeTeamLabel} to confirm`"
-					@keydown.enter="confirmed && suspendAll()"
-				/>
-			</template>
-			<template #actions>
-				<div class="flex justify-end gap-2">
-					<Button label="Cancel" @click="open = false" />
-					<Button
-						variant="solid"
-						theme="red"
-						label="Stop servers"
-						:disabled="!confirmed"
-						:loading="suspending"
-						@click="suspendAll"
-					/>
-				</div>
-			</template>
-		</Dialog>
+			<p class="text-p-base text-ink-gray-6">
+				Sites on these servers will be unavailable until you restart them. Data,
+				snapshots, and configuration are retained.
+			</p>
+		</ConfirmDialog>
 	</section>
 </template>

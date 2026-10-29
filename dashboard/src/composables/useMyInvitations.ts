@@ -3,18 +3,15 @@ import { computed, ref } from 'vue'
 import { API, method } from '@/api/methods'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { useSession } from '@/composables/useSession'
-import { reportError, successToast } from '@/lib/feedback'
+import { getErrorMessage, reportError, successToast } from '@/lib/feedback'
 import { submitOrThrow } from '@/lib/frappeCall'
 import type { MyInvitation } from '@/types/api'
 
-// The signed-in user's pending invitations across teams — the invitee's inbox.
-// A module singleton so the header badge and the inbox page share one fetch, and
-// accepting/declining re-drives both. Accepting also re-pulls the team roster +
-// capabilities so the newly joined team appears in the switcher immediately.
+// The signed-in user's pending invitations across teams. A module singleton, so the
+// app menu badge and the Invitations settings tab share one fetch. Accepting also
+// re-pulls the session and capabilities so the joined team appears in the switcher.
 
-// immediate:false so the request doesn't fire at module-import time (this module
-// is imported by AppShell, on every authenticated page). The first consumer
-// triggers the load inside useMyInvitations(), i.e. in component setup.
+// immediate:false keeps the request out of module import; the first consumer loads it.
 const invitationsCall = useCall<MyInvitation[]>({
 	url: method(API.myInvitations),
 	immediate: false,
@@ -78,6 +75,14 @@ export function useMyInvitations() {
 		invitations: computed<MyInvitation[]>(() => invitationsCall.data ?? []),
 		count: computed<number>(() => invitationsCall.data?.length ?? 0),
 		loading: computed(() => invitationsCall.loading),
+		error: computed(() =>
+			invitationsCall.error
+				? getErrorMessage(
+						invitationsCall.error,
+						"Invitations couldn't be loaded.",
+					)
+				: '',
+		),
 		busy,
 		reload: () => invitationsCall.reload(),
 		accept,

@@ -15,9 +15,11 @@ event-driven, not a synchronous try/except cascade:
   invoice's Payment Attempt rows — no extra state).
 - Immediate fallback: a synchronous decline rotates to the next method in the
   same run; a synchronous success (captured) stops and waits for the webhook.
-- Escalate, don't repeat: each method is tried at most once per invoice. Once
-  all have failed, `collect_invoice` returns no_method and the invoice is left
-  Open for dunning (#14) to escalate — it never re-charges a failed method.
+- Escalate, don't repeat: each method is tried at most once per collection round.
+  Once all have failed, `collect_invoice` returns no_method and the invoice is left
+  Open for dunning (#14). Each dunning retry day starts a new round, in which a
+  method whose decline can clear (a shortfall, a generic refusal) is charged again.
+  A hard decline (expired, lost, fraud, revoked mandate) is never charged again.
 """
 
 import frappe
@@ -36,22 +38,35 @@ def ordered_methods(team: str) -> list:
 	)
 
 
-def _failed_methods_for(invoice: str) -> set:
-	"""Methods that already produced a failed attempt for this invoice."""
-	return set(
-		frappe.get_all(
-			"Payment Attempt",
-			filters={"invoice": invoice, "status": "Failed"},
-			pluck="payment_method",
-		)
+def attempts_of(invoice: str) -> set:
+	"""Every payment attempt made for this invoice so far."""
+	return set(frappe.get_all("Payment Attempt", filters={"invoice": invoice}, pluck="name"))
+
+
+def _failed_methods_for(invoice: str, earlier: set | None = None) -> set:
+	"""Methods that failed this invoice. With `earlier`, the attempts made before this
+	round, only this round's failures count, and failures no later round can fix."""
+	attempts = frappe.get_all(
+		"Payment Attempt",
+		filters={"invoice": invoice, "status": "Failed"},
+		fields=["name", "payment_method", "failure_code", "decline_code"],
 	)
+	return {
+		a.payment_method
+		for a in attempts
+		if earlier is None
+		or a.name not in earlier
+		or not decline.is_retryable_later(a.failure_code, a.decline_code)
+	}
 
 
-def next_method_for(invoice: str, team: str):
-	"""The next untried, chargeable method for this invoice, or None if exhausted."""
-	failed = _failed_methods_for(invoice)
+def next_method_for(invoice: str, team: str, earlier: set | None = None, skip: set | None = None):
+	"""The next untried, chargeable method for this invoice, or None if exhausted.
+	`earlier` starts a new round, as in `_failed_methods_for`. `skip` holds methods that
+	cannot be charged in this run."""
+	passed_over = _failed_methods_for(invoice, earlier) | (skip or set())
 	for method in ordered_methods(team):
-		if method.name not in failed:
+		if method.name not in passed_over:
 			return method
 	return None
 
@@ -80,43 +95,62 @@ def _ask_for_another_method(inv) -> None:
 	)
 
 
-def collect_invoice(invoice: str) -> dict:
+def collect_invoice(invoice: str, new_round: bool = False) -> dict:
 	"""Charge the next untried method; rotate immediately on a synchronous decline.
 
 	Idempotent and safe to re-enter (from settlement, a webhook failure, or a
 	dunning retry): the in-flight guard + invoice row lock in charges.pay_invoice
 	prevent a double charge, and the per-invoice failed-set guarantees each method
-	is tried at most once.
+	is tried at most once per round. `new_round` starts a dunning retry round.
 	"""
+	from central.billing.revenue.tax import is_internal_team
+
 	inv = frappe.get_doc("Invoice", invoice)
-
+	if is_internal_team(inv.team):
+		return {"collected": False, "reason": "internal_team"}
+	earlier = attempts_of(invoice) if new_round else None
+	skipped = set()
 	while True:
-		in_flight = frappe.get_all(
-			"Payment Attempt",
-			filters={"invoice": invoice, "status": ["in", charges._IN_FLIGHT]},
-			pluck="name",
-		)
-		if in_flight:
-			return {"collected": False, "reason": "attempt_in_flight", "attempt": in_flight[0]}
+		outcome = _charge_next_method(inv, earlier, skipped)
+		if outcome is not None:
+			return outcome
 
-		method = next_method_for(invoice, inv.team)
-		if not method:
-			# Every method has failed (or there are none) — leave it for dunning, and
-			# ask the customer for another way to pay. Off-session there is nobody to
-			# offer the other rail to in the moment, so the ask has to arrive as a
-			# notification instead (ADR 0022 §5, ADR 0023).
-			_ask_for_another_method(inv)
-			return {"collected": False, "reason": "no_method"}
 
-		result = charges.pay_invoice(invoice, method.name, method.gateway)
+def _charge_next_method(inv, earlier: set | None, skipped: set) -> dict | None:
+	"""Try the next method once. Returns the outcome to stop on, or None to rotate to the
+	next method (a final decline, or a rail that cannot debit now, added to `skipped`)."""
+	from central.billing.payments import emandate
 
-		# A synchronous decline: rotate to the next method now (immediate fallback) —
-		# but only when the decline is final. An ambiguous failure may still settle at
-		# the gateway, and charging a second method on top of it pays one invoice
-		# twice; reconciliation resolves those instead (ADR 0022).
-		if result.get("status") == "Failed":
-			if not decline.is_terminal(result.get("failure_code")):
-				return {"collected": False, "reason": "ambiguous_failure", "attempt": result.get("attempt")}
-			continue
+	if in_flight := charges.in_flight_attempt(inv.name):
+		return {"collected": False, "reason": "attempt_in_flight", "attempt": in_flight}
+
+	method = next_method_for(inv.name, inv.team, earlier, skip=skipped)
+	if not method:
+		# Every method has failed (or there are none) — leave it for dunning, and
+		# ask the customer for another way to pay. Off-session there is nobody to
+		# offer the other rail to in the moment, so the ask has to arrive as a
+		# notification instead (ADR 0022 §5, ADR 0023).
+		_ask_for_another_method(inv)
+		return {"collected": False, "reason": "no_method"}
+
+	# Every off-session debit on a rail that owes a pre-debit notice waits for it, whichever
+	# path asked for it: the billing run, a dunning retry or a webhook.
+	predebit, notice = emandate.await_predebit(inv.name, method.gateway)
+	if predebit == emandate.Predebit.WAIT:
+		return {"collected": False, "reason": "awaiting_predebit_window", **notice}
+	if predebit == emandate.Predebit.ROTATE:
+		skipped.add(method.name)
+		return None
+
+	result = charges.pay_invoice(inv.name, method.name, method.gateway)
+
+	# A synchronous decline: rotate to the next method now (immediate fallback) —
+	# but only when the decline is final. An ambiguous failure may still settle at
+	# the gateway, and charging a second method on top of it pays one invoice
+	# twice; reconciliation resolves those instead (ADR 0022).
+	if result.get("status") != "Failed":
 		# Captured (awaiting webhook), in-flight, or a transient timeout: stop here.
 		return result
+	if not decline.is_terminal(result.get("failure_code")):
+		return {"collected": False, "reason": "ambiguous_failure", "attempt": result.get("attempt")}
+	return None

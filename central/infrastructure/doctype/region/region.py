@@ -50,6 +50,7 @@ class Region(AtlasConnectionMixin, CargoConnectionMixin, Document):
 		region: DF.Data
 		region_id: DF.Int
 		status: DF.Literal["Active", "Draining", "Disabled"]
+		telemetry_data_source: DF.Data | None
 		webhook_secret: DF.Password | None
 	# end: auto-generated types
 
@@ -60,6 +61,16 @@ class Region(AtlasConnectionMixin, CargoConnectionMixin, Document):
 	def validate(self) -> None:
 		self.validate_atlas_connection()
 		self.validate_cargo_connection()
+
+	def on_update(self) -> None:
+		from central.infrastructure.doctype.blocked_domain.blocked_domain import seed_for_zone
+
+		if self.has_value_changed("proxy_domain"):
+			seed_for_zone(self.proxy_domain)
+		if not self.get_doc_before_save() and frappe.db.get_single_value(
+			"Central Settings", "wildcard_domain"
+		):
+			seed_for_zone(self.get_zone(self.name))
 
 	@staticmethod
 	def get_zone(region: str) -> str:
@@ -80,6 +91,17 @@ class Region(AtlasConnectionMixin, CargoConnectionMixin, Document):
 		"""A proxy client for one region, with a freshly minted token."""
 		region_id = frappe.get_doc("Region", region).get_atlas_region_id()
 		return ProxyClient(Region.get_service_url("proxy", region), mint_proxy_token(region_id))
+
+	def run_telemetry_sql(self, sql: str) -> tuple[list[str], list[list]]:
+		"""Columns and rows of one SQL query on this region's Insights telemetry data source."""
+		if not self.telemetry_data_source or "insights" not in frappe.get_installed_apps():
+			frappe.throw(_("Region {0} has no telemetry data source.").format(self.name))
+
+		source = frappe.get_doc("Insights Data Source v3", self.telemetry_data_source)
+		result = source._get_ibis_backend().raw_sql(sql)
+		if hasattr(result, "result_rows"):
+			return list(result.column_names), [list(row) for row in result.result_rows]
+		return [column[0] for column in result.description], [list(row) for row in result.fetchall()]
 
 
 def on_doctype_update() -> None:

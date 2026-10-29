@@ -12,6 +12,7 @@ from central.infrastructure.doctype.resource_action.resource_action import (
 )
 from central.infrastructure.doctype.site.site import Site
 from central.integrations.pilot import PilotLoginPending, is_site_reachable
+from central.signups.journey import ACTION_FIELDS, SetupJourney
 from central.utils.guards import require_capability
 
 
@@ -25,8 +26,55 @@ def site_domain(team: str | None = None, product: str | None = None) -> dict:
 	from central.signups.doctype.product.product import get_signup_product
 	from central.site_provisioning import trial_zone
 
-	signup_app = get_signup_product(product).signup_app if product else None
-	return {"domain": trial_zone(team, signup_app)}
+	signup_product = get_signup_product(product) if product else None
+	return {"domain": trial_zone(team, signup_product)}
+
+
+@frappe.whitelist(methods=["GET"])
+@require_capability(
+	"server:create", _lt("You can't create sites for this Team. Ask a team admin to review your access.")
+)
+def get_open_trial(team: str | None = None) -> dict | None:
+	"""The owner's open free trial, so the signup page offers that site before it asks for a new one."""
+	from central.signups.eligibility import get_open_trial_summary
+
+	return get_open_trial_summary(team)
+
+
+@frappe.whitelist(methods=["POST"])
+@require_capability(
+	"server:create", _lt("You can't create sites for this Team. Ask a team admin to review your access.")
+)
+def install_trial_app(product: str, team: str | None = None) -> dict:
+	"""Install a product's app on the owner's open trial site, instead of a second free trial.
+	Returns `site`, the bench's name for it, and `task_id` for `get_trial_app_install`."""
+	from central.signups.app_install import TrialAppInstall
+
+	return TrialAppInstall(authorized_open_trial(team), product).start()
+
+
+# A POST, because a failed install leaves its reason on the Site and Frappe rolls back a GET.
+@frappe.whitelist(methods=["POST"])
+@require_capability(
+	"server:create", _lt("You can't create sites for this Team. Ask a team admin to review your access.")
+)
+def get_trial_app_install(site: str, task_id: str, product: str, team: str | None = None) -> dict:
+	"""The progress of an app install on the owner's open trial site. See `TrialAppInstall.get_progress`."""
+	from central.signups.app_install import TrialAppInstall
+
+	return TrialAppInstall(authorized_open_trial(team), product).get_progress(site, task_id)
+
+
+def authorized_open_trial(team: str):
+	"""The owner's open trial, once the caller may sign in to its site. It may be on another team of the owner."""
+	from central.signups.eligibility import get_open_trial_of_owner
+	from central.signups.trial import Trial
+
+	trial = get_open_trial_of_owner(team)
+	if not trial:
+		frappe.throw(_("You have no free trial site to add an app to."))
+
+	return Trial(authorized_site(trial.site.name, "server:console"))
 
 
 @frappe.whitelist(methods=["GET"])
@@ -68,11 +116,10 @@ def create_trial_team(
 def create_trial_site(
 	subdomain: str,
 	request_key: str,
+	product: str,
 	team: str | None = None,
-	product: str | None = None,
 ) -> dict:
-	"""Start a trial site under a name the customer chose, with the product's app when one is
-	named. Gated on `server:create`."""
+	"""Start a product's trial site under a name the customer chose. Gated on `server:create`."""
 	from central.site_provisioning import create_trial_site as start
 
 	return start(team, subdomain, request_key, product)
@@ -111,9 +158,10 @@ def get_site(name: str) -> dict:
 
 
 @frappe.whitelist(methods=["POST"])
-def login_site(name: str) -> dict:
-	"""Create a one-time site login. It signs in as Administrator, so it needs `server:console`."""
-	return site_state(authorized_site(name, "server:console"), with_login=True)
+def login_site(name: str, product: str | None = None) -> dict:
+	"""Create a one-time site login. It signs in as Administrator, so it needs `server:console`.
+	It lands on the page of `product` when given, such as an app just installed on the site."""
+	return site_state(authorized_site(name, "server:console"), with_login=True, product=product)
 
 
 @frappe.whitelist(methods=["GET"])
@@ -121,7 +169,24 @@ def login_site(name: str) -> dict:
 	"server:view", _lt("You can't view this team's sites. Ask a team admin to review your access.")
 )
 def onboarding_status(team: str | None = None, product: str | None = None) -> dict:
-	"""Resume this product's site or creation within the authorized team."""
+	"""Resume this product's site or creation within the authorized team, with the journey the
+	waiting page follows."""
+	site, action = find_onboarding(team, product)
+	state = site_state(site, with_login=False) if site else None
+	creation = (
+		action_status(action)
+		if not site and action and action.status in (*PENDING_STATES, "Failed", "Timed Out")
+		else None
+	)
+	if not state and not creation:
+		return {"site": None, "creation": None, "journey": None}
+
+	journey = SetupJourney(action, site, state)
+	return {"site": state, "creation": creation, "journey": journey.as_dict()}
+
+
+def find_onboarding(team: str | None, product: str | None) -> tuple[Site | None, frappe._dict | None]:
+	"""The signup's site, once it exists, and the creation request that started it."""
 	if product:
 		if not frappe.db.exists("Product", product):
 			frappe.throw(_("This product is not available for signup."))
@@ -133,41 +198,33 @@ def onboarding_status(team: str | None = None, product: str | None = None) -> di
 			limit=1,
 		)
 		if sites:
-			return {
-				"site": site_state(authorized_site(sites[0], "server:view"), with_login=False),
-				"creation": None,
-			}
+			site = authorized_site(sites[0], "server:view")
+			return site, latest_creation({"team": team, "server": site.server})
 
+	action = latest_creation(
+		{"team": team, "requested_by": frappe.session.user, "product": product or ["is", "not set"]}
+	)
+	name = (
+		frappe.db.get_value("Site", {"server": action.server}, "name") if action and action.server else None
+	)
+	if not name:
+		return None, action
+
+	site = authorized_site(name, "server:view")
+	if site.status == "Terminated":
+		return None, None
+	return site, action
+
+
+def latest_creation(filters: dict) -> frappe._dict | None:
 	rows = frappe.get_list(
 		"Resource Action",
-		filters={
-			"team": team,
-			"requested_by": frappe.session.user,
-			"resource_type": "Site",
-			"action": "create",
-			"product": product or ["is", "not set"],
-		},
-		fields=[*STATUS_FIELDS, "server"],
+		filters={**filters, "resource_type": "Site", "action": "create"},
+		fields=list({*STATUS_FIELDS, *ACTION_FIELDS}),
 		order_by="creation desc",
 		limit=1,
 	)
-	if not rows:
-		return {"site": None, "creation": None}
-
-	creation = rows[0]
-	name = frappe.db.get_value("Site", {"server": creation.server}, "name") if creation.server else None
-	if name:
-		site = authorized_site(name, "server:view")
-		if site.status == "Terminated":
-			return {"site": None, "creation": None}
-		return {"site": site_state(site, with_login=False), "creation": None}
-
-	return {
-		"site": None,
-		"creation": action_status(creation)
-		if creation.status in (*PENDING_STATES, "Failed", "Timed Out")
-		else None,
-	}
+	return rows[0] if rows else None
 
 
 @frappe.whitelist(methods=["POST"])
@@ -181,7 +238,7 @@ def terminate_site(name: str) -> dict:
 	return submit_command("terminate", site.team, site.server)
 
 
-def site_state(site: Site, with_login: bool = True) -> dict:
+def site_state(site: Site, with_login: bool = True, product: str | None = None) -> dict:
 	"""The site's readiness: its machine is awake and the site answers.
 	A login is minted only when asked, because each one starts a real Administrator session.
 	Only the POST calls that ask for a login record readiness, because Frappe rolls back a GET."""
@@ -190,10 +247,11 @@ def site_state(site: Site, with_login: bool = True) -> dict:
 	if ready and with_login:
 		site.record_ready()
 	login_url = None
-	login_pending = False
+	# A busy machine can miss one probe, so a login it could not try yet is retried, not failed.
+	login_pending = with_login and not ready
 	if ready and with_login:
 		try:
-			login_url = site.get_login_url(frappe.session.user)
+			login_url = site.get_login_url(frappe.session.user, product)
 		except PilotLoginPending:
 			login_pending = True
 

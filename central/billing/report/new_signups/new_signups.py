@@ -3,13 +3,15 @@
 """New signups & billing activations — the acquisition-to-revenue funnel.
 
 One row per team that signed up in the window, with the billing milestones it has
-crossed: billing profile created, first payment method added, and first paid
-invoice (the activation event that turns a signup into revenue). The stage is
+crossed: billing profile created, first payment method added, and first payment
+(the activation event that turns a signup into revenue). A first payment is money
+the customer paid: an invoice paid by the gateway or by paid-in credit, or a credit
+top-up. An invoice that welcome credit alone covered is not a payment. The stage is
 derived from the furthest milestone reached:
 
   Signed Up  → team exists, no billing profile yet
-  Onboarding → profile and/or a payment method, but no paid invoice
-  Activated  → has at least one paid invoice
+  Onboarding → profile and/or a payment method, but no payment
+  Activated  → has paid money at least once
 
 The summary cards headline signups, activations, and the activation rate over the
 window. "Signup" is the team's creation (top of funnel); the milestones are the
@@ -20,7 +22,9 @@ import frappe
 from frappe import _
 from frappe.utils import flt
 
+from central.billing.doctype.payment_method.payment_method import held_method_filters
 from central.billing.report._currency import split_currency_columns
+from central.billing.report._paging import first_rows
 
 
 def execute(filters: dict | None = None):
@@ -28,7 +32,8 @@ def execute(filters: dict | None = None):
 	columns = get_columns()
 	rows, summary = get_data(filters)
 	columns = split_currency_columns(columns, rows, ["first_payment_amount"])
-	return columns, rows, None, None, summary
+	rows, message = first_rows(rows)
+	return columns, rows, message, None, summary
 
 
 def get_columns() -> list[dict]:
@@ -49,7 +54,7 @@ def get_columns() -> list[dict]:
 			"fieldtype": "Datetime",
 			"width": 160,
 		},
-		{"label": _("First Paid Invoice"), "fieldname": "first_paid", "fieldtype": "Datetime", "width": 160},
+		{"label": _("First Paid"), "fieldname": "first_paid", "fieldtype": "Datetime", "width": 160},
 		{
 			"label": _("First Payment"),
 			"fieldname": "first_payment_amount",
@@ -62,21 +67,57 @@ def get_columns() -> list[dict]:
 
 
 def _earliest_by_team(
-	doctype: str, teams: list[str], extra_filters: dict | None = None, extra_fields: list[str] | None = None
+	doctype: str,
+	teams: list[str],
+	extra_filters: dict | None = None,
+	extra_fields: list[str] | None = None,
+	time_field: str = "creation",
+	or_filters: dict | None = None,
 ) -> dict[str, dict]:
-	"""First (earliest-created) row of `doctype` per team, keyed by team."""
-	conditions = {"team": ["in", teams]}
+	"""Earliest row of `doctype` per team by `time_field`, keyed by team. Its time is `at`."""
+	conditions = {"team": ["in", teams], time_field: ["is", "set"]}
 	if extra_filters:
 		conditions.update(extra_filters)
 	rows = frappe.get_all(
 		doctype,
 		filters=conditions,
-		fields=["team", "creation", *(extra_fields or [])],
-		order_by="creation asc",
+		fields=["team", f"{time_field} as at", *(extra_fields or [])],
+		order_by=f"{time_field} asc",
+		or_filters=or_filters,
 	)
 	first: dict[str, dict] = {}
 	for r in rows:
 		first.setdefault(r.team, r)  # first seen is earliest given the asc order
+	return first
+
+
+def _first_payment_by_team(teams: list[str]) -> dict[str, dict]:
+	"""Each team's first money, keyed by team, with its amount and currency."""
+	paid_invoice = {"status": "Paid", "invoice_type": "Billable"}
+	sources = (
+		_earliest_by_team(
+			"Invoice",
+			teams,
+			{**paid_invoice, "amount_paid": [">", 0]},
+			["amount_paid as amount", "currency"],
+			time_field="paid_at",
+		),
+		_earliest_by_team(
+			"Invoice",
+			teams,
+			{**paid_invoice, "advance_applied": [">", 0]},
+			["advance_applied as amount", "currency"],
+			time_field="paid_at",
+		),
+		_earliest_by_team(
+			"Credit Ledger Entry", teams, {"entry_type": "Credit", "paid_in": 1}, ["amount", "currency"]
+		),
+	)
+	first: dict[str, dict] = {}
+	for source in sources:
+		for team, row in source.items():
+			if team not in first or row.at < first[team].at:
+				first[team] = row
 	return first
 
 
@@ -100,10 +141,8 @@ def get_data(filters: dict):
 
 	names = [t.name for t in teams]
 	profiles = _earliest_by_team("Billing Profile", names, extra_fields=["currency"])
-	methods = _earliest_by_team("Payment Method", names)
-	paid = _earliest_by_team(
-		"Invoice", names, {"status": "Paid", "invoice_type": "Billable"}, ["amount_paid", "currency"]
-	)
+	methods = _earliest_by_team("Payment Method", names, or_filters=held_method_filters())
+	paid = _first_payment_by_team(names)
 
 	rows = []
 	signups = onboarding = activated = 0
@@ -125,12 +164,12 @@ def get_data(filters: dict):
 				"team": t.name,
 				"team_name": t.team_name,
 				"signed_up": t.creation,
-				"profile_created": profile.creation if profile else None,
+				"profile_created": profile.at if profile else None,
 				"currency": (profile.currency if profile else None)
 				or (first_paid.currency if first_paid else None),
-				"first_method": method.creation if method else None,
-				"first_paid": first_paid.creation if first_paid else None,
-				"first_payment_amount": flt(first_paid.amount_paid) if first_paid else None,
+				"first_method": method.at if method else None,
+				"first_paid": first_paid.at if first_paid else None,
+				"first_payment_amount": flt(first_paid.amount) if first_paid else None,
 				"stage": stage,
 			}
 		)

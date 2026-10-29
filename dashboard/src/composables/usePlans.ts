@@ -104,6 +104,9 @@ export function usePlans(
 		plans: computed<Plan[]>(() => Object.values(groups.value).flat()),
 		currency: computed<string | null>(() => call.data?.currency ?? null),
 		tier: computed<string | null>(() => call.data?.tier ?? null),
+		includedTransferGigabytes: computed<number>(
+			() => call.data?.included_transfer_gb ?? 0,
+		),
 		// Remaining trust-tier headroom in the team's currency — explains an empty menu.
 		available: computed<number | null>(() =>
 			call.data?.spend_limit_enforced === false

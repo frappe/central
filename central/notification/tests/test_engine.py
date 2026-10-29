@@ -8,7 +8,7 @@ from unittest.mock import patch
 import frappe
 
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
-from central.billing.tests.utils import ensure_team, make_user
+from central.billing.tests.utils import ensure_team, make_user, run_enqueued_inline
 
 TEAM = "team-engine"
 
@@ -314,6 +314,19 @@ class TestEmailFanout(EngineTestBase):
 		self.user_a = make_user("fanout-a@example.com")
 		self.user_b = make_user("fanout-b@example.com")
 		self._add_members([self.user_a, self.user_b])
+		# The emails go out from a job after commit; run it in place.
+		self.enqueue = self.enterContext(
+			patch("central.notification.engine.frappe.enqueue", side_effect=run_enqueued_inline)
+		)
+
+	def test_emails_wait_for_the_commit(self):
+		self._ensure_event_type("payment_failure", category="Billing", required_cap="billing:view")
+
+		from central.notification.engine import dispatch, send_notification_emails
+
+		dispatch(TEAM, "payment_failure", message="Card declined")
+		self.assertEqual(self.enqueue.call_args.args[0], send_notification_emails)
+		self.assertTrue(self.enqueue.call_args.kwargs["enqueue_after_commit"])
 
 	def _add_members(self, users):
 		"""Add users as active members of the test team (non-owner roles)."""
@@ -824,6 +837,13 @@ class TestMemberInvitedSuppression(EngineTestBase):
 
 
 class TestDirectRecipientsAffectedUser(EngineTestBase):
+	def setUp(self):
+		super().setUp()
+		# The emails go out from a job after commit; run it in place.
+		self.enterContext(
+			patch("central.notification.engine.frappe.enqueue", side_effect=run_enqueued_inline)
+		)
+
 	@patch("central.notification.engine.frappe.sendmail")
 	def test_affected_user_receives_email(self, mock_sendmail):
 		"""Only the affected_user gets the email when direct_recipients='Affected User'."""

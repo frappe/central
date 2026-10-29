@@ -2,8 +2,9 @@
 import { computed, ref, watch } from 'vue'
 import BillingCountryField from '@/components/billing/BillingCountryField.vue'
 import PaymentMethodFlow from '@/components/billing/PaymentMethodFlow.vue'
+import TrialBillingBanner from '@/components/billing/TrialBillingBanner.vue'
 import { useBillingSetup } from '@/composables/useBillingSetup'
-import { formatDate, money } from '@/lib/format'
+import { money } from '@/lib/format'
 import type { WelcomeCredit } from '@/types/billing'
 
 const { profile } = useBillingSetup()
@@ -27,15 +28,10 @@ const offerAmount = computed(() =>
 			})
 		: '',
 )
-// The two limits on the offer, each shown only when it applies.
+// The limit on the offer, shown only when it applies.
 const offerFacts = computed(() => {
 	if (!offer.value) return []
 	const facts: { icon: string; text: string }[] = []
-	if (offer.value.ends_on)
-		facts.push({
-			icon: 'lucide-calendar',
-			text: `Add one by ${formatDate(offer.value.ends_on)}`,
-		})
 	if (offer.value.validity_days)
 		facts.push({
 			icon: 'lucide-clock',
@@ -80,6 +76,7 @@ defineExpose({
 
 <template>
 	<div class="space-y-5">
+		<TrialBillingBanner :link-to-upgrade="false" />
 		<BillingCountryField v-if="!hasMethod" />
 		<div
 			v-if="hasMethod"
