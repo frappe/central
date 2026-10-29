@@ -161,6 +161,9 @@ class Team(TeamLifecycle, Document):
 			role.flags.from_team_delete = True
 			# Team deletion already passed team:delete and owns this dependent cleanup.
 			role.delete(ignore_permissions=True, force=True)
+		for name in frappe.get_all("WireGuard Device", {"team": self.name}, pluck="name"):
+			# Team deletion already passed team:delete and its on_trash takes the peer off the gateway.
+			frappe.delete_doc("WireGuard Device", name, ignore_permissions=True, force=True)
 
 	# Internal; the HTTP surface is central.api.teams.invite_team_member.
 	def invite_member(

@@ -70,7 +70,9 @@ class WireGuardDevice(Document):
 		self.db_set(get_gateway_fields(settings))
 
 	def on_trash(self) -> None:
-		self.get_client().remove_peer(self.tenant_id, self.client_id)
+		# a region whose gateway was switched off holds no peer, so the row alone goes
+		if frappe.get_cached_value("Region", self.region, "has_wireguard_gateway"):
+			self.get_client().remove_peer(self.tenant_id, self.client_id)
 
 	def remove(self) -> bool:
 		"""Take the device off its gateway and delete it or leave it Removing when the gateway is down."""
@@ -143,7 +145,10 @@ def remove_devices_for_role(role: str) -> None:
 		return
 
 	for team in get_team_names_with_role(role, teams):
-		remove_departed_devices(frappe.get_doc("Team", team))
+		try:
+			remove_departed_devices(frappe.get_doc("Team", team))
+		except Exception:
+			frappe.log_error(title=f"WireGuard device recheck failed for {team}")
 
 
 def remove_disabled_user_devices(user: Document, method: str | None = None) -> None:
@@ -164,13 +169,18 @@ def queue_removal(filters: dict) -> None:
 
 
 def remove_pending_devices() -> None:
+	"""Scheduler: retry every Removing device. One device's failure does not stop the others."""
 	for name in frappe.get_all("WireGuard Device", {"status": "Removing"}, pluck="name"):
-		# an overlapping run may have deleted it already
+		frappe.db.savepoint("wireguard_device_removal")
 		try:
-			device = frappe.get_doc("WireGuard Device", name)
+			frappe.get_doc("WireGuard Device", name).remove()
 		except frappe.DoesNotExistError:
+			# an overlapping run may have deleted it already
 			continue
-		device.remove()
+		except Exception as error:
+			frappe.db.rollback(save_point="wireguard_device_removal")
+			frappe.db.set_value("WireGuard Device", name, "last_error", str(error))
+			frappe.log_error(title=f"WireGuard device removal failed for {name}")
 
 
 def restore_devices(region: str) -> int:

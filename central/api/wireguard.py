@@ -55,6 +55,7 @@ def list_wireguard_devices(team: str) -> dict:
 		limit_page_length=0,
 	)
 
+	# customers cannot read User so read only the names of the device owners as the system
 	owners = {
 		user.name: user.full_name
 		for user in frappe.get_all(

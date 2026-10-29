@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { Alert, Button, Checkbox, Dialog, FormControl } from 'frappe-ui'
+import { renderSVG } from 'uqr'
 import { computed, ref, watch } from 'vue'
 import CopyButton from '@/components/common/CopyButton.vue'
 import WireGuardServerList from '@/components/wireguard/WireGuardServerList.vue'
@@ -70,6 +71,11 @@ const config = computed(() =>
 		? buildConfig(device.value, privateKey.value || '<your private key>')
 		: '',
 )
+const qrCode = computed(
+	() =>
+		privateKey.value &&
+		`data:image/svg+xml;utf8,${encodeURIComponent(renderSVG(config.value))}`,
+)
 
 watch(open, (value) => {
 	opening++
@@ -125,8 +131,8 @@ async function submit() {
 			<Alert
 				v-if="privateKey"
 				theme="amber"
-				title="The private key is shown only now"
-				description="Download the file before you close this. Central never saw the key and can't show it again."
+				title="This file is available only now"
+				description="Frappe Cloud never saw the key and can't show it again."
 			/>
 
 			<ol class="list-decimal space-y-1 pl-5 text-p-sm text-ink-gray-7">
@@ -140,12 +146,31 @@ async function submit() {
 						>WireGuard app</a
 					>.
 				</li>
-				<li v-if="privateKey">Download the file and import it.</li>
+				<li v-if="privateKey">
+					Scan the code with a phone, or download the file on a computer and
+					import it.
+				</li>
 				<li v-else>Copy the file, add your private key, and import it.</li>
-				<li>Turn on the tunnel and copy an SSH command below.</li>
+				<li>
+					Turn on the tunnel and copy an SSH command below.
+					<a
+						href="https://frappe.github.io/central/servers/wireguard#connect"
+						target="_blank"
+						rel="noopener"
+						class="text-p-sm-medium text-ink-gray-8 hover:underline"
+						>Steps for each device</a
+					>
+				</li>
 			</ol>
 
-			<div class="relative">
+			<img
+				v-if="qrCode"
+				:src="qrCode"
+				alt="QR code of the WireGuard file for the mobile app"
+				class="size-48 self-center rounded-6 bg-white p-2"
+			/>
+
+			<div v-else class="relative">
 				<pre
 					class="max-h-60 overflow-auto rounded-6 bg-surface-gray-1 p-3 font-mono text-sm text-ink-gray-8"
 				>{{ config }}</pre>
@@ -208,7 +233,8 @@ async function submit() {
 				</p>
 			</template>
 			<p v-else class="text-p-sm text-ink-gray-5">
-				Your browser makes the key pair. Only the public key is sent to Central.
+				Your browser makes the key pair. Only the public key is sent to Frappe
+				Cloud.
 			</p>
 			<WireGuardServerList v-if="region" :servers="regionServers" />
 			<div class="flex justify-end gap-2">

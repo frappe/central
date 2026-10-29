@@ -21,10 +21,14 @@ WireGuard is available only in regions that have a WireGuard gateway. If no regi
 4. Select the **Region**. The dialog shows the servers in that region and which ones the device can reach.
 5. Click **Add device**.
 
-Your browser makes the key pair. Only the public key goes to Frappe Cloud. The dialog then shows the WireGuard file with the private key.
+Your browser makes the key pair. Only the public key goes to Frappe Cloud. The dialog then shows a QR code and a **Download .conf** button. Both hold the private key. Scan the code on a phone, or download the file on a computer. The file has the name of the device, such as `work-laptop.conf`.
 
 ::: warning
-The private key shows only once. Click **Download .conf** before you close the dialog. If you lose the file, delete the device and add it again.
+The QR code and the file show only once. If you lose the file, delete the device and add it again.
+:::
+
+::: tip
+A device reaches a server only after you turn on [WireGuard access](#let-a-device-reach-a-server) for that server.
 :::
 
 ### Use your own key pair
@@ -41,15 +45,61 @@ When you open **View settings** later, the file has `<your private key>` in plac
 
 ## Connect
 
-1. Install the WireGuard app on the device.
-2. Import the `.conf` file and turn on the tunnel.
-3. In the settings, open the row menu of the device and click **View settings**. Click the SSH command of a server to copy it, then run it:
+Install the [WireGuard app](https://www.wireguard.com/install/) on the device. Then follow the steps for the device.
+
+### Windows
+
+1. Open WireGuard.
+2. Click **Import tunnel(s) from file**.
+3. Select the `.conf` file.
+4. Click **Activate**.
+
+### macOS
+
+1. Open WireGuard.
+2. Click **Import Tunnel(s) from File**.
+3. Select the `.conf` file.
+4. If macOS asks, allow the VPN configuration.
+5. Click **Activate**.
+
+### Android
+
+1. Open WireGuard.
+2. Tap **+**.
+3. Tap **Scan from QR code**.
+4. Scan the QR code in the dialog.
+5. Tap the switch next to the tunnel.
+
+### iPhone and iPad
+
+1. Open WireGuard.
+2. Tap **Add a tunnel**.
+3. Tap **Create from QR code**.
+4. Scan the QR code in the dialog.
+5. If iOS asks, allow the VPN configuration.
+6. Tap the switch next to the tunnel.
+
+### Linux
+
+1. Install the WireGuard tools, for example `sudo apt install wireguard`.
+2. Copy the file to `/etc/wireguard/`, for example `sudo cp work-laptop.conf /etc/wireguard/`.
+3. Start the tunnel with `sudo wg-quick up work-laptop`. Use the file name without `.conf`.
+4. To stop the tunnel, run `sudo wg-quick down work-laptop`.
+
+### Connect to a server
+
+When the tunnel is on:
+
+1. In the settings, open the row menu of the device.
+2. Click **View settings**.
+3. Click the SSH command of a server to copy it.
+4. Run the command:
 
    ```bash
    ssh root@2001:db8:4a:6::10
    ```
 
-The dialog shows the SSH command only for servers that the device can reach. The private address is also in the **Addresses** section of the server's **Networking** tab.
+   The dialog shows the SSH command only for servers that the device can reach. The private address is also in the **Addresses** section of the server's **Networking** tab.
 
 ## Let a device reach a server
 
@@ -59,6 +109,12 @@ A server accepts no WireGuard traffic until you turn it on:
 2. In **Addresses**, turn on **WireGuard access**.
 
 When the switch is on, all WireGuard devices of the team in that region can reach the server. Turn it off to block all devices from that server. The switch shows only in regions with a WireGuard gateway.
+
+## What a device can reach
+
+The server firewall does not filter WireGuard devices. You cannot set rules for one device or one member.
+
+The tunnel works both ways. While the tunnel is on, a server that the device can reach can also connect to the device. Keep the firewall of the device on, and turn off the tunnel when you do not need it.
 
 ## Delete a device
 

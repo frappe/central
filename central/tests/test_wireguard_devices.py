@@ -100,6 +100,23 @@ class TestWireGuardDevices(IntegrationTestCase):
 		with self.assertRaises(frappe.ValidationError):
 			self.add_device(self.owner, "not-a-key")
 
+	def test_one_failing_device_does_not_stop_the_removal_run(self) -> None:
+		broken = self.add_device(self.owner)
+		other = self.add_device(self.member, OTHER_KEY)
+		frappe.db.set_value("WireGuard Device", {"team": self.team.name}, "status", "Removing")
+
+		def remove_peer(tenant_id, client_id):
+			if client_id == broken.client_id:
+				raise RuntimeError("unexpected reply")
+
+		self.gateway.remove_peer.side_effect = remove_peer
+		remove_pending_devices()
+
+		self.assertFalse(frappe.db.exists("WireGuard Device", other.name))
+		self.assertEqual(
+			frappe.db.get_value("WireGuard Device", broken.name, "last_error"), "unexpected reply"
+		)
+
 	def test_gateway_outage_leaves_the_device_removing_until_a_retry_works(self) -> None:
 		device = self.add_device(self.owner)
 		self.gateway.remove_peer.side_effect = WireGuardGatewayError("down")
@@ -199,6 +216,26 @@ class TestWireGuardDevices(IntegrationTestCase):
 		self.addCleanup(frappe.db.set_value, "User", self.member, "enabled", 1)
 
 		self.assertEqual(frappe.db.get_value("WireGuard Device", device.name, "status"), "Removing")
+
+	def test_deleting_a_team_takes_its_devices_off_the_gateway(self) -> None:
+		device = self.add_device(self.member)
+
+		self.team.reload()
+		self.team.delete()
+
+		self.assertFalse(frappe.db.exists("WireGuard Device", device.name))
+		self.gateway.remove_peer.assert_called_once_with(self.team.tenant_id, device.client_id)
+
+	def test_a_team_in_a_region_without_a_gateway_can_still_be_deleted(self) -> None:
+		device = self.add_device(self.member)
+		frappe.db.set_value("Region", REGION, "has_wireguard_gateway", 0)
+		self.addCleanup(frappe.db.set_value, "Region", REGION, "has_wireguard_gateway", 1)
+
+		self.team.reload()
+		self.team.delete()
+
+		self.assertFalse(frappe.db.exists("WireGuard Device", device.name))
+		self.gateway.remove_peer.assert_not_called()
 
 	def test_restore_keeps_each_device_on_its_node(self) -> None:
 		device = self.add_device(self.owner)
