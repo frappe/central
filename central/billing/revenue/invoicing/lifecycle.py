@@ -73,7 +73,11 @@ def open_and_collect(invoice: str, collect: bool = True) -> dict:
 
 	# Leg 1 — credits first (only against the collectable amount, gross less TDS).
 	collectable = frappe.utils.flt(doc.total) - frappe.utils.flt(doc.tds_amount)
-	draw = _draw_wallet(doc, collectable) if collectable > 0 else frappe._dict(wallet=0, advance=0, gst=0)
+	draw = (
+		_draw_wallet(doc, collectable, frappe.utils.flt(doc.output_tax_amount))
+		if collectable > 0
+		else frappe._dict(wallet=0, advance=0, gst=0)
+	)
 	if draw.wallet > 0:
 		credits.apply_credit(
 			doc.team,
@@ -135,6 +139,86 @@ def open_and_collect(invoice: str, collect: bool = True) -> dict:
 	}
 
 
+def settle_with_new_credit(team: str) -> list[dict]:
+	"""Spend credit that landed after invoices were issued on the team's unpaid invoices, oldest first.
+
+	Credit is drawn only at issue, so without this a top-up made to pay an open invoice
+	would sit in the wallet while that invoice was dunned, and pay next month's instead."""
+	invoices = frappe.get_all(
+		"Invoice",
+		filters={
+			"team": team,
+			"invoice_type": "Billable",
+			"status": ["in", ["Open", "Overdue"]],
+			"expected_collection": [">", 0],
+		},
+		pluck="name",
+		order_by="period_start asc, creation asc",
+	)
+	return [_settle_with_credit(invoice) for invoice in invoices]
+
+
+def _settle_with_credit(invoice: str) -> dict:
+	"""Pay what the wallet can of one unpaid invoice, and charge the rest.
+
+	1. An invoice with a charge in flight is left alone: that charge is for the whole amount.
+	2. Credit that settles only part of an invoice is spent only when a method can pay the
+	   rest. Otherwise it stays in the wallet until more credit settles the whole invoice.
+	"""
+	from central.billing.payments import charges, collection, collection_mode
+
+	invoice_tbl = frappe.qb.DocType("Invoice")
+	frappe.qb.from_(invoice_tbl).select(invoice_tbl.name).where(
+		invoice_tbl.name == invoice
+	).for_update().run()
+	doc = frappe.get_doc("Invoice", invoice)
+	doc.flags.ignore_links = True  # only its amounts and status change here
+	due = frappe.utils.flt(doc.expected_collection)
+	if doc.status not in ("Open", "Overdue") or due <= 0 or charges.in_flight_attempt(invoice):
+		return {"invoice": invoice, "applied": 0}
+
+	draw = _draw_wallet(doc, due, _gst_still_due(doc, due))
+	is_covered = draw.wallet + draw.gst + 0.005 >= due
+	can_charge_rest = collection_mode.is_debit_allowed(doc.team) and collection_mode.has_chargeable_method(
+		doc.team
+	)
+	if draw.wallet <= 0 or not (is_covered or can_charge_rest):
+		return {"invoice": invoice, "applied": 0}
+
+	credits.apply_credit(
+		doc.team,
+		draw.wallet,
+		doc.currency,
+		reference_type="Invoice",
+		reference_name=invoice,
+		note=f"Credit applied to {invoice}",
+	)
+	doc.credit_applied = frappe.utils.flt(doc.credit_applied) + draw.wallet
+	doc.advance_applied = frappe.utils.flt(doc.advance_applied) + draw.advance
+	doc.advance_tax_applied = frappe.utils.flt(doc.advance_tax_applied) + draw.gst
+	doc.expected_collection = frappe.utils.flt(due - draw.wallet - draw.gst, 2)
+	if doc.expected_collection > 0:
+		save_billing_record(doc)
+		return {"invoice": invoice, "applied": draw.wallet, "charge": collection.collect_invoice(invoice)}
+
+	doc.expected_collection = 0
+	doc.paid_at = frappe.utils.now_datetime()
+	transition(doc, "Paid", reason="credit added later covered it", actor="scheduler", amount=draw.wallet)
+	save_billing_record(doc)
+	from central.billing.ingester.erpnext_sync import enqueue_invoice_sync
+
+	enqueue_invoice_sync(doc.name)
+	return {"invoice": invoice, "applied": draw.wallet, "status": "Paid"}
+
+
+def _gst_still_due(doc, due: float) -> float:
+	"""The GST share of what is still due. Earlier credit paid GST in proportion to what it paid."""
+	collectable = frappe.utils.flt(doc.total) - frappe.utils.flt(doc.tds_amount)
+	if collectable <= 0:
+		return 0.0
+	return frappe.utils.flt(doc.output_tax_amount) * due / collectable
+
+
 def _waive_internal(doc) -> dict:
 	"""Waive an internal team's invoice in full: rated for the record, never collected."""
 	_retax(doc)
@@ -153,15 +237,14 @@ HOLD_KEYS = {
 }
 
 
-def _draw_wallet(doc, collectable: float) -> frappe._dict:
-	"""What the wallet pays of `collectable`, in the order it is spent.
+def _draw_wallet(doc, collectable: float, gst_due: float) -> frappe._dict:
+	"""What the wallet pays of `collectable`, of which `gst_due` is GST, in the order it is spent.
 
 	Credit with GST already paid on it (a top-up) pays the invoice's net amount, and
 	that GST pays the GST on it. Any other credit (promotional, a refund) pays the
 	invoice as it stands, GST included. The wallet stays locked until this commits.
 	"""
 	credits.lock_team_wallet(doc.team, doc.currency)
-	gst_due = frappe.utils.flt(doc.output_tax_amount)
 	net_due = collectable - gst_due
 	gst_per_net = gst_due / net_due if gst_due and net_due > 0 else 0
 	gst_left = credits.advance_gst_balance(doc.team, doc.currency)
