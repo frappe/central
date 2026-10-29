@@ -396,6 +396,37 @@ class TestTeamScoping(CustomerDataBase):
 		finally:
 			frappe.set_user("Administrator")
 
+	def test_a_card_on_another_team_cannot_be_confirmed(self):
+		from central.billing.tests.test_payments import stub_adapter
+		from central.billing.tests.test_stripe_adapter import make_stripe_gateway
+
+		user = make_user()
+		make_billing_team(user)
+		other_team = make_billing_team(make_user())
+		method = frappe.get_doc(
+			{
+				"doctype": "Payment Method",
+				"team": other_team.name,
+				"gateway": make_stripe_gateway().name,
+				"method_type": "Card",
+				"status": "Pending Validation",
+				"setup_reference": "seti_other_team",
+			}
+		).insert(ignore_permissions=True)
+
+		frappe.set_user(user)
+		try:
+			with stub_adapter() as adapter:
+				with self.assertRaises(frappe.PermissionError):
+					dashboard.confirm_card(method.name)
+				with self.assertRaises(frappe.PermissionError):
+					dashboard.confirm_card("no-such-payment-method")
+		finally:
+			frappe.set_user("Administrator")
+
+		adapter.read_saved_card.assert_not_called()
+		self.assertEqual(frappe.db.get_value("Payment Method", method.name, "status"), "Pending Validation")
+
 
 class TestCustomerActions(CustomerDataBase):
 	def tearDown(self):
