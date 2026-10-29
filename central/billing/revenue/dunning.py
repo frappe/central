@@ -248,7 +248,6 @@ def process_invoice_dunning(invoice_name: str, now=None) -> dict:
 	if "Overdue" in reached:
 		if inv.status == "Open":
 			transition(inv, "Overdue", reason="dunning: past due window elapsed", actor="scheduler")
-			# The scheduled dunning transition owns this invoice state change.
 			save_billing_record(inv)
 			actions.append("overdue")
 			from central.billing.platform import notifications

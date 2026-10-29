@@ -174,7 +174,6 @@ def _mark_failed(event_name: str, error: str) -> None:
 		transition(event, "Failed", actor="webhook", correlation=event.gateway_event_id)
 	event.error = error[-2000:]
 	event.retry_count = (event.retry_count or 0) + 1
-	# The webhook job runs as Guest or the system; nobody else writes a Webhook Event.
 	save_billing_record(event)
 
 

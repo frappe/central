@@ -208,7 +208,6 @@ def _charge_claimed_attempt(attempt_name: str) -> dict:
 def _defer(attempt, e) -> dict:
 	"""Transient: leave the attempt initiated so a retry reuses the same key."""
 	attempt.failure_reason = str(e)[:140]
-	# Charges run as the system, from dunning or reconciliation.
 	save_billing_record(attempt)
 	# We never reached the customer — a rate limit or a network fault is ours, not
 	# theirs — so their retry ladder must not start ticking on it.

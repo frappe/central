@@ -84,7 +84,6 @@ class TopupOrder(Document):
 	def expire(self) -> None:
 		"""Stop asking the gateway about an order nobody paid."""
 		transition(self, "Expired", actor="reconciliation", correlation=self.team)
-		# Reconciliation runs as the system with no session user to check.
 		save_billing_record(self)
 
 	def record_decline(self, failure: decline.Failure, gateway_event_id: str) -> None:
@@ -101,7 +100,6 @@ class TopupOrder(Document):
 		self.failed_attempts = frappe.utils.cint(self.failed_attempts) + 1
 		self.last_failed_at = frappe.utils.now_datetime()
 		self.update(decline.failure_fields(failure))
-		# The webhook runs as the system with no session user to check.
 		save_billing_record(self)
 		record_event(self, DECLINED_EVENT, reason=self.failure_code, correlation=gateway_event_id)
 
@@ -122,7 +120,6 @@ class TopupOrder(Document):
 		"""Stop retrying an order an operator has to resolve, and keep the reason on it."""
 		transition(self, "Failed", reason=reason, actor="reconciliation", correlation=self.team)
 		self.failure_reason = reason
-		# Reconciliation runs as the system with no session user to check.
 		save_billing_record(self)
 
 	def credit_wallet(self, payment: VerifiedPayment) -> dict:
@@ -155,7 +152,6 @@ class TopupOrder(Document):
 		transition(self, "Credited", actor="gateway", correlation=self.team, amount=self.total)
 		self.gateway_payment_id = payment.payment_id
 		self.ledger_entry = result["ledger_entry"]
-		# A verified gateway payment credits it, often from a Guest webhook.
 		save_billing_record(self)
 		return result
 
