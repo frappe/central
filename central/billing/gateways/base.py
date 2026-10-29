@@ -95,11 +95,11 @@ class RefundResult:
 	status: str  # Completed / Pending / Failed
 	gateway_refund_id: str | None = None
 	raw: dict = field(default_factory=dict)
+	# The gateway accepted the refund. A Pending refund is accepted but not paid out yet.
+	success: bool = field(init=False)
 
-	@property
-	def success(self) -> bool:
-		"""The gateway accepted the refund. A Pending refund is accepted but not paid out yet."""
-		return self.status != "Failed"
+	def __post_init__(self) -> None:
+		self.success = self.status != "Failed"
 
 
 @dataclass
