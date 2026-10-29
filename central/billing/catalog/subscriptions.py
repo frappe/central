@@ -1025,8 +1025,10 @@ def locked_team_run_rate(team: str, exclude: str | None = None) -> float:
 
 	Two creates that read the same run rate both pass, and the team ends up running
 	more than it was cleared for. Reading the rows under a lock makes the second
-	caller wait for the first and then see what it committed.
+	caller wait for the first and then see what it committed. The Billing Profile row
+	is locked first, because a team with no subscription yet has no row to lock.
 	"""
+	frappe.db.get_value("Billing Profile", team, "name", for_update=True)
 	sub = frappe.qb.DocType("Subscription")
 	names = (
 		frappe.qb.from_(sub)
