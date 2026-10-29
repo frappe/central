@@ -13,7 +13,10 @@
   "trial_key_geography",
   "trial_key_cap",
   "column_break_oabk",
-  "trial_pool_size"
+  "trial_pool_size",
+  "pause_section",
+  "pause_pool_refill",
+  "pause_key_assignment"
  ],
  "fields": [
   {
@@ -59,7 +62,6 @@
    "fieldtype": "Int",
    "label": "Trial Pool Size"
   },
-
   {
    "default": "2",
    "description": "What one trial key may spend for its whole life, whole USD. Sent with every mint; a change applies to keys minted after it.",
@@ -70,12 +72,31 @@
   {
    "fieldname": "column_break_oabk",
    "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "pause_section",
+   "fieldtype": "Section Break",
+   "label": "Pause"
+  },
+  {
+   "default": "0",
+   "description": "Stops the 5-minute job from minting new keys. The pool keeps its size and its ready keys; retries of revokes and hand-overs still run.",
+   "fieldname": "pause_pool_refill",
+   "fieldtype": "Check",
+   "label": "Pause Pool Refill"
+  },
+  {
+   "default": "0",
+   "description": "Stops a new free-trial server from taking a key from the pool. It boots without one, as with an empty pool; a server that already holds a key keeps it.",
+   "fieldname": "pause_key_assignment",
+   "fieldtype": "Check",
+   "label": "Pause Key Assignment"
   }
  ],
  "grid_page_length": 50,
  "issingle": 1,
  "links": [],
- "modified": "2026-10-27 00:00:00.000000",
+ "modified": "2026-10-29 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Services",
  "name": "AI Settings",
