@@ -28,6 +28,10 @@ class Failure(TypedDict, total=False):
 	raw: dict
 
 
+# The gateway would not create the charge because our request was wrong. Nothing was
+# taken, and sending the same request again gets the same answer, so an operator fixes it.
+REQUEST_REFUSED = "request_refused"
+
 # The card is refused, or the gateway refused to open the charge. Nothing was taken,
 # and charging this rail again in the same round gives the same answer.
 TERMINAL_CODES = (
@@ -38,6 +42,7 @@ TERMINAL_CODES = (
 	"incorrect_number",
 	"incorrect_cvc",
 	"order_refused",
+	REQUEST_REFUSED,
 )
 
 # The outcome is unknown: the money may yet move. Never fall back on these.

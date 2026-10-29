@@ -203,6 +203,25 @@ class TestOperatorAlertSources(ReconTestBase):
 		attempt = self._captured_attempt(self._open_invoice(), minutes_old=60)
 		self.assertFalse([a for a in alerts.unsettled_captures() if a["subject"] == attempt])
 
+	def test_a_charge_the_gateway_refused_to_create_is_an_alert(self):
+		from central.billing.payments import decline
+
+		invoice = self._open_invoice()
+		attempt = self._captured_attempt(invoice)
+		frappe.db.set_value(
+			"Payment Attempt",
+			attempt,
+			{
+				"status": "Failed",
+				"failure_code": decline.REQUEST_REFUSED,
+				"failure_reason": "contact missing",
+			},
+		)
+
+		found = [a for a in alerts.refused_charges() if a["subject"] == attempt]
+		self.assertEqual(len(found), 1)
+		self.assertIn("contact missing", found[0]["detail"])
+
 	def test_a_failed_accounting_sync_is_an_alert(self):
 		invoice = self._open_invoice()
 		frappe.db.set_value(

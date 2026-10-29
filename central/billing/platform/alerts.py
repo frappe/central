@@ -10,6 +10,7 @@ import frappe
 import requests
 
 from central.billing import settings
+from central.billing.payments import decline
 from central.billing.platform import invariants, metrics
 
 # A webhook we failed to process is a settlement we have not applied. An hour is long
@@ -227,6 +228,32 @@ def unsettled_captures() -> list[dict]:
 	]
 
 
+def refused_charges() -> list[dict]:
+	"""Charges a gateway would not create because our request was wrong, on invoices still unpaid.
+	No retry fixes these; the request or the billing profile must be corrected."""
+	attempt = frappe.qb.DocType("Payment Attempt")
+	invoice = frappe.qb.DocType("Invoice")
+	refused = (
+		frappe.qb.from_(attempt)
+		.join(invoice)
+		.on(invoice.name == attempt.invoice)
+		.select(attempt.name, attempt.team, attempt.invoice, attempt.failure_reason)
+		.where((attempt.failure_code == decline.REQUEST_REFUSED) & invoice.status.isin(("Open", "Overdue")))
+		.limit(100)
+		.run(as_dict=True)
+	)
+	return [
+		{
+			"alert": "refused_charge",
+			"doctype": "Payment Attempt",
+			"subject": a.name,
+			"team": a.team,
+			"detail": f"Gateway refused the charge for {a.invoice}: {a.failure_reason}",
+		}
+		for a in refused
+	]
+
+
 def failed_accounting_syncs() -> list[dict]:
 	"""Paid invoices the accounting sync gave up on. The customer is not affected; the books are short."""
 	return [
@@ -252,6 +279,7 @@ SOURCES = (
 	failed_webhooks,
 	stale_attempts,
 	unsettled_captures,
+	refused_charges,
 	held_invoices,
 	failed_refunds,
 	failed_accounting_syncs,
