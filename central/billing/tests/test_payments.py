@@ -190,6 +190,18 @@ class TestSetupAndConfirm(CardTestBase):
 		# frappe.throw logs the reason, so an API error response carries it to Pilot.
 		self.assertIn(reason, frappe.local.message_log[-1]["message"])
 
+	def test_a_refusal_we_cannot_word_gets_the_general_reason(self):
+		with stub_adapter() as adapter:
+			setup = payments.initiate_payment_method_setup(TEAM, GATEWAY)
+			adapter.read_saved_card.return_value = {
+				"setup_error": {"failure_code": "some_new_code", "decline_code": None}
+			}
+			with self.assertRaises(payments.CardDeclinedAtSetup) as raised:
+				payments.confirm_payment_method(setup["payment_method"])
+
+		self.assertTrue(str(raised.exception).startswith("We couldn't complete this payment."))
+		self.assertNotIn("some_new_code", str(raised.exception))
+
 	def test_a_card_saved_to_another_customer_fails(self):
 		with stub_adapter(card=saved_card(customer="cus_someone_else")) as adapter:
 			setup = payments.initiate_payment_method_setup(TEAM, GATEWAY)

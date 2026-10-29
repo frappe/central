@@ -54,32 +54,6 @@ class TestCardFailureMessage(IntegrationTestCase):
 		self.assertTrue(message.startswith("Your card has expired."))
 
 
-class TestCardRefusedAtSetup(IntegrationTestCase):
-	def test_a_reason_we_cannot_word_gets_the_general_reason(self):
-		from central.billing.payments import payments
-		from central.billing.tests.test_payments import stub_adapter
-		from central.billing.tests.test_stripe_adapter import make_stripe_gateway
-
-		ensure_team("team-setup-refused")
-		method = frappe.get_doc(
-			{
-				"doctype": "Payment Method",
-				"team": "team-setup-refused",
-				"gateway": make_stripe_gateway().name,
-				"method_type": "Card",
-				"status": "Pending Validation",
-				"setup_reference": "seti_refused",
-			}
-		).insert(ignore_permissions=True)
-		refusal = {"setup_error": {"failure_code": "some_new_code", "decline_code": None}}
-
-		with stub_adapter(card=refusal), self.assertRaises(payments.CardDeclinedAtSetup) as raised:
-			payments.confirm_payment_method(method.name)
-
-		self.assertTrue(str(raised.exception).startswith("We couldn't complete this payment."))
-		self.assertNotIn("some_new_code", str(raised.exception))
-
-
 class TestTheOffer(IntegrationTestCase):
 	def setUp(self):
 		from central.billing.tests.test_razorpay_adapter import make_razorpay_gateway
