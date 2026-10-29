@@ -295,8 +295,14 @@ def _flag_failed_after_completion(refund) -> str:
 		f"The gateway failed refund {refund.name} ({refund.gateway_refund_id}) for {refund.amount} "
 		"after it reported it as completed. The customer did not get this money back."
 	)
-	flagged = {"reference_doctype": "Invoice", "reference_name": refund.invoice, "content": text}
-	if frappe.db.exists("Comment", {**flagged, "comment_type": "Info"}):
+	flag_comment = {
+		"reference_doctype": "Invoice",
+		"reference_name": refund.invoice,
+		"comment_type": "Info",
+		"content": text,
+	}
+	# A locking read sees the comment the first job committed; a plain read uses the old snapshot.
+	if frappe.db.get_value("Comment", flag_comment, "name", for_update=True):
 		return "unchanged"
 
 	frappe.get_doc("Invoice", refund.invoice).add_comment("Info", text)
