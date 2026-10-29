@@ -33,11 +33,20 @@ class TeamRole(Document):
 
 	def on_update(self) -> None:
 		clear_grants_cache()
-		frappe.enqueue(
-			"central.infrastructure.doctype.wireguard_device.wireguard_device.remove_devices_for_role",
-			role=self.name,
-			enqueue_after_commit=True,
-		)
+		if self.has_capabilities_changed():
+			frappe.enqueue(
+				"central.infrastructure.doctype.wireguard_device.wireguard_device.remove_devices_for_role",
+				role=self.name,
+				enqueue_after_commit=True,
+			)
+
+	def has_capabilities_changed(self) -> bool:
+		previous = self.get_doc_before_save()
+		if not previous:
+			return False
+
+		capabilities = {row.capability for row in self.capabilities}
+		return {row.capability for row in previous.capabilities} != capabilities
 
 	def on_trash(self) -> None:
 		if self.is_system:

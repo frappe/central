@@ -65,14 +65,12 @@ class WireGuardDevice(Document):
 		self.client_id = get_next_client_id(self.team)
 
 	def after_insert(self) -> None:
-		lock_region(self.region)
 		settings = self.get_client().register_peer(self.tenant_id, self.client_id, self.public_key)
 		self.db_set(get_gateway_fields(settings))
 
 	def on_trash(self) -> None:
 		# a region whose gateway was switched off holds no peer, so the row alone goes
 		if frappe.get_cached_value("Region", self.region, "has_wireguard_gateway"):
-			lock_region(self.region)
 			self.get_client().remove_peer(self.tenant_id, self.client_id)
 
 	def remove(self) -> bool:
@@ -184,15 +182,8 @@ def remove_pending_devices() -> None:
 			frappe.log_error(title=f"WireGuard device removal failed for {name}")
 
 
-def lock_region(region: str) -> None:
-	"""Hold the region row so a peer change and a restore cannot interleave."""
-	frappe.db.get_value("Region", region, "name", for_update=True)
-
-
 def restore_devices(region: str) -> int:
 	"""Send every Active device of a region to its gateway again and store the settings it returns."""
-	# the replacement covers the whole region, so a create or delete must not run inside it
-	lock_region(region)
 	client = Region.get_wireguard_client(region)
 	nodes = {(peer["tenant_id"], peer["client_id"]): peer["node_id"] for peer in client.list_peers()}
 

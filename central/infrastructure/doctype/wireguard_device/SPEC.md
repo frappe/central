@@ -18,4 +18,4 @@ Delete sends `DELETE /v1/peers`. If the region no longer has a gateway, delete r
 
 ## Restore
 
-**Restore WireGuard Devices** on the Region reads `GET /v1/peers` for the node of each device. It sends every `Active` device with `PUT /v1/peers` and stores the settings the gateway returns. A device whose node is gone gets a new node and a new address, so its user must download a new file.
+**Restore WireGuard Devices** on the Region reads `GET /v1/peers` for the node of each device. It sends every `Active` device with `PUT /v1/peers` and stores the settings the gateway returns. A device whose node is gone gets a new node and a new address, so its user must download a new file. A restore does not stop devices that are added or removed while it runs, so run it again if a member changed a device during the restore.

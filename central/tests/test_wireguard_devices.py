@@ -196,6 +196,24 @@ class TestWireGuardDevices(IntegrationTestCase):
 
 		self.assertEqual(frappe.db.get_value("WireGuard Device", device.name, "status"), "Removing")
 
+	@patch("central.identity.doctype.team_role.team_role.frappe.enqueue")
+	def test_only_a_capability_change_rechecks_the_role_devices(self, enqueue) -> None:
+		role = frappe.get_doc(
+			{
+				"doctype": "Team Role",
+				"role_name": f"wg-{frappe.generate_hash(length=6)}",
+				"team": self.team.name,
+				"capabilities": [{"capability": "server:view"}, {"capability": "server:wireguard"}],
+			}
+		).insert()
+
+		role.save()
+		enqueue.assert_not_called()
+
+		role.capabilities = [row for row in role.capabilities if row.capability != "server:wireguard"]
+		role.save()
+		enqueue.assert_called_once()
+
 	@patch("central.infrastructure.doctype.wireguard_device.wireguard_device.frappe.enqueue")
 	def test_an_archived_team_loses_every_device(self, enqueue) -> None:
 		device = self.add_device(self.owner)
