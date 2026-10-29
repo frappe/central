@@ -127,7 +127,7 @@ The console shows the onboarding dialog in two cases:
 1. The user is a member of no Team. The dialog asks for a Team name. This step cannot be skipped.
 2. The user owns the active Team, and the Team has a `Pending` onboarding step. `my_teams` returns these steps as `onboarding`.
 
-The owner answers each step with `set_onboarding_step` (`Done` or `Skipped`), or all at once with `skip_onboarding`. Only the current owner can answer. A Team created before onboarding existed has no rows, so its owner never sees the dialog.
+The owner answers each step with `set_onboarding_step` (`Done` or `Skipped`). The dialog has Back, Skip, and the step's own action. Back goes to an earlier step, but not to the Team name step. A step the owner goes back to keeps its recorded answer, unless the owner now completes it. Only the current owner can answer. A Team created before onboarding existed has no rows, so its owner never sees the dialog.
 
 ### Invitation email and join link
 

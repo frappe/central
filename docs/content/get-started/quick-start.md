@@ -27,6 +27,10 @@ The console opens a setup dialog with four steps:
 | **Add a payment method** | Add a card. Your team pays for its servers at the end of each month. |
 | **Get started** | Go to the console. |
 
+Click **Skip** to leave a step for later. Click **Back** to go to an earlier step. You cannot go back to **Create your team**, because the team exists after that step.
+
+<Screenshot name="get-started/onboarding" alt="The setup dialog on the Add a payment method step, with Back, Skip, and Add payment method at the bottom." />
+
 ## 2. Create a server
 
 1. Go to **Servers**. Click **New server**.
