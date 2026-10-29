@@ -11,7 +11,7 @@ from central.api.jwks import jwks_document
 from central.api.pilot import get_telemetry_base_url, region_id_of
 from central.infrastructure.doctype.pilot_credential.pilot_credential import PilotCredential
 from central.infrastructure.doctype.user_mail_account.user_mail_account import UserMailAccount
-from central.integrations.object_storage import ObjectStorageClient
+from central.integrations.object_storage import ObjectStorageClient, ObjectStorageNotFound
 from central.services.doctype.ai_trial_key.ai_trial_key import AITrialKey
 from central.services.doctype.team_service.team_service import get_bucket_name, get_storage_endpoint_url
 from central.sso import central_url, jwks_url, mint_bench_login, mint_datum_token, mint_site_login
@@ -92,6 +92,12 @@ def get_bundled_bucket(action) -> dict | None:
 	endpoint_url = get_storage_endpoint_url(action.region)
 	client = ObjectStorageClient.from_region(action.region)
 	name = get_bucket_name(action.team, action.region, action.server_id)
+	# Only this creation uses the name, and a retry runs before any machine exists, so a
+	# bucket left by an earlier attempt is empty and safe to replace.
+	try:
+		client.delete_bucket(name)
+	except ObjectStorageNotFound:
+		pass
 	credentials = client.create_bucket(name)["credentials"]
 	# Cargo enforces the cap. Zero leaves the object count unlimited.
 	client.set_quota(name, size_gib, 0)
@@ -105,6 +111,23 @@ def get_bundled_bucket(action) -> dict | None:
 		"region": action.region,
 		"endpoint_url": endpoint_url,
 	}
+
+
+def delete_bundled_bucket(action: str) -> None:
+	"""Delete the bucket of a Pilot creation that failed before it got a server."""
+	# The dispatch holds this lock, so a retry cannot create the bucket while it is deleted.
+	with frappe.cache.lock(f"server-provisioning:{action}", timeout=60, blocking_timeout=60):
+		request = frappe.get_doc("Resource Action", action)
+		if request.server or request.status not in ("Failed", "Timed Out"):
+			return
+		if not frappe.db.get_value("Region", request.region, "max_storage_bundle_size"):
+			return
+
+		name = get_bucket_name(request.team, request.region, request.server_id)
+		try:
+			ObjectStorageClient.from_region(request.region).delete_bucket(name)
+		except ObjectStorageNotFound:
+			pass
 
 
 def get_telemetry_configuration(action) -> dict:

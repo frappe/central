@@ -259,9 +259,15 @@ class ResourceAction(Document):
 				# A creation the region never accepted leaves no machine to use its credential.
 				if not self.remote_vm_id:
 					PilotCredential.revoke_by_id(self.credential)
-				# No server will ever link the mailbox or trial key, so termination would not release them.
+				# No server will ever link the mailbox, trial key or bucket, so termination would not release them.
 				UserMailAccount.queue_removal(resource_action=self.name, server=("is", "not set"))
 				AITrialKey.queue_revoke(resource_action=self.name, server=("is", "not set"))
+				if not self.server:
+					frappe.enqueue(
+						"central.integrations.pilot.delete_bundled_bucket",
+						action=self.name,
+						enqueue_after_commit=True,
+					)
 			self.queue_attention_notification(envelope)
 			if self.is_trial_creation:
 				self.capture_trial_event("trial_failed", status=status, error_code=self.error_code)
