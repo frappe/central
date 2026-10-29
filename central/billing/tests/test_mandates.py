@@ -101,6 +101,20 @@ class TestMandateSetup(MandateTestBase):
 		self.assertEqual(method.gateway_method_id, "token_live")
 		self.assertTrue(method.validated_at)
 
+	def test_a_confirmed_mandate_is_labelled_with_its_upi_id(self):
+		payment = {
+			"id": "pay_mandate",
+			"order_id": "order_mandate",
+			"status": "captured",
+			"token_id": "token_live",
+			"customer_id": "cust_x",
+			"vpa": "success@razorpay",
+		}
+		with stub_adapter(payment=payment):
+			result = mandates.setup_mandate(TEAM, GATEWAY, customer_id="cust_x")
+			method = mandates.confirm_mandate(result["payment_method"], CALLBACK)
+		self.assertEqual(method.display_label, "UPI Autopay · success@razorpay")
+
 	def test_a_token_from_the_browser_is_never_stored(self):
 		with stub_adapter(token="token_from_razorpay"):
 			result = mandates.setup_mandate(TEAM, GATEWAY, customer_id="cust_x")

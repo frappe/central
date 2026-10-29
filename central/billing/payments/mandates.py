@@ -279,6 +279,7 @@ def confirm_mandate(payment_method: str, callback: dict):
 		return _refuse_mandate(method, PAYMENT_NOT_AUTHORISED, "The payment does not authorise this mandate.")
 
 	method.gateway_method_id = payment["token_id"]
+	method.display_label = _mandate_label(method, payment)
 	transition(method, "Active", actor=frappe.session.user)
 	method.validated_at = frappe.utils.now_datetime()
 	method.reauth_required = 0
@@ -347,6 +348,16 @@ def _is_mandate_payment(method, payment: dict) -> bool:
 		and bool(payment.get("token_id"))
 		and (not method.gateway_customer_id or payment.get("customer_id") == method.gateway_customer_id)
 	)
+
+
+def _mandate_label(method, payment: dict) -> str:
+	"""How the customer recognises the mandate: the UPI ID, or the card's network and last four digits."""
+	card = payment.get("card") or {}
+	if card.get("last4"):
+		return f"{card.get('network') or 'Card'} ···· {card['last4']}"
+	if payment.get("vpa"):
+		return f"{method.method_type} · {payment['vpa']}"
+	return method.method_type
 
 
 def _refuse_mandate(method, failure_code: str, reason: str):
