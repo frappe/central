@@ -8,6 +8,8 @@ Central reaches each service through `central/integrations/`. Team authorization
 
 The planned abuse protection events and calls to Atlas, the proxy, and Cargo are in [Abuse protection](ABUSE.md#interfaces).
 
+Planned: `central/integrations/datum.py` reads the per-VM abuse metrics from the Datum of each region. See [Detection](ABUSE.md#detection).
+
 ## Who owns what?
 
 ```text

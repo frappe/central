@@ -56,7 +56,7 @@ This reading of Q24 needs a legal check before Central automates the clock.
 |---|---|
 | Point of contact | Not named yet. Name it, register it with CERT-In, and fill the `cert_in_contact_*` fields. |
 | Time source | Hosts and service VMs do not use NIC or NPL time servers. Point chrony at `samay1.nic.in`, `samay2.nic.in`, and `time.nplindia.org` after a check of the hostnames. This is Atlas work. |
-| Logs | There is no NAT log, and proxy access logs rotate within hours on each node. [Cargo abuse logs](https://github.com/frappe/cargo/blob/develop/docs/abuse-logs.md) and [Atlas abuse data](https://github.com/frappe/atlas/blob/develop/docs/abuse/data.md) fix this. |
+| Logs | There is no NAT log, and proxy access logs rotate within hours on each node. [Cargo abuse logs](https://github.com/frappe/cargo/blob/develop/docs/abuse-logs.md) and [Public IP history](ABUSE.md#public-ip-history) fix this. |
 
 ## Sources
 

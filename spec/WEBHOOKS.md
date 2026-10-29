@@ -63,7 +63,7 @@ Atlas reports one virtual machine per delivery.
 | `status` | For `vm.state` | `running`, `stopped`, or `paused` |
 | `observed_at` | For `vm.state` | The region's own timestamp. Central orders reports by it and drops one that is not newer. |
 
-The planned abuse events, `vm.abuse.signal` and `vm.restriction`, are in [Abuse protection](ABUSE.md#events-from-atlas).
+The planned abuse event `vm.restriction` is in [Abuse protection](ABUSE.md#events-from-atlas).
 
 For `vm.state`, Central records `running` as `Running`, `stopped` as `Stopped`, and `paused` as `Paused`. Central never records a status it was not told.
 
