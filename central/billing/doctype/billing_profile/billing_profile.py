@@ -20,6 +20,10 @@ _TIER_FIELDS = ("trust_tier_level", "override_max_spend")
 
 # GSTIN: 2-digit state + 10-char PAN + entity digit + 'Z' + checksum char.
 GSTIN_RE = re.compile(r"^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$")
+# A phone the gateways accept: 8 to 15 digits with an optional leading +. An Indian
+# mobile is 10 digits that start with 6 to 9, optionally after +91 or 91.
+PHONE_RE = re.compile(r"^\+?[0-9]{8,15}$")
+INDIAN_MOBILE_RE = re.compile(r"^(?:\+?91)?[6-9][0-9]{9}$")
 REQUIRED_FIELDS = ("currency", "legal_name", "address_line1", "city", "country")
 FIELD_LABELS = {
 	"currency": "currency",
@@ -124,6 +128,7 @@ class BillingProfile(Document):
 	# end: auto-generated types
 
 	def validate(self):
+		self.validate_phone()
 		self.validate_gstin()
 		self.validate_india_state()
 		self.lock_country_and_currency_after_invoicing()
@@ -275,6 +280,23 @@ class BillingProfile(Document):
 			_("This team has already been invoiced, so its billing {0} can no longer be changed.").format(
 				_(" and ").join(changed)
 			),
+			frappe.ValidationError,
+		)
+
+	def validate_phone(self):
+		"""Razorpay refuses a mandate debit without a valid contact, so a phone it would
+		refuse is caught here, where the customer can correct it. Only a phone being set is
+		checked, so a stored one never blocks the system's own saves of the profile."""
+		if not self.phone or not (self.is_new() or self.has_value_changed("phone")):
+			return
+		self.phone = re.sub(r"[\s()-]", "", self.phone)
+		is_indian = (self.country or "").strip() == INDIA
+		if (INDIAN_MOBILE_RE if is_indian else PHONE_RE).match(self.phone):
+			return
+		frappe.throw(
+			_("Enter a 10-digit mobile number.")
+			if is_indian
+			else _("Enter a phone number of 8 to 15 digits, with the country code."),
 			frappe.ValidationError,
 		)
 
