@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import time
 from datetime import datetime
 from itertools import pairwise
@@ -280,7 +279,7 @@ def remove_legacy_device_rule(server: VirtualMachine) -> None:
 	if observe_server(server) == "Terminated":
 		return
 
-	rules = json.loads(frappe.db.get_value("Virtual Machine", server.name, "firewall_rules") or "{}")
+	rules = frappe.parse_json(frappe.db.get_value("Virtual Machine", server.name, "firewall_rules")) or {}
 	inbound = rules.get("inbound") or []
 	if firewall.LEGACY_DEVICE_RULE not in inbound:
 		return

@@ -1,5 +1,3 @@
-import json
-
 import frappe
 from frappe import _
 from frappe.utils.translations import _lt
@@ -82,7 +80,7 @@ def list_wireguard_devices(team: str) -> dict:
 		device.can_delete = wireguard_device_has_permission(frappe._dict(device, team=team), ptype="delete")
 
 	for server in servers:
-		rules = json.loads(server.pop("firewall_rules") or "null")
+		rules = frappe.parse_json(server.pop("firewall_rules"))
 		server.is_blocked_by_firewall = bool(rules) and is_blocking_devices(
 			bool(server.pop("is_firewall_enabled")), rules["inbound"]
 		)
