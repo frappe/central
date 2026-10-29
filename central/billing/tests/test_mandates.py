@@ -147,10 +147,13 @@ class TestAuthorisationRefund(MandateTestBase):
 	"""The authorisation payment registers the mandate and pays no bill, so it goes back."""
 
 	def _confirm(self):
+		"""Confirm the mandate, and return it with the refund jobs it queued. The welcome
+		credit it earns queues its own job, which is not a refund."""
 		result = mandates.setup_mandate(TEAM, GATEWAY, customer_id="cust_x")
 		with patch("frappe.enqueue") as enqueue:
 			method = mandates.confirm_mandate(result["payment_method"], CALLBACK)
-		return method, enqueue
+		refunds = [c for c in enqueue.call_args_list if c.args[0].endswith("refund_authorisation_payment")]
+		return method, refunds
 
 	def test_a_confirmed_mandate_queues_the_refund_of_its_authorisation(self):
 		payment = {
@@ -162,11 +165,11 @@ class TestAuthorisationRefund(MandateTestBase):
 			"amount": 100,
 		}
 		with stub_adapter(payment=payment):
-			method, enqueue = self._confirm()
+			method, refunds = self._confirm()
 
-		enqueue.assert_called_once()
+		self.assertEqual(len(refunds), 1)
 		self.assertEqual(
-			enqueue.call_args.kwargs,
+			refunds[0].kwargs,
 			{
 				"payment_method": method.name,
 				"payment_id": "pay_mandate",
@@ -186,9 +189,9 @@ class TestAuthorisationRefund(MandateTestBase):
 			"customer_id": "cust_x",
 		}
 		with stub_adapter(payment=payment):
-			_method, enqueue = self._confirm()
+			_method, refunds = self._confirm()
 
-		enqueue.assert_not_called()
+		self.assertEqual(refunds, [])
 
 	def test_the_refund_is_keyed_on_the_payment(self):
 		with stub_adapter() as adapter:
