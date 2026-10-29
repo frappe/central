@@ -356,11 +356,12 @@ class StripeAdapter(GatewayAdapter):
 		params = _charge_params(invoice, payment_method, idempotency_key)
 		try:
 			intent = _to_dict(stripe.PaymentIntent.create(**params, **self._options()))
+		except (*_UNKNOWN_OUTCOME, stripe.error.IdempotencyError) as e:
+			# A reused key means a charge was already sent with it and may have gone through.
+			raise GatewayTimeout(str(e)) from e
 		except (stripe.error.CardError, *_INVALID_REQUEST) as e:
 			# A mandate Stripe refuses mid-billing surfaces here too, as InvalidRequestError.
 			return _declined(e)
-		except _UNKNOWN_OUTCOME as e:
-			raise GatewayTimeout(str(e)) from e
 
 		succeeded = intent.get("status") == "succeeded"
 		return PaymentResult(

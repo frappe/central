@@ -7,7 +7,7 @@ from unittest.mock import patch
 import frappe
 import stripe
 
-from central.billing.gateways.base import GatewayUnsupported
+from central.billing.gateways.base import GatewayTimeout, GatewayUnsupported
 from central.billing.gateways.stripe_adapter import StripeAdapter
 from central.billing.tests.gateway_contract import GatewayAdapterContract
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
@@ -387,6 +387,19 @@ class TestIndiaCardMandate(IntegrationTestCase):
 			)
 		self.assertFalse(result.success)
 		self.assertEqual(result.status, "Failed")
+
+	def test_a_reused_charge_key_is_an_unknown_outcome_not_a_decline(self):
+		method = frappe._dict(gateway_method_id="pm_x", team="t")
+		error = stripe.error.IdempotencyError(
+			"Keys for idempotent requests can only be used with the same parameters"
+		)
+		with patch.object(stripe.PaymentIntent, "create", side_effect=error):
+			with self.assertRaises(GatewayTimeout):
+				self.adapter.charge(
+					frappe._dict(name="INV-1", amount=50, currency="USD", customer_id="cus_x", team="t"),
+					method,
+					"key-4",
+				)
 
 	def test_a_mandate_card_is_checked_by_its_mandate_not_a_charge(self):
 		method = frappe._dict(
