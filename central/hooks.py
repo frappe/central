@@ -262,6 +262,7 @@ scheduler_events = {
 		"central.billing.ingester.advance.sync_pending_advances",
 		"central.billing.revenue.storage_usage.record_storage_usage",
 		"central.billing.platform.invariants.run_invariant_audit",
+		"central.billing.payments.reconciliation.recheck_completed_refunds",
 	],
 	"hourly": [
 		"central.billing.revenue.invoicing.collect_due_invoices",

@@ -167,7 +167,6 @@ def run_reconciliation(now=None) -> list:
 	)
 	results += reconcile_top_up_orders(now=now)
 	results += reconcile_pending_refunds()
-	results += recheck_completed_refunds(now=now)
 	return results
 
 
@@ -181,7 +180,8 @@ def reconcile_pending_refunds() -> list[dict]:
 
 def recheck_completed_refunds(now=None) -> list[dict]:
 	"""Ask the gateway again about each card refund completed in the recheck window, so a
-	refund it failed later is flagged even when that webhook never came."""
+	refund it failed later is flagged even when that webhook never came. Runs daily: one
+	gateway call per refund per day is enough to catch a failure the webhook missed."""
 	now = frappe.utils.get_datetime(now or frappe.utils.now_datetime())
 	since = frappe.utils.add_to_date(now, days=-COMPLETED_REFUND_RECHECK_DAYS)
 	names = frappe.get_all(
