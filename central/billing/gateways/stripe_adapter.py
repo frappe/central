@@ -554,14 +554,8 @@ class StripeAdapter(GatewayAdapter):
 
 		intent = _to_dict(stripe.SetupIntent.retrieve(intent_id))
 		method_id = intent.get("payment_method")
-		error = intent.get("last_setup_error")
-		# Stripe leaves a refused SetupIntent open for the customer to try another card.
-		if intent.get("status") == "requires_payment_method" and error:
-			return {
-				"setup_error": {"failure_code": error.get("code"), "decline_code": error.get("decline_code")}
-			}
 		if intent.get("status") != "succeeded" or not method_id:
-			return {}
+			return _unfinished_setup(intent)
 
 		card = (_to_dict(stripe.PaymentMethod.retrieve(method_id)).get("card")) or {}
 		return {
@@ -638,6 +632,17 @@ def _unfinished_check(intent: dict) -> PaymentResult:
 		failure_reason=error.get("message") or f"The card check charge ended as {status}.",
 		raw=intent,
 	)
+
+
+def _unfinished_setup(intent: dict) -> dict:
+	"""A SetupIntent that saved no card: only `setup_error` when the bank refused the card,
+	`{}` while the customer has not finished."""
+	error = intent.get("last_setup_error")
+	# Stripe leaves a refused SetupIntent open for the customer to try another card.
+	if intent.get("status") != "requires_payment_method" or not error:
+		return {}
+
+	return {"setup_error": {"failure_code": error.get("code"), "decline_code": error.get("decline_code")}}
 
 
 @contextmanager
