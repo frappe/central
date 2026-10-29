@@ -234,6 +234,15 @@ class TestStripeAdapter(GatewayAdapterContract, IntegrationTestCase):
 		):
 			adapter.create_order(100, "USD", "topup-1")
 
+	def test_an_order_keeps_cents_off_the_callers_amount(self):
+		"""create_topup_order spreads these handles over its own major-unit `amount`."""
+		adapter = self.make_adapter()
+		intent = {"id": "pi_1", "client_secret": "s", "amount": 15000}
+		with patch.object(stripe.PaymentIntent, "create", return_value=intent):
+			handles = adapter.create_order(150, "USD", "topup-1")
+		self.assertNotIn("amount", handles)
+		self.assertEqual(handles["amount_in_subunits"], 15000)
+
 	def test_get_mandate_status(self):
 		adapter = self.make_adapter()
 		with patch.object(stripe.Mandate, "retrieve", return_value=frappe._dict(status="Active")):
