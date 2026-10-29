@@ -17,6 +17,9 @@ SITE_LOGIN_TTL = 5 * 60  # a single-use assertion that a site exchanges for its 
 BOOTSTRAP_TTL = 30 * 60  # the first-boot enrollment window
 DATUM_TTL = 7 * 24 * 60 * 60  # short: no revocation list, and the pilot re-fetches on 401 / near expiry
 ENROLL_SCOPE = "enroll"
+# A template server reports once, after its first boot. A later report only loses the redirect.
+TEMPLATE_READY_TTL = 30 * 60
+TEMPLATE_READY_SCOPE = "template-ready"
 DATUM_SCOPE = "datum"
 DATUM_ACCESS = ["write"]  # datum serves no reads at all; every caller is a producer
 ATLAS_TOKEN_TTL = 5 * 60
@@ -140,6 +143,31 @@ def verify_bootstrap_token(token: str) -> dict:
 		frappe.throw(_("Not an enrollment token."), frappe.AuthenticationError)
 
 	return {"team": claims["team"], "pcid": claims["aud"], "jti": claims["jti"]}
+
+
+def mint_template_ready_token(action: str) -> str:
+	"""The token a template server presents to say its application answers. `aud` is the
+	server's creation request, so the token reaches nothing else."""
+	return _mint(action, TEMPLATE_READY_SCOPE, TEMPLATE_READY_TTL)
+
+
+def verify_template_ready_token(token: str) -> str:
+	"""The creation request a template-ready token names. Raises on a bad, expired or
+	wrong-scope token."""
+	public_key = CentralSSOSettings.instance().get_public_key("pilot")
+	try:
+		claims = jwt.decode(
+			token,
+			public_key,
+			algorithms=[ALGORITHM],
+			options={"verify_aud": False, "require": ["exp", "aud", "scope"]},
+		)
+	except jwt.InvalidTokenError as exc:
+		frappe.throw(_("Invalid template token: {0}").format(exc), frappe.AuthenticationError)
+	if claims["scope"] != TEMPLATE_READY_SCOPE:
+		frappe.throw(_("Not a template token."), frappe.AuthenticationError)
+
+	return claims["aud"]
 
 
 def _mint(audience: str, scope: str, ttl: int, extra: dict | None = None) -> str:

@@ -25,6 +25,7 @@
   "capacity_column",
   "image_offering",
   "has_site",
+  "app_ready_at",
   "skip_automatic_snapshot",
   "is_termination_protected",
   "access_tab",
@@ -176,6 +177,13 @@
    "fieldname": "has_site",
    "fieldtype": "Check",
    "label": "Has Site",
+   "read_only": 1
+  },
+  {
+   "description": "When a server made from a template reported that its application answers.",
+   "fieldname": "app_ready_at",
+   "fieldtype": "Datetime",
+   "label": "Application Ready At",
    "read_only": 1
   },
   {
@@ -381,7 +389,7 @@
    "link_fieldname": "server"
   }
  ],
- "modified": "2026-10-25 20:00:00.000000",
+ "modified": "2026-10-27 18:00:00.000000",
  "modified_by": "Administrator",
  "module": "Infrastructure",
  "name": "Virtual Machine",

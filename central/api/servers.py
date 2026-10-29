@@ -19,6 +19,7 @@ from central.server_models import FirewallChange
 from central.signups.access import get_locked_servers
 from central.utils.guards import require_capability
 
+TEMPLATE_TOKEN_HEADER = "X-Template-Token"
 METRICS_PERIOD_HOURS = {"1h": 1, "24h": 24, "7d": 168, "14d": 336, "30d": 720}
 
 # `list_instances` reads only these non-secret Region fields — base_url, atlas_region_id
@@ -699,6 +700,7 @@ def create_server(
 	is_firewall_enabled: bool = False,
 	user_data: str = "",
 	template_inputs: dict[str, str] | None = None,
+	subdomain: str | None = None,
 	snapshot: str | None = None,
 ) -> dict:
 	"""Create a server from an image, or restore one from a `snapshot`."""
@@ -720,6 +722,7 @@ def create_server(
 		is_firewall_enabled=is_firewall_enabled,
 		user_data=user_data,
 		template_inputs=template_inputs,
+		subdomain=subdomain,
 		snapshot=snapshot,
 	)
 
@@ -743,6 +746,7 @@ def create_composed_server(
 	is_firewall_enabled: bool = False,
 	user_data: str = "",
 	template_inputs: dict[str, str] | None = None,
+	subdomain: str | None = None,
 	snapshot: str | None = None,
 ) -> dict:
 	"""Create a custom-sized server from an image, or restore one from a `snapshot`."""
@@ -765,6 +769,7 @@ def create_composed_server(
 		is_firewall_enabled=is_firewall_enabled,
 		user_data=user_data,
 		template_inputs=template_inputs,
+		subdomain=subdomain,
 		snapshot=snapshot,
 	)
 
@@ -774,6 +779,23 @@ def action_status(name: str) -> dict:
 	from central.resource_actions import get_status
 
 	return get_status(name)
+
+
+@frappe.whitelist(methods=["GET"])
+@handle_resource_operation
+def template_journey(name: str) -> dict:
+	"""Where a server from a template is on its way to its first answer."""
+	from central.infrastructure.doctype.virtual_machine.template import get_journey
+
+	return get_journey(name)
+
+
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+def report_template_ready() -> None:
+	"""A server from a template says its application answers, with the token Central gave it at boot."""
+	from central.infrastructure.doctype.virtual_machine.template import record_ready
+
+	record_ready(frappe.get_request_header(TEMPLATE_TOKEN_HEADER) or "")
 
 
 @frappe.whitelist(methods=["POST"])

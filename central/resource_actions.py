@@ -31,6 +31,7 @@ from central.billing.payments.settlement import has_paid_by_hand, is_behind_on_p
 from central.billing.revenue.tax import is_internal_team
 from central.errors import throw_action_error
 from central.iam import can, resolve_team
+from central.infrastructure.doctype.blocked_domain.blocked_domain import normalize_domain
 from central.infrastructure.doctype.resource_action.resource_action import (
 	ACTION_CAPABILITIES,
 	COMMAND_ACTIONS,
@@ -124,15 +125,31 @@ def submit_request(
 
 		require_public_ipv4_rate(server_input.team, server_input.region)
 
+	if resource_type == "Server" and subdomain:
+		subdomain = normalize_domain(subdomain)
+
 	digest = _request_digest(server_input, resource_type, subdomain)
 	# Serialize budget reservations and repeated submissions within one Team.
 	frappe.db.get_value("Team", server_input.team, "name", for_update=True)
 	if existing := _repeated_request(server_input, digest):
 		return existing.customer_status()
 
+	# A repeated request already holds its name, so only a new one is checked.
+	if resource_type == "Server" and subdomain:
+		from central.site_provisioning import validated_subdomain
+
+		validated_subdomain(subdomain)
+
 	is_free_trial = is_free_trial_creation(server_input.team, site.product if site else None)
 	configuration, rate = _build_server_configuration(server_input, snapshot, is_free_trial)
 	configuration.site = site
+	# A template server is routed at the name. Any other server has no application to route.
+	if (
+		resource_type == "Server"
+		and subdomain
+		and configuration.image_tags.get("purpose") != TEMPLATE_PURPOSE
+	):
+		frappe.throw(_("Only a server from a template takes a site name."))
 
 	return ResourceAction.queue(
 		"create",

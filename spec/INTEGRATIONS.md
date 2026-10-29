@@ -227,6 +227,7 @@ Trial, Pilot-server, and plain-Ubuntu creation use the same authorized Atlas ada
 | Trial | Prepared Pilot image, one existing site, metadata credential, approved idle timeout. | VM accepted, Pilot ready, site reachable, and site login succeeds. |
 | Pilot server | Cargo Pilot image with its prepared bench and site, plus metadata credential. | VM is ready and Central can open the correct Pilot admin. |
 | Plain Ubuntu | Approved Ubuntu image, allowed size, hostname, and SSH keys. | Atlas confirms the requested running state and the agreed access configuration. No Pilot or Site record is required. |
+| Template server | Cargo template image, user data from Cargo, `one-click-central` metadata, and an optional site name. | The server reports its application ready, and the chosen name has an active route. See [How does a template server report that it is ready?](#how-does-a-template-server-report-that-it-is-ready). |
 
 Show Open Pilot only for a Pilot-managed resource. A plain Ubuntu VM must not fail because it has no Pilot process or site.
 
@@ -255,6 +256,18 @@ Pilot links back to its server in the console with `/dashboard/servers?pilot=<jw
 Display supported network and SSH information for a plain Ubuntu server. Do not imply that a private mesh address is publicly reachable.
 
 Delete only after the customer confirms the action. Confirm remote absence, revoke any Pilot credential, and preserve existing billing cancellation behavior.
+
+## How does a template server report that it is ready?
+
+A template server boots from a Cargo template image. The setup scripts of the image start the application, check that it answers, and then report to Central. The server opens no port for this report.
+
+1. Central adds the `one-click-central` metadata to the creation. It holds `endpoint`, the Central URL, and `token`, a signed token with the `template-ready` scope. The `aud` claim is the creation's Resource Action, and the token expires after 30 minutes.
+2. The server reads the metadata from the region's metadata service and sends `POST /api/method/central.api.servers.report_template_ready` with the token in the `X-Template-Token` header.
+3. Central sets **Application Ready At** on the Virtual Machine. A repeated report changes nothing.
+
+A customer can give a template server a site name at creation, as `subdomain`. Central checks the name as it checks a trial site name, and refuses it for a server that is not from a template. When the server reports its mesh address, Central adds a Site Domain for `<name>.<zone>`, and the Site Domain routes the name at the regional proxy.
+
+`central.api.servers.template_journey` returns the progress of the creation for the console. The phase is `booking`, `server`, `app`, `ready`, or `failed`. The phase is `ready` when the server has reported and the chosen name, if any, has an active route. A report after the token expires is refused. The server still runs, and the console shows that the setup takes longer.
 
 ## What does creation depend on?
 

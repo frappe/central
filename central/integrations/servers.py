@@ -11,7 +11,7 @@ from central.errors import AtlasConnectionError, AtlasRejected, AtlasResourceGon
 from central.iam import can_on_any_server
 from central.infrastructure.doctype.resource_action.resource_action import ResourceAction
 from central.infrastructure.doctype.site.site import Site
-from central.infrastructure.doctype.virtual_machine import firewall
+from central.infrastructure.doctype.virtual_machine import firewall, template
 from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
 from central.integrations.atlas import AtlasClient, ConsoleMode
 from central.server_models import FirewallChange
@@ -94,6 +94,7 @@ def observe_server(server: VirtualMachine) -> str:
 
 	# A Pilot machine carries a site, and this report is where its address arrives.
 	Site.create_once_addressable(server.name)
+	template.route_chosen_name(server.name)
 	ResourceAction.confirm_observed_status(server.name, status)
 	if status == "Running" and gateway and not server.admin_domain_task:
 		frappe.enqueue_doc(

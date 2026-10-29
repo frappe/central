@@ -46,6 +46,7 @@ class VirtualMachine(Document):
 		admin_domain_diagnostic: DF.Code | None
 		admin_domain_error: DF.SmallText | None
 		admin_domain_task: DF.Data | None
+		app_ready_at: DF.Datetime | None
 		atlas_image_id: DF.Data | None
 		atlas_host_id: DF.Data | None
 		atlas_vm_id: DF.Data | None
