@@ -68,8 +68,9 @@ A role grant applies to all resources (`resource_type = "*"`) or to one resource
 - Only `server:view`, `server:power`, `server:resize`, `server:snapshot`, `server:terminate`, and `server:console` can be scoped. A scoped grant drops every other capability of its role.
 - A scoped grant must name a server or site of the same Team. The Owner role is always team-wide. A grant whose resource no longer belongs to the Team grants nothing.
 - `iam.can(user, team, capability, server=None)` answers the first two questions. Without `server`, it is the team-wide question. Routes that act on one server pass it. `iam.can_on_any_server` answers the list question.
-- The permission rules for Virtual Machine, Site, VM Snapshot, Resource Action, and Site Domain filter lists by the allowed servers and check the server on each record.
+- The permission rules for Virtual Machine, Site, VM Snapshot, Resource Action, Server Event, and Site Domain filter lists by the allowed servers and check the server on each record.
 - Team-scoped billing DocTypes (Invoice, Payment Attempt, Credit Ledger Entry, Top-up Order and the others in `hooks._BILLING_TEAM_RECORDS`) are for operators only in both layers: `billing_record_query_conditions` returns `1 = 0` and `billing_record_has_permission` returns False for everyone else, on their own Team too. Customers read billing through the billing API, which checks `billing:view` or `billing:manage` on the record's Team.
+- The permission rules for Virtual Machine, Site, VM Snapshot, Resource Action, Server Event, and Site Domain filter lists by the allowed servers and check the server on each record.
 - Pricing a resize reads the plans and the current configuration of one server. Those two billing reads accept `server:resize` on that server in place of `billing:view`.
 - A notification that is about a server records it in `Team Notification.server`. A scoped member sees and receives only the notifications for its servers.
 - The console reads each server's capabilities from the `capabilities` field on its row, so it shows only the actions that the member can do on that server.

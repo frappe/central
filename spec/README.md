@@ -18,6 +18,7 @@ Each module specification below describes current behavior. Update it in the sam
 - [Regional configuration](../central/infrastructure/doctype/region/SPEC.md): signed connection checks, tenant selection, and regional identity.
 - [Image offerings](../central/infrastructure/doctype/image_offering/SPEC.md): presentation records and on-demand regional System image discovery.
 - [Resource actions](../central/infrastructure/doctype/resource_action/SPEC.md): durable intent, states, authorization, and recovery for server operations.
+- [Activity ledger](../central/central/doctype/activity_event/SPEC.md): recorded events, visibility, request addresses, and retention.
 - [Team SSH keys](../central/infrastructure/doctype/team_ssh_key/SPEC.md): public login keys, server selection, and rotation.
 - [WireGuard devices](../central/infrastructure/doctype/wireguard_device/SPEC.md): customer devices on the regional WireGuard gateway, removal, and restore.
 - [Proxy routes](../central/infrastructure/doctype/site_domain/SPEC.md): site and custom-domain routes on the regional proxy, with retry and delete.

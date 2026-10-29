@@ -1,0 +1,81 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "hash",
+ "creation": "2026-10-30 00:00:00",
+ "description": "The request IP for one Activity Event. Only a System Manager reads this table; customers read the address through the activity API.",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "event",
+  "team",
+  "ip_address",
+  "occurred_at"
+ ],
+ "fields": [
+  {
+   "fieldname": "event",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Activity Event",
+   "options": "Activity Event",
+   "reqd": 1,
+   "search_index": 1,
+   "unique": 1
+  },
+  {
+   "fieldname": "team",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Team",
+   "options": "Team",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "ip_address",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "IP Address",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "occurred_at",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Occurred At",
+   "reqd": 1,
+   "search_index": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-10-30 00:00:00",
+ "modified_by": "Administrator",
+ "module": "Central",
+ "name": "Activity Event IP",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 0,
+   "delete": 0,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "write": 0
+  }
+ ],
+ "sort_field": "occurred_at",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "ip_address",
+ "search_fields": "ip_address,event,team",
+ "track_changes": 0
+}
