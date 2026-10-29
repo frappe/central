@@ -15,6 +15,7 @@ through the registry, keeping the gateway seam intact (see gateways/base.py).
 import frappe
 from frappe import _
 
+from central.billing.payments.decline import ORDER_MISMATCH, PAYMENT_NOT_AUTHORISED, SIGNATURE_INVALID
 from central.billing.states import transition
 
 MANDATE_METHOD = "UPI Autopay"
@@ -261,17 +262,21 @@ def confirm_mandate(payment_method: str, callback: dict):
 	   taken from the browser.
 	A new active mandate retires any sibling active mandate for the same team+gateway
 	(the re-authorisation case), so the higher ceiling cleanly supersedes.
+	A method already past validation is returned as it is, so a repeated callback
+	neither activates a refused mandate nor refunds an authorisation twice.
 	"""
 	method = frappe.get_doc("Payment Method", payment_method)
+	if method.status != "Pending Validation":
+		return method
 	adapter = _adapter(method.gateway)
 
 	if not adapter.verify_payment_signature(callback):
-		_refuse_mandate(method, "mandate signature invalid")
+		return _refuse_mandate(method, SIGNATURE_INVALID, "The checkout signature is invalid.")
 	if not method.setup_reference or callback.get("razorpay_order_id") != method.setup_reference:
-		_refuse_mandate(method, "callback is for another order")
+		return _refuse_mandate(method, ORDER_MISMATCH, "The callback is for another order.")
 	payment = adapter.get_payment(callback.get("razorpay_payment_id"))
 	if not _is_mandate_payment(method, payment):
-		_refuse_mandate(method, "payment does not authorise this mandate")
+		return _refuse_mandate(method, PAYMENT_NOT_AUTHORISED, "The payment does not authorise this mandate.")
 
 	method.gateway_method_id = payment["token_id"]
 	transition(method, "Active", actor=frappe.session.user)
@@ -344,13 +349,13 @@ def _is_mandate_payment(method, payment: dict) -> bool:
 	)
 
 
-def _refuse_mandate(method, reason: str) -> None:
-	transition(method, "Failed", actor=frappe.session.user, reason=reason)
+def _refuse_mandate(method, failure_code: str, reason: str):
+	"""Fail the method and return it. It does not raise, so the failure is not rolled back."""
+	method.record_failure({"failure_code": failure_code, "failure_reason": reason})
+	transition(method, "Failed", actor=frappe.session.user, reason=failure_code)
 	# Only billing code changes a method's status; the caller checked billing:manage.
 	method.save(ignore_permissions=True)
-	frappe.throw(
-		_("The mandate authorisation could not be confirmed. Try adding it again."), frappe.ValidationError
-	)
+	return method
 
 
 def cancel_mandate(payment_method: str):

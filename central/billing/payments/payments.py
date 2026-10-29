@@ -20,7 +20,8 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
-from central.billing.states import transition
+from central.billing.payments import decline
+from central.billing.states import record_event, transition
 
 CARD_METHOD = "Card"
 
@@ -100,7 +101,7 @@ def initiate_payment_method_setup(team: str, gateway: str, gateway_customer_id: 
 	Returns the client secret the frontend confirms the card against. No money
 	moves here and the method is not yet usable.
 	"""
-	_discard_abandoned_setups(team, gateway)
+	_cancel_abandoned_setups(team, gateway)
 	adapter = _adapter(gateway)
 	gateway_customer_id = ensure_gateway_customer(team, gateway, adapter, gateway_customer_id)
 	currency = frappe.db.get_value("Billing Profile", team, "currency")
@@ -148,11 +149,11 @@ def mandate_ceiling(team: str, gateway: str, currency: str | None) -> float | No
 	return float(min(ceiling, cap)) if cap else float(ceiling)
 
 
-def _discard_abandoned_setups(team: str, gateway: str):
-	"""Delete the team's never-confirmed card setups on this gateway before a fresh
-	attempt. A Pending Validation method with no gateway_method_id is an abandoned
-	SetupIntent (dialog closed before confirm) — otherwise these pile up in the
-	store. Confirmed methods (any status) are left alone."""
+def _cancel_abandoned_setups(team: str, gateway: str):
+	"""Cancel the team's never-confirmed setups on this gateway before a fresh attempt.
+	A Pending Validation method with no gateway_method_id is an abandoned setup (dialog
+	closed before confirm). It stays on record, so the setup funnel can count it.
+	Confirmed methods (any status) are left alone."""
 	for name in frappe.get_all(
 		"Payment Method",
 		filters={
@@ -163,11 +164,18 @@ def _discard_abandoned_setups(team: str, gateway: str):
 		},
 		pluck="name",
 	):
-		frappe.delete_doc("Payment Method", name, ignore_permissions=True, force=True)
+		method = frappe.get_doc("Payment Method", name)
+		transition(method, "Cancelled", reason="setup abandoned")
+		# Only billing code changes a method's status; the caller checked billing:manage.
+		method.save(ignore_permissions=True)
 
 
 class CardNotSaved(frappe.ValidationError):
 	"""The gateway has not saved the card for this setup yet."""
+
+
+class CardDeclinedAtSetup(CardNotSaved):
+	"""The bank refused the card at setup. The message says why, for the customer."""
 
 
 def confirm_payment_method(payment_method: str) -> Document:
@@ -180,22 +188,39 @@ def confirm_payment_method(payment_method: str) -> Document:
 	   the first active method for a team becomes its default.
 	4. A method already past validation is returned as it is, so a repeated confirm
 	   never charges the card again.
+	5. A card the bank refused at setup raises CardDeclinedAtSetup with the gateway's
+	   reason. Nothing is written: the setup webhook records the failure, and the
+	   method stays Pending Validation so the customer can try another card.
 	"""
 	method = frappe.get_doc("Payment Method", payment_method)
 	if method.status != "Pending Validation":
 		return method
 
 	card = _adapter(method.gateway).read_saved_card(method.setup_reference) if method.setup_reference else {}
+	if error := card.get("setup_error"):
+		frappe.throw(
+			decline.method_failure_message(
+				error.get("failure_code"), error.get("decline_code"), method.method_type
+			),
+			CardDeclinedAtSetup,
+		)
 	if not card:
 		frappe.throw(_("The card has not been saved yet. Finish adding it, then try again."), CardNotSaved)
 	if _is_saved_to_another_customer(card, method):
-		return _fail_method(method, "card saved to another gateway customer")
+		return _fail_method(
+			method,
+			{
+				"failure_code": "customer_mismatch",
+				"failure_reason": "The card was saved to another gateway customer.",
+			},
+		)
 
 	method.update(_saved_card_fields(card, method))
 	method.save(ignore_permissions=True)
 
-	if not _adapter(method.gateway).validate_payment_method(method):
-		return _fail_method(method, "validation failed")
+	check = _adapter(method.gateway).validate_payment_method(method)
+	if not check.success:
+		return _fail_method(method, check.failure)
 
 	transition(method, "Active", actor=frappe.session.user)
 	method.validated_at = frappe.utils.now_datetime()
@@ -224,8 +249,9 @@ def _saved_card_fields(card: dict, method) -> dict:
 	}
 
 
-def _fail_method(method, reason: str) -> Document:
-	transition(method, "Failed", actor=frappe.session.user, reason=reason)
+def _fail_method(method, failure: dict) -> Document:
+	method.record_failure(failure)
+	transition(method, "Failed", actor=frappe.session.user, reason=method.failure_code)
 	# Only billing code changes a method's status; the caller checked billing:manage.
 	method.save(ignore_permissions=True)
 	return method
@@ -352,27 +378,30 @@ def expire_payment_methods(now=None) -> dict:
 	return {"expired": expired}
 
 
+CARD_DETACHED_EVENT = "payment_method.detached"
+CARD_SETUP_FAILED_EVENT = "setup_intent.setup_failed"
+
+
 def apply_payment_method_event(event_name: str) -> dict:
 	"""Record a card event from the gateway on the Payment Method it is about.
 
 	A card detached at the gateway can no longer be charged, so it is cancelled and
-	drops out of the charge order. A failed card setup is only noted on the card: the
-	customer can retry on the same setup, so one failed try does not fail the card.
+	drops out of the charge order. A failed card setup is recorded on the card with the
+	gateway's reason. The card stays Pending Validation: the customer can retry on the
+	same setup, so one failed try does not fail the card. Any other card or setup event
+	(created, requires_action, succeeded) is not a failure and is ignored.
 	"""
 	from central.billing.payments import charges
 
 	event = frappe.get_doc("Webhook Event", event_name)
+	if event.event_type not in (CARD_DETACHED_EVENT, CARD_SETUP_FAILED_EVENT):
+		charges._mark_event(event, "Ignored")
+		return {"handled": False, "reason": "not_a_card_failure"}
+
 	payload = frappe.parse_json(event.raw_payload) if event.raw_payload else {}
 	gateway_object = (payload.get("data") or {}).get("object") or {}
-	is_detached = event.event_type == "payment_method.detached"
-	reference = "gateway_method_id" if is_detached else "setup_reference"
-	method = (
-		frappe.db.get_value(
-			"Payment Method", {"gateway": event.gateway, reference: gateway_object["id"]}, "name"
-		)
-		if gateway_object.get("id")
-		else None
-	)
+	is_detached = event.event_type == CARD_DETACHED_EVENT
+	method = _find_event_method(event.gateway, gateway_object.get("id"), is_detached)
 	if not method:
 		charges._mark_event(event, "Ignored")
 		return {"handled": False, "reason": "no_matching_method"}
@@ -381,6 +410,19 @@ def apply_payment_method_event(event_name: str) -> dict:
 	result = _cancel_detached(method) if is_detached else _note_setup_failure(method, gateway_object)
 	charges._mark_event(event, "Processed")
 	return {"handled": True, "result": result, "payment_method": method}
+
+
+def _find_event_method(gateway: str, object_id: str | None, is_detached: bool) -> str | None:
+	"""The method a card event is about. A detach names the card. A setup event names
+	the SetupIntent: an in-app setup keeps it as its setup reference, and a hosted setup
+	keeps the Checkout Session there and the SetupIntent apart."""
+	if not object_id:
+		return None
+	if is_detached:
+		return frappe.db.get_value("Payment Method", {"gateway": gateway, "gateway_method_id": object_id})
+	return frappe.db.get_value(
+		"Payment Method", {"gateway": gateway, "setup_reference": object_id}
+	) or frappe.db.get_value("Payment Method", {"gateway": gateway, "setup_intent_id": object_id})
 
 
 def _cancel_detached(payment_method: str) -> str:
@@ -395,10 +437,36 @@ def _cancel_detached(payment_method: str) -> str:
 	return "Cancelled"
 
 
+def note_setup_payment_failure(gateway: str, order_id: str | None, decline: dict) -> str | None:
+	"""Keep a declined authorisation payment (a Razorpay mandate order) on the method it
+	was for. Returns the method, or None when the order is not a setup of ours."""
+	if not order_id:
+		return None
+	name = frappe.db.get_value(
+		"Payment Method", {"gateway": gateway, "setup_reference": order_id, "status": "Pending Validation"}
+	)
+	if name:
+		_record_setup_failure(name, decline)
+	return name
+
+
 def _note_setup_failure(payment_method: str, setup_intent: dict) -> str:
 	error = setup_intent.get("last_setup_error") or {}
-	reason = error.get("message") or error.get("code") or "no reason given"
-	frappe.get_doc("Payment Method", payment_method).add_comment(
-		"Info", f"Card setup failed at the gateway: {reason}"
+	_record_setup_failure(
+		payment_method,
+		{
+			"failure_code": error.get("code") or "setup_failed",
+			"decline_code": error.get("decline_code"),
+			"failure_reason": error.get("message"),
+		},
 	)
 	return "noted"
+
+
+def _record_setup_failure(payment_method: str, decline: dict) -> None:
+	"""Keep a failed try on a setup the customer can still retry, so it stays Pending."""
+	method = frappe.get_doc("Payment Method", payment_method, for_update=True)
+	method.record_failure(decline)
+	record_event(method, "Payment Method Setup Failed", reason=method.failure_code)
+	# The webhook runs as the system, and only billing code writes a method's failure.
+	method.save(ignore_permissions=True)

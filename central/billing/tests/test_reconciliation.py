@@ -167,6 +167,7 @@ class TestReconcile(ReconTestBase):
 		with gateway_status("failed"):
 			reconciliation.reconcile_attempt(attempt)
 		self.assertEqual(frappe.db.get_value("Payment Attempt", attempt, "status"), "Failed")
+		self.assertEqual(frappe.db.get_value("Payment Attempt", attempt, "failure_code"), "gateway_failed")
 		self.assertEqual(frappe.db.get_value("Invoice", inv, "status"), "Open")
 
 	def test_uncompleted_checkout_is_failed_after_a_day(self):
@@ -178,6 +179,9 @@ class TestReconcile(ReconTestBase):
 			reconciliation.reconcile_attempt(attempt)
 			adapter.get_transaction_status.assert_not_called()
 		self.assertEqual(frappe.db.get_value("Payment Attempt", attempt, "status"), "Failed")
+		self.assertEqual(
+			frappe.db.get_value("Payment Attempt", attempt, "failure_code"), "checkout_abandoned"
+		)
 
 	def test_a_slow_checkout_is_left_open(self):
 		"""A UPI collect or 3DS checkout can take a while; it is not failed in its first day."""

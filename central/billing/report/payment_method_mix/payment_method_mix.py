@@ -28,6 +28,7 @@ per currency (a wallet holds one currency per team); never summed across currenc
 import frappe
 from frappe import _
 
+from central.billing.doctype.payment_method.payment_method import held_method_filters
 from central.billing.report._currency import split_currency_columns
 
 STATUS_FIELDS = [
@@ -109,6 +110,7 @@ def _method_mix(filters: dict):
 	methods = frappe.get_all(
 		"Payment Method",
 		filters=conditions,
+		or_filters=held_method_filters(),
 		fields=["team", "method_type", "status", "is_default", "reauth_required"],
 	)
 

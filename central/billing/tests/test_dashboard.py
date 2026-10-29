@@ -202,6 +202,42 @@ class TestCustomerReads(CustomerDataBase):
 		self.assertNotIn("api_key", rows[0])
 		frappe.db.delete("Payment Method", {"team": TEAM})
 
+	def test_a_card_refused_at_setup_is_explained_from_the_gateway(self):
+		from central.billing.tests.test_payments import stub_adapter
+		from central.billing.tests.test_stripe_adapter import make_stripe_gateway
+
+		method = frappe.get_doc(
+			{
+				"doctype": "Payment Method",
+				"team": TEAM,
+				"gateway": make_stripe_gateway().name,
+				"method_type": "Card",
+				"status": "Pending Validation",
+				"setup_reference": "seti_refused",
+			}
+		).insert(ignore_permissions=True)
+		refusal = {"setup_error": {"failure_code": "card_declined", "decline_code": "generic_decline"}}
+
+		frappe.local.message_log = []
+		with stub_adapter(card=refusal) as adapter:
+			out = dashboard.confirm_card(method.name)
+
+		self.assertEqual(frappe.local.message_log, [])  # no second alert beside the answer
+
+		adapter.read_saved_card.assert_called_once_with("seti_refused")
+		adapter.validate_payment_method.assert_not_called()
+		adapter.charge.assert_not_called()
+		self.assertEqual(out["status"], "Pending Validation")
+		self.assertEqual(
+			out["message"],
+			"Your bank declined the payment. Try another card, or add credit to your account instead.",
+		)
+		# The setup webhook records the failure, so confirming writes nothing.
+		stored = frappe.db.get_value("Payment Method", method.name, ["status", "failure_code"], as_dict=True)
+		self.assertEqual(stored.status, "Pending Validation")
+		self.assertFalse(stored.failure_code)
+		frappe.db.delete("Payment Method", {"team": TEAM})
+
 	def test_credit_ledger_and_balance(self):
 		credits.purchase(TEAM, 500, "INR")
 		self.assertEqual(dashboard.get_credit_balance(TEAM)["balance"], 500)
@@ -363,6 +399,37 @@ class TestTeamScoping(CustomerDataBase):
 		finally:
 			frappe.set_user("Administrator")
 
+	def test_a_card_on_another_team_cannot_be_confirmed(self):
+		from central.billing.tests.test_payments import stub_adapter
+		from central.billing.tests.test_stripe_adapter import make_stripe_gateway
+
+		user = make_user()
+		make_billing_team(user)
+		other_team = make_billing_team(make_user())
+		method = frappe.get_doc(
+			{
+				"doctype": "Payment Method",
+				"team": other_team.name,
+				"gateway": make_stripe_gateway().name,
+				"method_type": "Card",
+				"status": "Pending Validation",
+				"setup_reference": "seti_other_team",
+			}
+		).insert(ignore_permissions=True)
+
+		frappe.set_user(user)
+		try:
+			with stub_adapter() as adapter:
+				with self.assertRaises(frappe.PermissionError):
+					dashboard.confirm_card(method.name)
+				with self.assertRaises(frappe.PermissionError):
+					dashboard.confirm_card("no-such-payment-method")
+		finally:
+			frappe.set_user("Administrator")
+
+		adapter.read_saved_card.assert_not_called()
+		self.assertEqual(frappe.db.get_value("Payment Method", method.name, "status"), "Pending Validation")
+
 
 class TestCustomerActions(CustomerDataBase):
 	def tearDown(self):
@@ -456,6 +523,20 @@ class TestBillingCurrency(CustomerDataBase):
 		# A foreign country → USD.
 		dashboard.save_billing_profile(TEAM, country="Germany")
 		self.assertEqual(frappe.db.get_value("Billing Profile", TEAM, "currency"), "USD")
+
+	def test_an_abandoned_card_setup_does_not_lock_the_currency(self):
+		dashboard.save_billing_profile(TEAM, currency="INR", legal_name="Acme")
+		frappe.get_doc(
+			{
+				"doctype": "Payment Method",
+				"team": TEAM,
+				"gateway": "Stripe",
+				"method_type": "Card",
+				"status": "Cancelled",
+			}
+		).insert(ignore_permissions=True, ignore_links=True)
+
+		self.assertFalse(dashboard.get_billing_profile(TEAM)["currency_locked"])
 
 	def test_currency_locks_after_money_activity(self):
 		from central.billing.revenue import credits

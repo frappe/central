@@ -184,6 +184,10 @@ class TestChargeInvoice(ChargeTestBase):
 		attempt = frappe.get_doc("Payment Attempt", result["attempt"])
 		self.assertEqual(attempt.status, "Failed")
 		self.assertEqual(attempt.failure_code, "card_declined")
+		event_reason = frappe.db.get_value(
+			"Billing Event", {"subject": attempt.name, "to_state": "Failed"}, "reason"
+		)
+		self.assertEqual(event_reason, "card_declined")
 		self.assertEqual(frappe.db.get_value("Invoice", inv, "status"), "Open")
 
 	def test_webhook_settles_invoice_to_paid(self):
@@ -661,6 +665,14 @@ class TestDeclineDetail(ChargeTestBase):
 		self.assertEqual(a.decline_code, "insufficient_funds")
 		self.assertIn("insufficient funds", a.failure_reason)
 		self.assertTrue(a.gateway_response)  # raw error persisted for audit
+
+	def test_a_failure_webhook_without_a_reason_still_gets_a_code(self):
+		inv = self._open_invoice(1000)
+		attempt = self._initiated_attempt(inv, "pi_bare")
+		event = self._stripe_failed_event("evt_bare", "pi_bare", None)
+		with patch("central.billing.payments.collection.collect_invoice", return_value=None):
+			charges.apply_webhook(event)
+		self.assertEqual(frappe.db.get_value("Payment Attempt", attempt, "failure_code"), "payment_failed")
 
 
 class TestFailedPaymentsReport(ChargeTestBase):

@@ -6,7 +6,10 @@ from frappe import _
 from frappe.model.document import Document
 
 from central.billing.gateways.base import VerifiedPayment
-from central.billing.states import transition
+from central.billing.payments import decline
+from central.billing.states import record_event, transition
+
+DECLINED_EVENT = "Top-up Order Declined"
 
 
 class PaymentDoesNotCover(frappe.ValidationError):
@@ -32,11 +35,15 @@ class TopupOrder(Document):
 
 		credit: DF.Currency
 		currency: DF.Link
+		decline_code: DF.Data | None
+		failed_attempts: DF.Int
+		failure_code: DF.Data | None
 		failure_reason: DF.SmallText | None
 		gateway: DF.Link
 		gateway_order_id: DF.Data | None
 		gateway_payment_id: DF.Data | None
 		gst: DF.Currency
+		last_failed_at: DF.Datetime | None
 		ledger_entry: DF.Link | None
 		status: DF.Literal["Created", "Credited", "Failed", "Expired"]
 		team: DF.Link
@@ -78,6 +85,37 @@ class TopupOrder(Document):
 		transition(self, "Expired", actor="reconciliation", correlation=self.team)
 		# Reconciliation runs as the system with no session user to check.
 		self.save(ignore_permissions=True)
+
+	def record_decline(self, failure: decline.Failure, gateway_event_id: str) -> None:
+		"""Keep why the gateway declined a payment on this order, and log each decline as
+		a Billing Event. The order stays open, because the payer can try again on it.
+
+		1. Locked, so two failure webhooks both count.
+		2. A gateway event already logged on this order counts once."""
+		frappe.db.get_value("Top-up Order", self.name, "name", for_update=True)
+		self.reload()
+		if self._has_declined_event(gateway_event_id):
+			return
+
+		self.failed_attempts = frappe.utils.cint(self.failed_attempts) + 1
+		self.last_failed_at = frappe.utils.now_datetime()
+		self.update(decline.failure_fields(failure))
+		# The webhook runs as the system with no session user to check.
+		self.save(ignore_permissions=True)
+		record_event(self, DECLINED_EVENT, reason=self.failure_code, correlation=gateway_event_id)
+
+	def _has_declined_event(self, gateway_event_id: str) -> bool:
+		return bool(
+			frappe.db.exists(
+				"Billing Event",
+				{
+					"subject_doctype": "Top-up Order",
+					"subject": self.name,
+					"event_type": DECLINED_EVENT,
+					"correlation": gateway_event_id,
+				},
+			)
+		)
 
 	def fail(self, reason: str) -> None:
 		"""Stop retrying an order an operator has to resolve, and keep the reason on it."""

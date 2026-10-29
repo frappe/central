@@ -21,6 +21,7 @@ from central.billing.gateways.base import (
 	PaymentResult,
 	RefundResult,
 	header_value,
+	token_check,
 )
 
 # Network/server failures are transient → GatewayTimeout (retry reuses the key).
@@ -78,9 +79,9 @@ class PayPalAdapter(GatewayAdapter):
 			"customer_id": setup_data.get("customer_id"),
 		}
 
-	def validate_payment_method(self, payment_method) -> bool:
+	def validate_payment_method(self, payment_method) -> PaymentResult:
 		"""A live vault token (set on approval) is the proof — no micro-charge."""
-		return bool(payment_method.gateway_method_id)
+		return token_check(payment_method)
 
 	def charge(self, invoice, payment_method, idempotency_key: str) -> PaymentResult:
 		"""Off-session capture against a vaulted token. `idempotency_key` rides

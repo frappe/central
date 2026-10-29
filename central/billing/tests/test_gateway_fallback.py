@@ -33,6 +33,27 @@ class TestWhichDeclinesAreFinal(IntegrationTestCase):
 		self.assertFalse(decline.is_terminal(None))
 
 
+class TestCardFailureMessage(IntegrationTestCase):
+	def test_the_bank_reason_is_used_when_we_can_word_it(self):
+		message = decline.method_failure_message("card_declined", "insufficient_funds")
+		self.assertTrue(message.startswith("There wasn't enough balance."))
+		self.assertIn("add credit", message)
+
+	def test_a_mandate_is_not_told_to_try_another_card(self):
+		message = decline.method_failure_message("token_missing", None, "UPI Autopay")
+		self.assertNotIn("card", message)
+		self.assertIn("add credit", message)
+
+	def test_an_unfinished_card_check_is_not_called_still_confirming(self):
+		message = decline.method_failure_message("check_unfinished")
+		self.assertTrue(message.startswith("The card check didn't finish."))
+		self.assertIn("Try another card", message)
+
+	def test_an_unknown_bank_reason_falls_back_to_the_failure_code(self):
+		message = decline.method_failure_message("expired_card", "some_new_reason")
+		self.assertTrue(message.startswith("Your card has expired."))
+
+
 class TestTheOffer(IntegrationTestCase):
 	def setUp(self):
 		from central.billing.tests.test_razorpay_adapter import make_razorpay_gateway

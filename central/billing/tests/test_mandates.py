@@ -112,11 +112,11 @@ class TestMandateSetup(MandateTestBase):
 	def test_a_callback_for_another_order_fails(self):
 		with stub_adapter():
 			result = mandates.setup_mandate(TEAM, GATEWAY, customer_id="cust_x")
-			with self.assertRaises(frappe.ValidationError):
-				mandates.confirm_mandate(
-					result["payment_method"], {**CALLBACK, "razorpay_order_id": "order_other"}
-				)
-		self.assertEqual(frappe.db.get_value("Payment Method", result["payment_method"], "status"), "Failed")
+			method = mandates.confirm_mandate(
+				result["payment_method"], {**CALLBACK, "razorpay_order_id": "order_other"}
+			)
+		self.assertEqual(method.status, "Failed")
+		self.assertEqual(method.failure_code, "order_mismatch")
 
 	def test_a_payment_without_a_token_fails(self):
 		payment = {
@@ -127,16 +127,20 @@ class TestMandateSetup(MandateTestBase):
 		}
 		with stub_adapter(payment=payment):
 			result = mandates.setup_mandate(TEAM, GATEWAY, customer_id="cust_x")
-			with self.assertRaises(frappe.ValidationError):
-				mandates.confirm_mandate(result["payment_method"], CALLBACK)
+			method = mandates.confirm_mandate(result["payment_method"], CALLBACK)
+		self.assertEqual(method.failure_code, "payment_not_authorised")
 
 	def test_confirm_invalid_signature_fails(self):
 		with stub_adapter(signature_ok=False):
 			result = mandates.setup_mandate(TEAM, GATEWAY, customer_id="cust_x")
-			with self.assertRaises(frappe.ValidationError):
-				mandates.confirm_mandate(result["payment_method"], {"razorpay_signature": "bad"})
-		method = frappe.get_doc("Payment Method", result["payment_method"])
+			method = mandates.confirm_mandate(result["payment_method"], {"razorpay_signature": "bad"})
 		self.assertEqual(method.status, "Failed")
+
+		with stub_adapter(signature_ok=True):
+			again = mandates.confirm_mandate(result["payment_method"], CALLBACK)
+		self.assertEqual(again.status, "Failed")  # a refused mandate is not activated by a retry
+		self.assertEqual(method.failure_code, "signature_invalid")
+		self.assertEqual(method.failed_attempts, 1)
 
 
 class TestAuthorisationRefund(MandateTestBase):

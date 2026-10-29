@@ -248,9 +248,39 @@ class StripeAdapter(GatewayAdapter):
 			}
 		}
 
-	def validate_payment_method(self, payment_method) -> bool:
-		"""Micro-charge (50 minor units) + auto-refund to prove the card is live."""
+	def validate_payment_method(self, payment_method) -> PaymentResult:
+		"""Prove the card is live: by its India mandate, or by a 50-unit charge that is
+		refunded at once."""
 		self._configure()
+		mandate = payment_method.get("gateway_mandate_id")
+		if mandate:
+			return self._check_mandate(mandate)
+		return self._check_with_charge(payment_method)
+
+	def _check_mandate(self, mandate: str) -> PaymentResult:
+		"""A debit on an India mandate waits 26 hours for the bank's pre-debit notice, so a
+		check charge cannot finish while the customer waits. The customer authenticated the
+		mandate at setup, and Stripe keeps it live only while the bank honours it."""
+		try:
+			status = (self.get_mandate_status(mandate) or "").lower()
+		except stripe.error.InvalidRequestError as error:
+			return _declined(error)
+		except (stripe.error.APIConnectionError, stripe.error.RateLimitError) as error:
+			raise GatewayTimeout(str(error)) from error
+
+		# A pending mandate is still being registered at the bank; a charge it refuses
+		# later retires the card (charges._retire_method_if_mandate_failed).
+		if status in ("active", "pending"):
+			return PaymentResult(success=True, status="Validated")
+		return PaymentResult(
+			success=False,
+			status="Failed",
+			failure_code=f"mandate_{status}",
+			failure_reason=f"The card's mandate is {status} at Stripe.",
+		)
+
+	def _check_with_charge(self, payment_method) -> PaymentResult:
+		"""Charge 50 minor units off-session and refund them."""
 		# India-based Stripe accounts require a description AND the customer's
 		# name + address on every export (international) charge — Stripe rejects
 		# the request otherwise.
@@ -262,24 +292,24 @@ class StripeAdapter(GatewayAdapter):
 			confirm=True,
 			off_session=True,
 			description="Payment method validation",
+			# Keyed on the method, so a repeated confirm charges and refunds the card once.
+			idempotency_key=f"{frappe.local.site}:card-check:{payment_method.get('name')}",
 		)
 		shipping = _export_shipping(payment_method.get("team"))
 		if shipping:
 			params["shipping"] = shipping
-		# An Indian mandate debit has to quote the mandate the bank issued at setup;
-		# the card alone is not authority to charge off-session there (see charge()).
-		mandate = payment_method.get("gateway_mandate_id")
-		if mandate:
-			params["mandate"] = mandate
 		try:
 			intent = _to_dict(stripe.PaymentIntent.create(**params))
-		except (stripe.error.CardError, stripe.error.InvalidRequestError):
-			return False
+		except (stripe.error.CardError, stripe.error.InvalidRequestError) as error:
+			return _declined(error)
+		except (stripe.error.APIConnectionError, stripe.error.RateLimitError) as error:
+			raise GatewayTimeout(str(error)) from error
 
-		if intent.get("status") == "succeeded":
-			stripe.Refund.create(payment_intent=intent.get("id"))
-			return True
-		return False
+		if intent.get("status") != "succeeded":
+			_close_check_charge(intent)
+			return _unfinished_check(intent)
+		_refund_check_charge(intent, params["idempotency_key"])
+		return PaymentResult(success=True, status="Validated", gateway_transaction_id=intent.get("id"))
 
 	def charge(self, invoice, payment_method, idempotency_key: str) -> PaymentResult:
 		"""Off-session charge of a stored payment method. Idempotent per attempt.
@@ -312,18 +342,8 @@ class StripeAdapter(GatewayAdapter):
 		try:
 			intent = _to_dict(stripe.PaymentIntent.create(**params))
 		except (stripe.error.CardError, stripe.error.InvalidRequestError) as e:
-			body = getattr(e, "json_body", None) or {}
-			# `code` for a declined card is almost always "card_declined"; the actual
-			# reason (insufficient_funds, lost_card, stolen_card, …) is the decline_code.
 			# A mandate Stripe refuses mid-billing surfaces here too, as InvalidRequestError.
-			return PaymentResult(
-				success=False,
-				status="Failed",
-				failure_code=getattr(e, "code", None),
-				decline_code=(body.get("error") or {}).get("decline_code"),
-				failure_reason=getattr(e, "user_message", None) or str(e),
-				raw=body,
-			)
+			return _declined(e)
 		except (stripe.error.APIConnectionError, stripe.error.RateLimitError) as e:
 			raise GatewayTimeout(str(e)) from e
 
@@ -331,6 +351,9 @@ class StripeAdapter(GatewayAdapter):
 		return PaymentResult(
 			success=succeeded,
 			status="Captured" if succeeded else intent.get("status"),
+			# An off-session charge the bank wants the customer to confirm ends as
+			# requires_action with no error; the status is the reason.
+			failure_code=None if succeeded else intent.get("status"),
 			gateway_transaction_id=intent.get("id"),
 			hold_until=_predebit_hold(intent),
 			raw=intent,
@@ -511,12 +534,17 @@ class StripeAdapter(GatewayAdapter):
 			)
 		)
 
-		return {"checkout_url": session.get("url"), "session_id": session.get("id")}
+		# Stripe creates the SetupIntent of a setup mode session with the session.
+		return {
+			"checkout_url": session.get("url"),
+			"session_id": session.get("id"),
+			"setup_intent_id": session.get("setup_intent"),
+		}
 
 	def read_saved_card(self, setup_reference: str) -> dict:
 		"""The card a SetupIntent (`seti_`) or a setup Checkout Session (`cs_`) saved, read
 		from Stripe: payment method, customer, mandate and display fields. `{}` while the
-		customer has not finished."""
+		customer has not finished, and only `setup_error` when the bank refused the card."""
 		self._configure()
 		intent_id = setup_reference
 		if setup_reference.startswith("cs_"):
@@ -527,7 +555,7 @@ class StripeAdapter(GatewayAdapter):
 		intent = _to_dict(stripe.SetupIntent.retrieve(intent_id))
 		method_id = intent.get("payment_method")
 		if intent.get("status") != "succeeded" or not method_id:
-			return {}
+			return _unfinished_setup(intent)
 
 		card = (_to_dict(stripe.PaymentMethod.retrieve(method_id)).get("card")) or {}
 		return {
@@ -555,6 +583,66 @@ class StripeAdapter(GatewayAdapter):
 	def get_mandate_status(self, mandate_reference: str) -> str:
 		self._configure()
 		return _to_dict(stripe.Mandate.retrieve(mandate_reference)).get("status")
+
+
+def _declined(error: stripe.error.StripeError) -> PaymentResult:
+	"""A refused charge, with Stripe's reasons. `code` for a declined card is almost always
+	"card_declined"; the actual reason (insufficient_funds, lost_card, …) is the decline_code."""
+	body = getattr(error, "json_body", None) or {}
+	return PaymentResult(
+		success=False,
+		status="Failed",
+		failure_code=getattr(error, "code", None) or type(error).__name__,
+		decline_code=(body.get("error") or {}).get("decline_code"),
+		failure_reason=getattr(error, "user_message", None) or str(error),
+		raw=body,
+	)
+
+
+def _close_check_charge(intent: dict) -> None:
+	"""Leave nothing open that could capture later. Stripe cannot cancel a charge that is
+	processing, so an operator is told to refund it if it settles."""
+	if intent.get("status") == "processing":
+		frappe.log_error(title=f"Card check charge {intent.get('id')} is processing; refund it if it settles")
+		return
+	with _stripe_errors():
+		stripe.PaymentIntent.cancel(intent.get("id"))
+
+
+def _refund_check_charge(intent: dict, key: str) -> None:
+	"""Give the card check charge back. The card is proven either way, so a failed
+	refund is told to an operator and does not fail the card."""
+	try:
+		stripe.Refund.create(payment_intent=intent.get("id"), idempotency_key=f"{key}:refund")
+	except stripe.error.StripeError:
+		frappe.log_error(title=f"Card check refund failed for {intent.get('id')}")
+
+
+def _unfinished_check(intent: dict) -> PaymentResult:
+	"""A card check charge that did not succeed: waiting on the customer, or held. The
+	method fails either way, so the intent status stays in the reason, not the code."""
+	error = intent.get("last_payment_error") or {}
+	status = intent.get("status")
+	return PaymentResult(
+		success=False,
+		status="Failed",
+		gateway_transaction_id=intent.get("id"),
+		failure_code=error.get("code") or "check_unfinished",
+		decline_code=error.get("decline_code"),
+		failure_reason=error.get("message") or f"The card check charge ended as {status}.",
+		raw=intent,
+	)
+
+
+def _unfinished_setup(intent: dict) -> dict:
+	"""A SetupIntent that saved no card: only `setup_error` when the bank refused the card,
+	`{}` while the customer has not finished."""
+	error = intent.get("last_setup_error")
+	# Stripe leaves a refused SetupIntent open for the customer to try another card.
+	if intent.get("status") != "requires_payment_method" or not error:
+		return {}
+
+	return {"setup_error": {"failure_code": error.get("code"), "decline_code": error.get("decline_code")}}
 
 
 @contextmanager

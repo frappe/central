@@ -20,6 +20,7 @@ from frappe import _
 from central.billing import settings
 from central.billing.doctype.payment_attempt.payment_attempt import idempotency_key
 from central.billing.gateways.base import GatewayTimeout
+from central.billing.payments.decline import Failure
 from central.billing.states import transition
 
 # The unique idempotency key rejected the insert: this charge is already claimed.
@@ -213,10 +214,10 @@ def _charge_claimed_attempt(attempt_name: str) -> dict:
 		# gateway captured; invoice Paid waits on the webhook
 		transition(attempt, "Captured", actor="gateway", correlation=attempt.invoice)
 	else:
+		stamp_failure(attempt, result.failure)
 		transition(
-			attempt, "Failed", actor="gateway", correlation=attempt.invoice, reason=result.failure_reason
+			attempt, "Failed", actor="gateway", correlation=attempt.invoice, reason=attempt.failure_code
 		)
-		_stamp_failure(attempt, result.failure_code, result.decline_code, result.failure_reason, result.raw)
 		attempt.completed_at = frappe.utils.now_datetime()
 		_retire_method_if_mandate_failed(attempt, result.failure_code)
 	attempt.save(ignore_permissions=True)
@@ -297,7 +298,7 @@ def fail_unopened_order(attempt, error: Exception) -> None:
 	"""The gateway did not open the order, so nothing can be paid against this attempt.
 	Failing it frees the invoice for the next payment."""
 	transition(attempt, "Failed", actor="gateway", correlation=attempt.invoice, reason="order not created")
-	attempt.failure_reason = str(error)[:140]
+	stamp_failure(attempt, {"failure_code": "order_not_created", "failure_reason": str(error)})
 	# The paying member reads invoices but cannot write a Payment Attempt.
 	attempt.save(ignore_permissions=True)
 	_persist()
@@ -488,20 +489,22 @@ def apply_webhook(event_name: str) -> dict:
 	# found by the gateway's own ids. Payment notes are never read: the payer sets them.
 	from central.billing.doctype.top_up_order.top_up_order import TopupOrder
 
+	decline = (_extract_failure(adapter_key, payload) or {}) if is_failure else None
 	order = TopupOrder.for_payment(payment, event.gateway)
 	if order:
-		if not is_success:
-			_mark_event(event, "Ignored")
-			return {"handled": False, "reason": "topup_not_captured"}
-		result = order.credit_wallet(payment)
-		_mark_event(event, "Processed")
-		return {"handled": True, "result": "topup_credited", "team": order.team, **result}
+		return _apply_topup_event(event, order, payment, is_success, decline)
 
 	attempt_name = _attempt_for_payment(payment, event.gateway)
 	if not attempt_name:
-		_mark_event(event, "Ignored")
-		return {"handled": False, "reason": "no_matching_attempt"}
+		return _apply_unmatched_event(event, payment, decline)
 
+	return _apply_attempt_event(event, attempt_name, payment, is_authorised, decline)
+
+
+def _apply_attempt_event(
+	event, attempt_name: str, payment, is_authorised: bool, decline: dict | None
+) -> dict:
+	"""Hold, decline or settle the invoice attempt a charge event belongs to."""
 	attempt = frappe.get_doc("Payment Attempt", attempt_name)
 	attempt.flags.ignore_links = True  # only its status and outcome change here
 	event.payment_attempt = attempt_name
@@ -514,44 +517,8 @@ def apply_webhook(event_name: str) -> dict:
 		_mark_event(event, "Processed")
 		return {"handled": True, "result": "Authorised", "attempt": attempt_name}
 
-	if is_failure:
-		fell_back = None
-		# A failure matters only until the invoice is settled — never undo a Paid
-		# invoice (a sync `captured` attempt isn't final: Paid lands on the success
-		# webhook). Gate on invoice status, not attempt status, and act once.
-		inv_status = frappe.db.get_value("Invoice", attempt.invoice, "status")
-		if inv_status != "Paid" and attempt.status not in ("Failed", "Refunded"):
-			transition(attempt, "Failed", actor="webhook", correlation=attempt.invoice)
-			# Off-session declines surface their real reason here, not on the sync
-			# charge response — pull it off the event so the attempt records why.
-			detail = _extract_failure(adapter_key, payload)
-			if detail:
-				_stamp_failure(
-					attempt,
-					detail.get("failure_code"),
-					detail.get("decline_code"),
-					detail.get("failure_reason"),
-					detail.get("raw"),
-				)
-			attempt.completed_at = frappe.utils.now_datetime()
-			attempt.save(ignore_permissions=True)
-			from central.billing.platform import notifications
-
-			notifications.notify(
-				attempt.team,
-				"Payment Failure",
-				context={"invoice": attempt.invoice, "reason": attempt.failure_reason or "declined"},
-				reference_doctype="Invoice",
-				reference_name=attempt.invoice,
-			)
-			# Async decline: rotate to the next untried method (#28). No-op once
-			# every method has been exhausted.
-			if inv_status in ("Open", "Overdue"):
-				from central.billing.payments import collection
-
-				fell_back = collection.collect_invoice(attempt.invoice)
-		_mark_event(event, "Processed")
-		return {"handled": True, "result": "Failed", "attempt": attempt_name, "fell_back": fell_back}
+	if decline is not None:
+		return _apply_attempt_failure(event, attempt, decline)
 
 	if attempt.status == "Captured" and attempt.completed_at:
 		_mark_event(event, "Processed")  # already settled, by the callback or a replayed event
@@ -564,6 +531,39 @@ def apply_webhook(event_name: str) -> dict:
 	attempt.save(ignore_permissions=True)
 	_mark_event(event, "Processed")
 	return {"handled": True, "result": "paid", "invoice": attempt.invoice, "settled": settled}
+
+
+def _apply_attempt_failure(event, attempt, decline: dict) -> dict:
+	"""Fail an invoice attempt for its declined payment and try the team's next method."""
+	fell_back = None
+	# A failure matters only until the invoice is settled — never undo a Paid
+	# invoice (a sync `captured` attempt isn't final: Paid lands on the success
+	# webhook). Gate on invoice status, not attempt status, and act once.
+	inv_status = frappe.db.get_value("Invoice", attempt.invoice, "status")
+	if inv_status != "Paid" and attempt.status not in ("Failed", "Refunded"):
+		transition(attempt, "Failed", actor="webhook", correlation=attempt.invoice)
+		# Off-session declines surface their real reason here, not on the sync
+		# charge response — pull it off the event so the attempt records why.
+		stamp_failure(attempt, decline)
+		attempt.completed_at = frappe.utils.now_datetime()
+		attempt.save(ignore_permissions=True)
+		from central.billing.platform import notifications
+
+		notifications.notify(
+			attempt.team,
+			"Payment Failure",
+			context={"invoice": attempt.invoice, "reason": attempt.failure_reason or "declined"},
+			reference_doctype="Invoice",
+			reference_name=attempt.invoice,
+		)
+		# Async decline: rotate to the next untried method (#28). No-op once
+		# every method has been exhausted.
+		if inv_status in ("Open", "Overdue"):
+			from central.billing.payments import collection
+
+			fell_back = collection.collect_invoice(attempt.invoice)
+	_mark_event(event, "Processed")
+	return {"handled": True, "result": "Failed", "attempt": attempt.name, "fell_back": fell_back}
 
 
 def _attempt_for_payment(payment, gateway: str) -> str | None:
@@ -738,7 +738,37 @@ def _prune_webhook_events(cutoff) -> int:
 	return len(stale)
 
 
-def _extract_failure(adapter_key: str, payload: dict) -> dict | None:
+def _apply_topup_event(event, order, payment, is_success: bool, decline: dict | None) -> dict:
+	"""Credit a top-up for its captured payment, or keep why its payment was declined."""
+	if decline is not None:
+		order.record_decline(decline, event.gateway_event_id)
+		_mark_event(event, "Processed")
+		return {"handled": True, "result": "topup_declined", "team": order.team}
+	if not is_success:
+		_mark_event(event, "Ignored")
+		return {"handled": False, "reason": "topup_not_captured"}
+	result = order.credit_wallet(payment)
+	_mark_event(event, "Processed")
+	return {"handled": True, "result": "topup_credited", "team": order.team, **result}
+
+
+def _apply_unmatched_event(event, payment, decline: dict | None) -> dict:
+	"""A payment with no top-up and no invoice attempt. A declined mandate authorisation
+	is kept on the method it was for; anything else is not ours."""
+	from central.billing.payments import payments
+
+	method = None
+	if decline is not None:
+		method = payments.note_setup_payment_failure(event.gateway, payment.order_id, decline)
+	if method:
+		event.payment_method = method
+		_mark_event(event, "Processed")
+		return {"handled": True, "result": "setup_payment_declined", "payment_method": method}
+	_mark_event(event, "Ignored")
+	return {"handled": False, "reason": "no_matching_attempt"}
+
+
+def _extract_failure(adapter_key: str, payload: dict) -> Failure | None:
 	"""Pull the decline detail out of a failure webhook body, normalised to
 	{failure_code, decline_code, failure_reason, raw}. This is where an off-session
 	decline's real reason lives — the sync charge response often can't see it."""
@@ -803,14 +833,14 @@ def _retire_method_if_mandate_failed(attempt, failure_code):
 	collection_mode.trip(attempt.team, "mandate_failed")
 
 
-def _stamp_failure(attempt, failure_code, decline_code, failure_reason, raw):
-	"""Record the decline detail on a Payment Attempt. `raw` is stored as JSON on
-	the Code field; failure_reason is trimmed to the Small Text column width."""
-	attempt.failure_code = failure_code
-	attempt.decline_code = decline_code
-	attempt.failure_reason = (failure_reason or "")[:140] or None
-	if raw:
-		attempt.gateway_response = frappe.as_json(raw)
+def stamp_failure(attempt, failure: Failure) -> None:
+	"""Record the decline detail on a Payment Attempt. The gateway's `raw` answer is
+	stored as JSON on the Code field."""
+	from central.billing.payments import decline
+
+	attempt.update(decline.failure_fields(failure))
+	if failure.get("raw"):
+		attempt.gateway_response = frappe.as_json(failure["raw"])
 
 
 def _mark_event(event, status: str):

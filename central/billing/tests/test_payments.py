@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import frappe
 
+from central.billing.gateways.base import PaymentResult
 from central.billing.payments import payments
 from central.billing.tests.test_stripe_adapter import make_stripe_gateway
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
@@ -29,6 +30,19 @@ def saved_card(**fields):
 	}
 
 
+def card_check(success: bool) -> PaymentResult:
+	"""What the gateway answers to a card check."""
+	if success:
+		return PaymentResult(success=True, status="Validated")
+	return PaymentResult(
+		success=False,
+		status="Failed",
+		failure_code="card_declined",
+		decline_code="insufficient_funds",
+		failure_reason="Your card has insufficient funds.",
+	)
+
+
 @contextmanager
 def stub_adapter(validate=True, card=None):
 	"""Resolve a mock GatewayAdapter (no SDK touched)."""
@@ -38,7 +52,7 @@ def stub_adapter(validate=True, card=None):
 		"client_secret": "seti_secret_123",
 		"setup_intent_id": "seti_123",
 	}
-	adapter.validate_payment_method.return_value = validate
+	adapter.validate_payment_method.return_value = card_check(validate)
 	adapter.create_customer.return_value = "cus_created"
 	with patch("central.billing.gateways.registry.get_adapter", return_value=adapter):
 		yield adapter
@@ -89,6 +103,32 @@ class TestSetupAndConfirm(CardTestBase):
 		self.assertEqual(method.status, "Failed")
 		self.assertFalse(method.is_default)
 
+	def test_a_failed_card_check_keeps_the_gateway_reason(self):
+		with stub_adapter(validate=False):
+			setup = payments.initiate_payment_method_setup(TEAM, GATEWAY)
+			method = payments.confirm_payment_method(setup["payment_method"])
+
+		self.assertEqual((method.failure_code, method.decline_code), ("card_declined", "insufficient_funds"))
+		self.assertEqual(method.failure_reason, "Your card has insufficient funds.")
+		self.assertEqual(method.failed_attempts, 1)
+		self.assertTrue(method.last_failed_at)
+		event_reason = frappe.db.get_value(
+			"Billing Event", {"subject": method.name, "to_state": "Failed"}, "reason"
+		)
+		self.assertEqual(event_reason, "card_declined")
+
+	def test_a_failed_card_check_without_a_code_gets_one(self):
+		with stub_adapter() as adapter:
+			adapter.validate_payment_method.return_value = PaymentResult(success=False, status="Failed")
+			setup = payments.initiate_payment_method_setup(TEAM, GATEWAY)
+			method = payments.confirm_payment_method(setup["payment_method"])
+
+		self.assertEqual(method.failure_code, "payment_failed")
+		event_reason = frappe.db.get_value(
+			"Billing Event", {"subject": method.name, "to_state": "Failed"}, "reason"
+		)
+		self.assertEqual(event_reason, "payment_failed")
+
 	def test_a_failed_method_is_not_charged_again(self):
 		with stub_adapter(validate=False) as adapter:
 			setup = payments.initiate_payment_method_setup(TEAM, GATEWAY)
@@ -100,6 +140,31 @@ class TestSetupAndConfirm(CardTestBase):
 		adapter.validate_payment_method.assert_not_called()
 		self.assertEqual(method.status, "Failed")
 
+	def test_a_new_setup_cancels_the_abandoned_one_and_keeps_it(self):
+		with stub_adapter():
+			abandoned = payments.initiate_payment_method_setup(TEAM, GATEWAY)["payment_method"]
+			fresh = payments.initiate_payment_method_setup(TEAM, GATEWAY)["payment_method"]
+
+		self.assertEqual(frappe.db.get_value("Payment Method", abandoned, "status"), "Cancelled")
+		self.assertEqual(frappe.db.get_value("Payment Method", fresh, "status"), "Pending Validation")
+		self.assertTrue(
+			frappe.db.exists("Billing Event", {"subject": abandoned, "reason": "setup abandoned"})
+		)
+
+	def test_an_abandoned_setup_is_not_listed_for_the_team(self):
+		from central.billing.api import billing_api
+
+		detached = self.add_active_card()
+		frappe.db.set_value("Payment Method", detached, "status", "Cancelled")
+		with stub_adapter():
+			abandoned = payments.initiate_payment_method_setup(TEAM, GATEWAY)["payment_method"]
+			fresh = payments.initiate_payment_method_setup(TEAM, GATEWAY)["payment_method"]
+
+		listed = {row["name"] for row in billing_api._payment_method_rows(TEAM)}
+
+		self.assertNotIn(abandoned, listed)
+		self.assertEqual(listed, {fresh, detached})
+
 	def test_a_card_not_saved_yet_is_not_confirmed(self):
 		with stub_adapter() as adapter:
 			setup = payments.initiate_payment_method_setup(TEAM, GATEWAY)
@@ -109,6 +174,33 @@ class TestSetupAndConfirm(CardTestBase):
 		self.assertEqual(
 			frappe.db.get_value("Payment Method", setup["payment_method"], "status"), "Pending Validation"
 		)
+
+	def test_a_card_refused_at_setup_carries_its_reason(self):
+		with stub_adapter() as adapter:
+			setup = payments.initiate_payment_method_setup(TEAM, GATEWAY)
+			adapter.read_saved_card.return_value = {
+				"setup_error": {"failure_code": "card_declined", "decline_code": "insufficient_funds"}
+			}
+			frappe.local.message_log = []
+			with self.assertRaises(payments.CardDeclinedAtSetup) as raised:
+				payments.confirm_payment_method(setup["payment_method"])
+
+		reason = str(raised.exception)
+		self.assertTrue(reason.startswith("There wasn't enough balance."))
+		# frappe.throw logs the reason, so an API error response carries it to Pilot.
+		self.assertIn(reason, frappe.local.message_log[-1]["message"])
+
+	def test_a_refusal_we_cannot_word_gets_the_general_reason(self):
+		with stub_adapter() as adapter:
+			setup = payments.initiate_payment_method_setup(TEAM, GATEWAY)
+			adapter.read_saved_card.return_value = {
+				"setup_error": {"failure_code": "some_new_code", "decline_code": None}
+			}
+			with self.assertRaises(payments.CardDeclinedAtSetup) as raised:
+				payments.confirm_payment_method(setup["payment_method"])
+
+		self.assertTrue(str(raised.exception).startswith("We couldn't complete this payment."))
+		self.assertNotIn("some_new_code", str(raised.exception))
 
 	def test_a_card_saved_to_another_customer_fails(self):
 		with stub_adapter(card=saved_card(customer="cus_someone_else")) as adapter:

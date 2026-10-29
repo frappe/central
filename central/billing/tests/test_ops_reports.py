@@ -190,3 +190,77 @@ class TestInvoluntaryChurn(BillingTestCase):
 			{"from_date": "2026-06-01", "to_date": "2026-06-30"}
 		)
 		self.assertEqual(_row(rows)["recovered"], 0)
+
+
+class TestNewSignupsCountsOnlyMoney(BillingTestCase):
+	"""A signup is activated by money the customer paid, never by welcome credit alone."""
+
+	def _paid_invoice(self, team, amount_paid, credit_applied=0, paid_at="2026-07-03 10:00:00"):
+		frappe.get_doc(
+			{
+				"doctype": "Invoice",
+				"team": team,
+				"status": "Paid",
+				"period_start": "2026-06-01",
+				"period_end": "2026-06-30",
+				"currency": "INR",
+				"subtotal": 1000,
+				"total": 1000,
+				"credit_applied": credit_applied,
+				"amount_paid": amount_paid,
+				"paid_at": paid_at,
+			}
+		).insert(ignore_permissions=True)
+
+	def _stages(self, *teams):
+		from central.billing.report.new_signups import new_signups
+
+		_columns, rows, *_ = new_signups.execute({"from_date": "2026-01-01"})
+		return {row["team"]: row["stage"] for row in rows if row["team"] in teams}
+
+	def test_an_invoice_welcome_credit_covered_does_not_activate(self):
+		ensure_team("team-signup-credit")
+		self._paid_invoice("team-signup-credit", amount_paid=0, credit_applied=1000)
+		self.assertEqual(self._stages("team-signup-credit"), {"team-signup-credit": "Signed Up"})
+
+	def test_a_paid_invoice_or_a_top_up_activates(self):
+		from central.billing.revenue import credits
+
+		ensure_team("team-signup-card")
+		ensure_team("team-signup-topup")
+		self._paid_invoice("team-signup-card", amount_paid=1000)
+		credits._book_entry("team-signup-topup", "Credit", 500, "INR", extra={"paid_in": 1})
+
+		self.assertEqual(
+			self._stages("team-signup-card", "team-signup-topup"),
+			{"team-signup-card": "Activated", "team-signup-topup": "Activated"},
+		)
+
+	def test_an_abandoned_card_setup_is_not_a_payment_method(self):
+		from central.billing.report.new_signups import new_signups
+
+		ensure_team("team-signup-abandoned")
+		frappe.get_doc(
+			{
+				"doctype": "Payment Method",
+				"team": "team-signup-abandoned",
+				"gateway": make_stripe_gateway().name,
+				"method_type": "Card",
+				"status": "Cancelled",
+			}
+		).db_insert()
+
+		_columns, rows, *_ = new_signups.execute({"from_date": "2026-01-01"})
+		row = next(r for r in rows if r["team"] == "team-signup-abandoned")
+		self.assertIsNone(row["first_method"])
+		self.assertEqual(row["stage"], "Signed Up")
+
+	def test_first_paid_is_when_the_invoice_was_paid(self):
+		from central.billing.report.new_signups import new_signups
+
+		ensure_team("team-signup-paid-at")
+		self._paid_invoice("team-signup-paid-at", amount_paid=1000, paid_at="2026-07-03 10:00:00")
+
+		_columns, rows, *_ = new_signups.execute({"from_date": "2026-01-01"})
+		row = next(r for r in rows if r["team"] == "team-signup-paid-at")
+		self.assertEqual(str(row["first_paid"]), "2026-07-03 10:00:00")

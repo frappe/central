@@ -384,7 +384,7 @@ When a Raven post fails, or Raven is not configured, the alert goes to the email
 | `charge.dispute.*` | `disputes.apply_dispute` | Note on the invoice; a lost dispute cancels the invoice without a second refund. |
 | `mandate.updated` | `mandates.apply_mandate_event` | A revoked mandate cancels its Payment Method. |
 | `payment_method.detached` | `payments.apply_payment_method_event` | The card is cancelled and leaves the charge order. |
-| `setup_intent.setup_failed` | `payments.apply_payment_method_event` | A comment on the card. The card stays Pending Validation, because the customer can retry on the same SetupIntent. |
+| `setup_intent.setup_failed` | `payments.apply_payment_method_event` | The failure code, decline code and message on the card, its failed attempt count, and a `Payment Method Setup Failed` Billing Event. The card stays Pending Validation, because the customer can retry on the same SetupIntent. Central finds the card by the SetupIntent: an in-app setup keeps it as the Setup Reference, and a hosted setup keeps it as the Setup Intent ID. |
 | `charge.refunded`, `refund.processed` | none | Stored only. |
 
 **Subscribed events.** Each adapter's `webhook_events` lists the events Central subscribes to. `test_payment_gateway.TestWebhookEventList` fails when a handled event is not in that list.
@@ -520,6 +520,8 @@ charges.pay_invoice → create_invoice_payment_order (via gateway adapter)
 | Case | Result |
 |---|---|
 | No stored row | Nothing is settled or credited. The event is Ignored. |
+| A declined payment on a Top-up Order | The order keeps the failure code, decline code, message and failed attempt count of the last decline. Each decline also adds a `Top-up Order Declined` Billing Event with its failure code. A repeated webhook adds no second event. The order stays Created, because the payer can try again. |
+| A declined payment on a mandate authorisation order | The Pending Validation method keeps the failure, and a `Payment Method Setup Failed` Billing Event is added. |
 | Short or another currency | Nothing is settled. The invoice gets a comment and an Error Log entry. |
 | More than is due | The invoice is Paid and the surplus goes to the wallet. |
 | The invoice is no longer Open or Overdue | The payment goes to the wallet, once per payment id, and an operator is told. |

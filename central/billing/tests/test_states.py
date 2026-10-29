@@ -116,6 +116,7 @@ class TestDeclaredMachines(IntegrationTestCase):
 
 	def test_payment_method_edges(self):
 		self.assertTrue(states.PAYMENT_METHOD.allows("Pending Validation", "Active"))
+		self.assertTrue(states.PAYMENT_METHOD.allows("Pending Validation", "Cancelled"))  # abandoned
 		self.assertTrue(states.PAYMENT_METHOD.allows("Active", "Expired"))
 		self.assertTrue(states.PAYMENT_METHOD.allows("Active", "Cancelled"))
 		self.assertFalse(states.PAYMENT_METHOD.allows("Cancelled", "Active"))  # terminal

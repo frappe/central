@@ -17,6 +17,7 @@ from central.billing.api.dashboard._shared import (
 	_resolve_team,
 	_team_currency,
 )
+from central.billing.payments import decline
 
 
 @frappe.whitelist()
@@ -121,16 +122,23 @@ def initiate_card_setup(team: str | None = None, gateway: str | None = None) -> 
 
 @frappe.whitelist(methods=["POST"])
 def confirm_card(payment_method: str | None = None) -> dict:
-	"""Confirm a card the gateway SDK saved — runs the micro-charge validation.
+	"""Confirm a card the customer saved in the console card dialog.
 
-	The card, its label, expiry and any India mandate are read from the gateway by the
-	setup this method was opened with, never taken from the request."""
+	1. The caller must hold billing manage on the method's team.
+	2. The card, its label, expiry, mandate and any refusal are read from the gateway
+	   by the setup this method was opened with, never taken from the request.
+	3. A saved card runs the micro-charge validation and answers its confirmation.
+	4. A card the bank refused at setup answers why and what to do next, and the
+	   method stays Pending Validation. The setup webhook records the failure."""
 	from central.billing.payments import payments
 
 	team = frappe.db.get_value("Payment Method", payment_method, "team")
 	_require_manage(team)
-	method = payments.confirm_payment_method(payment_method)
-	return {"payment_method": method.name, "status": method.status}
+	try:
+		return payments.confirm_payment_method(payment_method).get_confirmation()
+	except payments.CardDeclinedAtSetup as declined:
+		frappe.clear_last_message()  # the reason goes back in the answer, not as a second alert
+		return {"payment_method": payment_method, "status": "Pending Validation", "message": str(declined)}
 
 
 @frappe.whitelist(methods=["POST"])
@@ -185,8 +193,6 @@ def _fallback_reason(team: str, entry: dict | None, after_decline: bool) -> str 
 	field feeds the gateway comparison report, so a wrong value there is a wrong
 	answer to which rail authorises better.
 	"""
-	from central.billing.payments import decline
-
 	instrument_reason = entry["fallback_reason"] if entry else None
 	if not after_decline:
 		return instrument_reason
@@ -216,7 +222,7 @@ def confirm_payment_method_order(
 			"razorpay_signature": razorpay_signature,
 		},
 	)
-	return {"payment_method": method.name, "status": method.status}
+	return method.get_confirmation()
 
 
 @frappe.whitelist(methods=["POST"])

@@ -75,7 +75,7 @@ def reconcile_attempt(attempt_name: str, now=None) -> dict:
 		_resolve_paid(attempt)
 		return {"attempt": attempt_name, "resolved": "paid", "gateway_status": status}
 	if status in _GATEWAY_FAILED:
-		_resolve_failed(attempt, f"gateway:{status}")
+		_resolve_failed(attempt, f"gateway_{status}", f"The gateway reports the payment as {status}.")
 		return {"attempt": attempt_name, "resolved": "Failed", "gateway_status": status}
 
 	# Still pending/unknown at the gateway — escalate if it has aged out.
@@ -223,7 +223,7 @@ def _resolve_checkout(attempt, age_hours: float) -> dict:
 		return {"attempt": attempt.name, "resolved": "paid", "reason": "checkout_paid"}
 	if age_hours < CHECKOUT_OPEN_HOURS:
 		return {"attempt": attempt.name, "unresolved": "awaiting_payer"}
-	_resolve_failed(attempt, "checkout never completed")
+	_resolve_failed(attempt, "checkout_abandoned", "The payer never completed the checkout.")
 	return {"attempt": attempt.name, "resolved": "Failed", "reason": "no_txn"}
 
 
@@ -291,11 +291,13 @@ def _resolve_paid(attempt, payment=None):
 	charges._settle_invoice(attempt, payment)
 
 
-def _resolve_failed(attempt, reason: str):
-	transition(attempt, "Failed", actor="reconciliation", correlation=attempt.invoice, reason=reason[:140])
+def _resolve_failed(attempt, failure_code: str, reason: str):
+	from central.billing.payments import charges
+
+	transition(attempt, "Failed", actor="reconciliation", correlation=attempt.invoice, reason=failure_code)
 	attempt.completed_at = frappe.utils.now_datetime()
 	attempt.resolved_by = "Reconciliation"
-	attempt.failure_reason = reason[:140]
+	charges.stamp_failure(attempt, {"failure_code": failure_code, "failure_reason": reason})
 	attempt.save(ignore_permissions=True)
 
 

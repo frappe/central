@@ -21,6 +21,7 @@ from central.billing.api.dashboard._shared import (
 	_require_billing_setup,
 	_team_currency,
 )
+from central.billing.doctype.payment_method.payment_method import held_method_filters
 from central.billing.gateways import capabilities
 from central.infrastructure.doctype.resource_action.resource_action import PENDING_STATES
 
@@ -213,6 +214,7 @@ def _payment_method_rows(team: str) -> list[dict]:
 		"Payment Method",
 		{"team": team},
 		["name", "method_type", "display_label", "is_default", "status"],
+		or_filters=held_method_filters(),
 		order_by="is_default desc, priority asc, creation asc",
 	)
 	return [
@@ -311,7 +313,7 @@ def confirm_payment_method(
 	else:
 		method = payments.confirm_payment_method(payment_method)
 
-	return {"payment_method": method.name, "status": method.status}
+	return method.get_confirmation()
 
 
 # ── Add a card via hosted setup checkout (Stripe) ─────────────────────────────
@@ -345,7 +347,7 @@ def create_payment_method_checkout(redirect_url: str, gateway: str | None = None
 		)
 
 	adapter = get_adapter(gw_doc)
-	payments._discard_abandoned_setups(team, gw_doc.name)  # reap prior never-finished attempts
+	payments._cancel_abandoned_setups(team, gw_doc.name)  # close prior never-finished attempts
 	customer = payments.ensure_gateway_customer(team, gw_doc.name, adapter)
 	session = adapter.create_setup_checkout_session(
 		customer, success_url=redirect_url, cancel_url=redirect_url
@@ -361,6 +363,7 @@ def create_payment_method_checkout(redirect_url: str, gateway: str | None = None
 			"status": "Pending Validation",
 			"gateway_customer_id": customer,
 			"setup_reference": session["session_id"],
+			"setup_intent_id": session.get("setup_intent_id"),
 		}
 	).insert(ignore_permissions=True)
 	reference = f"{gw_doc.name}|{session['session_id']}|{method.name}"
@@ -382,7 +385,7 @@ def _activate_setup(method_name: str) -> dict:
 	except payments.CardNotSaved:
 		frappe.clear_last_message()
 		return {"status": "pending", "active": False}
-	return {"status": method.status, "active": method.status == "Active", "label": method.display_label}
+	return {**method.get_confirmation(), "active": method.status == "Active", "label": method.display_label}
 
 
 # nosemgrep: guest-whitelisted-method -- pilot_credential_auth verifies the caller below.
@@ -407,8 +410,6 @@ def confirm_payment_method_checkout(reference: str) -> dict:
 		result = _activate_setup(method_name)
 	if result["status"] == "pending":
 		result["message"] = "Awaiting card entry."
-	elif result["status"] == "Failed":
-		result["message"] = _("We could not verify this card. Try another card.")
 	return result
 
 

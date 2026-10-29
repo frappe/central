@@ -26,6 +26,7 @@ from central.billing.gateways.base import (
 	VerifiedPayment,
 	WebhookNotFound,
 	header_value,
+	token_check,
 )
 
 # Razorpay raises these for transient/server failures; declines are BadRequestError.
@@ -155,10 +156,10 @@ class RazorpayAdapter(GatewayAdapter):
 			"recurring": 1,
 		}
 
-	def validate_payment_method(self, payment_method) -> bool:
+	def validate_payment_method(self, payment_method) -> PaymentResult:
 		"""Razorpay validation is the mandate authorisation itself (token.confirmed);
 		a live token is the proof. No separate micro-charge."""
-		return bool(payment_method.gateway_method_id)
+		return token_check(payment_method)
 
 	def prepare_charge(self, invoice, receipt: str) -> str | None:
 		"""The order a recurring charge is made against. Razorpay has no idempotency key
