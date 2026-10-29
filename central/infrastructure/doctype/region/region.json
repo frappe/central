@@ -40,7 +40,9 @@
   "cargo_registered_at",
   "cargo_delivery_section",
   "cargo_webhook_secret",
-  "telemetry_data_source"
+  "telemetry_data_source",
+  "section_break_gfuz",
+  "max_storage_bundle_size"
  ],
  "fields": [
   {
@@ -260,6 +262,15 @@
    "fieldname": "region_id",
    "fieldtype": "Int",
    "label": "Region ID"
+  },
+  {
+   "fieldname": "section_break_gfuz",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "max_storage_bundle_size",
+   "fieldtype": "Int",
+   "label": "Max Storage Bundle Size"
   }
  ],
  "grid_page_length": 50,
@@ -296,7 +307,7 @@
    "link_fieldname": "region"
   }
  ],
- "modified": "2026-10-27 18:51:33.271906",
+ "modified": "2026-10-30 02:44:21.365432",
  "modified_by": "Administrator",
  "module": "Infrastructure",
  "name": "Region",

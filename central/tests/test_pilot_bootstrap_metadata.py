@@ -8,6 +8,7 @@ from central.integrations.atlas import MAXIMUM_METADATA_BYTES
 from central.integrations.pilot import METADATA_VALUE_BYTES
 from central.integrations.resource_actions import _create_payload
 from central.tests.test_iam import ensure_user
+from central.tests.utils import ensure_region
 
 PILOT = "central.integrations.pilot"
 TELEMETRY_CONFIG = {"endpoint": "https://datum.in-mumbai.example.test", "token": "datum-token"}
@@ -166,3 +167,46 @@ class TestPilotBootstrapMetadata(IntegrationTestCase):
 			metadata = _create_payload(pilot_request())["metadata"]
 
 		self.assertNotIn("ai_keys", json.loads(metadata["pilot-common-site-config"]))
+
+	def test_a_region_with_a_bundle_size_boots_pilot_with_a_capped_bucket(self):
+		region = ensure_region("bundle-test")
+		frappe.db.set_value("Region", region, "max_storage_bundle_size", 25)
+		request = pilot_request()
+		request.region = region
+		cargo = Mock()
+		cargo.create_bucket.return_value = {
+			"credentials": {"access_key": "access", "secret_access_key": "secret"}
+		}
+		with (
+			patch(f"{PILOT}.get_telemetry_base_url", return_value=None),
+			patch(f"{PILOT}.ObjectStorageClient.from_region", return_value=cargo),
+			patch(f"{PILOT}.get_storage_endpoint_url", return_value="https://s3.example.test"),
+			patch(f"{PILOT}.get_bucket_name", return_value="7-bundle-test-server-action-1"),
+		):
+			metadata = _create_payload(request)["metadata"]
+
+		cargo.set_quota.assert_called_once_with("7-bundle-test-server-action-1", 25, 0)
+		self.assertEqual(
+			json.loads(metadata["pilot-config"]),
+			{
+				"s3": {
+					"access_key": "access",
+					"secret_key": "secret",
+					"bucket": "7-bundle-test-server-action-1",
+					"provider": "garage",
+					"region": region,
+					"endpoint_url": "https://s3.example.test",
+				}
+			},
+		)
+		self.assertLessEqual(len(metadata["pilot-config"].encode()), METADATA_VALUE_BYTES)
+
+	def test_a_region_without_a_bundle_size_creates_no_bucket(self):
+		with (
+			patch(f"{PILOT}.get_telemetry_base_url", return_value=None),
+			patch(f"{PILOT}.ObjectStorageClient") as cargo,
+		):
+			metadata = _create_payload(pilot_request())["metadata"]
+
+		self.assertNotIn("pilot-config", metadata)
+		cargo.from_region.assert_not_called()

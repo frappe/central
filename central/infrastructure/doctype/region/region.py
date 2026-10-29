@@ -44,6 +44,7 @@ class Region(AtlasConnectionMixin, CargoConnectionMixin, Document):
 		last_synced_at: DF.Datetime | None
 		latitude: DF.Float
 		longitude: DF.Float
+		max_storage_bundle_size: DF.Int
 		provider: DF.Literal[
 			"", "AWS", "Hetzner", "Frappe", "OCI", "DigitalOcean", "Scaleway", "Self-Managed", "Fake"
 		]

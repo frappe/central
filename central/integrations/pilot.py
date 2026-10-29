@@ -11,7 +11,9 @@ from central.api.jwks import jwks_document
 from central.api.pilot import get_telemetry_base_url, region_id_of
 from central.infrastructure.doctype.pilot_credential.pilot_credential import PilotCredential
 from central.infrastructure.doctype.user_mail_account.user_mail_account import UserMailAccount
+from central.integrations.object_storage import ObjectStorageClient
 from central.services.doctype.ai_trial_key.ai_trial_key import AITrialKey
+from central.services.doctype.team_service.team_service import get_bucket_name, get_storage_endpoint_url
 from central.sso import central_url, jwks_url, mint_bench_login, mint_datum_token, mint_site_login
 
 PILOT_TASK_TIMEOUT_SECONDS = 35
@@ -73,7 +75,36 @@ def get_bootstrap_metadata(action) -> dict[str, str]:
 	if common_config:
 		metadata["pilot-common-config"] = json.dumps(common_config)
 
+	# Pilot merges pilot-config into bench.toml, whose [s3] section holds its backup bucket.
+	if bucket := get_bundled_bucket(action):
+		metadata["pilot-config"] = json.dumps({"s3": bucket})
+
 	return metadata
+
+
+def get_bundled_bucket(action) -> dict | None:
+	"""Create the server's backup bucket in Cargo, capped at the region's bundle size, and
+	return its [s3] settings. None when the region bundles no bucket."""
+	size_gib = frappe.db.get_value("Region", action.region, "max_storage_bundle_size")
+	if not size_gib:
+		return None
+
+	endpoint_url = get_storage_endpoint_url(action.region)
+	client = ObjectStorageClient.from_region(action.region)
+	name = get_bucket_name(action.team, action.region, action.server_id)
+	credentials = client.create_bucket(name)["credentials"]
+	# Cargo enforces the cap. Zero leaves the object count unlimited.
+	client.set_quota(name, size_gib, 0)
+
+	return {
+		"access_key": credentials["access_key"],
+		"secret_key": credentials["secret_access_key"],
+		"bucket": name,
+		# Pilot signs path-style requests for any provider but AWS, which Garage needs.
+		"provider": "garage",
+		"region": action.region,
+		"endpoint_url": endpoint_url,
+	}
 
 
 def get_telemetry_configuration(action) -> dict:
