@@ -50,6 +50,25 @@ frappe.ui.form.on("Virtual Machine", {
 					__("Server"),
 				);
 			}
+			if (frm.doc.status === "Running" && frm.doc.atlas_vm_id) {
+				const openConsole = (mode) => {
+					// Open the window inside the click, or the browser blocks the pop-up after the call.
+					const tab = window.open("about:blank", `console-${frm.doc.resource_id}`, "popup,width=960,height=640");
+					frappe
+						.call({
+							method: "central.api.servers.open_console",
+							args: { team: frm.doc.team, resource_id: frm.doc.resource_id, mode },
+							freeze: true,
+						})
+						.then((r) => {
+							if (r.exc || !r.message?.url) return tab?.close();
+							tab.location.href = r.message.url;
+						})
+						.catch(() => tab?.close());
+				};
+				frm.add_custom_button(__("SSH session"), () => openConsole("ssh"), __("Web Console"));
+				frm.add_custom_button(__("Serial console (TTY)"), () => openConsole("tty"), __("Web Console"));
+			}
 			frm.add_custom_button(
 				__("Revoke Pilot Access"),
 				() =>

@@ -9,7 +9,6 @@ from central.api.teams import (
 	create_team,
 	invite_team_member,
 	set_onboarding_step,
-	skip_onboarding,
 )
 from central.billing.payments.provisioning import grant_welcome_credits
 from central.billing.tests.utils import billing_settings
@@ -185,7 +184,7 @@ class TestOnboardingSteps(IntegrationTestCase):
 	def test_owner_finishes_one_step_and_skips_the_rest(self):
 		frappe.set_user(self.owner)
 		set_onboarding_step(self.team, "billing", "Done")
-		skip_onboarding(self.team)
+		frappe.get_doc("Team", self.team).skip_onboarding()
 
 		self.assertEqual(
 			onboarding_steps(self.team), {"invite": "Skipped", "billing": "Done", "start": "Skipped"}
@@ -200,7 +199,7 @@ class TestOnboardingSteps(IntegrationTestCase):
 		with self.assertRaises(frappe.PermissionError):
 			set_onboarding_step(self.team, "invite", "Skipped")
 		with self.assertRaises(frappe.PermissionError):
-			skip_onboarding(self.team)
+			frappe.get_doc("Team", self.team).skip_onboarding()
 		self.assertEqual(set(onboarding_steps(self.team).values()), {"Pending"})
 
 	def test_a_team_editor_cannot_change_onboarding_through_a_plain_save(self):
