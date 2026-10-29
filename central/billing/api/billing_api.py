@@ -417,7 +417,7 @@ def _activate_setup(method_name: str) -> dict:
 
 # nosemgrep: guest-whitelisted-method -- pilot_credential_auth verifies the caller below.
 @frappe.whitelist(allow_guest=True, methods=["POST"])
-@rate_limit(limit=20, seconds=60 * 60)
+@rate_limit(limit=300, seconds=60 * 60)
 @pilot_credential_auth
 def confirm_payment_method_checkout(reference: str) -> dict:
 	"""Poll a hosted card setup. Once the gateway reports the card saved, store its
