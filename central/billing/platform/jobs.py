@@ -29,8 +29,9 @@ def each_isolated(job: str, doctype: str, names, work) -> list:
 			)
 			continue
 		if not frappe.in_test:
-			# The per-row boundary is the point: the next row's failure must not undo this one.
-			frappe.db.commit()  # nosemgrep
+			# The per-row boundary is the point: the next row's failure must not undo this one,
+			# and the row locks this item took are released now, not at the end of the run.
+			frappe.db.commit()  # nosemgrep: frappe-manual-commit -- one row, one transaction
 	return results
 
 
