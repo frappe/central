@@ -37,9 +37,9 @@ You select keys when you [create a server](/servers/create). To change them late
 
 The change applies at the next sign-in. Open sessions stay connected.
 
-## WireGuard access
+## WireGuard VPN
 
-In a region with a WireGuard gateway, the **WireGuard** section lets the team's [WireGuard devices](/servers/wireguard) reach the private IPv6 address of the server. It is off by default. Turn on **WireGuard access** to allow them. Click **Manage devices** to add or delete a device.
+In a region with a WireGuard VPN gateway, the **WireGuard VPN** switch lets the team's [WireGuard VPN devices](/servers/wireguard) reach the private IPv6 address of the server. It is off by default. When it is on, the server heading shows a **VPN** tag. Click **Manage devices** to add or delete a device.
 
 ## Sign in
 

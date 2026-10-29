@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Button, Switch } from 'frappe-ui'
+import { Switch } from 'frappe-ui'
 import { computed } from 'vue'
 import SettingsSection from '@/components/common/SettingsSection.vue'
 import { useCapabilities } from '@/composables/useCapabilities'
@@ -25,35 +25,34 @@ const { setWireGuardAccess, isSavingAccess } = useServerWireGuardAccess(
 async function toggle(enabled: boolean): Promise<void> {
 	if (!(await setWireGuardAccess(enabled))) return
 
-	successToast(enabled ? 'WireGuard access is on' : 'WireGuard access is off')
+	successToast(enabled ? 'WireGuard VPN is on' : 'WireGuard VPN is off')
 	emit('changed')
 }
 </script>
 
 <template>
-	<SettingsSection
-		title="WireGuard"
-		description="Devices that reach this server over the regional gateway."
-	>
-		<template v-if="canManageWireGuard" #actions>
-			<Button
-				icon-left="lucide-shield"
-				label="Manage devices"
+	<SettingsSection title="WireGuard VPN">
+		<template #description>
+			Let your team's WireGuard VPN devices reach this server at its private
+			address.
+			<button
+				v-if="canManageWireGuard"
+				type="button"
+				class="text-p-sm-medium text-ink-gray-8 underline"
 				@click="openSettings('wireguard')"
-			/>
+			>
+				Manage devices
+			</button>
 		</template>
 
-		<Switch
-			:model-value="hasAccess"
-			:disabled="!canManageNetwork || isSavingAccess"
-			label="WireGuard access"
-			:description="
-				hasAccess
-					? 'WireGuard devices of your team reach this server at its private IPv6 address.'
-					: 'Lets WireGuard devices of your team reach the private address of this server.'
-			"
-			class="rounded-6 px-2 py-3"
-			@update:model-value="toggle"
-		/>
+		<template #actions>
+			<Switch
+				:model-value="hasAccess"
+				:disabled="!canManageNetwork || isSavingAccess"
+				@update:model-value="toggle"
+			>
+				<template #label><span class="sr-only">WireGuard VPN</span></template>
+			</Switch>
+		</template>
 	</SettingsSection>
 </template>

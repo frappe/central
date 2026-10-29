@@ -45,8 +45,19 @@ export const buildConfig = (
 		'',
 	].join('\n')
 
+/** The customer guide for WireGuard VPN. */
+export const WIREGUARD_DOCS_URL =
+	'https://frappe.github.io/central/servers/wireguard'
+
+/** Stands in for a private key the browser no longer has. */
+export const PRIVATE_KEY_PLACEHOLDER = '<your private key>'
+
 /** wg-quick takes the interface name from the file name, at most 15 characters. */
-export function downloadConfig(device: WireGuardDevice, config: string): void {
+export function downloadConfig(
+	device: WireGuardDevice,
+	privateKey: string,
+): void {
+	const config = buildConfig(device, privateKey || PRIVATE_KEY_PLACEHOLDER)
 	const link = document.createElement('a')
 	link.href = URL.createObjectURL(new Blob([config], { type: 'text/plain' }))
 	const name = device.title

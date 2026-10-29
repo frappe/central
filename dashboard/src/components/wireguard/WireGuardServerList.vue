@@ -1,57 +1,82 @@
 <script setup lang="ts">
-import { Badge, Button } from 'frappe-ui'
-import CopyableValue from '@/components/common/CopyableValue.vue'
-import { useCapabilities } from '@/composables/useCapabilities'
-import type { WireGuardServer } from '@/types/wireguard'
+import { TextInput } from 'frappe-ui'
+import { computed, ref } from 'vue'
+import WireGuardServerRow from '@/components/wireguard/WireGuardServerRow.vue'
+import type { WireGuardRegion, WireGuardServer } from '@/types/wireguard'
 
 interface Props {
+	regions: WireGuardRegion[]
 	servers: WireGuardServer[]
 }
 
-defineProps<Props>()
-const { canManageNetwork } = useCapabilities()
+const props = defineProps<Props>()
+const emit = defineEmits<{ changed: [] }>()
+
+const query = ref('')
+const isSearchable = computed(() => props.servers.length > 6)
+const matches = (server: WireGuardServer): boolean => {
+	const text = query.value.trim().toLowerCase()
+	return [server.title, server.ipv6_address ?? '']
+		.join(' ')
+		.toLowerCase()
+		.includes(text)
+}
+
+// A device reaches only its own region, so the servers group by region.
+const groups = computed(() =>
+	props.regions
+		.map((region) => ({
+			name: region.name,
+			label: region.display_name || region.name,
+			servers: props.servers.filter(
+				(server) => server.region === region.name && matches(server),
+			),
+		}))
+		.filter((group) => group.servers.length),
+)
 </script>
 
 <template>
-	<div class="space-y-2">
-		<p class="text-base-medium text-ink-gray-8">
-			Servers this device can reach
-		</p>
-		<p v-if="!servers.length" class="text-p-sm text-ink-gray-5">
-			No servers yet. A new server is reachable once you turn on its WireGuard
-			access.
-		</p>
-		<ul v-else class="divide-y divide-outline-gray-1">
-			<li
-				v-for="server in servers"
+	<TextInput
+		v-if="isSearchable"
+		v-model="query"
+		type="search"
+		placeholder="Search servers"
+		aria-label="Search servers"
+	>
+		<template #prefix>
+			<span class="lucide-search size-4 text-ink-gray-5" aria-hidden="true" />
+		</template>
+	</TextInput>
+
+	<p
+		v-if="!groups.length && query.trim()"
+		class="py-4 text-p-sm text-ink-gray-6"
+	>
+		No server matches “{{ query.trim() }}”.
+		<button
+			type="button"
+			class="text-p-sm-medium text-ink-gray-8 underline"
+			@click="query = ''"
+		>
+			Clear search
+		</button>
+	</p>
+	<p v-else-if="!groups.length" class="text-p-sm text-ink-gray-5">
+		No servers in a WireGuard VPN region yet.
+	</p>
+
+	<section v-for="group in groups" v-else :key="group.name">
+		<h3 v-if="regions.length > 1" class="text-sm-medium text-ink-gray-6">
+			{{ group.label }}
+		</h3>
+		<ul class="divide-y divide-outline-gray-1">
+			<WireGuardServerRow
+				v-for="server in group.servers"
 				:key="server.resource_id"
-				class="flex items-center justify-between gap-3 py-2"
-			>
-				<div class="min-w-0 space-y-1">
-					<p class="truncate text-base text-ink-gray-8">{{ server.title }}</p>
-					<CopyableValue
-						v-if="server.ipv6_address"
-						:value="
-							server.has_wireguard_access
-								? `ssh root@${server.ipv6_address}`
-								: server.ipv6_address
-						"
-						:label="server.has_wireguard_access ? 'SSH command' : 'Private address'"
-					/>
-				</div>
-				<Badge
-					v-if="server.has_wireguard_access"
-					theme="green"
-					label="Reachable"
-				/>
-				<Badge v-else-if="!canManageNetwork" theme="gray" label="Access off" />
-				<Button
-					v-else
-					size="sm"
-					label="Turn on access"
-					:route="`/servers/${server.resource_id}/access`"
-				/>
-			</li>
+				:server="server"
+				@changed="emit('changed')"
+			/>
 		</ul>
-	</div>
+	</section>
 </template>

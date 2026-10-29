@@ -29,7 +29,7 @@ export function useServerWireGuardAccess(resourceId: Ref<string>) {
 			})
 			return true
 		} catch (error) {
-			reportError(error, { title: "WireGuard access wasn't changed" })
+			reportError(error, { title: "WireGuard VPN wasn't changed" })
 			return false
 		}
 	}

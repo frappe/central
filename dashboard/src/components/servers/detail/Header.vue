@@ -195,6 +195,22 @@ const menu = computed(() => {
 						:theme="visual.badgeTheme"
 						:class="{ 'animate-pulse': visual.motion !== 'none' }"
 					/>
+
+					<Tooltip
+						v-if="details?.has_wireguard_access"
+						text="Your team's WireGuard VPN devices reach this server at its private address."
+					>
+						<RouterLink
+							:to="`/servers/${server.resource_id}/access`"
+							class="shrink-0 rounded-full focus-visible:ring-2 focus-visible:ring-outline-gray-3"
+						>
+							<Badge label="VPN" theme="blue">
+								<template #prefix>
+									<span class="lucide-shield-check size-3" aria-hidden="true" />
+								</template>
+							</Badge>
+						</RouterLink>
+					</Tooltip>
 				</div>
 
 				<ul

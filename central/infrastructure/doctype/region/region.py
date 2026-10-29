@@ -118,7 +118,7 @@ class Region(AtlasConnectionMixin, CargoConnectionMixin, Document):
 		"""A WireGuard gateway client for one region, with a freshly minted token."""
 		doc = frappe.get_cached_doc("Region", region)
 		if not doc.has_wireguard_gateway:
-			frappe.throw(_("WireGuard is not available in this region yet."), WireGuardGatewayError)
+			frappe.throw(_("WireGuard VPN is not available in this region yet."), WireGuardGatewayError)
 
 		return WireGuardGatewayClient(
 			Region.get_service_url("wireguard", region), mint_wireguard_token(doc.get_atlas_region_id())

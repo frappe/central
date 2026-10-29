@@ -36,10 +36,14 @@ export type SettingsTab =
 	| 'ssh-keys'
 	| 'wireguard'
 
+/** The sidebar sections, in display order. */
+export const SETTINGS_GROUPS = ['Account', 'Administration', 'Access'] as const
+export type SettingsGroup = (typeof SETTINGS_GROUPS)[number]
+
 export interface SettingsTabDef {
 	value: SettingsTab
 	/** Which section of the sidebar the entry sits in. */
-	group: 'Account' | 'Administration'
+	group: SettingsGroup
 	/** Sidebar entry and mobile row label. */
 	label: string
 	/** Lucide class for the entry; the profile tab uses your avatar instead. */
@@ -105,7 +109,7 @@ export const SETTINGS_TABS: SettingsTabDef[] = [
 	},
 	{
 		value: 'ssh-keys',
-		group: 'Administration',
+		group: 'Access',
 		label: 'SSH keys',
 		icon: 'lucide-key-round',
 		title: 'SSH keys',
@@ -115,12 +119,12 @@ export const SETTINGS_TABS: SettingsTabDef[] = [
 	},
 	{
 		value: 'wireguard',
-		group: 'Administration',
-		label: 'WireGuard',
+		group: 'Access',
+		label: 'WireGuard VPN',
 		icon: 'lucide-shield',
-		title: 'WireGuard',
+		title: 'WireGuard VPN',
 		description:
-			'Devices that reach your servers over their private addresses.',
+			"Connect a laptop or phone to your servers' private addresses through an encrypted tunnel.",
 		component: WireGuardForm,
 		requires: 'wireguard',
 	},
