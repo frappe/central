@@ -24,7 +24,7 @@ and it gets its own credit note for just that amount.
 import frappe
 from frappe import _
 
-from central.billing.platform.records import mark_billing_write
+from central.billing.platform.records import save_billing_record
 from central.billing.states import transition
 
 # CGST Act section 34: a credit note is issued by 30 November after the end of the
@@ -65,7 +65,7 @@ def cancel_and_refund(invoice: str, reason: str, dispute: dict | None = None) ->
 		_book_refund(doc, "Wallet", wallet, reason)
 
 	transition(doc, "Cancelled", reason=reason, actor=frappe.session.user)
-	mark_billing_write(doc).save(ignore_permissions=True)
+	save_billing_record(doc)
 	doc.add_comment("Info", f"Cancelled and refunded: {reason}")
 	enqueue_steps(invoice)
 	return {"invoice": invoice, "refunds": _refunds(invoice)}
@@ -159,7 +159,7 @@ def retry_failed_refunds(invoice: str) -> int:
 			left -= frappe.utils.flt(refund.amount)
 		refund.attempts = (refund.attempts or 0) + 1
 		transition(refund, _UNDER_WAY, actor=frappe.session.user, correlation=invoice)
-		mark_billing_write(refund).save(ignore_permissions=True)
+		save_billing_record(refund)
 	if failed:
 		enqueue_steps(invoice)
 	return len(failed)
@@ -259,7 +259,7 @@ def _settle(doc, refund) -> None:
 		if result.status == "Pending":
 			# Accepted, not paid out. The refund webhook or reconciliation finishes it.
 			transition(refund, "Pending", actor="refund", correlation=refund.invoice, amount=refund.amount)
-			mark_billing_write(refund).save(ignore_permissions=True)
+			save_billing_record(refund)
 			return
 		settle_gateway_refund(refund, result.status)
 
@@ -328,13 +328,13 @@ def _mark_refunded(doc, refund, actor: str) -> None:
 	)
 	if sum(frappe.utils.flt(a) for a in back) + 0.005 >= frappe.utils.flt(attempt.amount):
 		transition(attempt, "Refunded", actor=actor, correlation=doc.name, amount=refund.amount)
-		mark_billing_write(attempt).save(ignore_permissions=True)
+		save_billing_record(attempt)
 
 
 def _finish(refund, status: str) -> None:
 	transition(refund, status, actor="refund", correlation=refund.invoice, amount=refund.amount)
 	refund.completed_at = frappe.utils.now_datetime()
-	mark_billing_write(refund).save(ignore_permissions=True)
+	save_billing_record(refund)
 
 
 # --- step 3 and 4: the accounting system ---------------------------------------------

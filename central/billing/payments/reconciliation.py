@@ -29,7 +29,7 @@ at the gateway and settles it through the same idempotent path.
 import frappe
 
 from central.billing.platform.jobs import each_isolated
-from central.billing.platform.records import mark_billing_write
+from central.billing.platform.records import save_billing_record
 from central.billing.states import transition
 
 _AMBIGUOUS = ("Initiated", "Authorised")
@@ -141,7 +141,7 @@ def reconcile_captured_attempt(attempt_name: str, now=None) -> dict:
 	if not attempt.completed_at or not attempt.resolved_by:
 		attempt.completed_at = attempt.completed_at or frappe.utils.now_datetime()
 		attempt.resolved_by = attempt.resolved_by or "Reconciliation"
-		mark_billing_write(attempt).save(ignore_permissions=True)
+		save_billing_record(attempt)
 	return {"attempt": attempt_name, "resolved": "paid", "gateway_status": status, "settled": settled}
 
 
@@ -319,7 +319,7 @@ def _resolve_paid(attempt, payment=None):
 	transition(attempt, "Captured", actor="reconciliation", correlation=attempt.invoice)
 	attempt.completed_at = frappe.utils.now_datetime()
 	attempt.resolved_by = "Reconciliation"
-	mark_billing_write(attempt).save(ignore_permissions=True)
+	save_billing_record(attempt)
 	charges._settle_invoice(attempt, payment)
 
 
@@ -330,7 +330,7 @@ def _resolve_failed(attempt, failure_code: str, reason: str):
 	attempt.completed_at = frappe.utils.now_datetime()
 	attempt.resolved_by = "Reconciliation"
 	charges.stamp_failure(attempt, {"failure_code": failure_code, "failure_reason": reason})
-	mark_billing_write(attempt).save(ignore_permissions=True)
+	save_billing_record(attempt)
 
 
 def _alert_ops(attempt, gateway_status: str):

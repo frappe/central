@@ -19,7 +19,7 @@ issued line item is never mutated (see billing.reissue_invoice).
 import frappe
 from frappe import _
 
-from central.billing.platform.records import mark_billing_write
+from central.billing.platform.records import save_billing_record
 from central.billing.revenue import credits
 from central.billing.states import transition
 
@@ -97,7 +97,7 @@ def _to_wallet(refund, attempt):
 		refund, "Completed", actor=frappe.session.user, correlation=attempt.invoice, amount=refund.amount
 	)
 	refund.completed_at = frappe.utils.now_datetime()
-	mark_billing_write(refund).save(ignore_permissions=True)
+	save_billing_record(refund)
 	return refund
 
 
@@ -123,6 +123,6 @@ def _to_source(refund, attempt, reason):
 				correlation=attempt.invoice,
 				amount=refund.amount,
 			)
-			mark_billing_write(attempt).save(ignore_permissions=True)
-	mark_billing_write(refund).save(ignore_permissions=True)
+			save_billing_record(attempt)
+	save_billing_record(refund)
 	return refund
