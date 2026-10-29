@@ -78,7 +78,7 @@ class AITrialKey(Document):
 				"grove_key": minted["name"],
 				"geography": minted["geography"],
 				"gateway_url": minted["gateway_url"],
-				"cap": minted["cap"],
+				"cap": cint(settings.trial_key_cap),
 				"api_key": minted["api_key"],
 			}
 		).insert()
