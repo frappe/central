@@ -18,6 +18,7 @@ dependencies = [
     # Reads team bucket objects over S3 (central.integrations.object_storage).
     "boto3>=1.43,<2",
     "atlas-proxy-client @ git+https://github.com/frappe/atlas.git@abdde5b62bc8ebecbf38c9aa96a72a848c832fc4#subdirectory=clients/atlas-proxy-client",
+    "atlas-wg-gateway-client @ git+https://github.com/frappe/atlas.git@74a8796c4cd71ba89aa350d7acbdda190e038bb3#subdirectory=clients/atlas-wg-gateway-client",
 ]
 
 [build-system]

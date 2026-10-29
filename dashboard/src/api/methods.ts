@@ -71,6 +71,7 @@ export const API = {
 	updateServerFirewall: 'central.api.servers.update_server_firewall',
 	setServerPublicIp: 'central.api.servers.set_server_public_ip',
 	setServerIpv4Internet: 'central.api.servers.set_server_ipv4_internet',
+	setServerWireguardAccess: 'central.api.servers.set_server_wireguard_access',
 	publicIpv4Pricing: 'central.api.servers.public_ipv4_pricing',
 	terminateServer: 'central.api.servers.terminate_server',
 	keepTrialSite: 'central.api.servers.keep_trial_site',
@@ -86,6 +87,9 @@ export const API = {
 	retryTeamSSHKeySync: 'central.api.ssh_keys.retry_team_ssh_key_sync',
 	deleteTeamSSHKey: 'central.api.ssh_keys.delete_team_ssh_key',
 	setServerSSHKeys: 'central.api.ssh_keys.set_server_ssh_keys',
+	listWireGuardDevices: 'central.api.wireguard.list_wireguard_devices',
+	createWireGuardDevice: 'central.api.wireguard.create_wireguard_device',
+	deleteWireGuardDevice: 'central.api.wireguard.delete_wireguard_device',
 
 	// ── Snapshots (central.api.snapshots) ──
 	// server:view reads them and their price; server:snapshot takes, keeps and deletes.

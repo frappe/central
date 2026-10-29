@@ -4,6 +4,7 @@ import { computed, ref } from 'vue'
 import { API } from '@/api/methods'
 import CopyButton from '@/components/common/CopyButton.vue'
 import SettingsSection from '@/components/common/SettingsSection.vue'
+import WireGuardSection from '@/components/servers/detail/WireGuardSection.vue'
 import EditSSHKeysDialog from '@/components/servers/EditSSHKeysDialog.vue'
 import SSHKeyDialog from '@/components/servers/SSHKeyDialog.vue'
 import { useSession } from '@/composables/useSession'
@@ -16,6 +17,8 @@ interface Props {
 	overview: ServerOverview
 	/** The viewer holds server:ssh-key, so they can change this server's keys. */
 	canManageKeys: boolean
+	/** The viewer holds server:network on this server. */
+	canManageNetwork: boolean
 	/** The server runs a free trial, so SSH waits for an upgrade. */
 	isAccessLocked?: boolean
 }
@@ -124,6 +127,14 @@ function changed(): void {
 				</li>
 			</ul>
 		</SettingsSection>
+
+		<WireGuardSection
+			v-if="overview.server.region_details.has_wireguard_gateway"
+			:resource-id="overview.server.resource_id"
+			:has-access="!!overview.server.has_wireguard_access"
+			:can-manage-network="canManageNetwork"
+			@changed="emit('changed')"
+		/>
 
 		<EditSSHKeysDialog
 			v-model:open="isEditing"

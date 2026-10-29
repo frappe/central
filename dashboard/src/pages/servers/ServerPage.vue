@@ -376,6 +376,7 @@ watch(
 					v-else
 					:overview="details"
 					:can-manage-keys="canManageSSHKeys"
+					:can-manage-network="!!actions.network"
 					:is-access-locked="actions.isAccessLocked"
 					class="mt-6"
 					@changed="reloadOverview"

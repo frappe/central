@@ -187,6 +187,7 @@ doc_events = {
 	"User": {
 		"validate": "central.users.validate_user_image",
 		"after_insert": "central.users.grant_central_user_role",
+		"on_update": "central.infrastructure.doctype.wireguard_device.wireguard_device.remove_disabled_user_devices",
 	},
 	# A Billing Profile's level reaches Grove by the Webhook AI Settings keeps, with retries.
 	"Trust Tier Level": {
@@ -238,6 +239,7 @@ scheduler_events = {
 			"central.infrastructure.doctype.vm_snapshot.vm_snapshot.sync_pending_snapshots",
 			"central.infrastructure.doctype.frappemail_service.frappemail_service.refill_mailboxes",
 			"central.services.doctype.ai_trial_key.ai_trial_key.refill_trial_keys",
+			"central.infrastructure.doctype.wireguard_device.wireguard_device.remove_pending_devices",
 		],
 	},
 	# Maintenance jobs run once per period at a time Frappe spreads across sites.
@@ -408,6 +410,7 @@ _BILLING_TEAM_RECORDS = (
 
 permission_query_conditions = {
 	"Team SSH Key": "central.permissions.team_ssh_key_query_conditions",
+	"WireGuard Device": "central.permissions.wireguard_device_query_conditions",
 	"Virtual Machine": "central.permissions.server_query_conditions",
 	"Pilot Credential": "central.permissions.pilot_credential_query_conditions",
 	"Resource Action": "central.permissions.resource_action_query_conditions",
@@ -425,6 +428,7 @@ permission_query_conditions = {
 
 has_permission = {
 	"Team SSH Key": "central.permissions.team_ssh_key_has_permission",
+	"WireGuard Device": "central.permissions.wireguard_device_has_permission",
 	"Virtual Machine": "central.permissions.server_has_permission",
 	"Pilot Credential": "central.permissions.pilot_credential_has_permission",
 	"Resource Action": "central.permissions.resource_action_has_permission",

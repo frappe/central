@@ -1,0 +1,171 @@
+{
+ "actions": [],
+ "autoname": "hash",
+ "creation": "2026-10-25 11:47:23.418562",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "title",
+  "team",
+  "region",
+  "column_break_state",
+  "status",
+  "added_by",
+  "public_key",
+  "gateway_section",
+  "client_id",
+  "address",
+  "allowed_ips",
+  "column_break_gateway",
+  "endpoint",
+  "gateway_public_key",
+  "last_error"
+ ],
+ "fields": [
+  {
+   "description": "A name the team can recognize, such as Work laptop.",
+   "fieldname": "title",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Name",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "team",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Team",
+   "options": "Team",
+   "reqd": 1,
+   "search_index": 1,
+   "set_only_once": 1
+  },
+  {
+   "description": "The device reaches the team's servers in this region only.",
+   "fieldname": "region",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Region",
+   "options": "Region",
+   "reqd": 1,
+   "set_only_once": 1
+  },
+  {
+   "fieldname": "column_break_state",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "Active",
+   "description": "Removing means the gateway could not be reached yet. Central retries every 5 minutes.",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Status",
+   "options": "Active\nRemoving",
+   "read_only": 1
+  },
+  {
+   "description": "The member who added the device. It is removed when they leave the team.",
+   "fieldname": "added_by",
+   "fieldtype": "Link",
+   "label": "Added By",
+   "options": "User",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "description": "The WireGuard public key of the device. Central never sees its private key.",
+   "fieldname": "public_key",
+   "fieldtype": "Data",
+   "label": "Public Key",
+   "reqd": 1,
+   "set_only_once": 1
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "gateway_section",
+   "fieldtype": "Section Break",
+   "label": "Gateway Settings"
+  },
+  {
+   "description": "The device number within the team's tenant.",
+   "fieldname": "client_id",
+   "fieldtype": "Int",
+   "label": "Client ID",
+   "read_only": 1
+  },
+  {
+   "fieldname": "address",
+   "fieldtype": "Data",
+   "label": "Interface Address",
+   "read_only": 1
+  },
+  {
+   "description": "The server addresses the device routes through the gateway, one per line.",
+   "fieldname": "allowed_ips",
+   "fieldtype": "Small Text",
+   "label": "Allowed IPs",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_gateway",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "The gateway node that serves the device.",
+   "fieldname": "endpoint",
+   "fieldtype": "Data",
+   "label": "Endpoint",
+   "read_only": 1
+  },
+  {
+   "fieldname": "gateway_public_key",
+   "fieldtype": "Data",
+   "label": "Gateway Public Key",
+   "read_only": 1
+  },
+  {
+   "description": "The last gateway failure while removing the device.",
+   "fieldname": "last_error",
+   "fieldtype": "Small Text",
+   "label": "Last Error",
+   "read_only": 1
+  }
+ ],
+ "links": [],
+ "modified": "2026-10-25 16:52:09.731204",
+ "modified_by": "Administrator",
+ "module": "Infrastructure",
+ "name": "WireGuard Device",
+ "naming_rule": "Random",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Central User",
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "search_fields": "title,added_by",
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "title",
+ "track_changes": 1
+}

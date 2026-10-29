@@ -12,7 +12,7 @@ A capability is named `resource:action` and belongs to exactly one **plane**:
 | `atlas` | Atlas | Central, before each regional call (`central/utils/guards.py`, `central/iam.py`) |
 | `bench` | each bench | No capabilities on this plane today |
 
-## Server is the atomic unit (model v6)
+## Server is the atomic unit (model v7)
 
 Role capabilities live at the **team** and **server** level only. A team manages servers, and a server is a bench host. The **bench plane** holds no capabilities. Bench tokens carry no capabilities today. The `bench` plane value stays on Capability, so site-level capabilities can return under it later. `asset:view` is not a capability, because `server:view` gates the Virtual Machine registry.
 
@@ -23,9 +23,9 @@ The distinction matters:
 - **The vocabulary** is the set of capability strings below. Central enforces it, and stored grants, fixtures, and the dashboard depend on it. It is small and changes rarely.
 - **Roles** (system roles and team-defined custom roles) are named subsets of that vocabulary. A custom role recombines existing capabilities. It never mints a new capability string. Teams can create as many custom roles as they like without an effect on this contract.
 
-## The 17 capabilities
+## The 18 capabilities
 
-### `central` plane (8)
+### `central` plane (9)
 
 | Capability | Meaning |
 | --- | --- |
@@ -37,6 +37,7 @@ The distinction matters:
 | `service:view` | View managed service configuration. |
 | `service:manage` | Create and delete storage buckets, set bucket quotas, rotate bucket credentials, and download, upload, and delete stored objects. |
 | `server:ssh-key` | Add, rotate, and remove Team SSH keys for selected servers. |
+| `server:wireguard` | See, add, and remove team WireGuard devices that reach servers through the regional gateway. A member removes only their own devices unless they also hold `team:manage_members`. |
 
 ### `atlas` plane (9)
 
@@ -46,7 +47,7 @@ The distinction matters:
 | `server:view` | List servers and sites; view status, specs, and metrics. |
 | `server:create` | Provision a new server. |
 | `server:power` | Start, stop, and restart a server. |
-| `server:network` | Change the firewall and public addresses of a server. |
+| `server:network` | Change the firewall, public addresses, and WireGuard access of a server. |
 | `server:resize` | Resize, rebuild, or rename a server. |
 | `server:snapshot` | Create and restore server snapshots. |
 | `server:terminate` | Destroy a server. |
@@ -54,7 +55,7 @@ The distinction matters:
 
 ### `bench` plane (0)
 
-No capabilities are seeded on the bench plane in v6. Site-level management capabilities, such as `site:view`, `site:create`, or `site:apps`, would go here. Adding one needs an agreed bench token contract with Pilot first.
+No capabilities are seeded on the bench plane in v7. Site-level management capabilities, such as `site:view`, `site:create`, or `site:apps`, would go here. Adding one needs an agreed bench token contract with Pilot first.
 
 ## Capability implications
 
@@ -64,7 +65,7 @@ Acting on a resource is meaningless without seeing it. Central closes every gran
 | --- | --- |
 | `server:create` | `server:view`, `cluster:view` |
 | `server:power` / `network` / `resize` / `snapshot` / `terminate` | `server:view` |
-| `server:ssh-key` | `server:view` |
+| `server:ssh-key` / `wireguard` | `server:view` |
 | `server:console` | `server:view` |
 | `service:manage` | `service:view` |
 
@@ -93,12 +94,13 @@ System roles are seeded from `fixtures/team_role.json` and are identical across 
 | `server:resize` | ✓ | ✓ | ✓ | | |
 | `server:snapshot` | ✓ | ✓ | ✓ | | |
 | `server:ssh-key` | ✓ | ✓ | ✓ | | |
+| `server:wireguard` | ✓ | ✓ | ✓ | | |
 | `server:terminate` | ✓ | ✓ | ✓ | | |
 | `server:console` | ✓ | ✓ | ✓ | | |
 | `service:view` | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `service:manage` | ✓ | ✓ | ✓ | | ✓ |
 
-Totals: Owner 17, Admin 16, Developer 12, Viewer 3, Billing 6.
+Totals: Owner 18, Admin 17, Developer 13, Viewer 3, Billing 6.
 
 The ladder reads top to bottom: **Viewer** (look), **Billing** (look and pay), **Developer** (operate servers), **Admin** (Developer and run the team), **Owner** (Admin and delete the team). A team has exactly one Owner, transferable through Transfer Ownership. For a different mix, such as server operations without billing, create a custom role.
 

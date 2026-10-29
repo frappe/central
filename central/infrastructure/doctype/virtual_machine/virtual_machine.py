@@ -54,6 +54,7 @@ class VirtualMachine(Document):
 		frappe_version: DF.Data | None
 		gateway_url: DF.Data | None
 		has_ipv4_internet: DF.Check
+		has_wireguard_access: DF.Check
 		has_public_ipv6: DF.Check
 		has_site: DF.Check
 		image_offering: DF.Link | None
@@ -133,6 +134,7 @@ class VirtualMachine(Document):
 
 	def onload(self) -> None:
 		self.set_onload("is_access_locked", self.is_access_locked())
+		self.set_onload("has_wireguard_gateway", self.has_wireguard_gateway)
 
 	def after_insert(self) -> None:
 		# The region accepted a creation. Open consoles list the new server now, not at its first state report.
@@ -311,6 +313,7 @@ class VirtualMachine(Document):
 		"is_firewall_enabled",
 		"firewall_rules",
 		"has_ipv4_internet",
+		"has_wireguard_access",
 		"atlas_host_id",
 	)
 
@@ -436,6 +439,19 @@ class VirtualMachine(Document):
 			frappe.throw(_("Detach the public IPv4 address before you turn off IPv4 internet access."))
 
 		set_ipv4_internet(self, enabled)
+
+	def set_wireguard_access(self, enabled: bool) -> None:
+		from central.integrations.servers import set_wireguard_access
+
+		self.require_live()
+		if enabled and not self.has_wireguard_gateway:
+			frappe.throw(_("WireGuard is not available in this region yet."))
+
+		set_wireguard_access(self, enabled)
+
+	@property
+	def has_wireguard_gateway(self) -> bool:
+		return bool(frappe.get_cached_value("Region", self.region, "has_wireguard_gateway"))
 
 	def update_firewall(self, change: FirewallChange) -> None:
 		from central.integrations.servers import update_firewall

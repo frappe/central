@@ -17,7 +17,7 @@ The **Networking** tab of a server shows its addresses, its firewall, and the do
 | --- | --- | --- |
 | **Public IPv4** | Anyone on the internet | Monthly price for each region. The button shows the price. |
 | **Public IPv6** | Anyone on the internet | Free |
-| **Private IPv6** | Your servers in this region | Free |
+| **Private IPv6** | Your servers in this region, and your WireGuard devices when WireGuard access is on | Free |
 
 Every server gets a private IPv6 address when it finishes setting up. Click an address to copy it.
 
@@ -91,5 +91,6 @@ Changing addresses and the firewall needs the **Owner**, **Admin**, or **Develop
 
 - [Create a server](/servers/create)
 - [Connect with SSH](/servers/access)
+- [WireGuard devices](/servers/wireguard)
 - [Regions](/servers/regions)
 - [Domains and SSL](/pilot/domains)
