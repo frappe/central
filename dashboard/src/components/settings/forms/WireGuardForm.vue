@@ -1,12 +1,13 @@
 <script setup lang="ts">
-import { Badge, Button } from 'frappe-ui'
-import { ref } from 'vue'
+import { Badge, Button, Skeleton } from 'frappe-ui'
+import { ref, watch } from 'vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import RowActionsMenu from '@/components/common/RowActionsMenu.vue'
 import Table from '@/components/common/Table.vue'
 import WireGuardDeviceDialog from '@/components/wireguard/WireGuardDeviceDialog.vue'
 import { useCapabilities } from '@/composables/useCapabilities'
+import { useSession } from '@/composables/useSession'
 import { useWireGuardDevices } from '@/composables/useWireGuardDevices'
 import { getErrorMessage, infoToast, successToast } from '@/lib/feedback'
 import type { WireGuardDevice } from '@/types/wireguard'
@@ -20,12 +21,21 @@ const COLUMNS = [
 const { devices, regions, servers, loading, error, reload, create, remove } =
 	useWireGuardDevices()
 const { canManageWireGuard } = useCapabilities()
+const { activeTeam } = useSession()
 
 const adding = ref(false)
 const viewing = ref<WireGuardDevice | null>(null)
 const deleting = ref<WireGuardDevice | null>(null)
 const busy = ref(false)
 const deleteError = ref('')
+
+// the device lists reset with the team, so close anything that points at the old team
+watch(activeTeam, () => {
+	adding.value = false
+	viewing.value = null
+	deleting.value = null
+	deleteError.value = ''
+})
 
 const regionLabel = (name: string): string =>
 	regions.value.find((region) => region.name === name)?.display_name || name
@@ -94,15 +104,19 @@ const getActions = (device: WireGuardDevice) => [
 			</template>
 		</EmptyState>
 
+		<div v-else-if="loading && !devices.length" class="space-y-2">
+			<Skeleton v-for="n in 3" :key="n" class="h-16 rounded-6" />
+		</div>
+
 		<EmptyState
-			v-else-if="!loading && !devices.length && !regions.length"
+			v-else-if="!devices.length && !regions.length"
 			icon="lucide-shield"
 			title="WireGuard isn't available yet"
 			description="None of your regions has a WireGuard gateway yet."
 		/>
 
 		<EmptyState
-			v-else-if="!loading && !devices.length"
+			v-else-if="!devices.length"
 			icon="lucide-shield"
 			title="No devices yet"
 			description="Add a laptop or phone to reach your servers over their private addresses."

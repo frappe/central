@@ -66,11 +66,13 @@ class WireGuardGatewayClient:
 			)
 
 		if response.status_code >= 300 and response.status_code not in allow:
-			message = response.content.decode(errors="replace")[:500]
+			body = response.content.decode(errors="replace")[:500]
+			frappe.log_error(
+				title=f"WireGuard gateway returned HTTP {int(response.status_code)}",
+				message=f"{self.base_url}\n{body}",
+			)
 			raise WireGuardGatewayError(
-				_("WireGuard gateway {0} returned HTTP {1}: {2}").format(
-					self.base_url, int(response.status_code), message
-				)
+				_("The WireGuard gateway of this region refused the request. Try again in a few minutes.")
 			)
 
 		return response

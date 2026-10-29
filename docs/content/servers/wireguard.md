@@ -36,8 +36,12 @@ A device reaches a server only after you turn on [WireGuard access](#let-a-devic
 To keep the private key off the browser, make the key pair yourself:
 
 ```bash
-wg genkey | tee private.key | wg pubkey
+umask 077
+wg genkey > private.key
+wg pubkey < private.key
 ```
+
+`umask 077` keeps the private key readable by you alone.
 
 In the dialog, select **I have my own key pair** and paste the public key. Never paste the private key.
 
@@ -105,8 +109,8 @@ When the tunnel is on:
 
 A server accepts no WireGuard traffic until you turn it on:
 
-1. Go to **Servers**. Click the server. Click **Networking**.
-2. In **Addresses**, turn on **WireGuard access**.
+1. Go to **Servers**. Click the server. Click **Access**.
+2. Under **WireGuard**, turn on **WireGuard access**.
 
 When the switch is on, all WireGuard devices of the team in that region can reach the server. Turn it off to block all devices from that server. The switch shows only in regions with a WireGuard gateway.
 

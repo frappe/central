@@ -2,6 +2,7 @@ import frappe
 from frappe import _
 from frappe.utils.translations import _lt
 
+from central.errors import handle_resource_operation
 from central.permissions import wireguard_device_has_permission
 from central.utils.guards import require_capability
 
@@ -74,6 +75,7 @@ def list_wireguard_devices(team: str) -> dict:
 
 @frappe.whitelist(methods=["POST"])
 @require_capability("server:wireguard", ACCESS_MESSAGE)
+@handle_resource_operation
 def create_wireguard_device(team: str, region: str, title: str, public_key: str) -> dict:
 	"""Register a device with the region's gateway and return its settings."""
 	device = frappe.get_doc(
@@ -91,6 +93,7 @@ def create_wireguard_device(team: str, region: str, title: str, public_key: str)
 
 @frappe.whitelist(methods=["POST"])
 @require_capability("server:wireguard", ACCESS_MESSAGE)
+@handle_resource_operation
 def delete_wireguard_device(team: str, name: str) -> dict:
 	"""Remove a device from its gateway. A gateway outage leaves it Removing until a retry works."""
 	device = frappe.get_doc("WireGuard Device", name)

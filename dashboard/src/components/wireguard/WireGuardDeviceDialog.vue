@@ -40,7 +40,8 @@ const busy = ref(false)
 const error = ref('')
 const device = ref<WireGuardDevice | null>(null)
 // lives only while the dialog is open and never leaves the browser
-const privateKey = ref('')
+const generatedKey = ref<{ privateKey: string; publicKey: string } | null>(null)
+const privateKey = computed(() => generatedKey.value?.privateKey ?? '')
 // a save that finishes after the dialog closed must not fill the next opening
 let opening = 0
 
@@ -81,6 +82,7 @@ watch(open, (value) => {
 	opening++
 	if (value) {
 		device.value = props.saved ?? null
+		generatedKey.value = null
 		title.value = ''
 		region.value = props.regions.length === 1 ? props.regions[0].name : ''
 		hasOwnKey.value = false
@@ -88,7 +90,7 @@ watch(open, (value) => {
 		error.value = ''
 		return
 	}
-	privateKey.value = ''
+	generatedKey.value = null
 })
 
 async function submit() {
@@ -99,21 +101,23 @@ async function submit() {
 	try {
 		let key = publicKey.value.trim()
 		if (!hasOwnKey.value) {
-			const pair = await generateKeyPair()
-			if (!pair) {
-				hasOwnKey.value = true
-				error.value =
-					"This browser can't make WireGuard keys. Paste a public key instead."
-				return
+			if (!generatedKey.value) {
+				const pair = await generateKeyPair()
+				if (!pair) {
+					hasOwnKey.value = true
+					error.value =
+						"This browser can't make WireGuard keys. Paste a public key instead."
+					return
+				}
+				generatedKey.value = pair
 			}
-			privateKey.value = pair.privateKey
-			key = pair.publicKey
+			key = generatedKey.value.publicKey
 		}
 		const saved = await props.save(region.value, title.value.trim(), key)
 		if (current === opening) device.value = saved
 	} catch (failure) {
 		if (current !== opening) return
-		privateKey.value = ''
+		// keep the key: the request may have reached the gateway before it failed
 		error.value = getErrorMessage(failure, "The device couldn't be added.")
 	} finally {
 		busy.value = false
@@ -126,6 +130,7 @@ async function submit() {
 		v-model="open"
 		:title="device ? device.title : 'Add WireGuard device'"
 		size="xl"
+		:dismissible="!busy"
 	>
 		<div v-if="device" class="flex flex-col gap-5">
 			<Alert
@@ -170,7 +175,7 @@ async function submit() {
 				class="size-48 self-center rounded-6 bg-white p-2"
 			/>
 
-			<div v-else class="relative">
+			<div class="relative">
 				<pre
 					class="max-h-60 overflow-auto rounded-6 bg-surface-gray-1 p-3 font-mono text-sm text-ink-gray-8"
 				>{{ config }}</pre>
@@ -201,6 +206,24 @@ async function submit() {
 				addresses.
 			</p>
 			<Alert v-if="error" theme="red" :title="error" />
+			<div v-if="error && generatedKey" class="flex flex-col gap-2">
+				<p class="text-p-sm-medium text-ink-gray-8">Save your private key</p>
+				<p class="text-p-sm text-ink-gray-6">
+					If the device was created, close this dialog, open its settings, and
+					paste this key.
+				</p>
+				<div class="relative">
+					<pre
+						class="max-h-40 overflow-auto rounded-6 bg-surface-gray-1 p-3 pr-12 font-mono text-sm text-ink-gray-8"
+					>{{ generatedKey.privateKey }}</pre>
+					<CopyButton
+						class="absolute right-2 top-2"
+						size="sm"
+						:text="generatedKey.privateKey"
+						label="Copy private key"
+					/>
+				</div>
+			</div>
 			<FormControl
 				v-model="title"
 				autofocus
@@ -227,7 +250,7 @@ async function submit() {
 				<p v-else class="text-p-sm text-ink-gray-5">
 					Run
 					<code class="font-mono text-ink-gray-7"
-						>wg genkey | tee private.key | wg pubkey</code
+						>umask 077; wg genkey > private.key; wg pubkey &lt; private.key</code
 					>
 					and paste the output. Never paste the private key.
 				</p>

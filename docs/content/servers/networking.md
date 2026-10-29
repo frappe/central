@@ -41,10 +41,6 @@ A detached IPv4 address goes back to the region and its billing stops. You canno
 
 A server without a public IPv4 address cannot reach sites that have only IPv4 addresses. Turn on **IPv4 internet access** to let it reach them. The switch stays on while the server has a public IPv4 address.
 
-### WireGuard access
-
-In a region with a WireGuard gateway, turn on **WireGuard access** to let the team's [WireGuard devices](/servers/wireguard) reach the private IPv6 address of the server. It is off by default. Click **Manage WireGuard devices** to add or delete devices.
-
 ## Firewall
 
 The firewall controls who can connect to the server and where the server can connect. The region filters the traffic before it reaches the server.

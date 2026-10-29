@@ -37,6 +37,10 @@ You select keys when you [create a server](/servers/create). To change them late
 
 The change applies at the next sign-in. Open sessions stay connected.
 
+## WireGuard access
+
+In a region with a WireGuard gateway, the **WireGuard** section lets the team's [WireGuard devices](/servers/wireguard) reach the private IPv6 address of the server. It is off by default. Turn on **WireGuard access** to allow them. Click **Manage devices** to add or delete a device.
+
 ## Sign in
 
 The **Access** tab shows the command for the server. Click the copy button next to it.

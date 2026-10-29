@@ -17,8 +17,9 @@ frappe.ui.form.on("WireGuard Device", {
 			return;
 		}
 
+		const title = frappe.utils.escape_html(frm.doc.title);
 		frm.add_custom_button(__("Remove Device"), () =>
-			frappe.confirm(__("Remove {0}? It stops reaching the team's servers.", [frm.doc.title.bold()]), remove)
+			frappe.confirm(__("Remove {0}? It stops reaching the team's servers.", [`<b>${title}</b>`]), remove)
 		);
 	},
 });
