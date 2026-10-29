@@ -138,6 +138,22 @@ class TestEmandatePredebit(IntegrationTestCase):
 			adapter.charge.assert_called_once()
 			self.assertEqual(frappe.db.count("Payment Attempt", {"invoice": inv}), 1)
 
+	def test_charge_due_reads_the_window_on_the_clock_it_is_given(self):
+		from unittest.mock import MagicMock, patch
+
+		from central.billing.gateways.base import PaymentResult
+
+		inv = self._invoice(5000)
+		emandate.schedule_predebit(inv, now="2099-06-10 09:00:00")
+		adapter = MagicMock()
+		adapter.prepare_charge.return_value = None
+		adapter.charge.return_value = PaymentResult(
+			success=True, status="Captured", gateway_transaction_id="p"
+		)
+		with patch("central.billing.gateways.registry.get_adapter", return_value=adapter):
+			emandate.charge_due(now="2099-06-11 10:00:00")
+		adapter.charge.assert_called_once()
+
 
 class TestWhoOwesAPredebitNotice(IntegrationTestCase):
 	"""The notice follows the rail, not the mode. Every auto-charged team is now

@@ -95,13 +95,14 @@ def _ask_for_another_method(inv) -> None:
 	)
 
 
-def collect_invoice(invoice: str, new_round: bool = False) -> dict:
+def collect_invoice(invoice: str, new_round: bool = False, now=None) -> dict:
 	"""Charge the next untried method; rotate immediately on a synchronous decline.
 
 	Idempotent and safe to re-enter (from settlement, a webhook failure, or a
 	dunning retry): the in-flight guard + invoice row lock in charges.pay_invoice
 	prevent a double charge, and the per-invoice failed-set guarantees each method
-	is tried at most once per round. `new_round` starts a dunning retry round.
+	is tried at most once per round. `new_round` starts a dunning retry round, and
+	`now` is the clock a pre-debit window is read against.
 	"""
 	from central.billing.revenue.tax import is_internal_team
 
@@ -111,12 +112,12 @@ def collect_invoice(invoice: str, new_round: bool = False) -> dict:
 	earlier = attempts_of(invoice) if new_round else None
 	skipped = set()
 	while True:
-		outcome = _charge_next_method(inv, earlier, skipped)
+		outcome = _charge_next_method(inv, earlier, skipped, now)
 		if outcome is not None:
 			return outcome
 
 
-def _charge_next_method(inv, earlier: set | None, skipped: set) -> dict | None:
+def _charge_next_method(inv, earlier: set | None, skipped: set, now=None) -> dict | None:
 	"""Try the next method once. Returns the outcome to stop on, or None to rotate to the
 	next method (a final decline, or a rail that cannot debit now, added to `skipped`)."""
 	from central.billing.payments import emandate
@@ -135,7 +136,7 @@ def _charge_next_method(inv, earlier: set | None, skipped: set) -> dict | None:
 
 	# Every off-session debit on a rail that owes a pre-debit notice waits for it, whichever
 	# path asked for it: the billing run, a dunning retry or a webhook.
-	predebit, notice = emandate.await_predebit(inv.name, method.gateway)
+	predebit, notice = emandate.await_predebit(inv.name, method.gateway, now)
 	if predebit == emandate.Predebit.WAIT:
 		return {"collected": False, "reason": "awaiting_predebit_window", **notice}
 	if predebit == emandate.Predebit.ROTATE:

@@ -50,7 +50,7 @@ def _is_notice_required(inv, gateway: str | None) -> bool:
 	return bool(gateway and currency and capabilities.requires_predebit_notice(gateway, currency))
 
 
-def await_predebit(invoice: str, gateway: str) -> tuple[Predebit, dict]:
+def await_predebit(invoice: str, gateway: str, now=None) -> tuple[Predebit, dict]:
 	"""What `gateway` may do with this invoice now under the pre-debit notice rule.
 
 	1. CHARGE_NOW: the rail owes no notice, or the notice window has passed.
@@ -61,11 +61,12 @@ def await_predebit(invoice: str, gateway: str) -> tuple[Predebit, dict]:
 	"""
 	inv = frappe.get_doc("Invoice", invoice)
 	charge_after = inv.predebit_charge_after
+	now_dt = frappe.utils.get_datetime(now) if now else frappe.utils.now_datetime()
 	if not _is_notice_required(inv, gateway) or (
-		charge_after and frappe.utils.now_datetime() >= frappe.utils.get_datetime(charge_after)
+		charge_after and now_dt >= frappe.utils.get_datetime(charge_after)
 	):
 		return Predebit.CHARGE_NOW, {}
-	notice = schedule_predebit(invoice, gateway=gateway)
+	notice = schedule_predebit(invoice, now=now_dt, gateway=gateway)
 	if notice.get("notified") or notice.get("skipped") == "already_notified":
 		return Predebit.WAIT, notice
 	return Predebit.ROTATE, notice
@@ -145,7 +146,10 @@ def charge_due(now=None) -> list[dict]:
 	)
 	auto = [inv.name for inv in due if collection_mode.is_debit_allowed(inv.team)]
 	return each_isolated(
-		"E-mandate debit", "Invoice", auto, lambda name: {"invoice": name, **collection.collect_invoice(name)}
+		"E-mandate debit",
+		"Invoice",
+		auto,
+		lambda name: {"invoice": name, **collection.collect_invoice(name, now=now_dt)},
 	)
 
 
