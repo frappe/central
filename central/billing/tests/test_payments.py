@@ -199,7 +199,7 @@ class TestSetupAndConfirm(CardTestBase):
 			with self.assertRaises(payments.CardDeclinedAtSetup) as raised:
 				payments.confirm_payment_method(setup["payment_method"])
 
-		self.assertTrue(str(raised.exception).startswith("We couldn't complete this payment."))
+		self.assertTrue(str(raised.exception).startswith("We couldn't add this card."))
 		self.assertNotIn("some_new_code", str(raised.exception))
 
 	def test_a_card_saved_to_another_customer_fails(self):

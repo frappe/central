@@ -102,6 +102,12 @@ _CUSTOMER_REASON = {
 	"check_unfinished": _lt("The card check didn't finish"),
 }
 
+# The same declines when a method is being added, where no payment was being made.
+_SETUP_REASON = {
+	"card_declined": _lt("Your bank declined the card"),
+	"do_not_honor": _lt("Your bank declined the card"),
+}
+
 # Ambiguous failures may still settle. Saying "failed" of one is a lie we would
 # have to take back, so they are named as unresolved.
 _UNRESOLVED = _lt("We're still confirming this payment with your bank")
@@ -152,9 +158,23 @@ def method_failure_message(
 	code = decline_code if (decline_code or "").lower() in _CUSTOMER_REASON else failure_code
 	if method_type == "Card":
 		return _("{0}. Try another card, or add credit to your account instead.").format(
-			customer_reason(code)
+			_setup_reason(code, method_type)
 		)
-	return _("{0}. Try again, or add credit to your account instead.").format(customer_reason(code))
+	return _("{0}. Try again, or add credit to your account instead.").format(
+		_setup_reason(code, method_type)
+	)
+
+
+def _setup_reason(code: str | None, method_type: str) -> str:
+	"""A failure to add a method, said about the method: nothing was being paid."""
+	code = (code or "").lower()
+	if code in _SETUP_REASON:
+		return str(_SETUP_REASON[code])
+	if code in _CUSTOMER_REASON or code in AMBIGUOUS_CODES:
+		return customer_reason(code)
+	if method_type == "Card":
+		return _("We couldn't add this card")
+	return _("We couldn't set up this payment method")
 
 
 def is_mandate_failure(failure_code: str | None) -> bool:

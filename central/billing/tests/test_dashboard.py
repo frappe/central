@@ -230,7 +230,7 @@ class TestCustomerReads(CustomerDataBase):
 		self.assertEqual(out["status"], "Pending Validation")
 		self.assertEqual(
 			out["message"],
-			"Your bank declined the payment. Try another card, or add credit to your account instead.",
+			"Your bank declined the card. Try another card, or add credit to your account instead.",
 		)
 		# The setup webhook records the failure, so confirming writes nothing.
 		stored = frappe.db.get_value("Payment Method", method.name, ["status", "failure_code"], as_dict=True)

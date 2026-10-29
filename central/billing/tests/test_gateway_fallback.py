@@ -39,6 +39,11 @@ class TestCardFailureMessage(IntegrationTestCase):
 		self.assertTrue(message.startswith("There wasn't enough balance."))
 		self.assertIn("add credit", message)
 
+	def test_a_declined_card_is_not_called_a_payment(self):
+		message = decline.method_failure_message("card_declined")
+		self.assertTrue(message.startswith("Your bank declined the card."))
+		self.assertNotIn("payment", message)
+
 	def test_a_mandate_is_not_told_to_try_another_card(self):
 		message = decline.method_failure_message("token_missing", None, "UPI Autopay")
 		self.assertNotIn("card", message)
