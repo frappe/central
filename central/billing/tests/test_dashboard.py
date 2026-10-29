@@ -218,8 +218,11 @@ class TestCustomerReads(CustomerDataBase):
 		).insert(ignore_permissions=True)
 		refusal = {"setup_error": {"failure_code": "card_declined", "decline_code": "generic_decline"}}
 
+		frappe.local.message_log = []
 		with stub_adapter(card=refusal) as adapter:
 			out = dashboard.confirm_card(method.name)
+
+		self.assertEqual(frappe.local.message_log, [])  # no second alert beside the answer
 
 		adapter.read_saved_card.assert_called_once_with("seti_refused")
 		adapter.validate_payment_method.assert_not_called()

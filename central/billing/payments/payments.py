@@ -198,10 +198,11 @@ def confirm_payment_method(payment_method: str) -> Document:
 
 	card = _adapter(method.gateway).read_saved_card(method.setup_reference) if method.setup_reference else {}
 	if error := card.get("setup_error"):
-		raise CardDeclinedAtSetup(
+		frappe.throw(
 			decline.method_failure_message(
 				error.get("failure_code"), error.get("decline_code"), method.method_type
-			)
+			),
+			CardDeclinedAtSetup,
 		)
 	if not card:
 		frappe.throw(_("The card has not been saved yet. Finish adding it, then try again."), CardNotSaved)

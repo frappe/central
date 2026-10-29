@@ -175,6 +175,21 @@ class TestSetupAndConfirm(CardTestBase):
 			frappe.db.get_value("Payment Method", setup["payment_method"], "status"), "Pending Validation"
 		)
 
+	def test_a_card_refused_at_setup_carries_its_reason(self):
+		with stub_adapter() as adapter:
+			setup = payments.initiate_payment_method_setup(TEAM, GATEWAY)
+			adapter.read_saved_card.return_value = {
+				"setup_error": {"failure_code": "card_declined", "decline_code": "insufficient_funds"}
+			}
+			frappe.local.message_log = []
+			with self.assertRaises(payments.CardDeclinedAtSetup) as raised:
+				payments.confirm_payment_method(setup["payment_method"])
+
+		reason = str(raised.exception)
+		self.assertTrue(reason.startswith("There wasn't enough balance."))
+		# frappe.throw logs the reason, so an API error response carries it to Pilot.
+		self.assertIn(reason, frappe.local.message_log[-1]["message"])
+
 	def test_a_card_saved_to_another_customer_fails(self):
 		with stub_adapter(card=saved_card(customer="cus_someone_else")) as adapter:
 			setup = payments.initiate_payment_method_setup(TEAM, GATEWAY)

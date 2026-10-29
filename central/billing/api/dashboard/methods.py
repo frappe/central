@@ -137,6 +137,7 @@ def confirm_card(payment_method: str | None = None) -> dict:
 	try:
 		return payments.confirm_payment_method(payment_method).get_confirmation()
 	except payments.CardDeclinedAtSetup as declined:
+		frappe.clear_last_message()  # the reason goes back in the answer, not as a second alert
 		return {"payment_method": payment_method, "status": "Pending Validation", "message": str(declined)}
 
 
