@@ -125,7 +125,7 @@ Central sends the change through `PATCH /virtual-machines/{id}/network`. Atlas r
 | ICMP from anywhere | IPv6 neighbour discovery and path MTU need it. |
 | TCP 22, 80, and 443 from anywhere | SSH, HTTP, and HTTPS. |
 
-A WireGuard VPN device reaches a server only through a rule that allows its address in `fdac::/16`. Central used to add all traffic from `fdac::/16` to every server and hide it. The patch `show_firewall_defaults` queues a background job that reads each live server from Atlas and removes the `fdac::/16` rule when the server has it. The job is safe to run again: `central.integrations.servers.remove_legacy_device_rules`.
+A WireGuard VPN device reaches a server only through a rule that allows its address in `fdac::/16`. Central used to add all traffic from `fdac::/16` to every server and hide it. The patch `remove_wireguard_device_firewall_rule` queues a background job that reads each live server from Atlas and removes the `fdac::/16` rule when the server has it. The job is safe to run again: `central.integrations.servers.remove_legacy_device_rules`.
 
 Atlas checks at most 50 address ranges across all rules. The PATCH reply does not hold the firewall, so Central reads the VM again. Every read stores `is_firewall_enabled` and the customer's rules in `firewall_rules`. A server that Central has not read since this field was added shows its firewall after the next reconcile, which runs every 10 minutes.
 
