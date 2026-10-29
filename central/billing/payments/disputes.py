@@ -34,7 +34,7 @@ def apply_dispute(event, payload: dict) -> dict:
 
 	adapter_key = frappe.db.get_value("Payment Gateway", event.gateway, "adapter_key")
 	dispute = adapter_class(adapter_key).dispute_from_event(payload)
-	attempt = _attempt_for(dispute and dispute["payment_id"])
+	attempt = _attempt_for(dispute and dispute["payment_id"], event.gateway)
 	if not attempt:
 		return {"handled": False, "reason": "no_matching_attempt"}
 	event.payment_attempt = attempt.name
@@ -69,10 +69,13 @@ def apply_dispute(event, payload: dict) -> dict:
 	return {"handled": True, "result": "cancelled", "invoice": invoice.name}
 
 
-def _attempt_for(payment_id: str | None):
+def _attempt_for(payment_id: str | None, gateway: str):
+	"""The attempt the disputed payment belongs to. An attempt on another gateway is not found."""
 	if not payment_id:
 		return None
-	name = frappe.db.get_value("Payment Attempt", {"gateway_transaction_id": payment_id}, "name")
+	name = frappe.db.get_value(
+		"Payment Attempt", {"gateway_transaction_id": payment_id, "gateway": gateway}, "name"
+	)
 	return frappe.get_doc("Payment Attempt", name) if name else None
 
 

@@ -379,10 +379,28 @@ class TestDisputeWebhook(CorrectionsTestCase):
 		self.assertEqual(frappe.db.get_value("Invoice", inv, "status"), "Paid")
 
 	def test_a_lost_razorpay_dispute_cancels_the_invoice(self):
-		from central.billing.payments.charges import apply_webhook
 		from central.billing.tests.test_razorpay_adapter import make_razorpay_gateway
 
 		inv = self._paid_invoice()
+		gateway = make_razorpay_gateway().name
+		frappe.db.set_value("Payment Attempt", {"invoice": inv}, "gateway", gateway)
+
+		self.assertEqual(self._razorpay_dispute_lost(gateway)["result"], "cancelled")
+		self.assertEqual(self._refund(inv, "Dispute").gateway_refund_id, "disp_r1")
+
+	def test_a_dispute_does_not_match_an_attempt_on_another_gateway(self):
+		from central.billing.tests.test_razorpay_adapter import make_razorpay_gateway
+
+		inv = self._paid_invoice()  # its attempt is on Stripe, with the same transaction id
+
+		out = self._razorpay_dispute_lost(make_razorpay_gateway().name)
+
+		self.assertEqual(out, {"handled": False, "reason": "no_matching_attempt"})
+		self.assertEqual(frappe.db.get_value("Invoice", inv, "status"), "Paid")
+
+	def _razorpay_dispute_lost(self, gateway):
+		from central.billing.payments.charges import apply_webhook
+
 		payload = {
 			"event": "payment.dispute.lost",
 			"payload": {"dispute": {"entity": {"id": "disp_r1", "payment_id": "pi_card", "amount": 354000}}},
@@ -390,16 +408,14 @@ class TestDisputeWebhook(CorrectionsTestCase):
 		event = frappe.get_doc(
 			{
 				"doctype": "Webhook Event",
-				"gateway": make_razorpay_gateway().name,
+				"gateway": gateway,
 				"gateway_event_id": "evt_disp_r1",
 				"event_type": "payment.dispute.lost",
 				"raw_payload": frappe.as_json(payload),
 				"status": "Received",
 			}
 		).insert(ignore_permissions=True)
-
-		self.assertEqual(apply_webhook(event.name)["result"], "cancelled")
-		self.assertEqual(self._refund(inv, "Dispute").gateway_refund_id, "disp_r1")
+		return apply_webhook(event.name)
 
 	def test_a_dispute_lost_on_a_cancelled_invoice_is_flagged(self):
 		inv = self._paid_invoice()
