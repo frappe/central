@@ -11,6 +11,7 @@ import { useSession } from '@/composables/useSession'
 import { useTeamSSHKeys } from '@/composables/useTeamSSHKeys'
 import { ACCESS_LOCKED_REASON } from '@/lib/capabilities'
 import { successToast } from '@/lib/feedback'
+import { isBlockingWireGuard } from '@/lib/firewall'
 import type { ServerOverview } from '@/types/servers'
 
 interface Props {
@@ -132,6 +133,13 @@ function changed(): void {
 			v-if="overview.server.region_details.has_wireguard_gateway"
 			:resource-id="overview.server.resource_id"
 			:has-access="!!overview.server.has_wireguard_access"
+			:is-blocked-by-firewall="
+				!!overview.server.firewall_rules &&
+				isBlockingWireGuard(
+					!!overview.server.is_firewall_enabled,
+					overview.server.firewall_rules.inbound,
+				)
+			"
 			:can-manage-network="canManageNetwork"
 			@changed="emit('changed')"
 		/>

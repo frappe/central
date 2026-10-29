@@ -63,3 +63,5 @@ central.patches.v0_0.clear_default_mandate_currency
 central.patches.v0_0.backfill_invoice_paid_at
 # Report, without changing anything, billing data the October 2026 security fixes would have refused.
 central.patches.v0_0.report_billing_security_findings
+# Remove the hidden rule that let every WireGuard VPN device pass the firewall, from every live server at Atlas.
+central.patches.v0_0.remove_wireguard_device_firewall_rule

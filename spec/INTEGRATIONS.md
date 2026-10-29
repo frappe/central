@@ -86,7 +86,7 @@ Each option has a flag in Central Settings > Feature Flags > Networking: Enable 
 
 Every creation also sends the disk IOPS, disk throughput, and private and public network throughput from Central Settings > Servers > Server Limits. A change applies to servers created after it.
 
-Every new server gets the web server rules: inbound TCP ports 22, 80, and 443 and all outbound traffic, after the system rules in [Firewall](#firewall). The option only sets `firewall.enabled`. A disabled firewall permits all traffic and keeps the rules for when the customer turns it on.
+Every new server gets the default rules in [Firewall](#firewall): inbound all traffic from the private network, ICMP, and TCP ports 22, 80, and 443, and all outbound traffic. The option only sets `firewall.enabled`. A disabled firewall permits all traffic and keeps the rules for when the customer turns it on.
 
 A creation request can carry `user_data` of up to 16 KiB, which is also the Atlas limit. Central sends it to Atlas unchanged as `guest.user_data`, and cloud-init in the guest runs it on first boot. A caller uses it to set up a server without signing in after creation. Central saves it on the Resource Action with the other creation inputs, so it must not hold a long-lived secret.
 
@@ -117,15 +117,17 @@ Each row selects a service and either Anyone on the internet or Specific address
 
 `update_server_firewall` takes a list of servers and returns an error or `null` for each one. Central validates the change first: protocol `any`, `tcp`, `udp`, or `icmp`; ports only for TCP and UDP, as one port or one ascending range; address ranges in canonical CIDR form; and each rule only once.
 
-Central sends the change through `PATCH /virtual-machines/{id}/network`. Atlas replaces each firewall field it gets and keeps the others. Central puts these system rules before the customer's inbound rules, and the dashboard does not show them.
+Central sends the change through `PATCH /virtual-machines/{id}/network`. Atlas replaces each firewall field it gets and keeps the others. Central sends exactly the customer's rules and adds none of its own, so the dashboard shows every rule that Atlas enforces. A new server starts with these inbound rules, which the customer can remove:
 
 | Rule | Why |
 | --- | --- |
 | All traffic from `fdaa::/16` | The console and the regional gateway reach a machine over the mesh, and an enabled firewall filters mesh traffic too. |
-| All traffic from `fdac::/16` | WireGuard gateway clients. Atlas still drops them unless the VM opts in to gateway access. |
 | ICMP from anywhere | IPv6 neighbour discovery and path MTU need it. |
+| TCP 22, 80, and 443 from anywhere | SSH, HTTP, and HTTPS. |
 
-Atlas checks at most 50 address ranges across all rules, system rules included. The PATCH reply does not hold the firewall, so Central reads the VM again. Every read stores `is_firewall_enabled` and the customer's rules in `firewall_rules`. A server that Central has not read since this field was added shows its firewall after the next reconcile, which runs every 10 minutes.
+A WireGuard VPN device reaches a server only through a rule that allows its address in `fdac::/16`. Central used to add all traffic from `fdac::/16` to every server and hide it. The patch `remove_wireguard_device_firewall_rule` queues a background job that reads each live server from Atlas and removes the `fdac::/16` rule when the server has it. The job is safe to run again: `central.integrations.servers.remove_legacy_device_rules`.
+
+Atlas checks at most 50 address ranges across all rules. The PATCH reply does not hold the firewall, so Central reads the VM again. Every read stores `is_firewall_enabled` and the customer's rules in `firewall_rules`. A server that Central has not read since this field was added shows its firewall after the next reconcile, which runs every 10 minutes.
 
 ## Public addresses
 

@@ -107,11 +107,22 @@ A server accepts no WireGuard VPN traffic until you turn it on. Use one of these
 - In the **WireGuard VPN** settings, under **Servers**, turn on the switch of the server.
 - Go to **Servers**. Click the server. Click **Access**. Turn on **WireGuard VPN**.
 
-When the switch is on, all WireGuard VPN devices of the team in that region can reach the server, and the server heading shows a **VPN** tag. Turn it off to block all devices from that server. The switch shows only in regions with a WireGuard VPN gateway.
+When the switch is on, the server heading shows a **VPN** tag. Turn it off to block all devices from that server. The switch shows only in regions with a WireGuard VPN gateway.
+
+If the firewall of the server is on, it must also allow the device:
+
+1. Go to the **Networking** tab of the server.
+2. In **Firewall**, add an incoming rule, such as **SSH**.
+3. Select **Specific addresses**, then select the device by its name. Press Enter.
+4. Click **Apply changes**.
+
+When the switch is on but the firewall allows no device, the **Access** tab and the **Servers** list show **The firewall blocks every device**.
 
 ## What a device can reach
 
-The server firewall does not filter WireGuard VPN devices. You cannot set rules for one device or one member.
+A device reaches a server only when the WireGuard VPN switch of the server is on and the firewall allows the device. A firewall rule names one device by its address, so you can allow one device and not another, and allow it only on some ports.
+
+If a region restore gives a device a new address, a rule with the old address no longer matches. Update the rule with the new address.
 
 The tunnel works both ways. See [Protect the device](#protect-the-device).
 

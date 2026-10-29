@@ -1,5 +1,5 @@
 import { call, frappeRequest } from 'frappe-ui'
-import { ref, watch } from 'vue'
+import { type Ref, ref, watch } from 'vue'
 import { API, methodV1 } from '@/api/methods'
 import { useSession } from '@/composables/useSession'
 import { getErrorMessage } from '@/lib/feedback'
@@ -15,7 +15,8 @@ interface DeviceList {
 	servers: WireGuardServer[]
 }
 
-export function useWireGuardDevices() {
+/** `isAllowed` skips the request for a member who can't list devices. */
+export function useWireGuardDevices(isAllowed: Ref<boolean> = ref(true)) {
 	const { activeTeam } = useSession()
 	const devices = ref<WireGuardDevice[]>([])
 	const regions = ref<WireGuardRegion[]>([])
@@ -27,7 +28,7 @@ export function useWireGuardDevices() {
 	async function reload() {
 		const current = ++generation
 		error.value = ''
-		if (!activeTeam.value) {
+		if (!activeTeam.value || !isAllowed.value) {
 			loading.value = false
 			return
 		}
@@ -51,7 +52,7 @@ export function useWireGuardDevices() {
 	}
 
 	watch(
-		activeTeam,
+		[activeTeam, isAllowed],
 		() => {
 			devices.value = []
 			regions.value = []

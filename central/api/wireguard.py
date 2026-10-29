@@ -3,6 +3,7 @@ from frappe import _
 from frappe.utils.translations import _lt
 
 from central.errors import handle_resource_operation
+from central.infrastructure.doctype.virtual_machine.firewall import is_blocking_devices
 from central.permissions import wireguard_device_has_permission
 from central.utils.guards import require_capability
 
@@ -51,7 +52,15 @@ def list_wireguard_devices(team: str) -> dict:
 			"region": ("in", [region.name for region in regions] or [""]),
 			"status": ("!=", "Terminated"),
 		},
-		fields=["resource_id", "title", "region", "ipv6_address", "has_wireguard_access"],
+		fields=[
+			"resource_id",
+			"title",
+			"region",
+			"ipv6_address",
+			"has_wireguard_access",
+			"is_firewall_enabled",
+			"firewall_rules",
+		],
 		order_by="title asc",
 		limit_page_length=0,
 	)
@@ -69,6 +78,12 @@ def list_wireguard_devices(team: str) -> dict:
 	for device in devices:
 		device.added_by_name = owners.get(device.added_by) or device.added_by
 		device.can_delete = wireguard_device_has_permission(frappe._dict(device, team=team), ptype="delete")
+
+	for server in servers:
+		rules = frappe.parse_json(server.pop("firewall_rules"))
+		server.is_blocked_by_firewall = bool(rules) and is_blocking_devices(
+			bool(server.pop("is_firewall_enabled")), rules["inbound"]
+		)
 
 	return {"devices": devices, "regions": regions, "servers": servers}
 
