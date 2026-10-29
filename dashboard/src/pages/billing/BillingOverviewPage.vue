@@ -105,13 +105,14 @@ const onAddCredits = () => {
 				/>
 			</div>
 
-			<SpendCard :reports="reports">
-				<LimitsCard @open-tiers="showTiers = true" />
-			</SpendCard>
 			<PayingForCard
 				@open="showPayingFor = true"
 				@open-projects="showProjects = true"
 			/>
+
+			<SpendCard :reports="reports">
+				<LimitsCard @open-tiers="showTiers = true" />
+			</SpendCard>
 		</div>
 
 		<WalletHistoryPanel v-model:open="showWalletHistory" />
