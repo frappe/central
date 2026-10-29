@@ -159,19 +159,6 @@ def retry_payment(invoice_name: str) -> dict:
 	return result
 
 
-def _advance_standing(subscription: str, target: str):
-	"""Move standing toward `target` if the direct transition is legal; the
-	stepwise caller guarantees ordering (current -> past_due -> suspended)."""
-	current = frappe.db.get_value("Subscription", subscription, "account_standing")
-	if current == target:
-		return current
-	try:
-		subscriptions.set_standing(subscription, target, changed_by="dunning")
-		return target
-	except subscriptions.InvalidTransition:
-		return current
-
-
 def _retry_if_due(inv, schedule, now) -> dict | None:
 	"""Run the collection round of the latest retry day reached, once. Returns its result.
 
@@ -261,7 +248,8 @@ def process_invoice_dunning(invoice_name: str, now=None) -> dict:
 				reference_name=invoice_name,
 			)
 		if sub:
-			standing = _advance_standing(anchor, "Past Due")
+			subscriptions.mark_past_due(inv.team)
+			standing = frappe.db.get_value("Subscription", anchor, "account_standing")
 
 	# --- Day 14: suspend -> stop the team's running servers ------------------
 	if "Suspend" in reached and sub:

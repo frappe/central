@@ -1159,6 +1159,17 @@ def resume_billing(subscription: str, changed_by: str | None = None):
 	return doc
 
 
+def mark_past_due(team: str) -> list[str]:
+	"""Move every Current subscription of an unpaid team to Past Due. An invoice bills the
+	whole team, so its standing is the team's, not one server's. Returns those moved."""
+	moved = frappe.get_all(
+		"Subscription", filters={"team": team, "account_standing": "Current"}, pluck="name"
+	)
+	for name in moved:
+		set_standing(name, "Past Due", changed_by="dunning")
+	return moved
+
+
 def suspend_for_nonpayment(team: str) -> list[str]:
 	"""Suspend every subscription of an unpaid team and stop its running servers.
 

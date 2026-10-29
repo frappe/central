@@ -203,6 +203,16 @@ class TestStagedEscalation(DunningTestBase):
 		self.assertEqual(self._standing(sub), "Past Due")  # grace
 		stop.assert_not_called()  # late is not yet cut off
 
+	def test_day7_moves_every_subscription_of_the_team(self):
+		"""The invoice bills the whole team, so day 7 marks every server, as day 14 suspends every one."""
+		sub = self._subscription()
+		second = self._subscription(with_card=False)
+		inv = self._open_invoice(sub)
+		with patch("central.resource_actions.submit_billing_command"):
+			self._run_through(inv, sub, last_day=7)
+
+		self.assertEqual((self._standing(sub), self._standing(second)), ("Past Due", "Past Due"))
+
 	def test_day14_suspend_stops_running_servers(self):
 		sub = self._subscription()
 		server = self._running(sub)
