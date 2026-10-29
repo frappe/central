@@ -131,7 +131,8 @@ def validate_shape_rows(includes) -> None:
 	"""A customer-designed shape is exactly one Compute, Memory and Disk row, each above zero.
 
 	Every row is priced, so an extra or negative row would change the price without
-	changing the server."""
+	changing the server. A preset's rows, its Transfer allowance included, come from its
+	own Plan and are not checked here."""
 	seen = set()
 	for row in includes or []:
 		resource_type, quantity = row_values(row)

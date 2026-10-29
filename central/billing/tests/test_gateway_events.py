@@ -140,7 +140,13 @@ class TestGatewayEvents(ChargeTestBase):
 		event = self._event(
 			"evt_dispute",
 			"charge.dispute.created",
-			{"id": "dp_1", "payment_intent": "pi_disputed", "amount": 100000, "reason": "fraudulent"},
+			{
+				"id": "dp_1",
+				"object": "dispute",
+				"payment_intent": "pi_disputed",
+				"amount": 100000,
+				"reason": "fraudulent",
+			},
 		)
 		webhooks.handle_webhook_event(event)
 

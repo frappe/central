@@ -243,7 +243,9 @@ def _saved_card_fields(card: dict, method) -> dict:
 		"gateway_method_id": card["payment_method"],
 		"gateway_mandate_id": card.get("mandate") or method.gateway_mandate_id,
 		"card_network": brand,
-		"display_label": f"{brand or 'Card'} ···· {card['last4']}" if card.get("last4") else brand,
+		# A PayPal vault names the account itself; a card is shown by brand and last four digits.
+		"display_label": card.get("label")
+		or (f"{brand or 'Card'} ···· {card['last4']}" if card.get("last4") else brand),
 		"expiry_month": card.get("exp_month"),
 		"expiry_year": card.get("exp_year"),
 	}
@@ -352,30 +354,36 @@ def expire_payment_methods(now=None) -> dict:
 	it is no longer chargeable.
 	"""
 	from central.billing.platform import notifications
+	from central.billing.platform.jobs import each_isolated
 
 	today = frappe.utils.getdate(now or frappe.utils.now_datetime())
-	expired = []
-	for m in frappe.get_all(
-		"Payment Method",
-		filters={"method_type": CARD_METHOD, "status": "Active"},
-		fields=["name", "team", "display_label", "expiry_month", "expiry_year"],
-	):
-		if not m.expiry_year or not m.expiry_month:
-			continue
-		month_start = frappe.utils.getdate(f"{int(m.expiry_year):04d}-{int(m.expiry_month):02d}-01")
-		if frappe.utils.get_last_day(month_start) < today:
-			md = frappe.get_doc("Payment Method", m.name)
-			transition(md, "Expired", actor="scheduler", reason="card expiry date passed")
-			md.save(ignore_permissions=True)
-			expired.append(m.name)
-			notifications.notify(
-				m.team,
-				"Card Expiry",
-				context={"label": m.display_label or "Card"},
-				reference_doctype="Payment Method",
-				reference_name=m.name,
-			)
-	return {"expired": expired}
+	due = [
+		m.name
+		for m in frappe.get_all(
+			"Payment Method",
+			filters={"method_type": CARD_METHOD, "status": "Active"},
+			fields=["name", "expiry_month", "expiry_year"],
+		)
+		if m.expiry_year
+		and m.expiry_month
+		and frappe.utils.get_last_day(f"{int(m.expiry_year):04d}-{int(m.expiry_month):02d}-01") < today
+	]
+
+	def expire(name: str) -> str:
+		method = frappe.get_doc("Payment Method", name)
+		transition(method, "Expired", actor="scheduler", reason="card expiry date passed")
+		# The daily job runs as the system with no session user to check.
+		method.save(ignore_permissions=True)
+		notifications.notify(
+			method.team,
+			"Card Expiry",
+			context={"label": method.display_label or "Card"},
+			reference_doctype="Payment Method",
+			reference_name=name,
+		)
+		return name
+
+	return {"expired": each_isolated("Card expiry", "Payment Method", due, expire)}
 
 
 CARD_DETACHED_EVENT = "payment_method.detached"

@@ -277,6 +277,19 @@ def team_service_has_permission(doc, user: str | None = None, ptype: str | None 
 	return user_has_operator_bypass(user or frappe.session.user)
 
 
+def billing_record_query_conditions(user: str | None = None) -> str:
+	"""1. A System Manager sees every billing record.
+	2. Everyone else sees none: customers reach billing data only through the billing API,
+	   which checks billing:view or billing:manage on the record's team."""
+	return _operator_only_query_conditions(user)
+
+
+def billing_record_has_permission(doc, user: str | None = None, ptype: str | None = None, **kwargs) -> bool:
+	"""1. A System Manager has every permission.
+	2. Everyone else has none on the record itself; the billing API serves them."""
+	return user_has_operator_bypass(user or frappe.session.user)
+
+
 @frappe.whitelist(allow_guest=True)  # nosemgrep -- same surface as frappe.realtime.has_permission
 def realtime_has_permission(doctype: str, name: str) -> bool:
 	"""1. A doctype room of a team-scoped DocType is for operators only: it carries every team's changes.

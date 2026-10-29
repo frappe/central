@@ -29,7 +29,7 @@ class BillingSettings(Document):
 		self.validate_one_row_per_currency()
 		self.validate_operator_alerts()
 
-	@frappe.whitelist()
+	@frappe.whitelist(methods=["POST"])
 	def send_test_alert(self) -> list[str]:
 		"""Send one test alert through the saved settings and return where it went."""
 		from central.billing.platform.alerts import notify_operators

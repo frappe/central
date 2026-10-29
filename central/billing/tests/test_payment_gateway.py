@@ -135,8 +135,7 @@ class TestGatewaySetupValidation(IntegrationTestCase):
 		self.assertEqual(doc.get_password("webhook_secret"), "whsec_manual")
 
 	def test_unrelated_edit_does_not_revalidate(self):
-		# A local site cannot register its webhook, so the admin types the secret.
-		doc = _new_gateway(webhook_secret="whsec_typed")
+		doc = _new_gateway()
 		with (
 			patch.object(
 				StripeAdapter,
@@ -281,19 +280,28 @@ class TestWebhookEventList(IntegrationTestCase):
 			event
 			for event in charges._AUTHORISED_EVENTS | charges._SUCCESS_EVENTS | charges._FAILURE_EVENTS
 			if event.startswith("payment_intent.")
-		} | set(disputes.DISPUTE_EVENTS)
+		} | {event for event in disputes.DISPUTE_EVENTS if event.startswith("charge.")}
 		self.assertLessEqual(handled, set(STRIPE_WEBHOOK_EVENTS))
 
 	def test_razorpay_subscribes_to_every_event_it_handles(self):
 		from central.billing.gateways.razorpay_adapter import RAZORPAY_WEBHOOK_EVENTS
-		from central.billing.payments import charges
+		from central.billing.payments import charges, disputes
 
 		handled = {
 			event
 			for event in charges._AUTHORISED_EVENTS | charges._SUCCESS_EVENTS | charges._FAILURE_EVENTS
 			if event.startswith("payment.")
-		}
+		} | {event for event in disputes.DISPUTE_EVENTS if event.startswith("payment.")}
 		self.assertLessEqual(handled, set(RAZORPAY_WEBHOOK_EVENTS))
+
+	def test_every_refund_event_is_subscribed_by_a_gateway(self):
+		from central.billing.gateways.paypal_adapter import PayPalAdapter
+		from central.billing.gateways.razorpay_adapter import RazorpayAdapter
+		from central.billing.payments.webhooks import REFUND_EVENTS
+
+		adapters = (StripeAdapter, RazorpayAdapter, PayPalAdapter)
+		subscribed = {event for adapter in adapters for event in adapter.webhook_events}
+		self.assertLessEqual(set(REFUND_EVENTS), subscribed)
 
 
 class TestReregisterWebhook(IntegrationTestCase):
@@ -349,3 +357,13 @@ class TestEnableNeedsAWebhookSecret(IntegrationTestCase):
 		):
 			with self.assertRaisesRegex(frappe.ValidationError, "secret"):
 				doc.save(ignore_permissions=True)
+
+	def test_an_enabled_gateway_without_a_secret_still_takes_an_unrelated_edit(self):
+		frappe.db.set_value(
+			"Payment Gateway", "Stripe", {"is_enabled": 1, "credentials_validated_at": frappe.utils.now()}
+		)
+		doc = frappe.get_doc("Payment Gateway", "Stripe")
+		doc.flags.force_credential_validation = True
+		doc.supports_mandates = 1
+		with patch.object(StripeAdapter, "get_credential", return_value=None):
+			doc.save(ignore_permissions=True)

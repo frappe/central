@@ -40,6 +40,8 @@ class TestHostedCheckout(BillingTestCase):
 		self.adapter = MagicMock()
 		self.adapter.create_customer.return_value = "cus_hosted"
 		self.enterContext(patch("central.billing.gateways.registry.get_adapter", return_value=self.adapter))
+		# The return-address rule has its own tests below; these use any address.
+		self.enterContext(patch.object(billing_api, "_require_own_site_url", side_effect=lambda url: url))
 		self._act_as(TEAM)
 
 	def _act_as(self, team):
@@ -161,6 +163,27 @@ class TestHostedCheckout(BillingTestCase):
 		self.assertEqual(attempt, "pi_cs_inv")  # recorded, so a refund can find the charge
 
 
+class TestCheckoutReturnAddress(BillingTestCase):
+	"""A hosted checkout returns the payer only to a site on the credential's own server."""
+
+	def _check(self, url, hosts=("acme.example.com",)):
+		with patch.object(billing_api, "_own_hosts", return_value=set(hosts)):
+			return billing_api._require_own_site_url(url)
+
+	def test_a_site_on_the_server_is_allowed(self):
+		self.assertEqual(
+			self._check("https://acme.example.com/app/billing"), "https://acme.example.com/app/billing"
+		)
+
+	def test_another_host_is_refused(self):
+		with self.assertRaises(frappe.ValidationError):
+			self._check("https://attacker.example/phish")
+
+	def test_plain_http_is_refused_outside_localhost(self):
+		with self.assertRaises(frappe.ValidationError):
+			self._check("http://acme.example.com/app/billing")
+
+
 class TestHostedCardSetupInRegulatedCurrency(BillingTestCase):
 	"""Hosted Stripe card setup registers no India mandate, so INR teams add cards on Razorpay."""
 
@@ -177,6 +200,7 @@ class TestHostedCardSetupInRegulatedCurrency(BillingTestCase):
 		self.create_card_checkout = inspect.unwrap(billing_api.create_payment_method_checkout)
 		self.adapter = MagicMock()
 		self.enterContext(patch("central.billing.gateways.registry.get_adapter", return_value=self.adapter))
+		self.enterContext(patch.object(billing_api, "_require_own_site_url", side_effect=lambda url: url))
 
 	def _act_as(self, currency):
 		team = f"team-hosted-card-{currency.lower()}"

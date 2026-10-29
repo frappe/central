@@ -529,7 +529,7 @@ class TestFullStripeCycle(ChargeTestBase):
 
 
 class TestLogRetention(ChargeTestBase):
-	"""3-month rolling prune of Payment Attempt + Webhook Event logs."""
+	"""Rolling prune of failed Payment Attempts and handled Webhook Events."""
 
 	def _attempt(self, invoice, status):
 		return (
@@ -556,13 +556,25 @@ class TestLogRetention(ChargeTestBase):
 
 	def _far_future(self):
 		# Push 'now' past the retention window so every just-created row is old enough.
-		return frappe.utils.add_to_date(frappe.utils.now_datetime(), days=200)
+		return frappe.utils.add_to_date(frappe.utils.now_datetime(), days=400)
 
-	def test_prunes_terminal_attempt_on_settled_invoice(self):
-		captured = self._attempt(self._paid_invoice(), "Captured")
+	def test_prunes_a_failed_attempt_on_a_settled_invoice(self):
+		failed = self._attempt(self._paid_invoice(), "Failed")
 		out = charges.cleanup_payment_logs(now=self._far_future())
 		self.assertGreaterEqual(out["payment_attempts"], 1)
-		self.assertFalse(frappe.db.exists("Payment Attempt", captured))
+		self.assertFalse(frappe.db.exists("Payment Attempt", failed))
+
+	def test_keeps_a_captured_attempt_a_refund_or_dispute_needs(self):
+		captured = self._attempt(self._paid_invoice(), "Captured")
+		charges.cleanup_payment_logs(now=frappe.utils.add_to_date(frappe.utils.now_datetime(), days=2000))
+		self.assertTrue(frappe.db.exists("Payment Attempt", captured))
+
+	def test_retention_has_a_floor(self):
+		from central.billing import settings
+
+		frappe.db.set_single_value("Billing Settings", "payment_log_retention_days", 0)
+		self.addCleanup(frappe.db.set_single_value, "Billing Settings", "payment_log_retention_days", 180)
+		self.assertEqual(settings.payment_log_retention_days(), settings.MIN_PAYMENT_LOG_RETENTION_DAYS)
 
 	def test_keeps_attempt_on_unsettled_invoice(self):
 		live = self._attempt(self._open_invoice(1000), "Failed")  # invoice still Open
@@ -592,7 +604,7 @@ class TestLogRetention(ChargeTestBase):
 		captured = self._attempt(self._paid_invoice(), "Captured")
 		# Wide window (1 year) with 'now' = real now: a fresh row is NOT old enough.
 		frappe.db.set_single_value("Billing Settings", "payment_log_retention_days", 365)
-		self.addCleanup(frappe.db.set_single_value, "Billing Settings", "payment_log_retention_days", 90)
+		self.addCleanup(frappe.db.set_single_value, "Billing Settings", "payment_log_retention_days", 180)
 		charges.cleanup_payment_logs()
 		self.assertTrue(frappe.db.exists("Payment Attempt", captured))
 

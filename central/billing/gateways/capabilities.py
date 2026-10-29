@@ -40,7 +40,11 @@ def silent_charge_ceiling(gateway: str, currency: str) -> float | None:
 	"""
 	row = currency_row(gateway, currency)
 	configured = frappe.utils.flt(row.max_silent_charge) if row else 0.0
-	return configured or regulatory_ceiling(currency)
+	statutory = regulatory_ceiling(currency)
+	if not configured:
+		return statutory
+	# A stricter number is a business choice; a higher one is never allowed to win.
+	return min(configured, statutory) if statutory is not None else configured
 
 
 def requires_predebit_notice(gateway: str, currency: str) -> bool:

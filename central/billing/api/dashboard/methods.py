@@ -6,6 +6,7 @@ setup, and fallback-order management. Gateway secrets are never returned.
 
 import frappe
 from frappe import _
+from frappe.rate_limiter import rate_limit
 
 from central.billing import authz
 from central.billing.api.dashboard._shared import (
@@ -105,6 +106,7 @@ def get_payment_method_options(team: str | None = None) -> dict:
 
 
 @frappe.whitelist(methods=["POST"])
+@rate_limit(limit=20, seconds=60 * 60, user_based=True)
 def initiate_card_setup(team: str | None = None, gateway: str | None = None) -> dict:
 	"""Begin adding a card (gateway SetupIntent → client_secret). Real PAN is
 	collected client-side by the gateway SDK (PCI), never by our server."""
@@ -121,6 +123,7 @@ def initiate_card_setup(team: str | None = None, gateway: str | None = None) -> 
 
 
 @frappe.whitelist(methods=["POST"])
+@rate_limit(limit=20, seconds=60 * 60, user_based=True)
 def confirm_card(payment_method: str | None = None) -> dict:
 	"""Confirm a card the customer saved in the console card dialog.
 
@@ -142,6 +145,7 @@ def confirm_card(payment_method: str | None = None) -> dict:
 
 
 @frappe.whitelist(methods=["POST"])
+@rate_limit(limit=20, seconds=60 * 60, user_based=True)
 def setup_payment_method_order(
 	team: str | None = None,
 	gateway: str | None = None,
@@ -202,6 +206,7 @@ def _fallback_reason(team: str, entry: dict | None, after_decline: bool) -> str 
 
 
 @frappe.whitelist(methods=["POST"])
+@rate_limit(limit=20, seconds=60 * 60, user_based=True)
 def confirm_payment_method_order(
 	payment_method: str | None = None,
 	razorpay_payment_id: str | None = None,

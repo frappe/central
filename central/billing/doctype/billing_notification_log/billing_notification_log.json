@@ -21,7 +21,7 @@
   "message"
  ],
  "fields": [
-  {"fieldname": "team", "fieldtype": "Link", "options": "Team", "in_list_view": 1, "label": "Team", "reqd": 1},
+  {"fieldname": "team", "fieldtype": "Link", "options": "Team", "in_list_view": 1, "label": "Team", "reqd": 1, "search_index": 1},
   {
    "fieldname": "event_type", "fieldtype": "Select", "in_list_view": 1, "label": "Event Type",
    "options": "Payment Success\nPayment Failure\nPayment Retry\nInvoice Overdue\nCredit Low\nCard Expiry\nMandate Reauth\nTrial Expiring\nAction Required\nPre-debit Notice\nAdd Payment Method\nBilling Details Required"
@@ -41,7 +41,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-06-03 00:00:00.000000",
+ "modified": "2026-10-25 13:00:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Billing Notification Log",

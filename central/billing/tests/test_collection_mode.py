@@ -459,6 +459,15 @@ class TestSilentChargeCapability(IntegrationTestCase):
 		gw.save(ignore_permissions=True)
 		self.assertEqual(gw.currencies[0].max_silent_charge, 15000)
 
+	def test_a_higher_stored_ceiling_never_wins_at_the_read(self):
+		"""A row written around the form's clamp (a patch, raw SQL) still reads as the RBI limit."""
+		from central.billing.gateways import capabilities
+		from central.billing.tests.utils import configure_gateway
+
+		gw = configure_gateway("Razorpay", (("INR", 1),), is_enabled=1)
+		frappe.db.set_value("Payment Gateway Currency", gw.currencies[0].name, "max_silent_charge", 50000)
+		self.assertEqual(capabilities.silent_charge_ceiling(gw.name, "INR"), 15000)
+
 	def test_a_stricter_inr_ceiling_is_left_alone(self):
 		from central.billing.tests.utils import configure_gateway
 

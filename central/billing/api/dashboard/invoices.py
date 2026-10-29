@@ -319,7 +319,7 @@ def list_invoices(team: str | None = None) -> list[dict]:
 
 
 @frappe.whitelist(methods=["GET"])
-@rate_limit(limit=30, seconds=60 * 60)
+@rate_limit(limit=30, seconds=60 * 60, user_based=True)
 def download_invoice_pdf(name: str) -> None:
 	"""The customer's copy of the statutory invoice, as ERPNext renders it."""
 	from central.billing.ingester.erpnext_sync import sales_invoice_pdf
@@ -594,7 +594,7 @@ def credit_ledger(team: str | None = None, limit: int = 50) -> list[dict]:
 
 
 @frappe.whitelist(methods=["GET"])
-@rate_limit(limit=30, seconds=60 * 60)
+@rate_limit(limit=30, seconds=60 * 60, user_based=True)
 def download_topup_receipt(name: str) -> None:
 	"""The receipt voucher for a wallet top-up, as the accounting system renders it."""
 	from central.billing.ingester.advance import receipt_pdf
@@ -612,6 +612,7 @@ def download_topup_receipt(name: str) -> None:
 
 
 @frappe.whitelist(methods=["POST"])
+@rate_limit(limit=30, seconds=60 * 60, user_based=True)
 def pay_invoice(invoice: str | None = None) -> dict:
 	"""Postpaid one-off settlement of an outstanding invoice (team-scoped)."""
 	team = frappe.db.get_value("Invoice", invoice, "team")
@@ -656,6 +657,7 @@ def get_fallback_offer(invoice: str | None = None) -> dict:
 
 
 @frappe.whitelist(methods=["POST"])
+@rate_limit(limit=30, seconds=60 * 60, user_based=True)
 def pay_invoice_checkout(invoice: str | None = None) -> dict:
 	"""Open an on-session gateway checkout to pay an invoice yourself
 	(collection_mode = manual_checkout). Any amount — on-session has no ₹15k limit."""
@@ -667,6 +669,7 @@ def pay_invoice_checkout(invoice: str | None = None) -> dict:
 
 
 @frappe.whitelist(methods=["POST"])
+@rate_limit(limit=30, seconds=60 * 60, user_based=True)
 def confirm_invoice_checkout(
 	attempt: str | None = None,
 	razorpay_order_id: str | None = None,
@@ -716,6 +719,7 @@ def get_topup_options(team: str | None = None) -> dict:
 
 
 @frappe.whitelist(methods=["POST"])
+@rate_limit(limit=30, seconds=60 * 60, user_based=True)
 def create_topup_order(
 	team: str | None = None,
 	amount: float | None = None,
@@ -825,6 +829,7 @@ def _top_up_gateway(
 
 
 @frappe.whitelist(methods=["POST"])
+@rate_limit(limit=30, seconds=60 * 60, user_based=True)
 def confirm_topup(
 	team: str | None = None,
 	amount: float | None = None,

@@ -19,33 +19,69 @@ heads-up is sent here; the bank's own RBI pre-debit notification is dispatched b
 the gateway at debit time (an adapter concern, kept out of this orchestration).
 """
 
+from enum import StrEnum
+
 import frappe
 
 from central.billing.payments import collection, collection_mode
+from central.billing.platform.jobs import each_isolated
 
 PREDEBIT_NOTICE_HOURS = 24
 
 
-def _rail_requires_notice(team: str) -> bool:
-	"""Whether this team's rail owes a pre-debit notice before each off-session debit.
+class Predebit(StrEnum):
+	"""What `await_predebit` tells the collector to do with one rail."""
+
+	CHARGE_NOW = "charge_now"
+	WAIT = "wait"
+	ROTATE = "rotate"
+
+
+def _is_notice_required(inv, gateway: str | None) -> bool:
+	"""Whether the rail about to debit owes a notice: `gateway` when the caller names it,
+	otherwise the team's own rail.
 
 	It is a property of (gateway, currency), so an Indian mandate on Stripe owes one
 	exactly as a Razorpay one does, and a USD card owes none.
 	"""
 	from central.billing.gateways import capabilities
 
-	gateway, currency = collection_mode.team_rail(team)
+	gateway, currency = (gateway, inv.currency) if gateway else collection_mode.team_rail(inv.team)
 	return bool(gateway and currency and capabilities.requires_predebit_notice(gateway, currency))
 
 
-def schedule_predebit(invoice: str, now=None) -> dict:
+def await_predebit(invoice: str, gateway: str) -> tuple[Predebit, dict]:
+	"""What `gateway` may do with this invoice now under the pre-debit notice rule.
+
+	1. CHARGE_NOW: the rail owes no notice, or the notice window has passed.
+	2. WAIT: the notice is sent, now or before, and its window is still open. The
+	   notice outcome comes with it.
+	3. ROTATE: this rail cannot debit this invoice now (not on Auto Charge, or over the
+	   silent ceiling), so the next method is tried instead of a window that never opens.
+	"""
+	inv = frappe.get_doc("Invoice", invoice)
+	charge_after = inv.predebit_charge_after
+	if not _is_notice_required(inv, gateway) or (
+		charge_after and frappe.utils.now_datetime() >= frappe.utils.get_datetime(charge_after)
+	):
+		return Predebit.CHARGE_NOW, {}
+	notice = schedule_predebit(invoice, gateway=gateway)
+	if notice.get("notified") or notice.get("skipped") == "already_notified":
+		return Predebit.WAIT, notice
+	return Predebit.ROTATE, notice
+
+
+def schedule_predebit(invoice: str, now=None, gateway: str | None = None) -> dict:
 	"""Send the pre-debit notice for an e-mandate invoice and arm its debit window.
 	Over the silent ceiling → fork to Action Required rather than promise a debit we
-	can't make off-session. Idempotent (skips an already-notified invoice)."""
+	can't make off-session. Idempotent (skips an already-notified invoice).
+
+	`gateway` is the rail about to debit, when the caller knows it (a fallback onto a
+	second rail); otherwise the team's own rail decides."""
 	inv = frappe.get_doc("Invoice", invoice)
 	if frappe.db.get_value("Billing Profile", inv.team, "collection_mode") != "Auto Charge":
 		return {"invoice": invoice, "skipped": "not_auto_charge"}
-	if not _rail_requires_notice(inv.team):
+	if not _is_notice_required(inv, gateway):
 		# A rail that debits without a notice is collected by the ordinary sweep. Arming
 		# a 24h window here would delay every international charge for nothing.
 		return {"invoice": invoice, "skipped": "no_notice_required"}
@@ -107,12 +143,14 @@ def charge_due(now=None) -> list[dict]:
 		],
 		fields=["name", "team"],
 	)
-	out = []
-	for inv in due:
-		if frappe.db.get_value("Billing Profile", inv.team, "collection_mode") != "Auto Charge":
-			continue
-		out.append({"invoice": inv.name, **collection.collect_invoice(inv.name)})
-	return out
+	auto = [
+		inv.name
+		for inv in due
+		if frappe.db.get_value("Billing Profile", inv.team, "collection_mode") == "Auto Charge"
+	]
+	return each_isolated(
+		"E-mandate debit", "Invoice", auto, lambda name: {"invoice": name, **collection.collect_invoice(name)}
+	)
 
 
 def run_emandate_cycle(now=None) -> dict:
@@ -128,5 +166,7 @@ def run_emandate_cycle(now=None) -> dict:
 		],
 		pluck="name",
 	)
-	notified = [schedule_predebit(name, now=now) for name in pending]
+	notified = each_isolated(
+		"Pre-debit notice", "Invoice", pending, lambda name: schedule_predebit(name, now=now)
+	)
 	return {"notified": notified, "charged": charge_due(now=now)}

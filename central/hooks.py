@@ -196,6 +196,24 @@ doc_events = {
 	"Payment Method": {
 		"on_update": "central.signups.credit.on_payment_method_update",
 	},
+	# Money records change only through billing code (central/billing/platform/records.py).
+	**{
+		doctype: {
+			"validate": "central.billing.platform.records.refuse_manual_edit",
+			"on_trash": "central.billing.platform.records.refuse_manual_delete",
+		}
+		for doctype in (
+			"Invoice",
+			"Payment Attempt",
+			"Refund",
+			"Credit Ledger Entry",
+			"Credit Wallet",
+			"Usage Rollup",
+			"Webhook Event",
+			"Billing Event",
+			"Top-up Order",
+		)
+	},
 }
 
 # Scheduled Tasks
@@ -244,6 +262,7 @@ scheduler_events = {
 		"central.billing.ingester.advance.sync_pending_advances",
 		"central.billing.revenue.storage_usage.record_storage_usage",
 		"central.billing.platform.invariants.run_invariant_audit",
+		"central.billing.payments.reconciliation.recheck_completed_refunds",
 	],
 	"hourly": [
 		"central.billing.revenue.invoicing.collect_due_invoices",
@@ -363,6 +382,30 @@ page_renderer = ["central.oidc.DiscoveryPage"]
 
 # Authentication and authorization
 
+# Team-scoped billing records: operators only; customers use the billing API.
+_BILLING_TEAM_RECORDS = (
+	"Billing Event",
+	"Billing Notification Log",
+	"Billing Profile",
+	"Billing Projection Summary",
+	"Billing Scenario",
+	"Commitment",
+	"Credit Ledger Entry",
+	"Credit Wallet",
+	"Entitlement Token",
+	"Gateway Customer",
+	"Invoice",
+	"Payment Attempt",
+	"Payment Method",
+	"Project",
+	"Refund",
+	"Subscription",
+	"Subscription Change",
+	"Tax Profile",
+	"Top-up Order",
+	"Usage Rollup",
+)
+
 permission_query_conditions = {
 	"Team SSH Key": "central.permissions.team_ssh_key_query_conditions",
 	"Virtual Machine": "central.permissions.server_query_conditions",
@@ -377,6 +420,7 @@ permission_query_conditions = {
 	"Team Service": "central.permissions.team_service_query_conditions",
 	"User Notification Preference": "central.permissions.user_notification_preference_query_conditions",
 	"VM Snapshot": "central.permissions.vm_snapshot_query_conditions",
+	**dict.fromkeys(_BILLING_TEAM_RECORDS, "central.permissions.billing_record_query_conditions"),
 }
 
 has_permission = {
@@ -393,6 +437,7 @@ has_permission = {
 	"Team Service": "central.permissions.team_service_has_permission",
 	"User Notification Preference": "central.permissions.user_notification_preference_has_permission",
 	"VM Snapshot": "central.permissions.vm_snapshot_has_permission",
+	**dict.fromkeys(_BILLING_TEAM_RECORDS, "central.permissions.billing_record_has_permission"),
 }
 
 # --------------------------------

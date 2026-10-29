@@ -32,11 +32,9 @@ class CorrectionsTestCase(IntegrationTestCase):
 		billing_team(TEAM, gstin="27AABCT1111T1Z5")
 		self.remote = FakeAccountingSystem()
 		self.enterContext(self.remote.patches())
-		self.enterContext(patch("central.billing.payments.corrections._enqueue"))
+		self.enterContext(patch("central.billing.payments.corrections.enqueue_steps"))
 		self.gateway = MagicMock()
-		self.gateway.refund.return_value = RefundResult(
-			success=True, status="Completed", gateway_refund_id="re_1", raw={}
-		)
+		self.gateway.refund.return_value = RefundResult(status="Completed", gateway_refund_id="re_1", raw={})
 		self.enterContext(patch("central.billing.payments.corrections._adapter", return_value=self.gateway))
 
 	def _paid_invoice(self, synced=True, paid_at="2026-09-01 10:00:00"):
@@ -175,29 +173,12 @@ class TestCancelAndRefund(CorrectionsTestCase):
 		self.assertEqual(credits.get_balance(TEAM, "INR")["balance"], 2000)
 
 	def test_a_failed_gateway_refund_is_kept_for_a_person(self):
-		self.gateway.refund.return_value = RefundResult(
-			success=False, status="failed", gateway_refund_id=None, raw={}
-		)
+		self.gateway.refund.return_value = RefundResult(status="Failed", gateway_refund_id=None, raw={})
 		inv = self._paid_invoice()
 		corrections.cancel_and_refund(inv, "customer asked")
 		self._run_all(inv)
 		self.assertEqual(self._refund(inv, "Source").status, "Failed")
 		self.assertEqual(self._refund(inv, "Source").payment_record_id, None)
-
-
-class TestDispute(CorrectionsTestCase):
-	def test_a_lost_dispute_is_not_refunded_again(self):
-		inv = self._paid_invoice()
-		corrections.cancel_and_refund(
-			inv, "dispute lost", dispute={"id": "dp_1", "payment_intent": "pi_card"}
-		)
-		self._run_all(inv)
-		self.gateway.refund.assert_not_called()
-		lost = self._refund(inv, "Dispute")
-		self.assertEqual(lost.status, "Completed")
-		out = next(p for p in self.remote.posts("Payment Entry") if p.get("reference_no") == "dp_1")
-		self.assertEqual(out["paid_from"], "Stripe Clearing INR - TC")
-		self.assertEqual(credits.get_balance(TEAM, "INR")["balance"], 2000)  # the wallet part comes back too
 
 
 class TestRefused(CorrectionsTestCase):
@@ -213,78 +194,9 @@ class TestRefused(CorrectionsTestCase):
 			corrections.cancel_and_refund(inv, "x")
 
 
-class TestDisputeWebhook(CorrectionsTestCase):
-	def _event(self, event_type, status="needs_response", amount=3540):
-		payload = {
-			"id": f"evt_{frappe.generate_hash(length=8)}",
-			"type": event_type,
-			"data": {
-				"object": {
-					"object": "dispute",
-					"id": "dp_1",
-					"payment_intent": "pi_card",
-					"amount": round(amount * 100),
-					"currency": "inr",
-					"status": status,
-					"reason": "fraudulent",
-				}
-			},
-		}
-		event = frappe.get_doc(
-			{
-				"doctype": "Webhook Event",
-				"gateway": "Stripe",
-				"gateway_event_id": payload["id"],
-				"event_type": event_type,
-				"raw_payload": frappe.as_json(payload),
-				"status": "Received",
-			}
-		).insert(ignore_permissions=True)
-		from central.billing.payments.charges import apply_webhook
-
-		return apply_webhook(event.name)
-
-	def _comments(self, invoice):
-		return frappe.get_all(
-			"Comment", {"reference_doctype": "Invoice", "reference_name": invoice}, pluck="content"
-		)
-
-	def test_an_opened_dispute_is_noted(self):
-		inv = self._paid_invoice()
-		self.assertEqual(self._event("charge.dispute.created")["result"], "noted")
-		self.assertEqual(frappe.db.get_value("Invoice", inv, "status"), "Paid")
-		self.assertTrue(any("dp_1 opened" in c for c in self._comments(inv)))
-
-	def test_losing_the_whole_charge_cancels_the_invoice(self):
-		inv = self._paid_invoice()
-		self.assertEqual(self._event("charge.dispute.closed", status="lost")["result"], "cancelled")
-		self.assertEqual(frappe.db.get_value("Invoice", inv, "status"), "Cancelled")
-		lost = self._refund(inv, "Dispute")
-		self.assertEqual((lost.amount, lost.gateway_refund_id), (3540, "dp_1"))
-
-	def test_losing_part_of_the_charge_credits_that_part(self):
-		inv = self._paid_invoice()
-		self.assertEqual(
-			self._event("charge.dispute.closed", status="lost", amount=1000)["result"], "partly_refunded"
-		)
-		self.assertEqual(frappe.db.get_value("Invoice", inv, "status"), "Paid")
-		self._run_all(inv)
-		lost = self._refund(inv, "Dispute")
-		self.assertEqual((lost.partial, lost.amount, lost.gateway_refund_id), (1, 1000, "dp_1"))
-		self.gateway.refund.assert_not_called()
-		self.assertTrue(lost.credit_note_id and lost.payment_record_id)
-
-	def test_a_won_dispute_changes_nothing(self):
-		inv = self._paid_invoice()
-		self.assertEqual(self._event("charge.dispute.closed", status="won")["result"], "won")
-		self.assertEqual(frappe.db.get_value("Invoice", inv, "status"), "Paid")
-
-
 class TestRetryFailedRefund(CorrectionsTestCase):
 	def test_a_refused_refund_is_retried_with_a_new_key(self):
-		self.gateway.refund.return_value = RefundResult(
-			success=False, status="failed", gateway_refund_id=None, raw={}
-		)
+		self.gateway.refund.return_value = RefundResult(status="Failed", gateway_refund_id=None, raw={})
 		inv = self._paid_invoice()
 		corrections.cancel_and_refund(inv, "customer asked")
 		self._run_all(inv)
@@ -295,9 +207,7 @@ class TestRetryFailedRefund(CorrectionsTestCase):
 
 		self.assertIn(inv, [a["subject"] for a in alerts.failed_refunds()])
 
-		self.gateway.refund.return_value = RefundResult(
-			success=True, status="Completed", gateway_refund_id="re_2", raw={}
-		)
+		self.gateway.refund.return_value = RefundResult(status="Completed", gateway_refund_id="re_2", raw={})
 		self.assertEqual(corrections.retry_failed_refunds(inv), 1)
 		self._run_all(inv)
 		card.reload()
@@ -438,9 +348,7 @@ class TestRefundPart(CorrectionsTestCase):
 
 	def test_a_failed_part_is_not_retried_once_the_invoice_gave_that_amount_elsewhere(self):
 		inv = self._paid_invoice()  # 5,900 in all
-		self.gateway.refund.return_value = RefundResult(
-			success=False, status="failed", gateway_refund_id=None, raw={}
-		)
+		self.gateway.refund.return_value = RefundResult(status="Failed", gateway_refund_id=None, raw={})
 		corrections.refund_part(inv, 3000, "x", destination="Source")
 		self._run_all(inv)
 		self.assertEqual(self._refund(inv, "Source").status, "Failed")

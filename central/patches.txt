@@ -61,3 +61,5 @@ central.patches.v0_0.seed_signup_image_minimum_age
 central.patches.v0_0.clear_default_mandate_currency
 # A first payment is dated by paid_at. A Paid invoice from before that field gets one.
 central.patches.v0_0.backfill_invoice_paid_at
+# Report, without changing anything, billing data the October 2026 security fixes would have refused.
+central.patches.v0_0.report_billing_security_findings

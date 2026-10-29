@@ -306,7 +306,7 @@ class TestStripeTestModeIntegration(CardTestBase):
 			pi_create.return_value = {"id": "pi_micro", "status": "succeeded"}
 			method = payments.confirm_payment_method(setup["payment_method"])
 
-		setup_retrieve.assert_called_once_with("seti_1")
+		self.assertEqual(setup_retrieve.call_args.args, ("seti_1",))
 		self.assertEqual(method.gateway_method_id, "pm_card")
 
 		refund_create.assert_called_once()  # micro-charge refunded

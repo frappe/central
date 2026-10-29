@@ -1108,3 +1108,13 @@ class TestTheAmexAndDinersGapIsStatedUpfront(IntegrationTestCase):
 
 		frappe.db.set_value("Billing Profile", self.TEAM, "currency", "USD")
 		self.assertIsNone(account.get_collection_status(self.TEAM)["mandate_gap_note"])
+
+
+class TestCsvExportIsSafe(IntegrationTestCase):
+	def test_a_cell_a_spreadsheet_would_run_is_escaped(self):
+		from central.billing.api.dashboard.reports import _safe_cell
+
+		self.assertEqual(_safe_cell('=HYPERLINK("http://x")'), '\'=HYPERLINK("http://x")')
+		self.assertEqual(_safe_cell("@SUM(A1)"), "'@SUM(A1)")
+		self.assertEqual(_safe_cell("INV-2026-01"), "INV-2026-01")
+		self.assertEqual(_safe_cell(-12.5), -12.5)  # numbers are data, not formulas

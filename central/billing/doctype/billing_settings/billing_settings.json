@@ -210,8 +210,8 @@
    "label": "Log Retention"
   },
   {
-   "default": "90",
-   "description": "Rolling window (days) the gateway logs — Payment Attempt and Webhook Event — are kept before daily pruning. Live/unsettled rows are kept regardless.",
+   "default": "180",
+   "description": "How many days failed Payment Attempts and handled Webhook Events are kept before daily pruning. Never less than 180, so a chargeback still finds its trail. Captured and refunded charges are never pruned.",
    "fieldname": "payment_log_retention_days",
    "fieldtype": "Int",
    "label": "Payment Log Retention (Days)",

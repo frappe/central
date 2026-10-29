@@ -135,6 +135,22 @@ class TestRazorpayAdapter(GatewayAdapterContract, IntegrationTestCase):
 		header = self._mock.payment.refund.call_args.kwargs["headers"]["X-Refund-Idempotency"]
 		self.assertEqual(len(header), 40)
 
+	def test_the_sdk_sends_the_refund_idempotency_header(self):
+		"""Drives the real SDK client, so a change to its refund signature fails here."""
+		adapter = self.make_adapter()
+		payment_attempt, amount, reason = self.make_refund_inputs()
+		client = razorpay.Client(auth=("rzp_test_key", "rzp_test_secret"))
+		response = MagicMock(status_code=200)
+		response.json.return_value = {"id": "rfnd_sdk", "status": "processed"}
+		with (
+			patch.object(RazorpayAdapter, "_client", return_value=client),
+			patch.object(client.session, "post", return_value=response) as post,
+		):
+			result = adapter.refund(payment_attempt, amount, reason, "REF-0002")
+
+		self.assertEqual(result.gateway_refund_id, "rfnd_sdk")
+		self.assertEqual(len(post.call_args.kwargs["headers"]["X-Refund-Idempotency"]), 40)
+
 	def make_refund_inputs(self):
 		payment_attempt = frappe._dict(gateway_transaction_id="pay_charged")
 		return payment_attempt, 40.0, "duplicate charge"

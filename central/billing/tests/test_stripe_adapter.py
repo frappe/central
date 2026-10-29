@@ -7,7 +7,7 @@ from unittest.mock import patch
 import frappe
 import stripe
 
-from central.billing.gateways.base import GatewayUnsupported
+from central.billing.gateways.base import GatewayTimeout, GatewayUnsupported
 from central.billing.gateways.stripe_adapter import StripeAdapter
 from central.billing.tests.gateway_contract import GatewayAdapterContract
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
@@ -184,7 +184,12 @@ class TestStripeAdapter(GatewayAdapterContract, IntegrationTestCase):
 		adapter = self.make_adapter()
 		with patch.object(stripe.WebhookEndpoint, "modify") as modify:
 			adapter.update_webhook_events("we_1", "https://site/x", ["payment_intent.canceled"])
-		modify.assert_called_once_with("we_1", enabled_events=["payment_intent.canceled"])
+		modify.assert_called_once()
+		self.assertEqual(modify.call_args.args, ("we_1",))
+		self.assertEqual(modify.call_args.kwargs["enabled_events"], ["payment_intent.canceled"])
+		self.assertEqual(
+			modify.call_args.kwargs["stripe_version"], "2026-08-26.dahlia"
+		)  # per request, pinned
 
 	def test_create_customer_returns_id(self):
 		adapter = self.make_adapter()
@@ -383,6 +388,19 @@ class TestIndiaCardMandate(IntegrationTestCase):
 		self.assertFalse(result.success)
 		self.assertEqual(result.status, "Failed")
 
+	def test_a_reused_charge_key_is_an_unknown_outcome_not_a_decline(self):
+		method = frappe._dict(gateway_method_id="pm_x", team="t")
+		error = stripe.error.IdempotencyError(
+			"Keys for idempotent requests can only be used with the same parameters"
+		)
+		with patch.object(stripe.PaymentIntent, "create", side_effect=error):
+			with self.assertRaises(GatewayTimeout):
+				self.adapter.charge(
+					frappe._dict(name="INV-1", amount=50, currency="USD", customer_id="cus_x", team="t"),
+					method,
+					"key-4",
+				)
+
 	def test_a_mandate_card_is_checked_by_its_mandate_not_a_charge(self):
 		method = frappe._dict(
 			gateway_method_id="pm_x", gateway_mandate_id="mandate_x", gateway_customer_id="cus_x", team="t"
@@ -423,7 +441,8 @@ class TestIndiaCardMandate(IntegrationTestCase):
 			patch.object(stripe.PaymentIntent, "cancel") as cancel,
 		):
 			validated = self.adapter.validate_payment_method(method)
-		cancel.assert_called_once_with("pi_x")
+		cancel.assert_called_once()
+		self.assertEqual(cancel.call_args.args, ("pi_x",))
 		self.assertFalse(validated.success)
 		self.assertEqual(validated.failure_code, "check_unfinished")
 

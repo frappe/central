@@ -18,9 +18,9 @@ import frappe
 from frappe import _
 
 from central.billing import settings
-from central.billing.doctype.payment_attempt.payment_attempt import idempotency_key
-from central.billing.gateways.base import GatewayTimeout
+from central.billing.gateways.base import GatewayError, GatewayTimeout, PaymentResult
 from central.billing.payments.decline import Failure
+from central.billing.platform.records import delete_billing_record, save_billing_record
 from central.billing.states import transition
 
 # The unique idempotency key rejected the insert: this charge is already claimed.
@@ -35,14 +35,21 @@ _AUTHORISED_EVENTS = {
 	"payment_intent.amount_capturable_updated",  # Stripe: requires_capture
 	"payment.authorized",  # Razorpay
 	"charge.authorized",
+	"PAYMENT.CAPTURE.PENDING",  # PayPal: held for review or an eCheck; not paid yet
 }
-_SUCCESS_EVENTS = {"payment_intent.succeeded", "charge.succeeded", "payment.captured"}
+_SUCCESS_EVENTS = {
+	"payment_intent.succeeded",
+	"charge.succeeded",
+	"payment.captured",
+	"PAYMENT.CAPTURE.COMPLETED",
+}
 _FAILURE_EVENTS = {
 	"payment_intent.payment_failed",
 	# Stripe cancels an authorisation that expires uncaptured; it will never capture.
 	"payment_intent.canceled",
 	"charge.failed",
 	"payment.failed",
+	"PAYMENT.CAPTURE.DENIED",
 }
 
 _TERMINAL_ATTEMPT = ("Captured", "Failed", "Refunded")
@@ -141,8 +148,10 @@ def _claim_attempt(invoice: str, payment_method: str | None, gateway: str | None
 		# number, so the same key). They own it; we don't start a second one. Undo
 		# only the failed insert — whatever the caller did before this still stands.
 		frappe.db.rollback(save_point=save_point)
+		# By invoice and retry number, not a recomputed key: a key stored before the site
+		# joined it would not match.
 		owner = frappe.db.get_value(
-			"Payment Attempt", {"idempotency_key": idempotency_key(invoice, retry_number)}, "name"
+			"Payment Attempt", {"invoice": invoice, "retry_number": retry_number}, "name"
 		)
 		return {"charged": False, "reason": "attempt_in_flight", "attempt": owner}
 
@@ -177,23 +186,40 @@ def _charge_claimed_attempt(attempt_name: str) -> dict:
 		if not attempt.gateway_order_id:
 			# A gateway without a charge idempotency key (Razorpay) needs its order stored
 			# before the payment is made, so a retry finds that payment instead of a new one.
-			charge_input.order_id = adapter.prepare_charge(charge_input, attempt.name)
+			try:
+				charge_input.order_id = adapter.prepare_charge(charge_input, attempt.name)
+			except GatewayTimeout:
+				raise
+			except GatewayError as e:
+				# The gateway refused to open the charge; nothing was taken.
+				refused = PaymentResult(
+					success=False, status="Failed", failure_code="order_refused", failure_reason=str(e)
+				)
+				return _record_result(attempt, refused)
 			if charge_input.order_id:
 				attempt.db_set("gateway_order_id", charge_input.order_id)
 				_persist()
 		result = adapter.charge(charge_input, method, attempt.idempotency_key)
 	except GatewayTimeout as e:
-		# Transient: leave the attempt initiated so a retry reuses the same key.
-		attempt.failure_reason = str(e)[:140]
-		attempt.save(ignore_permissions=True)
-		# We never reached the customer — a rate limit or a network fault is ours, not
-		# theirs — so their retry ladder must not start ticking on it.
-		from central.billing.revenue.dunning import defer_dunning
+		return _defer(attempt, e)
+	return _record_result(attempt, result)
 
-		defer_dunning(attempt.invoice, f"gateway unreachable: {str(e)[:80]}")
-		_persist()
-		return {"charged": False, "reason": "timeout", "attempt": attempt.name}
 
+def _defer(attempt, e) -> dict:
+	"""Transient: leave the attempt initiated so a retry reuses the same key."""
+	attempt.failure_reason = str(e)[:140]
+	save_billing_record(attempt)
+	# We never reached the customer — a rate limit or a network fault is ours, not
+	# theirs — so their retry ladder must not start ticking on it.
+	from central.billing.revenue.dunning import defer_dunning
+
+	defer_dunning(attempt.invoice, f"gateway unreachable: {str(e)[:80]}")
+	_persist()
+	return {"charged": False, "reason": "timeout", "attempt": attempt.name}
+
+
+def _record_result(attempt, result) -> dict:
+	"""Write down what the gateway answered for this attempt, and commit it."""
 	attempt.gateway_transaction_id = result.gateway_transaction_id
 	# The gateway is holding the charge on purpose — Stripe's India pre-debit window,
 	# where the bank notifies the customer first and the money moves a day later. It
@@ -201,7 +227,7 @@ def _charge_claimed_attempt(attempt_name: str) -> dict:
 	# retries or falls back against it (ADR 0023).
 	if result.hold_until:
 		attempt.gateway_hold_until = result.hold_until
-		attempt.save(ignore_permissions=True)
+		save_billing_record(attempt)
 		_persist()
 		return {
 			"charged": False,
@@ -220,7 +246,7 @@ def _charge_claimed_attempt(attempt_name: str) -> dict:
 		)
 		attempt.completed_at = frappe.utils.now_datetime()
 		_retire_method_if_mandate_failed(attempt, result.failure_code)
-	attempt.save(ignore_permissions=True)
+	save_billing_record(attempt)
 	_persist()
 
 	return {
@@ -300,7 +326,7 @@ def fail_unopened_order(attempt, error: Exception) -> None:
 	transition(attempt, "Failed", actor="gateway", correlation=attempt.invoice, reason="order not created")
 	stamp_failure(attempt, {"failure_code": "order_not_created", "failure_reason": str(error)})
 	# The paying member reads invoices but cannot write a Payment Attempt.
-	attempt.save(ignore_permissions=True)
+	save_billing_record(attempt)
 	_persist()
 
 
@@ -409,7 +435,7 @@ def settle_checkout_attempt(attempt: str, payment) -> dict:
 	settled = _settle_invoice(att, payment)
 	transition(att, "Captured", actor="gateway", correlation=att.invoice)
 	att.completed_at = frappe.utils.now_datetime()
-	att.save(ignore_permissions=True)
+	save_billing_record(att)
 	return {"attempt": att.name, "status": att.status, "settled": settled}
 
 
@@ -513,7 +539,7 @@ def _apply_attempt_event(
 		# terminal attempt backwards if the capture/fail webhook arrived first.
 		if attempt.status == "Initiated":
 			transition(attempt, "Authorised", actor="webhook", correlation=attempt.invoice)
-			attempt.save(ignore_permissions=True)
+			save_billing_record(attempt)
 		_mark_event(event, "Processed")
 		return {"handled": True, "result": "Authorised", "attempt": attempt_name}
 
@@ -528,7 +554,7 @@ def _apply_attempt_event(
 	transition(attempt, "Captured", actor="webhook", correlation=attempt.invoice)
 	attempt.completed_at = frappe.utils.now_datetime()
 	attempt.resolved_by = "Webhook"
-	attempt.save(ignore_permissions=True)
+	save_billing_record(attempt)
 	_mark_event(event, "Processed")
 	return {"handled": True, "result": "paid", "invoice": attempt.invoice, "settled": settled}
 
@@ -546,7 +572,7 @@ def _apply_attempt_failure(event, attempt, decline: dict) -> dict:
 		# charge response — pull it off the event so the attempt records why.
 		stamp_failure(attempt, decline)
 		attempt.completed_at = frappe.utils.now_datetime()
-		attempt.save(ignore_permissions=True)
+		save_billing_record(attempt)
 		from central.billing.platform import notifications
 
 		notifications.notify(
@@ -634,7 +660,7 @@ def _mark_invoice_paid(
 		correlation=inv.name,
 		amount=inv.amount_paid,
 	)
-	inv.save(ignore_permissions=True)
+	save_billing_record(inv)
 
 	from central.billing.platform import notifications
 
@@ -703,13 +729,15 @@ def cleanup_payment_logs(now=None) -> dict:
 
 
 def _prune_payment_attempts(cutoff) -> int:
-	"""Delete terminal attempts older than cutoff, keeping any the audit chain or
-	an open invoice still needs."""
+	"""Delete failed attempts older than cutoff, keeping any an open invoice still needs.
+
+	A Captured or Refunded attempt is never deleted: a later refund or chargeback finds
+	the charge through it, and the money trail must outlive any log window."""
 	# Attempts referenced by a Refund anchor the refund audit chain — never drop.
 	keep = set(frappe.get_all("Refund", pluck="payment_attempt") or [])
 	candidates = frappe.get_all(
 		"Payment Attempt",
-		filters={"status": ["in", _TERMINAL_ATTEMPT], "creation": ["<", cutoff]},
+		filters={"status": "Failed", "creation": ["<", cutoff]},
 		fields=["name", "invoice"],
 	)
 	deleted = 0
@@ -718,9 +746,7 @@ def _prune_payment_attempts(cutoff) -> int:
 			continue
 		if frappe.db.get_value("Invoice", a.invoice, "status") in _UNSETTLED_INVOICE:
 			continue
-		frappe.delete_doc(
-			"Payment Attempt", a.name, ignore_permissions=True, force=True, delete_permanently=True
-		)
+		delete_billing_record(frappe.get_doc("Payment Attempt", a.name), force=True, delete_permanently=True)
 		deleted += 1
 	return deleted
 
@@ -734,7 +760,7 @@ def _prune_webhook_events(cutoff) -> int:
 		pluck="name",
 	)
 	for name in stale:
-		frappe.delete_doc("Webhook Event", name, ignore_permissions=True, force=True, delete_permanently=True)
+		delete_billing_record(frappe.get_doc("Webhook Event", name), force=True, delete_permanently=True)
 	return len(stale)
 
 
@@ -846,7 +872,7 @@ def stamp_failure(attempt, failure: Failure) -> None:
 def _mark_event(event, status: str):
 	transition(event, status, actor="webhook", correlation=event.gateway_event_id)
 	event.processed_at = frappe.utils.now_datetime()
-	event.save(ignore_permissions=True)
+	save_billing_record(event)
 
 
 def _notify(invoice, message: str):

@@ -88,7 +88,9 @@ REFUND = StateMachine(
 	"Refund",
 	"status",
 	{
-		"Initiated": {"Completed", "Failed"},
+		"Initiated": {"Pending", "Completed", "Failed"},
+		# The gateway accepted it but has not paid it out; it can still fail.
+		"Pending": {"Completed", "Failed"},
 		"Completed": set(),  # terminal
 		"Failed": {"Initiated"},  # an operator tries again
 	},

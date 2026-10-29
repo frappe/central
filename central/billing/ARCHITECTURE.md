@@ -143,6 +143,8 @@ Commitment ──team, ──currency              (spend floor)
 Usage Rollup ──team                            (metered aggregation)
 ```
 
+Money records (Invoice, Payment Attempt, Refund, Credit Ledger Entry, Credit Wallet, Usage Rollup, Webhook Event, Billing Event, Top-up Order) are read-only in Desk and keep a change history. `platform.records` refuses an edit or delete that billing code did not make through `save_billing_record` or `delete_billing_record`, Administrator included. The `ignore_permissions` flag alone does not allow the change. A `db_set` or `frappe.db.set_value` write does not run validation, so it needs no mark. A person changes them through the action that owns the change: cancel, refund, retry.
+
 **Payment plumbing**
 ```
 Billing Profile ──team, ──currency, ──country, ──trust_tier_level   (currency = source of truth, locks after activity)
@@ -242,9 +244,11 @@ flowchart LR
 ```
 
 ### Scheduled (`central/hooks.py` → `scheduler_events`)
+Dunning, reconciliation, the e-mandate cycle, credit expiry, card expiry, accounting-sync retries and the subscription backfill run each row through `platform.jobs.each_isolated`: a savepoint and a commit per row, and a row that fails is logged to the Error Log and skipped, so it does not stop the rows after it.
+
 | Cadence | Entry point | Purpose |
 |---|---|---|
-| daily | `revenue.dunning.run_dunning` | Day 1/3/7 retries → past_due → suspend and stop servers → termination due |
+| daily | `revenue.dunning.run_dunning` | Day 1/3/7 retries → past_due → suspend (stops servers) → termination due (operator) |
 | daily | `payments.charges.cleanup_payment_logs` | prune Payment Attempt / Webhook Event |
 | daily | `projection.batch.prune` | prune old projection batches |
 | daily | `payments.emandate.run_emandate_cycle` | INR ≤₹15k pre-debit notice → debit after 24h |
@@ -252,7 +256,9 @@ flowchart LR
 | daily | `payments.settlement.run_billing_details_reminder` | ask credit-funded teams for the billing details their invoice will need |
 | daily | `revenue.credits.run_credit_expiry` | write off expired promotional credit |
 | daily | `platform.invariants.run_invariant_audit` | audit the cross-table money invariants |
-| hourly | `payments.reconciliation.run_reconciliation` | charged-but-never-webhooked gateway scan |
+| daily | `payments.reconciliation.recheck_completed_refunds` | ask the gateway again about card refunds completed in the last 30 days; flag one that failed later |
+| hourly | `payments.webhooks.retry_failed_webhooks` | apply again failed and lost webhook events |
+| hourly | `payments.reconciliation.run_reconciliation` | charged-but-never-webhooked gateway scan and Pending refunds |
 | hourly | `platform.alerts.run_operator_alerts` | alert operators (invariants, readiness, failed webhooks, stale attempts, unsettled captures, held invoices, failed refunds, failed accounting syncs) |
 | monthly | `revenue.invoicing.draft_monthly_invoices` | waive internal teams' unpaid invoices, then draft the just-closed month as page jobs on the `billing` queue |
 | hourly | `revenue.invoicing.collect_due_invoices` | open and collect every Draft whose month has closed, as page jobs; record progress on the Billing Run |
@@ -372,7 +378,7 @@ When a Raven post fails, or Raven is not configured, the alert goes to the email
 - `override_doctype_dashboards["Currency"]` → `api.dashboard_overrides.currency_dashboard`.
 
 ### Inbound webhooks (`payments/webhooks.py`)
-`@stripe` / `@razorpay` (whitelisted, signature-first) → `process_webhook` → adapter `verify_webhook_signature`/`parse_webhook_event` → `handle_webhook_event`. Raw payload persisted to **Webhook Event** for dedupe/replay.
+`@stripe` / `@razorpay` / `@paypal` (whitelisted, signature-first; PayPal is verified through its verify-webhook-signature API) → `process_webhook` → adapter `verify_webhook_signature`/`parse_webhook_event` → `handle_webhook_event`. Raw payload persisted to **Webhook Event** for dedupe/replay.
 
 `handle_webhook_event` sends each event to one handler. The handler links the Webhook Event to the Payment Attempt or Payment Method it is about, so the record's Connections show its event history.
 
@@ -380,12 +386,13 @@ When a Raven post fails, or Raven is not configured, the alert goes to the email
 
 | Events | Handler | Effect |
 |---|---|---|
-| `payment_intent.*`, `payment.*` | `charges.apply_webhook` | Authorised, Captured or Failed. `payment_intent.canceled` fails the attempt with Stripe's cancellation reason. |
-| `charge.dispute.*` | `disputes.apply_dispute` | Note on the invoice; a lost dispute cancels the invoice without a second refund. |
+| `payment_intent.*`, `payment.*`, `PAYMENT.CAPTURE.*` except `PAYMENT.CAPTURE.REFUNDED` | `charges.apply_webhook` | Authorised, Captured or Failed. `payment_intent.canceled` fails the attempt with Stripe's cancellation reason. A PayPal PENDING capture keeps the attempt open (`gateway_hold_until`) instead of failing it. |
+| `charge.dispute.*`, `payment.dispute.*`, `CUSTOMER.DISPUTE.*` | `disputes.apply_dispute` | Note on the invoice; a lost dispute cancels the invoice without a second refund. A lost dispute on an invoice that is no longer Paid is flagged for an operator. |
+| `charge.refund.updated`, `refund.failed`, `refund.processed`, `PAYMENT.CAPTURE.REFUNDED` | `corrections.apply_refund_event` | Finishes a Pending refund as Completed or Failed. Reconciliation asks the gateway about any Pending refund the webhook missed. Once a day it also asks the gateway again about each refund to the card that paid (destination Source) that completed in the last `COMPLETED_REFUND_RECHECK_DAYS` (30) days, so a refund that failed later is flagged when its webhook does not arrive. When the gateway reports Failed for a refund that is already Completed, the refund and its charge keep their state. Central adds a comment on the invoice and an Error Log `Refund failed after completion on <invoice>` that names the refund and its gateway refund ID, so an operator can pay the customer back. |
 | `mandate.updated` | `mandates.apply_mandate_event` | A revoked mandate cancels its Payment Method. |
 | `payment_method.detached` | `payments.apply_payment_method_event` | The card is cancelled and leaves the charge order. |
 | `setup_intent.setup_failed` | `payments.apply_payment_method_event` | The failure code, decline code and message on the card, its failed attempt count, and a `Payment Method Setup Failed` Billing Event. The card stays Pending Validation, because the customer can retry on the same SetupIntent. Central finds the card by the SetupIntent: an in-app setup keeps it as the Setup Reference, and a hosted setup keeps it as the Setup Intent ID. |
-| `charge.refunded`, `refund.processed` | none | Stored only. |
+| `charge.refunded` | none | Stored only. A refund made in the gateway dashboard leaves no Refund record. |
 
 **Subscribed events.** Each adapter's `webhook_events` lists the events Central subscribes to. `test_payment_gateway.TestWebhookEventList` fails when a handled event is not in that list.
 
@@ -395,7 +402,7 @@ When a Raven post fails, or Raven is not configured, the alert goes to the email
 - **Webhook Events → Pull** reads the endpoint from the gateway and fills the Webhook Events table. Each event is OK, Missing (Central needs it, the gateway does not send it) or Not Used.
 - **Webhook Events → Update** sets the endpoint's events to the adapter's list. The signing secret does not change.
 
-When you save new keys, Central reads the stored endpoint with them. If the keys can see it (same account), Central adds any missing events. If they cannot (another account, or Stripe test keys changed to live keys), Central registers a new endpoint. Central never deletes an endpoint at the gateway, because another site can use the same account. A PayPal gateway that settles through Razorpay has no webhook of its own.
+When you save new keys, Central reads the stored endpoint with them. If the keys can see it (same account), Central adds any missing events. If they cannot (another account, or Stripe test keys changed to live keys), Central registers a new endpoint. Central never deletes an endpoint at the gateway, because another site can use the same account. A PayPal gateway that settles through Razorpay has no webhook of its own. PayPal calls go to the sandbox host unless site config `paypal_api_base` is `https://api-m.paypal.com`; no other host is accepted, because the client secret is sent there.
 
 ### API entry points (`@frappe.whitelist`): see §5 per package.
 
@@ -528,6 +535,8 @@ charges.pay_invoice → create_invoice_payment_order (via gateway adapter)
 
 Reconciliation asks the gateway about the stored order of an unanswered on-session attempt, and fails it only after `CHECKOUT_OPEN_HOURS`. It credits a Top-up Order that was paid but never confirmed, and expires one nobody paid after `TOP_UP_EXPIRES_HOURS`.
 
+**Pre-debit notice.** `collection.collect_invoice` is the one entry for an off-session debit (billing run, dunning retry, webhook fallback, e-mandate cycle). Before it charges a method whose (gateway, currency) row has `requires_predebit_notice`, it asks `emandate.await_predebit`. That function sends the notice through `emandate.schedule_predebit`, and the method waits until `Invoice.predebit_charge_after`. A team not on Auto Charge gets no notice and so no debit on such a rail; dunning escalates instead.
+
 Method resolution is team-wide, not scoped by anything — `collection.ordered_methods`
 returns the team's active methods, priority order. `charges._resolve_method` (manual
 "pay now") and `collection.next_method_for`/`collect_invoice` (the real auto-charge
@@ -606,6 +615,8 @@ get_team_caps resolves caps live (no per-team Trust Tier doctype — dropped)
 ---
 
 ## 5. API surface (by package)
+
+**Limits on the payment routes.** Top-up, invoice payment, checkout and their confirms allow 30 calls an hour; card setup, mandate setup, hosted card setup and the card and mandate confirms allow 20, to slow card testing. The two pilot polls, the checkout status poll and the hosted card setup poll, allow 300, because they run until the payer finishes the hosted page. Console routes count per user and pilot routes count per address. A pilot checkout returns the payer only to a site (or custom domain) on the credential's own server, over HTTPS. A pilot usage report cannot be negative, and an Authoritative total cannot go below the one already recorded. CSV exports prefix a cell that starts with `=`, `+`, `-`, `@`, tab or return with a quote. The `tests/e2e.py` endpoints answer only on a site whose own `site_config.json` sets `allow_tests`.
 
 **`api/dashboard/`** (customer, team-scoped)
 - `account.py`: whoami, get/save_billing_profile, get_billing_geo, get/save_billing_settings, get_collection_status, set_collection_mode, get_team_overview, get_trust_tier.
