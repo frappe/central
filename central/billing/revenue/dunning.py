@@ -172,15 +172,15 @@ def _advance_standing(subscription: str, target: str):
 		return current
 
 
-def _retry_if_due(inv, schedule, now, mode: str | None) -> dict | None:
+def _retry_if_due(inv, schedule, now) -> dict | None:
 	"""Run the collection round of the latest retry day reached, once. Returns its result.
 
 	Off-session retries only make sense for an auto-charge mode. Manual Checkout (paid
 	on-session) and Action Required (paused at the ₹15k threshold) are never silently
 	retried; dunning escalates and asks them to act (ADR 0005)."""
-	from central.billing.payments import collection
+	from central.billing.payments import collection, collection_mode
 
-	if inv.status != "Open" or mode in ("Manual Checkout", "Action Required"):
+	if inv.status != "Open" or not collection_mode.is_debit_allowed(inv.team):
 		return None
 	if not _is_retry_due(inv.name, schedule, now):
 		return None
@@ -236,7 +236,7 @@ def process_invoice_dunning(invoice_name: str, now=None) -> dict:
 	# --- retries: one collection round per retry day (escalate, don't repeat, #28).
 	# Credits-only teams (no methods) skip straight to the stages below.
 	mode = _collection_mode(inv.team)
-	if _retry_if_due(inv, schedule, now, mode):
+	if _retry_if_due(inv, schedule, now):
 		actions.append("retry")
 		inv.reload()
 		if inv.status == "Paid":

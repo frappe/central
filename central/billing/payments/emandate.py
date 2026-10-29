@@ -56,7 +56,7 @@ def await_predebit(invoice: str, gateway: str) -> tuple[Predebit, dict]:
 	1. CHARGE_NOW: the rail owes no notice, or the notice window has passed.
 	2. WAIT: the notice is sent, now or before, and its window is still open. The
 	   notice outcome comes with it.
-	3. ROTATE: this rail cannot debit this invoice now (not on Auto Charge, or over the
+	3. ROTATE: this rail cannot debit this invoice now (the mode holds debits back, or over the
 	   silent ceiling), so the next method is tried instead of a window that never opens.
 	"""
 	inv = frappe.get_doc("Invoice", invoice)
@@ -79,8 +79,8 @@ def schedule_predebit(invoice: str, now=None, gateway: str | None = None) -> dic
 	`gateway` is the rail about to debit, when the caller knows it (a fallback onto a
 	second rail); otherwise the team's own rail decides."""
 	inv = frappe.get_doc("Invoice", invoice)
-	if frappe.db.get_value("Billing Profile", inv.team, "collection_mode") != "Auto Charge":
-		return {"invoice": invoice, "skipped": "not_auto_charge"}
+	if not collection_mode.is_debit_allowed(inv.team):
+		return {"invoice": invoice, "skipped": "debit_not_allowed"}
 	if not _is_notice_required(inv, gateway):
 		# A rail that debits without a notice is collected by the ordinary sweep. Arming
 		# a 24h window here would delay every international charge for nothing.
@@ -143,11 +143,7 @@ def charge_due(now=None) -> list[dict]:
 		],
 		fields=["name", "team"],
 	)
-	auto = [
-		inv.name
-		for inv in due
-		if frappe.db.get_value("Billing Profile", inv.team, "collection_mode") == "Auto Charge"
-	]
+	auto = [inv.name for inv in due if collection_mode.is_debit_allowed(inv.team)]
 	return each_isolated(
 		"E-mandate debit", "Invoice", auto, lambda name: {"invoice": name, **collection.collect_invoice(name)}
 	)

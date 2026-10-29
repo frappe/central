@@ -99,6 +99,26 @@ def silent_threshold(team: str) -> float | None:
 	return float(min(ceiling, cap)) if cap else float(ceiling)
 
 
+def is_debit_allowed(team: str) -> bool:
+	"""Whether a team's methods may be debited off-session once its credit runs out.
+
+	Prepaid is a promise to keep credit topped up, not a ban on the card behind it, so
+	only Manual Checkout (the customer pays by hand) and Action Required (paused at the
+	ceiling) hold a debit back."""
+	mode = frappe.db.get_value("Billing Profile", team, "collection_mode")
+	return mode not in ("Manual Checkout", "Action Required")
+
+
+def start_auto_charge(team: str) -> None:
+	"""Move a team from the default Prepaid to Auto Charge when its first method becomes active.
+	A team that already holds another active method chose its mode with a method in hand, so it keeps it."""
+	if frappe.db.get_value("Billing Profile", team, "collection_mode") != "Prepaid":
+		return
+	if frappe.db.count("Payment Method", {"team": team, "status": "Active"}) != 1:
+		return
+	frappe.db.set_value("Billing Profile", team, "collection_mode", "Auto Charge")
+
+
 def evaluate(
 	team: str, projected_amount: float | None = None, reason: str = "forecast_over_threshold"
 ) -> dict:

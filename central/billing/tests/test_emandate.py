@@ -83,6 +83,16 @@ class TestEmandatePredebit(IntegrationTestCase):
 			frappe.db.exists("Billing Notification Log", {"team": TEAM, "event_type": "Pre-debit Notice"})
 		)
 
+	def test_a_prepaid_team_with_a_mandate_is_still_debited(self):
+		_set_mode(TEAM, "Prepaid")
+		out = emandate.schedule_predebit(self._invoice(5000), now="2026-06-10 09:00:00")
+		self.assertTrue(out["notified"])
+
+	def test_manual_checkout_is_never_debited(self):
+		_set_mode(TEAM, "Manual Checkout")
+		out = emandate.schedule_predebit(self._invoice(5000), now="2026-06-10 09:00:00")
+		self.assertEqual(out["skipped"], "debit_not_allowed")
+
 	def test_schedule_is_idempotent(self):
 		inv = self._invoice(5000)
 		emandate.schedule_predebit(inv, now="2026-06-10 09:00:00")
