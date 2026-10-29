@@ -4,7 +4,6 @@
 import frappe
 from frappe import _
 from frappe.model.document import Document
-from frappe.utils import cint, flt
 
 from central.integrations.grove import GroveClient
 
@@ -42,6 +41,8 @@ class AISettings(Document):
 		base_url: DF.Data | None
 		control_api_key: DF.Data | None
 		control_api_secret: DF.Password | None
+		pause_key_assignment: DF.Check
+		pause_pool_refill: DF.Check
 		trial_key_cap: DF.Currency
 		trial_key_geography: DF.Data | None
 		trial_pool_size: DF.Int

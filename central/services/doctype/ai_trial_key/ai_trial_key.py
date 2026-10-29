@@ -85,13 +85,18 @@ class AITrialKey(Document):
 
 	@classmethod
 	def assign(cls, action: ResourceAction) -> Self | None:
-		"""The oldest ready key for a free-trial creation; none for a paid one or an empty pool.
-		A retried creation keeps its key."""
+		"""The oldest ready key for a free-trial creation; none for a paid one, an empty pool or
+		while assignment is paused. A retried creation keeps its key."""
 		if not action.is_free_trial:
 			return None
 
-		if name := frappe.db.get_value("AI Trial Key", {"resource_action": action.name, "status": "Assigned"}):
+		if name := frappe.db.get_value(
+			"AI Trial Key", {"resource_action": action.name, "status": "Assigned"}
+		):
 			return frappe.get_doc("AI Trial Key", name)
+
+		if frappe.db.get_single_value("AI Settings", "pause_key_assignment"):
+			return None
 
 		name = frappe.db.get_value(
 			"AI Trial Key",
@@ -132,7 +137,6 @@ class AITrialKey(Document):
 		frappe.db.set_value(
 			"AI Trial Key", {"resource_action": resource_action, "status": "Assigned"}, "server", server
 		)
-
 
 	@classmethod
 	def queue_convert(cls, server: str) -> bool:
@@ -266,13 +270,13 @@ def convert_trial_key(name: str) -> None:
 def refill_trial_keys() -> None:
 	"""Scheduler, every 5 minutes: try the revokes and hand-overs Grove refused again, then mint
 	the keys the pool is missing, up to one batch. Nothing while Central is not enrolled; the
-	retries run with the pool off too, the mint does not."""
+	retries run with the pool off or paused too, the mint does not."""
 	settings = frappe.get_cached_doc("AI Settings")
 	if not settings.is_enrolled:
 		return
 
 	retry_stale()
-	if not settings.trial_pool_size:
+	if not settings.trial_pool_size or settings.pause_pool_refill:
 		return
 	missing = settings.trial_pool_size - frappe.db.count("AI Trial Key", {"status": "Available"})
 	# The team is the operator's to make at Grove, with its cap window, which is fixed at the
