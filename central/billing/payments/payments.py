@@ -383,11 +383,7 @@ def expire_payment_methods(now=None) -> dict:
 		)
 		return name
 
-	return {
-		"expired": [
-			r for r in each_isolated("Card expiry", "Payment Method", due, expire) if isinstance(r, str)
-		]
-	}
+	return {"expired": each_isolated("Card expiry", "Payment Method", due, expire)}
 
 
 CARD_DETACHED_EVENT = "payment_method.detached"

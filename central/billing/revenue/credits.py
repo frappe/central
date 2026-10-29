@@ -756,7 +756,7 @@ def run_credit_expiry(on_date=None) -> dict:
 		funded,
 		lambda name: _expire_wallet(wallets[name].team, wallets[name].currency, on_date),
 	)
-	expiries = [expiry for result in results if isinstance(result, list) for expiry in result]
+	expiries = [expiry for result in results for expiry in result]
 	return {"wallets": len(scopes), "entries": len(expiries), "amount": sum(e["amount"] for e in expiries)}
 
 

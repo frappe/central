@@ -575,5 +575,6 @@ class TestOneBadInvoiceDoesNotStopTheRun(DunningTestBase):
 		with patch.object(dunning, "process_invoice_dunning", side_effect=process):
 			results = dunning.run_dunning(now=day(7))
 
-		self.assertIn({"name": broken, "failed": True}, results)
+		self.assertNotIn(broken, [result["invoice"] for result in results])
+		self.assertIn(healthy, [result["invoice"] for result in results])
 		self.assertEqual(frappe.db.get_value("Invoice", healthy, "status"), "Overdue")

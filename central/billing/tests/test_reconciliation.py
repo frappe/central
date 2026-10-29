@@ -376,7 +376,8 @@ class TestScan(ReconTestBase):
 			adapter.get_transaction_status.side_effect = transaction_status
 			results = reconciliation.run_reconciliation()
 
-		self.assertIn({"name": unreachable, "failed": True}, results)
+		self.assertNotIn(unreachable, [result.get("attempt") for result in results])
+		self.assertIn(answered, [result.get("attempt") for result in results])
 		self.assertEqual(frappe.db.get_value("Payment Attempt", unreachable, "status"), "Initiated")
 		self.assertEqual(frappe.db.get_value("Payment Attempt", answered, "status"), "Captured")
 

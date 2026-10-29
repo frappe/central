@@ -12,7 +12,7 @@ def each_isolated(job: str, doctype: str, names, work) -> list:
 	1. Each item runs under a savepoint and commits on its own, so the next day's run
 	   does not start again at the same broken row with everything after it undone.
 	2. A failure undoes only that item, leaves an Error Log row naming it, and the job
-	   moves on. Its result is `{"name": name, "failed": True}`.
+	   moves on. The results hold only the items that succeeded.
 	3. An item that committed part-way (a gateway call commits its intent first) has no
 	   savepoint left; everything since the last per-item commit is that item's, so the
 	   whole transaction is rolled back instead.
@@ -27,7 +27,6 @@ def each_isolated(job: str, doctype: str, names, work) -> list:
 			frappe.log_error(
 				title=f"{job} failed on {doctype} {name}", reference_doctype=doctype, reference_name=name
 			)
-			results.append({"name": name, "failed": True})
 			continue
 		if not frappe.in_test:
 			# The per-row boundary is the point: the next row's failure must not undo this one.
