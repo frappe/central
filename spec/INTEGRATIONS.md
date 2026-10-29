@@ -6,6 +6,8 @@ Central owns identity, Team capabilities, catalog policy, and billing. Atlas own
 
 Central reaches each service through `central/integrations/`. Team authorization follows [IAM](IAM.md) and [Capabilities](../CAPABILITIES.md).
 
+The planned abuse protection events and calls to Atlas, the proxy, and Cargo are in [Abuse protection](ABUSE.md#interfaces).
+
 ## Who owns what?
 
 ```text

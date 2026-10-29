@@ -34,6 +34,9 @@ Each module specification below describes current behavior. Update it in the sam
 - [SSO](SSO.md): login flows, token types, and consumer contracts.
 - [Inbound webhooks](WEBHOOKS.md): the contract a region signs and sends its reports with. Share it with Atlas and Cargo.
 - [Frappe Connect](CONNECT.md): the planned contract for partner teams and partner links. Share it with the Connect developers.
+- [Abuse protection](ABUSE.md): the planned abuse cases, policy engine, report intake, customer messages, and the Central side of the Atlas contract.
+- [CERT-In](CERT_IN.md): the planned incident reporting to CERT-In.
+- [Abuse layouts](ABUSE_LAYOUTS.md): the planned abuse DocType mockups, awaiting engineer approval.
 
 ## Billing
 

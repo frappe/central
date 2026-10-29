@@ -63,6 +63,8 @@ Atlas reports one virtual machine per delivery.
 | `status` | For `vm.state` | `running`, `stopped`, or `paused` |
 | `observed_at` | For `vm.state` | The region's own timestamp. Central orders reports by it and drops one that is not newer. |
 
+The planned abuse events, `vm.abuse.signal` and `vm.restriction`, are in [Abuse protection](ABUSE.md#events-from-atlas).
+
 For `vm.state`, Central records `running` as `Running`, `stopped` as `Stopped`, and `paused` as `Paused`. Central never records a status it was not told.
 
 Atlas sends `vm.state.deleted` after Metal confirms that the machine is absent. Central records the server as `Terminated`, closes its billing, revokes its Pilot credentials, and completes a waiting terminate action. Termination is final, so Central ignores `status` and `observed_at` on this event and does no ordering check. A lost deletion is corrected by a scoped read that answers not found. See [resource actions](../central/infrastructure/doctype/resource_action/SPEC.md).
@@ -82,6 +84,8 @@ Cargo reports one service per delivery.
 | `service` | Yes | `telemetry` or `storage` |
 | `status` | Yes | `Available` or `Not Available` |
 | `service_endpoint` | No | The URL consumers reach the service at |
+
+Planned: a `storage` report can also carry an optional `abuse_signals` list, for phishing matches on public buckets. The shape is in [Abuse protection](ABUSE.md#reports-from-cargo).
 
 Cargo must map its own lifecycle states before it sends. Central records availability, not a Cargo state name. A cluster or host that is `Active` reports `Available`. Any other settled state reports `Not Available`.
 
