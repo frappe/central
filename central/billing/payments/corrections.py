@@ -264,11 +264,16 @@ def _settle(doc, refund) -> None:
 		settle_gateway_refund(refund, result.status)
 
 
-def settle_gateway_refund(refund, status: str) -> None:
+def settle_gateway_refund(refund, status: str) -> str:
 	"""Finish a refund the gateway has answered: Completed marks the charge refunded and
-	moves the cancellation on; Failed is left for an operator to retry."""
+	moves the cancellation on; Failed is left for an operator to retry. A refund the gateway
+	fails after it completed is flagged for an operator and keeps its state.
+	Returns "settled", "flagged" or "unchanged"."""
+	if refund.status == "Completed" and status == "Failed":
+		_flag_failed_after_completion(refund)
+		return "flagged"
 	if refund.status in ("Completed", "Failed") or status == "Pending":
-		return
+		return "unchanged"
 	_finish(refund, "Completed" if status == "Completed" else "Failed")
 	doc = frappe.get_doc("Invoice", refund.invoice)
 	if status == "Completed":
@@ -278,10 +283,23 @@ def settle_gateway_refund(refund, status: str) -> None:
 			title=f"Refund failed: {doc.name}",
 			message=f"The gateway refused refund {refund.name} ({refund.gateway_refund_id}).",
 		)
+	return "settled"
+
+
+def _flag_failed_after_completion(refund) -> None:
+	"""The gateway paid the refund out and then failed it, so the customer did not get the
+	money. Completed is final here, so an operator decides what to do."""
+	text = (
+		f"The gateway failed refund {refund.name} ({refund.gateway_refund_id}) for {refund.amount} "
+		"after it reported it as completed. The customer did not get this money back."
+	)
+	frappe.get_doc("Invoice", refund.invoice).add_comment("Info", text)
+	frappe.log_error(title=f"Refund failed after completion on {refund.invoice}", message=text)
 
 
 def apply_refund_event(event_name: str) -> dict:
-	"""Finish a pending refund from the gateway's refund webhook."""
+	"""Finish a pending refund from the gateway's refund webhook, or flag a completed refund
+	the gateway failed later."""
 	from central.billing.gateways.registry import adapter_class
 	from central.billing.payments.charges import _mark_event
 
@@ -292,12 +310,12 @@ def apply_refund_event(event_name: str) -> dict:
 	if not name:
 		_mark_event(event, "Ignored")  # a refund made outside Central, or not ours
 		return {"handled": False, "reason": "no_matching_refund"}
-	settle_gateway_refund(frappe.get_doc("Refund", name), found["status"])
+	result = settle_gateway_refund(frappe.get_doc("Refund", name), found["status"])
 	enqueue_steps(
 		frappe.db.get_value("Refund", name, "invoice")
 	)  # the credit note and payment record wait on it
 	_mark_event(event, "Processed")
-	return {"handled": True, "refund": name, "status": found["status"]}
+	return {"handled": True, "refund": name, "status": found["status"], "result": result}
 
 
 def _mark_refunded(doc, refund, actor: str) -> None:

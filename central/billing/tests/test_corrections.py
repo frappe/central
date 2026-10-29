@@ -226,6 +226,28 @@ class TestDispute(CorrectionsTestCase):
 
 		self.assertEqual(self._refund(inv, "Source").status, "Failed")
 
+	def test_a_completed_refund_the_gateway_fails_later_is_flagged(self):
+		inv = self._paid_invoice()
+		corrections.cancel_and_refund(inv, "customer asked")
+		self._run_all(inv)
+		event = self._refund_event("re_1", "failed")
+
+		out = corrections.apply_refund_event(event)
+
+		card = self._refund(inv, "Source")
+		self.assertEqual((out["result"], card.status), ("flagged", "Completed"))
+		self.assertEqual(frappe.db.get_value("Payment Attempt", card.payment_attempt, "status"), "Refunded")
+		self.assertEqual(frappe.db.get_value("Webhook Event", event, "status"), "Processed")
+		self.assertTrue(
+			frappe.get_all(
+				"Error Log", filters={"method": f"Refund failed after completion on {inv}"}, limit=1
+			)
+		)
+		comments = frappe.get_all(
+			"Comment", {"reference_doctype": "Invoice", "reference_name": inv}, pluck="content"
+		)
+		self.assertTrue(any("re_1" in c and "did not get" in c for c in comments))
+
 	def _refund_event(self, refund_id, status):
 		import json
 
