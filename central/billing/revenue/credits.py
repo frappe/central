@@ -744,23 +744,23 @@ def run_credit_expiry(on_date=None) -> dict:
 	from central.billing.platform.jobs import each_isolated
 
 	# A wallet with nothing in it has nothing to expire; skip before taking a lock.
-	wallets = [
-		wallet_name(scope.team, scope.currency)
-		for scope in scopes
-		if frappe.utils.flt(
-			frappe.db.get_value("Credit Wallet", wallet_name(scope.team, scope.currency), "balance")
-		)
-		> 0
+	wallets = {wallet_name(scope.team, scope.currency): scope for scope in scopes}
+	funded = [
+		name
+		for name in wallets
+		if frappe.utils.flt(frappe.db.get_value("Credit Wallet", name, "balance")) > 0
 	]
 	results = each_isolated(
-		"Credit expiry", "Credit Wallet", wallets, lambda name: _expire_wallet(name, on_date)
+		"Credit expiry",
+		"Credit Wallet",
+		funded,
+		lambda name: _expire_wallet(wallets[name].team, wallets[name].currency, on_date),
 	)
 	expiries = [expiry for result in results if isinstance(result, list) for expiry in result]
 	return {"wallets": len(scopes), "entries": len(expiries), "amount": sum(e["amount"] for e in expiries)}
 
 
-def _expire_wallet(wallet: str, on_date) -> list[dict]:
-	team, currency = frappe.db.get_value("Credit Wallet", wallet, ["team", "currency"])
+def _expire_wallet(team: str, currency: str, on_date) -> list[dict]:
 	expiries = expire_credits(team, currency, on_date)
 	for expiry in expiries:
 		frappe.logger("billing").info(
