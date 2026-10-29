@@ -1,6 +1,9 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
 
+from collections.abc import Iterator
+from contextlib import contextmanager
+
 import frappe
 from frappe import _
 from frappe.model.document import Document
@@ -10,20 +13,27 @@ def save_billing_record(doc: Document) -> Document:
 	"""Save a money record as billing code: mark it for the record guard and skip the
 	permission check, because billing runs as the system or on behalf of a team it has
 	already authorised."""
-	_mark_billing_write(doc)
-	# Billing code writes money records as the system; the record guard checks the mark.
-	return doc.save(ignore_permissions=True)
+	with _billing_write(doc):
+		# Billing code writes money records as the system; the record guard checks the mark.
+		return doc.save(ignore_permissions=True)
 
 
 def delete_billing_record(doc: Document, **options) -> None:
 	"""Delete a money record as billing code. `options` go to `Document.delete`."""
-	_mark_billing_write(doc)
-	# Billing code deletes money records as the system; the record guard checks the mark.
-	doc.delete(ignore_permissions=True, **options)
+	with _billing_write(doc):
+		# Billing code deletes money records as the system; the record guard checks the mark.
+		doc.delete(ignore_permissions=True, **options)
 
 
-def _mark_billing_write(doc: Document) -> None:
+@contextmanager
+def _billing_write(doc: Document) -> Iterator[None]:
+	"""Mark `doc` for the record guard for one call only, so a later plain save is refused."""
+	previous = doc.flags.billing_write
 	doc.flags.billing_write = True
+	try:
+		yield
+	finally:
+		doc.flags.billing_write = previous
 
 
 def refuse_manual_edit(doc, method=None) -> None:

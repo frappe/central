@@ -51,6 +51,10 @@ class TestMoneyRecordsAreReadOnly(BillingTestCase):
 		save_billing_record(self.invoice)
 		self.assertEqual(frappe.db.get_value("Invoice", self.invoice.name, "total"), 120)
 
+		self.invoice.total = 130
+		with self.assertRaises(frappe.PermissionError):
+			self.invoice.save(ignore_permissions=True)
+
 	def test_billing_code_may_still_delete_it(self):
 		delete_billing_record(self.invoice)
 		self.assertFalse(frappe.db.exists("Invoice", self.invoice.name))
