@@ -248,11 +248,28 @@ class TestDispute(CorrectionsTestCase):
 		)
 		self.assertTrue(any("re_1" in c and "did not get" in c for c in comments))
 
-	def _refund_event(self, refund_id, status):
+	def test_a_refund_failed_after_completion_is_flagged_once_for_both_stripe_events(self):
+		inv = self._paid_invoice()
+		corrections.cancel_and_refund(inv, "customer asked")
+		self._run_all(inv)
+		first = self._refund_event("re_1", "failed", event_type="refund.failed")
+		second = self._refund_event("re_1", "failed")
+
+		results = [corrections.apply_refund_event(e)["result"] for e in (first, second)]
+
+		self.assertEqual(results, ["flagged", "unchanged"])
+		logs = frappe.get_all("Error Log", filters={"method": f"Refund failed after completion on {inv}"})
+		self.assertEqual(len(logs), 1)
+		comments = frappe.get_all(
+			"Comment", {"reference_doctype": "Invoice", "reference_name": inv}, pluck="content"
+		)
+		self.assertEqual(sum("did not get" in c for c in comments), 1)
+
+	def _refund_event(self, refund_id, status, event_type="charge.refund.updated"):
 		import json
 
 		payload = {
-			"type": "charge.refund.updated",
+			"type": event_type,
 			"data": {"object": {"id": refund_id, "object": "refund", "status": status}},
 		}
 		return (
@@ -260,8 +277,8 @@ class TestDispute(CorrectionsTestCase):
 				{
 					"doctype": "Webhook Event",
 					"gateway": "Stripe",
-					"gateway_event_id": f"evt_{refund_id}_{status}",
-					"event_type": "charge.refund.updated",
+					"gateway_event_id": f"evt_{refund_id}_{status}_{event_type}",
+					"event_type": event_type,
 					"raw_payload": json.dumps(payload),
 					"status": "Received",
 				}

@@ -270,8 +270,7 @@ def settle_gateway_refund(refund, status: str) -> str:
 	fails after it completed is flagged for an operator and keeps its state.
 	Returns "settled", "flagged" or "unchanged"."""
 	if refund.status == "Completed" and status == "Failed":
-		_flag_failed_after_completion(refund)
-		return "flagged"
+		return _flag_failed_after_completion(refund)
 	if refund.status in ("Completed", "Failed") or status == "Pending":
 		return "unchanged"
 	_finish(refund, "Completed" if status == "Completed" else "Failed")
@@ -286,15 +285,23 @@ def settle_gateway_refund(refund, status: str) -> str:
 	return "settled"
 
 
-def _flag_failed_after_completion(refund) -> None:
+def _flag_failed_after_completion(refund) -> str:
 	"""The gateway paid the refund out and then failed it, so the customer did not get the
-	money. Completed is final here, so an operator decides what to do."""
+	money. Completed is final here, so an operator decides what to do. The invoice comment
+	marks the refund as flagged, so it is flagged once. Returns "flagged" or "unchanged"."""
+	# Stripe sends refund.failed and charge.refund.updated for one refund; the second waits here.
+	frappe.db.get_value("Refund", refund.name, "name", for_update=True)
 	text = (
 		f"The gateway failed refund {refund.name} ({refund.gateway_refund_id}) for {refund.amount} "
 		"after it reported it as completed. The customer did not get this money back."
 	)
+	flagged = {"reference_doctype": "Invoice", "reference_name": refund.invoice, "content": text}
+	if frappe.db.exists("Comment", {**flagged, "comment_type": "Info"}):
+		return "unchanged"
+
 	frappe.get_doc("Invoice", refund.invoice).add_comment("Info", text)
 	frappe.log_error(title=f"Refund failed after completion on {refund.invoice}", message=text)
+	return "flagged"
 
 
 def apply_refund_event(event_name: str) -> dict:
