@@ -59,6 +59,8 @@ TOP_UP_EXPIRES_HOURS = 7 * 24
 # A gateway forgets an idempotency key after about a day. Inside that window, re-sending
 # a charge is deduped by the gateway; outside it, the same request would be a second one.
 KEY_REPLAY_HOURS = 24
+# A gateway can fail a refund after it reported it paid out; a lost webhook would hide that.
+COMPLETED_REFUND_RECHECK_DAYS = 30
 
 
 def _adapter(gateway: str):
@@ -165,6 +167,7 @@ def run_reconciliation(now=None) -> list:
 	)
 	results += reconcile_top_up_orders(now=now)
 	results += reconcile_pending_refunds()
+	results += recheck_completed_refunds(now=now)
 	return results
 
 
@@ -174,6 +177,24 @@ def reconcile_pending_refunds() -> list[dict]:
 		"Refund", filters={"status": "Pending", "gateway_refund_id": ["is", "set"]}, pluck="name"
 	)
 	return each_isolated("Refund reconciliation", "Refund", names, _reconcile_refund)
+
+
+def recheck_completed_refunds(now=None) -> list[dict]:
+	"""Ask the gateway again about each card refund completed in the recheck window, so a
+	refund it failed later is flagged even when that webhook never came."""
+	now = frappe.utils.get_datetime(now or frappe.utils.now_datetime())
+	since = frappe.utils.add_to_date(now, days=-COMPLETED_REFUND_RECHECK_DAYS)
+	names = frappe.get_all(
+		"Refund",
+		filters={
+			"status": "Completed",
+			"completed_at": [">=", since],
+			"destination": "Source",  # a Wallet or Dispute refund never went through a gateway refund
+			"gateway_refund_id": ["is", "set"],
+		},
+		pluck="name",
+	)
+	return each_isolated("Refund recheck", "Refund", names, _reconcile_refund)
 
 
 def _reconcile_refund(name: str) -> dict:
@@ -186,8 +207,7 @@ def _reconcile_refund(name: str) -> dict:
 		status = _adapter(gateway).get_refund_status(refund.gateway_refund_id)
 	except GatewayUnsupported:
 		return {"refund": name, "status": "unsupported"}
-	if status != "Pending":
-		corrections.settle_gateway_refund(refund, status)
+	if status != "Pending" and corrections.settle_gateway_refund(refund, status) == "settled":
 		corrections.enqueue_steps(refund.invoice)
 	return {"refund": name, "status": status}
 

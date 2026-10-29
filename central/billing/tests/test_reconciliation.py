@@ -59,6 +59,7 @@ class ReconTestBase(IntegrationTestCase):
 			"Top-up Order",
 			"Credit Ledger Entry",
 			"Credit Wallet",
+			"Refund",
 		):
 			frappe.db.delete(dt, {"team": TEAM})
 		frappe.db.commit()
@@ -428,3 +429,66 @@ class TestTopUpReconciliation(ReconTestBase):
 			adapter.find_order_payment.return_value = None
 			reconciliation.reconcile_top_up_orders()
 		self.assertEqual(frappe.db.get_value("Top-up Order", order, "status"), "Expired")
+
+
+class TestCompletedRefundRecheck(ReconTestBase):
+	def _completed_refund(self, refund_id, days_old=1):
+		invoice = self._open_invoice()
+		attempt = self._captured_attempt(invoice, txn=f"pi_{refund_id}")
+		refund = frappe.get_doc(
+			{
+				"doctype": "Refund",
+				"invoice": invoice,
+				"payment_attempt": attempt,
+				"team": TEAM,
+				"amount": 1000,
+				"currency": "INR",
+				"destination": "Source",
+				"status": "Completed",
+				"gateway_refund_id": refund_id,
+			}
+		).insert(ignore_permissions=True)
+		completed_at = frappe.utils.add_to_date(frappe.utils.now_datetime(), days=-days_old)
+		frappe.db.set_value("Refund", refund.name, "completed_at", completed_at)
+		return invoice, refund.name
+
+	def _recheck(self, statuses):
+		adapter = MagicMock()
+		adapter.get_refund_status.side_effect = lambda refund_id: statuses.get(refund_id, "Completed")
+		with patch("central.billing.payments.reconciliation._adapter", return_value=adapter):
+			reconciliation.recheck_completed_refunds()
+		return [call.args[0] for call in adapter.get_refund_status.call_args_list]
+
+	def _flags(self, invoice):
+		logs = frappe.get_all("Error Log", filters={"method": f"Refund failed after completion on {invoice}"})
+		comments = frappe.get_all(
+			"Comment", {"reference_doctype": "Invoice", "reference_name": invoice}, pluck="content"
+		)
+		return len(logs), sum("did not get" in c for c in comments)
+
+	def test_a_completed_refund_the_gateway_failed_later_is_flagged_once(self):
+		invoice, refund = self._completed_refund("re_recheck_failed")
+
+		self._recheck({"re_recheck_failed": "Failed"})
+		self._recheck({"re_recheck_failed": "Failed"})
+
+		self.assertEqual(self._flags(invoice), (1, 1))
+		self.assertEqual(frappe.db.get_value("Refund", refund, "status"), "Completed")
+
+	def test_a_refund_completed_before_the_window_is_not_asked(self):
+		days_old = reconciliation.COMPLETED_REFUND_RECHECK_DAYS + 1
+		invoice, _ = self._completed_refund("re_recheck_old", days_old=days_old)
+
+		asked = self._recheck({"re_recheck_old": "Failed"})
+
+		self.assertNotIn("re_recheck_old", asked)
+		self.assertEqual(self._flags(invoice), (0, 0))
+
+	def test_a_refund_the_gateway_still_reports_completed_is_left_alone(self):
+		invoice, refund = self._completed_refund("re_recheck_ok")
+
+		asked = self._recheck({})
+
+		self.assertIn("re_recheck_ok", asked)
+		self.assertEqual(self._flags(invoice), (0, 0))
+		self.assertEqual(frappe.db.get_value("Refund", refund, "status"), "Completed")
