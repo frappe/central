@@ -661,7 +661,6 @@ def report_usage(
 	# without these a Live rollup would land context-less and be missed at invoicing.
 	seg = active_segment_for_resource(subject)
 	period_start, period_end, tag = _billing_period(period)
-	_refuse_a_lower_total(subject, f"{subject}|{service}|{tag}", quantity)
 	key = ingest_rollup(
 		{
 			"resource_id": subject,
@@ -675,27 +674,10 @@ def report_usage(
 			"period_end": period_end,
 			"idempotency_key": f"{subject}|{service}|{tag}",
 			"sequence": frappe.utils.cint(sequence),
-		}
+		},
+		refuse_lower=True,
 	)
 	return {"recorded": bool(key), "service_subject": subject}
-
-
-def _refuse_a_lower_total(subject: str, idempotency_key: str, quantity) -> None:
-	"""The credential sits on the customer's own server, so a period's reported usage may
-	only go up: an Authoritative total lower than the one recorded is refused. An
-	Incremental delta is already positive, so it can only add."""
-	plan = frappe.db.get_value("Subscription", {"service_subject": subject, "enabled": 1}, "plan")
-	category = plan and frappe.db.get_value("Plan", plan, "category")
-	if category and frappe.get_doc("Plan Category", category).effective_reporting_mode == "Incremental":
-		return
-	recorded = frappe.db.get_value(
-		"Usage Rollup", {"idempotency_key": idempotency_key, "superseded_by": ["is", "not set"]}, "quantity"
-	)
-	if recorded is not None and frappe.utils.flt(quantity) < frappe.utils.flt(recorded):
-		frappe.throw(
-			frappe._("A usage total for this period can only increase ({0} is recorded).").format(recorded),
-			frappe.ValidationError,
-		)
 
 
 def _billing_period(period: str | None) -> tuple[str, str, str]:
