@@ -1,16 +1,10 @@
 <script setup lang="ts">
 import { Alert, Button, Checkbox, Dialog, FormControl } from 'frappe-ui'
-import { renderSVG } from 'uqr'
 import { computed, ref, watch } from 'vue'
 import CopyButton from '@/components/common/CopyButton.vue'
 import WireGuardServerList from '@/components/wireguard/WireGuardServerList.vue'
 import { getErrorMessage } from '@/lib/feedback'
-import {
-	buildConfig,
-	downloadConfig,
-	generateKeyPair,
-	isWireGuardKey,
-} from '@/lib/wireguard'
+import { generateKeyPair, isWireGuardKey, type KeyPair } from '@/lib/wireguard'
 import type {
 	WireGuardDevice,
 	WireGuardRegion,
@@ -18,8 +12,6 @@ import type {
 } from '@/types/wireguard'
 
 interface Props {
-	/** Opens on the settings of a saved device instead of the add form. */
-	saved?: WireGuardDevice | null
 	regions: WireGuardRegion[]
 	servers: WireGuardServer[]
 	save: (
@@ -31,6 +23,10 @@ interface Props {
 
 const props = defineProps<Props>()
 const open = defineModel<boolean>({ required: true })
+const emit = defineEmits<{
+	/** The private key is empty when the member brought their own key pair. */
+	added: [device: WireGuardDevice, privateKey: string]
+}>()
 
 const title = ref('')
 const region = ref('')
@@ -38,12 +34,8 @@ const hasOwnKey = ref(false)
 const publicKey = ref('')
 const busy = ref(false)
 const error = ref('')
-const device = ref<WireGuardDevice | null>(null)
 // lives only while the dialog is open and never leaves the browser
-const generatedKey = ref<{ privateKey: string; publicKey: string } | null>(null)
-const privateKey = computed(() => generatedKey.value?.privateKey ?? '')
-// a save that finishes after the dialog closed must not fill the next opening
-let opening = 0
+const generatedKey = ref<KeyPair | null>(null)
 
 const regionOptions = computed(() =>
 	props.regions.map((entry) => ({
@@ -63,60 +55,48 @@ const canSave = computed(
 		(!hasOwnKey.value || (!!publicKey.value.trim() && !keyProblem.value)),
 )
 const regionServers = computed(() =>
-	props.servers.filter(
-		(server) => server.region === (device.value?.region ?? region.value),
-	),
-)
-const config = computed(() =>
-	device.value
-		? buildConfig(device.value, privateKey.value || '<your private key>')
-		: '',
-)
-const qrCode = computed(
-	() =>
-		privateKey.value &&
-		`data:image/svg+xml;utf8,${encodeURIComponent(renderSVG(config.value))}`,
+	props.servers.filter((server) => server.region === region.value),
 )
 
 watch(open, (value) => {
-	opening++
-	if (value) {
-		device.value = props.saved ?? null
-		generatedKey.value = null
-		title.value = ''
-		region.value = props.regions.length === 1 ? props.regions[0].name : ''
-		hasOwnKey.value = false
-		publicKey.value = ''
-		error.value = ''
-		return
-	}
 	generatedKey.value = null
+	if (!value) return
+
+	title.value = ''
+	region.value = props.regions.length === 1 ? props.regions[0].name : ''
+	hasOwnKey.value = false
+	publicKey.value = ''
+	error.value = ''
 })
 
-async function submit() {
+async function getPublicKey(): Promise<string | null> {
+	if (hasOwnKey.value) return publicKey.value.trim()
+
+	generatedKey.value ??= await generateKeyPair()
+	if (!generatedKey.value) {
+		hasOwnKey.value = true
+		error.value =
+			"This browser can't make WireGuard keys. Paste a public key instead."
+		return null
+	}
+	return generatedKey.value.publicKey
+}
+
+async function submit(): Promise<void> {
 	if (busy.value || !canSave.value) return
 	busy.value = true
 	error.value = ''
-	const current = opening
+
 	try {
-		let key = publicKey.value.trim()
-		if (!hasOwnKey.value) {
-			if (!generatedKey.value) {
-				const pair = await generateKeyPair()
-				if (!pair) {
-					hasOwnKey.value = true
-					error.value =
-						"This browser can't make WireGuard keys. Paste a public key instead."
-					return
-				}
-				generatedKey.value = pair
-			}
-			key = generatedKey.value.publicKey
-		}
-		const saved = await props.save(region.value, title.value.trim(), key)
-		if (current === opening) device.value = saved
+		const key = await getPublicKey()
+		if (!key) return
+
+		const device = await props.save(region.value, title.value.trim(), key)
+		// a team switch closes the dialog, and the device then belongs to the old team
+		if (!open.value) return
+		emit('added', device, generatedKey.value?.privateKey ?? '')
+		open.value = false
 	} catch (failure) {
-		if (current !== opening) return
 		// keep the key: the request may have reached the gateway before it failed
 		error.value = getErrorMessage(failure, "The device couldn't be added.")
 	} finally {
@@ -128,79 +108,11 @@ async function submit() {
 <template>
 	<Dialog
 		v-model="open"
-		:title="device ? device.title : 'Add WireGuard device'"
+		title="Add WireGuard device"
 		size="xl"
 		:dismissible="!busy"
 	>
-		<div v-if="device" class="flex flex-col gap-5">
-			<Alert
-				v-if="privateKey"
-				theme="amber"
-				title="This file is available only now"
-				description="Frappe Cloud never saw the key and can't show it again."
-			/>
-
-			<ol class="list-decimal space-y-1 pl-5 text-p-sm text-ink-gray-7">
-				<li>
-					Install the
-					<a
-						href="https://www.wireguard.com/install/"
-						target="_blank"
-						rel="noopener"
-						class="text-p-sm-medium text-ink-gray-8 hover:underline"
-						>WireGuard app</a
-					>.
-				</li>
-				<li v-if="privateKey">
-					Scan the code with a phone, or download the file on a computer and
-					import it.
-				</li>
-				<li v-else>Copy the file, add your private key, and import it.</li>
-				<li>
-					Turn on the tunnel and copy an SSH command below.
-					<a
-						href="https://frappe.github.io/central/servers/wireguard#connect"
-						target="_blank"
-						rel="noopener"
-						class="text-p-sm-medium text-ink-gray-8 hover:underline"
-						>Steps for each device</a
-					>
-				</li>
-			</ol>
-
-			<img
-				v-if="qrCode"
-				:src="qrCode"
-				alt="QR code of the WireGuard file for the mobile app"
-				class="size-48 self-center rounded-6 bg-white p-2"
-			/>
-
-			<div class="relative">
-				<pre
-					class="max-h-60 overflow-auto rounded-6 bg-surface-gray-1 p-3 font-mono text-sm text-ink-gray-8"
-				>{{ config }}</pre>
-				<CopyButton
-					class="absolute right-2 top-2"
-					size="sm"
-					:text="config"
-					label="Copy WireGuard file"
-				/>
-			</div>
-
-			<WireGuardServerList :servers="regionServers" />
-
-			<div class="flex justify-end gap-2">
-				<Button
-					v-if="privateKey"
-					icon-left="lucide-download"
-					label="Download .conf"
-					@click="downloadConfig(device, config)"
-				/>
-				<Button variant="solid" label="Done" @click="open = false" />
-			</div>
-		</div>
-
-		<div v-else class="flex flex-col gap-5">
+		<div class="flex flex-col gap-5">
 			<p class="text-p-sm text-ink-gray-6">
 				The device reaches your servers in one region over their private
 				addresses.

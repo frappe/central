@@ -1,18 +1,16 @@
 <script setup lang="ts">
-import { Button, call, Switch } from 'frappe-ui'
+import { Button, call } from 'frappe-ui'
 import { computed, ref } from 'vue'
 import { API } from '@/api/methods'
 import CopyButton from '@/components/common/CopyButton.vue'
 import SettingsSection from '@/components/common/SettingsSection.vue'
+import WireGuardSection from '@/components/servers/detail/WireGuardSection.vue'
 import EditSSHKeysDialog from '@/components/servers/EditSSHKeysDialog.vue'
 import SSHKeyDialog from '@/components/servers/SSHKeyDialog.vue'
-import { useCapabilities } from '@/composables/useCapabilities'
-import { useServerAddresses } from '@/composables/useServerAddresses'
 import { useSession } from '@/composables/useSession'
-import { openSettings } from '@/composables/useSettings'
 import { useTeamSSHKeys } from '@/composables/useTeamSSHKeys'
 import { ACCESS_LOCKED_REASON } from '@/lib/capabilities'
-import { reportError, successToast } from '@/lib/feedback'
+import { successToast } from '@/lib/feedback'
 import type { ServerOverview } from '@/types/servers'
 
 interface Props {
@@ -41,21 +39,6 @@ const isAdding = ref(false)
 
 const { activeTeam } = useSession()
 const { keys: teamKeys, create: createTeamKey } = useTeamSSHKeys()
-const { canManageWireGuard } = useCapabilities()
-const { setWireguardAccess, isSaving } = useServerAddresses(
-	computed(() => props.overview.server.resource_id),
-)
-
-async function toggleWireguardAccess(enabled: boolean): Promise<void> {
-	const error = await setWireguardAccess(enabled)
-	if (error) {
-		reportError(error, { title: "WireGuard access wasn't changed" })
-		return
-	}
-
-	successToast(enabled ? 'WireGuard access is on' : 'WireGuard access is off')
-	emit('changed')
-}
 
 // A team without keys has nothing to pick, so it starts by adding one.
 function editKeys(): void {
@@ -145,32 +128,13 @@ function changed(): void {
 			</ul>
 		</SettingsSection>
 
-		<SettingsSection
+		<WireGuardSection
 			v-if="overview.server.region_details.has_wireguard_gateway"
-			title="WireGuard"
-			description="Devices that reach this server over the regional gateway."
-		>
-			<template v-if="canManageWireGuard" #actions>
-				<Button
-					icon-left="lucide-shield"
-					label="Manage devices"
-					@click="openSettings('wireguard')"
-				/>
-			</template>
-
-			<Switch
-				:model-value="!!overview.server.has_wireguard_access"
-				:disabled="!canManageNetwork || isSaving"
-				label="WireGuard access"
-				:description="
-					overview.server.has_wireguard_access
-						? 'WireGuard devices of your team reach this server at its private IPv6 address.'
-						: 'Lets WireGuard devices of your team reach the private address of this server.'
-				"
-				class="rounded-6 px-2 py-3"
-				@update:model-value="toggleWireguardAccess"
-			/>
-		</SettingsSection>
+			:resource-id="overview.server.resource_id"
+			:has-access="!!overview.server.has_wireguard_access"
+			:can-manage-network="canManageNetwork"
+			@changed="emit('changed')"
+		/>
 
 		<EditSSHKeysDialog
 			v-model:open="isEditing"

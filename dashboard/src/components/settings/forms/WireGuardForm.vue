@@ -5,12 +5,13 @@ import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import RowActionsMenu from '@/components/common/RowActionsMenu.vue'
 import Table from '@/components/common/Table.vue'
-import WireGuardDeviceDialog from '@/components/wireguard/WireGuardDeviceDialog.vue'
+import AddWireGuardDeviceDialog from '@/components/wireguard/AddWireGuardDeviceDialog.vue'
+import WireGuardDeviceSettingsDialog from '@/components/wireguard/WireGuardDeviceSettingsDialog.vue'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { useSession } from '@/composables/useSession'
 import { useWireGuardDevices } from '@/composables/useWireGuardDevices'
 import { getErrorMessage, infoToast, successToast } from '@/lib/feedback'
-import type { WireGuardDevice } from '@/types/wireguard'
+import type { OpenedWireGuardDevice, WireGuardDevice } from '@/types/wireguard'
 
 const COLUMNS = [
 	{ key: 'title', label: 'Device', class: 'w-full max-w-0' },
@@ -24,7 +25,7 @@ const { canManageWireGuard } = useCapabilities()
 const { activeTeam } = useSession()
 
 const adding = ref(false)
-const viewing = ref<WireGuardDevice | null>(null)
+const opened = ref<OpenedWireGuardDevice | null>(null)
 const deleting = ref<WireGuardDevice | null>(null)
 const busy = ref(false)
 const deleteError = ref('')
@@ -32,7 +33,7 @@ const deleteError = ref('')
 // the device lists reset with the team, so close anything that points at the old team
 watch(activeTeam, () => {
 	adding.value = false
-	viewing.value = null
+	opened.value = null
 	deleting.value = null
 	deleteError.value = ''
 })
@@ -63,7 +64,7 @@ const getActions = (device: WireGuardDevice) => [
 		label: 'View settings',
 		icon: 'lucide-file-code',
 		onClick: () => {
-			viewing.value = device
+			opened.value = { device, privateKey: '' }
 		},
 	},
 	...(device.can_delete && device.status === 'Active'
@@ -170,20 +171,14 @@ const getActions = (device: WireGuardDevice) => [
 			@confirm="deleteSelected"
 		/>
 
-		<WireGuardDeviceDialog
+		<AddWireGuardDeviceDialog
 			v-model="adding"
 			:regions="regions"
 			:servers="servers"
 			:save="create"
+			@added="(device, privateKey) => (opened = { device, privateKey })"
 		/>
 
-		<WireGuardDeviceDialog
-			:model-value="!!viewing"
-			:saved="viewing"
-			:regions="regions"
-			:servers="servers"
-			:save="create"
-			@update:model-value="(open: boolean) => !open && (viewing = null)"
-		/>
+		<WireGuardDeviceSettingsDialog v-model:target="opened" :servers="servers" />
 	</div>
 </template>

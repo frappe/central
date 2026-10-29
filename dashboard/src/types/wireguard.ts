@@ -29,3 +29,9 @@ export interface WireGuardServer {
 	ipv6_address: string | null
 	has_wireguard_access: 0 | 1
 }
+
+/** A device shown in its settings dialog. The private key is set only right after the browser made it. */
+export interface OpenedWireGuardDevice {
+	device: WireGuardDevice
+	privateKey: string
+}

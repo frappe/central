@@ -6,11 +6,13 @@ const toBase64 = (bytes: ArrayBuffer): string =>
 export const isWireGuardKey = (key: string): boolean =>
 	/^[A-Za-z0-9+/]{43}=$/.test(key.trim())
 
-/** A WireGuard key pair made by the browser. Null when the browser has no X25519. */
-export async function generateKeyPair(): Promise<{
+export interface KeyPair {
 	privateKey: string
 	publicKey: string
-} | null> {
+}
+
+/** A WireGuard key pair made by the browser. Null when the browser has no X25519. */
+export async function generateKeyPair(): Promise<KeyPair | null> {
 	try {
 		const pair = (await crypto.subtle.generateKey({ name: 'X25519' }, true, [
 			'deriveBits',

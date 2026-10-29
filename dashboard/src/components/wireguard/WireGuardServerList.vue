@@ -49,7 +49,7 @@ const { canManageNetwork } = useCapabilities()
 					v-else
 					size="sm"
 					label="Turn on access"
-					:route="`/servers/${server.resource_id}/networking`"
+					:route="`/servers/${server.resource_id}/access`"
 				/>
 			</li>
 		</ul>
