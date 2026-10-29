@@ -5,6 +5,7 @@
 Every call to PayPal (`_token`, `_capture_payment`, `_get_order`, ...) is a small private
 method, so tests stub those. All of them go to PayPal's own API, not through Pilot."""
 
+import hashlib
 import json
 
 import frappe
@@ -245,8 +246,7 @@ class PayPalAdapter(GatewayAdapter):
 	# --- optional ------------------------------------------------------------
 
 	def create_customer(self, team) -> str:
-		# PayPal vaults against the buyer's account; a separate customer object is
-		# not required. Surface the team key as the local customer reference.
+		# PayPal vaults against the buyer's account, so the team name is the customer reference.
 		return getattr(team, "name", None) or (team.get("name") if hasattr(team, "get") else None)
 
 	# --- on-session one-time top-up -----------------------------------------
@@ -285,14 +285,13 @@ class PayPalAdapter(GatewayAdapter):
 		"""Capture an approved one-time order; returns {id, status, amount, currency}
 		of the capture. `confirm_topup` credits the wallet from this server-confirmed
 		amount and stores the capture id as the reconcilable gateway reference."""
-		captured = self._capture_order(order_id)
-		return _extract_capture(captured)
+		return _extract_capture(self._capture_order(order_id))
 
 	# --- gateway I/O (the stubbed seam) -------------------------------------
 
 	def _token(self) -> str:
 		"""An OAuth token, cached until shortly before PayPal expires it (about 9 hours)."""
-		key = f"paypal_token::{self.gateway.get('name')}"
+		key = self._token_key()
 		if cached := frappe.cache.get_value(key):
 			return cached
 		resp = requests.post(
@@ -301,12 +300,22 @@ class PayPalAdapter(GatewayAdapter):
 			auth=(self.gateway.get_password("api_key"), self.gateway.get_password("api_secret")),
 			timeout=30,
 		)
-		resp.raise_for_status()
-		body = resp.json()
-		frappe.cache.set_value(
-			key, body["access_token"], expires_in_sec=max(int(body.get("expires_in", 0)) - 300, 60)
-		)
+		body = self._checked(resp)
+		expires_in_sec = max(int(body.get("expires_in", 0)) - 300, 60)
+		frappe.cache.set_value(key, body["access_token"], expires_in_sec=expires_in_sec)
 		return body["access_token"]
+
+	def _token_key(self) -> str:
+		"""One cached token per gateway, host and client id. The key never holds the secret."""
+		client = hashlib.sha256(self.gateway.get_password("api_key").encode()).hexdigest()[:12]
+		return f"paypal_token::{self.gateway.get('name')}::{self._base()}::{client}"
+
+	def _checked(self, resp) -> dict:
+		"""The body of a PayPal answer. A 401 drops the cached token, so the next call gets a new one."""
+		if resp.status_code == 401:
+			frappe.cache.delete_value(self._token_key())
+		resp.raise_for_status()
+		return resp.json()
 
 	def _headers(self, request_id: str | None = None) -> dict:
 		headers = {"Authorization": f"Bearer {self._token()}", "Content-Type": "application/json"}
@@ -324,8 +333,7 @@ class PayPalAdapter(GatewayAdapter):
 			headers=self._headers(),
 			timeout=30,
 		)
-		resp.raise_for_status()
-		return resp.json()
+		return self._checked(resp)
 
 	def _create_setup_token(self, team, setup_data: dict) -> dict:
 		resp = requests.post(
@@ -334,8 +342,7 @@ class PayPalAdapter(GatewayAdapter):
 			headers=self._headers(),
 			timeout=30,
 		)
-		resp.raise_for_status()
-		return resp.json()
+		return self._checked(resp)
 
 	def _create_order(self, amount, currency, receipt, notes) -> dict:
 		resp = requests.post(
@@ -352,8 +359,7 @@ class PayPalAdapter(GatewayAdapter):
 			headers=self._headers(receipt),
 			timeout=30,
 		)
-		resp.raise_for_status()
-		return resp.json()
+		return self._checked(resp)
 
 	def _capture_order(self, order_id) -> dict:
 		resp = requests.post(
@@ -361,13 +367,13 @@ class PayPalAdapter(GatewayAdapter):
 			headers=self._headers(),
 			timeout=30,
 		)
-		resp.raise_for_status()
-		return resp.json()
+		return self._checked(resp)
 
 	def _capture_payment(self, vault_token, amount, currency, request_id) -> dict:
 		"""Create a CAPTURE-intent order against the vault token and return the
 		capture. A 4xx instrument decline is normalised to a non-COMPLETED status
-		(a clean decline, not an exception); network/5xx propagate as transient."""
+		(a clean decline, not an exception). A 401 is our token, not a decline: it and a
+		network or 5xx failure propagate as transient."""
 		resp = requests.post(
 			f"{self._base()}/v2/checkout/orders",
 			json={
@@ -378,7 +384,7 @@ class PayPalAdapter(GatewayAdapter):
 			headers=self._headers(request_id),
 			timeout=30,
 		)
-		if 400 <= resp.status_code < 500:
+		if 400 <= resp.status_code < 500 and resp.status_code != 401:
 			body = _safe_json(resp)
 			if resp.status_code == 409 or body.get("name") in _DUPLICATE_ERRORS:
 				raise GatewayTimeout(f"PayPal is still answering request {request_id}: {body.get('name')}")
@@ -388,8 +394,7 @@ class PayPalAdapter(GatewayAdapter):
 				"failure_code": body.get("name"),
 				"failure_reason": body.get("message"),
 			}
-		resp.raise_for_status()
-		return _extract_capture(resp.json())
+		return _extract_capture(self._checked(resp))
 
 	def _refund_capture(self, capture_id, amount, currency, request_id) -> dict:
 		resp = requests.post(
@@ -398,8 +403,7 @@ class PayPalAdapter(GatewayAdapter):
 			headers=self._headers(request_id),
 			timeout=30,
 		)
-		resp.raise_for_status()
-		return resp.json()
+		return self._checked(resp)
 
 	def _create_payment_token(self, setup_token: str) -> dict:
 		resp = requests.post(
@@ -408,29 +412,25 @@ class PayPalAdapter(GatewayAdapter):
 			headers=self._headers(f"vault-{setup_token}"),
 			timeout=30,
 		)
-		resp.raise_for_status()
-		return resp.json()
+		return self._checked(resp)
 
 	def _get_refund(self, refund_id) -> dict:
 		resp = requests.get(
 			f"{self._base()}/v2/payments/refunds/{refund_id}", headers=self._headers(), timeout=30
 		)
-		resp.raise_for_status()
-		return resp.json()
+		return self._checked(resp)
 
 	def _get_order(self, order_id) -> dict:
 		resp = requests.get(
 			f"{self._base()}/v2/checkout/orders/{order_id}", headers=self._headers(), timeout=30
 		)
-		resp.raise_for_status()
-		return resp.json()
+		return self._checked(resp)
 
 	def _get_capture(self, capture_id) -> dict:
 		resp = requests.get(
 			f"{self._base()}/v2/payments/captures/{capture_id}", headers=self._headers(), timeout=30
 		)
-		resp.raise_for_status()
-		return resp.json()
+		return self._checked(resp)
 
 	def _verify_webhook(self, payload: bytes, headers: dict) -> bool:
 		body = payload.decode() if isinstance(payload, bytes) else payload
@@ -448,8 +448,7 @@ class PayPalAdapter(GatewayAdapter):
 			headers=self._headers(),
 			timeout=30,
 		)
-		resp.raise_for_status()
-		return resp.json().get("verification_status") == "SUCCESS"
+		return self._checked(resp).get("verification_status") == "SUCCESS"
 
 
 # A pending refund can still fail, so it is not Completed.

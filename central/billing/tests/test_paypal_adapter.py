@@ -223,12 +223,31 @@ class TestPayPalAdapter(GatewayAdapterContract, IntegrationTestCase):
 
 	def test_the_oauth_token_is_reused(self):
 		adapter = self.make_adapter()
-		frappe.cache.delete_value(f"paypal_token::{adapter.gateway.name}")
+		frappe.cache.delete_value(adapter._token_key())
 		resp = MagicMock(status_code=200)
 		resp.json.return_value = {"access_token": "tok_1", "expires_in": 32400}
 		with patch("central.billing.gateways.paypal_adapter.requests.post", return_value=resp) as post:
 			self.assertEqual((adapter._token(), adapter._token()), ("tok_1", "tok_1"))
 		post.assert_called_once()
+
+	def test_the_token_key_names_the_host_and_client_but_not_the_secret(self):
+		key = self.make_adapter()._token_key()
+		self.assertIn("api-m.sandbox.paypal.com", key)
+		self.assertNotIn("pp_client", key)
+		self.assertNotIn("pp_secret", key)
+
+	def test_a_401_on_capture_is_unknown_and_drops_the_token(self):
+		from central.billing.gateways.base import GatewayTimeout
+
+		adapter = self.make_adapter()
+		frappe.cache.set_value(adapter._token_key(), "tok_old")
+		resp = MagicMock(status_code=401)
+		resp.raise_for_status.side_effect = requests.exceptions.HTTPError("401 Unauthorized")
+		invoice, method, key = self.make_charge_inputs()
+		with patch("central.billing.gateways.paypal_adapter.requests.post", return_value=resp):
+			with self.assertRaises(GatewayTimeout):
+				adapter.charge(invoice, method, key)
+		self.assertIsNone(frappe.cache.get_value(adapter._token_key()))
 
 	def test_only_paypal_hosts_receive_the_secret(self):
 		from central.billing.gateways.base import GatewayError
