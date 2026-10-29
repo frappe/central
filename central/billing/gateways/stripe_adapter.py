@@ -544,7 +544,7 @@ class StripeAdapter(GatewayAdapter):
 	def read_saved_card(self, setup_reference: str) -> dict:
 		"""The card a SetupIntent (`seti_`) or a setup Checkout Session (`cs_`) saved, read
 		from Stripe: payment method, customer, mandate and display fields. `{}` while the
-		customer has not finished."""
+		customer has not finished, and only `setup_error` when the bank refused the card."""
 		self._configure()
 		intent_id = setup_reference
 		if setup_reference.startswith("cs_"):
@@ -554,6 +554,12 @@ class StripeAdapter(GatewayAdapter):
 
 		intent = _to_dict(stripe.SetupIntent.retrieve(intent_id))
 		method_id = intent.get("payment_method")
+		error = intent.get("last_setup_error")
+		# Stripe leaves a refused SetupIntent open for the customer to try another card.
+		if intent.get("status") == "requires_payment_method" and error:
+			return {
+				"setup_error": {"failure_code": error.get("code"), "decline_code": error.get("decline_code")}
+			}
 		if intent.get("status") != "succeeded" or not method_id:
 			return {}
 

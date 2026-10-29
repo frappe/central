@@ -20,6 +20,7 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
+from central.billing.payments import decline
 from central.billing.states import record_event, transition
 
 CARD_METHOD = "Card"
@@ -173,6 +174,10 @@ class CardNotSaved(frappe.ValidationError):
 	"""The gateway has not saved the card for this setup yet."""
 
 
+class CardDeclinedAtSetup(CardNotSaved):
+	"""The bank refused the card at setup. The message says why, for the customer."""
+
+
 def confirm_payment_method(payment_method: str) -> Document:
 	"""Confirm a card the customer saved at the gateway.
 
@@ -183,12 +188,21 @@ def confirm_payment_method(payment_method: str) -> Document:
 	   the first active method for a team becomes its default.
 	4. A method already past validation is returned as it is, so a repeated confirm
 	   never charges the card again.
+	5. A card the bank refused at setup raises CardDeclinedAtSetup with the gateway's
+	   reason. Nothing is written: the setup webhook records the failure, and the
+	   method stays Pending Validation so the customer can try another card.
 	"""
 	method = frappe.get_doc("Payment Method", payment_method)
 	if method.status != "Pending Validation":
 		return method
 
 	card = _adapter(method.gateway).read_saved_card(method.setup_reference) if method.setup_reference else {}
+	if error := card.get("setup_error"):
+		raise CardDeclinedAtSetup(
+			decline.method_failure_message(
+				error.get("failure_code"), error.get("decline_code"), method.method_type
+			)
+		)
 	if not card:
 		frappe.throw(_("The card has not been saved yet. Finish adding it, then try again."), CardNotSaved)
 	if _is_saved_to_another_customer(card, method):

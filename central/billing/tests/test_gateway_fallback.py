@@ -54,18 +54,30 @@ class TestCardFailureMessage(IntegrationTestCase):
 		self.assertTrue(message.startswith("Your card has expired."))
 
 
-class TestCardSetupDeclineMessage(IntegrationTestCase):
-	def test_a_generic_bank_decline_names_the_bank_and_the_next_step(self):
-		message = decline.setup_decline_message("card_declined", "generic_decline")
-		self.assertEqual(
-			message,
-			"Your bank declined the payment. Try another card, or add credit to your account instead.",
-		)
+class TestCardRefusedAtSetup(IntegrationTestCase):
+	def test_a_reason_we_cannot_word_gets_the_general_reason(self):
+		from central.billing.payments import payments
+		from central.billing.tests.test_payments import stub_adapter
+		from central.billing.tests.test_stripe_adapter import make_stripe_gateway
 
-	def test_a_code_the_browser_made_up_gets_the_general_reason(self):
-		message = decline.setup_decline_message("<b>made up</b>", "signature_invalid")
-		self.assertTrue(message.startswith("We couldn't complete this payment."))
-		self.assertNotIn("made up", message)
+		ensure_team("team-setup-refused")
+		method = frappe.get_doc(
+			{
+				"doctype": "Payment Method",
+				"team": "team-setup-refused",
+				"gateway": make_stripe_gateway().name,
+				"method_type": "Card",
+				"status": "Pending Validation",
+				"setup_reference": "seti_refused",
+			}
+		).insert(ignore_permissions=True)
+		refusal = {"setup_error": {"failure_code": "some_new_code", "decline_code": None}}
+
+		with stub_adapter(card=refusal), self.assertRaises(payments.CardDeclinedAtSetup) as raised:
+			payments.confirm_payment_method(method.name)
+
+		self.assertTrue(str(raised.exception).startswith("We couldn't complete this payment."))
+		self.assertNotIn("some_new_code", str(raised.exception))
 
 
 class TestTheOffer(IntegrationTestCase):

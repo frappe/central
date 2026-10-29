@@ -202,7 +202,8 @@ class TestCustomerReads(CustomerDataBase):
 		self.assertNotIn("api_key", rows[0])
 		frappe.db.delete("Payment Method", {"team": TEAM})
 
-	def test_a_card_refused_at_setup_is_explained_and_not_recorded(self):
+	def test_a_card_refused_at_setup_is_explained_from_the_gateway(self):
+		from central.billing.tests.test_payments import stub_adapter
 		from central.billing.tests.test_stripe_adapter import make_stripe_gateway
 
 		method = frappe.get_doc(
@@ -212,15 +213,26 @@ class TestCustomerReads(CustomerDataBase):
 				"gateway": make_stripe_gateway().name,
 				"method_type": "Card",
 				"status": "Pending Validation",
+				"setup_reference": "seti_refused",
 			}
 		).insert(ignore_permissions=True)
-		out = dashboard.confirm_card(
-			method.name, setup_error_code="card_declined", setup_decline_code="insufficient_funds"
-		)
+		refusal = {"setup_error": {"failure_code": "card_declined", "decline_code": "generic_decline"}}
+
+		with stub_adapter(card=refusal) as adapter:
+			out = dashboard.confirm_card(method.name)
+
+		adapter.read_saved_card.assert_called_once_with("seti_refused")
+		adapter.validate_payment_method.assert_not_called()
+		adapter.charge.assert_not_called()
 		self.assertEqual(out["status"], "Pending Validation")
-		self.assertTrue(out["message"].startswith("There wasn't enough balance."))
-		# The gateway's webhook records the failure, not the browser.
-		self.assertFalse(frappe.db.get_value("Payment Method", method.name, "failure_code"))
+		self.assertEqual(
+			out["message"],
+			"Your bank declined the payment. Try another card, or add credit to your account instead.",
+		)
+		# The setup webhook records the failure, so confirming writes nothing.
+		stored = frappe.db.get_value("Payment Method", method.name, ["status", "failure_code"], as_dict=True)
+		self.assertEqual(stored.status, "Pending Validation")
+		self.assertFalse(stored.failure_code)
 		frappe.db.delete("Payment Method", {"team": TEAM})
 
 	def test_credit_ledger_and_balance(self):

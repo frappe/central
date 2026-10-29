@@ -37,13 +37,6 @@ interface ConfirmCardResult {
 	message?: string
 }
 
-// A card the bank refused at setup. The codes only pick Central's wording.
-interface SetupDecline {
-	payment_method: string
-	setup_error_code: string
-	setup_decline_code?: string
-}
-
 interface MountOptions {
 	team: string
 	publishableKey: string | null | undefined
@@ -59,10 +52,7 @@ export function useAddStripeCard({
 		method: 'POST',
 		immediate: false,
 	})
-	const confirm = useCall<
-		ConfirmCardResult,
-		{ payment_method?: string } | SetupDecline
-	>({
+	const confirm = useCall<ConfirmCardResult, { payment_method?: string }>({
 		url: method(API.confirmCard),
 		method: 'POST',
 		immediate: false,
@@ -76,7 +66,7 @@ export function useAddStripeCard({
 	let orderPromise: Promise<CardSetupOrder | null> | null = null
 
 	// A form mistake keeps Stripe's own field text. A bank refusal is explained by
-	// Central, in words it can translate, with the next step to take.
+	// Central, which reads the reason from Stripe and words it with the next step.
 	async function explainSetupError(
 		setupError: StripeError,
 		paymentMethod: string | undefined,
@@ -85,11 +75,7 @@ export function useAddStripeCard({
 		if (setupError.type !== 'card_error' || !paymentMethod) return stripeText
 		// A failed lookup must not hide the refusal, so it falls back to Stripe's text.
 		const explained = await confirm
-			.submit({
-				payment_method: paymentMethod,
-				setup_error_code: setupError.code ?? setupError.type,
-				setup_decline_code: setupError.decline_code,
-			})
+			.submit({ payment_method: paymentMethod })
 			.then(() => !confirm.error && confirm.data?.message)
 			.catch(() => '')
 		return explained || stripeText

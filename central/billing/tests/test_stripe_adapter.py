@@ -291,6 +291,26 @@ class TestStripeAdapter(GatewayAdapterContract, IntegrationTestCase):
 		self.assertEqual(out["amount_received"], 5000)
 		self.assertEqual(out["currency"], "eur")
 
+	def test_a_refused_setup_reads_back_the_bank_reason(self):
+		adapter = self.make_adapter()
+		intent = stripe.SetupIntent.construct_from(
+			{
+				"id": "seti_x",
+				"status": "requires_payment_method",
+				"last_setup_error": {
+					"type": "card_error",
+					"code": "card_declined",
+					"decline_code": "generic_decline",
+				},
+			},
+			"sk_test",
+		)
+		with patch.object(stripe.SetupIntent, "retrieve", return_value=intent):
+			out = adapter.read_saved_card("seti_x")
+		self.assertEqual(
+			out, {"setup_error": {"failure_code": "card_declined", "decline_code": "generic_decline"}}
+		)
+
 
 class TestIndiaCardMandate(IntegrationTestCase):
 	"""Stripe India registers the mandate an Indian recurring card debit needs, and

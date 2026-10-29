@@ -310,7 +310,8 @@ class GatewayAdapter(ABC):
 
 	def read_saved_card(self, setup_reference: str) -> dict:
 		"""The card a setup saved, read from the gateway, or `{}` while it is not finished.
-		Keys: payment_method, customer, mandate, brand, last4, exp_month, exp_year."""
+		Keys: payment_method, customer, mandate, brand, last4, exp_month, exp_year. A setup
+		the bank refused gives only `setup_error`, with its failure_code and decline_code."""
 		raise GatewayUnsupported(f"{type(self).__name__} does not support read_saved_card")
 
 	def verify_payment(self, payment_id: str) -> VerifiedPayment:

@@ -149,18 +149,6 @@ def method_failure_message(
 	return _("{0}. Try again, or add credit to your account instead.").format(customer_reason(code))
 
 
-def setup_decline_message(failure_code: str | None, decline_code: str | None = None) -> str:
-	"""Why the gateway's card form refused a card at setup, and what to do instead.
-
-	The browser reports these codes, so a code only picks wording we already have. Any
-	other code falls back to the general reason and is never echoed back."""
-	return method_failure_message(_known_reason(failure_code), _known_reason(decline_code))
-
-
-def _known_reason(code: str | None) -> str | None:
-	return code if (code or "").lower() in _CUSTOMER_REASON else None
-
-
 def is_mandate_failure(failure_code: str | None) -> bool:
 	"""True where the mandate, not the card, is what failed."""
 	return (failure_code or "").lower() in MANDATE_CODES
