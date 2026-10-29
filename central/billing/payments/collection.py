@@ -136,9 +136,9 @@ def _charge_next_method(inv, earlier: set | None, skipped: set) -> dict | None:
 	# Every off-session debit on a rail that owes a pre-debit notice waits for it, whichever
 	# path asked for it: the billing run, a dunning retry or a webhook.
 	predebit, notice = emandate.await_predebit(inv.name, method.gateway)
-	if predebit == emandate.WAIT:
+	if predebit == emandate.Predebit.WAIT:
 		return {"collected": False, "reason": "awaiting_predebit_window", **notice}
-	if predebit == emandate.ROTATE:
+	if predebit == emandate.Predebit.ROTATE:
 		skipped.add(method.name)
 		return None
 

@@ -19,6 +19,8 @@ heads-up is sent here; the bank's own RBI pre-debit notification is dispatched b
 the gateway at debit time (an adapter concern, kept out of this orchestration).
 """
 
+from enum import StrEnum
+
 import frappe
 
 from central.billing.payments import collection, collection_mode
@@ -26,8 +28,13 @@ from central.billing.platform.jobs import each_isolated
 
 PREDEBIT_NOTICE_HOURS = 24
 
-# What `await_predebit` tells the collector to do with one rail.
-CHARGE_NOW, WAIT, ROTATE = "charge_now", "wait", "rotate"
+
+class Predebit(StrEnum):
+	"""What `await_predebit` tells the collector to do with one rail."""
+
+	CHARGE_NOW = "charge_now"
+	WAIT = "wait"
+	ROTATE = "rotate"
 
 
 def _is_notice_required(inv, gateway: str | None) -> bool:
@@ -43,7 +50,7 @@ def _is_notice_required(inv, gateway: str | None) -> bool:
 	return bool(gateway and currency and capabilities.requires_predebit_notice(gateway, currency))
 
 
-def await_predebit(invoice: str, gateway: str) -> tuple[str, dict]:
+def await_predebit(invoice: str, gateway: str) -> tuple[Predebit, dict]:
 	"""What `gateway` may do with this invoice now under the pre-debit notice rule.
 
 	1. CHARGE_NOW: the rail owes no notice, or the notice window has passed.
@@ -57,11 +64,11 @@ def await_predebit(invoice: str, gateway: str) -> tuple[str, dict]:
 	if not _is_notice_required(inv, gateway) or (
 		charge_after and frappe.utils.now_datetime() >= frappe.utils.get_datetime(charge_after)
 	):
-		return CHARGE_NOW, {}
+		return Predebit.CHARGE_NOW, {}
 	notice = schedule_predebit(invoice, gateway=gateway)
 	if notice.get("notified") or notice.get("skipped") == "already_notified":
-		return WAIT, notice
-	return ROTATE, notice
+		return Predebit.WAIT, notice
+	return Predebit.ROTATE, notice
 
 
 def schedule_predebit(invoice: str, now=None, gateway: str | None = None) -> dict:
