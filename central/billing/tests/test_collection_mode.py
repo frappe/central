@@ -240,6 +240,14 @@ class TestInvoiceTimeTrip(IntegrationTestCase):
 		self.assertEqual(frappe.db.count("Payment Attempt", {"invoice": inv}), 0)
 		self.assertEqual(frappe.db.get_value("Billing Profile", TEAM, "collection_mode"), "Action Required")
 
+	def test_pay_over_15k_keeps_the_mode_the_customer_chose(self):
+		from central.billing.payments import charges
+
+		_set_mode(TEAM, "Prepaid")
+		out = charges.pay_invoice(self._invoice(20000), payment_method=self.pm, gateway=self.gw)
+		self.assertEqual(out["reason"], "action_required")
+		self.assertEqual(frappe.db.get_value("Billing Profile", TEAM, "collection_mode"), "Prepaid")
+
 
 class TestManualCheckout(IntegrationTestCase):
 	"""On-session pay-an-invoice for Manual Checkout teams: any amount, settled by

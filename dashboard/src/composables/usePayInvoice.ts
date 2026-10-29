@@ -40,6 +40,8 @@ export function usePayInvoice({
 				attempt_in_flight: 'A payment for this invoice is already in progress.',
 				nothing_due: 'This invoice has nothing left to pay.',
 				not_open: 'This invoice is no longer open.',
+				action_required:
+					'This amount is above the limit for automatic payments. Pay it with checkout instead.',
 			}
 			reportError(
 				(res.reason && reasons[res.reason]) || 'No payment was started',

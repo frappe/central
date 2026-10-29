@@ -114,13 +114,14 @@ def _claim_attempt(invoice: str, payment_method: str | None, gateway: str | None
 
 	# A debit the gateway can't pull silently in this currency (INR above ₹15,000 —
 	# an RBI off-session rule that binds Stripe India and Razorpay alike) is never
-	# attempted: it would just fail. Instead raise Action Required so the customer
-	# picks manual checkout / prepaid (ADR 0022, #106). An uncapped currency and
-	# anything under the ceiling pass straight through.
+	# attempted: it would just fail. An Auto Charge team is moved to Action Required so
+	# it picks manual checkout / prepaid (ADR 0022, #106); a mode the customer already
+	# chose is kept. An uncapped currency and anything under the ceiling pass through.
 	if not adapter.can_charge_silently(frappe.utils.flt(inv.expected_collection), inv.currency):
 		from central.billing.payments import collection_mode
 
-		collection_mode.trip(inv.team, "invoice_over_threshold")
+		if frappe.db.get_value("Billing Profile", inv.team, "collection_mode") == "Auto Charge":
+			collection_mode.trip(inv.team, "invoice_over_threshold")
 		return {"charged": False, "reason": "action_required", "invoice": invoice}
 
 	retry_number = frappe.db.count("Payment Attempt", {"invoice": invoice})
