@@ -28,7 +28,8 @@ class Failure(TypedDict, total=False):
 	raw: dict
 
 
-# The card is refused. Nothing about retrying it changes that.
+# The card is refused, or the gateway refused to open the charge. Nothing was taken,
+# and charging this rail again in the same round gives the same answer.
 TERMINAL_CODES = (
 	"card_declined",
 	"card_not_supported",
@@ -36,6 +37,7 @@ TERMINAL_CODES = (
 	"expired_card",
 	"incorrect_number",
 	"incorrect_cvc",
+	"order_refused",
 )
 
 # The outcome is unknown: the money may yet move. Never fall back on these.
@@ -59,8 +61,9 @@ MANDATE_CODES = (
 
 
 # Declines a later retry cannot fix: the card is wrong, gone or barred, or the
-# customer must be present. A shortfall or a generic bank refusal can clear in days.
-HARD_CODES = tuple(code for code in TERMINAL_CODES if code != "card_declined")
+# customer must be present. A shortfall, a generic bank refusal or a refused order
+# can clear in days.
+HARD_CODES = tuple(code for code in TERMINAL_CODES if code not in ("card_declined", "order_refused"))
 HARD_DECLINE_CODES = (
 	"lost_card",
 	"stolen_card",
