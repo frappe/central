@@ -62,7 +62,7 @@ class WireGuardGatewayClient:
 				response = endpoint.sync_detailed(client=client, **kwargs)
 		except httpx.HTTPError:
 			raise WireGuardGatewayError(
-				_("The WireGuard gateway of this region is not answering. Try again in a few minutes.")
+				_("The WireGuard VPN gateway of this region is not answering. Try again in a few minutes.")
 			)
 
 		if response.status_code >= 300 and response.status_code not in allow:
@@ -72,7 +72,7 @@ class WireGuardGatewayClient:
 				message=f"{self.base_url}\n{body}",
 			)
 			raise WireGuardGatewayError(
-				_("The WireGuard gateway of this region refused the request. Try again in a few minutes.")
+				_("The WireGuard VPN gateway of this region refused the request. Try again in a few minutes.")
 			)
 
 		return response

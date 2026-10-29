@@ -63,7 +63,7 @@ const addresses = computed(() =>
 			label: 'Private IPv6',
 			value: props.server.ipv6_address,
 			reach: props.server.has_wireguard_access
-				? 'Your servers and WireGuard devices'
+				? 'Your servers and WireGuard VPN devices'
 				: 'Your servers in this region',
 			version: null,
 		},

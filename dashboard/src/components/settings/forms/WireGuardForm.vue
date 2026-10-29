@@ -1,16 +1,19 @@
 <script setup lang="ts">
-import { Badge, Button, Skeleton } from 'frappe-ui'
-import { ref, watch } from 'vue'
+import { Badge, Button, Skeleton, TextInput } from 'frappe-ui'
+import { computed, ref, watch } from 'vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import RowActionsMenu from '@/components/common/RowActionsMenu.vue'
+import SettingsSection from '@/components/common/SettingsSection.vue'
 import Table from '@/components/common/Table.vue'
 import AddWireGuardDeviceDialog from '@/components/wireguard/AddWireGuardDeviceDialog.vue'
-import WireGuardDeviceSettingsDialog from '@/components/wireguard/WireGuardDeviceSettingsDialog.vue'
+import WireGuardDeviceAddedDialog from '@/components/wireguard/WireGuardDeviceAddedDialog.vue'
+import WireGuardServerList from '@/components/wireguard/WireGuardServerList.vue'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { useSession } from '@/composables/useSession'
 import { useWireGuardDevices } from '@/composables/useWireGuardDevices'
 import { getErrorMessage, infoToast, successToast } from '@/lib/feedback'
+import { downloadConfig, PRIVATE_KEY_PLACEHOLDER } from '@/lib/wireguard'
 import type { OpenedWireGuardDevice, WireGuardDevice } from '@/types/wireguard'
 
 const COLUMNS = [
@@ -41,6 +44,25 @@ watch(activeTeam, () => {
 const regionLabel = (name: string): string =>
 	regions.value.find((region) => region.name === name)?.display_name || name
 
+const deviceQuery = ref('')
+const isDeviceSearchable = computed(() => devices.value.length > 6)
+const visibleDevices = computed(() => {
+	const query = deviceQuery.value.trim().toLowerCase()
+	if (!query) return devices.value
+
+	return devices.value.filter((device) =>
+		[
+			device.title,
+			device.address,
+			device.added_by_name,
+			regionLabel(device.region),
+		]
+			.join(' ')
+			.toLowerCase()
+			.includes(query),
+	)
+})
+
 const deleteSelected = async (device: WireGuardDevice): Promise<void> => {
 	busy.value = true
 	deleteError.value = ''
@@ -61,10 +83,13 @@ const deleteSelected = async (device: WireGuardDevice): Promise<void> => {
 
 const getActions = (device: WireGuardDevice) => [
 	{
-		label: 'View settings',
-		icon: 'lucide-file-code',
+		label: 'Download .conf',
+		icon: 'lucide-download',
 		onClick: () => {
-			opened.value = { device, privateKey: '' }
+			downloadConfig(device, '')
+			infoToast(
+				`Replace ${PRIVATE_KEY_PLACEHOLDER} in the file with the private key of ${device.title}, then import it.`,
+			)
 		},
 	},
 	...(device.can_delete && device.status === 'Active'
@@ -112,53 +137,109 @@ const getActions = (device: WireGuardDevice) => [
 		<EmptyState
 			v-else-if="!devices.length && !regions.length"
 			icon="lucide-shield"
-			title="WireGuard isn't available yet"
-			description="None of your regions has a WireGuard gateway yet."
+			title="WireGuard VPN isn't available yet"
+			description="None of your regions has a WireGuard VPN gateway yet."
 		/>
 
-		<EmptyState
-			v-else-if="!devices.length"
-			icon="lucide-shield"
-			title="No devices yet"
-			description="Add a laptop or phone to reach your servers over their private addresses."
-		>
-			<template v-if="canManageWireGuard" #action>
-				<Button
-					label="Add device"
-					icon-left="lucide-plus"
-					@click="adding = true"
-				/>
-			</template>
-		</EmptyState>
-
-		<Table v-else :columns="COLUMNS" :rows="devices" height="h-auto">
-			<template #title="{ row }">
-				<div class="space-y-1 py-2">
-					<div class="flex items-center gap-2">
-						<p class="truncate text-base text-ink-gray-8">{{ row.title }}</p>
-						<Badge
-							v-if="row.status === 'Removing'"
-							theme="orange"
-							label="Removing"
-						/>
-					</div>
-					<p class="truncate text-sm text-ink-gray-5">
-						{{ row.address }}
-						· added by {{ row.added_by_name || row.added_by }}
-					</p>
-				</div>
-			</template>
-
-			<template #region="{ row }">
-				<span class="text-base text-ink-gray-7"
-					>{{ regionLabel(row.region) }}</span
+		<template v-else>
+			<SettingsSection title="Devices">
+				<EmptyState
+					v-if="!devices.length"
+					icon="lucide-shield"
+					title="No devices yet"
+					description="Add a laptop or phone to reach your servers over their private addresses."
 				>
-			</template>
+					<template v-if="canManageWireGuard" #action>
+						<Button
+							label="Add device"
+							icon-left="lucide-plus"
+							@click="adding = true"
+						/>
+					</template>
+				</EmptyState>
 
-			<template #actions="{ row }">
-				<RowActionsMenu :options="getActions(row)" label="Device actions" />
-			</template>
-		</Table>
+				<template v-else>
+					<TextInput
+						v-if="isDeviceSearchable"
+						v-model="deviceQuery"
+						type="search"
+						placeholder="Search devices"
+						aria-label="Search devices"
+					>
+						<template #prefix>
+							<span
+								class="lucide-search size-4 text-ink-gray-5"
+								aria-hidden="true"
+							/>
+						</template>
+					</TextInput>
+
+					<p
+						v-if="!visibleDevices.length"
+						class="py-4 text-p-sm text-ink-gray-6"
+					>
+						No device matches “{{ deviceQuery.trim() }}”.
+						<button
+							type="button"
+							class="text-p-sm-medium text-ink-gray-8 underline"
+							@click="deviceQuery = ''"
+						>
+							Clear search
+						</button>
+					</p>
+
+					<Table
+						v-else
+						:columns="COLUMNS"
+						:rows="visibleDevices"
+						height="h-auto"
+					>
+						<template #title="{ row }">
+							<div class="space-y-1 py-2">
+								<div class="flex items-center gap-2">
+									<p class="truncate text-base text-ink-gray-8">
+										{{ row.title }}
+									</p>
+									<Badge
+										v-if="row.status === 'Removing'"
+										theme="orange"
+										label="Removing"
+									/>
+								</div>
+								<p class="truncate text-sm text-ink-gray-5">
+									{{ row.address }}
+									· added by {{ row.added_by_name || row.added_by }}
+								</p>
+							</div>
+						</template>
+
+						<template #region="{ row }">
+							<span class="text-base text-ink-gray-7"
+								>{{ regionLabel(row.region) }}</span
+							>
+						</template>
+
+						<template #actions="{ row }">
+							<RowActionsMenu
+								:options="getActions(row)"
+								label="Device actions"
+							/>
+						</template>
+					</Table>
+				</template>
+			</SettingsSection>
+
+			<SettingsSection
+				title="Servers"
+				description="Turn on WireGuard VPN for a server to let your team's devices reach its private address."
+			>
+				<WireGuardServerList
+					:regions="regions"
+					:servers="servers"
+					@changed="reload"
+				/>
+			</SettingsSection>
+		</template>
 
 		<ConfirmDialog
 			v-model:target="deleting"
@@ -174,11 +255,10 @@ const getActions = (device: WireGuardDevice) => [
 		<AddWireGuardDeviceDialog
 			v-model="adding"
 			:regions="regions"
-			:servers="servers"
 			:save="create"
 			@added="(device, privateKey) => (opened = { device, privateKey })"
 		/>
 
-		<WireGuardDeviceSettingsDialog v-model:target="opened" :servers="servers" />
+		<WireGuardDeviceAddedDialog v-model:target="opened" />
 	</div>
 </template>

@@ -2,18 +2,17 @@
 import { Alert, Button, Checkbox, Dialog, FormControl } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import CopyButton from '@/components/common/CopyButton.vue'
-import WireGuardServerList from '@/components/wireguard/WireGuardServerList.vue'
 import { getErrorMessage } from '@/lib/feedback'
-import { generateKeyPair, isWireGuardKey, type KeyPair } from '@/lib/wireguard'
-import type {
-	WireGuardDevice,
-	WireGuardRegion,
-	WireGuardServer,
-} from '@/types/wireguard'
+import {
+	generateKeyPair,
+	isWireGuardKey,
+	type KeyPair,
+	WIREGUARD_DOCS_URL,
+} from '@/lib/wireguard'
+import type { WireGuardDevice, WireGuardRegion } from '@/types/wireguard'
 
 interface Props {
 	regions: WireGuardRegion[]
-	servers: WireGuardServer[]
 	save: (
 		region: string,
 		title: string,
@@ -53,9 +52,6 @@ const canSave = computed(
 		!!title.value.trim() &&
 		!!region.value &&
 		(!hasOwnKey.value || (!!publicKey.value.trim() && !keyProblem.value)),
-)
-const regionServers = computed(() =>
-	props.servers.filter((server) => server.region === region.value),
 )
 
 watch(open, (value) => {
@@ -108,15 +104,29 @@ async function submit(): Promise<void> {
 <template>
 	<Dialog
 		v-model="open"
-		title="Add WireGuard device"
+		title="Add WireGuard VPN device"
 		size="xl"
 		:dismissible="!busy"
 	>
 		<div class="flex flex-col gap-5">
 			<p class="text-p-sm text-ink-gray-6">
-				The device reaches your servers in one region over their private
-				addresses.
+				The device reaches the servers in one region that have WireGuard VPN on.
 			</p>
+			<Alert theme="amber" title="Your servers can reach this device too">
+				<template #description>
+					The tunnel works both ways. Servers with WireGuard VPN on can connect
+					to any open port on this device. Turn on its firewall before you
+					connect, most of all on a server or another machine that stays
+					connected.
+					<a
+						:href="`${WIREGUARD_DOCS_URL}#protect-the-device`"
+						target="_blank"
+						rel="noopener"
+						class="text-p-sm-medium underline"
+						>Read how to protect the device</a
+					>
+				</template>
+			</Alert>
 			<Alert v-if="error" theme="red" :title="error" />
 			<div v-if="error && generatedKey" class="flex flex-col gap-2">
 				<p class="text-p-sm-medium text-ink-gray-8">Save your private key</p>
@@ -171,7 +181,9 @@ async function submit(): Promise<void> {
 				Your browser makes the key pair. Only the public key is sent to Frappe
 				Cloud.
 			</p>
-			<WireGuardServerList v-if="region" :servers="regionServers" />
+		</div>
+
+		<template #actions>
 			<div class="flex justify-end gap-2">
 				<Button label="Cancel" :disabled="busy" @click="open = false" />
 				<Button
@@ -182,6 +194,6 @@ async function submit(): Promise<void> {
 					@click="submit"
 				/>
 			</div>
-		</div>
+		</template>
 	</Dialog>
 </template>

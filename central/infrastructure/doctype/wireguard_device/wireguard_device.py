@@ -56,7 +56,7 @@ class WireGuardDevice(Document):
 		validate_tenant_id(self.tenant_id)
 		if frappe.db.count("WireGuard Device", {"team": self.team}) >= MAXIMUM_TEAM_DEVICES:
 			frappe.throw(
-				_("This team has {0} WireGuard devices. Remove one before you add another.").format(
+				_("This team has {0} WireGuard VPN devices. Remove one before you add another.").format(
 					MAXIMUM_TEAM_DEVICES
 				)
 			)
@@ -114,7 +114,7 @@ def get_next_client_id(team: str) -> int:
 	highest = frappe.qb.from_(device).select(Max(device.client_id)).where(device.team == team).run()[0][0]
 	client_id = (highest or 0) + 1
 	if client_id > MAXIMUM_CLIENT_ID:
-		frappe.throw(_("This team has reached the limit of WireGuard devices."))
+		frappe.throw(_("This team has reached the limit of WireGuard VPN devices."))
 
 	return client_id
 

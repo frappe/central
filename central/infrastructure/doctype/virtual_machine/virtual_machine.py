@@ -445,7 +445,7 @@ class VirtualMachine(Document):
 
 		self.require_live()
 		if enabled and not self.has_wireguard_gateway:
-			frappe.throw(_("WireGuard is not available in this region yet."))
+			frappe.throw(_("WireGuard VPN is not available in this region yet."))
 
 		set_wireguard_access(self, enabled)
 
