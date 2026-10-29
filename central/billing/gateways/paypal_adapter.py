@@ -175,7 +175,6 @@ class PayPalAdapter(GatewayAdapter):
 
 		status = _REFUND_STATUS.get(refund.get("status"), "Failed")
 		return RefundResult(
-			success=status != "Failed",
 			status=status,
 			gateway_refund_id=refund.get("id"),
 			raw=dict(refund),

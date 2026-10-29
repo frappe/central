@@ -92,10 +92,14 @@ class VerifiedPayment:
 
 @dataclass
 class RefundResult:
-	success: bool
 	status: str  # Completed / Pending / Failed
 	gateway_refund_id: str | None = None
 	raw: dict = field(default_factory=dict)
+
+	@property
+	def success(self) -> bool:
+		"""The gateway accepted the refund. A Pending refund is accepted but not paid out yet."""
+		return self.status != "Failed"
 
 
 @dataclass

@@ -392,11 +392,10 @@ class StripeAdapter(GatewayAdapter):
 		except _UNKNOWN_OUTCOME as e:
 			raise GatewayTimeout(str(e)) from e
 		except _INVALID_REQUEST as e:
-			return RefundResult(success=False, status="Failed", raw=getattr(e, "json_body", None) or {})
+			return RefundResult(status="Failed", raw=getattr(e, "json_body", None) or {})
 
 		status = _REFUND_STATUS.get(refund.get("status"), "Failed")
 		return RefundResult(
-			success=status != "Failed",
 			status=status,
 			gateway_refund_id=refund.get("id"),
 			raw=refund,

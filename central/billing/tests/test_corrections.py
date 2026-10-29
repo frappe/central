@@ -34,9 +34,7 @@ class CorrectionsTestCase(IntegrationTestCase):
 		self.enterContext(self.remote.patches())
 		self.enterContext(patch("central.billing.payments.corrections.enqueue_steps"))
 		self.gateway = MagicMock()
-		self.gateway.refund.return_value = RefundResult(
-			success=True, status="Completed", gateway_refund_id="re_1", raw={}
-		)
+		self.gateway.refund.return_value = RefundResult(status="Completed", gateway_refund_id="re_1", raw={})
 		self.enterContext(patch("central.billing.payments.corrections._adapter", return_value=self.gateway))
 
 	def _paid_invoice(self, synced=True, paid_at="2026-09-01 10:00:00"):
@@ -175,9 +173,7 @@ class TestCancelAndRefund(CorrectionsTestCase):
 		self.assertEqual(credits.get_balance(TEAM, "INR")["balance"], 2000)
 
 	def test_a_failed_gateway_refund_is_kept_for_a_person(self):
-		self.gateway.refund.return_value = RefundResult(
-			success=False, status="failed", gateway_refund_id=None, raw={}
-		)
+		self.gateway.refund.return_value = RefundResult(status="Failed", gateway_refund_id=None, raw={})
 		inv = self._paid_invoice()
 		corrections.cancel_and_refund(inv, "customer asked")
 		self._run_all(inv)
@@ -188,7 +184,7 @@ class TestCancelAndRefund(CorrectionsTestCase):
 class TestDispute(CorrectionsTestCase):
 	def test_a_pending_refund_is_not_counted_as_given_back(self):
 		self.gateway.refund.return_value = RefundResult(
-			success=True, status="Pending", gateway_refund_id="re_pending", raw={}
+			status="Pending", gateway_refund_id="re_pending", raw={}
 		)
 		inv = self._paid_invoice()
 		corrections.cancel_and_refund(inv, "customer asked")
@@ -201,7 +197,7 @@ class TestDispute(CorrectionsTestCase):
 
 	def test_a_pending_refund_completes_on_its_webhook(self):
 		self.gateway.refund.return_value = RefundResult(
-			success=True, status="Pending", gateway_refund_id="re_pending", raw={}
+			status="Pending", gateway_refund_id="re_pending", raw={}
 		)
 		inv = self._paid_invoice()
 		corrections.cancel_and_refund(inv, "customer asked")
@@ -218,7 +214,7 @@ class TestDispute(CorrectionsTestCase):
 		from central.billing.payments import reconciliation
 
 		self.gateway.refund.return_value = RefundResult(
-			success=True, status="Pending", gateway_refund_id="re_pending", raw={}
+			status="Pending", gateway_refund_id="re_pending", raw={}
 		)
 		self.gateway.get_refund_status.return_value = "Failed"
 		inv = self._paid_invoice()
@@ -375,9 +371,7 @@ class TestDisputeWebhook(CorrectionsTestCase):
 
 class TestRetryFailedRefund(CorrectionsTestCase):
 	def test_a_refused_refund_is_retried_with_a_new_key(self):
-		self.gateway.refund.return_value = RefundResult(
-			success=False, status="failed", gateway_refund_id=None, raw={}
-		)
+		self.gateway.refund.return_value = RefundResult(status="Failed", gateway_refund_id=None, raw={})
 		inv = self._paid_invoice()
 		corrections.cancel_and_refund(inv, "customer asked")
 		self._run_all(inv)
@@ -388,9 +382,7 @@ class TestRetryFailedRefund(CorrectionsTestCase):
 
 		self.assertIn(inv, [a["subject"] for a in alerts.failed_refunds()])
 
-		self.gateway.refund.return_value = RefundResult(
-			success=True, status="Completed", gateway_refund_id="re_2", raw={}
-		)
+		self.gateway.refund.return_value = RefundResult(status="Completed", gateway_refund_id="re_2", raw={})
 		self.assertEqual(corrections.retry_failed_refunds(inv), 1)
 		self._run_all(inv)
 		card.reload()
@@ -531,9 +523,7 @@ class TestRefundPart(CorrectionsTestCase):
 
 	def test_a_failed_part_is_not_retried_once_the_invoice_gave_that_amount_elsewhere(self):
 		inv = self._paid_invoice()  # 5,900 in all
-		self.gateway.refund.return_value = RefundResult(
-			success=False, status="failed", gateway_refund_id=None, raw={}
-		)
+		self.gateway.refund.return_value = RefundResult(status="Failed", gateway_refund_id=None, raw={})
 		corrections.refund_part(inv, 3000, "x", destination="Source")
 		self._run_all(inv)
 		self.assertEqual(self._refund(inv, "Source").status, "Failed")
