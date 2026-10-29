@@ -12,6 +12,8 @@ stored and a background job is enqueued.
 import frappe
 from frappe import _
 
+from central.billing.platform.records import mark_billing_write
+
 # A failed event is retried hourly until it has failed this many times; then it waits for
 # an operator, whom the failed-webhook alert has been paging since the first failure.
 MAX_TRIES = 5
@@ -173,7 +175,7 @@ def _mark_failed(event_name: str, error: str) -> None:
 	event.error = error[-2000:]
 	event.retry_count = (event.retry_count or 0) + 1
 	# The webhook job runs as Guest or the system; nobody else writes a Webhook Event.
-	event.save(ignore_permissions=True)
+	mark_billing_write(event).save(ignore_permissions=True)
 
 
 def retry_failed_webhooks() -> list[str]:

@@ -13,6 +13,7 @@ import frappe
 from frappe import _
 
 from central.billing import settings
+from central.billing.platform.records import mark_billing_write
 from central.billing.revenue import credits
 from central.billing.revenue.invoicing.generate import generate_team_invoice
 from central.billing.revenue.tax import is_internal_team
@@ -67,7 +68,7 @@ def open_and_collect(invoice: str, collect: bool = True) -> dict:
 		doc.credit_applied = 0
 		doc.expected_collection = 0
 		transition(doc, "Open", reason="cost report opened", actor="scheduler")
-		doc.save(ignore_permissions=True)
+		mark_billing_write(doc).save(ignore_permissions=True)
 		return {"invoice": invoice, "claimed": True, "cost_report": True, "expected_collection": 0}
 
 	# Leg 1 — credits first (only against the collectable amount, gross less TDS).
@@ -101,7 +102,7 @@ def open_and_collect(invoice: str, collect: bool = True) -> dict:
 	if doc.expected_collection <= 0:
 		doc.paid_at = frappe.utils.now_datetime()
 		transition(doc, "Paid", reason="credits covered in full", actor="scheduler", amount=applied)
-		doc.save(ignore_permissions=True)
+		mark_billing_write(doc).save(ignore_permissions=True)
 		from central.billing.ingester.erpnext_sync import enqueue_invoice_sync
 
 		enqueue_invoice_sync(doc.name)
@@ -114,7 +115,7 @@ def open_and_collect(invoice: str, collect: bool = True) -> dict:
 		}
 
 	transition(doc, "Open", reason="drafted invoice opened for collection", actor="scheduler")
-	doc.save(ignore_permissions=True)
+	mark_billing_write(doc).save(ignore_permissions=True)
 
 	# Leg 2 — charge the remainder, walking the team's methods primary→backup
 	# (#28). Credits-only teams (no active method) fall through to dunning.
@@ -140,7 +141,7 @@ def _waive_internal(doc) -> dict:
 	doc.credit_applied = 0
 	doc.expected_collection = 0
 	transition(doc, "Waived", reason="internal team", actor="scheduler", amount=doc.total)
-	doc.save(ignore_permissions=True)
+	mark_billing_write(doc).save(ignore_permissions=True)
 	return {"invoice": doc.name, "claimed": True, "status": "Waived", "waived": doc.total}
 
 
@@ -292,7 +293,7 @@ def cancel_invoice(invoice: str, reason: str | None = None) -> str:
 			frappe.ValidationError,
 		)
 	transition(doc, "Cancelled", reason=reason, actor=frappe.session.user)
-	doc.save(ignore_permissions=True)
+	mark_billing_write(doc).save(ignore_permissions=True)
 	give_back_wallet(doc)
 	if reason:
 		doc.add_comment("Info", f"Cancelled: {reason}")
@@ -314,7 +315,7 @@ def waive_for_internal_team(team: str) -> list[str]:
 		):
 			continue
 		transition(doc, "Waived", reason="team marked internal", actor=frappe.session.user, amount=doc.total)
-		doc.save(ignore_permissions=True)
+		mark_billing_write(doc).save(ignore_permissions=True)
 		give_back_wallet(doc)
 		waived.append(name)
 	return waived

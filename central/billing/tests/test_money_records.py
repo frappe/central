@@ -4,6 +4,7 @@
 
 import frappe
 
+from central.billing.platform.records import mark_billing_write
 from central.billing.tests.utils import BillingTestCase, ensure_team
 
 TEAM = "team-money-records"
@@ -38,7 +39,18 @@ class TestMoneyRecordsAreReadOnly(BillingTestCase):
 		with self.assertRaises(frappe.PermissionError):
 			frappe.delete_doc("Invoice", self.invoice.name)
 
+	def test_ignore_permissions_alone_does_not_allow_a_change(self):
+		self.invoice.total = 1
+		with self.assertRaises(frappe.PermissionError):
+			self.invoice.save(ignore_permissions=True)
+		with self.assertRaises(frappe.PermissionError):
+			frappe.delete_doc("Invoice", self.invoice.name, ignore_permissions=True)
+
 	def test_billing_code_may_still_change_it(self):
 		self.invoice.total = 120
-		self.invoice.save(ignore_permissions=True)
+		mark_billing_write(self.invoice).save(ignore_permissions=True)
 		self.assertEqual(frappe.db.get_value("Invoice", self.invoice.name, "total"), 120)
+
+	def test_billing_code_may_still_delete_it(self):
+		mark_billing_write(self.invoice).delete(ignore_permissions=True)
+		self.assertFalse(frappe.db.exists("Invoice", self.invoice.name))

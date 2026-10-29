@@ -12,6 +12,7 @@ from central.billing import settings
 from central.billing.catalog import subscriptions
 from central.billing.gateways.base import PaymentResult
 from central.billing.payments import decline
+from central.billing.platform.records import mark_billing_write
 from central.billing.revenue import dunning
 from central.billing.tests.test_stripe_adapter import make_stripe_gateway
 from central.billing.tests.utils import (
@@ -277,7 +278,7 @@ class TestStagedEscalation(DunningTestBase):
 		doc = frappe.get_doc("Invoice", inv)
 		transition(doc, "Paid", reason="test payment", actor="test")
 		with patch("central.resource_actions.submit_billing_command") as start:
-			doc.save(ignore_permissions=True)
+			mark_billing_write(doc).save(ignore_permissions=True)
 
 		self.assertEqual(self._standing(sub), "Current")
 		start.assert_called_once_with("start", server)
@@ -295,7 +296,7 @@ class TestStagedEscalation(DunningTestBase):
 		doc = frappe.get_doc("Invoice", inv)
 		transition(doc, "Cancelled", reason="reissue", actor="test")
 		with patch("central.resource_actions.submit_billing_command") as start:
-			doc.save(ignore_permissions=True)
+			mark_billing_write(doc).save(ignore_permissions=True)
 
 		self.assertEqual(self._standing(sub), "Suspended")
 		start.assert_not_called()
@@ -345,7 +346,7 @@ class TestStagedEscalation(DunningTestBase):
 			with patch(
 				"central.infrastructure.doctype.resource_action.resource_action.ResourceAction.enqueue"
 			):
-				doc.save(ignore_permissions=True)
+				mark_billing_write(doc).save(ignore_permissions=True)
 		finally:
 			frappe.set_user("Administrator")
 

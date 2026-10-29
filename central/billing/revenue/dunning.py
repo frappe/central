@@ -25,6 +25,7 @@ import frappe
 from central.billing import settings
 from central.billing.catalog import subscriptions
 from central.billing.platform.jobs import each_isolated
+from central.billing.platform.records import mark_billing_write
 from central.billing.states import transition
 
 
@@ -248,7 +249,7 @@ def process_invoice_dunning(invoice_name: str, now=None) -> dict:
 		if inv.status == "Open":
 			transition(inv, "Overdue", reason="dunning: past due window elapsed", actor="scheduler")
 			# The scheduled dunning transition owns this invoice state change.
-			inv.save(ignore_permissions=True)
+			mark_billing_write(inv).save(ignore_permissions=True)
 			actions.append("overdue")
 			from central.billing.platform import notifications
 

@@ -8,6 +8,7 @@ from unittest.mock import patch
 import frappe
 
 from central.billing.catalog import subscriptions
+from central.billing.platform.records import mark_billing_write
 from central.billing.revenue import credits, invoicing
 from central.billing.revenue.invoicing import run
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
@@ -395,7 +396,7 @@ class TestStatusSaveKeepsLines(BillingTestBase):
 		line_modified = frappe.db.get_value("Invoice Line Item", inv.items[0].name, "modified")
 		with self.freeze_time("2030-01-01 10:00:00"):
 			inv.due_date = "2026-07-07"
-			inv.save(ignore_permissions=True)
+			mark_billing_write(inv).save(ignore_permissions=True)
 		self.assertEqual(
 			frappe.db.get_value("Invoice Line Item", inv.items[0].name, "modified"), line_modified
 		)
@@ -403,7 +404,7 @@ class TestStatusSaveKeepsLines(BillingTestBase):
 	def test_a_changed_line_is_still_written(self):
 		inv = self._invoice()
 		inv.items[0].amount = 1
-		inv.save(ignore_permissions=True)
+		mark_billing_write(inv).save(ignore_permissions=True)
 		self.assertEqual(frappe.db.get_value("Invoice Line Item", inv.items[0].name, "amount"), 1)
 
 
