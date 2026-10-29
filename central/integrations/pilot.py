@@ -22,7 +22,9 @@ METADATA_VALUE_BYTES = 1024
 # Minting a session can start a cold Frappe process on the machine. Central waits long
 # enough for that process rather than discarding a session the machine creates later.
 SITE_LOGIN_TIMEOUT_SECONDS = 120
-SITE_PING_TIMEOUT_SECONDS = 4
+# A ping to a booting machine hangs until it times out, and the signup poll waits on it. A short
+# timeout lets the next poll retry instead.
+SITE_PING_TIMEOUT_SECONDS = (0.5, 1.5)
 
 
 def get_bootstrap_metadata(action) -> dict[str, str]:
