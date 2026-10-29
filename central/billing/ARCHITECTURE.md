@@ -534,7 +534,7 @@ charges.pay_invoice → create_invoice_payment_order (via gateway adapter)
 
 Reconciliation asks the gateway about the stored order of an unanswered on-session attempt, and fails it only after `CHECKOUT_OPEN_HOURS`. It credits a Top-up Order that was paid but never confirmed, and expires one nobody paid after `TOP_UP_EXPIRES_HOURS`.
 
-**Pre-debit notice.** `collection.collect_invoice` is the one entry for an off-session debit (billing run, dunning retry, webhook fallback, e-mandate cycle). Before it charges a method whose (gateway, currency) row has `requires_predebit_notice`, it sends the notice through `emandate.schedule_predebit` and waits until `Invoice.predebit_charge_after`. A team not on Auto Charge gets no notice and so no debit on such a rail; dunning escalates instead.
+**Pre-debit notice.** `collection.collect_invoice` is the one entry for an off-session debit (billing run, dunning retry, webhook fallback, e-mandate cycle). Before it charges a method whose (gateway, currency) row has `requires_predebit_notice`, it asks `emandate.await_predebit`. That function sends the notice through `emandate.schedule_predebit`, and the method waits until `Invoice.predebit_charge_after`. A team not on Auto Charge gets no notice and so no debit on such a rail; dunning escalates instead.
 
 Method resolution is team-wide, not scoped by anything — `collection.ordered_methods`
 returns the team's active methods, priority order. `charges._resolve_method` (manual

@@ -26,27 +26,42 @@ from central.billing.platform.jobs import each_isolated
 
 PREDEBIT_NOTICE_HOURS = 24
 
+# What `await_predebit` tells the collector to do with one rail.
+CHARGE_NOW, WAIT, ROTATE = "charge_now", "wait", "rotate"
 
-def _rail_requires_notice(team: str) -> bool:
-	"""Whether this team's rail owes a pre-debit notice before each off-session debit.
+
+def _is_notice_required(inv, gateway: str | None) -> bool:
+	"""Whether the rail about to debit owes a notice: `gateway` when the caller names it,
+	otherwise the team's own rail.
 
 	It is a property of (gateway, currency), so an Indian mandate on Stripe owes one
 	exactly as a Razorpay one does, and a USD card owes none.
 	"""
 	from central.billing.gateways import capabilities
 
-	gateway, currency = collection_mode.team_rail(team)
+	gateway, currency = (gateway, inv.currency) if gateway else collection_mode.team_rail(inv.team)
 	return bool(gateway and currency and capabilities.requires_predebit_notice(gateway, currency))
 
 
-def _is_notice_required(inv, gateway: str | None) -> bool:
-	"""Whether the rail about to debit owes a notice: `gateway` when the caller names it,
-	otherwise the team's own rail."""
-	from central.billing.gateways import capabilities
+def await_predebit(invoice: str, gateway: str) -> tuple[str, dict]:
+	"""What `gateway` may do with this invoice now under the pre-debit notice rule.
 
-	if gateway:
-		return capabilities.requires_predebit_notice(gateway, inv.currency)
-	return _rail_requires_notice(inv.team)
+	1. CHARGE_NOW: the rail owes no notice, or the notice window has passed.
+	2. WAIT: the notice is sent, now or before, and its window is still open. The
+	   notice outcome comes with it.
+	3. ROTATE: this rail cannot debit this invoice now (not on Auto Charge, or over the
+	   silent ceiling), so the next method is tried instead of a window that never opens.
+	"""
+	inv = frappe.get_doc("Invoice", invoice)
+	charge_after = inv.predebit_charge_after
+	if not _is_notice_required(inv, gateway) or (
+		charge_after and frappe.utils.now_datetime() >= frappe.utils.get_datetime(charge_after)
+	):
+		return CHARGE_NOW, {}
+	notice = schedule_predebit(invoice, gateway=gateway)
+	if notice.get("notified") or notice.get("skipped") == "already_notified":
+		return WAIT, notice
+	return ROTATE, notice
 
 
 def schedule_predebit(invoice: str, now=None, gateway: str | None = None) -> dict:

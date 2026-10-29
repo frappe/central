@@ -95,29 +95,6 @@ def _ask_for_another_method(inv) -> None:
 	)
 
 
-def _is_waiting_for_notice(inv, method) -> bool:
-	"""Whether this rail needs a pre-debit notice (RBI e-mandate rules) whose window has
-	not yet passed for this invoice."""
-	from central.billing.gateways import capabilities
-
-	if not capabilities.requires_predebit_notice(method.gateway, inv.currency):
-		return False
-	charge_after = frappe.db.get_value("Invoice", inv.name, "predebit_charge_after")
-	return not charge_after or frappe.utils.now_datetime() < frappe.utils.get_datetime(charge_after)
-
-
-def _arm_predebit_notice(invoice: str, method) -> dict | None:
-	"""Send the notice for this rail, or find the one already sent. None when the rail
-	cannot debit this invoice now (not on Auto Charge, or over the silent ceiling), so
-	the next method is tried instead of waiting on a window that never opens."""
-	from central.billing.payments import emandate
-
-	notice = emandate.schedule_predebit(invoice, gateway=method.gateway)
-	if notice.get("notified") or notice.get("skipped") == "already_notified":
-		return notice
-	return None
-
-
 def collect_invoice(invoice: str, new_round: bool = False) -> dict:
 	"""Charge the next untried method; rotate immediately on a synchronous decline.
 
@@ -142,6 +119,8 @@ def collect_invoice(invoice: str, new_round: bool = False) -> dict:
 def _charge_next_method(inv, earlier: set | None, skipped: set) -> dict | None:
 	"""Try the next method once. Returns the outcome to stop on, or None to rotate to the
 	next method (a final decline, or a rail that cannot debit now, added to `skipped`)."""
+	from central.billing.payments import emandate
+
 	if in_flight := charges.in_flight_attempt(inv.name):
 		return {"collected": False, "reason": "attempt_in_flight", "attempt": in_flight}
 
@@ -154,12 +133,12 @@ def _charge_next_method(inv, earlier: set | None, skipped: set) -> dict | None:
 		_ask_for_another_method(inv)
 		return {"collected": False, "reason": "no_method"}
 
-	if _is_waiting_for_notice(inv, method):
-		# Every off-session debit on this rail waits for its pre-debit notice and window,
-		# whichever path asked for it: the billing run, a dunning retry or a webhook.
-		notice = _arm_predebit_notice(inv.name, method)
-		if notice:
-			return {"collected": False, "reason": "awaiting_predebit_window", **notice}
+	# Every off-session debit on a rail that owes a pre-debit notice waits for it, whichever
+	# path asked for it: the billing run, a dunning retry or a webhook.
+	predebit, notice = emandate.await_predebit(inv.name, method.gateway)
+	if predebit == emandate.WAIT:
+		return {"collected": False, "reason": "awaiting_predebit_window", **notice}
+	if predebit == emandate.ROTATE:
 		skipped.add(method.name)
 		return None
 
