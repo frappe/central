@@ -116,7 +116,10 @@ class TestSignupGuard(IntegrationTestCase):
 				watch_signup_domain(f"student@bio.{domain}")
 
 		self.assertEqual(enqueue.call_args.kwargs["domain"], domain)
-		with patch("central.identity.signup_watch.frappe.sendmail") as sendmail:
+		with (
+			patch("central.identity.signup_watch.get_system_managers", return_value=["ops@example.test"]),
+			patch("central.identity.signup_watch.frappe.sendmail") as sendmail,
+		):
 			save_automatic_block(domain, enqueue.call_args.kwargs["reason"])
 
 		entry = frappe.get_doc("Signup Domain", domain)

@@ -8,6 +8,7 @@ import requests
 import tldextract
 from frappe import _
 from frappe.utils import add_to_date, cint, now_datetime
+from frappe.utils.user import get_system_managers
 
 from central.identity.signup_email import (
 	get_domain,
@@ -136,9 +137,7 @@ def save_automatic_block(domain: str, reason: str) -> None:
 
 
 def notify_operators(entry: SignupDomain) -> None:
-	from central.billing.platform.alerts import operators
-
-	recipients = operators()
+	recipients = get_system_managers(only_name=True)
 	if not recipients:
 		return
 
