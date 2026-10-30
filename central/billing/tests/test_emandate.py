@@ -152,7 +152,8 @@ class TestEmandatePredebit(IntegrationTestCase):
 		)
 		with patch("central.billing.gateways.registry.get_adapter", return_value=adapter):
 			emandate.charge_due(now="2099-06-11 10:00:00")
-		adapter.charge.assert_called_once()
+		# charge_due reads the whole site, so count only this invoice's charge.
+		self.assertEqual(frappe.db.count("Payment Attempt", {"invoice": inv}), 1)
 
 
 class TestWhoOwesAPredebitNotice(IntegrationTestCase):
