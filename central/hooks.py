@@ -273,6 +273,7 @@ scheduler_events = {
 		"central.billing.payments.webhooks.retry_failed_webhooks",
 		"central.billing.platform.alerts.run_operator_alerts",
 		"central.signups.alerts.alert_failed_signups",
+		"central.notification.digest.send_due_digests",
 	],
 	"monthly": [
 		"central.billing.revenue.invoicing.draft_monthly_invoices",
@@ -420,6 +421,7 @@ permission_query_conditions = {
 	"Team Invitation": "central.permissions.team_invitation_query_conditions",
 	"Team Notification": "central.permissions.team_notification_query_conditions",
 	"Team Role": "central.permissions.team_role_query_conditions",
+	"Notification Digest Setting": "central.permissions.notification_digest_setting_query_conditions",
 	"Team Service": "central.permissions.team_service_query_conditions",
 	"User Notification Preference": "central.permissions.user_notification_preference_query_conditions",
 	"VM Snapshot": "central.permissions.vm_snapshot_query_conditions",
@@ -438,6 +440,7 @@ has_permission = {
 	"Team Invitation": "central.permissions.team_invitation_has_permission",
 	"Team Notification": "central.permissions.team_notification_has_permission",
 	"Team Role": "central.permissions.team_role_has_permission",
+	"Notification Digest Setting": "central.permissions.has_notification_digest_setting_permission",
 	"Team Service": "central.permissions.team_service_has_permission",
 	"User Notification Preference": "central.permissions.user_notification_preference_has_permission",
 	"VM Snapshot": "central.permissions.vm_snapshot_has_permission",

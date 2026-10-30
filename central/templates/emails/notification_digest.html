@@ -1,0 +1,31 @@
+{% extends "templates/emails/base.html" %}
+{% import "templates/emails/macros.html" as ui %}
+
+{% block content %}
+<tr>
+	<td class="fc-body">
+		{{ ui.heading(title) }}
+		{{ ui.paragraph(subtitle) }}
+
+		{% for group in groups %}
+			<h2 class="fc-subheading">{{ group.category }}</h2>
+			{% for item in group.entries %}
+				{{ ui.paragraph(item.summary) }}
+				{% for paragraph in item.body_parts %}
+					{{ ui.paragraph(paragraph) }}
+				{% endfor %}
+				{% if item.action_label and item.action_url %}
+					{{ ui.button(item.action_label, item.action_url) }}
+				{% endif %}
+			{% endfor %}
+			{{ ui.separator() }}
+		{% endfor %}
+
+		{% if more_text %}
+			{{ ui.paragraph(more_text) }}
+		{% endif %}
+
+		{{ ui.button(_("Manage notification preferences"), preferences_url, primary=false) }}
+	</td>
+</tr>
+{% endblock %}

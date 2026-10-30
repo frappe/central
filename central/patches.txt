@@ -65,3 +65,5 @@ central.patches.v0_0.backfill_invoice_paid_at
 central.patches.v0_0.report_billing_security_findings
 # Remove the hidden rule that let every WireGuard VPN device pass the firewall, from every live server at Atlas.
 central.patches.v0_0.remove_wireguard_device_firewall_rule
+# Existing server events keep their Pilot caller after the explicit reportable flag.
+central.patches.v0_0.mark_pilot_reportable_events

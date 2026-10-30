@@ -1,0 +1,36 @@
+{
+ "actions": [],
+ "allow_bulk_edit": 1,
+ "allow_rename": 0,
+ "autoname": "hash",
+ "creation": "2026-10-30 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "user",
+  "team",
+  "digest_hour"
+ ],
+ "fields": [
+  {"fieldname": "user", "fieldtype": "Link", "in_list_view": 1, "in_standard_filter": 1, "label": "User", "options": "User", "reqd": 1},
+  {"fieldname": "team", "fieldtype": "Link", "in_list_view": 1, "in_standard_filter": 1, "label": "Team", "options": "Team", "reqd": 1},
+  {"default": "8", "description": "Local hour from 0 to 23 for a daily or weekly digest.", "fieldname": "digest_hour", "fieldtype": "Int", "in_list_view": 1, "label": "Digest Hour", "max_value": 23, "min_value": 0, "non_negative": 1}
+ ],
+ "index_web_pages_for_search": 0,
+ "is_submittable": 0,
+ "links": [],
+ "modified": "2026-10-30 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Notification",
+ "name": "Notification Digest Setting",
+ "naming_rule": "Random",
+ "owner": "Administrator",
+ "permissions": [
+  {"create": 1, "delete": 1, "email": 1, "export": 1, "print": 1, "read": 1, "report": 1, "role": "System Manager", "share": 1, "write": 1},
+  {"create": 1, "read": 1, "write": 1, "role": "Central User"}
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

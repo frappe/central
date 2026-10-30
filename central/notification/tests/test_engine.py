@@ -23,6 +23,8 @@ _FIXTURE_FIELDS = [
 	"action_label",
 	"action_route",
 	"create_in_app",
+	"is_critical",
+	"reportable_by",
 ]
 
 
@@ -42,6 +44,10 @@ class EngineTestBase(IntegrationTestCase):
 
 	def _purge(self):
 		frappe.db.delete("Team Notification", {"team": TEAM})
+		frappe.db.delete("Notification Digest Setting", {"team": TEAM})
+		pref_names = frappe.get_all("User Notification Preference", {"team": TEAM}, pluck="name")
+		if pref_names:
+			frappe.db.delete("Notification Event Preference", {"parent": ["in", pref_names]})
 		created = self.__class__._created_event_types
 		if created:
 			frappe.db.delete("Notification Event Type", {"name": ["in", list(created)]})
@@ -69,6 +75,8 @@ class EngineTestBase(IntegrationTestCase):
 		create_in_app=True,
 		action_label=None,
 		action_route=None,
+		is_critical=False,
+		reportable_by="Pilot",
 	):
 		if frappe.db.exists("Notification Event Type", event_type):
 			original = frappe.db.get_value(
@@ -93,6 +101,8 @@ class EngineTestBase(IntegrationTestCase):
 				"create_in_app": int(create_in_app),
 				"action_label": action_label,
 				"action_route": action_route,
+				"is_critical": int(is_critical),
+				"reportable_by": reportable_by,
 			}
 		).insert(ignore_permissions=True)
 		self.__class__._created_event_types.add(event_type)
@@ -487,6 +497,264 @@ class TestSaveUserPreferences(EngineTestBase):
 		team.save(ignore_permissions=True)
 		frappe.set_user(self.user)
 
+	def test_saves_digest_and_event_overrides(self):
+		from central.notification.api import save_user_preferences
+		from central.notification.doctype.notification_digest_setting.notification_digest_setting import (
+			NotificationDigestSetting,
+		)
+
+		save_user_preferences(
+			team=TEAM,
+			preferences=[
+				{
+					"category": "Billing",
+					"email_enabled": 1,
+					"in_app_enabled": 1,
+					"frequency": "Daily",
+					"events": [
+						{"event_type": "payment_success", "email_enabled": 0},
+						{"event_type": "payment_failure", "email_enabled": 1},
+					],
+				}
+			],
+			digest_hour=7,
+		)
+
+		name = frappe.db.get_value(
+			"User Notification Preference",
+			{"user": self.user, "team": TEAM, "category": "Billing"},
+		)
+		pref = frappe.db.get_value("User Notification Preference", name, ["frequency"], as_dict=True)
+		self.assertEqual(pref.frequency, "Daily")
+		self.assertEqual(NotificationDigestSetting.get_hour(self.user, TEAM), 7)
+		events = frappe.get_all(
+			"Notification Event Preference",
+			filters={"parent": name},
+			fields=["event_type", "email_enabled"],
+		)
+		self.assertEqual(events, [{"event_type": "payment_success", "email_enabled": 0}])
+
+	def test_get_returns_the_digest_default_before_the_first_save(self):
+		from central.notification.api import get_user_preferences
+		from central.notification.doctype.notification_digest_setting.notification_digest_setting import (
+			NotificationDigestSetting,
+		)
+
+		self.assertEqual(get_user_preferences(TEAM)["digest_hour"], NotificationDigestSetting.default_hour())
+
+	def test_get_returns_catalog_and_event_overrides(self):
+		from central.notification.api import get_user_preferences, save_user_preferences
+
+		save_user_preferences(
+			team=TEAM,
+			preferences=[
+				{
+					"category": "Billing",
+					"email_enabled": 1,
+					"in_app_enabled": 1,
+					"frequency": "Weekly",
+					"events": [{"event_type": "payment_success", "email_enabled": 0}],
+				}
+			],
+			digest_hour=9,
+		)
+
+		out = get_user_preferences(TEAM)
+		billing = next(pref for pref in out["preferences"] if pref["category"] == "Billing")
+		self.assertEqual(billing["frequency"], "Weekly")
+		self.assertEqual(out["digest_hour"], 9)
+		self.assertEqual(billing["events"], [{"event_type": "payment_success", "email_enabled": 0}])
+		catalog = next(group for group in out["catalog"] if group["category"] == "Billing")
+		events = {event["event_type"]: event for event in catalog["events"]}
+		self.assertFalse(events["payment_success"]["can_receive"])
+		self.assertTrue(events["payment_failure"]["is_critical"])
+		server_catalog = next(group for group in out["catalog"] if group["category"] == "Server")
+		server_events = {event["event_type"]: event for event in server_catalog["events"]}
+		self.assertTrue(server_events["backup_failure"]["can_receive"])
+
+	def test_rejects_event_from_another_category(self):
+		from central.notification.api import save_user_preferences
+
+		with self.assertRaises(frappe.ValidationError):
+			save_user_preferences(
+				team=TEAM,
+				preferences=[
+					{
+						"category": "Server",
+						"email_enabled": 1,
+						"in_app_enabled": 1,
+						"events": [{"event_type": "payment_success", "email_enabled": 0}],
+					}
+				],
+			)
+
+	def test_rejects_duplicate_event_override(self):
+		from central.notification.api import save_user_preferences
+
+		with self.assertRaises(frappe.ValidationError):
+			save_user_preferences(
+				team=TEAM,
+				preferences=[
+					{
+						"category": "Billing",
+						"email_enabled": 1,
+						"in_app_enabled": 1,
+						"events": [
+							{"event_type": "payment_success", "email_enabled": 0},
+							{"event_type": "payment_success", "email_enabled": 0},
+						],
+					}
+				],
+			)
+
+	def test_critical_event_is_emailed_when_category_email_is_off(self):
+		from central.notification.engine import _is_emailed_instantly
+
+		event = frappe._dict(name="server_failed", is_critical=1, create_in_app=1, direct_recipients="None")
+		preference = {"email_enabled": False, "frequency": "Instant", "events": {}}
+
+		self.assertTrue(_is_emailed_instantly(preference, event))
+		self.assertFalse(_is_emailed_instantly(preference, frappe._dict(event, is_critical=0)))
+
+	def test_pilot_patch_marks_server_events_once_and_leaves_other_categories(self):
+		from central.patches.v0_0.mark_pilot_reportable_events import execute
+
+		self._ensure_event_type("patch_server_event", reportable_by="None")
+		self._ensure_event_type("patch_billing_event", category="Billing", reportable_by="None")
+
+		for _run in range(2):
+			execute()
+
+		server, billing = (
+			frappe.db.get_value("Notification Event Type", name, "reportable_by")
+			for name in ("patch_server_event", "patch_billing_event")
+		)
+		self.assertEqual((server, billing), ("Pilot", "None"))
+
+	def test_saves_one_digest_hour_for_all_categories(self):
+		from central.notification.api import save_user_preferences
+		from central.notification.doctype.notification_digest_setting.notification_digest_setting import (
+			NotificationDigestSetting,
+		)
+
+		base = {"email_enabled": 1, "in_app_enabled": 1}
+		save_user_preferences(team=TEAM, preferences=[{**base, "category": "Billing"}], digest_hour=14)
+		save_user_preferences(team=TEAM, preferences=[{**base, "category": "Server"}])
+		save_user_preferences(
+			team=TEAM,
+			preferences=[{**base, "category": "Team"}],
+			digest_hour=9,
+		)
+
+		self.assertEqual(NotificationDigestSetting.get_hour(frappe.session.user, TEAM), 9)
+		self.assertEqual(
+			frappe.db.count("Notification Digest Setting", {"user": frappe.session.user, "team": TEAM}),
+			1,
+		)
+
+	def test_a_save_without_events_keeps_the_muted_events(self):
+		from central.notification.api import save_user_preferences
+
+		base = {"category": "Billing", "email_enabled": 1, "in_app_enabled": 1}
+		muted = [{"event_type": "payment_success", "email_enabled": 0}]
+		save_user_preferences(team=TEAM, preferences=[{**base, "events": muted}])
+		save_user_preferences(team=TEAM, preferences=[base])
+
+		name = frappe.db.get_value(
+			"User Notification Preference", {"user": frappe.session.user, "team": TEAM, "category": "Billing"}
+		)
+		self.assertEqual(
+			frappe.get_all("Notification Event Preference", {"parent": name}, pluck="event_type"),
+			["payment_success"],
+		)
+
+	def test_a_non_member_cannot_save_preferences(self):
+		from central.notification.api import save_user_preferences
+
+		outsider = make_user("preference-outsider@example.com")
+		frappe.set_user(outsider)
+		self.addCleanup(frappe.set_user, "Administrator")
+
+		with self.assertRaises(frappe.PermissionError):
+			save_user_preferences(
+				team=TEAM, preferences=[{"category": "Billing", "email_enabled": 1, "in_app_enabled": 1}]
+			)
+
+	def test_rejects_an_unsupported_frequency(self):
+		from central.notification.api import save_user_preferences
+
+		with self.assertRaises(frappe.ValidationError):
+			save_user_preferences(
+				team=TEAM,
+				preferences=[
+					{
+						"category": "Billing",
+						"email_enabled": 1,
+						"in_app_enabled": 1,
+						"frequency": "Hourly",
+					}
+				],
+			)
+
+	def test_a_save_without_frequency_keeps_the_stored_choice(self):
+		from central.notification.api import save_user_preferences
+		from central.notification.doctype.notification_digest_setting.notification_digest_setting import (
+			NotificationDigestSetting,
+		)
+
+		base = {"category": "Billing", "email_enabled": 1, "in_app_enabled": 1}
+		save_user_preferences(team=TEAM, preferences=[{**base, "frequency": "Weekly"}], digest_hour=6)
+		save_user_preferences(team=TEAM, preferences=[{**base, "email_enabled": 0}])
+
+		saved = frappe.db.get_value(
+			"User Notification Preference",
+			{"user": frappe.session.user, "team": TEAM, "category": "Billing"},
+			["frequency", "email_enabled"],
+			as_dict=True,
+		)
+		self.assertEqual((saved.frequency, saved.email_enabled), ("Weekly", 0))
+		self.assertEqual(NotificationDigestSetting.get_hour(frappe.session.user, TEAM), 6)
+
+	def test_saves_midnight_as_a_digest_hour(self):
+		from central.notification.api import save_user_preferences
+		from central.notification.doctype.notification_digest_setting.notification_digest_setting import (
+			NotificationDigestSetting,
+		)
+
+		save_user_preferences(
+			team=TEAM,
+			preferences=[{"category": "Billing", "email_enabled": 1, "in_app_enabled": 1}],
+			digest_hour=0,
+		)
+
+		self.assertEqual(NotificationDigestSetting.get_hour(self.user, TEAM), 0)
+
+	def test_rejects_a_fractional_digest_hour(self):
+		from central.notification.doctype.notification_digest_setting.notification_digest_setting import (
+			NotificationDigestSetting,
+		)
+
+		with self.assertRaises(frappe.ValidationError):
+			NotificationDigestSetting.upsert(self.user, TEAM, 7.5)
+
+	def test_rejects_a_digest_hour_outside_the_day(self):
+		from central.notification.api import save_user_preferences
+
+		for digest_hour in (24, -1):
+			with self.subTest(digest_hour=digest_hour), self.assertRaises(frappe.ValidationError):
+				save_user_preferences(
+					team=TEAM,
+					preferences=[
+						{
+							"category": "Billing",
+							"email_enabled": 1,
+							"in_app_enabled": 1,
+							"frequency": "Daily",
+						}
+					],
+					digest_hour=digest_hour,
+				)
+
 	def test_creates_preferences_for_user(self):
 		"""save_user_preferences creates UserNotificationPreference records."""
 		from central.notification.api import save_user_preferences
@@ -693,6 +961,21 @@ class TestReportPilotEvent(EngineTestBase):
 
 			with self.assertRaises(frappe.PermissionError):
 				report_pilot_event(event_type="payment_failure", message="x")
+
+	def test_pilot_event_refuses_event_without_pilot_flag(self):
+		self._ensure_event_type("event_not_from_pilot", reportable_by="None")
+
+		class FakeCredential:
+			team = TEAM
+
+		with (
+			patch("central.api.pilot.PilotCredential.verify", return_value=FakeCredential()),
+			patch("frappe.get_request_header", return_value="fake-token"),
+		):
+			from central.notification.api import report_pilot_event
+
+			with self.assertRaises(frappe.PermissionError):
+				report_pilot_event(event_type="event_not_from_pilot", message="x")
 
 	def test_pilot_resource_alert_is_accepted_with_the_shipped_fixture(self):
 		"""Pilot's sustained resource alert must match a Server-category fixture, and the

@@ -231,15 +231,29 @@ def vm_snapshot_has_permission(doc, user: str | None = None, ptype: str | None =
 	return _server_scoped_has_permission(doc, "server", user, ptype)
 
 
-def user_notification_preference_query_conditions(user: str | None = None) -> str:
-	"""1. A System Manager sees every preference.
-	2. A user sees only preferences owned by that user.
-	"""
+def _user_notification_setting_query_conditions(doctype: str, user: str | None = None) -> str:
+	"""A user sees only their own notification settings; operators see all."""
 	user = user or frappe.session.user
 	if user_has_operator_bypass(user):
 		return ""
 
-	return f"`tabUser Notification Preference`.`user` = {frappe.db.escape(user)}"
+	return f"`tab{doctype}`.`user` = {frappe.db.escape(user)}"
+
+
+def _is_user_notification_setting_owned(doc, user: str | None = None) -> bool:
+	"""A user can act only on their own setting in a team they belong to."""
+	user = user or frappe.session.user
+	if user_has_operator_bypass(user):
+		return True
+
+	return doc.user == user and bool(doc.team) and is_active_team_member(user, doc.team)
+
+
+def user_notification_preference_query_conditions(user: str | None = None) -> str:
+	"""1. A System Manager sees every preference.
+	2. A user sees only preferences owned by that user.
+	"""
+	return _user_notification_setting_query_conditions("User Notification Preference", user)
 
 
 def user_notification_preference_has_permission(
@@ -249,11 +263,24 @@ def user_notification_preference_has_permission(
 	2. A user can act only on that user's row.
 	3. The user must be an active member of the row's team.
 	"""
-	user = user or frappe.session.user
-	if user_has_operator_bypass(user):
-		return True
+	return _is_user_notification_setting_owned(doc, user)
 
-	return doc.user == user and bool(doc.team) and is_active_team_member(user, doc.team)
+
+def notification_digest_setting_query_conditions(user: str | None = None) -> str:
+	"""1. A System Manager sees every digest setting.
+	2. A user sees only the digest setting owned by that user.
+	"""
+	return _user_notification_setting_query_conditions("Notification Digest Setting", user)
+
+
+def has_notification_digest_setting_permission(
+	doc, user: str | None = None, ptype: str | None = None, **kwargs
+) -> bool:
+	"""1. A System Manager has every permission.
+	2. A user can act only on that user's digest setting.
+	3. The user must be an active member of the setting's team.
+	"""
+	return _is_user_notification_setting_owned(doc, user)
 
 
 def pilot_credential_query_conditions(user: str | None = None) -> str:

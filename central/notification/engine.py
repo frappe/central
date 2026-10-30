@@ -141,6 +141,8 @@ def get_event_type(event_type: str):
 			"action_label",
 			"action_route",
 			"create_in_app",
+			"is_critical",
+			"reportable_by",
 		],
 		as_dict=True,
 	)
@@ -276,20 +278,22 @@ def _email_recipients(team, event, *, server=None, affected_user=None) -> list[s
 	"""The users who get this event by email.
 
 	For ``direct_recipients = "Affected User"``, only *affected_user*, without a capability check.
-	Otherwise each active member with the event's capability and email enabled."""
+	Otherwise each active member with the event's capability. Either way, only users who want it now."""
 	from central.iam import can
+	from central.notification.doctype.user_notification_preference.user_notification_preference import (
+		UserNotificationPreference,
+	)
 
 	if event.direct_recipients == "Affected User":
-		if affected_user and _email_enabled(affected_user, team, event.category):
-			return [affected_user]
-		return []
-
-	return [
-		user
-		for user in _get_active_members(team)
-		if (not event.required_cap or can(user, team, event.required_cap, server=server))
-		and _email_enabled(user, team, event.category)
-	]
+		users = [affected_user] if affected_user else []
+	else:
+		users = [
+			user
+			for user in _get_active_members(team)
+			if not event.required_cap or can(user, team, event.required_cap, server=server)
+		]
+	preferences = UserNotificationPreference.load_for_users(team, users)
+	return [user for user in users if _is_emailed_instantly(preferences.get((user, event.category)), event)]
 
 
 def send_notification_emails(recipients: list[str], event_type: str, ctx: dict, message=None) -> None:
@@ -327,14 +331,21 @@ def publish_team_nudge(team: str) -> None:
 		)
 
 
-def _email_enabled(user: str, team: str, category: str) -> bool:
-	"""Whether the user gets email for this category. No preference record means yes."""
-	pref = frappe.db.get_value(
-		"User Notification Preference",
-		{"user": user, "team": team, "category": category},
-		"email_enabled",
+def _is_emailed_instantly(preference: dict | None, event: frappe._dict) -> bool:
+	"""No preference means yes. A digest event waits for the digest, which reads it from the feed.
+
+	The feed row is team-wide, so an Affected User event cannot wait for the digest."""
+	if preference is None or event.is_critical:
+		return True
+	if not preference["email_enabled"]:
+		return False
+	if not preference["events"].get(event.name, True):
+		return False
+	return (
+		preference["frequency"] == "Instant"
+		or not event.create_in_app
+		or event.direct_recipients == "Affected User"
 	)
-	return pref is None or bool(pref)
 
 
 def _notification_email(event, ctx, message=None) -> tuple[str, str]:

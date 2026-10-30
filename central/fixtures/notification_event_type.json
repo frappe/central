@@ -13,7 +13,9 @@
   "modified": "2026-07-23 00:00:00",
   "name": "payment_success",
   "required_cap": "billing:view",
-  "severity": "Success"
+  "severity": "Success",
+  "is_critical": 0,
+  "reportable_by": "None"
  },
  {
   "action_label": "Pay now",
@@ -29,7 +31,9 @@
   "modified": "2026-07-23 00:00:00",
   "name": "payment_failure",
   "required_cap": "billing:view",
-  "severity": "Error"
+  "severity": "Error",
+  "is_critical": 1,
+  "reportable_by": "None"
  },
  {
   "action_label": "Pay now",
@@ -45,7 +49,9 @@
   "modified": "2026-07-23 00:00:00",
   "name": "payment_retry",
   "required_cap": "billing:view",
-  "severity": "Warning"
+  "severity": "Warning",
+  "is_critical": 0,
+  "reportable_by": "None"
  },
  {
   "action_label": "Pay now",
@@ -61,7 +67,9 @@
   "modified": "2026-07-23 00:00:00",
   "name": "invoice_overdue",
   "required_cap": "billing:view",
-  "severity": "Error"
+  "severity": "Error",
+  "is_critical": 1,
+  "reportable_by": "None"
  },
  {
   "action_label": "Top up",
@@ -77,7 +85,9 @@
   "modified": "2026-07-23 00:00:00",
   "name": "credit_low",
   "required_cap": "billing:view",
-  "severity": "Warning"
+  "severity": "Warning",
+  "is_critical": 0,
+  "reportable_by": "None"
  },
  {
   "action_label": "Update card",
@@ -93,7 +103,9 @@
   "modified": "2026-07-23 00:00:00",
   "name": "card_expiry",
   "required_cap": "billing:view",
-  "severity": "Warning"
+  "severity": "Warning",
+  "is_critical": 0,
+  "reportable_by": "None"
  },
  {
   "action_label": "Re-authorise",
@@ -109,7 +121,9 @@
   "modified": "2026-07-23 00:00:00",
   "name": "mandate_reauth",
   "required_cap": "billing:view",
-  "severity": "Warning"
+  "severity": "Warning",
+  "is_critical": 0,
+  "reportable_by": "None"
  },
  {
   "action_label": "Upgrade",
@@ -125,7 +139,9 @@
   "modified": "2026-10-26 00:00:00",
   "name": "trial_expiring",
   "required_cap": "billing:view",
-  "severity": "Warning"
+  "severity": "Warning",
+  "is_critical": 0,
+  "reportable_by": "None"
  },
  {
   "action_label": null,
@@ -141,7 +157,9 @@
   "modified": "2026-07-23 00:00:00",
   "name": "team_suspension",
   "required_cap": "billing:view",
-  "severity": "Error"
+  "severity": "Error",
+  "is_critical": 1,
+  "reportable_by": "None"
  },
  {
   "action_label": null,
@@ -157,7 +175,9 @@
   "modified": "2026-07-23 00:00:00",
   "name": "pre_debit_notice",
   "required_cap": "billing:view",
-  "severity": "Info"
+  "severity": "Info",
+  "is_critical": 0,
+  "reportable_by": "None"
  },
  {
   "action_label": "Choose how to pay",
@@ -173,7 +193,9 @@
   "modified": "2026-07-23 00:00:00",
   "name": "action_required",
   "required_cap": "billing:view",
-  "severity": "Warning"
+  "severity": "Warning",
+  "is_critical": 0,
+  "reportable_by": "None"
  },
  {
   "action_label": null,
@@ -189,7 +211,9 @@
   "modified": "2026-07-23 00:00:00",
   "name": "backup_failure",
   "required_cap": "server:view",
-  "severity": "Warning"
+  "severity": "Warning",
+  "is_critical": 0,
+  "reportable_by": "Pilot"
  },
  {
   "action_label": null,
@@ -205,7 +229,9 @@
   "modified": "2026-07-23 00:00:00",
   "name": "site_unavailable",
   "required_cap": "server:view",
-  "severity": "Error"
+  "severity": "Error",
+  "is_critical": 1,
+  "reportable_by": "Pilot"
  },
  {
   "action_label": null,
@@ -221,7 +247,9 @@
   "modified": "2026-07-23 00:00:00",
   "name": "site_recovered",
   "required_cap": "server:view",
-  "severity": "Success"
+  "severity": "Success",
+  "is_critical": 0,
+  "reportable_by": "Pilot"
  },
  {
   "action_label": null,
@@ -237,7 +265,9 @@
   "modified": "2026-07-23 00:00:00",
   "name": "migration_failure",
   "required_cap": "server:view",
-  "severity": "Error"
+  "severity": "Error",
+  "is_critical": 1,
+  "reportable_by": "Pilot"
  },
  {
   "action_label": null,
@@ -253,7 +283,9 @@
   "modified": "2026-10-04 00:00:00",
   "name": "server_suspension",
   "required_cap": "server:view",
-  "severity": "Error"
+  "severity": "Error",
+  "is_critical": 1,
+  "reportable_by": "Pilot"
  },
  {
   "action_label": null,
@@ -269,7 +301,9 @@
   "modified": "2026-10-04 00:00:00",
   "name": "credential_rotation",
   "required_cap": "server:view",
-  "severity": "Info"
+  "severity": "Info",
+  "is_critical": 0,
+  "reportable_by": "Pilot"
  },
  {
   "action_label": "Review request",
@@ -285,7 +319,9 @@
   "modified": "2026-07-23 00:00:00",
   "name": "provision_failure",
   "required_cap": "server:view",
-  "severity": "Error"
+  "severity": "Error",
+  "is_critical": 1,
+  "reportable_by": "Pilot"
  },
  {
   "action_label": null,
@@ -301,7 +337,9 @@
   "modified": "2026-07-23 00:00:00",
   "name": "role_change",
   "required_cap": "team:manage_members",
-  "severity": "Info"
+  "severity": "Info",
+  "is_critical": 1,
+  "reportable_by": "None"
  },
  {
   "action_label": null,
@@ -317,7 +355,9 @@
   "modified": "2026-07-23 00:00:00",
   "name": "member_joined",
   "required_cap": "team:manage_members",
-  "severity": "Success"
+  "severity": "Success",
+  "is_critical": 0,
+  "reportable_by": "None"
  },
  {
   "action_label": "View server",
@@ -333,7 +373,9 @@
   "modified": "2026-10-15 00:00:00",
   "name": "server_failed",
   "required_cap": "server:view",
-  "severity": "Error"
+  "severity": "Error",
+  "is_critical": 1,
+  "reportable_by": "Pilot"
  },
  {
   "action_label": "View server",
@@ -349,7 +391,9 @@
   "modified": "2026-10-15 00:00:00",
   "name": "resize_failed",
   "required_cap": "server:view",
-  "severity": "Error"
+  "severity": "Error",
+  "is_critical": 1,
+  "reportable_by": "Pilot"
  },
  {
   "action_label": "View servers",
@@ -365,7 +409,9 @@
   "modified": "2026-10-04 00:00:00",
   "name": "cluster_degraded",
   "required_cap": "server:view",
-  "severity": "Warning"
+  "severity": "Warning",
+  "is_critical": 0,
+  "reportable_by": "Pilot"
  },
  {
   "action_label": "Pay now",
@@ -381,7 +427,9 @@
   "modified": "2026-10-04 00:00:00",
   "name": "server_suspended",
   "required_cap": "server:view",
-  "severity": "Error"
+  "severity": "Error",
+  "is_critical": 1,
+  "reportable_by": "Pilot"
  },
  {
   "action_label": "Add payment method",
@@ -397,7 +445,9 @@
   "modified": "2026-09-23 00:00:00",
   "name": "add_payment_method",
   "required_cap": "billing:view",
-  "severity": "Error"
+  "severity": "Error",
+  "is_critical": 1,
+  "reportable_by": "None"
  },
  {
   "action_label": "Add billing details",
@@ -413,7 +463,9 @@
   "modified": "2026-09-30 00:00:00",
   "name": "billing_details_required",
   "required_cap": "billing:view",
-  "severity": "Warning"
+  "severity": "Warning",
+  "is_critical": 0,
+  "reportable_by": "None"
  },
  {
   "name": "server_action_required",
@@ -429,7 +481,9 @@
   "action_route": "/servers/{{ server }}",
   "doctype": "Notification Event Type",
   "docstatus": 0,
-  "modified": "2026-10-15 00:00:00"
+  "modified": "2026-10-15 00:00:00",
+  "is_critical": 1,
+  "reportable_by": "Pilot"
  },
  {
   "name": "server_terminated",
@@ -445,7 +499,9 @@
   "action_route": "/servers",
   "doctype": "Notification Event Type",
   "docstatus": 0,
-  "modified": "2026-10-04 00:00:00"
+  "modified": "2026-10-04 00:00:00",
+  "is_critical": 0,
+  "reportable_by": "Pilot"
  },
  {
   "name": "snapshot_failure",
@@ -461,7 +517,9 @@
   "action_route": "/servers/snapshots",
   "doctype": "Notification Event Type",
   "docstatus": 0,
-  "modified": "2026-10-04 00:00:00"
+  "modified": "2026-10-04 00:00:00",
+  "is_critical": 1,
+  "reportable_by": "Pilot"
  },
  {
   "name": "site_ready",
@@ -477,7 +535,9 @@
   "action_route": "/servers/{{ server }}",
   "doctype": "Notification Event Type",
   "docstatus": 0,
-  "modified": "2026-10-15 00:00:00"
+  "modified": "2026-10-15 00:00:00",
+  "is_critical": 0,
+  "reportable_by": "Pilot"
  },
  {
   "name": "resource_limit_breached",
@@ -493,7 +553,9 @@
   "action_route": "/servers/{{ server }}",
   "doctype": "Notification Event Type",
   "docstatus": 0,
-  "modified": "2026-10-15 00:00:00"
+  "modified": "2026-10-15 00:00:00",
+  "is_critical": 0,
+  "reportable_by": "Pilot"
  },
  {
   "name": "trial_ended",
@@ -509,7 +571,9 @@
   "in_app_title": "Your {{ context.product }} trial has ended",
   "in_app_body": "{{ context.address }} is stopped. Upgrade before {{ context.deletes_on }} to keep it. After that date, the site and its data are deleted.",
   "action_label": "Upgrade",
-  "action_route": "/servers/{{ server }}?action=resize"
+  "action_route": "/servers/{{ server }}?action=resize",
+  "is_critical": 1,
+  "reportable_by": "None"
  },
  {
   "name": "trial_deletion_soon",
@@ -525,7 +589,9 @@
   "in_app_title": "{{ context.address }} is deleted on {{ context.deletes_on }}",
   "in_app_body": "Your {{ context.product }} trial has ended. Upgrade before {{ context.deletes_on }} to keep the site and its data.",
   "action_label": "Upgrade",
-  "action_route": "/servers/{{ server }}?action=resize"
+  "action_route": "/servers/{{ server }}?action=resize",
+  "is_critical": 1,
+  "reportable_by": "None"
  },
  {
   "name": "trial_deleted",
@@ -541,7 +607,9 @@
   "in_app_title": "{{ context.address }} was deleted",
   "in_app_body": "Your {{ context.product }} trial site and its data are deleted. You can start a new free trial at any time.",
   "action_label": "Start a new trial",
-  "action_route": "/signup{% if context.product_key %}?product={{ context.product_key }}{% endif %}"
+  "action_route": "/signup{% if context.product_key %}?product={{ context.product_key }}{% endif %}",
+  "is_critical": 1,
+  "reportable_by": "None"
  },
  {
   "name": "trial_converted",
@@ -557,7 +625,9 @@
   "in_app_title": "{{ context.address }} is now a paid site",
   "in_app_body": "Your payment method is active, so your {{ context.product }} trial is over. {{ context.address }} keeps running, billing starts today, and server access is open.",
   "action_label": "View billing",
-  "action_route": "/billing"
+  "action_route": "/billing",
+  "is_critical": 0,
+  "reportable_by": "None"
  },
  {
   "name": "trial_unopened",
@@ -573,7 +643,9 @@
   "in_app_title": "Your {{ context.product }} site is waiting for you",
   "in_app_body": "{{ context.address }} is ready. Open it from Frappe Cloud to set it up. Your free trial ends on {{ context.ends_on }}.",
   "action_label": "View site",
-  "action_route": "/servers/{{ server }}"
+  "action_route": "/servers/{{ server }}",
+  "is_critical": 0,
+  "reportable_by": "None"
  },
  {
   "action_label": null,
@@ -589,7 +661,9 @@
   "modified": "2026-10-24 00:00:00",
   "name": "team_impersonated",
   "required_cap": "team:manage_members",
-  "severity": "Warning"
+  "severity": "Warning",
+  "is_critical": 1,
+  "reportable_by": "None"
  },
  {
   "action_label": null,
@@ -605,7 +679,9 @@
   "modified": "2026-10-24 00:00:00",
   "name": "team_archived",
   "required_cap": "team:delete",
-  "severity": "Info"
+  "severity": "Info",
+  "is_critical": 1,
+  "reportable_by": "None"
  },
  {
   "action_label": null,
@@ -621,7 +697,9 @@
   "name": "team_suspended",
   "severity": "Warning",
   "in_app_title": "Your team is suspended",
-  "in_app_body": "Frappe Cloud support suspended {{ team_name }}. Its members cannot open it, its running servers are stopped and its storage bucket keys no longer work. Its data is kept.\n\nTo find out why, or to ask for it back, contact support at support.frappe.io."
+  "in_app_body": "Frappe Cloud support suspended {{ team_name }}. Its members cannot open it, its running servers are stopped and its storage bucket keys no longer work. Its data is kept.\n\nTo find out why, or to ask for it back, contact support at support.frappe.io.",
+  "is_critical": 1,
+  "reportable_by": "None"
  },
  {
   "action_label": null,
@@ -637,6 +715,8 @@
   "name": "team_unsuspended",
   "severity": "Success",
   "in_app_title": "Your team is active again",
-  "in_app_body": "{{ team_name }} is active again, and its members can open it.\n\nServers that were stopped stay stopped. Start them from Frappe Cloud when you need them. Rotate the key of each storage bucket to get a key that works."
+  "in_app_body": "{{ team_name }} is active again, and its members can open it.\n\nServers that were stopped stay stopped. Start them from Frappe Cloud when you need them. Rotate the key of each storage bucket to get a key that works.",
+  "is_critical": 0,
+  "reportable_by": "None"
  }
 ]

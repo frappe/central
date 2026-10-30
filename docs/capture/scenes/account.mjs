@@ -25,7 +25,9 @@ export default [
 		target: '[role="dialog"]',
 		async setup(page) {
 			await openSettingsTab(page, 'Notifications')
-			await page.getByRole('button', { name: 'Save preferences' }).waitFor()
+			await page.getByLabel('Email frequency for Billing').click()
+			await page.getByRole('option', { name: 'Daily digest' }).click()
+			await page.getByText('Digest time').waitFor()
 		},
 	},
 	{

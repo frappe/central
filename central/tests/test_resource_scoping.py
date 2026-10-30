@@ -375,6 +375,7 @@ class TestScopedNotifications(ResourceScopingTestCase):
 				"in_app_body": "{{ message }}",
 				"direct_recipients": "None",
 				"create_in_app": 1,
+				"reportable_by": "Pilot",
 			}
 		).insert(ignore_permissions=True)
 		credential = frappe._dict(team=self.team, server=server)
