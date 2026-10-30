@@ -105,15 +105,9 @@ def get_temporary_domains_path() -> str:
 
 
 def is_alias_email(email: str) -> bool:
-	"""Whether the address is a plus alias, or another spelling of a Gmail account that already exists."""
+	"""Whether the address is a plus alias on a domain that does not allow aliases."""
 	local, _at, domain = email.lower().rpartition("@")
-	if domain in get_alias_domains():
-		return False
-
-	if "+" in local:
-		return True
-
-	return domain in GMAIL_DOMAINS and has_gmail_account(local)
+	return "+" in local and domain not in get_alias_domains()
 
 
 def get_alias_domains() -> set[str]:
@@ -133,15 +127,10 @@ def get_gmail_inbox(local: str) -> str:
 	return local.lower().partition("+")[0].replace(".", "")
 
 
-def has_gmail_account(local: str) -> bool:
-	"""Whether a Gmail account already reaches this inbox. The known inboxes sit in a cached set."""
-	ensure_gmail_accounts()
-	return bool(frappe.cache.sismember(GMAIL_ACCOUNTS_KEY, get_gmail_inbox(local)))
-
-
 def reserve_gmail_account(email: str) -> None:
 	"""Claim a new Gmail account's inbox before the account is made, so two spellings of one inbox
-	cannot both pass at once. A request that rolls back gives the inbox up again."""
+	cannot both pass at once. A request that rolls back gives the inbox up again. This runs only after
+	the code is verified: a refusal before it would tell anyone that a Gmail address has an account."""
 	local, _at, domain = email.lower().rpartition("@")
 	if domain not in GMAIL_DOMAINS or domain in get_alias_domains():
 		return

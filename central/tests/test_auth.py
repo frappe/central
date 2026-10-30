@@ -278,8 +278,12 @@ class TestAuth(IntegrationTestCase):
 		create_user(f"{local}@gmail.com")
 		frappe.set_user("Guest")
 
+		self.email = f"{local[:3]}.{local[3:]}@googlemail.com"
+		self.addCleanup(EmailCode(self.email).discard)
+		with patch(SENDMAIL):
+			send_code(self.email, "Dotted Person")
 		with self.assertRaisesRegex(frappe.ValidationError, "Aliases"):
-			send_code(f"{local[:3]}.{local[3:]}@googlemail.com", "Dotted Person")
+			self._verify(self._code())
 
 	def test_an_existing_alias_account_still_signs_in(self):
 		self.email = f"old.{frappe.generate_hash(length=8)}+1@example.test"

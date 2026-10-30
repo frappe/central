@@ -104,8 +104,14 @@ class TestSignupGuard(IntegrationTestCase):
 		).insert()
 
 		with self.assertRaisesRegex(frappe.ValidationError, "Aliases"):
-			validate_signup_email(f"{local[:2]}.{local[2:]}@googlemail.com")
-		validate_signup_email(f"new.{local}@gmail.com")
+			reserve_gmail_account(f"{local[:2]}.{local[2:]}@googlemail.com")
+		reserve_gmail_account(f"new.{local}@gmail.com")
+
+	def test_a_code_request_does_not_reveal_a_known_gmail_account(self):
+		local = f"gm{frappe.generate_hash(length=8)}"
+		self.add_gmail_user(f"{local}@gmail.com")
+
+		validate_signup_email(f"{local[:2]}.{local[2:]}@gmail.com")
 
 	def test_a_flood_from_one_organisation_blocks_it_and_tells_the_operators(self):
 		domain = unique_domain()
@@ -219,7 +225,7 @@ class TestSignupGuard(IntegrationTestCase):
 		self.add_gmail_user(f"{local}+work@gmail.com")
 
 		with self.assertRaisesRegex(frappe.ValidationError, "Aliases"):
-			validate_signup_email(f"{local}@gmail.com")
+			reserve_gmail_account(f"{local}@gmail.com")
 
 	def test_two_spellings_of_one_gmail_inbox_cannot_both_be_created(self):
 		local = f"race{frappe.generate_hash(length=6)}"
