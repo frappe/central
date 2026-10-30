@@ -664,13 +664,8 @@ def _mark_invoice_paid(
 	if inv.status == "Paid":
 		_refund_to_source(inv, attempt)
 		return False
-	if inv.status not in _UNSETTLED_INVOICE:
-		_to_wallet(
-			inv, amount, currency, payment_id, adapter_key, "landed on a {0} invoice".format(inv.status)
-		)
-		return False
-	if (currency or "").upper() != (inv.currency or "").upper() or frappe.utils.flt(amount) + 0.005 < due:
-		_to_wallet(inv, amount, currency, payment_id, adapter_key, f"did not cover {inv.currency} {due}")
+	if unsettled := _unsettled_reason(inv, amount, currency, due):
+		_to_wallet(inv, amount, currency, payment_id, adapter_key, unsettled)
 		return False
 	surplus = frappe.utils.flt(frappe.utils.flt(amount) - due, 2)
 	if surplus > 0:
@@ -702,6 +697,15 @@ def _mark_invoice_paid(
 
 	enqueue_invoice_sync(inv.name)
 	return True
+
+
+def _unsettled_reason(inv, amount, currency: str, due: float) -> str | None:
+	"""Why a captured payment cannot settle the invoice (rules 2 and 3 of _mark_invoice_paid)."""
+	if inv.status not in _UNSETTLED_INVOICE:
+		return "landed on a {0} invoice".format(inv.status)
+	if (currency or "").upper() != (inv.currency or "").upper() or frappe.utils.flt(amount) + 0.005 < due:
+		return f"did not cover {inv.currency} {due}"
+	return None
 
 
 def _to_wallet(inv, amount, currency: str, payment_id: str | None, adapter_key: str | None, why: str) -> None:

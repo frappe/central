@@ -193,29 +193,47 @@ def _next_step(doc, accounting: bool):
 
 def _accounting_step(doc, refunds: list):
 	"""The next accounting system step: credit notes, then payments out, then promotional reversals."""
+	return _credit_note_step(doc, refunds) or _payment_out_step(doc, refunds)
+
+
+def _credit_note_step(doc, refunds: list):
+	"""A partial refund's own credit note first, then the one credit note of a full refund."""
 	for refund in refunds:
-		if (
-			refund.partial
-			and refund.status == "Completed"
-			and not refund.credit_note_id
-			and frappe.utils.flt(refund.net_amount)
-		):
+		if _is_partial_credit_note_due(refund):
 			return lambda r=refund: _partial_credit_note(doc, r)
 	if any(not r.partial for r in refunds) and not doc.credit_note_id:
 		return lambda: _credit_note(doc)
+	return None
+
+
+def _payment_out_step(doc, refunds: list):
+	"""The payment entry of each completed refund, then the promotional reversal of a full one."""
 	for refund in refunds:
 		if refund.status == "Completed" and not refund.payment_record_id and _money_to_record(doc, refund):
 			return lambda r=refund: _record_payment(doc, r)
 	for refund in refunds:
-		if (
-			not refund.partial
-			and refund.destination == "Wallet"
-			and refund.status == "Completed"
-			and doc.promotional_record_id
-			and not refund.promotional_record_id
-		):
+		if _is_promotional_reversal_due(doc, refund):
 			return lambda r=refund: _reverse_promotional(doc, r)
 	return None
+
+
+def _is_partial_credit_note_due(refund) -> bool:
+	return bool(
+		refund.partial
+		and refund.status == "Completed"
+		and not refund.credit_note_id
+		and frappe.utils.flt(refund.net_amount)
+	)
+
+
+def _is_promotional_reversal_due(doc, refund) -> bool:
+	return bool(
+		not refund.partial
+		and refund.destination == "Wallet"
+		and refund.status == "Completed"
+		and doc.promotional_record_id
+		and not refund.promotional_record_id
+	)
 
 
 # --- step 1 and 2: Central and the gateway -------------------------------------------

@@ -116,7 +116,7 @@ def _require_card_contact(
 	without it Razorpay errors "The contact field is required for recurring links".
 	(UPI Autopay does not need one, so this is only called from the card path.)
 	Returns the customer id to use for the order, which may differ from the input
-	(see the collision case below).
+	(see _switch_to_existing_customer).
 
 	The phone is optional on the billing profile, so the dashboard collects it inline
 	at card setup when missing and passes it here. Use the inline `contact` else the
@@ -131,20 +131,7 @@ def _require_card_contact(
 		)
 		or frappe._dict()
 	)
-	contact = str(contact or "").strip()
-	# An inline phone is held to the same rule as one entered on the profile.
-	if contact:
-		contact = normalize_phone(contact, p.country)
-	phone = contact or str(p.phone or "").strip()
-	if not phone:
-		frappe.throw(
-			_("A phone number is required to set up automatic payments on this card."),
-			frappe.ValidationError,
-		)
-	# An inline-provided phone is saved to the profile so it's collected only once.
-	# Saved BEFORE the recovery path so gateway_customer_info() below carries it.
-	if contact and contact != str(p.phone or ""):
-		frappe.db.set_value("Billing Profile", team, "phone", contact)
+	phone = _card_phone(team, p, contact)
 
 	try:
 		adapter.update_customer(
@@ -152,28 +139,54 @@ def _require_card_contact(
 		)
 		return customer_id
 	except Exception as e:
-		# Razorpay enforces (email, contact) uniqueness per merchant. If a different
-		# customer already owns this identity (e.g. our stored customer was minted
-		# contactless and the real one already carries the phone), the edit fails
-		# "Customer already exists for the merchant". Swallowing it would leave a
-		# contactless customer and the order would then fail "contact required".
-		# Instead, fetch the customer that already has (email, contact) — create with
-		# fail_existing returns it now that the phone is on the profile — and repoint
-		# our stored row so the recurring order uses the contact-bearing customer.
 		if "already exists" not in str(e).lower():
 			raise
-		from central.billing.payments.payments import gateway_customer_info
+		return _switch_to_existing_customer(team, gateway, adapter, customer_id)
 
-		corrected = adapter.create_customer(gateway_customer_info(team))
-		if corrected and corrected != customer_id:
-			frappe.db.set_value(
-				"Gateway Customer",
-				{"team": team, "gateway": gateway},
-				"gateway_customer_id",
-				corrected,
-			)
-			return corrected
-		return customer_id
+
+def _card_phone(team: str, profile, contact: str | None) -> str:
+	"""The inline `contact`, else the profile's phone. Throws when there is neither."""
+	contact = _inline_phone(contact, profile.country)
+	phone = contact or str(profile.phone or "").strip()
+	if not phone:
+		frappe.throw(
+			_("A phone number is required to set up automatic payments on this card."),
+			frappe.ValidationError,
+		)
+	# An inline-provided phone is saved to the profile so it's collected only once.
+	# Saved BEFORE the recovery path so gateway_customer_info() carries it.
+	if contact and contact != str(profile.phone or ""):
+		frappe.db.set_value("Billing Profile", team, "phone", contact)
+	return phone
+
+
+def _inline_phone(contact: str | None, country: str | None) -> str:
+	"""An inline phone, held to the same rule as one entered on the profile."""
+	contact = str(contact or "").strip()
+	return normalize_phone(contact, country) if contact else contact
+
+
+def _switch_to_existing_customer(team: str, gateway: str, adapter, customer_id: str) -> str:
+	"""Razorpay enforces (email, contact) uniqueness per merchant. If a different
+	customer already owns this identity (e.g. our stored customer was minted
+	contactless and the real one already carries the phone), the edit fails
+	"Customer already exists for the merchant". Swallowing it would leave a
+	contactless customer and the order would then fail "contact required".
+	Instead, fetch the customer that already has (email, contact) — create with
+	fail_existing returns it now that the phone is on the profile — and repoint
+	our stored row so the recurring order uses the contact-bearing customer."""
+	from central.billing.payments.payments import gateway_customer_info
+
+	corrected = adapter.create_customer(gateway_customer_info(team))
+	if corrected and corrected != customer_id:
+		frappe.db.set_value(
+			"Gateway Customer",
+			{"team": team, "gateway": gateway},
+			"gateway_customer_id",
+			corrected,
+		)
+		return corrected
+	return customer_id
 
 
 def setup_mandate(team: str, gateway: str, customer_id: str | None = None, is_default: int = 0) -> dict:
@@ -311,17 +324,24 @@ def _fill_profile_contact(team: str, payment: dict) -> None:
 	if not frappe.db.exists("Billing Profile", team):
 		return
 	profile = frappe.get_doc("Billing Profile", team)
-	email = None if profile.email else payment.get("email")
-	phone = None if profile.phone else usable_phone(str(payment.get("contact") or ""), profile.country)
-	if not (email or phone):
+	missing = _missing_contact(profile, payment)
+	if not missing:
 		return
 
-	if email:
-		profile.email = email
-	if phone:
-		profile.phone = phone
+	profile.update(missing)
 	# A stored field that fails validation must not undo a mandate the gateway registered.
 	profile.save_as_system("fill the payer's contact from a confirmed mandate")
+
+
+def _missing_contact(profile, payment: dict) -> dict:
+	"""The payer's email and usable phone, each only where the profile has none."""
+	missing = {}
+	if not profile.email and payment.get("email"):
+		missing["email"] = payment.get("email")
+	phone = None if profile.phone else usable_phone(str(payment.get("contact") or ""), profile.country)
+	if phone:
+		missing["phone"] = phone
+	return missing
 
 
 def _queue_authorisation_refund(method, payment: dict) -> None:
