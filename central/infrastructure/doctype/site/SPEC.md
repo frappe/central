@@ -104,7 +104,7 @@ A Pilot 401 leaves the site unclaimed and tells the console to retry with bounde
 
 ## Plan change page
 
-A site's users have no Central account. When a plan change from the site stops the server, Central shows them a public page that follows the change. The page lives on Central, so it stays up while the server restarts. The site's plan list, `billing_api.get_plan_options`, leaves out a plan whose disk is smaller than the server's disk, because a plan change takes the plan's own disk and a disk can't shrink.
+A site's users have no Central account. When a plan change from the site stops the server, Central shows them a public page that follows the change. The page lives on Central, so it stays up while the server restarts. The site's plan list, `billing_api.get_plan_options`, leaves out a plan whose disk is smaller than the server's disk, because a plan change takes the plan's own disk and a disk can't shrink. Each plan in it carries the [plan note](../../../signups/doctype/product/SPEC.md#plans) of the site's product.
 
 1. `central.billing.api.billing_api.change_plan` queues the resize and returns `progress_url`. It returns a URL only when the server runs exactly one Site.
 2. The URL is `/upgrading?action=<Resource Action>&site=<Site>&_signature=<signature>`. Frappe's `get_signed_params` signs it with the site secret. The link does not expire.
