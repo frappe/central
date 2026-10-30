@@ -4,6 +4,7 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
+from central.activity.servers import record_action_terminal
 from central.errors import AtlasConnectionError, AtlasRequestUncertain, build_envelope, to_error_response
 from central.iam import can
 from central.infrastructure.doctype.blocked_domain.blocked_domain import BlockedDomain, normalize_domain
@@ -175,10 +176,9 @@ class ResourceAction(Document):
 	def is_allowed(self) -> bool:
 		"""Whether the requester still holds the capabilities this action needs."""
 		server = self.server or None
-		if not can(self.requested_by, self.team, ACTION_CAPABILITIES[self.action], server=server):
-			return False
-
-		return not self.take_snapshot or can(self.requested_by, self.team, "server:snapshot", server=server)
+		return can(self.requested_by, self.team, ACTION_CAPABILITIES[self.action], server=server) and (
+			not self.take_snapshot or can(self.requested_by, self.team, "server:snapshot", server=server)
+		)
 
 	def after_insert(self) -> None:
 		if self.status == "Queued":
@@ -269,23 +269,26 @@ class ResourceAction(Document):
 			values.update(self._diagnostic_values(diagnostic, diagnostic_title))
 
 		self.db_set(values, notify=notify)
-		if status != previous_status and status in ("Failed", "Timed Out"):
-			if self.action == "create":
-				# A creation the region never accepted leaves no machine to use its credential.
-				if not self.remote_vm_id:
-					PilotCredential.revoke_by_id(self.credential)
-				# No server will ever link the mailbox, trial key or bucket, so termination would not release them.
-				UserMailAccount.queue_removal(resource_action=self.name, server=("is", "not set"))
-				AITrialKey.queue_revoke(resource_action=self.name, server=("is", "not set"))
-				if not self.server:
-					frappe.enqueue(
-						"central.integrations.pilot.delete_bundled_bucket",
-						action=self.name,
-						enqueue_after_commit=True,
-					)
-			self.queue_attention_notification(envelope)
-			if self.is_trial_creation:
-				self.capture_trial_event("trial_failed", status=status, error_code=self.error_code)
+		if status != previous_status:
+			# one feed event per action, not per status step
+			record_action_terminal(self)
+			if status in ("Failed", "Timed Out"):
+				if self.action == "create":
+					# A creation the region never accepted leaves no machine to use its credential.
+					if not self.remote_vm_id:
+						PilotCredential.revoke_by_id(self.credential)
+					# No server will ever link the mailbox, trial key or bucket, so termination would not release them.
+					UserMailAccount.queue_removal(resource_action=self.name, server=("is", "not set"))
+					AITrialKey.queue_revoke(resource_action=self.name, server=("is", "not set"))
+					if not self.server:
+						frappe.enqueue(
+							"central.integrations.pilot.delete_bundled_bucket",
+							action=self.name,
+							enqueue_after_commit=True,
+						)
+				self.queue_attention_notification(envelope)
+				if self.is_trial_creation:
+					self.capture_trial_event("trial_failed", status=status, error_code=self.error_code)
 
 	def fail(self, error: Exception, title: str) -> None:
 		"""Record a failed dispatch. An uncertain Atlas reply stays pending for recovery."""
@@ -492,3 +495,4 @@ def on_doctype_update() -> None:
 	frappe.db.add_index("Resource Action", ["resource_id", "status"])
 	frappe.db.add_index("Resource Action", ["status", "modified"])
 	frappe.db.add_index("Resource Action", ["server", "action"])
+	frappe.db.add_index("Resource Action", ["server", "creation"])

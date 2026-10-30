@@ -8,7 +8,7 @@ app_license = "agpl-3.0"
 fixtures = [
 	"Capability",
 	# The trust-tier ladder (Beginner → Elite) with per-currency spend caps and
-	# promotion thresholds — reference data every team's caps resolve against.
+	# promotion thresholds: reference data every team's caps resolve against.
 	"Trust Tier Level",
 	{"dt": "Team Role", "filters": [["is_system", "=", 1]]},
 	# Warpgate signs in through the Central OpenID Connect provider and checks the Atlas roles.
@@ -115,7 +115,7 @@ jinja = {
 
 # before_install = "central.install.before_install"
 # Seed the catalog taxonomy masters (Plan Category / Sub-Category / Resource Type) on a
-# fresh install — patches are skipped on fresh installs, so the seed can't live only
+# fresh install. Patches are skipped on fresh installs, so the seed can't live only
 # there. Idempotent (ADR 0007).
 #
 # `ensure_constraints` is here for exactly the same reason: a CHECK constraint declared
@@ -215,6 +215,23 @@ doc_events = {
 			"Top-up Order",
 		)
 	},
+	"Virtual Machine": {"after_insert": "central.activity.servers.record_server_created"},
+	"Resource Action": {"after_insert": "central.activity.servers.record_action_terminal"},
+	"VM Snapshot": {
+		"after_insert": "central.activity.servers.record_snapshot_terminal",
+		"on_update": "central.activity.servers.record_snapshot_terminal",
+	},
+	"Version": {"after_insert": "central.activity.changes.record_version"},
+	"Team": {"on_update": "central.activity.teams.record_team_update"},
+	"Team Invitation": {"after_insert": "central.activity.teams.record_invitation_sent"},
+	"Site": {
+		"after_insert": "central.activity.sites.record_site_created",
+		"on_trash": "central.activity.sites.record_site_deleted",
+	},
+	"Site Domain": {
+		"after_insert": "central.activity.sites.record_domain_added",
+		"on_trash": "central.activity.sites.record_domain_removed",
+	},
 }
 
 # Scheduled Tasks
@@ -298,7 +315,7 @@ after_migrate = [
 # -------
 
 # Tests run on a fresh site (patches skipped), so seed the taxonomy masters the test
-# fixtures depend on — and apply the money constraints — before the suite runs.
+# fixtures depend on, and apply the money constraints, before the suite runs.
 before_tests = [
 	"central.billing.catalog.taxonomy_setup.ensure_catalog_masters",
 	"central.billing.settings.ensure_snapshot_settings",
@@ -344,7 +361,8 @@ override_doctype_dashboards = {
 # Ignore links to specified DocTypes when deleting documents
 # -----------------------------------------------------------
 
-# ignore_links_on_delete = ["Communication", "ToDo"]
+# Activity Event is an append-only audit trail; a deleted resource leaves its history behind.
+ignore_links_on_delete = ["Activity Event", "Activity Event IP"]
 
 # Request Events
 # ----------------
@@ -426,6 +444,8 @@ permission_query_conditions = {
 	"User Notification Preference": "central.permissions.user_notification_preference_query_conditions",
 	"VM Snapshot": "central.permissions.vm_snapshot_query_conditions",
 	**dict.fromkeys(_BILLING_TEAM_RECORDS, "central.permissions.billing_record_query_conditions"),
+	"Activity Event": "central.permissions.activity_event_query_conditions",
+	"Activity Event IP": "central.permissions.activity_event_ip_query_conditions",
 }
 
 has_permission = {
@@ -445,6 +465,8 @@ has_permission = {
 	"User Notification Preference": "central.permissions.user_notification_preference_has_permission",
 	"VM Snapshot": "central.permissions.vm_snapshot_has_permission",
 	**dict.fromkeys(_BILLING_TEAM_RECORDS, "central.permissions.billing_record_has_permission"),
+	"Activity Event": "central.permissions.has_activity_event_permission",
+	"Activity Event IP": "central.permissions.has_activity_event_ip_permission",
 }
 
 # --------------------------------
@@ -459,9 +481,8 @@ export_python_type_annotations = True
 # Require all whitelisted methods to have type annotations
 require_type_annotated_api_methods = True
 
-# default_log_clearing_doctypes = {
-# 	"Logging DocType Name": 30  # days to retain logs
-# }
+# Log Settings clears each listed DocType daily. An operator changes the days there.
+default_log_clearing_doctypes = {"Activity Event": 30}
 
 # Translation
 # ------------

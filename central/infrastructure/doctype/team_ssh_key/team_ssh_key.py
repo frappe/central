@@ -10,6 +10,7 @@ from cryptography.exceptions import UnsupportedAlgorithm
 from frappe import _
 from frappe.model.document import Document
 
+from central.activity.teams import record_ssh_key_added, record_ssh_key_deleted, record_ssh_key_updated
 from central.infrastructure.doctype.resource_action.resource_action import (
 	PENDING_STATES,
 	RETRYABLE_CREATE_STATES,
@@ -51,11 +52,16 @@ class TeamSSHKey(Document):
 		):
 			frappe.throw(_("This SSH key already belongs to the team."))
 
+	def after_insert(self) -> None:
+		record_ssh_key_added(self)
+
 	def on_update(self) -> None:
+		record_ssh_key_updated(self)
 		if self.has_value_changed("public_key"):
 			self.queue_sync()
 
 	def on_trash(self) -> None:
+		record_ssh_key_deleted(self)
 		if frappe.db.exists("Server SSH Key", {"team_ssh_key": self.name}):
 			frappe.throw(_("Remove this key from its servers before deleting it."))
 

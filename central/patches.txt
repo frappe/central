@@ -73,3 +73,5 @@ central.patches.v0_0.revoke_trial_keys
 central.patches.v0_0.seed_template_offering
 # Image offerings show Frappe first, then Apps, then Ubuntu.
 central.patches.v0_0.order_image_offerings
+# Seed the activity feed from the records Central already keeps.
+central.patches.v0_0.backfill_activity_events
