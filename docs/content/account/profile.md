@@ -4,9 +4,9 @@ Your profile is how you appear to every team you belong to. Change your name and
 
 ## Open settings
 
-Click your name at the bottom of the sidebar, then click **My profile**. The settings dialog opens on **Profile**. You can also press `⌘ ,` on macOS or `Ctrl ,` on Windows and Linux.
+Click your name at the bottom of the sidebar, then click **Settings**. The settings dialog opens on **Profile**. You can also press `⌘ ,` on macOS or `Ctrl ,` on Windows and Linux.
 
-<Screenshot name="account/user-menu" alt="The account menu at the bottom of the sidebar with My profile, Theme, and Sign out" />
+<Screenshot name="account/user-menu" alt="The account menu at the bottom of the sidebar with Settings, Theme, and Sign out" />
 
 On a phone, settings open as pages instead of a dialog.
 
