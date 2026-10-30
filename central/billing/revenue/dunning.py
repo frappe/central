@@ -162,9 +162,9 @@ def retry_payment(invoice_name: str) -> dict:
 def _retry_if_due(inv, schedule, now) -> dict | None:
 	"""Run the collection round of the latest retry day reached, once. Returns its result.
 
-	Off-session retries only make sense for an auto-charge mode. Manual Checkout (paid
-	on-session) and Action Required (paused at the ₹15k threshold) are never silently
-	retried; dunning escalates and asks them to act (ADR 0005)."""
+	Manual Checkout (paid on-session) and Action Required (paused at the ₹15k threshold)
+	are not retried off-session; dunning escalates and asks them to act (ADR 0005). Every
+	other mode, Prepaid included, is retried."""
 	from central.billing.payments import collection, collection_mode
 
 	if inv.status != "Open" or not collection_mode.is_debit_allowed(inv.team):
