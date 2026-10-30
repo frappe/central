@@ -63,27 +63,44 @@ const suspendAll = async () => {
 </script>
 
 <template>
-	<Button
-		v-if="canPowerServer && running.length"
-		theme="red"
-		icon-left="lucide-power"
-		label="Stop all"
-		@click="openConfirmation"
-	/>
-
-	<ConfirmDialog
-		v-model:target="stopTarget"
-		:title="`Stop ${running.length === 1 ? 'your server' : `all ${serverCount}`}?`"
-		confirm-label="Stop servers"
-		theme="red"
-		:loading="suspending"
-		:error="error"
-		:confirm-text="activeTeamLabel"
-		@confirm="suspendAll"
+	<section
+		aria-labelledby="suspend-heading"
+		class="flex flex-wrap items-center gap-4 rounded-6 border border-outline-red-2 px-5 py-4"
 	>
-		<p class="text-p-base text-ink-gray-6">
-			Stops {{ serverCount }}. Sites on these servers will be unavailable until
-			you restart them. Data, snapshots, and configuration are retained.
-		</p>
-	</ConfirmDialog>
+		<div class="min-w-0 flex-[1_1_20rem]">
+			<h2 id="suspend-heading" class="text-base-semibold text-ink-gray-8">
+				Stop all servers
+			</h2>
+			<p class="mt-0.5 text-p-sm text-ink-gray-5">
+				<template v-if="running.length">
+					Stops {{ serverCount }}. Sites will be unavailable. Data is retained,
+					and you can restart the servers.
+				</template>
+				<template v-else>No servers are running.</template>
+			</p>
+		</div>
+		<Button
+			v-if="canPowerServer"
+			theme="red"
+			label="Stop all"
+			:disabled="!running.length"
+			@click="openConfirmation"
+		/>
+
+		<ConfirmDialog
+			v-model:target="stopTarget"
+			:title="`Stop ${running.length === 1 ? 'your server' : `all ${serverCount}`}?`"
+			confirm-label="Stop servers"
+			theme="red"
+			:loading="suspending"
+			:error="error"
+			:confirm-text="activeTeamLabel"
+			@confirm="suspendAll"
+		>
+			<p class="text-p-base text-ink-gray-6">
+				Sites on these servers will be unavailable until you restart them. Data,
+				snapshots, and configuration are retained.
+			</p>
+		</ConfirmDialog>
+	</section>
 </template>

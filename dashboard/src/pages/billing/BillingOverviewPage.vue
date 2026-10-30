@@ -14,6 +14,7 @@ import PayingForPanel from '@/components/billing/PayingForPanel.vue'
 import PaymentSchedulePanel from '@/components/billing/PaymentSchedulePanel.vue'
 import ProjectsPanel from '@/components/billing/ProjectsPanel.vue'
 import SpendCard from '@/components/billing/SpendCard.vue'
+import StopBillingCard from '@/components/billing/StopBillingCard.vue'
 import TiersPanel from '@/components/billing/TiersPanel.vue'
 import TrialBillingBanner from '@/components/billing/TrialBillingBanner.vue'
 import WalletHistoryPanel from '@/components/billing/WalletHistoryPanel.vue'
@@ -113,6 +114,8 @@ const onAddCredits = () => {
 			<SpendCard :reports="reports">
 				<LimitsCard @open-tiers="showTiers = true" />
 			</SpendCard>
+
+			<StopBillingCard />
 		</div>
 
 		<WalletHistoryPanel v-model:open="showWalletHistory" />

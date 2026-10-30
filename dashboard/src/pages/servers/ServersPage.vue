@@ -9,7 +9,6 @@ import ServerFilters from '@/components/servers/ServerFilters.vue'
 import ServerListPanel from '@/components/servers/ServerListPanel.vue'
 import ServerMap from '@/components/servers/ServerMap.vue'
 import ServerRowActions from '@/components/servers/ServerRowActions.vue'
-import StopAllServers from '@/components/servers/StopAllServers.vue'
 import TerminateServerDialog from '@/components/servers/TerminateServerDialog.vue'
 import TakeSnapshotDialog from '@/components/snapshots/TakeSnapshotDialog.vue'
 import { useFleetCommands } from '@/composables/useFleetCommands'
@@ -137,7 +136,6 @@ useServerLink(
 <template>
 	<div class="flex h-full flex-col">
 		<Teleport defer to="#header-actions">
-			<StopAllServers v-if="activeTeam" />
 			<Button
 				v-if="activeTeam"
 				label="Refresh"
