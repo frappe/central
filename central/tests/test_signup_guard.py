@@ -33,7 +33,9 @@ class TestSignupGuard(IntegrationTestCase):
 				automatic_block_hours=24,
 			)
 		)
-		self.enterContext(patch.object(frappe.local, "request_ip", self.unique_ip(), create=True))
+		# patch.object(create=True) would delete a request IP that another test left on frappe.local.
+		self.addCleanup(setattr, frappe.local, "request_ip", getattr(frappe.local, "request_ip", None))
+		frappe.local.request_ip = self.unique_ip()
 
 	def unique_ip(self) -> str:
 		return f"ip-{frappe.generate_hash(length=10)}"
