@@ -185,6 +185,9 @@ class TestPilotBootstrapMetadata(IntegrationTestCase):
 		):
 			metadata = _create_payload(request)["metadata"]
 
+		cargo.create_bucket.assert_called_once_with(
+			"7-bundle-test-server-action-1", tags={"team": request.team, "server": request.server_id}
+		)
 		cargo.set_quota.assert_called_once_with("7-bundle-test-server-action-1", 25, 0)
 		self.assertEqual(
 			json.loads(metadata["pilot-config"]),

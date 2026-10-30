@@ -98,7 +98,10 @@ def get_bundled_bucket(action) -> dict | None:
 		client.delete_bucket(name)
 	except ObjectStorageNotFound:
 		pass
-	credentials = client.create_bucket(name)["credentials"]
+	receipt = client.create_bucket(
+		name, tags={"team": action.team, "server": action.server_id, "bundled": True}
+	)
+	credentials = receipt["credentials"]
 	# Cargo enforces the cap. Zero leaves the object count unlimited.
 	client.set_quota(name, size_gib, 0)
 

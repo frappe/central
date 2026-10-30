@@ -138,9 +138,9 @@ class ObjectStorageClient:
 
 		return frappe.utils.strip_html(message) if isinstance(message, str) else None
 
-	def create_bucket(self, name: str) -> dict:
-		"""Create a bucket and return the credentials."""
-		return self._call("create_bucket", name)
+	def create_bucket(self, name: str, tags: dict[str, str] | None = None) -> dict:
+		"""Create a bucket and return the credentials. Cargo records `tags` on the bucket."""
+		return self._call("create_bucket", name, tags=tags or {})
 
 	def delete_bucket(self, name: str) -> dict:
 		"""Delete a bucket."""
