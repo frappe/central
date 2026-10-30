@@ -22,6 +22,8 @@ event-driven, not a synchronous try/except cascade:
   A hard decline (expired, lost, fraud, revoked mandate) is never charged again.
 """
 
+from datetime import datetime
+
 import frappe
 
 from central.billing.payments import charges, decline
@@ -95,7 +97,7 @@ def _ask_for_another_method(inv) -> None:
 	)
 
 
-def collect_invoice(invoice: str, new_round: bool = False, now=None) -> dict:
+def collect_invoice(invoice: str, new_round: bool = False, now: datetime | str | None = None) -> dict:
 	"""Charge the next untried method; rotate immediately on a synchronous decline.
 
 	Idempotent and safe to re-enter (from settlement, a webhook failure, or a
@@ -117,7 +119,9 @@ def collect_invoice(invoice: str, new_round: bool = False, now=None) -> dict:
 			return outcome
 
 
-def _charge_next_method(inv, earlier: set | None, skipped: set, now=None) -> dict | None:
+def _charge_next_method(
+	inv, earlier: set | None, skipped: set, now: datetime | str | None = None
+) -> dict | None:
 	"""Try the next method once. Returns the outcome to stop on, or None to rotate to the
 	next method (a final decline, or a rail that cannot debit now, added to `skipped`)."""
 	from central.billing.payments import emandate

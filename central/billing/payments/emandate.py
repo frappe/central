@@ -19,6 +19,7 @@ heads-up is sent here; the bank's own RBI pre-debit notification is dispatched b
 the gateway at debit time (an adapter concern, kept out of this orchestration).
 """
 
+from datetime import datetime
 from enum import StrEnum
 
 import frappe
@@ -50,7 +51,7 @@ def _is_notice_required(inv, gateway: str | None) -> bool:
 	return bool(gateway and currency and capabilities.requires_predebit_notice(gateway, currency))
 
 
-def await_predebit(invoice: str, gateway: str, now=None) -> tuple[Predebit, dict]:
+def await_predebit(invoice: str, gateway: str, now: datetime | str | None = None) -> tuple[Predebit, dict]:
 	"""What `gateway` may do with this invoice now under the pre-debit notice rule.
 
 	1. CHARGE_NOW: the rail owes no notice, or the notice window has passed.
