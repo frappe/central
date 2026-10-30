@@ -13,7 +13,7 @@ WireGuard VPN is available only in regions that have a WireGuard VPN gateway. If
 
 ## Add a device
 
-1. Click your name at the bottom of the sidebar, then **My profile**. In the settings, under **Access**, click **WireGuard VPN**. You can also press `Ctrl+,` or `⌘+,` to open the settings.
+1. Click your name at the bottom of the sidebar, then **Settings**. In the settings, under **Access**, click **WireGuard VPN**. You can also press `Ctrl+,` or `⌘+,` to open the settings.
 2. Click **Add**. If the team has no devices yet, click **Add device**.
 3. Type a **Name**, such as `Work laptop`.
 4. Select the **Region**.

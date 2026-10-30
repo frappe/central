@@ -27,7 +27,7 @@ The panel shows notifications for the team you have open. Switch teams to see th
 
 ## Choose what you get
 
-1. Click your name at the bottom of the sidebar, then click **My profile**.
+1. Click your name at the bottom of the sidebar, then click **Settings**.
 2. Click **Notifications**.
 3. For each category, turn **Email** and **In-app** on or off.
 4. Click **Save preferences**.

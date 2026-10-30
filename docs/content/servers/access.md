@@ -11,7 +11,7 @@ You sign in to a server with SSH as the `root` user. The server accepts only the
 
 Team SSH keys belong to the team, not to one person. Each key can sign in to the servers that you select it for.
 
-1. Click your name at the bottom of the sidebar, then **My profile**. In the settings, click **SSH keys**. You can also press `Ctrl+,` or `⌘+,` to open the settings.
+1. Click your name at the bottom of the sidebar, then **Settings**. In the settings, click **SSH keys**. You can also press `Ctrl+,` or `⌘+,` to open the settings.
 2. Click **Add**.
 3. Type a **Name**, such as `Work laptop`.
 4. Paste your **SSH public key**, such as the content of `~/.ssh/id_ed25519.pub`.

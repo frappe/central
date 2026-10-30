@@ -1,6 +1,6 @@
 async function openSettingsTab(page, tab) {
 	await page.getByRole('button', { name: /Zara Quill/ }).click()
-	await page.getByRole('menuitem', { name: 'My profile' }).click()
+	await page.getByRole('menuitem', { name: 'Settings' }).click()
 	const dialog = page.getByRole('dialog')
 	await dialog.waitFor()
 	if (tab) await dialog.getByText(tab, { exact: true }).first().click()
@@ -41,7 +41,7 @@ export default [
 		path: '/servers',
 		async setup(page) {
 			await page.getByRole('button', { name: /Zara Quill/ }).click()
-			await page.getByRole('menuitem', { name: 'My profile' }).waitFor()
+			await page.getByRole('menuitem', { name: 'Settings' }).waitFor()
 		},
 	},
 ]

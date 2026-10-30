@@ -4,7 +4,7 @@ import { test } from '../fixtures'
 const openSettings = async (page, me, tab) => {
 	await page.goto('/dashboard/servers')
 	await page.getByRole('button', { name: me.email }).click()
-	await page.getByRole('menuitem', { name: 'My profile' }).click()
+	await page.getByRole('menuitem', { name: 'Settings' }).click()
 
 	if (tab) await page.getByRole('tab', { name: tab, exact: true }).click()
 }
