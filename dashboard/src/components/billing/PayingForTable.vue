@@ -1,6 +1,5 @@
 <script setup lang="ts">
-import { Badge, Button } from 'frappe-ui'
-import { computed } from 'vue'
+import { Badge } from 'frappe-ui'
 import SubscriptionRowActions from '@/components/billing/SubscriptionRowActions.vue'
 import Table from '@/components/common/Table.vue'
 import { money } from '@/lib/format'
@@ -12,30 +11,20 @@ import type {
 	SubscriptionRow,
 } from '@/types/billing'
 
-const props = defineProps<{
+defineProps<{
 	rows: PayingForItem[]
 	currency: string
 	canManage: boolean
 	busy: string
 	hideHeader?: boolean
-	showProjects?: boolean
-	projectCount?: number
 }>()
 
 defineEmits<{
-	openProjects: []
-	newProject: []
 	open: [sub: SubscriptionRow]
 	pause: [sub: SubscriptionRow]
 	resume: [sub: SubscriptionRow]
 	assignProject: [sub: SubscriptionRow]
 }>()
-
-const projectsRow = { kind: 'projects', id: 'projects' } as const
-
-const tableRows = computed(() =>
-	props.showProjects ? [...props.rows, projectsRow] : props.rows,
-)
 
 const columns = [
 	{ key: 'name', label: 'Name' },
@@ -132,25 +121,11 @@ const overAllowance = (s: ServiceRow): boolean =>
 </script>
 
 <template>
-	<Table flush :columns="columns" :rows="tableRows" :hide-header="hideHeader">
+	<Table flush :columns="columns" :rows="rows" :hide-header="hideHeader">
 		<template #name="{ row }">
-			<div
-				v-if="row.kind === 'projects'"
-				class="flex w-0 items-center gap-2.5 overflow-visible"
-			>
-				<span
-					class="lucide-layers size-4 shrink-0 text-ink-gray-5"
-					aria-hidden="true"
-				/>
-				<span class="text-base text-ink-gray-9">Projects</span>
-				<span class="text-sm text-ink-gray-5">
-					Group invoice costs by customer or environment.
-				</span>
-			</div>
-
 			<component
 				:is="row.sub.gateway_url ? 'button' : 'div'"
-				v-else-if="row.kind === 'server'"
+				v-if="row.kind === 'server'"
 				class="group flex min-w-0 items-center gap-2.5 text-left"
 				@click="$emit('open', row.sub)"
 			>
@@ -216,24 +191,7 @@ const overAllowance = (s: ServiceRow): boolean =>
 		</template>
 
 		<template #cost="{ row }">
-			<div v-if="row.kind === 'projects'" class="flex items-center gap-2">
-				<Button
-					v-if="projectCount"
-					size="xs"
-					variant="outline"
-					label="View all"
-					@click="$emit('openProjects')"
-				/>
-				<Button
-					v-if="canManage"
-					size="xs"
-					icon-left="lucide-plus"
-					label="New project"
-					@click="$emit('newProject')"
-				/>
-			</div>
-
-			<template v-else-if="row.kind === 'server'">
+			<template v-if="row.kind === 'server'">
 				<span
 					class="block text-base tabular-nums"
 					:class="isTerminated(row.sub) ? 'text-ink-gray-4' : 'text-ink-gray-9'"

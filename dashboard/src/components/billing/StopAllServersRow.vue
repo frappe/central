@@ -63,26 +63,20 @@ const suspendAll = async () => {
 </script>
 
 <template>
-	<section
-		aria-labelledby="suspend-heading"
-		class="flex flex-wrap items-center gap-4 rounded-6 border border-outline-red-2 px-5 py-4"
+	<div
+		class="flex flex-wrap items-center justify-between gap-3 border-t border-outline-gray-1 px-4 py-3"
 	>
-		<div class="min-w-0 flex-[1_1_20rem]">
-			<h2 id="suspend-heading" class="text-base-semibold text-ink-gray-8">
-				Stop all servers
-			</h2>
-			<p class="mt-0.5 text-p-sm text-ink-gray-5">
-				<template v-if="running.length">
-					Stops {{ serverCount }}. Sites will be unavailable. Data is retained,
-					and you can restart the servers.
-				</template>
-				<template v-else>No servers are running.</template>
-			</p>
-		</div>
+		<p class="text-p-sm text-ink-gray-5">
+			<template v-if="running.length">
+				Stop {{ serverCount }} at once. Data is retained, and you can restart
+				them.
+			</template>
+			<template v-else>No servers are running.</template>
+		</p>
 		<Button
 			v-if="canPowerServer"
 			theme="red"
-			label="Stop all"
+			label="Stop all servers"
 			:disabled="!running.length"
 			@click="openConfirmation"
 		/>
@@ -102,5 +96,5 @@ const suspendAll = async () => {
 				snapshots, and configuration are retained.
 			</p>
 		</ConfirmDialog>
-	</section>
+	</div>
 </template>
