@@ -391,6 +391,26 @@ class TestCreditAddedAfterIssue(BillingTestBase):
 		self.assertEqual((inv.status, inv.credit_applied, inv.expected_collection), ("Open", 400.0, 600.0))
 		collect.assert_called_once_with(name)
 
+	def test_an_invoice_with_a_charge_in_flight_keeps_the_credit_in_the_wallet(self):
+		name = self._open_invoice()
+		frappe.get_doc(
+			{
+				"doctype": "Payment Attempt",
+				"invoice": name,
+				"team": TEAM,
+				"amount": 1000,
+				"currency": "INR",
+				"status": "Initiated",
+				"initiated_at": frappe.utils.now_datetime(),
+			}
+		).insert(ignore_permissions=True)
+		credits.purchase(TEAM, 1000, "INR")
+
+		self.assertEqual(lifecycle.settle_with_new_credit(TEAM), [{"invoice": name, "applied": 0}])
+		inv = frappe.get_doc("Invoice", name)
+		self.assertEqual((inv.status, inv.credit_applied, inv.expected_collection), ("Open", 0.0, 1000.0))
+		self.assertEqual(credits.get_balance(TEAM)["balance"], 1000)
+
 	def test_booking_a_credit_queues_the_settlement(self):
 		with patch("frappe.enqueue") as enqueue:
 			credits.purchase(TEAM, 400, "INR")

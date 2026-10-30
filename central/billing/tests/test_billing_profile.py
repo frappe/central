@@ -95,6 +95,14 @@ class TestBillingProfile(IntegrationTestCase):
 		with self.assertRaises(frappe.ValidationError):
 			_profile(country="Germany", currency="USD", phone="12ab")
 
+	def test_a_stored_invalid_phone_does_not_block_another_change(self):
+		profile = _profile()
+		frappe.db.set_value("Billing Profile", TEAM, "phone", "1234567")
+		profile.reload()
+		profile.city = "Mumbai"
+		profile.save(ignore_permissions=True)
+		self.assertEqual(frappe.db.get_value("Billing Profile", TEAM, "city"), "Mumbai")
+
 	def test_non_india_skips_state_and_gstin_checks(self):
 		# A free-text state and no GSTIN is fine outside India.
 		doc = _profile(country="Germany", currency="USD", state="Hesse", gstin="")

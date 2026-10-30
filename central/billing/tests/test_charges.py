@@ -190,6 +190,20 @@ class TestChargeInvoice(ChargeTestBase):
 		self.assertEqual(event_reason, "card_declined")
 		self.assertEqual(frappe.db.get_value("Invoice", inv, "status"), "Open")
 
+	def test_a_debit_held_at_the_gateway_blocks_a_second_charge(self):
+		from central.billing.gateways.razorpay_adapter import _recurring_result
+
+		inv = self._open_invoice(1000)
+		with stub_adapter() as adapter:
+			adapter.charge.return_value = _recurring_result({"id": "pay_async", "status": "created"})
+			first = charges.pay_invoice(inv)
+			second = charges.pay_invoice(inv)
+
+		self.assertEqual(first["reason"], "gateway_hold")
+		self.assertEqual(frappe.db.get_value("Payment Attempt", first["attempt"], "status"), "Initiated")
+		self.assertEqual((second["reason"], second["attempt"]), ("attempt_in_flight", first["attempt"]))
+		adapter.charge.assert_called_once()
+
 	def test_webhook_settles_invoice_to_paid(self):
 		inv = self._open_invoice(1000)
 		with stub_adapter(success=True, txn_id="pi_settle"):
