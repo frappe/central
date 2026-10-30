@@ -21,7 +21,8 @@ TEMPORARY_DOMAINS_KEY = "signup_temporary_domains"
 def validate_signup_email(email: str) -> None:
 	"""Refuse a new account that is likely abuse, since every new owner gets free credit."""
 	domain = get_domain(email)
-	if is_blocked_domain(domain) or is_temporary_domain(domain):
+	# Trusted is how an operator corrects a wrong entry in the public temporary list.
+	if is_blocked_domain(domain) or (is_temporary_domain(domain) and not is_trusted_domain(domain)):
 		frappe.throw(_("Sign up with a different email address. This email domain is not accepted."))
 
 	if is_alias_email(email):

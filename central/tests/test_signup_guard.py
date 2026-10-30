@@ -92,6 +92,12 @@ class TestSignupGuard(IntegrationTestCase):
 		with self.change_settings("Central Settings", refuse_temporary_emails=0):
 			validate_signup_email("someone@mailinator.com")
 
+	def test_a_trusted_domain_on_the_temporary_list_is_accepted(self):
+		self.addCleanup(signup_email.clear_signup_domains)
+		self.block("0-mail.com", status="Trusted")
+
+		validate_signup_email("someone@0-mail.com")
+
 	def test_a_plus_alias_is_refused_except_on_an_allowed_domain(self):
 		with self.assertRaisesRegex(frappe.ValidationError, "Aliases"):
 			validate_signup_email(f"a{frappe.generate_hash(length=6)}+1@example.org")
