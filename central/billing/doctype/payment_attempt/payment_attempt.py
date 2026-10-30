@@ -7,9 +7,11 @@ charge always produces the same key and the gateway can dedupe it (ADR 0017).
 """
 
 import hashlib
+from datetime import datetime
 
 import frappe
 from frappe.model.document import Document
+from pypika.terms import Criterion
 
 
 def idempotency_key(invoice: str, retry_number) -> str:
@@ -28,7 +30,7 @@ def idempotency_key(invoice: str, retry_number) -> str:
 	).hexdigest()
 
 
-def gateway_hold_active(attempt, now=None):
+def gateway_hold_active(attempt, now: datetime | None = None) -> Criterion:
 	"""Query condition on the Payment Attempt table: the gateway holds the debit at `now`.
 
 	A held debit waits for its gateway on purpose (a Razorpay debit in progress, an
@@ -44,7 +46,7 @@ class PaymentAttempt(Document):
 		if not self.initiated_at:
 			self.initiated_at = frappe.utils.now_datetime()
 
-	def is_held_by_gateway(self, now=None) -> bool:
+	def is_held_by_gateway(self, now: datetime | None = None) -> bool:
 		"""The gateway holds this debit at `now`. The same condition as `gateway_hold_active`."""
 		now = frappe.utils.get_datetime(now or frappe.utils.now_datetime())
 		return bool(self.gateway_hold_until) and now < frappe.utils.get_datetime(self.gateway_hold_until)

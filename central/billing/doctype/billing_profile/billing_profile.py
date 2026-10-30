@@ -51,14 +51,18 @@ def normalize_phone(phone: str, country: str | None) -> str:
 		return usable
 	frappe.throw(
 		_("Enter a 10-digit mobile number.")
-		if _phone_pattern(country) is INDIAN_MOBILE_RE
+		if _is_india(country)
 		else _("Enter a phone number of 8 to 15 digits, with the country code."),
 		frappe.ValidationError,
 	)
 
 
 def _phone_pattern(country: str | None) -> re.Pattern:
-	return INDIAN_MOBILE_RE if (country or "").strip() == INDIA else PHONE_RE
+	return INDIAN_MOBILE_RE if _is_india(country) else PHONE_RE
+
+
+def _is_india(country: str | None) -> bool:
+	return (country or "").strip() == INDIA
 
 
 def get_team_currency(team: str) -> str:
@@ -168,10 +172,9 @@ class BillingProfile(Document):
 		self.enqueue_profile_sync()
 		self.apply_tier_change()
 
-	def save_as_system(self, action: str) -> bool:
+	def save_as_system(self, action: str) -> None:
 		"""Save a change billing code makes for `action`. A stored field that no longer passes
-		validation, such as an old GSTIN, is logged for an operator and does not fail the caller.
-		Returns whether the profile was saved."""
+		validation, such as an old GSTIN, is logged for an operator and does not fail the caller."""
 		frappe.db.savepoint(_SYSTEM_SAVEPOINT)
 		try:
 			# Billing code makes this change for the system; the caller checked its own permission.
@@ -179,9 +182,8 @@ class BillingProfile(Document):
 		except frappe.ValidationError:
 			frappe.db.rollback(save_point=_SYSTEM_SAVEPOINT)
 			frappe.log_error(title=f"Billing Profile {self.name} not saved: {action}")
-			return False
+			return
 		frappe.db.release_savepoint(_SYSTEM_SAVEPOINT)
-		return True
 
 	def validate_currency_matches_country(self):
 		"""India is billed only in INR, and only India is billed in INR."""
