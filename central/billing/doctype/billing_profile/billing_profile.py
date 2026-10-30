@@ -24,6 +24,7 @@ GSTIN_RE = re.compile(r"^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}
 # mobile is 10 digits that start with 6 to 9, optionally after +91 or 91.
 PHONE_RE = re.compile(r"^\+?[0-9]{8,15}$")
 INDIAN_MOBILE_RE = re.compile(r"^(?:\+?91)?[6-9][0-9]{9}$")
+_SYSTEM_SAVEPOINT = "billing_profile_system_save"
 REQUIRED_FIELDS = ("currency", "legal_name", "address_line1", "city", "country")
 FIELD_LABELS = {
 	"currency": "currency",
@@ -163,6 +164,21 @@ class BillingProfile(Document):
 		self.refresh_gst_status_on_change()
 		self.enqueue_profile_sync()
 		self.apply_tier_change()
+
+	def save_as_system(self, action: str) -> bool:
+		"""Save a change billing code makes for `action`. A stored field that no longer passes
+		validation, such as an old GSTIN, is logged for an operator and does not fail the caller.
+		Returns whether the profile was saved."""
+		frappe.db.savepoint(_SYSTEM_SAVEPOINT)
+		try:
+			# Billing code makes this change for the system; the caller checked its own permission.
+			self.save(ignore_permissions=True)
+		except frappe.ValidationError:
+			frappe.db.rollback(save_point=_SYSTEM_SAVEPOINT)
+			frappe.log_error(title=f"Billing Profile {self.name} not saved: {action}")
+			return False
+		frappe.db.release_savepoint(_SYSTEM_SAVEPOINT)
+		return True
 
 	def validate_currency_matches_country(self):
 		"""India is billed only in INR, and only India is billed in INR."""

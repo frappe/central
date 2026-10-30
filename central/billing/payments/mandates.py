@@ -318,8 +318,8 @@ def _fill_profile_contact(team: str, payment: dict) -> None:
 
 	profile.email = profile.email or email
 	profile.phone = profile.phone or phone
-	# Only billing code fills the contact; the caller checked billing:manage.
-	profile.save(ignore_permissions=True)
+	# A stored field that fails validation must not undo a mandate the gateway registered.
+	profile.save_as_system("fill the payer's contact from a confirmed mandate")
 
 
 def _queue_authorisation_refund(method, payment: dict) -> None:

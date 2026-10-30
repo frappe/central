@@ -119,8 +119,8 @@ def start_auto_charge(team: str) -> None:
 	profile = frappe.get_doc("Billing Profile", team)
 	profile.collection_mode = "Auto Charge"
 	profile.collection_action_reason = None
-	# Billing moves the mode for the system when a method activates, not on the user's behalf.
-	profile.save(ignore_permissions=True)
+	# A stored field that fails validation must not block the method's activation.
+	profile.save_as_system("start Auto Charge when the first payment method became active")
 
 
 def evaluate(

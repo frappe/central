@@ -145,6 +145,20 @@ class TestMandateSetup(MandateTestBase):
 		self._confirm_with_contact("12345")
 		self.assertIsNone(frappe.db.get_value("Billing Profile", TEAM, "phone"))
 
+	def test_a_stored_invalid_gstin_does_not_undo_the_confirmation(self):
+		# Razorpay already registered the token, so the profile save must not roll it back.
+		frappe.db.set_value(
+			"Billing Profile", TEAM, {"phone": None, "gstin": "BAD", "collection_mode": "Prepaid"}
+		)
+		self._confirm_with_contact("+919876543210")
+		method = frappe.get_all("Payment Method", {"team": TEAM}, ["status"])[0]
+		self.assertEqual(method.status, "Active")
+		self.assertIsNone(frappe.db.get_value("Billing Profile", TEAM, "phone"))
+		logs = frappe.get_all(
+			"Error Log", {"method": ["like", f"Billing Profile {TEAM} not saved:%"]}, pluck="method"
+		)
+		self.assertEqual(len(set(logs)), 2)  # the contact fill and the move to Auto Charge
+
 	def test_a_token_from_the_browser_is_never_stored(self):
 		with stub_adapter(token="token_from_razorpay"):
 			result = mandates.setup_mandate(TEAM, GATEWAY, customer_id="cust_x")
