@@ -48,7 +48,8 @@ INVOICE = StateMachine(
 	"Invoice",
 	"status",
 	{
-		"Draft": {"Open", "Paid", "Cancelled"},  # opened, or settled outright by credits
+		# Opened, settled outright by credits, or waived for an internal team.
+		"Draft": {"Open", "Paid", "Cancelled", "Waived"},
 		"Open": {"Paid", "Overdue", "Cancelled", "Waived"},
 		"Overdue": {"Paid", "Cancelled", "Waived"},
 		"Paid": {"Cancelled"},  # only by cancel-and-refund, which issues a credit note
@@ -87,7 +88,9 @@ REFUND = StateMachine(
 	"Refund",
 	"status",
 	{
-		"Initiated": {"Completed", "Failed"},
+		"Initiated": {"Pending", "Completed", "Failed"},
+		# The gateway accepted it but has not paid it out; it can still fail.
+		"Pending": {"Completed", "Failed"},
 		"Completed": set(),  # terminal
 		"Failed": {"Initiated"},  # an operator tries again
 	},
@@ -97,7 +100,7 @@ PAYMENT_METHOD = StateMachine(
 	"Payment Method",
 	"status",
 	{
-		"Pending Validation": {"Active", "Failed"},
+		"Pending Validation": {"Active", "Failed", "Cancelled"},
 		"Active": {"Paused", "Cancelled", "Expired", "Failed"},
 		"Paused": {"Active", "Cancelled", "Expired"},
 		"Failed": set(),  # terminal — a fresh attempt is a new method
@@ -117,6 +120,19 @@ WEBHOOK_EVENT = StateMachine(
 		"Failed": {"Processed", "Ignored"},  # a retried webhook can still land
 		"Processed": set(),
 		"Ignored": set(),
+	},
+)
+
+# A wallet top-up Central asked a gateway for. A payment that lands after the order
+# expired still credits it: the money was taken.
+TOP_UP_ORDER = StateMachine(
+	"Top-up Order",
+	"status",
+	{
+		"Created": {"Credited", "Failed", "Expired"},
+		"Expired": {"Credited"},
+		"Credited": set(),  # terminal
+		"Failed": set(),  # terminal
 	},
 )
 
@@ -164,6 +180,7 @@ _MACHINES = {
 		REFUND,
 		PAYMENT_METHOD,
 		WEBHOOK_EVENT,
+		TOP_UP_ORDER,
 		BILLING_RUN,
 		RERATING_RUN,
 		COMMITMENT,
@@ -216,7 +233,7 @@ def transition(
 
 
 def _append_event(doc, from_state, to_state, reason, actor, correlation, amount, event_type) -> None:
-	frappe.get_doc(
+	event = frappe.get_doc(
 		{
 			"doctype": "Billing Event",
 			"team": doc.get("team"),
@@ -232,7 +249,16 @@ def _append_event(doc, from_state, to_state, reason, actor, correlation, amount,
 			"reason": reason,
 			"correlation": correlation or doc.name,
 		}
-	).insert(ignore_permissions=True)
+	)
+	# The audit trail is written for whoever moved the document, and its links are copied from it.
+	event.insert(ignore_permissions=True, ignore_links=True)
+
+
+def record_event(
+	doc, event_type: str, from_state=None, to_state=None, reason=None, amount=None, correlation=None
+) -> None:
+	"""Log a billing change that is not a status move, such as a tier change."""
+	_append_event(doc, from_state, to_state, reason, None, correlation, amount, event_type)
 
 
 def _default_actor() -> str:

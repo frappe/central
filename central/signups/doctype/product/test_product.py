@@ -57,7 +57,8 @@ class IntegrationTestProduct(IntegrationTestCase):
 
 		self.start("raven-test")
 
-		self.configuration.assert_called_once_with("any-team", "raven")
+		team, product = self.configuration.call_args.args
+		self.assertEqual((team, product.signup_app), ("any-team", "raven"))
 
 	def test_a_disabled_or_unknown_product_is_refused_before_the_region_is_asked(self):
 		self.product("raven-off", enabled=0)
@@ -76,8 +77,9 @@ class IntegrationTestProduct(IntegrationTestCase):
 		self.assertEqual(get_product("raven-test").subtitle, "Chat for your team")
 		self.assertIsNone(get_product("raven-off"))
 
-	def test_the_operator_preview_asks_the_region_for_the_product_app(self):
+	def test_the_operator_preview_asks_the_region_for_the_product_app_and_version(self):
 		product = self.product("raven-test")
+		product.db_set("frappe_version", "version-16")
 
 		with (
 			patch("central.site_provisioning.signup_offering", return_value="pilot"),
@@ -89,8 +91,24 @@ class IntegrationTestProduct(IntegrationTestCase):
 			"pilot",
 			"par-2",
 			0,
-			extra_tags={"has_site": "1", "frappe_version": "develop", "app": "raven"},
+			extra_tags={"has_site": "1", "frappe_version": "version-16", "app": "raven"},
 		)
+
+	def test_a_new_product_runs_on_develop_and_takes_only_a_frappe_branch(self):
+		product = self.product("raven-version")
+		self.assertEqual(product.frappe_version, "develop")
+
+		product.frappe_version = "version-16-hotfix"
+		product.save()
+
+		for version in ("16", "v16", "version-16.1", "version-16-beta", "main"):
+			product.frappe_version = version
+			with self.subTest(version=version), self.assertRaises(frappe.ValidationError):
+				product.save()
+
+		product.reload()
+		product.frappe_version = "version-16-hotfix"
+		product.save()
 
 	def test_the_landing_route_is_a_path_on_the_site(self):
 		product = self.product("raven-landing")
@@ -207,6 +225,7 @@ class TestProductLifecycleEmails(SiteOnAMachine):
 		context = engine._resolve_context(
 			team or self.team.name, self.event.name, sample, self.site().name, "Site"
 		)
+		context["server"] = self.site().server or ""
 		return engine._notification_email(self.event, {**context, "reference_title": "acme"})[1]
 
 	def product(self, **values):
@@ -244,6 +263,15 @@ class TestProductLifecycleEmails(SiteOnAMachine):
 		self.assertIn("https://raven.example.test/start", html)
 		self.assertNotIn("https://raven.example.test/start", expiring)
 
+	def test_get_started_opens_the_site_and_the_docs_are_the_second_button(self):
+		product = self.product(landing_route="/raven", getting_started_url="https://raven.example.test/start")
+
+		html = self.email_for(product)
+
+		self.assertIn(f'fc-btn-primary" href="{self.site().url}/raven"', html)
+		self.assertIn('fc-btn-secondary" href="https://raven.example.test/start"', html)
+		self.assertLess(html.index("Get started"), html.index("View docs"))
+
 	def test_welcome_emails_link_the_created_site_and_product_landing_route(self):
 		product = self.product(landing_route="/raven")
 		for event_type in ("site_ready", "trial_unopened"):
@@ -257,15 +285,46 @@ class TestProductLifecycleEmails(SiteOnAMachine):
 		_, html = engine._notification_email(self.event, context)
 		self.assertIn(f'href="{self.site().url}"', html)
 
+	def test_site_emails_name_and_link_the_chosen_name(self):
+		"""Every Site email names the address its button opens, the trial emails included."""
+		from central.signups.trial import Trial
+
+		site = self.site()
+		site.db_set("subdomain", "acme")
+		with patch(
+			"central.infrastructure.doctype.region.region.Region.get_zone",
+			return_value=self.region.proxy_domain,
+		):
+			site.route_subdomain()
+		frappe.db.set_value("Site Domain", site.rename_target, "status", "Active")
+
+		context = engine._resolve_context(self.team.name, "site_ready", None, site.name, "Site")
+		context["reference_title"] = engine._get_reference_title(self.team.name, "Site", site.name)
+		subject, html = engine._notification_email(self.event, context)
+
+		self.assertEqual(subject, f"Site ready: {site.rename_target}")
+		self.assertIn(f"Site {site.rename_target} is ready.", html)
+		self.assertIn(f'href="https://{site.rename_target}"', html)
+		self.assertEqual(Trial(self.site()).address, site.rename_target)
+
 	def test_billing_emails_link_central_and_deleted_email_has_no_site_link(self):
 		product = self.product(landing_route="/raven")
+		upgrade = f'href="https://central.example.test/dashboard/servers/{self.site().server}?action=resize"'
+		billing = 'href="https://central.example.test/dashboard/billing"'
 		with patch("central.notification.engine.central_url", return_value="https://central.example.test"):
-			for event_type in ("trial_expiring", "trial_ended", "trial_deletion_soon", "trial_converted"):
+			for event_type in ("trial_expiring", "trial_ended", "trial_deletion_soon"):
 				with self.subTest(event_type=event_type):
 					self.event = engine.get_event_type(event_type)
 					html = self.email_for(product)
-					self.assertIn('href="https://central.example.test/dashboard/billing"', html)
+					self.assertIn(upgrade, html)
 					self.assertNotIn(f'href="{self.site().url}', html)
+					self.assertIn(
+						"/dashboard/servers/acme?action=resize", product.preview_email(event_type)["html"]
+					)
+			self.event = engine.get_event_type("trial_converted")
+			html = self.email_for(product)
+			self.assertIn(billing, html)
+			self.assertNotIn(f'href="{self.site().url}', html)
 		self.event = engine.get_event_type("trial_deleted")
 		self.assertNotIn(f'href="{self.site().url}', self.email_for(product))
 

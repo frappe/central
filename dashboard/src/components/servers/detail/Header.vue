@@ -111,7 +111,9 @@ const canOpen = computed(
 		props.actions.open &&
 		!isUbuntu.value &&
 		!isSettingUp(props.server.status) &&
-		(!!props.siteUrl || !!props.server.gateway_url),
+		// Without a site, Open signs in to Pilot, which a free trial locks.
+		(!!props.siteUrl ||
+			(!!props.server.gateway_url && !props.actions.isAccessLocked)),
 )
 
 // Overview and Open are the page itself and its primary button, so the menu omits them.
@@ -128,12 +130,47 @@ const handlers: Partial<Record<ServerMenuVerb, () => void>> = {
 	terminate: () => emit('terminate'),
 }
 
-const menu = computed(() =>
-	getServerMenu(props.server, props.actions, (verb) => handlers[verb]?.(), {
-		opensSite: !!props.siteUrl,
-		isOnServerPage: true,
-	}),
-)
+const operatorItems = computed(() => {
+	const links = props.details?.operator_links
+	if (!links) return []
+
+	const { desk_url: deskUrl, atlas_url: atlasUrl } = links
+	const open = (url: string) => window.open(url, '_blank', 'noopener')
+	return [
+		{
+			label: 'Open in Desk',
+			icon: 'lucide-app-window',
+			onClick: () => open(deskUrl),
+		},
+		...(atlasUrl
+			? [
+					{
+						label: 'Open in Atlas',
+						icon: 'lucide-earth',
+						onClick: () => open(atlasUrl),
+					},
+				]
+			: []),
+	]
+})
+
+const menu = computed(() => {
+	const groups = getServerMenu(
+		props.server,
+		props.actions,
+		(verb) => handlers[verb]?.(),
+		{
+			site: props.siteUrl ? new URL(props.siteUrl).host : null,
+			isOnServerPage: true,
+		},
+	)
+	if (!operatorItems.value.length) return groups
+
+	return [
+		...groups,
+		{ group: 'Operator', hideLabel: true, options: operatorItems.value },
+	]
+})
 </script>
 
 <template>
@@ -158,6 +195,22 @@ const menu = computed(() =>
 						:theme="visual.badgeTheme"
 						:class="{ 'animate-pulse': visual.motion !== 'none' }"
 					/>
+
+					<Tooltip
+						v-if="details?.has_wireguard_access"
+						text="Your team's WireGuard VPN devices reach this server at its private address."
+					>
+						<RouterLink
+							:to="`/servers/${server.resource_id}/access`"
+							class="shrink-0 rounded-full focus-visible:ring-2 focus-visible:ring-outline-gray-3"
+						>
+							<Badge label="VPN" theme="blue">
+								<template #prefix>
+									<span class="lucide-shield-check size-3" aria-hidden="true" />
+								</template>
+							</Badge>
+						</RouterLink>
+					</Tooltip>
 				</div>
 
 				<ul
@@ -188,7 +241,7 @@ const menu = computed(() =>
 
 		<div class="flex shrink-0 gap-2">
 			<Button
-				v-if="details && actions.terminate"
+				v-if="details && actions.terminate && !actions.isAccessLocked"
 				variant="ghost"
 				:icon="isProtected ? 'lucide-lock' : 'lucide-lock-open'"
 				:label="protectionLabel"

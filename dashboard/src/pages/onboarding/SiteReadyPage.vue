@@ -1,167 +1,154 @@
 <script setup lang="ts">
-import { Alert, Button, ErrorMessage, Spinner } from 'frappe-ui'
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { Alert, Button } from 'frappe-ui'
+import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { API } from '@/api/methods'
+import AuthErrorMessage from '@/components/auth/AuthErrorMessage.vue'
 import AuthShell from '@/components/auth/AuthShell.vue'
 import ProductLogo from '@/components/auth/ProductLogo.vue'
-import { useTrialOnboarding } from '@/composables/useTrialOnboarding'
-import { frappeErrorMessage, methodUrl, postFrappe } from '@/lib/auth'
+import ContactSupportLink from '@/components/common/ContactSupportLink.vue'
+import RotatingText from '@/components/common/RotatingText.vue'
+import SetupJourney from '@/components/onboarding/SetupJourney.vue'
+import { useProduct } from '@/composables/useProduct'
+import { useSiteSetup } from '@/composables/useSiteSetup'
 import { carriedQuery } from '@/lib/authRedirect'
-import type { TrialOnboardingStatus, TrialSiteState } from '@/types/api'
 
-const POLL_MS = 1000
-// A new Pilot accepts Central seconds after it finishes its bootstrap, so the
-// first retries come fast. The schedule still gives up after about 2 minutes.
-const LOGIN_RETRY_DELAYS_MS = [
-	1000, 1000, 1000, 2000, 2000, 2000, 2000, 5000, 5000, 10000, 10000, 15000,
-	15000, 15000, 15000, 20000,
-]
-
-const status = ref<TrialOnboardingStatus | null>(null)
-const error = ref('')
 const route = useRoute()
 const router = useRouter()
-const { readStatus } = useTrialOnboarding()
-let timer: ReturnType<typeof setTimeout> | undefined
-let loginRetryIndex = 0
+const { product } = useProduct()
+const {
+	site,
+	journey,
+	stage,
+	isDelayed,
+	isStuck,
+	secondsLeft,
+	failure,
+	error,
+	isSigningIn,
+	openSite,
+} = useSiteSetup()
 
-const site = computed(() => status.value?.site ?? null)
-const creation = computed(() => status.value?.creation ?? null)
-const isReady = computed(() => site.value?.ready === true && !error.value)
-const isFailed = computed(
-	() => site.value?.status === 'Failed' || Boolean(creation.value?.error),
-)
-// What the customer is waiting on: the machine being built, then the site answering.
-const waitingOn = computed(
-	() => site.value?.status ?? creation.value?.status ?? 'Pending',
-)
+const title = computed(() => product.value?.title)
+const signInFailed = computed(() => Boolean(error.value && site.value?.ready))
 
-async function poll() {
-	try {
-		status.value = await readStatus()
-		if (isReady.value) return claim()
-		if (isFailed.value) return
-	} catch (exception) {
-		error.value = frappeErrorMessage(
-			exception,
-			'Lost track of your site. Refresh to retry.',
-		)
-		return
-	}
-	timer = setTimeout(poll, POLL_MS)
+const heading = computed(() => {
+	if (stage.value === 'failed') return `Setup didn't finish`
+	if (stage.value === 'arrived')
+		return title.value ? `${title.value} is ready` : 'Your site is ready'
+	return `Getting ${title.value ?? 'your site'} ready`
+})
+
+const lines = computed(() => {
+	if (stage.value === 'arrived')
+		return [`Opening ${title.value ?? 'your site'}…`]
+	if (stage.value === 'failed') return []
+	const messages = product.value?.setup_messages
+	return messages?.length
+		? messages
+		: ['Setting things up…', 'Preparing your workspace…', 'Almost there…']
+})
+
+const failureDetail = computed(() => {
+	const reference = journey.value?.reference
+	return [failure.value, reference && `Reference: ${reference}`]
+		.filter(Boolean)
+		.join(' ')
+})
+
+const supportContext = computed(() => ({
+	Topic: 'Site setup',
+	Product: title.value,
+	Reference: journey.value?.reference,
+}))
+
+function tryAgain() {
+	router.push({ path: '/onboarding/site', query: carriedQuery(route.query) })
 }
-
-// Ready means the site answered. Claiming hands back a way in and schedules the
-// customer's name behind the response. A new Pilot can reject Central authentication
-// briefly, so only that state is retried without starting the rename.
-async function claim() {
-	try {
-		const claimed = await postFrappe<TrialSiteState>(methodUrl(API.claimSite), {
-			name: site.value!.name,
-		})
-		if (claimed.login_pending) {
-			const retryDelay = LOGIN_RETRY_DELAYS_MS[loginRetryIndex]
-			if (retryDelay === undefined) {
-				error.value =
-					'Your site is up, but we could not sign you in automatically.'
-				return
-			}
-			loginRetryIndex += 1
-			timer = setTimeout(claim, retryDelay)
-			return
-		}
-		if (!claimed.login_url) {
-			error.value =
-				'Your site is up, but we could not sign you in automatically.'
-			return
-		}
-		window.location.assign(claimed.login_url)
-	} catch (exception) {
-		error.value = frappeErrorMessage(
-			exception,
-			'Your site is up, but we could not sign you in automatically.',
-		)
-	}
-}
-
-function openSite() {
-	if (site.value?.url) window.location.assign(site.value.url)
-}
-
-onMounted(poll)
-onUnmounted(() => clearTimeout(timer))
 </script>
 
 <template>
 	<AuthShell show-progress :step="4">
-		<template v-if="isReady && site">
-			<div
-				class="mb-6 grid size-10 place-items-center rounded-5 bg-surface-green-3 text-ink-green-7"
-			>
-				<span class="lucide-check size-5" aria-hidden="true" />
-			</div>
+		<template v-if="signInFailed">
 			<h1 class="text-2xl-semibold text-ink-gray-9">Your site is ready</h1>
 			<p class="mt-2 text-p-base text-ink-gray-5">
-				Signing you in to
-				<span class="text-p-base-medium text-ink-gray-8">{{ site.url }}</span>…
-			</p>
-
-			<div class="mt-8 flex items-center gap-3 text-ink-gray-5">
-				<Spinner size="lg" />
-				<span class="text-base">Taking you to your site…</span>
-			</div>
-		</template>
-
-		<template v-else-if="error && site?.ready">
-			<h1 class="text-2xl-semibold text-ink-gray-9">Your site is ready</h1>
-			<p class="mt-2 text-p-base text-ink-gray-5">
-				We couldn't sign you in automatically, but your site is up. Open it and
-				sign in as Administrator.
+				Your site is up, but signing you in is taking longer than usual. Open
+				your site to try again.
 			</p>
 			<Button
 				class="mt-8 w-full"
 				variant="solid"
 				size="md"
 				label="Open my site"
+				:loading="isSigningIn"
 				@click="openSite"
 			/>
-			<ErrorMessage class="mt-4" :message="error" />
-		</template>
-
-		<template v-else-if="isFailed">
-			<h1 class="flex items-center gap-2 text-2xl-semibold text-ink-gray-9">
-				<ProductLogo />
-				Setup didn't finish
-			</h1>
-			<Alert
-				class="mt-6"
-				theme="red"
-				:title="creation?.error?.message || `We couldn't finish setting up your site.`"
-				:primary-action="{ label: 'Try again', onClick: () => router.push({ path: '/onboarding/site', query: carriedQuery(route.query) }) }"
+			<AuthErrorMessage
+				v-if="error && !isSigningIn"
+				class="mt-4"
+				:message="error"
+				page="Site setup"
+				:context="supportContext"
 			/>
 		</template>
 
 		<template v-else>
 			<h1 class="flex items-center gap-2 text-2xl-semibold text-ink-gray-9">
 				<ProductLogo />
-				Setting up your site…
+				{{ heading }}
 			</h1>
-			<p class="mt-2 text-p-base text-ink-gray-5">
-				<template v-if="site?.url">
-					We're getting
-					<span class="text-p-base-medium text-ink-gray-8">{{ site.url }}</span>
-					ready. This takes a moment.
+			<RotatingText class="mt-2 text-p-base text-ink-gray-5" :lines="lines" />
+
+			<SetupJourney
+				class="mt-7"
+				:journey="journey"
+				:stage="stage"
+				:is-delayed="isDelayed || isStuck"
+				:app-title="title"
+				:seconds-left="secondsLeft"
+			/>
+
+			<Alert
+				v-if="isDelayed"
+				class="mt-4"
+				theme="amber"
+				title="This is taking longer than usual"
+				description="You can keep this page open. We'll open your site when it's ready."
+			/>
+			<Alert
+				v-if="isStuck"
+				class="mt-4"
+				theme="red"
+				title="Your site is not ready yet"
+			>
+				<template #description>
+					Setup is taking much longer than it should.
+					<ContactSupportLink :context="supportContext"
+						>Contact support</ContactSupportLink
+					>
+					and we'll look into it. Keep this page open: it still opens your site
+					if setup finishes.
 				</template>
-				<template v-else>
-					We're building the server your site runs on. This takes a moment.
+			</Alert>
+			<Alert
+				v-if="stage === 'failed'"
+				class="mt-4"
+				theme="red"
+				title="We couldn't start your server"
+				:primary-action="{ label: 'Try again', onClick: tryAgain }"
+			>
+				<template #description>
+					<span v-if="failureDetail" class="block">{{ failureDetail }}</span>
+					If this keeps happening,
+					<ContactSupportLink :context="supportContext" />.
 				</template>
-			</p>
-			<div class="mt-8 flex items-center gap-3 text-ink-gray-5">
-				<Spinner size="lg" />
-				<span class="text-base">{{ waitingOn }}…</span>
-			</div>
-			<ErrorMessage v-if="error" class="mt-6" :message="error" />
+			</Alert>
+			<AuthErrorMessage
+				v-if="error"
+				class="mt-4"
+				:message="error"
+				page="Site setup"
+				:context="supportContext"
+			/>
 		</template>
 	</AuthShell>
 </template>

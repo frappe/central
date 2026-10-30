@@ -8,6 +8,11 @@ frappe.ui.form.on("Metal Server", {
 
 		if (frm.is_new() || !frappe.user.has_role("System Manager")) return;
 
+		frm.add_custom_button(__("Link Atlas Host"), async () => {
+			await frm.call({ doc: frm.doc, method: "link_atlas_host" });
+			frm.reload_doc();
+		});
+
 		for (const [kind, label] of [["root", __("Root")], ["bmc", __("BMC")]]) {
 			frm.add_custom_button(__("Show {0} Credentials", [label]), () =>
 				show_credentials(frm, kind, __("{0} Credentials", [label])),

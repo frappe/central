@@ -17,6 +17,7 @@ import frappe
 
 from central.billing.ingester import connection, gst
 from central.billing.ingester.settings import accounting_settings, invoice_series, receivable_account
+from central.billing.platform.jobs import each_isolated
 
 MAX_ATTEMPTS = 3
 BACKOFF_BASE_SECONDS = 60  # 60s, 120s, 240s
@@ -46,6 +47,9 @@ def sync_invoice(invoice: str) -> dict:
 		return {"skipped": "not_billable"}  # cost_report is not a statutory sale
 	if inv.status != "Paid":
 		return {"skipped": "not_paid"}
+	if is_paid_by_free_credit(inv):
+		frappe.db.set_value("Invoice", invoice, "erpnext_sync_status", "Not Required")
+		return {"skipped": "free_credit"}
 	if inv.erpnext_invoice and _settled_there(inv):
 		return {"skipped": "already_synced"}
 
@@ -58,9 +62,6 @@ def sync_invoice(invoice: str) -> dict:
 		if _card_attempt(inv) and not inv.payment_record_id:
 			inv.payment_record_id = _record_card_payment(inv, customer)
 			frappe.db.set_value("Invoice", invoice, "payment_record_id", inv.payment_record_id)
-		if _promotional_part(inv) and not inv.promotional_record_id:
-			inv.promotional_record_id = _settle_promotional(inv, customer)
-			frappe.db.set_value("Invoice", invoice, "promotional_record_id", inv.promotional_record_id)
 	except Exception as e:
 		return _handle_failure(invoice, attempt, _error_text(e))
 
@@ -69,6 +70,7 @@ def sync_invoice(invoice: str) -> dict:
 		invoice,
 		{
 			"erpnext_sync_status": "Synced",
+			"erpnext_synced_at": frappe.utils.now_datetime(),
 			"erpnext_sync_attempts": attempt,
 			"erpnext_sync_error": None,
 			"erpnext_next_retry_at": None,
@@ -77,16 +79,19 @@ def sync_invoice(invoice: str) -> dict:
 	return {
 		"synced": inv.erpnext_invoice,
 		"payment": inv.payment_record_id,
-		"promotional": inv.promotional_record_id,
 		"attempt": attempt,
 	}
 
 
 def _settled_there(inv) -> bool:
-	"""Every part of how the invoice was paid is recorded in the accounting system."""
-	card_done = inv.payment_record_id or not _card_attempt(inv)
-	promotional_done = inv.promotional_record_id or not _promotional_part(inv)
-	return bool(card_done and promotional_done)
+	"""The card payment, if any, is recorded in the accounting system. Promotional credit never is."""
+	return bool(inv.payment_record_id or not _card_attempt(inv))
+
+
+def is_paid_by_free_credit(inv) -> bool:
+	"""Whether promotional credit paid the whole invoice, so nothing was sold to record."""
+	collectable = frappe.utils.flt(inv.total) - frappe.utils.flt(inv.tds_amount)
+	return collectable > 0 and not _card_attempt(inv) and _promotional_part(inv) >= collectable - 0.01
 
 
 def _promotional_part(inv) -> float:
@@ -124,7 +129,7 @@ def retry_failed_syncs(now=None) -> list:
 		],
 		pluck="name",
 	)
-	return [sync_invoice(name) for name in due]
+	return each_isolated("Accounting sync retry", "Invoice", due, sync_invoice)
 
 
 # --- ERPNext transport ------------------------------------------------------
@@ -151,15 +156,19 @@ def _issue(inv, customer: str) -> str:
 
 
 def _build_sales_invoice(inv, customer: str) -> dict:
-	"""Map a Central invoice to a submitted ERPNext Sales Invoice."""
+	"""Map the part of a Central invoice paid with money to a submitted ERPNext Sales Invoice.
+
+	Usage paid with promotional credit is left out, so the Sales Invoice closes exactly
+	against the advances and the card payment."""
 	settings = accounting_settings()
 	tax = gst.treatment(inv.team)
 	# The GST on our invoice decides the rows. A lapsed GSTIN was billed as unregistered.
 	template = tax.template if frappe.utils.flt(inv.output_tax_amount) else None
-	advances, unbacked = _advances(inv)
-	remarks = _marker(inv)
-	if unbacked:
-		remarks += f". Promotional credit used: {unbacked}"
+	items = [_item(li, settings) for li in inv.items]
+	taxes = gst.tax_rows(template)
+	promotional = _promotional_part(inv)
+	if promotional > 0:
+		_keep_the_paid_share(items, taxes, frappe.utils.flt(inv.total) - promotional)
 	return {
 		"doctype": "Sales Invoice",
 		"docstatus": 1,
@@ -176,14 +185,28 @@ def _build_sales_invoice(inv, customer: str) -> dict:
 		"gst_category": _gst_category(inv, tax),
 		"place_of_supply": tax.place_of_supply,
 		"taxes_and_charges": template,
-		"taxes": gst.tax_rows(template),
-		"items": [_item(li, settings) for li in inv.items],
-		"advances": advances,
+		"taxes": taxes,
+		"items": items,
+		"advances": _advances(inv),
 		"allocate_advances_automatically": 0,
 		"disable_rounded_total": 1,
 		"ignore_pricing_rule": 1,
-		"remarks": remarks,
+		"remarks": _marker(inv),
 	}
+
+
+def _keep_the_paid_share(items: list[dict], taxes: list[dict], paid: float) -> None:
+	"""Reprice the lines, tax included, so they add up to exactly what was paid with money.
+
+	The last line takes the rounding remainder, and tax-inclusive rows make the accounting
+	system's grand total equal the lines to the paisa."""
+	weights = [frappe.utils.flt(item["rate"]) for item in items]
+	whole = sum(weights)
+	for item, weight in zip(items, weights, strict=True):
+		item["rate"] = frappe.utils.flt(paid * weight / whole, 2) if whole else 0
+	items[-1]["rate"] = frappe.utils.flt(paid - sum(item["rate"] for item in items[:-1]), 2)
+	for row in taxes:
+		row["included_in_print_rate"] = 1
 
 
 def _item(line, settings) -> dict:
@@ -205,15 +228,11 @@ def _gst_category(inv, tax) -> str:
 	return "Unregistered"
 
 
-def _advances(inv) -> tuple[list[dict], float]:
-	"""The advances this invoice's paid top-up credit came from, oldest first.
-
-	Returns the rows and any wallet credit no advance covers (promotional credit).
-	"""
+def _advances(inv) -> list[dict]:
+	"""The advances this invoice's paid top-up credit came from, oldest first."""
 	needed = frappe.utils.flt(inv.advance_applied)
-	unbacked = frappe.utils.flt(frappe.utils.flt(inv.credit_applied) - needed, 2)
 	if needed <= 0:
-		return [], unbacked
+		return []
 	pending = frappe.get_all(
 		"Credit Ledger Entry",
 		filters=[
@@ -266,16 +285,19 @@ def _advances(inv) -> tuple[list[dict], float]:
 		needed = frappe.utils.flt(needed - take, 2)
 		if needed <= 0:
 			break
-	return rows, unbacked
+	return rows
 
 
 def _card_attempt(inv):
 	"""The captured card or UPI payment that settled this invoice, if one did."""
+	from central.billing.payments.refunds import late_captured_attempts
+
 	if frappe.utils.flt(inv.amount_paid) <= 0:
 		return None
-	name = frappe.db.get_value(
-		"Payment Attempt", {"invoice": inv.name, "status": "Captured"}, "name", order_by="creation desc"
-	)
+	filters = {"invoice": inv.name, "status": "Captured"}
+	if late := late_captured_attempts(inv.name):
+		filters["name"] = ["not in", late]  # captured after the invoice was paid; never in the books
+	name = frappe.db.get_value("Payment Attempt", filters, "name", order_by="creation desc")
 	return frappe.get_doc("Payment Attempt", name) if name else None
 
 
@@ -297,8 +319,7 @@ def _record_card_payment(inv, customer: str) -> str | None:
 	if attempt.currency != inv.currency:
 		raise RuntimeError(f"{inv.name} is in {inv.currency} but was paid in {attempt.currency}")
 	sales_invoice = connection.fetch("Sales Invoice", inv.erpnext_invoice)
-	# What the card took, not what is outstanding: promotional credit on the same
-	# invoice is settled on its own, and is not card money.
+	# What the card took, capped at what is outstanding.
 	owed = min(frappe.utils.flt(attempt.amount), frappe.utils.flt(sales_invoice.outstanding_amount))
 	# The receivable and the clearing account are both in the invoice's currency.
 	rate = frappe.utils.flt(sales_invoice.conversion_rate) or 1
@@ -329,13 +350,6 @@ def _record_card_payment(inv, customer: str) -> str | None:
 		"remarks": f"{attempt.gateway} payment {attempt.gateway_transaction_id} for {_marker(inv)}",
 	}
 	return connection.post("api/resource/Payment Entry", payload).name
-
-
-def _settle_promotional(inv, customer: str) -> str:
-	"""A journal entry that pays the promotional part of the invoice from the promotional account."""
-	return promotional_journal(
-		inv, customer, inv.erpnext_invoice, _promotional_part(inv), f"{inv.name}-promotional"
-	)
 
 
 def promotional_journal(inv, customer: str, against: str, amount: float, marker: str, reverse=False) -> str:

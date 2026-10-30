@@ -55,16 +55,17 @@ class PlanChange:
 
 	def get_progress(self) -> dict:
 		"""What the waiting page shows. The site is ready only once it answers again."""
+		url = self.site.routed_url
 		step = STEPS.get(self.action.status, "saving")
-		if step == "starting" and is_site_reachable(self.site.primary_url):
+		if step == "starting" and is_site_reachable(url):
 			step = "ready"
 
 		configuration = self.action.get_resize_configuration()
 		plan, from_plan = configuration.plan, configuration.from_plan
 		return {
 			"step": step,
-			"site": urlsplit(self.site.primary_url).hostname,
-			"site_url": self.site.primary_url,
+			"site": urlsplit(url).hostname,
+			"site_url": url + (self.site.get_landing_route() or ""),
 			"plan": frappe.db.get_value("Plan", plan, "title") if plan else None,
 			"current_plan": frappe.db.get_value("Plan", from_plan, "title") if from_plan else None,
 			"shape": configuration.shape.model_dump(),

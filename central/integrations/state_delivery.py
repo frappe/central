@@ -120,7 +120,7 @@ def _apply_state(name: str, report: dict) -> None:
 	if not status or not _reported_at(report):
 		return
 	if not VirtualMachine.record_observed_state(
-		name, frappe.utils.now_datetime(), {"status": status}, reported_at=report.get("observed_at")
+		name, frappe.utils.now_datetime(), _observed(report, status), reported_at=report.get("observed_at")
 	):
 		return
 
@@ -133,6 +133,24 @@ def _apply_state(name: str, report: dict) -> None:
 			job_id=f"server-refresh:{name}",
 			deduplicate=True,
 		)
+
+
+def _observed(report: dict, status: str) -> dict:
+	"""The state a report sets. A report without a host keeps the one Central knows."""
+	observed = {"status": status}
+	if _reported_host(report):
+		observed["atlas_host_id"] = _reported_host(report)
+	return observed
+
+
+def _has_moved_host(report: dict, server: frappe._dict) -> bool:
+	host = _reported_host(report)
+	return bool(host) and host != server.atlas_host_id
+
+
+def _reported_host(report: dict) -> str | None:
+	host = report.get("server")
+	return host if isinstance(host, str) and host else None
 
 
 def _decide(report: dict, server: frappe._dict) -> dict | None:
@@ -149,7 +167,7 @@ def _decide(report: dict, server: frappe._dict) -> dict | None:
 	reported_at = _reported_at(report)
 	if not reported_at:
 		return _ignored("invalid observed_at")
-	if server.status == status:
+	if server.status == status and not _has_moved_host(report, server):
 		# A same-state report still advances the regional watermark. This prevents an
 		# older state change arriving later from regressing the server.
 		if not server.last_reported_at or reported_at > frappe.utils.get_datetime(server.last_reported_at):
@@ -196,7 +214,7 @@ def _atlas_server_for(region: str, virtual_machine: str | None) -> frappe._dict 
 	return frappe.db.get_value(
 		"Virtual Machine",
 		{"region": region, "atlas_vm_id": virtual_machine},
-		["name", "status", "last_reported_at"],
+		["name", "status", "last_reported_at", "atlas_host_id"],
 		as_dict=True,
 	)
 

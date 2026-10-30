@@ -83,13 +83,20 @@ async function openControls(
 async function openResize(page: Page): Promise<void> {
 	await page.getByRole('button', { name: 'Resize server', exact: true }).click()
 	await expect(
-		page.getByRole('radio', { name: 'Keep 25 GB disk' }),
+		page.getByRole('radio', { name: 'Keep current 25 GB disk size' }),
 	).toBeVisible()
 }
 
 async function removeSSH(page: Page): Promise<void> {
 	await page
 		.getByRole('button', { name: 'Remove SSH rule', exact: true })
+		.click()
+}
+
+async function discardChanges(page: Page): Promise<void> {
+	await page.getByRole('button', { name: 'Discard', exact: true }).click()
+	await page
+		.getByRole('button', { name: 'Discard changes', exact: true })
 		.click()
 }
 
@@ -175,30 +182,42 @@ test('retained storage cannot bypass the spending limit or a missing rate', asyn
 	await expect(page.getByRole('button', { name: /0.125 vCPU/ })).toBeDisabled()
 })
 
-test('removal stays visible, Undo restores it and observation refresh keeps the draft', async ({
+test('removal hides the rule until Undo, Mod+Z or Discard, and a refresh keeps the draft', async ({
 	page,
 }, testInfo) => {
 	await openControls(page)
+	const sshRule = page.getByRole('button', { name: 'Remove SSH rule' })
 	await removeSSH(page)
-	await expect(page.getByText('Removed on apply')).toBeVisible()
-	await expect(page.getByText('1 change pending')).toBeVisible()
+	await expect(sshRule).toHaveCount(0)
+	await expect(page.getByText('1 unsaved change')).toBeVisible()
 	await page.screenshot({ path: testInfo.outputPath('firewall-removal.png') })
 	await page.getByRole('button', { name: 'Refresh observed rules' }).click()
-	await expect(page.getByText('Removed on apply')).toBeVisible()
-	await page.getByRole('button', { name: 'Keep SSH rule', exact: true }).click()
-	await expect(page.getByText('Removed on apply')).toHaveCount(0)
+	await expect(sshRule).toHaveCount(0)
+	await page.getByRole('button', { name: 'Undo', exact: true }).click()
+	await expect(sshRule).toBeVisible()
 	await expect(
 		page.getByRole('button', { name: 'Apply changes', exact: true }),
-	).toHaveCount(0)
+	).toBeDisabled()
 	await removeSSH(page)
-	await page.getByRole('button', { name: 'Firewall options' }).click()
-	await page
-		.getByRole('menuitem', { name: 'Reset all pending changes' })
-		.click()
-	await page.getByRole('button', { name: 'Reset changes', exact: true }).click()
-	await expect(
-		page.getByRole('button', { name: 'Remove SSH rule' }),
-	).toBeVisible()
+	await page.keyboard.press('ControlOrMeta+z')
+	await expect(sshRule).toBeVisible()
+	await removeSSH(page)
+	await discardChanges(page)
+	await expect(sshRule).toBeVisible()
+})
+
+test('Mod+Z leaves text undo to the field being typed in', async ({ page }) => {
+	await openControls(page)
+	await page.goto('/tests/server-controls.html?specificFirewall=1')
+	const httpsRule = page.getByRole('button', { name: 'Remove HTTPS rule' })
+	await httpsRule.click()
+	const address = page.getByRole('textbox', {
+		name: 'Add an IP address or range, rule 1',
+		exact: true,
+	})
+	await address.fill('203.0.113.9')
+	await address.press('ControlOrMeta+z')
+	await expect(httpsRule).toHaveCount(0)
 })
 
 test('removal reaches the API only after review and Apply', async ({
@@ -228,7 +247,7 @@ test('resize controls fit a narrow screen', async ({ page }, testInfo) => {
 	await openControls(page)
 	await openResize(page)
 	await expect(
-		page.getByRole('radio', { name: 'Keep 25 GB disk' }),
+		page.getByRole('radio', { name: 'Keep current 25 GB disk size' }),
 	).toBeVisible()
 	await page.getByRole('button', { name: /0.125 vCPU/ }).click()
 	await page
@@ -250,26 +269,23 @@ test('specific addresses replace unrestricted access and invalid ranges stay in 
 }, testInfo) => {
 	await openControls(page)
 	await page
-		.getByRole('combobox', { name: 'Allowed from', exact: true })
-		.nth(1)
+		.getByRole('combobox', { name: 'Allowed from, rule 2', exact: true })
 		.click()
 	await page
 		.getByRole('option', { name: 'Specific addresses', exact: true })
 		.click()
 	const input = page.getByRole('textbox', {
-		name: 'New IP address or range, rule 2',
+		name: 'Add an IP address or range, rule 2',
 		exact: true,
 	})
 	await input.fill('999.1.1.1')
-	await page
-		.getByRole('button', { name: 'Add IP address', exact: true })
-		.click()
+	await page.getByRole('button', { name: 'Add', exact: true }).click()
 	await expect(page.getByText('Enter a valid IPv4 address.')).toBeVisible()
 	await input.fill('203.0.113.7')
 	await input.press('Enter')
 	await expect(
-		page.getByRole('button', { name: 'Allowed addresses', exact: true }),
-	).toContainText('203.0.113.7/32')
+		page.getByRole('button', { name: 'Remove 203.0.113.7/32', exact: true }),
+	).toBeVisible()
 	await page.screenshot({ path: testInfo.outputPath('firewall-addresses.png') })
 	const request = page.waitForRequest(
 		'**/central.api.servers.update_server_firewall',
@@ -334,7 +350,7 @@ test('enabling an empty firewall applies the complete web defaults together', as
 	await openControls(page)
 	await page.goto('/tests/server-controls.html?emptyFirewall=1')
 	await expect(
-		page.getByRole('button', { name: 'Add rule', exact: true }),
+		page.getByRole('button', { name: 'Add incoming rule', exact: true }),
 	).toHaveCount(0)
 	const request = page.waitForRequest(
 		'**/central.api.servers.update_server_firewall',
@@ -357,8 +373,7 @@ test('new rules show guidance without an empty error or empty address picker', a
 }) => {
 	await openControls(page)
 	await page
-		.getByRole('button', { name: 'Add rule', exact: true })
-		.first()
+		.getByRole('button', { name: 'Add incoming rule', exact: true })
 		.click()
 	await page
 		.getByRole('combobox', { name: 'Service, rule 3', exact: true })
@@ -366,13 +381,10 @@ test('new rules show guidance without an empty error or empty address picker', a
 	await page.getByRole('option', { name: 'Custom TCP', exact: true }).click()
 	await expect(
 		page.getByRole('textbox', {
-			name: 'New IP address or range, rule 3',
+			name: 'Add an IP address or range, rule 3',
 			exact: true,
 		}),
 	).toBeVisible()
-	await expect(
-		page.getByRole('button', { name: 'Allowed addresses', exact: true }),
-	).toHaveCount(0)
 	await expect(page.getByRole('alert')).toHaveCount(0)
 	await expect(
 		page.getByText('Use a port from 1 to 65535, or a range such as 8000-8100.'),
@@ -387,14 +399,8 @@ test('background observations preserve an address still being typed', async ({
 }) => {
 	await openControls(page)
 	await page.goto('/tests/server-controls.html?specificFirewall=1')
-	await page
-		.getByRole('button', { name: 'Allowed addresses', exact: true })
-		.click()
-	await page
-		.getByRole('button', { name: 'Add IP address', exact: true })
-		.click()
 	const input = page.getByRole('textbox', {
-		name: 'New IP address or range, rule 1',
+		name: 'Add an IP address or range, rule 1',
 		exact: true,
 	})
 	await input.fill('203.0.113.8')
@@ -454,13 +460,7 @@ test('changed observations block an older draft until reset', async ({
 	await expect(
 		page.getByRole('button', { name: 'Apply changes', exact: true }),
 	).toBeDisabled()
-	await page
-		.getByRole('button', { name: 'Firewall options', exact: true })
-		.click()
-	await page
-		.getByRole('menuitem', { name: 'Reset all pending changes', exact: true })
-		.click()
-	await page.getByRole('button', { name: 'Reset changes', exact: true }).click()
+	await discardChanges(page)
 	await expect(
 		page.getByRole('button', { name: 'Remove SSH rule', exact: true }),
 	).toHaveCount(0)

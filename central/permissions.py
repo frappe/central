@@ -145,6 +145,29 @@ def team_ssh_key_has_permission(doc, user: str | None = None, ptype: str | None 
 	return bool(doc.team) and can_on_any_server(user, doc.team, "server:view")
 
 
+def wireguard_device_query_conditions(user: str | None = None) -> str:
+	"""1. Operators see all devices.
+	2. Users see devices in teams where they hold server:wireguard.
+	3. Other users see no devices.
+	"""
+	return _team_field_query_conditions("WireGuard Device", "server:wireguard", user)
+
+
+def wireguard_device_has_permission(doc, user: str | None = None, ptype: str | None = None, **kwargs) -> bool:
+	"""1. Operators may manage devices.
+	2. Members with team-wide server:wireguard may read and add devices and remove their own.
+	3. Members with team:manage_members may also remove any device of the team.
+	4. Only operators may change a device after it is added.
+	"""
+	user = user or frappe.session.user
+	if user_has_operator_bypass(user):
+		return True
+	if not doc.team or not can(user, doc.team, "server:wireguard") or ptype == "write":
+		return False
+
+	return ptype != "delete" or doc.added_by == user or can(user, doc.team, "team:manage_members")
+
+
 def resource_action_query_conditions(user: str | None = None) -> str:
 	"""1. A System Manager sees every action.
 	2. A user sees the actions of a team where the user holds server:view team-wide.
@@ -277,15 +300,28 @@ def team_service_has_permission(doc, user: str | None = None, ptype: str | None 
 	return user_has_operator_bypass(user or frappe.session.user)
 
 
+def billing_record_query_conditions(user: str | None = None) -> str:
+	"""1. A System Manager sees every billing record.
+	2. Everyone else sees none: customers reach billing data only through the billing API,
+	   which checks billing:view or billing:manage on the record's team."""
+	return _operator_only_query_conditions(user)
+
+
+def billing_record_has_permission(doc, user: str | None = None, ptype: str | None = None, **kwargs) -> bool:
+	"""1. A System Manager has every permission.
+	2. Everyone else has none on the record itself; the billing API serves them."""
+	return user_has_operator_bypass(user or frappe.session.user)
+
+
 @frappe.whitelist(allow_guest=True)  # nosemgrep -- same surface as frappe.realtime.has_permission
-def realtime_has_permission(doctype: str, name: str, ptype: str = "read") -> bool:
+def realtime_has_permission(doctype: str, name: str) -> bool:
 	"""1. A doctype room of a team-scoped DocType is for operators only: it carries every team's changes.
 	2. Everything else follows Frappe's own check."""
 	is_team_scoped = doctype in frappe.get_hooks("has_permission")
 	if not name and is_team_scoped and not user_has_operator_bypass(frappe.session.user):
 		frappe.throw(_("Not permitted"), frappe.PermissionError)
 
-	return has_realtime_permission(doctype, name, ptype)
+	return has_realtime_permission(doctype, name)
 
 
 def _operator_only_query_conditions(user: str | None = None) -> str:

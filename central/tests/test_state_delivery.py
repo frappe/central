@@ -201,6 +201,23 @@ class TestStateDelivery(IntegrationTestCase):
 		self.apply(self.state_report(status="stopped", observed_at="2026-06-02 00:00:00"))
 		self.assertEqual(self.server.reload().status, "Stopped")
 
+	def test_the_reported_host_is_recorded(self):
+		self.apply(self.state_report(server="host-1"))
+		self.assertEqual(self.server.reload().atlas_host_id, "host-1")
+
+	def test_a_report_without_a_host_keeps_the_known_host(self):
+		self.server.db_set("atlas_host_id", "host-1")
+		self.apply(self.state_report())
+		self.assertEqual(self.server.reload().atlas_host_id, "host-1")
+
+	def test_a_host_move_is_applied_when_the_state_is_unchanged(self):
+		self.server.db_set({"status": "Running", "atlas_host_id": "host-1"})
+
+		report = self.state_report(server="host-2")
+		self.assertEqual(self.deliver(report), {"queued": True, "resource_id": self.server.name})
+		self.apply(report)
+		self.assertEqual(self.server.reload().atlas_host_id, "host-2")
+
 	def test_an_unchanged_state_is_ignored(self):
 		self.server.db_set("status", "Running")
 

@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { Alert } from 'frappe-ui'
-import { onErrorCaptured, ref, watch } from 'vue'
+import { computed, onErrorCaptured, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
+import { useSupport } from '@/composables/useSupport'
 
 // App-wide safety net: catches an unexpected render/lifecycle error anywhere
 // below it and shows a recoverable fallback instead of a white screen. Routine
@@ -9,6 +10,19 @@ import { useRoute } from 'vue-router'
 // unexpected. Navigating away clears it, so the rest of the app stays usable.
 const failed = ref(false)
 const route = useRoute()
+const { getContactSupportOption } = useSupport()
+
+// The ticket names the page by its route pattern, such as /join/:token. The real path
+// can hold an invitation token, which must not reach a third-party URL.
+const supportAction = computed(() => {
+	const option = getContactSupportOption({
+		Page:
+			route.matched[route.matched.length - 1]?.path ?? String(route.name ?? ''),
+	})
+	return option
+		? { label: 'Contact support', onClick: option.onClick }
+		: undefined
+})
 
 onErrorCaptured((error) => {
 	failed.value = true
@@ -37,8 +51,9 @@ function reload(): void {
 			class="w-full max-w-xl text-left"
 			theme="red"
 			title="This page ran into a problem"
-			description="Reload the page to try again. If the problem continues, contact support with the page address and what you were doing."
+			description="Reload the page to try again. If the problem continues, contact support and say what you were doing."
 			:primary-action="{ label: 'Reload page', onClick: reload }"
+			:secondary-action="supportAction"
 		/>
 	</div>
 	<slot v-else />

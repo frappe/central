@@ -19,6 +19,7 @@ issued line item is never mutated (see billing.reissue_invoice).
 import frappe
 from frappe import _
 
+from central.billing.platform.records import save_billing_record
 from central.billing.revenue import credits
 from central.billing.states import transition
 
@@ -29,11 +30,18 @@ def _adapter(gateway: str):
 	return get_adapter(frappe.get_doc("Payment Gateway", gateway))
 
 
-def issue_refund(payment_attempt: str, amount=None, destination: str = "Source", reason: str | None = None):
+def issue_refund(
+	payment_attempt: str,
+	amount=None,
+	destination: str = "Source",
+	reason: str | None = None,
+	late_capture: bool = False,
+):
 	"""Refund (part of) a captured Payment Attempt to source or to the wallet.
 
 	`amount` defaults to the full captured amount (a full dispute). The invoice
-	is never moved off Paid.
+	is never moved off Paid. `late_capture` marks a charge captured after the invoice
+	was already paid: the accounting system gets no credit note or payment for it.
 	"""
 	attempt = frappe.get_doc("Payment Attempt", payment_attempt)
 	if attempt.status not in ("Captured", "Refunded"):
@@ -56,6 +64,7 @@ def issue_refund(payment_attempt: str, amount=None, destination: str = "Source",
 			"currency": attempt.currency,
 			"destination": destination,
 			"reason": reason,
+			"late_capture": int(late_capture),
 			"status": "Initiated",
 			"created_at": frappe.utils.now_datetime(),
 		}
@@ -67,6 +76,11 @@ def issue_refund(payment_attempt: str, amount=None, destination: str = "Source",
 		_to_source(refund, attempt, reason)
 
 	return refund
+
+
+def late_captured_attempts(invoice: str) -> list[str]:
+	"""The charges captured after this invoice was paid. Only their own late capture Refund gives them back."""
+	return frappe.get_all("Refund", filters={"invoice": invoice, "late_capture": 1}, pluck="payment_attempt")
 
 
 def full_dispute(payment_attempt: str, reason: str | None = None):
@@ -96,7 +110,7 @@ def _to_wallet(refund, attempt):
 		refund, "Completed", actor=frappe.session.user, correlation=attempt.invoice, amount=refund.amount
 	)
 	refund.completed_at = frappe.utils.now_datetime()
-	refund.save(ignore_permissions=True)
+	save_billing_record(refund)
 	return refund
 
 
@@ -122,6 +136,6 @@ def _to_source(refund, attempt, reason):
 				correlation=attempt.invoice,
 				amount=refund.amount,
 			)
-			attempt.save(ignore_permissions=True)
-	refund.save(ignore_permissions=True)
+			save_billing_record(attempt)
+	save_billing_record(refund)
 	return refund

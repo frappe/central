@@ -1,0 +1,122 @@
+{
+ "actions": [],
+ "allow_bulk_edit": 1,
+ "autoname": "field:provider",
+ "creation": "2026-10-20 14:50:38.036333",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "enabled",
+  "provider",
+  "client_id",
+  "client_secret",
+  "column_break_app",
+  "endpoints_section",
+  "authorize_url",
+  "token_url",
+  "sign_in_section",
+  "scopes",
+  "query_parameters"
+ ],
+ "fields": [
+  {
+   "description": "The key sites sign in with, e.g. microsoft",
+   "fieldname": "provider",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Provider",
+   "reqd": 1,
+   "set_only_once": 1,
+   "unique": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Enabled"
+  },
+  {
+   "fieldname": "column_break_app",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "client_id",
+   "fieldtype": "Data",
+   "label": "Client ID"
+  },
+  {
+   "fieldname": "client_secret",
+   "fieldtype": "Password",
+   "label": "Client Secret"
+  },
+  {
+   "fieldname": "endpoints_section",
+   "fieldtype": "Section Break",
+   "label": "Endpoints"
+  },
+  {
+   "fieldname": "authorize_url",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Authorize URL",
+   "options": "URL",
+   "reqd": 1
+  },
+  {
+   "fieldname": "token_url",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Token URL",
+   "options": "URL",
+   "reqd": 1
+  },
+  {
+   "fieldname": "sign_in_section",
+   "fieldtype": "Section Break",
+   "label": "Sign-in"
+  },
+  {
+   "fieldname": "scopes",
+   "fieldtype": "Table",
+   "label": "Scopes",
+   "options": "OAuth Scope"
+  },
+  {
+   "description": "Added to the sign-in link",
+   "fieldname": "query_parameters",
+   "fieldtype": "Table",
+   "label": "Query Parameters",
+   "options": "Query Parameters"
+  }
+ ],
+ "grid_page_length": 50,
+ "links": [],
+ "modified": "2026-10-21 00:44:49.250559",
+ "modified_by": "Administrator",
+ "module": "Central",
+ "name": "Email OAuth Provider",
+ "naming_rule": "By fieldname",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

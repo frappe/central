@@ -11,9 +11,10 @@ from frappe import _
 from frappe.model.document import Document
 from frappe.utils import now_datetime
 
+from central.infrastructure.doctype.blocked_domain.blocked_domain import BlockedDomain, normalize_domain
 from central.infrastructure.doctype.region.atlas_connection import is_auto_routed_label
-from central.infrastructure.doctype.region.region import REGIONAL_SERVICES, Region
-from central.integrations.proxy import ProxyError
+from central.infrastructure.doctype.region.region import Region
+from central.integrations.proxy import ProxyError, get_pre_authorized_zone
 
 if TYPE_CHECKING:
 	from central.infrastructure.doctype.pilot_credential.pilot_credential import PilotCredential
@@ -38,8 +39,8 @@ class SiteDomain(Document):
 
 		server: DF.Link
 		attempts: DF.Int
+		diagnostic: DF.Code | None
 		domain: DF.Data
-		error_log: DF.Link | None
 		failure_reason: DF.SmallText | None
 		ipv6_address: DF.Data | None
 		last_attempt_at: DF.Datetime | None
@@ -69,14 +70,25 @@ class SiteDomain(Document):
 		self.domain = normalize_domain(self.domain)
 
 	def validate(self) -> None:
+		self.domain = normalize_domain(self.domain)
+		if (
+			self.has_value_changed("domain")
+			or self.has_value_changed("server")
+			or self.has_value_changed("team")
+		):
+			BlockedDomain.validate_assignment(self.domain)
 		self.route_type = self.get_route_type()
 		self.validate_targets()
 		self.validate_auto_routed_host()
 		if self.has_auto_routed_name:
 			frappe.throw(_("The region routes {0} already. It needs no route record.").format(self.domain))
+		self.validate_chosen_subdomain()
 
 	def after_insert(self) -> None:
 		frappe.enqueue_doc(self.doctype, self.name, "apply", enqueue_after_commit=True)
+
+	def before_rename(self, old_name: str, new_name: str, merge: bool = False) -> None:
+		BlockedDomain.validate_assignment(new_name)
 
 	def on_trash(self) -> None:
 		if self.has_auto_routed_name:
@@ -106,9 +118,6 @@ class SiteDomain(Document):
 		label = self.domain.removesuffix(f".{zone}")
 		if "." in label:
 			frappe.throw(_("A site must be one label below {0}.").format(zone))
-		if label in REGIONAL_SERVICES or label.startswith("proxy-"):
-			frappe.throw(_("The site name {0} is reserved.").format(label))
-
 		return "Site"
 
 	def validate_targets(self) -> None:
@@ -137,6 +146,20 @@ class SiteDomain(Document):
 		it from the label, so no record here could ever bring it to this server."""
 		if self.has_auto_routed_name and not self.is_auto_routed:
 			frappe.throw(_("The region routes {0} to another server.").format(self.domain))
+
+	def validate_chosen_subdomain(self) -> None:
+		"""Refuse a site label that a Site on another live server has chosen. The Site holds the
+		name before its rename routes it."""
+		if self.route_type != "Site":
+			return
+
+		filters = {
+			"subdomain": self.site_label,
+			"server": ["!=", self.server],
+			"server.status": ["!=", "Terminated"],
+		}
+		if frappe.get_all("Site", filters=filters, limit=1):
+			frappe.throw(_("{0} is already taken.").format(self.domain), frappe.DuplicateEntryError)
 
 	def apply(self) -> None:
 		"""Send this route to the regional proxy and record the outcome. Safe to repeat.
@@ -167,7 +190,7 @@ class SiteDomain(Document):
 			values.update(
 				status="Active",
 				failure_reason=None,
-				error_log=None,
+				diagnostic=None,
 				attempts=0,
 				ipv6_address=address,
 			)
@@ -194,14 +217,14 @@ class SiteDomain(Document):
 			)
 
 	def failure_values(self, reason: str, title: str) -> dict:
-		"""Build a safe failure and linked traceback for this route."""
+		"""Build a safe failure and the operator traceback for this route."""
 		diagnostic = frappe.get_traceback(with_context=False)
-		error_log = self.log_error(title=title, message=diagnostic)
+		self.log_error(title=title, message=diagnostic)
 
 		return {
 			"status": "Failed",
 			"failure_reason": reason,
-			"error_log": error_log.name,
+			"diagnostic": f"{title}\n\n{diagnostic}",
 		}
 
 	@staticmethod
@@ -231,6 +254,7 @@ class SiteDomain(Document):
 	def get_dns_records(credential: PilotCredential, domain: str) -> dict:
 		"""DNS records a customer sets before the Pilot registers a custom domain. A site needs none."""
 		route = SiteDomain.new_for_pilot(credential, domain)
+		BlockedDomain.validate_assignment(route.domain)
 		if route.route_type == "Site":
 			return {}
 
@@ -262,6 +286,7 @@ class SiteDomain(Document):
 			if route.server != credential.server:
 				frappe.throw(_("{0} is already taken.").format(route.domain), frappe.DuplicateEntryError)
 		else:
+			BlockedDomain.validate_assignment(route.domain)
 			if route.route_type == "Domain":
 				route.verify_ownership(credential)
 			# The Pilot credential already proves the server; the request runs as Guest.
@@ -293,25 +318,22 @@ class SiteDomain(Document):
 		return f"proxy.{Region.get_zone(self.region)}"
 
 	def verify_ownership(self, credential: PilotCredential) -> None:
-		"""Refuse a custom domain until its DNS proves that the customer controls it."""
+		"""Refuse a custom domain until its TXT record proves control and it reaches the region's proxy."""
 		token = frappe.cache.get_value(self.get_verification_key(credential))
 		if not token:
 			frappe.throw(
 				_("Generate the DNS records for {0} first.").format(self.domain), DomainNotVerifiedError
 			)
 
-		if token not in _resolve(f"{VERIFICATION_RECORD}.{self.domain}", "TXT"):
+		if token not in _resolve_txt(f"{VERIFICATION_RECORD}.{self.domain}"):
 			frappe.throw(
 				_("The TXT record for {0} is not set yet.").format(self.domain), DomainNotVerifiedError
 			)
 
-		# An apex cannot hold a CNAME and DNS providers flatten it, so only a subdomain is checked.
-		# TODO: replace this CNAME check with /.well-known/pre-authorize, served by the proxy.
-		if not is_apex(self.domain) and self.get_proxy_host() not in _resolve(self.domain, "CNAME"):
+		# The proxy answers with its zone, so a flattened apex or a CDN in front passes too.
+		if get_pre_authorized_zone(self.domain) != Region.get_zone(self.region):
 			frappe.throw(
-				_("The CNAME record for {0} does not point to {1} yet.").format(
-					self.domain, self.get_proxy_host()
-				),
+				_("{0} does not point to {1} yet.").format(self.domain, self.get_proxy_host()),
 				DomainNotVerifiedError,
 			)
 
@@ -342,28 +364,16 @@ def remove_server_routes(server: str) -> None:
 		frappe.db.commit()  # nosemgrep: frappe-manual-commit -- keep each outcome if a later route crashes the job
 
 
-def normalize_domain(domain: str | None) -> str:
-	return (domain or "").strip().strip(".").lower()
-
-
-def is_apex(domain: str) -> bool:
-	"""True when the domain is the root of its own DNS zone, such as example.com."""
-	return dns.resolver.zone_for_name(domain).to_text().rstrip(".").lower() == domain
-
-
-def _resolve(name: str, record_type: str) -> list[str]:
-	"""The values of one DNS record set, normalized for comparison. Empty when the name has none."""
+def _resolve_txt(name: str) -> list[str]:
+	"""The TXT values of one name. Empty when the name has none."""
 	try:
-		answer = dns.resolver.resolve(name, record_type)
+		answer = dns.resolver.resolve(name, "TXT")
 	except (dns.resolver.NXDOMAIN, dns.resolver.NoAnswer):
 		return []
 	except dns.exception.DNSException as exception:
 		frappe.throw(_("Could not look up {0}: {1}").format(name, str(exception)), DomainNotVerifiedError)
 
-	if record_type == "TXT":
-		return [b"".join(record.strings).decode() for record in answer]
-
-	return [record.to_text().rstrip(".").lower() for record in answer]
+	return [b"".join(record.strings).decode() for record in answer]
 
 
 def on_doctype_update():

@@ -1,4 +1,3 @@
-import type { InvitationStatus } from '@/types/api'
 import type { PaymentAttempt } from '@/types/billing'
 import type { VirtualMachine } from '@/types/Infrastructure/VirtualMachine'
 import type { ActionStatus } from '@/types/serverCreation'
@@ -61,20 +60,6 @@ export function canChange(server: {
 	)
 }
 
-// Team Invitation status → Badge theme. Pending is in-flight (amber), Accepted is
-// done (green), everything else is inactive/neutral or a hard stop.
-const INVITATION_STATUS_THEME: Record<InvitationStatus, BadgeTheme> = {
-	Pending: 'amber',
-	Accepted: 'green',
-	Expired: 'gray',
-	Revoked: 'red',
-	Declined: 'gray',
-}
-
-export function invitationStatusTheme(status: InvitationStatus): BadgeTheme {
-	return INVITATION_STATUS_THEME[status] ?? 'gray'
-}
-
 // Invoice status → Badge theme (case-insensitive), keyed by the Invoice DocType's
 // status options. Paid is the normal state and stays gray — color is reserved
 // for states that need attention.
@@ -92,7 +77,7 @@ export function invoiceTheme(status: string | null | undefined): BadgeTheme {
 }
 
 // Subscription account_standing → Badge theme. Current is the normal state and
-// stays gray; Past Due/Suspended need attention (amber) — matches PayingForRow's
+// stays gray; Past Due/Suspended need attention (amber) — matches PayingForTable's
 // inline `statusInfo` check for the same field.
 const STANDING_THEME: Record<string, BadgeTheme> = {
 	current: 'gray',

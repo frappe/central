@@ -35,6 +35,18 @@
   "default_gst_rate",
   "gst_status_refresh_days",
   "gst_status_daily_limit",
+  "section_break_reports",
+  "reporting_usd_to_inr",
+  "tab_operator_alerts",
+  "section_operator_alerts",
+  "operator_alert_channel",
+  "operator_alert_emails",
+  "section_raven",
+  "raven_site_url",
+  "raven_channel_id",
+  "column_break_raven",
+  "raven_api_key",
+  "raven_api_secret",
   "tab_accounting",
   "section_company",
   "company",
@@ -81,7 +93,7 @@
    "label": "Welcome Credits"
   },
   {
-   "default": "1",
+   "default": "0",
    "description": "Grant welcome credits when a team completes its billing profile.",
    "fieldname": "grant_welcome_credits",
    "fieldtype": "Check",
@@ -198,8 +210,8 @@
    "label": "Log Retention"
   },
   {
-   "default": "90",
-   "description": "Rolling window (days) the gateway logs — Payment Attempt and Webhook Event — are kept before daily pruning. Live/unsettled rows are kept regardless.",
+   "default": "180",
+   "description": "How many days failed Payment Attempts and handled Webhook Events are kept before daily pruning. Never less than 180, so a chargeback still finds its trail. Captured and refunded charges are never pruned.",
    "fieldname": "payment_log_retention_days",
    "fieldtype": "Int",
    "label": "Payment Log Retention (Days)",
@@ -218,7 +230,7 @@
    "description": "How long Central keeps a daily snapshot before it deletes it. A customer can keep one for longer."
   },
   {
-   "default": "2",
+   "default": "0",
    "fieldname": "free_snapshots_per_server",
    "fieldtype": "Int",
    "label": "Free Snapshots per Server",
@@ -263,6 +275,79 @@
    "fieldtype": "Int",
    "label": "GSTIN Lookups per Day",
    "non_negative": 1
+  },
+  {
+   "fieldname": "section_break_reports",
+   "fieldtype": "Section Break",
+   "label": "Reports"
+  },
+  {
+   "fieldname": "reporting_usd_to_inr",
+   "fieldtype": "Float",
+   "label": "USD to INR Rate for Reports",
+   "non_negative": 1,
+   "precision": "2",
+   "description": "Margin reports and dashboards turn USD revenue into INR at this rate, to compare it with the INR bare metal cost. Leave 0 to leave USD revenue out."
+  },
+  {
+   "fieldname": "tab_operator_alerts",
+   "fieldtype": "Tab Break",
+   "label": "Operator Alerts"
+  },
+  {
+   "description": "Where the hourly billing alerts for operators go. Customer notifications do not change.",
+   "fieldname": "section_operator_alerts",
+   "fieldtype": "Section Break",
+   "label": "Delivery"
+  },
+  {
+   "default": "Raven",
+   "description": "When a Raven post fails, the alert goes to the email addresses instead.",
+   "fieldname": "operator_alert_channel",
+   "fieldtype": "Select",
+   "label": "Alert Channel",
+   "options": "Raven\nEmail\nRaven and Email",
+   "reqd": 1
+  },
+  {
+   "description": "One address per line. Required when the channel includes Email.",
+   "fieldname": "operator_alert_emails",
+   "fieldtype": "Small Text",
+   "label": "Alert Email Addresses"
+  },
+  {
+   "depends_on": "eval:doc.operator_alert_channel != 'Email'",
+   "description": "The alert is posted as a bot user. Add that user to the channel.",
+   "fieldname": "section_raven",
+   "fieldtype": "Section Break",
+   "label": "Raven"
+  },
+  {
+   "description": "For example https://raven.example.com.",
+   "fieldname": "raven_site_url",
+   "fieldtype": "Data",
+   "label": "Raven Site URL",
+   "options": "URL"
+  },
+  {
+   "description": "The channel ID from the channel URL in Raven.",
+   "fieldname": "raven_channel_id",
+   "fieldtype": "Data",
+   "label": "Raven Channel ID"
+  },
+  {
+   "fieldname": "column_break_raven",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "raven_api_key",
+   "fieldtype": "Data",
+   "label": "Bot API Key"
+  },
+  {
+   "fieldname": "raven_api_secret",
+   "fieldtype": "Password",
+   "label": "Bot API Secret"
   },
   {
    "fieldname": "tab_accounting",
@@ -453,7 +538,7 @@
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-10-01 14:00:00.000000",
+ "modified": "2026-10-23 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Billing Settings",

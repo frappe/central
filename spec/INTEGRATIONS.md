@@ -30,7 +30,7 @@ The customer Team owns the trial before and after a paid upgrade. A Team can own
 
 ## Regional authentication
 
-Region stores the direct regional URL and numeric region ID, alongside its geography and display identity. Central signs a short-lived token for that region. Each request carries the Team tenant ID in `X-Tenant-ID`. Atlas verifies the token and enforces the tenant boundary.
+Region stores the direct regional URL and numeric region ID, alongside its geography and display identity. Central signs a short-lived token for that region. Each request carries the Team tenant ID in `X-Tenant-ID`. Atlas verifies the token and enforces the tenant boundary. Each request also carries the Central trace ID in `X-Frappe-Request-Id`. Atlas uses it as its own trace ID, so a Central Error Log and the Atlas logs of the same work share one ID. Both need `monitor` on in the site config.
 
 System images form a shared regional catalog. The tenant header identifies the authorized caller. It does not make those images Team-owned. Operator connection checks use the system tenant.
 
@@ -82,7 +82,11 @@ Server creation has three network options. Central sends an option to Atlas only
 | Public IPv6 | `public_ipv6: "auto"` |
 | Firewall | `firewall.enabled: true` with the rules below |
 
-Every new server gets the web server rules: inbound TCP ports 22, 80, and 443 and all outbound traffic, after the system rules in [Firewall](#firewall). The option only sets `firewall.enabled`. A disabled firewall permits all traffic and keeps the rules for when the customer turns it on.
+Each option has a flag in Central Settings > Feature Flags > Networking: Enable Public IPv4, Enable Public IPv6, and Enable Firewall. Each flag is off by default. When a flag is off, the New server page hides that option, and Central refuses a creation request that selects it.
+
+Every creation also sends the disk IOPS, disk throughput, and private and public network throughput from Central Settings > Servers > Server Limits. A change applies to servers created after it.
+
+Every new server gets the default rules in [Firewall](#firewall): inbound all traffic from the private network, ICMP, and TCP ports 22, 80, and 443, and all outbound traffic. The option only sets `firewall.enabled`. A disabled firewall permits all traffic and keeps the rules for when the customer turns it on.
 
 A creation request can carry `user_data` of up to 16 KiB, which is also the Atlas limit. Central sends it to Atlas unchanged as `guest.user_data`, and cloud-init in the guest runs it on first boot. A caller uses it to set up a server without signing in after creation. Central saves it on the Resource Action with the other creation inputs, so it must not hold a long-lived secret.
 
@@ -107,21 +111,23 @@ The Networking tab of a server shows its firewall. A member with `server:network
 | Apply changes | `inbound` and `outbound` only | When the saved rules block SSH or all outbound traffic on an enabled firewall |
 | Copy to other servers | `enabled`, `inbound`, and `outbound` | None. The dialog names the servers. |
 
-Rule edits stay in the browser until the customer selects Apply changes. Rules are edited inline, with one column header for each direction. A removed row stays visible with Keep rule. Reset all pending changes in the options menu restores the saved lists. An unchanged background observation does not replace a pending draft. If the saved rules change, Apply changes is blocked until the customer resets the draft to the latest saved rules. The presets Web server, SSH only, and Private only fill the rule lists for review before applying. Enabling a firewall with no saved rules allows SSH, HTTP, HTTPS and all outgoing connections.
+Rule edits stay in the browser until the customer selects Apply changes. Each direction is a table with the columns Service, Port and Allowed from or Allowed to. Removing a rule takes it out of the table at once. Undo, or Cmd+Z on macOS and Ctrl+Z elsewhere, restores the draft one step at a time. Quick edits to one rule count as one step. In a text field and in a dialog, the shortcut keeps its normal text behavior. A footer below the rules always shows the number of unsaved changes or the reason Apply changes is blocked, with Undo, Discard and Apply changes. Discard restores the saved lists. An unchanged background observation does not replace a pending draft. If the saved rules change, Apply changes is blocked until the customer discards the draft to load the latest saved rules. The presets Web server, SSH only, and Private only fill the rule lists for review before applying. Enabling a firewall with no saved rules allows SSH, HTTP, HTTPS and all outgoing connections.
 
-Each row selects a service and either Anyone on the internet or Specific addresses. Anyone permits both IPv4 and IPv6. Specific addresses shows an inline input for the first IP address or canonical CIDR range. Add IP address adds it to the rule. The selected addresses use the same searchable Frappe UI MultiSelect pattern as the SSH key field during server creation. A customer can deselect an address, clear the selection, or add another address. A single IP becomes a one-address range. Incomplete rules show guidance and cannot be applied. Invalid entries show a field error. An empty TCP or UDP port means all ports for that protocol. Custom ports stay editable when their value matches a preset service port. Central validates the complete change before sending it to Atlas.
+Each row selects a service and either Anyone on the internet or Specific addresses. Anyone permits both IPv4 and IPv6. Specific addresses shows each address of the rule as a removable chip, and an input for another IP address or canonical CIDR range. Enter or Add adds it to the rule. The input suggests addresses that other rules in the same direction use. A single IP becomes a one-address range. Incomplete rules show guidance and cannot be applied. Invalid entries show a field error. An empty TCP or UDP port means all ports for that protocol. Custom ports stay editable when their value matches a preset service port. Central validates the complete change before sending it to Atlas.
 
 `update_server_firewall` takes a list of servers and returns an error or `null` for each one. Central validates the change first: protocol `any`, `tcp`, `udp`, or `icmp`; ports only for TCP and UDP, as one port or one ascending range; address ranges in canonical CIDR form; and each rule only once.
 
-Central sends the change through `PATCH /virtual-machines/{id}/network`. Atlas replaces each firewall field it gets and keeps the others. Central puts these system rules before the customer's inbound rules, and the dashboard does not show them.
+Central sends the change through `PATCH /virtual-machines/{id}/network`. Atlas replaces each firewall field it gets and keeps the others. Central sends exactly the customer's rules and adds none of its own, so the dashboard shows every rule that Atlas enforces. A new server starts with these inbound rules, which the customer can remove:
 
 | Rule | Why |
 | --- | --- |
 | All traffic from `fdaa::/16` | The console and the regional gateway reach a machine over the mesh, and an enabled firewall filters mesh traffic too. |
-| All traffic from `fdac::/16` | WireGuard gateway clients. Atlas still drops them unless the VM opts in to gateway access. |
 | ICMP from anywhere | IPv6 neighbour discovery and path MTU need it. |
+| TCP 22, 80, and 443 from anywhere | SSH, HTTP, and HTTPS. |
 
-Atlas checks at most 50 address ranges across all rules, system rules included. The PATCH reply does not hold the firewall, so Central reads the VM again. Every read stores `is_firewall_enabled` and the customer's rules in `firewall_rules`. A server that Central has not read since this field was added shows its firewall after the next reconcile, which runs every 10 minutes.
+A WireGuard VPN device reaches a server only through a rule that allows its address in `fdac::/16`. Central used to add all traffic from `fdac::/16` to every server and hide it. The patch `remove_wireguard_device_firewall_rule` queues a background job that reads each live server from Atlas and removes the `fdac::/16` rule when the server has it. The job is safe to run again: `central.integrations.servers.remove_legacy_device_rules`.
+
+Atlas checks at most 50 address ranges across all rules. The PATCH reply does not hold the firewall, so Central reads the VM again. Every read stores `is_firewall_enabled` and the customer's rules in `firewall_rules`. A server that Central has not read since this field was added shows its firewall after the next reconcile, which runs every 10 minutes.
 
 ## Public addresses
 
@@ -137,6 +143,17 @@ Atlas applies an attach or detach after it replies. Central waits up to 30 secon
 
 A public IPv4 is billed from the first read that reports it until a read no longer reports it, or the server is terminated. `VirtualMachine.sync_public_ipv4_billing` opens and closes one `Subscription` per server, linked by `public_ip_server`. The price is the Catalog Rate of the `IP` Resource Type for the team's currency, optionally per region. The starter rates are INR 170 and USD 2 per month. Central refuses to attach an IPv4, or to create a server with one, in a region without a rate. IPv6 is free.
 
+## WireGuard gateway
+
+A region with **WireGuard Gateway** on serves customer devices at `https://wireguard.<region zone>`. Central signs a token with audience `atlas-wg-gateway:<region ID>` and scope `peers:read peers:update`, with no tenant claim. Each device is the Team `tenant_id` and a client ID. See [WireGuard Device](../central/infrastructure/doctype/wireguard_device/SPEC.md).
+
+| Operation | Request | Notes |
+| --- | --- | --- |
+| Add a device | `POST /v1/peers` | Central retries once on HTTP 503. HTTP 409 means the key is in use. |
+| Remove a device | `DELETE /v1/peers` | A missing device is not an error, so the retry job is safe. |
+| Restore a region | `GET /v1/peers`, then `PUT /v1/peers` | Operator action on Region. Never retried by itself. |
+| Server access | `PATCH /virtual-machines/{id}/network` with `wireguard_gateway_access` | Needs `server:network`. Off by default. |
+
 ## Termination protection
 
 A member with `server:terminate` can turn termination protection on or off with the lock button in the server header. Central sends `PATCH /virtual-machines/{id}/termination-protection` and stores the `is_termination_protected` value that Atlas returns on the Virtual Machine. Atlas does not report this value in a VM read, so the stored value changes only through this request. Central refuses a terminate request for a protected server before it queues a Resource Action, and Atlas also refuses to delete a protected VM.
@@ -147,7 +164,11 @@ Central stores each authorized operation in Resource Action before dispatch. Atl
 
 Scoped regional reads confirm VM state and repair interrupted local finalization. A failed read does not prove deletion. A scoped not-found response can confirm deletion and trigger local credential and billing cleanup.
 
-Central builds the automatic management address itself. The regional proxy decodes a VM's mesh address from its hostname label, so Central encodes the same label from the observed mesh address and the region's proxy domain. The tenant API does not publish the regional zone, so an operator sets `proxy_domain` on [Region](../central/infrastructure/doctype/region/SPEC.md). A management address alone does not prove Pilot readiness. Pilot creation also receives credential-bound `pilot-central` metadata and `pilot-common-config` metadata with the telemetry settings when the region has a telemetry host. When Central Settings has a **Common Site Config**, every server also gets it as `pilot-common-site-config`, which Pilot merges into `sites/common_site_config.json` at bootstrap, such as an app's relay URL. The customer can read it, so it never holds a secret. Every Pilot server's `pilot-common-site-config` also holds `fc_team`, the server's Team, so Frappe's Pulse telemetry on each site files its events under that Team. When the region links an enabled **FrappeMail Service**, Central takes a ready mailbox from that service's pool, records it as a **User Mail Account** for the creation, and adds its SMTP settings to `pilot-common-site-config`: the SMTP server on port 587 with STARTTLS, the mailbox as login and sender, and `always_use_account_email_id_as_sender`. Pilot and every site then send mail through it. The password belongs to that one server. An empty pool fails the creation. A job every 5 minutes fills the pool to the service's minimum with send-only mailboxes, named `notifications-<hash>@<domain>`, through the Suite site's admin API. It adds at most 50 in one run. Central removes a server's mailbox from the Suite site when the server is terminated. Atlas refuses guest metadata with more than 16 entries or more than 48 KiB as compact JSON, and the region's host refuses a key longer than 128 bytes. `AtlasClient.create_vm` refuses the same metadata before it calls Atlas, because Atlas saves a draft machine before the host rejects a key.
+Central builds the automatic management address itself. The regional proxy decodes a VM's mesh address from its hostname label, so Central encodes the same label from the observed mesh address and the region's proxy domain. The tenant API does not publish the regional zone, so an operator sets `proxy_domain` on [Region](../central/infrastructure/doctype/region/SPEC.md). A management address alone does not prove Pilot readiness. Pilot creation also receives credential-bound `pilot-central` metadata and `pilot-common-config` metadata with the telemetry settings when the region has a telemetry host. When Central Settings has a **Common Site Config**, every server also gets it as `pilot-common-site-config`, which Pilot merges into `sites/common_site_config.json` at bootstrap, such as an app's relay URL. The customer can read it, so it holds nothing Central keeps from them (a trial's Grove key is the customer's own credential). Every Pilot server's `pilot-common-site-config` also holds `fc_team`, the server's Team, so Frappe's Pulse telemetry on each site files its events under that Team. When the region links an enabled **FrappeMail Service**, Central takes a ready mailbox from that service's pool, records it as a **User Mail Account** for the creation, and adds its SMTP settings to `pilot-common-site-config`: the SMTP server on port 587 with STARTTLS, the mailbox as login and sender, and `always_use_account_email_id_as_sender`. Pilot and every site then send mail through it. The password belongs to that one server. An empty pool fails the creation. A job every 5 minutes fills the pool to the service's minimum with send-only mailboxes, named `notifications-<hash>@<domain>`, through the Suite site's admin API. It adds at most 50 in one run. Central removes a server's mailbox from the Suite site when the server is terminated. Atlas refuses guest metadata with more than 16 entries or more than 48 KiB as compact JSON, and the region's host refuses a key longer than 128 bytes. `AtlasClient.create_vm` refuses the same metadata before it calls Atlas, because Atlas saves a draft machine before the host rejects a key.
+
+Pilot creation includes the requesting user's email as `letsencrypt.email` in `pilot-common-config`. Pilot saves it in `common_config.toml` for certificate requests. Central reads the user from `Resource Action.requested_by`, not from the dispatch worker session. This setting is sent even when telemetry is unavailable. A request with no user email leaves the setting unset. This applies to new VMs; existing VMs keep their current setting.
+
+A free-trial creation also gets a Grove key when AI Settings keeps a pool of them (**Trial Pool Size** above 0). Central mints the pool ahead, every 5 minutes, under the fixed Grove Team `Central Trial`, which an operator makes at Grove first, in the geography and Model Group AI Settings name (blank: that geography's default group), each key capped for its life at **Trial Key Cap** and carrying no expiry of its own: its life is its trial's. Each key is an **AI Trial Key** record that holds the secret. The creation takes the oldest ready key, records the creation on it, and adds it to `pilot-common-site-config` as `ai_keys`: the key's gateway URL and secret, the entry Pilot writes for a team's own keys. A paid creation gets no key. An empty pool does not fail the creation: the trial starts without AI. Central revokes the key at Grove when the creation fails, when the trial ends and when the server is terminated, and tries a refused revoke again every hour. When the trial converts, Central hands the key to the team at Grove in the background: the same secret, now the team's, titled by the site, in the geography's default group and without the trial's expiry, so the server's config keeps working and the team finds the key in its dashboard (AI is turned on for the team first; every conversion path has a payment method). The record goes Converting, then Converted. A hand-over Grove refuses or cannot hear is tried again every hour and given up after three attempts as Conversion Failed, said on the record and the Site with Grove's last answer (the record's **Last Error**, kept from any failed hand-over or revoke until one lands); the key is then revoked like any trial key's (the record's **Revoked** box ticks once Grove has it; its status keeps the failure) and the team creates its own key. An operator's **Extend Trial** of an ended trial starts it without an AI key, which its end revoked; the Site says so. The gateway closes the key's books at the push that moves it, so what the trial spent stays Central Trial's and what follows is the team's.
 
 See [Resource Action](../central/infrastructure/doctype/resource_action/SPEC.md) for states, authorization, recovery, accepted quotes, and customer responses.
 
@@ -234,13 +255,14 @@ A restart completes when the region accepts it and Central then reads the server
 
 Opening Pilot uses a short-lived audience-bound token and the automatic admin name. Deny another Team's access.
 
-A System Manager has three more actions on the Virtual Machine form in Desk. Central records the first two as a Comment on the server.
+A System Manager has four more actions on the Virtual Machine form in Desk. Central records the first two as a Comment on the server.
 
 | Action | Effect |
 | --- | --- |
 | **Open Bench as Administrator** | Opens the bench with the same one-click token, for a Running server with a gateway. |
 | **Revoke Pilot Access** | Revokes every Pilot Credential of the server, so its Pilot can no longer reach Central. |
 | **Retry Admin Domain** | Asks Pilot again for the admin hostname, when the server shows an admin domain error. |
+| **Web Console** | Opens an SSH session or the serial console (TTY) of a Running server, through `open_console`. |
 
 Pilot links back to its server in the console with `/dashboard/servers?pilot=<jwks_audience_id>&action=<action>`. The action is `overview` or `resize`; any other value opens the overview. A resize link opens the dialog only when the server can take a change and the user may resize it. The server list returns each server's active audience as `pilot_audience`, and the console matches the link against it. When the active Team does not hold that server, the console shows the server list and a message. On a fresh page, the link waits for the first server list load before it looks for the server.
 
@@ -342,6 +364,32 @@ Atlas provisions the regional proxy and its wildcard certificate. The separate p
 Wildcard or shared-proxy DNS resolution alone does not prove customer ownership. A domain-specific ownership check is required before a route can move between Teams.
 
 The proxy forwards customer HTTPS as TLS with PROXY protocol v2 to VM port 443. Certificates and renewal stay in Pilot. Central stores the domain record, the operation result, and useful failure information.
+
+## How does the investigator read and change a server?
+
+The Central Investigator is a Flow agent for operators. It is defined in `central/investigator/agents.py` and uses the first enabled Flow Model. It follows the `server-support-guide`, `performance-inspection`, and `virtual-machine-investigation` skills in `skills/`.
+
+| Layer | Read | Change | Contract |
+| --- | --- | --- | --- |
+| Central | `read_records`, `run_report` | `run_desk_action`, `call_central_api` | The permissions of the user. A change runs a whitelisted document method or a `central.api` method. |
+| Pilot | `send_pilot_read_request`, `get_performance_snapshot`, `run_database_query` | `send_pilot_write_request` | Central mints the bench token for each call and attaches it. The agent never sees the token. |
+| Insights | `run_region_dashboard_queries` | None | Runs the SQL of an Atlas workbook query on `Region.telemetry_data_source`. Only workbook queries, no free SQL. |
+| Atlas | `start_region_investigation`, `get_region_investigation_status`, `get_region_investigation` | None | `POST /investigations` and `GET /investigations/<id>` with the operator client of the region. |
+
+A session starts read-only. A change needs these, in order:
+
+1. The agent asks the user to switch the session to read-write, and the user approves the `switch_to_read_write` call. The switch lasts one hour.
+2. The user approves each change call.
+
+A session that approves its own tool calls, such as a Trigger session, cannot switch. `central/investigator/access.py` refuses any change that terminates or destroys a resource, or that returns a login, a console, or a secret. The operator does these in Desk.
+
+The agent can read any Pilot `GET` path except those in `PILOT_DENIED_READ_PATHS`, which return a credential, a login, or a backup file. Performance data (database, monitor, metrics, system, storage, and site monitoring) comes back exact, because a scrub changes numbers and query text. Other results are scrubbed. `run_database_query` runs one `SELECT`, `WITH`, `EXPLAIN`, `SHOW`, or `DESCRIBE` statement in a read-only transaction. A `SELECT` stops after 10 seconds. A read-only transaction does not stop DDL, so the tool refuses any other statement. `PILOT_DENIED_WRITE_PATHS` refuses code, credentials, setup, and SQL changes.
+
+The `Central` and `Pilot` knowledge bases hold the Central documents and the Pilot documents from GitHub, including the generated `docs/admin-api-reference.md`. Each migrate reloads the changed documents. If the load fails, for example without GitHub access, the migrate prints the error and continues. To load them without a migrate:
+
+```sh
+pilot --site <site> execute central.investigator.knowledge.load_knowledge_bases
+```
 
 ## Validation
 

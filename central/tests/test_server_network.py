@@ -7,7 +7,7 @@ from frappe.tests import IntegrationTestCase
 
 from central.api.servers import open_console, server_overview
 from central.errors import AtlasConnectionError, AtlasRejected, AtlasResourceGone
-from central.infrastructure.doctype.virtual_machine.firewall import SYSTEM_INBOUND_RULES
+from central.infrastructure.doctype.virtual_machine.firewall import DEFAULT_INBOUND_RULES
 from central.integrations.resource_actions import _create_payload
 from central.resource_actions import validate_guest_input
 from central.server_models import MAXIMUM_USER_DATA_BYTES, CreateServerInput
@@ -53,7 +53,9 @@ class TestCreationNetworkPayload(TestCase):
 	def test_every_new_server_gets_the_web_server_rules(self, _idle) -> None:
 		firewall = _create_payload(creation_request())["firewall"]
 
-		self.assertEqual(firewall["inbound"][: len(SYSTEM_INBOUND_RULES)], SYSTEM_INBOUND_RULES)
+		defaults = [rule.model_dump() for rule in DEFAULT_INBOUND_RULES]
+		self.assertEqual(firewall["inbound"][: len(defaults)], defaults)
+		self.assertNotIn({"protocol": "any", "ports": "", "cidrs": ["fdac::/16"]}, firewall["inbound"])
 		self.assertEqual(
 			[rule["ports"] for rule in firewall["inbound"] if rule["protocol"] == "tcp"],
 			["22", "80", "443"],
@@ -68,6 +70,20 @@ class TestCreationNetworkPayload(TestCase):
 
 		self.assertEqual(_create_payload(creation_request())["user_data"], "")
 		self.assertEqual(_create_payload(creation_request(user_data=script))["user_data"], script)
+
+	def test_server_limits_come_from_central_settings(self, _idle) -> None:
+		limits = {
+			"disk_iops": 4000,
+			"disk_throughput_mibps": 250,
+			"private_network_throughput_mibps": 900,
+			"public_network_throughput_mibps": 300,
+		}
+		settings = SimpleNamespace(**limits)
+
+		with patch("frappe.get_cached_doc", return_value=settings):
+			payload = _create_payload(creation_request())
+
+		self.assertEqual({key: payload[key] for key in limits}, limits)
 
 
 def guest_input(user_data: str) -> CreateServerInput:
@@ -169,7 +185,8 @@ class TestServerConsole(IntegrationTestCase):
 		self.assertEqual(raised.exception.envelope["code"], "ATLAS_REJECTED")
 
 	def test_console_rejects_an_unknown_mode(self):
-		with self.assertRaises(frappe.ValidationError):
+		# Frappe's own type check refuses it first where it validates Literal annotations.
+		with self.assertRaises((frappe.ValidationError, frappe.exceptions.FrappeTypeError)):
 			self.open_as(self.owner, mode="vnc")
 		self.get_console_url.assert_not_called()
 
@@ -220,3 +237,19 @@ class TestServerConsole(IntegrationTestCase):
 
 		self.assertEqual(server["public_ipv6"], "2001:db8:5::7")
 		self.assertEqual(server["ssh_command"], "ssh root@2001:db8:5::7")
+
+	def test_overview_gives_an_operator_desk_and_atlas_links(self):
+		links = server_overview(team=self.team.name, resource_id=self.server.name)["server"]["operator_links"]
+
+		self.assertTrue(links["desk_url"].endswith(f"/desk/virtual-machine/{self.server.name}"))
+		base_url = frappe.db.get_value("Region", self.region, "base_url").rstrip("/")
+		self.assertEqual(links["atlas_url"], f"{base_url}/desk/virtual-machine/vm-00001")
+
+	def test_overview_hides_operator_links_from_a_team_owner(self):
+		frappe.set_user(self.owner)
+		try:
+			server = server_overview(team=self.team.name, resource_id=self.server.name)["server"]
+		finally:
+			frappe.set_user("Administrator")
+
+		self.assertIsNone(server["operator_links"])

@@ -66,11 +66,26 @@
 	}
 
 	function getLead(progress) {
-		const target = progress.plan || 'the new plan'
-		if (progress.step === 'ready') return `${progress.site} now runs on ${target}.`
 		if (progress.step === 'failed') return 'We could not move your site to the new plan.'
 		if (progress.step === 'invalid') return "Open the upgrade again from your site's settings."
-		return `Moving ${progress.site} to ${target}. Keep this tab open and we bring you back when it is ready.`
+		if (!progress.shape) return 'Your site is moving to its new plan.'
+		if (progress.step === 'ready') return `${progress.site} now runs with ${describeCapacity(progress.shape)}.`
+		return `${getChanges(previousShape, progress.shape)} Your site goes offline for a few minutes while it moves. Keep this tab open and we open your site when it is ready.`
+	}
+
+	// "Memory goes from 1 GB to 2 GB.", naming only what the plan change alters.
+	function getChanges(from, to) {
+		if (!from) return `Your site moves to ${describeCapacity(to)}.`
+		const changes = [
+			['CPU', `${formatNumber(from.vcpus)} vCPU`, `${formatNumber(to.vcpus)} vCPU`],
+			['memory', formatMemory(from), formatMemory(to)],
+			['disk', `${formatNumber(from.disk_gigabytes)} GB`, `${formatNumber(to.disk_gigabytes)} GB`],
+		]
+			.filter(([, before, after]) => before !== after)
+			.map(([part, before, after]) => `${part} goes from ${before} to ${after}`)
+		if (!changes.length) return 'Your site keeps its size on the new plan.'
+		const sentence = new Intl.ListFormat('en', { type: 'conjunction' }).format(changes)
+		return `${sentence.charAt(0).toUpperCase()}${sentence.slice(1)}.`
 	}
 
 	// The ticket is in the page once; only its data changes, so the plane glides between steps.
@@ -80,10 +95,10 @@
 		if (!shape) return
 
 		const from = previousShape || shape
-		byId('from-plan').textContent = previousPlan || describeShape(from)
-		byId('from-shape').textContent = previousPlan ? describeShape(from) : ''
-		byId('to-plan').textContent = progress.plan || describeShape(shape)
-		byId('to-shape').textContent = progress.plan ? describeShape(shape) : ''
+		byId('from-plan').textContent = describeShape(from, '\n')
+		byId('from-shape').textContent = getPlanDetail(previousPlan, from)
+		byId('to-plan').textContent = describeShape(shape, '\n')
+		byId('to-shape').textContent = getPlanDetail(progress.plan, shape)
 		byId('ticket-site').textContent = progress.site
 		byId('ticket-region').textContent = (progress.region && progress.region.display_name) || '—'
 		byId('ticket-status').textContent = FLIGHT_STATUS[progress.step] || ''
@@ -183,8 +198,22 @@
 		if (!TERMINAL.includes(current.step)) window.setTimeout(poll, POLL_MILLISECONDS)
 	}
 
-	function describeShape(shape) {
-		return `${formatNumber(shape.vcpus)} vCPU · ${formatNumber(shape.memory_megabytes / 1024)} GB`
+	function describeShape(shape, separator = ' · ') {
+		return `${formatNumber(shape.vcpus)} vCPU${separator}${formatMemory(shape)}`
+	}
+
+	function describeCapacity(shape) {
+		return `${formatNumber(shape.vcpus)} vCPU and ${formatMemory(shape)} memory`
+	}
+
+	// A plan titled after its size, such as "0.5 vCPU / 1 GB", adds nothing below the size.
+	function getPlanDetail(plan, shape) {
+		const normalize = (text) => text.toLowerCase().replace(/[^0-9a-z.]/g, '')
+		return plan && normalize(plan) !== normalize(describeShape(shape)) ? `${plan} plan` : ''
+	}
+
+	function formatMemory(shape) {
+		return `${formatNumber(shape.memory_megabytes / 1024)} GB`
 	}
 
 	function formatNumber(value) {

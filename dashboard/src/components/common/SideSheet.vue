@@ -27,7 +27,7 @@ const open = defineModel<boolean>('open', { default: false })
 				class="side-sheet-overlay fixed inset-0 z-50 bg-black-overlay-200 dark:bg-black-overlay-700"
 			/>
 			<DialogContent
-				class="side-sheet fixed inset-y-0 right-0 z-50 flex w-full max-w-xl flex-col border-l border-outline-gray-1 bg-surface-elevation-2 shadow-xl focus-visible:outline-none"
+				class="side-sheet fixed inset-y-0 right-0 z-50 flex w-full max-w-xl flex-col border-l border-outline-gray-1 bg-surface-base shadow-xl focus-visible:outline-none"
 			>
 				<header
 					class="flex items-start justify-between gap-3 border-b border-outline-gray-1 px-5 py-4"
@@ -38,7 +38,7 @@ const open = defineModel<boolean>('open', { default: false })
 						</DialogTitle>
 						<DialogDescription
 							v-if="description"
-							class="mt-1 text-p-sm text-ink-gray-5"
+							class="mt-1 text-p-sm text-ink-gray-6"
 						>
 							{{ description }}
 						</DialogDescription>

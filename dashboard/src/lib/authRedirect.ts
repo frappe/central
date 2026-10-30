@@ -3,6 +3,8 @@ import { queryString } from '@/lib/auth'
 
 const DEFAULT_DASHBOARD = '/dashboard/servers'
 const PRODUCT_ONBOARDING = '/dashboard/onboarding/site'
+// Central's mailbox sign-in callback sends a logged-out browser here to log in, then back to it
+const EMAIL_OAUTH_CALLBACK = '/api/method/central.api.email_oauth.callback?'
 
 /** Where to land once signed in: the requested page, the product onboarding, or the console. */
 export function signInDestination(query: LocationQuery): string {
@@ -11,6 +13,15 @@ export function signInDestination(query: LocationQuery): string {
 	const product = queryString(query.product)
 	if (!product) return DEFAULT_DASHBOARD
 	return `${PRODUCT_ONBOARDING}?${new URLSearchParams({ product })}`
+}
+
+/** The product onboarding route when sign-in lands there, so the console carries on in place. */
+export function productOnboarding(
+	query: LocationQuery,
+): { path: string; query: LocationQueryRaw } | null {
+	const product = queryString(query.product)
+	if (!product || queryString(query['redirect-to'])) return null
+	return { path: '/onboarding/site', query: { product } }
 }
 
 /** The intent that must survive every step between the auth pages. */
@@ -27,6 +38,7 @@ function dashboardPath(value: string): string | null {
 	if (!value) return null
 
 	const path = sameOriginPath(value)
+	if (path?.startsWith(EMAIL_OAUTH_CALLBACK)) return path
 	if (path === '/dashboard') return DEFAULT_DASHBOARD
 	if (!path?.startsWith('/dashboard/')) return null
 	if (/^\/dashboard\/(login|signup|verify)\b/.test(path)) return null

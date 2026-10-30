@@ -8,11 +8,11 @@ from unittest.mock import MagicMock, patch
 
 import frappe
 
-from central.billing.gateways.base import PaymentResult
+from central.billing.gateways.base import GatewayError, PaymentResult
 from central.billing.payments import charges, collection, payments
 from central.billing.tests.test_stripe_adapter import make_stripe_gateway
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
-from central.billing.tests.utils import ensure_team, make_plan
+from central.billing.tests.utils import ensure_team, make_plan, stripe_intent
 
 TEAM = "team-fallback"
 PLAN = "bundle-fallback-test"
@@ -34,6 +34,7 @@ def stub_charges(results):
 	"""Patch the adapter so each successive charge() returns the next scripted
 	(success, txn_id) result."""
 	adapter = MagicMock()
+	adapter.prepare_charge.return_value = None  # Stripe-like: no order to store
 	adapter.charge.side_effect = [_result(s, t) for s, t in results]
 	with patch("central.billing.gateways.registry.get_adapter", return_value=adapter):
 		yield adapter
@@ -105,7 +106,7 @@ class FallbackTestBase(IntegrationTestCase):
 		payload = {
 			"id": f"evt_{txn_id}",
 			"type": "payment_intent.payment_failed",
-			"data": {"object": {"id": txn_id}},
+			"data": {"object": stripe_intent(txn_id, "payment_intent.payment_failed")},
 		}
 		return (
 			frappe.get_doc(
@@ -155,6 +156,20 @@ class TestSyncFallback(FallbackTestBase):
 		with stub_charges([]) as adapter:
 			collection.collect_invoice(inv)
 		self.assertEqual(adapter.charge.call_count, 0)
+
+	def test_refused_order_rotates_to_backup(self):
+		inv = self._open_invoice()
+		with stub_charges([(True, "pi_backup")]) as adapter:
+			adapter.prepare_charge.side_effect = [GatewayError("order refused"), None]
+			collection.collect_invoice(inv)
+
+		self.assertEqual(adapter.charge.call_count, 1)  # the primary never reached a charge
+		primary, backup = self._attempts()
+		self.assertEqual((primary.payment_method, primary.status), (self.primary, "Failed"))
+		self.assertEqual(
+			frappe.db.get_value("Payment Attempt", primary.name, "failure_code"), "order_refused"
+		)
+		self.assertEqual((backup.payment_method, backup.status), (self.backup, "Captured"))
 
 	def test_reauth_required_method_is_skipped(self):
 		frappe.db.set_value("Payment Method", self.backup, "reauth_required", 1)

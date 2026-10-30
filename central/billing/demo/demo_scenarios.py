@@ -64,17 +64,21 @@ from central.billing.demo._factory import (
 	backdate_welcome_credit,
 	bank_pending_attempt,
 	collection_moment,
+	demo_host,
 	draw_wallet_credit,
 	make_refund,
 	meter_service_usage,
 	opens_on,
 	plan_name,
+	plan_shape,
 	set_collection_mode,
 	stage_resizes,
 	subscribe_service,
 )
-from central.billing.payments.provisioning import provision_billing_profile
+from central.billing.doctype.billing_run.billing_run import snapshot
+from central.billing.payments.provisioning import grant_welcome_credits, provision_billing_profile
 from central.billing.revenue import credits, invoicing
+from central.billing.revenue.invoicing.run import billing_run_status
 
 # service plan slug -> (resource_type, unit), for reporting usage against a subject.
 _SERVICE_META = {s[2]: (s[1], s[4]) for s in SERVICES}
@@ -261,6 +265,9 @@ def seed() -> dict:
 	# list, and the console can finally say so. Done LAST so it lands on top of the
 	# locks the teams already hold.
 	_raise_catalog_prices()
+
+	# Record the closed month's run the way the hourly collection sweep does.
+	snapshot(billing_run_status(), "Complete")
 
 	# NOTE: the demo does NOT touch the Billing workspace — the app ships the real
 	# "Catalog Administration" workspace as a file fixture (billing/workspace/billing),
@@ -465,9 +472,10 @@ def _build_team(team, slug, tier, currency, state, resources, resize):
 	_tax(team, currency)
 	_profile(team, slug, currency, resources[0][0])
 	_tier(team, tier)  # tier lives on the Billing Profile, so set it after _profile
-	# Signup provisioning grants the welcome credits once, in the team's currency and at
-	# the amount Billing Settings carries — the same rule production runs, not a random grant.
 	provision_billing_profile(team)
+	# Production grants the welcome credit once a payment method is active. The demo grants it
+	# here through the same function, so its credit-only teams have credit to settle from.
+	grant_welcome_credits(team)
 	_team_members(team, slug)  # members on varied system roles + a custom role
 	gateway, pm = _payment_setup(team, slug, currency, state)
 	# A top-up-only team has no card, but its wallet top-up still mints a customer.
@@ -518,7 +526,16 @@ def _build_team(team, slug, tier, currency, state, resources, resize):
 		# A readable name, so a receipt that groups by machine has a heading worth
 		# reading rather than the raw resource id.
 		if frappe.db.exists("Virtual Machine", resource):
-			frappe.db.set_value("Virtual Machine", resource, "title", f"{slug}-{idx}", update_modified=False)
+			frappe.db.set_value(
+				"Virtual Machine",
+				resource,
+				{
+					"title": f"{slug}-{idx}",
+					"atlas_host_id": f"host-{demo_host(cluster, idx)}",
+					**plan_shape(plan_key),
+				},
+				update_modified=False,
+			)
 		opening = frappe.db.get_value(
 			"Subscription Change", {"subscription": sub, "change_type": "Created"}, "name"
 		)

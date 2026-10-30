@@ -25,19 +25,26 @@ export type ServerCapability =
 /** A row that carries the caller's capabilities on its own server. */
 export interface ServerAccess {
 	capabilities?: ServerCapability[] | null
+	/** The server runs a free trial: its site works, and server access waits for an upgrade. */
+	is_access_locked?: boolean
 }
+
+/** Why a server action is off on a free trial server. */
+export const ACCESS_LOCKED_REASON = 'Not in the free trial. Upgrade to use it.'
 
 /** The server actions the caller may take. */
 export interface ServerActions {
 	/** Sign in to the server's bench or site, which is an Administrator session. */
 	open: boolean
 	power: boolean
-	/** Change the firewall and public addresses. */
+	/** Change the firewall, public addresses, and WireGuard access. */
 	network?: boolean
 	resize: boolean
 	snapshot: boolean
 	terminate: boolean
 	console?: boolean
+	/** SSH, the web console, Pilot and snapshots wait for an upgrade. */
+	isAccessLocked?: boolean
 }
 
 /** What the caller may do on this row's server. Central sends each row its own
@@ -48,8 +55,10 @@ export function getServerActions(
 	teamActions: ServerActions,
 ): ServerActions {
 	const caps = row?.capabilities
-	if (!caps) return teamActions
+	const isAccessLocked = !!row?.is_access_locked
+	if (!caps) return { ...teamActions, isAccessLocked }
 	return {
+		isAccessLocked,
 		open: caps.includes('server:console'),
 		power: caps.includes('server:power'),
 		network: caps.includes('server:network'),

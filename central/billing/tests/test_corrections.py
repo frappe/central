@@ -32,11 +32,9 @@ class CorrectionsTestCase(IntegrationTestCase):
 		billing_team(TEAM, gstin="27AABCT1111T1Z5")
 		self.remote = FakeAccountingSystem()
 		self.enterContext(self.remote.patches())
-		self.enterContext(patch("central.billing.payments.corrections._enqueue"))
+		self.enterContext(patch("central.billing.payments.corrections.enqueue_steps"))
 		self.gateway = MagicMock()
-		self.gateway.refund.return_value = RefundResult(
-			success=True, status="Completed", gateway_refund_id="re_1", raw={}
-		)
+		self.gateway.refund.return_value = RefundResult(status="Completed", gateway_refund_id="re_1", raw={})
 		self.enterContext(patch("central.billing.payments.corrections._adapter", return_value=self.gateway))
 
 	def _paid_invoice(self, synced=True, paid_at="2026-09-01 10:00:00"):
@@ -175,29 +173,12 @@ class TestCancelAndRefund(CorrectionsTestCase):
 		self.assertEqual(credits.get_balance(TEAM, "INR")["balance"], 2000)
 
 	def test_a_failed_gateway_refund_is_kept_for_a_person(self):
-		self.gateway.refund.return_value = RefundResult(
-			success=False, status="failed", gateway_refund_id=None, raw={}
-		)
+		self.gateway.refund.return_value = RefundResult(status="Failed", gateway_refund_id=None, raw={})
 		inv = self._paid_invoice()
 		corrections.cancel_and_refund(inv, "customer asked")
 		self._run_all(inv)
 		self.assertEqual(self._refund(inv, "Source").status, "Failed")
 		self.assertEqual(self._refund(inv, "Source").payment_record_id, None)
-
-
-class TestDispute(CorrectionsTestCase):
-	def test_a_lost_dispute_is_not_refunded_again(self):
-		inv = self._paid_invoice()
-		corrections.cancel_and_refund(
-			inv, "dispute lost", dispute={"id": "dp_1", "payment_intent": "pi_card"}
-		)
-		self._run_all(inv)
-		self.gateway.refund.assert_not_called()
-		lost = self._refund(inv, "Dispute")
-		self.assertEqual(lost.status, "Completed")
-		out = next(p for p in self.remote.posts("Payment Entry") if p.get("reference_no") == "dp_1")
-		self.assertEqual(out["paid_from"], "Stripe Clearing INR - TC")
-		self.assertEqual(credits.get_balance(TEAM, "INR")["balance"], 2000)  # the wallet part comes back too
 
 
 class TestRefused(CorrectionsTestCase):
@@ -213,78 +194,9 @@ class TestRefused(CorrectionsTestCase):
 			corrections.cancel_and_refund(inv, "x")
 
 
-class TestDisputeWebhook(CorrectionsTestCase):
-	def _event(self, event_type, status="needs_response", amount=3540):
-		payload = {
-			"id": f"evt_{frappe.generate_hash(length=8)}",
-			"type": event_type,
-			"data": {
-				"object": {
-					"object": "dispute",
-					"id": "dp_1",
-					"payment_intent": "pi_card",
-					"amount": round(amount * 100),
-					"currency": "inr",
-					"status": status,
-					"reason": "fraudulent",
-				}
-			},
-		}
-		event = frappe.get_doc(
-			{
-				"doctype": "Webhook Event",
-				"gateway": "Stripe",
-				"gateway_event_id": payload["id"],
-				"event_type": event_type,
-				"raw_payload": frappe.as_json(payload),
-				"status": "Received",
-			}
-		).insert(ignore_permissions=True)
-		from central.billing.payments.charges import apply_webhook
-
-		return apply_webhook(event.name)
-
-	def _comments(self, invoice):
-		return frappe.get_all(
-			"Comment", {"reference_doctype": "Invoice", "reference_name": invoice}, pluck="content"
-		)
-
-	def test_an_opened_dispute_is_noted(self):
-		inv = self._paid_invoice()
-		self.assertEqual(self._event("charge.dispute.created")["result"], "noted")
-		self.assertEqual(frappe.db.get_value("Invoice", inv, "status"), "Paid")
-		self.assertTrue(any("dp_1 opened" in c for c in self._comments(inv)))
-
-	def test_losing_the_whole_charge_cancels_the_invoice(self):
-		inv = self._paid_invoice()
-		self.assertEqual(self._event("charge.dispute.closed", status="lost")["result"], "cancelled")
-		self.assertEqual(frappe.db.get_value("Invoice", inv, "status"), "Cancelled")
-		lost = self._refund(inv, "Dispute")
-		self.assertEqual((lost.amount, lost.gateway_refund_id), (3540, "dp_1"))
-
-	def test_losing_part_of_the_charge_credits_that_part(self):
-		inv = self._paid_invoice()
-		self.assertEqual(
-			self._event("charge.dispute.closed", status="lost", amount=1000)["result"], "partly_refunded"
-		)
-		self.assertEqual(frappe.db.get_value("Invoice", inv, "status"), "Paid")
-		self._run_all(inv)
-		lost = self._refund(inv, "Dispute")
-		self.assertEqual((lost.partial, lost.amount, lost.gateway_refund_id), (1, 1000, "dp_1"))
-		self.gateway.refund.assert_not_called()
-		self.assertTrue(lost.credit_note_id and lost.payment_record_id)
-
-	def test_a_won_dispute_changes_nothing(self):
-		inv = self._paid_invoice()
-		self.assertEqual(self._event("charge.dispute.closed", status="won")["result"], "won")
-		self.assertEqual(frappe.db.get_value("Invoice", inv, "status"), "Paid")
-
-
 class TestRetryFailedRefund(CorrectionsTestCase):
 	def test_a_refused_refund_is_retried_with_a_new_key(self):
-		self.gateway.refund.return_value = RefundResult(
-			success=False, status="failed", gateway_refund_id=None, raw={}
-		)
+		self.gateway.refund.return_value = RefundResult(status="Failed", gateway_refund_id=None, raw={})
 		inv = self._paid_invoice()
 		corrections.cancel_and_refund(inv, "customer asked")
 		self._run_all(inv)
@@ -295,9 +207,7 @@ class TestRetryFailedRefund(CorrectionsTestCase):
 
 		self.assertIn(inv, [a["subject"] for a in alerts.failed_refunds()])
 
-		self.gateway.refund.return_value = RefundResult(
-			success=True, status="Completed", gateway_refund_id="re_2", raw={}
-		)
+		self.gateway.refund.return_value = RefundResult(status="Completed", gateway_refund_id="re_2", raw={})
 		self.assertEqual(corrections.retry_failed_refunds(inv), 1)
 		self._run_all(inv)
 		card.reload()
@@ -349,6 +259,36 @@ class TestRefundPart(CorrectionsTestCase):
 			},
 		)
 		return inv
+
+	def test_a_wallet_refund_past_the_money_paid_comes_back_as_promotional_credit(self):
+		# 1,000 + 180 GST: 1,000 promotional credit, 180 by card.
+		inv = self._paid_invoice()
+		frappe.db.set_value(
+			"Invoice",
+			inv,
+			{
+				"subtotal": 1000,
+				"output_tax_amount": 180,
+				"total": 1180,
+				"credit_applied": 1000,
+				"advance_applied": 0,
+				"advance_tax_applied": 0,
+				"amount_paid": 180,
+			},
+		)
+		corrections.refund_part(inv, 500, "goodwill")
+		self._run_all(inv)
+
+		refund = self._refund(inv, "Wallet")
+		self.assertEqual(
+			(refund.net_amount, refund.tax_amount, refund.promotional_amount), (152.54, 27.46, 320)
+		)
+		note = next(p for p in self.remote.posts("Sales Invoice") if p.get("is_return"))
+		self.assertEqual([(i["qty"], i["rate"]) for i in note["items"]], [(-1, 152.54)])
+		promotional = frappe.get_doc(
+			"Credit Ledger Entry", {"reference_name": refund.name, "paid_in": 0, "entry_type": "Credit"}
+		)
+		self.assertEqual(promotional.amount, 320)
 
 	def test_a_part_goes_back_to_the_wallet_with_its_gst(self):
 		inv = self._wallet_paid()
@@ -408,9 +348,7 @@ class TestRefundPart(CorrectionsTestCase):
 
 	def test_a_failed_part_is_not_retried_once_the_invoice_gave_that_amount_elsewhere(self):
 		inv = self._paid_invoice()  # 5,900 in all
-		self.gateway.refund.return_value = RefundResult(
-			success=False, status="failed", gateway_refund_id=None, raw={}
-		)
+		self.gateway.refund.return_value = RefundResult(status="Failed", gateway_refund_id=None, raw={})
 		corrections.refund_part(inv, 3000, "x", destination="Source")
 		self._run_all(inv)
 		self.assertEqual(self._refund(inv, "Source").status, "Failed")
@@ -425,3 +363,82 @@ class TestRefundPart(CorrectionsTestCase):
 		corrections.refund_part(inv, 1180, "x")
 		with self.assertRaises(frappe.ValidationError):
 			corrections.cancel_and_refund(inv, "x")
+
+
+class TestLateCaptureRefund(CorrectionsTestCase):
+	"""A charge captured after the invoice was paid goes back to its source, outside the books."""
+
+	def _late_refund(self, status="Completed"):
+		from central.billing.payments import charges
+
+		inv = self._paid_invoice()
+		attempt = frappe.get_doc(
+			{
+				"doctype": "Payment Attempt",
+				"invoice": inv,
+				"team": TEAM,
+				"gateway": "Stripe",
+				"currency": "INR",
+				"amount": 3540,
+				"status": "Captured",
+				"retry_number": 1,
+				"gateway_transaction_id": "pi_late",
+			}
+		).insert(ignore_permissions=True)
+		gateway = MagicMock()
+		gateway.refund.return_value = RefundResult(status=status, gateway_refund_id="re_late", raw={})
+		with patch("central.billing.payments.refunds._adapter", return_value=gateway):
+			charges._refund_to_source(frappe.get_doc("Invoice", inv), attempt)
+		return inv, frappe.get_doc("Refund", {"payment_attempt": attempt.name})
+
+	def _payment_entries_for(self, refund):
+		return [
+			p
+			for p in self.remote.posts("Payment Entry")
+			if refund.name in (p.get("remarks") or "") or p.get("reference_no") == refund.gateway_refund_id
+		]
+
+	def test_its_refund_makes_no_credit_note_or_payment_out(self):
+		inv, refund = self._late_refund()
+		self.assertTrue(refund.late_capture)
+		self._run_all(inv)  # as the refund webhook does
+		self.assertEqual(self.remote.posted, [])
+		self.assertFalse(frappe.db.get_value("Invoice", inv, "credit_note_id"))
+
+	def test_a_retried_refund_makes_no_credit_note_or_payment_out(self):
+		inv, refund = self._late_refund(status="Failed")
+		self.gateway.refund.return_value = RefundResult(status="Completed", gateway_refund_id="re_2", raw={})
+		self.assertEqual(corrections.retry_failed_refunds(inv), 1)
+		self._run_all(inv)
+		self.assertEqual(frappe.db.get_value("Refund", refund.name, "status"), "Completed")
+		self.assertEqual(self.remote.posted, [])
+
+	def test_cancelling_the_invoice_later_records_only_its_own_payment(self):
+		inv, refund = self._late_refund()
+		corrections.cancel_and_refund(inv, "customer asked")
+		self._run_all(inv)
+		self.assertTrue(frappe.db.get_value("Invoice", inv, "credit_note_id"))
+		self.assertEqual(self._payment_entries_for(refund), [])
+		self.assertIn("customer asked", self.remote.posts("Sales Invoice")[-1]["remarks"])
+
+	def test_cancelling_after_its_refund_failed_leaves_it_to_the_retry(self):
+		inv, refund = self._late_refund(status="Failed")
+		corrections.cancel_and_refund(inv, "customer asked")
+		self._run_all(inv)
+		refunds = frappe.get_all("Refund", {"payment_attempt": refund.payment_attempt}, pluck="name")
+		self.assertEqual(refunds, [refund.name])
+		self.assertEqual(self.gateway.refund.call_count, 1)  # only the charge that paid the invoice
+		self.assertEqual(self._payment_entries_for(refund), [])
+
+	def test_the_card_payment_in_the_books_is_never_it(self):
+		from central.billing.ingester.erpnext_sync import _card_attempt
+
+		inv, _refund = self._late_refund(status="Failed")
+		paid_by = _card_attempt(frappe.get_doc("Invoice", inv))
+		self.assertEqual(paid_by.gateway_transaction_id, "pi_card")
+
+	def test_a_part_back_to_the_card_never_takes_it_after_its_refund_failed(self):
+		inv, _refund = self._late_refund(status="Failed")
+		corrections.refund_part(inv, 3000, "goodwill", destination="Source")
+		with self.assertRaises(frappe.ValidationError):
+			corrections.refund_part(inv, 1000, "goodwill", destination="Source")

@@ -124,7 +124,7 @@ Creates the **Subscription** (intent) and its first **Subscription Change** row 
 Real servers go through `central.api.servers.create_server` / `create_composed_server` → `central.resource_actions.submit_request`. The Virtual Machine controller creates the Subscription when the server reaches Running.
 
 ### Step 7 · Generate the invoice
-> Invoice generation runs monthly on the scheduler through `run_monthly_billing`, which drafts and collects inline (see `ARCHITECTURE.md` §3). For a demo, drive it by hand. The calls below do the same work.
+> Invoice generation runs on the scheduler: `draft_monthly_invoices` drafts on the 1st, and the hourly `collect_due_invoices` collects (see `ARCHITECTURE.md` §3). For a demo, drive it by hand. The calls below do the same work.
 ```bash
 # One team, one period (in arrears):
 pilot frappe --site central.localhost execute central.billing.revenue.invoicing.generate_team_invoice \
@@ -182,5 +182,5 @@ For e2e isolation, each Playwright spec seeds + tears down its own sandbox via
 | Plans + rates | — | ✅ Plan Configurator |
 | Trust tiers / Tax profiles | — | ✅ reference data |
 | Billing Profile (per team) | — | ✅ wizard (gates money) |
-| Invoice generation | ✅ monthly `run_monthly_billing` (draft, then collect, inline) | ✅ `run_monthly_billing` / `generate_*` / `open_drafts` |
+| Invoice generation | ✅ monthly `draft_monthly_invoices`, hourly `collect_due_invoices` (paged) | ✅ `run_monthly_billing` / `generate_*` / `open_drafts` |
 | Dunning / reconciliation / e-mandate / card expiry | ✅ scheduled | — |

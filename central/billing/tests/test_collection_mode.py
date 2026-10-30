@@ -2,8 +2,11 @@
 # For license information, please see license.txt
 """Collection mode + the ₹15,000 Action Required threshold (ADR 0005, ADR 0022)."""
 
+from unittest.mock import MagicMock, patch
+
 import frappe
 
+from central.billing.gateways.base import PaymentResult, VerifiedPayment
 from central.billing.payments import collection_mode
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import clear_team_tier, complete_billing_profile, ensure_team, set_team_tier
@@ -24,6 +27,36 @@ class TestCollectionMode(IntegrationTestCase):
 		complete_billing_profile(TEAM)
 		clear_team_tier(TEAM)  # no tier → flat ₹15k threshold
 		frappe.db.delete("Billing Notification Log", {"team": TEAM})
+
+	def _activate_method(self, method_id):
+		from central.billing.tests.test_razorpay_adapter import make_razorpay_gateway
+
+		method = frappe.get_doc(
+			{
+				"doctype": "Payment Method",
+				"team": TEAM,
+				"gateway": make_razorpay_gateway().name,
+				"method_type": "UPI Autopay",
+				"status": "Pending Validation",
+				"gateway_method_id": method_id,
+				"mandate_currency": "INR",
+			}
+		).insert(ignore_permissions=True)
+		method.status = "Active"
+		method.save(ignore_permissions=True)
+
+	def test_the_first_active_method_starts_auto_charge(self):
+		frappe.db.delete("Payment Method", {"team": TEAM})
+		_set_mode(TEAM, "Prepaid")
+		self._activate_method("tok_first")
+		self.assertEqual(frappe.db.get_value("Billing Profile", TEAM, "collection_mode"), "Auto Charge")
+
+	def test_a_later_method_keeps_the_chosen_mode(self):
+		frappe.db.delete("Payment Method", {"team": TEAM})
+		self._activate_method("tok_first")
+		_set_mode(TEAM, "Prepaid")
+		self._activate_method("tok_second")
+		self.assertEqual(frappe.db.get_value("Billing Profile", TEAM, "collection_mode"), "Prepaid")
 
 	def test_threshold_is_15k_without_a_tier(self):
 		self.assertEqual(collection_mode.silent_threshold(TEAM), 15000.0)
@@ -207,6 +240,14 @@ class TestInvoiceTimeTrip(IntegrationTestCase):
 		self.assertEqual(frappe.db.count("Payment Attempt", {"invoice": inv}), 0)
 		self.assertEqual(frappe.db.get_value("Billing Profile", TEAM, "collection_mode"), "Action Required")
 
+	def test_pay_over_15k_keeps_the_mode_the_customer_chose(self):
+		from central.billing.payments import charges
+
+		_set_mode(TEAM, "Prepaid")
+		out = charges.pay_invoice(self._invoice(20000), payment_method=self.pm, gateway=self.gw)
+		self.assertEqual(out["reason"], "action_required")
+		self.assertEqual(frappe.db.get_value("Billing Profile", TEAM, "collection_mode"), "Prepaid")
+
 
 class TestManualCheckout(IntegrationTestCase):
 	"""On-session pay-an-invoice for Manual Checkout teams: any amount, settled by
@@ -245,7 +286,7 @@ class TestManualCheckout(IntegrationTestCase):
 			.name
 		)
 
-	def test_checkout_settles_only_on_webhook_for_any_amount(self):
+	def test_checkout_settles_on_a_verified_payment_for_any_amount(self):
 		from unittest.mock import MagicMock, patch
 
 		from central.billing.payments import charges
@@ -258,12 +299,16 @@ class TestManualCheckout(IntegrationTestCase):
 			"amount_in_subunits": 4000000,
 		}
 		adapter.verify_payment_signature.return_value = True
+		adapter.verify_payment.return_value = VerifiedPayment(
+			"pay_inv", True, 40000, "INR", order_id="order_inv"
+		)
 		with patch("central.billing.gateways.registry.get_adapter", return_value=adapter):
 			order = charges.create_invoice_payment_order(inv, gateway=self.gw)
 			self.assertTrue(order["created"])
 			self.assertEqual(order["order_id"], "order_inv")
 			attempt = order["attempt"]
 			self.assertEqual(frappe.db.get_value("Payment Attempt", attempt, "status"), "Initiated")
+			self.assertEqual(frappe.db.get_value("Payment Attempt", attempt, "gateway_order_id"), "order_inv")
 
 			out = charges.confirm_invoice_payment(
 				attempt,
@@ -272,11 +317,32 @@ class TestManualCheckout(IntegrationTestCase):
 				razorpay_signature="sig",
 			)
 			self.assertTrue(out["confirmed"])
-			# Attempt captured + stamped, but the invoice is NOT Paid yet (webhook-truth).
+			# Settled on the payment read back from the gateway for this attempt's order.
 			self.assertEqual(
 				frappe.db.get_value("Payment Attempt", attempt, "gateway_transaction_id"), "pay_inv"
 			)
-			self.assertEqual(frappe.db.get_value("Invoice", inv, "status"), "Open")
+			self.assertEqual(frappe.db.get_value("Invoice", inv, "status"), "Paid")
+
+	def test_checkout_refuses_a_payment_for_another_order(self):
+		from unittest.mock import MagicMock, patch
+
+		from central.billing.payments import charges
+
+		inv = self._invoice(40000)
+		adapter = MagicMock()
+		adapter.create_order.return_value = {"order_id": "order_inv", "key_id": "rzp"}
+		adapter.verify_payment_signature.return_value = True
+		adapter.verify_payment.return_value = VerifiedPayment("pay_1", True, 1, "INR", order_id="order_other")
+		with patch("central.billing.gateways.registry.get_adapter", return_value=adapter):
+			attempt = charges.create_invoice_payment_order(inv, gateway=self.gw)["attempt"]
+			with self.assertRaises(frappe.ValidationError):
+				charges.confirm_invoice_payment(
+					attempt,
+					razorpay_order_id="order_other",
+					razorpay_payment_id="pay_1",
+					razorpay_signature="s",
+				)
+		self.assertEqual(frappe.db.get_value("Invoice", inv, "status"), "Open")
 
 	def test_bad_signature_is_rejected(self):
 		from unittest.mock import MagicMock, patch
@@ -309,6 +375,13 @@ class TestModeAwareDunning(IntegrationTestCase):
 		frappe.db.delete("Payment Method", {"team": TEAM})
 		frappe.db.delete("Billing Notification Log", {"team": TEAM})
 		self.gw = make_razorpay_gateway().name
+		# A retry the mode allows is declined here, never sent to Razorpay.
+		adapter = MagicMock()
+		adapter.prepare_charge.return_value = "order_declined"
+		adapter.charge.return_value = PaymentResult(
+			success=False, status="Failed", failure_code="card_declined", failure_reason="Declined"
+		)
+		self.enterContext(patch("central.billing.gateways.registry.get_adapter", return_value=adapter))
 		# An active method exists — so a retry WOULD happen if the mode allowed it.
 		frappe.get_doc(
 			{
@@ -423,6 +496,15 @@ class TestSilentChargeCapability(IntegrationTestCase):
 		gw.currencies[0].max_silent_charge = 50000
 		gw.save(ignore_permissions=True)
 		self.assertEqual(gw.currencies[0].max_silent_charge, 15000)
+
+	def test_a_higher_stored_ceiling_never_wins_at_the_read(self):
+		"""A row written around the form's clamp (a patch, raw SQL) still reads as the RBI limit."""
+		from central.billing.gateways import capabilities
+		from central.billing.tests.utils import configure_gateway
+
+		gw = configure_gateway("Razorpay", (("INR", 1),), is_enabled=1)
+		frappe.db.set_value("Payment Gateway Currency", gw.currencies[0].name, "max_silent_charge", 50000)
+		self.assertEqual(capabilities.silent_charge_ceiling(gw.name, "INR"), 15000)
 
 	def test_a_stricter_inr_ceiling_is_left_alone(self):
 		from central.billing.tests.utils import configure_gateway

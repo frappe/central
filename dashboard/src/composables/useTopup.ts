@@ -27,6 +27,7 @@ import {
 	type GatewayOrder,
 	mountPayPalButtons,
 	openRazorpayCheckout,
+	stripeCardElementStyle,
 } from '@/lib/gateway'
 
 interface BeginResult {
@@ -154,7 +155,10 @@ export function useTopup({ onDone }: { onDone?: (res: unknown) => void } = {}) {
 			throw new Error(
 				'The Stripe payment library could not load. Check your connection and reload the page before starting a payment.',
 			)
-		card = stripe.elements().create('card', { hidePostalCode: true })
+		card = stripe.elements().create('card', {
+			hidePostalCode: true,
+			style: stripeCardElementStyle(),
+		})
 		card.on('change', (e) => {
 			cardComplete.value = !!e.complete
 			error.value = e.error?.message ?? ''

@@ -20,17 +20,17 @@ export function useTerminationProtection(resourceId: Ref<string>) {
 	async function setTerminationProtection(enabled: boolean): Promise<boolean> {
 		if (!activeTeam.value) return false
 
-		await protectionCall.submit({
-			team: activeTeam.value,
-			resource_id: resourceId.value,
-			enabled,
-		})
-		if (protectionCall.error)
-			reportError(protectionCall.error, {
-				title: "Termination protection wasn't changed",
+		try {
+			await protectionCall.submit({
+				team: activeTeam.value,
+				resource_id: resourceId.value,
+				enabled,
 			})
-
-		return !protectionCall.error
+			return true
+		} catch (error) {
+			reportError(error, { title: "Termination protection wasn't changed" })
+			return false
+		}
 	}
 
 	return {

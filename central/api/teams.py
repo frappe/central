@@ -7,6 +7,7 @@ from frappe.rate_limiter import rate_limit
 from frappe.utils.translations import _lt
 
 from central.iam import can, expand_capabilities, get_all_capabilities
+from central.identity.doctype.team.archive import get_archive_checks, get_credit_balances
 from central.identity.doctype.team.team import Team
 from central.identity.doctype.team_invitation.team_invitation import get_invitation_by_token
 from central.utils.guards import require_capability, require_team_member
@@ -105,13 +106,6 @@ def set_onboarding_step(team: str, step: str, status: str) -> dict[str, Any]:
 
 
 @frappe.whitelist(methods=["POST"])
-def skip_onboarding(team: str) -> dict[str, Any]:
-	"""Skip every onboarding step the owner has not answered yet. Owner only."""
-	frappe.get_doc("Team", team).skip_onboarding()
-	return {"skipped": True}
-
-
-@frappe.whitelist(methods=["POST"])
 @require_capability("team:edit", _lt("You can't rename this team. Ask a team admin to review your access."))
 def rename_team(team: str, team_name: str) -> dict[str, Any]:
 	"""Rename a team. Team.validate re-checks team:edit on save."""
@@ -143,12 +137,46 @@ def transfer_team_ownership(team: str, user: str) -> dict[str, Any]:
 	return {"team": team, "owner": user}
 
 
+@frappe.whitelist(methods=["GET"])
+@require_capability("team:delete", _lt("Only the team owner can archive this team."))
+def get_team_archive_checks(team: str) -> dict[str, Any]:
+	"""What still stops the team from being archived, and the credit that archiving forfeits."""
+	return {"checks": get_archive_checks(team), "credit_balances": get_credit_balances(team)}
+
+
 @frappe.whitelist(methods=["POST"])
-@require_capability("team:delete", _lt("You can't delete this team. Ask a team admin to review your access."))
-def delete_team(team: str) -> dict[str, Any]:
-	"""Delete a team. The Team lifecycle validates and removes owned access records."""
-	frappe.delete_doc("Team", team)
-	return {"team": team, "deleted": True}
+@require_capability("team:delete", _lt("Only the team owner can archive this team."))
+def archive_team(team: str) -> dict[str, Any]:
+	frappe.get_doc("Team", team).archive()
+	return {"team": team, "archived": True}
+
+
+@frappe.whitelist(methods=["POST"])
+def restore_team(team: str) -> dict[str, Any]:
+	"""Operator action: open an archived team again."""
+	frappe.get_doc("Team", team).restore()
+	return {"team": team, "restored": True}
+
+
+@frappe.whitelist(methods=["POST"])
+def suspend_team(team: str, reason: str) -> dict[str, Any]:
+	"""Operator action: suspend the team, for example for abuse."""
+	frappe.get_doc("Team", team).suspend(reason)
+	return {"team": team, "status": "Suspended"}
+
+
+@frappe.whitelist(methods=["POST"])
+def unsuspend_team(team: str) -> dict[str, Any]:
+	"""Operator action: give the team's members access again."""
+	frappe.get_doc("Team", team).unsuspend()
+	return {"team": team, "status": "Active"}
+
+
+@frappe.whitelist(methods=["POST"])
+def impersonate_team_owner(team: str, reason: str, notify_owner: bool | int = 0) -> dict[str, str]:
+	"""Operator action: the console address that opens as this team."""
+	url = frappe.get_doc("Team", team).get_impersonation_url(reason, bool(frappe.utils.cint(notify_owner)))
+	return {"url": url}
 
 
 @frappe.whitelist(methods=["POST"])

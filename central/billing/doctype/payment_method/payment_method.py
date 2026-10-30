@@ -5,10 +5,17 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
+from central.billing.payments import collection_mode, decline
+
 
 class PaymentMethod(Document):
 	def validate(self):
 		self._reject_duplicate_card()
+
+	def on_update(self):
+		before = self.get_doc_before_save()
+		if self.status == "Active" and before and before.status != "Active":
+			collection_mode.start_auto_charge(self.team)
 
 	def _reject_duplicate_card(self):
 		"""A team can't register the same card twice. Using one card as both the
@@ -33,3 +40,32 @@ class PaymentMethod(Document):
 				),
 				frappe.ValidationError,
 			)
+
+	def record_failure(self, failure: decline.Failure) -> None:
+		"""Keep the gateway's reason for the latest failed setup or check of this method."""
+		self.failed_attempts = frappe.utils.cint(self.failed_attempts) + 1
+		self.last_failed_at = frappe.utils.now_datetime()
+		self.update(decline.failure_fields(failure))
+
+	def get_confirmation(self) -> dict:
+		"""What a confirm route answers. A failed method says why, in words for the customer."""
+		result = {"payment_method": self.name, "status": self.status}
+		if self.status == "Failed":
+			result["message"] = decline.method_failure_message(
+				self.failure_code, self.decline_code, self.method_type
+			)
+		return result
+
+
+def held_method_filters() -> dict:
+	"""The `or_filters` that keep the methods a team holds. An abandoned setup stays on
+	record as Cancelled with no gateway id, so the setup funnel can count it, but it
+	never held a card or a mandate."""
+	return {"status": ["!=", "Cancelled"], "gateway_method_id": ["is", "set"]}
+
+
+def on_doctype_update() -> None:
+	# The billing run, its dashboards and the money reports filter on these.
+	frappe.db.add_index("Payment Method", ["team", "status"])
+	# A failed hosted card setup webhook finds its card by this.
+	frappe.db.add_index("Payment Method", ["setup_intent_id"])

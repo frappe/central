@@ -6,38 +6,71 @@
  "engine": "InnoDB",
  "field_order": [
   "general_tab",
-  "trial_idle_shutdown_minutes",
-  "invitation_expiry_days",
+  "regions_section",
   "wildcard_domain",
+  "column_break_regions",
   "central_id",
+  "help_section",
+  "support_ticket_url",
+  "column_break_help",
+  "feedback_url",
+  "alerts_section",
+  "infra_alert_webhook_url",
+  "column_break_infra_webhooks",
+  "infra_report_webhook_url",
   "feature_flags_tab",
   "addons_section",
   "enable_addons",
   "column_break_spvk",
   "enable_llm_service",
   "enable_pdf_print_service",
+  "column_break_addons_services",
   "enable_email_delivery_service",
   "enable_object_storage_service",
+  "networking_section",
+  "enable_public_ipv4",
+  "column_break_networking_ipv6",
+  "enable_public_ipv6",
+  "column_break_networking_firewall",
+  "enable_firewall",
   "servers_tab",
+  "server_creation_section",
+  "require_payment_method",
+  "included_transfer_gb",
+  "signup_image_minimum_age_minutes",
+  "server_limits_section",
+  "disk_iops",
+  "disk_throughput_mibps",
+  "column_break_server_limits",
+  "private_network_throughput_mibps",
+  "public_network_throughput_mibps",
+  "site_config_section",
   "common_site_config",
   "limits_tab",
   "invitations_section",
+  "invitation_expiry_days",
   "invitations_per_hour",
+  "column_break_invitations",
   "invitation_resend_cooldown_minutes",
   "sign_in_section",
   "sign_in_code_attempts",
+  "column_break_sign_in",
   "sign_in_codes_per_email",
   "signups_section",
   "alias_email_domains",
   "refuse_temporary_emails",
   "signup_requests_per_minute",
   "automatic_block_hours",
-  "trials_section",
-  "require_payment_method",
-  "trial_servers_per_team",
+  "trials_tab",
+  "trial_clock_section",
   "trial_days",
   "trial_deletion_days",
+  "column_break_trial_clock",
   "trial_notice_days",
+  "trial_limits_section",
+  "trial_servers_per_team",
+  "column_break_trial_limits",
+  "trial_idle_shutdown_minutes",
   "github_tab",
   "github_app_section",
   "github_app_id",
@@ -52,11 +85,78 @@
  ],
  "fields": [
   {
+   "fieldname": "general_tab",
+   "fieldtype": "Tab Break",
+   "label": "General"
+  },
+  {
+   "fieldname": "regions_section",
+   "fieldtype": "Section Break",
+   "label": "Regions"
+  },
+  {
+   "description": "Base domain of regional services, such as frappe.dev.",
+   "fieldname": "wildcard_domain",
+   "fieldtype": "Data",
+   "label": "Wildcard Domain"
+  },
+  {
+   "fieldname": "column_break_regions",
+   "fieldtype": "Column Break"
+  },
+  {
    "default": "1",
-   "description": "Show the Add-ons area (LLM / storage services) in the console. Off hides its nav entry and blocks its routes.",
-   "fieldname": "enable_addons",
-   "fieldtype": "Check",
-   "label": "Enable Add-ons"
+   "description": "This Central's ID in Atlas webhooks. Keep 1 unless several Centrals share one Atlas.",
+   "fieldname": "central_id",
+   "fieldtype": "Int",
+   "label": "Central ID",
+   "non_negative": 1
+  },
+  {
+   "fieldname": "help_section",
+   "fieldtype": "Section Break",
+   "label": "Help"
+  },
+  {
+   "description": "The helpdesk customer portal's new ticket page, such as https://support.frappe.io/help/my-tickets/new. Leave empty to hide Contact support.",
+   "fieldname": "support_ticket_url",
+   "fieldtype": "Data",
+   "label": "Support Ticket URL",
+   "options": "URL"
+  },
+  {
+   "fieldname": "column_break_help",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "Feedback form opened from the console Help menu. Leave empty to hide Share feedback.",
+   "fieldname": "feedback_url",
+   "fieldtype": "Data",
+   "label": "Feedback URL",
+   "options": "URL"
+  },
+  {
+   "fieldname": "alerts_section",
+   "fieldtype": "Section Break",
+   "label": "Infra Webhooks"
+  },
+  {
+   "description": "Raven incoming webhook for infrastructure alerts that the investigator sends.",
+   "fieldname": "infra_alert_webhook_url",
+   "fieldtype": "Password",
+   "label": "Infra Alert Webhook URL",
+   "length": 512
+  },
+  {
+   "fieldname": "column_break_infra_webhooks",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "Raven incoming webhook for infrastructure reports that the investigator sends.",
+   "fieldname": "infra_report_webhook_url",
+   "fieldtype": "Password",
+   "label": "Infra Report Webhook URL",
+   "length": 512
   },
   {
    "fieldname": "feature_flags_tab",
@@ -66,7 +166,14 @@
   {
    "fieldname": "addons_section",
    "fieldtype": "Section Break",
-   "label": "AddOn Services"
+   "label": "Add-ons"
+  },
+  {
+   "default": "1",
+   "description": "Shows Add-ons in the console navigation.",
+   "fieldname": "enable_addons",
+   "fieldtype": "Check",
+   "label": "Enable Add-ons"
   },
   {
    "fieldname": "column_break_spvk",
@@ -85,10 +192,8 @@
    "label": "Enable PDF Print Service"
   },
   {
-   "default": "0",
-   "fieldname": "enable_object_storage_service",
-   "fieldtype": "Check",
-   "label": "Enable Object Storage Service"
+   "fieldname": "column_break_addons_services",
+   "fieldtype": "Column Break"
   },
   {
    "default": "0",
@@ -97,39 +202,42 @@
    "label": "Enable Email Delivery Service"
   },
   {
-   "fieldname": "general_tab",
-   "fieldtype": "Tab Break",
-   "label": "General"
+   "default": "0",
+   "fieldname": "enable_object_storage_service",
+   "fieldtype": "Check",
+   "label": "Enable Object Storage Service"
   },
   {
-   "default": "10",
-   "description": "Minutes a trial server may sit idle before its region puts it to sleep. Customer traffic wakes it. Set 0 to keep trial servers awake. Paid servers do not use idle sleep. Resizing disables idle sleep.",
-   "fieldname": "trial_idle_shutdown_minutes",
-   "fieldtype": "Int",
-   "label": "Trial Idle Shutdown (Minutes)",
-   "non_negative": 1
+   "fieldname": "networking_section",
+   "fieldtype": "Section Break",
+   "label": "Networking",
+   "description": "Options on the New server page. An option that is off is hidden and refused."
   },
   {
-   "default": "14",
-   "description": "Days a team invitation stays open. Resending it starts the count again.",
-   "fieldname": "invitation_expiry_days",
-   "fieldtype": "Int",
-   "label": "Invitation Expiry (Days)",
-   "non_negative": 1
+   "default": "0",
+   "fieldname": "enable_public_ipv4",
+   "fieldtype": "Check",
+   "label": "Enable Public IPv4"
   },
   {
-   "description": "Base domain of every regional service. Central reaches proxy.<region>.<wildcard domain>, atlas.<region>.<wildcard domain>, and cargo.<region>.<wildcard domain>. Example: frappe.dev",
-   "fieldname": "wildcard_domain",
-   "fieldtype": "Data",
-   "label": "Wildcard Domain"
+   "fieldname": "column_break_networking_ipv6",
+   "fieldtype": "Column Break"
   },
   {
-   "default": "1",
-   "description": "This Central's id in Atlas's Configure Webhooks call. Atlas refuses anything but 1 unless its developer mode is on or it allows multiple Central webhooks -- raise this only where more than one Central environment shares an Atlas.",
-   "fieldname": "central_id",
-   "fieldtype": "Int",
-   "label": "Central ID",
-   "non_negative": 1
+   "default": "0",
+   "fieldname": "enable_public_ipv6",
+   "fieldtype": "Check",
+   "label": "Enable Public IPv6"
+  },
+  {
+   "fieldname": "column_break_networking_firewall",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "0",
+   "fieldname": "enable_firewall",
+   "fieldtype": "Check",
+   "label": "Enable Firewall"
   },
   {
    "fieldname": "servers_tab",
@@ -137,7 +245,82 @@
    "label": "Servers"
   },
   {
-   "description": "A JSON object that every server Central creates merges into its sites/common_site_config.json, such as {\"raven_push_notification_server_url\": \"https://cloud.ravenchat.ai\"}. The customer can read it, so never put a secret here. A server keeps what it got when it was created.",
+   "fieldname": "server_creation_section",
+   "fieldtype": "Section Break",
+   "label": "Creation"
+  },
+  {
+   "default": "1",
+   "description": "A paid server needs a payment method or enough credit. Turn off for demos.",
+   "fieldname": "require_payment_method",
+   "fieldtype": "Check",
+   "label": "Require Payment Method"
+  },
+  {
+   "default": "1024",
+   "description": "The monthly transfer the console shows for every server. Central does not limit or bill it.",
+   "fieldname": "included_transfer_gb",
+   "fieldtype": "Int",
+   "label": "Included Transfer (GB)",
+   "non_negative": 1
+  },
+  {
+   "default": "30",
+   "description": "Prefer the newest signup image at least this old, to allow host caching. Use the latest if none qualifies. 0 selects the latest.",
+   "fieldname": "signup_image_minimum_age_minutes",
+   "fieldtype": "Int",
+   "label": "Signup Image Minimum Age (Minutes)",
+   "non_negative": 1
+  },
+  {
+   "fieldname": "server_limits_section",
+   "fieldtype": "Section Break",
+   "label": "Server Limits",
+   "description": "Every new server gets these limits, so one server cannot use all of its host's disk or network."
+  },
+  {
+   "default": "3000",
+   "description": "Disk operations per second.",
+   "fieldname": "disk_iops",
+   "fieldtype": "Int",
+   "label": "Disk IOPS",
+   "non_negative": 1
+  },
+  {
+   "default": "125",
+   "description": "Disk read and write speed.",
+   "fieldname": "disk_throughput_mibps",
+   "fieldtype": "Int",
+   "label": "Disk Throughput (MiB/s)",
+   "non_negative": 1
+  },
+  {
+   "fieldname": "column_break_server_limits",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "500",
+   "description": "Traffic within the region.",
+   "fieldname": "private_network_throughput_mibps",
+   "fieldtype": "Int",
+   "label": "Private Network Throughput (MiB/s)",
+   "non_negative": 1
+  },
+  {
+   "default": "500",
+   "description": "Traffic to and from the internet.",
+   "fieldname": "public_network_throughput_mibps",
+   "fieldtype": "Int",
+   "label": "Public Network Throughput (MiB/s)",
+   "non_negative": 1
+  },
+  {
+   "fieldname": "site_config_section",
+   "fieldtype": "Section Break",
+   "label": "Site Config"
+  },
+  {
+   "description": "JSON merged into each new server's common_site_config.json. Customers can read it, so add no secrets.",
    "fieldname": "common_site_config",
    "fieldtype": "JSON",
    "label": "Common Site Config"
@@ -153,38 +336,54 @@
    "label": "Invitations"
   },
   {
+   "default": "14",
+   "description": "Days an invitation stays open. Resending restarts the count.",
+   "fieldname": "invitation_expiry_days",
+   "fieldtype": "Int",
+   "label": "Invitation Expiry (Days)",
+   "non_negative": 1
+  },
+  {
    "default": "50",
-   "description": "Invitations one person may send in an hour. Operators are not limited.",
+   "description": "Per sender. Operators have no limit.",
    "fieldname": "invitations_per_hour",
    "fieldtype": "Int",
    "label": "Invitations per Hour",
    "non_negative": 1
   },
   {
+   "fieldname": "column_break_invitations",
+   "fieldtype": "Column Break"
+  },
+  {
    "default": "5",
-   "description": "Minutes before a pending invitation can be sent again.",
+   "description": "Wait before a pending invitation can be sent again.",
    "fieldname": "invitation_resend_cooldown_minutes",
    "fieldtype": "Int",
    "label": "Invitation Resend Cooldown (Minutes)",
    "non_negative": 1
   },
   {
-   "description": "A code expires after System Settings > Login with email link expiry.",
+   "description": "Codes expire after the email link expiry in System Settings.",
    "fieldname": "sign_in_section",
    "fieldtype": "Section Break",
    "label": "Sign-in Codes"
   },
   {
    "default": "5",
-   "description": "Wrong codes an email may enter before it is locked until the code expires.",
+   "description": "Wrong codes before the email is locked until the code expires.",
    "fieldname": "sign_in_code_attempts",
    "fieldtype": "Int",
    "label": "Code Attempts",
    "non_negative": 1
   },
   {
+   "fieldname": "column_break_sign_in",
+   "fieldtype": "Column Break"
+  },
+  {
    "default": "5",
-   "description": "Codes one email may request before the code expires.",
+   "description": "Codes one email can request before the code expires.",
    "fieldname": "sign_in_codes_per_email",
    "fieldtype": "Int",
    "label": "Codes per Email",
@@ -226,47 +425,68 @@
    "description": "How long an automatic block lasts. A blocked domain is listed in Signup Domain, and the System Managers get an email."
   },
   {
-   "fieldname": "trials_section",
-   "fieldtype": "Section Break",
+   "fieldname": "trials_tab",
+   "fieldtype": "Tab Break",
    "label": "Trials"
   },
   {
-   "default": "1",
-   "description": "A team needs an active payment method, or credit that covers the server, to create a server other than a free trial site. Turn it off for demos, so a complete billing profile is enough.",
-   "fieldname": "require_payment_method",
-   "fieldtype": "Check",
-   "label": "Require Payment Method for Servers"
+   "description": "A trial runs for Trial Days, then stops. After Trial Deletion Days, its server is terminated. Upgrading keeps the site.",
+   "fieldname": "trial_clock_section",
+   "fieldtype": "Section Break",
+   "label": "Trial Period"
   },
   {
-   "default": "3",
-   "description": "Free trial sites one owner may hold across all their teams. For a staging trial team, the servers that team may hold.",
-   "fieldname": "trial_servers_per_team",
-   "fieldtype": "Int",
-   "label": "Trial Servers Limit",
-   "non_negative": 1
-  },
-  {
-   "default": "14",
-   "description": "Days a trial site runs from when it is first ready. A Product can set its own.",
+   "default": "7",
+   "description": "Days a trial site runs. A Product can override it.",
    "fieldname": "trial_days",
    "fieldtype": "Int",
    "label": "Trial Days",
    "non_negative": 1
   },
   {
-   "default": "14",
-   "description": "Days a stopped trial site is kept before its server is terminated. A Product can set its own.",
+   "default": "7",
+   "description": "Days a stopped trial is kept before its server is terminated. A Product can override it.",
    "fieldname": "trial_deletion_days",
    "fieldtype": "Int",
    "label": "Trial Deletion Days",
    "non_negative": 1
   },
   {
-   "default": "3",
-   "description": "Days before a trial ends, and before an ended trial is deleted, that Central sends the warning email. A second warning goes out on the last day.",
+   "fieldname": "column_break_trial_clock",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "2",
+   "description": "Days before the trial ends, or before deletion, to send a warning email.",
    "fieldname": "trial_notice_days",
    "fieldtype": "Int",
    "label": "Trial Notice Days",
+   "non_negative": 1
+  },
+  {
+   "description": "Trial servers use the cheapest plan marked Available on Trial. Billing Settings holds the welcome credit.",
+   "fieldname": "trial_limits_section",
+   "fieldtype": "Section Break",
+   "label": "Trial Server"
+  },
+  {
+   "default": "3",
+   "description": "Open trial sites per owner, across teams. For a staging trial team, servers per team.",
+   "fieldname": "trial_servers_per_team",
+   "fieldtype": "Int",
+   "label": "Trial Servers Limit",
+   "non_negative": 1
+  },
+  {
+   "fieldname": "column_break_trial_limits",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "10",
+   "description": "Idle minutes before a trial server sleeps. 0 keeps it awake.",
+   "fieldname": "trial_idle_shutdown_minutes",
+   "fieldtype": "Int",
+   "label": "Trial Idle Shutdown (Minutes)",
    "non_negative": 1
   },
   {
@@ -275,10 +495,10 @@
    "label": "GitHub"
   },
   {
+   "description": "Pilot clones private repositories with this App. Create GitHub App fills these fields.",
    "fieldname": "github_app_section",
    "fieldtype": "Section Break",
-   "label": "GitHub App",
-   "description": "Pilot benches clone private repositories with short-lived tokens of this App. Use Create GitHub App to fill these fields."
+   "label": "GitHub App"
   },
   {
    "fieldname": "github_app_id",
@@ -329,7 +549,7 @@
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-10-18 12:42:11.087757",
+ "modified": "2026-10-28 18:00:00.000000",
  "modified_by": "Administrator",
  "module": "Central",
  "name": "Central Settings",

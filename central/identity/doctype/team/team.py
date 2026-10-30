@@ -8,6 +8,7 @@ from frappe.utils import now_datetime
 
 from central.billing import settings as billing_settings
 from central.iam import can, clear_grants_cache, user_has_operator_bypass
+from central.identity.doctype.team.lifecycle import TeamLifecycle
 from central.identity.doctype.team.tenant import (
 	allocate_tenant_id,
 	prepare_tenant_id_series,
@@ -20,7 +21,7 @@ ONBOARDING_STEPS = ("invite", "billing", "start")
 MAX_INVITATIONS_PER_REQUEST = 10
 
 
-class Team(Document):
+class Team(TeamLifecycle, Document):
 	# begin: auto-generated types
 	# This code is auto-generated. Do not modify anything in this block.
 
@@ -39,7 +40,7 @@ class Team(Document):
 		onboarding_steps: DF.Table[TeamOnboardingStep]
 		owner_user: DF.Link
 		referrer: DF.SmallText | None
-		status: DF.Literal["Active", "Suspended"]
+		status: DF.Literal["Active", "Suspended", "Archived"]
 		team_logo: DF.AttachImage | None
 		team_name: DF.Data
 		tenant_id: DF.Int
@@ -128,15 +129,14 @@ class Team(Document):
 
 	def on_update(self) -> None:
 		from central.billing.payments.provisioning import on_team_update
-		from central.services.ai import on_alert_address_update
+		from central.infrastructure.doctype.wireguard_device.wireguard_device import remove_departed_devices
 
 		# Team and member-row edits change resolved capabilities; drop the request-cached
 		# grants so later checks in this request see the new state.
 		clear_grants_cache()
 		# A staging-trial team keeps a complete billing profile, so it can create servers.
 		on_team_update(self)
-		# A new owner may be the new alert address of the team's Grove user.
-		on_alert_address_update(self)
+		remove_departed_devices(self)
 
 	def on_trash(self) -> None:
 		self._require_capability("team:delete")
@@ -161,6 +161,9 @@ class Team(Document):
 			role.flags.from_team_delete = True
 			# Team deletion already passed team:delete and owns this dependent cleanup.
 			role.delete(ignore_permissions=True, force=True)
+		for name in frappe.get_all("WireGuard Device", {"team": self.name}, pluck="name"):
+			# Team deletion already passed team:delete and its on_trash takes the peer off the gateway.
+			frappe.delete_doc("WireGuard Device", name, ignore_permissions=True, force=True)
 
 	# Internal; the HTTP surface is central.api.teams.invite_team_member.
 	def invite_member(
@@ -466,7 +469,11 @@ class Team(Document):
 		if not previous:
 			return
 
-		if self._metadata_changed(previous):
+		if self.status != previous.status and not self.flags.from_team_archive:
+			frappe.throw(
+				_("Only Frappe Cloud staff can change the status of a team."), frappe.PermissionError
+			)
+		if self.team_name != previous.team_name:
 			self._require_capability("team:edit")
 		if self._onboarding_state(self) != self._onboarding_state(previous):
 			self._require_current_owner(previous.owner_user)
@@ -478,9 +485,6 @@ class Team(Document):
 		validate_tenant_id(self.tenant_id)
 		if not self.is_new() and self.has_value_changed("tenant_id"):
 			frappe.throw(_("The tenant ID cannot be changed."), frappe.CannotChangeConstantError)
-
-	def _metadata_changed(self, previous) -> bool:
-		return self.team_name != previous.team_name or self.status != previous.status
 
 	def _members_changed(self, previous) -> bool:
 		return self.owner_user != previous.owner_user or self._member_state(self) != self._member_state(

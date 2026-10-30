@@ -8,8 +8,9 @@ from unittest.mock import patch
 import frappe
 
 from central.billing.catalog import subscriptions
+from central.billing.platform.records import save_billing_record
 from central.billing.revenue import credits, invoicing
-from central.billing.revenue.invoicing import run
+from central.billing.revenue.invoicing import lifecycle, run
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import (
 	add_segment,
@@ -143,6 +144,46 @@ class TestDraftGeneration(BillingTestBase):
 		# Jun 10 and Jun 11 are excluded from the daily lines (billed hourly instead).
 		daily_days = sum(li.days for li in inv.items if li.unit == "day")
 		self.assertEqual(daily_days, 28)  # 30 days − Jun 10 − Jun 11
+
+	def test_a_mid_day_start_bills_that_day_by_the_hour(self):
+		add_segment(self.sub, "Created", 3000, "2026-06-05 14:00:00")
+		inv = frappe.get_doc(
+			"Invoice", invoicing.generate_draft_invoice(self.sub, "2026-06-01", "2026-06-30")
+		)
+		self.assertEqual(
+			sorted((li.unit, li.days or li.hours) for li in inv.items), [("day", 25), ("hour", 10.0)]
+		)
+		self.assertEqual(inv.subtotal, round(25 * 3000 / 30, 2) + round(10 * 3000 / 720, 2))
+
+	def test_a_mid_day_stop_bills_that_day_by_the_hour(self):
+		add_segment(self.sub, "Created", 3000, "2026-06-01 00:00:00")
+		add_segment(self.sub, "Cancelled", None, "2026-06-20 12:00:00")
+		inv = frappe.get_doc(
+			"Invoice", invoicing.generate_draft_invoice(self.sub, "2026-06-01", "2026-06-30")
+		)
+		self.assertEqual(
+			sorted((li.unit, li.days or li.hours) for li in inv.items), [("day", 19), ("hour", 12.0)]
+		)
+
+	def test_a_mid_day_resize_still_gives_the_day_to_the_new_plan(self):
+		add_segment(self.sub, "Created", 1000, "2026-06-01 00:00:00")
+		add_segment(self.sub, "Plan Changed", 2000, "2026-06-10 15:00:00")
+		inv = frappe.get_doc(
+			"Invoice", invoicing.generate_draft_invoice(self.sub, "2026-06-01", "2026-06-30")
+		)
+		self.assertEqual(sorted((li.rate, li.days) for li in inv.items), [(1000.0, 9), (2000.0, 21)])
+
+	def test_a_mid_day_stop_after_a_resize_bills_that_day_by_the_hour(self):
+		add_segment(self.sub, "Created", 1000, "2026-06-01 00:00:00")
+		add_segment(self.sub, "Plan Changed", 2000, "2026-06-10 15:00:00")
+		add_segment(self.sub, "Cancelled", None, "2026-06-20 12:00:00")
+		inv = frappe.get_doc(
+			"Invoice", invoicing.generate_draft_invoice(self.sub, "2026-06-01", "2026-06-30")
+		)
+		self.assertEqual(
+			sorted((li.rate, li.unit, li.days or li.hours) for li in inv.items),
+			[(1000.0, "day", 9), (2000.0, "day", 10), (2000.0, "hour", 12.0)],
+		)
 
 	def test_partial_first_month_billed_for_join_window(self):
 		add_segment(self.sub, "Created", 3000, "2026-06-15 00:00:00")
@@ -307,6 +348,97 @@ class TestOpenAndCollect(BillingTestBase):
 		self.assertEqual(len(debits), 1)
 
 
+class TestCreditAddedAfterIssue(BillingTestBase):
+	"""Credit that lands after an invoice is issued pays that invoice, not next month's."""
+
+	def _open_invoice(self):
+		add_segment(self.sub, "Created", 1000, "2026-06-01 00:00:00")
+		name = invoicing.generate_draft_invoice(self.sub, "2026-06-01", "2026-06-30")
+		invoicing.open_and_collect(name, collect=False)
+		return name
+
+	def test_credit_that_covers_the_invoice_settles_it(self):
+		name = self._open_invoice()
+		credits.purchase(TEAM, 1000, "INR")
+
+		lifecycle.settle_with_new_credit(TEAM)
+
+		inv = frappe.get_doc("Invoice", name)
+		self.assertEqual((inv.status, inv.credit_applied, inv.expected_collection), ("Paid", 1000.0, 0.0))
+		self.assertEqual(credits.get_balance(TEAM)["balance"], 0)
+
+	def test_part_credit_waits_in_the_wallet_without_a_method(self):
+		name = self._open_invoice()
+		credits.purchase(TEAM, 400, "INR")
+
+		lifecycle.settle_with_new_credit(TEAM)
+
+		inv = frappe.get_doc("Invoice", name)
+		self.assertEqual((inv.status, inv.credit_applied, inv.expected_collection), ("Open", 0.0, 1000.0))
+		self.assertEqual(credits.get_balance(TEAM)["balance"], 400)
+
+	def test_part_credit_waits_in_the_wallet_even_with_a_method(self):
+		name = self._open_invoice()
+		credits.purchase(TEAM, 400, "INR")
+
+		with (
+			patch("central.billing.payments.collection_mode._has_chargeable_method", return_value=True),
+			patch("central.billing.payments.collection.collect_invoice") as collect,
+		):
+			lifecycle.settle_with_new_credit(TEAM)
+
+		inv = frappe.get_doc("Invoice", name)
+		self.assertEqual((inv.status, inv.credit_applied, inv.expected_collection), ("Open", 0.0, 1000.0))
+		self.assertEqual(credits.get_balance(TEAM)["balance"], 400)
+		collect.assert_not_called()
+
+	def _attempt(self, invoice: str, hold_until=None) -> None:
+		frappe.get_doc(
+			{
+				"doctype": "Payment Attempt",
+				"invoice": invoice,
+				"team": TEAM,
+				"amount": 1000,
+				"currency": "INR",
+				"status": "Initiated",
+				"initiated_at": frappe.utils.now_datetime(),
+				"gateway_hold_until": hold_until,
+			}
+		).insert(ignore_permissions=True)
+
+	def test_an_invoice_with_a_charge_in_flight_keeps_the_credit_in_the_wallet(self):
+		name = self._open_invoice()
+		self._attempt(name)
+		credits.purchase(TEAM, 1000, "INR")
+
+		self.assertEqual(lifecycle.settle_with_new_credit(TEAM), [{"invoice": name, "applied": 0}])
+		inv = frappe.get_doc("Invoice", name)
+		self.assertEqual((inv.status, inv.credit_applied, inv.expected_collection), ("Open", 0.0, 1000.0))
+		self.assertEqual(credits.get_balance(TEAM)["balance"], 1000)
+
+	def test_credit_settles_an_invoice_whose_debit_the_gateway_holds(self):
+		name = self._open_invoice()
+		self._attempt(name, hold_until=frappe.utils.add_to_date(frappe.utils.now_datetime(), hours=36))
+		credits.purchase(TEAM, 1000, "INR")
+
+		lifecycle.settle_with_new_credit(TEAM)
+
+		inv = frappe.get_doc("Invoice", name)
+		self.assertEqual((inv.status, inv.credit_applied, inv.expected_collection), ("Paid", 1000.0, 0.0))
+
+	def test_a_debit_whose_hold_ended_still_keeps_the_credit_in_the_wallet(self):
+		name = self._open_invoice()
+		self._attempt(name, hold_until=frappe.utils.add_to_date(frappe.utils.now_datetime(), hours=-1))
+		credits.purchase(TEAM, 1000, "INR")
+
+		self.assertEqual(lifecycle.settle_with_new_credit(TEAM), [{"invoice": name, "applied": 0}])
+
+	def test_booking_a_credit_queues_the_settlement(self):
+		with patch("frappe.enqueue") as enqueue:
+			credits.purchase(TEAM, 400, "INR")
+		self.assertEqual(enqueue.call_args.kwargs["team"], TEAM)
+
+
 class TestTerminationCancelsBilling(BillingTestBase):
 	"""Terminating the VM must close the billing segment, not just pause it."""
 
@@ -339,6 +471,60 @@ class TestTerminationCancelsBilling(BillingTestBase):
 		self.assertFalse(frappe.db.get_value("Subscription", self.sub, "enabled"))
 		self.assertEqual(subscriptions.current_segment_rate(self.sub), 0)
 		self.assertEqual(subscriptions.team_run_rate(TEAM), 0)  # headroom freed
+
+
+class TestStatusSaveKeepsLines(BillingTestBase):
+	"""Saving an invoice's status does not write its lines again."""
+
+	def _invoice(self):
+		add_segment(self.sub, "Created", 1000, "2026-06-01 00:00:00")
+		return frappe.get_doc(
+			"Invoice", invoicing.generate_draft_invoice(self.sub, "2026-06-01", "2026-06-30")
+		)
+
+	def test_a_status_save_leaves_the_lines_alone(self):
+		inv = self._invoice()
+		line_modified = frappe.db.get_value("Invoice Line Item", inv.items[0].name, "modified")
+		with self.freeze_time("2030-01-01 10:00:00"):
+			inv.due_date = "2026-07-07"
+			save_billing_record(inv)
+		self.assertEqual(
+			frappe.db.get_value("Invoice Line Item", inv.items[0].name, "modified"), line_modified
+		)
+
+	def test_a_changed_line_is_still_written(self):
+		inv = self._invoice()
+		inv.items[0].amount = 1
+		save_billing_record(inv)
+		self.assertEqual(frappe.db.get_value("Invoice Line Item", inv.items[0].name, "amount"), 1)
+
+
+class TestServerBillsFromItsStart(BillingTestBase):
+	"""A server bills from the moment it was created, not from that day's midnight."""
+
+	def _server_for(self, created, terminated):
+		with self.freeze_time(created):
+			sub = make_billing_subscription(TEAM, CLUSTER, PLAN, clear_changes=False)
+		server = frappe.get_doc("Virtual Machine", frappe.db.get_value("Subscription", sub, "server_id"))
+		server.status = "Running"
+		server.save(ignore_permissions=True)
+		with self.freeze_time(terminated):
+			server.reload()
+			server.status = "Terminated"
+			server.save(ignore_permissions=True)
+		return sub
+
+	def test_a_server_that_ran_eight_hours_bills_eight_hours(self):
+		sub = self._server_for("2026-06-05 14:30:00", "2026-06-05 22:30:00")
+
+		inv = frappe.get_doc("Invoice", invoicing.generate_draft_invoice(sub, "2026-06-01", "2026-06-30"))
+		self.assertEqual([(li.unit, li.hours) for li in inv.items], [("hour", 8.0)])
+
+	def test_a_backdated_start_opens_at_its_date(self):
+		with self.freeze_time("2026-06-10 15:00:00"):
+			sub = make_billing_subscription(TEAM, CLUSTER, PLAN, start_date="2026-06-05", clear_changes=False)
+		opened = frappe.db.get_value("Subscription Change", {"subscription": sub}, "effective_at")
+		self.assertEqual(str(opened), "2026-06-05 00:00:00")
 
 
 class TestMonthlyBillingRun(BillingTestBase):

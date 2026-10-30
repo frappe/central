@@ -14,6 +14,7 @@
   "identity_column",
   "plan",
   "atlas_vm_id",
+  "atlas_host_id",
   "frappe_version",
   "status",
   "configuration_tab",
@@ -37,13 +38,14 @@
   "is_firewall_enabled",
   "firewall_rules",
   "has_ipv4_internet",
+  "has_wireguard_access",
   "ssh_keys_section",
   "ssh_keys",
   "diagnostics_tab",
   "admin_domain_section",
   "admin_domain_task",
   "admin_domain_error",
-  "admin_domain_error_log",
+  "admin_domain_diagnostic",
   "regional_section",
   "atlas_image_id",
   "regional_column",
@@ -113,7 +115,7 @@
    "options": "Plan"
   },
   {
-   "description": "Frappe version the VM was provisioned with \u2014 requested at create, resolved to a bench image and echoed back by Atlas (an unbuilt version falls back to the default).",
+   "description": "Frappe version the VM was provisioned with — requested at create, resolved to a bench image and echoed back by Atlas (an unbuilt version falls back to the default).",
    "fieldname": "frappe_version",
    "fieldtype": "Data",
    "label": "Frappe Version",
@@ -259,6 +261,14 @@
    "read_only": 1
   },
   {
+   "default": "0",
+   "description": "Whether the team's WireGuard devices reach the server through the regional gateway, as Atlas last reported.",
+   "fieldname": "has_wireguard_access",
+   "fieldtype": "Check",
+   "label": "WireGuard Access",
+   "read_only": 1
+  },
+  {
    "description": "The customer's firewall rules, as Atlas last reported, without the rules Central adds.",
    "fieldname": "firewall_rules",
    "fieldtype": "JSON",
@@ -304,11 +314,11 @@
    "read_only": 1
   },
   {
-   "description": "The Error Log for the latest admin hostname failure.",
-   "fieldname": "admin_domain_error_log",
-   "fieldtype": "Link",
-   "label": "Admin Domain Error Log",
-   "options": "Error Log",
+   "description": "The detail of the latest admin hostname failure. Operators only.",
+   "fieldname": "admin_domain_diagnostic",
+   "fieldtype": "Code",
+   "label": "Admin Domain Diagnostic",
+   "permlevel": 1,
    "read_only": 1
   },
   {
@@ -324,6 +334,14 @@
    "in_standard_filter": 1,
    "label": "Atlas VM ID",
    "read_only": 1
+  },
+  {
+   "description": "Bare metal host the region placed this VM on, as Atlas reports it.",
+   "fieldname": "atlas_host_id",
+   "fieldtype": "Data",
+   "label": "Atlas Host ID",
+   "read_only": 1,
+   "search_index": 1
   },
   {
    "fieldname": "atlas_image_id",
@@ -372,7 +390,7 @@
    "link_fieldname": "server"
   }
  ],
- "modified": "2026-10-11 14:00:00.000000",
+ "modified": "2026-10-26 10:42:17.318256",
  "modified_by": "Administrator",
  "module": "Infrastructure",
  "name": "Virtual Machine",
@@ -396,6 +414,11 @@
    "read": 1,
    "report": 1,
    "role": "Central User"
+  },
+  {
+   "permlevel": 1,
+   "read": 1,
+   "role": "System Manager"
   }
  ],
  "row_format": "Dynamic",

@@ -20,6 +20,8 @@ import { openRazorpayCheckout, type RazorpayOrder } from '@/lib/gateway'
 interface MethodResult {
 	payment_method: string
 	status: string
+	// Why the method could not be added, when status is Failed.
+	message?: string
 }
 
 export function useAddPaymentMethod({
@@ -76,6 +78,10 @@ export function useAddPaymentMethod({
 			await confirm.submit({ payment_method: order.payment_method, ...handles })
 			if (confirm.error) throw confirm.error
 			const res = confirm.data ?? undefined
+			if (res?.status === 'Failed') {
+				error.value = res.message ?? `Could not add ${methodType}`
+				return
+			}
 			successToast(`${methodType} added`)
 			onDone?.(res)
 			return res

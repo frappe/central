@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { Switch } from 'frappe-ui'
+import { features } from '@/lib/features'
 
 interface Props {
 	/** The monthly price of a public IPv4 in the chosen region, or null when it has none. */
@@ -19,6 +20,7 @@ const isFirewallEnabled = defineModel<boolean>('isFirewallEnabled', {
 		class="divide-y divide-outline-gray-2 rounded-6 border border-outline-gray-2"
 	>
 		<Switch
+			v-if="features.publicIpv4"
 			v-model="hasPublicIpv4"
 			:disabled="!ipv4PriceLabel"
 			class="px-4 py-3"
@@ -37,7 +39,11 @@ const isFirewallEnabled = defineModel<boolean>('isFirewallEnabled', {
 				</span>
 			</template>
 		</Switch>
-		<Switch v-model="hasPublicIpv6" class="px-4 py-3">
+		<Switch
+			v-if="features.publicIpv6"
+			v-model="hasPublicIpv6"
+			class="px-4 py-3"
+		>
 			<template #label>
 				<span class="block text-base-medium text-ink-gray-8">
 					Public IPv6 address · Free
@@ -47,7 +53,11 @@ const isFirewallEnabled = defineModel<boolean>('isFirewallEnabled', {
 				</span>
 			</template>
 		</Switch>
-		<Switch v-model="isFirewallEnabled" class="px-4 py-3">
+		<Switch
+			v-if="features.firewall"
+			v-model="isFirewallEnabled"
+			class="px-4 py-3"
+		>
 			<template #label>
 				<span class="block text-base-medium text-ink-gray-8">
 					Enable firewall

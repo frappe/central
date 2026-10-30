@@ -16,6 +16,7 @@ from central.billing.tests.utils import (
 	complete_billing_profile,
 	ensure_atlas_instance,
 	ensure_team,
+	give_team_a_card,
 	make_plan,
 	run_enqueued_inline,
 	set_team_tier,
@@ -60,6 +61,7 @@ class TestResizeComposed(IntegrationTestCase):
 		ensure_atlas_instance(CLUSTER)
 		ensure_team(TEAM)
 		complete_billing_profile(TEAM, currency="INR")
+		give_team_a_card(TEAM)
 		_ensure_tier_level("t1")
 		set_team_tier(TEAM, max_spend=1_000_000)
 		for resource_type, rate in (("Compute", 500), ("Memory", 250), ("Disk", 10)):
@@ -349,6 +351,18 @@ class TestResizeComposed(IntegrationTestCase):
 			{"Compute": 4, "Memory": 16, "Disk": 40, "Transfer": 400},
 		)
 
+	def test_resize_config_rounds_a_fractional_disk_up(self):
+		"""Atlas reports MiB, so a 12800 MiB disk mirrors as 12.5 GB. The resize API takes
+		whole GB, so the console must receive a disk it can send back."""
+		from central.billing.api.dashboard.catalog import get_composed_config
+
+		plan = make_plan("resize-fractional-disk", rates=[{"cluster": "", "currency": "INR", "rate": 1500}])
+		sub = subscriptions.create_subscription(TEAM, CLUSTER, plan=plan).name
+		server = self._ready(sub)
+		frappe.db.set_value("Virtual Machine", server, "disk_gigabytes", 12.5)
+
+		self.assertEqual(get_composed_config(server, team=TEAM)["disk_gb"], 13)
+
 	def test_begin_resize_onto_a_smaller_preset_keeps_the_larger_disk(self):
 		"""CPU and memory only: a plan with less disk than the server still fits, because
 		the server keeps its own disk."""
@@ -403,6 +417,63 @@ class TestResizeComposed(IntegrationTestCase):
 		enqueue.assert_not_called()  # rejected up front, nothing queued
 		self.assertFalse(frappe.db.exists("Resource Action", {"resource_id": server}))
 
+	def test_begin_resize_refuses_a_retired_plan(self):
+		"""A team keeps a retired plan it runs, but cannot move onto one."""
+		sub = self._provision()
+		server = self._ready(sub)
+		plan = make_plan("resize-retired", rates=[{"cluster": "", "currency": "INR", "rate": 100}])
+		frappe.db.set_value("Plan", plan, "is_active", 0)
+		with patch("frappe.enqueue") as enqueue:
+			with self.assertRaisesRegex(frappe.ValidationError, "not available"):
+				subscriptions.begin_resize(sub, plan=plan)
+		enqueue.assert_not_called()
+		self.assertFalse(frappe.db.exists("Resource Action", {"resource_id": server}))
+
+	def test_begin_resize_grows_the_disk_of_a_retired_plan_it_runs(self):
+		plan = make_plan(
+			"resize-retired-own",
+			rates=[{"cluster": "", "currency": "INR", "rate": 3000}],
+			sub_category="General",
+		)
+		sub = subscriptions.create_subscription(TEAM, CLUSTER, plan=plan).name
+		self._ready(sub)
+		frappe.db.set_value("Plan", plan, "is_active", 0)
+		with patch("frappe.enqueue", side_effect=run_enqueued_inline):
+			result = subscriptions.begin_resize(sub, plan=plan, disk_gigabytes=200)
+		self.assertTrue(result["resized"])
+
+	def test_resize_up_needs_a_way_to_pay_and_resize_down_does_not(self):
+		def rows(shape):
+			# Fresh rows: insert writes child-row keys into the dicts it is given.
+			return [{key: row[key] for key in ("resource_type", "quantity", "unit")} for row in shape]
+
+		big_rows, small_rows = rows(BIG), rows(SMALL)
+		big = self._provision(rows(BIG))
+		frappe.db.set_value("Virtual Machine", self._ready(big), "atlas_vm_id", "vm-resize-big")
+		small = self._provision(rows(SMALL))
+		self._ready(small)
+		frappe.db.delete("Payment Method", {"team": TEAM})
+
+		with patch("frappe.enqueue") as enqueue:
+			with self.assertRaises(frappe.ValidationError) as caught:
+				subscriptions.begin_resize(small, includes=big_rows, sub_category="General")
+		self.assertEqual(caught.exception.envelope["code"], "PAYMENT_METHOD_REQUIRED")
+		enqueue.assert_not_called()
+
+		with patch("frappe.enqueue", side_effect=run_enqueued_inline):
+			result = subscriptions.begin_resize(big, includes=small_rows, sub_category="General")
+		self.assertTrue(result["resized"])
+
+	def test_begin_resize_refuses_an_extra_priced_row(self):
+		sub = self._provision()
+		self._ready(sub)
+		includes = [*BIG, {"resource_type": "Snapshot", "quantity": -10000, "unit": "GB"}]
+		with patch("frappe.enqueue") as enqueue:
+			with self.assertRaisesRegex(frappe.ValidationError, "Remove"):
+				subscriptions.begin_resize(sub, includes=includes, sub_category="General")
+		enqueue.assert_not_called()
+		self.assertEqual(len(self._segments(sub)), 1)
+
 	def test_begin_resize_returns_the_action_already_running(self):
 		sub = self._provision()
 		self._ready(sub)
@@ -438,7 +509,7 @@ class TestResizeComposed(IntegrationTestCase):
 			result = subscriptions.begin_resize(sub, includes=BIG, sub_category="General")
 		action = frappe.get_doc("Resource Action", result["action"])
 		self.assertEqual(action.status, "Uncertain")
-		self.assertIn("host unavailable", frappe.get_doc("Error Log", action.error_log).error)
+		self.assertIn("host unavailable", action.diagnostic)
 		self.assertEqual(len(self._segments(sub)), 1)  # billing stayed on the old segment
 
 	def test_unconfirmed_remote_shape_does_not_relock_billing(self):
@@ -454,7 +525,7 @@ class TestResizeComposed(IntegrationTestCase):
 		self.assertEqual(action.status, "Uncertain")
 		self.assertIn(
 			"did not report the requested server size",
-			frappe.get_doc("Error Log", action.error_log).error,
+			action.diagnostic,
 		)
 		self.assertEqual(len(self._segments(sub)), 1)
 
@@ -476,7 +547,7 @@ class TestResizeComposed(IntegrationTestCase):
 
 		action = frappe.get_doc("Resource Action", result["action"])
 		self.assertEqual(action.status, "Sent")
-		self.assertIn("billing unavailable", frappe.get_doc("Error Log", action.error_log).error)
+		self.assertIn("billing unavailable", action.diagnostic)
 		self.assertEqual(len(self._segments(sub)), 1)
 
 		with patch("central.integrations.servers.observe_server"):

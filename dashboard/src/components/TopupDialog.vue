@@ -80,7 +80,7 @@ const icons: Record<string, string> = {
 }
 const marks: Record<string, PaymentNetwork[]> = {
 	Card: ['visa', 'mastercard'],
-	'RuPay Card': ['rupay'],
+	'RuPay Card': ['rupay', 'diners'],
 	UPI: ['upi'],
 }
 
@@ -234,14 +234,14 @@ watch(open, (isOpen) => {
 				<p class="text-sm text-ink-gray-8">
 					Paying {{ money(payable, currency) }}
 				</p>
-				<p v-if="cardLoading" class="text-p-sm text-ink-gray-5">
+				<p v-if="cardLoading" class="text-p-sm text-ink-gray-6">
 					Loading secure card field…
 				</p>
 				<div
 					ref="cardEl"
 					class="rounded-4 border border-outline-gray-2 px-3 py-3"
 				/>
-				<p class="text-p-sm text-ink-gray-5">
+				<p class="text-p-sm text-ink-gray-6">
 					Card details are entered on Stripe's secure field. We never see your
 					card number. Your billing address is taken from your billing profile.
 				</p>
@@ -252,11 +252,11 @@ watch(open, (isOpen) => {
 				<p class="text-sm text-ink-gray-8">
 					Paying {{ money(payable, currency) }}
 				</p>
-				<p v-if="paypalLoading" class="text-p-sm text-ink-gray-5">
+				<p v-if="paypalLoading" class="text-p-sm text-ink-gray-6">
 					Loading PayPal…
 				</p>
 				<div ref="paypalEl" />
-				<p class="text-p-sm text-ink-gray-5">
+				<p class="text-p-sm text-ink-gray-6">
 					You'll approve the payment in PayPal. Your wallet is credited only
 					after PayPal confirms.
 				</p>
@@ -378,7 +378,7 @@ watch(open, (isOpen) => {
 						</dd>
 					</div>
 				</dl>
-				<p class="text-p-sm text-ink-gray-5">
+				<p class="text-p-sm text-ink-gray-6">
 					We add the credit to your wallet once the payment goes through.
 				</p>
 			</div>

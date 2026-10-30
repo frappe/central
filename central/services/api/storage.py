@@ -5,6 +5,7 @@ from frappe.utils.translations import _lt
 
 from central.integrations.object_storage import BucketInteractions
 from central.services.doctype.team_service.team_service import STORAGE_SERVICE, TeamService, get_bucket_name
+from central.signups.access import require_service_access
 from central.utils.guards import require_capability
 
 BUCKET_FIELDS = ("name", "bucket_name", "region", "status", "endpoint_url", "access_key", "creation")
@@ -105,7 +106,8 @@ def delete_objects(
 @require_capability("service:manage", MANAGE_DENIED)
 def create_bucket(team: str | None = None, bucket_name: str | None = None, region: str | None = None) -> dict:
 	"""Create a bucket and return its secret once. The bucket is named
-	`<tenant>-<region>-<bucket_name>`, because bucket names are shared across a region."""
+	`<tenant>-<region>-<bucket_name>`, because bucket names are shared across a region. Not on a free trial."""
+	require_service_access(team)
 	bucket_name = (bucket_name or "").strip()
 	if not bucket_name or not region:
 		frappe.throw(_("A bucket needs a name and a region."))

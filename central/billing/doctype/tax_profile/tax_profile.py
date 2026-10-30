@@ -15,6 +15,8 @@ class TaxProfile(Document):
 	if TYPE_CHECKING:
 		from frappe.types import DF
 
+		internal_reason: DF.SmallText | None
+		is_internal: DF.Check
 		output_tax_rate: DF.Float
 		output_tax_type: DF.Literal["None", "GST", "VAT"]
 		tds_applicable: DF.Check
@@ -31,3 +33,22 @@ class TaxProfile(Document):
 				_("A zero-rated tax profile needs a compliance reason (sez_lut / export)."),
 				frappe.ValidationError,
 			)
+		if self.is_internal and not (self.internal_reason or "").strip():
+			frappe.throw(_("Write why this team is internal."), frappe.ValidationError)
+
+	def on_update(self):
+		"""Log who marked or cleared the team as internal, and why."""
+		before = self.get_doc_before_save()
+		if bool(self.is_internal) == bool(before and before.is_internal):
+			return
+
+		from central.billing.revenue.invoicing.lifecycle import waive_for_internal_team
+		from central.billing.states import record_event
+
+		record_event(
+			self,
+			"Internal Team Marked" if self.is_internal else "Internal Team Cleared",
+			reason=self.internal_reason,
+		)
+		if self.is_internal:
+			waive_for_internal_team(self.team)

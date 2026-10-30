@@ -32,7 +32,9 @@ def seed_server(team: str, trial_state: str = "Active", days_left: int = 5, stat
 		}
 	).db_insert()
 	site = _insert_site(team, server.name, trial_state, days_left)
-	if not trial_state:
+	if trial_state:
+		_insert_creation_request(team, region, server.name, plan)
+	else:
 		server.ensure_subscription_enabled()
 
 	frappe.db.commit()
@@ -121,13 +123,14 @@ def teardown_servers(team: str) -> dict:
 
 
 def _trial_region_and_plan(team: str) -> tuple[str, str]:
-	"""Central's own trial region and plan. A site with no plan marked Available on Trial falls back
-	to the cheapest plan of a region that serves sites."""
+	"""Central's own trial region and plan. A site with no trial region or no plan marked Available
+	on Trial falls back to the cheapest plan of any active region. The seeded server is written
+	directly, so its region needs no proxy domain."""
 	for region in trial_regions():
 		plan = get_cheapest_trial_plan(team, region)
 		if plan:
 			return region, plan
-	for region in trial_regions():
+	for region in frappe.get_all("Region", filters={"status": "Active"}, pluck="name", order_by="name asc"):
 		plans = [row for rows in get_server_plans(team, cluster=region)["plans"].values() for row in rows]
 		if plans:
 			return region, min(plans, key=lambda plan: plan["rate"])["plan"]
@@ -172,6 +175,28 @@ def _insert_site(team: str, server: str, trial_state: str, days_left: int) -> st
 		}
 	).db_insert()
 	return name
+
+
+def _insert_creation_request(team: str, region: str, server: str, plan: str) -> None:
+	"""The finished free trial creation that names the trial's plan, as a signup leaves it."""
+	frappe.get_doc(
+		{
+			"doctype": "Resource Action",
+			"name": frappe.generate_hash(length=10),
+			"resource_type": "Site",
+			"action": "create",
+			"team": team,
+			"region": region,
+			"title": server,
+			"server": server,
+			"resource_id": server,
+			"requested_by": "Administrator",
+			"correlation_id": frappe.generate_hash(length=32),
+			"status": "Succeeded",
+			"is_free_trial": 1,
+			"request_payload": frappe.as_json({"plan": plan}),
+		}
+	).db_insert()
 
 
 def _gateway() -> str:

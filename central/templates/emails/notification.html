@@ -10,12 +10,12 @@
 
 		{% for note in notes %}{{ ui.paragraph(note) }}{% endfor %}
 
-		{% if getting_started_url %}
-		{{ ui.button(_("Get started"), getting_started_url) }}
+		{% if action_label and action_url %}
+		{{ ui.button(_("Get started") if getting_started_url else action_label, action_url) }}
 		{% endif %}
 
-		{% if action_label and action_url %}
-		{{ ui.button(action_label, action_url, primary=not getting_started_url) }}
+		{% if getting_started_url %}
+		{{ ui.button(_("View docs"), getting_started_url, primary=not action_url) }}
 		{% endif %}
 	</td>
 </tr>

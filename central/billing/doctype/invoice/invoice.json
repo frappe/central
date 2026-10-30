@@ -48,6 +48,7 @@
   "promotional_record_id",
   "credit_note_id",
   "erpnext_sync_status",
+  "erpnext_synced_at",
   "erpnext_sync_attempts",
   "erpnext_next_retry_at",
   "erpnext_sync_error",
@@ -315,8 +316,17 @@
    "fieldname": "erpnext_sync_status",
    "fieldtype": "Select",
    "label": "ERPNext Sync Status",
-   "options": "Pending\nSynced\nFailed",
-   "read_only": 1
+   "options": "Pending\nSynced\nFailed\nNot Required",
+   "read_only": 1,
+   "description": "Not Required: promotional credit paid the whole invoice, so it is not sent to the accounting system."
+  },
+  {
+   "description": "When the invoice reached the accounting system.",
+   "fieldname": "erpnext_synced_at",
+   "fieldtype": "Datetime",
+   "label": "Synced At",
+   "read_only": 1,
+   "no_copy": 1
   },
   {
    "default": "0",
@@ -370,7 +380,7 @@
    "link_fieldname": "invoice"
   }
  ],
- "modified": "2026-10-10 10:27:25.616292",
+ "modified": "2026-10-25 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Invoice",
@@ -378,8 +388,8 @@
  "owner": "Administrator",
  "permissions": [
   {
-   "create": 1,
-   "delete": 1,
+   "create": 0,
+   "delete": 0,
    "email": 1,
    "export": 1,
    "print": 1,
@@ -387,7 +397,7 @@
    "report": 1,
    "role": "System Manager",
    "share": 1,
-   "write": 1
+   "write": 0
   }
  ],
  "sort_field": "creation",

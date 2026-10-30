@@ -14,7 +14,11 @@
   "zero_rating_reason",
   "section_break_tds",
   "tds_applicable",
-  "tds_rate"
+  "tds_rate",
+  "section_break_internal",
+  "is_internal",
+  "column_break_internal",
+  "internal_reason"
  ],
  "fields": [
   {
@@ -46,7 +50,7 @@
   },
   {
    "default": "0",
-   "description": "SEZ-LUT / export \u2014 output tax 0 but a reason is mandatory",
+   "description": "SEZ-LUT / export — output tax 0 but a reason is mandatory",
    "fieldname": "zero_rated",
    "fieldtype": "Check",
    "label": "Zero Rated"
@@ -74,11 +78,38 @@
    "fieldname": "tds_rate",
    "fieldtype": "Float",
    "label": "TDS Rate %"
+  },
+  {
+   "fieldname": "section_break_internal",
+   "fieldtype": "Section Break",
+   "label": "Internal Team"
+  },
+  {
+   "default": "0",
+   "fieldname": "is_internal",
+   "fieldtype": "Check",
+   "label": "Internal Team",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "search_index": 1,
+   "description": "A team the company runs for itself. It is not held to its trust tier or credits, its invoices are waived instead of collected, and it is never sent to the accounting system."
+  },
+  {
+   "fieldname": "column_break_internal",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "internal_reason",
+   "fieldtype": "Small Text",
+   "label": "Why Internal",
+   "depends_on": "eval:doc.is_internal",
+   "mandatory_depends_on": "eval:doc.is_internal",
+   "description": "Who approved it and what the team is for."
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-10-10 10:27:25.616292",
+ "modified": "2026-10-21 14:56:42.317751",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Tax Profile",

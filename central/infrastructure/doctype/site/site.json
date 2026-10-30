@@ -13,15 +13,18 @@
   "ready_at",
   "claimed_at",
   "rename_task",
+  "rename_status",
+  "rename_completed_at",
   "renamed_at",
   "rename_error",
-  "rename_error_log",
+  "rename_diagnostic",
   "trial_section",
   "trial_state",
   "trial_ends_on",
   "trial_deletes_on",
   "trial_last_notice",
   "column_break_trial",
+  "conversion_plan",
   "trial_cost",
   "trial_currency",
   "trial_error"
@@ -86,14 +89,29 @@
    "read_only": 1
   },
   {
-   "description": "The Pilot task that renamed the bench site onto the customer's subdomain. Set once, when the rename is sent; empty means it never was.",
+   "description": "The accepted Pilot task for the physical site rename. An ID does not confirm completion.",
    "fieldname": "rename_task",
    "fieldtype": "Data",
    "label": "Rename Task",
    "read_only": 1
   },
   {
-   "description": "When Central first reached the site on the customer's subdomain after the rename. From then on the console shows that address.",
+   "description": "The latest status reported by Pilot for the physical site rename.",
+   "fieldname": "rename_status",
+   "fieldtype": "Select",
+   "label": "Rename Status",
+   "options": "\nqueued\nrunning\nsuccess\nfailed\nkilled",
+   "read_only": 1
+  },
+  {
+   "description": "When Central confirmed that Pilot completed the physical site rename.",
+   "fieldname": "rename_completed_at",
+   "fieldtype": "Datetime",
+   "label": "Rename Completed At",
+   "read_only": 1
+  },
+  {
+   "description": "When Central first reached the customer's subdomain. This does not confirm the physical rename.",
    "fieldname": "renamed_at",
    "fieldtype": "Datetime",
    "label": "Renamed At",
@@ -107,11 +125,11 @@
    "read_only": 1
   },
   {
-   "description": "The Error Log for the latest site rename failure.",
-   "fieldname": "rename_error_log",
-   "fieldtype": "Link",
-   "label": "Rename Error Log",
-   "options": "Error Log",
+   "description": "The traceback of the latest site rename failure. Operators only.",
+   "fieldname": "rename_diagnostic",
+   "fieldtype": "Code",
+   "label": "Rename Diagnostic",
+   "permlevel": 1,
    "read_only": 1
   },
   {
@@ -165,6 +183,14 @@
    "fieldtype": "Column Break"
   },
   {
+   "description": "The paid plan the customer chose to keep the site on. The server moves to it when the trial converts. Empty means the cheapest plan the site may move to.",
+   "fieldname": "conversion_plan",
+   "fieldtype": "Link",
+   "label": "Conversion Plan",
+   "options": "Plan",
+   "read_only": 1
+  },
+  {
    "description": "What the free trial cost: the plan's monthly rate for the days the trial ran. Set when the trial converts or is deleted.",
    "fieldname": "trial_cost",
    "fieldtype": "Currency",
@@ -194,7 +220,7 @@
    "link_fieldname": "site"
   }
  ],
- "modified": "2026-10-15 10:00:00.000000",
+ "modified": "2026-10-28 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Infrastructure",
  "name": "Site",
@@ -218,6 +244,11 @@
    "read": 1,
    "report": 1,
    "role": "Central User"
+  },
+  {
+   "permlevel": 1,
+   "read": 1,
+   "role": "System Manager"
   }
  ],
  "row_format": "Dynamic",

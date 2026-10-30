@@ -46,7 +46,7 @@ def get_billing_profile(team: str | None = None) -> dict:
 	  exists, so the UI disables the currency picker.
 	- `supported_currencies` — the allowed set (gateway-backed; not stored on the
 	  profile).
-	- `payment_method_required`, `welcome_credit` — see `signups.credit.get_purchase_state`.
+	- `payment_method_required`, `welcome_credit`, `open_trial` — see `signups.credit.get_purchase_state`.
 
 	The stored fields (currency, legal name, address, GSTIN, …) come straight off
 	the doc for the edit forms; the derived fields drive routing and locking.

@@ -130,7 +130,7 @@ class TestWhenToSync(CustomerSyncTestCase):
 
 	def test_nothing_is_queued_when_sync_is_off(self):
 		frappe.local.conf["enable_erpnext_sync"] = 0
-		self._save(phone="5555555555").assert_not_called()
+		self._save(phone="9555555555").assert_not_called()
 
 
 class TestPending(CustomerSyncTestCase):

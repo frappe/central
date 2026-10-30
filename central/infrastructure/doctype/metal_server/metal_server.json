@@ -11,6 +11,7 @@
   "column_break_main",
   "vendor",
   "cost_per_month_inr",
+  "atlas_host_id",
   "specs_section",
   "os",
   "column_break_pgts",
@@ -19,6 +20,13 @@
   "memory_gib",
   "column_break_llac",
   "disk_gib",
+  "sellable_section",
+  "reserved_vcpus",
+  "cpu_overcommit_ratio",
+  "column_break_reserve",
+  "reserved_memory_gib",
+  "column_break_reserve_disk",
+  "reserved_disk_gib",
   "network_section",
   "private_ipv4",
   "column_break_network",
@@ -29,7 +37,18 @@
   "column_break_access",
   "bmc_url",
   "bmc_username",
-  "bmc_password"
+  "bmc_password",
+  "lifecycle_tab",
+  "ownership",
+  "model",
+  "column_break_lifecycle",
+  "purchase_price_inr",
+  "purchased_on",
+  "column_break_lifecycle_dates",
+  "deployed_on",
+  "warranty_until",
+  "incidents_section",
+  "incidents"
  ],
  "fields": [
   {
@@ -69,7 +88,20 @@
    "fieldname": "cost_per_month_inr",
    "fieldtype": "Currency",
    "label": "Cost per Month (INR)",
-   "options": "INR"
+   "options": "INR",
+   "reqd": 1,
+   "in_list_view": 1,
+   "non_negative": 1,
+   "description": "What the vendor charges for this machine each month. Billing reports split it across the servers in the region to work out margin."
+  },
+  {
+   "description": "The Metal Server ID in the region's Atlas. Billing reports use it to find the VMs on this machine. Use Link Atlas Host to fill it.",
+   "fieldname": "atlas_host_id",
+   "fieldtype": "Data",
+   "label": "Atlas Host ID",
+   "unique": 1,
+   "no_copy": 1,
+   "read_only": 1
   },
   {
    "fieldname": "specs_section",
@@ -83,7 +115,10 @@
   {
    "fieldname": "vcpus",
    "fieldtype": "Int",
-   "label": "vCPUs"
+   "label": "vCPUs",
+   "reqd": 1,
+   "non_negative": 1,
+   "description": "Billing reports split the monthly cost by vCPU."
   },
   {
    "fieldname": "memory_gib",
@@ -94,6 +129,46 @@
    "fieldname": "disk_gib",
    "fieldtype": "Int",
    "label": "Disk (GiB)"
+  },
+  {
+   "fieldname": "sellable_section",
+   "fieldtype": "Section Break",
+   "label": "Sellable Capacity",
+   "description": "What the host keeps for itself. Sellable = (physical − reserved), and vCPUs are then multiplied by the overcommit ratio."
+  },
+  {
+   "fieldname": "reserved_vcpus",
+   "fieldtype": "Int",
+   "label": "Reserved vCPUs",
+   "non_negative": 1
+  },
+  {
+   "default": "1",
+   "fieldname": "cpu_overcommit_ratio",
+   "fieldtype": "Float",
+   "label": "CPU Overcommit Ratio",
+   "non_negative": 1,
+   "description": "1 sells each vCPU once. 2 sells each vCPU twice."
+  },
+  {
+   "fieldname": "column_break_reserve",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "reserved_memory_gib",
+   "fieldtype": "Int",
+   "label": "Reserved Memory (GiB)",
+   "non_negative": 1
+  },
+  {
+   "fieldname": "column_break_reserve_disk",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "reserved_disk_gib",
+   "fieldtype": "Int",
+   "label": "Reserved Disk (GiB)",
+   "non_negative": 1
   },
   {
    "fieldname": "network_section",
@@ -165,10 +240,77 @@
   {
    "fieldname": "column_break_llac",
    "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "lifecycle_tab",
+   "fieldtype": "Tab Break",
+   "label": "Lifecycle"
+  },
+  {
+   "default": "Rented",
+   "fieldname": "ownership",
+   "fieldtype": "Select",
+   "label": "Ownership",
+   "options": "Rented\nOwned",
+   "in_standard_filter": 1,
+   "description": "Rented: the monthly cost is the rent. Owned: the monthly cost is power, space and support, and the purchase price is paid back over time."
+  },
+  {
+   "fieldname": "model",
+   "fieldtype": "Data",
+   "label": "Model",
+   "in_standard_filter": 1,
+   "description": "Hardware model, for example Lenovo ThinkSystem SR635. Machines of one model share a packing plan."
+  },
+  {
+   "fieldname": "column_break_lifecycle",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "purchase_price_inr",
+   "fieldtype": "Currency",
+   "label": "Purchase Price (INR)",
+   "options": "INR",
+   "non_negative": 1,
+   "depends_on": "eval:doc.ownership=='Owned'",
+   "mandatory_depends_on": "eval:doc.ownership=='Owned'"
+  },
+  {
+   "fieldname": "purchased_on",
+   "fieldtype": "Date",
+   "label": "Purchased On",
+   "depends_on": "eval:doc.ownership=='Owned'",
+   "mandatory_depends_on": "eval:doc.ownership=='Owned'"
+  },
+  {
+   "fieldname": "column_break_lifecycle_dates",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "deployed_on",
+   "fieldtype": "Date",
+   "label": "In Service Since",
+   "description": "The day it started taking servers. The ROI report counts months from here."
+  },
+  {
+   "fieldname": "warranty_until",
+   "fieldtype": "Date",
+   "label": "Warranty Until"
+  },
+  {
+   "fieldname": "incidents_section",
+   "fieldtype": "Section Break",
+   "label": "Repairs and Outages"
+  },
+  {
+   "fieldname": "incidents",
+   "fieldtype": "Table",
+   "label": "Incidents",
+   "options": "Metal Server Incident"
   }
  ],
  "links": [],
- "modified": "2026-10-15 00:19:14.075225",
+ "modified": "2026-10-22 10:00:00.000000",
  "modified_by": "Administrator",
  "module": "Infrastructure",
  "name": "Metal Server",

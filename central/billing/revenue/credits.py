@@ -52,6 +52,10 @@ class InsufficientCredits(frappe.ValidationError):
 	"""A debit would drive the wallet negative."""
 
 
+class WalletDrift(frappe.ValidationError):
+	"""The wallet's balance is not what its ledger adds up to, so no money may move."""
+
+
 def _backoff(attempt: int) -> None:
 	"""Wait before retrying a deadlocked booking, jittered so retriers don't
 	re-collide in lockstep."""
@@ -107,12 +111,43 @@ def _lock_and_read_balance(team: str, currency: str) -> float:
 	wallet = frappe.qb.DocType("Credit Wallet")
 	rows = (
 		frappe.qb.from_(wallet)
-		.select(wallet.balance)
+		.select(wallet.balance, wallet.last_entry)
 		.where(wallet.name == wallet_name(team, currency))
 		.for_update()
-		.run(pluck=True)
+		.run(as_dict=True)
 	)
-	return frappe.utils.flt(rows[0]) if rows else 0.0
+	if not rows:
+		return 0.0
+	balance = frappe.utils.flt(rows[0].balance)
+	_refuse_drifted_wallet(team, currency, balance, rows[0].last_entry)
+	return balance
+
+
+def _refuse_drifted_wallet(team: str, currency: str, balance: float, last_entry: str | None) -> None:
+	"""Stop every booking on a wallet whose balance is not the one its last ledger entry left.
+
+	A locking read on the entry's primary key sees the latest committed row, not this
+	transaction's snapshot, and takes no gap lock. Ledger entries are never updated, so
+	the lock contends with nothing."""
+	entry = frappe.qb.DocType("Credit Ledger Entry")
+	rows = (
+		frappe.qb.from_(entry)
+		.select(entry.running_balance)
+		.where(entry.name == last_entry)
+		.for_update()
+		.run(pluck=True)
+		if last_entry
+		else []
+	)
+	expected = frappe.utils.flt(rows[0]) if rows else 0.0
+	if abs(balance - expected) <= 0.01:
+		return
+	raise WalletDrift(
+		_(
+			"Credits for team {0} are on hold: the {1} wallet shows {2} but its last ledger entry left {3}. "
+			"An operator must correct the ledger before credits can be used or added."
+		).format(team, currency, balance, expected)
+	)
 
 
 def lock_team_wallet(team: str, currency: str | None = None) -> float:
@@ -260,19 +295,12 @@ def _post_entry(
 			f"Debit of {amount} {currency} exceeds wallet balance {balance} for {team}."
 		)
 
-	# Advance the authoritative balance on the locked anchor, then append the
-	# immutable ledger entry mirroring it. Both commit together under the lock.
+	# Append the immutable ledger entry, then advance the authoritative balance on the
+	# locked anchor and point it at that entry. Both commit together under the lock.
 	# `set_value` skips the controller, so the guard above is the only
 	# application-level check — the CHECK (balance >= 0) constraint on the column
 	# is what makes a negative balance impossible even for a caller that bypasses
 	# this function.
-	frappe.db.set_value(
-		"Credit Wallet",
-		wallet_name(team, currency),
-		"balance",
-		new_balance,
-		update_modified=False,
-	)
 	entry = frappe.get_doc(
 		{
 			"doctype": "Credit Ledger Entry",
@@ -290,6 +318,12 @@ def _post_entry(
 			**(extra or {}),
 		}
 	).insert(ignore_permissions=True)
+	frappe.db.set_value(
+		"Credit Wallet",
+		wallet_name(team, currency),
+		{"balance": new_balance, "last_entry": entry.name},
+		update_modified=False,
+	)
 	return entry, new_balance
 
 
@@ -707,22 +741,30 @@ def run_credit_expiry(on_date=None) -> dict:
 		.run(as_dict=True)
 	)
 
-	swept, total = 0, 0.0
-	for scope in scopes:
-		# A wallet with nothing in it has nothing to expire; skip before taking a lock.
-		if (
-			frappe.utils.flt(
-				frappe.db.get_value("Credit Wallet", wallet_name(scope.team, scope.currency), "balance")
-			)
-			<= 0
-		):
-			continue
-		for expiry in expire_credits(scope.team, scope.currency, on_date):
-			swept += 1
-			total += expiry["amount"]
-			frappe.logger("billing").info(
-				f"expired {expiry['amount']} {scope.currency} of promotional credit "
-				f"for {scope.team} (grant {expiry['expired_grant']})"
-			)
+	from central.billing.platform.jobs import each_isolated
 
-	return {"wallets": len(scopes), "entries": swept, "amount": total}
+	# A wallet with nothing in it has nothing to expire; skip before taking a lock.
+	wallets = {wallet_name(scope.team, scope.currency): scope for scope in scopes}
+	funded = [
+		name
+		for name in wallets
+		if frappe.utils.flt(frappe.db.get_value("Credit Wallet", name, "balance")) > 0
+	]
+	results = each_isolated(
+		"Credit expiry",
+		"Credit Wallet",
+		funded,
+		lambda name: _expire_wallet(wallets[name].team, wallets[name].currency, on_date),
+	)
+	expiries = [expiry for result in results for expiry in result]
+	return {"wallets": len(scopes), "entries": len(expiries), "amount": sum(e["amount"] for e in expiries)}
+
+
+def _expire_wallet(team: str, currency: str, on_date) -> list[dict]:
+	expiries = expire_credits(team, currency, on_date)
+	for expiry in expiries:
+		frappe.logger("billing").info(
+			f"expired {expiry['amount']} {currency} of promotional credit "
+			f"for {team} (grant {expiry['expired_grant']})"
+		)
+	return expiries

@@ -36,3 +36,8 @@ class CatalogRate(Document):
 		# Normalise a blank cluster to None so "global" rows compare cleanly.
 		if not (self.cluster or "").strip():
 			self.cluster = None
+
+
+def on_doctype_update() -> None:
+	# Every price lookup reads the rates of one priced plan or resource.
+	frappe.db.add_index("Catalog Rate", ["priced_doctype", "priced_for"])

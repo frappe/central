@@ -26,6 +26,16 @@ export function money(
 	return `${currencySymbol(currency)}${major}`
 }
 
+export function usd(amount: number | null | undefined): string {
+	const value = Number(amount ?? 0)
+	return value.toLocaleString(undefined, {
+		style: 'currency',
+		currency: 'USD',
+		minimumFractionDigits: 2,
+		maximumFractionDigits: value > 0 && value < 1 ? 4 : 2,
+	})
+}
+
 /** Signed amount for ledgers: "+ ₹5,000.00" / "− ₹5,003.20". */
 export function signedMoney(
 	amount: number | null | undefined,
@@ -34,6 +44,14 @@ export function signedMoney(
 ): string {
 	const sign = isCredit ? '+' : '−'
 	return `${sign} ${money(Math.abs(Number(amount ?? 0)), currency)}`
+}
+
+/** "1.3K", "112K", "2.4M" — a count that must fit a chip or a caption. */
+export function compactNumber(value: number): string {
+	return new Intl.NumberFormat(undefined, {
+		notation: 'compact',
+		maximumFractionDigits: 1,
+	}).format(value)
 }
 
 export { formatDateTime as formatSyncedAt } from '@/lib/datetime'

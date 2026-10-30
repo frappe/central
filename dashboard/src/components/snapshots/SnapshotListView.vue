@@ -8,6 +8,7 @@ import {
 	type ListViewFilter,
 } from '@/components/common/list-view'
 import RowActionsMenu from '@/components/common/RowActionsMenu.vue'
+import { ACCESS_LOCKED_REASON } from '@/lib/capabilities'
 import { formatDate, money } from '@/lib/format'
 import {
 	SNAPSHOT_STATUS_THEME,
@@ -30,6 +31,8 @@ interface SnapshotListViewProps {
 	/** Search to open with, such as the server a link came from. */
 	initialSearch?: string
 	serverScoped?: boolean
+	/** The server runs a free trial, which takes no snapshots until it converts. */
+	isAccessLocked?: boolean
 }
 
 // Presentational: emits what the customer chose; the page owns the dialogs and calls.
@@ -46,9 +49,10 @@ const query = ref(
 	createListViewQuery({ pageSize: 20, search: props.initialSearch ?? '' }),
 )
 
-const freeRule = computed(
-	() =>
-		`The newest ${props.freePerServer} snapshots per server are free. Older snapshots are billed by size.`,
+const pricingRule = computed(() =>
+	props.freePerServer
+		? `The newest ${props.freePerServer} snapshots per server are free. Older snapshots are billed by size.`
+		: 'Each snapshot is billed by size until you delete it.',
 )
 const errorSnapshot = ref<VMSnapshotRow | null>(null)
 const errorOpen = computed({
@@ -57,14 +61,15 @@ const errorOpen = computed({
 		if (!open) errorSnapshot.value = null
 	},
 })
+// Count every snapshot outside the free allowance, even before its billing record opens.
 const monthlyTotal = computed(() => {
-	const total = props.snapshots.reduce(
-		(sum, row) => sum + (row.is_billed ? (row.monthly_cost ?? 0) : 0),
-		0,
+	const billed = props.snapshots.filter(
+		(row) => row.status === 'Available' && !row.is_free,
 	)
-	return total
-		? `${money(total, props.currency, { trimTrailingZeros: true })} / month`
-		: 'All free'
+	if (billed.some((row) => row.monthly_cost == null)) return 'Price not set'
+
+	const total = billed.reduce((sum, row) => sum + (row.monthly_cost ?? 0), 0)
+	return `${money(total, props.currency, { trimTrailingZeros: true })} / month`
 })
 
 const searchPlaceholder = computed(() =>
@@ -195,14 +200,16 @@ function rowActions(row: VMSnapshotRow): SnapshotAction[] {
 		row-class="min-h-12 py-1.5"
 		:empty-state="{
 			title: 'No snapshots yet',
-			description: canManage
-				? 'Take a snapshot to save a copy of a server disk that you can use to create another server.'
-				: 'Snapshots save a copy of a server disk. Ask a team admin to take one or grant you permission to manage snapshots.',
+			description: isAccessLocked
+				? ACCESS_LOCKED_REASON
+				: canManage
+					? 'Take a snapshot to save a copy of a server disk that you can use to create another server.'
+					: 'Snapshots save a copy of a server disk. Ask a team admin to take one or grant you permission to manage snapshots.',
 		}"
 		@retry="emit('retry')"
 	>
 		<template v-if="snapshots.length" #toolbar>
-			<Tooltip :text="freeRule">
+			<Tooltip :text="pricingRule">
 				<span
 					tabindex="0"
 					class="flex items-center gap-1.5 rounded-4 text-p-sm text-ink-gray-7 focus-visible:outline focus-visible:outline-2 focus-visible:outline-outline-gray-3"

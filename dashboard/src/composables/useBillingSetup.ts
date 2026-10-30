@@ -18,7 +18,7 @@ import {
 	fetchBillingSetup,
 	invalidateBillingSetup,
 } from '@/data/billingSetup'
-import { formatDate, money } from '@/lib/format'
+import { money } from '@/lib/format'
 
 // Module-level so a money-moving action anywhere can ask the Overview to open its
 // billing-profile edit dialog, and the dialog reflects that one source of truth.
@@ -66,16 +66,13 @@ export function useBillingSetup() {
 		paymentMethodRequired: computed(
 			() => !!state.data?.payment_method_required,
 		),
-		// "$10 credit, valid for 60 days", or null when there is none to get. A trial team
-		// earns it only before its trial ends, so the text names that day.
+		// "$10 credit, valid for 60 days", or null when there is none to get.
 		welcomeCredit: computed(() => {
 			const credit = state.data?.welcome_credit
 			if (!credit) return null
 			const amount = money(credit.amount, credit.currency, {
 				trimTrailingZeros: true,
 			})
-			if (credit.ends_on)
-				return `${amount} credit if you add one by ${formatDate(credit.ends_on)}`
 			return credit.validity_days
 				? `${amount} credit, valid for ${credit.validity_days} days`
 				: `${amount} credit`

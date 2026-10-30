@@ -17,8 +17,14 @@ const PreferencesForm = defineAsyncComponent(
 const TeamForm = defineAsyncComponent(
 	() => import('@/components/settings/forms/TeamForm.vue'),
 )
+const InvitationsForm = defineAsyncComponent(
+	() => import('@/components/settings/forms/InvitationsForm.vue'),
+)
 const SSHKeysForm = defineAsyncComponent(
 	() => import('@/components/settings/forms/SSHKeysForm.vue'),
+)
+const WireGuardForm = defineAsyncComponent(
+	() => import('@/components/settings/forms/WireGuardForm.vue'),
 )
 
 export type SettingsTab =
@@ -26,12 +32,18 @@ export type SettingsTab =
 	| 'notifications'
 	| 'preferences'
 	| 'team'
+	| 'invitations'
 	| 'ssh-keys'
+	| 'wireguard'
+
+/** The sidebar sections, in display order. */
+export const SETTINGS_GROUPS = ['Account', 'Administration', 'Access'] as const
+export type SettingsGroup = (typeof SETTINGS_GROUPS)[number]
 
 export interface SettingsTabDef {
 	value: SettingsTab
 	/** Which section of the sidebar the entry sits in. */
-	group: 'Account' | 'Administration'
+	group: SettingsGroup
 	/** Sidebar entry and mobile row label. */
 	label: string
 	/** Lucide class for the entry; the profile tab uses your avatar instead. */
@@ -43,9 +55,9 @@ export interface SettingsTabDef {
 	/**
 	 * Capability gate, resolved by the consumer against useCapabilities:
 	 * 'member' needs any standing on the team, 'teamAdmin' needs team:edit or
-	 * team:delete. Undefined is always available.
+	 * team:delete, 'wireguard' needs server:wireguard. Undefined is always available.
 	 */
-	requires?: 'member' | 'teamAdmin'
+	requires?: 'member' | 'teamAdmin' | 'wireguard'
 }
 
 export const SETTINGS_TABS: SettingsTabDef[] = [
@@ -87,8 +99,17 @@ export const SETTINGS_TABS: SettingsTabDef[] = [
 		component: TeamForm,
 	},
 	{
-		value: 'ssh-keys',
+		value: 'invitations',
 		group: 'Administration',
+		label: 'Invitations',
+		icon: 'lucide-mail',
+		title: 'Invitations',
+		description: 'Teams that invited you. Accept one to join it.',
+		component: InvitationsForm,
+	},
+	{
+		value: 'ssh-keys',
+		group: 'Access',
 		label: 'SSH keys',
 		icon: 'lucide-key-round',
 		title: 'SSH keys',
@@ -96,14 +117,27 @@ export const SETTINGS_TABS: SettingsTabDef[] = [
 		component: SSHKeysForm,
 		requires: 'member',
 	},
+	{
+		value: 'wireguard',
+		group: 'Access',
+		label: 'WireGuard VPN',
+		icon: 'lucide-shield',
+		title: 'WireGuard VPN',
+		description:
+			"Connect a laptop or phone to your servers' private addresses through an encrypted tunnel.",
+		component: WireGuardForm,
+		requires: 'wireguard',
+	},
 ]
 
 /** The settings tabs this member can open on the active team. */
 export function useSettingsTabs() {
-	const { isMember, canEditTeam, canDeleteTeam } = useCapabilities()
+	const { isMember, canEditTeam, canDeleteTeam, canManageWireGuard } =
+		useCapabilities()
 
 	const isAvailable = (tab: SettingsTabDef): boolean => {
 		if (tab.requires === 'member') return isMember.value
+		if (tab.requires === 'wireguard') return canManageWireGuard.value
 		if (tab.requires === 'teamAdmin')
 			return canEditTeam.value || canDeleteTeam.value
 		return true

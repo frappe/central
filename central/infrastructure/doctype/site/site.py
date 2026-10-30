@@ -5,6 +5,7 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
+from central.infrastructure.doctype.blocked_domain.blocked_domain import BlockedDomain, normalize_domain
 from central.signups.funnel import capture_trial_event
 
 if TYPE_CHECKING:
@@ -26,10 +27,13 @@ class Site(Document):
 		from frappe.types import DF
 
 		claimed_at: DF.Datetime | None
+		conversion_plan: DF.Link | None
 		product: DF.Link | None
 		ready_at: DF.Datetime | None
+		rename_completed_at: DF.Datetime | None
+		rename_diagnostic: DF.Code | None
 		rename_error: DF.SmallText | None
-		rename_error_log: DF.Link | None
+		rename_status: DF.Literal["", "queued", "running", "success", "failed", "killed"]
 		rename_task: DF.Data | None
 		renamed_at: DF.Datetime | None
 		server: DF.Link
@@ -61,6 +65,14 @@ class Site(Document):
 	def primary_url(self) -> str:
 		"""The address the console shows: the customer's subdomain once the rename has landed."""
 		return Site.get_primary_url(self.name, self.subdomain, self.renamed_at)
+
+	@property
+	def routed_url(self) -> str:
+		"""The customer's chosen name once its Site Domain is active, else the primary address. The
+		image serves every name in its zone, so the chosen name answers before the rename lands."""
+		if self.subdomain and frappe.db.get_value("Site Domain", self.rename_target, "status") == "Active":
+			return f"https://{self.rename_target}"
+		return self.primary_url
 
 	@staticmethod
 	def get_primary_url(name: str, subdomain: str | None, renamed_at: str | None) -> str:
@@ -115,14 +127,47 @@ class Site(Document):
 		site.insert(ignore_permissions=True)
 
 	def before_insert(self) -> None:
-		from central.signups.trial import start_trial
+		from central.signups.trial import Trial
 
-		start_trial(self)
+		Trial(self).start()
+
+	def validate(self) -> None:
+		if self.has_value_changed("site_name"):
+			BlockedDomain.validate_assignment(self.site_name)
+		if self.subdomain and (self.has_value_changed("subdomain") or self.has_value_changed("site_name")):
+			self.subdomain = normalize_domain(self.subdomain)
+			BlockedDomain.validate_assignment(self.rename_target)
+
+	def before_rename(self, old_name: str, new_name: str, merge: bool = False) -> None:
+		BlockedDomain.validate_assignment(new_name)
 
 	def after_insert(self) -> None:
-		from central.signups.trial import convert_if_paid
+		from central.signups.trial import Trial
 
-		convert_if_paid(self)
+		Trial(self).convert_if_paid()
+		if self.subdomain:
+			frappe.enqueue_doc(
+				self.doctype, self.name, "route_subdomain", queue="short", enqueue_after_commit=True
+			)
+
+	def route_subdomain(self) -> None:
+		"""Route the chosen name to the server now, so the first sign-in can use it before the
+		rename lands. A job keeps a refused route from stopping the Site record."""
+		if frappe.db.exists("Site Domain", self.rename_target):
+			return
+
+		route = frappe.get_doc(
+			{
+				"doctype": "Site Domain",
+				"domain": self.rename_target,
+				"team": self.team,
+				"server": self.server,
+				"site": self.name,
+				"region": frappe.db.get_value("Virtual Machine", self.server, "region"),
+			}
+		)
+		# The system routes the name the customer chose at signup; no user acts here.
+		route.insert(ignore_permissions=True)
 
 	def mark_claimed(self) -> None:
 		"""Record the first successful login handoff and schedule the optional rename."""
@@ -179,11 +224,16 @@ class Site(Document):
 		)
 
 	def apply_subdomain(self) -> None:
-		"""Rename the bench onto the customer's chosen name, once. It returns when Pilot accepts
-		the rename, and both hostnames serve until it finishes."""
+		"""Submit the site rename without waiting for Pilot to finish it."""
 		from central.integrations.pilot import rename_site
 
 		if not self.subdomain or self.rename_task:
+			return
+
+		try:
+			BlockedDomain.validate_assignment(self.rename_target)
+		except frappe.ValidationError as exception:
+			self.record_rename_failure(str(exception), frappe.get_traceback(with_context=False))
 			return
 
 		try:
@@ -204,12 +254,47 @@ class Site(Document):
 			)
 			return
 
-		self.db_set({"rename_task": task_id, "rename_error": None, "rename_error_log": None})
+		self.db_set(
+			{
+				"rename_task": task_id,
+				"rename_status": "queued",
+				"rename_completed_at": None,
+				"rename_error": None,
+				"rename_diagnostic": None,
+			}
+		)
+
+	def record_rename_status(self) -> None:
+		"""Record Pilot's rename outcome without waiting in the signup request."""
+		from central.integrations.pilot import get_task
+
+		if not self.rename_task or self.rename_status not in {"queued", "running"}:
+			return
+		task_id = self.rename_task
+		task = get_task(self.server, task_id)
+
+		updates = {"rename_status": task["status"]}
+		if task["status"] == "success":
+			updates.update(
+				rename_completed_at=frappe.utils.now_datetime(), rename_error=None, rename_diagnostic=None
+			)
+		elif task["status"] in {"failed", "killed"}:
+			updates.update(
+				rename_error=_("Pilot did not complete the site rename. Inspect the task in Pilot."),
+				rename_diagnostic=frappe.as_json(task.get("failure")),
+			)
+		frappe.db.set_value(
+			"Site",
+			{"name": self.name, "rename_task": task_id, "rename_status": ["in", ["queued", "running"]]},
+			updates,
+		)
 
 	def record_rename_failure(self, reason: str, diagnostic: str) -> None:
-		"""Keep a safe reason on the Site and the diagnostic in Error Log."""
-		error_log = self.log_error(title="Pilot site rename failed", message=diagnostic)
-		self.db_set({"rename_error": reason, "rename_error_log": error_log.name})
+		"""Keep a safe reason and the operator diagnostic on the Site."""
+		self.log_error(title="Pilot site rename failed", message=diagnostic)
+		self.db_set(
+			{"rename_error": reason, "rename_diagnostic": f"Pilot site rename failed\n\n{diagnostic}"}
+		)
 
 	@frappe.whitelist(methods=["POST"])
 	def retry_subdomain_rename(self) -> None:
@@ -220,44 +305,46 @@ class Site(Document):
 		if not self.rename_error:
 			frappe.throw(_("This site rename has no recorded failure."))
 
-		self.db_set({"rename_error": None, "rename_error_log": None})
+		self.db_set({"rename_error": None, "rename_diagnostic": None})
 		self.enqueue_subdomain_rename()
 
 	@frappe.whitelist(methods=["POST"])
 	def extend_trial(self, days: int) -> None:
 		"""Operator action: give the trial more days, and start an ended trial again."""
-		from central.signups.trial import extend_trial
+		from central.signups.trial import Trial
 
 		frappe.only_for("System Manager")
-		extend_trial(self, days)
+		Trial(self).extend(days)
 		self.add_comment("Info", _("{0} extended the trial by {1} days.").format(frappe.session.user, days))
 
 	@frappe.whitelist(methods=["POST"])
 	def end_trial_now(self) -> None:
 		"""Operator action: end an active trial today. Its server stops."""
-		from central.signups.trial import end_trial
+		from central.signups.trial import Trial
 
 		frappe.only_for("System Manager")
-		if self.trial_state != "Active":
-			frappe.throw(_("Only an active trial can be ended."))
-
-		end_trial(self, frappe.utils.getdate())
+		Trial(self).end(frappe.utils.getdate())
 		self.add_comment("Info", _("{0} ended the trial.").format(frappe.session.user))
 
 	@frappe.whitelist(methods=["POST"])
 	def retry_trial_step(self) -> None:
 		"""Operator action: run today's trial step again after a failure."""
-		from central.signups.trial import advance_trial
+		from central.signups.trial import Trial
 
 		frappe.only_for("System Manager")
 		self.db_set("trial_error", None)
-		advance_trial(self, frappe.utils.getdate())
+		Trial(self).advance(frappe.utils.getdate())
 
 	@frappe.whitelist(methods=["POST"])
 	def open_as_administrator(self) -> str | None:
 		"""Operator action: a one-click login to this site, recorded on the site and its server."""
+		from central.integrations.pilot import PilotLoginPending
+
 		frappe.only_for("System Manager")
-		url = self.get_login_url(frappe.session.user)
+		try:
+			url = self.get_login_url(frappe.session.user)
+		except PilotLoginPending:
+			frappe.throw(_("Pilot could not create a login yet. Try again in a minute."))
 		note = _("{0} opened site {1} as Administrator.").format(frappe.session.user, self.name)
 		self.add_comment("Info", note)
 		frappe.get_doc("Virtual Machine", self.server).add_comment("Info", note)
@@ -275,9 +362,10 @@ class Site(Document):
 
 		return is_ready
 
-	def get_login_url(self, user: str | None = None) -> str | None:
+	def get_login_url(self, user: str | None = None, product: str | None = None) -> str | None:
 		"""A one-click session for `user`, or for Administrator, on the site's public address.
-		Use the customer hostname only after its route answers and Pilot accepts its site name."""
+		Use the customer hostname once it answers, and the automatic address until then.
+		It lands on the page of `product`, or of the site's own product."""
 		from central.integrations.pilot import fetch_site_login_url, is_site_reachable
 
 		gateway, audience = self.get_pilot_access()
@@ -285,22 +373,30 @@ class Site(Document):
 			return None
 
 		login_user, full_name = self.get_login_user(user)
-		renamed_ready = (
-			self.subdomain and self.rename_task and is_site_reachable(f"https://{self.rename_target}")
-		)
-		if renamed_ready and not self.renamed_at:
+		# The image serves every name in its zone, so the chosen name answers once its route does.
+		is_chosen_name_ready = bool(self.subdomain) and is_site_reachable(f"https://{self.rename_target}")
+		if is_chosen_name_ready and not self.renamed_at:
 			self.db_set("renamed_at", frappe.utils.now_datetime())
-		pilot_names = [self.rename_target, IMAGE_SITE_NAME] if renamed_ready else [IMAGE_SITE_NAME]
+		host = self.rename_target if is_chosen_name_ready else self.name
+		pilot_names = self.get_pilot_site_names() if is_chosen_name_ready else [IMAGE_SITE_NAME]
 		for pilot_name in pilot_names:
 			if minted := fetch_site_login_url(gateway, audience, pilot_name, login_user, full_name):
-				host = self.name if pilot_name == IMAGE_SITE_NAME else self.rename_target
-				return on_host(minted, host, self.get_landing_route())
+				return on_host(minted, host, self.get_landing_route(product))
 
 		return None
 
-	def get_landing_route(self) -> str | None:
+	def get_landing_route(self, product: str | None = None) -> str | None:
 		"""The product's page, where the app runs its own setup, instead of Desk."""
-		return frappe.db.get_value("Product", self.product, "landing_route") if self.product else None
+		product = product or self.product
+		return frappe.db.get_value("Product", product, "landing_route") if product else None
+
+	def get_pilot_site_names(self) -> list[str]:
+		"""Try the stable image name first, then the name of a previously renamed site."""
+		return (
+			[IMAGE_SITE_NAME, self.rename_target]
+			if self.subdomain and self.rename_task
+			else [IMAGE_SITE_NAME]
+		)
 
 	def get_login_user(self, user: str | None) -> tuple[str | None, str | None]:
 		"""Who `user` signs in as: themselves on a trial site of their team, otherwise
@@ -355,6 +451,23 @@ def record_ready_sites() -> None:
 			frappe.db.commit()  # nosemgrep: frappe-manual-commit -- keep each site's readiness if a later probe fails
 
 
+def poll_site_renames() -> None:
+	"""Record pending rename outcomes without one failed check stopping the rest."""
+	for name in frappe.get_all(
+		"Site",
+		filters={"rename_status": ["in", ["queued", "running"]], "server.status": "Running"},
+		pluck="name",
+	):
+		try:
+			frappe.get_doc("Site", name).record_rename_status()
+			frappe.db.commit()  # nosemgrep: frappe-manual-commit -- preserve each observed outcome
+		except Exception:
+			frappe.db.rollback()
+			frappe.log_error(
+				title="Could not read Pilot rename task", reference_doctype="Site", reference_name=name
+			)
+
+
 def on_host(url: str, host: str, path: str | None = None) -> str:
 	"""The same request on another host, and on `path` when given. The scheme is always
 	https, because the public name exists only behind the regional proxy, which terminates
@@ -380,5 +493,6 @@ def on_doctype_update():
 	# The fleet reads a team's sites, then drops the machine each one already stands for.
 	frappe.db.add_index("Site", ["team", "server"])
 	frappe.db.add_index("Site", ["product"])
+	frappe.db.add_index("Site", ["rename_status", "modified"])
 	# The daily trial job reads trials by state and the day they end.
 	frappe.db.add_index("Site", ["trial_state", "trial_ends_on"])

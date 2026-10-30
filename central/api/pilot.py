@@ -84,6 +84,19 @@ def config() -> dict:
 # nosemgrep: guest-whitelisted-method -- pilot_credential_auth verifies the caller below.
 @frappe.whitelist(allow_guest=True, methods=["GET"])
 @pilot_credential_auth
+def get_server_access() -> dict:
+	"""Whether this server is locked by an open free trial. Pilot then refuses the site's
+	config edits and config downloads, because they reach past the site."""
+	from central.signups.access import is_server_locked
+
+	server = frappe.local.pilot_credential.server
+	# A Pilot whose server is not linked yet cannot prove it is not a trial, so it stays locked.
+	return {"is_locked": not server or is_server_locked(server)}
+
+
+# nosemgrep: guest-whitelisted-method -- pilot_credential_auth verifies the caller below.
+@frappe.whitelist(allow_guest=True, methods=["GET"])
+@pilot_credential_auth
 def storage_regions() -> dict[str, str]:
 	"""Each region that serves object storage now, mapped to its S3 endpoint. The region
 	name is also the S3 region a client signs with."""

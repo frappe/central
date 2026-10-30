@@ -134,13 +134,16 @@ Project ──team, ──title, ──enabled, ──spending_limit          (c
 ```
 Invoice ──team, ──items─→ [C]Invoice Line Item
 Invoice Line Item ──project, ──project_title                  (snapshot tag, stamped at generation; see §2.1)
-Payment Attempt ──invoice, ──team, ──gateway, ──payment_method
+Payment Attempt ──invoice, ──team, ──gateway, ──payment_method, gateway_order_id   (on-session and hosted payments)
+Top-up Order ──team, ──gateway, ──ledger_entry, gateway_order_id    (a wallet top-up, stored before the payer acts)
 Refund ──payment_attempt, ──invoice, ──team
 Credit Ledger Entry ──team, ──currency                        (append-only)
 Credit Wallet ──team                           (lock anchor / cached balance — one per (team,currency))
 Commitment ──team, ──currency              (spend floor)
 Usage Rollup ──team                            (metered aggregation)
 ```
+
+Money records (Invoice, Payment Attempt, Refund, Credit Ledger Entry, Credit Wallet, Usage Rollup, Webhook Event, Billing Event, Top-up Order) are read-only in Desk and keep a change history. `platform.records` refuses an edit or delete that billing code did not make through `save_billing_record` or `delete_billing_record`, Administrator included. The `ignore_permissions` flag alone does not allow the change. A `db_set` or `frappe.db.set_value` write does not run validation, so it needs no mark. A person changes them through the action that owns the change: cancel, refund, retry.
 
 **Payment plumbing**
 ```
@@ -227,13 +230,9 @@ flowchart LR
     H1 --> RF["retry_failed_syncs (ERPNext)"]
     H1 --> RR["run_reconciliation"]
     H1 --> OA["run_operator_alerts"]
-    M1 --> RMB["run_monthly_billing (inline, both phases)"]
+    M1 --> DMI["draft_monthly_invoices → draft page jobs"]
     M1 --> EX["expire_payment_methods"]
-
-    subgraph MANUAL["manual fan-out only (not scheduled)"]
-        DMI["draft_monthly_invoices → page jobs"]
-        CDI["collect_due_invoices → page jobs"]
-    end
+    H1 --> CDI["collect_due_invoices → settle page jobs"]
 
     subgraph INSTALL["install/migrate/before_tests"]
         ECM["ensure_catalog_masters, ensure_constraints, ..."]
@@ -245,9 +244,11 @@ flowchart LR
 ```
 
 ### Scheduled (`central/hooks.py` → `scheduler_events`)
+Dunning, reconciliation, the e-mandate cycle, credit expiry, card expiry, accounting-sync retries and the subscription backfill run each row through `platform.jobs.each_isolated`: a savepoint and a commit per row, and a row that fails is logged to the Error Log and skipped, so it does not stop the rows after it.
+
 | Cadence | Entry point | Purpose |
 |---|---|---|
-| daily | `revenue.dunning.run_dunning` | Day 1/3/7 retries → past_due → suspend → terminate |
+| daily | `revenue.dunning.run_dunning` | Day 1/3/7 retries → past_due → suspend (stops servers) → termination due (operator) |
 | daily | `payments.charges.cleanup_payment_logs` | prune Payment Attempt / Webhook Event |
 | daily | `projection.batch.prune` | prune old projection batches |
 | daily | `payments.emandate.run_emandate_cycle` | INR ≤₹15k pre-debit notice → debit after 24h |
@@ -255,15 +256,18 @@ flowchart LR
 | daily | `payments.settlement.run_billing_details_reminder` | ask credit-funded teams for the billing details their invoice will need |
 | daily | `revenue.credits.run_credit_expiry` | write off expired promotional credit |
 | daily | `platform.invariants.run_invariant_audit` | audit the cross-table money invariants |
-| hourly | `payments.reconciliation.run_reconciliation` | charged-but-never-webhooked gateway scan |
-| hourly | `platform.alerts.run_operator_alerts` | page operators (invariants, failed webhooks, stale attempts, held invoices) |
-| monthly | `revenue.invoicing.run_monthly_billing` | bill the just-closed month inline: draft, then open and collect |
+| daily | `payments.reconciliation.recheck_completed_refunds` | ask the gateway again about card refunds completed in the last 30 days; flag one that failed later |
+| hourly | `payments.webhooks.retry_failed_webhooks` | apply again failed and lost webhook events |
+| hourly | `payments.reconciliation.run_reconciliation` | charged-but-never-webhooked gateway scan and Pending refunds |
+| hourly | `platform.alerts.run_operator_alerts` | alert operators (invariants, readiness, failed webhooks, stale attempts, unsettled captures, held invoices, failed refunds, failed accounting syncs) |
+| monthly | `revenue.invoicing.draft_monthly_invoices` | waive internal teams' unpaid invoices, then draft the just-closed month as page jobs on the `billing` queue |
+| hourly | `revenue.invoicing.collect_due_invoices` | open and collect every Draft whose month has closed, as page jobs; record progress on the Billing Run |
 | hourly | `ingester.erpnext_sync.retry_failed_syncs` | retry Sales Invoice push (backoff window elapsed) |
 | monthly | `payments.payments.expire_payment_methods` | flip cards past their printed month |
 
-`draft_monthly_invoices` and `collect_due_invoices` are the fan-out variants of the two phases. They are not in `scheduler_events`. Run them by hand to fan a run out over the `billing` queue.
+**The scheduled run is paged.** On the 1st, `draft_monthly_invoices` drafts the closed month as page jobs. Every hour, `collect_due_invoices` collects whatever has drafted and updates the **Billing Run** row for the month (start, counts, failures, completion). A lost worker stops one page only; the next hourly sweep picks up the rest. `run_monthly_billing` does both phases inline in one job; use it only for a small site or a test.
 
-**The scheduled trigger is `run_monthly_billing`.** It runs on the monthly scheduler tick and does both phases inline: `generate_draft_invoices`, then `open_drafts`. It commits after each team and each invoice. The page-job fan-out below exists in code, but `scheduler_events` does not call it.
+The readiness check B5 flags a month with billing but no Billing Run, and drafts that waited more than 3 hours to be collected. It feeds the hourly operator alerts.
 
 **The fan-out is two orchestrators, and neither of them does the work.** Each keyset-pages its subjects and enqueues a **page job** per slice: `draft_team_page(after, until)` / `settle_draft_page(cutoff, after, until)`, deduplicated on the slice's upper bound. A page job re-derives its slice from the bounds and works it in order. It commits after **each team / each invoice**. The page is the unit of *scheduling* and the team is still the unit of *work*, so a job killed at team 300 of 500 keeps the 299 it finished.
 
@@ -353,13 +357,52 @@ an accounting fact AR aging depends on) forward to today + the standard window. 
 monotonic and self-limiting: a successful ask stops pushing, so a broken gateway defers
 *escalation*, not collection.
 
+### Operator alerts
+
+`platform.alerts.notify_operators(title, alerts)` sends every billing alert for operators. No other billing code mails operators. Customer notifications use `platform.notifications` and do not change with these settings.
+
+Configure it in **Billing Settings → Operator Alerts**:
+
+| Field | Purpose |
+|---|---|
+| Alert Channel | `Raven` (default), `Email`, or `Raven and Email`. |
+| Alert Email Addresses | One address per line. Required when the channel includes Email. Central never mails the System Manager role. |
+| Raven Site URL, Raven Channel ID | The Raven site and the channel that gets the alerts. |
+| Bot API Key, Bot API Secret | The API key of a bot user that is a member of the channel. The alert is posted as this user through `raven.api.raven_message.send_message`. |
+
+When a Raven post fails, or Raven is not configured, the alert goes to the email addresses once and the failure is written to the Error Log. Use **Send Test Alert** on the form to check the saved settings. The hourly digest keeps one Error Log row for each digest it sends, and it does not send the same digest again for `REPEAT_AFTER_HOURS`.
+
 ### Lifecycle / install hooks
 - `after_install` / `after_migrate` / `before_tests` → `catalog.taxonomy_setup.ensure_catalog_masters` (idempotent seed of catalog masters, ADR 0007), `settings.ensure_snapshot_settings`, `platform.constraints.ensure_constraints`, `gateways.setup.ensure_gateway_records`, `navigation.ensure_workspace_sidebars`. `after_install` and `before_tests` also run `settings.ensure_welcome_credit_amounts`.
 - `doc_events`: `Team.on_update` → `payments.provisioning.on_team_update`. Server Subscriptions are not in `doc_events`: the Virtual Machine controller's `on_update` creates the Subscription when the server reaches Running and closes it when the server is Terminated.
 - `override_doctype_dashboards["Currency"]` → `api.dashboard_overrides.currency_dashboard`.
 
 ### Inbound webhooks (`payments/webhooks.py`)
-`@stripe` / `@razorpay` (whitelisted, signature-first) → `process_webhook` → adapter `verify_webhook_signature`/`parse_webhook_event` → `handle_webhook_event` → `charges.apply_webhook` (settle the Payment Attempt). Raw payload persisted to **Webhook Event** for dedupe/replay.
+`@stripe` / `@razorpay` / `@paypal` (whitelisted, signature-first; PayPal is verified through its verify-webhook-signature API) → `process_webhook` → adapter `verify_webhook_signature`/`parse_webhook_event` → `handle_webhook_event`. Raw payload persisted to **Webhook Event** for dedupe/replay.
+
+`handle_webhook_event` sends each event to one handler. The handler links the Webhook Event to the Payment Attempt or Payment Method it is about, so the record's Connections show its event history.
+
+**When a handler fails.** Its writes are rolled back to a savepoint, the event becomes Failed with the traceback in Error and its Tries count goes up. `retry_failed_webhooks` runs hourly and applies again every Failed event under `MAX_TRIES`, and every Received event older than `STALE_RECEIVED_MINUTES` (its job was lost). `platform.alerts.failed_webhooks` pages an operator while an event stays Failed. A Razorpay event is deduped on an id built from the signed body (event, `created_at` and entity ids), because the `X-Razorpay-Event-Id` header is outside the signature. A gateway cannot be enabled without a webhook secret, and a missing secret or signature verifies nothing.
+
+| Events | Handler | Effect |
+|---|---|---|
+| `payment_intent.*`, `payment.*`, `PAYMENT.CAPTURE.*` except `PAYMENT.CAPTURE.REFUNDED` | `charges.apply_webhook` | Authorised, Captured or Failed. `payment_intent.canceled` fails the attempt with Stripe's cancellation reason. A PayPal PENDING capture keeps the attempt open (`gateway_hold_until`) instead of failing it. |
+| `charge.dispute.*`, `payment.dispute.*`, `CUSTOMER.DISPUTE.*` | `disputes.apply_dispute` | Note on the invoice; a lost dispute cancels the invoice without a second refund. A lost dispute on an invoice that is no longer Paid, or on a charge captured after the invoice was paid, is flagged for an operator. |
+| `charge.refund.updated`, `refund.failed`, `refund.processed`, `PAYMENT.CAPTURE.REFUNDED` | `corrections.apply_refund_event` | Finishes a Pending refund as Completed or Failed. Reconciliation asks the gateway about any Pending refund the webhook missed. Once a day it also asks the gateway again about each refund to the card that paid (destination Source) that completed in the last `COMPLETED_REFUND_RECHECK_DAYS` (30) days, so a refund that failed later is flagged when its webhook does not arrive. When the gateway reports Failed for a refund that is already Completed, the refund and its charge keep their state. Central adds a comment on the invoice and an Error Log `Refund failed after completion on <invoice>` that names the refund and its gateway refund ID, so an operator can pay the customer back. |
+| `mandate.updated` | `mandates.apply_mandate_event` | A revoked mandate cancels its Payment Method. |
+| `payment_method.detached` | `payments.apply_payment_method_event` | The card is cancelled and leaves the charge order. |
+| `setup_intent.setup_failed` | `payments.apply_payment_method_event` | The failure code, decline code and message on the card, its failed attempt count, and a `Payment Method Setup Failed` Billing Event. The card stays Pending Validation, because the customer can retry on the same SetupIntent. Central finds the card by the SetupIntent: an in-app setup keeps it as the Setup Reference, and a hosted setup keeps it as the Setup Intent ID. |
+| `charge.refunded` | none | Stored only. A refund made in the gateway dashboard leaves no Refund record. |
+
+**Subscribed events.** Each adapter's `webhook_events` lists the events Central subscribes to. `test_payment_gateway.TestWebhookEventList` fails when a handled event is not in that list.
+
+**Webhook endpoint.** On the Payment Gateway form:
+
+- **Register Webhook** (or **Re-register Webhook** when an endpoint exists) checks the keys and creates a new endpoint and a new signing secret. The old endpoint is not deleted at the gateway. When no new endpoint is registered, for example on a local site, the current endpoint and secret are kept.
+- **Webhook Events → Pull** reads the endpoint from the gateway and fills the Webhook Events table. Each event is OK, Missing (Central needs it, the gateway does not send it) or Not Used.
+- **Webhook Events → Update** sets the endpoint's events to the adapter's list. The signing secret does not change.
+
+When you save new keys, Central reads the stored endpoint with them. If the keys can see it (same account), Central adds any missing events. If they cannot (another account, or Stripe test keys changed to live keys), Central registers a new endpoint. Central never deletes an endpoint at the gateway, because another site can use the same account. A PayPal gateway that settles through Razorpay has no webhook of its own. PayPal calls go to the sandbox host unless site config `paypal_api_base` is `https://api-m.paypal.com`; no other host is accepted, because the client secret is sent there.
 
 ### API entry points (`@frappe.whitelist`): see §5 per package.
 
@@ -403,7 +446,7 @@ Resize: `central.api.servers.resize_server` → `catalog.subscriptions.begin_res
 ### B. Bill a period (draft → open → collect)
 ```mermaid
 flowchart TD
-    TICK(["monthly · run_monthly_billing"]) --> GDI["generate_draft_invoices (pages teams)"]
+    TICK(["monthly · draft_monthly_invoices"]) --> GDI["generate_draft_invoices (pages teams)"]
     GDI --> DTI["draft_team_invoice<br/>(per team, isolated, committed)"]
     DTI --> GTI["generate_team_invoice<br/>(per team: one consolidated invoice)"]
     GTI --> RS["reconcile_subscription (fix drift)"]
@@ -414,7 +457,7 @@ flowchart TD
     GTI --> TAX["+ tax.resolve_tax<br/>GST / SEZ / TDS"]
     LINES & MET & DISC & TAX --> DRAFT[["Invoice: Draft"]]
 
-    TICK --> OD["open_drafts (pages drafts, period_end ≤ closed month)"]
+    SWEEP(["hourly · collect_due_invoices"]) --> OD["open_drafts (pages drafts, period_end ≤ closed month)"]
     DRAFT --> OD
     OD --> OAC["settle_draft → open_and_collect<br/>(per invoice: isolated, committed)"]
     OAC --> HOLD{"team has billing details?"}
@@ -429,7 +472,7 @@ flowchart TD
     PAID --> SYNC["erpnext_sync.enqueue_invoice_sync"]
 ```
 ```
-[monthly]  revenue.invoicing.run_monthly_billing   (both phases inline)
+[monthly]  revenue.invoicing.draft_monthly_invoices   (settle_internal_teams, then page jobs)
   → generate_draft_invoices (pages teams)
   → draft_team_invoice (one team = one transaction = one commit)
     → generate_team_invoice (per team, aggregates every cluster it runs in)
@@ -441,6 +484,7 @@ flowchart TD
         (GST additive / SEZ zero / TDS withhold)
   → Invoice (Draft), one per team, same period, `period_key` keyed on (team, period)
 
+[hourly]   revenue.invoicing.collect_due_invoices   (snapshot the Billing Run, then page jobs)
   → open_drafts (every Draft with period_end ≤ the closed month)
   → settle_draft → open_and_collect (per invoice)
       → billing-details hold: a Billable draft stays Draft if the team has no billing
@@ -451,7 +495,7 @@ flowchart TD
 ```
 A held draft is released when the profile is complete. `Billing Profile.on_update` calls `release_held_invoices`, which enqueues `run.release_held_drafts` to settle the held drafts. When a draft waits longer than `Billing Settings.billing_details_grace_days`, the team stops being credit-funded for new spend (`settlement.details_overdue`), and `platform.alerts.held_invoices` pages operators.
 
-To fan a run out over the `billing` queue, run `draft_monthly_invoices` and then `collect_due_invoices` by hand. They use `draft_team_page` and `settle_draft_page` page jobs (see §3).
+Both ticks use `draft_team_page` and `settle_draft_page` page jobs (see §3).
 
 ### C. Collect / settle a charge
 ```mermaid
@@ -478,6 +522,22 @@ charges.pay_invoice → create_invoice_payment_order (via gateway adapter)
   → webhook arrives → apply_webhook → Payment Attempt Paid → Invoice Paid
   → failure → collection.collect_invoice walks primary → backup methods (escalate, don't repeat)
 ```
+**How a payment is matched to what Central asked for.** Before the payer acts, Central stores a row for the payment: a Payment Attempt for an invoice, a Top-up Order for a wallet top-up. Its name is the receipt sent to the gateway, and the gateway's order id (a Razorpay order, a Stripe PaymentIntent or Checkout Session, a PayPal order, a Razorpay Payment Link) is stored on it. The webhook, every confirm route, the pilot poll and reconciliation read the payment back as a `VerifiedPayment` (a server-side read or a signed webhook body) and find the row by the gateway's ids, or by `metadata.receipt` on Stripe, which only the secret key can set. Razorpay payment notes are never read, because Checkout lets the payer set them. The payment must be captured, in the row's currency, for at least its amount:
+
+| Case | Result |
+|---|---|
+| No stored row | Nothing is settled or credited. The event is Ignored. |
+| A declined payment on a Top-up Order | The order keeps the failure code, decline code, message and failed attempt count of the last decline. Each decline also adds a `Top-up Order Declined` Billing Event with its failure code. A repeated webhook adds no second event. The order stays Created, because the payer can try again. |
+| A declined payment on a mandate authorisation order | The Pending Validation method keeps the failure, and a `Payment Method Setup Failed` Billing Event is added. |
+| Short or another currency | Nothing is settled. The invoice gets a comment and an Error Log entry. |
+| More than is due | The invoice is Paid and the surplus goes to the wallet. |
+| The invoice is already Paid, by credit or by another charge | `refunds.issue_refund` returns the whole payment to its source and the attempt becomes Refunded. The Refund is marked `late_capture`. No wallet credit or advance is booked, and the refund steps make no credit note and no payment out in the accounting system for it, also when its webhook, a retry or a later cancellation runs them. A later cancellation, a partial refund and the card payment sent to the accounting system leave the charge out, so only `retry_failed_refunds` gives it back when its refund fails. The invoice gets a comment and an Error Log entry. |
+| The invoice is Cancelled or Waived | The payment goes to the wallet, once per payment id, and an operator is told. |
+
+Reconciliation asks the gateway about the stored order of an unanswered on-session attempt, and fails it only after `CHECKOUT_OPEN_HOURS`. It credits a Top-up Order that was paid but never confirmed, and expires one nobody paid after `TOP_UP_EXPIRES_HOURS`.
+
+**Pre-debit notice.** `collection.collect_invoice` is the one entry for an off-session debit (billing run, dunning retry, webhook fallback, e-mandate cycle). Before it charges a method whose (gateway, currency) row has `requires_predebit_notice`, it asks `emandate.await_predebit`. That function sends the notice through `emandate.schedule_predebit`, and the method waits until `Invoice.predebit_charge_after`. A team not on Auto Charge gets no notice and so no debit on such a rail; dunning escalates instead.
+
 Method resolution is team-wide, not scoped by anything — `collection.ordered_methods`
 returns the team's active methods, priority order. `charges._resolve_method` (manual
 "pay now") and `collection.next_method_for`/`collect_invoice` (the real auto-charge
@@ -494,21 +554,28 @@ stateDiagram-v2
     Day3 --> Day7: retry_payment fails
     Day7 --> PastDue: still unpaid
     PastDue --> Suspended: grace elapsed
-    Suspended --> Terminated: no recovery
+    Suspended --> Current: paid
+    Suspended --> Terminated: an operator decides
     Day1 --> Current: paid
     Day3 --> Current: paid
     Day7 --> Current: paid
     PastDue --> Current: paid
     note right of Suspended
-        The server keeps running until the
-        issued Entitlement Token expires
+        Central stops the team's running
+        servers. Paying starts them again.
     end note
 ```
 ```
 daily run_dunning → process_invoice_dunning(invoice)
-  → retry_payment on Day 1/3/7 → account_standing past_due → suspend → terminate
-  → Agent/cluster enforcement: an already-issued token keeps the Virtual Machine running until expiry
+  → retry_payment on Day 1/3/7 → account_standing past_due → suspend → termination due
+  → suspend: subscriptions.suspend_for_nonpayment moves every subscription of the team to
+    Suspended, stops its running servers and flags them stopped_for_nonpayment
+  → paid: Invoice.on_update → subscriptions.restore_after_payment (standing Current, start
+    what dunning stopped) once the team has no other overdue invoice
+  → termination due: platform.alerts.termination_due pages an operator; nothing is deleted
+  → while behind on payment a team cannot create, resize up or subscribe (PAYMENT_OVERDUE)
 ```
+Billing stops and starts a server as the system (`resource_actions.submit_billing_command`), because a payment can arrive by webhook as Guest. `submit_command` refuses a customer `start` while the server's subscription is Suspended.
 
 ### E. Metering
 ```
@@ -550,6 +617,8 @@ get_team_caps resolves caps live (no per-team Trust Tier doctype — dropped)
 
 ## 5. API surface (by package)
 
+**Limits on the payment routes.** Top-up, invoice payment, checkout and their confirms allow 30 calls an hour; card setup, mandate setup, hosted card setup and the card and mandate confirms allow 20, to slow card testing. The two pilot polls, the checkout status poll and the hosted card setup poll, allow 300, because they run until the payer finishes the hosted page. Console routes count per user and pilot routes count per address. A pilot checkout returns the payer only to a site (or custom domain) on the credential's own server, over HTTPS. A pilot usage report cannot be negative, and an Authoritative total cannot go below the one already recorded. CSV exports prefix a cell that starts with `=`, `+`, `-`, `@`, tab or return with a quote. The `tests/e2e.py` endpoints answer only on a site whose own `site_config.json` sets `allow_tests`.
+
 **`api/dashboard/`** (customer, team-scoped)
 - `account.py`: whoami, get/save_billing_profile, get_billing_geo, get/save_billing_settings, get_collection_status, set_collection_mode, get_team_overview, get_trust_tier.
 - `catalog.py`: get_eligible_plans and provision/get_composed_config.
@@ -581,8 +650,8 @@ get_team_caps resolves caps live (no per-team Trust Tier doctype — dropped)
 
 | Symptom | Start at |
 |---|---|
-| Invoice never generated | `billing_run_status()`: is the team in `pending_draft`? Then Error Log `Billing Run Failure` for that team, the scheduler's `default` queue (the scheduled `run_monthly_billing` runs inline there) or the `billing` queue for a fan-out run by hand, and `lines.compute_line_items` for empty segments |
-| Half the teams billed, half not | a partial run: read `billing_run_status()`, fix the cause, run `run_monthly_billing` again (or `draft_monthly_invoices` / `collect_due_invoices` to fan out). Both phases are idempotent and resume |
+| Invoice never generated | `billing_run_status()`: is the team in `pending_draft`? Then Error Log `Billing Run Failure` for that team, the `billing` queue, and `lines.compute_line_items` for empty segments |
+| Half the teams billed, half not | a partial run: read `billing_run_status()`, fix the cause, run `draft_monthly_invoices` again; the hourly `collect_due_invoices` collects the rest. Both phases are idempotent and resume |
 | Billing run never starts / jobs pile up | is there a worker on the `billing` queue? (`common_site_config.workers.billing` + `bench worker --queue billing`); the billing log warns and falls back to `long` if the queue is undeclared |
 | Two creates both cleared the same credit, or a create waits on a lock | `settlement.wallet_funds` takes the team's Credit Wallet anchor `FOR UPDATE` and reads the run rate through `subscriptions.locked_team_run_rate`; the lock is held to the end of the request, so one team's concurrent creates queue. Check nothing on the create path takes Subscription before Credit Wallet |
 | Lock wait timeouts during the run | check the per-unit `frappe.db.commit()` in `draft_team_page`/`settle_draft_page` is still there — without it the `tabSeries` lock is held for a whole page; then check nothing new writes a shared row inside the unit |

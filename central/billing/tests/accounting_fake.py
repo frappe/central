@@ -109,12 +109,26 @@ class FakeAccountingSystem:
 		return stack
 
 	def _invoice_totals(self, payload) -> dict:
-		net = sum(frappe.utils.flt(i["rate"]) * frappe.utils.flt(i["qty"]) for i in payload["items"])
-		tax = sum(net * frappe.utils.flt(t["rate"]) / 100 for t in payload.get("taxes") or [])
+		# ERPNext rounds each total to the currency's precision. Tax-inclusive rows carve the
+		# tax out of the line rates, so the grand total is exactly the lines.
+		lines = frappe.utils.flt(
+			sum(frappe.utils.flt(i["rate"]) * frappe.utils.flt(i["qty"]) for i in payload["items"]), 2
+		)
+		taxes = payload.get("taxes") or []
+		rate = sum(frappe.utils.flt(t["rate"]) for t in taxes) / 100
+		inclusive = any(t.get("included_in_print_rate") for t in taxes)
+		net = frappe.utils.flt(lines / (1 + rate), 2) if inclusive else lines
+		tax = (
+			frappe.utils.flt(lines - net, 2)
+			if inclusive
+			else sum(frappe.utils.flt(net * frappe.utils.flt(t["rate"]) / 100, 2) for t in taxes)
+		)
 		allocated = sum(frappe.utils.flt(a["allocated_amount"]) for a in payload.get("advances") or [])
 		return {
-			"grand_total": net + tax,
-			"outstanding_amount": max(net + tax - allocated * (1 + (tax / net if net else 0)), 0),
+			"grand_total": frappe.utils.flt(net + tax, 2),
+			"outstanding_amount": max(
+				frappe.utils.flt(net + tax - allocated * (1 + (tax / net if net else 0)), 2), 0
+			),
 			"conversion_rate": self.conversion_rate,
 		}
 

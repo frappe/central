@@ -113,7 +113,7 @@ class GatewayAdapterContract:
 	def test_validate_payment_method_true_when_live(self):
 		adapter = self.make_adapter()
 		with self.stub_validation_success():
-			self.assertTrue(adapter.validate_payment_method(self.validation_inputs()))
+			self.assertTrue(adapter.validate_payment_method(self.validation_inputs()).success)
 
 	def test_successful_charge_returns_captured(self):
 		adapter = self.make_adapter()

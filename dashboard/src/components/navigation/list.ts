@@ -61,8 +61,6 @@ export const sidebarSections = computed<SidebarSection[]>(() => {
 					to: '/servers',
 					condition: canViewServers.value,
 				},
-				// The sent-invitations page (/team/invitations) still exists but has
-				// no sidebar entry — pending invites are managed from the Team page.
 				{
 					label: 'Team',
 					icon: 'lucide-users',
@@ -106,6 +104,12 @@ export const sidebarSections = computed<SidebarSection[]>(() => {
 					label: 'Invoices',
 					icon: 'lucide-receipt',
 					to: '/billing/invoices',
+					condition: canViewBilling.value,
+				},
+				{
+					label: 'Payments',
+					icon: 'lucide-wallet',
+					to: '/billing/payments',
 					condition: canViewBilling.value,
 				},
 			],

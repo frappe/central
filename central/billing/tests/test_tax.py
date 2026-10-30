@@ -139,3 +139,46 @@ class TestWithholdingSeam(TaxTestBase):
 		# The mandate was authorised for the gross, not the TDS-reduced amount.
 		self.assertEqual(tax.mandate_ceiling_amount(inv), inv.total)
 		self.assertGreater(inv.total, inv.expected_collection)
+
+
+class TestOutputTaxFollowsTheCountry(IntegrationTestCase):
+	"""The signup IP sets the first country; a corrected billing country sets the tax."""
+
+	TEAM = "team-tax-country"
+
+	def setUp(self):
+		from central.billing.tests.utils import ensure_team
+
+		ensure_team(self.TEAM)
+		for doctype in ("Invoice", "Tax Profile", "Billing Profile"):
+			frappe.db.delete(doctype, {"team": self.TEAM})
+
+	def _signup_from(self, country):
+		from central.billing.payments.provisioning import provision_signup_billing
+
+		provision_signup_billing(self.TEAM, country)
+
+	def _move_to(self, country, currency):
+		profile = frappe.get_doc("Billing Profile", self.TEAM)
+		profile.update({"country": country, "currency": currency})
+		profile.save(ignore_permissions=True)
+
+	def test_a_profile_corrected_to_india_pays_gst(self):
+		self._signup_from("United States")
+		self._move_to("India", "INR")
+
+		self.assertEqual(tax.resolve_tax(self.TEAM, 1000)["output_tax_type"], "GST")
+		self.assertGreater(tax.resolve_tax(self.TEAM, 1000)["output_tax_amount"], 0)
+
+	def test_a_profile_corrected_abroad_pays_no_gst(self):
+		self._signup_from("India")
+		self._move_to("United States", "USD")
+
+		self.assertEqual(tax.resolve_tax(self.TEAM, 1000)["output_tax_amount"], 0)
+
+	def test_operator_tax_settings_survive_a_country_change(self):
+		self._signup_from("United States")
+		frappe.db.set_value("Tax Profile", self.TEAM, {"tds_applicable": 1, "tds_rate": 2})
+		self._move_to("India", "INR")
+
+		self.assertTrue(frappe.db.get_value("Tax Profile", self.TEAM, "tds_applicable"))

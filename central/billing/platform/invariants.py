@@ -24,7 +24,7 @@ ledger.
 from dataclasses import asdict, dataclass
 
 import frappe
-from frappe.query_builder import Case
+from frappe.query_builder import Case, Order
 from frappe.query_builder.functions import Count, Sum
 
 # Money is float `Currency` in major units, so an exact `==` is a bug. Anything at or
@@ -35,6 +35,7 @@ TOLERANCE = 0.01
 # invoice older than the window has no attempts to reconcile against and would report a
 # false violation. Audits that read attempts stay inside the window.
 from central.billing import settings
+from central.billing.doctype.payment_attempt.payment_attempt import gateway_hold_active
 
 STUCK_ATTEMPT_MINUTES = 30
 
@@ -386,12 +387,24 @@ def check_no_stuck_attempts() -> list[Violation]:
 			detail=f"Attempt still '{a.status}' after {STUCK_ATTEMPT_MINUTES} minutes — "
 			"its outcome at the gateway is unknown and unreconciled.",
 		)
-		for a in frappe.get_all(
-			"Payment Attempt",
-			filters={"status": ["in", IN_FLIGHT], "initiated_at": ["<", stale]},
-			fields=["name", "team", "currency", "amount", "status"],
-		)
+		for a in unheld_attempts_in_flight(stale, ["name", "team", "currency", "amount", "status"])
 	]
+
+
+def unheld_attempts_in_flight(initiated_before, fields: list[str], limit: int = 0) -> list[frappe._dict]:
+	"""Attempts in flight since before `initiated_before` that no gateway hold covers now."""
+	attempt = frappe.qb.DocType("Payment Attempt")
+	query = (
+		frappe.qb.from_(attempt)
+		.select(*(attempt[field] for field in fields))
+		.where(attempt.status.isin(IN_FLIGHT))
+		.where(attempt.initiated_at < initiated_before)
+		.where(~gateway_hold_active(attempt))
+		.orderby(attempt.creation, order=Order.desc)
+	)
+	if limit:
+		query = query.limit(limit)
+	return query.run(as_dict=True)
 
 
 CHECKS = {
@@ -405,12 +418,13 @@ CHECKS = {
 }
 
 
-def audit(only: str | None = None) -> list[Violation]:
-	"""Run every registered check (or one) and return the violations, worst drift first."""
-	keys = [only] if only else list(CHECKS)
+def audit(only: str | None = None, checks: dict | None = None) -> list[Violation]:
+	"""Run every check in a registry (or one) and return the violations, worst drift first."""
+	checks = CHECKS if checks is None else checks
+	keys = [only] if only else list(checks)
 	found: list[Violation] = []
 	for key in keys:
-		_title, fn = CHECKS[key]
+		_title, fn = checks[key]
 		try:
 			found.extend(fn())
 		except Exception:
@@ -424,12 +438,14 @@ def audit(only: str | None = None) -> list[Violation]:
 
 
 def run_invariant_audit() -> dict:
-	"""Daily: assert the money invariants and speak up only when one is broken.
+	"""Daily: assert the money invariants and the readiness checks, and speak up only when one is broken.
 
 	Silence is the success case. A violation is logged with its team and amount so it
 	is actionable without opening a dashboard.
 	"""
-	violations = audit()
+	from central.billing.platform import readiness
+
+	violations = audit() + audit(checks=readiness.CHECKS)
 	if not violations:
 		frappe.logger("billing").info("invariant audit clean")
 		return {"violations": 0, "by_check": {}}

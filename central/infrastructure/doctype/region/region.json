@@ -24,6 +24,7 @@
   "column_break_kufp",
   "atlas_region_id",
   "proxy_domain",
+  "has_wireguard_gateway",
   "connection_section",
   "reachable",
   "connection_checked_at",
@@ -38,7 +39,8 @@
   "cargo_base_url",
   "cargo_registered_at",
   "cargo_delivery_section",
-  "cargo_webhook_secret"
+  "cargo_webhook_secret",
+  "telemetry_data_source"
  ],
  "fields": [
   {
@@ -58,7 +60,7 @@
    "label": "Display Name"
   },
   {
-   "description": "Infrastructure provider hosting this region, shown as the pin's brand mark. Display vocabulary only \u2014 distinct from Atlas's Server.provider_type (DigitalOcean/Scaleway/Self-Managed/Fake); reconcile into a shared source if provider identity ever needs to be authoritative.",
+   "description": "Infrastructure provider hosting this region, shown as the pin's brand mark. Display vocabulary only — distinct from Atlas's Server.provider_type (DigitalOcean/Scaleway/Self-Managed/Fake); reconcile into a shared source if provider identity ever needs to be authoritative.",
    "fieldname": "provider",
    "fieldtype": "Select",
    "in_standard_filter": 1,
@@ -125,6 +127,13 @@
    "fieldname": "proxy_domain",
    "fieldtype": "Data",
    "label": "Proxy Domain"
+  },
+  {
+   "default": "0",
+   "description": "Offer WireGuard devices in this region. Turn it on once the region's gateway cluster answers at wireguard.<region zone>.",
+   "fieldname": "has_wireguard_gateway",
+   "fieldtype": "Check",
+   "label": "WireGuard Gateway"
   },
   {
    "description": "Gives new servers in this region a mailbox. Leave blank for none.",
@@ -238,6 +247,12 @@
    "read_only": 1
   },
   {
+   "fieldname": "telemetry_data_source",
+   "fieldtype": "Data",
+   "label": "Telemetry Data Source",
+   "description": "Name of the Insights data source that reads this region's telemetry (for example mumbai_telemetry). Capacity and usage reports read server and host usage from it."
+  },
+  {
    "fieldname": "column_break_kufp",
    "fieldtype": "Column Break"
   },
@@ -274,9 +289,14 @@
    "group": "Cargo",
    "link_doctype": "Service Detail",
    "link_fieldname": "region"
+  },
+  {
+   "group": "WireGuard",
+   "link_doctype": "WireGuard Device",
+   "link_fieldname": "region"
   }
  ],
- "modified": "2026-10-10 10:08:25.434103",
+ "modified": "2026-10-27 18:51:33.271906",
  "modified_by": "Administrator",
  "module": "Infrastructure",
  "name": "Region",

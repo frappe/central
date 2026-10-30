@@ -9,6 +9,7 @@
  "field_order": [
   "resource_type_name",
   "is_active",
+  "cost_per_unit_inr",
   "description"
  ],
  "fields": [
@@ -26,6 +27,14 @@
    "fieldtype": "Check",
    "in_list_view": 1,
    "label": "Is Active"
+  },
+  {
+   "fieldname": "cost_per_unit_inr",
+   "fieldtype": "Currency",
+   "label": "Our Cost per Unit (INR)",
+   "options": "INR",
+   "non_negative": 1,
+   "description": "What one unit costs us, in INR, in the same unit the price uses: per IPv4 per month, per GB of bandwidth, per token, per email. Leave 0 for compute, memory and disk; bare metal covers those. Margin reports use it."
   },
   {
    "fieldname": "description",
@@ -68,7 +77,7 @@
    "table_fieldname": "includes"
   }
  ],
- "modified": "2026-06-23 00:00:00.000000",
+ "modified": "2026-10-22 10:00:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Resource Type",

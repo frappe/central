@@ -22,6 +22,11 @@ frappe.ui.form.on("Virtual Machine", {
 				});
 
 		if (frm.doc.admin_domain_error) frm.set_intro(frappe.utils.escape_html(frm.doc.admin_domain_error), "red");
+		else if (frm.doc.__onload?.is_access_locked)
+			frm.set_intro(
+				__("Free trial server. The customer has no SSH, console, Pilot or snapshots until the trial converts. Operators keep access."),
+				"blue",
+			);
 
 		if (frappe.user.has_role("System Manager")) {
 			if (frm.doc.admin_domain_error) {
@@ -44,6 +49,25 @@ frappe.ui.form.on("Virtual Machine", {
 						}),
 					__("Server"),
 				);
+			}
+			if (frm.doc.status === "Running" && frm.doc.atlas_vm_id) {
+				const openConsole = (mode) => {
+					// Open the window inside the click, or the browser blocks the pop-up after the call.
+					const tab = window.open("about:blank", `console-${frm.doc.resource_id}`, "popup,width=960,height=640");
+					frappe
+						.call({
+							method: "central.api.servers.open_console",
+							args: { team: frm.doc.team, resource_id: frm.doc.resource_id, mode },
+							freeze: true,
+						})
+						.then((r) => {
+							if (r.exc || !r.message?.url) return tab?.close();
+							tab.location.href = r.message.url;
+						})
+						.catch(() => tab?.close());
+				};
+				frm.add_custom_button(__("SSH session"), () => openConsole("ssh"), __("Web Console"));
+				frm.add_custom_button(__("Serial console (TTY)"), () => openConsole("tty"), __("Web Console"));
 			}
 			frm.add_custom_button(
 				__("Revoke Pilot Access"),
@@ -104,6 +128,24 @@ frappe.ui.form.on("Virtual Machine", {
 					}),
 			__("Server"),
 		);
+		if (frm.doc.__onload?.has_wireguard_gateway || frm.doc.has_wireguard_access) {
+			frm.add_custom_button(
+				frm.doc.has_wireguard_access ? __("Turn Off WireGuard Access") : __("Turn On WireGuard Access"),
+				() =>
+					frappe
+						.call({
+							method: "central.api.servers.set_server_wireguard_access",
+							args: {
+								team: frm.doc.team,
+								resource_id: frm.doc.resource_id,
+								enabled: frm.doc.has_wireguard_access ? 0 : 1,
+							},
+							freeze: true,
+						})
+						.then((r) => !r.exc && frm.reload_doc()),
+				__("Server"),
+			);
+		}
 		frm.add_custom_button(__("Start"), () => run(__("Start"), "start_server", "green"), __("Server"));
 		frm.add_custom_button(__("Stop"), () => run(__("Stop"), "stop_server", "orange"), __("Server"));
 		if (frm.doc.status === "Running") {

@@ -264,6 +264,9 @@ class GitHubConnectionAttempt:
 				_("You can't connect GitHub to this server. Ask a team admin to review your access."),
 				frappe.PermissionError,
 			)
+		# A credential with no linked server has no machine to protect yet.
+		if credential.server:
+			frappe.get_doc("Virtual Machine", credential.server).require_server_access(user)
 
 		# SET NX lets only one user claim the attempt, even when two users open it at once.
 		# nosemgrep: frappe-cache-breaks-multitenancy -- make_key adds the site prefix.

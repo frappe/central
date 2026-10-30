@@ -24,6 +24,7 @@ from central.infrastructure.doctype.virtual_machine.virtual_machine import Virtu
 from central.integrations import servers
 from central.integrations.atlas import AtlasClient
 from central.integrations.pilot import get_bootstrap_metadata
+from central.services.doctype.ai_trial_key.ai_trial_key import AITrialKey
 
 # A region stamps its own clock on a machine, so allow for a little drift when deciding
 # which machines are new enough to have come from this request.
@@ -220,11 +221,16 @@ def _create_payload(request) -> dict:
 		from central.resource_actions import resolve_team_ssh_keys
 
 		configuration.ssh_keys = resolve_team_ssh_keys(request.team, configuration.ssh_key_ids)
+	settings = frappe.get_cached_doc("Central Settings")
 	payload = {
 		"image_id": configuration.image_id,
 		"cpu_millicores": configuration.cpu_millicores,
 		"memory_mib": configuration.memory_mib,
 		"disk_mib": configuration.disk_mib,
+		"disk_iops": settings.disk_iops,
+		"disk_throughput_mibps": settings.disk_throughput_mibps,
+		"private_network_throughput_mibps": settings.private_network_throughput_mibps,
+		"public_network_throughput_mibps": settings.public_network_throughput_mibps,
 		"hostname": configuration.hostname or "",
 		"ssh_keys": configuration.ssh_keys,
 		"user_data": configuration.user_data,
@@ -265,6 +271,7 @@ def _finalize(request) -> None:
 				create_server_subscription(request, server_id)
 			PilotCredential.link_server(request.credential, server_id)
 			UserMailAccount.link_server(request.name, server_id)
+			AITrialKey.link_server(request.name, server_id)
 			request.db_set({"server": server_id, "resource_id": server_id})
 		# Finalize local ownership and billing together, independently of the next remote read.
 		frappe.db.commit()
@@ -321,7 +328,7 @@ def process_resize(action) -> None:
 		if not first_dispatch:
 			servers.observe_server(server)
 			server.reload()
-		if not _matches_shape(server, target):
+		if _needs_resize(server, target, configuration):
 			servers.resize_server(server, target)
 			server.reload()
 		if not _matches_shape(server, target):
@@ -344,8 +351,8 @@ def process_resize(action) -> None:
 	try:
 		from central.billing.catalog.subscriptions import apply_resize_billing
 
-		apply_resize_billing(action)
 		server.db_set("plan", configuration.plan, notify=False)
+		apply_resize_billing(action)
 	except Exception:
 		diagnostic = frappe.get_traceback()
 		frappe.db.rollback()
@@ -359,6 +366,13 @@ def process_resize(action) -> None:
 		return
 
 	action.transition("Succeeded")
+
+
+def _needs_resize(server: VirtualMachine, shape: dict, configuration) -> bool:
+	"""A converted trial's move has no subscription. Only the resize starts its server and turns
+	idle sleep off, so it runs even when the shape already matches. With a matching shape it
+	does not stop the server."""
+	return not configuration.subscription or not _matches_shape(server, shape)
 
 
 def _matches_shape(server: VirtualMachine, shape: dict) -> bool:
@@ -473,18 +487,36 @@ def is_final_snapshot_ready(action, server: VirtualMachine, client: AtlasClient)
 	return False
 
 
+REFRESH_RETRY_SECONDS = 15
+
+
 def recover_requests() -> None:
 	"""Recover lost queue deliveries, and settle creations the region never answered.
 
 	Nothing here repeats a create: an accepted machine is read, and an unanswered request
 	is looked up by its action marker."""
-	cutoff = frappe.utils.add_to_date(frappe.utils.now_datetime(), minutes=-3)
-	names = frappe.get_all(
+	now = frappe.utils.now_datetime()
+	stalled = frappe.get_all(
 		"Resource Action",
-		filters={"modified": ("<", cutoff), "status": ("in", PENDING_STATES)},
+		filters={
+			"modified": ("<", frappe.utils.add_to_date(now, minutes=-3)),
+			"status": ("in", PENDING_STATES),
+		},
 		order_by="modified asc",
 		limit=100,
 		pluck="name",
 	)
-	for name in names:
+	# A failed read only observes the region, so it is retried soon instead of after the stall cutoff.
+	refresh_due = frappe.get_all(
+		"Resource Action",
+		filters={
+			"modified": ("<", frappe.utils.add_to_date(now, seconds=-REFRESH_RETRY_SECONDS)),
+			"status": ("in", PENDING_STATES),
+			"error_code": "REFRESH_FAILED",
+		},
+		order_by="modified asc",
+		limit=100,
+		pluck="name",
+	)
+	for name in dict.fromkeys(stalled + refresh_due):
 		frappe.get_doc("Resource Action", name).enqueue()

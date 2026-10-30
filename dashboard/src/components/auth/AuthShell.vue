@@ -19,7 +19,7 @@ withDefaults(defineProps<AuthShellProps>(), {
 		<section class="mx-auto w-full max-w-[384px] flex-1 pb-12 pt-16 sm:pt-24">
 			<div
 				v-if="showProgress"
-				class="mb-12 flex gap-2"
+				class="vt-auth-progress mb-12 flex gap-2"
 				aria-label="Signup progress"
 			>
 				<span
@@ -30,7 +30,9 @@ withDefaults(defineProps<AuthShellProps>(), {
 				/>
 			</div>
 
-			<slot />
+			<div class="vt-auth-step">
+				<slot />
+			</div>
 		</section>
 
 		<footer class="flex items-center justify-center gap-2 py-8">

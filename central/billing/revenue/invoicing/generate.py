@@ -247,15 +247,12 @@ def rate_subscription_period(subscription: str, period_start, period_end, explai
 
 
 def team_clusters(team: str) -> list[str]:
-	"""Every cluster the team runs a server in, resolved in one pass."""
-	server_ids = frappe.get_all("Subscription", filters={"team": team}, pluck="server_id")
-	return sorted(
-		{
-			c
-			for c in frappe.get_all("Virtual Machine", filters={"name": ["in", server_ids]}, pluck="region")
-			if c
-		}
-	)
+	"""Every cluster the team runs a server or a team-level service in, resolved in one pass."""
+	subscriptions = frappe.get_all("Subscription", filters={"team": team}, fields=["server_id", "cluster"])
+	server_ids = [s.server_id for s in subscriptions if s.server_id]
+	servers = frappe.get_all("Virtual Machine", filters={"name": ["in", server_ids]}, pluck="region")
+	services = [s.cluster for s in subscriptions if not s.server_id]
+	return sorted({c for c in (*servers, *services) if c})
 
 
 def rate_team_period(

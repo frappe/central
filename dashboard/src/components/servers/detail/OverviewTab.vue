@@ -92,15 +92,15 @@ const charts = computed(() =>
 		: [],
 )
 
-const { plans } = usePlans(computed(() => server.value.region))
+const { includedTransferGigabytes } = usePlans(
+	computed(() => server.value.region),
+)
 
-const transferQuota = computed(() => {
-	const gigabytes = plans.value
-		.find((plan) => plan.plan === server.value.plan)
-		?.includes.find((include) => include.resource_type === 'Transfer')?.quantity
-
-	return gigabytes ? gigabytes * 1024 ** 3 : null
-})
+const transferQuota = computed(() =>
+	includedTransferGigabytes.value
+		? includedTransferGigabytes.value * 1024 ** 3
+		: null,
+)
 
 const transferred = computed(() =>
 	points.value.reduce(

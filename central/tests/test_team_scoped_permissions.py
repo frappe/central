@@ -3,6 +3,8 @@ from frappe.desk.reportview import execute as reportview_execute
 from frappe.tests import IntegrationTestCase
 
 from central.permissions import (
+	billing_record_has_permission,
+	billing_record_query_conditions,
 	pilot_credential_has_permission,
 	pilot_credential_query_conditions,
 	realtime_has_permission,
@@ -118,6 +120,31 @@ class TestTeamScopedPermissions(IntegrationTestCase):
 			with self.subTest(query_conditions=query_conditions.__name__):
 				self.assertEqual(query_conditions(), "")
 				self.assertTrue(has_permission(frappe._dict(team="any-team")))
+
+	def test_billing_records_are_operator_only_even_on_the_users_own_team(self):
+		"""Customers reach billing data through the billing API, never the raw record."""
+		mine = self._team("Billing Mine", self.viewer, "Admin")
+
+		frappe.set_user(self.viewer)
+		self.assertEqual(billing_record_query_conditions(), "1 = 0")
+		self.assertFalse(billing_record_has_permission(frappe._dict(team=mine.name)))
+		self.assertFalse(billing_record_has_permission(frappe._dict(team="another-team")))
+
+		frappe.set_user("Administrator")
+		self.assertEqual(billing_record_query_conditions(), "")
+		self.assertTrue(billing_record_has_permission(frappe._dict(team=mine.name)))
+
+	def test_every_team_scoped_billing_doctype_is_wired_in_both_layers(self):
+		for doctype in ("Invoice", "Payment Attempt", "Credit Ledger Entry", "Top-up Order", "Refund"):
+			with self.subTest(doctype=doctype):
+				self.assertIn(
+					"central.permissions.billing_record_query_conditions",
+					frappe.get_hooks("permission_query_conditions").get(doctype, []),
+				)
+				self.assertIn(
+					"central.permissions.billing_record_has_permission",
+					frappe.get_hooks("has_permission").get(doctype, []),
+				)
 
 	def _team(self, label: str, user: str, role: str):
 		members = [{"user": self.owner, "role": "Owner", "status": "Active"}]

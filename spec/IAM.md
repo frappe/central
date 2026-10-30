@@ -69,6 +69,7 @@ A role grant applies to all resources (`resource_type = "*"`) or to one resource
 - A scoped grant must name a server or site of the same Team. The Owner role is always team-wide. A grant whose resource no longer belongs to the Team grants nothing.
 - `iam.can(user, team, capability, server=None)` answers the first two questions. Without `server`, it is the team-wide question. Routes that act on one server pass it. `iam.can_on_any_server` answers the list question.
 - The permission rules for Virtual Machine, Site, VM Snapshot, Resource Action, and Site Domain filter lists by the allowed servers and check the server on each record.
+- Team-scoped billing DocTypes (Invoice, Payment Attempt, Credit Ledger Entry, Top-up Order and the others in `hooks._BILLING_TEAM_RECORDS`) are for operators only in both layers: `billing_record_query_conditions` returns `1 = 0` and `billing_record_has_permission` returns False for everyone else, on their own Team too. Customers read billing through the billing API, which checks `billing:view` or `billing:manage` on the record's Team.
 - Pricing a resize reads the plans and the current configuration of one server. Those two billing reads accept `server:resize` on that server in place of `billing:view`.
 - A notification that is about a server records it in `Team Notification.server`. A scoped member sees and receives only the notifications for its servers.
 - The console reads each server's capabilities from the `capabilities` field on its row, so it shows only the actions that the member can do on that server.
@@ -131,7 +132,7 @@ The console shows the onboarding dialog in two cases:
 1. The user is a member of no Team. The dialog asks for a Team name. This step cannot be skipped.
 2. The user owns the active Team, and the Team has a `Pending` onboarding step. `my_teams` returns these steps as `onboarding`.
 
-The owner answers each step with `set_onboarding_step` (`Done` or `Skipped`), or all at once with `skip_onboarding`. Only the current owner can answer. A Team created before onboarding existed has no rows, so its owner never sees the dialog.
+The owner answers each step with `set_onboarding_step` (`Done` or `Skipped`). The dialog has Back, Skip, and the step's own action. Back goes to an earlier step, but not to the Team name step. A step the owner goes back to keeps its recorded answer, unless the owner now completes it. Only the current owner can answer. A Team created before onboarding existed has no rows, so its owner never sees the dialog.
 
 ### Invitation email and join link
 

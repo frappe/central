@@ -18,8 +18,11 @@ export function getTeamSwitcherRows(teams: Team[]): TeamSwitcherRow[] {
 		const hasUniqueOwner =
 			team.owner &&
 			matches.filter((match) => match.owner === team.owner).length === 1
-		const detail =
+		const owner =
 			matches.length > 1 ? (hasUniqueOwner ? team.owner! : team.name) : ''
+		const detail = [owner, team.status === 'Suspended' ? 'Suspended' : '']
+			.filter(Boolean)
+			.join(' · ')
 		return {
 			...team,
 			detail,

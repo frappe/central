@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 import frappe
 
 from central.integrations.grove import GroveClient
@@ -9,11 +11,6 @@ from central.services.doctype.team_service.team_service import AI_SERVICE
 def get_ai_service(team: str) -> str | None:
 	"""The team's AI Team Service, None while AI is off for it."""
 	return frappe.db.get_value("Team Service", {"team": team, "add_on_service": AI_SERVICE})
-
-
-def get_gateway_url(team: str) -> str | None:
-	"""Where the team's keys call, as Grove answered when the team was registered."""
-	return frappe.db.get_value("Team Service", {"team": team, "add_on_service": AI_SERVICE}, "endpoint_url")
 
 
 def enable(team: str) -> str:
@@ -33,77 +30,130 @@ def enable(team: str) -> str:
 	return service.name
 
 
-def get_alert_email(team: str) -> str:
-	"""Where Grove sends the team's alerts: the billing contact when set, else the owner."""
-	if email := frappe.db.get_value("Billing Profile", team, "email"):
-		return email
-
-	owner = frappe.db.get_value("Team", team, "owner_user")
-
-	# The User's name is not always an address: Administrator is not one.
-	return frappe.db.get_value("User", owner, "email")
-
-
-def register_grove_user(team: str, free: bool = True) -> dict:
-	"""Register the team as a Grove user named by the team id, with its alert email. Grove picks
-	its geography and answers with it and its `gateway_url`. A repeat sends the email again and
-	changes nothing else; `free=False` keeps the Free setting Grove already has."""
-	return GroveClient.from_settings().provision_user(team, get_alert_email(team), free=free) or {}
-
-
-def on_alert_address_update(doc, method: str | None = None) -> None:
-	"""Team and Billing Profile hook: send a changed alert address to Grove. A Billing Profile
-	is named by its team. A no-op when the address stayed or AI is off."""
-	field = "owner_user" if doc.doctype == "Team" else "email"
-	if not doc.has_value_changed(field) or not get_ai_service(doc.name):
+def stop_team_keys(team: str) -> None:
+	"""Stop every live key of a team that is closing. Each cap goes to 0 first, which Grove allows at
+	any time, so no key spends again. Then the keys old enough to revoke are revoked."""
+	if not get_ai_service(team):
 		return
 
-	# No retry: if Grove is down now, it keeps the old address until the next change.
-	frappe.enqueue(
-		"central.services.ai.register_grove_user", team=doc.name, free=False, enqueue_after_commit=True
-	)
+	client = GroveClient.from_settings()
+	live = [key for key in client.get_figures(team)["keys"] if key["status"] == "active"]
+	if not live:
+		return
+
+	client.update_caps(team, {key["name"]: 0 for key in live})
+	# Grove sends UTC timestamps such as "2026-10-06T10:30:00Z".
+	now = datetime.now(UTC)
+	for key in live:
+		if datetime.fromisoformat(key["revocable_at"].replace("Z", "+00:00")) <= now:
+			client.revoke_key(team, key["name"])
 
 
-def get_overview(team: str) -> dict:
-	"""The team's AI at a glance: `models`, `rate_limits`, `balance` and this month's `usage`."""
+def set_team_suspended(team: str, suspended: bool) -> None:
+	"""Pause or resume every key of a team at Grove. Unlike revoking, this can be undone."""
+	if get_ai_service(team):
+		GroveClient.from_settings().update_team(team, suspended=suspended)
+
+
+def register_team(team: str) -> dict:
+	"""Register the team at Grove under the team id, then send the name of its tier. Grove keeps
+	nothing else about the team."""
+	client = GroveClient.from_settings()
+	registered = client.provision_team(team) or {}
+	client.update_team(**get_team_limits(team))
+	return registered
+
+
+def get_team_limits(team: str) -> dict:
+	"""What Central tells Grove about the team, and the body of the Webhook that carries it (a
+	`jinja` hook method, rendered when the delivery runs): the name of its tier, whose key count,
+	monthly spend limit and rate limits Grove holds (untiered: "", Grove's default tier), and
+	`observed_at`, the Billing Profile's `modified`, which Grove keeps so a retried or reordered
+	delivery never overwrites a newer one (no profile yet: None, and the body applies)."""
+	from central.billing.catalog.entitlements import get_team_caps
+
+	observed_at = frappe.db.get_value("Billing Profile", team, "modified")
 	return {
-		"models": get_reachable_models(team),
-		"rate_limits": get_rate_limits(team),
-		"balance": GroveClient.from_settings().get_balance(team),
-		"usage": get_month_usage(team),
+		"team": team,
+		"tier": get_team_caps(team).tier or "",
+		"observed_at": str(observed_at) if observed_at else None,
 	}
 
 
-def get_month_usage(team: str) -> dict:
-	"""This month's requests, tokens and cost, with the window and Grove's as-of time."""
-	usage = GroveClient.from_settings().get_usage([team], period="This Month")
+def on_level_update(doc, method: str | None = None) -> None:
+	"""Trust Tier Level hook: a renamed label renames the Tier at Grove, with every team on it.
+	Direct and inside the save, since a Webhook body carries no old value: with Grove down the
+	save fails and is tried again later. A Central not enrolled at Grove still edits its levels."""
+	before = doc.get_doc_before_save()
+	if not (before and before.tier and doc.has_value_changed("tier")):
+		return
+	if frappe.get_cached_doc("AI Settings").is_enrolled:
+		GroveClient.from_settings().rename_tier(before.tier, doc.tier)
+
+
+def get_overview(team: str) -> dict:
+	"""The team's AI at a glance: `spend` (this month's, and the keys' caps against the tier's
+	spend limit), this month's `usage`, and the `geographies` a key may be minted in. What a key may call and how fast is the key's own: see `list_api_keys`."""
+	client = GroveClient.from_settings()
+	figures = client.get_figures(team)
+	return {
+		"spend": figures["spend"],
+		"usage": get_month_usage(team, figures["usage"]),
+		"geographies": client.list_geographies(),
+	}
+
+
+def get_month_usage(team: str, usage: dict) -> dict:
+	"""This month's requests, tokens and cost off the team's figures, with the window, Grove's
+	as-of time and one total per day so far (`daily`) for the overview's sparklines."""
 	return {
 		**(usage.get(team) or {"requests": 0, "tokens": 0, "cost": 0}),
 		"from_date": usage["from_date"],
 		"to_date": usage["to_date"],
 		"as_of": usage["as_of"],
+		"daily": get_day_totals(usage),
 	}
 
 
-def get_reachable_models(team: str) -> list[dict]:
-	"""The models Grove lets the team call: what each takes and gives, and the API surfaces
-	(openai, anthropic) it answers on. Grove decides; Central only shows them."""
+def get_day_totals(usage: dict) -> list[dict]:
+	"""Every day of the period in order, each with the team's requests, tokens and cost summed
+	over its models, zeros on a quiet day: one point per day for a sparkline."""
+	days = frappe.utils.date_diff(usage["to_date"], usage["from_date"]) + 1
+	totals = {
+		str(frappe.utils.add_days(usage["from_date"], offset)): {"requests": 0, "tokens": 0, "cost": 0}
+		for offset in range(days)
+	}
+	for row in usage["daily_summary"]:
+		for field in ("requests", "tokens", "cost"):
+			totals[row["day"]][field] += row[field]
+	return [{"day": day, **fields} for day, fields in totals.items()]
+
+
+def get_models(geography: str | None = None) -> list[dict]:
+	"""What a new key in `geography` (Grove's default when None) starts with: the published
+	models of its default group, what each takes and gives, and the API surfaces it answers on."""
+	return shape_models(GroveClient.from_settings().list_models(geography=geography))
+
+
+def get_key_models(team: str, key: str) -> list[dict]:
+	"""The models Grove lets one key call, as its geography serves them. Grove decides; Central
+	only shows them."""
+	return shape_models(GroveClient.from_settings().list_models(team, key))
+
+
+def shape_models(rows: list[dict]) -> list[dict]:
 	return [
 		{
 			"name": row["name"],
+			"provider": row.get("provider"),
+			"model_id": row.get("model_id"),
+			"zero_data_retention": bool(row.get("zero_data_retention")),
 			"input_modalities": row.get("input_modalities", []),
 			"output_modalities": row.get("output_modalities", []),
 			"dialects": row["dialects"],
 		}
-		for row in GroveClient.from_settings().list_models(team)
+		for row in rows
 	]
-
-
-def get_rate_limits(team: str) -> list[dict]:
-	"""The limits Grove counts across every key of the team: rows of `metric` (requests,
-	total_tokens), `window` (1m, 1h, 1d, 1M) and `value`. No rows is no limit."""
-	rows = GroveClient.from_settings().get_limits(team)
-	return [{"metric": row["metric"], "window": row["window"], "value": row["value"]} for row in rows]
 
 
 def get_usage_report(team: str, period: str, key_hash: str | None = None) -> dict:

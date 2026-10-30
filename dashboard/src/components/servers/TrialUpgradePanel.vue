@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Alert, call } from 'frappe-ui'
+import { Alert, call, Radio, RadioGroup } from 'frappe-ui'
 import { computed, ref } from 'vue'
 import { API } from '@/api/methods'
 import AddMethodDialog from '@/components/AddMethodDialog.vue'
@@ -8,10 +8,12 @@ import { useBillingSetup } from '@/composables/useBillingSetup'
 import { useSession } from '@/composables/useSession'
 import { getErrorMessage } from '@/lib/feedback'
 import { formatDate, money, plural } from '@/lib/format'
-import type { ServerTrial } from '@/types/billing'
+import type { ServerTrial, TrialPlanChoice } from '@/types/billing'
 
 interface Props {
 	trial: ServerTrial
+	/** The paid plans the site may move to, cheapest first. */
+	plans: TrialPlanChoice[]
 	checking: boolean
 	serverId: string
 }
@@ -25,6 +27,18 @@ const showAddMethod = ref(false)
 // A new card is confirmed by the gateway first, so the trial can stay open for a moment.
 const methodAdded = ref(false)
 
+const selected = ref(props.trial.plan?.name ?? props.plans[0]?.name ?? '')
+const choice = computed(() =>
+	props.plans.find((plan) => plan.name === selected.value),
+)
+const price = computed(() =>
+	choice.value
+		? money(choice.value.monthly_rate, choice.value.currency, {
+				trimTrailingZeros: true,
+			})
+		: '',
+)
+
 const title = computed(() =>
 	props.trial.state === 'Ended'
 		? 'Your free trial has ended'
@@ -33,76 +47,74 @@ const title = computed(() =>
 
 const description = computed(() => {
 	if (props.trial.state !== 'Ended' || !props.trial.deletes_on)
-		return 'Add a payment method to keep this site and choose a bigger plan.'
+		return 'Choose a plan to keep this site after the trial. Billing starts when you add a payment method.'
 	const deletesOn = formatDate(props.trial.deletes_on)
 	return props.trial.can_keep
-		? `This site is stopped. Keep it before ${deletesOn} to start it again on its paid plan.`
-		: `This site is stopped. Add a payment method before ${deletesOn} to keep it and choose a plan.`
-})
-
-// The card earns the credit only before the trial ends, so the line names that day.
-const credit = computed(() => {
-	const offer = props.trial.credit
-	if (!offer) return null
-	const amount = money(offer.amount, offer.currency, {
-		trimTrailingZeros: true,
-	})
-	return offer.ends_on
-		? `Add a payment method by ${formatDate(offer.ends_on)} and get ${amount} credit`
-		: `Get ${amount} credit when you add a payment method`
+		? `This site is stopped. Choose a plan and keep the site before ${deletesOn}.`
+		: `This site is stopped. Choose a plan and add a payment method before ${deletesOn} to keep it.`
 })
 
 const facts = computed(() => [
 	{
 		icon: 'lucide-credit-card',
-		text: credit.value
-			? 'After the credit is used, we charge this card for your monthly bill.'
-			: 'We charge this card for your monthly bill.',
+		text: `Billing starts at ${price.value} a month when your site moves to this plan.`,
 	},
-	...(props.trial.state === 'Active' && props.trial.sleeps_after_minutes
-		? [
-				{
-					icon: 'lucide-moon',
-					text: `Until you add a payment method, your site sleeps after ${plural(props.trial.sleeps_after_minutes, 'minute')} without visitors. The next visit wakes it in a few seconds.`,
-				},
-			]
-		: []),
 	{
-		icon: 'lucide-shield-check',
-		text: 'Your site and its data stay as they are.',
+		icon: 'lucide-terminal',
+		text: 'Every plan gives you full server access: SSH, the web console, Pilot and snapshots.',
+	},
+	{
+		icon: 'lucide-refresh-cw',
+		text: 'Your site restarts once, for a few minutes, to move to the new plan. Its data stays as it is.',
 	},
 ])
 
-function addMethod(): void {
-	if (requireSetup()) showAddMethod.value = true
+const saving = ref(false)
+const actionError = ref<string | null>(null)
+
+// Central keeps the choice, so the conversion moves the site to it whichever way it starts.
+async function run(action: () => Promise<unknown>): Promise<void> {
+	saving.value = true
+	actionError.value = null
+	try {
+		await call(API.resizeServer, {
+			team: activeTeam.value,
+			resource_id: props.serverId,
+			plan: selected.value,
+		})
+		await action()
+	} catch (error) {
+		actionError.value = getErrorMessage(error)
+	} finally {
+		saving.value = false
+	}
 }
+
+const addMethod = () =>
+	run(async () => {
+		if (requireSetup()) showAddMethod.value = true
+	})
+
+const choosePlan = () => run(async () => emit('check'))
+
+const keep = () =>
+	run(async () => {
+		await call(API.keepTrialSite, {
+			team: activeTeam.value,
+			resource_id: props.serverId,
+		})
+		emit('check')
+	})
 
 function onMethodAdded(): void {
 	methodAdded.value = true
 	emit('check')
 }
 
-const keeping = ref(false)
-const keepError = ref<string | null>(null)
-
-async function keep(): Promise<void> {
-	keeping.value = true
-	keepError.value = null
-	try {
-		await call(API.keepTrialSite, {
-			team: activeTeam.value,
-			resource_id: props.serverId,
-		})
-		emit('check')
-	} catch (error) {
-		keepError.value = getErrorMessage(error)
-	} finally {
-		keeping.value = false
-	}
-}
+const canContinue = computed(() => Boolean(choice.value) && !saving.value)
 
 // The dialog's footer holds the button, so it reads these.
-defineExpose({ addMethod, methodAdded, keep, keeping })
+defineExpose({ addMethod, choosePlan, keep, methodAdded, saving, canContinue })
 </script>
 
 <template>
@@ -116,27 +128,47 @@ defineExpose({ addMethod, methodAdded, keep, keeping })
 			v-if="trial.held"
 			theme="amber"
 			title="This site stays on its free trial"
-			description="Your payment method is added, but this site's plan is above your spending limit. Contact support to raise the limit."
+			description="Your payment method is added, but this plan is above your spending limit. Choose a smaller plan, or contact support to raise the limit."
 		/>
 		<Alert
-			v-if="keepError"
+			v-if="actionError"
 			theme="red"
-			title="Couldn't keep this site"
-			:description="keepError"
+			title="Couldn't save your plan"
+			:description="actionError"
 		/>
 
-		<div
-			v-if="credit"
-			class="flex items-center gap-3 rounded-6 bg-surface-gray-2 px-4 py-3"
+		<p v-if="!plans.length" class="text-p-sm text-ink-gray-6">
+			No plan fits your spending limit. Contact support to raise it.
+		</p>
+		<RadioGroup
+			v-else
+			v-model="selected"
+			aria-label="Plans"
+			:disabled="saving || methodAdded"
 		>
-			<span
-				class="lucide-gift size-4 shrink-0 text-ink-gray-8"
-				aria-hidden="true"
-			/>
-			<p class="text-p-sm-medium text-ink-gray-9">{{ credit }}</p>
-		</div>
+			<div
+				v-for="plan in plans"
+				:key="plan.name"
+				class="flex items-center gap-3 rounded-6 border px-4 py-3"
+				:class="
+					selected === plan.name
+						? 'border-outline-gray-5'
+						: 'border-outline-gray-2'
+				"
+			>
+				<Radio
+					class="min-w-0 flex-1"
+					:value="plan.name"
+					:label="plan.title"
+					:description="plan.specs"
+				/>
+				<span class="shrink-0 text-p-base-medium tabular-nums text-ink-gray-9">
+					{{ money(plan.monthly_rate, plan.currency, { trimTrailingZeros: true }) }}/mo
+				</span>
+			</div>
+		</RadioGroup>
 
-		<ul class="space-y-3">
+		<ul v-if="choice" class="space-y-3">
 			<li
 				v-for="fact in facts"
 				:key="fact.icon"

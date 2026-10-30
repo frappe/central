@@ -30,8 +30,8 @@ const transferCall = useCall<{ owner: string }, { team: string; user: string }>(
 		immediate: false,
 	},
 )
-const deleteCall = useCall<{ deleted: boolean }, { team: string }>({
-	url: method(API.deleteTeam),
+const archiveCall = useCall<{ archived: boolean }, { team: string }>({
+	url: method(API.archiveTeam),
 	method: 'POST',
 	immediate: false,
 })
@@ -112,16 +112,16 @@ export function useTeamSettings() {
 		)
 	}
 
-	function deleteTeam(team?: string) {
+	function archiveTeam() {
 		return run(
-			deleteCall,
-			{ team: team ?? activeTeam.value! },
+			archiveCall,
+			{ team: activeTeam.value! },
 			async () => {
 				await session.reload()
 				session.setActiveTeam(session.teams.value[0]?.name ?? null)
 				caps.reload()
 			},
-			'Team deleted',
+			'Team archived',
 		)
 	}
 
@@ -207,7 +207,7 @@ export function useTeamSettings() {
 		rename,
 		setLogo,
 		transferOwnership,
-		deleteTeam,
+		archiveTeam,
 		leaveTeam,
 		teamColumns,
 		teamRowActions,

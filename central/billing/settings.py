@@ -140,7 +140,7 @@ def terminate_after_days() -> int:
 
 
 # Starting points for the snapshot settings; an operator changes them in Billing Settings.
-SNAPSHOT_DEFAULTS = {"daily_snapshot_retention_hours": 48, "free_snapshots_per_server": 2}
+SNAPSHOT_DEFAULTS = {"daily_snapshot_retention_hours": 48, "free_snapshots_per_server": 0}
 
 
 def ensure_snapshot_settings() -> None:
@@ -168,10 +168,15 @@ def free_snapshots_per_server() -> int:
 	return frappe.utils.cint(_settings().free_snapshots_per_server)
 
 
+# A chargeback can arrive up to about 120 days after the charge, and its handler needs
+# the webhook trail; a shorter window would delete what a dispute is matched against.
+MIN_PAYMENT_LOG_RETENTION_DAYS = 180
+
+
 def payment_log_retention_days() -> int:
 	"""Rolling window (days) the gateway logs — Payment Attempt and Webhook Event —
-	are kept before daily pruning."""
-	return frappe.utils.cint(_settings().payment_log_retention_days)
+	are kept before daily pruning. Never below `MIN_PAYMENT_LOG_RETENTION_DAYS`."""
+	return max(frappe.utils.cint(_settings().payment_log_retention_days), MIN_PAYMENT_LOG_RETENTION_DAYS)
 
 
 def default_gst_rate() -> float:
@@ -189,12 +194,39 @@ def gst_status_daily_limit() -> int:
 	return frappe.utils.cint(_settings().gst_status_daily_limit)
 
 
+def reporting_usd_to_inr() -> float:
+	"""Rate the margin reports turn USD revenue into INR at, or 0 to leave USD out."""
+	return frappe.utils.flt(_settings().reporting_usd_to_inr)
+
+
 def forecast_notify_ratio() -> float:
 	"""Share of a team's cap at which its forecast spend warning fires (0.8 = 80%)."""
 	override = _override("forecast_notify_percent")
 	if override is not _MISSING:
 		return frappe.utils.flt(override) / 100.0
 	return frappe.utils.flt(_settings().forecast_notify_percent) / 100.0
+
+
+def operator_alert_channel() -> str:
+	"""Where operator alerts go: Raven, Email, or Raven and Email."""
+	return _settings().operator_alert_channel
+
+
+def operator_alert_emails() -> list[str]:
+	"""The named addresses that get operator alerts by email."""
+	return _settings().alert_emails()
+
+
+def raven_connection() -> dict | None:
+	"""The Raven site, channel and bot credentials, or None when any one is missing."""
+	doc = _settings()
+	connection = {
+		"site_url": (doc.raven_site_url or "").rstrip("/"),
+		"channel_id": doc.raven_channel_id,
+		"api_key": doc.raven_api_key,
+		"api_secret": doc.get_password("raven_api_secret", raise_exception=False),
+	}
+	return connection if all(connection.values()) else None
 
 
 def ensure_welcome_credit_amounts() -> None:

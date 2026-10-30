@@ -71,6 +71,6 @@ export interface ResourceAction {
 	request_digest?: string
 	/**	Pilot Credential : Link - Pilot Credential	*/
 	credential?: string
-	/**	Error Log : Link - Error Log - Latest Error Log created for this action. All related Error Logs also reference this Resource Action.	*/
-	error_log?: string
+	/**	Diagnostic : Code - The traceback or Atlas detail of the latest failure of this action. Operators only.	*/
+	diagnostic?: string
 }

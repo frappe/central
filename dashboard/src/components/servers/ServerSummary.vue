@@ -21,7 +21,6 @@ const tiles = [
 	{ type: 'Compute', label: 'vCPU', icon: 'lucide-cpu' },
 	{ type: 'Memory', label: 'Memory', icon: 'lucide-memory-stick' },
 	{ type: 'Disk', label: 'SSD', icon: 'lucide-database' },
-	{ type: 'Transfer', label: 'Transfer', icon: 'lucide-arrow-up-down' },
 ]
 </script>
 
@@ -42,7 +41,7 @@ const tiles = [
 		</div>
 
 		<dl
-			class="grid grid-cols-2 divide-outline-gray-2 rounded-6 border border-outline-gray-2 md:grid-cols-4 md:divide-x"
+			class="grid grid-cols-2 divide-outline-gray-2 rounded-6 border border-outline-gray-2 md:grid-cols-3 md:divide-x"
 		>
 			<div
 				v-for="tile in tiles"

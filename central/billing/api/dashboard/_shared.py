@@ -28,6 +28,7 @@ from central.billing.doctype.billing_profile.billing_profile import (
 from central.billing.doctype.billing_profile.billing_profile import (
 	require_billing_profile,
 )
+from central.billing.doctype.payment_method.payment_method import held_method_filters
 from central.iam import can
 
 # Tier caps (max_spend) are stored in INR; convert to the team's billing currency
@@ -119,7 +120,7 @@ def _has_money_activity(team: str) -> bool:
 	so a wallet can't end up holding mixed-currency value."""
 	return bool(
 		frappe.db.exists("Credit Ledger Entry", {"team": team})
-		or frappe.db.exists("Payment Method", {"team": team})
+		or frappe.get_all("Payment Method", filters={"team": team}, or_filters=held_method_filters(), limit=1)
 		or frappe.db.exists("Invoice", {"team": team})
 	)
 

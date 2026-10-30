@@ -31,14 +31,14 @@ export const API = {
 	listTeamRoles: 'central.api.teams.list_team_roles',
 	createTeam: 'central.api.teams.create_team',
 	setOnboardingStep: 'central.api.teams.set_onboarding_step',
-	skipOnboarding: 'central.api.teams.skip_onboarding',
 	renameTeam: 'central.api.teams.rename_team',
 	setTeamLogo: 'central.api.teams.set_team_logo',
 	myProfile: 'central.api.identity.my_profile',
 	updateProfile: 'central.api.identity.update_profile',
 	setProfilePhoto: 'central.api.identity.set_profile_photo',
 	transferOwnership: 'central.api.teams.transfer_team_ownership',
-	deleteTeam: 'central.api.teams.delete_team',
+	archiveTeam: 'central.api.teams.archive_team',
+	teamArchiveChecks: 'central.api.teams.get_team_archive_checks',
 	leaveTeam: 'central.api.teams.leave_team',
 	inviteTeamMember: 'central.api.teams.invite_team_member',
 	setTeamMemberRoles: 'central.api.teams.set_team_member_roles',
@@ -70,6 +70,7 @@ export const API = {
 	updateServerFirewall: 'central.api.servers.update_server_firewall',
 	setServerPublicIp: 'central.api.servers.set_server_public_ip',
 	setServerIpv4Internet: 'central.api.servers.set_server_ipv4_internet',
+	setServerWireguardAccess: 'central.api.servers.set_server_wireguard_access',
 	publicIpv4Pricing: 'central.api.servers.public_ipv4_pricing',
 	terminateServer: 'central.api.servers.terminate_server',
 	keepTrialSite: 'central.api.servers.keep_trial_site',
@@ -85,6 +86,9 @@ export const API = {
 	retryTeamSSHKeySync: 'central.api.ssh_keys.retry_team_ssh_key_sync',
 	deleteTeamSSHKey: 'central.api.ssh_keys.delete_team_ssh_key',
 	setServerSSHKeys: 'central.api.ssh_keys.set_server_ssh_keys',
+	listWireGuardDevices: 'central.api.wireguard.list_wireguard_devices',
+	createWireGuardDevice: 'central.api.wireguard.create_wireguard_device',
+	deleteWireGuardDevice: 'central.api.wireguard.delete_wireguard_device',
 
 	// ── Snapshots (central.api.snapshots) ──
 	// server:view reads them and their price; server:snapshot takes, keeps and deletes.
@@ -100,9 +104,11 @@ export const API = {
 	aiUsage: 'central.services.api.ai.get_usage',
 	aiApiKeys: 'central.services.api.ai.list_api_keys',
 	createAIApiKey: 'central.services.api.ai.create_api_key',
+	setAIApiKeyCaps: 'central.services.api.ai.set_api_key_caps',
+	aiModels: 'central.services.api.ai.get_models',
 	revokeAIApiKey: 'central.services.api.ai.revoke_api_key',
-	setAIApiKeyBalanceAccess:
-		'central.services.api.ai.set_api_key_balance_access',
+	pullAIUsage: 'central.services.api.ai.pull_usage',
+	setAIPromptLogging: 'central.services.api.ai.set_prompt_logging',
 
 	objectStorage: 'central.services.api.storage.get_object_storage',
 	bucketUsage: 'central.services.api.storage.get_bucket_usage',
@@ -127,6 +133,9 @@ export const API = {
 	getSite: 'central.api.sites.get_site',
 	loginSite: 'central.api.sites.login_site',
 	terminateSite: 'central.api.sites.terminate_site',
+	getOpenTrial: 'central.api.sites.get_open_trial',
+	installTrialApp: 'central.api.sites.install_trial_app',
+	trialAppInstall: 'central.api.sites.get_trial_app_install',
 
 	getBenchLink: 'central.api.sso.get_bench_link',
 

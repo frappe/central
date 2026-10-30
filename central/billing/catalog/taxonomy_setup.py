@@ -147,6 +147,13 @@ CATEGORIES = [
 		"configurator_builder": "Simple",
 		"sub_category_label": "Storage purpose",
 		"description": "Frappe Box remote storage — data, backups, or snapshots (live-priced).",
+		# Billed by the GB-month at the current rate: a daily reading of what the team's
+		# buckets hold adds that day's share of the month (storage_usage.py).
+		"billing_type": "Metered",
+		"billing_interval": "Monthly",
+		"pricing_mode": "Live",
+		"settlement_mode": "Postpaid Overage",
+		"reporting_mode": "Incremental",
 		"allowed": ["Storage", "Backup"],
 		"sub_categories": [{"name": "Data"}, {"name": "Backups"}, {"name": "Snapshots"}],
 	},

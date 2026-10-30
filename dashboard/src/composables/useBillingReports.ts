@@ -17,7 +17,7 @@ export const BILLING_REPORT_MONTHS = [
 	{ label: '12 months', value: 12 },
 ]
 
-export function useBillingReports() {
+export function useBillingReports(options: { statementOnly?: boolean } = {}) {
 	const { activeTeam } = useSession()
 	const months = ref(12)
 	const fromDate = computed(() =>
@@ -52,8 +52,11 @@ export function useBillingReports() {
 	})
 
 	function reload(): void {
-		history.reload()
 		statement.reload()
+
+		if (options.statementOnly) return
+
+		history.reload()
 		tax.reload()
 		attempts.reload()
 	}

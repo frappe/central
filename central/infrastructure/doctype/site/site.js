@@ -47,9 +47,9 @@ function show_trial_intro(form) {
 	const { trial_state, trial_ends_on, trial_deletes_on, trial_error } = form.doc
 	if (trial_error) return form.set_intro(frappe.utils.escape_html(trial_error), 'red')
 	if (trial_state === 'Active')
-		form.set_intro(__('Free trial. It ends on {0}, and then the server stops.', [frappe.datetime.str_to_user(trial_ends_on)]), 'blue')
+		form.set_intro(__('Free trial. It ends on {0}, and then the server stops. Server access is locked until the trial converts.', [frappe.datetime.str_to_user(trial_ends_on)]), 'blue')
 	if (trial_state === 'Ended')
-		form.set_intro(__('Trial ended. The server is stopped and is deleted on {0}.', [frappe.datetime.str_to_user(trial_deletes_on)]), 'orange')
+		form.set_intro(__('Trial ended. The server is stopped and is deleted on {0}. Server access is locked until the trial converts.', [frappe.datetime.str_to_user(trial_deletes_on)]), 'orange')
 }
 
 function add_trial_actions(form) {

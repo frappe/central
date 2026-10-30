@@ -8,6 +8,7 @@ from urllib.parse import quote, urlsplit
 import frappe
 import requests
 from frappe import _
+from frappe.monitor import get_trace_id
 
 from central.errors import AtlasConnectionError, AtlasRejected, AtlasRequestUncertain, AtlasResourceGone
 from central.iam import can, user_has_operator_bypass
@@ -130,6 +131,16 @@ class AtlasClient:
 			if not page.get("has_more"):
 				return hosts
 
+	def get_host_id(self, title: str) -> str:
+		"""The ID of the region's Metal host named `title`."""
+		hosts = self.list_hosts()
+		for host in hosts:
+			if host.get("title") == title:
+				return host["id"]
+
+		titles = ", ".join(host.get("title") or host.get("id") for host in hosts)
+		frappe.throw(_("Atlas has no host named {0}. Its hosts are: {1}.").format(frappe.bold(title), titles))
+
 	def grant_host_access(self, host_id: str, email: str, expires_at: datetime) -> dict:
 		"""Open one host, or every host for `all`, to one person. A repeated grant moves the end time."""
 		path = f"hosts/{quote(host_id, safe='')}/access/grant"
@@ -229,6 +240,15 @@ class AtlasClient:
 		base_url, _region_id = self._configuration()
 
 		return f"{base_url}/vm_console#token={quote(token, safe='')}"
+
+	def create_investigation(self, problem: str, context: dict | None, requested_by: str | None) -> dict:
+		"""Hand a problem to the region's read-only investigator. Atlas works on it in the background."""
+		payload = {"problem": problem, "context": context, "requested_by": requested_by}
+		return self._request("POST", "investigations", payload=payload)
+
+	def get_investigation(self, investigation_id: str) -> dict:
+		"""The status, report, and scrubbed tool log of one investigation."""
+		return self._get(f"investigations/{quote(investigation_id, safe='')}")
 
 	def check_connection(self) -> None:
 		response = self._get("images", params={"limit": 1})
@@ -379,6 +399,8 @@ class AtlasClient:
 		headers = {
 			"Authorization": f"Bearer {token}",
 			"X-Tenant-ID": str(self.tenant_id),
+			# Atlas logs under the same trace ID as Central's Error Log. Requests drops it when None.
+			"X-Frappe-Request-Id": get_trace_id(),
 			"Accept": "application/json",
 		}
 

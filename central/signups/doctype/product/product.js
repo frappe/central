@@ -101,7 +101,8 @@ async function show_images(frm, region, offset) {
 		title: __("Trial Images for {0}", [frm.doc.title]),
 		message: rows
 			? `<ul>${rows}</ul>`
-			: __("No trial image has {0} installed in this region. Build one in Cargo.", [
+			: __("No {0} trial image has {1} installed in this region. Build one in Cargo.", [
+					frm.doc.frappe_version,
 					frm.doc.signup_app,
 				]),
 	};

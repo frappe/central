@@ -26,8 +26,12 @@ class TestGatewayEventParity(IntegrationTestCase):
 	def test_razorpay_event_types_normalise(self):
 		adapter = RazorpayAdapter(make_razorpay_gateway())
 		for etype in RAZORPAY_EVENTS:
-			event = adapter.parse_webhook_event(
-				{"event": etype, "payload": {}}, {"X-Razorpay-Event-Id": "evt_r"}
-			)
+			body = {
+				"event": etype,
+				"created_at": 1700000000,
+				"payload": {"payment": {"entity": {"id": "pay_r"}}},
+			}
+			event = adapter.parse_webhook_event(body, {"X-Razorpay-Event-Id": "evt_r"})
 			self.assertEqual(event.event_type, etype)
-			self.assertEqual(event.gateway_event_id, "evt_r")
+			# The dedupe id comes from the signed body, not the unsigned header.
+			self.assertEqual(event.gateway_event_id, f"{etype}:1700000000:payment=pay_r")

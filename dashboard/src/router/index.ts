@@ -68,11 +68,13 @@ const routes = [
 				component: () => import('@/pages/servers/ServersPage.vue'),
 				meta: { title: 'Servers' },
 			},
+			// Team-wide snapshots, including those of terminated servers. Reached only
+			// from the archive-team checks, which list the snapshots still billing.
 			{
 				path: 'servers/snapshots',
 				name: 'Snapshots',
 				component: () => import('@/pages/servers/SnapshotsPage.vue'),
-				meta: { title: 'Snapshots' },
+				meta: { title: 'Team snapshots' },
 			},
 			{
 				path: 'servers/new',
@@ -89,7 +91,7 @@ const routes = [
 			{
 				path: 'llm',
 				name: 'LLM',
-				component: () => import('@/pages/addons/AIInference.vue'),
+				component: () => import('@/pages/services/AIInference.vue'),
 				meta: { title: 'LLM', feature: ['addons', 'llm'] },
 			},
 			{
@@ -117,6 +119,12 @@ const routes = [
 				meta: { title: 'Invoices' },
 			},
 			{
+				path: 'billing/payments',
+				name: 'BillingPayments',
+				component: () => import('@/pages/billing/BillingPaymentsPage.vue'),
+				meta: { title: 'Payments' },
+			},
+			{
 				path: 'settings',
 				name: 'Settings',
 				component: () => import('@/pages/settings/SettingsPage.vue'),
@@ -134,8 +142,7 @@ const routes = [
 			{ path: 'team', redirect: '/team/members' },
 			// Members + roles share one tabbed page. Settings fold into this surface
 			// (rename beside the title, transfer on member rows, delete in team menu).
-			// /team/roles and /team/settings stay as aliases; invitations stay routable
-			// but are hidden from the sidebar for now.
+			// /team/roles and /team/settings stay as aliases.
 			{
 				path: 'team/members',
 				name: 'Members',
@@ -144,19 +151,6 @@ const routes = [
 			},
 			{ path: 'team/roles', redirect: '/team/members' },
 			{ path: 'team/settings', redirect: '/team/members' },
-			{
-				path: 'team/invitations',
-				name: 'TeamInvitations',
-				component: () => import('@/pages/team/InvitationsPage.vue'),
-				meta: { title: 'Invitations' },
-			},
-			// Personal invitation inbox: opens the Invitations page on its Received tab.
-			{
-				path: 'invitations',
-				name: 'MyInvitations',
-				component: () => import('@/pages/team/InvitationsPage.vue'),
-				meta: { title: 'Invitations' },
-			},
 		],
 	},
 ]
@@ -172,6 +166,13 @@ const ROUTE_TRANSITIONS: Record<string, string> = {
 	'Server>Servers': 'server-open-back',
 	'Servers>NewServer': 'server-create',
 	'NewServer>Servers': 'server-create-back',
+	// A finished creation opens its server the same way the list does.
+	'NewServer>Server': 'server-open',
+	'Login>VerifyEmail': 'auth-step',
+	'Signup>VerifyEmail': 'auth-step',
+	'VerifyEmail>OnboardingSite': 'auth-step',
+	'OnboardingSite>OnboardingProvisioning': 'auth-step',
+	'VerifyEmail>Login': 'auth-step-back',
 }
 
 router.beforeResolve((to, from) => {
@@ -198,23 +199,21 @@ router.beforeResolve((to, from) => {
 })
 
 // Session state is seeded synchronously from boot data (window.user), so the
-// guard can decide without awaiting. Auth transitions (login/logout) do a full
-// page reload, which re-boots the SPA with a fresh session — no client revalidation needed.
+// guard can decide without awaiting. Sign-in and logout reload the page, except a
+// product signup, which enters its new session in place (useAuth.enterSession).
 router.beforeEach((to) => {
 	const { isGuest } = useAuth()
-	// Seeded with `window.user` (central/www/dashboard.py). A brand-new user has no
-	// live site yet, so they belong in the onboarding funnel, not the dashboard.
-	const onboardingComplete = window.onboarding_complete ?? false
+	// Only a product signup has an onboarding funnel, which ends in its free trial site.
+	// A direct Central signup buys its servers from the console.
 	const productSignup = Boolean(carriedQuery(to.query).product)
 
 	if (to.meta.public) {
 		if (isGuest.value) rememberFirstTouch(to.query)
 		if (isGuest.value || to.meta.allowSignedIn) return true
-		// Logged in but on an auth page — e.g. browser-Back after verifying. Don't dump
-		// them into the dashboard mid-onboarding: resume the funnel until it's finished.
-		return onboardingComplete && !productSignup
-			? '/servers'
-			: { path: '/onboarding/site', query: carriedQuery(to.query) }
+		// Logged in but on an auth page, such as browser-Back after verifying.
+		return productSignup
+			? { path: '/onboarding/site', query: carriedQuery(to.query) }
+			: '/servers'
 	}
 
 	if (isGuest.value) {
@@ -234,8 +233,7 @@ router.beforeEach((to) => {
 			return '/servers'
 	}
 
-	if (to.path.startsWith('/onboarding') && onboardingComplete && !productSignup)
-		return '/servers'
+	if (to.path.startsWith('/onboarding') && !productSignup) return '/servers'
 
 	// Warm the billing-profile completeness cache for the active team, non-blocking
 	// (mirrors the legacy guard): money-moving actions gate on it via

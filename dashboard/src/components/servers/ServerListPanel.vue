@@ -175,7 +175,7 @@ onBeforeUnmount(() => window.clearTimeout(cascadeTimer))
 						:can-terminate="canTerminate"
 						:can-snapshot="canSnapshot"
 						:can-open-console="canOpenConsole"
-						:opens-site="!!row.site"
+						:site="row.site?.name"
 						:busy="busy === row.server.resource_id"
 						:opening="
 							opening === row.server.resource_id || opening === row.site?.name

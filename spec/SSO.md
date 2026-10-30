@@ -14,6 +14,10 @@ Atlas regional requests use a separate Ed25519 key. The shared `central.api.jwks
 2. Central mints `mint_bench_login(audience)`: `scope=bench`, 60 minutes, single-use `jti`.
 3. The browser opens `{gateway}/?sid=<jwt>`. The bench SPA exchanges it for a local session cookie.
 
+**Bench login from a site**: `central.api.sso.open_bench?pilot=<audience>`
+
+The "Open server" link in a site's cloud settings is a browser GET to this route. Central finds the server by the `audience_id` of its Active `Pilot Credential` and redirects straight to the bench login URL above, with the same access checks. A guest, an unknown audience, or a refused login goes to `/dashboard/servers?pilot=<audience>&action=open-bench`. That page signs the member in or shows why the server does not open.
+
 **Site login**: `central.api.sites.login_site`
 
 1. `login_site` checks `server:view` and calls `Site.get_login_url`.
@@ -56,7 +60,7 @@ Central separates token purposes by the required `scope` claim and by the audien
 | `site` | `mint_site_login` | bench's `audience_id` | 5 min | Pilot (Ed25519) | the bench (site login) |
 | `enroll` | `mint_bootstrap_token` | `pilot_credential_id` | 30 min | Pilot (Ed25519) | Central (`verify_bootstrap_token`, asserts `scope == enroll`) |
 | `datum` | `mint_datum_token` | `atlas-datum:<region id>` | 7 days | Atlas (Ed25519) | Datum, for metrics and logs |
-| regional | `mint_atlas_token` / `mint_proxy_token` / `mint_cargo_token` | `atlas-admin:<region id>` / `atlas-proxy:<region id>` / `atlas-cargo:<region id>` | 5 min | Atlas (Ed25519) | Atlas, the regional proxy, Cargo |
+| regional | `mint_atlas_token` / `mint_proxy_token` / `mint_cargo_token` / `mint_wireguard_token` | `atlas-admin:<region id>` / `atlas-proxy:<region id>` / `atlas-cargo:<region id>` / `atlas-wg-gateway:<region id>` | 5 min | Atlas (Ed25519) | Atlas, the regional proxy, Cargo, the WireGuard gateway |
 
 One `datum` token serves both write paths. One route hands it out: `central.api.pilot.datum_token`. Datum tells metrics from logs by the route the Pilot posts to, not by the credential. A second token would carry the same `resource_id` and the same authority. It is signed with the Atlas key, not the Pilot key, because Datum verifies against the merged key set that Atlas publishes. `iss` is the literal `central`, and the key id has the `central:` namespace. Datum uses these two values to bind one to the other. The audience names one region, so every other region refuses the token.
 

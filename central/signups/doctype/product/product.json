@@ -16,8 +16,10 @@
   "signup_page_section",
   "logo",
   "subtitle",
+  "setup_messages",
   "image_section",
   "signup_app",
+  "frappe_version",
   "landing_route",
   "trial_section",
   "trial_days",
@@ -74,6 +76,12 @@
    "label": "Subtitle"
   },
   {
+   "description": "Shown one at a time while a new site starts, one line per message. For example: Setting up channels. Leave empty to show general messages.",
+   "fieldname": "setup_messages",
+   "fieldtype": "Small Text",
+   "label": "Setup Messages"
+  },
+  {
    "fieldname": "image_section",
    "fieldtype": "Section Break",
    "label": "Trial Image"
@@ -85,6 +93,15 @@
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Signup App",
+   "reqd": 1
+  },
+  {
+   "default": "develop",
+   "description": "The Frappe branch of this product's trial image, such as develop, version-16 or version-16-hotfix. Cargo builds images only for the branches in Cargo Settings, so check with Preview Trial Images before you change it.",
+   "fieldname": "frappe_version",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Frappe Version",
    "reqd": 1
   },
   {
@@ -147,7 +164,7 @@
  "index_web_pages_for_search": 1,
  "links": [],
  "make_attachments_public": 1,
- "modified": "2026-10-13 09:39:34.175260",
+ "modified": "2026-10-25 21:00:00.000000",
  "modified_by": "prathamesh@frappe.io",
  "module": "Signups",
  "name": "Product",

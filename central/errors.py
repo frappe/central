@@ -148,6 +148,24 @@ ERROR_CATALOG: dict[str, dict] = {
 		"remediation": "Open Billing to add your billing details and a payment method. Ask a team admin if you cannot manage billing.",
 		"retriable": False,
 	},
+	"PAYMENT_OVERDUE": {
+		"title": "Pay what your team owes to continue",
+		"message": "Your team has an unpaid invoice that is overdue, or its account is past due or suspended.",
+		"remediation": "Open Billing and pay the unpaid invoice. Ask a team admin if you cannot manage billing.",
+		"retriable": False,
+	},
+	"TRIAL_IN_PROGRESS": {
+		"title": "You already have a free trial",
+		"message": "Your {product} trial at {address} is still open.",
+		"remediation": "Use that site, or delete it to start a new trial.",
+		"retriable": False,
+	},
+	"TRUST_TIER_LIMIT": {
+		"title": "Your trust tier limit is reached",
+		"message": "Your trust tier allows {limit} servers, and your team already has {count}.",
+		"remediation": "Terminate a server you no longer need, or contact support to review your trust tier.",
+		"retriable": False,
+	},
 	"MAILBOX_POOL_EMPTY": {
 		"title": "The server wasn't created",
 		"message": "This region has no mailbox ready for a new server. No server was created.",

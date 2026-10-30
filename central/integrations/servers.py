@@ -88,17 +88,24 @@ def observe_server(server: VirtualMachine) -> str:
 			"public_ipv6": (network.get("public_ipv6") or "").removesuffix("/128") or None,
 			"gateway_url": gateway,
 			"has_ipv4_internet": bool(network.get("ipv4_internet_access")),
+			"has_wireguard_access": bool(network.get("wireguard_gateway_access")),
 			**firewall.get_observed_firewall(network),
 		},
 	)
 
-	# The wildcard gateway already routes here. Pilot only needs to replace its local
-	# admin.local hostname with the routed name.
-	frappe.get_doc("Virtual Machine", server.name).claim_admin_hostname()
-
 	# A Pilot machine carries a site, and this report is where its address arrives.
 	Site.create_once_addressable(server.name)
 	ResourceAction.confirm_observed_status(server.name, status)
+	if status == "Running" and gateway and not server.admin_domain_task:
+		frappe.enqueue_doc(
+			"Virtual Machine",
+			server.name,
+			"claim_admin_hostname",
+			queue="short",
+			enqueue_after_commit=True,
+			job_id=f"admin-domain:{server.name}",
+			deduplicate=True,
+		)
 
 	return status
 
@@ -211,6 +218,7 @@ def get_console_url(server: VirtualMachine, mode: ConsoleMode) -> str:
 
 	SSH opens a root shell with a key Atlas pushes for that session only. TTY opens the
 	shared serial console, which every guest has and which asks for a user password."""
+	server.require_server_access()
 	if server.status != "Running":
 		frappe.throw(_("Start the server before you open its console."))
 
@@ -242,6 +250,42 @@ def update_firewall(server: VirtualMachine, change: FirewallChange) -> None:
 	"""Change the firewall on Atlas, then read the result back."""
 	get_client(server).update_network(server.atlas_vm_id, {"firewall": firewall.get_atlas_firewall(change)})
 	observe_server(server)
+
+
+def remove_legacy_device_rules() -> None:
+	"""Remove the old rule that let every WireGuard VPN device pass the firewall, from every live
+	server. Safe to run again: a server without the rule is left as it is."""
+	servers = frappe.get_all(
+		"Virtual Machine",
+		filters={"status": ("!=", "Terminated"), "atlas_vm_id": ("is", "set")},
+		pluck="name",
+	)
+	for name in servers:
+		try:
+			remove_legacy_device_rule(frappe.get_doc("Virtual Machine", name))
+			frappe.db.commit()
+		except Exception:
+			# One unreachable region must not stop the rest. The log names the server to retry.
+			frappe.db.rollback()
+			frappe.log_error(
+				title=f"WireGuard VPN firewall rule not removed: {name}",
+				reference_doctype="Virtual Machine",
+				reference_name=name,
+			)
+
+
+def remove_legacy_device_rule(server: VirtualMachine) -> None:
+	"""Read the server's firewall from Atlas, then send it again without the old device rule."""
+	if observe_server(server) == "Terminated":
+		return
+
+	rules = frappe.parse_json(frappe.db.get_value("Virtual Machine", server.name, "firewall_rules")) or {}
+	inbound = rules.get("inbound") or []
+	if firewall.LEGACY_DEVICE_RULE not in inbound:
+		return
+
+	kept = [rule for rule in inbound if rule != firewall.LEGACY_DEVICE_RULE]
+	update_firewall(server, FirewallChange.model_validate({"inbound": kept}))
 
 
 def set_public_ip(server: VirtualMachine, version: int, is_attached: bool) -> bool:
@@ -277,6 +321,12 @@ def set_ipv4_internet(server: VirtualMachine, enabled: bool) -> None:
 	"""Turn IPv4 internet access on or off, then read the result back. Atlas keeps it on while
 	the server has a public IPv4."""
 	get_client(server).update_network(server.atlas_vm_id, {"ipv4_internet_access": enabled})
+	observe_server(server)
+
+
+def set_wireguard_access(server: VirtualMachine, enabled: bool) -> None:
+	"""Let the team's WireGuard devices reach the server or cut them off, then read the result back."""
+	get_client(server).update_network(server.atlas_vm_id, {"wireguard_gateway_access": enabled})
 	observe_server(server)
 
 

@@ -17,8 +17,8 @@ const props = defineProps<{
 	canOpenConsole?: boolean
 	busy?: boolean
 	opening?: boolean
-	/** This machine carries a site. Open goes to that site, not the bench. */
-	opensSite?: boolean
+	/** The address of the site this machine carries. Open goes to that site, not the bench. */
+	site?: string | null
 }>()
 
 const emit = defineEmits<{
@@ -60,7 +60,7 @@ const options = computed(() =>
 			console: !!props.canOpenConsole,
 		}),
 		(verb: ServerMenuVerb) => handlers[verb]?.(),
-		{ opensSite: props.opensSite },
+		{ site: props.site },
 	),
 )
 </script>
