@@ -363,3 +363,60 @@ class TestRefundPart(CorrectionsTestCase):
 		corrections.refund_part(inv, 1180, "x")
 		with self.assertRaises(frappe.ValidationError):
 			corrections.cancel_and_refund(inv, "x")
+
+
+class TestLateCaptureRefund(CorrectionsTestCase):
+	"""A charge captured after the invoice was paid goes back to its source, outside the books."""
+
+	def _late_refund(self, status="Completed"):
+		from central.billing.payments import charges
+
+		inv = self._paid_invoice()
+		attempt = frappe.get_doc(
+			{
+				"doctype": "Payment Attempt",
+				"invoice": inv,
+				"team": TEAM,
+				"gateway": "Stripe",
+				"currency": "INR",
+				"amount": 3540,
+				"status": "Captured",
+				"retry_number": 1,
+				"gateway_transaction_id": "pi_late",
+			}
+		).insert(ignore_permissions=True)
+		gateway = MagicMock()
+		gateway.refund.return_value = RefundResult(status=status, gateway_refund_id="re_late", raw={})
+		with patch("central.billing.payments.refunds._adapter", return_value=gateway):
+			charges._refund_to_source(frappe.get_doc("Invoice", inv), attempt)
+		return inv, frappe.get_doc("Refund", {"payment_attempt": attempt.name})
+
+	def _payment_entries_for(self, refund):
+		return [
+			p
+			for p in self.remote.posts("Payment Entry")
+			if refund.name in (p.get("remarks") or "") or p.get("reference_no") == refund.gateway_refund_id
+		]
+
+	def test_its_refund_makes_no_credit_note_or_payment_out(self):
+		inv, refund = self._late_refund()
+		self.assertTrue(refund.late_capture)
+		self._run_all(inv)  # as the refund webhook does
+		self.assertEqual(self.remote.posted, [])
+		self.assertFalse(frappe.db.get_value("Invoice", inv, "credit_note_id"))
+
+	def test_a_retried_refund_makes_no_credit_note_or_payment_out(self):
+		inv, refund = self._late_refund(status="Failed")
+		self.gateway.refund.return_value = RefundResult(status="Completed", gateway_refund_id="re_2", raw={})
+		self.assertEqual(corrections.retry_failed_refunds(inv), 1)
+		self._run_all(inv)
+		self.assertEqual(frappe.db.get_value("Refund", refund.name, "status"), "Completed")
+		self.assertEqual(self.remote.posted, [])
+
+	def test_cancelling_the_invoice_later_records_only_its_own_payment(self):
+		inv, refund = self._late_refund()
+		corrections.cancel_and_refund(inv, "customer asked")
+		self._run_all(inv)
+		self.assertTrue(frappe.db.get_value("Invoice", inv, "credit_note_id"))
+		self.assertEqual(self._payment_entries_for(refund), [])
+		self.assertIn("customer asked", self.remote.posts("Sales Invoice")[-1]["remarks"])

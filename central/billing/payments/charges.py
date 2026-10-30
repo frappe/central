@@ -723,7 +723,9 @@ def _refund_to_source(inv, attempt) -> None:
 	no advance, and its refund makes no credit note, because no invoice was issued against it."""
 	from central.billing.payments import refunds
 
-	refund = refunds.issue_refund(attempt.name, destination="Source", reason=f"{inv.name} was already paid")
+	refund = refunds.issue_refund(
+		attempt.name, destination="Source", reason=f"{inv.name} was already paid", late_capture=True
+	)
 	outcome = "refunded to its source" if refund.status == "Completed" else "could not be refunded"
 	_flag_payment(
 		inv,

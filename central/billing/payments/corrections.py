@@ -139,6 +139,7 @@ def card_refundable(invoice: str) -> float:
 def retry_failed_refunds(invoice: str) -> int:
 	"""Try again the card or UPI refunds the gateway refused. Returns how many.
 
+	The invoice can be Cancelled, or Paid with a partial refund or a refunded late capture.
 	A failed partial refund gave its share back to the invoice, so a retry takes that share
 	again only while the invoice still has it."""
 	doc = frappe.get_doc("Invoice", invoice, for_update=True)
@@ -186,6 +187,12 @@ def _next_step(doc, accounting: bool):
 			return lambda r=refund: _settle(doc, r)
 	if not (accounting and doc.erpnext_invoice):
 		return None  # nothing was issued in the accounting system
+	# A late capture was never invoiced, so it gets no credit note and no payment out.
+	return _accounting_step(doc, [r for r in refunds if not r.late_capture])
+
+
+def _accounting_step(doc, refunds: list):
+	"""The next accounting system step: credit notes, then payments out, then promotional reversals."""
 	for refund in refunds:
 		if (
 			refund.partial
@@ -615,7 +622,10 @@ def _book_refund(doc, destination: str, amount, reason: str, **values) -> None:
 
 def _reason(invoice: str) -> str:
 	return (
-		frappe.db.get_value("Refund", {"invoice": invoice}, "reason", order_by="creation asc") or "cancelled"
+		frappe.db.get_value(
+			"Refund", {"invoice": invoice, "late_capture": 0}, "reason", order_by="creation asc"
+		)
+		or "cancelled"
 	)
 
 
@@ -627,6 +637,7 @@ def _refunds(invoice: str) -> list:
 			"name",
 			"destination",
 			"partial",
+			"late_capture",
 			"amount",
 			"net_amount",
 			"tax_amount",

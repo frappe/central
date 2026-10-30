@@ -174,19 +174,21 @@ def termination_due() -> list[dict]:
 
 
 def failed_refunds() -> list[dict]:
-	"""Refunds a gateway refused. The invoice is cancelled but the customer is still owed."""
+	"""Refunds a gateway refused. The customer is still owed the money, whether the invoice is
+	Cancelled or still Paid (a partial refund, or a charge captured after the invoice was paid)."""
 	return [
 		{
 			"alert": "failed_refund",
 			"doctype": "Invoice",
 			"subject": r.invoice,
 			"team": r.team,
-			"detail": f"{r.currency} {r.amount} not refunded ({r.name}); retry it from the invoice",
+			"detail": f"{r.currency} {r.amount} {'captured after the invoice was paid, ' if r.late_capture else ''}"
+			f"not refunded ({r.name}); retry it from the invoice",
 		}
 		for r in frappe.get_all(
 			"Refund",
 			filters={"status": "Failed"},
-			fields=["name", "invoice", "team", "currency", "amount"],
+			fields=["name", "invoice", "team", "currency", "amount", "late_capture"],
 			limit=100,
 		)
 	]
