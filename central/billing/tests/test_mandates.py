@@ -101,6 +101,64 @@ class TestMandateSetup(MandateTestBase):
 		self.assertEqual(method.gateway_method_id, "token_live")
 		self.assertTrue(method.validated_at)
 
+	def test_a_confirmed_mandate_is_labelled_with_its_upi_id(self):
+		payment = {
+			"id": "pay_mandate",
+			"order_id": "order_mandate",
+			"status": "captured",
+			"token_id": "token_live",
+			"customer_id": "cust_x",
+			"vpa": "success@razorpay",
+		}
+		with stub_adapter(payment=payment):
+			result = mandates.setup_mandate(TEAM, GATEWAY, customer_id="cust_x")
+			method = mandates.confirm_mandate(result["payment_method"], CALLBACK)
+		self.assertEqual(method.display_label, "UPI Autopay · success@razorpay")
+
+	def _confirm_with_contact(self, contact: str) -> None:
+		payment = {
+			"id": "pay_mandate",
+			"order_id": "order_mandate",
+			"status": "authorized",
+			"token_id": "token_live",
+			"customer_id": "cust_x",
+			"email": "payer@test.example",
+			"contact": contact,
+		}
+		with stub_adapter(payment=payment):
+			result = mandates.setup_mandate(TEAM, GATEWAY, customer_id="cust_x")
+			mandates.confirm_mandate(result["payment_method"], CALLBACK)
+
+	def test_a_confirmed_mandate_fills_an_empty_profile_contact(self):
+		frappe.db.set_value("Billing Profile", TEAM, {"email": None, "phone": None})
+		self._confirm_with_contact("+919876543210")
+		profile = frappe.db.get_value("Billing Profile", TEAM, ["email", "phone"], as_dict=True)
+		self.assertEqual((profile.email, profile.phone), ("payer@test.example", "+919876543210"))
+
+	def test_a_confirmed_mandate_keeps_the_profile_contact(self):
+		self._confirm_with_contact("+919876543210")
+		profile = frappe.db.get_value("Billing Profile", TEAM, ["email", "phone"], as_dict=True)
+		self.assertEqual((profile.email, profile.phone), ("billing@test.example", "9999999999"))
+
+	def test_a_contact_the_gateways_refuse_is_not_kept(self):
+		frappe.db.set_value("Billing Profile", TEAM, "phone", None)
+		self._confirm_with_contact("12345")
+		self.assertIsNone(frappe.db.get_value("Billing Profile", TEAM, "phone"))
+
+	def test_a_stored_invalid_gstin_does_not_undo_the_confirmation(self):
+		# Razorpay already registered the token, so the profile save must not roll it back.
+		frappe.db.set_value(
+			"Billing Profile", TEAM, {"phone": None, "gstin": "BAD", "collection_mode": "Prepaid"}
+		)
+		self._confirm_with_contact("+919876543210")
+		method = frappe.get_all("Payment Method", {"team": TEAM}, ["status"])[0]
+		self.assertEqual(method.status, "Active")
+		self.assertIsNone(frappe.db.get_value("Billing Profile", TEAM, "phone"))
+		logs = frappe.get_all(
+			"Error Log", {"method": ["like", f"Billing Profile {TEAM} not saved:%"]}, pluck="method"
+		)
+		self.assertEqual(len(set(logs)), 2)  # the contact fill and the move to Auto Charge
+
 	def test_a_token_from_the_browser_is_never_stored(self):
 		with stub_adapter(token="token_from_razorpay"):
 			result = mandates.setup_mandate(TEAM, GATEWAY, customer_id="cust_x")
@@ -147,10 +205,13 @@ class TestAuthorisationRefund(MandateTestBase):
 	"""The authorisation payment registers the mandate and pays no bill, so it goes back."""
 
 	def _confirm(self):
+		"""Confirm the mandate, and return it with the refund jobs it queued. The welcome
+		credit it earns queues its own job, which is not a refund."""
 		result = mandates.setup_mandate(TEAM, GATEWAY, customer_id="cust_x")
 		with patch("frappe.enqueue") as enqueue:
 			method = mandates.confirm_mandate(result["payment_method"], CALLBACK)
-		return method, enqueue
+		refunds = [c for c in enqueue.call_args_list if c.args[0].endswith("refund_authorisation_payment")]
+		return method, refunds
 
 	def test_a_confirmed_mandate_queues_the_refund_of_its_authorisation(self):
 		payment = {
@@ -162,11 +223,11 @@ class TestAuthorisationRefund(MandateTestBase):
 			"amount": 100,
 		}
 		with stub_adapter(payment=payment):
-			method, enqueue = self._confirm()
+			method, refunds = self._confirm()
 
-		enqueue.assert_called_once()
+		self.assertEqual(len(refunds), 1)
 		self.assertEqual(
-			enqueue.call_args.kwargs,
+			refunds[0].kwargs,
 			{
 				"payment_method": method.name,
 				"payment_id": "pay_mandate",
@@ -186,9 +247,9 @@ class TestAuthorisationRefund(MandateTestBase):
 			"customer_id": "cust_x",
 		}
 		with stub_adapter(payment=payment):
-			_method, enqueue = self._confirm()
+			_method, refunds = self._confirm()
 
-		enqueue.assert_not_called()
+		self.assertEqual(refunds, [])
 
 	def test_the_refund_is_keyed_on_the_payment(self):
 		with stub_adapter() as adapter:
@@ -417,6 +478,14 @@ class TestRazorpayCardSetup(MandateTestBase):
 			mandates.setup_card(TEAM, GATEWAY, contact="8888888888")
 			self.assertEqual(adapter.update_customer.call_args.args[1]["contact"], "8888888888")
 			self.assertEqual(frappe.db.get_value("Billing Profile", TEAM, "phone"), "8888888888")
+
+	def test_card_setup_refuses_an_inline_phone_the_gateways_cannot_use(self):
+		frappe.db.set_value("Billing Profile", TEAM, "phone", "")
+		with stub_adapter() as adapter:
+			with self.assertRaises(frappe.ValidationError):
+				mandates.setup_card(TEAM, GATEWAY, contact="12ab")
+			adapter.update_customer.assert_not_called()
+		self.assertFalse(frappe.db.get_value("Billing Profile", TEAM, "phone"))
 
 	def test_card_setup_syncs_profile_contact_onto_customer(self):
 		# With a profile phone present, it's synced onto the (possibly reused,

@@ -5,12 +5,17 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
-from central.billing.payments import decline
+from central.billing.payments import collection_mode, decline
 
 
 class PaymentMethod(Document):
 	def validate(self):
 		self._reject_duplicate_card()
+
+	def on_update(self):
+		before = self.get_doc_before_save()
+		if self.status == "Active" and before and before.status != "Active":
+			collection_mode.start_auto_charge(self.team)
 
 	def _reject_duplicate_card(self):
 		"""A team can't register the same card twice. Using one card as both the

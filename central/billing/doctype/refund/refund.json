@@ -16,6 +16,7 @@
   "currency",
   "destination",
   "partial",
+  "late_capture",
   "net_amount",
   "tax_amount",
   "promotional_amount",
@@ -86,6 +87,14 @@
    "fieldname": "partial",
    "fieldtype": "Check",
    "label": "Partial",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "description": "Gives back a charge that was captured after the invoice was already paid. No invoice was issued for it, so it gets no credit note and no payment record in the accounting system.",
+   "fieldname": "late_capture",
+   "fieldtype": "Check",
+   "label": "Late Capture",
    "read_only": 1
   },
   {
@@ -193,7 +202,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-10-25 13:00:00.000000",
+ "modified": "2026-10-30 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Refund",

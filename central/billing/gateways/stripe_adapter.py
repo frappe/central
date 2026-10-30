@@ -479,7 +479,8 @@ class StripeAdapter(GatewayAdapter):
 		return {
 			"client_secret": intent.get("client_secret"),
 			"payment_intent_id": intent.get("id"),
-			"amount": intent.get("amount"),
+			# In cents, under its own key, so it never overwrites the caller's `amount`.
+			"amount_in_subunits": intent.get("amount"),
 			"publishable_key": self.get_credential("api_key"),
 			"currency": (currency or "usd").upper(),
 		}

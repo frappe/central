@@ -22,13 +22,14 @@ from central.billing.gateways.base import (
 	header_value,
 	token_check,
 )
+from central.billing.payments.decline import REQUEST_REFUSED
 
-# Razorpay raises these for transient/server failures; declines are BadRequestError.
-_TRANSIENT = (
-	razorpay.errors.GatewayError,
-	razorpay.errors.ServerError,
-	requests.exceptions.RequestException,
-)
+# Razorpay raises these for transient/server failures; a refused request is BadRequestError.
+_TRANSIENT = (razorpay.errors.GatewayError, razorpay.errors.ServerError, requests.exceptions.RequestException)
+
+# Razorpay notifies the payer a day before a recurring debit and takes the money after,
+# so a debit stays in progress this long before anyone should ask about it.
+RECURRING_HOLD_HOURS = 36
 
 # The events the webhook spine consumes (see webhooks.handle_webhook_event).
 RAZORPAY_WEBHOOK_EVENTS = (
@@ -53,10 +54,8 @@ class RazorpayAdapter(GatewayAdapter):
 		"webhook_secret": "razorpay_webhook_secret",
 	}
 
-	# Razorpay pulls UPI Autopay and card mandates off-session. How much it may
-	# pull silently, and whether a pre-debit notice precedes it, are set per
-	# currency on the gateway row (ADR 0022) — INR is capped at ₹15,000 by the RBI,
-	# and that binds every gateway settling INR, not this one in particular.
+	# Razorpay pulls UPI Autopay and card mandates off-session. The silent-debit cap and pre-debit
+	# notice are set per currency on the gateway row (ADR 0022); the RBI caps INR at ₹15,000 everywhere.
 	supports_off_session_charge = True
 
 	webhook_events = RAZORPAY_WEBHOOK_EVENTS
@@ -65,10 +64,7 @@ class RazorpayAdapter(GatewayAdapter):
 		return razorpay.Client(auth=(self.get_credential("api_key"), self.get_credential("api_secret")))
 
 	def validate_credentials(self) -> dict:
-		"""Cheapest authed read — list one payment to prove key/secret work.
-
-		Razorpay maps 401/4xx to BadRequestError → bad keys; transient/server
-		failures raise GatewayTimeout. Razorpay settles in INR."""
+		"""List one payment to prove the keys; a BadRequestError means bad keys. Settles in INR."""
 		try:
 			self._client().payment.all({"count": 1})
 		except razorpay.errors.BadRequestError as e:
@@ -78,8 +74,7 @@ class RazorpayAdapter(GatewayAdapter):
 		return {"account_id": self.get_credential("api_key"), "currency": "INR"}
 
 	def register_webhook(self, callback_url: str, events: list[str] | None = None) -> dict:
-		"""Create a Razorpay webhook. Razorpay takes a caller-chosen secret, so we
-		generate a strong one server-side, register it, and return it to store."""
+		"""Create a webhook with a strong secret made here, as Razorpay takes a caller-chosen one."""
 		secret = frappe.generate_hash(length=32)
 		# Razorpay wants events as an object {name: 1}, not a list — a list is
 		# serialised positionally and the API rejects it ("Invalid event name/names: 1, 2, 3").
@@ -98,8 +93,7 @@ class RazorpayAdapter(GatewayAdapter):
 		return {"endpoint_id": webhook.get("id"), "secret": secret}
 
 	def get_webhook(self, endpoint_id: str) -> dict:
-		"""Read the webhook. The keys are already proven, so a refused read means the
-		webhook is not in this account."""
+		"""Read the webhook. The keys are proven, so a refused read means it is not in this account."""
 		try:
 			webhook = self._client().webhook.fetch(endpoint_id, None)
 		except razorpay.errors.BadRequestError as e:
@@ -121,13 +115,8 @@ class RazorpayAdapter(GatewayAdapter):
 			raise GatewayTimeout(str(e)) from e
 
 	def setup_payment_method(self, team, setup_data: dict) -> dict:
-		"""Create a recurring authorisation order — UPI Autopay or card.
-
-		`method` selects the rail ("upi" default, or "card"); `max_amount` becomes
-		the token's ceiling. The UI runs Razorpay Checkout against the returned
-		order to capture the recurring token. The recurring `charge()` path is the
-		same for both rails (it charges the token).
-		"""
+		"""Create a recurring authorisation order on the `method` rail ("upi" or "card"), with
+		`max_amount` as the token's ceiling. The UI runs Checkout against it to get the token."""
 		client = self._client()
 		method = setup_data.get("method") or "upi"
 		max_amount = int(setup_data.get("max_amount") or 0)
@@ -156,14 +145,12 @@ class RazorpayAdapter(GatewayAdapter):
 		}
 
 	def validate_payment_method(self, payment_method) -> PaymentResult:
-		"""Razorpay validation is the mandate authorisation itself (token.confirmed);
-		a live token is the proof. No separate micro-charge."""
+		"""The mandate authorisation is the validation: a live token is the proof, no micro-charge."""
 		return token_check(payment_method)
 
 	def prepare_charge(self, invoice, receipt: str) -> str | None:
-		"""The order a recurring charge is made against. Razorpay has no idempotency key
-		for charges, so the order id, stored before the payment is created, is what lets
-		a retry find the payment instead of making a second one."""
+		"""The order a recurring charge is made against. Razorpay has no charge idempotency key, so
+		the order id, stored before the payment, lets a retry find the payment instead of repeating it."""
 		try:
 			order = self._client().order.create(
 				{
@@ -181,12 +168,8 @@ class RazorpayAdapter(GatewayAdapter):
 		return order["id"]
 
 	def charge(self, invoice, payment_method, idempotency_key: str) -> PaymentResult:
-		"""Off-session recurring charge against a mandate token, on the stored order.
-
-		A payment the order already has is returned rather than repeated: captured is
-		success, one still in progress is unknown (GatewayTimeout, so reconciliation asks
-		again later). Only an order with no live payment is charged. Declines come back
-		as a failed result."""
+		"""Off-session recurring charge against a mandate token, on the stored order. A payment the
+		order already has is returned rather than repeated (see _settled_or_live)."""
 		order_id = invoice.get("order_id")
 		if not order_id:
 			raise GatewayError("A Razorpay charge needs the order prepare_charge created and Central stored.")
@@ -194,27 +177,31 @@ class RazorpayAdapter(GatewayAdapter):
 		try:
 			if earlier := _settled_or_live(_order_payments(client, order_id)):
 				return earlier
-			payment = client.payment.createRecurring(_recurring_charge(invoice, payment_method, order_id))
+			# Checked after the order's payments, so a resumed charge returns the payment it made.
+			payer = frappe.db.get_value(
+				"Billing Profile", payment_method.team, ["email", "phone"], as_dict=True
+			)
+			if not payer or not payer.email or not payer.phone:
+				return _refused(
+					f"Billing Profile {payment_method.team} needs an email and a phone to debit a mandate."
+				)
+			created = client.payment.createRecurring(
+				_recurring_charge(invoice, payment_method, order_id, payer)
+			)
+			# The reply carries only the payment id; the payment itself says how it went.
+			payment = client.payment.fetch(created["razorpay_payment_id"])
 		except razorpay.errors.BadRequestError as e:
-			return _declined(e)
+			# A recurring debit is declined later, on `payment.failed`. Refusing to create
+			# it means the request itself is wrong, and sending it again changes nothing.
+			return _refused(str(e))
 		except _TRANSIENT as e:
 			raise GatewayTimeout(str(e)) from e
-
-		captured = payment.get("status") == "captured"
-		return PaymentResult(
-			success=captured,
-			status="Captured" if captured else payment.get("status"),
-			gateway_transaction_id=payment.get("id"),
-			raw=dict(payment),
-		)
+		return _recurring_result(payment)
 
 	def refund(
 		self, payment_attempt, amount, reason: str, idempotency_key: str | None = None
 	) -> RefundResult:
-		"""Refund to the source. A UPI payment goes back to the bank account behind the UPI ID.
-
-		Sent with `X-Refund-Idempotency`, so a retried refund is not made twice.
-		"""
+		"""Refund to the source, with `X-Refund-Idempotency` so a retried refund is not made twice."""
 		client = self._client()
 		body = {"amount": round((amount or 0) * 100)}
 		options = {}
@@ -228,11 +215,7 @@ class RazorpayAdapter(GatewayAdapter):
 			raise GatewayTimeout(str(e)) from e
 
 		status = _REFUND_STATUS.get(refund.get("status"), "Failed")
-		return RefundResult(
-			status=status,
-			gateway_refund_id=refund.get("id"),
-			raw=dict(refund),
-		)
+		return RefundResult(status=status, gateway_refund_id=refund.get("id"), raw=dict(refund))
 
 	def get_refund_status(self, gateway_refund_id: str) -> str:
 		"""Completed, Pending or Failed, as Razorpay reports the refund now."""
@@ -293,9 +276,8 @@ class RazorpayAdapter(GatewayAdapter):
 		return self._client().payment.fetch(gateway_txn_id).get("status")
 
 	def get_payment(self, payment_id: str) -> dict:
-		"""Fetch a payment server-side — the authoritative captured amount/currency
-		(paise). The checkout-callback signature does not bind the amount, so any
-		crediting path must read it from here, never from the request."""
+		"""The authoritative captured amount and currency (paise). The checkout-callback signature does
+		not bind the amount, so any crediting path must read it from here, never from the request."""
 		return self._client().payment.fetch(payment_id)
 
 	def verify_payment(self, payment_id: str) -> VerifiedPayment:
@@ -332,8 +314,7 @@ class RazorpayAdapter(GatewayAdapter):
 
 	@staticmethod
 	def payment_from_event(payload: dict) -> VerifiedPayment | None:
-		"""The payment entity of a signed Razorpay event. Its `notes` are never read:
-		Checkout lets the payer set them."""
+		"""The payment entity of a signed event. Its `notes` are never read: the payer can set them."""
 		entity = ((payload.get("payload") or {}).get("payment") or {}).get("entity")
 		return _verified(entity) if entity and entity.get("id") else None
 
@@ -408,19 +389,14 @@ class RazorpayAdapter(GatewayAdapter):
 		return customer.get("id")
 
 	def update_customer(self, customer_id: str, info: dict) -> None:
-		"""Set the non-empty name, email and contact; a recurring order needs a contact.
-		A clash with another customer that owns the same email and contact is raised,
-		because the caller recovers by switching to that customer."""
+		"""Set the non-empty name, email and contact. A clash with a customer that owns the same email
+		and contact is raised, because the caller recovers by switching to that customer."""
 		fields = {k: info.get(k) for k in ("name", "email", "contact") if info.get(k)}
 		if fields:
 			self._client().customer.edit(customer_id, fields)
 
 	def verify_payment_signature(self, data: dict) -> bool:
-		"""Verify a Razorpay Checkout callback (payment_id + order_id + signature).
-
-		Distinct from the webhook signature; used when the client completes UPI
-		Autopay authorisation or a one-time order.
-		"""
+		"""Verify a Checkout callback (payment_id, order_id, signature), not a webhook signature."""
 		try:
 			self._client().utility.verify_payment_signature(data)
 			return True
@@ -473,7 +449,9 @@ def _refund_key(key: str) -> str:
 	return hashlib.sha1(f"{frappe.local.site}:{key}".encode()).hexdigest()
 
 
-def _recurring_charge(invoice, payment_method, order_id: str) -> dict:
+def _recurring_charge(invoice, payment_method, order_id: str, payer: dict) -> dict:
+	"""The createRecurring body. Razorpay refuses a recurring payment without the
+	payer's email and contact, even when the customer already holds them."""
 	return {
 		"amount": round((invoice.amount or 0) * 100),
 		"currency": (invoice.currency or "").upper(),
@@ -481,17 +459,38 @@ def _recurring_charge(invoice, payment_method, order_id: str) -> dict:
 		"customer_id": invoice.get("customer_id"),
 		"token": payment_method.gateway_method_id,
 		"recurring": "1",
+		"email": payer.email,
+		"contact": payer.phone,
 	}
 
 
-def _declined(error) -> PaymentResult:
-	"""A charge Razorpay refused. The SDK keeps only the description string; the error code
-	and the granular reason arrive on the `payment.failed` webhook (see
-	charges.apply_webhook), which is the authoritative decline record."""
+def _recurring_result(payment: dict) -> PaymentResult:
+	"""What a recurring payment's own status means for the attempt. A UPI or e-mandate debit is
+	asynchronous, so until the bank moves the money the attempt is held, not failed: nothing
+	charges again and the `payment.captured` webhook settles it."""
+	status = payment.get("status")
+	known = {"gateway_transaction_id": payment.get("id"), "raw": dict(payment)}
+	if status == "captured":
+		return PaymentResult(success=True, status="Captured", **known)
+	if status == "failed":
+		return PaymentResult(
+			success=False,
+			status="Failed",
+			failure_code=payment.get("error_code"),
+			decline_code=payment.get("error_reason"),
+			failure_reason=payment.get("error_description"),
+			**known,
+		)
+	hold = frappe.utils.add_to_date(frappe.utils.now_datetime(), hours=RECURRING_HOLD_HOURS)
+	return PaymentResult(success=False, status=status, hold_until=str(hold), **known)
+
+
+def _refused(reason: str) -> PaymentResult:
+	"""A recurring debit Razorpay would not create. Nothing was taken."""
 	return PaymentResult(
 		success=False,
 		status="Failed",
-		failure_code=getattr(error, "code", None) or type(error).__name__,
-		failure_reason=str(error),
-		raw={"description": str(error)},
+		failure_code=REQUEST_REFUSED,
+		failure_reason=reason,
+		raw={"description": reason},
 	)

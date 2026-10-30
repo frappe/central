@@ -84,7 +84,7 @@ class ChargeTestBase(IntegrationTestCase):
 		self._purge()
 
 	def _purge(self):
-		for dt in ("Payment Attempt", "Invoice"):
+		for dt in ("Refund", "Payment Attempt", "Invoice"):
 			frappe.db.delete(dt, {"team": TEAM})
 		for pm in frappe.get_all("Payment Method", {"team": TEAM}, pluck="name"):
 			frappe.db.delete("Payment Method", {"name": pm})
@@ -189,6 +189,20 @@ class TestChargeInvoice(ChargeTestBase):
 		)
 		self.assertEqual(event_reason, "card_declined")
 		self.assertEqual(frappe.db.get_value("Invoice", inv, "status"), "Open")
+
+	def test_a_debit_held_at_the_gateway_blocks_a_second_charge(self):
+		from central.billing.gateways.razorpay_adapter import _recurring_result
+
+		inv = self._open_invoice(1000)
+		with stub_adapter() as adapter:
+			adapter.charge.return_value = _recurring_result({"id": "pay_async", "status": "created"})
+			first = charges.pay_invoice(inv)
+			second = charges.pay_invoice(inv)
+
+		self.assertEqual(first["reason"], "gateway_hold")
+		self.assertEqual(frappe.db.get_value("Payment Attempt", first["attempt"], "status"), "Initiated")
+		self.assertEqual((second["reason"], second["attempt"]), ("attempt_in_flight", first["attempt"]))
+		adapter.charge.assert_called_once()
 
 	def test_webhook_settles_invoice_to_paid(self):
 		inv = self._open_invoice(1000)
@@ -296,12 +310,33 @@ class TestChargeInvoice(ChargeTestBase):
 		self.assertIsNone(charges.in_flight_attempt(inv))
 		self.assertTrue(charges._claim_on_session_attempt(inv, GATEWAY)["created"])
 
-	def test_a_capture_on_a_paid_invoice_goes_to_the_wallet(self):
+	def test_a_capture_on_a_paid_invoice_is_refunded_to_its_source(self):
+		"""Credit paid the invoice while the debit was held; the debit that lands is given back."""
+		inv = self._open_invoice(1000)
+		attempt = self._hosted_attempt(inv)
+		frappe.db.set_value("Invoice", inv, "status", "Paid")
+		entries = frappe.db.count("Credit Ledger Entry", {"team": TEAM})
+
+		with stub_adapter() as adapter:
+			adapter.refund.return_value = frappe._dict(success=True, gateway_refund_id="re_late")
+			charges.apply_webhook(self._hosted_checkout_event("evt_late", attempt, 100000))
+			replay = charges.apply_webhook(self._hosted_checkout_event("evt_late_2", attempt, 100000))
+
+		adapter.refund.assert_called_once()
+		self.assertEqual(replay["result"], "duplicate")
+		self.assertEqual(frappe.db.get_value("Payment Attempt", attempt, "status"), "Refunded")
+		refund = frappe.get_all("Refund", {"payment_attempt": attempt}, ["status", "amount", "destination"])
+		self.assertEqual(
+			[(r.status, r.amount, r.destination) for r in refund], [("Completed", 1000.0, "Source")]
+		)
+		self.assertEqual(frappe.db.count("Credit Ledger Entry", {"team": TEAM}), entries)
+
+	def test_a_capture_on_a_cancelled_invoice_goes_to_the_wallet(self):
 		from central.billing.revenue import credits
 
 		inv = self._open_invoice(1000)
 		attempt = self._hosted_attempt(inv)
-		frappe.db.set_value("Invoice", inv, "status", "Paid")
+		frappe.db.set_value("Invoice", inv, "status", "Cancelled")
 
 		charges.apply_webhook(self._hosted_checkout_event("evt_late", attempt, 100000))
 

@@ -139,6 +139,7 @@ def card_refundable(invoice: str) -> float:
 def retry_failed_refunds(invoice: str) -> int:
 	"""Try again the card or UPI refunds the gateway refused. Returns how many.
 
+	The invoice can be Cancelled, or Paid with a partial refund or a refunded late capture.
 	A failed partial refund gave its share back to the invoice, so a retry takes that share
 	again only while the invoice still has it."""
 	doc = frappe.get_doc("Invoice", invoice, for_update=True)
@@ -186,29 +187,53 @@ def _next_step(doc, accounting: bool):
 			return lambda r=refund: _settle(doc, r)
 	if not (accounting and doc.erpnext_invoice):
 		return None  # nothing was issued in the accounting system
+	# A late capture was never invoiced, so it gets no credit note and no payment out.
+	return _accounting_step(doc, [r for r in refunds if not r.late_capture])
+
+
+def _accounting_step(doc, refunds: list):
+	"""The next accounting system step: credit notes, then payments out, then promotional reversals."""
+	return _credit_note_step(doc, refunds) or _payment_out_step(doc, refunds)
+
+
+def _credit_note_step(doc, refunds: list):
+	"""A partial refund's own credit note first, then the one credit note of a full refund."""
 	for refund in refunds:
-		if (
-			refund.partial
-			and refund.status == "Completed"
-			and not refund.credit_note_id
-			and frappe.utils.flt(refund.net_amount)
-		):
+		if _is_partial_credit_note_due(refund):
 			return lambda r=refund: _partial_credit_note(doc, r)
 	if any(not r.partial for r in refunds) and not doc.credit_note_id:
 		return lambda: _credit_note(doc)
+	return None
+
+
+def _payment_out_step(doc, refunds: list):
+	"""The payment entry of each completed refund, then the promotional reversal of a full one."""
 	for refund in refunds:
 		if refund.status == "Completed" and not refund.payment_record_id and _money_to_record(doc, refund):
 			return lambda r=refund: _record_payment(doc, r)
 	for refund in refunds:
-		if (
-			not refund.partial
-			and refund.destination == "Wallet"
-			and refund.status == "Completed"
-			and doc.promotional_record_id
-			and not refund.promotional_record_id
-		):
+		if _is_promotional_reversal_due(doc, refund):
 			return lambda r=refund: _reverse_promotional(doc, r)
 	return None
+
+
+def _is_partial_credit_note_due(refund) -> bool:
+	return bool(
+		refund.partial
+		and refund.status == "Completed"
+		and not refund.credit_note_id
+		and frappe.utils.flt(refund.net_amount)
+	)
+
+
+def _is_promotional_reversal_due(doc, refund) -> bool:
+	return bool(
+		not refund.partial
+		and refund.destination == "Wallet"
+		and refund.status == "Completed"
+		and doc.promotional_record_id
+		and not refund.promotional_record_id
+	)
 
 
 # --- step 1 and 2: Central and the gateway -------------------------------------------
@@ -615,7 +640,10 @@ def _book_refund(doc, destination: str, amount, reason: str, **values) -> None:
 
 def _reason(invoice: str) -> str:
 	return (
-		frappe.db.get_value("Refund", {"invoice": invoice}, "reason", order_by="creation asc") or "cancelled"
+		frappe.db.get_value(
+			"Refund", {"invoice": invoice, "late_capture": 0}, "reason", order_by="creation asc"
+		)
+		or "cancelled"
 	)
 
 
@@ -627,6 +655,7 @@ def _refunds(invoice: str) -> list:
 			"name",
 			"destination",
 			"partial",
+			"late_capture",
 			"amount",
 			"net_amount",
 			"tax_amount",
@@ -705,10 +734,15 @@ def _charge_with_room(invoice: str, amount: float) -> str:
 
 
 def _captured_attempts(invoice: str) -> list:
+	"""The captured charges that paid the invoice. A charge captured after it was paid is left out,
+	so a cancellation or a partial refund never books a second refund for it."""
+	from central.billing.payments.refunds import late_captured_attempts
+
+	filters = {"invoice": invoice, "status": "Captured"}
+	if late := late_captured_attempts(invoice):
+		filters["name"] = ["not in", late]
 	return frappe.get_all(
-		"Payment Attempt",
-		filters={"invoice": invoice, "status": "Captured"},
-		fields=["name", "amount", "gateway", "gateway_transaction_id"],
+		"Payment Attempt", filters=filters, fields=["name", "amount", "gateway", "gateway_transaction_id"]
 	)
 
 

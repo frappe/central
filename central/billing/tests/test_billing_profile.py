@@ -81,6 +81,28 @@ class TestBillingProfile(IntegrationTestCase):
 		with self.assertRaises(frappe.ValidationError):
 			_profile(state="Atlantis")
 
+	def test_an_indian_mobile_is_kept_without_its_spacing(self):
+		self.assertEqual(_profile(phone="+91 91234-56780").phone, "+919123456780")
+
+	def test_an_indian_number_that_is_not_a_mobile_is_refused(self):
+		with self.assertRaises(frappe.ValidationError):
+			_profile(phone="1234567")
+
+	def test_a_phone_abroad_needs_8_to_15_digits(self):
+		self.assertEqual(
+			_profile(country="Germany", currency="USD", phone="+49 30 1234567").phone, "+49301234567"
+		)
+		with self.assertRaises(frappe.ValidationError):
+			_profile(country="Germany", currency="USD", phone="12ab")
+
+	def test_a_stored_invalid_phone_does_not_block_another_change(self):
+		profile = _profile()
+		frappe.db.set_value("Billing Profile", TEAM, "phone", "1234567")
+		profile.reload()
+		profile.city = "Mumbai"
+		profile.save(ignore_permissions=True)
+		self.assertEqual(frappe.db.get_value("Billing Profile", TEAM, "city"), "Mumbai")
+
 	def test_non_india_skips_state_and_gstin_checks(self):
 		# A free-text state and no GSTIN is fine outside India.
 		doc = _profile(country="Germany", currency="USD", state="Hesse", gstin="")

@@ -10,7 +10,7 @@ import frappe
 from central.billing.catalog import subscriptions
 from central.billing.platform.records import save_billing_record
 from central.billing.revenue import credits, invoicing
-from central.billing.revenue.invoicing import run
+from central.billing.revenue.invoicing import lifecycle, run
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import (
 	add_segment,
@@ -346,6 +346,97 @@ class TestOpenAndCollect(BillingTestBase):
 			{"team": TEAM, "entry_type": "Debit", "reference_name": name},
 		)
 		self.assertEqual(len(debits), 1)
+
+
+class TestCreditAddedAfterIssue(BillingTestBase):
+	"""Credit that lands after an invoice is issued pays that invoice, not next month's."""
+
+	def _open_invoice(self):
+		add_segment(self.sub, "Created", 1000, "2026-06-01 00:00:00")
+		name = invoicing.generate_draft_invoice(self.sub, "2026-06-01", "2026-06-30")
+		invoicing.open_and_collect(name, collect=False)
+		return name
+
+	def test_credit_that_covers_the_invoice_settles_it(self):
+		name = self._open_invoice()
+		credits.purchase(TEAM, 1000, "INR")
+
+		lifecycle.settle_with_new_credit(TEAM)
+
+		inv = frappe.get_doc("Invoice", name)
+		self.assertEqual((inv.status, inv.credit_applied, inv.expected_collection), ("Paid", 1000.0, 0.0))
+		self.assertEqual(credits.get_balance(TEAM)["balance"], 0)
+
+	def test_part_credit_waits_in_the_wallet_without_a_method(self):
+		name = self._open_invoice()
+		credits.purchase(TEAM, 400, "INR")
+
+		lifecycle.settle_with_new_credit(TEAM)
+
+		inv = frappe.get_doc("Invoice", name)
+		self.assertEqual((inv.status, inv.credit_applied, inv.expected_collection), ("Open", 0.0, 1000.0))
+		self.assertEqual(credits.get_balance(TEAM)["balance"], 400)
+
+	def test_part_credit_waits_in_the_wallet_even_with_a_method(self):
+		name = self._open_invoice()
+		credits.purchase(TEAM, 400, "INR")
+
+		with (
+			patch("central.billing.payments.collection_mode._has_chargeable_method", return_value=True),
+			patch("central.billing.payments.collection.collect_invoice") as collect,
+		):
+			lifecycle.settle_with_new_credit(TEAM)
+
+		inv = frappe.get_doc("Invoice", name)
+		self.assertEqual((inv.status, inv.credit_applied, inv.expected_collection), ("Open", 0.0, 1000.0))
+		self.assertEqual(credits.get_balance(TEAM)["balance"], 400)
+		collect.assert_not_called()
+
+	def _attempt(self, invoice: str, hold_until=None) -> None:
+		frappe.get_doc(
+			{
+				"doctype": "Payment Attempt",
+				"invoice": invoice,
+				"team": TEAM,
+				"amount": 1000,
+				"currency": "INR",
+				"status": "Initiated",
+				"initiated_at": frappe.utils.now_datetime(),
+				"gateway_hold_until": hold_until,
+			}
+		).insert(ignore_permissions=True)
+
+	def test_an_invoice_with_a_charge_in_flight_keeps_the_credit_in_the_wallet(self):
+		name = self._open_invoice()
+		self._attempt(name)
+		credits.purchase(TEAM, 1000, "INR")
+
+		self.assertEqual(lifecycle.settle_with_new_credit(TEAM), [{"invoice": name, "applied": 0}])
+		inv = frappe.get_doc("Invoice", name)
+		self.assertEqual((inv.status, inv.credit_applied, inv.expected_collection), ("Open", 0.0, 1000.0))
+		self.assertEqual(credits.get_balance(TEAM)["balance"], 1000)
+
+	def test_credit_settles_an_invoice_whose_debit_the_gateway_holds(self):
+		name = self._open_invoice()
+		self._attempt(name, hold_until=frappe.utils.add_to_date(frappe.utils.now_datetime(), hours=36))
+		credits.purchase(TEAM, 1000, "INR")
+
+		lifecycle.settle_with_new_credit(TEAM)
+
+		inv = frappe.get_doc("Invoice", name)
+		self.assertEqual((inv.status, inv.credit_applied, inv.expected_collection), ("Paid", 1000.0, 0.0))
+
+	def test_a_debit_whose_hold_ended_still_keeps_the_credit_in_the_wallet(self):
+		name = self._open_invoice()
+		self._attempt(name, hold_until=frappe.utils.add_to_date(frappe.utils.now_datetime(), hours=-1))
+		credits.purchase(TEAM, 1000, "INR")
+
+		self.assertEqual(lifecycle.settle_with_new_credit(TEAM), [{"invoice": name, "applied": 0}])
+
+	def test_booking_a_credit_queues_the_settlement(self):
+		with patch("frappe.enqueue") as enqueue:
+			credits.purchase(TEAM, 400, "INR")
+		self.assertEqual(enqueue.call_args.kwargs["team"], TEAM)
 
 
 class TestTerminationCancelsBilling(BillingTestBase):

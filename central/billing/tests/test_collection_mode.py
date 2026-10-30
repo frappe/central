@@ -28,6 +28,36 @@ class TestCollectionMode(IntegrationTestCase):
 		clear_team_tier(TEAM)  # no tier → flat ₹15k threshold
 		frappe.db.delete("Billing Notification Log", {"team": TEAM})
 
+	def _activate_method(self, method_id):
+		from central.billing.tests.test_razorpay_adapter import make_razorpay_gateway
+
+		method = frappe.get_doc(
+			{
+				"doctype": "Payment Method",
+				"team": TEAM,
+				"gateway": make_razorpay_gateway().name,
+				"method_type": "UPI Autopay",
+				"status": "Pending Validation",
+				"gateway_method_id": method_id,
+				"mandate_currency": "INR",
+			}
+		).insert(ignore_permissions=True)
+		method.status = "Active"
+		method.save(ignore_permissions=True)
+
+	def test_the_first_active_method_starts_auto_charge(self):
+		frappe.db.delete("Payment Method", {"team": TEAM})
+		_set_mode(TEAM, "Prepaid")
+		self._activate_method("tok_first")
+		self.assertEqual(frappe.db.get_value("Billing Profile", TEAM, "collection_mode"), "Auto Charge")
+
+	def test_a_later_method_keeps_the_chosen_mode(self):
+		frappe.db.delete("Payment Method", {"team": TEAM})
+		self._activate_method("tok_first")
+		_set_mode(TEAM, "Prepaid")
+		self._activate_method("tok_second")
+		self.assertEqual(frappe.db.get_value("Billing Profile", TEAM, "collection_mode"), "Prepaid")
+
 	def test_threshold_is_15k_without_a_tier(self):
 		self.assertEqual(collection_mode.silent_threshold(TEAM), 15000.0)
 
@@ -209,6 +239,14 @@ class TestInvoiceTimeTrip(IntegrationTestCase):
 		# No Payment Attempt was created — we never hit the gateway.
 		self.assertEqual(frappe.db.count("Payment Attempt", {"invoice": inv}), 0)
 		self.assertEqual(frappe.db.get_value("Billing Profile", TEAM, "collection_mode"), "Action Required")
+
+	def test_pay_over_15k_keeps_the_mode_the_customer_chose(self):
+		from central.billing.payments import charges
+
+		_set_mode(TEAM, "Prepaid")
+		out = charges.pay_invoice(self._invoice(20000), payment_method=self.pm, gateway=self.gw)
+		self.assertEqual(out["reason"], "action_required")
+		self.assertEqual(frappe.db.get_value("Billing Profile", TEAM, "collection_mode"), "Prepaid")
 
 
 class TestManualCheckout(IntegrationTestCase):

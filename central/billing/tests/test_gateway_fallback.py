@@ -39,6 +39,11 @@ class TestCardFailureMessage(IntegrationTestCase):
 		self.assertTrue(message.startswith("There wasn't enough balance."))
 		self.assertIn("add credit", message)
 
+	def test_a_declined_card_is_not_called_a_payment(self):
+		message = decline.method_failure_message("card_declined")
+		self.assertTrue(message.startswith("Your bank declined the card."))
+		self.assertNotIn("payment", message)
+
 	def test_a_mandate_is_not_told_to_try_another_card(self):
 		message = decline.method_failure_message("token_missing", None, "UPI Autopay")
 		self.assertNotIn("card", message)
@@ -365,9 +370,9 @@ class TestOneInvoiceIsNeverChargedTwiceAcrossRails(IntegrationTestCase):
 		self.assertEqual(self._charged_gateways(), ["Stripe"])  # Razorpay not debited yet
 		self.assertTrue(frappe.db.get_value("Invoice", self.invoice, "predebit_charge_after"))
 
-	def test_a_mandate_rail_that_cannot_arm_its_notice_passes_to_the_next_method(self):
-		"""Off Auto Charge no notice is sent, so the window never opens; waiting on it would
-		leave the card behind it untried on every retry."""
+	def test_a_prepaid_teams_mandate_waits_for_its_notice(self):
+		"""Prepaid only promises to keep credit topped up. A mandate behind it is still
+		debited, so it owes its notice before the card behind it is tried."""
 		from unittest.mock import MagicMock, patch
 
 		from central.billing.gateways.base import PaymentResult
@@ -387,8 +392,8 @@ class TestOneInvoiceIsNeverChargedTwiceAcrossRails(IntegrationTestCase):
 		with patch("central.billing.gateways.registry.get_adapter", return_value=adapter):
 			out = collection.collect_invoice(self.invoice)
 
-		self.assertNotEqual(out.get("reason"), "awaiting_predebit_window")
-		self.assertEqual(self._charged_gateways(), ["Stripe"])
+		self.assertEqual(out.get("reason"), "awaiting_predebit_window")
+		self.assertEqual(self._charged_gateways(), [])
 
 	def test_nothing_is_asked_of_a_team_that_never_had_a_method(self):
 		"""Nothing was tried, so there is nothing to report — onboarding and the
