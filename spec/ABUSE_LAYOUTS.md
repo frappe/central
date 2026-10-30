@@ -39,6 +39,8 @@ Team-scoped: an indexed `team` field, `abuse_case_query_conditions`, and `abuse_
 │   Spam / Phishing / Malware / Scanning / Brute       │                                   │
 │   Force / DoS / Mining / Copyright / Illegal         │                                   │
 │   Content / Other                                    │                                   │
+│ Blocked Scope     blocked_scope     Select RO        │ Blocked User     blocked_user     │
+│   VM / Team / Account                                │                  Link User RO     │
 │                                                                                           │
 │ [Deadline]                                                                                │
 │ Notice Delivered  notice_delivered_at  Datetime RO   │ Self-Lift Used   is_self_lift_used│
@@ -88,12 +90,13 @@ Child tables:
 | Child | Fields |
 |---|---|
 | Abuse Case Signal | `abuse_signal` Link Abuse Signal, `finding_code` Data (fetched), `severity` Select (fetched), `window_start` Datetime (fetched) |
-| Abuse Case Restriction | `restriction_id` Data (the entry ID in the Metal VM network object: the Resource Action name, or the `atlas-` ID of an emergency restriction), `resource_action` Link Resource Action (the `idempotency_key`, empty for an emergency restriction), `kind` Select (egress_throttle, ingress_throttle, port_block, quarantine, isolate), `status` Select (Pending, Saved, Applied, Failed, Lifted, Expired), `desired_generation` Int (from the Atlas response), `error` Small Text (the Atlas error or `host_error`), `applied_by` Select, `applied_by_user` Data, `applied_at` Datetime, `expires_at` Datetime, `ended_at` Datetime, `ended_by` Select (Central, Expiry, Atlas operator) |
+| Abuse Case Restriction | `server` Link VM (the VM of the entry: the server of the case, or another VM of the team for a team block), `restriction_id` Data (the entry ID in the Metal VM network object: the Resource Action name, or the `atlas-` ID of an emergency restriction), `resource_action` Link Resource Action (the `idempotency_key`, empty for an emergency restriction), `kind` Select (egress_throttle, ingress_throttle, port_block, quarantine, isolate), `status` Select (Pending, Saved, Applied, Failed, Lifted, Expired), `desired_generation` Int (from the Atlas response), `error` Small Text (the Atlas error or `host_error`), `applied_by` Select, `applied_by_user` Data, `applied_at` Datetime, `expires_at` Datetime, `ended_at` Datetime, `ended_by` Select (Central, Expiry, Atlas operator) |
 | Abuse Case Notification | `event_type` Data, `recipient` Data, `sent_at` Datetime, `result` Select (Sent, Failed), `error` Small Text |
 | Abuse Case CERT-In Report | `kind` Select (Initial, Follow-up), `sent_at` Datetime, `sent_copy` Attach |
 
 - Only the policy engine or an operator action sets the status, the ladder level, the deadlines, and the restrictions. Nobody edits them on the form.
 - Central sets the restriction `status` from the Atlas response and from the repair scan of the Atlas `GET` VM response. Central derives `ended_by`: Central for its own lift, Expiry at `expires_at`, and Atlas operator for an entry that left the network before `expires_at`. The Resource Action of a Central lift names the customer or the operator. See [Restriction states](ABUSE.md#restriction-states).
+- Central sets `blocked_scope` (VM, Team, or Account) when it restricts something for the case. It is empty before that. `blocked_user` is set only for an account block. A team block is a field on the case, not a DocType. See [Team and account blocks](ABUSE.md#team-and-account-blocks).
 - The form is read only, except Resolution, Operator Notes, Legal Hold, and the CERT-In tier, category, and reason.
 - An operator can set every resolution except Fixed. Central sets Fixed when a Resolved case closes itself. See [Lifecycle](ABUSE.md#lifecycle).
 - The {Operator} and {CERT-In} tabs are hidden from customers. The dashboard API returns only the {Case} fields and a redacted signal list.
@@ -200,7 +203,7 @@ Team-scoped: an indexed `team` field, `abuse_exception_query_conditions`, and `a
 
 - Central applies approved exceptions to findings until they expire or a responder revokes them. Central sends nothing to Watcher or Atlas. See [Exceptions](ABUSE.md#exceptions).
 - The controller refuses a multiplier below 0.5, the level from which Watcher reports. See [Profiles](ABUSE.md#profiles).
-- The controller refuses the `smtp_outbound` port 25 block. See [Abuse Exception](ABUSE.md#abuse-exception).
+- An exception cannot open the mail ports. See [Abuse Exception](ABUSE.md#abuse-exception).
 
 ## Public IP Assignment
 
@@ -222,12 +225,12 @@ Not team-scoped. Only `Abuse Responder` and `System Manager` read it. Nobody wri
 - `server` and `team` are plain names, not Links, so the history stays after a deletion.
 - Index in `on_doctype_update`: (`address`, `attached_at`). Attribution finds the row where `attached_at <= t < detached_at`, or where `detached_at` is empty.
 
-## Port 25 Request
+## Mail Port Request
 
-Team-scoped: an indexed `team` field, `port_25_request_query_conditions`, and `port_25_request_has_permission`, which reuse `_team_field_query_conditions` and `_team_field_has_permission`. A member with `security:manage` creates it on the server's Security tab. Central or a responder decides it. Naming: `P25-.#####`. `track_changes` on.
+Team-scoped: an indexed `team` field, `mail_port_request_query_conditions`, and `mail_port_request_has_permission`, which reuse `_team_field_query_conditions` and `_team_field_has_permission`. A member with `security:manage` creates it on the server's Security tab. Central or a responder decides it. Naming: `MPR-.#####`. `track_changes` on.
 
 ```text
-┌ Port 25 Request P25-00012 ────────────────────────────────────────────────────────────────┐
+┌ Mail Port Request MPR-00012 ──────────────────────────────────────────────────────────────┐
 │ [Request]                                                                                 │
 │ Team              team              Link Team RO     │ Status        status      Select   │
 │ Server            server            Link VM          │   Pending / Accepted /             │
@@ -249,7 +252,7 @@ Team-scoped: an indexed `team` field, `port_25_request_query_conditions`, and `p
 |---|---|---|
 | `team` | Link Team, indexed, RO | The team that owns the server |
 | `server` | Link Virtual Machine | The server to unblock |
-| `purpose` | Small Text | Why the server sends mail on port 25 |
+| `purpose` | Small Text | Why the server uses ports 25, 465, and 587 |
 | `sending_domain` | Data | The domain in the sender address |
 | `reverse_dns_name` | Data | The reverse DNS name for the public IPv4 |
 | `bulk_mail_policy` | Small Text | How the customer sends bulk mail, if at all |
@@ -260,9 +263,9 @@ Team-scoped: an indexed `team` field, `port_25_request_query_conditions`, and `p
 | `abuse_case` | Link Abuse Case, RO | The case of the DNSBL listing or spam trap hit that revoked the request |
 
 - A server has at most one open request. An open request is Pending or Accepted.
-- Central sets `is_port_25_blocked` in every VM create request.
-- Accepted clears `is_port_25_blocked` through the Atlas port 25 route. Revoked sets it again through the same route. See [Email](ABUSE.md#email).
-- A VM created before the rollout has port 25 open and needs no request. Central blocks it on a DNSBL finding or a spam finding, or when a responder sets the block.
+- Central sets `is_mail_ports_blocked` in every VM create request.
+- Accepted clears `is_mail_ports_blocked` through the Atlas mail ports route. Revoked sets it again through the same route. See [Email](ABUSE.md#email).
+- A VM created before the rollout has the mail ports open and needs no request. Central blocks it on a DNSBL finding or a spam finding, or when a responder sets the block.
 
 ## Team (layout change)
 
@@ -319,7 +322,8 @@ No field has a default. See [Settings](ABUSE.md#settings).
 
 ## Decided
 
-1. Port 25 is blocked only when Central asks. `is_port_25_blocked` is a field of the Metal VM network object, and a missing field means open. Central sets it in every VM create request. Central clears it when it accepts a Port 25 Request, and sets it again when it revokes one, through the Atlas port 25 route. VMs created before the rollout keep port 25 until a DNSBL finding, a spam finding, or a responder sets the block.
+1. The mail ports 25, 465, and 587 are blocked only when Central asks. `is_mail_ports_blocked` is a field of the Metal VM network object, and a missing field means open. The block applies to new TCP flows in both directions, only to remote addresses outside the mesh prefix list. Central sets it in every VM create request. Central clears it when it accepts a Mail Port Request, and sets it again when it revokes one, through the Atlas mail ports route. VMs created before the rollout keep the mail ports open until a DNSBL finding, a spam finding, or a responder sets the block.
 2. Attribution is per item. Each Abuse Report Item links its own Abuse Case. The report status includes Partly Attributed.
 3. The calibration switch is `mode` (Off, Shadow, Active) on the Cargo Abuse Threshold of each finding code. Central stores a shadow finding and takes no action. See [Cargo calibration](https://github.com/frappe/cargo/blob/develop/docs/watcher.md#calibration).
-4. Signals, profiles, exceptions, and public IP history are Central records. Finding codes, thresholds, and feeds are Cargo records. See [Cargo Watcher](https://github.com/frappe/cargo/blob/develop/docs/watcher.md). Atlas keeps no abuse record. Restrictions and `is_port_25_blocked` are in the Metal VM network object. Atlas Settings holds the log bucket name and endpoint. See [Atlas abuse layouts](https://github.com/frappe/atlas/blob/develop/docs/abuse/layouts.md).
+4. Signals, profiles, exceptions, and public IP history are Central records. Finding codes, thresholds, and feeds are Cargo records. See [Cargo Watcher](https://github.com/frappe/cargo/blob/develop/docs/watcher.md). Atlas keeps no abuse record. Restrictions and `is_mail_ports_blocked` are in the Metal VM network object. Atlas Settings holds the log bucket name and endpoint. See [Atlas abuse layouts](https://github.com/frappe/atlas/blob/develop/docs/abuse/layouts.md).
+5. Team and account blocks are fields on the Abuse Case: `blocked_scope` (VM, Team, or Account) and `blocked_user`. There is no separate DocType. Each VM of a team block has its own Abuse Case Restriction row, with `server` set. See [Team and account blocks](ABUSE.md#team-and-account-blocks).

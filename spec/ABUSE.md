@@ -20,7 +20,9 @@ In scope:
 Out of scope:
 
 - 180-day logs for all ICT systems (CERT-In direction (iv)), other than the logs in [Cargo abuse logs](https://github.com/frappe/cargo/blob/develop/docs/abuse-logs.md).
-- Guest spoofing and tenant-to-tenant mesh traffic. WG Mesh `local_vms` and `can_communicate` already stop them.
+- Guest spoofing. The Metal VM guard drops it. See [Atlas VM guard](https://github.com/frappe/atlas/blob/develop/docs/abuse/protection.md#vm-guard).
+- Tenant-to-tenant mesh traffic. WG Mesh `local_vms` and `can_communicate` already stop it.
+- Protection of the Metal hosts and the Atlas service VMs from floods and scans. Atlas owns it. See [Atlas core service protection](https://github.com/frappe/atlas/blob/develop/docs/abuse/protection.md).
 - A guest-side agent. Guests are untrusted.
 - Signup data and identity validation (CERT-In direction (v)).
 - Infrastructure VMs of tenant 0. Central does not know them, so it skips their findings.
@@ -28,20 +30,20 @@ Out of scope:
 ## Principles
 
 1. Watcher detects and Central decides. Atlas exports metrics and logs, and applies or lifts a restriction when Central calls it. Atlas does not know teams, trust tiers, thresholds, or contacts. Watcher does not know teams, trust tiers, profiles, or contacts.
-2. Atlas never acts alone on abuse. Only an Atlas operator can apply an emergency restriction.
+2. Atlas never acts alone on abuse. Only an Atlas operator can apply an emergency restriction. The static protection rules of the hosts and the service VMs, and the VM guard, are not restrictions. They are the same for every tenant. See [Atlas core service protection](https://github.com/frappe/atlas/blob/develop/docs/abuse/protection.md).
 3. Restrictions live in a layer that the tenant API cannot write. Tenant firewall, route, and IPv4 changes cannot widen them.
 4. Every restriction has a reason, an actor, a case, and an end condition. Terminate by an operator is the last step.
 5. Restrict traffic, never compute. The abuse system never pauses or stops a VM.
 6. Keep evidence before it is destroyed. Central snapshots the disk before it terminates a server with an open case or an active restriction. Never stop and start a VM to collect evidence.
 7. Detection failure must not block customers. If Datum, Watcher, Atlas, or Central is down, nothing new is applied, and automatic restrictions still end at `expires_at`.
-8. Atlas stays backward compatible: optional fields and new endpoints only. Watcher deploys last, in Phase 3. See [Deploy order](#deploy-order).
+8. Atlas stays backward compatible: optional fields, new endpoints, and one new event only. Watcher deploys last, in Phase 3. See [Deploy order](#deploy-order).
 
 ## Who does what
 
 | Component | Responsible for | Acts alone |
 |---|---|---|
-| Metal (each host) | `restrictions` and `is_port_25_blocked` in the VM network object, per-VM counters exported to Datum, the flow log, the SNI log, and the NAT port range log uploaded to the log bucket, the `metal_abuse` chain, the `smtp_outbound` port 25 block | No |
-| Atlas app (each region) | The restriction API and the port 25 API, which read, merge, and replace the Metal VM network object. The log write keys from Cargo in host and proxy config. Atlas keeps no restriction record. | Emergency restrictions by an Atlas operator only |
+| Metal (each host) | `restrictions` and `is_mail_ports_blocked` in the VM network object, per-VM counters exported to Datum, the flow log, the SNI log, and the NAT port range log uploaded to the log bucket, the `metal_abuse` chain, the mail ports block, the VM guard, and the host protection rules | No |
+| Atlas app (each region) | The restriction API and the mail ports API, which read, merge, and replace the Metal VM network object. The `vm.network` event to Central. The log write keys from Cargo in host and proxy config. Atlas keeps no restriction record. | Emergency restrictions by an Atlas operator only, on one VM or on every VM of a tenant |
 | HTTP proxy | Static rate limits, the abuse tombstone, the access log upload | No |
 | Cargo | Log bucket and keys, the per-VM metric table in Datum and the `watcher` read user, `attribute_address` from the NAT port range log | No |
 | Watcher (Cargo) | Finding codes, threshold rules, windows, thresholds, feeds, mining detection, hostname and address checks, calibration, the `abuse` report to Central | No |
@@ -60,19 +62,20 @@ HTTP proxy: limits, tombstone, ────────┘                      
                                                                   messages, Abuse Report, CERT-In
                                                                         │       ▲
 metal_abuse  ◀── VM network object ───── Atlas app ◀── restriction and ─┘       │
-restrictions,    read, merge, replace    port 25 API                            │
-port 25 block                                     └───── GET VM, repair scan ───┘
+restrictions,    read, merge, replace    mail ports API                         │
+mail ports block                                  ├───── vm.network event ──────┤
+                                                  └───── GET VM, repair scan ───┘
 ```
 
 ## Roles and capabilities
 
 | Name | Kind | Use |
 |---|---|---|
-| `Abuse Responder` | Desk role, planned. Not tied to a team. | Reads and writes Abuse Case, Abuse Report, Abuse Exception, Abuse Signal, Public IP Assignment, and Port 25 Request. Works the abuse dashboard. |
+| `Abuse Responder` | Desk role, planned. Not tied to a team. | Reads and writes Abuse Case, Abuse Report, Abuse Exception, Abuse Signal, Public IP Assignment, and Mail Port Request. Works the abuse dashboard. |
 | `security:view` | Team capability, planned | Reads the team's abuse cases and gets Security email. Owner and Admin roles get it by default. |
-| `security:manage` | Team capability, planned | Responds to a case, requests a lift or an exception, applies and lifts self-quarantine, and requests a port 25 unblock. Implies `security:view`. Owner, Admin, and Developer roles get it by default. These are the roles that have `server:network`. |
+| `security:manage` | Team capability, planned | Responds to a case, requests a lift or an exception, applies and lifts self-quarantine, and requests a mail port unblock. Implies `security:view`. Owner, Admin, and Developer roles get it by default. These are the roles that have `server:network`. |
 
-Add `security:view` and `security:manage` to [Capabilities](../CAPABILITIES.md) and the fixtures in the implementation change. Developer gets `security:view` through the implication. Customers read cases only through the dashboard API, filtered by `security:view`. Each customer action on a case, a restriction, an exception, or a port 25 request needs `security:manage`.
+Add `security:view` and `security:manage` to [Capabilities](../CAPABILITIES.md) and the fixtures in the implementation change. Developer gets `security:view` through the implication. Customers read cases only through the dashboard API, filtered by `security:view`. Each customer action on a case, a restriction, an exception, or a mail port request needs `security:manage`.
 
 ## Findings from Watcher
 
@@ -96,7 +99,7 @@ Central acts on findings:
 - Central makes one finding itself, `Phishing:Site/LookalikeDomain`, because it needs the team age. See [Phishing sites](#phishing-sites).
 - From Phase 3, when the thresholds are Active, a flood or a scan can continue for about 3 min before Central restricts the VM. No automatic limit exists before that. See [Cargo windows](https://github.com/frappe/cargo/blob/develop/docs/watcher.md#windows).
 
-The HTTP proxy has static limits for each client address and site: `limit_req` 100 requests a second with a burst of 500, and `limit_conn` 200. Central does not change them. See [Atlas HTTP proxy](https://github.com/frappe/atlas/blob/develop/docs/abuse/enforcement.md#http-proxy).
+The HTTP proxy has static limits for each client address and site: `limit_req` 100 requests a second with a burst of 500, and `limit_conn` 200. From Phase 2, it also limits each host to 1,000 requests a second with a burst of 2,000. Central does not change these limits. See [Atlas HTTP proxy](https://github.com/frappe/atlas/blob/develop/docs/abuse/enforcement.md#http-proxy).
 
 ### Profiles
 
@@ -181,7 +184,7 @@ Open ◀─────────────────────── ne
 | Awaiting Customer | A notice is sent. The deadline runs, if the step has one. | Resolved when the customer fixes the cause before the deadline. Restricted at the deadline. Escalated when the case needs an operator. |
 | Notification Failed | No customer notice could be sent. The deadline does not start. Automatic restrictions still apply. | Awaiting Customer when a responder marks the notice as delivered by another channel. |
 | Restricted | A restriction from the ladder is active. | Resolved when the cause is fixed and the restriction is lifted. Escalated when the case needs an operator. |
-| Escalated | The case waits for an operator decision: a dispute, a deadline reached on a paid team, an isolate, a `Failed` restriction, or illegal content. | Restricted or Resolved, from the operator decision. |
+| Escalated | The case waits for an operator decision: a dispute, a deadline reached on a paid team, an isolate, a team block, an account block, a `Failed` restriction, or illegal content. | Restricted or Resolved, from the operator decision. |
 | Resolved | The cause is fixed and no case restriction is active. | Closed with resolution Fixed after 7 days without a new signal. Open at the same ladder level on a new signal. |
 | Closed | The resolution is set. Central sends the close reply to reporters. | None |
 
@@ -201,16 +204,41 @@ Resolution values: Fixed, False Positive, No Response, Terminated, Suspended, Du
 | 1 | Notice | Central | Not applicable |
 | 2 | `port_block` or `egress_throttle` | Central or an operator | Lift or `expires_at` |
 | 3 | `quarantine` | Central or an operator | Lift |
-| 4 | `isolate` | Central (trials, confirmed mining) or an operator | Operator only |
+| 4 | Team block: `isolate` on every VM of the team. See [Team and account blocks](#team-and-account-blocks). | Central (trials, confirmed mining) or an operator | Operator only |
 
 - What each restriction kind blocks is in [Atlas restriction kinds](https://github.com/frappe/atlas/blob/develop/docs/abuse/enforcement.md#restriction-kinds).
-- The ladder stops at isolate. There is no pause and no stop.
+- The ladder stops at the team block. There is no pause and no stop.
 - History counts per team over 90 days. A new VM does not reset it.
 - When a VM is isolated, Central also tombstones its sites.
 - Restrictions add up. Lifting one never lifts another.
 - The abuse dashboard lists level 2 to 4 restrictions older than 14 days for review.
 
-Outside the ladder, operators keep `Team.suspend` (fraud, legal hold) and terminate. No policy applies them. Today `Team.suspend` skips `Paused` servers (`central/identity/doctype/team/lifecycle.py`). Fix this before abuse cases depend on it.
+Outside the ladder, operators keep the account block, `Team.suspend` (fraud, legal hold), and terminate. No policy applies them. Today `Team.suspend` stops only `Running` servers, so it skips `Paused` servers (`central/identity/doctype/team/lifecycle.py`). Fix this before abuse cases depend on it. The team block does not use `Team.suspend`. See [Team and account blocks](#team-and-account-blocks).
+
+### Team and account blocks
+
+Central blocks one of three scopes. The `blocked_scope` field of the Abuse Case records it: VM, Team, or Account. Layout: [Abuse layouts](ABUSE_LAYOUTS.md#abuse-case).
+
+- VM: Central applies a restriction to the VM of the case, for example `isolate` or `egress_throttle`. See [Restrictions](#restrictions).
+- Team: one Central team is one Atlas tenant. Central refuses new servers for the team. It applies `isolate` to every VM of the team that is not Terminated, `Paused` and `Stopped` VMs included.
+- Account: one user. Central disables the login of the user, and blocks each team of the user that has no other enabled member. An enabled member is a Team Member with status Active whose User is enabled.
+
+The team block:
+
+- Each VM gets its own Resource Action and its own Abuse Case Restriction row on the case, through the normal path. The row names the VM. See [Apply a restriction](#apply-a-restriction).
+- `Team.suspend` skips `Paused` servers. The team block must not. A `Paused` or `Stopped` VM keeps the restriction in its Metal network object, so it is isolated when it runs again.
+- A server create that started before the block gets `isolate` in the create request, as in [New servers](#new-servers).
+- Level 4 of the ladder is the team block. A scan or a brute force from a trial or a team that never paid also gets the team block at once. See [Policy engine](#policy-engine).
+- A lift reverses the block. Central lifts the `isolate` entry on each VM that the block restricted, and accepts new servers for the team again. It does not lift a restriction of another case.
+- Only an operator lifts a team block.
+
+The account block:
+
+- Each team that the account block blocks has an Abuse Case with `blocked_scope` Account and `blocked_user` set. Central uses the case that started the block for its own team, and opens a new case for each other blocked team.
+- Teams of the user that have another enabled member keep running. The case that started the block lists them and goes to Escalated, so an operator decides on them.
+- Only an operator lifts an account block. The lift enables the login of the user and lifts the team blocks of the account block.
+
+An Atlas operator can also isolate a tenant. A Desk action takes a tenant ID and applies `isolate` to every VM of that tenant, one VM at a time, through the same path as an emergency restriction. Each entry has an `atlas-` ID. Atlas refuses tenant 0. Each VM sends a `vm.network` event, and Central adds an emergency row for each VM. See [Restrictions](#restrictions) and [Atlas operator emergency restriction](https://github.com/frappe/atlas/blob/develop/docs/abuse/enforcement.md#operator-emergency-restriction). Central does not refuse new servers for the team from this action. A Central operator sets a team block when the team needs it.
 
 ### Tracks
 
@@ -220,7 +248,7 @@ The ladder is one track. Three tracks are outside it:
 |---|---|---|
 | Sites | Phishing and illegal content | Central tombstones the site on the proxy. This equals level 3. Only an operator lifts it. |
 | Protection | Inbound DDoS on the customer | `ingress_throttle` and the operator steps protect the victim. The dashboard shows them as protection. They never count as history. |
-| Port 25 | The `smtp_outbound` port 25 block from `is_port_25_blocked`. See [Email](#email). | Not a ladder step and not history |
+| Mail ports | The mail ports block from `is_mail_ports_blocked`. See [Email](#email). | Not a ladder step and not history |
 
 ### Lifts
 
@@ -233,9 +261,9 @@ Each customer action below needs `security:manage`.
 
 ### New servers
 
-While a team has an open case at level 3 or 4, every new server starts with the same restriction. Central sends it in the optional `restrictions` field of the Atlas VM create request. Atlas puts it in the Metal network object. Each inherited restriction has its own `idempotency_key`, the name of a new Resource Action, and the `case_reference` of the case. The restriction ends with the case.
+While a team has an open case at level 3 or 4, every new server starts with the same restriction. While a team block holds, Central refuses new servers for the team. A create that started before the block still gets the restriction. See [Team and account blocks](#team-and-account-blocks). Central sends it in the optional `restrictions` field of the Atlas VM create request. Atlas puts it in the Metal network object. Each inherited restriction has its own `idempotency_key`, the name of a new Resource Action, and the `case_reference` of the case. The restriction ends with the case.
 
-- Restrictions and `is_port_25_blocked` are part of the create fingerprint, so a retried create with the same key sends the same values.
+- Restrictions and `is_mail_ports_blocked` are part of the create fingerprint, so a retried create with the same key sends the same values.
 - Atlas accepts these two create fields only from a Central identity. It refuses them from any other caller with HTTP 403.
 - Restrictions are in the Metal VM network object, so they move with a VM on migration.
 
@@ -252,8 +280,9 @@ Central applies and lifts restrictions through the Atlas restriction API. See [A
 Who changes restrictions:
 
 - Normal: the policy engine or an operator in Central calls the restriction API. Central records a Resource Action with action `restrict` (a new action) and a system actor, and links the case.
-- Emergency: an Atlas operator applies a restriction with a Desk action on the Atlas Virtual Machine. The entry ID is `atlas-` and a random suffix. Atlas adds a Comment on the VM with the user, the kind, and the reason. Central finds the entry in its repair scan, adds a row with `applied_by` Atlas operator, and posts it to Raven `#abuse`. Central links the row to an open case of the server, or opens a case.
-- Expiry: Central knows the end from its own `expires_at`. Metal skips an entry after its `expires_at`, and Atlas removes the entry on its next change of the VM network. Atlas sends nothing at expiry.
+- Emergency: an Atlas operator applies a restriction with a Desk action on the Atlas Virtual Machine. The entry ID is `atlas-` and a random suffix. Atlas adds a Comment on the VM with the user, the kind, and the reason. Atlas sends a `vm.network` event, because the desired generation moves. Central finds the entry when it handles the event, or in its repair scan. It adds a row with `applied_by` Atlas operator, and posts it to Raven `#abuse`. Central links the row to an open case of the server, or opens a case.
+- Tenant emergency: an Atlas operator isolates every VM of a tenant with one Desk action. Central handles each VM as an emergency restriction. See [Team and account blocks](#team-and-account-blocks).
+- Expiry: Central knows the end from its own `expires_at`. Metal skips an entry after its `expires_at`, and Atlas removes the entry on its next change of the VM network. Atlas sends no event at expiry.
 
 ### Restriction states
 
@@ -262,13 +291,18 @@ Each Abuse Case Restriction row has one of these states. Layout: [Abuse layouts]
 | State | Meaning | How Central learns it |
 |---|---|---|
 | `Pending` | Central sent the call. It does not know the response yet. | Central sets it before it sends the call. |
-| `Saved` | Atlas returned the entry in the desired network of the VM. Metal has not applied it yet. | The response of the call. The repair scan, after a lost response. |
-| `Applied` | Metal applied the network that holds the entry: `observed_generation` reached the `desired_generation` of the response. | The repair scan. The response, when `observed_generation` already reached `desired_generation`. |
-| `Failed` | Atlas refused the call with `409 host_unsupported` or a validation error, or Metal reported `host_error`. | The response, or the repair scan |
-| `Lifted` | The entry was removed before its `expires_at`. | The response of the lift call. The repair scan, for an entry that an Atlas operator removed. |
+| `Saved` | Atlas returned the entry in the desired network of the VM. Metal has not applied it yet. | The response of the call. The `vm.network` event or the repair scan, after a lost response. |
+| `Applied` | Metal applied the network that holds the entry: `observed_generation` reached the `desired_generation` of the response. | The `vm.network` event or the repair scan. The response, when `observed_generation` already reached `desired_generation`. |
+| `Failed` | Atlas refused the call with `409 host_unsupported` or a validation error, or Metal reported `host_error`. | The response, the `vm.network` event, or the repair scan |
+| `Lifted` | The entry was removed before its `expires_at`. | The response of the lift call. The `vm.network` event or the repair scan, for an entry that an Atlas operator removed. |
 | `Expired` | The `expires_at` of the row passed. | Central's own `expires_at`. Central asks Atlas nothing. |
 
-The repair scan reads the Atlas `GET` VM response: `restrictions`, `is_port_25_blocked`, `desired_generation`, `observed_generation`, and `host_error`. It runs every minute for each VM with a `Saved` row. For all other VMs, it runs in the normal repair scan, `central.integrations.servers.reconcile`. For each VM, the scan does these steps:
+Central reads the Atlas `GET` VM response: `restrictions`, `is_mail_ports_blocked`, `desired_generation`, `observed_generation`, and `host_error`. It reads it at two times:
+
+- When a `vm.network` event for the VM arrives. Atlas sends it when Metal applies a change, when Metal reports an error, and when an Atlas operator changes a restriction. See [Events from Atlas](#events-from-atlas).
+- In the normal repair scan, `central.integrations.servers.reconcile`, every 10 min. This is the backup for a lost event.
+
+Both do the same steps for each VM. This document calls them the repair scan:
 
 1. A `Saved` row becomes `Applied` when `observed_generation` reached its `desired_generation`.
 2. A `Saved` row becomes `Failed` when `host_error` is set.
@@ -278,9 +312,9 @@ The repair scan reads the Atlas `GET` VM response: `restrictions`, `is_port_25_b
 
 Other errors may be transient: the `409` conflict when the network lock is busy, a timeout, or a `5xx`. The row stays `Pending`, and Central retries with the same `idempotency_key`. Central tells the two `409` errors apart by `error.code`.
 
-A successful extend with `PATCH` stores the new `desired_generation` and sets the row back to `Saved`. The repair scan sets `Applied` again.
+A successful extend with `PATCH` stores the new `desired_generation` and sets the row back to `Saved`. The `vm.network` event or the repair scan sets `Applied` again.
 
-On VM create, the Atlas response has `restrictions` and `is_port_25_blocked`. When both are missing, the host runs an old Metal and the VM has no port 25 block and no inherited restriction. Central sets the inherited rows to `Failed`, posts to Raven `#abuse`, and sets the port 25 block through the port 25 route after the host update.
+On VM create, the Atlas response has `restrictions` and `is_mail_ports_blocked`. When both are missing, the host runs an old Metal and the VM has no mail ports block and no inherited restriction. Central sets the inherited rows to `Failed`, posts to Raven `#abuse`, and sets the mail ports block through the mail ports route after the host update.
 
 Central sets `ended_by` on the row. Atlas does not send it.
 
@@ -299,8 +333,8 @@ Default escalation:
 | Finding | Escalation |
 |---|---|
 | Outbound flood, SYN flood | `egress_throttle` at once, and a notice. A repeat in 7 days: quarantine. |
-| Scan, brute force | `port_block` on the matched port class at once. Notice, 24 h deadline. Exception: a trial or a team that never paid gets `isolate` at once. |
-| `Smtp:VM/BlockedPort25` | Helpful notice: use port 587 or 465 |
+| Scan, brute force | `port_block` on the matched port class at once. Notice, 24 h deadline. Exception: a trial or a team that never paid gets a team block at once. See [Team and account blocks](#team-and-account-blocks). |
+| `Smtp:VM/BlockedMailPort` | Helpful notice: the mail ports are blocked. Send mail through an email service over HTTPS, or request an unblock. See [Email](#email). |
 | `Spam:VM/Smtp` | Notice. A DNSBL listing: see [DNSBL response](#dnsbl-response). |
 | Reflector | `egress_throttle` at once, and a notice with a fix guide |
 | Mining | See [Mining](#mining). |
@@ -313,7 +347,7 @@ Default escalation:
 - An immediate level 2 restriction from a finding has `expires_at` 24 h after it is applied. So a failure in Watcher or in Central never leaves it in place for long.
 - While the match continues, Watcher updates the finding with a later `window_end`, and the signal moves its `window_end`. When less than 12 h of the restriction remain, Central extends it with a new `expires_at`. See [Calls to Atlas](#calls-to-atlas).
 - An extension never resets the deadline or the ladder level.
-- Example: a scan from a trial that never paid is isolated. The same scan from a Tier 3 team that paid for 12 months gets a `port_block`, a notice, and 24 h.
+- Example: a scan from a trial that never paid gets a team block. The same scan from a Tier 3 team that paid for 12 months gets a `port_block`, a notice, and 24 h.
 - At a deadline, the policy engine takes the next ladder step and sends `abuse_restriction_applied`.
 - Abuse history lowers the trust tier. A resolved case with a fix restores the tier after 90 days.
 
@@ -328,7 +362,7 @@ An Abuse Exception lets a team change how Central acts on one finding code on on
 - The expiry is at most 90 days after the start.
 - Central applies an approved exception to findings until it expires or a responder revokes it. The exception stays in Central. Watcher and Atlas get nothing.
 - The controller refuses a multiplier below 0.5. Watcher reports nothing below the strict level, so a lower multiplier has no effect.
-- The controller refuses the `smtp_outbound` port 25 block. Port 25 has its own flow. See [Email](#email).
+- An exception cannot open the mail ports. They have their own flow. See [Email](#email).
 
 ## Controls
 
@@ -336,37 +370,42 @@ Neither Central nor Watcher reads the content of a VM's traffic. For the counter
 
 ### Email
 
-Port 25 is blocked only when Central asks. `is_port_25_blocked` is a field of the Metal VM network object. A missing field means open. For a VM with `is_port_25_blocked` set, the `smtp_outbound` block in Metal drops new TCP flows to port 25. The submission ports 465 and 587 stay open. See [Atlas metal_abuse chain](https://github.com/frappe/atlas/blob/develop/docs/abuse/enforcement.md#metal_abuse-chain).
+The mail ports are 25, 465, and 587. They are blocked only when Central asks. `is_mail_ports_blocked` is a field of the Metal VM network object. A missing field means open. For a VM with `is_mail_ports_blocked` set, Metal drops:
 
-- Central sets `is_port_25_blocked: true` in every VM create request.
-- Central changes it on an existing VM through `PUT /api/atlas/virtual-machines/<id>/port-25` with `is_blocked`. See [Atlas port 25 API](https://github.com/frappe/atlas/blob/develop/docs/abuse/contract.md#port-25-api).
-- VMs created before the rollout keep port 25 open. Central sets the block on such a VM on a DNSBL finding or a spam finding. A responder can also set it from the case view. See [DNSBL response](#dnsbl-response).
+- New TCP flows from the VM to remote ports 25, 465, and 587.
+- New TCP flows from a remote address to VM ports 25, 465, and 587.
 
-A Port 25 Request holds one unblock request for one server. It is team-scoped. Layout: [Abuse layouts](ABUSE_LAYOUTS.md#port-25-request).
+The block applies only to remote addresses outside the mesh prefix list. Mesh traffic is not affected. See [Atlas metal_abuse chain](https://github.com/frappe/atlas/blob/develop/docs/abuse/enforcement.md#metal_abuse-chain).
+
+- Central sets `is_mail_ports_blocked: true` in every VM create request.
+- Central changes it on an existing VM through `PUT /api/atlas/virtual-machines/<id>/mail-ports` with `is_blocked`. See [Atlas mail ports API](https://github.com/frappe/atlas/blob/develop/docs/abuse/contract.md#mail-ports-api).
+- VMs created before the rollout keep the mail ports open. Central sets the block on such a VM on a DNSBL finding or a spam finding. A responder can also set it from the case view. See [DNSBL response](#dnsbl-response).
+
+A Mail Port Request holds one unblock request for one server. It is team-scoped. Layout: [Abuse layouts](ABUSE_LAYOUTS.md#mail-port-request).
 
 - Status: Pending, Accepted, Rejected, or Revoked.
 - A server has at most one open request. An open request is Pending or Accepted.
-- Accepted clears `is_port_25_blocked` on the VM through the Atlas port 25 route. Revoked sets it again through the same route.
+- Accepted clears `is_mail_ports_blocked` on the VM through the Atlas mail ports route. Revoked sets it again through the same route.
 - `decided_by`, `decided_at`, and `abuse_case` are read only. Central sets them.
 
-Port 25 unblock flow:
+Mail port unblock flow:
 
-1. A member with `security:manage` creates a Port 25 Request on the server's Security tab: purpose, sending domain, reverse DNS name, and bulk-mail policy. The status is Pending.
+1. A member with `security:manage` creates a Mail Port Request on the server's Security tab: purpose, sending domain, reverse DNS name, and bulk-mail policy. The status is Pending.
 2. Central accepts the request automatically for trust tier 3 and higher when the team has no open case. Otherwise the request goes to `#abuse`, and a responder accepts or rejects it with a decision reason.
 3. Only a server with a dedicated public IPv4 can get an unblock. Shared NAT addresses are never unblocked.
-4. On acceptance, Central sets the status to Accepted and sends `is_blocked: false` for that VM to the Atlas port 25 route.
+4. On acceptance, Central sets the status to Accepted and sends `is_blocked: false` for that VM to the Atlas mail ports route.
 5. The customer sets reverse DNS on the address.
 6. Central sends `smtp_unblock_decided` with the result.
 7. A responder can revoke an Accepted request. A DNSBL listing or a spam trap hit revokes it automatically. See [DNSBL response](#dnsbl-response).
 
 ### DNSBL response
 
-- A DNSBL listing, or an SNDS spam trap hit, on an address with port 25 open opens a case. Central sets the Port 25 Request of the server to Revoked, sets its `abuse_case` to the new case, and sends `is_blocked: true` to the Atlas port 25 route.
-- A VM created before the rollout has port 25 open and no Port 25 Request. On a DNSBL finding or a spam finding on it, Central sends `is_blocked: true` to the Atlas port 25 route. The customer can then create a Port 25 Request.
+- A DNSBL listing, or an SNDS spam trap hit, on an address with the mail ports open opens a case. Central sets the Mail Port Request of the server to Revoked, sets its `abuse_case` to the new case, and sends `is_blocked: true` to the Atlas mail ports route.
+- A VM created before the rollout has the mail ports open and no Mail Port Request. On a DNSBL finding or a spam finding on it, Central sends `is_blocked: true` to the Atlas mail ports route. The customer can then create a Mail Port Request.
 - For `Spam:VM/Smtp` with a DNSBL listing, Central applies `port_block` on the ports of the `smtp` and `submission` classes. An operator gets the address delisted.
 - DNSBL notices that arrive by email become Abuse Reports. See [Report intake](#report-intake).
 - Every hour, Watcher checks two sets of addresses against DNSBLs, Microsoft SNDS, and Shadowserver: the dedicated public IPv4 and IPv6 addresses of each VM, and the shared host addresses in the NAT port range log. Watcher reports each listing as a finding. See [Cargo feeds](https://github.com/frappe/cargo/blob/develop/docs/watcher.md#feeds).
-- A finding on a dedicated address has `address` and `virtual_machine`. It follows the normal policy: a case, the response above, and the revoke of the Port 25 Request.
+- A finding on a dedicated address has `address` and `virtual_machine`. It follows the normal policy: a case, the response above, and the revoke of the Mail Port Request.
 - Central checks through [Public IP history](#public-ip-history) when the server got the address. If the server got it less than 7 days before Central gets the finding, Central posts the listing to Raven `#abuse` and opens no case for the new team. An operator gets the address delisted.
 - A finding on a shared NAT address has `address` only. It names no single server. Central posts its listing to Raven `#abuse` and opens no case.
 
@@ -394,9 +433,9 @@ The AUP forbids mining on every server, trial or paid. CPU use alone is never ev
 
 | Team | Outcome |
 |---|---|
-| Trial, or never paid | Isolate |
+| Trial, or never paid | Team block |
 | Paid | Quarantine, 24 h deadline |
-| A repeat in 90 days | Isolate. An operator decides on `Team.suspend`. |
+| A repeat in 90 days | Team block. An operator decides on an account block or `Team.suspend`. |
 
 Isolation is enough: a miner with no network earns nothing.
 
@@ -509,7 +548,7 @@ Recipients of Security email:
 | `abuse_restriction_lifted` | A restriction is lifted or expires | Info | In-app |
 | `abuse_case_resolved` | Case closed | Info | In-app, email |
 | `security_inbound_attack` | The customer is a DDoS target | Warning | In-app, email |
-| `smtp_unblock_decided` | A Port 25 Request is accepted, rejected, or revoked | Info | In-app, email |
+| `smtp_unblock_decided` | A Mail Port Request is accepted, rejected, or revoked | Info | In-app, email |
 
 - An extension of a restriction sends no new email.
 - `_is_duplicate` uses the case as the reference.
@@ -539,7 +578,7 @@ R2 and R3 notices also say: "If you operate in India, you may have your own duty
 
 ### Dashboard
 
-- Security tab on each server: active restrictions and their expiry, open cases, the signal timeline, self-quarantine, the port 25 request, and the exception request. Self-quarantine and the requests need `security:manage`.
+- Security tab on each server: active restrictions and their expiry, open cases, the signal timeline, self-quarantine, the mail port request, and the exception request. Self-quarantine and the requests need `security:manage`.
 - Team abuse cases page.
 - Case page: acknowledge, describe the fix, self-lift or request a lift, or dispute. These responses need `security:manage`. Each response alerts the operator queue.
 - A banner in `AppShell.vue` when any server has a High or Critical case, next to `SuspendedTeamNotice.vue`.
@@ -584,7 +623,7 @@ The profile multipliers are constants, not settings. See [Profiles](#profiles).
 |---|---|
 | Email to `abuse_email` | Every Critical case, copies of reporter acknowledgements, CERT-In clock alerts |
 | Raven `#abuse-p1` (pages on call) | Critical findings, region-level floods, illegal content, unconfirmed cases past their SLA, CERT-In clocks with 2 h left |
-| Raven `#abuse` | Cases that need a person (dispute, port 25 review, failed attribution, deadline reached on a paid team, `Notification Failed`, a `Failed` restriction), DNSBL listings with no case, log integrity findings (no case), and regions where Watcher does not report. See [Monitoring](#monitoring). |
+| Raven `#abuse` | Cases that need a person (dispute, mail port review, account block, failed attribution, deadline reached on a paid team, `Notification Failed`, a `Failed` restriction), DNSBL listings with no case, log integrity findings (no case), and regions where Watcher does not report. See [Monitoring](#monitoring). |
 | Daily digest | Cases opened and closed, restrictions applied, top findings, shadow signals and false positives by finding code, DNSBL listings |
 
 ### Abuse dashboard
@@ -602,7 +641,7 @@ A Desk workspace `Abuse` in Central, with Insights charts. Central sees all regi
 │ Signals by finding       │ Shadow signals by finding │ Public IPv4 on DNSBLs: 3     │
 │ Cases opened vs closed   │ Finding lag by region     │ False positives (7 d): 1     │
 ├──────────────────────────┴───────────────────────────┴──────────────────────────────┤
-│ Unattributed reports 4   Port 25 requests 2   Disputes 1   Restrictions > 14 days 0 │
+│ Unattributed reports 4  Mail port requests 2  Disputes 1   Restrictions > 14 days 0 │
 └─────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -624,7 +663,7 @@ Case view:
 
 ### Monitoring
 
-- `track_changes` is on for Abuse Case, Abuse Exception, Abuse Signal, and Port 25 Request. Central Resource Actions and Abuse Case Restriction rows are the audit record of who restricted a VM and why. For an emergency restriction, the Comment on the Atlas Virtual Machine is the record.
+- `track_changes` is on for Abuse Case, Abuse Exception, Abuse Signal, and Mail Port Request. Central Resource Actions and Abuse Case Restriction rows are the audit record of who restricted a VM and why. For an emergency restriction, the Comment on the Atlas Virtual Machine is the record.
 - The Central investigator agent gets read tools for abuse cases.
 - The abuse dashboard shows the finding lag of each region in "Finding lag by region": the age of each `checked_until` value in the last `abuse` report of the region.
 - Central starts the checks below for a region when it gets the first `abuse` report from that region. Before Phase 3, a production region sends no `abuse` report, so Central does not alert for it. See [Deploy order](#deploy-order).
@@ -632,35 +671,36 @@ Case view:
 
 ## Interfaces
 
-All Atlas changes are optional fields or new endpoints. There is no new API version. Central calls other planes only from `central/integrations/`. The Atlas side of this contract is in [Atlas abuse contract](https://github.com/frappe/atlas/blob/develop/docs/abuse/contract.md).
+All Atlas changes are optional fields, new endpoints, or the new `vm.network` event. There is no new API version. Central calls other planes only from `central/integrations/`. The Atlas side of this contract is in [Atlas abuse contract](https://github.com/frappe/atlas/blob/develop/docs/abuse/contract.md).
 
 ### Communication
 
 | Caller to receiver | Use | Credential |
 |---|---|---|
-| Central to Atlas | The restriction API, the port 25 API, the create fields, and `GET` VM for the repair scan. See [Calls to Atlas](#calls-to-atlas). | `atlas-admin:<region>` token, as for every Central call to Atlas |
+| Central to Atlas | The restriction API, the mail ports API, the create fields, and `GET` VM for the repair scan. See [Calls to Atlas](#calls-to-atlas). | `atlas-admin:<region>` token, as for every Central call to Atlas |
+| Atlas to Central | The `vm.network` event. See [Events from Atlas](#events-from-atlas). | Signed webhook delivery, checked against `Region.webhook_secret` |
 | Central to the proxy | `suspend_site`. See [Calls to the proxy](#calls-to-the-proxy). | `atlas-proxy:<region>` token |
 | Central to Cargo, buckets | `suspend_bucket` and `unsuspend_bucket`. See [Calls to Cargo](#calls-to-cargo). | `atlas-cargo:<region>` token with scope `bucket:*` |
 | Central to Cargo, attribution | `attribute_address`. See [Calls to Cargo](#calls-to-cargo). | `atlas-cargo:<region>` token with scope `abuse:attribute` |
 | Cargo Watcher to Central | The `abuse` report. See [Reports from Cargo](#reports-from-cargo). | Signed webhook delivery, checked against `Region.cargo_webhook_secret` |
 
-Atlas sends no abuse event to Central. Central reads restrictions from the Atlas `GET` VM response. See [Restriction states](#restriction-states).
+Atlas sends a `vm.network` event when the network state of a VM changes. The event holds no restrictions. Central reads them from the Atlas `GET` VM response. See [Events from Atlas](#events-from-atlas).
 
 The platform [service access matrix](https://frappe.github.io/platform/reference/token-validation) needs the same Central to Cargo attribution row.
 
 ### Calls to Atlas
 
-Central calls these through `central/integrations/atlas.py`. Each one is `central_only`. Atlas serves each one under the per-VM network lock: it reads the network object from Metal, merges one change, and sends the complete object back. See [Atlas restriction API](https://github.com/frappe/atlas/blob/develop/docs/abuse/contract.md#restriction-api) and [Atlas port 25 API](https://github.com/frappe/atlas/blob/develop/docs/abuse/contract.md#port-25-api).
+Central calls these through `central/integrations/atlas.py`. Each one is `central_only`. Atlas serves each one under the per-VM network lock: it reads the network object from Metal, merges one change, and sends the complete object back. See [Atlas restriction API](https://github.com/frappe/atlas/blob/develop/docs/abuse/contract.md#restriction-api) and [Atlas mail ports API](https://github.com/frappe/atlas/blob/develop/docs/abuse/contract.md#mail-ports-api).
 
 | Call | Use |
 |---|---|
 | `PUT /api/atlas/virtual-machines/<id>/restrictions` | Apply a restriction. Idempotent by `idempotency_key`. See [Apply a restriction](#apply-a-restriction). |
 | `PATCH /api/atlas/virtual-machines/<id>/restrictions/<restriction_id>` | Extend a level 2 restriction with a new `expires_at`, while the match continues and less than 12 h remain. Only `expires_at` changes. See [Policy engine](#policy-engine). |
 | `DELETE /api/atlas/virtual-machines/<id>/restrictions/<restriction_id>` | Lift a restriction by its ID. Lifting a missing entry succeeds. |
-| `PUT /api/atlas/virtual-machines/<id>/port-25` | Set or clear the port 25 block with `is_blocked`. See [Email](#email). |
+| `PUT /api/atlas/virtual-machines/<id>/mail-ports` | Set or clear the mail ports block with `is_blocked`. See [Email](#email). |
 
 - `restriction_id` is the `idempotency_key` of the apply call, or the `atlas-` ID of an emergency restriction.
-- The response of each call holds the `restrictions` list of the VM, `is_port_25_blocked`, and `desired_generation`, `observed_generation`, and `host_error` from Metal. Central stores `desired_generation` on the row and sets its state from the response. See [Restriction states](#restriction-states).
+- The response of each call holds the `restrictions` list of the VM, `is_mail_ports_blocked`, and `desired_generation`, `observed_generation`, and `host_error` from Metal. Central stores `desired_generation` on the row and sets its state from the response. See [Restriction states](#restriction-states).
 - Atlas refuses a call on a VM of tenant 0 with HTTP 403. Central never sends one, because it does not know these VMs.
 - On a Metal host without restriction support, Atlas answers `409 host_unsupported` and saves nothing. Central sets the row to `Failed`. Other errors keep the row `Pending`. See [Restriction states](#restriction-states).
 
@@ -668,8 +708,8 @@ Changed requests, with optional fields:
 
 | Request | Field |
 |---|---|
-| VM create | Create fields that Atlas puts in the Metal network object: `is_port_25_blocked: true` on every create, and `restrictions` (inherited, each with `idempotency_key` and `case_reference`). See [New servers](#new-servers). |
-| `GET` VM response | `restrictions`, `is_port_25_blocked`, `desired_generation`, `observed_generation`, and `host_error`. Central's repair scan reads them. See [Restriction states](#restriction-states). |
+| VM create | Create fields that Atlas puts in the Metal network object: `is_mail_ports_blocked: true` on every create, and `restrictions` (inherited, each with `idempotency_key` and `case_reference`). See [New servers](#new-servers). |
+| `GET` VM response | `restrictions`, `is_mail_ports_blocked`, `desired_generation`, `observed_generation`, and `host_error`. Central's repair scan reads them. See [Restriction states](#restriction-states). |
 
 Before Central terminates a server with an open case or an active restriction, it takes a snapshot of the disk through the existing Atlas snapshot action. The snapshot is a VM Snapshot with `is_abuse_evidence` set. Central keeps it for 30 days, or longer on a legal hold. The customer dashboard never lists it, and the customer cannot delete it. Only `Abuse Responder` and System Manager read it. Layout: [Abuse layouts](ABUSE_LAYOUTS.md#vm-snapshot-layout-change).
 
@@ -708,16 +748,27 @@ Atlas answers with the VM network fields:
 			"case_reference": "AC-00192"
 		}
 	],
-	"is_port_25_blocked": true,
+	"is_mail_ports_blocked": true,
 	"desired_generation": 42,
 	"observed_generation": 41,
 	"host_error": null
 }
 ```
 
-- When the entry is in `restrictions`, Central sets the row to `Saved` and stores `desired_generation`. The repair scan sets it to `Applied` later.
+- When the entry is in `restrictions`, Central sets the row to `Saved` and stores `desired_generation`. The `vm.network` event or the repair scan sets it to `Applied` later.
 - A repeat with the same `idempotency_key` returns the existing entry and changes nothing.
 - A lost response leaves the row `Pending` and the Resource Action uncertain. The repair scan settles it. Central does not send a second apply with a new key.
+
+### Events from Atlas
+
+Atlas sends a `vm.network` event to `central.api.state_delivery.receive`, as it sends `vm.state`. The shape is in [Atlas reports](WEBHOOKS.md#atlas-reports). The Atlas side is in [Atlas events to Central](https://github.com/frappe/atlas/blob/develop/docs/abuse/contract.md#events-to-central).
+
+- Atlas sends the event when `network_desired_generation`, `network_observed_generation`, or `network_error` of the Atlas Virtual Machine State changes. These fields mirror Metal. So Central learns when Metal applies a change, when Metal reports an error, and when an Atlas operator changes a restriction.
+- The generations belong to the complete VM spec. A change that is not a network change also sends the event, and costs one `GET` VM.
+- The event is only a trigger. Central reads the `GET` VM response and runs the steps of the repair scan for the VM. See [Restriction states](#restriction-states). Until step 7 of [Phase 2](#phase-2-findings-and-restrictions) adds restriction rows, the handler only reads the VM.
+- Central queues one job for each VM. A repeated or late event reads the same state again and changes nothing.
+- Central skips an event for a VM that it does not know. These are the tenant 0 infrastructure VMs.
+- An older Central answers `unsupported event 'vm.network'` with HTTP 200 and drops the event. So Central ships the handler before Atlas configures the delivery. See [Deploy order](#deploy-order).
 
 ### Calls to the proxy
 
@@ -856,7 +907,7 @@ The owner email lets responders find a repeat offender who signs up again.
 
 Public IP Assignment stores the team and the server as plain names, so it never blocks a deletion.
 
-Central deletes Port 25 Requests with their team or server. They hold no evidence. A revoked request's cause stays on its Abuse Case.
+Central deletes Mail Port Requests with their team or server. They hold no evidence. A revoked request's cause stays on its Abuse Case.
 
 Evidence holds no payloads. Addresses shown to customers are truncated to /24.
 
@@ -877,32 +928,38 @@ Data collection, and one data plane change: the NAT port ranges. The NAT port ra
 
 ### Phase 2: Findings and restrictions
 
-Central acts on sample findings, reports, and operator actions. There is no Watcher yet.
+Central acts on sample findings, reports, and operator actions. There is no Watcher yet. This phase also adds the core service protection. That part does not need Phase 1 data. Each new drop rule ships in `count` mode first. See [Atlas rollout](https://github.com/frappe/atlas/blob/develop/docs/abuse/protection.md#rollout).
 
 1. Cargo: `attribute_address` with the `abuse:attribute` scope check. It reads the NAT port range log. It does not need Watcher detection. See [Calls to Cargo](#calls-to-cargo).
-2. Atlas app: the restriction API, the port 25 API, and the `restrictions` and `is_port_25_blocked` create fields. See [Atlas restriction API](https://github.com/frappe/atlas/blob/develop/docs/abuse/contract.md#restriction-api).
-3. Metal: `restrictions` and `is_port_25_blocked` in the VM network object, and the `metal_abuse` chain. See [Atlas metal_abuse chain](https://github.com/frappe/atlas/blob/develop/docs/abuse/enforcement.md#metal_abuse-chain).
-4. HTTP proxy: the tombstone.
-5. Central: the `abuse` report branch, profiles, exceptions, signals, cases, restrictions, the port 25 block on every VM create, report intake, customer messages, and the `abuse:attribute` token. In production, Central acts only on abuse reports and operator actions in this phase.
-6. Cargo: `tools/fake_watcher` (planned), next to `tools/fake_atlas` and `tools/fake_proxy`. It posts signed `abuse` reports with sample findings, from fixture files, to a Central test or staging site. It posts only to a Central that has the `abuse` report branch from step 5. It never posts to production.
+2. Central: the `vm.network` handler. An older Central drops the event, so the handler ships before Atlas configures the delivery in step 3. See [Events from Atlas](#events-from-atlas).
+3. Atlas app: the restriction API, the mail ports API, the `restrictions` and `is_mail_ports_blocked` create fields, the three network fields of Virtual Machine State and the `vm.network` delivery, and the tenant isolate Desk action. A rerun of `configure_state_webhooks` adds the delivery. See [Atlas restriction API](https://github.com/frappe/atlas/blob/develop/docs/abuse/contract.md#restriction-api) and [Atlas events to Central](https://github.com/frappe/atlas/blob/develop/docs/abuse/contract.md#events-to-central).
+4. Metal: the generations in host sync, `restrictions` and `is_mail_ports_blocked` in the VM network object, the `metal_abuse` chain, the VM guard, the per-VM conntrack limit, the host baseline sysctl, and the host protection rules in `count` mode. See [Atlas metal_abuse chain](https://github.com/frappe/atlas/blob/develop/docs/abuse/enforcement.md#metal_abuse-chain) and [Atlas core service protection](https://github.com/frappe/atlas/blob/develop/docs/abuse/protection.md).
+5. Service VMs (http-proxy, ipv6-router, wg-gateway; `control-cluster` runs inside the proxy and gateway VMs): the baseline and the protection rules in `count` mode. The HTTP proxy also gets the tombstone, the per-host limit, and the handshake timeout.
+6. Cargo: the Garage node baseline.
+7. Central: the `abuse` report branch, profiles, exceptions, signals, cases, restrictions, the mail ports block on every VM create, Mail Port Request, team and account blocks, report intake, customer messages, and the `abuse:attribute` token. In production, Central acts only on abuse reports and operator actions in this phase.
+8. Insights: the protection alerts. See [Atlas counters and alerts](https://github.com/frappe/atlas/blob/develop/docs/abuse/protection.md#counters-and-alerts).
+9. Cargo: `tools/fake_watcher` (planned), next to `tools/fake_atlas` and `tools/fake_proxy`. It posts signed `abuse` reports with sample findings, from fixture files, to a Central test or staging site. It posts only to a Central that has the `abuse` report branch from step 7. It never posts to production.
+10. An operator moves the protection rules to `drop`, one service at a time. See [Atlas rollout](https://github.com/frappe/atlas/blob/develop/docs/abuse/protection.md#rollout).
 
-Central must accept `abuse` reports before Watcher sends them in Phase 3, because an older Central drops them. Step 5 of this phase ships the `abuse` report branch.
+Central must accept `abuse` reports before Watcher sends them in Phase 3, because an older Central drops them. Step 7 of this phase ships the `abuse` report branch.
 
 ### Phase 3: Watcher
 
-1. Cargo: Watcher, Abuse Threshold, and Abuse Feed, with every Abuse Threshold in Shadow. See [Cargo Watcher](https://github.com/frappe/cargo/blob/develop/docs/watcher.md).
+1. Cargo: Watcher, Abuse Threshold, and Abuse Feed, with every Abuse Threshold in Shadow. This includes the thresholds on the per-VM traffic counters. See [Cargo Watcher](https://github.com/frappe/cargo/blob/develop/docs/watcher.md) and [Cargo thresholds](https://github.com/frappe/cargo/blob/develop/docs/watcher.md#thresholds).
 2. Calibration against the Phase 1 data, then Active one finding code at a time. See [Cargo calibration](https://github.com/frappe/cargo/blob/develop/docs/watcher.md#calibration).
 
-All Atlas changes are optional fields: an old Central ignores them. Public IP history has no dependency, so Central can ship it before Phase 1.
+All Atlas changes are optional fields and one new event: an old Central ignores them. Public IP history has no dependency, so Central can ship it before Phase 1.
 
 ## Compared with AWS
 
 | AWS | Frappe Cloud |
 |---|---|
-| Port 25 blocked, unblock by form | The same, with the trust tier as a gate. See [Email](#email). |
+| Port 25 blocked, unblock by form | Ports 25, 465, and 587 blocked on new VMs, in both directions. Unblock by request, with the trust tier as a gate. See [Email](#email). |
 | Abuse report to the customer, with a deadline | Abuse Case with a deadline and the ladder. See [Report intake](#report-intake) and [Ladder](#ladder). |
 | AWS Health abuse event, alternate security contact | Security notifications, the team security contact, and `security:view`. See [Customer messages](#customer-messages). |
-| Shield Standard | Inbound DDoS protection and a notice to the customer. See [Inbound DDoS](#inbound-ddos). |
+| Shield Standard | Inbound DDoS protection and a notice to the customer. See [Inbound DDoS](#inbound-ddos). Protection of the hosts and service VMs from SYN, UDP, ICMP, and TLS handshake floods, spoofed sources, and fragments. See [Atlas core service protection](https://github.com/frappe/atlas/blob/develop/docs/abuse/protection.md). |
+| Source and destination check | The Metal VM guard drops packets from a VM with a source address that is not its own, and router and DHCP server messages. See [Atlas VM guard](https://github.com/frappe/atlas/blob/develop/docs/abuse/protection.md#vm-guard). |
+| Account suspension for abuse | Team and account blocks. See [Team and account blocks](#team-and-account-blocks). |
 
 Differences from AWS: each notice holds the exact evidence. Self-quarantine is one click and keeps access through the WireGuard gateway. Automatic restrictions from findings expire by themselves.
 

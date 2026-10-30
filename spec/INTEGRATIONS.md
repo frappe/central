@@ -6,7 +6,7 @@ Central owns identity, Team capabilities, catalog policy, and billing. Atlas own
 
 Central reaches each service through `central/integrations/`. Team authorization follows [IAM](IAM.md) and [Capabilities](../CAPABILITIES.md).
 
-The planned abuse protection calls to Atlas, the proxy, and Cargo are in [Abuse protection](ABUSE.md#interfaces).
+The planned abuse protection calls to Atlas, the proxy, and Cargo are in [Abuse protection](ABUSE.md#interfaces). Planned: Atlas also sends a `vm.network` event to Central when the network state of a VM changes. See [Events from Atlas](ABUSE.md#events-from-atlas).
 
 Planned: `central/integrations/cargo.py` calls `attribute_address` to find the VM behind a shared NAT address, with an `atlas-cargo:<region>` token of scope `abuse:attribute`. See [Calls to Cargo](ABUSE.md#calls-to-cargo).
 
