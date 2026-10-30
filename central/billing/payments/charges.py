@@ -454,7 +454,7 @@ def settle_checkout_attempt(attempt: str, payment) -> dict:
 	settled = _settle_invoice(att, payment)
 	return {
 		"attempt": att.name,
-		"status": frappe.db.get_value("Payment Attempt", att.name, "status"),
+		"status": att.status,
 		"settled": settled,
 	}
 
@@ -733,6 +733,7 @@ def _refund_to_source(inv, attempt) -> None:
 	refund = refunds.issue_refund(
 		attempt.name, destination="Source", reason=f"{inv.name} was already paid", late_capture=True
 	)
+	attempt.reload()  # the refund moved the attempt to Refunded through its own copy
 	outcome = "refunded to its source" if refund.status == "Completed" else "could not be refunded"
 	_flag_payment(
 		inv,
