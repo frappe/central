@@ -63,6 +63,8 @@ Atlas reports one virtual machine per delivery.
 | `status` | For `vm.state` | `running`, `stopped`, or `paused` |
 | `observed_at` | For `vm.state` | The region's own timestamp. Central orders reports by it and drops one that is not newer. |
 
+Planned abuse protection adds the `vm.network` event. See [Planned: `vm.network`](#planned-vmnetwork).
+
 For `vm.state`, Central records `running` as `Running`, `stopped` as `Stopped`, and `paused` as `Paused`. Central never records a status it was not told.
 
 Atlas sends `vm.state.deleted` after Metal confirms that the machine is absent. Central records the server as `Terminated`, closes its billing, revokes its Pilot credentials, and completes a waiting terminate action. Termination is final, so Central ignores `status` and `observed_at` on this event and does no ordering check. A lost deletion is corrected by a scoped read that answers not found. See [resource actions](../central/infrastructure/doctype/resource_action/SPEC.md).
@@ -73,15 +75,40 @@ An accepted report is applied by a background job, not in the request. The reply
 {"queued": true, "resource_id": "vm-0a1b2c3d4e"}
 ```
 
+### Planned: `vm.network`
+
+Atlas sends `vm.network` when one of three fields of the Atlas Virtual Machine State changes: `network_desired_generation`, `network_observed_generation`, or `network_error`. These fields mirror Metal. So Central learns when Metal applies a change, when Metal reports an error, and when an Atlas operator changes a restriction. The generations belong to the complete VM spec, so a change that is not a network change also sends the event. Each event costs Central one `GET` VM. See [Atlas events to Central](https://github.com/frappe/atlas/blob/develop/docs/abuse/contract.md#events-to-central).
+
+| Field | Required | Value |
+|---|---|---|
+| `event` | Yes | `vm.network` |
+| `virtual_machine` | Yes | The Atlas VM ID |
+| `server` | No | The Atlas host of the VM |
+| `desired_generation` | No | The VM spec generation that Atlas sent to Metal |
+| `observed_generation` | No | The VM spec generation that Metal applied |
+| `host_error` | No | The error that Metal reported, or an empty string |
+| `observed_at` | Yes | The region's own timestamp, as in `vm.state` |
+
+```json
+{"event": "vm.network", "virtual_machine": "vm-0a1b2c3d4e", "server": "metal-bom-01", "desired_generation": 42, "observed_generation": 42, "host_error": "", "observed_at": "2026-11-12 10:00:05"}
+```
+
+- The event is only a trigger. Central reads the Atlas `GET` VM response and runs the steps of its repair scan for the VM. It does not record the status of the server from this event. See [Restriction states](ABUSE.md#restriction-states) and [Events from Atlas](ABUSE.md#events-from-atlas).
+- Central queues one job for each VM. A repeated or late event reads the same state again and changes nothing, so Central does no ordering check on `observed_at`.
+- The normal repair scan stays as the backup for a lost event.
+- Deploy: an older Central answers `unsupported event 'vm.network'` and drops the event. Central ships the handler before Atlas reruns `configure_state_webhooks`, which adds the delivery.
+
 ## Cargo reports
 
 Cargo reports one service per delivery.
 
 | Field | Required | Value |
 |---|---|---|
-| `service` | Yes | `telemetry` or `storage` |
-| `status` | Yes | `Available` or `Not Available` |
+| `service` | Yes | `telemetry`, `storage`, or `abuse` |
+| `status` | For `telemetry` and `storage` | `Available` or `Not Available` |
 | `service_endpoint` | No | The URL consumers reach the service at |
+
+Planned: an `abuse` report carries the findings of Watcher, the Cargo abuse detection. It has a `findings` list, and no `status` or `service_endpoint`. Central handles it in its own branch of `accept_cargo_report`, before the status check, and writes no Service Detail row for it. The shape is in [Abuse protection](ABUSE.md#reports-from-cargo).
 
 Cargo must map its own lifecycle states before it sends. Central records availability, not a Cargo state name. A cluster or host that is `Active` reports `Available`. Any other settled state reports `Not Available`.
 
@@ -115,13 +142,13 @@ An ignored report is authentic and readable. Central has nothing to do with it. 
 |---|---|---|
 | `unreadable body` | Both | The body is not a JSON object |
 | `unknown server` | Atlas | No Virtual Machine in this region carries that VM ID |
-| `unsupported event '<value>'` | Atlas | The event is not `vm.state` or `vm.state.deleted` |
+| `unsupported event '<value>'` | Atlas | The event is not `vm.state` or `vm.state.deleted`. Planned: `vm.network` is also supported. |
 | `unsupported status '<value>'` | Atlas | The status of a `vm.state` report is not `running`, `stopped`, or `paused` |
 | `invalid observed_at` | Atlas | `observed_at` of a `vm.state` report is missing or is not a timestamp |
 | `no change` | Atlas | Central already records this state, or the server of a `vm.state.deleted` report is already `Terminated` |
 | `stale report` | Atlas | `observed_at` is not newer than the last report Central applied |
-| `unsupported service '<value>'` | Cargo | The service is not `telemetry` or `storage` |
-| `unsupported status '<value>'` | Cargo | The status is not `Available` or `Not Available` |
+| `unsupported service '<value>'` | Cargo | The service is not `telemetry`, `storage`, or `abuse` |
+| `unsupported status '<value>'` | Cargo | The status of a `telemetry` or `storage` report is not `Available` or `Not Available` |
 
 A region may report on a timer instead of on change. When a same-state report has a newer `observed_at`, Central advances `Virtual Machine.last_reported_at` and answers `no change`. This stops an older state change that arrives later from changing the server.
 
