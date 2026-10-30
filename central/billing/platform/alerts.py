@@ -44,11 +44,8 @@ def stale_attempts() -> list[dict]:
 			"team": a.team,
 			"detail": f"{a.status} since {a.initiated_at}",
 		}
-		for a in frappe.get_all(
-			"Payment Attempt",
-			filters={"status": ["in", invariants.IN_FLIGHT], "initiated_at": ["<", cutoff]},
-			fields=["name", "team", "status", "initiated_at"],
-			limit=100,
+		for a in invariants.unheld_attempts_in_flight(
+			cutoff, ["name", "team", "status", "initiated_at"], limit=100
 		)
 	]
 

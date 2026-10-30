@@ -191,6 +191,53 @@ class TestPaidNeverExceedsCaptured(InvariantTestBase):
 		self.assertEqual((found[0].expected, found[0].actual), (200, 500))
 
 
+class TestNoStuckAttempts(InvariantTestBase):
+	"""P4 — an attempt in flight past the threshold is stuck, unless a gateway hold covers it."""
+
+	def tearDown(self):
+		frappe.db.delete("Payment Attempt", {"team": TEAM})
+		frappe.db.delete("Invoice", {"team": TEAM})
+		super().tearDown()
+
+	def _attempt_held_for(self, hours: int) -> str:
+		invoice = frappe.get_doc(
+			{
+				"doctype": "Invoice",
+				"team": TEAM,
+				"status": "Open",
+				"currency": "INR",
+				"period_start": "2098-04-01",
+				"period_end": "2098-04-30",
+				"total": 500,
+			}
+		).insert(ignore_permissions=True)
+		now = frappe.utils.now_datetime()
+		return (
+			frappe.get_doc(
+				{
+					"doctype": "Payment Attempt",
+					"invoice": invoice.name,
+					"team": TEAM,
+					"amount": 500,
+					"currency": "INR",
+					"status": "Initiated",
+					"initiated_at": frappe.utils.add_to_date(now, hours=-2),
+					"gateway_hold_until": frappe.utils.add_to_date(now, hours=hours),
+				}
+			)
+			.insert(ignore_permissions=True)
+			.name
+		)
+
+	def test_an_attempt_the_gateway_still_holds_is_not_stuck(self):
+		self._attempt_held_for(30)
+		self.assertEqual(self._mine(invariants.audit("P4"), "P4"), [])
+
+	def test_an_attempt_past_its_hold_is_stuck(self):
+		attempt = self._attempt_held_for(-1)
+		self.assertEqual([v.subject for v in self._mine(invariants.audit("P4"), "P4")], [attempt])
+
+
 class TestPaidInvoiceIsCovered(InvariantTestBase):
 	"""I5 — a Paid invoice was covered by the card, the wallet and the GST paid with top-ups."""
 

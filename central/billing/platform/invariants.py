@@ -386,12 +386,25 @@ def check_no_stuck_attempts() -> list[Violation]:
 			detail=f"Attempt still '{a.status}' after {STUCK_ATTEMPT_MINUTES} minutes — "
 			"its outcome at the gateway is unknown and unreconciled.",
 		)
-		for a in frappe.get_all(
-			"Payment Attempt",
-			filters={"status": ["in", IN_FLIGHT], "initiated_at": ["<", stale]},
-			fields=["name", "team", "currency", "amount", "status"],
-		)
+		for a in unheld_attempts_in_flight(stale, ["name", "team", "currency", "amount", "status"])
 	]
+
+
+def unheld_attempts_in_flight(initiated_before, fields: list[str], limit: int = 0) -> list[frappe._dict]:
+	"""Attempts in flight since before `initiated_before` that no gateway hold covers now.
+
+	A held attempt waits for its gateway on purpose (a Razorpay debit in progress, an
+	Indian card's pre-debit notice), so it is not stuck until its hold ends."""
+	return frappe.get_all(
+		"Payment Attempt",
+		filters={"status": ["in", IN_FLIGHT], "initiated_at": ["<", initiated_before]},
+		or_filters=[
+			["gateway_hold_until", "is", "not set"],
+			["gateway_hold_until", "<=", frappe.utils.now_datetime()],
+		],
+		fields=fields,
+		limit=limit,
+	)
 
 
 CHECKS = {

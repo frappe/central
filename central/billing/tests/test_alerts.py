@@ -203,6 +203,19 @@ class TestOperatorAlertSources(ReconTestBase):
 		attempt = self._captured_attempt(self._open_invoice(), minutes_old=60)
 		self.assertFalse([a for a in alerts.unsettled_captures() if a["subject"] == attempt])
 
+	def test_a_debit_the_gateway_still_holds_is_not_stale(self):
+		attempt = self._captured_attempt(
+			self._open_invoice(), minutes_old=alerts.ATTEMPT_STALE_HOURS * 60 + 5
+		)
+		hold_until = frappe.utils.add_to_date(frappe.utils.now_datetime(), hours=12)
+		frappe.db.set_value(
+			"Payment Attempt", attempt, {"status": "Initiated", "gateway_hold_until": hold_until}
+		)
+		self.assertFalse([a for a in alerts.stale_attempts() if a["subject"] == attempt])
+
+		frappe.db.set_value("Payment Attempt", attempt, "gateway_hold_until", None)
+		self.assertTrue([a for a in alerts.stale_attempts() if a["subject"] == attempt])
+
 	def test_a_charge_the_gateway_refused_to_create_is_an_alert(self):
 		from central.billing.payments import decline
 
