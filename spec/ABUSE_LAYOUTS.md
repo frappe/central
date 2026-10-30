@@ -169,7 +169,7 @@ Not team-scoped. Only `Abuse Responder` reads it. Naming: `AR-.#####`.
 
 | Child | Fields |
 |---|---|
-| Abuse Report Item | `address` Data, `hostname` Data, `port` Int, `event_time` Datetime, `server` Data (name of the attributed Central Virtual Machine, as plain text), `attribution_method` Select (Public IP History, NAT Log, Proxy Route, Site Record, Unknown), `abuse_case` Link Abuse Case |
+| Abuse Report Item | `address` Data, `hostname` Data, `port` Int, `event_time` Datetime, `server` Data (name of the attributed Central Virtual Machine, as plain text), `attribution_method` Select (Public IP History, NAT Port Range, Proxy Route, Site Record, Unknown), `abuse_case` Link Abuse Case |
 
 - `abuse_case` is on each item, not on the report. See [Decided](#decided), item 2.
 - The parser fills `customer_evidence` with the reporter's details removed. A responder can edit it before the notice goes out. Central never forwards raw attachments. See [Redaction](ABUSE.md#redaction).

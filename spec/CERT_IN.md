@@ -15,7 +15,7 @@ From the CERT-In Directions of 28 April 2022 and the FAQs of May 2022:
 - The entity that notices an incident must report it. The duty cannot be transferred (Q13). It overrides contract confidentiality (Q22).
 - The FAQs do not define "noticing" (Q24).
 - Name a point of contact (Q29) and register it with CERT-In by email.
-- Keep logs for 180 days. Storage outside India is allowed if the logs can be produced (Q35).
+- Keep logs for 180 days. Storage outside India is allowed if the logs can be produced (Q35). See [Logs](#logs).
 - Sync clocks to NIC or NPL, or to sources traceable to them (Direction (i)).
 - CERT-In publishes its incident contacts on its [contact page](https://www.cert-in.org.in/s2cMainServlet?pageid=CONTACTUS): email incident@cert-in.org.in, phone +91-11-22902657. Central reads the report address from `cert_in_incident_email`.
 
@@ -50,13 +50,24 @@ This reading of Q24 needs a legal check before Central automates the clock.
 
 "Build report" refuses until all the `cert_in_contact_*` fields in Central Settings are set. See [Settings](ABUSE.md#settings).
 
+## Logs
+
+The regional log bucket keeps these logs for 180 days. See [Cargo abuse logs](https://github.com/frappe/cargo/blob/develop/docs/abuse-logs.md).
+
+- The flow log: the public flows of each VM, recorded by Metal at the VM tap. See [Atlas flow log](https://github.com/frappe/atlas/blob/develop/docs/abuse/metrics.md#flow-log).
+- The SNI log. See [Atlas SNI log](https://github.com/frappe/atlas/blob/develop/docs/abuse/metrics.md#sni-log).
+- The NAT port ranges: the source port range of each VM on a shared host address. See [Atlas NAT port ranges](https://github.com/frappe/atlas/blob/develop/docs/abuse/metrics.md#nat-port-ranges).
+- The proxy access logs.
+
+The logs stay in the region. Central reads none of them. For attribution of a shared address, Central calls Cargo `attribute_address`. See [Calls to Cargo](ABUSE.md#calls-to-cargo).
+
 ## Compliance gaps
 
 | Gap | Fix |
 |---|---|
 | Point of contact | Not named yet. Name it, register it with CERT-In, and fill the `cert_in_contact_*` fields. |
 | Time source | Hosts and service VMs do not use NIC or NPL time servers. Point chrony at `samay1.nic.in`, `samay2.nic.in`, and `time.nplindia.org` after a check of the hostnames. This is Atlas work. |
-| Logs | There is no NAT log, and proxy access logs rotate within hours on each node. [Cargo abuse logs](https://github.com/frappe/cargo/blob/develop/docs/abuse-logs.md) and [Public IP history](ABUSE.md#public-ip-history) fix this. |
+| Logs | There is no record of tenant flows or of the NAT source ports of a VM, and proxy access logs rotate within hours on each node. The logs in [Logs](#logs) and [Public IP history](ABUSE.md#public-ip-history) fix this from Phase 1. See [Deploy order](ABUSE.md#deploy-order). |
 
 ## Sources
 

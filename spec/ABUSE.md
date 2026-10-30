@@ -34,25 +34,25 @@ Out of scope:
 5. Restrict traffic, never compute. The abuse system never pauses or stops a VM.
 6. Keep evidence before it is destroyed. Central snapshots the disk before it terminates a server with an open case or an active restriction. Never stop and start a VM to collect evidence.
 7. Detection failure must not block customers. If Datum, Watcher, Atlas, or Central is down, nothing new is applied, and automatic restrictions still end at `expires_at`.
-8. Atlas stays backward compatible: optional fields and new endpoints only. Watcher deploys last. See [Deploy order](#deploy-order).
+8. Atlas stays backward compatible: optional fields and new endpoints only. Watcher deploys last, in Phase 3. See [Deploy order](#deploy-order).
 
 ## Who does what
 
 | Component | Responsible for | Acts alone |
 |---|---|---|
-| Metal (each host) | `restrictions` and `is_port_25_blocked` in the VM network object, per-VM counters exported to Datum, NAT and SNI logs uploaded to the log bucket, the `metal_abuse` chain, the `smtp_outbound` port 25 block | No |
+| Metal (each host) | `restrictions` and `is_port_25_blocked` in the VM network object, per-VM counters exported to Datum, the flow log, the SNI log, and the NAT port range log uploaded to the log bucket, the `metal_abuse` chain, the `smtp_outbound` port 25 block | No |
 | Atlas app (each region) | The restriction API and the port 25 API, which read, merge, and replace the Metal VM network object. The log write keys from Cargo in host and proxy config. Atlas keeps no restriction record. | Emergency restrictions by an Atlas operator only |
 | HTTP proxy | Static rate limits, the abuse tombstone, the access log upload | No |
-| Cargo | Log bucket and keys, the per-VM metric table in Datum and the `watcher` read user | No |
-| Watcher (Cargo) | Finding codes, threshold rules, windows, thresholds, feeds, mining detection, hostname and address checks, calibration, NAT log attribution, the `abuse` report to Central | No |
+| Cargo | Log bucket and keys, the per-VM metric table in Datum and the `watcher` read user, `attribute_address` from the NAT port range log | No |
+| Watcher (Cargo) | Finding codes, threshold rules, windows, thresholds, feeds, mining detection, hostname and address checks, calibration, the `abuse` report to Central | No |
 | Central | Profiles, exceptions, brand-term scoring, Abuse Signal, Abuse Case, the policy engine, reports, all customer messages, the abuse dashboard, CERT-In, public IP history | Yes |
 | Pilot | Nothing | Not applicable |
 
 ```text
 Metal host          metrics      Datum (Cargo)       read user     Watcher (Cargo)
 counters      ───────────────▶  vm_abuse_*, 30 d  ─────────────▶  finding codes, thresholds
-NAT, SNI logs ───────────────▶  Cargo log bucket  ─────────────▶  feeds ◀── blocklists, DNSBLs
-                                       ▲            read key      NAT log attribution
+flow, SNI,    ───────────────▶  Cargo log bucket  ─────────────▶  feeds ◀── blocklists, DNSBLs
+NAT range logs                         ▲            read key      NAT range attribution
 HTTP proxy: limits, tombstone, ────────┘                                │ abuse report
             access log                                                  ▼
                                                                   Central: profiles, Abuse Signal
@@ -76,7 +76,7 @@ Add `security:view` and `security:manage` to [Capabilities](../CAPABILITIES.md) 
 
 ## Findings from Watcher
 
-Watcher finds abuse. It is a planned module of Cargo in each region. It reads the per-VM metrics in Datum, the NAT, SNI, and proxy access logs in the log bucket, and external feeds and shared abuse databases. It sends each finding to Central in an `abuse` report. See [Reports from Cargo](#reports-from-cargo).
+Watcher finds abuse. It is a planned module of Cargo in each region. It reads the per-VM metrics in Datum, the flow, SNI, NAT port range, and proxy access logs in the log bucket, and external feeds and shared abuse databases. It sends each finding to Central in an `abuse` report. See [Reports from Cargo](#reports-from-cargo).
 
 Cargo documents detection:
 
@@ -89,11 +89,12 @@ Cargo documents detection:
 
 Central acts on findings:
 
+- Watcher starts in Phase 3. Central acts on Watcher findings in production only from Phase 3. In Phase 2, Central acts in production only on abuse reports and operator actions. In Phase 2, the Cargo `tools/fake_watcher` (planned) posts sample findings to a Central test or staging site, never to production. See [Deploy order](#deploy-order).
 - Watcher knows no teams, trials, or profiles. Central maps the subject of each finding to a team, and applies the [profile](#profiles) and any approved [exception](#exceptions).
 - `virtual_machine` is the Atlas VM ID, for example `vm-0a1b2c3d4e`. Central matches it to `Virtual Machine.atlas_vm_id`. Central skips a finding on a VM that it does not know. These are the tenant 0 infrastructure VMs.
 - Central reads no metrics and no logs. Neither Central nor Watcher reads the content of VM traffic.
 - Central makes one finding itself, `Phishing:Site/LookalikeDomain`, because it needs the team age. See [Phishing sites](#phishing-sites).
-- A flood or a scan can continue for about 3 min before Central restricts the VM. No automatic limit exists before that. See [Cargo windows](https://github.com/frappe/cargo/blob/develop/docs/watcher.md#windows).
+- From Phase 3, when the thresholds are Active, a flood or a scan can continue for about 3 min before Central restricts the VM. No automatic limit exists before that. See [Cargo windows](https://github.com/frappe/cargo/blob/develop/docs/watcher.md#windows).
 
 The HTTP proxy has static limits for each client address and site: `limit_req` 100 requests a second with a burst of 500, and `limit_conn` 200. Central does not change them. See [Atlas HTTP proxy](https://github.com/frappe/atlas/blob/develop/docs/abuse/enforcement.md#http-proxy).
 
@@ -331,7 +332,7 @@ An Abuse Exception lets a team change how Central acts on one finding code on on
 
 ## Controls
 
-Neither Central nor Watcher reads the content of a VM's traffic. Metal reads only the TLS server name and, for mining, the first payload bytes of new flows to non-standard ports. The AUP and the privacy policy must say so before Metal turns on the SNI log.
+Neither Central nor Watcher reads the content of a VM's traffic. For the counters and the flow log, Metal reads only packet headers. Of the payload, Metal reads only the TLS server name and, for mining, the first payload bytes of new flows to non-standard ports. Flow rows and SNI rows hold remote addresses, and can be personal data. The AUP and the privacy policy must say so. They must be published before an operator turns on `is_abuse_logs_enabled` in Atlas Settings. Metal records and uploads the flow log and the SNI log only when it is on. See [Atlas flow log](https://github.com/frappe/atlas/blob/develop/docs/abuse/metrics.md#flow-log).
 
 ### Email
 
@@ -364,7 +365,7 @@ Port 25 unblock flow:
 - A VM created before the rollout has port 25 open and no Port 25 Request. On a DNSBL finding or a spam finding on it, Central sends `is_blocked: true` to the Atlas port 25 route. The customer can then create a Port 25 Request.
 - For `Spam:VM/Smtp` with a DNSBL listing, Central applies `port_block` on the ports of the `smtp` and `submission` classes. An operator gets the address delisted.
 - DNSBL notices that arrive by email become Abuse Reports. See [Report intake](#report-intake).
-- Every hour, Watcher checks two sets of addresses against DNSBLs, Microsoft SNDS, and Shadowserver: the dedicated public IPv4 and IPv6 addresses of each VM, and the public source addresses in the NAT log. Watcher reports each listing as a finding. See [Cargo feeds](https://github.com/frappe/cargo/blob/develop/docs/watcher.md#feeds).
+- Every hour, Watcher checks two sets of addresses against DNSBLs, Microsoft SNDS, and Shadowserver: the dedicated public IPv4 and IPv6 addresses of each VM, and the shared host addresses in the NAT port range log. Watcher reports each listing as a finding. See [Cargo feeds](https://github.com/frappe/cargo/blob/develop/docs/watcher.md#feeds).
 - A finding on a dedicated address has `address` and `virtual_machine`. It follows the normal policy: a case, the response above, and the revoke of the Port 25 Request.
 - Central checks through [Public IP history](#public-ip-history) when the server got the address. If the server got it less than 7 days before Central gets the finding, Central posts the listing to Raven `#abuse` and opens no case for the new team. An operator gets the address delisted.
 - A finding on a shared NAT address has `address` only. It names no single server. Central posts its listing to Raven `#abuse` and opens no case.
@@ -389,7 +390,7 @@ This flow applies only after Cargo offers public buckets. Cargo has no public bu
 
 ### Mining
 
-The AUP forbids mining on every server, trial or paid. CPU use alone is never evidence. Watcher finds mining from the stratum counter, and from mining pool matches in the NAT and SNI logs. See [Cargo finding codes](https://github.com/frappe/cargo/blob/develop/docs/watcher.md#finding-codes).
+The AUP forbids mining on every server, trial or paid. CPU use alone is never evidence. Watcher finds mining from the stratum counter, and from mining pool matches in the flow and SNI logs. See [Cargo finding codes](https://github.com/frappe/cargo/blob/develop/docs/watcher.md#finding-codes).
 
 | Team | Outcome |
 |---|---|
@@ -424,7 +425,7 @@ Central records each change of `public_ipv4` or `public_ipv6` on a Virtual Machi
 - Attribution finds the row where `attached_at <= t < detached_at`, or where `detached_at` is empty.
 - Each day without this record loses history, so it comes first in the implementation.
 
-A shared NAT address names no single server. For it, Central calls Cargo `attribute_address`. See [Calls to Cargo](#calls-to-cargo).
+A shared NAT address names no single server. For it, Central calls Cargo `attribute_address`, which reads the NAT port range log. See [Calls to Cargo](#calls-to-cargo).
 
 ## Report intake
 
@@ -456,7 +457,7 @@ A standalone DocType. It is not team-scoped. Only `Abuse Responder` reads it. La
 3. Attribute each item:
    - Hostname: Central site records (Site Domain) first, then proxy routes. Method Site Record or Proxy Route.
    - Dedicated address: the [Public IP Assignment](#public-ip-history) row for the address and time. Method Public IP History.
-   - Shared NAT address: Cargo `attribute_address` with the address, port, and time. Method NAT Log. See [Calls to Cargo](#calls-to-cargo).
+   - Shared NAT address: Cargo `attribute_address` with the address, port, and time. Method NAT Port Range. See [Calls to Cargo](#calls-to-cargo).
    - Proxy address: the hostname in the report, as above. Without a hostname, the item is `Unattributed`.
    - No match: `Unattributed`, to the dashboard queue. Never guess.
 4. Merge: an item for a server with an open case of the same category joins that case. Ten complaints make one case and one notice.
@@ -626,6 +627,7 @@ Case view:
 - `track_changes` is on for Abuse Case, Abuse Exception, Abuse Signal, and Port 25 Request. Central Resource Actions and Abuse Case Restriction rows are the audit record of who restricted a VM and why. For an emergency restriction, the Comment on the Atlas Virtual Machine is the record.
 - The Central investigator agent gets read tools for abuse cases.
 - The abuse dashboard shows the finding lag of each region in "Finding lag by region": the age of each `checked_until` value in the last `abuse` report of the region.
+- Central starts the checks below for a region when it gets the first `abuse` report from that region. Before Phase 3, a production region sends no `abuse` report, so Central does not alert for it. See [Deploy order](#deploy-order).
 - Central posts to Raven `#abuse` when a region sends no `abuse` report for 10 min, when `checked_until.metrics` or `checked_until.logs` is more than 15 min old, or when `checked_until.feeds` is more than 2 h old. See [Reports from Cargo](#reports-from-cargo).
 
 ## Interfaces
@@ -727,7 +729,7 @@ Through `central/integrations/proxy.py`:
 
 Central calls these through `central/integrations/cargo.py`:
 
-- `attribute_address(address, port, time)`: returns the Atlas VM ID that used a shared NAT address and port at that time, or nothing. Watcher reads the NAT log for it. Report attribution uses it. See [Processing](#processing) and [Cargo attribution](https://github.com/frappe/cargo/blob/develop/docs/watcher.md#attribution).
+- `attribute_address(address, port, time)`: returns the Atlas VM ID that used a shared NAT address and port at that time, or nothing. Cargo reads the NAT port range log for it. It does not need Watcher detection, so it ships in Phase 2. Report attribution uses it. See [Processing](#processing), [Cargo attribution](https://github.com/frappe/cargo/blob/develop/docs/watcher.md#attribution), and [Atlas NAT port ranges](https://github.com/frappe/atlas/blob/develop/docs/abuse/metrics.md#nat-port-ranges).
 - `suspend_bucket(name, region, reason_code)`: turns off website access on a public bucket. The bucket and its objects stay.
 - `unsuspend_bucket(name, region)`: turns website access on again.
 
@@ -737,7 +739,7 @@ Central sends a token for that region's Cargo in each call:
 - `attribute_address` uses an `atlas-cargo:<region>` token with the new scope `abuse:attribute`. A new function in `central/sso.py` mints it with `_mint_regional_token`, in the same way as `mint_cargo_token`. It has the same 5 min TTL and the same signing key as `mint_cargo_token`, with `iss` = `central`.
 - Cargo accepts `attribute_address` only with a token that Central signed with scope `abuse:attribute`. It refuses a token that Atlas issued, and every other scope, with HTTP 403.
 
-Central never reads the log bucket or Datum. Log rows stay in the region, because SNI rows can be personal data.
+Central never reads the log bucket or Datum. Log rows stay in the region, because flow rows and SNI rows can be personal data.
 
 ### Reports from Cargo
 
@@ -835,7 +837,7 @@ Each evidence field is optional:
 
 Deletion jobs follow `clear_old_logs` (Log Settings), so all Central periods are visible and editable in one place.
 
-Datum keeps the per-VM metrics for 30 days. The log bucket keeps the logs for 180 days. See [Cargo abuse logs](https://github.com/frappe/cargo/blob/develop/docs/abuse-logs.md). Atlas keeps no restriction record. An entry stays in the Metal VM network object until Central or an Atlas operator lifts it, or until Atlas removes it after its `expires_at`. The Abuse Case Restriction rows and the Resource Actions keep the history in Central.
+Datum keeps the per-VM metrics for 30 days. The log bucket keeps the flow log, the SNI log, the NAT port range log, and the proxy access logs for 180 days. See [Cargo abuse logs](https://github.com/frappe/cargo/blob/develop/docs/abuse-logs.md). Atlas keeps no restriction record. An entry stays in the Metal VM network object until Central or an Atlas operator lifts it, or until Atlas removes it after its `expires_at`. The Abuse Case Restriction rows and the Resource Actions keep the history in Central.
 
 ### Legal hold
 
@@ -860,14 +862,38 @@ Evidence holds no payloads. Addresses shown to customers are truncated to /24.
 
 ## Deploy order
 
-1. The Datum release: the per-VM table with its 30-day TTL, the ingest that routes `vm_abuse_*` series to that table, and the `watcher` read user. See [Cargo per-VM metrics](https://github.com/frappe/cargo/blob/develop/docs/abuse-logs.md#per-vm-metrics). Cargo: the log bucket, the `permission` argument of `add_credentials`, and the `abuse:attribute` scope check on `attribute_address`.
-2. Atlas app: the restriction API and the port 25 API, the `restrictions` and `is_port_25_blocked` create fields, the log write key provisioning, and the Atlas Settings fields. A patch makes a write key for each existing Metal host and proxy node and writes it into their config. See [Atlas log bucket keys](https://github.com/frappe/atlas/blob/develop/docs/abuse/contract.md#log-bucket-keys).
-3. Metal: `restrictions` and `is_port_25_blocked` in the VM network object, the `metal_abuse` chain, the counters behind `abuse_metrics`, and the log upload.
-4. HTTP proxy: the tombstone and the log upload.
-5. Central: the `abuse:attribute` token, the `abuse` report branch, profiles, cases, restrictions, and `is_port_25_blocked` on every VM create.
-6. An operator turns on `is_abuse_metrics_enabled` in Atlas Settings. Watcher starts with every Abuse Threshold in Shadow, then goes Active one finding code at a time. See [Cargo calibration](https://github.com/frappe/cargo/blob/develop/docs/watcher.md#calibration).
+Abuse protection ships in three phases. Each phase is an ordered list. A phase starts after the previous phase is complete.
 
-All Atlas changes are optional fields: an old Central ignores them. Central must accept `abuse` reports before Watcher sends them in step 6, because an older Central drops them. Public IP history has no dependency, so Central can ship it before step 1.
+### Phase 1: Flow log and counters
+
+Data collection, and one data plane change: the NAT port ranges. The NAT port ranges change live NAT on every host. There is no detection and no action. See [Atlas NAT port ranges](https://github.com/frappe/atlas/blob/develop/docs/abuse/metrics.md#nat-port-ranges).
+
+1. Datum release: the per-VM table with a 30-day TTL, the routing of `vm_abuse_*` series to that table, and the `watcher` read user. See [Cargo per-VM metrics](https://github.com/frappe/cargo/blob/develop/docs/abuse-logs.md#per-vm-metrics).
+2. Cargo: the log bucket, its lifecycle rules, and the `permission` argument of `add_credentials`. See [Cargo abuse logs](https://github.com/frappe/cargo/blob/develop/docs/abuse-logs.md).
+3. Atlas app: the log write key provisioning, the Atlas Settings "Log Bucket" section, `is_abuse_metrics_enabled`, `is_nat_port_range_enabled`, and `is_abuse_logs_enabled`. All three are off by default. A patch makes a write key for each existing Metal host and proxy node and writes it into their config. See [Atlas log bucket keys](https://github.com/frappe/atlas/blob/develop/docs/abuse/contract.md#log-bucket-keys).
+4. Metal: the counters behind `abuse_metrics`, the flow log, the SNI log, the NAT port ranges and their log, and the log upload. See [Atlas flow log](https://github.com/frappe/atlas/blob/develop/docs/abuse/metrics.md#flow-log) and [Atlas NAT port ranges](https://github.com/frappe/atlas/blob/develop/docs/abuse/metrics.md#nat-port-ranges).
+5. HTTP proxy: the access log upload.
+6. After the AUP and the privacy policy state the collection, an operator turns on `is_abuse_metrics_enabled`, `is_nat_port_range_enabled`, and `is_abuse_logs_enabled` in Atlas Settings, in that order. Atlas Settings apply to every host in the region. After each switch, the operator checks host CPU, NAT errors and object sizes before the next switch. The operator checks the object sizes against the estimates in [Atlas flow log](https://github.com/frappe/atlas/blob/develop/docs/abuse/metrics.md#flow-log).
+
+### Phase 2: Findings and restrictions
+
+Central acts on sample findings, reports, and operator actions. There is no Watcher yet.
+
+1. Cargo: `attribute_address` with the `abuse:attribute` scope check. It reads the NAT port range log. It does not need Watcher detection. See [Calls to Cargo](#calls-to-cargo).
+2. Atlas app: the restriction API, the port 25 API, and the `restrictions` and `is_port_25_blocked` create fields. See [Atlas restriction API](https://github.com/frappe/atlas/blob/develop/docs/abuse/contract.md#restriction-api).
+3. Metal: `restrictions` and `is_port_25_blocked` in the VM network object, and the `metal_abuse` chain. See [Atlas metal_abuse chain](https://github.com/frappe/atlas/blob/develop/docs/abuse/enforcement.md#metal_abuse-chain).
+4. HTTP proxy: the tombstone.
+5. Central: the `abuse` report branch, profiles, exceptions, signals, cases, restrictions, the port 25 block on every VM create, report intake, customer messages, and the `abuse:attribute` token. In production, Central acts only on abuse reports and operator actions in this phase.
+6. Cargo: `tools/fake_watcher` (planned), next to `tools/fake_atlas` and `tools/fake_proxy`. It posts signed `abuse` reports with sample findings, from fixture files, to a Central test or staging site. It posts only to a Central that has the `abuse` report branch from step 5. It never posts to production.
+
+Central must accept `abuse` reports before Watcher sends them in Phase 3, because an older Central drops them. Step 5 of this phase ships the `abuse` report branch.
+
+### Phase 3: Watcher
+
+1. Cargo: Watcher, Abuse Threshold, and Abuse Feed, with every Abuse Threshold in Shadow. See [Cargo Watcher](https://github.com/frappe/cargo/blob/develop/docs/watcher.md).
+2. Calibration against the Phase 1 data, then Active one finding code at a time. See [Cargo calibration](https://github.com/frappe/cargo/blob/develop/docs/watcher.md#calibration).
+
+All Atlas changes are optional fields: an old Central ignores them. Public IP history has no dependency, so Central can ship it before Phase 1.
 
 ## Compared with AWS
 
