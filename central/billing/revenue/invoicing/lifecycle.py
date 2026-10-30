@@ -78,19 +78,8 @@ def open_and_collect(invoice: str, collect: bool = True) -> dict:
 		if collectable > 0
 		else frappe._dict(wallet=0, advance=0, gst=0)
 	)
-	if draw.wallet > 0:
-		credits.apply_credit(
-			doc.team,
-			draw.wallet,
-			doc.currency,
-			reference_type="Invoice",
-			reference_name=invoice,
-			note=f"Credit applied to {invoice}",
-		)
+	_apply_draw(doc, draw)
 	applied = draw.wallet
-	doc.credit_applied = draw.wallet
-	doc.advance_applied = draw.advance
-	doc.advance_tax_applied = draw.gst
 	# Auto-charge target = gross total, less withheld TDS, less credits and the GST
 	# already paid with the top-ups those credits came from.
 	doc.expected_collection = frappe.utils.flt(collectable - draw.wallet - draw.gst, 2)
@@ -104,12 +93,7 @@ def open_and_collect(invoice: str, collect: bool = True) -> dict:
 
 	# Credits cover it in full — settled, no card charge needed.
 	if doc.expected_collection <= 0:
-		doc.paid_at = frappe.utils.now_datetime()
-		transition(doc, "Paid", reason="credits covered in full", actor="scheduler", amount=applied)
-		save_billing_record(doc)
-		from central.billing.ingester.erpnext_sync import enqueue_invoice_sync
-
-		enqueue_invoice_sync(doc.name)
+		_settle_paid_by_credit(doc, "credits covered in full", applied)
 		return {
 			"invoice": invoice,
 			"claimed": True,
@@ -165,7 +149,7 @@ def _settle_with_credit(invoice: str) -> dict:
 	2. Credit that settles only part of an invoice is spent only when a method can pay the
 	   rest. Otherwise it stays in the wallet until more credit settles the whole invoice.
 	"""
-	from central.billing.payments import charges, collection, collection_mode
+	from central.billing.payments import charges, collection
 
 	invoice_tbl = frappe.qb.DocType("Invoice")
 	frappe.qb.from_(invoice_tbl).select(invoice_tbl.name).where(
@@ -178,37 +162,51 @@ def _settle_with_credit(invoice: str) -> dict:
 		return {"invoice": invoice, "applied": 0}
 
 	draw = _draw_wallet(doc, due, _gst_still_due(doc, due))
-	is_covered = draw.wallet + draw.gst + 0.005 >= due
-	can_charge_rest = collection_mode.is_debit_allowed(doc.team) and collection_mode.has_chargeable_method(
-		doc.team
-	)
-	if draw.wallet <= 0 or not (is_covered or can_charge_rest):
+	remainder = frappe.utils.flt(due - draw.wallet - draw.gst, 2)
+	if draw.wallet <= 0 or (remainder > 0 and not _can_charge_rest(doc.team)):
 		return {"invoice": invoice, "applied": 0}
 
-	credits.apply_credit(
-		doc.team,
-		draw.wallet,
-		doc.currency,
-		reference_type="Invoice",
-		reference_name=invoice,
-		note=f"Credit applied to {invoice}",
-	)
+	_apply_draw(doc, draw)
+	doc.expected_collection = max(remainder, 0)
+	if remainder <= 0:
+		_settle_paid_by_credit(doc, "credit added later covered it", draw.wallet)
+		return {"invoice": invoice, "applied": draw.wallet, "status": "Paid"}
+
+	save_billing_record(doc)
+	return {"invoice": invoice, "applied": draw.wallet, "charge": collection.collect_invoice(invoice)}
+
+
+def _can_charge_rest(team: str) -> bool:
+	"""A method may be debited for what credit leaves unpaid."""
+	from central.billing.payments import collection_mode
+
+	return collection_mode.is_debit_allowed(team) and collection_mode.has_chargeable_method(team)
+
+
+def _apply_draw(doc, draw: frappe._dict) -> None:
+	"""Spend a wallet draw on the invoice and add it to what credit has paid of it."""
+	if draw.wallet > 0:
+		credits.apply_credit(
+			doc.team,
+			draw.wallet,
+			doc.currency,
+			reference_type="Invoice",
+			reference_name=doc.name,
+			note=f"Credit applied to {doc.name}",
+		)
 	doc.credit_applied = frappe.utils.flt(doc.credit_applied) + draw.wallet
 	doc.advance_applied = frappe.utils.flt(doc.advance_applied) + draw.advance
 	doc.advance_tax_applied = frappe.utils.flt(doc.advance_tax_applied) + draw.gst
-	doc.expected_collection = frappe.utils.flt(due - draw.wallet - draw.gst, 2)
-	if doc.expected_collection > 0:
-		save_billing_record(doc)
-		return {"invoice": invoice, "applied": draw.wallet, "charge": collection.collect_invoice(invoice)}
 
-	doc.expected_collection = 0
-	doc.paid_at = frappe.utils.now_datetime()
-	transition(doc, "Paid", reason="credit added later covered it", actor="scheduler", amount=draw.wallet)
-	save_billing_record(doc)
+
+def _settle_paid_by_credit(doc, reason: str, applied: float) -> None:
+	"""Move an invoice that credit paid in full to Paid and queue it for the ERPNext sync."""
 	from central.billing.ingester.erpnext_sync import enqueue_invoice_sync
 
+	doc.paid_at = frappe.utils.now_datetime()
+	transition(doc, "Paid", reason=reason, actor="scheduler", amount=applied)
+	save_billing_record(doc)
 	enqueue_invoice_sync(doc.name)
-	return {"invoice": invoice, "applied": draw.wallet, "status": "Paid"}
 
 
 def _gst_still_due(doc, due: float) -> float:
