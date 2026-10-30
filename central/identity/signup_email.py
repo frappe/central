@@ -165,6 +165,12 @@ def remember_gmail_account(doc: User, method: str | None = None) -> None:
 		frappe.cache.sadd(GMAIL_ACCOUNTS_KEY, get_gmail_inbox(local))
 
 
+def forget_gmail_accounts(doc: User, method: str | None = None) -> None:
+	"""Reload the known inboxes once a Gmail user is gone, so that person can sign up again."""
+	if doc.name.lower().rpartition("@")[2] in GMAIL_DOMAINS:
+		frappe.db.after_commit.add(lambda: frappe.cache.delete_value(GMAIL_ACCOUNTS_KEY))
+
+
 def replace_cached_set(name: str, members: list[str]) -> None:
 	"""Build the set under a new key and swap it in, so no reader sees it half filled. An empty
 	member marks a set that is loaded but has nothing in it."""

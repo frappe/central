@@ -247,6 +247,15 @@ class TestSignupGuard(IntegrationTestCase):
 
 		reserve_gmail_account(f"{local}@gmail.com")
 
+	def test_a_deleted_gmail_user_can_sign_up_again(self):
+		email = f"gone{frappe.generate_hash(length=6)}@gmail.com"
+		self.add_gmail_user(email)
+
+		frappe.delete_doc("User", email, force=True)
+		frappe.db.after_commit.run()
+
+		reserve_gmail_account(email)
+
 	def test_a_domain_change_clears_the_cache_again_after_commit(self):
 		domain = unique_domain()
 		self.block(domain)

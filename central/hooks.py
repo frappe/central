@@ -191,6 +191,7 @@ doc_events = {
 			"central.identity.signup_email.remember_gmail_account",
 		],
 		"on_update": "central.infrastructure.doctype.wireguard_device.wireguard_device.remove_disabled_user_devices",
+		"after_delete": "central.identity.signup_email.forget_gmail_accounts",
 	},
 	# A Billing Profile's level reaches Grove by the Webhook AI Settings keeps, with retries.
 	"Trust Tier Level": {
