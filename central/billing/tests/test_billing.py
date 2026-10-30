@@ -377,19 +377,20 @@ class TestCreditAddedAfterIssue(BillingTestBase):
 		self.assertEqual((inv.status, inv.credit_applied, inv.expected_collection), ("Open", 0.0, 1000.0))
 		self.assertEqual(credits.get_balance(TEAM)["balance"], 400)
 
-	def test_part_credit_is_spent_and_a_method_charged_the_rest(self):
+	def test_part_credit_waits_in_the_wallet_even_with_a_method(self):
 		name = self._open_invoice()
 		credits.purchase(TEAM, 400, "INR")
 
 		with (
-			patch("central.billing.payments.collection_mode.has_chargeable_method", return_value=True),
+			patch("central.billing.payments.collection_mode._has_chargeable_method", return_value=True),
 			patch("central.billing.payments.collection.collect_invoice") as collect,
 		):
 			lifecycle.settle_with_new_credit(TEAM)
 
 		inv = frappe.get_doc("Invoice", name)
-		self.assertEqual((inv.status, inv.credit_applied, inv.expected_collection), ("Open", 400.0, 600.0))
-		collect.assert_called_once_with(name)
+		self.assertEqual((inv.status, inv.credit_applied, inv.expected_collection), ("Open", 0.0, 1000.0))
+		self.assertEqual(credits.get_balance(TEAM)["balance"], 400)
+		collect.assert_not_called()
 
 	def test_an_invoice_with_a_charge_in_flight_keeps_the_credit_in_the_wallet(self):
 		name = self._open_invoice()

@@ -143,13 +143,13 @@ def settle_with_new_credit(team: str) -> list[dict]:
 
 
 def _settle_with_credit(invoice: str) -> dict:
-	"""Pay what the wallet can of one unpaid invoice, and charge the rest.
+	"""Pay one unpaid invoice with the wallet, when the wallet covers all of it.
 
 	1. An invoice with a charge in flight is left alone: that charge is for the whole amount.
-	2. Credit that settles only part of an invoice is spent only when a method can pay the
-	   rest. Otherwise it stays in the wallet until more credit settles the whole invoice.
+	2. Credit that covers only part of the invoice stays in the wallet. It is never split
+	   with a charge, so the customer pays the whole amount due in one way.
 	"""
-	from central.billing.payments import charges, collection
+	from central.billing.payments import charges
 
 	invoice_tbl = frappe.qb.DocType("Invoice")
 	frappe.qb.from_(invoice_tbl).select(invoice_tbl.name).where(
@@ -162,25 +162,13 @@ def _settle_with_credit(invoice: str) -> dict:
 		return {"invoice": invoice, "applied": 0}
 
 	draw = _draw_wallet(doc, due, _gst_still_due(doc, due))
-	remainder = frappe.utils.flt(due - draw.wallet - draw.gst, 2)
-	if draw.wallet <= 0 or (remainder > 0 and not _can_charge_rest(doc.team)):
+	if draw.wallet <= 0 or frappe.utils.flt(due - draw.wallet - draw.gst, 2) > 0:
 		return {"invoice": invoice, "applied": 0}
 
 	_apply_draw(doc, draw)
-	doc.expected_collection = max(remainder, 0)
-	if remainder <= 0:
-		_settle_paid_by_credit(doc, "credit added later covered it", draw.wallet)
-		return {"invoice": invoice, "applied": draw.wallet, "status": "Paid"}
-
-	save_billing_record(doc)
-	return {"invoice": invoice, "applied": draw.wallet, "charge": collection.collect_invoice(invoice)}
-
-
-def _can_charge_rest(team: str) -> bool:
-	"""A method may be debited for what credit leaves unpaid."""
-	from central.billing.payments import collection_mode
-
-	return collection_mode.is_debit_allowed(team) and collection_mode.has_chargeable_method(team)
+	doc.expected_collection = 0
+	_settle_paid_by_credit(doc, "credit added later covered it", draw.wallet)
+	return {"invoice": invoice, "applied": draw.wallet, "status": "Paid"}
 
 
 def _apply_draw(doc, draw: frappe._dict) -> None:

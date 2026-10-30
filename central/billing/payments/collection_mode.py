@@ -174,7 +174,7 @@ def choose(team: str, mode: str) -> dict:
 	first invoice would discover the gap on the customer's behalf.
 	"""
 	if mode in RETURNABLE:
-		if not has_chargeable_method(team):
+		if not _has_chargeable_method(team):
 			frappe.throw(
 				_("Add a card or UPI mandate before switching to automatic payments."),
 				frappe.ValidationError,
@@ -191,7 +191,7 @@ def choose(team: str, mode: str) -> dict:
 	return status(team)
 
 
-def has_chargeable_method(team: str) -> bool:
+def _has_chargeable_method(team: str) -> bool:
 	"""An active method that is not waiting on the customer to re-authorise it."""
 	return bool(
 		frappe.get_all(
@@ -217,5 +217,5 @@ def status(team: str) -> dict:
 		"reason": p.collection_action_reason,
 		"threshold": silent_threshold(team),
 		"choices": list(CUSTOMER_CHOOSABLE),
-		"can_return_to_auto": has_chargeable_method(team),
+		"can_return_to_auto": _has_chargeable_method(team),
 	}
