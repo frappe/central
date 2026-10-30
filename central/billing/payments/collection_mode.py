@@ -116,7 +116,11 @@ def start_auto_charge(team: str) -> None:
 		return
 	if frappe.db.count("Payment Method", {"team": team, "status": "Active"}) != 1:
 		return
-	frappe.db.set_value("Billing Profile", team, "collection_mode", "Auto Charge")
+	profile = frappe.get_doc("Billing Profile", team)
+	profile.collection_mode = "Auto Charge"
+	profile.collection_action_reason = None
+	# Billing moves the mode for the system when a method activates, not on the user's behalf.
+	profile.save(ignore_permissions=True)
 
 
 def evaluate(
