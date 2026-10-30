@@ -119,6 +119,12 @@ const routes = [
 				meta: { title: 'Invoices' },
 			},
 			{
+				path: 'billing/payments',
+				name: 'BillingPayments',
+				component: () => import('@/pages/billing/BillingPaymentsPage.vue'),
+				meta: { title: 'Payments' },
+			},
+			{
 				path: 'settings',
 				name: 'Settings',
 				component: () => import('@/pages/settings/SettingsPage.vue'),

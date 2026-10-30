@@ -12,9 +12,9 @@ Add your billing details first. Frappe Cloud needs your currency, legal name, an
 
 ## How payment methods are used
 
-The **Payment methods** card lists your prepaid credits and your payment methods in the order they are used.
+The **Methods** card on **Billing > Payments** lists your prepaid credits and your payment methods in the order they are used.
 
-<Screenshot name="billing/payment-methods" alt="The Payment methods card with prepaid credits, a Visa card marked Primary, and Add another card" />
+<Screenshot name="billing/payment-methods" alt="The Methods card with prepaid credits, a Visa card marked Primary, and Add another card" />
 
 - An invoice uses your prepaid credits first.
 - Then Frappe Cloud charges the payment method marked **Primary**.
@@ -24,8 +24,8 @@ While your wallet has a balance, the wallet is the primary and every card is a f
 
 ## Add a card
 
-1. Go to **Billing > Overview**.
-2. On the **Payment methods** card, click **Add another card**. When you have no payment method, click **Add card** in the summary panel.
+1. Go to **Billing > Payments**.
+2. On the **Methods** card, click **Add another card**. When you have no payment method, click **Add card** in the summary panel.
 3. Select **Card**. Click **Continue**.
 4. Type the card details in the secure card field.
 5. Click **Add card**.
@@ -40,14 +40,14 @@ The options in the dialog depend on your billing currency. Teams billed in INR c
 
 ## Change the order
 
-1. On the **Payment methods** card, click the **⋯** menu on a payment method.
+1. On the **Methods** card, click the **⋯** menu on a payment method.
 2. Click **Move up** or **Move down**.
 
 To charge a method first, click **Primary payment method** in the same menu. This option is not available while your wallet has a balance, because credits pay first.
 
 ## Remove a payment method
 
-1. On the **Payment methods** card, click the **⋯** menu on the payment method.
+1. On the **Methods** card, click the **⋯** menu on the payment method.
 2. Click **Remove**.
 3. Click **Remove** to confirm.
 

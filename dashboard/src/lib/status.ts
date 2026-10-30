@@ -77,7 +77,7 @@ export function invoiceTheme(status: string | null | undefined): BadgeTheme {
 }
 
 // Subscription account_standing → Badge theme. Current is the normal state and
-// stays gray; Past Due/Suspended need attention (amber) — matches PayingForRow's
+// stays gray; Past Due/Suspended need attention (amber) — matches PayingForTable's
 // inline `statusInfo` check for the same field.
 const STANDING_THEME: Record<string, BadgeTheme> = {
 	current: 'gray',

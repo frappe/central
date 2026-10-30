@@ -22,7 +22,6 @@ const streetLines = computed(() => {
 	return [
 		[p.address_line1, p.address_line2].filter(Boolean).join(', '),
 		[p.city, p.state, p.pincode].filter(Boolean).join(' '),
-		p.country,
 	].filter((line): line is string => Boolean(line))
 })
 
@@ -33,44 +32,44 @@ const gstStatus = computed(() => profile.data?.gst_status || '')
 </script>
 
 <template>
-	<BillingCard title="Billing details">
+	<BillingCard title="Billing details" flat>
 		<template v-if="canManageBilling" #action>
 			<Button size="sm" label="Edit" @click="$emit('edit')" />
 		</template>
 
 		<LoadingText v-if="loading" :lines="4" />
 
-		<dl
+		<div
 			v-else
 			class="grid grid-cols-[6rem_minmax(0,1fr)] gap-x-3 gap-y-2 text-p-sm"
 		>
-			<dt class="text-ink-gray-5">Email</dt>
-			<dd class="flex min-w-0 items-center gap-1.5">
+			<span class="text-ink-gray-5">Email</span>
+			<div class="flex min-w-0 items-center gap-1.5">
 				<template v-if="email">
 					<span class="truncate text-ink-gray-8">{{ email }}</span>
 					<CopyButton class="-my-1" :text="email" />
 				</template>
 				<span v-else class="text-ink-gray-5">Not set</span>
-			</dd>
+			</div>
 
-			<dt class="text-ink-gray-5">Address</dt>
-			<dd class="text-ink-gray-8">
+			<span class="text-ink-gray-5">Address</span>
+			<div class="text-ink-gray-8">
 				<template v-if="streetLines.length">
 					<span v-for="line in streetLines" :key="line" class="block">
 						{{ line }}
 					</span>
 				</template>
 				<span v-else class="text-ink-gray-5">Not set</span>
-			</dd>
+			</div>
 
-			<dt class="text-ink-gray-5">Tax region</dt>
-			<dd :class="country ? 'text-ink-gray-8' : 'text-ink-gray-5'">
+			<span class="text-ink-gray-5">Tax region</span>
+			<div :class="country ? 'text-ink-gray-8' : 'text-ink-gray-5'">
 				{{ country || 'Not set' }}
-			</dd>
+			</div>
 
 			<template v-if="isIndia">
-				<dt class="text-ink-gray-5">GSTIN</dt>
-				<dd class="flex items-center gap-2">
+				<span class="text-ink-gray-5">GSTIN</span>
+				<div class="flex items-center gap-2">
 					<template v-if="gstin">
 						<span class="font-mono text-ink-gray-8">{{ gstin }}</span>
 						<Badge
@@ -80,20 +79,18 @@ const gstStatus = computed(() => profile.data?.gst_status || '')
 						/>
 					</template>
 					<template v-else>
-						<button
+						<Button
 							v-if="canManageBilling"
-							type="button"
-							class="text-ink-blue-link transition-opacity hover:opacity-80"
+							size="xs"
+							label="Add GSTIN"
 							@click="$emit('edit')"
-						>
-							Add GSTIN
-						</button>
+						/>
 						<span class="text-ink-gray-5">
 							{{ canManageBilling ? '· needed for tax credit' : 'Not set' }}
 						</span>
 					</template>
-				</dd>
+				</div>
 			</template>
-		</dl>
+		</div>
 	</BillingCard>
 </template>
