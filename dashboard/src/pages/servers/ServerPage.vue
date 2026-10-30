@@ -5,6 +5,7 @@ import { useRoute, useRouter } from 'vue-router'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import AccessTab from '@/components/servers/detail/AccessTab.vue'
+import ActivityTab from '@/components/servers/detail/ActivityTab.vue'
 import Header from '@/components/servers/detail/Header.vue'
 import NetworkingTab from '@/components/servers/detail/NetworkingTab.vue'
 import OverviewTab from '@/components/servers/detail/OverviewTab.vue'
@@ -37,6 +38,7 @@ const TABS = [
 	{ label: 'Networking', value: 'networking', iconLeft: 'lucide-network' },
 	{ label: 'Access', value: 'access', iconLeft: 'lucide-key-round' },
 	{ label: 'Snapshots', value: 'snapshots', iconLeft: 'lucide-camera' },
+	{ label: 'Activity', value: 'activity', iconLeft: 'lucide-history' },
 	{ label: 'Settings', value: 'settings', iconLeft: 'lucide-settings' },
 ]
 
@@ -312,8 +314,14 @@ watch(
 						/>
 					</TabList>
 				</Tabs>
+				<ActivityTab
+					v-if="activeTab === 'activity'"
+					:resource-id="server.resource_id"
+					class="mt-6"
+				/>
+
 				<SnapshotsPanel
-					v-if="activeTab === 'snapshots'"
+					v-else-if="activeTab === 'snapshots'"
 					:server="server"
 					class="mt-6"
 				/>
@@ -373,7 +381,7 @@ watch(
 				/>
 
 				<AccessTab
-					v-else
+					v-else-if="activeTab === 'access'"
 					:overview="details"
 					:can-manage-keys="canManageSSHKeys"
 					:can-manage-network="!!actions.network"

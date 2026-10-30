@@ -75,6 +75,7 @@ export const API = {
 	terminateServer: 'central.api.servers.terminate_server',
 	keepTrialSite: 'central.api.servers.keep_trial_site',
 	serverOverview: 'central.api.servers.server_overview',
+	serverActivity: 'central.api.activity.server_activity',
 	serverMetrics: 'central.api.servers.server_metrics',
 	serverHostnames: 'central.api.servers.server_hostnames',
 	listImageOfferings: 'central.api.images.list_offerings',

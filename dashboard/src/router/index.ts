@@ -83,7 +83,7 @@ const routes = [
 				meta: { title: 'New server' },
 			},
 			{
-				path: 'servers/:id/:tab(networking|access|snapshots|settings)?',
+				path: 'servers/:id/:tab(networking|access|snapshots|settings|activity)?',
 				name: 'Server',
 				component: () => import('@/pages/servers/ServerPage.vue'),
 				meta: { title: 'Servers' },

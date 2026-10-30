@@ -1,0 +1,238 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "hash",
+ "creation": "2026-10-23 00:00:00",
+ "description": "One customer-visible event on a team resource. Central appends it once and never rewrites it.",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "team",
+  "resource_type",
+  "resource_name",
+  "server",
+  "column_break_identity",
+  "event",
+  "category",
+  "title",
+  "status",
+  "body_section",
+  "actor",
+  "occurred_at",
+  "details_column",
+  "details",
+  "error",
+  "access_section",
+  "required_capability",
+  "reference_section",
+  "reference_doctype",
+  "reference_name",
+  "dedupe_section",
+  "event_key"
+ ],
+ "fields": [
+  {
+   "description": "The team that owns this event.",
+   "fieldname": "team",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Team",
+   "options": "Team",
+   "read_only": 1,
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "description": "The kind of resource this event is about, such as Virtual Machine, Site, or Team.",
+   "fieldname": "resource_type",
+   "fieldtype": "Link",
+   "in_standard_filter": 1,
+   "label": "Resource Type",
+   "options": "DocType",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "resource_name",
+   "fieldtype": "Dynamic Link",
+   "in_list_view": 1,
+   "label": "Resource",
+   "options": "resource_type",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "description": "The server whose access decides who sees this event. Empty for a team event.",
+   "fieldname": "server",
+   "fieldtype": "Link",
+   "in_standard_filter": 1,
+   "label": "Server",
+   "options": "Virtual Machine",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_identity",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "The registered event name, such as server.restarted or member.added.",
+   "fieldname": "event",
+   "fieldtype": "Data",
+   "in_standard_filter": 1,
+   "label": "Event",
+   "read_only": 1,
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "category",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Category",
+   "options": "action\nconfiguration\nsnapshot\nsite\nteam\nmember\naccess",
+   "read_only": 1,
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "description": "The one-line title the console shows, in English. The API translates it.",
+   "fieldname": "title",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Title",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "description": "The source's status at this moment, such as Succeeded, Failed, Available, or Deleted.",
+   "fieldname": "status",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Status",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "body_section",
+   "fieldtype": "Section Break",
+   "label": "Activity"
+  },
+  {
+   "description": "The user behind the event. Empty for the system.",
+   "fieldname": "actor",
+   "fieldtype": "Link",
+   "label": "Actor",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "description": "When the event happened, not when this row was written.",
+   "fieldname": "occurred_at",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "Occurred At",
+   "read_only": 1,
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "details_column",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "The values this event reports, shaped for the console.",
+   "fieldname": "details",
+   "fieldtype": "JSON",
+   "label": "Details",
+   "read_only": 1
+  },
+  {
+   "description": "A short, customer-safe failure reason when an event ended in an error.",
+   "fieldname": "error",
+   "fieldtype": "Small Text",
+   "label": "Error",
+   "read_only": 1
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "access_section",
+   "fieldtype": "Section Break",
+   "label": "Access"
+  },
+  {
+   "description": "The capability a member needs to see this event. Set from the event registry.",
+   "fieldname": "required_capability",
+   "fieldtype": "Link",
+   "label": "Required Capability",
+   "options": "Capability",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "reference_section",
+   "fieldtype": "Section Break",
+   "label": "Source Reference"
+  },
+  {
+   "fieldname": "reference_doctype",
+   "fieldtype": "Link",
+   "label": "Source Type",
+   "options": "DocType",
+   "read_only": 1
+  },
+  {
+   "fieldname": "reference_name",
+   "fieldtype": "Dynamic Link",
+   "label": "Source ID",
+   "options": "reference_doctype",
+   "read_only": 1
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "dedupe_section",
+   "fieldtype": "Section Break",
+   "label": "Idempotency"
+  },
+  {
+   "description": "The source record and outcome this event was built from. Recorded once.",
+   "fieldname": "event_key",
+   "fieldtype": "Data",
+   "label": "Event Key",
+   "read_only": 1,
+   "reqd": 1,
+   "unique": 1
+  }
+ ],
+ "links": [],
+ "modified": "2026-10-29 10:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Central",
+ "name": "Activity Event",
+ "naming_rule": "Random",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager"
+  },
+  {
+   "read": 1,
+   "role": "Central User"
+  }
+ ],
+ "row_format": "Dynamic",
+ "search_fields": "team,resource_name,title,event",
+ "show_title_field_in_link": 1,
+ "sort_field": "occurred_at",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "title",
+ "track_changes": 0
+}

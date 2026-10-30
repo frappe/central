@@ -40,3 +40,38 @@ export function timeAgo(value: When): string {
 	if (!date) return ''
 	return date.fromNow()
 }
+
+export interface TimestampZone {
+	zone: string
+	date: string
+	time: string
+}
+
+/** UTC and browser-local wall clocks for a timestamp popover. */
+export function timestampZones(
+	value: When,
+): { utc: TimestampZone; local: TimestampZone } | null {
+	const date = at(value)
+	if (!date) return null
+	const utc = date.utc()
+	return {
+		utc: {
+			zone: 'UTC',
+			date: utc.format('MMMM D, YYYY'),
+			time: utc.format('hh:mm:ss A'),
+		},
+		local: {
+			zone: gmtLabel(date.utcOffset()),
+			date: date.format('MMMM D, YYYY'),
+			time: date.format('hh:mm:ss A'),
+		},
+	}
+}
+
+function gmtLabel(offsetMinutes: number): string {
+	const sign = offsetMinutes < 0 ? '-' : '+'
+	const absolute = Math.abs(offsetMinutes)
+	const hours = Math.floor(absolute / 60)
+	const minutes = absolute % 60
+	return `GMT${sign}${hours}${minutes ? `:${String(minutes).padStart(2, '0')}` : ''}`
+}

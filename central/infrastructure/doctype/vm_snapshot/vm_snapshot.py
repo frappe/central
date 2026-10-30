@@ -189,6 +189,9 @@ class VMSnapshot(Document):
 
 		# Only the deletion time changes; the free flag and billing belong to the allowance.
 		self.db_set("expires_at", None)
+		from central.activity.servers import record_snapshot_kept
+
+		record_snapshot_kept(self)
 
 	def set_free(self, is_free: bool) -> None:
 		"""Bill this snapshot by size, or stop billing it, as its place among the server's
@@ -366,3 +369,4 @@ def _delete_expired(name: str) -> None:
 def on_doctype_update() -> None:
 	frappe.db.add_index("VM Snapshot", ["team", "status"])
 	frappe.db.add_index("VM Snapshot", ["status", "expires_at"])
+	frappe.db.add_index("VM Snapshot", ["server", "creation"])
