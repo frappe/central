@@ -38,6 +38,20 @@ def validate_gstin(gstin: str) -> bool:
 	return bool(GSTIN_RE.match((gstin or "").strip().upper()))
 
 
+def normalize_phone(phone: str, country: str | None) -> str:
+	"""The phone with spaces, brackets and dashes removed. Throws when the gateways would refuse it."""
+	phone = re.sub(r"[\s()-]", "", phone)
+	is_indian = (country or "").strip() == INDIA
+	if (INDIAN_MOBILE_RE if is_indian else PHONE_RE).match(phone):
+		return phone
+	frappe.throw(
+		_("Enter a 10-digit mobile number.")
+		if is_indian
+		else _("Enter a phone number of 8 to 15 digits, with the country code."),
+		frappe.ValidationError,
+	)
+
+
 def get_team_currency(team: str) -> str:
 	"""Return the billing profile currency, with the legacy segment fallback."""
 	currency = frappe.db.get_value("Billing Profile", team, "currency")
@@ -289,16 +303,7 @@ class BillingProfile(Document):
 		checked, so a stored one never blocks the system's own saves of the profile."""
 		if not self.phone or not (self.is_new() or self.has_value_changed("phone")):
 			return
-		self.phone = re.sub(r"[\s()-]", "", self.phone)
-		is_indian = (self.country or "").strip() == INDIA
-		if (INDIAN_MOBILE_RE if is_indian else PHONE_RE).match(self.phone):
-			return
-		frappe.throw(
-			_("Enter a 10-digit mobile number.")
-			if is_indian
-			else _("Enter a phone number of 8 to 15 digits, with the country code."),
-			frappe.ValidationError,
-		)
+		self.phone = normalize_phone(self.phone, self.country)
 
 	def validate_gstin(self):
 		if not self.gstin:

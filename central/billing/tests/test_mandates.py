@@ -435,6 +435,14 @@ class TestRazorpayCardSetup(MandateTestBase):
 			self.assertEqual(adapter.update_customer.call_args.args[1]["contact"], "8888888888")
 			self.assertEqual(frappe.db.get_value("Billing Profile", TEAM, "phone"), "8888888888")
 
+	def test_card_setup_refuses_an_inline_phone_the_gateways_cannot_use(self):
+		frappe.db.set_value("Billing Profile", TEAM, "phone", "")
+		with stub_adapter() as adapter:
+			with self.assertRaises(frappe.ValidationError):
+				mandates.setup_card(TEAM, GATEWAY, contact="12ab")
+			adapter.update_customer.assert_not_called()
+		self.assertFalse(frappe.db.get_value("Billing Profile", TEAM, "phone"))
+
 	def test_card_setup_syncs_profile_contact_onto_customer(self):
 		# With a profile phone present, it's synced onto the (possibly reused,
 		# contactless) customer before the recurring order.

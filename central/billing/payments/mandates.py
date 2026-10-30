@@ -15,6 +15,7 @@ through the registry, keeping the gateway seam intact (see gateways/base.py).
 import frappe
 from frappe import _
 
+from central.billing.doctype.billing_profile.billing_profile import normalize_phone
 from central.billing.payments.decline import ORDER_MISMATCH, PAYMENT_NOT_AUTHORISED, SIGNATURE_INVALID
 from central.billing.states import transition
 
@@ -125,10 +126,15 @@ def _require_card_contact(
 	if frappe.db.get_value("Payment Gateway", gateway, "adapter_key") != "Razorpay":
 		return customer_id
 	p = (
-		frappe.db.get_value("Billing Profile", team, ["legal_name", "email", "phone"], as_dict=True)
+		frappe.db.get_value(
+			"Billing Profile", team, ["legal_name", "email", "phone", "country"], as_dict=True
+		)
 		or frappe._dict()
 	)
 	contact = str(contact or "").strip()
+	# An inline phone is held to the same rule as one entered on the profile.
+	if contact:
+		contact = normalize_phone(contact, p.country)
 	phone = contact or str(p.phone or "").strip()
 	if not phone:
 		frappe.throw(
