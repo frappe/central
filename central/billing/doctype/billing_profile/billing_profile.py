@@ -42,8 +42,7 @@ def validate_gstin(gstin: str) -> bool:
 def usable_phone(phone: str, country: str | None) -> str | None:
 	"""The phone with spaces, brackets and dashes removed, or None when the gateways would refuse it."""
 	phone = re.sub(r"[\s()-]", "", phone)
-	is_indian = (country or "").strip() == INDIA
-	return phone if (INDIAN_MOBILE_RE if is_indian else PHONE_RE).match(phone) else None
+	return phone if _phone_pattern(country).match(phone) else None
 
 
 def normalize_phone(phone: str, country: str | None) -> str:
@@ -52,10 +51,14 @@ def normalize_phone(phone: str, country: str | None) -> str:
 		return usable
 	frappe.throw(
 		_("Enter a 10-digit mobile number.")
-		if (country or "").strip() == INDIA
+		if _phone_pattern(country) is INDIAN_MOBILE_RE
 		else _("Enter a phone number of 8 to 15 digits, with the country code."),
 		frappe.ValidationError,
 	)
+
+
+def _phone_pattern(country: str | None) -> re.Pattern:
+	return INDIAN_MOBILE_RE if (country or "").strip() == INDIA else PHONE_RE
 
 
 def get_team_currency(team: str) -> str:

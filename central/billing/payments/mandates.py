@@ -316,8 +316,10 @@ def _fill_profile_contact(team: str, payment: dict) -> None:
 	if not (email or phone):
 		return
 
-	profile.email = profile.email or email
-	profile.phone = profile.phone or phone
+	if email:
+		profile.email = email
+	if phone:
+		profile.phone = phone
 	# A stored field that fails validation must not undo a mandate the gateway registered.
 	profile.save_as_system("fill the payer's contact from a confirmed mandate")
 
