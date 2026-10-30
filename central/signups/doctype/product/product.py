@@ -39,6 +39,7 @@ class Product(Document):
 		from frappe.types import DF
 
 		from central.signups.doctype.product_email_note.product_email_note import ProductEmailNote
+		from central.signups.doctype.product_plan_note.product_plan_note import ProductPlanNote
 
 		email_notes: DF.Table[ProductEmailNote]
 		enabled: DF.Check
@@ -46,6 +47,7 @@ class Product(Document):
 		getting_started_url: DF.Data | None
 		landing_route: DF.Data | None
 		logo: DF.AttachImage | None
+		plan_notes: DF.Table[ProductPlanNote]
 		product_key: DF.Data
 		setup_messages: DF.SmallText | None
 		signup_app: DF.Data
@@ -78,6 +80,10 @@ class Product(Document):
 
 		self.validate_emails()
 
+		plans = [row.plan for row in self.plan_notes]
+		if len(plans) != len(set(plans)):
+			frappe.throw(_("Add at most one note for each plan."))
+
 	def validate_emails(self) -> None:
 		"""An email client loads the logo without a session, so it must be a public file."""
 		if self.use_own_email_branding and not (self.logo or "").startswith("/files/"):
@@ -109,6 +115,10 @@ class Product(Document):
 			"notes": [escape_html(part.strip()) for part in note.split("\n\n") if part.strip()],
 			"getting_started_url": escape_html(url) if url else None,
 		}
+
+	def get_plan_notes(self) -> dict[str, str]:
+		"""The note for each plan, by plan name."""
+		return {row.plan: row.note for row in self.plan_notes}
 
 	@frappe.whitelist(methods=["POST"])
 	def preview_email(self, event_type: str) -> dict:
@@ -195,6 +205,17 @@ def get_email_product(product_key: str | None) -> Product | None:
 		return None
 
 	return frappe.get_cached_doc("Product", product_key)
+
+
+def get_server_product(server: str) -> Product | None:
+	"""The product of the sites on a server, or None when they have none or more than one."""
+	products = frappe.get_all(
+		"Site", filters={"server": server, "product": ["is", "set"]}, pluck="product", distinct=True
+	)
+	if len(products) != 1:
+		return None
+
+	return frappe.get_cached_doc("Product", products[0])
 
 
 def get_signup_product(product_key: str) -> Product:

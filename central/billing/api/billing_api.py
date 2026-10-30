@@ -832,12 +832,21 @@ def _estimate_note(forecast: dict) -> str | None:
 def get_plan_options() -> dict:
 	"""Plans this bench's server can switch to, flattened + priced for the Change-plan
 	list, plus the provider/region header and an insufficient-headroom flag. On an open trial
-	they are the paid plans the site may move to, with `selected` the one it moves to."""
+	they are the paid plans the site may move to, with `selected` the one it moves to. Each plan
+	carries the `note` of the server's product for it, or None."""
+	from central.signups.doctype.product.product import get_server_product
 	from central.signups.trial import Trial
 
 	team, server = _team(), _server()
 	trial = Trial.find_open(server)
-	return _trial_plan_options(trial) if trial else _paid_plan_options(team, server)
+	options = _trial_plan_options(trial) if trial else _paid_plan_options(team, server)
+
+	product = get_server_product(server)
+	notes = product.get_plan_notes() if product else {}
+	for plan in options["plans"]:
+		plan["note"] = notes.get(plan["name"])
+
+	return options
 
 
 def _paid_plan_options(team: str, server: str) -> dict:
