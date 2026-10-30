@@ -290,6 +290,7 @@ const showListControls = computed(
 				</TextInput>
 
 				<Select
+          side='bottom'
 					v-for="filter in filters"
 					:key="filter.key"
 					:model-value="query.filters[filter.key] || ''"
@@ -300,7 +301,17 @@ const showListControls = computed(
 						...filter.options,
 					]"
 					@update:model-value="setFilter(filter.key, $event)"
-				/>
+				>
+					<template
+						v-if="filter.options.some((option) => option.dot)"
+						#item-prefix="{ item }"
+					>
+						<span
+							class="size-2 shrink-0 rounded-full"
+							:style="{ background: item.dot || 'var(--ink-gray-4)' }"
+						/>
+					</template>
+				</Select>
 
 				<slot name="filters" />
 			</div>

@@ -507,3 +507,14 @@ export function siteVisual(
 	// A site mirrors its machine's status, so the two share one vocabulary.
 	return STATUS_VISUAL[status] ?? VISUALS.settingUp
 }
+
+export const CROWDED_REGION_SIZE = 10
+
+export const hasCrowdedRegion = (rows: { cluster: string }[]): boolean => {
+	const counts = new Map<string, number>()
+
+	for (const row of rows)
+		counts.set(row.cluster, (counts.get(row.cluster) ?? 0) + 1)
+
+	return [...counts.values()].some((count) => count > CROWDED_REGION_SIZE)
+}

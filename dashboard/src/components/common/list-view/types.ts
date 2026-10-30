@@ -17,6 +17,7 @@ export interface ListViewEmptyState {
 export interface ListViewFilterOption {
 	label: string
 	value: string
+	dot?: string
 }
 
 export interface ListViewFilter {

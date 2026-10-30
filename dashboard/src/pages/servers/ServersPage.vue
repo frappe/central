@@ -7,6 +7,7 @@ import MapHealthStrips from '@/components/servers/MapHealthStrips.vue'
 import ResizeServerDialog from '@/components/servers/ResizeServerDialog.vue'
 import ServerFilters from '@/components/servers/ServerFilters.vue'
 import ServerListPanel from '@/components/servers/ServerListPanel.vue'
+import ServerListView from '@/components/servers/ServerListView.vue'
 import ServerMap from '@/components/servers/ServerMap.vue'
 import ServerRowActions from '@/components/servers/ServerRowActions.vue'
 import TerminateServerDialog from '@/components/servers/TerminateServerDialog.vue'
@@ -48,11 +49,17 @@ const {
 	spots,
 	frame,
 	mapView,
+	fleetView,
 	hasMapViewChoice,
 	settledIds,
 	servers,
 	loaded,
 } = useServerFleet()
+
+const FLEET_VIEW_OPTIONS = [
+	{ label: 'Map', value: 'map', iconLeft: 'lucide-map' },
+	{ label: 'List', value: 'list', iconLeft: 'lucide-list' },
+]
 
 const MAP_VIEW_OPTIONS = [
 	{ label: 'My regions', value: 'fleet' },
@@ -62,6 +69,10 @@ const { refreshing, stale, busy, opening, openConsole } = useServers()
 
 // With no servers yet the map names each region, so the empty map invites a choice.
 const isFleetEmpty = computed(() => !loading.value && !rows.value.length)
+
+const isListView = computed(
+	() => fleetView.value === 'list' && !isFleetEmpty.value,
+)
 
 const hoverId = ref<string | null>(null)
 const { showServer, openServer, openResource, openById, openBench, openSite } =
@@ -136,6 +147,14 @@ useServerLink(
 <template>
 	<div class="flex h-full flex-col">
 		<Teleport defer to="#header-actions">
+			<TabButtons
+				v-if="activeTeam && !isFleetEmpty"
+				v-model="fleetView"
+				size="sm"
+				aria-label="Servers view"
+				:options="FLEET_VIEW_OPTIONS"
+			/>
+
 			<Button
 				v-if="activeTeam"
 				label="Refresh"
@@ -154,7 +173,36 @@ useServerLink(
 		</Teleport>
 
 		<!-- The list stays in view on the right. Below lg, it stacks over a short map. -->
-		<div class="flex min-h-0 flex-1 flex-col lg:flex-row-reverse">
+		<div
+			v-if="isListView"
+			class="mx-auto flex min-h-0 w-full max-w-5xl flex-1 flex-col p-3 md:p-4 lg:pt-8"
+		>
+			<ServerListView
+				:rows="rows"
+				:settled-ids="settledIds"
+				:can-open="canOpenConsole"
+				:can-power="canPowerServer"
+				:can-resize="canResizeServer"
+				:can-terminate="canTerminateServer"
+				:can-snapshot="canSnapshotServer"
+				:can-open-console="canOpenConsole"
+				:busy="busy"
+				:opening="opening"
+				@open-row="openResource"
+				@overview="showServer"
+				@open="openServer"
+				@pilot="openBench"
+				@start="start"
+				@stop="stop"
+				@restart="pendingRestart = $event"
+				@resize="openResize"
+				@snapshot="pendingSnapshot = $event"
+				@console="openConsole"
+				@terminate="pendingTerminate = $event"
+			/>
+		</div>
+
+		<div v-else class="flex min-h-0 flex-1 flex-col lg:flex-row-reverse">
 			<ServerListPanel
 				class="vt-server-list min-h-0 flex-1 overflow-hidden border-b border-outline-gray-1 lg:w-96 lg:flex-none lg:border-b-0 lg:border-l"
 				v-model:query="q"
