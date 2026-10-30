@@ -15,7 +15,7 @@ through the registry, keeping the gateway seam intact (see gateways/base.py).
 import frappe
 from frappe import _
 
-from central.billing.doctype.billing_profile.billing_profile import normalize_phone
+from central.billing.doctype.billing_profile.billing_profile import normalize_phone, usable_phone
 from central.billing.payments.decline import ORDER_MISMATCH, PAYMENT_NOT_AUTHORISED, SIGNATURE_INVALID
 from central.billing.states import transition
 
@@ -295,6 +295,7 @@ def confirm_mandate(payment_method: str, callback: dict):
 	# (the fallback list, #28), so only retire siblings for UPI mandates.
 	if method.method_type == MANDATE_METHOD:
 		_retire_superseded_mandates(method)
+	_fill_profile_contact(method.team, payment)
 
 	from central.billing.payments import payments
 
@@ -302,6 +303,23 @@ def confirm_mandate(payment_method: str, callback: dict):
 	_queue_authorisation_refund(method, payment)
 	method.reload()
 	return method
+
+
+def _fill_profile_contact(team: str, payment: dict) -> None:
+	"""Keep the phone and email the payer gave Razorpay at authorisation, where the billing
+	profile has none. A mandate debit must send both. A phone the gateways refuse is not kept."""
+	if not frappe.db.exists("Billing Profile", team):
+		return
+	profile = frappe.get_doc("Billing Profile", team)
+	email = None if profile.email else payment.get("email")
+	phone = None if profile.phone else usable_phone(str(payment.get("contact") or ""), profile.country)
+	if not (email or phone):
+		return
+
+	profile.email = profile.email or email
+	profile.phone = profile.phone or phone
+	# Only billing code fills the contact; the caller checked billing:manage.
+	profile.save(ignore_permissions=True)
 
 
 def _queue_authorisation_refund(method, payment: dict) -> None:

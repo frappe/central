@@ -38,15 +38,20 @@ def validate_gstin(gstin: str) -> bool:
 	return bool(GSTIN_RE.match((gstin or "").strip().upper()))
 
 
-def normalize_phone(phone: str, country: str | None) -> str:
-	"""The phone with spaces, brackets and dashes removed. Throws when the gateways would refuse it."""
+def usable_phone(phone: str, country: str | None) -> str | None:
+	"""The phone with spaces, brackets and dashes removed, or None when the gateways would refuse it."""
 	phone = re.sub(r"[\s()-]", "", phone)
 	is_indian = (country or "").strip() == INDIA
-	if (INDIAN_MOBILE_RE if is_indian else PHONE_RE).match(phone):
-		return phone
+	return phone if (INDIAN_MOBILE_RE if is_indian else PHONE_RE).match(phone) else None
+
+
+def normalize_phone(phone: str, country: str | None) -> str:
+	"""The phone with spaces, brackets and dashes removed. Throws when the gateways would refuse it."""
+	if usable := usable_phone(phone, country):
+		return usable
 	frappe.throw(
 		_("Enter a 10-digit mobile number.")
-		if is_indian
+		if (country or "").strip() == INDIA
 		else _("Enter a phone number of 8 to 15 digits, with the country code."),
 		frappe.ValidationError,
 	)

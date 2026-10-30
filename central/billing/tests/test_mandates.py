@@ -115,6 +115,36 @@ class TestMandateSetup(MandateTestBase):
 			method = mandates.confirm_mandate(result["payment_method"], CALLBACK)
 		self.assertEqual(method.display_label, "UPI Autopay · success@razorpay")
 
+	def _confirm_with_contact(self, contact: str) -> None:
+		payment = {
+			"id": "pay_mandate",
+			"order_id": "order_mandate",
+			"status": "authorized",
+			"token_id": "token_live",
+			"customer_id": "cust_x",
+			"email": "payer@test.example",
+			"contact": contact,
+		}
+		with stub_adapter(payment=payment):
+			result = mandates.setup_mandate(TEAM, GATEWAY, customer_id="cust_x")
+			mandates.confirm_mandate(result["payment_method"], CALLBACK)
+
+	def test_a_confirmed_mandate_fills_an_empty_profile_contact(self):
+		frappe.db.set_value("Billing Profile", TEAM, {"email": None, "phone": None})
+		self._confirm_with_contact("+919876543210")
+		profile = frappe.db.get_value("Billing Profile", TEAM, ["email", "phone"], as_dict=True)
+		self.assertEqual((profile.email, profile.phone), ("payer@test.example", "+919876543210"))
+
+	def test_a_confirmed_mandate_keeps_the_profile_contact(self):
+		self._confirm_with_contact("+919876543210")
+		profile = frappe.db.get_value("Billing Profile", TEAM, ["email", "phone"], as_dict=True)
+		self.assertEqual((profile.email, profile.phone), ("billing@test.example", "9999999999"))
+
+	def test_a_contact_the_gateways_refuse_is_not_kept(self):
+		frappe.db.set_value("Billing Profile", TEAM, "phone", None)
+		self._confirm_with_contact("12345")
+		self.assertIsNone(frappe.db.get_value("Billing Profile", TEAM, "phone"))
+
 	def test_a_token_from_the_browser_is_never_stored(self):
 		with stub_adapter(token="token_from_razorpay"):
 			result = mandates.setup_mandate(TEAM, GATEWAY, customer_id="cust_x")
