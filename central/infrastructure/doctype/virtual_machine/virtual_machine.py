@@ -415,10 +415,14 @@ class VirtualMachine(Document):
 	@requires_server_access
 	def set_termination_protection(self, enabled: bool) -> None:
 		"""Turn termination protection on or off. The region refuses to terminate a protected server."""
+		from central.activity.servers import record_setting
 		from central.integrations.servers import set_termination_protection
 
 		self.require_live()
+		was_protected = self.is_termination_protected
 		set_termination_protection(self, enabled)
+		# db_set leaves no Version row, so the feed gets its own record
+		record_setting(self, "is_termination_protected", was_protected, self.is_termination_protected)
 
 	def set_public_ip(self, version: int, is_attached: bool) -> bool:
 		"""Attach or detach a public address. Returns False while Atlas is still applying it."""

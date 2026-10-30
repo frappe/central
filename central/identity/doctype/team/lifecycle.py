@@ -121,4 +121,7 @@ class TeamLifecycle:
 			else _("{0} impersonated the team owner. Reason: {1}")
 		)
 		self.add_comment("Info", comment.format(frappe.session.user, reason))
+		from central.activity.teams import record_team_impersonation
+
+		record_team_impersonation(self)
 		return f"/dashboard/servers?view_as={self.name}"

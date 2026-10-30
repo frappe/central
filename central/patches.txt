@@ -65,3 +65,5 @@ central.patches.v0_0.backfill_invoice_paid_at
 central.patches.v0_0.report_billing_security_findings
 # Remove the hidden rule that let every WireGuard VPN device pass the firewall, from every live server at Atlas.
 central.patches.v0_0.remove_wireguard_device_firewall_rule
+# Seed the activity feed from the records Central already keeps.
+central.patches.v0_0.backfill_activity_events

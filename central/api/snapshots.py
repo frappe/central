@@ -150,7 +150,14 @@ def set_automatic_snapshots(
 ) -> dict:
 	"""Turn the daily free snapshot of one server on or off. Gated on `server:snapshot`."""
 	server = _team_server(team, resource_id)
+	old = bool(server.skip_automatic_snapshot)
 	server.db_set("skip_automatic_snapshot", 0 if frappe.utils.cint(enabled) else 1)
+	new = bool(server.skip_automatic_snapshot)
+	if old != new:
+		from central.activity.servers import record_setting
+
+		# db_set leaves no Version row, so the feed gets its own row
+		record_setting(server, "skip_automatic_snapshot", old, new)
 
 	return _automatic_setting(team, resource_id)
 
