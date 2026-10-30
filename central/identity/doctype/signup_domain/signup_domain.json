@@ -21,6 +21,7 @@
    "in_list_view": 1,
    "label": "Domain",
    "reqd": 1,
+   "set_only_once": 1,
    "unique": 1,
    "description": "Applies to this domain and its subdomains."
   },

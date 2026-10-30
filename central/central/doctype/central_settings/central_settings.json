@@ -406,7 +406,7 @@
    "fieldname": "refuse_temporary_emails",
    "fieldtype": "Check",
    "label": "Refuse Temporary Emails",
-   "description": "Refuse a new account on a known temporary email provider. To block another domain, add it to Blocked Email Domain."
+   "description": "Refuse a new account on a known temporary email provider. To block another domain, add it to Signup Domain."
   },
   {
    "default": "10",
