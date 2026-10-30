@@ -28,12 +28,26 @@ def idempotency_key(invoice: str, retry_number) -> str:
 	).hexdigest()
 
 
+def gateway_hold_active(attempt, now=None):
+	"""Query condition on the Payment Attempt table: the gateway holds the debit at `now`.
+
+	A held debit waits for its gateway on purpose (a Razorpay debit in progress, an
+	Indian card's pre-debit notice), so it is not stuck until its hold ends."""
+	now = now or frappe.utils.now_datetime()
+	return attempt.gateway_hold_until.isnotnull() & (attempt.gateway_hold_until > now)
+
+
 class PaymentAttempt(Document):
 	def validate(self):
 		if not self.idempotency_key:
 			self.idempotency_key = idempotency_key(self.invoice, self.retry_number)
 		if not self.initiated_at:
 			self.initiated_at = frappe.utils.now_datetime()
+
+	def is_held_by_gateway(self, now=None) -> bool:
+		"""The gateway holds this debit at `now`. The same condition as `gateway_hold_active`."""
+		now = frappe.utils.get_datetime(now or frappe.utils.now_datetime())
+		return bool(self.gateway_hold_until) and now < frappe.utils.get_datetime(self.gateway_hold_until)
 
 
 def on_doctype_update() -> None:

@@ -24,7 +24,7 @@ ledger.
 from dataclasses import asdict, dataclass
 
 import frappe
-from frappe.query_builder import Case
+from frappe.query_builder import Case, Order
 from frappe.query_builder.functions import Count, Sum
 
 # Money is float `Currency` in major units, so an exact `==` is a bug. Anything at or
@@ -35,6 +35,7 @@ TOLERANCE = 0.01
 # invoice older than the window has no attempts to reconcile against and would report a
 # false violation. Audits that read attempts stay inside the window.
 from central.billing import settings
+from central.billing.doctype.payment_attempt.payment_attempt import gateway_hold_active
 
 STUCK_ATTEMPT_MINUTES = 30
 
@@ -391,20 +392,19 @@ def check_no_stuck_attempts() -> list[Violation]:
 
 
 def unheld_attempts_in_flight(initiated_before, fields: list[str], limit: int = 0) -> list[frappe._dict]:
-	"""Attempts in flight since before `initiated_before` that no gateway hold covers now.
-
-	A held attempt waits for its gateway on purpose (a Razorpay debit in progress, an
-	Indian card's pre-debit notice), so it is not stuck until its hold ends."""
-	return frappe.get_all(
-		"Payment Attempt",
-		filters={"status": ["in", IN_FLIGHT], "initiated_at": ["<", initiated_before]},
-		or_filters=[
-			["gateway_hold_until", "is", "not set"],
-			["gateway_hold_until", "<=", frappe.utils.now_datetime()],
-		],
-		fields=fields,
-		limit=limit,
+	"""Attempts in flight since before `initiated_before` that no gateway hold covers now."""
+	attempt = frappe.qb.DocType("Payment Attempt")
+	query = (
+		frappe.qb.from_(attempt)
+		.select(*(attempt[field] for field in fields))
+		.where(attempt.status.isin(IN_FLIGHT))
+		.where(attempt.initiated_at < initiated_before)
+		.where(~gateway_hold_active(attempt))
+		.orderby(attempt.creation, order=Order.desc)
 	)
+	if limit:
+		query = query.limit(limit)
+	return query.run(as_dict=True)
 
 
 CHECKS = {

@@ -159,11 +159,7 @@ def _settle_with_credit(invoice: str) -> dict:
 	doc = frappe.get_doc("Invoice", invoice)
 	doc.flags.ignore_links = True  # only its amounts and status change here
 	due = frappe.utils.flt(doc.expected_collection)
-	if (
-		doc.status not in ("Open", "Overdue")
-		or due <= 0
-		or charges.in_flight_attempt(invoice, count_held=False)
-	):
+	if doc.status not in ("Open", "Overdue") or due <= 0 or charges.unheld_attempt_in_flight(invoice):
 		return {"invoice": invoice, "applied": 0}
 
 	draw = _draw_wallet(doc, due, _gst_still_due(doc, due))

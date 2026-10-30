@@ -18,6 +18,7 @@ import frappe
 from frappe import _
 
 from central.billing import settings
+from central.billing.doctype.payment_attempt.payment_attempt import gateway_hold_active
 from central.billing.gateways.base import GatewayError, GatewayTimeout, PaymentResult
 from central.billing.payments.decline import Failure
 from central.billing.platform.records import delete_billing_record, save_billing_record
@@ -337,13 +338,23 @@ def store_gateway_order(attempt, order_id: str) -> None:
 	_persist()
 
 
-def in_flight_attempt(invoice: str, count_held: bool = True) -> str | None:
+def in_flight_attempt(invoice: str) -> str | None:
 	"""An attempt occupying the invoice, so a second charge must not start beside it.
 
 	A capture still waiting for its settlement counts. A capture already settled does not:
-	if the invoice is still unpaid, that payment did not cover it and went to the wallet.
-	With `count_held` off, a debit the gateway holds does not count: credit may pay the
-	invoice beside it, and the debit is refunded if it later goes through."""
+	if the invoice is still unpaid, that payment did not cover it and went to the wallet."""
+	return _first_in_flight(invoice)
+
+
+def unheld_attempt_in_flight(invoice: str) -> str | None:
+	"""An attempt in flight that blocks credit from paying the invoice. A debit the gateway
+	holds does not: credit may pay the invoice beside it, and the debit is refunded if it
+	later goes through."""
+	attempt = frappe.qb.DocType("Payment Attempt")
+	return _first_in_flight(invoice, (attempt.status == "Captured") | ~gateway_hold_active(attempt))
+
+
+def _first_in_flight(invoice: str, *conditions) -> str | None:
 	attempt = frappe.qb.DocType("Payment Attempt")
 	query = (
 		frappe.qb.from_(attempt)
@@ -355,12 +366,8 @@ def in_flight_attempt(invoice: str, count_held: bool = True) -> str | None:
 		)
 		.limit(1)
 	)
-	if not count_held:
-		query = query.where(
-			(attempt.status == "Captured")
-			| attempt.gateway_hold_until.isnull()
-			| (attempt.gateway_hold_until <= frappe.utils.now_datetime())
-		)
+	for condition in conditions:
+		query = query.where(condition)
 	rows = query.run(pluck=True)
 	return rows[0] if rows else None
 
