@@ -61,7 +61,7 @@ SUFFIXES = tldextract.TLDExtract(suffix_list_urls=(), cache_dir=None, include_ps
 
 def watch_signup_ip() -> None:
 	"""Count a new-account request from the caller's IP, and block an IP that floods signups."""
-	ip = frappe.local.request_ip
+	ip = getattr(frappe.local, "request_ip", None)
 	if not ip:
 		return
 
