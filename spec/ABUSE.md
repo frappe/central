@@ -6,7 +6,7 @@ This document is the Central part of abuse protection in Frappe Cloud v2. It cov
 
 Status: planned. Central does not implement this design yet. The DocType layouts in [Abuse layouts](ABUSE_LAYOUTS.md) need engineer approval before implementation. Change this document before you change the design.
 
-Central owns detection and all policy: finding codes, thresholds, windows, profiles, exceptions, feeds, signals, cases, the ladder, reports, messages, CERT-In, and public IP history. Atlas exports metrics and logs, and applies or lifts a restriction when Central calls it. See the [Atlas abuse documentation](https://github.com/frappe/atlas/blob/develop/docs/abuse/index.md). Cargo owns the regional log bucket, its object layout, its keys, and the per-VM metric table in Datum. See [Cargo abuse logs](https://github.com/frappe/cargo/blob/develop/docs/abuse-logs.md). CERT-In reporting is in [CERT-In](CERT_IN.md).
+Central owns all policy: profiles, exceptions, signals, cases, the ladder, reports, messages, CERT-In, and public IP history. Watcher, a planned module of Cargo in each region, finds abuse and sends findings to Central. It owns the finding codes, thresholds, windows, feeds, and calibration. See [Cargo Watcher](https://github.com/frappe/cargo/blob/develop/docs/watcher.md). Atlas exports metrics and logs, and applies or lifts a restriction when Central calls it. See the [Atlas abuse documentation](https://github.com/frappe/atlas/blob/develop/docs/abuse/index.md). Cargo also owns the regional log bucket, its object layout, its keys, and the per-VM metric table in Datum. See [Cargo abuse logs](https://github.com/frappe/cargo/blob/develop/docs/abuse-logs.md). CERT-In reporting is in [CERT-In](CERT_IN.md).
 
 ## Scope
 
@@ -23,18 +23,18 @@ Out of scope:
 - Guest spoofing and tenant-to-tenant mesh traffic. WG Mesh `local_vms` and `can_communicate` already stop them.
 - A guest-side agent. Guests are untrusted.
 - Signup data and identity validation (CERT-In direction (v)).
-- Infrastructure VMs of tenant 0. Central does not know them, so detection skips them.
+- Infrastructure VMs of tenant 0. Central does not know them, so it skips their findings.
 
 ## Principles
 
-1. Central detects and decides. Atlas exports metrics and logs, and applies or lifts a restriction when Central calls it. Atlas does not know teams, trust tiers, thresholds, or contacts.
+1. Watcher detects and Central decides. Atlas exports metrics and logs, and applies or lifts a restriction when Central calls it. Atlas does not know teams, trust tiers, thresholds, or contacts. Watcher does not know teams, trust tiers, profiles, or contacts.
 2. Atlas never acts alone on abuse. Only an Atlas operator can apply an emergency restriction.
 3. Restrictions live in a layer that the tenant API cannot write. Tenant firewall, route, and IPv4 changes cannot widen them.
 4. Every restriction has a reason, an actor, a case, and an end condition. Terminate by an operator is the last step.
 5. Restrict traffic, never compute. The abuse system never pauses or stops a VM.
 6. Keep evidence before it is destroyed. Central snapshots the disk before it terminates a server with an open case or an active restriction. Never stop and start a VM to collect evidence.
-7. Detection failure must not block customers. If Datum, Atlas, or Central is down, nothing new is applied, and automatic restrictions still end at `expires_at`.
-8. Atlas stays backward compatible: optional fields and new endpoints only. Central deploys last. See [Deploy order](#deploy-order).
+7. Detection failure must not block customers. If Datum, Watcher, Atlas, or Central is down, nothing new is applied, and automatic restrictions still end at `expires_at`.
+8. Atlas stays backward compatible: optional fields and new endpoints only. Watcher deploys last. See [Deploy order](#deploy-order).
 
 ## Who does what
 
@@ -43,17 +43,21 @@ Out of scope:
 | Metal (each host) | Per-VM counters exported to Datum, NAT and SNI logs uploaded to the log bucket, the `metal_abuse` chain, the `smtp_outbound` default block | No |
 | Atlas app (each region) | VM Restriction, the restriction API, `is_port_25_allowed` on the VM, the `vm.restriction` event, the log write keys in Abuse Settings and in host and proxy config | Emergency restrictions by an Atlas operator only |
 | HTTP proxy | Static rate limits, the abuse tombstone, the access log upload | No |
-| Cargo | Log bucket and keys, the per-VM metric table in Datum and its Central read user, the phishing check on public buckets | No |
-| Central | Detection, finding codes, thresholds, profiles, exceptions, feeds, Abuse Signal, Abuse Case, the policy engine, reports, all customer messages, the abuse dashboard, CERT-In, public IP history | Yes |
+| Cargo | Log bucket and keys, the per-VM metric table in Datum and the `watcher` read user | No |
+| Watcher (Cargo) | Finding codes, threshold rules, windows, thresholds, feeds, mining detection, hostname and address checks, calibration, NAT log attribution, the `abuse` report to Central | No |
+| Central | Profiles, exceptions, brand-term scoring, Abuse Signal, Abuse Case, the policy engine, reports, all customer messages, the abuse dashboard, CERT-In, public IP history | Yes |
 | Pilot | Nothing | Not applicable |
 
 ```text
-Metal host          metrics      Datum (Cargo)       read user     Central
-counters      ───────────────▶  vm_abuse_*, 30 d  ─────────────▶  detection, Abuse Signal
-NAT, SNI logs ───────────────▶  Cargo log bucket  ─────────────▶  feed match, attribution
-                                       ▲            read key       Abuse Case, policy engine
-HTTP proxy: limits, tombstone, ────────┘                           messages, dashboard
-            access log                                             Abuse Report, CERT-In
+Metal host          metrics      Datum (Cargo)       read user     Watcher (Cargo)
+counters      ───────────────▶  vm_abuse_*, 30 d  ─────────────▶  finding codes, thresholds
+NAT, SNI logs ───────────────▶  Cargo log bucket  ─────────────▶  feeds ◀── blocklists, DNSBLs
+                                       ▲            read key      NAT log attribution
+HTTP proxy: limits, tombstone, ────────┘                                │ abuse report
+            access log                                                  ▼
+                                                                  Central: profiles, Abuse Signal
+                                                                  Abuse Case, policy engine
+                                                                  messages, Abuse Report, CERT-In
                                                                         │       ▲
 metal_abuse  ◀─── host and VM config ─── Atlas app ◀── restriction ─────┘       │
                                          VM Restriction    API                  │
@@ -64,147 +68,44 @@ metal_abuse  ◀─── host and VM config ─── Atlas app ◀── restr
 
 | Name | Kind | Use |
 |---|---|---|
-| `Abuse Responder` | Desk role, planned. Not tied to a team. | Reads and writes Abuse Case, Abuse Report, Abuse Exception, Abuse Signal, Abuse Threshold, Abuse Feed, Public IP Assignment, and Port 25 Request. Works the abuse dashboard. |
+| `Abuse Responder` | Desk role, planned. Not tied to a team. | Reads and writes Abuse Case, Abuse Report, Abuse Exception, Abuse Signal, Public IP Assignment, and Port 25 Request. Works the abuse dashboard. |
 | `security:view` | Team capability, planned | Reads the team's abuse cases and gets Security email. Owner and Admin roles get it by default. |
 | `security:manage` | Team capability, planned | Responds to a case, requests a lift or an exception, applies and lifts self-quarantine, and requests a port 25 unblock. Implies `security:view`. Owner, Admin, and Developer roles get it by default. These are the roles that have `server:network`. |
 
 Add `security:view` and `security:manage` to [Capabilities](../CAPABILITIES.md) and the fixtures in the implementation change. Developer gets `security:view` through the implication. Customers read cases only through the dashboard API, filtered by `security:view`. Each customer action on a case, a restriction, an exception, or a port 25 request needs `security:manage`.
 
-## Detection
+## Findings from Watcher
 
-`central/abuse/detection.py` (planned) finds abuse. A scheduler job runs every minute for each Active region. It queries the per-VM metrics in the region's Datum through `central/integrations/datum.py` (planned), with a read-only ClickHouse user. The query URL and the user credentials are on the Region's Cargo connection. Layout: [Abuse layouts](ABUSE_LAYOUTS.md#region-layout-change).
+Watcher finds abuse. It is a planned module of Cargo in each region. It reads the per-VM metrics in Datum, the NAT, SNI, and proxy access logs in the log bucket, and external feeds and shared abuse databases. It sends each finding to Central in an `abuse` report. See [Reports from Cargo](#reports-from-cargo).
 
-- The job compares each window with the [thresholds](#thresholds) of the region, after the [profile](#profiles) and any approved [exception](#abuse-exception).
-- A match writes an [Abuse Signal](#signals).
-- Central reads only metrics and log rows. It never reads the content of VM traffic.
-- Central skips a VM that it does not know. These are the tenant 0 infrastructure VMs.
-- If the Datum query of a region fails, or its newest sample is older than 5 min, Central alerts Raven `#abuse`. Central applies nothing new in that region until the query works again.
+Cargo documents detection:
 
-### Metrics
+- Inputs, with the Atlas counters and logs: [Cargo inputs](https://github.com/frappe/cargo/blob/develop/docs/watcher.md#inputs).
+- Finding codes: [Cargo finding codes](https://github.com/frappe/cargo/blob/develop/docs/watcher.md#finding-codes).
+- Severity: Watcher takes the severity of a finding from the Abuse Threshold Trigger row that matched. So one finding code can have triggers of different severity. For example, the slow scan of `Recon:VM/Portscan` is Low. See [Cargo thresholds](https://github.com/frappe/cargo/blob/develop/docs/watcher.md#thresholds).
+- Rules, windows, and threshold values: [Cargo threshold rules](https://github.com/frappe/cargo/blob/develop/docs/watcher.md#threshold-rules), [Cargo windows](https://github.com/frappe/cargo/blob/develop/docs/watcher.md#windows), and [Cargo thresholds](https://github.com/frappe/cargo/blob/develop/docs/watcher.md#thresholds).
+- Feeds, hostname checks, and address checks: [Cargo feeds](https://github.com/frappe/cargo/blob/develop/docs/watcher.md#feeds).
+- Baseline, shadow, red team, and activation: [Cargo calibration](https://github.com/frappe/cargo/blob/develop/docs/watcher.md#calibration).
 
-Metal exports per-VM counters to Datum at the metald telemetry interval, 30 s by default. Each series has the label `virtual_machine`, the Atlas VM name. Central maps it to a server through `Virtual Machine.atlas_vm_id`. Datum keeps `vm_abuse_*` series for 30 days. See [Atlas counters](https://github.com/frappe/atlas/blob/develop/docs/abuse/metrics.md#counters) and [Cargo per-VM metrics](https://github.com/frappe/cargo/blob/develop/docs/abuse-logs.md#per-vm-metrics).
+Central acts on findings:
 
-Central uses these series:
-
-| Series | Use |
-|---|---|
-| `vm_abuse_transmit_packets_total`, `vm_abuse_transmit_bytes_total` | Outbound floods and volume. Labels `scope` (public or mesh) and `protocol`. |
-| `vm_abuse_receive_packets_total`, `vm_abuse_receive_bytes_total` | Answer ratios and inbound floods. Same labels. |
-| `vm_abuse_tcp_initiated_total`, `vm_abuse_tcp_answered_total` | SYN floods and scan answer ratios |
-| `vm_abuse_udp_first_packets_total` | UDP to new destinations |
-| `vm_abuse_destinations` | Gauge: distinct public destinations in the window. Labels `port_class` (a class, or `all`) and `window` (`60s` or `10m`). |
-| `vm_abuse_ports_per_destination_max` | Gauge: the highest number of distinct ports to one public address in the last 60 s |
-| `vm_abuse_flows_per_destination_max` | Gauge: the highest number of new flows to one public address in the last 10 min. Label `port_class`. |
-| `vm_abuse_unanswered_pairs` | Gauge: unanswered address and port pairs in the last 1 h |
-| `vm_abuse_smtp_blocked_total` | Port 25 attempts that `smtp_outbound` blocked |
-| `vm_abuse_stratum_flows_total` | New flows with a stratum match in the first payload bytes |
-| `vm_abuse_amplification_bytes_total` | Public UDP bytes of the `amplification` class. Labels `direction` and `port`. `transmit` counts bytes from an amplification source port. `receive` counts bytes to an amplification destination port. |
-
-The definitions of the series and their labels are in [Atlas counters](https://github.com/frappe/atlas/blob/develop/docs/abuse/metrics.md#counters).
-
-Central computes rates from counter differences. A counter that goes down is a metald restart. Central treats it as a gap, not as a rate.
-
-Port classes (`auth`, `smtp`, `submission`, `amplification`, `mining`) are a fixed list in metald. See [Atlas port classes](https://github.com/frappe/atlas/blob/develop/docs/abuse/metrics.md#port-classes). Central keeps a copy of the list in code, and changes it together with metald. Central uses it to turn a class into explicit ports for `port_block`.
-
-### Finding codes
-
-A finding code uses the GuardDuty style `<threat>:<resource>/<name>`. A finding never names a reporter. Customer evidence holds counts, ports, times, and destination prefixes truncated to /24.
-
-| Finding code | Signal | Source |
-|---|---|---|
-| `DoS:VM/OutboundFlood` | Public pps or bps above the threshold | Datum |
-| `DoS:VM/SynFlood` | Initiated SYN to few destinations, few answered | Datum |
-| `Recon:VM/Portscan` | Fan-out with a low answer ratio | Datum |
-| `UnauthorizedAccess:VM/BruteForce` | Auth ports to many addresses, or many connections to one | Datum |
-| `Smtp:VM/BlockedPort25` | A few blocked port 25 attempts | Datum |
-| `Spam:VM/Smtp` | Many port 25 attempts, a submission spray, or our address on a DNSBL or in SNDS | Datum, feed |
-| `Reflector:VM/<protocol>` | Amplification ratio, or a Shadowserver report | Datum, feed |
-| `CryptoCurrency:VM/PoolConnection` | Pool address from the feed in the NAT log, or a stratum match | NAT log, Datum |
-| `CryptoCurrency:VM/PoolName` | Pool name in the SNI log | SNI log |
-| `Backdoor:VM/C2Activity` | Flows to Spamhaus DROP or abuse.ch Feodo addresses | NAT log |
-| `Phishing:Site/LookalikeDomain` | A site hostname with a brand term on a young team | Site Domain |
-| `Proxy:VM/Tor` | Connections to Tor relays from the public consensus | NAT log |
-| `Phishing:Site/Reported` | Site hostname on Safe Browsing, OpenPhish, or URLhaus, or in a report | Feed, report |
-| `Phishing:Bucket/Reported` | Public bucket hostname on a phishing feed | Cargo |
-| `Content:Site/Illegal` | Report only | Report |
-| `DoS:VM/InboundFlood` | Received pps or bps on a VM above the threshold | Datum |
-
-The [policy engine](#policy-engine) decides the next step for each finding.
-
-### Threshold rules
-
-1. Every rule has a volume floor and a shape condition: answer ratio, packet size, fan-out, or protocol.
-2. Rules count public traffic only. Mesh traffic never counts.
-3. Limits are absolute. They do not change with the VM size.
-4. A rule needs a series in [Metrics](#metrics). A rule whose series Metal does not export stays Off.
-
-### Windows
-
-Every window is 1 min or longer. The rules that used 30 s now use 2 min.
-
-| Window | Use |
-|---|---|
-| 1 min | Volumetric flood, horizontal and vertical scan, reflector |
-| 2 min | UDP, small-packet, ICMP, and SYN floods, inbound flood |
-| 10 min | Brute force, SMTP, mining stratum |
-| 1 h | Slow scan, C2 |
-
-Reaction time is the window, plus up to 30 s until the next sample, plus up to 1 min until the next scheduler run. For the flood and scan rules, with 1 min and 2 min windows, this is about 3 min (2.5 min to 3.5 min) from the start of abuse to a restriction. No automatic limit exists before that. A VM can flood or scan for these minutes. This is an accepted trade-off: Atlas keeps no detection state, and Central makes every decision.
-
-### Thresholds
-
-An Abuse Threshold holds the trigger values of one finding code in one region. Layout: [Abuse layouts](ABUSE_LAYOUTS.md#abuse-threshold).
-
-- `mode` is Off, Shadow, or Active. Shadow writes signals with `is_shadow` and opens no case. Active also sends the signal to the policy engine.
-- An operator changes a value or a mode in Desk, with no deploy.
-- These are starting values. They ship as fixtures, not as JSON defaults, so a region can use other values. No value is Active until [calibration](#calibration) confirms it.
-- The "Reads" column names the [series](#metrics) or the source of each rule. Rates and ratios use the `scope="public"` series. A 1 min count of destinations reads `window="60s"`. A 10 min count reads `window="10m"`.
-
-Outbound to public destinations:
-
-| Rule | Finding code | Trigger | Reads |
-|---|---|---|---|
-| UDP flood | `DoS:VM/OutboundFlood` | UDP above 20k pps for 2 min, and received below 10% of sent or fewer than 8 destinations | `vm_abuse_transmit_packets_total` and `vm_abuse_receive_packets_total` with `protocol="udp"`, `vm_abuse_destinations{port_class="all",window="60s"}` |
-| Small-packet flood | `DoS:VM/OutboundFlood` | Above 20k pps for 2 min, average packet below 200 bytes | `vm_abuse_transmit_packets_total`, `vm_abuse_transmit_bytes_total` |
-| Volumetric | `DoS:VM/OutboundFlood` | Above 1 Gbit/s for 1 min, received below 5% of sent | `vm_abuse_transmit_bytes_total`, `vm_abuse_receive_bytes_total` |
-| ICMP flood | `DoS:VM/OutboundFlood` | Above 1k pps for 2 min | `vm_abuse_transmit_packets_total{protocol="icmp"}` |
-| SYN flood | `DoS:VM/SynFlood` | Initiated SYN above 2k/s for 2 min, answered below 10% | `vm_abuse_tcp_initiated_total`, `vm_abuse_tcp_answered_total` |
-| Horizontal scan | `Recon:VM/Portscan` | 256 or more addresses in one port class in 1 min, below 25% answered | `vm_abuse_destinations{window="60s"}` for each port class, `vm_abuse_tcp_initiated_total`, `vm_abuse_tcp_answered_total` |
-| Vertical scan | `Recon:VM/Portscan` | 512 or more ports on one address in 1 min, below 25% answered | `vm_abuse_ports_per_destination_max`, `vm_abuse_tcp_initiated_total`, `vm_abuse_tcp_answered_total` |
-| Slow scan | `Recon:VM/Portscan` | 2,000 or more unanswered address and port pairs in 1 h. Low severity. | `vm_abuse_unanswered_pairs` |
-| Brute force | `UnauthorizedAccess:VM/BruteForce` | The `auth` class to 64 or more addresses in 10 min, or 300 or more new flows to one address in 10 min | `vm_abuse_destinations{port_class="auth",window="10m"}`, `vm_abuse_flows_per_destination_max{port_class="auth"}` |
-| Reflector | `Reflector:VM/<protocol>` | Amplification source port, bytes out above 10 times bytes in, above 10 Mbit/s for 1 min | `vm_abuse_amplification_bytes_total`, `transmit` against `receive` for each `port`. The `port` gives the protocol, for example 53 is DNS. |
-
-SMTP:
-
-| Rule | Trigger | Result | Reads |
-|---|---|---|---|
-| Port 25 misconfiguration | 1 to 19 blocked attempts in 10 min | `Smtp:VM/BlockedPort25`, Low | `vm_abuse_smtp_blocked_total` |
-| Port 25 spam | 500 or more blocked attempts in 10 min, or 50 or more destinations | `Spam:VM/Smtp`, Medium | `vm_abuse_smtp_blocked_total`, `vm_abuse_destinations{port_class="smtp",window="10m"}` |
-| Submission spray | The `submission` class to 20 or more addresses, or 300 or more new flows to one address, in 10 min | `Spam:VM/Smtp`, Medium | `vm_abuse_destinations{port_class="submission",window="10m"}`, `vm_abuse_flows_per_destination_max{port_class="submission"}` |
-| DNSBL listing | A listing of the public address of a server | `Spam:VM/Smtp` from the feed. See [DNSBL response](#dnsbl-response). | DNSBL feeds |
-
-Other rules:
-
-| Rule | Trigger | Reads |
-|---|---|---|
-| Mining pool, feed | 1 match of a pool address in the NAT log, or of a pool name in the SNI log | NAT log, SNI log |
-| Mining pool, stratum | 1 or more stratum flows in 10 min | `vm_abuse_stratum_flows_total` |
-| C2 | 1 flow to abuse.ch Feodo, or 3 flows in 1 h to Spamhaus DROP | NAT log |
-| Lookalike domain | A site hostname with a brand term, on a team younger than 30 days. `Phishing:Site/LookalikeDomain`, Low. An operator reviews it. See [Phishing sites](#phishing-sites). | Site Domain, team age |
-| Inbound flood | Above 20k pps or 1 Gbit/s received for 2 min. Central applies `ingress_throttle` and sends `security_inbound_attack`. See [Inbound DDoS](#inbound-ddos). | `vm_abuse_receive_packets_total`, `vm_abuse_receive_bytes_total` |
+- Watcher knows no teams, trials, or profiles. Central maps the subject of each finding to a team, and applies the [profile](#profiles) and any approved [exception](#exceptions).
+- `virtual_machine` is the Atlas VM ID, for example `vm-0a1b2c3d4e`. Central matches it to `Virtual Machine.atlas_vm_id`. Central skips a finding on a VM that it does not know. These are the tenant 0 infrastructure VMs.
+- Central reads no metrics and no logs. Neither Central nor Watcher reads the content of VM traffic.
+- Central makes one finding itself, `Phishing:Site/LookalikeDomain`, because it needs the team age. See [Phishing sites](#phishing-sites).
+- A flood or a scan can continue for about 3 min before Central restricts the VM. No automatic limit exists before that. See [Cargo windows](https://github.com/frappe/cargo/blob/develop/docs/watcher.md#windows).
 
 The HTTP proxy has static limits for each client address and site: `limit_req` 100 requests a second with a burst of 500, and `limit_conn` 200. Central does not change them. See [Atlas HTTP proxy](https://github.com/frappe/atlas/blob/develop/docs/abuse/enforcement.md#http-proxy).
 
 ### Profiles
 
-Central picks a profile for each server on each detection run, from team data. The profile stays in Central. Atlas does not get it.
+Central picks a profile for each server when a finding arrives, from team data. The profile stays in Central. Watcher and Atlas do not get it.
 
-| Profile | For | Effect |
+| Profile | For | Multiplier |
 |---|---|---|
-| `strict` | Free trial servers, and teams that never paid | Volume triggers at `strict_multiplier` (start with 0.5) |
-| `standard` | All other servers | The values in [Thresholds](#thresholds) |
-| `relaxed` | Trust tier 3 (Advance) or higher, and no case in 90 days | Volume triggers at `relaxed_multiplier` (start with 2) |
+| `strict` | Free trial servers, and teams that never paid | 0.5 |
+| `standard` | All other servers | 1 |
+| `relaxed` | Trust tier 3 (Advance) or higher, and no case in 90 days | 2 |
 
 When rules overlap, Central uses the first match:
 
@@ -213,76 +114,29 @@ When rules overlap, Central uses the first match:
 3. A team that never paid is `strict`.
 4. All other servers are `standard`.
 
-- A multiplier changes volume values: rates, counts of addresses, and counts of attempts. It does not change ratios, feed matches, or stratum matches.
-- The multipliers are in Central Settings. See [Settings](#settings).
-- There is no profile for infrastructure VMs. Central skips VMs that it does not know.
+- Central acts on a finding when every value in `measured` reaches the matching value in `threshold` times the multiplier.
+- `threshold` holds the standard values. Watcher reports a finding from 0.5 times `threshold`, the strict level, so each profile gets the findings that it needs.
+- A finding below the level of the profile writes no Abuse Signal. A later update of the same `finding_id` can reach the level.
+- `measured` and `threshold` hold only the volume triggers: rates, counts of addresses, and counts of attempts. These are the triggers that scale with the profile. See [Cargo thresholds](https://github.com/frappe/cargo/blob/develop/docs/watcher.md#thresholds).
+- Watcher checks ratio and shape conditions at their standard values, for example the answer ratio, the packet size, and bytes out against bytes in. It puts the measured ratios in `evidence`. The multiplier does not change them.
+- A feed match or a stratum match has empty `measured` and `threshold`. Central acts on it for every profile.
+- The multipliers are constants in code, not settings. The strict multiplier must equal the Watcher report level, so the two change together.
+- There is no profile for infrastructure VMs.
 
 ### Exceptions
 
-An approved [Abuse Exception](#abuse-exception) changes one finding code on one server until it expires. Detection reads it on each run. Central sends nothing to Atlas.
-
-### Feeds
-
-An Abuse Feed holds one external list. Central fetches each enabled feed on its own schedule. A feed match is an Abuse Signal with source Feed. A feed is not an abuse report, so Central sends no reply. Layout: [Abuse layouts](ABUSE_LAYOUTS.md#abuse-feed).
-
-| Feed | Use |
-|---|---|
-| Mining pools | Pool addresses and names |
-| Spamhaus DROP, abuse.ch Feodo | C2 addresses |
-| Tor consensus | Tor relay addresses |
-| Safe Browsing, OpenPhish, URLhaus | Phishing and malware hostnames |
-| DNSBLs: Spamhaus ZEN, Barracuda, and others | Listings of our public addresses |
-| Microsoft SNDS | Spam trap hits and complaints for our address ranges |
-| Shadowserver | Reports for the region's prefixes, through its API |
-
-Central matches feeds in three ways:
-
-- Logs. Metal uploads one NAT log object and one SNI log object for each host every 5 min. After each upload, Central reads the new objects from the Cargo log bucket with the read key, and matches the destination addresses and server names against the feeds. See [Cargo object layout](https://github.com/frappe/cargo/blob/develop/docs/abuse-logs.md#object-layout), [Atlas NAT log](https://github.com/frappe/atlas/blob/develop/docs/abuse/metrics.md#nat-log), and [Atlas SNI log](https://github.com/frappe/atlas/blob/develop/docs/abuse/metrics.md#sni-log).
-- Site hostnames. Central checks each Site Domain against the phishing feeds when the domain is added, and every day after.
-- Public addresses. Central checks the `public_ipv4` and `public_ipv6` of each server that is not Terminated against the DNSBLs every hour.
-
-Limitation: Central knows only the addresses of its own servers. A listed address can go to a new server. If the server got the address less than 7 days before Central first sees the listing, Central posts the listing to Raven `#abuse` and opens no case for the new team. An operator gets the address delisted.
+An approved [Abuse Exception](#abuse-exception) changes one finding code on one server until it expires. It sets another multiplier, or disables the finding code for the server. Central reads it when a finding arrives. Watcher and Atlas get nothing.
 
 ### Signals
 
-An Abuse Signal is one match of one finding code on one server, or on one bucket or site, in one window. It is team-scoped. Layout: [Abuse layouts](ABUSE_LAYOUTS.md#abuse-signal).
+An Abuse Signal is one finding on one server, bucket, or site. It is team-scoped. Layout: [Abuse layouts](ABUSE_LAYOUTS.md#abuse-signal).
 
-- Fields: team, server, finding code, severity, source, `window_start`, `window_end`, values, `is_shadow`, and `is_false_positive`.
-- Values hold counts, rates, top destination ports, and destination prefixes truncated to /24.
-- A match that continues an open signal of the same server and finding code moves its `window_end`. A gap of more than one window starts a new signal.
-- A signal from an Active threshold goes to the policy engine. The policy engine finds or opens the case for (team, server, finding code), and links the signal to it.
-- A shadow signal opens no case.
-- Sources: Detection, Feed, Cargo, Report, or Operator.
-
-### Mining detection
-
-The AUP forbids mining on every server. CPU use alone is never evidence. Central finds mining from:
-
-- `vm_abuse_stratum_flows_total`. Metal reads only the first payload bytes of new flows to non-standard ports for this match.
-- Matches of pool addresses in the NAT log, and of pool names in the SNI log, against the mining pool feed.
-
-The outcomes are in [Mining](#mining).
-
-### Calibration
-
-1. Baseline. Until per-VM metrics are in Datum, an operator runs the Atlas script [atlas-abuse-baseline.py](https://github.com/frappe/atlas/blob/develop/scripts/atlas-abuse-baseline.py) on every Metal host from 2 to 7 November 2026, so that the samples include the October month end. Agents do not run it. Its data includes mesh traffic and counts a SYN-ACK as a SYN, so it gives upper bounds only.
-2. Shadow. Every Abuse Threshold `mode` is Shadow for at least 4 weeks, with a month end. Signals get `is_shadow`. Central opens no case for them.
-3. Red team in staging, from a test tenant. Each row must give a signal in time:
-
-   | Tool | Rule | Signal within |
-   |---|---|---|
-   | masscan at 100, 1k, and 10k pps | Horizontal scan | 3 min |
-   | nmap `-T3` and `-T4`, top 1000 ports | Vertical scan | 3 min |
-   | hping3 `--flood`, SYN and UDP | SYN flood, UDP flood | 4 min |
-   | hydra against 100 SSH hosts in a test range | Brute force | 12 min |
-   | iperf3 UDP at 2 Gbit/s to a silent sink | Volumetric | 3 min |
-   | xmrig to a test stratum server | Mining, stratum | 12 min |
-   | swaks loop to 100 MX hosts on port 25 | Port 25 spam | 12 min |
-
-   These must stay silent: a bench build (yarn, pip, git), `apt upgrade`, a 50 GB backup to S3, a month-end run of 10k emails, a 500 Mbit/s WireGuard VPN, and a crawler on 1k sites.
-4. Active. Switch one finding code at a time, when false positives are below 1 for each 1,000 VM-days and every red-team row gives a signal.
-
-After that, responders mark disputed signals `is_false_positive`. The daily digest shows false positives for each finding code. Operators tune each region in its Abuse Thresholds.
+- Fields: team, server, bucket, hostname, address, finding code, severity, source, `finding_id`, `window_start`, `window_end`, `measured`, `threshold`, evidence, `is_shadow`, `is_trusted_source`, and `is_false_positive`.
+- Central matches a finding to a signal by `finding_id`. A known `finding_id` updates the signal and moves its `window_end`. A new `finding_id` adds a signal.
+- Evidence holds the port class, ports, the protocol, counts, ratios, destination prefixes truncated to /24 or /48, the feed that matched, and the feed entry that matched. See [Reports from Cargo](#reports-from-cargo). It holds no payloads and never names a reporter.
+- A finding with `is_shadow` writes a signal with `is_shadow`. Central stores it, takes no action, and opens no case.
+- Every other signal goes to the policy engine. The policy engine finds or opens the case for (team, server, finding code), or for (team, bucket, finding code), and links the signal.
+- Sources: Watcher, Brand Scoring, Report, or Operator.
 
 ## Abuse Case
 
@@ -290,7 +144,7 @@ An Abuse Case is the record of one abuse problem on one server. It is team-scope
 
 - Central keeps one open case for each (team, server, finding code), or for each (team, bucket, finding code).
 - The name is `AC-.#####`. It is the reference in mail subjects, for example `[AC-00192]`.
-- A case links its Abuse Signals. They come from detection, feeds, Cargo reports, Abuse Reports, or an operator.
+- A case links its Abuse Signals. They come from Watcher findings, brand-term scoring, Abuse Reports, or an operator.
 - A case for a public bucket names the bucket instead of a server. See [Public buckets](#public-buckets).
 - Status, ladder level, deadlines, and restrictions change only through the policy engine or an operator action. Nobody edits them on the form.
 - Severity is Low, Medium, High, or Critical. Three signals of one finding code on the case in 24 h raise it to High.
@@ -342,7 +196,7 @@ Resolution values: Fixed, False Positive, No Response, Terminated, Suspended, Du
 
 | Level | Action | Applied by | Ends |
 |---|---|---|---|
-| 0 | Signal | Central detection | Not applicable |
+| 0 | Signal | Watcher finding, or Central | Not applicable |
 | 1 | Notice | Central | Not applicable |
 | 2 | `port_block` or `egress_throttle` | Central or an operator | Lift or `expires_at` |
 | 3 | `quarantine` | Central or an operator | Lift |
@@ -415,28 +269,29 @@ Default escalation:
 | Illegal content | A responder through `#abuse-p1`. Tombstone or isolate. Set `is_legal_hold` on the case. |
 | Inbound flood | `ingress_throttle` and a protection notice. See [Inbound DDoS](#inbound-ddos). |
 
-- An immediate level 2 restriction from detection has `expires_at` 24 h after it is applied. So a failure in detection or in Central never leaves it in place for long.
-- While the match continues, the open signal moves its `window_end`. When less than 12 h of the restriction remain, Central extends it with a new `expires_at`. See [Calls to Atlas](#calls-to-atlas).
+- An immediate level 2 restriction from a finding has `expires_at` 24 h after it is applied. So a failure in Watcher or in Central never leaves it in place for long.
+- While the match continues, Watcher updates the finding with a later `window_end`, and the signal moves its `window_end`. When less than 12 h of the restriction remain, Central extends it with a new `expires_at`. See [Calls to Atlas](#calls-to-atlas).
 - An extension never resets the deadline or the ladder level.
 - Example: a scan from a trial that never paid is isolated. The same scan from a Tier 3 team that paid for 12 months gets a `port_block`, a notice, and 24 h.
 - At a deadline, the policy engine takes the next ladder step and sends `abuse_restriction_applied`.
 - Abuse history lowers the trust tier. A resolved case with a fix restores the tier after 90 days.
 
-The finding codes and their meaning are in [Finding codes](#finding-codes).
+The finding codes and their meaning are in [Cargo finding codes](https://github.com/frappe/cargo/blob/develop/docs/watcher.md#finding-codes).
 
 ## Abuse Exception
 
-An Abuse Exception lets a team change one detection rule on one server for a fixed period. Example: an authorized penetration test. It is team-scoped. Layout: [Abuse layouts](ABUSE_LAYOUTS.md#abuse-exception).
+An Abuse Exception lets a team change how Central acts on one finding code on one server for a fixed period. Example: an authorized penetration test. It is team-scoped. Layout: [Abuse layouts](ABUSE_LAYOUTS.md#abuse-exception).
 
 - A member with `security:manage` requests it on the server's Security tab. A responder approves or rejects it.
 - Fields: team, server, finding code, effect (a multiplier, or disabled), reason, expiry, and approver.
 - The expiry is at most 90 days after the start.
-- Detection applies an approved exception until it expires or a responder revokes it. The exception stays in Central. Atlas gets nothing.
+- Central applies an approved exception to findings until it expires or a responder revokes it. The exception stays in Central. Watcher and Atlas get nothing.
+- The controller refuses a multiplier below 0.5. Watcher reports nothing below the strict level, so a lower multiplier has no effect.
 - The controller refuses the `smtp_outbound` default block. Port 25 has its own flow. See [Email](#email).
 
 ## Controls
 
-Central never reads the content of a VM's traffic. Metal reads only the TLS server name and, for mining, the first payload bytes of new flows to non-standard ports. The AUP and the privacy policy must say so before Metal turns on the SNI log.
+Neither Central nor Watcher reads the content of a VM's traffic. Metal reads only the TLS server name and, for mining, the first payload bytes of new flows to non-standard ports. The AUP and the privacy policy must say so before Metal turns on the SNI log.
 
 ### Email
 
@@ -464,28 +319,32 @@ Port 25 unblock flow:
 - A DNSBL listing, or an SNDS spam trap hit, on an address with port 25 unblocked opens a case. Central sets the Port 25 Request of the server to Revoked, sets its `abuse_case` to the new case, and clears `is_port_25_allowed`.
 - For `Spam:VM/Smtp` with a DNSBL listing, Central applies `port_block` on the ports of the `smtp` and `submission` classes. An operator gets the address delisted.
 - DNSBL notices that arrive by email become Abuse Reports. See [Report intake](#report-intake).
-- Central checks the public addresses of its servers against DNSBLs. A listing on an address that a server got recently opens no case. See [Feeds](#feeds).
+- Every hour, Watcher checks two sets of addresses against DNSBLs, Microsoft SNDS, and Shadowserver: the dedicated public IPv4 and IPv6 addresses of each VM, and the public source addresses in the NAT log. Watcher reports each listing as a finding. See [Cargo feeds](https://github.com/frappe/cargo/blob/develop/docs/watcher.md#feeds).
+- A finding on a dedicated address has `address` and `virtual_machine`. It follows the normal policy: a case, the response above, and the revoke of the Port 25 Request.
+- Central checks through [Public IP history](#public-ip-history) when the server got the address. If the server got it less than 7 days before Central gets the finding, Central posts the listing to Raven `#abuse` and opens no case for the new team. An operator gets the address delisted.
+- A finding on a shared NAT address has `address` only. It names no single server. Central posts its listing to Raven `#abuse` and opens no case.
 
 ### Phishing sites
 
 - Central suspends a site with `proxy.suspend_site(name, reason_code)` in `central/integrations/proxy.py`. The proxy serves a branded suspended page with HTTP 403 for abuse, or HTTP 451 for a legal hold, and a link to the abuse page.
-- Central suspends automatically only when the source is a Trusted feed or reporter, or when another signal corroborates it. Otherwise an operator checks first.
+- Central suspends automatically only when the finding has `is_trusted_source`, the reporter is Trusted, or another signal corroborates it. Otherwise an operator checks first.
 - Only an operator lifts a site suspension.
-- Central checks site hostnames against phishing feeds. A match is an Abuse Signal with `Phishing:Site/Reported`. See [Feeds](#feeds).
-- Central gives a score to hostnames with brand terms on teams younger than 30 days. A match is an Abuse Signal with `Phishing:Site/LookalikeDomain`, Low severity, for an operator to review. See [Thresholds](#thresholds).
+- Watcher checks the hostnames in the proxy access logs against phishing feeds, and reports a match with `Phishing:Site/Reported`. Central finds the site through Site Domain, then proxy routes. See [Cargo feeds](https://github.com/frappe/cargo/blob/develop/docs/watcher.md#feeds).
+- Central writes an Error Log for a hostname that it cannot find. It opens no case for it.
+- Central gives a score to the hostname of each new Site Domain on a team younger than 30 days. A hostname with a brand term is an Abuse Signal with `Phishing:Site/LookalikeDomain`, Low severity, and source Brand Scoring, for an operator to review. Central does this, not Watcher, because it needs the team age.
 
 ### Public buckets
 
 This flow applies only after Cargo offers public buckets. Cargo has no public buckets today.
 
-- Cargo checks the hostname of each public bucket against phishing feeds. See [Cargo public buckets](https://github.com/frappe/cargo/blob/develop/docs/abuse-logs.md#public-buckets).
-- Cargo sends a match to Central in its `storage` report. See [Reports from Cargo](#reports-from-cargo).
+- Watcher checks the hostname of each public bucket against phishing feeds. See [Cargo public buckets](https://github.com/frappe/cargo/blob/develop/docs/abuse-logs.md#public-buckets).
+- Watcher sends a match to Central as a finding with `Phishing:Bucket/Reported` and `bucket` set. See [Reports from Cargo](#reports-from-cargo).
 - Central opens a case for the team that owns the bucket.
 - Central can suspend the bucket with `suspend_bucket`, and lift the suspension with `unsuspend_bucket`. See [Calls to Cargo](#calls-to-cargo).
 
 ### Mining
 
-The AUP forbids mining on every server, trial or paid. CPU use alone is never evidence. Detection is in [Mining detection](#mining-detection).
+The AUP forbids mining on every server, trial or paid. CPU use alone is never evidence. Watcher finds mining from the stratum counter, and from mining pool matches in the NAT and SNI logs. See [Cargo finding codes](https://github.com/frappe/cargo/blob/develop/docs/watcher.md#finding-codes).
 
 | Team | Outcome |
 |---|---|
@@ -503,7 +362,7 @@ A button on the server's Security tab applies `quarantine` with `applied_by = Cu
 
 The customer is the victim. The steps protect the customer. They are not penalties and never count as history.
 
-- On an inbound flood, Central applies `ingress_throttle` to the VM. See [Thresholds](#thresholds).
+- On a `DoS:VM/InboundFlood` finding, Central applies `ingress_throttle` to the VM. See [Cargo thresholds](https://github.com/frappe/cargo/blob/develop/docs/watcher.md#thresholds).
 - An operator can add an XDP drop on the attacked address, or withdraw the address, in Atlas. See [Atlas inbound DDoS](https://github.com/frappe/atlas/blob/develop/docs/abuse/enforcement.md#inbound-ddos).
 - Central sends `security_inbound_attack`: "Your server is under attack. We limited inbound traffic to X."
 - Central tells customers with a public IP to put their sites behind the proxy.
@@ -520,7 +379,7 @@ Central records each change of `public_ipv4` or `public_ipv6` on a Virtual Machi
 - Attribution finds the row where `attached_at <= t < detached_at`, or where `detached_at` is empty.
 - Each day without this record loses history, so it comes first in the implementation.
 
-A shared NAT address names no single server. For it, Central reads the NAT log objects in the Cargo log bucket. See [Atlas NAT log](https://github.com/frappe/atlas/blob/develop/docs/abuse/metrics.md#nat-log).
+A shared NAT address names no single server. For it, Central calls Cargo `attribute_address`. See [Calls to Cargo](#calls-to-cargo).
 
 ## Report intake
 
@@ -532,7 +391,7 @@ Abuse reports live only in Central.
 |---|---|
 | Email | `abuse_email`, read by a Frappe incoming Email Account. The same address is the IRT and `abuse-c` contact in APNIC WHOIS for our prefixes. |
 | Web form | Guest page `/abuse`: category, address or hostname, port, time with timezone, description, and evidence upload. hCaptcha, a rate limit for each IP, and an upload size limit. |
-| Feeds | Central fetches feeds. Matches are signals with source Feed, not reports. Central sends no reply. See [Feeds](#feeds). |
+| Feeds | Watcher matches feeds. A match is a finding, not a report. Central sends no reply. See [Findings from Watcher](#findings-from-watcher). |
 | Legal | Law enforcement requests, court orders, and CERT-In directions. A responder forwards them to legal and links them to the case. Never automatic. |
 
 ### Abuse Report
@@ -552,8 +411,8 @@ A standalone DocType. It is not team-scoped. Only `Abuse Responder` reads it. La
 3. Attribute each item:
    - Hostname: Central site records (Site Domain) first, then proxy routes. Method Site Record or Proxy Route.
    - Dedicated address: the [Public IP Assignment](#public-ip-history) row for the address and time. Method Public IP History.
-   - Shared NAT address: the NAT log objects in the Cargo log bucket for the time, with the read key. Method NAT Log.
-   - Proxy address: the proxy access log objects in the Cargo log bucket. Method Proxy Route.
+   - Shared NAT address: Cargo `attribute_address` with the address, port, and time. Method NAT Log. See [Calls to Cargo](#calls-to-cargo).
+   - Proxy address: the hostname in the report, as above. Without a hostname, the item is `Unattributed`.
    - No match: `Unattributed`, to the dashboard queue. Never guess.
 4. Merge: an item for a server with an open case of the same category joins that case. Ten complaints make one case and one notice.
 5. Set `reporter_trust`:
@@ -660,7 +519,6 @@ Central Settings has a tab "Abuse". No field has a default. Layout: [Abuse layou
 | `abuse_alert_webhook_url` | Raven `#abuse-p1` |
 | `abuse_report_webhook_url` | Raven `#abuse` and the daily digest |
 | `trusted_reporters` | Domains and addresses whose reports are Trusted |
-| `strict_multiplier`, `relaxed_multiplier` | Profile multipliers. See [Profiles](#profiles). Start with 0.5 and 2. |
 | `cert_in_contact_*` | Name, designation, organisation, address, email, mobile, phone, and fax (optional). CERT-In Annexure II. |
 | `cert_in_incident_email` | The address that gets CERT-In reports |
 
@@ -669,11 +527,10 @@ When a field is empty:
 - Central does not guess and has no fallback.
 - The abuse dashboard shows a red banner that names the field. The readiness checks fail, as in `central/billing/platform/readiness.py`.
 - Central does not send a message that needs the field. It writes an Error Log and sets `has_operator_notification_failure` on the case. The case status does not change.
-- Detection does not run until both profile multipliers are set.
 - "Build report" refuses until the CERT-In contact fields are set.
 - Customer notices still go out.
 
-The Datum and log bucket credentials of each region are on the Region. See [Reads from Datum](#reads-from-datum) and [Reads from the log bucket](#reads-from-the-log-bucket).
+The profile multipliers are constants, not settings. See [Profiles](#profiles).
 
 ### Channels
 
@@ -681,7 +538,7 @@ The Datum and log bucket credentials of each region are on the Region. See [Read
 |---|---|
 | Email to `abuse_email` | Every Critical case, copies of reporter acknowledgements, CERT-In clock alerts |
 | Raven `#abuse-p1` (pages on call) | Critical findings, region-level floods, illegal content, unconfirmed cases past their SLA, CERT-In clocks with 2 h left |
-| Raven `#abuse` | Cases that need a person (dispute, port 25 review, failed attribution, deadline reached on a paid team, `Notification Failed`, a `Failed` restriction), DNSBL listings with no case, and detection failures in a region |
+| Raven `#abuse` | Cases that need a person (dispute, port 25 review, failed attribution, deadline reached on a paid team, `Notification Failed`, a `Failed` restriction), DNSBL listings with no case, and regions where Watcher does not report. See [Monitoring](#monitoring). |
 | Daily digest | Cases opened and closed, restrictions applied, top findings, shadow signals and false positives by finding code, DNSBL listings |
 
 ### Abuse dashboard
@@ -697,7 +554,7 @@ A Desk workspace `Abuse` in Central, with Insights charts. Central sees all regi
 │ 2:10      High  AC-00190  foo-pvt        BLR     Recon:VM/Portscan     Port block   │
 ├──────────────────────────┬───────────────────────────┬──────────────────────────────┤
 │ Signals by finding       │ Shadow signals by finding │ Public IPv4 on DNSBLs: 3     │
-│ Cases opened vs closed   │ Detection lag by region   │ False positives (7 d): 1     │
+│ Cases opened vs closed   │ Finding lag by region     │ False positives (7 d): 1     │
 ├──────────────────────────┴───────────────────────────┴──────────────────────────────┤
 │ Unattributed reports 4   Port 25 requests 2   Disputes 1   Restrictions > 14 days 0 │
 └─────────────────────────────────────────────────────────────────────────────────────┘
@@ -705,7 +562,7 @@ A Desk workspace `Abuse` in Central, with Insights charts. Central sees all regi
 
 Case view:
 
-- Evidence pack: the signal timeline, per-VM graphs from Datum for up to 30 days, and NAT, SNI, and proxy log lines from the Cargo log bucket. See [Reads from Datum](#reads-from-datum) and [Reads from the log bucket](#reads-from-the-log-bucket).
+- Evidence pack: the signal timeline, with the measured value, the threshold, and the evidence of each finding. See [Signals](#signals).
 - Team context: trust tier, age, paid history, earlier cases, and security contact.
 - One button for each ladder step. Each needs a reason and writes a Resource Action and a Comment.
 - Separate threads with the customer and the reporter, with reply templates. Neither sees the identity of the other.
@@ -721,9 +578,10 @@ Case view:
 
 ### Monitoring
 
-- `track_changes` is on for Abuse Case, Abuse Exception, Abuse Signal, Abuse Threshold, and Port 25 Request. Atlas VM Restriction rows and Central Resource Actions are the audit record of who restricted a VM and why.
+- `track_changes` is on for Abuse Case, Abuse Exception, Abuse Signal, and Port 25 Request. Atlas VM Restriction rows and Central Resource Actions are the audit record of who restricted a VM and why.
 - The Central investigator agent gets read tools for abuse cases.
-- Central alerts `#abuse` when the detection job of a region fails or reads stale data. See [Detection](#detection).
+- The abuse dashboard shows the finding lag of each region in "Finding lag by region": the age of each `checked_until` value in the last `abuse` report of the region.
+- Central posts to Raven `#abuse` when a region sends no `abuse` report for 10 min, when `checked_until.metrics` or `checked_until.logs` is more than 15 min old, or when `checked_until.feeds` is more than 2 h old. See [Reports from Cargo](#reports-from-cargo).
 
 ## Interfaces
 
@@ -736,7 +594,7 @@ Atlas sends one new event, `vm.restriction`, through the signed webhook path to 
 | Field | Value |
 |---|---|
 | `restriction_id` | The name of the VM Restriction. Central matches it to `atlas_restriction_id`. |
-| `virtual_machine` | The Atlas VM ID |
+| `virtual_machine` | The Atlas VM ID, for example `vm-0a1b2c3d4e`. Central matches it to `Virtual Machine.atlas_vm_id`. |
 | `kind` | The restriction kind |
 | `status` | `Pending`, `Applied`, `Lifted`, or `Failed` |
 | `idempotency_key` | Optional. The Resource Action name from the apply request or the VM create request. |
@@ -798,23 +656,6 @@ Central sends:
 
 Atlas returns the restriction `name`. Central stores it in `atlas_restriction_id` and uses it to lift the restriction. A repeat with the same `idempotency_key` returns the same name. A lost response leaves the Resource Action uncertain, and Central does not send a second apply with a new key.
 
-### Reads from Datum
-
-`central/integrations/datum.py` (planned) queries the per-VM `vm_abuse_*` table of a region's Datum. It uses a read-only ClickHouse user that Cargo makes for Central. An operator copies the query URL, the user, and the password into the Region. See [Cargo per-VM metrics](https://github.com/frappe/cargo/blob/develop/docs/abuse-logs.md#per-vm-metrics) and [Atlas telemetry](https://github.com/frappe/atlas/blob/develop/docs/abuse/contract.md#telemetry).
-
-- Detection reads the last windows every minute. See [Detection](#detection).
-- The evidence pack reads up to 30 days for one VM.
-- Central keeps the queries narrow: one region, a time range, and the `vm_abuse_*` table only.
-
-### Reads from the log bucket
-
-Central reads the NAT, SNI, and proxy access log objects in the region's Cargo log bucket with the read key. An operator copies the endpoint, the bucket name, and the read key from Cargo into the Region. Atlas has no read key. See [Cargo keys](https://github.com/frappe/cargo/blob/develop/docs/abuse-logs.md#keys) and [Atlas log upload](https://github.com/frappe/atlas/blob/develop/docs/abuse/contract.md#log-upload).
-
-- Feed matching reads each new 5 min object once. See [Feeds](#feeds).
-- Report attribution and the evidence pack read the objects around one time.
-- Central reads objects only after their upload, so the newest 5 min are not visible yet.
-- Central never copies log objects out of the region. SNI rows can be personal data.
-
 ### Calls to the proxy
 
 Through `central/integrations/proxy.py`:
@@ -823,46 +664,92 @@ Through `central/integrations/proxy.py`:
 
 ### Calls to Cargo
 
-For public buckets, Central calls these through `central/integrations/cargo.py`:
+Central calls these through `central/integrations/cargo.py`:
 
-- `suspend_bucket(name, region, reason_code)`: turns off website access on the bucket. The bucket and its objects stay.
+- `attribute_address(address, port, time)`: returns the Atlas VM ID that used a shared NAT address and port at that time, or nothing. Watcher reads the NAT log for it. Report attribution uses it. See [Processing](#processing) and [Cargo attribution](https://github.com/frappe/cargo/blob/develop/docs/watcher.md#attribution).
+- `suspend_bucket(name, region, reason_code)`: turns off website access on a public bucket. The bucket and its objects stay.
 - `unsuspend_bucket(name, region)`: turns website access on again.
+
+Central never reads the log bucket or Datum. Log rows stay in the region, because SNI rows can be personal data.
 
 ### Reports from Cargo
 
-Cargo reports a phishing match on a public bucket in its existing `storage` report. See [Cargo reports](WEBHOOKS.md#cargo-reports). The report gets a new optional list, `abuse_signals`. Central owns this shape.
+Watcher sends findings in a Cargo report with `service` set to `abuse`. The signature, headers, and retries are those of every Cargo report. See [Cargo reports](WEBHOOKS.md#cargo-reports). The report also carries `region` and `region_id`, as every Cargo report does. Central ignores them, as that section says. Central owns this shape. Watcher documents when it sends a finding. See [Cargo findings](https://github.com/frappe/cargo/blob/develop/docs/watcher.md#findings).
 
 | Field | Value |
 |---|---|
-| `signal_id` | The Cargo ID of the signal. Central matches repeats on it. |
-| `bucket` | The bucket name |
-| `finding_code` | `Phishing:Bucket/Reported` |
-| `severity` | Low, Medium, High, or Critical |
-| `evidence` | The public hostname and the feed that matched |
-| `window_start` | The start of the check |
-| `window_end` | The end of the check |
+| `service` | `abuse` |
+| `checked_until` | An object with one timestamp for each input: `metrics`, `logs`, and `feeds`. `metrics` and `logs` are the end of the last window that Watcher checked from that input. `feeds` is the end of the last hourly address check. |
+| `findings` | The list of new and changed findings. It can be empty. |
+
+The `abuse` report has no `status` and no `service_endpoint`. Central writes no Service Detail row for it.
+
+- Watcher sends an `abuse` report after each run, every minute. It sends the report also when it has no new or changed finding.
+- When an input fails, Watcher writes an Error Log and does not move `checked_until` for that input.
+- Central keeps the receipt time and `checked_until` of the last `abuse` report of each region. It alerts when they are old. See [Monitoring](#monitoring).
+
+Each finding has these fields:
+
+| Field | Value |
+|---|---|
+| `finding_id` | The Watcher ID of the finding. Central matches repeats on it. |
+| `finding_code` | A code from [Cargo finding codes](https://github.com/frappe/cargo/blob/develop/docs/watcher.md#finding-codes) |
+| `severity` | Low, Medium, High, or Critical, from the Abuse Threshold Trigger row that matched |
+| `virtual_machine` | Optional. The Atlas VM ID, when Watcher knows it. Central matches it to `Virtual Machine.atlas_vm_id`. A finding on a dedicated public address has it. A finding on a shared NAT address does not. |
+| `bucket` | Optional. The bucket name, when the subject is a bucket. |
+| `hostname` | Optional. The hostname, when the subject is a hostname. |
+| `address` | Optional. The public address, when the subject is an address. |
+| `window_start` | The start of the window |
+| `window_end` | The end of the window |
+| `measured` | An object with one measured value for each volume trigger of the rule. Empty for a feed match or a stratum match. See [Profiles](#profiles). |
+| `threshold` | An object with the standard threshold for each volume trigger in `measured`. Empty for a feed match or a stratum match. |
+| `evidence` | An object. See the evidence fields below. No payloads. |
+| `is_shadow` | Set when the Abuse Threshold of the finding code is in Shadow mode |
+| `is_trusted_source` | Set when the finding comes from an Abuse Feed with `is_trusted` |
+
+Each evidence field is optional:
+
+| Field | Value |
+|---|---|
+| `port_class` | The port class of the traffic |
+| `ports` | A list of port numbers |
+| `protocol` | The protocol, for example `tcp` |
+| `counts` | An object of counts |
+| `ratios` | An object of measured ratios, for example `answered_percent` |
+| `prefixes` | Destination prefixes, truncated to /24 for IPv4 and /48 for IPv6 |
+| `feed` | The name of the Abuse Feed that matched |
+| `hostname_match` | The feed entry that matched |
 
 ```json
 {
-	"service": "storage",
-	"status": "Available",
-	"abuse_signals": [
+	"region": "bom",
+	"region_id": 3,
+	"service": "abuse",
+	"checked_until": {"metrics": "2026-10-29T10:03:00Z", "logs": "2026-10-29T10:00:00Z", "feeds": "2026-10-29T10:00:00Z"},
+	"findings": [
 		{
-			"signal_id": "sig-7f3a",
-			"bucket": "acme-assets",
-			"finding_code": "Phishing:Bucket/Reported",
-			"severity": "High",
-			"evidence": "acme-assets.s3.example.com in OpenPhish",
-			"window_start": "2026-10-29T10:00:00Z",
-			"window_end": "2026-10-29T10:05:00Z"
+			"finding_id": "fnd-7f3a",
+			"finding_code": "Recon:VM/Portscan",
+			"severity": "Medium",
+			"virtual_machine": "vm-0a1b2c3d4e",
+			"window_start": "2026-10-29T10:02:00Z",
+			"window_end": "2026-10-29T10:03:00Z",
+			"measured": {"destinations": 4312},
+			"threshold": {"destinations": 256},
+			"evidence": {"port_class": "auth", "ports": [22], "ratios": {"answered_percent": 3}, "prefixes": ["203.0.113.0/24"]},
+			"is_shadow": false,
+			"is_trusted_source": false
 		}
 	]
 }
 ```
 
-- Central finds the team of the bucket, and adds or updates an Abuse Signal with source Cargo by `cargo_signal_id`. It finds or opens the case for (team, bucket, finding code) and links the signal.
-- Central writes an Error Log for a signal on a bucket that it does not know. It opens no case for it.
-- Today Central ignores unknown fields in a Cargo report. So Cargo can send the list before Central reads it.
+- A continuing match sends the same `finding_id` with a later `window_end`. Central updates the same Abuse Signal. See [Signals](#signals).
+- Central finds the team from the VM, the bucket, the hostname, or the address. See [Findings from Watcher](#findings-from-watcher).
+- Central skips a finding on a VM that it does not know. It writes an Error Log for a bucket or a hostname that it does not know, and opens no case.
+- Central builds a `port_block` from `port_class` or `ports` in `evidence`.
+- Central applies the [profile](#profiles) and any [exception](#exceptions). A finding with `is_shadow` is stored with no action.
+- An older Central answers `unsupported service 'abuse'` with HTTP 200 and drops the report. So Central must accept `abuse` reports before Watcher sends them. See [Deploy order](#deploy-order).
 
 ## Records and retention
 
@@ -902,13 +789,14 @@ Evidence holds no payloads. Addresses shown to customers are truncated to /24.
 
 ## Deploy order
 
-1. Cargo: the log bucket and its keys, the per-VM Datum table with its 30-day TTL, and the Central read user.
+1. Cargo: the log bucket and its keys, and the Datum release. The Datum release is a prerequisite: the per-VM table with its 30-day TTL, the ingest that routes `vm_abuse_*` series to that table, and the `watcher` read user. See [Cargo per-VM metrics](https://github.com/frappe/cargo/blob/develop/docs/abuse-logs.md#per-vm-metrics).
 2. Atlas app: the restriction API, `restriction_status` in host sync, and the write keys in host and proxy config.
 3. Metal: the counters and their export, the `metal_abuse` chain with `smtp_outbound`, and the log upload.
 4. HTTP proxy: the tombstone and the log upload.
-5. Central: detection with every Abuse Threshold in Shadow, then cases and restrictions.
+5. Central: accepts `abuse` reports, then profiles, signals, cases, and restrictions.
+6. Cargo Watcher: every Abuse Threshold in Shadow, then Active one finding code at a time. See [Cargo calibration](https://github.com/frappe/cargo/blob/develop/docs/watcher.md#calibration).
 
-All Atlas changes are optional fields: an old Central ignores them. Public IP history has no dependency, so Central can ship it before step 1.
+All Atlas changes are optional fields: an old Central ignores them. Central must accept `abuse` reports before step 6, because an older Central drops them. Public IP history has no dependency, so Central can ship it before step 1.
 
 ## Compared with AWS
 
@@ -919,7 +807,7 @@ All Atlas changes are optional fields: an old Central ignores them. Public IP hi
 | AWS Health abuse event, alternate security contact | Security notifications, the team security contact, and `security:view`. See [Customer messages](#customer-messages). |
 | Shield Standard | Inbound DDoS protection and a notice to the customer. See [Inbound DDoS](#inbound-ddos). |
 
-Differences from AWS: each notice holds the exact evidence. Self-quarantine is one click and keeps access through the WireGuard gateway. Automatic restrictions from detection expire by themselves.
+Differences from AWS: each notice holds the exact evidence. Self-quarantine is one click and keeps access through the WireGuard gateway. Automatic restrictions from findings expire by themselves.
 
 ## Sources
 

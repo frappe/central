@@ -81,11 +81,11 @@ Cargo reports one service per delivery.
 
 | Field | Required | Value |
 |---|---|---|
-| `service` | Yes | `telemetry` or `storage` |
-| `status` | Yes | `Available` or `Not Available` |
+| `service` | Yes | `telemetry`, `storage`, or `abuse` |
+| `status` | For `telemetry` and `storage` | `Available` or `Not Available` |
 | `service_endpoint` | No | The URL consumers reach the service at |
 
-Planned: a `storage` report can also carry an optional `abuse_signals` list, for phishing matches on public buckets. The shape is in [Abuse protection](ABUSE.md#reports-from-cargo).
+Planned: an `abuse` report carries the findings of Watcher, the Cargo abuse detection. It has a `findings` list, and no `status` or `service_endpoint`. The shape is in [Abuse protection](ABUSE.md#reports-from-cargo).
 
 Cargo must map its own lifecycle states before it sends. Central records availability, not a Cargo state name. A cluster or host that is `Active` reports `Available`. Any other settled state reports `Not Available`.
 
@@ -124,8 +124,8 @@ An ignored report is authentic and readable. Central has nothing to do with it. 
 | `invalid observed_at` | Atlas | `observed_at` of a `vm.state` report is missing or is not a timestamp |
 | `no change` | Atlas | Central already records this state, or the server of a `vm.state.deleted` report is already `Terminated` |
 | `stale report` | Atlas | `observed_at` is not newer than the last report Central applied |
-| `unsupported service '<value>'` | Cargo | The service is not `telemetry` or `storage` |
-| `unsupported status '<value>'` | Cargo | The status is not `Available` or `Not Available` |
+| `unsupported service '<value>'` | Cargo | The service is not `telemetry`, `storage`, or `abuse` |
+| `unsupported status '<value>'` | Cargo | The status of a `telemetry` or `storage` report is not `Available` or `Not Available` |
 
 A region may report on a timer instead of on change. When a same-state report has a newer `observed_at`, Central advances `Virtual Machine.last_reported_at` and answers `no change`. This stops an older state change that arrives later from changing the server.
 
