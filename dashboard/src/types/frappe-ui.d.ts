@@ -235,6 +235,7 @@ export const Dropdown: Component
 export const ErrorMessage: Component
 export const FileUploader: Component
 export const FormControl: Component
+export const HoverCard: Component
 export const KeyboardShortcut: Component
 export const LoadingIndicator: Component
 export const LoadingText: Component
