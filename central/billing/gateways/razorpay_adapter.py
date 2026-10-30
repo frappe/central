@@ -195,15 +195,18 @@ class RazorpayAdapter(GatewayAdapter):
 		order_id = invoice.get("order_id")
 		if not order_id:
 			raise GatewayError("A Razorpay charge needs the order prepare_charge created and Central stored.")
-		payer = frappe.db.get_value("Billing Profile", payment_method.team, ["email", "phone"], as_dict=True)
-		if not payer or not payer.email or not payer.phone:
-			return _refused(
-				f"Billing Profile {payment_method.team} needs an email and a phone to debit a mandate."
-			)
 		client = self._client()
 		try:
 			if earlier := _settled_or_live(_order_payments(client, order_id)):
 				return earlier
+			# Checked after the order's payments, so a resumed charge returns the payment it made.
+			payer = frappe.db.get_value(
+				"Billing Profile", payment_method.team, ["email", "phone"], as_dict=True
+			)
+			if not payer or not payer.email or not payer.phone:
+				return _refused(
+					f"Billing Profile {payment_method.team} needs an email and a phone to debit a mandate."
+				)
 			created = client.payment.createRecurring(
 				_recurring_charge(invoice, payment_method, order_id, payer)
 			)

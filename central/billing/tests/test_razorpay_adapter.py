@@ -123,9 +123,20 @@ class TestRazorpayAdapter(GatewayAdapterContract, IntegrationTestCase):
 		invoice, method, key = self.make_charge_inputs()
 		frappe.db.set_value("Billing Profile", method.team, "phone", None)
 		with self._client() as c:
+			c.order.payments.return_value = {"items": []}
 			result = adapter.charge(invoice, method, key)
 		self.assertEqual(result.failure_code, decline.REQUEST_REFUSED)
 		c.payment.createRecurring.assert_not_called()
+
+	def test_a_resumed_charge_returns_its_payment_even_without_a_phone(self):
+		adapter = self.make_adapter()
+		invoice, method, key = self.make_charge_inputs()
+		frappe.db.set_value("Billing Profile", method.team, "phone", None)
+		with self._client() as c:
+			c.order.payments.return_value = {"items": [{"id": "pay_first", "status": "captured"}]}
+			result = adapter.charge(invoice, method, key)
+		self.assertTrue(result.success)
+		self.assertEqual(result.gateway_transaction_id, "pay_first")
 
 	@contextmanager
 	def charge_times_out(self):
