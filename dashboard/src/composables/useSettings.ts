@@ -66,7 +66,7 @@ export const SETTINGS_TABS: SettingsTabDef[] = [
 		group: 'Account',
 		label: 'Profile',
 		icon: 'lucide-user',
-		title: 'My profile',
+		title: 'Profile',
 		description: 'How you appear to your teams.',
 		component: ProfileForm,
 	},

@@ -16,7 +16,7 @@ On a phone, settings open as pages instead of a dialog.
 2. Change **Full name**.
 3. Click **Save**, or press Enter.
 
-<Screenshot name="account/profile" alt="The My profile tab with the photo, the Full name field, and the Email field" />
+<Screenshot name="account/profile" alt="The Profile tab with the photo, the Full name field, and the Email field" />
 
 Your email is shown but you cannot change it. It is the address you sign in with and the address invitations go to.
 
