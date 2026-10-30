@@ -94,6 +94,7 @@ def load_temporary_domains(replace: bool = True) -> None:
 		if not os.path.exists(path):
 			path = BUNDLED_TEMPORARY_DOMAINS
 
+		# nosemgrep: frappe-security-file-traversal -- the path is built here, with no user input.
 		with open(path) as file:
 			domains = [line.strip() for line in file if line.strip() and not line.startswith("#")]
 		replace_cached_set(TEMPORARY_DOMAINS_KEY, domains)

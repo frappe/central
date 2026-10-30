@@ -173,6 +173,7 @@ def refresh_temporary_domains() -> None:
 		return
 
 	path = get_temporary_domains_path()
+	# nosemgrep: frappe-security-file-traversal -- the path is built here, with no user input.
 	with open(f"{path}.tmp", "w") as file:
 		file.write("\n".join(sorted(domains)) + "\n")
 	os.replace(f"{path}.tmp", path)
