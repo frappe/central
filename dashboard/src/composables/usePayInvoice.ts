@@ -5,11 +5,13 @@
 // in-flight Payment Attempt and returns {charged, reason?, attempt?}. We show an
 // "initiated" toast and let the caller refetch; the invoice flips to Paid only
 // when the gateway webhook lands. So this composable never asserts success — it
-// asserts "we kicked off a charge".
+// asserts "we kicked off a charge". An amount above the automatic-payment limit
+// (action_required) opens the invoice checkout instead, so the customer can pay.
 
 import { useCall } from 'frappe-ui'
 import { computed } from 'vue'
 import { API, method } from '@/api/methods'
+import { usePayInvoiceCheckout } from '@/composables/usePayInvoiceCheckout'
 import { reportError, successToast } from '@/lib/feedback'
 
 interface PayResult {
@@ -30,18 +32,19 @@ export function usePayInvoice({
 		onError: (e: unknown) =>
 			reportError(e, { fallback: 'Could not start the payment' }),
 	})
+	const checkout = usePayInvoiceCheckout()
 
 	async function run(invoice: string): Promise<PayResult | undefined> {
 		await pay.submit({ invoice })
 		const res = pay.data ?? undefined
-		if (res?.charged === false) {
+		if (res?.charged === false && res.reason === 'action_required') {
+			await checkout.run(invoice)
+		} else if (res?.charged === false) {
 			// Already settling, nothing due, or not open — say so, don't double-charge.
 			const reasons: Record<string, string> = {
 				attempt_in_flight: 'A payment for this invoice is already in progress.',
 				nothing_due: 'This invoice has nothing left to pay.',
 				not_open: 'This invoice is no longer open.',
-				action_required:
-					'This amount is above the limit for automatic payments. Pay it with checkout instead.',
 			}
 			reportError(
 				(res.reason && reasons[res.reason]) || 'No payment was started',
@@ -57,5 +60,8 @@ export function usePayInvoice({
 
 	// Wrap in a computed so the reactive `loading` survives being returned out of
 	// the reactive useCall object (reading it raw would snapshot a boolean).
-	return { run, loading: computed(() => pay.loading) }
+	return {
+		run,
+		loading: computed(() => pay.loading || checkout.loading.value),
+	}
 }
