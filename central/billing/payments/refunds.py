@@ -78,6 +78,11 @@ def issue_refund(
 	return refund
 
 
+def late_captured_attempts(invoice: str) -> list[str]:
+	"""The charges captured after this invoice was paid. Only their own late capture Refund gives them back."""
+	return frappe.get_all("Refund", filters={"invoice": invoice, "late_capture": 1}, pluck="payment_attempt")
+
+
 def full_dispute(payment_attempt: str, reason: str | None = None):
 	"""Refund the whole charge to source; the invoice stays Paid + linked Refund."""
 	return issue_refund(payment_attempt, amount=None, destination="Source", reason=reason)

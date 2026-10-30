@@ -235,6 +235,25 @@ class TestDisputeWebhook(CorrectionsTestCase):
 		).insert(ignore_permissions=True)
 		return apply_webhook(event.name)
 
+	def test_a_dispute_lost_on_a_late_capture_is_flagged(self):
+		inv = self._paid_invoice()
+		frappe.get_doc(
+			{
+				"doctype": "Refund",
+				"invoice": inv,
+				"team": TEAM,
+				"payment_attempt": frappe.db.get_value("Payment Attempt", {"invoice": inv}),
+				"amount": 3540,
+				"currency": "INR",
+				"destination": "Source",
+				"late_capture": 1,
+				"status": "Failed",
+			}
+		).insert(ignore_permissions=True)
+		self.assertEqual(self._event("charge.dispute.closed", status="lost")["result"], "flagged")
+		self.assertEqual(frappe.db.get_value("Invoice", inv, "status"), "Paid")
+		self.assertFalse(frappe.db.exists("Refund", {"invoice": inv, "destination": "Dispute"}))
+
 	def test_a_dispute_lost_on_a_cancelled_invoice_is_flagged(self):
 		inv = self._paid_invoice()
 		frappe.db.set_value("Invoice", inv, "status", "Cancelled")

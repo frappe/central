@@ -6,8 +6,9 @@ An opened dispute is noted on the invoice for a person to answer. A lost dispute
 over the whole charge cancels the invoice: a credit note, the wallet part given
 back, and no refund, because the gateway has already taken the money back. A lost
 dispute over part of a charge gets a credit note for that part only. A lost dispute
-on an invoice that is no longer Paid is put in front of an operator, because the
-customer may have been refunded as well.
+on an invoice that is no longer Paid, or on a charge captured after the invoice was
+paid, is put in front of an operator, because the customer may have been refunded
+as well.
 """
 
 import frappe
@@ -52,7 +53,15 @@ def apply_dispute(event, payload: dict) -> dict:
 			f"Card dispute {dispute['id']} lost for {dispute['amount']} on a {invoice.status} invoice.",
 		)
 		return {"handled": True, "result": "flagged", "invoice_status": invoice.status}
-	from central.billing.payments import corrections
+	from central.billing.payments import corrections, refunds
+
+	if attempt.name in refunds.late_captured_attempts(invoice.name):
+		_flag(
+			invoice,
+			f"Card dispute {dispute['id']} lost for {dispute['amount']} on payment "
+			f"{attempt.gateway_transaction_id}, which was captured after the invoice was paid.",
+		)
+		return {"handled": True, "result": "flagged", "late_capture": True}
 
 	lost = {"id": dispute["id"], "payment_id": dispute["payment_id"]}
 	if dispute["amount"] + 0.005 < frappe.utils.flt(attempt.amount):

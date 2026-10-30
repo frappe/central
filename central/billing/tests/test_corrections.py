@@ -420,3 +420,25 @@ class TestLateCaptureRefund(CorrectionsTestCase):
 		self.assertTrue(frappe.db.get_value("Invoice", inv, "credit_note_id"))
 		self.assertEqual(self._payment_entries_for(refund), [])
 		self.assertIn("customer asked", self.remote.posts("Sales Invoice")[-1]["remarks"])
+
+	def test_cancelling_after_its_refund_failed_leaves_it_to_the_retry(self):
+		inv, refund = self._late_refund(status="Failed")
+		corrections.cancel_and_refund(inv, "customer asked")
+		self._run_all(inv)
+		refunds = frappe.get_all("Refund", {"payment_attempt": refund.payment_attempt}, pluck="name")
+		self.assertEqual(refunds, [refund.name])
+		self.assertEqual(self.gateway.refund.call_count, 1)  # only the charge that paid the invoice
+		self.assertEqual(self._payment_entries_for(refund), [])
+
+	def test_the_card_payment_in_the_books_is_never_it(self):
+		from central.billing.ingester.erpnext_sync import _card_attempt
+
+		inv, _refund = self._late_refund(status="Failed")
+		paid_by = _card_attempt(frappe.get_doc("Invoice", inv))
+		self.assertEqual(paid_by.gateway_transaction_id, "pi_card")
+
+	def test_a_part_back_to_the_card_never_takes_it_after_its_refund_failed(self):
+		inv, _refund = self._late_refund(status="Failed")
+		corrections.refund_part(inv, 3000, "goodwill", destination="Source")
+		with self.assertRaises(frappe.ValidationError):
+			corrections.refund_part(inv, 1000, "goodwill", destination="Source")

@@ -716,10 +716,15 @@ def _charge_with_room(invoice: str, amount: float) -> str:
 
 
 def _captured_attempts(invoice: str) -> list:
+	"""The captured charges that paid the invoice. A charge captured after it was paid is left out,
+	so a cancellation or a partial refund never books a second refund for it."""
+	from central.billing.payments.refunds import late_captured_attempts
+
+	filters = {"invoice": invoice, "status": "Captured"}
+	if late := late_captured_attempts(invoice):
+		filters["name"] = ["not in", late]
 	return frappe.get_all(
-		"Payment Attempt",
-		filters={"invoice": invoice, "status": "Captured"},
-		fields=["name", "amount", "gateway", "gateway_transaction_id"],
+		"Payment Attempt", filters=filters, fields=["name", "amount", "gateway", "gateway_transaction_id"]
 	)
 
 
