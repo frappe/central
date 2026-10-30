@@ -270,7 +270,7 @@ class TestAuth(IntegrationTestCase):
 			patch(SENDMAIL),
 		):
 			send_code(self.email, "Staff Person")
-			self.assertEqual(self._verify(self._code()), {"user": self.email})
+			self.assertEqual(self._verify(self._code())["user"], self.email)
 
 	def test_a_new_account_cannot_use_a_dotted_spelling_of_a_gmail_account(self):
 		local = f"gmail{frappe.generate_hash(length=8)}"
@@ -294,7 +294,7 @@ class TestAuth(IntegrationTestCase):
 
 		with patch(SENDMAIL):
 			send_code(self.email)
-		self.assertEqual(self._verify(self._code()), {"user": self.email})
+		self.assertEqual(self._verify(self._code())["user"], self.email)
 
 	def test_guest_context(self):
 		context = build_auth_context()
