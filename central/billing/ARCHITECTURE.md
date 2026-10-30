@@ -531,7 +531,8 @@ charges.pay_invoice → create_invoice_payment_order (via gateway adapter)
 | A declined payment on a mandate authorisation order | The Pending Validation method keeps the failure, and a `Payment Method Setup Failed` Billing Event is added. |
 | Short or another currency | Nothing is settled. The invoice gets a comment and an Error Log entry. |
 | More than is due | The invoice is Paid and the surplus goes to the wallet. |
-| The invoice is no longer Open or Overdue | The payment goes to the wallet, once per payment id, and an operator is told. |
+| The invoice is already Paid, by credit or by another charge | `refunds.issue_refund` returns the whole payment to its source and the attempt becomes Refunded. No wallet credit, advance or credit note is booked. The invoice gets a comment and an Error Log entry. |
+| The invoice is Cancelled or Waived | The payment goes to the wallet, once per payment id, and an operator is told. |
 
 Reconciliation asks the gateway about the stored order of an unanswered on-session attempt, and fails it only after `CHECKOUT_OPEN_HOURS`. It credits a Top-up Order that was paid but never confirmed, and expires one nobody paid after `TOP_UP_EXPIRES_HOURS`.
 

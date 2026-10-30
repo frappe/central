@@ -337,13 +337,15 @@ def store_gateway_order(attempt, order_id: str) -> None:
 	_persist()
 
 
-def in_flight_attempt(invoice: str) -> str | None:
+def in_flight_attempt(invoice: str, count_held: bool = True) -> str | None:
 	"""An attempt occupying the invoice, so a second charge must not start beside it.
 
 	A capture still waiting for its settlement counts. A capture already settled does not:
-	if the invoice is still unpaid, that payment did not cover it and went to the wallet."""
+	if the invoice is still unpaid, that payment did not cover it and went to the wallet.
+	With `count_held` off, a debit the gateway holds does not count: credit may pay the
+	invoice beside it, and the debit is refunded if it later goes through."""
 	attempt = frappe.qb.DocType("Payment Attempt")
-	rows = (
+	query = (
 		frappe.qb.from_(attempt)
 		.select(attempt.name)
 		.where(attempt.invoice == invoice)
@@ -352,7 +354,14 @@ def in_flight_attempt(invoice: str) -> str | None:
 			| ((attempt.status == "Captured") & attempt.completed_at.isnull())
 		)
 		.limit(1)
-	).run(pluck=True)
+	)
+	if not count_held:
+		query = query.where(
+			(attempt.status == "Captured")
+			| attempt.gateway_hold_until.isnull()
+			| (attempt.gateway_hold_until <= frappe.utils.now_datetime())
+		)
+	rows = query.run(pluck=True)
 	return rows[0] if rows else None
 
 
@@ -432,11 +441,15 @@ def settle_checkout_attempt(attempt: str, payment) -> dict:
 		return {"attempt": att.name, "status": att.status}
 
 	att.gateway_transaction_id = payment.payment_id
-	settled = _settle_invoice(att, payment)
 	transition(att, "Captured", actor="gateway", correlation=att.invoice)
 	att.completed_at = frappe.utils.now_datetime()
 	save_billing_record(att)
-	return {"attempt": att.name, "status": att.status, "settled": settled}
+	settled = _settle_invoice(att, payment)
+	return {
+		"attempt": att.name,
+		"status": frappe.db.get_value("Payment Attempt", att.name, "status"),
+		"settled": settled,
+	}
 
 
 def _gateway_for_invoice(inv) -> str:
@@ -546,15 +559,15 @@ def _apply_attempt_event(
 	if decline is not None:
 		return _apply_attempt_failure(event, attempt, decline)
 
-	if attempt.status == "Captured" and attempt.completed_at:
+	if attempt.status in ("Captured", "Refunded") and attempt.completed_at:
 		_mark_event(event, "Processed")  # already settled, by the callback or a replayed event
 		return {"handled": True, "result": "duplicate", "attempt": attempt_name}
 	attempt.gateway_transaction_id = payment.payment_id
-	settled = _settle_invoice(attempt, payment)
 	transition(attempt, "Captured", actor="webhook", correlation=attempt.invoice)
 	attempt.completed_at = frappe.utils.now_datetime()
 	attempt.resolved_by = "Webhook"
 	save_billing_record(attempt)
+	settled = _settle_invoice(attempt, payment)
 	_mark_event(event, "Processed")
 	return {"handled": True, "result": "paid", "invoice": attempt.invoice, "settled": settled}
 
@@ -610,10 +623,10 @@ def _attempt_for_payment(payment, gateway: str) -> str | None:
 
 def _settle_invoice(attempt, payment=None) -> bool:
 	"""Settle the attempt's invoice with what was captured. Without a gateway reading, what
-	we charged off-session is what was captured."""
+	we charged off-session is what was captured. The attempt must already be saved as Captured."""
 	adapter_key = frappe.db.get_value("Payment Gateway", attempt.gateway, "adapter_key")
 	return _mark_invoice_paid(
-		attempt.invoice,
+		attempt,
 		payment.amount if payment else attempt.amount,
 		payment.currency if payment else attempt.currency,
 		payment_id=payment.payment_id if payment else attempt.gateway_transaction_id,
@@ -622,23 +635,28 @@ def _settle_invoice(attempt, payment=None) -> bool:
 
 
 def _mark_invoice_paid(
-	invoice: str, amount, currency: str, payment_id: str | None, adapter_key: str | None
+	attempt, amount, currency: str, payment_id: str | None, adapter_key: str | None
 ) -> bool:
-	"""Settle an invoice with a captured payment, under a row lock.
+	"""Settle the attempt's invoice with a captured payment, under a row lock.
 
-	1. A payment that lands on an invoice no longer unpaid is late money: it goes to the
-	   wallet, and an operator is told.
-	2. A payment in another currency, or for less than is due, settles nothing: it goes to
+	1. A payment that lands on an invoice already Paid (by credit, or by another charge)
+	   is refunded in full to its source, and an operator is told.
+	2. A payment that lands on an invoice otherwise no longer unpaid is late money: it goes
+	   to the wallet, and an operator is told.
+	3. A payment in another currency, or for less than is due, settles nothing: it goes to
 	   the wallet too, so captured money is never left without a ledger entry.
-	3. Otherwise the invoice is Paid, and anything paid above what was due goes to the wallet.
+	4. Otherwise the invoice is Paid, and anything paid above what was due goes to the wallet.
 	"""
 	invoice_tbl = frappe.qb.DocType("Invoice")
 	frappe.qb.from_(invoice_tbl).select(invoice_tbl.name).where(
-		invoice_tbl.name == invoice
+		invoice_tbl.name == attempt.invoice
 	).for_update().run()
-	inv = frappe.get_doc("Invoice", invoice)
+	inv = frappe.get_doc("Invoice", attempt.invoice)
 	inv.flags.ignore_links = True  # only its status and outcome change here
 	due = frappe.utils.flt(inv.expected_collection)
+	if inv.status == "Paid":
+		_refund_to_source(inv, attempt)
+		return False
 	if inv.status not in _UNSETTLED_INVOICE:
 		_to_wallet(
 			inv, amount, currency, payment_id, adapter_key, "landed on a {0} invoice".format(inv.status)
@@ -696,6 +714,22 @@ def _to_wallet(inv, amount, currency: str, payment_id: str | None, adapter_key: 
 		gateway=adapter_key,
 	)
 	_flag_payment(inv, f"Payment {payment_id} of {currency} {amount} {why}; credited to the wallet.")
+
+
+def _refund_to_source(inv, attempt) -> None:
+	"""Give back a capture on an invoice that is already paid, in full, to where it came from.
+
+	The invoice keeps the payment that settled it. This capture books no wallet credit and
+	no advance, and its refund makes no credit note, because no invoice was issued against it."""
+	from central.billing.payments import refunds
+
+	refund = refunds.issue_refund(attempt.name, destination="Source", reason=f"{inv.name} was already paid")
+	outcome = "refunded to its source" if refund.status == "Completed" else "could not be refunded"
+	_flag_payment(
+		inv,
+		f"Payment {attempt.gateway_transaction_id} of {attempt.currency} {attempt.amount} landed on "
+		f"a paid invoice and {outcome} (Refund {refund.name}).",
+	)
 
 
 def _flag_payment(inv, message: str) -> None:

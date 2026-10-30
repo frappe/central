@@ -10,7 +10,7 @@ You need the Owner, Admin, or Billing role to add credit. All billing roles can 
 
 The wallet holds your prepaid credit. Each invoice uses credit first, before Frappe Cloud charges a payment method. The balance shows as **Wallet** in the summary panel and as **Prepaid credits** on the **Methods** card.
 
-Credit that you add while an invoice is unpaid pays that invoice only when it covers the whole amount due, tax included. Otherwise the credit stays in the wallet, and Frappe Cloud does not split the invoice between credit and a payment method.
+Credit that you add while an invoice is unpaid pays that invoice only when it covers the whole amount due, tax included. Otherwise the credit stays in the wallet, and Frappe Cloud does not split the invoice between credit and a payment method. If an automatic debit for the invoice was still pending at your bank and goes through after the credit paid the invoice, Frappe Cloud refunds that debit in full to its source.
 
 ### Add credit
 

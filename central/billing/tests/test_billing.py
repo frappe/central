@@ -392,25 +392,46 @@ class TestCreditAddedAfterIssue(BillingTestBase):
 		self.assertEqual(credits.get_balance(TEAM)["balance"], 400)
 		collect.assert_not_called()
 
-	def test_an_invoice_with_a_charge_in_flight_keeps_the_credit_in_the_wallet(self):
-		name = self._open_invoice()
+	def _attempt(self, invoice: str, hold_until=None) -> None:
 		frappe.get_doc(
 			{
 				"doctype": "Payment Attempt",
-				"invoice": name,
+				"invoice": invoice,
 				"team": TEAM,
 				"amount": 1000,
 				"currency": "INR",
 				"status": "Initiated",
 				"initiated_at": frappe.utils.now_datetime(),
+				"gateway_hold_until": hold_until,
 			}
 		).insert(ignore_permissions=True)
+
+	def test_an_invoice_with_a_charge_in_flight_keeps_the_credit_in_the_wallet(self):
+		name = self._open_invoice()
+		self._attempt(name)
 		credits.purchase(TEAM, 1000, "INR")
 
 		self.assertEqual(lifecycle.settle_with_new_credit(TEAM), [{"invoice": name, "applied": 0}])
 		inv = frappe.get_doc("Invoice", name)
 		self.assertEqual((inv.status, inv.credit_applied, inv.expected_collection), ("Open", 0.0, 1000.0))
 		self.assertEqual(credits.get_balance(TEAM)["balance"], 1000)
+
+	def test_credit_settles_an_invoice_whose_debit_the_gateway_holds(self):
+		name = self._open_invoice()
+		self._attempt(name, hold_until=frappe.utils.add_to_date(frappe.utils.now_datetime(), hours=36))
+		credits.purchase(TEAM, 1000, "INR")
+
+		lifecycle.settle_with_new_credit(TEAM)
+
+		inv = frappe.get_doc("Invoice", name)
+		self.assertEqual((inv.status, inv.credit_applied, inv.expected_collection), ("Paid", 1000.0, 0.0))
+
+	def test_a_debit_whose_hold_ended_still_keeps_the_credit_in_the_wallet(self):
+		name = self._open_invoice()
+		self._attempt(name, hold_until=frappe.utils.add_to_date(frappe.utils.now_datetime(), hours=-1))
+		credits.purchase(TEAM, 1000, "INR")
+
+		self.assertEqual(lifecycle.settle_with_new_credit(TEAM), [{"invoice": name, "applied": 0}])
 
 	def test_booking_a_credit_queues_the_settlement(self):
 		with patch("frappe.enqueue") as enqueue:

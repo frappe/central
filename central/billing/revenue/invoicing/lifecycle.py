@@ -146,6 +146,7 @@ def _settle_with_credit(invoice: str) -> dict:
 	"""Pay one unpaid invoice with the wallet, when the wallet covers all of it.
 
 	1. An invoice with a charge in flight is left alone: that charge is for the whole amount.
+	   A debit the gateway holds does not stop the credit. It is refunded if it goes through.
 	2. Credit that covers only part of the invoice stays in the wallet. It is never split
 	   with a charge, so the customer pays the whole amount due in one way.
 	"""
@@ -158,7 +159,11 @@ def _settle_with_credit(invoice: str) -> dict:
 	doc = frappe.get_doc("Invoice", invoice)
 	doc.flags.ignore_links = True  # only its amounts and status change here
 	due = frappe.utils.flt(doc.expected_collection)
-	if doc.status not in ("Open", "Overdue") or due <= 0 or charges.in_flight_attempt(invoice):
+	if (
+		doc.status not in ("Open", "Overdue")
+		or due <= 0
+		or charges.in_flight_attempt(invoice, count_held=False)
+	):
 		return {"invoice": invoice, "applied": 0}
 
 	draw = _draw_wallet(doc, due, _gst_still_due(doc, due))
