@@ -120,8 +120,7 @@ def _claim_attempt(invoice: str, payment_method: str | None, gateway: str | None
 	if not adapter.can_charge_silently(frappe.utils.flt(inv.expected_collection), inv.currency):
 		from central.billing.payments import collection_mode
 
-		if frappe.db.get_value("Billing Profile", inv.team, "collection_mode") == "Auto Charge":
-			collection_mode.trip(inv.team, "invoice_over_threshold")
+		collection_mode.trip_auto_charge(inv.team, "invoice_over_threshold")
 		return {"charged": False, "reason": "action_required", "invoice": invoice}
 
 	retry_number = frappe.db.count("Payment Attempt", {"invoice": invoice})

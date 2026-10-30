@@ -159,6 +159,12 @@ def trip(team: str, reason: str) -> None:
 	)
 
 
+def trip_auto_charge(team: str, reason: str) -> None:
+	"""Trip Action Required only for an Auto Charge team. A mode the customer chose is kept."""
+	if frappe.db.get_value("Billing Profile", team, "collection_mode") == "Auto Charge":
+		trip(team, reason)
+
+
 def choose(team: str, mode: str) -> dict:
 	"""Customer picks how they are collected: Manual Checkout, Prepaid, or back to
 	Auto Charge. Reversible and idempotent; clears the action reason.
