@@ -7,6 +7,8 @@ import CreateProjectDialog from '@/components/billing/CreateProjectDialog.vue'
 import PayingForTable from '@/components/billing/PayingForTable.vue'
 import ProjectMembersDialog from '@/components/billing/ProjectMembersDialog.vue'
 import RenameProjectDialog from '@/components/billing/RenameProjectDialog.vue'
+import StopAllServersRow from '@/components/billing/StopAllServersRow.vue'
+import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { usePayingFor } from '@/composables/usePayingFor'
 import { useProjects } from '@/composables/useProjects'
@@ -87,10 +89,8 @@ const goToObjectStorage = () => router.push({ name: 'ObjectStorage' })
 			</div>
 
 			<PayingForTable
-				show-projects
-				:hide-header="!rows.length"
+				v-if="rows.length"
 				:rows="visible"
-				:project-count="projectCount"
 				:currency="currency"
 				:can-manage="canManageBilling"
 				:busy="busy"
@@ -98,8 +98,6 @@ const goToObjectStorage = () => router.push({ name: 'ObjectStorage' })
 				@pause="askPause"
 				@resume="onResume"
 				@assign-project="askAssignProject"
-				@open-projects="$emit('openProjects')"
-				@new-project="showCreate = true"
 			/>
 			<button
 				v-if="hidden"
@@ -110,6 +108,35 @@ const goToObjectStorage = () => router.push({ name: 'ObjectStorage' })
 				View all {{ rows.length }}
 				<span class="lucide-arrow-right size-3.5" aria-hidden="true" />
 			</button>
+			<div
+				class="flex flex-wrap items-center justify-between gap-3 border-t border-outline-gray-1 px-4 py-3"
+			>
+				<div class="flex min-w-0 items-center gap-2.5">
+					<span
+						class="lucide-layers size-4 shrink-0 text-ink-gray-5"
+						aria-hidden="true"
+					/>
+					<span class="text-base text-ink-gray-9">Projects</span>
+					<span class="text-p-sm text-ink-gray-5">
+						Group invoice costs by customer or environment.
+					</span>
+				</div>
+				<div class="flex items-center gap-2">
+					<Button
+						v-if="projectCount"
+						variant="outline"
+						label="View all"
+						@click="$emit('openProjects')"
+					/>
+					<Button
+						v-if="canManageBilling"
+						icon-left="lucide-plus"
+						label="New project"
+						@click="showCreate = true"
+					/>
+				</div>
+			</div>
+			<StopAllServersRow />
 		</div>
 
 		<CreateProjectDialog v-model="showCreate" @created="reloadProjects" />

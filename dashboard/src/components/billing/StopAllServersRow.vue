@@ -63,27 +63,38 @@ const suspendAll = async () => {
 </script>
 
 <template>
-	<Button
-		v-if="canPowerServer && running.length"
-		theme="red"
-		icon-left="lucide-power"
-		label="Stop all"
-		@click="openConfirmation"
-	/>
-
-	<ConfirmDialog
-		v-model:target="stopTarget"
-		:title="`Stop ${running.length === 1 ? 'your server' : `all ${serverCount}`}?`"
-		confirm-label="Stop servers"
-		theme="red"
-		:loading="suspending"
-		:error="error"
-		:confirm-text="activeTeamLabel"
-		@confirm="suspendAll"
+	<div
+		class="flex flex-wrap items-center justify-between gap-3 border-t border-outline-gray-1 px-4 py-3"
 	>
-		<p class="text-p-base text-ink-gray-6">
-			Stops {{ serverCount }}. Sites on these servers will be unavailable until
-			you restart them. Data, snapshots, and configuration are retained.
+		<p class="text-p-sm text-ink-gray-5">
+			<template v-if="running.length">
+				Stop {{ serverCount }} at once. Data is retained, and you can restart
+				them.
+			</template>
+			<template v-else>No servers are running.</template>
 		</p>
-	</ConfirmDialog>
+		<Button
+			v-if="canPowerServer"
+			theme="red"
+			label="Stop all servers"
+			:disabled="!running.length"
+			@click="openConfirmation"
+		/>
+
+		<ConfirmDialog
+			v-model:target="stopTarget"
+			:title="`Stop ${running.length === 1 ? 'your server' : `all ${serverCount}`}?`"
+			confirm-label="Stop servers"
+			theme="red"
+			:loading="suspending"
+			:error="error"
+			:confirm-text="activeTeamLabel"
+			@confirm="suspendAll"
+		>
+			<p class="text-p-base text-ink-gray-6">
+				Sites on these servers will be unavailable until you restart them. Data,
+				snapshots, and configuration are retained.
+			</p>
+		</ConfirmDialog>
+	</div>
 </template>
