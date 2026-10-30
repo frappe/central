@@ -192,8 +192,8 @@ class TestPilotPlanChange(PlanChangeCase):
 
 		self.assertEqual([plan["name"] for plan in options["plans"]], ["plan-25gb", "plan-50gb"])
 
-	def test_each_plan_carries_the_note_of_the_sites_product(self):
-		"""Only the product's noted plans carry a note. The title and price stay the same."""
+	def get_product_plan_options(self, **product_values) -> dict:
+		"""The plan list of a server whose site belongs to a Raven product with a note on Pro."""
 		self.server.db_set({"disk_gigabytes": 25, "plan": None})
 		product = frappe.get_doc(
 			{
@@ -202,6 +202,7 @@ class TestPilotPlanChange(PlanChangeCase):
 				"title": "Raven",
 				"signup_app": "raven",
 				"plan_notes": [{"plan": "plan-pro", "note": "Up to 200 users"}],
+				**product_values,
 			}
 		)
 		# The menu below is mocked, so its plans are not records.
@@ -224,7 +225,17 @@ class TestPilotPlanChange(PlanChangeCase):
 		}
 
 		with patch("central.billing.api.dashboard.catalog.get_eligible_plans", return_value=menu):
-			options = billing_api.get_plan_options()
+			return billing_api.get_plan_options()
+
+	def test_each_plan_carries_the_note_of_the_sites_product(self):
+		"""Only the product's noted plans carry a note, and the specs stay."""
+		options = self.get_product_plan_options()
 
 		notes = {plan["name"]: plan["note"] for plan in options["plans"]}
 		self.assertEqual(notes, {"plan-standard": None, "plan-pro": "Up to 200 users"})
+		self.assertTrue(all(plan["subtitle"] for plan in options["plans"]))
+
+	def test_a_product_that_hides_plan_specs_gets_no_subtitles(self):
+		options = self.get_product_plan_options(hide_plan_specs=1)
+
+		self.assertEqual([plan["subtitle"] for plan in options["plans"]], ["", ""])

@@ -45,6 +45,7 @@ class Product(Document):
 		enabled: DF.Check
 		frappe_version: DF.Data
 		getting_started_url: DF.Data | None
+		hide_plan_specs: DF.Check
 		landing_route: DF.Data | None
 		logo: DF.AttachImage | None
 		plan_notes: DF.Table[ProductPlanNote]

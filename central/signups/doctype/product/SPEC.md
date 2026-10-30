@@ -25,6 +25,7 @@ System Managers and Product Operators create and edit products in Desk. Only a S
 | Trial Deletion Days | Days a stopped trial site is kept before its server is terminated. 0 uses Central Settings, Trial Deletion Days. |
 | Use Product Branding in Emails | Off uses Frappe Cloud's logo and name in emails. On uses the product's Logo and Title. See [Emails](#emails). |
 | Email Notes | One extra paragraph for each lifecycle email about a site of this product. See [Emails](#emails). |
+| Hide Plan Specs | Hides the vCPU, memory and disk line under each plan on a site of this product. See [Plans](#plans). |
 | Plan Notes | A short tag for each plan, which the site's plan list shows on a site of this product. See [Plans](#plans). |
 
 Example: Product Key `raven`, Title `Raven`, Signup App `raven`, Frappe Version `version-16`. The signup link is `/dashboard/signup?product=raven`.
@@ -120,6 +121,8 @@ Each row names a Plan and a few words of plain text. Add at most one note for ea
 | Pro | Up to 200 users |
 
 A plan without a note still shows in the list, with its title and specs.
+
+With **Hide Plan Specs** on, `get_plan_options` and `get_billing_summary` return an empty `subtitle` on a site of this product, so the site's plan list and billing card show the title, the note and the price only. `get_billing_summary` still returns `specs`, because the usage meters read them. The Cloud dashboard and invoices still show the specs. Add a note to each plan that the product shows, because the title and price then tell the plans apart.
 
 ## Signup funnel
 

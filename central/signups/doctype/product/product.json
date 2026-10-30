@@ -30,6 +30,7 @@
   "getting_started_url",
   "email_notes",
   "plans_section",
+  "hide_plan_specs",
   "plan_notes"
  ],
  "fields": [
@@ -165,6 +166,13 @@
    "fieldname": "plans_section",
    "fieldtype": "Section Break",
    "label": "Plans"
+  },
+  {
+   "default": "0",
+   "description": "Hide the vCPU, memory and disk line under each plan in the site's plan list and billing card. Add a note to each plan, because the title and price then tell the plans apart. The Cloud dashboard and invoices still show the specs.",
+   "fieldname": "hide_plan_specs",
+   "fieldtype": "Check",
+   "label": "Hide Plan Specs"
   },
   {
    "description": "A short tag the in-app cloud shows next to a plan's title on a site of this product, such as Up to 200 users. The plan title and price stay the same.",
