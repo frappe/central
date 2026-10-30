@@ -63,7 +63,7 @@ Atlas reports one virtual machine per delivery.
 | `status` | For `vm.state` | `running`, `stopped`, or `paused` |
 | `observed_at` | For `vm.state` | The region's own timestamp. Central orders reports by it and drops one that is not newer. |
 
-The planned abuse event `vm.restriction` is in [Abuse protection](ABUSE.md#events-from-atlas).
+Planned abuse protection adds no Atlas event. Central reads restrictions from the Atlas `GET` VM response in its repair scan. See [Restriction states](ABUSE.md#restriction-states).
 
 For `vm.state`, Central records `running` as `Running`, `stopped` as `Stopped`, and `paused` as `Paused`. Central never records a status it was not told.
 
@@ -85,7 +85,7 @@ Cargo reports one service per delivery.
 | `status` | For `telemetry` and `storage` | `Available` or `Not Available` |
 | `service_endpoint` | No | The URL consumers reach the service at |
 
-Planned: an `abuse` report carries the findings of Watcher, the Cargo abuse detection. It has a `findings` list, and no `status` or `service_endpoint`. The shape is in [Abuse protection](ABUSE.md#reports-from-cargo).
+Planned: an `abuse` report carries the findings of Watcher, the Cargo abuse detection. It has a `findings` list, and no `status` or `service_endpoint`. Central handles it in its own branch of `accept_cargo_report`, before the status check, and writes no Service Detail row for it. The shape is in [Abuse protection](ABUSE.md#reports-from-cargo).
 
 Cargo must map its own lifecycle states before it sends. Central records availability, not a Cargo state name. A cluster or host that is `Active` reports `Available`. Any other settled state reports `Not Available`.
 

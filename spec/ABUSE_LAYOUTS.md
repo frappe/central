@@ -6,7 +6,7 @@ This document holds the mockups for the new Central DocTypes and layout changes 
 
 Status: awaiting engineer approval. Do not write DocType JSON before an engineer approves these layouts. Follow the Desk rules in [the repository guide](../CLAUDE.md#desk-and-operations).
 
-The Atlas layouts (VM Restriction and the Virtual Machine change) are in [Atlas abuse layouts](https://github.com/frappe/atlas/blob/develop/docs/abuse/layouts.md). The Watcher layouts (Abuse Threshold and Abuse Feed) are in [Cargo Watcher layouts](https://github.com/frappe/cargo/blob/develop/docs/watcher.md#layouts).
+The Atlas layouts are in [Atlas abuse layouts](https://github.com/frappe/atlas/blob/develop/docs/abuse/layouts.md). The Watcher layouts (Abuse Threshold and Abuse Feed) are in [Cargo Watcher layouts](https://github.com/frappe/cargo/blob/develop/docs/watcher.md#layouts).
 
 Notation:
 
@@ -88,12 +88,12 @@ Child tables:
 | Child | Fields |
 |---|---|
 | Abuse Case Signal | `abuse_signal` Link Abuse Signal, `finding_code` Data (fetched), `severity` Select (fetched), `window_start` Datetime (fetched) |
-| Abuse Case Restriction | `atlas_restriction_id` Data, `resource_action` Link Resource Action (the `idempotency_key`, empty for an emergency restriction), `kind` Select (egress_throttle, ingress_throttle, port_block, quarantine, isolate), `status` Select (Pending, Applied, Lifted, Failed), `applied_by` Select, `applied_by_user` Data, `applied_at` Datetime, `expires_at` Datetime, `ended_at` Datetime, `ended_by` Select (Central, Expiry, Atlas user) |
+| Abuse Case Restriction | `restriction_id` Data (the entry ID in the Metal VM network object: the Resource Action name, or the `atlas-` ID of an emergency restriction), `resource_action` Link Resource Action (the `idempotency_key`, empty for an emergency restriction), `kind` Select (egress_throttle, ingress_throttle, port_block, quarantine, isolate), `status` Select (Pending, Saved, Applied, Failed, Lifted, Expired), `desired_generation` Int (from the Atlas response), `error` Small Text (the Atlas error or `host_error`), `applied_by` Select, `applied_by_user` Data, `applied_at` Datetime, `expires_at` Datetime, `ended_at` Datetime, `ended_by` Select (Central, Expiry, Atlas operator) |
 | Abuse Case Notification | `event_type` Data, `recipient` Data, `sent_at` Datetime, `result` Select (Sent, Failed), `error` Small Text |
 | Abuse Case CERT-In Report | `kind` Select (Initial, Follow-up), `sent_at` Datetime, `sent_copy` Attach |
 
 - Only the policy engine or an operator action sets the status, the ladder level, the deadlines, and the restrictions. Nobody edits them on the form.
-- Central matches a `vm.restriction` event to a restriction row by `atlas_restriction_id`, and by `resource_action` when the name is not known yet. `ended_by` comes from `lifted_by` of the event. The Resource Action of a Central lift names the customer or the operator. See [Events from Atlas](ABUSE.md#events-from-atlas).
+- Central sets the restriction `status` from the Atlas response and from the repair scan of the Atlas `GET` VM response. Central derives `ended_by`: Central for its own lift, Expiry at `expires_at`, and Atlas operator for an entry that left the network before `expires_at`. The Resource Action of a Central lift names the customer or the operator. See [Restriction states](ABUSE.md#restriction-states).
 - The form is read only, except Resolution, Operator Notes, Legal Hold, and the CERT-In tier, category, and reason.
 - An operator can set every resolution except Fixed. Central sets Fixed when a Resolved case closes itself. See [Lifecycle](ABUSE.md#lifecycle).
 - The {Operator} and {CERT-In} tabs are hidden from customers. The dashboard API returns only the {Case} fields and a redacted signal list.
@@ -121,7 +121,7 @@ Team-scoped: an indexed `team` field, `abuse_signal_query_conditions`, and `abus
 │ Measured          measured          JSON RO          │ Threshold     threshold  JSON RO   │
 │   one value for each volume trigger                  │                                    │
 │ Evidence          evidence          JSON RO                                               │
-│   port class, ports, protocol, counts, ratios, prefixes (/24 or /48), feed, feed entry    │
+│   port class, ports, protocol, counts, ratios, prefixes, feed, feed entry, log writer     │
 │ [Review]                                                                                  │
 │ False Positive    is_false_positive Check            │ Reviewed By   reviewed_by Link RO  │
 │ Review Note       review_note       Small Text                                            │
@@ -200,7 +200,7 @@ Team-scoped: an indexed `team` field, `abuse_exception_query_conditions`, and `a
 
 - Central applies approved exceptions to findings until they expire or a responder revokes them. Central sends nothing to Watcher or Atlas. See [Exceptions](ABUSE.md#exceptions).
 - The controller refuses a multiplier below 0.5, the level from which Watcher reports. See [Profiles](ABUSE.md#profiles).
-- The controller refuses the `smtp_outbound` default block. See [Abuse Exception](ABUSE.md#abuse-exception).
+- The controller refuses the `smtp_outbound` port 25 block. See [Abuse Exception](ABUSE.md#abuse-exception).
 
 ## Public IP Assignment
 
@@ -260,7 +260,9 @@ Team-scoped: an indexed `team` field, `port_25_request_query_conditions`, and `p
 | `abuse_case` | Link Abuse Case, RO | The case of the DNSBL listing or spam trap hit that revoked the request |
 
 - A server has at most one open request. An open request is Pending or Accepted.
-- Accepted sets `is_port_25_allowed` through an Atlas VM update. Revoked clears it. See [Email](ABUSE.md#email).
+- Central sets `is_port_25_blocked` in every VM create request.
+- Accepted clears `is_port_25_blocked` through the Atlas port 25 route. Revoked sets it again through the same route. See [Email](ABUSE.md#email).
+- A VM created before the rollout has port 25 open and needs no request. Central blocks it on a DNSBL finding or a spam finding, or when a responder sets the block.
 
 ## Team (layout change)
 
@@ -317,7 +319,7 @@ No field has a default. See [Settings](ABUSE.md#settings).
 
 ## Decided
 
-1. The only default block is `smtp_outbound`, a host rule on every VM with no VM Restriction row. `is_port_25_allowed` on the VM is its only exception. Central sets it when it accepts a Port 25 Request, and clears it when it revokes one.
+1. Port 25 is blocked only when Central asks. `is_port_25_blocked` is a field of the Metal VM network object, and a missing field means open. Central sets it in every VM create request. Central clears it when it accepts a Port 25 Request, and sets it again when it revokes one, through the Atlas port 25 route. VMs created before the rollout keep port 25 until a DNSBL finding, a spam finding, or a responder sets the block.
 2. Attribution is per item. Each Abuse Report Item links its own Abuse Case. The report status includes Partly Attributed.
 3. The calibration switch is `mode` (Off, Shadow, Active) on the Cargo Abuse Threshold of each finding code. Central stores a shadow finding and takes no action. See [Cargo calibration](https://github.com/frappe/cargo/blob/develop/docs/watcher.md#calibration).
-4. Signals, profiles, exceptions, and public IP history are Central records. Finding codes, thresholds, and feeds are Cargo records. See [Cargo Watcher](https://github.com/frappe/cargo/blob/develop/docs/watcher.md). Atlas holds only VM Restriction, `is_port_25_allowed`, and Abuse Settings with the log bucket write keys. See [Atlas abuse layouts](https://github.com/frappe/atlas/blob/develop/docs/abuse/layouts.md).
+4. Signals, profiles, exceptions, and public IP history are Central records. Finding codes, thresholds, and feeds are Cargo records. See [Cargo Watcher](https://github.com/frappe/cargo/blob/develop/docs/watcher.md). Atlas keeps no abuse record. Restrictions and `is_port_25_blocked` are in the Metal VM network object. Atlas Settings holds the log bucket name and endpoint. See [Atlas abuse layouts](https://github.com/frappe/atlas/blob/develop/docs/abuse/layouts.md).
