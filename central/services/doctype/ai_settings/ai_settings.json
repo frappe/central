@@ -8,16 +8,16 @@
   "base_url",
   "control_section",
   "control_api_key",
+  "column_break_tipc",
   "control_api_secret",
   "trials_tab",
   "trial_key_geography",
+  "pause_pool_refill",
   "column_break_oabk",
   "trial_key_cap",
+  "pause_key_assignment",
   "pools_section",
-  "trial_products",
-  "pause_section",
-  "pause_pool_refill",
-  "pause_key_assignment"
+  "trial_products"
  ],
  "fields": [
   {
@@ -80,11 +80,6 @@
    "options": "AI Trial Product"
   },
   {
-   "fieldname": "pause_section",
-   "fieldtype": "Section Break",
-   "label": "Pause"
-  },
-  {
    "default": "0",
    "description": "Stops the 5-minute job from minting new keys. The pool keeps its size and its ready keys; retries of revokes and hand-overs still run.",
    "fieldname": "pause_pool_refill",
@@ -97,12 +92,16 @@
    "fieldname": "pause_key_assignment",
    "fieldtype": "Check",
    "label": "Pause Key Assignment"
+  },
+  {
+   "fieldname": "column_break_tipc",
+   "fieldtype": "Column Break"
   }
  ],
  "grid_page_length": 50,
  "issingle": 1,
  "links": [],
- "modified": "2026-11-01 00:00:00.000000",
+ "modified": "2026-11-01 18:17:33.773576",
  "modified_by": "Administrator",
  "module": "Services",
  "name": "AI Settings",
