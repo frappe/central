@@ -31,7 +31,6 @@ from central.billing.payments.settlement import has_paid_by_hand, is_behind_on_p
 from central.billing.revenue.tax import is_internal_team
 from central.errors import throw_action_error
 from central.iam import can, resolve_team
-from central.infrastructure.doctype.blocked_domain.blocked_domain import normalize_domain
 from central.infrastructure.doctype.resource_action.resource_action import (
 	ACTION_CAPABILITIES,
 	COMMAND_ACTIONS,
@@ -41,6 +40,8 @@ from central.infrastructure.doctype.resource_action.resource_action import (
 from central.integrations.cargo import CargoClient
 from central.integrations.images import (
 	TEMPLATE_PURPOSE,
+	get_image_template_requirements,
+	get_minimum_shape,
 	selected_image,
 	snapshot_image,
 	snapshot_source,
@@ -125,26 +126,15 @@ def submit_request(
 
 		require_public_ipv4_rate(server_input.team, server_input.region)
 
-	if resource_type == "Server" and subdomain:
-		subdomain = normalize_domain(subdomain)
-
 	digest = _request_digest(server_input, resource_type, subdomain)
 	# Serialize budget reservations and repeated submissions within one Team.
 	frappe.db.get_value("Team", server_input.team, "name", for_update=True)
 	if existing := _repeated_request(server_input, digest):
 		return existing.customer_status()
 
-	# A repeated request already holds its name, so only a new one is checked.
-	if resource_type == "Server" and subdomain:
-		from central.site_provisioning import validated_subdomain
-
-		validated_subdomain(subdomain, server_input.region)
-
 	is_free_trial = is_free_trial_creation(server_input.team, site.product if site else None)
 	configuration, rate = _build_server_configuration(server_input, snapshot, is_free_trial)
 	configuration.site = site
-	if resource_type == "Server":
-		_validate_site_name(server_input.region, configuration, subdomain, snapshot)
 
 	return ResourceAction.queue(
 		"create",
@@ -336,6 +326,10 @@ def _build_server_configuration(
 	# Check the saved keys now so the form shows the error. Dispatch reads their text, which a
 	# rotation can change before a retry.
 	resolve_team_ssh_keys(server_input.team, server_input.ssh_key_ids)
+	shape = image_shape(composition, image)
+	_validate_template_size(
+		image, get_image_template_requirements(server_input.region, image, snapshot), shape
+	)
 
 	configuration = ServerCreation(
 		offering=server_input.offering,
@@ -355,7 +349,7 @@ def _build_server_configuration(
 		is_firewall_enabled=server_input.is_firewall_enabled,
 		user_data=_get_user_data(server_input, image, snapshot),
 		image_tags=image["tags"],
-		**image_shape(composition, image),
+		**shape,
 	)
 
 	return configuration, rate
@@ -379,23 +373,17 @@ def _get_user_data(server_input: CreateServerInput, image: dict, snapshot: str |
 	)
 
 
-def _validate_site_name(
-	region: str, configuration: ServerCreation, subdomain: str | None, snapshot: str | None
-) -> None:
-	"""1. Only a server from a template takes a site name. No other server has an application to route.
-	2. A new template server needs a name when its template requires one.
-	3. A restored snapshot is already set up, so its name stays optional."""
-	is_template = configuration.image_tags.get("purpose") == TEMPLATE_PURPOSE
-	if subdomain and not is_template:
-		frappe.throw(_("Only a server from a template takes a site name."))
-	if subdomain or snapshot or not is_template:
+def _validate_template_size(image: dict, requirements: dict | None, shape: dict[str, int]) -> None:
+	"""A new template server needs at least the template's minimum size. Any other server, and a
+	restored snapshot, has no template requirements."""
+	if not requirements:
 		return
 
-	requirements = CargoClient(frappe.get_doc("Region", region)).get_template_requirements(
-		configuration.image_tags["application"]
-	)
-	if requirements["requires_site_name"]:
-		frappe.throw(_("This template needs a site name."))
+	minimum = get_minimum_shape(image, requirements)
+	if any(shape[key] < minimum[key] for key in minimum):
+		frappe.throw(
+			_("This template needs a bigger server. Choose a plan with more CPU, memory or storage.")
+		)
 
 
 def unanswered_request(team: str, digest: str) -> str | None:

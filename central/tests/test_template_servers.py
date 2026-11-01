@@ -1,205 +1,77 @@
-import json
 from types import SimpleNamespace
 from unittest import TestCase
 from unittest.mock import patch
 
 import frappe
-from frappe.tests import IntegrationTestCase
-from frappe.utils import add_to_date, now_datetime
 
-from central.central.doctype.central_sso_settings.central_sso_settings import CentralSSOSettings
-from central.infrastructure.doctype.virtual_machine import template
-from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
-from central.integrations.pilot import METADATA_VALUE_BYTES
-from central.integrations.resource_actions import TEMPLATE_METADATA_KEY, _create_payload
-from central.resource_actions import _validate_site_name
-from central.site_provisioning import subdomain_availability
-from central.sso import central_url, mint_bootstrap_token, verify_template_ready_token
-from central.tests.test_server_network import creation_request
+from central.integrations.images import get_minimum_shape, is_shape_enough
+from central.resource_actions import _get_user_data, _validate_template_size
 
-WILDCARD = "example.test"
+SHAPE = {"cpu_millicores": 1000, "memory_mib": 1024, "disk_mib": 10240}
+TEMPLATE_IMAGE = {"tags": {"purpose": "one-click", "application": "redis"}, "rootfs_size_mib": 4096}
+UBUNTU_IMAGE = {"tags": {"purpose": "base"}, "rootfs_size_mib": 4096}
 
 
-@patch("central.integrations.resource_actions.idle_shutdown_seconds", return_value=0)
-class TestTemplateMetadata(IntegrationTestCase):
-	def setUp(self) -> None:
-		super().setUp()
-		self.addCleanup(frappe.db.rollback)
-		CentralSSOSettings.instance().initialize_signing_key("pilot")
-
-	def test_a_template_server_gets_a_token_for_its_own_creation(self, _idle) -> None:
-		value = _create_payload(creation_request("one-click"))["metadata"][TEMPLATE_METADATA_KEY]
-		bootstrap = json.loads(value)
-
-		self.assertLessEqual(len(value.encode()), METADATA_VALUE_BYTES)
-		self.assertEqual(bootstrap["endpoint"], central_url())
-		self.assertEqual(verify_template_ready_token(bootstrap["token"]), "action-1")
-
-	def test_any_other_server_gets_no_token(self, _idle) -> None:
-		self.assertNotIn(TEMPLATE_METADATA_KEY, _create_payload(creation_request())["metadata"])
-
-	def test_a_token_of_another_scope_is_refused(self, _idle) -> None:
-		with self.assertRaises(frappe.AuthenticationError):
-			verify_template_ready_token(mint_bootstrap_token("team-a", "pilot-action-1"))
+def requirements(**minimum: int) -> dict:
+	return {
+		"inputs": [],
+		"minimum_size": {"cpu_millicores": 500, "memory_mib": 512, "disk_mib": 5120, **minimum},
+		"ports": [],
+	}
 
 
-class TestTemplateServer(IntegrationTestCase):
-	def setUp(self) -> None:
-		super().setUp()
-		frappe.set_user("Administrator")
-		self.addCleanup(frappe.db.rollback)
-		self.enterContext(patch.object(VirtualMachine, "ensure_subscription_enabled"))
-		frappe.db.set_single_value("Central Settings", "wildcard_domain", WILDCARD)
-		suffix = frappe.generate_hash(length=8)
-		self.region = f"tpl-{suffix}"
-		frappe.get_doc(
-			{
-				"doctype": "Region",
-				"region": self.region,
-				"base_url": "https://atlas.example.test",
-				"status": "Active",
-				"proxy_domain": f"{self.region}.{WILDCARD}",
-			}
-		).insert()
-		self.team = frappe.get_doc(
-			{"doctype": "Team", "team_name": f"Templates {suffix}", "owner_user": "Administrator"}
-		).insert()
-		self.server = frappe.get_doc(
-			{
-				"doctype": "Virtual Machine",
-				"resource_id": f"server-{suffix}",
-				"team": self.team.name,
-				"region": self.region,
-				"status": "Running",
-				"ipv6_address": "fdaa:2::264",
-			}
-		).insert(ignore_permissions=True)
-		self.action = frappe.get_doc(
-			{
-				"doctype": "Resource Action",
-				"resource_type": "Server",
-				"action": "create",
-				"team": self.team.name,
-				"region": self.region,
-				"server": self.server.name,
-				"subdomain": f"app-{suffix}",
-				"requested_by": "Administrator",
-				"correlation_id": frappe.generate_hash(length=32),
-				"status": "Succeeded",
-			}
-		).insert(ignore_permissions=True)
-		self.domain = f"app-{suffix}.{self.region}.{WILDCARD}"
+def server_input(**values) -> SimpleNamespace:
+	return SimpleNamespace(**{"region": "region-a", "user_data": "", "template_inputs": {}, **values})
 
-	def test_the_first_report_marks_the_server_ready(self) -> None:
-		with patch.object(template, "verify_template_ready_token", return_value=self.action.name):
-			template.record_ready("token")
-			first = frappe.db.get_value("Virtual Machine", self.server.name, "app_ready_at")
-			with patch.object(template, "now_datetime", return_value=add_to_date(now_datetime(), hours=1)):
-				template.record_ready("token")
 
-		self.assertIsNotNone(first)
-		self.assertEqual(frappe.db.get_value("Virtual Machine", self.server.name, "app_ready_at"), first)
+class TestTemplateSize(TestCase):
+	def test_a_big_enough_server_passes(self) -> None:
+		_validate_template_size(TEMPLATE_IMAGE, requirements(), SHAPE)
 
-	def test_a_report_before_the_server_is_recorded_is_refused(self) -> None:
-		self.action.db_set("server", None)
+	def test_a_server_smaller_than_the_template_is_refused(self) -> None:
+		for minimum in ({"cpu_millicores": 2000}, {"memory_mib": 2048}, {"disk_mib": 20480}):
+			with self.subTest(minimum=minimum), self.assertRaises(frappe.ValidationError):
+				_validate_template_size(TEMPLATE_IMAGE, requirements(**minimum), SHAPE)
 
-		with patch.object(template, "verify_template_ready_token", return_value=self.action.name):
-			with self.assertRaises(frappe.DoesNotExistError):
-				template.record_ready("token")
+	def test_a_server_without_template_requirements_is_not_checked(self) -> None:
+		_validate_template_size(UBUNTU_IMAGE, None, {**SHAPE, "cpu_millicores": 100})
 
-	def test_the_chosen_name_is_routed_once_the_server_has_an_address(self) -> None:
-		with patch.object(frappe, "enqueue") as enqueue:
-			template.route_chosen_name(self.server.name)
-		self.assertEqual(enqueue.call_args.kwargs["server"], self.server.name)
+	def test_a_plan_must_reach_the_template_minimum(self) -> None:
+		minimum = get_minimum_shape(TEMPLATE_IMAGE, requirements())
 
-		with patch.object(frappe, "enqueue"):
-			template.insert_route(self.server.name)
-		route = frappe.get_doc("Site Domain", self.domain)
-		self.assertEqual(
-			(route.route_type, route.server, route.team), ("Site", self.server.name, self.team.name)
-		)
+		self.assertEqual(minimum, {"cpu_millicores": 500, "memory_mib": 512, "disk_mib": 5120})
+		self.assertTrue(is_shape_enough({"Compute": 0.5, "Memory": 0.5, "Disk": 5}, minimum))
+		self.assertFalse(is_shape_enough({"Compute": 0.25, "Memory": 1, "Disk": 10}, minimum))
 
-		with patch.object(frappe, "enqueue") as enqueue:
-			template.route_chosen_name(self.server.name)
-		enqueue.assert_not_called()
+	def test_the_image_disk_counts_when_it_is_bigger(self) -> None:
+		image = {**TEMPLATE_IMAGE, "rootfs_size_mib": 8192}
 
-	def test_ready_waits_for_the_report_and_the_route(self) -> None:
-		self.assertEqual(template.get_journey(self.action.name)["phase"], "app")
-
-		self.server.db_set("app_ready_at", now_datetime())
-		self.assertEqual(template.get_journey(self.action.name)["phase"], "app")
-
-		with patch.object(frappe, "enqueue"):
-			template.insert_route(self.server.name)
-		frappe.db.set_value("Site Domain", self.domain, "status", "Active")
-		journey = template.get_journey(self.action.name)
-
-		self.assertEqual(journey["phase"], "ready")
-		self.assertEqual(journey["url"], f"https://{self.domain}")
-		self.assertEqual(journey["domain"], f"{self.region}.{WILDCARD}")
-
-	def test_a_server_without_a_name_is_ready_on_its_report(self) -> None:
-		self.action.db_set("subdomain", None)
-		self.server.db_set("app_ready_at", now_datetime())
-		journey = template.get_journey(self.action.name)
-
-		self.assertEqual((journey["phase"], journey["url"]), ("ready", None))
-
-	def is_free(self, region: str | None) -> bool:
-		return subdomain_availability(self.action.subdomain, region)["available"]
-
-	def test_a_template_name_is_held_until_its_creation_is_over(self) -> None:
-		self.assertFalse(self.is_free(self.region))
-
-		self.action.db_set({"status": "Queued", "server": None})
-		self.assertFalse(self.is_free(self.region))
-		self.assertFalse(self.is_free(None))
-
-		self.action.db_set("status", "Failed")
-		self.assertTrue(self.is_free(self.region))
-
-	def test_a_terminated_template_server_frees_its_unrouted_name(self) -> None:
-		self.server.db_set("status", "Terminated")
-
-		self.assertTrue(self.is_free(self.region))
-
-	def test_a_name_is_checked_in_the_zone_of_its_region(self) -> None:
-		with patch.object(frappe, "enqueue"):
-			template.insert_route(self.server.name)
-		# Only the route holds the name now.
-		self.server.db_set("status", "Terminated")
-
-		self.assertFalse(self.is_free(self.region))
-		self.assertTrue(self.is_free(f"other-{self.region}"))
-
-	def test_a_reserved_name_is_refused_in_a_region(self) -> None:
-		self.assertFalse(subdomain_availability("admin", self.region)["available"])
+		self.assertEqual(get_minimum_shape(image, requirements())["disk_mib"], 8192)
 
 
 @patch("central.resource_actions.frappe.get_doc")
-class TestTemplateSiteName(TestCase):
-	def validate(self, purpose: str, subdomain: str | None, snapshot: str | None = None, requires=True):
-		configuration = SimpleNamespace(image_tags={"purpose": purpose, "application": "fastapi"})
+class TestTemplateUserData(TestCase):
+	def test_a_template_takes_its_user_data_from_cargo(self, _region) -> None:
 		with patch(
-			"central.resource_actions.CargoClient.get_template_requirements",
-			return_value={"requires_site_name": requires},
-		) as requirements:
-			_validate_site_name("region-a", configuration, subdomain, snapshot)
-		return requirements
+			"central.resource_actions.CargoClient.get_template_user_data", return_value="#cloud-config\n"
+		) as user_data:
+			result = _get_user_data(
+				server_input(template_inputs={"password": "a" * 12}), TEMPLATE_IMAGE, None
+			)
 
-	def test_a_template_that_requires_a_name_refuses_a_server_without_one(self, _region) -> None:
+		self.assertEqual(result, "#cloud-config\n")
+		user_data.assert_called_once_with("redis", {"password": "a" * 12})
+
+	def test_a_template_refuses_its_own_user_data(self, _region) -> None:
 		with self.assertRaises(frappe.ValidationError):
-			self.validate("one-click", None)
+			_get_user_data(server_input(user_data="#!/bin/sh"), TEMPLATE_IMAGE, None)
 
-	def test_a_template_that_requires_a_name_takes_one(self, _region) -> None:
-		self.validate("one-click", "app").assert_not_called()
-
-	def test_an_optional_name_can_be_left_out(self, _region) -> None:
-		self.validate("one-click", None, requires=False).assert_called_once_with("fastapi")
-
-	def test_a_restored_template_server_needs_no_name(self, _region) -> None:
-		self.validate("one-click", None, snapshot="snapshot-1").assert_not_called()
-
-	def test_any_other_server_refuses_a_name(self, _region) -> None:
+	def test_any_other_server_refuses_template_settings(self, _region) -> None:
 		with self.assertRaises(frappe.ValidationError):
-			self.validate("base", "app")
+			_get_user_data(server_input(template_inputs={"password": "a" * 12}), UBUNTU_IMAGE, None)
+
+	def test_a_restored_template_server_takes_no_template_user_data(self, _region) -> None:
+		with patch("central.resource_actions.CargoClient.get_template_user_data") as user_data:
+			self.assertEqual(_get_user_data(server_input(), TEMPLATE_IMAGE, "snapshot-1"), "")
+
+		user_data.assert_not_called()

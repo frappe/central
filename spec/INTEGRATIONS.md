@@ -227,7 +227,7 @@ Trial, Pilot-server, and plain-Ubuntu creation use the same authorized Atlas ada
 | Trial | Prepared Pilot image, one existing site, metadata credential, approved idle timeout. | VM accepted, Pilot ready, site reachable, and site login succeeds. |
 | Pilot server | Cargo Pilot image with its prepared bench and site, plus metadata credential. | VM is ready and Central can open the correct Pilot admin. |
 | Plain Ubuntu | Approved Ubuntu image, allowed size, hostname, and SSH keys. | Atlas confirms the requested running state and the agreed access configuration. No Pilot or Site record is required. |
-| Template server | Cargo template image, user data from Cargo, `one-click-central` metadata, and an optional site name. | The server reports its application ready, and the chosen name has an active route. See [How does a template server report that it is ready?](#how-does-a-template-server-report-that-it-is-ready). |
+| Template server | Cargo template image and user data from Cargo, built from the answers to the template's inputs. | Atlas confirms the requested running state. The service sets itself up at first boot. See [How is a template server created?](#how-is-a-template-server-created). |
 
 Show Open Pilot only for a Pilot-managed resource. A plain Ubuntu VM must not fail because it has no Pilot process or site.
 
@@ -257,17 +257,16 @@ Display supported network and SSH information for a plain Ubuntu server. Do not 
 
 Delete only after the customer confirms the action. Confirm remote absence, revoke any Pilot credential, and preserve existing billing cancellation behavior.
 
-## How does a template server report that it is ready?
+## How is a template server created?
 
-A template server boots from a Cargo template image. The setup scripts of the image start the application, check that it answers, and then report to Central. The server opens no port for this report.
+A template is a fixed service, such as Redis or MariaDB, that a region's Cargo builds into an Atlas image tagged `purpose: one-click`. The **Templates** Image Offering lists these images.
 
-1. Central adds the `one-click-central` metadata to the creation. It holds `endpoint`, the Central URL, and `token`, a signed token with the `template-ready` scope. The `aud` claim is the creation's Resource Action, and the token expires after 30 minutes.
-2. The server reads the metadata from the region's metadata service and sends `POST /api/method/central.api.servers.report_template_ready` with the token in the `X-Template-Token` header.
-3. Central sets **Application Ready At** on the Virtual Machine. A repeated report changes nothing.
+1. The console lists the region's templates with `central.api.images.list_templates`, and reads the inputs and minimum size of the selected one with `central.api.images.get_template_requirements`. Central gets both from Cargo.
+2. `eligible_plans` shows only the plans with enough CPU, memory and disk for the template.
+3. The customer sends the answers as `template_inputs`. Central refuses a plan below the template's minimum size, refuses customer user data, and asks Cargo for the user data. Cargo checks each answer. A blank input that the template marks `generate` is left out, and the server makes the value itself.
+4. The server boots from the image. Its first-boot script sets up the service and keeps the settings, including generated passwords, in `/etc/one-click/app.env` on the server.
 
-A customer can give a template server a site name at creation, as `subdomain`. Central checks the name as it checks a trial site name, and refuses it for a server that is not from a template. A template that sets `requires_site_name: true` in its `template.yaml` needs a name: Cargo returns the value with the template requirements, the console marks the field as required, and Central refuses a creation without a name. A server restored from a snapshot does not need a name. When the server reports its mesh address, Central adds a Site Domain for `<name>.<zone>`, and the Site Domain routes the name at the regional proxy.
-
-`central.api.servers.template_journey` returns the progress of the creation for the console. The phase is `booking`, `server`, `app`, `ready`, or `failed`. The phase is `ready` when the server has reported and the chosen name, if any, has an active route. A report after the token expires is refused. The server still runs, and the console shows that the setup takes longer.
+A template server is a normal server after creation. Central does not route a name to it and does not open its ports. Without a public address, the service is reachable only on the region's private network. A server restored from a snapshot of a template server has no template requirements.
 
 ## What does creation depend on?
 

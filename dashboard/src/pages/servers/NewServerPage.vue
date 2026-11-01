@@ -14,7 +14,6 @@ import ServerSummary from '@/components/servers/ServerSummary.vue'
 import SSHKeysField from '@/components/servers/SSHKeysField.vue'
 import TemplateInputs from '@/components/servers/TemplateInputs.vue'
 import TemplateSelector from '@/components/servers/TemplateSelector.vue'
-import TemplateSiteName from '@/components/servers/TemplateSiteName.vue'
 import { useBreadcrumbs } from '@/composables/useBreadcrumbs'
 import { useServerCreation } from '@/composables/useServerCreation'
 import { features } from '@/lib/features'
@@ -70,8 +69,6 @@ const {
 	template,
 	templateRequirements,
 	templateAnswers,
-	templateSiteName,
-	templateSiteNameCheck,
 	templateRequirementsLoading,
 	templateRequirementsError,
 	reloadTemplateRequirements,
@@ -294,21 +291,17 @@ watch(
 								onClick: reloadTemplateRequirements,
 							}"
 						/>
-						<template v-else-if="templateRequirements">
-							<TemplateSiteName
-								v-model="templateSiteName"
-								:zone="templateRequirements.zone"
-								:required="templateRequirements.requires_site_name"
-								:checking="templateSiteNameCheck.checking.value"
-								:availability="templateSiteNameCheck.availability.value"
-								:error="templateSiteNameCheck.error.value"
-							/>
-							<TemplateInputs
-								v-if="templateRequirements.inputs.length"
-								v-model="templateAnswers"
-								:inputs="templateRequirements.inputs"
-							/>
-						</template>
+						<p
+							v-else-if="!templateRequirements?.inputs.length"
+							class="text-p-sm text-ink-gray-5"
+						>
+							This template needs no settings.
+						</p>
+						<TemplateInputs
+							v-else
+							v-model="templateAnswers"
+							:inputs="templateRequirements.inputs"
+						/>
 					</section>
 
 					<section

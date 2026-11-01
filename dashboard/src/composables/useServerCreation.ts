@@ -161,8 +161,6 @@ export function useServerCreation() {
 	const {
 		requirements: templateRequirements,
 		answers: templateAnswers,
-		siteName: templateSiteName,
-		siteNameCheck: templateSiteNameCheck,
 		loading: templateRequirementsLoading,
 		error: templateRequirementsError,
 		reload: reloadTemplateRequirements,
@@ -423,9 +421,6 @@ export function useServerCreation() {
 						.map(([key, value]) => [key, value.trim()])
 						.filter(([, value]) => value),
 				),
-				...(templateSiteName.value.trim() && {
-					subdomain: templateSiteName.value.trim(),
-				}),
 			}),
 		}
 		if (isCustom.value && composedConfig.value) {
@@ -516,8 +511,6 @@ export function useServerCreation() {
 		template,
 		templateRequirements,
 		templateAnswers,
-		templateSiteName,
-		templateSiteNameCheck,
 		templateRequirementsLoading,
 		templateRequirementsError,
 		reloadTemplateRequirements,
