@@ -682,14 +682,14 @@ class TestTrialLifecycle(TrialOnAMachine):
 
 		self.assertEqual(self.site().trial_state, "Ended")
 
-	def test_ending_a_trial_revokes_its_ai_key(self):
+	def test_ending_a_trial_keeps_its_ai_key(self):
 		with (
 			patch.object(trial.Trial, "enqueue_job"),
 			patch.object(trial.AITrialKey, "queue_revoke") as revoke,
 		):
 			self.site().end_trial_now()
 
-		revoke.assert_called_once_with(server=self.server.name)
+		revoke.assert_not_called()
 
 	def test_converting_a_trial_hands_its_ai_key_to_the_team_and_notes_a_trial_without_one(self):
 		with (

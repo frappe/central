@@ -163,7 +163,7 @@ The console's Upgrade dialog on a trial server lists the trial's plan choices wi
 
 ### Desk
 
-On a Site with an open trial, a System Manager has a **Trial** menu: **Extend Trial** adds days and starts an Ended trial again without the AI key its end revoked, **End Trial Now** ends an Active trial today and revokes its AI key at Grove, and **Retry Trial Step** runs today's step again after a Trial Error. On a Converted site, it sends the conversion job again. Each action leaves a comment on the Site. A trial that converts hands its AI key to the team at Grove in the background, best effort: three attempts, then the AI Trial Key record and the Site say it failed, the key is revoked and the team creates its own. The **Trial Sites** report counts trial sites and their cost by product, month and state.
+On a Site with an open trial, a System Manager has a **Trial** menu: **Extend Trial** adds days and starts an Ended trial again, with the AI key it still holds, **End Trial Now** ends an Active trial today and stops its server (its AI key stays until its days pass or the server is terminated), and **Retry Trial Step** runs today's step again after a Trial Error. On a Converted site, it sends the conversion job again. Each action leaves a comment on the Site. A trial that converts hands its AI key to the team at Grove in the background, best effort: three attempts, then the AI Trial Key record and the Site say it failed, the key is revoked and the team creates its own. The **Trial Sites** report counts trial sites and their cost by product, month and state.
 
 ### Failure
 

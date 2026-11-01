@@ -46,6 +46,7 @@ class AISettings(Document):
 		pause_pool_refill: DF.Check
 		trial_key_cap: DF.Currency
 		trial_key_geography: DF.Data | None
+		trial_key_revoke_after_days: DF.Int
 		trial_products: DF.Table[AITrialProduct]
 	# end: auto-generated types
 
