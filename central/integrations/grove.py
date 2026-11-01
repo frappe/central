@@ -124,8 +124,9 @@ class GroveClient:
 	def list_models(
 		self, team: str | None = None, key: str | None = None, geography: str | None = None
 	) -> list[dict]:
-		"""What a new key in `geography` (Grove's default when None) starts with: the published
-		models of its default group. With `team` and `key`, what that one key may call."""
+		"""With `team` alone, the published models its keys may call in `geography` (Grove's
+		default when None); with `team` and `key`, what that one key may call; with neither, what a
+		new key starts with there: the default group."""
 		return self.call("grove.api.catalog.available_models", team=team, key=key, geography=geography) or []
 
 	def list_geographies(self) -> list[dict]:

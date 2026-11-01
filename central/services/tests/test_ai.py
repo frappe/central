@@ -425,13 +425,14 @@ class TestAI(IntegrationTestCase):
 			self.assertEqual(api.pull_usage(self.team), {"sync": "PS-1"})
 		pull_usage.assert_called_once_with(self.team)
 
-	def test_a_geographys_models_are_read_from_grove(self):
+	def test_the_teams_models_in_a_geography_are_read_from_grove(self):
 		self.enabled()
 		with patch.object(GroveClient, "list_models", return_value=MODELS) as list_models:
 			[model] = api.get_models(self.team, "eu")
 			api.get_models(self.team, "")
 		self.assertEqual(
-			[call.kwargs for call in list_models.call_args_list], [{"geography": "eu"}, {"geography": None}]
+			[call.kwargs for call in list_models.call_args_list],
+			[{"team": self.team, "geography": "eu"}, {"team": self.team, "geography": None}],
 		)
 		self.assertEqual(
 			(model["name"], model["provider"], model["model_id"], model["zero_data_retention"]),

@@ -142,9 +142,9 @@ def pull_usage(team: str | None = None) -> dict:
 @frappe.whitelist(methods=["GET"])
 @require_capability("service:view", VIEW_DENIED)
 def get_models(team: str | None = None, geography: str | None = None) -> list[dict]:
-	"""What a key in `geography` (Grove's default when none) starts with: its default group."""
+	"""The models the team's keys may call in `geography` (Grove's default when none)."""
 	require_ai(team)
-	return ai.get_models(geography or None)
+	return ai.get_models(team, geography or None)
 
 
 @frappe.whitelist(methods=["POST"])
