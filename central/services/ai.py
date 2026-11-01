@@ -129,10 +129,11 @@ def get_day_totals(usage: dict) -> list[dict]:
 	return [{"day": day, **fields} for day, fields in totals.items()]
 
 
-def get_models(geography: str | None = None) -> list[dict]:
-	"""What a new key in `geography` (Grove's default when None) starts with: the published
-	models of its default group, what each takes and gives, and the API surfaces it answers on."""
-	return shape_models(GroveClient.from_settings().list_models(geography=geography))
+def get_models(team: str | None = None, geography: str | None = None) -> list[dict]:
+	"""The published models a key of `team` in `geography` (Grove's default when None) may call,
+	what each takes and gives, and the API surfaces it answers on. With no team, what a new key
+	starts with there: Grove's default group."""
+	return shape_models(GroveClient.from_settings().list_models(team=team, geography=geography))
 
 
 def get_key_models(team: str, key: str) -> list[dict]:

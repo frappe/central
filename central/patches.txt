@@ -67,3 +67,5 @@ central.patches.v0_0.report_billing_security_findings
 central.patches.v0_0.remove_wireguard_device_firewall_rule
 # Existing server events keep their Pilot caller after the explicit reportable flag.
 central.patches.v0_0.mark_pilot_reportable_events
+# Revoke every trial key still live, pool and assigned alike; the refill job mints the pools fresh.
+central.patches.v0_0.revoke_trial_keys
