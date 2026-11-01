@@ -194,7 +194,8 @@ def provision_composed_subscription(
 	# Re-check the config fits the team's remaining headroom (#83) — the client bounds
 	# are a convenience, the server is the gate.
 	currency = frappe.db.get_value("Billing Profile", team, "currency")
-	enforce_headroom(team, resolve_config_rate(includes, currency, cluster))
+	# Locked, so two parallel requests cannot both spend the same headroom.
+	enforce_headroom(team, resolve_config_rate(includes, currency, cluster), for_update=True)
 	resource_id = resource_id or f"res-{frappe.generate_hash(length=10)}"
 	sub = create_subscription(
 		team,
@@ -517,7 +518,7 @@ def _queue_resize(doc, server, target: frappe._dict, shape: dict, changed_by: st
 			"preset_plan": target.preset_plan,
 			"shape": shape,
 			"from_plan": server.plan,
-			"from_shape": _server_resize_shape(server),
+			"from_shape": get_server_shape(server),
 		}
 	)
 	# Billing validated the target and the route already checked server:resize.
@@ -533,7 +534,7 @@ def _queue_resize(doc, server, target: frappe._dict, shape: dict, changed_by: st
 	)
 
 
-def _server_resize_shape(server) -> dict | None:
+def get_server_shape(server) -> dict | None:
 	"""The shape the server runs now, or None while any part of it is unknown."""
 	if not (server.vcpus and server.memory_megabytes and server.disk_gigabytes):
 		return None
@@ -574,8 +575,12 @@ def _require_offered_plan(doc, plan: str, region: str | None) -> None:
 
 
 def apply_resize_billing(action) -> None:
-	"""Re-lock billing after the integration worker confirmed the target shape."""
+	"""Re-lock billing after the integration worker confirmed the target shape. A converted
+	trial's move has no subscription to re-lock: the server opens one on the paid plan it now runs."""
 	configuration = action.get_resize_configuration()
+	if not configuration.subscription:
+		frappe.get_doc("Virtual Machine", action.server).ensure_subscription_enabled()
+		return
 	if configuration.plan:
 		resize_to_plan(
 			configuration.subscription,
@@ -604,7 +609,7 @@ def _plan_resize(doc, server, plan, includes, sub_category, override_rate=None) 
 	if plan:
 		if doc.pricing_mode == "Preset" and doc.plan == plan:
 			return None
-		shape = _plan_shape(plan)
+		shape = get_plan_shape(plan)
 		new_rate = frappe.get_doc("Plan", plan).get_rate(currency, cluster)
 	else:
 		from central.billing.catalog.composition import composition_quantities
@@ -659,7 +664,7 @@ def _resize_disk_choice(plan, includes, sub_category, disk_gigabytes):
 		return plan, includes, sub_category
 
 	disk_gigabytes = frappe.utils.cint(disk_gigabytes)
-	if disk_gigabytes == _plan_shape(plan)["disk_gigabytes"]:
+	if disk_gigabytes == get_plan_shape(plan)["disk_gigabytes"]:
 		return plan, includes, sub_category
 
 	rows = [dict(row) for row in _plan_includes(plan) if row["resource_type"] != "Disk"]
@@ -689,7 +694,7 @@ def _preset_plus_disk_rate(doc, plan: str, disk_gigabytes) -> float | None:
 	base = frappe.get_doc("Plan", plan).get_rate(currency, cluster)
 	if base is None:
 		return None
-	extra = max(0, frappe.utils.cint(disk_gigabytes) - _plan_shape(plan)["disk_gigabytes"])
+	extra = max(0, frappe.utils.cint(disk_gigabytes) - get_plan_shape(plan)["disk_gigabytes"])
 	if not extra:
 		return base
 	return base + extra * frappe.utils.flt(resolve_component_rate("Disk", currency, cluster) or 0)
@@ -782,7 +787,7 @@ def resize_to_plan(
 	return change_plan(subscription, new_plan, changed_by=changed_by)
 
 
-def _plan_shape(plan: str) -> dict:
+def get_plan_shape(plan: str) -> dict:
 	"""A preset Plan's bundled size as the _server_shape dict (vcpus/memory/disk)."""
 	includes = frappe.get_all(
 		"Plan Includes",
@@ -1020,8 +1025,10 @@ def locked_team_run_rate(team: str, exclude: str | None = None) -> float:
 
 	Two creates that read the same run rate both pass, and the team ends up running
 	more than it was cleared for. Reading the rows under a lock makes the second
-	caller wait for the first and then see what it committed.
+	caller wait for the first and then see what it committed. The Billing Profile row
+	is locked first, because a team with no subscription yet has no row to lock.
 	"""
+	frappe.db.get_value("Billing Profile", team, "name", for_update=True)
 	sub = frappe.qb.DocType("Subscription")
 	names = (
 		frappe.qb.from_(sub)
@@ -1150,6 +1157,17 @@ def resume_billing(subscription: str, changed_by: str | None = None):
 	_record_change(subscription, "Resumed", old_value=0, new_value=1, changed_by=changed_by)
 	_control_subscription_server(doc, "start")
 	return doc
+
+
+def mark_past_due(team: str) -> list[str]:
+	"""Move every Current subscription of an unpaid team to Past Due. An invoice bills the
+	whole team, so its standing is the team's, not one server's. Returns those moved."""
+	moved = frappe.get_all(
+		"Subscription", filters={"team": team, "account_standing": "Current"}, pluck="name"
+	)
+	for name in moved:
+		set_standing(name, "Past Due", changed_by="dunning")
+	return moved
 
 
 def suspend_for_nonpayment(team: str) -> list[str]:
@@ -1311,11 +1329,19 @@ def backfill_missing_subscriptions():
 	"""Daily job: create a Subscription for any Running VirtualMachine that lacks an
 	active one (e.g. the VirtualMachine's status was set Running outside the normal flow).
 	"""
+	from central.billing.platform.jobs import each_isolated
+
+	running_servers = frappe.get_all("Virtual Machine", filters={"status": "Running"}, pluck="name")
+	each_isolated("Subscription backfill", "Virtual Machine", running_servers, _backfill_server)
+
+
+def _backfill_server(server_id: str) -> None:
+	"""Create the server's Subscription unless it has an active one or its billing is deferred."""
 	from central.billing.doctype.subscription.subscription import create_subscription
 	from central.signups.trial import is_billing_deferred
 
-	running_servers = frappe.get_all("Virtual Machine", filters={"status": "Running"}, pluck="name")
-	for server_id in running_servers:
-		has_active_subscription = frappe.db.exists("Subscription", {"server_id": server_id, "enabled": 1})
-		if not has_active_subscription and not is_billing_deferred(server_id):
-			create_subscription(server_id)
+	if frappe.db.exists("Subscription", {"server_id": server_id, "enabled": 1}):
+		return
+	if is_billing_deferred(server_id):
+		return
+	create_subscription(server_id)

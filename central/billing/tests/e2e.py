@@ -28,10 +28,16 @@ def _enter_test_mode() -> None:
 	"""Gate, then elevate. These endpoints are called by an unauthenticated test
 	harness (allow_guest) and must create/delete teams and users across permission
 	hooks, so they run as Administrator. The ONLY thing that makes that safe is the
-	`allow_tests` gate — it is never set on a production site, so this whole surface
-	is unreachable there. Checked first, before any elevation."""
-	if not frappe.conf.get("allow_tests"):
-		frappe.throw(_("e2e seed endpoints require `allow_tests` on the site."), frappe.PermissionError)
+	`allow_tests` gate, read from this site's own config — it is never set on a production
+	site, so this whole surface is unreachable there. Checked first, before any elevation."""
+	# Read from this site's own config: a bench-wide `allow_tests` in common_site_config
+	# (often set on staging) must not open these endpoints on every site of the bench.
+	own_config = frappe.get_file_json(frappe.get_site_path("site_config.json"))
+	if not own_config.get("allow_tests"):
+		frappe.throw(
+			_("e2e seed endpoints require `allow_tests` in this site's site_config.json."),
+			frappe.PermissionError,
+		)
 	frappe.set_user("Administrator")
 
 

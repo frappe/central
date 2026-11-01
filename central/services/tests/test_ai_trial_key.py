@@ -18,6 +18,12 @@ def minted(name: str) -> dict:
 	return {"name": name, "geography": "eu", "gateway_url": GATEWAY, "cap": 2, "api_key": f"gr_{name}"}
 
 
+def product(key: str) -> str:
+	if not frappe.db.exists("Product", key):
+		frappe.get_doc({"doctype": "Product", "product_key": key, "title": key, "signup_app": key}).insert()
+	return key
+
+
 class TestAITrialKey(IntegrationTestCase):
 	def setUp(self):
 		super().setUp()
@@ -30,27 +36,35 @@ class TestAITrialKey(IntegrationTestCase):
 		frappe.db.delete("AI Trial Key")
 		self.grove = self.enterContext(patch(f"{MODULE}.GroveClient")).from_settings.return_value
 		self.grove.provision_key.side_effect = lambda **kwargs: minted(frappe.generate_hash(length=10))
-		self.configure(size=3)
+		self.configure(products={"raven": 3})
 
-	def configure(self, size: int, enrolled: bool = True, group: str = "trial-models") -> None:
-		values = {
-			"base_url": "https://grove.example.test" if enrolled else "",
-			"control_api_key": "control" if enrolled else "",
-			"trial_key_geography": "eu",
-			"trial_model_group": group,
-			"trial_pool_size": size,
-			"trial_key_cap": 2,
-		}
-		for fieldname, value in values.items():
-			frappe.db.set_single_value("AI Settings", fieldname, value)
+	def configure(self, products: dict[str, int], enrolled: bool = True, groups: dict | None = None) -> None:
+		"""The Trials tab: one pool row per product in `products` ({key: size}), each in the Model
+		Group `groups` names for it, if any."""
+		settings = frappe.get_doc("AI Settings")
+		settings.update(
+			{
+				"base_url": "https://grove.example.test" if enrolled else "",
+				"control_api_key": "control" if enrolled else "",
+				"control_api_secret": "secret" if enrolled else "",
+				"trial_key_geography": "eu",
+				"trial_key_cap": 2,
+				"trial_products": [
+					{"product": product(key), "pool_size": size, "model_group": (groups or {}).get(key)}
+					for key, size in products.items()
+				],
+			}
+		)
+		settings.save()
 		frappe.clear_document_cache("AI Settings", "AI Settings")
 
-	def available(self) -> AITrialKey:
+	def available(self, product_key: str = "raven") -> AITrialKey:
 		reply = minted(frappe.generate_hash(length=10))
 		return frappe.get_doc(
 			{
 				"doctype": "AI Trial Key",
 				"grove_key": reply["name"],
+				"product": product(product_key),
 				"geography": reply["geography"],
 				"gateway_url": reply["gateway_url"],
 				"cap": reply["cap"],
@@ -58,8 +72,8 @@ class TestAITrialKey(IntegrationTestCase):
 			}
 		).insert()
 
-	def action(self, name: str = "action-1", free: int = 1) -> Mock:
-		action = Mock(team="TEAM-00001", is_free_trial=free)
+	def action(self, name: str = "action-1", free: int = 1, product_key: str = "raven") -> Mock:
+		action = Mock(team="TEAM-00001", is_free_trial=free, product=product_key)
 		action.name = name
 		return action
 
@@ -78,20 +92,35 @@ class TestAITrialKey(IntegrationTestCase):
 				"team": TRIAL_TEAM,
 				"title": None,
 				"geography": "eu",
-				"model_group": "trial-models",
 				"cap": 2,
+				"model_groups": None,
 			},
 		)
 		key = frappe.get_doc("AI Trial Key", frappe.get_all("AI Trial Key", pluck="name")[-1])
 		self.assertEqual((key.gateway_url, key.get_password("api_key")), (GATEWAY, f"gr_{key.grove_key}"))
+		self.assertEqual(key.product, "raven")
 
-	def test_a_blank_model_group_sends_none(self):
-		self.configure(size=1, group="")
-		ai_trial_key.refill_trial_keys()
-		self.assertIsNone(self.grove.provision_key.call_args.kwargs["model_group"])
+	def test_each_product_is_refilled_to_its_size_in_its_group_within_one_batch(self):
+		self.configure(products={"raven": 2, "crm": 2}, groups={"crm": "crm-trial"})
+		self.available()
+
+		with patch(f"{MODULE}.REFILL_BATCH_SIZE", 2):
+			ai_trial_key.refill_trial_keys()
+
+		self.assertEqual(
+			frappe.get_all("AI Trial Key", pluck="product", order_by="creation asc"), ["raven", "raven", "crm"]
+		)
+		sent = [call.kwargs["model_groups"] for call in self.grove.provision_key.call_args_list]
+		self.assertEqual(sent, [None, ["crm-trial"]])
+
+	def test_one_pool_row_per_product(self):
+		settings = frappe.get_doc("AI Settings")
+		settings.append("trial_products", {"product": "raven", "pool_size": 1})
+		with self.assertRaisesRegex(frappe.ValidationError, "One pool row per product"):
+			settings.save()
 
 	def test_refill_mints_at_most_one_batch(self):
-		self.configure(size=5)
+		self.configure(products={"raven": 5})
 
 		with patch(f"{MODULE}.REFILL_BATCH_SIZE", 2):
 			ai_trial_key.refill_trial_keys()
@@ -108,9 +137,9 @@ class TestAITrialKey(IntegrationTestCase):
 		log_error.assert_called_once()
 
 	def test_refill_does_nothing_while_the_pool_is_off_or_central_is_not_enrolled(self):
-		self.configure(size=0)
+		self.configure(products={"raven": 0})
 		ai_trial_key.refill_trial_keys()
-		self.configure(size=3, enrolled=False)
+		self.configure(products={"raven": 3}, enrolled=False)
 		ai_trial_key.refill_trial_keys()
 
 		self.assertEqual(self.statuses(), [])
@@ -121,7 +150,7 @@ class TestAITrialKey(IntegrationTestCase):
 		with patch(f"{MODULE}.frappe.enqueue"):
 			AITrialKey.queue_revoke(name=key.name)
 		self.age(key)
-		self.configure(size=0)
+		self.configure(products={"raven": 0})
 
 		ai_trial_key.refill_trial_keys()
 
@@ -136,7 +165,16 @@ class TestAITrialKey(IntegrationTestCase):
 		other = AITrialKey.assign(self.action("action-2"))
 
 		self.assertEqual((taken.name, retried.name, other.name), (first.name, first.name, second.name))
-		self.assertEqual((first.reload().status, first.team, first.resource_action), ("Assigned", "TEAM-00001", "action-1"))
+		self.assertEqual(
+			(first.reload().status, first.team, first.resource_action), ("Assigned", "TEAM-00001", "action-1")
+		)
+
+	def test_a_free_trial_takes_a_key_of_its_product_and_none_of_anothers(self):
+		crm, raven = self.available("crm"), self.available("raven")
+
+		self.assertEqual(AITrialKey.assign(self.action()).name, raven.name)
+		self.assertIsNone(AITrialKey.assign(self.action("action-2")))
+		self.assertEqual(AITrialKey.assign(self.action("action-3", product_key="crm")).name, crm.name)
 
 	def test_only_a_running_trials_cap_can_be_raised_and_only_upward(self):
 		key = self.available()
@@ -169,9 +207,7 @@ class TestAITrialKey(IntegrationTestCase):
 
 		self.assertEqual(
 			key.get_site_config(),
-			{
-				"ai_keys": [{"gateway_url": GATEWAY, "api_key": f"gr_{key.grove_key}"}]
-			},
+			{"ai_keys": [{"gateway_url": GATEWAY, "api_key": f"gr_{key.grove_key}"}]},
 		)
 
 	def test_a_failed_creation_releases_its_key_and_a_retry_gets_a_new_one(self):
@@ -196,7 +232,6 @@ class TestAITrialKey(IntegrationTestCase):
 			AITrialKey.queue_revoke(server="server-1")
 
 		self.assertEqual((key.reload().server, key.status), ("server-1", "Revoking"))
-
 
 	def test_a_refused_revoke_stays_revoking_and_is_tried_again_once_stale(self):
 		key = self.available()

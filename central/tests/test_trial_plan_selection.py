@@ -72,10 +72,13 @@ class TestTrialPlanSelection(IntegrationTestCase):
 		self.assertEqual(image_shape(includes, image)["disk_mib"], 51200)
 		self.assertEqual(frappe.db.get_value("Team", self.team.name, "is_staging_trial"), 0)
 
-	def test_unmarked_plan_stays_available_for_paid_servers(self):
-		catalog = get_server_plans(self.team.name, cluster="par-2")
-		plans = {row["plan"] for rows in catalog["plans"].values() for row in rows}
-		self.assertEqual(plans, {self.small_plan, self.trial_plan})
+	def test_a_paid_server_is_never_offered_a_trial_plan(self):
+		for catalog in (
+			get_server_plans(self.team.name, cluster="par-2"),
+			get_server_plans(self.team.name, cluster="par-2", for_resize=1),
+		):
+			plans = {row["plan"] for rows in catalog["plans"].values() for row in rows}
+			self.assertEqual(plans, {self.small_plan})
 
 	def test_staging_team_still_selects_marked_plan(self):
 		self.team.db_set("is_staging_trial", 1)
@@ -142,13 +145,13 @@ class TestConvertedTrialPlanFloor(IntegrationTestCase):
 		).db_insert()
 		return server
 
-	def test_the_floor_is_the_trial_plan_of_a_converted_trial_only(self):
+	def test_the_floor_is_the_plan_a_trial_server_started_on(self):
 		from central.signups.trial import get_trial_plan_floor
 
-		self.assertEqual(
-			get_trial_plan_floor(self.add_trial("Converted")), {"Compute": 0.5, "Memory": 1, "Disk": 12.5}
-		)
-		self.assertIsNone(get_trial_plan_floor(self.add_trial("Active")))
+		floor = {"Compute": 0.5, "Memory": 1, "Disk": 12.5}
+		self.assertEqual(get_trial_plan_floor(self.add_trial("Active")), floor)
+		self.assertEqual(get_trial_plan_floor(self.add_trial("Converted")), floor)
+		self.assertIsNone(get_trial_plan_floor("server-without-trial"))
 
 	def test_the_plan_menu_leaves_out_plans_below_the_floor(self):
 		caps = frappe._dict(max_spend=10000, allowed_plans=None, allowed_clusters=None, tier="Entry")

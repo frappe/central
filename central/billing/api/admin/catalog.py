@@ -80,14 +80,13 @@ def create_configured_plan(
 	return {"plan": name}
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def update_plan_rate(plan: str, currency: str, rate: int, cluster: str = "") -> dict:
 	"""Price management: change a plan's Catalog Rate. Existing price-locks are
 	untouched (they copied the rate at provision) — only new provisions lock the
 	new rate. Zero new plans."""
 	require_operator()
-	if not frappe.db.exists("Plan", plan):
-		frappe.throw(_("Plan {0!r} does not exist.").format(plan))
+	_require_plan_rate(plan, rate)
 	cluster = cluster or None
 
 	existing = frappe.get_all(
@@ -115,6 +114,13 @@ def update_plan_rate(plan: str, currency: str, rate: int, cluster: str = "") -> 
 		"cluster": cluster or "global",
 		"rate": frappe.utils.flt(rate),
 	}
+
+
+def _require_plan_rate(plan: str, rate) -> None:
+	if not frappe.db.exists("Plan", plan):
+		frappe.throw(_("Plan {0!r} does not exist.").format(plan))
+	if frappe.utils.flt(rate) < 0:
+		frappe.throw(_("A rate cannot be negative."), frappe.ValidationError)
 
 
 def update_component_rate(resource_type: str, currency: str, rate: int, cluster: str = "") -> dict:

@@ -187,6 +187,7 @@ doc_events = {
 	"User": {
 		"validate": "central.users.validate_user_image",
 		"after_insert": "central.users.grant_central_user_role",
+		"on_update": "central.infrastructure.doctype.wireguard_device.wireguard_device.remove_disabled_user_devices",
 	},
 	# A Billing Profile's level reaches Grove by the Webhook AI Settings keeps, with retries.
 	"Trust Tier Level": {
@@ -195,6 +196,24 @@ doc_events = {
 	},
 	"Payment Method": {
 		"on_update": "central.signups.credit.on_payment_method_update",
+	},
+	# Money records change only through billing code (central/billing/platform/records.py).
+	**{
+		doctype: {
+			"validate": "central.billing.platform.records.refuse_manual_edit",
+			"on_trash": "central.billing.platform.records.refuse_manual_delete",
+		}
+		for doctype in (
+			"Invoice",
+			"Payment Attempt",
+			"Refund",
+			"Credit Ledger Entry",
+			"Credit Wallet",
+			"Usage Rollup",
+			"Webhook Event",
+			"Billing Event",
+			"Top-up Order",
+		)
 	},
 }
 
@@ -220,6 +239,7 @@ scheduler_events = {
 			"central.infrastructure.doctype.vm_snapshot.vm_snapshot.sync_pending_snapshots",
 			"central.infrastructure.doctype.frappemail_service.frappemail_service.refill_mailboxes",
 			"central.services.doctype.ai_trial_key.ai_trial_key.refill_trial_keys",
+			"central.infrastructure.doctype.wireguard_device.wireguard_device.remove_pending_devices",
 		],
 	},
 	# Maintenance jobs run once per period at a time Frappe spreads across sites.
@@ -244,6 +264,7 @@ scheduler_events = {
 		"central.billing.ingester.advance.sync_pending_advances",
 		"central.billing.revenue.storage_usage.record_storage_usage",
 		"central.billing.platform.invariants.run_invariant_audit",
+		"central.billing.payments.reconciliation.recheck_completed_refunds",
 	],
 	"hourly": [
 		"central.billing.revenue.invoicing.collect_due_invoices",
@@ -252,6 +273,7 @@ scheduler_events = {
 		"central.billing.payments.webhooks.retry_failed_webhooks",
 		"central.billing.platform.alerts.run_operator_alerts",
 		"central.signups.alerts.alert_failed_signups",
+		"central.notification.digest.send_due_digests",
 	],
 	"monthly": [
 		"central.billing.revenue.invoicing.draft_monthly_invoices",
@@ -269,6 +291,7 @@ after_migrate = [
 	"central.billing.navigation.ensure_workspace_sidebars",
 	# The Webhook that carries a team's tier to Grove, so an edit to its spec rolls out.
 	"central.services.doctype.ai_settings.ai_settings.sync_webhook",
+	"central.investigator.knowledge.load_knowledge_bases_after_migrate",
 ]
 
 # Testing
@@ -362,8 +385,33 @@ page_renderer = ["central.oidc.DiscoveryPage"]
 
 # Authentication and authorization
 
+# Team-scoped billing records: operators only; customers use the billing API.
+_BILLING_TEAM_RECORDS = (
+	"Billing Event",
+	"Billing Notification Log",
+	"Billing Profile",
+	"Billing Projection Summary",
+	"Billing Scenario",
+	"Commitment",
+	"Credit Ledger Entry",
+	"Credit Wallet",
+	"Entitlement Token",
+	"Gateway Customer",
+	"Invoice",
+	"Payment Attempt",
+	"Payment Method",
+	"Project",
+	"Refund",
+	"Subscription",
+	"Subscription Change",
+	"Tax Profile",
+	"Top-up Order",
+	"Usage Rollup",
+)
+
 permission_query_conditions = {
 	"Team SSH Key": "central.permissions.team_ssh_key_query_conditions",
+	"WireGuard Device": "central.permissions.wireguard_device_query_conditions",
 	"Virtual Machine": "central.permissions.server_query_conditions",
 	"Pilot Credential": "central.permissions.pilot_credential_query_conditions",
 	"Resource Action": "central.permissions.resource_action_query_conditions",
@@ -373,13 +421,16 @@ permission_query_conditions = {
 	"Team Invitation": "central.permissions.team_invitation_query_conditions",
 	"Team Notification": "central.permissions.team_notification_query_conditions",
 	"Team Role": "central.permissions.team_role_query_conditions",
+	"Notification Digest Setting": "central.permissions.notification_digest_setting_query_conditions",
 	"Team Service": "central.permissions.team_service_query_conditions",
 	"User Notification Preference": "central.permissions.user_notification_preference_query_conditions",
 	"VM Snapshot": "central.permissions.vm_snapshot_query_conditions",
+	**dict.fromkeys(_BILLING_TEAM_RECORDS, "central.permissions.billing_record_query_conditions"),
 }
 
 has_permission = {
 	"Team SSH Key": "central.permissions.team_ssh_key_has_permission",
+	"WireGuard Device": "central.permissions.wireguard_device_has_permission",
 	"Virtual Machine": "central.permissions.server_has_permission",
 	"Pilot Credential": "central.permissions.pilot_credential_has_permission",
 	"Resource Action": "central.permissions.resource_action_has_permission",
@@ -389,9 +440,11 @@ has_permission = {
 	"Team Invitation": "central.permissions.team_invitation_has_permission",
 	"Team Notification": "central.permissions.team_notification_has_permission",
 	"Team Role": "central.permissions.team_role_has_permission",
+	"Notification Digest Setting": "central.permissions.has_notification_digest_setting_permission",
 	"Team Service": "central.permissions.team_service_has_permission",
 	"User Notification Preference": "central.permissions.user_notification_preference_has_permission",
 	"VM Snapshot": "central.permissions.vm_snapshot_has_permission",
+	**dict.fromkeys(_BILLING_TEAM_RECORDS, "central.permissions.billing_record_has_permission"),
 }
 
 # --------------------------------
@@ -414,3 +467,5 @@ require_type_annotated_api_methods = True
 # ------------
 # List of apps whose translatable strings should be excluded from this app's translations.
 # ignore_translatable_strings_from = []
+
+flow_agents = ["central.investigator.agents.get_agents"]

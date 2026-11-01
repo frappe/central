@@ -56,7 +56,7 @@ class TestObjectStorageClient(TestCase):
 		)
 		post.assert_called_once_with(
 			"https://cargo.par-2.example.test/api/method/cargo.object_storage.api.bucket.create_bucket",
-			json={"name": "pilot-action-1", "region": "par-2"},
+			json={"name": "pilot-action-1", "region": "par-2", "tags": {}},
 			headers={"X-Cargo-Access-Token": "cargo-token"},
 			timeout=(5, 20),
 			allow_redirects=False,

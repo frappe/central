@@ -35,6 +35,7 @@ const { hostnames, loading, error } = useServerHostnames(
 
 		<FirewallSection
 			:resource-id="overview.server.resource_id"
+			:region="overview.server.region"
 			:is-enabled="!!overview.server.is_firewall_enabled"
 			:rules="overview.server.firewall_rules"
 			:can-edit="canManageNetwork"

@@ -53,6 +53,24 @@ GUARD_TOKENS = (
 	"_assert_owns",
 )
 
+# Payment routes that must carry @rate_limit, by file.
+RATE_LIMITED_ROUTES = {
+	"api/billing_api.py": {
+		"add_payment_method",
+		"confirm_payment_method",
+		"create_payment_method_checkout",
+		"confirm_payment_method_checkout",
+		"get_checkout_status",
+	},
+	"api/dashboard/invoices.py": {
+		"pay_invoice",
+		"pay_invoice_checkout",
+		"confirm_invoice_checkout",
+		"create_topup_order",
+		"confirm_topup",
+	},
+}
+
 # A decorator that authenticates + binds the team before the body runs.
 AUTH_DECORATORS = {"pilot_credential_auth"}
 
@@ -136,6 +154,19 @@ class TestWhitelistBoundary(BillingTestCase):
 			[],
 			f"whitelisted endpoints with no authz guard on entry: {unguarded}",
 		)
+
+	def test_payment_routes_are_rate_limited(self):
+		"""Every route that charges, starts a checkout or saves a card carries a rate limit."""
+		missing = []
+		for path, rel in _billing_files():
+			if rel not in RATE_LIMITED_ROUTES:
+				continue
+			tree = ast.parse(path.read_text())
+			limited = {
+				fn.name for fn, _inside, names in _whitelisted_functions(tree, "") if "rate_limit" in names
+			}
+			missing += [f"{rel}::{name}" for name in RATE_LIMITED_ROUTES[rel] - limited]
+		self.assertEqual(missing, [], f"payment routes with no rate limit: {missing}")
 
 
 class TestAuditedPrimitivesStayInternal(BillingTestCase):

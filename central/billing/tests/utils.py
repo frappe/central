@@ -64,8 +64,8 @@ class BillingTestCase(IntegrationTestCase):
 	# raw deletes (frappe.db.delete) need no dependency ordering. Child rows need
 	# explicit cleanup because raw deletes do not run the parent document hooks.
 	_TRACKED = (
-		"Payment Attempt",
 		"Top-up Order",
+		"Payment Attempt",
 		"Refund",
 		"Credit Ledger Entry",
 		"Credit Wallet",

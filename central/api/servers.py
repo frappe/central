@@ -167,6 +167,7 @@ def server_overview(team: str | None = None, resource_id: str | None = None) -> 
 			"is_firewall_enabled": row.is_firewall_enabled,
 			"is_termination_protected": row.is_termination_protected,
 			"has_ipv4_internet": row.has_ipv4_internet,
+			"has_wireguard_access": row.has_wireguard_access,
 			"firewall_rules": frappe.parse_json(row.firewall_rules) if row.firewall_rules else None,
 			"ssh_command": _ssh_command(row),
 			"ssh_keys": _server_ssh_keys(row.resource_id),
@@ -185,6 +186,7 @@ def server_overview(team: str | None = None, resource_id: str | None = None) -> 
 				"display_name": row.region_display_name or server.region,
 				"provider": row.region_provider,
 				"country_code": row.region_country_code,
+				"has_wireguard_gateway": row.region_has_wireguard_gateway,
 			},
 		},
 	}
@@ -327,12 +329,14 @@ def _overview_server_row(resource_id: str, team: str):
 			server.is_firewall_enabled,
 			server.is_termination_protected,
 			server.has_ipv4_internet,
+			server.has_wireguard_access,
 			server.firewall_rules,
 			server.gateway_url,
 			server.creation,
 			region.display_name.as_("region_display_name"),
 			region.provider.as_("region_provider"),
 			region.country_code.as_("region_country_code"),
+			region.has_wireguard_gateway.as_("region_has_wireguard_gateway"),
 			region.base_url.as_("region_base_url"),
 			team_table.team_name.as_("team_name"),
 		)
@@ -498,12 +502,24 @@ def resize_server(
 	disk_gigabytes: int | None = None,
 ) -> dict:
 	"""Resize a server's CPU, memory and disk. Gated on `server:resize`.
-	A compute change stops the server first. A larger disk does not, and a smaller disk is refused."""
+	A compute change stops the server first. A larger disk does not, and a smaller disk is refused.
+	On an open trial it keeps the paid plan the site moves to when the trial converts."""
+	from central.signups.trial import Trial
+
 	if not resource_id:
 		frappe.throw(_("A server is required."))
 
 	server = VirtualMachine.get_team_server_name(team, resource_id)
 	subscription = frappe.db.get_value("Subscription", {"team": team, "server_id": server}, "name")
+	if not subscription and (trial := Trial.find_open(server)):
+		# The chosen plan is what the team pays once the trial converts.
+		if not can(frappe.session.user, team, "billing:manage"):
+			frappe.throw(
+				_("You can't manage this team's billing. Ask a team admin to review your access."),
+				frappe.PermissionError,
+			)
+		Trial.load(trial.site.name, for_update=True).choose_plan(plan)
+		return {"queued": False, "resized": False}
 	if not subscription:
 		frappe.throw(
 			_("This server cannot be resized because its billing subscription is missing. Contact support.")
@@ -603,6 +619,21 @@ def set_server_ipv4_internet(
 	"""Turn IPv4 internet access on or off. Gated on `server:network`."""
 	server = frappe.get_doc("Virtual Machine", VirtualMachine.get_team_server_name(team, resource_id))
 	server.set_ipv4_internet(bool(frappe.utils.cint(enabled)))
+
+
+@frappe.whitelist(methods=["POST"])
+@handle_resource_operation
+@require_capability(
+	"server:network",
+	_lt("You can't change the network of this server. Ask a team admin to review your access."),
+	server="resource_id",
+)
+def set_server_wireguard_access(
+	team: str | None = None, resource_id: str | None = None, enabled: bool | int | str = True
+) -> None:
+	"""Turn WireGuard device access on or off. Gated on `server:network`."""
+	server = frappe.get_doc("Virtual Machine", VirtualMachine.get_team_server_name(team, resource_id))
+	server.set_wireguard_access(bool(frappe.utils.cint(enabled)))
 
 
 @frappe.whitelist(methods=["POST"])

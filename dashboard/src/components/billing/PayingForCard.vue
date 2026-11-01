@@ -1,12 +1,17 @@
 <script setup lang="ts">
-import { Button, LoadingText } from 'frappe-ui'
-import { computed } from 'vue'
+import { Badge, Button, LoadingText } from 'frappe-ui'
+import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import AssignProjectDialog from '@/components/billing/AssignProjectDialog.vue'
-import PayingForRow from '@/components/billing/PayingForRow.vue'
-import ProjectsRow from '@/components/billing/ProjectsRow.vue'
+import CreateProjectDialog from '@/components/billing/CreateProjectDialog.vue'
+import PayingForTable from '@/components/billing/PayingForTable.vue'
+import ProjectMembersDialog from '@/components/billing/ProjectMembersDialog.vue'
+import RenameProjectDialog from '@/components/billing/RenameProjectDialog.vue'
+import StopAllServersRow from '@/components/billing/StopAllServersRow.vue'
+import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { usePayingFor } from '@/composables/usePayingFor'
+import { useProjects } from '@/composables/useProjects'
 import { money } from '@/lib/format'
 import { subscriptionTitle } from '@/lib/subscriptions'
 
@@ -33,6 +38,17 @@ const {
 	onAssignedProject,
 } = usePayingFor()
 
+const {
+	projects,
+	pendingRename,
+	pendingManageMembers,
+	manageMembersOpen,
+	reloadProjects,
+} = useProjects()
+
+const showCreate = ref(false)
+const projectCount = computed(() => projects.data?.length ?? 0)
+
 const visible = computed(() => rows.value.slice(0, VISIBLE))
 const hidden = computed(() => Math.max(0, rows.value.length - VISIBLE))
 const goToObjectStorage = () => router.push({ name: 'ObjectStorage' })
@@ -43,15 +59,10 @@ const goToObjectStorage = () => router.push({ name: 'ObjectStorage' })
 		aria-labelledby="subscriptions-heading"
 		class="overflow-hidden rounded-6 border border-outline-gray-1 bg-surface-base"
 	>
-		<header class="flex min-h-14 items-center justify-between gap-3 px-5 py-3">
+		<header class="flex items-center justify-between gap-3 px-4 py-3">
 			<h2 id="subscriptions-heading" class="text-base-semibold text-ink-gray-8">
 				Subscriptions
-				<span
-					v-if="rows.length"
-					class="ml-1 text-base tabular-nums text-ink-gray-4"
-				>
-					{{ rows.length }}
-				</span>
+				<Badge v-if="rows.length" class="ml-1" :label="String(rows.length)" />
 			</h2>
 			<span class="text-sm tabular-nums text-ink-gray-5">
 				{{ money(total, currency) }}
@@ -59,66 +70,85 @@ const goToObjectStorage = () => router.push({ name: 'ObjectStorage' })
 			</span>
 		</header>
 
-		<LoadingText v-if="loading" :lines="3" class="px-5 pb-5" />
+		<LoadingText v-if="loading" :lines="3" class="px-4 pb-5" />
 
-		<div v-else-if="rows.length" class="overflow-x-auto">
-			<table class="w-full min-w-max border-collapse">
-				<thead>
-					<tr class="text-left text-sm text-ink-gray-5">
-						<th class="border-y border-outline-gray-1 py-2 pl-5 pr-3">Name</th>
-						<th class="w-2/5 border-y border-outline-gray-1 px-3 py-2">
-							Usage
-						</th>
-						<th class="border-y border-outline-gray-1 px-3 py-2 text-right">
-							Cost
-						</th>
-						<th class="w-10 border-y border-outline-gray-1">
-							<span class="sr-only">Actions</span>
-						</th>
-					</tr>
-				</thead>
-				<tbody class="divide-y divide-outline-gray-1">
-					<PayingForRow
-						v-for="row in visible"
-						:key="row.id"
-						:row="row"
-						:currency="currency"
-						:can-manage="canManageBilling"
-						:busy="busy"
-						@open="openServer"
-						@pause="askPause"
-						@resume="onResume"
-						@assign-project="askAssignProject"
-					/>
-				</tbody>
-			</table>
+		<div v-else>
+			<div
+				v-if="!rows.length"
+				class="flex flex-wrap items-center justify-between gap-3 border-t border-outline-gray-1 px-4 py-4"
+			>
+				<p class="text-p-sm text-ink-gray-5">
+					Servers and metered services you subscribe to show here with what they
+					cost.
+				</p>
+				<Button
+					v-if="canManageBilling"
+					label="Open Object Storage"
+					@click="goToObjectStorage"
+				/>
+			</div>
+
+			<PayingForTable
+				v-if="rows.length"
+				:rows="visible"
+				:currency="currency"
+				:can-manage="canManageBilling"
+				:busy="busy"
+				@open="openServer"
+				@pause="askPause"
+				@resume="onResume"
+				@assign-project="askAssignProject"
+			/>
 			<button
 				v-if="hidden"
 				type="button"
-				class="flex w-full items-center gap-1 border-t border-outline-gray-1 px-5 py-2.5 text-sm text-ink-gray-5 transition-colors hover:bg-surface-gray-1 hover:text-ink-gray-8"
+				class="flex w-full items-center gap-1 border-t border-outline-gray-1 px-4 py-2.5 text-sm text-ink-gray-5 transition-colors hover:bg-surface-gray-1 hover:text-ink-gray-8"
 				@click="$emit('open')"
 			>
 				View all {{ rows.length }}
 				<span class="lucide-arrow-right size-3.5" aria-hidden="true" />
 			</button>
+			<div
+				class="flex flex-wrap items-center justify-between gap-3 border-t border-outline-gray-1 px-4 py-3"
+			>
+				<div class="flex min-w-0 items-center gap-2.5">
+					<span
+						class="lucide-layers size-4 shrink-0 text-ink-gray-5"
+						aria-hidden="true"
+					/>
+					<span class="text-base text-ink-gray-9">Projects</span>
+					<span class="text-p-sm text-ink-gray-5">
+						Group invoice costs by customer or environment.
+					</span>
+				</div>
+				<div class="flex items-center gap-2">
+					<Button
+						v-if="projectCount"
+						variant="outline"
+						label="View all"
+						@click="$emit('openProjects')"
+					/>
+					<Button
+						v-if="canManageBilling"
+						icon-left="lucide-plus"
+						label="New project"
+						@click="showCreate = true"
+					/>
+				</div>
+			</div>
+			<StopAllServersRow />
 		</div>
 
-		<div
-			v-else
-			class="flex flex-wrap items-center justify-between gap-3 border-t border-outline-gray-1 px-5 py-4"
-		>
-			<p class="text-p-sm text-ink-gray-5">
-				Servers and metered services you subscribe to show here with what they
-				cost.
-			</p>
-			<Button
-				v-if="canManageBilling"
-				label="Open Object Storage"
-				@click="goToObjectStorage"
-			/>
-		</div>
-
-		<ProjectsRow @open="$emit('openProjects')" />
+		<CreateProjectDialog v-model="showCreate" @created="reloadProjects" />
+		<RenameProjectDialog
+			v-model:project="pendingRename"
+			@saved="reloadProjects"
+		/>
+		<ProjectMembersDialog
+			v-model:open="manageMembersOpen"
+			:project="pendingManageMembers"
+			@changed="reloadProjects"
+		/>
 
 		<ConfirmDialog
 			v-model:target="pendingPause"

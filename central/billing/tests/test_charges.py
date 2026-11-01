@@ -84,7 +84,7 @@ class ChargeTestBase(IntegrationTestCase):
 		self._purge()
 
 	def _purge(self):
-		for dt in ("Payment Attempt", "Invoice"):
+		for dt in ("Refund", "Payment Attempt", "Invoice"):
 			frappe.db.delete(dt, {"team": TEAM})
 		for pm in frappe.get_all("Payment Method", {"team": TEAM}, pluck="name"):
 			frappe.db.delete("Payment Method", {"name": pm})
@@ -184,7 +184,25 @@ class TestChargeInvoice(ChargeTestBase):
 		attempt = frappe.get_doc("Payment Attempt", result["attempt"])
 		self.assertEqual(attempt.status, "Failed")
 		self.assertEqual(attempt.failure_code, "card_declined")
+		event_reason = frappe.db.get_value(
+			"Billing Event", {"subject": attempt.name, "to_state": "Failed"}, "reason"
+		)
+		self.assertEqual(event_reason, "card_declined")
 		self.assertEqual(frappe.db.get_value("Invoice", inv, "status"), "Open")
+
+	def test_a_debit_held_at_the_gateway_blocks_a_second_charge(self):
+		from central.billing.gateways.razorpay_adapter import _recurring_result
+
+		inv = self._open_invoice(1000)
+		with stub_adapter() as adapter:
+			adapter.charge.return_value = _recurring_result({"id": "pay_async", "status": "created"})
+			first = charges.pay_invoice(inv)
+			second = charges.pay_invoice(inv)
+
+		self.assertEqual(first["reason"], "gateway_hold")
+		self.assertEqual(frappe.db.get_value("Payment Attempt", first["attempt"], "status"), "Initiated")
+		self.assertEqual((second["reason"], second["attempt"]), ("attempt_in_flight", first["attempt"]))
+		adapter.charge.assert_called_once()
 
 	def test_webhook_settles_invoice_to_paid(self):
 		inv = self._open_invoice(1000)
@@ -292,12 +310,33 @@ class TestChargeInvoice(ChargeTestBase):
 		self.assertIsNone(charges.in_flight_attempt(inv))
 		self.assertTrue(charges._claim_on_session_attempt(inv, GATEWAY)["created"])
 
-	def test_a_capture_on_a_paid_invoice_goes_to_the_wallet(self):
+	def test_a_capture_on_a_paid_invoice_is_refunded_to_its_source(self):
+		"""Credit paid the invoice while the debit was held; the debit that lands is given back."""
+		inv = self._open_invoice(1000)
+		attempt = self._hosted_attempt(inv)
+		frappe.db.set_value("Invoice", inv, "status", "Paid")
+		entries = frappe.db.count("Credit Ledger Entry", {"team": TEAM})
+
+		with stub_adapter() as adapter:
+			adapter.refund.return_value = frappe._dict(success=True, gateway_refund_id="re_late")
+			charges.apply_webhook(self._hosted_checkout_event("evt_late", attempt, 100000))
+			replay = charges.apply_webhook(self._hosted_checkout_event("evt_late_2", attempt, 100000))
+
+		adapter.refund.assert_called_once()
+		self.assertEqual(replay["result"], "duplicate")
+		self.assertEqual(frappe.db.get_value("Payment Attempt", attempt, "status"), "Refunded")
+		refund = frappe.get_all("Refund", {"payment_attempt": attempt}, ["status", "amount", "destination"])
+		self.assertEqual(
+			[(r.status, r.amount, r.destination) for r in refund], [("Completed", 1000.0, "Source")]
+		)
+		self.assertEqual(frappe.db.count("Credit Ledger Entry", {"team": TEAM}), entries)
+
+	def test_a_capture_on_a_cancelled_invoice_goes_to_the_wallet(self):
 		from central.billing.revenue import credits
 
 		inv = self._open_invoice(1000)
 		attempt = self._hosted_attempt(inv)
-		frappe.db.set_value("Invoice", inv, "status", "Paid")
+		frappe.db.set_value("Invoice", inv, "status", "Cancelled")
 
 		charges.apply_webhook(self._hosted_checkout_event("evt_late", attempt, 100000))
 
@@ -525,7 +564,7 @@ class TestFullStripeCycle(ChargeTestBase):
 
 
 class TestLogRetention(ChargeTestBase):
-	"""3-month rolling prune of Payment Attempt + Webhook Event logs."""
+	"""Rolling prune of failed Payment Attempts and handled Webhook Events."""
 
 	def _attempt(self, invoice, status):
 		return (
@@ -552,13 +591,25 @@ class TestLogRetention(ChargeTestBase):
 
 	def _far_future(self):
 		# Push 'now' past the retention window so every just-created row is old enough.
-		return frappe.utils.add_to_date(frappe.utils.now_datetime(), days=200)
+		return frappe.utils.add_to_date(frappe.utils.now_datetime(), days=400)
 
-	def test_prunes_terminal_attempt_on_settled_invoice(self):
-		captured = self._attempt(self._paid_invoice(), "Captured")
+	def test_prunes_a_failed_attempt_on_a_settled_invoice(self):
+		failed = self._attempt(self._paid_invoice(), "Failed")
 		out = charges.cleanup_payment_logs(now=self._far_future())
 		self.assertGreaterEqual(out["payment_attempts"], 1)
-		self.assertFalse(frappe.db.exists("Payment Attempt", captured))
+		self.assertFalse(frappe.db.exists("Payment Attempt", failed))
+
+	def test_keeps_a_captured_attempt_a_refund_or_dispute_needs(self):
+		captured = self._attempt(self._paid_invoice(), "Captured")
+		charges.cleanup_payment_logs(now=frappe.utils.add_to_date(frappe.utils.now_datetime(), days=2000))
+		self.assertTrue(frappe.db.exists("Payment Attempt", captured))
+
+	def test_retention_has_a_floor(self):
+		from central.billing import settings
+
+		frappe.db.set_single_value("Billing Settings", "payment_log_retention_days", 0)
+		self.addCleanup(frappe.db.set_single_value, "Billing Settings", "payment_log_retention_days", 180)
+		self.assertEqual(settings.payment_log_retention_days(), settings.MIN_PAYMENT_LOG_RETENTION_DAYS)
 
 	def test_keeps_attempt_on_unsettled_invoice(self):
 		live = self._attempt(self._open_invoice(1000), "Failed")  # invoice still Open
@@ -588,7 +639,7 @@ class TestLogRetention(ChargeTestBase):
 		captured = self._attempt(self._paid_invoice(), "Captured")
 		# Wide window (1 year) with 'now' = real now: a fresh row is NOT old enough.
 		frappe.db.set_single_value("Billing Settings", "payment_log_retention_days", 365)
-		self.addCleanup(frappe.db.set_single_value, "Billing Settings", "payment_log_retention_days", 90)
+		self.addCleanup(frappe.db.set_single_value, "Billing Settings", "payment_log_retention_days", 180)
 		charges.cleanup_payment_logs()
 		self.assertTrue(frappe.db.exists("Payment Attempt", captured))
 
@@ -661,6 +712,14 @@ class TestDeclineDetail(ChargeTestBase):
 		self.assertEqual(a.decline_code, "insufficient_funds")
 		self.assertIn("insufficient funds", a.failure_reason)
 		self.assertTrue(a.gateway_response)  # raw error persisted for audit
+
+	def test_a_failure_webhook_without_a_reason_still_gets_a_code(self):
+		inv = self._open_invoice(1000)
+		attempt = self._initiated_attempt(inv, "pi_bare")
+		event = self._stripe_failed_event("evt_bare", "pi_bare", None)
+		with patch("central.billing.payments.collection.collect_invoice", return_value=None):
+			charges.apply_webhook(event)
+		self.assertEqual(frappe.db.get_value("Payment Attempt", attempt, "failure_code"), "payment_failed")
 
 
 class TestFailedPaymentsReport(ChargeTestBase):

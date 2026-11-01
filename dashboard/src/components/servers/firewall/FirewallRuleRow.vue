@@ -5,6 +5,7 @@ import {
 	ANYWHERE_IPV4,
 	ANYWHERE_IPV6,
 	type FirewallRule,
+	getAddressLabel,
 	getCidrError,
 	getService,
 	isValidPortRange,
@@ -19,6 +20,8 @@ interface Props {
 	disabled: boolean
 	/** Addresses used by the other rules, offered while typing a new one. */
 	options: string[]
+	/** Names for known addresses, such as the team's WireGuard VPN devices. */
+	names: Record<string, string>
 }
 
 const props = defineProps<Props>()
@@ -201,13 +204,17 @@ function removeAddress(cidr: string): void {
 						class="inline-flex h-6 items-center rounded-3 bg-surface-gray-2 text-sm text-ink-gray-8"
 						:class="disabled ? 'px-2' : 'pl-2'"
 					>
-						{{ cidr }}
+						<span
+							:title="getAddressLabel(cidr, names) === cidr ? undefined : cidr"
+						>
+							{{ getAddressLabel(cidr, names) }}
+						</span>
 						<Button
 							v-if="!disabled"
 							variant="ghost"
 							size="xs"
 							icon="lucide-x"
-							:aria-label="`Remove ${cidr}`"
+							:aria-label="`Remove ${getAddressLabel(cidr, names)}`"
 							@click="removeAddress(cidr)"
 						/>
 					</li>
@@ -218,7 +225,7 @@ function removeAddress(cidr: string): void {
 						v-model="address"
 						:aria-label="`Add an IP address or range, rule ${index + 1}`"
 						:list="suggestions.length ? suggestionsId : undefined"
-						placeholder="Add an IP address or range, then press Enter"
+						placeholder="Add an IP address, a range or a device, then press Enter"
 						:error="addressError"
 						@keyup.enter="addAddress"
 					>
@@ -233,7 +240,12 @@ function removeAddress(cidr: string): void {
 						</template>
 					</FormControl>
 					<datalist v-if="suggestions.length" :id="suggestionsId">
-						<option v-for="cidr in suggestions" :key="cidr" :value="cidr" />
+						<option
+							v-for="cidr in suggestions"
+							:key="cidr"
+							:value="cidr"
+							:label="getAddressLabel(cidr, names)"
+						/>
 					</datalist>
 				</template>
 			</template>

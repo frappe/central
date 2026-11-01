@@ -6,7 +6,7 @@ import { useMyInvitations } from '@/composables/useMyInvitations'
 import { useSession } from '@/composables/useSession'
 import {
 	openSettings,
-	type SettingsTabDef,
+	SETTINGS_GROUPS,
 	useSettingsTabs,
 } from '@/composables/useSettings'
 
@@ -35,13 +35,10 @@ const available = computed(() =>
 )
 
 const groups = computed(() => {
-	const order: SettingsTabDef['group'][] = ['Account', 'Administration']
-	return order
-		.map((group) => ({
-			label: group,
-			rows: available.value.filter((row) => row.tab.group === group),
-		}))
-		.filter((group) => group.rows.length > 0)
+	return SETTINGS_GROUPS.map((group) => ({
+		label: group,
+		rows: available.value.filter((row) => row.tab.group === group),
+	})).filter((group) => group.rows.length > 0)
 })
 </script>
 

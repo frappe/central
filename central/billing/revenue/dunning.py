@@ -24,6 +24,8 @@ import frappe
 
 from central.billing import settings
 from central.billing.catalog import subscriptions
+from central.billing.platform.jobs import each_isolated
+from central.billing.platform.records import save_billing_record
 from central.billing.states import transition
 
 
@@ -157,28 +159,15 @@ def retry_payment(invoice_name: str) -> dict:
 	return result
 
 
-def _advance_standing(subscription: str, target: str):
-	"""Move standing toward `target` if the direct transition is legal; the
-	stepwise caller guarantees ordering (current -> past_due -> suspended)."""
-	current = frappe.db.get_value("Subscription", subscription, "account_standing")
-	if current == target:
-		return current
-	try:
-		subscriptions.set_standing(subscription, target, changed_by="dunning")
-		return target
-	except subscriptions.InvalidTransition:
-		return current
-
-
-def _retry_if_due(inv, schedule, now, mode: str | None) -> dict | None:
+def _retry_if_due(inv, schedule, now) -> dict | None:
 	"""Run the collection round of the latest retry day reached, once. Returns its result.
 
-	Off-session retries only make sense for an auto-charge mode. Manual Checkout (paid
-	on-session) and Action Required (paused at the ₹15k threshold) are never silently
-	retried; dunning escalates and asks them to act (ADR 0005)."""
-	from central.billing.payments import collection
+	Manual Checkout (paid on-session) and Action Required (paused at the ₹15k threshold)
+	are not retried off-session; dunning escalates and asks them to act (ADR 0005). Every
+	other mode, Prepaid included, is retried."""
+	from central.billing.payments import collection, collection_mode
 
-	if inv.status != "Open" or mode in ("Manual Checkout", "Action Required"):
+	if inv.status != "Open" or not collection_mode.is_debit_allowed(inv.team):
 		return None
 	if not _is_retry_due(inv.name, schedule, now):
 		return None
@@ -234,7 +223,7 @@ def process_invoice_dunning(invoice_name: str, now=None) -> dict:
 	# --- retries: one collection round per retry day (escalate, don't repeat, #28).
 	# Credits-only teams (no methods) skip straight to the stages below.
 	mode = _collection_mode(inv.team)
-	if _retry_if_due(inv, schedule, now, mode):
+	if _retry_if_due(inv, schedule, now):
 		actions.append("retry")
 		inv.reload()
 		if inv.status == "Paid":
@@ -246,8 +235,7 @@ def process_invoice_dunning(invoice_name: str, now=None) -> dict:
 	if "Overdue" in reached:
 		if inv.status == "Open":
 			transition(inv, "Overdue", reason="dunning: past due window elapsed", actor="scheduler")
-			# The scheduled dunning transition owns this invoice state change.
-			inv.save(ignore_permissions=True)
+			save_billing_record(inv)
 			actions.append("overdue")
 			from central.billing.platform import notifications
 
@@ -260,7 +248,8 @@ def process_invoice_dunning(invoice_name: str, now=None) -> dict:
 				reference_name=invoice_name,
 			)
 		if sub:
-			standing = _advance_standing(anchor, "Past Due")
+			subscriptions.mark_past_due(inv.team)
+			standing = frappe.db.get_value("Subscription", anchor, "account_standing")
 
 	# --- Day 14: suspend -> stop the team's running servers ------------------
 	if "Suspend" in reached and sub:
@@ -301,4 +290,4 @@ def run_dunning(now=None) -> list[dict]:
 	if internal:
 		filters.append(["team", "not in", internal])
 	invoices = frappe.get_all("Invoice", filters=filters, pluck="name")
-	return [process_invoice_dunning(name, now=now) for name in invoices]
+	return each_isolated("Dunning", "Invoice", invoices, lambda name: process_invoice_dunning(name, now=now))

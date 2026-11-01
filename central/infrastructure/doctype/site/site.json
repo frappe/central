@@ -24,6 +24,7 @@
   "trial_deletes_on",
   "trial_last_notice",
   "column_break_trial",
+  "conversion_plan",
   "trial_cost",
   "trial_currency",
   "trial_error"
@@ -182,6 +183,14 @@
    "fieldtype": "Column Break"
   },
   {
+   "description": "The paid plan the customer chose to keep the site on. The server moves to it when the trial converts. Empty means the cheapest plan the site may move to.",
+   "fieldname": "conversion_plan",
+   "fieldtype": "Link",
+   "label": "Conversion Plan",
+   "options": "Plan",
+   "read_only": 1
+  },
+  {
    "description": "What the free trial cost: the plan's monthly rate for the days the trial ran. Set when the trial converts or is deleted.",
    "fieldname": "trial_cost",
    "fieldtype": "Currency",
@@ -211,7 +220,7 @@
    "link_fieldname": "site"
   }
  ],
- "modified": "2026-10-25 20:00:00.000000",
+ "modified": "2026-10-28 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Infrastructure",
  "name": "Site",

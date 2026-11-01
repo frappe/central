@@ -88,7 +88,9 @@ REFUND = StateMachine(
 	"Refund",
 	"status",
 	{
-		"Initiated": {"Completed", "Failed"},
+		"Initiated": {"Pending", "Completed", "Failed"},
+		# The gateway accepted it but has not paid it out; it can still fail.
+		"Pending": {"Completed", "Failed"},
 		"Completed": set(),  # terminal
 		"Failed": {"Initiated"},  # an operator tries again
 	},
@@ -98,7 +100,7 @@ PAYMENT_METHOD = StateMachine(
 	"Payment Method",
 	"status",
 	{
-		"Pending Validation": {"Active", "Failed"},
+		"Pending Validation": {"Active", "Failed", "Cancelled"},
 		"Active": {"Paused", "Cancelled", "Expired", "Failed"},
 		"Paused": {"Active", "Cancelled", "Expired"},
 		"Failed": set(),  # terminal — a fresh attempt is a new method
@@ -252,9 +254,11 @@ def _append_event(doc, from_state, to_state, reason, actor, correlation, amount,
 	event.insert(ignore_permissions=True, ignore_links=True)
 
 
-def record_event(doc, event_type: str, from_state=None, to_state=None, reason=None, amount=None) -> None:
+def record_event(
+	doc, event_type: str, from_state=None, to_state=None, reason=None, amount=None, correlation=None
+) -> None:
 	"""Log a billing change that is not a status move, such as a tier change."""
-	_append_event(doc, from_state, to_state, reason, None, None, amount, event_type)
+	_append_event(doc, from_state, to_state, reason, None, correlation, amount, event_type)
 
 
 def _default_actor() -> str:

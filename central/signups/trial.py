@@ -15,6 +15,7 @@ from frappe.utils import (
 	nowdate,
 )
 
+from central.billing.catalog.trials import is_trial_plan
 from central.iam import can
 from central.infrastructure.doctype.resource_action.resource_action import PENDING_STATES, ResourceAction
 from central.infrastructure.doctype.site.site import Site
@@ -127,15 +128,32 @@ class Trial:
 		from central.billing.catalog.subscriptions import remaining_headroom
 
 		team = self.site.team
-		# A converted server gets its subscription only when it starts, so its rate is held here.
+		# A converted server gets its subscription only when it runs its paid plan, so its rate is held here.
 		frappe.db.get_value("Team", team, "name", for_update=True)
 		available = remaining_headroom(team, for_update=True) - get_starting_rate(team)
+		if is_trial_plan(self.get_server_plan()) and not self.get_conversion_plan():
+			self.site.db_set(
+				"trial_error",
+				_("No paid plan is available for this site, or the chosen plan is no longer offered."),
+			)
+			return False
 		if self.get_monthly_rate() > available:
 			self.site.db_set("trial_error", _("The site's plan is above the team's spending limit."))
 			return False
 
 		self.convert()
 		return True
+
+	def choose_plan(self, plan: str) -> None:
+		"""Keep the paid plan the customer picked for the conversion. A team whose payment
+		method is already active converts now."""
+		if not self.is_open:
+			frappe.throw(_("This site has no open trial."))
+		if plan not in {choice["name"] for choice in self.get_plan_choices()}:
+			frappe.throw(_("This plan is not available for this site. Choose a plan from the list."))
+
+		self.site.db_set({"conversion_plan": plan, "trial_error": None})
+		self.convert_if_paid()
 
 	def keep(self) -> None:
 		"""Convert an ended trial that the customer chose to keep, and start its server."""
@@ -149,10 +167,14 @@ class Trial:
 			)
 
 	def convert(self) -> None:
-		"""Start billing the site's server, keep it awake, and start it again if the trial stopped it.
+		"""Start billing the site's server on its paid plan, keep it awake, and start it again if the
+		trial stopped it.
 		The trial's AI key is handed to the team in the background, best effort: its outcome is the
 		AI Trial Key record's; a failure is a comment here and the key is revoked."""
-		self.move_to("Converted", trial_error=None, **self.get_cost())
+		# The plan is checked once, here. The move goes to it even if the catalog changes after.
+		self.move_to(
+			"Converted", trial_error=None, conversion_plan=self.get_conversion_plan(), **self.get_cost()
+		)
 		if not AITrialKey.queue_convert(self.site.server):
 			self.site.add_comment(
 				"Info", _("The trial has no live AI key to hand over. The team creates one in the dashboard.")
@@ -166,7 +188,7 @@ class Trial:
 		self.notify("trial_converted", "converted")
 
 		# A sleeping server is paid for like a running one. A stopped server gets its subscription
-		# when the conversion job starts it.
+		# when the conversion job starts it, and a server on a trial plan when it runs its paid plan.
 		server = frappe.get_doc("Virtual Machine", self.site.server)
 		if server.status in ("Running", "Paused"):
 			server.ensure_subscription_enabled()
@@ -174,8 +196,8 @@ class Trial:
 		self.enqueue_job(finish_conversion, "trial-convert")
 
 	def finish_conversion(self) -> None:
-		"""Turn idle sleep off on the converted trial's server, and start it when it is stopped.
-		Safe to repeat, so the daily job runs it again after a failure."""
+		"""Move the converted trial's server off its trial plan, or else turn idle sleep off and
+		start it when it is stopped. Safe to repeat, so the daily job runs it again after a failure."""
 		from central.integrations.servers import convert_trial_server
 
 		if self.state != "Converted":
@@ -189,9 +211,12 @@ class Trial:
 			self.record_error(_("Another action is running on this server. The conversion retries tomorrow."))
 			return
 
-		is_stopped = frappe.db.get_value("Virtual Machine", self.site.server, "status") == "Stopped"
+		server = frappe.db.get_value("Virtual Machine", self.site.server, ["plan", "status"], as_dict=True)
 		try:
-			convert_trial_server(self.site.server, start=is_stopped)
+			if is_trial_plan(server.plan):
+				self.queue_plan_move()
+			else:
+				convert_trial_server(self.site.server, start=server.status == "Stopped")
 		# This worker boundary records every failure, and the daily job runs the conversion again.
 		except Exception:
 			frappe.db.rollback()
@@ -342,17 +367,103 @@ class Trial:
 	def get_plan(self) -> dict | None:
 		"""The plan the site converts to, at the rate its subscription will charge. The rate
 		reserved at creation can be older than the catalog. None when the server has no plan."""
-		server = frappe.db.get_value("Virtual Machine", self.site.server, ["plan", "region"], as_dict=True)
-		if not server or not server.plan:
+		return self.get_rated_plan(self.get_conversion_plan())
+
+	def get_conversion_plan(self) -> str | None:
+		"""A trial plan is never billed, so the site moves to the paid plan the customer chose,
+		or else the cheapest one it may choose. A site on any other plan converts on it. None
+		when the chosen plan is no longer a choice, so the trial holds until the customer chooses again."""
+		plan = self.get_server_plan()
+		if not is_trial_plan(plan):
+			return plan
+		if self.state == "Converted":
+			return self.site.conversion_plan
+
+		choices = [choice["name"] for choice in self.get_plan_choices()]
+		if self.site.conversion_plan:
+			return self.site.conversion_plan if self.site.conversion_plan in choices else None
+		return choices[0] if choices else None
+
+	def get_server_plan(self) -> str | None:
+		return frappe.db.get_value("Virtual Machine", self.site.server, "plan")
+
+	def get_plan_choices(self) -> list[dict]:
+		"""The paid plans the site may move to, cheapest first. None is smaller than its trial plan,
+		and none has a smaller disk than its server, because a disk cannot shrink."""
+		from central.billing.catalog.composition import COMPUTE, DISK, MEMORY, composition_quantities
+		from central.billing.catalog.server_plans import get_server_plans
+
+		server = frappe.db.get_value(
+			"Virtual Machine", self.site.server, ["region", "disk_gigabytes"], as_dict=True
+		)
+		catalog = get_server_plans(
+			self.site.team, cluster=server.region, for_resize=1, server=self.site.server
+		)
+		rows = sorted(
+			(row for rows in catalog["plans"].values() for row in rows), key=lambda row: row["rate"]
+		)
+
+		choices = []
+		for row in rows:
+			quantities = composition_quantities(row["includes"])
+			specs = (quantities.get(COMPUTE, 0), quantities.get(MEMORY, 0), quantities.get(DISK, 0))
+			if specs[2] < flt(server.disk_gigabytes):
+				continue
+			choices.append(
+				{
+					"name": row["plan"],
+					"title": row["title"],
+					"specs": "{0:g} vCPU · {1:g} GB RAM · {2:g} GB SSD".format(*specs),
+					"monthly_rate": row["rate"],
+					"currency": catalog["currency"],
+				}
+			)
+		return choices
+
+	def get_rated_plan(self, name: str | None) -> dict | None:
+		"""A plan with its catalog rate in the team's currency and the server's region."""
+		if not name:
 			return None
 
-		plan = frappe.get_doc("Plan", server.plan)
+		plan = frappe.get_doc("Plan", name)
 		currency = frappe.db.get_value("Billing Profile", self.site.team, "currency")
+		region = frappe.db.get_value("Virtual Machine", self.site.server, "region")
 		return {
+			"name": plan.name,
 			"title": plan.title or plan.name,
-			"monthly_rate": plan.get_rate(currency, server.region) if currency else None,
+			"monthly_rate": plan.get_rate(currency, region) if currency else None,
 			"currency": currency,
 		}
+
+	def queue_plan_move(self) -> None:
+		"""Resize the converted trial's server onto its paid plan. The resize also turns idle sleep
+		off and starts the server. Its subscription opens once the server runs the paid plan."""
+		from central.billing.catalog.subscriptions import get_plan_shape, get_server_shape
+		from central.server_models import ResizeConfiguration
+
+		plan = self.get_conversion_plan()
+		if not plan:
+			frappe.throw(_("No paid plan fits the team's spending limit."))
+
+		server = frappe.get_doc("Virtual Machine", self.site.server)
+		configuration = ResizeConfiguration.model_validate(
+			{
+				"plan": plan,
+				"shape": get_plan_shape(plan),
+				"from_plan": server.plan,
+				"from_shape": get_server_shape(server),
+			}
+		)
+		ResourceAction.queue(
+			"resize",
+			server.team,
+			server.region,
+			server.title or server.name,
+			server=server.name,
+			remote_vm_id=server.atlas_vm_id,
+			requested_by="Administrator",
+			request_payload=configuration.model_dump(),
+		)
 
 	def get_summary(self) -> dict:
 		"""What a new signup shows when this trial is still open."""
@@ -375,8 +486,8 @@ class Trial:
 		return flt(plan["monthly_rate"]) if plan else 0.0
 
 	def get_cost(self, until=None) -> dict:
-		"""The plan's monthly rate for the days the trial ran. The trial starts when Central records the site."""
-		plan = self.get_plan()
+		"""The trial plan's monthly rate for the days the trial ran. The trial starts when Central records the site."""
+		plan = self.get_rated_plan(self.get_server_plan())
 		if not plan:
 			return {}
 
@@ -456,7 +567,8 @@ def stop_server(site: str) -> None:
 
 
 def run_trials() -> None:
-	"""Daily job: run each open trial's step, and finish a conversion that failed."""
+	"""Daily job: run each open trial's step, and finish a conversion that failed or whose
+	server still runs its trial plan."""
 	today = getdate(nowdate())
 	open_trials = frappe.get_all(
 		"Site", filters={"trial_state": ["in", OPEN_STATES]}, pluck="name", order_by="creation asc"
@@ -464,7 +576,7 @@ def run_trials() -> None:
 	failed_conversions = frappe.get_all(
 		"Site", filters={"trial_state": "Converted", "trial_error": ["is", "set"]}, pluck="name"
 	)
-	for name in open_trials + failed_conversions:
+	for name in dict.fromkeys(open_trials + failed_conversions + get_unmoved_conversions()):
 		try:
 			Trial.load(name, for_update=True).advance(today)
 			frappe.db.commit()  # nosemgrep: frappe-manual-commit -- keep each site's step if a later one fails
@@ -483,6 +595,29 @@ def convert_team(team: str) -> None:
 		Trial.load(name, for_update=True).convert_within_limit()
 
 
+def get_unmoved_conversions() -> list[str]:
+	"""Converted sites whose live server still runs a trial plan, because its move to the paid plan failed."""
+	from central.billing.catalog.trials import trial_plan_names
+
+	trial_plans = trial_plan_names()
+	if not trial_plans:
+		return []
+
+	site = frappe.qb.DocType("Site")
+	machine = frappe.qb.DocType("Virtual Machine")
+	return (
+		frappe.qb.from_(site)
+		.join(machine)
+		.on(machine.name == site.server)
+		.select(site.name)
+		.where(
+			(site.trial_state == "Converted")
+			& machine.plan.isin(list(trial_plans))
+			& (machine.status != "Terminated")
+		)
+	).run(pluck=True)
+
+
 def get_trial_status(server: str, site: str | None = None) -> dict | None:
 	"""The open trial of the site on `server`, for the in-app billing panel, or None. A server
 	with several sites must name one."""
@@ -498,11 +633,11 @@ def get_trial_status(server: str, site: str | None = None) -> dict | None:
 
 
 def get_trial_plan_floor(server: str) -> dict[str, float] | None:
-	"""The composition of the plan a converted trial server started on. Its plan menus offer
-	nothing smaller, because the product site needs at least that much. None for other servers."""
+	"""The composition of the plan a trial server started on. Its plan menus offer nothing
+	smaller, because the product site needs at least that much. None for other servers."""
 	from central.billing.catalog.composition import composition_quantities
 
-	if not frappe.db.exists("Site", {"server": server, "trial_state": "Converted"}):
+	if not frappe.db.exists("Site", {"server": server, "trial_state": ["is", "set"]}):
 		return None
 
 	payload = frappe.db.get_value(
@@ -539,8 +674,12 @@ def get_server_trial_state(server: str) -> str | None:
 
 
 def is_billing_deferred(server: str) -> bool:
-	"""Whether the server runs a free trial site, so it has no subscription yet."""
-	return get_server_trial_state(server) in (*OPEN_STATES, "Deleted", "Pending")
+	"""Whether the server has no subscription yet: it runs a free trial site, or a converted
+	trial that still runs its trial plan, which is never billed."""
+	state = get_server_trial_state(server)
+	if state == "Converted":
+		return is_trial_plan(frappe.db.get_value("Virtual Machine", server, "plan"))
+	return state in (*OPEN_STATES, "Deleted", "Pending")
 
 
 def is_conversion_starting(server: str) -> bool:

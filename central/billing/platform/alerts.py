@@ -10,6 +10,7 @@ import frappe
 import requests
 
 from central.billing import settings
+from central.billing.payments import decline
 from central.billing.platform import invariants, metrics
 
 # A webhook we failed to process is a settlement we have not applied. An hour is long
@@ -43,11 +44,8 @@ def stale_attempts() -> list[dict]:
 			"team": a.team,
 			"detail": f"{a.status} since {a.initiated_at}",
 		}
-		for a in frappe.get_all(
-			"Payment Attempt",
-			filters={"status": ["in", invariants.IN_FLIGHT], "initiated_at": ["<", cutoff]},
-			fields=["name", "team", "status", "initiated_at"],
-			limit=100,
+		for a in invariants.unheld_attempts_in_flight(
+			cutoff, ["name", "team", "status", "initiated_at"], limit=100
 		)
 	]
 
@@ -176,19 +174,21 @@ def termination_due() -> list[dict]:
 
 
 def failed_refunds() -> list[dict]:
-	"""Refunds a gateway refused. The invoice is cancelled but the customer is still owed."""
+	"""Refunds a gateway refused. The customer is still owed the money, whether the invoice is
+	Cancelled or still Paid (a partial refund, or a charge captured after the invoice was paid)."""
 	return [
 		{
 			"alert": "failed_refund",
 			"doctype": "Invoice",
 			"subject": r.invoice,
 			"team": r.team,
-			"detail": f"{r.currency} {r.amount} not refunded ({r.name}); retry it from the invoice",
+			"detail": f"{r.currency} {r.amount} {'captured after the invoice was paid, ' if r.late_capture else ''}"
+			f"not refunded ({r.name}); retry it from the invoice",
 		}
 		for r in frappe.get_all(
 			"Refund",
 			filters={"status": "Failed"},
-			fields=["name", "invoice", "team", "currency", "amount"],
+			fields=["name", "invoice", "team", "currency", "amount", "late_capture"],
 			limit=100,
 		)
 	]
@@ -227,6 +227,32 @@ def unsettled_captures() -> list[dict]:
 	]
 
 
+def refused_charges() -> list[dict]:
+	"""Charges a gateway would not create because our request was wrong, on invoices still unpaid.
+	No retry fixes these; the request or the billing profile must be corrected."""
+	attempt = frappe.qb.DocType("Payment Attempt")
+	invoice = frappe.qb.DocType("Invoice")
+	refused = (
+		frappe.qb.from_(attempt)
+		.join(invoice)
+		.on(invoice.name == attempt.invoice)
+		.select(attempt.name, attempt.team, attempt.invoice, attempt.failure_reason)
+		.where((attempt.failure_code == decline.REQUEST_REFUSED) & invoice.status.isin(("Open", "Overdue")))
+		.limit(100)
+		.run(as_dict=True)
+	)
+	return [
+		{
+			"alert": "refused_charge",
+			"doctype": "Payment Attempt",
+			"subject": a.name,
+			"team": a.team,
+			"detail": f"Gateway refused the charge for {a.invoice}: {a.failure_reason}",
+		}
+		for a in refused
+	]
+
+
 def failed_accounting_syncs() -> list[dict]:
 	"""Paid invoices the accounting sync gave up on. The customer is not affected; the books are short."""
 	return [
@@ -252,6 +278,7 @@ SOURCES = (
 	failed_webhooks,
 	stale_attempts,
 	unsettled_captures,
+	refused_charges,
 	held_invoices,
 	failed_refunds,
 	failed_accounting_syncs,

@@ -132,13 +132,22 @@ class TestPilotPlanChange(PlanChangeCase):
 			patch("central.api.pilot.PilotCredential.verify", return_value=frappe._dict(name="credential"))
 		)
 
-	def test_a_trial_site_must_add_a_payment_method_first(self):
+	def test_a_trial_site_keeps_the_plan_it_moves_to_and_resizes_nothing(self):
 		self.site().db_set(
 			{"trial_state": "Active", "trial_ends_on": frappe.utils.add_days(frappe.utils.nowdate(), 5)}
 		)
+		choices = [{"name": "plan-2vcpu"}]
 
-		with self.assertRaisesRegex(frappe.ValidationError, "Add a payment method"):
-			billing_api.change_plan(plan="plan-2vcpu")
+		with patch("central.signups.trial.Trial.get_plan_choices", return_value=choices):
+			result = billing_api.change_plan(plan="plan-2vcpu")
+			with self.assertRaisesRegex(frappe.ValidationError, "not available for this site"):
+				billing_api.change_plan(plan="plan-8vcpu")
+
+		self.assertFalse(result["queued"])
+		self.assertEqual(self.site().conversion_plan, "plan-2vcpu")
+		self.assertFalse(
+			frappe.db.exists("Resource Action", {"server": self.server.name, "action": "resize"})
+		)
 
 	def test_a_queued_change_returns_its_progress_page(self):
 		action = self.resize()
@@ -182,3 +191,51 @@ class TestPilotPlanChange(PlanChangeCase):
 			options = billing_api.get_plan_options()
 
 		self.assertEqual([plan["name"] for plan in options["plans"]], ["plan-25gb", "plan-50gb"])
+
+	def get_product_plan_options(self, **product_values) -> dict:
+		"""The plan list of a server whose site belongs to a Raven product with a note on Pro."""
+		self.server.db_set({"disk_gigabytes": 25, "plan": None})
+		product = frappe.get_doc(
+			{
+				"doctype": "Product",
+				"product_key": "raven-plan-notes",
+				"title": "Raven",
+				"signup_app": "raven",
+				"plan_notes": [{"plan": "plan-pro", "note": "Up to 200 users"}],
+				**product_values,
+			}
+		)
+		# The menu below is mocked, so its plans are not records.
+		product.flags.ignore_links = True
+		product.insert()
+		self.site().db_set("product", product.name)
+		menu = {
+			"currency": "USD",
+			"plans": {
+				"general": [
+					{
+						"plan": name,
+						"title": name,
+						"rate": 10,
+						"includes": [{"resource_type": "Disk", "quantity": 25, "unit": "GB"}],
+					}
+					for name in ("plan-standard", "plan-pro")
+				]
+			},
+		}
+
+		with patch("central.billing.api.dashboard.catalog.get_eligible_plans", return_value=menu):
+			return billing_api.get_plan_options()
+
+	def test_each_plan_carries_the_note_of_the_sites_product(self):
+		"""Only the product's noted plans carry a note, and the specs stay."""
+		options = self.get_product_plan_options()
+
+		notes = {plan["name"]: plan["note"] for plan in options["plans"]}
+		self.assertEqual(notes, {"plan-standard": None, "plan-pro": "Up to 200 users"})
+		self.assertTrue(all(plan["subtitle"] for plan in options["plans"]))
+
+	def test_a_product_that_hides_plan_specs_gets_no_subtitles(self):
+		options = self.get_product_plan_options(hide_plan_specs=1)
+
+		self.assertEqual([plan["subtitle"] for plan in options["plans"]], ["", ""])

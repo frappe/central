@@ -18,8 +18,6 @@ defineProps<Props>()
 const { usage, usageLoading, usageError, loadUsage, apiKeys } = useAI()
 
 const periodOptions = [
-	{ label: 'Today', value: 'Today' },
-	{ label: 'Yesterday', value: 'Yesterday' },
 	{ label: 'Last 7 days', value: 'Last 7 Days' },
 	{ label: 'Last 30 days', value: 'Last 30 Days' },
 	{ label: 'This month', value: 'This Month' },

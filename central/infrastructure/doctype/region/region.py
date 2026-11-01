@@ -10,7 +10,8 @@ from frappe.model.document import Document
 from central.infrastructure.doctype.region.atlas_connection import AtlasConnectionMixin
 from central.infrastructure.doctype.region.cargo_connection import CargoConnectionMixin
 from central.integrations.proxy import ProxyClient
-from central.sso import mint_proxy_token
+from central.integrations.wireguard import WireGuardGatewayClient, WireGuardGatewayError
+from central.sso import mint_proxy_token, mint_wireguard_token
 
 REGIONAL_SERVICES = ("proxy", "atlas", "cargo")
 
@@ -39,9 +40,11 @@ class Region(AtlasConnectionMixin, CargoConnectionMixin, Document):
 		country_code: DF.Data | None
 		display_name: DF.Data | None
 		frappemail_service: DF.Link | None
+		has_wireguard_gateway: DF.Check
 		last_synced_at: DF.Datetime | None
 		latitude: DF.Float
 		longitude: DF.Float
+		max_storage_bundle_size: DF.Int
 		provider: DF.Literal[
 			"", "AWS", "Hetzner", "Frappe", "OCI", "DigitalOcean", "Scaleway", "Self-Managed", "Fake"
 		]
@@ -91,6 +94,36 @@ class Region(AtlasConnectionMixin, CargoConnectionMixin, Document):
 		"""A proxy client for one region, with a freshly minted token."""
 		region_id = frappe.get_doc("Region", region).get_atlas_region_id()
 		return ProxyClient(Region.get_service_url("proxy", region), mint_proxy_token(region_id))
+
+	def run_telemetry_sql(self, sql: str) -> tuple[list[str], list[list]]:
+		"""Columns and rows of one SQL query on this region's Insights telemetry data source."""
+		if not self.telemetry_data_source or "insights" not in frappe.get_installed_apps():
+			frappe.throw(_("Region {0} has no telemetry data source.").format(self.name))
+
+		source = frappe.get_doc("Insights Data Source v3", self.telemetry_data_source)
+		result = source._get_ibis_backend().raw_sql(sql)
+		if hasattr(result, "result_rows"):
+			return list(result.column_names), [list(row) for row in result.result_rows]
+		return [column[0] for column in result.description], [list(row) for row in result.fetchall()]
+
+	@frappe.whitelist(methods=["POST"])
+	def restore_wireguard_devices(self) -> int:
+		"""Operator action: rebuild the gateway device table from Central's records."""
+		from central.infrastructure.doctype.wireguard_device.wireguard_device import restore_devices
+
+		frappe.only_for("System Manager")
+		return restore_devices(self.name)
+
+	@staticmethod
+	def get_wireguard_client(region: str) -> WireGuardGatewayClient:
+		"""A WireGuard gateway client for one region, with a freshly minted token."""
+		doc = frappe.get_cached_doc("Region", region)
+		if not doc.has_wireguard_gateway:
+			frappe.throw(_("WireGuard VPN is not available in this region yet."), WireGuardGatewayError)
+
+		return WireGuardGatewayClient(
+			Region.get_service_url("wireguard", region), mint_wireguard_token(doc.get_atlas_region_id())
+		)
 
 
 def on_doctype_update() -> None:

@@ -14,6 +14,8 @@ from typing import ClassVar
 import frappe
 from frappe import _
 
+from central.billing.payments.decline import Failure
+
 
 def header_value(headers: dict, name: str):
 	"""Case-insensitive header lookup (werkzeug preserves sent casing)."""
@@ -40,6 +42,27 @@ class PaymentResult:
 	# reconcile and nothing to retry (ADR 0023).
 	hold_until: str | None = None
 	raw: dict = field(default_factory=dict)
+
+	@property
+	def failure(self) -> Failure:
+		return {
+			"failure_code": self.failure_code,
+			"decline_code": self.decline_code,
+			"failure_reason": self.failure_reason,
+			"raw": self.raw,
+		}
+
+
+def token_check(payment_method) -> PaymentResult:
+	"""The check of a method whose proof is the token the gateway issued on approval."""
+	if payment_method.gateway_method_id:
+		return PaymentResult(success=True, status="Validated")
+	return PaymentResult(
+		success=False,
+		status="Failed",
+		failure_code="token_missing",
+		failure_reason="The gateway issued no token for this method.",
+	)
 
 
 @dataclass(frozen=True)
@@ -69,10 +92,14 @@ class VerifiedPayment:
 
 @dataclass
 class RefundResult:
-	success: bool
-	status: str  # completed / failed
+	status: str  # Completed / Pending / Failed
 	gateway_refund_id: str | None = None
 	raw: dict = field(default_factory=dict)
+	# The gateway accepted the refund. A Pending refund is accepted but not paid out yet.
+	success: bool = field(init=False)
+
+	def __post_init__(self) -> None:
+		self.success = self.status != "Failed"
 
 
 @dataclass
@@ -205,8 +232,9 @@ class GatewayAdapter(ABC):
 		...
 
 	@abstractmethod
-	def validate_payment_method(self, payment_method) -> bool:
-		"""Prove the method is live (Stripe micro-charge + auto-refund)."""
+	def validate_payment_method(self, payment_method) -> PaymentResult:
+		"""Prove the method is live (Stripe micro-charge + auto-refund). A failed check
+		carries the gateway's failure_code, decline_code and failure_reason."""
 		...
 
 	# --- charge / refund / webhooks (universal) -----------------------------
@@ -284,9 +312,25 @@ class GatewayAdapter(ABC):
 		none (Stripe dedupes the charge itself by its idempotency key)."""
 		return None
 
+	def get_refund_status(self, gateway_refund_id: str) -> str:
+		"""Completed, Pending or Failed, as the gateway reports the refund now."""
+		raise GatewayUnsupported(f"{type(self).__name__} does not support get_refund_status")
+
+	@staticmethod
+	def dispute_from_event(payload: dict) -> dict | None:
+		"""`{id, payment_id, amount, reason, status}` of the dispute a verified webhook body
+		carries, or None. `status` is open, won, lost or the gateway's own closing reason."""
+		return None
+
+	@staticmethod
+	def refund_from_event(payload: dict) -> dict | None:
+		"""`{id, status}` of the refund a verified webhook body carries, or None."""
+		return None
+
 	def read_saved_card(self, setup_reference: str) -> dict:
 		"""The card a setup saved, read from the gateway, or `{}` while it is not finished.
-		Keys: payment_method, customer, mandate, brand, last4, exp_month, exp_year."""
+		Keys: payment_method, customer, mandate, brand, last4, exp_month, exp_year. A setup
+		the bank refused gives only `setup_error`, with its failure_code and decline_code."""
 		raise GatewayUnsupported(f"{type(self).__name__} does not support read_saved_card")
 
 	def verify_payment(self, payment_id: str) -> VerifiedPayment:
@@ -294,7 +338,8 @@ class GatewayAdapter(ABC):
 		raise GatewayUnsupported(f"{type(self).__name__} does not support verify_payment")
 
 	def find_order_payment(self, order_id: str) -> VerifiedPayment | None:
-		"""The captured payment on a gateway order Central created, or None while it has none."""
+		"""The captured payment on a gateway order Central created, or None while it has none.
+		A hosted checkout id is accepted too, so reconciliation needs no second lookup."""
 		raise GatewayUnsupported(f"{type(self).__name__} does not support find_order_payment")
 
 	def checkout_payment(self, session_id: str) -> VerifiedPayment | None:

@@ -8,8 +8,14 @@ would not change a single invoice total. Its readers are engineers debugging, th
 admin UI, and the reports.
 """
 
+import frappe
 from frappe.model.document import Document
 
 
 class BillingEvent(Document):
 	pass
+
+
+def on_doctype_update() -> None:
+	# The First Payment dashboard reads a subject's failures by kind on every load.
+	frappe.db.add_index("Billing Event", ["subject_doctype", "event_type"])

@@ -13,6 +13,7 @@ from central.integrations.grove import GroveClient
 if TYPE_CHECKING:
 	from central.infrastructure.doctype.resource_action.resource_action import ResourceAction
 	from central.services.doctype.ai_settings.ai_settings import AISettings
+	from central.services.doctype.ai_trial_product.ai_trial_product import AITrialProduct
 
 # The one Grove Team every trial key is minted under.
 TRIAL_TEAM = "Central Trial"
@@ -53,6 +54,7 @@ class AITrialKey(Document):
 		geography: DF.Data | None
 		grove_key: DF.Data
 		last_error: DF.SmallText | None
+		product: DF.Link | None
 		resource_action: DF.Link | None
 		revoked: DF.Check
 		server: DF.Link | None
@@ -63,40 +65,47 @@ class AITrialKey(Document):
 	# end: auto-generated types
 
 	@classmethod
-	def provision(cls, settings: AISettings) -> Self:
-		"""Mint one key into the pool. A crash between the mint and the insert leaves a capped,
-		untitled key under the trial team that no record names; Grove Desk shows it."""
+	def provision(cls, settings: AISettings, row: AITrialProduct) -> Self:
+		"""Mint one key into `row`'s product's pool, in the product's Model Group on top of the team's
+		when the row names one. A crash between the mint and the insert leaves a capped, untitled key
+		under the trial team that no record names; Grove Desk shows it."""
 		minted = GroveClient.from_settings().provision_key(
 			team=TRIAL_TEAM,
 			title=None,
 			geography=settings.trial_key_geography,
-			model_group=settings.trial_model_group or None,
 			cap=cint(settings.trial_key_cap),
+			model_groups=[row.model_group] if row.model_group else None,
 		)
 		return frappe.get_doc(
 			{
 				"doctype": "AI Trial Key",
 				"grove_key": minted["name"],
+				"product": row.product,
 				"geography": minted["geography"],
 				"gateway_url": minted["gateway_url"],
-				"cap": minted["cap"],
+				"cap": cint(settings.trial_key_cap),
 				"api_key": minted["api_key"],
 			}
 		).insert()
 
 	@classmethod
 	def assign(cls, action: ResourceAction) -> Self | None:
-		"""The oldest ready key for a free-trial creation; none for a paid one or an empty pool.
-		A retried creation keeps its key."""
+		"""The oldest ready key of the creation's product for a free trial; none for a paid one, an
+		empty pool or while assignment is paused. A retried creation keeps its key."""
 		if not action.is_free_trial:
 			return None
 
-		if name := frappe.db.get_value("AI Trial Key", {"resource_action": action.name, "status": "Assigned"}):
+		if name := frappe.db.get_value(
+			"AI Trial Key", {"resource_action": action.name, "status": "Assigned"}
+		):
 			return frappe.get_doc("AI Trial Key", name)
+
+		if frappe.db.get_single_value("AI Settings", "pause_key_assignment"):
+			return None
 
 		name = frappe.db.get_value(
 			"AI Trial Key",
-			{"status": "Available"},
+			{"status": "Available", "product": action.product},
 			order_by="creation asc",
 			for_update=True,
 			skip_locked=True,
@@ -133,7 +142,6 @@ class AITrialKey(Document):
 		frappe.db.set_value(
 			"AI Trial Key", {"resource_action": resource_action, "status": "Assigned"}, "server", server
 		)
-
 
 	@classmethod
 	def queue_convert(cls, server: str) -> bool:
@@ -266,24 +274,27 @@ def convert_trial_key(name: str) -> None:
 
 def refill_trial_keys() -> None:
 	"""Scheduler, every 5 minutes: try the revokes and hand-overs Grove refused again, then mint
-	the keys the pool is missing, up to one batch. Nothing while Central is not enrolled; the
-	retries run with the pool off too, the mint does not."""
+	the keys each product's pool is missing, up to one batch across them. Nothing while Central is
+	not enrolled; the retries run with the pools off or paused too, the mint does not."""
 	settings = frappe.get_cached_doc("AI Settings")
 	if not settings.is_enrolled:
 		return
 
 	retry_stale()
-	if not settings.trial_pool_size:
+	if settings.pause_pool_refill:
 		return
-	missing = settings.trial_pool_size - frappe.db.count("AI Trial Key", {"status": "Available"})
-	# The team is the operator's to make at Grove, with its cap window, which is fixed at the
-	# insert: until then every mint is refused and logged.
-	for _attempt in range(min(missing, REFILL_BATCH_SIZE)):
-		try:
-			AITrialKey.provision(settings)
-		except Exception:
-			frappe.log_error(title="Trial key mint failed")
-			break
+	budget = REFILL_BATCH_SIZE
+	for row in settings.trial_products:
+		ready = frappe.db.count("AI Trial Key", {"status": "Available", "product": row.product})
+		# The team is the operator's to make at Grove, with its cap window, which is fixed at the
+		# insert: until then every mint is refused and logged.
+		for _attempt in range(min(row.pool_size - ready, budget)):
+			try:
+				AITrialKey.provision(settings, row)
+			except Exception:
+				frappe.log_error(title="Trial key mint failed")
+				return
+			budget -= 1
 
 
 def retry_stale() -> None:

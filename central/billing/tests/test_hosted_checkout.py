@@ -4,12 +4,14 @@
 only that record, for the credential's own team."""
 
 import inspect
+import json
 from unittest.mock import MagicMock, patch
 
 import frappe
 
 from central.billing.api import billing_api
 from central.billing.gateways.base import VerifiedPayment
+from central.billing.payments import webhooks
 from central.billing.revenue import credits
 from central.billing.tests.test_stripe_adapter import make_stripe_gateway
 from central.billing.tests.utils import BillingTestCase, complete_billing_profile, ensure_team
@@ -38,6 +40,8 @@ class TestHostedCheckout(BillingTestCase):
 		self.adapter = MagicMock()
 		self.adapter.create_customer.return_value = "cus_hosted"
 		self.enterContext(patch("central.billing.gateways.registry.get_adapter", return_value=self.adapter))
+		# The return-address rule has its own tests below; these use any address.
+		self.enterContext(patch.object(billing_api, "_require_own_site_url", side_effect=lambda url: url))
 		self._act_as(TEAM)
 
 	def _act_as(self, team):
@@ -157,3 +161,169 @@ class TestHostedCheckout(BillingTestCase):
 			"Payment Attempt", {"gateway_order_id": "cs_inv"}, "gateway_transaction_id"
 		)
 		self.assertEqual(attempt, "pi_cs_inv")  # recorded, so a refund can find the charge
+
+
+class TestCheckoutReturnAddress(BillingTestCase):
+	"""A hosted checkout returns the payer only to a site on the credential's own server."""
+
+	def _check(self, url, hosts=("acme.example.com",)):
+		with patch.object(billing_api, "_own_hosts", return_value=set(hosts)):
+			return billing_api._require_own_site_url(url)
+
+	def test_a_site_on_the_server_is_allowed(self):
+		self.assertEqual(
+			self._check("https://acme.example.com/app/billing"), "https://acme.example.com/app/billing"
+		)
+
+	def test_another_host_is_refused(self):
+		with self.assertRaises(frappe.ValidationError):
+			self._check("https://attacker.example/phish")
+
+	def test_plain_http_is_refused_outside_localhost(self):
+		with self.assertRaises(frappe.ValidationError):
+			self._check("http://acme.example.com/app/billing")
+
+
+class TestHostedCardSetupInRegulatedCurrency(BillingTestCase):
+	"""Hosted Stripe card setup registers no India mandate, so INR teams add cards on Razorpay."""
+
+	def setUp(self):
+		from central.billing.tests.test_razorpay_adapter import make_razorpay_gateway
+
+		validated = {"credentials_validated_at": frappe.utils.now_datetime()}
+		make_stripe_gateway(currencies=(("INR", 1), ("USD", 1)))
+		frappe.db.set_value("Payment Gateway", "Stripe", validated)
+		make_razorpay_gateway(currencies=(("INR", 0),))
+		frappe.db.set_value("Payment Gateway", "Razorpay", validated)
+
+		self.gateways = inspect.unwrap(billing_api.get_payment_gateways)
+		self.create_card_checkout = inspect.unwrap(billing_api.create_payment_method_checkout)
+		self.adapter = MagicMock()
+		self.enterContext(patch("central.billing.gateways.registry.get_adapter", return_value=self.adapter))
+		self.enterContext(patch.object(billing_api, "_require_own_site_url", side_effect=lambda url: url))
+
+	def _act_as(self, currency):
+		team = f"team-hosted-card-{currency.lower()}"
+		ensure_team(team)
+		complete_billing_profile(team, currency=currency)
+		frappe.local.pilot_credential = frappe._dict(team=team)
+
+	def test_an_inr_team_is_offered_razorpay_only(self):
+		self._act_as("INR")
+
+		self.assertEqual([gateway["adapter_key"] for gateway in self.gateways()], ["Razorpay"])
+
+	def test_an_inr_team_cannot_open_a_hosted_stripe_card_setup(self):
+		self._act_as("INR")
+
+		with self.assertRaises(frappe.ValidationError):
+			self.create_card_checkout(redirect_url="https://site", gateway="Stripe")
+		self.adapter.create_setup_checkout_session.assert_not_called()
+
+	def _open_usd_card_setup(self) -> dict:
+		self._act_as("USD")
+		self.adapter.create_customer.return_value = "cus_usd"
+		self.adapter.create_setup_checkout_session.return_value = {
+			"checkout_url": "https://setup",
+			"session_id": "cs_usd",
+			"setup_intent_id": "seti_usd",
+		}
+		return self.create_card_checkout(redirect_url="https://site", gateway="Stripe")
+
+	def test_a_usd_team_still_gets_hosted_stripe_card_setup(self):
+		checkout = self._open_usd_card_setup()
+
+		self.assertEqual([gateway["adapter_key"] for gateway in self.gateways()], ["Stripe"])
+		self.assertEqual(checkout["checkout_url"], "https://setup")
+
+	def test_a_card_that_fails_verification_says_so(self):
+		from central.billing.tests.test_payments import card_check, saved_card
+
+		reference = self._open_usd_card_setup()["reference"]
+		self.adapter.read_saved_card.return_value = saved_card(customer="cus_usd")
+		self.adapter.validate_payment_method.return_value = card_check(False)
+
+		result = inspect.unwrap(billing_api.confirm_payment_method_checkout)(reference=reference)
+
+		self.assertEqual(result["status"], "Failed")
+		self.assertEqual(
+			result["message"],
+			"There wasn't enough balance. Try another card, or add credit to your account instead.",
+		)
+
+	def _receive_setup_event(self, event_type: str, setup_intent: dict) -> str:
+		payload = {"id": f"evt_{event_type}", "type": event_type, "data": {"object": setup_intent}}
+		event = frappe.get_doc(
+			{
+				"doctype": "Webhook Event",
+				"gateway": "Stripe",
+				"gateway_event_id": payload["id"],
+				"event_type": event_type,
+				"raw_payload": json.dumps(payload),
+				"status": "Received",
+			}
+		).insert(ignore_permissions=True)
+		webhooks.handle_webhook_event(event.name)
+		return event.name
+
+	def test_a_declined_hosted_card_setup_is_kept_on_its_card(self):
+		method = self._open_usd_card_setup()["reference"].split("|")[-1]
+		failure = {"code": "card_declined", "message": "Your card was declined."}
+
+		self._receive_setup_event(
+			"setup_intent.setup_failed", {"id": "seti_usd", "last_setup_error": failure}
+		)
+
+		failed = frappe.db.get_value(
+			"Payment Method", method, ["status", "failure_code", "failed_attempts"], as_dict=True
+		)
+		self.assertEqual(
+			(failed.status, failed.failure_code, failed.failed_attempts),
+			("Pending Validation", "card_declined", 1),
+		)
+		self.assertTrue(
+			frappe.db.exists(
+				"Billing Event",
+				{"subject": method, "event_type": "Payment Method Setup Failed", "reason": "card_declined"},
+			)
+		)
+
+	def test_a_setup_event_that_is_not_a_failure_leaves_the_card_alone(self):
+		method = self._open_usd_card_setup()["reference"].split("|")[-1]
+
+		events = [
+			self._receive_setup_event(event_type, {"id": "seti_usd"})
+			for event_type in (
+				"setup_intent.created",
+				"setup_intent.requires_action",
+				"setup_intent.succeeded",
+			)
+		]
+
+		card = frappe.db.get_value("Payment Method", method, ["status", "failed_attempts"], as_dict=True)
+		self.assertEqual((card.status, card.failed_attempts), ("Pending Validation", 0))
+		self.assertFalse(
+			frappe.db.exists(
+				"Billing Event", {"subject": method, "event_type": "Payment Method Setup Failed"}
+			)
+		)
+		statuses = {frappe.db.get_value("Webhook Event", name, "status") for name in events}
+		self.assertEqual(statuses, {"Ignored"})
+
+
+class TestInAppBillingProfile(BillingTestCase):
+	"""The in-app address form picks country and Indian state from lists Central owns."""
+
+	def test_the_profile_carries_the_country_and_india_state_lists(self):
+		from central.billing.india_gst import india_state_options
+
+		team = "team-hosted-profile"
+		ensure_team(team)
+		complete_billing_profile(team, currency="INR")
+		frappe.local.pilot_credential = frappe._dict(team=team)
+
+		profile = inspect.unwrap(billing_api.get_billing_profile)()
+
+		self.assertEqual(profile["legal_name"], f"{team} Ltd")
+		self.assertIn("India", profile["countries"])
+		self.assertEqual(profile["india_states"], india_state_options())

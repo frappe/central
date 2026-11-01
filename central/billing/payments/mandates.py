@@ -15,6 +15,8 @@ through the registry, keeping the gateway seam intact (see gateways/base.py).
 import frappe
 from frappe import _
 
+from central.billing.doctype.billing_profile.billing_profile import normalize_phone, usable_phone
+from central.billing.payments.decline import ORDER_MISMATCH, PAYMENT_NOT_AUTHORISED, SIGNATURE_INVALID
 from central.billing.states import transition
 
 MANDATE_METHOD = "UPI Autopay"
@@ -114,7 +116,7 @@ def _require_card_contact(
 	without it Razorpay errors "The contact field is required for recurring links".
 	(UPI Autopay does not need one, so this is only called from the card path.)
 	Returns the customer id to use for the order, which may differ from the input
-	(see the collision case below).
+	(see _switch_to_existing_customer).
 
 	The phone is optional on the billing profile, so the dashboard collects it inline
 	at card setup when missing and passes it here. Use the inline `contact` else the
@@ -124,20 +126,12 @@ def _require_card_contact(
 	if frappe.db.get_value("Payment Gateway", gateway, "adapter_key") != "Razorpay":
 		return customer_id
 	p = (
-		frappe.db.get_value("Billing Profile", team, ["legal_name", "email", "phone"], as_dict=True)
+		frappe.db.get_value(
+			"Billing Profile", team, ["legal_name", "email", "phone", "country"], as_dict=True
+		)
 		or frappe._dict()
 	)
-	contact = str(contact or "").strip()
-	phone = contact or str(p.phone or "").strip()
-	if not phone:
-		frappe.throw(
-			_("A phone number is required to set up automatic payments on this card."),
-			frappe.ValidationError,
-		)
-	# An inline-provided phone is saved to the profile so it's collected only once.
-	# Saved BEFORE the recovery path so gateway_customer_info() below carries it.
-	if contact and contact != str(p.phone or ""):
-		frappe.db.set_value("Billing Profile", team, "phone", contact)
+	phone = _card_phone(team, p, contact)
 
 	try:
 		adapter.update_customer(
@@ -145,28 +139,54 @@ def _require_card_contact(
 		)
 		return customer_id
 	except Exception as e:
-		# Razorpay enforces (email, contact) uniqueness per merchant. If a different
-		# customer already owns this identity (e.g. our stored customer was minted
-		# contactless and the real one already carries the phone), the edit fails
-		# "Customer already exists for the merchant". Swallowing it would leave a
-		# contactless customer and the order would then fail "contact required".
-		# Instead, fetch the customer that already has (email, contact) — create with
-		# fail_existing returns it now that the phone is on the profile — and repoint
-		# our stored row so the recurring order uses the contact-bearing customer.
 		if "already exists" not in str(e).lower():
 			raise
-		from central.billing.payments.payments import gateway_customer_info
+		return _switch_to_existing_customer(team, gateway, adapter, customer_id)
 
-		corrected = adapter.create_customer(gateway_customer_info(team))
-		if corrected and corrected != customer_id:
-			frappe.db.set_value(
-				"Gateway Customer",
-				{"team": team, "gateway": gateway},
-				"gateway_customer_id",
-				corrected,
-			)
-			return corrected
-		return customer_id
+
+def _card_phone(team: str, profile, contact: str | None) -> str:
+	"""The inline `contact`, else the profile's phone. Throws when there is neither."""
+	contact = _inline_phone(contact, profile.country)
+	phone = contact or str(profile.phone or "").strip()
+	if not phone:
+		frappe.throw(
+			_("A phone number is required to set up automatic payments on this card."),
+			frappe.ValidationError,
+		)
+	# An inline-provided phone is saved to the profile so it's collected only once.
+	# Saved BEFORE the recovery path so gateway_customer_info() carries it.
+	if contact and contact != str(profile.phone or ""):
+		frappe.db.set_value("Billing Profile", team, "phone", contact)
+	return phone
+
+
+def _inline_phone(contact: str | None, country: str | None) -> str:
+	"""An inline phone, held to the same rule as one entered on the profile."""
+	contact = str(contact or "").strip()
+	return normalize_phone(contact, country) if contact else contact
+
+
+def _switch_to_existing_customer(team: str, gateway: str, adapter, customer_id: str) -> str:
+	"""Razorpay enforces (email, contact) uniqueness per merchant. If a different
+	customer already owns this identity (e.g. our stored customer was minted
+	contactless and the real one already carries the phone), the edit fails
+	"Customer already exists for the merchant". Swallowing it would leave a
+	contactless customer and the order would then fail "contact required".
+	Instead, fetch the customer that already has (email, contact) — create with
+	fail_existing returns it now that the phone is on the profile — and repoint
+	our stored row so the recurring order uses the contact-bearing customer."""
+	from central.billing.payments.payments import gateway_customer_info
+
+	corrected = adapter.create_customer(gateway_customer_info(team))
+	if corrected and corrected != customer_id:
+		frappe.db.set_value(
+			"Gateway Customer",
+			{"team": team, "gateway": gateway},
+			"gateway_customer_id",
+			corrected,
+		)
+		return corrected
+	return customer_id
 
 
 def setup_mandate(team: str, gateway: str, customer_id: str | None = None, is_default: int = 0) -> dict:
@@ -261,19 +281,24 @@ def confirm_mandate(payment_method: str, callback: dict):
 	   taken from the browser.
 	A new active mandate retires any sibling active mandate for the same team+gateway
 	(the re-authorisation case), so the higher ceiling cleanly supersedes.
+	A method already past validation is returned as it is, so a repeated callback
+	neither activates a refused mandate nor refunds an authorisation twice.
 	"""
 	method = frappe.get_doc("Payment Method", payment_method)
+	if method.status != "Pending Validation":
+		return method
 	adapter = _adapter(method.gateway)
 
 	if not adapter.verify_payment_signature(callback):
-		_refuse_mandate(method, "mandate signature invalid")
+		return _refuse_mandate(method, SIGNATURE_INVALID, "The checkout signature is invalid.")
 	if not method.setup_reference or callback.get("razorpay_order_id") != method.setup_reference:
-		_refuse_mandate(method, "callback is for another order")
+		return _refuse_mandate(method, ORDER_MISMATCH, "The callback is for another order.")
 	payment = adapter.get_payment(callback.get("razorpay_payment_id"))
 	if not _is_mandate_payment(method, payment):
-		_refuse_mandate(method, "payment does not authorise this mandate")
+		return _refuse_mandate(method, PAYMENT_NOT_AUTHORISED, "The payment does not authorise this mandate.")
 
 	method.gateway_method_id = payment["token_id"]
+	method.display_label = _mandate_label(method, payment)
 	transition(method, "Active", actor=frappe.session.user)
 	method.validated_at = frappe.utils.now_datetime()
 	method.reauth_required = 0
@@ -283,12 +308,82 @@ def confirm_mandate(payment_method: str, callback: dict):
 	# (the fallback list, #28), so only retire siblings for UPI mandates.
 	if method.method_type == MANDATE_METHOD:
 		_retire_superseded_mandates(method)
+	_fill_profile_contact(method.team, payment)
 
 	from central.billing.payments import payments
 
 	payments.densify_priorities(method.team)  # slot the new method into the fallback order
+	_queue_authorisation_refund(method, payment)
 	method.reload()
 	return method
+
+
+def _fill_profile_contact(team: str, payment: dict) -> None:
+	"""Keep the phone and email the payer gave Razorpay at authorisation, where the billing
+	profile has none. A mandate debit must send both. A phone the gateways refuse is not kept."""
+	if not frappe.db.exists("Billing Profile", team):
+		return
+	profile = frappe.get_doc("Billing Profile", team)
+	missing = _missing_contact(profile, payment)
+	if not missing:
+		return
+
+	profile.update(missing)
+	# A stored field that fails validation must not undo a mandate the gateway registered.
+	profile.save_as_system("fill the payer's contact from a confirmed mandate")
+
+
+def _missing_contact(profile, payment: dict) -> dict:
+	"""The payer's email and usable phone, each only where the profile has none."""
+	missing = {}
+	if not profile.email and payment.get("email"):
+		missing["email"] = payment.get("email")
+	phone = None if profile.phone else usable_phone(str(payment.get("contact") or ""), profile.country)
+	if phone:
+		missing["phone"] = phone
+	return missing
+
+
+def _queue_authorisation_refund(method, payment: dict) -> None:
+	"""Queue the refund of the authorisation payment. It registers the mandate and pays no bill."""
+	if payment.get("status") != "captured":
+		return
+
+	frappe.enqueue(
+		"central.billing.payments.mandates.refund_authorisation_payment",
+		payment_method=method.name,
+		payment_id=payment["id"],
+		amount=frappe.utils.flt(payment.get("amount")) / 100,
+		job_id=f"mandate-authorisation-refund::{payment['id']}",
+		deduplicate=True,
+		enqueue_after_commit=True,
+	)
+
+
+def refund_authorisation_payment(payment_method: str, payment_id: str, amount: float) -> None:
+	"""Refund the authorisation payment that registered a mandate.
+
+	1. The refund is keyed on the payment, so a retried job never refunds twice.
+	2. A failure leaves a comment on the method for an operator and fails the job.
+	   The mandate stays active either way.
+	"""
+	method = frappe.get_doc("Payment Method", payment_method)
+	try:
+		result = _adapter(method.gateway).refund(
+			frappe._dict(gateway_transaction_id=payment_id),
+			amount,
+			reason="Mandate authorisation",
+			idempotency_key=f"mandate-authorisation-{payment_id}",
+		)
+		if not result.success:
+			raise frappe.ValidationError(f"Gateway refund status: {result.status}")
+	except Exception as error:
+		method.add_comment(
+			"Comment", f"Authorisation payment {payment_id} ({amount} INR) was not refunded: {error}"
+		)
+		# The job's own rollback would drop the comment the operator needs.
+		frappe.db.commit()
+		raise
 
 
 def _is_mandate_payment(method, payment: dict) -> bool:
@@ -301,13 +396,23 @@ def _is_mandate_payment(method, payment: dict) -> bool:
 	)
 
 
-def _refuse_mandate(method, reason: str) -> None:
-	transition(method, "Failed", actor=frappe.session.user, reason=reason)
+def _mandate_label(method, payment: dict) -> str:
+	"""How the customer recognises the mandate: the UPI ID, or the card's network and last four digits."""
+	card = payment.get("card") or {}
+	if card.get("last4"):
+		return f"{card.get('network') or 'Card'} ···· {card['last4']}"
+	if payment.get("vpa"):
+		return f"{method.method_type} · {payment['vpa']}"
+	return method.method_type
+
+
+def _refuse_mandate(method, failure_code: str, reason: str):
+	"""Fail the method and return it. It does not raise, so the failure is not rolled back."""
+	method.record_failure({"failure_code": failure_code, "failure_reason": reason})
+	transition(method, "Failed", actor=frappe.session.user, reason=failure_code)
 	# Only billing code changes a method's status; the caller checked billing:manage.
 	method.save(ignore_permissions=True)
-	frappe.throw(
-		_("The mandate authorisation could not be confirmed. Try adding it again."), frappe.ValidationError
-	)
+	return method
 
 
 def cancel_mandate(payment_method: str):

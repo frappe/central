@@ -39,7 +39,13 @@ LISTED = {
 	"limits": LIMITS,
 }
 MODELS = [
-	{"name": "acme/m", "provider": "acme", "model_id": "m", "zero_data_retention": True, "dialects": ["openai"]}
+	{
+		"name": "acme/m",
+		"provider": "acme",
+		"model_id": "m",
+		"zero_data_retention": True,
+		"dialects": ["openai"],
+	}
 ]
 GEOGRAPHIES = [
 	{"name": "eu", "label": "Europe", "endpoint": "https://eu.llm.frappe.cloud", "is_default": True}
@@ -109,6 +115,9 @@ class TestGroveClientCalls(IntegrationTestCase):
 				{"team": "TEAM-1", "title": "n8n prod", "geography": "eu", "cap": 5},
 			),
 		)
+		with grove_replies(MINTED) as post:
+			self.client.provision_key("TEAM-1", None, "eu", 2, model_groups=["crm-trial"])
+		self.assertEqual(sent(post)[1]["model_groups"], ["crm-trial"])
 
 		with grove_replies({"spend": {}, "keys": [LISTED], "usage": EMPTY_USAGE}) as post:
 			self.assertEqual(self.client.get_figures("TEAM-1")["keys"], [LISTED])

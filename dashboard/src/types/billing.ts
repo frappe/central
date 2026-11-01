@@ -488,10 +488,34 @@ export interface NotificationFeed {
 	has_next_page: boolean
 }
 
-/** get_notification_preferences — per-event-type delivery toggles (0/1), keyed by event. */
-export interface NotificationPreferences {
-	team: string
-	[event: string]: number | string
+export type NotificationFrequency = 'Instant' | 'Daily' | 'Weekly'
+
+export interface NotificationPreference {
+	category: NotificationCategory
+	email_enabled: boolean | number
+	in_app_enabled: boolean | number
+	frequency: NotificationFrequency
+	events: { event_type: string; email_enabled: number }[]
+}
+
+export interface NotificationCatalogEvent {
+	event_type: string
+	title: string
+	severity: NotificationSeverity
+	is_critical: 0 | 1
+	can_receive: 0 | 1
+}
+
+/** get_user_preferences: saved rows plus the events each category holds. */
+export interface UserNotificationPreferences {
+	time_zone: string
+	digest_hour: number
+	preferences: NotificationPreference[]
+	catalog: {
+		category: NotificationCategory
+		label: string
+		events: NotificationCatalogEvent[]
+	}[]
 }
 
 /** get_spend_history — the period-ranged reads behind Billing → Reports. */
@@ -652,7 +676,18 @@ export interface ServerTrial {
 }
 
 export interface TrialPlan {
+	name: string
 	title: string
 	monthly_rate: number
 	currency: Currency | null
+}
+
+/** A paid plan a trial site may move to when it converts. */
+export interface TrialPlanChoice {
+	name: string
+	title: string
+	/** For example "0.5 vCPU · 2 GB RAM · 40 GB SSD". */
+	specs: string
+	monthly_rate: number
+	currency: Currency
 }
