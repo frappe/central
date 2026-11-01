@@ -42,7 +42,7 @@ Example: Central Settings has Trial Days 7 and Trial Deletion Days 7. Product `r
 
 Central records the site when the region first reports its machine with an address, a few minutes after the request. The trial starts then. It does not wait for the customer to open the site, so a trial that the customer leaves also ends.
 
-A free-trial server also boots with a Grove key from the pool [AI Settings](../services/doctype/ai_settings/SPEC.md) keeps, when the pool has one, so the site's apps can call AI before the team has AI of its own.
+A free-trial server also boots with a Grove key from the pool [AI Settings](../services/doctype/ai_settings/SPEC.md) keeps for its product, when that pool has one, so the site's apps can call AI before the team has AI of its own.
 
 | Trial State | When | What Central does |
 |---|---|---|

@@ -8,6 +8,7 @@
  "field_order": [
   "status",
   "grove_key",
+  "product",
   "column_break_head",
   "geography",
   "gateway_url",
@@ -45,6 +46,16 @@
    "read_only": 1,
    "reqd": 1,
    "unique": 1
+  },
+  {
+   "description": "The product whose free trials this key is for, set at the mint.",
+   "fieldname": "product",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Product",
+   "options": "Product",
+   "read_only": 1
   },
   {
    "fieldname": "column_break_head",
@@ -152,7 +163,7 @@
  ],
  "grid_page_length": 50,
  "links": [],
- "modified": "2026-10-26 00:00:01",
+ "modified": "2026-11-01 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Services",
  "name": "AI Trial Key",

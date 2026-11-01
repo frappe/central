@@ -12,10 +12,21 @@ class TestAITrialKeyPause(IntegrationTestCase):
 	def setUp(self):
 		super().setUp()
 		self.addCleanup(frappe.db.rollback)
-		frappe.db.set_single_value(
-			"AI Settings",
-			{"base_url": "https://grove.test", "control_api_key": "control", "trial_pool_size": 1},
+		if not frappe.db.exists("Product", "raven"):
+			frappe.get_doc(
+				{"doctype": "Product", "product_key": "raven", "title": "Raven", "signup_app": "raven"}
+			).insert()
+		settings = frappe.get_doc("AI Settings")
+		settings.update(
+			{
+				"base_url": "https://grove.test",
+				"control_api_key": "control",
+				"control_api_secret": "secret",
+				"trial_products": [{"product": "raven", "pool_size": 1}],
+			}
 		)
+		settings.save()
+		frappe.clear_document_cache("AI Settings", "AI Settings")
 
 	def test_a_paused_pool_is_not_refilled_but_the_retries_run(self):
 		frappe.db.set_single_value("AI Settings", "pause_pool_refill", 1)
@@ -30,9 +41,11 @@ class TestAITrialKeyPause(IntegrationTestCase):
 		retry_stale.assert_called_once()
 
 	def test_paused_assignment_leaves_the_ready_key_in_the_pool(self):
-		key = frappe.get_doc({"doctype": "AI Trial Key", "grove_key": "key-1", "api_key": "secret"}).insert()
+		key = frappe.get_doc(
+			{"doctype": "AI Trial Key", "grove_key": "key-1", "product": "raven", "api_key": "secret"}
+		).insert()
 		frappe.db.set_single_value("AI Settings", "pause_key_assignment", 1)
-		action = Mock(is_free_trial=1, team="TEAM-00001")
+		action = Mock(is_free_trial=1, team="TEAM-00001", product="raven")
 		action.name = "action-1"
 
 		self.assertIsNone(AITrialKey.assign(action))

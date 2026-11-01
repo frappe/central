@@ -92,16 +92,20 @@ class GroveClient:
 		cap: int | None = None,
 		expiry: str | None = None,
 		expiry_from_first_use: bool = False,
+		model_groups: list[str] | None = None,
 	) -> dict:
 		"""Mint a key in `geography` (Grove's default when None) with `cap` whole USD to spend a
 		month (0 when None: refused until it gets one), untitled when `title` is None, retiring by
 		`expiry` (one of Grove's rules: Never, 1 Day, 7 Days, 14 Days, 30 Days; Never when None)
 		counted from the mint or, with `expiry_from_first_use`, from its first request; what it may
-		call is the team's, set at Grove: its `name`, `geography`, `gateway_url` and `api_key`. The
-		secret is never sent again."""
+		call is the team's, set at Grove, plus `model_groups`, Grove Model Groups of its geography it
+		is in on top: its `name`, `geography`, `gateway_url` and `api_key`. The secret is never sent
+		again."""
 		body = {"team": team, "title": title, "geography": geography, "cap": cap}
 		if expiry:
 			body |= {"expiry": expiry, "expiry_from_first_use": expiry_from_first_use}
+		if model_groups:
+			body["model_groups"] = model_groups
 		return self.call("grove.api.keys.provision_key", **body)
 
 	def update_caps(self, team: str, caps: dict[str, int]) -> list[dict]:
