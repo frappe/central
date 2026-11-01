@@ -1,4 +1,6 @@
 import json
+from types import SimpleNamespace
+from unittest import TestCase
 from unittest.mock import patch
 
 import frappe
@@ -10,6 +12,7 @@ from central.infrastructure.doctype.virtual_machine import template
 from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
 from central.integrations.pilot import METADATA_VALUE_BYTES
 from central.integrations.resource_actions import TEMPLATE_METADATA_KEY, _create_payload
+from central.resource_actions import _validate_site_name
 from central.sso import central_url, mint_bootstrap_token, verify_template_ready_token
 from central.tests.test_server_network import creation_request
 
@@ -140,3 +143,32 @@ class TestTemplateServer(IntegrationTestCase):
 		journey = template.get_journey(self.action.name)
 
 		self.assertEqual((journey["phase"], journey["url"]), ("ready", None))
+
+
+@patch("central.resource_actions.frappe.get_doc")
+class TestTemplateSiteName(TestCase):
+	def validate(self, purpose: str, subdomain: str | None, snapshot: str | None = None, requires=True):
+		configuration = SimpleNamespace(image_tags={"purpose": purpose, "application": "fastapi"})
+		with patch(
+			"central.resource_actions.CargoClient.get_template_requirements",
+			return_value={"requires_site_name": requires},
+		) as requirements:
+			_validate_site_name("region-a", configuration, subdomain, snapshot)
+		return requirements
+
+	def test_a_template_that_requires_a_name_refuses_a_server_without_one(self, _region) -> None:
+		with self.assertRaises(frappe.ValidationError):
+			self.validate("one-click", None)
+
+	def test_a_template_that_requires_a_name_takes_one(self, _region) -> None:
+		self.validate("one-click", "app").assert_not_called()
+
+	def test_an_optional_name_can_be_left_out(self, _region) -> None:
+		self.validate("one-click", None, requires=False).assert_called_once_with("fastapi")
+
+	def test_a_restored_template_server_needs_no_name(self, _region) -> None:
+		self.validate("one-click", None, snapshot="snapshot-1").assert_not_called()
+
+	def test_any_other_server_refuses_a_name(self, _region) -> None:
+		with self.assertRaises(frappe.ValidationError):
+			self.validate("base", "app")

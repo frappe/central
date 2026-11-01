@@ -265,7 +265,7 @@ A template server boots from a Cargo template image. The setup scripts of the im
 2. The server reads the metadata from the region's metadata service and sends `POST /api/method/central.api.servers.report_template_ready` with the token in the `X-Template-Token` header.
 3. Central sets **Application Ready At** on the Virtual Machine. A repeated report changes nothing.
 
-A customer can give a template server a site name at creation, as `subdomain`. Central checks the name as it checks a trial site name, and refuses it for a server that is not from a template. When the server reports its mesh address, Central adds a Site Domain for `<name>.<zone>`, and the Site Domain routes the name at the regional proxy.
+A customer can give a template server a site name at creation, as `subdomain`. Central checks the name as it checks a trial site name, and refuses it for a server that is not from a template. A template that sets `requires_site_name: true` in its `template.yaml` needs a name: Cargo returns the value with the template requirements, the console marks the field as required, and Central refuses a creation without a name. A server restored from a snapshot does not need a name. When the server reports its mesh address, Central adds a Site Domain for `<name>.<zone>`, and the Site Domain routes the name at the regional proxy.
 
 `central.api.servers.template_journey` returns the progress of the creation for the console. The phase is `booking`, `server`, `app`, `ready`, or `failed`. The phase is `ready` when the server has reported and the chosen name, if any, has an active route. A report after the token expires is refused. The server still runs, and the console shows that the setup takes longer.
 

@@ -2,10 +2,11 @@ import { frappeRequest } from 'frappe-ui'
 import { type Ref, ref, watch } from 'vue'
 import { API, methodV1 } from '@/api/methods'
 import { useSession } from '@/composables/useSession'
+import { useSubdomainAvailability } from '@/composables/useSubdomainAvailability'
 import { getErrorMessage } from '@/lib/feedback'
 import type { Template, TemplateRequirements } from '@/types/serverCreation'
 
-/** What the selected template asks the user for, and the answers given so far. */
+/** What the selected template asks the user for, and the answers and site name given so far. */
 export function useTemplateRequirements(
 	region: Ref<string | null>,
 	template: Ref<Template | null>,
@@ -13,6 +14,8 @@ export function useTemplateRequirements(
 	const { activeTeam } = useSession()
 	const requirements = ref<TemplateRequirements | null>(null)
 	const answers = ref<Record<string, string>>({})
+	const siteName = ref('')
+	const siteNameCheck = useSubdomainAvailability(siteName)
 	const loading = ref(false)
 	const error = ref('')
 	let generation = 0
@@ -21,6 +24,7 @@ export function useTemplateRequirements(
 		const current = ++generation
 		requirements.value = null
 		answers.value = {}
+		siteName.value = ''
 		error.value = ''
 		loading.value = false
 		if (!activeTeam.value || !region.value || !template.value) return
@@ -56,12 +60,30 @@ export function useTemplateRequirements(
 		immediate: true,
 	})
 
+	// A blank optional name is fine; a typed one must be free. Central checks it again.
+	function isSiteNameComplete(): boolean {
+		if (!siteName.value.trim()) return !requirements.value?.requires_site_name
+		return !!siteNameCheck.availability.value?.available
+	}
+
 	// Every required answer is filled; Cargo checks each value's type at launch.
 	function isComplete(): boolean {
-		return (requirements.value?.inputs ?? []).every(
-			(input) => !input.required || !!answers.value[input.name]?.trim(),
+		return (
+			isSiteNameComplete() &&
+			(requirements.value?.inputs ?? []).every(
+				(input) => !input.required || !!answers.value[input.name]?.trim(),
+			)
 		)
 	}
 
-	return { requirements, answers, loading, error, reload, isComplete }
+	return {
+		requirements,
+		answers,
+		siteName,
+		siteNameCheck,
+		loading,
+		error,
+		reload,
+		isComplete,
+	}
 }

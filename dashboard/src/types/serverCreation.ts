@@ -38,6 +38,16 @@ export interface TemplateRequirements {
 	inputs: TemplateInput[]
 	minimum_size: { cpu_millicores: number; memory_mib: number; disk_mib: number }
 	ports: { port: number; protocol: string }[]
+	/** The template refuses a server without a site name. */
+	requires_site_name: boolean
+	/** The DNS zone the site name is in, such as `<region>.<wildcard domain>`. */
+	zone: string
+}
+
+export interface SubdomainAvailability {
+	subdomain: string
+	available: boolean
+	reason: string | null
 }
 
 export interface ImageSelection {

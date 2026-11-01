@@ -143,13 +143,8 @@ def submit_request(
 	is_free_trial = is_free_trial_creation(server_input.team, site.product if site else None)
 	configuration, rate = _build_server_configuration(server_input, snapshot, is_free_trial)
 	configuration.site = site
-	# A template server is routed at the name. Any other server has no application to route.
-	if (
-		resource_type == "Server"
-		and subdomain
-		and configuration.image_tags.get("purpose") != TEMPLATE_PURPOSE
-	):
-		frappe.throw(_("Only a server from a template takes a site name."))
+	if resource_type == "Server":
+		_validate_site_name(server_input.region, configuration, subdomain, snapshot)
 
 	return ResourceAction.queue(
 		"create",
@@ -382,6 +377,25 @@ def _get_user_data(server_input: CreateServerInput, image: dict, snapshot: str |
 	return CargoClient(region).get_template_user_data(
 		image["tags"]["application"], server_input.template_inputs
 	)
+
+
+def _validate_site_name(
+	region: str, configuration: ServerCreation, subdomain: str | None, snapshot: str | None
+) -> None:
+	"""1. Only a server from a template takes a site name. No other server has an application to route.
+	2. A new template server needs a name when its template requires one.
+	3. A restored snapshot is already set up, so its name stays optional."""
+	is_template = configuration.image_tags.get("purpose") == TEMPLATE_PURPOSE
+	if subdomain and not is_template:
+		frappe.throw(_("Only a server from a template takes a site name."))
+	if subdomain or snapshot or not is_template:
+		return
+
+	requirements = CargoClient(frappe.get_doc("Region", region)).get_template_requirements(
+		configuration.image_tags["application"]
+	)
+	if requirements["requires_site_name"]:
+		frappe.throw(_("This template needs a site name."))
 
 
 def unanswered_request(team: str, digest: str) -> str | None:

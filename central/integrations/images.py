@@ -4,6 +4,7 @@ import frappe
 from frappe import _
 
 from central.iam import can
+from central.infrastructure.doctype.region.region import Region
 from central.integrations.atlas import AtlasClient
 from central.integrations.cargo import CargoClient
 
@@ -59,8 +60,10 @@ def list_templates(team: str, region: str) -> list[dict]:
 
 
 def get_template_requirements(team: str, region: str, application: str) -> dict:
-	"""What a server from one template asks the user for and needs to run."""
-	return _template_cargo(team, region).get_template_requirements(application)
+	"""What a server from one template asks the user for and needs to run, and the zone its
+	site name is in."""
+	requirements = _template_cargo(team, region).get_template_requirements(application)
+	return {**requirements, "zone": Region.get_zone(region)}
 
 
 def _template_cargo(team: str, region: str) -> CargoClient:
