@@ -8,6 +8,9 @@ from central.infrastructure.doctype.region.region import Region
 from central.integrations.atlas import AtlasClient
 from central.integrations.cargo import CargoClient
 
+# The Atlas `purpose` tag of an image a region's Cargo built from a template.
+TEMPLATE_PURPOSE = "one-click"
+
 
 def list_offerings(team: str, flow: str = "Server") -> list[dict]:
 	"""List customer image choices.
