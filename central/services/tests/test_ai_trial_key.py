@@ -38,7 +38,13 @@ class TestAITrialKey(IntegrationTestCase):
 		self.grove.provision_key.side_effect = lambda **kwargs: minted(frappe.generate_hash(length=10))
 		self.configure(products={"raven": 3})
 
-	def configure(self, products: dict[str, int], enrolled: bool = True, groups: dict | None = None) -> None:
+	def configure(
+		self,
+		products: dict[str, int],
+		enrolled: bool = True,
+		groups: dict | None = None,
+		revoke_after_days: int = 30,
+	) -> None:
 		"""The Trials tab: one pool row per product in `products` ({key: size}), each in the Model
 		Group `groups` names for it, if any."""
 		settings = frappe.get_doc("AI Settings")
@@ -49,6 +55,7 @@ class TestAITrialKey(IntegrationTestCase):
 				"control_api_secret": "secret" if enrolled else "",
 				"trial_key_geography": "eu",
 				"trial_key_cap": 2,
+				"trial_key_revoke_after_days": revoke_after_days,
 				"trial_products": [
 					{"product": product(key), "pool_size": size, "model_group": (groups or {}).get(key)}
 					for key, size in products.items()
@@ -108,7 +115,8 @@ class TestAITrialKey(IntegrationTestCase):
 			ai_trial_key.refill_trial_keys()
 
 		self.assertEqual(
-			frappe.get_all("AI Trial Key", pluck="product", order_by="creation asc"), ["raven", "raven", "crm"]
+			frappe.get_all("AI Trial Key", pluck="product", order_by="creation asc"),
+			["raven", "raven", "crm"],
 		)
 		sent = [call.kwargs["model_groups"] for call in self.grove.provision_key.call_args_list]
 		self.assertEqual(sent, [None, ["crm-trial"]])
@@ -165,7 +173,9 @@ class TestAITrialKey(IntegrationTestCase):
 		other = AITrialKey.assign(self.action("action-2"))
 
 		self.assertEqual((taken.name, retried.name, other.name), (first.name, first.name, second.name))
-		self.assertEqual((first.reload().status, first.team, first.resource_action), ("Assigned", "TEAM-00001", "action-1"))
+		self.assertEqual(
+			(first.reload().status, first.team, first.resource_action), ("Assigned", "TEAM-00001", "action-1")
+		)
 
 	def test_a_free_trial_takes_a_key_of_its_product_and_none_of_anothers(self):
 		crm, raven = self.available("crm"), self.available("raven")
@@ -205,9 +215,7 @@ class TestAITrialKey(IntegrationTestCase):
 
 		self.assertEqual(
 			key.get_site_config(),
-			{
-				"ai_keys": [{"gateway_url": GATEWAY, "api_key": f"gr_{key.grove_key}"}]
-			},
+			{"ai_keys": [{"gateway_url": GATEWAY, "api_key": f"gr_{key.grove_key}"}]},
 		)
 
 	def test_a_failed_creation_releases_its_key_and_a_retry_gets_a_new_one(self):
@@ -233,6 +241,24 @@ class TestAITrialKey(IntegrationTestCase):
 
 		self.assertEqual((key.reload().server, key.status), ("server-1", "Revoking"))
 
+	def test_an_assigned_key_is_revoked_once_its_days_have_passed(self):
+		self.configure(products={"raven": 0})
+		aged, fresh = self.available(), self.available()
+		self.available()
+		AITrialKey.assign(self.action())
+		AITrialKey.assign(self.action("action-2"))
+
+		self.age_assignment(aged)
+		with patch(f"{MODULE}.frappe.enqueue"):
+			ai_trial_key.refill_trial_keys()
+		self.assertEqual(self.statuses(), ["Revoking", "Assigned", "Available"])
+
+		# 0 turns the stop off.
+		self.configure(products={"raven": 0}, revoke_after_days=0)
+		self.age_assignment(fresh)
+		with patch(f"{MODULE}.frappe.enqueue"):
+			ai_trial_key.refill_trial_keys()
+		self.assertEqual(self.statuses(), ["Revoking", "Assigned", "Available"])
 
 	def test_a_refused_revoke_stays_revoking_and_is_tried_again_once_stale(self):
 		key = self.available()
@@ -269,6 +295,10 @@ class TestAITrialKey(IntegrationTestCase):
 	def age(self, key: AITrialKey) -> None:
 		stale = add_to_date(now_datetime(), minutes=-ai_trial_key.RETRY_AFTER_MINUTES - 1)
 		frappe.db.set_value("AI Trial Key", key.name, "modified", stale, update_modified=False)
+
+	def age_assignment(self, key: AITrialKey) -> None:
+		expired = add_to_date(now_datetime(), days=-31)
+		frappe.db.set_value("AI Trial Key", key.name, "assigned_at", expired)
 
 	def converting(self) -> tuple[AITrialKey, str]:
 		"""An assigned key whose trial converted, its hand-over queued: the record and the job's name."""

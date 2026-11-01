@@ -59,3 +59,5 @@ central.patches.v0_0.copy_error_logs_to_diagnostics
 central.patches.v0_0.seed_signup_image_minimum_age
 # A card with no mandate carries no mandate currency (it used to default to INR).
 central.patches.v0_0.clear_default_mandate_currency
+# A running trial's AI key is revoked 30 days after its assignment unless AI Settings says otherwise.
+central.patches.v0_0.seed_trial_key_revoke_after_days

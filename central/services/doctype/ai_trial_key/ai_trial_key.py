@@ -33,10 +33,11 @@ RETRIED = {
 
 class AITrialKey(Document):
 	"""One Grove key minted ahead under Central Trial and held here with its secret, until a
-	free-trial server takes it in its boot config. The key carries no expiry: its life is its
-	trial's. Central revokes it when that creation fails, the trial ends or the server is
-	terminated, and hands it to the team when the trial converts, so the secret in the server's
-	config keeps working; a hand-over that fails for good ends in a revoke too."""
+	free-trial server takes it in its boot config. The key carries no expiry at Grove. Central
+	revokes it when that creation fails, when the server is terminated or once AI Settings' Revokes
+	Automatically After days have passed since its assignment, and hands it to the team when the
+	trial converts, so the secret in the server's config keeps working; a hand-over that fails for
+	good ends in a revoke too."""
 
 	# begin: auto-generated types
 	# This code is auto-generated. Do not modify anything in this block.
@@ -273,14 +274,16 @@ def convert_trial_key(name: str) -> None:
 
 
 def refill_trial_keys() -> None:
-	"""Scheduler, every 5 minutes: try the revokes and hand-overs Grove refused again, then mint
-	the keys each product's pool is missing, up to one batch across them. Nothing while Central is
-	not enrolled; the retries run with the pools off or paused too, the mint does not."""
+	"""Scheduler, every 5 minutes: try the revokes and hand-overs Grove refused again, revoke the
+	keys past their days, then mint the keys each product's pool is missing, up to one batch across
+	them. Nothing while Central is not enrolled; the retries and the revokes run with the pools off
+	or paused too, the mint does not."""
 	settings = frappe.get_cached_doc("AI Settings")
 	if not settings.is_enrolled:
 		return
 
 	retry_stale()
+	revoke_expired_keys(settings)
 	if settings.pause_pool_refill:
 		return
 	budget = REFILL_BATCH_SIZE
@@ -314,3 +317,21 @@ def retry_stale() -> None:
 	)
 	for name in waiting + failed:
 		frappe.get_doc("AI Trial Key", name).try_at_grove()
+
+
+def revoke_expired_keys(settings: AISettings) -> None:
+	"""An Assigned key older than Revokes Automatically After since its assignment is revoked,
+	whatever its trial is doing: the trial runs on without AI. 0 turns this off."""
+	days = cint(settings.trial_key_revoke_after_days)
+	if not days:
+		return
+
+	# Only an Assigned key has an assignment: a `<` alone would also match the NULL of a ready
+	# key, which Frappe compares as the oldest date.
+	expired = frappe.get_all(
+		"AI Trial Key",
+		filters={"status": "Assigned", "assigned_at": ("<", add_to_date(now_datetime(), days=-days))},
+		pluck="name",
+	)
+	if expired:
+		AITrialKey.queue_revoke(name=("in", expired))
