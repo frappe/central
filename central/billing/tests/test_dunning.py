@@ -12,6 +12,7 @@ from central.billing import settings
 from central.billing.catalog import subscriptions
 from central.billing.gateways.base import PaymentResult
 from central.billing.payments import decline
+from central.billing.platform.records import save_billing_record
 from central.billing.revenue import dunning
 from central.billing.tests.test_stripe_adapter import make_stripe_gateway
 from central.billing.tests.utils import (
@@ -33,6 +34,7 @@ DUE = "2026-06-01"
 @contextmanager
 def declining_gateway(failure_code="card_declined", decline_code=None):
 	adapter = MagicMock()
+	adapter.prepare_charge.return_value = None  # Stripe-like: no order to store
 	adapter.charge.return_value = PaymentResult(
 		success=False,
 		status="Failed",
@@ -201,6 +203,16 @@ class TestStagedEscalation(DunningTestBase):
 		self.assertEqual(self._standing(sub), "Past Due")  # grace
 		stop.assert_not_called()  # late is not yet cut off
 
+	def test_day7_moves_every_subscription_of_the_team(self):
+		"""The invoice bills the whole team, so day 7 marks every server, as day 14 suspends every one."""
+		sub = self._subscription()
+		second = self._subscription(with_card=False)
+		inv = self._open_invoice(sub)
+		with patch("central.resource_actions.submit_billing_command"):
+			self._run_through(inv, sub, last_day=7)
+
+		self.assertEqual((self._standing(sub), self._standing(second)), ("Past Due", "Past Due"))
+
 	def test_day14_suspend_stops_running_servers(self):
 		sub = self._subscription()
 		server = self._running(sub)
@@ -276,7 +288,7 @@ class TestStagedEscalation(DunningTestBase):
 		doc = frappe.get_doc("Invoice", inv)
 		transition(doc, "Paid", reason="test payment", actor="test")
 		with patch("central.resource_actions.submit_billing_command") as start:
-			doc.save(ignore_permissions=True)
+			save_billing_record(doc)
 
 		self.assertEqual(self._standing(sub), "Current")
 		start.assert_called_once_with("start", server)
@@ -294,7 +306,7 @@ class TestStagedEscalation(DunningTestBase):
 		doc = frappe.get_doc("Invoice", inv)
 		transition(doc, "Cancelled", reason="reissue", actor="test")
 		with patch("central.resource_actions.submit_billing_command") as start:
-			doc.save(ignore_permissions=True)
+			save_billing_record(doc)
 
 		self.assertEqual(self._standing(sub), "Suspended")
 		start.assert_not_called()
@@ -344,7 +356,7 @@ class TestStagedEscalation(DunningTestBase):
 			with patch(
 				"central.infrastructure.doctype.resource_action.resource_action.ResourceAction.enqueue"
 			):
-				doc.save(ignore_permissions=True)
+				save_billing_record(doc)
 		finally:
 			frappe.set_user("Administrator")
 
@@ -551,3 +563,29 @@ class TestRetryableLater(IntegrationTestCase):
 
 	def test_an_ambiguous_failure_is_not_charged_again(self):
 		self.assertFalse(decline.is_retryable_later("processing_error", None))
+
+
+class TestOneBadInvoiceDoesNotStopTheRun(DunningTestBase):
+	def test_the_next_invoice_is_dunned_after_one_fails(self):
+		sub = self._subscription(with_card=False)
+		broken = self._open_invoice(sub)
+		april = {
+			"period_start": "2026-04-01",
+			"period_end": "2026-04-30",
+			"period_key": f"{TEAM}|2026-04-01|2026-04-30",
+		}
+		frappe.db.set_value("Invoice", broken, april)  # one live invoice per period
+		healthy = self._open_invoice(sub, total=2000)
+		real = dunning.process_invoice_dunning
+
+		def process(name, now=None):
+			if name == broken:
+				raise RuntimeError("bad row")
+			return real(name, now=now)
+
+		with patch.object(dunning, "process_invoice_dunning", side_effect=process):
+			results = dunning.run_dunning(now=day(7))
+
+		self.assertNotIn(broken, [result["invoice"] for result in results])
+		self.assertIn(healthy, [result["invoice"] for result in results])
+		self.assertEqual(frappe.db.get_value("Invoice", healthy, "status"), "Overdue")

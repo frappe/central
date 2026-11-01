@@ -10,7 +10,7 @@ from frappe.utils.caching import request_cache
 OPERATOR_BYPASS_ROLE = "System Manager"
 
 # The revision of the capability taxonomy. Bump it with every change (see CAPABILITIES.md).
-CAPABILITY_VERSION = 6
+CAPABILITY_VERSION = 7
 
 # Granting a key implies each capability in its value, because acting on a resource needs
 # seeing it. Every grant is closed under these before it is checked.
@@ -22,6 +22,7 @@ CAP_IMPLICATIONS = {
 	"server:resize": ("server:view",),
 	"server:snapshot": ("server:view",),
 	"server:ssh-key": ("server:view",),
+	"server:wireguard": ("server:view",),
 	"server:console": ("server:view",),
 	"service:manage": ("service:view",),
 }
@@ -124,6 +125,16 @@ def is_active_team_member(user: str, team: str) -> bool:
 	)
 
 	return bool(query.run())
+
+
+def get_team_names_with_role(role: str, teams: list[str]) -> list[str]:
+	"""The teams among `teams` where at least one member holds `role`."""
+	return frappe.get_all(
+		"Team Member",
+		filters={"parenttype": "Team", "role": role, "parent": ("in", teams)},
+		pluck="parent",
+		distinct=True,
+	)
 
 
 def resolve_team(user: str, team: str | None = None) -> str:

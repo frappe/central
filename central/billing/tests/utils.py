@@ -64,6 +64,7 @@ class BillingTestCase(IntegrationTestCase):
 	# raw deletes (frappe.db.delete) need no dependency ordering. Child rows need
 	# explicit cleanup because raw deletes do not run the parent document hooks.
 	_TRACKED = (
+		"Top-up Order",
 		"Payment Attempt",
 		"Refund",
 		"Credit Ledger Entry",
@@ -616,3 +617,19 @@ def isolate_trial_plans(case) -> None:
 	for name in frappe.get_all("Plan", filters={"available_on_trial": 1}, pluck="name"):
 		frappe.db.set_value("Plan", name, "available_on_trial", 0)
 		case.addCleanup(frappe.db.set_value, "Plan", name, "available_on_trial", 1)
+
+
+def stripe_intent(txn_id, event_type="payment_intent.succeeded", **fields):
+	"""A PaymentIntent as Stripe sends it, for the charge we made under `txn_id`."""
+	attempt = frappe.db.get_value(
+		"Payment Attempt", {"gateway_transaction_id": txn_id}, ["amount", "currency"], as_dict=True
+	) or frappe._dict(amount=0, currency="INR")
+	succeeded = event_type == "payment_intent.succeeded"
+	return {
+		"id": txn_id,
+		"object": "payment_intent",
+		"status": "succeeded" if succeeded else "requires_payment_method",
+		"amount_received": round(frappe.utils.flt(attempt.amount) * 100) if succeeded else 0,
+		"currency": (attempt.currency or "INR").lower(),
+		**fields,
+	}

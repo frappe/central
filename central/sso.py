@@ -37,6 +37,11 @@ def mint_cargo_token(region_id: int) -> str:
 	return _mint_regional_token(region_id, f"atlas-cargo:{region_id}", "bucket:*")
 
 
+def mint_wireguard_token(region_id: int) -> str:
+	"""Mint a credential for the peer routes of one regional WireGuard gateway."""
+	return _mint_regional_token(region_id, f"atlas-wg-gateway:{region_id}", "peers:read peers:update")
+
+
 def mint_datum_token(region_id: int, resource_id: str) -> str:
 	"""The token a pilot presents to its region's datum, for metrics and logs alike. The
 	audience names one region, so every other region refuses it."""

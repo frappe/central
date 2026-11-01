@@ -52,7 +52,14 @@ class TestGatewayEvents(ChargeTestBase):
 	def test_a_cancelled_authorisation_fails_the_attempt_with_its_reason(self):
 		attempt = self._authorised_attempt(self._open_invoice(), "pi_cancel")
 		event = self._event(
-			"evt_cancel", "payment_intent.canceled", {"id": "pi_cancel", "cancellation_reason": "automatic"}
+			"evt_cancel",
+			"payment_intent.canceled",
+			{
+				"id": "pi_cancel",
+				"object": "payment_intent",
+				"status": "canceled",
+				"cancellation_reason": "automatic",
+			},
 		)
 		with patch("central.billing.payments.collection.collect_invoice") as collect:
 			webhooks.handle_webhook_event(event)
@@ -82,7 +89,7 @@ class TestGatewayEvents(ChargeTestBase):
 		self.assertEqual(frappe.db.get_value("Webhook Event", event, "status"), "Ignored")
 		self.assertEqual(frappe.db.get_value("Payment Method", self.method, "status"), "Active")
 
-	def test_a_failed_card_setup_is_noted_and_the_card_can_still_be_confirmed(self):
+	def test_a_failed_card_setup_is_recorded_and_the_card_can_still_be_confirmed(self):
 		pending = (
 			frappe.get_doc(
 				{
@@ -100,17 +107,28 @@ class TestGatewayEvents(ChargeTestBase):
 		event = self._event(
 			"evt_setup_failed",
 			"setup_intent.setup_failed",
-			{"id": "seti_1", "last_setup_error": {"message": "Your card was declined."}},
+			{
+				"id": "seti_1",
+				"last_setup_error": {
+					"code": "card_declined",
+					"decline_code": "do_not_honor",
+					"message": "Your card was declined.",
+				},
+			},
 		)
 		webhooks.handle_webhook_event(event)
 
-		self.assertEqual(frappe.db.get_value("Payment Method", pending, "status"), "Pending Validation")
-		comments = frappe.get_all(
-			"Comment",
-			{"reference_doctype": "Payment Method", "reference_name": pending, "comment_type": "Info"},
-			pluck="content",
+		method = frappe.get_doc("Payment Method", pending)
+		self.assertEqual(method.status, "Pending Validation")
+		self.assertEqual((method.failure_code, method.decline_code), ("card_declined", "do_not_honor"))
+		self.assertEqual(method.failure_reason, "Your card was declined.")
+		self.assertEqual(method.failed_attempts, 1)
+		self.assertTrue(
+			frappe.db.exists(
+				"Billing Event",
+				{"subject": pending, "event_type": "Payment Method Setup Failed", "reason": "card_declined"},
+			)
 		)
-		self.assertTrue(any("Your card was declined." in comment for comment in comments))
 		self.assertEqual(frappe.db.get_value("Webhook Event", event, "payment_method"), pending)
 
 	def test_a_dispute_is_linked_to_the_charge_it_is_about(self):
@@ -122,7 +140,13 @@ class TestGatewayEvents(ChargeTestBase):
 		event = self._event(
 			"evt_dispute",
 			"charge.dispute.created",
-			{"id": "dp_1", "payment_intent": "pi_disputed", "amount": 100000, "reason": "fraudulent"},
+			{
+				"id": "dp_1",
+				"object": "dispute",
+				"payment_intent": "pi_disputed",
+				"amount": 100000,
+				"reason": "fraudulent",
+			},
 		)
 		webhooks.handle_webhook_event(event)
 

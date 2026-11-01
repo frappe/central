@@ -156,6 +156,12 @@ class TestProductEmailSettings(IntegrationTestCase):
 		with self.assertRaisesRegex(frappe.ValidationError, "at most one note"):
 			self.product("raven-notes", email_notes=notes).insert()
 
+	def test_one_note_for_each_plan(self):
+		notes = [{"plan": "plan-2vcpu", "note": "One"}, {"plan": "plan-2vcpu", "note": "Two"}]
+
+		with self.assertRaisesRegex(frappe.ValidationError, "at most one note for each plan"):
+			self.product("raven-plans", plan_notes=notes).insert()
+
 	def test_the_getting_started_page_must_be_https(self):
 		with self.assertRaisesRegex(frappe.ValidationError, "https://"):
 			self.product("raven-start", getting_started_url="http://raven.example.test").insert()

@@ -42,8 +42,8 @@ export const useAppMenu = () => {
 
 	const footerMenuItems = computed(() => [
 		{
-			label: 'My profile',
-			icon: 'lucide-user',
+			label: 'Settings',
+			icon: 'lucide-settings',
 			onClick: () => openSettings('profile'),
 		},
 		// Shown only while an invitation waits, so a signed-in invitee finds it without the email.

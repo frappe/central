@@ -13,3 +13,5 @@ def on_doctype_update() -> None:
 	# The billing run, its dashboards and the money reports filter on these.
 	frappe.db.add_index("Refund", ["invoice"])
 	frappe.db.add_index("Refund", ["status", "created_at"])
+	# Reconciliation rechecks recently completed refunds.
+	frappe.db.add_index("Refund", ["status", "completed_at"])

@@ -255,11 +255,18 @@ def export_csv(
 
 	rows = build(team, from_date, to_date)
 	buffer = io.StringIO()
-	csv.writer(buffer).writerows(rows)
+	csv.writer(buffer).writerows([[_safe_cell(cell) for cell in row] for row in rows])
 	frappe.response["type"] = "binary"
 	frappe.response["filename"] = f"{report}-{frappe.utils.getdate()}.csv"
 	frappe.response["filecontent"] = buffer.getvalue().encode("utf-8")
 	frappe.response["doctype"] = None
+
+
+def _safe_cell(value):
+	"""A text cell a spreadsheet would run as a formula is prefixed with a quote."""
+	if isinstance(value, str) and value[:1] in ("=", "+", "-", "@", "\t", "\r"):
+		return "'" + value
+	return value
 
 
 def _statement_csv(team, from_date, to_date) -> list[list]:

@@ -27,6 +27,7 @@ class Site(Document):
 		from frappe.types import DF
 
 		claimed_at: DF.Datetime | None
+		conversion_plan: DF.Link | None
 		product: DF.Link | None
 		ready_at: DF.Datetime | None
 		rename_completed_at: DF.Datetime | None

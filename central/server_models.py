@@ -102,7 +102,8 @@ class ResizeConfiguration(BaseModel):
 
 	model_config = ConfigDict(extra="forbid", strict=True)
 
-	subscription: str = Field(min_length=1)
+	# None for a converted trial's move off its trial plan: its subscription opens once the move lands.
+	subscription: str | None = Field(default=None, min_length=1)
 	plan: str | None = None
 	includes: list[ResourceQuantity] = Field(default_factory=list, max_length=4)
 	sub_category: str | None = None
@@ -146,8 +147,7 @@ class FirewallRule(BaseModel):
 
 
 class FirewallChange(BaseModel):
-	"""A change to a customer's firewall. A field left as None keeps its value on Atlas. Central
-	adds its own rules when it sends the inbound list."""
+	"""A change to a customer's firewall. A field left as None keeps its value on Atlas."""
 
 	model_config = ConfigDict(extra="forbid", strict=True)
 

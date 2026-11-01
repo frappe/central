@@ -2,6 +2,8 @@
 # For license information, please see license.txt
 """Subscription intent + two-axis state model (issue #04)."""
 
+from unittest.mock import patch
+
 import frappe
 
 from central.billing.catalog import subscriptions
@@ -145,3 +147,21 @@ class TestReconciliation(SubscriptionTestBase):
 		result = subscriptions.reconcile_with_agent_event(sub.name, "srv-sub-1")
 		self.assertTrue(result["reconciled"])
 		self.assertEqual(result["locked_plan"], PLAN)
+
+
+class TestSubscriptionBackfill(IntegrationTestCase):
+	def test_one_failing_server_does_not_stop_the_backfill(self):
+		get_all = frappe.get_all
+
+		def running_servers(doctype, *args, **kwargs):
+			if doctype == "Virtual Machine":
+				return ["vm-backfill-broken", "vm-backfill-ok"]
+			return get_all(doctype, *args, **kwargs)
+
+		with (
+			patch.object(frappe, "get_all", side_effect=running_servers),
+			patch("central.signups.trial.is_billing_deferred", side_effect=[RuntimeError("bad row"), False]),
+			patch("central.billing.doctype.subscription.subscription.create_subscription") as create,
+		):
+			subscriptions.backfill_missing_subscriptions()
+		create.assert_called_once_with("vm-backfill-ok")

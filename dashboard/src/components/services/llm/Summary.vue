@@ -2,7 +2,6 @@
 import { Button, dayjs, Tooltip } from 'frappe-ui'
 import { AreaChart, useChartTokens } from 'frappe-ui/charts'
 import { computed, ref } from 'vue'
-import CopyableValue from '@/components/common/CopyableValue.vue'
 import { useAI } from '@/composables/useAI'
 import { formatDateTime, timeAgo } from '@/lib/datetime'
 import { reportError, successToast } from '@/lib/feedback'
@@ -136,15 +135,6 @@ const keysLabel = computed(() => {
 		? `${activeKeyCount.value} of ${max}`
 		: String(activeKeyCount.value)
 })
-
-const gateway = computed(() => {
-	const geographies = (ai.value?.geographies ?? []).filter((g) => g.endpoint)
-	return geographies.find((g) => g.is_default) ?? geographies[0]
-})
-
-const hasManyGeographies = computed(
-	() => (ai.value?.geographies ?? []).filter((g) => g.endpoint).length > 1,
-)
 
 const refresh = async (): Promise<void> => {
 	try {
@@ -362,17 +352,6 @@ const refresh = async (): Promise<void> => {
 			<div class="flex items-center justify-between gap-3">
 				<dt class="text-ink-gray-5">Live keys</dt>
 				<dd class="tabular-nums text-ink-gray-8">{{ keysLabel }}</dd>
-			</div>
-
-			<div v-if="gateway?.endpoint" class="flex flex-col gap-1.5">
-				<dt class="text-ink-gray-5">
-					Gateway<template v-if="hasManyGeographies">
-						· {{ gateway.label }}</template
-					>
-				</dt>
-				<dd>
-					<CopyableValue :value="gateway.endpoint" label="Gateway URL" />
-				</dd>
 			</div>
 		</dl>
 	</section>

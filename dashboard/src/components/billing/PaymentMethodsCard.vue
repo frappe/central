@@ -203,7 +203,11 @@ const onTopUp = () => {
 </script>
 
 <template>
-	<BillingCard title="Payment methods">
+	<BillingCard
+		title="Methods"
+		description="Invoices use credits first, then payment methods in the order shown."
+		flat
+	>
 		<div v-if="loading" class="flex flex-col gap-2.5">
 			<Skeleton v-for="i in 2" :key="i" class="h-14 rounded-5" />
 		</div>
@@ -314,17 +318,6 @@ const onTopUp = () => {
 				</button>
 			</li>
 		</ul>
-
-		<p
-			v-if="!loading"
-			class="mt-auto flex items-start gap-1.5 pt-4 text-p-sm text-ink-gray-6"
-		>
-			<span
-				class="lucide-arrow-down-wide-narrow mt-0.5 size-3.5 shrink-0 text-ink-gray-4"
-				aria-hidden="true"
-			/>
-			Invoices use credits first, then payment methods in the order shown.
-		</p>
 
 		<ConfirmDialog
 			v-model:target="pendingRemove"

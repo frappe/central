@@ -22,6 +22,10 @@ export interface FirewallService {
 
 export const ANYWHERE_IPV4 = '0.0.0.0/0'
 export const ANYWHERE_IPV6 = '::/0'
+/** The region's private network: the web console, the regional proxy and the team's servers. */
+export const PRIVATE_NETWORK = 'fdaa::/16'
+/** Every WireGuard VPN device of every team in the region. */
+export const WIREGUARD_NETWORK = 'fdac::/16'
 
 export const SERVICES: FirewallService[] = [
 	{ label: 'SSH', protocol: 'tcp', ports: '22' },
@@ -46,10 +50,21 @@ const ANYWHERE = [ANYWHERE_IPV4, ANYWHERE_IPV6]
 const ALL_OUTBOUND: FirewallRule[] = [
 	{ protocol: 'any', ports: '', cidrs: ANYWHERE },
 ]
-const allow = (...ports: string[]): FirewallRule[] =>
-	ports.map((port) => ({ protocol: 'tcp', ports: port, cidrs: ANYWHERE }))
+// Every new server starts with these. They are ordinary rules that the customer can remove.
+const DEFAULT_INBOUND: FirewallRule[] = [
+	{ protocol: 'any', ports: '', cidrs: [PRIVATE_NETWORK] },
+	{ protocol: 'icmp', ports: '', cidrs: ANYWHERE },
+]
+const allow = (...ports: string[]): FirewallRule[] => [
+	...DEFAULT_INBOUND,
+	...ports.map((port) => ({
+		protocol: 'tcp' as const,
+		ports: port,
+		cidrs: ANYWHERE,
+	})),
+]
 
-/** Starting rule sets. Each one lets the server reach the internet. */
+/** Starting rule sets. Each one keeps the private network and ping, and lets the server reach the internet. */
 export const PRESETS: { label: string; rules: FirewallRules }[] = [
 	{
 		label: 'Web server',
@@ -59,7 +74,10 @@ export const PRESETS: { label: string; rules: FirewallRules }[] = [
 		label: 'SSH only',
 		rules: { inbound: allow('22'), outbound: ALL_OUTBOUND },
 	},
-	{ label: 'Private only', rules: { inbound: [], outbound: ALL_OUTBOUND } },
+	{
+		label: 'Private only',
+		rules: { inbound: allow(), outbound: ALL_OUTBOUND },
+	},
 ]
 
 export function getService(rule: FirewallRule): FirewallService {
@@ -81,10 +99,41 @@ export function getPortLabel(rule: FirewallRule): string {
 	return `${rule.protocol.toUpperCase()} ${rule.ports || 'all'}`
 }
 
-export function getAddressLabel(cidr: string): string {
+/** A readable name for an address range. `names` maps a device address to its name. */
+export function getAddressLabel(
+	cidr: string,
+	names: Record<string, string> = {},
+): string {
 	if (cidr === ANYWHERE_IPV4) return 'Anywhere (IPv4)'
 	if (cidr === ANYWHERE_IPV6) return 'Anywhere (IPv6)'
-	return cidr
+	if (cidr === PRIVATE_NETWORK) return 'Private network'
+	if (cidr === WIREGUARD_NETWORK) return 'All WireGuard VPN devices'
+	return names[cidr] ?? cidr
+}
+
+// The web console and the regional proxy use more than one port, so only All traffic keeps them.
+const allowsPrivateNetwork = (rules: FirewallRule[]): boolean =>
+	rules.some(
+		(rule) =>
+			rule.protocol === 'any' &&
+			rule.cidrs.some((cidr) =>
+				[PRIVATE_NETWORK, ANYWHERE_IPV6].includes(cidr),
+			),
+	)
+
+/** An enabled firewall lets WireGuard VPN devices in only through a rule that names them. */
+export function isBlockingWireGuard(
+	isEnabled: boolean,
+	inbound: FirewallRule[],
+): boolean {
+	if (!isEnabled) return false
+	return !inbound.some(
+		(rule) =>
+			rule.protocol !== 'icmp' &&
+			rule.cidrs.some(
+				(cidr) => cidr === ANYWHERE_IPV6 || cidr.startsWith('fdac:'),
+			),
+	)
 }
 
 /** A single address becomes a one-address range, the form Atlas stores. */
@@ -228,9 +277,27 @@ export function getFirewallTexts(before: Firewall, after: Firewall): string[] {
 		return before.enabled ? ['Every port will be open to the internet.'] : []
 
 	const warnings: string[] = []
+	const hasPrivate = allowsPrivateNetwork(after.inbound)
+	if (!hasPrivate && (!before.enabled || allowsPrivateNetwork(before.inbound)))
+		warnings.push(
+			"No rule allows the private network, so the web console, the regional proxy and your other servers can't reach this server. Sites stop loading through the proxy.",
+		)
+	const allowsPing = (rules: FirewallRule[]) =>
+		rules.some(
+			(rule) =>
+				['icmp', 'any'].includes(rule.protocol) &&
+				rule.cidrs.includes(ANYWHERE_IPV6),
+		)
+	if (
+		!allowsPing(after.inbound) &&
+		(!before.enabled || allowsPing(before.inbound))
+	)
+		warnings.push('No rule allows ping, so some IPv6 connections can fail.')
 	if (!opensSSH(after.inbound) && (!before.enabled || opensSSH(before.inbound)))
 		warnings.push(
-			'No rule allows SSH, so SSH connections will stop. The web console still works.',
+			hasPrivate
+				? 'No rule allows SSH, so SSH connections will stop. The web console still works.'
+				: 'No rule allows SSH, so SSH connections will stop.',
 		)
 	if (!after.outbound.length && (!before.enabled || before.outbound.length))
 		warnings.push(

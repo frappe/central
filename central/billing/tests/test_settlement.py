@@ -37,6 +37,7 @@ GATEWAY = "Stripe"
 @contextmanager
 def stub_adapter(success=True, txn_id="pi_x"):
 	adapter = MagicMock()
+	adapter.prepare_charge.return_value = None  # Stripe-like: no order to store
 	adapter.charge.return_value = PaymentResult(
 		success=success,
 		status="Captured" if success else "Failed",

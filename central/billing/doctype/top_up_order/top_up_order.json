@@ -1,0 +1,203 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "format:TU-{YY}{MM}-{#####}",
+ "naming_rule": "Expression",
+ "creation": "2026-10-24 00:00:00.000000",
+ "description": "A wallet top-up Central asked a gateway for, stored before the payer acts. A gateway payment credits the wallet only through this record, for its team and its amount.",
+ "doctype": "DocType",
+ "editable_grid": 0,
+ "engine": "InnoDB",
+ "field_order": [
+  "team",
+  "gateway",
+  "status",
+  "column_break_amount",
+  "currency",
+  "credit",
+  "gst",
+  "total",
+  "section_break_gateway",
+  "gateway_order_id",
+  "gateway_payment_id",
+  "column_break_gateway",
+  "ledger_entry",
+  "section_break_failure",
+  "failed_attempts",
+  "last_failed_at",
+  "column_break_failure",
+  "failure_code",
+  "decline_code",
+  "failure_reason"
+ ],
+ "fields": [
+  {
+   "fieldname": "team",
+   "fieldtype": "Link",
+   "options": "Team",
+   "label": "Team",
+   "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "search_index": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "gateway",
+   "fieldtype": "Link",
+   "options": "Payment Gateway",
+   "label": "Gateway",
+   "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "options": "Created\nCredited\nFailed\nExpired",
+   "default": "Created",
+   "label": "Status",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_amount",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "currency",
+   "fieldtype": "Link",
+   "options": "Currency",
+   "label": "Currency",
+   "reqd": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "credit",
+   "fieldtype": "Currency",
+   "options": "currency",
+   "label": "Wallet Credit",
+   "description": "What the wallet gets. Blank for a hosted checkout, whose payment is split into credit and GST at the rate on the day it is paid.",
+   "read_only": 1
+  },
+  {
+   "fieldname": "gst",
+   "fieldtype": "Currency",
+   "options": "currency",
+   "label": "GST",
+   "read_only": 1
+  },
+  {
+   "fieldname": "total",
+   "fieldtype": "Currency",
+   "options": "currency",
+   "label": "Amount Charged",
+   "description": "The amount the gateway order asks the payer for. A payment below it credits nothing.",
+   "in_list_view": 1,
+   "reqd": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_break_gateway",
+   "fieldtype": "Section Break",
+   "label": "Gateway"
+  },
+  {
+   "fieldname": "gateway_order_id",
+   "fieldtype": "Data",
+   "label": "Gateway Order ID",
+   "description": "The Razorpay order, Stripe PaymentIntent or Checkout Session, or PayPal order this top-up was created as. A payment settles this top-up only when it belongs to this id.",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "gateway_payment_id",
+   "fieldtype": "Data",
+   "label": "Gateway Payment ID",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_gateway",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "ledger_entry",
+   "fieldtype": "Link",
+   "options": "Credit Ledger Entry",
+   "label": "Ledger Entry",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_break_failure",
+   "fieldtype": "Section Break",
+   "label": "Last Failure",
+   "collapsible": 1,
+   "collapsible_depends_on": "eval:doc.failed_attempts || doc.failure_reason"
+  },
+  {
+   "default": "0",
+   "description": "How many payments on this order the gateway declined.",
+   "fieldname": "failed_attempts",
+   "fieldtype": "Int",
+   "label": "Failed Attempts",
+   "read_only": 1
+  },
+  {
+   "fieldname": "last_failed_at",
+   "fieldtype": "Datetime",
+   "label": "Last Failed At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_failure",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "The gateway's error code, such as card_declined.",
+   "fieldname": "failure_code",
+   "fieldtype": "Data",
+   "in_standard_filter": 1,
+   "label": "Failure Code",
+   "read_only": 1
+  },
+  {
+   "description": "The bank's reason for a decline, such as insufficient_funds.",
+   "fieldname": "decline_code",
+   "fieldtype": "Data",
+   "label": "Decline Code",
+   "read_only": 1
+  },
+  {
+   "fieldname": "failure_reason",
+   "fieldtype": "Small Text",
+   "label": "Failure Reason",
+   "read_only": 1,
+   "description": "The gateway's message for the latest declined payment, or why the order failed."
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-10-28 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Billing",
+ "name": "Top-up Order",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager"
+  }
+ ],
+ "search_fields": "gateway_order_id,gateway_payment_id",
+ "show_title_field_in_link": 0,
+ "title_field": "team",
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

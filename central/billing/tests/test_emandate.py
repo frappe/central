@@ -83,6 +83,16 @@ class TestEmandatePredebit(IntegrationTestCase):
 			frappe.db.exists("Billing Notification Log", {"team": TEAM, "event_type": "Pre-debit Notice"})
 		)
 
+	def test_a_prepaid_team_with_a_mandate_is_still_debited(self):
+		_set_mode(TEAM, "Prepaid")
+		out = emandate.schedule_predebit(self._invoice(5000), now="2026-06-10 09:00:00")
+		self.assertTrue(out["notified"])
+
+	def test_manual_checkout_is_never_debited(self):
+		_set_mode(TEAM, "Manual Checkout")
+		out = emandate.schedule_predebit(self._invoice(5000), now="2026-06-10 09:00:00")
+		self.assertEqual(out["skipped"], "debit_not_allowed")
+
 	def test_schedule_is_idempotent(self):
 		inv = self._invoice(5000)
 		emandate.schedule_predebit(inv, now="2026-06-10 09:00:00")
@@ -112,6 +122,7 @@ class TestEmandatePredebit(IntegrationTestCase):
 		emandate.schedule_predebit(inv, now="2026-06-10 09:00:00")  # window opens 06-11 09:00
 
 		adapter = MagicMock()
+		adapter.prepare_charge.return_value = None  # Stripe-like: no order to store
 		adapter.charge.return_value = PaymentResult(
 			success=True, status="Captured", gateway_transaction_id="pay_e"
 		)
@@ -126,6 +137,23 @@ class TestEmandatePredebit(IntegrationTestCase):
 			self.assertEqual(len(late), 1)
 			adapter.charge.assert_called_once()
 			self.assertEqual(frappe.db.count("Payment Attempt", {"invoice": inv}), 1)
+
+	def test_charge_due_reads_the_window_on_the_clock_it_is_given(self):
+		from unittest.mock import MagicMock, patch
+
+		from central.billing.gateways.base import PaymentResult
+
+		inv = self._invoice(5000)
+		emandate.schedule_predebit(inv, now="2099-06-10 09:00:00")
+		adapter = MagicMock()
+		adapter.prepare_charge.return_value = None
+		adapter.charge.return_value = PaymentResult(
+			success=True, status="Captured", gateway_transaction_id="p"
+		)
+		with patch("central.billing.gateways.registry.get_adapter", return_value=adapter):
+			emandate.charge_due(now="2099-06-11 10:00:00")
+		# charge_due reads the whole site, so count only this invoice's charge.
+		self.assertEqual(frappe.db.count("Payment Attempt", {"invoice": inv}), 1)
 
 
 class TestWhoOwesAPredebitNotice(IntegrationTestCase):

@@ -14,6 +14,8 @@ from central.central.doctype.central_sso_settings.central_sso_settings import Ce
 from central.errors import AtlasConnectionError, AtlasRequestUncertain
 from central.infrastructure.doctype.resource_action.resource_action import ResourceAction
 from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
+from central.integrations.object_storage import ObjectStorageRejected
+from central.integrations.pilot import delete_bundled_bucket
 from central.integrations.resource_actions import SERVER_PAGE_SIZE, _process_locked
 from central.resource_actions import get_status, server_count, submit_request, validate_trial
 from central.server_models import SiteCreation
@@ -294,6 +296,59 @@ class TestResourceActions(IntegrationTestCase):
 		self.assertIn("Traceback", diagnostic)
 		self.assertIn("AtlasConnectionError: region refused", diagnostic)
 		self.assertNotIn("region refused", action.error_message)
+
+	def bundle_bucket(self):
+		"""Give the region a bundled bucket and return the Cargo client it creates it with."""
+		frappe.db.set_value("Region", self.region.name, "max_storage_bundle_size", 10)
+		cargo = self.enterContext(patch("central.integrations.pilot.ObjectStorageClient")).from_region()
+		cargo.create_bucket.return_value = {"credentials": {"access_key": "a", "secret_access_key": "s"}}
+		self.enterContext(
+			patch(
+				"central.integrations.pilot.get_storage_endpoint_url", return_value="https://s3.example.test"
+			)
+		)
+		return cargo
+
+	def test_a_bucket_cargo_refuses_fails_the_creation_before_dispatch(self):
+		cargo = self.bundle_bucket()
+		cargo.create_bucket.side_effect = ObjectStorageRejected("taken")
+		name = self.submit()["action"]
+		_process_locked(name)
+
+		self.assertEqual(frappe.db.get_value("Resource Action", name, "status"), "Failed")
+		self.client.return_value.create_vm.assert_not_called()
+
+	def test_a_failed_creation_queues_its_bucket_for_deletion(self):
+		self.bundle_bucket()
+		name = self.submit()["action"]
+		self.client.return_value.create_vm.side_effect = AtlasConnectionError("region refused")
+		_process_locked(name)
+
+		frappe.enqueue.assert_any_call(
+			"central.integrations.pilot.delete_bundled_bucket", action=name, enqueue_after_commit=True
+		)
+
+	def test_the_bucket_of_a_failed_creation_is_deleted_unless_it_was_retried(self):
+		cargo = self.bundle_bucket()
+		name = self.submit()["action"]
+		bucket = f"{self.team.tenant_id}-{self.region.name.casefold()}-server-{name}"
+
+		frappe.db.set_value("Resource Action", name, "status", "Queued")
+		delete_bundled_bucket(name)
+		cargo.delete_bucket.assert_not_called()
+
+		frappe.db.set_value("Resource Action", name, "status", "Failed")
+		delete_bundled_bucket(name)
+		cargo.delete_bucket.assert_called_once_with(bucket)
+
+	def test_a_creation_clears_a_leftover_bucket_before_it_creates_one(self):
+		cargo = self.bundle_bucket()
+		name = self.submit()["action"]
+		_process_locked(name)
+
+		bucket = cargo.create_bucket.call_args.args[0]
+		cargo.delete_bucket.assert_called_once_with(bucket)
+		self.assertEqual(cargo.method_calls[0][0], "delete_bucket")
 
 	def test_retry_is_refused_without_a_saved_configuration(self):
 		name = self.submit()["action"]

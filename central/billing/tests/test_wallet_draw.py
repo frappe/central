@@ -162,17 +162,17 @@ class TestTopUpSplit(WalletDrawTestCase):
 		row = self._purchase(11800)
 		self.assertEqual((row.amount, row.tax_amount), (10000, 1800))
 
-	def test_a_webhook_carries_the_ordered_credit(self):
-		from central.billing.payments.charges import _extract_topup
+	def test_a_top_up_order_credits_its_stored_split(self):
+		"""The split is fixed on the order before the payer acts, not read from the payment."""
+		from central.billing.doctype.top_up_order.top_up_order import TopupOrder
+		from central.billing.gateways.base import VerifiedPayment
 
-		payload = {
-			"data": {
-				"object": {
-					"id": "pi_1",
-					"amount_received": 1180000,
-					"currency": "inr",
-					"metadata": {"purpose": "wallet_topup", "team": TEAM, "credit": "10000"},
-				}
-			}
-		}
-		self.assertEqual(_extract_topup("Stripe", payload)["credit"], "10000")
+		order = TopupOrder.start(TEAM, "Stripe", "INR", 11800, credit=10000, gst=1800)
+		order.record_gateway_order("pi_split")
+		frappe.db.set_value("Tax Profile", TEAM, "output_tax_rate", 12)  # changed after the order
+
+		entry = order.credit_wallet(VerifiedPayment("pi_split", True, 11800, "INR", order_id="pi_split"))[
+			"ledger_entry"
+		]
+		row = frappe.db.get_value("Credit Ledger Entry", entry, ["amount", "tax_amount"], as_dict=True)
+		self.assertEqual((row.amount, row.tax_amount), (10000, 1800))

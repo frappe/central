@@ -194,7 +194,8 @@ def provision_composed_subscription(
 	# Re-check the config fits the team's remaining headroom (#83) — the client bounds
 	# are a convenience, the server is the gate.
 	currency = frappe.db.get_value("Billing Profile", team, "currency")
-	enforce_headroom(team, resolve_config_rate(includes, currency, cluster))
+	# Locked, so two parallel requests cannot both spend the same headroom.
+	enforce_headroom(team, resolve_config_rate(includes, currency, cluster), for_update=True)
 	resource_id = resource_id or f"res-{frappe.generate_hash(length=10)}"
 	sub = create_subscription(
 		team,
@@ -425,35 +426,53 @@ def begin_resize(
 	doc = frappe.get_doc("Subscription", subscription)
 	if not _is_resizable(doc):
 		return {"queued": False, "resized": False}
-	server = (
-		frappe.db.get_value(
-			"Virtual Machine",
-			doc.server_id,
-			[
-				"region",
-				"status",
-				"atlas_vm_id",
-				"title",
-				"plan",
-				"vcpus",
-				"memory_megabytes",
-				"disk_gigabytes",
-			],
-			as_dict=True,
-			for_update=True,
-		)
-		if doc.server_id
-		else None
-	)
+	server = _locked_server(doc.server_id)
 	if server and (pending := ResourceAction.get_pending(doc.server_id, "resize")):
 		return {"queued": True, "resized": True, **pending.customer_status()}
 
+	is_live = _is_live_for_resize(server)
+	_require_resize_target(doc, server, plan, includes)
+	target = _resize_target(doc, plan, includes, sub_category, disk_gigabytes)
+	shape = _plan_resize(doc, server, target.plan, target.includes, target.sub_category, target.override_rate)
+	if shape is None:
+		return {"queued": False, "resized": False}  # same config — nothing to do
+
+	# No live VM to reshape → re-lock the contract inline (nothing slow to defer).
+	if not is_live:
+		_relock_resize(subscription, target, changed_by)
+		return {"queued": False, "resized": True}
+
+	action = _queue_resize(doc, server, target, shape, changed_by)
+	return {"queued": True, "resized": True, **action.customer_status()}
+
+
+def _locked_server(server_id: str | None):
+	"""The server a resize reshapes, locked so two resizes cannot both pass the checks."""
+	if not server_id:
+		return None
+	fields = [
+		"region",
+		"status",
+		"atlas_vm_id",
+		"title",
+		"plan",
+		"vcpus",
+		"memory_megabytes",
+		"disk_gigabytes",
+	]
+	return frappe.db.get_value("Virtual Machine", server_id, fields, as_dict=True, for_update=True)
+
+
+def _is_live_for_resize(server) -> bool:
+	"""Whether the resize must reshape a VM. One without a regional identity cannot be reshaped."""
 	is_live = bool(server and server.status in ("Running", "Paused", "Stopped"))
 	if is_live and not server.atlas_vm_id:
 		frappe.throw(frappe._("This server has no verified regional identity."))
+	return is_live
 
-	_require_resize_target(doc, server, plan, includes)
 
+def _resize_target(doc, plan, includes, sub_category, disk_gigabytes) -> frappe._dict:
+	"""What the resize moves to, after the console's disk choice is applied."""
 	# A plan's own disk is what a new server is created with. Resize keeps the
 	# current disk, or grows it, and refuses a plan whose disk is smaller.
 	original_plan = plan
@@ -462,48 +481,48 @@ def begin_resize(
 	# price plus the disk rate for the extra GB — never the cheaper à-la-carte total.
 	preset_plan = original_plan if original_plan and plan is None else None
 	override_rate = _preset_plus_disk_rate(doc, preset_plan, disk_gigabytes) if preset_plan else None
-	shape = _plan_resize(doc, server, plan, includes, sub_category, override_rate)
-	if shape is None:
-		return {"queued": False, "resized": False}  # same config — nothing to do
+	return frappe._dict(
+		plan=plan,
+		includes=includes or [],
+		sub_category=sub_category,
+		preset_plan=preset_plan,
+		override_rate=override_rate,
+	)
 
-	# No live VM to reshape → re-lock the contract inline (nothing slow to defer).
-	if not is_live:
-		if plan:
-			resize_to_plan(subscription, plan, changed_by=changed_by)
-		else:
-			resize_composed_subscription(
-				subscription,
-				includes or [],
-				sub_category,
-				changed_by=changed_by,
-				override_rate=override_rate,
-				preset_plan=preset_plan,
-			)
-		return {"queued": False, "resized": True}
 
+def _relock_resize(subscription: str, target: frappe._dict, changed_by: str | None) -> None:
+	if target.plan:
+		resize_to_plan(subscription, target.plan, changed_by=changed_by)
+		return
+	resize_composed_subscription(
+		subscription,
+		target.includes,
+		target.sub_category,
+		changed_by=changed_by,
+		override_rate=target.override_rate,
+		preset_plan=target.preset_plan,
+	)
+
+
+def _queue_resize(doc, server, target: frappe._dict, shape: dict, changed_by: str | None) -> ResourceAction:
+	"""Persist the resize for the integration worker, which reshapes the VM and then re-locks billing."""
 	from central.server_models import ResizeConfiguration
 
 	configuration = ResizeConfiguration.model_validate(
 		{
-			"subscription": subscription,
-			"plan": plan,
-			"includes": includes or [],
-			"sub_category": sub_category,
-			"override_rate": float(override_rate) if override_rate is not None else None,
-			"preset_plan": preset_plan,
+			"subscription": doc.name,
+			"plan": target.plan,
+			"includes": target.includes,
+			"sub_category": target.sub_category,
+			"override_rate": float(target.override_rate) if target.override_rate is not None else None,
+			"preset_plan": target.preset_plan,
 			"shape": shape,
 			"from_plan": server.plan,
-			"from_shape": {
-				"vcpus": float(server.vcpus),
-				"memory_megabytes": int(server.memory_megabytes),
-				"disk_gigabytes": int(server.disk_gigabytes),
-			}
-			if server.vcpus and server.memory_megabytes and server.disk_gigabytes
-			else None,
+			"from_shape": get_server_shape(server),
 		}
 	)
 	# Billing validated the target and the route already checked server:resize.
-	action = ResourceAction.queue(
+	return ResourceAction.queue(
 		"resize",
 		doc.team,
 		server.region,
@@ -513,7 +532,17 @@ def begin_resize(
 		requested_by=changed_by,
 		request_payload=configuration.model_dump(),
 	)
-	return {"queued": True, "resized": True, **action.customer_status()}
+
+
+def get_server_shape(server) -> dict | None:
+	"""The shape the server runs now, or None while any part of it is unknown."""
+	if not (server.vcpus and server.memory_megabytes and server.disk_gigabytes):
+		return None
+	return {
+		"vcpus": float(server.vcpus),
+		"memory_megabytes": int(server.memory_megabytes),
+		"disk_gigabytes": int(server.disk_gigabytes),
+	}
 
 
 def _require_resize_target(doc, server, plan: str | None, includes: list | None) -> None:
@@ -546,8 +575,12 @@ def _require_offered_plan(doc, plan: str, region: str | None) -> None:
 
 
 def apply_resize_billing(action) -> None:
-	"""Re-lock billing after the integration worker confirmed the target shape."""
+	"""Re-lock billing after the integration worker confirmed the target shape. A converted
+	trial's move has no subscription to re-lock: the server opens one on the paid plan it now runs."""
 	configuration = action.get_resize_configuration()
+	if not configuration.subscription:
+		frappe.get_doc("Virtual Machine", action.server).ensure_subscription_enabled()
+		return
 	if configuration.plan:
 		resize_to_plan(
 			configuration.subscription,
@@ -576,7 +609,7 @@ def _plan_resize(doc, server, plan, includes, sub_category, override_rate=None) 
 	if plan:
 		if doc.pricing_mode == "Preset" and doc.plan == plan:
 			return None
-		shape = _plan_shape(plan)
+		shape = get_plan_shape(plan)
 		new_rate = frappe.get_doc("Plan", plan).get_rate(currency, cluster)
 	else:
 		from central.billing.catalog.composition import composition_quantities
@@ -631,7 +664,7 @@ def _resize_disk_choice(plan, includes, sub_category, disk_gigabytes):
 		return plan, includes, sub_category
 
 	disk_gigabytes = frappe.utils.cint(disk_gigabytes)
-	if disk_gigabytes == _plan_shape(plan)["disk_gigabytes"]:
+	if disk_gigabytes == get_plan_shape(plan)["disk_gigabytes"]:
 		return plan, includes, sub_category
 
 	rows = [dict(row) for row in _plan_includes(plan) if row["resource_type"] != "Disk"]
@@ -661,7 +694,7 @@ def _preset_plus_disk_rate(doc, plan: str, disk_gigabytes) -> float | None:
 	base = frappe.get_doc("Plan", plan).get_rate(currency, cluster)
 	if base is None:
 		return None
-	extra = max(0, frappe.utils.cint(disk_gigabytes) - _plan_shape(plan)["disk_gigabytes"])
+	extra = max(0, frappe.utils.cint(disk_gigabytes) - get_plan_shape(plan)["disk_gigabytes"])
 	if not extra:
 		return base
 	return base + extra * frappe.utils.flt(resolve_component_rate("Disk", currency, cluster) or 0)
@@ -754,7 +787,7 @@ def resize_to_plan(
 	return change_plan(subscription, new_plan, changed_by=changed_by)
 
 
-def _plan_shape(plan: str) -> dict:
+def get_plan_shape(plan: str) -> dict:
 	"""A preset Plan's bundled size as the _server_shape dict (vcpus/memory/disk)."""
 	includes = frappe.get_all(
 		"Plan Includes",
@@ -771,13 +804,7 @@ def _validate_resize_shape(
 	profile minimum. CPU and memory the server runs now, or that `preset_plan` sells,
 	need only the disk checks, even when that shape is not what a new config would
 	be allowed to design."""
-	from central.billing.catalog.composition import (
-		COMPUTE,
-		DISK,
-		MEMORY,
-		composition_quantities,
-		validate_composition,
-	)
+	from central.billing.catalog.composition import DISK, composition_quantities, validate_composition
 
 	if not server_id:
 		validate_composition(profile, rows)
@@ -788,29 +815,45 @@ def _validate_resize_shape(
 		)
 		or frappe._dict()
 	)
-	qty = composition_quantities(rows)
-	current_disk = frappe.utils.cint(current.disk_gigabytes)
-	new_disk = frappe.utils.flt(qty.get(DISK, 0))
-	same_compute = frappe.utils.flt(qty.get(COMPUTE, 0)) == frappe.utils.flt(current.vcpus) and (
-		frappe.utils.flt(qty.get(MEMORY, 0)) == frappe.utils.flt(current.memory_megabytes) / 1024
-	)
-	if same_compute or preset_plan:
-		_guard_disk_shrink(server_id, {"disk_gigabytes": int(new_disk)})
-		disk_max = frappe.utils.flt(frappe.db.get_value("Plan Sub-Category", profile, "disk_max"))
-		if disk_max and new_disk > disk_max:
-			frappe.throw(
-				frappe._("Disk {0} GB exceeds the {1} maximum of {2} GB.").format(
-					frappe.utils.flt(new_disk), profile, disk_max
-				)
-			)
+	quantities = composition_quantities(rows)
+	new_disk = frappe.utils.flt(quantities.get(DISK, 0))
+	if preset_plan or _is_same_compute(quantities, current):
+		_validate_resize_disk(profile, server_id, new_disk)
 		return
+	if new_disk == frappe.utils.cint(current.disk_gigabytes):
+		rows = _kept_disk_at_profile_minimum(profile, rows)
+	validate_composition(profile, rows)
+
+
+def _is_same_compute(quantities: dict, current) -> bool:
+	"""Whether a resize keeps the CPU and memory the server runs now."""
+	from central.billing.catalog.composition import COMPUTE, MEMORY
+
+	same_vcpus = frappe.utils.flt(quantities.get(COMPUTE, 0)) == frappe.utils.flt(current.vcpus)
+	memory_gigabytes = frappe.utils.flt(current.memory_megabytes) / 1024
+	return same_vcpus and frappe.utils.flt(quantities.get(MEMORY, 0)) == memory_gigabytes
+
+
+def _validate_resize_disk(profile: str, server_id: str, new_disk: float) -> None:
+	"""The disk checks alone: no shrink, and no more than the profile maximum."""
+	_guard_disk_shrink(server_id, {"disk_gigabytes": int(new_disk)})
+	disk_max = frappe.utils.flt(frappe.db.get_value("Plan Sub-Category", profile, "disk_max"))
+	if disk_max and new_disk > disk_max:
+		frappe.throw(
+			frappe._("Disk {0} GB exceeds the {1} maximum of {2} GB.").format(
+				frappe.utils.flt(new_disk), profile, disk_max
+			)
+		)
+
+
+def _kept_disk_at_profile_minimum(profile: str, rows: list) -> list:
+	"""A kept disk below the profile minimum is checked as the minimum, so the server keeps it."""
+	from central.billing.catalog.composition import DISK, composition_quantities
+
 	disk_min = frappe.utils.flt(frappe.db.get_value("Plan Sub-Category", profile, "disk_min"))
-	check_rows = rows
-	if new_disk == current_disk and disk_min and new_disk < disk_min:
-		check_rows = [
-			{**row, "quantity": disk_min} if row.get("resource_type") == DISK else dict(row) for row in rows
-		]
-	validate_composition(profile, check_rows)
+	if not disk_min or composition_quantities(rows).get(DISK, 0) >= disk_min:
+		return rows
+	return [{**row, "quantity": disk_min} if row.get("resource_type") == DISK else dict(row) for row in rows]
 
 
 def _guard_disk_shrink(server_id: str, shape: dict) -> None:
@@ -982,8 +1025,10 @@ def locked_team_run_rate(team: str, exclude: str | None = None) -> float:
 
 	Two creates that read the same run rate both pass, and the team ends up running
 	more than it was cleared for. Reading the rows under a lock makes the second
-	caller wait for the first and then see what it committed.
+	caller wait for the first and then see what it committed. The Billing Profile row
+	is locked first, because a team with no subscription yet has no row to lock.
 	"""
+	frappe.db.get_value("Billing Profile", team, "name", for_update=True)
 	sub = frappe.qb.DocType("Subscription")
 	names = (
 		frappe.qb.from_(sub)
@@ -1112,6 +1157,17 @@ def resume_billing(subscription: str, changed_by: str | None = None):
 	_record_change(subscription, "Resumed", old_value=0, new_value=1, changed_by=changed_by)
 	_control_subscription_server(doc, "start")
 	return doc
+
+
+def mark_past_due(team: str) -> list[str]:
+	"""Move every Current subscription of an unpaid team to Past Due. An invoice bills the
+	whole team, so its standing is the team's, not one server's. Returns those moved."""
+	moved = frappe.get_all(
+		"Subscription", filters={"team": team, "account_standing": "Current"}, pluck="name"
+	)
+	for name in moved:
+		set_standing(name, "Past Due", changed_by="dunning")
+	return moved
 
 
 def suspend_for_nonpayment(team: str) -> list[str]:
@@ -1273,11 +1329,19 @@ def backfill_missing_subscriptions():
 	"""Daily job: create a Subscription for any Running VirtualMachine that lacks an
 	active one (e.g. the VirtualMachine's status was set Running outside the normal flow).
 	"""
+	from central.billing.platform.jobs import each_isolated
+
+	running_servers = frappe.get_all("Virtual Machine", filters={"status": "Running"}, pluck="name")
+	each_isolated("Subscription backfill", "Virtual Machine", running_servers, _backfill_server)
+
+
+def _backfill_server(server_id: str) -> None:
+	"""Create the server's Subscription unless it has an active one or its billing is deferred."""
 	from central.billing.doctype.subscription.subscription import create_subscription
 	from central.signups.trial import is_billing_deferred
 
-	running_servers = frappe.get_all("Virtual Machine", filters={"status": "Running"}, pluck="name")
-	for server_id in running_servers:
-		has_active_subscription = frappe.db.exists("Subscription", {"server_id": server_id, "enabled": 1})
-		if not has_active_subscription and not is_billing_deferred(server_id):
-			create_subscription(server_id)
+	if frappe.db.exists("Subscription", {"server_id": server_id, "enabled": 1}):
+		return
+	if is_billing_deferred(server_id):
+		return
+	create_subscription(server_id)

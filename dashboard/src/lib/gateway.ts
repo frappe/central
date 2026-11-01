@@ -60,8 +60,6 @@ export interface RazorpayHandles {
 	razorpay_order_id?: string
 	razorpay_payment_id?: string
 	razorpay_signature?: string
-	/** Present for recurring (UPI Autopay / card mandate) setups. */
-	razorpay_token_id?: string
 }
 
 interface RazorpayOptions {
@@ -123,7 +121,6 @@ export async function openRazorpayCheckout(
 					razorpay_order_id: resp.razorpay_order_id,
 					razorpay_payment_id: resp.razorpay_payment_id,
 					razorpay_signature: resp.razorpay_signature,
-					razorpay_token_id: resp.razorpay_token_id,
 				}),
 			modal: { ondismiss: () => reject(new Error('cancelled')) },
 		}

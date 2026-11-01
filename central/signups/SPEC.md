@@ -75,7 +75,7 @@ A trial server usually sleeps when idle, and Atlas does not stop a sleeping VM. 
 | A trial site from the signup flow, Team that has no payment method and has never paid | The Team's owner has fewer open trial sites (Active or Ended), pending trial site creations, and provisioned trial servers whose site Central has not recorded yet, across all the owner's Teams, than Central Settings, Trial Servers Limit. A new Team gives no new trials. No credit is needed. Otherwise Central refuses with `TRIAL_IN_PROGRESS`, which names the open trial. |
 | Any other server | A Team with an overdue invoice, or a subscription that is Past Due or Suspended, is refused with `PAYMENT_OVERDUE`. Otherwise credit covers the server's monthly rate, or the billing profile is complete and the Team has an active payment method, or the Team pays by Manual Checkout and has already paid one invoice by gateway. Otherwise Central refuses with `PAYMENT_METHOD_REQUIRED`. With Central Settings, Require Payment Method for Servers off, a complete billing profile is enough. |
 | Start an Ended trial's server | Refused. The Team adds a payment method and then chooses Keep this site, which converts the trial and starts the server. |
-| Resize a trial server | Refused, because a trial server has no subscription. The console resize dialog and the in-app plan list ask for a payment method first. `get_composed_config` returns `trial`, and `billing_api.change_plan` refuses with "Add a payment method to change this site's plan." |
+| Resize a trial server | Not done. A trial server has no subscription. On an open trial, `central.api.servers.resize_server` (which also needs `billing:manage`) and `billing_api.change_plan` keep the plan in Conversion Plan on the Site and resize nothing. The plan must be one of the trial's plan choices. `get_composed_config` returns `trial` and `trial_plans`. |
 
 ### Signup with an open trial
 
@@ -135,23 +135,31 @@ Central converts the Active trials one at a time, oldest first. Each one must fi
 
 A site becomes Converted in these steps:
 
-1. Central records Trial Cost: the plan's monthly rate, divided by 30, for each day since Central recorded the site.
-2. A running or sleeping server gets its subscription now. A stopped server gets it when it starts. Until then, `get_composed_config` returns `starting`, and the console resize dialog says the server is starting on its paid plan and checks again.
-3. A background job turns idle sleep off in Atlas, and starts the server when it is Stopped. When the team pays while the trial's stop job runs, the stop job queues this job again, so the server does not stay stopped. When a resize of the server is pending, the job writes a Trial Error and stops, because both jobs change the server's power. The daily job sends the conversion again.
+1. Central records Trial Cost: the server's plan's monthly rate, divided by 30, for each day since Central recorded the site.
+2. A running or sleeping server gets its subscription now. A stopped server gets it when it starts. A server on a trial plan gets it when it runs its paid plan, so the trial plan is never billed. Until then, `get_composed_config` returns `starting`, and the console resize dialog says the server is moving to its paid plan and checks again.
+3. A background job moves a server on a trial plan to its paid plan with a normal resize, which also turns idle sleep off and starts the server. The resize has no subscription to re-lock, so the server opens its subscription on the paid plan when the resize is done. For a server on any other plan, the job turns idle sleep off in Atlas, and starts the server when it is Stopped. When the team pays while the trial's stop job runs, the stop job queues this job again, so the server does not stay stopped. When a resize of the server is pending, the job writes a Trial Error and stops, because both jobs change the server's power. The daily job sends the conversion again.
 
-A trial is priced at its plan's catalog rate in the team's currency and the server's region, which is the rate its subscription charges. The rate reserved on the creation request is not its price: the customer accepted no quote at signup, the currency at signup is a guess before the billing profile exists, and a subscription keeps its opening rate. The spending-limit check, the rate held for a starting server, Trial Cost and the Upgrade dialog all use this one rate (`Trial.get_monthly_rate`).
+A plan marked Available on Trial is a trial plan. Only a free trial site starts on one, and every paid plan list leaves it out (`get_server_plans`). A trial on a trial plan converts onto a paid plan: the Site's Conversion Plan, which the customer picks in the in-app billing panel or the console Upgrade dialog, or else the cheapest plan in the trial's plan choices (`Trial.get_conversion_plan`). The plan choices are the paid plans that the team may resize to, no smaller than the trial plan, cheapest first (`Trial.get_plan_choices`). A trial on any other plan converts on it.
 
-After conversion, the plan menus of the server (console resize and in-app Change plan) leave out every plan with less vCPU or memory than the plan the trial was created on, because the product site needs at least that much (`get_trial_plan_floor`).
+A trial is priced at the catalog rate of the plan it converts to, in the team's currency and the server's region, which is the rate its subscription charges. The rate reserved on the creation request is not its price: the customer accepted no quote at signup, the currency at signup is a guess before the billing profile exists, and a subscription keeps its opening rate. The spending-limit check, the rate held for a starting server, Trial Cost and the Upgrade dialog all use this one rate (`Trial.get_monthly_rate`).
+
+The plan menus of a trial server (the plan choices, console resize and in-app Change plan) leave out every plan with less vCPU or memory than the plan the trial was created on, because the product site needs at least that much (`get_trial_plan_floor`).
 
 A Deleted trial is not converted, because its server is gone. Its Trial Cost runs to Trial Ends On.
 
 ### Upgrade dialog
 
-The console's Upgrade dialog on a trial server names the plan and its monthly rate before the customer adds a payment method. After the payment method is added, the dialog checks the trial again every 5 seconds for 2 minutes. An Active trial converts on its own plan, and the dialog then shows the resize plans under a heading that names the plan, for example "You're on the Starter plan", so the customer can choose a bigger size or close the dialog. An Ended trial is only kept: **Keep this site** starts the server on its own plan, and the resize plans show when the server runs.
+The console's Upgrade dialog on a trial server lists the trial's plan choices with their monthly rates, with the Conversion Plan or the cheapest one selected. **Add payment method**, **Keep this site** and, for a held trial, **Use this plan** first save the selected plan. After the payment method is added, the dialog checks the trial again every 5 seconds for 2 minutes. While the server moves to its paid plan, the dialog says so. An Ended trial is only kept: **Keep this site** moves the server to the selected plan and starts it.
 
 ### In-app status
 
-`central.billing.api.billing_api.get_billing_summary` returns `trial` for the site on the calling server: `state` (Active or Ended), `can_keep` (Ended, the Team has an active payment method, and the caller has `billing:manage`), `held` (Active, and the Team has an active payment method, so the spending limit holds it), `ends_on`, `days_left`, `deletes_on` and `plan`. `plan` is the plan the site converts to: `title`, `monthly_rate` (the plan's catalog rate in the team's currency and the server's region, which the subscription charges) and `currency`, or null when the site has no creation request. `trial` is null when the site has no open trial. The in-app billing panel shows it. On a server with several sites, the caller passes `site`, the Site's name. Without it, Central refuses the call.
+`central.billing.api.billing_api.get_billing_summary` returns `trial` for the site on the calling server: `state` (Active or Ended), `can_keep` (Ended, the Team has an active payment method, and the caller has `billing:manage`), `held` (Active, and the Team has an active payment method, so the spending limit holds it), `ends_on`, `days_left`, `deletes_on` and `plan`. `plan` is the plan the site converts to: `name`, `title`, `monthly_rate` (the plan's catalog rate in the team's currency and the server's region, which the subscription charges) and `currency`, or null when the site has no creation request. `trial` is null when the site has no open trial. The in-app billing panel also reads these values:
+
+| Value | Meaning |
+|---|---|
+| `plan_change` in `get_billing_summary` | The pending resize of the server, such as the move to the paid plan. `plan` is the plan title. `progress_url` is the waiting page. It is null when no resize is pending. |
+| `get_plan_options` on an open trial | The trial's plan choices, cheapest first. `selected` is the plan that the site converts to. |
+| `change_plan` on an open trial | Keeps the chosen plan in Conversion Plan. It resizes nothing. | On a server with several sites, the caller passes `site`, the Site's name. Without it, Central refuses the call.
 
 ### Desk
 

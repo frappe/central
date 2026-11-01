@@ -59,5 +59,11 @@ central.patches.v0_0.copy_error_logs_to_diagnostics
 central.patches.v0_0.seed_signup_image_minimum_age
 # A card with no mandate carries no mandate currency (it used to default to INR).
 central.patches.v0_0.clear_default_mandate_currency
-# A running trial's AI key is revoked 30 days after its assignment unless AI Settings says otherwise.
-central.patches.v0_0.seed_trial_key_revoke_after_days
+# A first payment is dated by paid_at. A Paid invoice from before that field gets one.
+central.patches.v0_0.backfill_invoice_paid_at
+# Report, without changing anything, billing data the October 2026 security fixes would have refused.
+central.patches.v0_0.report_billing_security_findings
+# Remove the hidden rule that let every WireGuard VPN device pass the firewall, from every live server at Atlas.
+central.patches.v0_0.remove_wireguard_device_firewall_rule
+# Existing server events keep their Pilot caller after the explicit reportable flag.
+central.patches.v0_0.mark_pilot_reportable_events

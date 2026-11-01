@@ -263,10 +263,25 @@ class PaymentGateway(Document):
 				_("Validate the gateway credentials before enabling it."),
 				title=_("Gateway Not Validated"),
 			)
+		# A webhook with no secret to check it against would be accepted from anyone. Checked
+		# when the gateway goes live or its secret changes, so an unrelated edit still saves.
+		if self.is_enabled and self._is_webhook_setup_changing() and not self._has_webhook_secret():
+			frappe.throw(
+				_("Register the webhook, or enter its secret, before enabling the gateway."),
+				title=_("Webhook Secret Missing"),
+			)
+
+	def _is_webhook_setup_changing(self) -> bool:
+		return self.has_value_changed("is_enabled") or self.has_value_changed("webhook_secret")
+
+	def _has_webhook_secret(self) -> bool:
+		"""Whether a webhook secret is set: typed now, stored (the field then holds a mask),
+		or in site config."""
+		return bool(self.webhook_secret or self.get_adapter().get_credential("webhook_secret"))
 
 	# --- admin actions -------------------------------------------------------
 
-	@frappe.whitelist()
+	@frappe.whitelist(methods=["POST"])
 	def pull_webhook_events(self) -> dict:
 		"""Read the endpoint from the gateway and list the events it sends."""
 		self.check_permission("write")
@@ -275,7 +290,7 @@ class PaymentGateway(Document):
 		self.save()
 		return self._webhook_report()
 
-	@frappe.whitelist()
+	@frappe.whitelist(methods=["POST"])
 	def update_webhook_events(self) -> dict:
 		"""Subscribe the endpoint to exactly the events Central needs, then read it back.
 		The signing secret does not change."""
@@ -318,7 +333,7 @@ class PaymentGateway(Document):
 			"expected_url": self.webhook_callback_url(),
 		}
 
-	@frappe.whitelist()
+	@frappe.whitelist(methods=["POST"])
 	def revalidate_and_register_webhook(self) -> dict:
 		"""Re-check the keys and register a new webhook endpoint with a new signing secret.
 

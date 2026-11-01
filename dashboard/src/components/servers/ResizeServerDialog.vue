@@ -32,6 +32,7 @@ const {
 	plansLoading,
 	resizable,
 	trial,
+	trialPlans,
 	starting,
 	nothingToShow,
 	resizeError,
@@ -132,6 +133,7 @@ const open = computed({
 				v-else-if="trial"
 				ref="trialPanel"
 				:trial="trial"
+				:plans="trialPlans"
 				:checking="configCall.loading"
 				:server-id="server?.resource_id ?? ''"
 				@check="awaitConversion"
@@ -140,7 +142,7 @@ const open = computed({
 				v-else-if="starting"
 				theme="blue"
 				title="Your payment method is confirmed"
-				description="We are starting your server on its paid plan. This takes about a minute, then the plans show here."
+				description="We are moving your server to its paid plan. This takes a few minutes, then the plans show here."
 			/>
 			<p
 				v-else-if="!resizable || nothingToShow"
@@ -247,11 +249,20 @@ const open = computed({
 					variant="solid"
 					icon-left="lucide-play"
 					label="Keep this site"
-					:loading="trialPanel?.keeping"
+					:disabled="!trialPanel?.canContinue"
+					:loading="trialPanel?.saving"
 					@click="trialPanel?.keep()"
 				/>
 				<Button
-					v-else-if="trial.held || trialPanel?.methodAdded"
+					v-else-if="trial.held"
+					variant="solid"
+					label="Use this plan"
+					:disabled="!trialPanel?.canContinue"
+					:loading="trialPanel?.saving || configCall.loading"
+					@click="trialPanel?.choosePlan()"
+				/>
+				<Button
+					v-else-if="trialPanel?.methodAdded"
 					label="Check again"
 					:loading="configCall.loading"
 					@click="configCall.reload()"
@@ -261,6 +272,8 @@ const open = computed({
 					variant="solid"
 					icon-left="lucide-credit-card"
 					label="Add payment method"
+					:disabled="!trialPanel?.canContinue"
+					:loading="trialPanel?.saving"
 					@click="trialPanel?.addMethod()"
 				/>
 			</div>

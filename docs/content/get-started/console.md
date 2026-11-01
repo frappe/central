@@ -54,9 +54,9 @@ To choose which events you get by email, see [Notifications](/account/notificati
 
 Click your name at the bottom of the sidebar.
 
-<Screenshot name="get-started/user-menu" alt="The user menu open above the name Zara Quill, with My profile, Theme, and Sign out." />
+<Screenshot name="get-started/user-menu" alt="The user menu open above the name Zara Quill, with Settings, Theme, and Sign out." />
 
-- **My profile** opens your name and photo.
+- **Settings** opens your profile and account settings.
 - **Theme** switches the console between light, dark, and your system setting.
 - **Sign out** ends your session on this device.
 
