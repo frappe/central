@@ -38,6 +38,8 @@ class AISettings(Document):
 	if TYPE_CHECKING:
 		from frappe.types import DF
 
+		from central.services.doctype.ai_trial_product.ai_trial_product import AITrialProduct
+
 		base_url: DF.Data | None
 		control_api_key: DF.Data | None
 		control_api_secret: DF.Password | None
@@ -45,7 +47,7 @@ class AISettings(Document):
 		pause_pool_refill: DF.Check
 		trial_key_cap: DF.Currency
 		trial_key_geography: DF.Data | None
-		trial_pool_size: DF.Int
+		trial_products: DF.Table[AITrialProduct]
 	# end: auto-generated types
 
 	@property
@@ -54,6 +56,9 @@ class AISettings(Document):
 
 	def validate(self) -> None:
 		self.base_url = (self.base_url or "").strip().rstrip("/")
+		products = [row.product for row in self.trial_products]
+		if len(products) != len(set(products)):
+			frappe.throw(_("One pool row per product."))
 
 	def on_update(self) -> None:
 		self.sync_webhook()

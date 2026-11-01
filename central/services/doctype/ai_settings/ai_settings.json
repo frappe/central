@@ -11,9 +11,10 @@
   "control_api_secret",
   "trials_tab",
   "trial_key_geography",
-  "trial_key_cap",
   "column_break_oabk",
-  "trial_pool_size",
+  "trial_key_cap",
+  "pools_section",
+  "trial_products",
   "pause_section",
   "pause_pool_refill",
   "pause_key_assignment"
@@ -56,13 +57,6 @@
    "label": "Trial Key Geography"
   },
   {
-   "default": "0",
-   "description": "How many trial keys Central keeps minted and ready for free-trial servers, under the Grove Team Central Trial; a job every 5 minutes refills the pool. 0 keeps the pool off: a trial server then gets no key.",
-   "fieldname": "trial_pool_size",
-   "fieldtype": "Int",
-   "label": "Trial Pool Size"
-  },
-  {
    "default": "2",
    "description": "What one trial key may spend for its whole life, whole USD. Sent with every mint; a change applies to keys minted after it.",
    "fieldname": "trial_key_cap",
@@ -72,6 +66,18 @@
   {
    "fieldname": "column_break_oabk",
    "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "pools_section",
+   "fieldtype": "Section Break",
+   "label": "Pools"
+  },
+  {
+   "description": "One row per product: how many trial keys Central keeps minted and ready for its free-trial servers, under the Grove Team Central Trial, and the Grove Model Group those keys add to the team's catalog. A job every 5 minutes refills every pool. A product without a row gets no key.",
+   "fieldname": "trial_products",
+   "fieldtype": "Table",
+   "label": "Trial Products",
+   "options": "AI Trial Product"
   },
   {
    "fieldname": "pause_section",
@@ -96,7 +102,7 @@
  "grid_page_length": 50,
  "issingle": 1,
  "links": [],
- "modified": "2026-10-29 00:00:00.000000",
+ "modified": "2026-11-01 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Services",
  "name": "AI Settings",
