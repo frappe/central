@@ -10,6 +10,8 @@ from central.billing.catalog.trials import trial_plan_names
 from central.iam import get_user_team_names, resolve_team
 from central.identity.doctype.team.team import Team
 from central.infrastructure.doctype.blocked_domain.blocked_domain import BlockedDomain, normalize_domain
+from central.infrastructure.doctype.region.region import Region
+from central.infrastructure.doctype.resource_action.resource_action import RETRYABLE_CREATE_STATES
 from central.integrations.images import list_images
 from central.resource_actions import submit_request
 from central.server_models import DNS_LABEL, SiteCreation
@@ -83,29 +85,29 @@ def _clip(value: str | None, length: int) -> str | None:
 	return (value.strip()[:length] or None) if isinstance(value, str) else None
 
 
-def validated_subdomain(subdomain: str) -> str:
+def validated_subdomain(subdomain: str, region: str | None = None) -> str:
 	"""The customer's name, or a refusal saying why it cannot be theirs."""
-	availability = subdomain_availability(subdomain)
+	availability = subdomain_availability(subdomain, region)
 	if not availability["available"]:
 		frappe.throw(availability["reason"])
 
 	return availability["subdomain"]
 
 
-def subdomain_availability(subdomain: str) -> dict:
-	"""Whether a name is free. It is checked in every trial zone, because the region a trial
-	lands in is chosen only when it is created."""
+def subdomain_availability(subdomain: str, region: str | None = None) -> dict:
+	"""Whether a name is free. A trial's name is checked in every trial zone, because the region
+	a trial lands in is chosen only when it is created. A template server's name is checked in
+	the zone of its `region`, where it is routed."""
 	subdomain = normalize_domain(subdomain)
 	answer = {"subdomain": subdomain}
+	regions = [region] if region else trial_regions()
+	domains = get_name_domains(subdomain, region)
 
 	if not DNS_LABEL.fullmatch(subdomain):
 		reason = _("Use lowercase letters, numbers and hyphens, starting and ending with one.")
-	elif any(
-		BlockedDomain.is_blocked(f"{subdomain}.{frappe.get_cached_value('Region', region, 'proxy_domain')}")
-		for region in trial_regions()
-	):
+	elif any(BlockedDomain.is_blocked(domain) for domain in domains):
 		reason = _("That name is reserved. Please choose another.")
-	elif is_subdomain_taken(subdomain):
+	elif is_subdomain_taken(subdomain, regions, domains):
 		reason = _("That name is taken. Please choose another.")
 	else:
 		return {**answer, "available": True, "reason": None}
@@ -113,19 +115,45 @@ def subdomain_availability(subdomain: str) -> dict:
 	return {**answer, "available": False, "reason": reason}
 
 
-def is_subdomain_taken(subdomain: str) -> bool:
-	"""Taken as the chosen name of a site on a live server, which exists before the rename
-	routes it, or as a route in any trial zone. A route holds its name until its removal
-	succeeds, even for a terminated server, because registration refuses a name in use."""
-	domains = [
-		f"{subdomain}.{frappe.get_cached_value('Region', region, 'proxy_domain')}"
-		for region in trial_regions()
+def get_name_domains(subdomain: str, region: str | None = None) -> list[str]:
+	"""The full names a new name must be free as: in the region's zone, or in every trial zone."""
+	if region:
+		return [f"{subdomain}.{Region.get_zone(region)}"]
+
+	return [
+		f"{subdomain}.{frappe.get_cached_value('Region', name, 'proxy_domain')}" for name in trial_regions()
 	]
+
+
+def is_subdomain_taken(subdomain: str, regions: list[str], domains: list[str]) -> bool:
+	"""Taken as:
+	1. the chosen name of a site on a live server, which exists before the rename routes it,
+	2. a route in one of `domains`. A route holds its name until its removal succeeds, even for
+	   a terminated server, because registration refuses a name in use,
+	3. the name of a template server creation in one of `regions` that is not over yet, or
+	   whose server is still live and not yet routed."""
 	site_filters = {"subdomain": subdomain, "server.status": ["!=", "Terminated"]}
 	if frappe.get_all("Site", filters=site_filters, limit=1):
 		return True
+	if domains and frappe.db.exists("Site Domain", {"name": ["in", domains]}):
+		return True
+	if not regions:
+		return False
 
-	return bool(domains) and bool(frappe.db.exists("Site Domain", {"name": ["in", domains]}))
+	return bool(
+		frappe.get_all(
+			"Resource Action",
+			filters={
+				"resource_type": "Server",
+				"action": "create",
+				"subdomain": subdomain,
+				"region": ["in", regions],
+				"status": ["not in", RETRYABLE_CREATE_STATES],
+			},
+			or_filters=[["server", "is", "not set"], ["server.status", "!=", "Terminated"]],
+			limit=1,
+		)
+	)
 
 
 def trial_zone(team: str, product: Product | None = None) -> str:

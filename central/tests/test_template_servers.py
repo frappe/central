@@ -13,6 +13,7 @@ from central.infrastructure.doctype.virtual_machine.virtual_machine import Virtu
 from central.integrations.pilot import METADATA_VALUE_BYTES
 from central.integrations.resource_actions import TEMPLATE_METADATA_KEY, _create_payload
 from central.resource_actions import _validate_site_name
+from central.site_provisioning import subdomain_availability
 from central.sso import central_url, mint_bootstrap_token, verify_template_ready_token
 from central.tests.test_server_network import creation_request
 
@@ -143,6 +144,36 @@ class TestTemplateServer(IntegrationTestCase):
 		journey = template.get_journey(self.action.name)
 
 		self.assertEqual((journey["phase"], journey["url"]), ("ready", None))
+
+	def is_free(self, region: str | None) -> bool:
+		return subdomain_availability(self.action.subdomain, region)["available"]
+
+	def test_a_template_name_is_held_until_its_creation_is_over(self) -> None:
+		self.assertFalse(self.is_free(self.region))
+
+		self.action.db_set({"status": "Queued", "server": None})
+		self.assertFalse(self.is_free(self.region))
+		self.assertFalse(self.is_free(None))
+
+		self.action.db_set("status", "Failed")
+		self.assertTrue(self.is_free(self.region))
+
+	def test_a_terminated_template_server_frees_its_unrouted_name(self) -> None:
+		self.server.db_set("status", "Terminated")
+
+		self.assertTrue(self.is_free(self.region))
+
+	def test_a_name_is_checked_in_the_zone_of_its_region(self) -> None:
+		with patch.object(frappe, "enqueue"):
+			template.insert_route(self.server.name)
+		# Only the route holds the name now.
+		self.server.db_set("status", "Terminated")
+
+		self.assertFalse(self.is_free(self.region))
+		self.assertTrue(self.is_free(f"other-{self.region}"))
+
+	def test_a_reserved_name_is_refused_in_a_region(self) -> None:
+		self.assertFalse(subdomain_availability("admin", self.region)["available"])
 
 
 @patch("central.resource_actions.frappe.get_doc")

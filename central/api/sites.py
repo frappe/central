@@ -81,11 +81,12 @@ def authorized_open_trial(team: str):
 @require_capability(
 	"server:create", _lt("You can't create sites for this Team. Ask a team admin to review your access.")
 )
-def check_subdomain(subdomain: str, team: str | None = None) -> dict:
-	"""Whether a name is free, while the customer is still typing it."""
+def check_subdomain(subdomain: str, team: str | None = None, region: str | None = None) -> dict:
+	"""Whether a name is free, while the customer is still typing it. A template server's name
+	passes its `region`."""
 	from central.site_provisioning import subdomain_availability
 
-	return subdomain_availability(subdomain)
+	return subdomain_availability(subdomain, region)
 
 
 @frappe.whitelist(methods=["POST"])

@@ -138,7 +138,7 @@ def submit_request(
 	if resource_type == "Server" and subdomain:
 		from central.site_provisioning import validated_subdomain
 
-		validated_subdomain(subdomain)
+		validated_subdomain(subdomain, server_input.region)
 
 	is_free_trial = is_free_trial_creation(server_input.team, site.product if site else None)
 	configuration, rate = _build_server_configuration(server_input, snapshot, is_free_trial)
