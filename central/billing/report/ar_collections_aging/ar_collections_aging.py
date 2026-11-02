@@ -81,7 +81,7 @@ def _bucket_for(days_overdue: int) -> str:
 
 
 def get_data(filters: dict, as_of):
-	conditions = {"status": ["in", ["Open", "Overdue"]], "expected_collection": [">", 0]}
+	conditions = {"status": ["in", ["Outstanding", "Overdue"]], "expected_collection": [">", 0]}
 	if filters.get("team"):
 		conditions["team"] = filters["team"]
 	if filters.get("currency"):

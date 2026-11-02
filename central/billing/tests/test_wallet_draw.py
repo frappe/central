@@ -36,7 +36,7 @@ class WalletDrawTestCase(IntegrationTestCase):
 				"doctype": "Invoice",
 				"team": TEAM,
 				"invoice_type": "Billable",
-				"status": "Draft",
+				"status": "Outstanding",
 				"period_start": start,
 				"period_end": str(frappe.utils.get_last_day(start)),
 				"currency": "INR",
@@ -70,7 +70,7 @@ class TestWalletDraw(WalletDrawTestCase):
 		self._top_up(11800)
 		self._open(8000, 8)
 		inv = self._open(5000, 9)  # 5,000 + 900 GST, with 2,000 + 360 left
-		self.assertEqual(self._state(inv), (2000, 2000, 360, 3540, "Open"))
+		self.assertEqual(self._state(inv), (2000, 2000, 360, 3540, "Outstanding"))
 		self.assertEqual(credits.get_balance(TEAM, "INR")["balance"], 0)
 		self.assertEqual(credits.advance_gst_balance(TEAM, "INR"), 0)
 

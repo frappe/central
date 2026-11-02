@@ -87,7 +87,7 @@ def schedule_predebit(invoice: str, now=None, gateway: str | None = None) -> dic
 		# A rail that debits without a notice is collected by the ordinary sweep. Arming
 		# a 24h window here would delay every international charge for nothing.
 		return {"invoice": invoice, "skipped": "no_notice_required"}
-	if inv.invoice_type != "Billable" or inv.status not in ("Open", "Overdue"):
+	if inv.invoice_type != "Billable" or inv.status not in ("Outstanding", "Overdue"):
 		return {"invoice": invoice, "skipped": "not_collectable"}
 	if frappe.utils.flt(inv.expected_collection) <= 0:
 		return {"invoice": invoice, "skipped": "nothing_due"}
@@ -138,8 +138,9 @@ def charge_due(now=None) -> list[dict]:
 		"Invoice",
 		filters=[
 			["invoice_type", "=", "Billable"],
-			["status", "in", ["Open", "Overdue"]],
+			["status", "in", ["Outstanding", "Overdue"]],
 			["expected_collection", ">", 0],
+			["due_date", "is", "set"],
 			["predebit_charge_after", "is", "set"],
 			["predebit_charge_after", "<=", now_dt],
 		],
@@ -161,8 +162,9 @@ def run_emandate_cycle(now=None) -> dict:
 		"Invoice",
 		filters=[
 			["invoice_type", "=", "Billable"],
-			["status", "in", ["Open", "Overdue"]],
+			["status", "in", ["Outstanding", "Overdue"]],
 			["expected_collection", ">", 0],
+			["due_date", "is", "set"],
 			["predebit_notified_at", "is", "not set"],
 		],
 		pluck="name",

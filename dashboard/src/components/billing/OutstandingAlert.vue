@@ -22,7 +22,7 @@ const outstanding = computed(
 )
 const openRows = computed(() =>
 	(props.statement?.rows ?? []).filter(
-		(r) => r.status === 'Open' || r.status === 'Overdue',
+		(r) => r.status === 'Outstanding' || r.status === 'Overdue',
 	),
 )
 const hasOutstanding = computed(() => outstanding.value > 0)

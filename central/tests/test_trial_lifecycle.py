@@ -153,7 +153,7 @@ class TestTrialLifecycle(TrialOnAMachine):
 		self.assertFalse(eligibility.is_free_trial_creation(self.team.name, None))
 
 	def test_a_team_that_has_paid_before_gets_no_free_trial(self):
-		invoice = frappe.get_doc({"doctype": "Invoice", "team": self.team.name, "status": "Draft"})
+		invoice = frappe.get_doc({"doctype": "Invoice", "team": self.team.name, "status": "Outstanding"})
 		invoice.db_insert()
 		self.assertTrue(eligibility.is_free_trial_creation(self.team.name, "raven"))
 

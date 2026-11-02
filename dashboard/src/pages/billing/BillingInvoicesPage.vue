@@ -84,7 +84,7 @@ watch(activeTeam, (team, previous) => {
 	shown.value = null
 })
 
-// Open OR Overdue is still collectable — an overdue invoice is the one the customer
+// Outstanding OR Overdue is still collectable — an overdue invoice is the one the customer
 // most needs to settle (dunning failed on the card), so it must offer Pay too.
 const canPay = computed(
 	() =>

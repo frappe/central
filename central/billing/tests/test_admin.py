@@ -105,7 +105,7 @@ class TestAdminGating(AdminTestBase):
 class TestAggregates(AdminTestBase):
 	def test_summary_billed_collected_outstanding(self):
 		self._invoice(TEAM_A, 1000, status="Paid")
-		self._invoice(TEAM_B, 500, status="Open", paid=0)
+		self._invoice(TEAM_B, 500, status="Outstanding", paid=0)
 		s = admin.get_summary("2099-01-01", "2099-01-31")
 		self.assertEqual(s["total_billed"], 1500)
 		self.assertEqual(s["total_collected"], 1000)
@@ -132,7 +132,7 @@ class TestAggregates(AdminTestBase):
 
 class TestPanels(AdminTestBase):
 	def test_payment_analytics_success_rate_and_reasons(self):
-		inv = self._invoice(TEAM_A, 100, status="Open", paid=0)
+		inv = self._invoice(TEAM_A, 100, status="Outstanding", paid=0)
 		# retry_number is part of the attempt's gateway key, so each attempt on one
 		# invoice carries its own — as the charge path does.
 		for retry, (status, code) in enumerate(

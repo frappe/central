@@ -84,9 +84,9 @@ class TestWebhookLag(BillingTestCase):
 
 class TestDunningRecovery(BillingTestCase):
 	def test_an_invoice_that_went_overdue_then_paid_counts_as_recovered(self):
-		_event("Invoice", "INV-A", "Open", "Overdue")
+		_event("Invoice", "INV-A", "Outstanding", "Overdue")
 		_event("Invoice", "INV-A", "Overdue", "Paid", day="2026-06-20")
-		_event("Invoice", "INV-B", "Open", "Overdue")
+		_event("Invoice", "INV-B", "Outstanding", "Overdue")
 
 		_columns, rows, _msg, _chart, _summary = dunning_recovery.execute(
 			{"from_date": "2026-06-01", "to_date": "2026-06-30"}
@@ -98,14 +98,14 @@ class TestDunningRecovery(BillingTestCase):
 		self.assertEqual(row["recovery_rate"], 50.0)
 
 	def test_an_invoice_paid_without_going_overdue_is_not_in_the_denominator(self):
-		_event("Invoice", "INV-C", "Open", "Paid")
+		_event("Invoice", "INV-C", "Outstanding", "Paid")
 		_columns, rows, _msg, _chart, _summary = dunning_recovery.execute(
 			{"from_date": "2026-06-01", "to_date": "2026-06-30"}
 		)
 		self.assertEqual(rows, [])
 
 	def test_a_recovery_after_the_window_still_counts(self):
-		_event("Invoice", "INV-D", "Open", "Overdue", day="2026-06-28")
+		_event("Invoice", "INV-D", "Outstanding", "Overdue", day="2026-06-28")
 		_event("Invoice", "INV-D", "Overdue", "Paid", day="2026-07-03")
 		_columns, rows, _msg, _chart, _summary = dunning_recovery.execute(
 			{"from_date": "2026-06-01", "to_date": "2026-06-30"}
@@ -124,7 +124,7 @@ class TestGatewayAuthRateOverTime(BillingTestCase):
 				{
 					"doctype": "Invoice",
 					"team": self.team,
-					"status": "Open",
+					"status": "Outstanding",
 					"period_start": "2026-05-01",
 					"period_end": "2026-05-31",
 					"currency": "USD",

@@ -215,7 +215,7 @@ class TestReadiness(IntegrationTestCase):
 				"period_start": period_end,
 				"period_end": period_end,
 				"currency": "INR",
-				"status": "Draft",
+				"status": "Outstanding",
 			}
 		).insert(ignore_permissions=True)
 		frappe.db.set_value("Invoice", invoice.name, "creation", frappe.utils.add_to_date(None, hours=-5))

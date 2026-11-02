@@ -75,3 +75,5 @@ central.patches.v0_0.seed_template_offering
 central.patches.v0_0.order_image_offerings
 # Subscriptions and usage rollups keep the region name from their creation. Move them off a renamed region.
 central.patches.v0_0.repoint_billing_records_to_renamed_region
+# Draft and Open invoices become Outstanding.
+central.patches.v0_0.merge_invoice_draft_and_open_into_outstanding

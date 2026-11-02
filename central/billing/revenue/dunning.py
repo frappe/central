@@ -167,7 +167,7 @@ def _retry_if_due(inv, schedule, now) -> dict | None:
 	other mode, Prepaid included, is retried."""
 	from central.billing.payments import collection, collection_mode
 
-	if inv.status != "Open" or not collection_mode.is_debit_allowed(inv.team):
+	if inv.status != "Outstanding" or not collection_mode.is_debit_allowed(inv.team):
 		return None
 	if not _is_retry_due(inv.name, schedule, now):
 		return None
@@ -201,7 +201,7 @@ def process_invoice_dunning(invoice_name: str, now=None) -> dict:
 	inv = frappe.get_doc("Invoice", invoice_name)
 	if inv.invoice_type != "Billable":
 		return {"invoice": invoice_name, "skipped": "Cost Report"}
-	if inv.status not in ("Open", "Overdue") or frappe.utils.flt(inv.expected_collection) <= 0:
+	if inv.status not in ("Outstanding", "Overdue") or frappe.utils.flt(inv.expected_collection) <= 0:
 		return {"invoice": invoice_name, "skipped": "nothing_due"}
 	if not inv.due_date:
 		return {"invoice": invoice_name, "skipped": "no_due_date"}
@@ -233,7 +233,7 @@ def process_invoice_dunning(invoice_name: str, now=None) -> dict:
 
 	# --- Day 7: Overdue + past_due, still running --------------------------
 	if "Overdue" in reached:
-		if inv.status == "Open":
+		if inv.status == "Outstanding":
 			transition(inv, "Overdue", reason="dunning: past due window elapsed", actor="scheduler")
 			save_billing_record(inv)
 			actions.append("overdue")
@@ -283,8 +283,9 @@ def run_dunning(now=None) -> list[dict]:
 	settle_internal_teams()
 	filters = [
 		["invoice_type", "=", "Billable"],
-		["status", "in", ["Open", "Overdue"]],
+		["status", "in", ["Outstanding", "Overdue"]],
 		["expected_collection", ">", 0],
+		["due_date", "is", "set"],
 	]
 	internal = frappe.get_all("Tax Profile", filters={"is_internal": 1}, pluck="team")
 	if internal:

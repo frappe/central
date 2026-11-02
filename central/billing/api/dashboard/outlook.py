@@ -115,8 +115,9 @@ def _next_collectable_invoice(team: str):
 		filters={
 			"team": team,
 			"invoice_type": "Billable",
-			"status": ["in", ("Open", "Overdue")],
+			"status": ["in", ("Outstanding", "Overdue")],
 			"expected_collection": [">", 0],
+			"due_date": ["is", "set"],
 		},
 		fields=["name", "expected_collection", "due_date", "period_end", "predebit_charge_after"],
 		order_by="due_date asc",

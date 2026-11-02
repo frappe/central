@@ -218,5 +218,5 @@ class TestLoadTwoPhase(IntegrationTestCase):
 
 		# Phase 2 opens each exactly once.
 		invoicing.open_drafts("2026-06-30")
-		opened = sum(1 for d in mine if frappe.db.get_value("Invoice", d, "status") == "Open")
+		opened = sum(1 for d in mine if frappe.db.get_value("Invoice", d, "status") == "Outstanding")
 		self.assertEqual(opened, self.N)

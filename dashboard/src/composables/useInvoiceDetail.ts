@@ -21,7 +21,9 @@ export function useInvoiceDetail() {
 	whenTeamReady(() => collection.reload())
 
 	const isPayable = computed(() =>
-		['open', 'overdue'].includes(String(detail.data?.status).toLowerCase()),
+		['outstanding', 'overdue'].includes(
+			String(detail.data?.status).toLowerCase(),
+		),
 	)
 	const isOverdue = computed(
 		() =>

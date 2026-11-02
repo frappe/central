@@ -206,8 +206,7 @@ export interface CreditLedgerEntry {
 // Mirrors the Invoice DocType's status Select options — keep in sync with
 // central/billing/doctype/invoice/invoice.json.
 export type InvoiceStatus =
-	| 'Draft'
-	| 'Open'
+	| 'Outstanding'
 	| 'Paid'
 	| 'Overdue'
 	| 'Waived'

@@ -30,8 +30,9 @@ def unpaid_invoices(filters: dict | None = None) -> list[frappe._dict]:
 	filters = filters or {}
 	conditions = {
 		"invoice_type": "Billable",
-		"status": ["in", ["Open", "Overdue"]],
+		"status": ["in", ["Outstanding", "Overdue"]],
 		"expected_collection": [">", 0],
+		"due_date": ["is", "set"],
 	}
 	if filters.get("currency"):
 		conditions["currency"] = filters["currency"]

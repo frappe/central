@@ -330,7 +330,7 @@ def generate_draft_invoices(period_start, period_end, enqueue: bool = False) -> 
 
 
 def draft_pages(cutoff, page_size: int = COLLECT_PAGE_SIZE):
-	"""Yield every still-Draft invoice for a month that closed on or before `cutoff`,
+	"""Yield every invoice not yet collected for a month that closed on or before `cutoff`,
 	one bounded page at a time.
 
 	`<=`, not `==`: collection sweeps every draft whose period has ended, not one exact
@@ -345,7 +345,12 @@ def draft_pages(cutoff, page_size: int = COLLECT_PAGE_SIZE):
 	while True:
 		page = frappe.get_all(
 			"Invoice",
-			filters={"status": "Draft", "period_end": ("<=", cutoff), "name": (">", after)},
+			filters={
+				"status": "Outstanding",
+				"due_date": ["is", "not set"],
+				"period_end": ("<=", cutoff),
+				"name": (">", after),
+			},
 			pluck="name",
 			order_by="name asc",
 			limit=page_size,
@@ -357,13 +362,13 @@ def draft_pages(cutoff, page_size: int = COLLECT_PAGE_SIZE):
 
 
 def drafts_to_settle(cutoff, page_size: int = COLLECT_PAGE_SIZE):
-	"""Every settleable Draft on or before `cutoff`, page by page, flattened."""
+	"""Every invoice not yet collected on or before `cutoff`, page by page, flattened."""
 	for page in draft_pages(cutoff, page_size):
 		yield from page
 
 
 def drafts_in_range(cutoff, after: str, until: str) -> list[str]:
-	"""The still-Draft invoices in one cursor slice `(after, until]`, for any month
+	"""The invoices not yet collected in one cursor slice `(after, until]`, for any month
 	that closed on or before `cutoff`.
 
 	Re-read at run time, not carried in the job: by the time a page job starts, some
@@ -373,7 +378,8 @@ def drafts_in_range(cutoff, after: str, until: str) -> list[str]:
 	return frappe.get_all(
 		"Invoice",
 		filters=[
-			["status", "=", "Draft"],
+			["status", "=", "Outstanding"],
+			["due_date", "is", "not set"],
 			["period_end", "<=", cutoff],
 			["name", ">", after],
 			["name", "<=", until],
@@ -394,7 +400,7 @@ def settle_draft_page(cutoff, after: str, until: str) -> dict:
 	with metrics.timed("billing.settle_page", cutoff=str(cutoff)) as counters:
 		counters.update(settled=0, held=0, failed=0)
 		for invoice in drafts_in_range(cutoff, after, until):
-			# Only a claimed invoice settled. A held draft stays Draft for the next
+			# Only a claimed invoice settled. A held invoice stays uncollected for the next
 			# run, and one another worker took is neither ours to count nor a failure.
 			result = settle_draft(invoice, counters) or {}
 			if result.get("held"):
@@ -406,14 +412,14 @@ def settle_draft_page(cutoff, after: str, until: str) -> dict:
 
 
 def open_drafts(cutoff, enqueue: bool = False) -> list[str]:
-	"""Phase-2 orchestrator: open every Draft for a month closed on or before `cutoff`.
+	"""Phase-2 orchestrator: collect every uncollected invoice for a month closed on or before `cutoff`.
 
 	Page jobs, not a job per invoice — same reason as drafting, plus one specific to
 	collection: a job per invoice puts the run's gateway concurrency at the mercy of
 	how many workers happen to be free. A page job holds its invoices and works them
 	in order, so in-flight charges never exceed the billing worker count.
 
-	Claiming Draft -> Open under a row lock already makes two workers on one invoice
+	Claiming the invoice under a row lock already makes two workers on one invoice
 	harmless; the deduplicated page job id keeps them from queueing at all. Because a
 	settled draft drops out of the scan, re-running this against the same cutoff only
 	ever picks up what is still owed — which is exactly what the daily sweep relies on.
@@ -471,7 +477,7 @@ def draft_monthly_invoices(today=None) -> dict:
 
 
 def collect_due_invoices(today=None) -> dict:
-	"""Tick 2 (hourly): open + collect every Draft whose month has already closed.
+	"""Tick 2 (hourly): collect every uncollected invoice whose month has already closed.
 
 	Daily, not a single tick a fixed few hours after drafting: at a million teams the
 	draft page jobs may still be finishing when collection first fires, and a one-shot
@@ -483,9 +489,9 @@ def collect_due_invoices(today=None) -> dict:
 	until nothing is owed: drafts that appeared after the previous sweep get collected on
 	the next one, and a draft a settle page left behind — this month's or an older run's
 	— is swept up rather than stranded. Once the run has drained it is a cheap indexed
-	no-op (no Draft for a closed period left to find).
+	no-op (no uncollected invoice for a closed period left to find).
 
-	`open_drafts` skips anything already Open/Paid, so re-firing never double-charges;
+	`open_drafts` skips anything already collecting or Paid, so re-firing never double-charges;
 	`settle_draft` defers dunning on failure, so a slow sweep never makes a customer late.
 	"""
 	_, period_end = billing_period(today)
@@ -531,7 +537,9 @@ def billing_run_status(today=None) -> dict:
 		).run(as_dict=True)
 	}
 	drafted = sum(n for status, n in counts.items() if status != "Cancelled")
-	pending_collection = counts.get("Draft", 0)
+	pending_collection = frappe.db.count(
+		"Invoice", {"period_end": period_end, "status": "Outstanding", "due_date": ["is", "not set"]}
+	)
 	return {
 		"period_start": str(period_start),
 		"period_end": str(period_end),
@@ -539,7 +547,7 @@ def billing_run_status(today=None) -> dict:
 		"drafted": drafted,
 		"pending_draft": max(teams - drafted, 0),
 		"pending_collection": pending_collection,
-		"collected": drafted - pending_collection,
+		"collected": drafted - pending_collection - counts.get("Waived", 0),
 		"by_status": counts,
 		# Error Log can live outside the site database, where `frappe.db.count` cannot reach it.
 		"failures": len(

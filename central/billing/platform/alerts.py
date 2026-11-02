@@ -105,7 +105,7 @@ def held_invoices() -> list[dict]:
 	accounting records that never synced, or a GSTIN never checked.
 
 	This is money we are not collecting on resources that are still running, and
-	nothing else surfaces it: the invoice stays Draft, so dunning never sees it.
+	nothing else surfaces it: the invoice has no due date, so dunning never sees it.
 	"""
 	from central.billing.revenue.invoicing.lifecycle import held_drafts
 
@@ -209,7 +209,7 @@ def unsettled_captures() -> list[dict]:
 		.select(attempt.name, attempt.team, attempt.currency, attempt.amount, attempt.invoice)
 		.where(
 			(attempt.status == "Captured")
-			& invoice.status.isin(("Open", "Overdue"))
+			& invoice.status.isin(("Outstanding", "Overdue"))
 			& (attempt.initiated_at < cutoff)
 		)
 		.limit(100)
@@ -237,7 +237,10 @@ def refused_charges() -> list[dict]:
 		.join(invoice)
 		.on(invoice.name == attempt.invoice)
 		.select(attempt.name, attempt.team, attempt.invoice, attempt.failure_reason)
-		.where((attempt.failure_code == decline.REQUEST_REFUSED) & invoice.status.isin(("Open", "Overdue")))
+		.where(
+			(attempt.failure_code == decline.REQUEST_REFUSED)
+			& invoice.status.isin(("Outstanding", "Overdue"))
+		)
 		.limit(100)
 		.run(as_dict=True)
 	)

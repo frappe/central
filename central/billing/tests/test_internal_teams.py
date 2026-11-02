@@ -133,7 +133,7 @@ class TestInternalTeams(IntegrationTestCase):
 		with patch.object(frappe, "get_doc", side_effect=collector_wins_the_race):
 			_mark_internal()
 
-		self.assertEqual(frappe.db.get_value("Invoice", open_invoice, "status"), "Open")
+		self.assertEqual(frappe.db.get_value("Invoice", open_invoice, "status"), "Outstanding")
 
 	def _payment_attempt(self, invoice):
 		return frappe.get_doc(
@@ -155,7 +155,8 @@ class TestInternalTeams(IntegrationTestCase):
 					"doctype": "Invoice",
 					"team": TEAM,
 					"invoice_type": "Billable",
-					"status": "Open",
+					"status": "Outstanding",
+					"due_date": "2026-12-31",
 					"period_start": "2026-07-01",
 					"period_end": "2026-07-31",
 					"currency": "INR",

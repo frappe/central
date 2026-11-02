@@ -19,7 +19,7 @@ def has_paid_before(team: str) -> bool:
 	its payment method lapses."""
 	return bool(
 		frappe.db.exists("Subscription", {"team": team})
-		or frappe.db.exists("Invoice", {"team": team, "status": ["not in", ("Draft", "Cancelled")]})
+		or frappe.db.exists("Invoice", {"team": team, "status": ["!=", "Cancelled"]})
 	)
 
 

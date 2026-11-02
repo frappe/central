@@ -50,7 +50,7 @@ class TestRepairBillingAuditFindings(IntegrationTestCase):
 
 		self._run_repair()
 
-		self.assertEqual(frappe.db.get_value("Invoice", invoice, "status"), "Open")
+		self.assertEqual(frappe.db.get_value("Invoice", invoice, "status"), "Outstanding")
 		self.assertTrue(frappe.db.get_value("Tax Profile", TEAM, "is_internal"))
 
 	def _staging_team_invoice(self, credit_applied=0):
@@ -61,7 +61,7 @@ class TestRepairBillingAuditFindings(IntegrationTestCase):
 					"doctype": "Invoice",
 					"team": TEAM,
 					"invoice_type": "Billable",
-					"status": "Open",
+					"status": "Outstanding",
 					"period_start": "2026-09-01",
 					"period_end": "2026-09-30",
 					"currency": "INR",

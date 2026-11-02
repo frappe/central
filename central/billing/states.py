@@ -48,9 +48,9 @@ INVOICE = StateMachine(
 	"Invoice",
 	"status",
 	{
-		# Opened, settled outright by credits, or waived for an internal team.
-		"Draft": {"Open", "Paid", "Cancelled", "Waived"},
-		"Open": {"Paid", "Overdue", "Cancelled", "Waived"},
+		# An invoice is Outstanding from creation. Its due date marks that collection began;
+		# until then it can be settled by credits, waived for an internal team, or cancelled.
+		"Outstanding": {"Paid", "Overdue", "Cancelled", "Waived"},
 		"Overdue": {"Paid", "Cancelled", "Waived"},
 		"Paid": {"Cancelled"},  # only by cancel-and-refund, which issues a credit note
 		"Cancelled": set(),  # terminal

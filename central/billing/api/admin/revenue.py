@@ -30,7 +30,7 @@ def get_summary(from_date: str | None = None, to_date: str | None = None) -> dic
 	outstanding = sum(
 		_to_inr(i.total, i.currency) - _to_inr(i.amount_paid, i.currency)
 		for i in invoices
-		if i.status in ("Open", "Overdue")
+		if i.status in ("Outstanding", "Overdue")
 	)
 	by_status = {}
 	for i in invoices:
@@ -141,13 +141,13 @@ def get_payment_analytics(from_date: str | None = None, to_date: str | None = No
 
 @frappe.whitelist()
 def get_overdue_aging(now: str | None = None) -> dict:
-	"""Outstanding Open/Overdue invoices bucketed by days overdue."""
+	"""Outstanding and Overdue invoices bucketed by days overdue."""
 	require_operator()
 	today = frappe.utils.getdate(now)
 	buckets = {label: {"count": 0, "amount": 0.0} for label, _lo, _hi in AGING_BUCKETS}
 	for inv in frappe.get_all(
 		"Invoice",
-		filters=[["status", "in", ["Open", "Overdue"]], ["invoice_type", "=", "Billable"]],
+		filters=[["status", "in", ["Outstanding", "Overdue"]], ["invoice_type", "=", "Billable"]],
 		fields=["total", "amount_paid", "due_date"],
 	):
 		if not inv.due_date:
@@ -198,15 +198,15 @@ def list_all_invoices(status: str | None = None, team: str | None = None, limit:
 	"""Global invoice list (admin) with optional status/team filters — the
 	drill-down target for the Collected / Outstanding cards.
 
-	`status` accepts a literal Invoice status (Paid/Open/Overdue/Draft/…) or the
-	pseudo-filters `outstanding` (Open+Overdue) and `paid`.
+	`status` accepts a literal Invoice status (Paid/Outstanding/Overdue/…) or the
+	pseudo-filters `outstanding` (Outstanding+Overdue) and `paid`.
 	"""
 	require_operator()
 	filters = {"invoice_type": "Billable"}
 	if team:
 		filters["team"] = team
 	if status == "outstanding":
-		filters["status"] = ["in", ["Open", "Overdue"]]
+		filters["status"] = ["in", ["Outstanding", "Overdue"]]
 	elif status == "paid":
 		filters["status"] = "Paid"
 	elif status:

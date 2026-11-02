@@ -94,7 +94,7 @@ class DunningTestBase(BillingTestCase):
 					"team": TEAM,
 					"subscription": sub,
 					"invoice_type": "Billable",
-					"status": "Open",
+					"status": "Outstanding",
 					"period_start": "2026-05-01",
 					"period_end": "2026-05-31",
 					"currency": "INR",
@@ -429,7 +429,7 @@ class TestOurDelayIsNotTheirDelinquency(DunningTestBase):
 		result = dunning.process_invoice_dunning(inv, now=day(7))
 
 		self.assertEqual(result["action"], "none")
-		self.assertEqual(frappe.db.get_value("Invoice", inv, "status"), "Open")
+		self.assertEqual(frappe.db.get_value("Invoice", inv, "status"), "Outstanding")
 		self.assertNotEqual(self._standing(sub), "Past Due")
 
 	def test_the_deferred_ladder_still_runs_from_the_fair_date(self):

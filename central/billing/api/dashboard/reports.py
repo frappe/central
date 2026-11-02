@@ -109,7 +109,7 @@ def get_statement(team: str | None = None, from_date: str | None = None, to_date
 			sum(
 				frappe.utils.flt(i.expected_collection) - frappe.utils.flt(i.amount_paid)
 				for i in invoices
-				if i.status in ("Open", "Overdue")
+				if i.status in ("Outstanding", "Overdue")
 			),
 			2,
 		),
@@ -401,7 +401,7 @@ def _outstanding_before(team: str, before) -> float:
 		filters={
 			"team": team,
 			"invoice_type": "Billable",
-			"status": ["in", ("Open", "Overdue")],
+			"status": ["in", ("Outstanding", "Overdue")],
 			"period_start": ["<", before],
 		},
 		fields=["expected_collection", "amount_paid"],

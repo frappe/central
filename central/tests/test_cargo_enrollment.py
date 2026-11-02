@@ -67,7 +67,7 @@ class TestCargoEnrollment(IntegrationTestCase):
 			self.instance.enroll_cargo()
 
 		self.post.assert_not_called()
-		self.assertEqual(self.instance.reload().cargo_status, "Draft")
+		self.assertEqual(self.instance.reload().cargo_status, "Outstanding")
 
 	def test_enroll_raises_on_a_rejected_configuration_and_persists_nothing(self):
 		self.post.return_value = self.response({}, 403)
@@ -76,7 +76,7 @@ class TestCargoEnrollment(IntegrationTestCase):
 			self.instance.enroll_cargo()
 
 		self.instance.reload()
-		self.assertEqual(self.instance.cargo_status, "Draft")
+		self.assertEqual(self.instance.cargo_status, "Outstanding")
 		self.assertIsNone(self.instance.get_password("cargo_webhook_secret", raise_exception=False))
 
 	def test_enroll_without_an_atlas_region_id_raises_instead_of_registering(self):
@@ -86,7 +86,7 @@ class TestCargoEnrollment(IntegrationTestCase):
 			self.instance.enroll_cargo()
 
 		self.post.assert_not_called()
-		self.assertEqual(self.instance.reload().cargo_status, "Draft")
+		self.assertEqual(self.instance.reload().cargo_status, "Outstanding")
 
 	def test_enroll_is_operator_only(self):
 		user = frappe.get_doc(
@@ -161,7 +161,7 @@ class TestCargoFollowsAtlas(IntegrationTestCase):
 		self.post.assert_not_called()
 		self.instance.reload()
 		self.assertTrue(self.instance.get_password("webhook_secret"))
-		self.assertEqual(self.instance.cargo_status, "Draft")
+		self.assertEqual(self.instance.cargo_status, "Outstanding")
 
 	def test_a_cargo_that_rejects_enrollment_does_not_fail_atlas(self):
 		self.post.return_value = self.response({}, 403)
@@ -170,7 +170,7 @@ class TestCargoFollowsAtlas(IntegrationTestCase):
 
 		self.instance.reload()
 		self.assertTrue(self.instance.get_password("webhook_secret"))
-		self.assertEqual(self.instance.cargo_status, "Draft")
+		self.assertEqual(self.instance.cargo_status, "Outstanding")
 		self.assertTrue(
 			frappe.get_all(
 				"Error Log",
@@ -183,10 +183,10 @@ class TestCargoFollowsAtlas(IntegrationTestCase):
 		from central.infrastructure.doctype.region.cargo_connection import register_pending_cargo
 
 		register_pending_cargo()
-		self.assertEqual(self.instance.reload().cargo_status, "Draft")
+		self.assertEqual(self.instance.reload().cargo_status, "Outstanding")
 
 		self.instance.enroll_atlas()
-		self.instance.db_set("cargo_status", "Draft")
+		self.instance.db_set("cargo_status", "Outstanding")
 		register_pending_cargo()
 		self.assertEqual(self.instance.reload().cargo_status, "Registered")
 

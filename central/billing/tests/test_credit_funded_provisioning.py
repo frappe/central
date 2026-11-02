@@ -82,7 +82,7 @@ class CreditFundedTestBase(IntegrationTestCase):
 					"doctype": "Invoice",
 					"team": TEAM,
 					"invoice_type": invoice_type,
-					"status": "Draft",
+					"status": "Outstanding",
 					"period_start": "2026-06-01",
 					"period_end": period_end,
 					"currency": "INR",
@@ -238,7 +238,7 @@ class TestInvoiceHeldForBillingDetails(CreditFundedTestBase):
 		result = invoicing.open_and_collect(invoice)
 
 		self.assertEqual(result["held"], "billing_details")
-		self.assertEqual(frappe.db.get_value("Invoice", invoice, "status"), "Draft")
+		self.assertEqual(frappe.db.get_value("Invoice", invoice, "status"), "Outstanding")
 		# Credits are untouched: nothing was settled against an invoice never issued.
 		self.assertEqual(credits.get_balance(TEAM)["balance"], 5000)
 		self.assertTrue(
@@ -267,7 +267,7 @@ class TestInvoiceHeldForBillingDetails(CreditFundedTestBase):
 
 		self.assertEqual(counters["held"], 1)
 		self.assertEqual(counters["settled"], 0)
-		self.assertEqual(frappe.db.get_value("Invoice", invoice, "status"), "Draft")
+		self.assertEqual(frappe.db.get_value("Invoice", invoice, "status"), "Outstanding")
 
 	def test_completing_the_profile_settles_what_was_held(self):
 		# Otherwise the customer waits for the next monthly run to be billed for
@@ -315,7 +315,7 @@ class TestInvoiceHeldForBillingDetails(CreditFundedTestBase):
 		result = invoicing.open_and_collect(invoice)
 
 		self.assertTrue(result["cost_report"])
-		self.assertEqual(frappe.db.get_value("Invoice", invoice, "status"), "Open")
+		self.assertEqual(frappe.db.get_value("Invoice", invoice, "status"), "Outstanding")
 
 
 class TestBillingDetailsEscalation(CreditFundedTestBase):

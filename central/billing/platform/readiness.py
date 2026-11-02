@@ -545,7 +545,8 @@ def check_billing_run_is_moving() -> list[Violation]:
 	waiting = frappe.db.count(
 		"Invoice",
 		{
-			"status": "Draft",
+			"status": "Outstanding",
+			"due_date": ["is", "not set"],
 			"period_end": ["<=", period_end],
 			"hold_reason": ["is", "not set"],
 			"creation": ["<", stalled_since],

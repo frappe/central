@@ -163,7 +163,7 @@ def list_teams() -> list[dict]:
 		t["mrr"] = frappe.utils.flt(t["mrr"], 2)
 		t["tier"] = frappe.db.get_value("Billing Profile", t["team"], "trust_tier") or "—"
 		t["open_invoices"] = frappe.db.count(
-			"Invoice", {"team": t["team"], "status": ["in", ["Open", "Overdue"]]}
+			"Invoice", {"team": t["team"], "status": ["in", ["Outstanding", "Overdue"]]}
 		)
 		t["invoices"] = frappe.db.count("Invoice", {"team": t["team"]})
 		# Credit normalised to INR so the whole row reads on one (INR-equiv.) axis.
@@ -213,7 +213,7 @@ def get_delinquent_teams() -> list[dict]:
 		seen.add(s.team)
 		overdue = frappe.get_all(
 			"Invoice",
-			filters={"team": s.team, "status": ["in", ["Open", "Overdue"]]},
+			filters={"team": s.team, "status": ["in", ["Outstanding", "Overdue"]]},
 			fields=["name", "status", "total", "amount_paid", "due_date"],
 			order_by="due_date asc",
 		)

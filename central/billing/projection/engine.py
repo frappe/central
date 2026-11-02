@@ -189,8 +189,9 @@ def _in_flight(team: str, today) -> list[dict]:
 		filters={
 			"team": team,
 			"invoice_type": "Billable",
-			"status": ["in", ["Open", "Overdue"]],
+			"status": ["in", ["Outstanding", "Overdue"]],
 			"expected_collection": [">", 0],
+			"due_date": ["is", "set"],
 		},
 		fields=["name", "status", "due_date", "dunning_starts_on", "expected_collection", "currency"],
 		order_by="due_date asc",

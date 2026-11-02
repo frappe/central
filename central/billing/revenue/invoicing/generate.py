@@ -4,7 +4,7 @@
 
 Per team/subscription, compute day-weighted fixed lines (from Subscription
 Change rate-snapshot segments) plus metered overage, apply the commitment
-adjustment, and create a `Draft`. Idempotent per (team, period) — and idempotent
+adjustment, and create an `Outstanding` invoice. Idempotent per (team, period) — and idempotent
 *under concurrency*, which is a different and stronger claim (ADR 0018).
 
 The "does an invoice already exist?" read below is a fast path, not the guarantee.
@@ -142,7 +142,7 @@ def reconcile_subscription(subscription_doc):
 def generate_draft_invoice(subscription: str, period_start, period_end):
 	"""Reconcile-then-draft one subscription. Idempotent per (subscription, period).
 
-	Returns the (existing or newly created) Draft invoice name, or None when the
+	Returns the (existing or newly created) invoice name, or None when the
 	subscription had no billable runtime in the period.
 	"""
 	sub = frappe.get_doc("Subscription", subscription)
@@ -206,7 +206,7 @@ def _rate(team: str, lines: list[dict], period_start, period_end):
 			"doctype": "Invoice",
 			"team": team,
 			"invoice_type": invoice_type_for(team),
-			"status": "Draft",
+			"status": "Outstanding",
 			"period_start": period_start,
 			"period_end": period_end,
 			"currency": currency,

@@ -20,7 +20,7 @@ from frappe.model.naming import make_autoname
 
 CANCELLED = "Cancelled"
 # What a team still owes; leaving one of these is when dunning can let go.
-UNSETTLED = ("Open", "Overdue")
+UNSETTLED = ("Outstanding", "Overdue")
 
 
 def period_key_for(team: str, period_start, period_end) -> str:
@@ -75,7 +75,7 @@ class Invoice(Document):
 	def restore_team_once_settled(self):
 		"""When an unpaid invoice is paid or waived, a team with no other overdue invoice is
 		restored: standing back to Current and the servers dunning stopped started again. An
-		Open invoice does not hold the restore, since it is not yet overdue and dunning acts on
+		Outstanding invoice does not hold the restore, since it is not yet overdue and dunning acts on
 		it on its own schedule. A cancel does not restore: it is a correction, and the
 		reissued invoice is still owed."""
 		before = self.get_doc_before_save()
