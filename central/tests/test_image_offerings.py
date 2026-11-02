@@ -7,6 +7,7 @@ from frappe.tests import IntegrationTestCase
 
 from central.errors import AtlasConnectionError
 from central.integrations.images import list_images, list_offerings, selected_image
+from central.patches.v0_0.order_image_offerings import execute as order_offerings
 from central.patches.v0_0.rename_pilot_offering_to_frappe import execute as rename_pilot_offering
 from central.patches.v0_0.seed_image_offerings import execute as seed_offerings
 from central.patches.v0_0.select_full_ubuntu_image import execute as select_full_ubuntu_image
@@ -220,6 +221,18 @@ class TestImageOfferings(IntegrationTestCase):
 
 		self.assertEqual(frappe.db.get_value("Image Offering", "pilot", "title"), "Frappe")
 		self.assertEqual(frappe.db.get_value("Image Offering", "ubuntu", "description"), "Our Ubuntu.")
+
+	def test_offerings_list_in_display_order_and_keep_operator_order(self):
+		seed_offerings()
+		frappe.db.set_value("Image Offering", {"name": ["in", ["pilot", "apps"]]}, "display_order", 0)
+		frappe.db.set_value("Image Offering", "ubuntu", "display_order", 9)
+		order_offerings()
+
+		self.assertEqual(frappe.db.get_value("Image Offering", "apps", "display_order"), 2)
+		self.assertEqual(frappe.db.get_value("Image Offering", "ubuntu", "display_order"), 9)
+		names = [item["name"] for item in list_offerings(self.team.name)]
+		self.assertLess(names.index("pilot"), names.index("apps"))
+		self.assertLess(names.index("apps"), names.index("ubuntu"))
 
 	def test_customer_can_read_catalog_but_not_edit_or_preview_as_operator(self):
 		user = frappe.get_doc(

@@ -23,7 +23,7 @@ def list_offerings(team: str, flow: str = "Server") -> list[dict]:
 		"Image Offering",
 		filters={"enabled": 1, "available_in": ["in", [flow, "Both"]]},
 		fields=["name", "title", "logo", "description", "available_in"],
-		order_by="title asc",
+		order_by="display_order asc, title asc",
 		limit=0,
 	)
 

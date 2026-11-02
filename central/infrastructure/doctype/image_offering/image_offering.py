@@ -23,6 +23,7 @@ class ImageOffering(Document):
 
 		available_in: DF.Literal["Server", "Signup", "Both"]
 		description: DF.SmallText | None
+		display_order: DF.Int
 		enabled: DF.Check
 		logo: DF.AttachImage | None
 		offering_key: DF.Data
@@ -76,16 +77,10 @@ def on_doctype_update() -> None:
 
 
 def ensure_default_offerings() -> None:
-	"""Create default product choices without replacing an operator's configuration."""
-	for key, title, flow, description, tags in (
+	"""Create default product choices without replacing an operator's configuration. They show
+	in the order listed here."""
+	offerings = (
 		("pilot", "Frappe", "Both", "A Frappe bench, ready for your apps.", {"purpose": "pilot"}),
-		(
-			"ubuntu",
-			"Ubuntu",
-			"Server",
-			"A plain Ubuntu server.",
-			{"purpose": "base", "os": "Ubuntu", "minimal": "false"},
-		),
 		(
 			"apps",
 			"Apps",
@@ -93,7 +88,15 @@ def ensure_default_offerings() -> None:
 			"Ready-to-run software such as Redis and MariaDB.",
 			{"purpose": APP_PURPOSE},
 		),
-	):
+		(
+			"ubuntu",
+			"Ubuntu",
+			"Server",
+			"A plain Ubuntu server.",
+			{"purpose": "base", "os": "Ubuntu", "minimal": "false"},
+		),
+	)
+	for order, (key, title, flow, description, tags) in enumerate(offerings, start=1):
 		if frappe.db.exists("Image Offering", key):
 			continue
 
@@ -102,6 +105,7 @@ def ensure_default_offerings() -> None:
 				"doctype": "Image Offering",
 				"offering_key": key,
 				"title": title,
+				"display_order": order,
 				"enabled": 1,
 				"available_in": flow,
 				"description": description,
