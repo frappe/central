@@ -10,6 +10,7 @@
   "team",
   "resource_type",
   "resource_name",
+  "resource_label",
   "server",
   "column_break_identity",
   "event",
@@ -61,6 +62,13 @@
    "options": "resource_type",
    "read_only": 1,
    "reqd": 1
+  },
+  {
+   "description": "The resource name when the event happened. It stays after the resource is deleted.",
+   "fieldname": "resource_label",
+   "fieldtype": "Data",
+   "label": "Resource Name",
+   "read_only": 1
   },
   {
    "description": "The server whose access decides who sees this event. Empty for a team event.",
@@ -228,7 +236,7 @@
   }
  ],
  "row_format": "Dynamic",
- "search_fields": "team,resource_name,title,event",
+ "search_fields": "team,resource_name,title,event,resource_label",
  "show_title_field_in_link": 1,
  "sort_field": "occurred_at",
  "sort_order": "DESC",

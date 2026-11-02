@@ -9,6 +9,7 @@ def record_site_created(site) -> None:
 		"site.created",
 		resource_type="Site",
 		resource_name=site.name,
+		label=_site_label(site),
 		key=f"site:{site.name}:created",
 		occurred_at=site.creation,
 	)
@@ -19,6 +20,7 @@ def record_site_claimed(site) -> None:
 		"site.claimed",
 		resource_type="Site",
 		resource_name=site.name,
+		label=_site_label(site),
 		key=f"site:{site.name}:claimed",
 		occurred_at=now_datetime(),
 	)
@@ -29,9 +31,15 @@ def record_site_deleted(site) -> None:
 		"site.deleted",
 		resource_type="Site",
 		resource_name=site.name,
+		label=_site_label(site),
 		key=f"site:{site.name}:deleted",
-		details=[get_detail("Site", None, site.site_name)],
 	)
+
+
+def _site_label(site) -> str:
+	"""The name the customer chose, or the automatic address when there is none."""
+	# rename_target needs a zone after the first dot; a failed label must not block the site
+	return site.rename_target if site.subdomain and "." in site.name else site.site_name
 
 
 def record_domain_added(domain) -> None:

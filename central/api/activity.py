@@ -4,10 +4,10 @@ from typing import Any
 
 import frappe
 from frappe import _
-from frappe.utils import cint, get_datetime
+from frappe.utils import cint, convert_utc_to_system_timezone, get_datetime
 from frappe.utils.translations import _lt
 
-from central.activity.events import CATEGORIES, SYSTEM_USERS
+from central.activity.events import CATEGORIES, EVENTS, SYSTEM_USERS
 from central.iam import can, get_user_team_names, user_has_operator_bypass
 from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
 from central.utils.guards import require_capability
@@ -20,6 +20,9 @@ FIELDS = [
 	"event",
 	"category",
 	"title",
+	"resource_type",
+	"resource_name",
+	"resource_label",
 	"status",
 	"details",
 	"error",
@@ -40,6 +43,8 @@ def server_activity(
 	cursor: str | None = None,
 	limit: int = DEFAULT_LIMIT,
 	category: str | None = None,
+	since: str | None = None,
+	until: str | None = None,
 ) -> dict:
 	"""One server's activity, newest first, after the opaque cursor if given."""
 	if not team or not resource_id:
@@ -47,7 +52,7 @@ def server_activity(
 
 	server = VirtualMachine.get_team_server_name(team, resource_id)
 	# Every row that names this server belongs here, including its sites and domains.
-	return _activity(team, {"server": server}, cursor, limit, category)
+	return _activity(team, [["server", "=", server]], cursor, limit, category, since, until)
 
 
 @frappe.whitelist(methods=["GET"])
@@ -56,6 +61,8 @@ def team_activity(
 	cursor: str | None = None,
 	limit: int = DEFAULT_LIMIT,
 	category: str | None = None,
+	since: str | None = None,
+	until: str | None = None,
 ) -> dict:
 	"""One team's activity, newest first. The permission rules narrow it to what the reader may see."""
 	if not team:
@@ -63,20 +70,25 @@ def team_activity(
 	if not user_has_operator_bypass() and team not in get_user_team_names(frappe.session.user):
 		frappe.throw(_("You can't view this team's activity."), frappe.PermissionError)
 
-	return _activity(team, {}, cursor, limit, category)
+	return _activity(team, [], cursor, limit, category, since, until)
 
 
 def _activity(
 	team: str,
-	filters: dict,
+	filters: list[list],
 	cursor: str | None,
 	limit: int,
 	category: str | None,
+	since: str | None,
+	until: str | None,
 ) -> dict:
 	_validate_category(category)
+	filters = [*filters, ["team", "=", team], *_period_filters(since, until)]
+	if category:
+		filters.append(["category", "=", category])
 	after = _decode_cursor(cursor) if cursor else None
 	page_size = max(1, min(cint(limit) or DEFAULT_LIMIT, MAX_LIMIT))
-	page = _page({**filters, "team": team}, category, after, page_size + 1)
+	page = _page(filters, after, page_size + 1)
 
 	has_more = len(page) > page_size
 	rows = page[:page_size]
@@ -92,15 +104,13 @@ def _activity(
 	}
 
 
-def _page(filters: dict, category: str | None, after: dict | None, size: int) -> list[dict]:
+def _page(filters: list[list], after: dict | None, size: int) -> list[dict]:
 	rows: list[dict] = []
-	if category:
-		filters = {**filters, "category": category}
 	for group in _cursor_queries(after):
 		rows.extend(
 			frappe.get_list(
 				"Activity Event",
-				filters={**filters, **group},
+				filters=[*filters, *group],
 				fields=FIELDS,
 				order_by="occurred_at desc, name desc",
 				limit=size,
@@ -111,14 +121,32 @@ def _page(filters: dict, category: str | None, after: dict | None, size: int) ->
 	return rows[:size]
 
 
-def _cursor_queries(after: dict | None) -> list[dict]:
+def _cursor_queries(after: dict | None) -> list[list[list]]:
 	if not after:
-		return [{}]
+		return [[]]
 
 	return [
-		{"occurred_at": ["<", after["timestamp"]]},
-		{"occurred_at": ["=", after["timestamp"]], "name": ["<", after["name"]]},
+		[["occurred_at", "<", after["timestamp"]]],
+		[["occurred_at", "=", after["timestamp"]], ["name", "<", after["name"]]],
 	]
+
+
+def _period_filters(since: str | None, until: str | None) -> list[list]:
+	"""`since` and `until` are UTC instants from the browser; `until` is exclusive."""
+	try:
+		bounds = [
+			["occurred_at", operator, _site_time(value)]
+			for operator, value in ((">=", since), ("<", until))
+			if value
+		]
+	except ValueError:
+		frappe.throw(_("Choose a valid date range."), frappe.ValidationError)
+	return bounds
+
+
+def _site_time(value: str):
+	# occurred_at is a naive clock in the site timezone
+	return convert_utc_to_system_timezone(get_datetime(value)).replace(tzinfo=None)
 
 
 def _event(row) -> dict[str, Any]:
@@ -129,6 +157,13 @@ def _event(row) -> dict[str, Any]:
 		"occurred_at": str(row.occurred_at),
 		"actor": row.actor,
 		"title": _(row.title),
+		# a row outlives a registry entry by up to the retention window
+		"sentence": _(EVENTS[row.event].sentence) if row.event in EVENTS else _(row.title),
+		"resource": {
+			"type": row.resource_type,
+			"name": row.resource_name,
+			"label": row.resource_label or row.resource_name,
+		},
 		"status": row.status or None,
 		"details": _details(row.details),
 		"error": row.error or None,

@@ -406,11 +406,14 @@ class VirtualMachine(Document):
 	@requires_server_access
 	def set_ssh_keys(self, key_names: list[str]) -> None:
 		"""Replace the team keys that can sign in to this server."""
+		from central.activity.servers import record_ssh_keys_changed
 		from central.integrations.ssh_keys import replace_server_ssh_keys
 		from central.resource_actions import resolve_team_ssh_keys
 
 		self.require_live()
+		previous = [row.team_ssh_key for row in self.ssh_keys]
 		replace_server_ssh_keys(self, key_names, resolve_team_ssh_keys(self.team, key_names))
+		record_ssh_keys_changed(self, previous, key_names)
 
 	@requires_server_access
 	def set_termination_protection(self, enabled: bool) -> None:

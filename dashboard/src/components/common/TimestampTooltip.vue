@@ -5,9 +5,14 @@ import { timeAgo, timestampZones } from '@/lib/datetime'
 
 interface Props {
 	value: string
+	triggerClass?: string
+	align?: 'start' | 'center' | 'end'
 }
 
-const props = defineProps<Props>()
+const props = withDefaults(defineProps<Props>(), {
+	triggerClass: '',
+	align: 'end',
+})
 
 const ago = computed(() => timeAgo(props.value))
 const zones = computed(() => timestampZones(props.value))
@@ -16,14 +21,14 @@ const zones = computed(() => timestampZones(props.value))
 <template>
 	<HoverCard
 		side="top"
-		align="end"
+		:align="align"
 		:offset="8"
 		:arrow="true"
 		:hover-delay="120"
 		:leave-delay="80"
 	>
 		<template #trigger>
-			<span>
+			<span :class="triggerClass">
 				<slot>{{ ago }}</slot>
 			</span>
 		</template>
@@ -39,9 +44,9 @@ const zones = computed(() => timestampZones(props.value))
 						{{ row.zone }}
 					</span>
 					<span class="text-xs text-ink-gray-7">{{ row.date }}</span>
-					<span class="text-xs tabular-nums text-ink-gray-6"
-						>{{ row.time }}</span
-					>
+					<span class="text-xs tabular-nums text-ink-gray-6">
+						{{ row.time }}
+					</span>
 				</template>
 			</div>
 		</div>

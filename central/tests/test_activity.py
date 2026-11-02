@@ -366,6 +366,27 @@ class TestActivity(ActivityTestBase):
 			],
 		)
 
+	def test_period_filter_and_sentence(self):
+		old, recent = self._action("restart"), self._action("stop")
+		self._backdate_event(old, "2026-10-10 09:00:00.000000")
+		self._backdate_event(recent, "2026-10-20 09:00:00.000000")
+
+		frappe.set_user(self.owner)
+		events = server_activity(
+			team=self.team,
+			resource_id=self.server,
+			since="2026-10-15T00:00:00Z",
+			until="2026-10-22T00:00:00Z",
+		)["events"]
+		self.assertEqual([event["title"] for event in events], ["Server stopped"])
+		self.assertEqual(events[0]["sentence"], "{actor} stopped {resource}")
+		# a server with no title is named by its id
+		title = frappe.db.get_value("Virtual Machine", self.server, "title")
+		self.assertEqual(events[0]["resource"]["label"], title or self.server)
+
+		with self.assertRaises(frappe.ValidationError):
+			server_activity(team=self.team, resource_id=self.server, since="not a date")
+
 	def test_cursor_does_not_repeat_or_skip(self):
 		actions = [self._action("restart"), self._action("start"), self._action("stop")]
 		for action, when in zip(actions, ("09:00", "09:01", "09:02"), strict=False):

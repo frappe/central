@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import dayjs from 'dayjs'
-import { Badge, Button, DateRangePicker } from 'frappe-ui'
+import { Badge, Button } from 'frappe-ui'
 import { computed, ref } from 'vue'
+import DateRangeFilter, {
+	type DateRangePreset,
+} from '@/components/common/DateRangeFilter.vue'
 import {
 	ListView,
 	type ListViewColumn,
@@ -34,7 +37,7 @@ const today = dayjs().format('YYYY-MM-DD')
 const isoDaysAgo = (count: number, unit: 'month' | 'year'): string =>
 	dayjs().subtract(count, unit).format('YYYY-MM-DD')
 
-const datePresets: { label: string; range: () => [string, string] }[] = [
+const datePresets: DateRangePreset[] = [
 	{ label: 'Last month', range: () => [isoDaysAgo(1, 'month'), today] },
 	{ label: 'Last 6 months', range: () => [isoDaysAgo(6, 'month'), today] },
 	{ label: 'Last year', range: () => [isoDaysAgo(1, 'year'), today] },
@@ -120,36 +123,7 @@ const filters: ListViewFilter[] = [
 		@row-click="emit('rowClick', $event)"
 	>
 		<template #filters>
-			<DateRangePicker
-				v-model="range"
-				class="flex-1 md:w-44"
-				size="sm"
-				format="D MMM"
-				placeholder="Any date"
-				:max="today"
-			>
-				<template #prefix>
-					<span class="lucide-calendar size-4 text-ink-gray-4" />
-				</template>
-				<template #actions="{ setRange, clear, close }">
-					<button
-						v-for="p in datePresets"
-						:key="p.label"
-						type="button"
-						class="w-full rounded-4 px-2 py-1.5 text-left text-base text-ink-gray-7 hover:bg-surface-gray-2"
-						@click="() => { setRange(p.range()); close() }"
-					>
-						{{ p.label }}
-					</button>
-					<button
-						type="button"
-						class="w-full rounded-4 px-2 py-1.5 text-left text-base text-ink-gray-5 hover:bg-surface-gray-2"
-						@click="() => { clear(); close() }"
-					>
-						Any date
-					</button>
-				</template>
-			</DateRangePicker>
+			<DateRangeFilter v-model="range" :presets="datePresets" />
 		</template>
 
 		<template #invoice="{ row }">

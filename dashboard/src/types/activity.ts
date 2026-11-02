@@ -1,4 +1,4 @@
-/** One normalized event from `central.api.activity.server_activity`. */
+/** One normalized event from `central.api.activity`. */
 
 export type ActivityCategory =
 	| 'action'
@@ -23,6 +23,12 @@ export interface ActivityDetail {
 	to: string | null
 }
 
+export interface ActivityResource {
+	type: string
+	name: string
+	label: string
+}
+
 export interface ActivityEvent {
 	id: string
 	event: string
@@ -30,6 +36,9 @@ export interface ActivityEvent {
 	occurred_at: string
 	actor: ActivityActor
 	title: string
+	/** Translated; `{actor}` and `{resource}` mark the names to emphasise. */
+	sentence: string
+	resource: ActivityResource
 	status: string | null
 	details: ActivityDetail[]
 	error: string | null
@@ -37,7 +46,7 @@ export interface ActivityEvent {
 	ip_address?: string
 }
 
-export interface ServerActivity {
+export interface ActivityPage {
 	events: ActivityEvent[]
 	next_cursor: string | null
 }

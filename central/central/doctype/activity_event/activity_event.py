@@ -31,6 +31,7 @@ class ActivityEvent(Document):
 		reference_doctype: DF.Link | None
 		reference_name: DF.DynamicLink | None
 		required_capability: DF.Link
+		resource_label: DF.Data | None
 		resource_name: DF.DynamicLink
 		resource_type: DF.Link
 		server: DF.Link | None
@@ -46,6 +47,7 @@ class ActivityEvent(Document):
 		resource_type: str,
 		resource_name: str,
 		key: str,
+		label: str | None = None,
 		actor: str | None = None,
 		occurred_at=None,
 		status: str | None = None,
@@ -73,6 +75,7 @@ class ActivityEvent(Document):
 					server=server,
 					resource_type=resource_type,
 					resource_name=resource_name,
+					resource_label=label,
 					actor=actor,
 					occurred_at=occurred_at,
 					status=status,
@@ -112,6 +115,15 @@ class ActivityEvent(Document):
 		frappe.db.delete(events, filters=events.occurred_at < cutoff)
 
 
+def get_resource_label(resource_type: str, resource_name: str) -> str:
+	"""The resource's title as people know it, or its name when the DocType has no title."""
+	title_field = frappe.get_meta(resource_type).title_field
+	if not title_field:
+		return resource_name
+
+	return frappe.db.get_value(resource_type, resource_name, title_field) or resource_name
+
+
 def _event_key(event: str, key: str) -> str:
 	value = f"{event}:{key}"
 	if len(value) <= MAX_EVENT_KEY_LENGTH:
@@ -130,6 +142,7 @@ def _values(
 	server: str | None,
 	resource_type: str,
 	resource_name: str,
+	resource_label: str | None,
 	actor: str | None,
 	occurred_at,
 	status: str | None,
@@ -143,6 +156,7 @@ def _values(
 		"team": team,
 		"resource_type": resource_type,
 		"resource_name": resource_name,
+		"resource_label": resource_label or get_resource_label(resource_type, resource_name),
 		"server": server,
 		"event": event,
 		"category": event_type.category,

@@ -5,6 +5,7 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
+from central.activity.sites import record_site_claimed
 from central.infrastructure.doctype.blocked_domain.blocked_domain import BlockedDomain, normalize_domain
 from central.signups.funnel import capture_trial_event
 
@@ -174,7 +175,6 @@ class Site(Document):
 		if not self.claimed_at:
 			self.db_set("claimed_at", frappe.utils.now_datetime())
 			capture_trial_event("trial_claimed", self.team, self.product, user=frappe.session.user)
-			from central.activity.sites import record_site_claimed
 			record_site_claimed(self)
 
 		self.enqueue_subdomain_rename()

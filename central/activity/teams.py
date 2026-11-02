@@ -1,4 +1,4 @@
-from frappe.utils import now_datetime
+from frappe.utils import get_fullname, now_datetime
 
 from central.activity.changes import get_detail
 from central.central.doctype.activity_event.activity_event import ActivityEvent
@@ -161,6 +161,7 @@ def _record_invitation(invitation, event: str, *, key: str, occurred_at=None) ->
 		resource_type="Team Invitation",
 		resource_name=invitation.name,
 		key=f"{invitation.name}:{key}",
+		label=invitation.email,
 		occurred_at=occurred_at,
 		status=invitation.status,
 		details=[
@@ -187,7 +188,9 @@ def _record_member_changes(team, previous) -> None:
 	for user in sorted(before.keys() | after.keys()):
 		event, details = _member_event(user, before.get(user, ()), after.get(user, ()))
 		if event:
-			_record(team, event, key=f"member:{user}:{team.modified}", details=details)
+			_record(
+				team, event, key=f"member:{user}:{team.modified}", details=details, label=get_fullname(user)
+			)
 
 
 def _member_rows(team) -> dict[str, list]:

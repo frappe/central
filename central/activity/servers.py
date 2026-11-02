@@ -25,7 +25,6 @@ VERSION_FIELDS = {
 	"plan": "Plan",
 	"public_ipv4": "Public IPv4",
 	"public_ipv6": "Public IPv6",
-	"ssh_keys": "SSH keys",
 	"title": "Server name",
 	"vcpus": "vCPUs",
 	"firewall_rules": "Firewall rules",
@@ -35,7 +34,7 @@ VERSION_FIELDS = {
 	"skip_automatic_snapshot": "Automatic snapshots",
 }
 # Diffs too wide for two short values, so the row renders as one label.
-SUMMARY_FIELDS = {"firewall_rules", "ssh_keys"}
+SUMMARY_FIELDS = {"firewall_rules"}
 CHECK_FIELDS = {
 	"has_ipv4_internet",
 	"is_firewall_enabled",
@@ -53,6 +52,51 @@ def record_server_created(server) -> str | None:
 		actor=server.owner,
 		occurred_at=server.creation,
 	)
+
+
+def record_ssh_keys_changed(server, previous: list[str], current: list[str]) -> str | None:
+	"""Record which team keys can sign in to one server."""
+	try:
+		details = _ssh_key_changes(server.team, previous, current)
+	except Exception:
+		# The region already holds the new keys; a failed audit read must not roll back the save.
+		frappe.log_error(title="SSH key activity not recorded", message=frappe.get_traceback())
+		return None
+	if not details:
+		return None
+
+	return ActivityEvent.record(
+		"server.ssh_keys_changed",
+		resource_type="Virtual Machine",
+		resource_name=server.name,
+		key=f"ssh-keys:{server.name}:{server.modified}:{','.join(previous)}:{','.join(current)}",
+		details=details,
+	)
+
+
+def _ssh_key_changes(team: str, previous: list[str], current: list[str]) -> list[dict]:
+	added = _ssh_key_titles(team, [name for name in current if name not in previous])
+	removed = _ssh_key_titles(team, [name for name in previous if name not in current])
+	details = []
+	if added:
+		details.append(get_detail("Added", None, added))
+	if removed:
+		details.append(get_detail("Removed", removed, None))
+
+	return details
+
+
+def _ssh_key_titles(team: str, names: list[str]) -> str:
+	if not names:
+		return ""
+
+	rows = frappe.get_all(
+		"Team SSH Key",
+		filters={"team": team, "name": ("in", names)},
+		fields=["name", "title"],
+	)
+	titles = {row.name: row.title for row in rows}
+	return ", ".join(titles.get(name, name) for name in names)
 
 
 def record_action_terminal(action) -> str | None:

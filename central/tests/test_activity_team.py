@@ -193,15 +193,20 @@ class TestTeamActivity(ActivityTestBase):
 		)
 
 	def test_site_and_domain_events(self):
+		frappe.db.set_single_value("Central Settings", "wildcard_domain", "example.test")
+		suffix = frappe.generate_hash(length=8)
 		site = frappe.get_doc(
 			{
 				"doctype": "Site",
-				"site_name": f"activity-{frappe.generate_hash(length=8)}.example.test",
+				"site_name": f"site-{suffix}.example.test",
+				"subdomain": f"chosen-{suffix}",
 				"team": self.team,
 				"server": self.server,
 			}
 		).insert(ignore_permissions=True)
-		self.assertEqual(self._latest_event("site.created", team=self.team).resource_name, site.name)
+		created = self._latest_event("site.created", team=self.team)
+		self.assertEqual(created.resource_name, site.name)
+		self.assertEqual(created.resource_label, site.rename_target)
 		self.assertEqual(
 			{event["event"] for event in self._events(category="site")},
 			{"site.created"},
@@ -209,7 +214,9 @@ class TestTeamActivity(ActivityTestBase):
 
 		frappe.set_user(self.owner)
 		site.mark_claimed()
-		self.assertEqual(self._latest_event("site.claimed", team=self.team).resource_name, site.name)
+		claimed = self._latest_event("site.claimed", team=self.team)
+		self.assertEqual(claimed.resource_name, site.name)
+		self.assertEqual(claimed.resource_label, site.rename_target)
 
 		domain = frappe.get_doc(
 			{
