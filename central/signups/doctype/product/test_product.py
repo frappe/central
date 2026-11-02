@@ -276,7 +276,7 @@ class TestProductLifecycleEmails(SiteOnAMachine):
 
 		self.assertIn(f'fc-btn-primary" href="{self.site().url}/raven"', html)
 		self.assertIn('fc-btn-secondary" href="https://raven.example.test/start"', html)
-		self.assertLess(html.index("Get started"), html.index("View docs"))
+		self.assertLess(html.index("Get started"), html.index("Documentation"))
 
 	def test_welcome_emails_link_the_created_site_and_product_landing_route(self):
 		product = self.product(landing_route="/raven")

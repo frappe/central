@@ -42,11 +42,15 @@
 	}
 
 	.fc-btn {
-		@apply mt-6 inline-block rounded-lg px-2 py-1.5 no-underline;
+		@apply mt-6 inline-block rounded-lg px-2 py-1.5 [text-decoration:none];
 	}
 
 	.fc-btn-primary {
 		@apply bg-neutral-900;
+	}
+
+	.fc-btn-label {
+		@apply [text-decoration:none];
 	}
 
 	.fc-btn-primary .fc-btn-label {
