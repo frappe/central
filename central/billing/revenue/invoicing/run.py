@@ -14,9 +14,11 @@ import frappe
 from frappe.query_builder.functions import Count
 
 from central.billing.doctype.billing_run.billing_run import snapshot
+from central.billing.doctype.billing_run_team.billing_run_team import FAILED, has_same_failure, record_outcome
 from central.billing.platform import metrics
 from central.billing.revenue.invoicing.generate import generate_team_invoice
 from central.billing.revenue.invoicing.lifecycle import held_drafts, open_and_collect, settle_internal_teams
+from central.billing.states import record_team_event
 
 # How many teams / invoices one page job is responsible for.
 PAGE_SIZE = 500
@@ -74,7 +76,9 @@ def billing_queue() -> str:
 	return "long"
 
 
-def _contain(unit: str, doctype: str, name: str, error: Exception, undo: bool) -> None:
+def _contain(
+	unit: str, doctype: str, name: str, error: Exception, undo: bool, is_repeat: bool = False
+) -> None:
 	"""Contain one unit's failure so the run survives it — or refuse to.
 
 	Order matters. The **file log** is written first and unconditionally, because it
@@ -98,6 +102,8 @@ def _contain(unit: str, doctype: str, name: str, error: Exception, undo: bool) -
 			frappe.db.rollback(save_point=_SAVEPOINT)
 		except Exception as rollback_failed:
 			raise error from rollback_failed
+	if is_repeat:
+		return
 	frappe.log_error(
 		title=BILLING_RUN_FAILURE,
 		message=f"{unit}\n\n{frappe.get_traceback()}",
@@ -121,8 +127,7 @@ def draft_team_invoice(team: str, period_start, period_end, counters: dict | Non
 	so a caller part-way through a page keeps the teams it already billed.
 
 	A contained failure is not re-raised, and needn't be: drafting is idempotent per
-	(team, period), so re-running the phase retries exactly the teams that failed.
-	A partial run is resumable for free.
+	(team, period), and `retry_failed_drafts` tries the failed teams again every hour.
 
 	Lock contention is not a failure at all, though, and is retried here rather than
 	contained — see `_CONTENTION`. InnoDB has already rolled the transaction back by
@@ -139,15 +144,41 @@ def draft_team_invoice(team: str, period_start, period_end, counters: dict | Non
 			frappe.db.rollback()
 			if attempt == CONTENTION_RETRIES - 1:
 				# Out of patience: record it and let the next tick pick the team up.
-				_contain(unit, "Team", team, error, undo=False)
+				_record_draft_failure(unit, team, period_end, error, undo=False)
 				_tally(counters, "failed")
 				return []
 			# Jittered, so a whole page of retriers doesn't re-collide in lockstep.
 			time.sleep(CONTENTION_BACKOFF * (attempt + 1) + random.uniform(0, CONTENTION_BACKOFF))
 		except Exception as error:
-			_contain(unit, "Team", team, error, undo=True)
+			_record_draft_failure(unit, team, period_end, error, undo=True)
 			_tally(counters, "failed")
 			return []
+
+
+def _record_draft_failure(unit: str, team: str, period_end, error: Exception, undo: bool) -> None:
+	"""Keep why the team has no invoice where an operator looks. A retry that meets the
+	same error adds no second log row or event."""
+	reason = str(error) or type(error).__name__
+	is_repeat = has_same_failure(team, period_end, reason)
+	_contain(unit, "Team", team, error, undo=undo, is_repeat=is_repeat)
+	record_outcome(team, period_end, FAILED, reason=reason)
+	if not is_repeat:
+		record_team_event(team, "Invoice Generation Failed", "Invoice", reason=reason)
+
+
+def retry_failed_drafts() -> int:
+	"""Draft again every team whose invoice failed, for any closed month, one commit per team.
+
+	The monthly tick comes once and bills one month. Without this a failed team waits for an
+	operator, and its month is never billed once the next month closes."""
+	failed = frappe.get_all(
+		"Billing Run Team", filters={"outcome": FAILED}, fields=["team", "period_end"], limit=PAGE_SIZE
+	)
+	for row in failed:
+		period_start = frappe.utils.get_first_day(row.period_end)
+		draft_team_invoice(row.team, period_start, row.period_end)
+		frappe.db.commit()  # nosemgrep: frappe-manual-commit -- one team, one transaction
+	return len(failed)
 
 
 def settle_draft(invoice: str, counters: dict | None = None) -> dict | None:
@@ -495,6 +526,7 @@ def collect_due_invoices(today=None) -> dict:
 	`settle_draft` defers dunning on failure, so a slow sweep never makes a customer late.
 	"""
 	_, period_end = billing_period(today)
+	retry_failed_drafts()
 	# Recorded before fanning out, so the record of what the run has achieved (and what it
 	# still owes) exists even if collection then falls over.
 	status = billing_run_status(today)
@@ -506,7 +538,8 @@ def collect_due_invoices(today=None) -> dict:
 	metrics.emit("billing.collect_tick", period_end=str(period_end), pages=len(fanned))
 	# Re-derived after the sweep has been handed out: nothing owed means the period is done.
 	done = billing_run_status(today)
-	snapshot(done, "Complete" if not done["pending_collection"] else None)
+	is_done = not done["pending_collection"] and not done["failures"]
+	snapshot(done, "Complete" if is_done else None)
 	return {"period_end": str(period_end), "pages": len(fanned)}
 
 
@@ -549,14 +582,7 @@ def billing_run_status(today=None) -> dict:
 		"pending_collection": pending_collection,
 		"collected": drafted - pending_collection - counts.get("Waived", 0),
 		"by_status": counts,
-		# Error Log can live outside the site database, where `frappe.db.count` cannot reach it.
-		"failures": len(
-			frappe.get_all(
-				"Error Log",
-				filters={"method": BILLING_RUN_FAILURE, "creation": [">=", period_end]},
-				pluck="name",
-			)
-		),
+		"failures": frappe.db.count("Billing Run Team", {"period_end": period_end, "outcome": FAILED}),
 	}
 
 

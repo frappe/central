@@ -33,6 +33,7 @@ class CustomerSyncTestCase(IntegrationTestCase):
 		complete_billing_profile(TEAM)
 		self._conf = patch.dict(frappe.local.conf, {"enable_erpnext_sync": 1})
 		self._conf.start()
+		self.enterContext(patch("central.billing.ingester.customer.has_billable_activity", return_value=True))
 		# Reads such as the company's GSTIN come from a fake accounting system, never a real one.
 		configure_accounting()
 		self.enterContext(patch("central.billing.ingester.connection.fetch", FakeAccountingSystem().fetch))

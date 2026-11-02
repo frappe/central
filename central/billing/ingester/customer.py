@@ -15,6 +15,10 @@ from frappe.query_builder.functions import Coalesce
 
 from central.billing.ingester.connection import enabled, get, post, put
 from central.billing.ingester.locks import hold_until_transaction_ends, lock_name
+from central.billing.states import record_event
+
+CUSTOMER_SYNC = "Customer Sync"
+_SYNC_STEP = "customer_sync_step"
 
 # Changes to these are what the accounting system needs to hear about.
 SYNCED_FIELDS = (
@@ -53,6 +57,19 @@ def sync_customer_profile(team: str) -> None:
 	profile = frappe.get_doc("Billing Profile", team)
 	if not _should_sync(profile):
 		return
+	frappe.db.savepoint(_SYNC_STEP)
+	try:
+		_take_next_step(profile)
+	except Exception as error:
+		# The job's rollback would lose the record, so keep it in its own transaction, then fail the job.
+		frappe.db.rollback(save_point=_SYNC_STEP)
+		record_event(profile, "Customer Sync Failed", reason=str(error)[:500], category=CUSTOMER_SYNC)
+		frappe.db.commit()  # nosemgrep: frappe-manual-commit -- the failure must outlive the failed job
+		raise
+
+
+def _take_next_step(profile) -> None:
+	team = profile.team
 	if not profile.profile_id:
 		_create(profile, "profile_id", "Customer", _customer_payload)
 		following = "address"
@@ -65,6 +82,7 @@ def sync_customer_profile(team: str) -> None:
 		following = "update"
 	else:
 		update_customer_profile(profile)
+		record_event(profile, "Customer Sync Succeeded", category=CUSTOMER_SYNC)
 		_release_held_drafts(team)
 		return
 	# Each step has its own job id: this job is still running when it queues the next,

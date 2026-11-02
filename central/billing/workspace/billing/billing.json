@@ -373,6 +373,30 @@
    "dependencies": "",
    "hidden": 0,
    "is_query_report": 1,
+   "label": "Billing Run Coverage",
+   "link_count": 0,
+   "link_to": "Billing Run Coverage",
+   "link_type": "Report",
+   "onboard": 0,
+   "report_ref_doctype": "Billing Run Team",
+   "type": "Link"
+  },
+  {
+   "dependencies": "",
+   "hidden": 0,
+   "is_query_report": 1,
+   "label": "Billing Activity",
+   "link_count": 0,
+   "link_to": "Billing Activity",
+   "link_type": "Report",
+   "onboard": 0,
+   "report_ref_doctype": "Billing Event",
+   "type": "Link"
+  },
+  {
+   "dependencies": "",
+   "hidden": 0,
+   "is_query_report": 1,
    "label": "Gateway Payment Success Ratio",
    "link_count": 0,
    "link_to": "Gateway Payment Success Ratio",
@@ -529,7 +553,7 @@
    "type": "Link"
   }
  ],
- "modified": "2026-10-22 19:00:00.000000",
+ "modified": "2026-11-03 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Billing",

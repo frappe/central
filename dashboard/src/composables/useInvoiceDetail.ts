@@ -20,10 +20,13 @@ export function useInvoiceDetail() {
 	})
 	whenTeamReady(() => collection.reload())
 
-	const isPayable = computed(() =>
-		['outstanding', 'overdue'].includes(
-			String(detail.data?.status).toLowerCase(),
-		),
+	// An Outstanding invoice with no due date is held, and cannot be paid yet.
+	const isPayable = computed(
+		() =>
+			Boolean(detail.data?.due_date) &&
+			['outstanding', 'overdue'].includes(
+				String(detail.data?.status).toLowerCase(),
+			),
 	)
 	const isOverdue = computed(
 		() =>

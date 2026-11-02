@@ -384,6 +384,7 @@ def get_invoice(name: str) -> dict:
 		"expected_collection": doc.expected_collection,
 		"amount_paid": doc.amount_paid,
 		"due_date": str(doc.due_date) if doc.due_date else None,
+		"hold_reason": doc.hold_reason,
 		"has_pdf": bool(doc.erpnext_invoice),
 		"payment_in_progress": payment_in_progress,
 		"paid_with": paid_with,

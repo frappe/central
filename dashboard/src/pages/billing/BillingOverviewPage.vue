@@ -89,16 +89,16 @@ const onAddCredits = () => {
 		<div
 			class="grid min-w-0 flex-1 auto-rows-max grid-cols-[min(64rem,100%)] content-start justify-center gap-3 overflow-y-auto px-3 pb-24 pt-3 [container-type:inline-size] md:gap-4 md:px-6 md:pt-7"
 		>
+			<OutstandingAlert
+				:statement="reports.statement.data ?? null"
+				:attempts="reports.attempts.data ?? null"
+			/>
 			<Alert
 				v-if="!complete"
 				theme="amber"
 				title="Add your billing details"
 				description="Currency, legal name, and address are needed to add credit, save a payment method, and provision servers."
 				:primary-action="{ label: 'Add billing details', onClick: () => { setupDialogOpen = true } }"
-			/>
-			<OutstandingAlert
-				:statement="reports.statement.data ?? null"
-				:attempts="reports.attempts.data ?? null"
 			/>
 			<CollectionActionBanner />
 			<TrialBillingBanner @upgrade="upgradeServerName = $event" />

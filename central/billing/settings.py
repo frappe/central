@@ -71,6 +71,26 @@ def _settings():
 	return frappe.get_cached_doc(SETTINGS)
 
 
+def minimum_invoice_amount(currency: str | None) -> float:
+	"""The smallest total worth invoicing in `currency`. Zero means no minimum."""
+	for row in _settings().minimum_invoice_amounts:
+		if row.currency == currency:
+			return frappe.utils.flt(row.amount)
+	return 0.0
+
+
+def ensure_minimum_invoice_amounts() -> None:
+	"""Seed the starting minimums if none is set. An operator changes them in Billing Settings."""
+	doc = frappe.get_doc("Billing Settings")
+	if doc.minimum_invoice_amounts:
+		return
+	for currency, amount in (("INR", 50), ("USD", 1)):
+		if frappe.db.exists("Currency", currency):
+			doc.append("minimum_invoice_amounts", {"currency": currency, "amount": amount})
+	doc.save(ignore_permissions=True)
+	frappe.clear_cache(doctype="Billing Settings")
+
+
 def welcome_credit_amount(currency: str) -> float:
 	"""What a team billed in `currency` is granted when its first payment method is active.
 

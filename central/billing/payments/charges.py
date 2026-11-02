@@ -591,10 +591,12 @@ def _apply_attempt_failure(event, attempt, decline: dict) -> dict:
 	# webhook). Gate on invoice status, not attempt status, and act once.
 	inv_status = frappe.db.get_value("Invoice", attempt.invoice, "status")
 	if inv_status != "Paid" and attempt.status not in ("Failed", "Refunded"):
-		transition(attempt, "Failed", actor="webhook", correlation=attempt.invoice)
 		# Off-session declines surface their real reason here, not on the sync
 		# charge response — pull it off the event so the attempt records why.
 		stamp_failure(attempt, decline)
+		transition(
+			attempt, "Failed", actor="webhook", correlation=attempt.invoice, reason=attempt.failure_reason
+		)
 		attempt.completed_at = frappe.utils.now_datetime()
 		save_billing_record(attempt)
 		from central.billing.platform import notifications

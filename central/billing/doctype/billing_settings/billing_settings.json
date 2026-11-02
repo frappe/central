@@ -15,6 +15,7 @@
   "section_break_invoicing",
   "invoice_due_days",
   "billing_details_grace_days",
+  "minimum_invoice_amounts",
   "column_break_invoicing",
   "forecast_notify_percent",
   "section_break_dunning",
@@ -123,7 +124,7 @@
   },
   {
    "default": "0",
-   "description": "Create every new team as a staging trial — it provisions servers on welcome credits without a full billing profile. For staging deployments.",
+   "description": "Create every new team as a staging trial \u2014 it provisions servers on welcome credits without a full billing profile. For staging deployments.",
    "fieldname": "provision_teams_as_trial",
    "fieldtype": "Check",
    "label": "Provision Teams as Trial"
@@ -148,6 +149,13 @@
    "fieldtype": "Int",
    "label": "Billing Details Grace (Days)",
    "non_negative": 1
+  },
+  {
+   "description": "Below this total in a currency, the month is written off and no invoice is created. A currency with no row has no minimum.",
+   "fieldname": "minimum_invoice_amounts",
+   "fieldtype": "Table",
+   "label": "Minimum Invoice Amounts",
+   "options": "Minimum Invoice Amount"
   },
   {
    "fieldname": "column_break_invoicing",

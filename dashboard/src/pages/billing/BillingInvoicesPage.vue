@@ -385,7 +385,12 @@ const eventDate = (at: string | null): string => String(at ?? '').split(',')[0]
 			<!-- The footer carries only the one state-dependent action. Settling an
            invoice is the helpful way out of an overdue state, not a
            destructive act — the default solid, not red. -->
-			<template v-if="detail.data && (canPay || settling)" #footer>
+			<template v-if="detail.data?.hold_reason && !canPay" #footer>
+				<p class="text-p-sm text-ink-gray-6">
+					We are preparing this invoice. You can pay it once it is issued.
+				</p>
+			</template>
+			<template v-else-if="detail.data && (canPay || settling)" #footer>
 				<Button
 					v-if="canPay"
 					variant="solid"

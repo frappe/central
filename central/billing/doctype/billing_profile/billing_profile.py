@@ -168,6 +168,11 @@ class BillingProfile(Document):
 		self.sync_tier_fields()
 		self.validate_internal_flag()
 
+	def after_insert(self):
+		from central.billing.states import record_event
+
+		record_event(self, "Billing Profile Created")
+
 	def on_update(self):
 		self.apply_internal_flag_change()
 		# Before held invoices are released: releasing re-taxes them from the Tax Profile.
@@ -253,7 +258,9 @@ class BillingProfile(Document):
 	def validate_internal_flag(self):
 		"""1. Only an operator changes the flag, because it waives the team's invoices.
 		2. An internal team states why."""
-		if self.has_value_changed("is_internal") and not user_has_operator_bypass():
+		before = self.get_doc_before_save()
+		is_changed = bool(self.is_internal) != bool(before and before.is_internal)
+		if is_changed and not user_has_operator_bypass():
 			frappe.throw(_("Only an operator can mark a team as internal."), frappe.PermissionError)
 		if self.is_internal and not (self.internal_reason or "").strip():
 			frappe.throw(_("Write why this team is internal."), frappe.ValidationError)

@@ -259,6 +259,8 @@ export interface InvoiceDetail {
 	expected_collection: number
 	amount_paid: number
 	due_date: string | null
+	/** Why the invoice cannot be paid yet. */
+	hold_reason: string | null
 	/** A charge is in flight (or captured, awaiting the settlement webhook). */
 	payment_in_progress: boolean
 	/** The method that settled a Paid invoice (from the capturing attempt). */
@@ -546,6 +548,7 @@ export interface StatementRow {
 	period_start: string
 	period_end: string
 	status: InvoiceStatus
+	due_date: string | null
 	total: number
 	tax: number
 	credit_applied: number

@@ -232,13 +232,16 @@ def transition(
 	_append_event(doc, from_state, to_state, reason, actor, correlation, amount, event_type)
 
 
-def _append_event(doc, from_state, to_state, reason, actor, correlation, amount, event_type) -> None:
+def _append_event(
+	doc, from_state, to_state, reason, actor, correlation, amount, event_type, category=None
+) -> None:
 	event = frappe.get_doc(
 		{
 			"doctype": "Billing Event",
 			"team": doc.get("team"),
 			"occurred_at": frappe.utils.now_datetime(),
 			"event_type": event_type or f"{doc.doctype} {to_state}",
+			"category": category,
 			"subject_doctype": doc.doctype,
 			"subject": doc.name,
 			"from_state": from_state,
@@ -255,10 +258,23 @@ def _append_event(doc, from_state, to_state, reason, actor, correlation, amount,
 
 
 def record_event(
-	doc, event_type: str, from_state=None, to_state=None, reason=None, amount=None, correlation=None
+	doc,
+	event_type: str,
+	from_state=None,
+	to_state=None,
+	reason=None,
+	amount=None,
+	correlation=None,
+	category=None,
 ) -> None:
 	"""Log a billing change that is not a status move, such as a tier change."""
-	_append_event(doc, from_state, to_state, reason, None, correlation, amount, event_type)
+	_append_event(doc, from_state, to_state, reason, None, correlation, amount, event_type, category)
+
+
+def record_team_event(team: str, event_type: str, category: str, reason=None, amount=None) -> None:
+	"""Log a billing step about a team when no document exists, such as an invoice that failed."""
+	subject = frappe._dict(doctype="Team", name=team, team=team)
+	record_event(subject, event_type, reason=reason, amount=amount, category=category)
 
 
 def _default_actor() -> str:

@@ -26,6 +26,10 @@ const openRows = computed(() =>
 	),
 )
 const hasOutstanding = computed(() => outstanding.value > 0)
+// An invoice with no due date is still being prepared and cannot be paid yet.
+const allHeld = computed(
+	() => openRows.value.length > 0 && openRows.value.every((r) => !r.due_date),
+)
 const isOverdue = computed(() =>
 	openRows.value.some((r) => r.status === 'Overdue'),
 )
@@ -76,7 +80,10 @@ const detail = computed(() => {
 
 const action = computed(() => ({
 	label:
-		props.attempts === null || story.value.inFlight || preWindowInFlight.value
+		props.attempts === null ||
+		story.value.inFlight ||
+		preWindowInFlight.value ||
+		allHeld.value
 			? 'View invoice'
 			: 'Pay now',
 	onClick: () => {

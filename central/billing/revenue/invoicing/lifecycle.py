@@ -224,6 +224,8 @@ def _waive_internal(doc) -> dict:
 	return {"invoice": doc.name, "claimed": True, "status": "Waived", "waived": doc.total}
 
 
+DETAILS_REMINDER_DAYS = 7
+
 # Hold Reason values, and the keys callers of `open_and_collect` see.
 HOLD_KEYS = {
 	"Billing Details": "billing_details",
@@ -284,6 +286,7 @@ def _hold_reason(doc) -> str | None:
 def _mark_held(doc, hold: str) -> None:
 	if doc.hold_reason != hold:
 		frappe.db.set_value("Invoice", doc.name, "hold_reason", hold, update_modified=False)
+		record_event(doc, "Invoice Held", reason=hold, amount=doc.total)
 
 
 def _retax(doc) -> None:
@@ -304,8 +307,7 @@ def _retax(doc) -> None:
 def _hold_for_billing_details(doc) -> bool:
 	"""Whether this invoice must wait for billing details, asking for them if so.
 
-	The engine dedupes the ask for an hour only, so each retry of the held draft asks
-	again. The monthly billing run is the only retry that finds details still missing.
+	The hourly sweep retries a held invoice, so the ask repeats at most once a week.
 	"""
 	from central.billing.doctype.billing_profile.billing_profile import get_missing_field_labels
 	from central.billing.platform import notifications
@@ -313,6 +315,8 @@ def _hold_for_billing_details(doc) -> bool:
 	missing = get_missing_field_labels(doc.team)
 	if not missing:
 		return False
+	if _asked_for_details_recently(doc.name):
+		return True
 	notifications.notify(
 		doc.team,
 		"Billing Details Required",
@@ -321,6 +325,21 @@ def _hold_for_billing_details(doc) -> bool:
 		reference_name=doc.name,
 	)
 	return True
+
+
+def _asked_for_details_recently(invoice: str) -> bool:
+	return bool(
+		frappe.db.exists(
+			"Billing Notification Log",
+			{
+				"reference_doctype": "Invoice",
+				"reference_name": invoice,
+				"event_type": "Billing Details Required",
+				"status": "Queued",
+				"creation": [">", frappe.utils.add_days(frappe.utils.now_datetime(), -DETAILS_REMINDER_DAYS)],
+			},
+		)
+	)
 
 
 def held_drafts(team: str | None = None, held_before=None, limit: int | None = None) -> list[dict]:
