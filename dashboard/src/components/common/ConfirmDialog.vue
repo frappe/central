@@ -61,27 +61,47 @@ function confirm(): void {
 </script>
 
 <template>
-	<Dialog v-model="open" :title="title" :message="message" :size="size">
+	<!-- Matches frappe-ui's dialog.danger: a red alert badge, Cancel beside the confirm. -->
+	<Dialog
+		v-model="open"
+		:title="title"
+		:message="message"
+		:size="size"
+		:theme="theme"
+		:icon="theme === 'red' ? 'lucide-alert-triangle' : undefined"
+	>
 		<slot />
 		<TextInput
 			v-if="confirmText"
 			v-model="typedText"
 			class="mt-4"
 			autocomplete="off"
-			:label="`Type ${confirmText} to confirm`"
 			@keydown.enter="confirm"
-		/>
+		>
+			<template #label>
+				Type
+				<code class="rounded-4 bg-surface-gray-2 px-1 font-mono text-ink-gray-9"
+					>{{ confirmText }}</code
+				>
+				to confirm
+			</template>
+		</TextInput>
 		<ErrorMessage v-if="error" class="mt-2" :message="error" />
 		<template #actions>
-			<div :class="size === 'lg' ? 'flex justify-end' : ''">
+			<div class="flex flex-row-reverse gap-2">
 				<Button
-					:class="size === 'lg' ? '' : 'w-full'"
 					variant="solid"
 					:theme="theme"
 					:label="confirmLabel"
 					:loading="loading"
 					:disabled="isBlocked"
 					@click="confirm"
+				/>
+				<Button
+					variant="outline"
+					label="Cancel"
+					:disabled="loading"
+					@click="open = false"
 				/>
 			</div>
 		</template>
