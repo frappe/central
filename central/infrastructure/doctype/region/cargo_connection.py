@@ -71,7 +71,7 @@ def get_cargo_machine_claims(token: str) -> dict:
 	1. The unverified `region` claim only selects the secret; it proves nothing.
 	2. The region's Cargo must be Registered and hold a secret.
 	3. The HS256 signature must match that secret, with the machine token audience.
-	4. The token must name a machine and one of Cargo's node roles."""
+	4. The token must name a machine and one of Cargo's node roles, or `cargo` for Cargo's own host."""
 	import jwt
 
 	try:
@@ -97,7 +97,7 @@ def get_cargo_machine_claims(token: str) -> dict:
 	except jwt.PyJWTError:
 		frappe.throw(_("Invalid machine token."), frappe.AuthenticationError)
 
-	if not claims.get("machine") or claims.get("role") not in ("gateway", "storage", "telemetry"):
+	if not claims.get("machine") or claims.get("role") not in ("gateway", "storage", "telemetry", "cargo"):
 		frappe.throw(_("Invalid machine token."), frappe.AuthenticationError)
 
 	return claims

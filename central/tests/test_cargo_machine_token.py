@@ -58,6 +58,11 @@ class TestCargoMachineToken(IntegrationTestCase):
 		self.assertEqual(result["resource_id"], "cargo:vm-1")
 		self.mint.assert_called_once_with(60117, "cargo:vm-1")
 
+	def test_the_cargo_host_gets_a_datum_token_for_its_region(self):
+		result = self.call(self.machine_token(role="cargo", machine=self.region.name))
+
+		self.assertEqual(result["resource_id"], f"cargo:{self.region.name}")
+
 	def test_a_token_signed_with_another_secret_is_refused(self):
 		with self.assertRaises(frappe.AuthenticationError):
 			self.call(self.machine_token(secret=frappe.generate_hash(length=32)))
