@@ -69,7 +69,7 @@ watch(
 <template>
 	<section>
 		<Teleport
-			v-if="active && geographyOptions.length > 1"
+			v-if="active"
 			defer
 			to="#ai-tab-controls"
 		>
