@@ -93,17 +93,21 @@ class TestAITrialKey(IntegrationTestCase):
 		ai_trial_key.refill_trial_keys()
 
 		self.assertEqual(self.statuses(), ["Available"] * 3)
+		key = frappe.get_doc(
+			"AI Trial Key", frappe.get_all("AI Trial Key", pluck="name", order_by="creation asc")[-1]
+		)
+		# The record has an id of its own, and that id is the key's title at Grove.
+		self.assertTrue(key.name.startswith("AITK-") and key.name != key.grove_key)
 		self.assertEqual(
 			self.grove.provision_key.call_args.kwargs,
 			{
 				"team": TRIAL_TEAM,
-				"title": None,
+				"title": key.name,
 				"geography": "eu",
 				"cap": 2,
 				"model_groups": None,
 			},
 		)
-		key = frappe.get_doc("AI Trial Key", frappe.get_all("AI Trial Key", pluck="name")[-1])
 		self.assertEqual((key.gateway_url, key.get_password("api_key")), (GATEWAY, f"gr_{key.grove_key}"))
 		self.assertEqual(key.product, "raven")
 
@@ -265,6 +269,11 @@ class TestAITrialKey(IntegrationTestCase):
 		self.grove.revoke_key.side_effect = Exception("Grove refused")
 		with patch(f"{MODULE}.frappe.enqueue"):
 			AITrialKey.queue_revoke(name=key.name)
+		# The queued job itself: the refusal lands on the record, nothing raises.
+		with patch(f"{MODULE}.frappe.log_error"):
+			ai_trial_key.revoke_trial_key(key.name)
+		self.assertEqual((key.reload().status, key.last_error), ("Revoking", "Grove refused"))
+		self.grove.revoke_key.reset_mock()
 
 		ai_trial_key.retry_stale()
 		self.grove.revoke_key.assert_not_called()
