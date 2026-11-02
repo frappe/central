@@ -4,7 +4,11 @@ import { useAuth } from '@/composables/useAuth'
 import { useSession } from '@/composables/useSession'
 import { fetchBillingSetup } from '@/data/billingSetup'
 import { rememberFirstTouch } from '@/lib/attribution'
-import { carriedQuery } from '@/lib/authRedirect'
+import {
+	carriedQuery,
+	productOnboarding,
+	signInDestination,
+} from '@/lib/authRedirect'
 import { features } from '@/lib/features'
 
 const routes = [
@@ -210,10 +214,16 @@ router.beforeEach((to) => {
 	if (to.meta.public) {
 		if (isGuest.value) rememberFirstTouch(to.query)
 		if (isGuest.value || to.meta.allowSignedIn) return true
-		// Logged in but on an auth page, such as browser-Back after verifying.
-		return productSignup
-			? { path: '/onboarding/site', query: carriedQuery(to.query) }
-			: '/servers'
+		// Logged in but on an auth page, such as browser-Back after verifying: go where sign-in would.
+		const onboarding = productOnboarding(to.query)
+		if (onboarding) return onboarding
+
+		const destination = signInDestination(to.query)
+		if (destination.startsWith('/dashboard/'))
+			return destination.slice('/dashboard'.length)
+		// Central's mailbox sign-in callback is a server route, not a console page.
+		window.location.replace(destination)
+		return false
 	}
 
 	if (isGuest.value) {
