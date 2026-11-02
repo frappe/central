@@ -19,6 +19,8 @@ export interface ImageOffering {
 	enabled?: 0 | 1
 	/**	Available In : Select	*/
 	available_in: 'Server' | 'Signup' | 'Both'
+	/**	Display Order : Int - Offerings show in ascending order. Equal values sort by display name.	*/
+	display_order?: number
 	/**	Logo : Attach Image	*/
 	logo?: string
 	/**	Description : Small Text	*/
