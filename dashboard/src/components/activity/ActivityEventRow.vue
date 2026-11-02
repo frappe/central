@@ -38,6 +38,8 @@ const detailId = computed(() => `activity-detail-${event.value.id}`)
 const parts = computed(() => getSentenceParts(event.value))
 const summary = computed(() => getEventSummary(event.value))
 const filteredDetails = computed(() => getSummaryDetails(event.value))
+const changeCount = computed(() => filteredDetails.value.length)
+const hasMultipleChanges = computed(() => !isRun.value && changeCount.value > 1)
 
 const statusTheme = computed(() =>
 	event.value.status ? getStatusTheme(event.value.status) : 'gray',
@@ -72,10 +74,10 @@ function toggle() {
 <template>
 	<li class="relative">
 		<div
-			class="group flex items-start gap-3.5 rounded-6 px-3.5 py-3 transition-colors sm:py-3.5"
+			class="group flex items-start gap-3.5 rounded-6 px-3.5 py-3 transition-colors duration-150 sm:py-3.5"
 			:class="{
-				'cursor-pointer hover:bg-surface-gray-1': canExpand,
-				'bg-surface-gray-1': isOpen,
+				'cursor-pointer hover:bg-surface-gray-1/40': canExpand,
+				'bg-surface-gray-1/40': isOpen,
 			}"
 			@click="toggle"
 		>
@@ -105,6 +107,9 @@ function toggle() {
 					</template>
 					<template v-if="isRun">
 						<span class="text-ink-gray-5"> · {{ repeatCount }}</span>
+					</template>
+					<template v-else-if="hasMultipleChanges">
+						<span class="text-ink-gray-5"> · {{ changeCount }} changes</span>
 					</template>
 					<template v-else-if="summary.length">
 						<span class="text-ink-gray-4" aria-hidden="true"> · </span>
@@ -218,7 +223,7 @@ function toggle() {
 					<span
 						class="w-32 shrink-0 font-normal text-ink-gray-5 whitespace-nowrap"
 					>
-						IP address
+						Accessed from
 					</span>
 					<span class="min-w-0 flex-1 font-mono text-xs text-ink-gray-8">
 						{{ event.ip_address }}

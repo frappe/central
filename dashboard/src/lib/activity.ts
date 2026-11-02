@@ -114,11 +114,10 @@ export function getEventItems(event: ActivityEvent): SummaryPart[] {
 	return getSummaryDetails(event).map(getDetailSummary)
 }
 
-/** The line under the sentence: one item in full, or the first item and how many more. */
+/** The change inline when only one exists; multiple changes show their count instead. */
 export function getEventSummary(event: ActivityEvent): SummaryPart[] {
 	const items = getEventItems(event)
-	if (items.length < 2) return items
-	return [items[0], { label: `and ${items.length - 1} more`, value: '' }]
+	return items.length === 1 ? items : []
 }
 
 export interface SentencePart {

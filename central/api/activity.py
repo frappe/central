@@ -12,7 +12,7 @@ from central.iam import can, get_user_team_names, user_has_operator_bypass
 from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
 from central.utils.guards import require_capability
 
-DEFAULT_LIMIT = 20
+DEFAULT_LIMIT = 50
 MAX_LIMIT = 100
 FIELDS = [
 	"name",

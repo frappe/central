@@ -144,7 +144,7 @@ function clearFilters() {
 				:key="month.label"
 				class="mt-6 first:mt-2"
 			>
-				<h3 class="px-3.5 pb-2 text-lg-semibold text-ink-gray-9">
+				<h3 class="px-3.5 pb-1.5 text-sm-medium text-ink-gray-5">
 					{{ month.label }}
 				</h3>
 
@@ -166,10 +166,11 @@ function clearFilters() {
 				class="mt-3"
 			/>
 
-			<div v-if="nextCursor" class="mt-4 flex justify-center">
+			<div v-if="nextCursor" class="mt-4 px-3.5">
 				<Button
 					label="Load more"
-					variant="ghost"
+					class="border border-outline-gray-2 bg-surface-gray-2 text-ink-gray-8 hover:bg-surface-gray-3 hover:text-ink-gray-9 active:bg-surface-gray-4"
+					size="sm"
 					:loading="loadingMore"
 					@click="loadMore"
 				/>
