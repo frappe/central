@@ -116,8 +116,8 @@ const canOpen = computed(
 			(!!props.server.gateway_url && !props.actions.isAccessLocked)),
 )
 
-// Overview and Open are the page itself and its primary button, so the menu omits them.
 const handlers: Partial<Record<ServerMenuVerb, () => void>> = {
+	open: () => emit('open'),
 	pilot: () => emit('pilot'),
 	start: () => emit('command', 'start'),
 	stop: () => emit('command', 'stop'),

@@ -112,3 +112,26 @@ test('a locked web console is one disabled row with the reason and no submenu', 
 	assert.equal('submenu' in row, false)
 	assert.equal(row.description, 'Not in the free trial.')
 })
+
+test('the server page menu offers Visit site and Resize', () => {
+	const server = {
+		resource_id: 'vm-1',
+		status: 'Running',
+		pending_action: null,
+		gateway_url: 'https://vm-1.example.test',
+	}
+	const labels = menu
+		.getServerMenuGroups(
+			server,
+			{ ...allowed, open: true, resize: true },
+			() => {},
+			{ site: 'acme.example.test', isOnServerPage: true },
+		)
+		.flat()
+		.map((option) => option.label)
+
+	assert.ok(labels.includes('Visit site'))
+	assert.ok(labels.includes('Open server'))
+	assert.ok(labels.includes('Resize'))
+	assert.equal(labels.includes('Overview'), false)
+})
