@@ -10,6 +10,7 @@
   "control_api_key",
   "column_break_tipc",
   "control_api_secret",
+  "grove_token_hash",
   "trials_tab",
   "trial_key_geography",
   "pause_pool_refill",
@@ -45,6 +46,12 @@
    "fieldtype": "Password",
    "label": "Control API Secret",
    "read_only": 1
+  },
+  {
+   "description": "SHA-256 (hex) of the Central Token Grove Settings holds. Grove presents that token as X-Grove-Token to mint each box's datum write token (central.api.grove.datum_token). Blank admits nobody.",
+   "fieldname": "grove_token_hash",
+   "fieldtype": "Data",
+   "label": "Grove Token Hash"
   },
   {
    "fieldname": "trials_tab",
