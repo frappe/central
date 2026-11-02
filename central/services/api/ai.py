@@ -83,15 +83,15 @@ def create_api_key(
 		"geography": key["geography"],
 		"gateway_url": key["gateway_url"],
 		"api_key": key["api_key"],
-		"models": key_models_or_none(team, key["name"]),
+		"models": _get_models(team, key["geography"]),
 	}
 
 
-def key_models_or_none(team: str, key: str) -> list[dict]:
+def _get_models(team: str, geography: str) -> list[dict]:
 	"""The models for the quickstart, or none: the secret is shown once, and a failed read of what
 	the key may call must not cost it. The Grove client has logged the failure already."""
 	try:
-		return ai.get_key_models(team, key)
+		return ai.get_models(team, geography)
 	except frappe.ValidationError:
 		frappe.clear_last_message()
 		return []
@@ -142,9 +142,9 @@ def pull_usage(team: str | None = None) -> dict:
 @frappe.whitelist(methods=["GET"])
 @require_capability("service:view", VIEW_DENIED)
 def get_models(team: str | None = None, geography: str | None = None) -> list[dict]:
-	"""What a key in `geography` (Grove's default when none) starts with: its default group."""
+	"""The models the team's keys may call in `geography` (Grove's default when none)."""
 	require_ai(team)
-	return ai.get_models(geography or None)
+	return ai.get_models(team, geography or None)
 
 
 @frappe.whitelist(methods=["POST"])

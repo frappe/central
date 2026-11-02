@@ -26,7 +26,7 @@ A System Manager can grant credit from the **Grant Credit** action on a Team, fo
 
 A trial site is a site from a Product's signup flow, for a Team that has no active payment method and has never paid. A direct Central signup has no free trial: it lands in the console, adds a payment method and buys its servers. Only a signup link with `?product=` opens the onboarding pages, and `create_trial_site` needs a product. It runs free for a set number of days. The trial state is on the Site, in the **Trial** section.
 
-A Team has paid when it has a Subscription, or an Invoice that is not Draft or Cancelled. Such a Team buys its signup sites like any other server, also when its payment method has expired or failed. So a Team with unpaid invoices cannot open free servers.
+A Team has paid when it has a Subscription, or an Invoice that is not Draft or Cancelled. Such a Team gets no free trial, also when its payment method has expired or failed. So a Team with unpaid invoices cannot open free servers. A Team with an active payment method gets no free trial either. When such a Team follows a signup link, the signup page does not ask for a site name. It says that the Team buys its servers and links to the New Server page.
 
 ### Configuration
 
@@ -163,7 +163,7 @@ The console's Upgrade dialog on a trial server lists the trial's plan choices wi
 
 ### Desk
 
-On a Site with an open trial, a System Manager has a **Trial** menu: **Extend Trial** adds days and starts an Ended trial again without the AI key its end revoked, **End Trial Now** ends an Active trial today and revokes its AI key at Grove, and **Retry Trial Step** runs today's step again after a Trial Error. On a Converted site, it sends the conversion job again. Each action leaves a comment on the Site. A trial that converts hands its AI key to the team at Grove in the background, best effort: three attempts, then the AI Trial Key record and the Site say it failed, the key is revoked and the team creates its own. The **Trial Sites** report counts trial sites and their cost by product, month and state.
+On a Site with an open trial, a System Manager has a **Trial** menu: **Extend Trial** adds days and starts an Ended trial again, with the AI key it still holds, **End Trial Now** ends an Active trial today and stops its server (its AI key stays until its days pass or the server is terminated), and **Retry Trial Step** runs today's step again after a Trial Error. On a Converted site, it sends the conversion job again. Each action leaves a comment on the Site. A trial that converts hands its AI key to the team at Grove in the background, best effort: three attempts, then the AI Trial Key record and the Site say it failed, the key is revoked and the team creates its own. The **Trial Sites** report counts trial sites and their cost by product, month and state.
 
 ### Failure
 

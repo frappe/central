@@ -298,4 +298,6 @@ export interface TrialOnboardingStatus {
 		error: { message: string } | null
 	} | null
 	journey: SetupJourney | null
+	/** Whether a new site of this product would be free. A team that pays buys its servers. */
+	is_free_trial: boolean
 }
