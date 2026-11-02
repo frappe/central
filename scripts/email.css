@@ -33,6 +33,10 @@
 		@apply m-0 mb-3 text-2xl font-bold text-neutral-900;
 	}
 
+	.fc-subheading {
+		@apply mb-2 mt-6 text-base font-semibold text-neutral-900;
+	}
+
 	.fc-text {
 		@apply m-0 mb-4 text-sm leading-relaxed text-neutral-700;
 	}
@@ -65,8 +69,9 @@
 		@apply text-sm font-normal text-neutral-800;
 	}
 
+	/* Frappe's email CSS colours every link blue, and the underline takes the link's colour. */
 	.fc-link {
-		@apply underline;
+		@apply text-neutral-900 [text-decoration:underline];
 	}
 
 	.fc-link .fc-link-label {
