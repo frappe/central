@@ -14,10 +14,10 @@ const LOADING_MESSAGES = [
 	'Filing the flight plan…',
 	'Running preflight checks…',
 	'Warming up the engines…',
-	'Checking the instruments…',
 	'Taxiing to the runway…',
 	'Waiting for clearance…',
-	'Climbing to cruising altitude…',
+	'Getting ready for takeoff…',
+	'Brewing your coffee…',
 ]
 
 type BenchLinkResponse = { url: string }
