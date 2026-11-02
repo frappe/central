@@ -129,17 +129,11 @@ def get_day_totals(usage: dict) -> list[dict]:
 	return [{"day": day, **fields} for day, fields in totals.items()]
 
 
-def get_models(team: str | None = None, geography: str | None = None) -> list[dict]:
+def get_models(team: str, geography: str | None = None) -> list[dict]:
 	"""The published models a key of `team` in `geography` (Grove's default when None) may call,
-	what each takes and gives, and the API surfaces it answers on. With no team, what a new key
-	starts with there: Grove's default group."""
+	what each takes and gives, and the API surfaces it answers on. Grove decides; Central only
+	shows them."""
 	return shape_models(GroveClient.from_settings().list_models(team=team, geography=geography))
-
-
-def get_key_models(team: str, key: str) -> list[dict]:
-	"""The models Grove lets one key call, as its geography serves them. Grove decides; Central
-	only shows them."""
-	return shape_models(GroveClient.from_settings().list_models(team, key))
 
 
 def shape_models(rows: list[dict]) -> list[dict]:
