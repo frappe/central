@@ -132,7 +132,7 @@ const { onKeydown } = useMenuKeyboardNavigation(() => {
 				<p v-if="switching" class="p-2 text-p-sm text-ink-gray-5" role="status">
 					Switching team…
 				</p>
-				<div v-if="!loading && !switching" class="max-h-64 overflow-y-auto">
+				<div v-if="!loading && !switching" class="max-h-64 overflow-y-auto flex flex-col gap-0.5">
 					<Button
 						v-for="team in visibleTeams"
 						:key="team.name"
