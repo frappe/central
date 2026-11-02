@@ -43,7 +43,7 @@ def open_and_collect(invoice: str, collect: bool = True) -> dict:
 		.for_update()
 		.run(as_dict=True)
 	)
-	if not rows or rows[0].status != "Outstanding" or rows[0].due_date:
+	if not rows or not _is_uncollected(rows[0]):
 		return {"invoice": invoice, "claimed": False}
 
 	doc = frappe.get_doc("Invoice", invoice)
@@ -122,6 +122,10 @@ def open_and_collect(invoice: str, collect: bool = True) -> dict:
 		"status": "Outstanding",
 		"charge": charge,
 	}
+
+
+def _is_uncollected(row) -> bool:
+	return row.status == "Outstanding" and not row.due_date
 
 
 def settle_with_new_credit(team: str) -> list[dict]:
@@ -315,7 +319,7 @@ def _hold_for_billing_details(doc) -> bool:
 	missing = get_missing_field_labels(doc.team)
 	if not missing:
 		return False
-	if _asked_for_details_recently(doc.name):
+	if _has_asked_for_details_recently(doc.name):
 		return True
 	notifications.notify(
 		doc.team,
@@ -327,7 +331,7 @@ def _hold_for_billing_details(doc) -> bool:
 	return True
 
 
-def _asked_for_details_recently(invoice: str) -> bool:
+def _has_asked_for_details_recently(invoice: str) -> bool:
 	return bool(
 		frappe.db.exists(
 			"Billing Notification Log",

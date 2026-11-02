@@ -119,7 +119,7 @@ def get_statement(team: str | None = None, from_date: str | None = None, to_date
 				"period_start": str(i.period_start),
 				"period_end": str(i.period_end),
 				"status": i.status,
-				"due_date": str(i.due_date) if i.due_date else None,
+				"due_date": i.due_date,
 				"total": frappe.utils.flt(i.total),
 				"tax": frappe.utils.flt(i.output_tax_amount),
 				"credit_applied": frappe.utils.flt(i.credit_applied),

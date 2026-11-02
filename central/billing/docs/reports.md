@@ -82,7 +82,7 @@ Used CPU, memory, disk and bandwidth come from the region's telemetry. Only serv
 
 - A region's monthly cost is the sum of `cost_per_month_inr` on its Active Metal Servers. A live server carries its vCPUs times the region's cost per vCPU.
 - A metered line costs its quantity times its Resource Type's cost per unit. A service whose Resource Type has no cost shows cost 0.
-- Who pays is checked in this order, and the first match wins: Our Own Team (Tax Profile marked internal), Free Trial (the server runs a free trial site), Paying Customer (an active payment method, bought credit or a paid invoice), Not Paying Yet (anything else).
+- Who pays is checked in this order, and the first match wins: Our Own Team (Billing Profile marked internal), Free Trial (the server runs a free trial site), Paying Customer (an active payment method, bought credit or a paid invoice), Not Paying Yet (anything else).
 - Sellable capacity is physical less the host reserve. vCPUs are then multiplied by the CPU overcommit ratio.
 - Potential revenue prices each sellable vCPU, GiB of memory and GiB of disk at the region's INR component rate card (Resource Types Compute, Memory and Disk). A resource with no INR rate counts at 0.
 - Yield is cash revenue divided by potential revenue. Potential revenue is unsold plus used free plus discount plus cash revenue. Unsold is the rate card value that no Central server holds, so platform servers count in it. Used free is the rate card value of servers that do not pay. It is revenue we do not earn, not a loss: what those servers cost us is their vCPU share of the metal bill, shown as Cost of Servers That Pay Nothing. On a machine row that share is of the machine's own bill. Discount is the rate card value of paying servers less what they pay, and is below 0 when they pay more than the rate card.
@@ -126,7 +126,7 @@ A team tries to pay when it adds a card or mandate, orders credit, or pays an in
 | Fixed method, not billed yet | The team failed first, then added a working method within 30 days. The dashboard counts it as recovered. |
 | Window still open | The team failed first less than 30 days ago and has not recovered yet. |
 | Lost | The team failed first and did not recover within 30 days. |
-| Not billed directly | The team is internal (Tax Profile marked internal). |
+| Not billed directly | The team is internal (Billing Profile marked internal). |
 
 A failure is any of these:
 
