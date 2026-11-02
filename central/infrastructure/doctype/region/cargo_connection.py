@@ -64,15 +64,6 @@ class CargoConnectionMixin:
 
 		return True
 
-	def issue_cargo_datum_token(self) -> None:
-		"""Mint this region's Cargo a Datum token and hand it over. Cargo has no pilot
-		credential to fetch one with, so it reports telemetry again when its token nears expiry."""
-		from central.integrations.cargo import CargoClient
-		from central.sso import mint_datum_token
-
-		token = mint_datum_token(self.get_atlas_region_id(), f"cargo:{self.name}")
-		CargoClient(self).accept_datum_token(token)
-
 
 def get_cargo_machine_claims(token: str) -> dict:
 	"""The claims of a machine token a region's Cargo signed with its webhook secret.
