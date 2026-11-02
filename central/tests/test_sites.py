@@ -582,6 +582,18 @@ class TestSiteRoutes(SiteOnAMachine):
 		with self.assertRaises(frappe.PermissionError):
 			onboarding_status(self.team.name, product)
 
+	def test_a_disabled_product_refuses_a_new_site_but_resumes_a_started_one(self):
+		product = self.signup_product("raven-disabled")
+		frappe.db.set_value("Product", product, "enabled", 0)
+
+		with self.assertRaises(frappe.ValidationError):
+			onboarding_status(self.team.name, product)
+
+		self.site().db_set("product", product)
+		self.creation_action("Site", product)
+		with patch("central.api.sites.is_site_reachable", return_value=False):
+			self.assertEqual(onboarding_status(self.team.name, product)["site"]["name"], self.site().name)
+
 	def test_the_patch_records_the_product_of_existing_trial_actions(self):
 		from central.patches.v0_0.record_trial_action_product import execute
 

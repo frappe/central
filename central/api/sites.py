@@ -171,6 +171,8 @@ def login_site(name: str, product: str | None = None) -> dict:
 def onboarding_status(team: str | None = None, product: str | None = None) -> dict:
 	"""Resume this product's site or creation within the authorized team, with the journey the
 	waiting page follows."""
+	from central.signups.doctype.product.product import get_signup_product
+
 	site, action = find_onboarding(team, product)
 	state = site_state(site, with_login=False) if site else None
 	creation = (
@@ -179,6 +181,9 @@ def onboarding_status(team: str | None = None, product: str | None = None) -> di
 		else None
 	)
 	if not state and not creation:
+		# A new site needs a product that still takes signups. A started one resumes regardless.
+		if product:
+			get_signup_product(product)
 		return {"site": None, "creation": None, "journey": None}
 
 	journey = SetupJourney(action, site, state)

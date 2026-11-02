@@ -39,6 +39,8 @@ const offerOpenTrial = ref(false)
 const isCheckingTrial = ref(true)
 const { team, requestKey, prepareTeam, readStatus, resetRequestKey } =
 	useTrialOnboarding()
+// The page could not start: there is nothing to retry here, so it offers the console.
+const loadError = ref('')
 const provisioning = {
 	path: '/onboarding/provisioning',
 	query: carriedQuery(route.query),
@@ -56,7 +58,10 @@ onMounted(async () => {
 	try {
 		await prepareTeam()
 	} catch (exception) {
-		error.value = frappeErrorMessage(exception, 'Could not set up your team.')
+		loadError.value = frappeErrorMessage(
+			exception,
+			'Could not set up your team.',
+		)
 		isCheckingTrial.value = false
 		return
 	}
@@ -91,8 +96,10 @@ onMounted(async () => {
 		// The open trial of this product is on another team of the owner.
 		if (open) offerOpenTrial.value = true
 	} catch (exception) {
-		error.value = frappeErrorMessage(exception, 'Could not find your trial.')
-		requestKey.value = ''
+		loadError.value = frappeErrorMessage(
+			exception,
+			'Could not find your trial.',
+		)
 	} finally {
 		isCheckingTrial.value = false
 	}
@@ -193,6 +200,25 @@ async function createSite() {
 			:setup-messages="product?.setup_messages ?? []"
 			@start-over="startOver"
 		/>
+		<template v-else-if="loadError">
+			<h1 class="flex items-center gap-2 text-2xl-semibold text-ink-gray-9">
+				<ProductLogo />
+				We could not start your site
+			</h1>
+			<div class="mt-4">
+				<AuthErrorMessage
+					:message="loadError"
+					page="Name your site"
+					:context="{ Product: product?.title }"
+				/>
+			</div>
+			<Button
+				class="mt-8 w-full"
+				size="md"
+				label="Go to Frappe Cloud"
+				:route="{ path: '/servers' }"
+			/>
+		</template>
 		<template v-else>
 			<h1 class="flex items-center gap-2 text-2xl-semibold text-ink-gray-9">
 				<ProductLogo />
