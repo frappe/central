@@ -7,6 +7,8 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
+from central.integrations.images import APP_PURPOSE
+
 
 class ImageOffering(Document):
 	# begin: auto-generated types
@@ -83,6 +85,13 @@ def ensure_default_offerings() -> None:
 			"Server",
 			"A plain Ubuntu server.",
 			{"purpose": "base", "os": "Ubuntu", "minimal": "false"},
+		),
+		(
+			"apps",
+			"Apps",
+			"Server",
+			"Ready-to-run software such as Redis and MariaDB.",
+			{"purpose": APP_PURPOSE},
 		),
 	):
 		if frappe.db.exists("Image Offering", key):

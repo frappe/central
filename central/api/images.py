@@ -17,6 +17,18 @@ def list_images(team: str, region: str, offering: str, flow: str = "Server", off
 
 @frappe.whitelist(methods=["GET"])
 @handle_resource_operation
+def list_apps(team: str, region: str) -> list[dict]:
+	return images.list_apps(team, region)
+
+
+@frappe.whitelist(methods=["GET"])
+@handle_resource_operation
+def get_app_requirements(team: str, region: str, application: str) -> dict:
+	return images.get_app_requirements(team, region, application)
+
+
+@frappe.whitelist(methods=["GET"])
+@handle_resource_operation
 def eligible_plans(
 	team: str, region: str, offering: str = "", image_id: str = "", snapshot: str | None = None
 ) -> dict:

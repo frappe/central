@@ -68,11 +68,7 @@ watch(
 
 <template>
 	<section>
-		<Teleport
-			v-if="active"
-			defer
-			to="#ai-tab-controls"
-		>
+		<Teleport v-if="active" defer to="#ai-tab-controls">
 			<Select
 				v-model="geography"
 				:options="geographyOptions"

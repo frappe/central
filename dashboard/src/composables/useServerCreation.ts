@@ -1,6 +1,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { API } from '@/api/methods'
+import { useAppRequirements } from '@/composables/useAppRequirements'
 import { useBillingSetup } from '@/composables/useBillingSetup'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { useMyProfile } from '@/composables/useMyProfile'
@@ -143,6 +144,9 @@ export function useServerCreation() {
 		reloadSnapshots,
 		offerings,
 		offering,
+		apps,
+		isApp,
+		app,
 		imageId,
 		image,
 		selection,
@@ -154,6 +158,14 @@ export function useServerCreation() {
 		selectedRegion,
 		typeof route.query.snapshot === 'string' ? route.query.snapshot : '',
 	)
+	const {
+		requirements: appRequirements,
+		answers: appAnswers,
+		loading: appRequirementsLoading,
+		error: appRequirementsError,
+		reload: reloadAppRequirements,
+		isComplete: isAppComplete,
+	} = useAppRequirements(selectedRegion, app)
 	const offeringOptions = computed(() =>
 		offerings.value.map((item) => ({
 			label: item.title,
@@ -374,6 +386,7 @@ export function useServerCreation() {
 		if (paymentMethodRequired.value) return false // the page asks for one instead
 		if (regionFull.value) return false // the region can't seat a new server right now
 		if (bracketExhausted.value) return false // nothing here fits the budget
+		if (app.value && (!appRequirements.value || !isAppComplete())) return false // the app's required settings are still blank
 		return isCustom.value ? !!composedConfig.value : !!selectedPlanObj.value
 	})
 
@@ -397,6 +410,14 @@ export function useServerCreation() {
 			has_public_ipv4: hasPublicIpv4.value,
 			has_public_ipv6: hasPublicIpv6.value,
 			is_firewall_enabled: isFirewallEnabled.value,
+			// Blank answers are left out: the VM generates or defaults them at first boot.
+			...(app.value && {
+				app_inputs: Object.fromEntries(
+					Object.entries(appAnswers.value)
+						.map(([key, value]) => [key, value.trim()])
+						.filter(([, value]) => value),
+				),
+			}),
 		}
 		if (isCustom.value && composedConfig.value) {
 			await operation.submit(API.createComposedServer, {
@@ -481,6 +502,14 @@ export function useServerCreation() {
 		welcomeCredit,
 		offering,
 		offeringOptions,
+		apps,
+		isApp,
+		app,
+		appRequirements,
+		appAnswers,
+		appRequirementsLoading,
+		appRequirementsError,
+		reloadAppRequirements,
 		imageId,
 		image,
 		imageOptions,

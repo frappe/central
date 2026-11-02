@@ -32,7 +32,7 @@ The operator's **Preview Regional Images** action uses the saved selector and sy
 
 ## Installation and migration
 
-`ensure_default_offerings` creates missing Frappe and Ubuntu records on installation. The `seed_image_offerings` patch runs the same function on existing sites. Repeated execution preserves operator edits, including disabled offerings.
+`ensure_default_offerings` creates missing Frappe, Ubuntu and Templates records on installation. The `seed_image_offerings` and `seed_template_offering` patches run the same function on existing sites. Repeated execution preserves operator edits, including disabled offerings.
 
 ## Dependencies
 

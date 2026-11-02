@@ -37,7 +37,15 @@ from central.infrastructure.doctype.resource_action.resource_action import (
 	PENDING_STATES,
 	ResourceAction,
 )
-from central.integrations.images import selected_image, snapshot_image, snapshot_source
+from central.integrations.cargo import CargoClient
+from central.integrations.images import (
+	APP_PURPOSE,
+	get_image_app_requirements,
+	get_minimum_shape,
+	selected_image,
+	snapshot_image,
+	snapshot_source,
+)
 from central.server_models import (
 	DNS_LABEL,
 	MAXIMUM_USER_DATA_BYTES,
@@ -73,6 +81,7 @@ def submit_request(
 	has_public_ipv6: bool = False,
 	is_firewall_enabled: bool = False,
 	user_data: str = "",
+	app_inputs: dict[str, str] | None = None,
 	resource_type: str = "Server",
 	subdomain: str | None = None,
 	snapshot: str | None = None,
@@ -102,6 +111,7 @@ def submit_request(
 		has_public_ipv6=has_public_ipv6,
 		is_firewall_enabled=is_firewall_enabled,
 		user_data=user_data,
+		app_inputs=app_inputs,
 	)
 	if not can(frappe.session.user, server_input.team, "server:create"):
 		frappe.throw(
@@ -245,6 +255,7 @@ def _validate_server_input(**values) -> CreateServerInput:
 	values["hostname"] = values.get("hostname") or ""
 	values["ssh_keys"] = values.get("ssh_keys") or []
 	values["ssh_key_ids"] = values.get("ssh_key_ids") or []
+	values["app_inputs"] = values.get("app_inputs") or {}
 	try:
 		server_input = CreateServerInput.model_validate(values)
 	except ValidationError as error:
@@ -315,6 +326,8 @@ def _build_server_configuration(
 	# Check the saved keys now so the form shows the error. Dispatch reads their text, which a
 	# rotation can change before a retry.
 	resolve_team_ssh_keys(server_input.team, server_input.ssh_key_ids)
+	shape = image_shape(composition, image)
+	_validate_app_size(image, get_image_app_requirements(server_input.region, image, snapshot), shape)
 
 	configuration = ServerCreation(
 		offering=server_input.offering,
@@ -332,12 +345,39 @@ def _build_server_configuration(
 		has_public_ipv4=server_input.has_public_ipv4,
 		has_public_ipv6=server_input.has_public_ipv6,
 		is_firewall_enabled=server_input.is_firewall_enabled,
-		user_data=server_input.user_data,
+		user_data=_get_user_data(server_input, image, snapshot),
 		image_tags=image["tags"],
-		**image_shape(composition, image),
+		**shape,
 	)
 
 	return configuration, rate
+
+
+def _get_user_data(server_input: CreateServerInput, image: dict, snapshot: str | None) -> str:
+	"""The user data the server boots with. An app's comes from its region's Cargo, built
+	from the answers to its inputs, and names the application by the image's own tags. A
+	restored snapshot is already set up, so it takes none."""
+	if snapshot or image["tags"].get("purpose") != APP_PURPOSE:
+		if server_input.app_inputs:
+			frappe.throw(_("Only an app takes app settings."))
+		return server_input.user_data
+
+	if server_input.user_data:
+		frappe.throw(_("An app server sets its own user data."))
+
+	region = frappe.get_doc("Region", server_input.region)
+	return CargoClient(region).get_app_user_data(image["tags"]["application"], server_input.app_inputs)
+
+
+def _validate_app_size(image: dict, requirements: dict | None, shape: dict[str, int]) -> None:
+	"""A new app server needs at least the app's minimum size. Any other server, and a
+	restored snapshot, has no app requirements."""
+	if not requirements:
+		return
+
+	minimum = get_minimum_shape(image, requirements)
+	if any(shape[key] < minimum[key] for key in minimum):
+		frappe.throw(_("This app needs a bigger server. Choose a plan with more CPU, memory or storage."))
 
 
 def unanswered_request(team: str, digest: str) -> str | None:

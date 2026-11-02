@@ -69,3 +69,5 @@ central.patches.v0_0.remove_wireguard_device_firewall_rule
 central.patches.v0_0.mark_pilot_reportable_events
 # Revoke every trial key still live, pool and assigned alike; the refill job mints the pools fresh.
 central.patches.v0_0.revoke_trial_keys
+# Apps: ready-to-run one-click images a region's Cargo builds.
+central.patches.v0_0.seed_template_offering
