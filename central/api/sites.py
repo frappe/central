@@ -170,8 +170,9 @@ def login_site(name: str, product: str | None = None) -> dict:
 )
 def onboarding_status(team: str | None = None, product: str | None = None) -> dict:
 	"""Resume this product's site or creation within the authorized team, with the journey the
-	waiting page follows."""
+	waiting page follows, and whether a new site of this product would be a free trial."""
 	from central.signups.doctype.product.product import get_signup_product
+	from central.signups.eligibility import is_free_trial_creation
 
 	site, action = find_onboarding(team, product)
 	state = site_state(site, with_login=False) if site else None
@@ -180,14 +181,15 @@ def onboarding_status(team: str | None = None, product: str | None = None) -> di
 		if not site and action and action.status in (*PENDING_STATES, "Failed", "Timed Out")
 		else None
 	)
+	is_free_trial = is_free_trial_creation(team, product)
 	if not state and not creation:
 		# A new site needs a product that still takes signups. A started one resumes regardless.
 		if product:
 			get_signup_product(product)
-		return {"site": None, "creation": None, "journey": None}
+		return {"site": None, "creation": None, "journey": None, "is_free_trial": is_free_trial}
 
 	journey = SetupJourney(action, site, state)
-	return {"site": state, "creation": creation, "journey": journey.as_dict()}
+	return {"site": state, "creation": creation, "journey": journey.as_dict(), "is_free_trial": is_free_trial}
 
 
 def find_onboarding(team: str | None, product: str | None) -> tuple[Site | None, frappe._dict | None]:
