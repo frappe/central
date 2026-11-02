@@ -3,6 +3,7 @@
 
 import frappe
 from frappe import _
+from frappe.utils.password import get_decrypted_password
 
 from central.errors import CargoConnectionError
 from central.iam import user_has_operator_bypass
@@ -71,6 +72,44 @@ class CargoConnectionMixin:
 
 		token = mint_datum_token(self.get_atlas_region_id(), f"cargo:{self.name}")
 		CargoClient(self).accept_datum_token(token)
+
+
+def get_cargo_machine_claims(token: str) -> dict:
+	"""The claims of a machine token a region's Cargo signed with its webhook secret.
+
+	1. The unverified `region` claim only selects the secret; it proves nothing.
+	2. The region's Cargo must be Registered and hold a secret.
+	3. The HS256 signature must match that secret, with the machine token audience.
+	4. The token must name a machine and one of Cargo's node roles."""
+	import jwt
+
+	try:
+		region = jwt.decode(token, options={"verify_signature": False}).get("region")
+		if (
+			not isinstance(region, str)
+			or frappe.db.get_value("Region", region, "cargo_status") != "Registered"
+		):
+			raise jwt.InvalidTokenError
+
+		secret = get_decrypted_password("Region", region, "cargo_webhook_secret", raise_exception=False)
+		if not secret:
+			raise jwt.InvalidTokenError
+
+		claims = jwt.decode(
+			token,
+			secret,
+			algorithms=["HS256"],
+			audience="central:datum-credential",
+			issuer="cargo",
+			options={"require": ["iss", "aud", "iat"]},
+		)
+	except jwt.PyJWTError:
+		frappe.throw(_("Invalid machine token."), frappe.AuthenticationError)
+
+	if not claims.get("machine") or claims.get("role") not in ("gateway", "storage", "telemetry"):
+		frappe.throw(_("Invalid machine token."), frappe.AuthenticationError)
+
+	return claims
 
 
 def register_pending_cargo() -> None:
