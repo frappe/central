@@ -1,18 +1,17 @@
 <script setup lang="ts">
 import { Alert } from 'frappe-ui'
 import { computed } from 'vue'
-import { useRouter } from 'vue-router'
 import { useBillingSetup } from '@/composables/useBillingSetup'
 import { money } from '@/lib/format'
 
 interface Props {
-	/** Off inside a dialog, where leaving the page would lose the dialog. */
+	/** Off inside a dialog, which cannot open the Upgrade dialog over itself. */
 	linkToUpgrade?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), { linkToUpgrade: true })
+const emit = defineEmits<{ upgrade: [server: string] }>()
 
-const router = useRouter()
 const { profile } = useBillingSetup()
 
 // A payment method converts an Active trial at once, but not an Ended one: that site
@@ -52,8 +51,7 @@ const action = computed(() => {
 
 	return {
 		label: isEnded.value ? 'Keep this site' : 'Upgrade site',
-		onClick: () =>
-			router.push({ path: `/servers/${server}`, query: { action: 'resize' } }),
+		onClick: () => emit('upgrade', server),
 	}
 })
 </script>

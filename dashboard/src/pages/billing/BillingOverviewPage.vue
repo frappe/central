@@ -17,10 +17,12 @@ import SpendCard from '@/components/billing/SpendCard.vue'
 import TiersPanel from '@/components/billing/TiersPanel.vue'
 import TrialBillingBanner from '@/components/billing/TrialBillingBanner.vue'
 import WalletHistoryPanel from '@/components/billing/WalletHistoryPanel.vue'
+import ResizeServerDialog from '@/components/servers/ResizeServerDialog.vue'
 import TopupDialog from '@/components/TopupDialog.vue'
 import { useBillingOverview } from '@/composables/useBillingOverview'
 import { useBillingReports } from '@/composables/useBillingReports'
 import { useBillingSetup } from '@/composables/useBillingSetup'
+import { useServerMapData } from '@/composables/useServerMapData'
 
 const { complete, setupDialogOpen, requireSetup } = useBillingSetup()
 const { currency, reloadMoney } = useBillingOverview()
@@ -63,6 +65,20 @@ const showTiers = trayModel('tiers')
 
 const showTopup = ref(false)
 
+// The trial's Upgrade dialog opens here, so the customer stays on Billing.
+const { servers } = useServerMapData()
+const upgradeServerName = ref<string | null>(null)
+const upgradeServer = computed(
+	() =>
+		servers.value.find((row) => row.name === upgradeServerName.value) ?? null,
+)
+const showUpgrade = computed({
+	get: () => !!upgradeServer.value,
+	set: (open: boolean) => {
+		if (!open) upgradeServerName.value = null
+	},
+})
+
 const onAddCredits = () => {
 	if (requireSetup()) showTopup.value = true
 }
@@ -85,7 +101,7 @@ const onAddCredits = () => {
 				:attempts="reports.attempts.data ?? null"
 			/>
 			<CollectionActionBanner />
-			<TrialBillingBanner />
+			<TrialBillingBanner @upgrade="upgradeServerName = $event" />
 			<GstStatusBanner @edit="setupDialogOpen = true" />
 
 			<div class="grid gap-3 md:gap-4 lg:grid-cols-3">
@@ -125,4 +141,9 @@ const onAddCredits = () => {
 
 	<EditBillingProfileDialog v-model="setupDialogOpen" />
 	<TopupDialog v-model="showTopup" :currency="currency" @done="reloadMoney" />
+	<ResizeServerDialog
+		v-model:open="showUpgrade"
+		:server="upgradeServer"
+		@resized="reloadMoney"
+	/>
 </template>

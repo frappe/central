@@ -75,7 +75,7 @@ test('A server with a resize in progress cannot change plan again', async ({ pag
 	await expect(page.getByRole('dialog')).toHaveCount(0)
 })
 
-test('Billing points an open trial to its Upgrade dialog', async ({ page, trials }) => {
+test('Billing opens the trial Upgrade dialog in place', async ({ page, trials }) => {
 	await trials.start({ trialState: 'Active' })
 
 	await page.goto('/dashboard/billing')
@@ -85,4 +85,5 @@ test('Billing points an open trial to its Upgrade dialog', async ({ page, trials
 	await page.getByRole('button', { name: 'Upgrade site' }).click()
 
 	await expect(page.getByRole('dialog').getByText('Upgrade from free trial')).toBeVisible()
+	await expect(page).toHaveURL(/\/dashboard\/billing$/)
 })
