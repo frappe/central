@@ -37,6 +37,7 @@ Click a server to open its page. The header shows the status, the region, the pl
 | **Networking** | [Addresses, the firewall](/servers/networking), and the domains that point to the server. |
 | **Access** | The [SSH command](/servers/access) and the keys that can sign in. |
 | **Snapshots** | The [snapshots](/servers/snapshots) of this server. |
+| **Activity** | The timeline of changes, restarts, and actions on this server. |
 | **Settings** | [Resize and terminate](/servers/lifecycle). |
 
 ## Statuses

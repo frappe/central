@@ -52,7 +52,7 @@ Each event in the response has a `sentence` and a `resource`. The sentence comes
 | Server, Activity tab | Type (Actions, Configuration, Sites, Access, Snapshots) and date range |
 | Team, Activity tab | Type (also Team and Members) and date range |
 
-The feed groups events by month. Consecutive events by the same actor on the same resource show under one header. A click on a row shows its details, its error and, for a team admin, the IP address. In the team feed, a server name links to the server page.
+The feed groups events by month. Consecutive events by the same actor on the same resource show under one header. A single change detail fits inline on the first line. An event with several details or several repeats opens as an accordion on click. The second line shows the relative time, with a detailed timestamp on hover. In the team feed, a server name links to the server page.
 
 ## Backfill and failure
 
