@@ -218,6 +218,7 @@ def _waive_internal(doc) -> dict:
 	_retax(doc)
 	doc.credit_applied = 0
 	doc.expected_collection = 0
+	doc.erpnext_sync_status = "Not Required"
 	transition(doc, "Waived", reason="internal team", actor="scheduler", amount=doc.total)
 	save_billing_record(doc)
 	return {"invoice": doc.name, "claimed": True, "status": "Waived", "waived": doc.total}
@@ -394,6 +395,7 @@ def waive_for_internal_team(team: str) -> list[str]:
 			"Payment Attempt", {"invoice": name, "status": ["in", ["Initiated", "Authorised", "Captured"]]}
 		):
 			continue
+		doc.erpnext_sync_status = "Not Required"
 		transition(doc, "Waived", reason="team marked internal", actor=frappe.session.user, amount=doc.total)
 		save_billing_record(doc)
 		give_back_wallet(doc)

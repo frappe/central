@@ -165,6 +165,15 @@ class Subscription(Document):
 		# composition) — a payment-method or standing edit is not a price event.
 		if not self.flags.in_insert and self._billing_segment_changed():
 			self.log_plan_change()
+		self.sync_customer_once_active()
+
+	def sync_customer_once_active(self):
+		"""An enabled subscription is what makes a team a customer in the accounting system."""
+		if not self.enabled or not (self.flags.in_insert or self.has_value_changed("enabled")):
+			return
+		from central.billing.ingester.customer import enqueue_for
+
+		enqueue_for(self.team)
 
 	def _billing_segment_changed(self) -> bool:
 		"""Whether this save opens a new billing segment (a re-lock, #82)."""

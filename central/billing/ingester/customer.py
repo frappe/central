@@ -119,14 +119,25 @@ def get_gstin_details(gstin: str) -> frappe._dict | None:
 	)
 
 
+def has_billable_activity(team: str) -> bool:
+	"""Whether the team needs accounting records: an enabled subscription, a live invoice or a paid top-up."""
+	return bool(
+		frappe.db.exists("Subscription", {"team": team, "enabled": 1})
+		or frappe.db.exists("Invoice", {"team": team, "status": ["not in", ("Cancelled", "Waived")]})
+		or frappe.db.exists("Credit Ledger Entry", {"team": team, "entry_type": "Credit", "paid_in": 1})
+	)
+
+
 def _should_sync(profile) -> bool:
-	"""Only complete profiles of real customers; staging trials carry placeholders and internal teams are never sold to."""
+	"""Only complete profiles of real customers with billable activity; staging trials carry placeholders and internal teams are never sold to."""
 	from central.billing.doctype.billing_profile.billing_profile import get_missing_fields_of
 	from central.billing.revenue.tax import is_internal_team
 
 	if not enabled() or get_missing_fields_of(profile) or is_internal_team(profile.team):
 		return False
-	return not frappe.db.get_value("Team", profile.team, "is_staging_trial")
+	if frappe.db.get_value("Team", profile.team, "is_staging_trial"):
+		return False
+	return has_billable_activity(profile.team)
 
 
 def _enqueue(team: str, job_id: str | None = None) -> None:
@@ -167,7 +178,8 @@ def _pending_teams() -> list[str]:
 	)
 	for field in REQUIRED_FIELDS:
 		query = query.where(~_blank(profile[field]))
-	return query.orderby(profile.modified).limit(PENDING_BATCH).run(pluck=True)
+	pending = query.orderby(profile.modified).limit(PENDING_BATCH).run(pluck=True)
+	return [team for team in pending if has_billable_activity(team)]
 
 
 def _blank(column):
