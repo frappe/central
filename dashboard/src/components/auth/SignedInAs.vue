@@ -34,11 +34,15 @@ async function signOut() {
 <template>
 	<div class="mt-8 border-t border-outline-gray-2 pt-4">
 		<div class="flex items-center justify-between gap-2">
-			<p class="min-w-0 truncate text-p-sm text-ink-gray-5">
-				Signed in as
-				<span class="text-ink-gray-8">{{ currentUser }}</span>
-				in {{ activeTeamLabel }}
-			</p>
+			<div class="min-w-0 text-p-sm text-ink-gray-5">
+				<p class="truncate">
+					Signed in as
+					<span class="text-ink-gray-8">{{ currentUser }}</span>
+				</p>
+				<p class="truncate">
+					Team <span class="text-ink-gray-8">{{ activeTeamLabel }}</span>
+				</p>
+			</div>
 			<Button
 				variant="ghost"
 				size="sm"
