@@ -10,6 +10,15 @@ import { submitOrThrow } from '@/lib/frappeCall'
 import type { RefreshResponse } from '@/types/api'
 import type { VirtualMachine } from '@/types/Infrastructure/VirtualMachine'
 
+const LOADING_MESSAGES = [
+	'Brewing your site to get you started…',
+	'Pulling a fresh shot…',
+	'Warming up the bench…',
+	'Grinding the beans…',
+	'Waking up the workers…',
+	'Setting the table…',
+]
+
 type BenchLinkResponse = { url: string }
 type SiteLinkResponse = { url: string | null; login_url: string | null }
 type TeamParams = { team: string }
@@ -146,8 +155,12 @@ function openLoadingTab(
 	target = '_blank',
 	features = '',
 ): { tab: Window | null; loadingUrl: string } {
+	const message =
+		LOADING_MESSAGES[Math.floor(Math.random() * LOADING_MESSAGES.length)]
 	const loadingUrl = URL.createObjectURL(
-		new Blob([signingInHtml], { type: 'text/html' }),
+		new Blob([signingInHtml.replace('{{ message }}', message)], {
+			type: 'text/html',
+		}),
 	)
 	return { tab: window.open(loadingUrl, target, features), loadingUrl }
 }
