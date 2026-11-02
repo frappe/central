@@ -6,7 +6,7 @@ test('Shows the billing cards', async ({ page, users }) => {
 
 	await page.goto('/dashboard/billing/payments')
 
-	await expect(page.getByRole('heading', { name: 'Methods' })).toBeVisible()
+	await expect(page.getByRole('heading', { name: 'Payment methods' })).toBeVisible()
 	await expect(page.getByRole('heading', { name: 'Billing details' })).toBeVisible()
 })
 
