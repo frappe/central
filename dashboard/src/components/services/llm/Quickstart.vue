@@ -24,17 +24,21 @@ const languages = [
 	{ label: 'Python', value: 'python' },
 ]
 
-const chatModels = computed(() =>
+// Models the example can show: chat (text out) and embeddings. Grove lists embeddings on the
+// OpenAI surface only, so the dialect filter keeps them off the Anthropic tab by itself.
+const shownModels = computed(() =>
 	props.models.filter(
 		(m) =>
 			m.dialects.includes(dialect.value) &&
-			(!m.output_modalities.length || m.output_modalities.includes('text')),
+			(!m.output_modalities.length ||
+				m.output_modalities.includes('text') ||
+				m.output_modalities.includes('embeddings')),
 	),
 )
 
 const selectedModel = ref('')
 watch(
-	chatModels,
+	shownModels,
 	(models) => {
 		const names = models.map((m) => m.name)
 		if (!names.includes(selectedModel.value))
@@ -44,9 +48,14 @@ watch(
 )
 
 const modelOptions = computed(() =>
-	chatModels.value.map((m) => ({ label: m.name, value: m.name })),
+	shownModels.value.map((m) => ({ label: m.name, value: m.name })),
 )
 const model = computed(() => selectedModel.value || 'MODEL_ID')
+const embeds = computed(() =>
+	shownModels.value
+		.find((m) => m.name === selectedModel.value)
+		?.output_modalities.includes('embeddings'),
+)
 const key = computed(() => props.apiKey ?? '$API_KEY')
 
 const baseUrl = computed(() =>
@@ -54,6 +63,24 @@ const baseUrl = computed(() =>
 		? `${props.gatewayUrl}/openai/v1`
 		: `${props.gatewayUrl}/anthropic`,
 )
+
+const embeddingExamples = computed<Record<'curl' | 'python', string>>(() => ({
+	curl: `curl ${baseUrl.value}/embeddings \\
+  -H "Content-Type: application/json" \\
+  -H "Authorization: Bearer ${key.value}" \\
+  -d '{
+    "model": "${model.value}",
+    "input": "Hello"
+  }'`,
+	python: `from openai import OpenAI
+
+client = OpenAI(base_url="${baseUrl.value}", api_key="${key.value}")
+response = client.embeddings.create(
+    model="${model.value}",
+    input="Hello",
+)
+print(response.data[0].embedding)`,
+}))
 
 const examples = computed<Record<AIDialect, Record<'curl' | 'python', string>>>(
 	() => ({
@@ -97,7 +124,11 @@ print(message.content[0].text)`,
 	}),
 )
 
-const example = computed(() => examples.value[dialect.value][language.value])
+const example = computed(() =>
+	embeds.value
+		? embeddingExamples.value[language.value]
+		: examples.value[dialect.value][language.value],
+)
 </script>
 
 <template>
@@ -116,7 +147,7 @@ const example = computed(() => examples.value[dialect.value][language.value])
 				<label class="text-p-sm-medium text-ink-gray-7">Example request</label>
 				<div class="flex items-center gap-2">
 					<Select
-						v-if="chatModels.length"
+						v-if="shownModels.length"
 						v-model="selectedModel"
 						:options="modelOptions"
 						variant="outline"
