@@ -2,6 +2,7 @@
 import { Badge, Button, LoadingText } from 'frappe-ui'
 import { computed } from 'vue'
 import BillingCard from '@/components/billing/BillingCard.vue'
+import EmptyState from '@/components/common/EmptyState.vue'
 import Table from '@/components/common/Table.vue'
 import { billingPeriod } from '@/lib/date'
 import { money } from '@/lib/format'
@@ -13,6 +14,7 @@ const props = defineProps<{
 	loading: boolean
 	exportUrl: string
 }>()
+defineEmits<{ retry: [] }>()
 
 const currency = computed(() => props.statement?.currency ?? 'INR')
 const period = computed(() =>
@@ -53,13 +55,22 @@ const tableRows = computed(() =>
 
 		<LoadingText v-if="loading" :lines="3" />
 
-		<p v-else-if="!statement" class="py-4 text-p-sm text-ink-gray-5">
-			Couldn't load the statement.
-		</p>
+		<EmptyState
+			v-else-if="!statement"
+			icon="lucide-cloud-off"
+			title="Statement couldn't load"
+		>
+			<template #action>
+				<Button label="Retry" @click="$emit('retry')" />
+			</template>
+		</EmptyState>
 
-		<p v-else-if="!rows.length" class="py-4 text-p-sm text-ink-gray-5">
-			No invoices in this period.
-		</p>
+		<EmptyState
+			v-else-if="!rows.length"
+			icon="lucide-file-text"
+			title="No invoices in this period"
+			description="Invoices and their payments show here at the end of each billing cycle."
+		/>
 
 		<Table v-else :columns="columns" :rows="tableRows">
 			<template #period="{ row }">

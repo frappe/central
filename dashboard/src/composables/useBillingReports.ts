@@ -84,23 +84,7 @@ export function useBillingReports(options: { statementOnly?: boolean } = {}) {
 			return `${charged[0].tax_type} on ${money(charged[0].taxable, data.currency)}`
 		return `across ${charged.length} tax types`
 	})
-	const hasDebt = computed(() => {
-		const data = statement.data
-		return data
-			? Number(data.closing_outstanding ?? 0) +
-					Number(data.opening_outstanding ?? 0) >
-					0
-			: false
-	})
 	const loading = computed(() => history.loading && !history.data)
-	const neverBilled = computed(
-		() =>
-			!loading.value &&
-			Boolean(history.data) &&
-			months.value === 12 &&
-			history.data?.invoice_count === 0 &&
-			!hasDebt.value,
-	)
 	function exportUrl(report: string): string {
 		const team = encodeURIComponent(activeTeam.value ?? '')
 		return `/api/method/${API.exportCsv}?report=${report}&team=${team}&from_date=${fromDate.value}`
@@ -129,7 +113,6 @@ export function useBillingReports(options: { statementOnly?: boolean } = {}) {
 		loading,
 		statementLoading: computed(() => statement.loading && !statement.data),
 		taxLoading: computed(() => tax.loading && !tax.data),
-		neverBilled,
 		exportUrl,
 		reload,
 	}
