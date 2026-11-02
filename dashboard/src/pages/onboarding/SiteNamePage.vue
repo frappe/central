@@ -6,9 +6,11 @@ import { API } from '@/api/methods'
 import AuthErrorMessage from '@/components/auth/AuthErrorMessage.vue'
 import AuthShell from '@/components/auth/AuthShell.vue'
 import ProductLogo from '@/components/auth/ProductLogo.vue'
+import SignedInAs from '@/components/auth/SignedInAs.vue'
 import OpenTrialCard from '@/components/onboarding/OpenTrialCard.vue'
 import { useOpenTrial } from '@/composables/useOpenTrial'
 import { useProduct } from '@/composables/useProduct'
+import { useSession } from '@/composables/useSession'
 import { useTrialOnboarding } from '@/composables/useTrialOnboarding'
 import {
 	frappeErrorMessage,
@@ -39,6 +41,11 @@ const offerOpenTrial = ref(false)
 const isCheckingTrial = ref(true)
 const { team, requestKey, prepareTeam, readStatus, resetRequestKey } =
 	useTrialOnboarding()
+const { activeTeamLabel } = useSession()
+// A team with a payment method or a past payment buys its servers, so it gets no name form.
+const isFreeTrial = ref(true)
+// The page could not start: there is nothing to retry here, so it offers the console.
+const loadError = ref('')
 const provisioning = {
 	path: '/onboarding/provisioning',
 	query: carriedQuery(route.query),
@@ -56,7 +63,10 @@ onMounted(async () => {
 	try {
 		await prepareTeam()
 	} catch (exception) {
-		error.value = frappeErrorMessage(exception, 'Could not set up your team.')
+		loadError.value = frappeErrorMessage(
+			exception,
+			'Could not set up your team.',
+		)
 		isCheckingTrial.value = false
 		return
 	}
@@ -90,9 +100,12 @@ onMounted(async () => {
 			resetRequestKey()
 		// The open trial of this product is on another team of the owner.
 		if (open) offerOpenTrial.value = true
+		isFreeTrial.value = status.is_free_trial
 	} catch (exception) {
-		error.value = frappeErrorMessage(exception, 'Could not find your trial.')
-		requestKey.value = ''
+		loadError.value = frappeErrorMessage(
+			exception,
+			'Could not find your trial.',
+		)
 	} finally {
 		isCheckingTrial.value = false
 	}
@@ -193,6 +206,42 @@ async function createSite() {
 			:setup-messages="product?.setup_messages ?? []"
 			@start-over="startOver"
 		/>
+		<template v-else-if="loadError">
+			<h1 class="flex items-center gap-2 text-2xl-semibold text-ink-gray-9">
+				<ProductLogo />
+				We could not start your site
+			</h1>
+			<div class="mt-4">
+				<AuthErrorMessage
+					:message="loadError"
+					page="Name your site"
+					:context="{ Product: product?.title }"
+				/>
+			</div>
+			<Button
+				class="mt-8 w-full"
+				size="md"
+				label="Go to Frappe Cloud"
+				:route="{ path: '/servers' }"
+			/>
+		</template>
+		<template v-else-if="!isFreeTrial">
+			<h1 class="flex items-center gap-2 text-2xl-semibold text-ink-gray-9">
+				<ProductLogo />
+				Your team buys its servers
+			</h1>
+			<p class="mt-2 text-p-base text-ink-gray-5">
+				Free trials are for teams with no payment method and no past payments.
+				Create a server for {{ activeTeamLabel }} in the console instead.
+			</p>
+			<Button
+				class="mt-8 w-full"
+				variant="solid"
+				size="md"
+				label="Create a server"
+				:route="{ path: '/servers/new' }"
+			/>
+		</template>
 		<template v-else>
 			<h1 class="flex items-center gap-2 text-2xl-semibold text-ink-gray-9">
 				<ProductLogo />
@@ -249,5 +298,6 @@ async function createSite() {
 				/>
 			</form>
 		</template>
+		<SignedInAs />
 	</AuthShell>
 </template>

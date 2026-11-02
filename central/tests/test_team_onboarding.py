@@ -98,8 +98,31 @@ class TestTeamCreation(IntegrationTestCase):
 		team = create_trial_team(self.owner)
 
 		self.assertEqual(frappe.db.get_value("Team", team, "owner_user"), self.owner)
-		self.assertIsNone(create_trial_team(self.owner))
+		self.assertEqual(create_trial_team(self.owner), team)
 		self.assertEqual(frappe.db.count("Team", {"owner_user": self.owner}), 1)
+
+	def test_trial_funnel_keeps_the_current_team_only_where_the_user_can_create(self):
+		first = create_team("First Team")["name"]
+		second = create_team("Second Team")["name"]
+
+		self.assertEqual(create_trial_team(self.owner, team=second), second)
+		with set_user("Administrator"):
+			outsider_team = create_team("Outsider Team")["name"]
+		self.assertIn(create_trial_team(self.owner, team=outsider_team), (first, second))
+
+	@patch("frappe.sendmail")
+	def test_a_viewer_with_no_team_of_their_own_gets_one(self, _sendmail):
+		team = create_team("Inviting Team")["name"]
+		with set_user("Administrator"):
+			viewer = create_user("viewer")
+		invitation = invite_team_member(team, viewer, "Viewer")
+
+		with set_user(viewer):
+			accept_invitation(invitation)
+			own_team = create_trial_team(viewer, team=team)
+
+		self.assertNotEqual(own_team, team)
+		self.assertEqual(frappe.db.get_value("Team", own_team, "owner_user"), viewer)
 
 	@patch("frappe.sendmail")
 	def test_invited_member_reuses_the_team_without_another_welcome_grant(self, _sendmail):
@@ -111,7 +134,7 @@ class TestTeamCreation(IntegrationTestCase):
 
 		with set_user(member):
 			self.assertEqual(accept_invitation(invitation)["team"], team)
-			self.assertIsNone(create_trial_team(member))
+			self.assertEqual(create_trial_team(member), team)
 
 		self.assertFalse(frappe.db.exists("Team", {"owner_user": member}))
 		self.assertCountEqual(
