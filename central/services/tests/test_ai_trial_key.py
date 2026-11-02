@@ -269,6 +269,11 @@ class TestAITrialKey(IntegrationTestCase):
 		self.grove.revoke_key.side_effect = Exception("Grove refused")
 		with patch(f"{MODULE}.frappe.enqueue"):
 			AITrialKey.queue_revoke(name=key.name)
+		# The queued job itself: the refusal lands on the record, nothing raises.
+		with patch(f"{MODULE}.frappe.log_error"):
+			ai_trial_key.revoke_trial_key(key.name)
+		self.assertEqual((key.reload().status, key.last_error), ("Revoking", "Grove refused"))
+		self.grove.revoke_key.reset_mock()
 
 		ai_trial_key.retry_stale()
 		self.grove.revoke_key.assert_not_called()

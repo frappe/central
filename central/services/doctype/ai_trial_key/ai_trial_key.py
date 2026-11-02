@@ -265,9 +265,11 @@ class AITrialKey(Document):
 
 
 def revoke_trial_key(name: str) -> None:
+	"""The queued revoke. A refusal (Grove's six-hour mint guard, Grove down) is kept on the record as
+	`last_error` and tried again hourly."""
 	key = frappe.get_doc("AI Trial Key", name)
 	if key.is_revoke_pending:
-		key.revoke_at_grove()
+		key.try_at_grove()
 
 
 def convert_trial_key(name: str) -> None:
