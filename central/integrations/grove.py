@@ -121,13 +121,10 @@ class GroveClient:
 		it is. → the key as `get_figures` lists it."""
 		return self.call("grove.api.keys.transfer_key", team=team, key=key, to_team=to_team, title=title)
 
-	def list_models(
-		self, team: str | None = None, key: str | None = None, geography: str | None = None
-	) -> list[dict]:
-		"""With `team` alone, the published models its keys may call in `geography` (Grove's
-		default when None); with `team` and `key`, what that one key may call; with neither, what a
-		new key starts with there: the default group."""
-		return self.call("grove.api.catalog.available_models", team=team, key=key, geography=geography) or []
+	def list_models(self, team: str, geography: str | None = None) -> list[dict]:
+		"""The published models the team's keys may call in `geography` (Grove's default when
+		None): the team's own reach, never one key's."""
+		return self.call("grove.api.catalog.available_models", team=team, geography=geography) or []
 
 	def list_geographies(self) -> list[dict]:
 		"""Where a key may be minted: `name`, `label`, `endpoint` (None while the geography has no

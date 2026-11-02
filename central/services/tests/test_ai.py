@@ -134,12 +134,12 @@ class TestGroveClientCalls(IntegrationTestCase):
 	def test_models_geographies_spend_and_usage_name_the_team(self):
 		calls = [
 			(
-				lambda: self.client.list_models("TEAM-1", "k1"),
-				("grove.api.catalog.available_models", {"team": "TEAM-1", "key": "k1", "geography": None}),
+				lambda: self.client.list_models("TEAM-1"),
+				("grove.api.catalog.available_models", {"team": "TEAM-1", "geography": None}),
 			),
 			(
-				lambda: self.client.list_models(geography="eu"),
-				("grove.api.catalog.available_models", {"team": None, "key": None, "geography": "eu"}),
+				lambda: self.client.list_models("TEAM-1", "eu"),
+				("grove.api.catalog.available_models", {"team": "TEAM-1", "geography": "eu"}),
 			),
 			(lambda: self.client.list_geographies(), ("grove.api.catalog.geographies", {})),
 			(lambda: self.client.pull_usage("TEAM-1"), ("grove.api.usage.pull_usage", {"team": "TEAM-1"})),
@@ -381,7 +381,7 @@ class TestAI(IntegrationTestCase):
 			with self.assertRaises(frappe.ValidationError):
 				api.create_api_key(self.team, "app", "eu", "2.5")
 		provision_key.assert_called_once_with(self.team, "app", "eu", 5)
-		list_models.assert_called_once_with(self.team, "k1")
+		list_models.assert_called_once_with(team=self.team, geography="eu")
 		self.assertEqual(
 			(created["api_key"], created["geography"], created["gateway_url"]),
 			(MINTED["api_key"], "eu", MINTED["gateway_url"]),
