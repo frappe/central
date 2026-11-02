@@ -122,6 +122,33 @@ class TestServerHostnames(IntegrationTestCase):
 			],
 		)
 
+	def test_a_renamed_site_shows_once_at_its_new_address(self):
+		site = frappe.get_doc(
+			{
+				"doctype": "Site",
+				"site_name": f"site-abc.{self.zone}",
+				"subdomain": "acme",
+				"renamed_at": frappe.utils.now_datetime(),
+				"team": self.team,
+				"server": self.server.name,
+			}
+		).insert(ignore_permissions=True)
+		for domain in (site.name, f"acme.{self.zone}"):
+			frappe.get_doc(
+				{
+					"doctype": "Site Domain",
+					"domain": domain,
+					"route_type": "Site",
+					"team": self.team,
+					"region": self.cluster,
+					"server": self.server.name,
+				}
+			).insert(ignore_permissions=True)
+
+		hostnames = servers.server_hostnames(self.team, self.server.resource_id)
+
+		self.assertEqual(hostnames, [{"hostname": f"acme.{self.zone}", "kind": "Site"}])
+
 	def test_a_user_outside_the_team_is_refused(self):
 		frappe.set_user(ensure_user("hostnames.outsider@example.test"))
 		try:

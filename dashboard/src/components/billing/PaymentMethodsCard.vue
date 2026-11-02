@@ -41,7 +41,11 @@ const { activeTeam } = useSession()
 const { methods, credit, currency, reloadMethods, reloadMoney } =
 	useBillingOverview()
 const { canManageBilling } = useCapabilities()
-const { requireSetup } = useBillingSetup()
+const { complete: isSetupComplete } = useBillingSetup()
+// Until billing details are saved, the page's setup banner is the only way to pay.
+const canChangeMethods = computed(
+	() => canManageBilling.value && isSetupComplete.value,
+)
 
 const ordered = computed(() => methods.data ?? [])
 const loading = computed(() => methods.loading && !methods.data)
@@ -193,18 +197,12 @@ async function move(pm: PaymentMethod, delta: number): Promise<void> {
 const showAdd = ref(false)
 const removeError = ref('')
 watch(pendingRemove, () => (removeError.value = ''))
-function onAdd(): void {
-	if (requireSetup()) showAdd.value = true
-}
 const showTopup = ref(false)
-const onTopUp = () => {
-	if (requireSetup()) showTopup.value = true
-}
 </script>
 
 <template>
 	<BillingCard
-		title="Methods"
+		title="Payment methods"
 		description="Invoices use credits first, then payment methods in the order shown."
 		flat
 	>
@@ -233,10 +231,10 @@ const onTopUp = () => {
 				</div>
 				<span v-if="hasCredits" class="text-sm text-ink-gray-5"> Primary </span>
 				<Button
-					v-if="canManageBilling"
+					v-if="canChangeMethods"
 					size="sm"
 					label="Top up"
-					@click="onTopUp"
+					@click="showTopup = true"
 				/>
 			</li>
 
@@ -291,11 +289,11 @@ const onTopUp = () => {
 				/>
 			</li>
 
-			<li v-if="canManageBilling">
+			<li v-if="canChangeMethods">
 				<button
 					type="button"
 					class="flex w-full items-center gap-3 rounded-5 border border-dashed border-outline-gray-2 p-3 text-left transition-colors hover:bg-surface-gray-1"
-					@click="onAdd"
+					@click="showAdd = true"
 				>
 					<span
 						class="grid size-8 shrink-0 place-items-center rounded-4 border border-dashed border-outline-gray-2"

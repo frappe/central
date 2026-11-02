@@ -33,15 +33,15 @@ export default [
 	{
 		name: 'billing/payment-methods',
 		path: '/billing/payments',
-		target: card('Methods'),
-		setup: (page) => scrollTo(page, card('Methods')),
+		target: card('Payment methods'),
+		setup: (page) => scrollTo(page, card('Payment methods')),
 	},
 	{
 		name: 'billing/add-method',
 		path: '/billing/payments',
 		target: '[role="dialog"]',
 		async setup(page) {
-			await scrollTo(page, card('Methods'))
+			await scrollTo(page, card('Payment methods'))
 			await page.getByRole('button', { name: /Add another card/ }).click()
 			await page.getByRole('dialog').getByText('Card', { exact: true }).waitFor()
 		},

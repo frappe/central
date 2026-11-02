@@ -3,6 +3,7 @@ import { Button, LoadingText, TabButtons } from 'frappe-ui'
 import { BarChart, useChartTokens } from 'frappe-ui/charts'
 import { computed, ref } from 'vue'
 import BillingCard from '@/components/billing/BillingCard.vue'
+import EmptyState from '@/components/common/EmptyState.vue'
 import { useBillingOverview } from '@/composables/useBillingOverview'
 import {
 	BILLING_REPORT_MONTHS,
@@ -159,11 +160,11 @@ const toSlices = (
 	}
 }
 
+// Nothing invoiced in the period and nothing accrued this cycle: a chart would be all zeros.
 const hasSpend = computed(
 	() =>
 		!props.reports.loading.value &&
-		!!history.value &&
-		!props.reports.neverBilled.value,
+		chartRows.value.some((row) => row.invoiced + row.current + row.over > 0),
 )
 
 const breakdowns = computed(() =>
@@ -210,12 +211,16 @@ const breakdowns = computed(() =>
 				<Button label="Retry" @click="reports.reload()" />
 			</div>
 
-			<p
-				v-else-if="reports.neverBilled.value"
-				class="rounded-5 px-4 py-3 text-p-sm text-ink-gray-6"
-			>
-				Your spend, payments and tax show up here after your first invoice.
-			</p>
+			<EmptyState
+				v-else-if="!hasSpend"
+				icon="lucide-chart-column"
+				:title="`No spend in the last ${months} months`"
+				:description="
+					months < 12
+						? 'Pick a longer period to see earlier spend.'
+						: 'Your spend, payments and tax show here after your first invoice.'
+				"
+			/>
 
 			<template v-else>
 				<div

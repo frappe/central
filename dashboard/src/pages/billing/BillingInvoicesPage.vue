@@ -156,6 +156,7 @@ const eventDate = (at: string | null): string => String(at ?? '').split(',')[0]
 					:statement="reports.statement.data ?? null"
 					:loading="reports.statementLoading.value"
 					:export-url="reports.exportUrl('statement')"
+					@retry="reports.statement.reload()"
 				/>
 
 				<RefundsCard v-if="view === 'invoices'" />

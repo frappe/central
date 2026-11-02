@@ -1,6 +1,7 @@
 import { useCall } from 'frappe-ui'
 import { computed, ref } from 'vue'
 import { API, method } from '@/api/methods'
+import { useFrappeEventListener } from '@/composables/useFrappeRealtime'
 import type { Team } from '@/types/api'
 
 const STORAGE_KEY = 'central.console.activeTeam'
@@ -106,6 +107,23 @@ function endImpersonation(): void {
 async function adoptNewTeam(name: string): Promise<void> {
 	selectTeam(name)
 	await teamsCall.reload()
+}
+
+/** Drop a team a manager removed this user from. The active team reloads the console
+ *  from the start, so no page keeps showing that team's data. */
+export function useTeamRemovalRealtime(): void {
+	useFrappeEventListener<{ team: string }>(
+		'team_membership_removed',
+		({ team }) => {
+			if (team !== activeTeam.value) {
+				teamsCall.reload()
+				return
+			}
+
+			selectTeam(null)
+			window.location.replace('/dashboard')
+		},
+	)
 }
 
 // Resolves once my_teams has settled the active team. Router + team-scoped reads

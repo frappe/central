@@ -682,6 +682,22 @@ class TestTrialLifecycle(TrialOnAMachine):
 
 		self.assertEqual(self.site().trial_state, "Ended")
 
+	def test_an_operator_converts_a_trial_without_a_payment_method(self):
+		self.price_trial(30)
+
+		with patch.object(trial.Trial, "enqueue_job"):
+			self.site().convert_trial()
+
+		self.assertEqual(self.site().trial_state, "Converted")
+		self.assertIn("converted the trial", self.trial_comments())
+
+	def test_an_operator_conversion_keeps_the_spending_limit(self):
+		self.price_trial(30)
+		self.headroom.return_value = 10
+
+		with self.assertRaisesRegex(frappe.ValidationError, "spending limit"):
+			self.site().convert_trial()
+
 	def test_ending_a_trial_keeps_its_ai_key(self):
 		with (
 			patch.object(trial.Trial, "enqueue_job"),
