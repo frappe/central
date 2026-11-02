@@ -80,7 +80,12 @@ export interface TeamRegistry {
 		title: string
 		region: string
 	}[]
-	sites: { name: string; subdomain: string; region: string }[]
+	sites: {
+		name: string
+		subdomain: string
+		region: string
+		server: string | null
+	}[]
 }
 
 /** Team Invitation document shown in the manager view. */

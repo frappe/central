@@ -15,6 +15,7 @@ function loadModule(path, dependencies = {}) {
 }
 
 const { getTeamSwitcherRows } = loadModule('../src/lib/teamSwitcher.ts')
+const { getResourceOptions } = loadModule('../src/lib/resourceScope.ts')
 const { capabilityLabel, groupCapabilitiesByCategory } = loadModule(
 	'../src/lib/capabilities.ts',
 	{
@@ -59,4 +60,34 @@ test('identifier-style permission labels are readable without changing the capab
 	const [group] = groupCapabilitiesByCategory([capability])
 	assert.equal(group.label, 'Act on customer')
 	assert.equal(group.caps[0].name, 'ACT_ON_CUSTOMER')
+})
+
+test('a server that runs a site is offered once, as the site', () => {
+	const registry = {
+		servers: [
+			{ name: 'vm-1', resource_id: 'vm-1', title: 'trial', region: 'bom' },
+			{ name: 'vm-2', resource_id: 'vm-2', title: 'build', region: 'bom' },
+		],
+		sites: [
+			{
+				name: 'site-1.bom.example.test',
+				subdomain: 'acme',
+				region: 'bom',
+				server: 'vm-1',
+			},
+		],
+	}
+
+	// Spread into this realm: the module runs in its own VM context.
+	const values = [...getResourceOptions(registry, () => undefined)].map(
+		(option) => option.value,
+	)
+	assert.deepEqual(values, [
+		'*::',
+		'Server::vm-2',
+		'Site::site-1.bom.example.test',
+	])
+
+	const kept = getResourceOptions(registry, () => undefined, ['Server::vm-1'])
+	assert.ok(kept.some((option) => option.value === 'Server::vm-1'))
 })
