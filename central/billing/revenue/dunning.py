@@ -287,7 +287,7 @@ def run_dunning(now=None) -> list[dict]:
 		["expected_collection", ">", 0],
 		["due_date", "is", "set"],
 	]
-	internal = frappe.get_all("Tax Profile", filters={"is_internal": 1}, pluck="team")
+	internal = frappe.get_all("Billing Profile", filters={"is_internal": 1}, pluck="team")
 	if internal:
 		filters.append(["team", "not in", internal])
 	invoices = frappe.get_all("Invoice", filters=filters, pluck="name")

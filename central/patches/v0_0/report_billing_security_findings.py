@@ -63,17 +63,17 @@ def _india_teams_without_gst() -> list:
 	india = frappe.get_all(
 		"Billing Profile", filters=[["country", "=", "India"]], pluck="team"
 	) + frappe.get_all("Billing Profile", filters={"currency": "INR"}, pluck="team")
+	internal = frappe.get_all("Billing Profile", filters={"is_internal": 1}, pluck="team")
 	untaxed = frappe.get_all(
 		"Tax Profile",
 		filters={
 			"team": ["in", list(set(india)) or [""]],
 			"output_tax_type": ["!=", "GST"],
-			"is_internal": 0,
 			"zero_rated": 0,
 		},
 		pluck="team",
 	)
-	return sorted(untaxed)
+	return sorted(set(untaxed) - set(internal))
 
 
 def _short_paid_invoices() -> list:

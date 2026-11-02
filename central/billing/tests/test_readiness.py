@@ -59,9 +59,7 @@ class TestReadiness(IntegrationTestCase):
 
 	def test_internal_team_is_not_held_to_its_tier(self):
 		set_team_tier(TEAM, max_spend=500)
-		frappe.get_doc(
-			{"doctype": "Tax Profile", "team": TEAM, "is_internal": 1, "internal_reason": "Our own team"}
-		).insert(ignore_permissions=True)
+		frappe.db.set_value("Billing Profile", TEAM, {"is_internal": 1, "internal_reason": "Our own team"})
 		self.assertEqual(_found("T1"), [])
 
 	def test_unpriced_subscription_is_found(self):

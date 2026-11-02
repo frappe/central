@@ -26,7 +26,7 @@ ACCOUNTING_FIELDS = (
 
 
 def _internal_teams() -> set[str]:
-	return set(frappe.get_all("Tax Profile", filters={"is_internal": 1}, pluck="team"))
+	return set(frappe.get_all("Billing Profile", filters={"is_internal": 1}, pluck="team"))
 
 
 def _profiles() -> dict:

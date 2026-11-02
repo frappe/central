@@ -403,7 +403,7 @@ def waive_for_internal_team(team: str) -> list[str]:
 
 def settle_internal_teams() -> list[str]:
 	"""Waive every internal team's unpaid invoices, so no collection run reaches them."""
-	internal = frappe.get_all("Tax Profile", filters={"is_internal": 1}, pluck="team")
+	internal = frappe.get_all("Billing Profile", filters={"is_internal": 1}, pluck="team")
 	if not internal:
 		return []
 	teams = frappe.get_all(

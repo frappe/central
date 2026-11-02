@@ -77,3 +77,5 @@ central.patches.v0_0.order_image_offerings
 central.patches.v0_0.repoint_billing_records_to_renamed_region
 # Draft and Open invoices become Outstanding.
 central.patches.v0_0.merge_invoice_draft_and_open_into_outstanding
+# The internal flag moves from Tax Profile to Billing Profile.
+central.patches.v0_0.move_internal_flag_to_billing_profile

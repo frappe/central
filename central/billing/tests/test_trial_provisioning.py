@@ -200,9 +200,9 @@ class TestTrialProvisioning(IntegrationTestCase):
 	def test_internal_team_is_not_held_to_a_tier(self):
 		self._fund()
 		clear_team_tier(self.team)
-		frappe.get_doc(
-			{"doctype": "Tax Profile", "team": self.team, "is_internal": 1, "internal_reason": "Our own team"}
-		).insert(ignore_permissions=True)
+		frappe.db.set_value(
+			"Billing Profile", self.team, {"is_internal": 1, "internal_reason": "Our own team"}
+		)
 
 		action, _ = self._create(self.plan)
 

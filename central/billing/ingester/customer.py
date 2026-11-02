@@ -156,16 +156,13 @@ def _pending_teams() -> list[str]:
 
 	profile = frappe.qb.DocType("Billing Profile")
 	team = frappe.qb.DocType("Team")
-	tax = frappe.qb.DocType("Tax Profile")
 	query = (
 		frappe.qb.from_(profile)
 		.join(team)
 		.on(team.name == profile.team)
-		.left_join(tax)
-		.on(tax.team == profile.team)
 		.select(profile.name)
 		.where(team.is_staging_trial == 0)
-		.where(Coalesce(tax.is_internal, 0) == 0)
+		.where(Coalesce(profile.is_internal, 0) == 0)
 		.where(_blank(profile.profile_id) | _blank(profile.address_id) | _blank(profile.contact_id))
 	)
 	for field in REQUIRED_FIELDS:

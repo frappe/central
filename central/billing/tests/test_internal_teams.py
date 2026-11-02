@@ -10,7 +10,13 @@ from central.billing.ingester import customer
 from central.billing.report.internal_usage_and_waivers import internal_usage_and_waivers as report
 from central.billing.revenue import credits, invoicing
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
-from central.billing.tests.utils import add_segment, make_billing_subscription, make_plan
+from central.billing.tests.utils import (
+	add_segment,
+	complete_billing_profile,
+	ensure_team,
+	make_billing_subscription,
+	make_plan,
+)
 
 TEAM = "team-internal-waiver"
 CLUSTER = "ap-south-1"
@@ -18,12 +24,7 @@ PLAN = "bundle-internal-waiver"
 
 
 def _mark_internal(reason="Platform team's own servers"):
-	values = {"doctype": "Tax Profile", "team": TEAM, "output_tax_type": "GST", "output_tax_rate": 18}
-	doc = (
-		frappe.get_doc("Tax Profile", TEAM)
-		if frappe.db.exists("Tax Profile", TEAM)
-		else frappe.get_doc(values)
-	)
+	doc = frappe.get_doc("Billing Profile", TEAM)
 	doc.is_internal = 1
 	doc.internal_reason = reason
 	doc.save(ignore_permissions=True)
@@ -168,3 +169,19 @@ class TestInternalTeams(IntegrationTestCase):
 			.insert(ignore_permissions=True)
 			.name
 		)
+
+
+class TestInternalFlagGuard(IntegrationTestCase):
+	def test_a_customer_cannot_mark_their_own_team_internal(self):
+		ensure_team(TEAM)
+		complete_billing_profile(TEAM)
+		doc = frappe.get_doc("Billing Profile", TEAM)
+		doc.is_internal = 1
+		doc.internal_reason = "Free servers"
+
+		with patch(
+			"central.billing.doctype.billing_profile.billing_profile.user_has_operator_bypass",
+			return_value=False,
+		):
+			with self.assertRaises(frappe.PermissionError):
+				doc.save(ignore_permissions=True)
