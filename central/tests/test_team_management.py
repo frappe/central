@@ -432,6 +432,16 @@ class TestTeamManagement(IntegrationTestCase):
 			message, [f"{frappe.utils.get_fullname(self.viewer)} is now Developer in Managed Team."]
 		)
 
+	def test_removed_member_is_told_in_their_own_room(self):
+		frappe.set_user(self.owner)
+
+		with patch("central.identity.doctype.team.team.frappe.publish_realtime") as publish:
+			frappe.get_doc("Team", self.team.name).remove_member(self.viewer)
+
+		publish.assert_any_call(
+			"team_membership_removed", {"team": self.team.name}, user=self.viewer, after_commit=True
+		)
+
 	def test_only_owner_can_transfer_ownership(self):
 		frappe.set_user(self.admin)
 		with self.assertRaises(frappe.PermissionError):

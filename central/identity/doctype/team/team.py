@@ -292,6 +292,9 @@ class Team(TeamLifecycle, Document):
 			self.remove(row)
 		self.save()
 
+		# The user's room, not the Team room: a socket that joined the Team room stays in it.
+		frappe.publish_realtime("team_membership_removed", {"team": self.name}, user=user, after_commit=True)
+
 	# Internal; the HTTP surface is central.api.teams.leave_team.
 	def leave(self) -> None:
 		"""Drop your own membership. Leaving is yours to do, so it needs no
