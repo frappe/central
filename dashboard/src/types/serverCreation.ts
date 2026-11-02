@@ -21,6 +21,8 @@ export interface App {
 	title: string
 	os_version: string | null
 	information: string | null
+	/** A data URI of the app's SVG logo, or null when its template names none. */
+	logo: string | null
 	snapshot_id: string
 }
 

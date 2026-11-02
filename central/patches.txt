@@ -71,3 +71,5 @@ central.patches.v0_0.mark_pilot_reportable_events
 central.patches.v0_0.revoke_trial_keys
 # Apps: ready-to-run one-click images a region's Cargo builds.
 central.patches.v0_0.seed_template_offering
+# Image offerings show Frappe first, then Apps, then Ubuntu.
+central.patches.v0_0.order_image_offerings
