@@ -43,7 +43,7 @@ The regional proxy decodes a VM's mesh address from the hostname label, so Centr
 
 ## Operation
 
-The funnel first calls `central.api.sites.create_trial_team(team)` with the console's current team. It returns that team when the user can create servers there (`server:create`). Otherwise it returns the first other team where the user can. Otherwise it creates a team named after the user. So a user who is only a Viewer in another team still gets a team to start the trial in.
+The funnel first calls `central.api.sites.create_trial_team(team)` with the console's current team. It returns that team when the user can create servers there (`server:create`). Otherwise it returns the first other team where the user can. Otherwise it creates a team named after the user. So a user who is only a Viewer in another team still gets a team to start the trial in. The onboarding pages show the signed-in email and team, with **Sign out**. Sign out opens the product's signup page as a guest, so a browser signed in as another person does not start the site in that person's account.
 
 ```text
 create_trial_site(subdomain) --> queued Resource Action holds the name --> warm image restores

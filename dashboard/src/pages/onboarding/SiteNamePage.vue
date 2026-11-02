@@ -6,6 +6,7 @@ import { API } from '@/api/methods'
 import AuthErrorMessage from '@/components/auth/AuthErrorMessage.vue'
 import AuthShell from '@/components/auth/AuthShell.vue'
 import ProductLogo from '@/components/auth/ProductLogo.vue'
+import SignedInAs from '@/components/auth/SignedInAs.vue'
 import OpenTrialCard from '@/components/onboarding/OpenTrialCard.vue'
 import { useOpenTrial } from '@/composables/useOpenTrial'
 import { useProduct } from '@/composables/useProduct'
@@ -297,5 +298,6 @@ async function createSite() {
 				/>
 			</form>
 		</template>
+		<SignedInAs />
 	</AuthShell>
 </template>
