@@ -11,12 +11,13 @@ import type { RefreshResponse } from '@/types/api'
 import type { VirtualMachine } from '@/types/Infrastructure/VirtualMachine'
 
 const LOADING_MESSAGES = [
-	'Brewing your site to get you started…',
-	'Pulling a fresh shot…',
-	'Warming up the bench…',
-	'Grinding the beans…',
-	'Waking up the workers…',
-	'Setting the table…',
+	'Filing the flight plan…',
+	'Running preflight checks…',
+	'Warming up the engines…',
+	'Checking the instruments…',
+	'Taxiing to the runway…',
+	'Waiting for clearance…',
+	'Climbing to cruising altitude…',
 ]
 
 type BenchLinkResponse = { url: string }
