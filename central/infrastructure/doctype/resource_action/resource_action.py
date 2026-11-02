@@ -115,6 +115,7 @@ class ResourceAction(Document):
 		take_snapshot: DF.Check
 		team: DF.Link
 		title: DF.Data | None
+		user_data: DF.Password | None
 		vm_snapshot: DF.Link | None
 	# end: auto-generated types
 
@@ -191,6 +192,17 @@ class ResourceAction(Document):
 			)
 			self.capture_trial_event("trial_requested", region=self.region, **first_touch)
 
+	def before_validate(self) -> None:
+		"""Keep the user data out of the request a customer can read. It can hold the passwords
+		a customer typed for an app, so it goes to the encrypted `user_data` field."""
+		payload = frappe.parse_json(self.request_payload or "{}")
+		if not isinstance(payload, dict) or "user_data" not in payload:
+			return
+
+		if user_data := payload.pop("user_data"):
+			self.user_data = user_data
+		self.request_payload = payload
+
 	def validate(self) -> None:
 		if self.subdomain and (self.has_value_changed("subdomain") or self.has_value_changed("region")):
 			self.subdomain = normalize_domain(self.subdomain)
@@ -211,7 +223,10 @@ class ResourceAction(Document):
 		)
 
 	def get_configuration(self) -> ServerCreation:
-		return ServerCreation.model_validate(frappe.parse_json(self.request_payload))
+		payload = frappe.parse_json(self.request_payload)
+		if user_data := self.get_password("user_data", raise_exception=False):
+			payload["user_data"] = user_data
+		return ServerCreation.model_validate(payload)
 
 	def get_site_creation(self) -> SiteCreation | None:
 		"""The trial site part of a creation request. Older requests carry none."""
