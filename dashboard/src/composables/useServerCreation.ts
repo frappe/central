@@ -1,6 +1,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { API } from '@/api/methods'
+import { useAppRequirements } from '@/composables/useAppRequirements'
 import { useBillingSetup } from '@/composables/useBillingSetup'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { useMyProfile } from '@/composables/useMyProfile'
@@ -11,7 +12,6 @@ import { useRegions } from '@/composables/useRegions'
 import { usePublicIpv4Pricing } from '@/composables/useServerAddresses'
 import { useServerMapData } from '@/composables/useServerMapData'
 import { useSession } from '@/composables/useSession'
-import { useTemplateRequirements } from '@/composables/useTemplateRequirements'
 import {
 	configIncludes,
 	estimateConfig,
@@ -144,9 +144,9 @@ export function useServerCreation() {
 		reloadSnapshots,
 		offerings,
 		offering,
-		templates,
-		isTemplate,
-		template,
+		apps,
+		isApp,
+		app,
 		imageId,
 		image,
 		selection,
@@ -159,13 +159,13 @@ export function useServerCreation() {
 		typeof route.query.snapshot === 'string' ? route.query.snapshot : '',
 	)
 	const {
-		requirements: templateRequirements,
-		answers: templateAnswers,
-		loading: templateRequirementsLoading,
-		error: templateRequirementsError,
-		reload: reloadTemplateRequirements,
-		isComplete: isTemplateComplete,
-	} = useTemplateRequirements(selectedRegion, template)
+		requirements: appRequirements,
+		answers: appAnswers,
+		loading: appRequirementsLoading,
+		error: appRequirementsError,
+		reload: reloadAppRequirements,
+		isComplete: isAppComplete,
+	} = useAppRequirements(selectedRegion, app)
 	const offeringOptions = computed(() =>
 		offerings.value.map((item) => ({
 			label: item.title,
@@ -386,11 +386,7 @@ export function useServerCreation() {
 		if (paymentMethodRequired.value) return false // the page asks for one instead
 		if (regionFull.value) return false // the region can't seat a new server right now
 		if (bracketExhausted.value) return false // nothing here fits the budget
-		if (
-			template.value &&
-			(!templateRequirements.value || !isTemplateComplete())
-		)
-			return false // the template's required settings are still blank
+		if (app.value && (!appRequirements.value || !isAppComplete())) return false // the app's required settings are still blank
 		return isCustom.value ? !!composedConfig.value : !!selectedPlanObj.value
 	})
 
@@ -415,9 +411,9 @@ export function useServerCreation() {
 			has_public_ipv6: hasPublicIpv6.value,
 			is_firewall_enabled: isFirewallEnabled.value,
 			// Blank answers are left out: the VM generates or defaults them at first boot.
-			...(template.value && {
-				template_inputs: Object.fromEntries(
-					Object.entries(templateAnswers.value)
+			...(app.value && {
+				app_inputs: Object.fromEntries(
+					Object.entries(appAnswers.value)
 						.map(([key, value]) => [key, value.trim()])
 						.filter(([, value]) => value),
 				),
@@ -506,14 +502,14 @@ export function useServerCreation() {
 		welcomeCredit,
 		offering,
 		offeringOptions,
-		templates,
-		isTemplate,
-		template,
-		templateRequirements,
-		templateAnswers,
-		templateRequirementsLoading,
-		templateRequirementsError,
-		reloadTemplateRequirements,
+		apps,
+		isApp,
+		app,
+		appRequirements,
+		appAnswers,
+		appRequirementsLoading,
+		appRequirementsError,
+		reloadAppRequirements,
 		imageId,
 		image,
 		imageOptions,

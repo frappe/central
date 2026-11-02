@@ -3,15 +3,15 @@ import { type Ref, ref, watch } from 'vue'
 import { API, methodV1 } from '@/api/methods'
 import { useSession } from '@/composables/useSession'
 import { getErrorMessage } from '@/lib/feedback'
-import type { Template, TemplateRequirements } from '@/types/serverCreation'
+import type { App, AppRequirements } from '@/types/serverCreation'
 
-/** What the selected template asks the user for, and the answers given so far. */
-export function useTemplateRequirements(
+/** What the selected app asks the user for, and the answers given so far. */
+export function useAppRequirements(
 	region: Ref<string | null>,
-	template: Ref<Template | null>,
+	app: Ref<App | null>,
 ) {
 	const { activeTeam } = useSession()
-	const requirements = ref<TemplateRequirements | null>(null)
+	const requirements = ref<AppRequirements | null>(null)
 	const answers = ref<Record<string, string>>({})
 	const loading = ref(false)
 	const error = ref('')
@@ -23,17 +23,17 @@ export function useTemplateRequirements(
 		answers.value = {}
 		error.value = ''
 		loading.value = false
-		if (!activeTeam.value || !region.value || !template.value) return
+		if (!activeTeam.value || !region.value || !app.value) return
 
 		loading.value = true
 		try {
-			const result = await frappeRequest<TemplateRequirements>({
-				url: methodV1(API.templateRequirements),
+			const result = await frappeRequest<AppRequirements>({
+				url: methodV1(API.appRequirements),
 				method: 'GET',
 				params: {
 					team: activeTeam.value,
 					region: region.value,
-					application: template.value.application,
+					application: app.value.application,
 				},
 			})
 			if (current !== generation) return
@@ -45,14 +45,14 @@ export function useTemplateRequirements(
 			if (current === generation)
 				error.value = getErrorMessage(
 					failure,
-					'Template settings could not be loaded.',
+					'App settings could not be loaded.',
 				)
 		} finally {
 			if (current === generation) loading.value = false
 		}
 	}
 
-	watch([activeTeam, region, () => template.value?.application], reload, {
+	watch([activeTeam, region, () => app.value?.application], reload, {
 		immediate: true,
 	})
 

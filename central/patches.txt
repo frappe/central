@@ -67,5 +67,5 @@ central.patches.v0_0.report_billing_security_findings
 central.patches.v0_0.remove_wireguard_device_firewall_rule
 # Existing server events keep their Pilot caller after the explicit reportable flag.
 central.patches.v0_0.mark_pilot_reportable_events
-# Templates: ready-to-run one-click images a region's Cargo builds.
+# Apps: ready-to-run one-click images a region's Cargo builds.
 central.patches.v0_0.seed_template_offering

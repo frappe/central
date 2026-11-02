@@ -5,10 +5,10 @@ import { useSession } from '@/composables/useSession'
 import { getErrorMessage } from '@/lib/feedback'
 import { formatUnixTime } from '@/lib/format'
 import type {
+	App,
 	ImageOffering,
 	ImageSelection,
 	RegionalImage,
-	Template,
 } from '@/types/serverCreation'
 import type { SnapshotList, VMSnapshotRow } from '@/types/snapshots'
 
@@ -53,21 +53,21 @@ const newestRelease = (images: RegionalImage[]): RegionalImage | undefined =>
 
 export type ImageSource = 'image' | 'snapshot'
 
-/** The offering whose builds are Cargo's templates rather than Atlas's catalog. */
-export const TEMPLATES_OFFERING = 'templates'
+/** The offering whose builds are Cargo's apps rather than Atlas's catalog. */
+export const APPS_OFFERING = 'apps'
 
-// A template boots from its Atlas image, so it stands in for an image build. Central
+// An app boots from its Atlas image, so it stands in for an image build. Central
 // checks the image against the offering's tags when the server is created.
-function templateAsImage(template: Template): RegionalImage {
+function appAsImage(app: App): RegionalImage {
 	return {
-		id: template.snapshot_id,
-		title: template.title,
+		id: app.snapshot_id,
+		title: app.title,
 		architecture: '',
 		rootfs_size_mib: 0,
 		created_at: 0,
 		tags: {
-			application: template.application,
-			os_version: template.os_version ?? '',
+			application: app.application,
+			os_version: app.os_version ?? '',
 		},
 	}
 }
@@ -147,7 +147,7 @@ export function useRegionalImages(
 
 	const offerings = ref<ImageOffering[]>([])
 	const images = ref<RegionalImage[]>([])
-	const templates = ref<Template[]>([])
+	const apps = ref<App[]>([])
 	const offering = ref('')
 	const imageId = ref('')
 	const loading = ref(false)
@@ -159,7 +159,7 @@ export function useRegionalImages(
 		const team = activeTeam.value
 		const atlas = region.value
 		images.value = []
-		templates.value = []
+		apps.value = []
 		imageId.value = ''
 		error.value = ''
 		loading.value = false
@@ -180,16 +180,16 @@ export function useRegionalImages(
 			}
 			if (!offering.value) return
 
-			// The user picks a template card, so none is selected for them.
-			if (offering.value === TEMPLATES_OFFERING) {
-				const built = await frappeRequest<Template[]>({
-					url: methodV1(API.listTemplates),
+			// The user picks an app card, so none is selected for them.
+			if (offering.value === APPS_OFFERING) {
+				const built = await frappeRequest<App[]>({
+					url: methodV1(API.listApps),
 					method: 'GET',
 					params: { team, region: atlas },
 				})
 				if (current !== generation) return
-				templates.value = built
-				images.value = built.map(templateAsImage)
+				apps.value = built
+				images.value = built.map(appAsImage)
 				return
 			}
 
@@ -243,11 +243,11 @@ export function useRegionalImages(
 			? { offering: offering.value, image_id: image.value.id }
 			: null
 	})
-	const isTemplate = computed(() => offering.value === TEMPLATES_OFFERING)
-	const template = computed<Template | null>(
+	const isApp = computed(() => offering.value === APPS_OFFERING)
+	const app = computed<App | null>(
 		() =>
 			(source.value === 'image' &&
-				templates.value.find((item) => item.snapshot_id === imageId.value)) ||
+				apps.value.find((item) => item.snapshot_id === imageId.value)) ||
 			null,
 	)
 	const isPlainImage = computed(() => offering.value === 'ubuntu')
@@ -297,9 +297,9 @@ export function useRegionalImages(
 		offerings,
 		offering,
 		images,
-		templates,
-		isTemplate,
-		template,
+		apps,
+		isApp,
+		app,
 		imageId,
 		image,
 		selection,

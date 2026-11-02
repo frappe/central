@@ -242,7 +242,7 @@ Trial, Pilot-server, and plain-Ubuntu creation use the same authorized Atlas ada
 | Trial | Prepared Pilot image, one existing site, metadata credential, approved idle timeout. | VM accepted, Pilot ready, site reachable, and site login succeeds. |
 | Pilot server | Cargo Pilot image with its prepared bench and site, plus metadata credential. | VM is ready and Central can open the correct Pilot admin. |
 | Plain Ubuntu | Approved Ubuntu image, allowed size, hostname, and SSH keys. | Atlas confirms the requested running state and the agreed access configuration. No Pilot or Site record is required. |
-| Template server | Cargo template image and user data from Cargo, built from the answers to the template's inputs. | Atlas confirms the requested running state. The service sets itself up at first boot. See [How is a template server created?](#how-is-a-template-server-created). |
+| App server | Cargo app image and user data from Cargo, built from the answers to the app's inputs. | Atlas confirms the requested running state. The service sets itself up at first boot. See [How is an app server created?](#how-is-an-app-server-created). |
 
 Show Open Pilot only for a Pilot-managed resource. A plain Ubuntu VM must not fail because it has no Pilot process or site.
 
@@ -273,16 +273,16 @@ Display supported network and SSH information for a plain Ubuntu server. Do not 
 
 Delete only after the customer confirms the action. Confirm remote absence, revoke any Pilot credential, and preserve existing billing cancellation behavior.
 
-## How is a template server created?
+## How is an app server created?
 
-A template is a fixed service, such as Redis or MariaDB, that a region's Cargo builds into an Atlas image tagged `purpose: one-click`. The **Templates** Image Offering lists these images.
+An app is a fixed service, such as Redis or MariaDB, that a region's Cargo builds into an Atlas image tagged `purpose: one-click`. The **Apps** Image Offering lists these images.
 
-1. The console lists the region's templates with `central.api.images.list_templates`, and reads the inputs and minimum size of the selected one with `central.api.images.get_template_requirements`. Central gets both from Cargo.
-2. `eligible_plans` shows only the plans with enough CPU, memory and disk for the template.
-3. The customer sends the answers as `template_inputs`. Central refuses a plan below the template's minimum size, refuses customer user data, and asks Cargo for the user data. Cargo checks each answer. A blank input that the template marks `generate` is left out, and the server makes the value itself.
+1. The console lists the region's apps with `central.api.images.list_apps`, and reads the inputs and minimum size of the selected one with `central.api.images.get_app_requirements`. Central gets both from Cargo.
+2. `eligible_plans` shows only the plans with enough CPU, memory and disk for the app.
+3. The customer sends the answers as `app_inputs`. Central refuses a plan below the app's minimum size, refuses customer user data, and asks Cargo for the user data. Cargo checks each answer. A blank input that the app marks `generate` is left out, and the server makes the value itself.
 4. The server boots from the image. Its first-boot script sets up the service and keeps the settings, including generated passwords, in `/etc/one-click/app.env` on the server.
 
-A template server is a normal server after creation. Central does not route a name to it and does not open its ports. Without a public address, the service is reachable only on the region's private network. A server restored from a snapshot of a template server has no template requirements.
+An app server is a normal server after creation. Central does not route a name to it and does not open its ports. Without a public address, the service is reachable only on the region's private network. A server restored from a snapshot of an app server has no app requirements.
 
 ## What does creation depend on?
 

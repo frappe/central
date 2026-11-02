@@ -8,8 +8,8 @@ from central.integrations.atlas import AtlasClient
 from central.integrations.cargo import CargoClient
 from central.utils.units import MIB_PER_GIB, MILLICORES_PER_VCPU
 
-# The Atlas `purpose` tag of an image a region's Cargo built from a template.
-TEMPLATE_PURPOSE = "one-click"
+# The Atlas `purpose` tag of an image a region's Cargo built for an app.
+APP_PURPOSE = "one-click"
 
 
 def list_offerings(team: str, flow: str = "Server") -> list[dict]:
@@ -54,17 +54,17 @@ def list_images(
 	return client.list_system_images({**document.get_image_tags(), **(extra_tags or {})}, offset)
 
 
-def list_templates(team: str, region: str) -> list[dict]:
-	"""The ready-to-run templates the region's Cargo has built, one per application."""
-	return _template_cargo(team, region).get_templates()
+def list_apps(team: str, region: str) -> list[dict]:
+	"""The ready-to-run apps the region's Cargo has built, one per application."""
+	return _app_cargo(team, region).get_apps()
 
 
-def get_template_requirements(team: str, region: str, application: str) -> dict:
-	"""What a server from one template asks the user for and needs to run."""
-	return _template_cargo(team, region).get_template_requirements(application)
+def get_app_requirements(team: str, region: str, application: str) -> dict:
+	"""What a server from one app asks the user for and needs to run."""
+	return _app_cargo(team, region).get_app_requirements(application)
 
 
-def _template_cargo(team: str, region: str) -> CargoClient:
+def _app_cargo(team: str, region: str) -> CargoClient:
 	validate_catalog_access(team, "Server")
 	instance = frappe.get_doc("Region", region)
 	instance.ensure_accepts_new_servers()
@@ -180,7 +180,7 @@ def eligible_plans(team: str, region: str, offering: str, image_id: str, snapsho
 		if snapshot
 		else selected_image(team, region, offering, image_id)
 	)
-	minimum = get_minimum_shape(image, get_image_template_requirements(region, image, snapshot))
+	minimum = get_minimum_shape(image, get_image_app_requirements(region, image, snapshot))
 	catalog = get_server_plans(team, cluster=region)
 	groups = {}
 	for name, plans in catalog["plans"].items():
@@ -210,18 +210,18 @@ def eligible_plans(team: str, region: str, offering: str, image_id: str, snapsho
 	return {**catalog, "plans": groups, "profiles": profiles, "image_id": image_id}
 
 
-def get_image_template_requirements(region: str, image: dict, snapshot: str | None = None) -> dict | None:
-	"""What a new server from a template image needs, from the region's Cargo. A restored
-	snapshot is already set up, and any other image has no template, so both need nothing."""
-	if snapshot or image["tags"].get("purpose") != TEMPLATE_PURPOSE:
+def get_image_app_requirements(region: str, image: dict, snapshot: str | None = None) -> dict | None:
+	"""What a new server from an app image needs, from the region's Cargo. A restored
+	snapshot is already set up, and any other image has no app, so both need nothing."""
+	if snapshot or image["tags"].get("purpose") != APP_PURPOSE:
 		return None
 
 	region_document = frappe.get_doc("Region", region)
-	return CargoClient(region_document).get_template_requirements(image["tags"]["application"])
+	return CargoClient(region_document).get_app_requirements(image["tags"]["application"])
 
 
 def get_minimum_shape(image: dict, requirements: dict | None) -> dict[str, int]:
-	"""The smallest machine an image runs on: its root disk, and a template's minimum size."""
+	"""The smallest machine an image runs on: its root disk, and an app's minimum size."""
 	minimum = (requirements or {}).get("minimum_size") or {}
 	return {
 		"cpu_millicores": minimum.get("cpu_millicores", 0),

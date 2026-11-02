@@ -16,7 +16,7 @@ export interface RegionalImage {
 }
 
 /** A ready-to-run application the region's Cargo has built an image of. */
-export interface Template {
+export interface App {
 	application: string
 	title: string
 	os_version: string | null
@@ -24,7 +24,7 @@ export interface Template {
 	snapshot_id: string
 }
 
-export interface TemplateInput {
+export interface AppInput {
 	name: string
 	label: string
 	type: 'string' | 'email' | 'domain' | 'password'
@@ -34,8 +34,8 @@ export interface TemplateInput {
 	generate?: boolean
 }
 
-export interface TemplateRequirements {
-	inputs: TemplateInput[]
+export interface AppRequirements {
+	inputs: AppInput[]
 	minimum_size: { cpu_millicores: number; memory_mib: number; disk_mib: number }
 	ports: { port: number; protocol: string }[]
 }

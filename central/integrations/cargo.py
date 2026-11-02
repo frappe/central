@@ -89,16 +89,16 @@ class CargoClient:
 				CargoConnectionError,
 			)
 
-	def get_templates(self) -> list[dict]:
+	def get_apps(self) -> list[dict]:
 		"""The one-click images this region's Cargo has built, newest per application."""
 		return self._get_one_click("get_supported_one_click_images")
 
-	def get_template_requirements(self, application: str) -> dict:
-		"""The inputs, smallest machine and ports one template needs."""
+	def get_app_requirements(self, application: str) -> dict:
+		"""The inputs, smallest machine and ports one app needs."""
 		return self._get_one_click("get_one_click_image_requirements", application=application)
 
-	def get_template_user_data(self, application: str, inputs: dict[str, str]) -> str:
-		"""Cloud-init user data carrying the answers to one template's inputs. Cargo checks each
+	def get_app_user_data(self, application: str, inputs: dict[str, str]) -> str:
+		"""Cloud-init user data carrying the answers to one app's inputs. Cargo checks each
 		answer, so a rejected one comes back as its message."""
 		try:
 			response = requests.post(
@@ -109,13 +109,13 @@ class CargoClient:
 				allow_redirects=False,
 			)
 		except requests.RequestException:
-			frappe.throw(_("Cargo could not be reached for the template's settings."), CargoConnectionError)
+			frappe.throw(_("Cargo could not be reached for the app's settings."), CargoConnectionError)
 
 		if response.status_code == 417:
-			frappe.throw(_("Check the template settings: {0}").format(_cargo_message(response)))
+			frappe.throw(_("Check the app settings: {0}").format(_cargo_message(response)))
 		if response.status_code != 200:
 			frappe.throw(
-				_("Cargo could not prepare the template (HTTP {0}).").format(response.status_code),
+				_("Cargo could not prepare the app (HTTP {0}).").format(response.status_code),
 				CargoConnectionError,
 			)
 
@@ -137,11 +137,11 @@ class CargoClient:
 				allow_redirects=False,
 			)
 		except requests.RequestException:
-			frappe.throw(_("Cargo could not be reached for templates."), CargoConnectionError)
+			frappe.throw(_("Cargo could not be reached for apps."), CargoConnectionError)
 
 		if response.status_code != 200:
 			frappe.throw(
-				_("Cargo could not list templates (HTTP {0}).").format(response.status_code),
+				_("Cargo could not list apps (HTTP {0}).").format(response.status_code),
 				CargoConnectionError,
 			)
 

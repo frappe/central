@@ -1,19 +1,19 @@
 <script setup lang="ts">
 import { TextInput } from 'frappe-ui'
-import type { TemplateInput } from '@/types/serverCreation'
+import type { AppInput } from '@/types/serverCreation'
 
-defineProps<{ inputs: TemplateInput[] }>()
+defineProps<{ inputs: AppInput[] }>()
 
 const answers = defineModel<Record<string, string>>({ required: true })
 
-const inputTypes: Record<TemplateInput['type'], string> = {
+const inputTypes: Record<AppInput['type'], string> = {
 	string: 'text',
 	domain: 'text',
 	email: 'email',
 	password: 'password',
 }
 
-function placeholderFor(input: TemplateInput): string {
+function placeholderFor(input: AppInput): string {
 	if (input.type === 'domain') return 'e.g. app.example.com'
 	if (input.generate) return 'Leave blank to generate one'
 	return ''
