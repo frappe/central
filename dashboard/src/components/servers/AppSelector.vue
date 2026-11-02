@@ -18,14 +18,16 @@ const logos = computed(
 )
 
 const options = computed(() =>
-	props.apps.map((app) => ({
-		label: app.title,
-		value: app.snapshot_id,
-		description: [app.information, app.os_version && `Ubuntu ${app.os_version}`]
-			.filter(Boolean)
-			.join(' · '),
-	})),
+	props.apps.map((app) => ({ label: app.title, value: app.snapshot_id })),
 )
+
+const selectedDescription = computed(() => {
+	const app = props.apps.find((item) => item.snapshot_id === props.modelValue)
+
+	return [app?.information, app?.os_version && `Ubuntu ${app.os_version}`]
+		.filter(Boolean)
+		.join(' · ')
+})
 </script>
 
 <template>
@@ -33,7 +35,6 @@ const options = computed(() =>
 		:model-value="modelValue"
 		:options="options"
 		:disabled="disabled"
-		:columns="2"
 		label="Select an app"
 		@update:model-value="emit('update:modelValue', $event)"
 	>
@@ -42,8 +43,15 @@ const options = computed(() =>
 				:src="logos.get(option.value) ?? appsLogo"
 				alt=""
 				class="size-6 shrink-0 object-contain"
+				:class="{
+					'rounded-4 bg-surface-gray-2 p-1': logos.get(option.value) !== appsLogo,
+				}"
 				draggable="false"
 			/>
 		</template>
 	</ChoiceCards>
+
+	<p v-if="selectedDescription" class="text-p-sm text-ink-gray-5">
+		{{ selectedDescription }}
+	</p>
 </template>
