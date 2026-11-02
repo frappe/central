@@ -327,6 +327,20 @@ class Site(Document):
 		self.add_comment("Info", _("{0} ended the trial.").format(frappe.session.user))
 
 	@frappe.whitelist(methods=["POST"])
+	def convert_trial(self) -> None:
+		"""Operator action: convert an open trial without a payment method. The plan must still
+		fit the team's spending limit."""
+		from central.signups.trial import Trial
+
+		frappe.only_for("System Manager")
+		trial = Trial(self)
+		if not trial.is_open:
+			frappe.throw(_("This site has no open trial."))
+		if not trial.convert_within_limit():
+			frappe.throw(self.trial_error)
+		self.add_comment("Info", _("{0} converted the trial.").format(frappe.session.user))
+
+	@frappe.whitelist(methods=["POST"])
 	def retry_trial_step(self) -> None:
 		"""Operator action: run today's trial step again after a failure."""
 		from central.signups.trial import Trial
