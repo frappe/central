@@ -259,6 +259,16 @@ class RazorpayAdapter(GatewayAdapter):
 		except razorpay.errors.SignatureVerificationError:
 			return False
 
+	@staticmethod
+	def webhook_references(payload: dict) -> set[str] | None:
+		"""Every id on the event's entities. Notes are left out, because Checkout lets the payer set them."""
+		fields = ("id", "order_id", "payment_id", "customer_id", "token_id", "invoice_id", "payment_link_id")
+		references = set()
+		for wrapper in (payload.get("payload") or {}).values():
+			entity = (wrapper or {}).get("entity") or {}
+			references.update(entity.get(field) for field in fields)
+		return {reference for reference in references if isinstance(reference, str) and reference}
+
 	def parse_webhook_event(self, payload: dict, headers: dict | None = None) -> NormalisedEvent:
 		"""The dedupe id is built from the signed body. Razorpay's X-Razorpay-Event-Id
 		header is outside the signature, so a replayed body could carry a new one."""

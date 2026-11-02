@@ -36,6 +36,9 @@ class TestStripeWebhookReceiver(IntegrationTestCase):
 	def setUp(self):
 		make_stripe_gateway()
 		frappe.db.delete("Webhook Event", {"gateway_event_id": EVENT_ID})
+		central_event = patch("central.billing.payments.webhooks.is_central_event", return_value=True)
+		central_event.start()
+		self.addCleanup(central_event.stop)
 
 	def _events(self):
 		return frappe.db.count("Webhook Event", {"gateway_event_id": EVENT_ID})
@@ -100,6 +103,9 @@ class TestRazorpayWebhookReceiver(IntegrationTestCase):
 
 	def setUp(self):
 		make_razorpay_gateway()
+		central_event = patch("central.billing.payments.webhooks.is_central_event", return_value=True)
+		central_event.start()
+		self.addCleanup(central_event.stop)
 		frappe.db.delete("Webhook Event", {"gateway_event_id": R_EVENT_ID})
 
 	def _events(self):

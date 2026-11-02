@@ -406,8 +406,6 @@ def check_billed_teams_can_pay() -> list[Violation]:
 
 def check_promotional_credit_expires() -> list[Violation]:
 	"""Promotional credit carries an expiry date when the policy says it expires."""
-	if not settings.promotional_credit_validity_days():
-		return []
 	internal = _internal_teams()
 	return [
 		Violation(

@@ -144,6 +144,9 @@ def valid_signature():
 class TestWebhookHardening(IntegrationTestCase):
 	def setUp(self):
 		make_stripe_gateway()
+		central_event = patch("central.billing.payments.webhooks.is_central_event", return_value=True)
+		central_event.start()
+		self.addCleanup(central_event.stop)
 		frappe.db.delete("Webhook Event", {"gateway_event_id": FLOOD_EVENT})
 		frappe.db.commit()
 

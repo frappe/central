@@ -102,7 +102,7 @@
   {
    "default": "60",
    "depends_on": "grant_welcome_credits",
-   "description": "Days a welcome credit stays usable. 0 means it never expires.",
+   "description": "Days a promotional credit stays usable. An empty value or 0 uses 60 days.",
    "fieldname": "promotional_credit_validity_days",
    "fieldtype": "Int",
    "label": "Validity (Days)",

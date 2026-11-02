@@ -12,6 +12,7 @@ stored and a background job is enqueued.
 import frappe
 from frappe import _
 
+from central.billing.platform import metrics
 from central.billing.platform.records import save_billing_record
 
 # A failed event is retried hourly until it has failed this many times; then it waits for
@@ -53,6 +54,24 @@ def paypal() -> dict:
 	)
 
 
+# Where Central stores each id a gateway can name in an event.
+_GATEWAY_REFERENCES = (
+	("Payment Attempt", "name"),
+	("Payment Attempt", "gateway_transaction_id"),
+	("Payment Attempt", "gateway_order_id"),
+	("Top-up Order", "name"),
+	("Top-up Order", "gateway_order_id"),
+	("Top-up Order", "gateway_payment_id"),
+	("Payment Method", "gateway_method_id"),
+	("Payment Method", "gateway_customer_id"),
+	("Payment Method", "gateway_mandate_id"),
+	("Payment Method", "setup_reference"),
+	("Payment Method", "setup_intent_id"),
+	("Refund", "gateway_refund_id"),
+	("Gateway Customer", "gateway_customer_id"),
+)
+
+
 def process_webhook(adapter_key: str, payload: bytes, headers: dict) -> dict:
 	gateway = _resolve_gateway(adapter_key)
 	adapter = gateway.get_adapter()
@@ -64,9 +83,27 @@ def process_webhook(adapter_key: str, payload: bytes, headers: dict) -> dict:
 
 	body = payload.decode() if isinstance(payload, bytes) else payload
 	event = adapter.parse_webhook_event(frappe.parse_json(body), headers)
+	if not is_central_event(adapter, event.payload):
+		# Frappe Cloud v1 shares these gateway accounts, so its events reach this endpoint too.
+		metrics.emit("billing.webhook_of_another_product", gateway=gateway.name, event_type=event.event_type)
+		frappe.local.response.http_status_code = 200
+		return {"ok": True, "stored": False}
 	_store_and_enqueue(gateway, event, payload)
 	frappe.local.response.http_status_code = 200
 	return {"ok": True, "event": event.gateway_event_id}
+
+
+def is_central_event(adapter, payload: dict) -> bool:
+	"""Whether the event names a record Central stored. Reconciliation recovers a payment
+	whose event arrives before its gateway id is saved."""
+	references = adapter.webhook_references(payload)
+	if references is None:
+		return True
+	if not references:
+		return False
+	return any(
+		frappe.db.exists(doctype, {field: ["in", list(references)]}) for doctype, field in _GATEWAY_REFERENCES
+	)
 
 
 def _resolve_gateway(adapter_key: str):

@@ -506,16 +506,12 @@ def return_credit(
 
 
 def promotional_expiry_date(on_date=None):
-	"""When a promotional credit granted today stops being usable.
-
-	`None` when the configured validity is 0 — the grant never expires, same as
-	purchased credit."""
+	"""When a promotional credit granted today stops being usable."""
 	from central.billing import settings
 
-	days = settings.promotional_credit_validity_days()
-	if not days:
-		return None
-	return frappe.utils.add_days(on_date or frappe.utils.nowdate(), days)
+	return frappe.utils.add_days(
+		on_date or frappe.utils.nowdate(), settings.promotional_credit_validity_days()
+	)
 
 
 def grant_promotional_credits(team, amount, currency, note=None, expires_on=None) -> dict:

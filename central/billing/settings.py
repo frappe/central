@@ -91,12 +91,14 @@ def provision_teams_as_trial() -> bool:
 	return bool(_settings().provision_teams_as_trial)
 
 
+DEFAULT_PROMOTIONAL_CREDIT_VALIDITY_DAYS = 60
+
+
 def promotional_credit_validity_days() -> int:
-	"""Days a welcome credit stays usable; 0 means it never expires."""
+	"""Days a promotional credit stays usable. Every promotional credit expires."""
 	override = _override("promotional_credit_validity_days")
-	if override is not _MISSING:
-		return frappe.utils.cint(override)
-	return frappe.utils.cint(_settings().promotional_credit_validity_days)
+	days = override if override is not _MISSING else _settings().promotional_credit_validity_days
+	return frappe.utils.cint(days) or DEFAULT_PROMOTIONAL_CREDIT_VALIDITY_DAYS
 
 
 def invoice_due_days() -> int:
