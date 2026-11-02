@@ -93,17 +93,21 @@ class TestAITrialKey(IntegrationTestCase):
 		ai_trial_key.refill_trial_keys()
 
 		self.assertEqual(self.statuses(), ["Available"] * 3)
+		key = frappe.get_doc(
+			"AI Trial Key", frappe.get_all("AI Trial Key", pluck="name", order_by="creation asc")[-1]
+		)
+		# The record has an id of its own, and that id is the key's title at Grove.
+		self.assertTrue(key.name.startswith("AITK-") and key.name != key.grove_key)
 		self.assertEqual(
 			self.grove.provision_key.call_args.kwargs,
 			{
 				"team": TRIAL_TEAM,
-				"title": None,
+				"title": key.name,
 				"geography": "eu",
 				"cap": 2,
 				"model_groups": None,
 			},
 		)
-		key = frappe.get_doc("AI Trial Key", frappe.get_all("AI Trial Key", pluck="name")[-1])
 		self.assertEqual((key.gateway_url, key.get_password("api_key")), (GATEWAY, f"gr_{key.grove_key}"))
 		self.assertEqual(key.product, "raven")
 

@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Self
 import frappe
 from frappe import _
 from frappe.model.document import Document
+from frappe.model.naming import make_autoname
 from frappe.utils import add_to_date, cint, flt, now_datetime
 
 from central.integrations.grove import GroveClient
@@ -67,12 +68,14 @@ class AITrialKey(Document):
 
 	@classmethod
 	def provision(cls, settings: AISettings, row: AITrialProduct) -> Self:
-		"""Mint one key into `row`'s product's pool, in the product's Model Group on top of the team's
-		when the row names one. A crash between the mint and the insert leaves a capped, untitled key
-		under the trial team that no record names; Grove Desk shows it."""
+		"""Mint one key into `row`'s product's pool, titled at Grove by this record's id (taken from the
+		series before the mint), in the product's Model Group on top of the team's when the row names one.
+		A crash between the mint and the insert leaves a capped key under the trial team titled by an id
+		no record carries; Grove Desk shows it."""
+		name = make_autoname(frappe.get_meta("AI Trial Key").autoname)
 		minted = GroveClient.from_settings().provision_key(
 			team=TRIAL_TEAM,
-			title=None,
+			title=name,
 			geography=settings.trial_key_geography,
 			cap=cint(settings.trial_key_cap),
 			model_groups=[row.model_group] if row.model_group else None,
@@ -87,7 +90,7 @@ class AITrialKey(Document):
 				"cap": cint(settings.trial_key_cap),
 				"api_key": minted["api_key"],
 			}
-		).insert()
+		).insert(set_name=name)
 
 	@classmethod
 	def assign(cls, action: ResourceAction) -> Self | None:

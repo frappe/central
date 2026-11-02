@@ -1,6 +1,6 @@
 {
  "actions": [],
- "autoname": "field:grove_key",
+ "autoname": "AITK-.#####",
  "creation": "2026-10-24 00:00:00",
  "doctype": "DocType",
  "editable_grid": 1,
@@ -38,7 +38,7 @@
    "search_index": 1
   },
   {
-   "description": "The key's name at Grove.",
+   "description": "The key's name at Grove; its title there is this record's id.",
    "fieldname": "grove_key",
    "fieldtype": "Data",
    "in_list_view": 1,
@@ -164,11 +164,11 @@
  ],
  "grid_page_length": 50,
  "links": [],
- "modified": "2026-11-01 19:00:00.000000",
+ "modified": "2026-11-02 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Services",
  "name": "AI Trial Key",
- "naming_rule": "By fieldname",
+ "naming_rule": "Expression (old style)",
  "owner": "Administrator",
  "permissions": [
   {
