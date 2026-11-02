@@ -14,7 +14,6 @@ if TYPE_CHECKING:
 
 PING_PATH = "/api/method/ping"
 CONFIGURE_WEBHOOKS_PATH = "/api/method/cargo.api.webhooks.configure"
-ACCEPT_DATUM_TOKEN_PATH = "/api/method/cargo.telemetry.api.auth.accept_datum_token"
 ONE_CLICK_API_PATH = "/api/method/cargo.image_builder.api.one_click_image"
 TOKEN_HEADER = "X-Cargo-Access-Token"
 
@@ -63,29 +62,6 @@ class CargoClient:
 		if response.status_code not in (200, 201):
 			frappe.throw(
 				_("Cargo rejected webhook configuration (HTTP {0}).").format(response.status_code),
-				CargoConnectionError,
-			)
-
-	def accept_datum_token(self, token: str) -> None:
-		"""Hand Cargo the token it ships its own telemetry to the region's Datum with."""
-		headers = {
-			TOKEN_HEADER: mint_cargo_token(self.instance.get_atlas_region_id()),
-			"Accept": "application/json",
-		}
-
-		try:
-			response = requests.post(
-				f"{self._base_url()}{ACCEPT_DATUM_TOKEN_PATH}",
-				headers=headers,
-				json={"token": token},
-				timeout=(5, 20),
-			)
-		except requests.RequestException:
-			frappe.throw(_("Cargo could not be reached to accept its Datum token."), CargoConnectionError)
-
-		if response.status_code != 200:
-			frappe.throw(
-				_("Cargo rejected its Datum token (HTTP {0}).").format(response.status_code),
 				CargoConnectionError,
 			)
 

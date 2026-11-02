@@ -536,20 +536,3 @@ class TestCargoServiceDelivery(IntegrationTestCase):
 		reply = accept_cargo_report(raw_body=body, region=self.region.name, signature=signature)
 
 		self.assertEqual(reply["ignored"], "unreadable body")
-
-	# — Datum token delivery
-
-	def test_telemetry_coming_up_queues_a_datum_token_for_cargo(self):
-		with patch("central.integrations.state_delivery.frappe.enqueue_doc") as enqueue_doc:
-			self.deliver(self.service_report(service="telemetry"))
-
-		enqueue_doc.assert_called_once()
-		self.assertEqual(enqueue_doc.call_args.args, ("Region", self.region.name, "issue_cargo_datum_token"))
-		self.assertTrue(enqueue_doc.call_args.kwargs["deduplicate"])
-
-	def test_no_datum_token_is_queued_for_any_other_report(self):
-		with patch("central.integrations.state_delivery.frappe.enqueue_doc") as enqueue_doc:
-			self.deliver(self.service_report())
-			self.deliver(self.service_report(service="telemetry", status="Not Available"))
-
-		enqueue_doc.assert_not_called()
