@@ -240,3 +240,15 @@ class TestReadiness(IntegrationTestCase):
 	def test_readiness_gaps_reach_the_operator_alerts(self):
 		gaps = [a for a in alerts.readiness_gaps() if a["team"] == TEAM]
 		self.assertIn("readiness", {a["alert"] for a in gaps})
+
+
+class TestSubscriptionRegion(IntegrationTestCase):
+	def test_a_subscription_on_an_unknown_region_is_reported(self):
+		make_plan(PLAN)
+		subscription = make_billing_subscription(TEAM, CLUSTER, PLAN, billing_cycle="Monthly")
+		frappe.db.set_value("Subscription", subscription, {"cluster": "gone-region", "enabled": 1})
+
+		found = [v for v in _found("S4") if v.subject == subscription]
+
+		self.assertEqual(len(found), 1)
+		self.assertIn("gone-region", found[0].detail)

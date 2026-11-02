@@ -73,3 +73,5 @@ central.patches.v0_0.revoke_trial_keys
 central.patches.v0_0.seed_template_offering
 # Image offerings show Frappe first, then Apps, then Ubuntu.
 central.patches.v0_0.order_image_offerings
+# Subscriptions and usage rollups keep the region name from their creation. Move them off a renamed region.
+central.patches.v0_0.repoint_billing_records_to_renamed_region

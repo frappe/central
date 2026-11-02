@@ -269,6 +269,25 @@ def check_subscriptions_are_priced() -> list[Violation]:
 	return found
 
 
+def check_subscriptions_name_a_known_region() -> list[Violation]:
+	"""Every running subscription with a cluster names a Region, or its metered usage cannot be priced."""
+	regions = set(frappe.get_all("Region", pluck="name"))
+	subscriptions = frappe.get_all(
+		"Subscription", filters={"enabled": 1, "cluster": ["is", "set"]}, fields=["name", "team", "cluster"]
+	)
+	return [
+		Violation(
+			check="S4",
+			team=subscription.team,
+			subject_doctype="Subscription",
+			subject=subscription.name,
+			detail=f"Cluster {subscription.cluster} is not a Region, so its metered usage cannot be priced.",
+		)
+		for subscription in subscriptions
+		if subscription.cluster not in regions
+	]
+
+
 def check_running_servers_are_billed() -> list[Violation]:
 	"""A running server has an active subscription, unless it is a free trial."""
 	from central.signups.trial import is_billing_deferred
@@ -557,6 +576,7 @@ CHECKS = {
 	"S1": ("Running subscriptions are priced", check_subscriptions_are_priced),
 	"S2": ("Running servers are billed", check_running_servers_are_billed),
 	"S3": ("Terminated servers stop billing", check_terminated_servers_stop_billing),
+	"S4": ("Subscriptions name a known region", check_subscriptions_name_a_known_region),
 	"M1": ("Storage usage is read daily", check_storage_usage_is_recorded),
 	"W1": ("Billed teams can pay", check_billed_teams_can_pay),
 	"W2": ("Promotional credit expires", check_promotional_credit_expires),
