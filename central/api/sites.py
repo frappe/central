@@ -95,9 +95,11 @@ def create_trial_team(
 	utm_campaign: str | None = None,
 	referrer: str | None = None,
 	product: str | None = None,
+	team: str | None = None,
 ) -> dict:
-	"""Give a caller with no team a team before the trial funnel asks for a site name. The
-	browser sends how the signup first arrived, which the new team keeps."""
+	"""The team the trial funnel uses, before it asks for a site name: `team` when the caller can
+	create servers there, else another such team, else a new one. The browser sends how the
+	signup first arrived, which a new team keeps."""
 	from central.site_provisioning import create_trial_team as create
 
 	attribution = {
@@ -108,7 +110,7 @@ def create_trial_team(
 		"product": product,
 	}
 
-	return {"team": create(frappe.session.user, attribution)}
+	return {"team": create(frappe.session.user, attribution, team)}
 
 
 @frappe.whitelist(methods=["POST"])
