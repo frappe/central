@@ -263,6 +263,8 @@ class Team(TeamLifecycle, Document):
 			team=self.name,
 			event_type="role_change",
 			message=", ".join(g["role"] for g in roles),
+			# The team feed shows this to every member manager, so it names the member.
+			context={"member": frappe.utils.get_fullname(user)},
 			affected_user=user,
 		)
 

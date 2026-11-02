@@ -410,6 +410,28 @@ class TestTeamManagement(IntegrationTestCase):
 		with self.assertRaises(frappe.ValidationError):
 			team.set_member_roles(self.viewer, [])
 
+	def test_role_change_notification_names_the_member(self):
+		_ensure_event_type(
+			"role_change",
+			direct_recipients="Affected User",
+			create_in_app=1,
+			in_app_body="{{ context.member }} is now {{ message }} in {{ team_name }}.",
+		)
+		frappe.set_user(self.owner)
+
+		frappe.get_doc("Team", self.team.name).set_member_roles(
+			self.viewer, [{"role": "Developer", "resource_type": "*"}]
+		)
+
+		message = frappe.get_all(
+			"Team Notification",
+			filters={"team": self.team.name, "event_type": "role_change"},
+			pluck="message",
+		)
+		self.assertEqual(
+			message, [f"{frappe.utils.get_fullname(self.viewer)} is now Developer in Managed Team."]
+		)
+
 	def test_only_owner_can_transfer_ownership(self):
 		frappe.set_user(self.admin)
 		with self.assertRaises(frappe.PermissionError):
