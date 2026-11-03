@@ -5,7 +5,8 @@ import frappe
 from frappe.model.document import Document
 
 INVOICED = "Invoiced"
-SKIPPED = "Skipped"
+NOTHING_TO_BILL = "Nothing to Bill"
+BELOW_MINIMUM = "Below Minimum"
 FAILED = "Failed"
 
 

@@ -2,7 +2,7 @@ import frappe
 
 from central.billing import settings
 from central.billing.doctype.billing_event.billing_event import flow_of, outcome_of
-from central.billing.doctype.billing_run_team.billing_run_team import FAILED, record_outcome
+from central.billing.doctype.billing_run_team.billing_run_team import BELOW_MINIMUM, FAILED, record_outcome
 from central.billing.payments.provisioning import ensure_tax_profile
 from central.billing.revenue.invoicing.generate import is_below_minimum
 from central.billing.revenue.invoicing.lifecycle import cancel_invoice
@@ -64,4 +64,4 @@ def cancel_uncollected_invoices_below_the_minimum() -> None:
 				f"{invoice.currency} {invoice.total} is below the minimum invoice amount and was written off."
 			)
 			cancel_invoice(invoice.name, reason=reason)
-			record_outcome(invoice.team, invoice.period_end, "Skipped", reason=reason)
+			record_outcome(invoice.team, invoice.period_end, BELOW_MINIMUM, reason=reason)

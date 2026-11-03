@@ -22,7 +22,12 @@ import frappe
 
 from central.billing import settings
 from central.billing.catalog import commitments
-from central.billing.doctype.billing_run_team.billing_run_team import INVOICED, SKIPPED, record_outcome
+from central.billing.doctype.billing_run_team.billing_run_team import (
+	BELOW_MINIMUM,
+	INVOICED,
+	NOTHING_TO_BILL,
+	record_outcome,
+)
 from central.billing.revenue.invoicing.lines import compute_line_items, team_line_items
 from central.billing.states import record_team_event
 
@@ -311,7 +316,7 @@ def _generate_team_invoice(team: str, period_start, period_end):
 
 	rated = rate_team_period(team, period_start, period_end)
 	if not rated:
-		record_outcome(team, period_end, SKIPPED, reason="Nothing billable in this month.")
+		record_outcome(team, period_end, NOTHING_TO_BILL, reason="Nothing billable in this month.")
 		return None
 	if is_below_minimum(rated.payload):
 		_forgive(team, period_end, rated.payload)
@@ -324,10 +329,6 @@ def _generate_team_invoice(team: str, period_start, period_end):
 	return name
 
 
-# The coverage report and the Billing Day SQL find a written-off month by this phrase.
-BELOW_MINIMUM_MARK = "below the minimum"
-
-
 def is_below_minimum(payload: dict) -> bool:
 	"""Whether the month totals less than the smallest amount worth invoicing in its currency."""
 	return frappe.utils.flt(payload["total"]) < settings.minimum_invoice_amount(payload["currency"])
@@ -335,8 +336,10 @@ def is_below_minimum(payload: dict) -> bool:
 
 def _forgive(team: str, period_end, payload: dict) -> None:
 	"""Write off a month below the minimum. No invoice is made, and the amount stays on record."""
-	reason = f"{payload['currency']} {payload['total']} is {BELOW_MINIMUM_MARK} invoice amount and was written off."
-	record_outcome(team, period_end, SKIPPED, reason=reason)
+	reason = (
+		f"{payload['currency']} {payload['total']} is below the minimum invoice amount and was written off."
+	)
+	record_outcome(team, period_end, BELOW_MINIMUM, reason=reason)
 	record_team_event(
 		team, "Invoice Skipped Below Minimum", "Invoice", reason=reason, amount=payload["total"]
 	)

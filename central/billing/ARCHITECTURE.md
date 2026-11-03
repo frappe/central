@@ -362,9 +362,9 @@ An invoice is `Outstanding` from creation. The due date marks that collection be
 
 ### Why a team has no invoice
 
-**Billing Run Team** keeps the outcome of the run for each team and month: Invoiced, Skipped or Failed, with the reason. The **Billing Run Coverage** report shows every team that existed by month end with one result and its reason: Invoiced, Waiting, Needs Action, Waived (Internal), Below Minimum, Nothing to Bill or No Subscription. The results add up to the team count. The top of the **Billing Day** dashboard shows the same counts from the same rules. It also lists the settings that an operator must set by hand. The same list shows as a banner at the top of the **Billing** workspace, for a System Manager only, and only while a value is missing. A run cannot reach Complete while a team is Failed.
+**Billing Run Team** keeps the outcome of the run for each team and month: Invoiced, Nothing to Bill, Below Minimum or Failed, with the reason. The **Billing Run Coverage** report shows every team that existed by month end with one result and its reason: Invoiced, Waiting, Needs Action, Waived (Internal), Below Minimum, Nothing to Bill or No Subscription. The results add up to the team count. The top of the **Billing Day** dashboard shows the same counts from the same rules. It also lists the settings that an operator must set by hand. The same list shows as a banner at the top of the **Billing** workspace, for a System Manager only, and only while a value is missing. A run cannot reach Complete while a team is Failed.
 
-A month whose total is below the **Minimum Invoice Amount** for its currency (Billing Settings) gets no invoice. The amount is written off, and a Skipped row and a Billing Event record it.
+A month whose total is below the **Minimum Invoice Amount** for its currency (Billing Settings) gets no invoice. The amount is written off, and a Below Minimum row and a Billing Event record it.
 
 ### Billing activity
 

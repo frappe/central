@@ -5,7 +5,7 @@
 import frappe
 from frappe import _
 
-from central.billing.revenue.invoicing.generate import BELOW_MINIMUM_MARK
+from central.billing.doctype.billing_run_team import billing_run_team
 
 INVOICED = "Invoiced"
 WAITING = "Waiting"
@@ -97,9 +97,9 @@ class _Facts:
 		outcome = self.outcomes.get(team.name)
 		if not outcome:
 			return self._no_run_result(team)
-		if outcome.outcome == "Failed":
+		if outcome.outcome == billing_run_team.FAILED:
 			return NEEDS_ACTION, _("Invoice failed, retried every hour: {0}").format(outcome.reason)
-		if BELOW_MINIMUM_MARK in (outcome.reason or ""):
+		if outcome.outcome == billing_run_team.BELOW_MINIMUM:
 			return BELOW_MINIMUM, outcome.reason
 		return NOTHING_TO_BILL, outcome.reason or _("The invoice was cancelled.")
 

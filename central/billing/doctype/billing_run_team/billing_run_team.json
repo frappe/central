@@ -43,7 +43,7 @@
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Outcome",
-   "options": "Invoiced\nSkipped\nFailed",
+   "options": "Invoiced\nNothing to Bill\nBelow Minimum\nFailed",
    "reqd": 1
   },
   {
@@ -58,7 +58,7 @@
    "fieldtype": "Section Break"
   },
   {
-   "description": "Why the team was skipped, or the error that stopped its invoice.",
+   "description": "Why the team has no invoice, or the error that stopped its invoice.",
    "fieldname": "reason",
    "fieldtype": "Small Text",
    "in_list_view": 1,
@@ -67,7 +67,7 @@
  ],
  "in_create": 1,
  "links": [],
- "modified": "2026-11-02 00:00:00.000000",
+ "modified": "2026-11-03 14:00:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Billing Run Team",
@@ -89,7 +89,11 @@
   },
   {
    "color": "Gray",
-   "title": "Skipped"
+   "title": "Nothing to Bill"
+  },
+  {
+   "color": "Gray",
+   "title": "Below Minimum"
   },
   {
    "color": "Red",
