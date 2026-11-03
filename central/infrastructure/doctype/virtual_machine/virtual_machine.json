@@ -388,6 +388,10 @@
   {
    "link_doctype": "User Mail Account",
    "link_fieldname": "server"
+  },
+  {
+   "link_doctype": "Activity Event",
+   "link_fieldname": "server"
   }
  ],
  "modified": "2026-10-26 10:42:17.318256",

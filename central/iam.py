@@ -315,6 +315,22 @@ def get_allowed_servers(user: str, capability: str) -> dict[str, str | frozenset
 	return allowed
 
 
+def get_capability_gate(capability_field, server_field, team: str, user: str):
+	"""A query builder condition for the team rows `user` may see. A row with no required
+	capability is visible to every member. A team-wide grant sees a row it has the
+	capability for. A grant scoped to servers sees a row only about one of those servers."""
+	gate = capability_field.isnull() | (capability_field == "")
+	capabilities = {cap for grant in resolve_user_grants(user).get(team, []) for cap in grant["caps"]}
+	for capability in sorted(capabilities):
+		servers = get_allowed_servers(user, capability)[team]
+		if servers == ALL_SERVERS:
+			gate = gate | (capability_field == capability)
+		else:
+			gate = gate | ((capability_field == capability) & server_field.isin(sorted(servers)))
+
+	return gate
+
+
 def get_server_capabilities(user: str, team: str, server: str) -> list[str]:
 	"""The capabilities `user` holds on one server, for the console's buttons."""
 	return sorted(cap for cap in SERVER_CAPABILITIES if can(user, team, cap, server=server))

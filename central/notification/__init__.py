@@ -96,7 +96,7 @@ _FEED_FIELDS = (
 def _visible_conditions(tn, team: str, user: str, category: str | None) -> list:
 	"""Conditions for the notifications a user may see in a team's feed. The list and the
 	unread count share them, so the two never disagree."""
-	from central.iam import user_has_operator_bypass
+	from central.iam import get_capability_gate, user_has_operator_bypass
 
 	conds = [tn.team == team]
 	if category:
@@ -104,7 +104,7 @@ def _visible_conditions(tn, team: str, user: str, category: str | None) -> list:
 	if user_has_operator_bypass(user):
 		return conds
 
-	conds.append(_capability_gate(tn, team, user))
+	conds.append(get_capability_gate(tn.required_cap, tn.server, team, user))
 
 	disabled = frappe.get_all(
 		"User Notification Preference",
@@ -115,24 +115,6 @@ def _visible_conditions(tn, team: str, user: str, category: str | None) -> list:
 		conds.append(tn.category.notin(disabled))
 
 	return conds
-
-
-def _capability_gate(tn, team: str, user: str):
-	"""A row with no required capability is visible to every member. A team-wide grant
-	sees a row it has the capability for. A grant scoped to servers sees a row only when
-	the row is about one of those servers."""
-	from central.iam import ALL_SERVERS, get_allowed_servers, resolve_user_grants
-
-	gate = tn.required_cap.isnull() | (tn.required_cap == "")
-	caps = {cap for grant in resolve_user_grants(user).get(team, []) for cap in grant["caps"]}
-	for cap in sorted(caps):
-		servers = get_allowed_servers(user, cap)[team]
-		if servers == ALL_SERVERS:
-			gate = gate | (tn.required_cap == cap)
-		else:
-			gate = gate | ((tn.required_cap == cap) & tn.server.isin(sorted(servers)))
-
-	return gate
 
 
 def unread_count(team: str, *, user: str | None = None) -> int:

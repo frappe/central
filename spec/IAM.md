@@ -72,6 +72,7 @@ A role grant applies to all resources (`resource_type = "*"`) or to one resource
 - Team-scoped billing DocTypes (Invoice, Payment Attempt, Credit Ledger Entry, Top-up Order and the others in `hooks._BILLING_TEAM_RECORDS`) are for operators only in both layers: `billing_record_query_conditions` returns `1 = 0` and `billing_record_has_permission` returns False for everyone else, on their own Team too. Customers read billing through the billing API, which checks `billing:view` or `billing:manage` on the record's Team.
 - Pricing a resize reads the plans and the current configuration of one server. Those two billing reads accept `server:resize` on that server in place of `billing:view`.
 - A notification that is about a server records it in `Team Notification.server`. A scoped member sees and receives only the notifications for its servers.
+- Activity Event is for operators only in both layers. Customers read it through the activity API, which applies `iam.get_capability_gate` to each event's required capability and server.
 - The console reads each server's capabilities from the `capabilities` field on its row, so it shows only the actions that the member can do on that server.
 
 ## User And Invitation Flow

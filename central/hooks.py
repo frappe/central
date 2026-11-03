@@ -216,6 +216,40 @@ doc_events = {
 			"Top-up Order",
 		)
 	},
+	# Activity feed. Frappe writes a Version for each save of a tracked DocType, and the feed
+	# keeps the fields that central/central/doctype/activity_event/tracked.py lists.
+	"Version": {
+		"after_insert": "central.central.doctype.activity_event.activity_event.record_version",
+	},
+	# A Version records no creation and no deletion, so these DocTypes record both themselves.
+	"VM Snapshot": {
+		"after_insert": "central.central.doctype.activity_event.activity_event.record_created",
+		"on_trash": "central.central.doctype.activity_event.activity_event.record_deleted",
+	},
+	"Site": {
+		"after_insert": "central.central.doctype.activity_event.activity_event.record_created",
+		"on_trash": "central.central.doctype.activity_event.activity_event.record_deleted",
+	},
+	"Site Domain": {
+		"after_insert": "central.central.doctype.activity_event.activity_event.record_created",
+		"on_trash": "central.central.doctype.activity_event.activity_event.record_deleted",
+	},
+	"Team": {
+		"after_insert": "central.central.doctype.activity_event.activity_event.record_created",
+		"on_trash": "central.central.doctype.activity_event.activity_event.record_deleted",
+	},
+	"Team Role": {
+		"after_insert": "central.central.doctype.activity_event.activity_event.record_created",
+		"on_trash": "central.central.doctype.activity_event.activity_event.record_deleted",
+	},
+	"Team Invitation": {
+		"after_insert": "central.central.doctype.activity_event.activity_event.record_created",
+		"on_trash": "central.central.doctype.activity_event.activity_event.record_deleted",
+	},
+	"Team SSH Key": {
+		"after_insert": "central.central.doctype.activity_event.activity_event.record_created",
+		"on_trash": "central.central.doctype.activity_event.activity_event.record_deleted",
+	},
 }
 
 # Scheduled Tasks
@@ -345,7 +379,8 @@ override_doctype_dashboards = {
 # Ignore links to specified DocTypes when deleting documents
 # -----------------------------------------------------------
 
-# ignore_links_on_delete = ["Communication", "ToDo"]
+# An event outlives the resource it describes.
+ignore_links_on_delete = ["Activity Event"]
 
 # Request Events
 # ----------------
@@ -422,6 +457,7 @@ permission_query_conditions = {
 	"Team": "central.permissions.team_query_conditions",
 	"Team Invitation": "central.permissions.team_invitation_query_conditions",
 	"Team Notification": "central.permissions.team_notification_query_conditions",
+	"Activity Event": "central.permissions.activity_event_query_conditions",
 	"Team Role": "central.permissions.team_role_query_conditions",
 	"Notification Digest Setting": "central.permissions.notification_digest_setting_query_conditions",
 	"Team Service": "central.permissions.team_service_query_conditions",
@@ -441,6 +477,7 @@ has_permission = {
 	"Team": "central.permissions.team_has_permission",
 	"Team Invitation": "central.permissions.team_invitation_has_permission",
 	"Team Notification": "central.permissions.team_notification_has_permission",
+	"Activity Event": "central.permissions.activity_event_has_permission",
 	"Team Role": "central.permissions.team_role_has_permission",
 	"Notification Digest Setting": "central.permissions.has_notification_digest_setting_permission",
 	"Team Service": "central.permissions.team_service_has_permission",
@@ -461,9 +498,8 @@ export_python_type_annotations = True
 # Require all whitelisted methods to have type annotations
 require_type_annotated_api_methods = True
 
-# default_log_clearing_doctypes = {
-# 	"Logging DocType Name": 30  # days to retain logs
-# }
+# Log Settings clears each listed DocType daily. An operator changes the days there.
+default_log_clearing_doctypes = {"Activity Event": 365}
 
 # Translation
 # ------------

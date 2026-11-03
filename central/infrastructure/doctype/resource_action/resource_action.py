@@ -5,6 +5,7 @@ from frappe import _
 from frappe.model.document import Document
 
 from central.billing.catalog.trials import is_trial_plan
+from central.central.doctype.activity_event.activity_event import ActivityEvent
 from central.errors import AtlasConnectionError, AtlasRequestUncertain, build_envelope, to_error_response
 from central.iam import can
 from central.infrastructure.doctype.blocked_domain.blocked_domain import BlockedDomain, normalize_domain
@@ -270,6 +271,8 @@ class ResourceAction(Document):
 			values.update(self._diagnostic_values(diagnostic, diagnostic_title))
 
 		self.db_set(values, notify=notify)
+		if status != previous_status and status in TERMINAL_STATES:
+			ActivityEvent.record_action(self)
 		if status != previous_status and status == "Succeeded" and self.is_trial_upgrade():
 			frappe.enqueue(
 				"central.integrations.pilot.attach_bundled_bucket",

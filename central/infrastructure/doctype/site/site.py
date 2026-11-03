@@ -173,6 +173,8 @@ class Site(Document):
 		"""Record the first successful login handoff and schedule the optional rename."""
 		if not self.claimed_at:
 			self.db_set("claimed_at", frappe.utils.now_datetime())
+			# db_set writes no Version, and the activity feed reads Versions.
+			self.save_version()
 			capture_trial_event("trial_claimed", self.team, self.product, user=frappe.session.user)
 
 		self.enqueue_subdomain_rename()
