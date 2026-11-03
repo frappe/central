@@ -27,7 +27,6 @@ const EVENT_ICONS: Record<string, string> = {
 	'domain.created': 'lucide-link',
 	'domain.deleted': 'lucide-link-2-off',
 	'team.impersonated': 'lucide-shield-check',
-	'team.members_changed': 'lucide-user-round',
 	'invitation.created': 'lucide-mail',
 	'invitation.resent': 'lucide-mail',
 	'invitation.accepted': 'lucide-mail-check',

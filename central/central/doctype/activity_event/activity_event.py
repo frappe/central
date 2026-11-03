@@ -184,6 +184,7 @@ def get_event(
 	kind: EventKind,
 	*,
 	actor: str | None = None,
+	label: str | None = None,
 	details: list[dict] | None = None,
 	status: str | None = None,
 	error: str | None = None,
@@ -204,11 +205,11 @@ def get_event(
 		"server": resource.name if resource.doctype == "Virtual Machine" else resource.get("server"),
 		"resource_type": resource.doctype,
 		"resource_name": resource.name,
-		"resource_label": resource.get(label_field) or resource.name,
+		"resource_label": label or resource.get(label_field) or resource.name,
 		"event": event,
 		"category": kind.category,
 		"required_capability": kind.capability,
-		"actor": actor or frappe.session.user,
+		"actor": get_actor(resource, actor or frappe.session.user),
 		"status": status,
 		"details": frappe.as_json(details) if details else None,
 		"error": error,
@@ -216,6 +217,17 @@ def get_event(
 		"reference_name": reference[1] if reference else None,
 		"creation": occurred_at,
 	}
+
+
+def get_actor(resource: Document, actor: str) -> str | None:
+	"""The person behind an event, or None for a job, a schedule or a region report. A guest
+	session acts for the person the record names, such as the owner signing up."""
+	spec = TRACKED.get(resource.doctype)
+	if actor == "Guest" and spec and spec.guest_actor:
+		return spec.guest_actor(resource) or None
+
+	# Frappe's standard users run jobs, schedules and unsigned requests, not people.
+	return None if actor in frappe.STANDARD_USERS else actor
 
 
 def get_version_events(version, resource: Document, diff: dict) -> list[dict | None]:
@@ -230,11 +242,56 @@ def get_version_events(version, resource: Document, diff: dict) -> list[dict | N
 		get_event(resource, f"{spec.prefix}.{kind.verb}", kind, details=details, **context)
 		for kind, details in get_changes(spec, resource, diff).items()
 	]
+	events += get_row_events(spec, resource, diff, context)
 	if status := get_new_status(spec, diff):
 		event = f"{spec.prefix}.{status.lower()}"
 		events.append(get_event(resource, event, spec.get_kind(), status=status, **context))
 
 	return events
+
+
+def get_row_events(spec: Tracked, resource: Document, diff: dict, context: dict) -> list[dict | None]:
+	"""One event per person whose rows changed, such as a member added or given a new role."""
+	events = []
+	for table in sorted(get_changed_fields(diff) & spec.row_subjects.keys()):
+		kind = spec.get_kind(table)
+		subject = spec.row_subjects[table]
+		subject_doctype = frappe.get_meta(resource.meta.get_field(table).options).get_field(subject).options
+		before, after = get_row_sides(resource, table, diff)
+		for person in sorted({row.get(subject) for row in before + after} - {None}):
+			old = [row for row in before if row.get(subject) == person]
+			new = [row for row in after if row.get(subject) == person]
+			# A guest session can only add its own person, as when an invitee signs up.
+			is_self = context["actor"] in (person, "Guest")
+			verb = get_row_verb(bool(old), bool(new), is_self)
+			details = [
+				get_detail(
+					spec.fields[table],
+					get_row_labels(spec, resource, table, old),
+					get_row_labels(spec, resource, table, new),
+				)
+			]
+			label = get_link_title(subject_doctype, person)
+			events.append(
+				get_event(
+					resource,
+					f"{spec.prefix}.{kind.verb}_{verb}",
+					kind,
+					label=label,
+					details=details,
+					**{**context, "actor": person if is_self else context["actor"]},
+				)
+			)
+
+	return events
+
+
+def get_row_verb(had_rows: bool, has_rows: bool, is_self: bool) -> str:
+	if not had_rows:
+		return "joined" if is_self else "added"
+	if not has_rows:
+		return "left" if is_self else "removed"
+	return "changed"
 
 
 def get_lifecycle_event(
@@ -248,9 +305,10 @@ def get_lifecycle_event(
 
 
 def get_action_event(action: Document, server: Document) -> dict | None:
+	succeeded, failed = ACTION_EVENTS[action.action]
 	return get_event(
 		server,
-		ACTION_EVENTS[action.action],
+		succeeded if action.status == "Succeeded" else failed,
 		ACTION,
 		actor=action.requested_by,
 		details=get_action_details(action),
@@ -287,7 +345,7 @@ def get_changes(spec: Tracked, resource: Document, diff: dict) -> dict[EventKind
 			detail = get_field_detail(spec, resource, fieldname, old, new)
 			changes.setdefault(spec.get_kind(fieldname), []).append(detail)
 
-	for table in sorted(get_changed_fields(diff) & spec.row_fields.keys()):
+	for table in sorted(get_changed_fields(diff) & spec.row_fields.keys() - spec.row_subjects.keys()):
 		detail = get_table_detail(spec, resource, table, diff)
 		changes.setdefault(spec.get_kind(table), []).append(detail)
 
@@ -314,8 +372,13 @@ def get_switch(value, inverted: bool) -> str:
 
 def get_table_detail(spec: Tracked, resource: Document, table: str, diff: dict) -> dict:
 	"""Removed rows on the left, added rows on the right. A changed row shows on both sides."""
-	child_meta = frappe.get_meta(resource.meta.get_field(table).options)
-	fields = spec.row_fields[table]
+	before, after = get_row_sides(resource, table, diff)
+	old, new = get_row_labels(spec, resource, table, before), get_row_labels(spec, resource, table, after)
+	return get_detail(spec.fields[table], old, new)
+
+
+def get_row_sides(resource: Document, table: str, diff: dict) -> tuple[list[dict], list[dict]]:
+	"""The rows of one table before and after a save."""
 	rows = {row.name: row.as_dict() for row in resource.get(table)}
 	before = [row for name, row in diff.get("removed") or [] if name == table]
 	after = [row for name, row in diff.get("added") or [] if name == table]
@@ -326,10 +389,12 @@ def get_table_detail(spec: Tracked, resource: Document, table: str, diff: dict) 
 			after.append({**row, **{field: new for field, _old, new in changed}})
 			before.append({**row, **{field: old for field, old, _new in changed}})
 
-	def labels(side: list[dict]) -> str | None:
-		return ", ".join(get_row_label(child_meta, row, fields) for row in side) or None
+	return before, after
 
-	return get_detail(spec.fields[table], labels(before), labels(after))
+
+def get_row_labels(spec: Tracked, resource: Document, table: str, rows: list[dict]) -> str | None:
+	child_meta = frappe.get_meta(resource.meta.get_field(table).options)
+	return ", ".join(get_row_label(child_meta, row, spec.row_fields[table]) for row in rows) or None
 
 
 def get_row_label(meta, row: dict, fields: tuple[str, ...]) -> str:

@@ -1,7 +1,9 @@
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from types import MappingProxyType
 from typing import NamedTuple
 
+import frappe
+from frappe.model.document import Document
 from frappe.utils.translations import N_
 
 NO_FIELDS = MappingProxyType({})
@@ -32,6 +34,10 @@ class Tracked(NamedTuple):
 	row_fields: Mapping[str, tuple[str, ...]] = NO_FIELDS
 	# Check fields stored as the opposite of their label, such as skip_automatic_snapshot.
 	inverted: tuple[str, ...] = ()
+	# A change to a row of these tables is an event about the person the row names.
+	row_subjects: Mapping[str, str] = NO_FIELDS
+	# A guest session acts for the person this returns, such as the owner signing up.
+	guest_actor: Callable[[Document], str | None] | None = None
 	label_field: str | None = None
 	lifecycle: bool = True
 
@@ -40,6 +46,11 @@ class Tracked(NamedTuple):
 
 
 TEAM_MEMBERS = "team:manage_members"
+
+
+def get_team_owner(doc: Document) -> str | None:
+	return frappe.db.get_value("Team", doc.team, "owner_user")
+
 
 TRACKED: dict[str, Tracked] = {
 	"Virtual Machine": Tracked(
@@ -79,19 +90,24 @@ TRACKED: dict[str, Tracked] = {
 		"server:view",
 		fields={"claimed_at": "Claimed"},
 		field_events={"claimed_at": EventKind("claimed", "site", "server:view")},
+		guest_actor=get_team_owner,
 	),
-	"Site Domain": Tracked("domain", "site", "server:view"),
+	"Site Domain": Tracked("domain", "site", "server:view", guest_actor=get_team_owner),
 	"Team": Tracked(
 		"team",
 		"team",
 		"team:edit",
-		fields={"team_name": "Team name", "team_logo": "Logo", "owner_user": "Owner", "members": "Members"},
+		fields={"team_name": "Team name", "team_logo": "Logo", "owner_user": "Owner", "members": "Access"},
 		field_events={
+			"team_name": EventKind("renamed", "team", "team:edit"),
+			"team_logo": EventKind("logo_changed", "team", "team:edit"),
 			"owner_user": EventKind("ownership_transferred", "team", TEAM_MEMBERS),
-			"members": EventKind("members_changed", "member", TEAM_MEMBERS),
+			"members": EventKind("member", "member", TEAM_MEMBERS),
 		},
 		statuses=("Active", "Suspended", "Archived"),
-		row_fields={"members": ("user", "role", "status")},
+		row_fields={"members": ("role", "status")},
+		row_subjects={"members": "user"},
+		guest_actor=lambda team: team.owner_user,
 	),
 	"Team Role": Tracked(
 		"role",
@@ -108,6 +124,7 @@ TRACKED: dict[str, Tracked] = {
 		field_events={"expires_on": EventKind("resent", "member", TEAM_MEMBERS)},
 		statuses=("Accepted", "Declined", "Revoked", "Expired"),
 		label_field="email",
+		guest_actor=lambda invitation: invitation.accepted_by,
 	),
 	"Team SSH Key": Tracked(
 		"ssh_key",
@@ -121,67 +138,131 @@ TRACKED: dict[str, Tracked] = {
 	),
 }
 
-# The end state of a server action, recorded on the server.
+# The end state of a server action, recorded on the server: (succeeded, failed).
 ACTION_EVENTS = {
-	"create": "server.created",
-	"start": "server.started",
-	"stop": "server.stopped",
-	"restart": "server.restarted",
-	"resize": "server.resized",
-	"terminate": "server.terminated",
+	"create": ("server.created", "server.create_failed"),
+	"start": ("server.started", "server.start_failed"),
+	"stop": ("server.stopped", "server.stop_failed"),
+	"restart": ("server.restarted", "server.restart_failed"),
+	"resize": ("server.resized", "server.resize_failed"),
+	"terminate": ("server.terminated", "server.terminate_failed"),
 }
 
-# {actor} and {resource} mark the names the console shows in bold. The API translates
-# each sentence for the reader.
+
+class Sentence(NamedTuple):
+	"""How the console says what happened. {actor} and {resource} mark the names it shows in
+	bold. An event without a person, such as a job or a schedule, reads without an actor."""
+
+	by_person: str
+	by_nobody: str
+
+
 SENTENCES = {
-	"server.created": N_("{actor} created {resource}"),
-	"server.started": N_("{actor} started {resource}"),
-	"server.stopped": N_("{actor} stopped {resource}"),
-	"server.restarted": N_("{actor} restarted {resource}"),
-	"server.resized": N_("{actor} resized {resource}"),
-	"server.terminated": N_("{actor} terminated {resource}"),
-	"server.renamed": N_("{actor} renamed {resource}"),
-	"server.updated": N_("{actor} changed the configuration of {resource}"),
-	"server.ssh_keys_changed": N_("{actor} changed the SSH keys on {resource}"),
-	"snapshot.created": N_("{actor} requested snapshot {resource}"),
-	"snapshot.available": N_("Snapshot {resource} is ready"),
-	"snapshot.failed": N_("Snapshot {resource} failed"),
-	"snapshot.deleted": N_("{actor} deleted snapshot {resource}"),
-	"site.created": N_("{actor} created site {resource}"),
-	"site.claimed": N_("{actor} claimed site {resource}"),
-	"site.deleted": N_("{actor} deleted site {resource}"),
-	"domain.created": N_("{actor} added domain {resource}"),
-	"domain.deleted": N_("{actor} removed domain {resource}"),
-	"team.created": N_("{actor} created team {resource}"),
-	"team.updated": N_("{actor} changed the team settings"),
-	"team.archived": N_("{actor} archived the team"),
-	"team.suspended": N_("{actor} suspended the team"),
-	"team.active": N_("{actor} reactivated the team"),
-	"team.ownership_transferred": N_("{actor} transferred ownership of the team"),
-	"team.members_changed": N_("{actor} changed the team members"),
-	"team.impersonated": N_("{actor} opened the team as support"),
-	"role.created": N_("{actor} created role {resource}"),
-	"role.updated": N_("{actor} changed role {resource}"),
-	"role.deleted": N_("{actor} deleted role {resource}"),
-	"invitation.created": N_("{actor} invited {resource}"),
-	"invitation.resent": N_("{actor} resent the invitation to {resource}"),
-	"invitation.accepted": N_("{actor} accepted the invitation"),
-	"invitation.declined": N_("{actor} declined the invitation"),
-	"invitation.revoked": N_("{actor} revoked the invitation to {resource}"),
-	"invitation.expired": N_("The invitation to {resource} expired"),
-	"ssh_key.created": N_("{actor} added SSH key {resource}"),
-	"ssh_key.renamed": N_("{actor} renamed SSH key {resource}"),
-	"ssh_key.rotated": N_("{actor} rotated SSH key {resource}"),
-	"ssh_key.deleted": N_("{actor} deleted SSH key {resource}"),
+	"server.created": Sentence(N_("{actor} created {resource}"), N_("{resource} was created")),
+	"server.create_failed": Sentence(
+		N_("{actor} tried to create {resource}"), N_("{resource} could not be created")
+	),
+	"server.started": Sentence(N_("{actor} started {resource}"), N_("{resource} started")),
+	"server.start_failed": Sentence(N_("{actor} tried to start {resource}"), N_("{resource} did not start")),
+	"server.stopped": Sentence(N_("{actor} stopped {resource}"), N_("{resource} stopped")),
+	"server.stop_failed": Sentence(N_("{actor} tried to stop {resource}"), N_("{resource} did not stop")),
+	"server.restarted": Sentence(N_("{actor} restarted {resource}"), N_("{resource} restarted")),
+	"server.restart_failed": Sentence(
+		N_("{actor} tried to restart {resource}"), N_("{resource} did not restart")
+	),
+	"server.resized": Sentence(N_("{actor} resized {resource}"), N_("{resource} was resized")),
+	"server.resize_failed": Sentence(
+		N_("{actor} tried to resize {resource}"), N_("{resource} was not resized")
+	),
+	"server.terminated": Sentence(N_("{actor} terminated {resource}"), N_("{resource} was terminated")),
+	"server.terminate_failed": Sentence(
+		N_("{actor} tried to terminate {resource}"), N_("{resource} was not terminated")
+	),
+	"server.renamed": Sentence(N_("{actor} renamed {resource}"), N_("{resource} was renamed")),
+	"server.updated": Sentence(
+		N_("{actor} changed settings on {resource}"), N_("Settings on {resource} changed")
+	),
+	"server.ssh_keys_changed": Sentence(
+		N_("{actor} changed the SSH keys that can sign in to {resource}"),
+		N_("The SSH keys that can sign in to {resource} changed"),
+	),
+	"snapshot.created": Sentence(
+		N_("{actor} started snapshot {resource}"), N_("Automatic snapshot {resource} started")
+	),
+	"snapshot.available": Sentence(N_("Snapshot {resource} is ready"), N_("Snapshot {resource} is ready")),
+	"snapshot.failed": Sentence(N_("Snapshot {resource} failed"), N_("Snapshot {resource} failed")),
+	"snapshot.deleted": Sentence(
+		N_("{actor} deleted snapshot {resource}"), N_("Snapshot {resource} was deleted")
+	),
+	"site.created": Sentence(N_("{actor} created site {resource}"), N_("Site {resource} was created")),
+	"site.claimed": Sentence(
+		N_("{actor} opened site {resource} for the first time"),
+		N_("Site {resource} was opened for the first time"),
+	),
+	"site.deleted": Sentence(N_("{actor} deleted site {resource}"), N_("Site {resource} was deleted")),
+	"domain.created": Sentence(N_("{actor} added domain {resource}"), N_("Domain {resource} was added")),
+	"domain.deleted": Sentence(N_("{actor} removed domain {resource}"), N_("Domain {resource} was removed")),
+	"team.created": Sentence(N_("{actor} created the team"), N_("The team was created")),
+	"team.renamed": Sentence(N_("{actor} renamed the team"), N_("The team was renamed")),
+	"team.logo_changed": Sentence(N_("{actor} changed the team logo"), N_("The team logo changed")),
+	"team.archived": Sentence(N_("{actor} archived the team"), N_("The team was archived")),
+	"team.suspended": Sentence(N_("{actor} suspended the team"), N_("The team was suspended")),
+	"team.active": Sentence(N_("{actor} restored the team"), N_("The team was restored")),
+	"team.ownership_transferred": Sentence(
+		N_("{actor} transferred team ownership"), N_("Team ownership was transferred")
+	),
+	"team.member_added": Sentence(
+		N_("{actor} added {resource} to the team"), N_("{resource} joined the team")
+	),
+	"team.member_joined": Sentence(N_("{actor} joined the team"), N_("{resource} joined the team")),
+	"team.member_removed": Sentence(
+		N_("{actor} removed {resource} from the team"), N_("{resource} was removed from the team")
+	),
+	"team.member_left": Sentence(N_("{actor} left the team"), N_("{resource} left the team")),
+	"team.member_changed": Sentence(
+		N_("{actor} changed the access of {resource}"), N_("The access of {resource} changed")
+	),
+	"team.impersonated": Sentence(N_("{actor} opened the team for support"), N_("Support opened the team")),
+	"role.created": Sentence(N_("{actor} created role {resource}"), N_("Role {resource} was created")),
+	"role.updated": Sentence(N_("{actor} changed role {resource}"), N_("Role {resource} changed")),
+	"role.deleted": Sentence(N_("{actor} deleted role {resource}"), N_("Role {resource} was deleted")),
+	"invitation.created": Sentence(N_("{actor} invited {resource}"), N_("{resource} was invited")),
+	"invitation.resent": Sentence(
+		N_("{actor} sent the invitation to {resource} again"),
+		N_("The invitation to {resource} was sent again"),
+	),
+	"invitation.accepted": Sentence(
+		N_("{actor} accepted the invitation"), N_("{resource} accepted the invitation")
+	),
+	"invitation.declined": Sentence(
+		N_("{actor} declined the invitation"), N_("{resource} declined the invitation")
+	),
+	"invitation.revoked": Sentence(
+		N_("{actor} revoked the invitation to {resource}"), N_("The invitation to {resource} was revoked")
+	),
+	"invitation.expired": Sentence(
+		N_("The invitation to {resource} expired"), N_("The invitation to {resource} expired")
+	),
+	"ssh_key.created": Sentence(N_("{actor} added SSH key {resource}"), N_("SSH key {resource} was added")),
+	"ssh_key.renamed": Sentence(
+		N_("{actor} renamed SSH key {resource}"), N_("SSH key {resource} was renamed")
+	),
+	"ssh_key.rotated": Sentence(
+		N_("{actor} rotated SSH key {resource}"), N_("SSH key {resource} was rotated")
+	),
+	"ssh_key.deleted": Sentence(
+		N_("{actor} deleted SSH key {resource}"), N_("SSH key {resource} was deleted")
+	),
 }
 
 GENERIC_SENTENCES = {
-	"created": N_("{actor} created {resource}"),
-	"deleted": N_("{actor} deleted {resource}"),
+	"created": Sentence(N_("{actor} created {resource}"), N_("{resource} was created")),
+	"deleted": Sentence(N_("{actor} deleted {resource}"), N_("{resource} was deleted")),
 }
-DEFAULT_SENTENCE = N_("{actor} changed {resource}")
+DEFAULT_SENTENCE = Sentence(N_("{actor} changed {resource}"), N_("{resource} changed"))
 
 
-def get_sentence(event: str) -> str:
+def get_sentence(event: str, has_actor: bool) -> str:
 	"""The English sentence for an event; a verb without its own sentence reads generically."""
-	return SENTENCES.get(event) or GENERIC_SENTENCES.get(event.rpartition(".")[2]) or DEFAULT_SENTENCE
+	sentence = SENTENCES.get(event) or GENERIC_SENTENCES.get(event.rpartition(".")[2]) or DEFAULT_SENTENCE
+	return sentence.by_person if has_actor else sentence.by_nobody

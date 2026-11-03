@@ -15,7 +15,8 @@ from central.utils.guards import require_capability, require_team_member
 DEFAULT_LIMIT = 50
 MAX_LIMIT = 100
 CATEGORIES = ("action", "configuration", "snapshot", "site", "team", "member", "access")
-SYSTEM_USERS = {"", None, "Administrator", "Guest"}
+# A job, a schedule or a region report: the sentence names no actor.
+NO_ACTOR = {"label": "", "kind": "system", "image": None}
 
 
 @frappe.whitelist(methods=["GET"])
@@ -89,8 +90,8 @@ def _to_event(row, actors: dict[str, dict]) -> dict:
 		"event": row.event,
 		"category": row.category,
 		"occurred_at": str(row.creation),
-		"actor": actors[row.actor],
-		"sentence": _(get_sentence(row.event)),
+		"actor": actors.get(row.actor, NO_ACTOR),
+		"sentence": _(get_sentence(row.event, has_actor=bool(row.actor))),
 		"resource": {"type": row.resource_type, "name": row.resource_name, "label": row.resource_label},
 		"status": row.status or None,
 		"details": [
@@ -100,19 +101,14 @@ def _to_event(row, actors: dict[str, dict]) -> dict:
 	}
 
 
-def _get_actors(emails: set[str]) -> dict[str, dict]:
-	"""System users read as System, operators as Frappe Cloud, and members by name."""
+def _get_actors(emails: set[str | None]) -> dict[str, dict]:
+	"""Operators read as Frappe Cloud and members by name. A deleted user keeps their email."""
+	people = [email for email in emails if email]
 	# User grants customers no read, and the event already names the actor.
 	users = frappe.db.get_values(
-		"User",
-		{"name": ("in", list(emails - SYSTEM_USERS) or [""])},
-		["name", "full_name", "user_image"],
-		as_dict=True,
+		"User", {"name": ("in", people or [""])}, ["name", "full_name", "user_image"], as_dict=True
 	)
-	actors = {email: {"label": email, "kind": "user", "image": None} for email in emails}
-	actors.update(
-		{email: {"label": _("System"), "kind": "system", "image": None} for email in emails & SYSTEM_USERS}
-	)
+	actors = {email: {"label": email, "kind": "user", "image": None} for email in people}
 	for user in users:
 		if user_has_operator_bypass(user.name):
 			actors[user.name] = {"label": _("Frappe Cloud"), "kind": "system", "image": None}

@@ -5,7 +5,7 @@ from frappe.tests import IntegrationTestCase
 
 from central.api.activity import server_activity, team_activity
 from central.api.snapshots import set_automatic_snapshots
-from central.central.doctype.activity_event.activity_event import get_retention_days
+from central.central.doctype.activity_event.activity_event import get_actor, get_retention_days
 from central.central.doctype.activity_event.backfill import backfill
 from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
 from central.resource_actions import submit_command
@@ -65,7 +65,7 @@ class TestActivity(IntegrationTestCase):
 		# One save writes its events together, so their order within the save is not fixed.
 		self.assertCountEqual(
 			self._team_events(self.admin),
-			["server.renamed", "team.updated", "team.members_changed", "team.created"],
+			["server.renamed", "team.renamed", "team.member_added", "team.created"],
 		)
 		self.assertEqual(self._team_events(self.viewer), ["server.renamed"])
 
@@ -98,6 +98,33 @@ class TestActivity(IntegrationTestCase):
 
 		events = server_activity(team=self.team.name, resource_id=self.server.resource_id)["events"]
 		self.assertEqual(events[0]["details"], [{"label": "Automatic snapshots", "from": "on", "to": "off"}])
+
+	def test_a_job_reads_without_a_person(self):
+		self._rename_server("Renamed by a job")
+
+		frappe.set_user(self.admin)
+		event = server_activity(team=self.team.name, resource_id=self.server.resource_id)["events"][0]
+		self.assertEqual((event["actor"]["label"], event["sentence"]), ("", "{resource} was renamed"))
+
+	def test_a_guest_session_names_the_person_on_the_record(self):
+		# An older sign-up created the team before its owner had a session.
+		team = frappe.get_doc({"doctype": "Team", "name": "TEAM-GUEST", "owner_user": self.admin})
+		self.assertEqual(get_actor(team, "Guest"), self.admin)
+		# A region report on a server has no person, signed in or not.
+		self.assertIsNone(get_actor(self.server, "Guest"))
+
+	def test_a_member_who_leaves_reads_as_leaving(self):
+		frappe.set_user(self.viewer)
+		for row in [row for row in self.team.members if row.user == self.viewer]:
+			self.team.remove(row)
+		self.team.save(ignore_permissions=True, ignore_version=False)
+
+		event = frappe.get_last_doc(
+			"Activity Event", filters={"team": self.team.name, "event": "team.member_left"}
+		)
+		self.assertEqual(
+			(event.actor, event.resource_label), (self.viewer, frappe.utils.get_fullname(self.viewer))
+		)
 
 	def test_a_member_of_another_team_cannot_read_the_feed(self):
 		frappe.set_user(self.outsider)
@@ -134,6 +161,21 @@ class TestActivity(IntegrationTestCase):
 		self.assertEqual(events, ["server.restarted"])
 		event = frappe.get_last_doc("Activity Event", filters={"event": "server.restarted"})
 		self.assertEqual((event.actor, event.status), (self.admin, "Succeeded"))
+
+	@patch("frappe.enqueue")
+	def test_a_failed_action_says_it_was_tried(self, enqueue):
+		frappe.set_user(self.admin)
+		submit_command("restart", self.team.name, self.server.name)
+		frappe.set_user("Administrator")
+
+		frappe.get_last_doc("Resource Action", filters={"server": self.server.name}).transition("Failed")
+
+		frappe.set_user(self.admin)
+		event = team_activity(team=self.team.name, category="action")["events"][0]
+		self.assertEqual(
+			(event["event"], event["sentence"]),
+			("server.restart_failed", "{actor} tried to restart {resource}"),
+		)
 
 	def test_pages_follow_the_cursor_without_gaps(self):
 		for title in ("One", "Two", "Three"):
