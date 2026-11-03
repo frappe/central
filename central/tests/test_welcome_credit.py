@@ -112,6 +112,17 @@ class TestWelcomeCredit(IntegrationTestCase):
 		self.assertEqual(self.promotion_count(OTHER_TEAM), 0)
 		self.assertEqual(credits.get_balance(OTHER_TEAM)["balance"], 0)
 
+	def test_a_failed_booking_on_another_unique_key_is_not_taken_for_a_reused_card(self):
+		conflict = frappe.UniqueValidationError(
+			"Credit Ledger Entry", "x", Exception("Duplicate entry 'p' for key 'gateway_payment_id'")
+		)
+		with (
+			billing_settings(grant_welcome_credits=1, welcome_credit_amounts=AMOUNTS),
+			patch("central.billing.revenue.credits.grant_promotional_credits", side_effect=conflict),
+			self.assertRaises(frappe.UniqueValidationError),
+		):
+			self.activate_payment_method(TEAM, card_fingerprint="fp_other_key")
+
 	def test_no_grant_when_grants_are_off_or_the_currency_has_no_amount(self):
 		with billing_settings(grant_welcome_credits=0, welcome_credit_amounts=AMOUNTS):
 			self.activate_payment_method(TEAM)

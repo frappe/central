@@ -222,6 +222,8 @@ def has_instrument_received_welcome_credits(instrument_fingerprint: str) -> bool
 
 
 _WELCOME_CREDIT_SAVEPOINT = "welcome_credit_grant"
+# The key MariaDB names when a second welcome credit is booked for the same card.
+_DUPLICATE_FINGERPRINT = "for key 'instrument_fingerprint'"
 
 
 def _book_welcome_credits(
@@ -236,7 +238,9 @@ def _book_welcome_credits(
 		credits.grant_promotional_credits(
 			team, amount, currency, instrument_fingerprint=instrument_fingerprint
 		)
-	except frappe.UniqueValidationError:
+	except frappe.UniqueValidationError as error:
+		if _DUPLICATE_FINGERPRINT not in str(error):
+			raise  # only a duplicate fingerprint means the card was already rewarded
 		frappe.db.rollback(save_point=_WELCOME_CREDIT_SAVEPOINT)
 		frappe.clear_last_message()  # the "must be unique" notice is not the customer's to read
 		return
