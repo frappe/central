@@ -10,6 +10,7 @@ from central.billing.catalog.subscriptions import active_segments
 from central.billing.doctype.invoice.invoice import unissued_filters
 from central.billing.india_gst import INDIA
 from central.billing.platform.invariants import Violation
+from central.billing.revenue import credits
 
 STALLED_HOURS = 3
 
@@ -418,16 +419,7 @@ def check_promotional_credit_expires() -> list[Violation]:
 			actual=frappe.utils.flt(e.amount),
 			detail="Promotional credit with no expiry date, so it never expires.",
 		)
-		for e in frappe.get_all(
-			"Credit Ledger Entry",
-			filters={
-				"entry_type": "Credit",
-				"paid_in": 0,
-				"reference_type": "Promotion",
-				"expires_on": ["is", "not set"],
-			},
-			fields=["name", "team", "currency", "amount"],
-		)
+		for e in credits.promotional_credit_without_expiry()
 		if e.team not in internal
 	]
 

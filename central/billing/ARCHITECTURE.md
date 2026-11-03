@@ -611,6 +611,8 @@ settlement.can_accept_spend gates money movement; 80% forecast warning
 team's one wallet, no scoping of any kind (Projects have no relationship to credits;
 see §2.1).
 
+**Which credit expires.** Promotional credit expires. Purchased credit and Admin credit do not. Promotional credit is an unpaid (`paid_in` 0) Credit with one of these reference types: `Promotion` (a grant), `Invoice` (credit that a cancelled invoice gave back), or `Refund` when that Refund has a `promotional_amount`. A Refund of an overcharge to the wallet is money and does not expire. `credits.promotional_credit_without_expiry` finds promotional credit with no expiry date. Readiness check W2 reports these entries, and the patch `expire_promotional_credit_and_clear_unbooked_wallets` gives each one an expiry date.
+
 **Ledger Repair.** A Credit Ledger Entry with the reference type `Ledger Repair` books credit that a wallet held with no ledger entry. The patch `expire_promotional_credit_and_clear_unbooked_wallets` writes one Credit for each wallet whose balance is above the sum of its ledger. The amount is the difference, the date is the wallet's creation, and the credit is promotional, so it expires `promotional_credit_validity_days` after that date. The patch does not change the wallet balance. A wallet below its ledger stays as it is, and invariant C2 reports it.
 
 ### G. Trust tier / entitlement

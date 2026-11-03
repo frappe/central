@@ -15,16 +15,7 @@ def execute() -> None:
 def set_expiry_on_promotional_credit() -> None:
 	"""Every promotional credit expires its validity period after the day it was granted."""
 	days = settings.promotional_credit_validity_days()
-	for entry in frappe.get_all(
-		"Credit Ledger Entry",
-		filters={
-			"entry_type": "Credit",
-			"reference_type": "Promotion",
-			"paid_in": 0,
-			"expires_on": ["is", "not set"],
-		},
-		fields=["name", "creation"],
-	):
+	for entry in credits.promotional_credit_without_expiry():
 		expires_on = add_days(getdate(entry.creation), days)
 		frappe.db.set_value(
 			"Credit Ledger Entry", entry.name, "expires_on", expires_on, update_modified=False

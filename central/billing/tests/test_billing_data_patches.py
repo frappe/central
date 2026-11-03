@@ -7,6 +7,7 @@ from frappe.utils import add_days, getdate
 
 from central.billing import settings
 from central.billing.doctype.invoice.invoice import period_key_for
+from central.billing.platform import readiness
 from central.billing.revenue import credits
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import complete_billing_profile, ensure_atlas_instance, ensure_team
@@ -243,3 +244,48 @@ class TestBookMissingWalletCredit(IntegrationTestCase):
 
 		self.assertEqual(_repair_entries(wallet), [])
 		self.assertEqual(frappe.db.get_value("Credit Wallet", wallet, "balance"), 100)
+
+
+def _refund(promotional_amount: float = 0) -> str:
+	refund = frappe.get_doc(
+		{
+			"doctype": "Refund",
+			"team": TEAM,
+			"amount": 50,
+			"currency": "INR",
+			"destination": "Wallet",
+			"promotional_amount": promotional_amount,
+		}
+	)
+	refund.db_insert()
+	return refund.name
+
+
+class TestSetExpiryOnPromotionalCredit(IntegrationTestCase):
+	def setUp(self):
+		ensure_team(TEAM)
+
+	def test_returned_unpaid_credit_expires_and_admin_credit_does_not(self):
+		promotional_refund, overcharge_refund = _refund(promotional_amount=50), _refund()
+		expiring = [
+			_ledger_entry("Credit", 100, reference_type="Promotion"),
+			_ledger_entry("Credit", 40, reference_type="Invoice", reference_name="INV-RETURNED"),
+			_ledger_entry("Credit", 50, reference_type="Refund", reference_name=promotional_refund),
+		]
+		kept = [
+			_ledger_entry("Credit", 30, reference_type="Admin"),
+			_ledger_entry("Credit", 50, reference_type="Refund", reference_name=overcharge_refund),
+			_ledger_entry("Credit", 60, reference_type="Invoice", reference_name="INV-PAID", paid_in=1),
+		]
+		self.assertEqual(sorted(self._flagged_by_readiness()), sorted(expiring))
+
+		expire_promotional_credit_and_clear_unbooked_wallets.set_expiry_on_promotional_credit()
+
+		for entry in expiring:
+			self.assertIsNotNone(frappe.db.get_value("Credit Ledger Entry", entry, "expires_on"))
+		for entry in kept:
+			self.assertIsNone(frappe.db.get_value("Credit Ledger Entry", entry, "expires_on"))
+		self.assertEqual(self._flagged_by_readiness(), [])
+
+	def _flagged_by_readiness(self) -> list[str]:
+		return [v.subject for v in readiness.check_promotional_credit_expires() if v.team == TEAM]
