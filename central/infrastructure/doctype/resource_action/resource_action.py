@@ -271,14 +271,17 @@ class ResourceAction(Document):
 
 		self.db_set(values, notify=notify)
 		if status != previous_status and status == "Succeeded" and self.is_trial_upgrade():
-			frappe.enqueue(
-				"central.integrations.pilot.attach_bundled_bucket",
-				server=self.server,
-				queue="long",
-				enqueue_after_commit=True,
-				job_id=f"bundled-bucket:{self.server}",
-				deduplicate=True,
-			)
+			from central.integrations.pilot import plan_includes_storage
+
+			if plan_includes_storage(self.get_resize_configuration().plan):
+				frappe.enqueue(
+					"central.integrations.pilot.attach_bundled_bucket",
+					server=self.server,
+					queue="long",
+					enqueue_after_commit=True,
+					job_id=f"bundled-bucket:{self.server}",
+					deduplicate=True,
+				)
 		if status != previous_status and status in ("Failed", "Timed Out"):
 			if self.action == "create":
 				# A creation the region never accepted leaves no machine to use its credential.

@@ -49,6 +49,7 @@ def pilot_request(is_free_trial: int = 0):
 	)
 	request.name = "action-1"
 	request.get_configuration.return_value = Mock(
+		plan="compute-only",
 		image_id="image-1",
 		cpu_millicores=2000,
 		memory_mib=4096,
@@ -169,11 +170,11 @@ class TestPilotBootstrapMetadata(IntegrationTestCase):
 
 		self.assertNotIn("ai_keys", json.loads(metadata["pilot-common-site-config"]))
 
-	def test_a_region_with_a_bundle_size_boots_pilot_with_a_capped_bucket(self):
+	def test_a_paid_plan_with_storage_boots_pilot_with_a_bucket(self):
 		region = ensure_region("bundle-test")
-		frappe.db.set_value("Region", region, "max_storage_bundle_size", 25)
 		request = pilot_request()
 		request.region = region
+		request.get_configuration.return_value.plan = "storage-plan"
 		cargo = Mock()
 		cargo.create_bucket.return_value = {
 			"credentials": {"access_key": "access", "secret_access_key": "secret"}
@@ -183,6 +184,7 @@ class TestPilotBootstrapMetadata(IntegrationTestCase):
 			patch(f"{PILOT}.ObjectStorageClient.from_region", return_value=cargo),
 			patch(f"{PILOT}.get_storage_endpoint_url", return_value="https://s3.example.test"),
 			patch(f"{PILOT}.get_bucket_name", return_value="7-bundle-test-server-action-1"),
+			patch(f"{PILOT}.plan_includes_storage", return_value=True),
 		):
 			metadata = _create_payload(request)["metadata"]
 
@@ -190,7 +192,6 @@ class TestPilotBootstrapMetadata(IntegrationTestCase):
 			"7-bundle-test-server-action-1",
 			tags={"team": request.team, "server": request.server_id, "bundled": "1"},
 		)
-		cargo.set_quota.assert_called_once_with("7-bundle-test-server-action-1", 25, 0)
 		self.assertEqual(
 			json.loads(metadata["pilot-config"]),
 			{
@@ -206,21 +207,23 @@ class TestPilotBootstrapMetadata(IntegrationTestCase):
 		)
 		self.assertLessEqual(len(metadata["pilot-config"].encode()), METADATA_VALUE_BYTES)
 
-	def test_a_region_without_a_bundle_size_creates_no_bucket(self):
+	def test_a_paid_plan_without_storage_creates_no_bucket(self):
+		request = pilot_request()
+		request.get_configuration.return_value.plan = "compute-only"
 		with (
-			patch(f"{PILOT}.get_telemetry_base_url", return_value=None),
-			patch(f"{PILOT}.ObjectStorageClient") as cargo,
+			patch(f"{PILOT}.is_trial_plan", return_value=False),
+			patch(f"{PILOT}.plan_includes_storage", return_value=False),
+			patch(f"{PILOT}.create_bundled_bucket") as create,
 		):
-			metadata = _create_payload(pilot_request())["metadata"]
+			from central.integrations.pilot import get_bundled_bucket
 
-		self.assertNotIn("pilot-config", metadata)
-		cargo.from_region.assert_not_called()
+			bucket = get_bundled_bucket(request)
+
+		self.assertIsNone(bucket)
+		create.assert_not_called()
 
 	def test_a_trial_plan_creation_boots_without_a_bucket(self):
-		region = ensure_region("bundle-test")
-		frappe.db.set_value("Region", region, "max_storage_bundle_size", 25)
 		request = pilot_request()
-		request.region = region
 		with (
 			patch(f"{PILOT}.get_telemetry_base_url", return_value=None),
 			patch(f"{PILOT}.is_trial_plan", return_value=True),
