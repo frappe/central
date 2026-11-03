@@ -4,6 +4,7 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
+from central.billing.catalog.trials import is_trial_plan
 from central.errors import AtlasConnectionError, AtlasRequestUncertain, build_envelope, to_error_response
 from central.iam import can
 from central.infrastructure.doctype.blocked_domain.blocked_domain import BlockedDomain, normalize_domain
@@ -269,6 +270,15 @@ class ResourceAction(Document):
 			values.update(self._diagnostic_values(diagnostic, diagnostic_title))
 
 		self.db_set(values, notify=notify)
+		if status != previous_status and status == "Succeeded" and self.is_trial_upgrade():
+			frappe.enqueue(
+				"central.integrations.pilot.attach_bundled_bucket",
+				server=self.server,
+				queue="long",
+				enqueue_after_commit=True,
+				job_id=f"bundled-bucket:{self.server}",
+				deduplicate=True,
+			)
 		if status != previous_status and status in ("Failed", "Timed Out"):
 			if self.action == "create":
 				# A creation the region never accepted leaves no machine to use its credential.
@@ -324,6 +334,14 @@ class ResourceAction(Document):
 	@property
 	def is_trial_creation(self) -> bool:
 		return self.action == "create" and self.resource_type == "Site"
+
+	def is_trial_upgrade(self) -> bool:
+		"""Whether this resize moves a server from a trial plan to a paid plan."""
+		if self.action != "resize":
+			return False
+
+		configuration = self.get_resize_configuration()
+		return is_trial_plan(configuration.from_plan) and not is_trial_plan(configuration.plan)
 
 	def capture_trial_event(self, event: str, **properties) -> None:
 		"""Send this trial's step to the signup funnel, once per action."""
