@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { Badge, Button, Dropdown, Tooltip } from 'frappe-ui'
 import { computed } from 'vue'
-import CopyableValue from '@/components/common/CopyableValue.vue'
 import ProviderAvatar from '@/components/servers/ProviderAvatar.vue'
 import type {
 	ConsoleMode,
@@ -44,31 +43,6 @@ const visual = computed(() => statusVisual(props.server))
 const isLocked = computed(() => !!props.server.pending_action)
 const isRunning = computed(() => props.server.status === 'Running')
 const isUbuntu = computed(() => props.server.image_offering === 'ubuntu')
-
-const addresses = computed(() =>
-	[
-		{
-			label: 'Public IPv4 address',
-			value: props.server.public_ipv4,
-			icon: 'lucide-globe',
-			help: 'Public IPv4',
-		},
-		{
-			label: 'Public IPv6 address',
-			value: props.server.public_ipv6,
-			icon: 'lucide-globe',
-			help: 'Public IPv6',
-		},
-		{
-			label: 'Private address',
-			value: props.server.ipv6_address,
-			icon: 'lucide-lock',
-			help: 'Private address within this region',
-		},
-	]
-		.filter((row): row is typeof row & { value: string } => !!row.value)
-		.slice(0, 1),
-)
 
 const isProtected = computed(() => !!props.details?.is_termination_protected)
 const protectionLabel = computed(() =>
@@ -247,17 +221,6 @@ const menu = computed(() => {
 								{{ fact.label }}
 							</span>
 						</Tooltip>
-					</li>
-
-					<li
-						v-for="row in addresses"
-						:key="row.label"
-						class="flex min-w-0 items-center gap-1.5"
-					>
-						<Tooltip :text="row.help">
-							<span :class="row.icon" class="size-3.5 shrink-0" />
-						</Tooltip>
-						<CopyableValue :value="row.value" :label="row.label" />
 					</li>
 				</ul>
 			</div>
