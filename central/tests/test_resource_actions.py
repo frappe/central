@@ -306,8 +306,8 @@ class TestResourceActions(IntegrationTestCase):
 		self.assertNotIn("region refused", action.error_message)
 
 	def bundle_bucket(self):
-		"""Give the region a bundled bucket and return the Cargo client it creates it with."""
-		frappe.db.set_value("Region", self.region.name, "max_storage_bundle_size", 10)
+		"""Make the selected plan bundle storage and return its Cargo client."""
+		self.enterContext(patch("central.integrations.pilot.plan_includes_storage", return_value=True))
 		cargo = self.enterContext(patch("central.integrations.pilot.ObjectStorageClient")).from_region()
 		cargo.create_bucket.return_value = {"credentials": {"access_key": "a", "secret_access_key": "s"}}
 		self.enterContext(
@@ -348,6 +348,16 @@ class TestResourceActions(IntegrationTestCase):
 		frappe.db.set_value("Resource Action", name, "status", "Failed")
 		delete_bundled_bucket(name)
 		cargo.delete_bucket.assert_called_once_with(bucket)
+
+	def test_a_failed_creation_without_storage_has_no_bucket_to_delete(self):
+		cargo = self.enterContext(patch("central.integrations.pilot.ObjectStorageClient"))
+		name = self.submit()["action"]
+		frappe.db.set_value("Resource Action", name, "status", "Failed")
+
+		with patch("central.integrations.pilot.plan_includes_storage", return_value=False):
+			delete_bundled_bucket(name)
+
+		cargo.from_region.assert_not_called()
 
 	def test_a_creation_clears_a_leftover_bucket_before_it_creates_one(self):
 		cargo = self.bundle_bucket()

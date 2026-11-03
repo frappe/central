@@ -87,5 +87,7 @@ central.patches.v0_0.expire_promotional_credit_and_clear_unbooked_wallets
 central.patches.v0_0.remove_webhook_events_of_another_product
 # Start per-team run outcomes and the minimum invoice amount, and clear what they replace.
 central.patches.v0_0.start_billing_run_outcomes_and_minimum_invoices
+# VM plans can bundle remote storage.
+central.patches.v0_0.allow_storage_in_vm_plans
 # Fill the activity feed from the Versions, deletions and server actions Central already keeps.
 central.patches.v0_0.backfill_activity_events

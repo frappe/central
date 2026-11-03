@@ -258,7 +258,7 @@ class TestResizeJobTimeout(UnitTestCase):
 
 
 class TestTrialUpgradeBucket(UnitTestCase):
-	def succeed(self, from_plan: str, plan: str):
+	def succeed(self, from_plan: str, plan: str, bundles_storage: bool = True):
 		action = frappe.get_doc(
 			{
 				"doctype": "Resource Action",
@@ -272,6 +272,10 @@ class TestTrialUpgradeBucket(UnitTestCase):
 		with (
 			patch.object(action, "db_set"),
 			patch(f"{resource_action}.is_trial_plan", side_effect=lambda name: name == "trial"),
+			patch(
+				"central.integrations.pilot.plan_includes_storage",
+				return_value=bundles_storage,
+			),
 			patch(f"{resource_action}.frappe.enqueue") as enqueue,
 		):
 			action.transition("Succeeded")
@@ -292,3 +296,6 @@ class TestTrialUpgradeBucket(UnitTestCase):
 
 	def test_a_move_between_paid_plans_attaches_nothing(self):
 		self.succeed("paid", "bigger").assert_not_called()
+
+	def test_a_trial_upgrade_without_storage_attaches_nothing(self):
+		self.succeed("trial", "compute-only", bundles_storage=False).assert_not_called()

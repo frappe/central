@@ -87,21 +87,34 @@ def get_bootstrap_metadata(action) -> dict[str, str]:
 
 
 def get_bundled_bucket(action) -> dict | None:
-	"""The [s3] settings of a creation's backup bucket. None on a trial plan: the server gets its
-	bucket when it moves to a paid plan."""
-	if is_trial_plan(action.get_configuration().plan):
+	"""The [s3] settings when the selected paid plan bundles remote storage."""
+	plan = action.get_configuration().plan
+	if is_trial_plan(plan) or not plan_includes_storage(plan):
 		return None
 
 	return create_bundled_bucket(action.team, action.region, action.server_id)
 
 
-def create_bundled_bucket(team: str, region: str, server: str) -> dict | None:
-	"""Create the server's backup bucket in Cargo, capped at the region's bundle size, and
-	return its [s3] settings. None when the region bundles no bucket."""
-	size_gib = frappe.db.get_value("Region", region, "max_storage_bundle_size")
-	if not size_gib:
-		return None
+def plan_includes_storage(plan: str | None) -> bool:
+	"""Whether a preset plan bundles a positive remote-storage allowance."""
+	if not plan:
+		return False
 
+	return bool(
+		frappe.db.exists(
+			"Plan Includes",
+			{
+				"parenttype": "Plan",
+				"parent": plan,
+				"resource_type": "Storage",
+				"quantity": [">", 0],
+			},
+		)
+	)
+
+
+def create_bundled_bucket(team: str, region: str, server: str) -> dict | None:
+	"""Create the server's uncapped backup bucket; billing reconciles its usage."""
 	endpoint_url = get_storage_endpoint_url(region)
 	client = ObjectStorageClient.from_region(region)
 	name = get_bucket_name(team, region, server)
@@ -113,8 +126,6 @@ def create_bundled_bucket(team: str, region: str, server: str) -> dict | None:
 		pass
 	receipt = client.create_bucket(name, tags={"team": team, "server": server, "bundled": "1"})
 	credentials = receipt["credentials"]
-	# Cargo enforces the cap. Zero leaves the object count unlimited.
-	client.set_quota(name, size_gib, 0)
 
 	return {
 		"access_key": credentials["access_key"],
@@ -147,7 +158,7 @@ def delete_bundled_bucket(action: str) -> None:
 		request = frappe.get_doc("Resource Action", action)
 		if request.server or request.status not in ("Failed", "Timed Out"):
 			return
-		if not frappe.db.get_value("Region", request.region, "max_storage_bundle_size"):
+		if not plan_includes_storage(request.get_configuration().plan):
 			return
 
 		name = get_bucket_name(request.team, request.region, request.server_id)
