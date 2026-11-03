@@ -625,6 +625,7 @@ class StripeAdapter(GatewayAdapter):
 			"last4": card.get("last4"),
 			"exp_month": card.get("exp_month"),
 			"exp_year": card.get("exp_year"),
+			"fingerprint": card.get("fingerprint"),
 		}
 
 	def create_customer(self, team) -> str:

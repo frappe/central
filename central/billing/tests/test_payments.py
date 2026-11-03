@@ -301,13 +301,20 @@ class TestStripeTestModeIntegration(CardTestBase):
 				"customer": "cus_1",
 			}
 			method_retrieve.return_value = {
-				"card": {"brand": "visa", "last4": "4242", "exp_month": 1, "exp_year": 2031}
+				"card": {
+					"brand": "visa",
+					"last4": "4242",
+					"exp_month": 1,
+					"exp_year": 2031,
+					"fingerprint": "fp_card",
+				}
 			}
 			pi_create.return_value = {"id": "pi_micro", "status": "succeeded"}
 			method = payments.confirm_payment_method(setup["payment_method"])
 
 		self.assertEqual(setup_retrieve.call_args.args, ("seti_1",))
 		self.assertEqual(method.gateway_method_id, "pm_card")
+		self.assertEqual(method.instrument_fingerprint, f"{method.gateway}:fp_card")
 
 		refund_create.assert_called_once()  # micro-charge refunded
 		self.assertEqual(method.status, "Active")

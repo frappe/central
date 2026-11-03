@@ -174,6 +174,7 @@ def _book_entry(
 	gateway_payment_id: str | None = None,
 	expires_on=None,
 	extra: dict | None = None,
+	retry_deadlock: bool = True,
 ):
 	"""Append one ledger entry under the per-wallet lock, retrying on deadlock.
 
@@ -184,6 +185,10 @@ def _book_entry(
 	re-locks the wallet and re-reads the now-current balance, so the
 	double-spend / InsufficientCredits guards still hold. `InsufficientCredits`
 	and bad-amount errors are NOT retried — they are deterministic outcomes.
+
+	`retry_deadlock=False` re-raises the deadlock at once. A booking made inside a
+	larger transaction cannot be retried alone: InnoDB has already rolled back the
+	whole transaction, the caller's earlier writes and savepoints included.
 
 	`gateway_payment_id` (top-ups) makes the booking idempotent on the gateway
 	payment: the synchronous confirm callback and the async webhook race to credit
@@ -213,6 +218,8 @@ def _book_entry(
 				extra,
 			)
 		except frappe.QueryDeadlockError:
+			if not retry_deadlock:
+				raise
 			# The transaction is already rolled back by InnoDB; sync Frappe's state
 			# and back off before trying again.
 			frappe.db.rollback()
@@ -534,7 +541,15 @@ def promotional_credit_without_expiry() -> list[dict]:
 	)
 
 
-def grant_promotional_credits(team, amount, currency, note=None, expires_on=None) -> dict:
+def grant_promotional_credits(
+	team,
+	amount,
+	currency,
+	note=None,
+	expires_on=None,
+	instrument_fingerprint: str | None = None,
+	retry_deadlock: bool = True,
+) -> dict:
 	"""Book a promotional/welcome credit — free credits granted at signup.
 
 	Tagged `reference_type="Promotion"` so the one-time signup grant is
@@ -543,7 +558,12 @@ def grant_promotional_credits(team, amount, currency, note=None, expires_on=None
 	Promotional credit is the only kind that expires, and the date is stamped on the
 	entry at grant time rather than derived from the setting when it is read. A team
 	granted credit under a 90-day policy keeps its 90 days when the policy changes to
-	60 — what a customer was given is a fact about that grant, not a live lookup."""
+	60 — what a customer was given is a fact about that grant, not a live lookup.
+
+	`instrument_fingerprint` is the card or account a welcome credit was earned with. It is
+	unique on the ledger, so a second grant for the same card raises UniqueValidationError.
+
+	`retry_deadlock=False` is for a grant inside a larger transaction; see `_book_entry`."""
 	entry, new_balance = _book_entry(
 		team,
 		"Credit",
@@ -552,6 +572,8 @@ def grant_promotional_credits(team, amount, currency, note=None, expires_on=None
 		reference_type="Promotion",
 		note=note or "Welcome credits",
 		expires_on=expires_on if expires_on is not None else promotional_expiry_date(),
+		extra={"instrument_fingerprint": instrument_fingerprint},
+		retry_deadlock=retry_deadlock,
 	)
 	return {"ledger_entry": entry.name, "new_balance": new_balance}
 

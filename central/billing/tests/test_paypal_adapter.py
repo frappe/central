@@ -301,11 +301,15 @@ class TestPayPalAdapter(GatewayAdapterContract, IntegrationTestCase):
 
 	def test_a_saved_paypal_account_is_read_from_the_vault(self):
 		adapter = self.make_adapter()
-		token = {"id": "vault_tok", "payment_source": {"paypal": {"email_address": "buyer@example.com"}}}
+		paypal = {"email_address": "buyer@example.com", "account_id": "PAYER1"}
+		token = {"id": "vault_tok", "payment_source": {"paypal": paypal}}
 		with patch.object(PayPalAdapter, "_create_payment_token", return_value=token) as create:
 			card = adapter.read_saved_card("setup_1")
 		create.assert_called_once_with("setup_1")
-		self.assertEqual((card["payment_method"], card["label"]), ("vault_tok", "buyer@example.com"))
+		self.assertEqual(
+			(card["payment_method"], card["label"], card["fingerprint"]),
+			("vault_tok", "buyer@example.com", "PAYER1"),
+		)
 
 	def test_an_order_is_paid_only_once_captured(self):
 		adapter = self.make_adapter()
