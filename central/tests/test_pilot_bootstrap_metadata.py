@@ -213,3 +213,49 @@ class TestPilotBootstrapMetadata(IntegrationTestCase):
 
 		self.assertNotIn("pilot-config", metadata)
 		cargo.from_region.assert_not_called()
+
+	def test_a_trial_plan_creation_boots_without_a_bucket(self):
+		region = ensure_region("bundle-test")
+		frappe.db.set_value("Region", region, "max_storage_bundle_size", 25)
+		request = pilot_request()
+		request.region = region
+		with (
+			patch(f"{PILOT}.get_telemetry_base_url", return_value=None),
+			patch(f"{PILOT}.is_trial_plan", return_value=True),
+			patch(f"{PILOT}.ObjectStorageClient") as cargo,
+		):
+			metadata = _create_payload(request)["metadata"]
+
+		self.assertNotIn("pilot-config", metadata)
+		cargo.from_region.assert_not_called()
+
+	def test_a_server_off_its_trial_plan_gets_its_bucket_through_pilot(self):
+		from central.integrations.pilot import attach_bundled_bucket
+
+		server = Mock(team="TEAM-00001", region="in-mumbai")
+		server.name = "server-1"
+		bucket = {"bucket": "7-in-mumbai-server-1"}
+		with (
+			patch(f"{PILOT}.frappe.get_doc", return_value=server),
+			patch(f"{PILOT}.create_bundled_bucket", return_value=bucket) as create,
+			patch(f"{PILOT}.write_pilot") as write,
+		):
+			attach_bundled_bucket("server-1")
+
+		create.assert_called_once_with("TEAM-00001", "in-mumbai", "server-1")
+		write.assert_called_once_with("server-1", "PATCH", "/api/v1/settings", {"s3": bucket})
+		server.add_comment.assert_not_called()
+
+	def test_a_failed_bucket_attach_is_kept_on_the_server(self):
+		from central.integrations.pilot import attach_bundled_bucket
+
+		server = Mock(team="TEAM-00001", region="in-mumbai")
+		with (
+			patch(f"{PILOT}.frappe.get_doc", return_value=server),
+			patch(f"{PILOT}.create_bundled_bucket", return_value={"bucket": "b"}),
+			patch(f"{PILOT}.write_pilot", side_effect=ConnectionError("asleep")),
+		):
+			attach_bundled_bucket("server-1")
+
+		server.log_error.assert_called_once()
+		server.add_comment.assert_called_once()
