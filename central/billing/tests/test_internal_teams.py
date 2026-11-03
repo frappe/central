@@ -7,8 +7,9 @@ from unittest.mock import patch
 import frappe
 
 from central.billing.ingester import customer
+from central.billing.payments.provisioning import ensure_tax_profile
 from central.billing.report.internal_usage_and_waivers import internal_usage_and_waivers as report
-from central.billing.revenue import credits, invoicing
+from central.billing.revenue import credits, invoicing, tax
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import (
 	add_segment,
@@ -61,6 +62,13 @@ class TestInternalTeams(IntegrationTestCase):
 			(invoice.status, invoice.output_tax_amount, invoice.credit_applied), ("Waived", 0, 0)
 		)
 		self.assertEqual(credits.get_balance(TEAM, "INR")["balance"], 500)
+
+	def test_internal_team_is_untaxed_even_with_a_tax_profile(self):
+		ensure_tax_profile(TEAM)
+		frappe.db.set_value("Tax Profile", TEAM, {"output_tax_type": "GST", "output_tax_rate": 18})
+		_mark_internal()
+
+		self.assertEqual(tax.resolve_tax(TEAM, 1000)["output_tax_amount"], 0)
 
 	def test_internal_team_is_not_sent_to_accounting(self):
 		_mark_internal()

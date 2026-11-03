@@ -49,13 +49,11 @@ def resolve_tax(team: str, subtotal) -> dict:
 	subtotal = frappe.utils.flt(subtotal)
 	gst = gst_status.standing(team)
 	block = dict(_ZERO_BLOCK, customer_gstin=gst.gstin)
-	if not frappe.db.exists("Tax Profile", team):
+	# An internal team's usage is waived, not sold, so there is no supply to tax.
+	if is_internal_team(team) or not frappe.db.exists("Tax Profile", team):
 		return block
 
 	p = frappe.get_doc("Tax Profile", team)
-	# An internal team's usage is waived, not sold, so there is no supply to tax.
-	if p.is_internal:
-		return block
 	block["output_tax_type"] = p.output_tax_type or "None"
 	block["output_tax_rate"] = frappe.utils.flt(p.output_tax_rate)
 
