@@ -2,7 +2,7 @@ import frappe
 from frappe.tests import IntegrationTestCase
 
 # The DPA (Schedule II, rows 2 and 13) promises a version log on every critical document.
-DPA_CRITICAL_DOCTYPES = (
+CRITICAL_DOCTYPES = (
 	"AI Settings",
 	"AI Trial Key",
 	"Billing Profile",
@@ -46,7 +46,5 @@ DPA_CRITICAL_DOCTYPES = (
 
 class TestTrackChanges(IntegrationTestCase):
 	def test_every_dpa_critical_doctype_has_track_changes_enabled(self):
-		untracked = [
-			doctype for doctype in DPA_CRITICAL_DOCTYPES if not frappe.get_meta(doctype).track_changes
-		]
+		untracked = [doctype for doctype in CRITICAL_DOCTYPES if not frappe.get_meta(doctype).track_changes]
 		self.assertEqual(untracked, [])
