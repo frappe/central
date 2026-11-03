@@ -51,7 +51,9 @@ class TestTeamLifecycle(IntegrationTestCase):
 		frappe.set_user(self.owner)
 		return {check["key"]: check["count"] for check in get_team_archive_checks(self.team.name)["checks"]}
 
-	def add_invoice(self, status: str, period_end: str, total: float = 0) -> None:
+	def add_invoice(
+		self, status: str, period_end: str, total: float = 0, due_date: str | None = None
+	) -> None:
 		frappe.get_doc(
 			{
 				"doctype": "Invoice",
@@ -60,6 +62,7 @@ class TestTeamLifecycle(IntegrationTestCase):
 				"status": status,
 				"period_end": period_end,
 				"total": total,
+				"due_date": due_date,
 			}
 		).db_insert()
 
@@ -122,6 +125,9 @@ class TestTeamLifecycle(IntegrationTestCase):
 		self.add_invoice("Overdue", add_months(today(), -1))
 		self.add_invoice("Outstanding", add_months(get_first_day(today()), -1))
 		self.assertEqual(self.blockers()["invoices"], 2)
+
+		self.add_invoice("Outstanding", today(), due_date=today())
+		self.assertEqual(self.blockers()["invoices"], 3)
 
 	def test_this_months_charges_block_until_the_team_has_a_payment_method(self):
 		self.add_invoice("Outstanding", today())

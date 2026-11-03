@@ -72,15 +72,23 @@ def _count_billing_add_ons(team: str) -> dict[str, int]:
 
 
 def _count_unpaid_invoices(team: str) -> int:
+	"""An issued invoice is unpaid. An invoice not yet issued is unpaid once its month has closed."""
 	invoice = frappe.qb.DocType("Invoice")
-	closed_month_draft = (invoice.status == "Draft") & (invoice.period_end < get_first_day(today()))
+	outstanding = invoice.status == "Outstanding"
+	closed_month_unissued = (
+		outstanding & invoice.due_date.isnull() & (invoice.period_end < get_first_day(today()))
+	)
 	return (
 		frappe.qb.from_(invoice)
 		.select(Count("*"))
 		.where(
 			(invoice.team == team)
 			& (invoice.invoice_type == "Billable")
-			& (invoice.status.isin(("Open", "Overdue")) | closed_month_draft)
+			& (
+				(invoice.status == "Overdue")
+				| (outstanding & invoice.due_date.isnotnull())
+				| closed_month_unissued
+			)
 		)
 	).run()[0][0]
 
@@ -92,7 +100,8 @@ def _has_current_charges(team: str) -> bool:
 			{
 				"team": team,
 				"invoice_type": "Billable",
-				"status": "Draft",
+				"status": "Outstanding",
+				"due_date": ["is", "not set"],
 				"period_end": (">=", get_first_day(today())),
 				"total": (">", 0),
 			},
