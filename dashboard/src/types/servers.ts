@@ -36,6 +36,9 @@ export interface ServerSSHKey {
 export interface ServerOverview {
 	server: VirtualMachineRow & {
 		creation: string
+		/** Null for a server that Central discovered rather than created. */
+		created_by: string | null
+		created_by_name: string | null
 		plan_title: string | null
 		plan_rate: number | null
 		plan_currency: string | null

@@ -9,6 +9,7 @@ import type {
 	VirtualMachineRow,
 } from '@/composables/useServers'
 import type { ServerActions } from '@/lib/capabilities'
+import { formatCalendarDate, timeAgo } from '@/lib/datetime'
 import { formatPlanLabel } from '@/lib/planLabel'
 import { statusVisual } from '@/lib/serverMap'
 import { getServerMenu, type ServerMenuVerb } from '@/lib/serverMenu'
@@ -76,7 +77,29 @@ const protectionLabel = computed(() =>
 		: 'Turn on termination protection',
 )
 
-const facts = computed(() => {
+interface Fact {
+	icon: string
+	label: string | null
+	help?: string
+}
+
+const createdFact = computed<Fact | null>(() => {
+	const details = props.details
+	if (!details) return null
+
+	const creator = details.created_by_name || details.created_by
+	return {
+		icon: 'lucide-clock',
+		label: creator
+			? `Created ${timeAgo(details.creation)} by ${creator}`
+			: `Created ${timeAgo(details.creation)}`,
+		help: [formatCalendarDate(details.creation), details.created_by]
+			.filter(Boolean)
+			.join(' · '),
+	}
+})
+
+const facts = computed<Fact[]>(() => {
 	const server = props.server
 	const details = props.details
 	const region = details?.region_details
@@ -103,7 +126,8 @@ const facts = computed(() => {
 					billingCycle: details.plan_billing_cycle,
 				}),
 		},
-	].filter((fact) => fact.label)
+		createdFact.value,
+	].filter((fact): fact is Fact => !!fact?.label)
 })
 
 const canOpen = computed(
@@ -216,13 +240,13 @@ const menu = computed(() => {
 				<ul
 					class="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-ink-gray-5"
 				>
-					<li
-						v-for="fact in facts"
-						:key="fact.icon"
-						class="flex items-center gap-1.5"
-					>
-						<span :class="fact.icon" class="size-3.5 shrink-0" />
-						{{ fact.label }}
+					<li v-for="fact in facts" :key="fact.icon">
+						<Tooltip :text="fact.help">
+							<span class="flex items-center gap-1.5">
+								<span :class="fact.icon" class="size-3.5 shrink-0" />
+								{{ fact.label }}
+							</span>
+						</Tooltip>
 					</li>
 
 					<li
