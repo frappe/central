@@ -88,6 +88,19 @@ class TestCreate(CustomerSyncTestCase):
 		self.assertEqual(self._ids().profile_id, "CUST-1")
 		self.assertEqual(self._ids().address_id, "ADDR-1")
 
+	def test_a_deadlock_is_left_to_the_job_runner(self):
+		self._assert_raised_for_the_job_runner(frappe.QueryDeadlockError)
+
+	def test_a_lock_wait_timeout_is_left_to_the_job_runner(self):
+		self._assert_raised_for_the_job_runner(frappe.QueryTimeoutError)
+
+	def _assert_raised_for_the_job_runner(self, error):
+		with patch(POST, side_effect=error("locked")):
+			self.assertRaises(error, self._job)
+		self.assertFalse(
+			frappe.db.exists("Billing Event", {"team": TEAM, "event_type": "Customer Sync Failed"})
+		)
+
 	def test_never_commits_itself(self):
 		with patch(POST, side_effect=created("CUST-1")), patch.object(frappe.db, "commit") as commit:
 			self._job()
