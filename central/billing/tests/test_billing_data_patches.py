@@ -82,15 +82,18 @@ class TestBillingDataPatches(IntegrationTestCase):
 	def test_the_internal_flag_moves_to_the_billing_profile(self):
 		ensure_team(OTHER_TEAM)
 		complete_billing_profile(TEAM)
-		tax = frappe.qb.DocType("Tax Profile")
-		for team, reason in ((TEAM, "Our own servers"), (OTHER_TEAM, None)):
-			frappe.db.delete("Tax Profile", {"team": team})
-			frappe.get_doc({"doctype": "Tax Profile", "team": team}).db_insert()
-			frappe.qb.update(tax).set(tax.is_internal, 1).set(tax.internal_reason, reason).where(
-				tax.team == team
-			).run()
-
-		move_internal_flag_to_billing_profile.execute()
+		frappe.db.delete("Billing Profile", {"team": OTHER_TEAM})
+		# The DocType no longer has the old columns, so a fresh site has none to fill.
+		old_rows = [
+			frappe._dict(team=TEAM, internal_reason="Our own servers"),
+			frappe._dict(team=OTHER_TEAM, internal_reason=None),
+		]
+		patch_module = move_internal_flag_to_billing_profile
+		with (
+			patch.object(frappe.db, "has_column", return_value=True),
+			patch.object(patch_module, "internal_tax_profiles", return_value=old_rows),
+		):
+			patch_module.execute()
 
 		profiles = frappe.get_all(
 			"Billing Profile",
