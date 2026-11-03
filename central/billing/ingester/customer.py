@@ -63,8 +63,11 @@ def sync_customer_profile(team: str) -> None:
 	try:
 		_take_next_step(profile)
 	except Exception as error:
-		# The job's rollback would lose the record, so keep it in its own transaction, then fail the job.
+		# Not re-raised: the job's own commit keeps the failure event, and the daily pending sweep retries.
 		frappe.db.rollback(save_point=_SYNC_STEP)
+		frappe.log_error(
+			title=f"Customer sync failed for {team}", reference_doctype="Billing Profile", reference_name=team
+		)
 		record_event(
 			profile,
 			"Customer Sync Failed",
@@ -72,8 +75,6 @@ def sync_customer_profile(team: str) -> None:
 			category=CUSTOMER_SYNC,
 			outcome=billing_event.FAILED,
 		)
-		frappe.db.commit()  # nosemgrep: frappe-manual-commit -- the failure must outlive the failed job
-		raise
 
 
 def _take_next_step(profile) -> None:

@@ -77,9 +77,11 @@ class TestCreate(CustomerSyncTestCase):
 	def test_failed_step_resumes_without_a_second_customer(self):
 		with patch(POST, side_effect=created("CUST-1")):
 			self._job()
-		with patch(POST, side_effect=ConnectionError("down")), self.assertRaises(ConnectionError):
-			self._job()
-		self._end_job()
+		with patch(POST, side_effect=ConnectionError("down")):
+			self._job().assert_not_called()  # the pending sweep retries, not the failed step
+		self.assertTrue(
+			frappe.db.exists("Billing Event", {"team": TEAM, "event_type": "Customer Sync Failed"})
+		)
 		with patch(POST, side_effect=created("ADDR-1")) as post:
 			self._job()
 		self.assertEqual(post.call_args.args[0], "api/resource/Address")
