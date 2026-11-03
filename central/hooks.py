@@ -216,23 +216,39 @@ doc_events = {
 			"Top-up Order",
 		)
 	},
-	# Frappe writes a Version for each save of a DocType that tracks changes; the feed keeps
-	# the fields central/central/doctype/activity_event/tracked.py lists.
-	"Version": {"after_insert": "central.central.doctype.activity_event.activity_event.record_version"},
-	**{
-		doctype: {
-			"after_insert": "central.central.doctype.activity_event.activity_event.record_created",
-			"on_trash": "central.central.doctype.activity_event.activity_event.record_deleted",
-		}
-		for doctype in (
-			"VM Snapshot",
-			"Site",
-			"Site Domain",
-			"Team",
-			"Team Role",
-			"Team Invitation",
-			"Team SSH Key",
-		)
+	# Activity feed. Frappe writes a Version for each save of a tracked DocType, and the feed
+	# keeps the fields that central/central/doctype/activity_event/tracked.py lists.
+	"Version": {
+		"after_insert": "central.central.doctype.activity_event.activity_event.record_version",
+	},
+	# A Version records no creation and no deletion, so these DocTypes record both themselves.
+	"VM Snapshot": {
+		"after_insert": "central.central.doctype.activity_event.activity_event.record_created",
+		"on_trash": "central.central.doctype.activity_event.activity_event.record_deleted",
+	},
+	"Site": {
+		"after_insert": "central.central.doctype.activity_event.activity_event.record_created",
+		"on_trash": "central.central.doctype.activity_event.activity_event.record_deleted",
+	},
+	"Site Domain": {
+		"after_insert": "central.central.doctype.activity_event.activity_event.record_created",
+		"on_trash": "central.central.doctype.activity_event.activity_event.record_deleted",
+	},
+	"Team": {
+		"after_insert": "central.central.doctype.activity_event.activity_event.record_created",
+		"on_trash": "central.central.doctype.activity_event.activity_event.record_deleted",
+	},
+	"Team Role": {
+		"after_insert": "central.central.doctype.activity_event.activity_event.record_created",
+		"on_trash": "central.central.doctype.activity_event.activity_event.record_deleted",
+	},
+	"Team Invitation": {
+		"after_insert": "central.central.doctype.activity_event.activity_event.record_created",
+		"on_trash": "central.central.doctype.activity_event.activity_event.record_deleted",
+	},
+	"Team SSH Key": {
+		"after_insert": "central.central.doctype.activity_event.activity_event.record_created",
+		"on_trash": "central.central.doctype.activity_event.activity_event.record_deleted",
 	},
 }
 
