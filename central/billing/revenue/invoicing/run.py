@@ -18,6 +18,7 @@ from central.billing.doctype.billing_run.billing_run import snapshot
 from central.billing.doctype.billing_run_team.billing_run_team import FAILED, has_same_outcome, record_outcome
 from central.billing.doctype.invoice.invoice import unissued_filters
 from central.billing.platform import metrics
+from central.billing.platform.jobs import each_isolated
 from central.billing.revenue.invoicing.generate import generate_team_invoice
 from central.billing.revenue.invoicing.lifecycle import held_drafts, open_and_collect, settle_internal_teams
 from central.billing.states import record_team_event
@@ -179,14 +180,17 @@ def retry_failed_invoices() -> int:
 	failed = frappe.get_all(
 		"Billing Run Team",
 		filters={"outcome": FAILED},
-		fields=["team", "period_end"],
+		fields=["name", "team", "period_end"],
 		order_by="modified asc",
 		limit=PAGE_SIZE,
 	)
-	for row in failed:
-		period_start = frappe.utils.get_first_day(row.period_end)
-		draft_team_invoice(row.team, period_start, row.period_end)
-		frappe.db.commit()  # nosemgrep: frappe-manual-commit -- one team, one transaction
+	rows = {row.name: row for row in failed}
+
+	def retry(name: str) -> list[str]:
+		row = rows[name]
+		return draft_team_invoice(row.team, frappe.utils.get_first_day(row.period_end), row.period_end)
+
+	each_isolated("Invoice retry", "Billing Run Team", list(rows), retry)
 	return len(failed)
 
 
