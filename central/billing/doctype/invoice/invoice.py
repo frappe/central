@@ -46,6 +46,11 @@ def owed_filters() -> list[list]:
 	return [["status", "in", UNSETTLED], *issued_filters()]
 
 
+def is_unissued(invoice) -> bool:
+	"""`unissued_filters` for one invoice."""
+	return invoice.status == OUTSTANDING and not is_issued(invoice)
+
+
 def unissued_filters() -> list[list]:
 	"""Outstanding invoices that collection has not started on yet."""
 	return [["status", "=", OUTSTANDING], ["due_date", "is", "not set"]]

@@ -14,10 +14,9 @@ from frappe import _
 
 from central.billing import settings
 from central.billing.doctype.invoice.invoice import (
-	OUTSTANDING,
 	UNSETTLED,
-	is_issued,
 	is_owed,
+	is_unissued,
 	owed_filters,
 	unissued_filters,
 )
@@ -51,7 +50,7 @@ def open_and_collect(invoice: str, collect: bool = True) -> dict:
 		.for_update()
 		.run(as_dict=True)
 	)
-	if not rows or not _is_uncollected(rows[0]):
+	if not rows or not is_unissued(rows[0]):
 		return {"invoice": invoice, "claimed": False}
 
 	doc = frappe.get_doc("Invoice", invoice)
@@ -130,10 +129,6 @@ def open_and_collect(invoice: str, collect: bool = True) -> dict:
 		"status": "Outstanding",
 		"charge": charge,
 	}
-
-
-def _is_uncollected(row) -> bool:
-	return row.status == OUTSTANDING and not is_issued(row)
 
 
 def settle_with_new_credit(team: str) -> list[dict]:
