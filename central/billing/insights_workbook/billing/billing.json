@@ -5224,7 +5224,7 @@
    "items": [
     {
      "layout": {
-      "h": 2,
+      "h": 3,
       "i": "coverage-text",
       "w": 20,
       "x": 0,
@@ -5240,7 +5240,7 @@
       "i": "coverage-0",
       "w": 5,
       "x": 0,
-      "y": 2
+      "y": 3
      },
      "type": "chart"
     },
@@ -5251,7 +5251,7 @@
       "i": "coverage-1",
       "w": 5,
       "x": 5,
-      "y": 2
+      "y": 3
      },
      "type": "chart"
     },
@@ -5262,7 +5262,7 @@
       "i": "coverage-2",
       "w": 5,
       "x": 10,
-      "y": 2
+      "y": 3
      },
      "type": "chart"
     },
@@ -5272,8 +5272,8 @@
       "h": 5,
       "i": "coverage-3",
       "w": 5,
-      "x": 0,
-      "y": 7
+      "x": 15,
+      "y": 3
      },
      "type": "chart"
     },
@@ -5283,8 +5283,8 @@
       "h": 5,
       "i": "coverage-4",
       "w": 5,
-      "x": 5,
-      "y": 7
+      "x": 0,
+      "y": 8
      },
      "type": "chart"
     },
@@ -5294,8 +5294,8 @@
       "h": 5,
       "i": "coverage-5",
       "w": 5,
-      "x": 10,
-      "y": 7
+      "x": 5,
+      "y": 8
      },
      "type": "chart"
     },
@@ -5305,8 +5305,8 @@
       "h": 5,
       "i": "coverage-6",
       "w": 5,
-      "x": 15,
-      "y": 7
+      "x": 10,
+      "y": 8
      },
      "type": "chart"
     },
@@ -5316,8 +5316,8 @@
       "h": 5,
       "i": "coverage-7",
       "w": 5,
-      "x": 0,
-      "y": 12
+      "x": 15,
+      "y": 8
      },
      "type": "chart"
     },
@@ -5327,8 +5327,8 @@
       "h": 5,
       "i": "coverage-8",
       "w": 5,
-      "x": 5,
-      "y": 12
+      "x": 0,
+      "y": 13
      },
      "type": "chart"
     },
@@ -5338,8 +5338,8 @@
       "h": 5,
       "i": "coverage-9",
       "w": 5,
-      "x": 10,
-      "y": 12
+      "x": 5,
+      "y": 13
      },
      "type": "chart"
     },
@@ -5349,19 +5349,19 @@
       "h": 5,
       "i": "coverage-10",
       "w": 5,
-      "x": 15,
-      "y": 12
+      "x": 10,
+      "y": 13
      },
      "type": "chart"
     },
     {
      "chart": "billing-why-this-many-invoices",
      "layout": {
-      "h": 9,
+      "h": 17,
       "i": "coverage-table",
       "w": 20,
       "x": 0,
-      "y": 17
+      "y": 18
      },
      "type": "chart"
     },
@@ -5371,8 +5371,8 @@
       "h": 5,
       "i": "item-1",
       "w": 5,
-      "x": 5,
-      "y": 26
+      "x": 0,
+      "y": 35
      },
      "type": "chart"
     },
@@ -5382,8 +5382,8 @@
       "h": 5,
       "i": "item-2",
       "w": 5,
-      "x": 10,
-      "y": 26
+      "x": 5,
+      "y": 35
      },
      "type": "chart"
     },
@@ -5393,8 +5393,8 @@
       "h": 5,
       "i": "item-3",
       "w": 5,
-      "x": 15,
-      "y": 26
+      "x": 10,
+      "y": 35
      },
      "type": "chart"
     },
@@ -5404,8 +5404,8 @@
       "h": 5,
       "i": "item-4",
       "w": 5,
-      "x": 0,
-      "y": 31
+      "x": 15,
+      "y": 35
      },
      "type": "chart"
     },
@@ -5415,8 +5415,8 @@
       "h": 5,
       "i": "item-5",
       "w": 5,
-      "x": 5,
-      "y": 31
+      "x": 0,
+      "y": 40
      },
      "type": "chart"
     },
@@ -5426,8 +5426,8 @@
       "h": 5,
       "i": "item-6",
       "w": 5,
-      "x": 10,
-      "y": 31
+      "x": 5,
+      "y": 40
      },
      "type": "chart"
     },
@@ -5437,8 +5437,8 @@
       "h": 5,
       "i": "item-7",
       "w": 5,
-      "x": 15,
-      "y": 31
+      "x": 10,
+      "y": 40
      },
      "type": "chart"
     },
@@ -5448,8 +5448,8 @@
       "h": 5,
       "i": "item-8",
       "w": 5,
-      "x": 0,
-      "y": 36
+      "x": 15,
+      "y": 40
      },
      "type": "chart"
     },
@@ -5459,8 +5459,8 @@
       "h": 5,
       "i": "item-9",
       "w": 5,
-      "x": 5,
-      "y": 36
+      "x": 0,
+      "y": 45
      },
      "type": "chart"
     },
@@ -5470,8 +5470,8 @@
       "h": 5,
       "i": "item-10",
       "w": 5,
-      "x": 10,
-      "y": 36
+      "x": 5,
+      "y": 45
      },
      "type": "chart"
     },
@@ -5481,8 +5481,8 @@
       "h": 5,
       "i": "item-11",
       "w": 5,
-      "x": 15,
-      "y": 36
+      "x": 10,
+      "y": 45
      },
      "type": "chart"
     },
@@ -5492,8 +5492,8 @@
       "h": 5,
       "i": "item-12",
       "w": 5,
-      "x": 0,
-      "y": 41
+      "x": 15,
+      "y": 45
      },
      "type": "chart"
     },
@@ -5503,8 +5503,8 @@
       "h": 5,
       "i": "item-13",
       "w": 5,
-      "x": 5,
-      "y": 41
+      "x": 0,
+      "y": 50
      },
      "type": "chart"
     },
@@ -5514,8 +5514,8 @@
       "h": 5,
       "i": "item-14",
       "w": 5,
-      "x": 10,
-      "y": 41
+      "x": 5,
+      "y": 50
      },
      "type": "chart"
     },
@@ -5525,8 +5525,8 @@
       "h": 5,
       "i": "item-15",
       "w": 5,
-      "x": 15,
-      "y": 41
+      "x": 10,
+      "y": 50
      },
      "type": "chart"
     },
@@ -5536,7 +5536,7 @@
       "i": "item-16",
       "w": 20,
       "x": 0,
-      "y": 46
+      "y": 55
      },
      "text": "<p>Detail: <a href=\"/desk/query-report/Invoice Register\">Invoice Register</a> · <a href=\"/desk/query-report/Failed Payments\">Failed Payments</a> · <a href=\"/desk/query-report/Billing Invariant Violations\">Billing Invariant Violations</a> · <a href=\"/desk/query-report/Internal Usage and Waivers\">Internal Usage and Waivers</a></p>",
      "type": "text"
@@ -5548,7 +5548,7 @@
       "i": "item-17",
       "w": 8,
       "x": 0,
-      "y": 48
+      "y": 57
      },
      "type": "chart"
     },
@@ -5559,7 +5559,7 @@
       "i": "item-18",
       "w": 12,
       "x": 8,
-      "y": 48
+      "y": 57
      },
      "type": "chart"
     },
@@ -5570,7 +5570,7 @@
       "i": "item-19",
       "w": 10,
       "x": 0,
-      "y": 62
+      "y": 71
      },
      "type": "chart"
     },
@@ -5581,7 +5581,7 @@
       "i": "item-20",
       "w": 10,
       "x": 10,
-      "y": 62
+      "y": 71
      },
      "type": "chart"
     },
@@ -5592,7 +5592,7 @@
       "i": "item-21",
       "w": 10,
       "x": 0,
-      "y": 74
+      "y": 83
      },
      "type": "chart"
     },
@@ -5603,7 +5603,7 @@
       "i": "item-22",
       "w": 10,
       "x": 10,
-      "y": 74
+      "y": 83
      },
      "type": "chart"
     }
@@ -6691,7 +6691,7 @@
  "folders": [],
  "idx": 0,
  "is_standard": 1,
- "modified": "2026-11-03 14:00:00.000000",
+ "modified": "2026-11-03 19:00:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "billing",
