@@ -13,15 +13,14 @@ The list shows each invoice with its period, invoice number, status, and amount.
 <Screenshot name="billing/invoices" alt="The Invoices page with monthly invoices from January to October 2026, each marked Paid" />
 
 - Type a period or an invoice number in the search box.
-- Use the **All status** menu to show only **Open**, **Paid**, or **Overdue** invoices.
+- Use the **All status** menu to show only **Outstanding**, **Paid**, or **Overdue** invoices.
 - Use the **Any date** menu to show the last month, the last 6 months, or the last year.
 
 ## Invoice statuses
 
 | Status | Meaning |
 | --- | --- |
-| `Draft` | The cycle has ended and the invoice is being prepared. |
-| `Open` | The invoice is issued and not paid yet. Frappe Cloud collects it from your credits and payment methods. |
+| `Outstanding` | The invoice is not paid yet. Before it has a due date, it is being prepared and you cannot pay it. After it is issued with a due date, Frappe Cloud collects it from your credits and payment methods. |
 | `Paid` | The invoice is paid in full. |
 | `Overdue` | The invoice is past its due date and still unpaid. Pay it to keep your servers running. |
 | `Waived` | Frappe Cloud cancelled the amount. You do not need to pay it. |

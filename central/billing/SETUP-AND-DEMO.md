@@ -98,7 +98,7 @@ currency** (rates live in standalone **Catalog Rate**, not on the Plan).
   — `revenue/tax.resolve_tax`. India GST codes live in `india_gst.py`.
 
 ### Step 4 · Customer Team + Billing Profile
-Charging a card needs a **complete Billing Profile**. Its `currency` is the source of truth (gateway-backed, locks after first activity). Credit can fund server creation without a complete profile. The team's invoices are then held at Draft until the billing details arrive. A daily job reminds the team, and operators get an alert after `billing_details_grace_days`.
+Charging a card needs a **complete Billing Profile**. Its `currency` is the source of truth (gateway-backed, locks after first activity). Credit can fund server creation without a complete profile. The team's invoices then stay Outstanding with no due date (held) until the billing details arrive. A daily job reminds the team, and operators get an alert after `billing_details_grace_days`.
 ```bash
 pilot frappe --site central.localhost execute central.billing.payments.profile.create_or_update_billing_profile \
   --kwargs '{"team": "<TEAM>"}'
