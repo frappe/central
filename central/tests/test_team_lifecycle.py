@@ -122,7 +122,7 @@ class TestTeamLifecycle(IntegrationTestCase):
 		self.add_invoice("Paid", add_months(today(), -2))
 		self.assertEqual(self.blockers()["invoices"], 0)
 
-		self.add_invoice("Overdue", add_months(today(), -1))
+		self.add_invoice("Overdue", add_months(today(), -1), due_date=add_months(today(), -1))
 		self.add_invoice("Outstanding", add_months(get_first_day(today()), -1))
 		self.assertEqual(self.blockers()["invoices"], 2)
 

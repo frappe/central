@@ -13,6 +13,14 @@ import frappe
 from frappe import _
 
 from central.billing import settings
+from central.billing.doctype.invoice.invoice import (
+	OUTSTANDING,
+	UNSETTLED,
+	is_issued,
+	is_owed,
+	owed_filters,
+	unissued_filters,
+)
 from central.billing.platform.records import save_billing_record
 from central.billing.revenue import credits
 from central.billing.revenue.invoicing.generate import generate_team_invoice
@@ -125,7 +133,7 @@ def open_and_collect(invoice: str, collect: bool = True) -> dict:
 
 
 def _is_uncollected(row) -> bool:
-	return row.status == "Outstanding" and not row.due_date
+	return row.status == OUTSTANDING and not is_issued(row)
 
 
 def settle_with_new_credit(team: str) -> list[dict]:
@@ -135,13 +143,12 @@ def settle_with_new_credit(team: str) -> list[dict]:
 	would sit in the wallet while that invoice was dunned, and pay next month's instead."""
 	invoices = frappe.get_all(
 		"Invoice",
-		filters={
-			"team": team,
-			"invoice_type": "Billable",
-			"status": ["in", ["Outstanding", "Overdue"]],
-			"expected_collection": [">", 0],
-			"due_date": ["is", "set"],
-		},
+		filters=[
+			*owed_filters(),
+			["team", "=", team],
+			["invoice_type", "=", "Billable"],
+			["expected_collection", ">", 0],
+		],
 		pluck="name",
 		order_by="period_start asc, creation asc",
 	)
@@ -165,12 +172,7 @@ def _settle_with_credit(invoice: str) -> dict:
 	doc = frappe.get_doc("Invoice", invoice)
 	doc.flags.ignore_links = True  # only its amounts and status change here
 	due = frappe.utils.flt(doc.expected_collection)
-	if (
-		doc.status not in ("Outstanding", "Overdue")
-		or not doc.due_date
-		or due <= 0
-		or charges.unheld_attempt_in_flight(invoice)
-	):
+	if not is_owed(doc) or due <= 0 or charges.unheld_attempt_in_flight(invoice):
 		return {"invoice": invoice, "applied": 0}
 
 	draw = _draw_wallet(doc, due, _gst_still_due(doc, due))
@@ -353,8 +355,7 @@ def held_drafts(team: str | None = None, held_before=None, limit: int | None = N
 	is how long the invoice has been waiting.
 	"""
 	filters = [
-		["status", "=", "Outstanding"],
-		["due_date", "is", "not set"],
+		*unissued_filters(),
 		["invoice_type", "=", "Billable"],
 		["period_end", "<=", held_before or frappe.utils.nowdate()],
 	]
@@ -409,12 +410,12 @@ def waive_for_internal_team(team: str) -> list[str]:
 	waived = []
 	for name in frappe.get_all(
 		"Invoice",
-		filters={"team": team, "status": ["in", ["Outstanding", "Overdue"]], "due_date": ["is", "set"]},
+		filters=[*owed_filters(), ["team", "=", team]],
 		pluck="name",
 	):
 		# Collectors claim a payment under this lock, so check for one only once it is held.
 		doc = frappe.get_doc("Invoice", name, for_update=True)
-		if doc.status not in ("Outstanding", "Overdue") or frappe.db.exists(
+		if doc.status not in UNSETTLED or frappe.db.exists(
 			"Payment Attempt", {"invoice": name, "status": ["in", ["Initiated", "Authorised", "Captured"]]}
 		):
 			continue
@@ -433,11 +434,7 @@ def settle_internal_teams() -> list[str]:
 		return []
 	teams = frappe.get_all(
 		"Invoice",
-		filters={
-			"team": ["in", internal],
-			"status": ["in", ["Outstanding", "Overdue"]],
-			"due_date": ["is", "set"],
-		},
+		filters=[*owed_filters(), ["team", "in", internal]],
 		pluck="team",
 		distinct=True,
 	)

@@ -7,6 +7,7 @@ from frappe.query_builder.functions import Count
 from central.billing import settings
 from central.billing.catalog.entitlements import cap_for, get_ladder
 from central.billing.catalog.subscriptions import active_segments
+from central.billing.doctype.invoice.invoice import unissued_filters
 from central.billing.india_gst import INDIA
 from central.billing.platform.invariants import Violation
 
@@ -595,13 +596,12 @@ def check_billing_run_is_moving() -> list[Violation]:
 	# The hourly sweep collects a draft within the hour; three hours means the run stopped.
 	waiting = frappe.db.count(
 		"Invoice",
-		{
-			"status": "Outstanding",
-			"due_date": ["is", "not set"],
-			"period_end": ["<=", period_end],
-			"hold_reason": ["is", "not set"],
-			"creation": ["<", stalled_since],
-		},
+		[
+			*unissued_filters(),
+			["period_end", "<=", period_end],
+			["hold_reason", "is", "not set"],
+			["creation", "<", stalled_since],
+		],
 	)
 	if not waiting:
 		return []

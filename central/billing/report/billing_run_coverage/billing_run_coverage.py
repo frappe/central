@@ -6,6 +6,7 @@ import frappe
 from frappe import _
 
 from central.billing.doctype.billing_run_team import billing_run_team
+from central.billing.doctype.invoice.invoice import is_issued
 from central.billing.revenue.invoicing.run import billing_period
 
 INVOICED = "Invoiced"
@@ -87,7 +88,7 @@ class _Facts:
 			return WAIVED, _("Internal team. The invoice is rated for the record and never collected.")
 		if invoice.status == "Paid":
 			return INVOICED, _("Paid.")
-		if invoice.due_date:
+		if is_issued(invoice):
 			return INVOICED, _("{0}, due {1}.").format(invoice.status, invoice.due_date)
 		if invoice.hold_reason:
 			return WAITING, _("Outstanding, not yet issued. Held for: {0}.").format(invoice.hold_reason)

@@ -19,8 +19,41 @@ from frappe.model.document import Document
 from frappe.model.naming import make_autoname
 
 CANCELLED = "Cancelled"
+OUTSTANDING = "Outstanding"
 # What a team still owes; leaving one of these is when dunning can let go.
-UNSETTLED = ("Outstanding", "Overdue")
+UNSETTLED = (OUTSTANDING, "Overdue")
+
+
+# An invoice is issued when collection starts and sets its due date. Before that it is
+# held: it is never charged, dunned or counted as owed. Overdue is reached only from an
+# issued invoice, so it always has a due date.
+def is_issued(invoice) -> bool:
+	return bool(invoice.get("due_date"))
+
+
+def is_owed(invoice) -> bool:
+	"""Issued and not settled: what the customer owes."""
+	return invoice.status in UNSETTLED and is_issued(invoice)
+
+
+def owed_filters() -> list[list]:
+	"""Invoices the customer owes: issued and not settled."""
+	return [["status", "in", UNSETTLED], ["due_date", "is", "set"]]
+
+
+def unissued_filters() -> list[list]:
+	"""Outstanding invoices that collection has not started on yet."""
+	return [["status", "=", OUTSTANDING], ["due_date", "is", "not set"]]
+
+
+def owed_criterion(invoice):
+	"""`owed_filters` for a `frappe.qb` Invoice table."""
+	return invoice.status.isin(UNSETTLED) & invoice.due_date.isnotnull()
+
+
+def unissued_criterion(invoice):
+	"""`unissued_filters` for a `frappe.qb` Invoice table."""
+	return (invoice.status == OUTSTANDING) & invoice.due_date.isnull()
 
 
 def period_key_for(team: str, period_start, period_end) -> str:

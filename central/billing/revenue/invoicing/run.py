@@ -16,6 +16,7 @@ from frappe.query_builder.functions import Count
 from central.billing.doctype.billing_event import billing_event
 from central.billing.doctype.billing_run.billing_run import snapshot
 from central.billing.doctype.billing_run_team.billing_run_team import FAILED, has_same_outcome, record_outcome
+from central.billing.doctype.invoice.invoice import unissued_filters
 from central.billing.platform import metrics
 from central.billing.revenue.invoicing.generate import generate_team_invoice
 from central.billing.revenue.invoicing.lifecycle import held_drafts, open_and_collect, settle_internal_teams
@@ -384,12 +385,7 @@ def draft_pages(cutoff, page_size: int = COLLECT_PAGE_SIZE):
 	while True:
 		page = frappe.get_all(
 			"Invoice",
-			filters={
-				"status": "Outstanding",
-				"due_date": ["is", "not set"],
-				"period_end": ("<=", cutoff),
-				"name": (">", after),
-			},
+			filters=[*unissued_filters(), ["period_end", "<=", cutoff], ["name", ">", after]],
 			pluck="name",
 			order_by="name asc",
 			limit=page_size,
@@ -417,8 +413,7 @@ def drafts_in_range(cutoff, after: str, until: str) -> list[str]:
 	return frappe.get_all(
 		"Invoice",
 		filters=[
-			["status", "=", "Outstanding"],
-			["due_date", "is", "not set"],
+			*unissued_filters(),
 			["period_end", "<=", cutoff],
 			["name", ">", after],
 			["name", "<=", until],
@@ -578,9 +573,7 @@ def billing_run_status(today=None) -> dict:
 		).run(as_dict=True)
 	}
 	drafted = sum(n for status, n in counts.items() if status != "Cancelled")
-	pending_collection = frappe.db.count(
-		"Invoice", {"period_end": period_end, "status": "Outstanding", "due_date": ["is", "not set"]}
-	)
+	pending_collection = frappe.db.count("Invoice", [*unissued_filters(), ["period_end", "=", period_end]])
 	return {
 		"period_start": str(period_start),
 		"period_end": str(period_end),

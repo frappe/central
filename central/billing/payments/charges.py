@@ -18,6 +18,7 @@ import frappe
 from frappe import _
 
 from central.billing import settings
+from central.billing.doctype.invoice.invoice import is_issued
 from central.billing.doctype.payment_attempt.payment_attempt import gateway_hold_active
 from central.billing.gateways.base import GatewayError, GatewayTimeout, PaymentResult
 from central.billing.payments.decline import Failure
@@ -104,7 +105,7 @@ def _claim_attempt(invoice: str, payment_method: str | None, gateway: str | None
 	# customer clicking Pay (or dunning) does — so allow both unsettled states.
 	if inv.status not in _UNSETTLED_INVOICE:
 		return {"charged": False, "reason": "not_open"}
-	if not inv.due_date:
+	if not is_issued(inv):
 		return {"charged": False, "reason": "not_issued"}
 	if frappe.utils.flt(inv.expected_collection) <= 0:
 		return {"charged": False, "reason": "nothing_due"}
@@ -384,7 +385,7 @@ def _claim_on_session_attempt(invoice: str, gateway: str | None) -> dict:
 
 	if inv.status not in _UNSETTLED_INVOICE:
 		return {"created": False, "reason": "not_open"}
-	if not inv.due_date:
+	if not is_issued(inv):
 		return {"created": False, "reason": "not_issued"}
 	if frappe.utils.flt(inv.expected_collection) <= 0:
 		return {"created": False, "reason": "nothing_due"}
@@ -610,7 +611,7 @@ def _apply_attempt_failure(event, attempt, decline: dict) -> dict:
 		)
 		# Async decline: rotate to the next untried method (#28). No-op once
 		# every method has been exhausted.
-		if inv_status in ("Outstanding", "Overdue"):
+		if inv_status in _UNSETTLED_INVOICE:
 			from central.billing.payments import collection
 
 			fell_back = collection.collect_invoice(attempt.invoice)

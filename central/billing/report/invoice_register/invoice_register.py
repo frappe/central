@@ -13,6 +13,7 @@ import frappe
 from frappe import _
 from frappe.utils import flt, getdate
 
+from central.billing.doctype.invoice.invoice import is_owed
 from central.billing.report._currency import split_currency_columns
 from central.billing.report._paging import first_rows
 
@@ -128,7 +129,8 @@ def get_summary(rows: list[dict]) -> list[dict]:
 		counts[r.status] = counts.get(r.status, 0) + 1
 		g = by_currency.setdefault(r.currency or "INR", {"invoiced": 0.0, "outstanding": 0.0})
 		g["invoiced"] += flt(r.total)
-		if r.status in ("Outstanding", "Overdue"):
+		# Owed only: an invoice not yet issued is not a receivable.
+		if is_owed(r):
 			g["outstanding"] += flt(r.expected_collection)
 
 	summary = [
