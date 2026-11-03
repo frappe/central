@@ -9,6 +9,7 @@ from frappe import _
 
 from central.api.jwks import jwks_document
 from central.api.pilot import get_telemetry_base_url, region_id_of
+from central.billing.catalog.trials import is_trial_plan
 from central.infrastructure.doctype.pilot_credential.pilot_credential import PilotCredential
 from central.infrastructure.doctype.user_mail_account.user_mail_account import UserMailAccount
 from central.integrations.object_storage import ObjectStorageClient, ObjectStorageNotFound
@@ -83,24 +84,31 @@ def get_bootstrap_metadata(action) -> dict[str, str]:
 
 
 def get_bundled_bucket(action) -> dict | None:
+	"""The [s3] settings of a creation's backup bucket. None on a trial plan: the server gets its
+	bucket when it moves to a paid plan."""
+	if is_trial_plan(action.get_configuration().plan):
+		return None
+
+	return create_bundled_bucket(action.team, action.region, action.server_id)
+
+
+def create_bundled_bucket(team: str, region: str, server: str) -> dict | None:
 	"""Create the server's backup bucket in Cargo, capped at the region's bundle size, and
 	return its [s3] settings. None when the region bundles no bucket."""
-	size_gib = frappe.db.get_value("Region", action.region, "max_storage_bundle_size")
+	size_gib = frappe.db.get_value("Region", region, "max_storage_bundle_size")
 	if not size_gib:
 		return None
 
-	endpoint_url = get_storage_endpoint_url(action.region)
-	client = ObjectStorageClient.from_region(action.region)
-	name = get_bucket_name(action.team, action.region, action.server_id)
-	# Only this creation uses the name, and a retry runs before any machine exists, so a
-	# bucket left by an earlier attempt is empty and safe to replace.
+	endpoint_url = get_storage_endpoint_url(region)
+	client = ObjectStorageClient.from_region(region)
+	name = get_bucket_name(team, region, server)
+	# Cargo returns credentials only on creation. A bucket left by an earlier attempt was never
+	# given to Pilot, so it is empty and safe to replace.
 	try:
 		client.delete_bucket(name)
 	except ObjectStorageNotFound:
 		pass
-	receipt = client.create_bucket(
-		name, tags={"team": action.team, "server": action.server_id, "bundled": "1"}
-	)
+	receipt = client.create_bucket(name, tags={"team": team, "server": server, "bundled": "1"})
 	credentials = receipt["credentials"]
 	# Cargo enforces the cap. Zero leaves the object count unlimited.
 	client.set_quota(name, size_gib, 0)
@@ -111,9 +119,22 @@ def get_bundled_bucket(action) -> dict | None:
 		"bucket": name,
 		# Pilot signs path-style requests for any provider but AWS, which Garage needs.
 		"provider": "garage",
-		"region": action.region,
+		"region": region,
 		"endpoint_url": endpoint_url,
 	}
+
+
+def attach_bundled_bucket(server: str) -> None:
+	"""Give a server that moved off its trial plan its backup bucket, through Pilot's settings."""
+	document = frappe.get_doc("Virtual Machine", server)
+	try:
+		bucket = create_bundled_bucket(document.team, document.region, document.name)
+		if bucket:
+			write_pilot(server, "PATCH", "/api/v1/settings", {"s3": bucket})
+	# This job is the worker boundary, so the failure stays on the server for the operator.
+	except Exception:
+		document.log_error(title=f"Backup bucket attach failed: {server}")
+		document.add_comment("Info", _("Central could not attach the backup bucket to this server."))
 
 
 def delete_bundled_bucket(action: str) -> None:
