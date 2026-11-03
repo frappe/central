@@ -1,6 +1,7 @@
 from typing import Any
 
 import frappe
+from frappe import _
 from frappe.query_builder import Order
 from frappe.query_builder.functions import Count
 from frappe.utils import escape_html
@@ -10,6 +11,7 @@ from central.iam import (
 	resolve_user_grants,
 	user_has_operator_bypass,
 )
+from central.identity.account_deletion import OPEN_STATUSES, get_open_request, get_owned_teams
 
 
 @frappe.whitelist(methods=["GET"])
@@ -237,3 +239,40 @@ def set_profile_photo(file_url: str | None = None) -> dict[str, Any]:
 	doc.save()
 
 	return {"user_image": doc.user_image}
+
+
+@frappe.whitelist(methods=["GET"])
+def get_account_deletion() -> dict[str, Any]:
+	"""The teams that still stop the signed-in user from deleting their account, and their open request."""
+	user = frappe.session.user
+	return {"teams": get_owned_teams(user), "request": get_open_request(user)}
+
+
+@frappe.whitelist(methods=["POST"])
+def delete_account(email: str) -> dict[str, Any]:
+	"""Start deleting the signed-in user's own account; Frappe emails a link to confirm it."""
+	user = frappe.session.user
+	if email.strip().lower() != user.lower():
+		frappe.throw(_("Type your email address to confirm."))
+
+	# Only a System Manager may create the request. Its email is always the caller's own.
+	frappe.get_doc({"doctype": "Personal Data Deletion Request", "email": user}).insert(
+		ignore_permissions=True
+	)
+	return {"request": get_open_request(user)}
+
+
+@frappe.whitelist(methods=["POST"])
+def cancel_account_deletion() -> dict[str, Any]:
+	"""Hold every open deletion request of the signed-in user, since two requests sent at once can both pass."""
+	user = frappe.session.user
+	if not get_open_request(user):
+		frappe.throw(_("Your account is not set to be deleted."))
+
+	frappe.db.set_value(
+		"Personal Data Deletion Request",
+		{"email": user, "status": ("in", OPEN_STATUSES)},
+		"status",
+		"On Hold",
+	)
+	return {"request": None}

@@ -317,6 +317,9 @@ before_tests = [
 # extend_doctype_class = {
 # 	"Task": "central.custom.task.CustomTaskMixin"
 # }
+extend_doctype_class = {
+	"Personal Data Deletion Request": ["central.identity.account_deletion.AccountDeletionRequest"],
+}
 
 # Overriding Methods
 # ------------------------------
@@ -363,26 +366,9 @@ page_renderer = ["central.oidc.DiscoveryPage"]
 # User Data Protection
 # --------------------
 
-# user_data_fields = [
-# 	{
-# 		"doctype": "{doctype_1}",
-# 		"filter_by": "{filter_by}",
-# 		"redact_fields": ["{field_1}", "{field_2}"],
-# 		"partial": 1,
-# 	},
-# 	{
-# 		"doctype": "{doctype_2}",
-# 		"filter_by": "{filter_by}",
-# 		"partial": 1,
-# 	},
-# 	{
-# 		"doctype": "{doctype_3}",
-# 		"strict": False,
-# 	},
-# 	{
-# 		"doctype": "{doctype_4}"
-# 	}
-# ]
+user_data_fields = [
+	{"doctype": "Team Invitation", "filter_by": "email", "redact_fields": ["email"]},
+]
 
 # Authentication and authorization
 
