@@ -163,6 +163,11 @@ class AtlasClient:
 
 		return self._request("POST", f"{path}/actions/{action}")
 
+	def set_rescue_mode(self, name: str, enabled: bool) -> dict:
+		"""Select the image for the next cold boot without restarting the VM."""
+		action = "enable-rescue-mode" if enabled else "disable-rescue-mode"
+		return self._request("POST", f"virtual-machines/{quote(name, safe='')}/actions/{action}")
+
 	def resize(self, name: str, cpu_millicores: int, memory_mib: int, disk_mib: int) -> dict:
 		"""Set CPU, memory and disk in one call, and turn idle shutdown off. Atlas takes a
 		resource change only on a stopped VM, resizes it in place or moves it to a host that
