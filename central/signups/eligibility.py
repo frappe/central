@@ -15,11 +15,13 @@ def is_free_trial_creation(team: str, product: str | None) -> bool:
 
 
 def has_paid_before(team: str) -> bool:
-	"""Whether the team ever had a subscription or a bill. Such a team buys its sites, even after
-	its payment method lapses."""
+	"""Whether the team ever had a subscription or an issued bill. Such a team buys its sites, even
+	after its payment method lapses. A bill is issued once its due date is set."""
 	return bool(
 		frappe.db.exists("Subscription", {"team": team})
-		or frappe.db.exists("Invoice", {"team": team, "status": ["!=", "Cancelled"]})
+		or frappe.db.exists(
+			"Invoice", {"team": team, "status": ["!=", "Cancelled"], "due_date": ["is", "set"]}
+		)
 	)
 
 

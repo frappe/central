@@ -157,7 +157,7 @@ class TestTrialLifecycle(TrialOnAMachine):
 		invoice.db_insert()
 		self.assertTrue(eligibility.is_free_trial_creation(self.team.name, "raven"))
 
-		invoice.db_set("status", "Overdue")
+		invoice.db_set("due_date", frappe.utils.nowdate())
 		self.assertFalse(eligibility.is_free_trial_creation(self.team.name, "raven"))
 
 	def test_a_team_with_a_subscription_gets_no_free_trial(self):
