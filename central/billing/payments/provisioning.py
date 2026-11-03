@@ -230,13 +230,16 @@ def _book_welcome_credits(
 	team: str, amount: float, currency: str, instrument_fingerprint: str | None
 ) -> None:
 	"""Book the grant. Two owners who add the same card at once both pass the check above;
-	the unique fingerprint on the ledger keeps one grant, and the other team gets none."""
+	the unique fingerprint on the ledger keeps one grant, and the other team gets none.
+
+	A wallet deadlock fails the activation: InnoDB has rolled back the whole transaction,
+	so the grant cannot be retried alone. The customer adds the card again."""
 	from central.billing.revenue import credits
 
 	frappe.db.savepoint(_WELCOME_CREDIT_SAVEPOINT)
 	try:
 		credits.grant_promotional_credits(
-			team, amount, currency, instrument_fingerprint=instrument_fingerprint
+			team, amount, currency, instrument_fingerprint=instrument_fingerprint, retry_deadlock=False
 		)
 	except frappe.UniqueValidationError as error:
 		if _DUPLICATE_FINGERPRINT not in str(error):

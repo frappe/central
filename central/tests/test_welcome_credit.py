@@ -123,6 +123,19 @@ class TestWelcomeCredit(IntegrationTestCase):
 		):
 			self.activate_payment_method(TEAM, card_fingerprint="fp_other_key")
 
+	def test_a_wallet_deadlock_fails_the_activation_without_a_retry(self):
+		"""A real deadlock has already rolled back the activation, so the grant must not retry alone."""
+		with (
+			billing_settings(grant_welcome_credits=1, welcome_credit_amounts=AMOUNTS),
+			patch(
+				"central.billing.revenue.credits._book_entry_once", side_effect=frappe.QueryDeadlockError
+			) as book_once,
+			self.assertRaises(frappe.QueryDeadlockError),
+		):
+			self.activate_payment_method(TEAM, card_fingerprint="fp_deadlock")
+
+		book_once.assert_called_once()
+
 	def test_no_grant_when_grants_are_off_or_the_currency_has_no_amount(self):
 		with billing_settings(grant_welcome_credits=0, welcome_credit_amounts=AMOUNTS):
 			self.activate_payment_method(TEAM)
