@@ -68,7 +68,7 @@ class TestHeld(InvoiceHoldTestCase):
 		self.assertEqual(result["held"], "accounting_sync")
 		sync.assert_called_once_with(TEAM)
 		inv = self._invoice()
-		self.assertEqual((inv.status, inv.hold_reason), ("Draft", "Accounting Sync"))
+		self.assertEqual((inv.status, inv.hold_reason), ("Outstanding", "Accounting Sync"))
 
 	def test_unchecked_gstin_holds_the_draft_and_queues_its_lookup(self):
 		self._profile(**SYNCED, gstin=GSTIN, gst_status=None)
@@ -115,7 +115,7 @@ class TestIssued(InvoiceHoldTestCase):
 			gst_status.store(TEAM, GSTIN, {"status": "Cancelled"})
 		self._open()
 		inv = self._invoice()
-		self.assertEqual(inv.status, "Open")
+		self.assertEqual(inv.status, "Outstanding")
 		self.assertFalse(inv.customer_gstin)  # billed as unregistered
 		self.assertEqual(inv.output_tax_amount, 180.0)  # and SEZ no longer applies
 		self.assertEqual(inv.total, 1180.0)

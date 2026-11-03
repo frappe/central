@@ -87,7 +87,8 @@ class FallbackTestBase(IntegrationTestCase):
 				{
 					"doctype": "Invoice",
 					"team": TEAM,
-					"status": "Open",
+					"status": "Outstanding",
+					"due_date": "2026-12-31",
 					"period_start": "2026-06-01",
 					"period_end": "2026-06-30",
 					"currency": "INR",
@@ -151,7 +152,7 @@ class TestSyncFallback(FallbackTestBase):
 
 		self.assertEqual(adapter.charge.call_count, 2)  # each method tried exactly once
 		self.assertEqual(result["reason"], "no_method")
-		self.assertEqual(frappe.db.get_value("Invoice", inv, "status"), "Open")
+		self.assertEqual(frappe.db.get_value("Invoice", inv, "status"), "Outstanding")
 		# Re-running does not re-charge an already-failed method (escalate, don't repeat).
 		with stub_charges([]) as adapter:
 			collection.collect_invoice(inv)

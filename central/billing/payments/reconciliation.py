@@ -48,7 +48,7 @@ _GATEWAY_FAILED = {
 	"requires_payment_method",
 }
 # A Captured attempt whose invoice sits in one of these lost its settlement webhook.
-_UNSETTLED_INVOICE = ("Open", "Overdue")
+_UNSETTLED_INVOICE = ("Outstanding", "Overdue")
 
 GRACE_MINUTES = 30
 ALERT_AFTER_HOURS = 24

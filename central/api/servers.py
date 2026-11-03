@@ -265,18 +265,32 @@ def server_hostnames(team: str | None = None, resource_id: str | None = None) ->
 	"""The site and custom-domain hostnames a server answers. They stop working when the
 	server is terminated, so the console lists them before it asks. Gated on `server:view`."""
 	server = VirtualMachine.get_team_server_name(team, resource_id)
-	sites = frappe.get_list("Site", filters={"team": team, "server": server}, pluck="name")
+	sites = frappe.get_list(
+		"Site",
+		filters={"team": team, "server": server},
+		fields=["name", "subdomain", "renamed_at"],
+	)
 	routes = frappe.get_list(
 		"Site Domain",
 		filters={"team": team, "server": server},
 		fields=["domain", "route_type"],
 		order_by="domain asc",
 	)
-	hostnames = [{"hostname": site, "kind": "Site"} for site in sites]
+
+	# A renamed site answers on its old and new names; it shows once, at its primary address.
+	site_names = set()
+	hostnames = []
+	for site in sites:
+		site_names.add(site.name)
+		if site.subdomain:
+			site_names.add(f"{site.subdomain}.{site.name.split('.', 1)[1]}")
+		primary = Site.get_primary_url(site.name, site.subdomain, site.renamed_at)
+		hostnames.append({"hostname": primary.removeprefix("https://"), "kind": "Site"})
+
 	hostnames += [
 		{"hostname": route.domain, "kind": "Site" if route.route_type == "Site" else "Custom domain"}
 		for route in routes
-		if route.domain not in sites
+		if route.domain not in site_names
 	]
 
 	return hostnames

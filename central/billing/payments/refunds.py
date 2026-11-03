@@ -12,7 +12,7 @@ Two destinations, two mechanics:
     wallet as a credit ledger entry, applied on the next invoice. No gateway
     round-trip — it is a credit, not a chargeback.
 
-Pre-payment corrections (Draft/Open) are NOT refunds: cancel + reissue, so an
+Pre-payment corrections (Outstanding/Overdue) are NOT refunds: cancel + reissue, so an
 issued line item is never mutated (see billing.reissue_invoice).
 """
 

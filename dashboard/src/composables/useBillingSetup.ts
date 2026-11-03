@@ -63,6 +63,13 @@ export function useBillingSetup() {
 		supportedCurrencies: computed(() => state.data?.supported_currencies ?? []),
 		loading: computed(() => state.loading),
 		profile: computed(() => state.data),
+		// The fetch for this team finished without a profile, so the caller can offer a retry.
+		hasLoadFailed: computed(
+			() =>
+				!state.loading &&
+				state.team === (activeTeam.value || '') &&
+				!state.data,
+		),
 		paymentMethodRequired: computed(
 			() => !!state.data?.payment_method_required,
 		),

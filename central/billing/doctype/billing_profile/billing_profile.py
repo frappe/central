@@ -9,6 +9,7 @@ from frappe.model.document import Document
 
 from central.billing.catalog.subscriptions import team_active_segments
 from central.billing.india_gst import GST_STATE_CODES, INDIA
+from central.iam import user_has_operator_bypass
 
 # Once a team has been invoiced, these are frozen: invoices are denominated in the
 # currency and taxed by the country in force when they were issued, so changing
@@ -136,6 +137,8 @@ class BillingProfile(Document):
 		gst_status: DF.Literal["", "Active", "Inactive", "Suspended", "Cancelled", "Invalid"]
 		gst_status_checked_at: DF.Datetime | None
 		gst_status_retry_after: DF.Datetime | None
+		internal_reason: DF.SmallText | None
+		is_internal: DF.Check
 		gstin: DF.Data | None
 		legal_name: DF.Data | None
 		manual_override: DF.Check
@@ -163,8 +166,15 @@ class BillingProfile(Document):
 		self.keep_mandates_in_the_billing_currency()
 		self.pin_tier_set_by_hand()
 		self.sync_tier_fields()
+		self.validate_internal_flag()
+
+	def after_insert(self):
+		from central.billing.states import record_event
+
+		record_event(self, "Billing Profile Created")
 
 	def on_update(self):
+		self.apply_internal_flag_change()
 		# Before held invoices are released: releasing re-taxes them from the Tax Profile.
 		self.apply_output_tax_on_country_change()
 		self.release_held_invoices()
@@ -244,6 +254,33 @@ class BillingProfile(Document):
 		)
 		if not self.manual_override:
 			self.override_max_spend = 0
+
+	def validate_internal_flag(self):
+		"""1. Only an operator changes the flag, because it waives the team's invoices.
+		2. An internal team states why."""
+		before = self.get_doc_before_save()
+		is_changed = bool(self.is_internal) != bool(before and before.is_internal)
+		if is_changed and not user_has_operator_bypass():
+			frappe.throw(_("Only an operator can mark a team as internal."), frappe.PermissionError)
+		if self.is_internal and not (self.internal_reason or "").strip():
+			frappe.throw(_("Write why this team is internal."), frappe.ValidationError)
+
+	def apply_internal_flag_change(self):
+		"""Log who marked or cleared the team as internal, and why. A new internal team's unpaid invoices are waived."""
+		before = self.get_doc_before_save()
+		if bool(self.is_internal) == bool(before and before.is_internal):
+			return
+
+		from central.billing.revenue.invoicing.lifecycle import waive_for_internal_team
+		from central.billing.states import record_event
+
+		record_event(
+			self,
+			"Internal Team Marked" if self.is_internal else "Internal Team Cleared",
+			reason=self.internal_reason,
+		)
+		if self.is_internal:
+			waive_for_internal_team(self.team)
 
 	def apply_tier_change(self):
 		"""Re-check mandate ceilings against the new cap and log who moved the tier."""

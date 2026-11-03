@@ -3,9 +3,10 @@ import { Alert, Button, Dialog, LoadingText, useCall } from 'frappe-ui'
 import { computed, watch } from 'vue'
 import { API, method } from '@/api/methods'
 import InviteRows from '@/components/team/InviteRows.vue'
-import { ALL_RESOURCES, useBulkInvite } from '@/composables/useBulkInvite'
+import { useBulkInvite } from '@/composables/useBulkInvite'
 import { useRegions } from '@/composables/useRegions'
 import { teamParams } from '@/composables/useTeamScope'
+import { getResourceOptions } from '@/lib/resourceScope'
 import type { TeamRegistry } from '@/types/api'
 
 const props = defineProps<{ open: boolean }>()
@@ -47,23 +48,9 @@ const regionLabel = (
 		: region.display_name
 }
 
-const resourceOptions = computed(() => {
-	const servers = registryCall.data?.servers ?? []
-	const sites = registryCall.data?.sites ?? []
-	return [
-		{ label: 'All resources', value: ALL_RESOURCES },
-		...servers.map((a) => ({
-			label: a.title || a.resource_id,
-			value: `Server::${a.name}`,
-			description: regionLabel(a.region),
-		})),
-		...sites.map((s) => ({
-			label: s.subdomain || s.name,
-			value: `Site::${s.name}`,
-			description: regionLabel(s.region),
-		})),
-	]
-})
+const resourceOptions = computed(() =>
+	getResourceOptions(registryCall.data, regionLabel),
+)
 
 // Read the servers and sites on every open, so a resource created since is offered.
 watch(open, (isOpen) => {

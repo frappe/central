@@ -700,7 +700,7 @@ def arm_emandate(team):
 	from central.billing.payments import collection_mode, emandate
 
 	open_inv = frappe.db.get_value(
-		"Invoice", {"team": team, "status": "Open"}, ["name", "expected_collection"], as_dict=True
+		"Invoice", {"team": team, "status": "Outstanding"}, ["name", "expected_collection"], as_dict=True
 	)
 	if not open_inv:
 		return
@@ -984,10 +984,13 @@ def draw_wallet_credit(invoice) -> float:
 	This is the same waterfall production uses (credits first, then card); collect=False
 	skips the gateway leg because the demo gateways are offline, so the caller simulates the
 	card capture for whatever is returned. Returns the remainder still due after credits."""
+	from central.billing.doctype.invoice.invoice import is_unissued
 	from central.billing.revenue import invoicing
 
-	if frappe.db.get_value("Invoice", invoice, "status") != "Draft":
-		frappe.db.set_value("Invoice", invoice, "status", "Draft", update_modified=False)
+	if not is_unissued(frappe.db.get_value("Invoice", invoice, ["status", "due_date"], as_dict=True)):
+		frappe.db.set_value(
+			"Invoice", invoice, {"status": "Outstanding", "due_date": None}, update_modified=False
+		)
 	invoicing.open_and_collect(invoice, collect=False)
 	return frappe.utils.flt(frappe.db.get_value("Invoice", invoice, "expected_collection"))
 

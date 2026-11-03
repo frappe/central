@@ -80,12 +80,12 @@
    "fieldtype": "Column Break"
   },
   {
-   "default": "Draft",
+   "default": "Outstanding",
    "fieldname": "status",
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Status",
-   "options": "Draft\nOpen\nPaid\nOverdue\nWaived\nCancelled"
+   "options": "Outstanding\nPaid\nOverdue\nWaived\nCancelled"
   },
   {
    "fieldname": "period_start",

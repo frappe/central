@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 from urllib.parse import quote, urlparse
 
 import frappe
@@ -9,6 +10,7 @@ from frappe import _
 
 from central.api.jwks import jwks_document
 from central.api.pilot import get_telemetry_base_url, region_id_of
+from central.billing.catalog.trials import is_trial_plan
 from central.infrastructure.doctype.pilot_credential.pilot_credential import PilotCredential
 from central.infrastructure.doctype.user_mail_account.user_mail_account import UserMailAccount
 from central.integrations.object_storage import ObjectStorageClient, ObjectStorageNotFound
@@ -27,6 +29,8 @@ SITE_LOGIN_TIMEOUT_SECONDS = 120
 # A ping to a booting machine hangs until it times out, and the signup poll waits on it. A short
 # timeout lets the next poll retry instead.
 SITE_PING_TIMEOUT_SECONDS = (0.5, 1.5)
+# A server that a resize just started needs some minutes before its pilot answers.
+PILOT_WAKE_DELAYS_SECONDS = (5, 10, 20, 40, 60, 60, 60)
 
 
 def get_bootstrap_metadata(action) -> dict[str, str]:
@@ -83,24 +87,31 @@ def get_bootstrap_metadata(action) -> dict[str, str]:
 
 
 def get_bundled_bucket(action) -> dict | None:
+	"""The [s3] settings of a creation's backup bucket. None on a trial plan: the server gets its
+	bucket when it moves to a paid plan."""
+	if is_trial_plan(action.get_configuration().plan):
+		return None
+
+	return create_bundled_bucket(action.team, action.region, action.server_id)
+
+
+def create_bundled_bucket(team: str, region: str, server: str) -> dict | None:
 	"""Create the server's backup bucket in Cargo, capped at the region's bundle size, and
 	return its [s3] settings. None when the region bundles no bucket."""
-	size_gib = frappe.db.get_value("Region", action.region, "max_storage_bundle_size")
+	size_gib = frappe.db.get_value("Region", region, "max_storage_bundle_size")
 	if not size_gib:
 		return None
 
-	endpoint_url = get_storage_endpoint_url(action.region)
-	client = ObjectStorageClient.from_region(action.region)
-	name = get_bucket_name(action.team, action.region, action.server_id)
-	# Only this creation uses the name, and a retry runs before any machine exists, so a
-	# bucket left by an earlier attempt is empty and safe to replace.
+	endpoint_url = get_storage_endpoint_url(region)
+	client = ObjectStorageClient.from_region(region)
+	name = get_bucket_name(team, region, server)
+	# Cargo returns credentials only on creation, so a bucket left by an earlier attempt is replaced.
+	# Garage refuses to delete a bucket that holds objects, so a bucket with backups stays.
 	try:
 		client.delete_bucket(name)
 	except ObjectStorageNotFound:
 		pass
-	receipt = client.create_bucket(
-		name, tags={"team": action.team, "server": action.server_id, "bundled": "1"}
-	)
+	receipt = client.create_bucket(name, tags={"team": team, "server": server, "bundled": "1"})
 	credentials = receipt["credentials"]
 	# Cargo enforces the cap. Zero leaves the object count unlimited.
 	client.set_quota(name, size_gib, 0)
@@ -111,9 +122,22 @@ def get_bundled_bucket(action) -> dict | None:
 		"bucket": name,
 		# Pilot signs path-style requests for any provider but AWS, which Garage needs.
 		"provider": "garage",
-		"region": action.region,
+		"region": region,
 		"endpoint_url": endpoint_url,
 	}
+
+
+def attach_bundled_bucket(server: str) -> None:
+	"""Give a server that moved off its trial plan its backup bucket, through Pilot's settings."""
+	document = frappe.get_doc("Virtual Machine", server)
+	try:
+		bucket = create_bundled_bucket(document.team, document.region, document.name)
+		if bucket:
+			write_pilot_when_awake(server, "PATCH", "/api/v1/settings", {"s3": bucket})
+	# This job is the worker boundary, so the failure stays on the server for the operator.
+	except Exception:
+		document.log_error(title=f"Backup bucket attach failed: {server}")
+		document.add_comment("Info", _("Central could not attach the backup bucket to this server."))
 
 
 def delete_bundled_bucket(action: str) -> None:
@@ -317,6 +341,30 @@ def write_pilot(server: str, method: str, path: str, payload: dict | None = None
 	"""Run a POST, PUT, or PATCH on a path of a server's pilot Admin API."""
 	base_url = _expected_gateway_url(frappe.get_doc("Virtual Machine", server))
 	return _request_pilot(method, server, base_url, path, payload=payload)
+
+
+def write_pilot_when_awake(
+	server: str, method: str, path: str, payload: dict | None = None
+) -> dict | list | str:
+	"""Run `write_pilot`, and wait out a pilot that is still starting. Use it only for a write that
+	is safe to repeat."""
+	for delay in PILOT_WAKE_DELAYS_SECONDS:
+		try:
+			return write_pilot(server, method, path, payload)
+		except (requests.ConnectionError, requests.Timeout):
+			pass
+		except requests.HTTPError as error:
+			if not is_pilot_starting(error.response):
+				raise
+		time.sleep(delay)
+
+	return write_pilot(server, method, path, payload)
+
+
+def is_pilot_starting(response: requests.Response | None) -> bool:
+	"""Whether a refusal comes from a pilot that has not started: the proxy has no backend yet, or
+	Pilot does not accept Central authentication yet."""
+	return response is not None and (response.status_code == 401 or response.status_code >= 500)
 
 
 def _request_pilot(

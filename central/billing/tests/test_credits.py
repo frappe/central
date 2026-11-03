@@ -325,11 +325,14 @@ class TestCreditExpiry(CreditTestBase):
 			frappe.utils.getdate(frappe.utils.add_days(frappe.utils.nowdate(), 30)),
 		)
 
-	def test_zero_validity_grants_credit_that_never_expires(self):
+	def test_zero_validity_still_expires_the_grant(self):
 		with billing_settings(promotional_credit_validity_days=0):
 			entry = credits.grant_promotional_credits(TEAM, 100, "INR")["ledger_entry"]
 
-		self.assertIsNone(frappe.db.get_value("Credit Ledger Entry", entry, "expires_on"))
+		self.assertEqual(
+			frappe.db.get_value("Credit Ledger Entry", entry, "expires_on"),
+			frappe.utils.getdate(frappe.utils.add_days(frappe.utils.nowdate(), 60)),
+		)
 
 	def test_expiry_writes_off_only_what_is_left(self):
 		self._grant(100, yesterday())

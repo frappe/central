@@ -93,7 +93,7 @@ const filters: ListViewFilter[] = [
 	{
 		key: 'status',
 		label: 'Status',
-		options: ['Open', 'Paid', 'Overdue'].map((value) => ({
+		options: ['Outstanding', 'Paid', 'Overdue'].map((value) => ({
 			label: value,
 			value,
 		})),

@@ -241,6 +241,7 @@ def save_test_card(team: str, token: str = "tok_visa") -> dict:
 	return {"payment_method": name, "gateway": gateway, "gateway_method_id": pm.id}
 
 
+# nosemgrep: guest-whitelisted-method -- _enter_test_mode refuses every site without allow_tests.
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 def make_invoice(team: str, total: float = 1180, currency: str | None = None, link_card: int = 0) -> dict:
 	"""Create a Draft Billable invoice (subtotal + tax = total) the waterfall can
@@ -282,7 +283,7 @@ def make_invoice(team: str, total: float = 1180, currency: str | None = None, li
 				"doctype": "Invoice",
 				"team": team,
 				"invoice_type": "Billable",
-				"status": "Draft",
+				"status": "Outstanding",
 				"subscription": subscription,
 				"period_start": "2026-06-01",
 				"period_end": "2026-06-30",
@@ -554,7 +555,7 @@ def _seed_invoices(team: str, currency: str) -> None:
 	tax_type = "GST" if currency == "INR" else "VAT"
 	for status, period, paid in (
 		("Paid", ("2026-05-01", "2026-05-31"), True),
-		("Open", ("2026-06-01", "2026-06-30"), False),
+		("Outstanding", ("2026-06-01", "2026-06-30"), False),
 	):
 		frappe.get_doc(
 			{

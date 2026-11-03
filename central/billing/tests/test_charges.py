@@ -123,7 +123,8 @@ class ChargeTestBase(IntegrationTestCase):
 					"doctype": "Invoice",
 					"team": TEAM,
 					"subscription": self.sub,
-					"status": "Open",
+					"status": "Outstanding",
+					"due_date": "2026-12-31",
 					"period_start": f"2026-{month:02d}-01",
 					"period_end": f"2026-{month:02d}-{last_day}",
 					"currency": "INR",
@@ -174,7 +175,7 @@ class TestChargeInvoice(ChargeTestBase):
 		self.assertEqual(attempt.status, "Captured")
 		self.assertEqual(attempt.gateway_transaction_id, "pi_1")
 		# Crucially: invoice is NOT Paid on the charge response.
-		self.assertEqual(frappe.db.get_value("Invoice", inv, "status"), "Open")
+		self.assertEqual(frappe.db.get_value("Invoice", inv, "status"), "Outstanding")
 
 	def test_declined_charge_records_failed_attempt(self):
 		inv = self._open_invoice(1000)
@@ -188,14 +189,14 @@ class TestChargeInvoice(ChargeTestBase):
 			"Billing Event", {"subject": attempt.name, "to_state": "Failed"}, "reason"
 		)
 		self.assertEqual(event_reason, "card_declined")
-		self.assertEqual(frappe.db.get_value("Invoice", inv, "status"), "Open")
+		self.assertEqual(frappe.db.get_value("Invoice", inv, "status"), "Outstanding")
 
 	def test_a_debit_held_at_the_gateway_blocks_a_second_charge(self):
-		from central.billing.gateways.razorpay_adapter import _recurring_result
+		from central.billing.gateways.razorpay_recurring import recurring_result
 
 		inv = self._open_invoice(1000)
 		with stub_adapter() as adapter:
-			adapter.charge.return_value = _recurring_result({"id": "pay_async", "status": "created"})
+			adapter.charge.return_value = recurring_result({"id": "pay_async", "status": "created"})
 			first = charges.pay_invoice(inv)
 			second = charges.pay_invoice(inv)
 
@@ -279,7 +280,7 @@ class TestChargeInvoice(ChargeTestBase):
 		frappe.db.set_value("Webhook Event", event, "raw_payload", json.dumps(payload))
 
 		self.assertEqual(charges.apply_webhook(event)["reason"], "no_matching_attempt")
-		self.assertEqual(frappe.db.get_value("Invoice", inv, "status"), "Open")
+		self.assertEqual(frappe.db.get_value("Invoice", inv, "status"), "Outstanding")
 
 	def test_a_payment_on_another_gateway_settles_nothing(self):
 		"""A transaction id stored for one gateway does not match a payment on another."""
@@ -293,7 +294,7 @@ class TestChargeInvoice(ChargeTestBase):
 		event = self._stripe_event("evt_other_gateway", "payment_intent.succeeded", "pi_other_gateway")
 
 		self.assertEqual(charges.apply_webhook(event)["reason"], "no_matching_attempt")
-		self.assertEqual(frappe.db.get_value("Invoice", inv, "status"), "Open")
+		self.assertEqual(frappe.db.get_value("Invoice", inv, "status"), "Outstanding")
 
 	def test_a_short_payment_settles_nothing_and_goes_to_the_wallet(self):
 		from central.billing.revenue import credits
@@ -303,7 +304,7 @@ class TestChargeInvoice(ChargeTestBase):
 
 		charges.apply_webhook(self._hosted_checkout_event("evt_short", attempt, 100))
 
-		self.assertEqual(frappe.db.get_value("Invoice", inv, "status"), "Open")
+		self.assertEqual(frappe.db.get_value("Invoice", inv, "status"), "Outstanding")
 		# The money was captured, so it must reach a ledger: 1.00 in major units.
 		self.assertEqual(frappe.utils.flt(credits.get_balance(TEAM)["balance"]), 1)
 		# The short capture no longer holds the invoice, so it can still be paid.
@@ -360,7 +361,7 @@ class TestChargeInvoice(ChargeTestBase):
 			charges.pay_invoice(inv)
 		event = self._stripe_event("evt_f", "payment_intent.payment_failed", "pi_fail")
 		charges.apply_webhook(event)
-		self.assertEqual(frappe.db.get_value("Invoice", inv, "status"), "Open")
+		self.assertEqual(frappe.db.get_value("Invoice", inv, "status"), "Outstanding")
 
 	def test_authorised_webhook_advances_attempt_without_paying(self):
 		inv = self._open_invoice(1000)
@@ -385,7 +386,7 @@ class TestChargeInvoice(ChargeTestBase):
 		self.assertEqual(out["result"], "Authorised")
 		self.assertEqual(frappe.db.get_value("Payment Attempt", attempt_name, "status"), "Authorised")
 		# Funds only held — invoice not settled.
-		self.assertEqual(frappe.db.get_value("Invoice", inv, "status"), "Open")
+		self.assertEqual(frappe.db.get_value("Invoice", inv, "status"), "Outstanding")
 
 	def test_authorised_webhook_never_walks_back_a_captured_attempt(self):
 		inv = self._open_invoice(1000)
@@ -542,7 +543,7 @@ class TestFullStripeCycle(ChargeTestBase):
 			stripe.PaymentIntent, "create", return_value={"id": "pi_cycle", "status": "succeeded"}
 		):
 			charges.pay_invoice(inv)
-		self.assertEqual(frappe.db.get_value("Invoice", inv, "status"), "Open")  # not paid yet
+		self.assertEqual(frappe.db.get_value("Invoice", inv, "status"), "Outstanding")  # not paid yet
 
 		# Deliver the webhook through the signature-first receiver, then handle it.
 		body = json.dumps(

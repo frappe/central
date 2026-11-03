@@ -147,7 +147,7 @@ class Funding:
 
 	def __init__(self, teams: list[str], servers: list[str]):
 		self.internal = set(
-			frappe.get_all("Tax Profile", filters={"team": ["in", teams], "is_internal": 1}, pluck="team")
+			frappe.get_all("Billing Profile", filters={"team": ["in", teams], "is_internal": 1}, pluck="team")
 		)
 		self.paying = _paying_teams(teams)
 		self.trial_servers = _trial_servers(servers)

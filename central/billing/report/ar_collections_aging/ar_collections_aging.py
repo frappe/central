@@ -12,6 +12,7 @@ import frappe
 from frappe import _
 from frappe.utils import date_diff, flt, getdate, nowdate
 
+from central.billing.doctype.invoice.invoice import owed_filters
 from central.billing.report._currency import split_currency_columns
 
 BUCKETS = [
@@ -81,11 +82,11 @@ def _bucket_for(days_overdue: int) -> str:
 
 
 def get_data(filters: dict, as_of):
-	conditions = {"status": ["in", ["Open", "Overdue"]], "expected_collection": [">", 0]}
+	conditions = [*owed_filters(), ["expected_collection", ">", 0]]
 	if filters.get("team"):
-		conditions["team"] = filters["team"]
+		conditions.append(["team", "=", filters["team"]])
 	if filters.get("currency"):
-		conditions["currency"] = filters["currency"]
+		conditions.append(["currency", "=", filters["currency"]])
 
 	invoices = frappe.get_all(
 		"Invoice",

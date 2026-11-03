@@ -204,7 +204,7 @@ class TestNoStuckAttempts(InvariantTestBase):
 			{
 				"doctype": "Invoice",
 				"team": TEAM,
-				"status": "Open",
+				"status": "Outstanding",
 				"currency": "INR",
 				"period_start": "2098-04-01",
 				"period_end": "2098-04-30",

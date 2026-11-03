@@ -2,6 +2,7 @@ import json
 from unittest.mock import Mock, patch
 
 import frappe
+import requests
 from frappe.tests import IntegrationTestCase
 
 from central.integrations.atlas import MAXIMUM_METADATA_BYTES
@@ -186,7 +187,8 @@ class TestPilotBootstrapMetadata(IntegrationTestCase):
 			metadata = _create_payload(request)["metadata"]
 
 		cargo.create_bucket.assert_called_once_with(
-			"7-bundle-test-server-action-1", tags={"team": request.team, "server": request.server_id}
+			"7-bundle-test-server-action-1",
+			tags={"team": request.team, "server": request.server_id, "bundled": "1"},
 		)
 		cargo.set_quota.assert_called_once_with("7-bundle-test-server-action-1", 25, 0)
 		self.assertEqual(
@@ -213,3 +215,78 @@ class TestPilotBootstrapMetadata(IntegrationTestCase):
 
 		self.assertNotIn("pilot-config", metadata)
 		cargo.from_region.assert_not_called()
+
+	def test_a_trial_plan_creation_boots_without_a_bucket(self):
+		region = ensure_region("bundle-test")
+		frappe.db.set_value("Region", region, "max_storage_bundle_size", 25)
+		request = pilot_request()
+		request.region = region
+		with (
+			patch(f"{PILOT}.get_telemetry_base_url", return_value=None),
+			patch(f"{PILOT}.is_trial_plan", return_value=True),
+			patch(f"{PILOT}.ObjectStorageClient") as cargo,
+		):
+			metadata = _create_payload(request)["metadata"]
+
+		self.assertNotIn("pilot-config", metadata)
+		cargo.from_region.assert_not_called()
+
+	def test_a_server_off_its_trial_plan_gets_its_bucket_through_pilot(self):
+		from central.integrations.pilot import attach_bundled_bucket
+
+		server = Mock(team="TEAM-00001", region="in-mumbai")
+		server.name = "server-1"
+		bucket = {"bucket": "7-in-mumbai-server-1"}
+		with (
+			patch(f"{PILOT}.frappe.get_doc", return_value=server),
+			patch(f"{PILOT}.create_bundled_bucket", return_value=bucket) as create,
+			patch(f"{PILOT}.write_pilot_when_awake") as write,
+		):
+			attach_bundled_bucket("server-1")
+
+		create.assert_called_once_with("TEAM-00001", "in-mumbai", "server-1")
+		write.assert_called_once_with("server-1", "PATCH", "/api/v1/settings", {"s3": bucket})
+		server.add_comment.assert_not_called()
+
+	def test_a_failed_bucket_attach_is_kept_on_the_server(self):
+		from central.integrations.pilot import attach_bundled_bucket
+
+		server = Mock(team="TEAM-00001", region="in-mumbai")
+		with (
+			patch(f"{PILOT}.frappe.get_doc", return_value=server),
+			patch(f"{PILOT}.create_bundled_bucket", return_value={"bucket": "b"}),
+			patch(f"{PILOT}.write_pilot_when_awake", side_effect=RuntimeError("refused")),
+		):
+			attach_bundled_bucket("server-1")
+
+		server.log_error.assert_called_once()
+		server.add_comment.assert_called_once()
+
+	def test_a_write_waits_for_a_pilot_that_is_still_starting(self):
+		from central.integrations.pilot import write_pilot_when_awake
+
+		starting = requests.HTTPError(response=Mock(status_code=502))
+		with (
+			patch(
+				f"{PILOT}.write_pilot", side_effect=[requests.ConnectionError(), starting, {"ok": 1}]
+			) as write,
+			patch(f"{PILOT}.time.sleep") as sleep,
+		):
+			result = write_pilot_when_awake("server-1", "PATCH", "/api/v1/settings", {"s3": {}})
+
+		self.assertEqual(result, {"ok": 1})
+		self.assertEqual(write.call_count, 3)
+		self.assertEqual(sleep.call_count, 2)
+
+	def test_a_write_that_pilot_refuses_is_not_repeated(self):
+		from central.integrations.pilot import write_pilot_when_awake
+
+		refused = requests.HTTPError(response=Mock(status_code=422))
+		with (
+			patch(f"{PILOT}.write_pilot", side_effect=refused) as write,
+			patch(f"{PILOT}.time.sleep"),
+			self.assertRaises(requests.HTTPError),
+		):
+			write_pilot_when_awake("server-1", "PATCH", "/api/v1/settings", {"s3": {}})
+
+		write.assert_called_once()

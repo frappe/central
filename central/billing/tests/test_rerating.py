@@ -18,7 +18,7 @@ class TestRerating(BillingTestCase):
 	def setUp(self):
 		self.team = ensure_team("team-rerating")
 
-	def _invoice(self, status="Open", total=100.0, resource_type=RESOURCE_TYPE, team=None):
+	def _invoice(self, status="Outstanding", total=100.0, resource_type=RESOURCE_TYPE, team=None):
 		# One live invoice per team per period is a DB-level invariant, so a test that
 		# needs two invoices in one period needs two teams.
 		return frappe.get_doc(
@@ -65,7 +65,7 @@ class TestRerating(BillingTestCase):
 		self.assertEqual(row["old_total"], 100.0)
 		self.assertEqual(row["new_total"], 60.0)
 		self.assertEqual(row["delta"], -40.0)
-		self.assertEqual(frappe.db.get_value("Invoice", invoice.name, "status"), "Open")
+		self.assertEqual(frappe.db.get_value("Invoice", invoice.name, "status"), "Outstanding")
 
 	def test_apply_cancels_each_affected_invoice_and_records_the_run(self):
 		invoice = self._invoice()

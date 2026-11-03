@@ -7,8 +7,10 @@ from frappe.query_builder.functions import Count
 from central.billing import settings
 from central.billing.catalog.entitlements import cap_for, get_ladder
 from central.billing.catalog.subscriptions import active_segments
+from central.billing.doctype.invoice.invoice import unissued_filters
 from central.billing.india_gst import INDIA
 from central.billing.platform.invariants import Violation
+from central.billing.revenue import credits
 
 STALLED_HOURS = 3
 
@@ -26,7 +28,7 @@ ACCOUNTING_FIELDS = (
 
 
 def _internal_teams() -> set[str]:
-	return set(frappe.get_all("Tax Profile", filters={"is_internal": 1}, pluck="team"))
+	return set(frappe.get_all("Billing Profile", filters={"is_internal": 1}, pluck="team"))
 
 
 def _profiles() -> dict:
@@ -154,7 +156,7 @@ def check_accounting_setup() -> list[Violation]:
 			check="B4",
 			subject_doctype="Billing Settings",
 			subject="Billing Settings",
-			detail=f"Every invoice will be held until these are set: {', '.join(missing)}.",
+			detail=f"Invoices cannot reach the accounting system until these are set: {', '.join(missing)}.",
 		)
 	]
 
@@ -267,6 +269,25 @@ def check_subscriptions_are_priced() -> list[Violation]:
 			)
 		)
 	return found
+
+
+def check_subscriptions_name_a_known_region() -> list[Violation]:
+	"""Every running subscription with a cluster names a Region, or its metered usage cannot be priced."""
+	regions = set(frappe.get_all("Region", pluck="name"))
+	subscriptions = frappe.get_all(
+		"Subscription", filters={"enabled": 1, "cluster": ["is", "set"]}, fields=["name", "team", "cluster"]
+	)
+	return [
+		Violation(
+			check="S4",
+			team=subscription.team,
+			subject_doctype="Subscription",
+			subject=subscription.name,
+			detail=f"Cluster {subscription.cluster} is not a Region, so its metered usage cannot be priced.",
+		)
+		for subscription in subscriptions
+		if subscription.cluster not in regions
+	]
 
 
 def check_running_servers_are_billed() -> list[Violation]:
@@ -387,8 +408,6 @@ def check_billed_teams_can_pay() -> list[Violation]:
 
 def check_promotional_credit_expires() -> list[Violation]:
 	"""Promotional credit carries an expiry date when the policy says it expires."""
-	if not settings.promotional_credit_validity_days():
-		return []
 	internal = _internal_teams()
 	return [
 		Violation(
@@ -400,16 +419,7 @@ def check_promotional_credit_expires() -> list[Violation]:
 			actual=frappe.utils.flt(e.amount),
 			detail="Promotional credit with no expiry date, so it never expires.",
 		)
-		for e in frappe.get_all(
-			"Credit Ledger Entry",
-			filters={
-				"entry_type": "Credit",
-				"paid_in": 0,
-				"reference_type": "Promotion",
-				"expires_on": ["is", "not set"],
-			},
-			fields=["name", "team", "currency", "amount"],
-		)
+		for e in credits.promotional_credit_without_expiry()
 		if e.team not in internal
 	]
 
@@ -492,6 +502,59 @@ def _unplaced_detail(names: list[str]) -> str:
 	return f"{len(names)} server(s) run on no known Metal Server, so machine profitability leaves them out. For example: {examples}."
 
 
+def check_teams_were_invoiced() -> list[Violation]:
+	"""Every team the run could not invoice is named, with the error that stopped it."""
+	failed = frappe.get_all(
+		"Billing Run Team", filters={"outcome": "Failed"}, fields=["name", "team", "period_end", "reason"]
+	)
+	return [
+		Violation(
+			check="B6",
+			team=row.team,
+			subject_doctype="Billing Run Team",
+			subject=row.name,
+			detail=f"No invoice for the month ending {row.period_end}: {row.reason}",
+		)
+		for row in failed
+	]
+
+
+def check_billed_teams_have_a_tax_profile() -> list[Violation]:
+	"""A team with no Tax Profile is invoiced with no tax, so it is named before its invoice goes out."""
+	billed = set(frappe.get_all("Subscription", filters={"enabled": 1}, pluck="team", distinct=True))
+	missing = billed - set(frappe.get_all("Tax Profile", pluck="team")) - _internal_teams()
+	return [
+		Violation(
+			check="B8",
+			team=team,
+			subject_doctype="Team",
+			subject=team,
+			detail="This team has no Tax Profile, so its invoices carry no tax.",
+		)
+		for team in sorted(missing)
+	]
+
+
+def get_manual_setup_gaps() -> list[Violation]:
+	"""The Billing Settings values only an operator can fill in. Billing never guesses them."""
+	return check_operator_alerts_have_a_destination() + check_accounting_setup()
+
+
+def check_operator_alerts_have_a_destination() -> list[Violation]:
+	"""Operator alerts need a Raven channel or an email address, set by hand in Billing Settings."""
+	values = frappe.get_cached_doc("Billing Settings")
+	if (values.raven_site_url and values.raven_channel_id) or values.operator_alert_emails:
+		return []
+	return [
+		Violation(
+			check="B7",
+			subject_doctype="Billing Settings",
+			subject="Billing Settings",
+			detail="Operator alerts reach nobody. Set the Raven details or Alert Email Addresses.",
+		)
+	]
+
+
 def check_billing_run_is_moving() -> list[Violation]:
 	"""The closed month's run has started, and no draft it owes waits hours to be collected."""
 	from central.billing.revenue.invoicing.run import billing_period
@@ -525,12 +588,12 @@ def check_billing_run_is_moving() -> list[Violation]:
 	# The hourly sweep collects a draft within the hour; three hours means the run stopped.
 	waiting = frappe.db.count(
 		"Invoice",
-		{
-			"status": "Draft",
-			"period_end": ["<=", period_end],
-			"hold_reason": ["is", "not set"],
-			"creation": ["<", stalled_since],
-		},
+		[
+			*unissued_filters(),
+			["period_end", "<=", period_end],
+			["hold_reason", "is", "not set"],
+			["creation", "<", stalled_since],
+		],
 	)
 	if not waiting:
 		return []
@@ -554,9 +617,13 @@ CHECKS = {
 	"T1": ("Spend fits the trust tier", check_spend_within_tier),
 	"T2": ("Servers fit the trust tier", check_servers_within_tier),
 	"T3": ("Tier changes are recorded", check_tier_changes_are_recorded),
+	"B6": ("The run invoiced every team it could", check_teams_were_invoiced),
+	"B7": ("Operator alerts have a destination", check_operator_alerts_have_a_destination),
+	"B8": ("Billed teams have a Tax Profile", check_billed_teams_have_a_tax_profile),
 	"S1": ("Running subscriptions are priced", check_subscriptions_are_priced),
 	"S2": ("Running servers are billed", check_running_servers_are_billed),
 	"S3": ("Terminated servers stop billing", check_terminated_servers_stop_billing),
+	"S4": ("Subscriptions name a known region", check_subscriptions_name_a_known_region),
 	"M1": ("Storage usage is read daily", check_storage_usage_is_recorded),
 	"W1": ("Billed teams can pay", check_billed_teams_can_pay),
 	"W2": ("Promotional credit expires", check_promotional_credit_expires),

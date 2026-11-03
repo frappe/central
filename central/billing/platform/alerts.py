@@ -105,11 +105,15 @@ def held_invoices() -> list[dict]:
 	accounting records that never synced, or a GSTIN never checked.
 
 	This is money we are not collecting on resources that are still running, and
-	nothing else surfaces it: the invoice stays Draft, so dunning never sees it.
+	nothing else surfaces it: the invoice has no due date, so dunning never sees it.
 	"""
 	from central.billing.revenue.invoicing.lifecycle import held_drafts
 
-	cutoff = frappe.utils.add_days(frappe.utils.nowdate(), -settings.billing_details_grace_days())
+	# A customer may take time over billing details. A failed sync or GSTIN check is ours to fix.
+	details_cutoff = frappe.utils.getdate(
+		frappe.utils.add_days(frappe.utils.nowdate(), -settings.billing_details_grace_days())
+	)
+	yesterday = frappe.utils.add_days(frappe.utils.nowdate(), -1)
 	return [
 		{
 			"alert": "held_invoice",
@@ -118,7 +122,8 @@ def held_invoices() -> list[dict]:
 			"team": i.team,
 			"detail": f"{i.currency} {i.total} still unissued ({i.hold_reason or 'not opened'}), period closed {i.period_end}",
 		}
-		for i in held_drafts(held_before=cutoff, limit=100)
+		for i in held_drafts(held_before=yesterday, limit=100)
+		if i.hold_reason != "Billing Details" or frappe.utils.getdate(i.period_end) <= details_cutoff
 	]
 
 
@@ -209,7 +214,7 @@ def unsettled_captures() -> list[dict]:
 		.select(attempt.name, attempt.team, attempt.currency, attempt.amount, attempt.invoice)
 		.where(
 			(attempt.status == "Captured")
-			& invoice.status.isin(("Open", "Overdue"))
+			& invoice.status.isin(("Outstanding", "Overdue"))
 			& (attempt.initiated_at < cutoff)
 		)
 		.limit(100)
@@ -237,7 +242,10 @@ def refused_charges() -> list[dict]:
 		.join(invoice)
 		.on(invoice.name == attempt.invoice)
 		.select(attempt.name, attempt.team, attempt.invoice, attempt.failure_reason)
-		.where((attempt.failure_code == decline.REQUEST_REFUSED) & invoice.status.isin(("Open", "Overdue")))
+		.where(
+			(attempt.failure_code == decline.REQUEST_REFUSED)
+			& invoice.status.isin(("Outstanding", "Overdue"))
+		)
 		.limit(100)
 		.run(as_dict=True)
 	)

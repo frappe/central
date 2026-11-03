@@ -17,10 +17,12 @@ import SpendCard from '@/components/billing/SpendCard.vue'
 import TiersPanel from '@/components/billing/TiersPanel.vue'
 import TrialBillingBanner from '@/components/billing/TrialBillingBanner.vue'
 import WalletHistoryPanel from '@/components/billing/WalletHistoryPanel.vue'
+import ResizeServerDialog from '@/components/servers/ResizeServerDialog.vue'
 import TopupDialog from '@/components/TopupDialog.vue'
 import { useBillingOverview } from '@/composables/useBillingOverview'
 import { useBillingReports } from '@/composables/useBillingReports'
 import { useBillingSetup } from '@/composables/useBillingSetup'
+import { useServerMapData } from '@/composables/useServerMapData'
 
 const { complete, setupDialogOpen, requireSetup } = useBillingSetup()
 const { currency, reloadMoney } = useBillingOverview()
@@ -63,6 +65,20 @@ const showTiers = trayModel('tiers')
 
 const showTopup = ref(false)
 
+// The trial's Upgrade dialog opens here, so the customer stays on Billing.
+const { servers } = useServerMapData()
+const upgradeServerName = ref<string | null>(null)
+const upgradeServer = computed(
+	() =>
+		servers.value.find((row) => row.name === upgradeServerName.value) ?? null,
+)
+const showUpgrade = computed({
+	get: () => !!upgradeServer.value,
+	set: (open: boolean) => {
+		if (!open) upgradeServerName.value = null
+	},
+})
+
 const onAddCredits = () => {
 	if (requireSetup()) showTopup.value = true
 }
@@ -73,6 +89,10 @@ const onAddCredits = () => {
 		<div
 			class="grid min-w-0 flex-1 auto-rows-max grid-cols-[min(64rem,100%)] content-start justify-center gap-3 overflow-y-auto px-3 pb-24 pt-3 [container-type:inline-size] md:gap-4 md:px-6 md:pt-7"
 		>
+			<OutstandingAlert
+				:statement="reports.statement.data ?? null"
+				:attempts="reports.attempts.data ?? null"
+			/>
 			<Alert
 				v-if="!complete"
 				theme="amber"
@@ -80,12 +100,8 @@ const onAddCredits = () => {
 				description="Currency, legal name, and address are needed to add credit, save a payment method, and provision servers."
 				:primary-action="{ label: 'Add billing details', onClick: () => { setupDialogOpen = true } }"
 			/>
-			<OutstandingAlert
-				:statement="reports.statement.data ?? null"
-				:attempts="reports.attempts.data ?? null"
-			/>
 			<CollectionActionBanner />
-			<TrialBillingBanner />
+			<TrialBillingBanner @upgrade="upgradeServerName = $event" />
 			<GstStatusBanner @edit="setupDialogOpen = true" />
 
 			<div class="grid gap-3 md:gap-4 lg:grid-cols-3">
@@ -125,4 +141,9 @@ const onAddCredits = () => {
 
 	<EditBillingProfileDialog v-model="setupDialogOpen" />
 	<TopupDialog v-model="showTopup" :currency="currency" @done="reloadMoney" />
+	<ResizeServerDialog
+		v-model:open="showUpgrade"
+		:server="upgradeServer"
+		@resized="reloadMoney"
+	/>
 </template>

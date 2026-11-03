@@ -274,10 +274,7 @@ class TestTrialPlanMenu(IntegrationTestCase):
 
 	def test_internal_team_sees_plans_despite_zero_headroom(self):
 		clear_team_tier(TEAM)
-		frappe.get_doc(
-			{"doctype": "Tax Profile", "team": TEAM, "is_internal": 1, "internal_reason": "Our own team"}
-		).insert(ignore_permissions=True)
-		self.addCleanup(frappe.db.delete, "Tax Profile", {"team": TEAM})
+		frappe.db.set_value("Billing Profile", TEAM, {"is_internal": 1, "internal_reason": "Our own team"})
 
 		out = get_eligible_plans(cluster=CLUSTER, team=TEAM)
 

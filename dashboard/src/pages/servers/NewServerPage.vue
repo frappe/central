@@ -243,7 +243,10 @@ watch(
 									No apps are available in this region yet. Select another image
 									or region.
 								</p>
-								<AppSelector v-else v-model="imageId" :apps="apps" />
+								<template v-else>
+									<h3 class="pt-2 text-sm-medium text-ink-gray-6">App</h3>
+									<AppSelector v-model="imageId" :apps="apps" />
+								</template>
 							</template>
 							<p
 								v-else-if="imageOptions.length < 2"

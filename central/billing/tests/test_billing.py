@@ -81,7 +81,7 @@ class TestDraftGeneration(BillingTestBase):
 		name = invoicing.generate_draft_invoice(self.sub, "2026-06-01", "2026-06-30")
 		inv = frappe.get_doc("Invoice", name)
 
-		self.assertEqual(inv.status, "Draft")
+		self.assertEqual(inv.status, "Outstanding")
 		days = sorted(li.days for li in inv.items)
 		self.assertEqual(days, [9, 9, 12])  # Jun1-9, Jun22-30 (9 each), Jun10-21 (12)
 		amounts = sorted(li.amount for li in inv.items)
@@ -290,7 +290,7 @@ class TestOpenAndCollect(BillingTestBase):
 		result = invoicing.open_and_collect(name)
 		inv = frappe.get_doc("Invoice", name)
 		self.assertTrue(result["claimed"])
-		self.assertEqual(inv.status, "Open")
+		self.assertEqual(inv.status, "Outstanding")
 		self.assertEqual(inv.credit_applied, 400.0)
 		self.assertEqual(inv.expected_collection, 600.0)
 		self.assertTrue(inv.due_date)
@@ -338,7 +338,7 @@ class TestOpenAndCollect(BillingTestBase):
 
 		frappe.db.rollback()
 		inv = frappe.get_doc("Invoice", name)
-		self.assertEqual(inv.status, "Open")
+		self.assertEqual(inv.status, "Outstanding")
 		self.assertEqual(inv.credit_applied, 200.0)  # credit applied exactly once
 		# One debit entry for the invoice — no duplicate debit.
 		debits = frappe.get_all(
@@ -374,7 +374,9 @@ class TestCreditAddedAfterIssue(BillingTestBase):
 		lifecycle.settle_with_new_credit(TEAM)
 
 		inv = frappe.get_doc("Invoice", name)
-		self.assertEqual((inv.status, inv.credit_applied, inv.expected_collection), ("Open", 0.0, 1000.0))
+		self.assertEqual(
+			(inv.status, inv.credit_applied, inv.expected_collection), ("Outstanding", 0.0, 1000.0)
+		)
 		self.assertEqual(credits.get_balance(TEAM)["balance"], 400)
 
 	def test_part_credit_waits_in_the_wallet_even_with_a_method(self):
@@ -388,7 +390,9 @@ class TestCreditAddedAfterIssue(BillingTestBase):
 			lifecycle.settle_with_new_credit(TEAM)
 
 		inv = frappe.get_doc("Invoice", name)
-		self.assertEqual((inv.status, inv.credit_applied, inv.expected_collection), ("Open", 0.0, 1000.0))
+		self.assertEqual(
+			(inv.status, inv.credit_applied, inv.expected_collection), ("Outstanding", 0.0, 1000.0)
+		)
 		self.assertEqual(credits.get_balance(TEAM)["balance"], 400)
 		collect.assert_not_called()
 
@@ -413,7 +417,9 @@ class TestCreditAddedAfterIssue(BillingTestBase):
 
 		self.assertEqual(lifecycle.settle_with_new_credit(TEAM), [{"invoice": name, "applied": 0}])
 		inv = frappe.get_doc("Invoice", name)
-		self.assertEqual((inv.status, inv.credit_applied, inv.expected_collection), ("Open", 0.0, 1000.0))
+		self.assertEqual(
+			(inv.status, inv.credit_applied, inv.expected_collection), ("Outstanding", 0.0, 1000.0)
+		)
 		self.assertEqual(credits.get_balance(TEAM)["balance"], 1000)
 
 	def test_credit_settles_an_invoice_whose_debit_the_gateway_holds(self):
@@ -543,7 +549,7 @@ class TestMonthlyBillingRun(BillingTestBase):
 
 		# The team's June invoice was drafted and opened (here, credits settle it).
 		inv = frappe.get_doc("Invoice", {"team": TEAM, "period_end": "2026-06-30"})
-		self.assertNotEqual(inv.status, "Draft")
+		self.assertTrue(inv.due_date or inv.status != "Outstanding")
 		self.assertEqual(inv.status, "Paid")
 		self.assertEqual(inv.credit_applied, 1000.0)
 
@@ -678,7 +684,7 @@ class TestFanOutRun(IntegrationTestCase):
 		self.assertGreaterEqual(drafting["pages"], 1)
 		for team in self.TEAMS:
 			inv = frappe.get_doc("Invoice", {"team": team, "period_end": "2026-06-30"})
-			self.assertNotEqual(inv.status, "Draft")
+			self.assertTrue(inv.due_date or inv.status != "Outstanding")
 
 	def test_collection_tick_alone_settles_nothing(self):
 		# Order matters: the collect tick only ever touches drafts that already exist,
@@ -703,17 +709,17 @@ class TestFanOutRun(IntegrationTestCase):
 		frappe.db.commit()
 		with patch("frappe.enqueue", side_effect=run_enqueued_inline):
 			run.collect_due_invoices(today="2026-07-01")
-		self.assertNotEqual(frappe.db.get_value("Invoice", {"team": "team-fanout-a"}, "status"), "Draft")
+		self.assertTrue(frappe.db.get_value("Invoice", {"team": "team-fanout-a"}, "due_date"))
 
 		# Drafting catches up after the first sweep — team-b is now a Draft.
 		run.draft_team_invoice("team-fanout-b", "2026-06-01", "2026-06-30")
 		frappe.db.commit()
-		self.assertEqual(frappe.db.get_value("Invoice", {"team": "team-fanout-b"}, "status"), "Draft")
+		self.assertFalse(frappe.db.get_value("Invoice", {"team": "team-fanout-b"}, "due_date"))
 
 		# The next daily sweep collects it — nothing is stranded.
 		with patch("frappe.enqueue", side_effect=run_enqueued_inline):
 			run.collect_due_invoices(today="2026-07-01")
-		self.assertNotEqual(frappe.db.get_value("Invoice", {"team": "team-fanout-b"}, "status"), "Draft")
+		self.assertTrue(frappe.db.get_value("Invoice", {"team": "team-fanout-b"}, "due_date"))
 
 	def test_the_sweep_takes_every_closed_period_draft_not_one_exact_month(self):
 		# period_end <= cutoff, not ==: a draft an earlier run left behind in an older

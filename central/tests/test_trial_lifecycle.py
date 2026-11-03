@@ -153,11 +153,11 @@ class TestTrialLifecycle(TrialOnAMachine):
 		self.assertFalse(eligibility.is_free_trial_creation(self.team.name, None))
 
 	def test_a_team_that_has_paid_before_gets_no_free_trial(self):
-		invoice = frappe.get_doc({"doctype": "Invoice", "team": self.team.name, "status": "Draft"})
+		invoice = frappe.get_doc({"doctype": "Invoice", "team": self.team.name, "status": "Outstanding"})
 		invoice.db_insert()
 		self.assertTrue(eligibility.is_free_trial_creation(self.team.name, "raven"))
 
-		invoice.db_set("status", "Overdue")
+		invoice.db_set("due_date", frappe.utils.nowdate())
 		self.assertFalse(eligibility.is_free_trial_creation(self.team.name, "raven"))
 
 	def test_a_team_with_a_subscription_gets_no_free_trial(self):
@@ -681,6 +681,22 @@ class TestTrialLifecycle(TrialOnAMachine):
 			self.site().end_trial_now()
 
 		self.assertEqual(self.site().trial_state, "Ended")
+
+	def test_an_operator_converts_a_trial_without_a_payment_method(self):
+		self.price_trial(30)
+
+		with patch.object(trial.Trial, "enqueue_job"):
+			self.site().convert_trial()
+
+		self.assertEqual(self.site().trial_state, "Converted")
+		self.assertIn("converted the trial", self.trial_comments())
+
+	def test_an_operator_conversion_keeps_the_spending_limit(self):
+		self.price_trial(30)
+		self.headroom.return_value = 10
+
+		with self.assertRaisesRegex(frappe.ValidationError, "spending limit"):
+			self.site().convert_trial()
 
 	def test_ending_a_trial_keeps_its_ai_key(self):
 		with (
