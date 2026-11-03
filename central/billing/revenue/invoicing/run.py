@@ -171,8 +171,13 @@ def retry_failed_drafts() -> int:
 
 	The monthly tick comes once and bills one month. Without this a failed team waits for an
 	operator, and its month is never billed once the next month closes."""
+	# Oldest first: a retry that fails again moves its row to the back of the queue.
 	failed = frappe.get_all(
-		"Billing Run Team", filters={"outcome": FAILED}, fields=["team", "period_end"], limit=PAGE_SIZE
+		"Billing Run Team",
+		filters={"outcome": FAILED},
+		fields=["team", "period_end"],
+		order_by="modified asc",
+		limit=PAGE_SIZE,
 	)
 	for row in failed:
 		period_start = frappe.utils.get_first_day(row.period_end)

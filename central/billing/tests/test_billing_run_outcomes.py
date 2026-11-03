@@ -8,15 +8,23 @@ from unittest.mock import patch
 
 import frappe
 
+from central.billing.doctype.billing_run_team.billing_run_team import record_outcome
 from central.billing.platform import readiness
 from central.billing.report.billing_activity import billing_activity
 from central.billing.report.billing_run_coverage import billing_run_coverage
 from central.billing.revenue import invoicing
 from central.billing.revenue.invoicing import run
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
-from central.billing.tests.utils import add_segment, billing_settings, make_billing_subscription, make_plan
+from central.billing.tests.utils import (
+	add_segment,
+	billing_settings,
+	ensure_team,
+	make_billing_subscription,
+	make_plan,
+)
 
 TEAM = "team-run-outcome"
+OTHER_TEAM = "team-run-outcome-other"
 CLUSTER = "ap-south-1"
 PLAN = "bundle-run-outcome"
 PERIOD = ("2026-06-01", "2026-06-30")
@@ -59,6 +67,20 @@ class TestBillingRunOutcomes(IntegrationTestCase):
 
 		self.assertEqual(_outcome().outcome, "Invoiced")
 		self.assertTrue(frappe.db.exists("Invoice", {"team": TEAM, "period_end": PERIOD[1]}))
+
+	def test_the_hourly_retry_takes_the_longest_waiting_failure_first(self):
+		with patch(RATE, side_effect=frappe.ValidationError("No rate for Storage")):
+			run.draft_team_invoice(TEAM, *PERIOD)
+		frappe.db.set_value(
+			"Billing Run Team", {"team": TEAM}, "modified", "2000-01-01", update_modified=False
+		)
+		ensure_team(OTHER_TEAM)
+		record_outcome(OTHER_TEAM, PERIOD[1], "Failed", reason="Retried later")
+
+		with patch.object(run, "PAGE_SIZE", 1):
+			run.retry_failed_drafts()
+
+		self.assertEqual(_outcome().outcome, "Invoiced")
 
 	def test_a_retry_with_the_same_error_records_one_event(self):
 		with patch(RATE, side_effect=frappe.ValidationError("No rate for Storage")):
