@@ -2,6 +2,9 @@
 # For license information, please see license.txt
 """Each billing data patch repairs the state it was written for."""
 
+import json
+from unittest.mock import patch
+
 import frappe
 from frappe.utils import add_days, getdate
 
@@ -9,6 +12,7 @@ from central.billing import settings
 from central.billing.doctype.invoice.invoice import period_key_for
 from central.billing.platform import readiness
 from central.billing.revenue import credits
+from central.billing.tests.test_stripe_adapter import make_stripe_gateway
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import complete_billing_profile, ensure_atlas_instance, ensure_team
 from central.patches.v0_0 import (
@@ -16,6 +20,7 @@ from central.patches.v0_0 import (
 	mark_waived_invoices_as_not_synced,
 	merge_invoice_draft_and_open_into_outstanding,
 	move_internal_flag_to_billing_profile,
+	remove_webhook_events_of_another_product,
 	repoint_billing_records_to_renamed_region,
 	start_billing_run_outcomes_and_minimum_invoices,
 )
@@ -289,3 +294,57 @@ class TestSetExpiryOnPromotionalCredit(IntegrationTestCase):
 
 	def _flagged_by_readiness(self) -> list[str]:
 		return [v.subject for v in readiness.check_promotional_credit_expires() if v.team == TEAM]
+
+
+def _stored_event(event_id: str, raw_payload: str) -> str:
+	event = frappe.get_doc(
+		{
+			"doctype": "Webhook Event",
+			"gateway": "Stripe",
+			"gateway_event_id": event_id,
+			"event_type": "payment_intent.succeeded",
+			"status": "Ignored",
+			"raw_payload": raw_payload,
+		}
+	)
+	event.db_insert()
+	frappe.get_doc(
+		{
+			"doctype": "Billing Event",
+			"event_type": "Webhook Event Ignored",
+			"subject_doctype": "Webhook Event",
+			"subject": event.name,
+		}
+	).db_insert()
+	return event.name
+
+
+def _stripe_body(event_id: str, gateway_object: dict) -> str:
+	return json.dumps(
+		{"id": event_id, "type": "payment_intent.succeeded", "data": {"object": gateway_object}}
+	)
+
+
+class TestRemoveWebhookEventsOfAnotherProduct(IntegrationTestCase):
+	def setUp(self):
+		make_stripe_gateway()
+
+	def test_only_events_of_another_product_are_removed(self):
+		order = frappe.get_doc(
+			{"doctype": "Top-up Order", "team": TEAM, "gateway": "Stripe", "currency": "INR"}
+		)
+		order.db_insert()
+		other_product = _stored_event("evt_v1", _stripe_body("evt_v1", {"id": "pi_v1"}))
+		central = _stored_event(
+			"evt_central", _stripe_body("evt_central", {"metadata": {"receipt": order.name}})
+		)
+		unreadable = _stored_event("evt_unreadable", "{not json")
+
+		with patch.object(remove_webhook_events_of_another_product, "PAGE_SIZE", 1):
+			remove_webhook_events_of_another_product.execute()
+
+		self.assertFalse(frappe.db.exists("Webhook Event", other_product))
+		self.assertFalse(frappe.db.exists("Billing Event", {"subject": other_product}))
+		for kept in (central, unreadable):
+			self.assertTrue(frappe.db.exists("Webhook Event", kept))
+			self.assertTrue(frappe.db.exists("Billing Event", {"subject": kept}))

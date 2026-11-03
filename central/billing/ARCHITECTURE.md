@@ -395,7 +395,7 @@ When a Raven post fails, or Raven is not configured, the alert goes to the email
 - `override_doctype_dashboards["Currency"]` → `api.dashboard_overrides.currency_dashboard`.
 
 ### Inbound webhooks (`payments/webhooks.py`)
-`@stripe` / `@razorpay` / `@paypal` (whitelisted, signature-first; PayPal is verified through its verify-webhook-signature API) → `process_webhook` → adapter `verify_webhook_signature`/`parse_webhook_event` → `handle_webhook_event`. Frappe Cloud v1 uses the same gateway accounts, so `is_central_event` first checks that the event names a record Central stored. Any other event gets a 200 and no row. A kept event is persisted to **Webhook Event** for dedupe/replay.
+`@stripe` / `@razorpay` / `@paypal` (whitelisted, signature-first; PayPal is verified through its verify-webhook-signature API) → `process_webhook` → adapter `verify_webhook_signature`/`parse_webhook_event` → `handle_webhook_event`. Frappe Cloud v1 uses the same gateway accounts, so `is_central_event` first checks that the event names a record Central stored. Any other event gets a 200 and no row. A kept event is persisted to **Webhook Event** for dedupe/replay. The patch `remove_webhook_events_of_another_product` applies `is_central_event` to the stored body of each Ignored Webhook Event that is not linked to a Payment Attempt or a Payment Method. It deletes only the events that the rule rejects, together with their `Webhook Event Ignored` Billing Events. It keeps an event whose body is not a JSON object.
 
 `handle_webhook_event` sends each event to one handler. The handler links the Webhook Event to the Payment Attempt or Payment Method it is about, so the record's Connections show its event history.
 
