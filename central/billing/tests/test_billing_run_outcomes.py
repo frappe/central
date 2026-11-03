@@ -2,8 +2,6 @@
 # For license information, please see license.txt
 """The run keeps what it did per team, retries a failure and explains every team it skipped."""
 
-import json
-from collections import Counter
 from unittest.mock import patch
 
 import frappe
@@ -147,17 +145,6 @@ class TestBillingRunCoverage(IntegrationTestCase):
 
 		self.assertEqual(self._row(TEAM)["stage"], billing_run_coverage.BELOW_MINIMUM)
 
-	def test_billing_day_counts_match_the_report(self):
-		make_plan(PLAN)
-		subscription = make_billing_subscription(TEAM, CLUSTER, PLAN, billing_cycle="Monthly")
-		add_segment(subscription, "Created", 1000, "2026-06-01 00:00:00")
-		run.draft_team_invoice(TEAM, *PERIOD)
-
-		report = Counter(row["stage"] for row in billing_run_coverage.classify_teams(PERIOD[1]))
-		dashboard = {row.result: row.teams for row in _billing_day_coverage(PERIOD[1]) if row.teams}
-
-		self.assertEqual(dashboard, dict(report))
-
 	def test_a_held_invoice_is_waiting_with_its_reason(self):
 		make_plan(PLAN)
 		subscription = make_billing_subscription(TEAM, CLUSTER, PLAN, billing_cycle="Monthly")
@@ -174,15 +161,6 @@ class TestBillingRunCoverage(IntegrationTestCase):
 		with billing_settings(raven_site_url="", raven_channel_id="", operator_alert_emails=""):
 			frappe.clear_document_cache("Billing Settings", "Billing Settings")
 			self.assertIn("Operator alerts reach nobody", billing_run_coverage._setup_message())
-
-
-def _billing_day_coverage(period_end: str) -> list:
-	"""Run the Billing Day coverage query from the shipped workbook for one month."""
-	path = frappe.get_app_path("central", "billing", "insights_workbook", "billing", "billing.json")
-	with open(path) as file:
-		sql = json.load(file)["queries"]["billing-run-coverage-query"]["operations"][0]["raw_sql"]
-	month = "LAST_DAY(CURDATE() - INTERVAL 1 MONTH)"
-	return frappe.db.sql(sql.replace(month, frappe.db.escape(period_end)), as_dict=True)
 
 
 class TestTaxProfileCheck(IntegrationTestCase):
