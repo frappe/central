@@ -98,6 +98,7 @@ class TestBillingRunOutcomes(IntegrationTestCase):
 	def test_a_month_below_the_minimum_makes_no_invoice(self):
 		with billing_settings(minimum_invoice_amounts=[{"currency": "INR", "amount": 5000}]):
 			self.assertEqual(run.draft_team_invoice(TEAM, *PERIOD), [])
+			run.draft_team_invoice(TEAM, *PERIOD)
 
 		self.assertFalse(frappe.db.exists("Invoice", {"team": TEAM, "period_end": PERIOD[1]}))
 		self.assertEqual(_outcome().outcome, "Below Minimum")

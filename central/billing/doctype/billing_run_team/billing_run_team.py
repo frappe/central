@@ -33,15 +33,15 @@ def record_outcome(
 		pass  # a concurrent worker recorded this team and month first
 
 
-def has_same_failure(team: str, period_end, reason: str) -> bool:
-	"""Whether a retry met the error already on record, so it needs no second log row."""
+def has_same_outcome(team: str, period_end, outcome: str, reason: str) -> bool:
+	"""Whether a retry met the outcome already on record, so it needs no second log row or event."""
 	return bool(
 		frappe.db.exists(
 			"Billing Run Team",
 			{
 				"team": team,
 				"period_end": frappe.utils.getdate(period_end),
-				"outcome": FAILED,
+				"outcome": outcome,
 				"reason": reason,
 			},
 		)

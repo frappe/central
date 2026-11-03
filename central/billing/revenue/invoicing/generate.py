@@ -26,6 +26,7 @@ from central.billing.doctype.billing_run_team.billing_run_team import (
 	BELOW_MINIMUM,
 	INVOICED,
 	NOTHING_TO_BILL,
+	has_same_outcome,
 	record_outcome,
 )
 from central.billing.revenue.invoicing.lines import compute_line_items, team_line_items
@@ -339,6 +340,8 @@ def _forgive(team: str, period_end, payload: dict) -> None:
 	reason = (
 		f"{payload['currency']} {payload['total']} is below the minimum invoice amount and was written off."
 	)
+	if has_same_outcome(team, period_end, BELOW_MINIMUM, reason):
+		return
 	record_outcome(team, period_end, BELOW_MINIMUM, reason=reason)
 	record_team_event(
 		team, "Invoice Skipped Below Minimum", "Invoice", reason=reason, amount=payload["total"]

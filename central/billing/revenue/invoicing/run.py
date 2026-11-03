@@ -14,7 +14,7 @@ import frappe
 from frappe.query_builder.functions import Count
 
 from central.billing.doctype.billing_run.billing_run import snapshot
-from central.billing.doctype.billing_run_team.billing_run_team import FAILED, has_same_failure, record_outcome
+from central.billing.doctype.billing_run_team.billing_run_team import FAILED, has_same_outcome, record_outcome
 from central.billing.platform import metrics
 from central.billing.revenue.invoicing.generate import generate_team_invoice
 from central.billing.revenue.invoicing.lifecycle import held_drafts, open_and_collect, settle_internal_teams
@@ -159,7 +159,7 @@ def _record_draft_failure(unit: str, team: str, period_end, error: Exception, un
 	"""Keep why the team has no invoice where an operator looks. A retry that meets the
 	same error adds no second log row or event."""
 	reason = str(error) or type(error).__name__
-	is_repeat = has_same_failure(team, period_end, reason)
+	is_repeat = has_same_outcome(team, period_end, FAILED, reason)
 	_contain(unit, "Team", team, error, undo=undo, is_repeat=is_repeat)
 	record_outcome(team, period_end, FAILED, reason=reason)
 	if not is_repeat:
