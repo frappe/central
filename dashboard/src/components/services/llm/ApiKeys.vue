@@ -557,7 +557,6 @@ const revoke = async (key: AIApiKey): Promise<void> => {
 						would with the vendor.
 					</p>
 					<Select
-						v-if="geographyOptions.length > 1"
 						v-model="helpGeography"
 						class="w-fit shrink-0"
 						:options="geographyOptions"
