@@ -63,7 +63,7 @@ class TestBillingRunOutcomes(IntegrationTestCase):
 		self.assertEqual(self._events("Invoice Generation Failed"), 1)
 		self.assertEqual(len([v for v in readiness.check_teams_were_invoiced() if v.team == TEAM]), 1)
 
-		run.retry_failed_drafts()
+		run.retry_failed_invoices()
 
 		self.assertEqual(_outcome().outcome, "Invoiced")
 		self.assertTrue(frappe.db.exists("Invoice", {"team": TEAM, "period_end": PERIOD[1]}))
@@ -78,7 +78,7 @@ class TestBillingRunOutcomes(IntegrationTestCase):
 		record_outcome(OTHER_TEAM, PERIOD[1], "Failed", reason="Retried later")
 
 		with patch.object(run, "PAGE_SIZE", 1):
-			run.retry_failed_drafts()
+			run.retry_failed_invoices()
 
 		self.assertEqual(_outcome().outcome, "Invoiced")
 

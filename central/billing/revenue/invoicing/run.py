@@ -127,7 +127,7 @@ def draft_team_invoice(team: str, period_start, period_end, counters: dict | Non
 	so a caller part-way through a page keeps the teams it already billed.
 
 	A contained failure is not re-raised, and needn't be: drafting is idempotent per
-	(team, period), and `retry_failed_drafts` tries the failed teams again every hour.
+	(team, period), and `retry_failed_invoices` tries the failed teams again every hour.
 
 	Lock contention is not a failure at all, though, and is retried here rather than
 	contained — see `_CONTENTION`. InnoDB has already rolled the transaction back by
@@ -144,18 +144,18 @@ def draft_team_invoice(team: str, period_start, period_end, counters: dict | Non
 			frappe.db.rollback()
 			if attempt == CONTENTION_RETRIES - 1:
 				# Out of patience: record it and let the next tick pick the team up.
-				_record_draft_failure(unit, team, period_end, error, undo=False)
+				_record_invoice_failure(unit, team, period_end, error, undo=False)
 				_tally(counters, "failed")
 				return []
 			# Jittered, so a whole page of retriers doesn't re-collide in lockstep.
 			time.sleep(CONTENTION_BACKOFF * (attempt + 1) + random.uniform(0, CONTENTION_BACKOFF))
 		except Exception as error:
-			_record_draft_failure(unit, team, period_end, error, undo=True)
+			_record_invoice_failure(unit, team, period_end, error, undo=True)
 			_tally(counters, "failed")
 			return []
 
 
-def _record_draft_failure(unit: str, team: str, period_end, error: Exception, undo: bool) -> None:
+def _record_invoice_failure(unit: str, team: str, period_end, error: Exception, undo: bool) -> None:
 	"""Keep why the team has no invoice where an operator looks. A retry that meets the
 	same error adds no second log row or event."""
 	reason = str(error) or type(error).__name__
@@ -166,7 +166,7 @@ def _record_draft_failure(unit: str, team: str, period_end, error: Exception, un
 		record_team_event(team, "Invoice Generation Failed", "Invoice", reason=reason)
 
 
-def retry_failed_drafts() -> int:
+def retry_failed_invoices() -> int:
 	"""Draft again every team whose invoice failed, for any closed month, one commit per team.
 
 	The monthly tick comes once and bills one month. Without this a failed team waits for an
@@ -531,7 +531,7 @@ def collect_due_invoices(today=None) -> dict:
 	`settle_draft` defers dunning on failure, so a slow sweep never makes a customer late.
 	"""
 	_, period_end = billing_period(today)
-	retry_failed_drafts()
+	retry_failed_invoices()
 	# Recorded before fanning out, so the record of what the run has achieved (and what it
 	# still owes) exists even if collection then falls over.
 	status = billing_run_status(today)

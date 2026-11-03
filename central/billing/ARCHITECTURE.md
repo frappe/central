@@ -295,7 +295,7 @@ warning if the bench hasn't declared the queue — enqueuing to a queue nobody c
 would mean the month silently never gets billed.
 
 A unit that fails is contained: logged to the billing log file *and* as a
-`Billing Run Failure` Error Log row, rolled back to its own savepoint, and kept as a Failed **Billing Run Team** row. `retry_failed_drafts` tries each Failed row again every hour, for any closed month. If the savepoint itself is gone —
+`Billing Run Failure` Error Log row, rolled back to its own savepoint, and kept as a Failed **Billing Run Team** row. `retry_failed_invoices` tries each Failed row again every hour, for any closed month. If the savepoint itself is gone —
 the database restarted, the connection dropped — the failure is **re-raised** instead:
 that is the machinery breaking, not a bad team, and containing it would turn one
 outage into a silent run in which nobody was billed.
