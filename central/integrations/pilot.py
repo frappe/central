@@ -61,6 +61,7 @@ def get_bootstrap_metadata(action) -> dict[str, str]:
 	common_site_config = frappe.get_cached_doc("Central Settings").get_common_site_config() | {
 		"fc_team": action.team
 	}
+	common_site_config |= get_pulse_site_config(action)
 	if mailbox := UserMailAccount.assign(action):
 		common_site_config |= mailbox.get_site_config()
 	# A free trial boots with a Grove key from the pool: AI works before the team holds any key.
@@ -84,6 +85,17 @@ def get_bootstrap_metadata(action) -> dict[str, str]:
 		metadata["pilot-config"] = json.dumps({"s3": bucket})
 
 	return metadata
+
+
+def get_pulse_site_config(action) -> dict:
+	"""The Pulse API key for a trial-plan creation. Empty for any other plan, or when no key is set."""
+	if not is_trial_plan(action.get_configuration().plan):
+		return {}
+
+	pulse_api_key = frappe.get_cached_doc("Central Settings").get_password(
+		"pulse_api_key", raise_exception=False
+	)
+	return {"pulse_api_key": pulse_api_key} if pulse_api_key else {}
 
 
 def get_bundled_bucket(action) -> dict | None:

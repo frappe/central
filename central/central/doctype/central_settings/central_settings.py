@@ -46,6 +46,7 @@ class CentralSettings(Document):
 		invitations_per_hour: DF.Int
 		private_network_throughput_mibps: DF.Int
 		public_network_throughput_mibps: DF.Int
+		pulse_api_key: DF.Password | None
 		require_payment_method: DF.Check
 		sign_in_code_attempts: DF.Int
 		sign_in_codes_per_email: DF.Int

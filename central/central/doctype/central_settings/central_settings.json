@@ -38,6 +38,7 @@
   "require_payment_method",
   "included_transfer_gb",
   "signup_image_minimum_age_minutes",
+  "pulse_api_key",
   "server_limits_section",
   "disk_iops",
   "disk_throughput_mibps",
@@ -503,13 +504,18 @@
    "fieldtype": "Password",
    "label": "Private Key",
    "length": 8192
+  },
+  {
+   "fieldname": "pulse_api_key",
+   "fieldtype": "Password",
+   "label": "Pulse API Key"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-10-28 18:00:00.000000",
+ "modified": "2026-11-03 11:35:03.774779",
  "modified_by": "Administrator",
  "module": "Central",
  "name": "Central Settings",

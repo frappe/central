@@ -16,6 +16,9 @@ TELEMETRY_CONFIG = {"endpoint": "https://datum.in-mumbai.example.test", "token":
 COMMON_SITE_CONFIG = (
 	"central.central.doctype.central_settings.central_settings.CentralSettings.get_common_site_config"
 )
+SETTINGS_PASSWORD = "central.central.doctype.central_settings.central_settings.CentralSettings.get_password"
+# A long key, so the size check keeps headroom for the real one.
+PULSE_API_KEY = "p" * 64
 MAIL_CONFIG = {
 	"mail_server": "mail.c3.frappemail.com",
 	"mail_port": 587,
@@ -153,21 +156,33 @@ class TestPilotBootstrapMetadata(IntegrationTestCase):
 			patch(COMMON_SITE_CONFIG, return_value=relay),
 			patch(f"{PILOT}.UserMailAccount.assign", return_value=mailbox),
 			patch(f"{PILOT}.AITrialKey.assign", return_value=trial_key) as assign,
+			patch(f"{PILOT}.is_trial_plan", return_value=True),
+			patch(SETTINGS_PASSWORD, return_value=PULSE_API_KEY),
 		):
 			metadata = _create_payload(pilot_request(is_free_trial=1))["metadata"]
 
 		config = metadata["pilot-common-site-config"]
 		self.assertEqual(
-			json.loads(config), relay | {"fc_team": "TEAM-00001"} | MAIL_CONFIG | TRIAL_KEY_CONFIG
+			json.loads(config),
+			relay
+			| {"fc_team": "TEAM-00001", "pulse_api_key": PULSE_API_KEY}
+			| MAIL_CONFIG
+			| TRIAL_KEY_CONFIG,
 		)
 		self.assertLessEqual(len(config.encode()), METADATA_VALUE_BYTES)
 		self.assertTrue(assign.call_args.args[0].is_free_trial)
 
-	def test_a_paid_creation_gets_no_trial_key(self):
-		with patch(f"{PILOT}.get_telemetry_base_url", return_value=None):
+	def test_a_paid_creation_gets_no_trial_key_or_pulse_key(self):
+		with (
+			patch(f"{PILOT}.get_telemetry_base_url", return_value=None),
+			patch(f"{PILOT}.is_trial_plan", return_value=False),
+			patch(SETTINGS_PASSWORD, return_value=PULSE_API_KEY),
+		):
 			metadata = _create_payload(pilot_request())["metadata"]
 
-		self.assertNotIn("ai_keys", json.loads(metadata["pilot-common-site-config"]))
+		config = json.loads(metadata["pilot-common-site-config"])
+		self.assertNotIn("ai_keys", config)
+		self.assertNotIn("pulse_api_key", config)
 
 	def test_a_region_with_a_bundle_size_boots_pilot_with_a_capped_bucket(self):
 		region = ensure_region("bundle-test")
