@@ -13,6 +13,7 @@ import time
 import frappe
 from frappe.query_builder.functions import Count
 
+from central.billing.doctype.billing_event import billing_event
 from central.billing.doctype.billing_run.billing_run import snapshot
 from central.billing.doctype.billing_run_team.billing_run_team import FAILED, has_same_outcome, record_outcome
 from central.billing.platform import metrics
@@ -163,7 +164,9 @@ def _record_invoice_failure(unit: str, team: str, period_end, error: Exception, 
 	_contain(unit, "Team", team, error, undo=undo, is_repeat=is_repeat)
 	record_outcome(team, period_end, FAILED, reason=reason)
 	if not is_repeat:
-		record_team_event(team, "Invoice Generation Failed", "Invoice", reason=reason)
+		record_team_event(
+			team, "Invoice Generation Failed", "Invoice", reason=reason, outcome=billing_event.FAILED
+		)
 
 
 def retry_failed_invoices() -> int:

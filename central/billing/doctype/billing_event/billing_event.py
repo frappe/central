@@ -25,6 +25,8 @@ _FLOW_BY_DOCTYPE = {
 	"Credit Wallet": "Credit",
 	"Webhook Event": "Webhook",
 }
+SUCCESS = "Success"
+FAILED = "Failed"
 _FAILURE_WORDS = ("failed", "declined", "refused")
 
 
@@ -33,15 +35,16 @@ def flow_of(subject_doctype: str | None) -> str:
 
 
 def outcome_of(event_type: str | None, to_state: str | None) -> str:
+	"""Guess the outcome of an event written before events carried one. Only the backfill uses it."""
 	text = f"{event_type} {to_state}".lower()
-	return "Failed" if any(word in text for word in _FAILURE_WORDS) else "Success"
+	return FAILED if any(word in text for word in _FAILURE_WORDS) else SUCCESS
 
 
 class BillingEvent(Document):
 	def before_insert(self):
-		"""Name the flow and the outcome here, so every writer gets them the same way."""
+		"""Name the flow here, so every writer gets it the same way. The writer states the outcome."""
 		self.category = self.category or flow_of(self.subject_doctype)
-		self.outcome = outcome_of(self.event_type, self.to_state)
+		self.outcome = self.outcome or SUCCESS
 
 
 def on_doctype_update() -> None:

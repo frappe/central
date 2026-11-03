@@ -13,6 +13,7 @@ from urllib.parse import quote
 import frappe
 from frappe.query_builder.functions import Coalesce
 
+from central.billing.doctype.billing_event import billing_event
 from central.billing.ingester.connection import enabled, get, post, put
 from central.billing.ingester.locks import hold_until_transaction_ends, lock_name
 from central.billing.states import record_event
@@ -63,7 +64,13 @@ def sync_customer_profile(team: str) -> None:
 	except Exception as error:
 		# The job's rollback would lose the record, so keep it in its own transaction, then fail the job.
 		frappe.db.rollback(save_point=_SYNC_STEP)
-		record_event(profile, "Customer Sync Failed", reason=str(error)[:500], category=CUSTOMER_SYNC)
+		record_event(
+			profile,
+			"Customer Sync Failed",
+			reason=str(error)[:500],
+			category=CUSTOMER_SYNC,
+			outcome=billing_event.FAILED,
+		)
 		frappe.db.commit()  # nosemgrep: frappe-manual-commit -- the failure must outlive the failed job
 		raise
 

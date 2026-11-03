@@ -14,6 +14,7 @@ from central.billing.report.billing_activity import billing_activity
 from central.billing.report.billing_run_coverage import billing_run_coverage
 from central.billing.revenue import invoicing
 from central.billing.revenue.invoicing import run
+from central.billing.states import record_team_event, transition
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import (
 	add_segment,
@@ -206,6 +207,22 @@ class TestBillingActivity(IntegrationTestCase):
 		_, rows, *_rest = billing_activity.execute({"team": TEAM, "category": "Invoice", "outcome": "Failed"})
 
 		self.assertEqual([row.reason for row in rows], ["No rate for Storage"])
+
+	def test_the_writer_states_the_outcome_and_a_move_to_failed_is_a_failure(self):
+		attempt = frappe.get_doc(
+			{"doctype": "Payment Attempt", "name": "PA-run-outcome", "team": TEAM, "status": "Initiated"}
+		)
+		transition(attempt, "Failed")
+		record_team_event(TEAM, "Invoice Retry Failed Over", "Invoice")
+
+		outcomes = dict(
+			frappe.get_all(
+				"Billing Event", filters={"team": TEAM}, fields=["event_type", "outcome"], as_list=True
+			)
+		)
+		self.assertEqual(
+			outcomes, {"Payment Attempt Failed": "Failed", "Invoice Retry Failed Over": "Success"}
+		)
 
 	def test_a_new_subscription_is_in_the_activity(self):
 		make_plan(PLAN)

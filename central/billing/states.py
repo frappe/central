@@ -17,6 +17,8 @@ the load-bearing constraint that stops the stream becoming a second source of tr
 import frappe
 from frappe import _
 
+from central.billing.doctype.billing_event import billing_event
+
 
 class InvalidTransition(frappe.ValidationError):
 	"""A status move the owning state machine forbids."""
@@ -229,11 +231,12 @@ def transition(
 			InvalidTransition,
 		)
 	doc.set(machine.field, to_state)
-	_append_event(doc, from_state, to_state, reason, actor, correlation, amount, event_type)
+	outcome = billing_event.FAILED if to_state == "Failed" else billing_event.SUCCESS
+	_append_event(doc, from_state, to_state, reason, actor, correlation, amount, event_type, outcome=outcome)
 
 
 def _append_event(
-	doc, from_state, to_state, reason, actor, correlation, amount, event_type, category=None
+	doc, from_state, to_state, reason, actor, correlation, amount, event_type, category=None, outcome=None
 ) -> None:
 	event = frappe.get_doc(
 		{
@@ -242,6 +245,7 @@ def _append_event(
 			"occurred_at": frappe.utils.now_datetime(),
 			"event_type": event_type or f"{doc.doctype} {to_state}",
 			"category": category,
+			"outcome": outcome,
 			"subject_doctype": doc.doctype,
 			"subject": doc.name,
 			"from_state": from_state,
@@ -266,15 +270,23 @@ def record_event(
 	amount=None,
 	correlation=None,
 	category=None,
+	outcome: str = billing_event.SUCCESS,
 ) -> None:
 	"""Log a billing change that is not a status move, such as a tier change."""
-	_append_event(doc, from_state, to_state, reason, None, correlation, amount, event_type, category)
+	_append_event(doc, from_state, to_state, reason, None, correlation, amount, event_type, category, outcome)
 
 
-def record_team_event(team: str, event_type: str, category: str, reason=None, amount=None) -> None:
+def record_team_event(
+	team: str,
+	event_type: str,
+	category: str,
+	reason=None,
+	amount=None,
+	outcome: str = billing_event.SUCCESS,
+) -> None:
 	"""Log a billing step about a team when no document exists, such as an invoice that failed."""
 	subject = frappe._dict(doctype="Team", name=team, team=team)
-	record_event(subject, event_type, reason=reason, amount=amount, category=category)
+	record_event(subject, event_type, reason=reason, amount=amount, category=category, outcome=outcome)
 
 
 def _default_actor() -> str:
