@@ -87,6 +87,7 @@ def ensure_minimum_invoice_amounts() -> None:
 	for currency, amount in (("INR", 50), ("USD", 1)):
 		if frappe.db.exists("Currency", currency):
 			doc.append("minimum_invoice_amounts", {"currency": currency, "amount": amount})
+	# The system seeds these defaults during install or a patch, with no user to check.
 	doc.save(ignore_permissions=True)
 	frappe.clear_cache(doctype="Billing Settings")
 
