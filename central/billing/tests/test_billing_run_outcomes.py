@@ -129,6 +129,14 @@ class TestBillingRunCoverage(IntegrationTestCase):
 		rows = billing_run_coverage.classify_teams(PERIOD[1])
 		self.assertTrue(all(row["reason"] for row in rows))
 
+	def test_with_no_month_the_report_shows_the_month_that_just_closed(self):
+		with patch.object(
+			billing_run_coverage, "classify_teams", wraps=billing_run_coverage.classify_teams
+		) as classify:
+			billing_run_coverage.execute({})
+
+		classify.assert_called_once_with(run.billing_period()[1])
+
 	def test_a_month_below_the_minimum_is_its_own_result(self):
 		make_plan(PLAN)
 		subscription = make_billing_subscription(TEAM, CLUSTER, PLAN, billing_cycle="Monthly")

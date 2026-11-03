@@ -6,6 +6,7 @@ import frappe
 from frappe import _
 
 from central.billing.doctype.billing_run_team import billing_run_team
+from central.billing.revenue.invoicing.run import billing_period
 
 INVOICED = "Invoiced"
 WAITING = "Waiting"
@@ -20,9 +21,8 @@ _INDICATORS = {NEEDS_ACTION: "Red", WAITING: "Orange", INVOICED: "Green"}
 
 def execute(filters: dict | None = None) -> tuple:
 	filters = filters or {}
-	period_end = filters.get("period_end") or _latest_run()
-	if not period_end:
-		return _columns(), [], _setup_message(), None, []
+	# The month that just closed by default, the same month the Billing Day dashboard shows.
+	period_end = filters.get("period_end") or billing_period()[1]
 	rows = classify_teams(period_end)
 	summary = _summary(rows)
 	if filters.get("stage"):
@@ -111,11 +111,6 @@ class _Facts:
 				"Free trial servers only. A trial has no subscription, so it is not billed."
 			)
 		return NO_SUBSCRIPTION, _("Never created a server.")
-
-
-def _latest_run() -> str | None:
-	runs = frappe.get_all("Billing Run", pluck="name", order_by="period_end desc", limit=1)
-	return runs[0] if runs else None
 
 
 def _summary(rows: list[dict]) -> list[dict]:

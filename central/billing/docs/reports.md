@@ -145,5 +145,5 @@ A month is final 30 days after it ends. Every failure keeps the gateway's failur
 |---|---|
 | Billing Invariant Violations | Which billing rules are broken now? This covers money invariants and readiness checks. Use the Summary view for a count per check. |
 | Webhook Lag | How long do gateway webhooks take from receipt to processing? |
-| Billing Run Coverage | Why does a month have fewer invoices than teams? Each team that existed by month end gets one result with its reason: Invoiced, Waiting, Needs Action, Waived (Internal), Below Minimum, Nothing to Bill or No Subscription. The results add up to the team count. |
+| Billing Run Coverage | Why does a month have fewer invoices than teams? Each team that existed by month end gets one result with its reason: Invoiced, Waiting, Needs Action, Waived (Internal), Below Minimum, Nothing to Bill or No Subscription. The results add up to the team count. With no Month filter, the report shows the month that just closed, the same month as the Billing Day dashboard. |
 | Billing Activity | What happened to one team across profile, subscription, customer sync, invoice and payment steps, and which step failed? |

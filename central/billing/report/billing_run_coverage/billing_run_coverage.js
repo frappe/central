@@ -8,7 +8,7 @@ frappe.query_reports["Billing Run Coverage"] = {
 			label: __("Month"),
 			fieldtype: "Link",
 			options: "Billing Run",
-			description: __("Empty shows the latest billing run."),
+			description: __("Empty shows the month that just closed."),
 		},
 		{
 			fieldname: "stage",
