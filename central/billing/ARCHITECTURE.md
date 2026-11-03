@@ -358,7 +358,7 @@ monotonic and self-limiting: a successful ask stops pushing, so a broken gateway
 
 ### Invoice status
 
-An invoice is `Outstanding` from creation. The due date marks that collection began. An Outstanding invoice with no due date is not issued yet. It is not charged or dunned, and its `hold_reason` says what it waits for. Receivables, outstanding totals and open invoice counts include only issued invoices that are not settled. `central/billing/doctype/invoice/invoice.py` owns this definition (`is_issued`, `is_owed`, `owed_filters`, `unissued_filters`).
+An invoice is `Outstanding` from creation. The due date marks that collection began. An Outstanding invoice with no due date is not issued yet. It is not charged or dunned, and its `hold_reason` says what it waits for. Receivables, outstanding totals and open invoice counts include only issued invoices that are not settled. `central/billing/doctype/invoice/invoice.py` owns this definition (`is_issued`, `is_owed`, `issued_filters`, `owed_filters`, `unissued_filters`).
 
 ### Why a team has no invoice
 

@@ -36,9 +36,14 @@ def is_owed(invoice) -> bool:
 	return invoice.status in UNSETTLED and is_issued(invoice)
 
 
+def issued_filters() -> list[list]:
+	"""Invoices collection has started on, settled ones included."""
+	return [["due_date", "is", "set"]]
+
+
 def owed_filters() -> list[list]:
 	"""Invoices the customer owes: issued and not settled."""
-	return [["status", "in", UNSETTLED], ["due_date", "is", "set"]]
+	return [["status", "in", UNSETTLED], *issued_filters()]
 
 
 def unissued_filters() -> list[list]:

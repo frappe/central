@@ -2,6 +2,7 @@ from typing import TYPE_CHECKING
 
 import frappe
 
+from central.billing.doctype.invoice.invoice import CANCELLED, issued_filters
 from central.iam import can
 
 if TYPE_CHECKING:
@@ -19,9 +20,7 @@ def has_paid_before(team: str) -> bool:
 	after its payment method lapses. A bill is issued once its due date is set."""
 	return bool(
 		frappe.db.exists("Subscription", {"team": team})
-		or frappe.db.exists(
-			"Invoice", {"team": team, "status": ["!=", "Cancelled"], "due_date": ["is", "set"]}
-		)
+		or frappe.db.exists("Invoice", [*issued_filters(), ["team", "=", team], ["status", "!=", CANCELLED]])
 	)
 
 
