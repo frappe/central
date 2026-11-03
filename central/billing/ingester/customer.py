@@ -62,8 +62,11 @@ def sync_customer_profile(team: str) -> None:
 	frappe.db.savepoint(_SYNC_STEP)
 	try:
 		_take_next_step(profile)
+	except (frappe.QueryDeadlockError, frappe.QueryTimeoutError):
+		raise  # the job runner retries lock contention within seconds
 	except Exception as error:
-		# Not re-raised: the job's own commit keeps the failure event, and the daily pending sweep retries.
+		# Not re-raised: the job's own commit keeps the failure event. The daily pending sweep
+		# retries a record that is still missing.
 		frappe.db.rollback(save_point=_SYNC_STEP)
 		frappe.log_error(
 			title=f"Customer sync failed for {team}", reference_doctype="Billing Profile", reference_name=team
