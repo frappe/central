@@ -5,13 +5,16 @@
 import frappe
 from frappe import _
 
-NEEDS_ACTION = "Needs Action"
-WAITING = "Waiting"
+from central.billing.revenue.invoicing.generate import BELOW_MINIMUM_MARK
+
 INVOICED = "Invoiced"
-WAIVED = "Waived"
-WRITTEN_OFF = "Written Off"
-NO_BILLING = "No Billing Expected"
-STAGES = (NEEDS_ACTION, WAITING, INVOICED, WAIVED, WRITTEN_OFF, NO_BILLING)
+WAITING = "Waiting"
+NEEDS_ACTION = "Needs Action"
+WAIVED = "Waived (Internal)"
+BELOW_MINIMUM = "Below Minimum"
+NOTHING_TO_BILL = "Nothing to Bill"
+NO_SUBSCRIPTION = "No Subscription"
+STAGES = (INVOICED, WAITING, NEEDS_ACTION, WAIVED, BELOW_MINIMUM, NOTHING_TO_BILL, NO_SUBSCRIPTION)
 _INDICATORS = {NEEDS_ACTION: "Red", WAITING: "Orange", INVOICED: "Green"}
 
 
@@ -28,12 +31,14 @@ def execute(filters: dict | None = None) -> tuple:
 
 
 def classify_teams(period_end) -> list[dict]:
-	"""Every team, with where the month's run left it. The first rule that matches wins."""
+	"""Every team that existed by month end, or that the run reached, with one result each.
+
+	The first rule that matches wins. The results add up to the team count, which is
+	what explains an invoice count far below the number of teams.
+	"""
 	facts = _Facts(frappe.utils.getdate(period_end))
-	return [
-		facts.row_for(team)
-		for team in frappe.get_all("Team", fields=["name", "team_name", "status", "creation"])
-	]
+	teams = frappe.get_all("Team", fields=["name", "team_name", "creation"])
+	return [facts.row_for(team) for team in teams if facts.is_in_month(team)]
 
 
 class _Facts:
@@ -45,7 +50,7 @@ class _Facts:
 			row.team: row
 			for row in frappe.get_all(
 				"Invoice",
-				filters={"period_end": period_end, "status": ["!=", "Cancelled"]},
+				filters={"period_end": period_end, "invoice_type": "Billable", "status": ["!=", "Cancelled"]},
 				fields=["name", "team", "status", "total", "currency", "due_date", "hold_reason"],
 			)
 		}
@@ -58,6 +63,10 @@ class _Facts:
 		self.subscribed = set(frappe.get_all("Subscription", pluck="team", distinct=True))
 		self.with_servers = set(frappe.get_all("Virtual Machine", pluck="team", distinct=True))
 		self.internal = set(frappe.get_all("Billing Profile", filters={"is_internal": 1}, pluck="team"))
+
+	def is_in_month(self, team) -> bool:
+		joined_by_month_end = frappe.utils.getdate(team.creation) <= self.period_end
+		return joined_by_month_end or team.name in self.invoices or team.name in self.outcomes
 
 	def row_for(self, team) -> dict:
 		invoice = self.invoices.get(team.name)
@@ -86,22 +95,22 @@ class _Facts:
 
 	def _no_invoice_result(self, team) -> tuple[str, str]:
 		outcome = self.outcomes.get(team.name)
-		if outcome and outcome.outcome == "Failed":
+		if not outcome:
+			return self._no_run_result(team)
+		if outcome.outcome == "Failed":
 			return NEEDS_ACTION, _("Invoice failed, retried every hour: {0}").format(outcome.reason)
-		if outcome and "minimum" in (outcome.reason or ""):
-			return WRITTEN_OFF, outcome.reason
-		if outcome:
-			return NO_BILLING, outcome.reason
-		return self._no_run_result(team)
+		if BELOW_MINIMUM_MARK in (outcome.reason or ""):
+			return BELOW_MINIMUM, outcome.reason
+		return NOTHING_TO_BILL, outcome.reason or _("The invoice was cancelled.")
 
 	def _no_run_result(self, team) -> tuple[str, str]:
 		if team.name in self.subscribed:
 			return WAITING, _("Has a subscription, and the run has not reached it yet.")
-		if frappe.utils.getdate(team.creation) > self.period_end:
-			return NO_BILLING, _("Joined after this month closed.")
 		if team.name in self.with_servers:
-			return NO_BILLING, _("Free trial servers only. A trial has no subscription, so it is not billed.")
-		return NO_BILLING, _("Never created a server.")
+			return NO_SUBSCRIPTION, _(
+				"Free trial servers only. A trial has no subscription, so it is not billed."
+			)
+		return NO_SUBSCRIPTION, _("Never created a server.")
 
 
 def _latest_run() -> str | None:
@@ -113,17 +122,16 @@ def _summary(rows: list[dict]) -> list[dict]:
 	counts = {stage: 0 for stage in STAGES}
 	for row in rows:
 		counts[row["stage"]] += 1
-	cards = [{"label": _("Teams"), "value": len(rows), "datatype": "Int", "indicator": "Blue"}]
-	for stage in STAGES:
-		cards.append(
-			{
-				"label": _(stage),
-				"value": counts[stage],
-				"datatype": "Int",
-				"indicator": _INDICATORS.get(stage, "Gray"),
-			}
-		)
+	cards = [
+		_card(_("Teams by Month End"), len(rows), "Blue"),
+		_card(_("Active Subscriptions"), frappe.db.count("Subscription", {"enabled": 1}), "Blue"),
+	]
+	cards += [_card(_(stage), counts[stage], _INDICATORS.get(stage, "Gray")) for stage in STAGES]
 	return cards
+
+
+def _card(label: str, value: int, indicator: str) -> dict:
+	return {"label": label, "value": value, "datatype": "Int", "indicator": indicator}
 
 
 def _setup_message() -> str | None:

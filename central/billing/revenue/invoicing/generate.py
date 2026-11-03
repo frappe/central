@@ -324,6 +324,10 @@ def _generate_team_invoice(team: str, period_start, period_end):
 	return name
 
 
+# The coverage report and the Billing Day SQL find a written-off month by this phrase.
+BELOW_MINIMUM_MARK = "below the minimum"
+
+
 def is_below_minimum(payload: dict) -> bool:
 	"""Whether the month totals less than the smallest amount worth invoicing in its currency."""
 	return frappe.utils.flt(payload["total"]) < settings.minimum_invoice_amount(payload["currency"])
@@ -331,9 +335,7 @@ def is_below_minimum(payload: dict) -> bool:
 
 def _forgive(team: str, period_end, payload: dict) -> None:
 	"""Write off a month below the minimum. No invoice is made, and the amount stays on record."""
-	reason = (
-		f"{payload['currency']} {payload['total']} is below the minimum invoice amount and was written off."
-	)
+	reason = f"{payload['currency']} {payload['total']} is {BELOW_MINIMUM_MARK} invoice amount and was written off."
 	record_outcome(team, period_end, SKIPPED, reason=reason)
 	record_team_event(
 		team, "Invoice Skipped Below Minimum", "Invoice", reason=reason, amount=payload["total"]
