@@ -47,27 +47,27 @@ class TestInvoiceStateMachine(IntegrationTestCase):
 
 	def test_a_legal_move_writes_the_field_and_appends_one_event(self):
 		doc = frappe.get_doc("Invoice", self.inv)
-		transition(doc, "Open", reason="opened", actor="scheduler")
+		transition(doc, "Overdue", reason="overdue", actor="scheduler")
 
-		self.assertEqual(doc.status, "Open")  # field written on the in-memory doc
+		self.assertEqual(doc.status, "Overdue")  # field written on the in-memory doc
 		events = self._events()
 		self.assertEqual(len(events), 1)
-		self.assertEqual(events[0].from_state, "Draft")
-		self.assertEqual(events[0].to_state, "Open")
+		self.assertEqual(events[0].from_state, "Outstanding")
+		self.assertEqual(events[0].to_state, "Overdue")
 		self.assertEqual(events[0].actor, "scheduler")
-		self.assertEqual(events[0].reason, "opened")
+		self.assertEqual(events[0].reason, "overdue")
 		# Correlation defaults to the invoice's own name, so its events thread together.
 		self.assertEqual(events[0].correlation, self.inv)
-		self.assertEqual(events[0].event_type, "Invoice Open")
+		self.assertEqual(events[0].event_type, "Invoice Overdue")
 
 	def test_an_illegal_move_is_refused_and_records_nothing(self):
 		doc = frappe.get_doc("Invoice", self.inv)
-		transition(doc, "Paid", reason="credits")  # Draft → Paid is legal
+		transition(doc, "Paid", reason="credits")  # Outstanding → Paid is legal
 		self.assertEqual(len(self._events()), 1)
 
 		# Paid is terminal: reopening it is impossible, and the refusal leaves no trace.
 		with self.assertRaises(InvalidTransition):
-			transition(doc, "Open")
+			transition(doc, "Outstanding")
 		self.assertEqual(doc.status, "Paid")  # unchanged
 		self.assertEqual(len(self._events()), 1)  # no event for the rejected move
 
@@ -77,14 +77,11 @@ class TestInvoiceStateMachine(IntegrationTestCase):
 		with self.assertRaises(InvalidTransition):
 			transition(doc, "Paid")
 
-	def test_open_and_collect_records_the_open_transition(self):
-		# The split-brain fix end to end: opening a draft goes through the authority, so
-		# the stream carries the move even when the caller is the billing run.
+	def test_open_and_collect_records_that_collection_began(self):
 		invoicing.open_and_collect(self.inv, collect=False)
 
-		self.assertEqual(frappe.db.get_value("Invoice", self.inv, "status"), "Open")
-		to_states = [e.to_state for e in self._events()]
-		self.assertIn("Open", to_states)
+		self.assertTrue(frappe.db.get_value("Invoice", self.inv, "due_date"))
+		self.assertIn("Invoice Issued", [e.event_type for e in self._events()])
 
 
 class TestDeclaredMachines(IntegrationTestCase):
@@ -92,9 +89,8 @@ class TestDeclaredMachines(IntegrationTestCase):
 	widen a machine (e.g. let a refunded attempt be re-captured, or an invoice reopen)."""
 
 	def test_invoice_edges(self):
-		self.assertTrue(states.INVOICE.allows("Draft", "Open"))
-		self.assertTrue(states.INVOICE.allows("Open", "Paid"))
-		self.assertFalse(states.INVOICE.allows("Paid", "Open"))  # terminal
+		self.assertTrue(states.INVOICE.allows("Outstanding", "Paid"))
+		self.assertFalse(states.INVOICE.allows("Paid", "Outstanding"))  # terminal
 		self.assertFalse(states.INVOICE.allows("Cancelled", "Paid"))  # can't pay a cancel
 
 	def test_payment_attempt_edges(self):

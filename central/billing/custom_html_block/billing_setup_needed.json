@@ -1,0 +1,21 @@
+{
+ "creation": "2026-11-03 00:00:00.000000",
+ "docstatus": 0,
+ "doctype": "Custom HTML Block",
+ "html": "<div class=\"setup-banner\" hidden>\n  <div class=\"setup-title\">Manual setup needed in Billing Settings</div>\n  <ul class=\"setup-gaps\"></ul>\n  <a href=\"/app/billing-settings\">Open Billing Settings</a>\n</div>",
+ "modified": "2026-11-03 00:00:00.000000",
+ "modified_by": "Administrator",
+ "name": "Billing Setup Needed",
+ "owner": "Administrator",
+ "private": 0,
+ "roles": [
+  {
+   "doctype": "Has Role",
+   "parentfield": "roles",
+   "parenttype": "Custom HTML Block",
+   "role": "System Manager"
+  }
+ ],
+ "script": "const banner = root_element.querySelector(\".setup-banner\");\nconst widget = root_element.host.closest(\".widget\");\nif (widget) widget.style.display = \"none\";\n\nfrappe\n  .xcall(\"central.billing.api.admin.accounting.get_manual_setup_gaps\")\n  .then((gaps) => {\n    if (!gaps.length) return;\n    const list = banner.querySelector(\".setup-gaps\");\n    for (const gap of gaps) {\n      const item = document.createElement(\"li\");\n      item.textContent = gap.detail;\n      list.appendChild(item);\n    }\n    banner.hidden = false;\n    if (widget) widget.style.display = \"\";\n  });",
+ "style": ".setup-banner {\n  padding: var(--padding-md);\n  border-radius: var(--border-radius-md);\n  background: var(--bg-orange);\n  color: var(--text-on-orange);\n}\n.setup-title {\n  font-weight: var(--weight-semibold);\n}\n.setup-gaps {\n  margin: var(--margin-xs) 0;\n  padding-left: var(--padding-lg);\n}\n.setup-banner a {\n  color: inherit;\n  text-decoration: underline;\n}"
+}

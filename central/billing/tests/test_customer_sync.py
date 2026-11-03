@@ -33,6 +33,7 @@ class CustomerSyncTestCase(IntegrationTestCase):
 		complete_billing_profile(TEAM)
 		self._conf = patch.dict(frappe.local.conf, {"enable_erpnext_sync": 1})
 		self._conf.start()
+		self.enterContext(patch("central.billing.ingester.customer.has_billable_activity", return_value=True))
 		# Reads such as the company's GSTIN come from a fake accounting system, never a real one.
 		configure_accounting()
 		self.enterContext(patch("central.billing.ingester.connection.fetch", FakeAccountingSystem().fetch))
@@ -76,14 +77,29 @@ class TestCreate(CustomerSyncTestCase):
 	def test_failed_step_resumes_without_a_second_customer(self):
 		with patch(POST, side_effect=created("CUST-1")):
 			self._job()
-		with patch(POST, side_effect=ConnectionError("down")), self.assertRaises(ConnectionError):
-			self._job()
-		self._end_job()
+		with patch(POST, side_effect=ConnectionError("down")):
+			self._job().assert_not_called()  # the pending sweep retries, not the failed step
+		self.assertTrue(
+			frappe.db.exists("Billing Event", {"team": TEAM, "event_type": "Customer Sync Failed"})
+		)
 		with patch(POST, side_effect=created("ADDR-1")) as post:
 			self._job()
 		self.assertEqual(post.call_args.args[0], "api/resource/Address")
 		self.assertEqual(self._ids().profile_id, "CUST-1")
 		self.assertEqual(self._ids().address_id, "ADDR-1")
+
+	def test_a_deadlock_is_left_to_the_job_runner(self):
+		self._assert_raised_for_the_job_runner(frappe.QueryDeadlockError)
+
+	def test_a_lock_wait_timeout_is_left_to_the_job_runner(self):
+		self._assert_raised_for_the_job_runner(frappe.QueryTimeoutError)
+
+	def _assert_raised_for_the_job_runner(self, error):
+		with patch(POST, side_effect=error("locked")):
+			self.assertRaises(error, self._job)
+		self.assertFalse(
+			frappe.db.exists("Billing Event", {"team": TEAM, "event_type": "Customer Sync Failed"})
+		)
 
 	def test_never_commits_itself(self):
 		with patch(POST, side_effect=created("CUST-1")), patch.object(frappe.db, "commit") as commit:
@@ -134,6 +150,16 @@ class TestWhenToSync(CustomerSyncTestCase):
 
 
 class TestPending(CustomerSyncTestCase):
+	def setUp(self):
+		super().setUp()
+		self.subscription = frappe.get_doc({"doctype": "Subscription", "team": TEAM, "enabled": 1})
+		self.subscription.db_insert()
+
+	def test_skips_a_team_with_nothing_billable(self):
+		frappe.db.set_value("Billing Profile", TEAM, {"profile_id": "CUST-1", "address_id": "ADDR-1"})
+		self.subscription.db_set("enabled", 0)
+		self.assertNotIn(TEAM, customer._pending_teams())
+
 	def test_picks_complete_profiles_missing_a_record(self):
 		frappe.db.set_value("Billing Profile", TEAM, {"profile_id": "CUST-1", "address_id": "ADDR-1"})
 		self.assertIn(TEAM, customer._pending_teams())

@@ -19,8 +19,41 @@ from frappe.model.document import Document
 from frappe.model.naming import make_autoname
 
 CANCELLED = "Cancelled"
+OUTSTANDING = "Outstanding"
 # What a team still owes; leaving one of these is when dunning can let go.
-UNSETTLED = ("Open", "Overdue")
+UNSETTLED = (OUTSTANDING, "Overdue")
+
+
+# An invoice is issued when collection starts and sets its due date. Before that it is
+# held: it is never charged, dunned or counted as owed. Overdue is reached only from an
+# issued invoice, so it always has a due date.
+def is_issued(invoice) -> bool:
+	return bool(invoice.get("due_date"))
+
+
+def is_owed(invoice) -> bool:
+	"""Issued and not settled: what the customer owes."""
+	return invoice.status in UNSETTLED and is_issued(invoice)
+
+
+def issued_filters() -> list[list]:
+	"""Invoices collection has started on, settled ones included."""
+	return [["due_date", "is", "set"]]
+
+
+def owed_filters() -> list[list]:
+	"""Invoices the customer owes: issued and not settled."""
+	return [["status", "in", UNSETTLED], *issued_filters()]
+
+
+def is_unissued(invoice) -> bool:
+	"""`unissued_filters` for one invoice."""
+	return invoice.status == OUTSTANDING and not is_issued(invoice)
+
+
+def unissued_filters() -> list[list]:
+	"""Outstanding invoices that collection has not started on yet."""
+	return [["status", "=", OUTSTANDING], ["due_date", "is", "not set"]]
 
 
 def period_key_for(team: str, period_start, period_end) -> str:
@@ -75,7 +108,7 @@ class Invoice(Document):
 	def restore_team_once_settled(self):
 		"""When an unpaid invoice is paid or waived, a team with no other overdue invoice is
 		restored: standing back to Current and the servers dunning stopped started again. An
-		Open invoice does not hold the restore, since it is not yet overdue and dunning acts on
+		Outstanding invoice does not hold the restore, since it is not yet overdue and dunning acts on
 		it on its own schedule. A cancel does not restore: it is a correction, and the
 		reissued invoice is still owed."""
 		before = self.get_doc_before_save()

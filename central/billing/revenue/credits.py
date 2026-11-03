@@ -506,16 +506,32 @@ def return_credit(
 
 
 def promotional_expiry_date(on_date=None):
-	"""When a promotional credit granted today stops being usable.
-
-	`None` when the configured validity is 0 — the grant never expires, same as
-	purchased credit."""
+	"""When a promotional credit granted today stops being usable."""
 	from central.billing import settings
 
-	days = settings.promotional_credit_validity_days()
-	if not days:
-		return None
-	return frappe.utils.add_days(on_date or frappe.utils.nowdate(), days)
+	return frappe.utils.add_days(
+		on_date or frappe.utils.nowdate(), settings.promotional_credit_validity_days()
+	)
+
+
+def promotional_credit_without_expiry() -> list[dict]:
+	"""Promotional credit with no expiry date: a grant, or unpaid credit that an invoice or a refund gave back.
+
+	Admin credit is an operator's decision and has no expiry. A refund of an overcharge to the wallet is
+	money, so a Refund entry counts only when that refund gave back promotional credit."""
+	entry = frappe.qb.DocType("Credit Ledger Entry")
+	refund = frappe.qb.DocType("Refund")
+	promotional_refunds = frappe.qb.from_(refund).select(refund.name).where(refund.promotional_amount > 0)
+	is_promotional = entry.reference_type.isin(("Promotion", "Invoice")) | (
+		(entry.reference_type == "Refund") & entry.reference_name.isin(promotional_refunds)
+	)
+	return (
+		frappe.qb.from_(entry)
+		.select(entry.name, entry.team, entry.currency, entry.amount, entry.creation)
+		.where((entry.entry_type == "Credit") & (entry.paid_in == 0) & entry.expires_on.isnull())
+		.where(is_promotional)
+		.run(as_dict=True)
+	)
 
 
 def grant_promotional_credits(team, amount, currency, note=None, expires_on=None) -> dict:

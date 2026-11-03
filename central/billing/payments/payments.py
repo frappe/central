@@ -20,6 +20,7 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
+from central.billing.doctype.billing_event import billing_event
 from central.billing.payments import decline
 from central.billing.states import record_event, transition
 
@@ -475,6 +476,8 @@ def _record_setup_failure(payment_method: str, decline: dict) -> None:
 	"""Keep a failed try on a setup the customer can still retry, so it stays Pending."""
 	method = frappe.get_doc("Payment Method", payment_method, for_update=True)
 	method.record_failure(decline)
-	record_event(method, "Payment Method Setup Failed", reason=method.failure_code)
+	record_event(
+		method, "Payment Method Setup Failed", reason=method.failure_code, outcome=billing_event.FAILED
+	)
 	# The webhook runs as the system, and only billing code writes a method's failure.
 	method.save(ignore_permissions=True)

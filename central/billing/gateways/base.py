@@ -317,6 +317,13 @@ class GatewayAdapter(ABC):
 		raise GatewayUnsupported(f"{type(self).__name__} does not support get_refund_status")
 
 	@staticmethod
+	def webhook_references(payload: dict) -> set[str] | None:
+		"""The ids a signed event names, to tell whether it concerns Central.
+
+		None means the account is not shared with another product, so every event is kept."""
+		return None
+
+	@staticmethod
 	def dispute_from_event(payload: dict) -> dict | None:
 		"""`{id, payment_id, amount, reason, status}` of the dispute a verified webhook body
 		carries, or None. `status` is open, won, lost or the gateway's own closing reason."""

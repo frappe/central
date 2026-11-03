@@ -439,6 +439,15 @@ class StripeAdapter(GatewayAdapter):
 		except (ValueError, stripe.error.SignatureVerificationError):
 			return False
 
+	@staticmethod
+	def webhook_references(payload: dict) -> set[str] | None:
+		"""Every id on the event's object, and the receipt only our secret key can set."""
+		gateway_object = (payload.get("data") or {}).get("object") or {}
+		fields = ("id", "payment_intent", "charge", "setup_intent", "customer", "payment_method", "mandate")
+		references = {gateway_object.get(field) for field in fields}
+		references.add((gateway_object.get("metadata") or {}).get("receipt"))
+		return {reference for reference in references if isinstance(reference, str) and reference}
+
 	def parse_webhook_event(self, payload: dict, headers: dict | None = None) -> NormalisedEvent:
 		"""Normalise an already-verified Stripe event dict (id is in the body)."""
 		return NormalisedEvent(

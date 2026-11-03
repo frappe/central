@@ -1,8 +1,8 @@
 import frappe
 from frappe import _
-from frappe.query_builder.functions import Count
 from frappe.utils import get_first_day, today
 
+from central.billing.doctype.invoice.invoice import owed_filters, unissued_filters
 from central.signups.eligibility import has_active_payment_method
 
 
@@ -72,29 +72,24 @@ def _count_billing_add_ons(team: str) -> dict[str, int]:
 
 
 def _count_unpaid_invoices(team: str) -> int:
-	invoice = frappe.qb.DocType("Invoice")
-	closed_month_draft = (invoice.status == "Draft") & (invoice.period_end < get_first_day(today()))
-	return (
-		frappe.qb.from_(invoice)
-		.select(Count("*"))
-		.where(
-			(invoice.team == team)
-			& (invoice.invoice_type == "Billable")
-			& (invoice.status.isin(("Open", "Overdue")) | closed_month_draft)
-		)
-	).run()[0][0]
+	"""An issued invoice is unpaid. An invoice not yet issued is unpaid once its month has closed."""
+	billable = [["team", "=", team], ["invoice_type", "=", "Billable"]]
+	closed_month = ["period_end", "<", get_first_day(today())]
+	return frappe.db.count("Invoice", [*owed_filters(), *billable]) + frappe.db.count(
+		"Invoice", [*unissued_filters(), *billable, closed_month]
+	)
 
 
 def _has_current_charges(team: str) -> bool:
 	return bool(
 		frappe.db.exists(
 			"Invoice",
-			{
-				"team": team,
-				"invoice_type": "Billable",
-				"status": "Draft",
-				"period_end": (">=", get_first_day(today())),
-				"total": (">", 0),
-			},
+			[
+				*unissued_filters(),
+				["team", "=", team],
+				["invoice_type", "=", "Billable"],
+				["period_end", ">=", get_first_day(today())],
+				["total", ">", 0],
+			],
 		)
 	)

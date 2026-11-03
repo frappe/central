@@ -13,10 +13,11 @@ import frappe
 from frappe import _
 from frappe.utils import flt, getdate
 
+from central.billing.doctype.invoice.invoice import is_owed
 from central.billing.report._currency import split_currency_columns
 from central.billing.report._paging import first_rows
 
-STATUS_ORDER = ["Draft", "Open", "Paid", "Overdue", "Waived", "Cancelled"]
+STATUS_ORDER = ["Outstanding", "Paid", "Overdue", "Waived", "Cancelled"]
 
 
 def execute(filters: dict | None = None):
@@ -128,19 +129,19 @@ def get_summary(rows: list[dict]) -> list[dict]:
 		counts[r.status] = counts.get(r.status, 0) + 1
 		g = by_currency.setdefault(r.currency or "INR", {"invoiced": 0.0, "outstanding": 0.0})
 		g["invoiced"] += flt(r.total)
-		if r.status in ("Open", "Overdue"):
+		# Owed only: an invoice not yet issued is not a receivable.
+		if is_owed(r):
 			g["outstanding"] += flt(r.expected_collection)
 
 	summary = [
 		{"label": _("Invoices"), "value": len(rows), "datatype": "Int"},
 		{"label": _("Paid"), "value": counts.get("Paid", 0), "datatype": "Int", "indicator": "green"},
 		{
-			"label": _("Open + Overdue"),
-			"value": counts.get("Open", 0) + counts.get("Overdue", 0),
+			"label": _("Outstanding + Overdue"),
+			"value": counts.get("Outstanding", 0) + counts.get("Overdue", 0),
 			"datatype": "Int",
 			"indicator": "orange",
 		},
-		{"label": _("Draft"), "value": counts.get("Draft", 0), "datatype": "Int", "indicator": "grey"},
 	]
 	for currency in sorted(by_currency):
 		g = by_currency[currency]

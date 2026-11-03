@@ -364,6 +364,391 @@
    "title": "Converted",
    "workbook": "billing"
   },
+  "billing-coverage-active-subscriptions": {
+   "chart_type": "Number",
+   "config": {
+    "filters": {
+     "filters": [],
+     "logical_operator": "And"
+    },
+    "number_column_options": [
+     {}
+    ],
+    "number_columns": [
+     {
+      "aggregation": "sum",
+      "column_name": "active_subscriptions",
+      "data_type": "Decimal",
+      "id": "Active subscriptions",
+      "measure_name": "Active subscriptions"
+     }
+    ],
+    "number_formats": {
+     "Active subscriptions": {
+      "decimals": 0
+     }
+    },
+    "sparkline": false
+   },
+   "description": null,
+   "folder": null,
+   "info": "Enabled subscriptions now. One team can hold many.",
+   "name": "billing-coverage-active-subscriptions",
+   "query": "billing-run-coverage-query",
+   "sort_order": 106,
+   "title": "Active subscriptions",
+   "workbook": "billing"
+  },
+  "billing-coverage-below-minimum": {
+   "chart_type": "Number",
+   "config": {
+    "filters": {
+     "filters": [],
+     "logical_operator": "And"
+    },
+    "number_column_options": [
+     {}
+    ],
+    "number_columns": [
+     {
+      "aggregation": "sum",
+      "column_name": "below_minimum",
+      "data_type": "Decimal",
+      "id": "Below minimum",
+      "measure_name": "Below minimum"
+     }
+    ],
+    "number_formats": {
+     "Below minimum": {
+      "decimals": 0
+     }
+    },
+    "sparkline": false
+   },
+   "description": null,
+   "folder": null,
+   "info": "The month totals less than the minimum invoice amount, so it is written off. Set the minimum in Billing Settings.",
+   "name": "billing-coverage-below-minimum",
+   "query": "billing-run-coverage-query",
+   "sort_order": 113,
+   "title": "Below minimum",
+   "workbook": "billing"
+  },
+  "billing-coverage-invoiced": {
+   "chart_type": "Number",
+   "config": {
+    "filters": {
+     "filters": [],
+     "logical_operator": "And"
+    },
+    "number_column_options": [
+     {}
+    ],
+    "number_columns": [
+     {
+      "aggregation": "sum",
+      "column_name": "invoiced",
+      "data_type": "Decimal",
+      "id": "Invoiced",
+      "measure_name": "Invoiced"
+     }
+    ],
+    "number_formats": {
+     "Invoiced": {
+      "decimals": 0
+     }
+    },
+    "sparkline": false
+   },
+   "description": null,
+   "folder": null,
+   "info": "Invoice issued: paid, or due on its due date. These teams pay.",
+   "name": "billing-coverage-invoiced",
+   "query": "billing-run-coverage-query",
+   "sort_order": 108,
+   "title": "Invoiced",
+   "workbook": "billing"
+  },
+  "billing-coverage-needs-action": {
+   "chart_type": "Number",
+   "config": {
+    "filters": {
+     "filters": [],
+     "logical_operator": "And"
+    },
+    "number_column_options": [
+     {}
+    ],
+    "number_columns": [
+     {
+      "aggregation": "sum",
+      "column_name": "needs_action",
+      "data_type": "Decimal",
+      "id": "Needs action",
+      "measure_name": "Needs action"
+     }
+    ],
+    "number_formats": {
+     "Needs action": {
+      "decimals": 0
+     }
+    },
+    "sparkline": false
+   },
+   "description": null,
+   "folder": null,
+   "info": "The invoice failed to generate. Retried every hour. Should be 0.",
+   "name": "billing-coverage-needs-action",
+   "query": "billing-run-coverage-query",
+   "sort_order": 111,
+   "title": "Needs action",
+   "workbook": "billing"
+  },
+  "billing-coverage-no-subscription": {
+   "chart_type": "Number",
+   "config": {
+    "filters": {
+     "filters": [],
+     "logical_operator": "And"
+    },
+    "number_column_options": [
+     {}
+    ],
+    "number_columns": [
+     {
+      "aggregation": "sum",
+      "column_name": "no_subscription",
+      "data_type": "Decimal",
+      "id": "No subscription",
+      "measure_name": "No subscription"
+     }
+    ],
+    "number_formats": {
+     "No subscription": {
+      "decimals": 0
+     }
+    },
+    "sparkline": false
+   },
+   "description": null,
+   "folder": null,
+   "info": "Free trial servers only, or never created a server. Not billed.",
+   "name": "billing-coverage-no-subscription",
+   "query": "billing-run-coverage-query",
+   "sort_order": 115,
+   "title": "No subscription",
+   "workbook": "billing"
+  },
+  "billing-coverage-nothing-to-bill": {
+   "chart_type": "Number",
+   "config": {
+    "filters": {
+     "filters": [],
+     "logical_operator": "And"
+    },
+    "number_column_options": [
+     {}
+    ],
+    "number_columns": [
+     {
+      "aggregation": "sum",
+      "column_name": "nothing_to_bill",
+      "data_type": "Decimal",
+      "id": "Nothing to bill",
+      "measure_name": "Nothing to bill"
+     }
+    ],
+    "number_formats": {
+     "Nothing to bill": {
+      "decimals": 0
+     }
+    },
+    "sparkline": false
+   },
+   "description": null,
+   "folder": null,
+   "info": "Has a subscription, but nothing was billable in the month, or the invoice was cancelled.",
+   "name": "billing-coverage-nothing-to-bill",
+   "query": "billing-run-coverage-query",
+   "sort_order": 114,
+   "title": "Nothing to bill",
+   "workbook": "billing"
+  },
+  "billing-coverage-paid": {
+   "chart_type": "Number",
+   "config": {
+    "filters": {
+     "filters": [],
+     "logical_operator": "And"
+    },
+    "number_column_options": [
+     {}
+    ],
+    "number_columns": [
+     {
+      "aggregation": "sum",
+      "column_name": "paid",
+      "data_type": "Decimal",
+      "id": "Paid",
+      "measure_name": "Paid"
+     }
+    ],
+    "number_formats": {
+     "Paid": {
+      "decimals": 0
+     }
+    },
+    "sparkline": false
+   },
+   "description": null,
+   "folder": null,
+   "info": "Invoiced teams that already paid.",
+   "name": "billing-coverage-paid",
+   "query": "billing-run-coverage-query",
+   "sort_order": 109,
+   "title": "Paid",
+   "workbook": "billing"
+  },
+  "billing-coverage-teams": {
+   "chart_type": "Number",
+   "config": {
+    "filters": {
+     "filters": [],
+     "logical_operator": "And"
+    },
+    "number_column_options": [
+     {}
+    ],
+    "number_columns": [
+     {
+      "aggregation": "sum",
+      "column_name": "teams",
+      "data_type": "Decimal",
+      "id": "Teams by month end",
+      "measure_name": "Teams by month end"
+     }
+    ],
+    "number_formats": {
+     "Teams by month end": {
+      "decimals": 0
+     }
+    },
+    "sparkline": false
+   },
+   "description": null,
+   "folder": null,
+   "info": "Every team that existed when the month closed. The seven results below add up to this number.",
+   "name": "billing-coverage-teams",
+   "query": "billing-run-coverage-query",
+   "sort_order": 105,
+   "title": "Teams by month end",
+   "workbook": "billing"
+  },
+  "billing-coverage-waiting": {
+   "chart_type": "Number",
+   "config": {
+    "filters": {
+     "filters": [],
+     "logical_operator": "And"
+    },
+    "number_column_options": [
+     {}
+    ],
+    "number_columns": [
+     {
+      "aggregation": "sum",
+      "column_name": "waiting",
+      "data_type": "Decimal",
+      "id": "Waiting",
+      "measure_name": "Waiting"
+     }
+    ],
+    "number_formats": {
+     "Waiting": {
+      "decimals": 0
+     }
+    },
+    "sparkline": false
+   },
+   "description": null,
+   "folder": null,
+   "info": "Has a subscription. The invoice is not issued yet, or is held.",
+   "name": "billing-coverage-waiting",
+   "query": "billing-run-coverage-query",
+   "sort_order": 110,
+   "title": "Waiting",
+   "workbook": "billing"
+  },
+  "billing-coverage-waived": {
+   "chart_type": "Number",
+   "config": {
+    "filters": {
+     "filters": [],
+     "logical_operator": "And"
+    },
+    "number_column_options": [
+     {}
+    ],
+    "number_columns": [
+     {
+      "aggregation": "sum",
+      "column_name": "waived",
+      "data_type": "Decimal",
+      "id": "Waived (internal)",
+      "measure_name": "Waived (internal)"
+     }
+    ],
+    "number_formats": {
+     "Waived (internal)": {
+      "decimals": 0
+     }
+    },
+    "sparkline": false
+   },
+   "description": null,
+   "folder": null,
+   "info": "Our own teams. Rated for the record, never collected.",
+   "name": "billing-coverage-waived",
+   "query": "billing-run-coverage-query",
+   "sort_order": 112,
+   "title": "Waived (internal)",
+   "workbook": "billing"
+  },
+  "billing-coverage-with-subscription": {
+   "chart_type": "Number",
+   "config": {
+    "filters": {
+     "filters": [],
+     "logical_operator": "And"
+    },
+    "number_column_options": [
+     {}
+    ],
+    "number_columns": [
+     {
+      "aggregation": "sum",
+      "column_name": "with_subscription",
+      "data_type": "Decimal",
+      "id": "Teams with a subscription",
+      "measure_name": "Teams with a subscription"
+     }
+    ],
+    "number_formats": {
+     "Teams with a subscription": {
+      "decimals": 0
+     }
+    },
+    "sparkline": false
+   },
+   "description": null,
+   "folder": null,
+   "info": "Teams the run visits. Only these can get an invoice.",
+   "name": "billing-coverage-with-subscription",
+   "query": "billing-run-coverage-query",
+   "sort_order": 107,
+   "title": "Teams with a subscription",
+   "workbook": "billing"
+  },
   "billing-credit-in-wallets-inr": {
    "chart_type": "Number",
    "config": {
@@ -1541,7 +1926,7 @@
    },
    "description": null,
    "folder": null,
-   "info": "Drafts waiting for a billing profile, an accounting sync or a GSTIN check.",
+   "info": "Outstanding invoices held for a billing profile, an accounting sync or a GSTIN check. They are not charged or dunned.",
    "name": "billing-held-for-billing-details",
    "query": "billing-billing-run-query",
    "sort_order": 22,
@@ -1846,7 +2231,7 @@
    },
    "description": null,
    "folder": null,
-   "info": "A team with nothing to bill gets no invoice, so this can stay below Teams to bill.",
+   "info": "Invoices made for the month, waived ones included. Why this many invoices above explains the teams with none.",
    "name": "billing-invoices-drafted",
    "query": "billing-billing-run-query",
    "sort_order": 20,
@@ -1896,7 +2281,7 @@
    },
    "description": null,
    "folder": null,
-   "info": "A gap in the bars while invoices are still Draft means the run stopped.",
+   "info": "A gap in the bars while invoices wait for collection means the run stopped.",
    "name": "billing-invoices-drafted-and-paid-per-hour",
    "query": "billing-run-progress-by-hour-query",
    "sort_order": 36,
@@ -1933,7 +2318,7 @@
    },
    "description": null,
    "folder": null,
-   "info": "Drafts waiting for billing details, accounting sync or a GSTIN check.",
+   "info": "Outstanding invoices held for billing details, accounting sync or a GSTIN check.",
    "name": "billing-invoices-on-hold",
    "query": "billing-billing-plumbing-query",
    "sort_order": 10,
@@ -2018,7 +2403,7 @@
    },
    "description": null,
    "folder": null,
-   "info": "Out of Draft: paid, waived, or open and waiting for payment.",
+   "info": "Invoices whose collection started: paid, or due on a due date.",
    "name": "billing-invoices-settled",
    "query": "billing-billing-run-query",
    "sort_order": 21,
@@ -2348,7 +2733,7 @@
    },
    "description": null,
    "folder": null,
-   "info": "Since any invoice of this run last changed. Large while invoices are still Draft means the run stopped.",
+   "info": "Since any invoice of this run last changed. Large while invoices wait for collection means the run stopped.",
    "name": "billing-minutes-since-last-progress",
    "query": "billing-billing-run-query",
    "sort_order": 30,
@@ -2573,7 +2958,7 @@
    },
    "description": null,
    "folder": null,
-   "info": "Servers of teams whose Tax Profile is marked internal. Their invoices are waived.",
+   "info": "Servers of teams whose Billing Profile is marked internal. Their invoices are waived.",
    "name": "billing-our-own-teams",
    "query": "billing-region-economics-query",
    "sort_order": 63,
@@ -3687,12 +4072,12 @@
       "aggregation": "sum",
       "column_name": "run_errors",
       "data_type": "Decimal",
-      "id": "Run errors",
-      "measure_name": "Run errors"
+      "id": "Failed invoices",
+      "measure_name": "Failed invoices"
      }
     ],
     "number_formats": {
-     "Run errors": {
+     "Failed invoices": {
       "decimals": 0
      }
     },
@@ -3700,11 +4085,11 @@
    },
    "description": null,
    "folder": null,
-   "info": "Billing Run Failure entries in the Error Log since the month closed. Should be 0.",
+   "info": "Teams whose invoice failed to generate this month. Retried every hour. Should be 0. Billing Run Coverage gives each reason.",
    "name": "billing-run-errors",
    "query": "billing-billing-run-query",
    "sort_order": 28,
-   "title": "Run errors",
+   "title": "Failed invoices",
    "workbook": "billing"
   },
   "billing-run-errors-per-day": {
@@ -3731,7 +4116,7 @@
         "aggregation": "sum",
         "column_name": "errors",
         "data_type": "Decimal",
-        "measure_name": "Errors"
+        "measure_name": "Failed invoices"
        },
        "type": "bar"
       }
@@ -3741,11 +4126,11 @@
    },
    "description": null,
    "folder": null,
-   "info": "Billing Run Failure entries in the Error Log. Open the Error Log for the team and cause.",
+   "info": "Invoice generation failures per day. Open Billing Activity for the team and cause.",
    "name": "billing-run-errors-per-day",
    "query": "billing-run-errors-query",
    "sort_order": 40,
-   "title": "Run errors per day",
+   "title": "Failed invoices per day",
    "workbook": "billing"
   },
   "billing-run-time-hours": {
@@ -4035,7 +4420,7 @@
    },
    "description": null,
    "folder": null,
-   "info": "Open and overdue invoices, after credit.",
+   "info": "Outstanding and overdue invoices, after credit.",
    "name": "billing-still-to-collect-inr",
    "query": "billing-receivables-query",
    "sort_order": 2,
@@ -4118,7 +4503,7 @@
    },
    "description": null,
    "folder": null,
-   "info": "Open or overdue. Dunning retries these.",
+   "info": "Outstanding or overdue, with a due date. Dunning retries these.",
    "name": "billing-still-unpaid",
    "query": "billing-billing-run-query",
    "sort_order": 26,
@@ -4268,41 +4653,6 @@
    "query": "billing-teams-owing-the-most-query",
    "sort_order": 14,
    "title": "Teams owing the most",
-   "workbook": "billing"
-  },
-  "billing-teams-to-bill": {
-   "chart_type": "Number",
-   "config": {
-    "filters": {
-     "filters": [],
-     "logical_operator": "And"
-    },
-    "number_column_options": [
-     {}
-    ],
-    "number_columns": [
-     {
-      "aggregation": "sum",
-      "column_name": "teams",
-      "data_type": "Decimal",
-      "id": "Teams to bill",
-      "measure_name": "Teams to bill"
-     }
-    ],
-    "number_formats": {
-     "Teams to bill": {
-      "decimals": 0
-     }
-    },
-    "sparkline": false
-   },
-   "description": null,
-   "folder": null,
-   "info": "Teams with a subscription when the run last checked.",
-   "name": "billing-teams-to-bill",
-   "query": "billing-billing-run-query",
-   "sort_order": 19,
-   "title": "Teams to bill",
    "workbook": "billing"
   },
   "billing-teams-tried-to-pay": {
@@ -4592,6 +4942,52 @@
    "title": "Why payments fail",
    "workbook": "billing"
   },
+  "billing-why-this-many-invoices": {
+   "chart_type": "Table",
+   "config": {
+    "columns": [],
+    "filters": {
+     "filters": [],
+     "logical_operator": "And"
+    },
+    "limit": 100,
+    "number_formats": {},
+    "rows": [
+     {
+      "column_name": "sort_order",
+      "data_type": "Integer",
+      "dimension_name": "#"
+     },
+     {
+      "column_name": "result",
+      "data_type": "String",
+      "dimension_name": "Result"
+     },
+     {
+      "column_name": "what_happens",
+      "data_type": "String",
+      "dimension_name": "What happens"
+     }
+    ],
+    "show_row_totals": false,
+    "values": [
+     {
+      "aggregation": "sum",
+      "column_name": "teams",
+      "data_type": "Decimal",
+      "measure_name": "Teams"
+     }
+    ]
+   },
+   "description": null,
+   "folder": null,
+   "info": "Every team lands in one row. The rows add up to Teams by month end. Open Billing Run Coverage for each team and its reason.",
+   "name": "billing-why-this-many-invoices",
+   "query": "billing-run-coverage-query",
+   "sort_order": 116,
+   "title": "Why this many invoices",
+   "workbook": "billing"
+  },
   "billing-yield-cash-revenue-of-potential": {
    "chart_type": "Number",
    "config": {
@@ -4827,13 +5223,134 @@
   "billing-billing-day": {
    "items": [
     {
-     "chart": "billing-teams-to-bill",
+     "chart": "billing-coverage-teams",
      "layout": {
       "h": 5,
-      "i": "item-0",
+      "i": "coverage-0",
       "w": 5,
       "x": 0,
       "y": 0
+     },
+     "type": "chart"
+    },
+    {
+     "chart": "billing-coverage-active-subscriptions",
+     "layout": {
+      "h": 5,
+      "i": "coverage-1",
+      "w": 5,
+      "x": 5,
+      "y": 0
+     },
+     "type": "chart"
+    },
+    {
+     "chart": "billing-coverage-with-subscription",
+     "layout": {
+      "h": 5,
+      "i": "coverage-2",
+      "w": 5,
+      "x": 10,
+      "y": 0
+     },
+     "type": "chart"
+    },
+    {
+     "chart": "billing-coverage-invoiced",
+     "layout": {
+      "h": 5,
+      "i": "coverage-3",
+      "w": 5,
+      "x": 15,
+      "y": 0
+     },
+     "type": "chart"
+    },
+    {
+     "chart": "billing-coverage-paid",
+     "layout": {
+      "h": 5,
+      "i": "coverage-4",
+      "w": 5,
+      "x": 0,
+      "y": 5
+     },
+     "type": "chart"
+    },
+    {
+     "chart": "billing-coverage-waiting",
+     "layout": {
+      "h": 5,
+      "i": "coverage-5",
+      "w": 5,
+      "x": 5,
+      "y": 5
+     },
+     "type": "chart"
+    },
+    {
+     "chart": "billing-coverage-needs-action",
+     "layout": {
+      "h": 5,
+      "i": "coverage-6",
+      "w": 5,
+      "x": 10,
+      "y": 5
+     },
+     "type": "chart"
+    },
+    {
+     "chart": "billing-coverage-waived",
+     "layout": {
+      "h": 5,
+      "i": "coverage-7",
+      "w": 5,
+      "x": 15,
+      "y": 5
+     },
+     "type": "chart"
+    },
+    {
+     "chart": "billing-coverage-below-minimum",
+     "layout": {
+      "h": 5,
+      "i": "coverage-8",
+      "w": 5,
+      "x": 0,
+      "y": 10
+     },
+     "type": "chart"
+    },
+    {
+     "chart": "billing-coverage-nothing-to-bill",
+     "layout": {
+      "h": 5,
+      "i": "coverage-9",
+      "w": 5,
+      "x": 5,
+      "y": 10
+     },
+     "type": "chart"
+    },
+    {
+     "chart": "billing-coverage-no-subscription",
+     "layout": {
+      "h": 5,
+      "i": "coverage-10",
+      "w": 5,
+      "x": 10,
+      "y": 10
+     },
+     "type": "chart"
+    },
+    {
+     "chart": "billing-why-this-many-invoices",
+     "layout": {
+      "h": 17,
+      "i": "coverage-table",
+      "w": 20,
+      "x": 0,
+      "y": 15
      },
      "type": "chart"
     },
@@ -4843,8 +5360,8 @@
       "h": 5,
       "i": "item-1",
       "w": 5,
-      "x": 5,
-      "y": 0
+      "x": 0,
+      "y": 32
      },
      "type": "chart"
     },
@@ -4854,8 +5371,8 @@
       "h": 5,
       "i": "item-2",
       "w": 5,
-      "x": 10,
-      "y": 0
+      "x": 5,
+      "y": 32
      },
      "type": "chart"
     },
@@ -4865,8 +5382,8 @@
       "h": 5,
       "i": "item-3",
       "w": 5,
-      "x": 15,
-      "y": 0
+      "x": 10,
+      "y": 32
      },
      "type": "chart"
     },
@@ -4876,8 +5393,8 @@
       "h": 5,
       "i": "item-4",
       "w": 5,
-      "x": 0,
-      "y": 5
+      "x": 15,
+      "y": 32
      },
      "type": "chart"
     },
@@ -4887,8 +5404,8 @@
       "h": 5,
       "i": "item-5",
       "w": 5,
-      "x": 5,
-      "y": 5
+      "x": 0,
+      "y": 37
      },
      "type": "chart"
     },
@@ -4898,8 +5415,8 @@
       "h": 5,
       "i": "item-6",
       "w": 5,
-      "x": 10,
-      "y": 5
+      "x": 5,
+      "y": 37
      },
      "type": "chart"
     },
@@ -4909,8 +5426,8 @@
       "h": 5,
       "i": "item-7",
       "w": 5,
-      "x": 15,
-      "y": 5
+      "x": 10,
+      "y": 37
      },
      "type": "chart"
     },
@@ -4920,8 +5437,8 @@
       "h": 5,
       "i": "item-8",
       "w": 5,
-      "x": 0,
-      "y": 10
+      "x": 15,
+      "y": 37
      },
      "type": "chart"
     },
@@ -4931,8 +5448,8 @@
       "h": 5,
       "i": "item-9",
       "w": 5,
-      "x": 5,
-      "y": 10
+      "x": 0,
+      "y": 42
      },
      "type": "chart"
     },
@@ -4942,8 +5459,8 @@
       "h": 5,
       "i": "item-10",
       "w": 5,
-      "x": 10,
-      "y": 10
+      "x": 5,
+      "y": 42
      },
      "type": "chart"
     },
@@ -4953,8 +5470,8 @@
       "h": 5,
       "i": "item-11",
       "w": 5,
-      "x": 15,
-      "y": 10
+      "x": 10,
+      "y": 42
      },
      "type": "chart"
     },
@@ -4964,8 +5481,8 @@
       "h": 5,
       "i": "item-12",
       "w": 5,
-      "x": 0,
-      "y": 15
+      "x": 15,
+      "y": 42
      },
      "type": "chart"
     },
@@ -4975,8 +5492,8 @@
       "h": 5,
       "i": "item-13",
       "w": 5,
-      "x": 5,
-      "y": 15
+      "x": 0,
+      "y": 47
      },
      "type": "chart"
     },
@@ -4986,8 +5503,8 @@
       "h": 5,
       "i": "item-14",
       "w": 5,
-      "x": 10,
-      "y": 15
+      "x": 5,
+      "y": 47
      },
      "type": "chart"
     },
@@ -4997,8 +5514,8 @@
       "h": 5,
       "i": "item-15",
       "w": 5,
-      "x": 15,
-      "y": 15
+      "x": 10,
+      "y": 47
      },
      "type": "chart"
     },
@@ -5008,9 +5525,9 @@
       "i": "item-16",
       "w": 20,
       "x": 0,
-      "y": 20
+      "y": 52
      },
-     "text": "<p>Detail: <a href=\"/desk/query-report/Invoice Register\">Invoice Register</a> · <a href=\"/desk/query-report/Failed Payments\">Failed Payments</a> · <a href=\"/desk/query-report/Billing Invariant Violations\">Billing Invariant Violations</a> · <a href=\"/desk/query-report/Internal Usage and Waivers\">Internal Usage and Waivers</a></p>",
+     "text": "<p>Detail: <a href=\"/desk/query-report/Billing Run Coverage\">Billing Run Coverage</a> · <a href=\"/desk/query-report/Invoice Register\">Invoice Register</a> · <a href=\"/desk/query-report/Failed Payments\">Failed Payments</a> · <a href=\"/desk/query-report/Billing Invariant Violations\">Billing Invariant Violations</a> · <a href=\"/desk/query-report/Internal Usage and Waivers\">Internal Usage and Waivers</a></p>",
      "type": "text"
     },
     {
@@ -5020,7 +5537,7 @@
       "i": "item-17",
       "w": 8,
       "x": 0,
-      "y": 22
+      "y": 54
      },
      "type": "chart"
     },
@@ -5031,7 +5548,7 @@
       "i": "item-18",
       "w": 12,
       "x": 8,
-      "y": 22
+      "y": 54
      },
      "type": "chart"
     },
@@ -5042,7 +5559,7 @@
       "i": "item-19",
       "w": 10,
       "x": 0,
-      "y": 36
+      "y": 68
      },
      "type": "chart"
     },
@@ -5053,7 +5570,7 @@
       "i": "item-20",
       "w": 10,
       "x": 10,
-      "y": 36
+      "y": 68
      },
      "type": "chart"
     },
@@ -5064,7 +5581,7 @@
       "i": "item-21",
       "w": 10,
       "x": 0,
-      "y": 48
+      "y": 80
      },
      "type": "chart"
     },
@@ -5075,7 +5592,7 @@
       "i": "item-22",
       "w": 10,
       "x": 10,
-      "y": 48
+      "y": 80
      },
      "type": "chart"
     }
@@ -6163,7 +6680,7 @@
  "folders": [],
  "idx": 0,
  "is_standard": 1,
- "modified": "2026-10-28 12:00:00.000000",
+ "modified": "2026-11-03 19:30:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "billing",
@@ -6178,7 +6695,7 @@
    "operations": [
     {
      "data_source": "Site DB",
-     "raw_sql": "WITH latest AS (\n  SELECT c.subscription, c.change_type, c.locked_rate, c.currency,\n    ROW_NUMBER() OVER (PARTITION BY c.subscription ORDER BY c.effective_at DESC, c.creation DESC) AS rn\n  FROM `tabSubscription Change` c\n  WHERE c.change_type IN ('Created', 'Plan Changed', 'Cancelled')\n)\nSELECT\n  COALESCE(SUM(CASE WHEN l.currency = 'INR' THEN l.locked_rate ELSE 0 END), 0) AS run_rate_inr,\n  COALESCE(SUM(CASE WHEN l.currency = 'USD' THEN l.locked_rate ELSE 0 END), 0) AS run_rate_usd\nFROM latest l\nJOIN `tabSubscription` s ON s.name = l.subscription\nWHERE l.rn = 1 AND l.change_type != 'Cancelled' AND s.enabled = 1\n  AND NOT EXISTS (SELECT 1 FROM `tabTax Profile` tp WHERE tp.team = s.team AND tp.is_internal = 1)\n",
+     "raw_sql": "WITH latest AS (\n  SELECT c.subscription, c.change_type, c.locked_rate, c.currency,\n    ROW_NUMBER() OVER (PARTITION BY c.subscription ORDER BY c.effective_at DESC, c.creation DESC) AS rn\n  FROM `tabSubscription Change` c\n  WHERE c.change_type IN ('Created', 'Plan Changed', 'Cancelled')\n)\nSELECT\n  COALESCE(SUM(CASE WHEN l.currency = 'INR' THEN l.locked_rate ELSE 0 END), 0) AS run_rate_inr,\n  COALESCE(SUM(CASE WHEN l.currency = 'USD' THEN l.locked_rate ELSE 0 END), 0) AS run_rate_usd\nFROM latest l\nJOIN `tabSubscription` s ON s.name = l.subscription\nWHERE l.rn = 1 AND l.change_type != 'Cancelled' AND s.enabled = 1\n  AND NOT EXISTS (SELECT 1 FROM `tabBilling Profile` tp WHERE tp.team = s.team AND tp.is_internal = 1)\n",
      "type": "sql"
     }
    ],
@@ -6196,7 +6713,7 @@
    "operations": [
     {
      "data_source": "Site DB",
-     "raw_sql": "SELECT\n  (SELECT COUNT(*) FROM `tabWebhook Event` WHERE status = 'Failed'\n    OR (status = 'Received' AND creation < NOW() - INTERVAL 15 MINUTE)) AS webhooks_stuck,\n  (SELECT COUNT(*) FROM `tabInvoice` WHERE erpnext_sync_status = 'Failed') AS sync_failed,\n  (SELECT COUNT(*) FROM `tabInvoice` WHERE status = 'Draft' AND hold_reason IS NOT NULL AND hold_reason != '') AS on_hold,\n  (SELECT COUNT(*) FROM `tabSubscription` WHERE enabled = 1 AND account_standing IN ('Past Due', 'Suspended')) AS past_due,\n  (SELECT COUNT(*) FROM `tabSubscription` WHERE enabled = 1) AS subscriptions,\n  (SELECT COALESCE(SUM(balance), 0) FROM `tabCredit Wallet` WHERE currency = 'INR') AS wallet_inr\n",
+     "raw_sql": "SELECT\n  (SELECT COUNT(*) FROM `tabWebhook Event` WHERE status = 'Failed'\n    OR (status = 'Received' AND creation < NOW() - INTERVAL 15 MINUTE)) AS webhooks_stuck,\n  (SELECT COUNT(*) FROM `tabInvoice` WHERE erpnext_sync_status = 'Failed') AS sync_failed,\n  (SELECT COUNT(*) FROM `tabInvoice` WHERE status = 'Outstanding' AND due_date IS NULL AND hold_reason IS NOT NULL AND hold_reason != '') AS on_hold,\n  (SELECT COUNT(*) FROM `tabSubscription` WHERE enabled = 1 AND account_standing IN ('Past Due', 'Suspended')) AS past_due,\n  (SELECT COUNT(*) FROM `tabSubscription` WHERE enabled = 1) AS subscriptions,\n  (SELECT COALESCE(SUM(balance), 0) FROM `tabCredit Wallet` WHERE currency = 'INR') AS wallet_inr\n",
      "type": "sql"
     }
    ],
@@ -6214,7 +6731,7 @@
    "operations": [
     {
      "data_source": "Site DB",
-     "raw_sql": "WITH period AS (SELECT LAST_DAY(CURDATE() - INTERVAL 1 MONTH) AS period_end),\ninvoices AS (\n  SELECT i.name, i.status, i.hold_reason, i.amount_paid, i.creation, i.modified, i.paid_at,\n    i.erpnext_sync_status, i.erpnext_synced_at, CASE\n    WHEN i.status = 'Waived' THEN 'Our own teams (waived)'\n    WHEN i.status = 'Draft' AND COALESCE(i.hold_reason, '') != '' THEN 'Held for details'\n    WHEN i.status = 'Draft' THEN 'Not collected yet'\n    WHEN i.status IN ('Open', 'Overdue') THEN 'Unpaid'\n    WHEN i.amount_paid <= 0 THEN 'Credit only'\n    ELSE COALESCE((\n      SELECT pm.method_type FROM `tabPayment Attempt` pa\n      JOIN `tabPayment Method` pm ON pm.name = pa.payment_method\n      WHERE pa.invoice = i.name AND pa.status IN ('Captured', 'Refunded') LIMIT 1\n    ), 'Paid, no payment record')\n  END AS settled_as\n  FROM `tabInvoice` i, period p\n  WHERE i.period_end = p.period_end AND i.invoice_type = 'Billable' AND i.status != 'Cancelled'\n),\nattempts AS (\n  SELECT COUNT(*) AS attempts, COALESCE(SUM(pa.status = 'Failed'), 0) AS failed\n  FROM `tabPayment Attempt` pa JOIN invoices i ON i.name = pa.invoice\n),\nrun AS (SELECT br.* FROM `tabBilling Run` br, period p WHERE br.period_end = p.period_end)\nSELECT\n  COALESCE((SELECT teams FROM run), (SELECT COUNT(DISTINCT team) FROM `tabSubscription`)) AS teams,\n  COUNT(i.name) AS drafted,\n  COALESCE(SUM(i.status != 'Draft'), 0) AS settled,\n  COALESCE(SUM(i.settled_as = 'Held for details'), 0) AS held,\n  COALESCE(SUM(i.settled_as = 'Credit only'), 0) AS by_credit,\n  COALESCE(SUM(i.settled_as = 'Card'), 0) AS by_card,\n  COALESCE(SUM(i.settled_as = 'UPI Autopay'), 0) AS by_upi,\n  COALESCE(SUM(i.settled_as = 'Unpaid'), 0) AS unpaid,\n  (SELECT failed FROM attempts) AS failed_payments,\n  (SELECT attempts FROM attempts) AS payment_attempts,\n  (SELECT COUNT(*) FROM `tabError Log` e, period p\n    WHERE e.method = 'Billing Run Failure' AND e.creation >= p.period_end) AS run_errors,\n  COALESCE(SUM(i.erpnext_sync_status = 'Failed'), 0) AS sync_failed,\n  COALESCE(SUM(i.erpnext_sync_status IN ('Synced', 'Failed')), 0) AS sync_tried,\n  COALESCE(ROUND(TIMESTAMPDIFF(MINUTE, MIN(i.creation), MAX(i.creation)) / 60, 1), 0) AS draft_hours,\n  COALESCE(ROUND(TIMESTAMPDIFF(MINUTE, (SELECT started_at FROM run),\n    COALESCE((SELECT completed_at FROM run), NOW())) / 60, 1), 0) AS run_hours,\n  COALESCE(ROUND(AVG(TIMESTAMPDIFF(MINUTE, i.paid_at, i.erpnext_synced_at)), 0), 0) AS sync_minutes,\n  COALESCE(TIMESTAMPDIFF(MINUTE, COALESCE(MAX(i.modified), (SELECT started_at FROM run)), NOW()), 0) AS minutes_since_progress\nFROM invoices i\n",
+     "raw_sql": "WITH period AS (SELECT LAST_DAY(CURDATE() - INTERVAL 1 MONTH) AS period_end),\ninvoices AS (\n  SELECT i.name, i.status, i.hold_reason, i.due_date, i.amount_paid, i.creation, i.modified, i.paid_at,\n    i.erpnext_sync_status, i.erpnext_synced_at, CASE\n    WHEN i.status = 'Waived' THEN 'Our own teams (waived)'\n    WHEN i.status = 'Outstanding' AND i.due_date IS NULL AND COALESCE(i.hold_reason, '') != '' THEN 'Held for details'\n    WHEN i.status = 'Outstanding' AND i.due_date IS NULL THEN 'Not collected yet'\n    WHEN i.status IN ('Outstanding', 'Overdue') THEN 'Unpaid'\n    WHEN i.amount_paid <= 0 THEN 'Credit only'\n    ELSE COALESCE((\n      SELECT pm.method_type FROM `tabPayment Attempt` pa\n      JOIN `tabPayment Method` pm ON pm.name = pa.payment_method\n      WHERE pa.invoice = i.name AND pa.status IN ('Captured', 'Refunded') LIMIT 1\n    ), 'Paid, no payment record')\n  END AS settled_as\n  FROM `tabInvoice` i, period p\n  WHERE i.period_end = p.period_end AND i.invoice_type = 'Billable' AND i.status != 'Cancelled'\n),\nattempts AS (\n  SELECT COUNT(*) AS attempts, COALESCE(SUM(pa.status = 'Failed'), 0) AS failed\n  FROM `tabPayment Attempt` pa JOIN invoices i ON i.name = pa.invoice\n),\nrun AS (SELECT br.* FROM `tabBilling Run` br, period p WHERE br.period_end = p.period_end)\nSELECT\n  COALESCE((SELECT teams FROM run), (SELECT COUNT(DISTINCT team) FROM `tabSubscription`)) AS teams,\n  COUNT(i.name) AS drafted,\n  COALESCE(SUM(i.due_date IS NOT NULL), 0) AS settled,\n  COALESCE(SUM(i.settled_as = 'Held for details'), 0) AS held,\n  COALESCE(SUM(i.settled_as = 'Credit only'), 0) AS by_credit,\n  COALESCE(SUM(i.settled_as = 'Card'), 0) AS by_card,\n  COALESCE(SUM(i.settled_as = 'UPI Autopay'), 0) AS by_upi,\n  COALESCE(SUM(i.settled_as = 'Unpaid'), 0) AS unpaid,\n  (SELECT failed FROM attempts) AS failed_payments,\n  (SELECT attempts FROM attempts) AS payment_attempts,\n  (SELECT COUNT(*) FROM `tabBilling Run Team` o, period p\n    WHERE o.period_end = p.period_end AND o.outcome = 'Failed') AS run_errors,\n  COALESCE(SUM(i.erpnext_sync_status = 'Failed'), 0) AS sync_failed,\n  COALESCE(SUM(i.erpnext_sync_status IN ('Synced', 'Failed')), 0) AS sync_tried,\n  COALESCE(ROUND(TIMESTAMPDIFF(MINUTE, MIN(i.creation), MAX(i.creation)) / 60, 1), 0) AS draft_hours,\n  COALESCE(ROUND(TIMESTAMPDIFF(MINUTE, (SELECT started_at FROM run),\n    COALESCE((SELECT completed_at FROM run), NOW())) / 60, 1), 0) AS run_hours,\n  COALESCE(ROUND(AVG(TIMESTAMPDIFF(MINUTE, i.paid_at, i.erpnext_synced_at)), 0), 0) AS sync_minutes,\n  COALESCE(TIMESTAMPDIFF(MINUTE, COALESCE(MAX(i.modified), (SELECT started_at FROM run)), NOW()), 0) AS minutes_since_progress\nFROM invoices i\n",
      "type": "sql"
     }
    ],
@@ -6232,7 +6749,7 @@
    "operations": [
     {
      "data_source": "Site DB",
-     "raw_sql": "WITH latest AS (\n  SELECT c.subscription, c.change_type, c.locked_rate, c.currency,\n    ROW_NUMBER() OVER (PARTITION BY c.subscription ORDER BY c.effective_at DESC, c.creation DESC) AS rn\n  FROM `tabSubscription Change` c\n  WHERE c.change_type IN ('Created', 'Plan Changed', 'Cancelled')\n),\nmetal AS (\n  SELECT region, SUM(cost_per_month_inr) AS cost, SUM(vcpus) AS vcpus,\n    SUM(memory_gib) AS memory_gib, SUM(disk_gib) AS disk_gib, COUNT(*) AS machines\n  FROM `tabMetal Server` WHERE status = 'Active' GROUP BY region\n),\nrate AS (\n  SELECT s.server_id, l.locked_rate, l.currency\n  FROM `tabSubscription` s JOIN latest l ON l.subscription = s.name AND l.rn = 1\n  WHERE s.enabled = 1 AND s.server_id IS NOT NULL AND s.server_id != '' AND l.change_type != 'Cancelled'\n),\nservers AS (\n  SELECT v.name AS server, v.team, t.team_name, v.region, v.status,\n    COALESCE(v.vcpus, 0) AS vcpus, COALESCE(v.memory_megabytes, 0) / 1024 AS memory_gib,\n    COALESCE(v.disk_gigabytes, 0) AS disk_gib,\n    CASE\n      WHEN EXISTS (SELECT 1 FROM `tabTax Profile` tp WHERE tp.team = v.team AND tp.is_internal = 1) THEN 'Internal'\n      WHEN (SELECT MAX(st.trial_state) FROM `tabSite` st WHERE st.server = v.name AND st.trial_state != '')\n        IN ('Active', 'Ended', 'Deleted') THEN 'Trial'\n      WHEN NOT EXISTS (SELECT 1 FROM `tabSite` st WHERE st.server = v.name AND st.trial_state != '')\n        AND EXISTS (SELECT 1 FROM `tabResource Action` ra\n          WHERE ra.server = v.name AND ra.action = 'create' AND ra.is_free_trial = 1) THEN 'Trial'\n      WHEN EXISTS (SELECT 1 FROM `tabPayment Method` pm WHERE pm.team = v.team AND pm.status = 'Active')\n        OR EXISTS (SELECT 1 FROM `tabCredit Ledger Entry` e WHERE e.team = v.team AND e.entry_type = 'Credit'\n          AND e.reference_type IN ('Top-up', 'Payment Method'))\n        OR EXISTS (SELECT 1 FROM `tabInvoice` i WHERE i.team = v.team AND i.amount_paid > 0) THEN 'Paid'\n      ELSE 'Free Credits'\n    END AS funding,\n    COALESCE(v.vcpus, 0) * COALESCE(m.cost / NULLIF(m.vcpus, 0), 0) AS metal_cost_inr,\n    COALESCE(r.locked_rate, 0) AS list_rate,\n    COALESCE(r.currency, 'INR') AS currency,\n    v.atlas_host_id,\n    CASE WHEN COALESCE(r.currency, 'INR') = 'INR' THEN 1\n      WHEN r.currency = 'USD' THEN COALESCE((SELECT CAST(value AS DECIMAL(12, 4)) FROM `tabSingles`\n        WHERE doctype = 'Billing Settings' AND field = 'reporting_usd_to_inr'), 0)\n      ELSE 0 END * COALESCE(r.locked_rate, 0) AS list_rate_inr\n  FROM `tabVirtual Machine` v\n  JOIN `tabTeam` t ON t.name = v.team\n  LEFT JOIN metal m ON m.region = v.region\n  LEFT JOIN rate r ON r.server_id = v.name\n  WHERE v.status NOT IN ('Terminated', 'Failed')\n)\n\nSELECT\n  COUNT(DISTINCT CASE WHEN funding = 'Paid' THEN team END) AS paying_customers,\n  COUNT(DISTINCT team) AS customers,\n  COUNT(*) AS servers,\n  COALESCE(SUM(funding != 'Paid'), 0) AS free_servers,\n  COALESCE(SUM(vcpus), 0) AS vcpus_used,\n  (SELECT COALESCE(SUM(vcpus), 0) FROM `tabMetal Server` WHERE status = 'Active') AS vcpus,\n  (SELECT COUNT(*) FROM `tabMetal Server` WHERE status = 'Active') AS machines,\n  (SELECT COALESCE(SUM(cost_per_month_inr), 0) FROM `tabMetal Server` WHERE status = 'Active')\n    - COALESCE(SUM(metal_cost_inr), 0) AS idle_cost\nFROM servers\n",
+     "raw_sql": "WITH latest AS (\n  SELECT c.subscription, c.change_type, c.locked_rate, c.currency,\n    ROW_NUMBER() OVER (PARTITION BY c.subscription ORDER BY c.effective_at DESC, c.creation DESC) AS rn\n  FROM `tabSubscription Change` c\n  WHERE c.change_type IN ('Created', 'Plan Changed', 'Cancelled')\n),\nmetal AS (\n  SELECT region, SUM(cost_per_month_inr) AS cost, SUM(vcpus) AS vcpus,\n    SUM(memory_gib) AS memory_gib, SUM(disk_gib) AS disk_gib, COUNT(*) AS machines\n  FROM `tabMetal Server` WHERE status = 'Active' GROUP BY region\n),\nrate AS (\n  SELECT s.server_id, l.locked_rate, l.currency\n  FROM `tabSubscription` s JOIN latest l ON l.subscription = s.name AND l.rn = 1\n  WHERE s.enabled = 1 AND s.server_id IS NOT NULL AND s.server_id != '' AND l.change_type != 'Cancelled'\n),\nservers AS (\n  SELECT v.name AS server, v.team, t.team_name, v.region, v.status,\n    COALESCE(v.vcpus, 0) AS vcpus, COALESCE(v.memory_megabytes, 0) / 1024 AS memory_gib,\n    COALESCE(v.disk_gigabytes, 0) AS disk_gib,\n    CASE\n      WHEN EXISTS (SELECT 1 FROM `tabBilling Profile` tp WHERE tp.team = v.team AND tp.is_internal = 1) THEN 'Internal'\n      WHEN (SELECT MAX(st.trial_state) FROM `tabSite` st WHERE st.server = v.name AND st.trial_state != '')\n        IN ('Active', 'Ended', 'Deleted') THEN 'Trial'\n      WHEN NOT EXISTS (SELECT 1 FROM `tabSite` st WHERE st.server = v.name AND st.trial_state != '')\n        AND EXISTS (SELECT 1 FROM `tabResource Action` ra\n          WHERE ra.server = v.name AND ra.action = 'create' AND ra.is_free_trial = 1) THEN 'Trial'\n      WHEN EXISTS (SELECT 1 FROM `tabPayment Method` pm WHERE pm.team = v.team AND pm.status = 'Active')\n        OR EXISTS (SELECT 1 FROM `tabCredit Ledger Entry` e WHERE e.team = v.team AND e.entry_type = 'Credit'\n          AND e.reference_type IN ('Top-up', 'Payment Method'))\n        OR EXISTS (SELECT 1 FROM `tabInvoice` i WHERE i.team = v.team AND i.amount_paid > 0) THEN 'Paid'\n      ELSE 'Free Credits'\n    END AS funding,\n    COALESCE(v.vcpus, 0) * COALESCE(m.cost / NULLIF(m.vcpus, 0), 0) AS metal_cost_inr,\n    COALESCE(r.locked_rate, 0) AS list_rate,\n    COALESCE(r.currency, 'INR') AS currency,\n    v.atlas_host_id,\n    CASE WHEN COALESCE(r.currency, 'INR') = 'INR' THEN 1\n      WHEN r.currency = 'USD' THEN COALESCE((SELECT CAST(value AS DECIMAL(12, 4)) FROM `tabSingles`\n        WHERE doctype = 'Billing Settings' AND field = 'reporting_usd_to_inr'), 0)\n      ELSE 0 END * COALESCE(r.locked_rate, 0) AS list_rate_inr\n  FROM `tabVirtual Machine` v\n  JOIN `tabTeam` t ON t.name = v.team\n  LEFT JOIN metal m ON m.region = v.region\n  LEFT JOIN rate r ON r.server_id = v.name\n  WHERE v.status NOT IN ('Terminated', 'Failed')\n)\n\nSELECT\n  COUNT(DISTINCT CASE WHEN funding = 'Paid' THEN team END) AS paying_customers,\n  COUNT(DISTINCT team) AS customers,\n  COUNT(*) AS servers,\n  COALESCE(SUM(funding != 'Paid'), 0) AS free_servers,\n  COALESCE(SUM(vcpus), 0) AS vcpus_used,\n  (SELECT COALESCE(SUM(vcpus), 0) FROM `tabMetal Server` WHERE status = 'Active') AS vcpus,\n  (SELECT COUNT(*) FROM `tabMetal Server` WHERE status = 'Active') AS machines,\n  (SELECT COALESCE(SUM(cost_per_month_inr), 0) FROM `tabMetal Server` WHERE status = 'Active')\n    - COALESCE(SUM(metal_cost_inr), 0) AS idle_cost\nFROM servers\n",
      "type": "sql"
     }
    ],
@@ -6383,7 +6900,7 @@
    "operations": [
     {
      "data_source": "Site DB",
-     "raw_sql": "WITH\ntries AS (\n  SELECT team, creation AS tried_at FROM `tabPayment Method`\n  UNION ALL SELECT team, creation FROM `tabTop-up Order`\n  UNION ALL SELECT team, creation FROM `tabPayment Attempt`\n),\nfirst_try AS (\n  SELECT team, MIN(tried_at) AS first_try FROM tries GROUP BY team\n),\nfailures AS (\n  SELECT team, occurred_at AS failed_at, reason AS failure_code\n  FROM `tabBilling Event`\n  WHERE subject_doctype = 'Payment Method'\n    AND (event_type = 'Payment Method Setup Failed' OR to_state = 'Failed')\n  UNION ALL\n  SELECT team, occurred_at, reason\n  FROM `tabBilling Event`\n  WHERE subject_doctype = 'Top-up Order' AND event_type = 'Top-up Order Declined'\n  UNION ALL\n  SELECT team, COALESCE(completed_at, creation), failure_code\n  FROM `tabPayment Attempt` WHERE status = 'Failed'\n),\nranked_failures AS (\n  SELECT team, failed_at, failure_code,\n    ROW_NUMBER() OVER (PARTITION BY team ORDER BY failed_at) AS position,\n    COUNT(*) OVER (PARTITION BY team) AS failures\n  FROM failures\n),\nfirst_failure AS (\n  SELECT team, failed_at AS first_failure, failure_code, failures\n  FROM ranked_failures WHERE position = 1\n),\nmoney AS (\n  SELECT team, paid_at, 'Invoice payment' AS method\n  FROM `tabInvoice`\n  WHERE status = 'Paid' AND invoice_type = 'Billable' AND (amount_paid > 0 OR advance_applied > 0)\n  UNION ALL\n  SELECT team, creation, 'Credit top-up'\n  FROM `tabCredit Ledger Entry` WHERE entry_type = 'Credit' AND paid_in = 1\n),\nranked_money AS (\n  SELECT team, paid_at, method, ROW_NUMBER() OVER (PARTITION BY team ORDER BY paid_at) AS position\n  FROM money\n),\nfirst_money AS (\n  SELECT team, paid_at AS first_paid, method FROM ranked_money WHERE position = 1\n),\nfirst_active AS (\n  SELECT team, MIN(validated_at) AS first_active\n  FROM `tabPayment Method` WHERE validated_at IS NOT NULL GROUP BY team\n),\noutcomes AS (\n  SELECT ft.team, ft.first_try, f.first_failure, f.failure_code, IFNULL(f.failures, 0) AS failures,\n    m.first_paid, m.method AS paid_by,\n    CASE\n      WHEN tp.is_internal = 1 THEN 'Not billed directly'\n      WHEN f.first_failure IS NULL OR f.first_failure > m.first_paid OR f.first_failure > a.first_active\n      THEN CASE\n        WHEN m.first_paid IS NOT NULL THEN 'Paid first time'\n        WHEN a.first_active IS NOT NULL THEN 'Method added, not billed yet'\n        ELSE 'Abandoned setup'\n      END\n      WHEN m.first_paid <= f.first_failure + INTERVAL 30 DAY THEN 'Recovered'\n      WHEN a.first_active <= f.first_failure + INTERVAL 30 DAY THEN 'Fixed method, not billed yet'\n      WHEN f.first_failure > NOW() - INTERVAL 30 DAY THEN 'Window still open'\n      ELSE 'Lost'\n    END AS outcome\n  FROM first_try ft\n  LEFT JOIN first_failure f ON f.team = ft.team\n  LEFT JOIN first_money m ON m.team = ft.team\n  LEFT JOIN first_active a ON a.team = ft.team\n  LEFT JOIN `tabTax Profile` tp ON tp.team = ft.team\n),\njourneys AS (\n  SELECT o.team, t.team_name, t.owner_user AS owner, DATE(o.first_try) AS first_try,\n    CAST(DATE_FORMAT(o.first_try, '%Y-%m-01') AS DATE) AS month, o.outcome, 1 AS teams,\n    o.outcome = 'Paid first time' AS paid_first_time,\n    o.outcome = 'Method added, not billed yet' AS method_added,\n    o.outcome = 'Abandoned setup' AS abandoned,\n    o.outcome IN ('Recovered', 'Fixed method, not billed yet', 'Window still open', 'Lost') AS failed_first,\n    o.outcome IN ('Recovered', 'Fixed method, not billed yet') AS recovered,\n    o.outcome = 'Window still open' AS window_open,\n    o.outcome = 'Lost' AS lost,\n    o.outcome = 'Not billed directly' AS not_billed_directly,\n    o.failure_code AS first_failure_code, o.failures,\n    CASE o.outcome\n      WHEN 'Recovered' THEN o.paid_by\n      WHEN 'Fixed method, not billed yet' THEN 'Verified method added'\n    END AS recovered_by,\n    CASE\n      WHEN o.outcome = 'Fixed method, not billed yet' THEN '5. Not billed yet'\n      WHEN o.outcome != 'Recovered' THEN NULL\n      WHEN DATEDIFF(o.first_paid, o.first_failure) = 0 THEN '1. Same day'\n      WHEN DATEDIFF(o.first_paid, o.first_failure) <= 3 THEN '2. 1 to 3 days'\n      WHEN DATEDIFF(o.first_paid, o.first_failure) <= 7 THEN '3. 4 to 7 days'\n      ELSE '4. 8 to 30 days'\n    END AS days_to_recover,\n    LAST_DAY(o.first_try) + INTERVAL 30 DAY < CURDATE() AS is_month_complete\n  FROM outcomes o\n  JOIN `tabTeam` t ON t.name = o.team\n)\nSELECT * FROM journeys\nORDER BY first_try DESC\n",
+     "raw_sql": "WITH\ntries AS (\n  SELECT team, creation AS tried_at FROM `tabPayment Method`\n  UNION ALL SELECT team, creation FROM `tabTop-up Order`\n  UNION ALL SELECT team, creation FROM `tabPayment Attempt`\n),\nfirst_try AS (\n  SELECT team, MIN(tried_at) AS first_try FROM tries GROUP BY team\n),\nfailures AS (\n  SELECT team, occurred_at AS failed_at, reason AS failure_code\n  FROM `tabBilling Event`\n  WHERE subject_doctype = 'Payment Method'\n    AND (event_type = 'Payment Method Setup Failed' OR to_state = 'Failed')\n  UNION ALL\n  SELECT team, occurred_at, reason\n  FROM `tabBilling Event`\n  WHERE subject_doctype = 'Top-up Order' AND event_type = 'Top-up Order Declined'\n  UNION ALL\n  SELECT team, COALESCE(completed_at, creation), failure_code\n  FROM `tabPayment Attempt` WHERE status = 'Failed'\n),\nranked_failures AS (\n  SELECT team, failed_at, failure_code,\n    ROW_NUMBER() OVER (PARTITION BY team ORDER BY failed_at) AS position,\n    COUNT(*) OVER (PARTITION BY team) AS failures\n  FROM failures\n),\nfirst_failure AS (\n  SELECT team, failed_at AS first_failure, failure_code, failures\n  FROM ranked_failures WHERE position = 1\n),\nmoney AS (\n  SELECT team, paid_at, 'Invoice payment' AS method\n  FROM `tabInvoice`\n  WHERE status = 'Paid' AND invoice_type = 'Billable' AND (amount_paid > 0 OR advance_applied > 0)\n  UNION ALL\n  SELECT team, creation, 'Credit top-up'\n  FROM `tabCredit Ledger Entry` WHERE entry_type = 'Credit' AND paid_in = 1\n),\nranked_money AS (\n  SELECT team, paid_at, method, ROW_NUMBER() OVER (PARTITION BY team ORDER BY paid_at) AS position\n  FROM money\n),\nfirst_money AS (\n  SELECT team, paid_at AS first_paid, method FROM ranked_money WHERE position = 1\n),\nfirst_active AS (\n  SELECT team, MIN(validated_at) AS first_active\n  FROM `tabPayment Method` WHERE validated_at IS NOT NULL GROUP BY team\n),\noutcomes AS (\n  SELECT ft.team, ft.first_try, f.first_failure, f.failure_code, IFNULL(f.failures, 0) AS failures,\n    m.first_paid, m.method AS paid_by,\n    CASE\n      WHEN tp.is_internal = 1 THEN 'Not billed directly'\n      WHEN f.first_failure IS NULL OR f.first_failure > m.first_paid OR f.first_failure > a.first_active\n      THEN CASE\n        WHEN m.first_paid IS NOT NULL THEN 'Paid first time'\n        WHEN a.first_active IS NOT NULL THEN 'Method added, not billed yet'\n        ELSE 'Abandoned setup'\n      END\n      WHEN m.first_paid <= f.first_failure + INTERVAL 30 DAY THEN 'Recovered'\n      WHEN a.first_active <= f.first_failure + INTERVAL 30 DAY THEN 'Fixed method, not billed yet'\n      WHEN f.first_failure > NOW() - INTERVAL 30 DAY THEN 'Window still open'\n      ELSE 'Lost'\n    END AS outcome\n  FROM first_try ft\n  LEFT JOIN first_failure f ON f.team = ft.team\n  LEFT JOIN first_money m ON m.team = ft.team\n  LEFT JOIN first_active a ON a.team = ft.team\n  LEFT JOIN `tabBilling Profile` tp ON tp.team = ft.team\n),\njourneys AS (\n  SELECT o.team, t.team_name, t.owner_user AS owner, DATE(o.first_try) AS first_try,\n    CAST(DATE_FORMAT(o.first_try, '%Y-%m-01') AS DATE) AS month, o.outcome, 1 AS teams,\n    o.outcome = 'Paid first time' AS paid_first_time,\n    o.outcome = 'Method added, not billed yet' AS method_added,\n    o.outcome = 'Abandoned setup' AS abandoned,\n    o.outcome IN ('Recovered', 'Fixed method, not billed yet', 'Window still open', 'Lost') AS failed_first,\n    o.outcome IN ('Recovered', 'Fixed method, not billed yet') AS recovered,\n    o.outcome = 'Window still open' AS window_open,\n    o.outcome = 'Lost' AS lost,\n    o.outcome = 'Not billed directly' AS not_billed_directly,\n    o.failure_code AS first_failure_code, o.failures,\n    CASE o.outcome\n      WHEN 'Recovered' THEN o.paid_by\n      WHEN 'Fixed method, not billed yet' THEN 'Verified method added'\n    END AS recovered_by,\n    CASE\n      WHEN o.outcome = 'Fixed method, not billed yet' THEN '5. Not billed yet'\n      WHEN o.outcome != 'Recovered' THEN NULL\n      WHEN DATEDIFF(o.first_paid, o.first_failure) = 0 THEN '1. Same day'\n      WHEN DATEDIFF(o.first_paid, o.first_failure) <= 3 THEN '2. 1 to 3 days'\n      WHEN DATEDIFF(o.first_paid, o.first_failure) <= 7 THEN '3. 4 to 7 days'\n      ELSE '4. 8 to 30 days'\n    END AS days_to_recover,\n    LAST_DAY(o.first_try) + INTERVAL 30 DAY < CURDATE() AS is_month_complete\n  FROM outcomes o\n  JOIN `tabTeam` t ON t.name = o.team\n)\nSELECT * FROM journeys\nORDER BY first_try DESC\n",
      "type": "sql"
     }
    ],
@@ -6462,7 +6979,7 @@
    "operations": [
     {
      "data_source": "Site DB",
-     "raw_sql": "SELECT CASE\n    WHEN i.status = 'Waived' THEN 'Our own teams (waived)'\n    WHEN i.status = 'Draft' AND COALESCE(i.hold_reason, '') != '' THEN 'Held for details'\n    WHEN i.status = 'Draft' THEN 'Not collected yet'\n    WHEN i.status IN ('Open', 'Overdue') THEN 'Unpaid'\n    WHEN i.amount_paid <= 0 THEN 'Credit only'\n    ELSE COALESCE((\n      SELECT pm.method_type FROM `tabPayment Attempt` pa\n      JOIN `tabPayment Method` pm ON pm.name = pa.payment_method\n      WHERE pa.invoice = i.name AND pa.status IN ('Captured', 'Refunded') LIMIT 1\n    ), 'Paid, no payment record')\n  END AS settled_as, COUNT(*) AS invoices\nFROM `tabInvoice` i\nWHERE i.period_end = LAST_DAY(CURDATE() - INTERVAL 1 MONTH) AND i.invoice_type = 'Billable' AND i.status != 'Cancelled'\nGROUP BY settled_as\n",
+     "raw_sql": "SELECT CASE\n    WHEN i.status = 'Waived' THEN 'Our own teams (waived)'\n    WHEN i.status = 'Outstanding' AND i.due_date IS NULL AND COALESCE(i.hold_reason, '') != '' THEN 'Held for details'\n    WHEN i.status = 'Outstanding' AND i.due_date IS NULL THEN 'Not collected yet'\n    WHEN i.status IN ('Outstanding', 'Overdue') THEN 'Unpaid'\n    WHEN i.amount_paid <= 0 THEN 'Credit only'\n    ELSE COALESCE((\n      SELECT pm.method_type FROM `tabPayment Attempt` pa\n      JOIN `tabPayment Method` pm ON pm.name = pa.payment_method\n      WHERE pa.invoice = i.name AND pa.status IN ('Captured', 'Refunded') LIMIT 1\n    ), 'Paid, no payment record')\n  END AS settled_as, COUNT(*) AS invoices\nFROM `tabInvoice` i\nWHERE i.period_end = LAST_DAY(CURDATE() - INTERVAL 1 MONTH) AND i.invoice_type = 'Billable' AND i.status != 'Cancelled'\nGROUP BY settled_as\n",
      "type": "sql"
     }
    ],
@@ -6565,7 +7082,7 @@
    "operations": [
     {
      "data_source": "Site DB",
-     "raw_sql": "WITH latest AS (\n  SELECT c.subscription, c.change_type, c.locked_rate, c.currency,\n    ROW_NUMBER() OVER (PARTITION BY c.subscription ORDER BY c.effective_at DESC, c.creation DESC) AS rn\n  FROM `tabSubscription Change` c\n  WHERE c.change_type IN ('Created', 'Plan Changed', 'Cancelled')\n),\nmetal AS (\n  SELECT region, SUM(cost_per_month_inr) AS cost, SUM(vcpus) AS vcpus,\n    SUM(memory_gib) AS memory_gib, SUM(disk_gib) AS disk_gib, COUNT(*) AS machines\n  FROM `tabMetal Server` WHERE status = 'Active' GROUP BY region\n),\nrate AS (\n  SELECT s.server_id, l.locked_rate, l.currency\n  FROM `tabSubscription` s JOIN latest l ON l.subscription = s.name AND l.rn = 1\n  WHERE s.enabled = 1 AND s.server_id IS NOT NULL AND s.server_id != '' AND l.change_type != 'Cancelled'\n),\nservers AS (\n  SELECT v.name AS server, v.team, t.team_name, v.region, v.status,\n    COALESCE(v.vcpus, 0) AS vcpus, COALESCE(v.memory_megabytes, 0) / 1024 AS memory_gib,\n    COALESCE(v.disk_gigabytes, 0) AS disk_gib,\n    CASE\n      WHEN EXISTS (SELECT 1 FROM `tabTax Profile` tp WHERE tp.team = v.team AND tp.is_internal = 1) THEN 'Internal'\n      WHEN (SELECT MAX(st.trial_state) FROM `tabSite` st WHERE st.server = v.name AND st.trial_state != '')\n        IN ('Active', 'Ended', 'Deleted') THEN 'Trial'\n      WHEN NOT EXISTS (SELECT 1 FROM `tabSite` st WHERE st.server = v.name AND st.trial_state != '')\n        AND EXISTS (SELECT 1 FROM `tabResource Action` ra\n          WHERE ra.server = v.name AND ra.action = 'create' AND ra.is_free_trial = 1) THEN 'Trial'\n      WHEN EXISTS (SELECT 1 FROM `tabPayment Method` pm WHERE pm.team = v.team AND pm.status = 'Active')\n        OR EXISTS (SELECT 1 FROM `tabCredit Ledger Entry` e WHERE e.team = v.team AND e.entry_type = 'Credit'\n          AND e.reference_type IN ('Top-up', 'Payment Method'))\n        OR EXISTS (SELECT 1 FROM `tabInvoice` i WHERE i.team = v.team AND i.amount_paid > 0) THEN 'Paid'\n      ELSE 'Free Credits'\n    END AS funding,\n    COALESCE(v.vcpus, 0) * COALESCE(m.cost / NULLIF(m.vcpus, 0), 0) AS metal_cost_inr,\n    COALESCE(r.locked_rate, 0) AS list_rate,\n    COALESCE(r.currency, 'INR') AS currency,\n    v.atlas_host_id,\n    CASE WHEN COALESCE(r.currency, 'INR') = 'INR' THEN 1\n      WHEN r.currency = 'USD' THEN COALESCE((SELECT CAST(value AS DECIMAL(12, 4)) FROM `tabSingles`\n        WHERE doctype = 'Billing Settings' AND field = 'reporting_usd_to_inr'), 0)\n      ELSE 0 END * COALESCE(r.locked_rate, 0) AS list_rate_inr\n  FROM `tabVirtual Machine` v\n  JOIN `tabTeam` t ON t.name = v.team\n  LEFT JOIN metal m ON m.region = v.region\n  LEFT JOIN rate r ON r.server_id = v.name\n  WHERE v.status NOT IN ('Terminated', 'Failed')\n)\n\nSELECT ms.region, ms.name AS machine, COUNT(s.server) AS servers,\n  COALESCE(SUM(s.vcpus), 0) / NULLIF(ms.vcpus, 0) AS vcpu_used,\n  COALESCE(SUM(CASE WHEN s.funding = 'Paid' THEN s.list_rate_inr ELSE 0 END), 0)\n    - ms.cost_per_month_inr AS profit_inr\nFROM `tabMetal Server` ms\nLEFT JOIN servers s ON s.atlas_host_id = ms.atlas_host_id AND ms.atlas_host_id IS NOT NULL\nWHERE ms.status = 'Active'\nGROUP BY ms.region, ms.name, ms.vcpus, ms.cost_per_month_inr\nORDER BY profit_inr\n",
+     "raw_sql": "WITH latest AS (\n  SELECT c.subscription, c.change_type, c.locked_rate, c.currency,\n    ROW_NUMBER() OVER (PARTITION BY c.subscription ORDER BY c.effective_at DESC, c.creation DESC) AS rn\n  FROM `tabSubscription Change` c\n  WHERE c.change_type IN ('Created', 'Plan Changed', 'Cancelled')\n),\nmetal AS (\n  SELECT region, SUM(cost_per_month_inr) AS cost, SUM(vcpus) AS vcpus,\n    SUM(memory_gib) AS memory_gib, SUM(disk_gib) AS disk_gib, COUNT(*) AS machines\n  FROM `tabMetal Server` WHERE status = 'Active' GROUP BY region\n),\nrate AS (\n  SELECT s.server_id, l.locked_rate, l.currency\n  FROM `tabSubscription` s JOIN latest l ON l.subscription = s.name AND l.rn = 1\n  WHERE s.enabled = 1 AND s.server_id IS NOT NULL AND s.server_id != '' AND l.change_type != 'Cancelled'\n),\nservers AS (\n  SELECT v.name AS server, v.team, t.team_name, v.region, v.status,\n    COALESCE(v.vcpus, 0) AS vcpus, COALESCE(v.memory_megabytes, 0) / 1024 AS memory_gib,\n    COALESCE(v.disk_gigabytes, 0) AS disk_gib,\n    CASE\n      WHEN EXISTS (SELECT 1 FROM `tabBilling Profile` tp WHERE tp.team = v.team AND tp.is_internal = 1) THEN 'Internal'\n      WHEN (SELECT MAX(st.trial_state) FROM `tabSite` st WHERE st.server = v.name AND st.trial_state != '')\n        IN ('Active', 'Ended', 'Deleted') THEN 'Trial'\n      WHEN NOT EXISTS (SELECT 1 FROM `tabSite` st WHERE st.server = v.name AND st.trial_state != '')\n        AND EXISTS (SELECT 1 FROM `tabResource Action` ra\n          WHERE ra.server = v.name AND ra.action = 'create' AND ra.is_free_trial = 1) THEN 'Trial'\n      WHEN EXISTS (SELECT 1 FROM `tabPayment Method` pm WHERE pm.team = v.team AND pm.status = 'Active')\n        OR EXISTS (SELECT 1 FROM `tabCredit Ledger Entry` e WHERE e.team = v.team AND e.entry_type = 'Credit'\n          AND e.reference_type IN ('Top-up', 'Payment Method'))\n        OR EXISTS (SELECT 1 FROM `tabInvoice` i WHERE i.team = v.team AND i.amount_paid > 0) THEN 'Paid'\n      ELSE 'Free Credits'\n    END AS funding,\n    COALESCE(v.vcpus, 0) * COALESCE(m.cost / NULLIF(m.vcpus, 0), 0) AS metal_cost_inr,\n    COALESCE(r.locked_rate, 0) AS list_rate,\n    COALESCE(r.currency, 'INR') AS currency,\n    v.atlas_host_id,\n    CASE WHEN COALESCE(r.currency, 'INR') = 'INR' THEN 1\n      WHEN r.currency = 'USD' THEN COALESCE((SELECT CAST(value AS DECIMAL(12, 4)) FROM `tabSingles`\n        WHERE doctype = 'Billing Settings' AND field = 'reporting_usd_to_inr'), 0)\n      ELSE 0 END * COALESCE(r.locked_rate, 0) AS list_rate_inr\n  FROM `tabVirtual Machine` v\n  JOIN `tabTeam` t ON t.name = v.team\n  LEFT JOIN metal m ON m.region = v.region\n  LEFT JOIN rate r ON r.server_id = v.name\n  WHERE v.status NOT IN ('Terminated', 'Failed')\n)\n\nSELECT ms.region, ms.name AS machine, COUNT(s.server) AS servers,\n  COALESCE(SUM(s.vcpus), 0) / NULLIF(ms.vcpus, 0) AS vcpu_used,\n  COALESCE(SUM(CASE WHEN s.funding = 'Paid' THEN s.list_rate_inr ELSE 0 END), 0)\n    - ms.cost_per_month_inr AS profit_inr\nFROM `tabMetal Server` ms\nLEFT JOIN servers s ON s.atlas_host_id = ms.atlas_host_id AND ms.atlas_host_id IS NOT NULL\nWHERE ms.status = 'Active'\nGROUP BY ms.region, ms.name, ms.vcpus, ms.cost_per_month_inr\nORDER BY profit_inr\n",
      "type": "sql"
     }
    ],
@@ -6583,7 +7100,7 @@
    "operations": [
     {
      "data_source": "Site DB",
-     "raw_sql": "SELECT bucket, SUM(owed) AS owed FROM (\n  SELECT CASE\n      WHEN DATEDIFF(CURDATE(), due_date) <= 0 THEN 'Not due'\n      WHEN DATEDIFF(CURDATE(), due_date) <= 30 THEN '1-30 days late'\n      WHEN DATEDIFF(CURDATE(), due_date) <= 60 THEN '31-60 days late'\n      ELSE 'Over 60 days late' END AS bucket,\n    expected_collection AS owed\n  FROM `tabInvoice`\n  WHERE invoice_type = 'Billable' AND status IN ('Open', 'Overdue') AND expected_collection > 0\n    AND currency = 'INR'\n) aged\nGROUP BY bucket ORDER BY FIELD(bucket, 'Not due', '1-30 days late', '31-60 days late', 'Over 60 days late')\n",
+     "raw_sql": "SELECT bucket, SUM(owed) AS owed FROM (\n  SELECT CASE\n      WHEN DATEDIFF(CURDATE(), due_date) <= 0 THEN 'Not due'\n      WHEN DATEDIFF(CURDATE(), due_date) <= 30 THEN '1-30 days late'\n      WHEN DATEDIFF(CURDATE(), due_date) <= 60 THEN '31-60 days late'\n      ELSE 'Over 60 days late' END AS bucket,\n    expected_collection AS owed\n  FROM `tabInvoice`\n  WHERE invoice_type = 'Billable' AND status IN ('Outstanding', 'Overdue') AND expected_collection > 0\n    AND currency = 'INR'\n) aged\nGROUP BY bucket ORDER BY FIELD(bucket, 'Not due', '1-30 days late', '31-60 days late', 'Over 60 days late')\n",
      "type": "sql"
     }
    ],
@@ -6601,7 +7118,7 @@
    "operations": [
     {
      "data_source": "Site DB",
-     "raw_sql": "SELECT bucket, SUM(owed) AS owed FROM (\n  SELECT CASE\n      WHEN DATEDIFF(CURDATE(), due_date) <= 0 THEN 'Not due'\n      WHEN DATEDIFF(CURDATE(), due_date) <= 30 THEN '1-30 days late'\n      WHEN DATEDIFF(CURDATE(), due_date) <= 60 THEN '31-60 days late'\n      ELSE 'Over 60 days late' END AS bucket,\n    expected_collection AS owed\n  FROM `tabInvoice`\n  WHERE invoice_type = 'Billable' AND status IN ('Open', 'Overdue') AND expected_collection > 0\n    AND currency = 'USD'\n) aged\nGROUP BY bucket ORDER BY FIELD(bucket, 'Not due', '1-30 days late', '31-60 days late', 'Over 60 days late')\n",
+     "raw_sql": "SELECT bucket, SUM(owed) AS owed FROM (\n  SELECT CASE\n      WHEN DATEDIFF(CURDATE(), due_date) <= 0 THEN 'Not due'\n      WHEN DATEDIFF(CURDATE(), due_date) <= 30 THEN '1-30 days late'\n      WHEN DATEDIFF(CURDATE(), due_date) <= 60 THEN '31-60 days late'\n      ELSE 'Over 60 days late' END AS bucket,\n    expected_collection AS owed\n  FROM `tabInvoice`\n  WHERE invoice_type = 'Billable' AND status IN ('Outstanding', 'Overdue') AND expected_collection > 0\n    AND currency = 'USD'\n) aged\nGROUP BY bucket ORDER BY FIELD(bucket, 'Not due', '1-30 days late', '31-60 days late', 'Over 60 days late')\n",
      "type": "sql"
     }
    ],
@@ -6637,7 +7154,7 @@
    "operations": [
     {
      "data_source": "Site DB",
-     "raw_sql": "WITH billed AS (\n  SELECT DATE_SUB(DATE(period_start), INTERVAL DAYOFMONTH(period_start) - 1 DAY) AS month,\n    SUM((total - output_tax_amount) * CASE currency WHEN 'INR' THEN 1 WHEN 'USD' THEN COALESCE((SELECT CAST(value AS DECIMAL(12, 4)) FROM `tabSingles` WHERE doctype = 'Billing Settings' AND field = 'reporting_usd_to_inr'), 0) ELSE 0 END) AS billed,\n    SUM((credit_applied) * CASE currency WHEN 'INR' THEN 1 WHEN 'USD' THEN COALESCE((SELECT CAST(value AS DECIMAL(12, 4)) FROM `tabSingles` WHERE doctype = 'Billing Settings' AND field = 'reporting_usd_to_inr'), 0) ELSE 0 END) AS paid_by_credit\n  FROM `tabInvoice`\n  WHERE invoice_type = 'Billable' AND status NOT IN ('Cancelled', 'Waived')\n    AND period_start >= DATE_SUB(DATE_SUB(DATE(CURDATE()), INTERVAL DAYOFMONTH(CURDATE()) - 1 DAY), INTERVAL 24 MONTH)\n  GROUP BY month\n),\nrefunded AS (\n  SELECT DATE_SUB(DATE(created_at), INTERVAL DAYOFMONTH(created_at) - 1 DAY) AS month,\n    SUM((amount - COALESCE(tax_amount, 0)) * CASE currency WHEN 'INR' THEN 1 WHEN 'USD' THEN COALESCE((SELECT CAST(value AS DECIMAL(12, 4)) FROM `tabSingles` WHERE doctype = 'Billing Settings' AND field = 'reporting_usd_to_inr'), 0) ELSE 0 END) AS refunded\n  FROM `tabRefund`\n  WHERE status = 'Completed' AND created_at >= DATE_SUB(DATE_SUB(DATE(CURDATE()), INTERVAL DAYOFMONTH(CURDATE()) - 1 DAY), INTERVAL 24 MONTH)\n  GROUP BY month\n),\nmonthly AS (\n  SELECT b.month, b.billed, b.paid_by_credit, COALESCE(r.refunded, 0) AS refunded,\n    b.billed - COALESCE(r.refunded, 0) AS revenue,\n    (SELECT COALESCE(SUM(ms.cost_per_month_inr), 0) FROM `tabMetal Server` ms\n      WHERE ms.status = 'Active' AND ms.creation <= LAST_DAY(b.month)) AS metal_cost\n  FROM billed b LEFT JOIN refunded r ON r.month = b.month\n)\n,\nclosed AS (SELECT * FROM monthly WHERE month < DATE_SUB(DATE(CURDATE()), INTERVAL DAYOFMONTH(CURDATE()) - 1 DAY) ORDER BY month DESC LIMIT 4),\nranked AS (SELECT closed.*, ROW_NUMBER() OVER (ORDER BY month DESC) AS age FROM closed),\nlatest AS (\n  SELECT c.subscription, c.change_type, c.locked_rate, c.currency,\n    ROW_NUMBER() OVER (PARTITION BY c.subscription ORDER BY c.effective_at DESC, c.creation DESC) AS rn\n  FROM `tabSubscription Change` c\n  WHERE c.change_type IN ('Created', 'Plan Changed', 'Cancelled')\n)\nSELECT\n  (SELECT COALESCE(SUM((l.locked_rate) * CASE l.currency WHEN 'INR' THEN 1 WHEN 'USD' THEN COALESCE((SELECT CAST(value AS DECIMAL(12, 4)) FROM `tabSingles` WHERE doctype = 'Billing Settings' AND field = 'reporting_usd_to_inr'), 0) ELSE 0 END), 0)\n    FROM latest l JOIN `tabSubscription` s ON s.name = l.subscription\n    WHERE l.rn = 1 AND l.change_type != 'Cancelled' AND s.enabled = 1\n      AND NOT EXISTS (SELECT 1 FROM `tabTax Profile` tp WHERE tp.team = s.team AND tp.is_internal = 1)) AS mrr,\n  COALESCE((SELECT revenue FROM ranked WHERE age = 1), 0) AS last_month_revenue,\n  COALESCE((SELECT revenue - metal_cost FROM ranked WHERE age = 1), 0) AS last_month_profit,\n  (SELECT (revenue - metal_cost) / NULLIF(revenue, 0) FROM ranked WHERE age = 1) AS last_month_margin,\n  COALESCE((SELECT refunded FROM ranked WHERE age = 1), 0) AS last_month_refunds,\n  (SELECT COALESCE(SUM(revenue), 0) FROM monthly WHERE YEAR(month) = YEAR(CURDATE())) AS year_revenue,\n  (SELECT a.revenue / NULLIF(b.revenue, 0) - 1 FROM ranked a, ranked b WHERE a.age = 1 AND b.age = 2) AS growth_last_month,\n  (SELECT POW(a.revenue / NULLIF(b.revenue, 0), 1 / 3) - 1 FROM ranked a, ranked b WHERE a.age = 1 AND b.age = 4) AS growth_3_months\n",
+     "raw_sql": "WITH billed AS (\n  SELECT DATE_SUB(DATE(period_start), INTERVAL DAYOFMONTH(period_start) - 1 DAY) AS month,\n    SUM((total - output_tax_amount) * CASE currency WHEN 'INR' THEN 1 WHEN 'USD' THEN COALESCE((SELECT CAST(value AS DECIMAL(12, 4)) FROM `tabSingles` WHERE doctype = 'Billing Settings' AND field = 'reporting_usd_to_inr'), 0) ELSE 0 END) AS billed,\n    SUM((credit_applied) * CASE currency WHEN 'INR' THEN 1 WHEN 'USD' THEN COALESCE((SELECT CAST(value AS DECIMAL(12, 4)) FROM `tabSingles` WHERE doctype = 'Billing Settings' AND field = 'reporting_usd_to_inr'), 0) ELSE 0 END) AS paid_by_credit\n  FROM `tabInvoice`\n  WHERE invoice_type = 'Billable' AND status NOT IN ('Cancelled', 'Waived')\n    AND period_start >= DATE_SUB(DATE_SUB(DATE(CURDATE()), INTERVAL DAYOFMONTH(CURDATE()) - 1 DAY), INTERVAL 24 MONTH)\n  GROUP BY month\n),\nrefunded AS (\n  SELECT DATE_SUB(DATE(created_at), INTERVAL DAYOFMONTH(created_at) - 1 DAY) AS month,\n    SUM((amount - COALESCE(tax_amount, 0)) * CASE currency WHEN 'INR' THEN 1 WHEN 'USD' THEN COALESCE((SELECT CAST(value AS DECIMAL(12, 4)) FROM `tabSingles` WHERE doctype = 'Billing Settings' AND field = 'reporting_usd_to_inr'), 0) ELSE 0 END) AS refunded\n  FROM `tabRefund`\n  WHERE status = 'Completed' AND created_at >= DATE_SUB(DATE_SUB(DATE(CURDATE()), INTERVAL DAYOFMONTH(CURDATE()) - 1 DAY), INTERVAL 24 MONTH)\n  GROUP BY month\n),\nmonthly AS (\n  SELECT b.month, b.billed, b.paid_by_credit, COALESCE(r.refunded, 0) AS refunded,\n    b.billed - COALESCE(r.refunded, 0) AS revenue,\n    (SELECT COALESCE(SUM(ms.cost_per_month_inr), 0) FROM `tabMetal Server` ms\n      WHERE ms.status = 'Active' AND ms.creation <= LAST_DAY(b.month)) AS metal_cost\n  FROM billed b LEFT JOIN refunded r ON r.month = b.month\n)\n,\nclosed AS (SELECT * FROM monthly WHERE month < DATE_SUB(DATE(CURDATE()), INTERVAL DAYOFMONTH(CURDATE()) - 1 DAY) ORDER BY month DESC LIMIT 4),\nranked AS (SELECT closed.*, ROW_NUMBER() OVER (ORDER BY month DESC) AS age FROM closed),\nlatest AS (\n  SELECT c.subscription, c.change_type, c.locked_rate, c.currency,\n    ROW_NUMBER() OVER (PARTITION BY c.subscription ORDER BY c.effective_at DESC, c.creation DESC) AS rn\n  FROM `tabSubscription Change` c\n  WHERE c.change_type IN ('Created', 'Plan Changed', 'Cancelled')\n)\nSELECT\n  (SELECT COALESCE(SUM((l.locked_rate) * CASE l.currency WHEN 'INR' THEN 1 WHEN 'USD' THEN COALESCE((SELECT CAST(value AS DECIMAL(12, 4)) FROM `tabSingles` WHERE doctype = 'Billing Settings' AND field = 'reporting_usd_to_inr'), 0) ELSE 0 END), 0)\n    FROM latest l JOIN `tabSubscription` s ON s.name = l.subscription\n    WHERE l.rn = 1 AND l.change_type != 'Cancelled' AND s.enabled = 1\n      AND NOT EXISTS (SELECT 1 FROM `tabBilling Profile` tp WHERE tp.team = s.team AND tp.is_internal = 1)) AS mrr,\n  COALESCE((SELECT revenue FROM ranked WHERE age = 1), 0) AS last_month_revenue,\n  COALESCE((SELECT revenue - metal_cost FROM ranked WHERE age = 1), 0) AS last_month_profit,\n  (SELECT (revenue - metal_cost) / NULLIF(revenue, 0) FROM ranked WHERE age = 1) AS last_month_margin,\n  COALESCE((SELECT refunded FROM ranked WHERE age = 1), 0) AS last_month_refunds,\n  (SELECT COALESCE(SUM(revenue), 0) FROM monthly WHERE YEAR(month) = YEAR(CURDATE())) AS year_revenue,\n  (SELECT a.revenue / NULLIF(b.revenue, 0) - 1 FROM ranked a, ranked b WHERE a.age = 1 AND b.age = 2) AS growth_last_month,\n  (SELECT POW(a.revenue / NULLIF(b.revenue, 0), 1 / 3) - 1 FROM ranked a, ranked b WHERE a.age = 1 AND b.age = 4) AS growth_3_months\n",
      "type": "sql"
     }
    ],
@@ -6727,7 +7244,7 @@
    "operations": [
     {
      "data_source": "Site DB",
-     "raw_sql": "SELECT\n  COALESCE(SUM(CASE WHEN currency = 'INR' THEN expected_collection ELSE 0 END), 0) AS owed_inr,\n  COALESCE(SUM(CASE WHEN currency = 'USD' THEN expected_collection ELSE 0 END), 0) AS owed_usd,\n  COALESCE(SUM(status = 'Overdue'), 0) AS overdue_invoices,\n  COUNT(*) AS unpaid_invoices\nFROM `tabInvoice`\nWHERE invoice_type = 'Billable' AND status IN ('Open', 'Overdue')\n",
+     "raw_sql": "SELECT\n  COALESCE(SUM(CASE WHEN currency = 'INR' THEN expected_collection ELSE 0 END), 0) AS owed_inr,\n  COALESCE(SUM(CASE WHEN currency = 'USD' THEN expected_collection ELSE 0 END), 0) AS owed_usd,\n  COALESCE(SUM(status = 'Overdue'), 0) AS overdue_invoices,\n  COUNT(*) AS unpaid_invoices\nFROM `tabInvoice`\nWHERE invoice_type = 'Billable' AND status IN ('Outstanding', 'Overdue')\n",
      "type": "sql"
     }
    ],
@@ -6763,7 +7280,7 @@
    "operations": [
     {
      "data_source": "Site DB",
-     "raw_sql": "WITH latest AS (\n  SELECT c.subscription, c.change_type, c.locked_rate, c.currency,\n    ROW_NUMBER() OVER (PARTITION BY c.subscription ORDER BY c.effective_at DESC, c.creation DESC) AS rn\n  FROM `tabSubscription Change` c\n  WHERE c.change_type IN ('Created', 'Plan Changed', 'Cancelled')\n),\nmetal AS (\n  SELECT region, SUM(cost_per_month_inr) AS cost, SUM(vcpus) AS vcpus,\n    SUM(memory_gib) AS memory_gib, SUM(disk_gib) AS disk_gib, COUNT(*) AS machines\n  FROM `tabMetal Server` WHERE status = 'Active' GROUP BY region\n),\nrate AS (\n  SELECT s.server_id, l.locked_rate, l.currency\n  FROM `tabSubscription` s JOIN latest l ON l.subscription = s.name AND l.rn = 1\n  WHERE s.enabled = 1 AND s.server_id IS NOT NULL AND s.server_id != '' AND l.change_type != 'Cancelled'\n),\nservers AS (\n  SELECT v.name AS server, v.team, t.team_name, v.region, v.status,\n    COALESCE(v.vcpus, 0) AS vcpus, COALESCE(v.memory_megabytes, 0) / 1024 AS memory_gib,\n    COALESCE(v.disk_gigabytes, 0) AS disk_gib,\n    CASE\n      WHEN EXISTS (SELECT 1 FROM `tabTax Profile` tp WHERE tp.team = v.team AND tp.is_internal = 1) THEN 'Internal'\n      WHEN (SELECT MAX(st.trial_state) FROM `tabSite` st WHERE st.server = v.name AND st.trial_state != '')\n        IN ('Active', 'Ended', 'Deleted') THEN 'Trial'\n      WHEN NOT EXISTS (SELECT 1 FROM `tabSite` st WHERE st.server = v.name AND st.trial_state != '')\n        AND EXISTS (SELECT 1 FROM `tabResource Action` ra\n          WHERE ra.server = v.name AND ra.action = 'create' AND ra.is_free_trial = 1) THEN 'Trial'\n      WHEN EXISTS (SELECT 1 FROM `tabPayment Method` pm WHERE pm.team = v.team AND pm.status = 'Active')\n        OR EXISTS (SELECT 1 FROM `tabCredit Ledger Entry` e WHERE e.team = v.team AND e.entry_type = 'Credit'\n          AND e.reference_type IN ('Top-up', 'Payment Method'))\n        OR EXISTS (SELECT 1 FROM `tabInvoice` i WHERE i.team = v.team AND i.amount_paid > 0) THEN 'Paid'\n      ELSE 'Free Credits'\n    END AS funding,\n    COALESCE(v.vcpus, 0) * COALESCE(m.cost / NULLIF(m.vcpus, 0), 0) AS metal_cost_inr,\n    COALESCE(r.locked_rate, 0) AS list_rate,\n    COALESCE(r.currency, 'INR') AS currency,\n    v.atlas_host_id,\n    CASE WHEN COALESCE(r.currency, 'INR') = 'INR' THEN 1\n      WHEN r.currency = 'USD' THEN COALESCE((SELECT CAST(value AS DECIMAL(12, 4)) FROM `tabSingles`\n        WHERE doctype = 'Billing Settings' AND field = 'reporting_usd_to_inr'), 0)\n      ELSE 0 END * COALESCE(r.locked_rate, 0) AS list_rate_inr\n  FROM `tabVirtual Machine` v\n  JOIN `tabTeam` t ON t.name = v.team\n  LEFT JOIN metal m ON m.region = v.region\n  LEFT JOIN rate r ON r.server_id = v.name\n  WHERE v.status NOT IN ('Terminated', 'Failed')\n)\n,\nmetal_region AS (\n  SELECT region, COUNT(*) AS machines, SUM(cost_per_month_inr) AS bill, SUM(vcpus) AS vcpus,\n    SUM(memory_gib) AS memory_gib, SUM(disk_gib) AS disk_gib\n  FROM `tabMetal Server` WHERE status = 'Active' GROUP BY region\n),\nserver_region AS (\n  SELECT region, COUNT(*) AS servers,\n    SUM(funding = 'Paid') AS paid, SUM(funding = 'Free Credits') AS free_credits,\n    SUM(funding = 'Internal') AS internal, SUM(funding = 'Trial') AS trial,\n    SUM(vcpus) AS vcpus_used, SUM(memory_gib) AS memory_used, SUM(disk_gib) AS disk_used,\n    SUM(CASE WHEN funding = 'Paid' THEN list_rate_inr ELSE 0 END) AS earned_inr,\n    SUM(CASE WHEN funding != 'Paid' THEN metal_cost_inr ELSE 0 END) AS given_away\n  FROM servers GROUP BY region\n),\nregions AS (SELECT region FROM metal_region UNION SELECT region FROM server_region)\n\nSELECT r.region,\n  COALESCE(m.machines, 0) AS machines, COALESCE(m.bill, 0) AS bill,\n  COALESCE(s.earned_inr, 0) AS earned_inr, COALESCE(s.earned_inr, 0) - COALESCE(m.bill, 0) AS profit_inr,\n  COALESCE(s.given_away, 0) AS given_away,\n  COALESCE(m.vcpus, 0) AS vcpus, COALESCE(s.vcpus_used, 0) AS vcpus_used,\n  COALESCE(m.memory_gib, 0) AS memory_gib, COALESCE(s.memory_used, 0) AS memory_used,\n  COALESCE(m.disk_gib, 0) AS disk_gib, COALESCE(s.disk_used, 0) AS disk_used,\n  COALESCE(s.servers, 0) AS servers, COALESCE(s.paid, 0) AS paid, COALESCE(s.free_credits, 0) AS free_credits,\n  COALESCE(s.internal, 0) AS internal, COALESCE(s.trial, 0) AS trial,\n  COALESCE(s.vcpus_used, 0) / NULLIF(m.vcpus, 0) AS vcpu_used_share,\n  COALESCE(s.memory_used, 0) / NULLIF(m.memory_gib, 0) AS memory_used_share,\n  COALESCE(s.disk_used, 0) / NULLIF(m.disk_gib, 0) AS disk_used_share\nFROM regions r\nLEFT JOIN metal_region m ON m.region = r.region\nLEFT JOIN server_region s ON s.region = r.region\n",
+     "raw_sql": "WITH latest AS (\n  SELECT c.subscription, c.change_type, c.locked_rate, c.currency,\n    ROW_NUMBER() OVER (PARTITION BY c.subscription ORDER BY c.effective_at DESC, c.creation DESC) AS rn\n  FROM `tabSubscription Change` c\n  WHERE c.change_type IN ('Created', 'Plan Changed', 'Cancelled')\n),\nmetal AS (\n  SELECT region, SUM(cost_per_month_inr) AS cost, SUM(vcpus) AS vcpus,\n    SUM(memory_gib) AS memory_gib, SUM(disk_gib) AS disk_gib, COUNT(*) AS machines\n  FROM `tabMetal Server` WHERE status = 'Active' GROUP BY region\n),\nrate AS (\n  SELECT s.server_id, l.locked_rate, l.currency\n  FROM `tabSubscription` s JOIN latest l ON l.subscription = s.name AND l.rn = 1\n  WHERE s.enabled = 1 AND s.server_id IS NOT NULL AND s.server_id != '' AND l.change_type != 'Cancelled'\n),\nservers AS (\n  SELECT v.name AS server, v.team, t.team_name, v.region, v.status,\n    COALESCE(v.vcpus, 0) AS vcpus, COALESCE(v.memory_megabytes, 0) / 1024 AS memory_gib,\n    COALESCE(v.disk_gigabytes, 0) AS disk_gib,\n    CASE\n      WHEN EXISTS (SELECT 1 FROM `tabBilling Profile` tp WHERE tp.team = v.team AND tp.is_internal = 1) THEN 'Internal'\n      WHEN (SELECT MAX(st.trial_state) FROM `tabSite` st WHERE st.server = v.name AND st.trial_state != '')\n        IN ('Active', 'Ended', 'Deleted') THEN 'Trial'\n      WHEN NOT EXISTS (SELECT 1 FROM `tabSite` st WHERE st.server = v.name AND st.trial_state != '')\n        AND EXISTS (SELECT 1 FROM `tabResource Action` ra\n          WHERE ra.server = v.name AND ra.action = 'create' AND ra.is_free_trial = 1) THEN 'Trial'\n      WHEN EXISTS (SELECT 1 FROM `tabPayment Method` pm WHERE pm.team = v.team AND pm.status = 'Active')\n        OR EXISTS (SELECT 1 FROM `tabCredit Ledger Entry` e WHERE e.team = v.team AND e.entry_type = 'Credit'\n          AND e.reference_type IN ('Top-up', 'Payment Method'))\n        OR EXISTS (SELECT 1 FROM `tabInvoice` i WHERE i.team = v.team AND i.amount_paid > 0) THEN 'Paid'\n      ELSE 'Free Credits'\n    END AS funding,\n    COALESCE(v.vcpus, 0) * COALESCE(m.cost / NULLIF(m.vcpus, 0), 0) AS metal_cost_inr,\n    COALESCE(r.locked_rate, 0) AS list_rate,\n    COALESCE(r.currency, 'INR') AS currency,\n    v.atlas_host_id,\n    CASE WHEN COALESCE(r.currency, 'INR') = 'INR' THEN 1\n      WHEN r.currency = 'USD' THEN COALESCE((SELECT CAST(value AS DECIMAL(12, 4)) FROM `tabSingles`\n        WHERE doctype = 'Billing Settings' AND field = 'reporting_usd_to_inr'), 0)\n      ELSE 0 END * COALESCE(r.locked_rate, 0) AS list_rate_inr\n  FROM `tabVirtual Machine` v\n  JOIN `tabTeam` t ON t.name = v.team\n  LEFT JOIN metal m ON m.region = v.region\n  LEFT JOIN rate r ON r.server_id = v.name\n  WHERE v.status NOT IN ('Terminated', 'Failed')\n)\n,\nmetal_region AS (\n  SELECT region, COUNT(*) AS machines, SUM(cost_per_month_inr) AS bill, SUM(vcpus) AS vcpus,\n    SUM(memory_gib) AS memory_gib, SUM(disk_gib) AS disk_gib\n  FROM `tabMetal Server` WHERE status = 'Active' GROUP BY region\n),\nserver_region AS (\n  SELECT region, COUNT(*) AS servers,\n    SUM(funding = 'Paid') AS paid, SUM(funding = 'Free Credits') AS free_credits,\n    SUM(funding = 'Internal') AS internal, SUM(funding = 'Trial') AS trial,\n    SUM(vcpus) AS vcpus_used, SUM(memory_gib) AS memory_used, SUM(disk_gib) AS disk_used,\n    SUM(CASE WHEN funding = 'Paid' THEN list_rate_inr ELSE 0 END) AS earned_inr,\n    SUM(CASE WHEN funding != 'Paid' THEN metal_cost_inr ELSE 0 END) AS given_away\n  FROM servers GROUP BY region\n),\nregions AS (SELECT region FROM metal_region UNION SELECT region FROM server_region)\n\nSELECT r.region,\n  COALESCE(m.machines, 0) AS machines, COALESCE(m.bill, 0) AS bill,\n  COALESCE(s.earned_inr, 0) AS earned_inr, COALESCE(s.earned_inr, 0) - COALESCE(m.bill, 0) AS profit_inr,\n  COALESCE(s.given_away, 0) AS given_away,\n  COALESCE(m.vcpus, 0) AS vcpus, COALESCE(s.vcpus_used, 0) AS vcpus_used,\n  COALESCE(m.memory_gib, 0) AS memory_gib, COALESCE(s.memory_used, 0) AS memory_used,\n  COALESCE(m.disk_gib, 0) AS disk_gib, COALESCE(s.disk_used, 0) AS disk_used,\n  COALESCE(s.servers, 0) AS servers, COALESCE(s.paid, 0) AS paid, COALESCE(s.free_credits, 0) AS free_credits,\n  COALESCE(s.internal, 0) AS internal, COALESCE(s.trial, 0) AS trial,\n  COALESCE(s.vcpus_used, 0) / NULLIF(m.vcpus, 0) AS vcpu_used_share,\n  COALESCE(s.memory_used, 0) / NULLIF(m.memory_gib, 0) AS memory_used_share,\n  COALESCE(s.disk_used, 0) / NULLIF(m.disk_gib, 0) AS disk_used_share\nFROM regions r\nLEFT JOIN metal_region m ON m.region = r.region\nLEFT JOIN server_region s ON s.region = r.region\n",
      "type": "sql"
     }
    ],
@@ -6790,6 +7307,24 @@
    "use_live_connection": 1,
    "workbook": "billing"
   },
+  "billing-run-coverage-query": {
+   "folder": null,
+   "is_builder_query": 0,
+   "is_native_query": 1,
+   "is_script_query": 0,
+   "name": "billing-run-coverage-query",
+   "operations": [
+    {
+     "data_source": "Site DB",
+     "raw_sql": "WITH period AS (SELECT LAST_DAY(CURDATE() - INTERVAL 1 MONTH) AS period_end),\nmonth_teams AS (\n  SELECT t.name AS team, i.status AS invoice_status, i.due_date, o.outcome\n  FROM `tabTeam` t\n  CROSS JOIN period p\n  LEFT JOIN `tabInvoice` i ON i.team = t.name AND i.period_end = p.period_end\n    AND i.invoice_type = 'Billable' AND i.status != 'Cancelled'\n  LEFT JOIN `tabBilling Run Team` o ON o.team = t.name AND o.period_end = p.period_end\n  WHERE DATE(t.creation) <= p.period_end OR i.name IS NOT NULL OR o.name IS NOT NULL\n),\nclassified AS (\n  SELECT m.team, m.invoice_status, CASE\n    WHEN m.invoice_status = 'Waived' THEN 'Waived (Internal)'\n    WHEN m.invoice_status = 'Paid' OR m.due_date IS NOT NULL THEN 'Invoiced'\n    WHEN m.invoice_status IS NOT NULL THEN 'Waiting'\n    WHEN m.outcome = 'Failed' THEN 'Needs Action'\n    WHEN m.outcome = 'Below Minimum' THEN 'Below Minimum'\n    WHEN m.outcome IS NOT NULL THEN 'Nothing to Bill'\n    WHEN EXISTS (SELECT 1 FROM `tabSubscription` s WHERE s.team = m.team) THEN 'Waiting'\n    ELSE 'No Subscription'\n  END AS result\n  FROM month_teams m\n),\nresults AS (\n  SELECT 1 AS sort_order, 'Invoiced' AS result, 'Invoice issued: paid, or due on its due date. These teams pay.' AS what_happens\n  UNION ALL SELECT 2, 'Waiting', 'Has a subscription. The invoice is not issued yet, or is held for billing details or accounting sync.'\n  UNION ALL SELECT 3, 'Needs Action', 'The invoice failed to generate. It is retried every hour. Read the reason in Billing Run Coverage.'\n  UNION ALL SELECT 4, 'Waived (Internal)', 'Our own team. The invoice is rated for the record and never collected.'\n  UNION ALL SELECT 5, 'Below Minimum', 'The month totals less than the minimum invoice amount. No invoice, the amount is written off.'\n  UNION ALL SELECT 6, 'Nothing to Bill', 'Has a subscription, but nothing was billable in the month, or the invoice was cancelled.'\n  UNION ALL SELECT 7, 'No Subscription', 'Free trial servers only, or never created a server. Nothing to bill.'\n)\nSELECT\n  r.sort_order,\n  r.result,\n  r.what_happens,\n  COUNT(c.team) AS teams,\n  CASE WHEN r.result != 'No Subscription' THEN COUNT(c.team) ELSE 0 END AS with_subscription,\n  CASE WHEN r.result = 'Invoiced' THEN COUNT(c.team) ELSE 0 END AS invoiced,\n  COALESCE(SUM(c.invoice_status = 'Paid'), 0) AS paid,\n  CASE WHEN r.result = 'Waiting' THEN COUNT(c.team) ELSE 0 END AS waiting,\n  CASE WHEN r.result = 'Needs Action' THEN COUNT(c.team) ELSE 0 END AS needs_action,\n  CASE WHEN r.result = 'Waived (Internal)' THEN COUNT(c.team) ELSE 0 END AS waived,\n  CASE WHEN r.result = 'Below Minimum' THEN COUNT(c.team) ELSE 0 END AS below_minimum,\n  CASE WHEN r.result = 'Nothing to Bill' THEN COUNT(c.team) ELSE 0 END AS nothing_to_bill,\n  CASE WHEN r.result = 'No Subscription' THEN COUNT(c.team) ELSE 0 END AS no_subscription,\n  -- Not a team count: carried on the first row only, so a sum over the rows stays right.\n  CASE WHEN r.sort_order = 1 THEN (SELECT COUNT(*) FROM `tabSubscription` WHERE enabled = 1) ELSE 0 END AS active_subscriptions\nFROM results r\nLEFT JOIN classified c ON c.result = r.result\nGROUP BY r.sort_order, r.result, r.what_happens\nORDER BY r.sort_order\n",
+     "type": "sql"
+    }
+   ],
+   "sort_order": 33,
+   "title": "Billing run coverage",
+   "use_live_connection": 1,
+   "workbook": "billing"
+  },
   "billing-run-errors-query": {
    "folder": null,
    "is_builder_query": 0,
@@ -6799,7 +7334,7 @@
    "operations": [
     {
      "data_source": "Site DB",
-     "raw_sql": "SELECT DATE(creation) AS day, COUNT(*) AS errors\nFROM `tabError Log`\nWHERE method = 'Billing Run Failure' AND creation >= NOW() - INTERVAL 90 DAY\nGROUP BY day ORDER BY day\n",
+     "raw_sql": "SELECT DATE(creation) AS day, COUNT(*) AS errors\nFROM `tabBilling Event`\nWHERE event_type = 'Invoice Generation Failed' AND creation >= NOW() - INTERVAL 90 DAY\nGROUP BY day ORDER BY day\n",
      "type": "sql"
     }
    ],
@@ -6853,7 +7388,7 @@
    "operations": [
     {
      "data_source": "Site DB",
-     "raw_sql": "WITH latest AS (\n  SELECT c.subscription, c.change_type, c.locked_rate, c.currency,\n    ROW_NUMBER() OVER (PARTITION BY c.subscription ORDER BY c.effective_at DESC, c.creation DESC) AS rn\n  FROM `tabSubscription Change` c\n  WHERE c.change_type IN ('Created', 'Plan Changed', 'Cancelled')\n),\nmetal AS (\n  SELECT region, SUM(cost_per_month_inr) AS cost, SUM(vcpus) AS vcpus,\n    SUM(memory_gib) AS memory_gib, SUM(disk_gib) AS disk_gib, COUNT(*) AS machines\n  FROM `tabMetal Server` WHERE status = 'Active' GROUP BY region\n),\nrate AS (\n  SELECT s.server_id, l.locked_rate, l.currency\n  FROM `tabSubscription` s JOIN latest l ON l.subscription = s.name AND l.rn = 1\n  WHERE s.enabled = 1 AND s.server_id IS NOT NULL AND s.server_id != '' AND l.change_type != 'Cancelled'\n),\nservers AS (\n  SELECT v.name AS server, v.team, t.team_name, v.region, v.status,\n    COALESCE(v.vcpus, 0) AS vcpus, COALESCE(v.memory_megabytes, 0) / 1024 AS memory_gib,\n    COALESCE(v.disk_gigabytes, 0) AS disk_gib,\n    CASE\n      WHEN EXISTS (SELECT 1 FROM `tabTax Profile` tp WHERE tp.team = v.team AND tp.is_internal = 1) THEN 'Internal'\n      WHEN (SELECT MAX(st.trial_state) FROM `tabSite` st WHERE st.server = v.name AND st.trial_state != '')\n        IN ('Active', 'Ended', 'Deleted') THEN 'Trial'\n      WHEN NOT EXISTS (SELECT 1 FROM `tabSite` st WHERE st.server = v.name AND st.trial_state != '')\n        AND EXISTS (SELECT 1 FROM `tabResource Action` ra\n          WHERE ra.server = v.name AND ra.action = 'create' AND ra.is_free_trial = 1) THEN 'Trial'\n      WHEN EXISTS (SELECT 1 FROM `tabPayment Method` pm WHERE pm.team = v.team AND pm.status = 'Active')\n        OR EXISTS (SELECT 1 FROM `tabCredit Ledger Entry` e WHERE e.team = v.team AND e.entry_type = 'Credit'\n          AND e.reference_type IN ('Top-up', 'Payment Method'))\n        OR EXISTS (SELECT 1 FROM `tabInvoice` i WHERE i.team = v.team AND i.amount_paid > 0) THEN 'Paid'\n      ELSE 'Free Credits'\n    END AS funding,\n    COALESCE(v.vcpus, 0) * COALESCE(m.cost / NULLIF(m.vcpus, 0), 0) AS metal_cost_inr,\n    COALESCE(r.locked_rate, 0) AS list_rate,\n    COALESCE(r.currency, 'INR') AS currency,\n    v.atlas_host_id,\n    CASE WHEN COALESCE(r.currency, 'INR') = 'INR' THEN 1\n      WHEN r.currency = 'USD' THEN COALESCE((SELECT CAST(value AS DECIMAL(12, 4)) FROM `tabSingles`\n        WHERE doctype = 'Billing Settings' AND field = 'reporting_usd_to_inr'), 0)\n      ELSE 0 END * COALESCE(r.locked_rate, 0) AS list_rate_inr\n  FROM `tabVirtual Machine` v\n  JOIN `tabTeam` t ON t.name = v.team\n  LEFT JOIN metal m ON m.region = v.region\n  LEFT JOIN rate r ON r.server_id = v.name\n  WHERE v.status NOT IN ('Terminated', 'Failed')\n)\n\nSELECT region, CASE funding WHEN 'Paid' THEN 'Paying customers' WHEN 'Free Credits' THEN 'Customers not paying yet' WHEN 'Internal' THEN 'Our own teams' ELSE 'Free trials' END AS funding, COUNT(*) AS servers\nFROM servers GROUP BY region, funding\n",
+     "raw_sql": "WITH latest AS (\n  SELECT c.subscription, c.change_type, c.locked_rate, c.currency,\n    ROW_NUMBER() OVER (PARTITION BY c.subscription ORDER BY c.effective_at DESC, c.creation DESC) AS rn\n  FROM `tabSubscription Change` c\n  WHERE c.change_type IN ('Created', 'Plan Changed', 'Cancelled')\n),\nmetal AS (\n  SELECT region, SUM(cost_per_month_inr) AS cost, SUM(vcpus) AS vcpus,\n    SUM(memory_gib) AS memory_gib, SUM(disk_gib) AS disk_gib, COUNT(*) AS machines\n  FROM `tabMetal Server` WHERE status = 'Active' GROUP BY region\n),\nrate AS (\n  SELECT s.server_id, l.locked_rate, l.currency\n  FROM `tabSubscription` s JOIN latest l ON l.subscription = s.name AND l.rn = 1\n  WHERE s.enabled = 1 AND s.server_id IS NOT NULL AND s.server_id != '' AND l.change_type != 'Cancelled'\n),\nservers AS (\n  SELECT v.name AS server, v.team, t.team_name, v.region, v.status,\n    COALESCE(v.vcpus, 0) AS vcpus, COALESCE(v.memory_megabytes, 0) / 1024 AS memory_gib,\n    COALESCE(v.disk_gigabytes, 0) AS disk_gib,\n    CASE\n      WHEN EXISTS (SELECT 1 FROM `tabBilling Profile` tp WHERE tp.team = v.team AND tp.is_internal = 1) THEN 'Internal'\n      WHEN (SELECT MAX(st.trial_state) FROM `tabSite` st WHERE st.server = v.name AND st.trial_state != '')\n        IN ('Active', 'Ended', 'Deleted') THEN 'Trial'\n      WHEN NOT EXISTS (SELECT 1 FROM `tabSite` st WHERE st.server = v.name AND st.trial_state != '')\n        AND EXISTS (SELECT 1 FROM `tabResource Action` ra\n          WHERE ra.server = v.name AND ra.action = 'create' AND ra.is_free_trial = 1) THEN 'Trial'\n      WHEN EXISTS (SELECT 1 FROM `tabPayment Method` pm WHERE pm.team = v.team AND pm.status = 'Active')\n        OR EXISTS (SELECT 1 FROM `tabCredit Ledger Entry` e WHERE e.team = v.team AND e.entry_type = 'Credit'\n          AND e.reference_type IN ('Top-up', 'Payment Method'))\n        OR EXISTS (SELECT 1 FROM `tabInvoice` i WHERE i.team = v.team AND i.amount_paid > 0) THEN 'Paid'\n      ELSE 'Free Credits'\n    END AS funding,\n    COALESCE(v.vcpus, 0) * COALESCE(m.cost / NULLIF(m.vcpus, 0), 0) AS metal_cost_inr,\n    COALESCE(r.locked_rate, 0) AS list_rate,\n    COALESCE(r.currency, 'INR') AS currency,\n    v.atlas_host_id,\n    CASE WHEN COALESCE(r.currency, 'INR') = 'INR' THEN 1\n      WHEN r.currency = 'USD' THEN COALESCE((SELECT CAST(value AS DECIMAL(12, 4)) FROM `tabSingles`\n        WHERE doctype = 'Billing Settings' AND field = 'reporting_usd_to_inr'), 0)\n      ELSE 0 END * COALESCE(r.locked_rate, 0) AS list_rate_inr\n  FROM `tabVirtual Machine` v\n  JOIN `tabTeam` t ON t.name = v.team\n  LEFT JOIN metal m ON m.region = v.region\n  LEFT JOIN rate r ON r.server_id = v.name\n  WHERE v.status NOT IN ('Terminated', 'Failed')\n)\n\nSELECT region, CASE funding WHEN 'Paid' THEN 'Paying customers' WHEN 'Free Credits' THEN 'Customers not paying yet' WHEN 'Internal' THEN 'Our own teams' ELSE 'Free trials' END AS funding, COUNT(*) AS servers\nFROM servers GROUP BY region, funding\n",
      "type": "sql"
     }
    ],
@@ -6871,7 +7406,7 @@
    "operations": [
     {
      "data_source": "Site DB",
-     "raw_sql": "SELECT t.team_name, i.currency, SUM(i.expected_collection) AS owed, MIN(i.due_date) AS oldest_due\nFROM `tabInvoice` i JOIN `tabTeam` t ON t.name = i.team\nWHERE i.invoice_type = 'Billable' AND i.status IN ('Open', 'Overdue') AND i.expected_collection > 0\nGROUP BY t.team_name, i.currency\nORDER BY oldest_due\nLIMIT 10\n",
+     "raw_sql": "SELECT t.team_name, i.currency, SUM(i.expected_collection) AS owed, MIN(i.due_date) AS oldest_due\nFROM `tabInvoice` i JOIN `tabTeam` t ON t.name = i.team\nWHERE i.invoice_type = 'Billable' AND i.status IN ('Outstanding', 'Overdue') AND i.expected_collection > 0\nGROUP BY t.team_name, i.currency\nORDER BY oldest_due\nLIMIT 10\n",
      "type": "sql"
     }
    ],
@@ -6889,7 +7424,7 @@
    "operations": [
     {
      "data_source": "Site DB",
-     "raw_sql": "WITH latest AS (\n  SELECT c.subscription, c.change_type, c.locked_rate, c.currency,\n    ROW_NUMBER() OVER (PARTITION BY c.subscription ORDER BY c.effective_at DESC, c.creation DESC) AS rn\n  FROM `tabSubscription Change` c\n  WHERE c.change_type IN ('Created', 'Plan Changed', 'Cancelled')\n),\nmetal AS (\n  SELECT region, SUM(cost_per_month_inr) AS cost, SUM(vcpus) AS vcpus,\n    SUM(memory_gib) AS memory_gib, SUM(disk_gib) AS disk_gib, COUNT(*) AS machines\n  FROM `tabMetal Server` WHERE status = 'Active' GROUP BY region\n),\nrate AS (\n  SELECT s.server_id, l.locked_rate, l.currency\n  FROM `tabSubscription` s JOIN latest l ON l.subscription = s.name AND l.rn = 1\n  WHERE s.enabled = 1 AND s.server_id IS NOT NULL AND s.server_id != '' AND l.change_type != 'Cancelled'\n),\nservers AS (\n  SELECT v.name AS server, v.team, t.team_name, v.region, v.status,\n    COALESCE(v.vcpus, 0) AS vcpus, COALESCE(v.memory_megabytes, 0) / 1024 AS memory_gib,\n    COALESCE(v.disk_gigabytes, 0) AS disk_gib,\n    CASE\n      WHEN EXISTS (SELECT 1 FROM `tabTax Profile` tp WHERE tp.team = v.team AND tp.is_internal = 1) THEN 'Internal'\n      WHEN (SELECT MAX(st.trial_state) FROM `tabSite` st WHERE st.server = v.name AND st.trial_state != '')\n        IN ('Active', 'Ended', 'Deleted') THEN 'Trial'\n      WHEN NOT EXISTS (SELECT 1 FROM `tabSite` st WHERE st.server = v.name AND st.trial_state != '')\n        AND EXISTS (SELECT 1 FROM `tabResource Action` ra\n          WHERE ra.server = v.name AND ra.action = 'create' AND ra.is_free_trial = 1) THEN 'Trial'\n      WHEN EXISTS (SELECT 1 FROM `tabPayment Method` pm WHERE pm.team = v.team AND pm.status = 'Active')\n        OR EXISTS (SELECT 1 FROM `tabCredit Ledger Entry` e WHERE e.team = v.team AND e.entry_type = 'Credit'\n          AND e.reference_type IN ('Top-up', 'Payment Method'))\n        OR EXISTS (SELECT 1 FROM `tabInvoice` i WHERE i.team = v.team AND i.amount_paid > 0) THEN 'Paid'\n      ELSE 'Free Credits'\n    END AS funding,\n    COALESCE(v.vcpus, 0) * COALESCE(m.cost / NULLIF(m.vcpus, 0), 0) AS metal_cost_inr,\n    COALESCE(r.locked_rate, 0) AS list_rate,\n    COALESCE(r.currency, 'INR') AS currency,\n    v.atlas_host_id,\n    CASE WHEN COALESCE(r.currency, 'INR') = 'INR' THEN 1\n      WHEN r.currency = 'USD' THEN COALESCE((SELECT CAST(value AS DECIMAL(12, 4)) FROM `tabSingles`\n        WHERE doctype = 'Billing Settings' AND field = 'reporting_usd_to_inr'), 0)\n      ELSE 0 END * COALESCE(r.locked_rate, 0) AS list_rate_inr\n  FROM `tabVirtual Machine` v\n  JOIN `tabTeam` t ON t.name = v.team\n  LEFT JOIN metal m ON m.region = v.region\n  LEFT JOIN rate r ON r.server_id = v.name\n  WHERE v.status NOT IN ('Terminated', 'Failed')\n)\n\nSELECT region, team_name, CASE funding WHEN 'Paid' THEN 'Paying customers' WHEN 'Free Credits' THEN 'Customers not paying yet' WHEN 'Internal' THEN 'Our own teams' ELSE 'Free trials' END AS funding,\n  SUM(metal_cost_inr) AS cost\nFROM servers\nGROUP BY region, team_name, funding\nORDER BY cost DESC\n",
+     "raw_sql": "WITH latest AS (\n  SELECT c.subscription, c.change_type, c.locked_rate, c.currency,\n    ROW_NUMBER() OVER (PARTITION BY c.subscription ORDER BY c.effective_at DESC, c.creation DESC) AS rn\n  FROM `tabSubscription Change` c\n  WHERE c.change_type IN ('Created', 'Plan Changed', 'Cancelled')\n),\nmetal AS (\n  SELECT region, SUM(cost_per_month_inr) AS cost, SUM(vcpus) AS vcpus,\n    SUM(memory_gib) AS memory_gib, SUM(disk_gib) AS disk_gib, COUNT(*) AS machines\n  FROM `tabMetal Server` WHERE status = 'Active' GROUP BY region\n),\nrate AS (\n  SELECT s.server_id, l.locked_rate, l.currency\n  FROM `tabSubscription` s JOIN latest l ON l.subscription = s.name AND l.rn = 1\n  WHERE s.enabled = 1 AND s.server_id IS NOT NULL AND s.server_id != '' AND l.change_type != 'Cancelled'\n),\nservers AS (\n  SELECT v.name AS server, v.team, t.team_name, v.region, v.status,\n    COALESCE(v.vcpus, 0) AS vcpus, COALESCE(v.memory_megabytes, 0) / 1024 AS memory_gib,\n    COALESCE(v.disk_gigabytes, 0) AS disk_gib,\n    CASE\n      WHEN EXISTS (SELECT 1 FROM `tabBilling Profile` tp WHERE tp.team = v.team AND tp.is_internal = 1) THEN 'Internal'\n      WHEN (SELECT MAX(st.trial_state) FROM `tabSite` st WHERE st.server = v.name AND st.trial_state != '')\n        IN ('Active', 'Ended', 'Deleted') THEN 'Trial'\n      WHEN NOT EXISTS (SELECT 1 FROM `tabSite` st WHERE st.server = v.name AND st.trial_state != '')\n        AND EXISTS (SELECT 1 FROM `tabResource Action` ra\n          WHERE ra.server = v.name AND ra.action = 'create' AND ra.is_free_trial = 1) THEN 'Trial'\n      WHEN EXISTS (SELECT 1 FROM `tabPayment Method` pm WHERE pm.team = v.team AND pm.status = 'Active')\n        OR EXISTS (SELECT 1 FROM `tabCredit Ledger Entry` e WHERE e.team = v.team AND e.entry_type = 'Credit'\n          AND e.reference_type IN ('Top-up', 'Payment Method'))\n        OR EXISTS (SELECT 1 FROM `tabInvoice` i WHERE i.team = v.team AND i.amount_paid > 0) THEN 'Paid'\n      ELSE 'Free Credits'\n    END AS funding,\n    COALESCE(v.vcpus, 0) * COALESCE(m.cost / NULLIF(m.vcpus, 0), 0) AS metal_cost_inr,\n    COALESCE(r.locked_rate, 0) AS list_rate,\n    COALESCE(r.currency, 'INR') AS currency,\n    v.atlas_host_id,\n    CASE WHEN COALESCE(r.currency, 'INR') = 'INR' THEN 1\n      WHEN r.currency = 'USD' THEN COALESCE((SELECT CAST(value AS DECIMAL(12, 4)) FROM `tabSingles`\n        WHERE doctype = 'Billing Settings' AND field = 'reporting_usd_to_inr'), 0)\n      ELSE 0 END * COALESCE(r.locked_rate, 0) AS list_rate_inr\n  FROM `tabVirtual Machine` v\n  JOIN `tabTeam` t ON t.name = v.team\n  LEFT JOIN metal m ON m.region = v.region\n  LEFT JOIN rate r ON r.server_id = v.name\n  WHERE v.status NOT IN ('Terminated', 'Failed')\n)\n\nSELECT region, team_name, CASE funding WHEN 'Paid' THEN 'Paying customers' WHEN 'Free Credits' THEN 'Customers not paying yet' WHEN 'Internal' THEN 'Our own teams' ELSE 'Free trials' END AS funding,\n  SUM(metal_cost_inr) AS cost\nFROM servers\nGROUP BY region, team_name, funding\nORDER BY cost DESC\n",
      "type": "sql"
     }
    ],
@@ -6925,7 +7460,7 @@
    "operations": [
     {
      "data_source": "Site DB",
-     "raw_sql": "WITH latest AS (\n  SELECT c.subscription, c.change_type, c.locked_rate, c.currency,\n    ROW_NUMBER() OVER (PARTITION BY c.subscription ORDER BY c.effective_at DESC, c.creation DESC) AS rn\n  FROM `tabSubscription Change` c\n  WHERE c.change_type IN ('Created', 'Plan Changed', 'Cancelled')\n),\nmetal AS (\n  SELECT region, SUM(cost_per_month_inr) AS cost, SUM(vcpus) AS vcpus,\n    SUM(memory_gib) AS memory_gib, SUM(disk_gib) AS disk_gib, COUNT(*) AS machines\n  FROM `tabMetal Server` WHERE status = 'Active' GROUP BY region\n),\nrate AS (\n  SELECT s.server_id, l.locked_rate, l.currency\n  FROM `tabSubscription` s JOIN latest l ON l.subscription = s.name AND l.rn = 1\n  WHERE s.enabled = 1 AND s.server_id IS NOT NULL AND s.server_id != '' AND l.change_type != 'Cancelled'\n),\nservers AS (\n  SELECT v.name AS server, v.team, t.team_name, v.region, v.status,\n    COALESCE(v.vcpus, 0) AS vcpus, COALESCE(v.memory_megabytes, 0) / 1024 AS memory_gib,\n    COALESCE(v.disk_gigabytes, 0) AS disk_gib,\n    CASE\n      WHEN EXISTS (SELECT 1 FROM `tabTax Profile` tp WHERE tp.team = v.team AND tp.is_internal = 1) THEN 'Internal'\n      WHEN (SELECT MAX(st.trial_state) FROM `tabSite` st WHERE st.server = v.name AND st.trial_state != '')\n        IN ('Active', 'Ended', 'Deleted') THEN 'Trial'\n      WHEN NOT EXISTS (SELECT 1 FROM `tabSite` st WHERE st.server = v.name AND st.trial_state != '')\n        AND EXISTS (SELECT 1 FROM `tabResource Action` ra\n          WHERE ra.server = v.name AND ra.action = 'create' AND ra.is_free_trial = 1) THEN 'Trial'\n      WHEN EXISTS (SELECT 1 FROM `tabPayment Method` pm WHERE pm.team = v.team AND pm.status = 'Active')\n        OR EXISTS (SELECT 1 FROM `tabCredit Ledger Entry` e WHERE e.team = v.team AND e.entry_type = 'Credit'\n          AND e.reference_type IN ('Top-up', 'Payment Method'))\n        OR EXISTS (SELECT 1 FROM `tabInvoice` i WHERE i.team = v.team AND i.amount_paid > 0) THEN 'Paid'\n      ELSE 'Free Credits'\n    END AS funding,\n    COALESCE(v.vcpus, 0) * COALESCE(m.cost / NULLIF(m.vcpus, 0), 0) AS metal_cost_inr,\n    COALESCE(r.locked_rate, 0) AS list_rate,\n    COALESCE(r.currency, 'INR') AS currency,\n    v.atlas_host_id,\n    CASE WHEN COALESCE(r.currency, 'INR') = 'INR' THEN 1\n      WHEN r.currency = 'USD' THEN COALESCE((SELECT CAST(value AS DECIMAL(12, 4)) FROM `tabSingles`\n        WHERE doctype = 'Billing Settings' AND field = 'reporting_usd_to_inr'), 0)\n      ELSE 0 END * COALESCE(r.locked_rate, 0) AS list_rate_inr\n  FROM `tabVirtual Machine` v\n  JOIN `tabTeam` t ON t.name = v.team\n  LEFT JOIN metal m ON m.region = v.region\n  LEFT JOIN rate r ON r.server_id = v.name\n  WHERE v.status NOT IN ('Terminated', 'Failed')\n)\n,\nmetal_region AS (\n  SELECT region, SUM(cost_per_month_inr) AS bill FROM `tabMetal Server` WHERE status = 'Active' GROUP BY region\n),\nused AS (\n  SELECT region, CASE funding WHEN 'Paid' THEN 'Paying customers' WHEN 'Free Credits' THEN 'Customers not paying yet'\n    WHEN 'Internal' THEN 'Our own teams' ELSE 'Free trials' END AS use_type, SUM(metal_cost_inr) AS cost\n  FROM servers GROUP BY region, use_type\n)\nSELECT region, use_type, cost FROM used\nUNION ALL\nSELECT m.region, 'Unused capacity', GREATEST(m.bill - COALESCE(SUM(u.cost), 0), 0)\nFROM metal_region m LEFT JOIN used u ON u.region = m.region\nGROUP BY m.region, m.bill\n",
+     "raw_sql": "WITH latest AS (\n  SELECT c.subscription, c.change_type, c.locked_rate, c.currency,\n    ROW_NUMBER() OVER (PARTITION BY c.subscription ORDER BY c.effective_at DESC, c.creation DESC) AS rn\n  FROM `tabSubscription Change` c\n  WHERE c.change_type IN ('Created', 'Plan Changed', 'Cancelled')\n),\nmetal AS (\n  SELECT region, SUM(cost_per_month_inr) AS cost, SUM(vcpus) AS vcpus,\n    SUM(memory_gib) AS memory_gib, SUM(disk_gib) AS disk_gib, COUNT(*) AS machines\n  FROM `tabMetal Server` WHERE status = 'Active' GROUP BY region\n),\nrate AS (\n  SELECT s.server_id, l.locked_rate, l.currency\n  FROM `tabSubscription` s JOIN latest l ON l.subscription = s.name AND l.rn = 1\n  WHERE s.enabled = 1 AND s.server_id IS NOT NULL AND s.server_id != '' AND l.change_type != 'Cancelled'\n),\nservers AS (\n  SELECT v.name AS server, v.team, t.team_name, v.region, v.status,\n    COALESCE(v.vcpus, 0) AS vcpus, COALESCE(v.memory_megabytes, 0) / 1024 AS memory_gib,\n    COALESCE(v.disk_gigabytes, 0) AS disk_gib,\n    CASE\n      WHEN EXISTS (SELECT 1 FROM `tabBilling Profile` tp WHERE tp.team = v.team AND tp.is_internal = 1) THEN 'Internal'\n      WHEN (SELECT MAX(st.trial_state) FROM `tabSite` st WHERE st.server = v.name AND st.trial_state != '')\n        IN ('Active', 'Ended', 'Deleted') THEN 'Trial'\n      WHEN NOT EXISTS (SELECT 1 FROM `tabSite` st WHERE st.server = v.name AND st.trial_state != '')\n        AND EXISTS (SELECT 1 FROM `tabResource Action` ra\n          WHERE ra.server = v.name AND ra.action = 'create' AND ra.is_free_trial = 1) THEN 'Trial'\n      WHEN EXISTS (SELECT 1 FROM `tabPayment Method` pm WHERE pm.team = v.team AND pm.status = 'Active')\n        OR EXISTS (SELECT 1 FROM `tabCredit Ledger Entry` e WHERE e.team = v.team AND e.entry_type = 'Credit'\n          AND e.reference_type IN ('Top-up', 'Payment Method'))\n        OR EXISTS (SELECT 1 FROM `tabInvoice` i WHERE i.team = v.team AND i.amount_paid > 0) THEN 'Paid'\n      ELSE 'Free Credits'\n    END AS funding,\n    COALESCE(v.vcpus, 0) * COALESCE(m.cost / NULLIF(m.vcpus, 0), 0) AS metal_cost_inr,\n    COALESCE(r.locked_rate, 0) AS list_rate,\n    COALESCE(r.currency, 'INR') AS currency,\n    v.atlas_host_id,\n    CASE WHEN COALESCE(r.currency, 'INR') = 'INR' THEN 1\n      WHEN r.currency = 'USD' THEN COALESCE((SELECT CAST(value AS DECIMAL(12, 4)) FROM `tabSingles`\n        WHERE doctype = 'Billing Settings' AND field = 'reporting_usd_to_inr'), 0)\n      ELSE 0 END * COALESCE(r.locked_rate, 0) AS list_rate_inr\n  FROM `tabVirtual Machine` v\n  JOIN `tabTeam` t ON t.name = v.team\n  LEFT JOIN metal m ON m.region = v.region\n  LEFT JOIN rate r ON r.server_id = v.name\n  WHERE v.status NOT IN ('Terminated', 'Failed')\n)\n,\nmetal_region AS (\n  SELECT region, SUM(cost_per_month_inr) AS bill FROM `tabMetal Server` WHERE status = 'Active' GROUP BY region\n),\nused AS (\n  SELECT region, CASE funding WHEN 'Paid' THEN 'Paying customers' WHEN 'Free Credits' THEN 'Customers not paying yet'\n    WHEN 'Internal' THEN 'Our own teams' ELSE 'Free trials' END AS use_type, SUM(metal_cost_inr) AS cost\n  FROM servers GROUP BY region, use_type\n)\nSELECT region, use_type, cost FROM used\nUNION ALL\nSELECT m.region, 'Unused capacity', GREATEST(m.bill - COALESCE(SUM(u.cost), 0), 0)\nFROM metal_region m LEFT JOIN used u ON u.region = m.region\nGROUP BY m.region, m.bill\n",
      "type": "sql"
     }
    ],
@@ -6943,7 +7478,7 @@
    "operations": [
     {
      "data_source": "Site DB",
-     "raw_sql": "WITH latest AS (\n  SELECT c.subscription, c.change_type, c.locked_rate, c.currency,\n    ROW_NUMBER() OVER (PARTITION BY c.subscription ORDER BY c.effective_at DESC, c.creation DESC) AS rn\n  FROM `tabSubscription Change` c\n  WHERE c.change_type IN ('Created', 'Plan Changed', 'Cancelled')\n),\nrate AS (\n  SELECT s.server_id, l.locked_rate, l.currency\n  FROM `tabSubscription` s JOIN latest l ON l.subscription = s.name AND l.rn = 1\n  WHERE s.enabled = 1 AND s.server_id IS NOT NULL AND s.server_id != '' AND l.change_type != 'Cancelled'\n),\ncard AS (\n  SELECT g.name AS region,\n    COALESCE(MAX(CASE WHEN c.priced_for = 'Compute' AND c.cluster = g.name THEN c.rate END),\n      MAX(CASE WHEN c.priced_for = 'Compute' AND COALESCE(c.cluster, '') = '' THEN c.rate END), 0) AS vcpu_rate,\n    COALESCE(MAX(CASE WHEN c.priced_for = 'Memory' AND c.cluster = g.name THEN c.rate END),\n      MAX(CASE WHEN c.priced_for = 'Memory' AND COALESCE(c.cluster, '') = '' THEN c.rate END), 0) AS memory_rate,\n    COALESCE(MAX(CASE WHEN c.priced_for = 'Disk' AND c.cluster = g.name THEN c.rate END),\n      MAX(CASE WHEN c.priced_for = 'Disk' AND COALESCE(c.cluster, '') = '' THEN c.rate END), 0) AS disk_rate\n  FROM `tabRegion` g\n  JOIN `tabCatalog Rate` c ON c.priced_doctype = 'Resource Type' AND c.currency = 'INR'\n  GROUP BY g.name\n),\nmetal_cost AS (\n  SELECT region, SUM(cost_per_month_inr) / NULLIF(SUM(vcpus), 0) AS cost_per_vcpu\n  FROM `tabMetal Server` WHERE status = 'Active' GROUP BY region\n),\nservers AS (\n  SELECT v.region,\n    COALESCE(v.vcpus, 0) AS vcpus, COALESCE(v.memory_megabytes, 0) / 1024 AS memory_gib,\n    COALESCE(v.disk_gigabytes, 0) AS disk_gib,\n    CASE\n      WHEN EXISTS (SELECT 1 FROM `tabTax Profile` tp WHERE tp.team = v.team AND tp.is_internal = 1) THEN 'Internal'\n      WHEN (SELECT MAX(st.trial_state) FROM `tabSite` st WHERE st.server = v.name AND st.trial_state != '')\n        IN ('Active', 'Ended', 'Deleted') THEN 'Trial'\n      WHEN NOT EXISTS (SELECT 1 FROM `tabSite` st WHERE st.server = v.name AND st.trial_state != '')\n        AND EXISTS (SELECT 1 FROM `tabResource Action` ra\n          WHERE ra.server = v.name AND ra.action = 'create' AND ra.is_free_trial = 1) THEN 'Trial'\n      WHEN EXISTS (SELECT 1 FROM `tabPayment Method` pm WHERE pm.team = v.team AND pm.status = 'Active')\n        OR EXISTS (SELECT 1 FROM `tabCredit Ledger Entry` e WHERE e.team = v.team AND e.entry_type = 'Credit'\n          AND e.reference_type IN ('Top-up', 'Payment Method'))\n        OR EXISTS (SELECT 1 FROM `tabInvoice` i WHERE i.team = v.team AND i.amount_paid > 0) THEN 'Paid'\n      ELSE 'Free Credits'\n    END AS funding,\n    CASE WHEN COALESCE(r.currency, 'INR') = 'INR' THEN 1\n      WHEN r.currency = 'USD' THEN COALESCE((SELECT CAST(value AS DECIMAL(12, 4)) FROM `tabSingles`\n        WHERE doctype = 'Billing Settings' AND field = 'reporting_usd_to_inr'), 0)\n      ELSE 0 END * COALESCE(r.locked_rate, 0) AS list_rate_inr\n  FROM `tabVirtual Machine` v\n  LEFT JOIN rate r ON r.server_id = v.name\n  WHERE v.status NOT IN ('Terminated', 'Failed')\n),\npriced AS (\n  SELECT s.*,\n    s.vcpus * COALESCE(k.vcpu_rate, 0) + s.memory_gib * COALESCE(k.memory_rate, 0)\n      + s.disk_gib * COALESCE(k.disk_rate, 0) AS card_value,\n    s.vcpus * COALESCE(mc.cost_per_vcpu, 0) AS metal_cost\n  FROM servers s LEFT JOIN card k ON k.region = s.region\n  LEFT JOIN metal_cost mc ON mc.region = s.region\n),\nserver_region AS (\n  SELECT region, COUNT(*) AS servers, SUM(vcpus) AS sold_vcpus, SUM(card_value) AS held_value,\n    SUM(CASE WHEN funding = 'Paid' THEN card_value ELSE 0 END) AS paid_value,\n    SUM(CASE WHEN funding = 'Paid' THEN list_rate_inr ELSE 0 END) AS revenue,\n    SUM(CASE WHEN funding != 'Paid' THEN metal_cost ELSE 0 END) AS unpaid_cost\n  FROM priced GROUP BY region\n),\nmetal_region AS (\n  SELECT region, COUNT(*) AS machines, SUM(cost_per_month_inr) AS bill,\n    SUM((vcpus - COALESCE(reserved_vcpus, 0)) * COALESCE(NULLIF(cpu_overcommit_ratio, 0), 1)) AS sellable_vcpus,\n    SUM(memory_gib - COALESCE(reserved_memory_gib, 0)) AS sellable_memory_gib,\n    SUM(disk_gib - COALESCE(reserved_disk_gib, 0)) AS sellable_disk_gib\n  FROM `tabMetal Server` WHERE status = 'Active' GROUP BY region\n),\nregions AS (SELECT region FROM metal_region UNION SELECT region FROM server_region),\ntotals AS (\n  SELECT r.region, COALESCE(m.machines, 0) AS machines, COALESCE(s.servers, 0) AS servers,\n    COALESCE(m.bill, 0) AS bill, COALESCE(m.sellable_vcpus, 0) AS sellable_vcpus,\n    COALESCE(s.sold_vcpus, 0) AS sold_vcpus, COALESCE(s.held_value, 0) AS held_value,\n    COALESCE(s.paid_value, 0) AS paid_value, COALESCE(s.revenue, 0) AS revenue,\n    COALESCE(s.unpaid_cost, 0) AS unpaid_cost,\n    COALESCE(m.sellable_vcpus, 0) * COALESCE(k.vcpu_rate, 0)\n      + COALESCE(m.sellable_memory_gib, 0) * COALESCE(k.memory_rate, 0)\n      + COALESCE(m.sellable_disk_gib, 0) * COALESCE(k.disk_rate, 0) AS potential\n  FROM regions r\n  LEFT JOIN metal_region m ON m.region = r.region\n  LEFT JOIN server_region s ON s.region = r.region\n  LEFT JOIN card k ON k.region = r.region\n)\n\nSELECT region, machines, servers, bill, sellable_vcpus, sold_vcpus,\n  sold_vcpus / NULLIF(sellable_vcpus, 0) AS vcpu_sold_share,\n  potential,\n  potential - held_value AS unsold,\n  held_value - paid_value AS unpaid,\n  unpaid_cost,\n  paid_value - revenue AS discount,\n  revenue,\n  revenue / NULLIF(potential, 0) AS yield_share,\n  revenue / NULLIF(sellable_vcpus, 0) AS revenue_per_sellable_vcpu\nFROM totals\n",
+     "raw_sql": "WITH latest AS (\n  SELECT c.subscription, c.change_type, c.locked_rate, c.currency,\n    ROW_NUMBER() OVER (PARTITION BY c.subscription ORDER BY c.effective_at DESC, c.creation DESC) AS rn\n  FROM `tabSubscription Change` c\n  WHERE c.change_type IN ('Created', 'Plan Changed', 'Cancelled')\n),\nrate AS (\n  SELECT s.server_id, l.locked_rate, l.currency\n  FROM `tabSubscription` s JOIN latest l ON l.subscription = s.name AND l.rn = 1\n  WHERE s.enabled = 1 AND s.server_id IS NOT NULL AND s.server_id != '' AND l.change_type != 'Cancelled'\n),\ncard AS (\n  SELECT g.name AS region,\n    COALESCE(MAX(CASE WHEN c.priced_for = 'Compute' AND c.cluster = g.name THEN c.rate END),\n      MAX(CASE WHEN c.priced_for = 'Compute' AND COALESCE(c.cluster, '') = '' THEN c.rate END), 0) AS vcpu_rate,\n    COALESCE(MAX(CASE WHEN c.priced_for = 'Memory' AND c.cluster = g.name THEN c.rate END),\n      MAX(CASE WHEN c.priced_for = 'Memory' AND COALESCE(c.cluster, '') = '' THEN c.rate END), 0) AS memory_rate,\n    COALESCE(MAX(CASE WHEN c.priced_for = 'Disk' AND c.cluster = g.name THEN c.rate END),\n      MAX(CASE WHEN c.priced_for = 'Disk' AND COALESCE(c.cluster, '') = '' THEN c.rate END), 0) AS disk_rate\n  FROM `tabRegion` g\n  JOIN `tabCatalog Rate` c ON c.priced_doctype = 'Resource Type' AND c.currency = 'INR'\n  GROUP BY g.name\n),\nmetal_cost AS (\n  SELECT region, SUM(cost_per_month_inr) / NULLIF(SUM(vcpus), 0) AS cost_per_vcpu\n  FROM `tabMetal Server` WHERE status = 'Active' GROUP BY region\n),\nservers AS (\n  SELECT v.region,\n    COALESCE(v.vcpus, 0) AS vcpus, COALESCE(v.memory_megabytes, 0) / 1024 AS memory_gib,\n    COALESCE(v.disk_gigabytes, 0) AS disk_gib,\n    CASE\n      WHEN EXISTS (SELECT 1 FROM `tabBilling Profile` tp WHERE tp.team = v.team AND tp.is_internal = 1) THEN 'Internal'\n      WHEN (SELECT MAX(st.trial_state) FROM `tabSite` st WHERE st.server = v.name AND st.trial_state != '')\n        IN ('Active', 'Ended', 'Deleted') THEN 'Trial'\n      WHEN NOT EXISTS (SELECT 1 FROM `tabSite` st WHERE st.server = v.name AND st.trial_state != '')\n        AND EXISTS (SELECT 1 FROM `tabResource Action` ra\n          WHERE ra.server = v.name AND ra.action = 'create' AND ra.is_free_trial = 1) THEN 'Trial'\n      WHEN EXISTS (SELECT 1 FROM `tabPayment Method` pm WHERE pm.team = v.team AND pm.status = 'Active')\n        OR EXISTS (SELECT 1 FROM `tabCredit Ledger Entry` e WHERE e.team = v.team AND e.entry_type = 'Credit'\n          AND e.reference_type IN ('Top-up', 'Payment Method'))\n        OR EXISTS (SELECT 1 FROM `tabInvoice` i WHERE i.team = v.team AND i.amount_paid > 0) THEN 'Paid'\n      ELSE 'Free Credits'\n    END AS funding,\n    CASE WHEN COALESCE(r.currency, 'INR') = 'INR' THEN 1\n      WHEN r.currency = 'USD' THEN COALESCE((SELECT CAST(value AS DECIMAL(12, 4)) FROM `tabSingles`\n        WHERE doctype = 'Billing Settings' AND field = 'reporting_usd_to_inr'), 0)\n      ELSE 0 END * COALESCE(r.locked_rate, 0) AS list_rate_inr\n  FROM `tabVirtual Machine` v\n  LEFT JOIN rate r ON r.server_id = v.name\n  WHERE v.status NOT IN ('Terminated', 'Failed')\n),\npriced AS (\n  SELECT s.*,\n    s.vcpus * COALESCE(k.vcpu_rate, 0) + s.memory_gib * COALESCE(k.memory_rate, 0)\n      + s.disk_gib * COALESCE(k.disk_rate, 0) AS card_value,\n    s.vcpus * COALESCE(mc.cost_per_vcpu, 0) AS metal_cost\n  FROM servers s LEFT JOIN card k ON k.region = s.region\n  LEFT JOIN metal_cost mc ON mc.region = s.region\n),\nserver_region AS (\n  SELECT region, COUNT(*) AS servers, SUM(vcpus) AS sold_vcpus, SUM(card_value) AS held_value,\n    SUM(CASE WHEN funding = 'Paid' THEN card_value ELSE 0 END) AS paid_value,\n    SUM(CASE WHEN funding = 'Paid' THEN list_rate_inr ELSE 0 END) AS revenue,\n    SUM(CASE WHEN funding != 'Paid' THEN metal_cost ELSE 0 END) AS unpaid_cost\n  FROM priced GROUP BY region\n),\nmetal_region AS (\n  SELECT region, COUNT(*) AS machines, SUM(cost_per_month_inr) AS bill,\n    SUM((vcpus - COALESCE(reserved_vcpus, 0)) * COALESCE(NULLIF(cpu_overcommit_ratio, 0), 1)) AS sellable_vcpus,\n    SUM(memory_gib - COALESCE(reserved_memory_gib, 0)) AS sellable_memory_gib,\n    SUM(disk_gib - COALESCE(reserved_disk_gib, 0)) AS sellable_disk_gib\n  FROM `tabMetal Server` WHERE status = 'Active' GROUP BY region\n),\nregions AS (SELECT region FROM metal_region UNION SELECT region FROM server_region),\ntotals AS (\n  SELECT r.region, COALESCE(m.machines, 0) AS machines, COALESCE(s.servers, 0) AS servers,\n    COALESCE(m.bill, 0) AS bill, COALESCE(m.sellable_vcpus, 0) AS sellable_vcpus,\n    COALESCE(s.sold_vcpus, 0) AS sold_vcpus, COALESCE(s.held_value, 0) AS held_value,\n    COALESCE(s.paid_value, 0) AS paid_value, COALESCE(s.revenue, 0) AS revenue,\n    COALESCE(s.unpaid_cost, 0) AS unpaid_cost,\n    COALESCE(m.sellable_vcpus, 0) * COALESCE(k.vcpu_rate, 0)\n      + COALESCE(m.sellable_memory_gib, 0) * COALESCE(k.memory_rate, 0)\n      + COALESCE(m.sellable_disk_gib, 0) * COALESCE(k.disk_rate, 0) AS potential\n  FROM regions r\n  LEFT JOIN metal_region m ON m.region = r.region\n  LEFT JOIN server_region s ON s.region = r.region\n  LEFT JOIN card k ON k.region = r.region\n)\n\nSELECT region, machines, servers, bill, sellable_vcpus, sold_vcpus,\n  sold_vcpus / NULLIF(sellable_vcpus, 0) AS vcpu_sold_share,\n  potential,\n  potential - held_value AS unsold,\n  held_value - paid_value AS unpaid,\n  unpaid_cost,\n  paid_value - revenue AS discount,\n  revenue,\n  revenue / NULLIF(potential, 0) AS yield_share,\n  revenue / NULLIF(sellable_vcpus, 0) AS revenue_per_sellable_vcpu\nFROM totals\n",
      "type": "sql"
     }
    ],

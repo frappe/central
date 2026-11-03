@@ -5,6 +5,7 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
+from central.billing.doctype.billing_event import billing_event
 from central.billing.gateways.base import VerifiedPayment
 from central.billing.payments import decline
 from central.billing.platform.records import save_billing_record
@@ -101,7 +102,13 @@ class TopupOrder(Document):
 		self.last_failed_at = frappe.utils.now_datetime()
 		self.update(decline.failure_fields(failure))
 		save_billing_record(self)
-		record_event(self, DECLINED_EVENT, reason=self.failure_code, correlation=gateway_event_id)
+		record_event(
+			self,
+			DECLINED_EVENT,
+			reason=self.failure_code,
+			correlation=gateway_event_id,
+			outcome=billing_event.FAILED,
+		)
 
 	def _has_declined_event(self, gateway_event_id: str) -> bool:
 		return bool(

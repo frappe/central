@@ -17,7 +17,7 @@ PERIOD = {
 	"collected": 5,
 	"pending_collection": 3,
 	"failures": 1,
-	"by_status": {"Draft": 3, "Paid": 5},
+	"by_status": {"Outstanding": 3, "Paid": 5},
 }
 
 

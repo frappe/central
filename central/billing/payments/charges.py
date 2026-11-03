@@ -18,6 +18,7 @@ import frappe
 from frappe import _
 
 from central.billing import settings
+from central.billing.doctype.invoice.invoice import is_issued
 from central.billing.doctype.payment_attempt.payment_attempt import gateway_hold_active
 from central.billing.gateways.base import GatewayError, GatewayTimeout, PaymentResult
 from central.billing.payments.decline import Failure
@@ -54,7 +55,7 @@ _FAILURE_EVENTS = {
 }
 
 _TERMINAL_ATTEMPT = ("Captured", "Failed", "Refunded")
-_UNSETTLED_INVOICE = ("Open", "Overdue")
+_UNSETTLED_INVOICE = ("Outstanding", "Overdue")
 
 
 def _adapter_for(gateway: str):
@@ -104,6 +105,8 @@ def _claim_attempt(invoice: str, payment_method: str | None, gateway: str | None
 	# customer clicking Pay (or dunning) does — so allow both unsettled states.
 	if inv.status not in _UNSETTLED_INVOICE:
 		return {"charged": False, "reason": "not_open"}
+	if not is_issued(inv):
+		return {"charged": False, "reason": "not_issued"}
 	if frappe.utils.flt(inv.expected_collection) <= 0:
 		return {"charged": False, "reason": "nothing_due"}
 
@@ -382,6 +385,8 @@ def _claim_on_session_attempt(invoice: str, gateway: str | None) -> dict:
 
 	if inv.status not in _UNSETTLED_INVOICE:
 		return {"created": False, "reason": "not_open"}
+	if not is_issued(inv):
+		return {"created": False, "reason": "not_issued"}
 	if frappe.utils.flt(inv.expected_collection) <= 0:
 		return {"created": False, "reason": "nothing_due"}
 	if in_flight := in_flight_attempt(invoice):
@@ -587,10 +592,12 @@ def _apply_attempt_failure(event, attempt, decline: dict) -> dict:
 	# webhook). Gate on invoice status, not attempt status, and act once.
 	inv_status = frappe.db.get_value("Invoice", attempt.invoice, "status")
 	if inv_status != "Paid" and attempt.status not in ("Failed", "Refunded"):
-		transition(attempt, "Failed", actor="webhook", correlation=attempt.invoice)
 		# Off-session declines surface their real reason here, not on the sync
 		# charge response — pull it off the event so the attempt records why.
 		stamp_failure(attempt, decline)
+		transition(
+			attempt, "Failed", actor="webhook", correlation=attempt.invoice, reason=attempt.failure_reason
+		)
 		attempt.completed_at = frappe.utils.now_datetime()
 		save_billing_record(attempt)
 		from central.billing.platform import notifications
@@ -604,7 +611,7 @@ def _apply_attempt_failure(event, attempt, decline: dict) -> dict:
 		)
 		# Async decline: rotate to the next untried method (#28). No-op once
 		# every method has been exhausted.
-		if inv_status in ("Open", "Overdue"):
+		if inv_status in _UNSETTLED_INVOICE:
 			from central.billing.payments import collection
 
 			fell_back = collection.collect_invoice(attempt.invoice)

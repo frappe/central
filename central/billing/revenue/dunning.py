@@ -24,6 +24,7 @@ import frappe
 
 from central.billing import settings
 from central.billing.catalog import subscriptions
+from central.billing.doctype.invoice.invoice import OUTSTANDING, UNSETTLED, is_issued, owed_filters
 from central.billing.platform.jobs import each_isolated
 from central.billing.platform.records import save_billing_record
 from central.billing.states import transition
@@ -167,7 +168,7 @@ def _retry_if_due(inv, schedule, now) -> dict | None:
 	other mode, Prepaid included, is retried."""
 	from central.billing.payments import collection, collection_mode
 
-	if inv.status != "Open" or not collection_mode.is_debit_allowed(inv.team):
+	if inv.status != OUTSTANDING or not collection_mode.is_debit_allowed(inv.team):
 		return None
 	if not _is_retry_due(inv.name, schedule, now):
 		return None
@@ -201,9 +202,9 @@ def process_invoice_dunning(invoice_name: str, now=None) -> dict:
 	inv = frappe.get_doc("Invoice", invoice_name)
 	if inv.invoice_type != "Billable":
 		return {"invoice": invoice_name, "skipped": "Cost Report"}
-	if inv.status not in ("Open", "Overdue") or frappe.utils.flt(inv.expected_collection) <= 0:
+	if inv.status not in UNSETTLED or frappe.utils.flt(inv.expected_collection) <= 0:
 		return {"invoice": invoice_name, "skipped": "nothing_due"}
-	if not inv.due_date:
+	if not is_issued(inv):
 		return {"invoice": invoice_name, "skipped": "no_due_date"}
 
 	clock_start = dunning_clock_start(inv)
@@ -233,7 +234,7 @@ def process_invoice_dunning(invoice_name: str, now=None) -> dict:
 
 	# --- Day 7: Overdue + past_due, still running --------------------------
 	if "Overdue" in reached:
-		if inv.status == "Open":
+		if inv.status == OUTSTANDING:
 			transition(inv, "Overdue", reason="dunning: past due window elapsed", actor="scheduler")
 			save_billing_record(inv)
 			actions.append("overdue")
@@ -281,12 +282,8 @@ def run_dunning(now=None) -> list[dict]:
 	from central.billing.revenue.invoicing.lifecycle import settle_internal_teams
 
 	settle_internal_teams()
-	filters = [
-		["invoice_type", "=", "Billable"],
-		["status", "in", ["Open", "Overdue"]],
-		["expected_collection", ">", 0],
-	]
-	internal = frappe.get_all("Tax Profile", filters={"is_internal": 1}, pluck="team")
+	filters = [*owed_filters(), ["invoice_type", "=", "Billable"], ["expected_collection", ">", 0]]
+	internal = frappe.get_all("Billing Profile", filters={"is_internal": 1}, pluck="team")
 	if internal:
 		filters.append(["team", "not in", internal])
 	invoices = frappe.get_all("Invoice", filters=filters, pluck="name")

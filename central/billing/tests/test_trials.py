@@ -117,7 +117,7 @@ class TestSubsidyAndExpiry(TrialTestBase):
 					"doctype": "Invoice",
 					"team": team,
 					"invoice_type": "Cost Report",
-					"status": "Open",
+					"status": "Outstanding",
 					"period_start": "2099-01-01",
 					"period_end": "2099-01-31",
 					"currency": "INR",

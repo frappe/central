@@ -314,7 +314,7 @@ def get_trust_tier(team: str | None = None) -> dict:
 	)
 	# First/last paid only look at rows with a real settlement time. An invoice paid
 	# before `paid_at` existed has no reliable timestamp — falling back to its
-	# creation would understate first_paid_at (it can sit Draft/Open for days before
+	# creation would understate first_paid_at (it can sit Outstanding for days before
 	# actually settling), so it's excluded from tenure rather than guessed at.
 	timed_rows = sorted((r for r in paid_rows if r.paid_at), key=lambda r: r.paid_at)
 	first_paid_at = timed_rows[0].paid_at if timed_rows else None

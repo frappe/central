@@ -19,7 +19,7 @@ class TestMoneyRecordsAreReadOnly(BillingTestCase):
 				"doctype": "Invoice",
 				"team": TEAM,
 				"invoice_type": "Billable",
-				"status": "Open",
+				"status": "Outstanding",
 				"period_start": "2026-09-01",
 				"period_end": "2026-09-30",
 				"currency": "INR",

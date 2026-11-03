@@ -451,7 +451,7 @@ class TestCargoServiceDelivery(IntegrationTestCase):
 			self.deliver(self.service_report(), region="")
 
 	def test_an_unregistered_region_is_refused(self):
-		self.region.db_set("cargo_status", "Draft")
+		self.region.db_set("cargo_status", "Outstanding")
 
 		with self.assertRaises(frappe.PermissionError):
 			self.deliver(self.service_report())

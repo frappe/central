@@ -41,6 +41,7 @@ const selected = ref<InvoiceSummary | null>(null)
 const {
 	activeTeam,
 	detail,
+	isPreparing,
 	isPayable,
 	isOverdue,
 	settling,
@@ -84,7 +85,7 @@ watch(activeTeam, (team, previous) => {
 	shown.value = null
 })
 
-// Open OR Overdue is still collectable — an overdue invoice is the one the customer
+// Outstanding OR Overdue is still collectable — an overdue invoice is the one the customer
 // most needs to settle (dunning failed on the card), so it must offer Pay too.
 const canPay = computed(
 	() =>
@@ -385,7 +386,12 @@ const eventDate = (at: string | null): string => String(at ?? '').split(',')[0]
 			<!-- The footer carries only the one state-dependent action. Settling an
            invoice is the helpful way out of an overdue state, not a
            destructive act — the default solid, not red. -->
-			<template v-if="detail.data && (canPay || settling)" #footer>
+			<template v-if="isPreparing" #footer>
+				<p class="text-p-sm text-ink-gray-6">
+					This invoice is being prepared. You can pay it once it is issued.
+				</p>
+			</template>
+			<template v-else-if="detail.data && (canPay || settling)" #footer>
 				<Button
 					v-if="canPay"
 					variant="solid"

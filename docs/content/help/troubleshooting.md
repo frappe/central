@@ -26,7 +26,7 @@ This page lists common problems with teams, billing, and servers, and how to fix
 | **Add a payment method to create servers.** | Your credit does not cover the server and the team has no payment method. [Add a card](/billing/payment-methods#add-a-card) or [add credit](/billing/limits#add-credit). |
 | **Your trust tier limit is reached.** | Your team runs the most servers your tier allows. Terminate a server you no longer need, or contact support to review your tier. |
 | **This plan and your pending server requests exceed your spending limit.** | Choose a smaller plan, or contact support to review your limit. See [Credits and spend limits](/billing/limits). |
-| A red or amber banner says an amount is overdue or outstanding. | Click **Pay now** and pay the invoice. See [Pay an open invoice](/billing/invoices#pay-an-open-invoice). |
+| A red or amber banner says an amount is overdue or outstanding. | Click **Pay now** and pay the invoice. See [Pay an outstanding invoice](/billing/invoices#pay-an-outstanding-invoice). |
 | A payment attempt failed. | Add another card or move a working card to the top, then pay the invoice. |
 | **Action required: choose how to keep paying.** | Click **Choose how to pay**. Select **Pay each invoice** or **Prepaid wallet**, then click **Confirm**. |
 | The invoice download icon is disabled. | The invoice is not issued yet. The PDF is ready after the invoice is issued. |

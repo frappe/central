@@ -250,7 +250,7 @@ class TestFailureIsolation(SyncTestCase):
 		cost = self._invoice(month=5)
 		frappe.db.set_value("Invoice", cost, "invoice_type", "Cost Report")
 		unpaid = self._invoice(month=6)
-		frappe.db.set_value("Invoice", unpaid, "status", "Open")
+		frappe.db.set_value("Invoice", unpaid, "status", "Outstanding")
 		self.assertEqual(erpnext_sync.sync_invoice(cost)["skipped"], "not_billable")
 		self.assertEqual(erpnext_sync.sync_invoice(unpaid)["skipped"], "not_paid")
 
@@ -268,7 +268,7 @@ class TestWhenItSyncs(SyncTestCase):
 		billing_team(TEAM, gstin=GSTIN)
 		frappe.db.set_value("Tax Profile", TEAM, {"output_tax_type": "GST", "output_tax_rate": 18})
 		inv = self._invoice(credit=0)
-		frappe.db.set_value("Invoice", inv, "status", "Draft")
+		frappe.db.set_value("Invoice", inv, "status", "Outstanding")
 		credits.grant_promotional_credits(TEAM, 20000, "INR")
 		with patch("central.billing.ingester.erpnext_sync.enqueue_invoice_sync") as enqueue:
 			self.assertEqual(open_and_collect(inv)["status"], "Paid")

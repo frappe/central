@@ -73,3 +73,17 @@ central.patches.v0_0.revoke_trial_keys
 central.patches.v0_0.seed_template_offering
 # Image offerings show Frappe first, then Apps, then Ubuntu.
 central.patches.v0_0.order_image_offerings
+# Subscriptions and usage rollups keep the region name from their creation. Move them off a renamed region.
+central.patches.v0_0.repoint_billing_records_to_renamed_region
+# Draft and Open invoices become Outstanding.
+central.patches.v0_0.merge_invoice_draft_and_open_into_outstanding
+# The internal flag moves from Tax Profile to Billing Profile.
+central.patches.v0_0.move_internal_flag_to_billing_profile
+# A waived invoice never reaches the accounting system.
+central.patches.v0_0.mark_waived_invoices_as_not_synced
+# Promotional credit always expires, and a wallet holds nothing its ledger cannot prove.
+central.patches.v0_0.expire_promotional_credit_and_clear_unbooked_wallets
+# Webhook events from Frappe Cloud v1 are no longer stored. Remove the old ones.
+central.patches.v0_0.remove_webhook_events_of_another_product
+# Start per-team run outcomes and the minimum invoice amount, and clear what they replace.
+central.patches.v0_0.start_billing_run_outcomes_and_minimum_invoices
