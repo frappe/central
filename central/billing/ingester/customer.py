@@ -12,6 +12,7 @@ from urllib.parse import quote
 
 import frappe
 from frappe.query_builder.functions import Coalesce
+from pypika.terms import Criterion, ExistsCriterion
 
 from central.billing.doctype.billing_event import billing_event
 from central.billing.ingester.connection import enabled, get, post, put
@@ -145,11 +146,35 @@ def get_gstin_details(gstin: str) -> frappe._dict | None:
 
 
 def has_billable_activity(team: str) -> bool:
-	"""Whether the team needs accounting records: an enabled subscription, a live invoice or a paid top-up."""
-	return bool(
-		frappe.db.exists("Subscription", {"team": team, "enabled": 1})
-		or frappe.db.exists("Invoice", {"team": team, "status": ["not in", ("Cancelled", "Waived")]})
-		or frappe.db.exists("Credit Ledger Entry", {"team": team, "entry_type": "Credit", "paid_in": 1})
+	"""Whether the team needs accounting records. See `billable_activity_of`."""
+	table = frappe.qb.DocType("Team")
+	query = frappe.qb.from_(table).select(table.name).where(table.name == team)
+	return bool(query.where(billable_activity_of(table.name)).run())
+
+
+def billable_activity_of(team_column) -> Criterion:
+	"""An enabled subscription, a live invoice or a paid top-up of the team in `team_column`."""
+	subscription = frappe.qb.DocType("Subscription")
+	invoice = frappe.qb.DocType("Invoice")
+	ledger = frappe.qb.DocType("Credit Ledger Entry")
+	return Criterion.any(
+		[
+			ExistsCriterion(
+				frappe.qb.from_(subscription)
+				.select(subscription.name)
+				.where((subscription.team == team_column) & (subscription.enabled == 1))
+			),
+			ExistsCriterion(
+				frappe.qb.from_(invoice)
+				.select(invoice.name)
+				.where((invoice.team == team_column) & invoice.status.notin(("Cancelled", "Waived")))
+			),
+			ExistsCriterion(
+				frappe.qb.from_(ledger)
+				.select(ledger.name)
+				.where((ledger.team == team_column) & (ledger.entry_type == "Credit") & (ledger.paid_in == 1))
+			),
+		]
 	)
 
 
@@ -200,11 +225,11 @@ def _pending_teams() -> list[str]:
 		.where(team.is_staging_trial == 0)
 		.where(Coalesce(profile.is_internal, 0) == 0)
 		.where(_blank(profile.profile_id) | _blank(profile.address_id) | _blank(profile.contact_id))
+		.where(billable_activity_of(profile.team))
 	)
 	for field in REQUIRED_FIELDS:
 		query = query.where(~_blank(profile[field]))
-	pending = query.orderby(profile.modified).limit(PENDING_BATCH).run(pluck=True)
-	return [team for team in pending if has_billable_activity(team)]
+	return query.orderby(profile.modified).limit(PENDING_BATCH).run(pluck=True)
 
 
 def _blank(column):

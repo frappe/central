@@ -135,6 +135,16 @@ class TestWhenToSync(CustomerSyncTestCase):
 
 
 class TestPending(CustomerSyncTestCase):
+	def setUp(self):
+		super().setUp()
+		self.subscription = frappe.get_doc({"doctype": "Subscription", "team": TEAM, "enabled": 1})
+		self.subscription.db_insert()
+
+	def test_skips_a_team_with_nothing_billable(self):
+		frappe.db.set_value("Billing Profile", TEAM, {"profile_id": "CUST-1", "address_id": "ADDR-1"})
+		self.subscription.db_set("enabled", 0)
+		self.assertNotIn(TEAM, customer._pending_teams())
+
 	def test_picks_complete_profiles_missing_a_record(self):
 		frappe.db.set_value("Billing Profile", TEAM, {"profile_id": "CUST-1", "address_id": "ADDR-1"})
 		self.assertIn(TEAM, customer._pending_teams())
