@@ -20,19 +20,16 @@ export function useInvoiceDetail() {
 	})
 	whenTeamReady(() => collection.reload())
 
-	// An Outstanding invoice with no due date is held, and cannot be paid yet.
+	// An Outstanding invoice is paid only once it is issued.
+	const isPreparing = computed(
+		() => detail.data?.status === 'Outstanding' && !detail.data.is_issued,
+	)
 	const isPayable = computed(
 		() =>
-			Boolean(detail.data?.due_date) &&
-			['outstanding', 'overdue'].includes(
-				String(detail.data?.status).toLowerCase(),
-			),
+			Boolean(detail.data?.is_issued) &&
+			['Outstanding', 'Overdue'].includes(String(detail.data?.status)),
 	)
-	const isOverdue = computed(
-		() =>
-			String(detail.data?.status).toLowerCase() === 'overdue' &&
-			Boolean(detail.data?.due_date),
-	)
+	const isOverdue = computed(() => detail.data?.status === 'Overdue')
 	const settling = computed(
 		() => isPayable.value && Boolean(detail.data?.payment_in_progress),
 	)
@@ -68,6 +65,7 @@ export function useInvoiceDetail() {
 		activeTeam,
 		collection,
 		detail,
+		isPreparing,
 		isPayable,
 		isOverdue,
 		settling,

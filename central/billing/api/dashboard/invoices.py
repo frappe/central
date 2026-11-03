@@ -23,6 +23,7 @@ from central.billing.api.dashboard._shared import (
 	_resolve_team,
 	_team_currency,
 )
+from central.billing.doctype.invoice.invoice import is_issued
 from central.billing.doctype.top_up_order.top_up_order import TopupOrder
 from central.billing.gateways.base import VerifiedPayment
 from central.billing.revenue import credits
@@ -385,6 +386,7 @@ def get_invoice(name: str) -> dict:
 		"amount_paid": doc.amount_paid,
 		"due_date": str(doc.due_date) if doc.due_date else None,
 		"hold_reason": doc.hold_reason,
+		"is_issued": is_issued(doc),
 		"has_pdf": bool(doc.erpnext_invoice),
 		"payment_in_progress": payment_in_progress,
 		"paid_with": paid_with,

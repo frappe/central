@@ -350,6 +350,16 @@ class TestReports(OverviewBase):
 
 		self.assertEqual(out["opening_outstanding"], 5000.0)
 
+	def test_an_invoice_not_yet_issued_is_shown_but_not_owed(self):
+		held = self._invoice("2026-06-01", "2026-06-30", total=3000, status="Outstanding")
+		self._invoice("2026-07-01", "2026-07-31", total=2000, status="Outstanding", due_date="2026-08-15")
+
+		out = dashboard.get_statement(TEAM, from_date="2026-06-01", to_date="2026-12-31")
+
+		self.assertEqual(out["closing_outstanding"], 2000.0)
+		self.assertEqual([row["is_issued"] for row in out["rows"]], [False, True])
+		self.assertFalse(dashboard.get_invoice(held.name)["is_issued"])
+
 	def test_tax_summary_never_calls_a_tax_None(self):
 		# output_tax_type's "no tax" option is the literal string "None" — truthy, and
 		# it must never reach a customer as the name of a tax.

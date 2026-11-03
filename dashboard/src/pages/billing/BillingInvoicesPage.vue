@@ -41,6 +41,7 @@ const selected = ref<InvoiceSummary | null>(null)
 const {
 	activeTeam,
 	detail,
+	isPreparing,
 	isPayable,
 	isOverdue,
 	settling,
@@ -385,9 +386,9 @@ const eventDate = (at: string | null): string => String(at ?? '').split(',')[0]
 			<!-- The footer carries only the one state-dependent action. Settling an
            invoice is the helpful way out of an overdue state, not a
            destructive act — the default solid, not red. -->
-			<template v-if="detail.data?.hold_reason && !canPay" #footer>
+			<template v-if="isPreparing" #footer>
 				<p class="text-p-sm text-ink-gray-6">
-					We are preparing this invoice. You can pay it once it is issued.
+					This invoice is being prepared. You can pay it once it is issued.
 				</p>
 			</template>
 			<template v-else-if="detail.data && (canPay || settling)" #footer>
