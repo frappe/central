@@ -173,6 +173,8 @@ def server_overview(team: str | None = None, resource_id: str | None = None) -> 
 			"ssh_keys": _server_ssh_keys(row.resource_id),
 			"gateway_url": row.gateway_url,
 			"creation": row.creation,
+			"created_by": row.created_by,
+			"created_by_name": row.created_by_name,
 		}
 	)
 
@@ -313,10 +315,12 @@ def _server_ssh_keys(server: str) -> list[dict]:
 
 
 def _overview_server_row(resource_id: str, team: str):
-	"""VirtualMachine + region + team in one query."""
+	"""VirtualMachine + region + team + creator in one query."""
 	server = frappe.qb.DocType("Virtual Machine")
 	region = frappe.qb.DocType("Region")
 	team_table = frappe.qb.DocType("Team")
+	creation_action = frappe.qb.DocType("Resource Action")
+	creator = frappe.qb.DocType("User")
 	rows = (
 		frappe.qb.from_(server)
 		# VirtualMachine.region links straight to Region.
@@ -324,6 +328,11 @@ def _overview_server_row(resource_id: str, team: str):
 		.on(region.name == server.region)
 		.left_join(team_table)
 		.on(team_table.name == server.team)
+		# A discovered server has no create action, so its creator stays empty.
+		.left_join(creation_action)
+		.on((creation_action.server == server.name) & (creation_action.action == "create"))
+		.left_join(creator)
+		.on(creator.name == creation_action.requested_by)
 		.select(
 			server.resource_id,
 			server.atlas_vm_id,
@@ -353,6 +362,8 @@ def _overview_server_row(resource_id: str, team: str):
 			region.has_wireguard_gateway.as_("region_has_wireguard_gateway"),
 			region.base_url.as_("region_base_url"),
 			team_table.team_name.as_("team_name"),
+			creation_action.requested_by.as_("created_by"),
+			creator.full_name.as_("created_by_name"),
 		)
 		.where((server.resource_id == resource_id) & (server.team == team))
 		.limit(1)
