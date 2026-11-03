@@ -148,15 +148,6 @@ class TestBillingRunCoverage(IntegrationTestCase):
 
 		self.assertEqual(dashboard, dict(report))
 
-
-def _billing_day_coverage(period_end: str) -> list:
-	"""Run the Billing Day coverage query from the shipped workbook for one month."""
-	path = frappe.get_app_path("central", "billing", "insights_workbook", "billing", "billing.json")
-	with open(path) as file:
-		sql = json.load(file)["queries"]["billing-run-coverage-query"]["operations"][0]["raw_sql"]
-	month = "LAST_DAY(CURDATE() - INTERVAL 1 MONTH)"
-	return frappe.db.sql(sql.replace(month, frappe.db.escape(period_end)), as_dict=True)
-
 	def test_a_held_invoice_is_waiting_with_its_reason(self):
 		make_plan(PLAN)
 		subscription = make_billing_subscription(TEAM, CLUSTER, PLAN, billing_cycle="Monthly")
@@ -173,6 +164,15 @@ def _billing_day_coverage(period_end: str) -> list:
 		with billing_settings(raven_site_url="", raven_channel_id="", operator_alert_emails=""):
 			frappe.clear_document_cache("Billing Settings", "Billing Settings")
 			self.assertIn("Operator alerts reach nobody", billing_run_coverage._setup_message())
+
+
+def _billing_day_coverage(period_end: str) -> list:
+	"""Run the Billing Day coverage query from the shipped workbook for one month."""
+	path = frappe.get_app_path("central", "billing", "insights_workbook", "billing", "billing.json")
+	with open(path) as file:
+		sql = json.load(file)["queries"]["billing-run-coverage-query"]["operations"][0]["raw_sql"]
+	month = "LAST_DAY(CURDATE() - INTERVAL 1 MONTH)"
+	return frappe.db.sql(sql.replace(month, frappe.db.escape(period_end)), as_dict=True)
 
 
 class TestTaxProfileCheck(IntegrationTestCase):
