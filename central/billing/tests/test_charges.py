@@ -192,11 +192,11 @@ class TestChargeInvoice(ChargeTestBase):
 		self.assertEqual(frappe.db.get_value("Invoice", inv, "status"), "Outstanding")
 
 	def test_a_debit_held_at_the_gateway_blocks_a_second_charge(self):
-		from central.billing.gateways.razorpay_adapter import _recurring_result
+		from central.billing.gateways.razorpay_recurring import recurring_result
 
 		inv = self._open_invoice(1000)
 		with stub_adapter() as adapter:
-			adapter.charge.return_value = _recurring_result({"id": "pay_async", "status": "created"})
+			adapter.charge.return_value = recurring_result({"id": "pay_async", "status": "created"})
 			first = charges.pay_invoice(inv)
 			second = charges.pay_invoice(inv)
 
