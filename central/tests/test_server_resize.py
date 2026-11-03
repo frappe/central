@@ -284,6 +284,7 @@ class TestTrialUpgradeBucket(UnitTestCase):
 		enqueue.assert_called_once_with(
 			"central.integrations.pilot.attach_bundled_bucket",
 			server="server-1",
+			queue="long",
 			enqueue_after_commit=True,
 			job_id="bundled-bucket:server-1",
 			deduplicate=True,

@@ -274,6 +274,7 @@ class ResourceAction(Document):
 			frappe.enqueue(
 				"central.integrations.pilot.attach_bundled_bucket",
 				server=self.server,
+				queue="long",
 				enqueue_after_commit=True,
 				job_id=f"bundled-bucket:{self.server}",
 				deduplicate=True,

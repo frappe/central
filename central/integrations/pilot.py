@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 from urllib.parse import quote, urlparse
 
 import frappe
@@ -28,6 +29,8 @@ SITE_LOGIN_TIMEOUT_SECONDS = 120
 # A ping to a booting machine hangs until it times out, and the signup poll waits on it. A short
 # timeout lets the next poll retry instead.
 SITE_PING_TIMEOUT_SECONDS = (0.5, 1.5)
+# A server that a resize just started needs some minutes before its pilot answers.
+PILOT_WAKE_DELAYS_SECONDS = (5, 10, 20, 40, 60, 60, 60)
 
 
 def get_bootstrap_metadata(action) -> dict[str, str]:
@@ -102,8 +105,8 @@ def create_bundled_bucket(team: str, region: str, server: str) -> dict | None:
 	endpoint_url = get_storage_endpoint_url(region)
 	client = ObjectStorageClient.from_region(region)
 	name = get_bucket_name(team, region, server)
-	# Cargo returns credentials only on creation. A bucket left by an earlier attempt was never
-	# given to Pilot, so it is empty and safe to replace.
+	# Cargo returns credentials only on creation, so a bucket left by an earlier attempt is replaced.
+	# Garage refuses to delete a bucket that holds objects, so a bucket with backups stays.
 	try:
 		client.delete_bucket(name)
 	except ObjectStorageNotFound:
@@ -130,7 +133,7 @@ def attach_bundled_bucket(server: str) -> None:
 	try:
 		bucket = create_bundled_bucket(document.team, document.region, document.name)
 		if bucket:
-			write_pilot(server, "PATCH", "/api/v1/settings", {"s3": bucket})
+			write_pilot_when_awake(server, "PATCH", "/api/v1/settings", {"s3": bucket})
 	# This job is the worker boundary, so the failure stays on the server for the operator.
 	except Exception:
 		document.log_error(title=f"Backup bucket attach failed: {server}")
@@ -338,6 +341,30 @@ def write_pilot(server: str, method: str, path: str, payload: dict | None = None
 	"""Run a POST, PUT, or PATCH on a path of a server's pilot Admin API."""
 	base_url = _expected_gateway_url(frappe.get_doc("Virtual Machine", server))
 	return _request_pilot(method, server, base_url, path, payload=payload)
+
+
+def write_pilot_when_awake(
+	server: str, method: str, path: str, payload: dict | None = None
+) -> dict | list | str:
+	"""Run `write_pilot`, and wait out a pilot that is still starting. Use it only for a write that
+	is safe to repeat."""
+	for delay in PILOT_WAKE_DELAYS_SECONDS:
+		try:
+			return write_pilot(server, method, path, payload)
+		except (requests.ConnectionError, requests.Timeout):
+			pass
+		except requests.HTTPError as error:
+			if not is_pilot_starting(error.response):
+				raise
+		time.sleep(delay)
+
+	return write_pilot(server, method, path, payload)
+
+
+def is_pilot_starting(response: requests.Response | None) -> bool:
+	"""Whether a refusal comes from a pilot that has not started: the proxy has no backend yet, or
+	Pilot does not accept Central authentication yet."""
+	return response is not None and (response.status_code == 401 or response.status_code >= 500)
 
 
 def _request_pilot(
