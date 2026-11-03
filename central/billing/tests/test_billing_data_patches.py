@@ -14,8 +14,14 @@ from central.billing.platform import readiness
 from central.billing.revenue import credits
 from central.billing.tests.test_stripe_adapter import make_stripe_gateway
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
-from central.billing.tests.utils import complete_billing_profile, ensure_atlas_instance, ensure_team
+from central.billing.tests.utils import (
+	complete_billing_profile,
+	ensure_atlas_instance,
+	ensure_team,
+	make_plan,
+)
 from central.patches.v0_0 import (
+	allow_storage_in_vm_plans,
 	expire_promotional_credit_and_clear_unbooked_wallets,
 	mark_waived_invoices_as_not_synced,
 	merge_invoice_draft_and_open_into_outstanding,
@@ -67,6 +73,56 @@ class TestBillingDataPatches(IntegrationTestCase):
 
 		self.assertEqual(frappe.db.get_value("Subscription", subscription.name, "cluster"), "bom")
 		self.assertEqual(frappe.db.get_value("Usage Rollup", rollup.name, "cluster"), "bom")
+
+	def test_storage_is_added_to_vm_plans_once(self):
+		filters = {
+			"parenttype": "Plan Category",
+			"parent": "VM Plans",
+			"parentfield": "allowed_resource_types",
+			"resource_type": "Storage",
+		}
+		frappe.db.delete("Plan Category Resource Type", filters)
+		existing_types = frappe.get_all(
+			"Plan Category Resource Type",
+			filters={"parenttype": "Plan Category", "parent": "VM Plans"},
+			fields=["name", "resource_type"],
+			order_by="name",
+		)
+		plan = make_plan(
+			"storage-patch-preserves-plan",
+			includes=[{"resource_type": "Compute", "quantity": 1, "unit": "vCPU"}],
+		)
+		plan_includes = frappe.get_all(
+			"Plan Includes",
+			filters={"parenttype": "Plan", "parent": plan},
+			fields=["resource_type", "quantity", "unit"],
+		)
+
+		allow_storage_in_vm_plans.execute()
+		allow_storage_in_vm_plans.execute()
+
+		self.assertEqual(frappe.db.count("Plan Category Resource Type", filters), 1)
+		self.assertEqual(
+			frappe.get_all(
+				"Plan Category Resource Type",
+				filters={
+					"parenttype": "Plan Category",
+					"parent": "VM Plans",
+					"resource_type": ["!=", "Storage"],
+				},
+				fields=["name", "resource_type"],
+				order_by="name",
+			),
+			existing_types,
+		)
+		self.assertEqual(
+			frappe.get_all(
+				"Plan Includes",
+				filters={"parenttype": "Plan", "parent": plan},
+				fields=["resource_type", "quantity", "unit"],
+			),
+			plan_includes,
+		)
 
 	def test_draft_and_open_become_outstanding_and_open_keeps_a_due_date(self):
 		draft = _insert_invoice("Draft", "2026-05-31", due_date="2026-06-10")
