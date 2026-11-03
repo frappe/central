@@ -3,6 +3,7 @@ from unittest.mock import patch
 import frappe
 from frappe.tests import IntegrationTestCase
 
+from central.api.activity import server_activity
 from central.api.servers import set_termination_protection
 from central.api.ssh_keys import set_server_ssh_keys
 from central.errors import AtlasConnectionError, AtlasRejected
@@ -106,6 +107,18 @@ class TestServerAccess(IntegrationTestCase):
 
 		self.server_client.set_termination_protection.assert_called_once_with("vm-access", True)
 		self.assertTrue(frappe.db.get_value("Virtual Machine", self.server.name, "is_termination_protected"))
+
+	def test_a_protection_change_shows_in_the_server_activity(self):
+		self.server_client.set_termination_protection.return_value = {"is_termination_protected": True}
+		frappe.set_user(self.developer)
+
+		set_termination_protection(self.team, self.server.name, enabled=1)
+
+		events = server_activity(team=self.team, resource_id=self.server.resource_id)["events"]
+		self.assertEqual(events[0]["event"], "server.updated")
+		self.assertEqual(
+			events[0]["details"], [{"label": "Termination protection", "from": "off", "to": "on"}]
+		)
 
 	def test_protection_refuses_an_unexpected_region_reply(self):
 		self.server_client.set_termination_protection.return_value = {}

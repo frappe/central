@@ -419,6 +419,8 @@ class VirtualMachine(Document):
 
 		self.require_live()
 		set_termination_protection(self, enabled)
+		# The region's answer arrives through db_set, so record the Version by hand.
+		self.save_version()
 
 	def set_public_ip(self, version: int, is_attached: bool) -> bool:
 		"""Attach or detach a public address. Returns False while Atlas is still applying it."""

@@ -313,6 +313,20 @@ def team_notification_has_permission(
 	return user_has_operator_bypass(user or frappe.session.user)
 
 
+def activity_event_query_conditions(user: str | None = None) -> str:
+	"""1. A System Manager sees every event.
+	2. Customers read the activity API, which applies each event's capability and server.
+	"""
+	return _operator_only_query_conditions(user)
+
+
+def activity_event_has_permission(doc, user: str | None = None, ptype: str | None = None, **kwargs) -> bool:
+	"""1. A System Manager has every permission.
+	2. Customers have no direct document permission because the activity API applies capabilities.
+	"""
+	return user_has_operator_bypass(user or frappe.session.user)
+
+
 def team_service_query_conditions(user: str | None = None) -> str:
 	"""1. A System Manager sees every service record.
 	2. Customers use the service API, which redacts credentials and applies service capabilities.

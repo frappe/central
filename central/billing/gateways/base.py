@@ -336,7 +336,8 @@ class GatewayAdapter(ABC):
 
 	def read_saved_card(self, setup_reference: str) -> dict:
 		"""The card a setup saved, read from the gateway, or `{}` while it is not finished.
-		Keys: payment_method, customer, mandate, brand, last4, exp_month, exp_year. A setup
+		Keys: payment_method, customer, mandate, brand, last4, exp_month, exp_year, and
+		fingerprint, the gateway's id for the card or account across customers. A setup
 		the bank refused gives only `setup_error`, with its failure_code and decline_code."""
 		raise GatewayUnsupported(f"{type(self).__name__} does not support read_saved_card")
 
@@ -374,3 +375,7 @@ class GatewayAdapter(ABC):
 
 	def get_mandate_status(self, mandate_reference: str) -> str:
 		raise GatewayUnsupported(f"{type(self).__name__} does not support get_mandate_status")
+
+	def read_instrument_fingerprint(self, payment: dict) -> str | None:
+		"""The gateway's id for the UPI ID or card a mandate payment authorised, across customers, or None."""
+		raise GatewayUnsupported(f"{type(self).__name__} does not support read_instrument_fingerprint")

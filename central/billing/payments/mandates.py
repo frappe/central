@@ -299,6 +299,7 @@ def confirm_mandate(payment_method: str, callback: dict):
 
 	method.gateway_method_id = payment["token_id"]
 	method.display_label = _mandate_label(method, payment)
+	method.set_instrument_fingerprint(adapter.read_instrument_fingerprint(payment))
 	transition(method, "Active", actor=frappe.session.user)
 	method.validated_at = frappe.utils.now_datetime()
 	method.reauth_required = 0
