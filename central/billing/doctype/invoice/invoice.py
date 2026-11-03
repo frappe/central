@@ -51,16 +51,6 @@ def unissued_filters() -> list[list]:
 	return [["status", "=", OUTSTANDING], ["due_date", "is", "not set"]]
 
 
-def owed_criterion(invoice):
-	"""`owed_filters` for a `frappe.qb` Invoice table."""
-	return invoice.status.isin(UNSETTLED) & invoice.due_date.isnotnull()
-
-
-def unissued_criterion(invoice):
-	"""`unissued_filters` for a `frappe.qb` Invoice table."""
-	return (invoice.status == OUTSTANDING) & invoice.due_date.isnull()
-
-
 def period_key_for(team: str, period_start, period_end) -> str:
 	"""The live-invoice slot for a (team, period).
 
