@@ -30,6 +30,8 @@ const props = withDefaults(
 const emit = defineEmits<{
 	'update:target': [value: T | null]
 	confirm: [value: T]
+	/** The close animation ended; safe to close a dialog this one sits in. */
+	'after-leave': []
 }>()
 
 const open = computed({
@@ -69,6 +71,7 @@ function confirm(): void {
 		:size="size"
 		:theme="theme"
 		:icon="theme === 'red' ? 'lucide-alert-triangle' : undefined"
+		@after-leave="emit('after-leave')"
 	>
 		<slot />
 		<TextInput

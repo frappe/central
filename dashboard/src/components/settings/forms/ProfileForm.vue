@@ -3,6 +3,7 @@ import { Alert, Button, TextInput, useCall } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import { API, method } from '@/api/methods'
 import ImageUpload from '@/components/common/ImageUpload.vue'
+import DeleteAccountSection from '@/components/settings/DeleteAccountSection.vue'
 import { useMyProfile } from '@/composables/useMyProfile'
 import { useTeamMembers } from '@/composables/useTeamMembers'
 import { getErrorMessage, successToast } from '@/lib/feedback'
@@ -100,5 +101,7 @@ async function onPhotoChange(fileUrl: string | null): Promise<void> {
 			</div>
 			<TextInput :model-value="profile?.user ?? ''" label="Email" disabled />
 		</div>
+
+		<DeleteAccountSection />
 	</div>
 </template>
