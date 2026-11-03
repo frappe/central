@@ -60,8 +60,6 @@ def provision_signup_billing(team: str, country: str | None) -> None:
 	complete_trial_billing_profile(team)
 
 
-_WELCOME_CREDIT_SAVEPOINT = "welcome_credit_grant"
-
 # Placeholder billing details for a staging-trial team, so its profile clears the
 # completeness gate (the console blocks server creation until the profile is complete)
 # without the user filling the form. Staging only — never a real customer's data.
@@ -221,6 +219,9 @@ def has_owner_received_welcome_credits(team: str, lock: bool = True) -> bool:
 def has_instrument_received_welcome_credits(instrument_fingerprint: str) -> bool:
 	"""Whether any team already holds a welcome credit earned with this card or account."""
 	return bool(frappe.db.exists("Credit Ledger Entry", {"instrument_fingerprint": instrument_fingerprint}))
+
+
+_WELCOME_CREDIT_SAVEPOINT = "welcome_credit_grant"
 
 
 def _book_welcome_credits(

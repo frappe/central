@@ -375,3 +375,7 @@ class GatewayAdapter(ABC):
 
 	def get_mandate_status(self, mandate_reference: str) -> str:
 		raise GatewayUnsupported(f"{type(self).__name__} does not support get_mandate_status")
+
+	def read_instrument_fingerprint(self, payment: dict) -> str | None:
+		"""The gateway's id for the UPI ID or card a mandate payment authorised, across customers, or None."""
+		raise GatewayUnsupported(f"{type(self).__name__} does not support read_instrument_fingerprint")
