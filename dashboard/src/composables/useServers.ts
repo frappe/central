@@ -1,7 +1,7 @@
 import { useCall } from 'frappe-ui'
 import { computed, ref } from 'vue'
 import { API, method } from '@/api/methods'
-import signingInHtml from '@/assets/signing-in.html?raw'
+import signingInUrl from '@/assets/signing-in.html?url&no-inline'
 import { useBusyRunner } from '@/composables/useBusyRunner'
 import { useSession } from '@/composables/useSession'
 import type { ServerAccess } from '@/lib/capabilities'
@@ -142,14 +142,8 @@ async function refreshServers(): Promise<boolean> {
 }
 
 // Open the window inside the click, before any await, or the browser blocks it.
-function openLoadingTab(
-	target = '_blank',
-	features = '',
-): { tab: Window | null; loadingUrl: string } {
-	const loadingUrl = URL.createObjectURL(
-		new Blob([signingInHtml], { type: 'text/html' }),
-	)
-	return { tab: window.open(loadingUrl, target, features), loadingUrl }
+function openLoadingTab(target = '_blank'): Window | null {
+	return window.open(signingInUrl, target)
 }
 
 /** `inPlace` replaces this page, for a link that opens the bench without a click. */
@@ -159,9 +153,7 @@ async function openBench(
 ): Promise<void> {
 	if (opening.value) return
 	opening.value = server.resource_id
-	const { tab, loadingUrl } = inPlace
-		? { tab: null, loadingUrl: '' }
-		: openLoadingTab()
+	const tab = inPlace ? null : openLoadingTab()
 	try {
 		await submitOrThrow(benchLinkCall, { server: server.resource_id })
 		openResolvedUrl(benchLinkCall.data?.url, tab, 'server')
@@ -171,12 +163,11 @@ async function openBench(
 			title: `Couldn't open ${server.title || server.resource_id}`,
 		})
 	} finally {
-		URL.revokeObjectURL(loadingUrl)
 		opening.value = ''
 	}
 }
 
-/** Open the server's Atlas web console in a popup. Atlas spends a token on first
+/** Open the server's Atlas web console in a tab. Atlas spends a token on first
  *  use, so every request mints a new one. One window per server: a second request
  *  replaces the session in that window. */
 async function openConsole(
@@ -186,11 +177,9 @@ async function openConsole(
 	const team = activeTeam.value
 	if (!team || opening.value) return
 	opening.value = server.resource_id
-	const { tab, loadingUrl } = openLoadingTab(
-		`console-${server.resource_id}`,
-		'popup,width=960,height=640',
-	)
+	let tab: Window | null = null
 	try {
+		tab = openLoadingTab(`console-${server.resource_id}`)
 		await submitOrThrow(consoleCall, {
 			team,
 			resource_id: server.resource_id,
@@ -201,7 +190,6 @@ async function openConsole(
 		tab?.close()
 		reportError(error, { title: "Couldn't open the console" })
 	} finally {
-		URL.revokeObjectURL(loadingUrl)
 		opening.value = ''
 	}
 }
@@ -209,7 +197,7 @@ async function openConsole(
 async function openSite(name: string): Promise<void> {
 	if (opening.value) return
 	opening.value = name
-	const { tab, loadingUrl } = openLoadingTab()
+	const tab = openLoadingTab()
 	try {
 		await submitOrThrow(siteLinkCall, { name })
 		const url = siteLinkCall.data?.login_url || siteLinkCall.data?.url
@@ -218,7 +206,6 @@ async function openSite(name: string): Promise<void> {
 		tab?.close()
 		reportError(error, { title: "Couldn't open this site" })
 	} finally {
-		URL.revokeObjectURL(loadingUrl)
 		opening.value = ''
 	}
 }
