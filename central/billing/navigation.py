@@ -21,16 +21,22 @@ import frappe
 from frappe.modules.import_file import import_file_by_path
 
 SIDEBAR_FOLDER = "workspace_sidebar"
+# The Billing workspace embeds this block. It has no module, so the doctype sync skips it.
+CUSTOM_BLOCK_FOLDER = "billing/custom_html_block"
 
 
 def ensure_workspace_sidebars():
-	"""Import every sidebar fixture the app ships.
+	"""Import every sidebar and workspace block fixture the app ships.
 
 	Idempotent: `import_file_by_path` compares the file's `modified` against the row's
 	and skips the write when they already match, so a migrate on an up-to-date site
 	does no work.
 	"""
-	folder = frappe.get_app_path("central", SIDEBAR_FOLDER)
+	for relative_folder in (CUSTOM_BLOCK_FOLDER, SIDEBAR_FOLDER):
+		_import_folder(frappe.get_app_path("central", relative_folder))
+
+
+def _import_folder(folder: str) -> None:
 	if not os.path.isdir(folder):
 		return
 

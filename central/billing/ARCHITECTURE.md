@@ -362,7 +362,7 @@ An invoice is `Outstanding` from creation. The due date marks that collection be
 
 ### Why a team has no invoice
 
-**Billing Run Team** keeps the outcome of the run for each team and month: Invoiced, Skipped or Failed, with the reason. The **Billing Run Coverage** report shows every team with its result and reason. It also lists the settings that an operator must set by hand. A run cannot reach Complete while a team is Failed.
+**Billing Run Team** keeps the outcome of the run for each team and month: Invoiced, Skipped or Failed, with the reason. The **Billing Run Coverage** report shows every team with its result and reason. It also lists the settings that an operator must set by hand. The same list shows as a banner at the top of the **Billing** workspace, for a System Manager only, and only while a value is missing. A run cannot reach Complete while a team is Failed.
 
 A month whose total is below the **Minimum Invoice Amount** for its currency (Billing Settings) gets no invoice. The amount is written off, and a Skipped row and a Billing Event record it.
 
@@ -390,7 +390,7 @@ Configure it in **Billing Settings → Operator Alerts**:
 When a Raven post fails, or Raven is not configured, the alert goes to the email addresses once and the failure is written to the Error Log. Use **Send Test Alert** on the form to check the saved settings. The hourly digest keeps one Error Log row for each digest it sends, and it does not send the same digest again for `REPEAT_AFTER_HOURS`.
 
 ### Lifecycle / install hooks
-- `after_install` / `after_migrate` / `before_tests` → `catalog.taxonomy_setup.ensure_catalog_masters` (idempotent seed of catalog masters, ADR 0007), `settings.ensure_snapshot_settings`, `platform.constraints.ensure_constraints`, `gateways.setup.ensure_gateway_records`, `navigation.ensure_workspace_sidebars`. `after_install` and `before_tests` also run `settings.ensure_welcome_credit_amounts`.
+- `after_install` / `after_migrate` / `before_tests` → `catalog.taxonomy_setup.ensure_catalog_masters` (idempotent seed of catalog masters, ADR 0007), `settings.ensure_snapshot_settings`, `platform.constraints.ensure_constraints`, `gateways.setup.ensure_gateway_records`, `navigation.ensure_workspace_sidebars` (also imports the workspace's Custom HTML Block). `after_install` and `before_tests` also run `settings.ensure_welcome_credit_amounts`.
 - `doc_events`: `Team.on_update` → `payments.provisioning.on_team_update`. Server Subscriptions are not in `doc_events`: the Virtual Machine controller's `on_update` creates the Subscription when the server reaches Running and closes it when the server is Terminated.
 - `override_doctype_dashboards["Currency"]` → `api.dashboard_overrides.currency_dashboard`.
 

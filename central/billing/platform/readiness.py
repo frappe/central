@@ -542,6 +542,11 @@ def check_billed_teams_have_a_tax_profile() -> list[Violation]:
 	]
 
 
+def get_manual_setup_gaps() -> list[Violation]:
+	"""The Billing Settings values only an operator can fill in. Billing never guesses them."""
+	return check_operator_alerts_have_a_destination() + check_accounting_setup()
+
+
 def check_operator_alerts_have_a_destination() -> list[Violation]:
 	"""Operator alerts need a Raven channel or an email address, set by hand in Billing Settings."""
 	values = frappe.get_cached_doc("Billing Settings")

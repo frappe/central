@@ -127,10 +127,9 @@ def _summary(rows: list[dict]) -> list[dict]:
 
 
 def _setup_message() -> str | None:
-	"""The settings only an operator can fill in. Billing never guesses them."""
 	from central.billing.platform import readiness
 
-	gaps = readiness.check_operator_alerts_have_a_destination() + readiness.check_accounting_setup()
+	gaps = readiness.get_manual_setup_gaps()
 	if not gaps:
 		return None
 	items = "".join(f"<li>{frappe.utils.escape_html(gap.detail)}</li>" for gap in gaps)
