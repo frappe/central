@@ -96,12 +96,7 @@ def get_bundled_bucket(action) -> dict | None:
 
 
 def create_bundled_bucket(team: str, region: str, server: str) -> dict | None:
-	"""Create the server's backup bucket in Cargo, capped at the region's bundle size, and
-	return its [s3] settings. None when the region bundles no bucket."""
-	size_gib = frappe.db.get_value("Region", region, "max_storage_bundle_size")
-	if not size_gib:
-		return None
-
+	"""Create the server's backup bucket in Cargo, without a quota cap this will be reconciled in billing itself."""
 	endpoint_url = get_storage_endpoint_url(region)
 	client = ObjectStorageClient.from_region(region)
 	name = get_bucket_name(team, region, server)
@@ -113,8 +108,6 @@ def create_bundled_bucket(team: str, region: str, server: str) -> dict | None:
 		pass
 	receipt = client.create_bucket(name, tags={"team": team, "server": server, "bundled": "1"})
 	credentials = receipt["credentials"]
-	# Cargo enforces the cap. Zero leaves the object count unlimited.
-	client.set_quota(name, size_gib, 0)
 
 	return {
 		"access_key": credentials["access_key"],
