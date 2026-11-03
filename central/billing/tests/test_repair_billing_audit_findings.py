@@ -24,7 +24,7 @@ class TestRepairBillingAuditFindings(IntegrationTestCase):
 		frappe.db.set_value("Team", TEAM, "is_staging_trial", 1)
 		with patch("central.billing.settings.provision_teams_as_trial", return_value=False):
 			repair.mark_staging_teams_internal()
-		self.assertTrue(frappe.db.get_value("Tax Profile", TEAM, "is_internal"))
+		self.assertTrue(frappe.db.get_value("Billing Profile", TEAM, "is_internal"))
 		self.assertFalse(frappe.db.get_value("Team", TEAM, "is_staging_trial"))
 
 	def test_staging_team_unpaid_invoice_is_waived(self):
@@ -50,8 +50,8 @@ class TestRepairBillingAuditFindings(IntegrationTestCase):
 
 		self._run_repair()
 
-		self.assertEqual(frappe.db.get_value("Invoice", invoice, "status"), "Open")
-		self.assertTrue(frappe.db.get_value("Tax Profile", TEAM, "is_internal"))
+		self.assertEqual(frappe.db.get_value("Invoice", invoice, "status"), "Outstanding")
+		self.assertTrue(frappe.db.get_value("Billing Profile", TEAM, "is_internal"))
 
 	def _staging_team_invoice(self, credit_applied=0):
 		frappe.db.set_value("Team", TEAM, "is_staging_trial", 1)
@@ -61,7 +61,8 @@ class TestRepairBillingAuditFindings(IntegrationTestCase):
 					"doctype": "Invoice",
 					"team": TEAM,
 					"invoice_type": "Billable",
-					"status": "Open",
+					"status": "Outstanding",
+					"due_date": "2026-12-31",
 					"period_start": "2026-09-01",
 					"period_end": "2026-09-30",
 					"currency": "INR",

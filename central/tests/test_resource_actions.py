@@ -14,6 +14,8 @@ from central.central.doctype.central_sso_settings.central_sso_settings import Ce
 from central.errors import AtlasConnectionError, AtlasRequestUncertain
 from central.infrastructure.doctype.resource_action.resource_action import ResourceAction
 from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
+from central.integrations.object_storage import ObjectStorageRejected
+from central.integrations.pilot import delete_bundled_bucket
 from central.integrations.resource_actions import SERVER_PAGE_SIZE, _process_locked
 from central.resource_actions import get_status, server_count, submit_request, validate_trial
 from central.server_models import SiteCreation
@@ -110,6 +112,14 @@ class TestResourceActions(IntegrationTestCase):
 		action = frappe.get_doc("Resource Action", result["action"])
 		self.assertEqual(action.get_configuration().cpu_millicores, 1000)
 		self.assertNotIn("central_auth_token", action.request_payload)
+
+	def test_user_data_is_encrypted_and_only_dispatch_reads_it(self):
+		user_data = "#cloud-config\nwrite_files:\n- content: MARIADB_PASSWORD='typed-secret'\n"
+		action = frappe.get_doc("Resource Action", self.submit(user_data=user_data)["action"])
+
+		self.assertNotIn("typed-secret", action.request_payload)
+		self.assertNotIn("typed-secret", action.user_data)
+		self.assertEqual(action.get_configuration().user_data, user_data)
 
 	def test_a_trial_records_its_product_before_a_site_exists(self):
 		product = frappe.get_doc(
@@ -294,6 +304,69 @@ class TestResourceActions(IntegrationTestCase):
 		self.assertIn("Traceback", diagnostic)
 		self.assertIn("AtlasConnectionError: region refused", diagnostic)
 		self.assertNotIn("region refused", action.error_message)
+
+	def bundle_bucket(self):
+		"""Make the selected plan bundle storage and return its Cargo client."""
+		self.enterContext(patch("central.integrations.pilot.plan_includes_storage", return_value=True))
+		cargo = self.enterContext(patch("central.integrations.pilot.ObjectStorageClient")).from_region()
+		cargo.create_bucket.return_value = {"credentials": {"access_key": "a", "secret_access_key": "s"}}
+		self.enterContext(
+			patch(
+				"central.integrations.pilot.get_storage_endpoint_url", return_value="https://s3.example.test"
+			)
+		)
+		return cargo
+
+	def test_a_bucket_cargo_refuses_fails_the_creation_before_dispatch(self):
+		cargo = self.bundle_bucket()
+		cargo.create_bucket.side_effect = ObjectStorageRejected("taken")
+		name = self.submit()["action"]
+		_process_locked(name)
+
+		self.assertEqual(frappe.db.get_value("Resource Action", name, "status"), "Failed")
+		self.client.return_value.create_vm.assert_not_called()
+
+	def test_a_failed_creation_queues_its_bucket_for_deletion(self):
+		self.bundle_bucket()
+		name = self.submit()["action"]
+		self.client.return_value.create_vm.side_effect = AtlasConnectionError("region refused")
+		_process_locked(name)
+
+		frappe.enqueue.assert_any_call(
+			"central.integrations.pilot.delete_bundled_bucket", action=name, enqueue_after_commit=True
+		)
+
+	def test_the_bucket_of_a_failed_creation_is_deleted_unless_it_was_retried(self):
+		cargo = self.bundle_bucket()
+		name = self.submit()["action"]
+		bucket = f"{self.team.tenant_id}-{self.region.name.casefold()}-server-{name}"
+
+		frappe.db.set_value("Resource Action", name, "status", "Queued")
+		delete_bundled_bucket(name)
+		cargo.delete_bucket.assert_not_called()
+
+		frappe.db.set_value("Resource Action", name, "status", "Failed")
+		delete_bundled_bucket(name)
+		cargo.delete_bucket.assert_called_once_with(bucket)
+
+	def test_a_failed_creation_without_storage_has_no_bucket_to_delete(self):
+		cargo = self.enterContext(patch("central.integrations.pilot.ObjectStorageClient"))
+		name = self.submit()["action"]
+		frappe.db.set_value("Resource Action", name, "status", "Failed")
+
+		with patch("central.integrations.pilot.plan_includes_storage", return_value=False):
+			delete_bundled_bucket(name)
+
+		cargo.from_region.assert_not_called()
+
+	def test_a_creation_clears_a_leftover_bucket_before_it_creates_one(self):
+		cargo = self.bundle_bucket()
+		name = self.submit()["action"]
+		_process_locked(name)
+
+		bucket = cargo.create_bucket.call_args.args[0]
+		cargo.delete_bucket.assert_called_once_with(bucket)
+		self.assertEqual(cargo.method_calls[0][0], "delete_bucket")
 
 	def test_retry_is_refused_without_a_saved_configuration(self):
 		name = self.submit()["action"]
@@ -610,6 +683,29 @@ class TestResourceActions(IntegrationTestCase):
 			names = [call.args[0].name for call in enqueue.call_args_list]
 		self.assertIn(queued, names)
 		self.assertIn(unanswered, names)
+
+	def test_the_recovery_sweep_retries_a_failed_refresh_soon(self):
+		"""A failed read is retried after seconds, while other recent requests wait for the stall cutoff."""
+		from central.integrations.resource_actions import recover_requests
+
+		failed_read = self.submit()["action"]
+		recent = self.submit(request_key="second-request-key-002", title="Second server")["action"]
+		moments_ago = frappe.utils.add_to_date(frappe.utils.now_datetime(), seconds=-30)
+		frappe.db.set_value(
+			"Resource Action",
+			failed_read,
+			{"status": "Sent", "error_code": "REFRESH_FAILED", "modified": moments_ago},
+			update_modified=False,
+		)
+		frappe.db.set_value("Resource Action", recent, "modified", moments_ago, update_modified=False)
+		with patch(
+			"central.infrastructure.doctype.resource_action.resource_action.ResourceAction.enqueue",
+			autospec=True,
+		) as enqueue:
+			recover_requests()
+			names = [call.args[0].name for call in enqueue.call_args_list]
+		self.assertIn(failed_read, names)
+		self.assertNotIn(recent, names)
 
 	def test_unexpected_worker_failure_is_recorded_without_redispatch(self):
 		from central.integrations.resource_actions import process_request

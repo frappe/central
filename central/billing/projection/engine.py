@@ -16,6 +16,7 @@ guarantee rather than a convention — see `guard`.
 import frappe
 
 from central.billing import settings
+from central.billing.doctype.invoice.invoice import owed_filters
 from central.billing.projection import behaviour, estimate, outcomes, state
 from central.billing.projection import events as injected
 from central.billing.projection.basis import MEASURED, mark, split_totals
@@ -186,12 +187,12 @@ def _in_flight(team: str, today) -> list[dict]:
 	"""
 	unpaid = frappe.get_all(
 		"Invoice",
-		filters={
-			"team": team,
-			"invoice_type": "Billable",
-			"status": ["in", ["Open", "Overdue"]],
-			"expected_collection": [">", 0],
-		},
+		filters=[
+			*owed_filters(),
+			["team", "=", team],
+			["invoice_type", "=", "Billable"],
+			["expected_collection", ">", 0],
+		],
 		fields=["name", "status", "due_date", "dunning_starts_on", "expected_collection", "currency"],
 		order_by="due_date asc",
 	)

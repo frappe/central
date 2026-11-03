@@ -24,13 +24,15 @@ Operators can upload a logo and set a description. The console shows image choic
 
 The integration requests System images with every saved offering tag. It rejects private images and mismatched responses. It returns available, enabled builds with their IDs, titles, architecture, disk size, and tags. It does not return transfer errors or private regional configuration.
 
+Signup checks all regional image pages and prefers the newest matching image at least **Signup Image Minimum Age (Minutes)** old. Central Settings defaults this value to 30 minutes, to allow time for host caching. If no matching image is old enough, signup uses the latest matching image. Set the value to 0 to select the latest image. This preference does not confirm that each host has cached the image.
+
 Follow `next_offset` until it is null. A page can contain no available images and still have another page. Regional failures use the customer-safe resource error envelope and remain visible in the page. They are not converted into empty catalogs. Draining and Disabled regions do not accept customer discovery for creation.
 
 The operator's **Preview Regional Images** action uses the saved selector and system tenant. It supports subsequent pages. It creates no remote resources.
 
 ## Installation and migration
 
-`ensure_default_offerings` creates missing Frappe and Ubuntu records on installation. The `seed_image_offerings` patch runs the same function on existing sites. Repeated execution preserves operator edits, including disabled offerings.
+`ensure_default_offerings` creates missing Frappe, Ubuntu and Templates records on installation. The `seed_image_offerings` and `seed_template_offering` patches run the same function on existing sites. Repeated execution preserves operator edits, including disabled offerings.
 
 ## Dependencies
 

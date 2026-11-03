@@ -167,11 +167,14 @@ def server_overview(team: str | None = None, resource_id: str | None = None) -> 
 			"is_firewall_enabled": row.is_firewall_enabled,
 			"is_termination_protected": row.is_termination_protected,
 			"has_ipv4_internet": row.has_ipv4_internet,
+			"has_wireguard_access": row.has_wireguard_access,
 			"firewall_rules": frappe.parse_json(row.firewall_rules) if row.firewall_rules else None,
 			"ssh_command": _ssh_command(row),
 			"ssh_keys": _server_ssh_keys(row.resource_id),
 			"gateway_url": row.gateway_url,
 			"creation": row.creation,
+			"created_by": row.created_by,
+			"created_by_name": row.created_by_name,
 		}
 	)
 
@@ -185,6 +188,7 @@ def server_overview(team: str | None = None, resource_id: str | None = None) -> 
 				"display_name": row.region_display_name or server.region,
 				"provider": row.region_provider,
 				"country_code": row.region_country_code,
+				"has_wireguard_gateway": row.region_has_wireguard_gateway,
 			},
 		},
 	}
@@ -263,18 +267,32 @@ def server_hostnames(team: str | None = None, resource_id: str | None = None) ->
 	"""The site and custom-domain hostnames a server answers. They stop working when the
 	server is terminated, so the console lists them before it asks. Gated on `server:view`."""
 	server = VirtualMachine.get_team_server_name(team, resource_id)
-	sites = frappe.get_list("Site", filters={"team": team, "server": server}, pluck="name")
+	sites = frappe.get_list(
+		"Site",
+		filters={"team": team, "server": server},
+		fields=["name", "subdomain", "renamed_at"],
+	)
 	routes = frappe.get_list(
 		"Site Domain",
 		filters={"team": team, "server": server},
 		fields=["domain", "route_type"],
 		order_by="domain asc",
 	)
-	hostnames = [{"hostname": site, "kind": "Site"} for site in sites]
+
+	# A renamed site answers on its old and new names; it shows once, at its primary address.
+	site_names = set()
+	hostnames = []
+	for site in sites:
+		site_names.add(site.name)
+		if site.subdomain:
+			site_names.add(f"{site.subdomain}.{site.name.split('.', 1)[1]}")
+		primary = Site.get_primary_url(site.name, site.subdomain, site.renamed_at)
+		hostnames.append({"hostname": primary.removeprefix("https://"), "kind": "Site"})
+
 	hostnames += [
 		{"hostname": route.domain, "kind": "Site" if route.route_type == "Site" else "Custom domain"}
 		for route in routes
-		if route.domain not in sites
+		if route.domain not in site_names
 	]
 
 	return hostnames
@@ -297,10 +315,12 @@ def _server_ssh_keys(server: str) -> list[dict]:
 
 
 def _overview_server_row(resource_id: str, team: str):
-	"""VirtualMachine + region + team in one query."""
+	"""VirtualMachine + region + team + creator in one query."""
 	server = frappe.qb.DocType("Virtual Machine")
 	region = frappe.qb.DocType("Region")
 	team_table = frappe.qb.DocType("Team")
+	creation_action = frappe.qb.DocType("Resource Action")
+	creator = frappe.qb.DocType("User")
 	rows = (
 		frappe.qb.from_(server)
 		# VirtualMachine.region links straight to Region.
@@ -308,6 +328,11 @@ def _overview_server_row(resource_id: str, team: str):
 		.on(region.name == server.region)
 		.left_join(team_table)
 		.on(team_table.name == server.team)
+		# A discovered server has no create action, so its creator stays empty.
+		.left_join(creation_action)
+		.on((creation_action.server == server.name) & (creation_action.action == "create"))
+		.left_join(creator)
+		.on(creator.name == creation_action.requested_by)
 		.select(
 			server.resource_id,
 			server.atlas_vm_id,
@@ -327,14 +352,18 @@ def _overview_server_row(resource_id: str, team: str):
 			server.is_firewall_enabled,
 			server.is_termination_protected,
 			server.has_ipv4_internet,
+			server.has_wireguard_access,
 			server.firewall_rules,
 			server.gateway_url,
 			server.creation,
 			region.display_name.as_("region_display_name"),
 			region.provider.as_("region_provider"),
 			region.country_code.as_("region_country_code"),
+			region.has_wireguard_gateway.as_("region_has_wireguard_gateway"),
 			region.base_url.as_("region_base_url"),
 			team_table.team_name.as_("team_name"),
+			creation_action.requested_by.as_("created_by"),
+			creator.full_name.as_("created_by_name"),
 		)
 		.where((server.resource_id == resource_id) & (server.team == team))
 		.limit(1)
@@ -498,12 +527,24 @@ def resize_server(
 	disk_gigabytes: int | None = None,
 ) -> dict:
 	"""Resize a server's CPU, memory and disk. Gated on `server:resize`.
-	A compute change stops the server first. A larger disk does not, and a smaller disk is refused."""
+	A compute change stops the server first. A larger disk does not, and a smaller disk is refused.
+	On an open trial it keeps the paid plan the site moves to when the trial converts."""
+	from central.signups.trial import Trial
+
 	if not resource_id:
 		frappe.throw(_("A server is required."))
 
 	server = VirtualMachine.get_team_server_name(team, resource_id)
 	subscription = frappe.db.get_value("Subscription", {"team": team, "server_id": server}, "name")
+	if not subscription and (trial := Trial.find_open(server)):
+		# The chosen plan is what the team pays once the trial converts.
+		if not can(frappe.session.user, team, "billing:manage"):
+			frappe.throw(
+				_("You can't manage this team's billing. Ask a team admin to review your access."),
+				frappe.PermissionError,
+			)
+		Trial.load(trial.site.name, for_update=True).choose_plan(plan)
+		return {"queued": False, "resized": False}
 	if not subscription:
 		frappe.throw(
 			_("This server cannot be resized because its billing subscription is missing. Contact support.")
@@ -609,6 +650,21 @@ def set_server_ipv4_internet(
 @handle_resource_operation
 @require_capability(
 	"server:network",
+	_lt("You can't change the network of this server. Ask a team admin to review your access."),
+	server="resource_id",
+)
+def set_server_wireguard_access(
+	team: str | None = None, resource_id: str | None = None, enabled: bool | int | str = True
+) -> None:
+	"""Turn WireGuard device access on or off. Gated on `server:network`."""
+	server = frappe.get_doc("Virtual Machine", VirtualMachine.get_team_server_name(team, resource_id))
+	server.set_wireguard_access(bool(frappe.utils.cint(enabled)))
+
+
+@frappe.whitelist(methods=["POST"])
+@handle_resource_operation
+@require_capability(
+	"server:network",
 	_lt("You can't change the network of this team's servers. Ask a team admin to review your access."),
 )
 def update_server_firewall(
@@ -698,6 +754,7 @@ def create_server(
 	has_public_ipv6: bool = False,
 	is_firewall_enabled: bool = False,
 	user_data: str = "",
+	app_inputs: dict[str, str] | None = None,
 	snapshot: str | None = None,
 ) -> dict:
 	"""Create a server from an image, or restore one from a `snapshot`."""
@@ -718,6 +775,7 @@ def create_server(
 		has_public_ipv6=has_public_ipv6,
 		is_firewall_enabled=is_firewall_enabled,
 		user_data=user_data,
+		app_inputs=app_inputs,
 		snapshot=snapshot,
 	)
 
@@ -740,6 +798,7 @@ def create_composed_server(
 	has_public_ipv6: bool = False,
 	is_firewall_enabled: bool = False,
 	user_data: str = "",
+	app_inputs: dict[str, str] | None = None,
 	snapshot: str | None = None,
 ) -> dict:
 	"""Create a custom-sized server from an image, or restore one from a `snapshot`."""
@@ -761,6 +820,7 @@ def create_composed_server(
 		has_public_ipv6=has_public_ipv6,
 		is_firewall_enabled=is_firewall_enabled,
 		user_data=user_data,
+		app_inputs=app_inputs,
 		snapshot=snapshot,
 	)
 

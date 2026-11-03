@@ -17,10 +17,10 @@ const POLL_MS = 1000
 // so past this the page treats it as stuck and offers support.
 const STUCK_AFTER_SECONDS = 10 * 60
 // A new Pilot accepts Central seconds after it finishes its bootstrap, so the
-// first retries come fast. The schedule still gives up after about 2 minutes.
+// first minute retries every second. The schedule still gives up after about 2 minutes.
 const LOGIN_RETRY_DELAYS_MS = [
-	1000, 1000, 1000, 2000, 2000, 2000, 2000, 5000, 5000, 10000, 10000, 15000,
-	15000, 15000, 15000, 20000,
+	...Array<number>(60).fill(1000),
+	...Array<number>(12).fill(5000),
 ]
 const SIGN_IN_FAILED =
 	'Your site is up, but we could not sign you in automatically.'
@@ -39,11 +39,8 @@ export function useSiteSetup() {
 
 	const site = computed(() => status.value?.site ?? null)
 	const journey = computed(() => status.value?.journey ?? null)
-	const isFailed = computed(
-		() =>
-			journey.value?.phase === 'failed' ||
-			Boolean(status.value?.creation?.error),
-	)
+	// A creation error such as REFRESH_FAILED is transient until the request itself fails.
+	const isFailed = computed(() => journey.value?.phase === 'failed')
 	const failure = computed(() => status.value?.creation?.error?.message ?? '')
 	const secondsWaited = computed(() => {
 		const started = journey.value?.started_at

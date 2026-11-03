@@ -20,7 +20,7 @@ const logging = computed(
 
 const description = computed(
 	() =>
-		'Keep prompts and model replies for a short time, so support can look into a failed request.' +
+		'Keep prompts and model replies, so support can look into a failed request.' +
 		(props.canManage ? '' : ' Ask a team admin to change this.'),
 )
 

@@ -11,8 +11,9 @@ Hourly billing kicks in only when a machine *churns*: two config changes less
 than 24h apart (a resize twice in a day, or a peak-then-drop even across
 midnight). Any calendar date a churn segment touches is billed by the exact hours
 each config ran that date, which closes the sub-day gaming loophole and bills a
-short-lived config fairly. Because a date is billed either daily OR hourly — never
-both — the two passes partition the period and the total stays exact.
+short-lived config fairly. The date a resource starts and the date it stops, when
+mid-day, also bill by the hours it ran. Because a date is billed either daily OR
+hourly — never both — the two passes partition the period and the total stays exact.
 """
 
 from datetime import datetime, time, timedelta
@@ -196,6 +197,10 @@ def _subscription_lines(sub, cluster: str, changes: list, b, explain: bool = Fal
 				"server": sub.server_id,
 				"cluster": cluster,
 				"churn": held_hours < CHURN_WINDOW_HOURS,
+				# The resource began or ended its life in this segment, not just a config. A
+				# segment always ends at the next change, so a stop after a resize closes it too.
+				"opens": change.change_type == "Created",
+				"closes": i + 1 < len(changes) and changes[i + 1].change_type == "Cancelled",
 			}
 		)
 
@@ -208,49 +213,78 @@ def _subscription_lines(sub, cluster: str, changes: list, b, explain: bool = Fal
 
 	lines = []
 	for s in segs:
-		# Daily pass — whole non-churn dates the segment owns. A date belongs to
-		# the config active at its start (the change-date boundary), so a single
-		# mid-day resize still sends the whole transition day to one plan.
-		d0 = max(s["start"].date(), b.ps)
-		d1 = min(s["end"].date(), b.pe + timedelta(days=1))  # exclusive
-		billed_dates = []
-		d = d0
-		while d < d1:
-			if d not in churn_dates:
-				billed_dates.append(d)
-			d += timedelta(days=1)
+		partial = {d: w for d, w in _partial_days(s).items() if d not in churn_dates}
+		billed_dates = [d for d in _owned_dates(s, b) if d not in churn_dates and d not in partial]
 		if billed_dates:
 			lines.append(_daily_line(s, len(billed_dates), b.day_units, explain, billed_dates))
-
-		# Hourly pass — this segment's real hours on each churn date it touches.
-		for cd in _dates_touched(s["start"], s["end"]):
-			if cd not in churn_dates:
-				continue
-			day_start = max(s["start"], datetime.combine(cd, time.min))
-			day_end = min(s["end"], datetime.combine(cd + timedelta(days=1), time.min))
-			hours = (day_end - day_start).total_seconds() / 3600.0
-			if hours > 0:
-				# Which configs shared this date is the whole explanation for why it went
-				# hourly, so carry them rather than leaving the reader to infer it.
-				touching = [
-					{
-						"from": str(other["start"]),
-						"to": str(other["end"]),
-						"rate": other["rate"],
-						"plan": other["plan"],
-						"held_under_24h": other["churn"],
-					}
-					for other in segs
-					if cd in _dates_touched(other["start"], other["end"])
-				]
-				lines.append(
-					_hourly_line(s, hours, b.hour_units, cd, explain, touching, window=(day_start, day_end))
-				)
+		for day, (lo, hi) in partial.items():
+			hours = (hi - lo).total_seconds() / 3600.0
+			lines.append(
+				_hourly_line(s, hours, b.hour_units, day, explain, window=(lo, hi), why=_PARTIAL_DAY)
+			)
+		lines.extend(_churn_lines(s, segs, churn_dates, b, explain))
 
 	# Grouped by server, chronological within each. A resize chain only means
 	# anything against one machine, so sorting purely by time would shuffle three
 	# servers' lines together and destroy the sequence it was meant to show.
 	return _ordered(lines)
+
+
+_PARTIAL_DAY = "the resource started or stopped during this date, so the date bills the hours it ran"
+
+
+def _owned_dates(seg: dict, b) -> list:
+	"""Whole dates the segment owns. A date belongs to the config active at its start
+	(the change-date boundary), so a single mid-day resize still sends the whole
+	transition day to one plan."""
+	d, last = max(seg["start"].date(), b.ps), min(seg["end"].date(), b.pe + timedelta(days=1))
+	dates = []
+	while d < last:
+		dates.append(d)
+		d += timedelta(days=1)
+	return dates
+
+
+def _partial_days(seg: dict) -> dict:
+	"""The date a resource started and the date it stopped, when either was mid-day,
+	mapped to the window of that date it ran."""
+	out = {}
+	start, end = seg["start"], seg["end"]
+	if seg["opens"] and start.time() != time.min:
+		out[start.date()] = (start, min(end, datetime.combine(start.date() + timedelta(days=1), time.min)))
+	if seg["closes"] and end.time() != time.min:
+		out[end.date()] = (max(start, datetime.combine(end.date(), time.min)), end)
+	return out
+
+
+def _churn_lines(seg: dict, segs: list, churn_dates: set, b, explain: bool) -> list[dict]:
+	"""This segment's real hours on each churn date it touches."""
+	lines = []
+	for cd in _dates_touched(seg["start"], seg["end"]):
+		if cd not in churn_dates:
+			continue
+		day_start = max(seg["start"], datetime.combine(cd, time.min))
+		day_end = min(seg["end"], datetime.combine(cd + timedelta(days=1), time.min))
+		hours = (day_end - day_start).total_seconds() / 3600.0
+		if hours <= 0:
+			continue
+		# Which configs shared this date is the whole explanation for why it went
+		# hourly, so carry them rather than leaving the reader to infer it.
+		touching = [
+			{
+				"from": str(other["start"]),
+				"to": str(other["end"]),
+				"rate": other["rate"],
+				"plan": other["plan"],
+				"held_under_24h": other["churn"],
+			}
+			for other in segs
+			if cd in _dates_touched(other["start"], other["end"])
+		]
+		lines.append(
+			_hourly_line(seg, hours, b.hour_units, cd, explain, touching, window=(day_start, day_end))
+		)
+	return lines
 
 
 def _resolve_changes(subscription_names: list[str], changes=None) -> dict:
@@ -337,6 +371,7 @@ def _hourly_line(
 	explain: bool = False,
 	touching=None,
 	window=None,
+	why=None,
 ) -> dict:
 	line = {
 		"subscription_resource": seg["server"],
@@ -356,9 +391,8 @@ def _hourly_line(
 	if explain:
 		line["derivation"] = {
 			"mode": "Hourly",
-			"why": (
-				"a config on this date was held for less than 24 hours, so the whole date bills by the hour"
-			),
+			"why": why
+			or "a config on this date was held for less than 24 hours, so the whole date bills by the hour",
 			"charge_date": str(charge_date),
 			"segment_from": str(seg["start"]),
 			"segment_to": str(seg["end"]),

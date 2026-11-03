@@ -83,6 +83,20 @@ class IntegrationTestSubscriptionChange(IntegrationTestCase):
 		with self.assertRaises(frappe.ValidationError):
 			change.save(ignore_permissions=True)
 
+	def test_negative_rate_refused(self):
+		sub = self._make_subscription()
+		change = frappe.get_doc(
+			{
+				"doctype": "Subscription Change",
+				"subscription": sub.name,
+				"change_type": "Plan Changed",
+				"locked_rate": -1,
+				"effective_at": frappe.utils.now_datetime(),
+			}
+		)
+		with self.assertRaisesRegex(frappe.ValidationError, "cannot be negative"):
+			change.insert(ignore_permissions=True)
+
 	def test_plan_update_appends_new_change_row_not_edit(self):
 		sub = self._make_subscription()
 		sub.plan = self.plan_b

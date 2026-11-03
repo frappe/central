@@ -46,10 +46,11 @@ class CentralSettings(Document):
 		invitations_per_hour: DF.Int
 		private_network_throughput_mibps: DF.Int
 		public_network_throughput_mibps: DF.Int
+		require_payment_method: DF.Check
 		sign_in_code_attempts: DF.Int
 		sign_in_codes_per_email: DF.Int
+		signup_image_minimum_age_minutes: DF.Int
 		support_ticket_url: DF.Data | None
-		require_payment_method: DF.Check
 		trial_days: DF.Int
 		trial_deletion_days: DF.Int
 		trial_idle_shutdown_minutes: DF.Int
@@ -63,8 +64,11 @@ class CentralSettings(Document):
 		self.validate_common_site_config()
 
 	def on_update(self) -> None:
+		from central.infrastructure.doctype.blocked_domain.blocked_domain import seed_regional_domains
 		from central.infrastructure.doctype.github_connection.github_connection import GitHubConnection
 
+		if self.has_value_changed("wildcard_domain"):
+			seed_regional_domains()
 		if self.has_value_changed("github_app_id"):
 			GitHubConnection.disable_all()
 

@@ -20,12 +20,17 @@ const earlier = computed(() =>
 const outstanding = computed(
 	() => Number(props.statement?.closing_outstanding ?? 0) + earlier.value,
 )
-const openRows = computed(() =>
+const unsettledRows = computed(() =>
 	(props.statement?.rows ?? []).filter(
-		(r) => r.status === 'Open' || r.status === 'Overdue',
+		(r) => r.status === 'Outstanding' || r.status === 'Overdue',
 	),
 )
+// Only an issued invoice is owed. One not issued yet is still being prepared.
+const openRows = computed(() => unsettledRows.value.filter((r) => r.is_issued))
 const hasOutstanding = computed(() => outstanding.value > 0)
+const allHeld = computed(
+	() => unsettledRows.value.length > 0 && openRows.value.length === 0,
+)
 const isOverdue = computed(() =>
 	openRows.value.some((r) => r.status === 'Overdue'),
 )
@@ -76,7 +81,10 @@ const detail = computed(() => {
 
 const action = computed(() => ({
 	label:
-		props.attempts === null || story.value.inFlight || preWindowInFlight.value
+		props.attempts === null ||
+		story.value.inFlight ||
+		preWindowInFlight.value ||
+		allHeld.value
 			? 'View invoice'
 			: 'Pay now',
 	onClick: () => {

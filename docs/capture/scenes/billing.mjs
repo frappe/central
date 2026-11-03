@@ -26,19 +26,19 @@ export default [
 		name: 'billing/tiers',
 		path: '/billing',
 		async setup(page) {
-			await page.getByRole('button', { name: 'All tiers' }).click()
+			await page.getByRole('button', { name: 'Tiers', exact: true }).click()
 			await page.getByRole('dialog').waitFor()
 		},
 	},
 	{
 		name: 'billing/payment-methods',
-		path: '/billing',
+		path: '/billing/payments',
 		target: card('Payment methods'),
 		setup: (page) => scrollTo(page, card('Payment methods')),
 	},
 	{
 		name: 'billing/add-method',
-		path: '/billing',
+		path: '/billing/payments',
 		target: '[role="dialog"]',
 		async setup(page) {
 			await scrollTo(page, card('Payment methods'))

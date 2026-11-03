@@ -2,6 +2,8 @@
 
 ## Purpose
 
+Customer names obey the scoped [blocked domains](../blocked_domain/SPEC.md). Central checks signup availability, queued creation requests, Site saves, and Site renames on the server.
+
 A `Site` record is the site a Pilot image already carries, on the machine that runs it. Central builds no site: [Cargo](../../../../../cargo/docs/image.md) bakes one bench into every Pilot image, and one site into an image tagged `has_site=1`. That image answers for the site on a `site-*` hostname alias. A bench-only image, tagged `has_site=0`, has no site and gets no `Site` record. Starting a trial therefore starts a machine, and nothing else.
 
 That is why a trial is one record and not two. A trial customer buys a site, the site is the machine, and the console shows one row for the pair.
@@ -20,8 +22,10 @@ Only what belongs to the site. Its address is its name and its state is the mach
 | `ready_at` | the first successful public readiness probe |
 | `claimed_at` | the first successful login handoff |
 | `rename_task` | the Pilot task that accepted the requested rename |
+| `rename_status` | the latest observed physical rename task status |
+| `rename_completed_at` | when Central confirmed physical rename success |
 | `renamed_at` | when a sign-in first found the requested hostname answering |
-| `rename_error` | a safe reason when Pilot did not accept the rename |
+| `rename_error` | a safe reason when Pilot did not accept or complete the rename |
 | `rename_diagnostic` | the operator traceback of the latest rename failure, readable only by a System Manager |
 
 `Site.url` is `https://` and the name. `Site.primary_url` is the requested hostname after `renamed_at` is set, otherwise `Site.url`. `Site.status` reads the machine's status. None of these is a column.
@@ -39,12 +43,12 @@ The regional proxy decodes a VM's mesh address from the hostname label, so Centr
 
 ## Operation
 
-The funnel first calls `central.api.sites.create_trial_team`. A user with no team gets one named after them. A user with a team keeps it.
+The funnel first calls `central.api.sites.create_trial_team(team)` with the console's current team. It returns that team when the user can create servers there (`server:create`). Otherwise it returns the first other team where the user can. Otherwise it creates a team named after the user. So a user who is only a Viewer in another team still gets a team to start the trial in. The onboarding pages show the signed-in email and team, with **Sign out**. Sign out opens the product's signup page as a guest, so a browser signed in as another person does not start the site in that person's account.
 
 ```text
 create_trial_site(subdomain) --> queued Resource Action holds the name --> warm image restores
                                                                          |
-observe_server --> VirtualMachine.claim_admin_hostname     (every Pilot machine, once)
+observe_server --> Site record --> queue VirtualMachine.claim_admin_hostname after commit
                --> Site.create_once_addressable   (site images only; carries the requested name)
                --> Site.route_subdomain           (queued; routes the requested name to the server)
                                                                          |
@@ -52,7 +56,7 @@ onboarding_status --> GET <url>/api/method/ping --> ready
                                                                          |
 claim_site --> mint login for site.local --> sign in at the requested name, or at url until it answers
                                       |
-                                      +--> enqueue rename_site
+                                      +--> enqueue physical site rename
 
 get_site --> read readiness only
 login_site --> mint a fresh login for site.local
@@ -62,9 +66,10 @@ login_site --> mint a fresh login for site.local
 - `Virtual Machine.has_site` records whether the machine's image carries a site. `VirtualMachine.create_from_action` sets it from the image's `has_site` tag. The machine owns this fact. The Resource Action is only the request.
 - The requested name rides on the `Resource Action`, because the site it will rename does not exist until the region answers.
 - A new Site with a requested name queues `Site.route_subdomain`. It creates the [Site Domain](../site_domain/SPEC.md) of the requested name for the server, unless the name has a route already. The Pilot image serves its site on every name in its zone, so the requested name answers as soon as the route is Active, before the rename. A job keeps a refused route from stopping the Site record. The rename later registers the same route again, which is safe.
-- `VirtualMachine.claim_admin_hostname` tells Pilot to replace its local `admin.local` name with the `admin-vm-*` hostname that the regional proxy already routes. Central does not create or change a proxy route. TLS stays off because the regional proxy terminates it. A machine that is not running, a failed request, or a response without a task ID leaves the marker empty, so the next report tries again.
+- `VirtualMachine.claim_admin_hostname` tells Pilot to replace its local `admin.local` name with the `admin-vm-*` hostname that the regional proxy already routes. Observation queues it after commit, after the Site record is available. A slow Admin request does not delay site discovery. TLS stays off because the regional proxy terminates it. A failed request or a response without a task ID leaves the marker empty, so the next report queues another attempt.
 - A successful claim records `claimed_at`, returns the login URL, and enqueues the rename after the database commit. The response does not wait for Pilot to accept or finish the rename.
-- `Site.apply_subdomain` creates one Pilot rename task. Pilot keeps the automatic hostname serving while the requested hostname comes up, and makes the requested hostname the site's `host_name`, so the links the site and its apps build use the customer's name.
+- `Site.apply_subdomain` submits a Pilot rename from `site.local` to the requested hostname with `make_primary=True`. Pilot moves the directory, makes the requested hostname primary, and keeps the old hostname by default. The `rename_task` field stores the accepted task and `rename_status` starts at `queued`. Signup does not wait for submission or completion.
+- Every five minutes, `poll_site_renames` checks pending renames on running servers. Each check has its own exception handler. A failed check leaves the status pending and does not stop the other checks. Central reads the bench task endpoint, which still works after the site directory moves. It stores Pilot's task status and records `rename_completed_at` only after `success`. Failed or killed tasks keep their failure details on the Site for an operator to inspect in Pilot. Existing sites with a recorded task and no tracking status are left unchanged.
 - A rename failure stays on the Site with a safe reason and an operator diagnostic. A System Manager can use **Retry Site Rename** until Pilot accepts a task.
 - Terminating the machine terminates the site, with nothing to write: the site reads its state from the machine.
 
@@ -72,7 +77,7 @@ login_site --> mint a fresh login for site.local
 
 Nothing is provisioned during signup, so readiness is not a build finishing. A site is ready when one request to `<url>/api/method/ping` answers. `central.api.sites.get_site` and `central.api.sites.onboarding_status` report `ready` but do not record it, because Frappe rolls back the writes of a GET request. These record readiness: the POST operations `claim_site` and `login_site`, the **Check Readiness** Desk action, and the scheduled job `central.infrastructure.doctype.site.site.record_ready_sites`. The job runs every 5 minutes and probes each Active trial site that has no `ready_at` and whose server is Running, so readiness does not wait for the customer to come back. A sleeping server is not Running, so the job does not wake it. The first recorded probe sets `ready_at`, queues one `site_ready` notification after commit, and sends the `trial_ready` [funnel event](../../../signups/doctype/product/SPEC.md#signup-funnel). A locking read makes sure that this happens once. A probe does not create a login session. The console polls `onboarding_status` and calls `claim_site` when the site is ready.
 
-`central.api.sites.onboarding_status(team, product)` first finds the selected product's non-terminated Site that the caller can view in the Team. If none exists, it follows the latest matching Site creation requested by the caller. A plain signup follows only creations without a product. It does not adopt a normal server creation or another team member's pending request. The response reports whether the site was claimed, so a returning customer can find it in the resource list. A Running state report schedules a full server refresh, so the Site record does not wait for the periodic reconciliation job.
+`central.api.sites.onboarding_status(team, product)` first finds the selected product's non-terminated Site that the caller can view in the Team. If none exists, it follows the latest matching Site creation requested by the caller. A plain signup follows only creations without a product. It does not adopt a normal server creation or another team member's pending request. The response reports whether the site was claimed, so a returning customer can find it in the resource list. It also returns `is_free_trial`: whether a new site of the product would be a free trial for the Team. When there is nothing to resume, a disabled or unknown product is refused, so the signup page stops before it asks for a site name. A started site of a disabled product still resumes. A Running state report schedules a full server refresh, so the Site record does not wait for the periodic reconciliation job.
 
 ### Setup journey
 
@@ -91,7 +96,7 @@ The page shows four milestones: Queued (until the region takes the request), Pro
 
 ## Sign-in
 
-Central signs in on the customer hostname as soon as it answers, which can be before the rename. Until then, sign-in uses the automatic `Site.url` and does not wait. A slow or failed route only delays the switch. Pilot names the site `site.local` until the rename lands, so Central tries the requested name and then `site.local` once the requested hostname answers. The first sign-in on the customer hostname sets `renamed_at`. From then on, the console and the server registry show `Site.primary_url`, and readiness probes still use `Site.url`. The claim still starts the rename, which makes the requested hostname the site's `host_name`.
+Central signs in on the customer hostname as soon as it answers. Until then, sign-in uses the automatic `Site.url` and does not wait. A slow or failed route only delays the switch. Central tries `site.local` first, then the customer name after Pilot renames the directory. The first sign-in on the customer hostname sets `renamed_at`; this timestamp does not confirm completion of the physical rename. From then on, the console and the server registry show `Site.primary_url`, and readiness probes still use `Site.url`. Claiming schedules the physical rename after the response.
 
 On a trial site, a member of the site's team signs in as their own user. Pilot creates the user as a System Manager the first time they open the site, so they can finish the app's own setup. An operator outside the team, and every other site, signs in as Administrator.
 
@@ -99,7 +104,7 @@ A Pilot 401 leaves the site unclaimed and tells the console to retry with bounde
 
 ## Plan change page
 
-A site's users have no Central account. When a plan change from the site stops the server, Central shows them a public page that follows the change. The page lives on Central, so it stays up while the server restarts. The site's plan list, `billing_api.get_plan_options`, leaves out a plan whose disk is smaller than the server's disk, because a plan change takes the plan's own disk and a disk can't shrink.
+A site's users have no Central account. When a plan change from the site stops the server, Central shows them a public page that follows the change. The page lives on Central, so it stays up while the server restarts. The site's plan list, `billing_api.get_plan_options`, leaves out a plan whose disk is smaller than the server's disk, because a plan change takes the plan's own disk and a disk can't shrink. Each plan in it carries the [plan note](../../../signups/doctype/product/SPEC.md#plans) of the site's product.
 
 1. `central.billing.api.billing_api.change_plan` queues the resize and returns `progress_url`. It returns a URL only when the server runs exactly one Site.
 2. The URL is `/upgrading?action=<Resource Action>&site=<Site>&_signature=<signature>`. Frappe's `get_signed_params` signs it with the site secret. The link does not expire.
@@ -137,7 +142,7 @@ The patch removes a Site only when the request of its server names an image with
 | Image site name | Cargo image invariant | `site.local` |
 | Proxy zone | `Region.proxy_domain` | `par-2.fc.frappe.dev` |
 | Signup image | `Image Offering.available_in` = `Signup` or `Both` | one offering, lowest title, `Signup` preferred |
-| Signup image tags | `SIGNUP_IMAGE_TAGS` in `central/site_provisioning.py` | `has_site=1`, `frappe_version=develop` |
+| Signup image tags | `SIGNUP_IMAGE_TAGS` in `central/site_provisioning.py` | Plain trials: `has_site=1`, `frappe_version=version-16-hotfix`. Product trials use the product's configured Frappe version. |
 | Product app tag | [`Product.signup_app`](../../../signups/doctype/product/SPEC.md) | `app=raven` |
 | Product Frappe version tag | [`Product.frappe_version`](../../../signups/doctype/product/SPEC.md) | `frappe_version=version-16` |
 | Trial region and plan | `Plan.available_on_trial` | the first Active region, by name, that has a proxy zone, offers a trial plan, and has a trial image for the signup. Central takes that region's cheapest active plan marked Available on Trial that is eligible for the Team. This applies to production and staging Teams. No marked eligible plan means no trial is available. |

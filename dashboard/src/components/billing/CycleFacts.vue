@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { LoadingText, Tooltip } from 'frappe-ui'
+import { Button, LoadingText, Tooltip } from 'frappe-ui'
 import { computed, ref } from 'vue'
 import AddMethodDialog from '@/components/AddMethodDialog.vue'
 import { useBillingOverview } from '@/composables/useBillingOverview'
@@ -10,7 +10,6 @@ import { formatDate, money } from '@/lib/format'
 
 interface Props {
 	outstanding: number
-	scheduleActive: boolean
 	walletActive: boolean
 }
 
@@ -99,85 +98,90 @@ const onAddMethod = () => {
 </script>
 
 <template>
-	<dl class="flex flex-col justify-between gap-4 px-5 pb-6 pt-7 text-base">
-		<LoadingText v-if="loading" :lines="4" class="py-2" />
+	<div
+		class="grid grid-cols-[auto_minmax(0,1fr)] content-between items-center gap-x-3 gap-y-3 px-4 py-3 text-base leading-6"
+	>
+		<LoadingText v-if="loading" :lines="4" class="col-span-2 py-2" />
+
 		<template v-else>
-			<div class="flex items-center justify-between gap-3">
-				<dt>
-					<button
-						v-if="nextCharge > 0"
-						type="button"
-						class="transition-colors hover:text-ink-gray-8"
-						:class="scheduleActive ? 'text-ink-gray-9' : 'text-ink-gray-5'"
-						@click="$emit('openSchedule')"
+			<span class="whitespace-nowrap text-ink-gray-5">
+				{{ hasOutstanding ? 'Due now' : 'Next payment' }}
+			</span>
+
+			<div class="flex items-center justify-end gap-2">
+				<Button
+					v-if="nextCharge > 0"
+					size="xs"
+					label="Schedule"
+					icon-left="lucide-calendar-clock"
+					@click="$emit('openSchedule')"
+				/>
+
+				<Tooltip :text="dueHint" :disabled="!dueHint">
+					<span
+						class="whitespace-nowrap text-base-medium tabular-nums text-ink-gray-9"
 					>
-						{{ hasOutstanding ? 'Due now' : 'Next payment' }}
-					</button>
-					<span v-else class="text-ink-gray-5">
-						{{ hasOutstanding ? 'Due now' : 'Next payment' }}
+						{{ money(amountDue, currency) }}
 					</span>
-				</dt>
-				<dd class="flex items-center gap-2">
-					<Tooltip :text="dueHint" :disabled="!dueHint">
-						<span class="text-base-medium tabular-nums text-ink-gray-9">
-							{{ money(amountDue, currency) }}
-						</span>
-					</Tooltip>
-				</dd>
+				</Tooltip>
 			</div>
 
-			<div class="flex items-center justify-between gap-3">
-				<dt>
-					<button
-						type="button"
-						class="transition-colors hover:text-ink-gray-8"
-						:class="walletActive ? 'text-ink-gray-9' : 'text-ink-gray-5'"
+			<span class="whitespace-nowrap text-ink-gray-5"> Wallet </span>
+
+			<div class="flex items-center justify-end gap-2">
+				<Tooltip text="Wallet history">
+					<Button
+						variant="ghost"
+						size="xs"
+						icon="lucide-history"
+						label="Wallet history"
+						:disabled="walletActive"
 						@click="$emit('openWallet')"
-					>
-						Wallet
-					</button>
-				</dt>
-				<dd class="flex items-center gap-2">
-					<!-- Prepaid credit is the second way to pay; the card stays the main one. -->
-					<button
-						v-if="canManageBilling"
-						type="button"
-						class="text-p-sm text-ink-blue-link transition-opacity hover:opacity-80"
-						@click="$emit('addCredit')"
-					>
-						Add credit
-					</button>
-					<Tooltip :text="walletHint" :disabled="!walletHint">
-						<span class="text-base-medium tabular-nums text-ink-gray-9">
-							{{ money(balance, currency) }}
-						</span>
-					</Tooltip>
-				</dd>
-			</div>
+					/>
+				</Tooltip>
 
-			<div class="flex items-center justify-between gap-3">
-				<dt class="text-ink-gray-5">Payment method</dt>
-				<dd class="min-w-0 truncate">
-					<span v-if="primaryMethod" class="text-ink-gray-8">
-						{{ primaryMethod.display_label || primaryMethod.method_type }}
+				<Button
+					v-if="canManageBilling"
+					size="xs"
+					label="Add credit"
+					@click="$emit('addCredit')"
+				/>
+
+				<Tooltip :text="walletHint" :disabled="!walletHint">
+					<span
+						class="whitespace-nowrap text-base-medium tabular-nums text-ink-gray-9"
+					>
+						{{ money(balance, currency) }}
 					</span>
-					<button
-						v-else-if="canManageBilling"
-						type="button"
-						class="text-ink-blue-link transition-opacity hover:opacity-80"
-						@click="onAddMethod"
-					>
-						Add card
-					</button>
-					<span v-else class="text-ink-gray-5">None</span>
-				</dd>
+				</Tooltip>
 			</div>
 
-			<div class="flex items-center justify-between gap-3">
-				<dt class="text-ink-gray-5">Next invoice</dt>
-				<dd class="tabular-nums text-ink-gray-8">{{ nextInvoiceOn || '—' }}</dd>
-			</div>
+			<span class="whitespace-nowrap text-ink-gray-5"> Payment method </span>
+
+			<span
+				v-if="primaryMethod"
+				class="truncate text-right text-base-medium text-ink-gray-9"
+			>
+				{{ primaryMethod.display_label || primaryMethod.method_type }}
+			</span>
+			<Button
+				v-else-if="canManageBilling"
+				class="justify-self-end"
+				size="xs"
+				label="Add card"
+				@click="onAddMethod"
+			/>
+			<span v-else class="text-right text-ink-gray-5">None</span>
+
+			<span class="whitespace-nowrap text-ink-gray-5"> Next invoice </span>
+
+			<span
+				class="whitespace-nowrap text-right text-base-medium tabular-nums text-ink-gray-9"
+			>
+				{{ nextInvoiceOn || '—' }}
+			</span>
 		</template>
+
 		<AddMethodDialog v-model="showAddMethod" @done="reloadMethods" />
-	</dl>
+	</div>
 </template>

@@ -32,6 +32,24 @@ class IntegrationTestCentralSettings(IntegrationTestCase):
 		flags = frappe.get_cached_doc("Central Settings").feature_flags()
 		self.assertEqual(set(flags), set(FLAG_FIELDS))
 
+	def test_signup_image_age_patch_seeds_missing_value_and_preserves_operator_settings(self):
+		from central.patches.v0_0.seed_signup_image_minimum_age import execute
+
+		frappe.db.delete(
+			"Singles", {"doctype": "Central Settings", "field": "signup_image_minimum_age_minutes"}
+		)
+		execute()
+		self.assertEqual(
+			frappe.db.get_single_value("Central Settings", "signup_image_minimum_age_minutes"), 30
+		)
+
+		for minutes in (0, 60):
+			frappe.db.set_single_value("Central Settings", "signup_image_minimum_age_minutes", minutes)
+			execute()
+			self.assertEqual(
+				frappe.db.get_single_value("Central Settings", "signup_image_minimum_age_minutes"), minutes
+			)
+
 	def test_feature_flags_reflect_the_checks(self):
 		self._set(enable_addons=1, enable_llm_service=1, enable_pdf_print_service=0)
 		flags = frappe.get_cached_doc("Central Settings").feature_flags()

@@ -129,12 +129,14 @@ class Team(TeamLifecycle, Document):
 
 	def on_update(self) -> None:
 		from central.billing.payments.provisioning import on_team_update
+		from central.infrastructure.doctype.wireguard_device.wireguard_device import remove_departed_devices
 
 		# Team and member-row edits change resolved capabilities; drop the request-cached
 		# grants so later checks in this request see the new state.
 		clear_grants_cache()
 		# A staging-trial team keeps a complete billing profile, so it can create servers.
 		on_team_update(self)
+		remove_departed_devices(self)
 
 	def on_trash(self) -> None:
 		self._require_capability("team:delete")
@@ -159,6 +161,9 @@ class Team(TeamLifecycle, Document):
 			role.flags.from_team_delete = True
 			# Team deletion already passed team:delete and owns this dependent cleanup.
 			role.delete(ignore_permissions=True, force=True)
+		for name in frappe.get_all("WireGuard Device", {"team": self.name}, pluck="name"):
+			# Team deletion already passed team:delete and its on_trash takes the peer off the gateway.
+			frappe.delete_doc("WireGuard Device", name, ignore_permissions=True, force=True)
 
 	# Internal; the HTTP surface is central.api.teams.invite_team_member.
 	def invite_member(
@@ -258,6 +263,8 @@ class Team(TeamLifecycle, Document):
 			team=self.name,
 			event_type="role_change",
 			message=", ".join(g["role"] for g in roles),
+			# The team feed shows this to every member manager, so it names the member.
+			context={"member": frappe.utils.get_fullname(user)},
 			affected_user=user,
 		)
 
@@ -284,6 +291,9 @@ class Team(TeamLifecycle, Document):
 		for row in rows:
 			self.remove(row)
 		self.save()
+
+		# The user's room, not the Team room: a socket that joined the Team room stays in it.
+		frappe.publish_realtime("team_membership_removed", {"team": self.name}, user=user, after_commit=True)
 
 	# Internal; the HTTP surface is central.api.teams.leave_team.
 	def leave(self) -> None:

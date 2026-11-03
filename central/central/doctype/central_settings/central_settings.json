@@ -14,6 +14,10 @@
   "support_ticket_url",
   "column_break_help",
   "feedback_url",
+  "alerts_section",
+  "infra_alert_webhook_url",
+  "column_break_infra_webhooks",
+  "infra_report_webhook_url",
   "feature_flags_tab",
   "addons_section",
   "enable_addons",
@@ -33,6 +37,7 @@
   "server_creation_section",
   "require_payment_method",
   "included_transfer_gb",
+  "signup_image_minimum_age_minutes",
   "server_limits_section",
   "disk_iops",
   "disk_throughput_mibps",
@@ -124,6 +129,29 @@
    "fieldtype": "Data",
    "label": "Feedback URL",
    "options": "URL"
+  },
+  {
+   "fieldname": "alerts_section",
+   "fieldtype": "Section Break",
+   "label": "Infra Webhooks"
+  },
+  {
+   "description": "Raven incoming webhook for infrastructure alerts that the investigator sends.",
+   "fieldname": "infra_alert_webhook_url",
+   "fieldtype": "Password",
+   "label": "Infra Alert Webhook URL",
+   "length": 512
+  },
+  {
+   "fieldname": "column_break_infra_webhooks",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "Raven incoming webhook for infrastructure reports that the investigator sends.",
+   "fieldname": "infra_report_webhook_url",
+   "fieldtype": "Password",
+   "label": "Infra Report Webhook URL",
+   "length": 512
   },
   {
    "fieldname": "feature_flags_tab",
@@ -229,6 +257,14 @@
    "fieldname": "included_transfer_gb",
    "fieldtype": "Int",
    "label": "Included Transfer (GB)",
+   "non_negative": 1
+  },
+  {
+   "default": "30",
+   "description": "Prefer the newest signup image at least this old, to allow host caching. Use the latest if none qualifies. 0 selects the latest.",
+   "fieldname": "signup_image_minimum_age_minutes",
+   "fieldtype": "Int",
+   "label": "Signup Image Minimum Age (Minutes)",
    "non_negative": 1
   },
   {
@@ -473,7 +509,7 @@
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-10-24 14:00:00.000000",
+ "modified": "2026-10-28 18:00:00.000000",
  "modified_by": "Administrator",
  "module": "Central",
  "name": "Central Settings",

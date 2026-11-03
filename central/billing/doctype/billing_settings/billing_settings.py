@@ -27,9 +27,10 @@ class BillingSettings(Document):
 		self.validate_retry_days()
 		self.validate_dunning_ladder()
 		self.validate_one_row_per_currency()
+		self.validate_one_minimum_per_currency()
 		self.validate_operator_alerts()
 
-	@frappe.whitelist()
+	@frappe.whitelist(methods=["POST"])
 	def send_test_alert(self) -> list[str]:
 		"""Send one test alert through the saved settings and return where it went."""
 		from central.billing.platform.alerts import notify_operators
@@ -111,6 +112,14 @@ class BillingSettings(Document):
 			frappe.throw(
 				_("Terminate After must be later than Suspend After."),
 				title=_("Invalid Dunning Ladder"),
+			)
+
+	def validate_one_minimum_per_currency(self):
+		"""One minimum invoice amount per currency."""
+		currencies = [row.currency for row in self.minimum_invoice_amounts]
+		if len(currencies) != len(set(currencies)):
+			frappe.throw(
+				_("Each currency can have one minimum invoice amount."), title=_("Duplicate Currency")
 			)
 
 	def validate_one_row_per_currency(self):

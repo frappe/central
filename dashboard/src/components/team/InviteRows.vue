@@ -75,7 +75,20 @@ function removeRow(index: number): void {
 						:options="resourceOptions"
 						:aria-label="`Resource ${index + 1}`"
 						:disabled="disabled"
-					/>
+					>
+						<!-- One line per option: Select lets a taller option shrink and overlap when the menu height is capped. -->
+						<template #item-label="{ item }">
+							<div class="flex min-w-0 items-center gap-2">
+								<span class="truncate leading-tighter">{{ item.label }}</span>
+								<span
+									v-if="item.description"
+									class="shrink-0 text-sm leading-tighter text-ink-gray-5"
+								>
+									{{ item.description }}
+								</span>
+							</div>
+						</template>
+					</Select>
 					<Button
 						v-if="rows.length > 1"
 						variant="ghost"

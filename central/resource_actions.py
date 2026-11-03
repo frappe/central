@@ -27,7 +27,7 @@ from central.billing.doctype.billing_profile.billing_profile import (
 	is_complete,
 	require_billing_profile,
 )
-from central.billing.payments.settlement import wallet_funds
+from central.billing.payments.settlement import has_paid_by_hand, is_behind_on_payment, wallet_funds
 from central.billing.revenue.tax import is_internal_team
 from central.errors import throw_action_error
 from central.iam import can, resolve_team
@@ -37,7 +37,15 @@ from central.infrastructure.doctype.resource_action.resource_action import (
 	PENDING_STATES,
 	ResourceAction,
 )
-from central.integrations.images import selected_image, snapshot_image, snapshot_source
+from central.integrations.cargo import CargoClient
+from central.integrations.images import (
+	APP_PURPOSE,
+	get_image_app_requirements,
+	get_minimum_shape,
+	selected_image,
+	snapshot_image,
+	snapshot_source,
+)
 from central.server_models import (
 	DNS_LABEL,
 	MAXIMUM_USER_DATA_BYTES,
@@ -73,6 +81,7 @@ def submit_request(
 	has_public_ipv6: bool = False,
 	is_firewall_enabled: bool = False,
 	user_data: str = "",
+	app_inputs: dict[str, str] | None = None,
 	resource_type: str = "Server",
 	subdomain: str | None = None,
 	snapshot: str | None = None,
@@ -102,6 +111,7 @@ def submit_request(
 		has_public_ipv6=has_public_ipv6,
 		is_firewall_enabled=is_firewall_enabled,
 		user_data=user_data,
+		app_inputs=app_inputs,
 	)
 	if not can(frappe.session.user, server_input.team, "server:create"):
 		frappe.throw(
@@ -176,6 +186,12 @@ def submit_command(
 		)
 	if action == "restart" and server.status != "Running":
 		frappe.throw(_("Only a running server can be restarted."))
+	if action == "start" and frappe.db.exists(
+		"Subscription", {"server_id": server.name, "account_standing": "Suspended"}
+	):
+		throw_action_error(
+			"PAYMENT_OVERDUE", message=_("This server is suspended because an invoice is unpaid.")
+		)
 	if action == "start" and frappe.db.exists("Site", {"server": server.name, "trial_state": "Ended"}):
 		if has_active_payment_method(team):
 			frappe.throw(_("This trial has ended. Choose Keep this site to start it on its paid plan."))
@@ -185,13 +201,36 @@ def submit_command(
 	if take_snapshot:
 		server.require_server_access()
 
+	return _queue_command(action, server, take_snapshot=take_snapshot)
+
+
+def submit_billing_command(action: str, server_name: str) -> ActionStatus:
+	"""Stop or start a server for billing, as the system.
+
+	Dunning stops a server that is not paid for, and a payment starts it again. The
+	payment can arrive by webhook as Guest, or from a member without `server:power`,
+	so no user capability applies here."""
+	if action not in ("stop", "start"):
+		raise ValueError(f"Billing cannot {action} a server")
+
+	server = frappe.get_doc("Virtual Machine", server_name, for_update=True)
+	if not server.atlas_vm_id:
+		frappe.throw(_("Server {0} has no verified regional identity.").format(server.name))
+
+	return _queue_command(action, server, requested_by="Administrator")
+
+
+def _queue_command(
+	action: str, server, take_snapshot: bool = False, requested_by: str | None = None
+) -> ActionStatus:
 	document = ResourceAction.get_pending(server.name, action) or ResourceAction.queue(
 		action,
-		team,
+		server.team,
 		server.region,
 		server.title or server.name,
 		server=server.name,
 		remote_vm_id=server.atlas_vm_id,
+		requested_by=requested_by,
 		take_snapshot=int(take_snapshot),
 	)
 
@@ -216,6 +255,7 @@ def _validate_server_input(**values) -> CreateServerInput:
 	values["hostname"] = values.get("hostname") or ""
 	values["ssh_keys"] = values.get("ssh_keys") or []
 	values["ssh_key_ids"] = values.get("ssh_key_ids") or []
+	values["app_inputs"] = values.get("app_inputs") or {}
 	try:
 		server_input = CreateServerInput.model_validate(values)
 	except ValidationError as error:
@@ -286,6 +326,8 @@ def _build_server_configuration(
 	# Check the saved keys now so the form shows the error. Dispatch reads their text, which a
 	# rotation can change before a retry.
 	resolve_team_ssh_keys(server_input.team, server_input.ssh_key_ids)
+	shape = image_shape(composition, image)
+	_validate_app_size(image, get_image_app_requirements(server_input.region, image, snapshot), shape)
 
 	configuration = ServerCreation(
 		offering=server_input.offering,
@@ -303,12 +345,39 @@ def _build_server_configuration(
 		has_public_ipv4=server_input.has_public_ipv4,
 		has_public_ipv6=server_input.has_public_ipv6,
 		is_firewall_enabled=server_input.is_firewall_enabled,
-		user_data=server_input.user_data,
+		user_data=_get_user_data(server_input, image, snapshot),
 		image_tags=image["tags"],
-		**image_shape(composition, image),
+		**shape,
 	)
 
 	return configuration, rate
+
+
+def _get_user_data(server_input: CreateServerInput, image: dict, snapshot: str | None) -> str:
+	"""The user data the server boots with. An app's comes from its region's Cargo, built
+	from the answers to its inputs, and names the application by the image's own tags. A
+	restored snapshot is already set up, so it takes none."""
+	if snapshot or image["tags"].get("purpose") != APP_PURPOSE:
+		if server_input.app_inputs:
+			frappe.throw(_("Only an app takes app settings."))
+		return server_input.user_data
+
+	if server_input.user_data:
+		frappe.throw(_("An app server sets its own user data."))
+
+	region = frappe.get_doc("Region", server_input.region)
+	return CargoClient(region).get_app_user_data(image["tags"]["application"], server_input.app_inputs)
+
+
+def _validate_app_size(image: dict, requirements: dict | None, shape: dict[str, int]) -> None:
+	"""A new app server needs at least the app's minimum size. Any other server, and a
+	restored snapshot, has no app requirements."""
+	if not requirements:
+		return
+
+	minimum = get_minimum_shape(image, requirements)
+	if any(shape[key] < minimum[key] for key in minimum):
+		frappe.throw(_("This app needs a bigger server. Choose a plan with more CPU, memory or storage."))
 
 
 def unanswered_request(team: str, digest: str) -> str | None:
@@ -344,7 +413,7 @@ def validate_purchase(
 	elif trial:
 		validate_trial(team)
 
-	catalog = get_server_plans(team, cluster=region)
+	catalog = get_server_plans(team, cluster=region, include_trial_plans=is_free_trial)
 	if plan:
 		choices = [row for rows in catalog["plans"].values() for row in rows]
 		selected = next((row for row in choices if row["plan"] == plan), None)
@@ -399,10 +468,14 @@ def require_server_slot(team: str) -> None:
 def require_payment_method_or_credit(team: str, rate: float) -> None:
 	"""Refuse a server that neither credit nor a way to pay covers.
 
-	1. Credit that covers the rate is enough.
-	2. Otherwise the billing profile must be complete, and the team needs an active payment
-	   method or must pay each invoice by hand (Manual Checkout).
-	3. With Central Settings' payment method requirement off, a complete profile is enough."""
+	1. A team with an overdue invoice, or a subscription Past Due or Suspended, buys nothing.
+	2. Credit that covers the rate is enough.
+	3. With Central Settings' payment method requirement off, a complete profile is enough.
+	4. Otherwise the billing profile must be complete, and the team needs an active payment
+	   method, or must be on Manual Checkout with one invoice already paid."""
+	if is_behind_on_payment(team):
+		throw_action_error("PAYMENT_OVERDUE")
+
 	if wallet_funds(team, rate):
 		return
 
@@ -410,8 +483,7 @@ def require_payment_method_or_credit(team: str, rate: float) -> None:
 		require_billing_profile(team, "create servers")
 		return
 
-	collection_mode = frappe.db.get_value("Billing Profile", team, "collection_mode")
-	if is_complete(team) and (collection_mode == "Manual Checkout" or has_active_payment_method(team)):
+	if is_complete(team) and (has_active_payment_method(team) or has_paid_by_hand(team)):
 		return
 
 	throw_action_error("PAYMENT_METHOD_REQUIRED")

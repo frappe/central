@@ -4,7 +4,7 @@ from frappe import _
 from central.billing import settings
 from central.billing.payments.provisioning import grant_welcome_credits, has_owner_received_welcome_credits
 from central.billing.revenue.credits import get_balance, grant_promotional_credits
-from central.signups.eligibility import has_active_payment_method
+from central.signups.eligibility import get_team_open_trial, has_active_payment_method
 from central.signups.trial import convert_team
 
 
@@ -17,7 +17,7 @@ def on_payment_method_update(doc, method: str | None = None) -> None:
 
 	# Checked before the conversion, which closes the team's open trials.
 	if is_welcome_credit_due(doc.team):
-		grant_welcome_credits(doc.team)
+		grant_welcome_credits(doc.team, doc.instrument_fingerprint)
 	convert_team(doc.team)
 
 
@@ -46,7 +46,8 @@ def grant_credit(team: str, amount: float, validity_days: int, note: str) -> dic
 
 def get_purchase_state(team: str) -> dict:
 	"""What the console shows before a server is bought: whether a payment method is needed,
-	and the welcome credit the first one adds. The server checks again on create."""
+	the welcome credit the first one adds, and the open trial it converts. The server checks
+	again on create."""
 	collection_mode = frappe.db.get_value("Billing Profile", team, "collection_mode")
 	is_required = bool(
 		frappe.get_cached_value("Central Settings", "Central Settings", "require_payment_method")
@@ -54,7 +55,11 @@ def get_purchase_state(team: str) -> dict:
 		and not has_active_payment_method(team)
 		and get_balance(team)["balance"] <= 0
 	)
-	return {"payment_method_required": is_required, "welcome_credit": get_welcome_credit_offer(team)}
+	return {
+		"payment_method_required": is_required,
+		"welcome_credit": get_welcome_credit_offer(team),
+		"open_trial": get_team_open_trial(team),
+	}
 
 
 def get_welcome_credit_offer(team: str) -> dict | None:

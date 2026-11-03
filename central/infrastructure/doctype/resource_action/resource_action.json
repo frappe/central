@@ -32,6 +32,7 @@
   "remediation",
   "request_tab",
   "request_payload",
+  "user_data",
   "reserved_monthly_rate",
   "diagnostics_tab",
   "remote_vm_id",
@@ -239,6 +240,13 @@
    "read_only": 1
   },
   {
+   "description": "The cloud-init user data the server boots with. It can hold the passwords a customer typed, so Central keeps it encrypted. Only the dispatch job and a System Manager read it.",
+   "fieldname": "user_data",
+   "fieldtype": "Password",
+   "label": "User Data",
+   "read_only": 1
+  },
+  {
    "fieldname": "reserved_monthly_rate",
    "fieldtype": "Currency",
    "label": "Reserved Monthly Rate",
@@ -308,7 +316,7 @@
    "link_fieldname": "resource_action"
   }
  ],
- "modified": "2026-10-25 20:00:00.000000",
+ "modified": "2026-11-02 18:00:00.000000",
  "modified_by": "Administrator",
  "module": "Infrastructure",
  "name": "Resource Action",

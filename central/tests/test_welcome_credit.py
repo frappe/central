@@ -13,6 +13,9 @@ from central.signups.credit import get_purchase_state, grant_credit
 OWNER = "welcome-credit-owner@example.com"
 TEAM = "team-welcome-credit"
 SECOND_TEAM = "team-welcome-credit-second"
+OTHER_OWNER = "welcome-credit-other-owner@example.com"
+OTHER_TEAM = "team-welcome-credit-other-owner"
+TEAMS = [TEAM, SECOND_TEAM, OTHER_TEAM]
 AMOUNTS = [{"currency": "USD", "amount": 10}]
 
 
@@ -22,11 +25,13 @@ class TestWelcomeCredit(IntegrationTestCase):
 		for team in (TEAM, SECOND_TEAM):
 			ensure_team(team, owner=owner)
 			complete_billing_profile(team, currency="USD")
+		ensure_team(OTHER_TEAM, owner=make_user(OTHER_OWNER))
+		complete_billing_profile(OTHER_TEAM, currency="USD")
 		self.gateway = make_stripe_gateway().name
 		for doctype in ("Credit Ledger Entry", "Credit Wallet", "Payment Method", "Site"):
-			frappe.db.delete(doctype, {"team": ["in", [TEAM, SECOND_TEAM]]})
+			frappe.db.delete(doctype, {"team": ["in", TEAMS]})
 
-	def activate_payment_method(self, team: str):
+	def activate_payment_method(self, team: str, card_fingerprint: str | None = None):
 		method = frappe.get_doc(
 			{
 				"doctype": "Payment Method",
@@ -36,6 +41,7 @@ class TestWelcomeCredit(IntegrationTestCase):
 				"status": "Pending Validation",
 			}
 		).insert(ignore_permissions=True)
+		method.set_instrument_fingerprint(card_fingerprint)
 		transition(method, "Active")
 		method.save(ignore_permissions=True)
 		return method
@@ -43,11 +49,12 @@ class TestWelcomeCredit(IntegrationTestCase):
 	def add_trial(self, team: str, state: str):
 		"""A trial site record. Its conversion is not under test, so it is patched out."""
 		self.enterContext(patch("central.signups.credit.convert_team"))
+		name = f"trial-{frappe.generate_hash(length=6)}.example.test"
 		frappe.get_doc(
 			{
 				"doctype": "Site",
-				"name": f"trial-{frappe.generate_hash(length=6)}.example.test",
-				"site_name": "trial.example.test",
+				"name": name,
+				"site_name": name,
 				"team": team,
 				"server": "server-trial",
 				"trial_state": state,
@@ -73,6 +80,61 @@ class TestWelcomeCredit(IntegrationTestCase):
 			self.activate_payment_method(SECOND_TEAM)
 
 		self.assertEqual(self.promotion_count(SECOND_TEAM), 0)
+
+	def test_one_card_gets_the_welcome_credit_once_across_owners(self):
+		with billing_settings(grant_welcome_credits=1, welcome_credit_amounts=AMOUNTS):
+			self.activate_payment_method(TEAM, card_fingerprint="fp_shared")
+			method = self.activate_payment_method(OTHER_TEAM, card_fingerprint="fp_shared")
+
+		self.assertEqual(method.status, "Active")
+		self.assertEqual(self.promotion_count(OTHER_TEAM), 0)
+		self.assertEqual(credits.get_balance(OTHER_TEAM)["balance"], 0)
+
+	def test_another_owner_with_another_card_gets_the_welcome_credit(self):
+		with billing_settings(grant_welcome_credits=1, welcome_credit_amounts=AMOUNTS):
+			self.activate_payment_method(TEAM, card_fingerprint="fp_first")
+			self.activate_payment_method(OTHER_TEAM, card_fingerprint="fp_second")
+
+		self.assertEqual(self.promotion_count(OTHER_TEAM), 1)
+
+	def test_a_card_added_at_the_same_time_by_two_owners_gets_one_welcome_credit(self):
+		"""Both activations pass the check before either commits; the unique ledger column keeps one."""
+		with billing_settings(grant_welcome_credits=1, welcome_credit_amounts=AMOUNTS):
+			self.activate_payment_method(TEAM, card_fingerprint="fp_raced")
+			with patch(
+				"central.billing.payments.provisioning.has_instrument_received_welcome_credits",
+				return_value=False,
+			):
+				method = self.activate_payment_method(OTHER_TEAM, card_fingerprint="fp_raced")
+
+		self.assertEqual(frappe.db.get_value("Payment Method", method.name, "status"), "Active")
+		self.assertNotIn("must be unique", str(frappe.local.message_log))
+		self.assertEqual(self.promotion_count(OTHER_TEAM), 0)
+		self.assertEqual(credits.get_balance(OTHER_TEAM)["balance"], 0)
+
+	def test_a_failed_booking_on_another_unique_key_is_not_taken_for_a_reused_card(self):
+		conflict = frappe.UniqueValidationError(
+			"Credit Ledger Entry", "x", Exception("Duplicate entry 'p' for key 'gateway_payment_id'")
+		)
+		with (
+			billing_settings(grant_welcome_credits=1, welcome_credit_amounts=AMOUNTS),
+			patch("central.billing.revenue.credits.grant_promotional_credits", side_effect=conflict),
+			self.assertRaises(frappe.UniqueValidationError),
+		):
+			self.activate_payment_method(TEAM, card_fingerprint="fp_other_key")
+
+	def test_a_wallet_deadlock_fails_the_activation_without_a_retry(self):
+		"""A real deadlock has already rolled back the activation, so the grant must not retry alone."""
+		with (
+			billing_settings(grant_welcome_credits=1, welcome_credit_amounts=AMOUNTS),
+			patch(
+				"central.billing.revenue.credits._book_entry_once", side_effect=frappe.QueryDeadlockError
+			) as book_once,
+			self.assertRaises(frappe.QueryDeadlockError),
+		):
+			self.activate_payment_method(TEAM, card_fingerprint="fp_deadlock")
+
+		book_once.assert_called_once()
 
 	def test_no_grant_when_grants_are_off_or_the_currency_has_no_amount(self):
 		with billing_settings(grant_welcome_credits=0, welcome_credit_amounts=AMOUNTS):
@@ -113,6 +175,19 @@ class TestWelcomeCredit(IntegrationTestCase):
 	@IntegrationTestCase.change_settings("Central Settings", require_payment_method=0)
 	def test_no_payment_method_is_asked_for_when_the_requirement_is_off(self):
 		self.assertFalse(get_purchase_state(TEAM)["payment_method_required"])
+
+	def test_the_console_names_only_the_teams_own_open_trial(self):
+		self.assertIsNone(get_purchase_state(TEAM)["open_trial"])
+
+		self.add_trial(SECOND_TEAM, "Active")
+		self.assertIsNone(get_purchase_state(TEAM)["open_trial"])
+
+		self.add_trial(TEAM, "Ended")
+		trial = get_purchase_state(TEAM)["open_trial"]
+		self.assertEqual((trial["state"], trial["server"]), ("Ended", "server-trial"))
+
+		with patch("central.signups.eligibility.can", return_value=False):
+			self.assertIsNone(get_purchase_state(TEAM)["open_trial"]["server"])
 
 	def test_a_team_that_had_a_free_trial_gets_no_welcome_credit(self):
 		for state in ("Active", "Ended"):

@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { Badge, Button, Dropdown, Tooltip } from 'frappe-ui'
 import { computed } from 'vue'
-import CopyableValue from '@/components/common/CopyableValue.vue'
 import ProviderAvatar from '@/components/servers/ProviderAvatar.vue'
 import type {
 	ConsoleMode,
@@ -9,6 +8,7 @@ import type {
 	VirtualMachineRow,
 } from '@/composables/useServers'
 import type { ServerActions } from '@/lib/capabilities'
+import { formatCalendarDate, timeAgo } from '@/lib/datetime'
 import { formatPlanLabel } from '@/lib/planLabel'
 import { statusVisual } from '@/lib/serverMap'
 import { getServerMenu, type ServerMenuVerb } from '@/lib/serverMenu'
@@ -44,31 +44,6 @@ const isLocked = computed(() => !!props.server.pending_action)
 const isRunning = computed(() => props.server.status === 'Running')
 const isUbuntu = computed(() => props.server.image_offering === 'ubuntu')
 
-const addresses = computed(() =>
-	[
-		{
-			label: 'Public IPv4 address',
-			value: props.server.public_ipv4,
-			icon: 'lucide-globe',
-			help: 'Public IPv4',
-		},
-		{
-			label: 'Public IPv6 address',
-			value: props.server.public_ipv6,
-			icon: 'lucide-globe',
-			help: 'Public IPv6',
-		},
-		{
-			label: 'Private address',
-			value: props.server.ipv6_address,
-			icon: 'lucide-lock',
-			help: 'Private address within this region',
-		},
-	]
-		.filter((row): row is typeof row & { value: string } => !!row.value)
-		.slice(0, 1),
-)
-
 const isProtected = computed(() => !!props.details?.is_termination_protected)
 const protectionLabel = computed(() =>
 	isProtected.value
@@ -76,7 +51,29 @@ const protectionLabel = computed(() =>
 		: 'Turn on termination protection',
 )
 
-const facts = computed(() => {
+interface Fact {
+	icon: string
+	label: string | null
+	help?: string
+}
+
+const createdFact = computed<Fact | null>(() => {
+	const details = props.details
+	if (!details) return null
+
+	const creator = details.created_by_name || details.created_by
+	return {
+		icon: 'lucide-clock',
+		label: creator
+			? `Created ${timeAgo(details.creation)} by ${creator}`
+			: `Created ${timeAgo(details.creation)}`,
+		help: [formatCalendarDate(details.creation), details.created_by]
+			.filter(Boolean)
+			.join(' · '),
+	}
+})
+
+const facts = computed<Fact[]>(() => {
 	const server = props.server
 	const details = props.details
 	const region = details?.region_details
@@ -103,7 +100,8 @@ const facts = computed(() => {
 					billingCycle: details.plan_billing_cycle,
 				}),
 		},
-	].filter((fact) => fact.label)
+		createdFact.value,
+	].filter((fact): fact is Fact => !!fact?.label)
 })
 
 const canOpen = computed(
@@ -116,8 +114,8 @@ const canOpen = computed(
 			(!!props.server.gateway_url && !props.actions.isAccessLocked)),
 )
 
-// Overview and Open are the page itself and its primary button, so the menu omits them.
 const handlers: Partial<Record<ServerMenuVerb, () => void>> = {
+	open: () => emit('open'),
 	pilot: () => emit('pilot'),
 	start: () => emit('command', 'start'),
 	stop: () => emit('command', 'stop'),
@@ -195,29 +193,34 @@ const menu = computed(() => {
 						:theme="visual.badgeTheme"
 						:class="{ 'animate-pulse': visual.motion !== 'none' }"
 					/>
+
+					<Tooltip
+						v-if="details?.has_wireguard_access"
+						text="Your team's WireGuard VPN devices reach this server at its private address."
+					>
+						<RouterLink
+							:to="`/servers/${server.resource_id}/access`"
+							class="shrink-0 rounded-full focus-visible:ring-2 focus-visible:ring-outline-gray-3"
+						>
+							<Badge label="VPN" theme="blue">
+								<template #prefix>
+									<span class="lucide-shield-check size-3" aria-hidden="true" />
+								</template>
+							</Badge>
+						</RouterLink>
+					</Tooltip>
 				</div>
 
 				<ul
 					class="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-ink-gray-5"
 				>
-					<li
-						v-for="fact in facts"
-						:key="fact.icon"
-						class="flex items-center gap-1.5"
-					>
-						<span :class="fact.icon" class="size-3.5 shrink-0" />
-						{{ fact.label }}
-					</li>
-
-					<li
-						v-for="row in addresses"
-						:key="row.label"
-						class="flex min-w-0 items-center gap-1.5"
-					>
-						<Tooltip :text="row.help">
-							<span :class="row.icon" class="size-3.5 shrink-0" />
+					<li v-for="fact in facts" :key="fact.icon">
+						<Tooltip :text="fact.help">
+							<span class="flex items-center gap-1.5">
+								<span :class="fact.icon" class="size-3.5 shrink-0" />
+								{{ fact.label }}
+							</span>
 						</Tooltip>
-						<CopyableValue :value="row.value" :label="row.label" />
 					</li>
 				</ul>
 			</div>

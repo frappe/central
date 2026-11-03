@@ -10,7 +10,7 @@ from frappe.utils.caching import request_cache
 OPERATOR_BYPASS_ROLE = "System Manager"
 
 # The revision of the capability taxonomy. Bump it with every change (see CAPABILITIES.md).
-CAPABILITY_VERSION = 6
+CAPABILITY_VERSION = 7
 
 # Granting a key implies each capability in its value, because acting on a resource needs
 # seeing it. Every grant is closed under these before it is checked.
@@ -22,6 +22,7 @@ CAP_IMPLICATIONS = {
 	"server:resize": ("server:view",),
 	"server:snapshot": ("server:view",),
 	"server:ssh-key": ("server:view",),
+	"server:wireguard": ("server:view",),
 	"server:console": ("server:view",),
 	"service:manage": ("service:view",),
 }
@@ -124,6 +125,16 @@ def is_active_team_member(user: str, team: str) -> bool:
 	)
 
 	return bool(query.run())
+
+
+def get_team_names_with_role(role: str, teams: list[str]) -> list[str]:
+	"""The teams among `teams` where at least one member holds `role`."""
+	return frappe.get_all(
+		"Team Member",
+		filters={"parenttype": "Team", "role": role, "parent": ("in", teams)},
+		pluck="parent",
+		distinct=True,
+	)
 
 
 def resolve_team(user: str, team: str | None = None) -> str:
@@ -302,6 +313,22 @@ def get_allowed_servers(user: str, capability: str) -> dict[str, str | frozenset
 			allowed[team] = frozenset(scopes)
 
 	return allowed
+
+
+def get_capability_gate(capability_field, server_field, team: str, user: str):
+	"""A query builder condition for the team rows `user` may see. A row with no required
+	capability is visible to every member. A team-wide grant sees a row it has the
+	capability for. A grant scoped to servers sees a row only about one of those servers."""
+	gate = capability_field.isnull() | (capability_field == "")
+	capabilities = {cap for grant in resolve_user_grants(user).get(team, []) for cap in grant["caps"]}
+	for capability in sorted(capabilities):
+		servers = get_allowed_servers(user, capability)[team]
+		if servers == ALL_SERVERS:
+			gate = gate | (capability_field == capability)
+		else:
+			gate = gate | ((capability_field == capability) & server_field.isin(sorted(servers)))
+
+	return gate
 
 
 def get_server_capabilities(user: str, team: str, server: str) -> list[str]:

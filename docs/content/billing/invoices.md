@@ -13,19 +13,20 @@ The list shows each invoice with its period, invoice number, status, and amount.
 <Screenshot name="billing/invoices" alt="The Invoices page with monthly invoices from January to October 2026, each marked Paid" />
 
 - Type a period or an invoice number in the search box.
-- Use the **All status** menu to show only **Open**, **Paid**, or **Overdue** invoices.
+- Use the **All status** menu to show only **Outstanding**, **Paid**, or **Overdue** invoices.
 - Use the **Any date** menu to show the last month, the last 6 months, or the last year.
 
 ## Invoice statuses
 
 | Status | Meaning |
 | --- | --- |
-| `Draft` | The cycle has ended and the invoice is being prepared. |
-| `Open` | The invoice is issued and not paid yet. Frappe Cloud collects it from your credits and payment methods. |
+| `Outstanding` | The invoice is not paid yet. Before it has a due date, it is being prepared and you cannot pay it. After it is issued with a due date, Frappe Cloud collects it from your credits and payment methods. |
 | `Paid` | The invoice is paid in full. |
 | `Overdue` | The invoice is past its due date and still unpaid. Pay it to keep your servers running. |
 | `Waived` | Frappe Cloud cancelled the amount. You do not need to pay it. |
 | `Cancelled` | The invoice was cancelled. |
+
+An `Outstanding` invoice can stay without a due date while your billing details are not complete. Add your billing details to issue it.
 
 ## See an invoice
 
@@ -45,17 +46,17 @@ Click the download icon on the invoice row or at the top of the invoice panel. T
 
 The PDF is ready only after the invoice is issued. Until then, the download icon is disabled. You can download up to 30 invoices in one hour.
 
-## Pay an open invoice
+## Pay an outstanding invoice
 
-Frappe Cloud tries to collect each invoice automatically. Pay by hand when an invoice is still `Open` or `Overdue`, for example after a card is declined.
+Frappe Cloud tries to collect each invoice automatically. Pay by hand when an issued invoice is still `Outstanding` or `Overdue`, for example after a card is declined. You can pay an `Outstanding` invoice only after it has a due date.
 
 1. Go to **Billing > Invoices**.
-2. Click the `Open` or `Overdue` invoice.
+2. Click the `Outstanding` or `Overdue` invoice.
 3. Click **Pay** with the amount, such as **Pay $683.11 now**.
 
 The charge uses your saved payment method. While the bank confirms the payment, the panel shows **Waiting for your bank to confirm the payment…**. The status changes to `Paid` when the payment is confirmed.
 
-When an invoice is unpaid, **Billing > Overview** shows a banner with the amount and a **Pay now** button. The banner is amber for an open invoice and red for an overdue invoice.
+When an invoice is unpaid, **Billing > Overview** shows a banner with the amount and a **Pay now** button. The banner is amber for an outstanding invoice and red for an overdue invoice.
 
 ## When a payment fails
 

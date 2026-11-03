@@ -34,10 +34,11 @@ Used CPU, memory, disk and bandwidth come from the region's telemetry. Only serv
 |---|---|
 | Cloud Overview | See the whole business on one page: MRR, revenue, gross profit, growth, customers who pay, servers that pay nothing, machines, capacity used and idle cost. |
 | Billing Health | See the state of billing: run rate, money still to collect, payment success, failed and stuck payments, stuck webhooks, accounting sync failures, held invoices and past due subscriptions. |
-| Billing Day | Watch the monthly run for the month that just closed: invoices drafted and settled, how each settled, failures, run errors, stall signal, run time, time to sync, and run history. |
+| Billing Day | Watch the monthly run for the month that just closed. The top section explains the invoice count: teams by month end, active subscriptions, teams with a subscription, and each team counted once as Invoiced, Waiting, Needs Action, Waived (Internal), Below Minimum, Nothing to Bill or No Subscription. Below it: invoices drafted and settled, how each settled, failed invoices, stall signal, run time, time to sync, and run history. |
 | P&L | See revenue, bare metal cost, gross profit and margin by month, growth, a 6-month forecast, money against credit, and refunds and disputes. |
 | Unit Economics | See bare metal cost against what servers earn, by region, with a drill-down per machine and per team. |
-| Bare Metal Yield | See what the sellable bare metal could earn at the rate card, what it earns, and how much is lost to unsold capacity, servers that pay nothing and discounts. |
+| Bare Metal Yield | See what the sellable bare metal could earn at the rate card, what it earns, and how much is not earned because of unsold capacity, servers used free and discounts, and what servers that pay nothing cost in bare metal. |
+| First Payment | See how many teams try to pay for the first time, how many fail, why they fail, how many recover and how, and which teams are lost. It also shows how invoice payment retries succeed. See [How the first payment is tracked](#how-the-first-payment-is-tracked). |
 
 ## Revenue
 
@@ -63,7 +64,7 @@ Used CPU, memory, disk and bandwidth come from the region's telemetry. Only serv
 | Metal Server Profitability | Is each machine earning its cost? Its whole monthly cost against what its servers pay, with allocated and used CPU and memory. |
 | Free vs Paid Consumption | What do servers that pay nothing cost us? Servers, allocated and used resources, revenue and bare metal cost per machine and who pays. |
 | Bare Metal ROI | Do the hardware economics work? Purchase, running and repair cost to date, revenue earned, gross profit, payback months, ROI, age, downtime and warranty. |
-| Bare Metal Yield | Of what the sellable bare metal could earn, how much does it earn? Potential revenue, cash revenue, yield and the loss to unsold capacity, unpaid servers and discounts, per region or per machine. |
+| Bare Metal Yield | Of what the sellable bare metal could earn, how much does it earn? Potential revenue, cash revenue, yield and the gap to unsold capacity, servers used free and discounts, per region or per machine. Also what servers that pay nothing cost in bare metal. |
 
 ## Capacity
 
@@ -81,10 +82,10 @@ Used CPU, memory, disk and bandwidth come from the region's telemetry. Only serv
 
 - A region's monthly cost is the sum of `cost_per_month_inr` on its Active Metal Servers. A live server carries its vCPUs times the region's cost per vCPU.
 - A metered line costs its quantity times its Resource Type's cost per unit. A service whose Resource Type has no cost shows cost 0.
-- Who pays is checked in this order, and the first match wins: Our Own Team (Tax Profile marked internal), Free Trial (the server runs a free trial site), Paying Customer (an active payment method, bought credit or a paid invoice), Not Paying Yet (anything else).
+- Who pays is checked in this order, and the first match wins: Our Own Team (Billing Profile marked internal), Free Trial (the server runs a free trial site), Paying Customer (an active payment method, bought credit or a paid invoice), Not Paying Yet (anything else).
 - Sellable capacity is physical less the host reserve. vCPUs are then multiplied by the CPU overcommit ratio.
 - Potential revenue prices each sellable vCPU, GiB of memory and GiB of disk at the region's INR component rate card (Resource Types Compute, Memory and Disk). A resource with no INR rate counts at 0.
-- Yield is cash revenue divided by potential revenue. Potential revenue is unsold plus unpaid plus discount plus cash revenue. Unsold is the rate card value that no Central server holds, so platform servers count in it. Unpaid is the rate card value of servers that do not pay. Discount is the rate card value of paying servers less what they pay, and is below 0 when they pay more than the rate card.
+- Yield is cash revenue divided by potential revenue. Potential revenue is unsold plus used free plus discount plus cash revenue. Unsold is the rate card value that no Central server holds, so platform servers count in it. Used free is the rate card value of servers that do not pay. It is revenue we do not earn, not a loss: what those servers cost us is their vCPU share of the metal bill, shown as Cost of Servers That Pay Nothing. On a machine row that share is of the machine's own bill. Discount is the rate card value of paying servers less what they pay, and is below 0 when they pay more than the rate card.
 - Allocated capacity is what Atlas reports for the host, its own platform servers included, when telemetry answers. Otherwise it is the sum of Central's servers placed on the host.
 - A server belongs to a machine when the server's `atlas_host_id` matches the machine's. Atlas sends a server's host in its `vm.state` webhook: when it records the server, when the state changes and when the server moves.
 - Readiness checks R1 (a region with servers but no priced metal) and R2 (a server on no known machine) feed the daily audit and the operator alerts.
@@ -109,8 +110,34 @@ Used CPU, memory, disk and bandwidth come from the region's telemetry. Only serv
 | Credit Wallet Movements | What went in and out of each wallet, and why? |
 | Team Credit Balance | How much credit does each team hold now? |
 | Internal Usage and Waivers | What did our own teams use, and how much was waived? |
-| New Signups | Which teams signed up, and how far did each get: billing profile, payment method, first paid invoice? |
+| New Signups | Which teams signed up, and how far did each get: billing profile, payment method, first payment? A first payment is money the customer paid: an invoice paid by the gateway or by paid-in credit, or a credit top-up. Welcome credit alone does not count. |
 | Trial Sites | How many trial sites started per product and month, how did they end, and what did they cost? |
+
+### How the first payment is tracked
+
+A team tries to pay when it adds a card or mandate, orders credit, or pays an invoice. The First Payment dashboard groups each team by its first try month and puts it in one outcome:
+
+| Outcome | Rule |
+|---|---|
+| Paid first time | The team paid before any failure. |
+| Method added, not billed yet | The team added a working method before any failure, and has not paid yet. |
+| Abandoned setup | The team started a setup, never finished it, and had no failure. |
+| Recovered | The team failed first, then paid within 30 days of the first failure. |
+| Fixed method, not billed yet | The team failed first, then added a working method within 30 days. The dashboard counts it as recovered. |
+| Window still open | The team failed first less than 30 days ago and has not recovered yet. |
+| Lost | The team failed first and did not recover within 30 days. |
+| Not billed directly | The team is internal (Billing Profile marked internal). |
+
+A failure is any of these:
+
+- A card setup that failed at the gateway. The Payment Method keeps the code and adds a `Payment Method Setup Failed` Billing Event.
+- A card check or mandate confirmation that failed. The Payment Method moves to Failed with the code.
+- A declined payment on a Top-up Order. The order keeps the last code and stays open, and each decline adds a `Top-up Order Declined` Billing Event with its code.
+- A failed Payment Attempt on an invoice.
+
+A payment is money the customer paid: an invoice paid by the gateway or by paid-in credit, or a credit top-up. Welcome credit does not count. An invoice payment is dated by the invoice's `paid_at`. A setup that the customer leaves is kept as a Cancelled Payment Method with the reason "setup abandoned".
+
+A month is final 30 days after it ends. Every failure keeps the gateway's failure code and, where the bank gives one, its decline code. Use **Payment methods that failed** and **Declined top-ups** in the dashboard's Detail line to open the records.
 
 ## Billing health
 
@@ -118,3 +145,5 @@ Used CPU, memory, disk and bandwidth come from the region's telemetry. Only serv
 |---|---|
 | Billing Invariant Violations | Which billing rules are broken now? This covers money invariants and readiness checks. Use the Summary view for a count per check. |
 | Webhook Lag | How long do gateway webhooks take from receipt to processing? |
+| Billing Run Coverage | Why does a month have fewer invoices than teams? Each team that existed by month end gets one result with its reason: Invoiced, Waiting, Needs Action, Waived (Internal), Below Minimum, Nothing to Bill or No Subscription. The results add up to the team count. With no Month filter, the report shows the month that just closed, the same month as the Billing Day dashboard. |
+| Billing Activity | What happened to one team across profile, subscription, customer sync, invoice and payment steps, and which step failed? |

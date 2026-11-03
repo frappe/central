@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 from urllib.parse import quote, urlparse
 
 import frappe
@@ -9,15 +10,27 @@ from frappe import _
 
 from central.api.jwks import jwks_document
 from central.api.pilot import get_telemetry_base_url, region_id_of
+from central.billing.catalog.trials import is_trial_plan
 from central.infrastructure.doctype.pilot_credential.pilot_credential import PilotCredential
 from central.infrastructure.doctype.user_mail_account.user_mail_account import UserMailAccount
+from central.integrations.object_storage import ObjectStorageClient, ObjectStorageNotFound
+from central.services.doctype.ai_trial_key.ai_trial_key import AITrialKey
+from central.services.doctype.team_service.team_service import get_bucket_name, get_storage_endpoint_url
 from central.sso import central_url, jwks_url, mint_bench_login, mint_datum_token, mint_site_login
 
 PILOT_TASK_TIMEOUT_SECONDS = 35
+# Metal caps each guest metadata value at 1 KiB. Not checked before a creation: unconfirmed
+# against Metal, and a value this size would already have failed the mail settings. The test on
+# the trial metadata holds pilot-common-site-config under it.
+METADATA_VALUE_BYTES = 1024
 # Minting a session can start a cold Frappe process on the machine. Central waits long
 # enough for that process rather than discarding a session the machine creates later.
 SITE_LOGIN_TIMEOUT_SECONDS = 120
-SITE_PING_TIMEOUT_SECONDS = 4
+# A ping to a booting machine hangs until it times out, and the signup poll waits on it. A short
+# timeout lets the next poll retry instead.
+SITE_PING_TIMEOUT_SECONDS = (0.5, 1.5)
+# A server that a resize just started needs some minutes before its pilot answers.
+PILOT_WAKE_DELAYS_SECONDS = (5, 10, 20, 40, 60, 60, 60)
 
 
 def get_bootstrap_metadata(action) -> dict[str, str]:
@@ -40,7 +53,7 @@ def get_bootstrap_metadata(action) -> dict[str, str]:
 		"initial_jwks_cache": initial_jwks,
 	}
 
-	# Metal caps each metadata value at 1 KiB. Pilot merges pilot-common-config into
+	# Each value stays under METADATA_VALUE_BYTES. Pilot merges pilot-common-config into
 	# common_config.toml and pilot-common-site-config into common_site_config.json at bootstrap.
 	metadata = {"pilot-central": json.dumps(bootstrap)}
 	# Frappe's Pulse telemetry files a site's events under `fc_team`, so the events of a
@@ -50,14 +63,109 @@ def get_bootstrap_metadata(action) -> dict[str, str]:
 	}
 	if mailbox := UserMailAccount.assign(action):
 		common_site_config |= mailbox.get_site_config()
+	# A free trial boots with a Grove key from the pool: AI works before the team holds any key.
+	if trial_key := AITrialKey.assign(action):
+		common_site_config |= trial_key.get_site_config()
 	metadata["pilot-common-site-config"] = json.dumps(common_site_config)
 
+	common_config = {}
+	if action.requested_by:
+		if email := frappe.db.get_value("User", action.requested_by, "email"):
+			common_config["letsencrypt"] = {"email": email}
 	try:
-		metadata["pilot-common-config"] = json.dumps({"telemetry": get_telemetry_configuration(action)})
+		common_config["telemetry"] = get_telemetry_configuration(action)
 	except Exception:
 		action.record_diagnostic(frappe.get_traceback(), "Pilot telemetry configuration failed")
+	if common_config:
+		metadata["pilot-common-config"] = json.dumps(common_config)
+
+	# Pilot merges pilot-config into bench.toml, whose [s3] section holds its backup bucket.
+	if bucket := get_bundled_bucket(action):
+		metadata["pilot-config"] = json.dumps({"s3": bucket})
 
 	return metadata
+
+
+def get_bundled_bucket(action) -> dict | None:
+	"""The [s3] settings when the selected paid plan bundles remote storage."""
+	plan = action.get_configuration().plan
+	if is_trial_plan(plan) or not plan_includes_storage(plan):
+		return None
+
+	return create_bundled_bucket(action.team, action.region, action.server_id)
+
+
+def plan_includes_storage(plan: str | None) -> bool:
+	"""Whether a preset plan bundles a positive remote-storage allowance."""
+	if not plan:
+		return False
+
+	return bool(
+		frappe.db.exists(
+			"Plan Includes",
+			{
+				"parenttype": "Plan",
+				"parent": plan,
+				"resource_type": "Storage",
+				"quantity": [">", 0],
+			},
+		)
+	)
+
+
+def create_bundled_bucket(team: str, region: str, server: str) -> dict | None:
+	"""Create the server's uncapped backup bucket; billing reconciles its usage."""
+	endpoint_url = get_storage_endpoint_url(region)
+	client = ObjectStorageClient.from_region(region)
+	name = get_bucket_name(team, region, server)
+	# Cargo returns credentials only on creation, so a bucket left by an earlier attempt is replaced.
+	# Garage refuses to delete a bucket that holds objects, so a bucket with backups stays.
+	try:
+		client.delete_bucket(name)
+	except ObjectStorageNotFound:
+		pass
+	receipt = client.create_bucket(name, tags={"team": team, "server": server, "bundled": "1"})
+	credentials = receipt["credentials"]
+
+	return {
+		"access_key": credentials["access_key"],
+		"secret_key": credentials["secret_access_key"],
+		"bucket": name,
+		# Pilot signs path-style requests for any provider but AWS, which Garage needs.
+		"provider": "garage",
+		"region": region,
+		"endpoint_url": endpoint_url,
+	}
+
+
+def attach_bundled_bucket(server: str) -> None:
+	"""Give a server that moved off its trial plan its backup bucket, through Pilot's settings."""
+	document = frappe.get_doc("Virtual Machine", server)
+	try:
+		bucket = create_bundled_bucket(document.team, document.region, document.name)
+		if bucket:
+			write_pilot_when_awake(server, "PATCH", "/api/v1/settings", {"s3": bucket})
+	# This job is the worker boundary, so the failure stays on the server for the operator.
+	except Exception:
+		document.log_error(title=f"Backup bucket attach failed: {server}")
+		document.add_comment("Info", _("Central could not attach the backup bucket to this server."))
+
+
+def delete_bundled_bucket(action: str) -> None:
+	"""Delete the bucket of a Pilot creation that failed before it got a server."""
+	# The dispatch holds this lock, so a retry cannot create the bucket while it is deleted.
+	with frappe.cache.lock(f"server-provisioning:{action}", timeout=60, blocking_timeout=60):
+		request = frappe.get_doc("Resource Action", action)
+		if request.server or request.status not in ("Failed", "Timed Out"):
+			return
+		if not plan_includes_storage(request.get_configuration().plan):
+			return
+
+		name = get_bucket_name(request.team, request.region, request.server_id)
+		try:
+			ObjectStorageClient.from_region(request.region).delete_bucket(name)
+		except ObjectStorageNotFound:
+			pass
 
 
 def get_telemetry_configuration(action) -> dict:
@@ -149,6 +257,18 @@ def rename_admin_domain(server: str, base_url: str | None = None, tls: bool = Tr
 	return _request_pilot("POST", server, base_url or expected, "/api/v1/settings/admin-domain", payload)
 
 
+def set_site_primary_domain(server: str, site: str, domain: str) -> dict:
+	"""Attach the customer's primary domain without moving the site's directory."""
+	base_url = _expected_gateway_url(frappe.get_doc("Virtual Machine", server))
+	return _request_pilot(
+		"POST",
+		server,
+		base_url,
+		f"/api/v1/sites/{quote(site, safe='')}/domains",
+		{"domain": domain, "primary": True},
+	)
+
+
 def rename_site(
 	server: str,
 	site: str,
@@ -203,6 +323,17 @@ def get_site_task(server: str, site: str, task_id: str) -> dict:
 	return _request_pilot("GET", server, base_url, path)
 
 
+def get_task(server: str, task_id: str) -> dict:
+	"""Read a bench task even after its site's directory has moved."""
+	base_url = _expected_gateway_url(frappe.get_doc("Virtual Machine", server))
+	task = _request_pilot("GET", server, base_url, f"/api/v1/tasks/{quote(task_id, safe='')}")
+	if not isinstance(task, dict) or task.get("task_id") != task_id:
+		raise ValueError("Pilot returned a different task.")
+	if task.get("status") not in {"queued", "running", "success", "failed", "killed"}:
+		raise ValueError("Pilot returned an invalid task status.")
+	return task
+
+
 def _expected_gateway_url(server) -> str:
 	url = frappe.get_cached_doc("Region", server.region).get_vm_gateway_url(server.ipv6_address)
 	if not url:
@@ -211,7 +342,50 @@ def _expected_gateway_url(server) -> str:
 	return url
 
 
-def _request_pilot(method: str, server: str, base_url: str, path: str, payload: dict | None = None) -> dict:
+def read_pilot(server: str, path: str, params: dict | None = None) -> dict | list | str:
+	"""Read a path of a server's pilot Admin API. A plain text response, such as task output, stays text."""
+	base_url = _expected_gateway_url(frappe.get_doc("Virtual Machine", server))
+	return _request_pilot("GET", server, base_url, path, params=params)
+
+
+def write_pilot(server: str, method: str, path: str, payload: dict | None = None) -> dict | list | str:
+	"""Run a POST, PUT, or PATCH on a path of a server's pilot Admin API."""
+	base_url = _expected_gateway_url(frappe.get_doc("Virtual Machine", server))
+	return _request_pilot(method, server, base_url, path, payload=payload)
+
+
+def write_pilot_when_awake(
+	server: str, method: str, path: str, payload: dict | None = None
+) -> dict | list | str:
+	"""Run `write_pilot`, and wait out a pilot that is still starting. Use it only for a write that
+	is safe to repeat."""
+	for delay in PILOT_WAKE_DELAYS_SECONDS:
+		try:
+			return write_pilot(server, method, path, payload)
+		except (requests.ConnectionError, requests.Timeout):
+			pass
+		except requests.HTTPError as error:
+			if not is_pilot_starting(error.response):
+				raise
+		time.sleep(delay)
+
+	return write_pilot(server, method, path, payload)
+
+
+def is_pilot_starting(response: requests.Response | None) -> bool:
+	"""Whether a refusal comes from a pilot that has not started: the proxy has no backend yet, or
+	Pilot does not accept Central authentication yet."""
+	return response is not None and (response.status_code == 401 or response.status_code >= 500)
+
+
+def _request_pilot(
+	method: str,
+	server: str,
+	base_url: str,
+	path: str,
+	payload: dict | None = None,
+	params: dict | None = None,
+) -> dict | list | str:
 	"""Call a server's pilot as the bench, with a token for its own audience."""
 	audience_id = frappe.db.get_value(
 		"Pilot Credential", {"server": server, "status": "Active"}, "audience_id"
@@ -224,11 +398,14 @@ def _request_pilot(method: str, server: str, base_url: str, path: str, payload: 
 		f"{_gateway_url(base_url)}{path}",
 		headers={"Authorization": f"Bearer {mint_bench_login(audience_id)}"},
 		json=payload,
+		params=params,
 		timeout=PILOT_TASK_TIMEOUT_SECONDS,
 		allow_redirects=False,
 	)
 	response.raise_for_status()
 
+	if response.headers.get("Content-Type", "").startswith("text/plain"):
+		return response.text
 	return response.json()
 
 

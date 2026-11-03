@@ -129,16 +129,11 @@ def get_day_totals(usage: dict) -> list[dict]:
 	return [{"day": day, **fields} for day, fields in totals.items()]
 
 
-def get_models(geography: str | None = None) -> list[dict]:
-	"""What a new key in `geography` (Grove's default when None) starts with: the published
-	models of its default group, what each takes and gives, and the API surfaces it answers on."""
-	return shape_models(GroveClient.from_settings().list_models(geography=geography))
-
-
-def get_key_models(team: str, key: str) -> list[dict]:
-	"""The models Grove lets one key call, as its geography serves them. Grove decides; Central
-	only shows them."""
-	return shape_models(GroveClient.from_settings().list_models(team, key))
+def get_models(team: str, geography: str | None = None) -> list[dict]:
+	"""The published models a key of `team` in `geography` (Grove's default when None) may call,
+	what each takes and gives, and the API surfaces it answers on. Grove decides; Central only
+	shows them."""
+	return shape_models(GroveClient.from_settings().list_models(team=team, geography=geography))
 
 
 def shape_models(rows: list[dict]) -> list[dict]:
@@ -147,6 +142,7 @@ def shape_models(rows: list[dict]) -> list[dict]:
 			"name": row["name"],
 			"provider": row.get("provider"),
 			"model_id": row.get("model_id"),
+			"zero_data_retention": bool(row.get("zero_data_retention")),
 			"input_modalities": row.get("input_modalities", []),
 			"output_modalities": row.get("output_modalities", []),
 			"dialects": row["dialects"],

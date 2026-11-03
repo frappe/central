@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+import time
+
 import frappe
 from frappe import _
 
 from central.billing.catalog.server_plans import get_server_plans
 from central.billing.catalog.trials import trial_plan_names
-from central.iam import get_user_team_names, resolve_team
+from central.iam import can, get_user_team_names, resolve_team
 from central.identity.doctype.team.team import Team
+from central.infrastructure.doctype.blocked_domain.blocked_domain import BlockedDomain, normalize_domain
 from central.integrations.images import list_images
 from central.resource_actions import submit_request
 from central.server_models import DNS_LABEL, SiteCreation
@@ -16,13 +19,11 @@ SIGNUP_FLOW = "Signup"
 # A trial is a site the image already carries, on the Frappe version a signup runs. A
 # product names its own version. The region tags what an image holds, and it matches a tag
 # exactly, so an image that carries no tag is never taken for a yes.
-SIGNUP_IMAGE_TAGS = {"has_site": "1", "frappe_version": "develop"}
+SIGNUP_IMAGE_TAGS = {"has_site": "1", "frappe_version": "version-16-hotfix"}
 # Cargo tags an image with the signup app installed on its site. A product trial asks for
 # its app. A plain trial starts on the bare site, and the region cannot filter on a missing
 # tag, so Central drops tagged images itself.
 SIGNUP_APP_TAG = "app"
-# One DNS label: what a customer may name a site, and all the proxy will route.
-RESERVED_SUBDOMAINS = frozenset({"admin", "atlas", "cargo", "proxy", "site", "www"})
 
 
 def create_trial_site(team: str | None, subdomain: str, request_key: str, product: str) -> dict:
@@ -46,13 +47,18 @@ def create_trial_site(team: str | None, subdomain: str, request_key: str, produc
 	)
 
 
-def create_trial_team(user: str, attribution: dict | None = None) -> str | None:
-	"""Create the first team of a user who starts the trial funnel with none.
+def create_trial_team(user: str, attribution: dict | None = None, team: str | None = None) -> str:
+	"""The team the trial funnel starts the site in.
 
-	The funnel cannot ask for a team name, so the team is named after the user. A
-	user who already has a team keeps it, and nothing is created."""
-	if get_user_team_names(user):
-		return None
+	1. `team`, the console's current team, when the user can create servers there.
+	2. Else the first other team where the user can.
+	3. Else a new team owned by the user. The funnel cannot ask for a name, so it is named
+	   after the user."""
+	if team and can(user, team, "server:create"):
+		return team
+	for name in get_user_team_names(user):
+		if can(user, name, "server:create"):
+			return name
 
 	full_name = frappe.db.get_value("User", user, "full_name") or user
 	team_name = _("{0}'s Team").format(full_name)
@@ -94,12 +100,15 @@ def validated_subdomain(subdomain: str) -> str:
 def subdomain_availability(subdomain: str) -> dict:
 	"""Whether a name is free. It is checked in every trial zone, because the region a trial
 	lands in is chosen only when it is created."""
-	subdomain = (subdomain or "").strip().lower()
+	subdomain = normalize_domain(subdomain)
 	answer = {"subdomain": subdomain}
 
 	if not DNS_LABEL.fullmatch(subdomain):
 		reason = _("Use lowercase letters, numbers and hyphens, starting and ending with one.")
-	elif subdomain in RESERVED_SUBDOMAINS:
+	elif any(
+		BlockedDomain.is_blocked(f"{subdomain}.{frappe.get_cached_value('Region', region, 'proxy_domain')}")
+		for region in trial_regions()
+	):
 		reason = _("That name is reserved. Please choose another.")
 	elif is_subdomain_taken(subdomain):
 		reason = _("That name is taken. Please choose another.")
@@ -156,7 +165,12 @@ def trial_configuration(team: str, product: Product | None = None) -> dict:
 
 		has_plan = True
 		if images := trial_images(team, region, offering, product):
-			newest = max(images, key=lambda image: image["created_at"])
+			minimum_age = frappe.get_cached_doc("Central Settings").signup_image_minimum_age_minutes
+			cutoff = time.time() - minimum_age * 60
+			preferred = (
+				[image for image in images if image["created_at"] <= cutoff] if minimum_age else images
+			)
+			newest = max(preferred or images, key=lambda image: image["created_at"])
 			return {"region": region, "offering": offering, "image_id": newest["id"], "plan": plan}
 
 	if not has_plan:
@@ -166,13 +180,16 @@ def trial_configuration(team: str, product: Product | None = None) -> dict:
 
 def trial_images(team: str, region: str, offering: str, product: Product | None) -> list[dict]:
 	"""The region's trial images with the product's app installed, or with no app at all."""
-	if product:
-		tags = product_image_tags(product)
-		return list_images(team, region, offering, SIGNUP_FLOW, extra_tags=tags)["items"]
+	tags = product_image_tags(product) if product else SIGNUP_IMAGE_TAGS
+	images = []
+	offset = 0
+	while True:
+		page = list_images(team, region, offering, SIGNUP_FLOW, offset=offset, extra_tags=tags)
+		images.extend(page["items"])
+		if (offset := page.get("next_offset")) is None:
+			break
 
-	images = list_images(team, region, offering, SIGNUP_FLOW, extra_tags=SIGNUP_IMAGE_TAGS)["items"]
-
-	return [image for image in images if SIGNUP_APP_TAG not in image["tags"]]
+	return images if product else [image for image in images if SIGNUP_APP_TAG not in image["tags"]]
 
 
 def product_image_tags(product: Product) -> dict[str, str]:
@@ -211,7 +228,7 @@ def get_cheapest_trial_plan(team: str, region: str) -> str | None:
 
 	plans = [
 		row
-		for rows in get_server_plans(team, cluster=region)["plans"].values()
+		for rows in get_server_plans(team, cluster=region, include_trial_plans=True)["plans"].values()
 		for row in rows
 		if row["plan"] in trial_plans
 	]

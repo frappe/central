@@ -3,6 +3,8 @@
 """get_eligible_plans returns the rate card + profile bounds + headroom; provision
 re-validates composition, bounds, and headroom server-side (#83)."""
 
+from unittest.mock import patch
+
 import frappe
 
 from central.billing.api.dashboard.catalog import (
@@ -105,6 +107,13 @@ class TestEligibilityComposed(IntegrationTestCase):
 		set_team_tier(TEAM, max_spend=3400)  # exactly covers the config
 		out = provision_composed_config(GENERAL, "General", CLUSTER, team=TEAM)
 		self.assertEqual(out["locked_rate"], 3400)
+
+	def test_locked_headroom_check_locks_the_billing_profile_first(self):
+		from central.billing.catalog import subscriptions
+
+		with patch.object(frappe.db, "get_value", wraps=frappe.db.get_value) as get_value:
+			subscriptions.enforce_headroom(TEAM, 100, for_update=True)
+		get_value.assert_any_call("Billing Profile", TEAM, "name", for_update=True)
 
 	def test_provision_off_ratio_refused_serverside(self):
 		bad = [

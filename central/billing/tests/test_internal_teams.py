@@ -7,10 +7,17 @@ from unittest.mock import patch
 import frappe
 
 from central.billing.ingester import customer
+from central.billing.payments.provisioning import ensure_tax_profile
 from central.billing.report.internal_usage_and_waivers import internal_usage_and_waivers as report
-from central.billing.revenue import credits, invoicing
+from central.billing.revenue import credits, invoicing, tax
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
-from central.billing.tests.utils import add_segment, make_billing_subscription, make_plan
+from central.billing.tests.utils import (
+	add_segment,
+	complete_billing_profile,
+	ensure_team,
+	make_billing_subscription,
+	make_plan,
+)
 
 TEAM = "team-internal-waiver"
 CLUSTER = "ap-south-1"
@@ -18,12 +25,7 @@ PLAN = "bundle-internal-waiver"
 
 
 def _mark_internal(reason="Platform team's own servers"):
-	values = {"doctype": "Tax Profile", "team": TEAM, "output_tax_type": "GST", "output_tax_rate": 18}
-	doc = (
-		frappe.get_doc("Tax Profile", TEAM)
-		if frappe.db.exists("Tax Profile", TEAM)
-		else frappe.get_doc(values)
-	)
+	doc = frappe.get_doc("Billing Profile", TEAM)
 	doc.is_internal = 1
 	doc.internal_reason = reason
 	doc.save(ignore_permissions=True)
@@ -60,6 +62,13 @@ class TestInternalTeams(IntegrationTestCase):
 			(invoice.status, invoice.output_tax_amount, invoice.credit_applied), ("Waived", 0, 0)
 		)
 		self.assertEqual(credits.get_balance(TEAM, "INR")["balance"], 500)
+
+	def test_internal_team_is_untaxed_even_with_a_tax_profile(self):
+		ensure_tax_profile(TEAM)
+		frappe.db.set_value("Tax Profile", TEAM, {"output_tax_type": "GST", "output_tax_rate": 18})
+		_mark_internal()
+
+		self.assertEqual(tax.resolve_tax(TEAM, 1000)["output_tax_amount"], 0)
 
 	def test_internal_team_is_not_sent_to_accounting(self):
 		_mark_internal()
@@ -133,7 +142,7 @@ class TestInternalTeams(IntegrationTestCase):
 		with patch.object(frappe, "get_doc", side_effect=collector_wins_the_race):
 			_mark_internal()
 
-		self.assertEqual(frappe.db.get_value("Invoice", open_invoice, "status"), "Open")
+		self.assertEqual(frappe.db.get_value("Invoice", open_invoice, "status"), "Outstanding")
 
 	def _payment_attempt(self, invoice):
 		return frappe.get_doc(
@@ -155,7 +164,8 @@ class TestInternalTeams(IntegrationTestCase):
 					"doctype": "Invoice",
 					"team": TEAM,
 					"invoice_type": "Billable",
-					"status": "Open",
+					"status": "Outstanding",
+					"due_date": "2026-12-31",
 					"period_start": "2026-07-01",
 					"period_end": "2026-07-31",
 					"currency": "INR",
@@ -167,3 +177,19 @@ class TestInternalTeams(IntegrationTestCase):
 			.insert(ignore_permissions=True)
 			.name
 		)
+
+
+class TestInternalFlagGuard(IntegrationTestCase):
+	def test_a_customer_cannot_mark_their_own_team_internal(self):
+		ensure_team(TEAM)
+		complete_billing_profile(TEAM)
+		doc = frappe.get_doc("Billing Profile", TEAM)
+		doc.is_internal = 1
+		doc.internal_reason = "Free servers"
+
+		with patch(
+			"central.billing.doctype.billing_profile.billing_profile.user_has_operator_bypass",
+			return_value=False,
+		):
+			with self.assertRaises(frappe.PermissionError):
+				doc.save(ignore_permissions=True)

@@ -9,6 +9,7 @@ from frappe.model.document import Document
 
 from central.billing.catalog.subscriptions import team_active_segments
 from central.billing.india_gst import GST_STATE_CODES, INDIA
+from central.iam import user_has_operator_bypass
 
 # Once a team has been invoiced, these are frozen: invoices are denominated in the
 # currency and taxed by the country in force when they were issued, so changing
@@ -20,6 +21,11 @@ _TIER_FIELDS = ("trust_tier_level", "override_max_spend")
 
 # GSTIN: 2-digit state + 10-char PAN + entity digit + 'Z' + checksum char.
 GSTIN_RE = re.compile(r"^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$")
+# A phone the gateways accept: 8 to 15 digits with an optional leading +. An Indian
+# mobile is 10 digits that start with 6 to 9, optionally after +91 or 91.
+PHONE_RE = re.compile(r"^\+?[0-9]{8,15}$")
+INDIAN_MOBILE_RE = re.compile(r"^(?:\+?91)?[6-9][0-9]{9}$")
+_SYSTEM_SAVEPOINT = "billing_profile_system_save"
 REQUIRED_FIELDS = ("currency", "legal_name", "address_line1", "city", "country")
 FIELD_LABELS = {
 	"currency": "currency",
@@ -32,6 +38,32 @@ FIELD_LABELS = {
 
 def validate_gstin(gstin: str) -> bool:
 	return bool(GSTIN_RE.match((gstin or "").strip().upper()))
+
+
+def usable_phone(phone: str, country: str | None) -> str | None:
+	"""The phone with spaces, brackets and dashes removed, or None when the gateways would refuse it."""
+	phone = re.sub(r"[\s()-]", "", phone)
+	return phone if _phone_pattern(country).match(phone) else None
+
+
+def normalize_phone(phone: str, country: str | None) -> str:
+	"""The phone with spaces, brackets and dashes removed. Throws when the gateways would refuse it."""
+	if usable := usable_phone(phone, country):
+		return usable
+	frappe.throw(
+		_("Enter a 10-digit mobile number.")
+		if _is_india(country)
+		else _("Enter a phone number of 8 to 15 digits, with the country code."),
+		frappe.ValidationError,
+	)
+
+
+def _phone_pattern(country: str | None) -> re.Pattern:
+	return INDIAN_MOBILE_RE if _is_india(country) else PHONE_RE
+
+
+def _is_india(country: str | None) -> bool:
+	return (country or "").strip() == INDIA
 
 
 def get_team_currency(team: str) -> str:
@@ -105,6 +137,8 @@ class BillingProfile(Document):
 		gst_status: DF.Literal["", "Active", "Inactive", "Suspended", "Cancelled", "Invalid"]
 		gst_status_checked_at: DF.Datetime | None
 		gst_status_retry_after: DF.Datetime | None
+		internal_reason: DF.SmallText | None
+		is_internal: DF.Check
 		gstin: DF.Data | None
 		legal_name: DF.Data | None
 		manual_override: DF.Check
@@ -124,6 +158,7 @@ class BillingProfile(Document):
 	# end: auto-generated types
 
 	def validate(self):
+		self.validate_phone()
 		self.validate_gstin()
 		self.validate_india_state()
 		self.lock_country_and_currency_after_invoicing()
@@ -131,12 +166,34 @@ class BillingProfile(Document):
 		self.keep_mandates_in_the_billing_currency()
 		self.pin_tier_set_by_hand()
 		self.sync_tier_fields()
+		self.validate_internal_flag()
+
+	def after_insert(self):
+		from central.billing.states import record_event
+
+		record_event(self, "Billing Profile Created")
 
 	def on_update(self):
+		self.apply_internal_flag_change()
+		# Before held invoices are released: releasing re-taxes them from the Tax Profile.
+		self.apply_output_tax_on_country_change()
 		self.release_held_invoices()
 		self.refresh_gst_status_on_change()
 		self.enqueue_profile_sync()
 		self.apply_tier_change()
+
+	def save_as_system(self, action: str) -> None:
+		"""Save a change billing code makes for `action`. A stored field that no longer passes
+		validation, such as an old GSTIN, is logged for an operator and does not fail the caller."""
+		frappe.db.savepoint(_SYSTEM_SAVEPOINT)
+		try:
+			# Billing code makes this change for the system; the caller checked its own permission.
+			self.save(ignore_permissions=True)
+		except frappe.ValidationError:
+			frappe.db.rollback(save_point=_SYSTEM_SAVEPOINT)
+			frappe.log_error(title=f"Billing Profile {self.name} not saved: {action}")
+			return
+		frappe.db.release_savepoint(_SYSTEM_SAVEPOINT)
 
 	def validate_currency_matches_country(self):
 		"""India is billed only in INR, and only India is billed in INR."""
@@ -198,6 +255,33 @@ class BillingProfile(Document):
 		if not self.manual_override:
 			self.override_max_spend = 0
 
+	def validate_internal_flag(self):
+		"""1. Only an operator changes the flag, because it waives the team's invoices.
+		2. An internal team states why."""
+		before = self.get_doc_before_save()
+		is_changed = bool(self.is_internal) != bool(before and before.is_internal)
+		if is_changed and not user_has_operator_bypass():
+			frappe.throw(_("Only an operator can mark a team as internal."), frappe.PermissionError)
+		if self.is_internal and not (self.internal_reason or "").strip():
+			frappe.throw(_("Write why this team is internal."), frappe.ValidationError)
+
+	def apply_internal_flag_change(self):
+		"""Log who marked or cleared the team as internal, and why. A new internal team's unpaid invoices are waived."""
+		before = self.get_doc_before_save()
+		if bool(self.is_internal) == bool(before and before.is_internal):
+			return
+
+		from central.billing.revenue.invoicing.lifecycle import waive_for_internal_team
+		from central.billing.states import record_event
+
+		record_event(
+			self,
+			"Internal Team Marked" if self.is_internal else "Internal Team Cleared",
+			reason=self.internal_reason,
+		)
+		if self.is_internal:
+			waive_for_internal_team(self.team)
+
 	def apply_tier_change(self):
 		"""Re-check mandate ceilings against the new cap and log who moved the tier."""
 		before = self.get_doc_before_save()
@@ -218,6 +302,16 @@ class BillingProfile(Document):
 			reason=self.promotion_basis,
 			amount=self.override_max_spend,
 		)
+
+	def apply_output_tax_on_country_change(self):
+		"""The output tax follows the country, so a corrected signup country is taxed right."""
+		if not (self.has_value_changed("country") or self.has_value_changed("currency")):
+			return
+		if not frappe.db.exists("Tax Profile", self.team):
+			return  # created with the right values when the profile is provisioned
+		from central.billing.payments.provisioning import apply_output_tax_for_country
+
+		apply_output_tax_for_country(self.team)
 
 	def refresh_gst_status_on_change(self):
 		"""A new GSTIN starts with no status and is looked up in the background."""
@@ -265,6 +359,14 @@ class BillingProfile(Document):
 			),
 			frappe.ValidationError,
 		)
+
+	def validate_phone(self):
+		"""Razorpay refuses a mandate debit without a valid contact, so a phone it would
+		refuse is caught here, where the customer can correct it. Only a phone being set is
+		checked, so a stored one never blocks the system's own saves of the profile."""
+		if not self.phone or not (self.is_new() or self.has_value_changed("phone")):
+			return
+		self.phone = normalize_phone(self.phone, self.country)
 
 	def validate_gstin(self):
 		if not self.gstin:

@@ -8,7 +8,14 @@ import {
 	MobileNavItem,
 	ToastProvider,
 } from 'frappe-ui'
-import { computed, defineAsyncComponent, ref, watch } from 'vue'
+import {
+	computed,
+	defineAsyncComponent,
+	onUnmounted,
+	ref,
+	watch,
+	watchEffect,
+} from 'vue'
 import { useRoute } from 'vue-router'
 import ErrorAlertHost from '@/components/common/ErrorAlertHost.vue'
 import ImpersonationBanner from '@/components/navigation/ImpersonationBanner.vue'
@@ -25,7 +32,7 @@ import {
 	searchOpen,
 	useSearchShortcut,
 } from '@/composables/useSearch'
-import { useSession } from '@/composables/useSession'
+import { useSession, useTeamRemovalRealtime } from '@/composables/useSession'
 import { useSettingsShortcut } from '@/composables/useSettings'
 import { teamSwitcherOpen } from '@/composables/useTeamSwitcher'
 
@@ -35,6 +42,7 @@ const SearchDialog = defineAsyncComponent(
 const searchMounted = ref(false)
 
 useNotificationsRealtime()
+useTeamRemovalRealtime()
 const { isActiveTeamSuspended } = useSession()
 useSearchShortcut()
 useSettingsShortcut()
@@ -66,6 +74,19 @@ watch(isMobile, (mobile) => {
 const breadcrumbs = computed(
 	() => items.value ?? [{ label: (route.meta.title as string) ?? '' }],
 )
+
+const appTitle = document.title
+watchEffect(() => {
+	document.title = [
+		...breadcrumbs.value.map((item) => item.label).reverse(),
+		appTitle,
+	]
+		.filter(Boolean)
+		.join(' · ')
+})
+onUnmounted(() => {
+	document.title = appTitle
+})
 </script>
 
 <template>

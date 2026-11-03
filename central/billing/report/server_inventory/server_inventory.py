@@ -7,6 +7,7 @@ from frappe import _
 
 from central.billing.report._currency import split_currency_columns
 from central.billing.report._inventory import FREE_CREDITS, FUNDING_CLASSES, INTERNAL, PAID, TRIAL, Inventory
+from central.billing.report._paging import first_rows
 
 MONEY_FIELDS = ("list_rate", "revenue")
 
@@ -17,7 +18,9 @@ def execute(filters: dict | None = None):
 	inventory = Inventory(filters)
 	rows = [_row(server) for server in inventory.servers if _matches(server, filters)]
 	columns = split_currency_columns(get_columns(), rows, MONEY_FIELDS)
-	return columns, rows, get_message(rows), get_chart(rows), get_summary(rows)
+	chart, summary = get_chart(rows), get_summary(rows)
+	rows, message = first_rows(rows, get_message(rows))
+	return columns, rows, message, chart, summary
 
 
 def _matches(server, filters: dict) -> bool:

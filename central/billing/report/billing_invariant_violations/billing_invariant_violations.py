@@ -6,6 +6,7 @@ from frappe import _
 
 from central.billing.platform import invariants, readiness
 from central.billing.report._currency import split_currency_columns
+from central.billing.report._paging import first_rows
 
 KINDS = {"Money": invariants.CHECKS, "Readiness": readiness.CHECKS}
 
@@ -63,7 +64,8 @@ def execute(filters: dict | None = None):
 	# Splits expected/actual/drift into one column per currency when the run spans more
 	# than one, and drops the standalone currency column. Mutates `rows` in place.
 	columns = split_currency_columns(_columns(), rows, ("expected", "actual", "drift"))
-	return columns, rows, _message(rows), _chart(violations)
+	rows, message = first_rows(rows, _message(rows))
+	return columns, rows, message, _chart(violations)
 
 
 def _summary(violations: list, selected: dict):

@@ -5,6 +5,7 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
+from central.infrastructure.doctype.blocked_domain.blocked_domain import BlockedDomain, normalize_domain
 from central.signups.funnel import capture_trial_event
 
 if TYPE_CHECKING:
@@ -26,10 +27,13 @@ class Site(Document):
 		from frappe.types import DF
 
 		claimed_at: DF.Datetime | None
+		conversion_plan: DF.Link | None
 		product: DF.Link | None
 		ready_at: DF.Datetime | None
+		rename_completed_at: DF.Datetime | None
 		rename_diagnostic: DF.Code | None
 		rename_error: DF.SmallText | None
+		rename_status: DF.Literal["", "queued", "running", "success", "failed", "killed"]
 		rename_task: DF.Data | None
 		renamed_at: DF.Datetime | None
 		server: DF.Link
@@ -127,6 +131,16 @@ class Site(Document):
 
 		Trial(self).start()
 
+	def validate(self) -> None:
+		if self.has_value_changed("site_name"):
+			BlockedDomain.validate_assignment(self.site_name)
+		if self.subdomain and (self.has_value_changed("subdomain") or self.has_value_changed("site_name")):
+			self.subdomain = normalize_domain(self.subdomain)
+			BlockedDomain.validate_assignment(self.rename_target)
+
+	def before_rename(self, old_name: str, new_name: str, merge: bool = False) -> None:
+		BlockedDomain.validate_assignment(new_name)
+
 	def after_insert(self) -> None:
 		from central.signups.trial import Trial
 
@@ -159,6 +173,8 @@ class Site(Document):
 		"""Record the first successful login handoff and schedule the optional rename."""
 		if not self.claimed_at:
 			self.db_set("claimed_at", frappe.utils.now_datetime())
+			# db_set writes no Version, and the activity feed reads Versions.
+			self.save_version()
 			capture_trial_event("trial_claimed", self.team, self.product, user=frappe.session.user)
 
 		self.enqueue_subdomain_rename()
@@ -210,11 +226,16 @@ class Site(Document):
 		)
 
 	def apply_subdomain(self) -> None:
-		"""Rename the bench onto the customer's chosen name, once. It returns when Pilot accepts
-		the rename, and both hostnames serve until it finishes."""
+		"""Submit the site rename without waiting for Pilot to finish it."""
 		from central.integrations.pilot import rename_site
 
 		if not self.subdomain or self.rename_task:
+			return
+
+		try:
+			BlockedDomain.validate_assignment(self.rename_target)
+		except frappe.ValidationError as exception:
+			self.record_rename_failure(str(exception), frappe.get_traceback(with_context=False))
 			return
 
 		try:
@@ -235,7 +256,40 @@ class Site(Document):
 			)
 			return
 
-		self.db_set({"rename_task": task_id, "rename_error": None, "rename_diagnostic": None})
+		self.db_set(
+			{
+				"rename_task": task_id,
+				"rename_status": "queued",
+				"rename_completed_at": None,
+				"rename_error": None,
+				"rename_diagnostic": None,
+			}
+		)
+
+	def record_rename_status(self) -> None:
+		"""Record Pilot's rename outcome without waiting in the signup request."""
+		from central.integrations.pilot import get_task
+
+		if not self.rename_task or self.rename_status not in {"queued", "running"}:
+			return
+		task_id = self.rename_task
+		task = get_task(self.server, task_id)
+
+		updates = {"rename_status": task["status"]}
+		if task["status"] == "success":
+			updates.update(
+				rename_completed_at=frappe.utils.now_datetime(), rename_error=None, rename_diagnostic=None
+			)
+		elif task["status"] in {"failed", "killed"}:
+			updates.update(
+				rename_error=_("Pilot did not complete the site rename. Inspect the task in Pilot."),
+				rename_diagnostic=frappe.as_json(task.get("failure")),
+			)
+		frappe.db.set_value(
+			"Site",
+			{"name": self.name, "rename_task": task_id, "rename_status": ["in", ["queued", "running"]]},
+			updates,
+		)
 
 	def record_rename_failure(self, reason: str, diagnostic: str) -> None:
 		"""Keep a safe reason and the operator diagnostic on the Site."""
@@ -273,6 +327,20 @@ class Site(Document):
 		frappe.only_for("System Manager")
 		Trial(self).end(frappe.utils.getdate())
 		self.add_comment("Info", _("{0} ended the trial.").format(frappe.session.user))
+
+	@frappe.whitelist(methods=["POST"])
+	def convert_trial(self) -> None:
+		"""Operator action: convert an open trial without a payment method. The plan must still
+		fit the team's spending limit."""
+		from central.signups.trial import Trial
+
+		frappe.only_for("System Manager")
+		trial = Trial(self)
+		if not trial.is_open:
+			frappe.throw(_("This site has no open trial."))
+		if not trial.convert_within_limit():
+			frappe.throw(self.trial_error)
+		self.add_comment("Info", _("{0} converted the trial.").format(frappe.session.user))
 
 	@frappe.whitelist(methods=["POST"])
 	def retry_trial_step(self) -> None:
@@ -339,10 +407,9 @@ class Site(Document):
 		return frappe.db.get_value("Product", product, "landing_route") if product else None
 
 	def get_pilot_site_names(self) -> list[str]:
-		"""The names the bench may know this site by, the most likely first. A requested rename
-		changes the bench's name for it before Central sees the new address answer."""
+		"""Try the stable image name first, then the name of a previously renamed site."""
 		return (
-			[self.rename_target, IMAGE_SITE_NAME]
+			[IMAGE_SITE_NAME, self.rename_target]
 			if self.subdomain and self.rename_task
 			else [IMAGE_SITE_NAME]
 		)
@@ -400,6 +467,23 @@ def record_ready_sites() -> None:
 			frappe.db.commit()  # nosemgrep: frappe-manual-commit -- keep each site's readiness if a later probe fails
 
 
+def poll_site_renames() -> None:
+	"""Record pending rename outcomes without one failed check stopping the rest."""
+	for name in frappe.get_all(
+		"Site",
+		filters={"rename_status": ["in", ["queued", "running"]], "server.status": "Running"},
+		pluck="name",
+	):
+		try:
+			frappe.get_doc("Site", name).record_rename_status()
+			frappe.db.commit()  # nosemgrep: frappe-manual-commit -- preserve each observed outcome
+		except Exception:
+			frappe.db.rollback()
+			frappe.log_error(
+				title="Could not read Pilot rename task", reference_doctype="Site", reference_name=name
+			)
+
+
 def on_host(url: str, host: str, path: str | None = None) -> str:
 	"""The same request on another host, and on `path` when given. The scheme is always
 	https, because the public name exists only behind the regional proxy, which terminates
@@ -425,5 +509,6 @@ def on_doctype_update():
 	# The fleet reads a team's sites, then drops the machine each one already stands for.
 	frappe.db.add_index("Site", ["team", "server"])
 	frappe.db.add_index("Site", ["product"])
+	frappe.db.add_index("Site", ["rename_status", "modified"])
 	# The daily trial job reads trials by state and the day they end.
 	frappe.db.add_index("Site", ["trial_state", "trial_ends_on"])

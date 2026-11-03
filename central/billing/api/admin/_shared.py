@@ -9,7 +9,7 @@ active-price-lock / plan-rate lookups the aggregates are built from.
 import frappe
 
 AGING_BUCKETS = [("0-7", 0, 7), ("8-15", 8, 15), ("16-30", 16, 30), ("30+", 31, 10**9)]
-_BILLABLE_LIVE = ("Open", "Paid", "Overdue")
+_BILLABLE_LIVE = ("Outstanding", "Paid", "Overdue")
 # Teams bill in mixed currencies; normalise revenue to INR for one comparable axis.
 _FX_TO_INR = {"INR": 1.0, "USD": 83.0}
 _MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]

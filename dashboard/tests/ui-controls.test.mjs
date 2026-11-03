@@ -312,6 +312,7 @@ test('invitation dismissal has no extra close button and is blocked while sendin
 				teamParams: () => ({ team: 'test-team' }),
 			},
 			'@/composables/useRegions': { useRegions: () => ({ regions: ref([]) }) },
+			'@/lib/resourceScope': { getResourceOptions: () => [] },
 			'@/composables/useBulkInvite': {
 				ALL_RESOURCES: '*',
 				useBulkInvite: () => ({

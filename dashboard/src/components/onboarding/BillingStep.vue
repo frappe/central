@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import BillingCountryField from '@/components/billing/BillingCountryField.vue'
 import PaymentMethodFlow from '@/components/billing/PaymentMethodFlow.vue'
+import TrialBillingBanner from '@/components/billing/TrialBillingBanner.vue'
 import { useBillingSetup } from '@/composables/useBillingSetup'
 import { money } from '@/lib/format'
 import type { WelcomeCredit } from '@/types/billing'
@@ -75,6 +76,7 @@ defineExpose({
 
 <template>
 	<div class="space-y-5">
+		<TrialBillingBanner :link-to-upgrade="false" />
 		<BillingCountryField v-if="!hasMethod" />
 		<div
 			v-if="hasMethod"

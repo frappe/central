@@ -9,9 +9,10 @@ test('A trial server asks for a payment method', async ({ page, trials }) => {
 	await openChangePlan(page, trial.audience)
 
 	const dialog = page.getByRole('dialog')
-	await expect(dialog.getByText('Upgrade your site')).toBeVisible()
+	await expect(dialog.getByText('Upgrade from free trial')).toBeVisible()
 	await expect(dialog.getByText('Your free trial ends in 5 days')).toBeVisible()
-	await expect(dialog.getByText('Add a payment method to keep this site and choose a bigger plan.')).toBeVisible()
+	await expect(dialog.getByText(/Add a payment method to keep this site on the .+ plan\. You can choose a bigger plan next\./)).toBeVisible()
+	await expect(dialog.getByText(/Billing starts today at .+ a month/)).toBeVisible()
 	await expect(dialog.getByRole('button', { name: 'Add payment method' })).toBeVisible()
 })
 
@@ -48,7 +49,7 @@ test('A card leaves an ended trial stopped and offers to keep it', async ({ page
 
 	const dialog = page.getByRole('dialog')
 	await expect(dialog.getByText('Your free trial has ended')).toBeVisible()
-	await expect(dialog.getByText(/Keep it before .+ to start it again on its paid plan/)).toBeVisible()
+	await expect(dialog.getByText(/Keep it before .+ to start it again on the .+ plan/)).toBeVisible()
 	await expect(dialog.getByRole('button', { name: 'Keep this site' })).toBeVisible()
 	await expect(dialog.getByRole('button', { name: 'Add payment method' })).toHaveCount(0)
 })
@@ -72,4 +73,17 @@ test('A server with a resize in progress cannot change plan again', async ({ pag
 
 	await expect(page.getByText("This server can't be resized right now.")).toBeVisible()
 	await expect(page.getByRole('dialog')).toHaveCount(0)
+})
+
+test('Billing opens the trial Upgrade dialog in place', async ({ page, trials }) => {
+	await trials.start({ trialState: 'Active' })
+
+	await page.goto('/dashboard/billing')
+
+	await expect(page.getByText('Your account is on a free trial')).toBeVisible()
+	await expect(page.getByText(/Adding a payment method ends the free trial today/)).toBeVisible()
+	await page.getByRole('button', { name: 'Upgrade site' }).click()
+
+	await expect(page.getByRole('dialog').getByText('Upgrade from free trial')).toBeVisible()
+	await expect(page).toHaveURL(/\/dashboard\/billing$/)
 })

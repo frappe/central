@@ -81,11 +81,21 @@
 			<div class="spinner" role="status" aria-label="Signing you in"></div>
 			<div class="text">
 				<div class="title">Signing you in</div>
-				<!-- reminder to be tasteful (xD) -->
-				<div class="subtitle">
-					Brewing your site to get you started…
-				</div>
+				<div class="subtitle">Running preflight checks…</div>
 			</div>
 		</div>
+		<script>
+			const messages = [
+				'Filing the flight plan…',
+				'Running preflight checks…',
+				'Warming up the engines…',
+				'Taxiing to the runway…',
+				'Waiting for clearance…',
+				'Getting ready for takeoff…',
+				'Brewing your coffee…',
+			]
+			document.querySelector('.subtitle').textContent =
+				messages[Math.floor(Math.random() * messages.length)]
+		</script>
 	</body>
 </html>

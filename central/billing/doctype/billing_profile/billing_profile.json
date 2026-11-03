@@ -34,6 +34,10 @@
   "gst_category",
   "gst_status_checked_at",
   "gst_status_retry_after",
+  "section_break_internal",
+  "is_internal",
+  "column_break_internal",
+  "internal_reason",
   "section_break_settings",
   "min_balance",
   "collection_mode",
@@ -150,6 +154,33 @@
    "fieldname": "gstin",
    "fieldtype": "Data",
    "label": "GSTIN"
+  },
+  {
+   "fieldname": "section_break_internal",
+   "fieldtype": "Section Break",
+   "label": "Internal Team"
+  },
+  {
+   "default": "0",
+   "fieldname": "is_internal",
+   "fieldtype": "Check",
+   "label": "Internal Team",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "search_index": 1,
+   "description": "A team the company runs for itself. It is not held to its trust tier or credits, its invoices are waived instead of collected, and it is never sent to the accounting system."
+  },
+  {
+   "fieldname": "column_break_internal",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "internal_reason",
+   "fieldtype": "Small Text",
+   "label": "Why Internal",
+   "depends_on": "eval:doc.is_internal",
+   "mandatory_depends_on": "eval:doc.is_internal",
+   "description": "Who approved it and what the team is for."
   },
   {
    "fieldname": "section_break_settings",

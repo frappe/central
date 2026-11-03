@@ -36,6 +36,9 @@ export interface ServerSSHKey {
 export interface ServerOverview {
 	server: VirtualMachineRow & {
 		creation: string
+		/** Null for a server that Central discovered rather than created. */
+		created_by: string | null
+		created_by_name: string | null
 		plan_title: string | null
 		plan_rate: number | null
 		plan_currency: string | null
@@ -47,6 +50,7 @@ export interface ServerOverview {
 		is_firewall_enabled: 0 | 1
 		is_termination_protected: 0 | 1
 		has_ipv4_internet: 0 | 1
+		has_wireguard_access: 0 | 1
 		/** Null until Central first reads the firewall from the region. */
 		firewall_rules: FirewallRules | null
 		/** Set only for a System Manager. */
@@ -59,6 +63,7 @@ export interface ServerOverview {
 			display_name: string | null
 			provider: string | null
 			country_code: string | null
+			has_wireguard_gateway: 0 | 1
 		}
 	}
 }

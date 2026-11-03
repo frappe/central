@@ -5,6 +5,8 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
+from central.billing.states import record_event
+
 
 class Subscription(Document):
 	# begin: auto-generated types
@@ -31,6 +33,7 @@ class Subscription(Document):
 		vm_snapshot: DF.Link | None
 		public_ip_server: DF.Link | None
 		start_date: DF.Date | None
+		stopped_for_nonpayment: DF.Check
 		sub_category: DF.Link | None
 		team: DF.Link
 	# end: auto-generated types
@@ -133,13 +136,9 @@ class Subscription(Document):
 	def after_insert(self):
 		"""Log a 'Created' Subscription Change, with a rate snapshot, on insert.
 
-		The segment opens at the subscription's start_date (when billing begins),
-		not the wall-clock insert time, so a backdated subscription bills its real
-		period."""
+		The segment opens when the subscription starts (see `_opening_time`)."""
 		rate, currency = self.flags.opening_quote or self.resolve_rate_snapshot()
-		effective_at = (
-			frappe.utils.get_datetime(self.start_date) if self.start_date else frappe.utils.now_datetime()
-		)
+		effective_at = self._opening_time()
 		frappe.get_doc(
 			{
 				"doctype": "Subscription Change",
@@ -152,6 +151,15 @@ class Subscription(Document):
 				"changed_by": frappe.session.user,
 			}
 		).insert(ignore_permissions=True)
+		record_event(self, "Subscription Created", reason=self.plan)
+
+	def _opening_time(self):
+		"""Now for a subscription that starts today, so a server that runs a few hours bills
+		those hours and not the hours since midnight. A backdated start opens at its date."""
+		now = frappe.utils.now_datetime()
+		if not self.start_date or frappe.utils.getdate(self.start_date) == now.date():
+			return now
+		return frappe.utils.get_datetime(self.start_date)
 
 	def on_update(self):
 		# on_update fires during the initial insert too; after_insert already logs the
@@ -160,6 +168,27 @@ class Subscription(Document):
 		# composition) — a payment-method or standing edit is not a price event.
 		if not self.flags.in_insert and self._billing_segment_changed():
 			self.log_plan_change()
+		self.sync_customer_once_active()
+		self.record_change_event()
+
+	def record_change_event(self):
+		"""Keep subscription changes in the billing activity."""
+		if not self.get_doc_before_save():
+			return
+		if self.has_value_changed("enabled"):
+			record_event(
+				self, "Subscription Enabled" if self.enabled else "Subscription Disabled", reason=self.plan
+			)
+		elif self.has_value_changed("plan"):
+			record_event(self, "Subscription Plan Changed", reason=self.plan)
+
+	def sync_customer_once_active(self):
+		"""An enabled subscription is what makes a team a customer in the accounting system."""
+		if not self.enabled or not self.has_value_changed("enabled"):
+			return
+		from central.billing.ingester.customer import enqueue_for
+
+		enqueue_for(self.team)
 
 	def _billing_segment_changed(self) -> bool:
 		"""Whether this save opens a new billing segment (a re-lock, #82)."""
@@ -273,3 +302,8 @@ def on_doctype_update() -> None:
 	# Run rate, the billing run and the inventory reports look subscriptions up by server and state.
 	frappe.db.add_index("Subscription", ["server_id"])
 	frappe.db.add_index("Subscription", ["enabled", "account_standing"])
+	# Every server state report looks up the public IP and snapshot subscriptions of its server,
+	# and a metered report the subscription of its subject.
+	frappe.db.add_index("Subscription", ["public_ip_server"])
+	frappe.db.add_index("Subscription", ["vm_snapshot"])
+	frappe.db.add_index("Subscription", ["service_subject"])

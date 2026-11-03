@@ -10,6 +10,7 @@ import frappe
 import requests
 
 from central.billing import settings
+from central.billing.payments import decline
 from central.billing.platform import invariants, metrics
 
 # A webhook we failed to process is a settlement we have not applied. An hour is long
@@ -43,11 +44,8 @@ def stale_attempts() -> list[dict]:
 			"team": a.team,
 			"detail": f"{a.status} since {a.initiated_at}",
 		}
-		for a in frappe.get_all(
-			"Payment Attempt",
-			filters={"status": ["in", invariants.IN_FLIGHT], "initiated_at": ["<", cutoff]},
-			fields=["name", "team", "status", "initiated_at"],
-			limit=100,
+		for a in invariants.unheld_attempts_in_flight(
+			cutoff, ["name", "team", "status", "initiated_at"], limit=100
 		)
 	]
 
@@ -107,11 +105,15 @@ def held_invoices() -> list[dict]:
 	accounting records that never synced, or a GSTIN never checked.
 
 	This is money we are not collecting on resources that are still running, and
-	nothing else surfaces it: the invoice stays Draft, so dunning never sees it.
+	nothing else surfaces it: the invoice has no due date, so dunning never sees it.
 	"""
 	from central.billing.revenue.invoicing.lifecycle import held_drafts
 
-	cutoff = frappe.utils.add_days(frappe.utils.nowdate(), -settings.billing_details_grace_days())
+	# A customer may take time over billing details. A failed sync or GSTIN check is ours to fix.
+	details_cutoff = frappe.utils.getdate(
+		frappe.utils.add_days(frappe.utils.nowdate(), -settings.billing_details_grace_days())
+	)
+	yesterday = frappe.utils.add_days(frappe.utils.nowdate(), -1)
 	return [
 		{
 			"alert": "held_invoice",
@@ -120,24 +122,78 @@ def held_invoices() -> list[dict]:
 			"team": i.team,
 			"detail": f"{i.currency} {i.total} still unissued ({i.hold_reason or 'not opened'}), period closed {i.period_end}",
 		}
-		for i in held_drafts(held_before=cutoff, limit=100)
+		for i in held_drafts(held_before=yesterday, limit=100)
+		if i.hold_reason != "Billing Details" or frappe.utils.getdate(i.period_end) <= details_cutoff
 	]
 
 
+def suspended_servers_running() -> list[dict]:
+	"""Servers dunning suspended but could not stop. The team is not paying for them."""
+	sub = frappe.qb.DocType("Subscription")
+	vm = frappe.qb.DocType("Virtual Machine")
+	rows = (
+		frappe.qb.from_(sub)
+		.join(vm)
+		.on(sub.server_id == vm.name)
+		.select(sub.name, sub.team, sub.server_id)
+		.where((sub.account_standing == "Suspended") & (vm.status == "Running"))
+		.limit(100)
+	).run(as_dict=True)
+	return [
+		{
+			"alert": "suspended_server_running",
+			"doctype": "Subscription",
+			"subject": r.name,
+			"team": r.team,
+			"detail": f"Server {r.server_id} is suspended for non-payment but still running",
+		}
+		for r in rows
+	]
+
+
+def termination_due() -> list[dict]:
+	"""Overdue invoices past the termination day. A person decides; nothing is deleted for them."""
+	from central.billing.revenue import dunning
+
+	policy = dunning.dunning_policy()
+	today = frappe.utils.nowdate()
+	found = []
+	for invoice in frappe.get_all(
+		"Invoice",
+		filters={"invoice_type": "Billable", "status": "Overdue"},
+		fields=["name", "team", "currency", "total", "due_date", "dunning_starts_on"],
+		limit=100,
+	):
+		schedule = dunning.dunning_schedule(dunning.dunning_clock_start(invoice), policy)
+		if "Terminate" in dunning.stages_reached(schedule, today):
+			found.append(
+				{
+					"alert": "termination_due",
+					"doctype": "Invoice",
+					"subject": invoice.name,
+					"team": invoice.team,
+					"detail": f"{invoice.currency} {invoice.total} unpaid since {invoice.due_date}; termination is due",
+				}
+			)
+	return found
+
+
 def failed_refunds() -> list[dict]:
-	"""Refunds a gateway refused. The invoice is cancelled but the customer is still owed."""
+	"""Refunds a gateway refused. The customer is still owed the money, whether the invoice is
+	Cancelled or still Paid (a partial refund, or a charge captured after the invoice was paid)."""
 	return [
 		{
 			"alert": "failed_refund",
 			"doctype": "Invoice",
 			"subject": r.invoice,
 			"team": r.team,
-			"detail": f"{r.currency} {r.amount} not refunded ({r.name}); retry it from the invoice",
+			"detail": f"{r.currency} {r.amount} {'captured after the invoice was paid, ' if r.late_capture else ''}"
+			f"not refunded ({r.name}); retry it from the invoice",
 		}
 		for r in frappe.get_all(
 			"Refund",
 			filters={"status": "Failed"},
-			fields=["name", "invoice", "team", "currency", "amount"],
+			fields=["name", "invoice", "team", "currency", "amount", "late_capture"],
 			limit=100,
 		)
 	]
@@ -158,7 +214,7 @@ def unsettled_captures() -> list[dict]:
 		.select(attempt.name, attempt.team, attempt.currency, attempt.amount, attempt.invoice)
 		.where(
 			(attempt.status == "Captured")
-			& invoice.status.isin(("Open", "Overdue"))
+			& invoice.status.isin(("Outstanding", "Overdue"))
 			& (attempt.initiated_at < cutoff)
 		)
 		.limit(100)
@@ -173,6 +229,35 @@ def unsettled_captures() -> list[dict]:
 			"detail": f"{a.currency} {a.amount} captured, but invoice {a.invoice} is still unpaid",
 		}
 		for a in captures
+	]
+
+
+def refused_charges() -> list[dict]:
+	"""Charges a gateway would not create because our request was wrong, on invoices still unpaid.
+	No retry fixes these; the request or the billing profile must be corrected."""
+	attempt = frappe.qb.DocType("Payment Attempt")
+	invoice = frappe.qb.DocType("Invoice")
+	refused = (
+		frappe.qb.from_(attempt)
+		.join(invoice)
+		.on(invoice.name == attempt.invoice)
+		.select(attempt.name, attempt.team, attempt.invoice, attempt.failure_reason)
+		.where(
+			(attempt.failure_code == decline.REQUEST_REFUSED)
+			& invoice.status.isin(("Outstanding", "Overdue"))
+		)
+		.limit(100)
+		.run(as_dict=True)
+	)
+	return [
+		{
+			"alert": "refused_charge",
+			"doctype": "Payment Attempt",
+			"subject": a.name,
+			"team": a.team,
+			"detail": f"Gateway refused the charge for {a.invoice}: {a.failure_reason}",
+		}
+		for a in refused
 	]
 
 
@@ -201,9 +286,12 @@ SOURCES = (
 	failed_webhooks,
 	stale_attempts,
 	unsettled_captures,
+	refused_charges,
 	held_invoices,
 	failed_refunds,
 	failed_accounting_syncs,
+	suspended_servers_running,
+	termination_due,
 )
 
 

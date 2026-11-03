@@ -38,7 +38,15 @@ LISTED = {
 	"cap": 5.0,
 	"limits": LIMITS,
 }
-MODELS = [{"name": "acme/m", "provider": "acme", "model_id": "m", "dialects": ["openai"]}]
+MODELS = [
+	{
+		"name": "acme/m",
+		"provider": "acme",
+		"model_id": "m",
+		"zero_data_retention": True,
+		"dialects": ["openai"],
+	}
+]
 GEOGRAPHIES = [
 	{"name": "eu", "label": "Europe", "endpoint": "https://eu.llm.frappe.cloud", "is_default": True}
 ]
@@ -107,6 +115,9 @@ class TestGroveClientCalls(IntegrationTestCase):
 				{"team": "TEAM-1", "title": "n8n prod", "geography": "eu", "cap": 5},
 			),
 		)
+		with grove_replies(MINTED) as post:
+			self.client.provision_key("TEAM-1", None, "eu", 2, model_groups=["crm-trial"])
+		self.assertEqual(sent(post)[1]["model_groups"], ["crm-trial"])
 
 		with grove_replies({"spend": {}, "keys": [LISTED], "usage": EMPTY_USAGE}) as post:
 			self.assertEqual(self.client.get_figures("TEAM-1")["keys"], [LISTED])
@@ -123,12 +134,12 @@ class TestGroveClientCalls(IntegrationTestCase):
 	def test_models_geographies_spend_and_usage_name_the_team(self):
 		calls = [
 			(
-				lambda: self.client.list_models("TEAM-1", "k1"),
-				("grove.api.catalog.available_models", {"team": "TEAM-1", "key": "k1", "geography": None}),
+				lambda: self.client.list_models("TEAM-1"),
+				("grove.api.catalog.available_models", {"team": "TEAM-1", "geography": None}),
 			),
 			(
-				lambda: self.client.list_models(geography="eu"),
-				("grove.api.catalog.available_models", {"team": None, "key": None, "geography": "eu"}),
+				lambda: self.client.list_models("TEAM-1", "eu"),
+				("grove.api.catalog.available_models", {"team": "TEAM-1", "geography": "eu"}),
 			),
 			(lambda: self.client.list_geographies(), ("grove.api.catalog.geographies", {})),
 			(lambda: self.client.pull_usage("TEAM-1"), ("grove.api.usage.pull_usage", {"team": "TEAM-1"})),
@@ -370,7 +381,7 @@ class TestAI(IntegrationTestCase):
 			with self.assertRaises(frappe.ValidationError):
 				api.create_api_key(self.team, "app", "eu", "2.5")
 		provision_key.assert_called_once_with(self.team, "app", "eu", 5)
-		list_models.assert_called_once_with(self.team, "k1")
+		list_models.assert_called_once_with(team=self.team, geography="eu")
 		self.assertEqual(
 			(created["api_key"], created["geography"], created["gateway_url"]),
 			(MINTED["api_key"], "eu", MINTED["gateway_url"]),
@@ -414,15 +425,19 @@ class TestAI(IntegrationTestCase):
 			self.assertEqual(api.pull_usage(self.team), {"sync": "PS-1"})
 		pull_usage.assert_called_once_with(self.team)
 
-	def test_a_geographys_models_are_read_from_grove(self):
+	def test_the_teams_models_in_a_geography_are_read_from_grove(self):
 		self.enabled()
 		with patch.object(GroveClient, "list_models", return_value=MODELS) as list_models:
 			[model] = api.get_models(self.team, "eu")
 			api.get_models(self.team, "")
 		self.assertEqual(
-			[call.kwargs for call in list_models.call_args_list], [{"geography": "eu"}, {"geography": None}]
+			[call.kwargs for call in list_models.call_args_list],
+			[{"team": self.team, "geography": "eu"}, {"team": self.team, "geography": None}],
 		)
-		self.assertEqual((model["name"], model["provider"], model["model_id"]), ("acme/m", "acme", "m"))
+		self.assertEqual(
+			(model["name"], model["provider"], model["model_id"], model["zero_data_retention"]),
+			("acme/m", "acme", "m", True),
+		)
 
 	def test_usage_of_one_key_sends_its_hash_and_an_unknown_key_is_refused(self):
 		self.enabled()

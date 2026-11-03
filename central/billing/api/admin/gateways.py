@@ -80,7 +80,7 @@ def get_effective_routing() -> list[dict]:
 	return routing
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def set_default_gateway(gateway: str, currency: str) -> dict:
 	"""Make `gateway` the default handler for `currency`.
 

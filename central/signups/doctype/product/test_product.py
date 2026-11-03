@@ -106,6 +106,10 @@ class IntegrationTestProduct(IntegrationTestCase):
 			with self.subTest(version=version), self.assertRaises(frappe.ValidationError):
 				product.save()
 
+		product.reload()
+		product.frappe_version = "version-16-hotfix"
+		product.save()
+
 	def test_the_landing_route_is_a_path_on_the_site(self):
 		product = self.product("raven-landing")
 
@@ -151,6 +155,12 @@ class TestProductEmailSettings(IntegrationTestCase):
 
 		with self.assertRaisesRegex(frappe.ValidationError, "at most one note"):
 			self.product("raven-notes", email_notes=notes).insert()
+
+	def test_one_note_for_each_plan(self):
+		notes = [{"plan": "plan-2vcpu", "note": "One"}, {"plan": "plan-2vcpu", "note": "Two"}]
+
+		with self.assertRaisesRegex(frappe.ValidationError, "at most one note for each plan"):
+			self.product("raven-plans", plan_notes=notes).insert()
 
 	def test_the_getting_started_page_must_be_https(self):
 		with self.assertRaisesRegex(frappe.ValidationError, "https://"):
@@ -221,6 +231,7 @@ class TestProductLifecycleEmails(SiteOnAMachine):
 		context = engine._resolve_context(
 			team or self.team.name, self.event.name, sample, self.site().name, "Site"
 		)
+		context["server"] = self.site().server or ""
 		return engine._notification_email(self.event, {**context, "reference_title": "acme"})[1]
 
 	def product(self, **values):
@@ -265,7 +276,7 @@ class TestProductLifecycleEmails(SiteOnAMachine):
 
 		self.assertIn(f'fc-btn-primary" href="{self.site().url}/raven"', html)
 		self.assertIn('fc-btn-secondary" href="https://raven.example.test/start"', html)
-		self.assertLess(html.index("Get started"), html.index("View docs"))
+		self.assertLess(html.index("Get started"), html.index("Documentation"))
 
 	def test_welcome_emails_link_the_created_site_and_product_landing_route(self):
 		product = self.product(landing_route="/raven")
@@ -304,13 +315,22 @@ class TestProductLifecycleEmails(SiteOnAMachine):
 
 	def test_billing_emails_link_central_and_deleted_email_has_no_site_link(self):
 		product = self.product(landing_route="/raven")
+		upgrade = f'href="https://central.example.test/dashboard/servers/{self.site().server}?action=resize"'
+		billing = 'href="https://central.example.test/dashboard/billing"'
 		with patch("central.notification.engine.central_url", return_value="https://central.example.test"):
-			for event_type in ("trial_expiring", "trial_ended", "trial_deletion_soon", "trial_converted"):
+			for event_type in ("trial_expiring", "trial_ended", "trial_deletion_soon"):
 				with self.subTest(event_type=event_type):
 					self.event = engine.get_event_type(event_type)
 					html = self.email_for(product)
-					self.assertIn('href="https://central.example.test/dashboard/billing"', html)
+					self.assertIn(upgrade, html)
 					self.assertNotIn(f'href="{self.site().url}', html)
+					self.assertIn(
+						"/dashboard/servers/acme?action=resize", product.preview_email(event_type)["html"]
+					)
+			self.event = engine.get_event_type("trial_converted")
+			html = self.email_for(product)
+			self.assertIn(billing, html)
+			self.assertNotIn(f'href="{self.site().url}', html)
 		self.event = engine.get_event_type("trial_deleted")
 		self.assertNotIn(f'href="{self.site().url}', self.email_for(product))
 

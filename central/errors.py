@@ -148,6 +148,12 @@ ERROR_CATALOG: dict[str, dict] = {
 		"remediation": "Open Billing to add your billing details and a payment method. Ask a team admin if you cannot manage billing.",
 		"retriable": False,
 	},
+	"PAYMENT_OVERDUE": {
+		"title": "Pay what your team owes to continue",
+		"message": "Your team has an unpaid invoice that is overdue, or its account is past due or suspended.",
+		"remediation": "Open Billing and pay the unpaid invoice. Ask a team admin if you cannot manage billing.",
+		"retriable": False,
+	},
 	"TRIAL_IN_PROGRESS": {
 		"title": "You already have a free trial",
 		"message": "Your {product} trial at {address} is still open.",

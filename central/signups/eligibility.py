@@ -2,6 +2,7 @@ from typing import TYPE_CHECKING
 
 import frappe
 
+from central.billing.doctype.invoice.invoice import CANCELLED, issued_filters
 from central.iam import can
 
 if TYPE_CHECKING:
@@ -15,11 +16,11 @@ def is_free_trial_creation(team: str, product: str | None) -> bool:
 
 
 def has_paid_before(team: str) -> bool:
-	"""Whether the team ever had a subscription or a bill. Such a team buys its sites, even after
-	its payment method lapses."""
+	"""Whether the team ever had a subscription or an issued bill. Such a team buys its sites, even
+	after its payment method lapses. A bill is issued once its due date is set."""
 	return bool(
 		frappe.db.exists("Subscription", {"team": team})
-		or frappe.db.exists("Invoice", {"team": team, "status": ["not in", ("Draft", "Cancelled")]})
+		or frappe.db.exists("Invoice", [*issued_filters(), ["team", "=", team], ["status", "!=", CANCELLED]])
 	)
 
 
@@ -61,6 +62,27 @@ def get_open_trial_summary(team: str) -> dict | None:
 		return None
 
 	return {"state": "Setting up", "product": creation.product, **get_product_branding(creation.product)}
+
+
+def get_team_open_trial(team: str) -> dict | None:
+	"""The team's own oldest open trial for the billing pages, because a payment method converts
+	only this team's trials. The server is left out for a caller who cannot view it."""
+	from central.signups.trial import OPEN_STATES, Trial, get_product_branding
+
+	name = frappe.db.get_value(
+		"Site", {"team": team, "trial_state": ["in", OPEN_STATES]}, order_by="creation asc"
+	)
+	if not name:
+		return None
+
+	trial = Trial.load(name)
+	return {
+		"state": trial.state,
+		"server": trial.site.server if can(frappe.session.user, team, "server:view") else None,
+		"product": trial.site.product,
+		"product_title": get_product_branding(trial.site.product)["product_title"],
+		"plan": trial.get_plan(),
+	}
 
 
 def get_unrecorded_trial_creation(team: str) -> frappe._dict | None:

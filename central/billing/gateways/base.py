@@ -14,6 +14,8 @@ from typing import ClassVar
 import frappe
 from frappe import _
 
+from central.billing.payments.decline import Failure
+
 
 def header_value(headers: dict, name: str):
 	"""Case-insensitive header lookup (werkzeug preserves sent casing)."""
@@ -41,13 +43,63 @@ class PaymentResult:
 	hold_until: str | None = None
 	raw: dict = field(default_factory=dict)
 
+	@property
+	def failure(self) -> Failure:
+		return {
+			"failure_code": self.failure_code,
+			"decline_code": self.decline_code,
+			"failure_reason": self.failure_reason,
+			"raw": self.raw,
+		}
+
+
+def token_check(payment_method) -> PaymentResult:
+	"""The check of a method whose proof is the token the gateway issued on approval."""
+	if payment_method.gateway_method_id:
+		return PaymentResult(success=True, status="Validated")
+	return PaymentResult(
+		success=False,
+		status="Failed",
+		failure_code="token_missing",
+		failure_reason="The gateway issued no token for this method.",
+	)
+
+
+@dataclass(frozen=True)
+class VerifiedPayment:
+	"""A payment as the gateway reports it, from a server-side read or a signed webhook.
+
+	`order_id` is the gateway object Central created for the payer (a Razorpay order, a
+	Stripe PaymentIntent). `receipt` is Central's own reference, where only Central can set
+	it (Stripe metadata). Never fill either from a field the payer can set, such as Razorpay
+	payment notes."""
+
+	payment_id: str
+	captured: bool
+	amount: float  # major units
+	currency: str
+	order_id: str | None = None
+	receipt: str | None = None
+
+	def is_enough_for(self, amount, currency: str) -> bool:
+		"""Whether this payment is captured, in `currency`, for at least `amount`."""
+		return (
+			self.captured
+			and (self.currency or "").upper() == (currency or "").upper()
+			and frappe.utils.flt(self.amount, 2) + 0.005 >= frappe.utils.flt(amount, 2)
+		)
+
 
 @dataclass
 class RefundResult:
-	success: bool
-	status: str  # completed / failed
+	status: str  # Completed / Pending / Failed
 	gateway_refund_id: str | None = None
 	raw: dict = field(default_factory=dict)
+	# The gateway accepted the refund. A Pending refund is accepted but not paid out yet.
+	success: bool = field(init=False)
+
+	def __post_init__(self) -> None:
+		self.success = self.status != "Failed"
 
 
 @dataclass
@@ -180,8 +232,9 @@ class GatewayAdapter(ABC):
 		...
 
 	@abstractmethod
-	def validate_payment_method(self, payment_method) -> bool:
-		"""Prove the method is live (Stripe micro-charge + auto-refund)."""
+	def validate_payment_method(self, payment_method) -> PaymentResult:
+		"""Prove the method is live (Stripe micro-charge + auto-refund). A failed check
+		carries the gateway's failure_code, decline_code and failure_reason."""
 		...
 
 	# --- charge / refund / webhooks (universal) -----------------------------
@@ -253,6 +306,59 @@ class GatewayAdapter(ABC):
 		"""Retrieve a hosted-checkout session to confirm it was paid (server-side)."""
 		raise GatewayUnsupported(f"{type(self).__name__} does not support get_checkout_session")
 
+	def prepare_charge(self, invoice, receipt: str) -> str | None:
+		"""Create, before any money moves, the gateway object an off-session charge runs
+		against, and return its id for the caller to store. None where the charge needs
+		none (Stripe dedupes the charge itself by its idempotency key)."""
+		return None
+
+	def get_refund_status(self, gateway_refund_id: str) -> str:
+		"""Completed, Pending or Failed, as the gateway reports the refund now."""
+		raise GatewayUnsupported(f"{type(self).__name__} does not support get_refund_status")
+
+	@staticmethod
+	def webhook_references(payload: dict) -> set[str] | None:
+		"""The ids a signed event names, to tell whether it concerns Central.
+
+		None means the account is not shared with another product, so every event is kept."""
+		return None
+
+	@staticmethod
+	def dispute_from_event(payload: dict) -> dict | None:
+		"""`{id, payment_id, amount, reason, status}` of the dispute a verified webhook body
+		carries, or None. `status` is open, won, lost or the gateway's own closing reason."""
+		return None
+
+	@staticmethod
+	def refund_from_event(payload: dict) -> dict | None:
+		"""`{id, status}` of the refund a verified webhook body carries, or None."""
+		return None
+
+	def read_saved_card(self, setup_reference: str) -> dict:
+		"""The card a setup saved, read from the gateway, or `{}` while it is not finished.
+		Keys: payment_method, customer, mandate, brand, last4, exp_month, exp_year, and
+		fingerprint, the gateway's id for the card or account across customers. A setup
+		the bank refused gives only `setup_error`, with its failure_code and decline_code."""
+		raise GatewayUnsupported(f"{type(self).__name__} does not support read_saved_card")
+
+	def verify_payment(self, payment_id: str) -> VerifiedPayment:
+		"""Read one payment back from the gateway (server-side)."""
+		raise GatewayUnsupported(f"{type(self).__name__} does not support verify_payment")
+
+	def find_order_payment(self, order_id: str) -> VerifiedPayment | None:
+		"""The captured payment on a gateway order Central created, or None while it has none.
+		A hosted checkout id is accepted too, so reconciliation needs no second lookup."""
+		raise GatewayUnsupported(f"{type(self).__name__} does not support find_order_payment")
+
+	def checkout_payment(self, session_id: str) -> VerifiedPayment | None:
+		"""The payment on a hosted checkout, or None while it is unpaid. `order_id` is the session."""
+		raise GatewayUnsupported(f"{type(self).__name__} does not support checkout_payment")
+
+	@staticmethod
+	def payment_from_event(payload: dict) -> VerifiedPayment | None:
+		"""The payment a verified webhook body carries, or None if it carries none."""
+		return None
+
 	def create_customer(self, team) -> str:
 		raise GatewayUnsupported(f"{type(self).__name__} does not support create_customer")
 
@@ -269,3 +375,7 @@ class GatewayAdapter(ABC):
 
 	def get_mandate_status(self, mandate_reference: str) -> str:
 		raise GatewayUnsupported(f"{type(self).__name__} does not support get_mandate_status")
+
+	def read_instrument_fingerprint(self, payment: dict) -> str | None:
+		"""The gateway's id for the UPI ID or card a mandate payment authorised, across customers, or None."""
+		raise GatewayUnsupported(f"{type(self).__name__} does not support read_instrument_fingerprint")

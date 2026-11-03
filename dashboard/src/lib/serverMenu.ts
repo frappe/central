@@ -23,8 +23,8 @@ export type ServerMenuVerb =
 export interface ServerMenuOptions {
 	/** The address of the site this machine carries. Open goes to that site, not the bench. */
 	site?: string | null
-	/** The caller shows Overview and Open itself, and its Settings tab offers Resize
-	 *  and Terminate, as on the server page. */
+	/** The caller is the server page: it is the Overview, and its Settings tab offers
+	 *  Terminate. */
 	isOnServerPage?: boolean
 }
 
@@ -58,7 +58,7 @@ export function getServerMenuGroups(
 	const groups: DropdownOption[][] = [
 		getViewItems(server, allowed, entry, options),
 		isBusy ? [] : getPowerItems(server, allowed, entry),
-		isChangeable ? getChangeItems(allowed, entry, options) : [],
+		isChangeable ? getChangeItems(allowed, entry) : [],
 		[
 			// Renaming is rare, so it lives on the server page only.
 			...(options.isOnServerPage && allowed.resize
@@ -126,7 +126,7 @@ function getViewItems(
 	if (!isOnServerPage) items.push(entry('overview', 'Overview', 'lucide-gauge'))
 
 	// Without a site, Open signs in to Pilot, which a free trial locks.
-	if (canOpen && !isOnServerPage)
+	if (canOpen)
 		items.push(
 			...lockable(allowed, !opensSite, {
 				...entry(
@@ -217,11 +217,10 @@ function getPowerItems(
 function getChangeItems(
 	allowed: ServerActions,
 	entry: Entry,
-	{ isOnServerPage }: ServerMenuOptions,
 ): DropdownOption[] {
 	const items: DropdownOption[] = []
 
-	if (allowed.resize && !isOnServerPage)
+	if (allowed.resize)
 		items.push(entry('resize', 'Resize', 'lucide-sliders-horizontal'))
 
 	if (allowed.snapshot)

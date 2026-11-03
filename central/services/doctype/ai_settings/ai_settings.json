@@ -1,6 +1,6 @@
 {
  "actions": [],
- "creation": "2026-10-06 00:00:00",
+ "creation": "2026-10-24 18:38:14.500950",
  "doctype": "DocType",
  "editable_grid": 1,
  "engine": "InnoDB",
@@ -8,11 +8,17 @@
   "base_url",
   "control_section",
   "control_api_key",
+  "column_break_tipc",
   "control_api_secret",
   "trials_tab",
-  "trial_team",
-  "trial_key_expiry",
-  "trial_key_cap"
+  "trial_key_geography",
+  "pause_pool_refill",
+  "column_break_oabk",
+  "trial_key_cap",
+  "trial_key_revoke_after_days",
+  "pause_key_assignment",
+  "pools_section",
+  "trial_products"
  ],
  "fields": [
   {
@@ -46,33 +52,64 @@
    "label": "Trials"
   },
   {
-   "default": "Central Trial",
-   "description": "The Grove Team trial keys are minted under, one for every trial, each titled by its Central team.",
-   "fieldname": "trial_team",
+   "description": "The Grove geography the pool's keys are minted in, one of Grove's geography names. A key works from any region and dials this geography's gateway; a key minted earlier keeps its own.",
+   "fieldname": "trial_key_geography",
    "fieldtype": "Data",
-   "label": "Trial Team"
-  },
-  {
-   "default": "Never",
-   "description": "When a trial key retires on its own: so many days after the mint, Grove revokes it. Sent with every mint; a change applies to keys minted after it.",
-   "fieldname": "trial_key_expiry",
-   "fieldtype": "Select",
-   "label": "Trial Key Expiry",
-   "options": "Never\n1 Day\n7 Days\n14 Days\n30 Days"
+   "label": "Trial Key Geography"
   },
   {
    "default": "2",
-   "description": "What one trial key may spend in all, USD. Sent with every mint; a change applies to keys minted after it.",
+   "description": "What one trial key may spend for its whole life, whole USD. Sent with every mint; a change applies to keys minted after it.",
    "fieldname": "trial_key_cap",
    "fieldtype": "Currency",
    "label": "Trial Key Cap (USD)"
+  },
+  {
+   "fieldname": "column_break_oabk",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "pools_section",
+   "fieldtype": "Section Break",
+   "label": "Pools"
+  },
+  {
+   "description": "One row per product: how many trial keys Central keeps minted and ready for its free-trial servers, under the Grove Team Central Trial, and the Grove Model Group those keys add to the team's catalog. A job every 5 minutes refills every pool. A product without a row gets no key.",
+   "fieldname": "trial_products",
+   "fieldtype": "Table",
+   "label": "Trial Products",
+   "options": "AI Trial Product"
+  },
+  {
+   "default": "0",
+   "description": "Stops the 5-minute job from minting new keys. The pool keeps its size and its ready keys; retries of revokes and hand-overs still run.",
+   "fieldname": "pause_pool_refill",
+   "fieldtype": "Check",
+   "label": "Pause Pool Refill"
+  },
+  {
+   "default": "0",
+   "description": "Stops a new free-trial server from taking a key from the pool. It boots without one, as with an empty pool; a server that already holds a key keeps it.",
+   "fieldname": "pause_key_assignment",
+   "fieldtype": "Check",
+   "label": "Pause Key Assignment"
+  },
+  {
+   "fieldname": "column_break_tipc",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "30",
+   "description": "An assigned trial's key is revoked at Grove this many days after it was assigned, whatever the trial does. 0 keeps the key until its server is terminated.",
+   "fieldname": "trial_key_revoke_after_days",
+   "fieldtype": "Int",
+   "label": "Revokes Automatically After (Days)"
   }
  ],
  "grid_page_length": 50,
- "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-10-23 12:00:00.000000",
+ "modified": "2026-11-01 19:00:00.000000",
  "modified_by": "Administrator",
  "module": "Services",
  "name": "AI Settings",

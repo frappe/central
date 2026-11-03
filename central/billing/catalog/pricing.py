@@ -178,14 +178,15 @@ def resolve_config_rate(includes, currency: str, cluster: str | None = None):
 
 	`includes`: iterable of rows/dicts with `resource_type` and `quantity`. Returns
 	None if *any* component has no rate for the currency — a config priced from its
-	parts is only sellable when every part is priced (ADR 0009).
+	parts is only sellable when every part is priced (ADR 0009). A row of zero or less is
+	not a part, so it makes the config unpriceable rather than cheaper.
 	"""
 	total = 0.0
 	for row in includes:
 		resource_type = row["resource_type"] if isinstance(row, dict) else row.resource_type
 		quantity = row["quantity"] if isinstance(row, dict) else row.quantity
 		rate = resolve_component_rate(resource_type, currency, cluster)
-		if rate is None:
+		if rate is None or frappe.utils.flt(quantity) <= 0:
 			return None
 		total += frappe.utils.flt(quantity) * frappe.utils.flt(rate)
 	return total

@@ -11,7 +11,7 @@ You sign in to a server with SSH as the `root` user. The server accepts only the
 
 Team SSH keys belong to the team, not to one person. Each key can sign in to the servers that you select it for.
 
-1. Click your name at the bottom of the sidebar, then **My profile**. In the settings, click **SSH keys**. You can also press `Ctrl+,` or `⌘+,` to open the settings.
+1. Click your name at the bottom of the sidebar, then **Settings**. In the settings, click **SSH keys**. You can also press `Ctrl+,` or `⌘+,` to open the settings.
 2. Click **Add**.
 3. Type a **Name**, such as `Work laptop`.
 4. Paste your **SSH public key**, such as the content of `~/.ssh/id_ed25519.pub`.
@@ -36,6 +36,10 @@ You select keys when you [create a server](/servers/create). To change them late
 3. Select or clear keys. Click **Save**.
 
 The change applies at the next sign-in. Open sessions stay connected.
+
+## WireGuard VPN
+
+In a region with a WireGuard VPN gateway, the **WireGuard VPN** switch lets the team's [WireGuard VPN devices](/servers/wireguard) reach the private IPv6 address of the server. It is off by default. When it is on, the server heading shows a **VPN** tag. Click **Manage devices** to add or delete a device.
 
 ## Sign in
 

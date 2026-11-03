@@ -7,7 +7,7 @@ from central.api.sites import claim_site, get_site, login_site, onboarding_statu
 from central.errors import AtlasResourceGone
 from central.infrastructure.doctype.pilot_credential.pilot_credential import PilotCredential
 from central.infrastructure.doctype.resource_action.resource_action import ResourceAction
-from central.infrastructure.doctype.site.site import on_host, record_ready_sites
+from central.infrastructure.doctype.site.site import on_host, poll_site_renames, record_ready_sites
 from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
 from central.integrations.pilot import PilotLoginPending, fetch_site_login_url
 from central.integrations.servers import observe_server
@@ -216,6 +216,7 @@ class TestSiteRoutes(SiteOnAMachine):
 		super().setUp()
 		self.enroll()
 		observe_server(self.server)
+		self.enqueue_doc.reset_mock()
 
 	def test_a_site_is_ready_only_once_it_answers_on_its_own_address(self):
 		with patch("central.api.sites.is_site_reachable", return_value=False) as reachable:
@@ -466,7 +467,7 @@ class TestSiteRoutes(SiteOnAMachine):
 
 	def test_onboarding_follows_only_a_site_creation(self):
 		server_action = self.creation_action("Server")
-		self.assertEqual(onboarding_status(self.team.name), {"site": None, "creation": None, "journey": None})
+		self.assert_nothing_to_resume(onboarding_status(self.team.name))
 
 		site_action = self.creation_action("Site")
 		state = onboarding_status(self.team.name)
@@ -530,9 +531,7 @@ class TestSiteRoutes(SiteOnAMachine):
 		self.site().db_set("product", raven)
 		self.creation_action("Site", raven)
 
-		self.assertEqual(
-			onboarding_status(self.team.name, crm), {"site": None, "creation": None, "journey": None}
-		)
+		self.assert_nothing_to_resume(onboarding_status(self.team.name, crm))
 
 	def test_a_claimed_product_site_is_found_without_a_new_login(self):
 		product = self.signup_product("raven-return")
@@ -558,7 +557,7 @@ class TestSiteRoutes(SiteOnAMachine):
 	def test_a_plain_signup_does_not_resume_a_product_trial(self):
 		self.creation_action("Site", self.signup_product("raven-return"))
 
-		self.assertEqual(onboarding_status(self.team.name), {"site": None, "creation": None, "journey": None})
+		self.assert_nothing_to_resume(onboarding_status(self.team.name))
 
 	def test_a_terminated_product_site_does_not_block_a_new_trial(self):
 		product = self.signup_product("raven-return")
@@ -566,9 +565,7 @@ class TestSiteRoutes(SiteOnAMachine):
 		self.creation_action("Site", product)
 		self.server.db_set("status", "Terminated")
 
-		self.assertEqual(
-			onboarding_status(self.team.name, product), {"site": None, "creation": None, "journey": None}
-		)
+		self.assert_nothing_to_resume(onboarding_status(self.team.name, product))
 
 	def test_another_team_cannot_resume_a_product_site(self):
 		product = self.signup_product("raven-return")
@@ -580,6 +577,26 @@ class TestSiteRoutes(SiteOnAMachine):
 
 		with self.assertRaises(frappe.PermissionError):
 			onboarding_status(self.team.name, product)
+
+	def test_a_new_product_site_says_whether_it_is_free(self):
+		product = self.signup_product("raven-terms")
+
+		with patch("central.signups.eligibility.has_active_payment_method", return_value=False):
+			self.assertTrue(onboarding_status(self.team.name, product)["is_free_trial"])
+		with patch("central.signups.eligibility.has_active_payment_method", return_value=True):
+			self.assertFalse(onboarding_status(self.team.name, product)["is_free_trial"])
+
+	def test_a_disabled_product_refuses_a_new_site_but_resumes_a_started_one(self):
+		product = self.signup_product("raven-disabled")
+		frappe.db.set_value("Product", product, "enabled", 0)
+
+		with self.assertRaises(frappe.ValidationError):
+			onboarding_status(self.team.name, product)
+
+		self.site().db_set("product", product)
+		self.creation_action("Site", product)
+		with patch("central.api.sites.is_site_reachable", return_value=False):
+			self.assertEqual(onboarding_status(self.team.name, product)["site"]["name"], self.site().name)
 
 	def test_the_patch_records_the_product_of_existing_trial_actions(self):
 		from central.patches.v0_0.record_trial_action_product import execute
@@ -593,6 +610,9 @@ class TestSiteRoutes(SiteOnAMachine):
 		execute()
 
 		self.assertEqual(frappe.db.get_value("Resource Action", action, "product"), product)
+
+	def assert_nothing_to_resume(self, status: dict) -> None:
+		self.assertEqual((status["site"], status["creation"], status["journey"]), (None, None, None))
 
 	def signup_product(self, key: str) -> str:
 		return (
@@ -726,6 +746,11 @@ class TestTrialRegion(IntegrationTestCase):
 class TestTrialImage(IntegrationTestCase):
 	"""A trial is the site the image carries, so the region is asked for that image alone."""
 
+	def setUp(self):
+		super().setUp()
+		frappe.db.set_single_value("Central Settings", "signup_image_minimum_age_minutes", 30)
+		self.enterContext(patch("central.site_provisioning.time.time", return_value=10000))
+
 	def images(self, count: int) -> dict:
 		return {
 			"items": [{"id": f"image-{index}", "created_at": index, "tags": {}} for index in range(count)]
@@ -744,12 +769,60 @@ class TestTrialImage(IntegrationTestCase):
 		"""The tags ride the regional query, so a page of other images cannot hide a match."""
 		_, asked = self.resolve(self.images(1))
 
-		self.assertEqual(asked["extra_tags"], {"has_site": "1", "frappe_version": "develop"})
+		self.assertEqual(asked["extra_tags"], {"has_site": "1", "frappe_version": "version-16-hotfix"})
 
 	def test_the_newest_offered_image_is_chosen(self):
 		configuration, _ = self.resolve(self.images(3))
 
 		self.assertEqual(configuration["image_id"], "image-2")
+
+	def test_the_newest_image_at_least_thirty_minutes_old_is_preferred(self):
+		page = self.images(4)
+		for image, created_at in zip(page["items"], (6000, 8200, 8201, 9900), strict=True):
+			image["created_at"] = created_at
+
+		configuration, _ = self.resolve(page)
+
+		self.assertEqual(configuration["image_id"], "image-1")
+
+	def test_the_latest_image_is_used_when_none_is_old_enough(self):
+		page = self.images(2)
+		page["items"][0]["created_at"] = 8201
+		page["items"][1]["created_at"] = 9900
+
+		configuration, _ = self.resolve(page)
+
+		self.assertEqual(configuration["image_id"], "image-1")
+
+	def test_the_configured_age_and_zero_are_used(self):
+		page = self.images(2)
+		page["items"][0]["created_at"] = 6000
+		page["items"][1]["created_at"] = 8200
+		for minimum_age, expected in ((60, "image-0"), (0, "image-1")):
+			with self.subTest(minimum_age=minimum_age):
+				frappe.db.set_single_value(
+					"Central Settings", "signup_image_minimum_age_minutes", minimum_age
+				)
+				configuration, _ = self.resolve(page)
+				self.assertEqual(configuration["image_id"], expected)
+
+	def test_an_older_product_image_can_be_on_a_later_page(self):
+		pages = [
+			{"items": [{"id": "fresh", "created_at": 9900, "tags": {"app": "raven"}}], "next_offset": 100},
+			{"items": [{"id": "cached", "created_at": 8200, "tags": {"app": "raven"}}], "next_offset": None},
+		]
+		with (
+			patch("central.site_provisioning.signup_offering", return_value="pilot"),
+			patch("central.site_provisioning.trial_regions", return_value=["par-2"]),
+			patch("central.site_provisioning.get_cheapest_trial_plan", return_value="plan-trial"),
+			patch("central.site_provisioning.list_images", side_effect=pages) as list_images,
+		):
+			configuration = trial_configuration(
+				"any-team", frappe._dict(signup_app="raven", frappe_version="version-16-hotfix")
+			)
+
+		self.assertEqual(configuration["image_id"], "cached")
+		self.assertEqual([call.kwargs["offset"] for call in list_images.call_args_list], [0, 100])
 
 	def test_an_image_with_a_signup_app_is_never_chosen(self):
 		"""The newest build can be one with an app on its site, which a trial must not get."""
@@ -818,7 +891,7 @@ class TestSiteNaming(SiteOnAMachine):
 		):
 			self.assertEqual(site.get_login_url(), f"https://{site.rename_target}/desk?sid=abc")
 
-		self.assertEqual([call.args[2] for call in login.call_args_list], [site.rename_target, "site.local"])
+		self.assertEqual([call.args[2] for call in login.call_args_list], ["site.local", site.rename_target])
 
 	def test_the_chosen_name_signs_in_before_the_rename(self):
 		"""The image serves every name in its zone, so the route alone makes the name answer."""
@@ -857,7 +930,7 @@ class TestSiteNaming(SiteOnAMachine):
 		):
 			self.assertEqual(site.get_login_url(), f"https://{site.rename_target}/desk?sid=abc")
 		probe.assert_called_once_with(f"https://{site.rename_target}")
-		self.assertEqual(login.call_args.args[2], site.rename_target)
+		self.assertEqual(login.call_args.args[2], "site.local")
 		self.assertEqual(self.site().primary_url, f"https://{site.rename_target}")
 
 	def test_pending_route_keeps_the_automatic_redirect(self):
@@ -881,7 +954,7 @@ class TestSiteNaming(SiteOnAMachine):
 		self.assertEqual(site.url, "https://site-1z141z4.par-2.example.test")
 		self.assertEqual(site.rename_target, "acme.par-2.example.test")
 
-	def test_naming_renames_the_bench_onto_their_address_once(self):
+	def test_naming_submits_the_physical_rename_once(self):
 		with patch("central.integrations.pilot.rename_site", return_value={"task_id": "task-1"}) as rename:
 			self.site().apply_subdomain()
 			self.site().apply_subdomain()
@@ -890,6 +963,7 @@ class TestSiteNaming(SiteOnAMachine):
 			self.server.name, "site.local", "acme.par-2.example.test", make_primary=True
 		)
 		self.assertEqual(self.site().rename_task, "task-1")
+		self.assertEqual(self.site().rename_status, "queued")
 
 	def test_a_site_nobody_named_is_never_renamed(self):
 		self.site().db_set("subdomain", None)
@@ -913,8 +987,123 @@ class TestSiteNaming(SiteOnAMachine):
 		self.enqueue_doc.assert_called_once()
 		self.assertIsNone(site.rename_error)
 
+	def test_claim_only_enqueues_the_rename_after_commit(self):
+		self.enqueue_doc.reset_mock()
+		with patch("central.integrations.pilot.rename_site") as rename:
+			self.site().mark_claimed()
+
+		rename.assert_not_called()
+		self.enqueue_doc.assert_called_once_with(
+			"Site",
+			self.site().name,
+			"apply_subdomain",
+			queue="short",
+			enqueue_after_commit=True,
+			job_id=f"site-rename:{self.site().name}",
+			deduplicate=True,
+		)
+		self.assertIsNotNone(self.site().claimed_at)
+
+	def test_a_rename_without_a_task_id_stays_retryable(self):
+		site = self.site()
+		with patch("central.integrations.pilot.rename_site", return_value={}):
+			site.apply_subdomain()
+
+		self.assertFalse(self.site().rename_task)
+		self.assertIn("did not return a task", site.rename_error)
+
+	def test_rename_completion_is_recorded_only_after_pilot_succeeds(self):
+		site = self.site()
+		site.db_set({"rename_task": "task-1", "rename_status": "queued"})
+		with patch("central.integrations.pilot.get_task", return_value={"status": "running"}):
+			site.record_rename_status()
+		site.reload()
+		self.assertEqual(site.rename_status, "running")
+		self.assertIsNone(site.rename_completed_at)
+		with patch("central.integrations.pilot.get_task", return_value={"status": "success"}) as get_task:
+			site.record_rename_status()
+		get_task.assert_called_once_with(self.server.name, "task-1")
+		site.reload()
+		self.assertEqual(site.rename_status, "success")
+		self.assertIsNotNone(site.rename_completed_at)
+		with patch("central.integrations.pilot.get_task") as get_task:
+			site.record_rename_status()
+		get_task.assert_not_called()
+
+	def test_failed_rename_keeps_the_pilot_failure_for_the_operator(self):
+		site = self.site()
+		site.db_set({"rename_task": "task-1", "rename_status": "queued"})
+		with patch(
+			"central.integrations.pilot.get_task",
+			return_value={"status": "failed", "failure": {"code": "task_interrupted"}},
+		):
+			site.record_rename_status()
+		site.reload()
+		self.assertEqual(site.rename_status, "failed")
+		self.assertIn("Inspect the task in Pilot", site.rename_error)
+		self.assertIn("task_interrupted", site.rename_diagnostic)
+		self.assertIsNone(site.rename_completed_at)
+
+	def test_an_old_poll_cannot_complete_a_replacement_task(self):
+		site = self.site()
+		site.db_set({"rename_task": "task-1", "rename_status": "queued"})
+
+		def answer(*args):
+			frappe.db.set_value("Site", site.name, "rename_task", "task-2")
+			return {"status": "success"}
+
+		with patch("central.integrations.pilot.get_task", side_effect=answer):
+			site.record_rename_status()
+		site.reload()
+		self.assertEqual(site.rename_task, "task-2")
+		self.assertEqual(site.rename_status, "queued")
+		self.assertIsNone(site.rename_completed_at)
+
+	def test_a_failed_poll_does_not_stop_other_pending_sites(self):
+		site = self.site()
+		site.db_set({"rename_task": "task-1", "rename_status": "queued"})
+		other = frappe.copy_doc(site)
+		other.site_name = "second.par-2.example.test"
+		other.rename_task = "task-2"
+		other.insert()
+
+		def answer(server, task):
+			if task == "task-1":
+				raise OSError("unreachable")
+			return {"status": "success"}
+
+		with (
+			patch("central.integrations.pilot.get_task", side_effect=answer),
+			patch("frappe.db.commit"),
+			patch("frappe.db.rollback"),
+			patch("frappe.log_error"),
+		):
+			poll_site_renames()
+		self.assertEqual(site.reload().rename_status, "queued")
+		self.assertEqual(other.reload().rename_status, "success")
+
 
 class TestAdminHostname(SiteOnAMachine):
+	def observe_and_run_admin_claim(self):
+		observe_server(self.server)
+		self.enqueue_doc.assert_any_call(
+			"Virtual Machine",
+			self.server.name,
+			"claim_admin_hostname",
+			queue="short",
+			enqueue_after_commit=True,
+			job_id=f"admin-domain:{self.server.name}",
+			deduplicate=True,
+		)
+		self.server.reload().claim_admin_hostname()
+
+	def test_site_discovery_does_not_wait_for_the_admin_api(self):
+		self.enroll()
+		with patch("central.integrations.pilot.rename_admin_domain", side_effect=TimeoutError) as rename:
+			observe_server(self.server)
+			self.assertTrue(frappe.db.exists("Site", {"server": self.server.name}))
+			rename.assert_not_called()
+
 	def test_a_running_pilot_machine_claims_its_admin_hostname_once(self):
 		"""Every Pilot machine needs it, and TLS stays off behind the regional proxy."""
 		self.enroll()
@@ -922,7 +1111,7 @@ class TestAdminHostname(SiteOnAMachine):
 		with patch(
 			"central.integrations.pilot.rename_admin_domain", return_value={"task_id": "task-2"}
 		) as rename:
-			observe_server(self.server)
+			self.observe_and_run_admin_claim()
 			observe_server(self.server)
 
 		rename.assert_called_once_with(self.server.name, tls=False)
@@ -932,7 +1121,7 @@ class TestAdminHostname(SiteOnAMachine):
 		self.enroll()
 
 		with patch("central.integrations.pilot.rename_admin_domain", side_effect=OSError("unreachable")):
-			observe_server(self.server)
+			self.observe_and_run_admin_claim()
 
 		server = self.server.reload()
 		self.assertIsNone(server.admin_domain_task)
@@ -943,8 +1132,8 @@ class TestAdminHostname(SiteOnAMachine):
 		self.enroll()
 
 		with patch("central.integrations.pilot.rename_admin_domain", return_value={}) as rename:
-			observe_server(self.server)
-			observe_server(self.server)
+			self.observe_and_run_admin_claim()
+			self.observe_and_run_admin_claim()
 
 		self.assertEqual(rename.call_count, 2)
 		self.assertIsNone(self.server.reload().admin_domain_task)

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {
 	Alert,
+	Badge,
 	Button,
 	Dialog,
 	dayjs,
@@ -149,61 +150,66 @@ async function submitAlert(): Promise<void> {
 
 <template>
 	<div
-		class="flex flex-col gap-4.5 px-6 pb-6 pt-5.5 transition-colors"
+		class="flex flex-col gap-4 px-4 py-3 transition-colors"
 		:class="active ? 'bg-surface-gray-1' : ''"
 	>
 		<div class="flex items-center justify-between gap-3">
-			<h2>
-				<component
-					:is="hasCycle ? 'button' : 'span'"
-					:type="hasCycle ? 'button' : undefined"
-					class="flex items-center gap-2 text-sm-medium text-ink-gray-6"
-					:class="hasCycle ? 'transition-colors hover:text-ink-gray-8' : ''"
-					@click="hasCycle && $emit('open')"
-				>
-					<span
-						class="size-1.5 rounded-9 ring-[3px]"
-						:class="
-							overLimit
-								? 'bg-surface-amber-5 ring-outline-amber-2'
-								: 'bg-surface-gray-6 ring-outline-gray-1'
-						"
-						aria-hidden="true"
-					/>
-					{{ cycleLabel }}
-				</component>
+			<h2 class="flex items-center gap-2 text-sm-medium text-ink-gray-6">
+				<span
+					class="size-1.5 rounded-9 ring-[3px]"
+					:class="
+						overLimit
+							? 'bg-surface-amber-5 ring-outline-amber-2'
+							: 'bg-surface-gray-6 ring-outline-gray-1'
+					"
+					aria-hidden="true"
+				/>
+				{{ cycleLabel }}
 			</h2>
-			<Tooltip v-if="canManageBilling" :text="alertLabel">
-				<Button label="Budget alerts" @click="openDialog">
-					<template #icon>
-						<span
-							class="lucide-bell size-4"
-							:class="alertTint || 'text-ink-gray-6'"
-							aria-hidden="true"
-						/>
-					</template>
-				</Button>
-			</Tooltip>
+
+			<div class="flex items-center gap-2">
+				<Button
+					v-if="hasCycle"
+					size="xs"
+					label="Breakdown"
+					icon-left="lucide-receipt-text"
+					variant="outline"
+					@click="$emit('open')"
+				/>
+
+				<Tooltip v-if="canManageBilling" :text="alertLabel">
+					<Button size="xs" label="Budget alerts" @click="openDialog">
+						<template #icon>
+							<span
+								class="lucide-bell size-4"
+								:class="alertTint || 'text-ink-gray-6'"
+								aria-hidden="true"
+							/>
+						</template>
+					</Button>
+				</Tooltip>
+			</div>
 		</div>
 
 		<LoadingText v-if="loading" :lines="3" class="w-56" />
 
 		<template v-else>
-			<div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-				<span class="text-8xl-semibold tabular-nums text-ink-gray-9">
+			<div class="flex flex-wrap items-center gap-x-3 gap-y-1">
+				<span
+					class="text-4xl-semibold leading-tight tabular-nums text-ink-gray-9"
+				>
 					{{ money(soFar, currency) }}
 				</span>
-				<span class="text-base text-ink-gray-5">
-					<template v-if="!hasCycle">nothing billed yet this cycle</template>
-					<template v-else>
-						so far<template v-if="daysRemaining != null">
-							· bills in {{ daysRemaining }} days</template
-						>
-					</template>
+				<span v-if="!hasCycle" class="text-base text-ink-gray-5">
+					nothing billed yet this cycle
 				</span>
+				<Badge
+					v-if="hasCycle && daysRemaining != null"
+					:label="`Bills in ${daysRemaining} days`"
+				/>
 			</div>
 
-			<div class="flex flex-col gap-2.5">
+			<div class="flex flex-col gap-2">
 				<div class="relative h-2 overflow-hidden rounded-2 bg-surface-gray-2">
 					<div
 						class="absolute inset-y-0 left-0 bg-surface-gray-10 transition-[width] duration-300"

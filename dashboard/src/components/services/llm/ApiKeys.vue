@@ -68,13 +68,6 @@ const atKeyLimit = computed(
 const canSetCaps = computed(
 	() => prepaid.value && props.canManage && activeKeys.value.length > 0,
 )
-
-const keyCountTitle = computed(() => {
-	const max = spend.value?.max_keys ?? 0
-	return max > 0
-		? `${activeKeys.value.length} of ${max}`
-		: activeKeys.value.length
-})
 const query = ref('')
 
 const searchable = computed(() => apiKeys.value.length > 6)
@@ -329,10 +322,6 @@ const revoke = async (key: AIApiKey): Promise<void> => {
 					</template>
 				</TextInput>
 
-				<span v-if="apiKeys.length" class="text-sm text-ink-gray-5">
-					{{ keyCountTitle }}
-					live keys
-				</span>
 				<Button
 					v-if="canSetCaps"
 					label="Set caps"

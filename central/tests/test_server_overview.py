@@ -78,7 +78,27 @@ class TestServerOverview(IntegrationTestCase):
 		self.assertIsNone(result["server"]["plan_title"])
 		self.assertIsNone(result["server"]["plan_rate"])
 		self.assertEqual(result["server"]["plan_currency"], "INR")
+		self.assertIsNone(result["server"]["created_by"])
 		self.assertNotIn("monitoring", result)
+
+	def test_overview_names_the_user_who_created_the_server(self):
+		action = frappe.get_doc(
+			{
+				"doctype": "Resource Action",
+				"resource_type": "Server",
+				"action": "create",
+				"team": self.team.name,
+				"server": self.server.name,
+				"requested_by": self.owner,
+				"correlation_id": frappe.generate_hash(),
+			}
+		).insert(ignore_permissions=True)
+		self.addCleanup(action.delete, ignore_permissions=True, force=True)
+
+		server = server_overview(team=self.team.name, resource_id=self.server.name)["server"]
+
+		self.assertEqual(server["created_by"], self.owner)
+		self.assertEqual(server["created_by_name"], "overview.owner")
 
 	def test_overview_lists_the_keys_the_server_was_created_with(self):
 		with patch("central.infrastructure.doctype.team_ssh_key.team_ssh_key.TeamSSHKey.queue_sync"):

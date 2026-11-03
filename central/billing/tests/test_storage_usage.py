@@ -11,7 +11,13 @@ from central.billing.platform import invariants, readiness
 from central.billing.revenue import storage_usage
 from central.billing.revenue.invoicing.generate import rate_team_period, team_clusters
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
-from central.billing.tests.utils import _clear_metered_plans, complete_billing_profile, ensure_team, make_plan
+from central.billing.tests.utils import (
+	_clear_metered_plans,
+	complete_billing_profile,
+	ensure_team,
+	give_team_a_card,
+	make_plan,
+)
 
 TEAM = "team-storage-usage"
 CLUSTER = "ap-south-1"
@@ -26,6 +32,7 @@ class TestStorageUsage(IntegrationTestCase):
 		self.addCleanup(frappe.db.delete, "Team Service", {"team": TEAM})
 		ensure_team(TEAM)
 		complete_billing_profile(TEAM)
+		give_team_a_card(TEAM)
 		_clear_metered_plans("Storage", keep=PLAN)
 		make_plan(
 			PLAN,

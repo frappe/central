@@ -21,7 +21,9 @@
   "gateway_method_id",
   "gateway_customer_id",
   "gateway_mandate_id",
+  "instrument_fingerprint",
   "setup_reference",
+  "setup_intent_id",
   "display_label",
   "section_break_card",
   "card_network",
@@ -30,7 +32,14 @@
   "column_break_mandate",
   "mandate_max_amount",
   "mandate_currency",
-  "validated_at"
+  "validated_at",
+  "section_break_failure",
+  "failed_attempts",
+  "last_failed_at",
+  "column_break_failure",
+  "failure_code",
+  "decline_code",
+  "failure_reason"
  ],
  "fields": [
   {
@@ -39,7 +48,8 @@
    "options": "Team",
    "in_list_view": 1,
    "label": "Team",
-   "reqd": 1
+   "reqd": 1,
+   "search_index": 1
   },
   {
    "fieldname": "gateway",
@@ -124,10 +134,24 @@
    "description": "Mandate the off-session debit quotes (Stripe India mandate_xxx). Empty where the rail needs no mandate to charge."
   },
   {
+   "fieldname": "instrument_fingerprint",
+   "fieldtype": "Data",
+   "label": "Instrument Fingerprint",
+   "read_only": 1,
+   "description": "The card, UPI ID or PayPal account behind this method, as the gateway identifies it. The same card on another team has the same value."
+  },
+  {
    "fieldname": "setup_reference",
    "fieldtype": "Data",
    "label": "Setup Reference",
-   "description": "Gateway setup handle (Stripe SetupIntent id) captured at initiation, for reconcile"
+   "description": "The gateway setup handle: the SetupIntent of an in-app setup, or the Checkout Session of a hosted setup."
+  },
+  {
+   "fieldname": "setup_intent_id",
+   "fieldtype": "Data",
+   "label": "Setup Intent ID",
+   "read_only": 1,
+   "description": "The Stripe SetupIntent behind a hosted card setup. Central finds the card by it when Stripe reports a failed setup."
   },
   {
    "fieldname": "display_label",
@@ -167,7 +191,6 @@
    "description": "Mandate ceiling = team's trust-tier cap at authorisation time."
   },
   {
-   "default": "INR",
    "fieldname": "mandate_currency",
    "fieldtype": "Data",
    "label": "Mandate Currency"
@@ -176,6 +199,53 @@
    "fieldname": "validated_at",
    "fieldtype": "Datetime",
    "label": "Validated At"
+  },
+  {
+   "collapsible": 1,
+   "collapsible_depends_on": "eval:doc.failed_attempts",
+   "fieldname": "section_break_failure",
+   "fieldtype": "Section Break",
+   "label": "Last Failure"
+  },
+  {
+   "default": "0",
+   "description": "How many times adding or checking this method failed at the gateway.",
+   "fieldname": "failed_attempts",
+   "fieldtype": "Int",
+   "label": "Failed Attempts",
+   "read_only": 1
+  },
+  {
+   "fieldname": "last_failed_at",
+   "fieldtype": "Datetime",
+   "label": "Last Failed At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_failure",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "The gateway's error code, such as card_declined or authentication_required.",
+   "fieldname": "failure_code",
+   "fieldtype": "Data",
+   "in_standard_filter": 1,
+   "label": "Failure Code",
+   "read_only": 1
+  },
+  {
+   "description": "The bank's reason for a decline, such as insufficient_funds.",
+   "fieldname": "decline_code",
+   "fieldtype": "Data",
+   "label": "Decline Code",
+   "read_only": 1
+  },
+  {
+   "description": "The gateway's message for the failure.",
+   "fieldname": "failure_reason",
+   "fieldtype": "Small Text",
+   "label": "Failure Reason",
+   "read_only": 1
   }
  ],
  "index_web_pages_for_search": 1,
@@ -196,7 +266,7 @@
    "link_fieldname": "payment_method"
   }
  ],
- "modified": "2026-10-24 00:00:00.000000",
+ "modified": "2026-11-03 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Payment Method",

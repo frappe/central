@@ -146,6 +146,36 @@ def details_overdue(team: str) -> bool:
 	return bool(get_missing_fields(team))
 
 
+def has_overdue_invoice(team: str) -> bool:
+	return bool(frappe.db.exists("Invoice", {"team": team, "invoice_type": "Billable", "status": "Overdue"}))
+
+
+def is_behind_on_payment(team: str) -> bool:
+	"""Whether the team owes an overdue invoice or dunning has moved any subscription off Current."""
+	if has_overdue_invoice(team):
+		return True
+	return bool(
+		frappe.db.exists(
+			"Subscription", {"team": team, "account_standing": ["in", ["Past Due", "Suspended"]]}
+		)
+	)
+
+
+def has_paid_by_hand(team: str) -> bool:
+	"""Whether a team on Manual Checkout has shown it pays: one invoice settled with real money.
+
+	Manual Checkout is the customer's own choice and needs no card, so on its own it
+	proves nothing. An invoice paid by gateway, not by credit, is the proof."""
+	if frappe.db.get_value("Billing Profile", team, "collection_mode") != "Manual Checkout":
+		return False
+	return bool(
+		frappe.db.exists(
+			"Invoice",
+			{"team": team, "invoice_type": "Billable", "status": "Paid", "amount_paid": [">", 0]},
+		)
+	)
+
+
 def wallet_funds(team: str, new_rate) -> bool:
 	"""Whether credits cover `new_rate` of extra monthly run-rate. None is never funded.
 

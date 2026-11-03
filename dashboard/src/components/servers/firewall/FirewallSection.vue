@@ -6,9 +6,11 @@ import EmptyState from '@/components/common/EmptyState.vue'
 import SettingsSection from '@/components/common/SettingsSection.vue'
 import CopyFirewallDialog from '@/components/servers/firewall/CopyFirewallDialog.vue'
 import FirewallRuleRow from '@/components/servers/firewall/FirewallRuleRow.vue'
+import { useCapabilities } from '@/composables/useCapabilities'
 import { useServerFirewall } from '@/composables/useServerFirewall'
 import type { VirtualMachineRow } from '@/composables/useServers'
 import { useUndoHistory } from '@/composables/useUndoHistory'
+import { useWireGuardDevices } from '@/composables/useWireGuardDevices'
 import { reportError, successToast } from '@/lib/feedback'
 import {
 	ANYWHERE_IPV4,
@@ -24,6 +26,7 @@ import {
 	isSameRules,
 	PRESETS,
 	SERVICES,
+	toCidr,
 } from '@/lib/firewall'
 import { isMac } from '@/lib/platform'
 
@@ -31,6 +34,8 @@ type Direction = keyof FirewallRules
 
 interface Props {
 	resourceId: string
+	/** The server's region, whose WireGuard VPN devices a rule can name. */
+	region: string
 	isEnabled: boolean
 	/** Null until Central first reads the firewall from the region. */
 	rules: FirewallRules | null
@@ -295,10 +300,23 @@ const statusText = computed(() => {
 	return `${pendingChanges.value} unsaved ${pendingChanges.value === 1 ? 'change' : 'changes'}`
 })
 
+const { canManageWireGuard } = useCapabilities()
+const { devices } = useWireGuardDevices(canManageWireGuard)
+const deviceNames = computed<Record<string, string>>(() =>
+	Object.fromEntries(
+		devices.value
+			.filter((device) => device.region === props.region)
+			.map((device) => [toCidr(device.address), device.title]),
+	),
+)
+
 function getAddressOptions(direction: Direction): string[] {
-	return (draft.value?.[direction] ?? [])
+	const used = (draft.value?.[direction] ?? [])
 		.flatMap((rule) => rule.cidrs)
 		.filter((cidr) => ![ANYWHERE_IPV4, ANYWHERE_IPV6].includes(cidr))
+	return direction === 'inbound'
+		? [...used, ...Object.keys(deviceNames.value)]
+		: used
 }
 </script>
 
@@ -306,7 +324,7 @@ function getAddressOptions(direction: Direction): string[] {
 	<SettingsSection
 		title="Firewall"
 		help="The region filters traffic before it reaches the server."
-		description="Choose who can connect to this server and where it can connect. Your private network, VPN devices and ping are always allowed, so the web console keeps working."
+		description="Choose who can connect to this server and where it can connect. Keep the private network allowed, so the web console and your sites keep working. Allow a WireGuard VPN device by its name."
 	>
 		<template #actions>
 			<div v-if="draft" class="flex shrink-0 items-center gap-2">
@@ -383,6 +401,7 @@ function getAddressOptions(direction: Direction): string[] {
 					:incoming="direction === 'inbound'"
 					:disabled="!canEdit || isSaving"
 					:options="getAddressOptions(direction)"
+					:names="deviceNames"
 					@update="updateRule(direction, index, $event)"
 					@remove="removeRule(direction, index)"
 					@invalid="incomplete[`${direction}:${index}`] = $event"
@@ -391,8 +410,8 @@ function getAddressOptions(direction: Direction): string[] {
 					v-if="!draft[direction].length"
 					class="flex min-h-10 items-center px-2 text-sm text-ink-gray-5"
 				>
-					No public {{ direction === 'inbound' ? 'incoming' : 'outgoing' }}
-					connections are allowed.
+					No {{ direction === 'inbound' ? 'incoming' : 'outgoing' }} connections
+					are allowed.
 				</p>
 
 				<div v-if="canEdit" class="pt-2">
