@@ -233,7 +233,7 @@ def _book_welcome_credits(
 	the unique fingerprint on the ledger keeps one grant, and the other team gets none.
 
 	A wallet deadlock fails the activation: InnoDB has rolled back the whole transaction,
-	so the grant cannot be retried alone. The customer adds the card again."""
+	so the grant cannot be retried alone. The customer confirms the card again."""
 	from central.billing.revenue import credits
 
 	frappe.db.savepoint(_WELCOME_CREDIT_SAVEPOINT)
