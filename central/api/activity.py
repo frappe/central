@@ -1,34 +1,21 @@
 import base64
-import json
-from typing import Any
+from datetime import datetime
 
 import frappe
 from frappe import _
 from frappe.utils import cint, convert_utc_to_system_timezone, get_datetime
 from frappe.utils.translations import _lt
 
-from central.activity.events import CATEGORIES, EVENTS, SYSTEM_USERS
-from central.iam import can, get_user_team_names, user_has_operator_bypass
+from central.central.doctype.activity_event.activity_event import ActivityEvent
+from central.central.doctype.activity_event.tracked import get_sentence
+from central.iam import user_has_operator_bypass
 from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
-from central.utils.guards import require_capability
+from central.utils.guards import require_capability, require_team_member
 
 DEFAULT_LIMIT = 50
 MAX_LIMIT = 100
-FIELDS = [
-	"name",
-	"team",
-	"event",
-	"category",
-	"title",
-	"resource_type",
-	"resource_name",
-	"resource_label",
-	"status",
-	"details",
-	"error",
-	"actor",
-	"occurred_at",
-]
+CATEGORIES = ("action", "configuration", "snapshot", "site", "team", "member", "access")
+SYSTEM_USERS = {"", None, "Administrator", "Guest"}
 
 
 @frappe.whitelist(methods=["GET"])
@@ -38,236 +25,127 @@ FIELDS = [
 	server="resource_id",
 )
 def server_activity(
-	team: str | None = None,
-	resource_id: str | None = None,
+	team: str,
+	resource_id: str,
 	cursor: str | None = None,
 	limit: int = DEFAULT_LIMIT,
 	category: str | None = None,
 	since: str | None = None,
 	until: str | None = None,
 ) -> dict:
-	"""One server's activity, newest first, after the opaque cursor if given."""
-	if not team or not resource_id:
-		frappe.throw(_("Select a server to continue."), frappe.ValidationError)
-
+	"""One server's activity, including its sites, domains and snapshots, newest first."""
 	server = VirtualMachine.get_team_server_name(team, resource_id)
-	# Every row that names this server belongs here, including its sites and domains.
-	return _activity(team, [["server", "=", server]], cursor, limit, category, since, until)
+	return get_activity(team, cursor, limit, category, since, until, server=server)
 
 
 @frappe.whitelist(methods=["GET"])
+@require_team_member
 def team_activity(
-	team: str | None = None,
+	team: str,
 	cursor: str | None = None,
 	limit: int = DEFAULT_LIMIT,
 	category: str | None = None,
 	since: str | None = None,
 	until: str | None = None,
 ) -> dict:
-	"""One team's activity, newest first. The permission rules narrow it to what the reader may see."""
-	if not team:
-		frappe.throw(_("Select a team to continue."), frappe.ValidationError)
-	if not user_has_operator_bypass() and team not in get_user_team_names(frappe.session.user):
-		frappe.throw(_("You can't view this team's activity."), frappe.PermissionError)
-
-	return _activity(team, [], cursor, limit, category, since, until)
+	"""The team's activity, newest first. Each member sees the events their capabilities allow."""
+	return get_activity(team, cursor, limit, category, since, until)
 
 
-def _activity(
+def get_activity(
 	team: str,
-	filters: list[list],
 	cursor: str | None,
 	limit: int,
 	category: str | None,
 	since: str | None,
 	until: str | None,
+	server: str | None = None,
 ) -> dict:
-	_validate_category(category)
-	filters = [*filters, ["team", "=", team], *_period_filters(since, until)]
-	if category:
-		filters.append(["category", "=", category])
-	after = _decode_cursor(cursor) if cursor else None
-	page_size = max(1, min(cint(limit) or DEFAULT_LIMIT, MAX_LIMIT))
-	page = _page(filters, after, page_size + 1)
+	if category and category not in CATEGORIES:
+		frappe.throw(_("Choose a valid activity type."), frappe.ValidationError)
 
-	has_more = len(page) > page_size
-	rows = page[:page_size]
-	include_ip = can(frappe.session.user, team, "team:manage_members")
-	events = [_event(row) for row in rows]
-	if include_ip:
-		_add_ips(events, team)
-	_label_actors(events)
+	page_size = max(1, min(cint(limit) or DEFAULT_LIMIT, MAX_LIMIT))
+	rows = ActivityEvent.get_page(
+		team,
+		limit=page_size + 1,
+		server=server,
+		category=category,
+		since=_parse_instant(since),
+		until=_parse_instant(until),
+		after=_decode_cursor(cursor) if cursor else None,
+	)
+	page = rows[:page_size]
+	actors = _get_actors({row.actor for row in page})
 
 	return {
-		"events": events,
-		"next_cursor": _encode_cursor(events[-1]) if has_more and events else None,
+		"events": [_to_event(row, actors) for row in page],
+		"next_cursor": _encode_cursor(page[-1]) if len(rows) > page_size else None,
 	}
 
 
-def _page(filters: list[list], after: dict | None, size: int) -> list[dict]:
-	rows: list[dict] = []
-	for group in _cursor_queries(after):
-		rows.extend(
-			frappe.get_list(
-				"Activity Event",
-				filters=[*filters, *group],
-				fields=FIELDS,
-				order_by="occurred_at desc, name desc",
-				limit=size,
-			)
-		)
-
-	rows.sort(key=lambda row: (str(row.occurred_at), row.name), reverse=True)
-	return rows[:size]
-
-
-def _cursor_queries(after: dict | None) -> list[list[list]]:
-	if not after:
-		return [[]]
-
-	return [
-		[["occurred_at", "<", after["timestamp"]]],
-		[["occurred_at", "=", after["timestamp"]], ["name", "<", after["name"]]],
-	]
-
-
-def _period_filters(since: str | None, until: str | None) -> list[list]:
-	"""`since` and `until` are UTC instants from the browser; `until` is exclusive."""
-	try:
-		bounds = [
-			["occurred_at", operator, _site_time(value)]
-			for operator, value in ((">=", since), ("<", until))
-			if value
-		]
-	except ValueError:
-		frappe.throw(_("Choose a valid date range."), frappe.ValidationError)
-	return bounds
-
-
-def _site_time(value: str):
-	# occurred_at is a naive clock in the site timezone
-	return convert_utc_to_system_timezone(get_datetime(value)).replace(tzinfo=None)
-
-
-def _event(row) -> dict[str, Any]:
+def _to_event(row, actors: dict[str, dict]) -> dict:
 	return {
 		"id": row.name,
 		"event": row.event,
 		"category": row.category,
-		"occurred_at": str(row.occurred_at),
-		"actor": row.actor,
-		"title": _(row.title),
-		# a row outlives a registry entry by up to the retention window
-		"sentence": _(EVENTS[row.event].sentence) if row.event in EVENTS else _(row.title),
-		"resource": {
-			"type": row.resource_type,
-			"name": row.resource_name,
-			"label": row.resource_label or row.resource_name,
-		},
+		"occurred_at": str(row.creation),
+		"actor": actors[row.actor],
+		"sentence": _(get_sentence(row.event)),
+		"resource": {"type": row.resource_type, "name": row.resource_name, "label": row.resource_label},
 		"status": row.status or None,
-		"details": _details(row.details),
+		"details": [
+			{**detail, "label": _(detail["label"])} for detail in frappe.parse_json(row.details or "[]")
+		],
 		"error": row.error or None,
 	}
 
 
-def _add_ips(events: list[dict], team: str) -> None:
-	if not events:
-		return
-
-	# The endpoint checked team:manage_members before this system read. The address
-	# table has no customer permission, so a direct DocType read cannot return it.
-	addresses = frappe.get_all(
-		"Activity Event IP",
-		filters={"event": ("in", [event["id"] for event in events]), "team": team},
-		fields=["event", "ip_address"],
+def _get_actors(emails: set[str]) -> dict[str, dict]:
+	"""System users read as System, operators as Frappe Cloud, and members by name."""
+	# User grants customers no read, and the event already names the actor.
+	users = frappe.db.get_values(
+		"User",
+		{"name": ("in", list(emails - SYSTEM_USERS) or [""])},
+		["name", "full_name", "user_image"],
+		as_dict=True,
 	)
-	by_event = {row.event: row.ip_address for row in addresses}
-	for event in events:
-		if ip_address := by_event.get(event["id"]):
-			event["ip_address"] = ip_address
+	actors = {email: {"label": email, "kind": "user", "image": None} for email in emails}
+	actors.update(
+		{email: {"label": _("System"), "kind": "system", "image": None} for email in emails & SYSTEM_USERS}
+	)
+	for user in users:
+		if user_has_operator_bypass(user.name):
+			actors[user.name] = {"label": _("Frappe Cloud"), "kind": "system", "image": None}
+		else:
+			actors[user.name] = {
+				"label": user.full_name or user.name,
+				"kind": "user",
+				"image": user.user_image,
+			}
+
+	return actors
 
 
-def _details(raw) -> list[dict]:
-	parsed = frappe.parse_json(raw or "[]")
-	if not isinstance(parsed, list):
-		return []
-	return [
-		{
-			"label": _(detail["label"]),
-			"from": None if detail.get("from") is None else str(detail["from"]),
-			"to": None if detail.get("to") is None else str(detail["to"]),
-		}
-		for detail in parsed
-		if isinstance(detail, dict) and "label" in detail
-	]
+def _parse_instant(value: str | None) -> datetime | None:
+	"""A UTC instant from the browser as the site's naive clock, which `creation` uses."""
+	if not value:
+		return None
 
-
-def _label_actors(events: list[dict]) -> None:
-	emails = {event["actor"] for event in events if event["actor"] not in SYSTEM_USERS}
-	labels = _user_labels(emails)
-	for event in events:
-		event["actor"] = _actor(event["actor"], labels)
-
-
-def _user_labels(emails: set[str]) -> dict[str, tuple]:
-	if not emails:
-		return {}
-
-	# User grants no read to a customer, and the event already names the actor. Read the
-	# display fields directly; a missing row falls back to the email in `_actor`.
-	return {
-		row.name: (row.full_name, row.user_image)
-		for row in frappe.db.get_values(
-			"User",
-			{"name": ("in", list(emails))},
-			["name", "full_name", "user_image"],
-			as_dict=True,
-		)
-	}
-
-
-def _actor(email: str, labels: dict[str, tuple]) -> dict:
-	if email in SYSTEM_USERS:
-		return {"label": _("System"), "kind": "system", "image": None}
-	if user_has_operator_bypass(email):
-		return {"label": _("Frappe Cloud"), "kind": "system", "image": None}
-
-	name, image = labels.get(email, (email, None))
-	return {"label": name or email, "kind": "user", "image": image or None}
-
-
-def _validate_category(category: str | None) -> None:
-	if category and category not in CATEGORIES:
-		frappe.throw(
-			_("Filter activity by action, configuration, snapshot, site, team, member or access."),
-			frappe.ValidationError,
-		)
-
-
-def _encode_cursor(event: dict) -> str:
-	payload = {"t": event["occurred_at"], "n": event["id"]}
-	raw = json.dumps(payload, separators=(",", ":")).encode()
-	return base64.urlsafe_b64encode(raw).decode().rstrip("=")
-
-
-def _decode_cursor(cursor: str) -> dict:
 	try:
-		if len(cursor) > 512:
-			raise ValueError
-		decoded = base64.urlsafe_b64decode(cursor + "=" * (-len(cursor) % 4))
-		payload = json.loads(decoded)
-		if (
-			not isinstance(payload, dict)
-			or not isinstance(payload.get("t"), str)
-			or not isinstance(payload.get("n"), str)
-			or not payload["t"]
-			or not payload["n"]
-		):
-			raise ValueError
-		get_datetime(payload["t"])
-	except Exception:
-		frappe.throw(
-			_("This activity cursor is not valid. Reload the activity feed."),
-			frappe.ValidationError,
-		)
-	return {"timestamp": payload["t"], "name": payload["n"]}
+		return convert_utc_to_system_timezone(get_datetime(value)).replace(tzinfo=None)
+	except ValueError:
+		frappe.throw(_("Choose a valid date range."), frappe.ValidationError)
+
+
+def _encode_cursor(row) -> str:
+	return base64.urlsafe_b64encode(f"{row.creation}|{row.name}".encode()).decode()
+
+
+def _decode_cursor(cursor: str) -> tuple[str, str]:
+	try:
+		created, name = base64.urlsafe_b64decode(cursor.encode()).decode().split("|")
+		get_datetime(created)
+	except ValueError:
+		frappe.throw(_("Reload the activity feed to continue."), frappe.ValidationError)
+
+	return created, name

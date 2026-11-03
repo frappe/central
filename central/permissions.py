@@ -2,7 +2,6 @@ import frappe
 from frappe import _
 from frappe.realtime import has_permission as has_realtime_permission
 
-from central.activity.events import EVENTS
 from central.iam import (
 	ALL_SERVERS,
 	can,
@@ -21,6 +20,7 @@ def _team_filter(user: str) -> str:
 	teams = get_user_team_names(user)
 	if not teams:
 		return "1 = 0"
+
 	return f"`tabTeam`.`name` in ({_escape_values(teams)})"
 
 
@@ -30,6 +30,7 @@ def team_query_conditions(user: str | None = None) -> str:
 	user = user or frappe.session.user
 	if user_has_operator_bypass(user):
 		return ""
+
 	return _team_filter(user)
 
 
@@ -48,6 +49,7 @@ def team_has_permission(doc, user: str | None = None, ptype: str | None = None, 
 		return can(user, doc.name, "team:edit") or can(user, doc.name, "team:manage_members")
 	if ptype == "delete":
 		return can(user, doc.name, "team:delete")
+
 	return doc.name in get_user_team_names(user)
 
 
@@ -229,75 +231,6 @@ def vm_snapshot_has_permission(doc, user: str | None = None, ptype: str | None =
 	return _server_scoped_has_permission(doc, "server", user, ptype)
 
 
-def activity_event_query_conditions(user: str | None = None) -> str:
-	"""1. A System Manager sees every event.
-	2. A user sees an event when they hold its required capability team-wide.
-	3. A user sees a server event when they hold that capability on the event's server.
-	4. A user without such a grant sees no event."""
-	user = user or frappe.session.user
-	if user_has_operator_bypass(user):
-		return ""
-
-	table = "`tabActivity Event`"
-	clauses = [
-		clause
-		for cap in _activity_capabilities()
-		for clause in _activity_clauses(table, cap, get_allowed_servers(user, cap))
-	]
-	return f"({' or '.join(clauses)})" if clauses else "1 = 0"
-
-
-def has_activity_event_permission(doc, user: str | None = None, ptype: str | None = None, **kwargs) -> bool:
-	"""1. Central appends the ledger, so create, write, and delete are denied to every user.
-	2. A System Manager sees every event.
-	3. An event without a team or capability is denied.
-	4. Read needs the row's required capability, team-wide or on its server."""
-	user = user or frappe.session.user
-	if ptype in MUTATING_PERMISSION_TYPES:
-		return False
-	if user_has_operator_bypass(user):
-		return True
-	if not doc.team or not doc.required_capability:
-		return False
-
-	return can(user, doc.team, doc.required_capability, server=doc.server or None)
-
-
-def activity_event_ip_query_conditions(user: str | None = None) -> str:
-	"""1. A System Manager sees every activity address.
-	2. Every other user sees none. Customers read an address through the activity API."""
-	user = user or frappe.session.user
-	return "" if user_has_operator_bypass(user) else "1 = 0"
-
-
-def has_activity_event_ip_permission(
-	doc, user: str | None = None, ptype: str | None = None, **kwargs
-) -> bool:
-	"""1. This operator-only table is append-only.
-	2. A System Manager may read it.
-	3. Every other user is denied."""
-	if ptype in MUTATING_PERMISSION_TYPES:
-		return False
-
-	return user_has_operator_bypass(user or frappe.session.user)
-
-
-def _activity_capabilities() -> list[str]:
-	return sorted({event.capability for event in EVENTS.values()})
-
-
-def _activity_clauses(table: str, capability: str, allowed: dict) -> list[str]:
-	cap = f"{table}.`required_capability` = {frappe.db.escape(capability)}"
-	wide = [team for team, servers in allowed.items() if servers == ALL_SERVERS]
-	clauses = [f"({cap} and {table}.`team` in ({_escape_values(wide)}))"] if wide else []
-	for team, servers in allowed.items():
-		if servers != ALL_SERVERS:
-			clauses.append(
-				f"({cap} and {table}.`team` = {frappe.db.escape(team)} and {table}.`server` in ({_escape_values(servers)}))"
-			)
-	return clauses
-
-
 def _user_notification_setting_query_conditions(doctype: str, user: str | None = None) -> str:
 	"""A user sees only their own notification settings; operators see all."""
 	user = user or frappe.session.user
@@ -376,6 +309,20 @@ def team_notification_has_permission(
 ) -> bool:
 	"""1. A System Manager has every permission.
 	2. Customers have no direct document permission because the feed applies recipient policy.
+	"""
+	return user_has_operator_bypass(user or frappe.session.user)
+
+
+def activity_event_query_conditions(user: str | None = None) -> str:
+	"""1. A System Manager sees every event.
+	2. Customers read the activity API, which applies each event's capability and server.
+	"""
+	return _operator_only_query_conditions(user)
+
+
+def activity_event_has_permission(doc, user: str | None = None, ptype: str | None = None, **kwargs) -> bool:
+	"""1. A System Manager has every permission.
+	2. Customers have no direct document permission because the activity API applies capabilities.
 	"""
 	return user_has_operator_bypass(user or frappe.session.user)
 

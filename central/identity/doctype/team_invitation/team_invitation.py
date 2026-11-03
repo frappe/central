@@ -16,7 +16,6 @@ from frappe.utils import (
 	validate_email_address,
 )
 
-from central.activity.teams import record_invitation_action
 from central.iam import can, user_has_operator_bypass
 from central.identity.doctype.team_member.team_member import validate_resource_scope
 from central.sso import central_url
@@ -138,7 +137,6 @@ class TeamInvitation(Document):
 		self.accepted_at = now()
 		self.flags.from_invitation_action = True
 		self.save()
-		record_invitation_action(self, "accepted")
 
 		return {"team": self.team, "role": self.role, "accepted": True}
 
@@ -152,7 +150,6 @@ class TeamInvitation(Document):
 		self.status = "Revoked"
 		self.flags.from_invitation_action = True
 		self.save()
-		record_invitation_action(self, "revoked")
 
 		return True
 
@@ -179,7 +176,6 @@ class TeamInvitation(Document):
 		self.flags.from_invitation_action = True
 		self.save()
 		self.send_email()
-		record_invitation_action(self, "resent")
 
 		return {"name": self.name, "expires_on": self.expires_on}
 
@@ -198,7 +194,6 @@ class TeamInvitation(Document):
 		self.status = "Declined"
 		self.flags.from_invitation_action = True
 		self.save()
-		record_invitation_action(self, "declined")
 
 		return True
 
@@ -329,4 +324,3 @@ def expire_pending_invitations() -> None:
 		invitation = frappe.get_doc("Team Invitation", name)
 		invitation.status = "Expired"
 		invitation.save()
-		record_invitation_action(invitation, "expired")

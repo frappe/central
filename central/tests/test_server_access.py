@@ -1,4 +1,3 @@
-import json
 from unittest.mock import patch
 
 import frappe
@@ -70,50 +69,6 @@ class TestServerAccess(IntegrationTestCase):
 		)
 		self.assertEqual(self._saved_keys(), [self.second_key.name, self.first_key.name])
 
-	def test_a_key_change_records_which_keys_were_added_and_removed(self):
-		frappe.set_user(self.developer)
-		set_server_ssh_keys(self.team, self.server.name, [self.first_key.name])
-		set_server_ssh_keys(self.team, self.server.name, [self.second_key.name])
-
-		event_name = frappe.get_all(
-			"Activity Event",
-			filters={"event": "server.ssh_keys_changed", "server": self.server.name},
-			order_by="creation desc",
-			pluck="name",
-			limit=1,
-		)[0]
-		event = frappe.get_doc("Activity Event", event_name)
-		self.assertEqual(event.category, "access")
-		self.assertEqual(event.required_capability, "server:ssh-key")
-		self.assertEqual(event.actor, self.developer)
-		self.assertEqual(
-			{detail["label"]: (detail["from"], detail["to"]) for detail in json.loads(event.details)},
-			{"Added": (None, "CI"), "Removed": ("Laptop", None)},
-		)
-
-		self.assertEqual(
-			[
-				row["event"]
-				for row in server_activity(team=self.team, resource_id=self.server.name, category="access")[
-					"events"
-				]
-			],
-			["server.ssh_keys_changed", "server.ssh_keys_changed"],
-		)
-
-		frappe.set_user(self.viewer)
-		self.assertEqual(
-			server_activity(team=self.team, resource_id=self.server.name, category="access")["events"],
-			[],
-		)
-
-	def test_a_failed_activity_read_keeps_the_saved_keys(self):
-		frappe.set_user(self.developer)
-		with patch("central.activity.servers._ssh_key_changes", side_effect=RuntimeError("read failed")):
-			set_server_ssh_keys(self.team, self.server.name, [self.first_key.name])
-
-		self.assertEqual(self._saved_keys(), [self.first_key.name])
-
 	def test_a_viewer_cannot_change_keys(self):
 		frappe.set_user(self.viewer)
 		with self.assertRaises(frappe.PermissionError):
@@ -152,6 +107,18 @@ class TestServerAccess(IntegrationTestCase):
 
 		self.server_client.set_termination_protection.assert_called_once_with("vm-access", True)
 		self.assertTrue(frappe.db.get_value("Virtual Machine", self.server.name, "is_termination_protected"))
+
+	def test_a_protection_change_shows_in_the_server_activity(self):
+		self.server_client.set_termination_protection.return_value = {"is_termination_protected": True}
+		frappe.set_user(self.developer)
+
+		set_termination_protection(self.team, self.server.name, enabled=1)
+
+		events = server_activity(team=self.team, resource_id=self.server.resource_id)["events"]
+		self.assertEqual(events[0]["event"], "server.updated")
+		self.assertEqual(
+			events[0]["details"], [{"label": "Termination protection", "from": "off", "to": "on"}]
+		)
 
 	def test_protection_refuses_an_unexpected_region_reply(self):
 		self.server_client.set_termination_protection.return_value = {}

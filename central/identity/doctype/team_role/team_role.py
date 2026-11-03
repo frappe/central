@@ -5,7 +5,6 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
-from central.activity.teams import record_role_created, record_role_deleted, record_role_updated
 from central.iam import can, clear_grants_cache, user_has_operator_bypass
 
 
@@ -32,11 +31,7 @@ class TeamRole(Document):
 		if not self.is_system and not self.team:
 			frappe.throw(_("Custom Team Roles must be tied to one team."))
 
-	def after_insert(self) -> None:
-		record_role_created(self)
-
 	def on_update(self) -> None:
-		record_role_updated(self)
 		clear_grants_cache()
 		if self.has_capabilities_changed():
 			frappe.enqueue(
@@ -54,7 +49,6 @@ class TeamRole(Document):
 		return {row.capability for row in previous.capabilities} != capabilities
 
 	def on_trash(self) -> None:
-		record_role_deleted(self)
 		if self.is_system:
 			frappe.throw(_("System Team Roles cannot be deleted."))
 		if self.flags.from_team_delete:

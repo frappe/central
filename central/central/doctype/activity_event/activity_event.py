@@ -1,13 +1,34 @@
 import hashlib
+from datetime import datetime
+from functools import partial
 from typing import Any
 
 import frappe
 from frappe.model.document import Document
+from frappe.query_builder import Order
 from frappe.utils import add_days, cint, now_datetime
 
-from central.activity.events import SYSTEM_USERS, EventType, get_event
+from central.central.doctype.activity_event.tracked import ACTION_EVENTS, TRACKED, EventKind, Tracked
+from central.iam import get_capability_gate, user_has_operator_bypass
 
-MAX_EVENT_KEY_LENGTH = 140
+MAX_VALUE_LENGTH = 120
+# A long or structured value reads as "changed", not as two values side by side.
+SUMMARY_FIELDTYPES = {"Attach", "Attach Image", "Code", "JSON", "Long Text", "Small Text", "Text"}
+ACTION = EventKind("", "action", "server:view")
+FEED_FIELDS = (
+	"name",
+	"event",
+	"category",
+	"resource_type",
+	"resource_name",
+	"resource_label",
+	"status",
+	"details",
+	"error",
+	"actor",
+	"creation",
+)
+FEED_CACHE = "activity_feed"
 
 
 class ActivityEvent(Document):
@@ -26,8 +47,6 @@ class ActivityEvent(Document):
 		details: DF.JSON | None
 		error: DF.SmallText | None
 		event: DF.Data
-		event_key: DF.Data
-		occurred_at: DF.Datetime
 		reference_doctype: DF.Link | None
 		reference_name: DF.DynamicLink | None
 		required_capability: DF.Link
@@ -37,200 +56,333 @@ class ActivityEvent(Document):
 		server: DF.Link | None
 		status: DF.Data | None
 		team: DF.Link
-		title: DF.Data
 	# end: auto-generated types
 
 	@staticmethod
-	def record(
-		event: str,
-		*,
-		resource_type: str,
-		resource_name: str,
-		key: str,
-		label: str | None = None,
-		actor: str | None = None,
-		occurred_at=None,
-		status: str | None = None,
-		details: list[dict[str, Any]] | None = None,
-		error: str | None = None,
-		reference: tuple[str, str] | None = None,
-	) -> str | None:
-		"""Record `event` on a resource once per `key`. Team, server, capability and IP are
-		derived here, so a caller cannot widen who sees the row."""
-		event_type = get_event(event)
-		event_key = _event_key(event, key)
-		ip_address = _request_ip(actor or frappe.session.user)
-
-		try:
-			team, server = get_resource_scope(resource_type, resource_name)
-			if not team or frappe.db.exists("Activity Event", {"event_key": event_key}):
-				return None
-
-			doc = frappe.get_doc(
-				_values(
-					event=event,
-					event_type=event_type,
-					event_key=event_key,
-					team=team,
-					server=server,
-					resource_type=resource_type,
-					resource_name=resource_name,
-					resource_label=label,
-					actor=actor,
-					occurred_at=occurred_at,
-					status=status,
-					details=details,
-					error=error,
-					reference=reference,
-				)
-			)
-			# The system writes the ledger on behalf of any caller; a departed actor must still land.
-			try:
-				doc.insert(ignore_permissions=True, ignore_links=True)
-			except frappe.UniqueValidationError:
-				# Two workers can record the same key at once; the first row is the event.
-				return None
-		except Exception:
-			# An audit row must never roll back the operation it describes.
-			frappe.log_error(title="Activity event not recorded", message=frappe.get_traceback())
-			return None
-
-		if ip_address:
-			_record_ip(doc, ip_address)
-
-		try:
-			_publish(team)
-		except Exception:
-			frappe.log_error(title="Activity event not published", message=frappe.get_traceback())
-
-		return doc.name
+	def record(resource: Document, event: str, kind: EventKind, **values) -> None:
+		"""Append one event about `resource`, such as support opening a team."""
+		ActivityEvent.insert_events([get_event(resource, event, kind, **values)])
 
 	@staticmethod
-	def clear_old_logs(days: int = 30) -> None:
+	def record_action(action: Document) -> None:
+		"""Record the end state of a server action on its server."""
+		if action.server and action.action in ACTION_EVENTS:
+			server = frappe.get_doc("Virtual Machine", action.server)
+			ActivityEvent.insert_events([get_action_event(action, server)])
+
+	@staticmethod
+	def insert_events(events: list[dict | None]) -> None:
+		"""Write live events. Each team's feed cache clears, and its members hear of it, once
+		the change commits."""
+		events = [event for event in events if event]
+		for event in events:
+			# The system writes the ledger for every user. Customers read it through the activity API.
+			# An event can describe a resource that is already deleted, so links are not checked.
+			frappe.get_doc({"doctype": "Activity Event", **event}).insert(
+				ignore_permissions=True, ignore_links=True
+			)
+
+		for team in {event["team"] for event in events}:
+			clear_feed_cache(team)
+			# A reader between now and the commit can cache the old page, so clear again after it.
+			frappe.db.after_commit.add(partial(clear_feed_cache, team))
+			# The team room includes every member, so the signal carries no event detail.
+			frappe.publish_realtime("activity_changed", {}, doctype="Team", docname=team, after_commit=True)
+
+	@staticmethod
+	def get_page(
+		team: str,
+		*,
+		limit: int,
+		server: str | None = None,
+		category: str | None = None,
+		since: datetime | None = None,
+		until: datetime | None = None,
+		after: tuple[str, str] | None = None,
+	) -> list[dict]:
+		"""Newest first, the events of `team` the session user may see. `after` is the
+		(creation, name) of the last event on the previous page."""
+		table = frappe.qb.DocType("Activity Event")
+		query = (
+			frappe.qb.from_(table)
+			.select(*FEED_FIELDS)
+			.where(table.team == team)
+			.orderby(table.creation, order=Order.desc)
+			.orderby(table.name, order=Order.desc)
+			.limit(limit)
+		)
+		user = frappe.session.user
+		if not user_has_operator_bypass(user):
+			query = query.where(get_capability_gate(table.required_capability, table.server, team, user))
+		if server:
+			query = query.where(table.server == server)
+		if category:
+			query = query.where(table.category == category)
+		if since:
+			query = query.where(table.creation >= since)
+		if until:
+			query = query.where(table.creation < until)
+		if after:
+			created, name = after
+			query = query.where(
+				(table.creation < created) | ((table.creation == created) & (table.name < name))
+			)
+
+		# The SQL names the reader's grants, filters and cursor, so equal SQL means an equal page.
+		key = hashlib.sha256(str(query).encode()).hexdigest()
+		return frappe.cache.hget(f"{FEED_CACHE}|{team}", key, generator=lambda: query.run(as_dict=True))
+
+	@staticmethod
+	def clear_old_logs(days: int) -> None:
 		"""Log Settings calls this daily with the days an operator keeps."""
-		cutoff = add_days(now_datetime(), -cint(days))
-		addresses = frappe.qb.DocType("Activity Event IP")
-		frappe.db.delete(addresses, filters=addresses.occurred_at < cutoff)
-		events = frappe.qb.DocType("Activity Event")
-		frappe.db.delete(events, filters=events.occurred_at < cutoff)
+		table = frappe.qb.DocType("Activity Event")
+		frappe.db.delete(table, filters=table.creation < add_days(now_datetime(), -cint(days)))
+		frappe.cache.delete_keys(f"{FEED_CACHE}|")
 
 
-def get_resource_label(resource_type: str, resource_name: str) -> str:
-	"""The resource's title as people know it, or its name when the DocType has no title."""
-	title_field = frappe.get_meta(resource_type).title_field
-	if not title_field:
-		return resource_name
-
-	return frappe.db.get_value(resource_type, resource_name, title_field) or resource_name
-
-
-def _event_key(event: str, key: str) -> str:
-	value = f"{event}:{key}"
-	if len(value) <= MAX_EVENT_KEY_LENGTH:
-		return value
-
-	# A team name plus a member email can exceed the Data column; the digest keeps dedupe.
-	return f"{event}:{hashlib.sha256(value.encode()).hexdigest()}"[:MAX_EVENT_KEY_LENGTH]
+def get_retention_days() -> int:
+	"""Log Settings owns how long the feed keeps events. Frappe adds its row after the first
+	migrate's patches, so until then the default in hooks applies, as Frappe itself would."""
+	days = frappe.db.get_value(
+		"Logs To Clear", {"parent": "Log Settings", "ref_doctype": "Activity Event"}, "days"
+	)
+	return cint(days) or cint(frappe.get_hooks("default_log_clearing_doctypes")["Activity Event"][-1])
 
 
-def _values(
-	*,
+def clear_feed_cache(team: str) -> None:
+	frappe.cache.delete_value(f"{FEED_CACHE}|{team}")
+
+
+def record_version(version: Document, method: str | None = None) -> None:
+	"""Version.after_insert. A patch that saves documents is not customer activity."""
+	spec = TRACKED.get(version.ref_doctype)
+	if not spec or frappe.flags.in_patch or frappe.flags.in_install:
+		return
+
+	diff = frappe.parse_json(version.data)
+	if has_tracked_change(spec, diff):
+		resource = frappe.get_doc(version.ref_doctype, version.docname)
+		ActivityEvent.insert_events(get_version_events(version, resource, diff))
+
+
+def record_created(doc: Document, method: str | None = None) -> None:
+	"""after_insert of a tracked DocType."""
+	if not frappe.flags.in_patch:
+		ActivityEvent.insert_events([get_lifecycle_event(doc, "created", doc.owner)])
+
+
+def record_deleted(doc: Document, method: str | None = None) -> None:
+	"""on_trash of a tracked DocType. It runs after the controller checks, so a refused
+	delete records nothing."""
+	if not frappe.flags.in_patch:
+		ActivityEvent.insert_events([get_lifecycle_event(doc, "deleted", frappe.session.user)])
+
+
+def get_event(
+	resource: Document,
 	event: str,
-	event_type: EventType,
-	event_key: str,
-	team: str,
-	server: str | None,
-	resource_type: str,
-	resource_name: str,
-	resource_label: str | None,
-	actor: str | None,
-	occurred_at,
-	status: str | None,
-	details: list[dict[str, Any]] | None,
-	error: str | None,
-	reference: tuple[str, str] | None,
-) -> dict[str, Any]:
-	actor = actor or frappe.session.user
+	kind: EventKind,
+	*,
+	actor: str | None = None,
+	details: list[dict] | None = None,
+	status: str | None = None,
+	error: str | None = None,
+	reference: tuple[str, str] | None = None,
+	occurred_at: datetime | None = None,
+) -> dict | None:
+	"""The row for one event about `resource`. The team and server come from the resource, so
+	a caller cannot widen who sees it. Frappe keeps `occurred_at` as the creation only in a
+	patch, which replays history; a live event happens now."""
+	team = resource.name if resource.doctype == "Team" else resource.get("team")
+	if not team:
+		return None
+
+	spec = TRACKED.get(resource.doctype)
+	label_field = (spec and spec.label_field) or resource.meta.title_field or "name"
 	return {
-		"doctype": "Activity Event",
 		"team": team,
-		"resource_type": resource_type,
-		"resource_name": resource_name,
-		"resource_label": resource_label or get_resource_label(resource_type, resource_name),
-		"server": server,
+		"server": resource.name if resource.doctype == "Virtual Machine" else resource.get("server"),
+		"resource_type": resource.doctype,
+		"resource_name": resource.name,
+		"resource_label": resource.get(label_field) or resource.name,
 		"event": event,
-		"category": event_type.category,
-		"title": event_type.title,
-		"required_capability": event_type.capability,
+		"category": kind.category,
+		"required_capability": kind.capability,
+		"actor": actor or frappe.session.user,
 		"status": status,
-		"actor": actor,
-		"occurred_at": occurred_at or now_datetime(),
 		"details": frappe.as_json(details) if details else None,
 		"error": error,
 		"reference_doctype": reference[0] if reference else None,
 		"reference_name": reference[1] if reference else None,
-		"event_key": event_key,
+		"creation": occurred_at,
 	}
 
 
-def _record_ip(event, ip_address: str) -> None:
-	# The address sits in an operator-only table, so a customer read of the event
-	# cannot return it. A failure must not discard the event above.
-	try:
-		frappe.get_doc(
-			{
-				"doctype": "Activity Event IP",
-				"event": event.name,
-				"team": event.team,
-				"ip_address": ip_address,
-				"occurred_at": event.occurred_at,
-			}
-		).insert(ignore_permissions=True)
-	except Exception:
-		frappe.log_error(title="Activity event IP not recorded", message=frappe.get_traceback())
+def get_version_events(version, resource: Document, diff: dict) -> list[dict | None]:
+	"""The events in the tracked fields of one Version, one per capability."""
+	spec = TRACKED[version.ref_doctype]
+	context = {
+		"actor": version.owner,
+		"reference": ("Version", version.name),
+		"occurred_at": version.creation,
+	}
+	events = [
+		get_event(resource, f"{spec.prefix}.{kind.verb}", kind, details=details, **context)
+		for kind, details in get_changes(spec, resource, diff).items()
+	]
+	if status := get_new_status(spec, diff):
+		event = f"{spec.prefix}.{status.lower()}"
+		events.append(get_event(resource, event, spec.get_kind(), status=status, **context))
+
+	return events
 
 
-def _request_ip(actor: str) -> str | None:
-	# A background job or a different actor has no request IP of its own.
-	if actor in SYSTEM_USERS or actor != frappe.session.user:
+def get_lifecycle_event(
+	doc: Document, verb: str, actor: str, occurred_at: datetime | None = None
+) -> dict | None:
+	spec = TRACKED[doc.doctype]
+	if not spec.lifecycle:
 		return None
 
-	return getattr(frappe.local, "request_ip", None)
+	return get_event(doc, f"{spec.prefix}.{verb}", spec.get_kind(), actor=actor, occurred_at=occurred_at)
 
 
-def _publish(team: str) -> None:
-	# A patch writes history, and only the API and the console need a live update.
-	if frappe.flags.in_patch:
-		return
-
-	# The team room includes every member, so the signal carries no resource identity.
-	frappe.publish_realtime(
-		"activity_changed",
-		{},
-		doctype="Team",
-		docname=team,
-		after_commit=True,
+def get_action_event(action: Document, server: Document) -> dict | None:
+	return get_event(
+		server,
+		ACTION_EVENTS[action.action],
+		ACTION,
+		actor=action.requested_by,
+		details=get_action_details(action),
+		status=action.status,
+		error=action.error_message,
+		reference=("Resource Action", action.name),
+		occurred_at=action.completed_at,
 	)
 
 
-def get_resource_scope(resource_type: str, resource_name: str) -> tuple[str | None, str | None]:
-	"""The owning team, and the server whose scoped grants also see the event."""
-	if resource_type == "Team":
-		return resource_name, None
+def has_tracked_change(spec: Tracked, diff: dict) -> bool:
+	return bool(get_new_status(spec, diff) or get_changed_fields(diff) & spec.fields.keys())
 
-	meta = frappe.get_meta(resource_type)
-	fields = [name for name in ("team", "server") if meta.has_field(name)]
-	row = frappe.db.get_value(resource_type, resource_name, fields, as_dict=True) if fields else None
-	if not row:
-		return None, None
 
-	server = resource_name if resource_type == "Virtual Machine" else row.get("server")
-	return row.get("team"), server
+def get_new_status(spec: Tracked, diff: dict) -> str | None:
+	for fieldname, _old, new in diff.get("changed") or []:
+		if fieldname == "status" and new in spec.statuses:
+			return new
+
+	return None
+
+
+def get_changed_fields(diff: dict) -> set[str]:
+	changed = {row[0] for row in diff.get("changed") or []}
+	tables = {row[0] for key in ("added", "removed", "row_changed") for row in diff.get(key) or []}
+	return changed | tables
+
+
+def get_changes(spec: Tracked, resource: Document, diff: dict) -> dict[EventKind, list[dict]]:
+	"""The tracked details of one Version, grouped by the event each belongs to."""
+	changes: dict[EventKind, list[dict]] = {}
+	for fieldname, old, new in diff.get("changed") or []:
+		if fieldname in spec.fields:
+			detail = get_field_detail(spec, resource, fieldname, old, new)
+			changes.setdefault(spec.get_kind(fieldname), []).append(detail)
+
+	for table in sorted(get_changed_fields(diff) & spec.row_fields.keys()):
+		detail = get_table_detail(spec, resource, table, diff)
+		changes.setdefault(spec.get_kind(table), []).append(detail)
+
+	return changes
+
+
+def get_field_detail(spec: Tracked, resource: Document, fieldname: str, old, new) -> dict:
+	label = spec.fields[fieldname]
+	field = resource.meta.get_field(fieldname)
+	if field.fieldtype in SUMMARY_FIELDTYPES:
+		return get_detail(label)
+	if field.fieldtype == "Check":
+		inverted = fieldname in spec.inverted
+		return get_detail(label, get_switch(old, inverted), get_switch(new, inverted))
+	if field.fieldtype == "Link":
+		return get_detail(label, get_link_title(field.options, old), get_link_title(field.options, new))
+
+	return get_detail(label, old, new)
+
+
+def get_switch(value, inverted: bool) -> str:
+	return "on" if bool(cint(value)) != inverted else "off"
+
+
+def get_table_detail(spec: Tracked, resource: Document, table: str, diff: dict) -> dict:
+	"""Removed rows on the left, added rows on the right. A changed row shows on both sides."""
+	child_meta = frappe.get_meta(resource.meta.get_field(table).options)
+	fields = spec.row_fields[table]
+	rows = {row.name: row.as_dict() for row in resource.get(table)}
+	before = [row for name, row in diff.get("removed") or [] if name == table]
+	after = [row for name, row in diff.get("added") or [] if name == table]
+	for name, _index, row_name, changed in diff.get("row_changed") or []:
+		if name == table:
+			# An older Version can name a row the document no longer has.
+			row = rows.get(row_name, {})
+			after.append({**row, **{field: new for field, _old, new in changed}})
+			before.append({**row, **{field: old for field, old, _new in changed}})
+
+	def labels(side: list[dict]) -> str | None:
+		return ", ".join(get_row_label(child_meta, row, fields) for row in side) or None
+
+	return get_detail(spec.fields[table], labels(before), labels(after))
+
+
+def get_row_label(meta, row: dict, fields: tuple[str, ...]) -> str:
+	values = []
+	for fieldname in fields:
+		field = meta.get_field(fieldname)
+		value = row.get(fieldname)
+		values.append(get_link_title(field.options, value) if field.fieldtype == "Link" else value)
+
+	return " · ".join(str(value) for value in values if value)
+
+
+def get_link_title(doctype: str, name: str | None) -> str | None:
+	"""The name people know a linked record by. A deleted record keeps its ID."""
+	title_field = frappe.get_meta(doctype).title_field
+	if not name or not title_field:
+		return name
+
+	return frappe.db.get_value(doctype, name, title_field, cache=True) or name
+
+
+def get_action_details(action: Document) -> list[dict]:
+	# Only a finished resize confirms the new plan.
+	if action.action != "resize" or action.status != "Succeeded":
+		return []
+
+	configuration = action.get_resize_configuration()
+	if not configuration.plan or configuration.plan == configuration.from_plan:
+		return []
+
+	return [
+		get_detail(
+			"Plan",
+			get_link_title("Plan", configuration.from_plan),
+			get_link_title("Plan", configuration.plan),
+		)
+	]
+
+
+def get_detail(label: str, old=None, new=None) -> dict[str, Any]:
+	"""One change as the console shows it. The API translates the label for the reader."""
+	return {"label": label, "from": truncate(old), "to": truncate(new)}
+
+
+def truncate(value) -> str | None:
+	if value in (None, ""):
+		return None
+
+	text = str(value)
+	return text if len(text) <= MAX_VALUE_LENGTH else f"{text[: MAX_VALUE_LENGTH - 1]}…"
 
 
 def on_doctype_update() -> None:
-	"""Index the feed's paging order."""
-	frappe.db.add_index("Activity Event", ["server", "occurred_at", "name"])
-	frappe.db.add_index("Activity Event", ["resource_type", "resource_name", "occurred_at", "name"])
-	frappe.db.add_index("Activity Event", ["team", "occurred_at", "name"])
-	frappe.db.add_index("Activity Event", ["team", "required_capability", "occurred_at"])
+	"""Index the feed's paging order for a team and for one server."""
+	frappe.db.add_index("Activity Event", ["team", "creation", "name"])
+	frappe.db.add_index("Activity Event", ["server", "creation", "name"])

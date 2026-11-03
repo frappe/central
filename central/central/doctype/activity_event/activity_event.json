@@ -15,11 +15,9 @@
   "column_break_identity",
   "event",
   "category",
-  "title",
   "status",
   "body_section",
   "actor",
-  "occurred_at",
   "details_column",
   "details",
   "error",
@@ -27,9 +25,7 @@
   "required_capability",
   "reference_section",
   "reference_doctype",
-  "reference_name",
-  "dedupe_section",
-  "event_key"
+  "reference_name"
  ],
  "fields": [
   {
@@ -84,14 +80,15 @@
    "fieldtype": "Column Break"
   },
   {
-   "description": "The registered event name, such as server.restarted or member.added.",
+   "description": "The event name, such as server.restarted or team.members_changed.",
    "fieldname": "event",
    "fieldtype": "Data",
    "in_standard_filter": 1,
    "label": "Event",
    "read_only": 1,
    "reqd": 1,
-   "search_index": 1
+   "search_index": 1,
+   "in_list_view": 1
   },
   {
    "fieldname": "category",
@@ -103,15 +100,6 @@
    "read_only": 1,
    "reqd": 1,
    "search_index": 1
-  },
-  {
-   "description": "The one-line title the console shows, in English. The API translates it.",
-   "fieldname": "title",
-   "fieldtype": "Data",
-   "in_list_view": 1,
-   "label": "Title",
-   "read_only": 1,
-   "reqd": 1
   },
   {
    "description": "The source's status at this moment, such as Succeeded, Failed, Available, or Deleted.",
@@ -135,16 +123,6 @@
    "label": "Actor",
    "options": "User",
    "read_only": 1
-  },
-  {
-   "description": "When the event happened, not when this row was written.",
-   "fieldname": "occurred_at",
-   "fieldtype": "Datetime",
-   "in_list_view": 1,
-   "label": "Occurred At",
-   "read_only": 1,
-   "reqd": 1,
-   "search_index": 1
   },
   {
    "fieldname": "details_column",
@@ -171,7 +149,7 @@
    "label": "Access"
   },
   {
-   "description": "The capability a member needs to see this event. Set from the event registry.",
+   "description": "The capability a member needs to see this event. Set from the tracked DocType config.",
    "fieldname": "required_capability",
    "fieldtype": "Link",
    "label": "Required Capability",
@@ -190,7 +168,8 @@
    "fieldtype": "Link",
    "label": "Source Type",
    "options": "DocType",
-   "read_only": 1
+   "read_only": 1,
+   "description": "The record this event was built from: a Version, or a Resource Action."
   },
   {
    "fieldname": "reference_name",
@@ -198,25 +177,10 @@
    "label": "Source ID",
    "options": "reference_doctype",
    "read_only": 1
-  },
-  {
-   "collapsible": 1,
-   "fieldname": "dedupe_section",
-   "fieldtype": "Section Break",
-   "label": "Idempotency"
-  },
-  {
-   "description": "The source record and outcome this event was built from. Recorded once.",
-   "fieldname": "event_key",
-   "fieldtype": "Data",
-   "label": "Event Key",
-   "read_only": 1,
-   "reqd": 1,
-   "unique": 1
   }
  ],
  "links": [],
- "modified": "2026-10-29 10:00:00.000000",
+ "modified": "2026-11-03 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Central",
  "name": "Activity Event",
@@ -229,18 +193,14 @@
    "read": 1,
    "report": 1,
    "role": "System Manager"
-  },
-  {
-   "read": 1,
-   "role": "Central User"
   }
  ],
  "row_format": "Dynamic",
- "search_fields": "team,resource_name,title,event,resource_label",
+ "search_fields": "team,resource_name,event,resource_label",
  "show_title_field_in_link": 1,
- "sort_field": "occurred_at",
+ "sort_field": "creation",
  "sort_order": "DESC",
  "states": [],
- "title_field": "title",
+ "title_field": "resource_label",
  "track_changes": 0
 }

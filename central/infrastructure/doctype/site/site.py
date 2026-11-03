@@ -5,7 +5,6 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
-from central.activity.sites import record_site_claimed
 from central.infrastructure.doctype.blocked_domain.blocked_domain import BlockedDomain, normalize_domain
 from central.signups.funnel import capture_trial_event
 
@@ -174,8 +173,9 @@ class Site(Document):
 		"""Record the first successful login handoff and schedule the optional rename."""
 		if not self.claimed_at:
 			self.db_set("claimed_at", frappe.utils.now_datetime())
+			# db_set writes no Version, and the activity feed reads Versions.
+			self.save_version()
 			capture_trial_event("trial_claimed", self.team, self.product, user=frappe.session.user)
-			record_site_claimed(self)
 
 		self.enqueue_subdomain_rename()
 

@@ -1,6 +1,6 @@
-from central.activity.backfill import backfill_server_events
+from central.central.doctype.activity_event.backfill import backfill
 
 
 def execute() -> None:
-	"""Rebuild the feed from the records Central already keeps, within the retention window."""
-	backfill_server_events()
+	"""Fill the activity feed with the history the site already recorded, up to its retention."""
+	backfill()

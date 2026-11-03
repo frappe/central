@@ -8,7 +8,7 @@ You need the Owner or Admin role to invite, change, or remove members. Other rol
 
 ## The member list
 
-The Team page has three tabs: **Team**, **Roles**, and **Activity**. The **Team** tab shows each member and pending invitation. The **Roles** tab shows the custom roles of your team. The **Activity** tab shows the timeline of invitations, role changes, and member actions.
+The Team page has three tabs: **Team**, **Roles**, and **Activity**. The **Team** tab shows each member and pending invitation. The **Roles** tab shows the custom roles of your team. The **Activity** tab shows the changes to your team, its members, roles, SSH keys, and servers for the last 12 months. You see only the events that your role allows.
 
 Each row on the **Team** tab shows the member's name, email, and access. The access column shows each role and where it applies, such as `Developer on All resources`. A pending invitation shows the email address, an **Invited** badge, and the date it expires.
 
