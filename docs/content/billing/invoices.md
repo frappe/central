@@ -26,6 +26,8 @@ The list shows each invoice with its period, invoice number, status, and amount.
 | `Waived` | Frappe Cloud cancelled the amount. You do not need to pay it. |
 | `Cancelled` | The invoice was cancelled. |
 
+An `Outstanding` invoice can stay without a due date while your billing details are not complete. Add your billing details to issue it.
+
 ## See an invoice
 
 Click an invoice to open it. The panel shows:
@@ -44,17 +46,17 @@ Click the download icon on the invoice row or at the top of the invoice panel. T
 
 The PDF is ready only after the invoice is issued. Until then, the download icon is disabled. You can download up to 30 invoices in one hour.
 
-## Pay an open invoice
+## Pay an outstanding invoice
 
-Frappe Cloud tries to collect each invoice automatically. Pay by hand when an invoice is still `Open` or `Overdue`, for example after a card is declined.
+Frappe Cloud tries to collect each invoice automatically. Pay by hand when an issued invoice is still `Outstanding` or `Overdue`, for example after a card is declined. You can pay an `Outstanding` invoice only after it has a due date.
 
 1. Go to **Billing > Invoices**.
-2. Click the `Open` or `Overdue` invoice.
+2. Click the `Outstanding` or `Overdue` invoice.
 3. Click **Pay** with the amount, such as **Pay $683.11 now**.
 
 The charge uses your saved payment method. While the bank confirms the payment, the panel shows **Waiting for your bank to confirm the payment…**. The status changes to `Paid` when the payment is confirmed.
 
-When an invoice is unpaid, **Billing > Overview** shows a banner with the amount and a **Pay now** button. The banner is amber for an open invoice and red for an overdue invoice.
+When an invoice is unpaid, **Billing > Overview** shows a banner with the amount and a **Pay now** button. The banner is amber for an outstanding invoice and red for an overdue invoice.
 
 ## When a payment fails
 
