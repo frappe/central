@@ -231,7 +231,7 @@ def transition(
 			InvalidTransition,
 		)
 	doc.set(machine.field, to_state)
-	outcome = billing_event.FAILED if to_state == "Failed" else billing_event.SUCCESS
+	outcome = billing_event.FAILED if to_state == "Failed" else None
 	_append_event(doc, from_state, to_state, reason, actor, correlation, amount, event_type, outcome=outcome)
 
 
@@ -270,7 +270,7 @@ def record_event(
 	amount=None,
 	correlation=None,
 	category=None,
-	outcome: str = billing_event.SUCCESS,
+	outcome: str | None = None,
 ) -> None:
 	"""Log a billing change that is not a status move, such as a tier change."""
 	_append_event(doc, from_state, to_state, reason, None, correlation, amount, event_type, category, outcome)
@@ -282,7 +282,7 @@ def record_team_event(
 	category: str,
 	reason=None,
 	amount=None,
-	outcome: str = billing_event.SUCCESS,
+	outcome: str | None = None,
 ) -> None:
 	"""Log a billing step about a team when no document exists, such as an invoice that failed."""
 	subject = frappe._dict(doctype="Team", name=team, team=team)

@@ -368,7 +368,7 @@ A month whose total is below the **Minimum Invoice Amount** for its currency (Bi
 
 ### Billing activity
 
-Every billing step adds a **Billing Event**: profile, subscription, customer sync, invoice and payment. Each event has a flow and an outcome. The code that writes the event states the outcome. A status move to Failed is a failure. Use the **Billing Activity** report to find a failure by team, flow or outcome.
+Every billing step adds a **Billing Event**: profile, subscription, customer sync, invoice and payment. Each event has a flow and an outcome. The code that writes the event states a failure, and an event with no outcome is a success. A status move to Failed is a failure. Use the **Billing Activity** report to find a failure by team, flow or outcome.
 
 ### Accounting records
 

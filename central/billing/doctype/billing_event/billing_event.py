@@ -42,7 +42,8 @@ def outcome_of(event_type: str | None, to_state: str | None) -> str:
 
 class BillingEvent(Document):
 	def before_insert(self):
-		"""Name the flow here, so every writer gets it the same way. The writer states the outcome."""
+		"""Name the flow here, so every writer gets it the same way. A writer states a failure;
+		an event with no outcome is a success."""
 		self.category = self.category or flow_of(self.subject_doctype)
 		self.outcome = self.outcome or SUCCESS
 
