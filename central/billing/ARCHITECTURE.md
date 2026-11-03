@@ -611,6 +611,8 @@ settlement.can_accept_spend gates money movement; 80% forecast warning
 team's one wallet, no scoping of any kind (Projects have no relationship to credits;
 see §2.1).
 
+**Ledger Repair.** A Credit Ledger Entry with the reference type `Ledger Repair` books credit that a wallet held with no ledger entry. The patch `expire_promotional_credit_and_clear_unbooked_wallets` writes one Credit for each wallet whose balance is above the sum of its ledger. The amount is the difference, the date is the wallet's creation, and the credit is promotional, so it expires `promotional_credit_validity_days` after that date. The patch does not change the wallet balance. A wallet below its ledger stays as it is, and invariant C2 reports it.
+
 ### G. Trust tier / entitlement
 ```mermaid
 flowchart LR

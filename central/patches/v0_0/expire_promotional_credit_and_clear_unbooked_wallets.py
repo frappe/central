@@ -9,7 +9,7 @@ DRIFT_TOLERANCE = 0.001
 
 def execute() -> None:
 	set_expiry_on_promotional_credit()
-	clear_balances_with_no_ledger_entry()
+	book_missing_wallet_credit()
 
 
 def set_expiry_on_promotional_credit() -> None:
@@ -31,9 +31,47 @@ def set_expiry_on_promotional_credit() -> None:
 		)
 
 
-def clear_balances_with_no_ledger_entry() -> None:
-	"""The ledger holds the truth: a wallet above its ledger drops to what the ledger proves."""
-	for wallet in frappe.get_all("Credit Wallet", fields=["name", "team", "currency", "balance"]):
-		proven = credits.ledger_balance(wallet.team, wallet.currency)
-		if flt(wallet.balance) - proven > DRIFT_TOLERANCE:
-			frappe.db.set_value("Credit Wallet", wallet.name, "balance", proven, update_modified=False)
+def book_missing_wallet_credit() -> None:
+	"""A wallet above its ledger holds credit that the ledger never booked. Book that credit, so that
+	the ledger proves the balance. A wallet below its ledger stays as it is, for an operator."""
+	for wallet in frappe.get_all("Credit Wallet", pluck="name"):
+		_book_missing_credit(wallet)
+
+
+def _book_missing_credit(wallet_name: str) -> None:
+	wallet = frappe.db.get_value(
+		"Credit Wallet",
+		wallet_name,
+		["name", "team", "currency", "balance", "last_entry", "creation"],
+		as_dict=True,
+		for_update=True,
+	)
+	precision = frappe.get_precision("Credit Ledger Entry", "amount") or 2
+	missing = flt(flt(wallet.balance) - credits.ledger_balance(wallet.team, wallet.currency), precision)
+	if missing <= DRIFT_TOLERANCE:
+		return
+
+	entry = _repair_entry(wallet, missing)
+	# The entry is inserted without hooks, so the migration enqueues no settlement job.
+	entry.db_insert()
+	if not wallet.last_entry:
+		frappe.db.set_value("Credit Wallet", wallet.name, "last_entry", entry.name, update_modified=False)
+
+
+def _repair_entry(wallet, amount: float):
+	return frappe.get_doc(
+		{
+			"doctype": "Credit Ledger Entry",
+			"team": wallet.team,
+			"currency": wallet.currency,
+			"entry_type": "Credit",
+			"amount": amount,
+			"paid_in": 0,
+			"running_balance": flt(wallet.balance),
+			"reference_type": "Ledger Repair",
+			"reference_name": wallet.name,
+			"note": "The wallet held this credit with no ledger entry. This entry books it.",
+			"created_at": wallet.creation,
+			"expires_on": add_days(getdate(wallet.creation), settings.promotional_credit_validity_days()),
+		}
+	)

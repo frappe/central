@@ -7,9 +7,11 @@ from frappe.utils import add_days, getdate
 
 from central.billing import settings
 from central.billing.doctype.invoice.invoice import period_key_for
+from central.billing.revenue import credits
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import complete_billing_profile, ensure_atlas_instance, ensure_team
 from central.patches.v0_0 import (
+	expire_promotional_credit_and_clear_unbooked_wallets,
 	mark_waived_invoices_as_not_synced,
 	merge_invoice_draft_and_open_into_outstanding,
 	move_internal_flag_to_billing_profile,
@@ -164,3 +166,80 @@ class TestStartBillingRunOutcomes(IntegrationTestCase):
 		outcome = self._run_team(TEAM, "2026-04-30")
 		self.assertEqual(outcome.outcome, "Below Minimum")
 		self.assertIn("written off", outcome.reason)
+
+
+def _wallet(balance: float, team: str = TEAM, currency: str = "INR") -> str:
+	wallet = frappe.get_doc(
+		{
+			"doctype": "Credit Wallet",
+			"name": credits.wallet_name(team, currency),
+			"team": team,
+			"currency": currency,
+			"balance": balance,
+		}
+	)
+	wallet.db_insert()
+	return wallet.name
+
+
+def _ledger_entry(entry_type: str, amount: float, team: str = TEAM, **fields) -> str:
+	entry = frappe.get_doc(
+		{
+			"doctype": "Credit Ledger Entry",
+			"team": team,
+			"currency": "INR",
+			"entry_type": entry_type,
+			"amount": amount,
+			**fields,
+		}
+	)
+	entry.db_insert()
+	return entry.name
+
+
+def _repair_entries(wallet: str) -> list:
+	return frappe.get_all(
+		"Credit Ledger Entry",
+		filters={"reference_type": "Ledger Repair", "reference_name": wallet},
+		fields=["entry_type", "amount", "paid_in", "running_balance", "expires_on", "created_at"],
+	)
+
+
+class TestBookMissingWalletCredit(IntegrationTestCase):
+	def setUp(self):
+		ensure_team(TEAM)
+
+	def test_a_wallet_above_its_ledger_gets_the_missing_credit_booked(self):
+		wallet = _wallet(200)
+		_ledger_entry("Debit", 300, running_balance=200, reference_type="Invoice")
+
+		expire_promotional_credit_and_clear_unbooked_wallets.book_missing_wallet_credit()
+
+		(repair,) = _repair_entries(wallet)
+		self.assertEqual((repair.entry_type, repair.amount, repair.paid_in), ("Credit", 500, 0))
+		self.assertEqual(repair.running_balance, 200)
+		created = frappe.db.get_value("Credit Wallet", wallet, "creation")
+		days = settings.promotional_credit_validity_days()
+		self.assertEqual(repair.expires_on, add_days(getdate(created), days))
+		self.assertEqual(frappe.db.get_value("Credit Wallet", wallet, "balance"), 200)
+		self.assertEqual(credits.ledger_balance(TEAM, "INR"), 200)
+
+	def test_a_wallet_with_no_entries_gets_a_credit_of_its_balance(self):
+		wallet = _wallet(75.5)
+
+		expire_promotional_credit_and_clear_unbooked_wallets.book_missing_wallet_credit()
+
+		(repair,) = _repair_entries(wallet)
+		self.assertEqual(repair.amount, 75.5)
+		self.assertEqual(credits.ledger_balance(TEAM, "INR"), 75.5)
+		self.assertEqual(credits.get_balance(TEAM, "INR")["balance"], 75.5)
+		credits.lock_team_wallet(TEAM, "INR")
+
+	def test_a_wallet_below_its_ledger_is_left_alone(self):
+		wallet = _wallet(100)
+		_ledger_entry("Credit", 300, running_balance=300, reference_type="Promotion")
+
+		expire_promotional_credit_and_clear_unbooked_wallets.book_missing_wallet_credit()
+
+		self.assertEqual(_repair_entries(wallet), [])
+		self.assertEqual(frappe.db.get_value("Credit Wallet", wallet, "balance"), 100)
