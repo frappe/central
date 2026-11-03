@@ -57,6 +57,7 @@ def stub_adapter(signature_ok=True, token="token_live", payment=None):
 	adapter.verify_payment_signature.return_value = signature_ok
 	adapter.cancel_mandate.return_value = True
 	adapter.create_customer.return_value = "cust_created"
+	adapter.read_instrument_fingerprint.return_value = "upi:payer@razorpay"
 	with patch("central.billing.gateways.registry.get_adapter", return_value=adapter):
 		yield adapter
 
@@ -99,6 +100,7 @@ class TestMandateSetup(MandateTestBase):
 			)
 		self.assertEqual(method.status, "Active")
 		self.assertEqual(method.gateway_method_id, "token_live")
+		self.assertEqual(method.instrument_fingerprint, f"{GATEWAY}:upi:payer@razorpay")
 		self.assertTrue(method.validated_at)
 
 	def test_a_confirmed_mandate_is_labelled_with_its_upi_id(self):

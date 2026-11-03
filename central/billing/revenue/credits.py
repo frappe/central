@@ -534,7 +534,9 @@ def promotional_credit_without_expiry() -> list[dict]:
 	)
 
 
-def grant_promotional_credits(team, amount, currency, note=None, expires_on=None) -> dict:
+def grant_promotional_credits(
+	team, amount, currency, note=None, expires_on=None, instrument_fingerprint: str | None = None
+) -> dict:
 	"""Book a promotional/welcome credit — free credits granted at signup.
 
 	Tagged `reference_type="Promotion"` so the one-time signup grant is
@@ -543,7 +545,10 @@ def grant_promotional_credits(team, amount, currency, note=None, expires_on=None
 	Promotional credit is the only kind that expires, and the date is stamped on the
 	entry at grant time rather than derived from the setting when it is read. A team
 	granted credit under a 90-day policy keeps its 90 days when the policy changes to
-	60 — what a customer was given is a fact about that grant, not a live lookup."""
+	60 — what a customer was given is a fact about that grant, not a live lookup.
+
+	`instrument_fingerprint` is the card or account a welcome credit was earned with. It is
+	unique on the ledger, so a second grant for the same card raises UniqueValidationError."""
 	entry, new_balance = _book_entry(
 		team,
 		"Credit",
@@ -552,6 +557,7 @@ def grant_promotional_credits(team, amount, currency, note=None, expires_on=None
 		reference_type="Promotion",
 		note=note or "Welcome credits",
 		expires_on=expires_on if expires_on is not None else promotional_expiry_date(),
+		extra={"instrument_fingerprint": instrument_fingerprint},
 	)
 	return {"ledger_entry": entry.name, "new_balance": new_balance}
 

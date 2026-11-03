@@ -17,7 +17,7 @@ def on_payment_method_update(doc, method: str | None = None) -> None:
 
 	# Checked before the conversion, which closes the team's open trials.
 	if is_welcome_credit_due(doc.team):
-		grant_welcome_credits(doc.team)
+		grant_welcome_credits(doc.team, doc.instrument_fingerprint)
 	convert_team(doc.team)
 
 

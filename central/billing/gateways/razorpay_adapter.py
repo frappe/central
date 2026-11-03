@@ -420,6 +420,27 @@ class RazorpayAdapter(GatewayAdapter):
 	def get_mandate_status(self, mandate_reference: str) -> str:
 		return self._client().invoice.fetch(mandate_reference).get("status")
 
+	def read_instrument_fingerprint(self, payment: dict) -> str | None:
+		"""What identifies the UPI ID or card a mandate payment authorised, across customers.
+		Razorpay gives a card no fingerprint, so a card is keyed on what its token shows of it."""
+		if payment.get("vpa"):
+			return f"upi:{payment['vpa'].lower()}"
+
+		card = self._read_token(payment).get("card") or {}
+		if not card.get("last4"):
+			return None
+		parts = (card.get(key) for key in ("network", "issuer", "last4", "expiry_month", "expiry_year"))
+		return "card:" + ":".join(str(part or "") for part in parts)
+
+	def _read_token(self, payment: dict) -> dict:
+		"""The mandate token, or `{}` when Razorpay cannot give it. The mandate is already
+		registered, so a failed read must not undo it."""
+		try:
+			return self._client().token.fetch(payment.get("customer_id"), payment["token_id"])
+		except (*_TRANSIENT, razorpay.errors.BadRequestError):
+			frappe.log_error(title=f"Razorpay token {payment['token_id']} not read for its fingerprint")
+			return {}
+
 
 # A pending refund can still fail, so it is not Completed.
 _REFUND_STATUS = {"processed": "Completed", "pending": "Pending", "failed": "Failed"}

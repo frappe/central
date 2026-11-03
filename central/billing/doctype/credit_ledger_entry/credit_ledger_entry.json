@@ -21,6 +21,7 @@
   "reference_type",
   "reference_name",
   "gateway_payment_id",
+  "instrument_fingerprint",
   "advance_id",
   "column_break_ref",
   "created_at",
@@ -117,6 +118,14 @@
    "unique": 1
   },
   {
+   "fieldname": "instrument_fingerprint",
+   "fieldtype": "Data",
+   "label": "Instrument Fingerprint",
+   "read_only": 1,
+   "unique": 1,
+   "description": "The card, UPI ID or PayPal account a welcome credit was granted for; unique, so one instrument earns one welcome credit."
+  },
+  {
    "description": "The advance booked for this top-up in the accounting system.",
    "fieldname": "advance_id",
    "fieldtype": "Data",
@@ -141,7 +150,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-10-25 12:00:00.000000",
+ "modified": "2026-11-03 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Credit Ledger Entry",

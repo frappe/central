@@ -217,6 +217,7 @@ def confirm_payment_method(payment_method: str) -> Document:
 		)
 
 	method.update(_saved_card_fields(card, method))
+	method.set_instrument_fingerprint(card.get("fingerprint"))
 	method.save(ignore_permissions=True)
 
 	check = _adapter(method.gateway).validate_payment_method(method)

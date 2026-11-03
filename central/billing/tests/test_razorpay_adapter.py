@@ -359,3 +359,33 @@ class TestRazorpayAdapter(GatewayAdapterContract, IntegrationTestCase):
 		with self._client() as c:
 			c.invoice.fetch.return_value = {"status": "authenticated"}
 			self.assertEqual(adapter.get_mandate_status("order_x"), "authenticated")
+
+	def test_a_upi_mandate_is_fingerprinted_by_its_upi_id(self):
+		adapter = self.make_adapter()
+		with self._client() as c:
+			fingerprint = adapter.read_instrument_fingerprint({"vpa": "Payer@OKICICI", "token_id": "token_x"})
+			c.token.fetch.assert_not_called()
+		self.assertEqual(fingerprint, "upi:payer@okicici")
+
+	def test_a_card_mandate_is_fingerprinted_by_its_token_card(self):
+		adapter = self.make_adapter()
+		card = {
+			"network": "RuPay",
+			"issuer": "UTIB",
+			"last4": "8950",
+			"expiry_month": 12,
+			"expiry_year": 2030,
+		}
+		with self._client() as c:
+			c.token.fetch.return_value = {"id": "token_x", "card": card}
+			payment = {"token_id": "token_x", "customer_id": "cust_x"}
+			fingerprint = adapter.read_instrument_fingerprint(payment)
+			c.token.fetch.assert_called_once_with("cust_x", "token_x")
+		self.assertEqual(fingerprint, "card:RuPay:UTIB:8950:12:2030")
+
+	def test_an_unreadable_token_gives_no_fingerprint(self):
+		adapter = self.make_adapter()
+		with self._client() as c:
+			c.token.fetch.side_effect = razorpay.errors.BadRequestError("no such token")
+			payment = {"token_id": "token_x", "customer_id": "cust_x"}
+			self.assertIsNone(adapter.read_instrument_fingerprint(payment))
