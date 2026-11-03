@@ -73,16 +73,18 @@ export function useActivityFeed(
 		}
 	}
 
-	function clear() {
-		generation += 1
+	function reset() {
 		events.value = []
 		nextCursor.value = null
-		loadingMore.value = false
 	}
 
+	// The events on screen stay until the new first page replaces them, so a filter change
+	// does not blank the list.
 	async function reload() {
-		clear()
+		generation += 1
+		loadingMore.value = false
 		if (!hasTarget.value) {
+			reset()
 			loading.value = false
 			return
 		}
@@ -118,9 +120,16 @@ export function useActivityFeed(
 	})
 	onScopeDispose(() => window.clearTimeout(reloadTimer))
 
-	watch([activeTeam, resourceId, category, period, scope], reload, {
-		immediate: true,
-	})
+	// Another team or server must not show the previous one's events while its page loads.
+	watch(
+		[activeTeam, resourceId, scope],
+		() => {
+			reset()
+			reload()
+		},
+		{ immediate: true },
+	)
+	watch([category, period], reload)
 
 	return {
 		category,

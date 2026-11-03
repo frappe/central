@@ -2,11 +2,11 @@
 import { Button } from 'frappe-ui'
 import { computed, ref } from 'vue'
 import ActivityActorAvatar from '@/components/activity/ActivityActorAvatar.vue'
+import ActivityDetailValue from '@/components/activity/ActivityDetailValue.vue'
 import ActivityResourceName from '@/components/activity/ActivityResourceName.vue'
 import ActivitySummary from '@/components/activity/ActivitySummary.vue'
 import TimestampTooltip from '@/components/common/TimestampTooltip.vue'
 import {
-	formatDetailValue,
 	getEventIcon,
 	getEventSummary,
 	getSentenceParts,
@@ -55,13 +55,9 @@ const isFailed = computed(
 	() => Boolean(event.value.error) || statusTheme.value === 'red',
 )
 
-const sublistCount = computed(
-	() => filteredDetails.value.length + (event.value.ip_address ? 1 : 0),
-)
-
 // A single change detail fits inline on line 1; expanding would only repeat it.
 // Open as an accordion only when several items or several repeats exist.
-const canExpand = computed(() => isRun.value || sublistCount.value > 1)
+const canExpand = computed(() => isRun.value || changeCount.value > 1)
 
 const visibleRun = computed(() => props.events.slice(0, runLimit.value))
 const hiddenCount = computed(() => props.events.length - runLimit.value)
@@ -167,147 +163,59 @@ function toggle() {
 			:id="detailId"
 			class="mb-3 ml-11 mt-1 rounded-6 border border-outline-gray-1 p-2 text-p-sm sm:p-2.5"
 		>
-			<!-- Non-run expanded list -->
-			<div
-				v-if="!isRun && (filteredDetails.length || event.ip_address)"
-				class="space-y-0.5"
-			>
-				<TimestampTooltip
+			<!-- One event: each change on its own line -->
+			<ul v-if="!isRun && filteredDetails.length" class="space-y-0.5">
+				<li
 					v-for="(detail, index) in filteredDetails"
 					:key="`${detail.label}-${index}`"
-					:value="event.occurred_at"
-					trigger-class="block w-full"
-					align="start"
-				>
-					<div
-						class="group/row flex items-center gap-4 rounded-4 px-2 py-1.5 transition-colors hover:bg-surface-gray-1"
-					>
-						<span
-							class="w-32 shrink-0 font-normal text-ink-gray-5 whitespace-nowrap"
-						>
-							{{ detail.label }}
-						</span>
-						<span class="min-w-0 flex-1 text-ink-gray-8">
-							<template v-if="detail.from && detail.to">
-								<span class="text-ink-gray-4 line-through whitespace-nowrap">
-									{{ formatDetailValue(detail.label, detail.from) }}
-								</span>
-								<span class="px-1.5 text-xs text-ink-gray-4" aria-hidden="true"
-									>→</span
-								>
-								<span class="font-medium text-ink-gray-9 whitespace-nowrap">
-									{{ formatDetailValue(detail.label, detail.to) }}
-								</span>
-							</template>
-							<template v-else-if="detail.to">
-								<span class="whitespace-nowrap"
-									>{{ formatDetailValue(detail.label, detail.to) }}</span
-								>
-							</template>
-							<template v-else-if="detail.from">
-								<span class="text-ink-gray-5 whitespace-nowrap"
-									>{{ formatDetailValue(detail.label, detail.from) }}</span
-								>
-							</template>
-							<template v-else>
-								<span class="text-ink-gray-5">Updated</span>
-							</template>
-						</span>
-					</div>
-				</TimestampTooltip>
-
-				<div
-					v-if="event.ip_address"
-					class="flex items-center gap-4 rounded-4 px-2 py-1.5"
+					class="flex items-baseline gap-4 rounded-4 px-2 py-1.5 hover:bg-surface-gray-1"
 				>
 					<span
-						class="w-32 shrink-0 font-normal text-ink-gray-5 whitespace-nowrap"
+						class="w-44 shrink-0 truncate text-ink-gray-5"
+						:title="detail.label"
 					>
-						Accessed from
+						{{ detail.label }}
 					</span>
-					<span class="min-w-0 flex-1 font-mono text-xs text-ink-gray-8">
-						{{ event.ip_address }}
-					</span>
-				</div>
-			</div>
+					<ActivityDetailValue :detail="detail" />
+				</li>
+			</ul>
 
 			<p v-if="!isRun && event.error" class="mt-2 text-p-sm text-ink-red-6">
 				{{ event.error }}
 			</p>
 
-			<!-- Run expanded list (e.g. 15 configuration changes) -->
+			<!-- A run of one event: each occurrence on its own line, newest first -->
 			<template v-if="isRun">
-				<div class="space-y-0.5">
-					<TimestampTooltip
+				<ul class="space-y-0.5">
+					<li
 						v-for="occurrence in visibleRun"
 						:key="occurrence.id"
-						:value="occurrence.occurred_at"
-						trigger-class="block w-full"
-						align="start"
+						class="flex items-baseline gap-4 rounded-4 px-2 py-1.5 hover:bg-surface-gray-1"
 					>
-						<div
-							class="group/row flex items-center gap-4 rounded-4 px-2 py-1.5 transition-colors hover:bg-surface-gray-1"
+						<TimestampTooltip
+							:value="occurrence.occurred_at"
+							trigger-class="w-28 shrink-0"
+							align="start"
 						>
+							<span class="whitespace-nowrap text-ink-gray-5">
+								{{ timeAgo(occurrence.occurred_at) }}
+							</span>
+						</TimestampTooltip>
+						<span v-if="occurrence.error" class="text-ink-red-6">
+							{{ occurrence.error }}
+						</span>
+						<span v-else class="flex min-w-0 flex-wrap gap-x-4 gap-y-0.5">
 							<span
-								class="w-32 shrink-0 font-normal text-ink-gray-5 whitespace-nowrap"
+								v-for="(detail, index) in getSummaryDetails(occurrence)"
+								:key="`${detail.label}-${index}`"
+								class="inline-flex min-w-0 items-baseline gap-1.5"
 							>
-								<span v-if="occurrence.error" class="font-medium text-ink-red-6"
-									>Error</span
-								>
-								<template v-else>
-									<template
-										v-for="(detail, dIdx) in getSummaryDetails(occurrence)"
-										:key="dIdx"
-									>
-										<span v-if="dIdx">, </span>
-										<span>{{ detail.label }}</span>
-									</template>
-								</template>
+								<span class="text-ink-gray-5">{{ detail.label }}</span>
+								<ActivityDetailValue :detail="detail" />
 							</span>
-							<span class="min-w-0 flex-1 text-ink-gray-8">
-								<span v-if="occurrence.error" class="text-ink-red-6">
-									{{ occurrence.error }}
-								</span>
-								<div v-else class="flex flex-wrap items-center gap-x-2">
-									<template
-										v-for="(detail, dIdx) in getSummaryDetails(occurrence)"
-										:key="dIdx"
-									>
-										<template v-if="detail.from && detail.to">
-											<span
-												class="text-ink-gray-4 line-through whitespace-nowrap"
-											>
-												{{ formatDetailValue(detail.label, detail.from) }}
-											</span>
-											<span
-												class="px-1 text-xs text-ink-gray-4"
-												aria-hidden="true"
-												>→</span
-											>
-											<span
-												class="font-medium text-ink-gray-9 whitespace-nowrap"
-											>
-												{{ formatDetailValue(detail.label, detail.to) }}
-											</span>
-										</template>
-										<template v-else-if="detail.to">
-											<span
-												class="font-medium text-ink-gray-9 whitespace-nowrap"
-											>
-												{{ formatDetailValue(detail.label, detail.to) }}
-											</span>
-										</template>
-										<template v-else-if="detail.from">
-											<span class="text-ink-gray-5 whitespace-nowrap">
-												{{ formatDetailValue(detail.label, detail.from) }}
-											</span>
-										</template>
-									</template>
-								</div>
-							</span>
-						</div>
-					</TimestampTooltip>
-				</div>
+						</span>
+					</li>
+				</ul>
 
 				<div
 					v-if="hiddenCount > 0"

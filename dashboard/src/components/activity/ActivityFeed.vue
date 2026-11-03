@@ -54,11 +54,13 @@ const TEAM_TYPES = [
 const daysAgo = (count: number): string =>
 	dayjs().subtract(count, 'day').format('YYYY-MM-DD')
 
-// Rows are kept for 30 days, so a longer preset would never show more.
+// Rows are kept for 12 months, so a longer preset would never show more.
 const PERIOD_PRESETS: DateRangePreset[] = [
 	{ label: 'Today', range: () => [daysAgo(0), daysAgo(0)] },
 	{ label: 'Last 7 days', range: () => [daysAgo(6), daysAgo(0)] },
 	{ label: 'Last 30 days', range: () => [daysAgo(29), daysAgo(0)] },
+	{ label: 'Last 6 months', range: () => [daysAgo(182), daysAgo(0)] },
+	{ label: 'Last 12 months', range: () => [daysAgo(364), daysAgo(0)] },
 ]
 
 const types = computed(() =>
@@ -98,11 +100,15 @@ function clearFilters() {
 				v-model="period"
 				class="md:flex-none"
 				:presets="PERIOD_PRESETS"
-				any-label="Last 30 days"
+				any-label="Last 12 months"
 			/>
 		</div>
 
-		<div v-if="loading" class="space-y-1 pt-2" aria-busy="true">
+		<div
+			v-if="loading && !events.length"
+			class="space-y-1 pt-2"
+			aria-busy="true"
+		>
 			<span class="sr-only">Loading activity</span>
 			<Skeleton class="mb-4 h-5 w-32 rounded-4" />
 			<div
@@ -138,7 +144,12 @@ function clearFilters() {
 			</template>
 		</EmptyState>
 
-		<template v-else>
+		<div
+			v-else
+			class="transition-opacity duration-150"
+			:class="{ 'opacity-60': loading }"
+			:aria-busy="loading"
+		>
 			<section
 				v-for="month in months"
 				:key="month.label"
@@ -175,6 +186,6 @@ function clearFilters() {
 					@click="loadMore"
 				/>
 			</div>
-		</template>
+		</div>
 	</section>
 </template>

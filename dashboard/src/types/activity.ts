@@ -35,15 +35,12 @@ export interface ActivityEvent {
 	category: ActivityCategory
 	occurred_at: string
 	actor: ActivityActor
-	title: string
 	/** Translated; `{actor}` and `{resource}` mark the names to emphasise. */
 	sentence: string
 	resource: ActivityResource
 	status: string | null
 	details: ActivityDetail[]
 	error: string | null
-	/** Present only for a team admin. */
-	ip_address?: string
 }
 
 export interface ActivityPage {
