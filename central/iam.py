@@ -106,9 +106,9 @@ def get_user_team_names(user: str) -> list[str]:
 	return [row.name for row in rows]
 
 
-def is_active_team_member(user: str, team: str) -> bool:
+def is_active_team_member(user: str, team: str, statuses: tuple[str, ...] = ("Active",)) -> bool:
 	"""
-	Whether `user` is an active member of the active team `team`. A scoped
+	Whether `user` is an active member of team `team` in one of `statuses`. A scoped
 	existence check — cheaper than resolving grants or listing every team.
 	"""
 
@@ -126,7 +126,7 @@ def is_active_team_member(user: str, team: str) -> bool:
 			& (member.user == user)
 			& (member.status == "Active")
 			& (team_doc.name == team)
-			& (team_doc.status == "Active")
+			& team_doc.status.isin(statuses)
 		)
 		.limit(1)
 	)

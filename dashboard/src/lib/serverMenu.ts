@@ -245,6 +245,14 @@ function getSupportItems(
 	const option = useSupport().getContactSupportOption({
 		Server: reference,
 		Site: site,
+		server: {
+			name: server.name,
+			resource_id: server.resource_id,
+			title: server.title,
+			region: server.region,
+			plan: server.plan,
+			status: server.status,
+		},
 	})
 	return option ? [option] : []
 }

@@ -143,6 +143,9 @@ export const API = {
 
 	getBenchLink: 'central.api.sso.get_bench_link',
 
+	createSupportTicket: 'central.api.support.create_ticket',
+	listSupportTickets: 'central.api.support.list_tickets',
+
 	eligiblePlans: 'central.billing.api.dashboard.catalog.get_eligible_plans',
 	composedConfig: 'central.billing.api.dashboard.catalog.get_composed_config',
 

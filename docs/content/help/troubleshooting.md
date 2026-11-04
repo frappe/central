@@ -51,9 +51,16 @@ These messages show when a server action does not complete.
 
 ## Contact support
 
-Click your name at the bottom of the sidebar, then click **Help > Contact support**. The support portal opens in a new tab. Some messages in the console also have a **Contact support** link, which adds the topic to the ticket subject.
+Open the ticket form from your name at the bottom of the sidebar, then **Help > Contact support**. Some messages in the console also have a **Contact support** link, and each server menu has one. The form opens with the topic, the server, and the site filled in.
 
-Include the team name, the server name, and the exact message in your ticket.
+1. Choose what the ticket is about: Server, Site & app, Billing & plans, or Account & team.
+2. Choose the issue that fits. If you opened the form from a server, the server and its site are already selected.
+3. Write what happened. Include the exact message and the steps that led to it.
+4. Click **Create ticket**.
+
+To see your team's open tickets, open the form again and click **Open tickets**. The list shows the tickets that support has not resolved. Click the external link on a row to open the ticket in the support portal. If the portal asks you to sign in, use the same email address that you use for Frappe Cloud.
+
+When Central has a support portal link but no ticket connection, **Contact support** opens the support portal in a new tab instead.
 
 ## See also
 

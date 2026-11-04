@@ -20,9 +20,8 @@ setBreadcrumbs([{ label: 'Object Storage' }])
 const { canManageServices } = useCapabilities()
 const { regions, buckets, loading, error, reload } = useObjectStorage()
 
-const availabilityTicketUrl = useSupport().getTicketUrl({
-	Topic: 'Object Storage availability',
-})
+const { hasSupport, openSupport } = useSupport()
+const availabilityContext = { Topic: 'Object storage or LLM service' }
 
 const createOpen = ref(false)
 const credentials = ref<BucketCredentials | null>(null)
@@ -85,11 +84,11 @@ const canCreate = computed(
 						@click="createOpen = true"
 					/>
 				</template>
-				<template v-else-if="!regions.length && availabilityTicketUrl" #action>
+				<template v-else-if="!regions.length && hasSupport" #action>
 					<Button
 						label="Contact support"
-						:href="availabilityTicketUrl"
-						icon-right="lucide-external-link"
+						icon-left="lucide-life-buoy"
+						@click="openSupport(availabilityContext)"
 					/>
 				</template>
 			</EmptyState>
