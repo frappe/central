@@ -13,10 +13,22 @@ fixtures = [
 	{"dt": "Team Role", "filters": [["is_system", "=", 1]]},
 	# Warpgate signs in through the Central OpenID Connect provider and checks the Atlas roles.
 	# Product Operators create and edit products; only System Managers delete them.
+	# Staff Viewers read Team, Site and Virtual Machine in Desk, without customer data fields,
+	# and manage Product and Email OAuth Provider.
 	{
 		"dt": "Role",
 		"filters": [
-			["name", "in", ["Central User", "Atlas Host Access", "Atlas Warpgate Admin", "Product Operator"]]
+			[
+				"name",
+				"in",
+				[
+					"Central User",
+					"Atlas Host Access",
+					"Atlas Warpgate Admin",
+					"Product Operator",
+					"Staff Viewer",
+				],
+			]
 		],
 	},
 	"Notification Event Type",
@@ -186,7 +198,7 @@ after_install = [
 
 doc_events = {
 	"User": {
-		"validate": "central.users.validate_user_image",
+		"validate": ["central.users.validate_user_image", "central.users.validate_staff_viewer_roles"],
 		"after_insert": "central.users.grant_central_user_role",
 		"on_update": "central.infrastructure.doctype.wireguard_device.wireguard_device.remove_disabled_user_devices",
 	},
@@ -327,6 +339,7 @@ after_migrate = [
 	# The Webhook that carries a team's tier to Grove, so an edit to its spec rolls out.
 	"central.services.doctype.ai_settings.ai_settings.sync_webhook",
 	"central.investigator.knowledge.load_knowledge_bases_after_migrate",
+	"central.users.ensure_staff_role_profile",
 ]
 
 # Testing
@@ -342,6 +355,7 @@ before_tests = [
 	"central.billing.gateways.setup.ensure_gateway_records",
 	"central.integrations.email_oauth.setup.ensure_email_oauth_providers",
 	"central.billing.navigation.ensure_workspace_sidebars",
+	"central.users.ensure_staff_role_profile",
 ]
 
 # Extend DocType Class

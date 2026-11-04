@@ -28,6 +28,8 @@ frappe.ui.form.on("Virtual Machine", {
 				"blue",
 			);
 
+		if (!frm.has_perm("write")) return;
+
 		if (frappe.user.has_role("System Manager")) {
 			if (frm.doc.admin_domain_error) {
 				frm.add_custom_button(

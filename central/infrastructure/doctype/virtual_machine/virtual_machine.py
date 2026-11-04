@@ -360,7 +360,7 @@ class VirtualMachine(Document):
 		that looks stale."""
 		from central.integrations.servers import observe_server
 
-		self.check_permission("read")
+		self.check_permission("write")
 
 		return {"status": observe_server(self)}
 

@@ -371,7 +371,7 @@ class Site(Document):
 		"""Operator action: probe the site's address now, and record readiness when it answers."""
 		from central.integrations.pilot import is_site_reachable
 
-		self.check_permission("read")
+		self.check_permission("write")
 		is_ready = is_site_reachable(self.url)
 		if is_ready:
 			self.record_ready()

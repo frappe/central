@@ -8,6 +8,7 @@ from frappe import _
 from frappe.utils.caching import request_cache
 
 OPERATOR_BYPASS_ROLE = "System Manager"
+STAFF_VIEWER_ROLE = "Staff Viewer"
 
 # The revision of the capability taxonomy. Bump it with every change (see CAPABILITIES.md).
 CAPABILITY_VERSION = 7
@@ -70,6 +71,12 @@ def user_has_operator_bypass(user: str | None = None) -> bool:
 @request_cache
 def _user_has_operator_bypass(user: str) -> bool:
 	return OPERATOR_BYPASS_ROLE in frappe.get_roles(user)
+
+
+def is_staff_read(user: str, ptype: str | None) -> bool:
+	"""A Staff Viewer reads every team's records in Desk. It grants no capability and no write on
+	team records. The DocType permissions decide which DocTypes and fields it reads."""
+	return ptype in ("read", "select") and STAFF_VIEWER_ROLE in frappe.get_roles(user)
 
 
 def get_all_capabilities() -> list[str]:
