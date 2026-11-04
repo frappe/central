@@ -204,7 +204,10 @@ const menu = computed(() => {
 						>
 							<Badge label="VPN" theme="blue">
 								<template #prefix>
-									<span class="lucide-shield-check size-3" aria-hidden="true" />
+									<span
+										class="lucide-shield-check size-full"
+										aria-hidden="true"
+									/>
 								</template>
 							</Badge>
 						</RouterLink>
