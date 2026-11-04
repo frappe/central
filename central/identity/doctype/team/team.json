@@ -54,6 +54,7 @@
    "in_standard_filter": 1,
    "label": "Owner User",
    "options": "User",
+   "permlevel": 2,
    "reqd": 1
   },
   {
@@ -82,7 +83,8 @@
    "fieldname": "members",
    "fieldtype": "Table",
    "label": "Members",
-   "options": "Team Member"
+   "options": "Team Member",
+   "permlevel": 2
   },
   {
    "description": "Permanent numeric network identity shared by this Team. Assigned by Central.",
@@ -119,18 +121,21 @@
    "fieldname": "utm_source",
    "fieldtype": "Data",
    "label": "UTM Source",
+   "permlevel": 2,
    "read_only": 1
   },
   {
    "fieldname": "utm_medium",
    "fieldtype": "Data",
    "label": "UTM Medium",
+   "permlevel": 2,
    "read_only": 1
   },
   {
    "fieldname": "utm_campaign",
    "fieldtype": "Data",
    "label": "UTM Campaign",
+   "permlevel": 2,
    "read_only": 1
   },
   {
@@ -150,6 +155,7 @@
    "fieldname": "referrer",
    "fieldtype": "Small Text",
    "label": "Referrer",
+   "permlevel": 2,
    "read_only": 1
   }
  ],
@@ -275,7 +281,7 @@
    "link_fieldname": "team"
   }
  ],
- "modified": "2026-10-25 17:34:52.163870",
+ "modified": "2026-11-04 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Identity",
  "name": "Team",
@@ -305,6 +311,22 @@
    "permlevel": 1,
    "read": 1,
    "role": "System Manager",
+   "write": 1
+  },
+  {
+   "read": 1,
+   "role": "Staff Viewer"
+  },
+  {
+   "permlevel": 2,
+   "read": 1,
+   "role": "System Manager",
+   "write": 1
+  },
+  {
+   "permlevel": 2,
+   "read": 1,
+   "role": "Central User",
    "write": 1
   }
  ],

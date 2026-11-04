@@ -10,6 +10,7 @@ from central.iam import (
 	get_user_team_names,
 	get_user_team_names_with_capability,
 	is_active_team_member,
+	is_staff_read,
 	user_has_operator_bypass,
 )
 
@@ -26,9 +27,10 @@ def _team_filter(user: str) -> str:
 
 def team_query_conditions(user: str | None = None) -> str:
 	"""1. An operator sees every team.
-	2. A user sees each team they are an active member of, and no other."""
+	2. A Staff Viewer sees every team.
+	3. A user sees each team they are an active member of, and no other."""
 	user = user or frappe.session.user
-	if user_has_operator_bypass(user):
+	if user_has_operator_bypass(user) or is_staff_read(user, "read"):
 		return ""
 
 	return _team_filter(user)
@@ -36,12 +38,13 @@ def team_query_conditions(user: str | None = None) -> str:
 
 def team_has_permission(doc, user: str | None = None, ptype: str | None = None, **kwargs) -> bool:
 	"""1. An operator may do anything.
-	2. Create: a new team may hold only its creator, as Owner. Others join by invitation.
-	3. Write: `team:edit` or `team:manage_members`.
-	4. Delete: `team:delete`.
-	5. Read: an active member."""
+	2. A Staff Viewer may read every team.
+	3. Create: a new team may hold only its creator, as Owner. Others join by invitation.
+	4. Write: `team:edit` or `team:manage_members`.
+	5. Delete: `team:delete`.
+	6. Read: an active member."""
 	user = user or frappe.session.user
-	if user_has_operator_bypass(user):
+	if user_has_operator_bypass(user) or is_staff_read(user, ptype):
 		return True
 	if ptype == "create":
 		return all(member.user == user and member.role == "Owner" for member in doc.members)
@@ -111,17 +114,21 @@ def team_invitation_has_permission(doc, user: str | None = None, ptype: str | No
 
 def server_query_conditions(user: str | None = None) -> str:
 	"""1. A System Manager sees every server.
-	2. A user sees every server of a team where the user holds server:view team-wide.
-	3. A user sees each server that a scoped grant with server:view names.
-	4. A user without such a grant sees no server."""
-	return _server_scoped_query_conditions("Virtual Machine", "name", user)
+	2. A Staff Viewer sees every server.
+	3. A user sees every server of a team where the user holds server:view team-wide.
+	4. A user sees each server that a scoped grant with server:view names.
+	5. A user without such a grant sees no server."""
+	return _staff_readable_query_conditions("Virtual Machine", "name", user)
 
 
 def server_has_permission(doc, user: str | None = None, ptype: str | None = None, **kwargs) -> bool:
 	"""1. A System Manager has every permission.
-	2. Read needs server:view team-wide or on this server.
-	3. Create, write, and delete are denied. Customers change servers through the API."""
-	return _server_scoped_has_permission(doc, "name", user, ptype)
+	2. A Staff Viewer may read every server.
+	3. Read needs server:view team-wide or on this server.
+	4. Create, write, and delete are denied. Customers change servers through the API."""
+	return is_staff_read(user or frappe.session.user, ptype) or _server_scoped_has_permission(
+		doc, "name", user, ptype
+	)
 
 
 def team_ssh_key_query_conditions(user: str | None = None) -> str:
@@ -186,16 +193,20 @@ def resource_action_has_permission(doc, user: str | None = None, ptype: str | No
 
 def site_query_conditions(user: str | None = None) -> str:
 	"""1. A System Manager sees every site.
-	2. A user sees the sites of a team where the user holds server:view team-wide.
-	3. A user sees the site on each server that a scoped grant names."""
-	return _server_scoped_query_conditions("Site", "server", user)
+	2. A Staff Viewer sees every site.
+	3. A user sees the sites of a team where the user holds server:view team-wide.
+	4. A user sees the site on each server that a scoped grant names."""
+	return _staff_readable_query_conditions("Site", "server", user)
 
 
 def site_has_permission(doc, user: str | None = None, ptype: str | None = None, **kwargs) -> bool:
 	"""1. A System Manager has every permission.
-	2. Read needs server:view team-wide or on the site's server.
-	3. Create, write, and delete are denied. Customers change sites through the API."""
-	return _server_scoped_has_permission(doc, "server", user, ptype)
+	2. A Staff Viewer may read every site.
+	3. Read needs server:view team-wide or on the site's server.
+	4. Create, write, and delete are denied. Customers change sites through the API."""
+	return is_staff_read(user or frappe.session.user, ptype) or _server_scoped_has_permission(
+		doc, "server", user, ptype
+	)
 
 
 def site_domain_query_conditions(user: str | None = None) -> str:
@@ -404,6 +415,14 @@ def _team_field_has_permission(
 
 def _can_any(user: str, team: str, capabilities: tuple[str, ...]) -> bool:
 	return any(can(user, team, capability) for capability in capabilities)
+
+
+def _staff_readable_query_conditions(doctype: str, server_field: str, user: str | None = None) -> str:
+	user = user or frappe.session.user
+	if is_staff_read(user, "read"):
+		return ""
+
+	return _server_scoped_query_conditions(doctype, server_field, user)
 
 
 def _server_scoped_query_conditions(doctype: str, server_field: str, user: str | None = None) -> str:

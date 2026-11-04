@@ -273,6 +273,7 @@
    "fieldname": "firewall_rules",
    "fieldtype": "JSON",
    "label": "Firewall Rules",
+   "permlevel": 2,
    "read_only": 1
   },
   {
@@ -286,6 +287,7 @@
    "fieldtype": "Table",
    "label": "SSH Keys",
    "options": "Server SSH Key",
+   "permlevel": 2,
    "read_only": 1
   },
   {
@@ -394,7 +396,7 @@
    "link_fieldname": "server"
   }
  ],
- "modified": "2026-10-26 10:42:17.318256",
+ "modified": "2026-11-04 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Infrastructure",
  "name": "Virtual Machine",
@@ -423,6 +425,21 @@
    "permlevel": 1,
    "read": 1,
    "role": "System Manager"
+  },
+  {
+   "read": 1,
+   "role": "Staff Viewer"
+  },
+  {
+   "permlevel": 2,
+   "read": 1,
+   "role": "System Manager",
+   "write": 1
+  },
+  {
+   "permlevel": 2,
+   "read": 1,
+   "role": "Central User"
   }
  ],
  "row_format": "Dynamic",

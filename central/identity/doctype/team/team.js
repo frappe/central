@@ -1,6 +1,6 @@
 frappe.ui.form.on("Team", {
 	refresh(frm) {
-		if (frm.is_new()) {
+		if (frm.is_new() || !frm.has_perm("write")) {
 			return;
 		}
 
