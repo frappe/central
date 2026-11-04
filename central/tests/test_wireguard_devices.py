@@ -17,7 +17,7 @@ from central.integrations.wireguard import WireGuardGatewayClient, WireGuardGate
 from central.permissions import wireguard_device_has_permission, wireguard_device_query_conditions
 from central.sso import mint_wireguard_token
 from central.tests.test_iam import ensure_user
-from central.tests.utils import ensure_atlas_instance
+from central.tests.utils import ensure_atlas_instance, ensure_server
 
 REGION = "wg-test"
 PUBLIC_KEY = "HIgo9xNzJMWLKASShiTqIybxZ0U3wGLiUeJ1PKf8ykw="
@@ -95,6 +95,15 @@ class TestWireGuardDevices(IntegrationTestCase):
 
 		self.assertEqual(listed["devices"][0]["added_by"], self.member)
 		self.assertEqual(listed["devices"][0]["added_by_name"], "wg-member")
+
+	def test_the_server_list_puts_servers_with_wireguard_access_first(self) -> None:
+		ensure_server("wg-sort-a", self.team.name, REGION, title="alpha")
+		ensure_server("wg-sort-b", self.team.name, REGION, title="bravo", has_wireguard_access=1)
+		ensure_server("wg-sort-c", self.team.name, REGION, title="charlie")
+
+		listed = list_wireguard_devices(team=self.team.name)
+
+		self.assertEqual([server.title for server in listed["servers"]], ["bravo", "alpha", "charlie"])
 
 	def test_a_bad_public_key_is_refused(self) -> None:
 		with self.assertRaises(frappe.ValidationError):
