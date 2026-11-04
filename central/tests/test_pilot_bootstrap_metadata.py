@@ -16,6 +16,9 @@ TELEMETRY_CONFIG = {"endpoint": "https://datum.in-mumbai.example.test", "token":
 COMMON_SITE_CONFIG = (
 	"central.central.doctype.central_settings.central_settings.CentralSettings.get_common_site_config"
 )
+APP_COMMON_SITE_CONFIG = (
+	"central.central.doctype.central_settings.central_settings.CentralSettings.get_app_common_site_config"
+)
 MAIL_CONFIG = {
 	"mail_server": "mail.c3.frappemail.com",
 	"mail_port": 587,
@@ -206,6 +209,20 @@ class TestPilotBootstrapMetadata(IntegrationTestCase):
 			},
 		)
 		self.assertLessEqual(len(metadata["pilot-config"].encode()), METADATA_VALUE_BYTES)
+
+	def test_app_keys_travel_in_pilot_config_beside_the_bucket(self):
+		app_keys = {"raven": {"raven_push_notification_server_url": "https://relay.example.test"}}
+		bucket = {"bucket": "7-in-mumbai-server-action-1"}
+		with (
+			patch(f"{PILOT}.get_telemetry_base_url", return_value=None),
+			patch(APP_COMMON_SITE_CONFIG, return_value=app_keys),
+			patch(f"{PILOT}.get_bundled_bucket", return_value=bucket),
+		):
+			metadata = _create_payload(pilot_request())["metadata"]
+
+		self.assertEqual(
+			json.loads(metadata["pilot-config"]), {"app_common_site_config": app_keys, "s3": bucket}
+		)
 
 	def test_a_paid_plan_without_storage_creates_no_bucket(self):
 		request = pilot_request()

@@ -21,6 +21,7 @@ class CentralSettings(Document):
 	if TYPE_CHECKING:
 		from frappe.types import DF
 
+		app_common_site_config: DF.JSON | None
 		central_id: DF.Int
 		common_site_config: DF.JSON | None
 		disk_iops: DF.Int
@@ -62,6 +63,7 @@ class CentralSettings(Document):
 	def validate(self) -> None:
 		self.validate_limits()
 		self.validate_common_site_config()
+		self.validate_app_common_site_config()
 
 	def on_update(self) -> None:
 		from central.infrastructure.doctype.blocked_domain.blocked_domain import seed_regional_domains
@@ -87,19 +89,37 @@ class CentralSettings(Document):
 				frappe.throw(_("{0} must be at least 1.").format(_(self.meta.get_label(fieldname))))
 
 	def validate_common_site_config(self) -> None:
+		self._validate_metadata_object("common_site_config")
+
+	def validate_app_common_site_config(self) -> None:
+		"""Pilot rejects an app whose keys are not an object, so Central refuses it first."""
+		self._validate_metadata_object("app_common_site_config")
+		for app, keys in self.get_app_common_site_config().items():
+			if not isinstance(keys, dict):
+				frappe.throw(
+					_(
+						'App Common Site Config for {0} must be a JSON object, such as {{"key": "value"}}.'
+					).format(app)
+				)
+
+	def _validate_metadata_object(self, fieldname: str) -> None:
 		from central.integrations.atlas import MAXIMUM_METADATA_BYTES
 
+		label = _(self.meta.get_label(fieldname))
 		try:
-			config = self.get_common_site_config()
+			config = frappe.parse_json(self.get(fieldname) or "{}")
 		except ValueError:
 			config = None
 		if not isinstance(config, dict):
-			frappe.throw(_('Common Site Config must be a JSON object, such as {"key": "value"}.'))
+			frappe.throw(_('{0} must be a JSON object, such as {{"key": "value"}}.').format(label))
 		if len(json.dumps(config).encode()) > MAXIMUM_METADATA_BYTES:
-			frappe.throw(_("Common Site Config must fit in {0} bytes.").format(MAXIMUM_METADATA_BYTES))
+			frappe.throw(_("{0} must fit in {1} bytes.").format(label, MAXIMUM_METADATA_BYTES))
 
 	def get_common_site_config(self) -> dict:
 		return frappe.parse_json(self.common_site_config or "{}")
+
+	def get_app_common_site_config(self) -> dict:
+		return frappe.parse_json(self.app_common_site_config or "{}")
 
 	def feature_flags(self) -> dict[str, bool]:
 		"""The console's feature flags as a plain {name: bool} map for window boot.

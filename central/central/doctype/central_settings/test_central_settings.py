@@ -88,6 +88,21 @@ class IntegrationTestCentralSettings(IntegrationTestCase):
 		settings.common_site_config = '{"raven_push_notification_server_url": "https://relay.test"}'
 		settings.save()
 
+	def test_app_common_site_config_holds_an_object_per_app(self):
+		self.addCleanup(frappe.db.set_single_value, "Central Settings", "app_common_site_config", None)
+
+		for value in ('["raven"]', '{"raven": "https://relay.test"}'):
+			settings = frappe.get_doc("Central Settings")
+			settings.app_common_site_config = value
+			with self.assertRaises(frappe.ValidationError):
+				settings.save()
+
+		settings = frappe.get_doc("Central Settings")
+		settings.app_common_site_config = (
+			'{"raven": {"raven_push_notification_server_url": "https://relay.test"}}'
+		)
+		settings.save()
+
 	def test_help_links_send_an_empty_url_as_none_so_the_console_hides_it(self):
 		url = "https://support.test/help/my-tickets/new"
 		saved = {

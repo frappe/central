@@ -56,11 +56,10 @@ def get_bootstrap_metadata(action) -> dict[str, str]:
 	# Each value stays under METADATA_VALUE_BYTES. Pilot merges pilot-common-config into
 	# common_config.toml and pilot-common-site-config into common_site_config.json at bootstrap.
 	metadata = {"pilot-central": json.dumps(bootstrap)}
+	settings = frappe.get_cached_doc("Central Settings")
 	# Frappe's Pulse telemetry files a site's events under `fc_team`, so the events of a
 	# product on this server join the team's signup funnel in Central.
-	common_site_config = frappe.get_cached_doc("Central Settings").get_common_site_config() | {
-		"fc_team": action.team
-	}
+	common_site_config = settings.get_common_site_config() | {"fc_team": action.team}
 	if mailbox := UserMailAccount.assign(action):
 		common_site_config |= mailbox.get_site_config()
 	# A free trial boots with a Grove key from the pool: AI works before the team holds any key.
@@ -79,9 +78,15 @@ def get_bootstrap_metadata(action) -> dict[str, str]:
 	if common_config:
 		metadata["pilot-common-config"] = json.dumps(common_config)
 
-	# Pilot merges pilot-config into bench.toml, whose [s3] section holds its backup bucket.
+	# Pilot merges pilot-config into bench.toml. [s3] holds its backup bucket, and
+	# [app_common_site_config] holds the keys Pilot writes only while a site has that app.
+	bench_config = {}
+	if app_common_site_config := settings.get_app_common_site_config():
+		bench_config["app_common_site_config"] = app_common_site_config
 	if bucket := get_bundled_bucket(action):
-		metadata["pilot-config"] = json.dumps({"s3": bucket})
+		bench_config["s3"] = bucket
+	if bench_config:
+		metadata["pilot-config"] = json.dumps(bench_config)
 
 	return metadata
 

@@ -46,6 +46,7 @@
   "public_network_throughput_mibps",
   "site_config_section",
   "common_site_config",
+  "app_common_site_config",
   "limits_tab",
   "invitations_section",
   "invitation_expiry_days",
@@ -321,6 +322,12 @@
    "label": "Common Site Config"
   },
   {
+   "description": "Keys for one app, such as {\"raven\": {\"key\": \"value\"}}. Pilot writes an app's keys into common_site_config.json only while a site on the server has that app installed. Customers can read it, so add no secrets.",
+   "fieldname": "app_common_site_config",
+   "fieldtype": "JSON",
+   "label": "App Common Site Config"
+  },
+  {
    "fieldname": "limits_tab",
    "fieldtype": "Tab Break",
    "label": "Limits"
@@ -509,7 +516,7 @@
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-10-28 18:00:00.000000",
+ "modified": "2026-11-04 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Central",
  "name": "Central Settings",
