@@ -6,6 +6,7 @@ import { useServerMapData } from '@/composables/useServerMapData'
 import { useSession } from '@/composables/useSession'
 import {
 	flagEmoji,
+	hasCrowdedRegion,
 	hasMapCoords,
 	type MapPin,
 	type RegionSpot,
@@ -197,6 +198,24 @@ export function useServerFleet() {
 		localStorage.getItem(MAP_VIEW_KEY) === 'world' ? 'world' : 'fleet',
 	)
 	watch(mapView, (view) => localStorage.setItem(MAP_VIEW_KEY, view))
+
+	const storedFleetView = localStorage.getItem(FLEET_VIEW_KEY)
+
+	const chosenFleetView = ref<FleetView | null>(
+		storedFleetView === 'map' || storedFleetView === 'list'
+			? storedFleetView
+			: null,
+	)
+
+	const fleetView = computed({
+		get: (): FleetView =>
+			chosenFleetView.value ?? (hasCrowdedRegion(rows.value) ? 'list' : 'map'),
+		set: (view: FleetView) => {
+			chosenFleetView.value = view
+
+			localStorage.setItem(FLEET_VIEW_KEY, view)
+		},
+	})
 	const frame = computed(() =>
 		(hasMapViewChoice.value && mapView.value === 'fleet'
 			? usedRegions.value
@@ -212,6 +231,7 @@ export function useServerFleet() {
 		settledIds,
 		frame,
 		mapView,
+		fleetView,
 		hasMapViewChoice,
 		query,
 		statusFilter,
@@ -228,6 +248,8 @@ export function useServerFleet() {
 
 /** What the map frames: the regions the team uses, or every region. */
 type MapView = 'fleet' | 'world'
+type FleetView = 'map' | 'list'
+const FLEET_VIEW_KEY = 'central.console.serverFleetView'
 const MAP_VIEW_KEY = 'central.console.serverMapView'
 
 function toMapPoint(region: Region): { lat: number; lng: number } {
