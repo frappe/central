@@ -191,11 +191,13 @@ class Product(Document):
 
 	@frappe.whitelist(methods=["POST"])
 	def preview_images(self, region: str, offset: int = 0) -> dict:
-		"""1. Require a System Manager, because the preview reads the region as the system tenant."""
+		"""1. Require a System Manager or a Staff Viewer, because the preview reads the region as
+		the system tenant. A Product Operator may not."""
+		from central.iam import OPERATOR_BYPASS_ROLE, STAFF_VIEWER_ROLE
 		from central.integrations.images import preview_images
 		from central.site_provisioning import product_image_tags, signup_offering
 
-		frappe.only_for("System Manager")
+		frappe.only_for([OPERATOR_BYPASS_ROLE, STAFF_VIEWER_ROLE])
 
 		return preview_images(signup_offering(), region, offset, extra_tags=product_image_tags(self))
 

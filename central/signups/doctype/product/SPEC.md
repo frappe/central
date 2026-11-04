@@ -8,7 +8,7 @@ The Signups module holds Product, so it can move into its own app later.
 
 ## Configuration
 
-System Managers and Product Operators create and edit products in Desk. Only a System Manager deletes one. See [Access](#access).
+System Managers, Staff Viewers, and Product Operators create and edit products in Desk. Only a System Manager or a Staff Viewer deletes one. See [Access](#access).
 
 | Field | Rule |
 |---|---|
@@ -76,6 +76,7 @@ A System Manager gives a Frappe team member the **Product Operator** role. The r
 |---|---|---|
 | System Manager | Create, read, edit, delete every product | Everything |
 | Product Operator | Create, read and edit every product, and use Open Signup Page, Preview Email and Send Test Email | Files, to upload the logo. The Signups workspace shows them Product only. |
+| Staff Viewer | Create, read, edit and delete every product, and use Open Signup Page, Preview Email, Send Test Email and Preview Trial Images | See [Staff Desk Access](../../../../spec/IAM.md#staff-desk-access). |
 
 A Product Operator does not get Region, Image Offering, Site, Team or billing records, the Trial Sites report, or Preview Trial Images. Each of them reaches across every team, and only a System Manager may do that. To check an image, a Product Operator asks a System Manager. Those records belong to customer teams, and only a System Manager reads them across teams.
 

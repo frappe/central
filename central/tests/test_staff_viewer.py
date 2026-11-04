@@ -1,3 +1,5 @@
+from unittest.mock import patch
+
 import frappe
 from frappe.desk.form.load import getdoc
 from frappe.desk.reportview import execute as reportview_execute
@@ -85,6 +87,46 @@ class TestStaffViewer(IntegrationTestCase):
 
 		rows = reportview_execute("Team", fields=["name", "owner_user"], filters={"name": self.team.name})
 		self.assertEqual([row.get("owner_user") for row in rows], [None])
+
+	def test_a_staff_viewer_manages_products_and_email_oauth_providers(self):
+		frappe.set_user(self.staff)
+
+		for doctype in ("Product", "Email OAuth Provider"):
+			for ptype in ("read", "write", "create", "delete"):
+				self.assertTrue(frappe.has_permission(doctype, ptype), (doctype, ptype))
+
+		product = frappe.get_doc(
+			{
+				"doctype": "Product",
+				"product_key": f"staff-{self.suffix}",
+				"title": "Raven",
+				"signup_app": "raven",
+			}
+		).insert()
+		product.title = "Raven Chat"
+		product.save()
+		frappe.delete_doc("Product", product.name)
+		self.assertFalse(frappe.db.exists("Product", product.name))
+
+	def test_a_staff_viewer_previews_trial_images(self):
+		product = frappe.get_doc(
+			{
+				"doctype": "Product",
+				"product_key": f"staff-{self.suffix}",
+				"title": "Raven",
+				"signup_app": "raven",
+			}
+		).insert()
+		frappe.set_user(self.staff)
+
+		self.assertTrue(frappe.has_permission("Region", "select"))
+		self.assertFalse(frappe.has_permission("Region", "read"))
+		with (
+			patch("central.site_provisioning.signup_offering", return_value="pilot"),
+			patch("central.integrations.images.preview_images") as preview,
+		):
+			product.preview_images("par-2")
+		preview.assert_called_once()
 
 	def test_a_staff_viewer_reads_no_other_customer_doctype(self):
 		frappe.set_user(self.staff)

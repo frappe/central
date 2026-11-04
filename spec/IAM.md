@@ -82,11 +82,13 @@ Desk is for Frappe staff. Customers use the console. Desk access uses Frappe rol
 | Who | Setup | Desk access |
 |---|---|---|
 | Frappe Cloud staff | Role `System Manager` | Every DocType. Full operator bypass in Central IAM. |
-| Other Frappe employees | Role profile `Frappe Employee`, which holds only `Staff Viewer` | Read only: Team, Site, and Virtual Machine of every team, without customer data fields. |
+| Other Frappe employees | Role profile `Frappe Employee`, which holds only `Staff Viewer` | Read only: Team, Site, and Virtual Machine of every team, without customer data fields. Full access: Product and Email OAuth Provider. Preview Trial Images on a Product. |
 | Product owners | Role `Product Operator` | Read, write, and create on Product. |
 | Customers | Role `Central User`, without desk access | None. They use the console. |
 
 - `Staff Viewer` has read permission at permission level 0 on Team, Site, and Virtual Machine. It has no write, create, delete, report, export, print, or share permission on them.
+- `Staff Viewer` has read, write, create, and delete permission on Product and Email OAuth Provider. These DocTypes hold no customer data. The Email OAuth Provider client secret is a Password field, so a `Staff Viewer` can replace it but cannot read it.
+- `Staff Viewer` can use Preview Trial Images on a Product. It has select permission on Region, so it can pick a region in a Link field. It cannot open a Region record.
 - Customer data fields are at permission level 2: Team `owner_user`, `members`, `utm_source`, `utm_medium`, `utm_campaign`, and `referrer`, and Virtual Machine `firewall_rules` and `ssh_keys`. `System Manager` and `Central User` read them. `Staff Viewer` does not. Frappe removes these fields from forms, lists, filters, and version history.
 - The `has_permission` and `permission_query_conditions` rules of Team, Site, and Virtual Machine let a `Staff Viewer` read every record. All other permission types follow the normal rules, so a `Staff Viewer` cannot change these records.
 - `iam.can` and the API guards do not know `Staff Viewer`. A `Staff Viewer` that is not a team member gets no console access to other teams.

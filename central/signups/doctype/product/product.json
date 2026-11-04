@@ -186,7 +186,7 @@
  "index_web_pages_for_search": 1,
  "links": [],
  "make_attachments_public": 1,
- "modified": "2026-10-30 12:00:00.000000",
+ "modified": "2026-11-04 14:00:00.000000",
  "modified_by": "prathamesh@frappe.io",
  "module": "Signups",
  "name": "Product",
@@ -207,6 +207,13 @@
    "read": 1,
    "report": 1,
    "role": "Product Operator",
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "read": 1,
+   "role": "Staff Viewer",
    "write": 1
   }
  ],
