@@ -2,10 +2,11 @@ from unittest.mock import patch
 
 import frappe
 from frappe.tests import IntegrationTestCase
+from pydantic import ValidationError
 
 from central.billing.catalog.server_plans import _profiles
 from central.resource_actions import _build_server_configuration, image_shape
-from central.server_models import CreateServerInput
+from central.server_models import CreateServerInput, ResourceQuantity
 
 
 class TestServerProvisioningShapes(IntegrationTestCase):
@@ -45,6 +46,15 @@ class TestServerProvisioningShapes(IntegrationTestCase):
 
 		self.assertEqual([profile["sub_category"] for profile in profiles], ["small"])
 		self.assertEqual(profiles[0]["vcpu_steps"], [0.125, 0.25, 0.5])
+
+	def test_plan_can_include_any_catalog_resource_type(self):
+		row = ResourceQuantity(resource_type="Storage", quantity=80.0, unit="GB")
+
+		self.assertEqual(row.resource_type, "Storage")
+
+	def test_shape_resource_needs_its_own_unit(self):
+		with self.assertRaises(ValidationError):
+			ResourceQuantity(resource_type="Compute", quantity=1.0, unit="GB")
 
 	def build_ubuntu_configuration(self, ssh_key_ids: list[str], resolved_keys: list[str]):
 		server_input = CreateServerInput.model_validate(

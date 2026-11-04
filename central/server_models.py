@@ -6,6 +6,8 @@ from typing import Annotated, Literal, TypedDict
 
 from pydantic import BaseModel, ConfigDict, Field, PositiveInt, StringConstraints, model_validator
 
+from central.billing.catalog.rate_card import COMPONENT_UNITS
+
 SSHKey = Annotated[str, Field(min_length=1, max_length=16_384)]
 
 
@@ -18,14 +20,16 @@ PORTS = re.compile(r"([1-9][0-9]{0,4})(?:-([1-9][0-9]{0,4}))?")
 class ResourceQuantity(BaseModel):
 	model_config = ConfigDict(extra="forbid", strict=True)
 
-	resource_type: Literal["Compute", "Memory", "Disk", "Transfer"]
+	# The plan catalog decides which resource types a plan may include.
+	resource_type: str = Field(min_length=1)
 	quantity: float = Field(gt=0, allow_inf_nan=False)
 	unit: str
 
 	@model_validator(mode="after")
 	def validate_unit(self):
-		units = {"Compute": "vCPU", "Memory": "GB", "Disk": "GB", "Transfer": "GB"}
-		if self.unit != units[self.resource_type]:
+		# The server shape is read from these units, so they must match.
+		unit = COMPONENT_UNITS.get(self.resource_type)
+		if unit and self.unit != unit:
 			raise ValueError("The unit must match the selected resource type.")
 
 		return self
@@ -107,7 +111,7 @@ class ResizeConfiguration(BaseModel):
 	# None for a converted trial's move off its trial plan: its subscription opens once the move lands.
 	subscription: str | None = Field(default=None, min_length=1)
 	plan: str | None = None
-	includes: list[ResourceQuantity] = Field(default_factory=list, max_length=4)
+	includes: list[ResourceQuantity] = Field(default_factory=list)
 	sub_category: str | None = None
 	override_rate: float | None = Field(default=None, ge=0, allow_inf_nan=False)
 	preset_plan: str | None = None
