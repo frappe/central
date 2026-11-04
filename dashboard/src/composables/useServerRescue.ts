@@ -11,7 +11,6 @@ export function useServerRescue(resourceId: Ref<string>) {
 	const loading = ref(false)
 	const saving = ref(false)
 	const error = ref('')
-	const notice = ref('')
 	let generation = 0
 
 	async function refresh() {
@@ -47,12 +46,9 @@ export function useServerRescue(resourceId: Ref<string>) {
 		const server = resourceId.value
 		saving.value = true
 		error.value = ''
-		notice.value = ''
 		try {
 			await call(API.setRescueMode, { team, resource_id: server, enabled })
 			if (current !== generation) return
-			notice.value =
-				'Boot selection accepted. It applies at the next cold boot.'
 			await refresh()
 			return true
 		} catch (failure) {
@@ -60,23 +56,16 @@ export function useServerRescue(resourceId: Ref<string>) {
 			state.value = null
 			error.value = getErrorMessage(
 				failure,
-				"The boot selection couldn't be confirmed. Refresh status before trying again.",
+				"The boot selection couldn't be confirmed. Reload the page before you try again.",
 			)
 		} finally {
 			saving.value = false
 		}
 	}
 
-	watch(
-		[activeTeam, resourceId],
-		() => {
-			notice.value = ''
-			refresh()
-		},
-		{ immediate: true },
-	)
+	watch([activeTeam, resourceId], refresh, { immediate: true })
 	onScopeDispose(() => {
 		generation++
 	})
-	return { state, loading, saving, error, notice, refresh, select }
+	return { state, loading, saving, error, refresh, select }
 }
