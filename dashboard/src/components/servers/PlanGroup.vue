@@ -7,6 +7,7 @@ import { money } from '@/lib/format'
 import {
 	formatTransfer,
 	planAllowances,
+	planName,
 	planQuantity,
 	planSize,
 	presetPrice,
@@ -116,7 +117,7 @@ const matchingPreset = computed<Plan | null>(() => {
 			>
 				<span class="flex w-full items-center justify-between gap-2">
 					<span class="text-sm-medium text-ink-gray-7"
-						>{{ planSize(plan) }}</span
+						>{{ planName(plan) }}</span
 					>
 					<Badge
 						v-if="currentPlan === plan.plan"
@@ -133,6 +134,9 @@ const matchingPreset = computed<Plan | null>(() => {
 					>
 				</span>
 				<span class="mt-2 block text-p-sm text-ink-gray-5">
+					{{ planSize(plan) }}
+				</span>
+				<span class="block text-p-sm text-ink-gray-5">
 					{{ planAllowances(plan, { diskGigabytes: diskFor(plan) }) }}
 				</span>
 				<span

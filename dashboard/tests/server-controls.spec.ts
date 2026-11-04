@@ -2,13 +2,14 @@ import { expect, type Page, test } from '@playwright/test'
 
 const plan = (
 	name: string,
+	title: string,
 	cpu: number,
 	memory: number,
 	disk: number,
 	rate: number,
 ) => ({
 	plan: name,
-	title: name,
+	title,
 	sub_category: 'General',
 	billing_cycle: 'Monthly',
 	currency: 'INR',
@@ -52,9 +53,9 @@ async function openControls(
 				spend_limit_enforced: spendLimitEnforced,
 				plans: {
 					General: [
-						plan('small', 0.125, 0.5, 10, 240),
-						plan('current', 0.5, 2, 25, 950),
-						plan('large', 1, 4, 50, 1900),
+						plan('small', 'Hobby', 0.125, 0.5, 10, 240),
+						plan('current', 'Starter', 0.5, 2, 25, 950),
+						plan('large', 'Standard', 1, 4, 50, 1900),
 					],
 				},
 				rate_card: {
@@ -105,7 +106,8 @@ test('retained storage has the same price on the card, summary and submitted tar
 }, testInfo) => {
 	await openControls(page)
 	await openResize(page)
-	const small = page.getByRole('button', { name: /0.125 vCPU/ })
+	const small = page.getByRole('button', { name: /^Hobby/ })
+	await expect(small).toContainText('0.125 vCPU · 512 MB RAM')
 	await expect(small).toContainText('₹390')
 	await expect(small).toContainText('25 GB disk')
 	await small.click()

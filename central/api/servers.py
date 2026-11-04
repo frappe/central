@@ -73,7 +73,9 @@ def registry(team: str | None = None) -> dict:
 	pending = ResourceAction.pending_labels(team)
 	audiences = _pilot_audiences(team)
 	locked = get_locked_servers(team)
+	plan_titles = _plan_titles({server["plan"] for server in servers if server["plan"]})
 	for server in servers:
+		server["plan_title"] = plan_titles.get(server["plan"])
 		server["pending_action"] = pending.get(server["resource_id"])
 		server["pilot_audience"] = audiences.get(server["name"])
 		server["capabilities"] = get_server_capabilities(frappe.session.user, team, server["name"])
@@ -94,6 +96,13 @@ def registry(team: str | None = None) -> dict:
 	)
 
 	return {"team": team, "servers": servers, "sites": _sites(rows, servers, pending), "creations": creations}
+
+
+def _plan_titles(plans: set[str]) -> dict[str, str]:
+	"""Each plan's title in one read. Plan titles are catalog data, the same for every team."""
+	if not plans:
+		return {}
+	return dict(frappe.db.get_values("Plan", {"name": ["in", list(plans)]}, ["name", "title"]))
 
 
 def _pilot_audiences(team: str) -> dict[str, str]:
