@@ -100,7 +100,7 @@ class TestListInstances(IntegrationTestCase):
 				"memory_megabytes": 4096,
 				"disk_gigabytes": 40,
 				"frappe_version": "v15",
-				"image_offering": self._image_offering("Ubuntu"),
+				"image_offering": "ubuntu",
 			}
 		).insert(ignore_permissions=True)
 		frappe.set_user(self.owner)
@@ -111,13 +111,4 @@ class TestListInstances(IntegrationTestCase):
 			self.assertIn(field, servers[0])
 		self.assertEqual(servers[0].name, servers[0].resource_id)
 		self.assertEqual(servers[0].frappe_version, "v15")
-		self.assertEqual(servers[0].image_title, "Ubuntu")
-
-	def _image_offering(self, title: str) -> str:
-		key = "li-registry-image"
-		if not frappe.db.exists("Image Offering", key):
-			frappe.get_doc(
-				{"doctype": "Image Offering", "offering_key": key, "title": title, "available_in": "Server"}
-			).insert(ignore_permissions=True)
-
-		return key
+		self.assertEqual(servers[0].image_title, frappe.db.get_value("Image Offering", "ubuntu", "title"))
