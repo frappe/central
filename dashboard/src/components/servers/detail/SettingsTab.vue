@@ -97,8 +97,9 @@ const isLocked = computed(
 			@confirm="confirmSelection"
 		>
 			<p class="text-p-base text-ink-gray-7">
-				This changes the next cold boot, including a host restart. It does not
-				restart the server now. Enabling rescue can wake a sleeping server.
+				This changes how the server boots the next time you start or restart it.
+				It does not restart the server now. Enabling rescue can wake a sleeping
+				server.
 			</p>
 		</ConfirmDialog>
 		<SettingsSection

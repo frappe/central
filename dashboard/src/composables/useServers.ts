@@ -1,7 +1,7 @@
 import { useCall } from 'frappe-ui'
 import { computed, ref } from 'vue'
 import { API, method } from '@/api/methods'
-import signingInUrl from '@/assets/signing-in.html?url&no-inline'
+import signingInHtml from '@/assets/signing-in.html?raw'
 import { useBusyRunner } from '@/composables/useBusyRunner'
 import { useSession } from '@/composables/useSession'
 import type { ServerAccess } from '@/lib/capabilities'
@@ -9,6 +9,16 @@ import { reportError } from '@/lib/feedback'
 import { submitOrThrow } from '@/lib/frappeCall'
 import type { RefreshResponse } from '@/types/api'
 import type { VirtualMachine } from '@/types/Infrastructure/VirtualMachine'
+
+const LOADING_MESSAGES = [
+	'Filing the flight plan…',
+	'Running preflight checks…',
+	'Warming up the engines…',
+	'Taxiing to the runway…',
+	'Waiting for clearance…',
+	'Getting ready for takeoff…',
+	'Brewing your coffee…',
+]
 
 type BenchLinkResponse = { url: string }
 type SiteLinkResponse = { url: string | null; login_url: string | null }
@@ -142,8 +152,18 @@ async function refreshServers(): Promise<boolean> {
 }
 
 // Open the window inside the click, before any await, or the browser blocks it.
-function openLoadingTab(target = '_blank'): Window | null {
-	return window.open(signingInUrl, target)
+function openLoadingTab(
+	target = '_blank',
+	features = '',
+): { tab: Window | null; loadingUrl: string } {
+	const message =
+		LOADING_MESSAGES[Math.floor(Math.random() * LOADING_MESSAGES.length)]
+	const loadingUrl = URL.createObjectURL(
+		new Blob([signingInHtml.replace('{{ message }}', message)], {
+			type: 'text/html',
+		}),
+	)
+	return { tab: window.open(loadingUrl, target, features), loadingUrl }
 }
 
 /** `inPlace` replaces this page, for a link that opens the bench without a click. */
@@ -153,7 +173,9 @@ async function openBench(
 ): Promise<void> {
 	if (opening.value) return
 	opening.value = server.resource_id
-	const tab = inPlace ? null : openLoadingTab()
+	const { tab, loadingUrl } = inPlace
+		? { tab: null, loadingUrl: '' }
+		: openLoadingTab()
 	try {
 		await submitOrThrow(benchLinkCall, { server: server.resource_id })
 		openResolvedUrl(benchLinkCall.data?.url, tab, 'server')
@@ -163,11 +185,12 @@ async function openBench(
 			title: `Couldn't open ${server.title || server.resource_id}`,
 		})
 	} finally {
+		URL.revokeObjectURL(loadingUrl)
 		opening.value = ''
 	}
 }
 
-/** Open the server's Atlas web console in a tab. Atlas spends a token on first
+/** Open the server's Atlas web console in a popup. Atlas spends a token on first
  *  use, so every request mints a new one. One window per server: a second request
  *  replaces the session in that window. */
 async function openConsole(
@@ -177,9 +200,11 @@ async function openConsole(
 	const team = activeTeam.value
 	if (!team || opening.value) return
 	opening.value = server.resource_id
-	let tab: Window | null = null
+	const { tab, loadingUrl } = openLoadingTab(
+		`console-${server.resource_id}`,
+		'popup,width=960,height=640',
+	)
 	try {
-		tab = openLoadingTab(`console-${server.resource_id}`)
 		await submitOrThrow(consoleCall, {
 			team,
 			resource_id: server.resource_id,
@@ -190,6 +215,7 @@ async function openConsole(
 		tab?.close()
 		reportError(error, { title: "Couldn't open the console" })
 	} finally {
+		URL.revokeObjectURL(loadingUrl)
 		opening.value = ''
 	}
 }
@@ -197,7 +223,7 @@ async function openConsole(
 async function openSite(name: string): Promise<void> {
 	if (opening.value) return
 	opening.value = name
-	const tab = openLoadingTab()
+	const { tab, loadingUrl } = openLoadingTab()
 	try {
 		await submitOrThrow(siteLinkCall, { name })
 		const url = siteLinkCall.data?.login_url || siteLinkCall.data?.url
@@ -206,6 +232,7 @@ async function openSite(name: string): Promise<void> {
 		tab?.close()
 		reportError(error, { title: "Couldn't open this site" })
 	} finally {
+		URL.revokeObjectURL(loadingUrl)
 		opening.value = ''
 	}
 }

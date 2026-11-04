@@ -12,9 +12,7 @@ defineProps<Props>()
 
 <template>
 	<section class="space-y-4 py-6 first:pt-0">
-		<header
-			class="flex flex-col items-start gap-4 sm:flex-row sm:items-center sm:justify-between"
-		>
+		<header class="flex items-center justify-between gap-4">
 			<div class="min-w-0 space-y-1">
 				<div class="flex items-center gap-1.5">
 					<h2 class="text-base-semibold text-ink-gray-8">{{ title }}</h2>
@@ -38,9 +36,7 @@ defineProps<Props>()
 				</p>
 			</div>
 
-			<div v-if="$slots.actions" class="flex shrink-0 flex-wrap gap-2">
-				<slot name="actions" />
-			</div>
+			<slot name="actions" />
 		</header>
 
 		<slot />
