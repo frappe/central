@@ -82,6 +82,9 @@ const STATUS_TAB_OPTIONS = [
 	{ label: 'Attention', value: 'attention' },
 ]
 
+const planOf = (row: ResourceRow) =>
+	row.server?.plan_title || row.server?.plan || ''
+
 const specsOf = (server?: VirtualMachineRow) =>
 	[
 		server?.vcpus && `${server.vcpus} vCPU`,
@@ -116,7 +119,7 @@ const columns: ListViewColumn<ResourceRow>[] = [
 	{
 		key: 'plan',
 		label: 'Plan',
-		value: (row) => row.server?.plan ?? '',
+		value: planOf,
 		width: 'minmax(10rem,1fr)',
 		sortable: true,
 	},
@@ -146,7 +149,7 @@ const filters = computed<ListViewFilter[]>(() => [
 		key: 'plan',
 		label: 'Plan',
 		allLabel: 'All plans',
-		options: optionsFor((row) => row.server?.plan),
+		options: optionsFor(planOf),
 	},
 	{
 		key: 'version',
@@ -260,10 +263,10 @@ const filters = computed<ListViewFilter[]>(() => [
 				<span
 					:class="[
 						'truncate text-sm',
-						row.server?.plan ? 'text-ink-gray-7' : 'text-ink-gray-4',
+						planOf(row) ? 'text-ink-gray-7' : 'text-ink-gray-4',
 					]"
 				>
-					{{ row.server?.plan || '-' }}
+					{{ planOf(row) || '-' }}
 				</span>
 				<span class="truncate text-xs tabular-nums text-ink-gray-5">
 					{{ specsOf(row.server) }}
