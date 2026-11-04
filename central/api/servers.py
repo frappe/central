@@ -839,3 +839,24 @@ def retry_action(name: str) -> dict:
 	from central.resource_actions import retry
 
 	return retry(name)
+
+
+@frappe.whitelist(methods=["GET"])
+@handle_resource_operation
+@require_capability("server:view", _lt("You cannot view this server."), server="resource_id")
+def get_rescue_state(team: str | None = None, resource_id: str | None = None) -> dict:
+	"""Read the region's boot selection and last boot mode for this server."""
+	from central.integrations.servers import get_rescue_state
+
+	server = frappe.get_doc("Virtual Machine", VirtualMachine.get_team_server_name(team, resource_id))
+	server.require_live()
+	return get_rescue_state(server)
+
+
+@frappe.whitelist(methods=["POST"])
+@handle_resource_operation
+@require_capability("server:power", _lt("You cannot change this server's boot mode."), server="resource_id")
+def set_rescue_mode(enabled: bool, team: str | None = None, resource_id: str | None = None) -> None:
+	"""Select the next boot mode without starting or restarting the server."""
+	server = frappe.get_doc("Virtual Machine", VirtualMachine.get_team_server_name(team, resource_id))
+	server.set_rescue_mode(enabled)

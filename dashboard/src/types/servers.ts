@@ -67,3 +67,8 @@ export interface ServerOverview {
 		}
 	}
 }
+
+export interface RescueState {
+	is_rescue_mode_enabled: boolean | null
+	is_in_rescue_mode: boolean | null
+}

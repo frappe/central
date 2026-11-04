@@ -66,6 +66,8 @@ export const API = {
 	openConsole: 'central.api.servers.open_console',
 	resizeServer: 'central.api.servers.resize_server',
 	renameServer: 'central.api.servers.rename_server',
+	getRescueState: 'central.api.servers.get_rescue_state',
+	setRescueMode: 'central.api.servers.set_rescue_mode',
 	setTerminationProtection: 'central.api.servers.set_termination_protection',
 	updateServerFirewall: 'central.api.servers.update_server_firewall',
 	setServerPublicIp: 'central.api.servers.set_server_public_ip',

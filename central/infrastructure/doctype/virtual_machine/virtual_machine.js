@@ -83,6 +83,35 @@ frappe.ui.form.on("Virtual Machine", {
 		}
 
 		if (frm.doc.atlas_vm_id && frm.doc.status !== "Terminated") {
+			if (frappe.user.has_role("System Manager")) {
+				frm.add_custom_button(__("Rescue mode"), async () => {
+					const args = { team: frm.doc.team, resource_id: frm.doc.resource_id };
+					const result = await frappe.call({
+						method: "central.api.servers.get_rescue_state", args, type: "GET", freeze: true,
+					});
+					if (result.exc || !result.message) return;
+					const state = result.message;
+					const label = (value) => value == null ? __("Unknown") : value ? __("Rescue") : __("Normal");
+					const message = __(
+						"Last boot: {0}. Next boot: {1}. Repairs modify the original disk. Take a snapshot before repair. This selection applies on the next cold boot; it does not restart the server now. Enabling can wake a sleeping server.",
+						[label(state.is_in_rescue_mode), label(state.is_rescue_mode_enabled)],
+					);
+					if (state.is_rescue_mode_enabled == null) {
+						frappe.msgprint(message);
+						return;
+					}
+					const question = state.is_rescue_mode_enabled ? __("Disable rescue?") : __("Enable rescue?");
+					frappe.confirm(message + "<br>" + question, async () => {
+						const response = await frappe.call({
+							method: "central.api.servers.set_rescue_mode",
+							args: { ...args, enabled: !state.is_rescue_mode_enabled }, freeze: true,
+						});
+						if (response.exc) return;
+						frappe.msgprint(__("Boot selection accepted. Use the existing Start or Restart action, then open Rescue mode again to check status."));
+					});
+				}, __("Server"));
+			}
+
 			frm.add_custom_button(
 				__("Sync state"),
 				async () => {

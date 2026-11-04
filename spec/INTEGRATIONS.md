@@ -408,3 +408,11 @@ pilot --site <site> execute central.investigator.knowledge.load_knowledge_bases
 ## Validation
 
 Run the shared contract tests before deployment. Complete the live journeys in [Staging validation](STAGING_VALIDATION.md) against the actual staging revisions. Mocked responses do not prove VM startup, Pilot login, SSH access, or webhook delivery.
+
+## Rescue mode
+
+The server Settings tab and the operator's Desk Rescue mode action read the two nullable rescue fields directly from Atlas. Central does not persist a rescue selection. Unknown state is not disabled state. Use Refresh status after boot; a successful power action alone does not confirm the boot image.
+
+Changing the selection requires both `server:power` and `server:console` on the server, and the existing server-access restriction applies to trials. The selection takes effect at the next cold boot. Start or restart remains a separate action. Enabling rescue can wake a sleeping server. Repairs modify the original disk; take a snapshot first.
+
+CPU or memory resizing is refused before power changes while rescue is selected or active. Disk-only growth remains available unless the VM is in rescue with idle shutdown configured: Central cannot complete its required idle-setting update in that state, so it refuses before growing the disk. Leave rescue and boot normally before that resize.

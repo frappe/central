@@ -413,6 +413,24 @@ class VirtualMachine(Document):
 		replace_server_ssh_keys(self, key_names, resolve_team_ssh_keys(self.team, key_names))
 
 	@requires_server_access
+	def set_rescue_mode(self, enabled: bool) -> None:
+		"""Select rescue for a caller with both boot control and console access."""
+		from central.integrations.servers import set_rescue_mode
+
+		self.require_live()
+		if not all(
+			can(frappe.session.user, self.team, capability, server=self.name)
+			for capability in ("server:power", "server:console")
+		):
+			frappe.throw(
+				_("You need power and console access to change rescue mode."), frappe.PermissionError
+			)
+		if type(enabled) is not bool:
+			frappe.throw(_("Select whether rescue mode should be enabled."))
+
+		set_rescue_mode(self, enabled)
+
+	@requires_server_access
 	def set_termination_protection(self, enabled: bool) -> None:
 		"""Turn termination protection on or off. The region refuses to terminate a protected server."""
 		from central.integrations.servers import set_termination_protection

@@ -114,3 +114,5 @@ Stored grants, fixtures, and the dashboard depend on the vocabulary. Adding, rem
 4. Update this document.
 
 **Never rename a capability in place.** Stored grants and every consumer keep the old string, and the result authorizes the wrong thing without an error. Add the new capability, migrate grants to it, then retire the old one.
+
+Rescue boot selection requires both `server:power` and `server:console` on the selected server. Reading rescue state requires `server:view`. The existing free-trial server-access restriction applies to changing the selection; System Manager retains its operator bypass.
