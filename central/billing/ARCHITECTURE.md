@@ -251,7 +251,7 @@ Dunning, reconciliation, the e-mandate cycle, credit expiry, card expiry, accoun
 | daily | `revenue.dunning.run_dunning` | Day 1/3/7 retries → past_due → suspend (stops servers) → termination due (operator) |
 | daily | `payments.charges.cleanup_payment_logs` | prune Payment Attempt / Webhook Event |
 | daily | `projection.batch.prune` | prune old projection batches |
-| daily | `payments.emandate.run_emandate_cycle` | INR ≤₹15k pre-debit notice → debit after 24h |
+| daily | `payments.emandate.run_emandate_cycle` | INR ≤₹15k pre-debit notice → debit window opens 24 hours after the notice |
 | daily | `catalog.subscriptions.backfill_missing_subscriptions` | Subscription for any Running Virtual Machine missing one |
 | daily | `payments.settlement.run_billing_details_reminder` | ask credit-funded teams for the billing details their invoice will need |
 | daily | `revenue.credits.run_credit_expiry` | write off expired promotional credit |
@@ -262,7 +262,7 @@ Dunning, reconciliation, the e-mandate cycle, credit expiry, card expiry, accoun
 | hourly | `platform.alerts.run_operator_alerts` | alert operators (invariants, readiness, failed webhooks, stale attempts, unsettled captures, held invoices, failed refunds, failed accounting syncs) |
 | monthly | `revenue.invoicing.draft_monthly_invoices` | waive internal teams' unpaid invoices, then draft the just-closed month as page jobs on the `billing` queue |
 | hourly | `revenue.invoicing.collect_due_invoices` | collect every uncollected invoice whose month has closed, as page jobs; record progress on the Billing Run |
-| hourly | `payments.collection.collect_on_payment_date` | charge each open invoice on its payment date; a pre-debit rail is started one day early to send its notice |
+| hourly | `payments.collection.collect_on_payment_date` | charge each open invoice on its payment date; a pre-debit rail is started no earlier than 24 hours before the payment date to send its notice |
 | hourly | `ingester.erpnext_sync.retry_failed_syncs` | retry Sales Invoice push (backoff window elapsed) |
 | monthly | `payments.payments.expire_payment_methods` | flip cards past their printed month |
 
@@ -485,7 +485,7 @@ flowchart TD
     HOLD -->|yes| CR["wallet credits apply at open<br/>settlement.py"]
     CR -->|credits cover the bill| PAID[["Invoice: Paid"]]
     CR -->|remainder owed| OPEN[["Invoice: Outstanding,<br/>payment date and due date set"]]
-    OPEN -->|at open| CARD["collection.collect_invoice<br/>no rail debits before the payment date;<br/>a pre-debit rail debits 24 hours after its notice"]
+    OPEN -->|at open| CARD["collection.collect_invoice<br/>no rail debits before the payment date;<br/>a pre-debit rail: debit window opens 24 hours after its notice"]
     PDATE(["hourly · collection.collect_on_payment_date"]) -->|payment date reached| CARD
     CARD -->|webhook Paid| PAID
     PAID --> SYNC["erpnext_sync.enqueue_invoice_sync"]
@@ -517,7 +517,7 @@ flowchart TD
 [hourly]   payments.collection.collect_on_payment_date
   → every owed invoice with no payment attempt, payment_date ≤ tomorrow and due_date ≥ today
   → collection.collect_invoice (no rail debits before the payment date; a pre-debit rail sends
-    its notice no earlier than 24 hours before it, and debits 24 hours after the notice)
+    its notice no earlier than 24 hours before it, and its debit window opens 24 hours after the notice)
   → (on webhook) Paid → erpnext_sync.enqueue_invoice_sync
 ```
 A held draft is released when the profile is complete. `Billing Profile.on_update` calls `release_held_invoices`, which enqueues `run.release_held_drafts` to settle the held drafts. When a draft waits longer than `Billing Settings.billing_details_grace_days`, the team stops being credit-funded for new spend (`settlement.details_overdue`), and `platform.alerts.held_invoices` pages operators.

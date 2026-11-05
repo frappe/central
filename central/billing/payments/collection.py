@@ -125,8 +125,9 @@ def collect_on_payment_date(now: datetime | str | None = None) -> list[dict]:
 
 	The invoice opens on the 1st and waits for the team's payment day. An invoice is
 	picked up a day early, so a rail that owes a pre-debit notice can send it before the
-	payment date and debit 24 hours later. Only invoices with no payment attempt are picked up,
-	and only until their due date: after that, dunning owns the retries.
+	payment date. Its debit window opens 24 hours after the notice. Only invoices with
+	no payment attempt are picked up, and only until their due date: after that,
+	dunning owns the retries.
 	"""
 	from central.billing.doctype.invoice.invoice import owed_filters
 	from central.billing.platform.jobs import each_isolated
@@ -172,8 +173,8 @@ def _is_before_payment_date(inv, gateway: str, now: datetime | str | None = None
 	"""Whether a debit on `gateway` must still wait for the invoice's payment date.
 
 	1. On or after the payment date, no rail waits.
-	2. Before it, a rail that owes a pre-debit notice goes on, so the notice goes out a day
-	   ahead. Its debit window never opens before the payment date.
+	2. Before it, a rail that owes a pre-debit notice goes on, so the notice goes out no
+	   earlier than 24 hours before. Its debit window never opens before the payment date.
 	3. Before it, every other rail waits.
 	"""
 	from central.billing.payments import emandate

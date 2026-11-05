@@ -15,7 +15,7 @@ Each invoice is paid in this order:
 1. Prepaid credits in your wallet, on the invoice date.
 2. Your payment methods, on the payment date, in the order shown under **Methods** on **Billing > Payments**. When one fails, the next one is tried.
 
-The payment date is a day from the 1st to the 10th of the month. The default is the 1st. When the invoice is issued after that day, the payment method is charged on the invoice date. For UPI Autopay and other Indian mandates, Frappe Cloud sends the pre-debit notice one day before the payment date.
+The payment date is a day from the 1st to the 10th of the month. The default is the 1st. When the invoice is issued after that day, the payment method is charged on the invoice date. For UPI Autopay and other Indian mandates, Frappe Cloud sends a pre-debit notice no earlier than one day before the payment date, and charges 24 hours after the notice. When the payment date is the 1st, the notice goes out on the 1st and the charge is on the 2nd.
 
 You do not need to pay a normal invoice by hand. See [Invoices](/billing/invoices) for an invoice that stays open.
 
