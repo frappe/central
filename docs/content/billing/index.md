@@ -15,7 +15,7 @@ Each invoice is paid in this order:
 1. Prepaid credits in your wallet, on the invoice date.
 2. Your payment methods, on the payment date, in the order shown under **Methods** on **Billing > Payments**. When one fails, the next one is tried.
 
-The payment date is a day from the 1st to the 10th of the month. The default is the 1st. When the invoice is issued after that day, the payment method is charged on the invoice date. For UPI Autopay and other Indian mandates, Frappe Cloud sends a pre-debit notice no earlier than one day before the payment date, and charges 24 hours after the notice. When the payment date is the 1st, the notice goes out on the 1st and the charge is on the 2nd.
+The payment date is a day from the 1st to the 10th of the month. The default is the 1st. When the invoice is issued after that day, the payment method is charged on the invoice date. To pay an issued invoice before its payment date, open it and click **Pay *amount* now**. Only a user with the Owner, Admin, or Billing role sees this button. For UPI Autopay and other Indian mandates, Frappe Cloud sends a pre-debit notice no earlier than one day before the payment date, and charges 24 hours after the notice. When the payment date is the 1st, the notice goes out on the 1st and the charge is on the 2nd.
 
 You do not need to pay a normal invoice by hand. See [Invoices](/billing/invoices) for an invoice that stays open.
 
@@ -46,7 +46,7 @@ The panel at the top of **Billing > Overview** shows the current cycle.
 | Next invoice | The date of the next invoice. |
 | Next payment date | The next scheduled payment date. When an unpaid invoice passes its payment date, this row shows the payment date of the next invoice. |
 
-To change the payment date, click the calendar icon (**Change payment date**) next to **Next payment date**. The **Payment schedule** panel opens. It also shows the amount due, the date of the next charge or retry, the payment method that is charged, and the dates of each step if the invoice stays unpaid. Select a day from the 1st to the 10th of the month and click **Save payment date**. You can change it at most twice in a billing cycle. You need the Owner, Admin, or Billing role. Wallet credit still applies on the invoice date. A change does not move the payment date of an invoice that is already issued. To pay an issued invoice before its payment date, open it and click **Pay *amount* now**. Only a user with the Owner, Admin, or Billing role sees this button.
+To change the payment date, click the calendar icon (**Change payment date**) next to **Next payment date**. The **Payment schedule** panel opens. It also shows the amount due, the date of the next charge or retry, the payment method that is charged, and the dates of each step if the invoice stays unpaid. Select a day from the 1st to the 10th of the month and click **Save payment date**. You can change it at most twice in a billing cycle. You need the Owner, Admin, or Billing role. Wallet credit still applies on the invoice date. A change does not move the payment date of an invoice that is already issued.
 
 ### Budget alerts
 
