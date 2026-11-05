@@ -124,8 +124,8 @@ def collect_on_payment_date(now: datetime | str | None = None) -> list[dict]:
 	"""Hourly: start collection on every invoice whose payment date has come.
 
 	The invoice opens on the 1st and waits for the team's payment day. An invoice is
-	picked up a day early, so a rail that owes a pre-debit notice sends it in time to
-	debit on the payment date. Only invoices with no payment attempt are picked up,
+	picked up a day early, so a rail that owes a pre-debit notice can send it before the
+	payment date and debit 24 hours later. Only invoices with no payment attempt are picked up,
 	and only until their due date: after that, dunning owns the retries.
 	"""
 	from central.billing.doctype.invoice.invoice import owed_filters

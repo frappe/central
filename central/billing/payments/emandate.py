@@ -85,7 +85,7 @@ def schedule_predebit(invoice: str, now=None, gateway: str | None = None) -> dic
 	if skipped := _get_notice_skip_reason(inv, gateway):
 		return {"invoice": invoice, "skipped": skipped}
 
-	# The notice goes out a day ahead, so the debit lands on the payment date.
+	# The notice goes out no earlier than a day ahead, and the debit waits 24 hours after it.
 	now_dt = frappe.utils.get_datetime(now) if now else frappe.utils.now_datetime()
 	payment_starts_at = collection.payment_starts_at(inv)
 	if now_dt < frappe.utils.add_to_date(payment_starts_at, hours=-PREDEBIT_NOTICE_HOURS):
