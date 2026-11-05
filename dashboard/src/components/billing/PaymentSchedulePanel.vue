@@ -20,7 +20,7 @@ import type { PaymentSchedule } from '@/types/billing'
 // time. Loaded on open — nobody needs a dunning ladder on first paint.
 const open = defineModel<boolean>('open', { default: false })
 const { activeTeam } = useSession()
-const { nextPayment, forecast } = useBillingOverview()
+const { nextPayment } = useBillingOverview()
 
 const schedule = useCall<PaymentSchedule, { team: string }>({
 	url: method(API.paymentSchedule),
@@ -34,7 +34,6 @@ watch(open, (isOpen) => {
 function onPaymentDaySaved(): void {
 	schedule.reload()
 	nextPayment.reload()
-	forecast.reload()
 }
 
 const loading = computed(() => schedule.loading && !schedule.data)

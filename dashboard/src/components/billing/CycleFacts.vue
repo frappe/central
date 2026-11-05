@@ -34,7 +34,7 @@ const nextCharge = computed(() => Number(nextPayment.data?.amount ?? 0))
 const blocker = computed(() =>
 	nextCharge.value > 0 ? nextPayment.data?.blockers?.[0] : undefined,
 )
-const nextPaymentOn = computed(() => shortDate(forecast.data?.payment_date))
+const nextPaymentOn = computed(() => shortDate(nextPayment.data?.charge_on))
 
 // The row describes this cycle's charge; a due-now bill carries its own warning.
 const cycleBlocker = computed(() =>
@@ -173,7 +173,7 @@ const onAddMethod = () => {
 				{{ nextInvoiceOn || '—' }}
 			</span>
 
-			<template v-if="forecast.data">
+			<template v-if="nextPayment.data">
 				<span class="truncate text-ink-gray-5"> Next payment date </span>
 
 				<div class="flex items-center justify-end gap-2">

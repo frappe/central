@@ -23,7 +23,6 @@ from central.billing.api.dashboard._shared import (
 	_resolve_team,
 	_team_currency,
 )
-from central.billing.doctype.billing_profile.billing_profile import get_payment_date
 from central.billing.doctype.invoice.invoice import is_issued
 from central.billing.doctype.top_up_order.top_up_order import TopupOrder
 from central.billing.gateways.base import VerifiedPayment
@@ -68,8 +67,6 @@ def get_forecast(team: str | None = None) -> dict:
 	return {
 		"period_start": str(month_start),
 		"period_end": str(month_end),
-		# The day this cycle's invoice is charged to the card, from the team's payment day.
-		"payment_date": str(get_payment_date(team, frappe.utils.add_days(month_end, 1))),
 		"projected_total": projected_total,
 		"subtotal": subtotal,
 		# Never quote the projection as a bare number: the engine already knows which

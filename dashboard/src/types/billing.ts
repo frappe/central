@@ -51,8 +51,6 @@ export interface BillingLine {
 export interface Forecast {
 	period_start: string
 	period_end: string
-	/** The day this cycle's invoice is charged to the card. */
-	payment_date: string
 	projected_total: number
 	subtotal: number
 	tax_amount: number
