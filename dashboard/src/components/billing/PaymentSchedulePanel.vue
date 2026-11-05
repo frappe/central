@@ -7,6 +7,7 @@ import SidePanel from '@/components/common/SidePanel.vue'
 import { useBillingOverview } from '@/composables/useBillingOverview'
 import { useSession } from '@/composables/useSession'
 import { shortDate } from '@/lib/date'
+import { getDunningStep } from '@/lib/dunning'
 import { formatDate, money } from '@/lib/format'
 import type { PaymentSchedule } from '@/types/billing'
 
@@ -47,6 +48,16 @@ const blockerLines = computed(() => {
 	const lines = lead.fix ? [lead.fix] : []
 	return lines.concat(blockers.value.slice(1).map((b) => b.title))
 })
+
+// For a missed bill the amount above is that bill, so the date is its next step on
+// the dunning ladder rather than the next cycle's payment day.
+const chargeStep = computed(
+	() =>
+		getDunningStep(data.value) ?? {
+			label: "We'll charge on",
+			date: data.value?.charge_on,
+		},
+)
 </script>
 
 <template>
@@ -67,9 +78,9 @@ const blockerLines = computed(() => {
 					</span>
 				</div>
 				<div class="mt-1.5 flex items-baseline justify-between gap-3">
-					<span class="text-p-sm text-ink-gray-5">We'll charge on</span>
+					<span class="text-p-sm text-ink-gray-5">{{ chargeStep.label }}</span>
 					<span class="text-sm-medium text-ink-gray-8">
-						{{ shortDate(data?.charge_on) || '—' }}
+						{{ shortDate(chargeStep.date) || '—' }}
 					</span>
 				</div>
 				<div

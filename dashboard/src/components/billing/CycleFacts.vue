@@ -6,6 +6,7 @@ import { useBillingOverview } from '@/composables/useBillingOverview'
 import { useBillingSetup } from '@/composables/useBillingSetup'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { shortDate } from '@/lib/date'
+import { getDunningStep } from '@/lib/dunning'
 import { formatDate, money } from '@/lib/format'
 
 interface Props {
@@ -35,6 +36,25 @@ const blocker = computed(() =>
 	nextCharge.value > 0 ? nextPayment.data?.blockers?.[0] : undefined,
 )
 const nextPaymentOn = computed(() => shortDate(nextPayment.data?.charge_on))
+
+// A missed bill's place on the dunning ladder, shown under "Due now".
+const dunningStep = computed(() =>
+	hasOutstanding.value ? getDunningStep(nextPayment.data) : undefined,
+)
+
+const dunningHint = computed(() => {
+	const step = dunningStep.value
+
+	if (!step) return ''
+	if (!step.isSuspension) {
+		return 'We will try to charge your payment method again on this date.'
+	}
+	if (nextPayment.data?.suspended_since) {
+		return 'Your servers are stopped. Pay the bill to start them again.'
+	}
+
+	return 'Your servers stop on this date if the bill stays unpaid.'
+})
 
 // The row describes this cycle's charge; a due-now bill carries its own warning.
 const cycleBlocker = computed(() =>
@@ -113,6 +133,23 @@ const onAddMethod = () => {
 							class="whitespace-nowrap text-base-medium tabular-nums text-ink-gray-9"
 						>
 							{{ money(outstanding, currency) }}
+						</span>
+					</Tooltip>
+				</div>
+			</template>
+
+			<template v-if="dunningStep">
+				<span class="truncate text-ink-gray-5"> {{ dunningStep.label }} </span>
+
+				<div class="flex items-center justify-end gap-2">
+					<Tooltip :text="dunningHint">
+						<span
+							class="whitespace-nowrap text-base-medium tabular-nums"
+							:class="
+								dunningStep.isSuspension ? 'text-ink-red-7' : 'text-ink-amber-6'
+							"
+						>
+							{{ shortDate(dunningStep.date) }}
 						</span>
 					</Tooltip>
 				</div>

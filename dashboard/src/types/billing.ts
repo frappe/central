@@ -99,6 +99,10 @@ export interface NextPayment {
 	/** Empty blockers is not a promise of success — only that nothing decides otherwise. */
 	will_auto_charge: boolean
 	blockers: PaymentBlocker[]
+	/** Set only after the open invoice's payment date has passed. At most one is set. */
+	next_retry_on: string | null
+	suspends_on: string | null
+	suspended_since: string | null
 }
 
 export interface PredebitNotice {
