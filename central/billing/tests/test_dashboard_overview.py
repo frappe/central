@@ -289,6 +289,7 @@ class TestNextPayment(OverviewBase):
 		self.assertEqual(after["suspends_on"], str(frappe.utils.add_days(due_date, 14)))
 
 	def _attempt(self, invoice):
+		# Test fixture: a failed attempt the gateway would record, not a user action.
 		frappe.get_doc(
 			{
 				"doctype": "Payment Attempt",
