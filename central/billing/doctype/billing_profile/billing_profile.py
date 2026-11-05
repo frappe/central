@@ -218,8 +218,8 @@ class BillingProfile(Document):
 
 		1. The day is from the 1st to the 10th (`validate_payment_day`).
 		2. The same day again is not a change.
-		3. A team changes it at most twice in one billing cycle. The count starts
-		   again when a new cycle starts.
+		3. A team changes it at most `PAYMENT_DAY_CHANGES_PER_CYCLE` times in one billing
+		   cycle. The count starts again when a new cycle starts.
 		"""
 		day = frappe.utils.cint(day)
 		if day == frappe.utils.cint(self.payment_day):
@@ -229,8 +229,8 @@ class BillingProfile(Document):
 		if not changes_left:
 			frappe.throw(
 				_(
-					"You can change the payment date twice in a billing cycle. You can change it again next month."
-				),
+					"You can change the payment date {0} times in a billing cycle. You can change it again next month."
+				).format(PAYMENT_DAY_CHANGES_PER_CYCLE),
 				frappe.ValidationError,
 			)
 

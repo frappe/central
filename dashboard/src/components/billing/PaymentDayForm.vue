@@ -18,12 +18,6 @@ const emit = defineEmits<{ saved: [] }>()
 const { activeTeam } = useSession()
 const { canManageBilling } = useCapabilities()
 
-const LAST_PAYMENT_DAY = 10
-const options = Array.from({ length: LAST_PAYMENT_DAY }, (_, index) => ({
-	label: `${ordinal(index + 1)} of the month`,
-	value: String(index + 1),
-}))
-
 const settings = useCall<BillingSettings, { team: string }>({
 	url: method(API.billingSettings),
 	params: () => ({ team: activeTeam.value! }),
@@ -56,6 +50,16 @@ watch(
 
 watch(draft, () => (formError.value = ''))
 
+const options = computed(() =>
+	Array.from({ length: settings.data?.last_payment_day ?? 0 }, (_, index) => ({
+		label: `${ordinal(index + 1)} of the month`,
+		value: String(index + 1),
+	})),
+)
+
+const changesPerCycle = computed(
+	() => settings.data?.payment_day_changes_per_cycle ?? 0,
+)
 const changesLeft = computed(() => settings.data?.payment_day_changes_left ?? 0)
 const isUnchanged = computed(
 	() => Number(draft.value) === (settings.data?.payment_day ?? 1),
@@ -68,12 +72,22 @@ const hint = computed(() => {
 	if (!canManageBilling.value)
 		return 'Only team members who manage billing can change the payment date.'
 	if (!changesLeft.value)
-		return "You've changed the payment date twice this billing cycle. You can change it again next month."
+		return `You've changed the payment date ${timesLabel(changesPerCycle.value)} this billing cycle. You can change it again next month.`
 
-	const times = changesLeft.value === 1 ? 'once more' : 'twice'
+	const times =
+		changesLeft.value < changesPerCycle.value
+			? `${timesLabel(changesLeft.value)} more`
+			: timesLabel(changesLeft.value)
 
 	return `Wallet credit is used on the 1st. We charge the rest on this day. You can change it ${times} this billing cycle.`
 })
+
+function timesLabel(count: number): string {
+	if (count === 1) return 'once'
+	if (count === 2) return 'twice'
+
+	return `${count} times`
+}
 
 async function submit(): Promise<void> {
 	try {

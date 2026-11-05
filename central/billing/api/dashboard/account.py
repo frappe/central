@@ -21,7 +21,10 @@ from central.billing.api.dashboard._shared import (
 	_team_resource_count,
 	currency_for_country,
 )
-from central.billing.doctype.billing_profile.billing_profile import PAYMENT_DAY_CHANGES_PER_CYCLE
+from central.billing.doctype.billing_profile.billing_profile import (
+	LAST_PAYMENT_DAY,
+	PAYMENT_DAY_CHANGES_PER_CYCLE,
+)
 from central.billing.revenue import gst_status
 
 
@@ -187,6 +190,10 @@ def get_billing_settings(team: str | None = None) -> dict:
 	"""Alert thresholds and the payment day. (Payment mode was removed — billing is
 	credits-first-then-card for every team, so there is no prepaid/postpaid switch.)"""
 	team = _resolve_team(team)
+	limits = {
+		"last_payment_day": LAST_PAYMENT_DAY,
+		"payment_day_changes_per_cycle": PAYMENT_DAY_CHANGES_PER_CYCLE,
+	}
 	if not frappe.db.exists("Billing Profile", team):
 		return {
 			"team": team,
@@ -194,6 +201,7 @@ def get_billing_settings(team: str | None = None) -> dict:
 			"spend_alert_threshold": 0,
 			"payment_day": 1,
 			"payment_day_changes_left": PAYMENT_DAY_CHANGES_PER_CYCLE,
+			**limits,
 		}
 	p = frappe.get_doc("Billing Profile", team)
 	return {
@@ -202,6 +210,7 @@ def get_billing_settings(team: str | None = None) -> dict:
 		"spend_alert_threshold": p.spend_alert_threshold,
 		"payment_day": p.payment_day,
 		"payment_day_changes_left": p.get_payment_day_changes_left(),
+		**limits,
 	}
 
 

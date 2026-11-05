@@ -451,6 +451,10 @@ export interface BillingSettings {
 	payment_day: number
 	/** Changes to the payment day the team can still make this billing cycle. */
 	payment_day_changes_left: number
+	/** The latest day of the month a team can pick as its payment day. */
+	last_payment_day: number
+	/** Changes to the payment day a team can make in one billing cycle. */
+	payment_day_changes_per_cycle: number
 }
 
 /** get_collection_status — collection mode + the "Action Required" banner feed (ADR 0005). */
