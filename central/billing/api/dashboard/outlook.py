@@ -66,22 +66,23 @@ def get_next_payment(team: str | None = None) -> dict:
 
 	Reads the collectable amount off an already-open invoice where one exists, and
 	falls back to the current month's projection when the period is still running.
-	`charge_on` is always the next scheduled payment day. Once the open invoice's own
-	payment date has passed, that is the running cycle's, and the missed bill's place
-	on the dunning ladder is reported beside it.
+	`charge_on` is always the next scheduled payment day: the soonest owed invoice
+	still to be charged, else the running cycle's. When the oldest owed invoice's own
+	payment date has passed, its place on the dunning ladder is reported beside it.
 	"""
 	team = _resolve_team(team)
 	currency = _team_currency(team)
 	today = frappe.utils.getdate()
 
-	invoice = _next_collectable_invoice(team)
+	owed = _owed_invoices(team)
+	invoice = owed[0] if owed else None
 	if invoice:
 		amount = frappe.utils.flt(invoice.expected_collection)
 		period_end = invoice.period_end
 	else:
 		amount, period_end = _projected_collectable(team, today)
 
-	charge_on = _scheduled_charge_on(team, invoice, today)
+	charge_on = _scheduled_charge_on(team, owed, today)
 	missed = _missed_payment(team, invoice, today)
 	blockers = _blockers(team, amount, currency, missed["next_retry_on"] or charge_on, today)
 	return {
@@ -114,9 +115,9 @@ def get_payment_schedule(team: str | None = None) -> dict:
 	}
 
 
-def _next_collectable_invoice(team: str):
-	"""The open bill we would collect next, soonest due first."""
-	rows = frappe.get_all(
+def _owed_invoices(team: str) -> list[frappe._dict]:
+	"""The open bills we still have to collect, oldest due first."""
+	return frappe.get_all(
 		"Invoice",
 		filters=[
 			*owed_filters(),
@@ -134,9 +135,7 @@ def _next_collectable_invoice(team: str):
 			"predebit_charge_after",
 		],
 		order_by="due_date asc",
-		limit=1,
 	)
-	return frappe._dict(rows[0]) if rows else None
 
 
 def _invoice_charge_on(invoice):
@@ -150,11 +149,12 @@ def _is_charge_missed(invoice, today) -> bool:
 	return bool(charge_on) and frappe.utils.getdate(charge_on) < today
 
 
-def _scheduled_charge_on(team: str, invoice, today):
-	"""The next scheduled payment day: the open invoice's own until it passes, then the
-	day the running cycle's invoice is charged."""
-	if invoice and not _is_charge_missed(invoice, today):
-		return _invoice_charge_on(invoice)
+def _scheduled_charge_on(team: str, owed: list, today):
+	"""The next scheduled payment day: the oldest owed invoice whose charge day is today
+	or later, else the day the running cycle's invoice is charged."""
+	for invoice in owed:
+		if _invoice_charge_on(invoice) and not _is_charge_missed(invoice, today):
+			return _invoice_charge_on(invoice)
 	return get_payment_date(team, frappe.utils.add_days(frappe.utils.get_last_day(today), 1))
 
 
