@@ -70,6 +70,28 @@ def _get_uncharged_invoice(team: str) -> dict:
 	return {"open_invoice": invoice.name, "open_payment_date": _format_date(invoice.payment_date)}
 
 
+def notify_retry_failed(invoice: str) -> None:
+	"""Tell the team a dunning retry failed, and why, when the latest attempt on the invoice failed."""
+	last = frappe.get_all(
+		"Payment Attempt", {"invoice": invoice}, order_by="creation desc", limit=1, pluck="name"
+	)
+	if not last:
+		return
+	attempt = frappe.get_doc("Payment Attempt", last[0])
+	if attempt.status != "Failed":
+		return
+
+	count = frappe.db.count("Payment Attempt", {"invoice": invoice})
+	reason = attempt.failure_reason or attempt.failure_code or "declined"
+	notifications.notify(
+		attempt.team,
+		"Payment Retry",
+		message=_("Payment retry {0} for invoice {1} failed: {2}").format(count, invoice, reason),
+		reference_doctype="Invoice",
+		reference_name=invoice,
+	)
+
+
 def notify_invoice_overdue(invoice: str, team: str) -> None:
 	"""Tell the team an invoice is overdue, and the action that settles it in its collection mode."""
 	notifications.notify(

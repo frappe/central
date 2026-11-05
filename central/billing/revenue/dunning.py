@@ -304,24 +304,10 @@ def retry_payment(invoice_name: str) -> dict:
 	"""One dunning retry: a new collection round, primary→backup (#28), notified with
 	the reason on failure."""
 	from central.billing.payments import collection
-	from central.billing.platform import notifications
+	from central.billing.payments.payment_notices import notify_retry_failed
 
 	result = collection.collect_invoice(invoice_name, new_round=True)
-	last = frappe.get_all(
-		"Payment Attempt", {"invoice": invoice_name}, order_by="creation desc", limit=1, pluck="name"
-	)
-	if last:
-		attempt = frappe.get_doc("Payment Attempt", last[0])
-		if attempt.status == "Failed":
-			n = frappe.db.count("Payment Attempt", {"invoice": invoice_name})
-			reason = attempt.failure_reason or attempt.failure_code or "declined"
-			notifications.notify(
-				attempt.team,
-				"Payment Retry",
-				message=f"Payment retry {n} for invoice {invoice_name} failed: {reason}",
-				reference_doctype="Invoice",
-				reference_name=invoice_name,
-			)
+	notify_retry_failed(invoice_name)
 	return result
 
 
