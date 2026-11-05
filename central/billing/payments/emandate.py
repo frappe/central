@@ -82,18 +82,8 @@ def schedule_predebit(invoice: str, now=None, gateway: str | None = None) -> dic
 	`gateway` is the rail about to debit, when the caller knows it (a fallback onto a
 	second rail); otherwise the team's own rail decides."""
 	inv = frappe.get_doc("Invoice", invoice)
-	if not collection_mode.is_debit_allowed(inv.team):
-		return {"invoice": invoice, "skipped": "debit_not_allowed"}
-	if not is_notice_required(inv, gateway):
-		# A rail that debits without a notice is collected by the ordinary sweep. Arming
-		# a 24h window here would delay every international charge for nothing.
-		return {"invoice": invoice, "skipped": "no_notice_required"}
-	if inv.invoice_type != "Billable" or not is_owed(inv):
-		return {"invoice": invoice, "skipped": "not_collectable"}
-	if frappe.utils.flt(inv.expected_collection) <= 0:
-		return {"invoice": invoice, "skipped": "nothing_due"}
-	if inv.predebit_notified_at:
-		return {"invoice": invoice, "skipped": "already_notified"}
+	if skipped := _get_notice_skip_reason(inv, gateway):
+		return {"invoice": invoice, "skipped": skipped}
 
 	# The notice goes out a day ahead, so the debit lands on the payment date.
 	now_dt = frappe.utils.get_datetime(now) if now else frappe.utils.now_datetime()
@@ -134,6 +124,23 @@ def schedule_predebit(invoice: str, now=None, gateway: str | None = None) -> dic
 		reference_name=invoice,
 	)
 	return {"invoice": invoice, "notified": True, "charge_after": str(charge_after)}
+
+
+def _get_notice_skip_reason(inv, gateway: str | None) -> str | None:
+	"""Why this invoice gets no pre-debit notice, or None when it may get one."""
+	if not collection_mode.is_debit_allowed(inv.team):
+		return "debit_not_allowed"
+	if not is_notice_required(inv, gateway):
+		# A rail that debits without a notice is collected by the ordinary sweep. Arming
+		# a 24h window here would delay every international charge for nothing.
+		return "no_notice_required"
+	if inv.invoice_type != "Billable" or not is_owed(inv):
+		return "not_collectable"
+	if frappe.utils.flt(inv.expected_collection) <= 0:
+		return "nothing_due"
+	if inv.predebit_notified_at:
+		return "already_notified"
+	return None
 
 
 def charge_due(now=None) -> list[dict]:
