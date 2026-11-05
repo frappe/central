@@ -166,15 +166,23 @@ def _retry_if_due(inv, schedule, now) -> dict | None:
 	Manual Checkout (paid on-session) and Action Required (paused at the ₹15k threshold)
 	are not retried off-session; dunning escalates and asks them to act (ADR 0005). Every
 	other mode, Prepaid included, is retried."""
-	from central.billing.payments import collection, collection_mode
-
-	if inv.status != OUTSTANDING or not collection_mode.is_debit_allowed(inv.team):
+	if inv.status != OUTSTANDING or not has_retry_rail(inv.name, inv.team):
 		return None
 	if not is_retry_due(inv.name, schedule, now):
 		return None
-	if not collection.next_method_for(inv.name, inv.team, collection.attempts_of(inv.name)):
-		return None
 	return retry_payment(inv.name)
+
+
+def has_retry_rail(invoice: str, team: str) -> bool:
+	"""Dunning can retry the invoice off-session.
+
+	1. The team's collection mode allows an off-session debit.
+	2. A chargeable method is left to try in a new round."""
+	from central.billing.payments import collection, collection_mode
+
+	if not collection_mode.is_debit_allowed(team):
+		return False
+	return bool(collection.next_method_for(invoice, team, collection.attempts_of(invoice)))
 
 
 def is_retry_due(invoice: str, schedule: list, now) -> bool:
