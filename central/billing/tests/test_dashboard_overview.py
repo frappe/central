@@ -254,6 +254,7 @@ class TestNextPayment(OverviewBase):
 		self.assertEqual(out["charge_on"], self._next_cycle_payment_date())
 
 	def test_a_missed_bill_with_no_retry_left_reports_the_suspension_date(self):
+		give_team_a_card(TEAM)
 		due_date = frappe.utils.add_days(self.today, -10)
 		self._open_invoice(due_date)
 
