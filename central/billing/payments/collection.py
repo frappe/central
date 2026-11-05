@@ -156,6 +156,26 @@ def collect_on_payment_date(now: datetime | str | None = None) -> list[dict]:
 	)
 
 
+def payment_starts_at(inv) -> datetime:
+	"""The first moment the invoice may be debited: the start of its payment date. An
+	invoice opened before payment dates existed may be debited at once."""
+	return frappe.utils.get_datetime(inv.payment_date) if inv.payment_date else datetime.min
+
+
+def _is_before_payment_date(inv, gateway: str, now: datetime | str | None = None) -> bool:
+	"""Whether a debit on `gateway` must still wait for the invoice's payment date.
+
+	1. On or after the payment date, no rail waits.
+	2. Before it, a rail that owes a pre-debit notice goes on, so the notice goes out a day
+	   ahead. Its debit window never opens before the payment date.
+	3. Before it, every other rail waits.
+	"""
+	from central.billing.payments import emandate
+
+	now_dt = frappe.utils.get_datetime(now) if now else frappe.utils.now_datetime()
+	return now_dt < payment_starts_at(inv) and not emandate.is_notice_required(inv, gateway)
+
+
 def _charge_next_method(
 	inv, earlier: set | None, skipped: set, now: datetime | str | None = None
 ) -> dict | None:
@@ -174,6 +194,9 @@ def _charge_next_method(
 		# notification instead (ADR 0022 §5, ADR 0023).
 		_ask_for_another_method(inv)
 		return {"collected": False, "reason": "no_method"}
+
+	if _is_before_payment_date(inv, method.gateway, now):
+		return {"collected": False, "reason": "before_payment_date"}
 
 	# Every off-session debit on a rail that owes a pre-debit notice waits for it, whichever
 	# path asked for it: the billing run, a dunning retry or a webhook.

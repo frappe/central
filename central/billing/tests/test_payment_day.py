@@ -98,9 +98,20 @@ class TestDebitWaitsForThePaymentDate(test_emandate.EmandateTestBase):
 
 	def test_a_rail_without_a_notice_waits_for_the_payment_date(self):
 		name = self._invoice_due_on("2026-06-10")
+		adapter = MagicMock()
+		adapter.prepare_charge.return_value = None
+		adapter.charge.return_value = PaymentResult(
+			success=True, status="Captured", gateway_transaction_id="p"
+		)
 
-		with patch.object(emandate, "_is_notice_required", return_value=False):
-			before, _ = emandate.await_predebit(name, self.gw, now="2026-06-09 23:00:00")
-			on_the_day, _ = emandate.await_predebit(name, self.gw, now="2026-06-10 00:30:00")
+		with (
+			patch.object(emandate, "is_notice_required", return_value=False),
+			patch("central.billing.gateways.registry.get_adapter", return_value=adapter),
+		):
+			before = collection.collect_invoice(name, now="2026-06-09 23:00:00")
+			self.assertEqual(before["reason"], "before_payment_date")
+			self.assertEqual(frappe.db.count("Payment Attempt", {"invoice": name}), 0)
 
-		self.assertEqual((before, on_the_day), (emandate.Predebit.WAIT, emandate.Predebit.CHARGE_NOW))
+			collection.collect_invoice(name, now="2026-06-10 00:30:00")
+
+		self.assertEqual(frappe.db.count("Payment Attempt", {"invoice": name}), 1)

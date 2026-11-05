@@ -39,7 +39,7 @@ class Predebit(StrEnum):
 	ROTATE = "rotate"
 
 
-def _is_notice_required(inv, gateway: str | None) -> bool:
+def is_notice_required(inv, gateway: str | None) -> bool:
 	"""Whether the rail about to debit owes a notice: `gateway` when the caller names it,
 	otherwise the team's own rail.
 
@@ -53,34 +53,25 @@ def _is_notice_required(inv, gateway: str | None) -> bool:
 
 
 def await_predebit(invoice: str, gateway: str, now: datetime | str | None = None) -> tuple[Predebit, dict]:
-	"""What `gateway` may do with this invoice now under the payment date and the pre-debit
-	notice rule.
+	"""What `gateway` may do with this invoice now under the pre-debit notice rule.
 
-	1. WAIT: the invoice's payment date has not come, for a rail that owes no notice.
-	2. CHARGE_NOW: the rail owes no notice, or the notice window has passed.
-	3. WAIT: the notice is sent, now or before, and its window is still open, or it is too
+	1. CHARGE_NOW: the rail owes no notice, or the notice window has passed.
+	2. WAIT: the notice is sent, now or before, and its window is still open, or it is too
 	   early to send it. The notice outcome comes with it.
-	4. ROTATE: this rail cannot debit this invoice now (the mode holds debits back, or over the
+	3. ROTATE: this rail cannot debit this invoice now (the mode holds debits back, or over the
 	   silent ceiling), so the next method is tried instead of a window that never opens.
 	"""
 	inv = frappe.get_doc("Invoice", invoice)
 	charge_after = inv.predebit_charge_after
 	now_dt = frappe.utils.get_datetime(now) if now else frappe.utils.now_datetime()
-	notice_required = _is_notice_required(inv, gateway)
-	if not notice_required and now_dt < _payment_starts_at(inv):
-		return Predebit.WAIT, {"invoice": invoice, "skipped": "before_payment_date"}
-	if not notice_required or (charge_after and now_dt >= frappe.utils.get_datetime(charge_after)):
+	if not is_notice_required(inv, gateway) or (
+		charge_after and now_dt >= frappe.utils.get_datetime(charge_after)
+	):
 		return Predebit.CHARGE_NOW, {}
 	notice = schedule_predebit(invoice, now=now_dt, gateway=gateway)
 	if notice.get("notified") or notice.get("skipped") in ("already_notified", "before_payment_date"):
 		return Predebit.WAIT, notice
 	return Predebit.ROTATE, notice
-
-
-def _payment_starts_at(inv) -> datetime:
-	"""The first moment the invoice may be debited: the start of its payment date. An
-	invoice opened before payment dates existed may be debited at once."""
-	return frappe.utils.get_datetime(inv.payment_date) if inv.payment_date else datetime.min
 
 
 def schedule_predebit(invoice: str, now=None, gateway: str | None = None) -> dict:
@@ -93,7 +84,7 @@ def schedule_predebit(invoice: str, now=None, gateway: str | None = None) -> dic
 	inv = frappe.get_doc("Invoice", invoice)
 	if not collection_mode.is_debit_allowed(inv.team):
 		return {"invoice": invoice, "skipped": "debit_not_allowed"}
-	if not _is_notice_required(inv, gateway):
+	if not is_notice_required(inv, gateway):
 		# A rail that debits without a notice is collected by the ordinary sweep. Arming
 		# a 24h window here would delay every international charge for nothing.
 		return {"invoice": invoice, "skipped": "no_notice_required"}
@@ -106,7 +97,7 @@ def schedule_predebit(invoice: str, now=None, gateway: str | None = None) -> dic
 
 	# The notice goes out a day ahead, so the debit lands on the payment date.
 	now_dt = frappe.utils.get_datetime(now) if now else frappe.utils.now_datetime()
-	payment_starts_at = _payment_starts_at(inv)
+	payment_starts_at = collection.payment_starts_at(inv)
 	if inv.payment_date and now_dt < frappe.utils.add_to_date(
 		payment_starts_at, hours=-PREDEBIT_NOTICE_HOURS
 	):
