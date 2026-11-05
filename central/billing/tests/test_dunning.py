@@ -599,6 +599,57 @@ class TestTheLadderIsAList(DunningTestBase):
 			self.assertFalse(read.called)
 
 
+class TestTheSingleRetry(DunningTestBase):
+	"""Payment day 8: the first interval retry falls after the due date, so the ladder has one
+	retry, 24 hours after the first charge failed. The hourly sweep runs it."""
+
+	PAY = "2026-06-08"
+
+	def _open_on_payment_day(self):
+		inv = self._open_invoice(self._subscription())
+		frappe.db.set_value(
+			"Invoice", inv, {"payment_date": self.PAY, "due_date": self.PAY, "dunning_starts_on": self.PAY}
+		)
+		return inv
+
+	def _run_hourly_sweep(self, at):
+		from central.billing.payments import collection
+
+		with self.freeze_time(at):
+			collection.collect_on_payment_date(now=at)
+
+	def test_a_charge_that_failed_late_is_retried_a_full_day_later(self):
+		inv = self._open_on_payment_day()
+		with declining_gateway(decline_code="insufficient_funds"):
+			self._run_hourly_sweep("2026-06-08 23:00:00")
+			self.assertEqual(self._attempts(inv), 1)
+
+			with self.freeze_time("2026-06-09 00:30:00"):
+				dunning.process_invoice_dunning(inv, now="2026-06-09 00:30:00")
+			self.assertEqual(self._attempts(inv), 1)
+			self.assertEqual(frappe.db.get_value("Invoice", inv, "status"), "Outstanding")
+
+			self._run_hourly_sweep("2026-06-09 22:00:00")
+			self.assertEqual(self._attempts(inv), 1)
+
+			self._run_hourly_sweep("2026-06-09 23:00:00")
+			self.assertEqual(self._attempts(inv), 2)
+			self.assertEqual(frappe.db.get_value("Invoice", inv, "status"), "Overdue")
+
+			self._run_hourly_sweep("2026-06-10 00:00:00")
+			self.assertEqual(self._attempts(inv), 2)
+
+	def test_the_ladder_dates_the_single_retry_from_the_failed_charge(self):
+		dates = frappe._dict(anchor=self.PAY, retry_until=self.PAY, suspends_on=SUSPENDS_ON)
+		schedule = dunning.dunning_schedule(dates, first_failed_at="2026-06-09 05:00:00")
+		retry = next(s for s in schedule if s.stage == "Retry")
+		self.assertEqual(str(retry.at), "2026-06-10 05:00:00")
+		self.assertEqual(str(next(s for s in schedule if s.stage == "Overdue").at), "2026-06-10 05:00:00")
+
+		without_failure = next(s for s in dunning.dunning_schedule(dates) if s.stage == "Retry")
+		self.assertEqual(str(without_failure.date), "2026-06-09")
+
+
 class TestRetryableLater(IntegrationTestCase):
 	"""Which failed charges a later retry day may charge again."""
 

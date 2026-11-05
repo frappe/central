@@ -175,7 +175,7 @@
   },
   {
    "default": "2",
-   "description": "Days between payment retries after the payment date. Retries stop at the invoice due date. When no retry fits, the payment is retried once, 1 day after the payment date.",
+   "description": "Days between payment retries after the payment date. Retries stop at the invoice due date. When no retry fits, the payment is retried once, 24 hours after the failed charge.",
    "fieldname": "dunning_retry_interval_days",
    "fieldtype": "Int",
    "label": "Retry Every (Days)",
@@ -547,7 +547,7 @@
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-11-05 18:00:00.000000",
+ "modified": "2026-11-05 23:30:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Billing Settings",

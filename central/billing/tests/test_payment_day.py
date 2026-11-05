@@ -87,7 +87,11 @@ class TestDebitWaitsForThePaymentDate(test_emandate.EmandateTestBase):
 
 	def _invoice_due_on(self, payment_date):
 		name = self._invoice(5000)
-		frappe.db.set_value("Invoice", name, {"payment_date": payment_date, "due_date": "2026-06-17"})
+		frappe.db.set_value(
+			"Invoice",
+			name,
+			{"payment_date": payment_date, "due_date": "2026-06-17", "suspends_on": "2026-06-24"},
+		)
 		return name
 
 	def test_the_notice_waits_until_a_day_before_the_payment_date(self):
@@ -182,7 +186,11 @@ class TestPaymentReminder(test_emandate.EmandateTestBase):
 
 	def _invoice_due_on(self, payment_date):
 		name = self._invoice(5000)
-		frappe.db.set_value("Invoice", name, {"payment_date": payment_date, "due_date": "2026-06-17"})
+		frappe.db.set_value(
+			"Invoice",
+			name,
+			{"payment_date": payment_date, "due_date": "2026-06-17", "suspends_on": "2026-06-24"},
+		)
 		return name
 
 	def _reminders(self):

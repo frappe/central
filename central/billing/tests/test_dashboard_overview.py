@@ -336,20 +336,39 @@ class TestNextPayment(OverviewBase):
 		self.assertIsNone(after["next_retry_on"])
 		self.assertEqual(after["suspends_on"], str(invoice.suspends_on))
 
-	def _attempt(self, invoice):
+	def test_the_single_retry_is_shown_24_hours_after_the_failed_first_charge(self):
+		give_team_a_card(TEAM)
+		# Due on its payment date, so no interval retry fits and the ladder has the single retry.
+		invoice = self._open_invoice(
+			frappe.utils.add_days(self.today, -1), suspends_on=frappe.utils.add_days(self.today, 7)
+		)
+		# The first charge failed today, after the payment date: a pre-debit rail charges late.
+		failed_at = frappe.utils.get_datetime(f"{self.today} 00:00:01")
+		frappe.db.set_value("Payment Attempt", self._attempt(invoice.name), "creation", failed_at)
+
+		with settings.overridden(**LADDER):
+			out = dashboard.get_next_payment(TEAM)
+
+		self.assertEqual(out["next_retry_on"], str(frappe.utils.add_days(self.today, 1)))
+
+	def _attempt(self, invoice) -> str:
 		# Test fixture: a failed attempt the gateway would record, not a user action.
-		frappe.get_doc(
-			{
-				"doctype": "Payment Attempt",
-				"invoice": invoice,
-				"team": TEAM,
-				"gateway": "Stripe",
-				"amount": 3000,
-				"currency": "INR",
-				"status": "Failed",
-				"initiated_at": frappe.utils.now_datetime(),
-			}
-		).insert(ignore_permissions=True)
+		return (
+			frappe.get_doc(
+				{
+					"doctype": "Payment Attempt",
+					"invoice": invoice,
+					"team": TEAM,
+					"gateway": "Stripe",
+					"amount": 3000,
+					"currency": "INR",
+					"status": "Failed",
+					"initiated_at": frappe.utils.now_datetime(),
+				}
+			)
+			.insert(ignore_permissions=True)
+			.name
+		)
 
 	def test_the_schedule_publishes_the_escalation_ladder(self):
 		self._provision(rate=3000)

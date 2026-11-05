@@ -58,6 +58,7 @@ class EmandateTestBase(IntegrationTestCase):
 					"status": "Outstanding",
 					"due_date": "2026-12-31",
 					"payment_date": "2026-06-10",
+					"suspends_on": "2027-01-15",
 					"period_start": "2026-06-01",
 					"period_end": "2026-06-30",
 					"currency": "INR",

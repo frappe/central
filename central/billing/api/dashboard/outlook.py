@@ -25,6 +25,7 @@ from central.billing.revenue.dunning import (
 	LADDER_FIELDS,
 	dunning_policy,
 	dunning_schedule,
+	get_first_failed_at,
 	get_ladder_dates,
 	get_opening_ladder_dates,
 	has_retry_rail,
@@ -186,8 +187,9 @@ def _missed_payment(team: str, invoice, today) -> dict:
 	if suspended_since:
 		return {**missed, "suspended_since": str(frappe.utils.getdate(suspended_since))}
 
-	schedule = dunning_schedule(get_ladder_dates(invoice))
-	next_retry_on = _next_retry_on(invoice, team, schedule, today)
+	first_failed_at = get_first_failed_at([invoice.name]).get(invoice.name)
+	schedule = dunning_schedule(get_ladder_dates(invoice), first_failed_at=first_failed_at)
+	next_retry_on = _next_retry_on(invoice, team, schedule)
 	if next_retry_on:
 		return {**missed, "next_retry_on": str(next_retry_on)}
 
@@ -195,17 +197,16 @@ def _missed_payment(team: str, invoice, today) -> dict:
 	return {**missed, "suspends_on": str(suspend_on)}
 
 
-def _next_retry_on(invoice, team: str, schedule: list, today):
+def _next_retry_on(invoice, team: str, schedule: list):
 	"""The first retry still to run, or None when dunning cannot retry the invoice.
-	Dunning runs once a day, so a retry dated today stays next until that day's charge
-	has been tried."""
+	A retry that is due stays next until its charge has been tried."""
 	if not has_retry_rail(invoice, team):
 		return None
+	now = frappe.utils.now_datetime()
 	for stage in schedule:
 		if stage.stage != "Retry":
 			continue
-		retry_on = frappe.utils.getdate(stage.date)
-		if retry_on > today or (retry_on == today and is_retry_due(invoice.name, schedule, today)):
+		if stage.at > now or (stage.date == now.date() and is_retry_due(invoice.name, schedule, now)):
 			return stage.date
 	return None
 

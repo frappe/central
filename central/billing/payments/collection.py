@@ -127,17 +127,21 @@ def collect_on_payment_date(now: datetime | str | None = None) -> list[dict]:
 	2. Start collection on each invoice that has reached its payment date, or will reach
 	   it tomorrow, and has no payment attempt. A rail that owes a pre-debit notice sends
 	   it a day early. An invoice that missed its payment date is still picked up.
-	3. Remind each team whose invoice is charged tomorrow (`payment_notices`).
+	3. Retry each invoice whose ladder has the single retry, 24 hours after its first charge
+	   failed (`dunning.run_single_retries`).
+	4. Remind each team whose invoice is charged tomorrow (`payment_notices`).
 
 	Step 1 runs first. An invoice it charged has an attempt, so step 2 skips it.
 	"""
 	from central.billing.payments import emandate, payment_notices
+	from central.billing.revenue import dunning
 
 	now_dt = frappe.utils.get_datetime(now) if now else frappe.utils.now_datetime()
 	debited = emandate.charge_due(now=now_dt)
 	collected = _collect_first_charges(now_dt)
+	retried = dunning.run_single_retries(now_dt)
 	reminded = payment_notices.send_payment_reminders(now_dt)
-	return [*debited, *collected, *reminded]
+	return [*debited, *collected, *retried, *reminded]
 
 
 def _collect_first_charges(now_dt: datetime) -> list[dict]:
