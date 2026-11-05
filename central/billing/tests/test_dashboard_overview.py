@@ -278,6 +278,18 @@ class TestNextPayment(OverviewBase):
 		self.assertIsNone(out["next_retry_on"])
 		self.assertEqual(out["suspends_on"], str(frappe.utils.add_days(due_date, 14)))
 
+	def test_an_overdue_bill_reports_no_retry(self):
+		give_team_a_card(TEAM)
+		due_date = frappe.utils.add_days(self.today, -2)
+		invoice = self._open_invoice(due_date)
+		frappe.db.set_value("Invoice", invoice.name, "status", "Overdue")
+
+		with settings.overridden(dunning_retry_days="1,3,7", suspend_after_days=14):
+			out = dashboard.get_next_payment(TEAM)
+
+		self.assertIsNone(out["next_retry_on"])
+		self.assertEqual(out["suspends_on"], str(frappe.utils.add_days(due_date, 14)))
+
 	def test_a_newer_bill_still_to_be_charged_sets_the_next_payment_date(self):
 		give_team_a_card(TEAM)
 		missed = self._open_invoice(frappe.utils.add_days(self.today, -2), months_back=2)
