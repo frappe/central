@@ -290,6 +290,16 @@ class TestNextPayment(OverviewBase):
 		self.assertEqual(out["invoice"], missed.name)
 		self.assertEqual(out["next_retry_on"], str(frappe.utils.add_days(missed.due_date, 3)))
 
+	def test_the_earliest_upcoming_charge_is_the_next_payment_date(self):
+		later = frappe.utils.add_days(self.today, 5)
+		earlier = frappe.utils.add_days(self.today, 2)
+		self._open_invoice(later, due_date=frappe.utils.add_days(self.today, 1), months_back=2)
+		self._open_invoice(earlier, due_date=frappe.utils.add_days(self.today, 6))
+
+		out = dashboard.get_next_payment(TEAM)
+
+		self.assertEqual(out["charge_on"], str(earlier))
+
 	def test_a_retry_due_today_stays_next_until_it_runs(self):
 		give_team_a_card(TEAM)
 		due_date = frappe.utils.add_days(self.today, -7)
