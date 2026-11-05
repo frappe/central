@@ -2,7 +2,6 @@
 import { Alert, Button, LoadingText, Select, useCall } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import { API, method } from '@/api/methods'
-import { useCapabilities } from '@/composables/useCapabilities'
 import { useSession } from '@/composables/useSession'
 import { ordinal } from '@/lib/date'
 import { getErrorMessage, successToast } from '@/lib/feedback'
@@ -16,7 +15,6 @@ const props = defineProps<Props>()
 const emit = defineEmits<{ saved: [] }>()
 
 const { activeTeam } = useSession()
-const { canManageBilling } = useCapabilities()
 
 const settings = useCall<BillingSettings, { team: string }>({
 	url: method(API.billingSettings),
@@ -64,13 +62,9 @@ const changesLeft = computed(() => settings.data?.payment_day_changes_left ?? 0)
 const isUnchanged = computed(
 	() => Number(draft.value) === settings.data?.payment_day,
 )
-const canChange = computed(
-	() => canManageBilling.value && changesLeft.value > 0,
-)
+const canChange = computed(() => changesLeft.value > 0)
 
 const hint = computed(() => {
-	if (!canManageBilling.value)
-		return 'Only team members who manage billing can change the payment date.'
 	if (!changesLeft.value)
 		return `You've changed the payment date ${timesLabel(changesPerCycle.value)} this billing cycle. You can change it again next month.`
 
