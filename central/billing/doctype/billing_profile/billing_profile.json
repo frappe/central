@@ -137,7 +137,7 @@
    "options": "Country"
   },
   {
-   "description": "For India, pick the GST registration state — its code must match the GSTIN.",
+   "description": "For India, pick the GST registration state \u2014 its code must match the GSTIN.",
    "fieldname": "state",
    "fieldtype": "Autocomplete",
    "label": "State"
