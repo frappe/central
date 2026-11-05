@@ -30,7 +30,7 @@ const save = useCall<unknown, { team: string; payment_day: number }>({
 	immediate: false,
 })
 
-const draft = ref('1')
+const draft = ref('')
 const formError = ref('')
 
 watch(
@@ -44,7 +44,7 @@ watch(
 watch(
 	() => settings.data,
 	(data) => {
-		if (data) draft.value = String(data.payment_day || 1)
+		if (data) draft.value = String(data.payment_day)
 	},
 )
 
@@ -62,7 +62,7 @@ const changesPerCycle = computed(
 )
 const changesLeft = computed(() => settings.data?.payment_day_changes_left ?? 0)
 const isUnchanged = computed(
-	() => Number(draft.value) === (settings.data?.payment_day ?? 1),
+	() => Number(draft.value) === settings.data?.payment_day,
 )
 const canChange = computed(
 	() => canManageBilling.value && changesLeft.value > 0,

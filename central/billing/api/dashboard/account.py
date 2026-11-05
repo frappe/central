@@ -22,6 +22,7 @@ from central.billing.api.dashboard._shared import (
 	currency_for_country,
 )
 from central.billing.doctype.billing_profile.billing_profile import (
+	DEFAULT_PAYMENT_DAY,
 	LAST_PAYMENT_DAY,
 	PAYMENT_DAY_CHANGES_PER_CYCLE,
 )
@@ -199,7 +200,7 @@ def get_billing_settings(team: str | None = None) -> dict:
 			"team": team,
 			"min_balance": 0,
 			"spend_alert_threshold": 0,
-			"payment_day": 1,
+			"payment_day": DEFAULT_PAYMENT_DAY,
 			"payment_day_changes_left": PAYMENT_DAY_CHANGES_PER_CYCLE,
 			**limits,
 		}

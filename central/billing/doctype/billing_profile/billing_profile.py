@@ -30,6 +30,7 @@ INDIAN_MOBILE_RE = re.compile(r"^(?:\+?91)?[6-9][0-9]{9}$")
 _SYSTEM_SAVEPOINT = "billing_profile_system_save"
 # The card is charged on a day from the 1st to the 10th, so a failed charge still has
 # its retries before the dunning ladder suspends the team.
+DEFAULT_PAYMENT_DAY = 1
 LAST_PAYMENT_DAY = 10
 PAYMENT_DAY_CHANGES_PER_CYCLE = 2
 REQUIRED_FIELDS = ("currency", "legal_name", "address_line1", "city", "country")
@@ -86,7 +87,8 @@ def get_payment_date(team: str, opened_on: date | str) -> date:
 	"""The date an invoice opened on `opened_on` is charged: the team's payment day in that
 	month, or `opened_on` itself when the run opened the invoice after that day."""
 	opened_on = frappe.utils.getdate(opened_on)
-	day = frappe.db.get_value("Billing Profile", team, "payment_day") or 1
+	# A projection can run for a team that has no billing profile yet.
+	day = frappe.db.get_value("Billing Profile", team, "payment_day") or DEFAULT_PAYMENT_DAY
 	return max(opened_on, opened_on.replace(day=day))
 
 
