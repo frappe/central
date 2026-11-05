@@ -91,9 +91,7 @@ class TestDraftGeneration(BillingTestBase):
 		self.assertEqual(inv.total, 1400.0)
 		self.assertEqual(inv.expected_collection, 1400.0)
 
-	def test_same_day_churn_bills_by_the_hour(self):
-		# Provisioned 09:00 and cancelled 18:00 the same day: a sub-24h run bills its
-		# real hours (9h), not a floored full day.
+	def test_a_server_stopped_on_its_first_day_bills_that_whole_day(self):
 		add_segment(self.sub, "Created", 1000, "2026-06-05 09:00:00")
 		add_segment(self.sub, "Cancelled", None, "2026-06-05 18:00:00")
 
@@ -101,13 +99,11 @@ class TestDraftGeneration(BillingTestBase):
 		inv = frappe.get_doc("Invoice", name)
 		self.assertEqual(len(inv.items), 1)  # cancelled marker is skipped
 		li = inv.items[0]
-		self.assertEqual(li.unit, "hour")
-		self.assertEqual(li.hours, 9.0)
-		self.assertEqual(li.amount, round(9 * 1000 / (30 * 24), 2))
+		self.assertEqual((li.unit, li.days), ("day", 1))
+		self.assertEqual(li.amount, round(1000 / 30, 2))
 
 	def test_multiple_resizes_in_a_day_bill_that_day_hourly(self):
-		# 2000 all month; a peak-hours bump to 4000 (09:00) then back (18:00) on Jun 15.
-		# Only Jun 15 goes hourly; the rest of the month stays daily.
+		# 2000 all month; a bump to 4000 (09:00) then back (18:00) on Jun 15.
 		add_segment(self.sub, "Created", 2000, "2026-06-01 00:00:00")
 		add_segment(self.sub, "Plan Changed", 4000, "2026-06-15 09:00:00")
 		add_segment(self.sub, "Plan Changed", 2000, "2026-06-15 18:00:00")
@@ -128,9 +124,7 @@ class TestDraftGeneration(BillingTestBase):
 		# 9h billed at the higher 4000 rate. No double-count, no gap.
 		self.assertEqual(inv.subtotal, 2025.0)
 
-	def test_cross_midnight_churn_bills_both_days_hourly(self):
-		# Bump 23:00 Jun 10 → drop 01:00 Jun 11 (2h, < 24h): the 24h window straddles
-		# midnight, so both dates go hourly even though each has one change.
+	def test_a_resize_on_each_side_of_midnight_bills_both_days_hourly(self):
 		add_segment(self.sub, "Created", 2000, "2026-06-01 00:00:00")
 		add_segment(self.sub, "Plan Changed", 8000, "2026-06-10 23:00:00")
 		add_segment(self.sub, "Plan Changed", 2000, "2026-06-11 01:00:00")
@@ -145,15 +139,24 @@ class TestDraftGeneration(BillingTestBase):
 		daily_days = sum(li.days for li in inv.items if li.unit == "day")
 		self.assertEqual(daily_days, 28)  # 30 days − Jun 10 − Jun 11
 
-	def test_a_mid_day_start_bills_that_day_by_the_hour(self):
+	def test_a_mid_day_start_bills_that_whole_day(self):
 		add_segment(self.sub, "Created", 3000, "2026-06-05 14:00:00")
 		inv = frappe.get_doc(
 			"Invoice", invoicing.generate_draft_invoice(self.sub, "2026-06-01", "2026-06-30")
 		)
-		self.assertEqual(
-			sorted((li.unit, li.days or li.hours) for li in inv.items), [("day", 25), ("hour", 10.0)]
+		self.assertEqual(sorted((li.unit, li.days or li.hours) for li in inv.items), [("day", 26)])
+		self.assertEqual(inv.subtotal, round(26 * 3000 / 30, 2))
+
+	def test_a_resize_on_the_first_day_bills_the_first_plan_from_midnight(self):
+		add_segment(self.sub, "Created", 1000, "2026-06-05 14:00:00")
+		add_segment(self.sub, "Plan Changed", 2000, "2026-06-05 18:00:00")
+		inv = frappe.get_doc(
+			"Invoice", invoicing.generate_draft_invoice(self.sub, "2026-06-01", "2026-06-30")
 		)
-		self.assertEqual(inv.subtotal, round(25 * 3000 / 30, 2) + round(10 * 3000 / 720, 2))
+		self.assertEqual(
+			sorted((li.rate, li.unit, li.days or li.hours) for li in inv.items),
+			[(1000.0, "hour", 18.0), (2000.0, "day", 25), (2000.0, "hour", 6.0)],
+		)
 
 	def test_a_mid_day_stop_bills_that_day_by_the_hour(self):
 		add_segment(self.sub, "Created", 3000, "2026-06-01 00:00:00")
@@ -165,13 +168,16 @@ class TestDraftGeneration(BillingTestBase):
 			sorted((li.unit, li.days or li.hours) for li in inv.items), [("day", 19), ("hour", 12.0)]
 		)
 
-	def test_a_mid_day_resize_still_gives_the_day_to_the_new_plan(self):
+	def test_a_mid_day_resize_bills_each_plan_the_hours_it_ran(self):
 		add_segment(self.sub, "Created", 1000, "2026-06-01 00:00:00")
 		add_segment(self.sub, "Plan Changed", 2000, "2026-06-10 15:00:00")
 		inv = frappe.get_doc(
 			"Invoice", invoicing.generate_draft_invoice(self.sub, "2026-06-01", "2026-06-30")
 		)
-		self.assertEqual(sorted((li.rate, li.days) for li in inv.items), [(1000.0, 9), (2000.0, 21)])
+		self.assertEqual(
+			sorted((li.rate, li.unit, li.days or li.hours) for li in inv.items),
+			[(1000.0, "day", 9), (1000.0, "hour", 15.0), (2000.0, "day", 20), (2000.0, "hour", 9.0)],
+		)
 
 	def test_a_mid_day_stop_after_a_resize_bills_that_day_by_the_hour(self):
 		add_segment(self.sub, "Created", 1000, "2026-06-01 00:00:00")
@@ -182,7 +188,13 @@ class TestDraftGeneration(BillingTestBase):
 		)
 		self.assertEqual(
 			sorted((li.rate, li.unit, li.days or li.hours) for li in inv.items),
-			[(1000.0, "day", 9), (2000.0, "day", 10), (2000.0, "hour", 12.0)],
+			[
+				(1000.0, "day", 9),
+				(1000.0, "hour", 15.0),
+				(2000.0, "day", 9),
+				(2000.0, "hour", 9.0),
+				(2000.0, "hour", 12.0),
+			],
 		)
 
 	def test_partial_first_month_billed_for_join_window(self):
@@ -506,7 +518,7 @@ class TestStatusSaveKeepsLines(BillingTestBase):
 
 
 class TestServerBillsFromItsStart(BillingTestBase):
-	"""A server bills from the moment it was created, not from that day's midnight."""
+	"""A server bills its whole first date, whatever time it was created."""
 
 	def _server_for(self, created, terminated):
 		with self.freeze_time(created):
@@ -520,11 +532,11 @@ class TestServerBillsFromItsStart(BillingTestBase):
 			server.save(ignore_permissions=True)
 		return sub
 
-	def test_a_server_that_ran_eight_hours_bills_eight_hours(self):
+	def test_a_server_that_ran_eight_hours_bills_its_whole_first_day(self):
 		sub = self._server_for("2026-06-05 14:30:00", "2026-06-05 22:30:00")
 
 		inv = frappe.get_doc("Invoice", invoicing.generate_draft_invoice(sub, "2026-06-01", "2026-06-30"))
-		self.assertEqual([(li.unit, li.hours) for li in inv.items], [("hour", 8.0)])
+		self.assertEqual([(li.unit, li.days) for li in inv.items], [("day", 1)])
 
 	def test_a_backdated_start_opens_at_its_date(self):
 		with self.freeze_time("2026-06-10 15:00:00"):
