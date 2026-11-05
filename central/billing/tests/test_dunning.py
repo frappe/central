@@ -722,6 +722,14 @@ class TestTheSingleRetry(DunningTestBase):
 		self.assertEqual(frappe.db.get_value("Invoice", inv, "status"), "Overdue")
 		self.assertEqual(self._overdue_notices(inv), 1)
 
+	def test_only_a_team_dunning_can_charge_waits_for_its_first_charge(self):
+		inv = self._open_on_payment_day()
+		row = frappe.db.get_value("Invoice", inv, ["name", *dunning.LADDER_FIELDS], as_dict=True)
+		self.assertTrue(dunning.get_ladder_dates(row).is_awaiting_charge)
+
+		frappe.db.set_value("Billing Profile", TEAM, "collection_mode", "Manual Checkout")
+		self.assertFalse(dunning.get_ladder_dates(row).is_awaiting_charge)
+
 	def test_a_charge_in_flight_does_not_hold_the_suspension(self):
 		inv = self._open_on_payment_day()
 		self._attempt(inv, "Initiated", "2026-06-08 00:30:00")

@@ -41,6 +41,32 @@ def ordered_methods(team: str) -> list:
 	)
 
 
+def get_teams_with_retry_rail(teams: set[str]) -> set[str]:
+	"""The teams dunning can charge off-session before any attempt: the collection mode allows a
+	debit (`collection_mode.is_debit_allowed`) and a chargeable method is on file (`ordered_methods`).
+	Two queries for any number of teams."""
+	from central.billing.payments import collection_mode
+
+	if not teams:
+		return set()
+	held = frappe.get_all(
+		"Billing Profile",
+		filters={"name": ["in", list(teams)], "collection_mode": ["in", collection_mode.DEBIT_HELD_MODES]},
+		pluck="name",
+	)
+	allowed = teams.difference(held)
+	if not allowed:
+		return set()
+	return set(
+		frappe.get_all(
+			"Payment Method",
+			filters={"team": ["in", list(allowed)], "status": "Active", "reauth_required": 0},
+			pluck="team",
+			distinct=True,
+		)
+	)
+
+
 def attempts_of(invoice: str) -> set:
 	"""Every payment attempt made for this invoice so far."""
 	return set(frappe.get_all("Payment Attempt", filters={"invoice": invoice}, pluck="name"))

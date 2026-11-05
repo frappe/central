@@ -78,32 +78,47 @@ def get_ladder_dates(invoice) -> frappe._dict:
 
 
 def get_ladder_dates_by_invoice(invoices: list) -> dict[str, frappe._dict]:
-	"""The ladder dates of each issued invoice, by invoice name, with its charges read in one query.
+	"""The ladder dates of each issued invoice, by invoice name.
 
 	Each carries the retry window (`_get_window_dates`) and the two facts that time the single
-	retry: `first_failed_at`, when the first charge failed, and `is_awaiting_charge`."""
+	retry: `first_failed_at`, when the first charge failed, and `is_awaiting_charge`. The charges
+	are one grouped query. The rail is one batch, read only for the uncharged invoices whose
+	ladder has the single retry."""
+	from central.billing.payments import collection
+
 	charges = get_charge_outcomes([invoice.name for invoice in invoices])
+	windows = {invoice.name: _get_window_dates(invoice) for invoice in invoices}
+	interval = settings.dunning_retry_interval_days()
+	uncharged = [
+		invoice
+		for invoice in invoices
+		if invoice.name not in charges
+		and invoice.status == OUTSTANDING
+		and not get_interval_retry_dates(windows[invoice.name], interval)
+	]
+	rail_teams = collection.get_teams_with_retry_rail({invoice.team for invoice in uncharged})
+	chargeable = {invoice.name for invoice in uncharged if invoice.team in rail_teams}
 	return {
 		invoice.name: frappe._dict(
-			_get_window_dates(invoice),
+			windows[invoice.name],
 			first_failed_at=(charges.get(invoice.name) or {}).get("first_failed_at"),
-			is_awaiting_charge=_is_awaiting_charge(invoice, charges.get(invoice.name)),
+			is_awaiting_charge=_is_awaiting_charge(charges.get(invoice.name), invoice.name in chargeable),
 		)
 		for invoice in invoices
 	}
 
 
-def _is_awaiting_charge(invoice, charges: frappe._dict | None) -> bool:
+def _is_awaiting_charge(charges: frappe._dict | None, is_chargeable: bool) -> bool:
 	"""The single retry and Overdue wait for a charge, so a debit still in flight cannot fail later
 	on an invoice that dunning already moved on. `charges` is the invoice's `get_charge_outcomes` row.
 
 	1. A charge is in flight: wait for its outcome.
 	2. A charge failed: the ladder counts from the failure.
 	3. A charge was made and none failed: wait.
-	4. No charge yet: wait when dunning can charge the invoice off-session (`has_retry_rail`)."""
+	4. No charge yet: wait when dunning can charge the invoice off-session (`is_chargeable`)."""
 	if charges:
 		return bool(charges.is_in_flight) or not charges.first_failed_at
-	return has_retry_rail(invoice, invoice.team)
+	return is_chargeable
 
 
 def _get_window_dates(invoice) -> frappe._dict:
@@ -422,30 +437,28 @@ def process_invoice_dunning(invoice_name: str, now=None) -> dict:
 
 def run_single_retries(now: datetime) -> list[dict]:
 	"""Hourly: dun each invoice whose single retry is due, 24 hours after its first charge
-	failed. The daily run alone would reach it up to a day late."""
-	invoices = {
-		invoice.name: invoice
-		for invoice in frappe.get_all(
-			"Invoice",
-			filters=[
-				*_get_dunned_filters(),
-				["status", "=", OUTSTANDING],
-				["payment_date", "<=", now.date()],
-			],
-			fields=["name", *LADDER_FIELDS],
-		)
-	}
-	ladders = get_ladder_dates_by_invoice(list(invoices.values()))
+	failed. The daily run alone would reach it up to a day late. Only an invoice whose first
+	charge failed by the cutoff has its ladder dates read."""
+	invoices = frappe.get_all(
+		"Invoice",
+		filters=[*_get_dunned_filters(), ["status", "=", OUTSTANDING], ["payment_date", "<=", now.date()]],
+		fields=["name", *LADDER_FIELDS],
+	)
 	cutoff = frappe.utils.add_to_date(now, hours=-SINGLE_RETRY_HOURS)
-	waiting = [
-		name for name, dates in ladders.items() if dates.first_failed_at and dates.first_failed_at <= cutoff
-	]
+	charges = get_charge_outcomes([invoice.name for invoice in invoices])
+	failed_by_cutoff = {
+		name
+		for name, charge in charges.items()
+		if charge.first_failed_at and charge.first_failed_at <= cutoff
+	}
+	failed = {invoice.name: invoice for invoice in invoices if invoice.name in failed_by_cutoff}
+	ladders = get_ladder_dates_by_invoice(list(failed.values()))
 	policy = dunning_policy()
 	return each_isolated(
 		"Single retry",
 		"Invoice",
-		waiting,
-		lambda name: _run_single_retry(invoices[name], ladders[name], policy, now),
+		list(failed),
+		lambda name: _run_single_retry(failed[name], ladders[name], policy, now),
 	)
 
 
