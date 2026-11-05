@@ -81,6 +81,18 @@ const hint = computed(() => {
 	return `Wallet credit is used on the 1st. We charge the rest on this day. You can change it ${times} this billing cycle.`
 })
 
+// A payment day after the last one with interval retries gets one retry, a day later.
+const hasOneRetry = computed(
+	() =>
+		!!settings.data &&
+		Number(draft.value) > settings.data.last_payment_day_with_retries,
+)
+
+const oneRetryWarning = computed(
+	() =>
+		`If the charge on this day fails, we try once more after 24 hours. Your servers stop on the ${ordinal(settings.data?.suspension_day ?? 0)} if the bill stays unpaid.`,
+)
+
 function timesLabel(count: number): string {
 	if (count === 1) return 'once'
 	if (count === 2) return 'twice'
@@ -134,6 +146,8 @@ async function submit(): Promise<void> {
 			label="Payment date"
 			:description="hint"
 		/>
+
+		<Alert v-if="hasOneRetry" theme="amber" :title="oneRetryWarning" />
 
 		<div v-if="canChange" class="flex justify-end">
 			<Button

@@ -4,6 +4,7 @@
 
 import frappe
 
+from central.billing import settings
 from central.billing.api import dashboard
 from central.billing.gateways.base import VerifiedPayment
 from central.billing.revenue import credits
@@ -485,6 +486,14 @@ class TestCustomerActions(CustomerDataBase):
 		dashboard.save_billing_settings(team=TEAM, min_balance=5000)
 		s = dashboard.get_billing_settings(TEAM)
 		self.assertEqual(s["min_balance"], 5000)
+
+	def test_billing_settings_name_the_suspension_day_and_the_last_day_with_retries(self):
+		ladder = {"dunning_retry_interval_days": 2, "invoice_due_days": 7, "suspension_day": 15}
+		with settings.overridden(**ladder):
+			s = dashboard.get_billing_settings(TEAM)
+
+		self.assertEqual(s["suspension_day"], 15)
+		self.assertEqual(s["last_payment_day_with_retries"], 6)
 
 	def test_admin_without_team_falls_back(self):
 		from central.billing.catalog import subscriptions

@@ -8,7 +8,7 @@ import frappe
 from frappe import _
 from frappe.rate_limiter import rate_limit
 
-from central.billing import authz
+from central.billing import authz, settings
 from central.billing.api.dashboard._shared import (
 	_default_team,
 	_has_money_activity,
@@ -26,7 +26,7 @@ from central.billing.doctype.billing_profile.billing_profile import (
 	LAST_PAYMENT_DAY,
 	PAYMENT_DAY_CHANGES_PER_CYCLE,
 )
-from central.billing.revenue import gst_status
+from central.billing.revenue import dunning, gst_status
 
 
 @frappe.whitelist()
@@ -188,12 +188,15 @@ def save_billing_profile(team: str | None = None, **fields) -> dict:
 
 @frappe.whitelist()
 def get_billing_settings(team: str | None = None) -> dict:
-	"""Alert thresholds and the payment day. (Payment mode was removed — billing is
-	credits-first-then-card for every team, so there is no prepaid/postpaid switch.)"""
+	"""Alert thresholds, the payment day, and the ladder days the payment day form explains.
+	(Payment mode was removed — billing is credits-first-then-card for every team, so there
+	is no prepaid/postpaid switch.)"""
 	team = _resolve_team(team)
 	limits = {
 		"last_payment_day": LAST_PAYMENT_DAY,
 		"payment_day_changes_per_cycle": PAYMENT_DAY_CHANGES_PER_CYCLE,
+		"suspension_day": settings.suspension_day(),
+		"last_payment_day_with_retries": dunning.get_last_payment_day_with_retries(),
 	}
 	if not frappe.db.exists("Billing Profile", team):
 		return {

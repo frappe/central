@@ -459,6 +459,10 @@ export interface BillingSettings {
 	last_payment_day: number
 	/** Changes to the payment day a team can make in one billing cycle. */
 	payment_day_changes_per_cycle: number
+	/** Day of the month on which a team with an unpaid invoice is suspended. */
+	suspension_day: number
+	/** The last payment day that still gets interval retries. A later day gets one retry. */
+	last_payment_day_with_retries: number
 }
 
 /** get_collection_status — collection mode + the "Action Required" banner feed (ADR 0005). */
