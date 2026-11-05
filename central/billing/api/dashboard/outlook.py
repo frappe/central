@@ -66,6 +66,9 @@ def get_next_payment(team: str | None = None) -> dict:
 
 	Reads the collectable amount off an already-open invoice where one exists, and
 	falls back to the current month's projection when the period is still running.
+	`charge_on` is always the next scheduled payment day. Once the open invoice's own
+	payment date has passed, that is the running cycle's, and the missed bill's place
+	on the dunning ladder is reported beside it.
 	"""
 	team = _resolve_team(team)
 	currency = _team_currency(team)
@@ -74,13 +77,13 @@ def get_next_payment(team: str | None = None) -> dict:
 	invoice = _next_collectable_invoice(team)
 	if invoice:
 		amount = frappe.utils.flt(invoice.expected_collection)
-		charge_on = invoice.predebit_charge_after or invoice.payment_date
 		period_end = invoice.period_end
 	else:
 		amount, period_end = _projected_collectable(team, today)
-		charge_on = get_payment_date(team, frappe.utils.add_days(period_end, 1))
 
-	blockers = _blockers(team, amount, currency, charge_on, today)
+	charge_on = _scheduled_charge_on(team, invoice, today)
+	missed = _missed_payment(team, invoice, today)
+	blockers = _blockers(team, amount, currency, missed["next_retry_on"] or charge_on, today)
 	return {
 		"currency": currency,
 		"amount": amount,
@@ -93,6 +96,7 @@ def get_next_payment(team: str | None = None) -> dict:
 		# the data decides otherwise. The UI says "we'll charge", never "it will work".
 		"will_auto_charge": not blockers,
 		"blockers": blockers,
+		**missed,
 	}
 
 
@@ -124,6 +128,7 @@ def _next_collectable_invoice(team: str):
 			"name",
 			"expected_collection",
 			"due_date",
+			"dunning_starts_on",
 			"payment_date",
 			"period_end",
 			"predebit_charge_after",
@@ -132,6 +137,67 @@ def _next_collectable_invoice(team: str):
 		limit=1,
 	)
 	return frappe._dict(rows[0]) if rows else None
+
+
+def _invoice_charge_on(invoice):
+	"""When the open invoice is charged: its pre-debit charge time, else its payment date."""
+	return invoice.predebit_charge_after or invoice.payment_date
+
+
+def _is_charge_missed(invoice, today) -> bool:
+	"""The open invoice's charge day has passed without the bill being settled."""
+	charge_on = _invoice_charge_on(invoice)
+	return bool(charge_on) and frappe.utils.getdate(charge_on) < today
+
+
+def _scheduled_charge_on(team: str, invoice, today):
+	"""The next scheduled payment day: the open invoice's own until it passes, then the
+	day the running cycle's invoice is charged."""
+	if invoice and not _is_charge_missed(invoice, today):
+		return _invoice_charge_on(invoice)
+	return get_payment_date(team, frappe.utils.add_days(frappe.utils.get_last_day(today), 1))
+
+
+def _missed_payment(team: str, invoice, today) -> dict:
+	"""Where a missed bill stands on the dunning ladder.
+
+	1. No missed bill: all three dates are empty.
+	2. A suspended team: only the date it was suspended.
+	3. A retry still to come: only the next retry date.
+	4. No retry left: only the date the team is suspended.
+	"""
+	from central.billing.revenue.dunning import dunning_clock_start, dunning_schedule
+
+	missed = {"next_retry_on": None, "suspends_on": None, "suspended_since": None}
+	if not invoice or not _is_charge_missed(invoice, today):
+		return missed
+
+	suspended_since = _suspended_since(team)
+	if suspended_since:
+		return {**missed, "suspended_since": str(frappe.utils.getdate(suspended_since))}
+
+	schedule = dunning_schedule(dunning_clock_start(invoice))
+	retries = [s.date for s in schedule if s.stage == "Retry" and frappe.utils.getdate(s.date) > today]
+	if retries:
+		return {**missed, "next_retry_on": str(retries[0])}
+
+	suspend_on = next(s.date for s in schedule if s.stage == "Suspend")
+	return {**missed, "suspends_on": str(suspend_on)}
+
+
+def _suspended_since(team: str):
+	"""When dunning suspended the team, or None while it is not suspended."""
+	from central.billing.catalog.subscriptions import anchor_subscription
+
+	anchor = anchor_subscription(team)
+	if not anchor or frappe.db.get_value("Subscription", anchor, "account_standing") != "Suspended":
+		return None
+	return frappe.db.get_value(
+		"Subscription Change",
+		{"subscription": anchor, "change_type": "Suspended"},
+		"effective_at",
+		order_by="effective_at desc",
+	)
 
 
 def _projected_collectable(team: str, today) -> tuple[float, object]:

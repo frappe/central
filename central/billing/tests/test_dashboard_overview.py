@@ -13,7 +13,9 @@ from itertools import pairwise
 
 import frappe
 
+from central.billing import settings
 from central.billing.api import dashboard
+from central.billing.doctype.billing_profile.billing_profile import get_payment_date
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import (
 	add_segment,
@@ -200,6 +202,63 @@ class TestNextPayment(OverviewBase):
 		out = dashboard.get_next_payment(TEAM)
 
 		self.assertEqual(out["amount"], 0.0)
+
+	def _open_invoice(self, payment_date, due_date=None):
+		return frappe.get_doc(
+			{
+				"doctype": "Invoice",
+				"team": TEAM,
+				"invoice_type": "Billable",
+				"status": "Outstanding",
+				"period_start": frappe.utils.add_months(self.month_start, -1),
+				"period_end": frappe.utils.add_days(self.month_start, -1),
+				"currency": "INR",
+				"subtotal": 3000,
+				"total": 3000,
+				"expected_collection": 3000,
+				"payment_date": payment_date,
+				"due_date": due_date or payment_date,
+				"items": [
+					{"resource_type": "bundle", "plan": PLAN, "rate": 3000, "days": 30, "amount": 3000}
+				],
+			}
+		).insert(ignore_permissions=True)
+
+	def _next_cycle_payment_date(self):
+		next_month = frappe.utils.add_days(frappe.utils.get_last_day(self.today), 1)
+		return str(get_payment_date(TEAM, next_month))
+
+	def test_an_open_bill_is_charged_on_its_own_payment_date(self):
+		payment_date = frappe.utils.add_days(self.today, 3)
+		self._open_invoice(payment_date)
+
+		out = dashboard.get_next_payment(TEAM)
+
+		self.assertEqual(out["charge_on"], str(payment_date))
+		self.assertIsNone(out["next_retry_on"])
+		self.assertIsNone(out["suspends_on"])
+
+	def test_a_missed_bill_reports_its_next_retry(self):
+		due_date = frappe.utils.add_days(self.today, -2)
+		self._open_invoice(due_date)
+
+		with settings.overridden(dunning_retry_days="1,3,7", suspend_after_days=14):
+			out = dashboard.get_next_payment(TEAM)
+
+		self.assertEqual(out["next_retry_on"], str(frappe.utils.add_days(due_date, 3)))
+		self.assertIsNone(out["suspends_on"])
+		self.assertEqual(out["charge_on"], self._next_cycle_payment_date())
+
+	def test_a_missed_bill_with_no_retry_left_reports_the_suspension_date(self):
+		due_date = frappe.utils.add_days(self.today, -10)
+		self._open_invoice(due_date)
+
+		with settings.overridden(dunning_retry_days="1,3,7", suspend_after_days=14):
+			out = dashboard.get_next_payment(TEAM)
+
+		self.assertIsNone(out["next_retry_on"])
+		self.assertEqual(out["suspends_on"], str(frappe.utils.add_days(due_date, 14)))
+		self.assertEqual(out["charge_on"], self._next_cycle_payment_date())
 
 	def test_the_schedule_publishes_the_escalation_ladder(self):
 		self._provision(rate=3000)
