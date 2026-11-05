@@ -5,6 +5,7 @@
 import frappe
 
 from central.billing import settings
+from central.billing.doctype.billing_profile.billing_profile import get_payment_date
 from central.billing.projection import engine
 from central.billing.projection.basis import ESTIMATED, MEASURED
 from central.billing.revenue.dunning import get_suspension_date_after
@@ -170,7 +171,7 @@ class TestTheCalendar(ProjectionTestBase):
 		cal = engine.project(TEAM, "2026-09-01", "2026-09-30", today="2026-08-06")["calendar"]
 
 		self.assertEqual(cal["if_paid_on_time"][0]["stage"], "Settled")
-		self.assertEqual(cal["if_paid_on_time"][0]["date"], cal["due_on"])
+		self.assertEqual(cal["if_paid_on_time"][0]["date"], str(get_payment_date(TEAM, "2026-10-01")))
 
 		stages = [s["stage"] for s in cal["if_never_paid"]]
 		self.assertIn("Retry", stages)

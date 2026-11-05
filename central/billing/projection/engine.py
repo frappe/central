@@ -8,14 +8,13 @@ lay out the escalation ladder — and stops before the effects. Whatever the run
 charge, this reports; whatever the run would do about non-payment, this dates.
 
 Two things it deliberately does not do. It never asserts whether a card will succeed,
-so the collection calendar is given as *both* branches: settled on the due date, and
+so the collection calendar is given as *both* branches: settled on the payment date, and
 the full ladder if nothing is ever paid. And it never writes, which is a database
 guarantee rather than a convention — see `guard`.
 """
 
 import frappe
 
-from central.billing.doctype.billing_profile.billing_profile import get_due_date
 from central.billing.doctype.invoice.invoice import owed_filters
 from central.billing.projection import behaviour, estimate, outcomes, state
 from central.billing.projection import events as injected
@@ -161,12 +160,13 @@ def _calendar(team: str, period_end, today) -> dict:
 	the team's state entails, if either, and both are rendered regardless.
 	"""
 	opens_on = _opens_on(period_end)
-	due_on = get_due_date(team, opens_on)
+	dates = get_opening_ladder_dates(team, opens_on)
 	return {
 		"opens_on": str(opens_on),
-		"due_on": str(due_on),
-		"if_paid_on_time": [{"date": str(due_on), "stage": "Settled"}],
-		"if_never_paid": _ladder(get_opening_ladder_dates(team, opens_on)),
+		"due_on": str(dates.retry_until),
+		# Collection charges on the payment date, the ladder's anchor.
+		"if_paid_on_time": [{"date": str(dates.anchor), "stage": "Settled"}],
+		"if_never_paid": _ladder(dates),
 	}
 
 
