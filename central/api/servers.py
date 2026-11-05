@@ -73,7 +73,9 @@ def registry(team: str | None = None) -> dict:
 	pending = ResourceAction.pending_labels(team)
 	audiences = _pilot_audiences(team)
 	locked = get_locked_servers(team)
+	plan_titles = _plan_titles({server["plan"] for server in servers if server["plan"]})
 	for server in servers:
+		server["plan_title"] = plan_titles.get(server["plan"])
 		server["pending_action"] = pending.get(server["resource_id"])
 		server["pilot_audience"] = audiences.get(server["name"])
 		server["capabilities"] = get_server_capabilities(frappe.session.user, team, server["name"])
@@ -94,6 +96,13 @@ def registry(team: str | None = None) -> dict:
 	)
 
 	return {"team": team, "servers": servers, "sites": _sites(rows, servers, pending), "creations": creations}
+
+
+def _plan_titles(plans: set[str]) -> dict[str, str]:
+	"""Each plan's title in one read. Plan titles are catalog data, the same for every team."""
+	if not plans:
+		return {}
+	return dict(frappe.db.get_values("Plan", {"name": ["in", list(plans)]}, ["name", "title"]))
 
 
 def _pilot_audiences(team: str) -> dict[str, str]:
@@ -173,6 +182,8 @@ def server_overview(team: str | None = None, resource_id: str | None = None) -> 
 			"ssh_keys": _server_ssh_keys(row.resource_id),
 			"gateway_url": row.gateway_url,
 			"creation": row.creation,
+			"created_by": row.created_by,
+			"created_by_name": row.created_by_name,
 		}
 	)
 
@@ -265,18 +276,32 @@ def server_hostnames(team: str | None = None, resource_id: str | None = None) ->
 	"""The site and custom-domain hostnames a server answers. They stop working when the
 	server is terminated, so the console lists them before it asks. Gated on `server:view`."""
 	server = VirtualMachine.get_team_server_name(team, resource_id)
-	sites = frappe.get_list("Site", filters={"team": team, "server": server}, pluck="name")
+	sites = frappe.get_list(
+		"Site",
+		filters={"team": team, "server": server},
+		fields=["name", "subdomain", "renamed_at"],
+	)
 	routes = frappe.get_list(
 		"Site Domain",
 		filters={"team": team, "server": server},
 		fields=["domain", "route_type"],
 		order_by="domain asc",
 	)
-	hostnames = [{"hostname": site, "kind": "Site"} for site in sites]
+
+	# A renamed site answers on its old and new names; it shows once, at its primary address.
+	site_names = set()
+	hostnames = []
+	for site in sites:
+		site_names.add(site.name)
+		if site.subdomain:
+			site_names.add(f"{site.subdomain}.{site.name.split('.', 1)[1]}")
+		primary = Site.get_primary_url(site.name, site.subdomain, site.renamed_at)
+		hostnames.append({"hostname": primary.removeprefix("https://"), "kind": "Site"})
+
 	hostnames += [
 		{"hostname": route.domain, "kind": "Site" if route.route_type == "Site" else "Custom domain"}
 		for route in routes
-		if route.domain not in sites
+		if route.domain not in site_names
 	]
 
 	return hostnames
@@ -299,10 +324,12 @@ def _server_ssh_keys(server: str) -> list[dict]:
 
 
 def _overview_server_row(resource_id: str, team: str):
-	"""VirtualMachine + region + team in one query."""
+	"""VirtualMachine + region + team + creator in one query."""
 	server = frappe.qb.DocType("Virtual Machine")
 	region = frappe.qb.DocType("Region")
 	team_table = frappe.qb.DocType("Team")
+	creation_action = frappe.qb.DocType("Resource Action")
+	creator = frappe.qb.DocType("User")
 	rows = (
 		frappe.qb.from_(server)
 		# VirtualMachine.region links straight to Region.
@@ -310,6 +337,11 @@ def _overview_server_row(resource_id: str, team: str):
 		.on(region.name == server.region)
 		.left_join(team_table)
 		.on(team_table.name == server.team)
+		# A discovered server has no create action, so its creator stays empty.
+		.left_join(creation_action)
+		.on((creation_action.server == server.name) & (creation_action.action == "create"))
+		.left_join(creator)
+		.on(creator.name == creation_action.requested_by)
 		.select(
 			server.resource_id,
 			server.atlas_vm_id,
@@ -339,6 +371,8 @@ def _overview_server_row(resource_id: str, team: str):
 			region.has_wireguard_gateway.as_("region_has_wireguard_gateway"),
 			region.base_url.as_("region_base_url"),
 			team_table.team_name.as_("team_name"),
+			creation_action.requested_by.as_("created_by"),
+			creator.full_name.as_("created_by_name"),
 		)
 		.where((server.resource_id == resource_id) & (server.team == team))
 		.limit(1)
@@ -729,6 +763,7 @@ def create_server(
 	has_public_ipv6: bool = False,
 	is_firewall_enabled: bool = False,
 	user_data: str = "",
+	app_inputs: dict[str, str] | None = None,
 	snapshot: str | None = None,
 ) -> dict:
 	"""Create a server from an image, or restore one from a `snapshot`."""
@@ -749,6 +784,7 @@ def create_server(
 		has_public_ipv6=has_public_ipv6,
 		is_firewall_enabled=is_firewall_enabled,
 		user_data=user_data,
+		app_inputs=app_inputs,
 		snapshot=snapshot,
 	)
 
@@ -771,6 +807,7 @@ def create_composed_server(
 	has_public_ipv6: bool = False,
 	is_firewall_enabled: bool = False,
 	user_data: str = "",
+	app_inputs: dict[str, str] | None = None,
 	snapshot: str | None = None,
 ) -> dict:
 	"""Create a custom-sized server from an image, or restore one from a `snapshot`."""
@@ -792,6 +829,7 @@ def create_composed_server(
 		has_public_ipv6=has_public_ipv6,
 		is_firewall_enabled=is_firewall_enabled,
 		user_data=user_data,
+		app_inputs=app_inputs,
 		snapshot=snapshot,
 	)
 
@@ -810,3 +848,24 @@ def retry_action(name: str) -> dict:
 	from central.resource_actions import retry
 
 	return retry(name)
+
+
+@frappe.whitelist(methods=["GET"])
+@handle_resource_operation
+@require_capability("server:view", _lt("You cannot view this server."), server="resource_id")
+def get_rescue_state(team: str | None = None, resource_id: str | None = None) -> dict:
+	"""Read the region's boot selection and last boot mode for this server."""
+	from central.integrations.servers import get_rescue_state
+
+	server = frappe.get_doc("Virtual Machine", VirtualMachine.get_team_server_name(team, resource_id))
+	server.require_live()
+	return get_rescue_state(server)
+
+
+@frappe.whitelist(methods=["POST"])
+@handle_resource_operation
+@require_capability("server:power", _lt("You cannot change this server's boot mode."), server="resource_id")
+def set_rescue_mode(enabled: bool, team: str | None = None, resource_id: str | None = None) -> None:
+	"""Select the next boot mode without starting or restarting the server."""
+	server = frappe.get_doc("Virtual Machine", VirtualMachine.get_team_server_name(team, resource_id))
+	server.set_rescue_mode(enabled)

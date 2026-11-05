@@ -148,7 +148,7 @@ class TestCustomerReads(CustomerDataBase):
 					"doctype": "Invoice",
 					"team": TEAM,
 					"invoice_type": "Billable",
-					"status": "Open",
+					"status": "Outstanding",
 					"period_start": "2026-05-01",
 					"period_end": "2026-05-31",
 					"currency": "INR",

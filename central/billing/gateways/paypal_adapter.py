@@ -111,13 +111,14 @@ class PayPalAdapter(GatewayAdapter):
 			raise GatewayTimeout(str(e)) from e
 		if not token.get("id"):
 			return {}
-		email = ((token.get("payment_source") or {}).get("paypal") or {}).get("email_address")
+		account = (token.get("payment_source") or {}).get("paypal") or {}
 		return {
 			"payment_method": token["id"],
 			"customer": None,
 			"brand": "PayPal",
 			"last4": None,
-			"label": email,
+			"label": account.get("email_address"),
+			"fingerprint": account.get("account_id"),
 		}
 
 	def validate_payment_method(self, payment_method) -> PaymentResult:

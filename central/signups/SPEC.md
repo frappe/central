@@ -6,7 +6,7 @@ The Signups module holds what a new customer gets: the [Product](doctype/product
 
 ## Welcome credit
 
-Grant Welcome Credits is off by default, so no team gets a welcome credit: a product signup gets a free trial site instead, and every other server needs a payment method. When an operator turns it on, a Team gets the welcome credit when its first payment method becomes active, not at signup. The credit is granted once for each owner across all of the owner's Teams.
+Grant Welcome Credits is off by default, so no team gets a welcome credit: a product signup gets a free trial site instead, and every other server needs a payment method. When an operator turns it on, a Team gets the welcome credit when its first payment method becomes active, not at signup. The credit is granted once for each owner across all of the owner's Teams. It is also granted once for each card, UPI ID or PayPal account, so a person with two emails and one card gets one credit. The payment method keeps the gateway's identity for the instrument in Instrument Fingerprint: the Stripe card fingerprint, the PayPal account ID, or the Razorpay UPI ID. Razorpay gives no card fingerprint, so a Razorpay card is identified by its network, issuer, last four digits and expiry. The welcome credit's Credit Ledger Entry keeps the same value in a unique column, so two owners who add the same card at the same time also get one credit.
 
 A Team that had a free trial gets no welcome credit, because the trial site is its free start. A card still converts its trial site. `is_welcome_credit_due` holds this rule.
 
@@ -26,7 +26,7 @@ A System Manager can grant credit from the **Grant Credit** action on a Team, fo
 
 A trial site is a site from a Product's signup flow, for a Team that has no active payment method and has never paid. A direct Central signup has no free trial: it lands in the console, adds a payment method and buys its servers. Only a signup link with `?product=` opens the onboarding pages, and `create_trial_site` needs a product. It runs free for a set number of days. The trial state is on the Site, in the **Trial** section.
 
-A Team has paid when it has a Subscription, or an Invoice that is not Draft or Cancelled. Such a Team buys its signup sites like any other server, also when its payment method has expired or failed. So a Team with unpaid invoices cannot open free servers.
+A Team has paid when it has a Subscription, or an Invoice that is not Draft or Cancelled. Such a Team gets no free trial, also when its payment method has expired or failed. So a Team with unpaid invoices cannot open free servers. A Team with an active payment method gets no free trial either. When such a Team follows a signup link, the signup page does not ask for a site name. It says that the Team buys its servers and links to the New Server page.
 
 ### Configuration
 

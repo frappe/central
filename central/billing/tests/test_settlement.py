@@ -114,7 +114,7 @@ class SettlementTestBase(IntegrationTestCase):
 					"doctype": "Invoice",
 					"team": TEAM,
 					"subscription": subscription,
-					"status": "Draft",
+					"status": "Outstanding",
 					"period_start": "2026-06-01",
 					"period_end": "2026-06-30",
 					"currency": "INR",
@@ -140,7 +140,7 @@ class TestWaterfall(SettlementTestBase):
 		invoice = frappe.get_doc("Invoice", inv)
 		self.assertEqual(invoice.credit_applied, 400.0)
 		self.assertEqual(invoice.expected_collection, 600.0)
-		self.assertEqual(invoice.status, "Open")  # paid only on webhook
+		self.assertEqual(invoice.status, "Outstanding")  # paid only on webhook
 		# The card was charged the remainder, not the full total.
 		self.assertEqual(adapter.charge.call_args.args[0].amount, 600.0)
 		attempt = frappe.get_doc("Payment Attempt", result["charge"]["attempt"])
@@ -169,7 +169,7 @@ class TestWaterfall(SettlementTestBase):
 			invoicing.open_and_collect(inv)
 
 		# Declined remainder: invoice stays Open for dunning (#14), not stopped.
-		self.assertEqual(frappe.db.get_value("Invoice", inv, "status"), "Open")
+		self.assertEqual(frappe.db.get_value("Invoice", inv, "status"), "Outstanding")
 		self.assertEqual(frappe.db.get_value("Subscription", sub, "account_standing"), "Current")
 		attempt = frappe.get_all("Payment Attempt", {"invoice": inv}, ["status"])[0]
 		self.assertEqual(attempt.status, "Failed")

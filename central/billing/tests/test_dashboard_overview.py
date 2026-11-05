@@ -97,7 +97,7 @@ class TestForecastBasis(OverviewBase):
 				"doctype": "Invoice",
 				"team": TEAM,
 				"invoice_type": "Billable",
-				"status": "Open",
+				"status": "Outstanding",
 				"period_start": str(self.month_start),
 				"period_end": str(frappe.utils.get_last_day(self.today)),
 				"currency": "INR",
@@ -263,7 +263,17 @@ class TestSubscriptionQuotesTheLockedRate(OverviewBase):
 class TestReports(OverviewBase):
 	"""The period-ranged reads behind Billing → Reports."""
 
-	def _invoice(self, period_start, period_end, total=3000, paid=0, status="Paid", tax=0, tax_type="None"):
+	def _invoice(
+		self,
+		period_start,
+		period_end,
+		total=3000,
+		paid=0,
+		status="Paid",
+		tax=0,
+		tax_type="None",
+		due_date=None,
+	):
 		return frappe.get_doc(
 			{
 				"doctype": "Invoice",
@@ -279,6 +289,7 @@ class TestReports(OverviewBase):
 				"total": total,
 				"amount_paid": paid,
 				"expected_collection": total,
+				"due_date": due_date,
 				"items": [
 					{
 						"resource_type": "bundle",
@@ -333,11 +344,21 @@ class TestReports(OverviewBase):
 	def test_statement_carries_what_was_owed_before_the_window(self):
 		# An unpaid bill from before the range must not vanish, or the statement reads
 		# as though the team started clean.
-		self._invoice("2026-01-01", "2026-01-31", total=5000, status="Overdue")
+		self._invoice("2026-01-01", "2026-01-31", total=5000, status="Overdue", due_date="2026-02-15")
 
 		out = dashboard.get_statement(TEAM, from_date="2026-06-01", to_date="2026-12-31")
 
 		self.assertEqual(out["opening_outstanding"], 5000.0)
+
+	def test_an_invoice_not_yet_issued_is_shown_but_not_owed(self):
+		held = self._invoice("2026-06-01", "2026-06-30", total=3000, status="Outstanding")
+		self._invoice("2026-07-01", "2026-07-31", total=2000, status="Outstanding", due_date="2026-08-15")
+
+		out = dashboard.get_statement(TEAM, from_date="2026-06-01", to_date="2026-12-31")
+
+		self.assertEqual(out["closing_outstanding"], 2000.0)
+		self.assertEqual([row["is_issued"] for row in out["rows"]], [False, True])
+		self.assertFalse(dashboard.get_invoice(held.name)["is_issued"])
 
 	def test_tax_summary_never_calls_a_tax_None(self):
 		# output_tax_type's "no tax" option is the literal string "None" — truthy, and
@@ -460,7 +481,7 @@ class TestDeclineWording(OverviewBase):
 				"doctype": "Invoice",
 				"team": TEAM,
 				"invoice_type": "Billable",
-				"status": "Open",
+				"status": "Outstanding",
 				"period_start": str(self.month_start),
 				"period_end": str(frappe.utils.get_last_day(self.today)),
 				"currency": "INR",

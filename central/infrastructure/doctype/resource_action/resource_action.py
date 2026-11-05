@@ -4,6 +4,8 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
+from central.billing.catalog.trials import is_trial_plan
+from central.central.doctype.activity_event.activity_event import ActivityEvent
 from central.errors import AtlasConnectionError, AtlasRequestUncertain, build_envelope, to_error_response
 from central.iam import can
 from central.infrastructure.doctype.blocked_domain.blocked_domain import BlockedDomain, normalize_domain
@@ -115,6 +117,7 @@ class ResourceAction(Document):
 		take_snapshot: DF.Check
 		team: DF.Link
 		title: DF.Data | None
+		user_data: DF.Password | None
 		vm_snapshot: DF.Link | None
 	# end: auto-generated types
 
@@ -191,6 +194,17 @@ class ResourceAction(Document):
 			)
 			self.capture_trial_event("trial_requested", region=self.region, **first_touch)
 
+	def before_validate(self) -> None:
+		"""Keep the user data out of the request a customer can read. It can hold the passwords
+		a customer typed for an app, so it goes to the encrypted `user_data` field."""
+		payload = frappe.parse_json(self.request_payload or "{}")
+		if not isinstance(payload, dict) or "user_data" not in payload:
+			return
+
+		if user_data := payload.pop("user_data"):
+			self.user_data = user_data
+		self.request_payload = payload
+
 	def validate(self) -> None:
 		if self.subdomain and (self.has_value_changed("subdomain") or self.has_value_changed("region")):
 			self.subdomain = normalize_domain(self.subdomain)
@@ -211,7 +225,10 @@ class ResourceAction(Document):
 		)
 
 	def get_configuration(self) -> ServerCreation:
-		return ServerCreation.model_validate(frappe.parse_json(self.request_payload))
+		payload = frappe.parse_json(self.request_payload)
+		if user_data := self.get_password("user_data", raise_exception=False):
+			payload["user_data"] = user_data
+		return ServerCreation.model_validate(payload)
 
 	def get_site_creation(self) -> SiteCreation | None:
 		"""The trial site part of a creation request. Older requests carry none."""
@@ -254,6 +271,20 @@ class ResourceAction(Document):
 			values.update(self._diagnostic_values(diagnostic, diagnostic_title))
 
 		self.db_set(values, notify=notify)
+		if status != previous_status and status in TERMINAL_STATES:
+			ActivityEvent.record_action(self)
+		if status != previous_status and status == "Succeeded" and self.is_trial_upgrade():
+			from central.integrations.pilot import plan_includes_storage
+
+			if plan_includes_storage(self.get_resize_configuration().plan):
+				frappe.enqueue(
+					"central.integrations.pilot.attach_bundled_bucket",
+					server=self.server,
+					queue="long",
+					enqueue_after_commit=True,
+					job_id=f"bundled-bucket:{self.server}",
+					deduplicate=True,
+				)
 		if status != previous_status and status in ("Failed", "Timed Out"):
 			if self.action == "create":
 				# A creation the region never accepted leaves no machine to use its credential.
@@ -309,6 +340,14 @@ class ResourceAction(Document):
 	@property
 	def is_trial_creation(self) -> bool:
 		return self.action == "create" and self.resource_type == "Site"
+
+	def is_trial_upgrade(self) -> bool:
+		"""Whether this resize moves a server from a trial plan to a paid plan."""
+		if self.action != "resize":
+			return False
+
+		configuration = self.get_resize_configuration()
+		return is_trial_plan(configuration.from_plan) and not is_trial_plan(configuration.plan)
 
 	def capture_trial_event(self, event: str, **properties) -> None:
 		"""Send this trial's step to the signup funnel, once per action."""

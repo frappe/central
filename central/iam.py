@@ -8,6 +8,7 @@ from frappe import _
 from frappe.utils.caching import request_cache
 
 OPERATOR_BYPASS_ROLE = "System Manager"
+STAFF_VIEWER_ROLE = "Staff Viewer"
 
 # The revision of the capability taxonomy. Bump it with every change (see CAPABILITIES.md).
 CAPABILITY_VERSION = 7
@@ -70,6 +71,12 @@ def user_has_operator_bypass(user: str | None = None) -> bool:
 @request_cache
 def _user_has_operator_bypass(user: str) -> bool:
 	return OPERATOR_BYPASS_ROLE in frappe.get_roles(user)
+
+
+def is_staff_read(user: str, ptype: str | None) -> bool:
+	"""A Staff Viewer reads every team's records in Desk. It grants no capability and no write on
+	team records. The DocType permissions decide which DocTypes and fields it reads."""
+	return ptype in ("read", "select") and STAFF_VIEWER_ROLE in frappe.get_roles(user)
 
 
 def get_all_capabilities() -> list[str]:
@@ -313,6 +320,22 @@ def get_allowed_servers(user: str, capability: str) -> dict[str, str | frozenset
 			allowed[team] = frozenset(scopes)
 
 	return allowed
+
+
+def get_capability_gate(capability_field, server_field, team: str, user: str):
+	"""A query builder condition for the team rows `user` may see. A row with no required
+	capability is visible to every member. A team-wide grant sees a row it has the
+	capability for. A grant scoped to servers sees a row only about one of those servers."""
+	gate = capability_field.isnull() | (capability_field == "")
+	capabilities = {cap for grant in resolve_user_grants(user).get(team, []) for cap in grant["caps"]}
+	for capability in sorted(capabilities):
+		servers = get_allowed_servers(user, capability)[team]
+		if servers == ALL_SERVERS:
+			gate = gate | (capability_field == capability)
+		else:
+			gate = gate | ((capability_field == capability) & server_field.isin(sorted(servers)))
+
+	return gate
 
 
 def get_server_capabilities(user: str, team: str, server: str) -> list[str]:

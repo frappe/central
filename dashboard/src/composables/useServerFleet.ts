@@ -141,7 +141,7 @@ export function useServerFleet() {
 				const machine = row.server
 					? {
 							publicIpv4: row.server.public_ipv4 ?? null,
-							plan: row.server.plan ?? null,
+							plan: row.server.plan_title ?? null,
 							frappeVersion: row.server.frappe_version ?? null,
 							server: row.server,
 						}

@@ -5,6 +5,11 @@ from frappe import _
 
 from central.iam import can
 from central.integrations.atlas import AtlasClient
+from central.integrations.cargo import CargoClient
+from central.utils.units import MIB_PER_GIB, MILLICORES_PER_VCPU
+
+# The Atlas `purpose` tag of an image a region's Cargo built for an app.
+APP_PURPOSE = "one-click"
 
 
 def list_offerings(team: str, flow: str = "Server") -> list[dict]:
@@ -18,7 +23,7 @@ def list_offerings(team: str, flow: str = "Server") -> list[dict]:
 		"Image Offering",
 		filters={"enabled": 1, "available_in": ["in", [flow, "Both"]]},
 		fields=["name", "title", "logo", "description", "available_in"],
-		order_by="title asc",
+		order_by="display_order asc, title asc",
 		limit=0,
 	)
 
@@ -47,6 +52,23 @@ def list_images(
 	client = AtlasClient.for_team(instance, team)
 
 	return client.list_system_images({**document.get_image_tags(), **(extra_tags or {})}, offset)
+
+
+def list_apps(team: str, region: str) -> list[dict]:
+	"""The ready-to-run apps the region's Cargo has built, one per application."""
+	return _app_cargo(team, region).get_apps()
+
+
+def get_app_requirements(team: str, region: str, application: str) -> dict:
+	"""What a server from one app asks the user for and needs to run."""
+	return _app_cargo(team, region).get_app_requirements(application)
+
+
+def _app_cargo(team: str, region: str) -> CargoClient:
+	validate_catalog_access(team, "Server")
+	instance = frappe.get_doc("Region", region)
+	instance.ensure_accepts_new_servers()
+	return CargoClient(instance)
 
 
 def preview_images(
@@ -150,7 +172,7 @@ def eligible_plans(team: str, region: str, offering: str, image_id: str, snapsho
 	passes `snapshot` instead of an offering and image."""
 	from math import ceil
 
-	from central.billing.catalog.composition import DISK, composition_quantities
+	from central.billing.catalog.composition import composition_quantities
 	from central.billing.catalog.server_plans import get_server_plans
 
 	image = (
@@ -158,28 +180,62 @@ def eligible_plans(team: str, region: str, offering: str, image_id: str, snapsho
 		if snapshot
 		else selected_image(team, region, offering, image_id)
 	)
+	minimum = get_minimum_shape(image, get_image_app_requirements(region, image, snapshot))
 	catalog = get_server_plans(team, cluster=region)
-	minimum_disk = image["rootfs_size_mib"]
 	groups = {}
 	for name, plans in catalog["plans"].items():
-		rows = [
-			plan
-			for plan in plans
-			if composition_quantities(plan["includes"]).get(DISK, 0) * 1024 >= minimum_disk
-		]
+		rows = [plan for plan in plans if is_shape_enough(composition_quantities(plan["includes"]), minimum)]
 		if rows:
 			groups[name] = rows
 
 	profiles = []
 	for profile in catalog["profiles"]:
-		steps = [size for size in profile["disk_steps"] if size * 1024 >= minimum_disk]
-		if steps:
+		vcpu_steps = [
+			vcpus
+			for vcpus in profile["vcpu_steps"]
+			if vcpus * MILLICORES_PER_VCPU >= minimum["cpu_millicores"]
+			and vcpus * profile["ram_ratio"] * MIB_PER_GIB >= minimum["memory_mib"]
+		]
+		disk_steps = [size for size in profile["disk_steps"] if size * MIB_PER_GIB >= minimum["disk_mib"]]
+		if vcpu_steps and disk_steps:
 			profiles.append(
 				{
 					**profile,
-					"disk_steps": steps,
-					"disk_min": max(profile["disk_min"], ceil(minimum_disk / 1024)),
+					"vcpu_steps": vcpu_steps,
+					"disk_steps": disk_steps,
+					"disk_min": max(profile["disk_min"], ceil(minimum["disk_mib"] / MIB_PER_GIB)),
 				}
 			)
 
 	return {**catalog, "plans": groups, "profiles": profiles, "image_id": image_id}
+
+
+def get_image_app_requirements(region: str, image: dict, snapshot: str | None = None) -> dict | None:
+	"""What a new server from an app image needs, from the region's Cargo. A restored
+	snapshot is already set up, and any other image has no app, so both need nothing."""
+	if snapshot or image["tags"].get("purpose") != APP_PURPOSE:
+		return None
+
+	region_document = frappe.get_doc("Region", region)
+	return CargoClient(region_document).get_app_requirements(image["tags"]["application"])
+
+
+def get_minimum_shape(image: dict, requirements: dict | None) -> dict[str, int]:
+	"""The smallest machine an image runs on: its root disk, and an app's minimum size."""
+	minimum = (requirements or {}).get("minimum_size") or {}
+	return {
+		"cpu_millicores": minimum.get("cpu_millicores", 0),
+		"memory_mib": minimum.get("memory_mib", 0),
+		"disk_mib": max(image["rootfs_size_mib"], minimum.get("disk_mib", 0)),
+	}
+
+
+def is_shape_enough(quantities: dict[str, float], minimum: dict[str, int]) -> bool:
+	"""Whether plan quantities, in vCPUs and GiB, reach a minimum shape in millicores and MiB."""
+	from central.billing.catalog.composition import COMPUTE, DISK, MEMORY
+
+	return (
+		quantities.get(COMPUTE, 0) * MILLICORES_PER_VCPU >= minimum["cpu_millicores"]
+		and quantities.get(MEMORY, 0) * MIB_PER_GIB >= minimum["memory_mib"]
+		and quantities.get(DISK, 0) * MIB_PER_GIB >= minimum["disk_mib"]
+	)

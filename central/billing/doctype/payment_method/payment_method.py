@@ -41,6 +41,11 @@ class PaymentMethod(Document):
 				frappe.ValidationError,
 			)
 
+	def set_instrument_fingerprint(self, gateway_fingerprint: str | None) -> None:
+		"""Keep the gateway's id for the card, UPI ID or account behind this method. It is
+		namespaced by gateway, because each gateway (and each Stripe account) has its own ids."""
+		self.instrument_fingerprint = f"{self.gateway}:{gateway_fingerprint}" if gateway_fingerprint else None
+
 	def record_failure(self, failure: decline.Failure) -> None:
 		"""Keep the gateway's reason for the latest failed setup or check of this method."""
 		self.failed_attempts = frappe.utils.cint(self.failed_attempts) + 1

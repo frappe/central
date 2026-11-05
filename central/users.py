@@ -9,12 +9,14 @@ from frappe.utils import cint, escape_html, random_string, today
 from frappe.utils.telemetry import capture
 
 from central.geo import warm_country_cache
+from central.iam import STAFF_VIEWER_ROLE
 from central.identity.email_code import EmailCode
 
 if TYPE_CHECKING:
 	from central.signups.doctype.product.product import Product
 
 CENTRAL_USER_ROLE = "Central User"
+STAFF_ROLE_PROFILE = "Frappe Employee"
 
 
 def send_sign_in_code(email: str, full_name: str | None = None, product: str | None = None) -> None:
@@ -122,6 +124,33 @@ def grant_central_user_role(doc, method: str | None = None) -> None:
 		doc.add_roles(CENTRAL_USER_ROLE)
 
 
+def validate_staff_viewer_roles(doc, method: str | None = None) -> None:
+	"""A Staff Viewer reads every team. Central User reads customer data fields, so one user
+	must not hold both roles."""
+	roles = {row.role for row in doc.roles}
+	if {STAFF_VIEWER_ROLE, CENTRAL_USER_ROLE} <= roles:
+		frappe.throw(
+			_("A user cannot have both the {0} and {1} roles. Use the {2} role profile.").format(
+				STAFF_VIEWER_ROLE, CENTRAL_USER_ROLE, STAFF_ROLE_PROFILE
+			)
+		)
+
+
+def ensure_staff_role_profile() -> None:
+	"""Create the Frappe Employee role profile once. An operator may change it in Desk later."""
+	if frappe.db.exists("Role Profile", STAFF_ROLE_PROFILE):
+		return
+
+	# Migrate and test setup run this as the system, not as a user.
+	frappe.get_doc(
+		{
+			"doctype": "Role Profile",
+			"role_profile": STAFF_ROLE_PROFILE,
+			"roles": [{"role": STAFF_VIEWER_ROLE}],
+		}
+	).insert(ignore_permissions=True)
+
+
 def validate_user_image(doc, method: str | None = None) -> None:
 	"""A profile photo must be a file uploaded to that user's photo field, not any URL."""
 	if not doc.user_image or not doc.has_value_changed("user_image"):
@@ -188,4 +217,4 @@ def _should_skip_role_grant(doc) -> bool:
 	if not frappe.db.exists("Role", CENTRAL_USER_ROLE):
 		return True
 
-	return False
+	return STAFF_VIEWER_ROLE in {row.role for row in doc.roles}

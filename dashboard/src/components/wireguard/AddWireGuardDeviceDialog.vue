@@ -163,7 +163,7 @@ async function submit(): Promise<void> {
 				<FormControl
 					v-model="publicKey"
 					label="Public key"
-					placeholder="HIgo9xNzJMWLKASShiTqIybxZ0U3wGLiUeJ1PKf8ykw="
+					placeholder="Paste your public key"
 					:aria-invalid="!!keyProblem"
 				/>
 				<p v-if="keyProblem" class="text-p-sm text-ink-red-6">

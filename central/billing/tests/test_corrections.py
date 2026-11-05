@@ -184,7 +184,7 @@ class TestCancelAndRefund(CorrectionsTestCase):
 class TestRefused(CorrectionsTestCase):
 	def test_an_unpaid_invoice(self):
 		inv = self._paid_invoice()
-		frappe.db.set_value("Invoice", inv, "status", "Open")
+		frappe.db.set_value("Invoice", inv, "status", "Outstanding")
 		with self.assertRaises(frappe.ValidationError):
 			corrections.cancel_and_refund(inv, "x")
 

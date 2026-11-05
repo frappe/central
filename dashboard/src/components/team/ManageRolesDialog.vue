@@ -7,6 +7,7 @@ import { useTeamMembers } from '@/composables/useTeamMembers'
 import { useTeamRoles } from '@/composables/useTeamRoles'
 import { teamParams } from '@/composables/useTeamScope'
 import { getErrorMessage } from '@/lib/feedback'
+import { getResourceOptions } from '@/lib/resourceScope'
 import type {
 	ResourceType,
 	TeamMemberRoleAssignment,
@@ -64,23 +65,13 @@ const applyResourceKey = (row: TeamMemberRoleAssignment, key: string): void => {
 	row.resource_name = name || null
 }
 
-const resourceOptions = computed(() => {
-	const servers = registryCall.data?.servers ?? []
-	const sites = registryCall.data?.sites ?? []
-	return [
-		{ label: 'All resources', value: resourceKey('*', null) },
-		...servers.map((a) => ({
-			label: a.title || a.resource_id,
-			value: resourceKey('Server', a.name),
-			description: regionLabel(a.region),
-		})),
-		...sites.map((s) => ({
-			label: s.subdomain || s.name,
-			value: resourceKey('Site', s.name),
-			description: regionLabel(s.region),
-		})),
-	]
-})
+const resourceOptions = computed(() =>
+	getResourceOptions(
+		registryCall.data,
+		regionLabel,
+		rows.value.map((row) => resourceKey(row.resource_type, row.resource_name)),
+	),
+)
 
 const addRow = (): void => {
 	rows.value = [

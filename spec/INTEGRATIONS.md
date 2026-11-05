@@ -242,6 +242,7 @@ Trial, Pilot-server, and plain-Ubuntu creation use the same authorized Atlas ada
 | Trial | Prepared Pilot image, one existing site, metadata credential, approved idle timeout. | VM accepted, Pilot ready, site reachable, and site login succeeds. |
 | Pilot server | Cargo Pilot image with its prepared bench and site, plus metadata credential. | VM is ready and Central can open the correct Pilot admin. |
 | Plain Ubuntu | Approved Ubuntu image, allowed size, hostname, and SSH keys. | Atlas confirms the requested running state and the agreed access configuration. No Pilot or Site record is required. |
+| App server | Cargo app image and user data from Cargo, built from the answers to the app's inputs. | Atlas confirms the requested running state. The service sets itself up at first boot. See [How is an app server created?](#how-is-an-app-server-created). |
 
 Show Open Pilot only for a Pilot-managed resource. A plain Ubuntu VM must not fail because it has no Pilot process or site.
 
@@ -271,6 +272,17 @@ Pilot links back to its server in the console with `/dashboard/servers?pilot=<jw
 Display supported network and SSH information for a plain Ubuntu server. Do not imply that a private mesh address is publicly reachable.
 
 Delete only after the customer confirms the action. Confirm remote absence, revoke any Pilot credential, and preserve existing billing cancellation behavior.
+
+## How is an app server created?
+
+An app is a fixed service, such as Redis or MariaDB, that a region's Cargo builds into an Atlas image tagged `purpose: one-click`. The **Apps** Image Offering lists these images.
+
+1. The console lists the region's apps with `central.api.images.list_apps`, and reads the inputs and minimum size of the selected one with `central.api.images.get_app_requirements`. Central gets both from Cargo.
+2. `eligible_plans` shows only the plans with enough CPU, memory and disk for the app.
+3. The customer sends the answers as `app_inputs`. Central refuses a plan below the app's minimum size, refuses customer user data, and asks Cargo for the user data. Cargo checks each answer. A blank input that the app marks `generate` is left out, and the server makes the value itself.
+4. The server boots from the image. Its first-boot script sets up the service and keeps the settings, including generated passwords, in `/etc/one-click/app.env` on the server.
+
+An app server is a normal server after creation. Central does not route a name to it and does not open its ports. Without a public address, the service is reachable only on the region's private network. A server restored from a snapshot of an app server has no app requirements.
 
 ## What does creation depend on?
 
@@ -396,3 +408,11 @@ pilot --site <site> execute central.investigator.knowledge.load_knowledge_bases
 ## Validation
 
 Run the shared contract tests before deployment. Complete the live journeys in [Staging validation](STAGING_VALIDATION.md) against the actual staging revisions. Mocked responses do not prove VM startup, Pilot login, SSH access, or webhook delivery.
+
+## Rescue mode
+
+The server Settings tab and the operator's Desk Rescue mode action read the two nullable rescue fields directly from Atlas. Central does not persist a rescue selection. Unknown state is not disabled state. Use Refresh status after boot; a successful power action alone does not confirm the boot image.
+
+Changing the selection requires both `server:power` and `server:console` on the server, and the existing server-access restriction applies to trials. The selection takes effect at the next cold boot. Start or restart remains a separate action. Enabling rescue can wake a sleeping server. Repairs modify the original disk; take a snapshot first.
+
+CPU or memory resizing is refused before power changes while rescue is selected or active. Disk-only growth remains available unless the VM is in rescue with idle shutdown configured: Central cannot complete its required idle-setting update in that state, so it refuses before growing the disk. Leave rescue and boot normally before that resize.

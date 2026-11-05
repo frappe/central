@@ -71,7 +71,7 @@ class ReconTestBase(IntegrationTestCase):
 					"doctype": "Invoice",
 					"team": TEAM,
 					"invoice_type": "Billable",
-					"status": "Open",
+					"status": "Outstanding",
 					"period_start": "2026-05-01",
 					"period_end": "2026-05-31",
 					"currency": "INR",
@@ -169,7 +169,7 @@ class TestReconcile(ReconTestBase):
 			reconciliation.reconcile_attempt(attempt)
 		self.assertEqual(frappe.db.get_value("Payment Attempt", attempt, "status"), "Failed")
 		self.assertEqual(frappe.db.get_value("Payment Attempt", attempt, "failure_code"), "gateway_failed")
-		self.assertEqual(frappe.db.get_value("Invoice", inv, "status"), "Open")
+		self.assertEqual(frappe.db.get_value("Invoice", inv, "status"), "Outstanding")
 
 	def test_uncompleted_checkout_is_failed_after_a_day(self):
 		inv = self._open_invoice()
@@ -254,7 +254,7 @@ class TestUnansweredCharge(ReconTestBase):
 		with charge_result(success=False):
 			reconciliation.reconcile_attempt(attempt)
 		self.assertEqual(frappe.db.get_value("Payment Attempt", attempt, "status"), "Failed")
-		self.assertEqual(frappe.db.get_value("Invoice", inv, "status"), "Open")
+		self.assertEqual(frappe.db.get_value("Invoice", inv, "status"), "Outstanding")
 
 	def test_too_old_to_re_send_is_left_alone_and_alerted(self):
 		# Past the gateway's key window, re-sending would be a second charge — and
@@ -316,7 +316,7 @@ class TestCapturedUnsettled(ReconTestBase):
 		with gateway_status("requires_action"):
 			out = reconciliation.reconcile_captured_attempt(attempt, now=frappe.utils.now_datetime())
 		self.assertEqual(out["unresolved"], "requires_action")
-		self.assertEqual(frappe.db.get_value("Invoice", inv, "status"), "Open")
+		self.assertEqual(frappe.db.get_value("Invoice", inv, "status"), "Outstanding")
 
 	def test_captured_already_paid_invoice_is_skipped(self):
 		inv = self._open_invoice()
@@ -340,7 +340,7 @@ class TestCapturedUnsettled(ReconTestBase):
 		with gateway_status("succeeded"):
 			results = reconciliation.run_reconciliation()
 		self.assertNotIn(fresh, [r.get("attempt") for r in results])
-		self.assertEqual(frappe.db.get_value("Invoice", inv, "status"), "Open")
+		self.assertEqual(frappe.db.get_value("Invoice", inv, "status"), "Outstanding")
 
 
 class TestScan(ReconTestBase):

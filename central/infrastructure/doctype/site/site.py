@@ -173,6 +173,8 @@ class Site(Document):
 		"""Record the first successful login handoff and schedule the optional rename."""
 		if not self.claimed_at:
 			self.db_set("claimed_at", frappe.utils.now_datetime())
+			# db_set writes no Version, and the activity feed reads Versions.
+			self.save_version()
 			capture_trial_event("trial_claimed", self.team, self.product, user=frappe.session.user)
 
 		self.enqueue_subdomain_rename()
@@ -327,6 +329,20 @@ class Site(Document):
 		self.add_comment("Info", _("{0} ended the trial.").format(frappe.session.user))
 
 	@frappe.whitelist(methods=["POST"])
+	def convert_trial(self) -> None:
+		"""Operator action: convert an open trial without a payment method. The plan must still
+		fit the team's spending limit."""
+		from central.signups.trial import Trial
+
+		frappe.only_for("System Manager")
+		trial = Trial(self)
+		if not trial.is_open:
+			frappe.throw(_("This site has no open trial."))
+		if not trial.convert_within_limit():
+			frappe.throw(self.trial_error)
+		self.add_comment("Info", _("{0} converted the trial.").format(frappe.session.user))
+
+	@frappe.whitelist(methods=["POST"])
 	def retry_trial_step(self) -> None:
 		"""Operator action: run today's trial step again after a failure."""
 		from central.signups.trial import Trial
@@ -355,7 +371,7 @@ class Site(Document):
 		"""Operator action: probe the site's address now, and record readiness when it answers."""
 		from central.integrations.pilot import is_site_reachable
 
-		self.check_permission("read")
+		self.check_permission("write")
 		is_ready = is_site_reachable(self.url)
 		if is_ready:
 			self.record_ready()

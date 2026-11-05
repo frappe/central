@@ -1,6 +1,6 @@
 # Central
 
-Central is the control plane for Frappe Cloud v2. It manages teams, permissions, servers, sites, managed services, and billing. It includes a Frappe app and a Vue console.
+Central is the control plane for Frappe Cloud v2. It manages teams, permissions, servers, sites, managed services, and billing, and keeps an activity feed of the changes to each team and server. It includes a Frappe app and a Vue console.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset=".github/screenshots/central-overview-dark.png">

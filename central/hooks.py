@@ -13,10 +13,22 @@ fixtures = [
 	{"dt": "Team Role", "filters": [["is_system", "=", 1]]},
 	# Warpgate signs in through the Central OpenID Connect provider and checks the Atlas roles.
 	# Product Operators create and edit products; only System Managers delete them.
+	# Staff Viewers read Team, Site and Virtual Machine in Desk, without customer data fields,
+	# and manage Product and Email OAuth Provider.
 	{
 		"dt": "Role",
 		"filters": [
-			["name", "in", ["Central User", "Atlas Host Access", "Atlas Warpgate Admin", "Product Operator"]]
+			[
+				"name",
+				"in",
+				[
+					"Central User",
+					"Atlas Host Access",
+					"Atlas Warpgate Admin",
+					"Product Operator",
+					"Staff Viewer",
+				],
+			]
 		],
 	},
 	"Notification Event Type",
@@ -128,6 +140,7 @@ after_install = [
 	"central.billing.settings.ensure_snapshot_settings",
 	"central.billing.platform.constraints.ensure_constraints",
 	"central.billing.settings.ensure_welcome_credit_amounts",
+	"central.billing.settings.ensure_minimum_invoice_amounts",
 	"central.billing.gateways.setup.ensure_gateway_records",
 	"central.integrations.email_oauth.setup.ensure_email_oauth_providers",
 	"central.billing.navigation.ensure_workspace_sidebars",
@@ -185,7 +198,7 @@ after_install = [
 
 doc_events = {
 	"User": {
-		"validate": "central.users.validate_user_image",
+		"validate": ["central.users.validate_user_image", "central.users.validate_staff_viewer_roles"],
 		"after_insert": "central.users.grant_central_user_role",
 		"on_update": "central.infrastructure.doctype.wireguard_device.wireguard_device.remove_disabled_user_devices",
 	},
@@ -214,6 +227,40 @@ doc_events = {
 			"Billing Event",
 			"Top-up Order",
 		)
+	},
+	# Activity feed. Frappe writes a Version for each save of a tracked DocType, and the feed
+	# keeps the fields that central/central/doctype/activity_event/tracked.py lists.
+	"Version": {
+		"after_insert": "central.central.doctype.activity_event.activity_event.record_version",
+	},
+	# A Version records no creation and no deletion, so these DocTypes record both themselves.
+	"VM Snapshot": {
+		"after_insert": "central.central.doctype.activity_event.activity_event.record_created",
+		"on_trash": "central.central.doctype.activity_event.activity_event.record_deleted",
+	},
+	"Site": {
+		"after_insert": "central.central.doctype.activity_event.activity_event.record_created",
+		"on_trash": "central.central.doctype.activity_event.activity_event.record_deleted",
+	},
+	"Site Domain": {
+		"after_insert": "central.central.doctype.activity_event.activity_event.record_created",
+		"on_trash": "central.central.doctype.activity_event.activity_event.record_deleted",
+	},
+	"Team": {
+		"after_insert": "central.central.doctype.activity_event.activity_event.record_created",
+		"on_trash": "central.central.doctype.activity_event.activity_event.record_deleted",
+	},
+	"Team Role": {
+		"after_insert": "central.central.doctype.activity_event.activity_event.record_created",
+		"on_trash": "central.central.doctype.activity_event.activity_event.record_deleted",
+	},
+	"Team Invitation": {
+		"after_insert": "central.central.doctype.activity_event.activity_event.record_created",
+		"on_trash": "central.central.doctype.activity_event.activity_event.record_deleted",
+	},
+	"Team SSH Key": {
+		"after_insert": "central.central.doctype.activity_event.activity_event.record_created",
+		"on_trash": "central.central.doctype.activity_event.activity_event.record_deleted",
 	},
 }
 
@@ -292,6 +339,7 @@ after_migrate = [
 	# The Webhook that carries a team's tier to Grove, so an edit to its spec rolls out.
 	"central.services.doctype.ai_settings.ai_settings.sync_webhook",
 	"central.investigator.knowledge.load_knowledge_bases_after_migrate",
+	"central.users.ensure_staff_role_profile",
 ]
 
 # Testing
@@ -307,6 +355,7 @@ before_tests = [
 	"central.billing.gateways.setup.ensure_gateway_records",
 	"central.integrations.email_oauth.setup.ensure_email_oauth_providers",
 	"central.billing.navigation.ensure_workspace_sidebars",
+	"central.users.ensure_staff_role_profile",
 ]
 
 # Extend DocType Class
@@ -344,7 +393,8 @@ override_doctype_dashboards = {
 # Ignore links to specified DocTypes when deleting documents
 # -----------------------------------------------------------
 
-# ignore_links_on_delete = ["Communication", "ToDo"]
+# An event outlives the resource it describes.
+ignore_links_on_delete = ["Activity Event"]
 
 # Request Events
 # ----------------
@@ -391,6 +441,7 @@ _BILLING_TEAM_RECORDS = (
 	"Billing Notification Log",
 	"Billing Profile",
 	"Billing Projection Summary",
+	"Billing Run Team",
 	"Billing Scenario",
 	"Commitment",
 	"Credit Ledger Entry",
@@ -420,6 +471,7 @@ permission_query_conditions = {
 	"Team": "central.permissions.team_query_conditions",
 	"Team Invitation": "central.permissions.team_invitation_query_conditions",
 	"Team Notification": "central.permissions.team_notification_query_conditions",
+	"Activity Event": "central.permissions.activity_event_query_conditions",
 	"Team Role": "central.permissions.team_role_query_conditions",
 	"Notification Digest Setting": "central.permissions.notification_digest_setting_query_conditions",
 	"Team Service": "central.permissions.team_service_query_conditions",
@@ -439,6 +491,7 @@ has_permission = {
 	"Team": "central.permissions.team_has_permission",
 	"Team Invitation": "central.permissions.team_invitation_has_permission",
 	"Team Notification": "central.permissions.team_notification_has_permission",
+	"Activity Event": "central.permissions.activity_event_has_permission",
 	"Team Role": "central.permissions.team_role_has_permission",
 	"Notification Digest Setting": "central.permissions.has_notification_digest_setting_permission",
 	"Team Service": "central.permissions.team_service_has_permission",
@@ -461,6 +514,7 @@ require_type_annotated_api_methods = True
 
 # Days Log Settings keeps a record before its daily clean-up drops it.
 default_log_clearing_doctypes = {
+  "Activity Event": 365,
 	"AI Trial Key": 30,
 }
 

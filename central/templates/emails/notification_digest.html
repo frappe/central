@@ -15,7 +15,7 @@
 					{{ ui.paragraph(paragraph) }}
 				{% endfor %}
 				{% if item.action_label and item.action_url %}
-					{{ ui.button(item.action_label, item.action_url) }}
+					<p class="fc-text">{{ ui.link(item.action_label, item.action_url) }}</p>
 				{% endif %}
 			{% endfor %}
 			{{ ui.separator() }}
@@ -24,8 +24,12 @@
 		{% if more_text %}
 			{{ ui.paragraph(more_text) }}
 		{% endif %}
-
-		{{ ui.button(_("Manage notification preferences"), preferences_url, primary=false) }}
 	</td>
 </tr>
+{% endblock %}
+
+{% block footer %}
+{{ super() }}
+<br />
+{{ ui.link(_("Manage notification preferences"), preferences_url) }}
 {% endblock %}

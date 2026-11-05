@@ -177,16 +177,18 @@ def apply_gst_category(team: str, category: str | None) -> None:
 	profile.save(ignore_permissions=True)
 
 
-def grant_welcome_credits(team: str) -> None:
+def grant_welcome_credits(team: str, instrument_fingerprint: str | None = None) -> None:
 	"""Grant the one-time welcome credits in the team's currency, if not already.
 
 	Needs a currency (so the credit is booked in the right one) and grants only
 	once per owner — guarded on any prior Promotion entry for any team the owner
-	owns, so a second team does not earn a second grant. The amount comes from
-	Billing Settings, so it can be changed, or the grant switched off entirely,
-	without a release; a currency with no configured amount gets no grant (rather
-	than a wrong-currency one). What a team has already been granted is never
-	revisited.
+	owns, so a second team does not earn a second grant. It also grants only once
+	per card: `instrument_fingerprint` is the card, UPI ID or PayPal account the
+	team added, so one card on two owners (two emails) earns one grant. The amount
+	comes from Billing Settings, so it can be changed, or the grant switched off
+	entirely, without a release; a currency with no configured amount gets no grant
+	(rather than a wrong-currency one). What a team has already been granted is
+	never revisited.
 	"""
 	currency = frappe.db.get_value("Billing Profile", team, "currency")
 	if not currency:
@@ -196,10 +198,10 @@ def grant_welcome_credits(team: str) -> None:
 		return
 	if has_owner_received_welcome_credits(team):
 		return
+	if instrument_fingerprint and has_instrument_received_welcome_credits(instrument_fingerprint):
+		return
 
-	from central.billing.revenue import credits
-
-	credits.grant_promotional_credits(team, amount, currency)
+	_book_welcome_credits(team, amount, currency, instrument_fingerprint)
 
 
 def has_owner_received_welcome_credits(team: str, lock: bool = True) -> bool:
@@ -212,3 +214,37 @@ def has_owner_received_welcome_credits(team: str, lock: bool = True) -> bool:
 	return bool(
 		frappe.db.exists("Credit Ledger Entry", {"team": ["in", owned_teams], "reference_type": "Promotion"})
 	)
+
+
+def has_instrument_received_welcome_credits(instrument_fingerprint: str) -> bool:
+	"""Whether any team already holds a welcome credit earned with this card or account."""
+	return bool(frappe.db.exists("Credit Ledger Entry", {"instrument_fingerprint": instrument_fingerprint}))
+
+
+_WELCOME_CREDIT_SAVEPOINT = "welcome_credit_grant"
+# The key MariaDB names when a second welcome credit is booked for the same card.
+_DUPLICATE_FINGERPRINT = "for key 'instrument_fingerprint'"
+
+
+def _book_welcome_credits(
+	team: str, amount: float, currency: str, instrument_fingerprint: str | None
+) -> None:
+	"""Book the grant. Two owners who add the same card at once both pass the check above;
+	the unique fingerprint on the ledger keeps one grant, and the other team gets none.
+
+	A wallet deadlock fails the activation: InnoDB has rolled back the whole transaction,
+	so the grant cannot be retried alone. The customer confirms the card again."""
+	from central.billing.revenue import credits
+
+	frappe.db.savepoint(_WELCOME_CREDIT_SAVEPOINT)
+	try:
+		credits.grant_promotional_credits(
+			team, amount, currency, instrument_fingerprint=instrument_fingerprint, retry_deadlock=False
+		)
+	except frappe.UniqueValidationError as error:
+		if _DUPLICATE_FINGERPRINT not in str(error):
+			raise  # only a duplicate fingerprint means the card was already rewarded
+		frappe.db.rollback(save_point=_WELCOME_CREDIT_SAVEPOINT)
+		frappe.clear_last_message()  # the "must be unique" notice is not the customer's to read
+		return
+	frappe.db.release_savepoint(_WELCOME_CREDIT_SAVEPOINT)

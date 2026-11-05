@@ -21,6 +21,7 @@
   "gateway_method_id",
   "gateway_customer_id",
   "gateway_mandate_id",
+  "instrument_fingerprint",
   "setup_reference",
   "setup_intent_id",
   "display_label",
@@ -131,6 +132,13 @@
    "label": "Gateway Mandate ID",
    "read_only": 1,
    "description": "Mandate the off-session debit quotes (Stripe India mandate_xxx). Empty where the rail needs no mandate to charge."
+  },
+  {
+   "fieldname": "instrument_fingerprint",
+   "fieldtype": "Data",
+   "label": "Instrument Fingerprint",
+   "read_only": 1,
+   "description": "The card, UPI ID or PayPal account behind this method, as the gateway identifies it. The same card on another team has the same value."
   },
   {
    "fieldname": "setup_reference",
@@ -258,7 +266,7 @@
    "link_fieldname": "payment_method"
   }
  ],
- "modified": "2026-10-28 14:00:00.000000",
+ "modified": "2026-11-03 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Payment Method",

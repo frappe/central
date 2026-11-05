@@ -194,6 +194,37 @@ class TestServerResize(UnitTestCase):
 		self.client.resize.assert_not_called()
 		self.client.update_disk.assert_not_called()
 
+	def test_rescue_compute_resize_fails_before_power_changes(self):
+		for selected, active in ((True, False), (True, True), (False, True)):
+			with self.subTest(selected=selected, active=active):
+				self.client.get_vm.return_value = {
+					**self.remote("running"),
+					"is_rescue_mode_enabled": selected,
+					"is_in_rescue_mode": active,
+				}
+				with self.assertRaises(AtlasRejected):
+					resize_server(self.server, SHAPE)
+		self.client.vm_action.assert_not_called()
+		self.client.resize.assert_not_called()
+		self.client.update_disk.assert_not_called()
+
+	def test_rescue_disk_growth_rejects_idle_change_before_growing(self):
+		self.client.get_vm.return_value = {
+			**self.remote("running", sleep_after_idle_seconds=60),
+			"is_in_rescue_mode": True,
+		}
+		with self.assertRaises(AtlasRejected):
+			resize_server(self.server, {"vcpus": 1, "memory_megabytes": 2048, "disk_gigabytes": 50})
+		self.client.update_disk.assert_not_called()
+		self.client.vm_action.assert_not_called()
+
+	def test_rescue_disk_growth_without_idle_change_stays_supported(self):
+		self.client.get_vm.return_value = {**self.remote("running"), "is_in_rescue_mode": True}
+		resize_server(self.server, {"vcpus": 1, "memory_megabytes": 2048, "disk_gigabytes": 50})
+		self.client.update_disk.assert_called_once_with("vm-00001", 51200)
+		self.client.disable_idle_shutdown.assert_not_called()
+		self.client.vm_action.assert_not_called()
+
 
 class TestConsoleResize(UnitTestCase):
 	def test_resize_is_gated_and_handed_to_billing(self):
@@ -255,3 +286,47 @@ class TestResizeJobTimeout(UnitTestCase):
 
 		self.assertGreater(job_timeout, 2 * POWER_WAIT_SECONDS)
 		self.assertEqual(lock.call_args.kwargs["timeout"], job_timeout)
+
+
+class TestTrialUpgradeBucket(UnitTestCase):
+	def succeed(self, from_plan: str, plan: str, bundles_storage: bool = True):
+		action = frappe.get_doc(
+			{
+				"doctype": "Resource Action",
+				"action": "resize",
+				"status": "Sent",
+				"server": "server-1",
+				"request_payload": {"plan": plan, "from_plan": from_plan, "shape": SHAPE},
+			}
+		)
+		resource_action = "central.infrastructure.doctype.resource_action.resource_action"
+		with (
+			patch.object(action, "db_set"),
+			patch(f"{resource_action}.is_trial_plan", side_effect=lambda name: name == "trial"),
+			patch(
+				"central.integrations.pilot.plan_includes_storage",
+				return_value=bundles_storage,
+			),
+			patch(f"{resource_action}.frappe.enqueue") as enqueue,
+		):
+			action.transition("Succeeded")
+
+		return enqueue
+
+	def test_a_move_off_a_trial_plan_attaches_the_bucket(self):
+		enqueue = self.succeed("trial", "paid")
+
+		enqueue.assert_called_once_with(
+			"central.integrations.pilot.attach_bundled_bucket",
+			server="server-1",
+			queue="long",
+			enqueue_after_commit=True,
+			job_id="bundled-bucket:server-1",
+			deduplicate=True,
+		)
+
+	def test_a_move_between_paid_plans_attaches_nothing(self):
+		self.succeed("paid", "bigger").assert_not_called()
+
+	def test_a_trial_upgrade_without_storage_attaches_nothing(self):
+		self.succeed("trial", "compute-only", bundles_storage=False).assert_not_called()

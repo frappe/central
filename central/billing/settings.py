@@ -71,6 +71,27 @@ def _settings():
 	return frappe.get_cached_doc(SETTINGS)
 
 
+def minimum_invoice_amount(currency: str | None) -> float:
+	"""The smallest total worth invoicing in `currency`. Zero means no minimum."""
+	for row in _settings().minimum_invoice_amounts:
+		if row.currency == currency:
+			return frappe.utils.flt(row.amount)
+	return 0.0
+
+
+def ensure_minimum_invoice_amounts() -> None:
+	"""Seed the starting minimums if none is set. An operator changes them in Billing Settings."""
+	doc = frappe.get_doc("Billing Settings")
+	if doc.minimum_invoice_amounts:
+		return
+	for currency, amount in (("INR", 50), ("USD", 1)):
+		if frappe.db.exists("Currency", currency):
+			doc.append("minimum_invoice_amounts", {"currency": currency, "amount": amount})
+	# The system seeds these defaults during install or a patch, with no user to check.
+	doc.save(ignore_permissions=True)
+	frappe.clear_cache(doctype="Billing Settings")
+
+
 def welcome_credit_amount(currency: str) -> float:
 	"""What a team billed in `currency` is granted when its first payment method is active.
 
@@ -91,12 +112,14 @@ def provision_teams_as_trial() -> bool:
 	return bool(_settings().provision_teams_as_trial)
 
 
+DEFAULT_PROMOTIONAL_CREDIT_VALIDITY_DAYS = 60
+
+
 def promotional_credit_validity_days() -> int:
-	"""Days a welcome credit stays usable; 0 means it never expires."""
+	"""Days a promotional credit stays usable. Every promotional credit expires."""
 	override = _override("promotional_credit_validity_days")
-	if override is not _MISSING:
-		return frappe.utils.cint(override)
-	return frappe.utils.cint(_settings().promotional_credit_validity_days)
+	days = override if override is not _MISSING else _settings().promotional_credit_validity_days
+	return frappe.utils.cint(days) or DEFAULT_PROMOTIONAL_CREDIT_VALIDITY_DAYS
 
 
 def invoice_due_days() -> int:

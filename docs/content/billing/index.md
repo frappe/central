@@ -68,7 +68,7 @@ The **Spend** card shows what your team was invoiced in the last 3, 6, or 12 mon
 
 | Page | Use it to |
 | --- | --- |
-| **Billing > Payments** | Add, order, and remove payment methods on the **Methods** card. See [Payment methods](/billing/payment-methods). See and edit the billing email, address, and tax region on the **Billing details** card. |
+| **Billing > Payments** | Add, order, and remove payment methods on the **Payment methods** card. See [Payment methods](/billing/payment-methods). See and edit who invoices are billed to, the billing email, phone, currency, and GSTIN on the **Billing details** card. |
 | **Billing > Invoices** | See each invoice. Open the **Statement** tab to see the invoices and payments for a period, to reconcile with your own records. Tax invoices are issued separately. |
 | **Servers** | Click **Stop all** to stop every running server in the team. Sites are unavailable while the servers are stopped. Data is kept, and you can start the servers again. |
 

@@ -11,6 +11,11 @@ import {
 } from '@/lib/units'
 import type { Plan, RateCard } from '@/types/api'
 
+/** A plan's name, e.g. "Growth". A title like "Starter (Legacy) · 1 vCPU / 2 GB" keeps its name part. */
+export function planName(plan: Plan): string {
+	return plan.title.split(' · ')[0].trim() || planSize(plan)
+}
+
 /** A plan's CPU and memory, e.g. "0.125 vCPU · 512 MB RAM". */
 export function planSize(plan: Plan): string {
 	const vcpus = formatVcpu(planQuantity(plan, 'Compute'))

@@ -206,8 +206,7 @@ export interface CreditLedgerEntry {
 // Mirrors the Invoice DocType's status Select options — keep in sync with
 // central/billing/doctype/invoice/invoice.json.
 export type InvoiceStatus =
-	| 'Draft'
-	| 'Open'
+	| 'Outstanding'
 	| 'Paid'
 	| 'Overdue'
 	| 'Waived'
@@ -260,6 +259,10 @@ export interface InvoiceDetail {
 	expected_collection: number
 	amount_paid: number
 	due_date: string | null
+	/** Why the invoice cannot be paid yet. */
+	hold_reason: string | null
+	/** Collection has started, so the invoice can be paid. */
+	is_issued: boolean
 	/** A charge is in flight (or captured, awaiting the settlement webhook). */
 	payment_in_progress: boolean
 	/** The method that settled a Paid invoice (from the capturing attempt). */
@@ -547,6 +550,8 @@ export interface StatementRow {
 	period_start: string
 	period_end: string
 	status: InvoiceStatus
+	due_date: string | null
+	is_issued: boolean
 	total: number
 	tax: number
 	credit_applied: number

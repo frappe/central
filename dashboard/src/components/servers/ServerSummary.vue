@@ -30,7 +30,7 @@ const tiles = [
 		<div class="flex items-center justify-between gap-4">
 			<div class="min-w-0 space-y-1.5">
 				<h2 class="truncate text-2xl-semibold text-ink-gray-9">
-					{{ plan ? `${plan} plan` : 'No plan selected' }}
+					{{ plan || 'No plan selected' }}
 				</h2>
 				<p class="truncate text-base text-ink-gray-5">{{ server }}</p>
 			</div>

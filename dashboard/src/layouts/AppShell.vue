@@ -32,7 +32,7 @@ import {
 	searchOpen,
 	useSearchShortcut,
 } from '@/composables/useSearch'
-import { useSession } from '@/composables/useSession'
+import { useSession, useTeamRemovalRealtime } from '@/composables/useSession'
 import { useSettingsShortcut } from '@/composables/useSettings'
 import { teamSwitcherOpen } from '@/composables/useTeamSwitcher'
 
@@ -42,6 +42,7 @@ const SearchDialog = defineAsyncComponent(
 const searchMounted = ref(false)
 
 useNotificationsRealtime()
+useTeamRemovalRealtime()
 const { isActiveTeamSuspended } = useSession()
 useSearchShortcut()
 useSettingsShortcut()

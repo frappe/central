@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import appsLogo from '@/assets/images/apps.svg'
 import frappeLogo from '@/assets/images/frappe-logo.svg'
 import ubuntuLogo from '@/assets/images/ubuntu.svg'
 import ChoiceCards from '@/components/common/ChoiceCards.vue'
@@ -19,6 +20,7 @@ defineProps<{
 const emit = defineEmits<{ 'update:modelValue': [value: string] }>()
 
 const defaultLogos: Record<string, string> = {
+	apps: appsLogo,
 	pilot: frappeLogo,
 	ubuntu: ubuntuLogo,
 }
@@ -34,7 +36,7 @@ function logoFor(option: ImageChoice): string | null {
 			:model-value="modelValue"
 			:options="options"
 			:disabled="disabled"
-			:columns="2"
+			:columns="options.length > 2 ? 3 : 2"
 			label="Select an image"
 			@update:model-value="emit('update:modelValue', $event)"
 		>

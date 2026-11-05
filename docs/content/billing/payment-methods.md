@@ -8,13 +8,13 @@ You need the Owner, Admin, or Billing role to add, order, or remove payment meth
 
 ## Before you begin
 
-Add your billing details first. Frappe Cloud needs your currency, legal name, and address before you can add a payment method or credit. When they are missing, **Billing > Overview** shows **Add your billing details**. Click **Add billing details** and complete the form.
+Add your billing details first. Frappe Cloud needs your currency, legal name, and address before you can add a payment method or credit. When they are missing, **Billing > Payments** shows **Add your billing details**. Click **Add billing details**, complete the form, and click **Save**. The **Add payment method** dialog then opens, so you can add a card at once.
 
 ## How payment methods are used
 
-The **Methods** card on **Billing > Payments** lists your prepaid credits and your payment methods in the order they are used.
+The **Payment methods** card on **Billing > Payments** lists your prepaid credits and your payment methods in the order they are used.
 
-<Screenshot name="billing/payment-methods" alt="The Methods card with prepaid credits, a Visa card marked Primary, and Add another card" />
+<Screenshot name="billing/payment-methods" alt="The Payment methods card with prepaid credits, a Visa card marked Primary, and Add another card" />
 
 - An invoice uses your prepaid credits first.
 - Then Frappe Cloud charges the payment method marked **Primary**.

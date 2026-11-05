@@ -18,6 +18,7 @@ arithmetic over one.
 
 import frappe
 
+from central.billing.doctype.invoice.invoice import owed_filters
 from central.billing.revenue.dunning import dunning_clock_start, dunning_policy, dunning_schedule
 
 # Modes in which nothing is charged off-session — dunning escalates without retrying, so
@@ -28,15 +29,11 @@ ON_SESSION_MODES = ("Manual Checkout", "Action Required")
 def unpaid_invoices(filters: dict | None = None) -> list[frappe._dict]:
 	"""Every billable invoice still owing, with what the ladder needs to date it."""
 	filters = filters or {}
-	conditions = {
-		"invoice_type": "Billable",
-		"status": ["in", ["Open", "Overdue"]],
-		"expected_collection": [">", 0],
-	}
+	conditions = [*owed_filters(), ["invoice_type", "=", "Billable"], ["expected_collection", ">", 0]]
 	if filters.get("currency"):
-		conditions["currency"] = filters["currency"]
+		conditions.append(["currency", "=", filters["currency"]])
 	if filters.get("team"):
-		conditions["team"] = filters["team"]
+		conditions.append(["team", "=", filters["team"]])
 
 	return frappe.get_all(
 		"Invoice",

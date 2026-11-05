@@ -24,6 +24,7 @@ from enum import StrEnum
 
 import frappe
 
+from central.billing.doctype.invoice.invoice import is_owed, owed_filters
 from central.billing.payments import collection, collection_mode
 from central.billing.platform.jobs import each_isolated
 
@@ -87,7 +88,7 @@ def schedule_predebit(invoice: str, now=None, gateway: str | None = None) -> dic
 		# A rail that debits without a notice is collected by the ordinary sweep. Arming
 		# a 24h window here would delay every international charge for nothing.
 		return {"invoice": invoice, "skipped": "no_notice_required"}
-	if inv.invoice_type != "Billable" or inv.status not in ("Open", "Overdue"):
+	if inv.invoice_type != "Billable" or not is_owed(inv):
 		return {"invoice": invoice, "skipped": "not_collectable"}
 	if frappe.utils.flt(inv.expected_collection) <= 0:
 		return {"invoice": invoice, "skipped": "nothing_due"}
@@ -137,8 +138,8 @@ def charge_due(now=None) -> list[dict]:
 	due = frappe.get_all(
 		"Invoice",
 		filters=[
+			*owed_filters(),
 			["invoice_type", "=", "Billable"],
-			["status", "in", ["Open", "Overdue"]],
 			["expected_collection", ">", 0],
 			["predebit_charge_after", "is", "set"],
 			["predebit_charge_after", "<=", now_dt],
@@ -160,8 +161,8 @@ def run_emandate_cycle(now=None) -> dict:
 	pending = frappe.get_all(
 		"Invoice",
 		filters=[
+			*owed_filters(),
 			["invoice_type", "=", "Billable"],
-			["status", "in", ["Open", "Overdue"]],
 			["expected_collection", ">", 0],
 			["predebit_notified_at", "is", "not set"],
 		],

@@ -36,8 +36,9 @@ class AISettings(Document):
 	from typing import TYPE_CHECKING
 
 	if TYPE_CHECKING:
-		from central.services.doctype.ai_trial_product.ai_trial_product import AITrialProduct
 		from frappe.types import DF
+
+		from central.services.doctype.ai_trial_product.ai_trial_product import AITrialProduct
 
 		base_url: DF.Data | None
 		control_api_key: DF.Data | None

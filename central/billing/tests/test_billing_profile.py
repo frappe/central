@@ -39,7 +39,7 @@ def _invoice(team=TEAM, currency="INR"):
 			"doctype": "Invoice",
 			"team": team,
 			"invoice_type": "Billable",
-			"status": "Open",
+			"status": "Outstanding",
 			"period_start": "2099-01-01",
 			"period_end": "2099-01-31",
 			"currency": currency,

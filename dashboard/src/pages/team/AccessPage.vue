@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Avatar, Button, TabButtons } from 'frappe-ui'
 import { computed, ref } from 'vue'
+import ActivityFeed from '@/components/activity/ActivityFeed.vue'
 import MembersPanel from '@/components/team/MembersPanel.vue'
 import RolesPanel from '@/components/team/RolesPanel.vue'
 import { useCapabilities } from '@/composables/useCapabilities'
@@ -8,12 +9,8 @@ import { useSession } from '@/composables/useSession'
 import { openSettings } from '@/composables/useSettings'
 import { useTeamMembers } from '@/composables/useTeamMembers'
 
-// Members and roles are two views of the same thing — who is on the team and what
-// each role grants — so they live on one page behind a tab toggle, sharing one
-// identity header. The Team/Roles switcher rides on the list's own controls
-// row, ahead of search; each tab keeps its primary action (Invite, New role)
-// in that row's toolbar. Team-level settings (logo, rename, delete) open from
-// the pencil, on the Team tab of the shared settings dialog.
+// Members, roles and activity share one header, so they are tabs on one page.
+// Team settings (logo, rename, delete) open from the pencil.
 const { activeTeamLabel, activeTeamLogo } = useSession()
 const { members } = useTeamMembers()
 const { canEditTeam, canDeleteTeam } = useCapabilities()
@@ -22,6 +19,7 @@ const tab = ref('team')
 const tabs = [
 	{ label: 'Team', value: 'team' },
 	{ label: 'Roles', value: 'roles' },
+	{ label: 'Activity', value: 'activity' },
 ]
 
 const memberCountText = computed(() => {
@@ -54,7 +52,7 @@ const memberCountText = computed(() => {
 						</p>
 					</div>
 
-					<!-- Icon-only: renaming/deleting the team is rare — a label would
+					<!-- Icon-only: renaming/deleting the team is rare. A label would
 					     outweigh the action. -->
 					<Button
 						v-if="canEditTeam || canDeleteTeam"
@@ -67,14 +65,31 @@ const memberCountText = computed(() => {
 
 				<MembersPanel v-if="tab === 'team'">
 					<template #controls-start>
-						<TabButtons :options="tabs" v-model="tab" />
+						<TabButtons
+							:options="tabs"
+							v-model="tab"
+							aria-label="Team sections"
+						/>
 					</template>
 				</MembersPanel>
-				<RolesPanel v-else>
+				<RolesPanel v-else-if="tab === 'roles'">
 					<template #controls-start>
-						<TabButtons :options="tabs" v-model="tab" />
+						<TabButtons
+							:options="tabs"
+							v-model="tab"
+							aria-label="Team sections"
+						/>
 					</template>
 				</RolesPanel>
+				<ActivityFeed v-else scope="team">
+					<template #controls>
+						<TabButtons
+							:options="tabs"
+							v-model="tab"
+							aria-label="Team sections"
+						/>
+					</template>
+				</ActivityFeed>
 			</main>
 		</div>
 

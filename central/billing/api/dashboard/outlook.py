@@ -19,6 +19,7 @@ import frappe
 from frappe import _
 
 from central.billing.api.dashboard._shared import _resolve_team, _team_currency
+from central.billing.doctype.invoice.invoice import owed_filters
 
 # Customer-facing copy for the findings the engine can raise. `fix` is the sentence
 # that tells someone what to actually do — the reason this is worth showing at all.
@@ -112,12 +113,12 @@ def _next_collectable_invoice(team: str):
 	"""The open bill we would collect next, soonest due first."""
 	rows = frappe.get_all(
 		"Invoice",
-		filters={
-			"team": team,
-			"invoice_type": "Billable",
-			"status": ["in", ("Open", "Overdue")],
-			"expected_collection": [">", 0],
-		},
+		filters=[
+			*owed_filters(),
+			["team", "=", team],
+			["invoice_type", "=", "Billable"],
+			["expected_collection", ">", 0],
+		],
 		fields=["name", "expected_collection", "due_date", "period_end", "predebit_charge_after"],
 		order_by="due_date asc",
 		limit=1,

@@ -15,6 +15,7 @@ from central.billing.api.admin._shared import (
 	_to_inr,
 )
 from central.billing.authz import require_operator
+from central.billing.doctype.invoice.invoice import owed_filters
 from central.billing.revenue import credits
 
 
@@ -162,9 +163,7 @@ def list_teams() -> list[dict]:
 		currency = _team_currency(t["team"])
 		t["mrr"] = frappe.utils.flt(t["mrr"], 2)
 		t["tier"] = frappe.db.get_value("Billing Profile", t["team"], "trust_tier") or "—"
-		t["open_invoices"] = frappe.db.count(
-			"Invoice", {"team": t["team"], "status": ["in", ["Open", "Overdue"]]}
-		)
+		t["open_invoices"] = frappe.db.count("Invoice", [*owed_filters(), ["team", "=", t["team"]]])
 		t["invoices"] = frappe.db.count("Invoice", {"team": t["team"]})
 		# Credit normalised to INR so the whole row reads on one (INR-equiv.) axis.
 		t["credit_balance"] = frappe.utils.flt(
@@ -213,7 +212,7 @@ def get_delinquent_teams() -> list[dict]:
 		seen.add(s.team)
 		overdue = frappe.get_all(
 			"Invoice",
-			filters={"team": s.team, "status": ["in", ["Open", "Overdue"]]},
+			filters=[*owed_filters(), ["team", "=", s.team]],
 			fields=["name", "status", "total", "amount_paid", "due_date"],
 			order_by="due_date asc",
 		)

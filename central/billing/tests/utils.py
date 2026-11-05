@@ -92,6 +92,7 @@ class BillingTestCase(IntegrationTestCase):
 		"Notification Log",
 		"Billing Event",
 		"Billing Run",
+		"Billing Run Team",
 	)
 
 	# Payment Gateway is a fixed roster (one row per adapter), not something a test

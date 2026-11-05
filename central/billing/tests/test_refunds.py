@@ -178,7 +178,7 @@ class TestPrePaymentCorrection(RefundTestBase):
 		reissued = invoicing.reissue_invoice(first, reason="wrong cluster")
 		self.assertNotEqual(reissued, first)
 		self.assertEqual(frappe.db.get_value("Invoice", first, "status"), "Cancelled")
-		self.assertEqual(frappe.db.get_value("Invoice", reissued, "status"), "Draft")
+		self.assertEqual(frappe.db.get_value("Invoice", reissued, "status"), "Outstanding")
 
 	def test_cannot_cancel_a_paid_invoice(self):
 		inv, _ = self._paid_invoice_with_attempt(1000)
