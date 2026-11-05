@@ -18,6 +18,19 @@ from frappe.model.document import Document
 LAST_SUSPENSION_DAY = 28
 
 
+def validate_suspension_day(day: int | str | None) -> None:
+	"""The suspension day is after the last payment day and exists in every month."""
+	from central.billing.doctype.billing_profile.billing_profile import LAST_PAYMENT_DAY
+
+	if not LAST_PAYMENT_DAY < frappe.utils.cint(day) <= LAST_SUSPENSION_DAY:
+		frappe.throw(
+			_("Suspension Day must be from the {0}th to the {1}th of the month.").format(
+				LAST_PAYMENT_DAY + 1, LAST_SUSPENSION_DAY
+			),
+			title=_("Invalid Dunning Ladder"),
+		)
+
+
 class BillingSettings(Document):
 	def onload(self):
 		from central.billing.ingester.connection import enabled
@@ -78,17 +91,9 @@ class BillingSettings(Document):
 		1. Retries are at least 1 day apart.
 		2. The suspension day is after the last payment day and exists in every month.
 		3. Termination is due at least 1 day after suspension."""
-		from central.billing.doctype.billing_profile.billing_profile import LAST_PAYMENT_DAY
-
 		if frappe.utils.cint(self.dunning_retry_interval_days) < 1:
 			frappe.throw(_("Retry Every must be at least 1 day."), title=_("Invalid Dunning Ladder"))
-		if not LAST_PAYMENT_DAY < frappe.utils.cint(self.suspension_day) <= LAST_SUSPENSION_DAY:
-			frappe.throw(
-				_("Suspension Day must be from the {0}th to the {1}th of the month.").format(
-					LAST_PAYMENT_DAY + 1, LAST_SUSPENSION_DAY
-				),
-				title=_("Invalid Dunning Ladder"),
-			)
+		validate_suspension_day(self.suspension_day)
 		if frappe.utils.cint(self.terminate_after_days) < 1:
 			frappe.throw(_("Terminate After must be at least 1 day."), title=_("Invalid Dunning Ladder"))
 

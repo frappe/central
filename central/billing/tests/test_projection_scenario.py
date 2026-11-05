@@ -170,6 +170,11 @@ class TestSavingAScenario(ScenarioTestBase):
 		for dt, count in before.items():
 			self.assertEqual(frappe.db.count(dt), count, dt)
 
+	def test_a_suspension_day_that_is_not_in_every_month_is_refused(self):
+		for day in (10, 29):
+			with self.subTest(day=day), self.assertRaises(frappe.ValidationError):
+				self._scenario(suspension_day=day)
+
 	def test_the_writable_surface_is_exactly_one_doctype(self):
 		self.assertEqual(set(scenario.WRITABLE), {"Billing Scenario"})
 

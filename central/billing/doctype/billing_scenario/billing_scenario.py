@@ -10,6 +10,8 @@ costs nobody their real configuration.
 import frappe
 from frappe.model.document import Document
 
+from central.billing.doctype.billing_settings.billing_settings import validate_suspension_day
+
 # The fields that stand in for Billing Settings while a projection runs.
 OVERRIDE_FIELDS = (
 	"dunning_retry_interval_days",
@@ -25,6 +27,9 @@ class BillingScenario(Document):
 		self.months = max(1, min(frappe.utils.cint(self.months) or 1, 24))
 		if self.outcome_mode != "Assumed":
 			self.assume = None
+		# A blank day reads the live setting, which Billing Settings has already checked.
+		if self.suspension_day:
+			validate_suspension_day(self.suspension_day)
 
 	def rate_overrides_applied(self) -> list[dict]:
 		"""The pretended prices, as the pricing seam wants them."""
