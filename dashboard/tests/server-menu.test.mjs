@@ -90,7 +90,7 @@ test('Contact support sits beside Copy server ID and names the server and its si
 
 	assert.deepEqual([...labels], ['Copy server ID', 'Contact support'])
 	const [context] = supportContexts
-	assert.equal(context.Server, 'acme (vm-1)')
+	assert.equal(context.Server, undefined)
 	assert.equal(context.Site, 'acme.test')
 	assert.equal(context.server.resource_id, 'vm-1')
 	assert.equal(context.server.title, 'acme')

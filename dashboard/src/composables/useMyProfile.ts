@@ -9,6 +9,7 @@ interface MyProfile {
 	user: string
 	full_name: string
 	user_image: string | null
+	email: string | null
 }
 
 const profileCall = useCall<MyProfile>({

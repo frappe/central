@@ -20,66 +20,78 @@ export type SupportContext = Record<
 
 export type SupportCategoryKey = 'server' | 'site' | 'billing' | 'account'
 
-export interface SupportCategory {
-	label: string
-	/** One line under the card in the dialog. */
+/** What the dialog shows for a category. The catalog, and its issues, come from Central. */
+export interface SupportCategoryDetails {
 	description: string
 	icon: string
-	/** Mirrors central.api.support.SUPPORT_CATEGORIES, which validates every ticket. */
-	issues: readonly string[]
 }
 
-export const SUPPORT_CATEGORIES: Record<SupportCategoryKey, SupportCategory> = {
+export const SUPPORT_CATEGORY_DETAILS: Record<
+	SupportCategoryKey,
+	SupportCategoryDetails
+> = {
 	server: {
-		label: 'Server',
 		description: 'Power, disk, network, or console trouble.',
 		icon: 'lucide-server',
-		issues: [
-			'Unreachable or down',
-			'Slow performance or high load',
-			'Resize, disk, or plan',
-			'SSH, console, or networking',
-			'Snapshots or backups',
-			'Other server issue',
-		],
 	},
 	site: {
-		label: 'Site & app',
 		description: 'Setup, domains, apps, or email delivery.',
 		icon: 'lucide-globe',
-		issues: [
-			'Site setup or provisioning failed',
-			'Domain, DNS, or SSL certificate',
-			'App installation or update',
-			'Sign-in or administrator access',
-			'Email delivery',
-			'Other site issue',
-		],
 	},
 	billing: {
-		label: 'Billing & plans',
 		description: 'Invoices, payments, credits, or plans.',
 		icon: 'lucide-credit-card',
-		issues: [
-			'Invoice or tax question',
-			'Payment method or failed charge',
-			'Credits or spending limit',
-			'Plan or subscription',
-			'Other billing question',
-		],
 	},
 	account: {
-		label: 'Account & team',
 		description: 'Sign-in, members, roles, or managed services.',
 		icon: 'lucide-users',
-		issues: [
-			'Sign-in or verification',
-			'Team members, roles, or invitations',
-			'Object storage or LLM service',
-			'Team suspension or archive',
-			'Other account question',
-		],
 	},
+}
+
+export interface SupportIssueOption {
+	label: string
+	is_critical: boolean
+}
+
+export interface SupportCategoryOption {
+	key: SupportCategoryKey
+	label: string
+	issues: SupportIssueOption[]
+}
+
+export interface SupportArticle {
+	name: string
+	title: string
+	excerpt: string
+	category: string | null
+	url: string
+}
+
+export interface SupportRelatedTicket {
+	name: string
+	subject: string
+	status: string | null
+	url: string
+}
+
+export interface SupportRelatedResults {
+	articles: SupportArticle[]
+	tickets: SupportRelatedTicket[]
+}
+
+export interface SupportTicket {
+	name: string
+	subject: string
+	status: string
+	creation?: string | null
+	url?: string | null
+}
+
+/** `Production Web (vm-1)`, or the id alone when the server has no title. */
+export function getServerReference(server: SupportServer): string {
+	return server.title
+		? `${server.title} (${server.resource_id})`
+		: server.resource_id
 }
 
 /** The dialog sits above the page, so its state is shared: any surface that offers
@@ -191,11 +203,20 @@ export function useSupport() {
 }
 
 /** `[Server: acme (vm-1) · Site: acme.test] `, ending in a space so the customer types on.
- *  A structured value, such as the server itself, is context for the dialog, not the subject. */
+ *  A structured server is named from its title and resource id, so callers pass it once. */
 export function getTicketSubject(context: SupportContext): string {
+	const server = getSupportServer(context)
 	const parts = Object.entries(context)
-		.filter(([, value]) => typeof value === 'string' && value)
+		.filter(
+			([label, value]) =>
+				label !== 'server' &&
+				!(server && label === 'Server') &&
+				typeof value === 'string' &&
+				value,
+		)
 		.map(([label, value]) => `${label}: ${value}`)
+	if (server) parts.unshift(`Server: ${getServerReference(server)}`)
+
 	return parts.length ? `[${parts.join(' · ')}] ` : ''
 }
 
