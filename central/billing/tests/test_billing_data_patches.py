@@ -28,7 +28,9 @@ from central.patches.v0_0 import (
 	move_internal_flag_to_billing_profile,
 	remove_webhook_events_of_another_product,
 	repoint_billing_records_to_renamed_region,
+	set_dunning_ladder_settings,
 	set_payment_date_on_open_invoices,
+	set_suspension_date_on_open_invoices,
 	start_billing_run_outcomes_and_minimum_invoices,
 )
 
@@ -196,6 +198,76 @@ class TestSetPaymentDateOnOpenInvoices(IntegrationTestCase):
 
 		self.assertEqual(str(frappe.db.get_value("Invoice", open_invoice, "payment_date")), "2026-06-03")
 		self.assertEqual(str(frappe.db.get_value("Invoice", dated, "payment_date")), "2026-05-05")
+
+
+class TestSetSuspensionDateOnOpenInvoices(IntegrationTestCase):
+	def setUp(self):
+		ensure_team(TEAM)
+		singles = frappe.qb.DocType("Singles")
+		stored = (
+			frappe.qb.from_(singles)
+			.select(singles.value)
+			.where(singles.doctype == "Billing Settings")
+			.where(singles.field == "suspend_after_days")
+			.run(pluck=True)
+		)
+		self.addCleanup(self._store_old_suspend_after_days, stored[0] if stored else None)
+
+	def _store_old_suspend_after_days(self, value) -> None:
+		"""The removed field lives on only as a Singles row, so the test writes that row."""
+		singles = frappe.qb.DocType("Singles")
+		frappe.qb.from_(singles).delete().where(singles.doctype == "Billing Settings").where(
+			singles.field == "suspend_after_days"
+		).run()
+		if value is not None:
+			frappe.qb.into(singles).columns(singles.doctype, singles.field, singles.value).insert(
+				"Billing Settings", "suspend_after_days", value
+			).run()
+
+	def test_an_open_invoice_keeps_the_suspension_date_of_the_old_ladder(self):
+		self._store_old_suspend_after_days("12")
+		deferred = _insert_invoice(
+			"Outstanding", "2026-05-31", due_date="2026-06-08", dunning_starts_on="2026-06-10"
+		)
+		overdue = _insert_invoice("Overdue", "2026-04-30", due_date="2026-05-08")
+		dated = _insert_invoice("Outstanding", "2026-03-31", due_date="2026-04-08", suspends_on="2026-04-15")
+		paid = _insert_invoice("Paid", "2026-02-28", due_date="2026-03-08")
+
+		set_suspension_date_on_open_invoices.execute()
+
+		suspends_on = {
+			name: str(frappe.db.get_value("Invoice", name, "suspends_on") or "")
+			for name in (deferred, overdue, dated, paid)
+		}
+		self.assertEqual(suspends_on[deferred], "2026-06-22")
+		self.assertEqual(suspends_on[overdue], "2026-05-20")
+		self.assertEqual(suspends_on[dated], "2026-04-15")
+		self.assertEqual(suspends_on[paid], "")
+		self.assertEqual(str(frappe.db.get_value("Invoice", deferred, "dunning_starts_on")), "2026-06-10")
+
+	def test_an_unsaved_old_setting_reads_as_its_default(self):
+		self._store_old_suspend_after_days(None)
+		invoice = _insert_invoice("Outstanding", "2026-05-31", due_date="2026-06-08")
+
+		set_suspension_date_on_open_invoices.execute()
+
+		self.assertEqual(str(frappe.db.get_value("Invoice", invoice, "suspends_on")), "2026-06-22")
+
+
+class TestSetDunningLadderSettings(IntegrationTestCase):
+	def test_the_ladder_suspends_on_the_15th_and_terminates_10_days_later(self):
+		names = ("dunning_retry_interval_days", "suspension_day", "terminate_after_days")
+		before = {name: frappe.db.get_single_value("Billing Settings", name) for name in names}
+		self.addCleanup(frappe.db.set_single_value, "Billing Settings", before)
+		frappe.db.set_single_value(
+			"Billing Settings",
+			{"dunning_retry_interval_days": 5, "suspension_day": 20, "terminate_after_days": 30},
+		)
+
+		set_dunning_ladder_settings.execute()
+
+		after = {name: frappe.db.get_single_value("Billing Settings", name) for name in names}
+		self.assertEqual(after, dict(zip(names, (2, 15, 10), strict=True)))
 
 
 class TestStartBillingRunOutcomes(IntegrationTestCase):
