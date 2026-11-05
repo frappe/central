@@ -17,7 +17,9 @@ def _set_mode(team, mode):
 	doc.save(ignore_permissions=True)
 
 
-class TestEmandatePredebit(IntegrationTestCase):
+class EmandateTestBase(IntegrationTestCase):
+	"""An Auto Charge INR team with an active UPI Autopay mandate."""
+
 	def setUp(self):
 		from central.billing.tests.test_razorpay_adapter import make_razorpay_gateway
 
@@ -70,6 +72,8 @@ class TestEmandatePredebit(IntegrationTestCase):
 			.name
 		)
 
+
+class TestEmandatePredebit(EmandateTestBase):
 	def test_schedule_predebit_notifies_and_arms_window(self):
 		inv = self._invoice(5000)
 		out = emandate.schedule_predebit(inv, now="2026-06-10 09:00:00")

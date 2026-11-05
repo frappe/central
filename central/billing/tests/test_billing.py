@@ -360,6 +360,23 @@ class TestOpenAndCollect(BillingTestBase):
 		self.assertEqual(len(debits), 1)
 
 
+class TestInvoiceWaitsForThePaymentDay(BillingTestBase):
+	def test_credits_apply_on_opening_and_the_card_waits_for_the_payment_day(self):
+		frappe.db.set_value("Billing Profile", TEAM, "payment_day", 10)
+		credits.purchase(TEAM, 400, "INR")
+		add_segment(self.sub, "Created", 1000, "2026-06-01 00:00:00")
+		name = invoicing.generate_draft_invoice(self.sub, "2026-06-01", "2026-06-30")
+
+		with self.freeze_time("2026-07-01 02:00:00"):
+			invoicing.open_and_collect(name)
+
+		inv = frappe.get_doc("Invoice", name)
+		self.assertEqual((inv.credit_applied, inv.expected_collection), (400.0, 600.0))
+		self.assertEqual(str(inv.payment_date), "2026-07-10")
+		self.assertGreaterEqual(str(inv.due_date), "2026-07-10")
+		self.assertEqual(frappe.db.count("Payment Attempt", {"invoice": name}), 0)
+
+
 class TestCreditAddedAfterIssue(BillingTestBase):
 	"""Credit that lands after an invoice is issued pays that invoice, not next month's."""
 

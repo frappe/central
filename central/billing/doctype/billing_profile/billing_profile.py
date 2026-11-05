@@ -2,6 +2,7 @@
 # For license information, please see license.txt
 
 import re
+from datetime import date
 
 import frappe
 from frappe import _
@@ -26,6 +27,10 @@ GSTIN_RE = re.compile(r"^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}
 PHONE_RE = re.compile(r"^\+?[0-9]{8,15}$")
 INDIAN_MOBILE_RE = re.compile(r"^(?:\+?91)?[6-9][0-9]{9}$")
 _SYSTEM_SAVEPOINT = "billing_profile_system_save"
+# The card is charged on a day from the 1st to the 10th, so a failed charge still has
+# its retries before the dunning ladder suspends the team.
+LAST_PAYMENT_DAY = 10
+PAYMENT_DAY_CHANGES_PER_CYCLE = 2
 REQUIRED_FIELDS = ("currency", "legal_name", "address_line1", "city", "country")
 FIELD_LABELS = {
 	"currency": "currency",
@@ -74,6 +79,14 @@ def get_team_currency(team: str) -> str:
 
 	segment_currency = next((row.currency for row in team_active_segments(team) if row.currency), None)
 	return segment_currency or "INR"
+
+
+def get_payment_date(team: str, opened_on) -> date:
+	"""The date an invoice opened on `opened_on` is charged: the team's payment day in that
+	month, or `opened_on` itself when the run opened the invoice after that day."""
+	opened_on = frappe.utils.getdate(opened_on)
+	day = frappe.db.get_value("Billing Profile", team, "payment_day") or 1
+	return max(opened_on, opened_on.replace(day=min(day, LAST_PAYMENT_DAY)))
 
 
 def get_missing_fields(team: str) -> list[str]:
@@ -143,6 +156,9 @@ class BillingProfile(Document):
 		legal_name: DF.Data | None
 		manual_override: DF.Check
 		min_balance: DF.Currency
+		payment_day: DF.Int
+		payment_day_changes: DF.Int
+		payment_day_changes_cycle: DF.Date | None
 		override_max_spend: DF.Currency
 		phone: DF.Data | None
 		pincode: DF.Data | None
@@ -167,6 +183,7 @@ class BillingProfile(Document):
 		self.pin_tier_set_by_hand()
 		self.sync_tier_fields()
 		self.validate_internal_flag()
+		self.validate_payment_day()
 
 	def after_insert(self):
 		from central.billing.states import record_event
@@ -181,6 +198,45 @@ class BillingProfile(Document):
 		self.refresh_gst_status_on_change()
 		self.enqueue_profile_sync()
 		self.apply_tier_change()
+
+	def validate_payment_day(self):
+		if not 1 <= frappe.utils.cint(self.payment_day) <= LAST_PAYMENT_DAY:
+			frappe.throw(
+				_("Choose a payment day from the 1st to the {0}th of the month.").format(LAST_PAYMENT_DAY),
+				frappe.ValidationError,
+			)
+
+	def get_payment_day_changes_left(self) -> int:
+		"""Changes the customer can still make in the current billing cycle."""
+		cycle = self.payment_day_changes_cycle
+		if not cycle or frappe.utils.getdate(cycle) != frappe.utils.get_first_day(frappe.utils.nowdate()):
+			return PAYMENT_DAY_CHANGES_PER_CYCLE
+		return max(0, PAYMENT_DAY_CHANGES_PER_CYCLE - frappe.utils.cint(self.payment_day_changes))
+
+	def change_payment_day(self, day: int) -> None:
+		"""Set the day the next invoice is charged on.
+
+		1. The day is from the 1st to the 10th (`validate_payment_day`).
+		2. The same day again is not a change.
+		3. A team changes it at most twice in one billing cycle. The count starts
+		   again when a new cycle starts.
+		"""
+		day = frappe.utils.cint(day)
+		if day == frappe.utils.cint(self.payment_day):
+			return
+
+		changes_left = self.get_payment_day_changes_left()
+		if not changes_left:
+			frappe.throw(
+				_(
+					"You can change the payment date twice in a billing cycle. You can change it again next month."
+				),
+				frappe.ValidationError,
+			)
+
+		self.payment_day_changes = PAYMENT_DAY_CHANGES_PER_CYCLE - changes_left + 1
+		self.payment_day_changes_cycle = frappe.utils.get_first_day(frappe.utils.nowdate())
+		self.payment_day = day
 
 	def save_as_system(self, action: str) -> None:
 		"""Save a change billing code makes for `action`. A stored field that no longer passes

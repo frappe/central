@@ -262,6 +262,7 @@ Dunning, reconciliation, the e-mandate cycle, credit expiry, card expiry, accoun
 | hourly | `platform.alerts.run_operator_alerts` | alert operators (invariants, readiness, failed webhooks, stale attempts, unsettled captures, held invoices, failed refunds, failed accounting syncs) |
 | monthly | `revenue.invoicing.draft_monthly_invoices` | waive internal teams' unpaid invoices, then draft the just-closed month as page jobs on the `billing` queue |
 | hourly | `revenue.invoicing.collect_due_invoices` | collect every uncollected invoice whose month has closed, as page jobs; record progress on the Billing Run |
+| hourly | `payments.collection.collect_on_payment_date` | charge each open invoice on its payment date; a pre-debit rail is started one day early to send its notice |
 | hourly | `ingester.erpnext_sync.retry_failed_syncs` | retry Sales Invoice push (backoff window elapsed) |
 | monthly | `payments.payments.expire_payment_methods` | flip cards past their printed month |
 
@@ -513,6 +514,8 @@ flowchart TD
 A held draft is released when the profile is complete. `Billing Profile.on_update` calls `release_held_invoices`, which enqueues `run.release_held_drafts` to settle the held drafts. When a draft waits longer than `Billing Settings.billing_details_grace_days`, the team stops being credit-funded for new spend (`settlement.details_overdue`), and `platform.alerts.held_invoices` pages operators.
 
 Both ticks use `draft_team_page` and `settle_draft_page` page jobs (see §3).
+
+**The card is charged on the payment day.** Each team has a payment day from the 1st to the 10th on its Billing Profile (default 1). When an invoice opens, wallet credits apply at once and the invoice gets a `payment_date`: the payment day of the month it opened in, or the opening date when the run is late. The due date is never before the payment date. No rail debits before the payment date (`emandate.await_predebit`). A rail that owes the RBI pre-debit notice sends it 24 hours before the payment date, so the debit lands on that date. The hourly `collection.collect_on_payment_date` starts collection on each invoice that has no payment attempt and has not reached its due date. After the due date, dunning owns the retries. The customer changes the payment day at most twice in a billing cycle (`BillingProfile.change_payment_day`). The change applies to the next invoice; an open invoice keeps its date.
 
 ### C. Collect / settle a charge
 ```mermaid

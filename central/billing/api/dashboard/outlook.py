@@ -19,6 +19,7 @@ import frappe
 from frappe import _
 
 from central.billing.api.dashboard._shared import _resolve_team, _team_currency
+from central.billing.doctype.billing_profile.billing_profile import get_payment_date
 from central.billing.doctype.invoice.invoice import owed_filters
 
 # Customer-facing copy for the findings the engine can raise. `fix` is the sentence
@@ -73,11 +74,11 @@ def get_next_payment(team: str | None = None) -> dict:
 	invoice = _next_collectable_invoice(team)
 	if invoice:
 		amount = frappe.utils.flt(invoice.expected_collection)
-		charge_on = invoice.predebit_charge_after or invoice.due_date
+		charge_on = invoice.predebit_charge_after or invoice.payment_date or invoice.due_date
 		period_end = invoice.period_end
 	else:
 		amount, period_end = _projected_collectable(team, today)
-		charge_on = frappe.utils.add_days(period_end, 1)
+		charge_on = get_payment_date(team, frappe.utils.add_days(period_end, 1))
 
 	blockers = _blockers(team, amount, currency, charge_on, today)
 	return {
@@ -119,7 +120,14 @@ def _next_collectable_invoice(team: str):
 			["invoice_type", "=", "Billable"],
 			["expected_collection", ">", 0],
 		],
-		fields=["name", "expected_collection", "due_date", "period_end", "predebit_charge_after"],
+		fields=[
+			"name",
+			"expected_collection",
+			"due_date",
+			"payment_date",
+			"period_end",
+			"predebit_charge_after",
+		],
 		order_by="due_date asc",
 		limit=1,
 	)

@@ -119,6 +119,43 @@ def collect_invoice(invoice: str, new_round: bool = False, now: datetime | str |
 			return outcome
 
 
+def collect_on_payment_date(now: datetime | str | None = None) -> list[dict]:
+	"""Hourly: start collection on every invoice whose payment date has come.
+
+	The invoice opens on the 1st and waits for the team's payment day. An invoice is
+	picked up a day early, so a rail that owes a pre-debit notice sends it in time to
+	debit on the payment date. Only invoices with no payment attempt are picked up,
+	and only until their due date: after that, dunning owns the retries.
+	"""
+	from central.billing.doctype.invoice.invoice import owed_filters
+	from central.billing.platform.jobs import each_isolated
+
+	now_dt = frappe.utils.get_datetime(now) if now else frappe.utils.now_datetime()
+	today = now_dt.date()
+	waiting = frappe.get_all(
+		"Invoice",
+		filters=[
+			*owed_filters(),
+			["invoice_type", "=", "Billable"],
+			["expected_collection", ">", 0],
+			["payment_date", "<=", frappe.utils.add_days(today, 1)],
+			["due_date", ">=", today],
+		],
+		pluck="name",
+	)
+	tried = set(
+		frappe.get_all("Payment Attempt", filters={"invoice": ["in", waiting]}, pluck="invoice")
+		if waiting
+		else []
+	)
+	return each_isolated(
+		"Collect on payment date",
+		"Invoice",
+		[name for name in waiting if name not in tried],
+		lambda name: {"invoice": name, **collect_invoice(name, now=now_dt)},
+	)
+
+
 def _charge_next_method(
 	inv, earlier: set | None, skipped: set, now: datetime | str | None = None
 ) -> dict | None:

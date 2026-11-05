@@ -15,6 +15,7 @@
   "period_start",
   "period_end",
   "due_date",
+  "payment_date",
   "dunning_starts_on",
   "hold_reason",
   "period_key",
@@ -101,6 +102,13 @@
    "fieldname": "due_date",
    "fieldtype": "Date",
    "label": "Due Date"
+  },
+  {
+   "description": "The day the remainder after credits is charged to the payment method. Set from the team's payment day when the invoice opens.",
+   "fieldname": "payment_date",
+   "fieldtype": "Date",
+   "label": "Payment Date",
+   "read_only": 1
   },
   {
    "fieldname": "dunning_starts_on",
@@ -380,7 +388,7 @@
    "link_fieldname": "invoice"
   }
  ],
- "modified": "2026-10-25 12:00:00.000000",
+ "modified": "2026-11-05 16:30:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Invoice",

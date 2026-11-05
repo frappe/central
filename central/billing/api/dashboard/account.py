@@ -21,6 +21,7 @@ from central.billing.api.dashboard._shared import (
 	_team_resource_count,
 	currency_for_country,
 )
+from central.billing.doctype.billing_profile.billing_profile import PAYMENT_DAY_CHANGES_PER_CYCLE
 from central.billing.revenue import gst_status
 
 
@@ -183,20 +184,35 @@ def save_billing_profile(team: str | None = None, **fields) -> dict:
 
 @frappe.whitelist()
 def get_billing_settings(team: str | None = None) -> dict:
-	"""Alert thresholds. (Payment mode was removed — billing is credits-first-then-
-	card for every team, so there is no prepaid/postpaid switch.)"""
+	"""Alert thresholds and the payment day. (Payment mode was removed — billing is
+	credits-first-then-card for every team, so there is no prepaid/postpaid switch.)"""
 	team = _resolve_team(team)
 	if not frappe.db.exists("Billing Profile", team):
-		return {"team": team, "min_balance": 0, "spend_alert_threshold": 0}
+		return {
+			"team": team,
+			"min_balance": 0,
+			"spend_alert_threshold": 0,
+			"payment_day": 1,
+			"payment_day_changes_left": PAYMENT_DAY_CHANGES_PER_CYCLE,
+		}
 	p = frappe.get_doc("Billing Profile", team)
-	return {"team": team, "min_balance": p.min_balance, "spend_alert_threshold": p.spend_alert_threshold}
+	return {
+		"team": team,
+		"min_balance": p.min_balance,
+		"spend_alert_threshold": p.spend_alert_threshold,
+		"payment_day": p.payment_day,
+		"payment_day_changes_left": p.get_payment_day_changes_left(),
+	}
 
 
 @frappe.whitelist(methods=["POST"])
 def save_billing_settings(
-	team: str | None = None, min_balance: float | None = None, spend_alert_threshold: float | None = None
+	team: str | None = None,
+	min_balance: float | None = None,
+	spend_alert_threshold: float | None = None,
+	payment_day: int | None = None,
 ) -> dict:
-	"""Update the low-balance / spend alert thresholds."""
+	"""Update the low-balance / spend alert thresholds and the payment day."""
 	team = _resolve_team(team, authz.MANAGE)
 	if frappe.db.exists("Billing Profile", team):
 		doc = frappe.get_doc("Billing Profile", team)
@@ -206,6 +222,9 @@ def save_billing_settings(
 		doc.min_balance = frappe.utils.flt(min_balance)
 	if spend_alert_threshold is not None:
 		doc.spend_alert_threshold = frappe.utils.flt(spend_alert_threshold)
+	if payment_day is not None:
+		doc.change_payment_day(payment_day)
+	# The team's billing:manage capability was checked above; Billing Profile has no team role.
 	doc.save(ignore_permissions=True)
 	return {"saved": True}
 
