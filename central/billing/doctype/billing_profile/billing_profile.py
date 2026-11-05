@@ -235,8 +235,7 @@ class BillingProfile(Document):
 		if day == frappe.utils.cint(self.payment_day):
 			return
 
-		changes_left = self.get_payment_day_changes_left()
-		if not changes_left:
+		if not self.get_payment_day_changes_left():
 			frappe.throw(
 				_(
 					"You can change the payment date {0} times in a billing cycle. You can change it again next month."
@@ -244,8 +243,12 @@ class BillingProfile(Document):
 				frappe.ValidationError,
 			)
 
-		self.payment_day_changes = PAYMENT_DAY_CHANGES_PER_CYCLE - changes_left + 1
-		self.payment_day_changes_cycle = frappe.utils.get_first_day(frappe.utils.nowdate())
+		cycle = frappe.utils.get_first_day(frappe.utils.nowdate())
+		last_cycle = self.payment_day_changes_cycle
+		if not last_cycle or frappe.utils.getdate(last_cycle) != cycle:
+			self.payment_day_changes = 0
+		self.payment_day_changes = frappe.utils.cint(self.payment_day_changes) + 1
+		self.payment_day_changes_cycle = cycle
 		self.payment_day = day
 
 	def save_as_system(self, action: str) -> None:
