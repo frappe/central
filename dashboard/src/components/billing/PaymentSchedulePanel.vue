@@ -5,6 +5,7 @@ import { API, method } from '@/api/methods'
 import PaymentDayForm from '@/components/billing/PaymentDayForm.vue'
 import SidePanel from '@/components/common/SidePanel.vue'
 import { useBillingOverview } from '@/composables/useBillingOverview'
+import { useCapabilities } from '@/composables/useCapabilities'
 import { useSession } from '@/composables/useSession'
 import { shortDate } from '@/lib/date'
 import { getDunningStep } from '@/lib/dunning'
@@ -22,6 +23,7 @@ import type { PaymentSchedule } from '@/types/billing'
 const open = defineModel<boolean>('open', { default: false })
 const { activeTeam } = useSession()
 const { nextPayment } = useBillingOverview()
+const { canManageBilling } = useCapabilities()
 
 const schedule = useCall<PaymentSchedule, { team: string }>({
 	url: method(API.paymentSchedule),
@@ -65,7 +67,7 @@ const chargeStep = computed(
 		<LoadingText v-if="loading" :lines="5" class="p-4" />
 
 		<template v-else>
-			<div class="border-b border-outline-gray-2 p-4">
+			<div v-if="canManageBilling" class="border-b border-outline-gray-2 p-4">
 				<PaymentDayForm :open="open" @saved="onPaymentDaySaved" />
 			</div>
 
