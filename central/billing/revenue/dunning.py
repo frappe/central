@@ -30,6 +30,7 @@ from central.billing.catalog import subscriptions
 from central.billing.doctype.billing_profile.billing_profile import (
 	LAST_PAYMENT_DAY,
 	get_due_date,
+	get_due_date_for,
 	get_payment_date,
 )
 from central.billing.doctype.invoice.invoice import OUTSTANDING, UNSETTLED, is_issued, owed_filters
@@ -138,12 +139,22 @@ def dunning_policy() -> frappe._dict:
 
 
 def get_last_payment_day_with_retries() -> int:
-	"""The last payment day whose first interval retry still falls on or before the due date
-	of an invoice opened on the 1st. A later payment day gets one retry, 1 day after it."""
+	"""The last payment day whose ladder has an interval retry, for an invoice opened on the
+	1st. A later payment day gets the single retry."""
+	opened_on = frappe.utils.getdate(frappe.utils.get_first_day(frappe.utils.nowdate()))
 	interval = settings.dunning_retry_interval_days()
-	due_day = 1 + settings.invoice_due_days()
-	days = [day for day in range(1, LAST_PAYMENT_DAY + 1) if day + interval <= max(due_day, day)]
+	days = [
+		day
+		for day in range(1, LAST_PAYMENT_DAY + 1)
+		if get_interval_retry_dates(_get_reference_ladder_dates(opened_on, day), interval)
+	]
 	return max(days, default=0)
+
+
+def _get_reference_ladder_dates(opened_on: date, payment_day: int) -> frappe._dict:
+	"""The ladder dates of an invoice opened on `opened_on`, charged on `payment_day` of that month."""
+	payment_date = max(opened_on, opened_on.replace(day=payment_day))
+	return frappe._dict(anchor=payment_date, retry_until=get_due_date_for(opened_on, payment_date))
 
 
 # Stages that land on the same day still have an order: a retry is attempted before
@@ -162,7 +173,9 @@ def dunning_schedule(dates: frappe._dict, policy=None) -> list[frappe._dict]:
 	"""
 	policy = policy or dunning_policy()
 	anchor = frappe.utils.getdate(dates.anchor)
-	retries = _retry_dates(anchor, dates.retry_until, policy.retry_interval)
+	retries = get_interval_retry_dates(dates, policy.retry_interval) or [
+		frappe.utils.getdate(frappe.utils.add_days(anchor, 1))
+	]
 	suspends_on = frappe.utils.getdate(dates.suspends_on)
 
 	stages = [frappe._dict(stage="Retry", attempt=n, date=on) for n, on in enumerate(retries, start=1)]
@@ -180,16 +193,17 @@ def dunning_schedule(dates: frappe._dict, policy=None) -> list[frappe._dict]:
 	return sorted(stages, key=lambda s: (s.date, _STAGE_ORDER[s.stage]))
 
 
-def _retry_dates(anchor, retry_until, interval: int) -> list:
-	"""Every `interval` days after the anchor up to `retry_until`, or one retry the next day."""
-	retry_until = frappe.utils.getdate(retry_until)
+def get_interval_retry_dates(dates: frappe._dict, interval: int) -> list[date]:
+	"""Every `interval` days after the anchor, up to the end of the retry window. Empty when
+	none fits, and then the ladder has the single retry instead."""
+	retry_until = frappe.utils.getdate(dates.retry_until)
 	interval = max(1, frappe.utils.cint(interval))
-	dates = []
-	retry_on = frappe.utils.getdate(frappe.utils.add_days(anchor, interval))
+	retries = []
+	retry_on = frappe.utils.getdate(frappe.utils.add_days(dates.anchor, interval))
 	while retry_on <= retry_until:
-		dates.append(retry_on)
+		retries.append(retry_on)
 		retry_on = frappe.utils.getdate(frappe.utils.add_days(retry_on, interval))
-	return dates or [frappe.utils.getdate(frappe.utils.add_days(anchor, 1))]
+	return retries
 
 
 def stages_reached(schedule: list, on) -> set:

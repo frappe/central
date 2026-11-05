@@ -94,10 +94,15 @@ def get_payment_date(team: str, opened_on: date | str) -> date:
 
 
 def get_due_date(team: str, opened_on: date | str) -> date:
-	"""The date an invoice opened on `opened_on` falls due: the invoice due days after it
-	opens, and never before the day its card is charged."""
+	"""The date an invoice that `team` opens on `opened_on` falls due."""
+	return get_due_date_for(opened_on, get_payment_date(team, opened_on))
+
+
+def get_due_date_for(opened_on: date | str, payment_date: date | str) -> date:
+	"""The date an invoice opened on `opened_on` and charged on `payment_date` falls due: the
+	invoice due days after it opens, and never before the day it is charged."""
 	due_on = frappe.utils.getdate(frappe.utils.add_days(opened_on, settings.invoice_due_days()))
-	return max(due_on, get_payment_date(team, opened_on))
+	return max(due_on, frappe.utils.getdate(payment_date))
 
 
 def get_missing_fields(team: str) -> list[str]:

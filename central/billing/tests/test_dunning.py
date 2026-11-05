@@ -588,8 +588,9 @@ class TestTheLadderIsAList(DunningTestBase):
 		self.assertEqual(policy.terminate_after, 20)
 
 	def test_the_last_payment_day_with_interval_retries(self):
-		self.assertEqual(dunning.get_last_payment_day_with_retries(), 6)
-		with settings.overridden(dunning_retry_interval_days=1):
+		with settings.overridden(dunning_retry_interval_days=2, invoice_due_days=7):
+			self.assertEqual(dunning.get_last_payment_day_with_retries(), 6)
+		with settings.overridden(dunning_retry_interval_days=1, invoice_due_days=7):
 			self.assertEqual(dunning.get_last_payment_day_with_retries(), 7)
 
 	def test_drawing_the_ladder_touches_no_documents(self):
