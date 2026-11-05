@@ -457,15 +457,14 @@ class TestOurDelayIsNotTheirDelinquency(DunningTestBase):
 		with self.freeze_time(f"{day(3)} 03:00:00"):
 			dunning.defer_dunning(inv, "the run backed up")
 
-		row = frappe.db.get_value(
-			"Invoice", inv, ["payment_date", "due_date", "dunning_starts_on", "suspends_on"], as_dict=True
-		)
-		schedule = dunning.dunning_schedule(dunning.get_ladder_dates(row))
+		row = frappe.db.get_value("Invoice", inv, dunning.LADDER_FIELDS, as_dict=True)
+		dates = dunning.get_ladder_dates(row)
+		schedule = dunning.dunning_schedule(dates)
 		retries = [str(s.date) for s in schedule if s.stage == "Retry"]
 		self.assertEqual(str(row.dunning_starts_on), "2026-06-04")
 		self.assertEqual(retries, ["2026-06-06", "2026-06-08", "2026-06-10"])
 		self.assertEqual(str(row.suspends_on), "2026-06-18")
-		self.assertTrue(dunning.is_dunning_deferred(row))
+		self.assertTrue(dates.is_deferred)
 
 	def test_the_deferred_ladder_still_runs_from_the_fair_date(self):
 		sub = self._subscription()

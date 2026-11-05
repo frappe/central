@@ -24,7 +24,6 @@ from central.billing.revenue.dunning import (
 	dunning_policy,
 	dunning_schedule,
 	get_ladder_dates,
-	is_dunning_deferred,
 )
 
 # Modes in which nothing is charged off-session — dunning escalates without retrying, so
@@ -97,7 +96,7 @@ def rows(on=None, horizon_days: int | None = None, filters: dict | None = None) 
 				"clock_starts_on": str(dates.anchor),
 				# A deferred clock means *we* failed to collect on time. Saying so keeps
 				# the row from reading as the customer's delinquency.
-				"clock_deferred": is_dunning_deferred(invoice),
+				"clock_deferred": dates.is_deferred,
 				"days_in": (on - dates.anchor).days,
 				"stage": reached[-1].stage if reached else "Not yet due",
 				"next_action": next_stage.stage if next_stage else None,
@@ -124,18 +123,17 @@ def why(invoice: str, on=None) -> dict:
 	on = frappe.utils.getdate(on or frappe.utils.nowdate())
 	dates = get_ladder_dates(doc)
 	schedule = dunning_schedule(dates, dunning_policy())
-	deferred = is_dunning_deferred(doc)
 
 	return {
 		"invoice": invoice,
 		"team": doc.team,
 		"due_date": str(doc.due_date),
 		"clock_starts_on": str(dates.anchor),
-		"clock_deferred": deferred,
+		"clock_deferred": dates.is_deferred,
 		"deferred_note": (
 			"Collection failed on our side, so the escalation clock was pushed forward. "
 			"The due date is unchanged — what was owed and when is an accounting fact."
-			if deferred
+			if dates.is_deferred
 			else None
 		),
 		"days_in": (on - dates.anchor).days,

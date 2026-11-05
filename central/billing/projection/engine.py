@@ -27,7 +27,6 @@ from central.billing.revenue.dunning import (
 	dunning_schedule,
 	get_ladder_dates,
 	get_opening_ladder_dates,
-	is_dunning_deferred,
 )
 from central.billing.revenue.invoicing.generate import rate_team_period, team_clusters
 
@@ -223,7 +222,7 @@ def _in_flight(team: str, today) -> list[dict]:
 				"outstanding": inv.expected_collection,
 				"due_date": str(inv.due_date),
 				"clock_starts_on": str(dates.anchor),
-				"clock_deferred": is_dunning_deferred(inv),
+				"clock_deferred": dates.is_deferred,
 				"ladder": _ladder(dates),
 				"days_in": (today - dates.anchor).days,
 			}

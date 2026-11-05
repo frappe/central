@@ -83,6 +83,7 @@ def get_ladder_dates(invoice) -> frappe._dict:
 		anchor=anchor,
 		retry_until=frappe.utils.getdate(frappe.utils.add_days(due_date, shift)),
 		suspends_on=frappe.utils.getdate(suspends_on),
+		is_deferred=shift > 0,
 	)
 
 
@@ -92,6 +93,7 @@ def get_opening_ladder_dates(team: str, opened_on) -> frappe._dict:
 		anchor=get_payment_date(team, opened_on),
 		retry_until=get_due_date(team, opened_on),
 		suspends_on=get_suspension_date(team, opened_on),
+		is_deferred=False,
 	)
 
 
@@ -112,13 +114,6 @@ def get_suspension_date_after(month_of: date | str, retry_until: date | str) -> 
 		return on_suspension_day
 	gap = settings.suspension_day() - 1 - settings.invoice_due_days()
 	return frappe.utils.getdate(frappe.utils.add_days(retry_until, max(1, gap)))
-
-
-def is_dunning_deferred(invoice) -> bool:
-	"""`defer_dunning` moved the anchor past the payment date: collection failed on our side."""
-	anchor = invoice.get("dunning_starts_on")
-	payment_date = invoice.get("payment_date") or invoice.get("due_date")
-	return bool(anchor and payment_date) and frappe.utils.getdate(anchor) > frappe.utils.getdate(payment_date)
 
 
 def dunning_policy() -> frappe._dict:
