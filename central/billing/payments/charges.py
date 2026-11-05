@@ -19,7 +19,7 @@ from frappe import _
 
 from central.billing import settings
 from central.billing.doctype.invoice.invoice import is_issued
-from central.billing.doctype.payment_attempt.payment_attempt import gateway_hold_active
+from central.billing.doctype.payment_attempt.payment_attempt import gateway_hold_active, in_flight_condition
 from central.billing.gateways.base import GatewayError, GatewayTimeout, PaymentResult
 from central.billing.payments.decline import Failure
 from central.billing.platform.records import delete_billing_record, save_billing_record
@@ -363,10 +363,7 @@ def _first_in_flight(invoice: str, *conditions) -> str | None:
 		frappe.qb.from_(attempt)
 		.select(attempt.name)
 		.where(attempt.invoice == invoice)
-		.where(
-			attempt.status.isin(["Initiated", "Authorised"])
-			| ((attempt.status == "Captured") & attempt.completed_at.isnull())
-		)
+		.where(in_flight_condition(attempt))
 		.limit(1)
 	)
 	for condition in conditions:

@@ -46,9 +46,7 @@ def unpaid_invoices(filters: dict | None = None) -> list[frappe._dict]:
 		filters=conditions,
 		fields=[
 			"name",
-			"team",
 			"currency",
-			"status",
 			*LADDER_FIELDS,
 			"expected_collection",
 		],

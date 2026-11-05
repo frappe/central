@@ -11,6 +11,8 @@ from datetime import datetime
 
 import frappe
 from frappe.model.document import Document
+from frappe.query_builder import Case
+from frappe.query_builder.functions import Coalesce, Max, Min
 from pypika.terms import Criterion
 
 
@@ -37,6 +39,40 @@ def gateway_hold_active(attempt, now: datetime | None = None) -> Criterion:
 	Indian card's pre-debit notice), so it is not stuck until its hold ends."""
 	now = now or frappe.utils.now_datetime()
 	return attempt.gateway_hold_until.isnotnull() & (attempt.gateway_hold_until > now)
+
+
+def in_flight_condition(attempt) -> Criterion:
+	"""Query condition on the Payment Attempt table: the attempt has no outcome yet.
+
+	A capture still waiting for its settlement counts. A capture already settled does not."""
+	return attempt.status.isin(["Initiated", "Authorised"]) | (
+		(attempt.status == "Captured") & attempt.completed_at.isnull()
+	)
+
+
+def get_charge_outcomes(invoices: list[str]) -> dict[str, frappe._dict]:
+	"""For each invoice with a payment attempt: when its first charge failed
+	(`first_failed_at`, None when none failed) and whether a charge is in flight (`is_in_flight`).
+
+	A charge fails when its outcome arrives (`completed_at`), which for a debit the gateway
+	settles later is hours after the attempt was made."""
+	if not invoices:
+		return {}
+
+	attempt = frappe.qb.DocType("Payment Attempt")
+	failed_at = Case().when(attempt.status == "Failed", Coalesce(attempt.completed_at, attempt.creation))
+	rows = (
+		frappe.qb.from_(attempt)
+		.select(
+			attempt.invoice,
+			Min(failed_at).as_("first_failed_at"),
+			Max(Case().when(in_flight_condition(attempt), 1).else_(0)).as_("is_in_flight"),
+		)
+		.where(attempt.invoice.isin(invoices))
+		.groupby(attempt.invoice)
+		.run(as_dict=True)
+	)
+	return {row.invoice: row for row in rows}
 
 
 class PaymentAttempt(Document):

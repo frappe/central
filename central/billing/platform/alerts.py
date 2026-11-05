@@ -163,7 +163,6 @@ def termination_due() -> list[dict]:
 		filters={"invoice_type": "Billable", "status": "Overdue"},
 		fields=[
 			"name",
-			"team",
 			"currency",
 			"total",
 			*dunning.LADDER_FIELDS,

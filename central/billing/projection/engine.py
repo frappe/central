@@ -201,7 +201,6 @@ def _in_flight(team: str, today) -> list[dict]:
 		],
 		fields=[
 			"name",
-			"status",
 			*LADDER_FIELDS,
 			"expected_collection",
 			"currency",

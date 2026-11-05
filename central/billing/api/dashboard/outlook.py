@@ -136,7 +136,6 @@ def _owed_invoices(team: str) -> list[frappe._dict]:
 		],
 		fields=[
 			"name",
-			"status",
 			"expected_collection",
 			*LADDER_FIELDS,
 			"period_end",

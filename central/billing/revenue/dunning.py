@@ -8,8 +8,9 @@ anchor, `dunning_starts_on`). The days are the shipped defaults of Billing Setti
 
   Retries         every 2 days after the anchor, while the retry date is on or before
                   the invoice due date. When no retry fits, one retry 24 hours after the
-                  first charge failed, which the hourly sweep runs. Each is a new
-                  Payment Attempt, notified with the reason.
+                  first charge failed, which the hourly sweep runs. While a charge is
+                  awaited, this retry and Overdue wait for it. Each is a new Payment
+                  Attempt, notified with the reason.
   Last retry day  invoice -> Overdue, standing -> past_due. KEEP RUNNING (grace).
   Suspension      on the invoice's `suspends_on`: the 15th of the month it opened in.
                   Every server subscription -> suspended, and Central stops the team's
@@ -25,7 +26,6 @@ from datetime import date, datetime
 
 import frappe
 from frappe import _
-from frappe.query_builder.functions import Min
 
 from central.billing import settings
 from central.billing.catalog import subscriptions
@@ -36,12 +36,13 @@ from central.billing.doctype.billing_profile.billing_profile import (
 	get_payment_date,
 )
 from central.billing.doctype.invoice.invoice import OUTSTANDING, UNSETTLED, is_issued, owed_filters
+from central.billing.doctype.payment_attempt.payment_attempt import get_charge_outcomes
 from central.billing.platform.jobs import each_isolated
 from central.billing.platform.records import save_billing_record
 from central.billing.states import transition
 
 # The Invoice fields `get_ladder_dates` reads.
-LADDER_FIELDS = ("payment_date", "due_date", "dunning_starts_on", "suspends_on")
+LADDER_FIELDS = ("team", "status", "payment_date", "due_date", "dunning_starts_on", "suspends_on")
 
 
 def defer_dunning(invoice: str, reason: str) -> bool:
@@ -78,17 +79,32 @@ def get_ladder_dates(invoice) -> frappe._dict:
 
 
 def get_ladder_dates_by_invoice(invoices: list) -> dict[str, frappe._dict]:
-	"""The ladder dates of each issued invoice, by invoice name, read with one query.
+	"""The ladder dates of each issued invoice, by invoice name, with its charges read in one query.
 
-	Each carries the retry window (`_get_window_dates`) and `first_failed_at`, the time the
-	first charge failed, which times the single retry."""
-	first_failed_at = get_first_failed_at([invoice.name for invoice in invoices])
+	Each carries the retry window (`_get_window_dates`) and the two facts that time the single
+	retry: `first_failed_at`, when the first charge failed, and `is_awaiting_charge`."""
+	charges = get_charge_outcomes([invoice.name for invoice in invoices])
 	return {
 		invoice.name: frappe._dict(
-			_get_window_dates(invoice), first_failed_at=first_failed_at.get(invoice.name)
+			_get_window_dates(invoice),
+			first_failed_at=(charges.get(invoice.name) or {}).get("first_failed_at"),
+			is_awaiting_charge=_is_awaiting_charge(invoice, charges.get(invoice.name)),
 		)
 		for invoice in invoices
 	}
+
+
+def _is_awaiting_charge(invoice, charges: frappe._dict | None) -> bool:
+	"""The single retry and Overdue wait for a charge, so a debit still in flight cannot fail later
+	on an invoice that dunning already moved on. `charges` is the invoice's `get_charge_outcomes` row.
+
+	1. A charge is in flight: wait for its outcome.
+	2. A charge failed: the ladder counts from the failure.
+	3. A charge was made and none failed: wait.
+	4. No charge yet: wait when dunning can charge the invoice off-session (`has_retry_rail`)."""
+	if charges:
+		return bool(charges.is_in_flight) or not charges.first_failed_at
+	return has_retry_rail(invoice, invoice.team)
 
 
 def _get_window_dates(invoice) -> frappe._dict:
@@ -129,6 +145,7 @@ def get_opening_ladder_dates(team: str, opened_on) -> frappe._dict:
 		suspends_on=get_suspension_date(team, opened_on),
 		is_deferred=False,
 		first_failed_at=None,
+		is_awaiting_charge=False,
 	)
 
 
@@ -191,7 +208,8 @@ def dunning_schedule(dates: frappe._dict, policy=None) -> list[frappe._dict]:
 	Pure date arithmetic over the dates and the policy: no document reads and no writes.
 	`process_invoice_dunning` executes this schedule; anything that wants to *show* the
 	ladder without running it reads the same list. Each stage has the time it is reached
-	(`at`), its `date`, and its `day` counted from the anchor.
+	(`at`), its `date`, and its `day` counted from the anchor. A ladder that waits for a charge
+	(`get_retry_times`) has no Retry and no Overdue stage yet. Suspension still has its date.
 
 	Pass an explicit `policy` to ask what a different ladder would do.
 	"""
@@ -201,7 +219,8 @@ def dunning_schedule(dates: frappe._dict, policy=None) -> list[frappe._dict]:
 	suspends_on = frappe.utils.get_datetime(frappe.utils.getdate(dates.suspends_on))
 
 	stages = [frappe._dict(stage="Retry", attempt=n, at=at) for n, at in enumerate(retries, start=1)]
-	stages.append(frappe._dict(stage="Overdue", at=retries[-1]))
+	if retries:
+		stages.append(frappe._dict(stage="Overdue", at=retries[-1]))
 	stages.append(frappe._dict(stage="Suspend", at=suspends_on))
 	stages.append(
 		frappe._dict(stage="Terminate", at=frappe.utils.add_days(suspends_on, policy.terminate_after))
@@ -215,11 +234,17 @@ def dunning_schedule(dates: frappe._dict, policy=None) -> list[frappe._dict]:
 
 def get_retry_times(dates: frappe._dict, interval: int) -> list[datetime]:
 	"""When the ladder retries: the start of each interval retry day. When none fits, the
-	single retry, 24 hours after the first charge failed (`dates.first_failed_at`), or the day
-	after the anchor while no charge has failed."""
+	single retry:
+
+	1. None yet while the ladder waits for a charge (`dates.is_awaiting_charge`).
+	2. 24 hours after the first charge failed (`dates.first_failed_at`).
+	3. Otherwise (no charge and none dunning can make, or a projected invoice), the day after
+	   the anchor."""
 	interval_dates = get_interval_retry_dates(dates, interval)
 	if interval_dates:
 		return [frappe.utils.get_datetime(on) for on in interval_dates]
+	if dates.get("is_awaiting_charge"):
+		return []
 	if dates.get("first_failed_at"):
 		return [
 			frappe.utils.add_to_date(
@@ -246,22 +271,6 @@ def stages_reached(schedule: list, on) -> set:
 	"""The stage names reached by `on`. A date means the start of that day."""
 	now = frappe.utils.get_datetime(on)
 	return {s.stage for s in schedule if s.at <= now}
-
-
-def get_first_failed_at(invoices: list[str]) -> dict[str, datetime]:
-	"""The time of the first failed payment attempt of each invoice that has one."""
-	if not invoices:
-		return {}
-
-	attempt = frappe.qb.DocType("Payment Attempt")
-	return dict(
-		frappe.qb.from_(attempt)
-		.select(attempt.invoice, Min(attempt.creation))
-		.where(attempt.invoice.isin(invoices))
-		.where(attempt.status == "Failed")
-		.groupby(attempt.invoice)
-		.run()
-	)
 
 
 def _notify(invoice, message: str):
@@ -364,7 +373,7 @@ def process_invoice_dunning(invoice_name: str, now=None) -> dict:
 	days = (frappe.utils.getdate(now) - dates.anchor).days
 	schedule = dunning_schedule(dates)
 	reached = stages_reached(schedule, now)
-	if "Retry" not in reached:
+	if not reached:
 		return {"invoice": invoice_name, "days_overdue": days, "action": "none"}
 
 	from central.billing.catalog.subscriptions import anchor_subscription
@@ -381,6 +390,8 @@ def process_invoice_dunning(invoice_name: str, now=None) -> dict:
 		inv.reload()
 		if inv.status == "Paid":
 			return {"invoice": invoice_name, "days_overdue": days, "action": "paid"}
+		# A retry still in flight holds the single retry's Overdue until its outcome.
+		reached = stages_reached(dunning_schedule(get_ladder_dates(inv)), now)
 
 	standing = sub.account_standing if sub else None
 
@@ -444,7 +455,7 @@ def run_single_retries(now: datetime) -> list[dict]:
 				["status", "=", OUTSTANDING],
 				["payment_date", "<=", now.date()],
 			],
-			fields=["name", "team", "status", *LADDER_FIELDS],
+			fields=["name", *LADDER_FIELDS],
 		)
 	}
 	ladders = get_ladder_dates_by_invoice(list(invoices.values()))

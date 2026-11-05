@@ -447,6 +447,16 @@ class TestModeAwareDunning(IntegrationTestCase):
 
 		_set_mode(TEAM, "Prepaid")
 		inv = self._overdue_invoice()
+		# A Prepaid card is debited, so the ladder counts from its failed first charge.
+		frappe.get_doc(
+			{
+				"doctype": "Payment Attempt",
+				"invoice": inv,
+				"team": TEAM,
+				"status": "Failed",
+				"completed_at": "2026-06-01 10:00:00",
+			}
+		).insert(ignore_permissions=True)
 		dunning.process_invoice_dunning(inv, now="2026-06-10")
 		msg = frappe.db.get_value(
 			"Billing Notification Log", {"team": TEAM, "event_type": "Invoice Overdue"}, "message"
