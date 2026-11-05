@@ -575,6 +575,29 @@ class TestServerBillsFromItsStart(BillingTestBase):
 		self.assertEqual(str(opened), "2026-06-05 00:00:00")
 
 
+class TestSnapshotAndIPv4BillFromTheHour(IntegrationTestCase):
+	"""A snapshot or a public IPv4 bills the hours it ran on a mid-day first date."""
+
+	def _lines(self, sub):
+		from central.billing.revenue.invoicing import lines
+
+		created = frappe._dict(
+			change_type="Created", locked_rate=3000, new_value=None, effective_at="2026-06-05 18:00:00"
+		)
+		bounds = lines._period_bounds("2026-06-01", "2026-06-30")
+		return lines._subscription_lines(sub, CLUSTER, [created], bounds)
+
+	def test_a_mid_day_first_date_bills_its_hours(self):
+		kinds = {"vm_snapshot": "snapshot-1", "public_ip_server": "server-1"}
+		for field, value in kinds.items():
+			with self.subTest(field):
+				sub = frappe._dict(name="sub-1", server_id=None, vm_snapshot=None, public_ip_server=None)
+				sub[field] = value
+
+				billed = [(ln["unit"], ln["hours"] or ln["days"]) for ln in self._lines(sub)]
+				self.assertEqual(billed, [("hour", 6.0), ("day", 25)])
+
+
 class TestMonthlyBillingRun(BillingTestBase):
 	"""The scheduled entrypoint that drafts + settles the just-closed month."""
 
