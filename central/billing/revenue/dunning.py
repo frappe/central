@@ -82,13 +82,23 @@ def get_ladder_dates_by_invoice(invoices: list) -> dict[str, frappe._dict]:
 	"""The ladder dates of each issued invoice, by invoice name.
 
 	Each carries the retry window (`_get_window_dates`) and the charge facts that time the single
-	retry and Overdue: `first_failed_at`, `in_flight_since` and `is_awaiting_charge`. The charges
-	are one grouped query. The rail is one batch, read only for the uncharged invoices whose
-	ladder has the single retry."""
-	from central.billing.payments import collection
-
+	retry and Overdue (`_get_charge_facts`). The charges are one grouped query."""
 	charges = get_charge_outcomes([invoice.name for invoice in invoices])
 	windows = {invoice.name: _get_window_dates(invoice) for invoice in invoices}
+	chargeable = _get_chargeable_before_any_charge(invoices, windows, charges)
+	return {
+		invoice.name: frappe._dict(
+			windows[invoice.name], **_get_charge_facts(charges.get(invoice.name), invoice.name in chargeable)
+		)
+		for invoice in invoices
+	}
+
+
+def _get_chargeable_before_any_charge(invoices: list, windows: dict, charges: dict) -> set[str]:
+	"""The invoices with no charge yet whose ladder has the single retry and that dunning can charge
+	off-session. The rail is read for all their teams in one batch."""
+	from central.billing.payments import collection
+
 	interval = settings.dunning_retry_interval_days()
 	uncharged = [
 		invoice
@@ -98,29 +108,25 @@ def get_ladder_dates_by_invoice(invoices: list) -> dict[str, frappe._dict]:
 		and not get_interval_retry_dates(windows[invoice.name], interval)
 	]
 	rail_teams = collection.get_teams_with_retry_rail({invoice.team for invoice in uncharged})
-	chargeable = {invoice.name for invoice in uncharged if invoice.team in rail_teams}
-	return {
-		invoice.name: frappe._dict(
-			windows[invoice.name],
-			first_failed_at=(charges.get(invoice.name) or {}).get("first_failed_at"),
-			in_flight_since=(charges.get(invoice.name) or {}).get("in_flight_since"),
-			is_awaiting_charge=_is_awaiting_charge(charges.get(invoice.name), invoice.name in chargeable),
-		)
-		for invoice in invoices
-	}
+	return {invoice.name for invoice in uncharged if invoice.team in rail_teams}
 
 
-def _is_awaiting_charge(charges: frappe._dict | None, is_chargeable: bool) -> bool:
-	"""The single retry and Overdue wait for a charge, so a debit still in flight cannot fail later
-	on an invoice that dunning already moved on. `charges` is the invoice's `get_charge_outcomes` row.
+def _get_charge_facts(charge: frappe._dict | None, is_chargeable: bool) -> dict:
+	"""`first_failed_at`, `in_flight_since` and `is_awaiting_charge` from the invoice's
+	`get_charge_outcomes` row. The single retry and Overdue wait for a charge, so a debit still in
+	flight cannot fail later on an invoice that dunning already moved on.
 
 	1. A charge is in flight: wait for its outcome.
 	2. A charge failed: the ladder counts from the failure.
 	3. A charge was made and none failed: wait.
 	4. No charge yet: wait when dunning can charge the invoice off-session (`is_chargeable`)."""
-	if charges:
-		return bool(charges.in_flight_since) or not charges.first_failed_at
-	return is_chargeable
+	if not charge:
+		return {"first_failed_at": None, "in_flight_since": None, "is_awaiting_charge": is_chargeable}
+	return {
+		"first_failed_at": charge.first_failed_at,
+		"in_flight_since": charge.in_flight_since,
+		"is_awaiting_charge": bool(charge.in_flight_since) or not charge.first_failed_at,
+	}
 
 
 def _get_window_dates(invoice) -> frappe._dict:
