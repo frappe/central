@@ -482,11 +482,12 @@ flowchart TD
     HOLD -->|no| HELD[["Invoice held, no due date<br/>notify Billing Details Required"]]
     HELD -->|Billing Profile complete| REL["release_held_drafts"]
     REL --> OAC
-    HOLD -->|yes| WF{"settlement waterfall"}
-    WF -->|credits| CR["settlement.py"]
-    WF -->|then card| CARD["charges.pay_invoice"]
-    CR & CARD --> OPEN[["Invoice: Outstanding, due date set"]]
-    OPEN -->|webhook Paid| PAID[["Invoice: Paid"]]
+    HOLD -->|yes| CR["wallet credits apply at open<br/>settlement.py"]
+    CR -->|credits cover the bill| PAID[["Invoice: Paid"]]
+    CR -->|remainder owed| OPEN[["Invoice: Outstanding,<br/>payment date and due date set"]]
+    OPEN -->|payment date already reached| CARD["collection.collect_invoice<br/>refuses before the payment date"]
+    PDATE(["hourly · collection.collect_on_payment_date"]) -->|payment date reached| CARD
+    CARD -->|webhook Paid| PAID
     PAID --> SYNC["erpnext_sync.enqueue_invoice_sync"]
 ```
 ```
@@ -507,15 +508,26 @@ flowchart TD
   → settle_draft → open_and_collect (per invoice)
       → billing-details hold: a Billable invoice keeps no due date if the team has no billing
         details (lifecycle._hold_for_billing_details, notifies "Billing Details Required")
-      → settlement waterfall: credits (settlement.py) → card (charges.pay_invoice)
-      → Invoice gets its due date → (on webhook) Paid
-      → on Paid: erpnext_sync.enqueue_invoice_sync
+      → wallet credits apply at once (settlement.py); credits that cover the bill settle it (Paid)
+      → Invoice gets its payment_date and due_date
+      → collection.collect_invoice charges the card now only when the payment date is
+        already reached; before the payment date it refuses
+      → (on webhook) Paid → erpnext_sync.enqueue_invoice_sync
+
+[hourly]   payments.collection.collect_on_payment_date
+  → every owed invoice with no payment attempt, payment_date ≤ tomorrow and due_date ≥ today
+  → collection.collect_invoice (a pre-debit rail sends its notice, then debits on the payment date)
+  → (on webhook) Paid → erpnext_sync.enqueue_invoice_sync
 ```
 A held draft is released when the profile is complete. `Billing Profile.on_update` calls `release_held_invoices`, which enqueues `run.release_held_drafts` to settle the held drafts. When a draft waits longer than `Billing Settings.billing_details_grace_days`, the team stops being credit-funded for new spend (`settlement.details_overdue`), and `platform.alerts.held_invoices` pages operators.
 
 Both ticks use `draft_team_page` and `settle_draft_page` page jobs (see §3).
 
-**The card is charged on the payment day.** Each team has a payment day from the 1st to the 10th on its Billing Profile (default 1). When an invoice opens, wallet credits apply at once and the invoice gets a `payment_date`: the payment day of the month it opened in, or the opening date when the run is late. The due date is never before the payment date. No rail debits before the payment date (`collection.collect_invoice`). A rail that owes the RBI pre-debit notice sends it 24 hours before the payment date (`emandate.schedule_predebit`), and its debit window opens no earlier than that date. The hourly `collection.collect_on_payment_date` starts collection on each invoice that has no payment attempt and has not reached its due date. After the due date, dunning owns the retries. The customer changes the payment day at most twice in a billing cycle (`BillingProfile.change_payment_day`). The change applies to the next invoice; an open invoice keeps its date.
+**The card is charged on the payment day.** Each team has a payment day from the 1st to the 10th on its Billing Profile (default 1). When an invoice opens, wallet credits apply at once and the invoice gets a `payment_date`: the payment day of the month it opened in, or the opening date when the run is late. The due date is never before the payment date.
+
+No rail debits before the payment date (`collection.collect_invoice`). A rail that owes the RBI pre-debit notice sends it 24 hours before the payment date (`emandate.schedule_predebit`), and its debit window opens no earlier than that date. The hourly `collection.collect_on_payment_date` starts collection on each invoice that has no payment attempt and has not reached its due date. After the due date, dunning owns the retries.
+
+The customer changes the payment day at most twice in a billing cycle (`BillingProfile.change_payment_day`). The change applies to the next invoice. An open invoice keeps its date.
 
 ### C. Collect / settle a charge
 ```mermaid
