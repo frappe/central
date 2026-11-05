@@ -99,7 +99,19 @@ async function submit(): Promise<void> {
 <template>
 	<LoadingText v-if="settings.loading && !settings.data" :lines="2" />
 
-	<form v-else class="flex flex-col gap-3" @submit.prevent="submit">
+	<Alert
+		v-else-if="settings.error && !settings.data"
+		theme="red"
+		title="The payment date couldn't load"
+		:description="getErrorMessage(settings.error, 'Try again in a moment.')"
+		:primary-action="{ label: 'Retry', onClick: () => settings.reload() }"
+	/>
+
+	<form
+		v-else-if="settings.data"
+		class="flex flex-col gap-3"
+		@submit.prevent="submit"
+	>
 		<Alert v-if="formError" theme="red" :title="formError" />
 
 		<Select
