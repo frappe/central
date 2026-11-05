@@ -55,7 +55,12 @@ def require_capability(team: str, capability: str) -> None:
 	if is_operator(user):
 		return
 	if not iam.can(user, team, capability):
-		frappe.throw(_("Not permitted to access this team's billing."), frappe.PermissionError)
+		frappe.throw(
+			_(
+				"Your role does not allow this billing action. Ask a team admin to review your billing access."
+			),
+			frappe.PermissionError,
+		)
 
 
 def require_billing_view(team: str) -> None:

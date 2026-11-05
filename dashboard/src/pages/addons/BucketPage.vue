@@ -71,7 +71,16 @@ const tabs = [
 	{ label: 'Files', value: 'files', iconLeft: 'lucide-folder' },
 	{ label: 'Settings', value: 'settings', iconLeft: 'lucide-settings' },
 ]
-const activeTab = ref('files')
+
+const activeTab = computed({
+	get: () => (route.query.tab === 'settings' ? 'settings' : 'files'),
+	set: (tab: string) => {
+		router.replace({
+			query: { ...route.query, tab: tab === 'files' ? undefined : tab },
+		})
+	},
+})
+
 const credentials = ref<BucketCredentials | null>(null)
 
 const copyEndpoint = async (endpoint: string): Promise<void> => {
@@ -80,7 +89,7 @@ const copyEndpoint = async (endpoint: string): Promise<void> => {
 		return
 	}
 
-	reportError('The endpoint could not be copied. Select it and copy by hand.')
+	reportError('Could not copy the endpoint. Select it and copy it manually.')
 }
 </script>
 
@@ -159,13 +168,13 @@ const copyEndpoint = async (endpoint: string): Promise<void> => {
 				<TabButtons
 					v-model="activeTab"
 					:options="tabs"
-					class="mt-6 self-start"
+					class="mt-4 self-start"
 				/>
 
 				<BucketFiles
 					v-if="activeTab === 'files'"
 					:bucket="bucket"
-					:can-download="canManageServices"
+					:can-manage="canManageServices"
 					class="mt-4 min-h-0 flex-1"
 				/>
 
@@ -173,7 +182,7 @@ const copyEndpoint = async (endpoint: string): Promise<void> => {
 					v-else
 					:bucket="bucket"
 					:can-manage="canManageServices"
-					class="mt-6 min-h-0 overflow-y-auto"
+					class="mt-4 min-h-0 overflow-y-auto"
 					@rotated="credentials = $event"
 					@deleted="router.push('/object-storage')"
 				/>

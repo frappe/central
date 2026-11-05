@@ -5,11 +5,6 @@ import { useBillingOverview } from '@/composables/useBillingOverview'
 import { reportError, successToast } from '@/lib/feedback'
 import type { Project } from '@/types/billing'
 
-// Rename / enable-disable for Projects — the mutations ProjectsCard and
-// ProjectsPanel both need (card shows the top few, panel shows all of them;
-// sharing this keeps the busy/toggle state one thing, not two that could
-// disagree about which row is mid-mutation).
-
 const toggle = useCall<unknown, { name: string; enabled: boolean }>({
 	url: method(API.setProjectEnabled),
 	method: 'POST',

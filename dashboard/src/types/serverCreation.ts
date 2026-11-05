@@ -15,6 +15,33 @@ export interface RegionalImage {
 	tags: Record<string, string>
 }
 
+/** A ready-to-run application the region's Cargo has built an image of. */
+export interface App {
+	application: string
+	title: string
+	os_version: string | null
+	information: string | null
+	/** A data URI of the app's SVG logo, or null when its template names none. */
+	logo: string | null
+	snapshot_id: string
+}
+
+export interface AppInput {
+	name: string
+	label: string
+	type: 'string' | 'email' | 'domain' | 'password'
+	required?: boolean
+	description?: string
+	/** A blank answer gets a generated value at first boot. */
+	generate?: boolean
+}
+
+export interface AppRequirements {
+	inputs: AppInput[]
+	minimum_size: { cpu_millicores: number; memory_mib: number; disk_mib: number }
+	ports: { port: number; protocol: string }[]
+}
+
 export interface ImageSelection {
 	offering: string
 	image_id: string

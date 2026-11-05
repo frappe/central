@@ -1,4 +1,4 @@
-exclude: 'node_modules|.git'
+exclude: 'node_modules|.git|^docs/'
 default_stages: [pre-commit]
 fail_fast: false
 

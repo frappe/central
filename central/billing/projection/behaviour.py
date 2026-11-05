@@ -46,7 +46,7 @@ def summary(team: str, months: int = 6, on=None) -> dict:
 	)
 
 	settled = [i for i in invoices if i.status == "Paid"]
-	outstanding = [i for i in invoices if i.status in ("Open", "Overdue")]
+	outstanding = [i for i in invoices if i.status in ("Outstanding", "Overdue")]
 	delays = [_days_late(i, on) for i in invoices]
 	delays = [d for d in delays if d is not None]
 

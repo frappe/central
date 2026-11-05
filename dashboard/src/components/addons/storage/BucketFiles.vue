@@ -1,20 +1,39 @@
 <script setup lang="ts">
-import { Button, Tooltip } from 'frappe-ui'
-import { computed, ref, watch } from 'vue'
+import { Button } from 'frappe-ui'
+import { computed, markRaw, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
+import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import {
 	createListViewQuery,
 	ListView,
 	type ListViewColumn,
 } from '@/components/common/list-view'
-import { PAGE_SIZE, useBucketObjects } from '@/composables/useBucketObjects'
+import {
+	MAXIMUM_UPLOAD_BYTES,
+	PAGE_SIZE,
+	useBucketObjects,
+} from '@/composables/useBucketObjects'
 import { formatBytes } from '@/lib/bytes'
 import { formatDateTime, timeAgo } from '@/lib/datetime'
-import { getErrorMessage, reportError } from '@/lib/feedback'
+import {
+	getErrorMessage,
+	isAbortError,
+	reportError,
+	successToast,
+} from '@/lib/feedback'
 import type { StorageBucket } from '@/types/storage'
 
 interface Props {
 	bucket: StorageBucket
-	canDownload: boolean
+	canManage: boolean
+}
+
+interface Upload {
+	key: string
+	name: string
+	progress: number
+	error: string
+	controller: AbortController
 }
 
 interface FileRow {
@@ -40,11 +59,31 @@ const {
 	previous,
 	retry,
 	getDownloadUrl,
+	upload,
+	remove,
 } = useBucketObjects()
 
-const prefix = ref('')
-const selecting = ref(false)
+const route = useRoute()
+
+const prefix = computed(() => {
+	const path = route.query.path
+
+	if (typeof path !== 'string' || !path) return ''
+
+	return path.endsWith('/') ? path : `${path}/`
+})
+
+const folderLink = (path: string) => ({
+	query: { ...route.query, path: path || undefined },
+})
+
 const downloading = ref('')
+const fileInput = ref<HTMLInputElement | null>(null)
+const uploads = ref<Upload[]>([])
+const deleteTarget = ref<FileRow[] | null>(null)
+const deleting = ref(false)
+const deleteError = ref('')
+let clearSelection = (): void => {}
 
 const query = ref(createListViewQuery({ pageSize: PAGE_SIZE }))
 const searchPrefix = computed(() => prefix.value + query.value.search.trim())
@@ -77,7 +116,9 @@ const searchPlaceholder = computed(() =>
 
 const emptyState = computed(() => ({
 	title: prefix.value ? 'This folder is empty' : 'No files yet',
-	description: 'Upload with any S3 client, using the details under Settings.',
+	description: props.canManage
+		? 'Upload files here, or with any S3 client using the details under Settings.'
+		: 'Files uploaded to this bucket show here.',
 }))
 
 const folderRows = computed<FileRow[]>(() =>
@@ -107,17 +148,10 @@ const fileRows = computed<FileRow[]>(() =>
 const rows = computed(() => [...folderRows.value, ...fileRows.value])
 
 const columns = computed<ListViewColumn<FileRow>[]>(() => [
-	{ accessorKey: 'name', header: 'Name', size: 500, enableSorting: false },
-	{ accessorKey: 'size', header: 'Size', size: 100, enableSorting: false },
-	{
-		accessorKey: 'modified',
-		header: 'Last modified',
-		size: 140,
-		enableSorting: false,
-	},
-	...(props.canDownload
-		? [{ id: 'actions', header: '', size: 40, enableSorting: false }]
-		: []),
+	{ key: 'name', label: 'Name' },
+	{ key: 'size', label: 'Size', width: '6rem' },
+	{ key: 'modified', label: 'Last modified', width: '9rem' },
+	...(props.canManage ? [{ key: 'actions', label: '', width: '2.5rem' }] : []),
 ])
 
 const download = async (key: string): Promise<void> => {
@@ -133,6 +167,96 @@ const download = async (key: string): Promise<void> => {
 		downloading.value = ''
 	}
 }
+
+const uploadOne = async (file: File): Promise<void> => {
+	uploads.value.push({
+		key: prefix.value + file.name,
+		name: file.name,
+		progress: 0,
+		error: '',
+		controller: markRaw(new AbortController()),
+	})
+	// The reactive copy, so progress and errors written to it re-render.
+	const row = uploads.value[uploads.value.length - 1]
+
+	if (file.size > MAXIMUM_UPLOAD_BYTES) {
+		row.error = 'Files over 5 GB need an S3 client.'
+		return
+	}
+
+	try {
+		await upload(
+			props.bucket.name,
+			row.key,
+			file,
+			(fraction) => (row.progress = fraction),
+			row.controller.signal,
+		)
+		uploads.value = uploads.value.filter((item) => item !== row)
+		successToast(`Uploaded ${file.name}`)
+	} catch (failure) {
+		if (isAbortError(failure)) {
+			uploads.value = uploads.value.filter((item) => item !== row)
+			return
+		}
+		row.error = getErrorMessage(failure, "The file couldn't upload.")
+	}
+}
+
+const startUploads = async (event: Event): Promise<void> => {
+	const input = event.target as HTMLInputElement
+	const files = Array.from(input.files ?? [])
+	input.value = ''
+
+	await Promise.all(files.map(uploadOne))
+	retry(props.bucket.name, searchPrefix.value)
+}
+
+const dismissUpload = (entry: Upload): void => {
+	entry.controller.abort()
+	uploads.value = uploads.value.filter((item) => item !== entry)
+}
+
+const deleteSummary = computed(() => {
+	const rows = deleteTarget.value ?? []
+	const files = rows.filter((row) => !row.isFolder).length
+	const folders = rows.filter((row) => row.isFolder).length
+	const parts: string[] = []
+	if (files) parts.push(`${files} ${files === 1 ? 'file' : 'files'}`)
+	if (folders) parts.push(`${folders} ${folders === 1 ? 'folder' : 'folders'}`)
+
+	return parts.join(' and ')
+})
+
+const askDelete = (rows: FileRow[], clear: () => void): void => {
+	clearSelection = clear
+	deleteError.value = ''
+	deleteTarget.value = rows
+}
+
+const confirmDelete = async (rows: FileRow[]): Promise<void> => {
+	deleting.value = true
+	deleteError.value = ''
+
+	try {
+		const deleted = await remove(
+			props.bucket.name,
+			rows.filter((row) => !row.isFolder).map((row) => row.id),
+			rows.filter((row) => row.isFolder).map((row) => row.id),
+		)
+		deleteTarget.value = null
+		clearSelection()
+		successToast(`Deleted ${deleted} ${deleted === 1 ? 'object' : 'objects'}`)
+		retry(props.bucket.name, searchPrefix.value)
+	} catch (failure) {
+		deleteError.value = getErrorMessage(
+			failure,
+			"The files couldn't be deleted.",
+		)
+	} finally {
+		deleting.value = false
+	}
+}
 </script>
 
 <template>
@@ -142,27 +266,77 @@ const download = async (key: string): Promise<void> => {
 			aria-label="Folder"
 			class="flex min-w-0 flex-wrap items-center gap-1 text-sm text-ink-gray-5"
 		>
-			<button
-				type="button"
+			<RouterLink
+				:to="folderLink('')"
 				aria-label="All files"
 				class="grid size-6 place-items-center rounded-4 hover:bg-surface-gray-2 hover:text-ink-gray-8"
-				@click="prefix = ''"
 			>
 				<span class="lucide-house size-4" aria-hidden="true" />
-			</button>
+			</RouterLink>
 
 			<template v-for="crumb in crumbs" :key="crumb.prefix">
 				<span aria-hidden="true">/</span>
 
-				<button
-					type="button"
+				<RouterLink
+					:to="folderLink(crumb.prefix)"
 					class="rounded-4 px-1 hover:bg-surface-gray-2 hover:text-ink-gray-8 last:text-ink-gray-8"
-					@click="prefix = crumb.prefix"
 				>
 					{{ crumb.label }}
-				</button>
+				</RouterLink>
 			</template>
 		</nav>
+
+		<ul
+			v-if="uploads.length"
+			aria-label="Uploads"
+			class="flex flex-col divide-y divide-outline-gray-1 rounded-lg border border-outline-gray-2"
+		>
+			<li
+				v-for="entry in uploads"
+				:key="entry.key"
+				class="flex items-center gap-3 px-3 py-2"
+			>
+				<span class="lucide-upload size-4 shrink-0 text-ink-gray-5" />
+
+				<div class="flex min-w-0 flex-1 flex-col gap-1">
+					<span class="truncate text-sm text-ink-gray-8">{{ entry.name }}</span>
+
+					<span v-if="entry.error" class="text-sm text-ink-red-4">
+						{{ entry.error }}
+					</span>
+
+					<div
+						v-else
+						role="progressbar"
+						:aria-label="`Uploading ${entry.name}`"
+						:aria-valuenow="Math.round(entry.progress * 100)"
+						aria-valuemin="0"
+						aria-valuemax="100"
+						class="h-1 overflow-hidden rounded-full bg-surface-gray-2"
+					>
+						<div
+							class="h-full bg-surface-gray-7 transition-[width]"
+							:style="{ width: `${entry.progress * 100}%` }"
+						/>
+					</div>
+				</div>
+
+				<span
+					v-if="!entry.error"
+					class="w-10 text-right text-sm tabular-nums text-ink-gray-6"
+				>
+					{{ Math.round(entry.progress * 100) }}%
+				</span>
+
+				<Button
+					variant="ghost"
+					icon="lucide-x"
+					:label="entry.error ? `Dismiss ${entry.name}` : `Cancel ${entry.name}`"
+					:tooltip="entry.error ? 'Dismiss' : 'Cancel'"
+					@click="dismissUpload(entry)"
+				/>
+			</li>
+		</ul>
 
 		<ListView
 			v-model:query="query"
@@ -173,7 +347,7 @@ const download = async (key: string): Promise<void> => {
 			:loading="loading"
 			:error="error"
 			searchable
-			:selectable="selecting"
+			:selectable="canManage"
 			server-side
 			:paginated="false"
 			:show-count="false"
@@ -181,31 +355,31 @@ const download = async (key: string): Promise<void> => {
 			:empty-state="emptyState"
 			@retry="retry(bucket.name, searchPrefix)"
 		>
-			<template #toolbar>
+			<template v-if="canManage" #toolbar>
 				<Button
-					:label="selecting ? 'Done' : 'Select'"
-					@click="selecting = !selecting"
+					variant="solid"
+					icon-left="lucide-upload"
+					label="Upload"
+					@click="fileInput?.click()"
 				/>
 
-				<Tooltip text="Uploading from the dashboard is coming soon">
-					<Button
-						variant="solid"
-						icon-left="lucide-upload"
-						label="Upload"
-						disabled
-					/>
-				</Tooltip>
+				<input
+					ref="fileInput"
+					type="file"
+					multiple
+					class="hidden"
+					aria-label="Files to upload"
+					@change="startUploads"
+				/>
 			</template>
 
-			<template #selection-actions>
-				<Tooltip text="Deleting from the dashboard is coming soon">
-					<Button
-						theme="red"
-						icon-left="lucide-trash-2"
-						label="Delete"
-						disabled
-					/>
-				</Tooltip>
+			<template #selection-actions="{ rows: selected, clear }">
+				<Button
+					theme="red"
+					icon-left="lucide-trash-2"
+					label="Delete"
+					@click="askDelete(selected, clear)"
+				/>
 			</template>
 
 			<template #name="{ row }">
@@ -215,14 +389,14 @@ const download = async (key: string): Promise<void> => {
 						class="size-4 shrink-0 text-ink-gray-5"
 					/>
 
-					<button
+					<RouterLink
 						v-if="row.isFolder"
-						type="button"
+						:to="folderLink(row.id)"
 						class="truncate hover:underline"
-						@click.stop="prefix = row.id"
+						@click.stop
 					>
 						{{ row.name }}
-					</button>
+					</RouterLink>
 
 					<span v-else class="truncate">{{ row.name }}</span>
 				</span>
@@ -277,5 +451,21 @@ const download = async (key: string): Promise<void> => {
 				/>
 			</div>
 		</footer>
+
+		<ConfirmDialog
+			v-model:target="deleteTarget"
+			title="Delete files"
+			confirm-label="Delete"
+			theme="red"
+			size="md"
+			:loading="deleting"
+			:error="deleteError"
+			@confirm="confirmDelete"
+		>
+			<p class="text-p-base text-ink-gray-7">
+				Delete {{ deleteSummary }}? Everything inside a folder is deleted too.
+				This can't be undone.
+			</p>
+		</ConfirmDialog>
 	</div>
 </template>

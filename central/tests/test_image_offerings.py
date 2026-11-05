@@ -6,9 +6,11 @@ import requests
 from frappe.tests import IntegrationTestCase
 
 from central.errors import AtlasConnectionError
-from central.integrations.images import list_images, list_offerings
+from central.integrations.images import list_images, list_offerings, selected_image
+from central.patches.v0_0.order_image_offerings import execute as order_offerings
 from central.patches.v0_0.rename_pilot_offering_to_frappe import execute as rename_pilot_offering
 from central.patches.v0_0.seed_image_offerings import execute as seed_offerings
+from central.patches.v0_0.select_full_ubuntu_image import execute as select_full_ubuntu_image
 
 
 class TestImageOfferings(IntegrationTestCase):
@@ -151,6 +153,7 @@ class TestImageOfferings(IntegrationTestCase):
 			self.offering.save()
 
 	def test_seed_is_idempotent_and_preserves_operator_changes(self):
+		frappe.delete_doc("Image Offering", "ubuntu")
 		seed_offerings()
 		frappe.db.set_value("Image Offering", "pilot", {"title": "Our Pilot", "enabled": 0})
 		seed_offerings()
@@ -158,8 +161,57 @@ class TestImageOfferings(IntegrationTestCase):
 			frappe.db.get_value("Image Offering", "pilot", ["title", "enabled"]), ("Our Pilot", 0)
 		)
 		self.assertEqual(
-			frappe.get_doc("Image Offering", "ubuntu").get_image_tags(), {"purpose": "base", "os": "Ubuntu"}
+			frappe.get_doc("Image Offering", "ubuntu").get_image_tags(),
+			{"purpose": "base", "os": "Ubuntu", "minimal": "false"},
 		)
+
+	def test_ubuntu_migration_preserves_settings_and_is_idempotent(self):
+		seed_offerings()
+		offering = frappe.get_doc("Image Offering", "ubuntu")
+		offering.title = "Our Ubuntu"
+		offering.enabled = 0
+		offering.required_tags = [tag for tag in offering.required_tags if tag.key != "minimal"]
+		offering.append("required_tags", {"key": "os_version", "value": "24.04"})
+		offering.save()
+
+		select_full_ubuntu_image()
+		select_full_ubuntu_image()
+		offering.reload()
+		self.assertEqual((offering.title, offering.enabled), ("Our Ubuntu", 0))
+		self.assertEqual(
+			offering.get_image_tags(),
+			{"purpose": "base", "os": "Ubuntu", "os_version": "24.04", "minimal": "false"},
+		)
+
+		next(tag for tag in offering.required_tags if tag.key == "minimal").value = "true"
+		offering.save()
+		select_full_ubuntu_image()
+		self.assertEqual(offering.reload().get_image_tags()["minimal"], "false")
+
+	def test_ubuntu_discovery_and_creation_require_full_image(self):
+		seed_offerings()
+		select_full_ubuntu_image()
+		self.offering = frappe.get_doc("Image Offering", "ubuntu")
+		tags = {"purpose": "base", "os": "Ubuntu", "minimal": "false"}
+		self.set_page([self.image(tags=tags)])
+		self.discover()
+		self.assertEqual(
+			self.request.call_args.kwargs["params"]["tag"], "purpose:base,os:Ubuntu,minimal:false"
+		)
+
+		for minimal in ("true", None):
+			wrong_tags = {"purpose": "base", "os": "Ubuntu"}
+			if minimal is not None:
+				wrong_tags["minimal"] = minimal
+			with (
+				self.subTest(minimal=minimal),
+				patch(
+					"central.integrations.atlas.AtlasClient.get_image",
+					return_value=self.image(tags=wrong_tags),
+				),
+				self.assertRaises(AtlasConnectionError),
+			):
+				selected_image(self.team.name, self.instance.name, self.offering.name, "ubuntu-minimal")
 
 	def test_rename_shows_frappe_but_keeps_operator_changes(self):
 		seed_offerings()
@@ -169,6 +221,18 @@ class TestImageOfferings(IntegrationTestCase):
 
 		self.assertEqual(frappe.db.get_value("Image Offering", "pilot", "title"), "Frappe")
 		self.assertEqual(frappe.db.get_value("Image Offering", "ubuntu", "description"), "Our Ubuntu.")
+
+	def test_offerings_list_in_display_order_and_keep_operator_order(self):
+		seed_offerings()
+		frappe.db.set_value("Image Offering", {"name": ["in", ["pilot", "apps"]]}, "display_order", 0)
+		frappe.db.set_value("Image Offering", "ubuntu", "display_order", 9)
+		order_offerings()
+
+		self.assertEqual(frappe.db.get_value("Image Offering", "apps", "display_order"), 2)
+		self.assertEqual(frappe.db.get_value("Image Offering", "ubuntu", "display_order"), 9)
+		names = [item["name"] for item in list_offerings(self.team.name)]
+		self.assertLess(names.index("pilot"), names.index("apps"))
+		self.assertLess(names.index("apps"), names.index("ubuntu"))
 
 	def test_customer_can_read_catalog_but_not_edit_or_preview_as_operator(self):
 		user = frappe.get_doc(

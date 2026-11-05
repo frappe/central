@@ -146,6 +146,7 @@ class FrappeMailService(Document):
 		)
 		if not 200 <= response.status_code < 300:
 			raise requests.HTTPError(f"{response.status_code} from {path}", response=response)
+
 		return response.json()["message"]
 
 	@property

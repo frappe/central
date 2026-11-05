@@ -8,7 +8,12 @@ import frappe
 
 from central.billing.catalog import subscriptions
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
-from central.billing.tests.utils import complete_billing_profile, ensure_team, make_metered_plan
+from central.billing.tests.utils import (
+	complete_billing_profile,
+	ensure_team,
+	give_team_a_card,
+	make_metered_plan,
+)
 
 
 def _ensure_resource_type(name: str) -> str:
@@ -72,6 +77,33 @@ def _make_metered_family(
 	return doc.name
 
 
+def _publish_in_family(category, resource_type, plan, rate, retire):
+	"""Retire `retire` and publish `plan` in its place, in the same family."""
+	from central.billing.catalog.pricing import set_catalog_rates
+	from central.billing.tests.utils import _ensure_rate_instances
+
+	frappe.db.set_value("Plan", retire, "is_active", 0)
+	if frappe.db.exists("Plan", plan):
+		frappe.delete_doc("Plan", plan, force=True)
+	doc = frappe.get_doc(
+		{
+			"doctype": "Plan",
+			"title": plan,
+			"category": category,
+			"billing_cycle": "Monthly",
+			"is_active": 1,
+			"includes": [{"resource_type": resource_type, "quantity": 0, "unit": "Nos"}],
+		}
+	)
+	doc.name = plan
+	doc.flags.name_set = True
+	doc.insert(ignore_permissions=True)
+	rates = [{"cluster": "", "currency": "INR", "rate": rate}]
+	_ensure_rate_instances(rates)
+	set_catalog_rates("Plan", doc.name, rates)
+	return doc.name
+
+
 class TestPlanCategoryModes(IntegrationTestCase):
 	"""settlement_mode / reporting_mode are per-family properties, blank resolving to
 	the built default; both are meaningless on a Fixed family (ADR 0015)."""
@@ -122,6 +154,7 @@ class TestServiceSubjectProvisioning(IntegrationTestCase):
 	def setUp(self):
 		ensure_team(self.TEAM)
 		complete_billing_profile(self.TEAM, currency="INR")
+		give_team_a_card(self.TEAM)
 		frappe.db.delete("Subscription", {"team": self.TEAM})
 		_ensure_resource_type("PDF Render")
 		self.plan = make_metered_plan("Svc PDF Render", resource_type="PDF Render", unit="Nos")
@@ -211,6 +244,69 @@ class TestServiceSubjectProvisioning(IntegrationTestCase):
 		with self.assertRaises(frappe.ValidationError):
 			subscriptions.provision_service_subscription(self.TEAM, server_plan, cluster="mumbai")
 
+	def test_retired_plan_refused_for_a_new_subscriber(self):
+		retired = _make_metered_family("SM Retired Family", "Tokens Old", "SM Tokens Old", rate=0.01)
+		frappe.db.set_value("Plan", retired, "is_active", 0)
+		with self.assertRaisesRegex(frappe.ValidationError, "no longer offered"):
+			subscriptions.provision_service_subscription(self.TEAM, retired, cluster="mumbai")
+
+	def test_retired_plan_kept_by_its_subscriber(self):
+		plan = _make_metered_family("SM Kept Family", "Tokens Kept", "SM Tokens Kept", rate=0.01)
+		first = subscriptions.provision_service_subscription(self.TEAM, plan, cluster="mumbai")
+		frappe.db.set_value("Plan", plan, "is_active", 0)
+
+		again = subscriptions.provision_service_subscription(self.TEAM, plan, cluster="mumbai")
+		self.assertTrue(again["reused"])
+		self.assertEqual(again["subscription"], first["subscription"])
+
+	def test_operator_may_use_a_retired_plan(self):
+		retired = _make_metered_family("SM Operator Family", "Tokens Op", "SM Tokens Op", rate=0.01)
+		frappe.db.set_value("Plan", retired, "is_active", 0)
+		res = subscriptions.provision_service_subscription(
+			self.TEAM, retired, cluster="mumbai", allow_unlisted_plan=True
+		)
+		self.assertEqual(frappe.db.get_value("Subscription", res["subscription"], "plan"), retired)
+
+	def test_a_team_with_no_way_to_pay_cannot_subscribe(self):
+		frappe.db.delete("Payment Method", {"team": self.TEAM})
+		with self.assertRaises(frappe.ValidationError) as caught:
+			subscriptions.provision_service_subscription(self.TEAM, self.plan, cluster="mumbai")
+		self.assertEqual(caught.exception.envelope["code"], "PAYMENT_METHOD_REQUIRED")
+
+	def test_an_operator_still_needs_the_team_to_have_a_way_to_pay(self):
+		frappe.db.delete("Payment Method", {"team": self.TEAM})
+		with self.assertRaises(frappe.ValidationError) as caught:
+			subscriptions.provision_service_subscription(
+				self.TEAM, self.plan, cluster="mumbai", allow_unlisted_plan=True
+			)
+		self.assertEqual(caught.exception.envelope["code"], "PAYMENT_METHOD_REQUIRED")
+
+	def test_a_team_behind_on_payment_can_move_to_a_cheaper_plan_only(self):
+		family, resource = "SM Down Family", "Tokens Down"
+		dear = _make_metered_family(family, resource, "SM Tokens Dear", rate=0.02)
+		first = subscriptions.provision_service_subscription(self.TEAM, dear, cluster="mumbai")
+		frappe.db.set_value("Subscription", first["subscription"], "account_standing", "Past Due")
+
+		cheap = _publish_in_family(family, resource, "SM Tokens Cheap", rate=0.01, retire=dear)
+		res = subscriptions.provision_service_subscription(self.TEAM, cheap, cluster="mumbai")
+		self.assertTrue(res["upgraded"])
+
+		dearer = _publish_in_family(family, resource, "SM Tokens Dearer", rate=0.05, retire=cheap)
+		with self.assertRaises(frappe.ValidationError) as caught:
+			subscriptions.provision_service_subscription(self.TEAM, dearer, cluster="mumbai")
+		self.assertEqual(caught.exception.envelope["code"], "PAYMENT_OVERDUE")
+
+	def test_plan_without_a_rate_in_team_currency_refused(self):
+		"""A segment with no rate bills nothing, so even an operator cannot open one."""
+		from central.billing.catalog.pricing import set_catalog_rates
+
+		plan = _make_metered_family("SM Usd Family", "Tokens Usd", "SM Tokens Usd", rate=0.01)
+		set_catalog_rates("Plan", plan, [{"cluster": "", "currency": "USD", "rate": 0.01}])
+		with self.assertRaisesRegex(frappe.ValidationError, "no price in INR"):
+			subscriptions.provision_service_subscription(
+				self.TEAM, plan, cluster="mumbai", allow_unlisted_plan=True
+			)
+
 
 class TestDualModeIngestion(IntegrationTestCase):
 	"""Usage lands as one rollup row per period in both reporting modes (ADR 0015):
@@ -225,6 +321,7 @@ class TestDualModeIngestion(IntegrationTestCase):
 		self.metering = metering
 		ensure_team(self.TEAM)
 		complete_billing_profile(self.TEAM, currency="INR")
+		give_team_a_card(self.TEAM)
 		frappe.db.delete("Subscription", {"team": self.TEAM})
 		frappe.db.delete("Usage Rollup", {"team": self.TEAM})
 
@@ -384,6 +481,7 @@ class TestServiceAPI(IntegrationTestCase):
 		for t in (self.TEAM, self.OTHER):
 			ensure_team(t)
 			complete_billing_profile(t, currency="INR")
+			give_team_a_card(t)
 			frappe.db.delete("Subscription", {"team": t})
 		frappe.db.delete("Usage Rollup", {"team": self.TEAM})
 		self.plan = _make_metered_family("SM API Family", "PDF API", "SM PDF API Plan")
@@ -413,6 +511,32 @@ class TestServiceAPI(IntegrationTestCase):
 			frappe.utils.flt(frappe.db.get_value("Usage Rollup", {"resource_id": subject}, "quantity")),
 			500,
 		)
+
+	def test_a_lower_total_is_refused(self):
+		"""The credential sits on the customer's server, so a total may only go up."""
+		self.subscribe_service(plan=self.plan, cluster="mumbai")
+		self.report_usage(service="PDF API", quantity=500, cluster="mumbai")
+		with self.assertRaisesRegex(frappe.ValidationError, "only increase"):
+			self.report_usage(service="PDF API", quantity=0, cluster="mumbai")
+
+	def test_a_lower_total_is_refused_after_the_terms_are_corrected(self):
+		"""A correction moves the billed total to a new row; the refusal follows it."""
+		from central.billing.revenue.metering import override_terms
+
+		subject = self.subscribe_service(plan=self.plan, cluster="mumbai")["service_subject"]
+		self.report_usage(service="PDF API", quantity=500, cluster="mumbai")
+		original = frappe.db.get_value("Usage Rollup", {"resource_id": subject}, "name")
+		head = override_terms(original, rate=1.0, reason="test")
+
+		with self.assertRaisesRegex(frappe.ValidationError, "only increase"):
+			self.report_usage(service="PDF API", quantity=100, cluster="mumbai")
+		self.report_usage(service="PDF API", quantity=600, cluster="mumbai")
+		self.assertEqual(frappe.utils.flt(frappe.db.get_value("Usage Rollup", head, "quantity")), 600)
+
+	def test_negative_usage_is_refused(self):
+		self.subscribe_service(plan=self.plan, cluster="mumbai")
+		with self.assertRaises(frappe.ValidationError):
+			self.report_usage(service="PDF API", quantity=-10, cluster="mumbai")
 
 	def test_global_service_reports_from_any_cluster(self):
 		# A globally-priced service is subscribed once with no cluster; a caller on any
@@ -477,6 +601,7 @@ class TestPrepaidSettlement(IntegrationTestCase):
 		self.metering = metering
 		ensure_team(self.TEAM)
 		complete_billing_profile(self.TEAM, currency="INR")
+		give_team_a_card(self.TEAM)
 		frappe.db.delete("Subscription", {"team": self.TEAM})
 		frappe.db.delete("Usage Rollup", {"team": self.TEAM})
 		self.plan = _make_metered_family(
@@ -543,6 +668,7 @@ class TestAdminServices(IntegrationTestCase):
 		frappe.set_user("Administrator")
 		ensure_team(self.TEAM)
 		complete_billing_profile(self.TEAM, currency="INR")
+		give_team_a_card(self.TEAM)
 		frappe.db.delete("Subscription", {"team": self.TEAM})
 		self.plan = _make_metered_family("SM Admin Family", "PDF Admin", "SM PDF Admin Plan")
 

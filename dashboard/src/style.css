@@ -139,6 +139,29 @@ html[data-route-transition^="server-create"] .vt-server-summary {
 	}
 }
 
+/* Signup steps. The progress bar stays and fills; the step leaves to the left and the next
+   one comes in from the right. Back reverses it. */
+html[data-route-transition^="auth-step"] .vt-auth-progress {
+	view-transition-name: auth-progress;
+}
+html[data-route-transition^="auth-step"] .vt-auth-step {
+	view-transition-name: auth-step;
+}
+@media (prefers-reduced-motion: no-preference) {
+	html[data-route-transition="auth-step"]::view-transition-old(auth-step) {
+		animation: 160ms var(--route-ease-out) both route-slide-out-left;
+	}
+	html[data-route-transition="auth-step"]::view-transition-new(auth-step) {
+		animation: 260ms var(--route-ease-out) 60ms both route-slide-in-right;
+	}
+	html[data-route-transition="auth-step-back"]::view-transition-old(auth-step) {
+		animation: 160ms var(--route-ease-out) both route-slide-out-right;
+	}
+	html[data-route-transition="auth-step-back"]::view-transition-new(auth-step) {
+		animation: 260ms var(--route-ease-out) 60ms both route-slide-in-left;
+	}
+}
+
 /* Reduced motion keeps a short crossfade on every route transition, so the change still
    reads but nothing moves. Named pieces fade in place instead of morphing or sliding. */
 @media (prefers-reduced-motion: reduce) {

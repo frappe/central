@@ -12,9 +12,28 @@ The distinction is worth its own module because getting it wrong is not a UX
 regression — it is a double charge.
 """
 
-import frappe
+from typing import TypedDict
 
-# The card is refused. Nothing about retrying it changes that.
+import frappe
+from frappe import _
+from frappe.utils.translations import _lt
+
+
+class Failure(TypedDict, total=False):
+	"""A decline as a gateway reported it, before a record keeps it."""
+
+	failure_code: str | None
+	decline_code: str | None
+	failure_reason: str | None
+	raw: dict
+
+
+# The gateway would not create the charge because our request was wrong. Nothing was
+# taken, and sending the same request again gets the same answer, so an operator fixes it.
+REQUEST_REFUSED = "request_refused"
+
+# The card is refused, or the gateway refused to open the charge. Nothing was taken,
+# and charging this rail again in the same round gives the same answer.
 TERMINAL_CODES = (
 	"card_declined",
 	"card_not_supported",
@@ -22,6 +41,8 @@ TERMINAL_CODES = (
 	"expired_card",
 	"incorrect_number",
 	"incorrect_cvc",
+	"order_refused",
+	REQUEST_REFUSED,
 )
 
 # The outcome is unknown: the money may yet move. Never fall back on these.
@@ -44,28 +65,52 @@ MANDATE_CODES = (
 )
 
 
+# Declines a later retry cannot fix: the card is wrong, gone or barred, or the
+# customer must be present. A shortfall, a generic bank refusal or a refused order
+# can clear in days.
+HARD_CODES = tuple(code for code in TERMINAL_CODES if code not in ("card_declined", "order_refused"))
+HARD_DECLINE_CODES = (
+	"lost_card",
+	"stolen_card",
+	"pickup_card",
+	"fraudulent",
+	"restricted_card",
+	"invalid_account",
+	"do_not_try_again",
+	"revocation_of_authorization",
+	"revocation_of_all_authorizations",
+	"merchant_blacklist",
+)
+
 # What a decline means to the person whose card it was. Gateway codes and their
 # raw messages are written for us, not for them: "authentication_failed" and
 # "do_not_honor" tell a customer nothing about what to do next. Anything not
 # listed falls back to "we couldn't complete this payment", which is vague but
 # never wrong — inventing a specific reason we don't have is worse.
 _CUSTOMER_REASON = {
-	"expired_card": "Your card has expired",
-	"incorrect_number": "The card number was wrong",
-	"incorrect_cvc": "The security code was wrong",
-	"card_declined": "Your bank declined the payment",
-	"insufficient_funds": "There wasn't enough balance",
-	"card_not_supported": "Your bank doesn't allow this kind of payment",
-	"authentication_failed": "The bank's verification step didn't complete",
-	"do_not_honor": "Your bank declined the payment",
-	"payment_intent_mandate_invalid": "Your auto-pay approval is no longer valid",
-	"india_recurring_payment_mandate_canceled": "Your auto-pay approval was cancelled",
-	"transaction_not_approved": "Your bank didn't approve the auto-payment",
+	"expired_card": _lt("Your card has expired"),
+	"incorrect_number": _lt("The card number was wrong"),
+	"incorrect_cvc": _lt("The security code was wrong"),
+	"card_declined": _lt("Your bank declined the payment"),
+	"insufficient_funds": _lt("There wasn't enough balance"),
+	"card_not_supported": _lt("Your bank doesn't allow this kind of payment"),
+	"authentication_failed": _lt("The bank's verification step didn't complete"),
+	"do_not_honor": _lt("Your bank declined the payment"),
+	"payment_intent_mandate_invalid": _lt("Your auto-pay approval is no longer valid"),
+	"india_recurring_payment_mandate_canceled": _lt("Your auto-pay approval was cancelled"),
+	"transaction_not_approved": _lt("Your bank didn't approve the auto-payment"),
+	"check_unfinished": _lt("The card check didn't finish"),
+}
+
+# The same declines when a method is being added, where no payment was being made.
+_SETUP_REASON = {
+	"card_declined": _lt("Your bank declined the card"),
+	"do_not_honor": _lt("Your bank declined the card"),
 }
 
 # Ambiguous failures may still settle. Saying "failed" of one is a lie we would
 # have to take back, so they are named as unresolved.
-_UNRESOLVED = "We're still confirming this payment with your bank"
+_UNRESOLVED = _lt("We're still confirming this payment with your bank")
 
 
 def customer_reason(failure_code: str | None, fallback: str | None = None) -> str:
@@ -78,12 +123,58 @@ def customer_reason(failure_code: str | None, fallback: str | None = None) -> st
 	"""
 	code = (failure_code or "").lower()
 	if code in AMBIGUOUS_CODES:
-		return _UNRESOLVED
+		return str(_UNRESOLVED)
 	if code in _CUSTOMER_REASON:
-		return _CUSTOMER_REASON[code]
+		return str(_CUSTOMER_REASON[code])
 	# Never surface the gateway's own string: it is written for an operator and
 	# frequently names internals a customer cannot act on.
-	return "We couldn't complete this payment"
+	return _("We couldn't complete this payment")
+
+
+# Why Central refused a mandate confirmation. Nothing about the customer's bank.
+SIGNATURE_INVALID = "signature_invalid"
+ORDER_MISMATCH = "order_mismatch"
+PAYMENT_NOT_AUTHORISED = "payment_not_authorised"
+MANDATE_REFUSALS = (SIGNATURE_INVALID, ORDER_MISMATCH, PAYMENT_NOT_AUTHORISED)
+
+
+def failure_fields(failure: Failure) -> dict:
+	"""The failure columns a record keeps, from a decline shaped like `charges._extract_failure`.
+	A failure the gateway gave no code for still gets one, so every failure can be grouped."""
+	return {
+		"failure_code": failure.get("failure_code") or "payment_failed",
+		"decline_code": failure.get("decline_code"),
+		"failure_reason": (failure.get("failure_reason") or "")[:140] or None,
+	}
+
+
+def method_failure_message(
+	failure_code: str | None, decline_code: str | None = None, method_type: str = "Card"
+) -> str:
+	"""Why a payment method could not be added, and what the customer can do instead. The
+	bank's decline code is the more specific reason, so it is used when we can word it."""
+	if failure_code in MANDATE_REFUSALS:
+		return _("The mandate authorisation could not be confirmed. Try adding it again.")
+	code = decline_code if (decline_code or "").lower() in _CUSTOMER_REASON else failure_code
+	if method_type == "Card":
+		return _("{0}. Try another card, or add credit to your account instead.").format(
+			_setup_reason(code, method_type)
+		)
+	return _("{0}. Try again, or add credit to your account instead.").format(
+		_setup_reason(code, method_type)
+	)
+
+
+def _setup_reason(code: str | None, method_type: str) -> str:
+	"""A failure to add a method, said about the method: nothing was being paid."""
+	code = (code or "").lower()
+	if code in _SETUP_REASON:
+		return str(_SETUP_REASON[code])
+	if code in _CUSTOMER_REASON or code in AMBIGUOUS_CODES:
+		return customer_reason(code)
+	if method_type == "Card":
+		return _("We couldn't add this card")
+	return _("We couldn't set up this payment method")
 
 
 def is_mandate_failure(failure_code: str | None) -> bool:
@@ -96,6 +187,16 @@ def is_terminal(failure_code: str | None) -> bool:
 	ambiguous, because the safe reading of "we don't know" is "don't charge again"."""
 	code = (failure_code or "").lower()
 	return code in TERMINAL_CODES or code in MANDATE_CODES
+
+
+def is_retryable_later(failure_code: str | None, decline_code: str | None) -> bool:
+	"""True where charging the same method again on a later day can succeed.
+
+	An ambiguous failure may still settle, so charging it again could charge twice."""
+	code, reason = (failure_code or "").lower(), (decline_code or "").lower()
+	if code in AMBIGUOUS_CODES or code in HARD_CODES or code in MANDATE_CODES:
+		return False
+	return reason not in HARD_DECLINE_CODES and reason not in HARD_CODES
 
 
 def fallback_enabled() -> bool:

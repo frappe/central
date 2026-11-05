@@ -34,3 +34,60 @@ central.patches.v0_0.seed_accounting_defaults
 central.patches.v0_0.mark_top_ups_paid_in
 # The credit note series reads blank on a Billing Settings saved before it existed.
 central.patches.v0_0.seed_credit_note_series
+central.patches.v0_0.seed_central_limits
+# Trial and server purchase settings read 0 on a Central Settings saved before they existed.
+central.patches.v0_0.seed_trial_settings
+# A trial site recorded before trials started on insert waited for readiness to start.
+central.patches.v0_0.start_unready_trials
+# A site creation stores whether it started a free trial; older ones are marked from their site.
+central.patches.v0_0.set_free_trial_on_creations
+central.patches.v0_0.select_full_ubuntu_image
+# A credit wallet now records the ledger entry that set its balance.
+central.patches.v0_0.point_wallets_at_last_ledger_entry
+# Repair what the billing audit found: staging teams, currencies, hand-set tiers, unexplained wallets.
+central.patches.v0_0.repair_billing_audit_findings
+# New servers read their disk and network limits from Central Settings.
+central.patches.v0_0.seed_server_limits
+# Every server shows one included transfer from Central Settings; existing server plans drop their Transfer rows.
+central.patches.v0_0.move_transfer_to_central_settings
+# Billing operator alerts go to a Raven channel by default, not to every System Manager.
+central.patches.v0_0.seed_operator_alert_channel
+# Every snapshot is billed: no snapshot of a server is free any more.
+central.patches.v0_0.bill_every_snapshot
+# Failure diagnostics move from Error Log links onto their records, so they outlive Error Log retention.
+central.patches.v0_0.copy_error_logs_to_diagnostics
+central.patches.v0_0.seed_signup_image_minimum_age
+# A card with no mandate carries no mandate currency (it used to default to INR).
+central.patches.v0_0.clear_default_mandate_currency
+# A first payment is dated by paid_at. A Paid invoice from before that field gets one.
+central.patches.v0_0.backfill_invoice_paid_at
+# Report, without changing anything, billing data the October 2026 security fixes would have refused.
+central.patches.v0_0.report_billing_security_findings
+# Remove the hidden rule that let every WireGuard VPN device pass the firewall, from every live server at Atlas.
+central.patches.v0_0.remove_wireguard_device_firewall_rule
+# Existing server events keep their Pilot caller after the explicit reportable flag.
+central.patches.v0_0.mark_pilot_reportable_events
+# Revoke every trial key still live, pool and assigned alike; the refill job mints the pools fresh.
+central.patches.v0_0.revoke_trial_keys
+# Apps: ready-to-run one-click images a region's Cargo builds.
+central.patches.v0_0.seed_template_offering
+# Image offerings show Frappe first, then Apps, then Ubuntu.
+central.patches.v0_0.order_image_offerings
+# Subscriptions and usage rollups keep the region name from their creation. Move them off a renamed region.
+central.patches.v0_0.repoint_billing_records_to_renamed_region
+# Draft and Open invoices become Outstanding.
+central.patches.v0_0.merge_invoice_draft_and_open_into_outstanding
+# The internal flag moves from Tax Profile to Billing Profile.
+central.patches.v0_0.move_internal_flag_to_billing_profile
+# A waived invoice never reaches the accounting system.
+central.patches.v0_0.mark_waived_invoices_as_not_synced
+# Promotional credit always expires, and a wallet holds nothing its ledger cannot prove.
+central.patches.v0_0.expire_promotional_credit_and_clear_unbooked_wallets
+# Webhook events from Frappe Cloud v1 are no longer stored. Remove the old ones.
+central.patches.v0_0.remove_webhook_events_of_another_product
+# Start per-team run outcomes and the minimum invoice amount, and clear what they replace.
+central.patches.v0_0.start_billing_run_outcomes_and_minimum_invoices
+# VM plans can bundle remote storage.
+central.patches.v0_0.allow_storage_in_vm_plans
+# Fill the activity feed from the Versions, deletions and server actions Central already keeps.
+central.patches.v0_0.backfill_activity_events

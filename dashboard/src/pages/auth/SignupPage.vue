@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { Button, ErrorMessage } from 'frappe-ui'
+import { Button } from 'frappe-ui'
 import { ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import AuthErrorMessage from '@/components/auth/AuthErrorMessage.vue'
 import AuthShell from '@/components/auth/AuthShell.vue'
 import ProductLogo from '@/components/auth/ProductLogo.vue'
 import TermsNotice from '@/components/auth/TermsNotice.vue'
@@ -19,7 +20,7 @@ import { carriedQuery } from '@/lib/authRedirect'
 const route = useRoute()
 const router = useRouter()
 const { sendCode } = useEmailSignIn()
-const { product } = useProduct()
+const { product, productKey } = useProduct()
 
 const fullName = ref('')
 const email = ref(queryString(route.query.email))
@@ -49,8 +50,8 @@ async function submit() {
 </script>
 
 <template>
-	<AuthShell>
-		<h1 class="flex items-center gap-2 text-xl font-semibold text-ink-gray-9">
+	<AuthShell :show-progress="Boolean(productKey)" :step="1">
+		<h1 class="flex items-center gap-2 text-xl-semibold text-ink-gray-9">
 			<ProductLogo />
 			Create your account
 		</h1>
@@ -77,7 +78,7 @@ async function submit() {
 				:validator="emailError"
 				:submitted="submitted"
 			/>
-			<ErrorMessage v-if="error" :message="error" />
+			<AuthErrorMessage v-if="error" :message="error" page="Sign up" />
 			<Button
 				type="submit"
 				variant="solid"
@@ -93,7 +94,7 @@ async function submit() {
 			<p>
 				Already have an account?
 				<RouterLink
-					class="font-medium text-ink-gray-8 hover:underline"
+					class="text-p-sm-medium text-ink-gray-8 hover:underline"
 					:to="{ path: '/login', query: carriedQuery(route.query) }"
 				>
 					Sign in

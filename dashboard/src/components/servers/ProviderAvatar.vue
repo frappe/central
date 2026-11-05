@@ -31,6 +31,13 @@ const src = computed(() =>
 const monogram = computed(
 	() => props.provider?.trim().charAt(0).toUpperCase() || '?',
 )
+const monogramClass = computed(() => {
+	if (props.size >= 40) return 'text-xl-bold'
+	if (props.size >= 36) return 'text-lg-bold'
+	if (props.size >= 32) return 'text-sm-bold'
+	if (props.size >= 28) return 'text-xs-bold'
+	return 'text-2xs-bold'
+})
 </script>
 
 <template>
@@ -52,8 +59,8 @@ const monogram = computed(
 		/>
 		<span
 			v-else
-			class="grid size-full place-items-center overflow-hidden rounded-full bg-surface-gray-3 font-bold leading-none text-ink-gray-8"
-			:style="{ fontSize: `${Math.round(size * 0.42)}px` }"
+			class="grid size-full place-items-center overflow-hidden rounded-full bg-surface-gray-3 text-ink-gray-8"
+			:class="monogramClass"
 		>
 			{{ monogram }}
 		</span>

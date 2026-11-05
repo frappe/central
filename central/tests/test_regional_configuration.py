@@ -47,6 +47,12 @@ class TestRegionalConfiguration(IntegrationTestCase):
 		self.assertFalse(arguments.kwargs["allow_redirects"])
 		self.token.assert_called_once_with(42)
 
+	def test_a_request_carries_the_central_trace_id(self):
+		with patch("central.integrations.atlas.get_trace_id", return_value="trace-1"):
+			AtlasClient.for_operator(self.instance).check_connection()
+
+		self.assertEqual(self.request.call_args.kwargs["headers"]["X-Frappe-Request-Id"], "trace-1")
+
 	def test_missing_region_id_never_sends_request(self):
 		self.instance.atlas_region_id = None
 		with self.assertRaises(AtlasConnectionError):
@@ -217,6 +223,16 @@ class TestRegionalConfiguration(IntegrationTestCase):
 		self.instance.enroll_atlas()
 
 		self.assertEqual(self.request.call_args.kwargs["json"]["webhook_secret"], first_secret)
+
+	def test_the_atlas_secret_survives_a_later_save(self):
+		"""Frappe deletes a Password whose column is empty when the document is saved."""
+		self.request.return_value = self.response({})
+		self.instance.enroll_atlas()
+		secret = self.instance.reload().get_password("webhook_secret")
+
+		self.instance.save()
+
+		self.assertEqual(self.instance.reload().get_password("webhook_secret"), secret)
 
 	def test_enroll_atlas_raises_and_does_not_persist_a_rejected_secret(self):
 		self.request.return_value = self.response({}, 403)

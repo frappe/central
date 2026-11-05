@@ -1,18 +1,9 @@
 # Copyright (c) 2026, frappe and contributors
 # For license information, please see license.txt
-"""Everything about a region's Cargo that only Cargo cares about.
-
-Mixed into `Region` (see `region.py`). Cargo has no polled "Test Connection" the
-way Atlas does: Central checks its health endpoint only to know when to register it,
-and after that Cargo reports itself in by webhook. Keep Atlas-specific fields and
-logic in `atlas_connection.py` instead of here.
-"""
-
-from __future__ import annotations
 
 import frappe
 from frappe import _
-from frappe.utils.password import set_encrypted_password
+from frappe.utils.password import get_decrypted_password
 
 from central.errors import CargoConnectionError
 from central.iam import user_has_operator_bypass
@@ -43,6 +34,7 @@ class CargoConnectionMixin:
 		"""Operator action: register this region's Cargo now. A failure raises."""
 		if not user_has_operator_bypass():
 			frappe.throw(_("Not permitted."), frappe.PermissionError)
+
 		self.check_permission("write")
 
 		# Keep the saved configuration stable until this call finishes.
@@ -65,9 +57,50 @@ class CargoConnectionMixin:
 		secret = frappe.generate_hash(length=32)
 		client.configure_webhooks(secret)
 
-		set_encrypted_password("Region", self.name, secret, "cargo_webhook_secret")
-		self.db_set({"cargo_status": "Registered", "cargo_registered_at": frappe.utils.now_datetime()})
+		self.cargo_webhook_secret = secret
+		self.cargo_status = "Registered"
+		self.cargo_registered_at = frappe.utils.now_datetime()
+		self.save()
+
 		return True
+
+
+def get_cargo_machine_claims(token: str) -> dict:
+	"""The claims of a machine token a region's Cargo signed with its webhook secret.
+
+	1. The unverified `region` claim only selects the secret; it proves nothing.
+	2. The region's Cargo must be Registered and hold a secret.
+	3. The HS256 signature must match that secret, with the machine token audience.
+	4. The token must name a machine and one of Cargo's node roles, or `cargo` for Cargo's own host."""
+	import jwt
+
+	try:
+		region = jwt.decode(token, options={"verify_signature": False}).get("region")
+		if (
+			not isinstance(region, str)
+			or frappe.db.get_value("Region", region, "cargo_status") != "Registered"
+		):
+			raise jwt.InvalidTokenError
+
+		secret = get_decrypted_password("Region", region, "cargo_webhook_secret", raise_exception=False)
+		if not secret:
+			raise jwt.InvalidTokenError
+
+		claims = jwt.decode(
+			token,
+			secret,
+			algorithms=["HS256"],
+			audience="central:datum-credential",
+			issuer="cargo",
+			options={"require": ["iss", "aud", "iat"]},
+		)
+	except jwt.PyJWTError:
+		frappe.throw(_("Invalid machine token."), frappe.AuthenticationError)
+
+	if not claims.get("machine") or claims.get("role") not in ("gateway", "storage", "telemetry", "cargo"):
+		frappe.throw(_("Invalid machine token."), frappe.AuthenticationError)
+
+	return claims
 
 
 def register_pending_cargo() -> None:

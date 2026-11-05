@@ -16,6 +16,7 @@ const CATEGORY_ORDER = ['Billing', 'Team', 'Services', 'Servers']
 export type ServerCapability =
 	| 'server:view'
 	| 'server:power'
+	| 'server:network'
 	| 'server:resize'
 	| 'server:snapshot'
 	| 'server:terminate'
@@ -24,16 +25,26 @@ export type ServerCapability =
 /** A row that carries the caller's capabilities on its own server. */
 export interface ServerAccess {
 	capabilities?: ServerCapability[] | null
+	/** The server runs a free trial: its site works, and server access waits for an upgrade. */
+	is_access_locked?: boolean
 }
+
+/** Why a server action is off on a free trial server. */
+export const ACCESS_LOCKED_REASON = 'Not in the free trial. Upgrade to use it.'
 
 /** The server actions the caller may take. */
 export interface ServerActions {
+	/** Sign in to the server's bench or site, which is an Administrator session. */
 	open: boolean
 	power: boolean
+	/** Change the firewall, public addresses, and WireGuard access. */
+	network?: boolean
 	resize: boolean
 	snapshot: boolean
 	terminate: boolean
 	console?: boolean
+	/** SSH, the web console, Pilot and snapshots wait for an upgrade. */
+	isAccessLocked?: boolean
 }
 
 /** What the caller may do on this row's server. Central sends each row its own
@@ -44,10 +55,13 @@ export function getServerActions(
 	teamActions: ServerActions,
 ): ServerActions {
 	const caps = row?.capabilities
-	if (!caps) return teamActions
+	const isAccessLocked = !!row?.is_access_locked
+	if (!caps) return { ...teamActions, isAccessLocked }
 	return {
-		open: caps.includes('server:view'),
+		isAccessLocked,
+		open: caps.includes('server:console'),
 		power: caps.includes('server:power'),
+		network: caps.includes('server:network'),
 		resize: caps.includes('server:resize'),
 		snapshot: caps.includes('server:snapshot'),
 		terminate: caps.includes('server:terminate'),
@@ -68,7 +82,9 @@ export function groupCapabilitiesByCategory(
 	const byLabel = new Map<string, CapabilityInfo[]>()
 	for (const cap of palette) {
 		const prefix = cap.name.split(':')[0]
-		const label = CATEGORY_LABEL[prefix] ?? capitalise(prefix)
+		const label =
+			CATEGORY_LABEL[prefix] ??
+			capitalise(prefix.replace(/_/g, ' ').toLowerCase())
 		const list = byLabel.get(label) ?? []
 		list.push(cap)
 		byLabel.set(label, list)
@@ -84,7 +100,10 @@ export function groupCapabilitiesByCategory(
 /** Backend capability descriptions end with a full stop; in the role builder
  *  and the capability panel they read as list items, so drop it for display. */
 export function capabilityLabel(cap: CapabilityInfo): string {
-	return cap.description.replace(/\.\s*$/, '')
+	const label = cap.description.replace(/\.\s*$/, '')
+	return /^[A-Z][A-Z_]+$/.test(label)
+		? capitalise(label.replace(/_/g, ' ').toLowerCase())
+		: label
 }
 
 // The area nouns for derived role descriptions, in reading order.

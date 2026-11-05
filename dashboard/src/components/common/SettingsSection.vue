@@ -28,8 +28,11 @@ defineProps<Props>()
 					</Tooltip>
 				</div>
 
-				<p v-if="description" class="text-p-sm text-ink-gray-5">
-					{{ description }}
+				<p
+					v-if="description || $slots.description"
+					class="text-p-sm text-ink-gray-6"
+				>
+					<slot name="description">{{ description }}</slot>
 				</p>
 			</div>
 

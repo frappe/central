@@ -1,7 +1,13 @@
-import type { ColumnDef, RowData, Table } from '@tanstack/vue-table'
-
-export type ListViewColumn<TData extends RowData> = ColumnDef<TData, unknown>
-export type ListViewTable<TData extends RowData> = Table<TData>
+export interface ListViewColumn<TData> {
+	key: string
+	label: string
+	width?: string
+	value?: (row: TData) => unknown
+	sortable?: boolean
+	compare?: (a: TData, b: TData) => number
+	align?: 'start' | 'end'
+	class?: string
+}
 
 export interface ListViewEmptyState {
 	title: string
@@ -33,9 +39,9 @@ export interface ListViewQuery {
 	filters: Record<string, string>
 }
 
-export function createListViewQuery(
+export const createListViewQuery = (
 	overrides: Partial<ListViewQuery> = {},
-): ListViewQuery {
+): ListViewQuery => {
 	const { filters = {}, ...rest } = overrides
 	return {
 		page: 1,

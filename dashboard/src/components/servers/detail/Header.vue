@@ -1,11 +1,14 @@
 <script setup lang="ts">
-import { Badge, Button, Dropdown } from 'frappe-ui'
+import { Badge, Button, Dropdown, Tooltip } from 'frappe-ui'
 import { computed } from 'vue'
 import ProviderAvatar from '@/components/servers/ProviderAvatar.vue'
-import type { ServerCommand, VirtualMachineRow } from '@/composables/useServers'
+import type {
+	ConsoleMode,
+	ServerCommand,
+	VirtualMachineRow,
+} from '@/composables/useServers'
 import type { ServerActions } from '@/lib/capabilities'
-import { copyToClipboard } from '@/lib/clipboard'
-import { reportError, successToast } from '@/lib/feedback'
+import { formatCalendarDate, timeAgo } from '@/lib/datetime'
 import { formatPlanLabel } from '@/lib/planLabel'
 import { statusVisual } from '@/lib/serverMap'
 import { getServerMenu, type ServerMenuVerb } from '@/lib/serverMenu'
@@ -19,6 +22,7 @@ interface Props {
 	siteUrl: string | null
 	opening: boolean
 	busy: boolean
+	isSavingProtection: boolean
 }
 
 const props = defineProps<Props>()
@@ -27,11 +31,12 @@ const emit = defineEmits<{
 	open: []
 	pilot: []
 	command: [command: Exclude<ServerCommand, 'terminate'>]
-	console: []
+	console: [mode: ConsoleMode]
 	rename: []
 	snapshot: []
 	resize: []
 	terminate: []
+	protect: [enabled: boolean]
 }>()
 
 const visual = computed(() => statusVisual(props.server))
@@ -39,20 +44,36 @@ const isLocked = computed(() => !!props.server.pending_action)
 const isRunning = computed(() => props.server.status === 'Running')
 const isUbuntu = computed(() => props.server.image_offering === 'ubuntu')
 
-const address = computed(
-	() => props.server.public_ipv6 || props.server.public_ipv4,
+const isProtected = computed(() => !!props.details?.is_termination_protected)
+const protectionLabel = computed(() =>
+	isProtected.value
+		? 'Turn off termination protection'
+		: 'Turn on termination protection',
 )
 
-const copy = async (value: string, label: string): Promise<void> => {
-	if (await copyToClipboard(value)) {
-		successToast(`${label} copied`)
-		return
-	}
-
-	reportError(`${label} could not be copied. Select it and copy by hand.`)
+interface Fact {
+	icon: string
+	label: string | null
+	help?: string
 }
 
-const facts = computed(() => {
+const createdFact = computed<Fact | null>(() => {
+	const details = props.details
+	if (!details) return null
+
+	const creator = details.created_by_name || details.created_by
+	return {
+		icon: 'lucide-clock',
+		label: creator
+			? `Created ${timeAgo(details.creation)} by ${creator}`
+			: `Created ${timeAgo(details.creation)}`,
+		help: [formatCalendarDate(details.creation), details.created_by]
+			.filter(Boolean)
+			.join(' · '),
+	}
+})
+
+const facts = computed<Fact[]>(() => {
 	const server = props.server
 	const details = props.details
 	const region = details?.region_details
@@ -64,22 +85,23 @@ const facts = computed(() => {
 		},
 		{
 			icon: 'lucide-layers',
-			label: isUbuntu.value
-				? 'Ubuntu'
-				: `Frappe ${server.frappe_version || ''}`.trim(),
+			label: isUbuntu.value ? 'Ubuntu' : null,
 		},
 		{
-			icon: 'lucide-receipt',
+			icon: 'lucide-package',
 			label:
 				details &&
 				formatPlanLabel({
 					title: details.plan_title,
+					vcpus: details.vcpus,
+					memoryMegabytes: details.memory_megabytes,
 					rate: details.plan_rate,
 					currency: details.plan_currency,
 					billingCycle: details.plan_billing_cycle,
 				}),
 		},
-	].filter((fact) => fact.label)
+		createdFact.value,
+	].filter((fact): fact is Fact => !!fact?.label)
 })
 
 const canOpen = computed(
@@ -87,33 +109,71 @@ const canOpen = computed(
 		props.actions.open &&
 		!isUbuntu.value &&
 		!isSettingUp(props.server.status) &&
-		(!!props.siteUrl || !!props.server.gateway_url),
+		// Without a site, Open signs in to Pilot, which a free trial locks.
+		(!!props.siteUrl ||
+			(!!props.server.gateway_url && !props.actions.isAccessLocked)),
 )
 
-// Overview and Open are the page itself and its primary button, so the menu omits them.
 const handlers: Partial<Record<ServerMenuVerb, () => void>> = {
+	open: () => emit('open'),
 	pilot: () => emit('pilot'),
 	start: () => emit('command', 'start'),
 	stop: () => emit('command', 'stop'),
 	restart: () => emit('command', 'restart'),
 	resize: () => emit('resize'),
 	snapshot: () => emit('snapshot'),
-	console: () => emit('console'),
+	'ssh-console': () => emit('console', 'ssh'),
+	'tty-console': () => emit('console', 'tty'),
 	rename: () => emit('rename'),
 	terminate: () => emit('terminate'),
 }
 
-const menu = computed(() =>
-	getServerMenu(props.server, props.actions, (verb) => handlers[verb]?.(), {
-		opensSite: !!props.siteUrl,
-		isOnServerPage: true,
-	}),
-)
+const operatorItems = computed(() => {
+	const links = props.details?.operator_links
+	if (!links) return []
+
+	const { desk_url: deskUrl, atlas_url: atlasUrl } = links
+	const open = (url: string) => window.open(url, '_blank', 'noopener')
+	return [
+		{
+			label: 'Open in Desk',
+			icon: 'lucide-app-window',
+			onClick: () => open(deskUrl),
+		},
+		...(atlasUrl
+			? [
+					{
+						label: 'Open in Atlas',
+						icon: 'lucide-earth',
+						onClick: () => open(atlasUrl),
+					},
+				]
+			: []),
+	]
+})
+
+const menu = computed(() => {
+	const groups = getServerMenu(
+		props.server,
+		props.actions,
+		(verb) => handlers[verb]?.(),
+		{
+			site: props.siteUrl ? new URL(props.siteUrl).host : null,
+			isOnServerPage: true,
+		},
+	)
+	if (!operatorItems.value.length) return groups
+
+	return [
+		...groups,
+		{ group: 'Operator', hideLabel: true, options: operatorItems.value },
+	]
+})
 </script>
 
 <template>
 	<header
-		class="flex flex-col gap-4 rounded-6 bg-surface-gray-1 p-4 md:flex-row md:items-center md:justify-between"
+		class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between"
 	>
 		<div class="flex min-w-0 items-center gap-3">
 			<ProviderAvatar
@@ -133,37 +193,54 @@ const menu = computed(() =>
 						:theme="visual.badgeTheme"
 						:class="{ 'animate-pulse': visual.motion !== 'none' }"
 					/>
+
+					<Tooltip
+						v-if="details?.has_wireguard_access"
+						text="Your team's WireGuard VPN devices reach this server at its private address."
+					>
+						<RouterLink
+							:to="`/servers/${server.resource_id}/access`"
+							class="shrink-0 rounded-full focus-visible:ring-2 focus-visible:ring-outline-gray-3"
+						>
+							<Badge label="VPN" theme="blue">
+								<template #prefix>
+									<!-- A 10px shield looks light beside the caps, and the badge text renders 0.5px above center. -->
+									<span
+										class="lucide-shield-check -m-px size-3 -translate-y-[0.5px]"
+										aria-hidden="true"
+									/>
+								</template>
+							</Badge>
+						</RouterLink>
+					</Tooltip>
 				</div>
 
 				<ul
 					class="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-ink-gray-5"
 				>
-					<li
-						v-for="fact in facts"
-						:key="fact.icon"
-						class="flex items-center gap-1.5"
-					>
-						<span :class="fact.icon" class="size-3.5 shrink-0" />
-						{{ fact.label }}
-					</li>
-
-					<li v-if="address" class="min-w-0">
-						<button
-							type="button"
-							class="flex min-w-0 items-center gap-1.5 rounded-2 hover:text-ink-gray-8 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-outline-gray-3"
-							:aria-label="`Copy address ${address}`"
-							title="Copy address"
-							@click="copy(address, 'Address')"
-						>
-							<span class="lucide-globe size-3.5 shrink-0" />
-							<span class="truncate">{{ address }}</span>
-						</button>
+					<li v-for="fact in facts" :key="fact.icon">
+						<Tooltip :text="fact.help">
+							<span class="flex items-center gap-1.5">
+								<span :class="fact.icon" class="size-3.5 shrink-0" />
+								{{ fact.label }}
+							</span>
+						</Tooltip>
 					</li>
 				</ul>
 			</div>
 		</div>
 
 		<div class="flex shrink-0 gap-2">
+			<Button
+				v-if="details && actions.terminate && !actions.isAccessLocked"
+				variant="ghost"
+				:icon="isProtected ? 'lucide-lock' : 'lucide-lock-open'"
+				:label="protectionLabel"
+				:tooltip="protectionLabel"
+				:loading="isSavingProtection"
+				@click="emit('protect', !isProtected)"
+			/>
+
 			<Dropdown :options="menu" align="end">
 				<Button
 					label="Actions"

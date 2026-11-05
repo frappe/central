@@ -1,5 +1,5 @@
 import { useCall } from 'frappe-ui'
-import { computed, type Ref, ref, watch } from 'vue'
+import { computed, onScopeDispose, type Ref, ref, watch } from 'vue'
 import { API, method } from '@/api/methods'
 import { usePlans } from '@/composables/usePlans'
 import type { VirtualMachineRow } from '@/composables/useServers'
@@ -9,10 +9,11 @@ import {
 	estimateConfig,
 	rateCardComplete,
 } from '@/lib/composed'
-import { getErrorMessage, successToast } from '@/lib/feedback'
+import { getErrorMessage, isAbortError, successToast } from '@/lib/feedback'
 import { money } from '@/lib/format'
-import { planQuantity } from '@/lib/plans'
+import { planQuantity, presetPrice } from '@/lib/plans'
 import type { ComposedConfig, Plan, Profile } from '@/types/api'
+import type { ServerTrial, TrialPlanChoice } from '@/types/billing'
 
 interface ResizeCallbacks {
 	close: () => void
@@ -44,6 +45,12 @@ export function useResizeServer(
 		vcpus?: number
 		memory_gb?: number
 		disk_gb?: number
+		/** The open free trial that keeps this server from being resized. */
+		trial?: ServerTrial | null
+		/** The paid plans the trial site may move to, cheapest first. */
+		trial_plans?: TrialPlanChoice[]
+		/** A converted trial's server is starting and has no subscription yet. */
+		starting?: boolean
 		lock?: {
 			locked_rate: number
 			list_rate: number
@@ -83,6 +90,8 @@ export function useResizeServer(
 		currency,
 		capacity,
 		loading: plansLoading,
+		error: plansError,
+		reload: reloadPlans,
 	} = usePlans(region, subscription)
 
 	// A preset name, or `custom:<profile>` for a designed config in that profile — the
@@ -95,6 +104,18 @@ export function useResizeServer(
 		(selectedPlan.value ?? '').startsWith('custom:'),
 	)
 	const resizable = computed(() => configCall.data?.resizable === true)
+	const trial = computed(() => configCall.data?.trial ?? null)
+	const trialPlans = computed(() => configCall.data?.trial_plans ?? [])
+	const starting = computed(() => configCall.data?.starting === true)
+
+	// The subscription arrives once the converted server runs, so check again until it does.
+	let startingTimer: number | undefined
+	watch([starting, isOpen], ([isStarting, open]) => {
+		window.clearInterval(startingTimer)
+		if (isStarting && open)
+			startingTimer = window.setInterval(() => configCall.reload(), 5000)
+	})
+	onScopeDispose(() => window.clearInterval(startingTimer))
 
 	const canDesign = computed(
 		() => rateCardComplete(rateCard.value) && profiles.value.length > 0,
@@ -210,7 +231,7 @@ export function useResizeServer(
 		}
 	})
 
-	// Without "CPU and memory only" the disk follows the chosen size. It never shrinks.
+	// Storage follows exactly what the controls show. Invalid selections cannot submit.
 	const targetDisk = computed(() => {
 		if (computeOnly.value) return currentDisk.value
 
@@ -219,44 +240,58 @@ export function useResizeServer(
 			: selectedPreset.value
 				? planQuantity(selectedPreset.value, 'Disk')
 				: 0
-		return Math.max(currentDisk.value, chosen)
+		return chosen
 	})
+
+	watch(
+		[computeOnly, selectedPreset, currentDisk],
+		() => {
+			if (
+				!computeOnly.value &&
+				selectedPreset.value &&
+				targetDisk.value < currentDisk.value
+			)
+				selectedPlan.value = null
+		},
+		{ flush: 'sync' },
+	)
 
 	const computeChanged = computed(() => {
 		const next = targetCompute.value
 		const now = initial.value
 		if (!selectedPlan.value || !next || !now) return false
 
-		if (isCustomSel.value && !configCall.data?.composed) return true
-		if (!isCustomSel.value && selectedPlan.value !== configCall.data?.plan)
-			return true
-
-		return (
-			next.vcpus !== now.vcpus ||
-			next.memory_gb !== now.memory_gb ||
-			next.sub_category !== now.sub_category
-		)
+		return next.vcpus !== now.vcpus || next.memory_gb !== now.memory_gb
 	})
 	const diskChanged = computed(() => targetDisk.value > currentDisk.value)
-	const changed = computed(() => computeChanged.value || diskChanged.value)
+	const changed = computed(
+		() =>
+			!!targetCompute.value &&
+			(computeChanged.value ||
+				diskChanged.value ||
+				selectedPlan.value !== currentPlanKey.value ||
+				targetCompute.value.sub_category !== initial.value?.sub_category),
+	)
 	const needsRestart = computed(
 		() => serverIsLive.value && computeChanged.value,
 	)
 
-	const downtimeNote = computed(() =>
-		diskChanged.value && !needsRestart.value
-			? 'The disk grows while the server runs. No data is lost.'
-			: 'The server stops while it resizes. It takes a few minutes, and no data is lost.',
-	)
+	const downtimeNote = computed(() => {
+		if (server.value?.status === 'Stopped')
+			return 'The server will start after the resize.'
+		if (needsRestart.value)
+			return 'Your site goes offline for a few minutes while the server restarts.'
+		return 'No restart needed.'
+	})
 
 	const totalShape = computed(() => {
-		const compute = targetCompute.value ?? initial.value
+		const compute = targetCompute.value
 		if (!compute) return null
 
 		return {
 			vcpus: compute.vcpus,
 			memory_gb: compute.memory_gb,
-			disk_gb: targetDisk.value || compute.disk_gb,
+			disk_gb: targetDisk.value,
 			sub_category: compute.sub_category,
 		}
 	})
@@ -268,10 +303,7 @@ export function useResizeServer(
 		shape: ComposedConfig,
 		plan: Plan | undefined,
 	): number | null {
-		if (plan) {
-			const extraDisk = Math.max(0, shape.disk_gb - planQuantity(plan, 'Disk'))
-			return plan.rate + extraDisk * (rateCard.value.Disk?.rate ?? 0)
-		}
+		if (plan) return presetPrice(plan, rateCard.value, shape.disk_gb)
 
 		if (rateCardComplete(rateCard.value))
 			return estimateConfig(shape, rateCard.value)
@@ -305,6 +337,53 @@ export function useResizeServer(
 		return formatMonthly(getMonthlyPrice(shape, plan), plan?.currency)
 	})
 
+	const targetPrice = computed(() =>
+		totalShape.value
+			? getMonthlyPrice(totalShape.value, selectedPreset.value)
+			: null,
+	)
+	const selectionError = computed(() => {
+		if (!totalShape.value) return ''
+		if (targetDisk.value < currentDisk.value)
+			return `Storage cannot be smaller than your current ${currentDisk.value} GB disk.`
+		const profile = profileFor(totalShape.value.sub_category)
+		if (profile?.disk_max && targetDisk.value > profile.disk_max)
+			return `This server type supports at most ${profile.disk_max} GB storage.`
+		if (targetPrice.value === null)
+			return 'The price could not be loaded. Please try again.'
+		if (available.value != null && targetPrice.value > available.value)
+			return 'This size is over your spending limit, including retained storage.'
+		return ''
+	})
+	const configError = computed(() =>
+		isAbortError(configCall.error) ? null : configCall.error,
+	)
+	const optionsError = computed(() => {
+		const error = configError.value || plansError.value
+		return error ? getErrorMessage(error, "Couldn't load resize options.") : ''
+	})
+	async function reloadOptions(): Promise<void> {
+		if (!configError.value) {
+			reloadPlans()
+			return
+		}
+		const previousSubscription = subscription.value
+		await configCall.reload()
+		if (subscription.value === previousSubscription && plansError.value)
+			reloadPlans()
+	}
+
+	const canConfirm = computed(
+		() =>
+			resizable.value &&
+			changed.value &&
+			!selectionError.value &&
+			!optionsError.value &&
+			!configCall.loading &&
+			!plansLoading.value &&
+			!!totalShape.value,
+	)
+
 	const resizeCall = useCall<
 		{ subscription: string; queued: boolean; resized: boolean },
 		Record<string, unknown>
@@ -329,7 +408,8 @@ export function useResizeServer(
 		if (
 			!currentServer?.resource_id ||
 			!activeTeamId.value ||
-			!changed.value ||
+			!canConfirm.value ||
+			resizeCall.loading ||
 			!compute
 		)
 			return
@@ -370,6 +450,9 @@ export function useResizeServer(
 		resizeCall,
 		plansLoading,
 		resizable,
+		trial,
+		trialPlans,
+		starting,
 		nothingToShow,
 		resizeError,
 		losesLockedRate,
@@ -393,6 +476,11 @@ export function useResizeServer(
 		flatProfile,
 		currentPrice,
 		totalPrice,
+		totalShape,
+		selectionError,
+		canConfirm,
+		optionsError,
+		reloadOptions,
 		downtimeNote,
 		changed,
 		confirm,

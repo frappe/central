@@ -28,7 +28,7 @@
  ],
  "fields": [
   {"fieldname": "team", "fieldtype": "Link", "options": "Team", "in_list_view": 1, "in_standard_filter": 1, "label": "Team", "reqd": 1, "search_index": 1},
-  {"default": "Billing", "fieldname": "category", "fieldtype": "Select", "in_list_view": 1, "in_standard_filter": 1, "label": "Category", "options": "Billing\nServer\nTeam"},
+  {"default": "Billing", "fieldname": "category", "fieldtype": "Select", "in_list_view": 1, "in_standard_filter": 1, "label": "Category", "options": "Billing\nServer\nTeam\nTrial"},
   {"fieldname": "event_type", "fieldtype": "Data", "in_list_view": 1, "label": "Event Type"},
   {"default": "Info", "fieldname": "severity", "fieldtype": "Select", "in_list_view": 1, "label": "Severity", "options": "Info\nSuccess\nWarning\nError"},
   {"fieldname": "required_cap", "fieldtype": "Data", "label": "Required Capability", "search_index": 1},

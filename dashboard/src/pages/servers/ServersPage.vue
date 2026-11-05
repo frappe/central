@@ -33,7 +33,6 @@ const {
 	canTerminateServer,
 	canSnapshotServer,
 	canOpenConsole,
-	canViewServers,
 	canCreateServer,
 	activeTeam,
 	rows,
@@ -52,6 +51,7 @@ const {
 	hasMapViewChoice,
 	settledIds,
 	servers,
+	loaded,
 } = useServerFleet()
 
 const MAP_VIEW_OPTIONS = [
@@ -101,7 +101,7 @@ const {
 
 // A member can be scoped to some servers, so each dialog follows the server it shows.
 const teamActions = computed<ServerActions>(() => ({
-	open: canViewServers.value,
+	open: canOpenConsole.value,
 	power: canPowerServer.value,
 	resize: canResizeServer.value,
 	snapshot: canSnapshotServer.value,
@@ -114,7 +114,7 @@ const terminateActions = computed(() =>
 
 // A link from a server's own dashboard opens that server here.
 useServerLink(
-	{ activeTeam, servers, reload },
+	{ activeTeam, servers, loading, loaded, reload },
 	{
 		overview: showServer,
 		resize: (server) => {
@@ -123,6 +123,11 @@ useServerLink(
 			else if (!getServerActions(server, teamActions.value).resize)
 				infoToast("You can't resize this server.")
 			else openResize(server)
+		},
+		'open-bench': (server) => {
+			if (!getServerActions(server, teamActions.value).open)
+				infoToast("You can't open this server.")
+			else void openBench(server, { inPlace: true })
 		},
 	},
 )
@@ -159,7 +164,7 @@ useServerLink(
 				:has-rows="rows.length > 0"
 				:location-filter="locationFilter"
 				:settled-ids="settledIds"
-				:can-open="canViewServers"
+				:can-open="canOpenConsole"
 				:can-power="canPowerServer"
 				:can-resize="canResizeServer"
 				:can-terminate="canTerminateServer"
@@ -197,7 +202,7 @@ useServerLink(
 					:label-spots="isFleetEmpty"
 					:highlight-id="hoverId"
 					:allow-create="canCreateServer"
-					:allow-open="canViewServers"
+					:allow-open="canOpenConsole"
 					:opening="opening"
 					@open="openById"
 					@open-server="openBench"
@@ -209,13 +214,13 @@ useServerLink(
 						<ServerRowActions
 							v-if="pin.server"
 							:server="pin.server"
-							:can-open="canViewServers"
+							:can-open="canOpenConsole"
 							:can-power="canPowerServer"
 							:can-resize="canResizeServer"
 							:can-terminate="canTerminateServer"
 							:can-snapshot="canSnapshotServer"
 							:can-open-console="canOpenConsole"
-							:opens-site="!!pin.site"
+							:site="pin.site?.name"
 							:busy="busy === pin.server.resource_id"
 							:opening="
 								opening === pin.server.resource_id ||
@@ -293,7 +298,7 @@ useServerLink(
 		>
 			<p class="text-p-base text-ink-gray-7">
 				Restart
-				<span class="font-semibold text-ink-gray-9"
+				<span class="text-p-base-semibold text-ink-gray-9"
 					>{{ pendingRestart?.title || pendingRestart?.resource_id }}</span
 				>? It will be unavailable for a moment.
 			</p>
@@ -303,7 +308,9 @@ useServerLink(
 			v-model:target="pendingTerminate"
 			:loading="busy === pendingTerminate?.resource_id"
 			:error="terminateError"
-			:can-snapshot="terminateActions.snapshot"
+			:can-snapshot="
+				terminateActions.snapshot && !terminateActions.isAccessLocked
+			"
 			@confirm="confirmTerminate"
 		/>
 		<TakeSnapshotDialog v-model:server="pendingSnapshot" />

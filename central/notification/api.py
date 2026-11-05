@@ -1,16 +1,22 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
-"""Notification dashboard API — customer-facing endpoints for preferences and events."""
 
 import frappe
 from frappe import _
 from frappe.model.document import bulk_insert
 
 from central.api.pilot import pilot_credential_auth
-from central.iam import is_active_team_member, resolve_team, user_has_operator_bypass
+from central.iam import can_on_any_server, is_active_team_member, resolve_team, user_has_operator_bypass
 from central.notification import CATEGORIES
+from central.notification.doctype.notification_digest_setting.notification_digest_setting import (
+	NotificationDigestSetting,
+)
+from central.notification.doctype.user_notification_preference.user_notification_preference import (
+	UserNotificationPreference,
+)
 
 MARK_READ_BATCH_SIZE = 500
+PILOT_REPORTABLE_CATEGORIES = ("Server",)
 
 
 def _require_member(user: str, team: str) -> None:
@@ -31,71 +37,142 @@ def _member_team(team: str | None) -> str:
 	user = frappe.session.user
 	team = resolve_team(user, team)
 	_require_member(user, team)
+
 	return team
 
 
 @frappe.whitelist(methods=["POST"])
-def save_user_preferences(team: str, preferences: list[dict]) -> dict:
-	"""Create or update the calling user's notification preferences for *team*.
-
-	``preferences`` is a list of dicts, each with:
-	  - ``category``: Billing | Server | Team
-	  - ``email_enabled``: 0 | 1
-	  - ``in_app_enabled``: 0 | 1
-
-	Upserts per (user, team, category). Returns the saved preferences."""
+def save_user_preferences(team: str, preferences: list[dict], digest_hour: int | None = None) -> dict:
+	"""Save the caller's notification preferences and one digest hour for *team*."""
 	user = frappe.session.user
 	_require_member(user, team)
 	saved = []
 	# Serialize preference upserts for this team. The unique constraint remains the
 	# final guard when separate requests race.
 	frappe.db.get_value("Team", team, "name", for_update=True)
+	if digest_hour is not None:
+		NotificationDigestSetting.upsert(user, team, digest_hour)
 	for pref in preferences:
-		category = pref.get("category")
-		if category not in CATEGORIES:
-			frappe.throw(_("Unsupported notification category {0}.").format(frappe.bold(category)))
 		email = bool(frappe.utils.cint(pref.get("email_enabled", 1)))
 		in_app = bool(frappe.utils.cint(pref.get("in_app_enabled", 1)))
+		events = None
+		if "events" in pref:
+			events = [
+				{"event_type": event.get("event_type"), "email_enabled": 0}
+				for event in pref["events"] or []
+				if not frappe.utils.cint(event.get("email_enabled", 0))
+			]
 
-		existing = frappe.db.get_value(
-			"User Notification Preference",
-			{"user": user, "team": team, "category": category},
-			"name",
+		doc = UserNotificationPreference.upsert(
+			user,
+			team,
+			pref.get("category"),
+			email,
+			in_app,
+			pref.get("frequency"),
+			events,
 		)
-		if existing:
-			doc = frappe.get_doc("User Notification Preference", existing)
-			doc.update({"email_enabled": int(email), "in_app_enabled": int(in_app)})
-			doc.save()
-		else:
-			doc = frappe.get_doc(
-				{
-					"doctype": "User Notification Preference",
-					"user": user,
-					"team": team,
-					"category": category,
-					"email_enabled": int(email),
-					"in_app_enabled": int(in_app),
-				}
-			).insert()
-
 		saved.append(
-			{"category": category, "email_enabled": email, "in_app_enabled": in_app, "name": doc.name}
+			{
+				"name": doc.name,
+				"category": doc.category,
+				"email_enabled": doc.email_enabled,
+				"in_app_enabled": doc.in_app_enabled,
+				"frequency": doc.frequency,
+				"events": [
+					{"event_type": row.event_type, "email_enabled": row.email_enabled} for row in doc.events
+				],
+			}
 		)
 
-	return {"saved": True, "preferences": saved}
+	return {
+		"saved": True,
+		"digest_hour": NotificationDigestSetting.get_hour(user, team),
+		"preferences": saved,
+	}
 
 
 @frappe.whitelist()
 def get_user_preferences(team: str) -> dict:
-	"""Return the calling user's notification preferences for *team*."""
+	"""Return the calling user's notification preferences and the event catalog for *team*."""
 	user = frappe.session.user
 	_require_member(user, team)
-	rows = frappe.get_all(
-		"User Notification Preference",
-		filters={"user": user, "team": team},
-		fields=["category", "email_enabled", "in_app_enabled"],
+	loaded = UserNotificationPreference.load_for_users(team, [user], user_scoped=True)
+	preferences = [
+		{
+			"category": category,
+			"email_enabled": int(preference["email_enabled"]),
+			"in_app_enabled": int(preference["in_app_enabled"]),
+			"frequency": preference["frequency"],
+			"events": [
+				{"event_type": event_type, "email_enabled": int(email_enabled)}
+				for event_type, email_enabled in preference["events"].items()
+			],
+		}
+		for (loaded_user, category), preference in sorted(
+			loaded.items(), key=lambda item: CATEGORIES.index(item[0][1])
+		)
+		if loaded_user == user
+	]
+
+	time_zone = frappe.db.get_value("User", user, "time_zone") or frappe.utils.get_system_timezone() or "UTC"
+	return {
+		"time_zone": time_zone,
+		"digest_hour": NotificationDigestSetting.get_hour(user, team),
+		"preferences": preferences,
+		"catalog": _event_catalog(user, team),
+	}
+
+
+def _event_catalog(user: str, team: str) -> list[dict]:
+	# The event registry is global, so customers read this catalog without desk permissions.
+	events = frappe.get_all(
+		"Notification Event Type",
+		fields=[
+			"event_type",
+			"category",
+			"severity",
+			"required_cap",
+			"direct_recipients",
+			"in_app_title",
+			"is_critical",
+		],
+		order_by="event_type asc",
 	)
-	return {"preferences": rows}
+	allowed = _held_capabilities(user, team, events)
+	by_category = {category: [] for category in CATEGORIES}
+	for event in events:
+		by_category[event.category].append(_catalog_entry(event, allowed))
+	return [
+		{"category": category, "label": category, "events": by_category[category]}
+		for category in CATEGORIES
+		if by_category[category]
+	]
+
+
+def _held_capabilities(user: str, team: str, events: list[frappe._dict]) -> dict[str, bool]:
+	capabilities = {
+		event.required_cap
+		for event in events
+		if event.required_cap and event.direct_recipients != "Affected User"
+	}
+	return {capability: can_on_any_server(user, team, capability) for capability in capabilities}
+
+
+def _catalog_entry(event: frappe._dict, allowed: dict[str, bool]) -> dict:
+	can_receive = (
+		not event.required_cap or event.direct_recipients == "Affected User" or allowed[event.required_cap]
+	)
+	title = event.in_app_title
+	if "{{" in title or "{%" in title:
+		title = frappe.unscrub(event.event_type)
+	return {
+		"event_type": event.event_type,
+		"title": title,
+		"severity": event.severity,
+		"is_critical": event.is_critical,
+		"can_receive": int(can_receive),
+	}
 
 
 # nosemgrep: guest-whitelisted-method -- pilot_credential_auth verifies the caller below.
@@ -108,22 +185,15 @@ def report_pilot_event(
 	reference_name: str | None = None,
 	context: dict | None = None,
 ) -> dict:
-	"""Inbound event from a Pilot instance (authenticated via X-Pilot-Token).
-
-	Delegates to the notification engine. The team is resolved from the
-	authenticated pilot credential — never from the request body.
-
-	A pilot may only raise Server-domain events (the infra events a bench observes).
-	Billing/Team event types are Central-originated, so refusing them here stops a
-	compromised or buggy bench from fanning out, e.g., a payment_failure email to the
-	whole team. An unknown event type has no category and is refused too.
-
-	The event is scoped to the credential's server, so members whose access is limited
-	to that server still see it. The caller's reference is kept as sent.
-	"""
+	"""Raise a server or site event from a Pilot. The team and server come from the
+	Pilot's credential, never from the body. Billing and Team events are refused, so a
+	compromised bench cannot email a whole team."""
 	credential = frappe.local.pilot_credential
 	team = credential.team
-	if frappe.db.get_value("Notification Event Type", event_type, "category") != "Server":
+	event = frappe.db.get_value(
+		"Notification Event Type", event_type, ["category", "reportable_by"], as_dict=True
+	)
+	if not event or event.reportable_by != "Pilot" or event.category not in PILOT_REPORTABLE_CATEGORIES:
 		frappe.throw(_("This event type cannot be reported by a pilot."), frappe.PermissionError)
 	from central.notification.engine import dispatch
 
@@ -138,11 +208,7 @@ def report_pilot_event(
 	)
 
 
-# ── In-app notification feed ─────────────────────────────────────────────────
-# The team's unified feed (Team Notification) across billing and server events.
-# Moved here from billing so the reader lives with the notification domain; billing
-# only imports the writer. Gated on team membership + per-row capability, NOT on
-# billing:view (which used to hide the whole feed from non-billing members).
+# The team's feed of billing and server events, gated on membership and on each row's capability.
 
 
 @frappe.whitelist()
@@ -153,11 +219,8 @@ def list_notifications(
 	category: str | None = None,
 	unread_only: bool = False,
 ) -> dict:
-	"""One page of the team's in-app notification feed — billing and server events —
-	newest first. Returns ``has_next_page`` so the console can page with ``start``.
-
-	Capability-filtered: operators see everything; a member only sees notifications
-	whose ``required_cap`` they hold."""
+	"""One page of the team's feed, newest first, with ``has_next_page``. A member sees only
+	the notifications whose capability they hold."""
 	from central.notification import list_notifications as _list
 
 	return _list(
@@ -190,7 +253,7 @@ def mark_notification_read(name: str, team: str | None = None, read: bool = True
 	read = bool(frappe.utils.cint(read))
 
 	if read:
-		# Read markers are internal rows; this API already checked that the notification is visible.
+		# A read marker is the caller's own internal row; the check above keeps it to this team.
 		bulk_insert(
 			"Notification Read",
 			[_read_marker(user, name, frappe.utils.now_datetime())],
@@ -225,6 +288,7 @@ def mark_all_notifications_read(team: str | None = None) -> dict:
 		)
 
 	unread = unread_count(team, user=user)
+
 	return {"ok": True, "updated": before - unread, "unread": unread}
 
 
@@ -238,4 +302,5 @@ def _read_marker(user: str, notification: str, read_at):
 		}
 	)
 	doc.set_new_name()
+
 	return doc

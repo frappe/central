@@ -42,7 +42,9 @@ const theme = computed(() => {
 		</div>
 
 		<p class="flex items-baseline gap-1.5">
-			<span class="text-2xl-semibold tabular-nums text-ink-gray-9">
+			<span
+				class="whitespace-nowrap text-2xl-semibold tabular-nums text-ink-gray-9"
+			>
 				{{ used }}
 			</span>
 

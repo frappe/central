@@ -14,6 +14,7 @@
   "identity_column",
   "plan",
   "atlas_vm_id",
+  "atlas_host_id",
   "frappe_version",
   "status",
   "configuration_tab",
@@ -25,6 +26,7 @@
   "image_offering",
   "has_site",
   "skip_automatic_snapshot",
+  "is_termination_protected",
   "access_tab",
   "network_section",
   "ipv6_address",
@@ -34,13 +36,16 @@
   "gateway_url",
   "has_public_ipv6",
   "is_firewall_enabled",
+  "firewall_rules",
+  "has_ipv4_internet",
+  "has_wireguard_access",
   "ssh_keys_section",
   "ssh_keys",
   "diagnostics_tab",
   "admin_domain_section",
   "admin_domain_task",
   "admin_domain_error",
-  "admin_domain_error_log",
+  "admin_domain_diagnostic",
   "regional_section",
   "atlas_image_id",
   "regional_column",
@@ -110,7 +115,7 @@
    "options": "Plan"
   },
   {
-   "description": "Frappe version the VM was provisioned with \u2014 requested at create, resolved to a bench image and echoed back by Atlas (an unbuilt version falls back to the default).",
+   "description": "Frappe version the VM was provisioned with — requested at create, resolved to a bench image and echoed back by Atlas (an unbuilt version falls back to the default).",
    "fieldname": "frappe_version",
    "fieldtype": "Data",
    "label": "Frappe Version",
@@ -182,6 +187,14 @@
    "label": "Skip Automatic Snapshot"
   },
   {
+   "default": "0",
+   "description": "Atlas refuses to terminate this server while this is on. The customer changes it from the server page.",
+   "fieldname": "is_termination_protected",
+   "fieldtype": "Check",
+   "label": "Termination Protection",
+   "read_only": 1
+  },
+  {
    "fieldname": "access_tab",
    "fieldtype": "Tab Break",
    "label": "Access"
@@ -233,10 +246,34 @@
   },
   {
    "default": "0",
-   "description": "The customer turned on the Atlas firewall at creation. It allows the mesh, ICMP, SSH, HTTP, and HTTPS.",
+   "description": "Whether the Atlas firewall enforces its rules, as Atlas last reported.",
    "fieldname": "is_firewall_enabled",
    "fieldtype": "Check",
    "label": "Firewall Enabled",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "description": "Whether the server reaches the IPv4 internet through host NAT, as Atlas last reported. A public IPv4 needs it.",
+   "fieldname": "has_ipv4_internet",
+   "fieldtype": "Check",
+   "label": "IPv4 Internet Access",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "description": "Whether the team's WireGuard devices reach the server through the regional gateway, as Atlas last reported.",
+   "fieldname": "has_wireguard_access",
+   "fieldtype": "Check",
+   "label": "WireGuard Access",
+   "read_only": 1
+  },
+  {
+   "description": "The customer's firewall rules, as Atlas last reported, without the rules Central adds.",
+   "fieldname": "firewall_rules",
+   "fieldtype": "JSON",
+   "label": "Firewall Rules",
+   "permlevel": 2,
    "read_only": 1
   },
   {
@@ -250,6 +287,7 @@
    "fieldtype": "Table",
    "label": "SSH Keys",
    "options": "Server SSH Key",
+   "permlevel": 2,
    "read_only": 1
   },
   {
@@ -278,11 +316,11 @@
    "read_only": 1
   },
   {
-   "description": "The Error Log for the latest admin hostname failure.",
-   "fieldname": "admin_domain_error_log",
-   "fieldtype": "Link",
-   "label": "Admin Domain Error Log",
-   "options": "Error Log",
+   "description": "The detail of the latest admin hostname failure. Operators only.",
+   "fieldname": "admin_domain_diagnostic",
+   "fieldtype": "Code",
+   "label": "Admin Domain Diagnostic",
+   "permlevel": 1,
    "read_only": 1
   },
   {
@@ -295,8 +333,17 @@
    "description": "VM identifier within the linked Atlas region.",
    "fieldname": "atlas_vm_id",
    "fieldtype": "Data",
+   "in_standard_filter": 1,
    "label": "Atlas VM ID",
    "read_only": 1
+  },
+  {
+   "description": "Bare metal host the region placed this VM on, as Atlas reports it.",
+   "fieldname": "atlas_host_id",
+   "fieldtype": "Data",
+   "label": "Atlas Host ID",
+   "read_only": 1,
+   "search_index": 1
   },
   {
    "fieldname": "atlas_image_id",
@@ -343,9 +390,13 @@
   {
    "link_doctype": "User Mail Account",
    "link_fieldname": "server"
+  },
+  {
+   "link_doctype": "Activity Event",
+   "link_fieldname": "server"
   }
  ],
- "modified": "2026-10-10 10:07:58.752401",
+ "modified": "2026-11-04 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Infrastructure",
  "name": "Virtual Machine",
@@ -368,6 +419,26 @@
    "export": 1,
    "read": 1,
    "report": 1,
+   "role": "Central User"
+  },
+  {
+   "permlevel": 1,
+   "read": 1,
+   "role": "System Manager"
+  },
+  {
+   "read": 1,
+   "role": "Staff Viewer"
+  },
+  {
+   "permlevel": 2,
+   "read": 1,
+   "role": "System Manager",
+   "write": 1
+  },
+  {
+   "permlevel": 2,
+   "read": 1,
    "role": "Central User"
   }
  ],

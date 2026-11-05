@@ -27,6 +27,20 @@ export interface Site {
 	rename_task?: string
 	/**	Rename Error : Small Text - A safe summary of the latest site rename failure.	*/
 	rename_error?: string
-	/**	Rename Error Log : Link - Error Log - The Error Log for the latest site rename failure.	*/
-	rename_error_log?: string
+	/**	Rename Diagnostic : Code - The traceback of the latest site rename failure. Operators only.	*/
+	rename_diagnostic?: string
+	/**	Trial State : Select - Active runs free until the end date. Ended means the server is stopped and is terminated on the deletion date. Converted means the team added a payment method. Deleted means the trial ended without one. Empty for a site that is not a trial.	*/
+	trial_state?: '' | 'Active' | 'Ended' | 'Converted' | 'Deleted'
+	/**	Trial Ends On : Date - The day the trial ends and its server stops.	*/
+	trial_ends_on?: string
+	/**	Trial Deletes On : Date - The day an ended trial's server is terminated.	*/
+	trial_deletes_on?: string
+	/**	Trial Last Notice : Data - The last trial email sent for this site, so the daily job sends each one once.	*/
+	trial_last_notice?: string
+	/**	Trial Cost : Currency - What the free trial cost: the plan's monthly rate for the days the trial ran. Set when the trial converts or is deleted.	*/
+	trial_cost?: number
+	/**	Trial Currency : Link - Currency	*/
+	trial_currency?: string
+	/**	Trial Error : Small Text - Why the daily trial job could not stop or terminate the server. It retries the next day.	*/
+	trial_error?: string
 }

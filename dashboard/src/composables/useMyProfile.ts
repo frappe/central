@@ -1,6 +1,7 @@
 import { useCall } from 'frappe-ui'
 import { computed } from 'vue'
 import { API, method } from '@/api/methods'
+import { submitOrThrow } from '@/lib/frappeCall'
 
 // The signed-in user's own profile (display name + photo) — one shared read,
 // so the sidebar footer and the profile dialog repaint together after an edit.
@@ -26,8 +27,7 @@ const photoCall = useCall<
 
 /** Set the photo to an uploaded image's URL, or clear it with null. */
 async function setPhoto(fileUrl: string | null): Promise<void> {
-	await photoCall.submit({ file_url: fileUrl })
-	if (photoCall.error) throw photoCall.error
+	await submitOrThrow(photoCall, { file_url: fileUrl })
 	await profileCall.reload()
 }
 

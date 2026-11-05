@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta name="robots" content="noindex" />
+		<title>Upgrading your site</title>
+		<link rel="stylesheet" href="/assets/frappe/css/fonts/inter/inter.css" />
+		<style>
+			:root {
+				color-scheme: light dark;
+				--page: #f8f8f8;
+				--card: #ffffff;
+				--ink-strong: #171717;
+				--ink: #383838;
+				--ink-muted: #6b6b6b;
+				--ink-faint: #999999;
+				--line: #ededed;
+				--line-strong: #dcdcdc;
+				--accent: #0289f7;
+				--accent-soft: rgba(2, 137, 247, 0.14);
+				--success: #278f5e;
+				--danger: #e03636;
+				--danger-soft: #fff0f0;
+				--dots: #cfcfcf;
+				--button: #171717;
+				--button-ink: #ffffff;
+				--shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 8px 24px rgba(0, 0, 0, 0.06);
+				--ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+				--ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+				--ticket: #f3f3f3;
+			}
+			@media (prefers-color-scheme: dark) {
+				:root {
+					--page: #0f0f0f;
+					--card: #171717;
+					--ink-strong: #f8f8f8;
+					--ink: #d9d9d9;
+					--ink-muted: #a3a3a3;
+					--ink-faint: #737373;
+					--line: #262626;
+					--line-strong: #383838;
+					--accent: #4aa8ff;
+					--accent-soft: rgba(74, 168, 255, 0.18);
+					--success: #4cc38a;
+					--danger: #ff6b6b;
+					--danger-soft: #2a1414;
+					--dots: #3d3d3d;
+					--ticket: #202020;
+					--button: #f8f8f8;
+					--button-ink: #171717;
+					--shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px rgba(0, 0, 0, 0.4);
+				}
+			}
+
+			* { box-sizing: border-box; }
+			body {
+				margin: 0;
+				min-height: 100vh;
+				display: grid;
+				place-items: center;
+				padding: 24px 16px;
+				background: var(--page);
+				color: var(--ink);
+				font-family: "InterVariable", "Inter", system-ui, -apple-system, sans-serif;
+				font-size: 14px;
+				line-height: 1.5;
+				-webkit-font-smoothing: antialiased;
+			}
+			main { width: 100%; max-width: 440px; }
+
+			.card {
+				background: var(--card);
+				border: 1px solid transparent;
+				border-radius: 16px;
+				box-shadow: 0 0 0 1px var(--line), var(--shadow);
+				overflow: hidden;
+			}
+			.body { padding: 24px; }
+			.map { position: relative; height: 128px; border-bottom: 1px solid var(--line); color: var(--dots); }
+			.map svg { -webkit-mask-image: radial-gradient(ellipse 75% 90% at 50% 50%, #000 40%, transparent 100%); mask-image: radial-gradient(ellipse 75% 90% at 50% 50%, #000 40%, transparent 100%); }
+			.map svg { display: block; width: 100%; height: 100%; }
+			.map-label {
+				position: absolute; left: 16px; bottom: 12px;
+				display: inline-flex; align-items: center; gap: 6px;
+				padding: 2px 8px; border-radius: 999px;
+				background: var(--card); box-shadow: 0 0 0 1px var(--line);
+				color: var(--ink-muted); font-size: 12px;
+			}
+			.pin { fill: var(--accent); stroke: var(--card); stroke-width: 1; }
+			.pin-glow { fill: var(--accent-soft); }
+			[data-step="ready"] .pin { fill: var(--success); }
+			[data-step="ready"] .pin-glow { fill: none; }
+			[data-step="ready"] .pin-ring { stroke: var(--success); }
+			.pin-ring { fill: none; stroke: var(--accent); stroke-width: 1; opacity: 0; transform-box: fill-box; transform-origin: center; }
+
+			.site { display: flex; align-items: center; gap: 10px; color: var(--ink-muted); font-size: 13px; }
+			.monogram {
+				display: grid; place-items: center; width: 28px; height: 28px; border-radius: 8px;
+				background: var(--line); color: var(--ink-strong); font-weight: 600; font-size: 13px;
+			}
+			.site span:last-child { overflow-wrap: anywhere; }
+
+			h1 { margin: 20px 0 6px; color: var(--ink-strong); font-size: 20px; line-height: 1.3; font-weight: 600; letter-spacing: -0.01em; text-wrap: balance; }
+			.lead { margin: 0; color: var(--ink-muted); text-wrap: pretty; }
+
+			.capacity { margin: 20px 0 0; font-variant-numeric: tabular-nums; }
+			.eyebrow { display: block; color: var(--ink-faint); font-size: 11px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; }
+
+			.ticket { position: relative; border-radius: 14px; background: var(--ticket); }
+			.ticket-main { padding: 16px 18px 18px; }
+			.ticket-route { display: grid; grid-template-columns: auto minmax(40px, 1fr) auto; align-items: end; gap: 14px; }
+			.ticket-end { display: grid; gap: 2px; min-width: 0; }
+			.ticket-end:last-child { text-align: right; }
+			.ticket-end strong { color: var(--ink-strong); font-size: 22px; line-height: 1.15; font-weight: 600; letter-spacing: -0.02em; white-space: pre-line; }
+			.ticket-end small { color: var(--ink-muted); font-size: 12px; white-space: nowrap; }
+			.flight { position: relative; height: 20px; margin-bottom: 22px; }
+			.flight::before { content: ""; position: absolute; left: 0; right: 0; top: 50%; height: 1px; background-image: linear-gradient(to right, var(--line-strong) 50%, transparent 0); background-size: 6px 1px; }
+			/* The track spans the path, so a percentage translate is a share of the path. */
+			.plane-track { position: absolute; inset: 0; translate: 8% 0; }
+			.ticket[data-step="moving"] .plane-track { translate: 50% 0; }
+			.ticket[data-step="starting"] .plane-track { translate: 86% 0; }
+			.ticket[data-step="ready"] .plane-track { translate: 100% 0; }
+			.ticket.is-animated .plane-track { transition: translate 1100ms var(--ease-in-out); }
+			.plane { position: absolute; top: 50%; left: 0; width: 18px; height: 18px; margin: -9px 0 0 -9px; color: var(--accent); background: var(--ticket); transition: color 300ms ease; }
+			.plane svg { display: block; width: 100%; height: 100%; rotate: 45deg; }
+			.ticket[data-step="ready"] .plane { color: var(--success); }
+			.ticket-perforation { position: relative; height: 0; margin: 0 14px; border-top: 1.5px dashed var(--line-strong); }
+			.ticket-perforation::before, .ticket-perforation::after { content: ""; position: absolute; top: -9px; width: 16px; height: 16px; border-radius: 50%; background: var(--card); }
+			.ticket-perforation::before { left: -23px; }
+			.ticket-perforation::after { right: -23px; }
+			.ticket-stub { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) auto; gap: 12px; padding: 14px 18px 16px; }
+			.ticket-stub span:last-child { color: var(--ink-strong); font-size: 13px; font-weight: 500; overflow-wrap: anywhere; }
+			.ticket-stub div { display: grid; gap: 2px; min-width: 0; }
+			.ticket-stub div:last-child { text-align: right; }
+			.ticket[data-step="ready"] .ticket-status { color: var(--success); }
+			@media (max-width: 480px) {
+				.ticket-stub { grid-template-columns: 1fr auto; }
+				.ticket-stub div:first-child { grid-column: 1 / -1; }
+				.ticket-stub div:nth-child(2) { text-align: left; }
+			}
+			.steps { margin: 22px 0 0; padding: 0; list-style: none; display: grid; gap: 14px; }
+			.step { display: grid; grid-template-columns: 20px 1fr; gap: 12px; align-items: start; color: var(--ink-faint); }
+			.step-label { line-height: 20px; }
+			.step-note { display: none; margin-top: 2px; color: var(--ink-muted); font-size: 13px; }
+			.step[data-state="current"] { color: var(--ink-strong); font-weight: 500; }
+			.step[data-state="current"] .step-note { display: block; font-weight: 400; }
+			.step[data-state="done"] { color: var(--ink); }
+			.icon { position: relative; width: 20px; height: 20px; }
+			.icon svg { position: absolute; inset: 0; opacity: 0; transition: opacity 300ms cubic-bezier(0.2, 0, 0, 1), scale 300ms cubic-bezier(0.2, 0, 0, 1), filter 300ms cubic-bezier(0.2, 0, 0, 1); }
+			.step[data-state="pending"] .icon-pending,
+			.step[data-state="current"] .icon-current,
+			.step[data-state="done"] .icon-done { opacity: 1; }
+			.icon-pending { color: var(--line-strong); }
+			.icon-current { color: var(--accent); }
+			.icon-done { color: var(--success); }
+
+			.foot { display: flex; justify-content: space-between; gap: 12px; margin-top: 22px; padding-top: 16px; border-top: 1px solid var(--line); color: var(--ink-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+
+			.notice { margin-top: 18px; padding: 12px 14px; border-radius: 10px; background: var(--danger-soft); color: var(--ink); font-size: 13px; }
+			.notice strong { color: var(--danger); font-weight: 600; }
+
+			.actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 22px; }
+			.button {
+				display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+				min-height: 36px; padding: 0 14px; border-radius: 8px; border: 1px solid transparent;
+				background: var(--button); color: var(--button-ink); font: inherit; font-weight: 500; text-decoration: none; cursor: pointer;
+				transition: scale 150ms ease-out, opacity 150ms ease-out;
+			}
+			.button:not(:disabled):active { scale: 0.96; }
+			.link { border: 0; background: none; padding: 0; color: var(--ink-muted); font: inherit; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+			.countdown { color: var(--ink-muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+			.button:focus-visible, .link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+			.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+			[hidden] { display: none !important; }
+
+			@media (prefers-reduced-motion: no-preference) {
+				.enter { animation: enter 300ms ease-out both; }
+				.enter:nth-child(2) { animation-delay: 100ms; }
+				.enter:nth-child(3) { animation-delay: 200ms; }
+				.icon svg { scale: 0.25; filter: blur(4px); }
+				.step[data-state="pending"] .icon-pending,
+				.step[data-state="current"] .icon-current,
+				.step[data-state="done"] .icon-done { scale: 1; filter: blur(0); }
+				.icon-current .arc { transform-origin: 10px 10px; animation: spin 1s linear infinite; }
+				.pin-ring { animation: pulse 2.4s cubic-bezier(0.2, 0, 0, 1) infinite; }
+				.ticket:not([data-step="ready"]) .plane svg { animation: float 2.4s ease-in-out infinite; }
+			}
+			@media (prefers-reduced-motion: reduce) {
+				.ticket.is-animated .plane-track { transition: none; }
+			}
+			@keyframes enter { from { opacity: 0; filter: blur(4px); translate: 0 12px; } }
+			@keyframes float { 50% { translate: 0 -1.5px; } }
+			@keyframes spin { to { rotate: 360deg; } }
+			@keyframes pulse { 0% { opacity: 0.7; scale: 1; } 100% { opacity: 0; scale: 4; } }
+
+			.preview {
+				position: fixed; right: 16px; bottom: 16px; z-index: 1;
+				display: grid; gap: 10px; width: 220px; padding: 14px; border-radius: 12px;
+				background: var(--card); box-shadow: 0 0 0 1px var(--line), var(--shadow);
+				font-size: 12px; color: var(--ink);
+			}
+			.preview fieldset { margin: 0; padding: 0; border: 0; display: grid; gap: 4px; }
+			.preview legend { margin-bottom: 4px; color: var(--ink-muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; font-size: 11px; }
+			.preview label { display: flex; align-items: center; gap: 8px; min-height: 24px; cursor: pointer; }
+			@media (max-width: 720px) { .preview { position: static; width: 100%; max-width: 440px; margin: 16px auto 0; } }
+		</style>
+	</head>
+	<body>
+		<main
+			id="page"
+			data-progress="{{ (progress or '') | e }}"
+			data-query="{{ query | e }}"
+			data-preview="{{ 1 if preview else 0 }}"
+		>
+			<div class="card enter">
+				<div class="map" id="map" hidden>
+					<svg id="map-svg" aria-hidden="true" preserveAspectRatio="xMidYMid slice">
+						<use href="/assets/central/images/world-dots.svg?v={{ build_version }}#land" />
+						<g id="pin">
+							<circle class="pin-glow" r="6" />
+							<circle class="pin-ring" r="3" />
+							<circle class="pin" r="2.4" />
+						</g>
+					</svg>
+					<span class="map-label" id="map-label"></span>
+				</div>
+
+				<div class="body">
+					<div class="site enter">
+						<span class="monogram" id="monogram" aria-hidden="true"></span>
+						<span id="site-name"></span>
+					</div>
+
+					<h1 id="title" class="enter">Upgrading your site</h1>
+					<p class="lead" id="lead"></p>
+
+					<div class="capacity" id="capacity" hidden>
+						<div class="ticket" id="ticket">
+							<div class="ticket-main">
+								<div class="ticket-route">
+									<div class="ticket-end">
+										<span class="eyebrow">From</span>
+										<strong id="from-plan"></strong>
+										<small id="from-shape"></small>
+									</div>
+									<div class="flight" aria-hidden="true">
+										<span class="plane-track">
+											<span class="plane">
+												<!-- Lucide "plane" (ISC licence). -->
+												<svg viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z" /></svg>
+											</span>
+										</span>
+									</div>
+									<div class="ticket-end">
+										<span class="eyebrow">To</span>
+										<strong id="to-plan"></strong>
+										<small id="to-shape"></small>
+									</div>
+								</div>
+							</div>
+							<div class="ticket-perforation" aria-hidden="true"></div>
+							<div class="ticket-stub">
+								<div><span class="eyebrow">Site</span><span id="ticket-site"></span></div>
+								<div><span class="eyebrow">Region</span><span id="ticket-region"></span></div>
+								<div><span class="eyebrow">Status</span><span class="ticket-status" id="ticket-status"></span></div>
+							</div>
+						</div>
+					</div>
+
+					<ol class="steps" id="steps">
+						<li class="step" data-step="saving" data-state="pending">
+							<span class="icon" aria-hidden="true">{% include "templates/pages/upgrading_icons.html" %}</span>
+							<span><span class="step-label">Saving your new plan</span><span class="step-state visually-hidden"></span></span>
+						</li>
+						<li class="step" data-step="moving" data-state="pending">
+							<span class="icon" aria-hidden="true">{% include "templates/pages/upgrading_icons.html" %}</span>
+							<span>
+								<span class="step-label">Moving to a bigger server</span><span class="step-state visually-hidden"></span>
+								<span class="step-note">Your site is offline during this step.</span>
+							</span>
+						</li>
+						<li class="step" data-step="starting" data-state="pending">
+							<span class="icon" aria-hidden="true">{% include "templates/pages/upgrading_icons.html" %}</span>
+							<span>
+								<span class="step-label">Starting your site</span><span class="step-state visually-hidden"></span>
+								<span class="step-note">Almost there. Waiting for your site to answer.</span>
+							</span>
+						</li>
+					</ol>
+
+					<div class="notice" id="notice" hidden></div>
+
+					<div class="actions" id="actions" hidden>
+						<a class="button" id="go" href="#">Go to your site</a>
+						<span class="countdown" id="countdown"></span>
+						<button type="button" class="link" id="stay" hidden>Stay on this page</button>
+					</div>
+
+					<div class="foot" id="foot">
+						<span id="elapsed">0:00 elapsed</span>
+						<span>Usually a few minutes</span>
+					</div>
+				</div>
+			</div>
+
+			<p class="visually-hidden" role="status" id="announce"></p>
+
+			{% if preview %}
+			<form class="preview" id="preview" aria-label="Preview controls">
+				<fieldset>
+					<legend>State</legend>
+					{% for step in ["saving", "moving", "starting", "ready", "failed", "invalid"] %}
+					<label><input type="radio" name="step" value="{{ step }}" {{ "checked" if loop.first }} /> {{ step | capitalize }}</label>
+					{% endfor %}
+				</fieldset>
+				<button type="button" class="button" id="play">Play the whole upgrade</button>
+			</form>
+			{% endif %}
+		</main>
+
+		<script src="/assets/central/js/upgrading.js?v={{ build_version }}"></script>
+	</body>
+</html>

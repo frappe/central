@@ -34,6 +34,10 @@
   "gst_category",
   "gst_status_checked_at",
   "gst_status_retry_after",
+  "section_break_internal",
+  "is_internal",
+  "column_break_internal",
+  "internal_reason",
   "section_break_settings",
   "min_balance",
   "collection_mode",
@@ -130,7 +134,7 @@
    "options": "Country"
   },
   {
-   "description": "For India, pick the GST registration state — its code must match the GSTIN.",
+   "description": "For India, pick the GST registration state \u2014 its code must match the GSTIN.",
    "fieldname": "state",
    "fieldtype": "Autocomplete",
    "label": "State"
@@ -150,6 +154,33 @@
    "fieldname": "gstin",
    "fieldtype": "Data",
    "label": "GSTIN"
+  },
+  {
+   "fieldname": "section_break_internal",
+   "fieldtype": "Section Break",
+   "label": "Internal Team"
+  },
+  {
+   "default": "0",
+   "fieldname": "is_internal",
+   "fieldtype": "Check",
+   "label": "Internal Team",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "search_index": 1,
+   "description": "A team the company runs for itself. It is not held to its trust tier or credits, its invoices are waived instead of collected, and it is never sent to the accounting system."
+  },
+  {
+   "fieldname": "column_break_internal",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "internal_reason",
+   "fieldtype": "Small Text",
+   "label": "Why Internal",
+   "depends_on": "eval:doc.is_internal",
+   "mandatory_depends_on": "eval:doc.is_internal",
+   "description": "Who approved it and what the team is for."
   },
   {
    "fieldname": "section_break_settings",
@@ -209,33 +240,34 @@
   },
   {
    "default": "0",
-   "description": "Admin-set: exempt from auto promotion/demotion.",
+   "description": "Set when an operator places the tier by hand. A pinned tier is never moved by the tier review. Clearing it drops the bespoke spend cap.",
    "fieldname": "manual_override",
    "fieldtype": "Check",
-   "label": "Manual Override"
+   "label": "Pin Tier"
   },
   {
    "fieldname": "column_break_trust",
    "fieldtype": "Column Break"
   },
   {
-   "description": "Bespoke spend cap for Manual Override; blank uses the level's cap.",
+   "description": "Monthly spend cap for a pinned tier, in the billing currency. Blank uses the level's cap.",
    "fieldname": "override_max_spend",
    "fieldtype": "Currency",
-   "label": "Override Max Spend",
-   "options": "currency"
+   "label": "Bespoke Spend Cap",
+   "options": "currency",
+   "depends_on": "eval:doc.manual_override"
   },
   {
    "fieldname": "promoted_at",
    "fieldtype": "Datetime",
-   "label": "Promoted At",
+   "label": "Tier Changed At",
    "read_only": 1
   },
   {
    "fieldname": "promotion_basis",
    "fieldtype": "Small Text",
-   "label": "Promotion Basis",
-   "read_only": 1
+   "label": "Tier Change Reason",
+   "description": "Required when you change the tier or the spend cap by hand."
   },
   {
    "fetch_from": "team.owner_user",
@@ -304,7 +336,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-10-10 10:27:25.616292",
+ "modified": "2026-10-21 14:54:26.273541",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Billing Profile",

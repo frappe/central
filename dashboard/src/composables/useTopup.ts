@@ -27,6 +27,7 @@ import {
 	type GatewayOrder,
 	mountPayPalButtons,
 	openRazorpayCheckout,
+	stripeCardElementStyle,
 } from '@/lib/gateway'
 
 interface BeginResult {
@@ -146,10 +147,18 @@ export function useTopup({ onDone }: { onDone?: (res: unknown) => void } = {}) {
 	async function mountCard(el: string | HTMLElement): Promise<void> {
 		const o = order
 		if (o?.adapter_key !== 'Stripe' || !o.publishable_key)
-			throw new Error('Stripe publishable key missing.')
+			throw new Error(
+				'The Stripe publishable key is missing, so card payments cannot start. Choose another payment method, or contact support.',
+			)
 		stripe = await loadStripe(o.publishable_key)
-		if (!stripe) throw new Error('Stripe.js failed to load.')
-		card = stripe.elements().create('card', { hidePostalCode: true })
+		if (!stripe)
+			throw new Error(
+				'The Stripe payment library could not load. Check your connection and reload the page before starting a payment.',
+			)
+		card = stripe.elements().create('card', {
+			hidePostalCode: true,
+			style: stripeCardElementStyle(),
+		})
 		card.on('change', (e) => {
 			cardComplete.value = !!e.complete
 			error.value = e.error?.message ?? ''

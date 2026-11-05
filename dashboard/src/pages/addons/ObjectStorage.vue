@@ -9,6 +9,7 @@ import EmptyState from '@/components/common/EmptyState.vue'
 import { useBreadcrumbs } from '@/composables/useBreadcrumbs'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { useObjectStorage } from '@/composables/useObjectStorage'
+import { useSupport } from '@/composables/useSupport'
 import { getErrorMessage } from '@/lib/feedback'
 import { regionLabel } from '@/lib/serverMap'
 import type { BucketCredentials } from '@/types/storage'
@@ -18,6 +19,10 @@ setBreadcrumbs([{ label: 'Object Storage' }])
 
 const { canManageServices } = useCapabilities()
 const { regions, buckets, loading, error, reload } = useObjectStorage()
+
+const availabilityTicketUrl = useSupport().getTicketUrl({
+	Topic: 'Object Storage availability',
+})
 
 const createOpen = ref(false)
 const credentials = ref<BucketCredentials | null>(null)
@@ -66,8 +71,10 @@ const canCreate = computed(
 				:title="regions.length ? 'No buckets yet' : 'Not available yet'"
 				:description="
 					regions.length
-						? 'Create a bucket in a region near your servers. You get an S3 endpoint and a key that opens only that bucket.'
-						: 'Object Storage is not available in any region yet.'
+						? canCreate
+							? 'Create a bucket in a region near your servers. You get an S3 endpoint and a key that opens only that bucket.'
+							: 'This team has no buckets. Ask a team admin to create a bucket or grant you permission to manage object storage.'
+						: 'Object Storage is not available in any region right now. Contact support to check availability.'
 				"
 			>
 				<template v-if="canCreate" #action>
@@ -76,6 +83,13 @@ const canCreate = computed(
 						icon-left="lucide-plus"
 						label="Create bucket"
 						@click="createOpen = true"
+					/>
+				</template>
+				<template v-else-if="!regions.length && availabilityTicketUrl" #action>
+					<Button
+						label="Contact support"
+						:href="availabilityTicketUrl"
+						icon-right="lucide-external-link"
 					/>
 				</template>
 			</EmptyState>

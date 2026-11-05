@@ -66,7 +66,7 @@ async function submit() {
 			<p class="text-p-sm text-ink-gray-6">
 				{{ keyToRotate
 					? 'The new public key will replace this key on servers that selected it.'
-					: 'Save a public key for your team, then select it when you create a server.' }}
+					: 'Save a public key for your team. It is selected here when you save it.' }}
 			</p>
 			<Alert v-if="error" theme="red" :title="error" />
 			<FormControl

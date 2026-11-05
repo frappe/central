@@ -1,0 +1,65 @@
+{
+ "actions": [],
+ "creation": "2026-10-22 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "incident_date",
+  "component",
+  "downtime_hours",
+  "column_break_cost",
+  "repair_cost_inr",
+  "description"
+ ],
+ "fields": [
+  {
+   "fieldname": "incident_date",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "label": "Date",
+   "reqd": 1
+  },
+  {
+   "fieldname": "component",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "What Failed",
+   "description": "For example disk, memory, power supply, network card."
+  },
+  {
+   "fieldname": "downtime_hours",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Hours Down",
+   "non_negative": 1
+  },
+  {
+   "fieldname": "column_break_cost",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "repair_cost_inr",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Repair Cost (INR)",
+   "options": "INR",
+   "non_negative": 1
+  },
+  {
+   "fieldname": "description",
+   "fieldtype": "Small Text",
+   "label": "Description"
+  }
+ ],
+ "istable": 1,
+ "modified": "2026-10-22 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Infrastructure",
+ "name": "Metal Server Incident",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
+}

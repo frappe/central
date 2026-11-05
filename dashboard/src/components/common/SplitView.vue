@@ -38,9 +38,7 @@ const open = defineModel<boolean>('open', { default: false })
              document context (e.g. the selected invoice's number + period). -->
 				<div class="min-w-0 flex-1">
 					<slot name="header">
-						<span
-							class="text-p-sm font-medium uppercase tracking-wide text-ink-gray-5"
-						>
+						<span class="text-sm-medium uppercase text-ink-gray-5">
 							Details
 						</span>
 					</slot>

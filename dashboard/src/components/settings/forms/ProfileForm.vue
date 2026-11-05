@@ -6,6 +6,7 @@ import ImageUpload from '@/components/common/ImageUpload.vue'
 import { useMyProfile } from '@/composables/useMyProfile'
 import { useTeamMembers } from '@/composables/useTeamMembers'
 import { getErrorMessage, successToast } from '@/lib/feedback'
+import { submitOrThrow } from '@/lib/frappeCall'
 
 // The signed-in user's own profile: photo and display name. Chrome-free
 // on purpose: the settings dialog wraps it in a panel, mobile renders it as a
@@ -37,8 +38,7 @@ async function onSave(): Promise<void> {
 	if (!changed.value) return
 	saving.value = true
 	try {
-		await saveCall.submit({ full_name: name.value.trim() })
-		if (saveCall.error) throw saveCall.error
+		await submitOrThrow(saveCall, { full_name: name.value.trim() })
 		await Promise.all([reloadProfile(), reloadMembers()])
 		successToast('Name updated')
 	} catch (e) {
@@ -81,26 +81,24 @@ async function onPhotoChange(fileUrl: string | null): Promise<void> {
 		</div>
 
 		<Alert v-if="nameError" class="mb-3" theme="red" :title="nameError" />
-		<div class="flex items-end gap-2">
-			<TextInput
-				v-model="name"
-				v-focus
-				label="Full name"
-				class="flex-1"
-				@keydown.enter="onSave"
-			/>
-			<!-- Save only exists once there's something to save. -->
-			<Button
-				v-if="changed"
-				variant="solid"
-				label="Save"
-				:loading="saving"
-				@click="onSave"
-			/>
+		<div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
+			<div class="flex min-w-0 items-end gap-2">
+				<TextInput
+					v-model="name"
+					v-focus
+					label="Full name"
+					class="min-w-0 flex-1"
+					@keydown.enter="onSave"
+				/>
+				<Button
+					v-if="changed"
+					variant="solid"
+					label="Save"
+					:loading="saving"
+					@click="onSave"
+				/>
+			</div>
+			<TextInput :model-value="profile?.user ?? ''" label="Email" disabled />
 		</div>
-
-		<!-- Identity, not a setting — disabled (not readonly) so it can't be
-		     focused or clicked into at all. -->
-		<TextInput :model-value="profile?.user ?? ''" label="Email" disabled />
 	</div>
 </template>

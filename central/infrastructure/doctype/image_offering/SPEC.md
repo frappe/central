@@ -10,7 +10,7 @@ An offering has no Team, regional image ID, copied software version, resource si
 
 System Managers can create and edit offerings. Central Users can read them. The stable offering key cannot change after creation. Each required tag has one nonempty key and value. Duplicate keys and query separators are rejected.
 
-The default Frappe offering has the key `pilot` and selects `purpose=pilot` for Server and Signup flows. Every Pilot build has `default-bench`. A build tagged `has_site=1` also has `site.local`. Signup asks for `has_site=1`, and a [product](../../../signups/doctype/product/SPEC.md) signup also asks for its `app` tag. The Server flow marks those builds **With site** and hides builds tagged `app`. The Ubuntu offering selects `purpose=base` and `os=Ubuntu` for Server flows only. No layout tag is assumed.
+The default Frappe offering has the key `pilot` and selects `purpose=pilot` for Server and Signup flows. Every Pilot build has `default-bench`. A build tagged `has_site=1` also has `site.local`. Signup asks for `has_site=1`, and a [product](../../../signups/doctype/product/SPEC.md) signup also asks for its `app` tag. The Server picker excludes site and app builds and shows the newest build of each version and architecture. The Ubuntu offering selects `purpose=base` and `os=Ubuntu` for Server flows only. No layout tag is assumed.
 
 Operators can upload a logo and set a description. The console shows image choices as logo buttons. Uploaded logos take precedence over the bundled Frappe and Ubuntu defaults. Regional versions come from Atlas tags, including `pilot_version` and `frappe_version`. Frappe version 16 and Nightly are Frappe choices, not Pilot release numbers.
 
@@ -24,13 +24,15 @@ Operators can upload a logo and set a description. The console shows image choic
 
 The integration requests System images with every saved offering tag. It rejects private images and mismatched responses. It returns available, enabled builds with their IDs, titles, architecture, disk size, and tags. It does not return transfer errors or private regional configuration.
 
+Signup checks all regional image pages and prefers the newest matching image at least **Signup Image Minimum Age (Minutes)** old. Central Settings defaults this value to 30 minutes, to allow time for host caching. If no matching image is old enough, signup uses the latest matching image. Set the value to 0 to select the latest image. This preference does not confirm that each host has cached the image.
+
 Follow `next_offset` until it is null. A page can contain no available images and still have another page. Regional failures use the customer-safe resource error envelope and remain visible in the page. They are not converted into empty catalogs. Draining and Disabled regions do not accept customer discovery for creation.
 
 The operator's **Preview Regional Images** action uses the saved selector and system tenant. It supports subsequent pages. It creates no remote resources.
 
 ## Installation and migration
 
-`ensure_default_offerings` creates missing Frappe and Ubuntu records on installation. The `seed_image_offerings` patch runs the same function on existing sites. Repeated execution preserves operator edits, including disabled offerings.
+`ensure_default_offerings` creates missing Frappe, Ubuntu and Templates records on installation. The `seed_image_offerings` and `seed_template_offering` patches run the same function on existing sites. Repeated execution preserves operator edits, including disabled offerings.
 
 ## Dependencies
 

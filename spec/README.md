@@ -18,10 +18,15 @@ Each module specification below describes current behavior. Update it in the sam
 - [Regional configuration](../central/infrastructure/doctype/region/SPEC.md): signed connection checks, tenant selection, and regional identity.
 - [Image offerings](../central/infrastructure/doctype/image_offering/SPEC.md): presentation records and on-demand regional System image discovery.
 - [Resource actions](../central/infrastructure/doctype/resource_action/SPEC.md): durable intent, states, authorization, and recovery for server operations.
+- [Activity ledger](../central/central/doctype/activity_event/SPEC.md): how events are recorded, visibility, and retention.
 - [Team SSH keys](../central/infrastructure/doctype/team_ssh_key/SPEC.md): public login keys, server selection, and rotation.
+- [WireGuard devices](../central/infrastructure/doctype/wireguard_device/SPEC.md): customer devices on the regional WireGuard gateway, removal, and restore.
 - [Proxy routes](../central/infrastructure/doctype/site_domain/SPEC.md): site and custom-domain routes on the regional proxy, with retry and delete.
+- [Blocked domains](../central/infrastructure/doctype/blocked_domain/SPEC.md): scoped exact and prefix reservations for customer names, with operator conflict review.
 - [Trial sites](../central/infrastructure/doctype/site/SPEC.md): the site a Pilot image carries, its predictable address, and the signup handoff.
 - [Products](../central/signups/doctype/product/SPEC.md): apps customers sign up for from their own page, and the image their trial starts.
+- [Signups](../central/signups/SPEC.md): welcome credit, the trial clock, its emails, and conversion to paid.
+- [Trials operator guide](TRIALS_OPERATOR_GUIDE.md): settings to check and Desk tasks for trials and credit, in plain words.
 - [VM snapshots](../central/infrastructure/doctype/vm_snapshot/SPEC.md): the free-snapshot pricing rule, daily snapshots, terminate with a snapshot, and restore.
 
 ## Cross-cutting specifications

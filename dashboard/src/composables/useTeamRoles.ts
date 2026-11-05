@@ -101,6 +101,13 @@ export function useTeamRoles() {
 	return {
 		roles,
 		capabilities: computed<CapabilityInfo[]>(() => capabilitiesCall.data ?? []),
+		capabilitiesLoading: computed(() => capabilitiesCall.loading),
+		capabilitiesError: computed(() =>
+			capabilitiesCall.error
+				? getErrorMessage(capabilitiesCall.error, 'Could not load permissions.')
+				: '',
+		),
+		reloadCapabilities: () => capabilitiesCall.reload(),
 		capsByRole,
 		roleLabel,
 		loading: computed(() => rolesCall.loading || !rolesCall.isFinished),

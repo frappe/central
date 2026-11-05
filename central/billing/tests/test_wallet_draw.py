@@ -36,7 +36,7 @@ class WalletDrawTestCase(IntegrationTestCase):
 				"doctype": "Invoice",
 				"team": TEAM,
 				"invoice_type": "Billable",
-				"status": "Draft",
+				"status": "Outstanding",
 				"period_start": start,
 				"period_end": str(frappe.utils.get_last_day(start)),
 				"currency": "INR",
@@ -70,7 +70,7 @@ class TestWalletDraw(WalletDrawTestCase):
 		self._top_up(11800)
 		self._open(8000, 8)
 		inv = self._open(5000, 9)  # 5,000 + 900 GST, with 2,000 + 360 left
-		self.assertEqual(self._state(inv), (2000, 2000, 360, 3540, "Open"))
+		self.assertEqual(self._state(inv), (2000, 2000, 360, 3540, "Outstanding"))
 		self.assertEqual(credits.get_balance(TEAM, "INR")["balance"], 0)
 		self.assertEqual(credits.advance_gst_balance(TEAM, "INR"), 0)
 
@@ -117,7 +117,7 @@ class TestCancelUnpaid(WalletDrawTestCase):
 			{"team": TEAM, "reference_name": inv.name, "entry_type": "Credit"},
 			["amount", "paid_in", "expires_on"],
 		)
-		expires = credits.promotional_expiry_date()
+		expires = frappe.utils.getdate(credits.promotional_expiry_date())
 		self.assertEqual([(b.amount, b.paid_in, b.expires_on) for b in back], [(590, 0, expires)])
 
 	def test_a_paid_invoice_is_refused(self):
@@ -162,17 +162,17 @@ class TestTopUpSplit(WalletDrawTestCase):
 		row = self._purchase(11800)
 		self.assertEqual((row.amount, row.tax_amount), (10000, 1800))
 
-	def test_a_webhook_carries_the_ordered_credit(self):
-		from central.billing.payments.charges import _extract_topup
+	def test_a_top_up_order_credits_its_stored_split(self):
+		"""The split is fixed on the order before the payer acts, not read from the payment."""
+		from central.billing.doctype.top_up_order.top_up_order import TopupOrder
+		from central.billing.gateways.base import VerifiedPayment
 
-		payload = {
-			"data": {
-				"object": {
-					"id": "pi_1",
-					"amount_received": 1180000,
-					"currency": "inr",
-					"metadata": {"purpose": "wallet_topup", "team": TEAM, "credit": "10000"},
-				}
-			}
-		}
-		self.assertEqual(_extract_topup("Stripe", payload)["credit"], "10000")
+		order = TopupOrder.start(TEAM, "Stripe", "INR", 11800, credit=10000, gst=1800)
+		order.record_gateway_order("pi_split")
+		frappe.db.set_value("Tax Profile", TEAM, "output_tax_rate", 12)  # changed after the order
+
+		entry = order.credit_wallet(VerifiedPayment("pi_split", True, 11800, "INR", order_id="pi_split"))[
+			"ledger_entry"
+		]
+		row = frappe.db.get_value("Credit Ledger Entry", entry, ["amount", "tax_amount"], as_dict=True)
+		self.assertEqual((row.amount, row.tax_amount), (10000, 1800))

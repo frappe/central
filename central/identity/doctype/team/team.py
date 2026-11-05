@@ -8,6 +8,7 @@ from frappe.utils import now_datetime
 
 from central.billing import settings as billing_settings
 from central.iam import can, clear_grants_cache, user_has_operator_bypass
+from central.identity.doctype.team.lifecycle import TeamLifecycle
 from central.identity.doctype.team.tenant import (
 	allocate_tenant_id,
 	prepare_tenant_id_series,
@@ -20,7 +21,7 @@ ONBOARDING_STEPS = ("invite", "billing", "start")
 MAX_INVITATIONS_PER_REQUEST = 10
 
 
-class Team(Document):
+class Team(TeamLifecycle, Document):
 	# begin: auto-generated types
 	# This code is auto-generated. Do not modify anything in this block.
 
@@ -39,7 +40,7 @@ class Team(Document):
 		onboarding_steps: DF.Table[TeamOnboardingStep]
 		owner_user: DF.Link
 		referrer: DF.SmallText | None
-		status: DF.Literal["Active", "Suspended"]
+		status: DF.Literal["Active", "Suspended", "Archived"]
 		team_logo: DF.AttachImage | None
 		team_name: DF.Data
 		tenant_id: DF.Int
@@ -50,19 +51,17 @@ class Team(Document):
 
 	@classmethod
 	def create_for_current_user(cls, team_name: str, attribution: dict | None = None) -> "Team":
-		"""Create a team the signed-in user owns, with the signup's first-touch attribution.
-
-		Only the user's first team gets billing provisioned when it is created. A later
-		team gets its billing when its owner completes the billing profile. Welcome
-		credits are granted once per owner, in grant_welcome_credits."""
+		"""Create a team that the session user owns, with the signup's first-touch attribution.
+		Only the user's first team gets billing provisioned at creation."""
 		is_first_team = not frappe.db.exists("Team", {"owner_user": frappe.session.user})
 		team = frappe.get_doc({"doctype": "Team", "team_name": team_name, **(attribution or {})}).insert()
 		if is_first_team:
 			team.provision_billing()
+
 		return team
 
 	def provision_billing(self) -> None:
-		"""Seed the billing currency from the request IP and grant the welcome credits.
+		"""Seed the billing currency from the request IP.
 
 		A failure is logged and is not fatal. The owner can still complete the billing
 		profile in the console, which provisions the same way."""
@@ -77,6 +76,7 @@ class Team(Document):
 	def before_validate(self) -> None:
 		if not self.is_new():
 			return
+
 		self.owner_user = self.owner_user or frappe.session.user
 		if not any(member.user == self.owner_user for member in self.members):
 			self.append(
@@ -128,9 +128,15 @@ class Team(Document):
 			frappe.throw(_("Upload the image again."))
 
 	def on_update(self) -> None:
+		from central.billing.payments.provisioning import on_team_update
+		from central.infrastructure.doctype.wireguard_device.wireguard_device import remove_departed_devices
+
 		# Team and member-row edits change resolved capabilities; drop the request-cached
 		# grants so later checks in this request see the new state.
 		clear_grants_cache()
+		# A staging-trial team keeps a complete billing profile, so it can create servers.
+		on_team_update(self)
+		remove_departed_devices(self)
 
 	def on_trash(self) -> None:
 		self._require_capability("team:delete")
@@ -155,6 +161,9 @@ class Team(Document):
 			role.flags.from_team_delete = True
 			# Team deletion already passed team:delete and owns this dependent cleanup.
 			role.delete(ignore_permissions=True, force=True)
+		for name in frappe.get_all("WireGuard Device", {"team": self.name}, pluck="name"):
+			# Team deletion already passed team:delete and its on_trash takes the peer off the gateway.
+			frappe.delete_doc("WireGuard Device", name, ignore_permissions=True, force=True)
 
 	# Internal; the HTTP surface is central.api.teams.invite_team_member.
 	def invite_member(
@@ -176,6 +185,7 @@ class Team(Document):
 			}
 		)
 		invitation.insert()
+
 		return invitation.name
 
 	# Internal; the HTTP surface is central.api.teams.invite_team_member with `invitations`.
@@ -188,6 +198,7 @@ class Team(Document):
 			frappe.throw(_("Add at least one person to invite."))
 		if len(invitations) > MAX_INVITATIONS_PER_REQUEST:
 			frappe.throw(_("You can invite up to {0} people at a time.").format(MAX_INVITATIONS_PER_REQUEST))
+
 		return [self._invite_one_of_many(row) for row in invitations]
 
 	def _invite_one_of_many(self, row: dict) -> dict:
@@ -210,6 +221,7 @@ class Team(Document):
 			return {"email": email, "invitation": None, "error": str(error)}
 
 		frappe.db.release_savepoint("team_invitation")
+
 		return {"email": email, "invitation": name, "error": None}
 
 	# Internal; the HTTP surface is central.api.teams.set_team_member_roles.
@@ -251,6 +263,8 @@ class Team(Document):
 			team=self.name,
 			event_type="role_change",
 			message=", ".join(g["role"] for g in roles),
+			# The team feed shows this to every member manager, so it names the member.
+			context={"member": frappe.utils.get_fullname(user)},
 			affected_user=user,
 		)
 
@@ -277,6 +291,9 @@ class Team(Document):
 		for row in rows:
 			self.remove(row)
 		self.save()
+
+		# The user's room, not the Team room: a socket that joined the Team room stays in it.
+		frappe.publish_realtime("team_membership_removed", {"team": self.name}, user=user, after_commit=True)
 
 	# Internal; the HTTP surface is central.api.teams.leave_team.
 	def leave(self) -> None:
@@ -325,6 +342,7 @@ class Team(Document):
 	) -> None:
 		if any(member.user == user for member in self.members):
 			return
+
 		self.append(
 			"members",
 			{
@@ -418,12 +436,19 @@ class Team(Document):
 		frappe.throw(_("A team must have exactly one active Owner member matching Owner User."))
 
 	def _validate_role_scope(self) -> None:
-		for member in self.members:
-			role_team, is_system = frappe.db.get_value("Team Role", member.role, ["team", "is_system"]) or (
-				None,
-				0,
+		names = {member.role for member in self.members}
+		if not names:
+			return
+
+		roles = {
+			role.name: role
+			for role in frappe.get_all(
+				"Team Role", filters={"name": ("in", names)}, fields=["name", "team", "is_system"]
 			)
-			if not is_system and role_team != self.name:
+		}
+		for member in self.members:
+			role = roles.get(member.role)
+			if not role or (not role.is_system and role.team != self.name):
 				frappe.throw(_("Team Role {0} does not belong to this team.").format(member.role))
 
 	def _validate_member_resources(self) -> None:
@@ -449,7 +474,11 @@ class Team(Document):
 		if not previous:
 			return
 
-		if self._metadata_changed(previous):
+		if self.status != previous.status and not self.flags.from_team_archive:
+			frappe.throw(
+				_("Only Frappe Cloud staff can change the status of a team."), frappe.PermissionError
+			)
+		if self.team_name != previous.team_name:
 			self._require_capability("team:edit")
 		if self._onboarding_state(self) != self._onboarding_state(previous):
 			self._require_current_owner(previous.owner_user)
@@ -461,9 +490,6 @@ class Team(Document):
 		validate_tenant_id(self.tenant_id)
 		if not self.is_new() and self.has_value_changed("tenant_id"):
 			frappe.throw(_("The tenant ID cannot be changed."), frappe.CannotChangeConstantError)
-
-	def _metadata_changed(self, previous) -> bool:
-		return self.team_name != previous.team_name or self.status != previous.status
 
 	def _members_changed(self, previous) -> bool:
 		return self.owner_user != previous.owner_user or self._member_state(self) != self._member_state(
@@ -481,6 +507,7 @@ class Team(Document):
 		if user not in before or user in after:
 			return False
 		del before[user]
+
 		return before == after
 
 	def _validate_sensitive_member_changes(self, previous) -> None:
@@ -508,6 +535,7 @@ class Team(Document):
 			grants.setdefault(member.user, set()).add(
 				(member.role, member.resource_type, member.resource_name, member.status)
 			)
+
 		return {user: frozenset(rows) for user, rows in grants.items()}
 
 	def _validate_member_change_target(self, user: str) -> None:

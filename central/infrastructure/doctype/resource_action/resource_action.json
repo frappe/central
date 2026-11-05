@@ -16,12 +16,15 @@
   "resource_id",
   "subdomain",
   "product",
+  "is_free_trial",
   "column_break_main",
   "status",
   "requested_by",
   "dispatched_at",
   "last_checked_at",
   "completed_at",
+  "setup_section",
+  "setup_timeline",
   "section_break_error",
   "error_code",
   "retriable",
@@ -29,6 +32,7 @@
   "remediation",
   "request_tab",
   "request_payload",
+  "user_data",
   "reserved_monthly_rate",
   "diagnostics_tab",
   "remote_vm_id",
@@ -38,7 +42,7 @@
   "request_key",
   "request_digest",
   "credential",
-  "error_log"
+  "diagnostic"
  ],
  "fields": [
   {
@@ -49,6 +53,16 @@
    "in_standard_filter": 1,
    "label": "Product",
    "options": "Product",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "depends_on": "eval:doc.resource_type=='Site'",
+   "description": "Set once when the request is made. A free trial server has no subscription until its trial converts.",
+   "fieldname": "is_free_trial",
+   "fieldtype": "Check",
+   "in_standard_filter": 1,
+   "label": "Free Trial",
    "read_only": 1
   },
   {
@@ -126,6 +140,18 @@
    "fieldtype": "Datetime",
    "label": "Completed At",
    "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.resource_type==='Site' && doc.action==='create'",
+   "fieldname": "setup_section",
+   "fieldtype": "Section Break",
+   "label": "Site Setup"
+  },
+  {
+   "description": "Each step a new site takes and when it happened. The first step without a time is where the signup stopped.",
+   "fieldname": "setup_timeline",
+   "fieldtype": "HTML",
+   "label": "Setup Timeline"
   },
   {
    "fieldname": "section_break_error",
@@ -214,6 +240,13 @@
    "read_only": 1
   },
   {
+   "description": "The cloud-init user data the server boots with. It can hold the passwords a customer typed, so Central keeps it encrypted. Only the dispatch job and a System Manager read it.",
+   "fieldname": "user_data",
+   "fieldtype": "Password",
+   "label": "User Data",
+   "read_only": 1
+  },
+  {
    "fieldname": "reserved_monthly_rate",
    "fieldtype": "Currency",
    "label": "Reserved Monthly Rate",
@@ -269,11 +302,10 @@
    "read_only": 1
   },
   {
-   "description": "Latest Error Log created for this action. All related Error Logs also reference this Resource Action.",
-   "fieldname": "error_log",
-   "fieldtype": "Link",
-   "label": "Error Log",
-   "options": "Error Log",
+   "description": "The traceback or Atlas detail of the latest failure of this action. Operators only.",
+   "fieldname": "diagnostic",
+   "fieldtype": "Code",
+   "label": "Diagnostic",
    "permlevel": 1,
    "read_only": 1
   }
@@ -284,7 +316,7 @@
    "link_fieldname": "resource_action"
   }
  ],
- "modified": "2026-10-10 10:09:37.374070",
+ "modified": "2026-11-02 18:00:00.000000",
  "modified_by": "Administrator",
  "module": "Infrastructure",
  "name": "Resource Action",

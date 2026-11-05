@@ -20,7 +20,14 @@
   "credentials_validated_at",
   "column_break_secrets",
   "webhook_secret",
-  "webhook_endpoint_id"
+  "webhook_endpoint_id",
+  "section_break_webhook",
+  "webhook_url",
+  "column_break_webhook",
+  "is_webhook_active",
+  "webhook_events_pulled_at",
+  "section_break_webhook_events",
+  "webhook_events"
  ],
  "fields": [
   {
@@ -110,6 +117,48 @@
    "fieldtype": "Data",
    "label": "Webhook Endpoint ID",
    "read_only": 1
+  },
+  {
+   "depends_on": "eval:!(doc.adapter_key == 'Paypal' && doc.paypal_settlement_mode == 'Via Razorpay')",
+   "description": "Use Pull Webhook Events to read the endpoint from the gateway, and Update Webhook Events to subscribe to the events Central needs.",
+   "fieldname": "section_break_webhook",
+   "fieldtype": "Section Break",
+   "label": "Webhook"
+  },
+  {
+   "description": "The URL the gateway sends events to, as the last pull read it.",
+   "fieldname": "webhook_url",
+   "fieldtype": "Data",
+   "label": "Endpoint URL at Gateway",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_webhook",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "is_webhook_active",
+   "fieldtype": "Check",
+   "label": "Endpoint Active at Gateway",
+   "read_only": 1
+  },
+  {
+   "fieldname": "webhook_events_pulled_at",
+   "fieldtype": "Datetime",
+   "label": "Events Pulled At",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:!(doc.adapter_key == 'Paypal' && doc.paypal_settlement_mode == 'Via Razorpay')",
+   "fieldname": "section_break_webhook_events",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "webhook_events",
+   "fieldtype": "Table",
+   "label": "Webhook Events",
+   "options": "Payment Gateway Webhook Event",
+   "read_only": 1
   }
  ],
  "index_web_pages_for_search": 1,
@@ -140,7 +189,7 @@
    "link_fieldname": "gateway"
   }
  ],
- "modified": "2026-08-08 00:00:00.000000",
+ "modified": "2026-10-24 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Payment Gateway",

@@ -5,7 +5,7 @@ import { useCreateTeam } from '@/composables/useCreateTeam'
 
 const open = defineModel<boolean>('open', { default: false })
 
-const { teamName, name, duplicate, canSubmit, saving, error, submit, reset } =
+const { teamName, name, duplicate, canSubmit, error, submit, reset } =
 	useCreateTeam()
 
 watch(open, (isOpen) => {
@@ -20,7 +20,6 @@ const actions = computed(() => [
 	{
 		label: 'Create team',
 		variant: 'solid' as const,
-		loading: saving.value,
 		disabled: !canSubmit.value,
 		onClick: onSubmit,
 	},

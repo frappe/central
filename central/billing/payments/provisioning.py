@@ -3,15 +3,15 @@
 """One-time provisioning when a team completes its billing profile.
 
 Setting up a billing profile is the moment a team becomes a real paying customer,
-so three things are wired up here, once, off that event:
+so two things are wired up here, once, off that event:
 
   - the entry Trust Tier (the ladder rung every team starts on, so its caps resolve);
-  - a Tax Profile (GST for India, untaxed elsewhere at launch);
-  - a welcome grant of promotional credits.
+  - a Tax Profile (GST for India, untaxed elsewhere at launch).
 
 Each step is independently idempotent and guarded, so this is safe to re-run on
 every save of the profile — a step that has already happened (tier linked, tax
-profile exists, credits granted) is skipped.
+profile exists) is skipped. Welcome credits are granted when a payment method
+becomes active (`central.signups.credit`), not here.
 """
 
 import frappe
@@ -20,13 +20,12 @@ from central.billing import settings
 
 
 def provision_billing_profile(team: str) -> None:
-	"""Assign the entry tier, a tax profile, and welcome credits for `team`.
+	"""Assign the entry tier and a tax profile for `team`.
 
 	Idempotent and best-effort per step; call it after a billing profile is
 	created/updated."""
 	assign_entry_tier(team)
 	ensure_tax_profile(team)
-	grant_welcome_credits(team)
 
 
 def provision_signup_billing(team: str, country: str | None) -> None:
@@ -34,8 +33,9 @@ def provision_signup_billing(team: str, country: str | None) -> None:
 
 	Stamps a minimal Billing Profile with the country and the currency it implies
 	(India → INR, everything else → USD), then runs the standard provisioning so
-	the team gets its entry tier, tax profile, and welcome credits in that currency
-	right away — no waiting for the full address.
+	the team gets its entry tier and tax profile right away — no waiting for the
+	full address. A staging trial also gets its welcome credits now, because it
+	runs servers on them before it has a payment method.
 
 	The profile is created with `ignore_mandatory`: at signup we only know the
 	country, and the legal name / address are filled in later from the dashboard.
@@ -55,6 +55,8 @@ def provision_signup_billing(team: str, country: str | None) -> None:
 		profile.insert(ignore_permissions=True, ignore_mandatory=True)
 
 	provision_billing_profile(team)
+	if frappe.db.get_value("Team", team, "is_staging_trial"):
+		grant_welcome_credits(team)
 	complete_trial_billing_profile(team)
 
 
@@ -112,7 +114,7 @@ def assign_entry_tier(team: str) -> None:
 	if not entry:
 		return  # no ladder seeded — nothing to assign
 	profile.trust_tier_level = entry.name
-	profile.trust_tier = entry.tier
+	profile.flags.tier_set_by_system = True
 	profile.save(ignore_permissions=True)
 
 
@@ -125,16 +127,40 @@ def ensure_tax_profile(team: str):
 	if frappe.db.exists("Tax Profile", team):
 		return frappe.get_doc("Tax Profile", team)
 
+	# Only operators edit a Tax Profile; the system creates it for the customer's team.
+	return frappe.get_doc({"doctype": "Tax Profile", "team": team, **_output_tax_for(team)}).insert(
+		ignore_permissions=True
+	)
+
+
+def apply_output_tax_for_country(team: str) -> None:
+	"""Make the output tax follow the billing country, until the team is first invoiced.
+
+	The signup IP decides the first country, and the customer may correct it in the
+	billing profile before any invoice is issued. After that the country is locked
+	(`BillingProfile.lock_country_and_currency_after_invoicing`), so the tax is too.
+	Only the country-derived fields change; internal, SEZ and TDS settings are kept."""
+	# A held draft locks it too: the draft is in the team's currency, and India is billed
+	# only in INR, so the country cannot move into or out of India while it waits.
+	if frappe.db.exists("Invoice", {"team": team}):
+		return
+	profile = ensure_tax_profile(team)
+	values = _output_tax_for(team)
+	if all(profile.get(field) == value for field, value in values.items()):
+		return
+	profile.update(values)
+	# The customer changed the billing country; only operators edit a Tax Profile.
+	profile.save(ignore_permissions=True)
+
+
+def _output_tax_for(team: str) -> dict:
 	profile = (
 		frappe.db.get_value("Billing Profile", team, ["country", "currency"], as_dict=True) or frappe._dict()
 	)
 	india = (profile.country or "").strip() == "India" or profile.currency == "INR"
-	values = (
-		{"output_tax_type": "GST", "output_tax_rate": settings.default_gst_rate()}
-		if india
-		else {"output_tax_type": "None", "output_tax_rate": 0}
-	)
-	return frappe.get_doc({"doctype": "Tax Profile", "team": team, **values}).insert(ignore_permissions=True)
+	if india:
+		return {"output_tax_type": "GST", "output_tax_rate": settings.default_gst_rate()}
+	return {"output_tax_type": "None", "output_tax_rate": 0}
 
 
 def apply_gst_category(team: str, category: str | None) -> None:
@@ -151,16 +177,18 @@ def apply_gst_category(team: str, category: str | None) -> None:
 	profile.save(ignore_permissions=True)
 
 
-def grant_welcome_credits(team: str) -> None:
+def grant_welcome_credits(team: str, instrument_fingerprint: str | None = None) -> None:
 	"""Grant the one-time welcome credits in the team's currency, if not already.
 
 	Needs a currency (so the credit is booked in the right one) and grants only
 	once per owner — guarded on any prior Promotion entry for any team the owner
-	owns, so a second team does not earn a second grant. The amount comes from
-	Billing Settings, so it can be changed, or the grant switched off entirely,
-	without a release; a currency with no configured amount gets no grant (rather
-	than a wrong-currency one). What a team has already been granted is never
-	revisited.
+	owns, so a second team does not earn a second grant. It also grants only once
+	per card: `instrument_fingerprint` is the card, UPI ID or PayPal account the
+	team added, so one card on two owners (two emails) earns one grant. The amount
+	comes from Billing Settings, so it can be changed, or the grant switched off
+	entirely, without a release; a currency with no configured amount gets no grant
+	(rather than a wrong-currency one). What a team has already been granted is
+	never revisited.
 	"""
 	currency = frappe.db.get_value("Billing Profile", team, "currency")
 	if not currency:
@@ -170,18 +198,53 @@ def grant_welcome_credits(team: str) -> None:
 		return
 	if has_owner_received_welcome_credits(team):
 		return
+	if instrument_fingerprint and has_instrument_received_welcome_credits(instrument_fingerprint):
+		return
 
-	from central.billing.revenue import credits
-
-	credits.grant_promotional_credits(team, amount, currency)
+	_book_welcome_credits(team, amount, currency, instrument_fingerprint)
 
 
-def has_owner_received_welcome_credits(team: str) -> bool:
+def has_owner_received_welcome_credits(team: str, lock: bool = True) -> bool:
 	"""Whether any team of this team's owner already holds a Promotion grant."""
 	owner = frappe.db.get_value("Team", team, "owner_user")
-	# Lock the owner so two of their teams provisioning at once cannot both pass this check.
-	frappe.db.get_value("User", owner, "name", for_update=True)
+	if lock:
+		# Lock the owner so two of their teams provisioning at once cannot both pass this check.
+		frappe.db.get_value("User", owner, "name", for_update=True)
 	owned_teams = frappe.get_all("Team", filters={"owner_user": owner}, pluck="name")
 	return bool(
 		frappe.db.exists("Credit Ledger Entry", {"team": ["in", owned_teams], "reference_type": "Promotion"})
 	)
+
+
+def has_instrument_received_welcome_credits(instrument_fingerprint: str) -> bool:
+	"""Whether any team already holds a welcome credit earned with this card or account."""
+	return bool(frappe.db.exists("Credit Ledger Entry", {"instrument_fingerprint": instrument_fingerprint}))
+
+
+_WELCOME_CREDIT_SAVEPOINT = "welcome_credit_grant"
+# The key MariaDB names when a second welcome credit is booked for the same card.
+_DUPLICATE_FINGERPRINT = "for key 'instrument_fingerprint'"
+
+
+def _book_welcome_credits(
+	team: str, amount: float, currency: str, instrument_fingerprint: str | None
+) -> None:
+	"""Book the grant. Two owners who add the same card at once both pass the check above;
+	the unique fingerprint on the ledger keeps one grant, and the other team gets none.
+
+	A wallet deadlock fails the activation: InnoDB has rolled back the whole transaction,
+	so the grant cannot be retried alone. The customer confirms the card again."""
+	from central.billing.revenue import credits
+
+	frappe.db.savepoint(_WELCOME_CREDIT_SAVEPOINT)
+	try:
+		credits.grant_promotional_credits(
+			team, amount, currency, instrument_fingerprint=instrument_fingerprint, retry_deadlock=False
+		)
+	except frappe.UniqueValidationError as error:
+		if _DUPLICATE_FINGERPRINT not in str(error):
+			raise  # only a duplicate fingerprint means the card was already rewarded
+		frappe.db.rollback(save_point=_WELCOME_CREDIT_SAVEPOINT)
+		frappe.clear_last_message()  # the "must be unique" notice is not the customer's to read
+		return
+	frappe.db.release_savepoint(_WELCOME_CREDIT_SAVEPOINT)

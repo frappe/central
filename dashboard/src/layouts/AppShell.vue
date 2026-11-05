@@ -3,18 +3,27 @@ import {
 	BottomSheet,
 	Breadcrumbs,
 	DesktopShell,
+	Dialogs,
 	MobileNav,
 	MobileNavItem,
 	ToastProvider,
 } from 'frappe-ui'
-import { computed, defineAsyncComponent, ref, watch } from 'vue'
+import {
+	computed,
+	defineAsyncComponent,
+	onUnmounted,
+	ref,
+	watch,
+	watchEffect,
+} from 'vue'
 import { useRoute } from 'vue-router'
 import ErrorAlertHost from '@/components/common/ErrorAlertHost.vue'
+import ImpersonationBanner from '@/components/navigation/ImpersonationBanner.vue'
 import Sidebar from '@/components/navigation/Sidebar.vue'
 import NotificationsPanel from '@/components/notifications/NotificationsPanel.vue'
 import OnboardingDialog from '@/components/onboarding/OnboardingDialog.vue'
 import SettingsModal from '@/components/settings/SettingsModal.vue'
-import SwitchTeamDialog from '@/components/team/SwitchTeamDialog.vue'
+import SuspendedTeamNotice from '@/components/team/SuspendedTeamNotice.vue'
 import { useBreadcrumbs } from '@/composables/useBreadcrumbs'
 import { useIsMobile } from '@/composables/useIsMobile'
 import { useNotificationsRealtime } from '@/composables/useNotifications'
@@ -23,6 +32,7 @@ import {
 	searchOpen,
 	useSearchShortcut,
 } from '@/composables/useSearch'
+import { useSession, useTeamRemovalRealtime } from '@/composables/useSession'
 import { useSettingsShortcut } from '@/composables/useSettings'
 import { teamSwitcherOpen } from '@/composables/useTeamSwitcher'
 
@@ -32,6 +42,8 @@ const SearchDialog = defineAsyncComponent(
 const searchMounted = ref(false)
 
 useNotificationsRealtime()
+useTeamRemovalRealtime()
+const { isActiveTeamSuspended } = useSession()
 useSearchShortcut()
 useSettingsShortcut()
 
@@ -44,6 +56,9 @@ const { items, resetBreadcrumbs } = useBreadcrumbs()
 const isMobile = useIsMobile()
 
 const mobileNavDrawer = ref(false)
+watch(teamSwitcherOpen, (open) => {
+	if (open && isMobile.value) mobileNavDrawer.value = true
+})
 watch(
 	() => route.name,
 	() => {
@@ -59,10 +74,24 @@ watch(isMobile, (mobile) => {
 const breadcrumbs = computed(
 	() => items.value ?? [{ label: (route.meta.title as string) ?? '' }],
 )
+
+const appTitle = document.title
+watchEffect(() => {
+	document.title = [
+		...breadcrumbs.value.map((item) => item.label).reverse(),
+		appTitle,
+	]
+		.filter(Boolean)
+		.join(' · ')
+})
+onUnmounted(() => {
+	document.title = appTitle
+})
 </script>
 
 <template>
 	<div v-if="isMobile" class="fixed inset-0 flex flex-col overflow-hidden">
+		<ImpersonationBanner />
 		<header
 			class="flex h-12 shrink-0 items-center justify-between gap-3 border-b border-outline-gray-1 bg-surface-base px-3"
 		>
@@ -77,19 +106,24 @@ const breadcrumbs = computed(
 			class="min-h-0 flex-1 overflow-hidden"
 			style="view-transition-name: page"
 		>
-			<router-view />
+			<SuspendedTeamNotice v-if="isActiveTeamSuspended" />
+			<router-view v-else />
 		</main>
 
 		<MobileNav>
 			<MobileNavItem
 				label="Home"
 				icon="lucide-house"
-				to="/home"
+				route="/home"
 				:active="route.name === 'Home'"
 			/>
 			<MobileNavItem label="Search" icon="lucide-search" @click="openSearch" />
 			<NotificationsPanel mobile />
-			<MobileNavItem label="Settings" icon="lucide-settings" to="/settings" />
+			<MobileNavItem
+				label="Settings"
+				icon="lucide-settings"
+				route="/settings"
+			/>
 		</MobileNav>
 	</div>
 
@@ -98,6 +132,7 @@ const breadcrumbs = computed(
 			<Sidebar />
 		</template>
 
+		<ImpersonationBanner />
 		<header
 			class="flex h-12 shrink-0 items-center justify-between gap-3 border-b border-outline-gray-1 px-4"
 		>
@@ -109,7 +144,8 @@ const breadcrumbs = computed(
 			class="min-h-0 flex-1 overflow-hidden"
 			style="view-transition-name: page"
 		>
-			<router-view />
+			<SuspendedTeamNotice v-if="isActiveTeamSuspended" />
+			<router-view v-else />
 		</div>
 	</DesktopShell>
 
@@ -118,10 +154,10 @@ const breadcrumbs = computed(
 	</BottomSheet>
 
 	<ErrorAlertHost />
+	<Dialogs />
 	<!-- Toasts are reserved for short success and non-actionable status updates. -->
 	<ToastProvider />
 	<SettingsModal v-if="!isMobile" />
 	<SearchDialog v-if="searchMounted" v-model:open="searchOpen" />
-	<SwitchTeamDialog v-model:open="teamSwitcherOpen" />
 	<OnboardingDialog />
 </template>

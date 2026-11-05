@@ -54,6 +54,25 @@ class TestCompositionValidation(IntegrationTestCase):
 	def test_valid_on_ratio_in_bounds_passes(self):
 		validate_composition(self.profile, _config(2, 4, 40))  # 4 == 2 x 2, disk in [10,100]
 
+	def test_extra_priced_row_rejected(self):
+		"""Every row is priced, so a row the shape check does not read would change the price."""
+		rows = [*_config(2, 4, 40), {"resource_type": "IP", "quantity": -500}]
+		with self.assertRaisesRegex(frappe.ValidationError, "Remove"):
+			validate_composition(self.profile, rows)
+
+	def test_duplicate_row_rejected(self):
+		rows = [*_config(2, 4, 40), {"resource_type": "Disk", "quantity": 10}]
+		with self.assertRaises(frappe.ValidationError):
+			validate_composition(self.profile, rows)
+
+	def test_zero_or_negative_quantity_rejected(self):
+		with self.assertRaisesRegex(frappe.ValidationError, "greater than zero"):
+			validate_composition(self.profile, _config(-2, -4, 40))
+
+	def test_missing_disk_rejected(self):
+		with self.assertRaises(frappe.ValidationError):
+			validate_composition(self.profile, _config(2, 4))
+
 	def test_off_ratio_ram_rejected(self):
 		with self.assertRaises(frappe.ValidationError):
 			validate_composition(self.profile, _config(2, 6, 40))  # 6 != 2 x 2

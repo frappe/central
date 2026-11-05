@@ -78,7 +78,27 @@ class TestServerOverview(IntegrationTestCase):
 		self.assertIsNone(result["server"]["plan_title"])
 		self.assertIsNone(result["server"]["plan_rate"])
 		self.assertEqual(result["server"]["plan_currency"], "INR")
+		self.assertIsNone(result["server"]["created_by"])
 		self.assertNotIn("monitoring", result)
+
+	def test_overview_names_the_user_who_created_the_server(self):
+		action = frappe.get_doc(
+			{
+				"doctype": "Resource Action",
+				"resource_type": "Server",
+				"action": "create",
+				"team": self.team.name,
+				"server": self.server.name,
+				"requested_by": self.owner,
+				"correlation_id": frappe.generate_hash(),
+			}
+		).insert(ignore_permissions=True)
+		self.addCleanup(action.delete, ignore_permissions=True, force=True)
+
+		server = server_overview(team=self.team.name, resource_id=self.server.name)["server"]
+
+		self.assertEqual(server["created_by"], self.owner)
+		self.assertEqual(server["created_by_name"], "overview.owner")
 
 	def test_overview_lists_the_keys_the_server_was_created_with(self):
 		with patch("central.infrastructure.doctype.team_ssh_key.team_ssh_key.TeamSSHKey.queue_sync"):
@@ -101,7 +121,7 @@ class TestServerOverview(IntegrationTestCase):
 		finally:
 			frappe.set_user("Administrator")
 
-		self.assertEqual(keys, [{"title": "Laptop", "fingerprint": key.fingerprint}])
+		self.assertEqual(keys, [{"name": key.name, "title": "Laptop", "fingerprint": key.fingerprint}])
 
 	def test_viewer_gets_region_metrics(self):
 		metrics = {"available": True, "points": [], "sample_interval_seconds": 300}
@@ -143,13 +163,27 @@ class TestServerOverview(IntegrationTestCase):
 		self.assertEqual(second, first)
 		get_client.return_value.get_vm_metrics.assert_called_once()
 
-	def test_preset_period_runs_until_now(self):
-		start, end = _metrics_window("7d", None, None)
+	def test_an_unavailable_metrics_log_holds_no_frame_locals(self):
+		def refuse(*args, **kwargs):
+			headers = {"Authorization": "Bearer bearer-marker-" + frappe.generate_hash(length=8)}
+			raise AtlasConnectionError(f"down {len(headers)}")
 
-		self.assertAlmostEqual(
-			(datetime.now(UTC) - start).total_seconds(), timedelta(days=7).total_seconds(), delta=60
-		)
-		self.assertIsNone(end)
+		with patch("central.integrations.servers.get_client") as get_client:
+			get_client.return_value.get_vm_metrics.side_effect = refuse
+			self.assertEqual(get_cached_metrics(self.server, START), {"available": False})
+
+		logged = frappe.get_last_doc("Error Log", filters={"method": ("like", "Atlas metrics unavailable:%")})
+		self.assertIn("AtlasConnectionError", logged.error)
+		self.assertNotIn("bearer-marker-", logged.error)
+
+	def test_preset_period_runs_until_now(self):
+		for period, duration in [("1h", timedelta(hours=1)), ("7d", timedelta(days=7))]:
+			with self.subTest(period=period):
+				start, end = _metrics_window(period, None, None)
+				self.assertAlmostEqual(
+					(datetime.now(UTC) - start).total_seconds(), duration.total_seconds(), delta=60
+				)
+				self.assertIsNone(end)
 
 	def test_custom_window_reads_the_site_clock(self):
 		start, end = _metrics_window("custom", "2026-10-08 10:00:00", "2026-10-08 11:00:00")

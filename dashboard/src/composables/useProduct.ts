@@ -4,7 +4,10 @@ import { API } from '@/api/methods'
 import { getFrappe, methodUrl, queryString } from '@/lib/auth'
 import type { Product } from '@/types/Signups/Product'
 
-export type ProductBranding = Pick<Product, 'title' | 'logo' | 'subtitle'>
+export type ProductBranding = Pick<Product, 'title' | 'logo' | 'subtitle'> & {
+	/** One line each, in order. */
+	setup_messages: string[]
+}
 
 // Read once per product and shared by every page of the signup funnel.
 const brandings = reactive(new Map<string, ProductBranding | null>())

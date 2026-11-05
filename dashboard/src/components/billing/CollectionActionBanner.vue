@@ -87,9 +87,11 @@ const options = [
 	>
 		<template #description>
 			This month is heading to
-			<span class="font-medium">{{ money(s.projected_total, currency) }}</span>
+			<span class="text-p-sm-medium"
+				>{{ money(s.projected_total, currency) }}</span
+			>
 			, past the
-			<span class="font-medium">{{ money(s.threshold, currency) }}</span>
+			<span class="text-p-sm-medium">{{ money(s.threshold, currency) }}</span>
 			limit for automatic payments. Your services keep running.
 		</template>
 	</Alert>

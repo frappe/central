@@ -252,14 +252,14 @@ watch(open, (isOpen) => {
 
 			<!-- Stripe card entry: Element renders inside the iframe Stripe hosts. -->
 			<div v-else-if="stripeMode" class="space-y-3">
-				<p v-if="stripeLoading" class="text-p-sm text-ink-gray-5">
+				<p v-if="stripeLoading" class="text-p-sm text-ink-gray-6">
 					Loading secure card field…
 				</p>
 				<div
 					ref="cardEl"
 					class="rounded-4 border border-outline-gray-2 px-3 py-3"
 				/>
-				<p class="text-p-sm text-ink-gray-5">
+				<p class="text-p-sm text-ink-gray-6">
 					<template v-if="stripeSubmitting">
 						Validating your card with a small temporary charge that's refunded
 						right away. This can take a few seconds, so please don't close this
@@ -278,7 +278,7 @@ watch(open, (isOpen) => {
 						class="lucide-lock size-3.5 shrink-0 text-ink-gray-5"
 						aria-hidden="true"
 					/>
-					<p class="text-p-sm text-ink-gray-5">
+					<p class="text-p-sm text-ink-gray-6">
 						Authorised on your bank's page. We never see your
 						{{ hasUpi ? 'card or UPI' : 'card' }}
 						details.
@@ -294,7 +294,7 @@ watch(open, (isOpen) => {
 						class="flex w-full items-center gap-2.5 rounded-6 border p-4 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-60"
 						:class="
 							selected?.instrument === tile.instrument
-								? 'border-outline-gray-4'
+								? 'border-outline-gray-6 bg-surface-gray-2'
 								: 'border-outline-gray-2 hover:border-outline-gray-3'
 						"
 						:disabled="loading || !!blockedReason(tile)"
@@ -305,7 +305,7 @@ watch(open, (isOpen) => {
 							class="size-4 shrink-0 text-ink-gray-7"
 							aria-hidden="true"
 						/>
-						<span class="text-base font-medium text-ink-gray-9"
+						<span class="text-base-medium text-ink-gray-9"
 							>{{ tile.label }}</span
 						>
 						<span
@@ -320,6 +320,11 @@ watch(open, (isOpen) => {
 							>{{ blockedReason(tile) }}</span
 						>
 						<span v-else class="ml-auto flex shrink-0 items-center gap-1.5">
+							<span
+								v-if="selected?.instrument === tile.instrument"
+								class="lucide-circle-check mr-1 size-4 text-ink-gray-9"
+								aria-hidden="true"
+							/>
 							<PaymentNetworkMark
 								v-for="mark in marks[tile.instrument] ?? []"
 								:key="mark"
@@ -337,7 +342,7 @@ watch(open, (isOpen) => {
 						v-model="phone"
 						label="Phone number"
 						placeholder="Mobile number"
-						description="A recurring card on this rail needs a contact number. Saved to your billing profile."
+						description="A phone number is required to set up automatic card payments. It will be saved to your billing profile."
 					/>
 				</div>
 
@@ -346,14 +351,14 @@ watch(open, (isOpen) => {
 						class="lucide-info size-3.5 shrink-0 text-ink-gray-4"
 						aria-hidden="true"
 					/>
-					<p class="text-p-sm text-ink-gray-5">
+					<p class="text-p-sm text-ink-gray-6">
 						Amex and Diners can't be auto-charged. Add credit instead.
 					</p>
 				</div>
 			</div>
 
 			<div v-else class="space-y-3">
-				<p class="text-p-sm text-ink-gray-5">Couldn't load payment options.</p>
+				<p class="text-p-sm text-ink-gray-6">Couldn't load payment options.</p>
 				<Button label="Retry" @click="options.reload()" />
 			</div>
 		</template>

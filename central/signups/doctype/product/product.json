@@ -16,9 +16,22 @@
   "signup_page_section",
   "logo",
   "subtitle",
+  "setup_messages",
   "image_section",
   "signup_app",
-  "landing_route"
+  "frappe_version",
+  "landing_route",
+  "trial_section",
+  "trial_days",
+  "column_break_trial",
+  "trial_deletion_days",
+  "emails_section",
+  "use_own_email_branding",
+  "getting_started_url",
+  "email_notes",
+  "plans_section",
+  "hide_plan_specs",
+  "plan_notes"
  ],
  "fields": [
   {
@@ -66,6 +79,12 @@
    "label": "Subtitle"
   },
   {
+   "description": "Shown one at a time while a new site starts, one line per message. For example: Setting up channels. Leave empty to show general messages.",
+   "fieldname": "setup_messages",
+   "fieldtype": "Small Text",
+   "label": "Setup Messages"
+  },
+  {
    "fieldname": "image_section",
    "fieldtype": "Section Break",
    "label": "Trial Image"
@@ -80,17 +99,95 @@
    "reqd": 1
   },
   {
+   "default": "develop",
+   "description": "The Frappe branch of this product's trial image, such as develop, version-16 or version-16-hotfix. Cargo builds images only for the branches in Cargo Settings, so check with Preview Trial Images before you change it.",
+   "fieldname": "frappe_version",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Frappe Version",
+   "reqd": 1
+  },
+  {
    "description": "Where the owner lands after signing in to a trial site, such as /raven, so the app can run its own setup. Leave empty to open Desk.",
    "fieldname": "landing_route",
    "fieldtype": "Data",
    "label": "Landing Route"
+  },
+  {
+   "fieldname": "trial_section",
+   "fieldtype": "Section Break",
+   "label": "Trial"
+  },
+  {
+   "description": "Days a trial site of this product runs from when it is first ready. 0 uses Central Settings.",
+   "fieldname": "trial_days",
+   "fieldtype": "Int",
+   "label": "Trial Days",
+   "non_negative": 1
+  },
+  {
+   "fieldname": "column_break_trial",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "Days a stopped trial site is kept before its server is terminated. 0 uses Central Settings.",
+   "fieldname": "trial_deletion_days",
+   "fieldtype": "Int",
+   "label": "Trial Deletion Days",
+   "non_negative": 1
+  },
+  {
+   "fieldname": "emails_section",
+   "fieldtype": "Section Break",
+   "label": "Emails"
+  },
+  {
+   "default": "0",
+   "description": "Show this product's logo and title instead of Frappe Cloud's in signup codes and in emails about its sites. Needs a public logo.",
+   "fieldname": "use_own_email_branding",
+   "fieldtype": "Check",
+   "label": "Use Product Branding in Emails"
+  },
+  {
+   "description": "An https:// page that shows a new customer how to start, such as the product's docs. The site_ready and trial_unopened emails link to it with a Get started button.",
+   "fieldname": "getting_started_url",
+   "fieldtype": "Data",
+   "label": "Getting Started URL",
+   "options": "URL"
+  },
+  {
+   "description": "An extra paragraph for a lifecycle email about a site of this product, such as what to do first in site_ready.",
+   "fieldname": "email_notes",
+   "fieldtype": "Table",
+   "label": "Email Notes",
+   "options": "Product Email Note"
+  },
+  {
+   "fieldname": "plans_section",
+   "fieldtype": "Section Break",
+   "label": "Plans"
+  },
+  {
+   "default": "0",
+   "description": "Hide the vCPU, memory and disk line under each plan in the site's plan list and billing card. Add a note to each plan, because the title and price then tell the plans apart. The Cloud dashboard and invoices still show the specs.",
+   "fieldname": "hide_plan_specs",
+   "fieldtype": "Check",
+   "label": "Hide Plan Specs"
+  },
+  {
+   "description": "A short tag the in-app cloud shows next to a plan's title on a site of this product, such as Up to 200 users. The plan title and price stay the same.",
+   "fieldname": "plan_notes",
+   "fieldtype": "Table",
+   "label": "Plan Notes",
+   "options": "Product Plan Note"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-10-10 10:11:22.909804",
- "modified_by": "Administrator",
+ "make_attachments_public": 1,
+ "modified": "2026-11-04 14:00:00.000000",
+ "modified_by": "prathamesh@frappe.io",
  "module": "Signups",
  "name": "Product",
  "naming_rule": "By fieldname",
@@ -103,6 +200,20 @@
    "read": 1,
    "report": 1,
    "role": "System Manager",
+   "write": 1
+  },
+  {
+   "create": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Product Operator",
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "read": 1,
+   "role": "Staff Viewer",
    "write": 1
   }
  ],

@@ -11,10 +11,25 @@ fixtures = [
 	# promotion thresholds — reference data every team's caps resolve against.
 	"Trust Tier Level",
 	{"dt": "Team Role", "filters": [["is_system", "=", 1]]},
-	# Warpgate signs in through the Central OpenID Connect provider and checks these roles.
+	# Warpgate signs in through the Central OpenID Connect provider and checks the Atlas roles.
+	# Product Operators create and edit products; only System Managers delete them.
+	# Staff Viewers read Team, Site and Virtual Machine in Desk, without customer data fields,
+	# and manage Product and Email OAuth Provider.
 	{
 		"dt": "Role",
-		"filters": [["name", "in", ["Central User", "Atlas Host Access", "Atlas Warpgate Admin"]]],
+		"filters": [
+			[
+				"name",
+				"in",
+				[
+					"Central User",
+					"Atlas Host Access",
+					"Atlas Warpgate Admin",
+					"Product Operator",
+					"Staff Viewer",
+				],
+			]
+		],
 	},
 	"Notification Event Type",
 ]
@@ -102,10 +117,10 @@ website_user_home_page = "dashboard"
 # ----------
 
 # add methods and filters to jinja environment
-# jinja = {
-# 	"methods": "central.utils.jinja_methods",
-# 	"filters": "central.utils.jinja_filters"
-# }
+jinja = {
+	# The body of the Webhook that carries a team's tier to Grove (AI Settings).
+	"methods": ["central.services.ai.get_team_limits"],
+}
 
 # Installation
 # ------------
@@ -119,12 +134,15 @@ website_user_home_page = "dashboard"
 # only in a patch would exist on migrated sites and be silently ABSENT on fresh ones.
 # The money invariants are a property of the schema, not of a site's history (ADR 0018).
 after_install = [
+	"central.infrastructure.doctype.blocked_domain.blocked_domain.seed_regional_domains",
 	"central.infrastructure.doctype.image_offering.image_offering.ensure_default_offerings",
 	"central.billing.catalog.taxonomy_setup.ensure_catalog_masters",
 	"central.billing.settings.ensure_snapshot_settings",
 	"central.billing.platform.constraints.ensure_constraints",
 	"central.billing.settings.ensure_welcome_credit_amounts",
+	"central.billing.settings.ensure_minimum_invoice_amounts",
 	"central.billing.gateways.setup.ensure_gateway_records",
+	"central.integrations.email_oauth.setup.ensure_email_oauth_providers",
 	"central.billing.navigation.ensure_workspace_sidebars",
 ]
 
@@ -180,21 +198,69 @@ after_install = [
 
 doc_events = {
 	"User": {
-		"validate": "central.users.validate_user_image",
+		"validate": ["central.users.validate_user_image", "central.users.validate_staff_viewer_roles"],
 		"after_insert": "central.users.grant_central_user_role",
+		"on_update": "central.infrastructure.doctype.wireguard_device.wireguard_device.remove_disabled_user_devices",
+	},
+	# A Billing Profile's level reaches Grove by the Webhook AI Settings keeps, with retries.
+	"Trust Tier Level": {
+		# A level's renamed label renames the Tier at Grove.
+		"on_update": "central.services.ai.on_level_update",
+	},
+	"Payment Method": {
+		"on_update": "central.signups.credit.on_payment_method_update",
+	},
+	# Money records change only through billing code (central/billing/platform/records.py).
+	**{
+		doctype: {
+			"validate": "central.billing.platform.records.refuse_manual_edit",
+			"on_trash": "central.billing.platform.records.refuse_manual_delete",
+		}
+		for doctype in (
+			"Invoice",
+			"Payment Attempt",
+			"Refund",
+			"Credit Ledger Entry",
+			"Credit Wallet",
+			"Usage Rollup",
+			"Webhook Event",
+			"Billing Event",
+			"Top-up Order",
+		)
+	},
+	# Activity feed. Frappe writes a Version for each save of a tracked DocType, and the feed
+	# keeps the fields that central/central/doctype/activity_event/tracked.py lists.
+	"Version": {
+		"after_insert": "central.central.doctype.activity_event.activity_event.record_version",
+	},
+	# A Version records no creation and no deletion, so these DocTypes record both themselves.
+	"VM Snapshot": {
+		"after_insert": "central.central.doctype.activity_event.activity_event.record_created",
+		"on_trash": "central.central.doctype.activity_event.activity_event.record_deleted",
+	},
+	"Site": {
+		"after_insert": "central.central.doctype.activity_event.activity_event.record_created",
+		"on_trash": "central.central.doctype.activity_event.activity_event.record_deleted",
+	},
+	"Site Domain": {
+		"after_insert": "central.central.doctype.activity_event.activity_event.record_created",
+		"on_trash": "central.central.doctype.activity_event.activity_event.record_deleted",
 	},
 	"Team": {
-		# Keep a staging-trial team's billing profile complete so it can create servers
-		# without the setup prompt (the profile gate is otherwise enforced in the console).
-		"on_update": [
-			"central.billing.payments.provisioning.on_team_update",
-			# A new owner may be the new alert address of the team's Grove user.
-			"central.services.ai.on_alert_address_update",
-		],
+		"after_insert": "central.central.doctype.activity_event.activity_event.record_created",
+		"on_trash": "central.central.doctype.activity_event.activity_event.record_deleted",
 	},
-	"Billing Profile": {
-		# Its email is the alert address of the team's Grove user when set.
-		"on_update": "central.services.ai.on_alert_address_update",
+	"Team Role": {
+		"after_insert": "central.central.doctype.activity_event.activity_event.record_created",
+		"on_trash": "central.central.doctype.activity_event.activity_event.record_deleted",
+	},
+	"Team Invitation": {
+		"after_insert": "central.central.doctype.activity_event.activity_event.record_created",
+		"on_trash": "central.central.doctype.activity_event.activity_event.record_deleted",
+	},
+	"Team SSH Key": {
+		"after_insert": "central.central.doctype.activity_event.activity_event.record_created",
+		"on_trash": "central.central.doctype.activity_event.activity_event.record_deleted",
 	},
 }
 
@@ -215,9 +281,12 @@ scheduler_events = {
 		# Retry proxy routes that failed or never ran, up to the attempt limit.
 		"*/5 * * * *": [
 			"central.infrastructure.doctype.site_domain.site_domain.retry_failed",
-			# Snapshots have no region event, so Central reads each one until it settles.
+			"central.infrastructure.doctype.site.site.record_ready_sites",
+			"central.infrastructure.doctype.site.site.poll_site_renames",
 			"central.infrastructure.doctype.vm_snapshot.vm_snapshot.sync_pending_snapshots",
 			"central.infrastructure.doctype.frappemail_service.frappemail_service.refill_mailboxes",
+			"central.services.doctype.ai_trial_key.ai_trial_key.refill_trial_keys",
+			"central.infrastructure.doctype.wireguard_device.wireguard_device.remove_pending_devices",
 		],
 	},
 	# Maintenance jobs run once per period at a time Frappe spreads across sites.
@@ -229,69 +298,48 @@ scheduler_events = {
 	],
 	"daily": [
 		"central.identity.doctype.team_invitation.team_invitation.expire_pending_invitations",
-		# Billing (module): retry/dunning + staged suspension for unpaid invoices,
-		# and pruning Payment Attempt / Webhook Event logs.
+		"central.signups.trial.run_trials",
 		"central.billing.revenue.dunning.run_dunning",
 		"central.billing.payments.charges.cleanup_payment_logs",
 		"central.billing.projection.batch.prune",
-		# E-mandate (INR ≤₹15k): send the pre-debit notice, then debit after 24h.
 		"central.billing.payments.emandate.run_emandate_cycle",
-		# Backfill Subscriptions for any Running VirtualMachine missing an active one.
 		"central.billing.catalog.subscriptions.backfill_missing_subscriptions",
-		# Ask teams running on credits for the billing details their invoice will
-		# need, so the hold at issue time is never the first they hear of it.
 		"central.billing.payments.settlement.run_billing_details_reminder",
-		# Write off promotional credit that has run out of time. Ordered after
-		# collection on purpose: credit that was still good this morning settles
-		# today's invoice before it is swept, so the customer gets the full benefit
-		# of the last day they were given.
 		"central.billing.revenue.credits.run_credit_expiry",
-		# Keep stored GSTIN statuses fresh for invoicing, a paced and capped batch a day.
 		"central.billing.revenue.gst_status.run_gst_status_refresh",
-		# Retry billing profiles whose customer records never finished syncing.
 		"central.billing.ingester.customer.sync_pending_profiles",
-		# Retry wallet top-ups whose advance never reached the accounting system.
 		"central.billing.ingester.advance.sync_pending_advances",
-		# Assert the money invariants that no DB constraint can hold (they span
-		# tables): wallet == its ledger, invoice == its lines, captured == amount_paid.
-		# Silence is the success case; a violation is logged with its team and amount.
-		# Read it as the "Billing Invariant Violations" report.
+		"central.billing.revenue.storage_usage.record_storage_usage",
 		"central.billing.platform.invariants.run_invariant_audit",
+		"central.billing.payments.reconciliation.recheck_completed_refunds",
 	],
 	"hourly": [
-		# Billing: ERPNext sync retries whose backoff window has elapsed.
+		"central.billing.revenue.invoicing.collect_due_invoices",
 		"central.billing.ingester.erpnext_sync.retry_failed_syncs",
-		# A charge whose outcome we don't know is money in the air: ask the gateway and
-		# settle it. It waits 30 minutes for the webhook first, so a daily sweep left it
-		# hanging for up to a day — and the key it needs to re-send safely expires in
-		# about one (ADR 0017).
 		"central.billing.payments.reconciliation.run_reconciliation",
-		# The sweeps above detect what they cannot fix; this is what pages a human
-		# about it — unresolved invariants, failed webhooks, attempts still in flight.
+		"central.billing.payments.webhooks.retry_failed_webhooks",
 		"central.billing.platform.alerts.run_operator_alerts",
+		"central.signups.alerts.alert_failed_signups",
+		"central.notification.digest.send_due_digests",
 	],
 	"monthly": [
-		# Billing: on the 1st, bill the just-closed month end-to-end for every team —
-		# draft one consolidated invoice per team, then open + collect (credits→card).
-		# The production trigger for the two-phase invoicing (#09/#10).
-		"central.billing.revenue.invoicing.run_monthly_billing",
-		# Billing: cards expire at the end of their printed month; flip lapsed ones.
+		"central.billing.revenue.invoicing.draft_monthly_invoices",
 		"central.billing.payments.payments.expire_payment_methods",
 	],
 }
 
-# Billing (module): authorisation is Central's capability IAM (ADR 0004) — no
-# billing-owned roles or User->team field to provision. The catalog taxonomy masters,
-# however, are reference data the catalog can't run without, so re-assert them on every
-# migrate too (idempotent — ADR 0007). The money CHECK constraints are re-asserted for
-# the same reason: a dropped or never-applied constraint must heal on migrate, not wait
-# for someone to notice the balance went negative (ADR 0018).
 after_migrate = [
+	"central.infrastructure.doctype.blocked_domain.blocked_domain.seed_regional_domains",
 	"central.billing.catalog.taxonomy_setup.ensure_catalog_masters",
 	"central.billing.settings.ensure_snapshot_settings",
 	"central.billing.platform.constraints.ensure_constraints",
 	"central.billing.gateways.setup.ensure_gateway_records",
+	"central.integrations.email_oauth.setup.ensure_email_oauth_providers",
 	"central.billing.navigation.ensure_workspace_sidebars",
+	# The Webhook that carries a team's tier to Grove, so an edit to its spec rolls out.
+	"central.services.doctype.ai_settings.ai_settings.sync_webhook",
+	"central.investigator.knowledge.load_knowledge_bases_after_migrate",
+	"central.users.ensure_staff_role_profile",
 ]
 
 # Testing
@@ -305,7 +353,9 @@ before_tests = [
 	"central.billing.platform.constraints.ensure_constraints",
 	"central.billing.settings.ensure_welcome_credit_amounts",
 	"central.billing.gateways.setup.ensure_gateway_records",
+	"central.integrations.email_oauth.setup.ensure_email_oauth_providers",
 	"central.billing.navigation.ensure_workspace_sidebars",
+	"central.users.ensure_staff_role_profile",
 ]
 
 # Extend DocType Class
@@ -322,6 +372,9 @@ before_tests = [
 # override_whitelisted_methods = {
 # 	"frappe.desk.doctype.event.event.get_events": "central.event.get_events"
 # }
+override_whitelisted_methods = {
+	"frappe.realtime.has_permission": "central.permissions.realtime_has_permission",
+}
 #
 # each overriding function accepts a `data` argument;
 # generated from the base implementation of the doctype dashboard,
@@ -340,7 +393,8 @@ override_doctype_dashboards = {
 # Ignore links to specified DocTypes when deleting documents
 # -----------------------------------------------------------
 
-# ignore_links_on_delete = ["Communication", "ToDo"]
+# An event outlives the resource it describes.
+ignore_links_on_delete = ["Activity Event"]
 
 # Request Events
 # ----------------
@@ -381,10 +435,35 @@ page_renderer = ["central.oidc.DiscoveryPage"]
 
 # Authentication and authorization
 
+# Team-scoped billing records: operators only; customers use the billing API.
+_BILLING_TEAM_RECORDS = (
+	"Billing Event",
+	"Billing Notification Log",
+	"Billing Profile",
+	"Billing Projection Summary",
+	"Billing Run Team",
+	"Billing Scenario",
+	"Commitment",
+	"Credit Ledger Entry",
+	"Credit Wallet",
+	"Entitlement Token",
+	"Gateway Customer",
+	"Invoice",
+	"Payment Attempt",
+	"Payment Method",
+	"Project",
+	"Refund",
+	"Subscription",
+	"Subscription Change",
+	"Tax Profile",
+	"Top-up Order",
+	"Usage Rollup",
+)
+
 permission_query_conditions = {
 	"Team SSH Key": "central.permissions.team_ssh_key_query_conditions",
+	"WireGuard Device": "central.permissions.wireguard_device_query_conditions",
 	"Virtual Machine": "central.permissions.server_query_conditions",
-	"IAM Permission Probe": "central.permissions.iam_permission_probe_query_conditions",
 	"Pilot Credential": "central.permissions.pilot_credential_query_conditions",
 	"Resource Action": "central.permissions.resource_action_query_conditions",
 	"Site": "central.permissions.site_query_conditions",
@@ -392,16 +471,19 @@ permission_query_conditions = {
 	"Team": "central.permissions.team_query_conditions",
 	"Team Invitation": "central.permissions.team_invitation_query_conditions",
 	"Team Notification": "central.permissions.team_notification_query_conditions",
+	"Activity Event": "central.permissions.activity_event_query_conditions",
 	"Team Role": "central.permissions.team_role_query_conditions",
+	"Notification Digest Setting": "central.permissions.notification_digest_setting_query_conditions",
 	"Team Service": "central.permissions.team_service_query_conditions",
 	"User Notification Preference": "central.permissions.user_notification_preference_query_conditions",
 	"VM Snapshot": "central.permissions.vm_snapshot_query_conditions",
+	**dict.fromkeys(_BILLING_TEAM_RECORDS, "central.permissions.billing_record_query_conditions"),
 }
 
 has_permission = {
 	"Team SSH Key": "central.permissions.team_ssh_key_has_permission",
+	"WireGuard Device": "central.permissions.wireguard_device_has_permission",
 	"Virtual Machine": "central.permissions.server_has_permission",
-	"IAM Permission Probe": "central.permissions.iam_permission_probe_has_permission",
 	"Pilot Credential": "central.permissions.pilot_credential_has_permission",
 	"Resource Action": "central.permissions.resource_action_has_permission",
 	"Site": "central.permissions.site_has_permission",
@@ -409,10 +491,13 @@ has_permission = {
 	"Team": "central.permissions.team_has_permission",
 	"Team Invitation": "central.permissions.team_invitation_has_permission",
 	"Team Notification": "central.permissions.team_notification_has_permission",
+	"Activity Event": "central.permissions.activity_event_has_permission",
 	"Team Role": "central.permissions.team_role_has_permission",
+	"Notification Digest Setting": "central.permissions.has_notification_digest_setting_permission",
 	"Team Service": "central.permissions.team_service_has_permission",
 	"User Notification Preference": "central.permissions.user_notification_preference_has_permission",
 	"VM Snapshot": "central.permissions.vm_snapshot_has_permission",
+	**dict.fromkeys(_BILLING_TEAM_RECORDS, "central.permissions.billing_record_has_permission"),
 }
 
 # --------------------------------
@@ -427,11 +512,12 @@ export_python_type_annotations = True
 # Require all whitelisted methods to have type annotations
 require_type_annotated_api_methods = True
 
-# default_log_clearing_doctypes = {
-# 	"Logging DocType Name": 30  # days to retain logs
-# }
+# Log Settings clears each listed DocType daily. An operator changes the days there.
+default_log_clearing_doctypes = {"Activity Event": 365}
 
 # Translation
 # ------------
 # List of apps whose translatable strings should be excluded from this app's translations.
 # ignore_translatable_strings_from = []
+
+flow_agents = ["central.investigator.agents.get_agents"]

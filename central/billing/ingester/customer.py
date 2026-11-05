@@ -11,9 +11,16 @@ id instead of creating the customer again.
 from urllib.parse import quote
 
 import frappe
+from frappe.query_builder.functions import Coalesce
+from pypika.terms import Criterion, ExistsCriterion
 
+from central.billing.doctype.billing_event import billing_event
 from central.billing.ingester.connection import enabled, get, post, put
 from central.billing.ingester.locks import hold_until_transaction_ends, lock_name
+from central.billing.states import record_event
+
+CUSTOMER_SYNC = "Customer Sync"
+_SYNC_STEP = "customer_sync_step"
 
 # Changes to these are what the accounting system needs to hear about.
 SYNCED_FIELDS = (
@@ -52,6 +59,29 @@ def sync_customer_profile(team: str) -> None:
 	profile = frappe.get_doc("Billing Profile", team)
 	if not _should_sync(profile):
 		return
+	frappe.db.savepoint(_SYNC_STEP)
+	try:
+		_take_next_step(profile)
+	except (frappe.QueryDeadlockError, frappe.QueryTimeoutError):
+		raise  # the job runner retries lock contention within seconds
+	except Exception as error:
+		# Not re-raised: the job's own commit keeps the failure event. The daily pending sweep
+		# retries a record that is still missing.
+		frappe.db.rollback(save_point=_SYNC_STEP)
+		frappe.log_error(
+			title=f"Customer sync failed for {team}", reference_doctype="Billing Profile", reference_name=team
+		)
+		record_event(
+			profile,
+			"Customer Sync Failed",
+			reason=str(error)[:500],
+			category=CUSTOMER_SYNC,
+			outcome=billing_event.FAILED,
+		)
+
+
+def _take_next_step(profile) -> None:
+	team = profile.team
 	if not profile.profile_id:
 		_create(profile, "profile_id", "Customer", _customer_payload)
 		following = "address"
@@ -64,6 +94,7 @@ def sync_customer_profile(team: str) -> None:
 		following = "update"
 	else:
 		update_customer_profile(profile)
+		record_event(profile, "Customer Sync Succeeded", category=CUSTOMER_SYNC)
 		_release_held_drafts(team)
 		return
 	# Each step has its own job id: this job is still running when it queues the next,
@@ -118,13 +149,49 @@ def get_gstin_details(gstin: str) -> frappe._dict | None:
 	)
 
 
-def _should_sync(profile) -> bool:
-	"""Only complete profiles of real customers; staging trials carry placeholders."""
-	from central.billing.doctype.billing_profile.billing_profile import get_missing_fields_of
+def has_billable_activity(team: str) -> bool:
+	"""Whether the team needs accounting records. See `billable_activity_of`."""
+	table = frappe.qb.DocType("Team")
+	query = frappe.qb.from_(table).select(table.name).where(table.name == team)
+	return bool(query.where(billable_activity_of(table.name)).run())
 
-	if not enabled() or get_missing_fields_of(profile):
+
+def billable_activity_of(team_column) -> Criterion:
+	"""An enabled subscription, a live invoice or a paid top-up of the team in `team_column`."""
+	subscription = frappe.qb.DocType("Subscription")
+	invoice = frappe.qb.DocType("Invoice")
+	ledger = frappe.qb.DocType("Credit Ledger Entry")
+	return Criterion.any(
+		[
+			ExistsCriterion(
+				frappe.qb.from_(subscription)
+				.select(subscription.name)
+				.where((subscription.team == team_column) & (subscription.enabled == 1))
+			),
+			ExistsCriterion(
+				frappe.qb.from_(invoice)
+				.select(invoice.name)
+				.where((invoice.team == team_column) & invoice.status.notin(("Cancelled", "Waived")))
+			),
+			ExistsCriterion(
+				frappe.qb.from_(ledger)
+				.select(ledger.name)
+				.where((ledger.team == team_column) & (ledger.entry_type == "Credit") & (ledger.paid_in == 1))
+			),
+		]
+	)
+
+
+def _should_sync(profile) -> bool:
+	"""Only complete profiles of real customers with billable activity; staging trials carry placeholders and internal teams are never sold to."""
+	from central.billing.doctype.billing_profile.billing_profile import get_missing_fields_of
+	from central.billing.revenue.tax import is_internal_team
+
+	if not enabled() or get_missing_fields_of(profile) or is_internal_team(profile.team):
 		return False
-	return not frappe.db.get_value("Team", profile.team, "is_staging_trial")
+	if frappe.db.get_value("Team", profile.team, "is_staging_trial"):
+		return False
+	return has_billable_activity(profile.team)
 
 
 def _enqueue(team: str, job_id: str | None = None) -> None:
@@ -160,7 +227,9 @@ def _pending_teams() -> list[str]:
 		.on(team.name == profile.team)
 		.select(profile.name)
 		.where(team.is_staging_trial == 0)
+		.where(Coalesce(profile.is_internal, 0) == 0)
 		.where(_blank(profile.profile_id) | _blank(profile.address_id) | _blank(profile.contact_id))
+		.where(billable_activity_of(profile.team))
 	)
 	for field in REQUIRED_FIELDS:
 		query = query.where(~_blank(profile[field]))

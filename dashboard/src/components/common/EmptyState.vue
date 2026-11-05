@@ -22,8 +22,8 @@ withDefaults(
 		>
 			<span :class="[icon, 'size-4']" aria-hidden="true" />
 		</div>
-		<p class="mt-4 text-base font-medium text-ink-gray-8">{{ title }}</p>
-		<p v-if="description" class="mt-1 max-w-sm text-p-sm text-ink-gray-5">
+		<p class="mt-4 text-base-medium text-ink-gray-8">{{ title }}</p>
+		<p v-if="description" class="mt-1 max-w-sm text-p-sm text-ink-gray-6">
 			{{ description }}
 		</p>
 		<div v-if="$slots.action" class="mt-5">

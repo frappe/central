@@ -1,0 +1,9 @@
+#!/bin/sh
+# Stands in for crontab while you build the Pilot demo bench, so its jobs go to DEMO_CRONTAB, not your crontab.
+: "${DEMO_CRONTAB:?Set DEMO_CRONTAB to the file that holds the demo bench cron entries.}"
+touch "$DEMO_CRONTAB"
+case "$1" in
+	-l) cat "$DEMO_CRONTAB" ;;
+	-) cat > "$DEMO_CRONTAB" ;;
+	*) echo "demo crontab: unsupported arguments: $*" >&2; exit 1 ;;
+esac

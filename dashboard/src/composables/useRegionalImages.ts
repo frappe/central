@@ -5,6 +5,7 @@ import { useSession } from '@/composables/useSession'
 import { getErrorMessage } from '@/lib/feedback'
 import { formatUnixTime } from '@/lib/format'
 import type {
+	App,
 	ImageOffering,
 	ImageSelection,
 	RegionalImage,
@@ -21,20 +22,13 @@ function versionLabel(image: RegionalImage): string {
 		: `Version ${frappe.replace('version-', '')}`
 }
 
-// A region carries one build per release, so a version on its own names several of them.
-// The build time is what tells them apart and says which one is current.
 function buildLabel(image: RegionalImage, withArchitecture: boolean): string {
-	const parts = [
-		versionLabel(image),
-		hasSite(image) && 'With site',
-		formatUnixTime(image.created_at),
-	]
+	const parts = [versionLabel(image), formatUnixTime(image.created_at)]
 	if (withArchitecture) parts.push(image.architecture)
 	return parts.filter(Boolean).join(' · ')
 }
 
-// A plain OS image has no build history worth choosing from: the newest build of
-// each version and architecture is the one to run.
+// Offer the newest build of each version and architecture.
 function latestBuilds(images: RegionalImage[]): RegionalImage[] {
 	const latest = new Map<string, RegionalImage>()
 	for (const image of images) {
@@ -54,16 +48,29 @@ const newestRelease = (images: RegionalImage[]): RegionalImage | undefined =>
 		.filter((image) => image.tags.frappe_version?.startsWith('version-'))
 		.sort(
 			(a, b) =>
-				releaseNumber(b) - releaseNumber(a) ||
-				Number(hasSite(a)) - Number(hasSite(b)) ||
-				b.created_at - a.created_at,
+				releaseNumber(b) - releaseNumber(a) || b.created_at - a.created_at,
 		)[0]
 
-function hasSite(image: RegionalImage): boolean {
-	return image.tags.has_site === '1'
-}
-
 export type ImageSource = 'image' | 'snapshot'
+
+/** The offering whose builds are Cargo's apps rather than Atlas's catalog. */
+export const APPS_OFFERING = 'apps'
+
+// An app boots from its Atlas image, so it stands in for an image build. Central
+// checks the image against the offering's tags when the server is created.
+function appAsImage(app: App): RegionalImage {
+	return {
+		id: app.snapshot_id,
+		title: app.title,
+		architecture: '',
+		rootfs_size_mib: 0,
+		created_at: 0,
+		tags: {
+			application: app.application,
+			os_version: app.os_version ?? '',
+		},
+	}
+}
 
 // A snapshot restores into a server of its source's kind, so it stands in for an image
 // build. Its tags are empty: Central applies the source offering's tags itself.
@@ -140,6 +147,7 @@ export function useRegionalImages(
 
 	const offerings = ref<ImageOffering[]>([])
 	const images = ref<RegionalImage[]>([])
+	const apps = ref<App[]>([])
 	const offering = ref('')
 	const imageId = ref('')
 	const loading = ref(false)
@@ -151,6 +159,7 @@ export function useRegionalImages(
 		const team = activeTeam.value
 		const atlas = region.value
 		images.value = []
+		apps.value = []
 		imageId.value = ''
 		error.value = ''
 		loading.value = false
@@ -170,6 +179,19 @@ export function useRegionalImages(
 				return
 			}
 			if (!offering.value) return
+
+			// The user picks an app card, so none is selected for them.
+			if (offering.value === APPS_OFFERING) {
+				const built = await frappeRequest<App[]>({
+					url: methodV1(API.listApps),
+					method: 'GET',
+					params: { team, region: atlas },
+				})
+				if (current !== generation) return
+				apps.value = built
+				images.value = built.map(appAsImage)
+				return
+			}
 
 			const builds: RegionalImage[] = []
 			let offset: number | null = 0
@@ -221,12 +243,23 @@ export function useRegionalImages(
 			? { offering: offering.value, image_id: image.value.id }
 			: null
 	})
+	const isApp = computed(() => offering.value === APPS_OFFERING)
+	const app = computed<App | null>(
+		() =>
+			(source.value === 'image' &&
+				apps.value.find((item) => item.snapshot_id === imageId.value)) ||
+			null,
+	)
 	const isPlainImage = computed(() => offering.value === 'ubuntu')
 	// A build with an app installed gets its own offering later.
 	const buildChoices = computed(() =>
 		isPlainImage.value
 			? latestBuilds(images.value)
-			: images.value.filter((item) => !item.tags.app),
+			: latestBuilds(
+					images.value.filter(
+						(item) => item.tags.has_site === '0' && !item.tags.app,
+					),
+				),
 	)
 	const imageOptions = computed(() => {
 		// Architecture only earns its place when the region offers more than one.
@@ -237,7 +270,6 @@ export function useRegionalImages(
 		const builds = [...buildChoices.value].sort(
 			(a, b) =>
 				versionLabel(a).localeCompare(versionLabel(b)) ||
-				Number(hasSite(a)) - Number(hasSite(b)) ||
 				b.created_at - a.created_at,
 		)
 		return [
@@ -265,6 +297,9 @@ export function useRegionalImages(
 		offerings,
 		offering,
 		images,
+		apps,
+		isApp,
+		app,
 		imageId,
 		image,
 		selection,

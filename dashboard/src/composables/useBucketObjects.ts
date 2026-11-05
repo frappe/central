@@ -2,7 +2,7 @@ import { frappeRequest } from 'frappe-ui'
 import { computed, ref } from 'vue'
 import { API, methodV1 } from '@/api/methods'
 import { useSession } from '@/composables/useSession'
-import { getErrorMessage } from '@/lib/feedback'
+import { getErrorMessage, isAbortError } from '@/lib/feedback'
 import type { BucketObject, BucketObjectPage } from '@/types/storage'
 
 const STORAGE_ERRORS: Record<string, string> = {
@@ -18,6 +18,43 @@ const storageError = (failure: unknown): string =>
 	getErrorMessage(failure, "The files couldn't load.")
 
 export const PAGE_SIZE = 20
+
+// S3's limit for one PUT. Larger files need a multipart upload.
+export const MAXIMUM_UPLOAD_BYTES = 5 * 1024 ** 3
+
+// XMLHttpRequest, because fetch cannot report upload progress.
+const putFile = (
+	url: string,
+	file: File,
+	contentType: string,
+	onProgress: (fraction: number) => void,
+	signal: AbortSignal,
+): Promise<void> =>
+	new Promise((resolve, reject) => {
+		if (signal.aborted) {
+			reject(new DOMException('Upload cancelled', 'AbortError'))
+			return
+		}
+
+		const request = new XMLHttpRequest()
+		request.open('PUT', url)
+		request.setRequestHeader('Content-Type', contentType)
+		request.upload.onprogress = (event) => {
+			if (event.lengthComputable) onProgress(event.loaded / event.total)
+		}
+		request.onload = () =>
+			request.status < 300
+				? resolve()
+				: reject(
+						new Error(`Object Storage refused the upload (${request.status}).`),
+					)
+		request.onerror = () =>
+			reject(new Error(STORAGE_ERRORS.ObjectStorageConnectionError))
+		request.onabort = () =>
+			reject(new DOMException('Upload cancelled', 'AbortError'))
+		signal.addEventListener('abort', () => request.abort(), { once: true })
+		request.send(file)
+	})
 
 export const useBucketObjects = () => {
 	const { activeTeam } = useSession()
@@ -98,5 +135,50 @@ export const useBucketObjects = () => {
 					params: { team: activeTeam.value, name, key },
 				})
 			).url,
+
+		upload: async (
+			name: string,
+			key: string,
+			file: File,
+			onProgress: (fraction: number) => void,
+			signal: AbortSignal,
+		): Promise<void> => {
+			const contentType = file.type || 'application/octet-stream'
+
+			try {
+				const { url } = await frappeRequest<{ url: string }>({
+					url: methodV1(API.bucketUploadUrl),
+					method: 'POST',
+					params: {
+						team: activeTeam.value,
+						name,
+						key,
+						content_type: contentType,
+					},
+				})
+				await putFile(url, file, contentType, onProgress, signal)
+			} catch (failure) {
+				if (isAbortError(failure)) throw failure
+				throw new Error(storageError(failure))
+			}
+		},
+
+		remove: async (
+			name: string,
+			keys: string[],
+			prefixes: string[],
+		): Promise<number> => {
+			try {
+				return (
+					await frappeRequest<{ deleted: number }>({
+						url: methodV1(API.deleteBucketObjects),
+						method: 'POST',
+						params: { team: activeTeam.value, name, keys, prefixes },
+					})
+				).deleted
+			} catch (failure) {
+				throw new Error(storageError(failure))
+			}
+		},
 	}
 }

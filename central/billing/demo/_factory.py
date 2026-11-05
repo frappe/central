@@ -163,6 +163,38 @@ def _regions():
 _PLAN_BY_KEY: dict[str, str] = {}
 
 
+# Two bare metal machines per demo region, so the unit economics reports have a cost to split.
+DEMO_METAL = {
+	"vendor": "demo-metal",
+	"cost_per_month_inr": 50000,
+	"vcpus": 128,
+	"memory_gib": 512,
+	"disk_gib": 7680,
+}
+
+
+def _metal_servers():
+	for cslug, _label, _cur in CLUSTERS:
+		for idx in (1, 2):
+			name = demo_host(cslug, idx)
+			values = {"status": "Active", "atlas_host_id": f"host-{name}", **DEMO_METAL}
+			if frappe.db.exists("Metal Server", name):
+				frappe.get_doc("Metal Server", name).update(values).save()
+			else:
+				frappe.get_doc({"doctype": "Metal Server", "region": cslug, **values}).insert(set_name=name)
+
+
+def demo_host(cluster: str, index: int) -> str:
+	"""The demo Metal Server a region's `index`-th server lands on, alternating between two."""
+	return f"metal-{cluster}-{(index - 1) % 2 + 1}"
+
+
+def plan_shape(key: str) -> dict:
+	"""The shape Atlas reports for a server on the plan `key`."""
+	_slug, _title, vcpu, ram, disk, *_rest = next(size for size in PLAN_SIZES if size[0] == key)
+	return {"vcpus": vcpu, "memory_megabytes": ram * 1024, "disk_gigabytes": disk}
+
+
 def plan_name(key: str) -> str:
 	"""Resolve a demo logical plan key (e.g. 'plan-2vcpu', 'svc-ai-tokens') to the
 	configurator-minted Plan name."""
@@ -173,6 +205,7 @@ def _catalog():
 	from central.billing.catalog.taxonomy_setup import ensure_catalog_masters
 
 	_regions()
+	_metal_servers()
 	# Seed the taxonomy masters (Plan Category / Resource Type) through the canonical
 	# seeder — the demo authors plans against these families, it does not invent them.
 	ensure_catalog_masters()
@@ -667,7 +700,7 @@ def arm_emandate(team):
 	from central.billing.payments import collection_mode, emandate
 
 	open_inv = frappe.db.get_value(
-		"Invoice", {"team": team, "status": "Open"}, ["name", "expected_collection"], as_dict=True
+		"Invoice", {"team": team, "status": "Outstanding"}, ["name", "expected_collection"], as_dict=True
 	)
 	if not open_inv:
 		return
@@ -951,10 +984,13 @@ def draw_wallet_credit(invoice) -> float:
 	This is the same waterfall production uses (credits first, then card); collect=False
 	skips the gateway leg because the demo gateways are offline, so the caller simulates the
 	card capture for whatever is returned. Returns the remainder still due after credits."""
+	from central.billing.doctype.invoice.invoice import is_unissued
 	from central.billing.revenue import invoicing
 
-	if frappe.db.get_value("Invoice", invoice, "status") != "Draft":
-		frappe.db.set_value("Invoice", invoice, "status", "Draft", update_modified=False)
+	if not is_unissued(frappe.db.get_value("Invoice", invoice, ["status", "due_date"], as_dict=True)):
+		frappe.db.set_value(
+			"Invoice", invoice, {"status": "Outstanding", "due_date": None}, update_modified=False
+		)
 	invoicing.open_and_collect(invoice, collect=False)
 	return frappe.utils.flt(frappe.db.get_value("Invoice", invoice, "expected_collection"))
 

@@ -26,7 +26,7 @@ class OutlookTestBase(IntegrationTestCase):
 		frappe.db.delete("Payment Attempt", {"team": TEAM})
 		frappe.db.commit()
 
-	def _invoice(self, due, status="Open", amount=5000, dunning_starts_on=None, currency="INR"):
+	def _invoice(self, due, status="Outstanding", amount=5000, dunning_starts_on=None, currency="INR"):
 		# One invoice per team per period is enforced by a unique index, so each fixture
 		# bills its own month — derived from the due date it is given.
 		anchor = frappe.utils.add_months(frappe.utils.getdate(due or "2026-08-08"), -1)

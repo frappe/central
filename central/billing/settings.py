@@ -64,15 +64,36 @@ _MISSING = _Missing()
 
 # The launch grant, seeded once onto a Billing Settings nobody has saved yet. It is
 # a starting point for the accounts team to edit, not a value the code depends on.
-LAUNCH_WELCOME_CREDITS = {"INR": 2500.0, "USD": 25.0}
+LAUNCH_WELCOME_CREDITS = {"INR": 1000.0, "USD": 10.0}
 
 
 def _settings():
 	return frappe.get_cached_doc(SETTINGS)
 
 
+def minimum_invoice_amount(currency: str | None) -> float:
+	"""The smallest total worth invoicing in `currency`. Zero means no minimum."""
+	for row in _settings().minimum_invoice_amounts:
+		if row.currency == currency:
+			return frappe.utils.flt(row.amount)
+	return 0.0
+
+
+def ensure_minimum_invoice_amounts() -> None:
+	"""Seed the starting minimums if none is set. An operator changes them in Billing Settings."""
+	doc = frappe.get_doc("Billing Settings")
+	if doc.minimum_invoice_amounts:
+		return
+	for currency, amount in (("INR", 50), ("USD", 1)):
+		if frappe.db.exists("Currency", currency):
+			doc.append("minimum_invoice_amounts", {"currency": currency, "amount": amount})
+	# The system seeds these defaults during install or a patch, with no user to check.
+	doc.save(ignore_permissions=True)
+	frappe.clear_cache(doctype="Billing Settings")
+
+
 def welcome_credit_amount(currency: str) -> float:
-	"""What a team billed in `currency` is granted on completing its profile.
+	"""What a team billed in `currency` is granted when its first payment method is active.
 
 	Zero when grants are switched off or the currency has no configured amount —
 	callers treat both the same way, by not granting."""
@@ -91,12 +112,14 @@ def provision_teams_as_trial() -> bool:
 	return bool(_settings().provision_teams_as_trial)
 
 
+DEFAULT_PROMOTIONAL_CREDIT_VALIDITY_DAYS = 60
+
+
 def promotional_credit_validity_days() -> int:
-	"""Days a welcome credit stays usable; 0 means it never expires."""
+	"""Days a promotional credit stays usable. Every promotional credit expires."""
 	override = _override("promotional_credit_validity_days")
-	if override is not _MISSING:
-		return frappe.utils.cint(override)
-	return frappe.utils.cint(_settings().promotional_credit_validity_days)
+	days = override if override is not _MISSING else _settings().promotional_credit_validity_days
+	return frappe.utils.cint(days) or DEFAULT_PROMOTIONAL_CREDIT_VALIDITY_DAYS
 
 
 def invoice_due_days() -> int:
@@ -140,7 +163,7 @@ def terminate_after_days() -> int:
 
 
 # Starting points for the snapshot settings; an operator changes them in Billing Settings.
-SNAPSHOT_DEFAULTS = {"daily_snapshot_retention_hours": 48, "free_snapshots_per_server": 2}
+SNAPSHOT_DEFAULTS = {"daily_snapshot_retention_hours": 48, "free_snapshots_per_server": 0}
 
 
 def ensure_snapshot_settings() -> None:
@@ -168,10 +191,15 @@ def free_snapshots_per_server() -> int:
 	return frappe.utils.cint(_settings().free_snapshots_per_server)
 
 
+# A chargeback can arrive up to about 120 days after the charge, and its handler needs
+# the webhook trail; a shorter window would delete what a dispute is matched against.
+MIN_PAYMENT_LOG_RETENTION_DAYS = 180
+
+
 def payment_log_retention_days() -> int:
 	"""Rolling window (days) the gateway logs — Payment Attempt and Webhook Event —
-	are kept before daily pruning."""
-	return frappe.utils.cint(_settings().payment_log_retention_days)
+	are kept before daily pruning. Never below `MIN_PAYMENT_LOG_RETENTION_DAYS`."""
+	return max(frappe.utils.cint(_settings().payment_log_retention_days), MIN_PAYMENT_LOG_RETENTION_DAYS)
 
 
 def default_gst_rate() -> float:
@@ -189,12 +217,39 @@ def gst_status_daily_limit() -> int:
 	return frappe.utils.cint(_settings().gst_status_daily_limit)
 
 
+def reporting_usd_to_inr() -> float:
+	"""Rate the margin reports turn USD revenue into INR at, or 0 to leave USD out."""
+	return frappe.utils.flt(_settings().reporting_usd_to_inr)
+
+
 def forecast_notify_ratio() -> float:
 	"""Share of a team's cap at which its forecast spend warning fires (0.8 = 80%)."""
 	override = _override("forecast_notify_percent")
 	if override is not _MISSING:
 		return frappe.utils.flt(override) / 100.0
 	return frappe.utils.flt(_settings().forecast_notify_percent) / 100.0
+
+
+def operator_alert_channel() -> str:
+	"""Where operator alerts go: Raven, Email, or Raven and Email."""
+	return _settings().operator_alert_channel
+
+
+def operator_alert_emails() -> list[str]:
+	"""The named addresses that get operator alerts by email."""
+	return _settings().alert_emails()
+
+
+def raven_connection() -> dict | None:
+	"""The Raven site, channel and bot credentials, or None when any one is missing."""
+	doc = _settings()
+	connection = {
+		"site_url": (doc.raven_site_url or "").rstrip("/"),
+		"channel_id": doc.raven_channel_id,
+		"api_key": doc.raven_api_key,
+		"api_secret": doc.get_password("raven_api_secret", raise_exception=False),
+	}
+	return connection if all(connection.values()) else None
 
 
 def ensure_welcome_credit_amounts() -> None:

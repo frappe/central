@@ -5,6 +5,7 @@ from zoneinfo import ZoneInfo
 
 import frappe
 from frappe import _
+from frappe.utils import cint
 from redis.exceptions import LockError, LockNotOwnedError
 
 from central.errors import (
@@ -18,10 +19,12 @@ from central.errors import (
 from central.infrastructure.doctype.pilot_credential.pilot_credential import PilotCredential
 from central.infrastructure.doctype.resource_action.resource_action import PENDING_STATES, TERMINAL_STATES
 from central.infrastructure.doctype.user_mail_account.user_mail_account import UserMailAccount
+from central.infrastructure.doctype.virtual_machine import firewall
 from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
 from central.integrations import servers
 from central.integrations.atlas import AtlasClient
 from central.integrations.pilot import get_bootstrap_metadata
+from central.services.doctype.ai_trial_key.ai_trial_key import AITrialKey
 
 # A region stamps its own clock on a machine, so allow for a little drift when deciding
 # which machines are new enough to have come from this request.
@@ -32,10 +35,6 @@ SERVER_PAGE_SIZE = 100
 # the stop before a final snapshot. A resize waits for a stop and a start.
 JOB_TIMEOUT_SECONDS = servers.POWER_WAIT_SECONDS + 5 * 60
 RESIZE_JOB_TIMEOUT_SECONDS = 2 * servers.POWER_WAIT_SECONDS + 5 * 60
-ANYWHERE = ["0.0.0.0/0", "::/0"]
-# Atlas addresses every machine on its WireGuard mesh from this prefix, and an enabled
-# firewall filters mesh traffic too.
-MESH_NETWORK = "fdaa::/16"
 
 
 def get_job_timeout_seconds(action: str | None) -> int:
@@ -146,13 +145,9 @@ def _process_locked(name: str) -> None:
 
 
 def recover_unanswered(request) -> None:
-	"""Settle a creation the region never answered, by asking it what it built.
-
-	Central marks every create with its action ID, so the region can say whether this
-	request produced a machine. Finding one binds it and the creation carries on. Only a
-	search that completed can say no, and that is a plain failure the customer can send
-	again. A region Central cannot reach proves nothing, so the request stays open for
-	the next sweep."""
+	"""Settle a creation the region never answered by asking what it built.
+	A machine with this action's marker is bound. Only a completed search can say no; an
+	unreachable region proves nothing, so the request stays open for the next sweep."""
 	try:
 		remote_vm_id = find_created_vm(request)
 	except AtlasConnectionError:
@@ -175,11 +170,8 @@ def recover_unanswered(request) -> None:
 
 
 def find_created_vm(request) -> str | None:
-	"""The machine this creation built, or None when the region holds none.
-
-	The region lists newest first, so the search stops at the first machine older than
-	the dispatch. A candidate counts only when its tenant, image and action marker all
-	match, which is what keeps another request's machine from being adopted."""
+	"""The machine this creation built, or None. A candidate counts only when its tenant,
+	image and action marker all match, so another request's machine is never adopted."""
 	client = _client(request)
 	configuration = request.get_configuration()
 	# Central stores naive times in its system time zone, and `timestamp()` would read them in
@@ -192,10 +184,12 @@ def find_created_vm(request) -> str | None:
 		if not isinstance(created_at, int) or created_at < started - CLOCK_SKEW_SECONDS:
 			break
 		remote = client.get_vm(row["id"])
+		# Atlas sends null for a guest it has not booted yet.
+		metadata = (remote.get("guest") or {}).get("metadata") or {}
 		if (
 			remote.get("tenant_id") == client.tenant_id
 			and remote.get("image_id") == configuration.image_id
-			and remote.get("guest", {}).get("metadata", {}).get("central_action_id") == request.name
+			and metadata.get("central_action_id") == request.name
 		):
 			return row["id"]
 
@@ -217,6 +211,7 @@ def _servers_newest_first(client: AtlasClient) -> Iterator[dict]:
 def _client(request) -> AtlasClient:
 	instance = frappe.get_doc("Region", request.region)
 	tenant_id = frappe.db.get_value("Team", request.team, "tenant_id")
+
 	return AtlasClient(instance, tenant_id)
 
 
@@ -226,17 +221,25 @@ def _create_payload(request) -> dict:
 		from central.resource_actions import resolve_team_ssh_keys
 
 		configuration.ssh_keys = resolve_team_ssh_keys(request.team, configuration.ssh_key_ids)
+	settings = frappe.get_cached_doc("Central Settings")
 	payload = {
 		"image_id": configuration.image_id,
 		"cpu_millicores": configuration.cpu_millicores,
 		"memory_mib": configuration.memory_mib,
 		"disk_mib": configuration.disk_mib,
+		"disk_iops": settings.disk_iops,
+		"disk_throughput_mibps": settings.disk_throughput_mibps,
+		"private_network_throughput_mibps": settings.private_network_throughput_mibps,
+		"public_network_throughput_mibps": settings.public_network_throughput_mibps,
 		"hostname": configuration.hostname or "",
 		"ssh_keys": configuration.ssh_keys,
-		"firewall": firewall_configuration(configuration),
-		"sleep_after_idle_seconds": idle_shutdown_seconds(request.team),
+		"user_data": configuration.user_data,
+		"firewall": firewall.get_new_server_firewall(configuration.is_firewall_enabled),
+		"sleep_after_idle_seconds": idle_shutdown_seconds(request),
 		"metadata": {"central_action_id": request.name},
 	}
+	if configuration.has_public_ipv4:
+		payload["public_ipv4"] = "auto"
 	if configuration.has_public_ipv6:
 		payload["public_ipv6"] = "auto"
 	if configuration.image_tags.get("purpose") == "pilot":
@@ -245,38 +248,14 @@ def _create_payload(request) -> dict:
 	return payload
 
 
-def firewall_configuration(configuration) -> dict:
-	"""The Atlas firewall for a new machine. A disabled firewall permits all traffic.
-
-	1. Allow the region's mesh, which the regional gateway and console use.
-	2. Allow ICMP, which IPv6 neighbour discovery and path MTU need.
-	3. Allow SSH, HTTP, and HTTPS from anywhere.
-	4. Allow all outbound traffic."""
-	if not configuration.is_firewall_enabled:
-		return {"enabled": False}
-
-	return {
-		"enabled": True,
-		"inbound": [
-			{"protocol": "any", "cidrs": [MESH_NETWORK]},
-			{"protocol": "icmp", "cidrs": ANYWHERE},
-			*({"protocol": "tcp", "ports": port, "cidrs": ANYWHERE} for port in ("22", "80", "443")),
-		],
-		"outbound": [{"protocol": "any", "cidrs": ANYWHERE}],
-	}
-
-
-def idle_shutdown_seconds(team: str) -> int:
-	"""How long a machine may sit idle before its region puts it to sleep.
-
-	Sleep is a hobby comfort: a trial server costs nothing while nobody uses it, and
-	customer traffic wakes it. A paid server stays up, and so does every server once its
-	owner resizes it."""
-	if not frappe.db.get_value("Team", team, "is_staging_trial"):
+def idle_shutdown_seconds(request) -> int:
+	"""How long a free trial or staging machine may sit idle before its region puts it to sleep. A paid server, or one its owner resized, never sleeps."""
+	if not request.is_free_trial and not frappe.db.get_value("Team", request.team, "is_staging_trial"):
 		return 0
 
 	minutes = frappe.get_cached_value("Central Settings", "Central Settings", "trial_idle_shutdown_minutes")
-	return max(0, int(minutes or 0)) * 60
+
+	return max(0, cint(minutes)) * 60
 
 
 def _finalize(request) -> None:
@@ -287,9 +266,12 @@ def _finalize(request) -> None:
 			from central.billing.catalog.subscriptions import create_server_subscription
 
 			VirtualMachine.create_from_action(request, server_id)
-			create_server_subscription(request, server_id)
+			# A free trial has no subscription. Converting the trial opens it.
+			if not request.is_free_trial:
+				create_server_subscription(request, server_id)
 			PilotCredential.link_server(request.credential, server_id)
 			UserMailAccount.link_server(request.name, server_id)
+			AITrialKey.link_server(request.name, server_id)
 			request.db_set({"server": server_id, "resource_id": server_id})
 		# Finalize local ownership and billing together, independently of the next remote read.
 		frappe.db.commit()
@@ -346,7 +328,7 @@ def process_resize(action) -> None:
 		if not first_dispatch:
 			servers.observe_server(server)
 			server.reload()
-		if not _matches_shape(server, target):
+		if _needs_resize(server, target, configuration):
 			servers.resize_server(server, target)
 			server.reload()
 		if not _matches_shape(server, target):
@@ -369,8 +351,8 @@ def process_resize(action) -> None:
 	try:
 		from central.billing.catalog.subscriptions import apply_resize_billing
 
-		apply_resize_billing(action)
 		server.db_set("plan", configuration.plan, notify=False)
+		apply_resize_billing(action)
 	except Exception:
 		diagnostic = frappe.get_traceback()
 		frappe.db.rollback()
@@ -384,6 +366,13 @@ def process_resize(action) -> None:
 		return
 
 	action.transition("Succeeded")
+
+
+def _needs_resize(server: VirtualMachine, shape: dict, configuration) -> bool:
+	"""A converted trial's move has no subscription. Only the resize starts its server and turns
+	idle sleep off, so it runs even when the shape already matches. With a matching shape it
+	does not stop the server."""
+	return not configuration.subscription or not _matches_shape(server, shape)
 
 
 def _matches_shape(server: VirtualMachine, shape: dict) -> bool:
@@ -494,7 +483,11 @@ def is_final_snapshot_ready(action, server: VirtualMachine, client: AtlasClient)
 	# The terminate already checked server:snapshot for the requester.
 	snapshot.insert(ignore_permissions=True)
 	action.db_set({"vm_snapshot": snapshot.name, "last_checked_at": frappe.utils.now_datetime()})
+
 	return False
+
+
+REFRESH_RETRY_SECONDS = 15
 
 
 def recover_requests() -> None:
@@ -502,14 +495,28 @@ def recover_requests() -> None:
 
 	Nothing here repeats a create: an accepted machine is read, and an unanswered request
 	is looked up by its action marker."""
-	cutoff = frappe.utils.add_to_date(frappe.utils.now_datetime(), minutes=-3)
-	action = frappe.qb.DocType("Resource Action")
-	rows = (
-		frappe.qb.from_(action)
-		.select(action.name)
-		.where((action.modified < cutoff) & action.status.isin(PENDING_STATES))
-		.orderby(action.modified)
-		.limit(100)
-	).run(as_dict=True)
-	for row in rows:
-		frappe.get_doc("Resource Action", row.name).enqueue()
+	now = frappe.utils.now_datetime()
+	stalled = frappe.get_all(
+		"Resource Action",
+		filters={
+			"modified": ("<", frappe.utils.add_to_date(now, minutes=-3)),
+			"status": ("in", PENDING_STATES),
+		},
+		order_by="modified asc",
+		limit=100,
+		pluck="name",
+	)
+	# A failed read only observes the region, so it is retried soon instead of after the stall cutoff.
+	refresh_due = frappe.get_all(
+		"Resource Action",
+		filters={
+			"modified": ("<", frappe.utils.add_to_date(now, seconds=-REFRESH_RETRY_SECONDS)),
+			"status": ("in", PENDING_STATES),
+			"error_code": "REFRESH_FAILED",
+		},
+		order_by="modified asc",
+		limit=100,
+		pluck="name",
+	)
+	for name in dict.fromkeys(stalled + refresh_due):
+		frappe.get_doc("Resource Action", name).enqueue()

@@ -6,6 +6,10 @@
 					<tr>
 						<td class="fc-brand">
 							{% block brand %}
+							{% if brand %}
+							<img src="{{ brand.logo_url }}" height="28" alt="" class="align-middle" border="0" />
+							<span class="fc-wordmark">{{ brand.title }}</span>
+							{% else %}
 							<img
 								src="https://cloud.frappe.io/files/cloud9c3ae6.png"
 								width="28"
@@ -15,6 +19,7 @@
 								border="0"
 							/>
 							<span class="fc-wordmark">Frappe Cloud</span>
+							{% endif %}
 							{% endblock %}
 						</td>
 					</tr>

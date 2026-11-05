@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { Button, ErrorMessage } from 'frappe-ui'
+import { Button } from 'frappe-ui'
 import { ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import AuthErrorMessage from '@/components/auth/AuthErrorMessage.vue'
 import AuthShell from '@/components/auth/AuthShell.vue'
 import ProductLogo from '@/components/auth/ProductLogo.vue'
 import ValidatedFormControl from '@/components/common/formComponents/ValidatedFormControl.vue'
@@ -13,7 +14,7 @@ import { carriedQuery } from '@/lib/authRedirect'
 const route = useRoute()
 const router = useRouter()
 const { sendCode } = useEmailSignIn()
-const { product } = useProduct()
+const { product, productKey } = useProduct()
 
 const email = ref(queryString(route.query.email))
 const submitted = ref(false)
@@ -41,8 +42,8 @@ async function submit() {
 </script>
 
 <template>
-	<AuthShell>
-		<h1 class="flex items-center gap-2 text-xl font-semibold text-ink-gray-9">
+	<AuthShell :show-progress="Boolean(productKey)" :step="1">
+		<h1 class="flex items-center gap-2 text-xl-semibold text-ink-gray-9">
 			<ProductLogo />
 			Sign in to Frappe Cloud
 		</h1>
@@ -61,7 +62,7 @@ async function submit() {
 				:validator="emailError"
 				:submitted="submitted"
 			/>
-			<ErrorMessage v-if="error" :message="error" />
+			<AuthErrorMessage v-if="error" :message="error" page="Sign in" />
 			<Button
 				type="submit"
 				variant="solid"
@@ -76,7 +77,7 @@ async function submit() {
 		<p class="mt-6 text-center text-p-sm text-ink-gray-5">
 			New to Frappe Cloud?
 			<RouterLink
-				class="font-medium text-ink-gray-8 hover:underline"
+				class="text-p-sm-medium text-ink-gray-8 hover:underline"
 				:to="{ path: '/signup', query: carriedQuery(route.query) }"
 			>
 				Create an account

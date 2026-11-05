@@ -8,8 +8,8 @@ Central branches at exactly one point — at invoice generation an entry-tier
 team's invoice is emitted as `cost_report` (computed, never charged), so the
 free/trial subsidy is a *true* cost.
 
-Conversion flips the tier (cost_report -> billable) with resources untouched;
-expiry reuses the suspend directive on the entitlement-token channel.
+Conversion flips the tier (cost_report -> billable) with resources untouched.
+Product trials end in `central.signups.trial`.
 """
 
 import frappe
@@ -24,6 +24,11 @@ def trial_plan_names() -> set[str] | None:
 	when it was unset. Flag specific plans to restrict; flag none to leave open."""
 	names = set(frappe.get_all("Plan", filters={"available_on_trial": 1, "is_active": 1}, pluck="name"))
 	return names or None
+
+
+def is_trial_plan(plan: str | None) -> bool:
+	"""Whether `plan` is one a free trial site starts on. It is never billed."""
+	return bool(plan) and plan in (trial_plan_names() or ())
 
 
 def entry_tier() -> str | None:
@@ -81,27 +86,11 @@ def convert_to_paid(team: str, level: str | None = None):
 	target = frappe.get_doc("Trust Tier Level", level)
 	profile = entitlements._profile_for(team)
 	profile.trust_tier_level = target.name
-	profile.trust_tier = target.tier
 	profile.manual_override = 1
 	profile.promoted_at = frappe.utils.now_datetime()
 	profile.promotion_basis = "converted to paid"
 	profile.save(ignore_permissions=True)
 	return entitlements._tier_result(team, profile)
-
-
-def expire_trial(team: str, cluster_slices: dict | None = None) -> dict:
-	"""Trial lapsed unconverted: emit a suspend directive on the token channel.
-
-	Suspension is a Central-issued directive (next token = cap 0 + suspend flag),
-	the same channel non-payment uses; the cluster stops then terminates per the
-	staged enforcement (#14). Running resources are not touched here — the
-	directive carries the intent.
-	"""
-	from central.billing.catalog.entitlements import issue_token
-	from central.billing.platform import notifications
-
-	notifications.notify(team, "Trial Expiring", context={})
-	return issue_token(team, cluster_slices or {}, suspend=True)
 
 
 def subsidy_total(from_date=None, to_date=None) -> float:

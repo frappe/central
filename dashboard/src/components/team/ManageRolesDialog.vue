@@ -7,6 +7,7 @@ import { useTeamMembers } from '@/composables/useTeamMembers'
 import { useTeamRoles } from '@/composables/useTeamRoles'
 import { teamParams } from '@/composables/useTeamScope'
 import { getErrorMessage } from '@/lib/feedback'
+import { getResourceOptions } from '@/lib/resourceScope'
 import type {
 	ResourceType,
 	TeamMemberRoleAssignment,
@@ -64,23 +65,13 @@ const applyResourceKey = (row: TeamMemberRoleAssignment, key: string): void => {
 	row.resource_name = name || null
 }
 
-const resourceOptions = computed(() => {
-	const servers = registryCall.data?.servers ?? []
-	const sites = registryCall.data?.sites ?? []
-	return [
-		{ label: 'All resources', value: resourceKey('*', null) },
-		...servers.map((a) => ({
-			label: a.title || a.resource_id,
-			value: resourceKey('Server', a.name),
-			description: regionLabel(a.region),
-		})),
-		...sites.map((s) => ({
-			label: s.subdomain || s.name,
-			value: resourceKey('Site', s.name),
-			description: regionLabel(s.region),
-		})),
-	]
-})
+const resourceOptions = computed(() =>
+	getResourceOptions(
+		registryCall.data,
+		regionLabel,
+		rows.value.map((row) => resourceKey(row.resource_type, row.resource_name)),
+	),
+)
 
 const addRow = (): void => {
 	rows.value = [
@@ -152,7 +143,6 @@ const dialogOptions = computed(() => ({
 		{
 			label: 'Save',
 			variant: 'solid' as const,
-			loading: submitting.value,
 			disabled: !canSubmit.value,
 			onClick: submit,
 		},
@@ -173,7 +163,7 @@ const dialogOptions = computed(() => ({
 				<div class="flex items-center gap-3">
 					<Avatar :label="member?.full_name" size="2xl" />
 					<div class="min-w-0">
-						<p class="truncate font-medium text-ink-gray-9">
+						<p class="truncate text-base-medium text-ink-gray-9">
 							{{ member?.full_name }}
 						</p>
 						<p class="truncate text-p-sm text-ink-gray-5">

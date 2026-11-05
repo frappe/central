@@ -206,8 +206,7 @@ export interface CreditLedgerEntry {
 // Mirrors the Invoice DocType's status Select options — keep in sync with
 // central/billing/doctype/invoice/invoice.json.
 export type InvoiceStatus =
-	| 'Draft'
-	| 'Open'
+	| 'Outstanding'
 	| 'Paid'
 	| 'Overdue'
 	| 'Waived'
@@ -260,6 +259,10 @@ export interface InvoiceDetail {
 	expected_collection: number
 	amount_paid: number
 	due_date: string | null
+	/** Why the invoice cannot be paid yet. */
+	hold_reason: string | null
+	/** Collection has started, so the invoice can be paid. */
+	is_issued: boolean
 	/** A charge is in flight (or captured, awaiting the settlement webhook). */
 	payment_in_progress: boolean
 	/** The method that settled a Paid invoice (from the capturing attempt). */
@@ -402,6 +405,28 @@ export interface BillingProfile {
 	supported_currencies: Currency[]
 	/** GSTIN on file but not Active: invoices go out as unregistered. */
 	gst_lapsed?: boolean
+	/** A new server needs a payment method first: no credit covers it. */
+	payment_method_required?: boolean
+	/** What the team's first payment method adds, while the owner has not had it. */
+	welcome_credit?: WelcomeCredit | null
+	/** The team's open free trial, which its first payment method converts. */
+	open_trial?: TeamOpenTrial | null
+}
+
+export interface TeamOpenTrial {
+	state: 'Active' | 'Ended'
+	/** Null when the caller cannot view the server. */
+	server: string | null
+	/** Null for a plain Frappe Cloud trial. */
+	product: string | null
+	product_title: string
+	plan: TrialPlan | null
+}
+
+export interface WelcomeCredit {
+	amount: number
+	currency: Currency
+	validity_days: number
 }
 
 export type GstStatus =
@@ -439,7 +464,7 @@ export interface CollectionStatus {
 	currency: Currency
 }
 
-export type NotificationCategory = 'Billing' | 'Server' | 'Team'
+export type NotificationCategory = 'Billing' | 'Server' | 'Team' | 'Trial'
 export type NotificationSeverity = 'Info' | 'Success' | 'Warning' | 'Error'
 
 /** A Team Notification — one item in the console's unified in-app feed. */
@@ -466,10 +491,34 @@ export interface NotificationFeed {
 	has_next_page: boolean
 }
 
-/** get_notification_preferences — per-event-type delivery toggles (0/1), keyed by event. */
-export interface NotificationPreferences {
-	team: string
-	[event: string]: number | string
+export type NotificationFrequency = 'Instant' | 'Daily' | 'Weekly'
+
+export interface NotificationPreference {
+	category: NotificationCategory
+	email_enabled: boolean | number
+	in_app_enabled: boolean | number
+	frequency: NotificationFrequency
+	events: { event_type: string; email_enabled: number }[]
+}
+
+export interface NotificationCatalogEvent {
+	event_type: string
+	title: string
+	severity: NotificationSeverity
+	is_critical: 0 | 1
+	can_receive: 0 | 1
+}
+
+/** get_user_preferences: saved rows plus the events each category holds. */
+export interface UserNotificationPreferences {
+	time_zone: string
+	digest_hour: number
+	preferences: NotificationPreference[]
+	catalog: {
+		category: NotificationCategory
+		label: string
+		events: NotificationCatalogEvent[]
+	}[]
 }
 
 /** get_spend_history — the period-ranged reads behind Billing → Reports. */
@@ -501,6 +550,8 @@ export interface StatementRow {
 	period_start: string
 	period_end: string
 	status: InvoiceStatus
+	due_date: string | null
+	is_issued: boolean
 	total: number
 	tax: number
 	credit_applied: number
@@ -614,3 +665,34 @@ export interface MeteredServices {
 export type PayingForItem =
 	| { kind: 'server'; id: string; cost: number | null; sub: SubscriptionRow }
 	| { kind: 'service'; id: string; cost: number | null; service: ServiceRow }
+
+/** The open free trial of a server's site, from `signups.trial.get_status`. */
+export interface ServerTrial {
+	state: 'Active' | 'Ended'
+	/** An ended trial whose team has a payment method, so it can be kept. */
+	can_keep?: boolean
+	/** The team has a payment method, but the plan is above its spending limit. */
+	held?: boolean
+	ends_on: string
+	days_left: number
+	deletes_on: string | null
+	/** The plan the site converts to, or null when Central has no creation record. */
+	plan: TrialPlan | null
+}
+
+export interface TrialPlan {
+	name: string
+	title: string
+	monthly_rate: number
+	currency: Currency | null
+}
+
+/** A paid plan a trial site may move to when it converts. */
+export interface TrialPlanChoice {
+	name: string
+	title: string
+	/** For example "0.5 vCPU · 2 GB RAM · 40 GB SSD". */
+	specs: string
+	monthly_rate: number
+	currency: Currency
+}

@@ -13,6 +13,8 @@ interface TerminateServerDialogProps {
 	error?: string
 	/** The viewer holds server:snapshot, so a final snapshot can be offered. */
 	canSnapshot?: boolean
+	/** The server has termination protection on, so the region would refuse. */
+	isProtected?: boolean
 }
 
 // Lists what stops working before the customer confirms. The list is advice: a failed
@@ -41,14 +43,17 @@ watch(
 		takeSnapshot.value = false
 	},
 )
-const { rate, currency } = useSnapshotPricing(
+const { rate, currency, freePerServer } = useSnapshotPricing(
 	computed(() => props.target?.region ?? null),
 )
 const snapshotNote = computed(() => {
 	if (rate.value == null)
 		return 'Snapshot storage has no price in this region yet.'
 	const perGb = money(rate.value, currency.value, { trimTrailingZeros: true })
-	return `The first two snapshots are free. After that it costs ${perGb} per GB per month until you delete it.`
+	const cost = `${perGb} per GB per month until you delete it.`
+	return freePerServer.value
+		? `The ${freePerServer.value} newest snapshots are free. After that it costs ${cost}`
+		: `It costs ${cost}`
 })
 </script>
 
@@ -60,14 +65,23 @@ const snapshotNote = computed(() => {
 		theme="red"
 		size="md"
 		:loading="loading"
+		:disabled="isProtected"
+		:confirm-text="isProtected ? undefined : name"
 		:error="error"
 		@confirm="emit('confirm', $event, takeSnapshot)"
 	>
-		<div class="space-y-3">
+		<p v-if="isProtected" class="text-p-base text-ink-gray-7">
+			<span class="text-p-base-semibold text-ink-gray-9">{{ name }}</span>
+			has termination protection on. Turn it off with the lock button next to
+			Actions, then terminate the server.
+		</p>
+
+		<div v-else class="space-y-3">
 			<p class="text-p-base text-ink-gray-7">
 				Permanently destroy
-				<span class="font-semibold text-ink-gray-9">{{ name }}</span>? This
-				can't be undone.
+				<span class="text-p-base-semibold text-ink-gray-9">{{ name }}</span>?
+				The server and all data on its disk will be deleted. This can't be
+				undone.
 			</p>
 
 			<div
@@ -75,17 +89,19 @@ const snapshotNote = computed(() => {
 				class="flex items-center gap-2 text-p-sm text-ink-gray-5"
 			>
 				<LoadingIndicator class="h-4 w-4" />
-				Checking its sites and domains…
+				Loading sites and domains…
 			</div>
 			<p v-else-if="listError" class="text-p-sm text-ink-gray-5">
-				We couldn't list its sites and domains. Terminating still removes them.
+				Could not load sites and domains. Termination will still remove their
+				routes.
 			</p>
 			<p v-else-if="!hostnames.length" class="text-p-sm text-ink-gray-5">
 				No sites or custom domains point to this server.
 			</p>
 			<div v-else class="space-y-1.5">
 				<p class="text-p-sm text-ink-gray-7">
-					These stop working, and their routes are removed:
+					These addresses will become unavailable and their routes will be
+					removed:
 				</p>
 				<ul
 					class="max-h-40 space-y-1 overflow-y-auto rounded-6 border border-outline-gray-2 px-3 py-2"

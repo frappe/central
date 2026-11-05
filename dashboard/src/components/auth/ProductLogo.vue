@@ -9,6 +9,6 @@ const { product } = useProduct()
 		v-if="product?.logo"
 		:src="product.logo"
 		:alt="product.title"
-		class="size-8 shrink-0 object-contain"
+		class="size-8 shrink-0 rounded-4 object-contain"
 	/>
 </template>

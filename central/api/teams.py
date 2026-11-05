@@ -4,15 +4,13 @@ import frappe
 from frappe import _
 from frappe.query_builder import Order
 from frappe.rate_limiter import rate_limit
+from frappe.utils.translations import _lt
 
-from central.iam import expand_capabilities, get_all_capabilities
+from central.iam import can, expand_capabilities, get_all_capabilities
+from central.identity.doctype.team.archive import get_archive_checks, get_credit_balances
 from central.identity.doctype.team.team import Team
 from central.identity.doctype.team_invitation.team_invitation import get_invitation_by_token
 from central.utils.guards import require_capability, require_team_member
-
-# Team-roster reads + role management for the console's Team screens. Visibility
-# is "being a member" (any capability on the team); mutations delegate to the Team
-# doc methods, which independently enforce team:manage_members.
 
 
 @frappe.whitelist(methods=["GET"])
@@ -47,6 +45,7 @@ def list_team_members(team: str) -> list[dict[str, Any]]:
 		entry["roles"].append(
 			{"role": m.role, "resource_type": m.resource_type, "resource_name": m.resource_name}
 		)
+
 	return list(roster.values())
 
 
@@ -94,8 +93,7 @@ def list_team_roles(team: str) -> list[dict[str, Any]]:
 
 @frappe.whitelist(methods=["POST"])
 def create_team(team_name: str) -> dict[str, Any]:
-	"""Create a new team owned by the caller. The Team doc seeds the active Owner
-	membership; team_has_permission gates creation to Central Users."""
+	"""Create a new team owned by the caller, with the caller as its active Owner."""
 	team = Team.create_for_current_user(team_name)
 	return {"name": team.name, "team_name": team.team_name}
 
@@ -108,29 +106,26 @@ def set_onboarding_step(team: str, step: str, status: str) -> dict[str, Any]:
 
 
 @frappe.whitelist(methods=["POST"])
-def skip_onboarding(team: str) -> dict[str, Any]:
-	"""Skip every onboarding step the owner has not answered yet. Owner only."""
-	frappe.get_doc("Team", team).skip_onboarding()
-	return {"skipped": True}
-
-
-@frappe.whitelist(methods=["POST"])
-@require_capability("team:edit", "You can't rename this team.")
+@require_capability("team:edit", _lt("You can't rename this team. Ask a team admin to review your access."))
 def rename_team(team: str, team_name: str) -> dict[str, Any]:
 	"""Rename a team. Team.validate re-checks team:edit on save."""
 	doc = frappe.get_doc("Team", team)
 	doc.team_name = team_name
 	doc.save()
+
 	return {"name": doc.name, "team_name": doc.team_name}
 
 
 @frappe.whitelist(methods=["POST"])
-@require_capability("team:edit", "You can't change this team's logo.")
+@require_capability(
+	"team:edit", _lt("You can't change this team's logo. Ask a team admin to review your access.")
+)
 def set_team_logo(team: str, file_url: str | None = None) -> dict[str, Any]:
 	"""Set the team logo to an uploaded image, or clear it. Team.validate re-checks team:edit."""
 	doc = frappe.get_doc("Team", team)
 	doc.team_logo = file_url or None
 	doc.save()
+
 	return {"team_logo": doc.team_logo}
 
 
@@ -142,12 +137,46 @@ def transfer_team_ownership(team: str, user: str) -> dict[str, Any]:
 	return {"team": team, "owner": user}
 
 
+@frappe.whitelist(methods=["GET"])
+@require_capability("team:delete", _lt("Only the team owner can archive this team."))
+def get_team_archive_checks(team: str) -> dict[str, Any]:
+	"""What still stops the team from being archived, and the credit that archiving forfeits."""
+	return {"checks": get_archive_checks(team), "credit_balances": get_credit_balances(team)}
+
+
 @frappe.whitelist(methods=["POST"])
-@require_capability("team:delete", "You can't delete this team.")
-def delete_team(team: str) -> dict[str, Any]:
-	"""Delete a team. The Team lifecycle validates and removes owned access records."""
-	frappe.delete_doc("Team", team)
-	return {"team": team, "deleted": True}
+@require_capability("team:delete", _lt("Only the team owner can archive this team."))
+def archive_team(team: str) -> dict[str, Any]:
+	frappe.get_doc("Team", team).archive()
+	return {"team": team, "archived": True}
+
+
+@frappe.whitelist(methods=["POST"])
+def restore_team(team: str) -> dict[str, Any]:
+	"""Operator action: open an archived team again."""
+	frappe.get_doc("Team", team).restore()
+	return {"team": team, "restored": True}
+
+
+@frappe.whitelist(methods=["POST"])
+def suspend_team(team: str, reason: str) -> dict[str, Any]:
+	"""Operator action: suspend the team, for example for abuse."""
+	frappe.get_doc("Team", team).suspend(reason)
+	return {"team": team, "status": "Suspended"}
+
+
+@frappe.whitelist(methods=["POST"])
+def unsuspend_team(team: str) -> dict[str, Any]:
+	"""Operator action: give the team's members access again."""
+	frappe.get_doc("Team", team).unsuspend()
+	return {"team": team, "status": "Active"}
+
+
+@frappe.whitelist(methods=["POST"])
+def impersonate_team_owner(team: str, reason: str, notify_owner: bool | int = 0) -> dict[str, str]:
+	"""Operator action: the console address that opens as this team."""
+	url = frappe.get_doc("Team", team).get_impersonation_url(reason, bool(frappe.utils.cint(notify_owner)))
+	return {"url": url}
 
 
 @frappe.whitelist(methods=["POST"])
@@ -159,16 +188,14 @@ def invite_team_member(
 	resource_name: str | None = None,
 	invitations: list[dict] | None = None,
 ) -> str | list[dict[str, Any]]:
-	"""Invite one person, or up to 10 with `invitations`: rows of {email, role,
-	resource_type, resource_name}.
-
-	One person returns the invitation name. Rows return one result each, with the
-	invitation name or the error that refused that row."""
+	"""Invite one person, or up to 10 with `invitations` (rows of email, role, resource_type,
+	resource_name). Rows return one result each: the invitation name or the refusal."""
 	doc = frappe.get_doc("Team", team)
 	if invitations is not None:
 		return doc.invite_members(invitations)
 	if not email or not role:
 		frappe.throw(_("Email and role are required."))
+
 	return doc.invite_member(email, role, resource_type=resource_type or "*", resource_name=resource_name)
 
 
@@ -204,9 +231,9 @@ def decline_invitation(invitation: str) -> dict[str, Any]:
 
 @frappe.whitelist(methods=["POST"])
 def set_team_member_roles(team: str, user: str, roles: list[dict] | str) -> dict:
-	if isinstance(roles, str):
-		roles = frappe.parse_json(roles)  # the console posts a JSON-encoded array
+	roles = frappe.parse_json(roles)
 	frappe.get_doc("Team", team).set_member_roles(user, roles)
+
 	return {"team": team, "user": user, "roles": roles}
 
 
@@ -230,18 +257,32 @@ def leave_team(team: str) -> dict:
 
 
 @frappe.whitelist(methods=["POST"])
-@require_capability("team:manage_members", "You can't manage roles for this team.")
+@require_capability(
+	"team:manage_members",
+	_lt("You can't manage roles for this team. Ask a team admin to review your access."),
+)
 def create_custom_role(team: str, role_name: str, capabilities: list | str) -> dict:
 	"""Create a team-scoped custom Team Role granting exactly `capabilities`."""
-	if isinstance(capabilities, str):
-		capabilities = frappe.parse_json(capabilities)  # the console posts a JSON-encoded array
+	capabilities = frappe.parse_json(capabilities)  # the console posts a JSON-encoded array
 	valid = set(get_all_capabilities())
-	picked = [c for c in capabilities if c in valid]
+	picked = [c for c in dict.fromkeys(capabilities) if c in valid]
 	if not picked:
 		frappe.throw(_("Pick at least one capability."), frappe.ValidationError)
+
 	# Persist the implied dependencies too (e.g. server:create pulls in server:view +
 	# cluster:view), so the saved role is usable and matches what enforcement grants.
-	rows = [{"capability": c} for c in expand_capabilities(picked) if c in valid]
+	granted = [c for c in expand_capabilities(picked) if c in valid]
+	# A role cannot carry more than its creator holds, or it would hand out what they lack.
+	missing = [c for c in granted if not can(frappe.session.user, team, c)]
+	if missing:
+		frappe.throw(
+			_(
+				"You can't grant {0}, because you don't hold it. Ask a team admin to review your access."
+			).format(", ".join(missing)),
+			frappe.PermissionError,
+		)
+
+	rows = [{"capability": c} for c in granted]
 	# Authorized by the decorator; Team Role grants create only to System Manager, so bypass doc perms.
 	role = frappe.get_doc(
 		{
@@ -252,6 +293,7 @@ def create_custom_role(team: str, role_name: str, capabilities: list | str) -> d
 			"capabilities": rows,
 		}
 	).insert(ignore_permissions=True)
+
 	return {"role": role.name, "role_name": role.role_name}
 
 
@@ -261,4 +303,5 @@ def delete_custom_role(role: str) -> dict:
 	doc = frappe.get_doc("Team Role", role)
 	# TeamRole.on_trash enforces customer authorization because DocType RBAC is operator-only.
 	doc.delete(ignore_permissions=True)
+
 	return {"role": role, "deleted": True}

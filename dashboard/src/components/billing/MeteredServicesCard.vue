@@ -78,10 +78,7 @@ function exhausted(row: ServiceRow): boolean {
 </script>
 
 <template>
-	<BillingCard
-		title="Metered services"
-		title-info="Team-level services billed by usage, such as Object Storage. No server required."
-	>
+	<BillingCard title="Metered services" title-info="Services charged by usage.">
 		<template v-if="canSubscribe" #action>
 			<Button
 				variant="ghost"

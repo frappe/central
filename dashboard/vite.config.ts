@@ -29,6 +29,7 @@ export default defineConfig({
 	},
 	plugins: [
 		frappeui({
+			lucideIcons: true,
 			frontendRoute: '/dashboard',
 			frappeProxy: true,
 			jinjaBootData: true,
@@ -44,6 +45,8 @@ export default defineConfig({
 		alias: {
 			'@': path.resolve(__dirname, 'src'),
 		},
+		// One reka-ui instance, so a reka part placed inside a frappe-ui component shares its context.
+		dedupe: ['reka-ui'],
 	},
 	build: {
 		outDir: path.resolve(__dirname, '../central/public/dashboard'),
@@ -54,9 +57,7 @@ export default defineConfig({
 	optimizeDeps: {
 		exclude: ['frappe-ui'],
 		include: [
-			'feather-icons',
 			'tippy.js',
-			'showdown',
 			'engine.io-client',
 			'socket.io-client',
 			'debug',

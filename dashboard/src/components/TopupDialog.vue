@@ -1,7 +1,18 @@
 <script setup lang="ts">
-import { Alert, Button, Dialog, TextInput, useCall } from 'frappe-ui'
+import {
+	Alert,
+	Button,
+	Dialog,
+	Radio,
+	RadioGroup,
+	TextInput,
+	useCall,
+} from 'frappe-ui'
 import { computed, nextTick, type Ref, ref, watch } from 'vue'
 import { API, method } from '@/api/methods'
+import PaymentNetworkMark, {
+	type PaymentNetwork,
+} from '@/components/PaymentNetworkMark.vue'
 import { useSession } from '@/composables/useSession'
 import { useTopup } from '@/composables/useTopup'
 import { getErrorMessage } from '@/lib/feedback'
@@ -48,6 +59,10 @@ const gst = computed(
 )
 const payable = computed(() => Number(amount.value || 0) + gst.value)
 const instrument = ref<string | null>(null)
+// Start on the first instrument, so the form never opens with nothing chosen.
+watch(instruments, (list) => {
+	if (!instrument.value && list.length) instrument.value = list[0].instrument
+})
 
 // A caller-supplied instrument is fixed unless the customer asks to change it.
 const fixed = ref(false)
@@ -62,6 +77,11 @@ const icons: Record<string, string> = {
 	'RuPay Card': 'lucide-credit-card',
 	UPI: 'lucide-smartphone',
 	Netbanking: 'lucide-landmark',
+}
+const marks: Record<string, PaymentNetwork[]> = {
+	Card: ['visa', 'mastercard'],
+	'RuPay Card': ['rupay', 'diners'],
+	UPI: ['upi'],
 }
 
 // Payment rail. INR always uses the Razorpay sheet; international currencies use a
@@ -214,14 +234,14 @@ watch(open, (isOpen) => {
 				<p class="text-sm text-ink-gray-8">
 					Paying {{ money(payable, currency) }}
 				</p>
-				<p v-if="cardLoading" class="text-p-sm text-ink-gray-5">
+				<p v-if="cardLoading" class="text-p-sm text-ink-gray-6">
 					Loading secure card field…
 				</p>
 				<div
 					ref="cardEl"
 					class="rounded-4 border border-outline-gray-2 px-3 py-3"
 				/>
-				<p class="text-p-sm text-ink-gray-5">
+				<p class="text-p-sm text-ink-gray-6">
 					Card details are entered on Stripe's secure field. We never see your
 					card number. Your billing address is taken from your billing profile.
 				</p>
@@ -232,30 +252,57 @@ watch(open, (isOpen) => {
 				<p class="text-sm text-ink-gray-8">
 					Paying {{ money(payable, currency) }}
 				</p>
-				<p v-if="paypalLoading" class="text-p-sm text-ink-gray-5">
+				<p v-if="paypalLoading" class="text-p-sm text-ink-gray-6">
 					Loading PayPal…
 				</p>
 				<div ref="paypalEl" />
-				<p class="text-p-sm text-ink-gray-5">
+				<p class="text-p-sm text-ink-gray-6">
 					You'll approve the payment in PayPal. Your wallet is credited only
 					after PayPal confirms.
 				</p>
 			</div>
 
 			<div v-else class="space-y-5">
-				<!-- The recharge instruments. Each sits on its own rail, so this is not
-             decoration: it decides where the money goes. -->
+				<div>
+					<TextInput
+						v-model="amount"
+						autofocus
+						type="number"
+						label="Amount"
+						placeholder="0"
+						min="1"
+					>
+						<template #prefix>
+							<span class="text-sm text-ink-gray-5"
+								>{{ currencySymbol(currency) }}</span
+							>
+						</template>
+					</TextInput>
+					<div
+						class="mt-2 grid grid-cols-4 gap-2"
+						role="group"
+						aria-label="Quick amounts"
+					>
+						<Button
+							v-for="preset in presets"
+							:key="preset"
+							:label="money(preset, currency, { trimTrailingZeros: true })"
+							@click="amount = preset"
+						/>
+					</div>
+				</div>
+
 				<!-- Already told which instrument: say it, don't ask it again. -->
 				<div
 					v-if="fixed"
-					class="flex items-center gap-2 rounded-6 border border-outline-gray-2 bg-surface-gray-1 px-3 py-2.5"
+					class="flex items-center gap-3 rounded-6 border border-outline-gray-2 px-3 py-2.5"
 				>
 					<span
 						:class="icons[instrument || ''] || 'lucide-credit-card'"
 						class="size-4 shrink-0 text-ink-gray-6"
 						aria-hidden="true"
 					/>
-					<p class="text-p-sm text-ink-gray-6">
+					<p class="text-p-sm text-ink-gray-7">
 						Paying with your {{ chosenLabel.toLowerCase() }}
 					</p>
 					<Button
@@ -266,29 +313,32 @@ watch(open, (isOpen) => {
 					/>
 				</div>
 
-				<div v-else-if="instruments.length > 1">
-					<p class="mb-1.5 text-p-sm text-ink-gray-5">Pay with</p>
-					<div class="grid gap-2 sm:grid-cols-2">
-						<button
-							v-for="tile in instruments"
-							:key="tile.instrument"
-							class="flex items-center gap-2 rounded-6 border p-3 text-left transition-colors"
-							:class="
-								instrument === tile.instrument
-									? 'border-outline-gray-4 bg-surface-gray-1'
-									: 'border-outline-gray-2 hover:border-outline-gray-3'
-							"
-							@click="instrument = tile.instrument"
-						>
-							<span
-								:class="icons[tile.instrument] || 'lucide-credit-card'"
-								class="size-4 shrink-0 text-ink-gray-7"
-								aria-hidden="true"
-							/>
-							<span class="text-sm text-ink-gray-9">{{ tile.label }}</span>
-						</button>
-					</div>
-				</div>
+				<!-- Each instrument sits on its own rail, so the choice decides where the money goes. -->
+				<RadioGroup
+					v-else-if="instruments.length > 1"
+					v-model="instrument"
+					label="Pay with"
+					size="md"
+					padded
+				>
+					<Radio
+						v-for="tile in instruments"
+						:key="tile.instrument"
+						:value="tile.instrument"
+					>
+						<template #label>
+							<span class="flex items-center gap-2.5">
+								{{ tile.label }}
+								<PaymentNetworkMark
+									v-for="mark in marks[tile.instrument] ?? []"
+									:key="mark"
+									:network="mark"
+								/>
+							</span>
+						</template>
+					</Radio>
+				</RadioGroup>
+
 				<div v-if="showMethodChoice">
 					<p class="mb-1.5 text-p-sm text-ink-gray-5">Pay with</p>
 					<div class="flex gap-2">
@@ -304,52 +354,32 @@ watch(open, (isOpen) => {
 						/>
 					</div>
 				</div>
-				<div>
-					<p class="mb-1.5 text-p-sm text-ink-gray-5">Amount</p>
-					<div class="mb-2 flex flex-wrap gap-2">
-						<Button
-							v-for="p in presets"
-							:key="p"
-							:label="`${currencySymbol(currency)}${p.toLocaleString()}`"
-							:variant="Number(amount) === p ? 'solid' : 'subtle'"
-							@click="amount = p"
-						/>
+
+				<dl
+					v-if="Number(amount) > 0"
+					class="space-y-1.5 rounded-6 bg-surface-gray-1 px-3 py-2.5 text-p-sm"
+				>
+					<div v-if="gstRate" class="flex justify-between">
+						<dt class="text-ink-gray-6">Wallet credit</dt>
+						<dd class="tabular-nums text-ink-gray-8">
+							{{ money(Number(amount), currency) }}
+						</dd>
 					</div>
-					<TextInput
-						v-model="amount"
-						autofocus
-						type="number"
-						label="Amount"
-						:placeholder="`Enter amount in ${currency}`"
-						min="1"
-					/>
-					<dl
-						v-if="gstRate && Number(amount) > 0"
-						class="mt-3 space-y-1 text-p-sm"
-					>
-						<div class="flex justify-between">
-							<dt class="text-ink-gray-5">Wallet credit</dt>
-							<dd class="tabular-nums text-ink-gray-8">
-								{{ money(Number(amount), currency) }}
-							</dd>
-						</div>
-						<div class="flex justify-between">
-							<dt class="text-ink-gray-5">GST ({{ gstRate }}%)</dt>
-							<dd class="tabular-nums text-ink-gray-8">
-								{{ money(gst, currency) }}
-							</dd>
-						</div>
-						<div class="flex justify-between font-medium">
-							<dt class="text-ink-gray-8">You pay</dt>
-							<dd class="tabular-nums text-ink-gray-9">
-								{{ money(payable, currency) }}
-							</dd>
-						</div>
-					</dl>
-				</div>
-				<p class="text-p-sm text-ink-gray-5">
-					You'll complete payment securely. Your wallet is credited only after
-					the payment is confirmed.
+					<div v-if="gstRate" class="flex justify-between">
+						<dt class="text-ink-gray-6">GST ({{ gstRate }}%)</dt>
+						<dd class="tabular-nums text-ink-gray-8">
+							{{ money(gst, currency) }}
+						</dd>
+					</div>
+					<div class="flex justify-between text-p-sm-medium">
+						<dt class="text-ink-gray-8">You pay</dt>
+						<dd class="tabular-nums text-ink-gray-9">
+							{{ money(payable, currency) }}
+						</dd>
+					</div>
+				</dl>
+				<p class="text-p-sm text-ink-gray-6">
+					We add the credit to your wallet once the payment goes through.
 				</p>
 			</div>
 		</template>

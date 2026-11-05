@@ -1,21 +1,25 @@
 from datetime import UTC, datetime, timedelta
+from typing import get_args
 from zoneinfo import ZoneInfo
 
 import frappe
 from frappe import _
 from frappe.utils import get_system_timezone
+from frappe.utils.translations import _lt
+from pydantic import ValidationError
 
 from central.errors import handle_resource_operation
-from central.iam import get_server_capabilities
+from central.iam import can, get_server_capabilities, user_has_operator_bypass
 from central.infrastructure.doctype.resource_action.resource_action import ResourceAction
-from central.integrations.servers import get_cached_metrics, reconcile
+from central.infrastructure.doctype.site.site import Site
+from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
+from central.integrations.atlas import ConsoleMode
+from central.integrations.servers import get_cached_metrics, get_console_url, reconcile
+from central.server_models import FirewallChange
+from central.signups.access import get_locked_servers
 from central.utils.guards import require_capability
 
-# Server endpoints for the console. Reads come from the VirtualMachine mirror; commands go
-# to Atlas as the operator (Atlas stays policy-unaware — capability gating happens
-# here). Every call resolves and authorizes a team first.
-
-METRICS_PERIOD_DAYS = {"24h": 1, "7d": 7, "14d": 14, "30d": 30}
+METRICS_PERIOD_HOURS = {"1h": 1, "24h": 24, "7d": 168, "14d": 336, "30d": 720}
 
 # `list_instances` reads only these non-secret Region fields — base_url, atlas_region_id
 # and webhook_secret never leave this allowlist for a non-operator caller.
@@ -32,13 +36,12 @@ REGION_LIST_FIELDS = (
 
 
 @frappe.whitelist(methods=["GET"])
-@require_capability("server:view", "You can't view this team's servers.")
+@require_capability(
+	"server:view", _lt("You can't view this team's servers. Ask a team admin to review your access.")
+)
 def registry(team: str | None = None) -> dict:
-	"""List a team's VMs — servers (the VirtualMachine mirror) and self-serve sites (the Site
-	mirror, each a 1:1-backed VM) — in one read, so the console's map/panel unify them
-	from a single call. A pure read; gated on `server:view`. Terminated sites are gone,
-	not a state to render, so they're excluded here (Terminated servers are filtered by
-	the map feed client-side)."""
+	"""A team's servers and self-serve sites in one read, for the console map and panel.
+	Gated on `server:view`. Terminated sites are left out."""
 	servers = frappe.get_list(
 		"Virtual Machine",
 		filters={"team": team},
@@ -69,10 +72,15 @@ def registry(team: str | None = None) -> dict:
 	# mirror catches up — instead of looking like nothing happened.
 	pending = ResourceAction.pending_labels(team)
 	audiences = _pilot_audiences(team)
+	locked = get_locked_servers(team)
+	plan_titles = _plan_titles({server["plan"] for server in servers if server["plan"]})
 	for server in servers:
+		server["plan_title"] = plan_titles.get(server["plan"])
 		server["pending_action"] = pending.get(server["resource_id"])
 		server["pilot_audience"] = audiences.get(server["name"])
 		server["capabilities"] = get_server_capabilities(frappe.session.user, team, server["name"])
+		# A free trial gives the site, not the server: the console hides SSH, the console and Pilot.
+		server["is_access_locked"] = server["name"] in locked
 
 	# A creation has no server row until the region accepts it, so it cannot be overlaid
 	# like the pending actions above. It rides here as its own list: the console picks its
@@ -80,9 +88,21 @@ def registry(team: str | None = None) -> dict:
 	creations = ResourceAction.open_creations(team)
 
 	rows = frappe.get_list(
-		"Site", filters={"team": team}, fields=["name", "server"], order_by="name asc", limit_page_length=0
+		"Site",
+		filters={"team": team},
+		fields=["name", "server", "subdomain", "renamed_at"],
+		order_by="name asc",
+		limit_page_length=0,
 	)
+
 	return {"team": team, "servers": servers, "sites": _sites(rows, servers, pending), "creations": creations}
+
+
+def _plan_titles(plans: set[str]) -> dict[str, str]:
+	"""Each plan's title in one read. Plan titles are catalog data, the same for every team."""
+	if not plans:
+		return {}
+	return dict(frappe.db.get_values("Plan", {"name": ["in", list(plans)]}, ["name", "title"]))
 
 
 def _pilot_audiences(team: str) -> dict[str, str]:
@@ -97,18 +117,15 @@ def _pilot_audiences(team: str) -> dict[str, str]:
 
 
 def _sites(rows: list[dict], servers: list[dict], pending: dict[str, str]) -> list[dict]:
-	"""A site is a VM too, so it lists beside the servers and reads the same way.
-
-	Its address is its name and its state is its machine's, so both are read here from the
-	machines this call already loaded. A terminated machine is gone, not a state to render,
-	so its site goes with it."""
+	"""The sites on the machines already loaded, with each machine's state. A terminated
+	machine's site is left out."""
 	machines = {server["name"]: server for server in servers}
 	return [
 		{
 			"name": row["name"],
-			"subdomain": row["name"].split(".")[0],
+			"subdomain": row["subdomain"] or row["name"].split(".")[0],
 			"server": row["server"],
-			"url": f"https://{row['name']}",
+			"url": Site.get_primary_url(row["name"], row["subdomain"], row["renamed_at"]),
 			"status": machine["status"],
 			"region": machine["region"],
 			# A site's actions run against its machine, so its in-flight label is the machine's.
@@ -120,15 +137,24 @@ def _sites(rows: list[dict], servers: list[dict], pending: dict[str, str]) -> li
 
 
 @frappe.whitelist(methods=["GET"])
-@require_capability("server:view", "You can't view this team's servers.", server="resource_id")
+@require_capability(
+	"server:view",
+	_lt("You can't view this team's servers. Ask a team admin to review your access."),
+	server="resource_id",
+)
 def server_overview(team: str | None = None, resource_id: str | None = None) -> dict:
 	"""Return one server's Central mirror."""
 	if not resource_id:
-		frappe.throw(_("resource_id is required."), frappe.ValidationError)
+		frappe.throw(_("Select a server to continue."), frappe.ValidationError)
 
 	row = _overview_server_row(resource_id, team)
 	if not row:
-		frappe.throw(_("No server '{0}' for this team.").format(resource_id), frappe.DoesNotExistError)
+		frappe.throw(
+			_("Server '{0}' is not available on this team. Return to Servers and refresh the list.").format(
+				resource_id
+			),
+			frappe.DoesNotExistError,
+		)
 
 	server = frappe._dict(
 		{
@@ -148,32 +174,45 @@ def server_overview(team: str | None = None, resource_id: str | None = None) -> 
 			"public_ipv6": row.public_ipv6,
 			"has_public_ipv6": row.has_public_ipv6,
 			"is_firewall_enabled": row.is_firewall_enabled,
+			"is_termination_protected": row.is_termination_protected,
+			"has_ipv4_internet": row.has_ipv4_internet,
+			"has_wireguard_access": row.has_wireguard_access,
+			"firewall_rules": frappe.parse_json(row.firewall_rules) if row.firewall_rules else None,
 			"ssh_command": _ssh_command(row),
-			"ssh_keys": _server_ssh_keys(resource_id, team),
+			"ssh_keys": _server_ssh_keys(row.resource_id),
 			"gateway_url": row.gateway_url,
 			"creation": row.creation,
+			"created_by": row.created_by,
+			"created_by_name": row.created_by_name,
 		}
 	)
+
 	return {
 		"server": {
 			**server,
 			**_overview_plan(server, team),
 			"team_name": row.team_name or team,
+			"operator_links": _operator_links(row),
 			"region_details": {
 				"display_name": row.region_display_name or server.region,
 				"provider": row.region_provider,
 				"country_code": row.region_country_code,
+				"has_wireguard_gateway": row.region_has_wireguard_gateway,
 			},
 		},
 	}
 
 
 @frappe.whitelist(methods=["GET"])
-@require_capability("server:view", "You can't view this team's servers.", server="resource_id")
+@require_capability(
+	"server:view",
+	_lt("You can't view this team's servers. Ask a team admin to review your access."),
+	server="resource_id",
+)
 def server_metrics(
 	team: str | None = None,
 	resource_id: str | None = None,
-	period: str = "24h",
+	period: str = "1h",
 	start: str | None = None,
 	end: str | None = None,
 ) -> dict:
@@ -187,7 +226,12 @@ def server_metrics(
 		as_dict=True,
 	)
 	if not server:
-		frappe.throw(_("No server '{0}' for this team.").format(resource_id), frappe.DoesNotExistError)
+		frappe.throw(
+			_("Server '{0}' is not available on this team. Return to Servers and refresh the list.").format(
+				resource_id
+			),
+			frappe.DoesNotExistError,
+		)
 
 	if server.status != "Running" or not server.atlas_vm_id:
 		return {"available": False}
@@ -198,9 +242,9 @@ def server_metrics(
 def _metrics_window(period: str, start: str | None, end: str | None) -> tuple[datetime, datetime | None]:
 	"""A preset period runs until now. A custom window reads `start` and `end` on the site's
 	clock, the way the console's date pickers send them."""
-	if period in METRICS_PERIOD_DAYS:
+	if period in METRICS_PERIOD_HOURS:
 		now = datetime.now(UTC).replace(second=0, microsecond=0)
-		return now - timedelta(days=METRICS_PERIOD_DAYS[period]), None
+		return now - timedelta(hours=METRICS_PERIOD_HOURS[period]), None
 
 	if period != "custom" or not start or not end:
 		frappe.throw(_("Choose a metrics period or a start and end."), frappe.ValidationError)
@@ -215,61 +259,77 @@ def _metrics_window(period: str, start: str | None, end: str | None) -> tuple[da
 	if window_end <= window_start:
 		frappe.throw(_("The end must be after the start."), frappe.ValidationError)
 
-	longest = max(METRICS_PERIOD_DAYS.values())
-	if window_end - window_start > timedelta(days=longest):
-		frappe.throw(_("Choose {0} days or less.").format(longest), frappe.ValidationError)
+	longest = max(METRICS_PERIOD_HOURS.values())
+	if window_end - window_start > timedelta(hours=longest):
+		frappe.throw(_("Choose {0} days or less.").format(longest // 24), frappe.ValidationError)
 
 	return window_start, window_end
 
 
 @frappe.whitelist(methods=["GET"])
-@require_capability("server:view", "You can't view this team's servers.", server="resource_id")
+@require_capability(
+	"server:view",
+	_lt("You can't view this team's servers. Ask a team admin to review your access."),
+	server="resource_id",
+)
 def server_hostnames(team: str | None = None, resource_id: str | None = None) -> list[dict]:
 	"""The site and custom-domain hostnames a server answers. They stop working when the
 	server is terminated, so the console lists them before it asks. Gated on `server:view`."""
-	server = frappe.db.get_value("Virtual Machine", {"team": team, "resource_id": resource_id}, "name")
-	if not server:
-		frappe.throw(_("No server '{0}' for this team.").format(resource_id), frappe.DoesNotExistError)
-
-	sites = frappe.get_list("Site", filters={"team": team, "server": server}, pluck="name")
+	server = VirtualMachine.get_team_server_name(team, resource_id)
+	sites = frappe.get_list(
+		"Site",
+		filters={"team": team, "server": server},
+		fields=["name", "subdomain", "renamed_at"],
+	)
 	routes = frappe.get_list(
 		"Site Domain",
 		filters={"team": team, "server": server},
 		fields=["domain", "route_type"],
 		order_by="domain asc",
 	)
-	hostnames = [{"hostname": site, "kind": "Site"} for site in sites]
+
+	# A renamed site answers on its old and new names; it shows once, at its primary address.
+	site_names = set()
+	hostnames = []
+	for site in sites:
+		site_names.add(site.name)
+		if site.subdomain:
+			site_names.add(f"{site.subdomain}.{site.name.split('.', 1)[1]}")
+		primary = Site.get_primary_url(site.name, site.subdomain, site.renamed_at)
+		hostnames.append({"hostname": primary.removeprefix("https://"), "kind": "Site"})
+
 	hostnames += [
 		{"hostname": route.domain, "kind": "Site" if route.route_type == "Site" else "Custom domain"}
 		for route in routes
-		if route.domain not in sites
+		if route.domain not in site_names
 	]
+
 	return hostnames
 
 
-def _server_ssh_keys(resource_id: str, team: str) -> list[dict]:
-	"""The team keys a server was created with, by title."""
-	server = frappe.qb.DocType("Virtual Machine")
+def _server_ssh_keys(server: str) -> list[dict]:
+	"""The team keys that can sign in to one server, in the order the server holds them."""
 	link = frappe.qb.DocType("Server SSH Key")
 	key = frappe.qb.DocType("Team SSH Key")
+
 	return (
 		frappe.qb.from_(link)
-		.join(server)
-		.on((server.name == link.parent) & (link.parenttype == "Virtual Machine"))
 		.join(key)
 		.on(key.name == link.team_ssh_key)
-		.select(key.title, key.fingerprint)
-		.where((server.resource_id == resource_id) & (server.team == team))
-		.orderby(key.title)
+		.select(key.name, key.title, key.fingerprint)
+		.where((link.parent == server) & (link.parenttype == "Virtual Machine"))
+		.orderby(link.idx)
 		.run(as_dict=True)
 	)
 
 
 def _overview_server_row(resource_id: str, team: str):
-	"""VirtualMachine + region + team in one query."""
+	"""VirtualMachine + region + team + creator in one query."""
 	server = frappe.qb.DocType("Virtual Machine")
 	region = frappe.qb.DocType("Region")
 	team_table = frappe.qb.DocType("Team")
+	creation_action = frappe.qb.DocType("Resource Action")
+	creator = frappe.qb.DocType("User")
 	rows = (
 		frappe.qb.from_(server)
 		# VirtualMachine.region links straight to Region.
@@ -277,6 +337,11 @@ def _overview_server_row(resource_id: str, team: str):
 		.on(region.name == server.region)
 		.left_join(team_table)
 		.on(team_table.name == server.team)
+		# A discovered server has no create action, so its creator stays empty.
+		.left_join(creation_action)
+		.on((creation_action.server == server.name) & (creation_action.action == "create"))
+		.left_join(creator)
+		.on(creator.name == creation_action.requested_by)
 		.select(
 			server.resource_id,
 			server.atlas_vm_id,
@@ -294,18 +359,42 @@ def _overview_server_row(resource_id: str, team: str):
 			server.public_ipv6,
 			server.has_public_ipv6,
 			server.is_firewall_enabled,
+			server.is_termination_protected,
+			server.has_ipv4_internet,
+			server.has_wireguard_access,
+			server.firewall_rules,
 			server.gateway_url,
 			server.creation,
 			region.display_name.as_("region_display_name"),
 			region.provider.as_("region_provider"),
 			region.country_code.as_("region_country_code"),
+			region.has_wireguard_gateway.as_("region_has_wireguard_gateway"),
+			region.base_url.as_("region_base_url"),
 			team_table.team_name.as_("team_name"),
+			creation_action.requested_by.as_("created_by"),
+			creator.full_name.as_("created_by_name"),
 		)
 		.where((server.resource_id == resource_id) & (server.team == team))
 		.limit(1)
 		.run(as_dict=True)
 	)
+
 	return rows[0] if rows else None
+
+
+def _operator_links(row) -> dict | None:
+	"""Desk and Atlas form links for an operator. Other users get None, so the region URL stays private."""
+	if not user_has_operator_bypass():
+		return None
+
+	atlas_url = None
+	if row.region_base_url and row.atlas_vm_id:
+		atlas_url = f"{row.region_base_url.rstrip('/')}/desk/virtual-machine/{row.atlas_vm_id}"
+
+	return {
+		"desk_url": frappe.utils.get_url_to_form("Virtual Machine", row.resource_id),
+		"atlas_url": atlas_url,
+	}
 
 
 def _ssh_command(row) -> str | None:
@@ -313,16 +402,13 @@ def _ssh_command(row) -> str | None:
 	address = row.public_ipv6 or row.public_ipv4
 	if not address:
 		return None
+
 	return f"ssh root@{address}"
 
 
 def _overview_plan(server: dict, team: str) -> dict:
-	"""Tier name + billed rate — scoped to this server, not the team's full run-rate.
-
-	Reads the server's open priced segment through the billing seam
-	(`active_segment_for_resource`) rather than querying Subscription / Subscription
-	Change and re-deriving the ledger's open-segment rule here — servers does not own
-	how a segment resolves from the billing ledger."""
+	"""The server's plan name and billed rate, read from its open priced segment through the
+	billing module, which owns how a segment resolves."""
 	from central.billing.catalog.subscriptions import active_segment_for_resource
 
 	currency = frappe.db.get_value("Billing Profile", team, "currency") or "INR"
@@ -350,7 +436,6 @@ def _overview_plan(server: dict, team: str) -> dict:
 			title = plan.title
 			billing_cycle = plan.billing_cycle or "Monthly"
 			if rate is None:
-				# Local import: Plan.get_rate pulls billing catalog; keep servers import-light.
 				rate = frappe.get_cached_doc("Plan", plan_name).get_rate(currency, server.region)
 	else:
 		# VirtualMachine bootstrap may open a Subscription before a plan is attached — no rate to show.
@@ -365,7 +450,9 @@ def _overview_plan(server: dict, team: str) -> dict:
 
 
 @frappe.whitelist(methods=["GET"])
-@require_capability("cluster:view", "You can't view clusters for this team.")
+@require_capability(
+	"cluster:view", _lt("You can't view clusters for this team. Ask a team admin to review your access.")
+)
 def list_instances(team: str | None = None) -> list[dict]:
 	"""List the regions a team can place servers in — every Active Region.
 	A pure read for the console's New Server region picker. Gated on `cluster:view`
@@ -384,7 +471,9 @@ def list_instances(team: str | None = None) -> list[dict]:
 
 
 @frappe.whitelist(methods=["POST"])
-@require_capability("server:view", "You can't refresh this team's servers.")
+@require_capability(
+	"server:view", _lt("You can't refresh this team's servers. Ask a team admin to review your access.")
+)
 def refresh_servers(team: str | None = None) -> dict:
 	"""Manually reconcile this team's mirror from every Active Atlas — the on-demand
 	twin of the scheduled reconcile. Gated on `server:view`."""
@@ -393,13 +482,21 @@ def refresh_servers(team: str | None = None) -> dict:
 
 @frappe.whitelist(methods=["POST"])
 @handle_resource_operation
-@require_capability("server:console", "You can't open this server's console.", server="resource_id")
-def open_console(team: str | None = None, resource_id: str | None = None) -> dict:
-	"""Return a single-use web console URL for one server. Gated on `server:console`."""
-	from central.integrations.servers import get_console_url
+@require_capability(
+	"server:console",
+	_lt("You can't open this server's console. Ask a team admin to review your access."),
+	server="resource_id",
+)
+def open_console(team: str | None = None, resource_id: str | None = None, *, mode: ConsoleMode) -> dict:
+	"""Return a single-use web console URL for one server in SSH or TTY mode.
+	Gated on `server:console`."""
+	# Frappe skips type checks on a Literal of strings, so check the mode here.
+	if mode not in get_args(ConsoleMode):
+		frappe.throw(_("Choose SSH or TTY to open the console."))
 
 	server = frappe.get_doc("Virtual Machine", {"team": team, "resource_id": resource_id})
-	return {"url": get_console_url(server)}
+
+	return {"url": get_console_url(server, mode)}
 
 
 @frappe.whitelist(methods=["POST"])
@@ -425,7 +522,11 @@ def restart_server(team: str | None = None, resource_id: str | None = None) -> d
 
 @frappe.whitelist(methods=["POST"])
 @handle_resource_operation
-@require_capability("server:resize", "You can't resize this team's servers.", server="resource_id")
+@require_capability(
+	"server:resize",
+	_lt("You can't resize this team's servers. Ask a team admin to review your access."),
+	server="resource_id",
+)
 def resize_server(
 	team: str | None = None,
 	resource_id: str | None = None,
@@ -434,29 +535,33 @@ def resize_server(
 	sub_category: str | None = None,
 	disk_gigabytes: int | None = None,
 ) -> dict:
-	"""Resize a server's CPU, memory, and disk.
+	"""Resize a server's CPU, memory and disk. Gated on `server:resize`.
+	A compute change stops the server first. A larger disk does not, and a smaller disk is refused.
+	On an open trial it keeps the paid plan the site moves to when the trial converts."""
+	from central.signups.trial import Trial
 
-	Gated on `server:resize`. Billing re-locks the rate and Atlas applies the
-	shape: a compute change stops the server first, a larger disk does not, and
-	a smaller disk is refused. Atlas moves the server if this host cannot fit it."""
 	if not resource_id:
 		frappe.throw(_("A server is required."))
 
-	server = frappe.db.get_value("Virtual Machine", {"team": team, "resource_id": resource_id}, "name")
-	if not server:
-		frappe.throw(_("Server {0} was not found.").format(resource_id), frappe.DoesNotExistError)
+	server = VirtualMachine.get_team_server_name(team, resource_id)
 	subscription = frappe.db.get_value("Subscription", {"team": team, "server_id": server}, "name")
+	if not subscription and (trial := Trial.find_open(server)):
+		# The chosen plan is what the team pays once the trial converts.
+		if not can(frappe.session.user, team, "billing:manage"):
+			frappe.throw(
+				_("You can't manage this team's billing. Ask a team admin to review your access."),
+				frappe.PermissionError,
+			)
+		Trial.load(trial.site.name, for_update=True).choose_plan(plan)
+		return {"queued": False, "resized": False}
 	if not subscription:
-		frappe.throw(_("This server has no subscription to resize."))
+		frappe.throw(
+			_("This server cannot be resized because its billing subscription is missing. Contact support.")
+		)
 
 	from central.billing.catalog.subscriptions import begin_resize
 
-	if isinstance(includes, str):
-		includes = frappe.parse_json(includes)
-	if disk_gigabytes is not None and disk_gigabytes != "":
-		disk_gigabytes = frappe.utils.cint(disk_gigabytes)
-	else:
-		disk_gigabytes = None
+	includes = frappe.parse_json(includes)
 	result = begin_resize(
 		subscription,
 		plan=plan or None,
@@ -464,18 +569,165 @@ def resize_server(
 		sub_category=sub_category or None,
 		disk_gigabytes=disk_gigabytes,
 	)
+
 	return {"subscription": subscription, **result}
 
 
 @frappe.whitelist(methods=["POST"])
-@require_capability("server:resize", "You can't rename this server.", server="resource_id")
+@require_capability(
+	"server:resize",
+	_lt("You can't rename this server. Ask a team admin to review your access."),
+	server="resource_id",
+)
 def rename_server(team: str | None = None, resource_id: str | None = None, title: str = "") -> dict:
 	"""Rename one server. Gated on `server:resize`, the capability to change a server."""
 	server = frappe.get_doc("Virtual Machine", {"team": team, "resource_id": resource_id}, for_update=True)
 	server.title = title
 	# Customers cannot write a Virtual Machine; this route checks server:resize.
 	server.save(ignore_permissions=True)
+
 	return {"title": server.title}
+
+
+@frappe.whitelist(methods=["POST"])
+@handle_resource_operation
+@require_capability(
+	"server:terminate",
+	_lt("You can't change termination protection on this server. Ask a team admin to review your access."),
+	server="resource_id",
+)
+def set_termination_protection(
+	team: str | None = None, resource_id: str | None = None, enabled: bool | int | str = False
+) -> None:
+	"""Turn termination protection on or off. Gated on `server:terminate`."""
+	server = frappe.get_doc("Virtual Machine", VirtualMachine.get_team_server_name(team, resource_id))
+	server.set_termination_protection(bool(frappe.utils.cint(enabled)))
+
+
+@frappe.whitelist(methods=["GET"])
+@require_capability(
+	"server:view", _lt("You can't view this team's servers. Ask a team admin to review your access.")
+)
+def public_ipv4_pricing(team: str | None = None, region: str | None = None) -> dict:
+	"""The monthly price of one public IPv4 in `region`, shown before the customer commits."""
+	from central.billing.catalog.public_ips import get_public_ipv4_rate
+
+	rate, currency = get_public_ipv4_rate(team, region)
+	return {"rate": rate, "currency": currency}
+
+
+@frappe.whitelist(methods=["POST"])
+@handle_resource_operation
+@require_capability(
+	"server:network",
+	_lt("You can't change the network of this server. Ask a team admin to review your access."),
+	server="resource_id",
+)
+def set_server_public_ip(
+	team: str | None = None,
+	resource_id: str | None = None,
+	version: int | str = 4,
+	is_attached: bool | int | str = True,
+) -> dict:
+	"""Attach or detach the public IPv4 or IPv6 address. Gated on `server:network`. Returns
+	`is_pending` when Atlas is still applying the change."""
+	version = frappe.utils.cint(version)
+	if version not in (4, 6):
+		frappe.throw(_("Choose IPv4 or IPv6."))
+
+	server = frappe.get_doc("Virtual Machine", VirtualMachine.get_team_server_name(team, resource_id))
+	is_done = server.set_public_ip(version, bool(frappe.utils.cint(is_attached)))
+	return {"is_pending": not is_done}
+
+
+@frappe.whitelist(methods=["POST"])
+@handle_resource_operation
+@require_capability(
+	"server:network",
+	_lt("You can't change the network of this server. Ask a team admin to review your access."),
+	server="resource_id",
+)
+def set_server_ipv4_internet(
+	team: str | None = None, resource_id: str | None = None, enabled: bool | int | str = True
+) -> None:
+	"""Turn IPv4 internet access on or off. Gated on `server:network`."""
+	server = frappe.get_doc("Virtual Machine", VirtualMachine.get_team_server_name(team, resource_id))
+	server.set_ipv4_internet(bool(frappe.utils.cint(enabled)))
+
+
+@frappe.whitelist(methods=["POST"])
+@handle_resource_operation
+@require_capability(
+	"server:network",
+	_lt("You can't change the network of this server. Ask a team admin to review your access."),
+	server="resource_id",
+)
+def set_server_wireguard_access(
+	team: str | None = None, resource_id: str | None = None, enabled: bool | int | str = True
+) -> None:
+	"""Turn WireGuard device access on or off. Gated on `server:network`."""
+	server = frappe.get_doc("Virtual Machine", VirtualMachine.get_team_server_name(team, resource_id))
+	server.set_wireguard_access(bool(frappe.utils.cint(enabled)))
+
+
+@frappe.whitelist(methods=["POST"])
+@handle_resource_operation
+@require_capability(
+	"server:network",
+	_lt("You can't change the network of this team's servers. Ask a team admin to review your access."),
+)
+def update_server_firewall(
+	team: str | None = None,
+	resource_ids: list[str] | str | None = None,
+	firewall: dict | str | None = None,
+) -> dict[str, str | None]:
+	"""Change the firewall of each server in `resource_ids`. Gated on `server:network` on each
+	server. Returns each server's error, or None when it changed."""
+	change = _validate_firewall_change(firewall or {})
+
+	return {
+		resource_id: _update_one_firewall(team, resource_id, change)
+		for resource_id in frappe.parse_json(resource_ids) or []
+	}
+
+
+def _validate_firewall_change(firewall: dict | str) -> FirewallChange:
+	try:
+		return FirewallChange.model_validate(frappe.parse_json(firewall))
+	except ValidationError as error:
+		frappe.throw(error.errors(include_input=False)[0]["msg"].removeprefix("Value error, "))
+
+
+def _update_one_firewall(team: str, resource_id: str, change: FirewallChange) -> str | None:
+	if not can(frappe.session.user, team, "server:network", server=resource_id):
+		return _("You can't change the network of this server. Ask a team admin to review your access.")
+
+	try:
+		server = frappe.get_doc("Virtual Machine", VirtualMachine.get_team_server_name(team, resource_id))
+		server.update_firewall(change)
+	except (frappe.ValidationError, frappe.DoesNotExistError) as error:
+		# The error goes back in this server's result, not as a page-wide message.
+		frappe.clear_messages()
+		return str(error)
+
+	return None
+
+
+@frappe.whitelist(methods=["POST"])
+@require_capability(
+	"billing:manage", _lt("You can't manage this team's billing. Ask a team admin to review your access.")
+)
+def keep_trial_site(team: str | None = None, resource_id: str | None = None) -> dict:
+	"""Keep the ended trial on a server: it moves to its paid plan and starts again."""
+	from central.signups.trial import Trial
+
+	server = VirtualMachine.get_team_server_name(team, resource_id)
+	site = frappe.db.get_value("Site", {"team": team, "server": server, "trial_state": "Ended"})
+	if not site:
+		frappe.throw(_("This server has no ended trial to keep."))
+
+	Trial.load(site, for_update=True).keep()
+	return {"site": site}
 
 
 @frappe.whitelist(methods=["POST"])
@@ -507,8 +759,11 @@ def create_server(
 	hostname: str | None = None,
 	ssh_keys: list[str] | None = None,
 	ssh_key_ids: list[str] | None = None,
+	has_public_ipv4: bool = False,
 	has_public_ipv6: bool = False,
 	is_firewall_enabled: bool = False,
+	user_data: str = "",
+	app_inputs: dict[str, str] | None = None,
 	snapshot: str | None = None,
 ) -> dict:
 	"""Create a server from an image, or restore one from a `snapshot`."""
@@ -525,8 +780,11 @@ def create_server(
 		hostname=hostname,
 		ssh_keys=ssh_keys,
 		ssh_key_ids=ssh_key_ids,
+		has_public_ipv4=has_public_ipv4,
 		has_public_ipv6=has_public_ipv6,
 		is_firewall_enabled=is_firewall_enabled,
+		user_data=user_data,
+		app_inputs=app_inputs,
 		snapshot=snapshot,
 	)
 
@@ -545,8 +803,11 @@ def create_composed_server(
 	hostname: str | None = None,
 	ssh_keys: list[str] | None = None,
 	ssh_key_ids: list[str] | None = None,
+	has_public_ipv4: bool = False,
 	has_public_ipv6: bool = False,
 	is_firewall_enabled: bool = False,
+	user_data: str = "",
+	app_inputs: dict[str, str] | None = None,
 	snapshot: str | None = None,
 ) -> dict:
 	"""Create a custom-sized server from an image, or restore one from a `snapshot`."""
@@ -564,8 +825,11 @@ def create_composed_server(
 		hostname=hostname,
 		ssh_keys=ssh_keys,
 		ssh_key_ids=ssh_key_ids,
+		has_public_ipv4=has_public_ipv4,
 		has_public_ipv6=has_public_ipv6,
 		is_firewall_enabled=is_firewall_enabled,
+		user_data=user_data,
+		app_inputs=app_inputs,
 		snapshot=snapshot,
 	)
 
@@ -584,3 +848,24 @@ def retry_action(name: str) -> dict:
 	from central.resource_actions import retry
 
 	return retry(name)
+
+
+@frappe.whitelist(methods=["GET"])
+@handle_resource_operation
+@require_capability("server:view", _lt("You cannot view this server."), server="resource_id")
+def get_rescue_state(team: str | None = None, resource_id: str | None = None) -> dict:
+	"""Read the region's boot selection and last boot mode for this server."""
+	from central.integrations.servers import get_rescue_state
+
+	server = frappe.get_doc("Virtual Machine", VirtualMachine.get_team_server_name(team, resource_id))
+	server.require_live()
+	return get_rescue_state(server)
+
+
+@frappe.whitelist(methods=["POST"])
+@handle_resource_operation
+@require_capability("server:power", _lt("You cannot change this server's boot mode."), server="resource_id")
+def set_rescue_mode(enabled: bool, team: str | None = None, resource_id: str | None = None) -> None:
+	"""Select the next boot mode without starting or restarting the server."""
+	server = frappe.get_doc("Virtual Machine", VirtualMachine.get_team_server_name(team, resource_id))
+	server.set_rescue_mode(enabled)

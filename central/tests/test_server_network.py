@@ -1,13 +1,16 @@
 from types import SimpleNamespace
 from unittest import TestCase
-from unittest.mock import call, patch
+from unittest.mock import patch
 
 import frappe
 from frappe.tests import IntegrationTestCase
 
 from central.api.servers import open_console, server_overview
 from central.errors import AtlasConnectionError, AtlasRejected, AtlasResourceGone
-from central.integrations.resource_actions import MESH_NETWORK, _create_payload
+from central.infrastructure.doctype.virtual_machine.firewall import DEFAULT_INBOUND_RULES
+from central.integrations.resource_actions import _create_payload
+from central.resource_actions import validate_guest_input
+from central.server_models import MAXIMUM_USER_DATA_BYTES, CreateServerInput
 from central.tests.test_iam import ensure_user
 from central.tests.utils import ensure_atlas_instance
 
@@ -24,8 +27,10 @@ def creation_request(purpose: str = "base", **options) -> SimpleNamespace:
 		ssh_keys=["ssh-ed25519 AAAA"],
 		ssh_key_ids=[],
 		image_tags={"os": "Ubuntu", "purpose": purpose},
+		has_public_ipv4=options.get("has_public_ipv4", False),
 		has_public_ipv6=options.get("has_public_ipv6", False),
 		is_firewall_enabled=options.get("is_firewall_enabled", False),
+		user_data=options.get("user_data", ""),
 	)
 	return SimpleNamespace(name="action-1", team="team-a", get_configuration=lambda: configuration)
 
@@ -37,24 +42,73 @@ class TestCreationNetworkPayload(TestCase):
 
 		self.assertNotIn("public_ipv4", payload)
 		self.assertNotIn("public_ipv6", payload)
-		self.assertEqual(payload["firewall"], {"enabled": False})
+		self.assertFalse(payload["firewall"]["enabled"])
 
-	def test_public_ipv6_asks_atlas_for_an_automatic_address(self, _idle) -> None:
-		payload = _create_payload(creation_request(has_public_ipv6=True))
+	def test_public_addresses_ask_atlas_for_automatic_addresses(self, _idle) -> None:
+		payload = _create_payload(creation_request(has_public_ipv4=True, has_public_ipv6=True))
 
+		self.assertEqual(payload["public_ipv4"], "auto")
 		self.assertEqual(payload["public_ipv6"], "auto")
 
-	def test_firewall_keeps_the_mesh_and_web_ports_open(self, _idle) -> None:
-		firewall = _create_payload(creation_request(is_firewall_enabled=True))["firewall"]
+	def test_every_new_server_gets_the_web_server_rules(self, _idle) -> None:
+		firewall = _create_payload(creation_request())["firewall"]
 
-		self.assertTrue(firewall["enabled"])
-		self.assertIn({"protocol": "any", "cidrs": [MESH_NETWORK]}, firewall["inbound"])
-		self.assertIn({"protocol": "icmp", "cidrs": ["0.0.0.0/0", "::/0"]}, firewall["inbound"])
+		defaults = [rule.model_dump() for rule in DEFAULT_INBOUND_RULES]
+		self.assertEqual(firewall["inbound"][: len(defaults)], defaults)
+		self.assertNotIn({"protocol": "any", "ports": "", "cidrs": ["fdac::/16"]}, firewall["inbound"])
 		self.assertEqual(
 			[rule["ports"] for rule in firewall["inbound"] if rule["protocol"] == "tcp"],
 			["22", "80", "443"],
 		)
-		self.assertEqual(firewall["outbound"], [{"protocol": "any", "cidrs": ["0.0.0.0/0", "::/0"]}])
+		self.assertEqual(
+			firewall["outbound"], [{"protocol": "any", "ports": "", "cidrs": ["0.0.0.0/0", "::/0"]}]
+		)
+		self.assertTrue(_create_payload(creation_request(is_firewall_enabled=True))["firewall"]["enabled"])
+
+	def test_user_data_reaches_atlas(self, _idle) -> None:
+		script = "#!/bin/sh\necho ready\n"
+
+		self.assertEqual(_create_payload(creation_request())["user_data"], "")
+		self.assertEqual(_create_payload(creation_request(user_data=script))["user_data"], script)
+
+	def test_server_limits_come_from_central_settings(self, _idle) -> None:
+		limits = {
+			"disk_iops": 4000,
+			"disk_throughput_mibps": 250,
+			"private_network_throughput_mibps": 900,
+			"public_network_throughput_mibps": 300,
+		}
+		settings = SimpleNamespace(**limits)
+
+		with patch("frappe.get_cached_doc", return_value=settings):
+			payload = _create_payload(creation_request())
+
+		self.assertEqual({key: payload[key] for key in limits}, limits)
+
+
+def guest_input(user_data: str) -> CreateServerInput:
+	return CreateServerInput(
+		team="team-a",
+		region="region-a",
+		title="Worker",
+		offering="ubuntu",
+		image_id="ubuntu-image",
+		request_key="request-key-0000001",
+		plan="plan-a",
+		user_data=user_data,
+	)
+
+
+class TestGuestInput(TestCase):
+	def test_user_data_keeps_its_whitespace(self) -> None:
+		script = "#cloud-config\nruncmd: []\n"
+
+		self.assertEqual(guest_input(script).user_data, script)
+
+	def test_user_data_over_the_atlas_limit_is_refused(self) -> None:
+		validate_guest_input(guest_input("#!/bin/sh\n" + "x" * 16_000))
+		with self.assertRaises(frappe.ValidationError):
+			validate_guest_input(guest_input("#!/bin/sh\n" + "x" * MAXIMUM_USER_DATA_BYTES))
 
 
 class TestServerConsole(IntegrationTestCase):
@@ -101,10 +155,10 @@ class TestServerConsole(IntegrationTestCase):
 		self.addCleanup(team.delete, ignore_permissions=True, force=True)
 		return team
 
-	def open_as(self, user: str, team: str | None = None) -> dict:
+	def open_as(self, user: str, team: str | None = None, mode: str = "ssh") -> dict:
 		frappe.set_user(user)
 		try:
-			return open_console(team=team or self.team.name, resource_id=self.server.name)
+			return open_console(team=team or self.team.name, resource_id=self.server.name, mode=mode)
 		finally:
 			frappe.set_user("Administrator")
 
@@ -112,26 +166,42 @@ class TestServerConsole(IntegrationTestCase):
 		self.assertEqual(self.open_as(self.owner), {"url": CONSOLE_URL})
 		self.get_console_url.assert_called_once_with("vm-00001", mode="ssh")
 
-	def test_console_falls_back_to_tty_when_atlas_refuses_ssh(self):
-		self.get_console_url.side_effect = [AtlasRejected("SSH is unavailable."), CONSOLE_URL]
+	def test_owner_gets_a_single_use_tty_console_url(self):
+		self.assertEqual(self.open_as(self.owner, mode="tty"), {"url": CONSOLE_URL})
+		self.get_console_url.assert_called_once_with("vm-00001", mode="tty")
 
-		self.assertEqual(self.open_as(self.owner), {"url": CONSOLE_URL})
-		self.assertEqual(
-			self.get_console_url.call_args_list,
-			[call("vm-00001", mode="ssh"), call("vm-00001", mode="tty")],
-		)
+	def test_refused_ssh_points_to_tty_without_switching_mode(self):
+		self.get_console_url.side_effect = AtlasRejected("SSH is unavailable.")
 
-	def test_console_does_not_fall_back_unless_atlas_refuses_ssh(self):
-		for error in (
-			AtlasResourceGone("The server does not exist."),
-			AtlasConnectionError("Atlas rejected Central authentication."),
+		with self.assertRaisesRegex(frappe.ValidationError, "serial console"):
+			self.open_as(self.owner)
+		self.get_console_url.assert_called_once_with("vm-00001", mode="ssh")
+
+	def test_refused_tty_reports_the_atlas_rejection(self):
+		self.get_console_url.side_effect = AtlasRejected("The console is unavailable.")
+
+		with self.assertRaises(frappe.ValidationError) as raised:
+			self.open_as(self.owner, mode="tty")
+		self.assertEqual(raised.exception.envelope["code"], "ATLAS_REJECTED")
+
+	def test_console_rejects_an_unknown_mode(self):
+		# Frappe's own type check refuses it first where it validates Literal annotations.
+		with self.assertRaises((frappe.ValidationError, frappe.exceptions.FrappeTypeError)):
+			self.open_as(self.owner, mode="vnc")
+		self.get_console_url.assert_not_called()
+
+	def test_console_reports_atlas_failures_as_they_are(self):
+		for error, code in (
+			(AtlasResourceGone("The server does not exist."), "RESOURCE_GONE"),
+			(AtlasConnectionError("Atlas rejected Central authentication."), "REGION_UNAVAILABLE"),
 		):
 			with self.subTest(error=type(error).__name__):
 				self.get_console_url.reset_mock()
 				self.get_console_url.side_effect = error
 
-				with self.assertRaises(type(error)):
+				with self.assertRaises(frappe.ValidationError) as raised:
 					self.open_as(self.owner)
+				self.assertEqual(raised.exception.envelope["code"], code)
 				self.get_console_url.assert_called_once_with("vm-00001", mode="ssh")
 
 	def test_viewer_cannot_open_the_console(self):
@@ -167,3 +237,19 @@ class TestServerConsole(IntegrationTestCase):
 
 		self.assertEqual(server["public_ipv6"], "2001:db8:5::7")
 		self.assertEqual(server["ssh_command"], "ssh root@2001:db8:5::7")
+
+	def test_overview_gives_an_operator_desk_and_atlas_links(self):
+		links = server_overview(team=self.team.name, resource_id=self.server.name)["server"]["operator_links"]
+
+		self.assertTrue(links["desk_url"].endswith(f"/desk/virtual-machine/{self.server.name}"))
+		base_url = frappe.db.get_value("Region", self.region, "base_url").rstrip("/")
+		self.assertEqual(links["atlas_url"], f"{base_url}/desk/virtual-machine/vm-00001")
+
+	def test_overview_hides_operator_links_from_a_team_owner(self):
+		frappe.set_user(self.owner)
+		try:
+			server = server_overview(team=self.team.name, resource_id=self.server.name)["server"]
+		finally:
+			frappe.set_user("Administrator")
+
+		self.assertIsNone(server["operator_links"])

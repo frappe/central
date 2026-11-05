@@ -43,9 +43,9 @@ export const ONBOARDING_STEPS: OnboardingStep[] = [
 	},
 	{
 		key: 'billing',
-		title: 'Add your billing details',
+		title: 'Add a payment method',
 		description:
-			'Invoices use these details, and your country sets the currency.',
+			'Saving a payment method does not charge it today. You can also add one later from Billing.',
 		component: BillingStep,
 		isRequired: false,
 	},

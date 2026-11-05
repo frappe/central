@@ -12,7 +12,7 @@ A capability is named `resource:action` and belongs to exactly one **plane**:
 | `atlas` | Atlas | Central, before each regional call (`central/utils/guards.py`, `central/iam.py`) |
 | `bench` | each bench | No capabilities on this plane today |
 
-## Server is the atomic unit (model v5)
+## Server is the atomic unit (model v7)
 
 Role capabilities live at the **team** and **server** level only. A team manages servers, and a server is a bench host. The **bench plane** holds no capabilities. Bench tokens carry no capabilities today. The `bench` plane value stays on Capability, so site-level capabilities can return under it later. `asset:view` is not a capability, because `server:view` gates the Virtual Machine registry.
 
@@ -23,9 +23,9 @@ The distinction matters:
 - **The vocabulary** is the set of capability strings below. Central enforces it, and stored grants, fixtures, and the dashboard depend on it. It is small and changes rarely.
 - **Roles** (system roles and team-defined custom roles) are named subsets of that vocabulary. A custom role recombines existing capabilities. It never mints a new capability string. Teams can create as many custom roles as they like without an effect on this contract.
 
-## The 16 capabilities
+## The 18 capabilities
 
-### `central` plane (8)
+### `central` plane (9)
 
 | Capability | Meaning |
 | --- | --- |
@@ -33,27 +33,29 @@ The distinction matters:
 | `billing:manage` | Manage billing settings and payment operations. |
 | `team:edit` | Edit team metadata. |
 | `team:manage_members` | Invite, suspend, and change team members. |
-| `team:delete` | Delete a team. |
+| `team:delete` | Archive a team. |
 | `service:view` | View managed service configuration. |
-| `service:manage` | Create and delete storage buckets, set bucket quotas, rotate bucket credentials, and download stored objects. |
+| `service:manage` | Create and delete storage buckets, set bucket quotas, rotate bucket credentials, and download, upload, and delete stored objects. |
 | `server:ssh-key` | Add, rotate, and remove Team SSH keys for selected servers. |
+| `server:wireguard` | See, add, and remove team WireGuard devices that reach servers through the regional gateway. A member removes only their own devices unless they also hold `team:manage_members`. |
 
-### `atlas` plane (8)
+### `atlas` plane (9)
 
 | Capability | Meaning |
 | --- | --- |
 | `cluster:view` | View clusters the team can place servers in. |
-| `server:view` | List and open servers and sites; view status, specs, and metrics. |
+| `server:view` | List servers and sites; view status, specs, and metrics. |
 | `server:create` | Provision a new server. |
 | `server:power` | Start, stop, and restart a server. |
+| `server:network` | Change the firewall, public addresses, and WireGuard access of a server. |
 | `server:resize` | Resize, rebuild, or rename a server. |
 | `server:snapshot` | Create and restore server snapshots. |
 | `server:terminate` | Destroy a server. |
-| `server:console` | Open the web console of a running server. |
+| `server:console` | Open the web console of a running server, and sign in to its bench or site as Administrator. |
 
 ### `bench` plane (0)
 
-No capabilities are seeded on the bench plane in v5. Site-level management capabilities, such as `site:view`, `site:create`, or `site:apps`, would go here. Adding one needs an agreed bench token contract with Pilot first.
+No capabilities are seeded on the bench plane in v7. Site-level management capabilities, such as `site:view`, `site:create`, or `site:apps`, would go here. Adding one needs an agreed bench token contract with Pilot first.
 
 ## Capability implications
 
@@ -62,8 +64,8 @@ Acting on a resource is meaningless without seeing it. Central closes every gran
 | Capability | Implies |
 | --- | --- |
 | `server:create` | `server:view`, `cluster:view` |
-| `server:power` / `resize` / `snapshot` / `terminate` | `server:view` |
-| `server:ssh-key` | `server:view` |
+| `server:power` / `network` / `resize` / `snapshot` / `terminate` | `server:view` |
+| `server:ssh-key` / `wireguard` | `server:view` |
 | `server:console` | `server:view` |
 | `service:manage` | `service:view` |
 
@@ -71,7 +73,7 @@ The role builder can let a user tick `server:create` without `server:view` and `
 
 ## Scoped grants
 
-A role grant can apply to one server or site instead of the whole team. A scoped grant carries only these capabilities, on that server: `server:view`, `server:power`, `server:resize`, `server:snapshot`, `server:terminate`, and `server:console`. Every other capability is team-wide and comes only from a team-wide grant. For example, Developer on one server can stop that server, but cannot create a server or change the Team SSH keys. See [IAM resource scope](spec/IAM.md#resource-scope).
+A role grant can apply to one server or site instead of the whole team. A scoped grant carries only these capabilities, on that server: `server:view`, `server:power`, `server:network`, `server:resize`, `server:snapshot`, `server:terminate`, and `server:console`. Every other capability is team-wide and comes only from a team-wide grant. For example, Developer on one server can stop that server, but cannot create a server or change the Team SSH keys. See [IAM resource scope](spec/IAM.md#resource-scope).
 
 ## The 5 system roles
 
@@ -88,15 +90,17 @@ System roles are seeded from `fixtures/team_role.json` and are identical across 
 | `server:view` | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `server:create` | ✓ | ✓ | ✓ | | |
 | `server:power` | ✓ | ✓ | ✓ | | |
+| `server:network` | ✓ | ✓ | ✓ | | |
 | `server:resize` | ✓ | ✓ | ✓ | | |
 | `server:snapshot` | ✓ | ✓ | ✓ | | |
 | `server:ssh-key` | ✓ | ✓ | ✓ | | |
+| `server:wireguard` | ✓ | ✓ | ✓ | | |
 | `server:terminate` | ✓ | ✓ | ✓ | | |
 | `server:console` | ✓ | ✓ | ✓ | | |
 | `service:view` | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `service:manage` | ✓ | ✓ | ✓ | | ✓ |
 
-Totals: Owner 16, Admin 15, Developer 11, Viewer 3, Billing 6.
+Totals: Owner 18, Admin 17, Developer 13, Viewer 3, Billing 6.
 
 The ladder reads top to bottom: **Viewer** (look), **Billing** (look and pay), **Developer** (operate servers), **Admin** (Developer and run the team), **Owner** (Admin and delete the team). A team has exactly one Owner, transferable through Transfer Ownership. For a different mix, such as server operations without billing, create a custom role.
 
@@ -110,3 +114,5 @@ Stored grants, fixtures, and the dashboard depend on the vocabulary. Adding, rem
 4. Update this document.
 
 **Never rename a capability in place.** Stored grants and every consumer keep the old string, and the result authorizes the wrong thing without an error. Add the new capability, migrate grants to it, then retire the old one.
+
+Rescue boot selection requires both `server:power` and `server:console` on the selected server. Reading rescue state requires `server:view`. The existing free-trial server-access restriction applies to changing the selection; System Manager retains its operator bypass.

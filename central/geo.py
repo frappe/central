@@ -1,11 +1,5 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
-"""Resolve a request's country from its IP.
-
-Ported from press (`press.utils.get_country_info`): we ask ip-api.com to geolocate
-the caller and cache the answer per IP. Used at signup to seed a team's billing
-currency from where the user is signing up from.
-"""
 
 from __future__ import annotations
 
@@ -20,11 +14,8 @@ IP_COUNTRY_TTL_SECONDS = 30 * 24 * 60 * 60
 
 
 def get_country_from_ip(ip: str | None = None) -> str | None:
-	"""Country name (e.g. "India") for `ip`, or None when it can't be determined.
-
-	Falls back to the current request's IP. Returns None on any miss — no IP, a
-	private/localhost address, a lookup failure, or during tests — so every caller
-	must tolerate None (we default the currency in that case). Never raises."""
+	"""The country name for `ip`, or for the request IP, or None when it cannot be found.
+	Never raises, so callers must handle None."""
 	if frappe.flags.in_test:
 		return None
 
@@ -70,21 +61,12 @@ def _country_cache_key(ip: str) -> str:
 
 
 def _clean_public_ip(raw: str | None) -> str | None:
-	"""Canonical, globally-routable IP for `raw`, or None.
-
-	`request_ip` can be derived from a client-supplied `X-Forwarded-For` header, so
-	it is untrusted: validate it as a real IP address before it ever reaches the
-	outbound lookup URL or the cache key. This shuts the door on a spoofed or
-	malformed value injecting into the request, and drops private/loopback/reserved
-	addresses that can't be geolocated anyway (they fall back to India/INR at the
-	caller). Returns the library's canonical string form, which by construction
-	contains no URL-significant characters.
-
-	(Trusting X-Forwarded-For at all is a deployment concern — the edge proxy must
-	overwrite, not append, the client's header. This function only guarantees the
-	value is well-formed, not that it's honest.)"""
+	"""The canonical form of `raw` when it is a public IP address, otherwise None.
+	`request_ip` can come from a client header, so it is validated before it reaches the lookup
+	URL or the cache key."""
 	if not raw:
 		return None
+
 	# An X-Forwarded-For chain is "client, proxy1, proxy2"; the client is first.
 	candidate = str(raw).split(",")[0].strip()
 	try:
@@ -100,6 +82,7 @@ def _clean_public_ip(raw: str | None) -> str | None:
 		or addr.is_unspecified
 	):
 		return None
+
 	return addr.compressed
 
 
@@ -119,4 +102,5 @@ def _lookup_ip(ip: str) -> dict:
 			return data
 	except Exception:
 		frappe.log_error(title="IP country lookup failed")
+
 	return {}

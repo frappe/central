@@ -6,17 +6,19 @@ import type {
 	OnboardingStep,
 	OnboardingStepHandle,
 } from '@/components/onboarding/steps'
-import { useOnboarding } from '@/composables/useOnboarding'
+import { type StepStatus, useOnboarding } from '@/composables/useOnboarding'
 import { getErrorMessage } from '@/lib/feedback'
 
 // The dialog orders the steps, moves between them, and records each answer. Every
 // step saves its own work. It cannot be dismissed: the owner finishes or skips it.
 const router = useRouter()
-const { pendingSteps, answerStep, skipAll, reload } = useOnboarding()
+const { pendingSteps, answerStep, reload } = useOnboarding()
 
 const open = ref(false)
 const steps = ref<OnboardingStep[]>([])
 const index = ref(0)
+// Answers recorded in this dialog, so a step the owner goes back to is not recorded twice.
+const answers = ref<Partial<Record<OnboardingStep['key'], StepStatus>>>({})
 const stepHandle = ref<OnboardingStepHandle | null>(null)
 const busy = ref(false)
 const error = ref('')
@@ -24,6 +26,13 @@ const error = ref('')
 const current = computed(() => steps.value[index.value])
 const isLast = computed(() => index.value === steps.value.length - 1)
 const canSkip = computed(() => !current.value?.isRequired && !isLast.value)
+// The team exists once its step is done, so the owner cannot go back to it.
+const canGoBack = computed(
+	() => index.value > 0 && !steps.value[index.value - 1].isRequired,
+)
+const isAnswered = computed(
+	() => !!current.value && !!answers.value[current.value.key],
+)
 
 // Take the steps once when the dialog opens, so an answer does not reorder the rest.
 watch(
@@ -32,6 +41,7 @@ watch(
 		if (open.value || !pending.length) return
 		steps.value = pending
 		index.value = 0
+		answers.value = {}
 		open.value = true
 	},
 	{ immediate: true },
@@ -43,15 +53,11 @@ async function runPrimary(): Promise<void> {
 	if (await handle.submit()) await advance('Done')
 }
 
-async function advance(status: 'Done' | 'Skipped'): Promise<void> {
+async function advance(status: StepStatus): Promise<void> {
 	busy.value = true
 	error.value = ''
 	try {
-		const step = current.value
-		// A new team brings its own stored steps. The team step itself is not stored.
-		if (step.key === 'team') steps.value = [step, ...pendingSteps.value]
-		else await answerStep(step.key, status)
-
+		await record(current.value, status)
 		if (isLast.value) await finish()
 		else index.value += 1
 	} catch (exception) {
@@ -61,23 +67,29 @@ async function advance(status: 'Done' | 'Skipped'): Promise<void> {
 	}
 }
 
+async function record(step: OnboardingStep, status: StepStatus): Promise<void> {
+	// A new team brings its own stored steps. The team step itself is not stored.
+	if (step.key === 'team') {
+		steps.value = [step, ...pendingSteps.value]
+		return
+	}
+
+	const previous = answers.value[step.key]
+	if (previous === 'Done' || previous === status) return
+
+	await answerStep(step.key, status)
+	answers.value[step.key] = status
+}
+
+function goBack(): void {
+	error.value = ''
+	index.value -= 1
+}
+
 async function finish(): Promise<void> {
 	await reload()
 	open.value = false
 	await router.push('/servers')
-}
-
-async function skipOnboarding(): Promise<void> {
-	busy.value = true
-	error.value = ''
-	try {
-		await skipAll()
-		open.value = false
-	} catch (exception) {
-		error.value = getErrorMessage(exception)
-	} finally {
-		busy.value = false
-	}
 }
 </script>
 
@@ -109,9 +121,9 @@ async function skipOnboarding(): Promise<void> {
 		>
 			<div v-if="current" :key="current.key">
 				<p class="text-p-base text-ink-gray-6">{{ current.description }}</p>
-				<!-- Every step gets the same height, so the dialog never resizes between
-             steps or while a step loads. A longer step scrolls inside it. -->
-				<div class="-mx-1 mt-4 h-96 overflow-y-auto px-1">
+				<!-- On a wider screen every step gets the same height, so the dialog never
+             resizes between steps. A phone lets the step grow, so nothing is cut off. -->
+				<div class="-mx-1 mt-4 px-1 sm:h-96 sm:overflow-y-auto">
 					<component
 						:is="current.component"
 						ref="stepHandle"
@@ -122,20 +134,24 @@ async function skipOnboarding(): Promise<void> {
 		</Transition>
 
 		<template #actions>
-			<div class="flex w-full items-center justify-between gap-2">
+			<!-- Stacked on a phone, so the primary action never runs off the edge. -->
+			<div
+				class="flex w-full flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-between"
+			>
 				<Button
-					v-if="canSkip"
+					v-if="canGoBack"
 					variant="ghost"
-					label="Skip onboarding"
-					:disabled="busy"
-					@click="skipOnboarding"
+					icon-left="lucide-arrow-left"
+					label="Back"
+					:disabled="busy || stepHandle?.saving"
+					@click="goBack"
 				/>
-				<span v-else />
+				<span v-else class="hidden sm:block" />
 
-				<div class="flex gap-2">
+				<div class="flex flex-col-reverse gap-2 sm:flex-row">
 					<Button
 						v-if="canSkip"
-						label="Skip for now"
+						:label="isAnswered ? 'Next' : 'Skip'"
 						:disabled="busy || stepHandle?.saving"
 						@click="advance('Skipped')"
 					/>

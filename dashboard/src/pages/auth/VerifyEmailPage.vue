@@ -1,26 +1,29 @@
 <script setup lang="ts">
-import { Button, ErrorMessage } from 'frappe-ui'
+import { Button } from 'frappe-ui'
 import { computed, nextTick, onBeforeUnmount, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import AuthErrorMessage from '@/components/auth/AuthErrorMessage.vue'
 import AuthShell from '@/components/auth/AuthShell.vue'
 import ProductLogo from '@/components/auth/ProductLogo.vue'
 import TermsNotice from '@/components/auth/TermsNotice.vue'
 import ValidatedFormControl from '@/components/common/formComponents/ValidatedFormControl.vue'
 import OtpInput from '@/components/common/OtpInput.vue'
 import { useEmailSignIn } from '@/composables/useEmailSignIn'
+import { useProduct } from '@/composables/useProduct'
 import {
 	frappeErrorMessage,
 	nameFromEmail,
 	queryString,
 	requiredError,
 } from '@/lib/auth'
-import { carriedQuery, signInDestination } from '@/lib/authRedirect'
+import { carriedQuery } from '@/lib/authRedirect'
 
 const RESEND_WAIT_SECONDS = 30
 
 const route = useRoute()
 const router = useRouter()
-const { sendCode, verifyCode } = useEmailSignIn()
+const { sendCode, verifyCode, enterConsole } = useEmailSignIn()
+const { productKey } = useProduct()
 
 const email = queryString(route.query.email)
 const code = ref('')
@@ -63,10 +66,10 @@ async function verify() {
 			needsName.value = true
 			return
 		}
-		// A full load, so the console boots with the new session.
 		redirecting.value = true
-		window.location.replace(signInDestination(route.query))
+		await enterConsole(response, route.query)
 	} catch (exception) {
+		redirecting.value = false
 		error.value = frappeErrorMessage(exception, 'That code did not work.')
 		if (!needsName.value) code.value = ''
 	} finally {
@@ -94,9 +97,9 @@ onBeforeUnmount(() => clearInterval(resendTimer))
 </script>
 
 <template>
-	<AuthShell>
+	<AuthShell :show-progress="Boolean(productKey)" :step="2">
 		<template v-if="needsName">
-			<h1 class="flex items-center gap-2 text-xl font-semibold text-ink-gray-9">
+			<h1 class="flex items-center gap-2 text-xl-semibold text-ink-gray-9">
 				<ProductLogo />
 				Set up your profile
 			</h1>
@@ -114,7 +117,11 @@ onBeforeUnmount(() => clearInterval(resendTimer))
 					:validator="requiredError('Full name')"
 					:submitted="nameSubmitted"
 				/>
-				<ErrorMessage v-if="error" :message="error" />
+				<AuthErrorMessage
+					v-if="error"
+					:message="error"
+					page="Set up your profile"
+				/>
 				<Button
 					type="submit"
 					variant="solid"
@@ -129,14 +136,14 @@ onBeforeUnmount(() => clearInterval(resendTimer))
 		</template>
 
 		<template v-else>
-			<h1 class="flex items-center gap-2 text-xl font-semibold text-ink-gray-9">
+			<h1 class="flex items-center gap-2 text-xl-semibold text-ink-gray-9">
 				<ProductLogo />
 				Check your email
 			</h1>
 			<p class="mt-1 text-p-base text-ink-gray-5">
 				We sent a 6-digit code to
-				<span class="font-medium text-ink-gray-8">{{ email }}</span>. If it is
-				not in your inbox, check your spam folder.
+				<span class="text-p-base-medium text-ink-gray-8">{{ email }}</span>. If
+				it is not in your inbox, check your spam folder.
 			</p>
 
 			<form class="mt-6 space-y-4" @submit.prevent="verify">
@@ -149,7 +156,7 @@ onBeforeUnmount(() => clearInterval(resendTimer))
 					@complete="verify"
 				/>
 				<p v-if="notice" class="text-p-sm text-ink-gray-6">{{ notice }}</p>
-				<ErrorMessage v-if="error" :message="error" />
+				<AuthErrorMessage v-if="error" :message="error" page="Verify email" />
 				<Button
 					type="submit"
 					variant="solid"
@@ -164,14 +171,14 @@ onBeforeUnmount(() => clearInterval(resendTimer))
 
 			<div class="mt-6 flex items-center justify-between text-p-sm">
 				<RouterLink
-					class="font-medium text-ink-gray-8 hover:text-ink-gray-9"
+					class="text-p-sm-medium text-ink-gray-8 hover:text-ink-gray-9"
 					:to="backTo"
 				>
 					Use a different email
 				</RouterLink>
 				<button
 					type="button"
-					class="font-medium text-ink-gray-8 hover:text-ink-gray-9 disabled:text-ink-gray-4"
+					class="text-p-sm-medium text-ink-gray-8 hover:text-ink-gray-9 disabled:text-ink-gray-4"
 					:disabled="loading || resendWait > 0"
 					@click="resend"
 				>

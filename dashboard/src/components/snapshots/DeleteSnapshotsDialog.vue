@@ -30,11 +30,12 @@ const title = computed(() =>
 	<ConfirmDialog
 		v-model:target="target"
 		:title="title"
-		confirm-label="Yes, delete"
+		:confirm-label="title"
 		theme="red"
 		size="md"
 		:loading="loading"
 		:error="error"
+		:confirm-text="target?.length === 1 ? target[0].title : 'delete'"
 		@confirm="emit('confirm', $event)"
 	>
 		<div v-if="target" class="space-y-2">

@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 from urllib.parse import quote, urlsplit
 
 import frappe
 import requests
 from frappe import _
+from frappe.monitor import get_trace_id
 
 from central.errors import AtlasConnectionError, AtlasRejected, AtlasRequestUncertain, AtlasResourceGone
 from central.iam import can, user_has_operator_bypass
@@ -27,6 +28,8 @@ MAXIMUM_METADATA_KEY_BYTES = 128
 MAXIMUM_METADATA_BYTES = 48 * 1024
 # The largest page that the Atlas list routes return.
 HOST_PAGE_SIZE = 100
+
+ConsoleMode = Literal["ssh", "tty"]
 
 
 class AtlasClient:
@@ -65,6 +68,7 @@ class AtlasClient:
 
 		tenant_id = frappe.db.get_value("Team", team, "tenant_id")
 		validate_tenant_id(tenant_id)
+
 		return cls(instance, tenant_id)
 
 	def _get(self, path: str, params: dict | None = None) -> dict:
@@ -80,6 +84,7 @@ class AtlasClient:
 		"""Metal refuses a long key only after Atlas saved a draft machine."""
 		if len(metadata) > MAXIMUM_METADATA_ENTRIES:
 			frappe.throw(_("Guest metadata has more than {0} entries.").format(MAXIMUM_METADATA_ENTRIES))
+
 		for key in metadata:
 			if len(key.encode()) > MAXIMUM_METADATA_KEY_BYTES:
 				frappe.throw(
@@ -111,6 +116,7 @@ class AtlasClient:
 		items = page.get("items")
 		if not isinstance(items, list):
 			frappe.throw(_("Atlas returned an invalid server page."), AtlasConnectionError)
+
 		return items
 
 	def list_hosts(self) -> list[dict]:
@@ -124,6 +130,16 @@ class AtlasClient:
 			hosts += items
 			if not page.get("has_more"):
 				return hosts
+
+	def get_host_id(self, title: str) -> str:
+		"""The ID of the region's Metal host named `title`."""
+		hosts = self.list_hosts()
+		for host in hosts:
+			if host.get("title") == title:
+				return host["id"]
+
+		titles = ", ".join(host.get("title") or host.get("id") for host in hosts)
+		frappe.throw(_("Atlas has no host named {0}. Its hosts are: {1}.").format(frappe.bold(title), titles))
 
 	def grant_host_access(self, host_id: str, email: str, expires_at: datetime) -> dict:
 		"""Open one host, or every host for `all`, to one person. A repeated grant moves the end time."""
@@ -146,6 +162,11 @@ class AtlasClient:
 			frappe.throw(_("This server action is not supported."))
 
 		return self._request("POST", f"{path}/actions/{action}")
+
+	def set_rescue_mode(self, name: str, enabled: bool) -> dict:
+		"""Select the image for the next cold boot without restarting the VM."""
+		action = "enable-rescue-mode" if enabled else "disable-rescue-mode"
+		return self._request("POST", f"virtual-machines/{quote(name, safe='')}/actions/{action}")
 
 	def resize(self, name: str, cpu_millicores: int, memory_mib: int, disk_mib: int) -> dict:
 		"""Set CPU, memory and disk in one call, and turn idle shutdown off. Atlas takes a
@@ -184,7 +205,31 @@ class AtlasClient:
 			payload={"ssh_keys": public_keys},
 		)
 
-	def get_console_url(self, name: str, mode: str) -> str:
+	def update_network(self, name: str, payload: dict) -> dict:
+		"""Change network settings. Atlas replaces each firewall field it gets and keeps the rest."""
+		return self._request("PATCH", f"virtual-machines/{quote(name, safe='')}/network", payload=payload)
+
+	def attach_public_ip(self, name: str, version: int) -> dict:
+		"""Attach a public address from the region's pool. Atlas attaches it after the reply."""
+		return self._request(
+			"PUT",
+			f"virtual-machines/{quote(name, safe='')}/public-ipv{version}",
+			payload={"public_ip": "auto"},
+		)
+
+	def detach_public_ip(self, name: str, version: int) -> dict:
+		"""Detach the public address. An address from the pool goes back to it."""
+		return self._request("DELETE", f"virtual-machines/{quote(name, safe='')}/public-ipv{version}")
+
+	def set_termination_protection(self, name: str, enabled: bool) -> dict:
+		"""Turn termination protection on or off. Atlas refuses to delete a protected VM."""
+		return self._request(
+			"PATCH",
+			f"virtual-machines/{quote(name, safe='')}/termination-protection",
+			payload={"enabled": enabled},
+		)
+
+	def get_console_url(self, name: str, mode: ConsoleMode) -> str:
 		"""Return the Atlas console page for a single-use token. The token expires in 30 seconds.
 
 		The token goes in the URL fragment, so the browser never sends it to a server."""
@@ -198,7 +243,17 @@ class AtlasClient:
 			frappe.throw(_("Atlas returned an invalid console token."), AtlasConnectionError)
 
 		base_url, _region_id = self._configuration()
+
 		return f"{base_url}/vm_console#token={quote(token, safe='')}"
+
+	def create_investigation(self, problem: str, context: dict | None, requested_by: str | None) -> dict:
+		"""Hand a problem to the region's read-only investigator. Atlas works on it in the background."""
+		payload = {"problem": problem, "context": context, "requested_by": requested_by}
+		return self._request("POST", "investigations", payload=payload)
+
+	def get_investigation(self, investigation_id: str) -> dict:
+		"""The status, report, and scrubbed tool log of one investigation."""
+		return self._get(f"investigations/{quote(investigation_id, safe='')}")
 
 	def check_connection(self) -> None:
 		response = self._get("images", params={"limit": 1})
@@ -244,6 +299,7 @@ class AtlasClient:
 		items = page.get("items")
 		if not isinstance(items, list):
 			frappe.throw(_("Atlas returned an invalid image page."), AtlasConnectionError)
+
 		return items[0] if items else None
 
 	def get_machine_image(self, image_id: str) -> dict:
@@ -348,6 +404,8 @@ class AtlasClient:
 		headers = {
 			"Authorization": f"Bearer {token}",
 			"X-Tenant-ID": str(self.tenant_id),
+			# Atlas logs under the same trace ID as Central's Error Log. Requests drops it when None.
+			"X-Frappe-Request-Id": get_trace_id(),
 			"Accept": "application/json",
 		}
 
@@ -413,6 +471,7 @@ class AtlasClient:
 			return None
 
 		value = error.get(field) if isinstance(error, dict) else None
+
 		return value if isinstance(value, str) else None
 
 	def _read_response(self, response: requests.Response, method: str = "GET") -> dict:

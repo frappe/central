@@ -193,7 +193,7 @@ class TestInvoicesAlreadyInFlight(ProjectionTestBase):
 					"doctype": "Invoice",
 					"team": TEAM,
 					"subscription": self.sub,
-					"status": "Open",
+					"status": "Outstanding",
 					"period_start": "2026-07-01",
 					"period_end": "2026-07-31",
 					"currency": "INR",

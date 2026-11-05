@@ -481,7 +481,7 @@ export function placeHoverCard(
 		node.type === 'server'
 			? 220
 			: node.type === 'cluster'
-				? 40 + node.members.length * 48
+				? 40 + Math.min(node.members.length * 48, 320)
 				: 160
 	const top = clamp(
 		at.y - 36,

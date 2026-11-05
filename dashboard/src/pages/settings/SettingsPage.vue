@@ -2,10 +2,11 @@
 import { Button } from 'frappe-ui'
 import { computed } from 'vue'
 import { useAppMenu } from '@/composables/useAppMenu'
+import { useMyInvitations } from '@/composables/useMyInvitations'
 import { useSession } from '@/composables/useSession'
 import {
 	openSettings,
-	type SettingsTabDef,
+	SETTINGS_GROUPS,
 	useSettingsTabs,
 } from '@/composables/useSettings'
 
@@ -15,6 +16,7 @@ import {
 const { activeTeamLabel } = useSession()
 const { availableTabs } = useSettingsTabs()
 const { currentUser, logoutAndRedirect } = useAppMenu()
+const { count: invitationCount } = useMyInvitations()
 
 const available = computed(() =>
 	availableTabs.value.map((tab) => ({
@@ -26,18 +28,17 @@ const available = computed(() =>
 				? currentUser.value
 				: tab.value === 'team'
 					? activeTeamLabel.value
-					: '',
+					: tab.value === 'invitations' && invitationCount.value
+						? `${invitationCount.value} pending`
+						: '',
 	})),
 )
 
 const groups = computed(() => {
-	const order: SettingsTabDef['group'][] = ['Account', 'Administration']
-	return order
-		.map((group) => ({
-			label: group,
-			rows: available.value.filter((row) => row.tab.group === group),
-		}))
-		.filter((group) => group.rows.length > 0)
+	return SETTINGS_GROUPS.map((group) => ({
+		label: group,
+		rows: available.value.filter((row) => row.tab.group === group),
+	})).filter((group) => group.rows.length > 0)
 })
 </script>
 

@@ -1,16 +1,19 @@
-from __future__ import annotations
-
 import frappe
 from frappe import _
 
+from central.errors import handle_resource_operation
 from central.iam import can_on_any_server
+from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
 
 
 def require_access(team: str, capability: str) -> None:
 	# The key library is team-wide, so viewing any server of the team reads it. Changing
 	# keys needs server:ssh-key, which a grant cannot scope, so it stays team-wide.
 	if not can_on_any_server(frappe.session.user, team, capability):
-		frappe.throw(_("You cannot manage SSH keys for this team."), frappe.PermissionError)
+		frappe.throw(
+			_("You cannot manage SSH keys for this team. Ask a team admin to review your access."),
+			frappe.PermissionError,
+		)
 
 
 @frappe.whitelist(methods=["GET"])
@@ -33,6 +36,7 @@ def list_team_ssh_keys(team: str) -> list[dict]:
 	)
 	for key in keys:
 		key["server_count"] = len({link.parent for link in links if link.team_ssh_key == key.name})
+
 	return keys
 
 
@@ -43,6 +47,7 @@ def create_team_ssh_key(team: str, title: str, public_key: str) -> dict:
 	key = frappe.get_doc(
 		{"doctype": "Team SSH Key", "team": team, "title": title, "public_key": public_key}
 	).insert()
+
 	return {
 		"name": key.name,
 		"title": key.title,
@@ -63,6 +68,7 @@ def rotate_team_ssh_key(team: str, name: str, public_key: str) -> dict:
 		frappe.throw(_("The replacement SSH key must be different."))
 	key.public_key = public_key
 	key.save()
+
 	return {"name": key.name, "fingerprint": key.fingerprint}
 
 
@@ -84,3 +90,12 @@ def delete_team_ssh_key(team: str, name: str) -> None:
 	if key.team != team:
 		frappe.throw(_("This SSH key does not belong to the team."), frappe.PermissionError)
 	key.delete()
+
+
+@frappe.whitelist(methods=["POST"])
+@handle_resource_operation
+def set_server_ssh_keys(team: str, resource_id: str, ssh_keys: list[str] | str) -> None:
+	"""Replace the team keys that can sign in to one server."""
+	require_access(team, "server:ssh-key")
+	server = frappe.get_doc("Virtual Machine", VirtualMachine.get_team_server_name(team, resource_id))
+	server.set_ssh_keys(frappe.parse_json(ssh_keys) or [])

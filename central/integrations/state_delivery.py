@@ -31,11 +31,8 @@ AVAILABILITY = ("Available", "Not Available")
 
 
 def accept_atlas_report(raw_body: bytes, region: str | None, signature: str | None) -> dict:
-	"""Authenticate one Atlas delivery, then queue it when it tells Central something new.
-
-	The reply is the sender's receipt: `queued` when a job will apply the report, and
-	`ignored` with a reason when there is nothing to do. Only an authentication failure
-	raises, because only that is worth a retry."""
+	"""Authenticate one Atlas delivery, then queue it when it holds something new.
+	Only an authentication failure raises, because only that is worth a retry."""
 	verified_region = _verified_atlas_region(region, signature, raw_body)
 
 	report = _parsed(raw_body)
@@ -56,6 +53,7 @@ def accept_atlas_report(raw_body: bytes, region: str | None, signature: str | No
 		region=verified_region,
 		report=report,
 	)
+
 	return {"queued": True, "resource_id": server.name}
 
 
@@ -109,7 +107,7 @@ def _apply_state(name: str, report: dict) -> None:
 	if not status or not _reported_at(report):
 		return
 	if not VirtualMachine.record_observed_state(
-		name, frappe.utils.now_datetime(), {"status": status}, reported_at=report.get("observed_at")
+		name, frappe.utils.now_datetime(), _observed(report, status), reported_at=report.get("observed_at")
 	):
 		return
 
@@ -122,6 +120,24 @@ def _apply_state(name: str, report: dict) -> None:
 			job_id=f"server-refresh:{name}",
 			deduplicate=True,
 		)
+
+
+def _observed(report: dict, status: str) -> dict:
+	"""The state a report sets. A report without a host keeps the one Central knows."""
+	observed = {"status": status}
+	if _reported_host(report):
+		observed["atlas_host_id"] = _reported_host(report)
+	return observed
+
+
+def _has_moved_host(report: dict, server: frappe._dict) -> bool:
+	host = _reported_host(report)
+	return bool(host) and host != server.atlas_host_id
+
+
+def _reported_host(report: dict) -> str | None:
+	host = report.get("server")
+	return host if isinstance(host, str) and host else None
 
 
 def _decide(report: dict, server: frappe._dict) -> dict | None:
@@ -138,7 +154,7 @@ def _decide(report: dict, server: frappe._dict) -> dict | None:
 	reported_at = _reported_at(report)
 	if not reported_at:
 		return _ignored("invalid observed_at")
-	if server.status == status:
+	if server.status == status and not _has_moved_host(report, server):
 		# A same-state report still advances the regional watermark. This prevents an
 		# older state change arriving later from regressing the server.
 		if not server.last_reported_at or reported_at > frappe.utils.get_datetime(server.last_reported_at):
@@ -185,7 +201,7 @@ def _atlas_server_for(region: str, virtual_machine: str | None) -> frappe._dict 
 	return frappe.db.get_value(
 		"Virtual Machine",
 		{"region": region, "atlas_vm_id": virtual_machine},
-		["name", "status", "last_reported_at"],
+		["name", "status", "last_reported_at", "atlas_host_id"],
 		as_dict=True,
 	)
 
@@ -233,9 +249,12 @@ def _signature_matches(secret: str, raw_body: bytes, signature: str) -> bool:
 
 
 def _reject(reason: str) -> NoReturn:
-	"""Log which check failed, for an operator reading repeated rejections, and answer
-	every caller with the same sentence so none of them can probe for the reason."""
-	frappe.log_error(title="Rejected regional state report", message=reason)
+	"""Log which check failed, at most once per caller per window, and answer every caller
+	with the same sentence so none of them can probe for the reason."""
+	logged_key = f"state-delivery:rejected:{frappe.local.request_ip}"
+	if not frappe.cache.get_value(logged_key):
+		frappe.log_error(title="Rejected regional state report", message=reason[:200])
+		frappe.cache.set_value(logged_key, 1, expires_in_sec=10 * 60)
 
 	frappe.throw(_("Invalid signature."), frappe.PermissionError)
 

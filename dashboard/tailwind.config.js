@@ -5,7 +5,7 @@ export default {
 	presets: [frappeUIPreset],
 	content: [
 		'./index.html',
-		'./src/**/*.{vue,js,ts,jsx,tsx}',
+		'./src/**/*.{vue,js,ts,jsx,tsx,svg}',
 		'./node_modules/frappe-ui/src/**/*.{vue,js,ts,jsx,tsx}',
 		'./node_modules/frappe-ui/frappe/**/*.{vue,js,ts,jsx,tsx}',
 		// The experimental family (ListView, Accordion, CodeEditor …) ships its own

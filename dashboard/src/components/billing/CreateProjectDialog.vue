@@ -89,7 +89,7 @@ const dialogOptions = computed(() => ({
 					type="number"
 					label="Spending limit"
 					placeholder="No limit"
-					description="Blocks tagging new resources into this project once its committed monthly run-rate would exceed this. Leave blank for unlimited."
+					description="Prevents adding a resource when its monthly cost would put the project over this limit. Existing resources keep running. Leave blank for no limit."
 					min="0"
 				/>
 			</div>

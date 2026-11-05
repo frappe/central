@@ -46,11 +46,13 @@ def get_billing_profile(team: str | None = None) -> dict:
 	  exists, so the UI disables the currency picker.
 	- `supported_currencies` — the allowed set (gateway-backed; not stored on the
 	  profile).
+	- `payment_method_required`, `welcome_credit`, `open_trial` — see `signups.credit.get_purchase_state`.
 
 	The stored fields (currency, legal name, address, GSTIN, …) come straight off
 	the doc for the edit forms; the derived fields drive routing and locking.
 	"""
 	from central.billing.gateways.registry import supported_currencies
+	from central.signups.credit import get_purchase_state
 
 	team = _resolve_team(team)
 	profile = (
@@ -67,6 +69,7 @@ def get_billing_profile(team: str | None = None) -> dict:
 			"currency_locked": _has_money_activity(team),
 			"supported_currencies": supported_currencies(),
 			"gst_lapsed": gst_status.standing(team).lapsed,
+			**get_purchase_state(team),
 		}
 	)
 	return profile
@@ -311,7 +314,7 @@ def get_trust_tier(team: str | None = None) -> dict:
 	)
 	# First/last paid only look at rows with a real settlement time. An invoice paid
 	# before `paid_at` existed has no reliable timestamp — falling back to its
-	# creation would understate first_paid_at (it can sit Draft/Open for days before
+	# creation would understate first_paid_at (it can sit Outstanding for days before
 	# actually settling), so it's excluded from tenure rather than guessed at.
 	timed_rows = sorted((r for r in paid_rows if r.paid_at), key=lambda r: r.paid_at)
 	first_paid_at = timed_rows[0].paid_at if timed_rows else None

@@ -11,8 +11,7 @@ from central.central.doctype.central_sso_settings.central_sso_settings import (
 	CentralSSOSettings,
 )
 
-# Pilot ends an admin session when its login token expires, so this is the session length.
-BENCH_LOGIN_TTL = 60 * 60
+BENCH_API_TTL = 5 * 60  # Central mints a fresh bearer for every call to a pilot
 SITE_LOGIN_TTL = 5 * 60  # a single-use assertion that a site exchanges for its own session
 BOOTSTRAP_TTL = 30 * 60  # the first-boot enrollment window
 DATUM_TTL = 7 * 24 * 60 * 60  # short: no revocation list, and the pilot re-fetches on 401 / near expiry
@@ -35,6 +34,11 @@ def mint_proxy_token(region_id: int) -> str:
 def mint_cargo_token(region_id: int) -> str:
 	"""Mint a credential for the object storage routes of one regional Cargo host."""
 	return _mint_regional_token(region_id, f"atlas-cargo:{region_id}", "bucket:*")
+
+
+def mint_wireguard_token(region_id: int) -> str:
+	"""Mint a credential for the peer routes of one regional WireGuard gateway."""
+	return _mint_regional_token(region_id, f"atlas-wg-gateway:{region_id}", "peers:read peers:update")
 
 
 def mint_datum_token(region_id: int, resource_id: str) -> str:
@@ -91,8 +95,15 @@ def jwks_url() -> str:
 
 def mint_bench_login(audience: str) -> str:
 	"""A single-use admin SID that opens a bench. The bench verifies it against the JWKS
-	and checks `aud` equals its own audience id."""
-	return _mint(audience, "bench", BENCH_LOGIN_TTL, {"sub": "admin"})
+	and checks `aud` equals its own audience id. Pilot ends the session when it expires, so
+	its TTL is the session length set in Central SSO Settings."""
+	settings = frappe.get_cached_doc("Central SSO Settings")
+	return _mint(audience, "bench", settings.bench_session_seconds, {"sub": "admin"})
+
+
+def mint_bench_api_token(audience: str) -> str:
+	"""The bearer Central presents on a server-to-server call to a bench."""
+	return _mint(audience, "bench", BENCH_API_TTL, {"sub": "admin"})
 
 
 def mint_site_login(audience: str, site: str, user: str | None = None, full_name: str | None = None) -> str:
@@ -102,16 +113,14 @@ def mint_site_login(audience: str, site: str, user: str | None = None, full_name
 	claims = {"sub": user or "admin", "site": site}
 	if user and full_name:
 		claims["name"] = full_name
+
 	return _mint(audience, "site", SITE_LOGIN_TTL, claims)
 
 
 def mint_bootstrap_token(team: str, pilot_credential_id: str) -> str:
-	"""A single-use enrollment token seeded into a VM at create time. The pilot presents it
-	once to `central.api.pilot.enroll` to fetch its long-lived credential.
-
-	`aud` is the `pilot_credential_id` — the per-deployment audience id. Central controls it
-	up front (the VM's resource_id isn't known until Atlas provisions), so it doubles as the
-	audience every downward token to this bench will carry."""
+	"""A single-use enrollment token for a new VM. The Pilot presents it once to
+	`central.api.pilot.enroll` for its long-lived credential. `aud` is the `pilot_credential_id`,
+	which every later token to this bench carries."""
 	return _mint(pilot_credential_id, ENROLL_SCOPE, BOOTSTRAP_TTL, {"team": team})
 
 
@@ -140,6 +149,7 @@ def verify_bootstrap_token(token: str) -> dict:
 		frappe.throw(_("Invalid enrollment token: {0}").format(exc), frappe.AuthenticationError)
 	if claims.get("scope") != ENROLL_SCOPE:
 		frappe.throw(_("Not an enrollment token."), frappe.AuthenticationError)
+
 	return {"team": claims["team"], "pcid": claims["aud"], "jti": claims["jti"]}
 
 
@@ -159,4 +169,5 @@ def _mint(audience: str, scope: str, ttl: int, extra: dict | None = None) -> str
 		"scope": scope,
 		**(extra or {}),
 	}
+
 	return jwt.encode(payload, private_pem, algorithm=ALGORITHM, headers={"kid": kid})

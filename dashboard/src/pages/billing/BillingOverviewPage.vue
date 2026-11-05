@@ -1,69 +1,98 @@
 <script setup lang="ts">
 import { Alert } from 'frappe-ui'
 import { computed, ref } from 'vue'
-import BillingContactTaxCard from '@/components/billing/BillingContactTaxCard.vue'
 import CollectionActionBanner from '@/components/billing/CollectionActionBanner.vue'
 import CycleBreakdownPanel from '@/components/billing/CycleBreakdownPanel.vue'
+import CycleFacts from '@/components/billing/CycleFacts.vue'
 import EditBillingProfileDialog from '@/components/billing/EditBillingProfileDialog.vue'
 import EstimatedCard from '@/components/billing/EstimatedCard.vue'
 import GstStatusBanner from '@/components/billing/GstStatusBanner.vue'
-import NextPaymentCard from '@/components/billing/NextPaymentCard.vue'
+import LimitsCard from '@/components/billing/LimitsCard.vue'
+import OutstandingAlert from '@/components/billing/OutstandingAlert.vue'
 import PayingForCard from '@/components/billing/PayingForCard.vue'
 import PayingForPanel from '@/components/billing/PayingForPanel.vue'
-import PaymentMethodsCard from '@/components/billing/PaymentMethodsCard.vue'
 import PaymentSchedulePanel from '@/components/billing/PaymentSchedulePanel.vue'
-import ProjectsCard from '@/components/billing/ProjectsCard.vue'
 import ProjectsPanel from '@/components/billing/ProjectsPanel.vue'
-import StopBillingCard from '@/components/billing/StopBillingCard.vue'
-import WalletCard from '@/components/billing/WalletCard.vue'
+import SpendCard from '@/components/billing/SpendCard.vue'
+import TiersPanel from '@/components/billing/TiersPanel.vue'
+import TrialBillingBanner from '@/components/billing/TrialBillingBanner.vue'
 import WalletHistoryPanel from '@/components/billing/WalletHistoryPanel.vue'
+import ResizeServerDialog from '@/components/servers/ResizeServerDialog.vue'
+import TopupDialog from '@/components/TopupDialog.vue'
+import { useBillingOverview } from '@/composables/useBillingOverview'
+import { useBillingReports } from '@/composables/useBillingReports'
 import { useBillingSetup } from '@/composables/useBillingSetup'
+import { useServerMapData } from '@/composables/useServerMapData'
 
-// Billing › Overview (#69) — one scrollable surface that absorbs the legacy
-// Overview, Credits, Payment methods, Subscriptions, and Settings pages. Each card
-// reads from the shared useBillingOverview singleton.
-//
-// There is no separate onboarding page: the billing profile is filled right here
-// via the "Billing contact & tax" card / EditBillingProfileDialog. Until it's
-// complete we prompt the team to fill it (banner) and money-moving actions open
-// the same dialog (useBillingSetup.requireSetup → setupDialogOpen).
-const { complete, setupDialogOpen } = useBillingSetup()
+const { complete, setupDialogOpen, requireSetup } = useBillingSetup()
+const { currency, reloadMoney } = useBillingOverview()
+const reports = useBillingReports()
 
-// One docked tray at a time: the panel column is a single 24rem slot, and two
-// open at once would stack two SidePanels side by side and squeeze the content
-// out. A single ref names which is showing, and each card's v-model writes it.
-type Tray = 'wallet' | 'cycle' | 'schedule' | 'payingFor' | 'projects' | null
+const outstanding = computed(() => {
+	const statement = reports.statement.data
+
+	return (
+		Number(statement?.closing_outstanding ?? 0) +
+		Number(statement?.opening_outstanding ?? 0)
+	)
+})
+
+type Tray =
+	| 'wallet'
+	| 'cycle'
+	| 'schedule'
+	| 'payingFor'
+	| 'projects'
+	| 'tiers'
+	| null
+
 const tray = ref<Tray>(null)
 
-function trayModel(name: Exclude<Tray, null>) {
-	return computed({
+const trayModel = (name: Exclude<Tray, null>) =>
+	computed({
 		get: () => tray.value === name,
 		set: (open: boolean) => {
 			tray.value = open ? name : null
 		},
 	})
-}
+
 const showWalletHistory = trayModel('wallet')
 const showCycleBreakdown = trayModel('cycle')
 const showSchedule = trayModel('schedule')
 const showPayingFor = trayModel('payingFor')
 const showProjects = trayModel('projects')
+const showTiers = trayModel('tiers')
 
-// Rare, scary verbs live folded under "Advanced" — reference, not news, same
-// pattern as the invoice Activity fold.
-const advancedOpen = ref(false)
+const showTopup = ref(false)
+
+// The trial's Upgrade dialog opens here, so the customer stays on Billing.
+const { servers } = useServerMapData()
+const upgradeServerName = ref<string | null>(null)
+const upgradeServer = computed(
+	() =>
+		servers.value.find((row) => row.name === upgradeServerName.value) ?? null,
+)
+const showUpgrade = computed({
+	get: () => !!upgradeServer.value,
+	set: (open: boolean) => {
+		if (!open) upgradeServerName.value = null
+	},
+})
+
+const onAddCredits = () => {
+	if (requireSetup()) showTopup.value = true
+}
 </script>
 
 <template>
-	<!-- Content + docked wallet-history panel (like the invoice tray): the panel
-       shares the row, the content stays bright beside it — no modal overlay. -->
 	<div class="relative flex h-full min-h-0">
 		<div
-			class="grid min-w-0 flex-1 grid-cols-[min(48rem,100%)] content-start justify-center gap-3 md:gap-4
-      overflow-y-auto p-3 md:p-4 lg:mt-6  [container-type:inline-size]"
+			class="grid min-w-0 flex-1 auto-rows-max grid-cols-[min(64rem,100%)] content-start justify-center gap-3 overflow-y-auto px-3 pb-24 pt-3 [container-type:inline-size] md:gap-4 md:px-6 md:pt-7"
 		>
-			<!-- Until the billing profile is filled, ask the team to complete it
-               first — money-moving actions stay gated on it. -->
+			<OutstandingAlert
+				:statement="reports.statement.data ?? null"
+				:attempts="reports.attempts.data ?? null"
+			/>
 			<Alert
 				v-if="!complete"
 				theme="amber"
@@ -71,55 +100,50 @@ const advancedOpen = ref(false)
 				description="Currency, legal name, and address are needed to add credit, save a payment method, and provision servers."
 				:primary-action="{ label: 'Add billing details', onClick: () => { setupDialogOpen = true } }"
 			/>
-
 			<CollectionActionBanner />
+			<TrialBillingBanner @upgrade="upgradeServerName = $event" />
 			<GstStatusBanner @edit="setupDialogOpen = true" />
-			<!-- The cycle figure is the page's headline, so it gets the full
-               width; what happens to it next sits in the pair beneath. -->
-			<EstimatedCard
-				:active="showCycleBreakdown"
-				@open="showCycleBreakdown = true"
-			/>
-			<div
-				class="grid gap-3 md:gap-4 [@container_(min-width:50rem)]:grid-cols-2"
-			>
-				<NextPaymentCard :active="showSchedule" @open="showSchedule = true" />
-				<WalletCard
-					:active="showWalletHistory"
-					@open="showWalletHistory = true"
+
+			<div class="grid gap-3 md:gap-4 lg:grid-cols-3">
+				<EstimatedCard
+					class="rounded-6 border border-outline-gray-1 lg:col-span-2"
+					:active="showCycleBreakdown"
+					@open="showCycleBreakdown = true"
+					@open-tiers="showTiers = true"
+				/>
+				<CycleFacts
+					class="rounded-6 border border-outline-gray-1"
+					:outstanding="outstanding"
+					:wallet-active="showWalletHistory"
+					@open-schedule="showSchedule = true"
+					@open-wallet="showWalletHistory = true"
+					@add-credit="onAddCredits"
 				/>
 			</div>
-			<PayingForCard @open="showPayingFor = true" />
-			<ProjectsCard @open="showProjects = true" />
-			<PaymentMethodsCard />
-			<BillingContactTaxCard @edit="setupDialogOpen = true" />
 
-			<!-- Advanced — collapsed home for the rare, destructive-adjacent
-               verbs (Stop billing). -->
-			<section>
-				<button
-					class="-mx-2 flex items-center gap-1.5 rounded-5 px-2 py-1 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-outline-gray-4"
-					:aria-expanded="advancedOpen"
-					@click="advancedOpen = !advancedOpen"
-				>
-					<span
-						class="lucide-chevron-right size-3.5 shrink-0 text-ink-gray-5 transition-transform duration-150 ease-out"
-						:class="advancedOpen ? 'rotate-90' : ''"
-					/>
-					<h2 class="text-base-medium text-ink-gray-8">Advanced</h2>
-				</button>
-				<StopBillingCard v-if="advancedOpen" class="mt-4" />
-			</section>
+			<PayingForCard
+				@open="showPayingFor = true"
+				@open-projects="showProjects = true"
+			/>
+
+			<SpendCard :reports="reports">
+				<LimitsCard @open-tiers="showTiers = true" />
+			</SpendCard>
 		</div>
 
-		<!-- The shared docked SidePanel owns its own slide-in/out. Only one is
-         ever open (see `tray`), so they can all mount here. -->
 		<WalletHistoryPanel v-model:open="showWalletHistory" />
 		<CycleBreakdownPanel v-model:open="showCycleBreakdown" />
 		<PaymentSchedulePanel v-model:open="showSchedule" />
 		<PayingForPanel v-model:open="showPayingFor" />
 		<ProjectsPanel v-model:open="showProjects" />
+		<TiersPanel v-model:open="showTiers" />
 	</div>
 
 	<EditBillingProfileDialog v-model="setupDialogOpen" />
+	<TopupDialog v-model="showTopup" :currency="currency" @done="reloadMoney" />
+	<ResizeServerDialog
+		v-model:open="showUpgrade"
+		:server="upgradeServer"
+		@resized="reloadMoney"
+	/>
 </template>

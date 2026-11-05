@@ -27,7 +27,7 @@ const open = defineModel<boolean>('open', { default: false })
 			>
 				<div class="min-w-0">
 					<slot name="title">
-						<div class="truncate text-base-semibold text-ink-gray-9">
+						<div class="truncate text-lg-semibold text-ink-gray-9">
 							{{ title }}
 						</div>
 					</slot>

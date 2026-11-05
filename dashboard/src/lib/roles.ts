@@ -17,7 +17,7 @@ const SYSTEM_ROLE_DISPLAY: Record<string, RoleDisplay> = {
 	},
 	Admin: {
 		icon: 'lucide-shield',
-		description: 'Create and manage servers, sites and services',
+		description: 'Manage servers, sites, services, billing and team members',
 	},
 	Developer: {
 		icon: 'lucide-code-2',

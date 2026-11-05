@@ -24,6 +24,8 @@ class TestCreateServerRecordsSubscription(BillingTestCase):
 	def setUp(self):
 		self.team = "test-create-" + frappe.generate_hash(length=8)
 		frappe.set_user("Administrator")
+		# These tests are about the subscription a create records, not the payment method gate.
+		self.enterContext(self.change_settings("Central Settings", require_payment_method=0))
 		ensure_atlas_instance(REGION)
 		ensure_team(self.team)
 		complete_billing_profile(self.team, currency="INR")

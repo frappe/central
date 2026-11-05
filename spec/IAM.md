@@ -14,7 +14,7 @@ flowchart LR
 
 - Central is the global authority for users, Teams, roles, and capabilities. Every `server:*` decision is made here, before any regional call.
 - A region never sees a capability. Central signs a short-lived, tenant-scoped token for the call it is about to make; the region checks only that the token's tenant matches the resource's tenant. See [Integrations](INTEGRATIONS.md).
-- `System Manager` is the only authorization bypass.
+- `System Manager` is the only authorization bypass. `Staff Viewer` is the Desk role for Frappe employees. It grants no capability. See [Staff Desk Access](#staff-desk-access).
 
 ## Permission Model
 
@@ -35,7 +35,6 @@ Central owns:
 - `Role Capability`
 - `Capability`
 - `Team Invitation`
-- `IAM Permission Probe`
 
 A member receives capabilities through one path:
 
@@ -54,7 +53,7 @@ There are no per-user capability overrides. A Team owner is an active
 
 A member can hold several role grants in a Team. Each grant is team-wide or scoped to one server or site. Create a custom Team role when a member needs a combination such as administration and billing.
 
-Server is the atomic unit (capability model v5). Role capabilities live at the team and server level only. Server capabilities are `server:view`, `server:create`, `server:power`, `server:resize`, `server:snapshot`, `server:terminate`, `server:ssh-key`, and `server:console`, plus `cluster:view` for placement. `server:view` also permits opening a server or site. There are no site-level (bench-plane) capabilities. See [`CAPABILITIES.md`](../CAPABILITIES.md) for the full taxonomy.
+Server is the atomic unit (capability model v6). Role capabilities live at the team and server level only. Server capabilities are `server:view`, `server:create`, `server:power`, `server:network`, `server:resize`, `server:snapshot`, `server:terminate`, `server:ssh-key`, and `server:console`, plus `cluster:view` for placement. `server:console` also permits signing in to a server's bench or site, because that session is Administrator. There are no site-level (bench-plane) capabilities. See [`CAPABILITIES.md`](../CAPABILITIES.md) for the full taxonomy.
 
 ## Resource Scope
 
@@ -70,9 +69,33 @@ A role grant applies to all resources (`resource_type = "*"`) or to one resource
 - A scoped grant must name a server or site of the same Team. The Owner role is always team-wide. A grant whose resource no longer belongs to the Team grants nothing.
 - `iam.can(user, team, capability, server=None)` answers the first two questions. Without `server`, it is the team-wide question. Routes that act on one server pass it. `iam.can_on_any_server` answers the list question.
 - The permission rules for Virtual Machine, Site, VM Snapshot, Resource Action, and Site Domain filter lists by the allowed servers and check the server on each record.
+- Team-scoped billing DocTypes (Invoice, Payment Attempt, Credit Ledger Entry, Top-up Order and the others in `hooks._BILLING_TEAM_RECORDS`) are for operators only in both layers: `billing_record_query_conditions` returns `1 = 0` and `billing_record_has_permission` returns False for everyone else, on their own Team too. Customers read billing through the billing API, which checks `billing:view` or `billing:manage` on the record's Team.
 - Pricing a resize reads the plans and the current configuration of one server. Those two billing reads accept `server:resize` on that server in place of `billing:view`.
 - A notification that is about a server records it in `Team Notification.server`. A scoped member sees and receives only the notifications for its servers.
+- Activity Event is for operators only in both layers. Customers read it through the activity API, which applies `iam.get_capability_gate` to each event's required capability and server.
 - The console reads each server's capabilities from the `capabilities` field on its row, so it shows only the actions that the member can do on that server.
+
+## Staff Desk Access
+
+Desk is for Frappe staff. Customers use the console. Desk access uses Frappe roles, role permissions, and permission levels.
+
+| Who | Setup | Desk access |
+|---|---|---|
+| Frappe Cloud staff | Role `System Manager` | Every DocType. Full operator bypass in Central IAM. |
+| Other Frappe employees | Role profile `Frappe Employee`, which holds only `Staff Viewer` | Read only: Team, Site, and Virtual Machine of every team, without customer data fields. Full access: Product and Email OAuth Provider. Preview Trial Images on a Product. |
+| Product owners | Role `Product Operator` | Read, write, and create on Product. |
+| Customers | Role `Central User`, without desk access | None. They use the console. |
+
+- `Staff Viewer` has read permission at permission level 0 on Team, Site, and Virtual Machine. It has no write, create, delete, report, export, print, or share permission on them.
+- `Staff Viewer` has read, write, create, and delete permission on Product and Email OAuth Provider. These DocTypes hold no customer data. The Email OAuth Provider client secret is a Password field, so a `Staff Viewer` can replace it but cannot read it.
+- `Staff Viewer` can use Preview Trial Images on a Product. It has select permission on Region, so it can pick a region in a Link field. It cannot open a Region record.
+- Customer data fields are at permission level 2: Team `owner_user`, `members`, `utm_source`, `utm_medium`, `utm_campaign`, and `referrer`, and Virtual Machine `firewall_rules` and `ssh_keys`. `System Manager` and `Central User` read them. `Staff Viewer` does not. Frappe removes these fields from forms, lists, filters, and version history.
+- The `has_permission` and `permission_query_conditions` rules of Team, Site, and Virtual Machine let a `Staff Viewer` read every record. All other permission types follow the normal rules, so a `Staff Viewer` cannot change these records.
+- `iam.can` and the API guards do not know `Staff Viewer`. A `Staff Viewer` that is not a team member gets no console access to other teams.
+- A user cannot hold `Staff Viewer` and `Central User` together, because `Central User` reads the customer data fields. The User validation refuses the pair. A new user that has `Staff Viewer` does not get `Central User`.
+- `users.ensure_staff_role_profile` creates the `Frappe Employee` role profile after migrate when it does not exist. It does not change an existing profile, so a change in Desk stays.
+- A role profile replaces all other roles of its users. Do not give a role profile to a user that needs roles that code adds, such as the Atlas roles from Warpgate access.
+- To add a DocType for staff, add a `Staff Viewer` read permission to the DocType, move its customer data fields to permission level 2, and add the `Staff Viewer` rule to its permission functions.
 
 ## User And Invitation Flow
 
@@ -108,6 +131,7 @@ flowchart TD
 - Invitations cannot grant the `Owner` role.
 - `invite_team_member` invites one person, or up to 10 people in one request with `invitations`, because each invitation sends an email. It invites each row on its own: a refused row returns its error, and the other rows are still invited.
 - An invitation stays open for the days set in Central Settings, Invitation Expiry (Days). The default is 14. Resending an invitation starts the count again and issues a new link, so the link in the earlier email stops working.
+- One person can send Invitations per Hour invitations (default 50), and can resend an invitation after Invitation Resend Cooldown (default 5 minutes). Both are on the Limits tab of Central Settings. Operators are not limited.
 
 Example: Jane signs up without an invitation and creates Acme in onboarding, so Jane owns Acme. If John later invites Jane to John's Team, Jane accepts and is a member of both Teams. If John invites Jane before she has an account, Jane joins John's Team only and sees no onboarding.
 
@@ -119,14 +143,14 @@ Example: Jane signs up without an invitation and creates Acme in onboarding, so 
 |---|---|---|
 | Trial flag | `Team.before_insert` | `is_staging_trial` follows Billing Settings, Provision Teams as Trial. The caller cannot choose it. The field is permission level 1, so only a System Manager can change it later. |
 | Onboarding steps | `Team.before_insert` | One `Team Onboarding Step` row each for `invite`, `billing` and `start`, all `Pending`. A staging trial gets no `billing` row, because its billing profile is filled with placeholders. |
-| Billing | `Team.create_for_current_user` | The user's first Team gets a Billing Profile from the request country (India gives INR, any other country gives USD), and the welcome credits. A later Team gets its billing when its owner completes the billing profile. Welcome credits are granted once per owner across all their Teams, and the grant locks the owner's User row, so two Teams created at the same time cannot both get them. |
+| Billing | `Team.create_for_current_user` | The user's first Team gets a Billing Profile from the request country (India gives INR, any other country gives USD). A later Team gets its billing when its owner completes the billing profile. The welcome credit comes when the Team's first payment method is active. See [Welcome credit](../central/signups/SPEC.md#welcome-credit). |
 
 The console shows the onboarding dialog in two cases:
 
 1. The user is a member of no Team. The dialog asks for a Team name. This step cannot be skipped.
 2. The user owns the active Team, and the Team has a `Pending` onboarding step. `my_teams` returns these steps as `onboarding`.
 
-The owner answers each step with `set_onboarding_step` (`Done` or `Skipped`), or all at once with `skip_onboarding`. Only the current owner can answer. A Team created before onboarding existed has no rows, so its owner never sees the dialog.
+The owner answers each step with `set_onboarding_step` (`Done` or `Skipped`). The dialog has Back, Skip, and the step's own action. Back goes to an earlier step, but not to the Team name step. A step the owner goes back to keeps its recorded answer, unless the owner now completes it. Only the current owner can answer. A Team created before onboarding existed has no rows, so its owner never sees the dialog.
 
 ### Invitation email and join link
 
@@ -143,7 +167,7 @@ The emailed token verifies the address, so a new invitee does not need a second 
 
 ## Console Login
 
-Console login sends a six-digit code to an enabled user's email. The request response does not disclose whether the account exists. Central limits sends to five per supplied email value and 20 per IP in ten minutes. A pending code expires ten minutes after the last send or incorrect attempt and permits five incorrect attempts. Verification consumes the code before it creates a session. The console login form uses only this email code flow.
+Console login sends a six-digit code to an enabled user's email. The request response does not disclose whether the account exists. Central limits sends to 20 per IP in ten minutes, and per email to Codes per Email on the Limits tab of Central Settings (default 5). A pending code expires after System Settings, Login with email link expiry (default 10 minutes), counted from the last send or incorrect attempt. It permits Code Attempts incorrect attempts (default 5). Verification consumes the code before it creates a session. The console login form uses only this email code flow.
 
 ## Deferred Scope
 

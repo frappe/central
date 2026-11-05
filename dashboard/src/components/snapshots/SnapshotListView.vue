@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Badge, Button, Tooltip } from 'frappe-ui'
+import { Badge, Button, Dialog, Tooltip } from 'frappe-ui'
 import { computed, ref } from 'vue'
 import {
 	createListViewQuery,
@@ -8,6 +8,7 @@ import {
 	type ListViewFilter,
 } from '@/components/common/list-view'
 import RowActionsMenu from '@/components/common/RowActionsMenu.vue'
+import { ACCESS_LOCKED_REASON } from '@/lib/capabilities'
 import { formatDate, money } from '@/lib/format'
 import {
 	SNAPSHOT_STATUS_THEME,
@@ -30,6 +31,8 @@ interface SnapshotListViewProps {
 	/** Search to open with, such as the server a link came from. */
 	initialSearch?: string
 	serverScoped?: boolean
+	/** The server runs a free trial, which takes no snapshots until it converts. */
+	isAccessLocked?: boolean
 }
 
 // Presentational: emits what the customer chose; the page owns the dialogs and calls.
@@ -46,18 +49,27 @@ const query = ref(
 	createListViewQuery({ pageSize: 20, search: props.initialSearch ?? '' }),
 )
 
-const freeRule = computed(
-	() =>
-		`The ${props.freePerServer} newest snapshots of each server are free. Each older one costs money by its size, per month.`,
+const pricingRule = computed(() =>
+	props.freePerServer
+		? `The newest ${props.freePerServer} snapshots per server are free. Older snapshots are billed by size.`
+		: 'Each snapshot is billed by size until you delete it.',
 )
+const errorSnapshot = ref<VMSnapshotRow | null>(null)
+const errorOpen = computed({
+	get: () => errorSnapshot.value !== null,
+	set: (open: boolean) => {
+		if (!open) errorSnapshot.value = null
+	},
+})
+// Count every snapshot outside the free allowance, even before its billing record opens.
 const monthlyTotal = computed(() => {
-	const total = props.snapshots.reduce(
-		(sum, row) => sum + (row.is_billed ? (row.monthly_cost ?? 0) : 0),
-		0,
+	const billed = props.snapshots.filter(
+		(row) => row.status === 'Available' && !row.is_free,
 	)
-	return total
-		? `${money(total, props.currency, { trimTrailingZeros: true })} / month`
-		: 'All free'
+	if (billed.some((row) => row.monthly_cost == null)) return 'Price not set'
+
+	const total = billed.reduce((sum, row) => sum + (row.monthly_cost ?? 0), 0)
+	return `${money(total, props.currency, { trimTrailingZeros: true })} / month`
 })
 
 const searchPlaceholder = computed(() =>
@@ -69,56 +81,47 @@ const SERVER_SCOPED_HIDDEN = ['type', 'cost']
 const columns = computed<ListViewColumn<VMSnapshotRow>[]>(() =>
 	allColumns.value.filter(
 		(column) =>
-			!props.serverScoped || !SERVER_SCOPED_HIDDEN.includes(column.id ?? ''),
+			!props.serverScoped || !SERVER_SCOPED_HIDDEN.includes(column.key),
 	),
 )
 
 const allColumns = computed<ListViewColumn<VMSnapshotRow>[]>(() => [
 	{
-		id: 'snapshot',
-		accessorFn: (row) => `${row.title} ${row.server_title}`,
-		header: 'Snapshot',
-		size: 320,
+		key: 'snapshot',
+		label: 'Snapshot',
+		value: (row) => `${row.title} ${row.server_title}`,
+		sortable: true,
 	},
 	{
-		id: 'type',
-		accessorFn: (row) => row.snapshot_type,
-		header: 'Type',
-		size: 100,
+		key: 'type',
+		label: 'Type',
+		value: (row) => row.snapshot_type,
+		width: '6rem',
+		sortable: true,
 	},
 	{
-		id: 'size',
-		accessorFn: (row) => row.size_mib,
-		header: 'Size',
-		size: 90,
+		key: 'size',
+		label: 'Size',
+		value: (row) => row.size_mib,
+		width: '5.5rem',
+		sortable: true,
 	},
 	{
-		id: 'created',
-		accessorFn: (row) => row.creation,
-		header: 'Created',
-		size: 120,
-		meta: { cellClass: 'max-md:hidden', headerClass: 'max-md:hidden' },
+		key: 'created',
+		label: 'Created',
+		value: (row) => row.creation,
+		width: '7.5rem',
+		sortable: true,
+		class: 'max-md:hidden',
 	},
 	{
-		id: 'cost',
-		accessorFn: (row) => snapshotCostLabel(row, props.currency),
-		header: 'Cost',
-		size: 160,
-		enableSorting: false,
+		key: 'cost',
+		label: 'Cost',
+		value: (row) => snapshotCostLabel(row, props.currency),
+		width: '10rem',
 	},
-	{
-		accessorKey: 'status',
-		header: 'Status',
-		size: 110,
-	},
-	{
-		id: 'actions',
-		header: '',
-		size: 48,
-		enableSorting: false,
-		enableGlobalFilter: false,
-		meta: { align: 'end' },
-	},
+	{ key: 'status', label: 'Status', width: '7rem', sortable: true },
+	{ key: 'actions', label: '', width: '2.5rem', align: 'end' },
 ])
 
 const visibleFilters = computed(() =>
@@ -197,12 +200,16 @@ function rowActions(row: VMSnapshotRow): SnapshotAction[] {
 		row-class="min-h-12 py-1.5"
 		:empty-state="{
 			title: 'No snapshots yet',
-			description: 'Take a snapshot of a server to save its disk.',
+			description: isAccessLocked
+				? ACCESS_LOCKED_REASON
+				: canManage
+					? 'Take a snapshot to save a copy of a server disk that you can use to create another server.'
+					: 'Snapshots save a copy of a server disk. Ask a team admin to take one or grant you permission to manage snapshots.',
 		}"
 		@retry="emit('retry')"
 	>
 		<template v-if="snapshots.length" #toolbar>
-			<Tooltip :text="freeRule">
+			<Tooltip :text="pricingRule">
 				<span
 					tabindex="0"
 					class="flex items-center gap-1.5 rounded-4 text-p-sm text-ink-gray-7 focus-visible:outline focus-visible:outline-2 focus-visible:outline-outline-gray-3"
@@ -284,20 +291,29 @@ function rowActions(row: VMSnapshotRow): SnapshotAction[] {
 		</template>
 
 		<template #status="{ row }">
-			<Tooltip
-				:text="row.error_detail || undefined"
-				:disabled="!row.error_detail"
-			>
-				<Badge
-					:theme="SNAPSHOT_STATUS_THEME[row.status]"
-					variant="subtle"
-					:label="row.status"
-				/>
-			</Tooltip>
+			<Button
+				v-if="row.error_detail"
+				variant="ghost"
+				:theme="row.status === 'Failed' ? 'red' : 'gray'"
+				:label="row.status"
+				tooltip="View snapshot error"
+				@click.stop="errorSnapshot = row"
+			/>
+			<Badge
+				v-else
+				:theme="SNAPSHOT_STATUS_THEME[row.status]"
+				variant="subtle"
+				:label="row.status"
+			/>
 		</template>
 
 		<template #actions="{ row }">
 			<RowActionsMenu :options="rowActions(row)" label="Snapshot actions" />
 		</template>
 	</ListView>
+	<Dialog v-model:open="errorOpen" title="Snapshot error">
+		<p class="whitespace-pre-wrap break-words text-p-base text-ink-gray-8">
+			{{ errorSnapshot?.error_detail }}
+		</p>
+	</Dialog>
 </template>

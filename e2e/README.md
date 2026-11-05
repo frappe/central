@@ -10,15 +10,16 @@ credited only after the gateway confirms, and every read renders from real DocTy
 ```
 e2e/
   fixtures.ts             # shared `users` (seed, login, signIn, teardown) and `teams` fixtures
+  trials.ts               # adds `trials`: a team with a seeded trial or bought server
   notifications.spec.ts
   billing/
     fixtures.ts           # adds the `billing` payment helpers (finishRazorpay and others)
     helpers/stripe.ts     # fills the Stripe card Element
     *.spec.ts
-  servers/ settings/ team/  # *.spec.ts per area
+  servers/ sites/ settings/ team/  # *.spec.ts per area
 ```
 
-Playwright discovers every `*.spec.ts` under `e2e/`. All areas seed their data through the test-only endpoints in `central/billing/tests/e2e.py`, which `e2e/fixtures.ts` calls.
+Playwright discovers every `*.spec.ts` under `e2e/`. All areas seed their data through the test-only endpoints in `central/billing/tests/e2e.py`, which `e2e/fixtures.ts` calls. Trial and plan change specs also use `central/tests/e2e_trials.py`. It writes servers, sites and resize actions without hooks, so nothing reaches a region.
 
 ## What the suite covers
 
@@ -27,7 +28,8 @@ These specs run:
 | Area | Specs |
 | --- | --- |
 | Billing | `invoices`, `limits`, `overview`, `profile`, `projects`, `reports` |
-| Servers | `servers/list`, `servers/new` |
+| Servers | `servers/list`, `servers/new`, `servers/trial-upgrade` |
+| Sites | `sites/plan-change` (the public progress page) |
 | Team | `team/invite`, `team/manage`, `team/roles`, `team/settings`, `team/switch` |
 | Settings | `settings/profile` |
 | Notifications | `notifications` |
@@ -142,3 +144,15 @@ the `allow_tests` gate.
    call `await users.signIn({...})`, `page.goto('/dashboard/...')`, and assert on
    user-visible state.
 3. For Stripe card entry, use `fillStripeCard()` from `./helpers/stripe.ts`.
+
+## Run the trial and plan change specs
+
+The console under test must include the current dashboard code. Point the suite at the dashboard dev server, and keep the progress page on the bench itself:
+
+```bash
+E2E_BASE_URL=http://central.localhost:8081 npx playwright test e2e/servers/trial-upgrade.spec.ts e2e/sites/plan-change.spec.ts
+```
+
+These specs seed through `central/tests/e2e_trials.py`, which refuses to run without `allow_tests` on the site. Run them on a local or CI bench, never against production. Staging runs them only if its site sets `allow_tests`.
+
+`E2E_SITE_URL` sets the bench address for the progress page preview. The default is `E2E_BASE_URL`. The preview test needs `developer_mode` or `allow_tests` on the site. The live progress page stops at Landing in a test, because a seeded site has no server that answers.

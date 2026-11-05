@@ -28,6 +28,7 @@ from central.billing.doctype.billing_profile.billing_profile import (
 from central.billing.doctype.billing_profile.billing_profile import (
 	require_billing_profile,
 )
+from central.billing.doctype.payment_method.payment_method import held_method_filters
 from central.iam import can
 
 # Tier caps (max_spend) are stored in INR; convert to the team's billing currency
@@ -51,7 +52,7 @@ def _resolve_team(team: str | None, require: str = authz.VIEW) -> str:
 	mutation endpoint that takes a `team` argument."""
 	team = team or _default_team()
 	if not team:
-		frappe.throw(_("No billing team in context."), frappe.ValidationError)
+		frappe.throw(_("Select a team before opening Billing."), frappe.ValidationError)
 	authz.require_capability(team, require)
 	return team
 
@@ -119,7 +120,7 @@ def _has_money_activity(team: str) -> bool:
 	so a wallet can't end up holding mixed-currency value."""
 	return bool(
 		frappe.db.exists("Credit Ledger Entry", {"team": team})
-		or frappe.db.exists("Payment Method", {"team": team})
+		or frappe.get_all("Payment Method", filters={"team": team}, or_filters=held_method_filters(), limit=1)
 		or frappe.db.exists("Invoice", {"team": team})
 	)
 
@@ -135,7 +136,10 @@ def _gateway_for_currency(currency: str) -> str:
 		return resolve_gateway_for_currency(currency)
 	except GatewayNotFound:
 		frappe.throw(
-			_("No payment gateway configured for {0} top-ups.").format(currency), frappe.ValidationError
+			_(
+				"No payment gateway is configured for {0} top-ups. Contact support to add credit to this team."
+			).format(currency),
+			frappe.ValidationError,
 		)
 
 
@@ -163,7 +167,9 @@ def _paypal_gateway_for_currency(currency: str) -> str:
 	if gw:
 		return gw
 	frappe.throw(
-		_("PayPal top-ups need an enabled PayPal gateway that handles {0}.").format(currency),
+		_(
+			"No enabled PayPal gateway supports {0} top-ups. Choose another payment method, or contact support."
+		).format(currency),
 		frappe.ValidationError,
 	)
 

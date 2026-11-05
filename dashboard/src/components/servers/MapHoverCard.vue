@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Badge, Button } from 'frappe-ui'
+import { Badge, Button, ScrollArea } from 'frappe-ui'
 import { computed } from 'vue'
 import ProviderAvatar from '@/components/servers/ProviderAvatar.vue'
 import type { MapNode, MapPin } from '@/lib/serverMap'
@@ -42,7 +42,7 @@ function canOpenBench(server: NonNullable<MapPin['server']>): boolean {
 		<div class="flex items-start gap-2">
 			<div class="min-w-0 flex-1">
 				<div class="flex items-center gap-2">
-					<span class="truncate text-base font-semibold text-ink-gray-9"
+					<span class="truncate text-base-semibold text-ink-gray-9"
 						>{{ node.pin.name }}</span
 					>
 					<Badge
@@ -63,7 +63,7 @@ function canOpenBench(server: NonNullable<MapPin['server']>): boolean {
 			</div>
 		</div>
 		<div class="mt-3 flex items-baseline justify-between gap-3 text-sm">
-			<span class="shrink-0 font-medium text-ink-gray-8">Region</span>
+			<span class="shrink-0 text-sm-medium text-ink-gray-8">Region</span>
 			<span class="truncate text-ink-gray-9"
 				>{{ node.pin.flag }} {{ node.pin.regionLabel }}</span
 			>
@@ -72,8 +72,8 @@ function canOpenBench(server: NonNullable<MapPin['server']>): boolean {
 			v-if="node.pin.publicIpv4"
 			class="mt-2 flex items-baseline justify-between gap-3 text-sm"
 		>
-			<span class="shrink-0 font-medium text-ink-gray-8">IP</span>
-			<span class="truncate font-mono text-[13px] text-ink-gray-9"
+			<span class="shrink-0 text-sm-medium text-ink-gray-8">IP</span>
+			<span class="truncate font-mono text-sm text-ink-gray-9"
 				>{{ node.pin.publicIpv4 }}</span
 			>
 		</div>
@@ -81,14 +81,14 @@ function canOpenBench(server: NonNullable<MapPin['server']>): boolean {
 			v-if="node.pin.plan"
 			class="mt-2 flex items-baseline justify-between gap-3 text-sm"
 		>
-			<span class="shrink-0 font-medium text-ink-gray-8">Plan</span>
+			<span class="shrink-0 text-sm-medium text-ink-gray-8">Plan</span>
 			<span class="truncate text-ink-gray-9">{{ node.pin.plan }}</span>
 		</div>
 		<div
 			v-if="node.pin.frappeVersion"
 			class="mt-2 flex items-baseline justify-between gap-3 text-sm"
 		>
-			<span class="shrink-0 font-medium text-ink-gray-8">Version</span>
+			<span class="shrink-0 text-sm-medium text-ink-gray-8">Version</span>
 			<span class="truncate text-ink-gray-9">{{ node.pin.frappeVersion }}</span>
 		</div>
 	</template>
@@ -96,7 +96,7 @@ function canOpenBench(server: NonNullable<MapPin['server']>): boolean {
 	<!-- Cluster: the servers at this spot -->
 	<template v-else-if="node.type === 'cluster'">
 		<div class="flex items-center justify-between gap-2 px-1.5 pb-1 pt-0.5">
-			<span class="min-w-0 truncate text-xs font-medium text-ink-gray-5">
+			<span class="min-w-0 truncate text-xs-medium text-ink-gray-5">
 				{{ node.members[0].flag }} {{ node.title }} ·
 				{{ node.members.length }}
 				servers
@@ -111,70 +111,73 @@ function canOpenBench(server: NonNullable<MapPin['server']>): boolean {
 				<span class="lucide-plus size-3.5" />
 			</button>
 		</div>
-		<div
-			v-for="m in node.members"
-			:key="m.id"
-			class="group flex w-full items-center gap-2.5 rounded-6 p-1.5 transition-colors hover:bg-surface-gray-2"
-		>
-			<button
-				class="flex min-w-0 flex-1 items-center gap-2.5 text-left"
-				@click="emit('open', m.id)"
+		<!-- About seven rows, so a busy region scrolls inside the card. -->
+		<ScrollArea viewport-class="max-h-80 overscroll-contain">
+			<div
+				v-for="m in node.members"
+				:key="m.id"
+				class="group flex w-full items-center gap-2.5 rounded-6 p-1.5 transition-colors hover:bg-surface-gray-2"
 			>
-				<span class="relative shrink-0">
-					<ProviderAvatar :provider="m.provider" :size="28" />
+				<button
+					class="flex min-w-0 flex-1 items-center gap-2.5 text-left"
+					@click="emit('open', m.id)"
+				>
+					<span class="relative shrink-0">
+						<ProviderAvatar :provider="m.provider" :size="28" />
+						<span
+							class="absolute -bottom-px -right-px size-2.5 rounded-full border-2 border-[var(--surface-elevation-1)]"
+							:style="{ background: m.visual.dot }"
+						/>
+					</span>
+					<span class="min-w-0 flex-1">
+						<span class="block truncate text-sm-medium text-ink-gray-8"
+							>{{ m.name }}</span
+						>
+						<span class="mt-0.5 block truncate text-xs text-ink-gray-5"
+							>{{ m.specs }}</span
+						>
+					</span>
+				</button>
+				<!-- Server: open bench. Site: open its live URL. Same slot, per kind. -->
+				<button
+					v-if="m.kind === 'server' && m.server"
+					class="grid size-7 shrink-0 place-items-center rounded-4 text-ink-gray-5 transition-opacity disabled:cursor-default disabled:opacity-30 enabled:opacity-0 enabled:hover:text-ink-gray-8 group-hover:enabled:opacity-100"
+					:class="{ '!opacity-100': opening === m.server.resource_id }"
+					:disabled="!canOpenBench(m.server) || opening === m.server.resource_id"
+					title="Open"
+					aria-label="Open"
+					@click.stop="emit('open-server', m.server)"
+				>
 					<span
-						class="absolute -bottom-px -right-px size-2.5 rounded-full border-2 border-[var(--surface-elevation-1)]"
-						:style="{ background: m.visual.dot }"
+						:class="opening === m.server.resource_id ? 'lucide-loader-circle size-3.5 animate-spin' : 'lucide-arrow-up-right size-3.5'"
 					/>
-				</span>
-				<span class="min-w-0 flex-1">
-					<span class="block truncate text-sm font-medium text-ink-gray-8"
-						>{{ m.name }}</span
-					>
-					<span class="mt-0.5 block truncate text-xs text-ink-gray-5"
-						>{{ m.specs }}</span
-					>
-				</span>
-			</button>
-			<!-- Server: open bench. Site: open its live URL. Same slot, per kind. -->
-			<button
-				v-if="m.kind === 'server' && m.server"
-				class="grid size-7 shrink-0 place-items-center rounded-4 text-ink-gray-5 transition-opacity disabled:cursor-default disabled:opacity-30 enabled:opacity-0 enabled:hover:text-ink-gray-8 group-hover:enabled:opacity-100"
-				:class="{ '!opacity-100': opening === m.server.resource_id }"
-				:disabled="!canOpenBench(m.server) || opening === m.server.resource_id"
-				title="Open"
-				aria-label="Open"
-				@click.stop="emit('open-server', m.server)"
-			>
-				<span
-					:class="opening === m.server.resource_id ? 'lucide-loader-circle size-3.5 animate-spin' : 'lucide-arrow-up-right size-3.5'"
-				/>
-			</button>
-			<button
-				v-else-if="m.site"
-				class="grid size-7 shrink-0 place-items-center rounded-4 text-ink-gray-5 transition-opacity disabled:cursor-default disabled:opacity-30 enabled:opacity-0 enabled:hover:text-ink-gray-8 group-hover:enabled:opacity-100"
-				:class="{ '!opacity-100': opening === m.site.name }"
-				:disabled="
-					!allowOpen ||
-					!m.site.url ||
-					m.server?.status !== 'Running' ||
-					opening === m.site.name
-				"
-				title="Open"
-				aria-label="Open"
-				@click.stop="m.site.url && emit('open-site', m.site.name)"
-			>
-				<span
-					:class="opening === m.site.name ? 'lucide-loader-circle size-3.5 animate-spin' : 'lucide-arrow-up-right size-3.5'"
-				/>
-			</button>
-		</div>
+				</button>
+				<button
+					v-else-if="m.site"
+					class="grid size-7 shrink-0 place-items-center rounded-4 text-ink-gray-5 transition-opacity disabled:cursor-default disabled:opacity-30 enabled:opacity-0 enabled:hover:text-ink-gray-8 group-hover:enabled:opacity-100"
+					:class="{ '!opacity-100': opening === m.site.name }"
+					:disabled="
+						!allowOpen ||
+						!m.site.url ||
+						m.server?.status !== 'Running' ||
+						opening === m.site.name
+					"
+					title="Open"
+					aria-label="Open"
+					@click.stop="m.site.url && emit('open-site', m.site.name)"
+				>
+					<span
+						:class="opening === m.site.name ? 'lucide-loader-circle size-3.5 animate-spin' : 'lucide-arrow-up-right size-3.5'"
+					/>
+				</button>
+			</div>
+		</ScrollArea>
 	</template>
 
 	<!-- Empty region: what is offered here, and a direct path to create (markers never open cards).
 	     One region: the button creates. Several: each row creates in its own region. -->
 	<template v-else-if="node.type === 'plus'">
-		<div class="truncate text-base font-semibold text-ink-gray-9">
+		<div class="truncate text-base-semibold text-ink-gray-9">
 			{{ node.targets.length === 1 ? node.targets[0].flag : '' }}
 			{{ node.title }}
 		</div>
@@ -193,7 +196,7 @@ function canOpenBench(server: NonNullable<MapPin['server']>): boolean {
 			>
 				<ProviderAvatar :provider="target.provider" :size="24" />
 				<span class="min-w-0 flex-1">
-					<span class="block truncate text-sm font-medium text-ink-gray-8">
+					<span class="block truncate text-sm-medium text-ink-gray-8">
 						{{ target.provider || target.regionLabel }}
 					</span>
 					<span

@@ -39,7 +39,7 @@ Pilot      server runtime: benches, sites, apps on a single server.
 
 Central runs today:
 
-- Identity and access: teams, members, invitations, team roles, capabilities, and the permission probe.
+- Identity and access: teams, members, invitations, team roles, and capabilities.
 - Tokens: SSO and OAuth minting for Atlas, for a Pilot bench, and for Cargo, Datum and for any other future services, plus site login.
 - Regions: each Region holds its Atlas connection and its Cargo connection.
 - Resources: `Virtual Machine` for a provisioned server, `Site` for a self-serve site. Only the integration layer records observed state on them.
@@ -169,6 +169,7 @@ The console serves customers. Desk serves the operator who has to answer a page 
 - Raise specific exceptions. Handle only errors that the code can recover from. Use `central/errors.py` for a failure that a person reads.
 - Prefer standard Frappe APIs and built-in DocTypes over custom machinery. Use `frappe.db` and `frappe.qb` instead of raw SQL.
 - Wrap every user-facing string in `_()`.
+- Use `better-writing` for backend error messages shown to customers. Keep admin and developer diagnostics outside this copy review. See [interface copy guidance](llm/README.md#copy).
 - Avoid mutable global state, circular imports, and lazy re-exports in a package `__init__.py`.
 - Use `@property` only for a cheap, side-effect-free, no-argument operation that returns one noun-like value. Use `get_<what_it_returns>()` for an operation with arguments or multi-step work.
 - Name boolean properties and methods with `is_` or `has_`.
@@ -242,6 +243,7 @@ dashboard/src/components/<feature>/   Feature components, one folder per domain
 - Keep line heights and text sizes on the Frappe UI scale.
 - Use correct HTML semantics. Give every control a label, a reachable focus state, and keyboard operation.
 - Match the pinned Frappe UI version. Report a version mismatch instead of a silent upgrade.
+- Use the task-specific interface skill in [agent tooling setup](llm/README.md#interface-skills). Use `better-writing` when you add or change empty states, tooltips, labels, helper text, errors, or confirmations.
 
 ## Documentation
 
@@ -358,7 +360,7 @@ Use the most specific available skill for the task. See [agent tooling setup](ll
 | `quality-code-review` | Frappe correctness, security, performance, concurrency, readability, API design, and test review. |
 | `review-like-ankush` | Review of a Frappe diff or pull request. |
 | `technical-writing` | Documentation, READMEs, commits, pull requests, and release notes. |
-| `ui-design` | Dashboard layout, polish, hierarchy, spacing, typography, color, and accessibility. |
+| `ui-design` | General dashboard design. Use the task-specific interface skills in [agent tooling setup](llm/README.md#interface-skills) for copy, accessibility, layout, typography, and polish. |
 | `grill-me` | Strict review of a plan or design before handover. |
 | `diagnose` | A hard bug or a performance regression. |
 | `draft-security-advisory` | A security advisory for a fixed vulnerability. |

@@ -93,7 +93,7 @@ export function useSnapshots(resourceId?: Ref<string | null>) {
 	return {
 		snapshots: computed<VMSnapshotRow[]>(() => data.value?.snapshots ?? []),
 		currency: computed(() => data.value?.currency ?? 'INR'),
-		freePerServer: computed(() => data.value?.free_per_server ?? 2),
+		freePerServer: computed(() => data.value?.free_per_server ?? 0),
 		dailyRetentionHours: computed(
 			() => data.value?.daily_retention_hours ?? 48,
 		),
@@ -135,6 +135,6 @@ export function useSnapshotPricing(region: Ref<string | null>) {
 	return {
 		rate: computed(() => pricing.value?.rate_per_gib ?? null),
 		currency: computed(() => pricing.value?.currency ?? 'INR'),
-		freePerServer: computed(() => pricing.value?.free_per_server ?? 2),
+		freePerServer: computed(() => pricing.value?.free_per_server ?? 0),
 	}
 }

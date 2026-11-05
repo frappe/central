@@ -13,7 +13,9 @@
   "modified": "2026-07-23 00:00:00",
   "name": "payment_success",
   "required_cap": "billing:view",
-  "severity": "Success"
+  "severity": "Success",
+  "is_critical": 0,
+  "reportable_by": "None"
  },
  {
   "action_label": "Pay now",
@@ -29,7 +31,9 @@
   "modified": "2026-07-23 00:00:00",
   "name": "payment_failure",
   "required_cap": "billing:view",
-  "severity": "Error"
+  "severity": "Error",
+  "is_critical": 1,
+  "reportable_by": "None"
  },
  {
   "action_label": "Pay now",
@@ -45,7 +49,9 @@
   "modified": "2026-07-23 00:00:00",
   "name": "payment_retry",
   "required_cap": "billing:view",
-  "severity": "Warning"
+  "severity": "Warning",
+  "is_critical": 0,
+  "reportable_by": "None"
  },
  {
   "action_label": "Pay now",
@@ -61,7 +67,9 @@
   "modified": "2026-07-23 00:00:00",
   "name": "invoice_overdue",
   "required_cap": "billing:view",
-  "severity": "Error"
+  "severity": "Error",
+  "is_critical": 1,
+  "reportable_by": "None"
  },
  {
   "action_label": "Top up",
@@ -77,7 +85,9 @@
   "modified": "2026-07-23 00:00:00",
   "name": "credit_low",
   "required_cap": "billing:view",
-  "severity": "Warning"
+  "severity": "Warning",
+  "is_critical": 0,
+  "reportable_by": "None"
  },
  {
   "action_label": "Update card",
@@ -93,11 +103,13 @@
   "modified": "2026-07-23 00:00:00",
   "name": "card_expiry",
   "required_cap": "billing:view",
-  "severity": "Warning"
+  "severity": "Warning",
+  "is_critical": 0,
+  "reportable_by": "None"
  },
  {
   "action_label": "Re-authorise",
-  "action_route": "/billing",
+  "action_route": "/billing/payments",
   "category": "Billing",
   "create_in_app": 1,
   "direct_recipients": "None",
@@ -109,23 +121,27 @@
   "modified": "2026-07-23 00:00:00",
   "name": "mandate_reauth",
   "required_cap": "billing:view",
-  "severity": "Warning"
+  "severity": "Warning",
+  "is_critical": 0,
+  "reportable_by": "None"
  },
  {
-  "action_label": "Add payment method",
-  "action_route": "/billing",
-  "category": "Billing",
+  "action_label": "Upgrade",
+  "action_route": "/servers/{{ server }}?action=resize",
+  "category": "Trial",
   "create_in_app": 1,
   "direct_recipients": "None",
   "docstatus": 0,
   "doctype": "Notification Event Type",
   "event_type": "trial_expiring",
-  "in_app_body": "Your trial is ending. Add a payment method to keep your resources running.",
-  "in_app_title": "Trial ending",
-  "modified": "2026-07-23 00:00:00",
+  "in_app_body": "Your free trial of {{ context.address }} ends on {{ context.ends_on }}. Upgrade to keep the site.",
+  "in_app_title": "Your {{ context.product }} trial ends on {{ context.ends_on }}",
+  "modified": "2026-10-26 00:00:00",
   "name": "trial_expiring",
   "required_cap": "billing:view",
-  "severity": "Warning"
+  "severity": "Warning",
+  "is_critical": 0,
+  "reportable_by": "None"
  },
  {
   "action_label": null,
@@ -141,7 +157,9 @@
   "modified": "2026-07-23 00:00:00",
   "name": "team_suspension",
   "required_cap": "billing:view",
-  "severity": "Error"
+  "severity": "Error",
+  "is_critical": 1,
+  "reportable_by": "None"
  },
  {
   "action_label": null,
@@ -157,7 +175,9 @@
   "modified": "2026-07-23 00:00:00",
   "name": "pre_debit_notice",
   "required_cap": "billing:view",
-  "severity": "Info"
+  "severity": "Info",
+  "is_critical": 0,
+  "reportable_by": "None"
  },
  {
   "action_label": "Choose how to pay",
@@ -173,7 +193,9 @@
   "modified": "2026-07-23 00:00:00",
   "name": "action_required",
   "required_cap": "billing:view",
-  "severity": "Warning"
+  "severity": "Warning",
+  "is_critical": 0,
+  "reportable_by": "None"
  },
  {
   "action_label": null,
@@ -184,12 +206,14 @@
   "docstatus": 0,
   "doctype": "Notification Event Type",
   "event_type": "backup_failure",
-  "in_app_body": "Backup for {{ reference_name }} failed: {{ message }}",
-  "in_app_title": "Backup failed for {{ reference_name }}",
+  "in_app_body": "Backup for {{ reference_title }} failed: {{ message }}",
+  "in_app_title": "Backup failed for {{ reference_title }}",
   "modified": "2026-07-23 00:00:00",
   "name": "backup_failure",
   "required_cap": "server:view",
-  "severity": "Warning"
+  "severity": "Warning",
+  "is_critical": 0,
+  "reportable_by": "Pilot"
  },
  {
   "action_label": null,
@@ -200,12 +224,14 @@
   "docstatus": 0,
   "doctype": "Notification Event Type",
   "event_type": "site_unavailable",
-  "in_app_body": "Site {{ reference_name }} is unavailable: {{ message }}",
-  "in_app_title": "Site unavailable: {{ reference_name }}",
+  "in_app_body": "Site {{ reference_title }} is unavailable: {{ message }}",
+  "in_app_title": "Site unavailable: {{ reference_title }}",
   "modified": "2026-07-23 00:00:00",
   "name": "site_unavailable",
   "required_cap": "server:view",
-  "severity": "Error"
+  "severity": "Error",
+  "is_critical": 1,
+  "reportable_by": "Pilot"
  },
  {
   "action_label": null,
@@ -216,12 +242,14 @@
   "docstatus": 0,
   "doctype": "Notification Event Type",
   "event_type": "site_recovered",
-  "in_app_body": "Site {{ reference_name }} has recovered.",
-  "in_app_title": "Site recovered: {{ reference_name }}",
+  "in_app_body": "Site {{ reference_title }} has recovered.",
+  "in_app_title": "Site recovered: {{ reference_title }}",
   "modified": "2026-07-23 00:00:00",
   "name": "site_recovered",
   "required_cap": "server:view",
-  "severity": "Success"
+  "severity": "Success",
+  "is_critical": 0,
+  "reportable_by": "Pilot"
  },
  {
   "action_label": null,
@@ -232,12 +260,14 @@
   "docstatus": 0,
   "doctype": "Notification Event Type",
   "event_type": "migration_failure",
-  "in_app_body": "Migration for {{ reference_name }} failed: {{ message }}",
-  "in_app_title": "Migration failed for {{ reference_name }}",
+  "in_app_body": "Migration for {{ reference_title }} failed: {{ message }}",
+  "in_app_title": "Migration failed for {{ reference_title }}",
   "modified": "2026-07-23 00:00:00",
   "name": "migration_failure",
   "required_cap": "server:view",
-  "severity": "Error"
+  "severity": "Error",
+  "is_critical": 1,
+  "reportable_by": "Pilot"
  },
  {
   "action_label": null,
@@ -253,7 +283,9 @@
   "modified": "2026-10-04 00:00:00",
   "name": "server_suspension",
   "required_cap": "server:view",
-  "severity": "Error"
+  "severity": "Error",
+  "is_critical": 1,
+  "reportable_by": "Pilot"
  },
  {
   "action_label": null,
@@ -269,7 +301,9 @@
   "modified": "2026-10-04 00:00:00",
   "name": "credential_rotation",
   "required_cap": "server:view",
-  "severity": "Info"
+  "severity": "Info",
+  "is_critical": 0,
+  "reportable_by": "Pilot"
  },
  {
   "action_label": "Review request",
@@ -285,7 +319,9 @@
   "modified": "2026-07-23 00:00:00",
   "name": "provision_failure",
   "required_cap": "server:view",
-  "severity": "Error"
+  "severity": "Error",
+  "is_critical": 1,
+  "reportable_by": "Pilot"
  },
  {
   "action_label": null,
@@ -296,12 +332,14 @@
   "docstatus": 0,
   "doctype": "Notification Event Type",
   "event_type": "role_change",
-  "in_app_body": "Your role in {{ team_name }} has been changed to {{ message }}.",
+  "in_app_body": "{{ context.member }} is now {{ message }} in {{ team_name }}.",
   "in_app_title": "Role changed",
-  "modified": "2026-07-23 00:00:00",
+  "modified": "2026-11-02 00:00:00",
   "name": "role_change",
   "required_cap": "team:manage_members",
-  "severity": "Info"
+  "severity": "Info",
+  "is_critical": 1,
+  "reportable_by": "None"
  },
  {
   "action_label": null,
@@ -317,11 +355,13 @@
   "modified": "2026-07-23 00:00:00",
   "name": "member_joined",
   "required_cap": "team:manage_members",
-  "severity": "Success"
+  "severity": "Success",
+  "is_critical": 0,
+  "reportable_by": "None"
  },
  {
   "action_label": "View server",
-  "action_route": "/servers",
+  "action_route": "/servers/{{ server }}",
   "category": "Server",
   "create_in_app": 1,
   "direct_recipients": "None",
@@ -330,14 +370,16 @@
   "event_type": "server_failed",
   "in_app_body": "Your server {{ reference_title }} entered a Failed state: {{ message }}",
   "in_app_title": "Server failed: {{ reference_title }}",
-  "modified": "2026-10-04 00:00:00",
+  "modified": "2026-10-15 00:00:00",
   "name": "server_failed",
   "required_cap": "server:view",
-  "severity": "Error"
+  "severity": "Error",
+  "is_critical": 1,
+  "reportable_by": "Pilot"
  },
  {
   "action_label": "View server",
-  "action_route": "/servers",
+  "action_route": "/servers/{{ server }}",
   "category": "Server",
   "create_in_app": 1,
   "direct_recipients": "None",
@@ -346,10 +388,12 @@
   "event_type": "resize_failed",
   "in_app_body": "The resize of {{ context.title }} failed: {{ message }}",
   "in_app_title": "Resize failed for {{ context.title }}",
-  "modified": "2026-07-23 00:00:00",
+  "modified": "2026-10-15 00:00:00",
   "name": "resize_failed",
   "required_cap": "server:view",
-  "severity": "Error"
+  "severity": "Error",
+  "is_critical": 1,
+  "reportable_by": "Pilot"
  },
  {
   "action_label": "View servers",
@@ -365,7 +409,9 @@
   "modified": "2026-10-04 00:00:00",
   "name": "cluster_degraded",
   "required_cap": "server:view",
-  "severity": "Warning"
+  "severity": "Warning",
+  "is_critical": 0,
+  "reportable_by": "Pilot"
  },
  {
   "action_label": "Pay now",
@@ -381,7 +427,9 @@
   "modified": "2026-10-04 00:00:00",
   "name": "server_suspended",
   "required_cap": "server:view",
-  "severity": "Error"
+  "severity": "Error",
+  "is_critical": 1,
+  "reportable_by": "Pilot"
  },
  {
   "action_label": "Add payment method",
@@ -397,11 +445,13 @@
   "modified": "2026-09-23 00:00:00",
   "name": "add_payment_method",
   "required_cap": "billing:view",
-  "severity": "Error"
+  "severity": "Error",
+  "is_critical": 1,
+  "reportable_by": "None"
  },
  {
   "action_label": "Add billing details",
-  "action_route": "/billing",
+  "action_route": "/billing/payments",
   "category": "Billing",
   "create_in_app": 1,
   "direct_recipients": "None",
@@ -413,7 +463,9 @@
   "modified": "2026-09-30 00:00:00",
   "name": "billing_details_required",
   "required_cap": "billing:view",
-  "severity": "Warning"
+  "severity": "Warning",
+  "is_critical": 0,
+  "reportable_by": "None"
  },
  {
   "name": "server_action_required",
@@ -426,10 +478,12 @@
   "in_app_title": "Server action needs attention",
   "in_app_body": "The {{ context.action }} action for {{ context.title }} did not finish: {{ message }}",
   "action_label": "View servers",
-  "action_route": "/servers",
+  "action_route": "/servers/{{ server }}",
   "doctype": "Notification Event Type",
   "docstatus": 0,
-  "modified": "2026-09-23 00:00:00"
+  "modified": "2026-10-15 00:00:00",
+  "is_critical": 1,
+  "reportable_by": "Pilot"
  },
  {
   "name": "server_terminated",
@@ -445,7 +499,9 @@
   "action_route": "/servers",
   "doctype": "Notification Event Type",
   "docstatus": 0,
-  "modified": "2026-10-04 00:00:00"
+  "modified": "2026-10-04 00:00:00",
+  "is_critical": 0,
+  "reportable_by": "Pilot"
  },
  {
   "name": "snapshot_failure",
@@ -461,7 +517,9 @@
   "action_route": "/servers/snapshots",
   "doctype": "Notification Event Type",
   "docstatus": 0,
-  "modified": "2026-10-04 00:00:00"
+  "modified": "2026-10-04 00:00:00",
+  "is_critical": 1,
+  "reportable_by": "Pilot"
  },
  {
   "name": "site_ready",
@@ -471,13 +529,15 @@
   "required_cap": "server:view",
   "direct_recipients": "None",
   "create_in_app": 1,
-  "in_app_title": "Site ready: {{ reference_title }}",
+  "in_app_title": "{% if context and context.product %}Your {{ context.product }} site is ready{% else %}Site ready: {{ reference_title }}{% endif %}",
   "in_app_body": "Site {{ reference_title }} is ready.",
   "action_label": "View site",
-  "action_route": "/servers",
+  "action_route": "/servers/{{ server }}",
   "doctype": "Notification Event Type",
   "docstatus": 0,
-  "modified": "2026-10-04 00:00:00"
+  "modified": "2026-10-15 00:00:00",
+  "is_critical": 0,
+  "reportable_by": "Pilot"
  },
  {
   "name": "resource_limit_breached",
@@ -490,9 +550,173 @@
   "in_app_title": "Resource limit breached: {{ context.bench }}",
   "in_app_body": "{{ message }}",
   "action_label": "View server",
-  "action_route": "/servers",
+  "action_route": "/servers/{{ server }}",
   "doctype": "Notification Event Type",
   "docstatus": 0,
-  "modified": "2026-10-04 00:00:00"
+  "modified": "2026-10-15 00:00:00",
+  "is_critical": 0,
+  "reportable_by": "Pilot"
+ },
+ {
+  "name": "trial_ended",
+  "event_type": "trial_ended",
+  "category": "Trial",
+  "create_in_app": 1,
+  "direct_recipients": "None",
+  "docstatus": 0,
+  "doctype": "Notification Event Type",
+  "modified": "2026-10-26 00:00:00",
+  "required_cap": "billing:view",
+  "severity": "Error",
+  "in_app_title": "Your {{ context.product }} trial has ended",
+  "in_app_body": "{{ context.address }} is stopped. Upgrade before {{ context.deletes_on }} to keep it. After that date, the site and its data are deleted.",
+  "action_label": "Upgrade",
+  "action_route": "/servers/{{ server }}?action=resize",
+  "is_critical": 1,
+  "reportable_by": "None"
+ },
+ {
+  "name": "trial_deletion_soon",
+  "event_type": "trial_deletion_soon",
+  "category": "Trial",
+  "create_in_app": 1,
+  "direct_recipients": "None",
+  "docstatus": 0,
+  "doctype": "Notification Event Type",
+  "modified": "2026-10-26 00:00:00",
+  "required_cap": "billing:view",
+  "severity": "Error",
+  "in_app_title": "{{ context.address }} is deleted on {{ context.deletes_on }}",
+  "in_app_body": "Your {{ context.product }} trial has ended. Upgrade before {{ context.deletes_on }} to keep the site and its data.",
+  "action_label": "Upgrade",
+  "action_route": "/servers/{{ server }}?action=resize",
+  "is_critical": 1,
+  "reportable_by": "None"
+ },
+ {
+  "name": "trial_deleted",
+  "event_type": "trial_deleted",
+  "category": "Trial",
+  "create_in_app": 1,
+  "direct_recipients": "None",
+  "docstatus": 0,
+  "doctype": "Notification Event Type",
+  "modified": "2026-10-22 00:00:00",
+  "required_cap": "billing:view",
+  "severity": "Info",
+  "in_app_title": "{{ context.address }} was deleted",
+  "in_app_body": "Your {{ context.product }} trial site and its data are deleted. You can start a new free trial at any time.",
+  "action_label": "Start a new trial",
+  "action_route": "/signup{% if context.product_key %}?product={{ context.product_key }}{% endif %}",
+  "is_critical": 1,
+  "reportable_by": "None"
+ },
+ {
+  "name": "trial_converted",
+  "event_type": "trial_converted",
+  "category": "Trial",
+  "create_in_app": 1,
+  "direct_recipients": "None",
+  "docstatus": 0,
+  "doctype": "Notification Event Type",
+  "modified": "2026-10-22 00:00:00",
+  "required_cap": "billing:view",
+  "severity": "Success",
+  "in_app_title": "{{ context.address }} is now a paid site",
+  "in_app_body": "Your payment method is active, so your {{ context.product }} trial is over. {{ context.address }} keeps running, billing starts today, and server access is open.",
+  "action_label": "View billing",
+  "action_route": "/billing",
+  "is_critical": 0,
+  "reportable_by": "None"
+ },
+ {
+  "name": "trial_unopened",
+  "event_type": "trial_unopened",
+  "category": "Trial",
+  "create_in_app": 1,
+  "direct_recipients": "None",
+  "docstatus": 0,
+  "doctype": "Notification Event Type",
+  "modified": "2026-10-15 00:00:00",
+  "required_cap": "billing:view",
+  "severity": "Info",
+  "in_app_title": "Your {{ context.product }} site is waiting for you",
+  "in_app_body": "{{ context.address }} is ready. Open it from Frappe Cloud to set it up. Your free trial ends on {{ context.ends_on }}.",
+  "action_label": "View site",
+  "action_route": "/servers/{{ server }}",
+  "is_critical": 0,
+  "reportable_by": "None"
+ },
+ {
+  "action_label": null,
+  "action_route": null,
+  "category": "Team",
+  "create_in_app": 0,
+  "direct_recipients": "Affected User",
+  "docstatus": 0,
+  "doctype": "Notification Event Type",
+  "event_type": "team_impersonated",
+  "in_app_body": "A member of Frappe Cloud support opened {{ team_name }} as its owner to work on your account.\n\nIf you did not expect this, contact support at support.frappe.io.",
+  "in_app_title": "Frappe Cloud support opened your team",
+  "modified": "2026-10-24 00:00:00",
+  "name": "team_impersonated",
+  "required_cap": "team:manage_members",
+  "severity": "Warning",
+  "is_critical": 1,
+  "reportable_by": "None"
+ },
+ {
+  "action_label": null,
+  "action_route": null,
+  "category": "Team",
+  "create_in_app": 0,
+  "direct_recipients": "Affected User",
+  "docstatus": 0,
+  "doctype": "Notification Event Type",
+  "event_type": "team_archived",
+  "in_app_body": "{{ team_name }} is archived. Its members can no longer open it. Its invoices and records are kept.\n\nTo use the team again, contact support at support.frappe.io.",
+  "in_app_title": "Your team is archived",
+  "modified": "2026-10-24 00:00:00",
+  "name": "team_archived",
+  "required_cap": "team:delete",
+  "severity": "Info",
+  "is_critical": 1,
+  "reportable_by": "None"
+ },
+ {
+  "action_label": null,
+  "action_route": null,
+  "category": "Team",
+  "create_in_app": 0,
+  "direct_recipients": "Affected User",
+  "docstatus": 0,
+  "doctype": "Notification Event Type",
+  "modified": "2026-10-24 00:00:00",
+  "required_cap": "team:delete",
+  "event_type": "team_suspended",
+  "name": "team_suspended",
+  "severity": "Warning",
+  "in_app_title": "Your team is suspended",
+  "in_app_body": "Frappe Cloud support suspended {{ team_name }}. Its members cannot open it, its running servers are stopped and its storage bucket keys no longer work. Its data is kept.\n\nTo find out why, or to ask for it back, contact support at support.frappe.io.",
+  "is_critical": 1,
+  "reportable_by": "None"
+ },
+ {
+  "action_label": null,
+  "action_route": null,
+  "category": "Team",
+  "create_in_app": 0,
+  "direct_recipients": "Affected User",
+  "docstatus": 0,
+  "doctype": "Notification Event Type",
+  "modified": "2026-10-24 00:00:00",
+  "required_cap": "team:delete",
+  "event_type": "team_unsuspended",
+  "name": "team_unsuspended",
+  "severity": "Success",
+  "in_app_title": "Your team is active again",
+  "in_app_body": "{{ team_name }} is active again, and its members can open it.\n\nServers that were stopped stay stopped. Start them from Frappe Cloud when you need them. Rotate the key of each storage bucket to get a key that works.",
+  "is_critical": 0,
+  "reportable_by": "None"
  }
 ]

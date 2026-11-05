@@ -3,7 +3,7 @@ import { Button, Skeleton } from 'frappe-ui'
 import { computed, ref } from 'vue'
 import BucketQuotaDialog from '@/components/addons/storage/BucketQuotaDialog.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
-import CopyButton from '@/components/common/CopyButton.vue'
+import CopyableValue from '@/components/common/CopyableValue.vue'
 import SettingsSection from '@/components/common/SettingsSection.vue'
 import UsageCard from '@/components/common/UsageCard.vue'
 import { bucketLabel, useObjectStorage } from '@/composables/useObjectStorage'
@@ -115,7 +115,8 @@ const remove = async (target: StorageBucket): Promise<void> => {
 	<div class="divide-y divide-outline-gray-1">
 		<SettingsSection
 			title="Quota"
-			:help="`Cap how much this bucket can hold. ${quotaSummary}`"
+			help="Bucket storage limit"
+			:description="quotaSummary"
 			:aria-busy="usageLoading"
 		>
 			<template v-if="canManage" #actions>
@@ -144,7 +145,8 @@ const remove = async (target: StorageBucket): Promise<void> => {
 
 		<SettingsSection
 			title="Connection"
-			help="Point any S3 client at these. The secret key is shown once, when the bucket is created or its key is rotated."
+			help="S3 connection details"
+			description="Use these values in your S3 client. The secret key is shown only when you create or rotate it."
 		>
 			<template v-if="canManage" #actions>
 				<Button label="Rotate key" @click="rotateTarget = bucket" />
@@ -158,11 +160,9 @@ const remove = async (target: StorageBucket): Promise<void> => {
 				>
 					<dt class="w-24 shrink-0 text-sm text-ink-gray-5">{{ row.label }}</dt>
 
-					<dd class="min-w-0 truncate font-mono text-sm text-ink-gray-8">
-						{{ row.value }}
+					<dd class="min-w-0">
+						<CopyableValue :value="row.value" :label="row.label" />
 					</dd>
-
-					<CopyButton :text="row.value" />
 				</div>
 			</dl>
 		</SettingsSection>
@@ -170,7 +170,7 @@ const remove = async (target: StorageBucket): Promise<void> => {
 		<SettingsSection
 			v-if="canManage"
 			title="Delete bucket"
-			help="Removes the bucket and its key for good. Empty it first: a bucket that still holds objects can't be deleted."
+			description="Permanently deletes the bucket and its access key. Delete all objects first."
 		>
 			<template #actions>
 				<Button
@@ -207,6 +207,7 @@ const remove = async (target: StorageBucket): Promise<void> => {
 			confirm-label="Delete bucket"
 			theme="red"
 			size="md"
+			:confirm-text="deleteTarget ? bucketLabel(deleteTarget) : undefined"
 			:loading="busy"
 			:error="actionError"
 			@confirm="remove"

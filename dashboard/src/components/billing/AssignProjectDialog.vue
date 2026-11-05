@@ -101,7 +101,7 @@ const dialogOptions = computed(() => ({
 				v-model="selected"
 				:options="options"
 				label="Project"
-				description="Which project this subscription shows under in your cost breakdown. This doesn't change your invoice — every subscription bills on your one consolidated invoice."
+				description="Group this subscription under a project in your cost breakdown. All subscriptions remain on one invoice."
 			/>
 		</template>
 	</Dialog>

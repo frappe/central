@@ -21,7 +21,6 @@ const tiles = [
 	{ type: 'Compute', label: 'vCPU', icon: 'lucide-cpu' },
 	{ type: 'Memory', label: 'Memory', icon: 'lucide-memory-stick' },
 	{ type: 'Disk', label: 'SSD', icon: 'lucide-database' },
-	{ type: 'Transfer', label: 'Transfer', icon: 'lucide-arrow-up-down' },
 ]
 </script>
 
@@ -31,7 +30,7 @@ const tiles = [
 		<div class="flex items-center justify-between gap-4">
 			<div class="min-w-0 space-y-1.5">
 				<h2 class="truncate text-2xl-semibold text-ink-gray-9">
-					{{ plan ? `${plan} plan` : 'No plan selected' }}
+					{{ plan || 'No plan selected' }}
 				</h2>
 				<p class="truncate text-base text-ink-gray-5">{{ server }}</p>
 			</div>
@@ -42,7 +41,7 @@ const tiles = [
 		</div>
 
 		<dl
-			class="grid grid-cols-2 divide-outline-gray-2 rounded-6 border border-outline-gray-2 md:grid-cols-4 md:divide-x"
+			class="grid grid-cols-2 divide-outline-gray-2 rounded-6 border border-outline-gray-2 md:grid-cols-3 md:divide-x"
 		>
 			<div
 				v-for="tile in tiles"

@@ -1,15 +1,13 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
-"""Notification engine — dispatches events into the in-app feed and email channel.
 
-The engine is the single entry point for all notification-producing subsystems
-(billing, server/infra, pilot). It reads the ``Notification Event Type`` registry
-for templates and capability requirements, deduplicates in-app entries, writes
-one ``Team Notification`` per event, and fans out emails per qualified team member.
-"""
+from urllib.parse import urlsplit
 
 import frappe
 from frappe import _
+from frappe.utils import escape_html
+
+from central.sso import central_url
 
 
 def queue_event(
@@ -51,40 +49,26 @@ def dispatch(
 	server: str | None = None,
 	affected_user: str | None = None,
 ) -> dict:
-	"""Dispatch a notification event for *team*.
+	"""Record one notification event for *team* and email the qualified members.
 
-	Looks up the ``Notification Event Type`` registry, renders the in-app title
-	and body from Jinja templates, deduplicates (skips if an unread notification
-	with the same event_type + reference_name already exists), writes one
-	``Team Notification`` with the event's ``required_cap``, and fans out emails
-	to qualified team members honoring their ``UserNotificationPreference``.
-
-	When ``direct_recipients = "Affected User"``, only *affected_user* receives
-	the email (capability check is bypassed for that user).  All other members
-	receive nothing for that event.
-
-	The result always includes creation and email queue counts. A duplicate returns
-	``reason="duplicate"`` with zero email attempts.
-
-	*server* scopes the event when the reference does not name one.
-	"""
+	A duplicate returns ``reason="duplicate"`` and sends no email. *server* scopes the event
+	when the reference does not name one."""
 	from central.notification import get_reference_server
 
 	server = server or get_reference_server(reference_doctype, reference_name)
 	ctx = _resolve_context(team, event_type, context, reference_name, reference_doctype)
+	ctx["server"] = server or ""
 	ctx["server_title"] = _get_server_title(server)
 	ctx["reference_title"] = _get_reference_title(team, reference_doctype, reference_name)
 	ctx["message"] = message or ""
 
-	event = _get_event_type(event_type)
+	event = get_event_type(event_type)
 	if not event:
 		frappe.throw(
 			_("Unknown notification event type: {0}").format(event_type),
 			frappe.DoesNotExistError,
 		)
 
-	# Deduplication: suppress if an unread notification with the same
-	# event_type and reference_name already exists for this team.
 	if _is_duplicate(team, event_type, reference_name, server):
 		return {
 			"created": False,
@@ -100,9 +84,7 @@ def dispatch(
 
 	doc = None
 	if event.create_in_app:
-		# One writer: dispatch resolves the event type from the registry, then hands
-		# the row to create_notification (the single Team Notification insert) rather
-		# than building its own — so there is one insert path, not two.
+		# create_notification is the only Team Notification insert path.
 		from central.notification import create_notification
 
 		doc = create_notification(
@@ -143,8 +125,8 @@ def dispatch(
 	}
 
 
-def _get_event_type(event_type: str):
-	"""Fetch the Event Type registry row (cached per request)."""
+def get_event_type(event_type: str):
+	"""Fetch the Event Type registry row."""
 	return frappe.db.get_value(
 		"Notification Event Type",
 		event_type,
@@ -159,6 +141,8 @@ def _get_event_type(event_type: str):
 			"action_label",
 			"action_route",
 			"create_in_app",
+			"is_critical",
+			"reportable_by",
 		],
 		as_dict=True,
 	)
@@ -175,6 +159,7 @@ def _resolve_context(team, event_type, context, reference_name, reference_doctyp
 	}
 	if context:
 		ctx["context"] = context
+
 	return ctx
 
 
@@ -200,6 +185,7 @@ def _get_reference_title(team: str, reference_doctype: str | None, reference_nam
 	"""The reference's title, or its name when the record is unknown, untitled, or another team's."""
 	if not reference_name:
 		return ""
+
 	title_field = REFERENCE_TITLE_FIELDS.get(reference_doctype or "")
 	if not title_field:
 		return reference_name
@@ -209,6 +195,11 @@ def _get_reference_title(team: str, reference_doctype: str | None, reference_nam
 	row = frappe.db.get_value(reference_doctype, reference_name, fields, as_dict=True)
 	if not row or (is_team_owned and row.team != team):
 		return reference_name
+
+	# A site is named by the address its owner opens, which the email's button also opens.
+	if reference_doctype == "Site":
+		return urlsplit(frappe.get_doc("Site", reference_name).routed_url).hostname
+
 	return row[title_field] or reference_name
 
 
@@ -224,24 +215,18 @@ DEDUP_WINDOW_MINUTES = 60
 
 
 def _is_duplicate(team, event_type, reference_name, server=None) -> bool:
-	"""True if a Team Notification for the same event+ref was created recently.
+	"""True if the same event for the same reference was created in the dedup window.
 
-	Uses a time window instead of ``is_read`` because read state is now
-	per-user (``Notification Read``) — the shared ``is_read`` flag is never
-	mutated and stays ``0`` forever.
-
-	When a different event type for the same reference was created after the
-	first occurrence (e.g., ``site_recovered`` after ``backup_failure``), the
-	state has changed and a new notification is allowed through.
-
-	A known *server* narrows the match, so equal names on two servers stay distinct.
-	"""
+	Read state is per user, so the window replaces the shared ``is_read`` flag. A later,
+	different event for the reference means the state changed, so it is not a duplicate."""
 	if not reference_name:
 		return False
+
 	cutoff = frappe.utils.add_to_date(None, minutes=-DEDUP_WINDOW_MINUTES)
 	subject = {"team": team, "reference_name": reference_name}
 	if server:
 		subject["server"] = server
+
 	existing = frappe.db.get_value(
 		"Team Notification",
 		{**subject, "event_type": event_type, "creation": (">=", cutoff)},
@@ -249,12 +234,12 @@ def _is_duplicate(team, event_type, reference_name, server=None) -> bool:
 	)
 	if not existing:
 		return False
-	# A different event_type for the same reference means state changed
-	# since the first occurrence — allow the new notification through.
+
 	state_changed = frappe.db.exists(
 		"Team Notification",
 		{**subject, "event_type": ("!=", event_type), "creation": (">", existing)},
 	)
+
 	return not state_changed
 
 
@@ -269,70 +254,58 @@ def _fan_out_emails(
 	server=None,
 	affected_user=None,
 ) -> dict:
-	"""Send individual emails to each qualified team member.
+	"""Queue the email to each recipient, sent after the caller's transaction commits.
 
-	Members are qualified by:
-	  1. Being an active member of the team.
-	  2. Having the required capability (via ``iam.can``), on the referenced server when
-	     the event is about one.
-	  3. Having ``email_enabled`` in their ``UserNotificationPreference``
-	     (default: enabled when no preference record exists).
+	Rendering an email is slow, and the caller often holds a lock on money records, so only the
+	recipients are decided here. Returns ``{"queued": N, "attempted": N, "failed": 0}``: a send
+	fails only later, in the job, and leaves an Error Log there."""
+	recipients = _email_recipients(team, event, server=server, affected_user=affected_user)
+	if recipients:
+		# After commit only: a rollback drops the job, so no mail goes out for a change that never happened.
+		frappe.enqueue(
+			send_notification_emails,
+			queue="short",
+			enqueue_after_commit=True,
+			recipients=recipients,
+			event_type=event.name,
+			ctx=ctx,
+			message=message,
+		)
+	return {"queued": len(recipients), "attempted": len(recipients), "failed": 0}
 
-	For ``direct_recipients = "Affected User"``, only *affected_user* receives
-	the email — capability is bypassed for that user and no other members are
-	contacted.
 
-	Returns ``{"queued": N, "attempted": N, "failed": N}``.
-	"""
+def _email_recipients(team, event, *, server=None, affected_user=None) -> list[str]:
+	"""The users who get this event by email.
+
+	For ``direct_recipients = "Affected User"``, only *affected_user*, without a capability check.
+	Otherwise each active member with the event's capability. Either way, only users who want it now."""
 	from central.iam import can
-
-	result = {"queued": 0, "attempted": 0, "failed": 0}
+	from central.notification.doctype.user_notification_preference.user_notification_preference import (
+		UserNotificationPreference,
+	)
 
 	if event.direct_recipients == "Affected User":
-		if affected_user and _email_enabled(affected_user, team, event.category):
-			ok = _send_member_email(
-				affected_user,
-				team,
-				event,
-				ctx,
-				message=message,
-				reference_doctype=reference_doctype,
-				reference_name=reference_name,
-			)
-			result["attempted"] = 1
-			if ok:
-				result["queued"] = 1
-			else:
-				result["failed"] = 1
-		return result
+		users = [affected_user] if affected_user else []
+	else:
+		users = [
+			user
+			for user in _get_active_members(team)
+			if not event.required_cap or can(user, team, event.required_cap, server=server)
+		]
+	preferences = UserNotificationPreference.load_for_users(team, users)
+	return [user for user in users if _is_emailed_instantly(preferences.get((user, event.category)), event)]
 
-	members = _get_active_members(team)
-	if not members:
-		return result
 
-	for member_user in members:
-		if event.required_cap and not can(member_user, team, event.required_cap, server=server):
-			continue
-
-		if not _email_enabled(member_user, team, event.category):
-			continue
-
-		result["attempted"] += 1
-		ok = _send_member_email(
-			member_user,
-			team,
-			event,
-			ctx,
-			message=message,
-			reference_doctype=reference_doctype,
-			reference_name=reference_name,
-		)
-		if ok:
-			result["queued"] += 1
-		else:
-			result["failed"] += 1
-
-	return result
+def send_notification_emails(recipients: list[str], event_type: str, ctx: dict, message=None) -> None:
+	"""Background job: render the event's email once and send it to each recipient."""
+	event = get_event_type(event_type)
+	subject, body = _notification_email(event, ctx, message)
+	for user in recipients:
+		try:
+			frappe.sendmail(recipients=[user], subject=subject, message=body)
+		except Exception:
+			# Delivery is best effort, but a failure must leave an error log.
+			frappe.log_error(title=f"Notification email send failed: {event.name} -> {user}")
 
 
 def _get_active_members(team: str) -> list[str]:
@@ -345,15 +318,10 @@ def _get_active_members(team: str) -> list[str]:
 
 
 def publish_team_nudge(team: str) -> None:
-	"""Nudge only the team's active members' sockets, not the whole site.
+	"""Nudge the sockets of the team's active members only.
 
-	``frappe.publish_realtime`` without a ``user``/``room`` broadcasts to the
-	site room (every Desk user, all tenants). Target each member's
-	``user:<email>`` room instead — every socket auto-joins its own user room
-	on connect, so the dashboard's ``team_notification:<team>`` listener fires
-	only for team members. The payload stays team-only; feed content is
-	fetched over the permission-filtered API.
-	"""
+	A publish without a user goes to every Desk user of every tenant, so each member gets
+	their own. The payload names only the team; the feed comes from the permission-filtered API."""
 	for member in _get_active_members(team):
 		frappe.publish_realtime(
 			f"team_notification:{team}",
@@ -363,67 +331,70 @@ def publish_team_nudge(team: str) -> None:
 		)
 
 
-def _email_enabled(user: str, team: str, category: str) -> bool:
-	"""Check if the user has email enabled for this category.
+def _is_emailed_instantly(preference: dict | None, event: frappe._dict) -> bool:
+	"""No preference means yes. A digest event waits for the digest, which reads it from the feed.
 
-	Returns True when no preference record exists (opt-out model).
-	"""
-	pref = frappe.db.get_value(
-		"User Notification Preference",
-		{"user": user, "team": team, "category": category},
-		"email_enabled",
+	The feed row is team-wide, so an Affected User event cannot wait for the digest."""
+	if preference is None or event.is_critical:
+		return True
+	if not preference["email_enabled"]:
+		return False
+	if not preference["events"].get(event.name, True):
+		return False
+	return (
+		preference["frequency"] == "Instant"
+		or not event.create_in_app
+		or event.direct_recipients == "Affected User"
 	)
-	return pref is None or bool(pref)
 
 
 def _notification_email(event, ctx, message=None) -> tuple[str, str]:
-	"""Subject and branded HTML body for an event with no bespoke Email Template.
+	"""Subject and HTML body, with the branding and notes of the Site's product."""
+	from central.signups.doctype.product.product import GETTING_STARTED_EMAILS, get_email_product
 
-	Renders templates/emails/notification.html from the fields the event already
-	carries, so a newly added event type is styled without a new template.
-	"""
-	# The email says the same sentence as the in-app notification. A body may use
-	# `message` anywhere in it, so it is never split out of the sentence.
+	# The email uses the same sentence as the in-app notification.
 	ctx = {**ctx, "message": message or ctx.get("message") or ""}
-	subject = _render_template(event.in_app_title, ctx) or event.event_type
+	site = _get_email_site(ctx["team"], ctx["reference_doctype"], ctx["reference_name"])
+	product = get_email_product(site.product) if site else None
+	extras = product.get_email_extras(event.name) if product else {}
+	if site and event.name in GETTING_STARTED_EMAILS:
+		landing_route = product.landing_route if product else None
+		extras["site_url"] = site.routed_url + (landing_route or "")
+
+	return render_notification_email(event, ctx, extras)
+
+
+def render_notification_email(event, ctx: dict, extras: dict) -> tuple[str, str]:
+	"""Subject and branded HTML body, rendered from the event's own in-app fields. Context
+	values such as a product title or a Pilot message are text, so the HTML escapes them."""
+	subject = _render_template(event.in_app_title, ctx) or event.name
 	text = (_render_template(event.in_app_body, ctx) or "").strip()
 	route = _render_template(event.action_route, ctx) if event.action_route else None
+	action_url = extras.get("site_url") or (f"{central_url()}/dashboard{route}" if route else None)
+	# nosemgrep: frappe-ssti -- a fixed template that ships with the app, filled only with values.
 	body = frappe.render_template(
 		"templates/emails/notification.html",
 		{
-			"title": subject,
-			"body": text,
+			"title": escape_html(subject),
+			"paragraphs": [escape_html(part.strip()) for part in text.split("\n\n") if part.strip()],
+			"notes": extras.get("notes") or [],
+			"brand": extras.get("brand"),
 			"action_label": event.action_label,
-			"action_url": f"{frappe.utils.get_url()}/dashboard{route}" if route else None,
+			"action_url": escape_html(action_url) if action_url else None,
+			"getting_started_url": extras.get("getting_started_url"),
 		},
 	)
+
 	return subject, body
 
 
-def _send_member_email(
-	user, team, event, ctx, *, message=None, reference_doctype=None, reference_name=None
-) -> bool:
-	"""Render the shared notification template and queue one email for *user*.
+def _get_email_site(team: str, reference_doctype: str, reference_name: str):
+	"""Resolve the event's Site only within its Team, because a Pilot can name another team's Site."""
+	if reference_doctype != "Site" or not reference_name:
+		return None
 
-	Best-effort: if the outgoing email account is not configured the
-	notification is still recorded in the feed; the email is simply skipped.
+	name = frappe.db.exists("Site", {"name": reference_name, "team": team})
+	if not name:
+		return None
 
-	Returns True if Frappe accepted the email for delivery, False if queuing failed.
-
-	Every event uses templates/emails/notification.html. The event registry supplies
-	the title, body and action without maintaining a second template system.
-	"""
-	subject, body = _notification_email(event, ctx, message)
-
-	try:
-		frappe.sendmail(
-			recipients=[user],
-			subject=subject,
-			message=body,
-		)
-		return True
-	except Exception:
-		# Best-effort delivery, but never fail silently — a missing outgoing account
-		# or a send error must leave a trace to diagnose (retry/backoff is a later phase).
-		frappe.log_error(title=f"Notification email send failed: {event.event_type} -> {user}")
-		return False
+	return frappe.get_doc("Site", name)

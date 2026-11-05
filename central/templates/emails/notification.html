@@ -6,12 +6,16 @@
 	<td class="fc-body">
 		{{ ui.heading(title) }}
 
-		{% for paragraph in (body or '').split('\n\n') %}
-			{% if paragraph.strip() %}{{ ui.paragraph(paragraph.strip()) }}{% endif %}
-		{% endfor %}
+		{% for paragraph in paragraphs %}{{ ui.paragraph(paragraph) }}{% endfor %}
+
+		{% for note in notes %}{{ ui.paragraph(note) }}{% endfor %}
 
 		{% if action_label and action_url %}
-		{{ ui.button(action_label, action_url) }}
+		{{ ui.button(_("Get started") if getting_started_url else action_label, action_url) }}
+		{% endif %}
+
+		{% if getting_started_url %}
+		{{ ui.button(_("Documentation"), getting_started_url, primary=not action_url) }}
 		{% endif %}
 	</td>
 </tr>

@@ -1,16 +1,16 @@
-from __future__ import annotations
-
 import frappe
 from frappe import _
 from frappe.query_builder import DocType
+from frappe.utils.translations import _lt
 
 from central.integrations.object_storage import BucketInteractions
 from central.services.doctype.team_service.team_service import STORAGE_SERVICE, TeamService, get_bucket_name
+from central.signups.access import require_service_access
 from central.utils.guards import require_capability
 
 BUCKET_FIELDS = ("name", "bucket_name", "region", "status", "endpoint_url", "access_key", "creation")
-VIEW_DENIED = "You can't view this team's object storage."
-MANAGE_DENIED = "You can't manage this team's object storage."
+VIEW_DENIED = _lt("You can't view this team's object storage. Ask a team admin to review your access.")
+MANAGE_DENIED = _lt("You can't manage this team's object storage. Ask a team admin to review your access.")
 
 
 @frappe.whitelist(methods=["GET"])
@@ -63,9 +63,51 @@ def get_object_url(team: str | None = None, name: str | None = None, key: str | 
 
 @frappe.whitelist(methods=["POST"])
 @require_capability("service:manage", MANAGE_DENIED)
+def get_upload_url(
+	team: str | None = None,
+	name: str | None = None,
+	key: str | None = None,
+	content_type: str | None = None,
+) -> dict:
+	"""An upload link for one object that expires in 1 hour. PUT the file to it with the
+	same Content-Type. An existing object with this key is replaced."""
+	_validate_key(key)
+	content_type = content_type or "application/octet-stream"
+
+	return {"url": BucketInteractions(_team_bucket(team, name)).get_upload_url(key, content_type)}
+
+
+@frappe.whitelist(methods=["POST"])
+@require_capability("service:manage", MANAGE_DENIED)
+def delete_objects(
+	team: str | None = None,
+	name: str | None = None,
+	keys: list[str] | None = None,
+	prefixes: list[str] | None = None,
+) -> dict:
+	"""Delete objects and folders. A folder prefix ends in `/` and takes everything under it.
+	Refuses more than 1000 objects in total."""
+	keys, prefixes = keys or [], prefixes or []
+	if not keys and not prefixes:
+		frappe.throw(_("Choose what to delete."))
+
+	for key in keys:
+		_validate_key(key)
+	for prefix in prefixes:
+		_validate_key(prefix)
+		if not prefix.endswith("/"):
+			frappe.throw(_("A folder must end in '/'."))
+
+	deleted = BucketInteractions(_team_bucket(team, name)).delete_objects(keys, prefixes)
+	return {"deleted": deleted}
+
+
+@frappe.whitelist(methods=["POST"])
+@require_capability("service:manage", MANAGE_DENIED)
 def create_bucket(team: str | None = None, bucket_name: str | None = None, region: str | None = None) -> dict:
 	"""Create a bucket and return its secret once. The bucket is named
-	`<tenant>-<region>-<bucket_name>`, because bucket names are shared across a region."""
+	`<tenant>-<region>-<bucket_name>`, because bucket names are shared across a region. Not on a free trial."""
+	require_service_access(team)
 	bucket_name = (bucket_name or "").strip()
 	if not bucket_name or not region:
 		frappe.throw(_("A bucket needs a name and a region."))
@@ -81,6 +123,7 @@ def create_bucket(team: str | None = None, bucket_name: str | None = None, regio
 	)
 	# The route checked service:manage; Team Service is operator-only because it holds secrets.
 	service.insert(ignore_permissions=True)
+
 	return _credentials(service)
 
 
@@ -92,6 +135,7 @@ def rotate_credentials(team: str | None = None, name: str | None = None) -> dict
 	# The route checked service:manage; Team Service is operator-only because it holds secrets.
 	service.flags.ignore_permissions = True
 	service.rotate_credentials()
+
 	return _credentials(service)
 
 
@@ -102,6 +146,7 @@ def delete_bucket(team: str | None = None, name: str | None = None) -> dict:
 	service = _team_bucket(team, name, for_update=True)
 	# The route checked service:manage; Team Service is operator-only because it holds secrets.
 	service.delete(ignore_permissions=True)
+
 	return {"name": service.name}
 
 
@@ -120,6 +165,7 @@ def get_storage_regions() -> list[dict]:
 	"""Regions where Cargo reports object storage as available, with what the map needs."""
 	detail = DocType("Service Detail")
 	region = DocType("Region")
+
 	return (
 		frappe.qb.from_(detail)
 		.join(region)
@@ -143,9 +189,27 @@ def _team_bucket(team: str, name: str | None, for_update: bool = False) -> TeamS
 	each save a key the other has already replaced."""
 	filters = {"name": name, "team": team, "add_on_service": STORAGE_SERVICE}
 	if not name or not frappe.db.exists("Team Service", filters):
-		frappe.throw(_("No bucket '{0}' for this team.").format(name), frappe.DoesNotExistError)
+		frappe.throw(
+			_(
+				"Bucket '{0}' is not available on this team. Return to Object Storage and refresh the bucket list."
+			).format(name),
+			frappe.DoesNotExistError,
+		)
 
 	return frappe.get_doc("Team Service", name, for_update=for_update)
+
+
+def _validate_key(key: str | None) -> None:
+	"""An object key or folder prefix that names something inside the bucket. An empty
+	prefix would match the whole bucket."""
+	if not key or not isinstance(key, str):
+		frappe.throw(_("Choose an object."))
+	if key.startswith("/") or ".." in key.split("/") or len(key.encode()) > 1024:
+		frappe.throw(
+			_(
+				"'{0}' is not a valid file or folder name. Use a name of at most 1024 bytes, without a leading slash or a '..' path segment."
+			).format(key)
+		)
 
 
 def _credentials(service: TeamService) -> dict:

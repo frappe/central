@@ -6,6 +6,5 @@ export type {
 	ListViewFilterOption,
 	ListViewQuery,
 	ListViewSort,
-	ListViewTable,
 } from './types'
 export { createListViewQuery } from './types'

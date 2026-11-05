@@ -3,7 +3,7 @@ import jwt
 from frappe.tests import IntegrationTestCase
 
 from central.api.jwks import jwks_document
-from central.api.sso import get_bench_link
+from central.api.sso import get_bench_link, open_bench
 from central.central.doctype.central_sso_settings.central_sso_settings import ALGORITHM, CentralSSOSettings
 from central.infrastructure.doctype.pilot_credential.pilot_credential import PilotCredential
 from central.sso import central_url
@@ -121,6 +121,26 @@ class TestOpenBench(IntegrationTestCase):
 		self.assertEqual(claims["sub"], "admin")
 		self.assertEqual(claims["scope"], "bench")
 
+	def test_an_operator_opens_the_bench_and_the_server_records_it(self):
+		url = frappe.get_doc("Virtual Machine", "vm-open-1").open_bench_as_administrator()
+
+		self.assertTrue(url.startswith(f"{GATEWAY}/?sid="))
+		self.assertTrue(
+			frappe.db.exists(
+				"Comment",
+				{
+					"reference_doctype": "Virtual Machine",
+					"reference_name": "vm-open-1",
+					"content": ("like", "%as Administrator%"),
+				},
+			)
+		)
+
+	def test_only_an_operator_opens_the_bench_from_desk(self):
+		frappe.set_user(self.owner)
+		with self.assertRaises(frappe.PermissionError):
+			frappe.get_doc("Virtual Machine", "vm-open-1").open_bench_as_administrator()
+
 	def test_unenrolled_vm_refused(self):
 		"""A Running VM whose pilot hasn't enrolled has no audience id yet — Open is refused
 		rather than minting a SID no bench would accept."""
@@ -128,9 +148,9 @@ class TestOpenBench(IntegrationTestCase):
 		with self.assertRaises(frappe.ValidationError):
 			self._open(self.dev, server="vm-open-1")
 
-	def test_viewer_with_server_view_can_open(self):
-		link = self._open(self.viewer, server="vm-open-1")
-		self.assertTrue(link["url"].startswith(f"{GATEWAY}/?sid="))
+	def test_a_viewer_cannot_open_the_bench_as_admin(self):
+		with self.assertRaises(frappe.PermissionError):
+			self._open(self.viewer, server="vm-open-1")
 
 	def test_local_gateway_uses_the_servers_pilot_audience(self):
 		self._server("vm-open-1", "Running", gateway="http://localhost:3030")
@@ -161,3 +181,25 @@ class TestOpenBench(IntegrationTestCase):
 		frappe.db.set_value("Region", self.cluster, "status", "Disabled")
 		with self.assertRaises(frappe.ValidationError):
 			self._open(self.dev, server="vm-open-1")
+
+	def _redirect(self, user, pilot):
+		frappe.set_user(user)
+		try:
+			open_bench(pilot)
+			return frappe.local.response.location
+		finally:
+			frappe.set_user("Administrator")
+
+	def test_open_bench_redirects_straight_to_the_bench(self):
+		self.assertTrue(self._redirect(self.dev, self.pcid).startswith(f"{GATEWAY}/?sid="))
+
+	def test_open_bench_sends_a_refusal_to_the_dashboard(self):
+		dashboard = f"/dashboard/servers?pilot={self.pcid}&action=open-bench"
+		self.assertEqual(self._redirect(self.viewer, self.pcid), dashboard)
+		self.assertEqual(self._redirect("Guest", self.pcid), dashboard)
+
+	def test_open_bench_sends_an_unknown_pilot_to_the_dashboard(self):
+		self.assertEqual(
+			self._redirect(self.dev, "pcred-missing"),
+			"/dashboard/servers?pilot=pcred-missing&action=open-bench",
+		)

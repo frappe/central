@@ -26,6 +26,13 @@ export function money(
 	return `${currencySymbol(currency)}${major}`
 }
 
+/** "$12.50" to the cent; a positive amount under half a cent reads "<$0.01", not "$0.00". */
+export function usd(amount: number | null | undefined): string {
+	const value = Number(amount ?? 0)
+	if (value > 0 && value < 0.005) return '<$0.01'
+	return value.toLocaleString(undefined, { style: 'currency', currency: 'USD' })
+}
+
 /** Signed amount for ledgers: "+ ₹5,000.00" / "− ₹5,003.20". */
 export function signedMoney(
 	amount: number | null | undefined,
@@ -34,6 +41,14 @@ export function signedMoney(
 ): string {
 	const sign = isCredit ? '+' : '−'
 	return `${sign} ${money(Math.abs(Number(amount ?? 0)), currency)}`
+}
+
+/** "1.3K", "112K", "2.4M" — a count that must fit a chip or a caption. */
+export function compactNumber(value: number): string {
+	return new Intl.NumberFormat(undefined, {
+		notation: 'compact',
+		maximumFractionDigits: 1,
+	}).format(value)
 }
 
 export { formatDateTime as formatSyncedAt } from '@/lib/datetime'

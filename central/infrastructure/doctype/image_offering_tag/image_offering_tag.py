@@ -19,5 +19,3 @@ class ImageOfferingTag(Document):
 		parenttype: DF.Data
 		value: DF.Data
 	# end: auto-generated types
-
-	_DOCTYPE_NAME = "Image Offering Tag"

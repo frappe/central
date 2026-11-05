@@ -64,17 +64,21 @@ from central.billing.demo._factory import (
 	backdate_welcome_credit,
 	bank_pending_attempt,
 	collection_moment,
+	demo_host,
 	draw_wallet_credit,
 	make_refund,
 	meter_service_usage,
 	opens_on,
 	plan_name,
+	plan_shape,
 	set_collection_mode,
 	stage_resizes,
 	subscribe_service,
 )
-from central.billing.payments.provisioning import provision_billing_profile
+from central.billing.doctype.billing_run.billing_run import snapshot
+from central.billing.payments.provisioning import grant_welcome_credits, provision_billing_profile
 from central.billing.revenue import credits, invoicing
+from central.billing.revenue.invoicing.run import billing_run_status
 
 # service plan slug -> (resource_type, unit), for reporting usage against a subject.
 _SERVICE_META = {s[2]: (s[1], s[4]) for s in SERVICES}
@@ -262,6 +266,9 @@ def seed() -> dict:
 	# locks the teams already hold.
 	_raise_catalog_prices()
 
+	# Record the closed month's run the way the hourly collection sweep does.
+	snapshot(billing_run_status(), "Complete")
+
 	# NOTE: the demo does NOT touch the Billing workspace — the app ships the real
 	# "Catalog Administration" workspace as a file fixture (billing/workspace/billing),
 	# which `bench migrate` installs. Overwriting it here made the demo site diverge.
@@ -384,7 +391,7 @@ def summary() -> dict:
 		"totals": {
 			"teams_by_currency": by_currency,
 			"paid_invoices": frappe.db.count("Invoice", {"status": "Paid"}),
-			"open_invoices": frappe.db.count("Invoice", {"status": "Open"}),
+			"open_invoices": frappe.db.count("Invoice", {"status": "Outstanding"}),
 			"overdue_invoices": frappe.db.count("Invoice", {"status": "Overdue"}),
 			"failed_attempts": frappe.db.count("Payment Attempt", {"status": "Failed"}),
 			"in_flight_attempts": frappe.db.count("Payment Attempt", {"status": "Initiated"}),
@@ -465,9 +472,10 @@ def _build_team(team, slug, tier, currency, state, resources, resize):
 	_tax(team, currency)
 	_profile(team, slug, currency, resources[0][0])
 	_tier(team, tier)  # tier lives on the Billing Profile, so set it after _profile
-	# Signup provisioning grants the welcome credits once, in the team's currency and at
-	# the amount Billing Settings carries — the same rule production runs, not a random grant.
 	provision_billing_profile(team)
+	# Production grants the welcome credit once a payment method is active. The demo grants it
+	# here through the same function, so its credit-only teams have credit to settle from.
+	grant_welcome_credits(team)
 	_team_members(team, slug)  # members on varied system roles + a custom role
 	gateway, pm = _payment_setup(team, slug, currency, state)
 	# A top-up-only team has no card, but its wallet top-up still mints a customer.
@@ -518,7 +526,16 @@ def _build_team(team, slug, tier, currency, state, resources, resize):
 		# A readable name, so a receipt that groups by machine has a heading worth
 		# reading rather than the raw resource id.
 		if frappe.db.exists("Virtual Machine", resource):
-			frappe.db.set_value("Virtual Machine", resource, "title", f"{slug}-{idx}", update_modified=False)
+			frappe.db.set_value(
+				"Virtual Machine",
+				resource,
+				{
+					"title": f"{slug}-{idx}",
+					"atlas_host_id": f"host-{demo_host(cluster, idx)}",
+					**plan_shape(plan_key),
+				},
+				update_modified=False,
+			)
 		opening = frappe.db.get_value(
 			"Subscription Change", {"subscription": sub, "change_type": "Created"}, "name"
 		)
@@ -624,7 +641,7 @@ def _run_overdue_cycle(team, inv, pm, gateway, due):
 	status. With `due` on a closed month, the whole cycle lands before 'today'."""
 	from central.billing.revenue import dunning
 
-	frappe.db.set_value("Invoice", inv, {"status": "Open", "due_date": due, "amount_paid": 0})
+	frappe.db.set_value("Invoice", inv, {"status": "Outstanding", "due_date": due, "amount_paid": 0})
 	# Seed the declined retries (offline). With every method already failed, the real
 	# dunning has nothing left to charge, so it escalates without a gateway round-trip.
 	base = frappe.utils.get_datetime(f"{due} 09:00:00")
@@ -648,7 +665,7 @@ def _finish_current_month(team, sub, currency, state, pm, gateway):
 
 	# --- charge stuck in-flight — Stripe still awaiting the bank -----------------
 	if state == "bank_pending":
-		frappe.db.set_value("Invoice", inv, {"status": "Open", "due_date": ANCHOR_DUE})
+		frappe.db.set_value("Invoice", inv, {"status": "Outstanding", "due_date": ANCHOR_DUE})
 		bank_pending_attempt(team, inv, pm, gateway, collectable, currency)
 		return "charge in-flight (awaiting bank) — invoice frozen"
 
@@ -697,7 +714,7 @@ def _finish_current_month(team, sub, currency, state, pm, gateway):
 	# to the wallet instead (see refund_wallet).
 	if state == "fallback":
 		# Open first, so the fallback reads as a real collection run before it settles.
-		frappe.db.set_value("Invoice", inv, {"status": "Open", "due_date": ANCHOR_DUE})
+		frappe.db.set_value("Invoice", inv, {"status": "Outstanding", "due_date": ANCHOR_DUE})
 		_attempt, backup_pm = _settle_via_backup(
 			team, inv, pm, gateway, collectable, currency, when=f"{ANCHOR_END} 09:00:00"
 		)
@@ -730,7 +747,9 @@ def _finish_current_month(team, sub, currency, state, pm, gateway):
 	# historical loop, where the cycle fits before 'today'). The current month is a
 	# fresh, not-yet-due Open invoice — realistic for a team carrying an overdue bill.
 	if state == "overdue":
-		frappe.db.set_value("Invoice", inv, {"status": "Open", "due_date": ANCHOR_DUE, "amount_paid": 0})
+		frappe.db.set_value(
+			"Invoice", inv, {"status": "Outstanding", "due_date": ANCHOR_DUE, "amount_paid": 0}
+		)
 		return "prior month overdue → suspended; current month open"
 
 	# --- one failed attempt (with reason), then settled on retry ----------------
@@ -745,7 +764,7 @@ def _finish_current_month(team, sub, currency, state, pm, gateway):
 		return "settled fully from welcome credits (no card touched)"
 
 	# active / grandfathered — leave the current invoice Open.
-	frappe.db.set_value("Invoice", inv, {"status": "Open", "due_date": ANCHOR_DUE})
+	frappe.db.set_value("Invoice", inv, {"status": "Outstanding", "due_date": ANCHOR_DUE})
 	return (
 		"grandfathered (locked launch rate), open current invoice"
 		if state == "grandfathered"

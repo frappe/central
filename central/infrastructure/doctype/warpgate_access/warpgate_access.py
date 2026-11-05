@@ -1,8 +1,6 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
 
-from __future__ import annotations
-
 from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -68,6 +66,7 @@ class WarpgateAccess(Document):
 	def validate(self) -> None:
 		if self.duration not in self.durations:
 			frappe.throw(_("{0} access cannot last {1}.").format(self.access_type, self.duration))
+
 		if self.is_admin:
 			self.region = self.host = self.host_title = None
 			return
@@ -112,7 +111,10 @@ class WarpgateAccess(Document):
 		try:
 			self.revoke()
 		except AtlasConnectionError:
-			frappe.log_error(title=f"Warpgate Access {self.name} was not revoked")
+			# No frame locals: they hold the Atlas bearer token.
+			frappe.log_error(
+				title=f"Warpgate Access {self.name} was not revoked", message=frappe.get_traceback()
+			)
 			return
 		self.db_set("is_revoked", 1)
 
@@ -161,6 +163,7 @@ class WarpgateAccess(Document):
 		if not proxy_domain:
 			frappe.throw(_("Region {0} has no proxy domain.").format(self.region))
 		target = self.host_title or "<host>"
+
 		return f"ssh -p {WARPGATE_SSH_PORT} {self.email}:{target}@warpgate.{proxy_domain}"
 
 
@@ -180,12 +183,13 @@ def get_warpgate_regions() -> list:
 
 def revoke_ended_access() -> None:
 	"""Mark each access whose end time passed, then revoke each ended access that is not revoked yet."""
-	for name in frappe.get_all(
+	frappe.db.set_value(
 		"Warpgate Access",
-		filters={"docstatus": 1, "status": "Active", "expires_at": ["<=", now_datetime()]},
-		pluck="name",
-	):
-		frappe.db.set_value("Warpgate Access", name, "status", "Expired", update_modified=False)
+		{"docstatus": 1, "status": "Active", "expires_at": ["<=", now_datetime()]},
+		"status",
+		"Expired",
+		update_modified=False,
+	)
 	frappe.db.commit()  # nosemgrep
 
 	for name in frappe.get_all(

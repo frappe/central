@@ -33,8 +33,6 @@ class TeamService(Document):
 		team: DF.Link
 	# end: auto-generated types
 
-	_DOCTYPE_NAME = "Team Service"
-
 	@property
 	def is_bucket(self) -> bool:
 		return self.add_on_service == STORAGE_SERVICE
@@ -45,12 +43,13 @@ class TeamService(Document):
 
 	def before_insert(self) -> None:
 		"""Create the bucket, bill it, then let the record save. Cargo answers first, so a
-		record always names a bucket that exists. AI registers the team at Grove first."""
+		record always names a bucket that exists. AI registers the team at Grove first; its keys
+		each call their own geography's gateway, so an AI row has no endpoint."""
 		if self.is_ai:
-			from central.services.ai import register_grove_user
+			from central.services.ai import register_team
 
 			self.validate_one_ai_service()
-			self.endpoint_url = register_grove_user(self.team).get("gateway_url")
+			register_team(self.team)
 			return
 
 		if not self.is_bucket:
@@ -58,6 +57,7 @@ class TeamService(Document):
 
 		if not self.bucket_name:
 			frappe.throw(_("A bucket needs a name."))
+		self.validate_bucket_region()
 		self.validate_bucket_is_unclaimed()
 
 		# Read everything that can refuse first, so a refusal leaves no bucket in Cargo.
@@ -96,7 +96,7 @@ class TeamService(Document):
 			return
 
 		others = {"subscription": self.subscription, "name": ("!=", self.name)}
-		if not frappe.db.exists(self._DOCTYPE_NAME, others):
+		if not frappe.db.exists(self.doctype, others):
 			end_subscription(self.subscription)
 
 	def get_usage(self) -> dict:
@@ -124,20 +124,22 @@ class TeamService(Document):
 		if self.status == "Active" and not self.subscription and not self.is_ai:
 			frappe.throw(_("An active service must have a subscription."))
 
-		# The form asks for it through mandatory_depends_on, which the server does not check.
-		if self.is_bucket and not self.region:
-			frappe.throw(_("A bucket needs a region."), frappe.MandatoryError)
-
+		self.validate_bucket_region()
 		self.validate_bucket_is_unclaimed()
 		self.validate_one_ai_service()
 
+	def validate_bucket_region(self) -> None:
+		"""The form asks for it through mandatory_depends_on, which the server does not check."""
+		if self.is_bucket and not self.region:
+			frappe.throw(_("A bucket needs a region."), frappe.MandatoryError)
+
 	def validate_one_ai_service(self) -> None:
-		"""A team is one Grove user, so it has one AI service."""
+		"""A team is one Central Team at Grove, so it has one AI service."""
 		if not self.is_ai:
 			return
 
 		others = {"team": self.team, "add_on_service": AI_SERVICE, "name": ("!=", self.name or "")}
-		if frappe.db.exists(self._DOCTYPE_NAME, others):
+		if frappe.db.exists(self.doctype, others):
 			frappe.throw(_("Team {0} already has AI.").format(self.team))
 
 	def validate_bucket_is_unclaimed(self) -> None:
@@ -147,7 +149,7 @@ class TeamService(Document):
 			return
 
 		duplicate = frappe.db.exists(
-			self._DOCTYPE_NAME,
+			self.doctype,
 			{
 				"team": self.team,
 				"bucket_name": self.bucket_name,

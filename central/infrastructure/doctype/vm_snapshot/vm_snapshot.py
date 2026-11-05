@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import math
 
 import frappe
@@ -29,8 +27,8 @@ class VMSnapshot(Document):
 		from frappe.types import DF
 
 		atlas_image_id: DF.Data | None
+		diagnostic: DF.Code | None
 		error_detail: DF.LongText | None
-		error_log: DF.Link | None
 		expires_at: DF.Datetime | None
 		image_offering: DF.Link | None
 		is_free: DF.Check
@@ -50,7 +48,7 @@ class VMSnapshot(Document):
 		server = frappe.db.get_value(
 			"Virtual Machine",
 			self.server,
-			["team", "region", "status", "atlas_vm_id", "image_offering"],
+			["team", "title", "region", "status", "atlas_vm_id", "image_offering"],
 			as_dict=True,
 		)
 		if not server or server.team != self.team:
@@ -62,6 +60,7 @@ class VMSnapshot(Document):
 		if frappe.db.exists("VM Snapshot", {"server": self.server, "status": "Pending"}):
 			frappe.throw(_("A snapshot of this server is already in progress."))
 
+		self.title = (self.title or "").strip() or _("{0} snapshot").format(server.title or self.server)
 		self.region = server.region
 		self.image_offering = server.image_offering
 		self.is_restorable = not is_pilot_offering(server.image_offering)
@@ -78,11 +77,12 @@ class VMSnapshot(Document):
 	def on_update(self) -> None:
 		if not self.has_value_changed("status"):
 			return
+
 		if self.status in ("Failed", "Deleted"):
 			self.stop_billing()
 		if self.status in ("Available", "Deleted"):
 			apply_free_allowance(self.server)
-		if self.has_value_changed("status") and self.status == "Failed":
+		if self.status == "Failed":
 			self.queue_failure_notification()
 
 	def queue_failure_notification(self) -> None:
@@ -172,12 +172,12 @@ class VMSnapshot(Document):
 		self.save(ignore_permissions=True)
 
 	def record_diagnostic(self, reason: str, diagnostic: str, title: str) -> None:
-		"""Leave a safe reason and linked operator detail on this snapshot."""
+		"""Leave a safe reason and the operator diagnostic on this snapshot."""
 		self.db_set({"error_detail": reason, **self.diagnostic_values(diagnostic, title)})
 
 	def diagnostic_values(self, diagnostic: str, title: str) -> dict:
-		error_log = self.log_error(title=title, message=diagnostic)
-		return {"error_log": error_log.name}
+		self.log_error(title=title, message=diagnostic)
+		return {"diagnostic": f"{title}\n\n{diagnostic}"}
 
 	def keep(self) -> None:
 		"""Stop the automatic deletion of a daily snapshot. It is billed only while it is not
@@ -271,7 +271,10 @@ def is_pilot_offering(offering: str | None) -> bool:
 
 def take_automatic_snapshots() -> None:
 	"""Scheduler: one daily snapshot of each running server in a region that has
-	automatic snapshots on, unless its owner turned them off."""
+	automatic snapshots on, unless its owner turned them off. A free trial server gets none,
+	because a snapshot would hand its disk out before the trial converts."""
+	from central.signups.access import get_locked_servers_among
+
 	regions = frappe.get_all("Region", filters={"automatic_snapshots": 1, "status": "Active"}, pluck="name")
 	if not regions:
 		return
@@ -293,8 +296,9 @@ def take_automatic_snapshots() -> None:
 			pluck="server",
 		)
 	)
+	skipped = taken | get_locked_servers_among([server.name for server in servers])
 	for server in servers:
-		if server.name not in taken:
+		if server.name not in skipped:
 			_take_automatic_snapshot(server)
 
 
@@ -315,7 +319,8 @@ def _take_automatic_snapshot(server) -> None:
 		frappe.db.commit()  # nosemgrep: frappe-manual-commit -- keep each snapshot if a later server fails
 	except frappe.ValidationError:
 		frappe.db.rollback()
-		frappe.log_error(title=f"Automatic snapshot failed: {server.name}")
+		# No frame locals: they hold the Atlas bearer token.
+		frappe.log_error(title=f"Automatic snapshot failed: {server.name}", message=frappe.get_traceback())
 
 
 def sync_pending_snapshots() -> None:

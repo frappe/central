@@ -11,8 +11,12 @@ Atlas regional requests use a separate Ed25519 key. The shared `central.api.jwks
 **Bench (console) login**: `central.api.sso.get_bench_link`
 
 1. The caller supplies a server. Central checks access to that server and resolves its `gateway_url` and the `audience_id` of its Active `Pilot Credential`. A local server uses the same path with its local gateway URL.
-2. Central mints `mint_bench_login(audience)`: `scope=bench`, 60 minutes, single-use `jti`.
-3. The browser opens `{gateway}/?sid=<jwt>`. The bench SPA exchanges it for a local session cookie.
+2. Central mints `mint_bench_login(audience)`: `scope=bench`, single-use `jti`. Its lifetime is **Session Length** in Central SSO Settings, 60 minutes by default.
+3. The browser opens `{gateway}/?sid=<jwt>`. The bench SPA exchanges it for a local session cookie. Pilot ends that session when the token expires, so Session Length is also the session length.
+
+**Bench login from a site**: `central.api.sso.open_bench?pilot=<audience>`
+
+The "Open server" link in a site's cloud settings is a browser GET to this route. Central finds the server by the `audience_id` of its Active `Pilot Credential` and redirects straight to the bench login URL above, with the same access checks. A guest, an unknown audience, or a refused login goes to `/dashboard/servers?pilot=<audience>&action=open-bench`. That page signs the member in or shows why the server does not open.
 
 **Site login**: `central.api.sites.login_site`
 
@@ -42,7 +46,7 @@ On the bench (Pilot), the durable bearer is `bench.toml [central].auth_token`. C
 
 - **EdDSA (Ed25519) and JWKS**, verified offline. Benches hold only the public key.
 - **`aud` is the bench's `audience_id`**, assigned by Central. Bench B rejects a SID for bench A. A Pilot cannot declare its own audience.
-- **Short TTL.** The bench login SID lasts 60 minutes, is carried by the browser, and is single-use (the bench tracks the `jti`). The site assertion lasts 5 minutes and goes only from Central to the bench. The browser never sees it.
+- **Short TTL.** The bench login SID lasts for the configured Session Length, from 1 to 1440 minutes. The browser carries it, and it is single-use (the bench tracks the `jti`). The upper limit matches the 24-hour Pilot session cookie. The site assertion lasts 5 minutes and goes only from Central to the bench. The browser never sees it.
 - **Fail closed.** A bench rejects any assertion whose scope it does not understand (`Session.has_scope` is an allowlist). It does not downgrade to Administrator.
 - **Extensibility (distinct scope).** Site login is Administrator today. A future per-user session must use a new scope (for example `site_user`), so that older benches reject it. The identity goes through `SiteLogin.create_session(login_as=...)`, which defaults to Administrator. Adding it is additive: a new claim and a new scope handler, with no contract change.
 
@@ -52,13 +56,14 @@ Central separates token purposes by the required `scope` claim and by the audien
 
 | scope | minter | `aud` | TTL | Key | Consumed by |
 | --- | --- | --- | --- | --- | --- |
-| `bench` | `mint_bench_login` | bench's `audience_id` | 60 min | Pilot (Ed25519) | the bench (login SID) |
+| `bench` | `mint_bench_login` | bench's `audience_id` | Session Length (default 60 min) | Pilot (Ed25519) | the bench (login SID) |
+| `bench` | `mint_bench_api_token` | bench's `audience_id` | 5 min | Pilot (Ed25519) | the bench (`Bearer` on each Central call to Pilot) |
 | `site` | `mint_site_login` | bench's `audience_id` | 5 min | Pilot (Ed25519) | the bench (site login) |
 | `enroll` | `mint_bootstrap_token` | `pilot_credential_id` | 30 min | Pilot (Ed25519) | Central (`verify_bootstrap_token`, asserts `scope == enroll`) |
 | `datum` | `mint_datum_token` | `atlas-datum:<region id>` | 7 days | Atlas (Ed25519) | Datum, for metrics and logs |
-| regional | `mint_atlas_token` / `mint_proxy_token` / `mint_cargo_token` | `atlas-admin:<region id>` / `atlas-proxy:<region id>` / `atlas-cargo:<region id>` | 5 min | Atlas (Ed25519) | Atlas, the regional proxy, Cargo |
+| regional | `mint_atlas_token` / `mint_proxy_token` / `mint_cargo_token` / `mint_wireguard_token` | `atlas-admin:<region id>` / `atlas-proxy:<region id>` / `atlas-cargo:<region id>` / `atlas-wg-gateway:<region id>` | 5 min | Atlas (Ed25519) | Atlas, the regional proxy, Cargo, the WireGuard gateway |
 
-One `datum` token serves both write paths. One route hands it out: `central.api.pilot.datum_token`. Datum tells metrics from logs by the route the Pilot posts to, not by the credential. A second token would carry the same `resource_id` and the same authority. It is signed with the Atlas key, not the Pilot key, because Datum verifies against the merged key set that Atlas publishes. `iss` is the literal `central`, and the key id has the `central:` namespace. Datum uses these two values to bind one to the other. The audience names one region, so every other region refuses the token.
+One `datum` token serves both write paths. Two routes hand it out. A Pilot calls `central.api.pilot.datum_token` with its Pilot credential. A Cargo node (Garage gateway, Garage storage, or Datum host) calls `central.api.cargo.datum_token` with the machine token in its Atlas metadata, sent as `X-Cargo-Machine-Token`. The Cargo host calls the same route with a machine token it signs for itself, with `role = cargo` and `machine = <region>`, because its Pilot has no Pilot credential. Cargo signs that machine token with HS256 and the region's Cargo webhook secret, with `iss = cargo`, `aud = central:datum-credential`, and the `region`, `machine`, and `role` claims. Central selects the secret by the `region` claim, refuses a region whose Cargo is not Registered, and mints a token for `resource_id = cargo:<machine>`. The machine token has no expiry, and a new webhook secret makes every machine token of the region invalid. Datum tells metrics from logs by the route the Pilot posts to, not by the credential. A second token would carry the same `resource_id` and the same authority. It is signed with the Atlas key, not the Pilot key, because Datum verifies against the merged key set that Atlas publishes. `iss` is the literal `central`, and the key id has the `central:` namespace. Datum uses these two values to bind one to the other. The audience names one region, so every other region refuses the token.
 
 The token carries `resource_id` and `access: ["write"]` as top-level claims, which `Identity.from_claims` reads directly. Datum stamps every row with `resource_id`, so a Pilot cannot write as another resource. Datum serves no reads.
 

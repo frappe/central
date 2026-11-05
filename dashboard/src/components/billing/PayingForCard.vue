@@ -1,24 +1,32 @@
 <script setup lang="ts">
-import { Button, Skeleton } from 'frappe-ui'
-import { computed } from 'vue'
+import { Badge, Button, LoadingText } from 'frappe-ui'
+import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import AssignProjectDialog from '@/components/billing/AssignProjectDialog.vue'
-import BillingCard from '@/components/billing/BillingCard.vue'
-import PayingForRow from '@/components/billing/PayingForRow.vue'
-import EmptyState from '@/components/common/EmptyState.vue'
+import CreateProjectDialog from '@/components/billing/CreateProjectDialog.vue'
+import PayingForTable from '@/components/billing/PayingForTable.vue'
+import ProjectMembersDialog from '@/components/billing/ProjectMembersDialog.vue'
+import RenameProjectDialog from '@/components/billing/RenameProjectDialog.vue'
+import StopAllServersRow from '@/components/billing/StopAllServersRow.vue'
+import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { usePayingFor } from '@/composables/usePayingFor'
+import { useProjects } from '@/composables/useProjects'
+import { money } from '@/lib/format'
 import { subscriptionTitle } from '@/lib/subscriptions'
 
 const VISIBLE = 5
 
-defineEmits<{ open: [] }>()
+defineEmits<{ open: []; openProjects: [] }>()
+
 const router = useRouter()
 const { canManageBilling } = useCapabilities()
+
 const {
 	rows,
 	loading,
 	currency,
+	total,
 	busy,
 	pendingPause,
 	pendingAssignProject,
@@ -30,64 +38,117 @@ const {
 	onAssignedProject,
 } = usePayingFor()
 
+const {
+	projects,
+	pendingRename,
+	pendingManageMembers,
+	manageMembersOpen,
+	reloadProjects,
+} = useProjects()
+
+const showCreate = ref(false)
+const projectCount = computed(() => projects.data?.length ?? 0)
+
 const visible = computed(() => rows.value.slice(0, VISIBLE))
 const hidden = computed(() => Math.max(0, rows.value.length - VISIBLE))
-
-function goToObjectStorage(): void {
-	router.push({ name: 'ObjectStorage' })
-}
+const goToObjectStorage = () => router.push({ name: 'ObjectStorage' })
 </script>
 
 <template>
-	<BillingCard title="Subscriptions">
-		<div v-if="loading" class="space-y-3 py-1">
-			<div v-for="i in 3" :key="i" class="flex items-center gap-3">
-				<Skeleton class="size-4 shrink-0 rounded-4" />
-				<div class="flex-1 space-y-1.5">
-					<Skeleton class="h-3.5 w-40 rounded-4" />
-					<Skeleton class="h-3 w-28 rounded-4" />
-				</div>
-			</div>
-		</div>
+	<section
+		aria-labelledby="subscriptions-heading"
+		class="overflow-hidden rounded-6 border border-outline-gray-1 bg-surface-base"
+	>
+		<header class="flex items-center justify-between gap-3 px-4 py-3">
+			<h2 id="subscriptions-heading" class="text-base-semibold text-ink-gray-8">
+				Subscriptions
+				<Badge v-if="rows.length" class="ml-1" :label="String(rows.length)" />
+			</h2>
+			<span class="text-sm tabular-nums text-ink-gray-5">
+				{{ money(total, currency) }}
+				this cycle
+			</span>
+		</header>
 
-		<template v-else-if="rows.length">
-			<div class="divide-y divide-outline-gray-1">
-				<PayingForRow
-					v-for="row in visible"
-					:key="row.id"
-					:row="row"
-					:currency="currency"
-					:can-manage="canManageBilling"
-					:busy="busy"
-					@open="openServer"
-					@pause="askPause"
-					@resume="onResume"
-					@assign-project="askAssignProject"
+		<LoadingText v-if="loading" :lines="3" class="px-4 pb-5" />
+
+		<div v-else>
+			<div
+				v-if="!rows.length"
+				class="flex flex-wrap items-center justify-between gap-3 border-t border-outline-gray-1 px-4 py-4"
+			>
+				<p class="text-p-sm text-ink-gray-5">
+					Servers and metered services you subscribe to show here with what they
+					cost.
+				</p>
+				<Button
+					v-if="canManageBilling"
+					label="Open Object Storage"
+					@click="goToObjectStorage"
 				/>
 			</div>
-			<Button
+
+			<PayingForTable
+				v-if="rows.length"
+				:rows="visible"
+				:currency="currency"
+				:can-manage="canManageBilling"
+				:busy="busy"
+				@open="openServer"
+				@pause="askPause"
+				@resume="onResume"
+				@assign-project="askAssignProject"
+			/>
+			<button
 				v-if="hidden"
-				variant="ghost"
-				class="-mb-2 -ml-2 mt-2"
-				:label="`View all ${rows.length}`"
+				type="button"
+				class="flex w-full items-center gap-1 border-t border-outline-gray-1 px-4 py-2.5 text-sm text-ink-gray-5 transition-colors hover:bg-surface-gray-1 hover:text-ink-gray-8"
 				@click="$emit('open')"
 			>
-				<template #suffix>
-					<span class="lucide-chevron-right size-4" aria-hidden="true" />
-				</template>
-			</Button>
-		</template>
+				View all {{ rows.length }}
+				<span class="lucide-arrow-right size-3.5" aria-hidden="true" />
+			</button>
+			<div
+				class="flex flex-wrap items-center justify-between gap-3 border-t border-outline-gray-1 px-4 py-3"
+			>
+				<div class="flex min-w-0 items-center gap-2.5">
+					<span
+						class="lucide-layers size-4 shrink-0 text-ink-gray-5"
+						aria-hidden="true"
+					/>
+					<span class="text-base text-ink-gray-9">Projects</span>
+					<span class="text-p-sm text-ink-gray-5">
+						Group invoice costs by customer or environment.
+					</span>
+				</div>
+				<div class="flex items-center gap-2">
+					<Button
+						v-if="projectCount"
+						variant="outline"
+						label="View all"
+						@click="$emit('openProjects')"
+					/>
+					<Button
+						v-if="canManageBilling"
+						icon-left="lucide-plus"
+						label="New project"
+						@click="showCreate = true"
+					/>
+				</div>
+			</div>
+			<StopAllServersRow />
+		</div>
 
-		<EmptyState
-			v-else
-			icon="lucide-server"
-			title="Nothing being billed"
-			description="Servers and metered services you're subscribed to will show here with what they cost."
-		>
-			<template v-if="canManageBilling" #action>
-				<Button label="Open Object Storage" @click="goToObjectStorage" />
-			</template>
-		</EmptyState>
+		<CreateProjectDialog v-model="showCreate" @created="reloadProjects" />
+		<RenameProjectDialog
+			v-model:project="pendingRename"
+			@saved="reloadProjects"
+		/>
+		<ProjectMembersDialog
+			v-model:open="manageMembersOpen"
+			:project="pendingManageMembers"
+			@changed="reloadProjects"
+		/>
 
 		<ConfirmDialog
 			v-model:target="pendingPause"
@@ -101,5 +162,5 @@ function goToObjectStorage(): void {
 			v-model:subscription="pendingAssignProject"
 			@assigned="onAssignedProject"
 		/>
-	</BillingCard>
+	</section>
 </template>

@@ -85,21 +85,23 @@ function submitSignUp() {
 
 				<template v-else-if="step === 'accept'">
 					<ErrorMessage v-if="error" :message="error" />
-					<Button
-						class="w-full"
-						size="md"
-						variant="solid"
-						label="Accept and join"
-						:loading="busy"
-						@click="accept"
-					/>
-					<Button
-						class="w-full"
-						size="md"
-						label="Decline"
-						:disabled="busy"
-						@click="decline"
-					/>
+					<div class="flex flex-col gap-2">
+						<Button
+							class="w-full"
+							size="md"
+							variant="solid"
+							label="Accept and join"
+							:loading="busy"
+							@click="accept"
+						/>
+						<Button
+							class="w-full"
+							size="md"
+							label="Decline"
+							:disabled="busy"
+							@click="decline"
+						/>
+					</div>
 					<p class="text-center text-p-sm text-ink-gray-5">
 						Expires {{ formatDate(invitation.expires_on) }}
 					</p>

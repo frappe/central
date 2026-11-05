@@ -4,24 +4,21 @@ import {
 	Dropdown,
 	KeyboardShortcut,
 	Sidebar,
-	SidebarHeader,
 	SidebarItem,
 	SidebarLabel,
 	useKeyboardShortcut,
 } from 'frappe-ui'
 import { computed, ref } from 'vue'
 import { useRoute } from 'vue-router'
-import frappeCloudLogo from '@/assets/fc-logo.svg'
+import TeamSwitcher from '@/components/team/TeamSwitcher.vue'
 import { useAppMenu } from '@/composables/useAppMenu'
 import { useIsMobile } from '@/composables/useIsMobile'
 import { useMyProfile } from '@/composables/useMyProfile'
-import { useSession } from '@/composables/useSession'
 import { isMac } from '@/lib/platform'
 import { sidebarSections } from './list'
 
 const isMobile = useIsMobile()
-const { activeTeamLabel } = useSession()
-const { currentUser, headerMenuItems, footerMenuItems } = useAppMenu()
+const { currentUser, footerMenuItems } = useAppMenu()
 const { profile } = useMyProfile()
 
 const route = useRoute()
@@ -73,13 +70,7 @@ const toggleSection = (label: string) => {
 		class="border-r"
 		:class="isMobile ? '!w-full !border-r-0 bg-transparent pb-8' : ''"
 	>
-		<SidebarHeader
-			v-if="!isMobile"
-			title="Frappe Cloud"
-			:subtitle="activeTeamLabel"
-			:logo="frappeCloudLogo"
-			:menu-items="headerMenuItems"
-		/>
+		<TeamSwitcher :collapsed="sidebarCollapsed && !isMobile" />
 
 		<nav class="flex-1 overflow-y-auto px-2 pt-2">
 			<template
@@ -115,7 +106,7 @@ const toggleSection = (label: string) => {
 						<SidebarItem
 							v-else
 							:icon="item.icon"
-							:to="item.to"
+							:route="item.to"
 							:onclick="item.onClick"
 							class="mb-0.5"
 							:class="[item.class, isMobile ? '!h-10' : '']"
@@ -136,7 +127,7 @@ const toggleSection = (label: string) => {
 		</nav>
 
 		<!-- user profile dropdown -->
-		<div class="mt-auto px-2 pb-2" v-if="!isMobile">
+		<div class="mt-auto px-2 pb-2">
 			<Dropdown :options="footerMenuItems" side="top" match-trigger-width>
 				<template #default="{ open }">
 					<!-- No transition on the button itself: `duration-*` alone animates
@@ -170,12 +161,12 @@ const toggleSection = (label: string) => {
 									: 'ml-2 w-auto opacity-100'
 							"
 						>
-							<div class="truncate text-sm leading-4 text-ink-gray-8">
+							<div class="truncate text-sm text-ink-gray-8">
 								{{ profile?.full_name || currentUser }}
 							</div>
 							<div
 								v-if="profile?.full_name"
-								class="truncate text-xs leading-4 text-ink-gray-5"
+								class="truncate text-xs text-ink-gray-5"
 							>
 								{{ currentUser }}
 							</div>
@@ -191,11 +182,13 @@ const toggleSection = (label: string) => {
 		</div>
 	</Sidebar>
 
-	<!-- The collapse knob sits at the middle of the sidebar edge and never moves. It shows
-	     while the edge is hovered or the knob has keyboard focus. -->
-	<div v-if="!isMobile" class="group relative z-10 -mx-3 w-6 shrink-0">
+	<!-- Only the collapse button captures input. Its container overlaps navigation rows. -->
+	<div
+		v-if="!isMobile"
+		class="pointer-events-none relative z-10 -mx-3 w-6 shrink-0"
+	>
 		<button
-			class="absolute left-1/2 top-1/2 grid size-6 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border border-outline-gray-2 bg-surface-elevation-1 text-ink-gray-6 opacity-0 shadow-sm transition-opacity duration-150 hover:text-ink-gray-8 focus-visible:opacity-100 group-hover:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-outline-gray-3"
+			class="pointer-events-auto absolute left-1/2 top-1/2 grid size-6 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border border-outline-gray-2 bg-surface-elevation-1 text-ink-gray-6 opacity-0 shadow-sm transition-opacity duration-150 hover:opacity-100 hover:text-ink-gray-8 focus-visible:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-outline-gray-3"
 			:aria-label="toggleLabel"
 			:title="toggleLabel"
 			@click="sidebarCollapsed = !sidebarCollapsed"

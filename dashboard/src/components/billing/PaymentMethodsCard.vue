@@ -6,6 +6,7 @@ import AddMethodDialog from '@/components/AddMethodDialog.vue'
 import BillingCard from '@/components/billing/BillingCard.vue'
 import PaymentMethodRowActions from '@/components/billing/PaymentMethodRowActions.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
+import TopupDialog from '@/components/TopupDialog.vue'
 import { useBillingOverview } from '@/composables/useBillingOverview'
 import { useBillingSetup } from '@/composables/useBillingSetup'
 import { useCapabilities } from '@/composables/useCapabilities'
@@ -37,9 +38,14 @@ import type { CollectionStatus, PaymentMethod } from '@/types/billing'
 // The card owns the calls and the destructive remove confirm (a local Dialog, since
 // this app mounts no global <Dialogs /> container).
 const { activeTeam } = useSession()
-const { methods, credit, currency, reloadMethods } = useBillingOverview()
+const { methods, credit, currency, reloadMethods, reloadMoney } =
+	useBillingOverview()
 const { canManageBilling } = useCapabilities()
-const { requireSetup } = useBillingSetup()
+const { complete: isSetupComplete } = useBillingSetup()
+// Until billing details are saved, the page's setup banner is the only way to pay.
+const canChangeMethods = computed(
+	() => canManageBilling.value && isSetupComplete.value,
+)
 
 const ordered = computed(() => methods.data ?? [])
 const loading = computed(() => methods.loading && !methods.data)
@@ -191,113 +197,125 @@ async function move(pm: PaymentMethod, delta: number): Promise<void> {
 const showAdd = ref(false)
 const removeError = ref('')
 watch(pendingRemove, () => (removeError.value = ''))
-function onAdd(): void {
-	if (requireSetup()) showAdd.value = true
-}
+const showTopup = ref(false)
 </script>
 
 <template>
 	<BillingCard
 		title="Payment methods"
-		title-info="Settled in this order: credits first, then each method until one goes through."
+		description="Invoices use credits first, then payment methods in the order shown."
+		flat
 	>
-		<template v-if="canManageBilling" #action>
-			<Button
-				variant="ghost"
-				size="xs"
-				label="Add payment method"
-				@click="onAdd"
-			>
-				<template #icon>
-					<span class="lucide-plus size-4" aria-hidden="true" />
-				</template>
-			</Button>
-		</template>
-
-		<div v-if="loading" class="space-y-3 py-1">
-			<div v-for="i in 2" :key="i" class="flex items-center gap-3">
-				<Skeleton class="size-4 shrink-0 rounded-4" />
-				<div class="flex-1 space-y-1.5">
-					<Skeleton class="h-3.5 w-40 rounded-4" />
-					<Skeleton class="h-3 w-28 rounded-4" />
-				</div>
-			</div>
+		<div v-if="loading" class="flex flex-col gap-2.5">
+			<Skeleton v-for="i in 2" :key="i" class="h-14 rounded-5" />
 		</div>
 
-		<template v-else>
-			<div class="divide-y divide-outline-gray-1">
-				<div class="flex items-center justify-between gap-3 py-3">
-					<div class="flex min-w-0 items-start gap-2">
-						<span
-							class="lucide-wallet mt-0.5 size-4 shrink-0 text-ink-gray-5"
-							aria-hidden="true"
-						/>
-						<div class="min-w-0">
-							<span class="truncate text-base-medium text-ink-gray-9">
-								Prepaid credits
-							</span>
-							<div class="truncate text-p-sm text-ink-gray-5">
-								Balance {{ money(balance, currency) }}
-							</div>
-						</div>
-					</div>
-					<div class="flex shrink-0 items-center gap-1">
-						<span v-if="hasCredits" class="text-sm-medium text-ink-gray-9">
-							Primary
-						</span>
-						<!-- Holds the column so this row lines up with ones that have a menu. -->
-						<span class="size-7" aria-hidden="true" />
-					</div>
-				</div>
-				<div
-					v-for="(pm, idx) in ordered"
-					:key="pm.name"
-					class="flex items-center justify-between gap-3 py-3"
+		<ul v-else class="flex flex-col gap-2.5">
+			<li
+				class="flex items-center gap-3 rounded-5 border border-outline-gray-1 p-3"
+			>
+				<span
+					class="grid size-8 shrink-0 place-items-center rounded-4 bg-surface-gray-2"
 				>
-					<div class="flex min-w-0 items-start gap-2">
-						<span
-							:class="methodIcon(pm)"
-							class="mt-0.5 size-4 shrink-0 text-ink-gray-5"
-							aria-hidden="true"
-						/>
-						<div class="min-w-0">
-							<div class="flex items-center gap-2">
-								<span class="truncate text-base-medium text-ink-gray-9">
-									{{ pm.display_label || pm.method_type }}
-								</span>
-								<Badge
-									v-if="pm.reauth_required"
-									theme="amber"
-									label="Re-auth needed"
-								/>
-								<Badge v-else-if="pm.status !== 'Active'" :label="pm.status" />
-							</div>
-							<div v-if="detail(pm)" class="truncate text-p-sm text-ink-gray-5">
-								{{ detail(pm) }}
-							</div>
-						</div>
-					</div>
-					<div class="flex shrink-0 items-center gap-1">
-						<span class="text-sm-medium text-ink-gray-9">
-							{{ methodLabel(idx) }}
-						</span>
-						<PaymentMethodRowActions
-							:method="pm"
-							:can-manage="canManageBilling"
-							:is-primary="isPrimaryRow(idx)"
-							:can-promote="!hasCredits"
-							:is-first="idx === 0"
-							:is-last="idx === ordered.length - 1"
-							:busy="busy === pm.name"
-							@make-default="makeDefault"
-							@move-up="(m) => move(m, -1)"
-							@move-down="(m) => move(m, 1)"
-							@remove="pendingRemove = $event"
-						/>
+					<span
+						class="lucide-wallet size-4 text-ink-gray-6"
+						aria-hidden="true"
+					/>
+				</span>
+				<div class="min-w-0 flex-1">
+					<div class="text-base text-ink-gray-9">Prepaid credits</div>
+					<div class="mt-0.5 text-sm tabular-nums text-ink-gray-5">
+						{{ money(balance, currency) }}
+						balance
 					</div>
 				</div>
-			</div>
-		</template>
+				<span v-if="hasCredits" class="text-sm text-ink-gray-5"> Primary </span>
+				<Button
+					v-if="canChangeMethods"
+					size="sm"
+					label="Top up"
+					@click="showTopup = true"
+				/>
+			</li>
+
+			<li
+				v-for="(pm, idx) in ordered"
+				:key="pm.name"
+				class="flex items-center gap-3 rounded-5 border border-outline-gray-1 p-3"
+			>
+				<span
+					class="grid size-8 shrink-0 place-items-center rounded-4 bg-surface-gray-2"
+				>
+					<span
+						:class="methodIcon(pm)"
+						class="size-4 text-ink-gray-6"
+						aria-hidden="true"
+					/>
+				</span>
+				<div class="min-w-0 flex-1">
+					<div class="flex items-center gap-2">
+						<span class="truncate text-base text-ink-gray-9">
+							{{ pm.display_label || pm.method_type }}
+						</span>
+						<Badge
+							v-if="pm.reauth_required"
+							theme="amber"
+							label="Re-auth needed"
+						/>
+						<Badge v-else-if="pm.status !== 'Active'" :label="pm.status" />
+					</div>
+					<div
+						v-if="detail(pm)"
+						class="mt-0.5 truncate text-sm text-ink-gray-5"
+					>
+						{{ detail(pm) }}
+					</div>
+				</div>
+				<span class="text-sm text-ink-gray-5">
+					{{ methodLabel(idx) }}
+				</span>
+				<PaymentMethodRowActions
+					:method="pm"
+					:can-manage="canManageBilling"
+					:is-primary="isPrimaryRow(idx)"
+					:can-promote="!hasCredits"
+					:is-first="idx === 0"
+					:is-last="idx === ordered.length - 1"
+					:busy="busy === pm.name"
+					@make-default="makeDefault"
+					@move-up="(m) => move(m, -1)"
+					@move-down="(m) => move(m, 1)"
+					@remove="pendingRemove = $event"
+				/>
+			</li>
+
+			<li v-if="canChangeMethods">
+				<button
+					type="button"
+					class="flex w-full items-center gap-3 rounded-5 border border-dashed border-outline-gray-2 p-3 text-left transition-colors hover:bg-surface-gray-1"
+					@click="showAdd = true"
+				>
+					<span
+						class="grid size-8 shrink-0 place-items-center rounded-4 border border-dashed border-outline-gray-2"
+					>
+						<span
+							class="lucide-plus size-3.5 text-ink-gray-5"
+							aria-hidden="true"
+						/>
+					</span>
+					<span class="min-w-0 flex-1">
+						<span class="block text-base text-ink-gray-9">
+							{{ ordered.length ? 'Add another card' : 'Add a card' }}
+						</span>
+						<span class="mt-0.5 block text-sm text-ink-gray-5">
+							{{ ordered.length
+									? 'Used if the ones above fail'
+									: 'Pays invoices automatically on the due date' }}
+						</span>
+					</span>
+				</button>
+			</li>
+		</ul>
 
 		<ConfirmDialog
 			v-model:target="pendingRemove"
@@ -310,5 +328,6 @@ function onAdd(): void {
 			@confirm="confirmRemove"
 		/>
 		<AddMethodDialog v-model="showAdd" @done="reloadMethods" />
+		<TopupDialog v-model="showTopup" :currency="currency" @done="reloadMoney" />
 	</BillingCard>
 </template>

@@ -1,18 +1,3 @@
-"""Customer-safe errors and operator diagnostics for console APIs.
-
-A failed action must tell the user what happened and what to do about it — never a
-FrappeException or a raw traceback. Every server-action failure is shaped into a small
-envelope ({code, title, message, remediation, retriable}) built from `ERROR_CATALOG`,
-and carried to the client on the message it raises (Frappe serializes each message-log
-entry, extra keys included, into `_server_messages`). The stable `code` is what the UI
-switches on; `message`/`remediation` are the words a person reads (see the Wix "write
-better error messages" guidance: plain language, cause, reassurance, next step).
-
-Wire this at the two ends of the Server flow: `throw_action_error` where Central raises a
-known failure, and the `@handle_resource_operation` decorator on the whitelisted endpoints so
-nothing, including an unexpected bug, reaches the user as a bare exception.
-"""
-
 from __future__ import annotations
 
 import functools
@@ -152,9 +137,33 @@ ERROR_CATALOG: dict[str, dict] = {
 		"retriable": False,
 	},
 	"VALIDATION_ERROR": {
-		"title": "Please check and try again",
-		"message": "We couldn't complete that action.",
-		"remediation": "",
+		"title": "Check the request details",
+		"message": "The request could not be completed with these details.",
+		"remediation": "Review the information you entered. Contact support if you cannot resolve the problem.",
+		"retriable": False,
+	},
+	"PAYMENT_METHOD_REQUIRED": {
+		"title": "Add a payment method to create servers",
+		"message": "Your credit does not cover this server, and your team has no payment method.",
+		"remediation": "Open Billing to add your billing details and a payment method. Ask a team admin if you cannot manage billing.",
+		"retriable": False,
+	},
+	"PAYMENT_OVERDUE": {
+		"title": "Pay what your team owes to continue",
+		"message": "Your team has an unpaid invoice that is overdue, or its account is past due or suspended.",
+		"remediation": "Open Billing and pay the unpaid invoice. Ask a team admin if you cannot manage billing.",
+		"retriable": False,
+	},
+	"TRIAL_IN_PROGRESS": {
+		"title": "You already have a free trial",
+		"message": "Your {product} trial at {address} is still open.",
+		"remediation": "Use that site, or delete it to start a new trial.",
+		"retriable": False,
+	},
+	"TRUST_TIER_LIMIT": {
+		"title": "Your trust tier limit is reached",
+		"message": "Your trust tier allows {limit} servers, and your team already has {count}.",
+		"remediation": "Terminate a server you no longer need, or contact support to review your trust tier.",
 		"retriable": False,
 	},
 	"MAILBOX_POOL_EMPTY": {
@@ -237,7 +246,8 @@ def to_error_response(exc: Exception) -> dict:
 
 
 def handle_resource_operation(func):
-	"""Return customer-safe errors from a resource endpoint."""
+	"""Return customer-safe errors from a resource endpoint: a catalog envelope with a stable
+	`code` the console switches on, never a bare exception or a traceback."""
 
 	@functools.wraps(func)
 	def wrapper(*args, **kwargs):
@@ -250,7 +260,8 @@ def handle_resource_operation(func):
 			envelope = to_error_response(exc)
 			# The user sees only generic copy, so keep the traceback for the operator.
 			if envelope["code"] == "UNEXPECTED":
-				frappe.log_error(title="Unexpected server-action error")
+				# No frame locals: a remote call's frames hold its bearer token.
+				frappe.log_error(title="Unexpected server-action error", message=frappe.get_traceback())
 			_reraise_with_envelope(exc, envelope)
 
 	return wrapper

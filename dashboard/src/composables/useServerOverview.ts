@@ -57,7 +57,7 @@ export const useServerOverview = (
 		metricsCall.submit({
 			team: activeTeam.value,
 			resource_id: resourceId.value,
-			period: isComplete ? period : '24h',
+			period: isComplete ? period : '1h',
 			...(isCustom &&
 				isComplete && { start: start ?? undefined, end: end ?? undefined }),
 		})

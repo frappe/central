@@ -2,8 +2,7 @@ import { useCall } from 'frappe-ui'
 import { computed } from 'vue'
 import { API, method } from '@/api/methods'
 import { useBillingOverview } from '@/composables/useBillingOverview'
-import { useSession } from '@/composables/useSession'
-import { whenTeamReady } from '@/composables/useTeamScope'
+import { teamParams, whenTeamReady } from '@/composables/useTeamScope'
 import { money } from '@/lib/format'
 import type { TierLevel, TrustTier } from '@/types/billing'
 
@@ -11,7 +10,8 @@ interface Gate {
 	label: string
 	done: boolean
 	ratio: number
-	detail: string
+	have: string
+	need: string
 }
 
 interface Requirement {
@@ -21,16 +21,16 @@ interface Requirement {
 
 type RungState = 'reached' | 'current' | 'locked'
 
+const tier = useCall<TrustTier, { team: string }>({
+	url: method(API.trustTier),
+	params: teamParams,
+	immediate: false,
+	refetch: true,
+})
+whenTeamReady(() => tier.reload())
+
 export function useSpendingLimits() {
-	const { activeTeam } = useSession()
 	const { forecast, credit, methods } = useBillingOverview()
-	const tier = useCall<TrustTier, { team: string }>({
-		url: method(API.trustTier),
-		params: () => ({ team: activeTeam.value! }),
-		immediate: false,
-		refetch: true,
-	})
-	whenTeamReady(() => tier.reload())
 
 	const currency = computed(() => tier.data?.currency || 'INR')
 	const current = computed(() => tier.data?.current)
@@ -93,7 +93,8 @@ export function useSpendingLimits() {
 				label,
 				done,
 				ratio: Math.min(1, need ? have / need : 1),
-				detail: `${format(done ? need : have)} of ${format(need)}`,
+				have: format(done ? need : have),
+				need: format(need),
 			})
 		}
 
@@ -108,7 +109,7 @@ export function useSpendingLimits() {
 				'Paid to date',
 				Number(values.cumulative_paid ?? 0),
 				Number(level.min_cumulative_paid),
-				(value) => money(value, currency.value),
+				(value) => money(value, currency.value, { trimTrailingZeros: true }),
 			)
 		return result
 	})
@@ -122,7 +123,7 @@ export function useSpendingLimits() {
 			)
 			return [
 				{
-					text: 'Payment method added or prepaid credits available',
+					text: 'Card or prepaid credits',
 					met: hasChargeableMethod || Number(credit.data?.balance ?? 0) > 0,
 				},
 			]
@@ -132,13 +133,13 @@ export function useSpendingLimits() {
 		if (level.min_paid_invoices) {
 			const count = level.min_paid_invoices
 			requirements.push({
-				text: `≥ ${count} paid invoice${count === 1 ? '' : 's'}`,
+				text: `${count} paid invoice${count === 1 ? '' : 's'}`,
 				met: paid >= count,
 			})
 		}
 		if (level.min_cumulative_paid)
 			requirements.push({
-				text: `≥ ${money(level.min_cumulative_paid, currency.value)} paid to date`,
+				text: `${money(level.min_cumulative_paid, currency.value, { trimTrailingZeros: true })} paid`,
 				met: cumulative >= Number(level.min_cumulative_paid),
 			})
 		return requirements.length

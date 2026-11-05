@@ -131,32 +131,25 @@ function memberRank(row: RosterRow): number {
 
 const columns = computed<ListViewColumn<RosterRow>[]>(() => [
 	{
-		id: 'member',
-		header: 'Member',
-		accessorFn: (row) => `${row.name} ${row.member?.user ?? ''}`,
-		meta: { cellClass: 'truncate' },
+		key: 'member',
+		label: 'Member',
+		value: (row) => `${row.name} ${row.member?.user ?? ''}`,
+		sortable: true,
 	},
 	{
-		id: 'access',
-		header: 'Access',
-		accessorFn: (row) =>
+		key: 'access',
+		label: 'Access',
+		value: (row) =>
 			row.roles
 				.map((grant) =>
 					roleOnResourceLabel(roleLabel(grant.role), grant, registry.value),
 				)
 				.join(', '),
-		sortingFn: (a, b) =>
-			memberRank(a.original) - memberRank(b.original) ||
-			roleNames(a.original).localeCompare(roleNames(b.original)),
-		meta: { cellClass: 'truncate' },
+		sortable: true,
+		compare: (a, b) =>
+			memberRank(a) - memberRank(b) || roleNames(a).localeCompare(roleNames(b)),
 	},
-	{
-		id: 'actions',
-		header: '',
-		enableSorting: false,
-		size: 1,
-		meta: { align: 'end' },
-	},
+	{ key: 'actions', label: '', width: '2.5rem', align: 'end' },
 ])
 
 const roleFilters = computed<ListViewFilter[]>(() => [
@@ -215,7 +208,9 @@ const roleFilters = computed<ListViewFilter[]>(() => [
 				/>
 				<div class="min-w-0">
 					<div class="flex items-center gap-2">
-						<p class="truncate font-medium text-ink-gray-9">{{ row.name }}</p>
+						<p class="truncate text-sm-medium text-ink-gray-9">
+							{{ row.name }}
+						</p>
 						<Badge v-if="row.invite" theme="amber" label="Invited" />
 						<Badge
 							v-else-if="row.member?.status === 'Suspended'"
@@ -236,7 +231,7 @@ const roleFilters = computed<ListViewFilter[]>(() => [
 					class="flex min-w-0 items-center gap-2"
 				>
 					<p class="truncate text-p-sm text-ink-gray-8">
-						<span class="font-medium">{{ roleLabel(grant.role) }}</span>
+						<span class="text-p-sm-medium">{{ roleLabel(grant.role) }}</span>
 						<span class="text-ink-gray-5">
 							on {{ resourceScopeLabel(grant, registry) }}
 						</span>

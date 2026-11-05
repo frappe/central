@@ -12,6 +12,7 @@
   "enabled",
   "available_in",
   "presentation_section",
+  "display_order",
   "logo",
   "description",
   "selection_section",
@@ -57,6 +58,15 @@
    "label": "Presentation"
   },
   {
+   "default": "0",
+   "description": "Offerings show in ascending order. Equal values sort by display name.",
+   "fieldname": "display_order",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Display Order",
+   "non_negative": 1
+  },
+  {
    "fieldname": "logo",
    "fieldtype": "Attach Image",
    "label": "Logo"
@@ -83,7 +93,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-10-10 10:27:25.616292",
+ "modified": "2026-11-02 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Infrastructure",
  "name": "Image Offering",
@@ -105,7 +115,7 @@
  "row_format": "Dynamic",
  "rows_threshold_for_grid_search": 20,
  "search_fields": "title,offering_key",
- "sort_field": "title",
+ "sort_field": "display_order",
  "sort_order": "ASC",
  "states": [],
  "title_field": "title",

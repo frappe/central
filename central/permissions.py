@@ -1,6 +1,6 @@
-from __future__ import annotations
-
 import frappe
+from frappe import _
+from frappe.realtime import has_permission as has_realtime_permission
 
 from central.iam import (
 	ALL_SERVERS,
@@ -10,6 +10,7 @@ from central.iam import (
 	get_user_team_names,
 	get_user_team_names_with_capability,
 	is_active_team_member,
+	is_staff_read,
 	user_has_operator_bypass,
 )
 
@@ -20,30 +21,45 @@ def _team_filter(user: str) -> str:
 	teams = get_user_team_names(user)
 	if not teams:
 		return "1 = 0"
+
 	return f"`tabTeam`.`name` in ({_escape_values(teams)})"
 
 
 def team_query_conditions(user: str | None = None) -> str:
+	"""1. An operator sees every team.
+	2. A Staff Viewer sees every team.
+	3. A user sees each team they are an active member of, and no other."""
 	user = user or frappe.session.user
-	if user_has_operator_bypass(user):
+	if user_has_operator_bypass(user) or is_staff_read(user, "read"):
 		return ""
+
 	return _team_filter(user)
 
 
 def team_has_permission(doc, user: str | None = None, ptype: str | None = None, **kwargs) -> bool:
+	"""1. An operator may do anything.
+	2. A Staff Viewer may read every team.
+	3. Create: a new team may hold only its creator, as Owner. Others join by invitation.
+	4. Write: `team:edit` or `team:manage_members`.
+	5. Delete: `team:delete`.
+	6. Read: an active member."""
 	user = user or frappe.session.user
-	if user_has_operator_bypass(user):
+	if user_has_operator_bypass(user) or is_staff_read(user, ptype):
 		return True
 	if ptype == "create":
-		return True
+		return all(member.user == user and member.role == "Owner" for member in doc.members)
 	if ptype == "write":
 		return can(user, doc.name, "team:edit") or can(user, doc.name, "team:manage_members")
 	if ptype == "delete":
 		return can(user, doc.name, "team:delete")
+
 	return doc.name in get_user_team_names(user)
 
 
 def team_role_query_conditions(user: str | None = None) -> str:
+	"""1. An operator sees every role.
+	2. A user sees the system roles.
+	3. A user sees the custom roles of each team they are a member of."""
 	user = user or frappe.session.user
 	if user_has_operator_bypass(user):
 		return ""
@@ -56,13 +72,21 @@ def team_role_query_conditions(user: str | None = None) -> str:
 
 
 def team_role_has_permission(doc, user: str | None = None, ptype: str | None = None, **kwargs) -> bool:
+	"""1. An operator may do anything.
+	2. A system role is allowed to everyone.
+	3. A custom role is allowed to members of its team. Writes go through the API, which
+	   checks `team:manage_members`, and the DocType grants customers no write."""
 	user = user or frappe.session.user
 	if user_has_operator_bypass(user):
 		return True
+
 	return bool(doc.is_system) or doc.team in get_user_team_names(user)
 
 
 def team_invitation_query_conditions(user: str | None = None) -> str:
+	"""1. An operator sees every invitation.
+	2. A user sees invitations addressed to their email.
+	3. A user sees the invitations of each team where they hold `team:manage_members`."""
 	user = user or frappe.session.user
 	if user_has_operator_bypass(user):
 		return ""
@@ -71,31 +95,40 @@ def team_invitation_query_conditions(user: str | None = None) -> str:
 	teams = get_user_team_names_with_capability(user, "team:manage_members")
 	if teams:
 		conditions.append(f"`tabTeam Invitation`.`team` in ({_escape_values(teams)})")
+
 	return f"({' or '.join(conditions)})"
 
 
 def team_invitation_has_permission(doc, user: str | None = None, ptype: str | None = None, **kwargs) -> bool:
+	"""1. An operator may do anything.
+	2. Create: `team:manage_members` on the team.
+	3. Anything else: the invitee, or `team:manage_members` on the team."""
 	user = user or frappe.session.user
 	if user_has_operator_bypass(user):
 		return True
 	if ptype == "create":
 		return can(user, doc.team, "team:manage_members")
+
 	return doc.email == user or can(user, doc.team, "team:manage_members")
 
 
 def server_query_conditions(user: str | None = None) -> str:
 	"""1. A System Manager sees every server.
-	2. A user sees every server of a team where the user holds server:view team-wide.
-	3. A user sees each server that a scoped grant with server:view names.
-	4. A user without such a grant sees no server."""
-	return _server_scoped_query_conditions("Virtual Machine", "name", user)
+	2. A Staff Viewer sees every server.
+	3. A user sees every server of a team where the user holds server:view team-wide.
+	4. A user sees each server that a scoped grant with server:view names.
+	5. A user without such a grant sees no server."""
+	return _staff_readable_query_conditions("Virtual Machine", "name", user)
 
 
 def server_has_permission(doc, user: str | None = None, ptype: str | None = None, **kwargs) -> bool:
 	"""1. A System Manager has every permission.
-	2. Read needs server:view team-wide or on this server.
-	3. Create, write, and delete are denied. Customers change servers through the API."""
-	return _server_scoped_has_permission(doc, "name", user, ptype)
+	2. A Staff Viewer may read every server.
+	3. Read needs server:view team-wide or on this server.
+	4. Create, write, and delete are denied. Customers change servers through the API."""
+	return is_staff_read(user or frappe.session.user, ptype) or _server_scoped_has_permission(
+		doc, "name", user, ptype
+	)
 
 
 def team_ssh_key_query_conditions(user: str | None = None) -> str:
@@ -115,7 +148,31 @@ def team_ssh_key_has_permission(doc, user: str | None = None, ptype: str | None 
 	user = user or frappe.session.user
 	if ptype in MUTATING_PERMISSION_TYPES or user_has_operator_bypass(user):
 		return _team_field_has_permission(doc, (), ("server:ssh-key",), user, ptype)
+
 	return bool(doc.team) and can_on_any_server(user, doc.team, "server:view")
+
+
+def wireguard_device_query_conditions(user: str | None = None) -> str:
+	"""1. Operators see all devices.
+	2. Users see devices in teams where they hold server:wireguard.
+	3. Other users see no devices.
+	"""
+	return _team_field_query_conditions("WireGuard Device", "server:wireguard", user)
+
+
+def wireguard_device_has_permission(doc, user: str | None = None, ptype: str | None = None, **kwargs) -> bool:
+	"""1. Operators may manage devices.
+	2. Members with team-wide server:wireguard may read and add devices and remove their own.
+	3. Members with team:manage_members may also remove any device of the team.
+	4. Only operators may change a device after it is added.
+	"""
+	user = user or frappe.session.user
+	if user_has_operator_bypass(user):
+		return True
+	if not doc.team or not can(user, doc.team, "server:wireguard") or ptype == "write":
+		return False
+
+	return ptype != "delete" or doc.added_by == user or can(user, doc.team, "team:manage_members")
 
 
 def resource_action_query_conditions(user: str | None = None) -> str:
@@ -136,16 +193,20 @@ def resource_action_has_permission(doc, user: str | None = None, ptype: str | No
 
 def site_query_conditions(user: str | None = None) -> str:
 	"""1. A System Manager sees every site.
-	2. A user sees the sites of a team where the user holds server:view team-wide.
-	3. A user sees the site on each server that a scoped grant names."""
-	return _server_scoped_query_conditions("Site", "server", user)
+	2. A Staff Viewer sees every site.
+	3. A user sees the sites of a team where the user holds server:view team-wide.
+	4. A user sees the site on each server that a scoped grant names."""
+	return _staff_readable_query_conditions("Site", "server", user)
 
 
 def site_has_permission(doc, user: str | None = None, ptype: str | None = None, **kwargs) -> bool:
 	"""1. A System Manager has every permission.
-	2. Read needs server:view team-wide or on the site's server.
-	3. Create, write, and delete are denied. Customers change sites through the API."""
-	return _server_scoped_has_permission(doc, "server", user, ptype)
+	2. A Staff Viewer may read every site.
+	3. Read needs server:view team-wide or on the site's server.
+	4. Create, write, and delete are denied. Customers change sites through the API."""
+	return is_staff_read(user or frappe.session.user, ptype) or _server_scoped_has_permission(
+		doc, "server", user, ptype
+	)
 
 
 def site_domain_query_conditions(user: str | None = None) -> str:
@@ -181,30 +242,29 @@ def vm_snapshot_has_permission(doc, user: str | None = None, ptype: str | None =
 	return _server_scoped_has_permission(doc, "server", user, ptype)
 
 
-def iam_permission_probe_query_conditions(user: str | None = None) -> str:
+def _user_notification_setting_query_conditions(doctype: str, user: str | None = None) -> str:
+	"""A user sees only their own notification settings; operators see all."""
 	user = user or frappe.session.user
 	if user_has_operator_bypass(user):
 		return ""
-	return f"`tabIAM Permission Probe`.`user` = {frappe.db.escape(user)}"
+
+	return f"`tab{doctype}`.`user` = {frappe.db.escape(user)}"
 
 
-def iam_permission_probe_has_permission(
-	doc, user: str | None = None, ptype: str | None = None, **kwargs
-) -> bool:
+def _is_user_notification_setting_owned(doc, user: str | None = None) -> bool:
+	"""A user can act only on their own setting in a team they belong to."""
 	user = user or frappe.session.user
 	if user_has_operator_bypass(user):
 		return True
-	return doc.user == user
+
+	return doc.user == user and bool(doc.team) and is_active_team_member(user, doc.team)
 
 
 def user_notification_preference_query_conditions(user: str | None = None) -> str:
 	"""1. A System Manager sees every preference.
 	2. A user sees only preferences owned by that user.
 	"""
-	user = user or frappe.session.user
-	if user_has_operator_bypass(user):
-		return ""
-	return f"`tabUser Notification Preference`.`user` = {frappe.db.escape(user)}"
+	return _user_notification_setting_query_conditions("User Notification Preference", user)
 
 
 def user_notification_preference_has_permission(
@@ -214,10 +274,24 @@ def user_notification_preference_has_permission(
 	2. A user can act only on that user's row.
 	3. The user must be an active member of the row's team.
 	"""
-	user = user or frappe.session.user
-	if user_has_operator_bypass(user):
-		return True
-	return doc.user == user and bool(doc.team) and is_active_team_member(user, doc.team)
+	return _is_user_notification_setting_owned(doc, user)
+
+
+def notification_digest_setting_query_conditions(user: str | None = None) -> str:
+	"""1. A System Manager sees every digest setting.
+	2. A user sees only the digest setting owned by that user.
+	"""
+	return _user_notification_setting_query_conditions("Notification Digest Setting", user)
+
+
+def has_notification_digest_setting_permission(
+	doc, user: str | None = None, ptype: str | None = None, **kwargs
+) -> bool:
+	"""1. A System Manager has every permission.
+	2. A user can act only on that user's digest setting.
+	3. The user must be an active member of the setting's team.
+	"""
+	return _is_user_notification_setting_owned(doc, user)
 
 
 def pilot_credential_query_conditions(user: str | None = None) -> str:
@@ -250,6 +324,20 @@ def team_notification_has_permission(
 	return user_has_operator_bypass(user or frappe.session.user)
 
 
+def activity_event_query_conditions(user: str | None = None) -> str:
+	"""1. A System Manager sees every event.
+	2. Customers read the activity API, which applies each event's capability and server.
+	"""
+	return _operator_only_query_conditions(user)
+
+
+def activity_event_has_permission(doc, user: str | None = None, ptype: str | None = None, **kwargs) -> bool:
+	"""1. A System Manager has every permission.
+	2. Customers have no direct document permission because the activity API applies capabilities.
+	"""
+	return user_has_operator_bypass(user or frappe.session.user)
+
+
 def team_service_query_conditions(user: str | None = None) -> str:
 	"""1. A System Manager sees every service record.
 	2. Customers use the service API, which redacts credentials and applies service capabilities.
@@ -262,6 +350,30 @@ def team_service_has_permission(doc, user: str | None = None, ptype: str | None 
 	2. Customers have no direct permission because the record contains service credentials.
 	"""
 	return user_has_operator_bypass(user or frappe.session.user)
+
+
+def billing_record_query_conditions(user: str | None = None) -> str:
+	"""1. A System Manager sees every billing record.
+	2. Everyone else sees none: customers reach billing data only through the billing API,
+	   which checks billing:view or billing:manage on the record's team."""
+	return _operator_only_query_conditions(user)
+
+
+def billing_record_has_permission(doc, user: str | None = None, ptype: str | None = None, **kwargs) -> bool:
+	"""1. A System Manager has every permission.
+	2. Everyone else has none on the record itself; the billing API serves them."""
+	return user_has_operator_bypass(user or frappe.session.user)
+
+
+@frappe.whitelist(allow_guest=True)  # nosemgrep -- same surface as frappe.realtime.has_permission
+def realtime_has_permission(doctype: str, name: str) -> bool:
+	"""1. A doctype room of a team-scoped DocType is for operators only: it carries every team's changes.
+	2. Everything else follows Frappe's own check."""
+	is_team_scoped = doctype in frappe.get_hooks("has_permission")
+	if not name and is_team_scoped and not user_has_operator_bypass(frappe.session.user):
+		frappe.throw(_("Not permitted"), frappe.PermissionError)
+
+	return has_realtime_permission(doctype, name)
 
 
 def _operator_only_query_conditions(user: str | None = None) -> str:
@@ -303,6 +415,14 @@ def _team_field_has_permission(
 
 def _can_any(user: str, team: str, capabilities: tuple[str, ...]) -> bool:
 	return any(can(user, team, capability) for capability in capabilities)
+
+
+def _staff_readable_query_conditions(doctype: str, server_field: str, user: str | None = None) -> str:
+	user = user or frappe.session.user
+	if is_staff_read(user, "read"):
+		return ""
+
+	return _server_scoped_query_conditions(doctype, server_field, user)
 
 
 def _server_scoped_query_conditions(doctype: str, server_field: str, user: str | None = None) -> str:

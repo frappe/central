@@ -6,9 +6,10 @@
 //   1. initiate_card_setup → an off-session SetupIntent (client_secret) + a
 //      pending Payment Method doc.
 //   2. confirmCardSetup with the card → Stripe attaches the method to the team's
-//      customer and returns the pm_… handle, plus a mandate_… id in currencies
-//      where recurring debits are regulated (India).
-//   3. confirm_card → backend runs the micro-charge validation and activates it.
+//      customer (with a mandate in currencies where recurring debits are regulated).
+//   3. confirm_card → backend reads the saved card from Stripe, runs the
+//      micro-charge validation and activates it. The browser sends only the
+//      Payment Method name; the card details come from Stripe.
 //
 // publishableKey + client_secret come from the backend; we never hardcode a key.
 
@@ -16,12 +17,13 @@ import {
 	loadStripe,
 	type Stripe,
 	type StripeCardElement,
+	type StripeError,
 } from '@stripe/stripe-js'
 import { useCall } from 'frappe-ui'
 import { ref } from 'vue'
 import { API, method } from '@/api/methods'
 import { getErrorMessage, successToast } from '@/lib/feedback'
-import { capitalise } from '@/lib/format'
+import { stripeCardElementStyle } from '@/lib/gateway'
 
 interface CardSetupOrder {
 	client_secret?: string
@@ -31,6 +33,8 @@ interface CardSetupOrder {
 interface ConfirmCardResult {
 	payment_method: string
 	status: string
+	// Why the card failed its check, and what the customer can do instead.
+	message?: string
 }
 
 interface MountOptions {
@@ -48,7 +52,7 @@ export function useAddStripeCard({
 		method: 'POST',
 		immediate: false,
 	})
-	const confirm = useCall<ConfirmCardResult, Record<string, unknown>>({
+	const confirm = useCall<ConfirmCardResult, { payment_method?: string }>({
 		url: method(API.confirmCard),
 		method: 'POST',
 		immediate: false,
@@ -61,6 +65,22 @@ export function useAddStripeCard({
 	let card: StripeCardElement | null = null
 	let orderPromise: Promise<CardSetupOrder | null> | null = null
 
+	// A form mistake keeps Stripe's own field text. A bank refusal is explained by
+	// Central, which reads the reason from Stripe and words it with the next step.
+	async function explainSetupError(
+		setupError: StripeError,
+		paymentMethod: string | undefined,
+	): Promise<string> {
+		const stripeText = setupError.message ?? 'Could not add card'
+		if (setupError.type !== 'card_error' || !paymentMethod) return stripeText
+		// A failed lookup must not hide the refusal, so it falls back to Stripe's text.
+		const explained = await confirm
+			.submit({ payment_method: paymentMethod })
+			.then(() => !confirm.error && confirm.data?.message)
+			.catch(() => '')
+		return explained || stripeText
+	}
+
 	// Load Stripe.js and mount the card Element straight away. The SetupIntent (a
 	// server→Stripe round-trip) is kicked off in parallel and awaited only at
 	// submit — so the card field appears instantly instead of waiting on the
@@ -70,9 +90,15 @@ export function useAddStripeCard({
 		{ team, publishableKey }: MountOptions,
 	): Promise<void> {
 		error.value = ''
-		if (!publishableKey) throw new Error('Stripe publishable key missing.')
+		if (!publishableKey)
+			throw new Error(
+				'The Stripe publishable key is missing, so card setup cannot start. Contact support.',
+			)
 		stripe = await loadStripe(publishableKey)
-		if (!stripe) throw new Error('Stripe.js failed to load.')
+		if (!stripe)
+			throw new Error(
+				'The Stripe payment library could not load. Check your connection and reopen this dialog to try again.',
+			)
 
 		// Swallow here so a reject doesn't become an unhandled rejection if the user
 		// cancels before submitting; submit() turns the null into a clean message.
@@ -81,7 +107,10 @@ export function useAddStripeCard({
 			.submit({ team })
 			.then(() => initiate.data)
 			.catch(() => null)
-		card = stripe.elements().create('card', { hidePostalCode: true })
+		card = stripe.elements().create('card', {
+			hidePostalCode: true,
+			style: stripeCardElementStyle(),
+		})
 		card.on('change', (e) => {
 			complete.value = !!e.complete
 			error.value = e.error?.message ?? ''
@@ -96,40 +125,40 @@ export function useAddStripeCard({
 		error.value = ''
 		try {
 			const order = await orderPromise // usually already resolved by now
+			// The setup call's own message says why it failed, such as the provider being down.
 			if (!order?.client_secret)
-				throw new Error('Could not start card setup. Please try again.')
+				throw (
+					initiate.error ??
+					new Error('Could not start card setup. Please try again.')
+				)
 
 			const { paymentMethod, error: pmError } =
 				await stripe.createPaymentMethod({
 					type: 'card',
 					card,
 				})
-			if (pmError) throw pmError
+			if (pmError) {
+				error.value = await explainSetupError(pmError, order.payment_method)
+				return
+			}
 
-			const { setupIntent, error: setupError } = await stripe.confirmCardSetup(
+			const { error: setupError } = await stripe.confirmCardSetup(
 				order.client_secret,
 				{
 					payment_method: paymentMethod.id,
 				},
 			)
-			if (setupError) throw setupError
+			if (setupError) {
+				error.value = await explainSetupError(setupError, order.payment_method)
+				return
+			}
 
-			const c = paymentMethod.card
-			await confirm.submit({
-				payment_method: order.payment_method,
-				gateway_method_id: paymentMethod.id,
-				display_label: `${capitalise(c?.brand)} ····${c?.last4}`,
-				expiry_month: c?.exp_month,
-				expiry_year: c?.exp_year,
-				// Present where the currency required a mandate at setup (India); every
-				// later off-session debit quotes it.
-				gateway_mandate_id: mandateId(setupIntent),
-				card_network: c?.brand,
-			})
+			await confirm.submit({ payment_method: order.payment_method })
 			if (confirm.error) throw confirm.error
 			const res = confirm.data
 			if (!res || res.status !== 'Active') {
-				error.value = "Couldn't verify that card. Try a different one"
+				error.value =
+					res?.message ?? "Couldn't verify that card. Try a different one"
 				return
 			}
 			successToast('Card added')
@@ -151,14 +180,4 @@ export function useAddStripeCard({
 	}
 
 	return { mount, submit, destroy, complete, submitting, error }
-}
-
-// India mandates come back on the SetupIntent, either expanded or as a bare id.
-// stripe-js does not type the field, so read it off defensively.
-function mandateId(setupIntent: unknown): string | undefined {
-	const mandate = (setupIntent as { mandate?: unknown } | undefined)?.mandate
-	if (typeof mandate === 'string') return mandate
-	if (mandate && typeof mandate === 'object')
-		return (mandate as { id?: string }).id
-	return undefined
 }

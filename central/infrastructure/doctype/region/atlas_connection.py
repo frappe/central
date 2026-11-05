@@ -1,14 +1,5 @@
 # Copyright (c) 2026, frappe and contributors
 # For license information, please see license.txt
-"""Everything about a region's Atlas that only Atlas cares about.
-
-Mixed into `Region` (see `region.py`). Nothing here is Cargo's concern: Cargo has no
-VMs to gateway to, and checks its own reachability a different way (a self-report,
-not a polled connection). Keep Cargo-specific fields and logic in `cargo_connection.py`
-instead of here.
-"""
-
-from __future__ import annotations
 
 import ipaddress
 
@@ -113,6 +104,7 @@ class AtlasConnectionMixin:
 				"connection_error": result["error"],
 			}
 		)
+
 		return result
 
 	@frappe.whitelist(methods=["POST"])
@@ -121,8 +113,6 @@ class AtlasConnectionMixin:
 		delivery secret the first time, then register its Cargo if it answers. Separate
 		from `test_connection`: that call only reads from Atlas, this one mutates its
 		webhook configuration. A failure raises, same as any other Desk action."""
-		from frappe.utils.password import set_encrypted_password
-
 		from central.integrations.atlas import AtlasClient
 
 		if not user_has_operator_bypass():
@@ -135,7 +125,8 @@ class AtlasConnectionMixin:
 
 		secret = self.get_password("webhook_secret", raise_exception=False) or frappe.generate_hash(length=32)
 		AtlasClient.for_operator(self).configure_webhooks(secret)
-		set_encrypted_password("Region", self.name, secret, "webhook_secret")
+		self.webhook_secret = secret
+		self.save()
 
 		if self.cargo_status != "Draft":
 			return

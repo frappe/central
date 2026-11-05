@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from typing import TYPE_CHECKING
 
 import boto3
@@ -10,6 +9,7 @@ from botocore.config import Config
 from botocore.exceptions import BotoCoreError, ClientError
 from frappe import _
 
+from central.integrations.cargo import TOKEN_HEADER
 from central.sso import mint_cargo_token
 
 if TYPE_CHECKING:
@@ -27,6 +27,10 @@ class ObjectStorageRejected(ObjectStorageConnectionError):
 
 class ObjectStorageNotFound(ObjectStorageRejected):
 	"""Cargo says the bucket does not exist."""
+
+
+class ObjectStorageDeleteTooLarge(frappe.ValidationError):
+	"""A delete covers more objects than one request may remove."""
 
 
 class ObjectStorageRequestUncertain(ObjectStorageConnectionError):
@@ -65,7 +69,7 @@ class ObjectStorageClient:
 			response = requests.post(
 				f"{self.cargo_endpoint}/api/method/cargo.object_storage.api.bucket.{method}",
 				json={"name": name, "region": self.region, **arguments},
-				headers={"X-Cargo-Access-Token": mint_cargo_token(self.region_id)},
+				headers={TOKEN_HEADER: mint_cargo_token(self.region_id)},
 				timeout=(5, 20),
 				allow_redirects=False,
 			)
@@ -74,6 +78,7 @@ class ObjectStorageClient:
 
 		result = self._read_response(response)
 		self._validate_receipt(method, name, result)
+
 		return result
 
 	def _validate_receipt(self, method: str, name: str, receipt: dict) -> None:
@@ -126,16 +131,16 @@ class ObjectStorageClient:
 			return None
 
 		try:
-			messages = json.loads(response.json()["_server_messages"])
-			message = json.loads(messages[-1])["message"]
+			messages = frappe.parse_json(response.json()["_server_messages"])
+			message = frappe.parse_json(messages[-1])["message"]
 		except (ValueError, KeyError, IndexError, TypeError):
 			return None
 
 		return frappe.utils.strip_html(message) if isinstance(message, str) else None
 
-	def create_bucket(self, name: str) -> dict:
-		"""Create a bucket and return the credentials."""
-		return self._call("create_bucket", name)
+	def create_bucket(self, name: str, tags: dict[str, str] | None = None) -> dict:
+		"""Create a bucket and return the credentials. Cargo records `tags` on the bucket."""
+		return self._call("create_bucket", name, tags=tags or {})
 
 	def delete_bucket(self, name: str) -> dict:
 		"""Delete a bucket."""
@@ -161,6 +166,8 @@ class BucketInteractions:
 
 	MAXIMUM_PAGE_SIZE = 1000
 	DOWNLOAD_URL_EXPIRY_SECONDS = 300
+	UPLOAD_URL_EXPIRY_SECONDS = 3600
+	MAXIMUM_DELETE_COUNT = 1000
 
 	def __init__(self, service: TeamService):
 		self.bucket_name = service.bucket_name
@@ -191,6 +198,7 @@ class BucketInteractions:
 			arguments["ContinuationToken"] = offset
 
 		page = self._request(self.client.list_objects_v2, **arguments)
+
 		return {
 			"objects": [
 				{
@@ -213,6 +221,48 @@ class BucketInteractions:
 			"get_object",
 			Params={"Bucket": self.bucket_name, "Key": key},
 			ExpiresIn=self.DOWNLOAD_URL_EXPIRY_SECONDS,
+		)
+
+	def get_upload_url(self, key: str, content_type: str) -> str:
+		"""A presigned PUT for one object, so the browser sends its bytes to S3 directly.
+		The browser must send the same Content-Type, because it is signed."""
+		return self.client.generate_presigned_url(
+			"put_object",
+			Params={"Bucket": self.bucket_name, "Key": key, "ContentType": content_type},
+			ExpiresIn=self.UPLOAD_URL_EXPIRY_SECONDS,
+		)
+
+	def delete_objects(self, keys: list[str], prefixes: list[str]) -> int:
+		"""Delete objects and everything under each folder prefix, in one S3 call.
+		Refuses more than MAXIMUM_DELETE_COUNT objects before it deletes any."""
+		targets = set(keys)
+		for prefix in prefixes:
+			page = self._request(self.client.list_objects_v2, Bucket=self.bucket_name, Prefix=prefix)
+			if page.get("IsTruncated"):
+				self._refuse_large_delete()
+
+			targets.update(item["Key"] for item in page.get("Contents", []))
+
+		if len(targets) > self.MAXIMUM_DELETE_COUNT:
+			self._refuse_large_delete()
+
+		if not targets:
+			return 0
+
+		result = self._request(
+			self.client.delete_objects,
+			Bucket=self.bucket_name,
+			Delete={"Objects": [{"Key": key} for key in sorted(targets)], "Quiet": True},
+		)
+		if result.get("Errors"):
+			raise ObjectStorageRejected(_("Object storage did not delete some objects."))
+
+		return len(targets)
+
+	def _refuse_large_delete(self) -> None:
+		frappe.throw(
+			_("Delete at most {0} objects at a time.").format(self.MAXIMUM_DELETE_COUNT),
+			ObjectStorageDeleteTooLarge,
 		)
 
 	@staticmethod

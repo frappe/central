@@ -54,28 +54,16 @@ const onDeleteRole = async (role: TeamRoleRow): Promise<void> => {
 	}
 }
 
-// Columns declare id/header/sorting only — the Role/Members/Actions markup is
-// filled in by the matching #role/#members/#actions slots in the template below.
-const columns = computed<ListViewColumn<TeamRoleRow>[]>(() => [
+const columns: ListViewColumn<TeamRoleRow>[] = [
 	{
-		id: 'role',
-		header: 'Role',
-		accessorKey: 'role_name',
-		meta: { cellClass: 'truncate' },
+		key: 'role',
+		label: 'Role',
+		value: (role) => role.role_name,
+		sortable: true,
 	},
-	{
-		id: 'members',
-		header: 'Members',
-		enableSorting: false,
-	},
-	{
-		id: 'actions',
-		header: '',
-		enableSorting: false,
-		size: 1,
-		meta: { align: 'end' },
-	},
-])
+	{ key: 'members', label: 'Members' },
+	{ key: 'actions', label: '', width: '2.5rem', align: 'end' },
+]
 
 const getRoleKey = (role: TeamRoleRow): string => role.name
 
@@ -103,7 +91,12 @@ const { selectedKey, selected, select, clear } = useTeamRowSelection(
 		:show-page-size="false"
 		:show-count="false"
 		:active-key="selectedKey"
-		:empty-state="{ title: 'No roles yet', description: 'Create a role to grant capabilities to members.' }"
+		:empty-state="{
+			title: 'No roles yet',
+			description: canManageMembers
+				? 'Create a role to choose what team members can view and change.'
+				: 'Roles define what team members can view and change. Ask a team admin to create a role.',
+		}"
 		@retry="reload"
 		@row-click="select"
 	>
@@ -130,7 +123,7 @@ const { selectedKey, selected, select, clear } = useTeamRowSelection(
 				</div>
 
 				<div class="min-w-0">
-					<p class="truncate font-medium text-ink-gray-9">
+					<p class="truncate text-sm-medium text-ink-gray-9">
 						{{ row.role_name }}
 					</p>
 					<p class="truncate text-p-sm text-ink-gray-5">

@@ -1,0 +1,74 @@
+{
+ "app": "central",
+ "charts": [],
+ "content": "[{\"id\": \"sg-h\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Signups</b></span>\", \"col\": 12}}, {\"id\": \"sg-sc0\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Product\", \"col\": 3}}, {\"id\": \"sg-sc1\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Trial Sites\", \"col\": 3}}]",
+ "creation": "2026-10-13 12:00:00.000000",
+ "custom_blocks": [],
+ "docstatus": 0,
+ "doctype": "Workspace",
+ "for_user": "",
+ "hide_custom": 0,
+ "icon": "rocket",
+ "idx": 0,
+ "is_hidden": 0,
+ "label": "Signups",
+ "links": [
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Signups",
+   "link_count": 2,
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Product",
+   "link_count": 0,
+   "link_to": "Product",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 1,
+   "label": "Trial Sites",
+   "link_count": 0,
+   "link_to": "Trial Sites",
+   "link_type": "Report",
+   "onboard": 0,
+   "type": "Link"
+  }
+ ],
+ "modified": "2026-10-13 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Signups",
+ "name": "Signups",
+ "number_cards": [],
+ "owner": "Administrator",
+ "parent_page": "",
+ "public": 1,
+ "quick_lists": [],
+ "restrict_to_domain": "",
+ "roles": [],
+ "sequence_id": 4.0,
+ "shortcuts": [
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Product",
+   "link_to": "Product",
+   "type": "DocType"
+  },
+  {
+   "color": "Grey",
+   "label": "Trial Sites",
+   "link_to": "Trial Sites",
+   "type": "Report"
+  }
+ ],
+ "title": "Signups",
+ "type": "Workspace"
+}
