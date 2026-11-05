@@ -11,8 +11,8 @@ Atlas regional requests use a separate Ed25519 key. The shared `central.api.jwks
 **Bench (console) login**: `central.api.sso.get_bench_link`
 
 1. The caller supplies a server. Central checks access to that server and resolves its `gateway_url` and the `audience_id` of its Active `Pilot Credential`. A local server uses the same path with its local gateway URL.
-2. Central mints `mint_bench_login(audience)`: `scope=bench`, 60 minutes, single-use `jti`.
-3. The browser opens `{gateway}/?sid=<jwt>`. The bench SPA exchanges it for a local session cookie.
+2. Central mints `mint_bench_login(audience)`: `scope=bench`, single-use `jti`. Its lifetime is **Session Length** in Central SSO Settings, 60 minutes by default.
+3. The browser opens `{gateway}/?sid=<jwt>`. The bench SPA exchanges it for a local session cookie. Pilot ends that session when the token expires, so Session Length is also the session length.
 
 **Bench login from a site**: `central.api.sso.open_bench?pilot=<audience>`
 
@@ -46,7 +46,7 @@ On the bench (Pilot), the durable bearer is `bench.toml [central].auth_token`. C
 
 - **EdDSA (Ed25519) and JWKS**, verified offline. Benches hold only the public key.
 - **`aud` is the bench's `audience_id`**, assigned by Central. Bench B rejects a SID for bench A. A Pilot cannot declare its own audience.
-- **Short TTL.** The bench login SID lasts 60 minutes, is carried by the browser, and is single-use (the bench tracks the `jti`). The site assertion lasts 5 minutes and goes only from Central to the bench. The browser never sees it.
+- **Short TTL.** The bench login SID lasts for the configured Session Length, from 1 to 1440 minutes. The browser carries it, and it is single-use (the bench tracks the `jti`). The upper limit matches the 24-hour Pilot session cookie. The site assertion lasts 5 minutes and goes only from Central to the bench. The browser never sees it.
 - **Fail closed.** A bench rejects any assertion whose scope it does not understand (`Session.has_scope` is an allowlist). It does not downgrade to Administrator.
 - **Extensibility (distinct scope).** Site login is Administrator today. A future per-user session must use a new scope (for example `site_user`), so that older benches reject it. The identity goes through `SiteLogin.create_session(login_as=...)`, which defaults to Administrator. Adding it is additive: a new claim and a new scope handler, with no contract change.
 
@@ -56,7 +56,8 @@ Central separates token purposes by the required `scope` claim and by the audien
 
 | scope | minter | `aud` | TTL | Key | Consumed by |
 | --- | --- | --- | --- | --- | --- |
-| `bench` | `mint_bench_login` | bench's `audience_id` | 60 min | Pilot (Ed25519) | the bench (login SID) |
+| `bench` | `mint_bench_login` | bench's `audience_id` | Session Length (default 60 min) | Pilot (Ed25519) | the bench (login SID) |
+| `bench` | `mint_bench_api_token` | bench's `audience_id` | 5 min | Pilot (Ed25519) | the bench (`Bearer` on each Central call to Pilot) |
 | `site` | `mint_site_login` | bench's `audience_id` | 5 min | Pilot (Ed25519) | the bench (site login) |
 | `enroll` | `mint_bootstrap_token` | `pilot_credential_id` | 30 min | Pilot (Ed25519) | Central (`verify_bootstrap_token`, asserts `scope == enroll`) |
 | `datum` | `mint_datum_token` | `atlas-datum:<region id>` | 7 days | Atlas (Ed25519) | Datum, for metrics and logs |
