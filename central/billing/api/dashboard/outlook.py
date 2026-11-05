@@ -20,7 +20,7 @@ from frappe import _
 
 from central.billing.api.dashboard._shared import _resolve_team, _team_currency
 from central.billing.doctype.billing_profile.billing_profile import get_payment_date
-from central.billing.doctype.invoice.invoice import owed_filters
+from central.billing.doctype.invoice.invoice import OVERDUE, owed_filters
 from central.billing.revenue.dunning import (
 	LADDER_FIELDS,
 	dunning_policy,
@@ -151,7 +151,12 @@ def _invoice_charge_on(invoice):
 
 
 def _is_charge_missed(invoice, today) -> bool:
-	"""The open invoice's charge day has passed without the bill being settled."""
+	"""The open invoice is on the dunning ladder.
+
+	1. Dunning marked it Overdue, whatever its charge day.
+	2. Its charge day has passed without the bill being settled."""
+	if invoice.status == OVERDUE:
+		return True
 	charge_on = _invoice_charge_on(invoice)
 	return bool(charge_on) and frappe.utils.getdate(charge_on) < today
 
