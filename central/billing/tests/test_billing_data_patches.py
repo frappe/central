@@ -286,15 +286,16 @@ class TestClearRetiredScenarioLadderOverrides(IntegrationTestCase):
 		self.addCleanup(frappe.db.delete, "Billing Scenario", {"name": doc.name})
 		old_values = {"dunning_retry_days": "1, 3, 7", "suspend_after_days": 14}
 		retired = [column for column in old_values if frappe.db.has_column("Billing Scenario", column)]
-		scenario = frappe.qb.DocType("Billing Scenario")
-		query = frappe.qb.update(scenario).where(scenario.name == doc.name)
+		# A fresh install never had the retired columns, so there is nothing old to seed.
 		for column in retired:
-			query = query.set(scenario[column], old_values[column])
-		query.run()
+			frappe.db.set_value(
+				"Billing Scenario", doc.name, column, old_values[column], update_modified=False
+			)
 
 		clear_retired_scenario_ladder_overrides.execute()
 
 		cleared = frappe.get_doc("Billing Scenario", doc.name)
+		self.assertEqual(cleared.terminate_after_days, 0)
 		self.assertEqual(cleared.overrides(), {"invoice_due_days": 5})
 		for column in retired:
 			self.assertFalse(frappe.db.get_value("Billing Scenario", doc.name, column))
