@@ -9,10 +9,12 @@ from central.billing import settings
 from central.billing.api.dashboard import outlook
 from central.billing.doctype.billing_profile.billing_profile import get_due_date, get_payment_date
 from central.billing.gateways.base import PaymentResult
-from central.billing.payments import collection, emandate
+from central.billing.payments import collection, emandate, payment_notices
 from central.billing.tests import test_emandate
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import complete_billing_profile, ensure_team
+
+TEAM = test_emandate.TEAM
 
 PROFILE_TEAM = "team-payment-day"
 
@@ -142,3 +144,77 @@ class TestDebitWaitsForThePaymentDate(test_emandate.EmandateTestBase):
 			collection.collect_invoice(name, now="2026-06-10 00:30:00")
 
 		self.assertEqual(frappe.db.count("Payment Attempt", {"invoice": name}), 0)
+
+	def test_an_invoice_that_missed_its_payment_date_is_still_charged(self):
+		name = self._invoice_due_on("2026-06-10")
+
+		with (
+			patch.object(emandate, "is_notice_required", return_value=False),
+			patch("central.billing.gateways.registry.get_adapter", return_value=_capturing_adapter()),
+		):
+			collection.collect_on_payment_date(now="2026-06-20 02:00:00")
+
+		self.assertEqual(frappe.db.count("Payment Attempt", {"invoice": name}), 1)
+
+	def test_the_hourly_sweep_debits_a_mandate_once_its_window_opens(self):
+		name = self._invoice_due_on("2026-06-10")
+		emandate.schedule_predebit(name, now="2026-06-09 01:00:00")
+
+		with (
+			patch.object(emandate, "charge_due", wraps=emandate.charge_due) as charge_due,
+			patch("central.billing.gateways.registry.get_adapter", return_value=_capturing_adapter()),
+		):
+			collection.collect_on_payment_date(now="2026-06-10 01:30:00")
+
+		charge_due.assert_called_once()
+		self.assertEqual(frappe.db.count("Payment Attempt", {"invoice": name}), 1)
+
+
+def _capturing_adapter() -> MagicMock:
+	adapter = MagicMock()
+	adapter.prepare_charge.return_value = None
+	adapter.charge.return_value = PaymentResult(success=True, status="Captured", gateway_transaction_id="p")
+	return adapter
+
+
+class TestPaymentReminder(test_emandate.EmandateTestBase):
+	"""A day before the payment date the team hears what is charged, once."""
+
+	def _invoice_due_on(self, payment_date):
+		name = self._invoice(5000)
+		frappe.db.set_value("Invoice", name, {"payment_date": payment_date, "due_date": "2026-06-17"})
+		return name
+
+	def _reminders(self):
+		return frappe.db.count("Billing Notification Log", {"team": TEAM, "event_type": "Payment Reminder"})
+
+	def test_the_reminder_is_sent_once_the_day_before(self):
+		name = self._invoice_due_on("2026-06-10")
+
+		with patch.object(emandate, "is_notice_required", return_value=False):
+			collection.collect_on_payment_date(now="2026-06-08 23:00:00")
+			self.assertEqual(self._reminders(), 0)
+			collection.collect_on_payment_date(now="2026-06-09 00:30:00")
+			collection.collect_on_payment_date(now="2026-06-09 05:00:00")
+
+		self.assertEqual(self._reminders(), 1)
+		self.assertTrue(frappe.db.get_value("Invoice", name, "payment_reminder_sent_at"))
+		self.assertEqual(frappe.db.count("Payment Attempt", {"invoice": name}), 0)
+
+	def test_the_reminder_names_the_amount_the_date_and_the_method(self):
+		doc = frappe.get_doc("Invoice", self._invoice_due_on("2026-06-10"))
+
+		context = payment_notices.get_payment_context(doc)
+
+		self.assertEqual(set(context), {"amount", "payment_date", "method"})
+		self.assertEqual(context["payment_date"], "10 June 2026")
+		self.assertTrue(context["method"])
+
+	def test_a_rail_with_a_predebit_notice_gets_no_reminder(self):
+		name = self._invoice_due_on("2026-06-10")
+
+		collection.collect_on_payment_date(now="2026-06-09 01:00:00")
+
+		self.assertEqual(self._reminders(), 0)
+		self.assertTrue(frappe.db.get_value("Invoice", name, "predebit_notified_at"))
+		self.assertIsNone(frappe.db.get_value("Invoice", name, "payment_reminder_sent_at"))

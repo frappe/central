@@ -251,13 +251,14 @@ Dunning, reconciliation, the e-mandate cycle, credit expiry, card expiry, accoun
 | daily | `revenue.dunning.run_dunning` | retries every `dunning_retry_interval_days` up to the due date → past_due → suspend on the suspension date (stops servers) → termination due (operator) |
 | daily | `payments.charges.cleanup_payment_logs` | prune Payment Attempt / Webhook Event |
 | daily | `projection.batch.prune` | prune old projection batches |
-| daily | `payments.emandate.run_emandate_cycle` | INR ≤₹15k pre-debit notice → debit window opens 24 hours after the notice |
+| daily | `payments.emandate.run_emandate_cycle` | backstop: INR ≤₹15k pre-debit notice → debit window opens 24 hours after the notice |
 | daily | `catalog.subscriptions.backfill_missing_subscriptions` | Subscription for any Running Virtual Machine missing one |
 | daily | `payments.settlement.run_billing_details_reminder` | ask credit-funded teams for the billing details their invoice will need |
 | daily | `revenue.credits.run_credit_expiry` | write off expired promotional credit |
 | daily | `platform.invariants.run_invariant_audit` | audit the cross-table money invariants |
 | daily | `payments.reconciliation.recheck_completed_refunds` | ask the gateway again about card refunds completed in the last 30 days; flag one that failed later |
 | hourly | `payments.webhooks.retry_failed_webhooks` | apply again failed and lost webhook events |
+| hourly | `payments.collection.collect_on_payment_date` | debit each pre-debit rail whose window has opened, start the first charge on the payment date, and send the payment reminder the day before |
 | hourly | `payments.reconciliation.run_reconciliation` | charged-but-never-webhooked gateway scan and Pending refunds |
 | hourly | `platform.alerts.run_operator_alerts` | alert operators (invariants, readiness, failed webhooks, stale attempts, unsettled captures, held invoices, failed refunds, failed accounting syncs) |
 | monthly | `revenue.invoicing.draft_monthly_invoices` | waive internal teams' unpaid invoices, then draft the just-closed month as page jobs on the `billing` queue |
@@ -508,7 +509,9 @@ flowchart TD
       → (on webhook) Paid → erpnext_sync.enqueue_invoice_sync
 
 [hourly]   payments.collection.collect_on_payment_date
-  → every owed invoice with no payment attempt, payment_date ≤ tomorrow and due_date ≥ today
+  → emandate.charge_due: debit each pre-debit rail whose window has opened
+  → every owed invoice with no payment attempt and payment_date ≤ tomorrow (no due date cut-off)
+  → payment_notices.send_payment_reminders: invoices charged tomorrow, rails without a pre-debit notice
   → collection.collect_invoice (no rail debits before the payment date; a pre-debit rail sends
     its notice no earlier than 24 hours before it, and its debit window opens 24 hours after the notice)
   → (on webhook) Paid → erpnext_sync.enqueue_invoice_sync
@@ -519,7 +522,7 @@ Both ticks use `draft_team_page` and `settle_draft_page` page jobs (see §3).
 
 **The card is charged on the payment day.** Each team has a payment day from the 1st to the 10th on its Billing Profile (default 1). When an invoice opens, wallet credits apply at once and the invoice gets a `payment_date`: the payment day of the month it opened in, or the opening date when the run is late. The due date is never before the payment date.
 
-No rail debits before the payment date (`collection.collect_invoice`). A rail that owes the RBI pre-debit notice sends it no earlier than 24 hours before the payment date (`emandate.schedule_predebit`). Its debit window opens 24 hours after the notice, which is never before the payment date. On the default payment day, the 1st, the invoice opens on the payment date, so an e-mandate is debited on the 2nd. The hourly `collection.collect_on_payment_date` starts collection on each invoice that has no payment attempt and has not reached its due date. After the due date, dunning owns the retries.
+No rail debits before the payment date (`collection.collect_invoice`). A rail that owes the RBI pre-debit notice sends it no earlier than 24 hours before the payment date (`emandate.schedule_predebit`). Its debit window opens 24 hours after the notice, which is never before the payment date. On the default payment day, the 1st, the invoice opens on the payment date, so an e-mandate is debited on the 2nd. The hourly `collection.collect_on_payment_date` does three things in order. First it debits each pre-debit rail whose window has opened (`emandate.charge_due`), so the debit does not wait for the daily `run_emandate_cycle`. Then it starts collection on each invoice that has reached its payment date, or reaches it tomorrow, and has no payment attempt. An invoice that missed its payment date is still picked up. An invoice charged in the first step has an attempt, so the second step skips it. Last, it sends the payment reminder (`payment_notices.send_payment_reminders`) for each invoice that is charged tomorrow, has no attempt, and is on a rail that owes no pre-debit notice. `Invoice.payment_reminder_sent_at` makes the reminder go out once. After the first charge, dunning owns the retries.
 
 The customer changes the payment day at most twice in a billing cycle (`BillingProfile.change_payment_day`). The change applies to the next invoice. An open invoice keeps its date.
 

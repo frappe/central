@@ -121,27 +121,38 @@ def collect_invoice(invoice: str, new_round: bool = False, now: datetime | str |
 
 
 def collect_on_payment_date(now: datetime | str | None = None) -> list[dict]:
-	"""Hourly: start collection on every invoice whose payment date has come.
+	"""Hourly: charge on the payment date, and remind the day before.
 
-	The invoice opens on the 1st and waits for the team's payment day. An invoice is
-	picked up a day early, so a rail that owes a pre-debit notice can send it before the
-	payment date. Its debit window opens 24 hours after the notice. Only invoices with
-	no payment attempt are picked up, and only until their due date: after that,
-	dunning owns the retries.
+	1. Debit each pre-debit rail whose window has opened (`emandate.charge_due`).
+	2. Start collection on each invoice that has reached its payment date, or will reach
+	   it tomorrow, and has no payment attempt. A rail that owes a pre-debit notice sends
+	   it a day early. An invoice that missed its payment date is still picked up.
+	3. Remind each team whose invoice is charged tomorrow (`payment_notices`).
+
+	Step 1 runs first. An invoice it charged has an attempt, so step 2 skips it.
 	"""
+	from central.billing.payments import emandate, payment_notices
+
+	now_dt = frappe.utils.get_datetime(now) if now else frappe.utils.now_datetime()
+	debited = emandate.charge_due(now=now_dt)
+	collected = _collect_first_charges(now_dt)
+	reminded = payment_notices.send_payment_reminders(now_dt)
+	return [*debited, *collected, *reminded]
+
+
+def _collect_first_charges(now_dt: datetime) -> list[dict]:
+	"""Start collection on every owed invoice whose payment date is tomorrow or earlier and
+	that has no payment attempt yet."""
 	from central.billing.doctype.invoice.invoice import owed_filters
 	from central.billing.platform.jobs import each_isolated
 
-	now_dt = frappe.utils.get_datetime(now) if now else frappe.utils.now_datetime()
-	today = now_dt.date()
 	waiting = frappe.get_all(
 		"Invoice",
 		filters=[
 			*owed_filters(),
 			["invoice_type", "=", "Billable"],
 			["expected_collection", ">", 0],
-			["payment_date", "<=", frappe.utils.add_days(today, 1)],
-			["due_date", ">=", today],
+			["payment_date", "<=", frappe.utils.add_days(now_dt.date(), 1)],
 		],
 		pluck="name",
 	)

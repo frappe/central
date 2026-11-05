@@ -56,7 +56,8 @@
   "erpnext_sync_error",
   "pdf_url",
   "predebit_notified_at",
-  "predebit_charge_after"
+  "predebit_charge_after",
+  "payment_reminder_sent_at"
  ],
  "fields": [
   {
@@ -381,6 +382,13 @@
    "label": "Pre-debit Charge After",
    "read_only": 1,
    "description": "Earliest time the e-mandate off-session debit may run (notify + 24h)."
+  },
+  {
+   "fieldname": "payment_reminder_sent_at",
+   "fieldtype": "Datetime",
+   "label": "Payment Reminder Sent At",
+   "read_only": 1,
+   "description": "When the team was told that this invoice is charged the next day. A rail that sends a pre-debit notice gets no reminder."
   }
  ],
  "index_web_pages_for_search": 1,

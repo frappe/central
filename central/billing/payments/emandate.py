@@ -14,9 +14,9 @@ invoice is two-phase:
   2. charge_due — once the window has elapsed, run the off-session debit through
      the normal charge path, which re-checks the ₹15,000 ceiling (charges #50/1).
 
-Both are idempotent and safe to re-run from the daily scheduler. The customer-side
-heads-up is sent here; the bank's own RBI pre-debit notification is dispatched by
-the gateway at debit time (an adapter concern, kept out of this orchestration).
+Both are idempotent and safe to re-run from the hourly sweep and the daily backstop.
+The customer-side heads-up is sent here; the bank's own RBI pre-debit notification is
+dispatched by the gateway at debit time (an adapter concern, kept out of this orchestration).
 """
 
 from datetime import datetime
@@ -168,8 +168,9 @@ def charge_due(now=None) -> list[dict]:
 
 
 def run_emandate_cycle(now=None) -> dict:
-	"""Daily scheduler: arm the pre-debit notice on new e-mandate invoices, then
-	debit the ones whose window has elapsed."""
+	"""Daily backstop: arm the pre-debit notice on new e-mandate invoices, then debit the
+	ones whose window has elapsed. The hourly `collection.collect_on_payment_date` does
+	both as soon as it can."""
 	pending = frappe.get_all(
 		"Invoice",
 		filters=[
