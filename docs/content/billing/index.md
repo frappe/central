@@ -34,7 +34,7 @@ The panel at the top of **Billing > Overview** shows the current cycle.
 
 | Item | Meaning |
 | --- | --- |
-| Cycle and amount | The charges so far in this cycle, and the days until it is billed. Click **Breakdown** to see each line and the **Projected total**. |
+| Cycle and amount | The projected total for this cycle with tax, and the days until it is billed. Below it are the amount before tax and the tax. Click **See breakdown** to see each line. |
 | Spend limit | The most your team can spend in one cycle on its current tier. Click the tier to see all tiers. See [Credits and spend limits](/billing/limits). |
 | Next payment | The amount Frappe Cloud expects to collect next. It shows **Due now** when an invoice is unpaid. Click **Schedule** to see the payment schedule. |
 | Wallet | Your prepaid credit balance. Click the history icon to see its history. Click **Add credit** to top up. |
@@ -43,7 +43,7 @@ The panel at the top of **Billing > Overview** shows the current cycle.
 
 ### Budget alerts
 
-Click the bell icon on the summary panel to set a budget alert. Type an amount and click **Set alert**. The team gets a notification when the projected spend for the cycle goes above that amount. Set `0` to turn the alert off.
+Click the bell icon on the summary panel to set a budget alert. Type an amount and click **Set alert**. The amount excludes tax. The team gets a notification when the projected spend for the cycle, before tax, goes above that amount. Set `0` to turn the alert off.
 
 ## The spend chart
 

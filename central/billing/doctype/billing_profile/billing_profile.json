@@ -210,6 +210,7 @@
   },
   {
    "default": "0",
+   "description": "The team is alerted when the projected spend for the cycle, before tax, crosses this amount. 0 turns the alert off.",
    "fieldname": "spend_alert_threshold",
    "fieldtype": "Currency",
    "label": "Spend Alert Threshold"
@@ -362,7 +363,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-11-05 16:30:00.000000",
+ "modified": "2026-11-05 18:00:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Billing Profile",

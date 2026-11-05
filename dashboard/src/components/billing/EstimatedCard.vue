@@ -32,7 +32,7 @@ const { current: tierCurrent } = useSpendingLimits()
 const loading = computed(() => forecast.loading && !forecast.data)
 const fc = computed(() => forecast.data)
 // The headline is what the cycle will cost with tax, the same figure the card is
-// charged. The spend limit caps the amount before tax, so the bar reads the subtotal.
+// charged. The spend limit and the budget alert compare the amount before tax.
 const projected = computed(() => Number(fc.value?.projected_total ?? 0))
 const taxAmount = computed(() => Number(fc.value?.tax_amount ?? 0))
 const subtotal = computed(() => Number(fc.value?.subtotal ?? 0))
@@ -62,8 +62,8 @@ const overLimit = computed(() =>
 )
 
 // ── Billing alert (spend-alert threshold) ────────────────────────────────────
-// Notify the team once projected spend crosses this amount (0 = off). Stored on
-// the Billing Profile via get/save_billing_settings.
+// Notify the team once projected spend before tax crosses this amount (0 = off).
+// Stored on the Billing Profile via get/save_billing_settings.
 const settings = useCall<BillingSettings, { team: string }>({
 	url: method(API.billingSettings),
 	params: () => ({ team: activeTeam.value! }),
@@ -95,24 +95,24 @@ watch(
 // Alert relationship to the current estimate, so the button says something useful
 // at a glance and only tints when it's worth noticing.
 const crossed = computed(
-	() => spendAlert.value > 0 && projected.value >= spendAlert.value,
+	() => spendAlert.value > 0 && subtotal.value >= spendAlert.value,
 )
 
 const near = computed(
 	() =>
 		spendAlert.value > 0 &&
 		!crossed.value &&
-		projected.value >= 0.8 * spendAlert.value,
+		subtotal.value >= 0.8 * spendAlert.value,
 )
 
 const alertLabel = computed(() => {
 	if (spendAlert.value <= 0) return 'Set a budget alert'
-	if (crossed.value)
-		return `Over your ${money(spendAlert.value, currency.value)} alert`
-	if (near.value)
-		return `Nearing your ${money(spendAlert.value, currency.value)} alert`
 
-	return `Budget alert at ${money(spendAlert.value, currency.value)}`
+	const amount = money(spendAlert.value, currency.value)
+	if (crossed.value) return `Over your ${amount} alert before tax`
+	if (near.value) return `Nearing your ${amount} alert before tax`
+
+	return `Budget alert at ${amount} before tax`
 })
 
 const alertTint = computed(() =>
@@ -205,12 +205,13 @@ async function submitAlert(): Promise<void> {
 				</div>
 
 				<p v-if="hasCycle" class="text-sm text-ink-gray-6">
+					<span class="tabular-nums">{{ money(subtotal, currency) }}</span>
 					<template v-if="taxAmount">
-						Includes
+						+
 						<span class="tabular-nums">{{ money(taxAmount, currency) }}</span>
 						{{ fc?.tax_type || 'tax' }}
-						·
 					</template>
+					·
 					<button
 						type="button"
 						class="text-ink-gray-9 underline decoration-dotted underline-offset-[3px] transition-colors hover:decoration-solid"
@@ -282,13 +283,13 @@ async function submitAlert(): Promise<void> {
 					v-model="draft"
 					autofocus
 					type="number"
-					:label="`Alert me above (${currencySymbol(currency)})`"
+					:label="`Alert me above, excluding tax (${currencySymbol(currency)})`"
 					min="0"
 					placeholder="20000"
 				/>
 				<p class="mt-2 text-p-sm text-ink-gray-5">
-					We'll notify the team once projected spend crosses this. Set 0 to turn
-					it off.
+					We'll notify the team once projected spend before tax crosses this.
+					Set 0 to turn it off.
 				</p>
 			</template>
 			<template #actions>
