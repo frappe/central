@@ -25,7 +25,7 @@ from central.billing.revenue.dunning import (
 	LADDER_FIELDS,
 	dunning_policy,
 	dunning_schedule,
-	get_ladder_dates,
+	get_ladder_dates_by_invoice,
 	get_opening_ladder_dates,
 )
 from central.billing.revenue.invoicing.generate import rate_team_period, team_clusters
@@ -210,8 +210,9 @@ def _in_flight(team: str, today) -> list[dict]:
 	)
 
 	out = []
+	ladders = get_ladder_dates_by_invoice(unpaid)
 	for inv in unpaid:
-		dates = get_ladder_dates(inv)
+		dates = ladders[inv.name]
 		out.append(
 			{
 				"invoice": inv.name,

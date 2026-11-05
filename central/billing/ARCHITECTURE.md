@@ -609,7 +609,7 @@ daily run_dunning → process_invoice_dunning(invoice)
   → termination due: platform.alerts.termination_due pages an operator; nothing is deleted
   → while behind on payment a team cannot create, resize up or subscribe (PAYMENT_OVERDUE)
 ```
-`dunning.dunning_schedule` is the one owner of the ladder. Its inputs are the ladder dates of the invoice and the policy in Billing Settings. `get_ladder_dates` reads the dates of an issued invoice. `get_opening_ladder_dates` gives the dates of an invoice that would open on a given date, for the projections and the dashboard.
+`dunning.dunning_schedule` is the one owner of the ladder. Its inputs are the ladder dates of the invoice and the policy in Billing Settings. `get_ladder_dates` reads the dates of an issued invoice, and `get_ladder_dates_by_invoice` reads them for many invoices with one query. These dates include the time the first charge failed, so the runner, the dashboard, the projections and the alerts show the same single retry. `get_opening_ladder_dates` gives the dates of an invoice that would open on a given date, for the projections and the dashboard.
 
 | Ladder date | Rule |
 |---|---|

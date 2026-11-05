@@ -648,8 +648,7 @@ def _run_overdue_cycle(team, inv, pm, gateway, due):
 	for n in range(3):
 		_failed_attempt(team, inv, pm, gateway, n, when=frappe.utils.add_to_date(base, days=n))
 	row = frappe.db.get_value("Invoice", inv, ["name", *dunning.LADDER_FIELDS], as_dict=True)
-	first_failed_at = dunning.get_first_failed_at([inv]).get(inv)
-	for stage in dunning.dunning_schedule(dunning.get_ladder_dates(row), first_failed_at=first_failed_at):
+	for stage in dunning.dunning_schedule(dunning.get_ladder_dates(row)):
 		if stage.stage in ("Overdue", "Suspend"):
 			dunning.process_invoice_dunning(inv, now=stage.at)
 

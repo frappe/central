@@ -641,7 +641,8 @@ class TestTheSingleRetry(DunningTestBase):
 
 	def test_the_ladder_dates_the_single_retry_from_the_failed_charge(self):
 		dates = frappe._dict(anchor=self.PAY, retry_until=self.PAY, suspends_on=SUSPENDS_ON)
-		schedule = dunning.dunning_schedule(dates, first_failed_at="2026-06-09 05:00:00")
+		failed = frappe._dict(dates, first_failed_at="2026-06-09 05:00:00")
+		schedule = dunning.dunning_schedule(failed)
 		retry = next(s for s in schedule if s.stage == "Retry")
 		self.assertEqual(str(retry.at), "2026-06-10 05:00:00")
 		self.assertEqual(str(next(s for s in schedule if s.stage == "Overdue").at), "2026-06-10 05:00:00")

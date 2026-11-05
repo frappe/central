@@ -24,6 +24,7 @@ from central.billing.revenue.dunning import (
 	dunning_policy,
 	dunning_schedule,
 	get_ladder_dates,
+	get_ladder_dates_by_invoice,
 )
 
 # Modes in which nothing is charged off-session — dunning escalates without retrying, so
@@ -68,8 +69,10 @@ def rows(on=None, horizon_days: int | None = None, filters: dict | None = None) 
 	horizon = frappe.utils.add_days(on, horizon_days) if horizon_days else None
 
 	out = []
-	for invoice in unpaid_invoices(filters):
-		dates = get_ladder_dates(invoice)
+	invoices = unpaid_invoices(filters)
+	ladders = get_ladder_dates_by_invoice(invoices)
+	for invoice in invoices:
+		dates = ladders[invoice.name]
 		schedule = dunning_schedule(dates, policy)
 		reached = [s for s in schedule if frappe.utils.getdate(s.date) <= on]
 		ahead = [s for s in schedule if frappe.utils.getdate(s.date) > on]

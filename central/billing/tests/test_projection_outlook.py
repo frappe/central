@@ -60,6 +60,19 @@ class OutlookTestBase(IntegrationTestCase):
 
 
 class TestTheSweep(OutlookTestBase):
+	def _failed_attempt(self, invoice: str, at: str) -> None:
+		attempt = frappe.get_doc(
+			{
+				"doctype": "Payment Attempt",
+				"invoice": invoice,
+				"team": TEAM,
+				"amount": 5000,
+				"currency": "INR",
+				"status": "Failed",
+			}
+		).insert(ignore_permissions=True)
+		frappe.db.set_value("Payment Attempt", attempt.name, "creation", at, update_modified=False)
+
 	def test_an_unpaid_invoice_gets_a_dated_ladder(self):
 		with billing_settings(dunning_retry_interval_days=2, suspension_day=15, terminate_after_days=10):
 			self._invoice("2026-09-01")
@@ -95,6 +108,19 @@ class TestTheSweep(OutlookTestBase):
 			near = outlook.rows(on=TODAY, horizon_days=3, filters={"team": TEAM})
 			far = outlook.rows(on=TODAY, horizon_days=60, filters={"team": TEAM})
 		self.assertLessEqual(len(near), len(far))
+
+	def test_the_single_retry_is_dated_from_the_failed_charge(self):
+		# Payment day 8: no interval retry fits, so the one retry is 24 hours after the failure.
+		# The sweep and the drill must show the time the hourly run will use.
+		with billing_settings(dunning_retry_interval_days=2, suspension_day=15):
+			name = self._invoice("2026-09-08")
+			self._failed_attempt(name, at="2026-09-09 05:00:00")
+			row = outlook.rows(on="2026-09-09", filters={"team": TEAM})[0]
+			drill = outlook.why(name, on="2026-09-09")
+
+		self.assertEqual((row["next_action"], row["next_action_on"]), ("Retry", "2026-09-10"))
+		retry = next(stage for stage in drill["ladder"] if stage["stage"] == "Retry")
+		self.assertEqual(retry["date"], "2026-09-10")
 
 	def test_an_invoice_with_no_due_date_is_skipped_rather_than_guessed_at(self):
 		self._invoice(None)

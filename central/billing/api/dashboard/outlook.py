@@ -25,7 +25,6 @@ from central.billing.revenue.dunning import (
 	LADDER_FIELDS,
 	dunning_policy,
 	dunning_schedule,
-	get_first_failed_at,
 	get_ladder_dates,
 	get_opening_ladder_dates,
 	has_retry_rail,
@@ -187,8 +186,7 @@ def _missed_payment(team: str, invoice, today) -> dict:
 	if suspended_since:
 		return {**missed, "suspended_since": str(frappe.utils.getdate(suspended_since))}
 
-	first_failed_at = get_first_failed_at([invoice.name]).get(invoice.name)
-	schedule = dunning_schedule(get_ladder_dates(invoice), first_failed_at=first_failed_at)
+	schedule = dunning_schedule(get_ladder_dates(invoice))
 	next_retry_on = _next_retry_on(invoice, team, schedule)
 	if next_retry_on:
 		return {**missed, "next_retry_on": str(next_retry_on)}
