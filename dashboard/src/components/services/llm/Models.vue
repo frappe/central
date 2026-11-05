@@ -152,7 +152,7 @@ watch(
 					<td
 						class="hidden border-t border-outline-gray-1 py-2.5 pr-3 text-sm text-ink-gray-7 md:table-cell"
 					>
-						{{ model.model_id }}
+						{{ model.display_name }}
 					</td>
 
 					<td class="border-t border-outline-gray-1 py-2.5 pr-3">

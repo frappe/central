@@ -8,6 +8,8 @@ export interface AIModel {
 	name: string
 	provider: string
 	model_id: string
+	// What the model is called; Grove sends the id when no name is set.
+	display_name: string
 	// Whether the provider keeps nothing of a request once it is answered.
 	zero_data_retention: boolean
 	// What the model takes and what it gives: text, image, embeddings, ...

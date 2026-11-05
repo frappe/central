@@ -43,6 +43,7 @@ MODELS = [
 		"name": "acme/m",
 		"provider": "acme",
 		"model_id": "m",
+		"display_name": "M",
 		"zero_data_retention": True,
 		"dialects": ["openai"],
 	}
@@ -435,8 +436,14 @@ class TestAI(IntegrationTestCase):
 			[{"team": self.team, "geography": "eu"}, {"team": self.team, "geography": None}],
 		)
 		self.assertEqual(
-			(model["name"], model["provider"], model["model_id"], model["zero_data_retention"]),
-			("acme/m", "acme", "m", True),
+			(
+				model["name"],
+				model["provider"],
+				model["model_id"],
+				model["display_name"],
+				model["zero_data_retention"],
+			),
+			("acme/m", "acme", "m", "M", True),
 		)
 
 	def test_usage_of_one_key_sends_its_hash_and_an_unknown_key_is_refused(self):
