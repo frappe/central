@@ -273,6 +273,7 @@ scheduler_events = {
 		"* * * * *": [
 			"central.infrastructure.doctype.warpgate_access.warpgate_access.revoke_ended_access",
 		],
+		"* * * * * */10": ["central.integrations.runway.sweep"],
 		"*/10 * * * *": [
 			# Repair observed state through scoped regional reads.
 			"central.integrations.servers.reconcile",
@@ -461,6 +462,8 @@ _BILLING_TEAM_RECORDS = (
 )
 
 permission_query_conditions = {
+	"Runner Pool": "central.permissions.runner_pool_query_conditions",
+	"Runner Lease": "central.permissions.runner_lease_query_conditions",
 	"Team SSH Key": "central.permissions.team_ssh_key_query_conditions",
 	"WireGuard Device": "central.permissions.wireguard_device_query_conditions",
 	"Virtual Machine": "central.permissions.server_query_conditions",
@@ -481,6 +484,8 @@ permission_query_conditions = {
 }
 
 has_permission = {
+	"Runner Pool": "central.permissions.runner_pool_has_permission",
+	"Runner Lease": "central.permissions.runner_lease_has_permission",
 	"Team SSH Key": "central.permissions.team_ssh_key_has_permission",
 	"WireGuard Device": "central.permissions.wireguard_device_has_permission",
 	"Virtual Machine": "central.permissions.server_has_permission",

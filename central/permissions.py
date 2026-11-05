@@ -462,3 +462,23 @@ def _server_scoped_has_permission(doc, server_field: str, user: str | None, ptyp
 def _escape_values(values) -> str:
 	"""A comma-separated list of SQL-escaped values for an `in (...)` condition."""
 	return ", ".join(frappe.db.escape(value) for value in sorted(values))
+
+
+def runner_pool_query_conditions(user: str | None = None) -> str:
+	"""1. Operators see all pools. 2. Others require team-wide server:view."""
+	return _team_field_query_conditions("Runner Pool", "server:view", user)
+
+
+def runner_pool_has_permission(doc, user: str | None = None, ptype: str | None = None, **kwargs) -> bool:
+	"""1. Operators manage pools. 2. Others can only read their authorized Team."""
+	return _team_field_has_permission(doc, ("server:view",), (), user, ptype)
+
+
+def runner_lease_query_conditions(user: str | None = None) -> str:
+	"""1. Operators see all leases. 2. Others require team-wide server:view."""
+	return _team_field_query_conditions("Runner Lease", "server:view", user)
+
+
+def runner_lease_has_permission(doc, user: str | None = None, ptype: str | None = None, **kwargs) -> bool:
+	"""1. Operators inspect leases. 2. Others can only read their authorized Team."""
+	return _team_field_has_permission(doc, ("server:view",), (), user, ptype)
