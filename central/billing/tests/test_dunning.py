@@ -43,18 +43,29 @@ LADDER = {
 
 
 @contextmanager
-def declining_gateway(failure_code="card_declined", decline_code=None):
+def gateway_answering(result: PaymentResult):
 	adapter = MagicMock()
 	adapter.prepare_charge.return_value = None  # Stripe-like: no order to store
-	adapter.charge.return_value = PaymentResult(
-		success=False,
-		status="Failed",
-		failure_code=failure_code,
-		decline_code=decline_code,
-		failure_reason="Card declined",
-	)
+	adapter.charge.return_value = result
 	with patch("central.billing.gateways.registry.get_adapter", return_value=adapter):
 		yield adapter
+
+
+def declining_gateway(failure_code="card_declined", decline_code=None):
+	return gateway_answering(
+		PaymentResult(
+			success=False,
+			status="Failed",
+			failure_code=failure_code,
+			decline_code=decline_code,
+			failure_reason="Card declined",
+		)
+	)
+
+
+def capturing_gateway():
+	"""The gateway takes the charge and confirms it later by webhook, so the attempt stays in flight."""
+	return gateway_answering(PaymentResult(success=True, status="captured", gateway_transaction_id="pi_x"))
 
 
 def day(n):
@@ -126,6 +137,32 @@ class DunningTestBase(BillingTestCase):
 	def _attempts(self, inv):
 		return frappe.db.count("Payment Attempt", {"invoice": inv})
 
+	def _dun(self, inv, n):
+		with self.freeze_time(f"{day(n)} 03:00:00"):
+			return dunning.process_invoice_dunning(inv, now=day(n))
+
+	def _overdue_notices(self, inv):
+		return frappe.db.count(
+			"Billing Notification Log", {"team": TEAM, "event_type": "Invoice Overdue", "reference_name": inv}
+		)
+
+	def _fail(self, attempt, at):
+		frappe.db.set_value(
+			"Payment Attempt",
+			attempt,
+			{
+				"status": "Failed",
+				"failure_code": "card_declined",
+				"decline_code": "insufficient_funds",
+				"completed_at": at,
+			},
+		)
+
+	def _last_attempt(self, inv):
+		return frappe.get_all(
+			"Payment Attempt", {"invoice": inv}, order_by="creation desc", limit=1, pluck="name"
+		)[0]
+
 	def _standing(self, sub):
 		return frappe.db.get_value("Subscription", sub, "account_standing")
 
@@ -133,10 +170,6 @@ class DunningTestBase(BillingTestCase):
 class TestRetrySchedule(DunningTestBase):
 	"""Each retry day is a new collection round: a card whose decline can clear is
 	charged again, once per round. A hard decline is never charged again."""
-
-	def _dun(self, inv, n):
-		with self.freeze_time(f"{day(n)} 03:00:00"):
-			dunning.process_invoice_dunning(inv, now=day(n))
 
 	def test_a_declined_card_is_retried_on_each_retry_day(self):
 		inv = self._open_invoice(self._subscription())
@@ -217,6 +250,25 @@ class TestStagedEscalation(DunningTestBase):
 		self.assertEqual(frappe.db.get_value("Invoice", inv, "status"), "Overdue")
 		self.assertEqual(self._standing(sub), "Past Due")  # grace
 		stop.assert_not_called()  # late is not yet cut off
+
+	def test_overdue_waits_for_the_last_retry_still_in_flight(self):
+		inv = self._open_invoice(self._subscription())
+		with declining_gateway(decline_code="insufficient_funds"):
+			self._dun(inv, 2)
+			self._dun(inv, 4)
+		with capturing_gateway():
+			result = self._dun(inv, 6)
+
+		self.assertEqual(result["actions"], ["retry"])
+		self.assertEqual(frappe.db.get_value("Invoice", inv, "status"), "Outstanding")
+		self.assertEqual(self._overdue_notices(inv), 0)
+
+		self._fail(self._last_attempt(inv), f"{day(6)} 09:00:00")
+		result = self._dun(inv, 7)
+
+		self.assertEqual(result["actions"], ["overdue"])
+		self.assertEqual(frappe.db.get_value("Invoice", inv, "status"), "Overdue")
+		self.assertEqual(self._overdue_notices(inv), 1)
 
 	def test_the_last_retry_day_moves_every_subscription_of_the_team(self):
 		"""The invoice bills the whole team, so Overdue marks every server, as suspension suspends every one."""
@@ -517,7 +569,12 @@ class TestTheLadderIsAList(DunningTestBase):
 	being run — and the executor walks the same list."""
 
 	DATES = frappe._dict(
-		anchor=PAY, retry_until=DUE, suspends_on=SUSPENDS_ON, first_failed_at=None, is_awaiting_charge=False
+		anchor=PAY,
+		retry_until=DUE,
+		suspends_on=SUSPENDS_ON,
+		first_failed_at=None,
+		in_flight_since=None,
+		is_awaiting_charge=False,
 	)
 
 	def _policy(self, interval=2, terminate=10):
@@ -647,6 +704,7 @@ class TestTheSingleRetry(DunningTestBase):
 			retry_until=self.PAY,
 			suspends_on=SUSPENDS_ON,
 			first_failed_at=None,
+			in_flight_since=None,
 			is_awaiting_charge=False,
 		)
 		failed = frappe._dict(dates, first_failed_at="2026-06-09 05:00:00")
@@ -677,11 +735,6 @@ class TestTheSingleRetry(DunningTestBase):
 		frappe.db.set_value("Payment Attempt", attempt.name, "creation", at, update_modified=False)
 		return attempt.name
 
-	def _overdue_notices(self, inv):
-		return frappe.db.count(
-			"Billing Notification Log", {"team": TEAM, "event_type": "Invoice Overdue", "reference_name": inv}
-		)
-
 	def _run_hourly_single_retry(self, inv, at):
 		row = frappe.db.get_value("Invoice", inv, ["name", *dunning.LADDER_FIELDS], as_dict=True)
 		with self.freeze_time(at):
@@ -702,12 +755,7 @@ class TestTheSingleRetry(DunningTestBase):
 		self.assertEqual(self._overdue_notices(inv), 0)
 		self.assertEqual(self._attempts(inv), 1)
 
-		frappe.db.set_value(
-			"Payment Attempt",
-			attempt,
-			{"status": "Failed", "failure_code": "card_declined", "decline_code": "insufficient_funds"},
-		)
-		frappe.db.set_value("Payment Attempt", attempt, "completed_at", "2026-06-10 15:00:00")
+		self._fail(attempt, "2026-06-10 15:00:00")
 		with declining_gateway(decline_code="insufficient_funds"):
 			self.assertEqual(self._run_hourly_single_retry(inv, "2026-06-11 14:00:00")["skipped"], "not_due")
 			result = self._run_hourly_single_retry(inv, "2026-06-11 15:00:00")

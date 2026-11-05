@@ -12,7 +12,7 @@ from datetime import datetime
 import frappe
 from frappe.model.document import Document
 from frappe.query_builder import Case
-from frappe.query_builder.functions import Coalesce, Max, Min
+from frappe.query_builder.functions import Coalesce, Min
 from pypika.terms import Criterion
 
 
@@ -51,8 +51,9 @@ def in_flight_condition(attempt) -> Criterion:
 
 
 def get_charge_outcomes(invoices: list[str]) -> dict[str, frappe._dict]:
-	"""For each invoice with a payment attempt: when its first charge failed
-	(`first_failed_at`, None when none failed) and whether a charge is in flight (`is_in_flight`).
+	"""For each invoice with a payment attempt: when its first charge failed (`first_failed_at`)
+	and when the oldest charge still in flight was made (`in_flight_since`). Each is None when no
+	charge is in that state.
 
 	A charge fails when its outcome arrives (`completed_at`), which for a debit the gateway
 	settles later is hours after the attempt was made."""
@@ -66,7 +67,7 @@ def get_charge_outcomes(invoices: list[str]) -> dict[str, frappe._dict]:
 		.select(
 			attempt.invoice,
 			Min(failed_at).as_("first_failed_at"),
-			Max(Case().when(in_flight_condition(attempt), 1).else_(0)).as_("is_in_flight"),
+			Min(Case().when(in_flight_condition(attempt), attempt.creation)).as_("in_flight_since"),
 		)
 		.where(attempt.invoice.isin(invoices))
 		.groupby(attempt.invoice)

@@ -9,9 +9,10 @@ anchor, `dunning_starts_on`). The days are the shipped defaults of Billing Setti
   Retries         every 2 days after the anchor, while the retry date is on or before
                   the invoice due date. When no retry fits, one retry 24 hours after the
                   first charge failed, which the hourly sweep runs. While a charge is
-                  awaited, this retry and Overdue wait for it. Each is a new Payment
-                  Attempt, notified with the reason.
+                  awaited, this retry waits for it. Each is a new Payment Attempt,
+                  notified with the reason.
   Last retry day  invoice -> Overdue, standing -> past_due. KEEP RUNNING (grace).
+                  A charge in flight holds Overdue until its outcome.
   Suspension      on the invoice's `suspends_on`: the 15th of the month it opened in.
                   Every server subscription -> suspended, and Central stops the team's
                   running servers (data preserved). Paying the invoice returns the team
@@ -80,8 +81,8 @@ def get_ladder_dates(invoice) -> frappe._dict:
 def get_ladder_dates_by_invoice(invoices: list) -> dict[str, frappe._dict]:
 	"""The ladder dates of each issued invoice, by invoice name.
 
-	Each carries the retry window (`_get_window_dates`) and the two facts that time the single
-	retry: `first_failed_at`, when the first charge failed, and `is_awaiting_charge`. The charges
+	Each carries the retry window (`_get_window_dates`) and the charge facts that time the single
+	retry and Overdue: `first_failed_at`, `in_flight_since` and `is_awaiting_charge`. The charges
 	are one grouped query. The rail is one batch, read only for the uncharged invoices whose
 	ladder has the single retry."""
 	from central.billing.payments import collection
@@ -102,6 +103,7 @@ def get_ladder_dates_by_invoice(invoices: list) -> dict[str, frappe._dict]:
 		invoice.name: frappe._dict(
 			windows[invoice.name],
 			first_failed_at=(charges.get(invoice.name) or {}).get("first_failed_at"),
+			in_flight_since=(charges.get(invoice.name) or {}).get("in_flight_since"),
 			is_awaiting_charge=_is_awaiting_charge(charges.get(invoice.name), invoice.name in chargeable),
 		)
 		for invoice in invoices
@@ -117,7 +119,7 @@ def _is_awaiting_charge(charges: frappe._dict | None, is_chargeable: bool) -> bo
 	3. A charge was made and none failed: wait.
 	4. No charge yet: wait when dunning can charge the invoice off-session (`is_chargeable`)."""
 	if charges:
-		return bool(charges.is_in_flight) or not charges.first_failed_at
+		return bool(charges.in_flight_since) or not charges.first_failed_at
 	return is_chargeable
 
 
@@ -159,6 +161,7 @@ def get_opening_ladder_dates(team: str, opened_on) -> frappe._dict:
 		suspends_on=get_suspension_date(team, opened_on),
 		is_deferred=False,
 		first_failed_at=None,
+		in_flight_since=None,
 		is_awaiting_charge=False,
 	)
 
@@ -222,8 +225,9 @@ def dunning_schedule(dates: frappe._dict, policy=None) -> list[frappe._dict]:
 	Pure date arithmetic over the dates and the policy: no document reads and no writes.
 	`process_invoice_dunning` executes this schedule; anything that wants to *show* the
 	ladder without running it reads the same list. Each stage has the time it is reached
-	(`at`), its `date`, and its `day` counted from the anchor. A ladder that waits for a charge
-	(`get_retry_times`) has no Retry and no Overdue stage yet. Suspension still has its date.
+	(`at`), its `date`, and its `day` counted from the anchor. While a charge is in flight
+	(`in_flight_since`), the ladder has no Overdue stage, so Overdue waits for the outcome. A single
+	retry that waits for a charge (`get_retry_times`) is not dated yet. Suspension keeps its date.
 
 	Pass an explicit `policy` to ask what a different ladder would do.
 	"""
@@ -233,7 +237,7 @@ def dunning_schedule(dates: frappe._dict, policy=None) -> list[frappe._dict]:
 	suspends_on = frappe.utils.get_datetime(frappe.utils.getdate(dates.suspends_on))
 
 	stages = [frappe._dict(stage="Retry", attempt=n, at=at) for n, at in enumerate(retries, start=1)]
-	if retries:
+	if retries and not dates.in_flight_since:
 		stages.append(frappe._dict(stage="Overdue", at=retries[-1]))
 	stages.append(frappe._dict(stage="Suspend", at=suspends_on))
 	stages.append(
@@ -389,7 +393,7 @@ def process_invoice_dunning(invoice_name: str, now=None) -> dict:
 		inv.reload()
 		if inv.status == "Paid":
 			return {"invoice": invoice_name, "days_overdue": days, "action": "paid"}
-		# A retry still in flight holds the single retry's Overdue until its outcome.
+		# A retry still in flight holds Overdue until its outcome.
 		reached = stages_reached(dunning_schedule(get_ladder_dates(inv)), now)
 
 	standing = sub.account_standing if sub else None
