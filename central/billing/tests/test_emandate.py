@@ -150,7 +150,12 @@ class TestEmandatePredebit(EmandateTestBase):
 		from central.billing.gateways.base import PaymentResult
 
 		inv = self._invoice(5000)
-		emandate.schedule_predebit(inv, now="2099-06-10 09:00:00")
+		frappe.db.set_value("Invoice", inv, "payment_date", "2099-06-11")
+		out = emandate.schedule_predebit(inv, now="2099-06-10 09:00:00")
+		self.assertTrue(out.get("notified"))
+		# The debit waits 24 hours after the notice, which is later than the payment date start.
+		self.assertEqual(out["charge_after"], "2099-06-11 09:00:00")
+
 		adapter = MagicMock()
 		adapter.prepare_charge.return_value = None
 		adapter.charge.return_value = PaymentResult(
