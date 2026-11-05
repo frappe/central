@@ -23,6 +23,7 @@ from datetime import datetime
 from enum import StrEnum
 
 import frappe
+from frappe.query_builder.functions import Max
 
 from central.billing.doctype.invoice.invoice import is_owed, owed_filters
 from central.billing.payments import collection, collection_mode
@@ -144,8 +145,11 @@ def _get_notice_skip_reason(inv, gateway: str | None) -> str | None:
 
 
 def charge_due(now=None) -> list[dict]:
-	"""Off-session debit every e-mandate invoice whose pre-debit window has elapsed.
-	The charge path re-checks the ₹15,000 ceiling (#50 item 1)."""
+	"""Make the first off-session debit of every e-mandate invoice whose pre-debit window has
+	elapsed. The charge path re-checks the ₹15,000 ceiling (#50 item 1).
+
+	An invoice already debited in its window is left to dunning, which retries it. Debiting it
+	again on every sweep would also repeat the ask for another method each hour."""
 	now_dt = frappe.utils.get_datetime(now) if now else frappe.utils.now_datetime()
 	due = frappe.get_all(
 		"Invoice",
@@ -156,15 +160,36 @@ def charge_due(now=None) -> list[dict]:
 			["predebit_charge_after", "is", "set"],
 			["predebit_charge_after", "<=", now_dt],
 		],
-		fields=["name", "team"],
+		fields=["name", "team", "predebit_charge_after"],
 	)
-	auto = [inv.name for inv in due if collection_mode.is_debit_allowed(inv.team)]
+	debited = _get_debited_in_window(due)
+	auto = [inv.name for inv in due if inv.name not in debited and collection_mode.is_debit_allowed(inv.team)]
 	return each_isolated(
 		"E-mandate debit",
 		"Invoice",
 		auto,
 		lambda name: {"invoice": name, **collection.collect_invoice(name, now=now_dt)},
 	)
+
+
+def _get_debited_in_window(invoices: list) -> set[str]:
+	"""The invoices with a payment attempt made at or after their pre-debit charge time."""
+	if not invoices:
+		return set()
+
+	attempt = frappe.qb.DocType("Payment Attempt")
+	latest = dict(
+		frappe.qb.from_(attempt)
+		.select(attempt.invoice, Max(attempt.creation))
+		.where(attempt.invoice.isin([inv.name for inv in invoices]))
+		.groupby(attempt.invoice)
+		.run()
+	)
+	return {
+		inv.name
+		for inv in invoices
+		if inv.name in latest and latest[inv.name] >= frappe.utils.get_datetime(inv.predebit_charge_after)
+	}
 
 
 def run_emandate_cycle(now=None) -> dict:

@@ -123,7 +123,7 @@ def collect_invoice(invoice: str, new_round: bool = False, now: datetime | str |
 def collect_on_payment_date(now: datetime | str | None = None) -> list[dict]:
 	"""Hourly: charge on the payment date, and remind the day before.
 
-	1. Debit each pre-debit rail whose window has opened (`emandate.charge_due`).
+	1. Make the first debit on each pre-debit rail whose window has opened (`emandate.charge_due`).
 	2. Start collection on each invoice that has reached its payment date, or will reach
 	   it tomorrow, and has no payment attempt. A rail that owes a pre-debit notice sends
 	   it a day early. An invoice that missed its payment date is still picked up.
