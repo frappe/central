@@ -516,7 +516,9 @@ class TestTheLadderIsAList(DunningTestBase):
 	"""The schedule is date arithmetic over the ladder dates, so it can be drawn without
 	being run — and the executor walks the same list."""
 
-	DATES = frappe._dict(anchor=PAY, retry_until=DUE, suspends_on=SUSPENDS_ON)
+	DATES = frappe._dict(
+		anchor=PAY, retry_until=DUE, suspends_on=SUSPENDS_ON, first_failed_at=None, is_awaiting_charge=False
+	)
 
 	def _policy(self, interval=2, terminate=10):
 		return frappe._dict(retry_interval=interval, terminate_after=terminate)
@@ -640,7 +642,13 @@ class TestTheSingleRetry(DunningTestBase):
 			self.assertEqual(self._attempts(inv), 2)
 
 	def test_the_ladder_dates_the_single_retry_from_the_failed_charge(self):
-		dates = frappe._dict(anchor=self.PAY, retry_until=self.PAY, suspends_on=SUSPENDS_ON)
+		dates = frappe._dict(
+			anchor=self.PAY,
+			retry_until=self.PAY,
+			suspends_on=SUSPENDS_ON,
+			first_failed_at=None,
+			is_awaiting_charge=False,
+		)
 		failed = frappe._dict(dates, first_failed_at="2026-06-09 05:00:00")
 		schedule = dunning.dunning_schedule(failed)
 		retry = next(s for s in schedule if s.stage == "Retry")

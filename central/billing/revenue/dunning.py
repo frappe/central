@@ -257,9 +257,9 @@ def get_retry_times(dates: frappe._dict, interval: int) -> list[datetime]:
 	interval_dates = get_interval_retry_dates(dates, interval)
 	if interval_dates:
 		return [frappe.utils.get_datetime(on) for on in interval_dates]
-	if dates.get("is_awaiting_charge"):
+	if dates.is_awaiting_charge:
 		return []
-	if dates.get("first_failed_at"):
+	if dates.first_failed_at:
 		return [
 			frappe.utils.add_to_date(
 				frappe.utils.get_datetime(dates.first_failed_at), hours=SINGLE_RETRY_HOURS
