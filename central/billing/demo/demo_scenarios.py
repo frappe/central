@@ -580,7 +580,7 @@ def _build_team(team, slug, tier, currency, state, resources, resize):
 		backdate_invoice(inv, opened_at)
 		# The overdue team's most recent bill is left unpaid and dunned to Overdue +
 		# suspended. Anchoring it to a CLOSED month (due 7 days after the month ended)
-		# means the whole cycle — decline retries, Day-7 Overdue, Day-14 suspend — sits
+		# means the whole cycle — decline retries, Overdue, suspension — sits
 		# in the past, so the timeline reads finalised -> declines -> overdue in order.
 		# A current-month bill can't: finalised only at month end, it has no room to go
 		# overdue before 'today'.
@@ -636,9 +636,9 @@ def _build_team(team, slug, tier, currency, state, resources, resize):
 def _run_overdue_cycle(team, inv, pm, gateway, due):
 	"""Leave `inv` unpaid and drive it through the REAL dunning cycle to Overdue +
 	suspended. Three declined retries (a day apart from `due`) seed the failure trail;
-	dunning.process_invoice_dunning then escalates at Day 7 (Overdue + past_due +
-	notification) and Day 14 (suspend directive) — the real stages, not a hand-set
-	status. With `due` on a closed month, the whole cycle lands before 'today'."""
+	dunning.process_invoice_dunning then runs on the ladder's Overdue and Suspend stages
+	(Overdue + past_due + notification, then the suspend directive) — the real stages,
+	not a hand-set status. With `due` on a closed month, the whole cycle lands before 'today'."""
 	from central.billing.revenue import dunning
 
 	frappe.db.set_value("Invoice", inv, {**_open_on(due), "amount_paid": 0})
@@ -647,9 +647,11 @@ def _run_overdue_cycle(team, inv, pm, gateway, due):
 	base = frappe.utils.get_datetime(f"{due} 09:00:00")
 	for n in range(3):
 		_failed_attempt(team, inv, pm, gateway, n, when=frappe.utils.add_to_date(base, days=n))
-	due_d = frappe.utils.getdate(due)
-	dunning.process_invoice_dunning(inv, now=frappe.utils.add_days(due_d, 7))
-	dunning.process_invoice_dunning(inv, now=frappe.utils.add_days(due_d, 14))
+	row = frappe.db.get_value("Invoice", inv, ["name", *dunning.LADDER_FIELDS], as_dict=True)
+	first_failed_at = dunning.get_first_failed_at([inv]).get(inv)
+	for stage in dunning.dunning_schedule(dunning.get_ladder_dates(row), first_failed_at=first_failed_at):
+		if stage.stage in ("Overdue", "Suspend"):
+			dunning.process_invoice_dunning(inv, now=stage.at)
 
 
 def _open_on(due) -> dict:
