@@ -31,8 +31,11 @@ const { current: tierCurrent } = useSpendingLimits()
 
 const loading = computed(() => forecast.loading && !forecast.data)
 const fc = computed(() => forecast.data)
+// The headline is what the cycle will cost with tax, the same figure the card is
+// charged. The spend limit caps the amount before tax, so the bar reads the subtotal.
 const projected = computed(() => Number(fc.value?.projected_total ?? 0))
-const soFar = computed(() => Number(fc.value?.measured ?? projected.value))
+const taxAmount = computed(() => Number(fc.value?.tax_amount ?? 0))
+const subtotal = computed(() => Number(fc.value?.subtotal ?? 0))
 const hasCycle = computed(() => projected.value > 0)
 const daysRemaining = computed(() => fc.value?.days_remaining ?? null)
 
@@ -45,17 +48,17 @@ const cycleLabel = computed(() => {
 })
 
 const limit = computed(() => Number(tierCurrent.value?.max_spend ?? 0))
-const scale = computed(() => Math.max(soFar.value, limit.value))
+const scale = computed(() => Math.max(subtotal.value, limit.value))
 
 const percentOf = (amount: number): string =>
 	`${scale.value ? (amount / scale.value) * 100 : 0}%`
 
 const withinLimit = computed(() =>
-	limit.value ? Math.min(soFar.value, limit.value) : soFar.value,
+	limit.value ? Math.min(subtotal.value, limit.value) : subtotal.value,
 )
 
 const overLimit = computed(() =>
-	limit.value ? Math.max(0, soFar.value - limit.value) : 0,
+	limit.value ? Math.max(0, subtotal.value - limit.value) : 0,
 )
 
 // ── Billing alert (spend-alert threshold) ────────────────────────────────────
@@ -92,14 +95,14 @@ watch(
 // Alert relationship to the current estimate, so the button says something useful
 // at a glance and only tints when it's worth noticing.
 const crossed = computed(
-	() => spendAlert.value > 0 && soFar.value >= spendAlert.value,
+	() => spendAlert.value > 0 && projected.value >= spendAlert.value,
 )
 
 const near = computed(
 	() =>
 		spendAlert.value > 0 &&
 		!crossed.value &&
-		soFar.value >= 0.8 * spendAlert.value,
+		projected.value >= 0.8 * spendAlert.value,
 )
 
 const alertLabel = computed(() => {
@@ -168,15 +171,6 @@ async function submitAlert(): Promise<void> {
 			</h2>
 
 			<div class="flex items-center gap-2">
-				<Button
-					v-if="hasCycle"
-					size="xs"
-					label="Breakdown"
-					icon-left="lucide-receipt-text"
-					variant="outline"
-					@click="$emit('open')"
-				/>
-
 				<Tooltip v-if="canManageBilling" :text="alertLabel">
 					<Button size="xs" label="Budget alerts" @click="openDialog">
 						<template #icon>
@@ -194,19 +188,37 @@ async function submitAlert(): Promise<void> {
 		<LoadingText v-if="loading" :lines="3" class="w-56" />
 
 		<template v-else>
-			<div class="flex flex-wrap items-center gap-x-3 gap-y-1">
-				<span
-					class="text-4xl-semibold leading-tight tabular-nums text-ink-gray-9"
-				>
-					{{ money(soFar, currency) }}
-				</span>
-				<span v-if="!hasCycle" class="text-base text-ink-gray-5">
-					nothing billed yet this cycle
-				</span>
-				<Badge
-					v-if="hasCycle && daysRemaining != null"
-					:label="`Bills in ${daysRemaining} days`"
-				/>
+			<div class="flex flex-col gap-1">
+				<div class="flex flex-wrap items-center gap-x-3 gap-y-1">
+					<span
+						class="text-4xl-semibold leading-tight tabular-nums text-ink-gray-9"
+					>
+						{{ money(projected, currency) }}
+					</span>
+					<span v-if="!hasCycle" class="text-base text-ink-gray-5">
+						nothing billed yet this cycle
+					</span>
+					<Badge
+						v-if="hasCycle && daysRemaining != null"
+						:label="`Bills in ${daysRemaining} days`"
+					/>
+				</div>
+
+				<p v-if="hasCycle" class="text-sm text-ink-gray-6">
+					<template v-if="taxAmount">
+						Includes
+						<span class="tabular-nums">{{ money(taxAmount, currency) }}</span>
+						{{ fc?.tax_type || 'tax' }}
+						·
+					</template>
+					<button
+						type="button"
+						class="text-ink-gray-9 underline decoration-dotted underline-offset-[3px] transition-colors hover:decoration-solid"
+						@click="$emit('open')"
+					>
+						See breakdown
+					</button>
+				</p>
 			</div>
 
 			<div class="flex flex-col gap-2">
@@ -236,7 +248,7 @@ async function submitAlert(): Promise<void> {
 						<span class="tabular-nums text-ink-gray-9"
 							>{{ money(limit, currency) }}</span
 						>
-						on
+						before tax on
 						<button
 							type="button"
 							class="text-ink-gray-9 underline decoration-dotted underline-offset-[3px] transition-colors hover:decoration-solid"
