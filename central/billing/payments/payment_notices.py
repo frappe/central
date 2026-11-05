@@ -4,6 +4,7 @@
 from datetime import datetime
 
 import frappe
+from frappe import _
 
 from central.billing.doctype.invoice.invoice import owed_filters
 from central.billing.platform import notifications
@@ -67,6 +68,30 @@ def _get_uncharged_invoice(team: str) -> dict:
 	if not invoice:
 		return {}
 	return {"open_invoice": invoice.name, "open_payment_date": _format_date(invoice.payment_date)}
+
+
+def notify_invoice_overdue(invoice: str, team: str) -> None:
+	"""Tell the team an invoice is overdue, and the action that settles it in its collection mode."""
+	notifications.notify(
+		team,
+		"Invoice Overdue",
+		message=_get_overdue_message(invoice, team),
+		context={"invoice": invoice},
+		reference_doctype="Invoice",
+		reference_name=invoice,
+	)
+
+
+def _get_overdue_message(invoice: str, team: str) -> str:
+	"""A Manual Checkout team pays by hand and a Prepaid team tops up its wallet (ADR 0005)."""
+	mode = frappe.db.get_value("Billing Profile", team, "collection_mode")
+	if mode == "Manual Checkout":
+		return _("Invoice {0} is overdue. Pay it now to avoid suspension.").format(invoice)
+	if mode == "Prepaid":
+		return _("Invoice {0} is overdue. Top up your wallet to settle it and avoid suspension.").format(
+			invoice
+		)
+	return _("Invoice {0} is overdue. Please settle it to avoid suspension.").format(invoice)
 
 
 def get_ordinal(day: int) -> str:

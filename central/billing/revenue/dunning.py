@@ -276,20 +276,6 @@ def _notify(invoice, message: str):
 	invoice.add_comment("Info", message)
 
 
-def _collection_mode(team: str) -> str | None:
-	"""The team's collection mode (ADR 0005), or None for a team with no profile."""
-	return frappe.db.get_value("Billing Profile", team, "collection_mode")
-
-
-def _overdue_message(invoice: str, mode: str | None) -> str:
-	"""Mode-aware overdue copy: tell the customer the action that settles it."""
-	if mode == "Manual Checkout":
-		return f"Invoice {invoice} is overdue — pay it now to avoid suspension."
-	if mode == "Prepaid":
-		return f"Invoice {invoice} is overdue — top up your wallet to settle it and avoid suspension."
-	return f"Invoice {invoice} is overdue. Please settle it to avoid suspension."
-
-
 def retry_payment(invoice_name: str) -> dict:
 	"""One dunning retry: a new collection round, primary→backup (#28), notified with
 	the reason on failure."""
@@ -383,7 +369,6 @@ def process_invoice_dunning(invoice_name: str, now=None) -> dict:
 
 	# --- retries: one collection round per retry day (escalate, don't repeat, #28).
 	# Credits-only teams (no methods) skip straight to the stages below.
-	mode = _collection_mode(inv.team)
 	if _retry_if_due(inv, schedule, now):
 		actions.append("retry")
 		inv.reload()
@@ -400,16 +385,9 @@ def process_invoice_dunning(invoice_name: str, now=None) -> dict:
 			transition(inv, "Overdue", reason="dunning: past due window elapsed", actor="scheduler")
 			save_billing_record(inv)
 			actions.append("overdue")
-			from central.billing.platform import notifications
+			from central.billing.payments.payment_notices import notify_invoice_overdue
 
-			notifications.notify(
-				inv.team,
-				"Invoice Overdue",
-				message=_overdue_message(invoice_name, mode),
-				context={"invoice": invoice_name},
-				reference_doctype="Invoice",
-				reference_name=invoice_name,
-			)
+			notify_invoice_overdue(invoice_name, inv.team)
 		if sub:
 			subscriptions.mark_past_due(inv.team)
 			standing = frappe.db.get_value("Subscription", anchor, "account_standing")
