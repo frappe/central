@@ -19,7 +19,7 @@ import frappe
 from frappe import _
 
 from central.billing.api.dashboard._shared import _resolve_team, _team_currency
-from central.billing.doctype.billing_profile.billing_profile import get_due_date, get_payment_date
+from central.billing.doctype.billing_profile.billing_profile import get_payment_date
 from central.billing.doctype.invoice.invoice import owed_filters
 
 # Customer-facing copy for the findings the engine can raise. `fix` is the sentence
@@ -131,6 +131,7 @@ def _owed_invoices(team: str) -> list[frappe._dict]:
 			"expected_collection",
 			"due_date",
 			"dunning_starts_on",
+			"suspends_on",
 			"payment_date",
 			"period_end",
 			"predebit_charge_after",
@@ -171,7 +172,7 @@ def _missed_payment(team: str, invoice, today) -> dict:
 	3. A retry still to come, today's included until it runs: only the next retry date.
 	4. No retry left, or none dunning can run: only the date the team is suspended.
 	"""
-	from central.billing.revenue.dunning import dunning_clock_start, dunning_schedule
+	from central.billing.revenue.dunning import dunning_schedule, get_ladder_dates
 
 	missed = {"next_retry_on": None, "suspends_on": None, "suspended_since": None}
 	if not invoice or not _is_charge_missed(invoice, today):
@@ -181,7 +182,7 @@ def _missed_payment(team: str, invoice, today) -> dict:
 	if suspended_since:
 		return {**missed, "suspended_since": str(frappe.utils.getdate(suspended_since))}
 
-	schedule = dunning_schedule(dunning_clock_start(invoice))
+	schedule = dunning_schedule(get_ladder_dates(invoice))
 	next_retry_on = _next_retry_on(invoice, team, schedule, today)
 	if next_retry_on:
 		return {**missed, "next_retry_on": str(next_retry_on)}
@@ -304,19 +305,29 @@ def _escalation(team: str, invoice: str | None, period_end) -> list[dict]:
 	"""What happens if the bill goes unpaid — published up front rather than
 	discovered one failed retry at a time.
 
-	An open invoice counts from its own dunning clock. A projected one counts from the
-	due date the run would give it."""
-	from central.billing.revenue.dunning import dunning_clock_start, dunning_policy, dunning_schedule
+	An open invoice counts from its own ladder dates. A projected one counts from the
+	dates the run would give it when it opens."""
+	from central.billing.revenue.dunning import (
+		dunning_policy,
+		dunning_schedule,
+		get_ladder_dates,
+		get_opening_ladder_dates,
+	)
 
 	if invoice:
-		clock_start = dunning_clock_start(
-			frappe.db.get_value("Invoice", invoice, ["due_date", "dunning_starts_on"], as_dict=True)
+		dates = get_ladder_dates(
+			frappe.db.get_value(
+				"Invoice",
+				invoice,
+				["payment_date", "due_date", "dunning_starts_on", "suspends_on"],
+				as_dict=True,
+			)
 		)
 	elif period_end:
-		clock_start = get_due_date(team, frappe.utils.add_days(period_end, 1))
+		dates = get_opening_ladder_dates(team, frappe.utils.add_days(period_end, 1))
 	else:
 		return []
 	return [
 		{"date": str(stage.date), "stage": _(stage.stage), "day": stage.day}
-		for stage in dunning_schedule(clock_start, dunning_policy())
+		for stage in dunning_schedule(dates, dunning_policy())
 	]

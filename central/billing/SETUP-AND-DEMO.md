@@ -149,8 +149,7 @@ e2e suite delivers it via `tests/e2e.py:deliver_webhook` from a real captured tx
 manual demo, the seed path already shows Paid invoices.
 
 ### Step 9 · Dunning (unpaid path)
-Leave an invoice unpaid and run the daily job to walk the Day 1/3/7 retries → past_due →
-suspend:
+Leave an invoice unpaid and run the daily job to walk the retries after the payment date → past_due → suspend on the suspension date:
 ```bash
 pilot frappe --site central.localhost execute central.billing.revenue.dunning.run_dunning
 ```

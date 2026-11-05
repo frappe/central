@@ -10,7 +10,6 @@ from central.billing.api.dashboard import outlook
 from central.billing.doctype.billing_profile.billing_profile import get_due_date, get_payment_date
 from central.billing.gateways.base import PaymentResult
 from central.billing.payments import collection, emandate
-from central.billing.revenue.dunning import dunning_schedule
 from central.billing.tests import test_emandate
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import complete_billing_profile, ensure_team
@@ -66,11 +65,19 @@ class TestPaymentDayChanges(IntegrationTestCase):
 	def test_an_invoice_is_not_due_before_its_payment_date(self):
 		frappe.db.set_value("Billing Profile", PROFILE_TEAM, "payment_day", 10)
 
-		with settings.overridden(invoice_due_days=7):
+		with settings.overridden(invoice_due_days=7, dunning_retry_interval_days=2, suspension_day=15):
 			self.assertEqual(str(get_due_date(PROFILE_TEAM, "2026-12-01")), "2026-12-10")
 			ladder = outlook._escalation(PROFILE_TEAM, None, "2026-11-30")
 
-		self.assertEqual(ladder[0]["date"], str(dunning_schedule("2026-12-10")[0].date))
+		# A charge on the 10th has one retry, the next day, and the team is suspended on the 15th.
+		self.assertEqual(
+			[(row["stage"], row["date"]) for row in ladder[:3]],
+			[
+				("Retry", "2026-12-11"),
+				("Overdue", "2026-12-11"),
+				("Suspend", "2026-12-15"),
+			],
+		)
 
 
 class TestDebitWaitsForThePaymentDate(test_emandate.EmandateTestBase):

@@ -12,7 +12,11 @@ worker, is `run.py`'s business.
 import frappe
 from frappe import _
 
-from central.billing.doctype.billing_profile.billing_profile import get_due_date, get_payment_date
+from central.billing.doctype.billing_profile.billing_profile import (
+	get_due_date,
+	get_payment_date,
+	get_suspension_date,
+)
 from central.billing.doctype.invoice.invoice import (
 	UNSETTLED,
 	is_owed,
@@ -94,13 +98,14 @@ def open_and_collect(invoice: str, collect: bool = True) -> dict:
 	# Credits apply today; the card waits for the team's payment day.
 	doc.payment_date = get_payment_date(doc.team, frappe.utils.nowdate())
 
-	# Both dates are set from *today*, not from the period end: an invoice the run
-	# opened three days late is due three days later, and its dunning ladder starts
-	# three days later. A backlog delays collection; it never shortens the customer's
-	# window. From here the two diverge — due_date is the accounting fact and stays
-	# put, while dunning_starts_on moves if we fail to ask again (dunning.defer_dunning).
+	# The dates are set from *today*, not from the period end: an invoice the run opened
+	# three days late is due three days later, and its dunning ladder starts three days
+	# later. A backlog delays collection; it never shortens the customer's window. The
+	# ladder counts from the payment date. due_date is the accounting fact and stays put,
+	# while dunning_starts_on and suspends_on move if we fail to ask (dunning.defer_dunning).
 	doc.due_date = get_due_date(doc.team, frappe.utils.nowdate())
-	doc.dunning_starts_on = doc.due_date
+	doc.dunning_starts_on = doc.payment_date
+	doc.suspends_on = get_suspension_date(doc.team, frappe.utils.nowdate())
 
 	# Credits cover it in full — settled, no card charge needed.
 	if doc.expected_collection <= 0:

@@ -161,10 +161,19 @@ def termination_due() -> list[dict]:
 	for invoice in frappe.get_all(
 		"Invoice",
 		filters={"invoice_type": "Billable", "status": "Overdue"},
-		fields=["name", "team", "currency", "total", "due_date", "dunning_starts_on"],
+		fields=[
+			"name",
+			"team",
+			"currency",
+			"total",
+			"due_date",
+			"payment_date",
+			"dunning_starts_on",
+			"suspends_on",
+		],
 		limit=100,
 	):
-		schedule = dunning.dunning_schedule(dunning.dunning_clock_start(invoice), policy)
+		schedule = dunning.dunning_schedule(dunning.get_ladder_dates(invoice), policy)
 		if "Terminate" in dunning.stages_reached(schedule, today):
 			found.append(
 				{

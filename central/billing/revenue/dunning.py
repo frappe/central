@@ -2,20 +2,20 @@
 # For license information, please see license.txt
 """Retry / dunning + staged suspension (issue #14).
 
-Failed-payment handling, end to end and time-staged off the invoice due date. The
-days below are the shipped defaults; the ladder itself is configured on Billing
-Settings, so the stages are read per run rather than fixed here:
+Failed-payment handling, end to end. The first charge is made on the invoice's payment
+date by the hourly collection sweep. The ladder below counts from that date (the
+anchor, `dunning_starts_on`). The days are the shipped defaults of Billing Settings:
 
-  Day 1 / 3 / 7   retry the charge (each a new Payment Attempt), notify with the
-                  failure reason.
-  Day 7 (exhausted)   invoice -> Overdue, standing -> past_due. KEEP RUNNING
-                      (grace) — being late is not yet being cut off.
-  Day 14 (continued)  every server subscription -> suspended, and Central stops
-                      the team's running servers (data preserved). Paying the
-                      invoice returns the team to current and starts them again
-                      (`subscriptions.restore_after_payment`).
-  Day 44 (~30d suspended)   termination is due: the operator alerts page a person,
-                            who decides. Nothing is deleted automatically.
+  Retries         every 2 days after the anchor, while the retry date is on or before
+                  the invoice due date. When no retry fits, one retry 1 day after the
+                  anchor. Each is a new Payment Attempt, notified with the reason.
+  Last retry day  invoice -> Overdue, standing -> past_due. KEEP RUNNING (grace).
+  Suspension      on the invoice's `suspends_on`: the 15th of the month it opened in.
+                  Every server subscription -> suspended, and Central stops the team's
+                  running servers (data preserved). Paying the invoice returns the team
+                  to current and starts them again (`subscriptions.restore_after_payment`).
+  Termination     10 days after suspension: the operator alerts page a person, who
+                  decides. Nothing is deleted automatically.
 
 Only dunning stops a server for non-payment, and only a payment starts it again.
 """
@@ -24,6 +24,13 @@ import frappe
 
 from central.billing import settings
 from central.billing.catalog import subscriptions
+from central.billing.doctype.billing_profile.billing_profile import (
+	LAST_PAYMENT_DAY,
+	get_due_date,
+	get_payment_date,
+	get_suspension_date,
+	get_suspension_date_after,
+)
 from central.billing.doctype.invoice.invoice import OUTSTANDING, UNSETTLED, is_issued, owed_filters
 from central.billing.platform.jobs import each_isolated
 from central.billing.platform.records import save_billing_record
@@ -31,55 +38,84 @@ from central.billing.states import transition
 
 
 def defer_dunning(invoice: str, reason: str) -> bool:
-	"""Push an invoice's dunning clock forward — we failed to ask, so they aren't late.
+	"""Move an invoice's ladder anchor forward to today: we failed to ask, so they aren't late.
 
-	Every stage below is counted from a date the customer is entitled to assume we
-	honoured: that we tried to collect when we said we would. When the attempt fails
-	on *our* side — the gateway rate-limited us, the run backed up, a worker died
-	mid-charge — the customer did nothing wrong, and starting their retry ladder,
-	their Overdue notice and their suspension countdown on that date would be
-	charging them for our outage.
-
-	So the clock restarts at today plus the same window a freshly opened invoice
-	gets. Monotonic (it only ever moves forward) and self-limiting (a successful
-	ask stops pushing it), so a permanently broken gateway cannot defer collection
-	forever — it defers *escalation*, while reconciliation and the next run keep
-	trying. `due_date` is untouched: what the customer owes and when they owed it is
-	an accounting fact, and AR aging must keep telling the truth.
+	Every stage is counted from a date the customer is entitled to assume we honoured:
+	that we tried to collect when we said we would. When the attempt fails on *our* side
+	(the gateway rate-limited us, the run backed up, a worker died mid-charge), the
+	retries, the Overdue notice and the suspension move forward by the same number of
+	days. Monotonic (it only ever moves forward) and self-limiting (a successful ask
+	stops pushing it). `due_date` is untouched: it is an accounting fact AR aging reads.
 	"""
-	fair_start = frappe.utils.add_days(frappe.utils.nowdate(), settings.invoice_due_days())
-	current = frappe.db.get_value("Invoice", invoice, "dunning_starts_on")
-	if current and frappe.utils.getdate(current) >= frappe.utils.getdate(fair_start):
+	row = frappe.db.get_value(
+		"Invoice", invoice, ["payment_date", "due_date", "dunning_starts_on", "suspends_on"], as_dict=True
+	)
+	dates = get_ladder_dates(row)
+	today = frappe.utils.getdate(frappe.utils.nowdate())
+	if dates.anchor >= today:
 		return False
-	frappe.db.set_value("Invoice", invoice, "dunning_starts_on", fair_start)
-	frappe.logger("billing").info(f"dunning for {invoice} deferred to {fair_start}: {reason}")
+
+	shift = (today - dates.anchor).days
+	suspends_on = frappe.utils.add_days(dates.suspends_on, shift)
+	frappe.db.set_value("Invoice", invoice, {"dunning_starts_on": today, "suspends_on": suspends_on})
+	frappe.logger("billing").info(f"dunning for {invoice} deferred to {today}: {reason}")
 	return True
 
 
-def dunning_clock_start(invoice_doc):
-	"""The date this invoice's retry ladder counts from.
+def get_ladder_dates(invoice) -> frappe._dict:
+	"""The dates the ladder of an issued invoice is drawn from.
 
-	`dunning_starts_on` is absent on invoices raised before it existed, and on any
-	invoice whose collection went to plan — in both cases the due date is the
-	honest answer.
+	`invoice` is a document or a dict with `payment_date`, `due_date`, `dunning_starts_on`
+	and `suspends_on`. The retry window end is the due date, moved forward by as many days
+	as `defer_dunning` moved the anchor. An invoice without `suspends_on` gets the date
+	the opening run stores, read from the month of its payment date.
 	"""
-	return invoice_doc.get("dunning_starts_on") or invoice_doc.due_date
+	due_date = frappe.utils.getdate(invoice.get("due_date"))
+	payment_date = frappe.utils.getdate(invoice.get("payment_date") or due_date)
+	anchor = frappe.utils.getdate(invoice.get("dunning_starts_on") or payment_date)
+	shift = max(0, (anchor - payment_date).days)
+	suspends_on = invoice.get("suspends_on")
+	if not suspends_on:
+		suspends_on = frappe.utils.add_days(get_suspension_date_after(payment_date, due_date), shift)
+
+	return frappe._dict(
+		anchor=anchor,
+		retry_until=frappe.utils.getdate(frappe.utils.add_days(due_date, shift)),
+		suspends_on=frappe.utils.getdate(suspends_on),
+	)
+
+
+def get_opening_ladder_dates(team: str, opened_on) -> frappe._dict:
+	"""The ladder dates of an invoice that would open for `team` on `opened_on`."""
+	return frappe._dict(
+		anchor=get_payment_date(team, opened_on),
+		retry_until=get_due_date(team, opened_on),
+		suspends_on=get_suspension_date(team, opened_on),
+	)
+
+
+def is_dunning_deferred(invoice) -> bool:
+	"""`defer_dunning` moved the anchor past the payment date: collection failed on our side."""
+	anchor = invoice.get("dunning_starts_on")
+	payment_date = invoice.get("payment_date") or invoice.get("due_date")
+	return bool(anchor and payment_date) and frappe.utils.getdate(anchor) > frappe.utils.getdate(payment_date)
 
 
 def dunning_policy() -> frappe._dict:
-	"""The ladder's knobs, read once.
-
-	`overdue_after` is not its own setting — the invoice falls overdue once the last
-	retry has been spent, so with no retries configured there is nothing to wait for
-	and it goes overdue on day zero.
-	"""
-	retry_days = settings.dunning_retry_days()
+	"""The ladder's settings, read once."""
 	return frappe._dict(
-		retry_days=retry_days,
-		overdue_after=retry_days[-1] if retry_days else 0,
-		suspend_after=settings.suspend_after_days(),
+		retry_interval=settings.dunning_retry_interval_days(),
 		terminate_after=settings.terminate_after_days(),
 	)
+
+
+def get_last_payment_day_with_retries() -> int:
+	"""The last payment day whose first interval retry still falls on or before the due date
+	of an invoice opened on the 1st. A later payment day gets one retry, 1 day after it."""
+	interval = settings.dunning_retry_interval_days()
+	due_day = 1 + settings.invoice_due_days()
+	days = [day for day in range(1, LAST_PAYMENT_DAY + 1) if day + interval <= max(due_day, day)]
+	return max(days, default=0)
 
 
 # Stages that land on the same day still have an order: a retry is attempted before
@@ -87,28 +123,45 @@ def dunning_policy() -> frappe._dict:
 _STAGE_ORDER = {"Retry": 0, "Overdue": 1, "Suspend": 2, "Terminate": 3}
 
 
-def dunning_schedule(clock_start, policy=None) -> list[frappe._dict]:
-	"""The dated ladder for an invoice whose dunning clock starts on `clock_start`.
+def dunning_schedule(dates: frappe._dict, policy=None) -> list[frappe._dict]:
+	"""The dated ladder for an invoice with these ladder `dates` (`get_ladder_dates`).
 
-	Pure date arithmetic over the policy — no document reads, no writes, and no
-	knowledge of any particular invoice. `process_invoice_dunning` executes this
-	schedule; anything that wants to *show* the ladder without running it (which
-	dates, which stage, when the resource stops) reads the same list.
+	Pure date arithmetic over the dates and the policy: no document reads and no writes.
+	`process_invoice_dunning` executes this schedule; anything that wants to *show* the
+	ladder without running it reads the same list. Each stage's `day` counts from the anchor.
 
 	Pass an explicit `policy` to ask what a different ladder would do.
 	"""
 	policy = policy or dunning_policy()
-	start = frappe.utils.getdate(clock_start)
-	stages = [
-		frappe._dict(stage="Retry", attempt=n, day=day) for n, day in enumerate(policy.retry_days, start=1)
-	]
-	stages.append(frappe._dict(stage="Overdue", day=policy.overdue_after))
-	stages.append(frappe._dict(stage="Suspend", day=policy.suspend_after))
-	stages.append(frappe._dict(stage="Terminate", day=policy.terminate_after))
+	anchor = frappe.utils.getdate(dates.anchor)
+	retries = _retry_dates(anchor, dates.retry_until, policy.retry_interval)
+	suspends_on = frappe.utils.getdate(dates.suspends_on)
 
-	for s in stages:
-		s.date = frappe.utils.add_days(start, s.day)
-	return sorted(stages, key=lambda s: (s.day, _STAGE_ORDER[s.stage]))
+	stages = [frappe._dict(stage="Retry", attempt=n, date=on) for n, on in enumerate(retries, start=1)]
+	stages.append(frappe._dict(stage="Overdue", date=retries[-1]))
+	stages.append(frappe._dict(stage="Suspend", date=suspends_on))
+	stages.append(
+		frappe._dict(
+			stage="Terminate",
+			date=frappe.utils.getdate(frappe.utils.add_days(suspends_on, policy.terminate_after)),
+		)
+	)
+
+	for stage in stages:
+		stage.day = (stage.date - anchor).days
+	return sorted(stages, key=lambda s: (s.date, _STAGE_ORDER[s.stage]))
+
+
+def _retry_dates(anchor, retry_until, interval: int) -> list:
+	"""Every `interval` days after the anchor up to `retry_until`, or one retry the next day."""
+	retry_until = frappe.utils.getdate(retry_until)
+	interval = max(1, frappe.utils.cint(interval))
+	dates = []
+	retry_on = frappe.utils.getdate(frappe.utils.add_days(anchor, interval))
+	while retry_on <= retry_until:
+		dates.append(retry_on)
+		retry_on = frappe.utils.getdate(frappe.utils.add_days(retry_on, interval))
+	return dates or [frappe.utils.getdate(frappe.utils.add_days(anchor, 1))]
 
 
 def stages_reached(schedule: list, on) -> set:
@@ -217,12 +270,11 @@ def process_invoice_dunning(invoice_name: str, now=None) -> dict:
 	if not is_issued(inv):
 		return {"invoice": invoice_name, "skipped": "no_due_date"}
 
-	clock_start = dunning_clock_start(inv)
-	days = (frappe.utils.getdate(now) - frappe.utils.getdate(clock_start)).days
-	policy = dunning_policy()
-	schedule = dunning_schedule(clock_start, policy)
+	dates = get_ladder_dates(inv)
+	days = (frappe.utils.getdate(now) - dates.anchor).days
+	schedule = dunning_schedule(dates)
 	reached = stages_reached(schedule, now)
-	if policy.retry_days and "Retry" not in reached:
+	if "Retry" not in reached:
 		return {"invoice": invoice_name, "days_overdue": days, "action": "none"}
 
 	from central.billing.catalog.subscriptions import anchor_subscription
@@ -242,7 +294,7 @@ def process_invoice_dunning(invoice_name: str, now=None) -> dict:
 
 	standing = sub.account_standing if sub else None
 
-	# --- Day 7: Overdue + past_due, still running --------------------------
+	# --- last retry day: Overdue + past_due, still running -----------------
 	if "Overdue" in reached:
 		if inv.status == OUTSTANDING:
 			transition(inv, "Overdue", reason="dunning: past due window elapsed", actor="scheduler")
@@ -262,24 +314,27 @@ def process_invoice_dunning(invoice_name: str, now=None) -> dict:
 			subscriptions.mark_past_due(inv.team)
 			standing = frappe.db.get_value("Subscription", anchor, "account_standing")
 
-	# --- Day 14: suspend -> stop the team's running servers ------------------
+	# --- suspension date: suspend -> stop the team's running servers --------
 	if "Suspend" in reached and sub:
 		if subscriptions.suspend_for_nonpayment(inv.team):
 			standing = "Suspended"
-			_notify(inv, f"Suspended for non-payment (day {days}); running servers stopped, data preserved.")
+			_notify(
+				inv,
+				f"Suspended for non-payment on {dates.suspends_on}; running servers stopped, data preserved.",
+			)
 			from central.notification import engine
 
 			engine.dispatch(
 				inv.team,
 				"server_suspended",
-				message=f"Your account was suspended after {days} days overdue on invoice {invoice_name}. "
+				message=f"Your account was suspended because invoice {invoice_name} is unpaid. "
 				"Running servers were stopped and data is preserved. Pay the invoice to restore them.",
 				reference_doctype="Invoice",
 				reference_name=invoice_name,
 			)
 			actions.append("suspend")
 
-	# --- Day 44: termination is due. An operator decides; nothing is deleted here.
+	# --- termination date: an operator decides; nothing is deleted here.
 	# platform/alerts.termination_due pages them while the invoice stays unpaid.
 	if "Terminate" in reached and sub:
 		actions.append("termination_due")

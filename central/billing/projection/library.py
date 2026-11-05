@@ -75,13 +75,13 @@ SCENARIOS = {
 		"months": 3,
 	},
 	"harsher-dunning": {
-		"title": "Suspend a week sooner",
+		"title": "Suspend four days sooner",
 		"question": "What would tightening the ladder do to the teams already behind?",
 		"look_for": (
 			"Every date on the unpaid branch moving left. Billing Settings are untouched — "
 			"this is read instead of them, for one projection."
 		),
-		"overrides": {"suspend_after_days": 7, "terminate_after_days": 30},
+		"overrides": {"suspension_day": 11, "terminate_after_days": 5},
 		"events": [],
 	},
 	"a-price-rise": {

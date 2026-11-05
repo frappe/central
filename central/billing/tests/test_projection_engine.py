@@ -4,6 +4,7 @@
 
 import frappe
 
+from central.billing import settings
 from central.billing.projection import engine
 from central.billing.projection.basis import ESTIMATED, MEASURED
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
@@ -176,13 +177,25 @@ class TestTheCalendar(ProjectionTestBase):
 		self.assertIn("Suspend", stages)
 		self.assertIn("Terminate", stages)
 
-	def test_the_ladder_is_dated_from_the_due_date(self):
+	def test_the_ladder_is_dated_from_the_payment_date(self):
 		add_segment(self.sub, "Created", 12000, "2026-06-01 00:00:00")
 		frappe.db.commit()
-		cal = engine.project(TEAM, "2026-09-01", "2026-09-30", today="2026-08-06")["calendar"]
-		suspend = next(s for s in cal["if_never_paid"] if s["stage"] == "Suspend")
-		expected = frappe.utils.add_days(cal["due_on"], suspend["day"])
-		self.assertEqual(suspend["date"], str(expected))
+		ladder = {"dunning_retry_interval_days": 2, "invoice_due_days": 7, "suspension_day": 15}
+		with settings.overridden(**ladder, terminate_after_days=10):
+			cal = engine.project(TEAM, "2026-09-01", "2026-09-30", today="2026-08-06")["calendar"]
+
+		dated = [(s["stage"], s["date"]) for s in cal["if_never_paid"]]
+		self.assertEqual(
+			dated,
+			[
+				("Retry", "2026-10-03"),
+				("Retry", "2026-10-05"),
+				("Retry", "2026-10-07"),
+				("Overdue", "2026-10-07"),
+				("Suspend", "2026-10-15"),
+				("Terminate", "2026-10-25"),
+			],
+		)
 
 
 class TestInvoicesAlreadyInFlight(ProjectionTestBase):

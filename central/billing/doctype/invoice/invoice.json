@@ -17,6 +17,7 @@
   "due_date",
   "payment_date",
   "dunning_starts_on",
+  "suspends_on",
   "hold_reason",
   "period_key",
   "section_break_items",
@@ -115,7 +116,14 @@
    "fieldtype": "Date",
    "label": "Dunning Starts On",
    "read_only": 1,
-   "description": "When the retry ladder may begin. Starts at the due date, and is pushed forward whenever a collection attempt fails on our side — so a billing-run backlog never costs the customer their grace period."
+   "description": "The day the retry ladder counts from. It starts at the payment date. It moves forward when a collection attempt fails on our side, so a billing-run backlog never costs the customer their retries."
+  },
+  {
+   "fieldname": "suspends_on",
+   "fieldtype": "Date",
+   "label": "Suspends On",
+   "read_only": 1,
+   "description": "The day the team is suspended if this invoice stays unpaid. Set when the invoice opens, from the Suspension Day in Billing Settings. It moves forward with Dunning Starts On."
   },
   {
    "description": "Why this draft is waiting instead of being issued. Cleared when it opens.",
@@ -388,7 +396,7 @@
    "link_fieldname": "invoice"
   }
  ],
- "modified": "2026-11-05 16:30:00.000000",
+ "modified": "2026-11-05 18:00:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Invoice",

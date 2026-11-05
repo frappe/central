@@ -58,7 +58,7 @@ class OutlookTestBase(IntegrationTestCase):
 
 class TestTheSweep(OutlookTestBase):
 	def test_an_unpaid_invoice_gets_a_dated_ladder(self):
-		with billing_settings(dunning_retry_days="1, 3, 7", suspend_after_days=14, terminate_after_days=44):
+		with billing_settings(dunning_retry_interval_days=2, suspension_day=15, terminate_after_days=10):
 			self._invoice("2026-09-01")
 			rows = outlook.rows(on=TODAY, filters={"team": TEAM})
 
@@ -66,7 +66,7 @@ class TestTheSweep(OutlookTestBase):
 		row = rows[0]
 		self.assertEqual(row["days_in"], 9)
 		self.assertEqual(row["suspends_on"], "2026-09-15")
-		self.assertEqual(row["terminates_on"], "2026-10-15")
+		self.assertEqual(row["terminates_on"], "2026-09-25")
 
 	def test_a_paid_invoice_is_not_in_the_sweep(self):
 		self._invoice("2026-09-01", status="Paid")
@@ -87,7 +87,7 @@ class TestTheSweep(OutlookTestBase):
 		self.assertLessEqual(rows[0]["suspends_on"], rows[1]["suspends_on"])
 
 	def test_a_horizon_keeps_only_what_is_about_to_happen(self):
-		with billing_settings(dunning_retry_days="1, 3, 7", suspend_after_days=14, terminate_after_days=44):
+		with billing_settings(dunning_retry_interval_days=2, suspension_day=15, terminate_after_days=10):
 			self._invoice("2026-09-09")  # next action is days away
 			near = outlook.rows(on=TODAY, horizon_days=3, filters={"team": TEAM})
 			far = outlook.rows(on=TODAY, horizon_days=60, filters={"team": TEAM})
@@ -115,7 +115,7 @@ class TestOurDelayIsMarkedAsOurs(OutlookTestBase):
 		self.assertIn("due date is unchanged", out["deferred_note"])
 
 	def test_the_drill_shows_which_rungs_have_been_reached(self):
-		with billing_settings(dunning_retry_days="1, 3, 7", suspend_after_days=14):
+		with billing_settings(dunning_retry_interval_days=2, suspension_day=15):
 			name = self._invoice("2026-09-01")
 			out = outlook.why(name, on=TODAY)
 		reached = [s for s in out["ladder"] if s["reached"]]

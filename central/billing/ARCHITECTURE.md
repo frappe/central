@@ -248,7 +248,7 @@ Dunning, reconciliation, the e-mandate cycle, credit expiry, card expiry, accoun
 
 | Cadence | Entry point | Purpose |
 |---|---|---|
-| daily | `revenue.dunning.run_dunning` | Day 1/3/7 retries → past_due → suspend (stops servers) → termination due (operator) |
+| daily | `revenue.dunning.run_dunning` | retries every `dunning_retry_interval_days` up to the due date → past_due → suspend on the suspension date (stops servers) → termination due (operator) |
 | daily | `payments.charges.cleanup_payment_logs` | prune Payment Attempt / Webhook Event |
 | daily | `projection.batch.prune` | prune old projection batches |
 | daily | `payments.emandate.run_emandate_cycle` | INR ≤₹15k pre-debit notice → debit window opens 24 hours after the notice |
@@ -348,14 +348,7 @@ Two things keep that lock short, and both are load-bearing:
   round once a *month* — a contained loser would go unbilled until someone noticed.
   Only after the budget is exhausted is it recorded as a `Billing Run Failure`.
 
-**A late run never costs the customer grace.** `due_date` and `dunning_starts_on` are
-both set from the day the invoice is actually *opened*, so a run three days behind
-bills three days later rather than three days overdue. Beyond that, any collection
-failure on our side — a 429, a dead worker, a contained run error — calls
-`dunning.defer_dunning`, which pushes `dunning_starts_on` (never `due_date`, which is
-an accounting fact AR aging depends on) forward to today + the standard window. It is
-monotonic and self-limiting: a successful ask stops pushing, so a broken gateway defers
-*escalation*, not collection.
+**A late run never costs the customer grace.** `payment_date`, `due_date`, `dunning_starts_on` and `suspends_on` are all set from the day the invoice is actually *opened*, so a run three days behind bills three days later rather than three days overdue. Beyond that, any collection failure on our side (a 429, a dead worker, a contained run error) calls `dunning.defer_dunning`. It moves `dunning_starts_on` forward to today, and moves `suspends_on` and the end of the retry window forward by the same number of days. It never moves `due_date`, which is an accounting fact AR aging depends on. It is monotonic and self-limiting: a successful ask stops pushing, so a broken gateway defers *escalation*, not collection.
 
 ### Invoice status
 
@@ -582,16 +575,12 @@ rotation, so a manual retry must land on the same card twice, not silently rotat
 ```mermaid
 stateDiagram-v2
     [*] --> Current
-    Current --> Day1: invoice unpaid
-    Day1 --> Day3: retry_payment fails
-    Day3 --> Day7: retry_payment fails
-    Day7 --> PastDue: still unpaid
-    PastDue --> Suspended: grace elapsed
+    Current --> Retrying: charge on the payment date fails
+    Retrying --> PastDue: last retry day, still unpaid
+    PastDue --> Suspended: suspension date
     Suspended --> Current: paid
     Suspended --> Terminated: an operator decides
-    Day1 --> Current: paid
-    Day3 --> Current: paid
-    Day7 --> Current: paid
+    Retrying --> Current: paid
     PastDue --> Current: paid
     note right of Suspended
         Central stops the team's running
@@ -600,7 +589,8 @@ stateDiagram-v2
 ```
 ```
 daily run_dunning → process_invoice_dunning(invoice)
-  → retry_payment on Day 1/3/7 → account_standing past_due → suspend → termination due
+  → get_ladder_dates(invoice) → dunning_schedule(dates, policy)
+  → retry_payment on each retry date → account_standing past_due → suspend → termination due
   → suspend: subscriptions.suspend_for_nonpayment moves every subscription of the team to
     Suspended, stops its running servers and flags them stopped_for_nonpayment
   → paid: Invoice.on_update → subscriptions.restore_after_payment (standing Current, start
@@ -608,6 +598,30 @@ daily run_dunning → process_invoice_dunning(invoice)
   → termination due: platform.alerts.termination_due pages an operator; nothing is deleted
   → while behind on payment a team cannot create, resize up or subscribe (PAYMENT_OVERDUE)
 ```
+`dunning.dunning_schedule` is the one owner of the ladder. Its inputs are the ladder dates of the invoice and the policy in Billing Settings. `get_ladder_dates` reads the dates of an issued invoice. `get_opening_ladder_dates` gives the dates of an invoice that would open on a given date, for the projections and the dashboard.
+
+| Ladder date | Rule |
+|---|---|
+| Anchor | `dunning_starts_on`. The payment date when the invoice opens. `defer_dunning` moves it forward. |
+| Retries | Every `dunning_retry_interval_days` (default 2) after the anchor, while the retry date is on or before the end of the retry window. The window ends on the due date, moved forward by as many days as the anchor moved. When no retry fits, there is one retry 1 day after the anchor. |
+| Overdue | The last retry day, after that day's retry. The team goes past_due and its servers keep running. |
+| Suspension | `Invoice.suspends_on`. It is the `suspension_day` (default 15) of the month the invoice opened in. When that day is not after the due date (an invoice that opened late), it is the due date plus `suspension_day - 1 - invoice_due_days` days. `billing_profile.get_suspension_date` computes it. |
+| Termination due | `terminate_after_days` (default 10) after the suspension date. An operator decides. Nothing is deleted. |
+
+With the defaults, an invoice opens on the 1st and is due on the 8th, or on the payment date when that is later:
+
+| Payment day | Retries | Suspended | Termination due |
+|---|---|---|---|
+| 1st | 3rd, 5th, 7th | 15th | 25th |
+| 3rd | 5th, 7th | 15th | 25th |
+| 5th | 7th | 15th | 25th |
+| 6th | 8th | 15th | 25th |
+| 7th | 8th | 15th | 25th |
+| 8th | 9th | 15th | 25th |
+| 10th | 11th | 15th | 25th |
+
+`dunning.get_last_payment_day_with_retries` gives the last payment day that still gets an interval retry (the 6th with the defaults). The payment date form shows a warning for a later day.
+
 Billing stops and starts a server as the system (`resource_actions.submit_billing_command`), because a payment can arrive by webhook as Guest. `submit_command` refuses a customer `start` while the server's subscription is Suspended.
 
 ### E. Metering
@@ -702,7 +716,7 @@ get_team_caps resolves caps live (no per-team Trust Tier doctype — dropped)
 | Tier/cap wrong | `catalog.entitlements` (`get_team_caps`, `evaluate_tier`, per-currency Trust Tier Threshold) |
 | Provisioning failed | `central.resource_actions.submit_request` / `validate_purchase` (`require_payment_method_or_credit`, `reserved_rate`, spending limit), the Resource Action record, `composition.validate_composition` bounds |
 | Invoice Outstanding with no due date | `lifecycle._hold_for_billing_details` / `held_drafts`: is the Billing Profile incomplete? `platform.alerts.held_invoices` lists drafts held past `billing_details_grace_days` |
-| Card declined repeatedly | `collection` (escalate don't repeat), `mandates.effective_cap`, dunning Day 1/3/7 |
+| Card declined repeatedly | `collection` (escalate don't repeat), `mandates.effective_cap`, the dunning retry dates (`dunning.dunning_schedule`) |
 | A line's Project breakdown is missing/wrong | `generate._tag_projects`/`_resource_project_map` — is the resource's Subscription tagged, is its Project `enabled`? A disabled Project's lines carry no tag by design (§2.1); check `Invoice Line Item.project`/`project_title` on a real invoice, or the same fields on a forecast line |
 | Tagging a subscription into a Project is refused | `Subscription.validate_project` — same-team? Project `enabled`? `catalog.subscriptions.enforce_project_headroom` — would the tag push the Project's committed run-rate (`project_run_rate`) past its `spending_limit`? (blocks new tagging only, §2.1) |
 | ERPNext out of sync | `erpnext_sync` (async, never rolls back the invoice; check retry backoff) |

@@ -3,7 +3,7 @@
 """A saved question, not a saved answer.
 
 The overrides here never touch Billing Settings. They change what a projection *reads*,
-for the length of that projection — so asking what a 2/5/10 dunning ladder would do
+for the length of that projection — so asking what an earlier suspension day would do
 costs nobody their real configuration.
 """
 
@@ -12,9 +12,9 @@ from frappe.model.document import Document
 
 # The fields that stand in for Billing Settings while a projection runs.
 OVERRIDE_FIELDS = (
-	"dunning_retry_days",
+	"dunning_retry_interval_days",
 	"invoice_due_days",
-	"suspend_after_days",
+	"suspension_day",
 	"terminate_after_days",
 	"promotional_credit_validity_days",
 )

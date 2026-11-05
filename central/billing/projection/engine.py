@@ -21,7 +21,13 @@ from central.billing.projection import behaviour, estimate, outcomes, state
 from central.billing.projection import events as injected
 from central.billing.projection.basis import MEASURED, mark, split_totals
 from central.billing.projection.guard import read_only
-from central.billing.revenue.dunning import dunning_clock_start, dunning_policy, dunning_schedule
+from central.billing.revenue.dunning import (
+	dunning_policy,
+	dunning_schedule,
+	get_ladder_dates,
+	get_opening_ladder_dates,
+	is_dunning_deferred,
+)
 from central.billing.revenue.invoicing.generate import rate_team_period, team_clusters
 
 
@@ -160,11 +166,11 @@ def _calendar(team: str, period_end, today) -> dict:
 		"opens_on": str(opens_on),
 		"due_on": str(due_on),
 		"if_paid_on_time": [{"date": str(due_on), "stage": "Settled"}],
-		"if_never_paid": _ladder(due_on),
+		"if_never_paid": _ladder(get_opening_ladder_dates(team, opens_on)),
 	}
 
 
-def _ladder(clock_start, policy=None) -> list[dict]:
+def _ladder(dates, policy=None) -> list[dict]:
 	"""The escalation ladder as plain dated rows."""
 	return [
 		{
@@ -173,7 +179,7 @@ def _ladder(clock_start, policy=None) -> list[dict]:
 			"day": s.day,
 			**({"attempt": s.attempt} if s.get("attempt") else {}),
 		}
-		for s in dunning_schedule(clock_start, policy or dunning_policy())
+		for s in dunning_schedule(dates, policy or dunning_policy())
 	]
 
 
@@ -193,7 +199,16 @@ def _in_flight(team: str, today) -> list[dict]:
 			["invoice_type", "=", "Billable"],
 			["expected_collection", ">", 0],
 		],
-		fields=["name", "status", "due_date", "dunning_starts_on", "expected_collection", "currency"],
+		fields=[
+			"name",
+			"status",
+			"due_date",
+			"payment_date",
+			"dunning_starts_on",
+			"suspends_on",
+			"expected_collection",
+			"currency",
+		],
 		order_by="due_date asc",
 	)
 
@@ -201,7 +216,7 @@ def _in_flight(team: str, today) -> list[dict]:
 	for inv in unpaid:
 		if not inv.due_date:
 			continue
-		clock_start = dunning_clock_start(inv)
+		dates = get_ladder_dates(inv)
 		out.append(
 			{
 				"invoice": inv.name,
@@ -209,10 +224,10 @@ def _in_flight(team: str, today) -> list[dict]:
 				"currency": inv.currency,
 				"outstanding": inv.expected_collection,
 				"due_date": str(inv.due_date),
-				"clock_starts_on": str(clock_start),
-				"clock_deferred": bool(inv.dunning_starts_on),
-				"ladder": _ladder(clock_start),
-				"days_in": (today - frappe.utils.getdate(clock_start)).days,
+				"clock_starts_on": str(dates.anchor),
+				"clock_deferred": is_dunning_deferred(inv),
+				"ladder": _ladder(dates),
+				"days_in": (today - dates.anchor).days,
 			}
 		)
 	return out
