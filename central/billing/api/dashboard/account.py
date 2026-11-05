@@ -188,9 +188,7 @@ def save_billing_profile(team: str | None = None, **fields) -> dict:
 
 @frappe.whitelist()
 def get_billing_settings(team: str | None = None) -> dict:
-	"""Alert thresholds, the payment day, and the ladder days the payment day form explains.
-	(Payment mode was removed — billing is credits-first-then-card for every team, so there
-	is no prepaid/postpaid switch.)"""
+	"""Alert thresholds, the payment day, and the ladder days the payment day form explains."""
 	team = _resolve_team(team)
 	limits = {
 		"last_payment_day": LAST_PAYMENT_DAY,
