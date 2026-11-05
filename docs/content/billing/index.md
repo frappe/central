@@ -12,8 +12,10 @@ A billing cycle is one calendar month, from the 1st to the last day. Charges add
 
 Each invoice is paid in this order:
 
-1. Prepaid credits in your wallet.
-2. Your payment methods, in the order shown under **Methods** on **Billing > Payments**. When one fails, the next one is tried.
+1. Prepaid credits in your wallet, on the invoice date.
+2. Your payment methods, on the payment date, in the order shown under **Methods** on **Billing > Payments**. When one fails, the next one is tried.
+
+The payment date is a day from the 1st to the 10th of the month. The default is the 1st. When the invoice is issued after that day, the payment method is charged on the invoice date. For UPI Autopay and other Indian mandates, Frappe Cloud sends the pre-debit notice one day before the payment date.
 
 You do not need to pay a normal invoice by hand. See [Invoices](/billing/invoices) for an invoice that stays open.
 
@@ -21,7 +23,7 @@ You do not need to pay a normal invoice by hand. See [Invoices](/billing/invoice
 
 | Charge | How it is billed |
 | --- | --- |
-| Servers | A monthly rate set by the server's plan. The invoice shows each server, its plan, and the dates it was billed. |
+| Servers | A monthly rate set by the server's plan. On the day a server is created, resized, or stopped, each plan is billed for the hours it ran on that day. The invoice shows each server, its plan, and the dates it was billed. |
 | Metered services | Usage, such as AI tokens. The amount is final when the month ends. |
 | Add-ons | Subscriptions such as storage buckets and paid snapshots. |
 | Tax | Added on each invoice for the tax region in your billing details. |
@@ -36,10 +38,13 @@ The panel at the top of **Billing > Overview** shows the current cycle.
 | --- | --- |
 | Cycle and amount | The projected total for this cycle with tax, and the days until it is billed. Below it are the amount before tax and the tax. Click **See breakdown** to see each line. |
 | Spend limit | The most your team can spend in one cycle on its current tier. Click the tier to see all tiers. See [Credits and spend limits](/billing/limits). |
-| Next payment | The amount Frappe Cloud expects to collect next. It shows **Due now** when an invoice is unpaid. Click **Schedule** to see the payment schedule. |
+| Due now | The amount of your unpaid invoices. This row shows only when an invoice is unpaid. |
 | Wallet | Your prepaid credit balance. Click the history icon to see its history. Click **Add credit** to top up. |
 | Payment method | The payment method that is charged first. |
 | Next invoice | The date of the next invoice. |
+| Next payment date | The date Frappe Cloud charges your payment method for the next invoice. |
+
+To change the payment date, click the calendar icon (**Change payment date**) next to **Next payment date**. The **Payment schedule** panel opens. It also shows the amount due, the payment method that is charged, and the dates of each step if the invoice stays unpaid. Select a day from the 1st to the 10th of the month and click **Save payment date**. You can change it at most twice in a billing cycle. You need the Owner, Admin, or Billing role. Wallet credit still applies on the invoice date. A change does not move the payment date of an invoice that is already issued.
 
 ### Budget alerts
 
