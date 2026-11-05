@@ -19,7 +19,7 @@ import frappe
 from frappe import _
 
 from central.billing.api.dashboard._shared import _resolve_team, _team_currency
-from central.billing.doctype.billing_profile.billing_profile import get_payment_date
+from central.billing.doctype.billing_profile.billing_profile import get_due_date, get_payment_date
 from central.billing.doctype.invoice.invoice import owed_filters
 
 # Customer-facing copy for the findings the engine can raise. `fix` is the sentence
@@ -106,7 +106,7 @@ def get_payment_schedule(team: str | None = None) -> dict:
 	return {
 		**next_payment,
 		"notices": _predebit_notices(team),
-		"if_unpaid": _escalation(period_end),
+		"if_unpaid": _escalation(team, next_payment["invoice"], period_end),
 	}
 
 
@@ -212,17 +212,23 @@ def _predebit_notices(team: str, limit: int = 12) -> list[dict]:
 	]
 
 
-def _escalation(period_end) -> list[dict]:
+def _escalation(team: str, invoice: str | None, period_end) -> list[dict]:
 	"""What happens if the bill goes unpaid — published up front rather than
-	discovered one failed retry at a time."""
-	if not period_end:
-		return []
-	from central.billing import settings
-	from central.billing.revenue.dunning import dunning_policy, dunning_schedule
+	discovered one failed retry at a time.
 
-	opens_on = frappe.utils.add_days(frappe.utils.getdate(period_end), 1)
-	due_on = frappe.utils.add_days(opens_on, settings.invoice_due_days())
+	An open invoice counts from its own dunning clock. A projected one counts from the
+	due date the run would give it."""
+	from central.billing.revenue.dunning import dunning_clock_start, dunning_policy, dunning_schedule
+
+	if invoice:
+		clock_start = dunning_clock_start(
+			frappe.db.get_value("Invoice", invoice, ["due_date", "dunning_starts_on"], as_dict=True)
+		)
+	elif period_end:
+		clock_start = get_due_date(team, frappe.utils.add_days(period_end, 1))
+	else:
+		return []
 	return [
 		{"date": str(stage.date), "stage": _(stage.stage), "day": stage.day}
-		for stage in dunning_schedule(due_on, dunning_policy())
+		for stage in dunning_schedule(clock_start, dunning_policy())
 	]

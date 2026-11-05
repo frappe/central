@@ -12,8 +12,7 @@ worker, is `run.py`'s business.
 import frappe
 from frappe import _
 
-from central.billing import settings
-from central.billing.doctype.billing_profile.billing_profile import get_payment_date
+from central.billing.doctype.billing_profile.billing_profile import get_due_date, get_payment_date
 from central.billing.doctype.invoice.invoice import (
 	UNSETTLED,
 	is_owed,
@@ -97,11 +96,9 @@ def open_and_collect(invoice: str, collect: bool = True) -> dict:
 	# three days later. A backlog delays collection; it never shortens the customer's
 	# window. From here the two diverge — due_date is the accounting fact and stays
 	# put, while dunning_starts_on moves if we fail to ask again (dunning.defer_dunning).
-	doc.due_date = frappe.utils.add_days(frappe.utils.nowdate(), settings.invoice_due_days())
-	# Credits apply today; the card waits for the team's payment day. An invoice is never
-	# due before the day it is charged on.
+	# Credits apply today; the card waits for the team's payment day.
 	doc.payment_date = get_payment_date(doc.team, frappe.utils.nowdate())
-	doc.due_date = max(frappe.utils.getdate(doc.due_date), doc.payment_date)
+	doc.due_date = get_due_date(doc.team, frappe.utils.nowdate())
 	doc.dunning_starts_on = doc.due_date
 
 	# Credits cover it in full — settled, no card charge needed.

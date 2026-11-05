@@ -8,6 +8,7 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
+from central.billing import settings
 from central.billing.catalog.subscriptions import team_active_segments
 from central.billing.india_gst import GST_STATE_CODES, INDIA
 from central.iam import user_has_operator_bypass
@@ -87,6 +88,13 @@ def get_payment_date(team: str, opened_on: date | str) -> date:
 	opened_on = frappe.utils.getdate(opened_on)
 	day = frappe.db.get_value("Billing Profile", team, "payment_day") or 1
 	return max(opened_on, opened_on.replace(day=day))
+
+
+def get_due_date(team: str, opened_on: date | str) -> date:
+	"""The date an invoice opened on `opened_on` falls due: the invoice due days after it
+	opens, and never before the day its card is charged."""
+	due_on = frappe.utils.getdate(frappe.utils.add_days(opened_on, settings.invoice_due_days()))
+	return max(due_on, get_payment_date(team, opened_on))
 
 
 def get_missing_fields(team: str) -> list[str]:

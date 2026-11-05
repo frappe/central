@@ -5,9 +5,12 @@ from unittest.mock import MagicMock, patch
 
 import frappe
 
-from central.billing.doctype.billing_profile.billing_profile import get_payment_date
+from central.billing import settings
+from central.billing.api.dashboard import outlook
+from central.billing.doctype.billing_profile.billing_profile import get_due_date, get_payment_date
 from central.billing.gateways.base import PaymentResult
 from central.billing.payments import collection, emandate
+from central.billing.revenue.dunning import dunning_schedule
 from central.billing.tests import test_emandate
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import complete_billing_profile, ensure_team
@@ -59,6 +62,15 @@ class TestPaymentDayChanges(IntegrationTestCase):
 		self.assertEqual(str(get_payment_date(PROFILE_TEAM, "2026-12-01")), "2026-12-05")
 		# A run that opens the invoice late charges it the day it opens.
 		self.assertEqual(str(get_payment_date(PROFILE_TEAM, "2026-12-07")), "2026-12-07")
+
+	def test_an_invoice_is_not_due_before_its_payment_date(self):
+		frappe.db.set_value("Billing Profile", PROFILE_TEAM, "payment_day", 10)
+
+		with settings.overridden(invoice_due_days=7):
+			self.assertEqual(str(get_due_date(PROFILE_TEAM, "2026-12-01")), "2026-12-10")
+			ladder = outlook._escalation(PROFILE_TEAM, None, "2026-11-30")
+
+		self.assertEqual(ladder[0]["date"], str(dunning_schedule("2026-12-10")[0].date))
 
 
 class TestDebitWaitsForThePaymentDate(test_emandate.EmandateTestBase):
