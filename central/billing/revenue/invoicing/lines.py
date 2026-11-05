@@ -7,12 +7,10 @@ Billing is daily by default: a date with no mid-day plan change bills a whole da
 at a time, so a normal month reads as a handful of clean day lines and a full day
 always costs one day's rate — the "daily cap".
 
-A new server bills its whole first date, whatever time it started, so a server
-created at 15:00 costs a full day on that date. A snapshot or a public IPv4
-bills from the hour it started: its first date, when mid-day, bills the hours
-it ran. A plan change bills the exact hours: on the date of a mid-day change,
-each plan bills the hours it ran that date. The date a resource stops, when
-mid-day, also bills the hours it ran.
+A resource bills from the hour it started: a server, a snapshot or a public
+IPv4 created at 15:00 bills the hours it ran on that date. A plan change bills
+the exact hours: on the date of a mid-day change, each plan bills the hours it
+ran that date. The date a resource stops, when mid-day, also bills the hours it ran.
 Because a date is billed either daily OR hourly — never both — the two passes
 partition the period and the total stays exact.
 """
@@ -184,34 +182,23 @@ def _subscription_lines(sub, cluster: str, changes: list, b, explain: bool = Fal
 
 
 def _segments(sub, cluster: str, changes: list, b) -> list[dict]:
-	"""The subscription's billable segments, clamped to the period.
-
-	A server bills its whole first date (see `_whole_first_date`). A snapshot or a
-	public IPv4 segment starts at the hour it opened.
-	"""
+	"""The subscription's billable segments, clamped to the period."""
 	segs = []
-	born_on = None
 	for i, change in enumerate(changes):
 		if change.change_type == "Cancelled" or change.locked_rate is None:
 			continue  # terminal marker or no rate snapshot — not a billable segment
-		if change.change_type == "Created":
-			born_on = frappe.utils.get_datetime(change.effective_at).date()
 		following = changes[i + 1] if i + 1 < len(changes) else None
-		seg = _segment(sub, cluster, change, following, born_on, b)
+		seg = _segment(sub, cluster, change, following, b)
 		if seg:
 			segs.append(seg)
 	return segs
 
 
-def _segment(sub, cluster: str, change, following, born_on, b) -> dict | None:
+def _segment(sub, cluster: str, change, following, b) -> dict | None:
 	"""One change's billable segment, clamped to the period, or None outside it."""
 	opened_at = frappe.utils.get_datetime(change.effective_at)
-	seg_start_dt = opened_at
 	seg_end_dt = frappe.utils.get_datetime(following.effective_at) if following else b.period_end_excl_dt
-	closes = bool(following) and following.change_type == "Cancelled"
-	if sub.server_id:
-		seg_start_dt, seg_end_dt = _whole_first_date(change, opened_at, seg_end_dt, closes, born_on)
-	start = max(seg_start_dt, b.period_start_dt)
+	start = max(opened_at, b.period_start_dt)
 	end = min(seg_end_dt, b.period_end_excl_dt)
 	if start >= b.period_end_excl_dt or end <= b.period_start_dt:
 		return None  # no overlap with this month
@@ -229,27 +216,13 @@ def _segment(sub, cluster: str, change, following, born_on, b) -> dict | None:
 		# A resize that lands inside the period and not on midnight splits its date
 		# between two plans, so that date bills by the hour.
 		"resized_mid_day": change.change_type == "Plan Changed"
-		and start == seg_start_dt
+		and start == opened_at
 		and start.time() != time.min,
 		# The resource began or ended its life in this segment, not just a config. A
 		# segment always ends at the next change, so a stop after a resize closes it too.
 		"opens": change.change_type == "Created",
-		"closes": closes,
+		"closes": bool(following) and following.change_type == "Cancelled",
 	}
-
-
-def _whole_first_date(change, start: datetime, end: datetime, closes: bool, born_on) -> tuple:
-	"""Widen a server segment so the server bills its whole first date.
-
-	1. A `Created` segment starts at midnight of its date.
-	2. A server that also stops on that date bills the whole date, so its last segment
-	   runs to the next midnight, across any plan changes that date.
-	"""
-	if change.change_type == "Created":
-		start = datetime.combine(born_on, time.min)
-	if closes and end.date() == born_on:
-		end = datetime.combine(born_on + timedelta(days=1), time.min)
-	return start, end
 
 
 _PARTIAL_DAY = "the resource started or stopped during this date, so the date bills the hours it ran"
@@ -268,9 +241,8 @@ def _owned_dates(seg: dict, b) -> list:
 
 def _partial_days(seg: dict, hourly_dates: set) -> dict:
 	"""The date a resource started and the date it stopped, when either was mid-day,
-	mapped to the window of that date it ran. A server segment starts at midnight, so
-	only a snapshot or a public IPv4 has a mid-day start. A plan-change date already
-	bills by the hour, so it is left out."""
+	mapped to the window of that date it ran. A plan-change date already bills by the
+	hour, so it is left out."""
 	out = {}
 	start, end = seg["start"], seg["end"]
 	if seg["opens"] and start.time() != time.min:

@@ -91,7 +91,7 @@ class TestDraftGeneration(BillingTestBase):
 		self.assertEqual(inv.total, 1400.0)
 		self.assertEqual(inv.expected_collection, 1400.0)
 
-	def test_a_server_stopped_on_its_first_day_bills_that_whole_day(self):
+	def test_a_server_stopped_on_its_first_day_bills_the_hours_it_ran(self):
 		add_segment(self.sub, "Created", 1000, "2026-06-05 09:00:00")
 		add_segment(self.sub, "Cancelled", None, "2026-06-05 18:00:00")
 
@@ -99,20 +99,19 @@ class TestDraftGeneration(BillingTestBase):
 		inv = frappe.get_doc("Invoice", name)
 		self.assertEqual(len(inv.items), 1)  # cancelled marker is skipped
 		li = inv.items[0]
-		self.assertEqual((li.unit, li.days), ("day", 1))
-		self.assertEqual(li.amount, round(1000 / 30, 2))
+		self.assertEqual((li.unit, li.hours), ("hour", 9.0))
+		self.assertEqual(li.amount, round(9 * 1000 / 720, 2))
 
-	def test_a_server_created_resized_and_stopped_on_one_day_bills_that_whole_day(self):
+	def test_a_server_created_resized_and_stopped_on_one_day_bills_the_hours_each_plan_ran(self):
 		add_segment(self.sub, "Created", 1000, "2026-06-05 10:00:00")
 		add_segment(self.sub, "Plan Changed", 2000, "2026-06-05 11:00:00")
 		add_segment(self.sub, "Cancelled", None, "2026-06-05 12:00:00")
 		inv = frappe.get_doc(
 			"Invoice", invoicing.generate_draft_invoice(self.sub, "2026-06-01", "2026-06-30")
 		)
-		# The first plan ran from midnight, the second runs to the next midnight: 24 hours.
 		self.assertEqual(
 			sorted((li.rate, li.unit, li.hours) for li in inv.items),
-			[(1000.0, "hour", 11.0), (2000.0, "hour", 13.0)],
+			[(1000.0, "hour", 1.0), (2000.0, "hour", 1.0)],
 		)
 
 	def test_multiple_resizes_in_a_day_bill_that_day_hourly(self):
@@ -152,15 +151,17 @@ class TestDraftGeneration(BillingTestBase):
 		daily_days = sum(li.days for li in inv.items if li.unit == "day")
 		self.assertEqual(daily_days, 28)  # 30 days − Jun 10 − Jun 11
 
-	def test_a_mid_day_start_bills_that_whole_day(self):
+	def test_a_mid_day_start_bills_that_day_by_the_hour(self):
 		add_segment(self.sub, "Created", 3000, "2026-06-05 14:00:00")
 		inv = frappe.get_doc(
 			"Invoice", invoicing.generate_draft_invoice(self.sub, "2026-06-01", "2026-06-30")
 		)
-		self.assertEqual(sorted((li.unit, li.days or li.hours) for li in inv.items), [("day", 26)])
-		self.assertEqual(inv.subtotal, round(26 * 3000 / 30, 2))
+		self.assertEqual(
+			sorted((li.unit, li.days or li.hours) for li in inv.items), [("day", 25), ("hour", 10.0)]
+		)
+		self.assertEqual(inv.subtotal, round(25 * 3000 / 30, 2) + round(10 * 3000 / 720, 2))
 
-	def test_a_resize_on_the_first_day_bills_the_first_plan_from_midnight(self):
+	def test_a_resize_on_the_first_day_bills_each_plan_the_hours_it_ran(self):
 		add_segment(self.sub, "Created", 1000, "2026-06-05 14:00:00")
 		add_segment(self.sub, "Plan Changed", 2000, "2026-06-05 18:00:00")
 		inv = frappe.get_doc(
@@ -168,7 +169,7 @@ class TestDraftGeneration(BillingTestBase):
 		)
 		self.assertEqual(
 			sorted((li.rate, li.unit, li.days or li.hours) for li in inv.items),
-			[(1000.0, "hour", 18.0), (2000.0, "day", 25), (2000.0, "hour", 6.0)],
+			[(1000.0, "hour", 4.0), (2000.0, "day", 25), (2000.0, "hour", 6.0)],
 		)
 
 	def test_a_mid_day_stop_bills_that_day_by_the_hour(self):
@@ -548,7 +549,7 @@ class TestStatusSaveKeepsLines(BillingTestBase):
 
 
 class TestServerBillsFromItsStart(BillingTestBase):
-	"""A server bills its whole first date, whatever time it was created."""
+	"""A server bills from the moment it was created, not from that day's midnight."""
 
 	def _server_for(self, created, terminated):
 		with self.freeze_time(created):
@@ -562,40 +563,17 @@ class TestServerBillsFromItsStart(BillingTestBase):
 			server.save(ignore_permissions=True)
 		return sub
 
-	def test_a_server_that_ran_eight_hours_bills_its_whole_first_day(self):
+	def test_a_server_that_ran_eight_hours_bills_eight_hours(self):
 		sub = self._server_for("2026-06-05 14:30:00", "2026-06-05 22:30:00")
 
 		inv = frappe.get_doc("Invoice", invoicing.generate_draft_invoice(sub, "2026-06-01", "2026-06-30"))
-		self.assertEqual([(li.unit, li.days) for li in inv.items], [("day", 1)])
+		self.assertEqual([(li.unit, li.hours) for li in inv.items], [("hour", 8.0)])
 
 	def test_a_backdated_start_opens_at_its_date(self):
 		with self.freeze_time("2026-06-10 15:00:00"):
 			sub = make_billing_subscription(TEAM, CLUSTER, PLAN, start_date="2026-06-05", clear_changes=False)
 		opened = frappe.db.get_value("Subscription Change", {"subscription": sub}, "effective_at")
 		self.assertEqual(str(opened), "2026-06-05 00:00:00")
-
-
-class TestSnapshotAndIPv4BillFromTheHour(IntegrationTestCase):
-	"""A snapshot or a public IPv4 bills the hours it ran on a mid-day first date."""
-
-	def _lines(self, sub):
-		from central.billing.revenue.invoicing import lines
-
-		created = frappe._dict(
-			change_type="Created", locked_rate=3000, new_value=None, effective_at="2026-06-05 18:00:00"
-		)
-		bounds = lines._period_bounds("2026-06-01", "2026-06-30")
-		return lines._subscription_lines(sub, CLUSTER, [created], bounds)
-
-	def test_a_mid_day_first_date_bills_its_hours(self):
-		kinds = {"vm_snapshot": "snapshot-1", "public_ip_server": "server-1"}
-		for field, value in kinds.items():
-			with self.subTest(field):
-				sub = frappe._dict(name="sub-1", server_id=None, vm_snapshot=None, public_ip_server=None)
-				sub[field] = value
-
-				billed = [(ln["unit"], ln["hours"] or ln["days"]) for ln in self._lines(sub)]
-				self.assertEqual(billed, [("hour", 6.0), ("day", 25)])
 
 
 class TestMonthlyBillingRun(BillingTestBase):

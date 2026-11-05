@@ -2,7 +2,7 @@
  "actions": [],
  "allow_rename": 0,
  "creation": "2026-06-03 00:00:00.000000",
- "description": "Invoice line, generated once and never updated. Time-weighted from an event-log window x the locked price: whole days for a stable config, exact hours on a day the plan changed or the resource stopped.",
+ "description": "Invoice line, generated once and never updated. Time-weighted from an event-log window x the locked price: whole days for a stable config, exact hours on a day the resource started, changed plan or stopped mid-day.",
  "doctype": "DocType",
  "editable_grid": 1,
  "engine": "InnoDB",
@@ -95,7 +95,7 @@
    "fieldtype": "Float",
    "label": "Hours",
    "precision": "2",
-   "description": "Hours active, for a segment billed hourly on a plan-change or stop day"
+   "description": "Hours active, for a segment billed hourly on a start, plan-change or stop day"
   },
   {
    "fieldname": "charge_date",

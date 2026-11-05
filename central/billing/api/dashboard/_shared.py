@@ -253,7 +253,7 @@ def _describe_line(team: str, li) -> dict:
 		# support and the cluster logs know it as. A friendly name is optional and
 		# may be absent or duplicated; this never is.
 		row["server_id"] = li.subscription_resource
-		# Hourly lines come from a plan-change day or a stop day: they're
+		# Hourly lines come from a start, plan-change or stop day: they're
 		# tied to one calendar date, so name it. Daily lines span a range within the
 		# period — the invoice already carries the period dates, so no suffix.
 		# Say WHEN, not just how long. A month with a resize in it is several lines
