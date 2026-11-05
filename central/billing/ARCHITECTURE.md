@@ -258,12 +258,11 @@ Dunning, reconciliation, the e-mandate cycle, credit expiry, card expiry, accoun
 | daily | `platform.invariants.run_invariant_audit` | audit the cross-table money invariants |
 | daily | `payments.reconciliation.recheck_completed_refunds` | ask the gateway again about card refunds completed in the last 30 days; flag one that failed later |
 | hourly | `payments.webhooks.retry_failed_webhooks` | apply again failed and lost webhook events |
-| hourly | `payments.collection.collect_on_payment_date` | debit each pre-debit rail whose window has opened, start the first charge on the payment date, and send the payment reminder the day before |
+| hourly | `payments.collection.collect_on_payment_date` | debit each pre-debit rail whose window has opened (e-mandate first debit), start the first charge on the payment date, run the single retry 24 hours after a failed first charge, and send the payment reminder the day before; a pre-debit rail is started no earlier than 24 hours before the payment date to send its notice |
 | hourly | `payments.reconciliation.run_reconciliation` | charged-but-never-webhooked gateway scan and Pending refunds |
 | hourly | `platform.alerts.run_operator_alerts` | alert operators (invariants, readiness, failed webhooks, stale attempts, unsettled captures, held invoices, failed refunds, failed accounting syncs) |
 | monthly | `revenue.invoicing.draft_monthly_invoices` | waive internal teams' unpaid invoices, then draft the just-closed month as page jobs on the `billing` queue |
 | hourly | `revenue.invoicing.collect_due_invoices` | collect every uncollected invoice whose month has closed, as page jobs; record progress on the Billing Run |
-| hourly | `payments.collection.collect_on_payment_date` | charge each open invoice on its payment date; a pre-debit rail is started no earlier than 24 hours before the payment date to send its notice |
 | hourly | `ingester.erpnext_sync.retry_failed_syncs` | retry Sales Invoice push (backoff window elapsed) |
 | monthly | `payments.payments.expire_payment_methods` | flip cards past their printed month |
 
@@ -511,9 +510,10 @@ flowchart TD
 [hourly]   payments.collection.collect_on_payment_date
   → emandate.charge_due: debit each pre-debit rail whose window has opened
   → every owed invoice with no payment attempt and payment_date ≤ tomorrow (no due date cut-off)
-  → payment_notices.send_payment_reminders: invoices charged tomorrow, rails without a pre-debit notice
   → collection.collect_invoice (no rail debits before the payment date; a pre-debit rail sends
     its notice no earlier than 24 hours before it, and its debit window opens 24 hours after the notice)
+  → dunning.run_single_retries: the single retry, 24 hours after the first charge failed
+  → payment_notices.send_payment_reminders: invoices charged tomorrow, rails without a pre-debit notice
   → (on webhook) Paid → erpnext_sync.enqueue_invoice_sync
 ```
 A held draft is released when the profile is complete. `Billing Profile.on_update` calls `release_held_invoices`, which enqueues `run.release_held_drafts` to settle the held drafts. When a draft waits longer than `Billing Settings.billing_details_grace_days`, the team stops being credit-funded for new spend (`settlement.details_overdue`), and `platform.alerts.held_invoices` pages operators.
