@@ -294,7 +294,7 @@ class TestNextPayment(OverviewBase):
 	def test_the_earliest_upcoming_charge_is_the_next_payment_date(self):
 		later = frappe.utils.add_days(self.today, 5)
 		earlier = frappe.utils.add_days(self.today, 2)
-		self._open_invoice(later, due_date=frappe.utils.add_days(self.today, 1), months_back=2)
+		self._open_invoice(later, months_back=2)
 		self._open_invoice(earlier, due_date=frappe.utils.add_days(self.today, 6))
 
 		out = dashboard.get_next_payment(TEAM)
