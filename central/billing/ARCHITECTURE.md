@@ -526,6 +526,14 @@ No rail debits before the payment date (`collection.collect_invoice`). A rail th
 
 The customer changes the payment day at most twice in a billing cycle (`BillingProfile.change_payment_day`). The change applies to the next invoice. An open invoice keeps its date.
 
+**Payment emails.** `payments.payment_notices` sends three events through `platform.notifications.notify`. Each is a Billing event for members with `billing:view`, in-app and by email.
+
+| Event | When | Sent from |
+|---|---|---|
+| `payment_scheduled` | An invoice opens with an amount left after credit. It names the total, the credit applied, the amount to charge, the payment date and the payment method. With no method, it asks the team to add one. | `Invoice.on_update`, on the save that issues the invoice. A save that rolls back sends nothing. |
+| `payment_reminder` | 1 day before the payment date, when the invoice has no payment attempt and its rail owes no pre-debit notice. Once per invoice (`payment_reminder_sent_at`). | The hourly `collection.collect_on_payment_date`. |
+| `payment_date_changed` | The payment day changes, on the dashboard or in Desk. It names the new day, the next payment date, and an issued invoice that keeps its payment date. | `BillingProfile.on_update`. |
+
 ### C. Collect / settle a charge
 ```mermaid
 sequenceDiagram

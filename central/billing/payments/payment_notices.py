@@ -10,6 +10,68 @@ from central.billing.platform import notifications
 from central.billing.platform.jobs import each_isolated
 
 
+def notify_payment_scheduled(invoice) -> None:
+	"""Tell the team what an opened invoice charges, after credit, and when."""
+	credit = frappe.utils.flt(invoice.credit_applied)
+	context = {
+		**get_payment_context(invoice),
+		"total": frappe.utils.fmt_money(invoice.total, currency=invoice.currency),
+		"credit_applied": frappe.utils.fmt_money(credit, currency=invoice.currency) if credit > 0 else None,
+	}
+	notifications.notify(
+		invoice.team,
+		"Payment Scheduled",
+		context=context,
+		reference_doctype="Invoice",
+		reference_name=invoice.name,
+	)
+
+
+def notify_payment_date_changed(profile) -> None:
+	"""Tell the team its new payment day, and which invoice it applies to.
+
+	A new profile has no earlier day, so it gets no notice. The change carries no
+	reference, so a second change in the same hour is not deduplicated away."""
+	if not profile.get_doc_before_save() or not profile.has_value_changed("payment_day"):
+		return
+
+	from central.billing.doctype.billing_profile.billing_profile import get_payment_date
+
+	next_month = frappe.utils.add_months(frappe.utils.get_first_day(frappe.utils.nowdate()), 1)
+	context = {
+		"payment_day": get_ordinal(profile.payment_day),
+		"next_payment_date": _format_date(get_payment_date(profile.team, next_month)),
+		**_get_uncharged_invoice(profile.team),
+	}
+	notifications.notify(profile.team, "Payment Date Changed", context=context)
+
+
+def _get_uncharged_invoice(team: str) -> dict:
+	"""The issued invoice that is not charged yet. It keeps its payment date."""
+	invoice = frappe.db.get_value(
+		"Invoice",
+		[
+			*owed_filters(),
+			["team", "=", team],
+			["invoice_type", "=", "Billable"],
+			["payment_date", ">=", frappe.utils.nowdate()],
+		],
+		["name", "payment_date"],
+		as_dict=True,
+		order_by="payment_date asc",
+	)
+	if not invoice:
+		return {}
+	return {"open_invoice": invoice.name, "open_payment_date": _format_date(invoice.payment_date)}
+
+
+def get_ordinal(day: int) -> str:
+	"""1st, 2nd, 3rd, 4th, ... 11th, 12th, 13th, ... 21st."""
+	day = frappe.utils.cint(day)
+	suffix = "th" if 11 <= day % 100 <= 13 else {1: "st", 2: "nd", 3: "rd"}.get(day % 10, "th")
+	return f"{day}{suffix}"
+
+
 def send_payment_reminders(now: datetime) -> list[dict]:
 	"""Remind each team whose invoice is charged tomorrow and has no payment attempt yet.
 
@@ -59,7 +121,7 @@ def get_payment_context(invoice) -> dict:
 	"""The amount, the payment date and the method a payment notice names."""
 	return {
 		"amount": frappe.utils.fmt_money(invoice.expected_collection, currency=invoice.currency),
-		"payment_date": frappe.utils.formatdate(invoice.payment_date, "d MMMM yyyy"),
+		"payment_date": _format_date(invoice.payment_date),
 		"method": get_charging_method_label(invoice.team),
 	}
 
@@ -72,6 +134,10 @@ def get_charging_method_label(team: str) -> str | None:
 	if not methods:
 		return None
 	return frappe.db.get_value("Payment Method", methods[0].name, "display_label") or methods[0].gateway
+
+
+def _format_date(value) -> str:
+	return frappe.utils.formatdate(value, "d MMMM yyyy")
 
 
 def _invoices_with_attempts(invoices: list[str]) -> set[str]:

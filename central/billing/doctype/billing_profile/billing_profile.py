@@ -11,6 +11,7 @@ from frappe.model.document import Document
 from central.billing import settings
 from central.billing.catalog.subscriptions import team_active_segments
 from central.billing.india_gst import GST_STATE_CODES, INDIA
+from central.billing.payments.payment_notices import notify_payment_date_changed
 from central.iam import user_has_operator_bypass
 
 # Once a team has been invoiced, these are frozen: invoices are denominated in the
@@ -110,12 +111,10 @@ def get_suspension_date_after(opened_on: date | str, retry_until: date | str) ->
 	1. The suspension day of the month the invoice opened in, when it is after `retry_until`.
 	2. Otherwise (an invoice that opened late), `retry_until` plus the gap an invoice opened on
 	   the 1st gets: suspension day - 1 - invoice due days, and at least 1 day."""
-	opened_on = frappe.utils.getdate(opened_on)
 	retry_until = frappe.utils.getdate(retry_until)
-	on_suspension_day = opened_on.replace(day=settings.suspension_day())
+	on_suspension_day = frappe.utils.getdate(opened_on).replace(day=settings.suspension_day())
 	if on_suspension_day > retry_until:
 		return on_suspension_day
-
 	gap = settings.suspension_day() - 1 - settings.invoice_due_days()
 	return frappe.utils.getdate(frappe.utils.add_days(retry_until, max(1, gap)))
 
@@ -229,6 +228,7 @@ class BillingProfile(Document):
 		self.refresh_gst_status_on_change()
 		self.enqueue_profile_sync()
 		self.apply_tier_change()
+		notify_payment_date_changed(self)
 
 	def validate_payment_day(self):
 		if not 1 <= frappe.utils.cint(self.payment_day) <= LAST_PAYMENT_DAY:

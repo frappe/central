@@ -104,6 +104,23 @@ class Invoice(Document):
 
 	def on_update(self):
 		self.restore_team_once_settled()
+		self.notify_payment_scheduled()
+
+	def notify_payment_scheduled(self):
+		"""Tell the team once, when the invoice opens, what is charged and when.
+
+		1. Only the save that issues the invoice notifies; a later save does not.
+		2. Only an Outstanding billable invoice with an amount left after credit notifies."""
+		before = self.get_doc_before_save()
+		if not before or is_issued(before) or not is_issued(self):
+			return
+		if self.invoice_type != "Billable" or self.status != OUTSTANDING:
+			return
+		if frappe.utils.flt(self.expected_collection) <= 0:
+			return
+		from central.billing.payments.payment_notices import notify_payment_scheduled
+
+		notify_payment_scheduled(self)
 
 	def restore_team_once_settled(self):
 		"""When an unpaid invoice is paid or waived, a team with no other overdue invoice is
