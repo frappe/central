@@ -3,7 +3,7 @@
 """A saved question, not a saved answer.
 
 The overrides here never touch Billing Settings. They change what a projection *reads*,
-for the length of that projection — so asking what an earlier suspension day would do
+for the length of that projection, so asking what an earlier suspension day would do
 costs nobody their real configuration.
 """
 
@@ -68,5 +68,5 @@ class BillingScenario(Document):
 		return min(dates) if dates else None
 
 	def overrides(self) -> dict:
-		"""Only the fields actually filled in — a blank one means "use what is live"."""
+		"""Only the fields actually filled in. A blank one means "use what is live"."""
 		return {field: self.get(field) for field in OVERRIDE_FIELDS if self.get(field) not in (None, "", 0)}

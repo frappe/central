@@ -3,7 +3,6 @@ from frappe.query_builder import DocType
 
 from central.billing.doctype.invoice.invoice import owed_filters
 
-# The default of the removed `suspend_after_days` field, which an unsaved Single used.
 OLD_SUSPEND_AFTER_DAYS = 14
 
 
@@ -12,6 +11,8 @@ def execute() -> None:
 
 	The old ladder suspended a team `suspend_after_days` after the invoice's dunning start,
 	else its due date. Keeping that date means the new ladder suspends nobody earlier.
+	`OLD_SUSPEND_AFTER_DAYS` is the default of the removed `suspend_after_days` field, which an
+	unsaved Single used.
 	"""
 	suspend_after = _old_suspend_after_days()
 	invoices = frappe.get_all(

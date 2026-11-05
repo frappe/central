@@ -41,7 +41,6 @@ from central.billing.platform.jobs import each_isolated
 from central.billing.platform.records import save_billing_record
 from central.billing.states import transition
 
-# The Invoice fields `get_ladder_dates` reads.
 LADDER_FIELDS = ("team", "status", "payment_date", "due_date", "dunning_starts_on", "suspends_on")
 
 
