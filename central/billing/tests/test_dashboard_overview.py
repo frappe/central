@@ -351,8 +351,8 @@ class TestNextPayment(OverviewBase):
 
 		self.assertEqual(out["next_retry_on"], str(frappe.utils.add_days(self.today, 1)))
 
-	def _attempt(self, invoice) -> str:
-		# Test fixture: a failed attempt the gateway would record, not a user action.
+	def _attempt(self, invoice, status="Failed") -> str:
+		# Test fixture: an attempt the gateway would record, not a user action.
 		return (
 			frappe.get_doc(
 				{
@@ -362,13 +362,41 @@ class TestNextPayment(OverviewBase):
 					"gateway": "Stripe",
 					"amount": 3000,
 					"currency": "INR",
-					"status": "Failed",
+					"status": status,
 					"initiated_at": frappe.utils.now_datetime(),
 				}
 			)
 			.insert(ignore_permissions=True)
 			.name
 		)
+
+	def _charge_in_flight_since(self, invoice, started_on):
+		attempt = self._attempt(invoice, status="Initiated")
+		frappe.db.set_value("Payment Attempt", attempt, "creation", f"{started_on} 10:00:00")
+
+	def test_a_charge_in_flight_reports_the_payment_in_progress(self):
+		give_team_a_card(TEAM)
+		invoice = self._missed_invoice(10)
+		yesterday = frappe.utils.add_days(self.today, -1)
+		self._charge_in_flight_since(invoice.name, yesterday)
+
+		with settings.overridden(**LADDER):
+			out = dashboard.get_next_payment(TEAM)
+
+		self.assertEqual(out["payment_in_progress_since"], str(yesterday))
+		self.assertIsNone(out["next_retry_on"])
+		self.assertIsNone(out["suspends_on"])
+
+	def test_a_charge_in_flight_on_the_suspension_date_reports_the_suspension(self):
+		give_team_a_card(TEAM)
+		invoice = self._missed_invoice(14)
+		self._charge_in_flight_since(invoice.name, frappe.utils.add_days(self.today, -1))
+
+		with settings.overridden(**LADDER):
+			out = dashboard.get_next_payment(TEAM)
+
+		self.assertIsNone(out["payment_in_progress_since"])
+		self.assertEqual(out["suspends_on"], str(invoice.suspends_on))
 
 	def test_the_schedule_publishes_the_escalation_ladder(self):
 		self._provision(rate=3000)

@@ -60,7 +60,7 @@ When an invoice is unpaid, **Billing > Overview** shows a banner with the amount
 
 ## When a payment fails
 
-Frappe Cloud charges an invoice on its payment date. When the charge fails, Frappe Cloud tries again every 2 days until the invoice due date, and sends a notification with the reason. When no retry fits before the due date, Frappe Cloud tries once more 24 hours after the failed charge. After the last retry, the invoice becomes `Overdue`. If the invoice stays unpaid, Frappe Cloud stops the team's servers on the 15th of the month. The data on the servers is kept. When you pay the invoice, Frappe Cloud starts the servers again.
+Frappe Cloud charges an invoice on its payment date. When the charge fails, Frappe Cloud tries again every 2 days until the invoice due date, and sends a notification with the reason. When no retry fits before the due date, Frappe Cloud tries once more 24 hours after the failed charge. After the last retry, the invoice becomes `Overdue`. While your bank has not confirmed a charge, the invoice does not become `Overdue`, and the billing summary shows **Payment in progress**. If the invoice stays unpaid, Frappe Cloud stops the team's servers on the 15th of the month. The data on the servers is kept. When you pay the invoice, Frappe Cloud starts the servers again.
 
 An invoice is issued on the 1st and is due on the 8th, or on the payment date when that is later:
 

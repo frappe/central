@@ -100,6 +100,7 @@ export interface NextPayment {
 	will_auto_charge: boolean
 	blockers: PaymentBlocker[]
 	/** Set only after the open invoice's payment date has passed. At most one is set. */
+	payment_in_progress_since: string | null
 	next_retry_on: string | null
 	suspends_on: string | null
 	suspended_since: string | null

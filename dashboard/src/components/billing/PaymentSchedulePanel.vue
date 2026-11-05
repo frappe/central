@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Alert, LoadingText, useCall } from 'frappe-ui'
+import { Alert, LoadingText, Tooltip, useCall } from 'frappe-ui'
 import { computed, watch } from 'vue'
 import { API, method } from '@/api/methods'
 import PaymentDayForm from '@/components/billing/PaymentDayForm.vue'
@@ -60,6 +60,7 @@ const chargeStep = computed(
 		getDunningStep(data.value) ?? {
 			label: "We'll charge on",
 			date: data.value?.charge_on,
+			hint: '',
 		},
 )
 </script>
@@ -95,9 +96,11 @@ const chargeStep = computed(
 						<span class="text-p-sm text-ink-gray-5"
 							>{{ chargeStep.label }}</span
 						>
-						<span class="text-sm-medium text-ink-gray-8">
-							{{ shortDate(chargeStep.date) || '—' }}
-						</span>
+						<Tooltip :text="chargeStep.hint" :disabled="!chargeStep.hint">
+							<span class="text-sm-medium text-ink-gray-8">
+								{{ shortDate(chargeStep.date) || '—' }}
+							</span>
+						</Tooltip>
 					</div>
 					<div
 						v-if="data?.method?.label"
