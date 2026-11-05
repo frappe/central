@@ -46,7 +46,7 @@ The panel at the top of **Billing > Overview** shows the current cycle.
 | Next invoice | The date of the next invoice. |
 | Next payment date | The next scheduled payment date. When an unpaid invoice passes its payment date, this row shows the payment date of the next invoice. |
 
-To change the payment date, click the calendar icon (**Change payment date**) next to **Next payment date**. The **Payment schedule** panel opens. It also shows the amount due, the date of the next charge or retry, the payment method that is charged, and the dates of each step if the invoice stays unpaid. Select a day from the 1st to the 10th of the month and click **Save payment date**. You can change it at most twice in a billing cycle. You need the Owner, Admin, or Billing role. Wallet credit still applies on the invoice date. A change does not move the payment date of an invoice that is already issued.
+To change the payment date, click the calendar icon (**Change payment date**) next to **Next payment date**. The **Payment schedule** panel opens. It also shows the amount due, the date of the next charge or retry, the payment method that is charged, and the dates of each step if the invoice stays unpaid. Select a day from the 1st to the 10th of the month and click **Save payment date**. You can change it at most twice in a billing cycle. You need the Owner, Admin, or Billing role. Wallet credit still applies on the invoice date. A change does not move the payment date of an invoice that is already issued. To pay an issued invoice before its payment date, open it and click **Pay**.
 
 ### Budget alerts
 
