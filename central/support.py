@@ -45,6 +45,12 @@ CATEGORY_LABELS = {
 	"account": "Account & team",
 }
 
+CRITICAL_ISSUES = {
+	"Unreachable or down",
+	"Site setup or provisioning failed",
+	"Payment method or failed charge",
+}
+
 MAXIMUM_SUBJECT_LENGTH = 140
 
 SERVER_FIELDS = ("name", "resource_id", "atlas_vm_id", "title", "region", "status", "plan")
@@ -55,6 +61,28 @@ def team_context_line(team: str) -> str:
 	"""The marker for a ticket's team, and the only text a list filters on.
 	Central writes it after it escapes the customer's text, so a description cannot fake it."""
 	return f"<hr><p><strong>Context</strong><br>Team: {html.escape(team)}<br>"
+
+
+def is_articles_enabled() -> bool:
+	"""Help articles stay hidden until an operator enables them, because a new deployment has none."""
+	return bool(frappe.db.get_single_value("Central Settings", "articles_enabled"))
+
+
+def get_ticket_options() -> list[dict]:
+	"""The categories and issues the console offers, in catalog order."""
+	return [
+		{
+			"key": key,
+			"label": CATEGORY_LABELS[key],
+			"issues": [{"label": issue, "is_critical": issue in CRITICAL_ISSUES} for issue in issues],
+		}
+		for key, issues in SUPPORT_CATEGORIES.items()
+	]
+
+
+def resolve_priority(issue_type: str, priority: str | None) -> str | None:
+	"""A critical issue reaches support first, whatever the client asked for."""
+	return "Urgent" if issue_type in CRITICAL_ISSUES else priority
 
 
 def get_user_email() -> str:
@@ -127,7 +155,22 @@ def build_description(
 	details.extend(describe_site(site))
 	context = "".join(f"{html.escape(label)}: {html.escape(value)}<br>" for label, value in details)
 
-	return f"{format_text(description)}{team_context_line(team)}{context}</p>"
+	return (
+		f"{format_text(description)}{team_context_line(team)}{context}{central_links(team, server, site)}</p>"
+	)
+
+
+def central_links(team: str, server: dict | None, site: dict | None) -> str:
+	"""Links to the records the ticket is about, so an agent opens them from the ticket."""
+	base = frappe.utils.get_url()
+	links = [f'<a href="{base}/app/team/{html.escape(team, quote=True)}">Team</a>']
+	if server:
+		name = html.escape(server["name"], quote=True)
+		links.append(f'<a href="{base}/app/virtual-machine/{name}">Server</a>')
+	if site:
+		links.append(f'<a href="{base}/app/site/{html.escape(site["name"], quote=True)}">Site</a>')
+
+	return f"Open in Central: {' · '.join(links)}<br>"
 
 
 def describe_server(server: dict | None) -> list[tuple[str, str]]:

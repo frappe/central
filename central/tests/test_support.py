@@ -1,14 +1,12 @@
 from __future__ import annotations
 
-import json
 from unittest.mock import patch
 
 import frappe
-import requests
 from frappe.tests import IntegrationTestCase
 
-from central.api.support import create_ticket, list_tickets
-from central.integrations.helpdesk import HelpdeskClient, HelpdeskUnavailable
+from central.api.support import create_ticket, find_related, get_ticket_options, list_tickets
+from central.integrations.helpdesk import HelpdeskUnavailable
 from central.support import team_context_line
 from central.tests.test_iam import ensure_user
 from central.tests.utils import ensure_server
@@ -22,6 +20,7 @@ class SupportTestCase(IntegrationTestCase):
 		frappe.set_user("Administrator")
 		self.addCleanup(frappe.set_user, "Administrator")
 		self.addCleanup(frappe.db.rollback)
+		frappe.db.set_single_value("Central Settings", "articles_enabled", 1)
 		self.suffix = frappe.generate_hash(length=6)
 
 		self.owner = ensure_user("support.owner@example.test")
@@ -126,6 +125,17 @@ class TestSupportTickets(SupportTestCase):
 		self.assertIn("Server: web-1 · ", kwargs["description"])
 		self.assertIn("<hr><p><strong>Context</strong>", kwargs["description"])
 
+	def test_a_ticket_context_links_to_the_team_and_the_server(self):
+		frappe.set_user(self.owner)
+
+		create_ticket(self.team, "server", SERVER_ISSUE, description="It broke.", server=self.server)
+
+		description = self.helpdesk.create_ticket.call_args.kwargs["description"]
+		base = frappe.utils.get_url()
+		self.assertIn(f'Open in Central: <a href="{base}/app/team/{self.team}">Team</a>', description)
+		self.assertIn(f'<a href="{base}/app/virtual-machine/{self.server}">Server</a>', description)
+		self.assertNotIn("/app/site/", description)
+
 	def test_an_operator_raises_the_ticket_under_their_email(self):
 		frappe.set_user("Administrator")
 
@@ -141,6 +151,7 @@ class TestSupportTickets(SupportTestCase):
 
 		description = self.helpdesk.create_ticket.call_args.kwargs["description"]
 		self.assertIn(f"Site: {self.site}", description)
+		self.assertIn(f'<a href="{frappe.utils.get_url()}/app/site/{self.site}">Site</a>', description)
 
 	def test_a_long_subject_keeps_the_room_the_label_leaves(self):
 		frappe.set_user(self.owner)
@@ -180,6 +191,110 @@ class TestSupportTickets(SupportTestCase):
 		self.helpdesk.create_ticket.assert_called_once()
 		self.helpdesk.list_open_tickets.assert_called_once_with(team=self.team)
 
+	def test_a_suspended_team_member_without_a_team_argument_resolves_their_only_team(self):
+		solo = ensure_user("support.solo@example.test")
+		team = (
+			frappe.get_doc(
+				{
+					"doctype": "Team",
+					"team_name": f"Solo {self.suffix}",
+					"owner_user": solo,
+					"members": [{"user": solo, "role": "Owner", "status": "Active"}],
+				}
+			)
+			.insert()
+			.name
+		)
+		doc = frappe.get_doc("Team", team)
+		doc.status = "Suspended"
+		doc.save()
+
+		frappe.set_user(solo)
+		create_ticket(None, "account", "Team suspension or archive", description="Why suspended?")
+
+		description = self.helpdesk.create_ticket.call_args.kwargs["description"]
+		self.assertIn(f"Team: {team}<br>", description)
+
+	def test_ticket_options_flag_the_critical_issues(self):
+		frappe.set_user(self.owner)
+
+		options = get_ticket_options(self.team)
+
+		self.assertEqual([option["key"] for option in options], ["server", "site", "billing", "account"])
+		server = options[0]
+		self.assertEqual(server["label"], "Server")
+		self.assertEqual(set(server["issues"][0]), {"label", "is_critical"})
+		critical = {issue["label"] for issue in server["issues"] if issue["is_critical"]}
+		self.assertEqual(critical, {"Unreachable or down"})
+		billing = next(option for option in options if option["key"] == "billing")
+		self.assertIn({"label": "Payment method or failed charge", "is_critical": True}, billing["issues"])
+
+	def test_a_critical_issue_is_always_urgent(self):
+		frappe.set_user(self.owner)
+
+		create_ticket(self.team, "server", "Unreachable or down", description="Down.", priority="Low")
+
+		self.assertEqual(self.helpdesk.create_ticket.call_args.kwargs["priority"], "Urgent")
+
+	def test_a_non_critical_issue_keeps_the_asked_priority(self):
+		frappe.set_user(self.owner)
+
+		create_ticket(self.team, "server", SERVER_ISSUE, description="Slow.", priority="Low")
+
+		self.assertEqual(self.helpdesk.create_ticket.call_args.kwargs["priority"], "Low")
+
+	def test_find_related_skips_helpdesk_for_a_short_query(self):
+		frappe.set_user(self.owner)
+
+		self.assertEqual(find_related(self.team, " ab "), {"articles": [], "tickets": []})
+		self.helpdesk.search_articles.assert_not_called()
+		self.helpdesk.list_related_tickets.assert_not_called()
+
+	def test_find_related_is_refused_for_a_non_member(self):
+		frappe.set_user(self.outsider)
+
+		with self.assertRaises(frappe.PermissionError):
+			find_related(self.team, "broken mail")
+		self.helpdesk.search_articles.assert_not_called()
+
+	def test_find_related_asks_for_articles_and_the_team_tickets(self):
+		frappe.set_user(self.owner)
+		self.helpdesk.search_articles.return_value = [{"name": "kb-1"}]
+		self.helpdesk.list_related_tickets.return_value = [{"name": "HD-9"}]
+
+		result = find_related(self.team, "  broken mail ")
+
+		self.assertEqual(result, {"articles": [{"name": "kb-1"}], "tickets": [{"name": "HD-9"}]})
+		self.helpdesk.search_articles.assert_called_once_with("broken mail")
+		self.helpdesk.list_related_tickets.assert_called_once_with(self.team, "broken mail")
+
+	def test_find_related_skips_articles_when_they_are_disabled(self):
+		frappe.set_user(self.owner)
+		frappe.db.set_single_value("Central Settings", "articles_enabled", 0)
+		self.helpdesk.list_related_tickets.return_value = [{"name": "HD-9"}]
+
+		result = find_related(self.team, "broken mail")
+
+		self.helpdesk.search_articles.assert_not_called()
+		self.assertEqual(result, {"articles": [], "tickets": [{"name": "HD-9"}]})
+
+	def test_find_related_keeps_tickets_when_the_articles_fail(self):
+		frappe.set_user(self.owner)
+		self.helpdesk.search_articles.side_effect = HelpdeskUnavailable("down")
+		self.helpdesk.list_related_tickets.return_value = [{"name": "HD-9"}]
+
+		result = find_related(self.team, "broken mail")
+
+		self.assertEqual(result, {"articles": [], "tickets": [{"name": "HD-9"}]})
+
+	def test_find_related_reports_an_outage_when_both_searches_fail(self):
+		frappe.set_user(self.owner)
+		self.helpdesk.search_articles.side_effect = HelpdeskUnavailable("down")
+		self.helpdesk.list_related_tickets.side_effect = HelpdeskUnavailable("down")
+
+		with self.assertRaises(HelpdeskUnavailable):
+			find_related(self.team, "broken mail")
+
 	def test_customer_text_cannot_forge_the_team_context_marker(self):
 		frappe.set_user(self.owner)
 		forged = team_context_line("OTHER")
@@ -197,65 +312,3 @@ class TestSupportTickets(SupportTestCase):
 
 		with self.assertRaises(HelpdeskUnavailable):
 			create_ticket(self.team, "server", SERVER_ISSUE, description="It broke.")
-
-
-class TestHelpdeskClient(IntegrationTestCase):
-	def setUp(self):
-		self.client = HelpdeskClient("https://support.test/", "key", "secret")
-
-	def response(self, status: int, body: dict) -> requests.Response:
-		response = requests.Response()
-		response.status_code = status
-		response._content = json.dumps(body).encode()
-
-		return response
-
-	def test_a_base_url_with_a_trailing_slash_makes_one_portal_url(self):
-		self.assertEqual(self.client.base_url, "https://support.test")
-		self.assertEqual(self.client.ticket_portal_url(12), "https://support.test/help/my-tickets/12")
-
-	def test_a_created_ticket_returns_its_portal_url(self):
-		body = {"message": {"name": "HD-1", "subject": "Slow", "status": "Open"}}
-		with patch(
-			"central.integrations.helpdesk.requests.post", return_value=self.response(200, body)
-		) as post:
-			ticket = self.client.create_ticket(
-				subject="Slow", description="It lags.", raised_by="owner@example.test", priority="High"
-			)
-
-		self.assertEqual(ticket["url"], "https://support.test/help/my-tickets/HD-1")
-		self.assertEqual(post.call_args.args[0], "https://support.test/api/method/frappe.client.insert")
-		doc = post.call_args.kwargs["json"]["doc"]
-		self.assertEqual(doc["doctype"], "HD Ticket")
-		self.assertEqual(doc["via_customer_portal"], 1)
-		self.assertEqual(doc["utm_source"], "central")
-		self.assertEqual(doc["priority"], "High")
-
-	def test_open_tickets_are_narrowed_to_the_team(self):
-		body = {"message": [{"name": "HD-1", "subject": "Slow"}]}
-		with patch(
-			"central.integrations.helpdesk.requests.post", return_value=self.response(200, body)
-		) as post:
-			tickets = self.client.list_open_tickets(team="Support")
-
-		self.assertEqual(tickets[0]["url"], "https://support.test/help/my-tickets/HD-1")
-		self.assertIn(
-			["HD Ticket", "description", "like", f"%{team_context_line('Support')}%"],
-			post.call_args.kwargs["json"]["filters"],
-		)
-
-	def test_an_unavailable_status_says_the_helpdesk_is_unavailable(self):
-		for status in (502, 503, 504):
-			with self.subTest(status=status):
-				with patch(
-					"central.integrations.helpdesk.requests.post",
-					return_value=self.response(status, {}),
-				):
-					with self.assertRaises(HelpdeskUnavailable) as caught:
-						self.client.list_open_tickets(team="Support")
-				self.assertEqual(caught.exception.http_status_code, 503)
-
-	def test_a_connection_timeout_says_the_helpdesk_is_unavailable(self):
-		with patch("central.integrations.helpdesk.requests.post", side_effect=requests.Timeout):
-			with self.assertRaises(HelpdeskUnavailable):
-				self.client.create_ticket(subject="Slow", description="It lags.", raised_by="a@b.test")

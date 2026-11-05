@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import html
 import json
 
 import frappe
 import requests
 from frappe import _
+from frappe.utils import strip_html_tags
 
 from central.iam import user_has_operator_bypass
 from central.support import team_context_line
@@ -13,6 +15,9 @@ from central.support import team_context_line
 TIMEOUT = (30, 90)
 # What a Helpdesk that is down or in maintenance answers; Frappe's maintenance mode is a 503.
 UNAVAILABLE = (502, 503, 504)
+RELATED_TICKETS_LIMIT = 5
+RELATED_SEARCH_LIMIT = 20
+TEAM_TICKET_LIMIT = 500
 
 TICKET_FIELDS = [
 	"name",
@@ -106,14 +111,106 @@ class HelpdeskClient:
 
 		return [row | {"url": self.ticket_portal_url(row["name"])} for row in rows or []]
 
-	def call(self, method: str, **body) -> dict | list:
+	def article_portal_url(self, name: str, title_slug: str | None) -> str:
+		"""The article's page in the Helpdesk portal, `<name>-<slug>` as the portal links it."""
+		slug = f"{name}-{title_slug}" if title_slug else name
+		return f"{self.base_url}/help/articles/{slug}"
+
+	def search_articles(self, query: str) -> list[dict]:
+		"""Helpdesk articles that match `query`, each with its portal `url`."""
+		rows = self.get("helpdesk.api.knowledge_base.search_articles", query=query, limit=5)
+
+		return [
+			{
+				"name": row["name"],
+				"title": plain_text(row.get("title") or ""),
+				"excerpt": plain_text(row.get("excerpt") or ""),
+				"category": row.get("category_name"),
+				"url": self.article_portal_url(row["name"], row.get("title_slug")),
+			}
+			for row in rows or []
+		]
+
+	def list_related_tickets(self, team: str, query: str) -> list[dict]:
+		"""The team's tickets that match `query` in Helpdesk's full-text search, any status,
+		each with its portal `url`. A closed ticket can still answer the question."""
+		names = self.team_ticket_names(team)
+		if not names:
+			return []
+
+		return self.pick_team_tickets(self.search_tickets(query, names), names)
+
+	def pick_team_tickets(self, rows: list[dict], names: list[str]) -> list[dict]:
+		"""The first matching rows that belong to `names`, one row per ticket."""
+		tickets = []
+		seen = set()
+		for row in rows:
+			ticket = row.get("reference_ticket") or row.get("reference_name")
+			subject = plain_text(row.get("title") or "")
+			if ticket not in names or ticket in seen or not subject:
+				continue
+
+			seen.add(ticket)
+			tickets.append(
+				{
+					"name": ticket,
+					"subject": subject,
+					"status": row.get("status"),
+					"url": self.ticket_portal_url(ticket),
+				}
+			)
+			if len(tickets) == RELATED_TICKETS_LIMIT:
+				break
+
+		return tickets
+
+	def team_ticket_names(self, team: str) -> list[str]:
+		"""Every ticket whose context holds `team`, any status."""
+		rows = self.call(
+			"frappe.client.get_list",
+			doctype="HD Ticket",
+			fields=["name"],
+			filters=[["HD Ticket", "description", "like", f"%{team_context_line(team)}%"]],
+			limit_page_length=TEAM_TICKET_LIMIT,
+		)
+
+		return [row["name"] for row in rows or []]
+
+	def search_tickets(self, query: str, names: list[str]) -> list[dict]:
+		"""Helpdesk search rows for `query`, narrowed to the ticket names.
+		A missing search index must not block the ticket form."""
 		try:
-			response = requests.post(
-				f"{self.base_url}/api/method/{method}", json=body, headers=self.headers, timeout=TIMEOUT
+			result = self.get(
+				"helpdesk.api.search.search",
+				query=query,
+				filters=json.dumps({"reference_ticket": names}),
+				limit=RELATED_SEARCH_LIMIT,
+			)
+		except (HelpdeskUnavailable, frappe.ValidationError) as e:
+			frappe.log_error(title="Helpdesk related search failed", message=str(e))
+			return []
+
+		return result.get("results") or []
+
+	def call(self, method: str, **body) -> dict | list:
+		return self.read_request(requests.post, method, json=body)
+
+	def get(self, method: str, **params) -> dict | list:
+		return self.read_request(requests.get, method, params=params)
+
+	def read_request(self, request, method: str, **kwargs) -> dict | list:
+		try:
+			response = request(
+				f"{self.base_url}/api/method/{method}", headers=self.headers, timeout=TIMEOUT, **kwargs
 			)
 		except (requests.ConnectionError, requests.Timeout) as e:
 			raise HelpdeskUnavailable(_("The support desk can't be reached right now.")) from e
 		return read(response)
+
+
+def plain_text(markup: str) -> str:
+	"""Markup from Helpdesk read as plain text, so `&amp;` reads as `&`."""
+	return html.unescape(strip_html_tags(markup))
 
 
 def read(response: requests.Response) -> dict | list:

@@ -416,13 +416,19 @@ Central sends stock `HD Ticket` fields only. It does not change the Helpdesk sch
 | Field | Value |
 | --- | --- |
 | `subject` | `[<Category> · <Topic>] <customer subject>` |
-| `description` | The customer's escaped text, then a Context block with Team, User, Category, Topic and the verified Server and Site |
+| `description` | The customer's escaped text, then a Context block with Team, User, Category, Topic, the verified Server and Site, and links to the Team and records in Central |
 | `raised_by` | The caller's email |
 | `via_customer_portal` | `1` |
+
+A critical issue is `Unreachable or down`, `Site setup or provisioning failed`, or `Payment method or failed charge`. A ticket for one of these is `Urgent`, because the client cannot choose another priority.
+
+Each Context block ends with an `Open in Central` line. It links the Team, and the Server or Site when the ticket names one, to the Desk record. An agent opens the record from the ticket.
 
 A ticket's team is the `Team:` line in the Context block. The whole marker is `<hr><p><strong>Context</strong><br>Team: <team><br>`. Helpdesk has no team field, so this line links a ticket to a Central Team. Central escapes the customer's text before it writes the block, so a description cannot fake the line.
 
 A list request asks for tickets where `status_category` is not `Resolved` and the description holds the team marker. A ticket that waits on the customer is `Paused`, not `Resolved`, and stays in the list.
+
+Before a customer opens a ticket, the console asks Helpdesk for up to 5 matching articles and up to 5 of the team's tickets. An operator turns on Show Help Articles in Central Settings under Helpdesk after the desk publishes articles. While it is off, Central asks only for tickets, so a deployment with an empty knowledge base shows no article group. It first lists every ticket whose description holds the team marker, then asks Helpdesk's full-text search for those tickets, so a match in the subject or in the thread counts. The ticket search accepts any status, because a resolved ticket can still answer the question. Central drops a search row that points to a ticket outside the team list. A failed search returns no tickets and never blocks ticket creation.
 
 A ticket row opens `<Helpdesk URL>/help/my-tickets/<ticket name>`. This is the Helpdesk customer portal, so the customer needs a Helpdesk account there.
 

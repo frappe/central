@@ -23,6 +23,7 @@
   "column_break_helpdesk",
   "helpdesk_api_key",
   "helpdesk_api_secret",
+  "articles_enabled",
   "feature_flags_tab",
   "addons_section",
   "enable_addons",
@@ -185,6 +186,13 @@
    "fieldname": "helpdesk_api_secret",
    "fieldtype": "Password",
    "label": "Helpdesk API Secret"
+  },
+  {
+   "default": "0",
+   "description": "Show help articles from the support desk in the Get help dialog. Turn this on when the support desk has published articles.",
+   "fieldname": "articles_enabled",
+   "fieldtype": "Check",
+   "label": "Show Help Articles"
   },
   {
    "fieldname": "feature_flags_tab",
