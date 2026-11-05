@@ -112,7 +112,7 @@ class TestBuilding(LibraryTestBase):
 
 
 class TestWhatTheyDemonstrate(LibraryTestBase):
-	def test_the_churn_scenario_really_does_push_a_date_hourly(self):
+	def test_the_resize_scenario_really_does_push_a_date_hourly(self):
 		doc = library.build("resized-twice-in-a-day", TEAM, period_start="2026-09-01", today=TODAY)
 		out = scenario.project(doc, today=TODAY)
 		hourly = [li for li in out["invoice"]["lines"] if li["unit"] == "hour"]

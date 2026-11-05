@@ -97,7 +97,7 @@ class TestDailyLines(DerivationTestBase):
 		self.assertEqual([li["derivation"]["locked_rate"] for li in lines], [3000.0, 6000.0])
 
 
-class TestChurnDates(DerivationTestBase):
+class TestResizeDates(DerivationTestBase):
 	def setUp(self):
 		super().setUp()
 		# 2000 all month, bumped to 4000 for nine hours on the 15th.

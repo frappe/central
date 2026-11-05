@@ -3,9 +3,9 @@
 """The time-weighted line-item engine — fixed charges from Subscription Change
 rate-snapshot segments. Shared by draft generation and the dashboard forecast.
 
-Billing is daily by default: a stable config (one held for 24h or more) bills a
-whole day at a time, so a normal month reads as a handful of clean day lines and
-a full day always costs one day's rate — the "daily cap".
+Billing is daily by default: a date with no mid-day plan change bills a whole day
+at a time, so a normal month reads as a handful of clean day lines and a full day
+always costs one day's rate — the "daily cap".
 
 A new resource bills its whole first date, whatever time it started, so a
 server created at 15:00 costs a full day on that date. A plan change bills the
@@ -290,8 +290,8 @@ def _resolve_changes(subscription_names: list[str], changes=None) -> dict:
 
 	The run reads them from Subscription Change, which is the only source there is. A
 	projection may supply its own — the real rows plus a hypothetical resize, say — so
-	that an invented change is rated by exactly the code that rates a real one, churn
-	window and all. `changes` is either a ready-made mapping or a callable taking the
+	that an invented change is rated by exactly the code that rates a real one, resize
+	days and all. `changes` is either a ready-made mapping or a callable taking the
 	subscription names; absent, nothing changes.
 	"""
 	if changes is None:

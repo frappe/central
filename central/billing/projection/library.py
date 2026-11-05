@@ -43,7 +43,7 @@ SCENARIOS = {
 		"events": [],
 	},
 	"resized-twice-in-a-day": {
-		"title": "Two resizes inside 24 hours",
+		"title": "Two resizes on one day",
 		"question": "Why did one day of the bill itemise by the hour?",
 		"look_for": (
 			"That date leaves daily billing entirely and bills the real hours each config "
