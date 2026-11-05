@@ -31,10 +31,15 @@ const save = useCall<unknown, { team: string; payment_day: number }>({
 const draft = ref('')
 const formError = ref('')
 
+// A team switch drops the draft so the old team's choice is never saved to the new one.
 watch(
-	() => props.open,
-	(isOpen) => {
-		if (isOpen && activeTeam.value) settings.reload()
+	[() => props.open, activeTeam],
+	([isOpen, team], previous) => {
+		if (previous && team !== previous[1]) {
+			draft.value = ''
+			formError.value = ''
+		}
+		if (isOpen && team) settings.reload()
 	},
 	{ immediate: true },
 )
@@ -135,7 +140,7 @@ async function submit(): Promise<void> {
 				type="submit"
 				variant="solid"
 				label="Save payment date"
-				:disabled="isUnchanged"
+				:disabled="isUnchanged || settings.loading"
 				:loading="save.loading"
 			/>
 		</div>
