@@ -20,6 +20,7 @@ import frappe
 
 from central.billing.doctype.invoice.invoice import owed_filters
 from central.billing.revenue.dunning import (
+	LADDER_FIELDS,
 	dunning_policy,
 	dunning_schedule,
 	get_ladder_dates,
@@ -48,10 +49,7 @@ def unpaid_invoices(filters: dict | None = None) -> list[frappe._dict]:
 			"team",
 			"currency",
 			"status",
-			"due_date",
-			"payment_date",
-			"dunning_starts_on",
-			"suspends_on",
+			*LADDER_FIELDS,
 			"expected_collection",
 		],
 		order_by="due_date asc",

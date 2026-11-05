@@ -166,10 +166,7 @@ def termination_due() -> list[dict]:
 			"team",
 			"currency",
 			"total",
-			"due_date",
-			"payment_date",
-			"dunning_starts_on",
-			"suspends_on",
+			*dunning.LADDER_FIELDS,
 		],
 		limit=100,
 	):

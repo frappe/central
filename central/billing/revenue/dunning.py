@@ -36,6 +36,9 @@ from central.billing.platform.jobs import each_isolated
 from central.billing.platform.records import save_billing_record
 from central.billing.states import transition
 
+# The Invoice fields `get_ladder_dates` reads.
+LADDER_FIELDS = ("payment_date", "due_date", "dunning_starts_on", "suspends_on")
+
 
 def defer_dunning(invoice: str, reason: str) -> bool:
 	"""Move an invoice's ladder anchor forward to today: we failed to ask, so they aren't late.
@@ -47,9 +50,7 @@ def defer_dunning(invoice: str, reason: str) -> bool:
 	days. Monotonic (it only ever moves forward) and self-limiting (a successful ask
 	stops pushing it). `due_date` is untouched: it is an accounting fact AR aging reads.
 	"""
-	row = frappe.db.get_value(
-		"Invoice", invoice, ["payment_date", "due_date", "dunning_starts_on", "suspends_on"], as_dict=True
-	)
+	row = frappe.db.get_value("Invoice", invoice, LADDER_FIELDS, as_dict=True)
 	dates = get_ladder_dates(row)
 	today = frappe.utils.getdate(frappe.utils.nowdate())
 	if dates.anchor >= today:

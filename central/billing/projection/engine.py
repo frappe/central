@@ -22,6 +22,7 @@ from central.billing.projection import events as injected
 from central.billing.projection.basis import MEASURED, mark, split_totals
 from central.billing.projection.guard import read_only
 from central.billing.revenue.dunning import (
+	LADDER_FIELDS,
 	dunning_policy,
 	dunning_schedule,
 	get_ladder_dates,
@@ -202,10 +203,7 @@ def _in_flight(team: str, today) -> list[dict]:
 		fields=[
 			"name",
 			"status",
-			"due_date",
-			"payment_date",
-			"dunning_starts_on",
-			"suspends_on",
+			*LADDER_FIELDS,
 			"expected_collection",
 			"currency",
 		],

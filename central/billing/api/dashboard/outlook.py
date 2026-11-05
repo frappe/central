@@ -21,6 +21,15 @@ from frappe import _
 from central.billing.api.dashboard._shared import _resolve_team, _team_currency
 from central.billing.doctype.billing_profile.billing_profile import get_payment_date
 from central.billing.doctype.invoice.invoice import owed_filters
+from central.billing.revenue.dunning import (
+	LADDER_FIELDS,
+	dunning_policy,
+	dunning_schedule,
+	get_ladder_dates,
+	get_opening_ladder_dates,
+	has_retry_rail,
+	is_retry_due,
+)
 
 # Customer-facing copy for the findings the engine can raise. `fix` is the sentence
 # that tells someone what to actually do — the reason this is worth showing at all.
@@ -129,10 +138,7 @@ def _owed_invoices(team: str) -> list[frappe._dict]:
 			"name",
 			"status",
 			"expected_collection",
-			"due_date",
-			"dunning_starts_on",
-			"suspends_on",
-			"payment_date",
+			*LADDER_FIELDS,
 			"period_end",
 			"predebit_charge_after",
 		],
@@ -172,8 +178,6 @@ def _missed_payment(team: str, invoice, today) -> dict:
 	3. A retry still to come, today's included until it runs: only the next retry date.
 	4. No retry left, or none dunning can run: only the date the team is suspended.
 	"""
-	from central.billing.revenue.dunning import dunning_schedule, get_ladder_dates
-
 	missed = {"next_retry_on": None, "suspends_on": None, "suspended_since": None}
 	if not invoice or not _is_charge_missed(invoice, today):
 		return missed
@@ -195,8 +199,6 @@ def _next_retry_on(invoice, team: str, schedule: list, today):
 	"""The first retry still to run, or None when dunning cannot retry the invoice.
 	Dunning runs once a day, so a retry dated today stays next until that day's charge
 	has been tried."""
-	from central.billing.revenue.dunning import has_retry_rail, is_retry_due
-
 	if not has_retry_rail(invoice, team):
 		return None
 	for stage in schedule:
@@ -307,22 +309,8 @@ def _escalation(team: str, invoice: str | None, period_end) -> list[dict]:
 
 	An open invoice counts from its own ladder dates. A projected one counts from the
 	dates the run would give it when it opens."""
-	from central.billing.revenue.dunning import (
-		dunning_policy,
-		dunning_schedule,
-		get_ladder_dates,
-		get_opening_ladder_dates,
-	)
-
 	if invoice:
-		dates = get_ladder_dates(
-			frappe.db.get_value(
-				"Invoice",
-				invoice,
-				["payment_date", "due_date", "dunning_starts_on", "suspends_on"],
-				as_dict=True,
-			)
-		)
+		dates = get_ladder_dates(frappe.db.get_value("Invoice", invoice, LADDER_FIELDS, as_dict=True))
 	elif period_end:
 		dates = get_opening_ladder_dates(team, frappe.utils.add_days(period_end, 1))
 	else:
