@@ -39,12 +39,14 @@ The panel at the top of **Billing > Overview** shows the current cycle.
 | Cycle and amount | The projected total for this cycle with tax, and the days until it is billed. Below it are the amount before tax and the tax. Click **See breakdown** to see each line. |
 | Spend limit | The most your team can spend in one cycle on its current tier. Click the tier to see all tiers. See [Credits and spend limits](/billing/limits). |
 | Due now | The amount of your unpaid invoices. This row shows only when an invoice is unpaid. |
+| Next retry | The date Frappe Cloud tries the payment again. This row shows only after a payment date passes and the invoice is not paid. |
+| Suspends on | The date your servers stop if the invoice stays unpaid. This row shows when no retry is left. When your team is already suspended, the row shows **Suspended since** and the suspension date. |
 | Wallet | Your prepaid credit balance. Click the history icon to see its history. Click **Add credit** to top up. |
 | Payment method | The payment method that is charged first. |
 | Next invoice | The date of the next invoice. |
-| Next payment date | The date Frappe Cloud charges your payment method for the next invoice. |
+| Next payment date | The next scheduled payment date. When an unpaid invoice passes its payment date, this row shows the payment date of the next invoice. |
 
-To change the payment date, click the calendar icon (**Change payment date**) next to **Next payment date**. The **Payment schedule** panel opens. It also shows the amount due, the payment method that is charged, and the dates of each step if the invoice stays unpaid. Select a day from the 1st to the 10th of the month and click **Save payment date**. You can change it at most twice in a billing cycle. You need the Owner, Admin, or Billing role. Wallet credit still applies on the invoice date. A change does not move the payment date of an invoice that is already issued.
+To change the payment date, click the calendar icon (**Change payment date**) next to **Next payment date**. The **Payment schedule** panel opens. It also shows the amount due, the date of the next charge or retry, the payment method that is charged, and the dates of each step if the invoice stays unpaid. Select a day from the 1st to the 10th of the month and click **Save payment date**. You can change it at most twice in a billing cycle. You need the Owner, Admin, or Billing role. Wallet credit still applies on the invoice date. A change does not move the payment date of an invoice that is already issued.
 
 ### Budget alerts
 
