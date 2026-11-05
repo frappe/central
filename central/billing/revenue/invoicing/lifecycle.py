@@ -91,13 +91,14 @@ def open_and_collect(invoice: str, collect: bool = True) -> dict:
 	# Auto-charge target = gross total, less withheld TDS, less credits and the GST
 	# already paid with the top-ups those credits came from.
 	doc.expected_collection = frappe.utils.flt(collectable - draw.wallet - draw.gst, 2)
+	# Credits apply today; the card waits for the team's payment day.
+	doc.payment_date = get_payment_date(doc.team, frappe.utils.nowdate())
+
 	# Both dates are set from *today*, not from the period end: an invoice the run
 	# opened three days late is due three days later, and its dunning ladder starts
 	# three days later. A backlog delays collection; it never shortens the customer's
 	# window. From here the two diverge — due_date is the accounting fact and stays
 	# put, while dunning_starts_on moves if we fail to ask again (dunning.defer_dunning).
-	# Credits apply today; the card waits for the team's payment day.
-	doc.payment_date = get_payment_date(doc.team, frappe.utils.nowdate())
 	doc.due_date = get_due_date(doc.team, frappe.utils.nowdate())
 	doc.dunning_starts_on = doc.due_date
 
