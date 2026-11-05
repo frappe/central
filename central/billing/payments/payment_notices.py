@@ -11,10 +11,14 @@ from central.billing.platform.jobs import each_isolated
 
 
 def notify_payment_scheduled(invoice) -> None:
-	"""Tell the team what an opened invoice charges, after credit, and when."""
+	"""Tell the team what an opened invoice charges, after credit, and when.
+
+	A rail that owes a pre-debit notice is charged at its pre-debit charge time, which can be
+	a day after the payment date. Every other rail is charged on the payment date."""
 	credit = frappe.utils.flt(invoice.credit_applied)
 	context = {
 		**get_payment_context(invoice),
+		"payment_date": _format_date(invoice.predebit_charge_after or invoice.payment_date),
 		"total": frappe.utils.fmt_money(invoice.total, currency=invoice.currency),
 		"credit_applied": frappe.utils.fmt_money(credit, currency=invoice.currency) if credit > 0 else None,
 	}

@@ -14,6 +14,7 @@ from frappe import _
 
 from central.billing.doctype.billing_profile.billing_profile import get_due_date, get_payment_date
 from central.billing.doctype.invoice.invoice import (
+	OUTSTANDING,
 	UNSETTLED,
 	is_owed,
 	is_unissued,
@@ -125,6 +126,7 @@ def open_and_collect(invoice: str, collect: bool = True) -> dict:
 		from central.billing.payments import collection
 
 		charge = collection.collect_invoice(invoice)
+	_notify_payment_scheduled(invoice)
 
 	return {
 		"invoice": invoice,
@@ -134,6 +136,18 @@ def open_and_collect(invoice: str, collect: bool = True) -> dict:
 		"status": "Outstanding",
 		"charge": charge,
 	}
+
+
+def _notify_payment_scheduled(invoice: str) -> None:
+	"""Tell the team what the invoice it just opened charges, and when.
+
+	Only the run that claims the invoice gets here, so the team hears once. It runs after the
+	first collection step, which sets the debit time of a rail that owes a pre-debit notice."""
+	from central.billing.payments.payment_notices import notify_payment_scheduled
+
+	doc = frappe.get_doc("Invoice", invoice)
+	if doc.status == OUTSTANDING:
+		notify_payment_scheduled(doc)
 
 
 def settle_with_new_credit(team: str) -> list[dict]:

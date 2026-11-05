@@ -530,7 +530,7 @@ The customer changes the payment day at most twice in a billing cycle (`BillingP
 
 | Event | When | Sent from |
 |---|---|---|
-| `payment_scheduled` | An invoice opens with an amount left after credit. It names the total, the credit applied, the amount to charge, the payment date and the payment method. With no method, it asks the team to add one. | `Invoice.on_update`, on the save that issues the invoice. A save that rolls back sends nothing. |
+| `payment_scheduled` | An invoice opens with an amount left after credit. It names the total, the credit applied, the amount to charge, the charge date and the payment method. The charge date is the pre-debit charge time on a rail that owes a pre-debit notice, else the payment date. With no method, it asks the team to add one. | `lifecycle.open_and_collect`, after the first collection step, in the run that issues the invoice. A held invoice sends it when it is released and opens. |
 | `payment_reminder` | 1 day before the payment date, when the invoice has no payment attempt and its rail owes no pre-debit notice. Once per invoice (`payment_reminder_sent_at`). | The hourly `collection.collect_on_payment_date`. |
 | `payment_date_changed` | The payment day changes, on the dashboard or in Desk. It names the new day, the next payment date, and an issued invoice that keeps its payment date. | `BillingProfile.on_update`. |
 

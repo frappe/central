@@ -4,7 +4,8 @@
 import frappe
 
 from central.billing.payments import payment_notices
-from central.billing.platform.records import save_billing_record
+from central.billing.revenue import invoicing
+from central.billing.tests import test_emandate
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import complete_billing_profile, ensure_team, give_team_a_card
 
@@ -19,19 +20,13 @@ def _logs(event_type: str) -> list[frappe._dict]:
 	)
 
 
-class TestPaymentScheduled(IntegrationTestCase):
-	"""When an invoice opens with an amount left after credit, the team hears what is charged and when."""
-
-	def setUp(self):
-		ensure_team(TEAM)
-		complete_billing_profile(TEAM)
-		frappe.db.delete("Billing Notification Log", {"team": TEAM})
-
-	def _draft(self, total=5000, credit=1000):
-		return frappe.get_doc(
+def _draft(team: str, total=5000) -> str:
+	"""A billable draft the run has not opened yet."""
+	return (
+		frappe.get_doc(
 			{
 				"doctype": "Invoice",
-				"team": TEAM,
+				"team": team,
 				"invoice_type": "Billable",
 				"status": "Outstanding",
 				"period_start": "2026-10-01",
@@ -39,48 +34,83 @@ class TestPaymentScheduled(IntegrationTestCase):
 				"currency": "INR",
 				"subtotal": total,
 				"total": total,
-				"credit_applied": credit,
-				"expected_collection": total - credit,
+				"expected_collection": total,
+				"items": [
+					{"resource_type": "bundle", "plan": "p", "rate": total, "days": 31, "amount": total}
+				],
 			}
-		).insert(ignore_permissions=True)
+		)
+		.insert(ignore_permissions=True)
+		.name
+	)
 
-	def _open(self, doc):
-		doc.payment_date = "2026-11-05"
-		doc.due_date = "2026-11-08"
-		save_billing_record(doc)
 
-	def test_opening_an_invoice_sends_the_schedule_once(self):
+def _scheduled(team: str) -> list[frappe._dict]:
+	return frappe.get_all(
+		"Billing Notification Log",
+		filters={"team": team, "event_type": "Payment Scheduled"},
+		fields=["message", "reference_name"],
+	)
+
+
+class TestPaymentScheduled(IntegrationTestCase):
+	"""When the run opens an invoice with an amount left after credit, the team hears what is
+	charged and when."""
+
+	def setUp(self):
+		ensure_team(TEAM)
+		complete_billing_profile(TEAM)
+		frappe.db.set_value("Billing Profile", TEAM, "payment_day", 5)
+		frappe.db.delete("Billing Notification Log", {"team": TEAM})
+
+	def _open(self, invoice):
+		with self.freeze_time("2026-11-01 10:00:00"):
+			return invoicing.open_and_collect(invoice)
+
+	def test_a_card_is_charged_on_the_payment_date(self):
 		give_team_a_card(TEAM)
-		doc = self._draft()
+		invoice = _draft(TEAM)
 
-		self._open(doc)
-		doc.reload()
-		save_billing_record(doc)
+		self._open(invoice)
 
-		logs = _logs("Payment Scheduled")
+		logs = _scheduled(TEAM)
 		self.assertEqual(len(logs), 1)
-		self.assertEqual(logs[0].reference_name, doc.name)
-		for part in ("5,000.00", "1,000.00", "4,000.00", "5 November 2026"):
-			self.assertIn(part, logs[0].message)
+		self.assertEqual(logs[0].reference_name, invoice)
+		self.assertIn("5 November 2026", logs[0].message)
+
+	def test_opening_again_sends_nothing_more(self):
+		invoice = _draft(TEAM)
+
+		self._open(invoice)
+		self.assertFalse(self._open(invoice)["claimed"])
+
+		self.assertEqual(len(_scheduled(TEAM)), 1)
 
 	def test_a_team_without_a_method_is_asked_to_add_one(self):
-		self._open(self._draft())
+		self._open(_draft(TEAM))
 
-		self.assertIn("Add a payment method", _logs("Payment Scheduled")[0].message)
+		self.assertIn("Add a payment method", _scheduled(TEAM)[0].message)
 
-	def test_an_invoice_credit_paid_in_full_sends_no_schedule(self):
-		doc = self._draft(credit=5000)
-		doc.status = "Paid"
-		self._open(doc)
+	def test_a_held_invoice_sends_no_schedule(self):
+		frappe.db.set_value("Billing Profile", TEAM, "legal_name", None)
 
-		self.assertEqual(_logs("Payment Scheduled"), [])
+		self.assertTrue(self._open(_draft(TEAM)).get("held"))
+		self.assertEqual(_scheduled(TEAM), [])
 
-	def test_a_draft_that_stays_unissued_sends_no_schedule(self):
-		doc = self._draft()
-		doc.hold_reason = "Billing Details"
-		save_billing_record(doc)
 
-		self.assertEqual(_logs("Payment Scheduled"), [])
+class TestPaymentScheduledOnAMandate(test_emandate.EmandateTestBase):
+	"""A mandate is debited 24 hours after its pre-debit notice, so the schedule names that day."""
+
+	def test_an_invoice_opened_on_its_payment_date_names_the_debit_day(self):
+		frappe.db.set_value("Billing Profile", test_emandate.TEAM, "payment_day", 1)
+		invoice = _draft(test_emandate.TEAM)
+
+		with self.freeze_time("2026-12-01 10:00:00"):
+			invoicing.open_and_collect(invoice)
+
+		logs = _scheduled(test_emandate.TEAM)
+		self.assertEqual(len(logs), 1)
+		self.assertIn("2 December 2026", logs[0].message)
 
 
 class TestPaymentDateChanged(IntegrationTestCase):
