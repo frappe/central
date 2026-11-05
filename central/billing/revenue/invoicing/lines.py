@@ -7,12 +7,10 @@ Billing is daily by default: a date with no mid-day plan change bills a whole da
 at a time, so a normal month reads as a handful of clean day lines and a full day
 always costs one day's rate — the "daily cap".
 
-A resource bills from the hour it started: a server, a snapshot or a public
-IPv4 created at 15:00 bills the hours it ran on that date. A plan change bills
-the exact hours: on the date of a mid-day change, each plan bills the hours it
-ran that date. The date a resource stops, when mid-day, also bills the hours it ran.
-Because a date is billed either daily OR hourly — never both — the two passes
-partition the period and the total stays exact.
+A plan change bills the exact hours: on the date of a mid-day change, each plan
+bills the hours it ran that date. The date a resource starts and the date it stops,
+when mid-day, also bill by the hours it ran. Because a date is billed either daily
+OR hourly — never both — the two passes partition the period and the total stays exact.
 """
 
 from datetime import datetime, time, timedelta
