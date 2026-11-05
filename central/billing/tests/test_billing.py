@@ -102,6 +102,19 @@ class TestDraftGeneration(BillingTestBase):
 		self.assertEqual((li.unit, li.days), ("day", 1))
 		self.assertEqual(li.amount, round(1000 / 30, 2))
 
+	def test_a_server_created_resized_and_stopped_on_one_day_bills_that_whole_day(self):
+		add_segment(self.sub, "Created", 1000, "2026-06-05 10:00:00")
+		add_segment(self.sub, "Plan Changed", 2000, "2026-06-05 11:00:00")
+		add_segment(self.sub, "Cancelled", None, "2026-06-05 12:00:00")
+		inv = frappe.get_doc(
+			"Invoice", invoicing.generate_draft_invoice(self.sub, "2026-06-01", "2026-06-30")
+		)
+		# The first plan ran from midnight, the second runs to the next midnight: 24 hours.
+		self.assertEqual(
+			sorted((li.rate, li.unit, li.hours) for li in inv.items),
+			[(1000.0, "hour", 11.0), (2000.0, "hour", 13.0)],
+		)
+
 	def test_multiple_resizes_in_a_day_bill_that_day_hourly(self):
 		# 2000 all month; a bump to 4000 (09:00) then back (18:00) on Jun 15.
 		add_segment(self.sub, "Created", 2000, "2026-06-01 00:00:00")

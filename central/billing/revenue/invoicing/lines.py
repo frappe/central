@@ -187,9 +187,11 @@ def _segments(sub, cluster: str, changes: list, b) -> list[dict]:
 	"""The subscription's billable segments, clamped to the period.
 
 	A `Created` segment starts at midnight of its date: a new resource bills its whole
-	first date. One that also stops on that date still bills the whole date.
+	first date. A resource that also stops on that date still bills the whole date, so
+	its last segment runs to the next midnight, across any plan changes that date.
 	"""
 	segs = []
+	born_on = None
 	for i, change in enumerate(changes):
 		if change.change_type == "Cancelled" or change.locked_rate is None:
 			continue  # terminal marker or no rate snapshot — not a billable segment
@@ -199,9 +201,10 @@ def _segments(sub, cluster: str, changes: list, b) -> list[dict]:
 		seg_end_dt = frappe.utils.get_datetime(following.effective_at) if following else b.period_end_excl_dt
 		closes = bool(following) and following.change_type == "Cancelled"
 		if change.change_type == "Created":
-			seg_start_dt = datetime.combine(opened_at.date(), time.min)
-			if closes and seg_end_dt.date() == opened_at.date():
-				seg_end_dt = seg_start_dt + timedelta(days=1)
+			born_on = opened_at.date()
+			seg_start_dt = datetime.combine(born_on, time.min)
+		if closes and seg_end_dt.date() == born_on:
+			seg_end_dt = datetime.combine(born_on + timedelta(days=1), time.min)
 		start = max(seg_start_dt, b.period_start_dt)
 		end = min(seg_end_dt, b.period_end_excl_dt)
 		if start >= b.period_end_excl_dt or end <= b.period_start_dt:
