@@ -49,6 +49,7 @@ class OverviewBase(IntegrationTestCase):
 	def _purge(self):
 		for dt in (
 			"Invoice",
+			"Payment Attempt",
 			"Billing Notification Log",
 			"Credit Ledger Entry",
 			"Payment Method",
@@ -272,6 +273,34 @@ class TestNextPayment(OverviewBase):
 		self.assertEqual(out["charge_on"], str(payment_date))
 		self.assertEqual(out["invoice"], missed.name)
 		self.assertEqual(out["next_retry_on"], str(frappe.utils.add_days(missed.due_date, 3)))
+
+	def test_a_retry_due_today_stays_next_until_it_runs(self):
+		due_date = frappe.utils.add_days(self.today, -7)
+		invoice = self._open_invoice(due_date)
+
+		with settings.overridden(dunning_retry_days="1,3,7", suspend_after_days=14):
+			before = dashboard.get_next_payment(TEAM)
+			self._attempt(invoice.name)
+			after = dashboard.get_next_payment(TEAM)
+
+		self.assertEqual(before["next_retry_on"], str(self.today))
+		self.assertIsNone(before["suspends_on"])
+		self.assertIsNone(after["next_retry_on"])
+		self.assertEqual(after["suspends_on"], str(frappe.utils.add_days(due_date, 14)))
+
+	def _attempt(self, invoice):
+		frappe.get_doc(
+			{
+				"doctype": "Payment Attempt",
+				"invoice": invoice,
+				"team": TEAM,
+				"gateway": "Stripe",
+				"amount": 3000,
+				"currency": "INR",
+				"status": "Failed",
+				"initiated_at": frappe.utils.now_datetime(),
+			}
+		).insert(ignore_permissions=True)
 
 	def test_the_schedule_publishes_the_escalation_ladder(self):
 		self._provision(rate=3000)

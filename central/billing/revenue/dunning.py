@@ -170,14 +170,14 @@ def _retry_if_due(inv, schedule, now) -> dict | None:
 
 	if inv.status != OUTSTANDING or not collection_mode.is_debit_allowed(inv.team):
 		return None
-	if not _is_retry_due(inv.name, schedule, now):
+	if not is_retry_due(inv.name, schedule, now):
 		return None
 	if not collection.next_method_for(inv.name, inv.team, collection.attempts_of(inv.name)):
 		return None
 	return retry_payment(inv.name)
 
 
-def _is_retry_due(invoice: str, schedule: list, now) -> bool:
+def is_retry_due(invoice: str, schedule: list, now) -> bool:
 	"""A retry day has been reached and no charge was tried on or after it.
 
 	A run that missed retry days catches up with one round, not one per missed day, so a

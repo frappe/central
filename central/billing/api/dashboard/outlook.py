@@ -163,7 +163,7 @@ def _missed_payment(team: str, invoice, today) -> dict:
 
 	1. No missed bill: all three dates are empty.
 	2. A suspended team: only the date it was suspended.
-	3. A retry still to come: only the next retry date.
+	3. A retry still to come, today's included until it runs: only the next retry date.
 	4. No retry left: only the date the team is suspended.
 	"""
 	from central.billing.revenue.dunning import dunning_clock_start, dunning_schedule
@@ -177,12 +177,26 @@ def _missed_payment(team: str, invoice, today) -> dict:
 		return {**missed, "suspended_since": str(frappe.utils.getdate(suspended_since))}
 
 	schedule = dunning_schedule(dunning_clock_start(invoice))
-	retries = [s.date for s in schedule if s.stage == "Retry" and frappe.utils.getdate(s.date) > today]
-	if retries:
-		return {**missed, "next_retry_on": str(retries[0])}
+	next_retry_on = _next_retry_on(invoice.name, schedule, today)
+	if next_retry_on:
+		return {**missed, "next_retry_on": str(next_retry_on)}
 
 	suspend_on = next(s.date for s in schedule if s.stage == "Suspend")
 	return {**missed, "suspends_on": str(suspend_on)}
+
+
+def _next_retry_on(invoice: str, schedule: list, today):
+	"""The first retry still to run. Dunning runs once a day, so a retry dated today
+	stays next until that day's charge has been tried."""
+	from central.billing.revenue.dunning import is_retry_due
+
+	for stage in schedule:
+		if stage.stage != "Retry":
+			continue
+		retry_on = frappe.utils.getdate(stage.date)
+		if retry_on > today or (retry_on == today and is_retry_due(invoice, schedule, today)):
+			return stage.date
+	return None
 
 
 def _suspended_since(team: str):
