@@ -211,8 +211,6 @@ def _in_flight(team: str, today) -> list[dict]:
 
 	out = []
 	for inv in unpaid:
-		if not inv.due_date:
-			continue
 		dates = get_ladder_dates(inv)
 		out.append(
 			{

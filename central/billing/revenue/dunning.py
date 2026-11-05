@@ -23,6 +23,7 @@ Only dunning stops a server for non-payment, and only a payment starts it again.
 from datetime import date
 
 import frappe
+from frappe import _
 
 from central.billing import settings
 from central.billing.catalog import subscriptions
@@ -50,7 +51,11 @@ def defer_dunning(invoice: str, reason: str) -> bool:
 	days. Monotonic (it only ever moves forward) and self-limiting (a successful ask
 	stops pushing it). `due_date` is untouched: it is an accounting fact AR aging reads.
 	"""
-	row = frappe.db.get_value("Invoice", invoice, LADDER_FIELDS, as_dict=True)
+	row = frappe.db.get_value("Invoice", invoice, ["name", *LADDER_FIELDS], as_dict=True)
+	# An invoice that never opened has no ladder yet. Its dates count from the day it opens.
+	if not is_issued(row):
+		return False
+
 	dates = get_ladder_dates(row)
 	today = frappe.utils.getdate(frappe.utils.nowdate())
 	if dates.anchor >= today:
@@ -66,25 +71,33 @@ def defer_dunning(invoice: str, reason: str) -> bool:
 def get_ladder_dates(invoice) -> frappe._dict:
 	"""The dates the ladder of an issued invoice is drawn from.
 
-	`invoice` is a document or a dict with `payment_date`, `due_date`, `dunning_starts_on`
-	and `suspends_on`. The retry window end is the due date, moved forward by as many days
-	as `defer_dunning` moved the anchor. An invoice without `suspends_on` gets the date
-	the opening run stores, read from the month of its payment date.
+	`invoice` is a document or a dict with its name and `LADDER_FIELDS`. The anchor is the
+	payment date until `defer_dunning` moves it. The retry window end is the due date, moved
+	forward by as many days as `defer_dunning` moved the anchor.
 	"""
-	due_date = frappe.utils.getdate(invoice.get("due_date"))
-	payment_date = frappe.utils.getdate(invoice.get("payment_date") or due_date)
-	anchor = frappe.utils.getdate(invoice.get("dunning_starts_on") or payment_date)
+	_check_ladder_fields(invoice)
+	due_date = frappe.utils.getdate(invoice.due_date)
+	payment_date = frappe.utils.getdate(invoice.payment_date)
+	anchor = frappe.utils.getdate(invoice.dunning_starts_on or payment_date)
 	shift = max(0, (anchor - payment_date).days)
-	suspends_on = invoice.get("suspends_on")
-	if not suspends_on:
-		suspends_on = frappe.utils.add_days(get_suspension_date_after(payment_date, due_date), shift)
 
 	return frappe._dict(
 		anchor=anchor,
 		retry_until=frappe.utils.getdate(frappe.utils.add_days(due_date, shift)),
-		suspends_on=frappe.utils.getdate(suspends_on),
+		suspends_on=frappe.utils.getdate(invoice.suspends_on),
 		is_deferred=shift > 0,
 	)
+
+
+def _check_ladder_fields(invoice) -> None:
+	"""The opening run sets these dates and the patches set them on older invoices, so a
+	missing one is corrupt data. Guessing it could suspend a team on the wrong day."""
+	missing = [field for field in ("due_date", "payment_date", "suspends_on") if not invoice.get(field)]
+	if missing:
+		frappe.throw(
+			_("Invoice {0} is open but has no {1}.").format(invoice.get("name"), ", ".join(missing)),
+			frappe.ValidationError,
+		)
 
 
 def get_opening_ladder_dates(team: str, opened_on) -> frappe._dict:

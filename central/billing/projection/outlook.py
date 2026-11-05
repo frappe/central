@@ -69,10 +69,6 @@ def rows(on=None, horizon_days: int | None = None, filters: dict | None = None) 
 
 	out = []
 	for invoice in unpaid_invoices(filters):
-		if not invoice.due_date:
-			# No due date means no clock; it is a data problem, not a delinquency.
-			continue
-
 		dates = get_ladder_dates(invoice)
 		schedule = dunning_schedule(dates, policy)
 		reached = [s for s in schedule if frappe.utils.getdate(s.date) <= on]

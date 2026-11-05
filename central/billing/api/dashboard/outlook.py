@@ -310,7 +310,9 @@ def _escalation(team: str, invoice: str | None, period_end) -> list[dict]:
 	An open invoice counts from its own ladder dates. A projected one counts from the
 	dates the run would give it when it opens."""
 	if invoice:
-		dates = get_ladder_dates(frappe.db.get_value("Invoice", invoice, LADDER_FIELDS, as_dict=True))
+		dates = get_ladder_dates(
+			frappe.db.get_value("Invoice", invoice, ["name", *LADDER_FIELDS], as_dict=True)
+		)
 	elif period_end:
 		dates = get_opening_ladder_dates(team, frappe.utils.add_days(period_end, 1))
 	else:

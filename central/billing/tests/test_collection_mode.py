@@ -419,6 +419,7 @@ class TestModeAwareDunning(IntegrationTestCase):
 					"expected_collection": amount,
 					"payment_date": "2026-06-01",
 					"due_date": "2026-06-01",
+					"suspends_on": "2026-06-15",
 					"items": [
 						{"resource_type": "bundle", "plan": "p", "rate": amount, "days": 30, "amount": amount}
 					],

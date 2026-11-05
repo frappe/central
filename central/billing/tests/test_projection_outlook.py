@@ -5,6 +5,7 @@
 import frappe
 
 from central.billing.projection import behaviour, outlook
+from central.billing.revenue.dunning import get_suspension_date_after
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import billing_settings, ensure_team
 
@@ -46,7 +47,9 @@ class OutlookTestBase(IntegrationTestCase):
 					"total": amount,
 					"expected_collection": amount,
 					"due_date": due,
+					"payment_date": due,
 					"dunning_starts_on": dunning_starts_on,
+					"suspends_on": due and get_suspension_date_after(due, due),
 				}
 			)
 			.insert(ignore_permissions=True)
