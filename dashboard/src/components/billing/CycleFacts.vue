@@ -36,6 +36,9 @@ const blocker = computed(() =>
 	nextCharge.value > 0 ? nextPayment.data?.blockers?.[0] : undefined,
 )
 const nextPaymentOn = computed(() => shortDate(nextPayment.data?.charge_on))
+const nextPaymentFailed = computed(() =>
+	Boolean(nextPayment.error && !nextPayment.data),
+)
 
 // A missed bill's place on the dunning ladder, shown under "Due now".
 const dunningStep = computed(() =>
@@ -210,29 +213,31 @@ const onAddMethod = () => {
 				{{ nextInvoiceOn || '—' }}
 			</span>
 
-			<template v-if="nextPayment.data">
-				<span class="truncate text-ink-gray-5"> Next payment date </span>
+			<span class="truncate text-ink-gray-5"> Next payment date </span>
 
-				<div class="flex items-center justify-end gap-2">
-					<Tooltip v-if="canManageBilling" text="Change payment date">
-						<Button
-							variant="ghost"
-							size="xs"
-							icon="lucide-calendar-cog"
-							label="Change payment date"
-							@click="$emit('openSchedule')"
-						/>
-					</Tooltip>
-					<Tooltip :text="paymentHint" :disabled="!paymentHint">
-						<span
-							class="whitespace-nowrap text-base-medium tabular-nums"
-							:class="cycleBlocker ? 'text-ink-amber-6' : 'text-ink-gray-9'"
-						>
-							{{ nextPaymentOn || '—' }}
-						</span>
-					</Tooltip>
-				</div>
-			</template>
+			<div class="flex items-center justify-end gap-2">
+				<Tooltip v-if="canManageBilling" text="Change payment date">
+					<Button
+						variant="ghost"
+						size="xs"
+						icon="lucide-calendar-cog"
+						label="Change payment date"
+						@click="$emit('openSchedule')"
+					/>
+				</Tooltip>
+				<template v-if="nextPaymentFailed">
+					<span class="whitespace-nowrap text-ink-red-6">Couldn't load</span>
+					<Button size="xs" label="Retry" @click="nextPayment.reload()" />
+				</template>
+				<Tooltip v-else :text="paymentHint" :disabled="!paymentHint">
+					<span
+						class="whitespace-nowrap text-base-medium tabular-nums"
+						:class="cycleBlocker ? 'text-ink-amber-6' : 'text-ink-gray-9'"
+					>
+						{{ nextPaymentOn || '—' }}
+					</span>
+				</Tooltip>
+			</div>
 		</template>
 
 		<AddMethodDialog v-model="showAddMethod" @done="reloadMethods" />
