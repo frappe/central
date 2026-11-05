@@ -440,7 +440,7 @@ class TestModeAwareDunning(IntegrationTestCase):
 		msg = frappe.db.get_value(
 			"Billing Notification Log", {"team": TEAM, "event_type": "Invoice Overdue"}, "message"
 		)
-		self.assertIn("pay it now", msg)
+		self.assertIn("Pay it now", msg)
 
 	def test_prepaid_copy_says_top_up(self):
 		from central.billing.revenue import dunning
