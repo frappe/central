@@ -12,11 +12,7 @@ worker, is `run.py`'s business.
 import frappe
 from frappe import _
 
-from central.billing.doctype.billing_profile.billing_profile import (
-	get_due_date,
-	get_payment_date,
-	get_suspension_date,
-)
+from central.billing.doctype.billing_profile.billing_profile import get_due_date, get_payment_date
 from central.billing.doctype.invoice.invoice import (
 	UNSETTLED,
 	is_owed,
@@ -26,6 +22,7 @@ from central.billing.doctype.invoice.invoice import (
 )
 from central.billing.platform.records import save_billing_record
 from central.billing.revenue import credits
+from central.billing.revenue.dunning import get_suspension_date
 from central.billing.revenue.invoicing.generate import generate_team_invoice
 from central.billing.revenue.tax import is_internal_team
 from central.billing.states import record_event, transition

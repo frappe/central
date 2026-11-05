@@ -616,7 +616,7 @@ daily run_dunning → process_invoice_dunning(invoice)
 | Anchor | `dunning_starts_on`. The payment date when the invoice opens. `defer_dunning` moves it forward. |
 | Retries | Every `dunning_retry_interval_days` (default 2) after the anchor, while the retry date is on or before the end of the retry window. The window ends on the due date, moved forward by as many days as the anchor moved. When no retry fits, there is one retry 1 day after the anchor. |
 | Overdue | The last retry day, after that day's retry. The team goes past_due and its servers keep running. |
-| Suspension | `Invoice.suspends_on`. It is the `suspension_day` (default 15) of the month the invoice opened in. When that day is not after the due date (an invoice that opened late), it is the due date plus `suspension_day - 1 - invoice_due_days` days. `billing_profile.get_suspension_date` computes it. |
+| Suspension | `Invoice.suspends_on`. It is the `suspension_day` (default 15) of the month the invoice opened in. When that day is not after the due date (an invoice that opened late), it is the due date plus `suspension_day - 1 - invoice_due_days` days. `dunning.get_suspension_date` computes it. |
 | Termination due | `terminate_after_days` (default 10) after the suspension date. An operator decides. Nothing is deleted. |
 
 With the defaults, an invoice opens on the 1st and is due on the 8th, or on the payment date when that is later:

@@ -100,25 +100,6 @@ def get_due_date(team: str, opened_on: date | str) -> date:
 	return max(due_on, get_payment_date(team, opened_on))
 
 
-def get_suspension_date(team: str, opened_on: date | str) -> date:
-	"""The date a team is suspended if the invoice opened on `opened_on` stays unpaid."""
-	return get_suspension_date_after(opened_on, get_due_date(team, opened_on))
-
-
-def get_suspension_date_after(opened_on: date | str, retry_until: date | str) -> date:
-	"""The suspension date of an invoice opened on `opened_on` whose retries end on `retry_until`.
-
-	1. The suspension day of the month the invoice opened in, when it is after `retry_until`.
-	2. Otherwise (an invoice that opened late), `retry_until` plus the gap an invoice opened on
-	   the 1st gets: suspension day - 1 - invoice due days, and at least 1 day."""
-	retry_until = frappe.utils.getdate(retry_until)
-	on_suspension_day = frappe.utils.getdate(opened_on).replace(day=settings.suspension_day())
-	if on_suspension_day > retry_until:
-		return on_suspension_day
-	gap = settings.suspension_day() - 1 - settings.invoice_due_days()
-	return frappe.utils.getdate(frappe.utils.add_days(retry_until, max(1, gap)))
-
-
 def get_missing_fields(team: str) -> list[str]:
 	if not frappe.db.exists("Billing Profile", team):
 		return list(REQUIRED_FIELDS)
