@@ -7,6 +7,8 @@ export interface AIModel {
 	// The key a caller sends: `provider/model_id`.
 	name: string
 	provider: string
+	// What the provider is called; Grove sends the slug when no name is set.
+	provider_display_name: string
 	model_id: string
 	// What the model is called; Grove sends the id when no name is set.
 	display_name: string

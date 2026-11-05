@@ -42,6 +42,7 @@ MODELS = [
 	{
 		"name": "acme/m",
 		"provider": "acme",
+		"provider_display_name": "Acme",
 		"model_id": "m",
 		"display_name": "M",
 		"zero_data_retention": True,
@@ -439,11 +440,12 @@ class TestAI(IntegrationTestCase):
 			(
 				model["name"],
 				model["provider"],
+				model["provider_display_name"],
 				model["model_id"],
 				model["display_name"],
 				model["zero_data_retention"],
 			),
-			("acme/m", "acme", "m", "M", True),
+			("acme/m", "acme", "Acme", "m", "M", True),
 		)
 
 	def test_usage_of_one_key_sends_its_hash_and_an_unknown_key_is_refused(self):
