@@ -81,12 +81,12 @@ def get_team_currency(team: str) -> str:
 	return segment_currency or "INR"
 
 
-def get_payment_date(team: str, opened_on) -> date:
+def get_payment_date(team: str, opened_on: date | str) -> date:
 	"""The date an invoice opened on `opened_on` is charged: the team's payment day in that
 	month, or `opened_on` itself when the run opened the invoice after that day."""
 	opened_on = frappe.utils.getdate(opened_on)
 	day = frappe.db.get_value("Billing Profile", team, "payment_day") or 1
-	return max(opened_on, opened_on.replace(day=min(day, LAST_PAYMENT_DAY)))
+	return max(opened_on, opened_on.replace(day=day))
 
 
 def get_missing_fields(team: str) -> list[str]:
