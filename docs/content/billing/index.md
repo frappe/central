@@ -48,6 +48,16 @@ The panel at the top of **Billing > Overview** shows the current cycle.
 
 To change the payment date, click the calendar icon (**Change payment date**) next to **Next payment date**. The **Payment schedule** panel opens. It also shows the amount due, the date of the next charge or retry, the payment method that is charged, and the dates of each step if the invoice stays unpaid. Select a day from the 1st to the 10th of the month and click **Save payment date**. You can change it at most twice in a billing cycle. You need the Owner, Admin, or Billing role. Wallet credit still applies on the invoice date. A change does not move the payment date of an invoice that is already issued.
 
+A payment date from the 1st to the 6th gets a retry every 2 days until the invoice due date. A later payment date gets one retry, 24 hours after the failed charge. When you select a later day, the form shows a warning. In both cases, your servers stop on the 15th of the month if the invoice stays unpaid. See [When a payment fails](/billing/invoices#when-a-payment-fails).
+
+Frappe Cloud sends these payment emails to team members who can see billing:
+
+| Email | When |
+| --- | --- |
+| Invoice is ready | An invoice is issued with an amount to pay after wallet credit. It shows the total, the credit used, the amount to charge, the payment date, and the payment method. If the team has no payment method, it asks you to add one. |
+| Payment due tomorrow | One day before the payment date. Frappe Cloud does not send it for an Indian mandate, which gets a pre-debit notice instead. |
+| Payment date changed | You change the payment date. It shows the new day and the date of the next charge. An invoice that is already issued keeps its payment date. |
+
 ### Budget alerts
 
 Click the bell icon on the summary panel to set a budget alert. Type an amount and click **Set alert**. The amount excludes tax. The team gets a notification when the projected spend for the cycle, before tax, goes above that amount. Set `0` to turn the alert off.
