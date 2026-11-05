@@ -786,6 +786,26 @@ class TestTheSingleRetry(DunningTestBase):
 		frappe.db.set_value("Billing Profile", TEAM, "collection_mode", "Manual Checkout")
 		self.assertFalse(dunning.get_ladder_dates(row).is_awaiting_charge)
 
+	def test_a_single_retry_in_flight_holds_overdue_until_it_fails(self):
+		inv = self._open_on_payment_day()
+		self._fail(self._attempt(inv, "Initiated", "2026-06-08 09:00:00"), "2026-06-08 10:00:00")
+		with capturing_gateway():
+			result = self._run_hourly_single_retry(inv, "2026-06-09 10:00:00")
+
+		self.assertEqual(result["actions"], ["retry"])
+		self.assertEqual(self._attempts(inv), 2)
+		self.assertEqual(frappe.db.get_value("Invoice", inv, "status"), "Outstanding")
+		self.assertEqual(self._overdue_notices(inv), 0)
+
+		self._fail(self._last_attempt(inv), "2026-06-09 18:00:00")
+		with self.freeze_time("2026-06-10 03:00:00"):
+			result = dunning.process_invoice_dunning(inv, now="2026-06-10 03:00:00")
+
+		self.assertEqual(result["actions"], ["overdue"])
+		self.assertEqual(self._attempts(inv), 2)
+		self.assertEqual(frappe.db.get_value("Invoice", inv, "status"), "Overdue")
+		self.assertEqual(self._overdue_notices(inv), 1)
+
 	def test_a_retry_that_would_land_after_the_suspension_is_not_run(self):
 		inv = self._open_on_payment_day()
 		self._fail(self._attempt(inv, "Initiated", "2026-06-14 09:00:00"), "2026-06-14 10:00:00")
