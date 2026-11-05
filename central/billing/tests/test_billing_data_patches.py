@@ -22,6 +22,7 @@ from central.billing.tests.utils import (
 )
 from central.patches.v0_0 import (
 	allow_storage_in_vm_plans,
+	clear_retired_scenario_ladder_overrides,
 	expire_promotional_credit_and_clear_unbooked_wallets,
 	mark_waived_invoices_as_not_synced,
 	merge_invoice_draft_and_open_into_outstanding,
@@ -268,6 +269,35 @@ class TestSetDunningLadderSettings(IntegrationTestCase):
 
 		after = {name: frappe.db.get_single_value("Billing Settings", name) for name in names}
 		self.assertEqual(after, dict(zip(names, (2, 15, 10), strict=True)))
+
+
+class TestClearRetiredScenarioLadderOverrides(IntegrationTestCase):
+	def test_a_saved_scenario_reads_the_live_ladder(self):
+		doc = frappe.get_doc(
+			{
+				"doctype": "Billing Scenario",
+				"scenario_name": "Old ladder",
+				"period_start": "2026-09-01",
+				"terminate_after_days": 44,
+				"invoice_due_days": 5,
+			}
+		)
+		doc.db_insert()
+		self.addCleanup(frappe.db.delete, "Billing Scenario", {"name": doc.name})
+		old_values = {"dunning_retry_days": "1, 3, 7", "suspend_after_days": 14}
+		retired = [column for column in old_values if frappe.db.has_column("Billing Scenario", column)]
+		scenario = frappe.qb.DocType("Billing Scenario")
+		query = frappe.qb.update(scenario).where(scenario.name == doc.name)
+		for column in retired:
+			query = query.set(scenario[column], old_values[column])
+		query.run()
+
+		clear_retired_scenario_ladder_overrides.execute()
+
+		cleared = frappe.get_doc("Billing Scenario", doc.name)
+		self.assertEqual(cleared.overrides(), {"invoice_due_days": 5})
+		for column in retired:
+			self.assertFalse(frappe.db.get_value("Billing Scenario", doc.name, column))
 
 
 class TestStartBillingRunOutcomes(IntegrationTestCase):
