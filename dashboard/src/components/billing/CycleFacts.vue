@@ -31,11 +31,19 @@ const loading = computed(
 
 const hasOutstanding = computed(() => props.outstanding > 0)
 const nextCharge = computed(() => Number(nextPayment.data?.amount ?? 0))
-const blocker = computed(() => nextPayment.data?.blockers?.[0])
-const nextPaymentOn = computed(() => shortDate(nextPayment.data?.charge_on))
+const blocker = computed(() =>
+	nextCharge.value > 0 ? nextPayment.data?.blockers?.[0] : undefined,
+)
+const nextPaymentOn = computed(() => shortDate(forecast.data?.payment_date))
+
+// The row describes this cycle's charge; a due-now bill carries its own warning.
+const cycleBlocker = computed(() =>
+	hasOutstanding.value ? undefined : blocker.value,
+)
 
 const paymentHint = computed(() => {
-	if (blocker.value) return blocker.value.title
+	if (hasOutstanding.value) return ''
+	if (cycleBlocker.value) return cycleBlocker.value.title
 
 	const method = nextPayment.data?.method?.label
 
@@ -91,22 +99,15 @@ const onAddMethod = () => {
 
 <template>
 	<div
-		class="grid grid-cols-[auto_minmax(0,1fr)] content-between items-center gap-x-3 gap-y-3 px-4 py-3 text-base leading-6"
+		class="grid grid-cols-[minmax(0,1fr)_auto] content-between items-center gap-x-3 gap-y-3 px-4 py-3 text-base leading-6"
 	>
 		<LoadingText v-if="loading" :lines="4" class="col-span-2 py-2" />
 
 		<template v-else>
 			<template v-if="hasOutstanding">
-				<span class="whitespace-nowrap text-ink-gray-5"> Due now </span>
+				<span class="truncate text-ink-gray-5"> Due now </span>
 
 				<div class="flex items-center justify-end gap-2">
-					<Button
-						size="xs"
-						label="Schedule"
-						icon-left="lucide-calendar-clock"
-						@click="$emit('openSchedule')"
-					/>
-
 					<Tooltip :text="blocker?.title" :disabled="!blocker">
 						<span
 							class="whitespace-nowrap text-base-medium tabular-nums text-ink-gray-9"
@@ -117,7 +118,7 @@ const onAddMethod = () => {
 				</div>
 			</template>
 
-			<span class="whitespace-nowrap text-ink-gray-5"> Wallet </span>
+			<span class="truncate text-ink-gray-5"> Wallet </span>
 
 			<div class="flex items-center justify-end gap-2">
 				<Tooltip text="Wallet history">
@@ -147,7 +148,7 @@ const onAddMethod = () => {
 				</Tooltip>
 			</div>
 
-			<span class="whitespace-nowrap text-ink-gray-5"> Payment method </span>
+			<span class="truncate text-ink-gray-5"> Payment method </span>
 
 			<span
 				v-if="primaryMethod"
@@ -164,7 +165,7 @@ const onAddMethod = () => {
 			/>
 			<span v-else class="text-right text-ink-gray-5">None</span>
 
-			<span class="whitespace-nowrap text-ink-gray-5"> Next invoice </span>
+			<span class="truncate text-ink-gray-5"> Next invoice </span>
 
 			<span
 				class="whitespace-nowrap text-right text-base-medium tabular-nums text-ink-gray-9"
@@ -172,16 +173,23 @@ const onAddMethod = () => {
 				{{ nextInvoiceOn || '—' }}
 			</span>
 
-			<template v-if="!hasOutstanding && nextCharge > 0">
-				<span class="whitespace-nowrap text-ink-gray-5">
-					Next payment date
-				</span>
+			<template v-if="forecast.data">
+				<span class="truncate text-ink-gray-5"> Next payment date </span>
 
 				<div class="flex items-center justify-end gap-2">
+					<Tooltip v-if="canManageBilling" text="Change payment date">
+						<Button
+							variant="ghost"
+							size="xs"
+							icon="lucide-calendar-cog"
+							label="Change payment date"
+							@click="$emit('openSchedule')"
+						/>
+					</Tooltip>
 					<Tooltip :text="paymentHint" :disabled="!paymentHint">
 						<span
 							class="whitespace-nowrap text-base-medium tabular-nums"
-							:class="blocker ? 'text-ink-amber-6' : 'text-ink-gray-9'"
+							:class="cycleBlocker ? 'text-ink-amber-6' : 'text-ink-gray-9'"
 						>
 							{{ nextPaymentOn || '—' }}
 						</span>

@@ -2,7 +2,9 @@
 import { Alert, LoadingText, useCall } from 'frappe-ui'
 import { computed, watch } from 'vue'
 import { API, method } from '@/api/methods'
+import PaymentDayForm from '@/components/billing/PaymentDayForm.vue'
 import SidePanel from '@/components/common/SidePanel.vue'
+import { useBillingOverview } from '@/composables/useBillingOverview'
 import { useSession } from '@/composables/useSession'
 import { shortDate } from '@/lib/date'
 import { formatDate, money } from '@/lib/format'
@@ -18,6 +20,7 @@ import type { PaymentSchedule } from '@/types/billing'
 // time. Loaded on open — nobody needs a dunning ladder on first paint.
 const open = defineModel<boolean>('open', { default: false })
 const { activeTeam } = useSession()
+const { nextPayment, forecast } = useBillingOverview()
 
 const schedule = useCall<PaymentSchedule, { team: string }>({
 	url: method(API.paymentSchedule),
@@ -27,6 +30,12 @@ const schedule = useCall<PaymentSchedule, { team: string }>({
 watch(open, (isOpen) => {
 	if (isOpen && activeTeam.value) schedule.reload()
 })
+
+function onPaymentDaySaved(): void {
+	schedule.reload()
+	nextPayment.reload()
+	forecast.reload()
+}
 
 const loading = computed(() => schedule.loading && !schedule.data)
 const data = computed(() => schedule.data)
@@ -46,6 +55,10 @@ const blockerLines = computed(() => {
 		<LoadingText v-if="loading" :lines="5" class="p-4" />
 
 		<template v-else>
+			<div class="border-b border-outline-gray-2 p-4">
+				<PaymentDayForm :open="open" @saved="onPaymentDaySaved" />
+			</div>
+
 			<!-- What we intend to do -->
 			<div class="border-b border-outline-gray-2 p-4">
 				<div class="flex items-baseline justify-between gap-3">

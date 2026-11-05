@@ -51,6 +51,8 @@ export interface BillingLine {
 export interface Forecast {
 	period_start: string
 	period_end: string
+	/** The day this cycle's invoice is charged to the card. */
+	payment_date: string
 	projected_total: number
 	subtotal: number
 	tax_amount: number
@@ -447,6 +449,10 @@ export interface BillingSettings {
 	team: string
 	min_balance: number
 	spend_alert_threshold: number
+	/** Day of the month, 1 to 10, the card is charged on for the closed month. */
+	payment_day: number
+	/** Changes to the payment day the team can still make this billing cycle. */
+	payment_day_changes_left: number
 }
 
 /** get_collection_status — collection mode + the "Action Required" banner feed (ADR 0005). */
