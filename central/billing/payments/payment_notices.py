@@ -6,7 +6,7 @@ from datetime import datetime
 import frappe
 from frappe import _
 
-from central.billing.doctype.invoice.invoice import owed_filters
+from central.billing.doctype.invoice.invoice import is_owed, owed_filters
 from central.billing.platform import notifications
 from central.billing.platform.jobs import each_isolated
 
@@ -132,6 +132,8 @@ def send_payment_reminder(invoice: str, now: datetime) -> dict:
 	from central.billing.payments import emandate
 
 	doc = frappe.get_doc("Invoice", invoice)
+	if not _is_reminder_due(doc, now):
+		return {"invoice": invoice, "skipped": "not_due"}
 	if emandate.is_notice_required(doc, None):
 		return {"invoice": invoice, "skipped": "predebit_notice"}
 
@@ -144,6 +146,21 @@ def send_payment_reminder(invoice: str, now: datetime) -> dict:
 	)
 	frappe.db.set_value("Invoice", invoice, "payment_reminder_sent_at", now, update_modified=False)
 	return {"invoice": invoice, "reminded": True}
+
+
+def _is_reminder_due(invoice, now: datetime) -> bool:
+	"""The invoice can settle or be charged after the sweep selected it, so it is checked again.
+
+	1. It is still owed, with an amount to charge.
+	2. It is charged tomorrow.
+	3. It has no reminder yet and no payment attempt."""
+	return (
+		is_owed(invoice)
+		and frappe.utils.flt(invoice.expected_collection) > 0
+		and frappe.utils.getdate(invoice.payment_date) == frappe.utils.add_days(now.date(), 1)
+		and not invoice.payment_reminder_sent_at
+		and not _invoices_with_attempts([invoice.name])
+	)
 
 
 def get_payment_context(invoice) -> dict:

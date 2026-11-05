@@ -209,6 +209,30 @@ class TestPaymentReminder(test_emandate.EmandateTestBase):
 		self.assertTrue(frappe.db.get_value("Invoice", name, "payment_reminder_sent_at"))
 		self.assertEqual(frappe.db.count("Payment Attempt", {"invoice": name}), 0)
 
+	def test_an_invoice_settled_or_charged_after_selection_gets_no_reminder(self):
+		now = frappe.utils.get_datetime("2026-06-09 00:30:00")
+		name = self._invoice_due_on("2026-06-10")
+
+		with patch.object(emandate, "is_notice_required", return_value=False):
+			frappe.db.set_value("Invoice", name, "status", "Paid")
+			self.assertEqual(payment_notices.send_payment_reminder(name, now)["skipped"], "not_due")
+
+			frappe.db.set_value("Invoice", name, "status", "Outstanding")
+			frappe.get_doc(
+				{
+					"doctype": "Payment Attempt",
+					"invoice": name,
+					"team": TEAM,
+					"gateway": "Stripe",
+					"amount": 5000,
+					"currency": "INR",
+					"status": "Initiated",
+				}
+			).insert(ignore_permissions=True)
+			self.assertEqual(payment_notices.send_payment_reminder(name, now)["skipped"], "not_due")
+
+		self.assertEqual(self._reminders(), 0)
+
 	def test_the_reminder_names_the_amount_the_date_and_the_method(self):
 		doc = frappe.get_doc("Invoice", self._invoice_due_on("2026-06-10"))
 
