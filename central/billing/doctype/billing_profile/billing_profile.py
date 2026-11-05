@@ -218,10 +218,15 @@ class BillingProfile(Document):
 
 	def get_payment_day_changes_left(self) -> int:
 		"""Changes the customer can still make in the current billing cycle."""
+		return max(0, PAYMENT_DAY_CHANGES_PER_CYCLE - self._changes_this_cycle())
+
+	def _changes_this_cycle(self) -> int:
+		"""Payment day changes made in the current billing cycle. A count stored for an
+		earlier cycle is zero."""
 		cycle = self.payment_day_changes_cycle
 		if not cycle or frappe.utils.getdate(cycle) != frappe.utils.get_first_day(frappe.utils.nowdate()):
-			return PAYMENT_DAY_CHANGES_PER_CYCLE
-		return max(0, PAYMENT_DAY_CHANGES_PER_CYCLE - frappe.utils.cint(self.payment_day_changes))
+			return 0
+		return frappe.utils.cint(self.payment_day_changes)
 
 	def change_payment_day(self, day: int) -> None:
 		"""Set the day the next invoice is charged on.
@@ -243,12 +248,8 @@ class BillingProfile(Document):
 				frappe.ValidationError,
 			)
 
-		cycle = frappe.utils.get_first_day(frappe.utils.nowdate())
-		last_cycle = self.payment_day_changes_cycle
-		if not last_cycle or frappe.utils.getdate(last_cycle) != cycle:
-			self.payment_day_changes = 0
-		self.payment_day_changes = frappe.utils.cint(self.payment_day_changes) + 1
-		self.payment_day_changes_cycle = cycle
+		self.payment_day_changes = self._changes_this_cycle() + 1
+		self.payment_day_changes_cycle = frappe.utils.get_first_day(frappe.utils.nowdate())
 		self.payment_day = day
 
 	def save_as_system(self, action: str) -> None:
