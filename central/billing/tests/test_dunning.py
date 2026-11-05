@@ -786,6 +786,22 @@ class TestTheSingleRetry(DunningTestBase):
 		frappe.db.set_value("Billing Profile", TEAM, "collection_mode", "Manual Checkout")
 		self.assertFalse(dunning.get_ladder_dates(row).is_awaiting_charge)
 
+	def test_a_retry_that_would_land_after_the_suspension_is_not_run(self):
+		inv = self._open_on_payment_day()
+		self._fail(self._attempt(inv, "Initiated", "2026-06-14 09:00:00"), "2026-06-14 10:00:00")
+
+		schedule = dunning.dunning_schedule(dunning.get_ladder_dates(frappe.get_doc("Invoice", inv)))
+		self.assertEqual(
+			[(s.stage, str(s.at)) for s in schedule[:2]],
+			[("Overdue", "2026-06-15 00:00:00"), ("Suspend", "2026-06-15 00:00:00")],
+		)
+
+		with declining_gateway(), patch("central.resource_actions.submit_billing_command"):
+			result = dunning.process_invoice_dunning(inv, now="2026-06-15 11:00:00")
+
+		self.assertEqual(result["actions"], ["overdue", "suspend"])
+		self.assertEqual(self._attempts(inv), 1)
+
 	def test_a_charge_in_flight_does_not_hold_the_suspension(self):
 		inv = self._open_on_payment_day()
 		self._attempt(inv, "Initiated", "2026-06-08 00:30:00")

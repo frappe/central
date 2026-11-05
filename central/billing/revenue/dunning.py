@@ -228,17 +228,22 @@ def dunning_schedule(dates: frappe._dict, policy=None) -> list[frappe._dict]:
 	(`at`), its `date`, and its `day` counted from the anchor. While a charge is in flight
 	(`in_flight_since`), the ladder has no Overdue stage, so Overdue waits for the outcome. A single
 	retry that waits for a charge (`get_retry_times`) is not dated yet. Suspension keeps its date.
+	The team is suspended from then on, so a retry at or after it is dropped and the invoice
+	is Overdue on the suspension date.
 
 	Pass an explicit `policy` to ask what a different ladder would do.
 	"""
 	policy = policy or dunning_policy()
 	anchor = frappe.utils.getdate(dates.anchor)
-	retries = get_retry_times(dates, policy.retry_interval)
 	suspends_on = frappe.utils.get_datetime(frappe.utils.getdate(dates.suspends_on))
+	retries = get_retry_times(dates, policy.retry_interval)
+	before_suspension = [at for at in retries if at < suspends_on]
 
-	stages = [frappe._dict(stage="Retry", attempt=n, at=at) for n, at in enumerate(retries, start=1)]
+	stages = [
+		frappe._dict(stage="Retry", attempt=n, at=at) for n, at in enumerate(before_suspension, start=1)
+	]
 	if retries and not dates.in_flight_since:
-		stages.append(frappe._dict(stage="Overdue", at=retries[-1]))
+		stages.append(frappe._dict(stage="Overdue", at=min(retries[-1], suspends_on)))
 	stages.append(frappe._dict(stage="Suspend", at=suspends_on))
 	stages.append(
 		frappe._dict(stage="Terminate", at=frappe.utils.add_days(suspends_on, policy.terminate_after))
