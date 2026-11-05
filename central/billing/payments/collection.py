@@ -25,6 +25,7 @@ event-driven, not a synchronous try/except cascade:
 from datetime import datetime
 
 import frappe
+from frappe import _
 
 from central.billing.payments import charges, decline
 
@@ -158,6 +159,12 @@ def collect_on_payment_date(now: datetime | str | None = None) -> list[dict]:
 
 def payment_starts_at(inv) -> datetime:
 	"""The first moment the invoice may be debited: the start of its payment date."""
+	# Every opened invoice gets a payment date, so a missing one is corrupt data. It must
+	# not read as today and let the card be charged early.
+	if not inv.get("payment_date"):
+		frappe.throw(
+			_("Invoice {0} is open but has no payment date.").format(inv.name), frappe.ValidationError
+		)
 	return frappe.utils.get_datetime(inv.payment_date)
 
 

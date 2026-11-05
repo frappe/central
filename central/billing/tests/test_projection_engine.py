@@ -200,6 +200,7 @@ class TestInvoicesAlreadyInFlight(ProjectionTestBase):
 					"subtotal": 5000,
 					"total": 5000,
 					"expected_collection": 5000,
+					"payment_date": due,
 					"due_date": due,
 					"dunning_starts_on": dunning_starts_on,
 				}

@@ -641,7 +641,9 @@ def _run_overdue_cycle(team, inv, pm, gateway, due):
 	status. With `due` on a closed month, the whole cycle lands before 'today'."""
 	from central.billing.revenue import dunning
 
-	frappe.db.set_value("Invoice", inv, {"status": "Outstanding", "due_date": due, "amount_paid": 0})
+	frappe.db.set_value(
+		"Invoice", inv, {"status": "Outstanding", "payment_date": due, "due_date": due, "amount_paid": 0}
+	)
 	# Seed the declined retries (offline). With every method already failed, the real
 	# dunning has nothing left to charge, so it escalates without a gateway round-trip.
 	base = frappe.utils.get_datetime(f"{due} 09:00:00")
@@ -665,7 +667,9 @@ def _finish_current_month(team, sub, currency, state, pm, gateway):
 
 	# --- charge stuck in-flight — Stripe still awaiting the bank -----------------
 	if state == "bank_pending":
-		frappe.db.set_value("Invoice", inv, {"status": "Outstanding", "due_date": ANCHOR_DUE})
+		frappe.db.set_value(
+			"Invoice", inv, {"status": "Outstanding", "payment_date": ANCHOR_DUE, "due_date": ANCHOR_DUE}
+		)
 		bank_pending_attempt(team, inv, pm, gateway, collectable, currency)
 		return "charge in-flight (awaiting bank) — invoice frozen"
 
@@ -714,7 +718,9 @@ def _finish_current_month(team, sub, currency, state, pm, gateway):
 	# to the wallet instead (see refund_wallet).
 	if state == "fallback":
 		# Open first, so the fallback reads as a real collection run before it settles.
-		frappe.db.set_value("Invoice", inv, {"status": "Outstanding", "due_date": ANCHOR_DUE})
+		frappe.db.set_value(
+			"Invoice", inv, {"status": "Outstanding", "payment_date": ANCHOR_DUE, "due_date": ANCHOR_DUE}
+		)
 		_attempt, backup_pm = _settle_via_backup(
 			team, inv, pm, gateway, collectable, currency, when=f"{ANCHOR_END} 09:00:00"
 		)
@@ -748,7 +754,9 @@ def _finish_current_month(team, sub, currency, state, pm, gateway):
 	# fresh, not-yet-due Open invoice — realistic for a team carrying an overdue bill.
 	if state == "overdue":
 		frappe.db.set_value(
-			"Invoice", inv, {"status": "Outstanding", "due_date": ANCHOR_DUE, "amount_paid": 0}
+			"Invoice",
+			inv,
+			{"status": "Outstanding", "payment_date": ANCHOR_DUE, "due_date": ANCHOR_DUE, "amount_paid": 0},
 		)
 		return "prior month overdue → suspended; current month open"
 
@@ -764,7 +772,9 @@ def _finish_current_month(team, sub, currency, state, pm, gateway):
 		return "settled fully from welcome credits (no card touched)"
 
 	# active / grandfathered — leave the current invoice Open.
-	frappe.db.set_value("Invoice", inv, {"status": "Outstanding", "due_date": ANCHOR_DUE})
+	frappe.db.set_value(
+		"Invoice", inv, {"status": "Outstanding", "payment_date": ANCHOR_DUE, "due_date": ANCHOR_DUE}
+	)
 	return (
 		"grandfathered (locked launch rate), open current invoice"
 		if state == "grandfathered"

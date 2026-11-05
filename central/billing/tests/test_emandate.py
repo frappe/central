@@ -186,6 +186,7 @@ class TestWhoOwesAPredebitNotice(IntegrationTestCase):
 					"team": self.TEAM,
 					"invoice_type": "Billable",
 					"status": "Outstanding",
+					"payment_date": "2026-07-01",
 					"due_date": "2026-12-31",
 					"period_start": "2026-06-01",
 					"period_end": "2026-06-30",

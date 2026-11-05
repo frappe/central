@@ -127,3 +127,11 @@ class TestDebitWaitsForThePaymentDate(test_emandate.EmandateTestBase):
 			collection.collect_invoice(name, now="2026-06-10 00:30:00")
 
 		self.assertEqual(frappe.db.count("Payment Attempt", {"invoice": name}), 1)
+
+	def test_an_open_invoice_without_a_payment_date_is_not_charged(self):
+		name = self._invoice_due_on(None)
+
+		with self.assertRaises(frappe.ValidationError):
+			collection.collect_invoice(name, now="2026-06-10 00:30:00")
+
+		self.assertEqual(frappe.db.count("Payment Attempt", {"invoice": name}), 0)
