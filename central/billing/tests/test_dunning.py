@@ -102,6 +102,7 @@ class DunningTestBase(BillingTestCase):
 					"total": total,
 					"expected_collection": total,
 					"due_date": DUE,
+					"payment_date": DUE,
 				}
 			)
 			.insert(ignore_permissions=True)

@@ -271,6 +271,7 @@ class TestOneInvoiceIsNeverChargedTwiceAcrossRails(IntegrationTestCase):
 					"invoice_type": "Billable",
 					"status": "Outstanding",
 					"due_date": "2026-12-31",
+					"payment_date": "2026-07-01",
 					"period_start": "2026-06-01",
 					"period_end": "2026-06-30",
 					"currency": "INR",

@@ -157,9 +157,8 @@ def collect_on_payment_date(now: datetime | str | None = None) -> list[dict]:
 
 
 def payment_starts_at(inv) -> datetime:
-	"""The first moment the invoice may be debited: the start of its payment date. An
-	invoice opened before payment dates existed may be debited at once."""
-	return frappe.utils.get_datetime(inv.payment_date) if inv.payment_date else datetime.min
+	"""The first moment the invoice may be debited: the start of its payment date."""
+	return frappe.utils.get_datetime(inv.payment_date)
 
 
 def _is_before_payment_date(inv, gateway: str, now: datetime | str | None = None) -> bool:

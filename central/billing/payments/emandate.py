@@ -98,9 +98,7 @@ def schedule_predebit(invoice: str, now=None, gateway: str | None = None) -> dic
 	# The notice goes out a day ahead, so the debit lands on the payment date.
 	now_dt = frappe.utils.get_datetime(now) if now else frappe.utils.now_datetime()
 	payment_starts_at = collection.payment_starts_at(inv)
-	if inv.payment_date and now_dt < frappe.utils.add_to_date(
-		payment_starts_at, hours=-PREDEBIT_NOTICE_HOURS
-	):
+	if now_dt < frappe.utils.add_to_date(payment_starts_at, hours=-PREDEBIT_NOTICE_HOURS):
 		return {"invoice": invoice, "skipped": "before_payment_date"}
 
 	# A bill over the silent ceiling can't be debited off-session — fork to the

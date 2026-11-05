@@ -74,7 +74,7 @@ def get_next_payment(team: str | None = None) -> dict:
 	invoice = _next_collectable_invoice(team)
 	if invoice:
 		amount = frappe.utils.flt(invoice.expected_collection)
-		charge_on = invoice.predebit_charge_after or invoice.payment_date or invoice.due_date
+		charge_on = invoice.predebit_charge_after or invoice.payment_date
 		period_end = invoice.period_end
 	else:
 		amount, period_end = _projected_collectable(team, today)

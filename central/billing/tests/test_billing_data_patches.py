@@ -28,6 +28,7 @@ from central.patches.v0_0 import (
 	move_internal_flag_to_billing_profile,
 	remove_webhook_events_of_another_product,
 	repoint_billing_records_to_renamed_region,
+	set_payment_date_on_open_invoices,
 	start_billing_run_outcomes_and_minimum_invoices,
 )
 
@@ -170,6 +171,31 @@ class TestBillingDataPatches(IntegrationTestCase):
 
 		self.assertEqual(_invoice(waived).erpnext_sync_status, "Not Required")
 		self.assertEqual(_invoice(paid).erpnext_sync_status, "Pending")
+
+
+class TestSetPaymentDateOnOpenInvoices(IntegrationTestCase):
+	def setUp(self):
+		ensure_team(TEAM)
+
+	def test_an_open_invoice_gets_the_date_it_was_issued(self):
+		open_invoice = _insert_invoice("Outstanding", "2026-05-31", due_date="2026-06-14")
+		dated = _insert_invoice("Outstanding", "2026-04-30", due_date="2026-05-14", payment_date="2026-05-05")
+		for invoice, occurred_at in ((open_invoice, "2026-06-03 10:00:00"), (dated, "2026-05-01 10:00:00")):
+			frappe.get_doc(
+				{
+					"doctype": "Billing Event",
+					"team": TEAM,
+					"event_type": "Invoice Issued",
+					"subject_doctype": "Invoice",
+					"subject": invoice,
+					"occurred_at": occurred_at,
+				}
+			).db_insert()
+
+		set_payment_date_on_open_invoices.execute()
+
+		self.assertEqual(str(frappe.db.get_value("Invoice", open_invoice, "payment_date")), "2026-06-03")
+		self.assertEqual(str(frappe.db.get_value("Invoice", dated, "payment_date")), "2026-05-05")
 
 
 class TestStartBillingRunOutcomes(IntegrationTestCase):
