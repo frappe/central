@@ -10,6 +10,7 @@ import {
 	ListRows,
 } from 'frappe-ui/list'
 import { computed, getCurrentInstance, ref } from 'vue'
+import Scrollbar from '@/components/common/Scrollbar.vue'
 import ListViewPagination from './ListViewPagination.vue'
 import ListViewState from './ListViewState.vue'
 import {
@@ -49,6 +50,7 @@ const props = withDefaults(
 		 * @clear-filters to reset that control.
 		 */
 		externalFilterActive?: boolean
+		minWidth?: string
 	}>(),
 	{
 		loading: false,
@@ -67,6 +69,7 @@ const props = withDefaults(
 		rowClass: 'min-h-10',
 		activeKey: null,
 		externalFilterActive: false,
+		minWidth: '720px',
 		emptyState: () => ({
 			title: 'No data',
 			description: 'There is nothing to show yet.',
@@ -279,7 +282,7 @@ const showListControls = computed(
 				<TextInput
 					v-if="searchable"
 					:model-value="query.search"
-					class="w-full sm:w-80"
+					class="w-full sm:w-64"
 					:placeholder="searchPlaceholder"
 					:debounce="250"
 					@update:model-value="setSearch"
@@ -290,10 +293,11 @@ const showListControls = computed(
 				</TextInput>
 
 				<Select
+					side="bottom"
 					v-for="filter in filters"
 					:key="filter.key"
 					:model-value="query.filters[filter.key] || ''"
-					class="w-40"
+					class="w-36"
 					:placeholder="filter.allLabel || `All ${filter.label.toLowerCase()}`"
 					:options="[
 						{ label: filter.allLabel || `All ${filter.label.toLowerCase()}`, value: '' },
@@ -324,13 +328,15 @@ const showListControls = computed(
 
 		<!-- flex-1 is inert unless the caller makes the root section a flex column
 		     to pin the pagination footer to the bottom. -->
-		<div
+		<Scrollbar
 			v-if="isSkeleton || pageRows.length"
-			class="min-w-0 flex-1 overflow-x-auto"
+			class="min-w-0 flex-1"
+			type="auto"
 		>
 			<List
 				v-model:selection="selection"
-				class="min-w-[720px] list-gap-4 list-row-px-2"
+				class="list-gap-4 list-row-px-2"
+				:style="{ minWidth, contain: 'inline-size' }"
 				:columns="gridColumns"
 				:selectable="selectable"
 			>
@@ -413,7 +419,7 @@ const showListControls = computed(
 					</ListRow>
 				</ListRows>
 			</List>
-		</div>
+		</Scrollbar>
 
 		<ListViewState
 			v-else-if="stateKind === 'error'"
