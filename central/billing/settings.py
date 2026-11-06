@@ -71,6 +71,11 @@ def _settings():
 	return frappe.get_cached_doc(SETTINGS)
 
 
+# The smallest charge every gateway we use accepts, per currency. Razorpay takes at least
+# 100 subunits (₹1, $1). Stripe takes at least ₹0.50 or $0.50. Anything above this is charged.
+GATEWAY_MINIMUM_CHARGES = {"INR": 1.0, "USD": 1.0}
+
+
 def minimum_invoice_amount(currency: str | None) -> float:
 	"""The smallest total worth invoicing in `currency`. Zero means no minimum."""
 	for row in _settings().minimum_invoice_amounts:
@@ -84,7 +89,7 @@ def ensure_minimum_invoice_amounts() -> None:
 	doc = frappe.get_doc("Billing Settings")
 	if doc.minimum_invoice_amounts:
 		return
-	for currency, amount in (("INR", 50), ("USD", 1)):
+	for currency, amount in GATEWAY_MINIMUM_CHARGES.items():
 		if frappe.db.exists("Currency", currency):
 			doc.append("minimum_invoice_amounts", {"currency": currency, "amount": amount})
 	# The system seeds these defaults during install or a patch, with no user to check.

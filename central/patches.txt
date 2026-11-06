@@ -101,3 +101,5 @@ central.patches.v0_0.set_dunning_ladder_settings
 central.patches.v0_0.clear_retired_scenario_ladder_overrides
 # GST is mandatory in India. Set it on Indian Tax Profiles that have no tax.
 central.patches.v0_0.charge_gst_to_indian_tax_profiles
+# Lower the minimum invoice amounts to the smallest charge the gateways accept.
+central.patches.v0_0.set_minimum_invoice_amounts_to_gateway_minimum

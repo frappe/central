@@ -358,7 +358,7 @@ An invoice is `Outstanding` from creation. The due date marks that collection be
 
 **Billing Run Team** keeps the outcome of the run for each team and month: Invoiced, Nothing to Bill, Below Minimum or Failed, with the reason. The **Billing Run Coverage** report shows every team that existed by month end with one result and its reason: Invoiced, Waiting, Needs Action, Waived (Internal), Below Minimum, Nothing to Bill or No Subscription. The results add up to the team count. The top of the **Billing Day** dashboard shows the same counts. Its SQL query repeats the report's rules, so change both together. It also lists the settings that an operator must set by hand. The same list shows as a banner at the top of the **Billing** workspace, for a System Manager only, and only while a value is missing. A run cannot reach Complete while a team is Failed.
 
-A month whose total is below the **Minimum Invoice Amount** for its currency (Billing Settings) gets no invoice. The amount is written off, and a Below Minimum row and a Billing Event record it.
+A month whose total is below the **Minimum Invoice Amount** for its currency (Billing Settings) gets no invoice. The amount is written off, and a Below Minimum row and a Billing Event record it. The minimum is the smallest charge the payment gateways accept (`settings.GATEWAY_MINIMUM_CHARGES`: INR 1 and USD 1, from the Razorpay limit of 100 subunits). Billing Settings does not accept a higher minimum, because a month that a gateway can charge must be invoiced.
 
 ### Billing activity
 
