@@ -39,7 +39,7 @@ class TestOperatorAlerts(BillingTestCase):
 	def test_a_clean_system_pages_nobody(self):
 		with self._quiet_sources(lambda: []):
 			result = alerts.run_operator_alerts()
-		self.assertEqual(result, {"alerts": 0, "notified": False})
+		self.assertEqual(result, {"alerts": 0, "muted": 0, "notified": False})
 		self.mail.assert_not_called()
 
 	def test_an_open_alert_mails_the_named_addresses(self):
@@ -81,6 +81,46 @@ class TestOperatorAlerts(BillingTestCase):
 			alerts.run_operator_alerts()
 
 		self.assertEqual(self.mail.call_count, 2)
+
+	def _mute(self, *rows):
+		"""Mute alerts in Billing Settings for this test: (alert, until) pairs."""
+		table = [{"alert": alert, "until": until, "reason": "known issue"} for alert, until in rows]
+		return billing_settings(muted_operator_alerts=table)
+
+	def test_a_muted_kind_is_counted_but_not_sent(self):
+		with self._quiet_sources(lambda: [ALERT]), self._mute(("invariant", None)):
+			result = alerts.run_operator_alerts()
+
+		self.assertEqual((result["alerts"], result["muted"]), (0, 1))
+		self.mail.assert_not_called()
+
+	def test_a_muted_check_silences_only_that_check(self):
+		b8 = {"alert": "readiness", "check": "B8", "subject": "t1", "team": "t1", "detail": "B8: no profile"}
+		b1 = {"alert": "readiness", "check": "B1", "subject": "t2", "team": "t2", "detail": "B1: currency"}
+		with self._quiet_sources(lambda: [b8, b1]), self._mute(("readiness B8", None)):
+			result = alerts.run_operator_alerts()
+
+		self.assertEqual((result["alerts"], result["muted"]), (1, 1))
+		self.assertIn("t2", self.mail.call_args.kwargs["args"]["rows"][0][1])
+
+	def test_a_mute_that_has_ended_lets_the_alert_through(self):
+		ended = frappe.utils.add_to_date(frappe.utils.now_datetime(), hours=-1)
+		with self._quiet_sources(lambda: [ALERT]), self._mute(("invariant", ended)):
+			result = alerts.run_operator_alerts()
+
+		self.assertEqual(result["muted"], 0)
+		self.assertEqual(self.mail.call_count, 1)
+
+	def test_a_mute_with_an_end_time_ahead_holds(self):
+		ahead = frappe.utils.add_to_date(frappe.utils.now_datetime(), hours=1)
+		with self._quiet_sources(lambda: [ALERT]), self._mute(("invariant", ahead)):
+			alerts.run_operator_alerts()
+
+		self.mail.assert_not_called()
+
+	def test_the_muted_alerts_list_offers_every_kind_and_check(self):
+		options = frappe.get_meta("Muted Operator Alert").get_field("alert").options.split("\n")
+		self.assertEqual(options, alerts.get_mutable_alerts())
 
 	def test_one_broken_source_does_not_blind_the_others(self):
 		def broken():
