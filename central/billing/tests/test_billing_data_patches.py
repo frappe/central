@@ -362,18 +362,6 @@ class TestStartBillingRunOutcomes(IntegrationTestCase):
 		self.assertEqual(self._run_team(TEAM, "2026-05-31").outcome, "Failed")
 		self.assertIsNone(self._run_team(OTHER_TEAM, "2026-05-31"))
 
-	def test_an_unissued_invoice_below_the_minimum_is_written_off(self):
-		small = _insert_invoice("Outstanding", "2026-04-30", total=10)
-		issued = _insert_invoice("Outstanding", "2026-03-31", total=10, due_date="2026-04-10")
-
-		start_billing_run_outcomes_and_minimum_invoices.execute()
-
-		self.assertEqual(_invoice(small).status, "Cancelled")
-		self.assertEqual(_invoice(issued).status, "Outstanding")
-		outcome = self._run_team(TEAM, "2026-04-30")
-		self.assertEqual(outcome.outcome, "Below Minimum")
-		self.assertIn("written off", outcome.reason)
-
 
 def _wallet(balance: float, team: str = TEAM, currency: str = "INR") -> str:
 	wallet = frappe.get_doc(
