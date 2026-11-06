@@ -6,7 +6,7 @@ import { useBillingOverview } from '@/composables/useBillingOverview'
 import { useBillingSetup } from '@/composables/useBillingSetup'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { shortDate } from '@/lib/date'
-import { type DunningTone, getDunningStep } from '@/lib/dunning'
+import { type DunningTone, getDunningSteps } from '@/lib/dunning'
 import { formatDate, money } from '@/lib/format'
 
 interface Props {
@@ -41,8 +41,8 @@ const nextPaymentFailed = computed(() =>
 )
 
 // A missed bill's place on the dunning ladder, shown under "Due now".
-const dunningStep = computed(() =>
-	hasOutstanding.value ? getDunningStep(nextPayment.data) : undefined,
+const dunningSteps = computed(() =>
+	hasOutstanding.value ? getDunningSteps(nextPayment.data) : [],
 )
 
 const dunningToneClass: Record<DunningTone, string> = {
@@ -133,16 +133,16 @@ const onAddMethod = () => {
 				</div>
 			</template>
 
-			<template v-if="dunningStep">
-				<span class="truncate text-ink-gray-5"> {{ dunningStep.label }} </span>
+			<template v-for="step in dunningSteps" :key="step.label">
+				<span class="truncate text-ink-gray-5"> {{ step.label }} </span>
 
 				<div class="flex items-center justify-end gap-2">
-					<Tooltip :text="dunningStep.hint">
+					<Tooltip :text="step.hint">
 						<span
 							class="whitespace-nowrap text-base-medium tabular-nums"
-							:class="dunningToneClass[dunningStep.tone]"
+							:class="dunningToneClass[step.tone]"
 						>
-							{{ shortDate(dunningStep.date) }}
+							{{ shortDate(step.date) }}
 						</span>
 					</Tooltip>
 				</div>

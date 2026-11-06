@@ -11,42 +11,51 @@ export interface DunningStep {
 	hint: string
 }
 
-/** A missed bill's next step on the dunning ladder, or undefined while none is missed. */
-export function getDunningStep(
+/**
+ * A missed bill's steps on the dunning ladder, next step first, or none while no bill is
+ * missed. An overdue bill with a payment in progress has two: the payment and the suspension.
+ */
+export function getDunningSteps(
 	payment: NextPayment | null | undefined,
-): DunningStep | undefined {
+): DunningStep[] {
 	if (payment?.suspended_since) {
-		return {
-			label: 'Suspended since',
-			date: payment.suspended_since,
-			tone: 'danger',
-			hint: 'Your servers are stopped. Pay the bill to start them again.',
-		}
+		return [
+			{
+				label: 'Suspended since',
+				date: payment.suspended_since,
+				tone: 'danger',
+				hint: 'Your servers are stopped. Pay the bill to start them again.',
+			},
+		]
 	}
+
+	const steps: DunningStep[] = []
 	if (payment?.payment_in_progress_since) {
-		return {
+		steps.push({
 			label: 'Payment in progress',
 			date: payment.payment_in_progress_since,
 			tone: 'neutral',
 			hint: 'We are waiting for your bank to confirm this payment.',
-		}
+		})
 	}
 	if (payment?.next_retry_on) {
-		return {
+		steps.push({
 			label: 'Next retry',
 			date: payment.next_retry_on,
 			tone: 'warning',
 			hint: 'We will try to charge your payment method again on this date.',
-		}
+		})
 	}
 	if (payment?.suspends_on) {
-		return {
+		steps.push({
 			label: 'Suspends on',
 			date: payment.suspends_on,
 			tone: 'danger',
-			hint: 'Your servers stop on this date if the bill stays unpaid.',
-		}
+			hint: payment.payment_in_progress_since
+				? 'Your servers stop on this date if the payment fails. Add credit to your wallet to avoid this. If the payment also goes through, we will refund it.'
+				: 'Your servers stop on this date if the bill stays unpaid.',
+		})
 	}
 
-	return undefined
+	return steps
 }

@@ -99,7 +99,10 @@ export interface NextPayment {
 	/** Empty blockers is not a promise of success — only that nothing decides otherwise. */
 	will_auto_charge: boolean
 	blockers: PaymentBlocker[]
-	/** Set only after the open invoice's payment date has passed. At most one is set. */
+	/**
+	 * Set once the open invoice is charged or its payment date has passed. At most one is set,
+	 * except that an overdue invoice with a payment in progress also has `suspends_on`.
+	 */
 	payment_in_progress_since: string | null
 	next_retry_on: string | null
 	suspends_on: string | null

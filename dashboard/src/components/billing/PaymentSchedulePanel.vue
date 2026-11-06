@@ -8,7 +8,7 @@ import { useBillingOverview } from '@/composables/useBillingOverview'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { useSession } from '@/composables/useSession'
 import { shortDate } from '@/lib/date'
-import { getDunningStep } from '@/lib/dunning'
+import { getDunningSteps } from '@/lib/dunning'
 import { getErrorMessage } from '@/lib/feedback'
 import { formatDate, money } from '@/lib/format'
 import type { PaymentSchedule } from '@/types/billing'
@@ -57,7 +57,7 @@ const blockerLines = computed(() => {
 // the dunning ladder rather than the next cycle's payment day.
 const chargeStep = computed(
 	() =>
-		getDunningStep(data.value) ?? {
+		getDunningSteps(data.value)[0] ?? {
 			label: "We'll charge on",
 			date: data.value?.charge_on,
 			hint: '',

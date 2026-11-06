@@ -21,6 +21,7 @@ from frappe import _
 from central.billing.api.dashboard._shared import _resolve_team, _team_currency
 from central.billing.doctype.billing_profile.billing_profile import get_payment_date
 from central.billing.doctype.invoice.invoice import OVERDUE, owed_filters
+from central.billing.payments.charges import in_flight_attempt
 from central.billing.revenue.dunning import (
 	LADDER_FIELDS,
 	dunning_policy,
@@ -175,9 +176,9 @@ def _scheduled_charge_on(team: str, owed: list, today):
 
 
 def _missed_payment(team: str, invoice, today) -> dict:
-	"""Where a missed bill stands on the dunning ladder. At most one date is set.
+	"""Where an open bill stands on the dunning ladder once its charge is made or missed.
 
-	1. No missed bill: all dates are empty.
+	1. No open bill, or one with no charge in flight before its charge day: all dates are empty.
 	2. A suspended team: only the date it was suspended.
 	3. Otherwise: its next step on the ladder (`_next_ladder_step`).
 	"""
@@ -187,7 +188,7 @@ def _missed_payment(team: str, invoice, today) -> dict:
 		"suspends_on": None,
 		"suspended_since": None,
 	}
-	if not invoice or not _is_charge_missed(invoice, today):
+	if not invoice or not (_is_charge_missed(invoice, today) or in_flight_attempt(invoice.name)):
 		return missed
 
 	suspended_since = _suspended_since(team)
@@ -197,9 +198,10 @@ def _missed_payment(team: str, invoice, today) -> dict:
 
 
 def _next_ladder_step(invoice, team: str, today) -> dict:
-	"""The next step of a missed bill on the dunning ladder of a team that is not suspended.
+	"""The next step of an open bill on the dunning ladder of a team that is not suspended.
 
-	1. A charge in flight before the suspension date: the day the charge was made.
+	1. A charge in flight before the suspension date: the day the charge was made. Once the bill
+	   is Overdue, also the suspension date, because the team is suspended if the charge fails.
 	2. A retry still to come, today's included until it runs: the next retry date.
 	3. No retry left, or none dunning can run: the date the team is suspended.
 	"""
@@ -207,7 +209,10 @@ def _next_ladder_step(invoice, team: str, today) -> dict:
 	schedule = dunning_schedule(dates)
 	suspend_on = next(s.date for s in schedule if s.stage == "Suspend")
 	if dates.in_flight_since and today < suspend_on:
-		return {"payment_in_progress_since": str(frappe.utils.getdate(dates.in_flight_since))}
+		return {
+			"payment_in_progress_since": str(frappe.utils.getdate(dates.in_flight_since)),
+			"suspends_on": str(suspend_on) if invoice.status == OVERDUE else None,
+		}
 
 	next_retry_on = _next_retry_on(invoice, team, schedule)
 	if next_retry_on:

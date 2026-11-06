@@ -398,6 +398,29 @@ class TestNextPayment(OverviewBase):
 		self.assertIsNone(out["next_retry_on"])
 		self.assertIsNone(out["suspends_on"])
 
+	def test_a_charge_in_flight_on_the_charge_date_reports_the_payment_in_progress(self):
+		give_team_a_card(TEAM)
+		invoice = self._missed_invoice(0)
+		self._charge_in_flight_since(invoice.name, self.today)
+
+		with settings.overridden(**LADDER):
+			out = dashboard.get_next_payment(TEAM)
+
+		self.assertEqual(out["payment_in_progress_since"], str(self.today))
+		self.assertIsNone(out["suspends_on"])
+
+	def test_an_overdue_bill_with_a_charge_in_flight_reports_the_suspension_date_too(self):
+		give_team_a_card(TEAM)
+		invoice = self._missed_invoice(13)
+		frappe.db.set_value("Invoice", invoice.name, "status", "Overdue")
+		self._charge_in_flight_since(invoice.name, frappe.utils.add_days(self.today, -13))
+
+		with settings.overridden(**LADDER):
+			out = dashboard.get_next_payment(TEAM)
+
+		self.assertEqual(out["payment_in_progress_since"], str(frappe.utils.add_days(self.today, -13)))
+		self.assertEqual(out["suspends_on"], str(invoice.suspends_on))
+
 	def test_a_charge_in_flight_on_the_suspension_date_reports_the_suspension(self):
 		give_team_a_card(TEAM)
 		invoice = self._missed_invoice(14)
