@@ -111,6 +111,7 @@ export const API = {
 	aiApiKeys: 'central.services.api.ai.list_api_keys',
 	createAIApiKey: 'central.services.api.ai.create_api_key',
 	setAIApiKeyCaps: 'central.services.api.ai.set_api_key_caps',
+	setAIApiKeyLimits: 'central.services.api.ai.set_api_key_limits',
 	aiModels: 'central.services.api.ai.get_models',
 	revokeAIApiKey: 'central.services.api.ai.revoke_api_key',
 	pullAIUsage: 'central.services.api.ai.pull_usage',
