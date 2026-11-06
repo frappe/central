@@ -17,6 +17,7 @@ from central.notification.doctype.notification_digest_setting.notification_diges
 from central.notification.doctype.user_notification_preference.user_notification_preference import (
 	UserNotificationPreference,
 )
+from central.notification.engine import DIRECT_RECIPIENTS
 from central.sso import central_url
 
 MAX_ITEMS = 50
@@ -179,9 +180,14 @@ def _events_sent_instantly(user: str, team: str) -> list[str]:
 		for event, is_on in preference["events"].items()
 		if not is_on
 	]
+	# A critical or directly addressed event was emailed at once, and some events are never emailed.
 	sent_at_once = frappe.get_all(
 		"Notification Event Type",
-		or_filters={"is_critical": 1, "direct_recipients": "Affected User"},
+		or_filters=[
+			["is_critical", "=", 1],
+			["direct_recipients", "in", DIRECT_RECIPIENTS],
+			["send_email", "=", 0],
+		],
 		pluck="name",
 	)
 	return muted + sent_at_once

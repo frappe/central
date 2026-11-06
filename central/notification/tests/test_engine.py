@@ -8,7 +8,7 @@ from unittest.mock import patch
 import frappe
 
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
-from central.billing.tests.utils import ensure_team, make_user, run_enqueued_inline
+from central.billing.tests.utils import complete_billing_profile, ensure_team, make_user, run_enqueued_inline
 
 TEAM = "team-engine"
 
@@ -18,6 +18,7 @@ _FIXTURE_FIELDS = [
 	"severity",
 	"required_cap",
 	"direct_recipients",
+	"send_email",
 	"in_app_title",
 	"in_app_body",
 	"action_label",
@@ -72,6 +73,7 @@ class EngineTestBase(IntegrationTestCase):
 		in_app_title="Event happened",
 		in_app_body="Something broke",
 		direct_recipients="None",
+		send_email=True,
 		create_in_app=True,
 		action_label=None,
 		action_route=None,
@@ -98,6 +100,7 @@ class EngineTestBase(IntegrationTestCase):
 				"in_app_title": in_app_title,
 				"in_app_body": in_app_body,
 				"direct_recipients": direct_recipients,
+				"send_email": int(send_email),
 				"create_in_app": int(create_in_app),
 				"action_label": action_label,
 				"action_route": action_route,
@@ -263,12 +266,12 @@ class TestDeduplication(EngineTestBase):
 
 	def test_allows_same_event_without_reference_name(self):
 		"""Events without a reference_name are never deduplicated."""
-		self._ensure_event_type("team_suspension")
+		self._ensure_event_type("team_suspended")
 
 		from central.notification.engine import dispatch
 
-		dispatch(TEAM, "team_suspension", message="first")
-		second = dispatch(TEAM, "team_suspension", message="second")
+		dispatch(TEAM, "team_suspended", message="first")
+		second = dispatch(TEAM, "team_suspended", message="second")
 		self.assertTrue(second["created"])
 		self.assertEqual(frappe.db.count("Team Notification", {"team": TEAM}), 2)
 
@@ -1221,6 +1224,67 @@ class TestDirectRecipientsAffectedUser(EngineTestBase):
 			for r in (call.kwargs.get("recipients", call.args[0] if call.args else []))
 		]
 		self.assertIn(self.user_a, all_recipients)
+
+
+class TestDirectRecipientsBillingContacts(EngineTestBase):
+	def setUp(self):
+		super().setUp()
+		# The emails go out from a job after commit; run it in place.
+		self.enterContext(
+			patch("central.notification.engine.frappe.enqueue", side_effect=run_enqueued_inline)
+		)
+		self.sendmail = self.enterContext(patch("central.notification.engine.frappe.sendmail"))
+		self.member = make_user("billing-member@example.com")
+		team = frappe.get_doc("Team", TEAM)
+		team.append("members", {"user": self.member, "role": "Billing", "status": "Active"})
+		team.save(ignore_permissions=True)
+		complete_billing_profile(TEAM)
+
+	def _recipients(self) -> list[str]:
+		return [user for call in self.sendmail.call_args_list for user in call.kwargs["recipients"]]
+
+	def test_only_the_owner_and_the_billing_email_get_it(self):
+		self._ensure_event_type(
+			"bill_ready",
+			category="Billing",
+			required_cap="billing:view",
+			direct_recipients="Billing Contacts",
+		)
+
+		from central.notification.engine import dispatch
+
+		dispatch(TEAM, "bill_ready", reference_doctype="Invoice", reference_name="INV-BC-1")
+
+		owner = frappe.db.get_value("Team", TEAM, "owner_user")
+		self.assertEqual(sorted(self._recipients()), sorted([owner, "billing@test.example"]))
+		self.assertTrue(frappe.db.exists("Team Notification", {"team": TEAM, "event_type": "bill_ready"}))
+
+	def test_an_event_with_send_email_off_is_only_in_the_feed(self):
+		self._ensure_event_type(
+			"bill_paid",
+			category="Billing",
+			required_cap="billing:view",
+			direct_recipients="Billing Contacts",
+			send_email=False,
+		)
+
+		from central.notification.engine import dispatch
+
+		result = dispatch(TEAM, "bill_paid", reference_doctype="Invoice", reference_name="INV-BC-2")
+
+		self.assertEqual(result["email_attempted"], 0)
+		self.assertTrue(result["created"])
+
+	def test_only_a_billing_contact_can_turn_its_email_on(self):
+		from central.notification.api import _event_catalog
+
+		def billing_events(user):
+			group = next(group for group in _event_catalog(user, TEAM) if group["category"] == "Billing")
+			return {event["event_type"]: event["can_receive"] for event in group["events"]}
+
+		owner = frappe.db.get_value("Team", TEAM, "owner_user")
+		self.assertTrue(billing_events(owner)["payment_failure"])
+		self.assertFalse(billing_events(self.member)["payment_failure"])
 
 
 class TestFeedPagination(EngineTestBase):

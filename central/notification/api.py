@@ -6,6 +6,7 @@ from frappe import _
 from frappe.model.document import bulk_insert
 
 from central.api.pilot import pilot_credential_auth
+from central.billing.doctype.billing_profile.billing_profile import get_billing_contacts
 from central.iam import can_on_any_server, is_active_team_member, resolve_team, user_has_operator_bypass
 from central.notification import CATEGORIES
 from central.notification.doctype.notification_digest_setting.notification_digest_setting import (
@@ -14,6 +15,7 @@ from central.notification.doctype.notification_digest_setting.notification_diges
 from central.notification.doctype.user_notification_preference.user_notification_preference import (
 	UserNotificationPreference,
 )
+from central.notification.engine import DIRECT_RECIPIENTS
 
 MARK_READ_BATCH_SIZE = 500
 PILOT_REPORTABLE_CATEGORIES = ("Server",)
@@ -134,15 +136,18 @@ def _event_catalog(user: str, team: str) -> list[dict]:
 			"severity",
 			"required_cap",
 			"direct_recipients",
+			"send_email",
 			"in_app_title",
 			"is_critical",
 		],
 		order_by="event_type asc",
 	)
 	allowed = _held_capabilities(user, team, events)
+	is_billing_contact = user.lower() in {email.lower() for email in get_billing_contacts(team)}
 	by_category = {category: [] for category in CATEGORIES}
 	for event in events:
-		by_category[event.category].append(_catalog_entry(event, allowed))
+		can_receive = _is_emailed_to_user(event, allowed, is_billing_contact)
+		by_category[event.category].append(_catalog_entry(event, can_receive))
 	return [
 		{"category": category, "label": category, "events": by_category[category]}
 		for category in CATEGORIES
@@ -154,15 +159,28 @@ def _held_capabilities(user: str, team: str, events: list[frappe._dict]) -> dict
 	capabilities = {
 		event.required_cap
 		for event in events
-		if event.required_cap and event.direct_recipients != "Affected User"
+		if event.required_cap and event.direct_recipients not in DIRECT_RECIPIENTS
 	}
 	return {capability: can_on_any_server(user, team, capability) for capability in capabilities}
 
 
-def _catalog_entry(event: frappe._dict, allowed: dict[str, bool]) -> dict:
-	can_receive = (
-		not event.required_cap or event.direct_recipients == "Affected User" or allowed[event.required_cap]
-	)
+def _is_emailed_to_user(event: frappe._dict, allowed: dict[str, bool], is_billing_contact: bool) -> bool:
+	"""Whether the user can get this event by email, in this order:
+
+	1. An event that is never emailed reaches nobody.
+	2. An Affected User event can reach anyone it is about.
+	3. A Billing Contacts event reaches only the billing contacts.
+	4. Otherwise the user needs the event's capability."""
+	if not event.send_email:
+		return False
+	if event.direct_recipients == "Affected User":
+		return True
+	if event.direct_recipients == "Billing Contacts":
+		return is_billing_contact
+	return not event.required_cap or allowed[event.required_cap]
+
+
+def _catalog_entry(event: frappe._dict, can_receive: bool) -> dict:
 	title = event.in_app_title
 	if "{{" in title or "{%" in title:
 		title = frappe.unscrub(event.event_type)
