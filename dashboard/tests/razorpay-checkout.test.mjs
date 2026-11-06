@@ -9,7 +9,6 @@ const source = readFileSync(
 	'utf8',
 )
 
-// Each call to the fake Razorpay records its options and its failure handler.
 const sheet = {}
 const window = {
 	Razorpay: class {
