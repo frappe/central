@@ -20,8 +20,8 @@ import Quickstart from '@/components/services/llm/Quickstart.vue'
 import { useAI } from '@/composables/useAI'
 import { formatDateTime, timeAgo } from '@/lib/datetime'
 import { getErrorMessage, reportError } from '@/lib/feedback'
-import { compactNumber } from '@/lib/format'
-import type { AIApiKey, AIRateLimit } from '@/types/ai'
+import { limitChips, METRIC_OPTIONS, WINDOW_OPTIONS } from '@/lib/limits'
+import type { AIApiKey } from '@/types/ai'
 
 interface Props {
 	canManage: boolean
@@ -40,6 +40,8 @@ const {
 	createApiKey,
 	setCaps,
 	capsSaving,
+	setLimits,
+	limitsSaving,
 	models,
 	modelsLoading,
 	modelsGeography,
@@ -58,12 +60,6 @@ const asOf = computed(() =>
 )
 const activeKeys = computed(() =>
 	apiKeys.value.filter((key) => key.status === 'active'),
-)
-const atKeyLimit = computed(
-	() =>
-		!!spend.value &&
-		spend.value.max_keys > 0 &&
-		activeKeys.value.length >= spend.value.max_keys,
 )
 const canSetCaps = computed(
 	() => prepaid.value && props.canManage && activeKeys.value.length > 0,
@@ -126,47 +122,17 @@ const revocableFrom = (key: AIApiKey): string =>
 
 const rowActions = (key: AIApiKey): DropdownOptions => [
 	{
+		label: 'Rate limits',
+		icon: 'lucide-gauge',
+		onClick: () => openLimits(key),
+	},
+	{
 		label: 'Revoke',
 		icon: 'lucide-trash-2',
 		theme: 'red',
 		onClick: () => (revokeTarget.value = key),
 	},
 ]
-
-const METRIC_LETTERS: Record<string, string> = {
-	requests: 'R',
-	total_tokens: 'T',
-}
-const WINDOW_LETTERS: Record<string, string> = {
-	'1m': 'PM',
-	'1h': 'PH',
-	'1d': 'PD',
-	'1M': 'PMo',
-}
-const METRIC_WORDS: Record<string, string> = {
-	requests: 'requests',
-	total_tokens: 'tokens',
-}
-const WINDOW_WORDS: Record<string, string> = {
-	'1m': 'per minute',
-	'1h': 'per hour',
-	'1d': 'per day',
-	'1M': 'per month',
-}
-const limitChips = (limits: AIRateLimit[]) =>
-	limits.map((limit) => ({
-		key: `${limit.metric}:${limit.window}`,
-		label: `${compactNumber(limit.value)} ${METRIC_LETTERS[limit.metric] ?? limit.metric}${WINDOW_LETTERS[limit.window] ?? ''}`,
-		text: `${limit.value.toLocaleString()} ${METRIC_WORDS[limit.metric] ?? limit.metric} ${WINDOW_WORDS[limit.window] ?? limit.window}`,
-	}))
-
-const sharedLimits = computed(() => {
-	const [first, ...rest] = activeKeys.value.map((key) =>
-		JSON.stringify(key.limits),
-	)
-	if (!first || rest.some((limits) => limits !== first)) return null
-	return limitChips(activeKeys.value[0].limits)
-})
 
 const usd = (value: number): string =>
 	value.toLocaleString(undefined, {
@@ -266,6 +232,66 @@ const saveCaps = async (): Promise<void> => {
 	}
 }
 
+// One key's own rate limits, edited as rows: a blank model is every model, each counted on its
+// own; a row naming one holds there alone. The plan's limits stay above whatever is set here.
+interface LimitRow {
+	model_key: string
+	metric: string
+	window: string
+	value: string
+}
+const limitsOpen = ref(false)
+const limitsTarget = ref<AIApiKey | null>(null)
+const limitRows = ref<LimitRow[]>([])
+const limitsError = ref('')
+const modelOptions = computed(() => [
+	{ label: 'Every model', value: '' },
+	...models.value.map((model) => ({ label: model.name, value: model.name })),
+])
+const isWholeLimit = (value: string): boolean =>
+	Number.isInteger(Number(value)) && Number(value) >= 1
+const limitsInvalid = computed(() => {
+	const seen = new Set<string>()
+	return limitRows.value.some((row) => {
+		const slot = `${row.model_key}:${row.metric}:${row.window}`
+		if (seen.has(slot) || !isWholeLimit(row.value)) return true
+		seen.add(slot)
+		return false
+	})
+})
+const addLimitRow = (): void => {
+	limitRows.value.push({
+		model_key: '',
+		metric: 'requests',
+		window: '1m',
+		value: '',
+	})
+}
+const openLimits = (key: AIApiKey): void => {
+	limitsTarget.value = key
+	limitRows.value = key.limits.map((limit) => ({
+		...limit,
+		value: String(limit.value),
+	}))
+	limitsError.value = ''
+	limitsOpen.value = true
+	if (modelsGeography.value !== key.geography)
+		loadModels(key.geography).catch(reportError)
+}
+const saveLimits = async (): Promise<void> => {
+	if (!limitsTarget.value || limitsInvalid.value) return
+	limitsError.value = ''
+	try {
+		await setLimits(
+			limitsTarget.value.name,
+			limitRows.value.map((row) => ({ ...row, value: Number(row.value) })),
+		)
+		limitsOpen.value = false
+	} catch (e) {
+		limitsError.value = getErrorMessage(e)
+	}
+}
+
 const helpOpen = ref(false)
 const helpGeography = computed({
 	get: () => modelsGeography.value,
@@ -286,7 +312,7 @@ const openHelp = (): void => {
 	helpOpen.value = true
 }
 
-defineExpose({ openCreate, openHelp, atKeyLimit })
+defineExpose({ openCreate, openHelp })
 
 const revokeTarget = ref<AIApiKey | null>(null)
 const revokeError = ref('')
@@ -380,11 +406,7 @@ const revoke = async (key: AIApiKey): Promise<void> => {
 					<th scope="col" class="hidden pb-2 font-normal sm:table-cell">
 						Geography
 					</th>
-					<th
-						v-if="!sharedLimits"
-						scope="col"
-						class="hidden pb-2 font-normal lg:table-cell"
-					>
+					<th scope="col" class="hidden pb-2 font-normal lg:table-cell">
 						Rate limits
 					</th>
 					<th scope="col" class="hidden pb-2 font-normal md:table-cell">
@@ -432,11 +454,10 @@ const revoke = async (key: AIApiKey): Promise<void> => {
 					</td>
 
 					<td
-						v-if="!sharedLimits"
 						class="hidden border-t border-outline-gray-1 py-2.5 pr-3 text-sm lg:table-cell"
 					>
 						<span
-							v-if="key.status === 'active'"
+							v-if="key.status === 'active' && key.limits.length"
 							class="flex flex-wrap items-center gap-x-2 text-ink-gray-6"
 						>
 							<template
@@ -449,6 +470,12 @@ const revoke = async (key: AIApiKey): Promise<void> => {
 								</Tooltip>
 							</template>
 						</span>
+						<Tooltip
+							v-else-if="key.status === 'active'"
+							text="No limits of its own: the plan's apply, counted for the whole team."
+						>
+							<span class="text-ink-gray-5">Plan limits</span>
+						</Tooltip>
 					</td>
 
 					<td
@@ -516,19 +543,6 @@ const revoke = async (key: AIApiKey): Promise<void> => {
 				</tr>
 			</tbody>
 		</table>
-
-		<p
-			v-if="sharedLimits && apiKeys.length"
-			class="mt-3 flex flex-wrap items-center gap-x-2 text-p-xs text-ink-gray-5"
-		>
-			Every key is limited to
-			<template v-for="(chip, index) in sharedLimits" :key="chip.key">
-				<span v-if="index" aria-hidden="true">·</span>
-				<Tooltip :text="chip.text">
-					<span class="tabular-nums text-ink-gray-7">{{ chip.label }}</span>
-				</Tooltip>
-			</template>
-		</p>
 
 		<ListViewPagination
 			v-if="pageCount > 1"
@@ -623,6 +637,107 @@ const revoke = async (key: AIApiKey): Promise<void> => {
 					:loading="creating"
 					:disabled="!newLabel.trim() || !newGeography || !isWholeCap(newCap)"
 					@click="create"
+				/>
+			</div>
+		</template>
+	</Dialog>
+
+	<Dialog
+		v-model="limitsOpen"
+		:title="`Rate limits for ${limitsTarget?.title ?? ''}`"
+		size="2xl"
+	>
+		<template #default>
+			<Alert
+				v-if="limitsError"
+				class="mb-4"
+				theme="red"
+				title="Couldn't save the rate limits"
+				:description="limitsError"
+			/>
+			<p class="mb-3 text-p-sm text-ink-gray-5">
+				Your plan's limits hold for the whole team. This key's own sit beneath
+				them: whichever is lower refuses first. A row for every model counts
+				each model on its own; a row naming one model holds there alone.
+			</p>
+			<div
+				v-if="limitRows.length"
+				class="mb-2 grid grid-cols-[2fr_1fr_1fr_1fr_auto] gap-2 text-sm-medium text-ink-gray-6"
+				aria-hidden="true"
+			>
+				<span>Model</span>
+				<span>Metric</span>
+				<span>Window</span>
+				<span>Limit</span>
+				<span class="w-7" />
+			</div>
+			<div class="space-y-2">
+				<div
+					v-for="(row, index) in limitRows"
+					:key="index"
+					class="grid grid-cols-[2fr_1fr_1fr_1fr_auto] items-center gap-2"
+				>
+					<Select
+						v-model="row.model_key"
+						:options="modelOptions"
+						:disabled="limitsSaving || modelsLoading"
+						aria-label="Model"
+					/>
+					<Select
+						v-model="row.metric"
+						:options="METRIC_OPTIONS"
+						:disabled="limitsSaving"
+						aria-label="Metric"
+					/>
+					<Select
+						v-model="row.window"
+						:options="WINDOW_OPTIONS"
+						:disabled="limitsSaving"
+						aria-label="Window"
+					/>
+					<TextInput
+						v-model="row.value"
+						type="number"
+						min="1"
+						step="1"
+						placeholder="0"
+						aria-label="Limit"
+						:disabled="limitsSaving"
+						@keyup.enter="saveLimits"
+					/>
+					<Button
+						variant="ghost"
+						icon="lucide-x"
+						aria-label="Remove this limit"
+						:disabled="limitsSaving"
+						@click="limitRows.splice(index, 1)"
+					/>
+				</div>
+			</div>
+			<Button
+				class="mt-3"
+				icon-left="lucide-plus"
+				label="Add a limit"
+				:disabled="limitsSaving"
+				@click="addLimitRow"
+			/>
+			<p v-if="!limitRows.length" class="mt-3 text-p-sm text-ink-gray-5">
+				No limits of its own: the key runs under your plan's alone.
+			</p>
+		</template>
+		<template #actions>
+			<div class="flex items-center justify-end gap-2">
+				<Button
+					label="Cancel"
+					:disabled="limitsSaving"
+					@click="limitsOpen = false"
+				/>
+				<Button
+					variant="solid"
+					label="Save"
+					:loading="limitsSaving"
+					:disabled="limitsInvalid"
+					@click="saveLimits"
 				/>
 			</div>
 		</template>

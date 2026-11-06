@@ -8,6 +8,7 @@ import { submitOrThrow } from '@/lib/frappeCall'
 import type {
 	AIApiKey,
 	AIModel,
+	AIRateLimit,
 	AIState,
 	AIUsage,
 	MintedKey,
@@ -70,6 +71,15 @@ const capsCall = useCall<
 	{ team: string; caps: Record<string, number> }
 >({
 	url: method(API.setAIApiKeyCaps),
+	method: 'POST',
+	immediate: false,
+})
+
+const limitsCall = useCall<
+	AIApiKey,
+	{ team: string; key: string; limits: AIRateLimit[] }
+>({
+	url: method(API.setAIApiKeyLimits),
 	method: 'POST',
 	immediate: false,
 })
@@ -158,6 +168,13 @@ export function useAI() {
 			await Promise.all([apiKeysCall.reload(), aiCall.reload()])
 		},
 		capsSaving: computed(() => capsCall.loading),
+
+		// One key's own rows; [] leaves it under the plan's limits alone.
+		async setLimits(key: string, limits: AIRateLimit[]): Promise<void> {
+			await submitOrThrow(limitsCall, { team: activeTeam.value!, key, limits })
+			await apiKeysCall.reload()
+		},
+		limitsSaving: computed(() => limitsCall.loading),
 
 		// Grove holds the setting: the overview reads it back after the change.
 		async setPromptLogging(enabled: boolean): Promise<void> {

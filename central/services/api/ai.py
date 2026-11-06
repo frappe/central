@@ -54,7 +54,8 @@ def enable_ai(team: str | None = None) -> dict:
 @require_capability("service:view", VIEW_DENIED)
 def list_api_keys(team: str | None = None) -> list[dict]:
 	"""The team's keys, newest first, masked, each with its geography and the gateway it
-	calls, its monthly cap, its spend this month, and its rate limits."""
+	calls, its monthly cap, its spend this month, and its own rate limits (the plan's are in the
+	overview's `spend.limits`)."""
 	require_ai(team)
 	keys = GroveClient.from_settings().get_figures(team)["keys"]
 	return [{field: row.get(field) for field in KEY_FIELDS} for row in keys]
@@ -108,6 +109,21 @@ def set_api_key_caps(team: str | None = None, caps: dict[str, int] | None = None
 		team, {key: whole_dollars(cap) for key, cap in (caps or {}).items()}
 	)
 	return [{field: row.get(field) for field in KEY_FIELDS} for row in rows]
+
+
+@frappe.whitelist(methods=["POST"])
+@require_capability("service:manage", MANAGE_DENIED)
+def set_api_key_limits(
+	team: str | None = None, key: str | None = None, limits: list[dict] | None = None
+) -> dict:
+	"""Set one key's own rate limits: rows of `model_key` (blank: every model), `metric`
+	(`requests`, `total_tokens`), `window` (`1m`, `1h`, `1d`, `1M`) and `value`. They sit under the
+	plan's limits, which hold for the team as a whole; whichever is lower refuses first. An empty
+	list leaves the key under the plan's alone. Grove checks the rows and refuses another team's
+	key."""
+	require_ai(team)
+	row = GroveClient.from_settings().update_key(team, key, limits=limits or [])
+	return {field: row.get(field) for field in KEY_FIELDS}
 
 
 def whole_dollars(cap: int | float | str) -> int:
