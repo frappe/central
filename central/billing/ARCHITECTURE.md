@@ -380,7 +380,7 @@ Configure it in **Billing Settings → Operator Alerts**:
 | Alert Email Addresses | One address per line. Required when the channel includes Email. Central never mails the System Manager role. |
 | Raven Site URL, Raven Channel ID | The Raven site and the channel that gets the alerts. |
 | Bot API Key, Bot API Secret | The API key of a bot user that is a member of the channel. The alert is posted as this user through `raven.api.raven_message.send_message`. |
-| Muted Alerts | Billing alerts the hourly digest does not send. Mute a whole kind, such as `held_invoice`, or one check, such as `readiness B8`. **Until** is when the alert is sent again; leave it empty to mute until the row is removed. Enter the reason, for example the ticket of the known issue. |
+| Muted Alerts | Billing alerts the hourly digest does not send. Choose a **Category**: Payments, Invoicing, Dunning, Money checks or Readiness checks. Leave **Alert** empty to mute the whole category, or choose one alert or one check in it. **Until** is when the alert is sent again; leave it empty to mute until the row is removed. Enter the reason, for example the ticket of the known issue. `platform/muting.py` owns the categories. |
 
 When a Raven post fails, or Raven is not configured, the alert goes to the email addresses once and the failure is written to the Error Log. Use **Send Test Alert** on the form to check the saved settings. The hourly digest keeps one Error Log row for each digest it sends, and it does not send the same digest again for `REPEAT_AFTER_HOURS`. A muted alert is left out of the digest and counted as `muted` in the `billing.alerts` metric. Muting applies only to the hourly billing digest (`run_operator_alerts`). Signup alerts and **Send Test Alert** are never muted.
 

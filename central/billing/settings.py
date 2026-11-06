@@ -239,14 +239,14 @@ def operator_alert_emails() -> list[str]:
 	return _settings().alert_emails()
 
 
-def muted_operator_alerts() -> set[str]:
-	"""The billing alerts muted now: rows with no end time, or an end time still ahead."""
+def muted_operator_alerts() -> list:
+	"""The Muted Alerts rows in force now: no end time, or an end time still ahead."""
 	now = frappe.utils.now_datetime()
-	return {
-		row.alert
+	return [
+		row
 		for row in _settings().muted_operator_alerts
 		if not row.until or frappe.utils.get_datetime(row.until) > now
-	}
+	]
 
 
 def raven_connection() -> dict | None:

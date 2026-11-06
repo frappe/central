@@ -2,12 +2,14 @@
 # For license information, please see license.txt
 """Operator alerts fire on what the sweeps cannot fix, and stay quiet otherwise."""
 
+import inspect
+import re
 from unittest.mock import patch
 
 import frappe
 import requests
 
-from central.billing.platform import alerts
+from central.billing.platform import alerts, muting
 from central.billing.tests.test_reconciliation import ReconTestBase
 from central.billing.tests.test_stripe_adapter import make_stripe_gateway
 from central.billing.tests.utils import BillingTestCase, billing_settings
@@ -83,21 +85,36 @@ class TestOperatorAlerts(BillingTestCase):
 		self.assertEqual(self.mail.call_count, 2)
 
 	def _mute(self, *rows):
-		"""Mute alerts in Billing Settings for this test: (alert, until) pairs."""
-		table = [{"alert": alert, "until": until, "reason": "known issue"} for alert, until in rows]
+		"""Mute alerts in Billing Settings for this test: (category, alert, until) rows."""
+		table = [
+			{"category": category, "alert": alert, "until": until, "reason": "known issue"}
+			for category, alert, until in rows
+		]
 		return billing_settings(muted_operator_alerts=table)
 
-	def test_a_muted_kind_is_counted_but_not_sent(self):
-		with self._quiet_sources(lambda: [ALERT]), self._mute(("invariant", None)):
+	def test_a_muted_category_mutes_every_alert_in_it(self):
+		webhook = {"alert": "failed_webhook", "subject": "WH-1", "team": None, "detail": "boom"}
+		refund = {"alert": "failed_refund", "subject": "INV-2", "team": "t1", "detail": "refused"}
+		with self._quiet_sources(lambda: [webhook, refund, ALERT]), self._mute(("Payments", None, None)):
 			result = alerts.run_operator_alerts()
 
-		self.assertEqual((result["alerts"], result["muted"]), (0, 1))
-		self.mail.assert_not_called()
+		self.assertEqual((result["alerts"], result["muted"]), (1, 2))
+		self.assertIn("1 invariant", self.mail.call_args.kwargs["subject"])
+
+	def test_a_muted_alert_leaves_the_rest_of_its_category(self):
+		webhook = {"alert": "failed_webhook", "subject": "WH-1", "team": None, "detail": "boom"}
+		refund = {"alert": "failed_refund", "subject": "INV-2", "team": "t1", "detail": "refused"}
+		with self._quiet_sources(lambda: [webhook, refund]), self._mute(("Payments", "Failed webhook", None)):
+			result = alerts.run_operator_alerts()
+
+		self.assertEqual((result["alerts"], result["muted"]), (1, 1))
+		self.assertIn("1 failed_refund", self.mail.call_args.kwargs["subject"])
 
 	def test_a_muted_check_silences_only_that_check(self):
 		b8 = {"alert": "readiness", "check": "B8", "subject": "t1", "team": "t1", "detail": "B8: no profile"}
 		b1 = {"alert": "readiness", "check": "B1", "subject": "t2", "team": "t2", "detail": "B1: currency"}
-		with self._quiet_sources(lambda: [b8, b1]), self._mute(("readiness B8", None)):
+		b8_option = "B8 · Billed Indian teams have a Tax Profile"
+		with self._quiet_sources(lambda: [b8, b1]), self._mute(("Readiness checks", b8_option, None)):
 			result = alerts.run_operator_alerts()
 
 		self.assertEqual((result["alerts"], result["muted"]), (1, 1))
@@ -105,7 +122,7 @@ class TestOperatorAlerts(BillingTestCase):
 
 	def test_a_mute_that_has_ended_lets_the_alert_through(self):
 		ended = frappe.utils.add_to_date(frappe.utils.now_datetime(), hours=-1)
-		with self._quiet_sources(lambda: [ALERT]), self._mute(("invariant", ended)):
+		with self._quiet_sources(lambda: [ALERT]), self._mute(("Money checks", None, ended)):
 			result = alerts.run_operator_alerts()
 
 		self.assertEqual(result["muted"], 0)
@@ -113,14 +130,20 @@ class TestOperatorAlerts(BillingTestCase):
 
 	def test_a_mute_with_an_end_time_ahead_holds(self):
 		ahead = frappe.utils.add_to_date(frappe.utils.now_datetime(), hours=1)
-		with self._quiet_sources(lambda: [ALERT]), self._mute(("invariant", ahead)):
+		with self._quiet_sources(lambda: [ALERT]), self._mute(("Money checks", None, ahead)):
 			alerts.run_operator_alerts()
 
 		self.mail.assert_not_called()
 
-	def test_the_muted_alerts_list_offers_every_kind_and_check(self):
-		options = frappe.get_meta("Muted Operator Alert").get_field("alert").options.split("\n")
-		self.assertEqual(options, alerts.get_mutable_alerts())
+	def test_an_alert_from_another_category_is_refused(self):
+		with self.assertRaises(frappe.ValidationError), self._mute(("Invoicing", "Failed webhook", None)):
+			pass
+
+	def test_every_alert_kind_has_a_category(self):
+		# Read the kinds from the sources, so a new source cannot be left out of the list.
+		kinds = set(re.findall(r'"alert": "([a-z_]+)"', inspect.getsource(alerts)))
+		categorised = {kind for group in muting.CATEGORIES.values() for kind in group}
+		self.assertEqual(kinds, categorised)
 
 	def test_one_broken_source_does_not_blind_the_others(self):
 		def broken():

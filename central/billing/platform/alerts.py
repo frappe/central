@@ -11,7 +11,7 @@ import requests
 
 from central.billing import settings
 from central.billing.payments import decline
-from central.billing.platform import invariants, metrics
+from central.billing.platform import invariants, metrics, muting
 
 # A webhook we failed to process is a settlement we have not applied. An hour is long
 # enough to rule out a retry that is still in flight.
@@ -289,21 +289,6 @@ def failed_accounting_syncs() -> list[dict]:
 	]
 
 
-# The kinds the sources send, in the order the Muted Alerts list shows them.
-KINDS = (
-	"invariant",
-	"readiness",
-	"failed_webhook",
-	"stale_attempt",
-	"unsettled_capture",
-	"refused_charge",
-	"held_invoice",
-	"failed_refund",
-	"failed_accounting_sync",
-	"suspended_server_running",
-	"termination_due",
-)
-
 SOURCES = (
 	invariant_violations,
 	readiness_gaps,
@@ -317,22 +302,6 @@ SOURCES = (
 	suspended_servers_running,
 	termination_due,
 )
-
-
-def get_mutable_alerts() -> list[str]:
-	"""What an operator can mute: each kind the sources send, and each money or readiness check."""
-	from central.billing.platform import readiness
-
-	return [
-		*KINDS,
-		*(f"invariant {key}" for key in invariants.CHECKS),
-		*(f"readiness {key}" for key in readiness.CHECKS),
-	]
-
-
-def is_muted(alert: dict, muted: set[str]) -> bool:
-	"""True when the alert's kind is muted, or the one check it reports."""
-	return alert["alert"] in muted or f"{alert['alert']} {alert.get('check')}" in muted
 
 
 def collect() -> list[dict]:
@@ -442,9 +411,9 @@ def run_operator_alerts() -> dict:
 
 	An alert muted in Billing Settings is counted but not sent, so a known issue does not
 	repeat in the channel while its fix is in progress."""
-	muted = settings.muted_operator_alerts()
+	muted = muting.get_muted_keys(settings.muted_operator_alerts())
 	found = collect()
-	alerts = [alert for alert in found if not is_muted(alert, muted)]
+	alerts = [alert for alert in found if not muting.is_muted(alert, muted)]
 	silenced = len(found) - len(alerts)
 	if not alerts:
 		frappe.cache().delete_value(_CACHE_KEY)

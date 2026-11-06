@@ -2,22 +2,31 @@
  "actions": [],
  "creation": "2026-11-06 00:00:00.000000",
  "doctype": "DocType",
- "editable_grid": 1,
+ "editable_grid": 0,
  "engine": "InnoDB",
  "field_order": [
+  "category",
   "alert",
   "until",
   "reason"
  ],
  "fields": [
   {
-   "description": "A kind mutes every alert of that kind. A check, such as readiness B8, mutes only that check.",
-   "fieldname": "alert",
+   "description": "A group of billing alerts. Leave Alert empty to mute the whole group.",
+   "fieldname": "category",
    "fieldtype": "Select",
    "in_list_view": 1,
-   "label": "Alert",
-   "options": "invariant\nreadiness\nfailed_webhook\nstale_attempt\nunsettled_capture\nrefused_charge\nheld_invoice\nfailed_refund\nfailed_accounting_sync\nsuspended_server_running\ntermination_due\ninvariant C2\ninvariant C4\ninvariant I1\ninvariant I5\ninvariant I6\ninvariant P2\ninvariant P4\nreadiness B1\nreadiness B2\nreadiness B3\nreadiness B4\nreadiness B5\nreadiness T1\nreadiness T2\nreadiness T3\nreadiness B6\nreadiness B7\nreadiness B8\nreadiness S1\nreadiness S2\nreadiness S3\nreadiness S4\nreadiness M1\nreadiness W1\nreadiness W2\nreadiness X1\nreadiness R1\nreadiness R2",
+   "label": "Category",
+   "options": "\nPayments\nInvoicing\nDunning\nMoney checks\nReadiness checks",
    "reqd": 1
+  },
+  {
+   "depends_on": "category",
+   "description": "One alert in the category. Leave it empty to mute the whole category.",
+   "fieldname": "alert",
+   "fieldtype": "Autocomplete",
+   "in_list_view": 1,
+   "label": "Alert"
   },
   {
    "description": "The alert is sent again after this time. Leave it empty to mute until the row is removed.",
@@ -38,7 +47,7 @@
  "index_web_pages_for_search": 0,
  "istable": 1,
  "links": [],
- "modified": "2026-11-06 00:00:00.000000",
+ "modified": "2026-11-06 01:00:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Muted Operator Alert",
