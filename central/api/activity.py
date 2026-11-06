@@ -6,7 +6,7 @@ from frappe import _
 from frappe.utils import cint, convert_utc_to_system_timezone, get_datetime
 from frappe.utils.translations import _lt
 
-from central.central.doctype.activity_event.activity_event import ActivityEvent, get_requesters
+from central.central.doctype.activity_event.activity_event import ActivityEvent, get_initiators
 from central.central.doctype.activity_event.tracked import get_sentence
 from central.iam import user_has_operator_bypass
 from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
@@ -76,16 +76,16 @@ def get_activity(
 		after=_decode_cursor(cursor) if cursor else None,
 	)
 	page = rows[:page_size]
-	requesters = get_requesters(page)
-	actors = _get_actors({row.actor for row in page} | set(requesters.values()))
+	initiators = get_initiators(page)
+	actors = _get_actors({row.actor for row in page} | set(initiators.values()))
 
 	return {
-		"events": [_to_event(row, actors, requesters.get(row.name)) for row in page],
+		"events": [_to_event(row, actors, initiators.get(row.name)) for row in page],
 		"next_cursor": _encode_cursor(page[-1]) if len(rows) > page_size else None,
 	}
 
 
-def _to_event(row, actors: dict[str, dict], requester: str | None) -> dict:
+def _to_event(row, actors: dict[str, dict], initiator: str | None) -> dict:
 	return {
 		"id": row.name,
 		"event": row.event,
@@ -93,7 +93,7 @@ def _to_event(row, actors: dict[str, dict], requester: str | None) -> dict:
 		"occurred_at": str(row.creation),
 		"actor": actors.get(row.actor, NO_ACTOR),
 		"sentence": _(get_sentence(row.event, has_actor=bool(row.actor))),
-		"requested_by": actors[requester] if requester else None,
+		"initiator": actors[initiator] if initiator else None,
 		"resource": {"type": row.resource_type, "name": row.resource_name, "label": row.resource_label},
 		"status": row.status or None,
 		"details": [

@@ -106,7 +106,7 @@ class TestActivity(IntegrationTestCase):
 		event = server_activity(team=self.team.name, resource_id=self.server.resource_id)["events"][0]
 		self.assertEqual((event["actor"]["label"], event["sentence"]), ("", "{resource} was renamed"))
 
-	def test_a_region_report_names_who_requested_it(self):
+	def test_a_region_report_names_who_initiated_it(self):
 		snapshot = frappe.get_doc(
 			{
 				"doctype": "VM Snapshot",
@@ -123,7 +123,7 @@ class TestActivity(IntegrationTestCase):
 		frappe.set_user(self.viewer)
 		event = server_activity(team=self.team.name, resource_id=self.server.resource_id)["events"][0]
 		self.assertEqual(event["event"], "snapshot.available")
-		self.assertEqual(event["requested_by"]["label"], "activity.admin")
+		self.assertEqual(event["initiator"]["label"], "activity.admin")
 
 	def test_an_operator_reads_as_frappe_cloud_to_customers_only(self):
 		operator = ensure_user("activity.operator@example.test")
@@ -134,7 +134,7 @@ class TestActivity(IntegrationTestCase):
 		frappe.set_user(self.admin)
 		event = server_activity(team=self.team.name, resource_id=self.server.resource_id)["events"][0]
 		self.assertEqual(event["actor"]["label"], "Frappe Cloud")
-		self.assertIsNone(event["requested_by"])
+		self.assertIsNone(event["initiator"])
 
 		frappe.set_user(operator)
 		event = server_activity(team=self.team.name, resource_id=self.server.resource_id)["events"][0]
