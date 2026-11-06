@@ -15,6 +15,7 @@ from frappe import _
 from frappe.model.document import Document
 
 from central.billing.platform import kinds
+from central.billing.settings import GATEWAY_MINIMUM_CHARGES
 
 # The last day that exists in every month.
 LAST_SUSPENSION_DAY = 28
@@ -103,12 +104,24 @@ class BillingSettings(Document):
 			frappe.throw(_("Terminate After must be at least 1 day."), title=_("Invalid Dunning Ladder"))
 
 	def validate_one_minimum_per_currency(self):
-		"""One minimum invoice amount per currency."""
+		"""1. One minimum invoice amount per currency.
+		2. No minimum above the smallest charge the gateways accept, because a month the
+		   gateway can charge must not be written off."""
 		currencies = [row.currency for row in self.minimum_invoice_amounts]
 		if len(currencies) != len(set(currencies)):
 			frappe.throw(
 				_("Each currency can have one minimum invoice amount."), title=_("Duplicate Currency")
 			)
+
+		for row in self.minimum_invoice_amounts:
+			limit = GATEWAY_MINIMUM_CHARGES.get(row.currency)
+			if limit is not None and frappe.utils.flt(row.amount) > limit:
+				frappe.throw(
+					_(
+						"The minimum invoice amount for {0} can be at most {1}, the smallest charge the payment gateways accept."
+					).format(row.currency, frappe.utils.fmt_money(limit, currency=row.currency)),
+					title=_("Minimum Too High"),
+				)
 
 	def validate_one_row_per_currency(self):
 		"""One grant amount per currency — two rows would make the grant ambiguous."""
