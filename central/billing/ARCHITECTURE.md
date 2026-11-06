@@ -527,12 +527,22 @@ No rail debits before the payment date (`collection.collect_invoice`). A rail th
 
 The customer changes the payment day at most twice in a billing cycle (`BillingProfile.change_payment_day`). The change applies to the next invoice. An open invoice keeps its date.
 
-**Payment emails.** `payments.payment_notices` sends these events through `platform.notifications.notify`. Each is a Billing event for members with `billing:view`, in-app and by email.
+**Payment emails.** `payments.payment_notices` sends these events through `platform.notifications.notify`. Each is a Billing event in the feed of members with `billing:view`.
+
+**Who gets billing email.** Each Billing event type has **Direct Recipients** set to `Billing Contacts`. The email goes only to the team owner and the billing email of the Billing Profile (`billing_profile.get_billing_contacts`), and never into a digest. Other members see the event in the console. These rules keep the email count low:
+
+| Rule | Where |
+|---|---|
+| `payment_success` is not emailed (**Send Email** off). It shows only in the feed. | The event type fixture. |
+| `payment_reminder` is not sent when `payment_scheduled` went out for the invoice in the last `SCHEDULED_NOTICE_COVERS_DAYS` days. | `payment_notices.send_payment_reminder`. |
+| A rail that owes a pre-debit notice gets only `pre_debit_notice`, which names the amount, the invoice, the method and the debit time. | `payment_notices.send_payment_reminder`, `emandate.schedule_predebit`. |
+| A declined charge sends `payment_failure`, or `add_payment_method` when no method is left. It never sends both. | `charges._notify_attempt_failure`. |
+| `billing_details_required` goes to a team at most once in 7 days, from the invoice hold and the daily sweep together. | `lifecycle._hold_for_billing_details`, `settlement.REMINDER_EVERY_DAYS`. |
 
 | Event | When | Sent from |
 |---|---|---|
 | `payment_scheduled` | An invoice opens with an amount left after credit. It names the total, the credit applied, the amount to charge, the charge date and the payment method. The charge date is the pre-debit charge time on a rail that owes a pre-debit notice, else the payment date. With no method, it asks the team to add one. | `lifecycle.open_and_collect`, after the first collection step, in the run that issues the invoice. A held invoice sends it when it is released and opens. |
-| `payment_reminder` | 1 day before the payment date, when the invoice has no payment attempt and the rail of the method that is charged first owes no pre-debit notice. Once per invoice: a conditional update sets `payment_reminder_sent_at` before the notice, and only the sweep that changes the row sends it. | The hourly `collection.collect_on_payment_date`. |
+| `payment_reminder` | 1 day before the payment date, when the invoice has no payment attempt, `payment_scheduled` did not go out in the last 3 days, and the rail of the method that is charged first owes no pre-debit notice. Once per invoice: a conditional update sets `payment_reminder_sent_at` before the notice, and only the sweep that changes the row sends it. | The hourly `collection.collect_on_payment_date`. |
 | `payment_date_changed` | The payment day changes, on the dashboard or in Desk. It names the new day, the next payment date, and an issued invoice that keeps its payment date. | `BillingProfile.on_update`. |
 | `payment_retry` | A dunning retry fails. The message names the retry number and the reason. | `dunning.retry_payment`. |
 | `invoice_overdue` | Dunning marks the invoice Overdue. The message names the action that settles it in the team's collection mode. While a charge is in flight, the message says the payment is still processing, that wallet credit added now avoids suspension on the suspension date, and that the charge is refunded if it also goes through. | `dunning.process_invoice_dunning`. |

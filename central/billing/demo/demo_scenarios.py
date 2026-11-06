@@ -312,7 +312,7 @@ def _seed_notification_feed(slug_to_team: dict):
 		("stark-ind", "Payment Success", {}),
 		("harbor", "Credit Low", {"utilisation": "88%"}),
 		("piedpiper", "Credit Low", {"utilisation": "91%"}),
-		("acme-corp", "Mandate Reauth", {}),
+		("acme-corp", "Card Expiry", {}),
 		("northwind", "Pre-debit Notice", {"amount": "$4,200.00", "charge_on": ANCHOR_DUE}),
 	]
 	for slug, event, ctx in billing:

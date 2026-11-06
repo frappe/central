@@ -246,6 +246,35 @@ class TestPaymentReminder(test_emandate.EmandateTestBase):
 		self.assertEqual(result["skipped"], "already_reminded")
 		self.assertEqual(self._reminders(), 1)
 
+	def test_no_reminder_soon_after_the_scheduled_notice(self):
+		now = frappe.utils.get_datetime("2026-06-09 00:30:00")
+		name = self._invoice_due_on("2026-06-10")
+		frappe.get_doc(
+			{
+				"doctype": "Billing Notification Log",
+				"team": TEAM,
+				"event_type": "Payment Scheduled",
+				"channel": "email",
+				"status": "Queued",
+				"reference_doctype": "Invoice",
+				"reference_name": name,
+			}
+		).insert(ignore_permissions=True)
+
+		with patch.object(emandate, "is_notice_required", return_value=False):
+			self.assertEqual(
+				payment_notices.send_payment_reminder(name, now)["skipped"], "recently_scheduled"
+			)
+
+			# A notice older than the window does not stop the reminder.
+			frappe.db.set_value(
+				"Billing Notification Log",
+				{"reference_name": name, "event_type": "Payment Scheduled"},
+				"creation",
+				"2026-06-05 00:00:00",
+			)
+			self.assertTrue(payment_notices.send_payment_reminder(name, now)["reminded"])
+
 	def test_the_reminder_follows_the_rail_of_the_method_that_is_charged(self):
 		now = frappe.utils.get_datetime("2026-06-09 00:30:00")
 		name = self._invoice_due_on("2026-06-10")

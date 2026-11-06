@@ -596,23 +596,32 @@ def _apply_attempt_failure(event, attempt, decline: dict) -> dict:
 		)
 		attempt.completed_at = frappe.utils.now_datetime()
 		save_billing_record(attempt)
-		from central.billing.platform import notifications
-
-		notifications.notify(
-			attempt.team,
-			"Payment Failure",
-			context={"invoice": attempt.invoice, "reason": attempt.failure_reason or "declined"},
-			reference_doctype="Invoice",
-			reference_name=attempt.invoice,
-		)
 		# Async decline: rotate to the next untried method (#28). No-op once
 		# every method has been exhausted.
 		if inv_status in _UNSETTLED_INVOICE:
 			from central.billing.payments import collection
 
 			fell_back = collection.collect_invoice(attempt.invoice)
+		_notify_attempt_failure(attempt, fell_back)
 	_mark_event(event, "Processed")
 	return {"handled": True, "result": "Failed", "attempt": attempt.name, "fell_back": fell_back}
+
+
+def _notify_attempt_failure(attempt, fell_back: dict | None) -> None:
+	"""Tell the team the payment failed. When no method is left, collection has already
+	asked for another way to pay, which says the same thing, so this email is not sent."""
+	from central.billing.platform import notifications
+
+	if fell_back and fell_back.get("reason") == "no_method":
+		return
+
+	notifications.notify(
+		attempt.team,
+		"Payment Failure",
+		context={"invoice": attempt.invoice, "reason": attempt.failure_reason or "declined"},
+		reference_doctype="Invoice",
+		reference_name=attempt.invoice,
+	)
 
 
 def _attempt_for_payment(payment, gateway: str) -> str | None:

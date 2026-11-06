@@ -53,6 +53,10 @@ Click **Choose events** under a category to turn email off for single events. Yo
 
 Some events are critical, such as a failed payment or a server that is down. They show **Always sent**. Critical events are emailed at once, even when you choose a digest or turn **Email** off for the category.
 
+## Who gets billing email
+
+Billing email goes only to the team owner and to the billing email on the billing details. Other members with billing access see billing notifications in the console. A received payment shows only in the console and is not emailed.
+
 ## See also
 
 - [Profile and theme](/account/profile)

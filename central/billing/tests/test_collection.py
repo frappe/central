@@ -196,6 +196,21 @@ class TestWebhookFallback(FallbackTestBase):
 		self.assertEqual(attempts["pi_backup"].payment_method, self.backup)
 		primary_attempt = next(a for a in self._attempts() if a.payment_method == self.primary)
 		self.assertEqual(primary_attempt.status, "Failed")
+		self.assertEqual(self._notices(inv), ["Payment Failure"])
+
+	def test_a_decline_with_no_method_left_only_asks_for_another_way_to_pay(self):
+		frappe.db.delete("Payment Method", {"name": self.backup})
+		inv = self._open_invoice()
+		with stub_charges([(True, "pi_only")]):
+			collection.collect_invoice(inv)
+			charges.apply_webhook(self._failure_event("pi_only"))
+
+		self.assertEqual(self._notices(inv), ["Add Payment Method"])
+
+	def _notices(self, invoice):
+		return frappe.get_all(
+			"Billing Notification Log", filters={"reference_name": invoice}, pluck="event_type"
+		)
 
 
 class TestMethodOrdering(FallbackTestBase):

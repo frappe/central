@@ -336,7 +336,7 @@ def _hold_for_billing_details(doc) -> bool:
 	missing = get_missing_field_labels(doc.team)
 	if not missing:
 		return False
-	if _has_asked_for_details_recently(doc.name):
+	if _has_asked_for_details_recently(doc.team):
 		return True
 	notifications.notify(
 		doc.team,
@@ -348,15 +348,14 @@ def _hold_for_billing_details(doc) -> bool:
 	return True
 
 
-def _has_asked_for_details_recently(invoice: str) -> bool:
+def _has_asked_for_details_recently(team: str) -> bool:
+	"""Whether the team was asked this week, for this invoice, another one, or by the daily sweep."""
 	return bool(
 		frappe.db.exists(
 			"Billing Notification Log",
 			{
-				"reference_doctype": "Invoice",
-				"reference_name": invoice,
+				"team": team,
 				"event_type": "Billing Details Required",
-				"status": "Queued",
 				"creation": [">", frappe.utils.add_days(frappe.utils.now_datetime(), -DETAILS_REMINDER_DAYS)],
 			},
 		)
