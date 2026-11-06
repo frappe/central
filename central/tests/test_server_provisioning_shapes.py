@@ -87,7 +87,9 @@ class TestServerProvisioningShapes(IntegrationTestCase):
 			patch("central.resource_actions.get_team_currency", return_value="USD"),
 			patch("central.resource_actions.frappe.db.get_value", return_value="Monthly"),
 		):
-			configuration, _rate = _build_server_configuration(server_input, None, is_free_trial=False)
+			configuration, _rate, _subdomain = _build_server_configuration(
+				server_input, None, is_free_trial=False
+			)
 
 		resolve.assert_called_once_with("team-a", ssh_key_ids)
 		return configuration
