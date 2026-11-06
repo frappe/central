@@ -12,7 +12,8 @@ anchor, `dunning_starts_on`). The days are the shipped defaults of Billing Setti
                   awaited, this retry waits for it. Each is a new Payment Attempt,
                   notified with the reason.
   Last retry day  invoice -> Overdue, standing -> past_due. KEEP RUNNING (grace).
-                  A charge in flight holds Overdue until its outcome.
+                  A charge in flight holds Overdue until its outcome, or until the day
+                  before suspension, when every unpaid invoice is Overdue.
   Suspension      on the invoice's `suspends_on`: the 15th of the month it opened in.
                   Every server subscription -> suspended, and Central stops the team's
                   running servers (data preserved). Paying the invoice returns the team
@@ -38,6 +39,7 @@ from central.billing.doctype.billing_profile.billing_profile import (
 )
 from central.billing.doctype.invoice.invoice import OUTSTANDING, UNSETTLED, is_issued, owed_filters
 from central.billing.doctype.payment_attempt.payment_attempt import get_charge_outcomes
+from central.billing.payments import payment_notices
 from central.billing.platform.jobs import each_isolated
 from central.billing.platform.records import save_billing_record
 from central.billing.states import transition
@@ -231,11 +233,10 @@ def dunning_schedule(dates: frappe._dict, policy=None) -> list[frappe._dict]:
 	Pure date arithmetic over the dates and the policy: no document reads and no writes.
 	`process_invoice_dunning` executes this schedule; anything that wants to *show* the
 	ladder without running it reads the same list. Each stage has the time it is reached
-	(`at`), its `date`, and its `day` counted from the anchor. While a charge is in flight
-	(`in_flight_since`), the ladder has no Overdue stage, so Overdue waits for the outcome. A single
-	retry that waits for a charge (`get_retry_times`) is not dated yet. Suspension keeps its date.
-	The team is suspended from then on, so a retry at or after it is dropped and the invoice
-	is Overdue on the suspension date.
+	(`at`), its `date`, and its `day` counted from the anchor. A single retry that waits for a
+	charge (`get_retry_times`) is not dated yet. Overdue is at the last retry, and at the latest
+	on the day before the suspension date (`get_overdue_time`). An Overdue invoice is not retried,
+	so a retry after that day is dropped. Suspension keeps its date.
 
 	Pass an explicit `policy` to ask what a different ladder would do.
 	"""
@@ -243,13 +244,13 @@ def dunning_schedule(dates: frappe._dict, policy=None) -> list[frappe._dict]:
 	anchor = frappe.utils.getdate(dates.anchor)
 	suspends_on = frappe.utils.get_datetime(frappe.utils.getdate(dates.suspends_on))
 	retries = get_retry_times(dates, policy.retry_interval)
-	before_suspension = [at for at in retries if at < suspends_on]
+	overdue_at = get_overdue_time(dates, retries)
 
 	stages = [
-		frappe._dict(stage="Retry", attempt=n, at=at) for n, at in enumerate(before_suspension, start=1)
+		frappe._dict(stage="Retry", attempt=n, at=at)
+		for n, at in enumerate([at for at in retries if at <= overdue_at], start=1)
 	]
-	if retries and not dates.in_flight_since:
-		stages.append(frappe._dict(stage="Overdue", at=min(retries[-1], suspends_on)))
+	stages.append(frappe._dict(stage="Overdue", at=overdue_at))
 	stages.append(frappe._dict(stage="Suspend", at=suspends_on))
 	stages.append(
 		frappe._dict(stage="Terminate", at=frappe.utils.add_days(suspends_on, policy.terminate_after))
@@ -259,6 +260,19 @@ def dunning_schedule(dates: frappe._dict, policy=None) -> list[frappe._dict]:
 		stage.date = stage.at.date()
 		stage.day = (stage.date - anchor).days
 	return sorted(stages, key=lambda s: (s.at, _STAGE_ORDER[s.stage]))
+
+
+def get_overdue_time(dates: frappe._dict, retries: list[datetime]) -> datetime:
+	"""When the invoice goes Overdue. The team hears it a day before suspension at the latest, so
+	it can still pay.
+
+	1. The last retry, when it is before the day before the suspension date and no charge is in
+	   flight (`dates.in_flight_since`).
+	2. Otherwise, the day before the suspension date. A charge in flight holds Overdue until then."""
+	day_before_suspension = frappe.utils.get_datetime(frappe.utils.add_days(dates.suspends_on, -1))
+	if retries and not dates.in_flight_since:
+		return min(retries[-1], day_before_suspension)
+	return day_before_suspension
 
 
 def get_retry_times(dates: frappe._dict, interval: int) -> list[datetime]:
@@ -302,18 +316,13 @@ def stages_reached(schedule: list, on) -> set:
 	return {s.stage for s in schedule if s.at <= now}
 
 
-def _notify(invoice, message: str):
-	invoice.add_comment("Info", message)
-
-
 def retry_payment(invoice_name: str) -> dict:
 	"""One dunning retry: a new collection round, primary→backup (#28), notified with
 	the reason on failure."""
 	from central.billing.payments import collection
-	from central.billing.payments.payment_notices import notify_retry_failed
 
 	result = collection.collect_invoice(invoice_name, new_round=True)
-	notify_retry_failed(invoice_name)
+	payment_notices.notify_retry_failed(invoice_name)
 	return result
 
 
@@ -401,9 +410,7 @@ def process_invoice_dunning(invoice_name: str, now=None) -> dict:
 			transition(inv, "Overdue", reason="dunning: past due window elapsed", actor="scheduler")
 			save_billing_record(inv)
 			actions.append("overdue")
-			from central.billing.payments.payment_notices import notify_invoice_overdue
-
-			notify_invoice_overdue(invoice_name, inv.team)
+			payment_notices.notify_invoice_overdue(invoice_name, inv.team)
 		if sub:
 			subscriptions.mark_past_due(inv.team)
 			standing = frappe.db.get_value("Subscription", anchor, "account_standing")
@@ -412,20 +419,7 @@ def process_invoice_dunning(invoice_name: str, now=None) -> dict:
 	if "Suspend" in reached and sub:
 		if subscriptions.suspend_for_nonpayment(inv.team):
 			standing = "Suspended"
-			_notify(
-				inv,
-				f"Suspended for non-payment on {dates.suspends_on}; running servers stopped, data preserved.",
-			)
-			from central.notification import engine
-
-			engine.dispatch(
-				inv.team,
-				"server_suspended",
-				message=f"Your account was suspended because invoice {invoice_name} is unpaid. "
-				"Running servers were stopped and data is preserved. Pay the invoice to restore them.",
-				reference_doctype="Invoice",
-				reference_name=invoice_name,
-			)
+			payment_notices.notify_team_suspended(inv, dates.suspends_on)
 			actions.append("suspend")
 
 	# --- termination date: an operator decides; nothing is deleted here.

@@ -9,6 +9,7 @@ from frappe import _
 from central.billing.doctype.invoice.invoice import is_owed, owed_filters
 from central.billing.platform import notifications
 from central.billing.platform.jobs import each_isolated
+from central.notification import engine
 
 
 def notify_payment_scheduled(invoice) -> None:
@@ -105,7 +106,18 @@ def notify_invoice_overdue(invoice: str, team: str) -> None:
 
 
 def _get_overdue_message(invoice: str, team: str) -> str:
-	"""A Manual Checkout team pays by hand and a Prepaid team tops up its wallet (ADR 0005)."""
+	"""A charge still in flight can settle the invoice, so the team is told how to avoid suspension
+	if it does not. Otherwise a Manual Checkout team pays by hand and a Prepaid team tops up its
+	wallet (ADR 0005)."""
+	from central.billing.payments import charges
+
+	if charges.in_flight_attempt(invoice):
+		suspends_on = frappe.db.get_value("Invoice", invoice, "suspends_on")
+		return _(
+			"Invoice {0} is overdue and your payment is still processing. Add credit to your wallet "
+			"now to avoid suspension on {1}. If the payment also goes through, we will refund it."
+		).format(invoice, _format_date(suspends_on))
+
 	mode = frappe.db.get_value("Billing Profile", team, "collection_mode")
 	if mode == "Manual Checkout":
 		return _("Invoice {0} is overdue. Pay it now to avoid suspension.").format(invoice)
@@ -114,6 +126,23 @@ def _get_overdue_message(invoice: str, team: str) -> str:
 			invoice
 		)
 	return _("Invoice {0} is overdue. Please settle it to avoid suspension.").format(invoice)
+
+
+def notify_team_suspended(invoice, suspends_on) -> None:
+	"""Tell the team dunning suspended it for `invoice`, and leave the reason on the invoice."""
+	invoice.add_comment(
+		"Info", f"Suspended for non-payment on {suspends_on}; running servers stopped, data preserved."
+	)
+	engine.dispatch(
+		invoice.team,
+		"server_suspended",
+		message=_(
+			"Your account was suspended because invoice {0} is unpaid. Running servers were stopped "
+			"and data is preserved. Pay the invoice to restore them."
+		).format(invoice.name),
+		reference_doctype="Invoice",
+		reference_name=invoice.name,
+	)
 
 
 def get_ordinal(day: int) -> str:

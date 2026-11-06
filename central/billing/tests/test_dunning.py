@@ -717,7 +717,10 @@ class TestTheSingleRetry(DunningTestBase):
 		self.assertEqual(str(without_failure.date), "2026-06-09")
 
 		awaiting = frappe._dict(dates, is_awaiting_charge=True)
-		self.assertEqual([s.stage for s in dunning.dunning_schedule(awaiting)], ["Suspend", "Terminate"])
+		self.assertEqual(
+			[(s.stage, str(s.date)) for s in dunning.dunning_schedule(awaiting)][:2],
+			[("Overdue", "2026-06-14"), ("Suspend", "2026-06-15")],
+		)
 
 	def _attempt(self, inv, status, at):
 		attempt = frappe.get_doc(
@@ -813,7 +816,7 @@ class TestTheSingleRetry(DunningTestBase):
 		schedule = dunning.dunning_schedule(dunning.get_ladder_dates(frappe.get_doc("Invoice", inv)))
 		self.assertEqual(
 			[(s.stage, str(s.at)) for s in schedule[:2]],
-			[("Overdue", "2026-06-15 00:00:00"), ("Suspend", "2026-06-15 00:00:00")],
+			[("Overdue", "2026-06-14 00:00:00"), ("Suspend", "2026-06-15 00:00:00")],
 		)
 
 		with declining_gateway(), patch("central.resource_actions.submit_billing_command"):
@@ -822,17 +825,40 @@ class TestTheSingleRetry(DunningTestBase):
 		self.assertEqual(result["actions"], ["overdue", "suspend"])
 		self.assertEqual(self._attempts(inv), 1)
 
-	def test_a_charge_in_flight_does_not_hold_the_suspension(self):
+	def test_a_charge_in_flight_goes_overdue_the_day_before_the_suspension(self):
 		inv = self._open_on_payment_day()
 		self._attempt(inv, "Initiated", "2026-06-08 00:30:00")
+		self.assertEqual(dunning.process_invoice_dunning(inv, now="2026-06-13 23:00:00")["action"], "none")
+
+		with self.freeze_time("2026-06-14 03:00:00"):
+			result = dunning.process_invoice_dunning(inv, now="2026-06-14 03:00:00")
+
+		self.assertEqual(result["actions"], ["overdue"])
+		self.assertEqual(frappe.db.get_value("Invoice", inv, "status"), "Overdue")
+		message = frappe.db.get_value(
+			"Billing Notification Log", {"event_type": "Invoice Overdue", "reference_name": inv}, "message"
+		)
+		self.assertIn("still processing", message)
+		self.assertIn("15 June 2026", message)
 
 		with patch("central.resource_actions.submit_billing_command"):
 			result = dunning.process_invoice_dunning(inv, now=SUSPENDS_ON)
 
 		self.assertEqual(result["actions"], ["suspend"])
 		self.assertEqual(frappe.db.get_value("Subscription", {"team": TEAM}, "account_standing"), "Suspended")
-		self.assertEqual(frappe.db.get_value("Invoice", inv, "status"), "Outstanding")
-		self.assertEqual(self._overdue_notices(inv), 0)
+		self.assertEqual(self._overdue_notices(inv), 1)
+
+	def test_a_charge_that_fails_after_the_suspension_leaves_the_invoice_overdue(self):
+		inv = self._open_on_payment_day()
+		attempt = self._attempt(inv, "Initiated", "2026-06-08 00:30:00")
+		self._fail(attempt, "2026-06-16 10:00:00")
+
+		with patch("central.resource_actions.submit_billing_command"):
+			result = dunning.process_invoice_dunning(inv, now="2026-06-17 03:00:00")
+
+		self.assertEqual(result["actions"], ["overdue", "suspend"])
+		self.assertEqual(frappe.db.get_value("Invoice", inv, "status"), "Overdue")
+		self.assertEqual(self._attempts(inv), 1)
 
 
 class TestRetryableLater(IntegrationTestCase):
