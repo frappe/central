@@ -437,7 +437,20 @@ def complete_billing_profile(team, currency="INR"):
 	else:
 		doc = frappe.get_doc(values)
 	doc.save(ignore_permissions=True)
+	_ensure_untaxed_tax_profile(team)
 	return team
+
+
+def _ensure_untaxed_tax_profile(team: str) -> None:
+	"""Tests price without tax unless they set a Tax Profile. India must be GST, so its rate is 0."""
+	from central.billing.revenue.tax import is_indian_team
+
+	if frappe.db.exists("Tax Profile", team):
+		return
+	output_tax_type = "GST" if is_indian_team(team) else "None"
+	frappe.get_doc(
+		{"doctype": "Tax Profile", "team": team, "output_tax_type": output_tax_type, "output_tax_rate": 0}
+	).insert(ignore_permissions=True)
 
 
 def give_team_a_card(team, gateway="Stripe"):
@@ -472,6 +485,7 @@ def make_billing_subscription(team, cluster, plan, start_date=None, clear_change
 	currency = kwargs.pop("currency", "INR")
 	if not frappe.db.get_value("Billing Profile", team, "currency"):
 		complete_billing_profile(team, currency=currency)
+	_ensure_untaxed_tax_profile(team)
 	sub = subscriptions.create_subscription(
 		team=team, cluster=cluster, plan=plan, start_date=start_date, **kwargs
 	)
