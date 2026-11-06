@@ -195,14 +195,17 @@ def send_payment_reminders(now: datetime) -> list[dict]:
 
 
 def send_payment_reminder(invoice: str, now: datetime) -> dict:
-	"""Send one payment reminder. A rail that owes a pre-debit notice gets that notice instead."""
+	"""Send one payment reminder. A method that owes a pre-debit notice gets that notice instead."""
 	from central.billing.payments import emandate
 
 	doc = frappe.get_doc("Invoice", invoice)
 	if not _is_reminder_due(doc, now):
 		return {"invoice": invoice, "skipped": "not_due"}
-	if emandate.is_notice_required(doc, None):
+	gateway = _get_charged_gateway(doc.team)
+	if gateway and emandate.is_notice_required(doc, gateway):
 		return {"invoice": invoice, "skipped": "predebit_notice"}
+	if not _has_claimed_reminder(invoice, now):
+		return {"invoice": invoice, "skipped": "already_reminded"}
 
 	notifications.notify(
 		doc.team,
@@ -211,8 +214,25 @@ def send_payment_reminder(invoice: str, now: datetime) -> dict:
 		reference_doctype="Invoice",
 		reference_name=invoice,
 	)
-	frappe.db.set_value("Invoice", invoice, "payment_reminder_sent_at", now, update_modified=False)
 	return {"invoice": invoice, "reminded": True}
+
+
+def _get_charged_gateway(team: str) -> str | None:
+	"""The gateway of the method the charge uses first, or None when the team has no method."""
+	from central.billing.payments import collection
+
+	methods = collection.ordered_methods(team)
+	return methods[0].gateway if methods else None
+
+
+def _has_claimed_reminder(invoice: str, now: datetime) -> bool:
+	"""Stamp the reminder on the invoice unless another sweep did it first. Only the sweep whose
+	update changes the row sends, so two overlapping sweeps send one reminder."""
+	invoice_tbl = frappe.qb.DocType("Invoice")
+	frappe.qb.update(invoice_tbl).set(invoice_tbl.payment_reminder_sent_at, now).where(
+		invoice_tbl.name == invoice
+	).where(invoice_tbl.payment_reminder_sent_at.isnull()).run()
+	return frappe.db._cursor.rowcount == 1
 
 
 def _is_reminder_due(invoice, now: datetime) -> bool:

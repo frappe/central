@@ -233,6 +233,30 @@ class TestPaymentReminder(test_emandate.EmandateTestBase):
 
 		self.assertEqual(self._reminders(), 0)
 
+	def test_a_sweep_that_overlaps_another_sends_no_second_reminder(self):
+		now = frappe.utils.get_datetime("2026-06-09 00:30:00")
+		name = self._invoice_due_on("2026-06-10")
+
+		with patch.object(emandate, "is_notice_required", return_value=False):
+			self.assertTrue(payment_notices.send_payment_reminder(name, now)["reminded"])
+			# The second sweep read the invoice before the first one stamped it.
+			with patch.object(payment_notices, "_is_reminder_due", return_value=True):
+				result = payment_notices.send_payment_reminder(name, now)
+
+		self.assertEqual(result["skipped"], "already_reminded")
+		self.assertEqual(self._reminders(), 1)
+
+	def test_the_reminder_follows_the_rail_of_the_method_that_is_charged(self):
+		now = frappe.utils.get_datetime("2026-06-09 00:30:00")
+		name = self._invoice_due_on("2026-06-10")
+		# The team's own rail (Razorpay in USD) owes no notice. The charged mandate (in INR) does.
+		frappe.db.set_value("Billing Profile", TEAM, "currency", "USD")
+
+		self.assertEqual(payment_notices.send_payment_reminder(name, now)["skipped"], "predebit_notice")
+
+		frappe.db.delete("Payment Method", {"team": TEAM})
+		self.assertTrue(payment_notices.send_payment_reminder(name, now)["reminded"])
+
 	def test_the_reminder_names_the_amount_the_date_and_the_method(self):
 		doc = frappe.get_doc("Invoice", self._invoice_due_on("2026-06-10"))
 
