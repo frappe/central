@@ -227,7 +227,8 @@ watch(open, (isOpen) => {
 				v-if="visibleError"
 				class="mb-4"
 				theme="red"
-				:title="visibleError"
+				title="Couldn't top up your wallet"
+				:description="visibleError"
 			/>
 			<!-- Stripe card entry: Element renders inside the iframe Stripe hosts. -->
 			<div v-if="cardPhase" class="space-y-3">
