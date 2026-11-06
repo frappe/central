@@ -180,40 +180,42 @@ class TestAppSubdomain(TestCase):
 VM_MODULE = "central.infrastructure.doctype.virtual_machine.virtual_machine"
 
 
+def machine(**values) -> VirtualMachine:
+	fields = {"doctype": "Virtual Machine", "name": "vm-1", "region": "region-a", "status": "Running"}
+	return frappe.get_doc({**fields, "has_site": 0, "ipv6_address": "fd00::1", **values})
+
+
 @patch(f"{VM_MODULE}.Region.get_zone", return_value="region-a.example.com")
 @patch(f"{VM_MODULE}.frappe.enqueue_doc")
 class TestAppSubdomainRoute(TestCase):
-	def route(self, machine: dict | None, subdomain: str | None, routed: bool = False) -> None:
-		machine = frappe._dict(machine) if machine else None
-		with (
-			patch(f"{VM_MODULE}.frappe.db.get_value", side_effect=[machine, subdomain]),
-			patch(f"{VM_MODULE}.frappe.db.exists", return_value=routed),
-		):
-			VirtualMachine.route_app_subdomain_once_addressable("vm-1")
+	def report(self, server: VirtualMachine, subdomain: str | None, previous_address: str | None) -> None:
+		server._doc_before_save = machine(**{**server.as_dict(), "ipv6_address": previous_address})
+		with patch(f"{VM_MODULE}.frappe.db.get_value", return_value=subdomain):
+			server.on_update()
 
-	def test_an_addressed_app_server_is_routed_at_its_site_name(self, enqueue, _zone) -> None:
-		self.route({"region": "region-a", "ipv6_address": "fd00::1", "has_site": 0}, "metrics")
+	def test_an_app_server_is_routed_when_it_first_gets_an_address(self, enqueue, _zone) -> None:
+		self.report(machine(), "metrics", previous_address=None)
 
 		enqueue.assert_called_once()
-		self.assertEqual(enqueue.call_args.kwargs["domain"], "metrics.region-a.example.com")
 		self.assertEqual(enqueue.call_args.args[:3], ("Virtual Machine", "vm-1", "route_app_subdomain"))
+		self.assertEqual(enqueue.call_args.kwargs["domain"], "metrics.region-a.example.com")
+
+	def test_a_later_report_does_not_route_again(self, enqueue, _zone) -> None:
+		self.report(machine(), "metrics", previous_address="fd00::1")
+
+		enqueue.assert_not_called()
 
 	def test_nothing_is_routed_before_the_server_has_an_address(self, enqueue, _zone) -> None:
-		self.route({"region": "region-a", "ipv6_address": None, "has_site": 0}, "metrics")
+		self.report(machine(ipv6_address=None), "metrics", previous_address=None)
 
 		enqueue.assert_not_called()
 
 	def test_a_pilot_server_is_left_to_its_site(self, enqueue, _zone) -> None:
-		self.route({"region": "region-a", "ipv6_address": "fd00::1", "has_site": 1}, "metrics")
+		self.report(machine(has_site=1), "metrics", previous_address=None)
 
 		enqueue.assert_not_called()
 
 	def test_a_server_without_a_site_name_is_not_routed(self, enqueue, _zone) -> None:
-		self.route({"region": "region-a", "ipv6_address": "fd00::1", "has_site": 0}, None)
-
-		enqueue.assert_not_called()
-
-	def test_a_routed_server_is_not_routed_again(self, enqueue, _zone) -> None:
-		self.route({"region": "region-a", "ipv6_address": "fd00::1", "has_site": 0}, "metrics", routed=True)
+		self.report(machine(), None, previous_address=None)
 
 		enqueue.assert_not_called()

@@ -151,6 +151,10 @@ class VirtualMachine(Document):
 		if self.has_value_changed("status") and self.status == "Failed":
 			self.queue_status_notification("server_failed")
 
+		previous = self.get_doc_before_save()
+		if self.ipv6_address and not (previous and previous.ipv6_address):
+			self.route_app_subdomain_once_addressable()
+
 		if self.has_value_changed("status") and self.status == "Terminated":
 			self.close_trial()
 			self.enqueue_route_removal()
@@ -345,36 +349,26 @@ class VirtualMachine(Document):
 
 		return True
 
-	@classmethod
-	def route_app_subdomain_once_addressable(cls, server: str) -> None:
-		"""Route the site name chosen for an app server once it has an address. It runs on every
-		report and routes once; a Pilot server's Site routes its own name."""
-		machine = frappe.db.get_value(
-			"Virtual Machine", server, ["region", "ipv6_address", "has_site"], as_dict=True
-		)
-		if not machine or machine.has_site or not machine.ipv6_address:
+	def route_app_subdomain_once_addressable(self) -> None:
+		"""Route the site name chosen for an app server once, when it first gets an address, the
+		way a Pilot server's Site routes its own name. A job keeps a refused route from failing
+		the state report."""
+		if self.has_site:
 			return
 
 		subdomain = frappe.db.get_value(
-			"Resource Action", {"server": server, "action": "create"}, "subdomain"
+			"Resource Action", {"server": self.name, "action": "create"}, "subdomain"
 		)
 		if not subdomain:
 			return
 
-		domain = f"{subdomain}.{Region.get_zone(machine.region)}"
-		if frappe.db.exists("Site Domain", domain):
-			return
-
-		# A job keeps a refused route from failing the state report.
 		frappe.enqueue_doc(
-			"Virtual Machine",
-			server,
+			self.doctype,
+			self.name,
 			"route_app_subdomain",
 			queue="short",
 			enqueue_after_commit=True,
-			job_id=f"app-route:{server}",
-			deduplicate=True,
-			domain=domain,
+			domain=f"{subdomain}.{Region.get_zone(self.region)}",
 		)
 
 	def route_app_subdomain(self, domain: str) -> None:
