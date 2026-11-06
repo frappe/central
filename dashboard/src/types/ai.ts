@@ -130,7 +130,7 @@ export interface AIApiKey {
 export interface NewKey {
 	label: string
 	geography: string
-	cap?: number
+	cap: number
 }
 
 // A key just minted: the only answer that carries its secret, with what it may call.

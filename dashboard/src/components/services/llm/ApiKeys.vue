@@ -197,19 +197,23 @@ const geographyOptions = computed(() =>
 	mintable.value.map((g) => ({ label: g.label, value: g.name })),
 )
 
+const canCreate = computed(
+	() =>
+		!!newLabel.value.trim() &&
+		!!newGeography.value &&
+		isValidCap(newCap.value),
+)
+
 const create = async (): Promise<void> => {
-	const label = newLabel.value.trim()
-	if (!label) return
+	if (!canCreate.value) return
 
 	creating.value = true
 	createError.value = ''
 	try {
 		await createApiKey({
-			label,
+			label: newLabel.value.trim(),
 			geography: newGeography.value,
-			...(prepaid.value && newCap.value !== ''
-				? { cap: Number(newCap.value) }
-				: {}),
+			cap: Number(newCap.value),
 		})
 		createOpen.value = false
 	} catch (e) {
@@ -237,10 +241,10 @@ const capsOverLimit = computed(
 		committedTotal.value > (spend.value?.spend_limit ?? 0) &&
 		committedTotal.value > (spend.value?.committed ?? 0),
 )
-const isWholeCap = (value: string): boolean =>
-	Number.isInteger(Number(value)) && Number(value) >= 0
+const isValidCap = (value: string): boolean =>
+	Number.isInteger(Number(value)) && Number(value) >= 1
 const capsInvalid = computed(() =>
-	activeKeys.value.some((key) => !isWholeCap(capValues.value[key.name])),
+	activeKeys.value.some((key) => !isValidCap(capValues.value[key.name])),
 )
 
 const openCaps = (): void => {
@@ -581,6 +585,7 @@ const revoke = async (key: AIApiKey): Promise<void> => {
 				<TextInput
 					v-model="newLabel"
 					label="Label"
+					required
 					placeholder="e.g. n8n prod"
 					description="A name to recognise this key by. New keys can take a few minutes to start working."
 					@keyup.enter="create"
@@ -589,17 +594,18 @@ const revoke = async (key: AIApiKey): Promise<void> => {
 					v-model="newGeography"
 					label="Geography"
 					:options="geographyOptions"
+					required
 					description="Where the key's requests are served. It cannot be changed later: create another key for another geography."
 				/>
 				<TextInput
-					v-if="prepaid"
 					v-model="newCap"
 					type="number"
-					min="0"
+					min="1"
 					step="1"
 					label="Cap (USD)"
-					placeholder="0"
-					description="What this key may spend each month. Leave it at 0 to set it later: the key is refused until it has a cap."
+					required
+					placeholder="e.g. 10"
+					description="What this key may spend each month, in whole dollars."
 					@keyup.enter="create"
 				/>
 			</div>
@@ -620,7 +626,7 @@ const revoke = async (key: AIApiKey): Promise<void> => {
 					variant="solid"
 					label="Create"
 					:loading="creating"
-					:disabled="!newLabel.trim() || !newGeography || !isWholeCap(newCap)"
+					:disabled="!canCreate"
 					@click="create"
 				/>
 			</div>
@@ -657,9 +663,9 @@ const revoke = async (key: AIApiKey): Promise<void> => {
 					<TextInput
 						v-model="capValues[key.name]"
 						type="number"
-						min="0"
+						min="1"
 						step="1"
-						placeholder="0"
+						placeholder="e.g. 10"
 						:autofocus="index === 0"
 						:aria-label="`Monthly cap for ${key.title} (USD)`"
 						:disabled="capsSaving"
@@ -668,7 +674,7 @@ const revoke = async (key: AIApiKey): Promise<void> => {
 				</div>
 			</div>
 			<p class="mt-4 text-p-sm text-ink-gray-5">
-				A key at 0 is refused until it gets a cap. Spend is as of {{ asOf }}:
+				Every key needs a cap of at least $1. Spend is as of {{ asOf }}:
 				The live figure is checked when you save.
 			</p>
 		</template>
