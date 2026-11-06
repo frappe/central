@@ -520,18 +520,24 @@ def check_teams_were_invoiced() -> list[Violation]:
 
 
 def check_billed_teams_have_a_tax_profile() -> list[Violation]:
-	"""A team with no Tax Profile is invoiced with no tax, so it is named before its invoice goes out."""
+	"""A billed Indian team with no Tax Profile pays default GST, so an operator checks it for SEZ or TDS."""
 	billed = set(frappe.get_all("Subscription", filters={"enabled": 1}, pluck="team", distinct=True))
 	missing = billed - set(frappe.get_all("Tax Profile", pluck="team")) - _internal_teams()
+	indian = frappe.get_all(
+		"Billing Profile",
+		filters={"name": ["in", list(missing) or [""]]},
+		or_filters={"country": INDIA, "currency": "INR"},
+		pluck="name",
+	)
 	return [
 		Violation(
 			check="B8",
 			team=team,
 			subject_doctype="Team",
 			subject=team,
-			detail="This team has no Tax Profile, so its invoices carry no tax.",
+			detail="This Indian team has no Tax Profile. Its invoices take GST at the default rate.",
 		)
-		for team in sorted(missing)
+		for team in sorted(indian)
 	]
 
 
@@ -619,7 +625,7 @@ CHECKS = {
 	"T3": ("Tier changes are recorded", check_tier_changes_are_recorded),
 	"B6": ("The run invoiced every team it could", check_teams_were_invoiced),
 	"B7": ("Operator alerts have a destination", check_operator_alerts_have_a_destination),
-	"B8": ("Billed teams have a Tax Profile", check_billed_teams_have_a_tax_profile),
+	"B8": ("Billed Indian teams have a Tax Profile", check_billed_teams_have_a_tax_profile),
 	"S1": ("Running subscriptions are priced", check_subscriptions_are_priced),
 	"S2": ("Running servers are billed", check_running_servers_are_billed),
 	"S3": ("Terminated servers stop billing", check_terminated_servers_stop_billing),

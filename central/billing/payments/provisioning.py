@@ -17,6 +17,7 @@ becomes active (`central.signups.credit`), not here.
 import frappe
 
 from central.billing import settings
+from central.billing.revenue.tax import get_country_output_tax
 
 
 def provision_billing_profile(team: str) -> None:
@@ -128,7 +129,7 @@ def ensure_tax_profile(team: str):
 		return frappe.get_doc("Tax Profile", team)
 
 	# Only operators edit a Tax Profile; the system creates it for the customer's team.
-	return frappe.get_doc({"doctype": "Tax Profile", "team": team, **_output_tax_for(team)}).insert(
+	return frappe.get_doc({"doctype": "Tax Profile", "team": team, **get_country_output_tax(team)}).insert(
 		ignore_permissions=True
 	)
 
@@ -145,22 +146,12 @@ def apply_output_tax_for_country(team: str) -> None:
 	if frappe.db.exists("Invoice", {"team": team}):
 		return
 	profile = ensure_tax_profile(team)
-	values = _output_tax_for(team)
+	values = get_country_output_tax(team)
 	if all(profile.get(field) == value for field, value in values.items()):
 		return
 	profile.update(values)
 	# The customer changed the billing country; only operators edit a Tax Profile.
 	profile.save(ignore_permissions=True)
-
-
-def _output_tax_for(team: str) -> dict:
-	profile = (
-		frappe.db.get_value("Billing Profile", team, ["country", "currency"], as_dict=True) or frappe._dict()
-	)
-	india = (profile.country or "").strip() == "India" or profile.currency == "INR"
-	if india:
-		return {"output_tax_type": "GST", "output_tax_rate": settings.default_gst_rate()}
-	return {"output_tax_type": "None", "output_tax_rate": 0}
 
 
 def apply_gst_category(team: str, category: str | None) -> None:
