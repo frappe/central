@@ -308,6 +308,8 @@ class TestTrialUpgradeBucket(UnitTestCase):
 				return_value=bundles_storage,
 			),
 			patch(f"{resource_action}.frappe.enqueue") as enqueue,
+			# The server is not in the database; its activity feed is tested elsewhere.
+			patch(f"{resource_action}.ActivityEvent.record_action"),
 		):
 			action.transition("Succeeded")
 

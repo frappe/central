@@ -395,7 +395,7 @@ A session starts read-only. A change needs these, in order:
 1. The agent asks the user to switch the session to read-write, and the user approves the `switch_to_read_write` call. The switch lasts one hour.
 2. The user approves each change call.
 
-A session that approves its own tool calls, such as a Trigger session, cannot switch. `central/investigator/access.py` refuses any change that terminates or destroys a resource, or that returns a login, a console, or a secret. The operator does these in Desk.
+A session whose approval mode is not Ask cannot switch: in Auto a model approves its tool calls, and in Auto-approve, as in a Trigger session, nobody does. `central/investigator/access.py` refuses any change that terminates or destroys a resource, or that returns a login, a console, or a secret. The operator does these in Desk.
 
 The agent can read any Pilot `GET` path except those in `PILOT_DENIED_READ_PATHS`, which return a credential, a login, or a backup file. Performance data (database, monitor, metrics, system, storage, and site monitoring) comes back exact, because a scrub changes numbers and query text. Other results are scrubbed. `run_database_query` runs one `SELECT`, `WITH`, `EXPLAIN`, `SHOW`, or `DESCRIBE` statement in a read-only transaction. A `SELECT` stops after 10 seconds. A read-only transaction does not stop DDL, so the tool refuses any other statement. `PILOT_DENIED_WRITE_PATHS` refuses code, credentials, setup, and SQL changes.
 
