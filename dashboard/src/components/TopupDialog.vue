@@ -107,6 +107,9 @@ const paypalEl = ref<HTMLElement | null>(null)
 // Set when the wallet is actually credited, so a Razorpay top-up that runs with
 // the dialog closed knows whether to reopen (customer backed out) or stay closed.
 let completed = false
+// True while the Razorpay sheet runs with our dialog closed. The dialog keeps the
+// amount and method, so a customer who comes back retries without starting over.
+let inSheet = false
 const {
 	begin,
 	mountCard,
@@ -148,10 +151,12 @@ async function submit(): Promise<void> {
 		value,
 		chosen,
 		() => {
+			inSheet = true
 			open.value = false
 		},
 		instrument.value ?? undefined,
 	)
+	inSheet = false
 	if (paypal)
 		return enterPhase(
 			paypalPhase,
@@ -170,7 +175,8 @@ async function submit(): Promise<void> {
 		)
 	// else: the Razorpay sheet ran with our dialog closed — reopen it unless the
 	// top-up went through (onDone already closed and flagged it).
-	if (!completed) open.value = true
+	if (completed) reset()
+	else open.value = true
 }
 
 // Switch to a second-phase view and mount its gateway widget into the fresh node.
@@ -194,28 +200,30 @@ async function enterPhase(
 	}
 }
 
-// Reset to the amount step whenever the dialog closes, tearing down any widget so
-// a reopen never shows a stale card field / buttons.
+// Reset to the amount step, tearing down any widget so a reopen never shows a
+// stale card field / buttons.
+function reset(): void {
+	destroy()
+	amount.value = undefined
+	instrument.value = null
+	fixed.value = false
+	payMethod.value = 'card'
+	cardPhase.value = false
+	cardLoading.value = false
+	paypalPhase.value = false
+	paypalLoading.value = false
+	dialogError.value = ''
+}
+
 watch(open, (isOpen) => {
-	if (isOpen) {
-		options.reload()
-		if (props.instrument) {
-			instrument.value = props.instrument
-			fixed.value = true
-		}
+	if (!isOpen) {
+		if (!inSheet) reset()
 		return
 	}
-	if (!isOpen) {
-		destroy()
-		amount.value = undefined
-		instrument.value = null
-		fixed.value = false
-		payMethod.value = 'card'
-		cardPhase.value = false
-		cardLoading.value = false
-		paypalPhase.value = false
-		paypalLoading.value = false
-		dialogError.value = ''
+	options.reload()
+	if (props.instrument) {
+		instrument.value = props.instrument
+		fixed.value = true
 	}
 })
 </script>
