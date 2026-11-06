@@ -1,6 +1,10 @@
 import { computed, onScopeDispose, type Ref, ref, watch } from 'vue'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { useFleetRows } from '@/composables/useFleetRows'
+import {
+	type FleetView,
+	fleetViewChoice,
+} from '@/composables/useFleetViewChoice'
 import { useRegions } from '@/composables/useRegions'
 import { useServerMapData } from '@/composables/useServerMapData'
 import { useSession } from '@/composables/useSession'
@@ -199,21 +203,14 @@ export function useServerFleet() {
 	)
 	watch(mapView, (view) => localStorage.setItem(MAP_VIEW_KEY, view))
 
-	const storedFleetView = localStorage.getItem(FLEET_VIEW_KEY)
-
-	const chosenFleetView = ref<FleetView | null>(
-		storedFleetView === 'map' || storedFleetView === 'list'
-			? storedFleetView
-			: null,
-	)
-
 	const fleetView = computed({
-		get: (): FleetView =>
-			chosenFleetView.value ?? (hasCrowdedRegion(rows.value) ? 'list' : 'map'),
-		set: (view: FleetView) => {
-			chosenFleetView.value = view
+		get: (): FleetView => {
+			if (fleetViewChoice.value !== 'auto') return fleetViewChoice.value
 
-			localStorage.setItem(FLEET_VIEW_KEY, view)
+			return hasCrowdedRegion(rows.value) ? 'list' : 'map'
+		},
+		set: (view: FleetView) => {
+			fleetViewChoice.value = view
 		},
 	})
 	const frame = computed(() =>
@@ -248,8 +245,6 @@ export function useServerFleet() {
 
 /** What the map frames: the regions the team uses, or every region. */
 type MapView = 'fleet' | 'world'
-type FleetView = 'map' | 'list'
-const FLEET_VIEW_KEY = 'central.console.serverFleetView'
 const MAP_VIEW_KEY = 'central.console.serverMapView'
 
 function toMapPoint(region: Region): { lat: number; lng: number } {
