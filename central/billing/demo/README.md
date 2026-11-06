@@ -171,7 +171,7 @@ showed the full amount.
 both categories:
 
 - **Billing** (via `notifications.notify`): Payment Success/Failure, Card Expiry, Credit Low,
-  Mandate Reauth, Pre-debit Notice — one representative event per team, matched to its scenario.
+  Pre-debit Notice — one representative event per team, matched to its scenario.
 - **Server**: Server Failed (a real Virtual Machine flipped to `Failed` fires the `on_update` hook), Resize Failed and Cluster Degraded (via `central.notification.engine.dispatch`, the same writer the real hooks call).
 - The `overdue` team already emits Invoice Overdue + Server Suspended through real dunning.
 

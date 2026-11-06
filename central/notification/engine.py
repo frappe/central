@@ -136,6 +136,7 @@ def get_event_type(event_type: str):
 			"severity",
 			"required_cap",
 			"direct_recipients",
+			"send_email",
 			"in_app_title",
 			"in_app_body",
 			"action_label",
@@ -213,6 +214,9 @@ def _render_template(template_str: str | None, ctx: dict) -> str | None:
 
 DEDUP_WINDOW_MINUTES = 60
 
+# These events go only to the recipients they name, so they are emailed at once and never digested.
+DIRECT_RECIPIENTS = ("Affected User", "Billing Contacts")
+
 
 def _is_duplicate(team, event_type, reference_name, server=None) -> bool:
 	"""True if the same event for the same reference was created in the dedup window.
@@ -277,23 +281,38 @@ def _fan_out_emails(
 def _email_recipients(team, event, *, server=None, affected_user=None) -> list[str]:
 	"""The users who get this event by email.
 
-	For ``direct_recipients = "Affected User"``, only *affected_user*, without a capability check.
-	Otherwise each active member with the event's capability. Either way, only users who want it now."""
-	from central.iam import can
+	1. An event with ``send_email`` off goes to nobody.
+	2. ``direct_recipients = "Affected User"``: only *affected_user*, without a capability check.
+	3. ``direct_recipients = "Billing Contacts"``: the team owner and the billing email.
+	4. Otherwise each active member with the event's capability.
+	Each of them only when they want it now."""
 	from central.notification.doctype.user_notification_preference.user_notification_preference import (
 		UserNotificationPreference,
 	)
 
-	if event.direct_recipients == "Affected User":
-		users = [affected_user] if affected_user else []
-	else:
-		users = [
-			user
-			for user in _get_active_members(team)
-			if not event.required_cap or can(user, team, event.required_cap, server=server)
-		]
+	if not event.send_email:
+		return []
+
+	users = _get_addressees(team, event, server=server, affected_user=affected_user)
 	preferences = UserNotificationPreference.load_for_users(team, users)
 	return [user for user in users if _is_emailed_instantly(preferences.get((user, event.category)), event)]
+
+
+def _get_addressees(team, event, *, server=None, affected_user=None) -> list[str]:
+	"""Who the event is addressed to, before each person's own preferences."""
+	from central.billing.doctype.billing_profile.billing_profile import get_billing_contacts
+	from central.iam import can
+
+	if event.direct_recipients == "Affected User":
+		return [affected_user] if affected_user else []
+	if event.direct_recipients == "Billing Contacts":
+		return get_billing_contacts(team)
+
+	return [
+		user
+		for user in _get_active_members(team)
+		if not event.required_cap or can(user, team, event.required_cap, server=server)
+	]
 
 
 def send_notification_emails(recipients: list[str], event_type: str, ctx: dict, message=None) -> None:
@@ -334,7 +353,7 @@ def publish_team_nudge(team: str) -> None:
 def _is_emailed_instantly(preference: dict | None, event: frappe._dict) -> bool:
 	"""No preference means yes. A digest event waits for the digest, which reads it from the feed.
 
-	The feed row is team-wide, so an Affected User event cannot wait for the digest."""
+	The digest goes to every member, so an event with direct recipients cannot wait for it."""
 	if preference is None or event.is_critical:
 		return True
 	if not preference["email_enabled"]:
@@ -344,7 +363,7 @@ def _is_emailed_instantly(preference: dict | None, event: frappe._dict) -> bool:
 	return (
 		preference["frequency"] == "Instant"
 		or not event.create_in_app
-		or event.direct_recipients == "Affected User"
+		or event.direct_recipients in DIRECT_RECIPIENTS
 	)
 
 

@@ -111,6 +111,7 @@ def schedule_predebit(invoice: str, now=None, gateway: str | None = None) -> dic
 		update_modified=False,
 	)
 
+	from central.billing.payments.payment_notices import get_charging_method_label
 	from central.billing.platform import notifications
 
 	notifications.notify(
@@ -118,7 +119,9 @@ def schedule_predebit(invoice: str, now=None, gateway: str | None = None) -> dic
 		"Pre-debit Notice",
 		context={
 			"invoice": invoice,
-			"amount": f"{frappe.utils.flt(inv.expected_collection)} {inv.currency or ''}".strip(),
+			"amount": frappe.utils.fmt_money(inv.expected_collection, currency=inv.currency),
+			# A fallback debits another rail than the team's first method, so it names none.
+			"method": None if gateway else get_charging_method_label(inv.team),
 			"charge_on": frappe.utils.format_datetime(charge_after),
 		},
 		reference_doctype="Invoice",

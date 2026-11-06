@@ -84,6 +84,18 @@ def get_team_currency(team: str) -> str:
 	return segment_currency or "INR"
 
 
+def get_billing_contacts(team: str) -> list[str]:
+	"""The emails that receive billing notifications: the team owner and the billing email.
+	The same address is listed once."""
+	owner = frappe.db.get_value("Team", team, "owner_user")
+	billing_email = frappe.db.get_value("Billing Profile", team, "email")
+	contacts = {}
+	for email in (owner, billing_email):
+		if email and email.strip():
+			contacts.setdefault(email.strip().lower(), email.strip())
+	return list(contacts.values())
+
+
 def get_payment_date(team: str, opened_on: date | str) -> date:
 	"""The date an invoice opened on `opened_on` is charged: the team's payment day in that
 	month, or `opened_on` itself when the run opened the invoice after that day."""

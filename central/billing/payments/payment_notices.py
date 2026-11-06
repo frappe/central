@@ -11,6 +11,9 @@ from central.billing.platform import notifications
 from central.billing.platform.jobs import each_isolated
 from central.notification import engine
 
+# A reminder is not sent when the Payment Scheduled notice went out within this many days.
+SCHEDULED_NOTICE_COVERS_DAYS = 3
+
 
 def notify_payment_scheduled(invoice) -> None:
 	"""Tell the team what an opened invoice charges, after credit, and when.
@@ -204,6 +207,8 @@ def send_payment_reminder(invoice: str, now: datetime) -> dict:
 	gateway = _get_charged_gateway(doc.team)
 	if gateway and emandate.is_notice_required(doc, gateway):
 		return {"invoice": invoice, "skipped": "predebit_notice"}
+	if _has_recent_scheduled_notice(invoice, now):
+		return {"invoice": invoice, "skipped": "recently_scheduled"}
 	if not _has_claimed_reminder(invoice, now):
 		return {"invoice": invoice, "skipped": "already_reminded"}
 
@@ -215,6 +220,23 @@ def send_payment_reminder(invoice: str, now: datetime) -> dict:
 		reference_name=invoice,
 	)
 	return {"invoice": invoice, "reminded": True}
+
+
+def _has_recent_scheduled_notice(invoice: str, now: datetime) -> bool:
+	"""Whether the Payment Scheduled notice went out a short time ago. It already names
+	the amount, the method and the date, so a reminder soon after it repeats it."""
+	since = frappe.utils.add_days(now, -SCHEDULED_NOTICE_COVERS_DAYS)
+	return bool(
+		frappe.db.exists(
+			"Billing Notification Log",
+			{
+				"reference_doctype": "Invoice",
+				"reference_name": invoice,
+				"event_type": "Payment Scheduled",
+				"creation": [">=", since],
+			},
+		)
+	)
 
 
 def _get_charged_gateway(team: str) -> str | None:
