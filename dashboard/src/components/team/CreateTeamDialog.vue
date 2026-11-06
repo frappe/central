@@ -28,7 +28,13 @@ const actions = computed(() => [
 
 <template>
 	<Dialog v-model="open" title="Create a team" size="sm" :actions="actions">
-		<Alert v-if="error" class="mb-4" theme="red" :title="error" />
+		<Alert
+			v-if="error"
+			class="mb-4"
+			theme="red"
+			title="Couldn't create the team"
+			:description="error"
+		/>
 		<div>
 			<label for="team-name" class="block text-xs text-ink-gray-5">
 				Team name

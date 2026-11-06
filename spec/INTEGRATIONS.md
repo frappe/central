@@ -395,7 +395,7 @@ A session starts read-only. A change needs these, in order:
 1. The agent asks the user to switch the session to read-write, and the user approves the `switch_to_read_write` call. The switch lasts one hour.
 2. The user approves each change call.
 
-A session that approves its own tool calls, such as a Trigger session, cannot switch. `central/investigator/access.py` refuses any change that terminates or destroys a resource, or that returns a login, a console, or a secret. The operator does these in Desk.
+A session whose approval mode is not Ask cannot switch: in Auto a model approves its tool calls, and in Auto-approve, as in a Trigger session, nobody does. `central/investigator/access.py` refuses any change that terminates or destroys a resource, or that returns a login, a console, or a secret. The operator does these in Desk.
 
 The agent can read any Pilot `GET` path except those in `PILOT_DENIED_READ_PATHS`, which return a credential, a login, or a backup file. Performance data (database, monitor, metrics, system, storage, and site monitoring) comes back exact, because a scrub changes numbers and query text. Other results are scrubbed. `run_database_query` runs one `SELECT`, `WITH`, `EXPLAIN`, `SHOW`, or `DESCRIBE` statement in a read-only transaction. A `SELECT` stops after 10 seconds. A read-only transaction does not stop DDL, so the tool refuses any other statement. `PILOT_DENIED_WRITE_PATHS` refuses code, credentials, setup, and SQL changes.
 
@@ -408,3 +408,11 @@ pilot --site <site> execute central.investigator.knowledge.load_knowledge_bases
 ## Validation
 
 Run the shared contract tests before deployment. Complete the live journeys in [Staging validation](STAGING_VALIDATION.md) against the actual staging revisions. Mocked responses do not prove VM startup, Pilot login, SSH access, or webhook delivery.
+
+## Rescue mode
+
+The server Settings tab and the operator's Desk Rescue mode action read the two nullable rescue fields directly from Atlas. Central does not persist a rescue selection. Unknown state is not disabled state. Use Refresh status after boot; a successful power action alone does not confirm the boot image.
+
+Changing the selection requires both `server:power` and `server:console` on the server, and the existing server-access restriction applies to trials. The selection takes effect at the next cold boot. Start or restart remains a separate action. Enabling rescue can wake a sleeping server. Repairs modify the original disk; take a snapshot first.
+
+CPU or memory resizing is refused before power changes while rescue is selected or active. Disk-only growth remains available unless the VM is in rescue with idle shutdown configured: Central cannot complete its required idle-setting update in that state, so it refuses before growing the disk. Leave rescue and boot normally before that resize.

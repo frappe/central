@@ -24,7 +24,12 @@ const hint = computed(() =>
 
 <template>
 	<div class="space-y-4">
-		<Alert v-if="error" theme="red" :title="error" />
+		<Alert
+			v-if="error"
+			theme="red"
+			title="Couldn't create the team"
+			:description="error"
+		/>
 		<div>
 			<TextInput
 				v-model="teamName"

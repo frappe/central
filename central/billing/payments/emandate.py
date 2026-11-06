@@ -14,15 +14,16 @@ invoice is two-phase:
   2. charge_due — once the window has elapsed, run the off-session debit through
      the normal charge path, which re-checks the ₹15,000 ceiling (charges #50/1).
 
-Both are idempotent and safe to re-run from the daily scheduler. The customer-side
-heads-up is sent here; the bank's own RBI pre-debit notification is dispatched by
-the gateway at debit time (an adapter concern, kept out of this orchestration).
+Both are idempotent and safe to re-run from the hourly sweep and the daily backstop.
+The customer-side heads-up is sent here; the bank's own RBI pre-debit notification is
+dispatched by the gateway at debit time (an adapter concern, kept out of this orchestration).
 """
 
 from datetime import datetime
 from enum import StrEnum
 
 import frappe
+from frappe.query_builder.functions import Max
 
 from central.billing.doctype.invoice.invoice import is_owed, owed_filters
 from central.billing.payments import collection, collection_mode
@@ -39,7 +40,7 @@ class Predebit(StrEnum):
 	ROTATE = "rotate"
 
 
-def _is_notice_required(inv, gateway: str | None) -> bool:
+def is_notice_required(inv, gateway: str | None) -> bool:
 	"""Whether the rail about to debit owes a notice: `gateway` when the caller names it,
 	otherwise the team's own rail.
 
@@ -56,20 +57,20 @@ def await_predebit(invoice: str, gateway: str, now: datetime | str | None = None
 	"""What `gateway` may do with this invoice now under the pre-debit notice rule.
 
 	1. CHARGE_NOW: the rail owes no notice, or the notice window has passed.
-	2. WAIT: the notice is sent, now or before, and its window is still open. The
-	   notice outcome comes with it.
+	2. WAIT: the notice is sent, now or before, and its window is still open, or it is too
+	   early to send it. The notice outcome comes with it.
 	3. ROTATE: this rail cannot debit this invoice now (the mode holds debits back, or over the
 	   silent ceiling), so the next method is tried instead of a window that never opens.
 	"""
 	inv = frappe.get_doc("Invoice", invoice)
 	charge_after = inv.predebit_charge_after
 	now_dt = frappe.utils.get_datetime(now) if now else frappe.utils.now_datetime()
-	if not _is_notice_required(inv, gateway) or (
+	if not is_notice_required(inv, gateway) or (
 		charge_after and now_dt >= frappe.utils.get_datetime(charge_after)
 	):
 		return Predebit.CHARGE_NOW, {}
 	notice = schedule_predebit(invoice, now=now_dt, gateway=gateway)
-	if notice.get("notified") or notice.get("skipped") == "already_notified":
+	if notice.get("notified") or notice.get("skipped") in ("already_notified", "before_payment_date"):
 		return Predebit.WAIT, notice
 	return Predebit.ROTATE, notice
 
@@ -82,18 +83,14 @@ def schedule_predebit(invoice: str, now=None, gateway: str | None = None) -> dic
 	`gateway` is the rail about to debit, when the caller knows it (a fallback onto a
 	second rail); otherwise the team's own rail decides."""
 	inv = frappe.get_doc("Invoice", invoice)
-	if not collection_mode.is_debit_allowed(inv.team):
-		return {"invoice": invoice, "skipped": "debit_not_allowed"}
-	if not _is_notice_required(inv, gateway):
-		# A rail that debits without a notice is collected by the ordinary sweep. Arming
-		# a 24h window here would delay every international charge for nothing.
-		return {"invoice": invoice, "skipped": "no_notice_required"}
-	if inv.invoice_type != "Billable" or not is_owed(inv):
-		return {"invoice": invoice, "skipped": "not_collectable"}
-	if frappe.utils.flt(inv.expected_collection) <= 0:
-		return {"invoice": invoice, "skipped": "nothing_due"}
-	if inv.predebit_notified_at:
-		return {"invoice": invoice, "skipped": "already_notified"}
+	if skipped := _get_notice_skip_reason(inv, gateway):
+		return {"invoice": invoice, "skipped": skipped}
+
+	# The notice goes out no earlier than a day ahead, and the debit waits 24 hours after it.
+	now_dt = frappe.utils.get_datetime(now) if now else frappe.utils.now_datetime()
+	payment_starts_at = collection.payment_starts_at(inv)
+	if now_dt < frappe.utils.add_to_date(payment_starts_at, hours=-PREDEBIT_NOTICE_HOURS):
+		return {"invoice": invoice, "skipped": "before_payment_date"}
 
 	# A bill over the silent ceiling can't be debited off-session — fork to the
 	# customer's choice (manual checkout / prepaid) instead of notifying a debit
@@ -106,8 +103,7 @@ def schedule_predebit(invoice: str, now=None, gateway: str | None = None) -> dic
 	if st["action_required"]:
 		return {"invoice": invoice, "skipped": "over_threshold", "action_required": True}
 
-	now_dt = frappe.utils.get_datetime(now) if now else frappe.utils.now_datetime()
-	charge_after = frappe.utils.add_to_date(now_dt, hours=PREDEBIT_NOTICE_HOURS)
+	charge_after = max(frappe.utils.add_to_date(now_dt, hours=PREDEBIT_NOTICE_HOURS), payment_starts_at)
 	frappe.db.set_value(
 		"Invoice",
 		invoice,
@@ -131,9 +127,29 @@ def schedule_predebit(invoice: str, now=None, gateway: str | None = None) -> dic
 	return {"invoice": invoice, "notified": True, "charge_after": str(charge_after)}
 
 
+def _get_notice_skip_reason(inv, gateway: str | None) -> str | None:
+	"""Why this invoice gets no pre-debit notice, or None when it may get one."""
+	if not collection_mode.is_debit_allowed(inv.team):
+		return "debit_not_allowed"
+	if not is_notice_required(inv, gateway):
+		# A rail that debits without a notice is collected by the ordinary sweep. Arming
+		# a 24h window here would delay every international charge for nothing.
+		return "no_notice_required"
+	if inv.invoice_type != "Billable" or not is_owed(inv):
+		return "not_collectable"
+	if frappe.utils.flt(inv.expected_collection) <= 0:
+		return "nothing_due"
+	if inv.predebit_notified_at:
+		return "already_notified"
+	return None
+
+
 def charge_due(now=None) -> list[dict]:
-	"""Off-session debit every e-mandate invoice whose pre-debit window has elapsed.
-	The charge path re-checks the ₹15,000 ceiling (#50 item 1)."""
+	"""Make the first off-session debit of every e-mandate invoice whose pre-debit window has
+	elapsed. The charge path re-checks the ₹15,000 ceiling (#50 item 1).
+
+	An invoice already debited in its window is left to dunning, which retries it. Debiting it
+	again on every sweep would also repeat the ask for another method each hour."""
 	now_dt = frappe.utils.get_datetime(now) if now else frappe.utils.now_datetime()
 	due = frappe.get_all(
 		"Invoice",
@@ -144,9 +160,10 @@ def charge_due(now=None) -> list[dict]:
 			["predebit_charge_after", "is", "set"],
 			["predebit_charge_after", "<=", now_dt],
 		],
-		fields=["name", "team"],
+		fields=["name", "team", "predebit_charge_after"],
 	)
-	auto = [inv.name for inv in due if collection_mode.is_debit_allowed(inv.team)]
+	debited = _get_debited_in_window(due)
+	auto = [inv.name for inv in due if inv.name not in debited and collection_mode.is_debit_allowed(inv.team)]
 	return each_isolated(
 		"E-mandate debit",
 		"Invoice",
@@ -155,9 +172,30 @@ def charge_due(now=None) -> list[dict]:
 	)
 
 
+def _get_debited_in_window(invoices: list) -> set[str]:
+	"""The invoices with a payment attempt made at or after their pre-debit charge time."""
+	if not invoices:
+		return set()
+
+	attempt = frappe.qb.DocType("Payment Attempt")
+	latest = dict(
+		frappe.qb.from_(attempt)
+		.select(attempt.invoice, Max(attempt.creation))
+		.where(attempt.invoice.isin([inv.name for inv in invoices]))
+		.groupby(attempt.invoice)
+		.run()
+	)
+	return {
+		inv.name
+		for inv in invoices
+		if inv.name in latest and latest[inv.name] >= frappe.utils.get_datetime(inv.predebit_charge_after)
+	}
+
+
 def run_emandate_cycle(now=None) -> dict:
-	"""Daily scheduler: arm the pre-debit notice on new e-mandate invoices, then
-	debit the ones whose window has elapsed."""
+	"""Daily backstop: arm the pre-debit notice on new e-mandate invoices, then debit the
+	ones whose window has elapsed. The hourly `collection.collect_on_payment_date` does
+	both as soon as it can."""
 	pending = frappe.get_all(
 		"Invoice",
 		filters=[

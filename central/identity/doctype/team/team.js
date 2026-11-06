@@ -36,6 +36,7 @@ frappe.ui.form.on("Team", {
 
 		if (frappe.user.has_role("System Manager")) {
 			frm.add_custom_button(__("Grant Credit"), () => grant_credit(frm), actions);
+			frm.add_custom_button(__("Adjust Credit"), () => adjust_credit(frm), actions);
 			frm.add_custom_button(__("Impersonate Team Owner"), () => impersonate_team_owner(frm), actions);
 			if (frm.doc.status === "Active") {
 				frm.add_custom_button(__("Suspend Team"), () => suspend_team(frm), actions);
@@ -181,6 +182,72 @@ function grant_credit(frm) {
 							frappe.show_alert({ message: __("Credit granted"), indicator: "green" });
 						}),
 			);
+		},
+	});
+	dialog.show();
+}
+
+async function adjust_credit(frm) {
+	const { message } = await frappe.db.get_value("Billing Profile", frm.doc.name, "currency");
+	const currency = message?.currency;
+	if (!currency) {
+		frappe.msgprint(__("This team has no billing currency yet. Ask the customer to complete the billing details."));
+		return;
+	}
+	const money = (amount) => format_currency(amount, currency);
+	const dialog = new frappe.ui.Dialog({
+		title: __("Adjust Credit"),
+		fields: [
+			{
+				fieldname: "entry_type",
+				fieldtype: "Select",
+				label: __("Type"),
+				options: ["Credit", "Debit"],
+				default: "Credit",
+				reqd: 1,
+				description: __("Credit adds to the wallet. Debit takes from it."),
+			},
+			{
+				fieldname: "amount",
+				fieldtype: "Float",
+				label: __("Amount ({0})", [currency]),
+				reqd: 1,
+				description: __("Credit added here does not expire."),
+			},
+			{
+				fieldname: "note",
+				fieldtype: "Small Text",
+				label: __("Reason"),
+				reqd: 1,
+				description: __("Recorded on the ledger entry, for example the ticket number."),
+			},
+		],
+		primary_action_label: __("Adjust"),
+		primary_action(values) {
+			if (values.amount <= 0) {
+				frappe.msgprint(__("Enter an amount greater than zero."));
+				return;
+			}
+			const question =
+				values.entry_type === "Credit"
+					? __("Add {0} to the wallet of {1}?", [money(values.amount), frm.doc.team_name])
+					: __("Take {0} from the wallet of {1}?", [money(values.amount), frm.doc.team_name]);
+			frappe.confirm(question, async () => {
+				const response = await frappe.call({
+					method: "central.billing.api.admin.teams.adjust_team_credits",
+					args: { team: frm.doc.name, currency, ...values },
+					freeze: true,
+				});
+				dialog.hide();
+				frappe.show_alert(
+					{
+						message: __("Wallet balance is now {0}", [money(response.message.new_balance)]),
+						indicator: "green",
+					},
+					7,
+				);
+				frm.reload_doc();
+			});
 		},
 	});
 	dialog.show();

@@ -127,7 +127,12 @@ async function submit(): Promise<void> {
 					>
 				</template>
 			</Alert>
-			<Alert v-if="error" theme="red" :title="error" />
+			<Alert
+				v-if="error"
+				theme="red"
+				title="Couldn't add the device"
+				:description="error"
+			/>
 			<div v-if="error && generatedKey" class="flex flex-col gap-2">
 				<p class="text-p-sm-medium text-ink-gray-8">Save your private key</p>
 				<p class="text-p-sm text-ink-gray-6">

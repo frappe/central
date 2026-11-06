@@ -31,3 +31,17 @@ class TaxProfile(Document):
 				_("A zero-rated tax profile needs a compliance reason (sez_lut / export)."),
 				frappe.ValidationError,
 			)
+		self.validate_indian_team_pays_gst()
+
+	def validate_indian_team_pays_gst(self):
+		"""GST is mandatory in India. Only a zero-rated profile, which states its reason, has no GST."""
+		from central.billing.revenue.tax import is_indian_team
+
+		if self.output_tax_type == "GST" or self.zero_rated or not is_indian_team(self.team):
+			return
+		frappe.throw(
+			_(
+				"An Indian team must pay GST. Set the tax type to GST, or zero-rate the profile with a reason."
+			),
+			frappe.ValidationError,
+		)

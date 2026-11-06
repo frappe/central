@@ -4,7 +4,7 @@
 
 The cheap half of the cohort question, and the operationally urgent one. Answering it
 needs **no rating at all**: every input is already a fact — invoices that are Open or
-Overdue, their real `dunning_starts_on`, and the live ladder. It is `dunning_schedule`
+Overdue, their real ladder dates (`dunning_starts_on`, `suspends_on`), and the live ladder. It is `dunning_schedule`
 applied to rows that exist.
 
 That makes its cost scale with **delinquency rather than with the book**. Most teams
@@ -19,7 +19,13 @@ arithmetic over one.
 import frappe
 
 from central.billing.doctype.invoice.invoice import owed_filters
-from central.billing.revenue.dunning import dunning_clock_start, dunning_policy, dunning_schedule
+from central.billing.revenue.dunning import (
+	LADDER_FIELDS,
+	dunning_policy,
+	dunning_schedule,
+	get_ladder_dates,
+	get_ladder_dates_by_invoice,
+)
 
 # Modes in which nothing is charged off-session — dunning escalates without retrying, so
 # a row for one of these teams is asking a human to act rather than waiting on a gateway.
@@ -40,11 +46,8 @@ def unpaid_invoices(filters: dict | None = None) -> list[frappe._dict]:
 		filters=conditions,
 		fields=[
 			"name",
-			"team",
 			"currency",
-			"status",
-			"due_date",
-			"dunning_starts_on",
+			*LADDER_FIELDS,
 			"expected_collection",
 		],
 		order_by="due_date asc",
@@ -64,13 +67,11 @@ def rows(on=None, horizon_days: int | None = None, filters: dict | None = None) 
 	horizon = frappe.utils.add_days(on, horizon_days) if horizon_days else None
 
 	out = []
-	for invoice in unpaid_invoices(filters):
-		if not invoice.due_date:
-			# No due date means no clock; it is a data problem, not a delinquency.
-			continue
-
-		clock_start = dunning_clock_start(invoice)
-		schedule = dunning_schedule(clock_start, policy)
+	invoices = unpaid_invoices(filters)
+	ladders = get_ladder_dates_by_invoice(invoices)
+	for invoice in invoices:
+		dates = ladders[invoice.name]
+		schedule = dunning_schedule(dates, policy)
 		reached = [s for s in schedule if frappe.utils.getdate(s.date) <= on]
 		ahead = [s for s in schedule if frappe.utils.getdate(s.date) > on]
 		next_stage = ahead[0] if ahead else None
@@ -89,11 +90,11 @@ def rows(on=None, horizon_days: int | None = None, filters: dict | None = None) 
 				"status": invoice.status,
 				"outstanding": invoice.expected_collection,
 				"due_date": str(invoice.due_date),
-				"clock_starts_on": str(clock_start),
+				"clock_starts_on": str(dates.anchor),
 				# A deferred clock means *we* failed to collect on time. Saying so keeps
 				# the row from reading as the customer's delinquency.
-				"clock_deferred": bool(invoice.dunning_starts_on),
-				"days_in": (on - frappe.utils.getdate(clock_start)).days,
+				"clock_deferred": dates.is_deferred,
+				"days_in": (on - dates.anchor).days,
 				"stage": reached[-1].stage if reached else "Not yet due",
 				"next_action": next_stage.stage if next_stage else None,
 				"next_action_on": str(next_stage.date) if next_stage else None,
@@ -117,22 +118,22 @@ def why(invoice: str, on=None) -> dict:
 	"""
 	doc = frappe.get_doc("Invoice", invoice)
 	on = frappe.utils.getdate(on or frappe.utils.nowdate())
-	clock_start = dunning_clock_start(doc)
-	schedule = dunning_schedule(clock_start, dunning_policy())
+	dates = get_ladder_dates(doc)
+	schedule = dunning_schedule(dates, dunning_policy())
 
 	return {
 		"invoice": invoice,
 		"team": doc.team,
 		"due_date": str(doc.due_date),
-		"clock_starts_on": str(clock_start),
-		"clock_deferred": bool(doc.dunning_starts_on),
+		"clock_starts_on": str(dates.anchor),
+		"clock_deferred": dates.is_deferred,
 		"deferred_note": (
 			"Collection failed on our side, so the escalation clock was pushed forward. "
 			"The due date is unchanged — what was owed and when is an accounting fact."
-			if doc.dunning_starts_on
+			if dates.is_deferred
 			else None
 		),
-		"days_in": (on - frappe.utils.getdate(clock_start)).days,
+		"days_in": (on - dates.anchor).days,
 		"ladder": [
 			{
 				"date": str(s.date),

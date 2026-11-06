@@ -4,7 +4,7 @@ import frappe
 from frappe.tests import IntegrationTestCase
 
 from central.api.activity import server_activity
-from central.api.servers import set_termination_protection
+from central.api.servers import get_rescue_state, set_rescue_mode, set_termination_protection
 from central.api.ssh_keys import set_server_ssh_keys
 from central.errors import AtlasConnectionError, AtlasRejected
 from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
@@ -144,3 +144,87 @@ class TestServerAccess(IntegrationTestCase):
 
 		enqueue.assert_not_called()
 		self.assertFalse(frappe.db.exists("Resource Action", {"server": self.server.name}))
+
+	def test_rescue_selection_does_not_restart_or_write_observed_state(self):
+		frappe.set_user(self.developer)
+		set_rescue_mode(enabled=True, team=self.team, resource_id=self.server.name)
+		self.server_client.set_rescue_mode.assert_called_once_with("vm-access", True)
+		self.server_client.vm_action.assert_not_called()
+		self.server_client.get_vm.assert_not_called()
+		self.assertEqual(self.server.reload().status, "Running")
+
+	def test_rescue_read_preserves_unknown_mode(self):
+		self.server_client.tenant_id = 42
+		self.server_client.get_vm.return_value = {
+			"id": "vm-access",
+			"tenant_id": 42,
+			"is_rescue_mode_enabled": True,
+			"is_in_rescue_mode": None,
+		}
+		frappe.set_user(self.viewer)
+		self.assertEqual(
+			get_rescue_state(team=self.team, resource_id=self.server.name),
+			{
+				"is_rescue_mode_enabled": True,
+				"is_in_rescue_mode": None,
+			},
+		)
+
+	def test_rescue_selection_requires_both_capabilities(self):
+		for missing in ("server:power", "server:console"):
+			with (
+				self.subTest(missing=missing),
+				patch(
+					"central.infrastructure.doctype.virtual_machine.virtual_machine.can",
+					side_effect=lambda user, team, capability, **kwargs: capability != missing,
+				),
+				self.assertRaises(frappe.PermissionError),
+			):
+				self.server.set_rescue_mode(True)
+		self.server_client.set_rescue_mode.assert_not_called()
+
+	def test_rescue_read_rejects_another_tenant_and_malformed_state(self):
+		from central.integrations.servers import get_rescue_state as read
+
+		self.server_client.tenant_id = 42
+		for changes in ({"tenant_id": 43}, {"id": "another-vm"}, {"is_in_rescue_mode": "false"}):
+			self.server_client.get_vm.return_value = {
+				"id": "vm-access",
+				"tenant_id": 42,
+				"is_rescue_mode_enabled": False,
+				"is_in_rescue_mode": False,
+				**changes,
+			}
+			with self.subTest(changes=changes), self.assertRaises(AtlasConnectionError):
+				read(self.server)
+
+	def test_rescue_rejects_cross_team_and_viewer_mutations(self):
+		frappe.set_user(self.developer)
+		with self.assertRaises(frappe.PermissionError):
+			set_rescue_mode(enabled=True, team=self.other_team, resource_id=self.server.name)
+		frappe.set_user(self.viewer)
+		with self.assertRaises(frappe.PermissionError):
+			set_rescue_mode(enabled=True, team=self.team, resource_id=self.server.name)
+		self.server_client.set_rescue_mode.assert_not_called()
+
+	def test_rescue_uncertain_reply_does_not_retry(self):
+		from central.errors import AtlasRequestUncertain, ResourceActionError
+
+		self.server_client.set_rescue_mode.side_effect = AtlasRequestUncertain("lost reply")
+		with self.assertRaises(ResourceActionError) as caught:
+			self.server.set_rescue_mode(True)
+		self.assertEqual(caught.exception.envelope["code"], "OUTCOME_UNKNOWN")
+		self.assertIn("Refresh rescue status", caught.exception.envelope["remediation"])
+		self.server_client.set_rescue_mode.assert_called_once_with("vm-access", True)
+
+	def test_rescue_selection_requires_an_explicit_boolean(self):
+		for enabled in (None, "false", 2):
+			with self.subTest(enabled=enabled), self.assertRaises(frappe.ValidationError):
+				self.server.set_rescue_mode(enabled)
+		self.server_client.set_rescue_mode.assert_not_called()
+
+	def test_rescue_selection_rejects_terminated_servers(self):
+		self.server.status = "Terminated"
+		with self.assertRaises(frappe.ValidationError):
+			self.server.set_rescue_mode(True)
+		self.server_client.set_rescue_mode.assert_not_called()

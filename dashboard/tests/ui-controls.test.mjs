@@ -204,7 +204,9 @@ test('permission loading, empty, retry, and saving states stay inside the role d
 	assert.match(control.text(), /No permissions are available/)
 	state.capabilitiesError.value = 'Could not load permissions.'
 	await nextTick()
-	assert.equal(control.find('Alert').props.title, 'Could not load permissions.')
+	const alert = control.find('Alert').props
+	assert.equal(alert.title, "Couldn't load the permissions")
+	assert.equal(alert.description, 'Could not load permissions.')
 	control.find('Button', (props) => props.label === 'Retry').props.onClick()
 	await nextTick()
 	assert.equal(retries, 1)

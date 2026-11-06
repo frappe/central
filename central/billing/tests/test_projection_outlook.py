@@ -5,6 +5,7 @@
 import frappe
 
 from central.billing.projection import behaviour, outlook
+from central.billing.revenue.dunning import get_suspension_date_after
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import billing_settings, ensure_team
 
@@ -46,7 +47,9 @@ class OutlookTestBase(IntegrationTestCase):
 					"total": amount,
 					"expected_collection": amount,
 					"due_date": due,
+					"payment_date": due,
 					"dunning_starts_on": dunning_starts_on,
+					"suspends_on": due and get_suspension_date_after(due, due),
 				}
 			)
 			.insert(ignore_permissions=True)
@@ -57,8 +60,21 @@ class OutlookTestBase(IntegrationTestCase):
 
 
 class TestTheSweep(OutlookTestBase):
+	def _failed_attempt(self, invoice: str, at: str) -> None:
+		attempt = frappe.get_doc(
+			{
+				"doctype": "Payment Attempt",
+				"invoice": invoice,
+				"team": TEAM,
+				"amount": 5000,
+				"currency": "INR",
+				"status": "Failed",
+			}
+		).insert(ignore_permissions=True)
+		frappe.db.set_value("Payment Attempt", attempt.name, "creation", at, update_modified=False)
+
 	def test_an_unpaid_invoice_gets_a_dated_ladder(self):
-		with billing_settings(dunning_retry_days="1, 3, 7", suspend_after_days=14, terminate_after_days=44):
+		with billing_settings(dunning_retry_interval_days=2, suspension_day=15, terminate_after_days=10):
 			self._invoice("2026-09-01")
 			rows = outlook.rows(on=TODAY, filters={"team": TEAM})
 
@@ -66,7 +82,7 @@ class TestTheSweep(OutlookTestBase):
 		row = rows[0]
 		self.assertEqual(row["days_in"], 9)
 		self.assertEqual(row["suspends_on"], "2026-09-15")
-		self.assertEqual(row["terminates_on"], "2026-10-15")
+		self.assertEqual(row["terminates_on"], "2026-09-25")
 
 	def test_a_paid_invoice_is_not_in_the_sweep(self):
 		self._invoice("2026-09-01", status="Paid")
@@ -87,11 +103,24 @@ class TestTheSweep(OutlookTestBase):
 		self.assertLessEqual(rows[0]["suspends_on"], rows[1]["suspends_on"])
 
 	def test_a_horizon_keeps_only_what_is_about_to_happen(self):
-		with billing_settings(dunning_retry_days="1, 3, 7", suspend_after_days=14, terminate_after_days=44):
+		with billing_settings(dunning_retry_interval_days=2, suspension_day=15, terminate_after_days=10):
 			self._invoice("2026-09-09")  # next action is days away
 			near = outlook.rows(on=TODAY, horizon_days=3, filters={"team": TEAM})
 			far = outlook.rows(on=TODAY, horizon_days=60, filters={"team": TEAM})
 		self.assertLessEqual(len(near), len(far))
+
+	def test_the_single_retry_is_dated_from_the_failed_charge(self):
+		# Payment day 8: no interval retry fits, so the one retry is 24 hours after the failure.
+		# The sweep and the drill must show the time the hourly run will use.
+		with billing_settings(dunning_retry_interval_days=2, suspension_day=15):
+			name = self._invoice("2026-09-08")
+			self._failed_attempt(name, at="2026-09-09 05:00:00")
+			row = outlook.rows(on="2026-09-09", filters={"team": TEAM})[0]
+			drill = outlook.why(name, on="2026-09-09")
+
+		self.assertEqual((row["next_action"], row["next_action_on"]), ("Retry", "2026-09-10"))
+		retry = next(stage for stage in drill["ladder"] if stage["stage"] == "Retry")
+		self.assertEqual(retry["date"], "2026-09-10")
 
 	def test_an_invoice_with_no_due_date_is_skipped_rather_than_guessed_at(self):
 		self._invoice(None)
@@ -115,7 +144,7 @@ class TestOurDelayIsMarkedAsOurs(OutlookTestBase):
 		self.assertIn("due date is unchanged", out["deferred_note"])
 
 	def test_the_drill_shows_which_rungs_have_been_reached(self):
-		with billing_settings(dunning_retry_days="1, 3, 7", suspend_after_days=14):
+		with billing_settings(dunning_retry_interval_days=2, suspension_day=15):
 			name = self._invoice("2026-09-01")
 			out = outlook.why(name, on=TODAY)
 		reached = [s for s in out["ladder"] if s["reached"]]

@@ -73,7 +73,9 @@ def registry(team: str | None = None) -> dict:
 	pending = ResourceAction.pending_labels(team)
 	audiences = _pilot_audiences(team)
 	locked = get_locked_servers(team)
+	plan_titles = _plan_titles({server["plan"] for server in servers if server["plan"]})
 	for server in servers:
+		server["plan_title"] = plan_titles.get(server["plan"])
 		server["pending_action"] = pending.get(server["resource_id"])
 		server["pilot_audience"] = audiences.get(server["name"])
 		server["capabilities"] = get_server_capabilities(frappe.session.user, team, server["name"])
@@ -94,6 +96,13 @@ def registry(team: str | None = None) -> dict:
 	)
 
 	return {"team": team, "servers": servers, "sites": _sites(rows, servers, pending), "creations": creations}
+
+
+def _plan_titles(plans: set[str]) -> dict[str, str]:
+	"""Each plan's title in one read. Plan titles are catalog data, the same for every team."""
+	if not plans:
+		return {}
+	return dict(frappe.db.get_values("Plan", {"name": ["in", list(plans)]}, ["name", "title"]))
 
 
 def _pilot_audiences(team: str) -> dict[str, str]:
@@ -839,3 +848,24 @@ def retry_action(name: str) -> dict:
 	from central.resource_actions import retry
 
 	return retry(name)
+
+
+@frappe.whitelist(methods=["GET"])
+@handle_resource_operation
+@require_capability("server:view", _lt("You cannot view this server."), server="resource_id")
+def get_rescue_state(team: str | None = None, resource_id: str | None = None) -> dict:
+	"""Read the region's boot selection and last boot mode for this server."""
+	from central.integrations.servers import get_rescue_state
+
+	server = frappe.get_doc("Virtual Machine", VirtualMachine.get_team_server_name(team, resource_id))
+	server.require_live()
+	return get_rescue_state(server)
+
+
+@frappe.whitelist(methods=["POST"])
+@handle_resource_operation
+@require_capability("server:power", _lt("You cannot change this server's boot mode."), server="resource_id")
+def set_rescue_mode(enabled: bool, team: str | None = None, resource_id: str | None = None) -> None:
+	"""Select the next boot mode without starting or restarting the server."""
+	server = frappe.get_doc("Virtual Machine", VirtualMachine.get_team_server_name(team, resource_id))
+	server.set_rescue_mode(enabled)

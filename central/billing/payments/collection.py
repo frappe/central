@@ -25,6 +25,7 @@ event-driven, not a synchronous try/except cascade:
 from datetime import datetime
 
 import frappe
+from frappe import _
 
 from central.billing.payments import charges, decline
 
@@ -37,6 +38,32 @@ def ordered_methods(team: str) -> list:
 		filters={"team": team, "status": "Active", "reauth_required": 0},
 		order_by="priority asc, creation asc",
 		fields=["name", "gateway", "priority"],
+	)
+
+
+def get_teams_with_retry_rail(teams: set[str]) -> set[str]:
+	"""The teams dunning can charge off-session before any attempt: the collection mode allows a
+	debit (`collection_mode.is_debit_allowed`) and a chargeable method is on file (`ordered_methods`).
+	Two queries for any number of teams."""
+	from central.billing.payments import collection_mode
+
+	if not teams:
+		return set()
+	held = frappe.get_all(
+		"Billing Profile",
+		filters={"name": ["in", list(teams)], "collection_mode": ["in", collection_mode.DEBIT_HELD_MODES]},
+		pluck="name",
+	)
+	allowed = teams.difference(held)
+	if not allowed:
+		return set()
+	return set(
+		frappe.get_all(
+			"Payment Method",
+			filters={"team": ["in", list(allowed)], "status": "Active", "reauth_required": 0},
+			pluck="team",
+			distinct=True,
+		)
 	)
 
 
@@ -119,6 +146,84 @@ def collect_invoice(invoice: str, new_round: bool = False, now: datetime | str |
 			return outcome
 
 
+def collect_on_payment_date(now: datetime | str | None = None) -> list[dict]:
+	"""Hourly: charge on the payment date, and remind the day before.
+
+	1. Make the first debit on each pre-debit rail whose window has opened (`emandate.charge_due`).
+	2. Start collection on each invoice that has reached its payment date, or will reach
+	   it tomorrow, and has no payment attempt. A rail that owes a pre-debit notice sends
+	   it a day early. An invoice that missed its payment date is still picked up.
+	3. Retry each invoice whose ladder has the single retry, 24 hours after its first charge
+	   failed (`dunning.run_single_retries`).
+	4. Remind each team whose invoice is charged tomorrow (`payment_notices`).
+
+	Step 1 runs first. An invoice it charged has an attempt, so step 2 skips it.
+	"""
+	from central.billing.payments import emandate, payment_notices
+	from central.billing.revenue import dunning
+
+	now_dt = frappe.utils.get_datetime(now) if now else frappe.utils.now_datetime()
+	debited = emandate.charge_due(now=now_dt)
+	collected = _collect_first_charges(now_dt)
+	retried = dunning.run_single_retries(now_dt)
+	reminded = payment_notices.send_payment_reminders(now_dt)
+	return [*debited, *collected, *retried, *reminded]
+
+
+def _collect_first_charges(now_dt: datetime) -> list[dict]:
+	"""Start collection on every owed invoice whose payment date is tomorrow or earlier and
+	that has no payment attempt yet."""
+	from central.billing.doctype.invoice.invoice import owed_filters
+	from central.billing.platform.jobs import each_isolated
+
+	waiting = frappe.get_all(
+		"Invoice",
+		filters=[
+			*owed_filters(),
+			["invoice_type", "=", "Billable"],
+			["expected_collection", ">", 0],
+			["payment_date", "<=", frappe.utils.add_days(now_dt.date(), 1)],
+		],
+		pluck="name",
+	)
+	tried = set(
+		frappe.get_all("Payment Attempt", filters={"invoice": ["in", waiting]}, pluck="invoice")
+		if waiting
+		else []
+	)
+	return each_isolated(
+		"Collect on payment date",
+		"Invoice",
+		[name for name in waiting if name not in tried],
+		lambda name: {"invoice": name, **collect_invoice(name, now=now_dt)},
+	)
+
+
+def payment_starts_at(inv) -> datetime:
+	"""The first moment the invoice may be debited: the start of its payment date."""
+	# Every opened invoice gets a payment date, so a missing one is corrupt data. It must
+	# not read as today and let the card be charged early.
+	if not inv.get("payment_date"):
+		frappe.throw(
+			_("Invoice {0} is open but has no payment date.").format(inv.name), frappe.ValidationError
+		)
+	return frappe.utils.get_datetime(inv.payment_date)
+
+
+def _is_before_payment_date(inv, gateway: str, now: datetime | str | None = None) -> bool:
+	"""Whether a debit on `gateway` must still wait for the invoice's payment date.
+
+	1. On or after the payment date, no rail waits.
+	2. Before it, a rail that owes a pre-debit notice goes on, so the notice goes out no
+	   earlier than 24 hours before. Its debit window never opens before the payment date.
+	3. Before it, every other rail waits.
+	"""
+	from central.billing.payments import emandate
+
+	now_dt = frappe.utils.get_datetime(now) if now else frappe.utils.now_datetime()
+	return now_dt < payment_starts_at(inv) and not emandate.is_notice_required(inv, gateway)
+
+
 def _charge_next_method(
 	inv, earlier: set | None, skipped: set, now: datetime | str | None = None
 ) -> dict | None:
@@ -137,6 +242,9 @@ def _charge_next_method(
 		# notification instead (ADR 0022 §5, ADR 0023).
 		_ask_for_another_method(inv)
 		return {"collected": False, "reason": "no_method"}
+
+	if _is_before_payment_date(inv, method.gateway, now):
+		return {"collected": False, "reason": "before_payment_date"}
 
 	# Every off-session debit on a rail that owes a pre-debit notice waits for it, whichever
 	# path asked for it: the billing run, a dunning retry or a webhook.

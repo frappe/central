@@ -246,7 +246,8 @@ watch(open, (isOpen) => {
 				v-if="paymentError"
 				class="mb-4"
 				theme="red"
-				:title="paymentError"
+				title="Couldn't add the payment method"
+				:description="paymentError"
 			/>
 			<LoadingText v-if="options.loading && !options.data" :lines="3" />
 

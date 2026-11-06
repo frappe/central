@@ -59,10 +59,14 @@ const gst = computed(
 )
 const payable = computed(() => Number(amount.value || 0) + gst.value)
 const instrument = ref<string | null>(null)
-// Start on the first instrument, so the form never opens with nothing chosen.
-watch(instruments, (list) => {
-	if (!instrument.value && list.length) instrument.value = list[0].instrument
-})
+// Start on the first instrument, so the form never opens with nothing chosen. Only
+// while open: a default set while closed would block the caller's instrument.
+function pickFirstInstrument(): void {
+	if (open.value && !instrument.value && instruments.value.length)
+		instrument.value = instruments.value[0].instrument
+}
+// The first open has no cached list yet, so pick once the options arrive.
+watch(instruments, pickFirstInstrument)
 
 // A caller-supplied instrument is fixed unless the customer asks to change it.
 const fixed = ref(false)
@@ -104,9 +108,12 @@ const paypalPhase = ref(false)
 const paypalLoading = ref(false)
 const paypalEl = ref<HTMLElement | null>(null)
 
-// Set when the wallet is actually credited, so a Razorpay top-up that runs with
-// the dialog closed knows whether to reopen (customer backed out) or stay closed.
+// Set when the wallet is credited. The close for a Razorpay success happens while
+// inSheet is set, so the watcher skips reset and submit() resets the form instead.
 let completed = false
+// True while the Razorpay sheet runs with our dialog closed. The dialog keeps the
+// amount and method, so a customer who comes back retries without starting over.
+let inSheet = false
 const {
 	begin,
 	mountCard,
@@ -148,10 +155,12 @@ async function submit(): Promise<void> {
 		value,
 		chosen,
 		() => {
+			inSheet = true
 			open.value = false
 		},
 		instrument.value ?? undefined,
 	)
+	inSheet = false
 	if (paypal)
 		return enterPhase(
 			paypalPhase,
@@ -168,9 +177,10 @@ async function submit(): Promise<void> {
 			mountCard,
 			'Could not start secure card entry',
 		)
-	// else: the Razorpay sheet ran with our dialog closed — reopen it unless the
-	// top-up went through (onDone already closed and flagged it).
-	if (!completed) open.value = true
+	// The Razorpay sheet ran with the dialog closed, so the watcher kept the form.
+	// Reset it after a success; reopen it with the error after a cancel or failure.
+	if (completed) reset()
+	else open.value = true
 }
 
 // Switch to a second-phase view and mount its gateway widget into the fresh node.
@@ -194,29 +204,35 @@ async function enterPhase(
 	}
 }
 
-// Reset to the amount step whenever the dialog closes, tearing down any widget so
-// a reopen never shows a stale card field / buttons.
+// Reset to the amount step, tearing down any widget so a reopen never shows a
+// stale card field / buttons.
+function reset(): void {
+	destroy()
+	amount.value = undefined
+	instrument.value = null
+	fixed.value = false
+	payMethod.value = 'card'
+	cardPhase.value = false
+	cardLoading.value = false
+	paypalPhase.value = false
+	paypalLoading.value = false
+	dialogError.value = ''
+}
+
 watch(open, (isOpen) => {
-	if (isOpen) {
-		options.reload()
-		if (props.instrument) {
-			instrument.value = props.instrument
-			fixed.value = true
-		}
+	if (!isOpen) {
+		if (!inSheet) reset()
 		return
 	}
-	if (!isOpen) {
-		destroy()
-		amount.value = undefined
-		instrument.value = null
-		fixed.value = false
-		payMethod.value = 'card'
-		cardPhase.value = false
-		cardLoading.value = false
-		paypalPhase.value = false
-		paypalLoading.value = false
-		dialogError.value = ''
+	options.reload()
+	// A return from the Razorpay sheet keeps the customer's pick and its error;
+	// only a fresh open (form reset, so no instrument) takes the caller's instrument.
+	if (props.instrument && !instrument.value) {
+		instrument.value = props.instrument
+		fixed.value = true
 	}
+	// A reopen reuses the cached list, since the reload may not change or may fail.
+	pickFirstInstrument()
 })
 </script>
 
@@ -227,7 +243,8 @@ watch(open, (isOpen) => {
 				v-if="visibleError"
 				class="mb-4"
 				theme="red"
-				:title="visibleError"
+				title="Couldn't top up your wallet"
+				:description="visibleError"
 			/>
 			<!-- Stripe card entry: Element renders inside the iframe Stripe hosts. -->
 			<div v-if="cardPhase" class="space-y-3">

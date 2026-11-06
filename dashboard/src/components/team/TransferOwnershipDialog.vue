@@ -66,7 +66,12 @@ const dialogOptions = computed(() => ({
 		:actions="dialogOptions.actions"
 	>
 		<div class="space-y-4">
-			<Alert v-if="error" theme="red" :title="error" />
+			<Alert
+				v-if="error"
+				theme="red"
+				title="Couldn't transfer ownership"
+				:description="error"
+			/>
 			<p class="text-p-base text-ink-gray-7">
 				<span class="text-p-base-medium text-ink-gray-9">{{ expected }}</span>
 				becomes the owner of

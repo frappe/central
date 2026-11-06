@@ -214,6 +214,7 @@ class TestInvoiceTimeTrip(IntegrationTestCase):
 					"team": TEAM,
 					"invoice_type": "Billable",
 					"status": "Outstanding",
+					"payment_date": "2026-07-01",
 					"due_date": "2026-12-31",
 					"period_start": "2026-06-01",
 					"period_end": "2026-06-30",
@@ -272,6 +273,7 @@ class TestManualCheckout(IntegrationTestCase):
 					"team": TEAM,
 					"invoice_type": "Billable",
 					"status": "Outstanding",
+					"payment_date": "2026-07-01",
 					"due_date": "2026-12-31",
 					"period_start": "2026-06-01",
 					"period_end": "2026-06-30",
@@ -415,7 +417,9 @@ class TestModeAwareDunning(IntegrationTestCase):
 					"subtotal": amount,
 					"total": amount,
 					"expected_collection": amount,
+					"payment_date": "2026-06-01",
 					"due_date": "2026-06-01",
+					"suspends_on": "2026-06-15",
 					"items": [
 						{"resource_type": "bundle", "plan": "p", "rate": amount, "days": 30, "amount": amount}
 					],
@@ -436,13 +440,23 @@ class TestModeAwareDunning(IntegrationTestCase):
 		msg = frappe.db.get_value(
 			"Billing Notification Log", {"team": TEAM, "event_type": "Invoice Overdue"}, "message"
 		)
-		self.assertIn("pay it now", msg)
+		self.assertIn("Pay it now", msg)
 
 	def test_prepaid_copy_says_top_up(self):
 		from central.billing.revenue import dunning
 
 		_set_mode(TEAM, "Prepaid")
 		inv = self._overdue_invoice()
+		# A Prepaid card is debited, so the ladder counts from its failed first charge.
+		frappe.get_doc(
+			{
+				"doctype": "Payment Attempt",
+				"invoice": inv,
+				"team": TEAM,
+				"status": "Failed",
+				"completed_at": "2026-06-01 10:00:00",
+			}
+		).insert(ignore_permissions=True)
 		dunning.process_invoice_dunning(inv, now="2026-06-10")
 		msg = frappe.db.get_value(
 			"Billing Notification Log", {"team": TEAM, "event_type": "Invoice Overdue"}, "message"

@@ -26,7 +26,7 @@ SETTINGS = "Billing Settings"
 # would put the simulator's concerns into code that has no business knowing it exists.
 #
 # Nothing here writes. An override changes what a projection *reads*, never what the
-# document holds, so the answer to "what would a 2/5/10 ladder do" costs nobody their
+# document holds, so the answer to "what would a suspension on the 11th do" costs nobody their
 # real configuration.
 _overrides: ContextVar[dict | None] = ContextVar("billing_settings_overrides", default=None)
 
@@ -130,12 +130,11 @@ def invoice_due_days() -> int:
 	return frappe.utils.cint(_settings().invoice_due_days)
 
 
-def dunning_retry_days() -> list[int]:
-	"""Days past due on which payment is retried, in order. Empty means no retries."""
-	override = _override("dunning_retry_days")
-	if override is not _MISSING:
-		return _parse_retry_days(override)
-	return _settings().retry_days()
+def dunning_retry_interval_days() -> int:
+	"""Days between payment retries after the payment date. Never less than 1."""
+	override = _override("dunning_retry_interval_days")
+	days = override if override is not _MISSING else _settings().dunning_retry_interval_days
+	return max(1, frappe.utils.cint(days))
 
 
 def billing_details_grace_days() -> int:
@@ -146,16 +145,16 @@ def billing_details_grace_days() -> int:
 	return frappe.utils.cint(_settings().billing_details_grace_days)
 
 
-def suspend_after_days() -> int:
-	"""Days past due before a subscription is suspended."""
-	override = _override("suspend_after_days")
+def suspension_day() -> int:
+	"""Day of the month on which a team with an unpaid invoice is suspended."""
+	override = _override("suspension_day")
 	if override is not _MISSING:
 		return frappe.utils.cint(override)
-	return frappe.utils.cint(_settings().suspend_after_days)
+	return frappe.utils.cint(_settings().suspension_day)
 
 
 def terminate_after_days() -> int:
-	"""Days past due before a subscription is terminated."""
+	"""Days after suspension before termination is due. Termination only alerts an operator."""
 	override = _override("terminate_after_days")
 	if override is not _MISSING:
 		return frappe.utils.cint(override)
@@ -240,6 +239,16 @@ def operator_alert_emails() -> list[str]:
 	return _settings().alert_emails()
 
 
+def muted_operator_alerts() -> list:
+	"""The Muted Alerts rows in force now: no end time, or an end time still ahead."""
+	now = frappe.utils.now_datetime()
+	return [
+		row
+		for row in _settings().muted_operator_alerts
+		if not row.until or frappe.utils.get_datetime(row.until) > now
+	]
+
+
 def raven_connection() -> dict | None:
 	"""The Raven site, channel and bot credentials, or None when any one is missing."""
 	doc = _settings()
@@ -272,20 +281,3 @@ def ensure_welcome_credit_amounts() -> None:
 	for currency, amount in LAUNCH_WELCOME_CREDITS.items():
 		settings.append("welcome_credit_amounts", {"currency": currency, "amount": amount})
 	settings.save(ignore_permissions=True)
-
-
-def _parse_retry_days(value) -> list[int]:
-	"""Accept a ladder as a list or as the comma string the document stores."""
-	if isinstance(value, str):
-		parts = [p.strip() for p in value.split(",") if p.strip()]
-	else:
-		parts = list(value or [])
-	days = []
-	for part in parts:
-		try:
-			day = int(part)
-		except (TypeError, ValueError):
-			continue
-		if day not in days:
-			days.append(day)
-	return sorted(days)

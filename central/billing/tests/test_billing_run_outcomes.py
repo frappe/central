@@ -173,6 +173,15 @@ class TestTaxProfileCheck(IntegrationTestCase):
 
 		self.assertIn(TEAM, [v.team for v in readiness.check_billed_teams_have_a_tax_profile()])
 
+	def test_a_billed_team_outside_india_may_have_no_tax_profile(self):
+		make_plan(PLAN)
+		subscription = make_billing_subscription(OTHER_TEAM, CLUSTER, PLAN, billing_cycle="Monthly")
+		frappe.db.set_value("Subscription", subscription, "enabled", 1)
+		frappe.db.set_value("Billing Profile", OTHER_TEAM, {"country": "United States", "currency": "USD"})
+		frappe.db.delete("Tax Profile", {"team": OTHER_TEAM})
+
+		self.assertNotIn(OTHER_TEAM, [v.team for v in readiness.check_billed_teams_have_a_tax_profile()])
+
 
 class TestBillingActivity(IntegrationTestCase):
 	def test_a_failure_can_be_found_by_its_flow_and_outcome(self):

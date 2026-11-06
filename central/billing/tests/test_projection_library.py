@@ -101,8 +101,8 @@ class TestBuilding(LibraryTestBase):
 
 	def test_the_harsher_ladder_carries_its_overrides(self):
 		doc = library.build("harsher-dunning", TEAM, today=TODAY)
-		self.assertEqual(doc.suspend_after_days, 7)
-		self.assertEqual(doc.terminate_after_days, 30)
+		self.assertEqual(doc.suspension_day, 11)
+		self.assertEqual(doc.terminate_after_days, 5)
 
 	def test_the_price_rise_targets_the_plans_the_team_runs(self):
 		doc = library.build("a-price-rise", TEAM, period_start="2026-09-01", today=TODAY)
@@ -112,7 +112,7 @@ class TestBuilding(LibraryTestBase):
 
 
 class TestWhatTheyDemonstrate(LibraryTestBase):
-	def test_the_churn_scenario_really_does_push_a_date_hourly(self):
+	def test_the_resize_scenario_really_does_push_a_date_hourly(self):
 		doc = library.build("resized-twice-in-a-day", TEAM, period_start="2026-09-01", today=TODAY)
 		out = scenario.project(doc, today=TODAY)
 		hourly = [li for li in out["invoice"]["lines"] if li["unit"] == "hour"]

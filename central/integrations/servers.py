@@ -7,7 +7,7 @@ from itertools import pairwise
 import frappe
 from frappe import _
 
-from central.errors import AtlasConnectionError, AtlasRejected, AtlasResourceGone
+from central.errors import AtlasConnectionError, AtlasRejected, AtlasResourceGone, build_envelope
 from central.iam import can_on_any_server
 from central.infrastructure.doctype.resource_action.resource_action import ResourceAction
 from central.infrastructure.doctype.site.site import Site
@@ -110,6 +110,36 @@ def observe_server(server: VirtualMachine) -> str:
 	return status
 
 
+def get_rescue_state(server: VirtualMachine) -> dict:
+	"""Read rescue state without changing Central's mirror or contacting the guest."""
+	client = get_client(server)
+	remote = client.get_vm(server.atlas_vm_id)
+	if remote.get("id") != server.atlas_vm_id or remote.get("tenant_id") != client.tenant_id:
+		raise AtlasConnectionError(_("Atlas returned a different server or Team."))
+
+	fields = ("is_rescue_mode_enabled", "is_in_rescue_mode")
+	if any(
+		field not in remote or (remote[field] is not None and type(remote[field]) is not bool)
+		for field in fields
+	):
+		raise AtlasConnectionError(_("Atlas returned an invalid rescue state."))
+
+	return {field: remote[field] for field in fields}
+
+
+def set_rescue_mode(server: VirtualMachine, enabled: bool) -> None:
+	"""Change only the boot selection; power remains a separate user action."""
+	from central.errors import AtlasRequestUncertain, throw_action_error
+
+	try:
+		get_client(server).set_rescue_mode(server.atlas_vm_id, enabled)
+	except AtlasRequestUncertain:
+		throw_action_error(
+			"OUTCOME_UNKNOWN",
+			remediation=_("Refresh rescue status before submitting another request."),
+		)
+
+
 def resize_server(server: VirtualMachine, shape: dict) -> None:
 	"""Apply a new size on Atlas, then start the server. Safe to repeat: every call sets
 	absolute values. A CPU or memory change stops the server first; a disk-only grow does not.
@@ -123,6 +153,19 @@ def resize_server(server: VirtualMachine, shape: dict) -> None:
 	disk_mib = gigabytes_to_mebibytes(shape["disk_gigabytes"])
 
 	is_reshaping = (compute.get("cpu_millicores"), compute.get("memory_mib")) != (cpu_millicores, memory_mib)
+	rescue_selected = remote.get("is_rescue_mode_enabled") is True
+	in_rescue = remote.get("is_in_rescue_mode") is True
+	if (is_reshaping and (rescue_selected or in_rescue)) or (
+		in_rescue and compute.get("sleep_after_idle_seconds")
+	):
+		error = AtlasRejected(_("This resize cannot complete in rescue mode."))
+		error.envelope = build_envelope(
+			"ATLAS_REJECTED",
+			message=str(error),
+			remediation=_("Disable rescue mode and boot normally before making this resize."),
+		)
+		raise error
+
 	if is_reshaping:
 		# Atlas refuses to stop a sleeping VM, so wake it first.
 		if remote.get("current_state") == "paused":

@@ -20,7 +20,7 @@ import {
 } from '@/lib/composed'
 import { features } from '@/lib/features'
 import { money } from '@/lib/format'
-import { planPrice } from '@/lib/plans'
+import { planName, planPrice } from '@/lib/plans'
 import {
 	flagEmoji,
 	hasMapCoords,
@@ -350,7 +350,9 @@ export function useServerCreation() {
 		return {
 			plan: isCustom.value
 				? 'Custom'
-				: selectedPlanObj.value?.title.split(' · ')[0],
+				: selectedPlanObj.value
+					? planName(selectedPlanObj.value)
+					: undefined,
 			server: name.value.trim() || 'Untitled server',
 			price: price.value?.split(' / ')[0] ?? '—',
 			cycle: price.value?.split(' / ')[1],

@@ -5,6 +5,7 @@
 import frappe
 
 from central.billing.api import admin
+from central.billing.revenue import credits
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import (
 	ensure_atlas_instance,
@@ -100,6 +101,12 @@ class TestAdminGating(AdminTestBase):
 		entry = frappe.get_doc("Credit Ledger Entry", out["ledger_entry"])
 		self.assertEqual(entry.reference_type, "Admin")
 		self.assertEqual(entry.note, "goodwill")
+
+	def test_debit_over_the_balance_is_refused_with_a_message(self):
+		admin.adjust_team_credits(TEAM_A, 10, "Credit", currency="INR", note="goodwill")
+		with self.assertRaises(credits.InsufficientCredits):
+			admin.adjust_team_credits(TEAM_A, 50, "Debit", currency="INR", note="clawback")
+		self.assertIn("exceeds wallet balance", frappe.get_message_log()[-1]["message"])
 
 
 class TestAggregates(AdminTestBase):

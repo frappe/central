@@ -96,7 +96,13 @@ const dialogOptions = computed(() => ({
 		:actions="dialogOptions.actions"
 	>
 		<template #default>
-			<Alert v-if="formError" class="mb-4" theme="red" :title="formError" />
+			<Alert
+				v-if="formError"
+				class="mb-4"
+				theme="red"
+				title="Couldn't change the project"
+				:description="formError"
+			/>
 			<Select
 				v-model="selected"
 				:options="options"

@@ -66,7 +66,7 @@ const goToObjectStorage = () => router.push({ name: 'ObjectStorage' })
 			</h2>
 			<span class="text-sm tabular-nums text-ink-gray-5">
 				{{ money(total, currency) }}
-				this cycle
+				this cycle before tax
 			</span>
 		</header>
 

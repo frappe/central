@@ -75,7 +75,12 @@ const dialogOptions = computed(() => ({
 	>
 		<template #default>
 			<div class="space-y-4">
-				<Alert v-if="formError" theme="red" :title="formError" />
+				<Alert
+					v-if="formError"
+					theme="red"
+					title="Couldn't create the project"
+					:description="formError"
+				/>
 				<TextInput
 					v-model="title"
 					autofocus

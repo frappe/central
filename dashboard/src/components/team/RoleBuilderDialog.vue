@@ -100,7 +100,12 @@ async function submit() {
 	>
 		<template #default>
 			<div class="space-y-5">
-				<Alert v-if="formError" theme="red" :title="formError" />
+				<Alert
+					v-if="formError"
+					theme="red"
+					title="Couldn't create the role"
+					:description="formError"
+				/>
 				<TextInput
 					v-model="roleName"
 					autofocus
@@ -118,7 +123,8 @@ async function submit() {
 					<Alert
 						v-if="capabilitiesError"
 						theme="red"
-						:title="capabilitiesError"
+						title="Couldn't load the permissions"
+						:description="capabilitiesError"
 					/>
 					<Button
 						v-if="capabilitiesError"

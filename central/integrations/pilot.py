@@ -16,7 +16,7 @@ from central.infrastructure.doctype.user_mail_account.user_mail_account import U
 from central.integrations.object_storage import ObjectStorageClient, ObjectStorageNotFound
 from central.services.doctype.ai_trial_key.ai_trial_key import AITrialKey
 from central.services.doctype.team_service.team_service import get_bucket_name, get_storage_endpoint_url
-from central.sso import central_url, jwks_url, mint_bench_login, mint_datum_token, mint_site_login
+from central.sso import central_url, jwks_url, mint_bench_api_token, mint_datum_token, mint_site_login
 
 PILOT_TASK_TIMEOUT_SECONDS = 35
 # Metal caps each guest metadata value at 1 KiB. Not checked before a creation: unconfirmed
@@ -396,7 +396,7 @@ def _request_pilot(
 	response = requests.request(
 		method,
 		f"{_gateway_url(base_url)}{path}",
-		headers={"Authorization": f"Bearer {mint_bench_login(audience_id)}"},
+		headers={"Authorization": f"Bearer {mint_bench_api_token(audience_id)}"},
 		json=payload,
 		params=params,
 		timeout=PILOT_TASK_TIMEOUT_SECONDS,
