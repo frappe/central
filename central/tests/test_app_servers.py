@@ -1,10 +1,12 @@
 from types import SimpleNamespace
 from unittest import TestCase
+from unittest.mock import patch
 
 import frappe
 import yaml
 
-from central.integrations.images import get_minimum_shape, is_shape_enough
+from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
+from central.integrations.images import get_app_subdomain, get_minimum_shape, is_shape_enough
 from central.resource_actions import _get_user_data, _validate_app_size
 
 SHAPE = {"cpu_millicores": 1000, "memory_mib": 1024, "disk_mib": 10240}
@@ -72,6 +74,18 @@ class TestAppUserData(TestCase):
 			"DOMAIN=app.example.com\nADMIN_EMAIL=me@example.com\nADMIN_PASSWORD='it'\"'\"'s $(reboot) #1'\n",
 		)
 
+	def test_a_routed_app_gets_its_full_site_domain(self) -> None:
+		inputs = [{"name": "site_name", "label": "Site name", "required": True}]
+		with patch("central.resource_actions.Region.get_zone", return_value="region-a.example.com"):
+			user_data = _get_user_data(
+				server_input(app_inputs={"site_name": "metrics"}), requirements(inputs), "metrics"
+			)
+
+		self.assertEqual(
+			yaml.safe_load(user_data)["write_files"][0]["content"],
+			"SITE_NAME=metrics\nSITE_DOMAIN=metrics.region-a.example.com\n",
+		)
+
 	def test_a_blank_answer_is_left_for_the_server(self) -> None:
 		user_data = _get_user_data(
 			server_input(app_inputs={**EMAIL, "admin_password": "  "}), requirements(APP_INPUTS)
@@ -114,3 +128,80 @@ class TestAppUserData(TestCase):
 
 	def test_any_other_server_keeps_the_customer_user_data(self) -> None:
 		self.assertEqual(_get_user_data(server_input(user_data="#!/bin/sh"), None), "#!/bin/sh")
+
+
+@patch("central.integrations.images.Region.get_zone", return_value="region-a.example.com")
+@patch("central.integrations.images.BlockedDomain.is_blocked", return_value=False)
+@patch("central.integrations.images.frappe.get_all", return_value=[])
+@patch("central.integrations.images.frappe.db.exists", return_value=None)
+class TestAppSubdomain(TestCase):
+	def test_the_site_name_answer_is_the_subdomain(self, *_mocks) -> None:
+		self.assertEqual(get_app_subdomain("region-a", {"site_name": " metrics "}), "metrics")
+
+	def test_an_app_without_a_site_name_has_no_subdomain(self, *_mocks) -> None:
+		self.assertIsNone(get_app_subdomain("region-a", {"admin_email": "me@example.com"}))
+
+	def test_a_site_name_must_be_a_dns_label(self, *_mocks) -> None:
+		for name in ("Metrics", "my.site", "-metrics", "metrics_1"):
+			with self.subTest(name=name), self.assertRaisesRegex(frappe.ValidationError, "lowercase letters"):
+				get_app_subdomain("region-a", {"site_name": name})
+
+	def test_a_routed_name_is_taken(self, exists, *_mocks) -> None:
+		exists.return_value = "metrics.region-a.example.com"
+
+		with self.assertRaisesRegex(frappe.ValidationError, "already taken"):
+			get_app_subdomain("region-a", {"site_name": "metrics"})
+
+	def test_a_name_a_site_chose_is_taken(self, _exists, get_all, *_mocks) -> None:
+		get_all.return_value = [{"name": "site-1"}]
+
+		with self.assertRaisesRegex(frappe.ValidationError, "already taken"):
+			get_app_subdomain("region-a", {"site_name": "metrics"})
+
+	def test_a_reserved_name_is_refused(self, _exists, _get_all, is_blocked, _zone) -> None:
+		is_blocked.return_value = True
+
+		with self.assertRaisesRegex(frappe.ValidationError, "reserved"):
+			get_app_subdomain("region-a", {"site_name": "admin"})
+
+
+VM_MODULE = "central.infrastructure.doctype.virtual_machine.virtual_machine"
+
+
+@patch(f"{VM_MODULE}.Region.get_zone", return_value="region-a.example.com")
+@patch(f"{VM_MODULE}.frappe.enqueue_doc")
+class TestAppSubdomainRoute(TestCase):
+	def route(self, machine: dict | None, subdomain: str | None, routed: bool = False) -> None:
+		machine = frappe._dict(machine) if machine else None
+		with (
+			patch(f"{VM_MODULE}.frappe.db.get_value", side_effect=[machine, subdomain]),
+			patch(f"{VM_MODULE}.frappe.db.exists", return_value=routed),
+		):
+			VirtualMachine.route_app_subdomain_once_addressable("vm-1")
+
+	def test_an_addressed_app_server_is_routed_at_its_site_name(self, enqueue, _zone) -> None:
+		self.route({"region": "region-a", "ipv6_address": "fd00::1", "has_site": 0}, "metrics")
+
+		enqueue.assert_called_once()
+		self.assertEqual(enqueue.call_args.kwargs["domain"], "metrics.region-a.example.com")
+		self.assertEqual(enqueue.call_args.args[:3], ("Virtual Machine", "vm-1", "route_app_subdomain"))
+
+	def test_nothing_is_routed_before_the_server_has_an_address(self, enqueue, _zone) -> None:
+		self.route({"region": "region-a", "ipv6_address": None, "has_site": 0}, "metrics")
+
+		enqueue.assert_not_called()
+
+	def test_a_pilot_server_is_left_to_its_site(self, enqueue, _zone) -> None:
+		self.route({"region": "region-a", "ipv6_address": "fd00::1", "has_site": 1}, "metrics")
+
+		enqueue.assert_not_called()
+
+	def test_a_server_without_a_site_name_is_not_routed(self, enqueue, _zone) -> None:
+		self.route({"region": "region-a", "ipv6_address": "fd00::1", "has_site": 0}, None)
+
+		enqueue.assert_not_called()
+
+	def test_a_routed_server_is_not_routed_again(self, enqueue, _zone) -> None:
+		self.route({"region": "region-a", "ipv6_address": "fd00::1", "has_site": 0}, "metrics", routed=True)
+
+		enqueue.assert_not_called()
