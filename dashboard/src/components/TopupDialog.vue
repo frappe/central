@@ -61,10 +61,12 @@ const payable = computed(() => Number(amount.value || 0) + gst.value)
 const instrument = ref<string | null>(null)
 // Start on the first instrument, so the form never opens with nothing chosen. Only
 // while open: a default set while closed would block the caller's instrument.
-watch(instruments, (list) => {
-	if (open.value && !instrument.value && list.length)
-		instrument.value = list[0].instrument
-})
+function pickFirstInstrument(): void {
+	if (open.value && !instrument.value && instruments.value.length)
+		instrument.value = instruments.value[0].instrument
+}
+// The first open has no cached list yet, so pick once the options arrive.
+watch(instruments, pickFirstInstrument)
 
 // A caller-supplied instrument is fixed unless the customer asks to change it.
 const fixed = ref(false)
@@ -229,6 +231,8 @@ watch(open, (isOpen) => {
 		instrument.value = props.instrument
 		fixed.value = true
 	}
+	// A reopen reuses the cached list, since the reload may not change or may fail.
+	pickFirstInstrument()
 })
 </script>
 
