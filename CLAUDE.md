@@ -56,6 +56,8 @@ Central plans to add:
 
 `central/billing/**` is out of scope for the rewrite. Change it only when the task names it, and keep the change as small as the task needs.
 
+Apply the [billing change checklist](central/billing/CLAUDE.md) to every change under `central/billing/`.
+
 ## Core principles
 
 - Keep changes small, direct, and in the module that owns the behavior.
