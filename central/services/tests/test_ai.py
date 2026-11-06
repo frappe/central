@@ -42,7 +42,9 @@ MODELS = [
 	{
 		"name": "acme/m",
 		"provider": "acme",
+		"provider_display_name": "Acme",
 		"model_id": "m",
+		"display_name": "M",
 		"zero_data_retention": True,
 		"dialects": ["openai"],
 	}
@@ -377,9 +379,10 @@ class TestAI(IntegrationTestCase):
 			patch.object(GroveClient, "list_models", return_value=MODELS) as list_models,
 		):
 			created = api.create_api_key(self.team, " app ", "eu", "5")
-			# A cap is whole dollars: refused here, before Grove.
-			with self.assertRaises(frappe.ValidationError):
-				api.create_api_key(self.team, "app", "eu", "2.5")
+			# A cap is whole dollars, and label, geography and cap are all asked: refused here, before Grove.
+			for label, geography, cap in [("app", "eu", "2.5"), ("", "eu", "5"), ("app", "", "5"), ("app", "eu", None), ("app", "eu", "0")]:
+				with self.subTest(label=label, geography=geography, cap=cap), self.assertRaises(frappe.ValidationError):
+					api.create_api_key(self.team, label, geography, cap)
 		provision_key.assert_called_once_with(self.team, "app", "eu", 5)
 		list_models.assert_called_once_with(team=self.team, geography="eu")
 		self.assertEqual(
@@ -400,8 +403,9 @@ class TestAI(IntegrationTestCase):
 
 		with patch.object(GroveClient, "update_caps", return_value=[{**LISTED, "cap": 8}]) as update_caps:
 			self.assertEqual(api.set_api_key_caps(self.team, {"k1": "8"})[0]["cap"], 8)
-			with self.assertRaises(frappe.ValidationError):
-				api.set_api_key_caps(self.team, {"k1": "7.5"})
+			for cap in ("7.5", "0"):
+				with self.subTest(cap=cap), self.assertRaises(frappe.ValidationError):
+					api.set_api_key_caps(self.team, {"k1": cap})
 		update_caps.assert_called_once_with(self.team, {"k1": 8})
 
 		with patch.object(GroveClient, "revoke_key") as revoke_key:
@@ -435,8 +439,15 @@ class TestAI(IntegrationTestCase):
 			[{"team": self.team, "geography": "eu"}, {"team": self.team, "geography": None}],
 		)
 		self.assertEqual(
-			(model["name"], model["provider"], model["model_id"], model["zero_data_retention"]),
-			("acme/m", "acme", "m", True),
+			(
+				model["name"],
+				model["provider"],
+				model["provider_display_name"],
+				model["model_id"],
+				model["display_name"],
+				model["zero_data_retention"],
+			),
+			("acme/m", "acme", "Acme", "m", "M", True),
 		)
 
 	def test_usage_of_one_key_sends_its_hash_and_an_unknown_key_is_refused(self):

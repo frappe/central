@@ -43,6 +43,7 @@ class AISettings(Document):
 		base_url: DF.Data | None
 		control_api_key: DF.Data | None
 		control_api_secret: DF.Password | None
+		grove_token_hash: DF.Data | None
 		pause_key_assignment: DF.Check
 		pause_pool_refill: DF.Check
 		trial_key_cap: DF.Currency
@@ -57,6 +58,7 @@ class AISettings(Document):
 
 	def validate(self) -> None:
 		self.base_url = (self.base_url or "").strip().rstrip("/")
+		self.grove_token_hash = (self.grove_token_hash or "").strip().lower()
 		products = [row.product for row in self.trial_products]
 		if len(products) != len(set(products)):
 			frappe.throw(_("One pool row per product."))
