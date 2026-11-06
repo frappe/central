@@ -221,7 +221,9 @@ watch(open, (isOpen) => {
 		return
 	}
 	options.reload()
-	if (props.instrument) {
+	// A return from the Razorpay sheet keeps the customer's pick and its error;
+	// only a fresh open (form reset, so no instrument) takes the caller's instrument.
+	if (props.instrument && !instrument.value) {
 		instrument.value = props.instrument
 		fixed.value = true
 	}
