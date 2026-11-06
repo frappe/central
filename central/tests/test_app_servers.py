@@ -147,10 +147,22 @@ class TestAppSubdomain(TestCase):
 				get_app_subdomain("region-a", {"site_name": name})
 
 	def test_a_routed_name_is_taken(self, exists, *_mocks) -> None:
-		exists.return_value = "metrics.region-a.example.com"
+		exists.side_effect = lambda doctype, _filters: doctype == "Site Domain"
 
 		with self.assertRaisesRegex(frappe.ValidationError, "already taken"):
 			get_app_subdomain("region-a", {"site_name": "metrics"})
+
+	def test_a_name_a_pending_creation_holds_is_taken(self, exists, *_mocks) -> None:
+		exists.side_effect = lambda doctype, _filters: doctype == "Resource Action"
+
+		with self.assertRaisesRegex(frappe.ValidationError, "already taken"):
+			get_app_subdomain("region-a", {"site_name": "metrics"})
+
+		filters = next(call.args[1] for call in exists.call_args_list if call.args[0] == "Resource Action")
+		self.assertEqual(
+			{key: filters[key] for key in ("action", "region", "subdomain")},
+			{"action": "create", "region": "region-a", "subdomain": "metrics"},
+		)
 
 	def test_a_name_a_site_chose_is_taken(self, _exists, get_all, *_mocks) -> None:
 		get_all.return_value = [{"name": "site-1"}]

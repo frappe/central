@@ -10,6 +10,7 @@ from frappe.utils.password_strength import test_password_strength
 from central.iam import can
 from central.infrastructure.doctype.blocked_domain.blocked_domain import BlockedDomain
 from central.infrastructure.doctype.region.region import Region
+from central.infrastructure.doctype.resource_action.resource_action import PENDING_STATES
 from central.integrations.atlas import AtlasClient
 from central.integrations.cargo import CargoClient
 from central.server_models import DNS_LABEL, AppAnswers, AppInput, AppRequirements
@@ -311,7 +312,12 @@ def get_app_subdomain(region: str, answers: AppAnswers) -> str | None:
 		filters={"subdomain": subdomain, "server.region": region, "server.status": ["!=", "Terminated"]},
 		limit=1,
 	)
-	if frappe.db.exists("Site Domain", domain) or chosen_by_site:
+	subdomain_request_in_queue = frappe.db.exists(
+		"Resource Action",
+		{"action": "create", "region": region, "subdomain": subdomain, "status": ["in", PENDING_STATES]},
+	)
+
+	if frappe.db.exists("Site Domain", domain) or chosen_by_site or subdomain_request_in_queue:
 		frappe.throw(_("{0} is already taken. Choose another site name.").format(domain))
 
 	return subdomain
