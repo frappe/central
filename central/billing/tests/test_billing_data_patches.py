@@ -15,6 +15,7 @@ from central.billing.revenue import credits
 from central.billing.tests.test_stripe_adapter import make_stripe_gateway
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import (
+	billing_settings,
 	complete_billing_profile,
 	ensure_atlas_instance,
 	ensure_team,
@@ -22,6 +23,7 @@ from central.billing.tests.utils import (
 )
 from central.patches.v0_0 import (
 	allow_storage_in_vm_plans,
+	charge_gst_to_indian_tax_profiles,
 	clear_retired_scenario_ladder_overrides,
 	expire_promotional_credit_and_clear_unbooked_wallets,
 	mark_waived_invoices_as_not_synced,
@@ -335,6 +337,17 @@ class TestStartBillingRunOutcomes(IntegrationTestCase):
 		start_billing_run_outcomes_and_minimum_invoices.execute()
 
 		self.assertTrue(frappe.db.exists("Tax Profile", TEAM))
+
+	def test_an_indian_tax_profile_without_gst_is_charged_gst(self):
+		complete_billing_profile(TEAM)
+		frappe.db.delete("Tax Profile", {"team": TEAM})
+		frappe.get_doc({"doctype": "Tax Profile", "team": TEAM, "output_tax_type": "None"}).db_insert()
+
+		with billing_settings(default_gst_rate=18):
+			charge_gst_to_indian_tax_profiles.execute()
+
+		values = frappe.db.get_value("Tax Profile", TEAM, ["output_tax_type", "output_tax_rate"])
+		self.assertEqual(values, ("GST", 18))
 
 	def test_a_team_the_last_run_missed_is_queued_for_the_retry(self):
 		frappe.get_doc(
