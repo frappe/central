@@ -95,6 +95,7 @@ def observe_server(server: VirtualMachine) -> str:
 
 	# A Pilot machine carries a site, and this report is where its address arrives.
 	Site.create_once_addressable(server.name)
+	VirtualMachine.route_app_subdomain_once_addressable(server.name)
 	ResourceAction.confirm_observed_status(server.name, status)
 	if status == "Running" and gateway and not server.admin_domain_task:
 		frappe.enqueue_doc(

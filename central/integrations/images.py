@@ -8,13 +8,17 @@ from frappe.utils import validate_email_address
 from frappe.utils.password_strength import test_password_strength
 
 from central.iam import can
+from central.infrastructure.doctype.blocked_domain.blocked_domain import BlockedDomain
+from central.infrastructure.doctype.region.region import Region
 from central.integrations.atlas import AtlasClient
 from central.integrations.cargo import CargoClient
-from central.server_models import AppInput, AppRequirements
+from central.server_models import DNS_LABEL, AppAnswers, AppInput, AppRequirements
 from central.utils.units import MIB_PER_GIB, MILLICORES_PER_VCPU
 
 # The Atlas `purpose` tag of an image a region's Cargo built for an app.
 APP_PURPOSE = "one-click"
+# The app input whose answer Central routes to the app server, as <answer>.<region zone>.
+SITE_NAME_INPUT = "site_name"
 # Each answer becomes a shell variable in the app server's inputs.env, so its name must be one.
 APP_INPUT_NAME = re.compile(r"[a-z][a-z0-9_]*")
 DOMAIN = re.compile(r"(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}")
@@ -287,3 +291,27 @@ def validate_app_password(label: str, value: str) -> None:
 				label, advice or _("Use a longer password made of a few uncommon words.")
 			)
 		)
+
+
+def get_app_subdomain(region: str, answers: AppAnswers) -> str | None:
+	"""The answer to the app's `site_name` input, which the regional proxy routes to the server
+	once it has an address. It must be a free label in the region's zone."""
+	subdomain = answers.get(SITE_NAME_INPUT, "").strip()
+	if not subdomain:
+		return None
+	if not DNS_LABEL.fullmatch(subdomain):
+		frappe.throw(
+			_("Use lowercase letters, numbers and hyphens in the site name, starting and ending with one.")
+		)
+
+	domain = f"{subdomain}.{Region.get_zone(region)}"
+	BlockedDomain.validate_assignment(domain)
+	chosen_by_site = frappe.get_all(
+		"Site",
+		filters={"subdomain": subdomain, "server.region": region, "server.status": ["!=", "Terminated"]},
+		limit=1,
+	)
+	if frappe.db.exists("Site Domain", domain) or chosen_by_site:
+		frappe.throw(_("{0} is already taken. Choose another site name.").format(domain))
+
+	return subdomain

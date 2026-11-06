@@ -57,7 +57,8 @@ class CreateServerInput(BaseModel):
 	is_firewall_enabled: bool = False
 	# Cloud-init reads the script as sent, so keep its whitespace.
 	user_data: Annotated[str, StringConstraints(strip_whitespace=False)] = ""
-	# The answers to an app's inputs, as `AppAnswers`. Central turns them into the user data.
+	# The answers to an app's inputs, as `AppAnswers`. Central turns them into the user data, and
+	# routes a `site_name` answer to the server.
 	app_inputs: dict[str, str] = Field(default_factory=dict, max_length=20)
 
 

@@ -33,6 +33,7 @@ from central.billing.payments.settlement import has_paid_by_hand, is_behind_on_p
 from central.billing.revenue.tax import is_internal_team
 from central.errors import throw_action_error
 from central.iam import can, resolve_team
+from central.infrastructure.doctype.region.region import Region
 from central.infrastructure.doctype.resource_action.resource_action import (
 	ACTION_CAPABILITIES,
 	COMMAND_ACTIONS,
@@ -40,6 +41,7 @@ from central.infrastructure.doctype.resource_action.resource_action import (
 	ResourceAction,
 )
 from central.integrations.images import (
+	get_app_subdomain,
 	get_image_app_requirements,
 	get_minimum_shape,
 	selected_image,
@@ -137,7 +139,10 @@ def submit_request(
 		return existing.customer_status()
 
 	is_free_trial = is_free_trial_creation(server_input.team, site.product if site else None)
-	configuration, rate = _build_server_configuration(server_input, snapshot, is_free_trial)
+	configuration, rate, app_subdomain = _build_server_configuration(server_input, snapshot, is_free_trial)
+	if subdomain and app_subdomain:
+		frappe.throw(_("Choose either a site or an app site name, not both."))
+	subdomain = subdomain or app_subdomain
 	configuration.site = site
 
 	return ResourceAction.queue(
@@ -304,8 +309,9 @@ def _repeated_request(server_input: CreateServerInput, digest: str):
 
 def _build_server_configuration(
 	server_input: CreateServerInput, snapshot: str | None, is_free_trial: bool
-) -> tuple[ServerCreation, float]:
-	"""Resolve the authorized image, purchasable composition, and saved configuration."""
+) -> tuple[ServerCreation, float, str | None]:
+	"""Resolve the authorized image, purchasable composition, saved configuration, and the
+	site name an app server is routed at."""
 	image = (
 		snapshot_image(server_input.team, server_input.region, snapshot, "server:create")
 		if snapshot
@@ -333,6 +339,8 @@ def _build_server_configuration(
 	shape = image_shape(composition, image)
 	requirements = get_image_app_requirements(server_input.region, image, snapshot)
 	_validate_app_size(image, requirements, shape)
+	subdomain = get_app_subdomain(server_input.region, server_input.app_inputs) if requirements else None
+	user_data = _get_user_data(server_input, requirements, subdomain)
 
 	configuration = ServerCreation(
 		offering=server_input.offering,
@@ -350,18 +358,21 @@ def _build_server_configuration(
 		has_public_ipv4=server_input.has_public_ipv4,
 		has_public_ipv6=server_input.has_public_ipv6,
 		is_firewall_enabled=server_input.is_firewall_enabled,
-		user_data=_get_user_data(server_input, requirements),
+		user_data=user_data,
 		image_tags=image["tags"],
 		**shape,
 	)
 
-	return configuration, rate
+	return configuration, rate, subdomain
 
 
-def _get_user_data(server_input: CreateServerInput, requirements: AppRequirements | None) -> str:
+def _get_user_data(
+	server_input: CreateServerInput, requirements: AppRequirements | None, subdomain: str | None = None
+) -> str:
 	"""The user data the server boots with. An app's writes the answers to its inputs to
 	/etc/one-click/inputs.env, which its first-boot script reads. A blank answer is left out,
-	so the server makes that value itself."""
+	so the server makes that value itself. A routed app also gets SITE_DOMAIN, the full name
+	the proxy serves it at."""
 	_validate_user_data(server_input, requirements)
 	if not requirements:
 		return server_input.user_data
@@ -372,6 +383,8 @@ def _get_user_data(server_input: CreateServerInput, requirements: AppRequirement
 		for item in requirements["inputs"]
 		if answers.get(item["name"], "").strip()
 	]
+	if subdomain:
+		lines.append(f"SITE_DOMAIN={shlex.quote(f'{subdomain}.{Region.get_zone(server_input.region)}')}")
 	if not lines:
 		return ""
 

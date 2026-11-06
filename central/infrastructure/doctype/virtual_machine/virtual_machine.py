@@ -10,6 +10,7 @@ from requests import RequestException
 
 from central.iam import can, user_has_operator_bypass
 from central.infrastructure.doctype.pilot_credential.pilot_credential import PilotCredential
+from central.infrastructure.doctype.region.region import Region
 from central.infrastructure.doctype.user_mail_account.user_mail_account import UserMailAccount
 from central.services.doctype.ai_trial_key.ai_trial_key import AITrialKey
 from central.sso import mint_bench_login
@@ -343,6 +344,54 @@ class VirtualMachine(Document):
 			doc.publish_state_change()
 
 		return True
+
+	@classmethod
+	def route_app_subdomain_once_addressable(cls, server: str) -> None:
+		"""Route the site name chosen for an app server once it has an address. It runs on every
+		report and routes once; a Pilot server's Site routes its own name."""
+		machine = frappe.db.get_value(
+			"Virtual Machine", server, ["region", "ipv6_address", "has_site"], as_dict=True
+		)
+		if not machine or machine.has_site or not machine.ipv6_address:
+			return
+
+		subdomain = frappe.db.get_value(
+			"Resource Action", {"server": server, "action": "create"}, "subdomain"
+		)
+		if not subdomain:
+			return
+
+		domain = f"{subdomain}.{Region.get_zone(machine.region)}"
+		if frappe.db.exists("Site Domain", domain):
+			return
+
+		# A job keeps a refused route from failing the state report.
+		frappe.enqueue_doc(
+			"Virtual Machine",
+			server,
+			"route_app_subdomain",
+			queue="short",
+			enqueue_after_commit=True,
+			job_id=f"app-route:{server}",
+			deduplicate=True,
+			domain=domain,
+		)
+
+	def route_app_subdomain(self, domain: str) -> None:
+		if frappe.db.exists("Site Domain", domain):
+			return
+
+		route = frappe.get_doc(
+			{
+				"doctype": "Site Domain",
+				"domain": domain,
+				"team": self.team,
+				"server": self.name,
+				"region": self.region,
+			}
+		)
+		# The system routes the name the customer chose at creation; no user acts here.
+		route.insert(ignore_permissions=True)
 
 	@frappe.whitelist(methods=["POST"])
 	def remove_routes(self) -> None:
