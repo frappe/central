@@ -48,6 +48,8 @@
   "column_break_raven",
   "raven_api_key",
   "raven_api_secret",
+  "section_muted_alerts",
+  "muted_operator_alerts",
   "tab_accounting",
   "section_company",
   "company",
@@ -542,12 +544,24 @@
    "fieldtype": "Data",
    "label": "Receipt Voucher Print Format",
    "default": "Cloud Receipt Voucher"
+  },
+  {
+   "description": "Stop a known billing alert from being sent while its fix is in progress. The alert is still counted in the billing metrics. Other Central alerts are not affected.",
+   "fieldname": "section_muted_alerts",
+   "fieldtype": "Section Break",
+   "label": "Muted Alerts"
+  },
+  {
+   "fieldname": "muted_operator_alerts",
+   "fieldtype": "Table",
+   "label": "Muted Alerts",
+   "options": "Muted Operator Alert"
   }
  ],
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-11-05 23:30:00.000000",
+ "modified": "2026-11-06 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Billing Settings",

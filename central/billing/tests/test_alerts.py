@@ -2,12 +2,14 @@
 # For license information, please see license.txt
 """Operator alerts fire on what the sweeps cannot fix, and stay quiet otherwise."""
 
+import inspect
+import re
 from unittest.mock import patch
 
 import frappe
 import requests
 
-from central.billing.platform import alerts
+from central.billing.platform import alerts, invariants, kinds
 from central.billing.tests.test_reconciliation import ReconTestBase
 from central.billing.tests.test_stripe_adapter import make_stripe_gateway
 from central.billing.tests.utils import BillingTestCase, billing_settings
@@ -39,7 +41,7 @@ class TestOperatorAlerts(BillingTestCase):
 	def test_a_clean_system_pages_nobody(self):
 		with self._quiet_sources(lambda: []):
 			result = alerts.run_operator_alerts()
-		self.assertEqual(result, {"alerts": 0, "notified": False})
+		self.assertEqual(result, {"alerts": 0, "muted": 0, "notified": False})
 		self.mail.assert_not_called()
 
 	def test_an_open_alert_mails_the_named_addresses(self):
@@ -82,13 +84,74 @@ class TestOperatorAlerts(BillingTestCase):
 
 		self.assertEqual(self.mail.call_count, 2)
 
+	def _mute(self, *rows):
+		"""Mute alerts in Billing Settings for this test: (category, alert, until) rows."""
+		table = [
+			{"category": category, "alert": alert, "until": until, "reason": "known issue"}
+			for category, alert, until in rows
+		]
+		return billing_settings(muted_operator_alerts=table)
+
+	def test_a_muted_category_mutes_every_alert_in_it(self):
+		webhook = {"alert": "failed_webhook", "subject": "WH-1", "team": None, "detail": "boom"}
+		refund = {"alert": "failed_refund", "subject": "INV-2", "team": "t1", "detail": "refused"}
+		with self._quiet_sources(lambda: [webhook, refund, ALERT]), self._mute(("Payments", None, None)):
+			result = alerts.run_operator_alerts()
+
+		self.assertEqual((result["alerts"], result["muted"]), (1, 2))
+		self.assertIn("1 invariant", self.mail.call_args.kwargs["subject"])
+
+	def test_a_muted_alert_leaves_the_rest_of_its_category(self):
+		webhook = {"alert": "failed_webhook", "subject": "WH-1", "team": None, "detail": "boom"}
+		refund = {"alert": "failed_refund", "subject": "INV-2", "team": "t1", "detail": "refused"}
+		with self._quiet_sources(lambda: [webhook, refund]), self._mute(("Payments", "Failed webhook", None)):
+			result = alerts.run_operator_alerts()
+
+		self.assertEqual((result["alerts"], result["muted"]), (1, 1))
+		self.assertIn("1 failed_refund", self.mail.call_args.kwargs["subject"])
+
+	def test_a_muted_check_silences_only_that_check(self):
+		b8 = {"alert": "readiness", "check": "B8", "subject": "t1", "team": "t1", "detail": "B8: no profile"}
+		b1 = {"alert": "readiness", "check": "B1", "subject": "t2", "team": "t2", "detail": "B1: currency"}
+		b8_option = "B8 · Billed Indian teams have a Tax Profile"
+		with self._quiet_sources(lambda: [b8, b1]), self._mute(("Readiness checks", b8_option, None)):
+			result = alerts.run_operator_alerts()
+
+		self.assertEqual((result["alerts"], result["muted"]), (1, 1))
+		self.assertIn("t2", self.mail.call_args.kwargs["args"]["groups"][0]["rows"][0][0])
+
+	def test_a_mute_that_has_ended_lets_the_alert_through(self):
+		ended = frappe.utils.add_to_date(frappe.utils.now_datetime(), hours=-1)
+		with self._quiet_sources(lambda: [ALERT]), self._mute(("Money checks", None, ended)):
+			result = alerts.run_operator_alerts()
+
+		self.assertEqual(result["muted"], 0)
+		self.assertEqual(self.mail.call_count, 1)
+
+	def test_a_mute_with_an_end_time_ahead_holds(self):
+		ahead = frappe.utils.add_to_date(frappe.utils.now_datetime(), hours=1)
+		with self._quiet_sources(lambda: [ALERT]), self._mute(("Money checks", None, ahead)):
+			alerts.run_operator_alerts()
+
+		self.mail.assert_not_called()
+
+	def test_an_alert_from_another_category_is_refused(self):
+		with self.assertRaises(frappe.ValidationError), self._mute(("Invoicing", "Failed webhook", None)):
+			pass
+
+	def test_every_alert_kind_has_a_category(self):
+		# Read the kinds from the sources, so a new source cannot be left out of the list.
+		sent = set(re.findall(r'"alert": "([a-z_]+)"', inspect.getsource(alerts)))
+		categorised = {kind for group in kinds.CATEGORIES.values() for kind in group}
+		self.assertEqual(sent, categorised)
+
 	def test_one_broken_source_does_not_blind_the_others(self):
 		def broken():
 			raise RuntimeError("source down")
 
 		alert = {"alert": "failed_webhook", "subject": "WH-1", "team": None, "detail": "boom"}
 		with self._quiet_sources(broken, lambda: [alert]):
-			self.assertEqual(alerts.collect(), [alert])
+			self.assertEqual([found["subject"] for found in alerts.collect()], ["WH-1"])
 
 	def test_a_failed_webhook_older_than_the_window_is_an_alert(self):
 		event = frappe.get_doc(
@@ -180,6 +243,33 @@ class TestOperatorAlertDelivery(BillingTestCase):
 		text = self.raven.call_args.kwargs["json"]["text"]
 		self.assertNotIn("<script>", text)
 		self.assertIn("&lt;script&gt;", text)
+
+	def test_a_check_alert_says_what_the_check_expected(self):
+		b8 = invariants.Violation(
+			check="B8", detail="no profile", team="t1", subject_doctype="Team", subject="t1"
+		)
+		with (
+			self._settings("Raven", **RAVEN),
+			patch.object(alerts, "SOURCES", (alerts.readiness_gaps,)),
+			patch.object(alerts.invariants, "audit", return_value=[b8]),
+		):
+			alerts.notify_operators("Billing needs attention", alerts.collect())
+
+		text = self.raven.call_args.kwargs["json"]["text"]
+		self.assertIn("B8 · Billed Indian teams have a Tax Profile", text)
+		self.assertIn("Expected: A billed Indian team with no Tax Profile pays default GST", text)
+
+	def test_a_plain_alert_says_what_its_kind_means(self):
+		def failed_webhooks():
+			"""Webhooks that failed to process and have not been retried since."""
+			return [{"alert": "failed_webhook", "subject": "WH-1", "team": None, "detail": "boom"}]
+
+		with self._settings("Raven", **RAVEN), patch.object(alerts, "SOURCES", (failed_webhooks,)):
+			alerts.notify_operators("Billing needs attention", alerts.collect())
+
+		text = self.raven.call_args.kwargs["json"]["text"]
+		self.assertIn("<strong>Failed webhook</strong> (1)", text)
+		self.assertIn("Webhooks that failed to process and have not been retried since.", text)
 
 	def test_a_channel_with_email_needs_an_address(self):
 		with self.assertRaises(frappe.ValidationError), self._settings("Raven and Email", emails=""):

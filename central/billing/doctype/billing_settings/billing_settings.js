@@ -14,6 +14,26 @@ frappe.ui.form.on("Billing Settings", {
 	},
 });
 
+frappe.ui.form.on("Muted Operator Alert", {
+	category(frm, cdt, cdn) {
+		// An alert from another category would not match, so a new category starts empty.
+		frappe.model.set_value(cdt, cdn, "alert", "");
+		set_alert_options(frm, locals[cdt][cdn]);
+	},
+	form_render(frm, cdt, cdn) {
+		set_alert_options(frm, locals[cdt][cdn]);
+	},
+});
+
+// The Alert field lists only the alerts of the row's category.
+function set_alert_options(frm, row) {
+	const options = frm.doc.__onload?.muted_alert_options?.[row.category] || [];
+	const grid = frm.fields_dict.muted_operator_alerts.grid;
+	grid.update_docfield_property("alert", "options", options);
+	// The open row's control built its list when it rendered, so give it the new one too.
+	frm.cur_grid?.grid_form?.fields_dict?.alert?.set_data(options);
+}
+
 frappe.ui.form.on("Accounting Gateway Account", {
 	gateway(frm, cdt, cdn) {
 		// The mode of payment is usually named after the gateway. Never overwrite one already set.
