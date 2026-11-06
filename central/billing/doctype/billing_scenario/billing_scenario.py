@@ -1,11 +1,5 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
-"""A saved question, not a saved answer.
-
-The overrides here never touch Billing Settings. They change what a projection *reads*,
-for the length of that projection, so asking what an earlier suspension day would do
-costs nobody their real configuration.
-"""
 
 import frappe
 from frappe.model.document import Document
@@ -23,6 +17,9 @@ OVERRIDE_FIELDS = (
 
 
 class BillingScenario(Document):
+	"""A saved projection question. Its overrides change only what one projection reads, never
+	Billing Settings, so a test of an earlier suspension day changes no real configuration."""
+
 	def validate(self):
 		self.months = max(1, min(frappe.utils.cint(self.months) or 1, 24))
 		if self.outcome_mode != "Assumed":
