@@ -278,7 +278,13 @@ async function submitAlert(): Promise<void> {
 
 		<Dialog v-model:open="dialogOpen" title="Set a budget alert">
 			<template #default>
-				<Alert v-if="formError" class="mb-4" theme="red" :title="formError" />
+				<Alert
+					v-if="formError"
+					class="mb-4"
+					theme="red"
+					title="Couldn't save the budget alert"
+					:description="formError"
+				/>
 				<TextInput
 					v-model="draft"
 					autofocus

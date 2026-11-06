@@ -134,7 +134,12 @@ async function submit(): Promise<void> {
 		class="flex flex-col gap-3"
 		@submit.prevent="submit"
 	>
-		<Alert v-if="formError" theme="red" :title="formError" />
+		<Alert
+			v-if="formError"
+			theme="red"
+			title="Couldn't change the payment date"
+			:description="formError"
+		/>
 
 		<Select
 			v-model="draft"

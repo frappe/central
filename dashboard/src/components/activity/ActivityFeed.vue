@@ -172,7 +172,8 @@ function clearFilters() {
 			<Alert
 				v-if="error"
 				theme="red"
-				:title="error"
+				title="Couldn't load the activity"
+				:description="error"
 				:primary-action="{ label: 'Retry', onClick: reload }"
 				class="mt-3"
 			/>

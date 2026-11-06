@@ -45,7 +45,12 @@ async function onArchive(): Promise<void> {
 <template>
 	<div class="mt-6">
 		<div class="space-y-6">
-			<Alert v-if="error && !archiveTarget" theme="red" :title="error" />
+			<Alert
+				v-if="error && !archiveTarget"
+				theme="red"
+				title="Couldn't update the team"
+				:description="error"
+			/>
 			<ImageUpload
 				v-if="canEditTeam && activeTeam"
 				label="Logo"

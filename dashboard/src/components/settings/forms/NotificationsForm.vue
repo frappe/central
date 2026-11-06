@@ -194,7 +194,13 @@ async function onSave(): Promise<void> {
 
 <template>
 	<div class="mt-6">
-		<Alert v-if="formError" class="mb-4" theme="red" :title="formError" />
+		<Alert
+			v-if="formError"
+			class="mb-4"
+			theme="red"
+			title="Couldn't save your notification settings"
+			:description="formError"
+		/>
 		<EmptyState
 			v-if="load.error"
 			icon="lucide-cloud-off"

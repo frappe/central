@@ -316,7 +316,8 @@ const showListControls = computed(
 		<Alert
 			v-if="error && hasRows"
 			theme="red"
-			:title="error"
+			title="Couldn't refresh the list"
+			:description="error"
 			:primary-action="{ label: 'Retry', onClick: () => $emit('retry') }"
 			class="mb-2"
 		/>
