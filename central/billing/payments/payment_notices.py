@@ -128,6 +128,22 @@ def _get_overdue_message(invoice: str, team: str) -> str:
 	return _("Invoice {0} is overdue. Please settle it to avoid suspension.").format(invoice)
 
 
+def notify_payment_refunded(refund) -> None:
+	"""Tell the team a payment that landed on an invoice already paid went back to where it came from."""
+	method = frappe.db.get_value("Payment Attempt", refund.payment_attempt, "payment_method")
+	notifications.notify(
+		refund.team,
+		"Payment Refunded",
+		context={
+			"paid_invoice": refund.invoice,
+			"amount": frappe.utils.fmt_money(refund.amount, currency=refund.currency),
+			"method": frappe.db.get_value("Payment Method", method, "display_label") if method else None,
+		},
+		reference_doctype="Refund",
+		reference_name=refund.name,
+	)
+
+
 def notify_team_suspended(invoice, suspends_on) -> None:
 	"""Tell the team dunning suspended it for `invoice`, and leave the reason on the invoice."""
 	invoice.add_comment(

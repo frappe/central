@@ -172,8 +172,9 @@ def settle_with_new_credit(team: str) -> list[dict]:
 def _settle_with_credit(invoice: str) -> dict:
 	"""Pay one unpaid invoice with the wallet, when the wallet covers all of it.
 
-	1. An invoice with a charge in flight is left alone: that charge is for the whole amount.
-	   A debit the gateway holds does not stop the credit. It is refunded if it goes through.
+	1. A charge in flight does not stop the credit. If that charge goes through later, it lands on a
+	   Paid invoice and is refunded to its source (`charges._mark_invoice_paid`). A capture whose
+	   settlement has not landed yet does stop it: that money is already taken.
 	2. Credit that covers only part of the invoice stays in the wallet. It is never split
 	   with a charge, so the customer pays the whole amount due in one way.
 	"""
@@ -186,7 +187,7 @@ def _settle_with_credit(invoice: str) -> dict:
 	doc = frappe.get_doc("Invoice", invoice)
 	doc.flags.ignore_links = True  # only its amounts and status change here
 	due = frappe.utils.flt(doc.expected_collection)
-	if not is_owed(doc) or due <= 0 or charges.unheld_attempt_in_flight(invoice):
+	if not is_owed(doc) or due <= 0 or charges.unsettled_capture(invoice):
 		return {"invoice": invoice, "applied": 0}
 
 	draw = _draw_wallet(doc, due, _gst_still_due(doc, due))

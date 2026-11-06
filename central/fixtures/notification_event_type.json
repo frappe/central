@@ -18,6 +18,24 @@
   "reportable_by": "None"
  },
  {
+  "action_label": "View invoices",
+  "action_route": "/billing/invoices",
+  "category": "Billing",
+  "create_in_app": 1,
+  "direct_recipients": "None",
+  "docstatus": 0,
+  "doctype": "Notification Event Type",
+  "event_type": "payment_refunded",
+  "in_app_body": "Invoice {{ context.paid_invoice }} was already paid, so we refunded your payment of {{ context.amount }}{% if context.method %} to {{ context.method }}{% endif %}. It can take a few days to reach your account.",
+  "in_app_title": "Payment refunded",
+  "modified": "2026-11-06 00:00:00",
+  "name": "payment_refunded",
+  "required_cap": "billing:view",
+  "severity": "Info",
+  "is_critical": 0,
+  "reportable_by": "None"
+ },
+ {
   "action_label": "Pay now",
   "action_route": "/billing/invoices",
   "category": "Billing",

@@ -3,7 +3,7 @@
 """Postpaid two-phase invoice generation (issue #09)."""
 
 import threading
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import frappe
 
@@ -439,31 +439,31 @@ class TestCreditAddedAfterIssue(BillingTestBase):
 		self.assertEqual(credits.get_balance(TEAM)["balance"], 400)
 		collect.assert_not_called()
 
-	def _attempt(self, invoice: str, hold_until=None) -> None:
-		frappe.get_doc(
+	def _attempt(self, invoice: str, hold_until=None, status="Initiated"):
+		return frappe.get_doc(
 			{
 				"doctype": "Payment Attempt",
 				"invoice": invoice,
 				"team": TEAM,
 				"amount": 1000,
 				"currency": "INR",
-				"status": "Initiated",
+				"status": status,
 				"initiated_at": frappe.utils.now_datetime(),
 				"gateway_hold_until": hold_until,
+				"gateway_transaction_id": "pi_late",
 			}
 		).insert(ignore_permissions=True)
 
-	def test_an_invoice_with_a_charge_in_flight_keeps_the_credit_in_the_wallet(self):
+	def test_credit_settles_an_invoice_with_a_charge_in_flight(self):
 		name = self._open_invoice()
 		self._attempt(name)
 		credits.purchase(TEAM, 1000, "INR")
 
-		self.assertEqual(lifecycle.settle_with_new_credit(TEAM), [{"invoice": name, "applied": 0}])
+		lifecycle.settle_with_new_credit(TEAM)
+
 		inv = frappe.get_doc("Invoice", name)
-		self.assertEqual(
-			(inv.status, inv.credit_applied, inv.expected_collection), ("Outstanding", 0.0, 1000.0)
-		)
-		self.assertEqual(credits.get_balance(TEAM)["balance"], 1000)
+		self.assertEqual((inv.status, inv.credit_applied, inv.expected_collection), ("Paid", 1000.0, 0.0))
+		self.assertEqual(credits.get_balance(TEAM)["balance"], 0)
 
 	def test_credit_settles_an_invoice_whose_debit_the_gateway_holds(self):
 		name = self._open_invoice()
@@ -472,15 +472,45 @@ class TestCreditAddedAfterIssue(BillingTestBase):
 
 		lifecycle.settle_with_new_credit(TEAM)
 
-		inv = frappe.get_doc("Invoice", name)
-		self.assertEqual((inv.status, inv.credit_applied, inv.expected_collection), ("Paid", 1000.0, 0.0))
+		self.assertEqual(frappe.db.get_value("Invoice", name, "status"), "Paid")
 
-	def test_a_debit_whose_hold_ended_still_keeps_the_credit_in_the_wallet(self):
+	def test_a_capture_not_yet_settled_keeps_the_credit_in_the_wallet(self):
 		name = self._open_invoice()
-		self._attempt(name, hold_until=frappe.utils.add_to_date(frappe.utils.now_datetime(), hours=-1))
+		self._attempt(name, status="Captured")
 		credits.purchase(TEAM, 1000, "INR")
 
 		self.assertEqual(lifecycle.settle_with_new_credit(TEAM), [{"invoice": name, "applied": 0}])
+		self.assertEqual(credits.get_balance(TEAM)["balance"], 1000)
+
+	def test_the_charge_in_flight_that_captures_later_is_refunded_once(self):
+		from central.billing.gateways.base import RefundResult
+		from central.billing.payments import charges
+
+		name = self._open_invoice()
+		attempt = self._attempt(name)
+		credits.purchase(TEAM, 1000, "INR")
+		lifecycle.settle_with_new_credit(TEAM)
+
+		frappe.db.set_value("Payment Attempt", attempt.name, "status", "Captured")
+		attempt.reload()
+		gateway = MagicMock()
+		gateway.refund.return_value = RefundResult(status="Completed", gateway_refund_id="re_late", raw={})
+		with patch("central.billing.payments.refunds._adapter", return_value=gateway):
+			self.assertFalse(charges._mark_invoice_paid(attempt, 1000, "INR", "pi_late", None))
+
+		inv = frappe.get_doc("Invoice", name)
+		self.assertEqual((inv.status, inv.credit_applied, inv.amount_paid), ("Paid", 1000.0, 0.0))
+		self.assertEqual(credits.get_balance(TEAM)["balance"], 0)
+		self.assertEqual(frappe.db.get_value("Payment Attempt", attempt.name, "status"), "Refunded")
+		gateway.refund.assert_called_once()
+		refund = frappe.db.get_value("Refund", {"payment_attempt": attempt.name, "late_capture": 1})
+		notices = frappe.get_all(
+			"Billing Notification Log",
+			filters={"event_type": "Payment Refunded", "reference_name": refund},
+			pluck="message",
+		)
+		self.assertEqual(len(notices), 1)
+		self.assertIn(name, notices[0])
 
 	def test_booking_a_credit_queues_the_settlement(self):
 		with patch("frappe.enqueue") as enqueue:
