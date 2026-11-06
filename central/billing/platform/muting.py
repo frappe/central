@@ -51,7 +51,7 @@ def is_muted(alert: dict, muted: set[str]) -> bool:
 
 def validate_mute(row) -> None:
 	"""The row's alert must belong to its category. A check is matched on its code alone."""
-	if row.alert and not _belongs_to(row.alert, row.category):
+	if row.alert and not _is_in_category(row.alert, row.category):
 		frappe.throw(
 			_("Row {0}: {1} is not an alert in {2}. Choose the alert again.").format(
 				row.idx, row.alert, row.category
@@ -60,7 +60,7 @@ def validate_mute(row) -> None:
 		)
 
 
-def _belongs_to(alert: str, category: str) -> bool:
+def _is_in_category(alert: str, category: str) -> bool:
 	kinds = CATEGORIES[category]
 	checks = _checks_for(kinds[0])
 	if checks is None:
