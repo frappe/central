@@ -118,7 +118,7 @@ const { onKeydown } = useMenuKeyboardNavigation(() => {
 					v-if="switchError || error"
 					theme="red"
 					:title="switchError ? `Couldn't switch teams` : `Couldn't load your teams`"
-					:description="switchError || getErrorMessage(error, 'Could not load teams.')"
+					:description="switchError || getErrorMessage(error, 'Reload the page to try again.')"
 					class="mb-2"
 				/>
 				<Button

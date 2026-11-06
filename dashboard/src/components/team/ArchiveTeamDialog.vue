@@ -153,7 +153,7 @@ onBeforeUnmount(() => window.removeEventListener('focus', onFocus))
 			<Alert
 				v-else-if="checksError"
 				theme="red"
-				title="Couldn't check the team"
+				title="Couldn't check if the team can be archived"
 				:description="checksError"
 			>
 				<template #actions>

@@ -104,8 +104,8 @@ const paypalPhase = ref(false)
 const paypalLoading = ref(false)
 const paypalEl = ref<HTMLElement | null>(null)
 
-// Set when the wallet is actually credited, so a Razorpay top-up that runs with
-// the dialog closed knows whether to reopen (customer backed out) or stay closed.
+// Set when the wallet is credited. The close for a Razorpay success happens while
+// inSheet is set, so the watcher skips reset and submit() resets the form instead.
 let completed = false
 // True while the Razorpay sheet runs with our dialog closed. The dialog keeps the
 // amount and method, so a customer who comes back retries without starting over.
@@ -173,8 +173,8 @@ async function submit(): Promise<void> {
 			mountCard,
 			'Could not start secure card entry',
 		)
-	// else: the Razorpay sheet ran with our dialog closed — reopen it unless the
-	// top-up went through (onDone already closed and flagged it).
+	// The Razorpay sheet ran with the dialog closed, so the watcher kept the form.
+	// Reset it after a success; reopen it with the error after a cancel or failure.
 	if (completed) reset()
 	else open.value = true
 }
