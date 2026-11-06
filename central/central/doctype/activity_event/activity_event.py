@@ -1,4 +1,5 @@
 import hashlib
+from collections import defaultdict
 from datetime import datetime
 from functools import partial
 from typing import Any
@@ -228,6 +229,35 @@ def get_actor(resource: Document, actor: str) -> str | None:
 
 	# Frappe's standard users run jobs, schedules and unsigned requests, not people.
 	return None if actor in frappe.STANDARD_USERS else actor
+
+
+def _read_requesters(doctype: str, field: str, events: dict[str, list[str]]) -> dict[str, str]:
+	resources = frappe.get_list(doctype, {"name": ("in", list(events))}, ["name", field], as_list=True)
+	return {
+		event: requester
+		for name, requester in resources
+		if requester and requester not in frappe.STANDARD_USERS
+		for event in events[name]
+	}
+
+
+def get_requesters(rows: list[dict]) -> dict[str, str]:
+	"""Event name to the person who asked for an event that has no actor, such as a snapshot
+	the region reports ready. The resource names the requester, so it is read, not stored."""
+	requesters = {}
+	for doctype, spec in TRACKED.items():
+		if not spec.requester_field:
+			continue
+
+		events = defaultdict(list)
+		for row in rows:
+			if row.resource_type == doctype and not row.actor:
+				events[row.resource_name].append(row.name)
+
+		if events:
+			requesters.update(_read_requesters(doctype, spec.requester_field, events))
+
+	return requesters
 
 
 def get_version_events(version, resource: Document, diff: dict) -> list[dict | None]:
