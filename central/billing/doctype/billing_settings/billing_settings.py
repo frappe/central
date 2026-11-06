@@ -14,6 +14,22 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
+# The last day that exists in every month.
+LAST_SUSPENSION_DAY = 28
+
+
+def validate_suspension_day(day: int | str | None) -> None:
+	"""The suspension day is after the last payment day and exists in every month."""
+	from central.billing.doctype.billing_profile.billing_profile import LAST_PAYMENT_DAY
+
+	if not LAST_PAYMENT_DAY < frappe.utils.cint(day) <= LAST_SUSPENSION_DAY:
+		frappe.throw(
+			_("Suspension Day must be from the {0}th to the {1}th of the month.").format(
+				LAST_PAYMENT_DAY + 1, LAST_SUSPENSION_DAY
+			),
+			title=_("Invalid Dunning Ladder"),
+		)
+
 
 class BillingSettings(Document):
 	def onload(self):
@@ -24,7 +40,6 @@ class BillingSettings(Document):
 
 	def validate(self):
 		self.strip_accounting_names()
-		self.validate_retry_days()
 		self.validate_dunning_ladder()
 		self.validate_one_row_per_currency()
 		self.validate_one_minimum_per_currency()
@@ -70,49 +85,17 @@ class BillingSettings(Document):
 			for field in ("mode_of_payment", "clearing_account"):
 				row.set(field, (row.get(field) or "").strip())
 
-	def retry_days(self) -> list[int]:
-		"""The dunning retry days, parsed, de-duplicated and in order.
-
-		Returns an empty list for a blank or unparseable value; `validate` is what
-		refuses to store junk, so readers never have to."""
-		days = []
-		for part in (self.dunning_retry_days or "").split(","):
-			part = part.strip()
-			if not part:
-				continue
-			try:
-				days.append(int(part))
-			except ValueError:
-				return []
-		return sorted(set(days))
-
-	def validate_retry_days(self):
-		"""Every retry day must be a positive whole number of days past due."""
-		raw = [p.strip() for p in (self.dunning_retry_days or "").split(",") if p.strip()]
-		days = self.retry_days()
-		if len(days) != len(raw) or any(day < 1 for day in days):
-			frappe.throw(
-				_("Retry Days must be positive whole numbers, comma separated — for example 1, 3, 7."),
-				title=_("Invalid Retry Days"),
-			)
-		self.dunning_retry_days = ", ".join(str(day) for day in days)
-
 	def validate_dunning_ladder(self):
-		"""Suspension follows the last retry, and termination follows suspension.
+		"""Check the dunning ladder settings.
 
-		A ladder out of order would suspend a team the collection run was still
-		retrying, or terminate one before it was ever suspended."""
-		days = self.retry_days()
-		if days and self.suspend_after_days and self.suspend_after_days <= days[-1]:
-			frappe.throw(
-				_("Suspend After must be later than the last retry day ({0}).").format(days[-1]),
-				title=_("Invalid Dunning Ladder"),
-			)
-		if self.terminate_after_days and self.terminate_after_days <= (self.suspend_after_days or 0):
-			frappe.throw(
-				_("Terminate After must be later than Suspend After."),
-				title=_("Invalid Dunning Ladder"),
-			)
+		1. Retries are at least 1 day apart.
+		2. The suspension day is after the last payment day and exists in every month.
+		3. Termination is due at least 1 day after suspension."""
+		if frappe.utils.cint(self.dunning_retry_interval_days) < 1:
+			frappe.throw(_("Retry Every must be at least 1 day."), title=_("Invalid Dunning Ladder"))
+		validate_suspension_day(self.suspension_day)
+		if frappe.utils.cint(self.terminate_after_days) < 1:
+			frappe.throw(_("Terminate After must be at least 1 day."), title=_("Invalid Dunning Ladder"))
 
 	def validate_one_minimum_per_currency(self):
 		"""One minimum invoice amount per currency."""

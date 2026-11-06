@@ -60,7 +60,25 @@ When an invoice is unpaid, **Billing > Overview** shows a banner with the amount
 
 ## When a payment fails
 
-When a charge fails, Frappe Cloud retries it and sends a notification with the reason. If the invoice stays unpaid, it becomes `Overdue`. If it stays unpaid after that, Frappe Cloud stops the team's servers. The data on the servers is kept.
+Frappe Cloud charges an invoice on its payment date. When the charge fails, Frappe Cloud tries again every 2 days until the invoice due date, and sends a notification with the reason. When no retry fits before the due date, Frappe Cloud tries once more 24 hours after the failed charge. After the last retry, the invoice becomes `Overdue`. While your bank has not confirmed a charge, the invoice does not become `Overdue`, and the billing summary shows **Payment in progress**. On the day before the suspension date, every unpaid invoice becomes `Overdue` and you get a notification, also when your bank has not confirmed a charge yet. If the invoice stays unpaid, Frappe Cloud stops the team's servers on the 15th of the month. The data on the servers is kept. When you pay the invoice, Frappe Cloud starts the servers again.
+
+An invoice is issued on the 1st and is due on the 8th, or on the payment date when that is later:
+
+| Payment date | Retries | Servers stop on |
+| --- | --- | --- |
+| 1st | 3rd, 5th, 7th | 15th |
+| 3rd | 5th, 7th | 15th |
+| 5th | 7th | 15th |
+| 6th | 8th | 15th |
+| 7th | 8th | 15th |
+| 8th | 9th | 15th |
+| 10th | 11th | 15th |
+
+If the invoice is issued late, for example after you add missing billing details, and its due date is on or after the 15th, the servers stop 7 days after its due date.
+
+### When a payment is still in progress near the suspension date
+
+You can add credit to your wallet to avoid suspension. When the wallet covers the full amount of an unpaid invoice, the credit pays the invoice at once, also while your bank has not confirmed a charge. If the bank confirms that charge later, Frappe Cloud refunds the full charge to the payment method and sends you a notification. The refund can take a few days to reach your account.
 
 ::: warning
 Pay an overdue invoice as soon as you can. Stopped servers make your sites unavailable.

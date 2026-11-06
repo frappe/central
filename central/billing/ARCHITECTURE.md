@@ -248,16 +248,17 @@ Dunning, reconciliation, the e-mandate cycle, credit expiry, card expiry, accoun
 
 | Cadence | Entry point | Purpose |
 |---|---|---|
-| daily | `revenue.dunning.run_dunning` | Day 1/3/7 retries → past_due → suspend (stops servers) → termination due (operator) |
+| daily | `revenue.dunning.run_dunning` | retries every `dunning_retry_interval_days` up to the due date → past_due → suspend on the suspension date (stops servers) → termination due (operator) |
 | daily | `payments.charges.cleanup_payment_logs` | prune Payment Attempt / Webhook Event |
 | daily | `projection.batch.prune` | prune old projection batches |
-| daily | `payments.emandate.run_emandate_cycle` | INR ≤₹15k pre-debit notice → debit after 24h |
+| daily | `payments.emandate.run_emandate_cycle` | backstop: INR ≤₹15k pre-debit notice → debit window opens 24 hours after the notice |
 | daily | `catalog.subscriptions.backfill_missing_subscriptions` | Subscription for any Running Virtual Machine missing one |
 | daily | `payments.settlement.run_billing_details_reminder` | ask credit-funded teams for the billing details their invoice will need |
 | daily | `revenue.credits.run_credit_expiry` | write off expired promotional credit |
 | daily | `platform.invariants.run_invariant_audit` | audit the cross-table money invariants |
 | daily | `payments.reconciliation.recheck_completed_refunds` | ask the gateway again about card refunds completed in the last 30 days; flag one that failed later |
 | hourly | `payments.webhooks.retry_failed_webhooks` | apply again failed and lost webhook events |
+| hourly | `payments.collection.collect_on_payment_date` | debit each pre-debit rail whose window has opened (e-mandate first debit), start the first charge on the payment date, run the single retry 24 hours after a failed first charge, and send the payment reminder the day before; a pre-debit rail is started no earlier than 24 hours before the payment date to send its notice |
 | hourly | `payments.reconciliation.run_reconciliation` | charged-but-never-webhooked gateway scan and Pending refunds |
 | hourly | `platform.alerts.run_operator_alerts` | alert operators (invariants, readiness, failed webhooks, stale attempts, unsettled captures, held invoices, failed refunds, failed accounting syncs) |
 | monthly | `revenue.invoicing.draft_monthly_invoices` | waive internal teams' unpaid invoices, then draft the just-closed month as page jobs on the `billing` queue |
@@ -347,14 +348,7 @@ Two things keep that lock short, and both are load-bearing:
   round once a *month* — a contained loser would go unbilled until someone noticed.
   Only after the budget is exhausted is it recorded as a `Billing Run Failure`.
 
-**A late run never costs the customer grace.** `due_date` and `dunning_starts_on` are
-both set from the day the invoice is actually *opened*, so a run three days behind
-bills three days later rather than three days overdue. Beyond that, any collection
-failure on our side — a 429, a dead worker, a contained run error — calls
-`dunning.defer_dunning`, which pushes `dunning_starts_on` (never `due_date`, which is
-an accounting fact AR aging depends on) forward to today + the standard window. It is
-monotonic and self-limiting: a successful ask stops pushing, so a broken gateway defers
-*escalation*, not collection.
+**A late run never costs the customer grace.** `payment_date`, `due_date`, `dunning_starts_on` and `suspends_on` are all set from the day the invoice is actually *opened*, so a run three days behind bills three days later rather than three days overdue. Beyond that, any collection failure on our side (a 429, a dead worker, a contained run error) calls `dunning.defer_dunning`. It moves `dunning_starts_on` forward to today, and moves `suspends_on` and the end of the retry window forward by the same number of days. It never moves `due_date`, which is an accounting fact AR aging depends on. It is monotonic and self-limiting: a successful ask stops pushing, so a broken gateway defers *escalation*, not collection.
 
 ### Invoice status
 
@@ -481,11 +475,12 @@ flowchart TD
     HOLD -->|no| HELD[["Invoice held, no due date<br/>notify Billing Details Required"]]
     HELD -->|Billing Profile complete| REL["release_held_drafts"]
     REL --> OAC
-    HOLD -->|yes| WF{"settlement waterfall"}
-    WF -->|credits| CR["settlement.py"]
-    WF -->|then card| CARD["charges.pay_invoice"]
-    CR & CARD --> OPEN[["Invoice: Outstanding, due date set"]]
-    OPEN -->|webhook Paid| PAID[["Invoice: Paid"]]
+    HOLD -->|yes| CR["wallet credits apply at open<br/>settlement.py"]
+    CR -->|credits cover the bill| PAID[["Invoice: Paid"]]
+    CR -->|remainder owed| OPEN[["Invoice: Outstanding,<br/>payment date and due date set"]]
+    OPEN -->|at open| CARD["collection.collect_invoice<br/>no rail debits before the payment date;<br/>a pre-debit rail: debit window opens 24 hours after its notice"]
+    PDATE(["hourly · collection.collect_on_payment_date"]) -->|payment date reached| CARD
+    CARD -->|webhook Paid| PAID
     PAID --> SYNC["erpnext_sync.enqueue_invoice_sync"]
 ```
 ```
@@ -506,13 +501,41 @@ flowchart TD
   → settle_draft → open_and_collect (per invoice)
       → billing-details hold: a Billable invoice keeps no due date if the team has no billing
         details (lifecycle._hold_for_billing_details, notifies "Billing Details Required")
-      → settlement waterfall: credits (settlement.py) → card (charges.pay_invoice)
-      → Invoice gets its due date → (on webhook) Paid
-      → on Paid: erpnext_sync.enqueue_invoice_sync
+      → wallet credits apply at once (settlement.py); credits that cover the bill settle it (Paid)
+      → Invoice gets its payment_date and due_date
+      → collection.collect_invoice at open: no rail debits before the payment date; a
+        pre-debit rail sends its notice no earlier than 24 hours before the payment date, then waits 24 hours
+      → (on webhook) Paid → erpnext_sync.enqueue_invoice_sync
+
+[hourly]   payments.collection.collect_on_payment_date
+  → emandate.charge_due: debit each pre-debit rail whose window has opened
+  → every owed invoice with no payment attempt and payment_date ≤ tomorrow (no due date cut-off)
+  → collection.collect_invoice (no rail debits before the payment date; a pre-debit rail sends
+    its notice no earlier than 24 hours before it, and its debit window opens 24 hours after the notice)
+  → dunning.run_single_retries: the single retry, 24 hours after the first charge failed
+  → payment_notices.send_payment_reminders: invoices charged tomorrow, rails without a pre-debit notice
+  → (on webhook) Paid → erpnext_sync.enqueue_invoice_sync
 ```
 A held draft is released when the profile is complete. `Billing Profile.on_update` calls `release_held_invoices`, which enqueues `run.release_held_drafts` to settle the held drafts. When a draft waits longer than `Billing Settings.billing_details_grace_days`, the team stops being credit-funded for new spend (`settlement.details_overdue`), and `platform.alerts.held_invoices` pages operators.
 
 Both ticks use `draft_team_page` and `settle_draft_page` page jobs (see §3).
+
+**The card is charged on the payment day.** Each team has a payment day from the 1st to the 10th on its Billing Profile (default 1). When an invoice opens, wallet credits apply at once and the invoice gets a `payment_date`: the payment day of the month it opened in, or the opening date when the run is late. The due date is never before the payment date.
+
+No rail debits before the payment date (`collection.collect_invoice`). A rail that owes the RBI pre-debit notice sends it no earlier than 24 hours before the payment date (`emandate.schedule_predebit`). Its debit window opens 24 hours after the notice, which is never before the payment date. On the default payment day, the 1st, the invoice opens on the payment date, so an e-mandate is debited on the 2nd. The hourly `collection.collect_on_payment_date` does four things in order. First it makes the first debit on each pre-debit rail whose window has opened (`emandate.charge_due`), so the debit does not wait for the daily `run_emandate_cycle`. An invoice with an attempt made in its window is left to dunning. Then it starts collection on each invoice that has reached its payment date, or reaches it tomorrow, and has no payment attempt. An invoice that missed its payment date is still picked up. An invoice charged in the first step has an attempt, so the second step skips it. Then it runs the single retry of each invoice whose retry window has no interval retry, 24 hours after its first charge failed (`dunning.run_single_retries`). Last, it sends the payment reminder (`payment_notices.send_payment_reminders`) for each invoice that is charged tomorrow, has no attempt, and is on a rail that owes no pre-debit notice. `Invoice.payment_reminder_sent_at` makes the reminder go out once. After the first charge, dunning owns the retries.
+
+The customer changes the payment day at most twice in a billing cycle (`BillingProfile.change_payment_day`). The change applies to the next invoice. An open invoice keeps its date.
+
+**Payment emails.** `payments.payment_notices` sends these events through `platform.notifications.notify`. Each is a Billing event for members with `billing:view`, in-app and by email.
+
+| Event | When | Sent from |
+|---|---|---|
+| `payment_scheduled` | An invoice opens with an amount left after credit. It names the total, the credit applied, the amount to charge, the charge date and the payment method. The charge date is the pre-debit charge time on a rail that owes a pre-debit notice, else the payment date. With no method, it asks the team to add one. | `lifecycle.open_and_collect`, after the first collection step, in the run that issues the invoice. A held invoice sends it when it is released and opens. |
+| `payment_reminder` | 1 day before the payment date, when the invoice has no payment attempt and the rail of the method that is charged first owes no pre-debit notice. Once per invoice: a conditional update sets `payment_reminder_sent_at` before the notice, and only the sweep that changes the row sends it. | The hourly `collection.collect_on_payment_date`. |
+| `payment_date_changed` | The payment day changes, on the dashboard or in Desk. It names the new day, the next payment date, and an issued invoice that keeps its payment date. | `BillingProfile.on_update`. |
+| `payment_retry` | A dunning retry fails. The message names the retry number and the reason. | `dunning.retry_payment`. |
+| `invoice_overdue` | Dunning marks the invoice Overdue. The message names the action that settles it in the team's collection mode. While a charge is in flight, the message says the payment is still processing, that wallet credit added now avoids suspension on the suspension date, and that the charge is refunded if it also goes through. | `dunning.process_invoice_dunning`. |
+| `payment_refunded` | A late capture Refund completes (see the already Paid case below). It names the paid invoice, the amount and the payment method. Once per Refund, when its status changes to Completed. | `Refund.on_update`. |
 
 ### C. Collect / settle a charge
 ```mermaid
@@ -548,7 +571,7 @@ charges.pay_invoice → create_invoice_payment_order (via gateway adapter)
 | A declined payment on a mandate authorisation order | The Pending Validation method keeps the failure, and a `Payment Method Setup Failed` Billing Event is added. |
 | Short or another currency | Nothing is settled. The invoice gets a comment and an Error Log entry. |
 | More than is due | The invoice is Paid and the surplus goes to the wallet. |
-| The invoice is already Paid, by credit or by another charge | `refunds.issue_refund` returns the whole payment to its source and the attempt becomes Refunded. The Refund is marked `late_capture`. No wallet credit or advance is booked, and the refund steps make no credit note and no payment out in the accounting system for it, also when its webhook, a retry or a later cancellation runs them. A later cancellation, a partial refund and the card payment sent to the accounting system leave the charge out, so only `retry_failed_refunds` gives it back when its refund fails. The invoice gets a comment and an Error Log entry. |
+| The invoice is already Paid, by credit or by another charge | `refunds.issue_refund` returns the whole payment to its source and the attempt becomes Refunded. The Refund is marked `late_capture`. No wallet credit or advance is booked, and the refund steps make no credit note and no payment out in the accounting system for it, also when its webhook, a retry or a later cancellation runs them. A later cancellation, a partial refund and the card payment sent to the accounting system leave the charge out, so only `retry_failed_refunds` gives it back when its refund fails. The invoice gets a comment and an Error Log entry. The team gets `payment_refunded` when the refund completes. This is the normal end of a charge that was in flight when wallet credit paid the invoice (`lifecycle.settle_with_new_credit`). |
 | The invoice is Cancelled or Waived | The payment goes to the wallet, once per payment id, and an operator is told. |
 
 Reconciliation asks the gateway about the stored order of an unanswered on-session attempt, and fails it only after `CHECKOUT_OPEN_HOURS`. It credits a Top-up Order that was paid but never confirmed, and expires one nobody paid after `TOP_UP_EXPIRES_HOURS`.
@@ -566,16 +589,12 @@ rotation, so a manual retry must land on the same card twice, not silently rotat
 ```mermaid
 stateDiagram-v2
     [*] --> Current
-    Current --> Day1: invoice unpaid
-    Day1 --> Day3: retry_payment fails
-    Day3 --> Day7: retry_payment fails
-    Day7 --> PastDue: still unpaid
-    PastDue --> Suspended: grace elapsed
+    Current --> Retrying: charge on the payment date fails
+    Retrying --> PastDue: last retry day, still unpaid
+    PastDue --> Suspended: suspension date
     Suspended --> Current: paid
     Suspended --> Terminated: an operator decides
-    Day1 --> Current: paid
-    Day3 --> Current: paid
-    Day7 --> Current: paid
+    Retrying --> Current: paid
     PastDue --> Current: paid
     note right of Suspended
         Central stops the team's running
@@ -584,7 +603,8 @@ stateDiagram-v2
 ```
 ```
 daily run_dunning → process_invoice_dunning(invoice)
-  → retry_payment on Day 1/3/7 → account_standing past_due → suspend → termination due
+  → get_ladder_dates(invoice) → dunning_schedule(dates, policy)
+  → retry_payment on each retry date → account_standing past_due → suspend → termination due
   → suspend: subscriptions.suspend_for_nonpayment moves every subscription of the team to
     Suspended, stops its running servers and flags them stopped_for_nonpayment
   → paid: Invoice.on_update → subscriptions.restore_after_payment (standing Current, start
@@ -592,6 +612,30 @@ daily run_dunning → process_invoice_dunning(invoice)
   → termination due: platform.alerts.termination_due pages an operator; nothing is deleted
   → while behind on payment a team cannot create, resize up or subscribe (PAYMENT_OVERDUE)
 ```
+`dunning.dunning_schedule` is the one owner of the ladder. Its inputs are the ladder dates of the invoice and the policy in Billing Settings. `get_ladder_dates` reads the dates of an issued invoice, and `get_ladder_dates_by_invoice` reads them for many invoices with a fixed number of queries. These dates include the time the first charge failed, the time the oldest charge still in flight was made, and whether the ladder waits for a charge (`payment_attempt.get_charge_outcomes`, one grouped query), so the runner, the dashboard, the projections and the alerts show the same single retry. An invoice with no charge waits only when its ladder has the single retry and dunning can charge it off-session. `collection.get_teams_with_retry_rail` reads that for all such teams in one batch. The hourly `run_single_retries` reads the charges first and reads the ladder dates only of the invoices whose first charge failed 24 hours ago or earlier. `get_opening_ladder_dates` gives the dates of an invoice that would open on a given date, for the projections and the dashboard.
+
+| Ladder date | Rule |
+|---|---|
+| Anchor | `dunning_starts_on`. The payment date when the invoice opens. `defer_dunning` moves it forward. |
+| Retries | Every `dunning_retry_interval_days` (default 2) after the anchor, while the retry date is on or before the end of the retry window. The window ends on the due date, moved forward by as many days as the anchor moved. When no retry fits, there is one retry 24 hours after the first charge failed, counted from the time the failure arrived. The hourly `collection.collect_on_payment_date` runs it through `dunning.run_single_retries`, so the daily dunning run does not run it early. While a charge is in flight, or while a team that dunning can charge has no charge yet, the ladder waits: it has no retry, and Overdue waits until the day before the suspension date. An invoice that dunning cannot charge off-session (Manual Checkout, Action Required, or no method) gets this retry 1 day after the anchor. A projected invoice shows it 1 day after the anchor. A retry after the day before the suspension date is dropped, because the invoice is Overdue then and dunning does not retry an Overdue invoice. |
+| Overdue | The last retry day, after that day's retry, and at the latest the day before the suspension date (`dunning.get_overdue_time`). A charge still in flight holds Overdue until it fails or until the day before the suspension date. On that day every unpaid invoice is Overdue and the team gets `invoice_overdue`, so it can add wallet credit before suspension. Wallet credit that covers the whole invoice pays it also while a charge is in flight (`lifecycle.settle_with_new_credit`). Only a capture whose settlement has not landed yet stops the credit. If the charge captures later, `charges._mark_invoice_paid` refunds it to its source. The team goes past_due and its servers keep running. |
+| Suspension | `Invoice.suspends_on`. It is the `suspension_day` (default 15) of the month the invoice opened in. When that day is not after the due date (an invoice that opened late), it is the due date plus `suspension_day - 1 - invoice_due_days` days. `dunning.get_suspension_date` computes it. A charge in flight does not hold the suspension. |
+| Termination due | `terminate_after_days` (default 10) after the suspension date. An operator decides. Nothing is deleted. |
+
+With the defaults, an invoice opens on the 1st and is due on the 8th, or on the payment date when that is later:
+
+| Payment day | Retries | Suspended | Termination due |
+|---|---|---|---|
+| 1st | 3rd, 5th, 7th | 15th | 25th |
+| 3rd | 5th, 7th | 15th | 25th |
+| 5th | 7th | 15th | 25th |
+| 6th | 8th | 15th | 25th |
+| 7th | 8th | 15th | 25th |
+| 8th | 9th | 15th | 25th |
+| 10th | 11th | 15th | 25th |
+
+`dunning.get_last_payment_day_with_retries` gives the last payment day that still gets an interval retry (the 6th with the defaults). The payment date form shows a warning for a later day.
+
 Billing stops and starts a server as the system (`resource_actions.submit_billing_command`), because a payment can arrive by webhook as Guest. `submit_command` refuses a customer `start` while the server's subscription is Suspended.
 
 ### E. Metering
@@ -686,7 +730,7 @@ get_team_caps resolves caps live (no per-team Trust Tier doctype — dropped)
 | Tier/cap wrong | `catalog.entitlements` (`get_team_caps`, `evaluate_tier`, per-currency Trust Tier Threshold) |
 | Provisioning failed | `central.resource_actions.submit_request` / `validate_purchase` (`require_payment_method_or_credit`, `reserved_rate`, spending limit), the Resource Action record, `composition.validate_composition` bounds |
 | Invoice Outstanding with no due date | `lifecycle._hold_for_billing_details` / `held_drafts`: is the Billing Profile incomplete? `platform.alerts.held_invoices` lists drafts held past `billing_details_grace_days` |
-| Card declined repeatedly | `collection` (escalate don't repeat), `mandates.effective_cap`, dunning Day 1/3/7 |
+| Card declined repeatedly | `collection` (escalate don't repeat), `mandates.effective_cap`, the dunning retry dates (`dunning.dunning_schedule`) |
 | A line's Project breakdown is missing/wrong | `generate._tag_projects`/`_resource_project_map` — is the resource's Subscription tagged, is its Project `enabled`? A disabled Project's lines carry no tag by design (§2.1); check `Invoice Line Item.project`/`project_title` on a real invoice, or the same fields on a forecast line |
 | Tagging a subscription into a Project is refused | `Subscription.validate_project` — same-team? Project `enabled`? `catalog.subscriptions.enforce_project_headroom` — would the tag push the Project's committed run-rate (`project_run_rate`) past its `spending_limit`? (blocks new tagging only, §2.1) |
 | ERPNext out of sync | `erpnext_sync` (async, never rolls back the invoice; check retry backoff) |

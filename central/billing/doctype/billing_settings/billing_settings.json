@@ -19,9 +19,9 @@
   "column_break_invoicing",
   "forecast_notify_percent",
   "section_break_dunning",
-  "dunning_retry_days",
+  "dunning_retry_interval_days",
   "column_break_dunning",
-  "suspend_after_days",
+  "suspension_day",
   "terminate_after_days",
   "section_break_projection",
   "projection_budget_seconds",
@@ -174,27 +174,28 @@
    "label": "Dunning"
   },
   {
-   "default": "1, 3, 7",
-   "description": "Days past due to retry payment on, comma separated.",
-   "fieldname": "dunning_retry_days",
-   "fieldtype": "Data",
-   "label": "Retry Days"
+   "default": "2",
+   "description": "Days between payment retries after the payment date. Retries stop at the invoice due date. When no retry fits, the payment is retried once, 24 hours after the failed charge.",
+   "fieldname": "dunning_retry_interval_days",
+   "fieldtype": "Int",
+   "label": "Retry Every (Days)",
+   "non_negative": 1
   },
   {
    "fieldname": "column_break_dunning",
    "fieldtype": "Column Break"
   },
   {
-   "default": "14",
-   "description": "Days past due before a subscription is suspended.",
-   "fieldname": "suspend_after_days",
+   "default": "15",
+   "description": "Day of the month on which a team with an unpaid invoice is suspended. Choose a day from the 11th to the 28th.",
+   "fieldname": "suspension_day",
    "fieldtype": "Int",
-   "label": "Suspend After (Days)",
+   "label": "Suspension Day",
    "non_negative": 1
   },
   {
-   "default": "44",
-   "description": "Days past due before a subscription is terminated.",
+   "default": "10",
+   "description": "Days after suspension before termination is due. An operator is alerted. Nothing is deleted.",
    "fieldname": "terminate_after_days",
    "fieldtype": "Int",
    "label": "Terminate After (Days)",
@@ -546,7 +547,7 @@
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-10-23 12:00:00.000000",
+ "modified": "2026-11-05 23:30:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Billing Settings",

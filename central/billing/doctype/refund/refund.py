@@ -6,7 +6,12 @@ from frappe.model.document import Document
 
 
 class Refund(Document):
-	pass
+	def on_update(self) -> None:
+		"""The team did not ask for a refund of a late capture, so it hears when the money is back."""
+		if self.late_capture and self.status == "Completed" and self.has_value_changed("status"):
+			from central.billing.payments.payment_notices import notify_payment_refunded
+
+			notify_payment_refunded(self)
 
 
 def on_doctype_update() -> None:

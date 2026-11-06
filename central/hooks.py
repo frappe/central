@@ -315,6 +315,7 @@ scheduler_events = {
 	],
 	"hourly": [
 		"central.billing.revenue.invoicing.collect_due_invoices",
+		"central.billing.payments.collection.collect_on_payment_date",
 		"central.billing.ingester.erpnext_sync.retry_failed_syncs",
 		"central.billing.payments.reconciliation.run_reconciliation",
 		"central.billing.payments.webhooks.retry_failed_webhooks",

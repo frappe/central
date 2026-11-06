@@ -25,46 +25,44 @@ class TestTheOverrideContext(IntegrationTestCase):
 	"""Overrides change what is read, never what is stored."""
 
 	def test_without_an_override_the_document_is_read(self):
-		with billing_settings(dunning_retry_days="1, 3, 7", suspend_after_days=14):
-			self.assertEqual(settings.dunning_retry_days(), [1, 3, 7])
-			self.assertEqual(settings.suspend_after_days(), 14)
+		with billing_settings(dunning_retry_interval_days=2, suspension_day=15):
+			self.assertEqual(settings.dunning_retry_interval_days(), 2)
+			self.assertEqual(settings.suspension_day(), 15)
 
 	def test_an_override_is_read_instead(self):
-		with billing_settings(dunning_retry_days="1, 3, 7", suspend_after_days=14):
-			with settings.overridden(dunning_retry_days="2, 5, 10", suspend_after_days=21):
-				self.assertEqual(settings.dunning_retry_days(), [2, 5, 10])
-				self.assertEqual(settings.suspend_after_days(), 21)
+		with billing_settings(dunning_retry_interval_days=2, suspension_day=15):
+			with settings.overridden(dunning_retry_interval_days=3, suspension_day=21):
+				self.assertEqual(settings.dunning_retry_interval_days(), 3)
+				self.assertEqual(settings.suspension_day(), 21)
 
 	def test_the_document_is_untouched_by_an_override(self):
 		# The point of the whole seam: asking costs nobody their configuration.
-		with billing_settings(suspend_after_days=14):
-			with settings.overridden(suspend_after_days=21):
+		with billing_settings(suspension_day=15):
+			with settings.overridden(suspension_day=21):
 				pass
-			self.assertEqual(settings.suspend_after_days(), 14)
-			self.assertEqual(frappe.db.get_single_value("Billing Settings", "suspend_after_days"), 14)
+			self.assertEqual(settings.suspension_day(), 15)
+			self.assertEqual(frappe.db.get_single_value("Billing Settings", "suspension_day"), 15)
 
 	def test_the_override_lifts_when_the_block_ends(self):
-		with billing_settings(suspend_after_days=14):
-			with settings.overridden(suspend_after_days=21):
-				self.assertEqual(settings.suspend_after_days(), 21)
-			self.assertEqual(settings.suspend_after_days(), 14)
+		with billing_settings(suspension_day=15):
+			with settings.overridden(suspension_day=21):
+				self.assertEqual(settings.suspension_day(), 21)
+			self.assertEqual(settings.suspension_day(), 15)
 
 	def test_overrides_nest_and_the_inner_one_wins_only_for_what_it_names(self):
-		with billing_settings(suspend_after_days=14, terminate_after_days=44):
-			with settings.overridden(suspend_after_days=21):
+		with billing_settings(suspension_day=15, terminate_after_days=10):
+			with settings.overridden(suspension_day=21):
 				with settings.overridden(terminate_after_days=60):
-					self.assertEqual(settings.suspend_after_days(), 21)
+					self.assertEqual(settings.suspension_day(), 21)
 					self.assertEqual(settings.terminate_after_days(), 60)
 
-	def test_a_ladder_is_accepted_as_a_list_or_a_string(self):
-		with settings.overridden(dunning_retry_days=[5, 2, 5]):
-			self.assertEqual(settings.dunning_retry_days(), [2, 5])
-		with settings.overridden(dunning_retry_days="10, 3"):
-			self.assertEqual(settings.dunning_retry_days(), [3, 10])
+	def test_a_retry_interval_below_one_day_reads_as_one(self):
+		with settings.overridden(dunning_retry_interval_days=0):
+			self.assertEqual(settings.dunning_retry_interval_days(), 1)
 
 	def test_what_is_being_pretended_can_be_reported(self):
-		with settings.overridden(suspend_after_days=21):
-			self.assertEqual(settings.active_overrides(), {"suspend_after_days": 21})
+		with settings.overridden(suspension_day=21):
+			self.assertEqual(settings.active_overrides(), {"suspension_day": 21})
 		self.assertEqual(settings.active_overrides(), {})
 
 
@@ -108,10 +106,10 @@ class ScenarioTestBase(IntegrationTestCase):
 
 class TestProjectingUnderAScenario(ScenarioTestBase):
 	def test_an_altered_ladder_moves_the_projected_dates(self):
-		with billing_settings(dunning_retry_days="1, 3, 7", suspend_after_days=14, terminate_after_days=44):
+		with billing_settings(dunning_retry_interval_days=2, suspension_day=15, terminate_after_days=10):
 			live = scenario.project(self._scenario("Live"), today=TODAY)
 			altered = scenario.project(
-				self._scenario("Harsher", scenario_name="Harsher", suspend_after_days=5),
+				self._scenario("Harsher", scenario_name="Harsher", suspension_day=11),
 				today=TODAY,
 			)
 
@@ -122,17 +120,17 @@ class TestProjectingUnderAScenario(ScenarioTestBase):
 		self.assertLess(suspend_on(altered), suspend_on(live))
 
 	def test_a_scenario_reports_what_it_pretended(self):
-		out = scenario.project(self._scenario(suspend_after_days=5), today=TODAY)
-		self.assertEqual(out["scenario"]["overrides"], {"suspend_after_days": 5})
+		out = scenario.project(self._scenario(suspension_day=11), today=TODAY)
+		self.assertEqual(out["scenario"]["overrides"], {"suspension_day": 11})
 
 	def test_a_scenario_with_no_overrides_pretends_nothing(self):
 		out = scenario.project(self._scenario(), today=TODAY)
 		self.assertEqual(out["scenario"]["overrides"], {})
 
 	def test_the_override_does_not_outlive_the_projection(self):
-		with billing_settings(suspend_after_days=14):
-			scenario.project(self._scenario(suspend_after_days=5), today=TODAY)
-			self.assertEqual(settings.suspend_after_days(), 14)
+		with billing_settings(suspension_day=15):
+			scenario.project(self._scenario(suspension_day=11), today=TODAY)
+			self.assertEqual(settings.suspension_day(), 15)
 
 	def test_a_multi_month_scenario_rolls_forward(self):
 		out = scenario.project(self._scenario(months=3), today=TODAY)
@@ -172,6 +170,11 @@ class TestSavingAScenario(ScenarioTestBase):
 		for dt, count in before.items():
 			self.assertEqual(frappe.db.count(dt), count, dt)
 
+	def test_a_suspension_day_that_is_not_in_every_month_is_refused(self):
+		for day in (10, 29):
+			with self.subTest(day=day), self.assertRaises(frappe.ValidationError):
+				self._scenario(suspension_day=day)
+
 	def test_the_writable_surface_is_exactly_one_doctype(self):
 		self.assertEqual(set(scenario.WRITABLE), {"Billing Scenario"})
 
@@ -184,8 +187,8 @@ class TestSavingAScenario(ScenarioTestBase):
 
 class TestComparing(ScenarioTestBase):
 	def test_live_and_altered_are_projected_by_the_same_engine(self):
-		with billing_settings(suspend_after_days=14):
-			out = scenario.compare(self._scenario(suspend_after_days=5), today=TODAY)
+		with billing_settings(suspension_day=15):
+			out = scenario.compare(self._scenario(suspension_day=11), today=TODAY)
 
 		self.assertTrue(out["changed"])
 		self.assertEqual(out["live"]["invoice"]["total"], out["altered"]["invoice"]["total"])
