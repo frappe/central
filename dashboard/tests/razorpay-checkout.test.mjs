@@ -41,6 +41,7 @@ async function openSheet() {
 	const result = openRazorpayCheckout({ adapter_key: 'Razorpay' })
 	result.catch(() => {})
 	await new Promise((resolve) => setImmediate(resolve))
+	// Wrapped: an async function that returns a promise would wait for it to settle.
 	return { result }
 }
 
@@ -75,6 +76,7 @@ test('a retry that succeeds after a failure resolves with the handles', async ()
 		razorpay_payment_id: 'pay_1',
 		razorpay_signature: 'sig_1',
 	})
+	// The spread copies the object out of the vm realm, so the prototype check passes.
 	assert.deepEqual(
 		{ ...(await result) },
 		{
