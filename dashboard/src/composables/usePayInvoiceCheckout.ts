@@ -31,6 +31,8 @@ export function usePayInvoiceCheckout({
 	async function run(invoice: string): Promise<unknown> {
 		try {
 			await create.submit({ invoice })
+			// useCall stores a failure instead of throwing it, so rethrow to keep the server's message.
+			if (create.error) throw create.error
 			const order = create.data
 			if (!order || order.created === false) {
 				reportError('No payment was started')
@@ -46,6 +48,7 @@ export function usePayInvoiceCheckout({
 				razorpay_payment_id: handles.razorpay_payment_id,
 				razorpay_signature: handles.razorpay_signature,
 			})
+			if (confirm.error) throw confirm.error
 			const res = confirm.data
 			successToast(
 				'Payment received. The invoice updates once the gateway confirms.',
