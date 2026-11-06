@@ -59,9 +59,11 @@ const gst = computed(
 )
 const payable = computed(() => Number(amount.value || 0) + gst.value)
 const instrument = ref<string | null>(null)
-// Start on the first instrument, so the form never opens with nothing chosen.
+// Start on the first instrument, so the form never opens with nothing chosen. Only
+// while open: a default set while closed would block the caller's instrument.
 watch(instruments, (list) => {
-	if (!instrument.value && list.length) instrument.value = list[0].instrument
+	if (open.value && !instrument.value && list.length)
+		instrument.value = list[0].instrument
 })
 
 // A caller-supplied instrument is fixed unless the customer asks to change it.
