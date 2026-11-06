@@ -100,7 +100,7 @@ const dialogOptions = computed(() => ({
 				v-if="formError"
 				class="mb-4"
 				theme="red"
-				title="Couldn't assign the project"
+				title="Couldn't change the project"
 				:description="formError"
 			/>
 			<Select

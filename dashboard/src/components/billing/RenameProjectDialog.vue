@@ -112,7 +112,7 @@ const dialogOptions = computed(() => ({
 				<Alert
 					v-if="formError"
 					theme="red"
-					title="Couldn't rename the project"
+					title="Couldn't save the project"
 					:description="formError"
 				/>
 				<TextInput

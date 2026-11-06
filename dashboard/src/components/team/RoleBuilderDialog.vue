@@ -103,7 +103,7 @@ async function submit() {
 				<Alert
 					v-if="formError"
 					theme="red"
-					title="Couldn't save the role"
+					title="Couldn't create the role"
 					:description="formError"
 				/>
 				<TextInput
