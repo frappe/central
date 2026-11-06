@@ -96,7 +96,7 @@ class TestGroveClientCalls(IntegrationTestCase):
 		self.assertEqual(result, minted)
 
 	def test_a_team_is_registered_under_the_control_credential(self):
-		with grove_replies({"team": "TEAM-1", "max_keys": 0}) as post:
+		with grove_replies({"team": "TEAM-1"}) as post:
 			self.client.provision_team("TEAM-1")
 
 		self.assertEqual(
@@ -262,7 +262,7 @@ class TestAI(IntegrationTestCase):
 
 	def enabled(self):
 		with (
-			patch.object(GroveClient, "provision_team", return_value={"team": self.team, "max_keys": 10}),
+			patch.object(GroveClient, "provision_team", return_value={"team": self.team}),
 			patch.object(GroveClient, "update_team"),
 		):
 			return ai.enable(self.team)
@@ -270,9 +270,7 @@ class TestAI(IntegrationTestCase):
 	def test_enabling_registers_the_team_and_sends_its_limits(self):
 		frappe.set_user(self.owner)
 		with (
-			patch.object(
-				GroveClient, "provision_team", return_value={"team": self.team, "max_keys": 0}
-			) as provision_team,
+			patch.object(GroveClient, "provision_team", return_value={"team": self.team}) as provision_team,
 			patch.object(GroveClient, "update_team") as update_team,
 		):
 			name = api.enable_ai(self.team)["name"]
@@ -333,7 +331,7 @@ class TestAI(IntegrationTestCase):
 			"capped": 20.0,
 			"committed": 27.5,
 			"spend_limit": 50.0,
-			"max_keys": 10,
+			"limits": LIMITS,
 			"suspended": False,
 		}
 		month = {
@@ -419,6 +417,12 @@ class TestAI(IntegrationTestCase):
 				with self.subTest(cap=cap), self.assertRaises(frappe.ValidationError):
 					api.set_api_key_caps(self.team, {"k1": cap})
 		update_caps.assert_called_once_with(self.team, {"k1": 8})
+
+		own = [{"model_key": "acme/m", "metric": "requests", "window": "1m", "value": 5}]
+		with patch.object(GroveClient, "update_key", return_value={**LISTED, "limits": own}) as update_key:
+			self.assertEqual(api.set_api_key_limits(self.team, "k1", own)["limits"], own)
+			self.assertNotIn("key_hash", api.set_api_key_limits(self.team, "k1", []))
+		update_key.assert_called_with(self.team, "k1", limits=[])
 
 		with patch.object(GroveClient, "revoke_key") as revoke_key:
 			api.revoke_api_key(self.team, "k1")
