@@ -630,7 +630,13 @@ const revoke = async (key: AIApiKey): Promise<void> => {
 
 	<Dialog v-model="capsOpen" title="Set caps" size="2xl">
 		<template #default>
-			<Alert v-if="capsError" class="mb-4" theme="red" :title="capsError" />
+			<Alert
+				v-if="capsError"
+				class="mb-4"
+				theme="red"
+				title="Couldn't save the spending caps"
+				:description="capsError"
+			/>
 			<div
 				class="mb-2 grid grid-cols-[2fr_1fr_1fr_1fr] gap-3 text-sm-medium text-ink-gray-6"
 				aria-hidden="true"

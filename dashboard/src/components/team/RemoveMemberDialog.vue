@@ -64,7 +64,12 @@ const dialogOptions = computed(() => ({
 		:actions="dialogOptions.actions"
 	>
 		<div class="space-y-4">
-			<Alert v-if="formError" theme="red" :title="formError" />
+			<Alert
+				v-if="formError"
+				theme="red"
+				title="Couldn't remove the member"
+				:description="formError"
+			/>
 			<p class="text-p-base text-ink-gray-7">
 				They'll immediately lose access to
 				<span class="text-p-base-semibold text-ink-gray-9"

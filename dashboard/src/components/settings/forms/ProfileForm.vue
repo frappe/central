@@ -65,7 +65,13 @@ async function onPhotoChange(fileUrl: string | null): Promise<void> {
 <template>
 	<div class="mt-6 space-y-6">
 		<div v-if="profile">
-			<Alert v-if="photoError" class="mb-3" theme="red" :title="photoError" />
+			<Alert
+				v-if="photoError"
+				class="mb-3"
+				theme="red"
+				title="Couldn't update your photo"
+				:description="photoError"
+			/>
 			<ImageUpload
 				label="Photo"
 				:name="name.trim() || profile.full_name || profile.user"
@@ -80,7 +86,13 @@ async function onPhotoChange(fileUrl: string | null): Promise<void> {
 			/>
 		</div>
 
-		<Alert v-if="nameError" class="mb-3" theme="red" :title="nameError" />
+		<Alert
+			v-if="nameError"
+			class="mb-3"
+			theme="red"
+			title="Couldn't update your name"
+			:description="nameError"
+		/>
 		<div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
 			<div class="flex min-w-0 items-end gap-2">
 				<TextInput

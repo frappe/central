@@ -110,7 +110,13 @@ async function finish(): Promise<void> {
 			/>
 		</div>
 
-		<Alert v-if="error" class="mb-4" theme="red" :title="error" />
+		<Alert
+			v-if="error"
+			class="mb-4"
+			theme="red"
+			title="Couldn't finish this step"
+			:description="error"
+		/>
 
 		<Transition
 			mode="out-in"

@@ -87,7 +87,12 @@ const create = async (): Promise<void> => {
 		@after-leave="reset"
 	>
 		<form class="space-y-5" @submit.prevent="create">
-			<Alert v-if="error" theme="red" :title="error" />
+			<Alert
+				v-if="error"
+				theme="red"
+				title="Couldn't create the bucket"
+				:description="error"
+			/>
 
 			<div
 				v-if="markers.length"
