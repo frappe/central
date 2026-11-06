@@ -1,15 +1,23 @@
 from __future__ import annotations
 
+import re
+
 import frappe
 from frappe import _
+from frappe.utils import validate_email_address
+from frappe.utils.password_strength import test_password_strength
 
 from central.iam import can
 from central.integrations.atlas import AtlasClient
 from central.integrations.cargo import CargoClient
+from central.server_models import AppInput, AppRequirements
 from central.utils.units import MIB_PER_GIB, MILLICORES_PER_VCPU
 
 # The Atlas `purpose` tag of an image a region's Cargo built for an app.
 APP_PURPOSE = "one-click"
+# Each answer becomes a shell variable in the app server's inputs.env, so its name must be one.
+APP_INPUT_NAME = re.compile(r"[a-z][a-z0-9_]*")
+DOMAIN = re.compile(r"(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}")
 
 
 def list_offerings(team: str, flow: str = "Server") -> list[dict]:
@@ -59,7 +67,7 @@ def list_apps(team: str, region: str) -> list[dict]:
 	return _app_cargo(team, region).get_apps()
 
 
-def get_app_requirements(team: str, region: str, application: str) -> dict:
+def get_app_requirements(team: str, region: str, application: str) -> AppRequirements:
 	"""What a server from one app asks the user for and needs to run."""
 	return _app_cargo(team, region).get_app_requirements(application)
 
@@ -210,7 +218,9 @@ def eligible_plans(team: str, region: str, offering: str, image_id: str, snapsho
 	return {**catalog, "plans": groups, "profiles": profiles, "image_id": image_id}
 
 
-def get_image_app_requirements(region: str, image: dict, snapshot: str | None = None) -> dict | None:
+def get_image_app_requirements(
+	region: str, image: dict, snapshot: str | None = None
+) -> AppRequirements | None:
 	"""What a new server from an app image needs, from the region's Cargo. A restored
 	snapshot is already set up, and any other image has no app, so both need nothing."""
 	if snapshot or image["tags"].get("purpose") != APP_PURPOSE:
@@ -220,7 +230,7 @@ def get_image_app_requirements(region: str, image: dict, snapshot: str | None = 
 	return CargoClient(region_document).get_app_requirements(image["tags"]["application"])
 
 
-def get_minimum_shape(image: dict, requirements: dict | None) -> dict[str, int]:
+def get_minimum_shape(image: dict, requirements: AppRequirements | None) -> dict[str, int]:
 	"""The smallest machine an image runs on: its root disk, and an app's minimum size."""
 	minimum = (requirements or {}).get("minimum_size") or {}
 	return {
@@ -239,3 +249,41 @@ def is_shape_enough(quantities: dict[str, float], minimum: dict[str, int]) -> bo
 		and quantities.get(MEMORY, 0) * MIB_PER_GIB >= minimum["memory_mib"]
 		and quantities.get(DISK, 0) * MIB_PER_GIB >= minimum["disk_mib"]
 	)
+
+
+def validate_app_answer(name: str, item: AppInput, value: str) -> None:
+	"""Throw a message that says what is wrong with one answer to an app input and what it takes."""
+	label = item.get("label", name)
+	if not APP_INPUT_NAME.fullmatch(name):
+		frappe.throw(_("The app setting {0} is not a valid shell variable name.").format(name))
+	if len(value) > item.get("max_length", 255):
+		frappe.throw(_("{0} must be at most {1} characters.").format(label, item.get("max_length", 255)))
+	if not value.isprintable():
+		frappe.throw(
+			_("{0} can contain only printable characters, with no line breaks or tabs.").format(label)
+		)
+
+	kind = item.get("type", "string")
+	if kind == "email":
+		validate_email_address(value, throw=True)
+	elif kind == "domain" and not DOMAIN.fullmatch(value):
+		frappe.throw(_("{0} must be a domain name in lowercase, such as app.example.com.").format(label))
+	elif kind == "password":
+		validate_app_password(label, value)
+	if (pattern := item.get("pattern")) and not re.fullmatch(pattern, value):
+		frappe.throw(
+			_("{0} is not in the expected format. {1}").format(label, item.get("description", "")).strip()
+		)
+
+
+def validate_app_password(label: str, value: str) -> None:
+	"""Refuse a password that zxcvbn scores below 3 of 4, with its advice on how to fix it."""
+	result = test_password_strength(value)
+	if result["score"] < 3:
+		feedback = result["feedback"]
+		advice = " ".join([feedback.get("warning") or "", *feedback.get("suggestions", [])]).strip()
+		frappe.throw(
+			_("{0} is too easy to guess. {1}").format(
+				label, advice or _("Use a longer password made of a few uncommon words.")
+			)
+		)

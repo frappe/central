@@ -279,7 +279,7 @@ An app is a fixed service, such as Redis or MariaDB, that a region's Cargo build
 
 1. The console lists the region's apps with `central.api.images.list_apps`, and reads the inputs and minimum size of the selected one with `central.api.images.get_app_requirements`. Central gets both from Cargo.
 2. `eligible_plans` shows only the plans with enough CPU, memory and disk for the app.
-3. The customer sends the answers as `app_inputs`. Central refuses a plan below the app's minimum size, refuses customer user data, and asks Cargo for the user data. Cargo checks each answer. A blank input that the app marks `generate` is left out, and the server makes the value itself.
+3. The customer sends the answers as `app_inputs`. Central refuses a plan below the app's minimum size, refuses customer user data, checks each answer against the app's inputs, and writes the answers as cloud-init user data to `/etc/one-click/inputs.env`. A blank answer is left out, and the server makes the value itself.
 4. The server boots from the image. Its first-boot script sets up the service and keeps the settings, including generated passwords, in `/etc/one-click/app.env` on the server.
 
 An app server is a normal server after creation. Central does not route a name to it and does not open its ports. Without a public address, the service is reachable only on the region's private network. A server restored from a snapshot of an app server has no app requirements.
