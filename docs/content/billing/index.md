@@ -39,9 +39,9 @@ The panel at the top of **Billing > Overview** shows the current cycle.
 | Cycle and amount | The projected total for this cycle with tax, and the days until it is billed. Below it are the amount before tax and the tax. Click **See breakdown** to see each line. |
 | Spend limit | The most your team can spend in one cycle on its current tier. Click the tier to see all tiers. See [Credits and spend limits](/billing/limits). |
 | Due now | The amount of your unpaid invoices. This row shows only when an invoice is unpaid. |
-| Payment in progress | The date Frappe Cloud started a charge that your bank has not confirmed yet. This row shows only after a payment date passes and the invoice is not paid. It shows until the bank confirms or refuses the payment, or until the suspension date. |
+| Payment in progress | The date Frappe Cloud started a charge that your bank has not confirmed yet. This row shows from the day of the charge until the bank confirms or refuses the payment, or until the suspension date. |
 | Next retry | The date Frappe Cloud tries the payment again. This row shows only after a payment date passes and the invoice is not paid. |
-| Suspends on | The date your servers stop if the invoice stays unpaid. This row shows when no retry is left. When your team is already suspended, the row shows **Suspended since** and the suspension date. |
+| Suspends on | The date your servers stop if the invoice stays unpaid. This row shows when no retry is left. It also shows below **Payment in progress** when the invoice is overdue. To avoid suspension, add credit to your wallet. See [When a payment is still in progress near the suspension date](/billing/invoices#when-a-payment-is-still-in-progress-near-the-suspension-date). When your team is already suspended, the row shows **Suspended since** and the suspension date. |
 | Wallet | Your prepaid credit balance. Click the history icon to see its history. Click **Add credit** to top up. |
 | Payment method | The payment method that is charged first. |
 | Next invoice | The date of the next invoice. |
