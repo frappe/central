@@ -9,7 +9,7 @@ from unittest.mock import patch
 import frappe
 import requests
 
-from central.billing.platform import alerts, muting
+from central.billing.platform import alerts, invariants, kinds
 from central.billing.tests.test_reconciliation import ReconTestBase
 from central.billing.tests.test_stripe_adapter import make_stripe_gateway
 from central.billing.tests.utils import BillingTestCase, billing_settings
@@ -118,7 +118,7 @@ class TestOperatorAlerts(BillingTestCase):
 			result = alerts.run_operator_alerts()
 
 		self.assertEqual((result["alerts"], result["muted"]), (1, 1))
-		self.assertIn("t2", self.mail.call_args.kwargs["args"]["rows"][0][1])
+		self.assertIn("t2", self.mail.call_args.kwargs["args"]["groups"][0]["rows"][0][0])
 
 	def test_a_mute_that_has_ended_lets_the_alert_through(self):
 		ended = frappe.utils.add_to_date(frappe.utils.now_datetime(), hours=-1)
@@ -141,9 +141,9 @@ class TestOperatorAlerts(BillingTestCase):
 
 	def test_every_alert_kind_has_a_category(self):
 		# Read the kinds from the sources, so a new source cannot be left out of the list.
-		kinds = set(re.findall(r'"alert": "([a-z_]+)"', inspect.getsource(alerts)))
-		categorised = {kind for group in muting.CATEGORIES.values() for kind in group}
-		self.assertEqual(kinds, categorised)
+		sent = set(re.findall(r'"alert": "([a-z_]+)"', inspect.getsource(alerts)))
+		categorised = {kind for group in kinds.CATEGORIES.values() for kind in group}
+		self.assertEqual(sent, categorised)
 
 	def test_one_broken_source_does_not_blind_the_others(self):
 		def broken():
@@ -151,7 +151,7 @@ class TestOperatorAlerts(BillingTestCase):
 
 		alert = {"alert": "failed_webhook", "subject": "WH-1", "team": None, "detail": "boom"}
 		with self._quiet_sources(broken, lambda: [alert]):
-			self.assertEqual(alerts.collect(), [alert])
+			self.assertEqual([found["subject"] for found in alerts.collect()], ["WH-1"])
 
 	def test_a_failed_webhook_older_than_the_window_is_an_alert(self):
 		event = frappe.get_doc(
@@ -243,6 +243,33 @@ class TestOperatorAlertDelivery(BillingTestCase):
 		text = self.raven.call_args.kwargs["json"]["text"]
 		self.assertNotIn("<script>", text)
 		self.assertIn("&lt;script&gt;", text)
+
+	def test_a_check_alert_says_what_the_check_expected(self):
+		b8 = invariants.Violation(
+			check="B8", detail="no profile", team="t1", subject_doctype="Team", subject="t1"
+		)
+		with (
+			self._settings("Raven", **RAVEN),
+			patch.object(alerts, "SOURCES", (alerts.readiness_gaps,)),
+			patch.object(alerts.invariants, "audit", return_value=[b8]),
+		):
+			alerts.notify_operators("Billing needs attention", alerts.collect())
+
+		text = self.raven.call_args.kwargs["json"]["text"]
+		self.assertIn("B8 · Billed Indian teams have a Tax Profile", text)
+		self.assertIn("Expected: A billed Indian team with no Tax Profile pays default GST", text)
+
+	def test_a_plain_alert_says_what_its_kind_means(self):
+		def failed_webhooks():
+			"""Webhooks that failed to process and have not been retried since."""
+			return [{"alert": "failed_webhook", "subject": "WH-1", "team": None, "detail": "boom"}]
+
+		with self._settings("Raven", **RAVEN), patch.object(alerts, "SOURCES", (failed_webhooks,)):
+			alerts.notify_operators("Billing needs attention", alerts.collect())
+
+		text = self.raven.call_args.kwargs["json"]["text"]
+		self.assertIn("<strong>Failed webhook</strong> (1)", text)
+		self.assertIn("Webhooks that failed to process and have not been retried since.", text)
 
 	def test_a_channel_with_email_needs_an_address(self):
 		with self.assertRaises(frappe.ValidationError), self._settings("Raven and Email", emails=""):

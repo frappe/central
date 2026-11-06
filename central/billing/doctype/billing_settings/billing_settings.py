@@ -14,7 +14,7 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
-from central.billing.platform import muting
+from central.billing.platform import kinds
 
 # The last day that exists in every month.
 LAST_SUSPENSION_DAY = 28
@@ -39,7 +39,7 @@ class BillingSettings(Document):
 
 		# The Accounting tab shows only while the accounting sync is on.
 		self.set_onload("accounting_sync_enabled", enabled())
-		self.set_onload("muted_alert_options", muting.get_alert_options())
+		self.set_onload("muted_alert_options", kinds.get_alert_options())
 
 	def validate(self):
 		self.strip_accounting_names()
@@ -48,7 +48,7 @@ class BillingSettings(Document):
 		self.validate_one_minimum_per_currency()
 		self.validate_operator_alerts()
 		for row in self.muted_operator_alerts:
-			muting.validate_mute(row)
+			kinds.validate_mute(row)
 
 	@frappe.whitelist(methods=["POST"])
 	def send_test_alert(self) -> list[str]:

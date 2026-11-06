@@ -30,6 +30,26 @@ def get_alert_options() -> dict[str, list[str]]:
 	return options
 
 
+def get_heading(alert: dict) -> str:
+	"""The readable name an alert is grouped under: its check with the check's title, or its kind."""
+	checks = _checks_for(alert["alert"])
+	if checks and alert.get("check") in checks:
+		return f"{alert['check']}{CHECK_SEPARATOR}{checks[alert['check']][0]}"
+	if any(alert["alert"] in group for group in CATEGORIES.values()):
+		return _kind_label(alert["alert"])
+	return str(alert["alert"])
+
+
+def get_check_meaning(kind: str, code: str) -> str:
+	"""What a failing check expected, from the first paragraph of its docstring."""
+	return "Expected: " + get_first_paragraph(_checks_for(kind)[code][1].__doc__)
+
+
+def get_first_paragraph(text: str | None) -> str:
+	"""The first paragraph of a docstring, on one line."""
+	return " ".join((text or "").strip().split("\n\n")[0].split())
+
+
 def get_muted_keys(rows: list) -> set[str]:
 	"""The alert kinds, and the `<kind> <check>` pairs, that the active mute rows silence."""
 	keys = set()

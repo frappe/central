@@ -11,7 +11,7 @@ import requests
 
 from central.billing import settings
 from central.billing.payments import decline
-from central.billing.platform import invariants, metrics, muting
+from central.billing.platform import invariants, kinds, metrics
 
 # A webhook we failed to process is a settlement we have not applied. An hour is long
 # enough to rule out a retry that is still in flight.
@@ -76,10 +76,11 @@ def invariant_violations() -> list[dict]:
 		{
 			"alert": "invariant",
 			"check": v.check,
+			"meaning": kinds.get_check_meaning("invariant", v.check),
 			"doctype": v.subject_doctype,
 			"subject": v.subject,
 			"team": v.team,
-			"detail": f"{v.check}: {v.detail}",
+			"detail": v.detail,
 		}
 		for v in invariants.audit()
 	]
@@ -93,10 +94,11 @@ def readiness_gaps() -> list[dict]:
 		{
 			"alert": "readiness",
 			"check": v.check,
+			"meaning": kinds.get_check_meaning("readiness", v.check),
 			"doctype": v.subject_doctype,
 			"subject": v.subject,
 			"team": v.team,
-			"detail": f"{v.check}: {v.detail}",
+			"detail": v.detail,
 		}
 		for v in invariants.audit(checks=readiness.CHECKS)
 	]
@@ -305,11 +307,15 @@ SOURCES = (
 
 
 def collect() -> list[dict]:
-	"""Every open alert. One broken source must not blind the others."""
+	"""Every open alert. One broken source must not blind the others.
+
+	An alert that does not say what it means takes its source's docstring, so the person who
+	reads it knows what is wrong."""
 	found = []
 	for source in SOURCES:
 		try:
-			found.extend(source())
+			meaning = kinds.get_first_paragraph(source.__doc__)
+			found.extend({"meaning": meaning, **alert} for alert in source())
 		except Exception:
 			frappe.log_error(
 				title=f"Billing alert source {source.__name__} failed", message=frappe.get_traceback()
@@ -364,26 +370,48 @@ def _email(title: str, alerts: list[dict]) -> bool:
 		recipients=recipients,
 		subject=title,
 		template="operator_alert",
-		args={"count": len(alerts), "rows": [_row(alert) for alert in alerts[:MAX_ROWS]]},
+		args={"count": len(alerts), "groups": _groups(alerts), "hidden": max(len(alerts) - MAX_ROWS, 0)},
 		delayed=True,
 	)
 	return True
 
 
 def _raven_message(title: str, alerts: list[dict]) -> str:
-	"""The alerts as Raven message HTML: the title, then one line for each alert."""
-	rows = [_row(alert) for alert in alerts[:MAX_ROWS]]
-	lines = "".join(f"<li><code>{kind}</code> {reference}: {detail}</li>" for kind, reference, detail in rows)
+	"""The alerts as Raven message HTML: the title, then each group with what it means and its rows."""
+	parts = [f"<p><strong>{frappe.utils.escape_html(title)}</strong></p>"]
+	for group in _groups(alerts):
+		parts.append(
+			f"<p><strong>{group['heading']}</strong> ({len(group['rows'])})<br>{group['meaning']}</p>"
+		)
+		parts.append(
+			"<ul>"
+			+ "".join(f"<li>{reference}: {detail}</li>" for reference, detail in group["rows"])
+			+ "</ul>"
+		)
 	hidden = len(alerts) - MAX_ROWS
-	footer = f"<p>{hidden} more alerts are in the Error Log.</p>" if hidden > 0 else ""
-	return f"<p><strong>{frappe.utils.escape_html(title)}</strong></p><ul>{lines}</ul>{footer}"
+	if hidden > 0:
+		parts.append(f"<p>{hidden} more alerts are in the Error Log.</p>")
+	return "".join(parts)
+
+
+def _groups(alerts: list[dict]) -> list[dict]:
+	"""The alerts grouped under a readable name, each group with what it means and its rows.
+
+	Every text is escaped HTML, because a detail can carry a gateway error."""
+	escape = frappe.utils.escape_html
+	groups: dict[str, dict] = {}
+	for alert in alerts[:MAX_ROWS]:
+		heading = kinds.get_heading(alert)
+		group = groups.setdefault(
+			heading, {"heading": escape(heading), "meaning": escape(alert.get("meaning") or ""), "rows": []}
+		)
+		group["rows"].append(_row(alert))
+	return list(groups.values())
 
 
 def _row(alert: dict) -> list[str]:
-	"""Kind, reference and detail as escaped HTML, because a detail can carry a gateway error.
-
-	The reference links to the record in Desk when the alert names its DocType.
-	"""
+	"""Reference and detail as escaped HTML. The reference links to the record in Desk when
+	the alert names its DocType."""
 	escape = frappe.utils.escape_html
 	reference = escape(str(alert["subject"]))
 	if alert.get("doctype") and alert["subject"]:
@@ -391,7 +419,7 @@ def _row(alert: dict) -> list[str]:
 		reference = f'<a href="{escape(url)}">{reference}</a>'
 	if alert["team"]:
 		reference += f" ({escape(str(alert['team']))})"
-	return [escape(str(alert["alert"])), reference, escape(str(alert["detail"]))]
+	return [reference, escape(str(alert["detail"]))]
 
 
 def _digest(alerts: list[dict]) -> str:
@@ -411,9 +439,9 @@ def run_operator_alerts() -> dict:
 
 	An alert muted in Billing Settings is counted but not sent, so a known issue does not
 	repeat in the channel while its fix is in progress."""
-	muted = muting.get_muted_keys(settings.muted_operator_alerts())
+	muted = kinds.get_muted_keys(settings.muted_operator_alerts())
 	found = collect()
-	alerts = [alert for alert in found if not muting.is_muted(alert, muted)]
+	alerts = [alert for alert in found if not kinds.is_muted(alert, muted)]
 	silenced = len(found) - len(alerts)
 	if not alerts:
 		frappe.cache().delete_value(_CACHE_KEY)
