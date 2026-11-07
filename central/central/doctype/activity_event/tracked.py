@@ -148,7 +148,6 @@ ACTION_EVENTS = {
 	"terminate": ("server.terminated", "server.terminate_failed"),
 }
 
-# A console URL Central returns, recorded as server.ssh_console_opened or server.tty_console_opened.
 CONSOLE = EventKind("console_opened", "access", "server:console")
 
 
