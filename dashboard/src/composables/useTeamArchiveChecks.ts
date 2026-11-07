@@ -11,6 +11,8 @@ export type ArchiveCheckKey =
 	| 'add_ons'
 	| 'invoices'
 	| 'final_bill'
+	| 'members'
+	| 'suspended'
 
 export interface ArchiveCheck {
 	key: ArchiveCheckKey
