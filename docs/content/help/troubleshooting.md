@@ -51,9 +51,21 @@ These messages show when a server action does not complete.
 
 ## Contact support
 
-Click your name at the bottom of the sidebar, then click **Help > Contact support**. The support portal opens in a new tab. Some messages in the console also have a **Contact support** link, which adds the topic to the ticket subject.
+Open **Get help** from your name at the bottom of the sidebar, then **Help > Contact support**. Some messages in the console also have a **Contact support** link, and each server menu has one. The dialog opens with the server or site that you asked from.
 
-Include the team name, the server name, and the exact message in your ticket.
+**Get help** looks for an answer before it asks you to write a ticket.
+
+1. Describe the problem in your own words. Help articles and your team's past tickets appear as you type. Each row opens in a new tab.
+2. Read the rows. When an answer matches, the button reads **Still need help?**. The answers come first, so the dialog does not offer a ticket until you say the answers do not help.
+3. When no answer matches, the button reads **Contact support**. It is enabled after 3 characters and after the search completes.
+
+The contact stage shows **Topic** and **Issue**. It fills the description with your question. If you opened the dialog from a server, select the server and its site. The line below the details shows the email address that support will see. Click **Send to support**.
+
+If a server or site is down, click **Report an outage** instead of searching. The contact stage opens with the urgent issue selected, so support sees the ticket first.
+
+To see your team's open tickets, click **Your tickets** in the dialog header. The list shows the tickets that support has not resolved. Click the external link on a row to open the ticket in the support portal. If the portal asks you to sign in, use the same email address that you use for Frappe Cloud. Click **Back** to return to the search.
+
+When Central has a support portal link but no ticket connection, **Contact support** opens the support portal in a new tab instead.
 
 ## See also
 

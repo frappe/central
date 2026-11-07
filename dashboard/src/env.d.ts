@@ -30,6 +30,8 @@ interface Window {
 	help_links?: {
 		support_ticket_url?: string | null
 		feedback_url?: string | null
+		/** True when the Helpdesk API is configured, so the console opens its own dialog. */
+		in_app_tickets?: boolean
 	}
 	features?: {
 		addons?: boolean

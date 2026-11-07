@@ -405,6 +405,35 @@ The `Central` and `Pilot` knowledge bases hold the Central documents and the Pil
 pilot --site <site> execute central.investigator.knowledge.load_knowledge_bases
 ```
 
+## How does Central create and list support tickets?
+
+Central calls a Frappe Helpdesk site through `central/integrations/helpdesk.py`. Ticket policy lives in `central/support.py`. Central uses one service user on that site with the `Agent` role. An operator sets the Helpdesk URL, the API key and the API secret in Central Settings under General > Helpdesk. Central stores the secret in a Password field.
+
+A request to Helpdesk carries `Authorization: token <key>:<secret>`. Frappe reads the key, finds the service user and runs the request as that user. No customer session and no Central token reaches Helpdesk. The service user is the actor that Helpdesk records as `owner` and `modified_by`.
+
+Central sends stock `HD Ticket` fields only. It does not change the Helpdesk schema or its forms.
+
+| Field | Value |
+| --- | --- |
+| `subject` | `[<Category> · <Topic>] <customer subject>` |
+| `description` | The customer's escaped text, then a Context block with Team, User, Category, Topic, the verified Server and Site, and links to the Team and records in Central |
+| `raised_by` | The caller's email |
+| `via_customer_portal` | `1` |
+
+A critical issue is `Unreachable or down`, `Site setup or provisioning failed`, or `Payment method or failed charge`. A ticket for one of these is `Urgent`, because the client cannot choose another priority.
+
+Each Context block ends with an `Open in Central` line. It links the Team, and the Server or Site when the ticket names one, to the Desk record. An agent opens the record from the ticket.
+
+A ticket's team is the `Team:` line in the Context block. The whole marker is `<hr><p><strong>Context</strong><br>Team: <team><br>`. Helpdesk has no team field, so this line links a ticket to a Central Team. Central escapes the customer's text before it writes the block, so a description cannot fake the line.
+
+A list request asks for tickets where `status_category` is not `Resolved` and the description holds the team marker. A ticket that waits on the customer is `Paused`, not `Resolved`, and stays in the list.
+
+Before a customer opens a ticket, the console asks Helpdesk for up to 5 matching articles and up to 5 of the team's tickets. An operator turns on Show Help Articles in Central Settings under Helpdesk after the desk publishes articles. While it is off, Central asks only for tickets, so a deployment with an empty knowledge base shows no article group. It first lists every ticket whose description holds the team marker, then asks Helpdesk's full-text search for those tickets, so a match in the subject or in the thread counts. The ticket search accepts any status, because a resolved ticket can still answer the question. Central drops a search row that points to a ticket outside the team list. A failed search returns no tickets and never blocks ticket creation.
+
+A ticket row opens `<Helpdesk URL>/help/my-tickets/<ticket name>`. This is the Helpdesk customer portal, so the customer needs a Helpdesk account there.
+
+A member of a suspended team can create and list tickets. That member needs support to learn why the team was suspended. When Helpdesk is not configured, the console keeps the external Support Ticket URL and shows no in-app form.
+
 ## Validation
 
 Run the shared contract tests before deployment. Complete the live journeys in [Staging validation](STAGING_VALIDATION.md) against the actual staging revisions. Mocked responses do not prove VM startup, Pilot login, SSH access, or webhook delivery.

@@ -33,9 +33,11 @@ def _call_arg(func: Callable, args: tuple, kwargs: dict, name: str):
 	return _bound_call(func, args, kwargs).arguments.get(name)
 
 
-def _resolve_team_call(func: Callable, args: tuple, kwargs: dict) -> inspect.BoundArguments:
+def _resolve_team_call(
+	func: Callable, args: tuple, kwargs: dict, statuses: tuple[str, ...] = ("Active",)
+) -> inspect.BoundArguments:
 	bound = _bound_call(func, args, kwargs)
-	bound.arguments["team"] = resolve_team(frappe.session.user, bound.arguments.get("team"))
+	bound.arguments["team"] = resolve_team(frappe.session.user, bound.arguments.get("team"), statuses)
 
 	return bound
 
@@ -43,11 +45,23 @@ def _resolve_team_call(func: Callable, args: tuple, kwargs: dict) -> inspect.Bou
 def require_team_member(func: Callable) -> Callable:
 	"""Gate a team-scoped read on active membership of the `team` argument; operators bypass."""
 
+	return _require_team_member(func, ("Active",))
+
+
+def require_support_team_member(func: Callable) -> Callable:
+	"""Gate a support endpoint on membership of the `team` argument; operators bypass. A
+	suspended team is allowed here, because its members need support to learn why it was
+	suspended."""
+
+	return _require_team_member(func, ("Active", "Suspended"))
+
+
+def _require_team_member(func: Callable, statuses: tuple[str, ...]) -> Callable:
 	@functools.wraps(func)
 	def wrapper(*args, **kwargs):
-		bound = _resolve_team_call(func, args, kwargs)
+		bound = _resolve_team_call(func, args, kwargs, statuses)
 		team = bound.arguments["team"]
-		if not user_has_operator_bypass() and not is_active_team_member(frappe.session.user, team):
+		if not user_has_operator_bypass() and not is_active_team_member(frappe.session.user, team, statuses):
 			frappe.throw(_("You are not a member of this team."), frappe.PermissionError)
 
 		return func(*bound.args, **bound.kwargs)
