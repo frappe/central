@@ -1,13 +1,15 @@
 import json
 import os
 import uuid
+from argparse import Namespace
 from email.message import Message
 
 import pytest
 
 from frappe_cloud.client import Response
-from frappe_cloud.commands import server
+from frappe_cloud.commands import auth, server
 from frappe_cloud.config import Config
+from frappe_cloud.context import Context
 from frappe_cloud.errors import CentralError
 
 REGISTRY = "central.api.servers.registry"
@@ -52,7 +54,7 @@ def test_server_found_by_title_and_ambiguous_title_fails(central) -> None:
 
 	assert code == 1
 	assert "2 servers have the title 'web'" in err
-	assert not central.called("central.api.servers.rename_server")
+	assert not central.has_called("central.api.servers.rename_server")
 
 
 def test_create_server_uses_the_newest_image_and_an_idempotency_key(central) -> None:
@@ -90,7 +92,7 @@ def test_terminate_without_a_terminal_needs_yes(central, monkeypatch) -> None:
 	code, _, err = central.run("server", "terminate", "vm-1")
 	assert code == 1
 	assert "--yes" in err
-	assert not central.called("central.api.servers.terminate_server")
+	assert not central.has_called("central.api.servers.terminate_server")
 
 	code, _, _ = central.run("server", "terminate", "vm-1", "--yes", "--snapshot")
 	assert code == 0
@@ -170,6 +172,35 @@ def test_login_saves_a_private_session(central, monkeypatch, tmp_path) -> None:
 	assert "Signed in to https://central.test as ada@example.com" in out
 	assert (config.session_id, config.csrf_token, config.url) == ("abc123", "csrf", "https://central.test")
 	assert os.stat(config.path).st_mode & 0o777 == 0o600
+
+
+@pytest.mark.parametrize(
+	("url", "session_id", "team"),
+	[("https://central.test/", "abc123", "acme"), ("https://staging.test", None, None)],
+)
+def test_saved_session_and_team_apply_only_to_their_url(monkeypatch, tmp_path, url, session_id, team) -> None:
+	for name in ("FRAPPE_CLOUD_URL", "FRAPPE_CLOUD_TEAM"):
+		monkeypatch.delenv(name, raising=False)
+	config = Config(
+		path=tmp_path / "config.json", url="https://central.test", session_id="abc123", team="acme"
+	)
+
+	client = Context.create(Namespace(url=url, team=None, json=False), config).client
+
+	assert (client.session_id, client.team) == (session_id, team)
+
+
+def test_logout_ends_the_session_on_the_site_that_issued_it(central, monkeypatch) -> None:
+	Config(url="https://central.test", session_id="abc123").save()
+	monkeypatch.setenv("FRAPPE_CLOUD_URL", "https://staging.test")
+	logouts = []
+	monkeypatch.setattr(auth.CentralClient, "post", lambda client, method: logouts.append(client.url))
+
+	code, _, _ = central.run("auth", "logout")
+
+	assert code == 0
+	assert logouts == ["https://central.test"]
+	assert Config.load().session_id is None
 
 
 def test_save_replaces_a_readable_config_with_a_private_one(tmp_path) -> None:

@@ -66,23 +66,26 @@ class CentralClient:
 
 	def call(self, http_method: str, method: str, params: dict[str, Any], *, is_guest: bool = False) -> Any:
 		"""Call `/api/method/<method>` and return its `message`. Parameters set to None are left out."""
-		if not self.url:
-			raise CentralError(
-				"Set the Central URL with `fcloud auth login --url <url>` or $FRAPPE_CLOUD_URL."
-			)
-		if not is_guest and not self.has_credentials:
-			raise CentralError(f"You are not signed in. {SIGN_IN_HINT}")
-
+		self.validate_access(is_guest)
 		params = {key: value for key, value in params.items() if value is not None}
 		response = self.send(self.build_request(http_method, method, params, is_guest=is_guest))
 		if response.status >= 400:
 			raise CentralError(get_error_message(response))
 
 		self.read_session_cookie(response.headers)
-		try:
-			return json.loads(response.body or b"{}").get("message")
-		except (ValueError, AttributeError):
+		data = read_json_object(response.body or b"{}")
+		if data is None:
 			raise CentralError(f"{self.url} did not answer like Central. Check the URL.")
+		return data.get("message")
+
+	def validate_access(self, is_guest: bool) -> None:
+		"""Fail before the request when no URL is set, or a signed-in call has no credentials."""
+		if not self.url:
+			raise CentralError(
+				"Set the Central URL with `fcloud auth login --url <url>` or $FRAPPE_CLOUD_URL."
+			)
+		if not is_guest and not self.has_credentials:
+			raise CentralError(f"You are not signed in. {SIGN_IN_HINT}")
 
 	def build_request(
 		self, http_method: str, method: str, params: dict[str, Any], *, is_guest: bool = False
@@ -168,21 +171,32 @@ def encode_query_value(value: Any) -> str:
 
 def get_error_message(response: Response) -> str:
 	"""The messages Frappe queued for the user, else the exception, else the HTTP status."""
-	try:
-		data = json.loads(response.body)
-	except ValueError:
-		data = None
-	if not isinstance(data, dict):
+	data = read_json_object(response.body)
+	if data is None:
 		return f"Central returned HTTP {response.status}."
 
 	if is_signed_out(data):
 		return f"Central did not accept your session or API key. {SIGN_IN_HINT}"
 
+	return (
+		get_server_message(data)
+		or data.get("exception")
+		or data.get("exc_type")
+		or f"Central returned HTTP {response.status}."
+	)
+
+
+def read_json_object(body: bytes) -> dict | None:
+	try:
+		data = json.loads(body)
+	except ValueError:
+		return None
+	return data if isinstance(data, dict) else None
+
+
+def get_server_message(data: dict) -> str:
 	messages = [strip_html(message) for message in read_server_messages(data.get("_server_messages"))]
-	message = " ".join(message for message in messages if message)
-	if not message:
-		message = data.get("exception") or data.get("exc_type") or f"Central returned HTTP {response.status}."
-	return message
+	return " ".join(message for message in messages if message)
 
 
 def is_signed_out(data: dict) -> bool:

@@ -56,6 +56,12 @@ class Config:
 			os.unlink(temporary_path)
 			raise
 
+	def get_saved_for(self, url: str | None) -> "Config":
+		"""This config when it was saved for `url`, else an empty one, so a session never goes to another site."""
+		if url and url.rstrip("/") == self.url:
+			return self
+		return Config(path=self.path)
+
 	def clear_session(self) -> None:
 		self.user = None
 		self.session_id = None

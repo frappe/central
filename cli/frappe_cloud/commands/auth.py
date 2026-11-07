@@ -50,11 +50,9 @@ def verify_code(context: Context, email: str, code: str, full_name: str | None =
 
 def logout(context: Context, args: argparse.Namespace) -> None:
 	config = context.config
-	if config.session_id:
-		# Send the saved session only: an API key in the environment would end nothing.
-		session = CentralClient(
-			context.client.url, session_id=config.session_id, csrf_token=config.csrf_token
-		)
+	if config.url and config.session_id:
+		# End the session on the site that issued it, without an API key from the environment.
+		session = CentralClient(config.url, session_id=config.session_id, csrf_token=config.csrf_token)
 		try:
 			session.post("logout")
 		except CentralError:

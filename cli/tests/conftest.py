@@ -52,7 +52,7 @@ class Central:
 		"""The parameters of the last call to `method`."""
 		return next(read_params(request) for name, request in reversed(self.requests) if name == method)
 
-	def called(self, method: str) -> bool:
+	def has_called(self, method: str) -> bool:
 		return any(name == method for name, _ in self.requests)
 
 

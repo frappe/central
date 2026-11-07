@@ -22,9 +22,8 @@ class Output:
 
 		cells = [[header.upper() for header, _ in columns]]
 		cells += [[format_value(read(row, getter)) for _, getter in columns] for row in rows]
-		widths = [max(len(row[index]) for row in cells) for index in range(len(columns))]
-		for row in cells:
-			self.line("  ".join(cell.ljust(width) for cell, width in zip(row, widths, strict=True)).rstrip())
+		for line in align(cells):
+			self.line(line)
 
 	def record(self, record: dict, fields: Sequence[Column] | None = None) -> None:
 		if self.is_json:
@@ -46,6 +45,15 @@ class Output:
 
 	def line(self, text: str = "") -> None:
 		print(text, file=self.stream)
+
+
+def align(cells: list[list[str]]) -> list[str]:
+	"""Pad each column to its widest cell."""
+	widths = [max(len(cell) for cell in column) for column in zip(*cells, strict=True)]
+	return [
+		"  ".join(cell.ljust(width) for cell, width in zip(row, widths, strict=True)).rstrip()
+		for row in cells
+	]
 
 
 def read(row: dict, getter: Getter) -> Any:

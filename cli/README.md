@@ -34,6 +34,8 @@ Each command takes `--url`, `--team` and `--json`. A flag wins over the environm
 
 The URL must use `https://`. Plain `http://` is accepted only for a local development site, such as `http://central.localhost:8000`. The CLI does not follow a redirect, so it never sends your credentials to another host.
 
+The saved session and team apply only to the URL you signed in to. When `--url` or `FRAPPE_CLOUD_URL` names another site, the CLI does not send the saved session to it.
+
 When you are in one team only, commands use that team. Use `--json` for output that a script or an agent can read.
 
 ## Commands

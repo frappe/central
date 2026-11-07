@@ -56,7 +56,7 @@ def test_create_never_replaces_an_existing_config(central, tmp_path) -> None:
 	assert code == 1
 	assert "already exists" in err
 	assert path.read_text() == "keep"
-	assert not central.called(CREATE)
+	assert not central.has_called(CREATE)
 
 
 def test_create_removes_the_config_when_central_refuses(central, tmp_path) -> None:
