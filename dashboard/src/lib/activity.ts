@@ -156,6 +156,7 @@ function clusterKey(event: ActivityEvent): string {
 	return [
 		event.event,
 		event.actor.label,
+		event.initiator?.label,
 		event.resource.type,
 		event.resource.name,
 		event.resource.label,

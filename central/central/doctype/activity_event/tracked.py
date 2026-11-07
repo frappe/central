@@ -38,6 +38,7 @@ class Tracked(NamedTuple):
 	row_subjects: Mapping[str, str] = NO_FIELDS
 	# A guest session acts for the person this returns, such as the owner signing up.
 	guest_actor: Callable[[Document], str | None] | None = None
+	initiator_field: str | None = None
 	label_field: str | None = None
 	lifecycle: bool = True
 
@@ -83,6 +84,7 @@ TRACKED: dict[str, Tracked] = {
 		"snapshot",
 		"server:view",
 		statuses=("Available", "Failed", "Deleted"),
+		initiator_field="requested_by",
 	),
 	"Site": Tracked(
 		"site",
