@@ -37,6 +37,13 @@ def list_teams(context: Context, args: argparse.Namespace) -> None:
 
 
 def use_team(context: Context, args: argparse.Namespace) -> None:
+	# The client has the saved session only for the site that issued it.
+	if not context.client.session_id:
+		raise CentralError(
+			"`fcloud team use` saves a team for the site you signed in to with `fcloud auth login`. "
+			"For another site or an API key, pass --team or set FRAPPE_CLOUD_TEAM."
+		)
+
 	teams = {team["name"]: team for team in context.client.get("central.api.identity.my_teams")}
 	if args.name not in teams:
 		raise CentralError(f"You are not in team '{args.name}'. Run `fcloud team list` to see your teams.")

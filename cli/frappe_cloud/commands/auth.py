@@ -33,14 +33,12 @@ def login(context: Context, args: argparse.Namespace) -> None:
 	config = context.config
 	config.clear_session()
 	config.url = client.url
-	config.user = result["user"]
 	config.session_id = client.session_id
 	config.csrf_token = result.get("csrf_token")
 	config.save()
 
-	context.output.result(
-		{"user": config.user, "url": config.url}, f"Signed in to {config.url} as {config.user}."
-	)
+	user = result["user"]
+	context.output.result({"user": user, "url": config.url}, f"Signed in to {config.url} as {user}.")
 
 
 def verify_code(context: Context, email: str, code: str, full_name: str | None = None) -> dict:

@@ -216,8 +216,21 @@ def test_save_replaces_a_readable_config_with_a_private_one(tmp_path) -> None:
 
 
 def test_team_use_saves_only_a_team_of_the_user(central) -> None:
+	Config(url="https://central.test", session_id="abc123").save()
 	central.routes["central.api.identity.my_teams"] = [{"name": "acme", "status": "Active"}]
 
 	assert central.run("team", "use", "other")[0] == 1
 	assert central.run("team", "use", "acme")[0] == 0
 	assert Config.load().team == "acme"
+
+
+@pytest.mark.parametrize("saved_url", [None, "https://other.test"])
+def test_team_use_saves_nothing_without_a_session_for_this_site(central, saved_url) -> None:
+	Config(url=saved_url, session_id="abc123" if saved_url else None).save()
+
+	code, _, err = central.run("team", "use", "acme")
+
+	assert code == 1
+	assert "FRAPPE_CLOUD_TEAM" in err
+	assert Config.load().team is None
+	assert not central.has_called("central.api.identity.my_teams")

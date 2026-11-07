@@ -6,7 +6,7 @@ from pathlib import Path
 
 from frappe_cloud.errors import CentralError
 
-SAVED_FIELDS = ("url", "user", "session_id", "csrf_token", "team")
+SAVED_FIELDS = ("url", "session_id", "csrf_token", "team")
 
 
 def get_default_path() -> Path:
@@ -20,11 +20,10 @@ def get_default_path() -> Path:
 
 @dataclass
 class Config:
-	"""The saved Central URL, the signed-in session and the default team."""
+	"""The site you signed in to, its session and the default team. Central holds everything else."""
 
 	path: Path = field(default_factory=get_default_path)
 	url: str | None = None
-	user: str | None = None
 	session_id: str | None = None
 	csrf_token: str | None = None
 	team: str | None = None
@@ -63,7 +62,6 @@ class Config:
 		return Config(path=self.path)
 
 	def clear_session(self) -> None:
-		self.user = None
 		self.session_id = None
 		self.csrf_token = None
 		self.team = None

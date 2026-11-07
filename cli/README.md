@@ -12,7 +12,7 @@ uv tool install "git+https://github.com/frappe/central.git#subdirectory=cli"
 
 ## Sign in
 
-Sign in with a code that Central sends to your email. The CLI saves the session in `~/.config/frappe-cloud/config.json`, readable by you only.
+Sign in with a code that Central sends to your email. The CLI saves only the site URL, the session and your default team in `~/.config/frappe-cloud/config.json`, readable by you only. It reads everything else from Central.
 
 ```bash
 fcloud auth login --url https://central.example.com
@@ -20,7 +20,7 @@ fcloud team list
 fcloud team use my-team
 ```
 
-A script or an agent can use an API key instead of a session. Set `FRAPPE_CLOUD_URL`, `FRAPPE_CLOUD_API_KEY` and `FRAPPE_CLOUD_API_SECRET`. An API key wins over a saved session.
+A script or an agent can use an API key instead of a session. Set `FRAPPE_CLOUD_URL`, `FRAPPE_CLOUD_API_KEY` and `FRAPPE_CLOUD_API_SECRET`. An API key wins over a saved session. With an API key, set the team with `FRAPPE_CLOUD_TEAM` or `--team`, because `fcloud team use` saves a team only for the site you signed in to.
 
 ## Settings
 
