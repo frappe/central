@@ -53,7 +53,7 @@ def create_trial_team(user: str, attribution: dict | None = None, team: str | No
 	1. `team`, the console's current team, when the user can create servers there.
 	2. Else the first other team where the user can.
 	3. Else a new team owned by the user. The funnel cannot ask for a name, so it is named
-	   after the user."""
+	   after the user, and it skips the console's onboarding."""
 	if team and can(user, team, "server:create"):
 		return team
 	for name in get_user_team_names(user):
@@ -63,7 +63,10 @@ def create_trial_team(user: str, attribution: dict | None = None, team: str | No
 	full_name = frappe.db.get_value("User", user, "full_name") or user
 	team_name = _("{0}'s Team").format(full_name)
 
-	return Team.create_for_current_user(team_name, first_touch(**(attribution or {}))).name
+	team = Team.create_for_current_user(team_name, first_touch(**(attribution or {})))
+	# The product's app onboards a trial team, so the console's steps start skipped.
+	team.skip_onboarding()
+	return team.name
 
 
 def first_touch(
