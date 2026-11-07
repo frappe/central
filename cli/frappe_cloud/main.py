@@ -1,10 +1,10 @@
 import argparse
 import sys
 
-from frappe_cloud_cli import __version__
-from frappe_cloud_cli.commands import ai, auth, bucket, catalog, server, snapshot, ssh_key, team, wireguard
-from frappe_cloud_cli.context import Context
-from frappe_cloud_cli.errors import CentralError
+from frappe_cloud import __version__
+from frappe_cloud.commands import ai, auth, bucket, catalog, server, snapshot, ssh_key, team, wireguard
+from frappe_cloud.context import Context
+from frappe_cloud.errors import CentralError
 
 COMMAND_MODULES = (auth, team, server, catalog, snapshot, ssh_key, wireguard, bucket, ai)
 

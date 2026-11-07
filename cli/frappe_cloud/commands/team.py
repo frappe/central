@@ -1,8 +1,8 @@
 import argparse
 
-from frappe_cloud_cli.commands import add_command, add_group
-from frappe_cloud_cli.context import Context
-from frappe_cloud_cli.errors import CentralError
+from frappe_cloud.commands import add_command, add_group
+from frappe_cloud.context import Context
+from frappe_cloud.errors import CentralError
 
 
 def register(subparsers: argparse._SubParsersAction) -> None:

@@ -1,9 +1,9 @@
 import argparse
 
-from frappe_cloud_cli.commands import add_command, add_group, add_yes_option, confirm
-from frappe_cloud_cli.commands.server import find_server
-from frappe_cloud_cli.context import Context
-from frappe_cloud_cli.errors import CentralError
+from frappe_cloud.commands import add_command, add_group, add_yes_option, confirm
+from frappe_cloud.commands.server import find_server
+from frappe_cloud.context import Context
+from frappe_cloud.errors import CentralError
 
 SNAPSHOTS = "central.api.snapshots"
 

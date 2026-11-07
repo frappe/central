@@ -2,8 +2,8 @@ import argparse
 import sys
 from collections.abc import Callable
 
-from frappe_cloud_cli.context import Context
-from frappe_cloud_cli.errors import CentralError
+from frappe_cloud.context import Context
+from frappe_cloud.errors import CentralError
 
 Handler = Callable[[Context, argparse.Namespace], None]
 

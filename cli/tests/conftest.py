@@ -5,8 +5,8 @@ from typing import Any
 
 import pytest
 
-from frappe_cloud_cli import context, main
-from frappe_cloud_cli.client import CentralClient, Response
+from frappe_cloud import context, main
+from frappe_cloud.client import CentralClient, Response
 
 
 class FakeCentral(CentralClient):

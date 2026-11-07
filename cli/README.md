@@ -4,7 +4,7 @@
 
 ## Install
 
-The CLI needs Python 3.11 or later. The package is `frappe-cloud-cli`. It installs the `fcloud` command and `fcctl`, an alias of the same command.
+The CLI needs Python 3.11 or later. The package is `frappe-cloud`. It installs the `fcloud` command and `fcctl`, an alias of the same command.
 
 ```bash
 uv tool install "git+https://github.com/frappe/central.git#subdirectory=cli"

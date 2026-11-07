@@ -1,5 +1,5 @@
 [project]
-name = "frappe-cloud-cli"
+name = "frappe-cloud"
 version = "0.1.0"
 description = "Command line interface for Frappe Cloud"
 authors = [{ name = "frappe", email = "developers@frappe.io" }]
@@ -11,8 +11,8 @@ dependencies = [
 ]
 
 [project.scripts]
-fcloud = "frappe_cloud_cli.main:main"
-fcctl = "frappe_cloud_cli.main:main"
+fcloud = "frappe_cloud.main:main"
+fcctl = "frappe_cloud.main:main"
 
 [dependency-groups]
 dev = ["pytest>=8"]
@@ -22,7 +22,7 @@ requires = ["flit_core >=3.4,<4"]
 build-backend = "flit_core.buildapi"
 
 [tool.flit.module]
-name = "frappe_cloud_cli"
+name = "frappe_cloud"
 
 [tool.ruff]
 extend = "../pyproject.toml"

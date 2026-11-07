@@ -5,10 +5,10 @@ from email.message import Message
 
 import pytest
 
-from frappe_cloud_cli.client import Response
-from frappe_cloud_cli.commands import server
-from frappe_cloud_cli.config import Config
-from frappe_cloud_cli.errors import CentralError
+from frappe_cloud.client import Response
+from frappe_cloud.commands import server
+from frappe_cloud.config import Config
+from frappe_cloud.errors import CentralError
 
 REGISTRY = "central.api.servers.registry"
 WEB = {

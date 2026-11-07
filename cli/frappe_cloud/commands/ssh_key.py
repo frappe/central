@@ -1,9 +1,9 @@
 import argparse
 from pathlib import Path
 
-from frappe_cloud_cli.commands import add_command, add_group, add_yes_option, confirm
-from frappe_cloud_cli.context import Context
-from frappe_cloud_cli.errors import CentralError
+from frappe_cloud.commands import add_command, add_group, add_yes_option, confirm
+from frappe_cloud.context import Context
+from frappe_cloud.errors import CentralError
 
 SSH_KEYS = "central.api.ssh_keys"
 DEFAULT_KEY_FILES = ("id_ed25519.pub", "id_ecdsa.pub", "id_rsa.pub")

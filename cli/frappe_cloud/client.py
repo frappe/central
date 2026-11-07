@@ -8,8 +8,8 @@ from email.message import Message
 from http.cookies import SimpleCookie
 from typing import Any
 
-from frappe_cloud_cli import __version__
-from frappe_cloud_cli.errors import CentralError
+from frappe_cloud import __version__
+from frappe_cloud.errors import CentralError
 
 TIMEOUT_SECONDS = 60
 SIGN_IN_HINT = "Sign in with `fcloud auth login`."
@@ -88,7 +88,7 @@ class CentralClient:
 		self, http_method: str, method: str, params: dict[str, Any], *, is_guest: bool = False
 	) -> urllib.request.Request:
 		url = f"{self.url}/api/method/{method}"
-		headers = {"Accept": "application/json", "User-Agent": f"frappe-cloud-cli/{__version__}"}
+		headers = {"Accept": "application/json", "User-Agent": f"frappe-cloud/{__version__}"}
 		data = None
 		if http_method == "GET":
 			if params:

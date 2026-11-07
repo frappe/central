@@ -2,9 +2,9 @@ import os
 from argparse import Namespace
 from dataclasses import dataclass
 
-from frappe_cloud_cli.client import CentralClient
-from frappe_cloud_cli.config import Config
-from frappe_cloud_cli.output import Output
+from frappe_cloud.client import CentralClient
+from frappe_cloud.config import Config
+from frappe_cloud.output import Output
 
 
 @dataclass

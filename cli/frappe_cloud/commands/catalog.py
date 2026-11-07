@@ -1,9 +1,9 @@
 import argparse
 from datetime import UTC, datetime
 
-from frappe_cloud_cli.commands import add_command, add_group
-from frappe_cloud_cli.commands.server import get_image_params
-from frappe_cloud_cli.context import Context
+from frappe_cloud.commands import add_command, add_group
+from frappe_cloud.commands.server import get_image_params
+from frappe_cloud.context import Context
 
 
 def register(subparsers: argparse._SubParsersAction) -> None:

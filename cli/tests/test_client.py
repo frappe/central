@@ -6,8 +6,8 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import pytest
 
-from frappe_cloud_cli.client import CentralClient, Response, get_error_message, validate_url
-from frappe_cloud_cli.errors import CentralError
+from frappe_cloud.client import CentralClient, Response, get_error_message, validate_url
+from frappe_cloud.errors import CentralError
 from tests.conftest import FakeCentral, read_params
 
 

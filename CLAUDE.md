@@ -48,7 +48,7 @@ Central runs today:
 - Notifications: event types, team notifications, user preferences, and the delivery engine.
 - Billing: catalog, subscriptions, invoicing, payments, credits, and projections.
 - The console in `dashboard/`.
-- The `fcloud` command line interface in `cli/`. It is the separate Python package `frappe-cloud-cli` and calls the same API as the console.
+- The `fcloud` command line interface in `cli/`. It is the separate Python package `frappe-cloud` and calls the same API as the console.
 
 Central plans to add:
 

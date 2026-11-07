@@ -4,7 +4,7 @@ import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from frappe_cloud_cli.errors import CentralError
+from frappe_cloud.errors import CentralError
 
 SAVED_FIELDS = ("url", "user", "session_id", "csrf_token", "team")
 

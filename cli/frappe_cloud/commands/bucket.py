@@ -1,7 +1,7 @@
 import argparse
 
-from frappe_cloud_cli.commands import add_command, add_group, add_yes_option, confirm
-from frappe_cloud_cli.context import Context
+from frappe_cloud.commands import add_command, add_group, add_yes_option, confirm
+from frappe_cloud.context import Context
 
 STORAGE = "central.services.api.storage"
 CREDENTIAL_FIELDS = [
