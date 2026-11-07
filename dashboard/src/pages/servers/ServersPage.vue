@@ -140,6 +140,12 @@ useServerLink(
 				infoToast("You can't open this server.")
 			else void openBench(server, { inPlace: true })
 		},
+		// An app's "End subscription" lands here, so its customer meets one server, not the list.
+		terminate: (server) => {
+			if (!getServerActions(server, teamActions.value).terminate)
+				infoToast("You can't terminate this server.")
+			else pendingTerminate.value = server
+		},
 	},
 )
 </script>
