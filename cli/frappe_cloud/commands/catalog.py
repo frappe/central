@@ -2,7 +2,7 @@ import argparse
 from datetime import UTC, datetime
 
 from frappe_cloud.commands import add_command, add_group
-from frappe_cloud.commands.server import get_image_params
+from frappe_cloud.commands.server import get_image_params, get_images
 from frappe_cloud.context import Context
 
 
@@ -21,7 +21,7 @@ def register(subparsers: argparse._SubParsersAction) -> None:
 	commands = add_group(subparsers, "plan", "See server plans and prices.")
 	parser = add_command(commands, "list", list_plans, "List the plans a new server can use.")
 	parser.add_argument("--region", required=True, help="Region, from `fcloud region list`.")
-	parser.add_argument("--offering", help="Show only plans that fit this offering's image.")
+	parser.add_argument("--offering", help="Show only plans that fit this offering's newest image.")
 	parser.add_argument("--image", help="Show only plans that fit this image of the offering.")
 	parser.add_argument("--snapshot", help="Show only plans that fit this snapshot.")
 
@@ -46,12 +46,7 @@ def list_offerings(context: Context, args: argparse.Namespace) -> None:
 
 
 def list_images(context: Context, args: argparse.Namespace) -> None:
-	images = context.client.get(
-		"central.api.images.list_images",
-		team=context.client.require_team(),
-		region=args.region,
-		offering=args.offering,
-	)["items"]
+	images = get_images(context, args.region, args.offering)
 	columns = [
 		("ID", "id"),
 		("Title", "title"),

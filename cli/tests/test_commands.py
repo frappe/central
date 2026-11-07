@@ -114,6 +114,29 @@ def test_wait_raises_the_action_error(central, monkeypatch) -> None:
 	assert "RA-1 is Failed. The region is full." in err
 
 
+def test_wait_sends_no_request_after_the_timeout(central, monkeypatch) -> None:
+	clock = [0.0]
+	monkeypatch.setattr(server.time, "monotonic", lambda: clock[0])
+	monkeypatch.setattr(server.time, "sleep", lambda seconds: clock.append(clock.pop() + seconds))
+	central.routes["central.api.servers.action_status"] = {"action": "RA-1", "status": "Running"}
+
+	code, _, err = central.run("server", "wait", "RA-1", "--timeout", "5")
+
+	assert code == 1
+	assert "still Running" in err
+	assert [name for name, _ in central.requests].count("central.api.servers.action_status") == 2
+
+
+def test_image_list_shows_every_page(central) -> None:
+	pages = {"0": {"items": [{"id": "img-1"}], "next_offset": 1}, "1": {"items": [{"id": "img-2"}]}}
+	central.routes["central.api.images.list_images"] = lambda params: pages[params["offset"]]
+
+	code, out, _ = central.run("image", "list", "--region", "blr1", "--offering", "ubuntu", "--json")
+
+	assert code == 0
+	assert [image["id"] for image in json.loads(out)] == ["img-1", "img-2"]
+
+
 @pytest.mark.parametrize(
 	("overview", "address"),
 	[
@@ -146,6 +169,17 @@ def test_snapshot_delete_reports_each_failure(central, monkeypatch) -> None:
 
 	assert code == 1
 	assert "Deleting SNAP-1." in out
+	assert "SNAP-2: The snapshot is in use." in err
+
+
+def test_snapshot_delete_prints_json_when_every_deletion_fails(central) -> None:
+	result = {"deleted": [], "failed": {"SNAP-2": "The snapshot is in use."}}
+	central.routes["central.api.snapshots.delete_snapshots"] = result
+
+	code, out, err = central.run("snapshot", "delete", "SNAP-2", "--yes", "--json")
+
+	assert code == 1
+	assert json.loads(out) == result
 	assert "SNAP-2: The snapshot is in use." in err
 
 
@@ -215,7 +249,8 @@ def test_save_replaces_a_readable_config_with_a_private_one(tmp_path) -> None:
 	assert list(tmp_path.iterdir()) == [path]
 
 
-def test_team_use_saves_only_a_team_of_the_user(central) -> None:
+def test_team_use_saves_only_a_team_of_the_user(central, monkeypatch) -> None:
+	monkeypatch.delenv("FRAPPE_CLOUD_API_KEY")
 	Config(url="https://central.test", session_id="abc123").save()
 	central.routes["central.api.identity.my_teams"] = [{"name": "acme", "status": "Active"}]
 
@@ -224,8 +259,15 @@ def test_team_use_saves_only_a_team_of_the_user(central) -> None:
 	assert Config.load().team == "acme"
 
 
-@pytest.mark.parametrize("saved_url", [None, "https://other.test"])
-def test_team_use_saves_nothing_without_a_session_for_this_site(central, saved_url) -> None:
+@pytest.mark.parametrize(
+	("saved_url", "has_api_key"),
+	[(None, False), ("https://other.test", False), ("https://central.test", True)],
+)
+def test_team_use_saves_nothing_without_a_session_for_this_site(
+	central, monkeypatch, saved_url, has_api_key
+) -> None:
+	if not has_api_key:
+		monkeypatch.delenv("FRAPPE_CLOUD_API_KEY")
 	Config(url=saved_url, session_id="abc123" if saved_url else None).save()
 
 	code, _, err = central.run("team", "use", "acme")

@@ -20,7 +20,7 @@ fcloud team list
 fcloud team use my-team
 ```
 
-A script or an agent can use an API key instead of a session. Set `FRAPPE_CLOUD_URL`, `FRAPPE_CLOUD_API_KEY` and `FRAPPE_CLOUD_API_SECRET`. An API key wins over a saved session. With an API key, set the team with `FRAPPE_CLOUD_TEAM` or `--team`, because `fcloud team use` saves a team only for the site you signed in to.
+A script or an agent can use an API key instead of a session. Set `FRAPPE_CLOUD_URL`, `FRAPPE_CLOUD_API_KEY` and `FRAPPE_CLOUD_API_SECRET`. An API key wins over a saved session. With an API key, set the team with `FRAPPE_CLOUD_TEAM` or `--team`. `fcloud team use` saves a team only for the session of `fcloud auth login`, and refuses when an API key is set.
 
 ## Settings
 

@@ -44,6 +44,19 @@ def test_create_sends_only_the_public_key_and_writes_a_private_config(central, t
 	assert os.stat(path).st_mode & 0o777 == 0o600
 
 
+def test_create_to_stdout_with_json_prints_the_config_in_an_object(central) -> None:
+	central.routes[CREATE] = DEVICE
+
+	code, out, _ = central.run(
+		"wireguard", "create", "--region", "blr1", "--title", "laptop", "--output", "-", "--json"
+	)
+
+	device = json.loads(out)
+	assert code == 0
+	assert device["name"] == "WG-1"
+	assert "PrivateKey = " in device["config"]
+
+
 def test_create_never_replaces_an_existing_config(central, tmp_path) -> None:
 	path = tmp_path / "wg0.conf"
 	path.write_text("keep")

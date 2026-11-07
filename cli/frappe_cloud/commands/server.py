@@ -176,20 +176,25 @@ def get_image_params(context: Context, args: argparse.Namespace) -> dict:
 	return {"offering": args.offering, "image_id": get_newest_image_id(context, args.region, args.offering)}
 
 
-def get_newest_image_id(context: Context, region: str, offering: str) -> str:
+def get_images(context: Context, region: str, offering: str) -> list[dict]:
+	"""Every image of the offering in the region, from all pages."""
 	images = []
 	offset = 0
 	while offset is not None:
 		page = context.client.get(
 			"central.api.images.list_images",
-			team=context.client.team,
+			team=context.client.require_team(),
 			region=region,
 			offering=offering,
 			offset=offset,
 		)
 		images += page["items"]
 		offset = page.get("next_offset")
+	return images
 
+
+def get_newest_image_id(context: Context, region: str, offering: str) -> str:
+	images = get_images(context, region, offering)
 	if not images:
 		raise CentralError(f"Offering {offering} has no available image in {region}.")
 	return max(images, key=lambda image: image["created_at"])["id"]
@@ -244,7 +249,7 @@ def wait_for_action(context: Context, name: str, timeout: int) -> dict:
 			print(f"{name}: {status}", file=sys.stderr)
 		if status in FINISHED_STATES:
 			break
-		if time.monotonic() >= deadline:
+		if time.monotonic() + POLL_SECONDS > deadline:
 			raise CentralError(f"Action {name} is still {status}. Run `fcloud server wait {name}`.")
 		time.sleep(POLL_SECONDS)
 

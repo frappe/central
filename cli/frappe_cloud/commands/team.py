@@ -37,10 +37,10 @@ def list_teams(context: Context, args: argparse.Namespace) -> None:
 
 
 def use_team(context: Context, args: argparse.Namespace) -> None:
-	# The client has the saved session only for the site that issued it.
-	if not context.client.session_id:
+	# The client has the saved session only for the site that issued it. An API key acts as another user.
+	if not context.client.session_id or context.client.is_using_api_key:
 		raise CentralError(
-			"`fcloud team use` saves a team for the site you signed in to with `fcloud auth login`. "
+			"`fcloud team use` saves a team for the session of `fcloud auth login`, without an API key. "
 			"For another site or an API key, pass --team or set FRAPPE_CLOUD_TEAM."
 		)
 

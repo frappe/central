@@ -108,9 +108,13 @@ class CentralClient:
 		return urllib.request.Request(url, data=data, headers=headers, method=http_method)
 
 	@property
+	def is_using_api_key(self) -> bool:
+		return bool(self.api_key and self.api_secret)
+
+	@property
 	def auth_headers(self) -> dict[str, str]:
 		"""An API key wins over a saved session, so automation never acts as the last person to sign in."""
-		if self.api_key and self.api_secret:
+		if self.is_using_api_key:
 			return {"Authorization": f"token {self.api_key}:{self.api_secret}"}
 
 		headers = {"Cookie": f"sid={self.session_id}"}
@@ -151,14 +155,20 @@ class CentralClient:
 
 
 def validate_url(url: str) -> str:
-	"""Credentials travel only over HTTPS. Plain HTTP is for a local development site."""
+	"""Credentials travel only over HTTPS, to the host that the URL names. Plain HTTP is for a local
+	development site."""
 	parts = urllib.parse.urlsplit(url.rstrip("/"))
-	host = parts.hostname or ""
-	is_local = host in LOCAL_HOSTS or host.endswith(".localhost")
-	if parts.scheme == "https" or (parts.scheme == "http" and is_local):
-		return url.rstrip("/")
+	if "@" in parts.netloc or parts.query or parts.fragment:
+		raise CentralError(f"Use the site URL only, such as https://central.example.com, not {url}.")
+
+	if parts.scheme == "https" or (parts.scheme == "http" and is_local_host(parts.hostname or "")):
+		return urllib.parse.urlunsplit((parts.scheme, parts.netloc, parts.path, "", ""))
 
 	raise CentralError(f"Use an https:// URL for Central, not {url}.")
+
+
+def is_local_host(host: str) -> bool:
+	return host in LOCAL_HOSTS or host.endswith(".localhost")
 
 
 def encode_query_value(value: Any) -> str:

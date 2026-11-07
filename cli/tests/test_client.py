@@ -44,6 +44,14 @@ def test_url_refuses_plain_http_to_a_remote_host() -> None:
 		validate_url("http://central.test")
 
 
+@pytest.mark.parametrize(
+	"url", ["https://central.test@attacker.test", "https://central.test/?next=x", "https://central.test/#x"]
+)
+def test_url_refuses_user_info_query_and_fragment(url: str) -> None:
+	with pytest.raises(CentralError, match="site URL only"):
+		validate_url(url)
+
+
 def test_redirect_is_refused_so_credentials_stay_on_the_host() -> None:
 	class Redirect(BaseHTTPRequestHandler):
 		def do_GET(self) -> None:

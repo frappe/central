@@ -57,7 +57,7 @@ def delete_snapshots(context: Context, args: argparse.Namespace) -> None:
 	result = context.client.post(
 		f"{SNAPSHOTS}.delete_snapshots", team=context.client.require_team(), names=args.names
 	)
-	if result["deleted"]:
+	if result["deleted"] or context.output.is_json:
 		context.output.result(result, f"Deleting {', '.join(result['deleted'])}.")
 	if result["failed"]:
 		reasons = "; ".join(f"{name}: {reason}" for name, reason in result["failed"].items())

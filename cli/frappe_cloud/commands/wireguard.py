@@ -72,7 +72,8 @@ def list_devices(context: Context, args: argparse.Namespace) -> None:
 
 def create_device(context: Context, args: argparse.Namespace) -> None:
 	if args.output == "-":
-		return context.output.line(register_device(context, args)[1])
+		device, config = register_device(context, args)
+		return context.output.result({**device, "config": config}, config)
 
 	# Claim the file first: a device whose private key is lost must be added again.
 	path = Path(args.output or f"{get_interface_name(args.title)}.conf")
