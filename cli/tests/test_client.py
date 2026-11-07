@@ -6,8 +6,8 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import pytest
 
-from central_cli.client import CentralClient, Response, get_error_message, validate_url
-from central_cli.errors import CentralError
+from frappe_cloud_cli.client import CentralClient, Response, get_error_message, validate_url
+from frappe_cloud_cli.errors import CentralError
 from tests.conftest import FakeCentral, read_params
 
 
@@ -94,14 +94,14 @@ def test_error_reads_server_messages_without_html() -> None:
 def test_error_for_rejected_credentials_says_how_to_sign_in() -> None:
 	message = get_error_message(error_response(401, {"exc_type": "AuthenticationError"}))
 
-	assert "central auth login" in message
+	assert "fcloud auth login" in message
 
 
 def test_error_for_an_expired_session_says_how_to_sign_in() -> None:
 	messages = json.dumps([json.dumps({"message": "Login to access"})])
 	response = error_response(403, {"exc_type": "PermissionError", "_server_messages": messages})
 
-	assert "central auth login" in get_error_message(response)
+	assert "fcloud auth login" in get_error_message(response)
 
 
 @pytest.mark.parametrize("body", ["<html>Bad Gateway</html>", "[]"])
@@ -132,5 +132,5 @@ def test_require_team_refuses_to_guess_between_teams() -> None:
 	teams = [{"name": "acme", "status": "Active"}, {"name": "beta", "status": "Active"}]
 	client = make_client({"central.api.identity.my_teams": teams})
 
-	with pytest.raises(CentralError, match="central team use"):
+	with pytest.raises(CentralError, match="fcloud team use"):
 		client.require_team()

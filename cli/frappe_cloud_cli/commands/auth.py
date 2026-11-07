@@ -1,10 +1,10 @@
 import argparse
 import sys
 
-from central_cli.client import CentralClient
-from central_cli.commands import add_command, add_group, ask
-from central_cli.context import Context
-from central_cli.errors import CentralError
+from frappe_cloud_cli.client import CentralClient
+from frappe_cloud_cli.commands import add_command, add_group, ask
+from frappe_cloud_cli.context import Context
+from frappe_cloud_cli.errors import CentralError
 
 
 def register(subparsers: argparse._SubParsersAction) -> None:

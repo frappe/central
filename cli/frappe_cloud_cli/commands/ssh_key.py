@@ -1,9 +1,9 @@
 import argparse
 from pathlib import Path
 
-from central_cli.commands import add_command, add_group, add_yes_option, confirm
-from central_cli.context import Context
-from central_cli.errors import CentralError
+from frappe_cloud_cli.commands import add_command, add_group, add_yes_option, confirm
+from frappe_cloud_cli.context import Context
+from frappe_cloud_cli.errors import CentralError
 
 SSH_KEYS = "central.api.ssh_keys"
 DEFAULT_KEY_FILES = ("id_ed25519.pub", "id_ecdsa.pub", "id_rsa.pub")
@@ -19,7 +19,7 @@ def register(subparsers: argparse._SubParsersAction) -> None:
 	parser.add_argument("--file", type=Path, help="Public key file. Defaults to your key in ~/.ssh.")
 
 	parser = add_command(commands, "delete", delete_key, "Remove a key from the team.")
-	parser.add_argument("name", help="Key name, from `central ssh-key list`.")
+	parser.add_argument("name", help="Key name, from `fcloud ssh-key list`.")
 	add_yes_option(parser)
 
 

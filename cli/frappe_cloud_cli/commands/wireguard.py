@@ -10,10 +10,10 @@ from typing import TextIO
 from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
 from cryptography.hazmat.primitives.serialization import Encoding, NoEncryption, PrivateFormat, PublicFormat
 
-from central_cli.commands import add_command, add_group, add_yes_option, confirm
-from central_cli.commands.server import find_server
-from central_cli.context import Context
-from central_cli.errors import CentralError
+from frappe_cloud_cli.commands import add_command, add_group, add_yes_option, confirm
+from frappe_cloud_cli.commands.server import find_server
+from frappe_cloud_cli.context import Context
+from frappe_cloud_cli.errors import CentralError
 
 WIREGUARD = "central.api.wireguard"
 # wg-quick takes the interface name from the file name, at most 15 characters.
@@ -33,7 +33,7 @@ def register(subparsers: argparse._SubParsersAction) -> None:
 	)
 
 	parser = add_command(commands, "delete", delete_device, "Remove a device from its gateway.")
-	parser.add_argument("name", help="Device name, from `central wireguard list`.")
+	parser.add_argument("name", help="Device name, from `fcloud wireguard list`.")
 	add_yes_option(parser)
 
 	for name, summary in (

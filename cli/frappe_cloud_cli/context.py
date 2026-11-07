@@ -2,9 +2,9 @@ import os
 from argparse import Namespace
 from dataclasses import dataclass
 
-from central_cli.client import CentralClient
-from central_cli.config import Config
-from central_cli.output import Output
+from frappe_cloud_cli.client import CentralClient
+from frappe_cloud_cli.config import Config
+from frappe_cloud_cli.output import Output
 
 
 @dataclass
@@ -20,11 +20,11 @@ class Context:
 		"""Flags win over the environment, and the environment wins over the saved config."""
 		config = config or Config.load()
 		client = CentralClient(
-			args.url or os.environ.get("CENTRAL_URL") or config.url,
+			args.url or os.environ.get("FRAPPE_CLOUD_URL") or config.url,
 			session_id=config.session_id,
 			csrf_token=config.csrf_token,
-			api_key=os.environ.get("CENTRAL_API_KEY"),
-			api_secret=os.environ.get("CENTRAL_API_SECRET"),
-			team=args.team or os.environ.get("CENTRAL_TEAM") or config.team,
+			api_key=os.environ.get("FRAPPE_CLOUD_API_KEY"),
+			api_secret=os.environ.get("FRAPPE_CLOUD_API_SECRET"),
+			team=args.team or os.environ.get("FRAPPE_CLOUD_TEAM") or config.team,
 		)
 		return cls(client=client, config=config, output=Output(is_json=args.json))

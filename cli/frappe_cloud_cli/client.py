@@ -8,11 +8,11 @@ from email.message import Message
 from http.cookies import SimpleCookie
 from typing import Any
 
-from central_cli import __version__
-from central_cli.errors import CentralError
+from frappe_cloud_cli import __version__
+from frappe_cloud_cli.errors import CentralError
 
 TIMEOUT_SECONDS = 60
-SIGN_IN_HINT = "Sign in with `central auth login`."
+SIGN_IN_HINT = "Sign in with `fcloud auth login`."
 SIGNED_OUT_ERRORS = ("AuthenticationError", "SessionExpired", "CSRFTokenError")
 LOCAL_HOSTS = ("localhost", "127.0.0.1", "::1")
 
@@ -67,7 +67,9 @@ class CentralClient:
 	def call(self, http_method: str, method: str, params: dict[str, Any], *, is_guest: bool = False) -> Any:
 		"""Call `/api/method/<method>` and return its `message`. Parameters set to None are left out."""
 		if not self.url:
-			raise CentralError("Set the Central URL with `central auth login --url <url>` or $CENTRAL_URL.")
+			raise CentralError(
+				"Set the Central URL with `fcloud auth login --url <url>` or $FRAPPE_CLOUD_URL."
+			)
 		if not is_guest and not self.has_credentials:
 			raise CentralError(f"You are not signed in. {SIGN_IN_HINT}")
 
@@ -86,7 +88,7 @@ class CentralClient:
 		self, http_method: str, method: str, params: dict[str, Any], *, is_guest: bool = False
 	) -> urllib.request.Request:
 		url = f"{self.url}/api/method/{method}"
-		headers = {"Accept": "application/json", "User-Agent": f"central-cli/{__version__}"}
+		headers = {"Accept": "application/json", "User-Agent": f"frappe-cloud-cli/{__version__}"}
 		data = None
 		if http_method == "GET":
 			if params:
@@ -138,7 +140,7 @@ class CentralClient:
 		teams = [team for team in self.get("central.api.identity.my_teams") if team.get("status") == "Active"]
 		if len(teams) != 1:
 			raise CentralError(
-				f"You are in {len(teams)} active teams. Pick one with `central team use <team>` or --team."
+				f"You are in {len(teams)} active teams. Pick one with `fcloud team use <team>` or --team."
 			)
 
 		self.team = teams[0]["name"]

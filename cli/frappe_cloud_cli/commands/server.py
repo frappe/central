@@ -7,9 +7,9 @@ import uuid
 import webbrowser
 from pathlib import Path
 
-from central_cli.commands import add_command, add_group, add_yes_option, confirm
-from central_cli.context import Context
-from central_cli.errors import CentralError
+from frappe_cloud_cli.commands import add_command, add_group, add_yes_option, confirm
+from frappe_cloud_cli.context import Context
+from frappe_cloud_cli.errors import CentralError
 
 SERVERS = "central.api.servers"
 FINISHED_STATES = ("Succeeded", "Failed", "Timed Out")
@@ -57,9 +57,9 @@ def register(subparsers: argparse._SubParsersAction) -> None:
 def register_create(commands: argparse._SubParsersAction) -> None:
 	parser = add_command(commands, "create", create_server, "Create a server.")
 	parser.add_argument("title", help="A title for the server.")
-	parser.add_argument("--region", required=True, help="Region, from `central region list`.")
-	parser.add_argument("--plan", required=True, help="Plan, from `central plan list`.")
-	parser.add_argument("--offering", help="Image offering, from `central offering list`.")
+	parser.add_argument("--region", required=True, help="Region, from `fcloud region list`.")
+	parser.add_argument("--plan", required=True, help="Plan, from `fcloud plan list`.")
+	parser.add_argument("--offering", help="Image offering, from `fcloud offering list`.")
 	parser.add_argument("--image", help="Image ID. Defaults to the newest image of the offering.")
 	parser.add_argument("--snapshot", help="Restore from this snapshot instead of an image.")
 	parser.add_argument("--hostname", help="Hostname for the server.")
@@ -111,7 +111,7 @@ def find_server(context: Context, identifier: str) -> dict:
 		return matches[0]
 	if matches:
 		raise CentralError(f"{len(matches)} servers have the title '{identifier}'. Use the server ID.")
-	raise CentralError(f"No server '{identifier}' in team {context.client.team}. Run `central server list`.")
+	raise CentralError(f"No server '{identifier}' in team {context.client.team}. Run `fcloud server list`.")
 
 
 def get_overview(context: Context, identifier: str) -> dict:
@@ -169,7 +169,7 @@ def get_image_params(context: Context, args: argparse.Namespace) -> dict:
 	if args.snapshot:
 		return {"snapshot": args.snapshot}
 	if not args.offering:
-		raise CentralError("Pass --offering or --snapshot. Run `central offering list` to see the offerings.")
+		raise CentralError("Pass --offering or --snapshot. Run `fcloud offering list` to see the offerings.")
 	if args.image:
 		return {"offering": args.offering, "image_id": args.image}
 
@@ -245,7 +245,7 @@ def wait_for_action(context: Context, name: str, timeout: int) -> dict:
 		if status in FINISHED_STATES:
 			break
 		if time.monotonic() >= deadline:
-			raise CentralError(f"Action {name} is still {status}. Run `central server wait {name}`.")
+			raise CentralError(f"Action {name} is still {status}. Run `fcloud server wait {name}`.")
 		time.sleep(POLL_SECONDS)
 
 	if status != "Succeeded":
@@ -273,7 +273,7 @@ def ssh_server(context: Context, args: argparse.Namespace) -> None:
 	server = get_overview(context, args.server)
 	address = get_ssh_address(server)
 	if not shutil.which("ssh"):
-		raise CentralError("Install an OpenSSH client to use `central server ssh`.")
+		raise CentralError("Install an OpenSSH client to use `fcloud server ssh`.")
 
 	# ssh would read a destination that starts with a dash as an option.
 	if args.user.startswith("-"):
@@ -291,5 +291,5 @@ def get_ssh_address(server: dict) -> str:
 
 	raise CentralError(
 		f"{server['title']} has no public address. Attach one in the console, or connect over WireGuard "
-		f"with `central wireguard allow {server['resource_id']}`."
+		f"with `fcloud wireguard allow {server['resource_id']}`."
 	)

@@ -2,15 +2,17 @@ import argparse
 import sys
 from collections.abc import Callable
 
-from central_cli.context import Context
-from central_cli.errors import CentralError
+from frappe_cloud_cli.context import Context
+from frappe_cloud_cli.errors import CentralError
 
 Handler = Callable[[Context, argparse.Namespace], None]
 
-# Every command takes these, so they work after the command name: `central server list --json`.
+# Every command takes these, so they work after the command name: `fcloud server list --json`.
 COMMON_OPTIONS = argparse.ArgumentParser(add_help=False)
-COMMON_OPTIONS.add_argument("--url", help="Central URL. Defaults to $CENTRAL_URL, then the saved URL.")
-COMMON_OPTIONS.add_argument("--team", help="Team name. Defaults to $CENTRAL_TEAM, then `central team use`.")
+COMMON_OPTIONS.add_argument("--url", help="Central URL. Defaults to $FRAPPE_CLOUD_URL, then the saved URL.")
+COMMON_OPTIONS.add_argument(
+	"--team", help="Team name. Defaults to $FRAPPE_CLOUD_TEAM, then `fcloud team use`."
+)
 COMMON_OPTIONS.add_argument("--json", action="store_true", help="Print the result as JSON.")
 
 

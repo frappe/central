@@ -6,8 +6,8 @@ from email.message import Message
 from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
-from central_cli.client import Response
-from central_cli.commands.wireguard import generate_key_pair
+from frappe_cloud_cli.client import Response
+from frappe_cloud_cli.commands.wireguard import generate_key_pair
 
 CREATE = "central.api.wireguard.create_wireguard_device"
 DEVICE = {

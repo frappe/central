@@ -1,9 +1,9 @@
 import argparse
 from datetime import UTC, datetime
 
-from central_cli.commands import add_command, add_group
-from central_cli.commands.server import get_image_params
-from central_cli.context import Context
+from frappe_cloud_cli.commands import add_command, add_group
+from frappe_cloud_cli.commands.server import get_image_params
+from frappe_cloud_cli.context import Context
 
 
 def register(subparsers: argparse._SubParsersAction) -> None:
@@ -15,12 +15,12 @@ def register(subparsers: argparse._SubParsersAction) -> None:
 
 	commands = add_group(subparsers, "image", "See the images of an offering.")
 	parser = add_command(commands, "list", list_images, "List an offering's images in a region.")
-	parser.add_argument("--region", required=True, help="Region, from `central region list`.")
-	parser.add_argument("--offering", required=True, help="Offering, from `central offering list`.")
+	parser.add_argument("--region", required=True, help="Region, from `fcloud region list`.")
+	parser.add_argument("--offering", required=True, help="Offering, from `fcloud offering list`.")
 
 	commands = add_group(subparsers, "plan", "See server plans and prices.")
 	parser = add_command(commands, "list", list_plans, "List the plans a new server can use.")
-	parser.add_argument("--region", required=True, help="Region, from `central region list`.")
+	parser.add_argument("--region", required=True, help="Region, from `fcloud region list`.")
 	parser.add_argument("--offering", help="Show only plans that fit this offering's image.")
 	parser.add_argument("--image", help="Show only plans that fit this image of the offering.")
 	parser.add_argument("--snapshot", help="Show only plans that fit this snapshot.")

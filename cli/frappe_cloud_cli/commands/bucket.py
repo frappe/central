@@ -1,7 +1,7 @@
 import argparse
 
-from central_cli.commands import add_command, add_group, add_yes_option, confirm
-from central_cli.context import Context
+from frappe_cloud_cli.commands import add_command, add_group, add_yes_option, confirm
+from frappe_cloud_cli.context import Context
 
 STORAGE = "central.services.api.storage"
 CREDENTIAL_FIELDS = [
@@ -22,19 +22,19 @@ def register(subparsers: argparse._SubParsersAction) -> None:
 
 	parser = add_command(commands, "create", create_bucket, "Create a bucket and print its secret once.")
 	parser.add_argument("bucket_name", help="A name for the bucket.")
-	parser.add_argument("--region", required=True, help="Region, from `central bucket regions`.")
+	parser.add_argument("--region", required=True, help="Region, from `fcloud bucket regions`.")
 
 	parser = add_command(commands, "usage", show_usage, "Show a bucket's size, object count and quota.")
-	parser.add_argument("name", help="Bucket name, from `central bucket list`.")
+	parser.add_argument("name", help="Bucket name, from `fcloud bucket list`.")
 
 	parser = add_command(
 		commands, "rotate", rotate_credentials, "Replace a bucket's key and print the new secret."
 	)
-	parser.add_argument("name", help="Bucket name, from `central bucket list`.")
+	parser.add_argument("name", help="Bucket name, from `fcloud bucket list`.")
 	add_yes_option(parser)
 
 	parser = add_command(commands, "delete", delete_bucket, "Delete an empty bucket.")
-	parser.add_argument("name", help="Bucket name, from `central bucket list`.")
+	parser.add_argument("name", help="Bucket name, from `fcloud bucket list`.")
 	add_yes_option(parser)
 
 

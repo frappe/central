@@ -5,8 +5,8 @@ from typing import Any
 
 import pytest
 
-from central_cli import context, main
-from central_cli.client import CentralClient, Response
+from frappe_cloud_cli import context, main
+from frappe_cloud_cli.client import CentralClient, Response
 
 
 class FakeCentral(CentralClient):
@@ -59,11 +59,11 @@ class Central:
 @pytest.fixture
 def central(monkeypatch: pytest.MonkeyPatch, tmp_path, capsys) -> Central:
 	fake = Central(capsys)
-	monkeypatch.setenv("CENTRAL_CONFIG", str(tmp_path / "config.json"))
-	monkeypatch.setenv("CENTRAL_URL", "https://central.test")
-	monkeypatch.setenv("CENTRAL_API_KEY", "key")
-	monkeypatch.setenv("CENTRAL_API_SECRET", "secret")
-	monkeypatch.setenv("CENTRAL_TEAM", "acme")
+	monkeypatch.setenv("FRAPPE_CLOUD_CONFIG", str(tmp_path / "config.json"))
+	monkeypatch.setenv("FRAPPE_CLOUD_URL", "https://central.test")
+	monkeypatch.setenv("FRAPPE_CLOUD_API_KEY", "key")
+	monkeypatch.setenv("FRAPPE_CLOUD_API_SECRET", "secret")
+	monkeypatch.setenv("FRAPPE_CLOUD_TEAM", "acme")
 	monkeypatch.setattr(
 		context,
 		"CentralClient",

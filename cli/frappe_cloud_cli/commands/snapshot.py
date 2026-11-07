@@ -1,9 +1,9 @@
 import argparse
 
-from central_cli.commands import add_command, add_group, add_yes_option, confirm
-from central_cli.commands.server import find_server
-from central_cli.context import Context
-from central_cli.errors import CentralError
+from frappe_cloud_cli.commands import add_command, add_group, add_yes_option, confirm
+from frappe_cloud_cli.commands.server import find_server
+from frappe_cloud_cli.context import Context
+from frappe_cloud_cli.errors import CentralError
 
 SNAPSHOTS = "central.api.snapshots"
 
@@ -19,7 +19,7 @@ def register(subparsers: argparse._SubParsersAction) -> None:
 	parser.add_argument("--title", help="A title for the snapshot.")
 
 	parser = add_command(commands, "delete", delete_snapshots, "Delete snapshots.")
-	parser.add_argument("names", nargs="+", help="Snapshot names, from `central snapshot list`.")
+	parser.add_argument("names", nargs="+", help="Snapshot names, from `fcloud snapshot list`.")
 	add_yes_option(parser)
 
 

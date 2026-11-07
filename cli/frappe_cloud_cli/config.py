@@ -4,18 +4,18 @@ import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from central_cli.errors import CentralError
+from frappe_cloud_cli.errors import CentralError
 
 SAVED_FIELDS = ("url", "user", "session_id", "csrf_token", "team")
 
 
 def get_default_path() -> Path:
-	"""`$CENTRAL_CONFIG`, else `central/config.json` under the XDG config directory."""
-	if path := os.environ.get("CENTRAL_CONFIG"):
+	"""`$FRAPPE_CLOUD_CONFIG`, else `frappe-cloud/config.json` under the XDG config directory."""
+	if path := os.environ.get("FRAPPE_CLOUD_CONFIG"):
 		return Path(path)
 
 	base = os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config"
-	return Path(base) / "central" / "config.json"
+	return Path(base) / "frappe-cloud" / "config.json"
 
 
 @dataclass

@@ -5,10 +5,10 @@ from email.message import Message
 
 import pytest
 
-from central_cli.client import Response
-from central_cli.commands import server
-from central_cli.config import Config
-from central_cli.errors import CentralError
+from frappe_cloud_cli.client import Response
+from frappe_cloud_cli.commands import server
+from frappe_cloud_cli.config import Config
+from frappe_cloud_cli.errors import CentralError
 
 REGISTRY = "central.api.servers.registry"
 WEB = {
@@ -148,12 +148,12 @@ def test_snapshot_delete_reports_each_failure(central, monkeypatch) -> None:
 
 
 def test_ssh_address_without_a_route_explains_wireguard() -> None:
-	with pytest.raises(CentralError, match="central wireguard allow vm-1"):
+	with pytest.raises(CentralError, match="fcloud wireguard allow vm-1"):
 		server.get_ssh_address({"resource_id": "vm-1", "title": "web", "ipv6_address": "fd00::5"})
 
 
 def test_login_saves_a_private_session(central, monkeypatch, tmp_path) -> None:
-	monkeypatch.delenv("CENTRAL_API_KEY")
+	monkeypatch.delenv("FRAPPE_CLOUD_API_KEY")
 	monkeypatch.setattr("sys.stdin.isatty", lambda: True)
 	monkeypatch.setattr("builtins.input", lambda: "123456")
 	headers = Message()

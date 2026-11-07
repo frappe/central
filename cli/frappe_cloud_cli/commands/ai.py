@@ -1,7 +1,7 @@
 import argparse
 
-from central_cli.commands import add_command, add_group, add_yes_option, confirm
-from central_cli.context import Context
+from frappe_cloud_cli.commands import add_command, add_group, add_yes_option, confirm
+from frappe_cloud_cli.context import Context
 
 AI = "central.services.api.ai"
 
@@ -23,7 +23,7 @@ def register(subparsers: argparse._SubParsersAction) -> None:
 	parser.add_argument("--geography", help="Geography of the gateway. Defaults to the default one.")
 
 	parser = add_command(commands, "revoke-key", revoke_key, "Revoke an API key.")
-	parser.add_argument("key", help="Key name, from `central ai keys`.")
+	parser.add_argument("key", help="Key name, from `fcloud ai keys`.")
 	add_yes_option(parser)
 
 	parser = add_command(commands, "usage", show_usage, "Show requests and cost over a period.")

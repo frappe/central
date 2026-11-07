@@ -1,8 +1,8 @@
 import argparse
 
-from central_cli.commands import add_command, add_group
-from central_cli.context import Context
-from central_cli.errors import CentralError
+from frappe_cloud_cli.commands import add_command, add_group
+from frappe_cloud_cli.context import Context
+from frappe_cloud_cli.errors import CentralError
 
 
 def register(subparsers: argparse._SubParsersAction) -> None:
@@ -11,7 +11,7 @@ def register(subparsers: argparse._SubParsersAction) -> None:
 	add_command(commands, "list", list_teams, "List the teams you belong to.")
 
 	parser = add_command(commands, "use", use_team, "Make a team the default for later commands.")
-	parser.add_argument("name", help="Team name, from `central team list`.")
+	parser.add_argument("name", help="Team name, from `fcloud team list`.")
 
 	add_command(commands, "members", list_members, "List the members of the team.")
 
@@ -39,7 +39,7 @@ def list_teams(context: Context, args: argparse.Namespace) -> None:
 def use_team(context: Context, args: argparse.Namespace) -> None:
 	teams = {team["name"]: team for team in context.client.get("central.api.identity.my_teams")}
 	if args.name not in teams:
-		raise CentralError(f"You are not in team '{args.name}'. Run `central team list` to see your teams.")
+		raise CentralError(f"You are not in team '{args.name}'. Run `fcloud team list` to see your teams.")
 
 	context.config.team = args.name
 	context.config.save()
