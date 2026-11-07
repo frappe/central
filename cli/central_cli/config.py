@@ -1,0 +1,63 @@
+import json
+import os
+import tempfile
+from dataclasses import dataclass, field
+from pathlib import Path
+
+from central_cli.errors import CentralError
+
+SAVED_FIELDS = ("url", "user", "session_id", "csrf_token", "team")
+
+
+def get_default_path() -> Path:
+	"""`$CENTRAL_CONFIG`, else `central/config.json` under the XDG config directory."""
+	if path := os.environ.get("CENTRAL_CONFIG"):
+		return Path(path)
+
+	base = os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config"
+	return Path(base) / "central" / "config.json"
+
+
+@dataclass
+class Config:
+	"""The saved Central URL, the signed-in session and the default team."""
+
+	path: Path = field(default_factory=get_default_path)
+	url: str | None = None
+	user: str | None = None
+	session_id: str | None = None
+	csrf_token: str | None = None
+	team: str | None = None
+
+	@classmethod
+	def load(cls, path: Path | None = None) -> "Config":
+		path = path or get_default_path()
+		if not path.exists():
+			return cls(path=path)
+
+		try:
+			values = json.loads(path.read_text())
+		except (OSError, ValueError) as error:
+			raise CentralError(f"Could not read {path}: {error}. Fix or remove the file.")
+		if not isinstance(values, dict):
+			raise CentralError(f"{path} is not a Central config. Fix or remove the file.")
+
+		return cls(path=path, **{key: values.get(key) for key in SAVED_FIELDS})
+
+	def save(self) -> None:
+		"""Replace the file in one step with one that only its owner can read, because it holds a session."""
+		self.path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+		descriptor, temporary_path = tempfile.mkstemp(dir=self.path.parent, prefix=".config-")
+		try:
+			with os.fdopen(descriptor, "w") as file:
+				json.dump({key: getattr(self, key) for key in SAVED_FIELDS}, file, indent=2)
+			os.replace(temporary_path, self.path)
+		except BaseException:
+			os.unlink(temporary_path)
+			raise
+
+	def clear_session(self) -> None:
+		self.user = None
+		self.session_id = None
+		self.csrf_token = None
+		self.team = None

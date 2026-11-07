@@ -48,6 +48,7 @@ Central runs today:
 - Notifications: event types, team notifications, user preferences, and the delivery engine.
 - Billing: catalog, subscriptions, invoicing, payments, credits, and projections.
 - The console in `dashboard/`.
+- The `central` command line interface in `cli/`. It is a separate Python package that calls the same API as the console.
 
 Central plans to add:
 
@@ -279,6 +280,12 @@ Run a focused module during development and not the entire test suite. If small 
 
 ```bash
 pilot frappe --site central.localhost run-tests --app central --module central.tests.test_<name>
+```
+
+From `apps/central/cli`, for a change to the command line interface:
+
+```bash
+uv run pytest
 ```
 
 Use `pilot frappe ...` for any Frappe CLI command, such as `migrate` or `clear-cache`. Use `pilot` directly for bench-level work, such as `build`, `start`, `restart`, and `install-app`. Run `pilot --help` for the full list.

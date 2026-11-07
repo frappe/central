@@ -40,11 +40,16 @@ yarn dev
 
 Use the development URL printed by Vite. To build assets, run `pilot build --apps central` from the bench directory.
 
+## Command line
+
+The `central` command manages servers, WireGuard devices, snapshots, SSH keys, buckets, and AI keys from the terminal. It uses the same API as the console. See the [CLI guide](cli/README.md) to install it and sign in.
+
 ## Documentation
 
 - [User guide](https://frappe.github.io/central/): customer instructions for the console and Pilot.
 - [Documentation source and setup](docs/README.md): develop the guide and capture screenshots and videos.
 - [Specifications](spec/README.md): module behavior and integration contracts.
+- [CLI guide](cli/README.md): install and use the `central` command.
 - [Contributor guide](CLAUDE.md): repository rules, checks, and isolated tests.
 - [End-to-end tests](e2e/README.md): Playwright setup and commands.
 
