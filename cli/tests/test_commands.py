@@ -1,0 +1,278 @@
+import json
+import os
+import uuid
+from argparse import Namespace
+from email.message import Message
+
+import pytest
+
+from frappe_cloud.client import Response
+from frappe_cloud.commands import auth, server
+from frappe_cloud.config import Config
+from frappe_cloud.context import Context
+from frappe_cloud.errors import CentralError
+
+REGISTRY = "central.api.servers.registry"
+WEB = {
+	"resource_id": "vm-1",
+	"title": "web",
+	"region": "blr1",
+	"status": "Running",
+	"pending_action": None,
+	"plan_title": "Small",
+	"public_ipv4": "203.0.113.4",
+}
+
+
+def registry(*servers: dict) -> dict:
+	return {"servers": list(servers), "sites": [], "creations": []}
+
+
+def test_server_list_shows_the_pending_action_as_status(central) -> None:
+	central.routes[REGISTRY] = registry({**WEB, "pending_action": "Stopping"})
+
+	code, out, _ = central.run("server", "list")
+
+	assert code == 0
+	assert out.splitlines()[1].split() == ["vm-1", "web", "blr1", "Stopping", "Small", "203.0.113.4"]
+	assert central.params(REGISTRY) == {"team": "acme"}
+
+
+def test_json_flag_prints_the_raw_rows(central) -> None:
+	central.routes[REGISTRY] = registry(WEB)
+
+	_, out, _ = central.run("server", "list", "--json")
+
+	assert json.loads(out) == [WEB]
+
+
+def test_server_found_by_title_and_ambiguous_title_fails(central) -> None:
+	central.routes[REGISTRY] = registry(WEB, {**WEB, "resource_id": "vm-2"})
+	central.routes["central.api.servers.rename_server"] = {}
+
+	code, _, err = central.run("server", "rename", "web", "api")
+
+	assert code == 1
+	assert "2 servers have the title 'web'" in err
+	assert not central.has_called("central.api.servers.rename_server")
+
+
+def test_create_server_uses_the_newest_image_and_an_idempotency_key(central) -> None:
+	images = [{"id": "old", "created_at": 1}, {"id": "new", "created_at": 2}]
+	central.routes["central.api.images.list_images"] = {"items": images}
+	central.routes["central.api.servers.create_server"] = {"action": "RA-1", "status": "Queued"}
+
+	code, out, _ = central.run(
+		"server",
+		"create",
+		"web",
+		"--region",
+		"blr1",
+		"--plan",
+		"small",
+		"--offering",
+		"ubuntu",
+		"--ssh-key",
+		"k1",
+	)
+
+	params = central.params("central.api.servers.create_server")
+	assert code == 0
+	assert params["image_id"] == "new"
+	assert params["ssh_key_ids"] == ["k1"]
+	assert uuid.UUID(params["request_key"])
+	assert "RA-1 is Queued" in out
+
+
+def test_terminate_without_a_terminal_needs_yes(central, monkeypatch) -> None:
+	central.routes[REGISTRY] = registry(WEB)
+	central.routes["central.api.servers.terminate_server"] = {"action": "RA-2", "status": "Queued"}
+	monkeypatch.setattr("sys.stdin.isatty", lambda: False)
+
+	code, _, err = central.run("server", "terminate", "vm-1")
+	assert code == 1
+	assert "--yes" in err
+	assert not central.has_called("central.api.servers.terminate_server")
+
+	code, _, _ = central.run("server", "terminate", "vm-1", "--yes", "--snapshot")
+	assert code == 0
+	assert central.params("central.api.servers.terminate_server")["take_snapshot"] is True
+
+
+def test_wait_raises_the_action_error(central, monkeypatch) -> None:
+	states = iter(["Dispatching", "Failed"])
+	central.routes["central.api.servers.action_status"] = lambda params: {
+		"action": "RA-1",
+		"status": next(states),
+		"error": {"message": "The region is full."},
+	}
+	monkeypatch.setattr(server.time, "sleep", lambda seconds: None)
+
+	code, _, err = central.run("server", "wait", "RA-1")
+
+	assert code == 1
+	assert "RA-1 is Failed. The region is full." in err
+
+
+def test_wait_sends_no_request_after_the_timeout(central, monkeypatch) -> None:
+	clock = [0.0]
+	monkeypatch.setattr(server.time, "monotonic", lambda: clock[0])
+	monkeypatch.setattr(server.time, "sleep", lambda seconds: clock.append(clock.pop() + seconds))
+	central.routes["central.api.servers.action_status"] = {"action": "RA-1", "status": "Running"}
+
+	code, _, err = central.run("server", "wait", "RA-1", "--timeout", "5")
+
+	assert code == 1
+	assert "still Running" in err
+	assert [name for name, _ in central.requests].count("central.api.servers.action_status") == 2
+
+
+def test_image_list_shows_every_page(central) -> None:
+	pages = {"0": {"items": [{"id": "img-1"}], "next_offset": 1}, "1": {"items": [{"id": "img-2"}]}}
+	central.routes["central.api.images.list_images"] = lambda params: pages[params["offset"]]
+
+	code, out, _ = central.run("image", "list", "--region", "blr1", "--offering", "ubuntu", "--json")
+
+	assert code == 0
+	assert [image["id"] for image in json.loads(out)] == ["img-1", "img-2"]
+
+
+@pytest.mark.parametrize(
+	("overview", "address"),
+	[
+		({"public_ipv6": "2001:db8::1", "public_ipv4": "203.0.113.4"}, "2001:db8::1"),
+		({"has_wireguard_access": 1, "ipv6_address": "fd00::5"}, "fd00::5"),
+	],
+)
+def test_ssh_address_prefers_public_then_wireguard(overview: dict, address: str) -> None:
+	assert server.get_ssh_address(overview) == address
+
+
+def test_ssh_refuses_a_user_that_ssh_reads_as_an_option(central, monkeypatch) -> None:
+	central.routes[REGISTRY] = registry(WEB)
+	central.routes["central.api.servers.server_overview"] = {"server": WEB}
+	monkeypatch.setattr(server.os, "execvp", lambda *args: pytest.fail("ssh must not run"))
+
+	code, _, err = central.run("server", "ssh", "web", "--user=-oProxyCommand=x")
+
+	assert code == 1
+	assert "cannot start with '-'" in err
+
+
+def test_snapshot_delete_reports_each_failure(central, monkeypatch) -> None:
+	central.routes["central.api.snapshots.delete_snapshots"] = {
+		"deleted": ["SNAP-1"],
+		"failed": {"SNAP-2": "The snapshot is in use."},
+	}
+
+	code, out, err = central.run("snapshot", "delete", "SNAP-1", "SNAP-2", "--yes")
+
+	assert code == 1
+	assert "Deleting SNAP-1." in out
+	assert "SNAP-2: The snapshot is in use." in err
+
+
+def test_snapshot_delete_prints_json_when_every_deletion_fails(central) -> None:
+	result = {"deleted": [], "failed": {"SNAP-2": "The snapshot is in use."}}
+	central.routes["central.api.snapshots.delete_snapshots"] = result
+
+	code, out, err = central.run("snapshot", "delete", "SNAP-2", "--yes", "--json")
+
+	assert code == 1
+	assert json.loads(out) == result
+	assert "SNAP-2: The snapshot is in use." in err
+
+
+def test_ssh_address_without_a_route_explains_wireguard() -> None:
+	with pytest.raises(CentralError, match="fcloud wireguard allow vm-1"):
+		server.get_ssh_address({"resource_id": "vm-1", "title": "web", "ipv6_address": "fd00::5"})
+
+
+def test_login_saves_a_private_session(central, monkeypatch, tmp_path) -> None:
+	monkeypatch.delenv("FRAPPE_CLOUD_API_KEY")
+	monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+	monkeypatch.setattr("builtins.input", lambda: "123456")
+	headers = Message()
+	headers["Set-Cookie"] = "sid=abc123; Path=/; HttpOnly"
+	central.routes["central.api.auth.send_code"] = {"message": "sent"}
+	central.routes["central.api.auth.verify_code"] = Response(
+		200, headers, json.dumps({"message": {"user": "ada@example.com", "csrf_token": "csrf"}}).encode()
+	)
+
+	code, out, _ = central.run("auth", "login", "--email", "ada@example.com")
+
+	config = Config.load()
+	assert code == 0
+	assert "Signed in to https://central.test as ada@example.com" in out
+	assert (config.session_id, config.csrf_token, config.url) == ("abc123", "csrf", "https://central.test")
+	assert os.stat(config.path).st_mode & 0o777 == 0o600
+
+
+@pytest.mark.parametrize(
+	("url", "session_id", "team"),
+	[("https://central.test/", "abc123", "acme"), ("https://staging.test", None, None)],
+)
+def test_saved_session_and_team_apply_only_to_their_url(monkeypatch, tmp_path, url, session_id, team) -> None:
+	for name in ("FRAPPE_CLOUD_URL", "FRAPPE_CLOUD_TEAM"):
+		monkeypatch.delenv(name, raising=False)
+	config = Config(
+		path=tmp_path / "config.json", url="https://central.test", session_id="abc123", team="acme"
+	)
+
+	client = Context.create(Namespace(url=url, team=None, json=False), config).client
+
+	assert (client.session_id, client.team) == (session_id, team)
+
+
+def test_logout_ends_the_session_on_the_site_that_issued_it(central, monkeypatch) -> None:
+	Config(url="https://central.test", session_id="abc123").save()
+	monkeypatch.setenv("FRAPPE_CLOUD_URL", "https://staging.test")
+	logouts = []
+	monkeypatch.setattr(auth.CentralClient, "post", lambda client, method: logouts.append(client.url))
+
+	code, _, _ = central.run("auth", "logout")
+
+	assert code == 0
+	assert logouts == ["https://central.test"]
+	assert Config.load().session_id is None
+
+
+def test_save_replaces_a_readable_config_with_a_private_one(tmp_path) -> None:
+	path = tmp_path / "config.json"
+	path.write_text("{}")
+	path.chmod(0o644)
+
+	Config(path=path, session_id="abc123").save()
+
+	assert os.stat(path).st_mode & 0o777 == 0o600
+	assert Config.load(path).session_id == "abc123"
+	assert list(tmp_path.iterdir()) == [path]
+
+
+def test_team_use_saves_only_a_team_of_the_user(central, monkeypatch) -> None:
+	monkeypatch.delenv("FRAPPE_CLOUD_API_KEY")
+	Config(url="https://central.test", session_id="abc123").save()
+	central.routes["central.api.identity.my_teams"] = [{"name": "acme", "status": "Active"}]
+
+	assert central.run("team", "use", "other")[0] == 1
+	assert central.run("team", "use", "acme")[0] == 0
+	assert Config.load().team == "acme"
+
+
+@pytest.mark.parametrize(
+	("saved_url", "has_api_key"),
+	[(None, False), ("https://other.test", False), ("https://central.test", True)],
+)
+def test_team_use_saves_nothing_without_a_session_for_this_site(
+	central, monkeypatch, saved_url, has_api_key
+) -> None:
+	if not has_api_key:
+		monkeypatch.delenv("FRAPPE_CLOUD_API_KEY")
+	Config(url=saved_url, session_id="abc123" if saved_url else None).save()
+
+	code, _, err = central.run("team", "use", "acme")
+
+	assert code == 1
+	assert "FRAPPE_CLOUD_TEAM" in err
+	assert Config.load().team is None
+	assert not central.has_called("central.api.identity.my_teams")
