@@ -12,13 +12,14 @@ Frappe writes a Version for each save of a DocType that tracks changes. `record_
 save() ─► Frappe writes Version ─► record_version ─► Activity Event rows
 insert / delete of a tracked DocType ─► record_created / record_deleted
 Resource Action reaches a final state ─► ActivityEvent.record_action
+Central returns a console URL ─► ActivityEvent.record
 ```
 
 `tracked.py` lists each tracked DocType: its event prefix, category, required capability, the fields the feed shows, and the fields that are events of their own.
 
 | DocType | Events |
 |---|---|
-| Virtual Machine | Renamed, configuration changed, SSH keys changed |
+| Virtual Machine | Renamed, configuration changed, SSH keys changed, SSH console opened, serial console (TTY) opened |
 | Resource Action | Server created, started, stopped, restarted, resized, terminated |
 | VM Snapshot | Requested, available, failed, deleted |
 | Site and Site Domain | Created, claimed, deleted |
@@ -28,6 +29,8 @@ Resource Action reaches a final state ─► ActivityEvent.record_action
 | Team SSH Key | Added, renamed, rotated, deleted |
 
 One save can produce more than one event. Each event keeps only its own details, so a detail never shows under a weaker capability. For example, a server rename needs `server:view`, and a server SSH key change needs `server:ssh-key`.
+
+A console event needs `server:console`. Central writes one event for each console URL it returns. A refused request or an Atlas failure returns no URL and writes no event. During support access the session user is the operator, so the event stores the operator as the actor. Customers see the operator as Frappe Cloud.
 
 `db_set` writes no Version. A tracked field that changes through `db_set` calls `save_version()` after it, so the feed sees the change.
 

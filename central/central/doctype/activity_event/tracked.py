@@ -148,6 +148,8 @@ ACTION_EVENTS = {
 	"terminate": ("server.terminated", "server.terminate_failed"),
 }
 
+CONSOLE = EventKind("console_opened", "access", "server:console")
+
 
 class Sentence(NamedTuple):
 	"""How the console says what happened. {actor} and {resource} mark the names it shows in
@@ -185,6 +187,13 @@ SENTENCES = {
 	"server.ssh_keys_changed": Sentence(
 		N_("{actor} changed the SSH keys that can sign in to {resource}"),
 		N_("The SSH keys that can sign in to {resource} changed"),
+	),
+	"server.ssh_console_opened": Sentence(
+		N_("{actor} opened the SSH console of {resource}"), N_("The SSH console of {resource} was opened")
+	),
+	"server.tty_console_opened": Sentence(
+		N_("{actor} opened the serial console (TTY) of {resource}"),
+		N_("The serial console (TTY) of {resource} was opened"),
 	),
 	"snapshot.created": Sentence(
 		N_("{actor} started snapshot {resource}"), N_("Automatic snapshot {resource} started")
