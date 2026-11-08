@@ -8,23 +8,16 @@ import { useSession } from '@/composables/useSession'
 import { settingsOpen } from '@/composables/useSettings'
 import {
 	type ArchiveCheck,
-	type ArchiveCheckKey,
 	useTeamArchiveChecks,
 } from '@/composables/useTeamArchiveChecks'
-import { money, plural } from '@/lib/format'
+import { CHECK_COPY, describeCheck } from '@/lib/archiveChecks'
+import { money } from '@/lib/format'
 
 interface ArchiveTeamDialogProps {
 	/** The team to archive; null closes the dialog. */
 	target: string | null
 	archiving: boolean
 	error: string
-}
-
-interface CheckCopy {
-	passed: string
-	failed: (count: number) => string
-	action: string
-	route: string
 }
 
 const props = defineProps<ArchiveTeamDialogProps>()
@@ -44,45 +37,6 @@ const {
 	reload,
 } = useTeamArchiveChecks()
 
-const CHECK_COPY: Record<ArchiveCheckKey, CheckCopy> = {
-	servers: {
-		passed: 'All servers are terminated',
-		failed: (count) => `${plural(count, 'server')} not terminated`,
-		action: 'Open servers',
-		route: '/servers',
-	},
-	snapshots: {
-		passed: 'No paid snapshots',
-		failed: (count) => `${plural(count, 'paid snapshot')} to delete`,
-		action: 'Open snapshots',
-		route: '/servers/snapshots',
-	},
-	buckets: {
-		passed: 'No buckets',
-		failed: (count) => `${plural(count, 'bucket subscription')} still billing`,
-		action: 'Open storage',
-		route: '/object-storage',
-	},
-	add_ons: {
-		passed: 'No other paid add-ons',
-		failed: (count) => `${plural(count, 'other paid add-on')} still billing`,
-		action: 'Open billing',
-		route: '/billing',
-	},
-	invoices: {
-		passed: 'No unpaid invoices',
-		failed: (count) => plural(count, 'unpaid invoice'),
-		action: 'Pay invoices',
-		route: '/billing/invoices',
-	},
-	final_bill: {
-		passed: "This month's charges can be collected",
-		failed: () => "This month's charges need a payment method",
-		action: 'Add a card',
-		route: '/billing',
-	},
-}
-
 const creditText = computed(() =>
 	creditBalances.value
 		.map((credit) => money(credit.balance, credit.currency))
@@ -94,15 +48,20 @@ const target = computed({
 	set: (value: string | null) => emit('update:target', value),
 })
 
-function describe(check: ArchiveCheck): string {
-	const copy = CHECK_COPY[check.key]
-	return check.passed ? copy.passed : copy.failed(check.count)
-}
+let pendingRoute: string | undefined
 
 function openFix(check: ArchiveCheck): void {
+	pendingRoute = CHECK_COPY[check.key].route
 	target.value = null
+}
+
+/** Close settings only after this dialog has left, or its overlay stays behind. */
+function onAfterLeave(): void {
+	if (!pendingRoute) return
+	const route = pendingRoute
+	pendingRoute = undefined
 	settingsOpen.value = false
-	router.push(CHECK_COPY[check.key].route)
+	router.push(route)
 }
 
 // An owner may settle an invoice in another tab; check again when they come back.
@@ -132,6 +91,7 @@ onBeforeUnmount(() => window.removeEventListener('focus', onFocus))
 		:disabled="!isClear"
 		:confirm-text="isClear ? activeTeamLabel : undefined"
 		@confirm="emit('archive')"
+		@after-leave="onAfterLeave"
 	>
 		<div class="space-y-4">
 			<p class="text-p-base text-ink-gray-7">
@@ -181,7 +141,7 @@ onBeforeUnmount(() => window.removeEventListener('focus', onFocus))
 					/>
 					<span class="min-w-0 flex-1 text-p-sm text-ink-gray-8">
 						<span class="sr-only">{{ check.passed ? 'Done:' : 'To do:' }}</span>
-						{{ describe(check) }}
+						{{ describeCheck(check) }}
 					</span>
 					<Button
 						v-if="!check.passed"
