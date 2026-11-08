@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Alert, Button, Dialog, Skeleton, TabButtons, Tooltip } from 'frappe-ui'
+import { Alert, Button, Dialog, Skeleton, TabButtons } from 'frappe-ui'
 import { ref } from 'vue'
 import CopyableValue from '@/components/common/CopyableValue.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
@@ -52,22 +52,13 @@ const enableAI = async (): Promise<void> => {
 				label="How to call"
 				@click="keys?.openHelp()"
 			/>
-			<Tooltip
+			<Button
 				v-if="canManageServices"
-				:text="
-					keys?.atKeyLimit
-						? `Your plan allows ${ai.spend?.max_keys} live keys. Revoke one to create another.`
-						: ''
-				"
-			>
-				<Button
-					variant="solid"
-					icon-left="lucide-plus"
-					label="Create key"
-					:disabled="keys?.atKeyLimit"
-					@click="keys?.openCreate()"
-				/>
-			</Tooltip>
+				variant="solid"
+				icon-left="lucide-plus"
+				label="Create key"
+				@click="keys?.openCreate()"
+			/>
 		</Teleport>
 
 		<div
