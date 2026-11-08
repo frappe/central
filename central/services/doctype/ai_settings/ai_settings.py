@@ -58,7 +58,6 @@ class AISettings(Document):
 
 	def validate(self) -> None:
 		self.base_url = (self.base_url or "").strip().rstrip("/")
-		self.grove_token_hash = (self.grove_token_hash or "").strip().lower()
 		products = [row.product for row in self.trial_products]
 		if len(products) != len(set(products)):
 			frappe.throw(_("One pool row per product."))
