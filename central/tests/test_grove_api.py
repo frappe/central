@@ -28,6 +28,7 @@ class TestGroveDatumToken(IntegrationTestCase):
 		frappe.db.set_value("Region", self.region, "atlas_region_id", str(self.region_id))
 		CentralSSOSettings.instance().initialize_signing_key("atlas")
 		self.set_hash(hashlib.sha256(TOKEN.encode()).hexdigest())
+		frappe.local.request_ip = "127.0.0.1"  # the rate limiter keys on it; a request always has one
 		frappe.set_user("Guest")
 
 	def set_hash(self, value):
@@ -50,6 +51,13 @@ class TestGroveDatumToken(IntegrationTestCase):
 		self.assertEqual(["write"], claims["access"])
 		self.assertEqual(DATUM_SCOPE, claims["scope"])
 		self.assertEqual(f"atlas-datum:{self.region_id}", claims["aud"])
+
+	def test_the_route_is_rate_limited_per_ip(self):
+		frappe.local.request_ip = f"10.9.{random.randint(0, 255)}.{random.randint(1, 254)}"
+		for _ in range(30):
+			self.call(self.region, "grove:mc-1")
+		with self.assertRaises(frappe.RateLimitExceededError):
+			self.call(self.region, "grove:mc-1")
 
 	def test_a_wrong_token_is_refused(self):
 		with self.assertRaises(frappe.AuthenticationError):

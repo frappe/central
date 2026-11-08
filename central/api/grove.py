@@ -9,6 +9,7 @@ from collections.abc import Callable
 
 import frappe
 from frappe import _
+from frappe.rate_limiter import rate_limit
 
 from central.sso import DATUM_TTL, mint_datum_token
 
@@ -33,8 +34,9 @@ def grove_token_auth(func: Callable) -> Callable:
 	return wrapper
 
 
-# nosemgrep: guest-whitelisted-method -- grove_token_auth verifies the caller below.
+# nosemgrep: guest-whitelisted-method -- grove_token_auth verifies the caller below, and the IP rate limit applies.
 @frappe.whitelist(allow_guest=True, methods=["GET"])
+@rate_limit(limit=30, seconds=60, methods="GET")
 @grove_token_auth
 def datum_token(region: str, resource_id: str) -> dict:
 	"""The JWT one Grove box presents to its region's datum, for metrics and logs alike. The same

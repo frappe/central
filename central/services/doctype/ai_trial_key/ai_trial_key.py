@@ -273,9 +273,8 @@ class AITrialKey(Document):
 		if not names:
 			return
 
-		# A table delete skips the controller, so the secret in __Auth needs its own delete.
-		frappe.db.delete("__Auth", {"doctype": "AI Trial Key", "name": ("in", names)})
-		frappe.db.delete("AI Trial Key", {"name": ("in", names)})
+		for name in names:
+			frappe.delete_doc("AI Trial Key", name)
 
 	def revoke_at_grove(self) -> None:
 		"""Safe to repeat: Grove answers a revoked key's revoke as done. A Conversion Failed record
