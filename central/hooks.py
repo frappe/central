@@ -513,8 +513,11 @@ export_python_type_annotations = True
 # Require all whitelisted methods to have type annotations
 require_type_annotated_api_methods = True
 
-# Log Settings clears each listed DocType daily. An operator changes the days there.
-default_log_clearing_doctypes = {"Activity Event": 365}
+# Days Log Settings keeps a record before its daily clean-up drops it.
+default_log_clearing_doctypes = {
+  "Activity Event": 365,
+	"AI Trial Key": 30,
+}
 
 # Translation
 # ------------
