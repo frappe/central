@@ -248,7 +248,7 @@ const showListControls = computed(
 </script>
 
 <template>
-	<section class="min-w-0">
+	<section class="flex h-full min-h-0 min-w-0 flex-col">
 		<div
 			v-if="showListControls || $slots.toolbar || $slots['controls-start'] || hasSelection"
 			class="flex flex-wrap items-center justify-between gap-3 pb-3"
@@ -326,11 +326,9 @@ const showListControls = computed(
 			class="mb-2"
 		/>
 
-		<!-- flex-1 is inert unless the caller makes the root section a flex column
-		     to pin the pagination footer to the bottom. -->
 		<Scrollbar
 			v-if="isSkeleton || pageRows.length"
-			class="min-w-0 flex-1"
+			class="min-h-0 min-w-0 flex-1"
 			type="auto"
 		>
 			<List
