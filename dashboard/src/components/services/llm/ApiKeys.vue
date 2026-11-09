@@ -5,7 +5,6 @@ import {
 	Button,
 	Dialog,
 	type DropdownOptions,
-	dayjs,
 	LoadingText,
 	Select,
 	Spinner,
@@ -118,11 +117,6 @@ const geographies = computed(() => ai.value?.geographies ?? [])
 const mintable = computed(() => geographies.value.filter((g) => g.endpoint))
 const geographyLabel = (name: string): string =>
 	geographies.value.find((g) => g.name === name)?.label ?? name
-
-const isRevocable = (key: AIApiKey): boolean =>
-	new Date(key.revocable_at) <= new Date()
-const revocableFrom = (key: AIApiKey): string =>
-	dayjs(key.revocable_at).format('MMM D, h:mm A')
 
 const rowActions = (key: AIApiKey): DropdownOptions => [
 	{
@@ -296,7 +290,6 @@ const revokeTarget = ref<AIApiKey | null>(null)
 const revokeError = ref('')
 
 const revoke = async (key: AIApiKey): Promise<void> => {
-	if (!isRevocable(key)) return
 	revokeError.value = ''
 	try {
 		await revokeApiKey(key.name)
@@ -714,20 +707,12 @@ const revoke = async (key: AIApiKey): Promise<void> => {
 		confirm-label="Revoke"
 		theme="red"
 		:loading="busyKey === revokeTarget?.name"
-		:disabled="!!revokeTarget && !isRevocable(revokeTarget)"
 		:error="revokeError"
 		@confirm="revoke"
 		@after-leave="revokeError = ''"
 	>
 		<template v-if="revokeTarget">
-			<p v-if="!isRevocable(revokeTarget)" class="text-p-base text-ink-gray-7">
-				<span class="text-base-semibold text-ink-gray-9"
-					>{{ revokeTarget.title }}</span
-				>
-				can be revoked from {{ revocableFrom(revokeTarget) }}, six hours after
-				it was created.
-			</p>
-			<p v-else class="text-p-base text-ink-gray-7">
+			<p class="text-p-base text-ink-gray-7">
 				Revoke
 				<span class="text-base-semibold text-ink-gray-9"
 					>{{ revokeTarget.title }}</span
