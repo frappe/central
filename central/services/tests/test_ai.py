@@ -30,7 +30,6 @@ LISTED = {
 	"title": "app",
 	"status": "active",
 	"creation": "2026-10-06 10:00:00",
-	"revocable_at": "2026-10-06T10:30:00Z",
 	"key_hash": "abc123",
 	"masked": "gr_test…",
 	"geography": "eu",
@@ -398,8 +397,6 @@ class TestAI(IntegrationTestCase):
 			(listed["masked"], listed["geography"], listed["cap"], listed["limits"]),
 			(LISTED["masked"], "eu", 5.0, LIMITS),
 		)
-		# So the console can hold Revoke back instead of asking Grove and being refused.
-		self.assertEqual(listed["revocable_at"], LISTED["revocable_at"])
 
 		with patch.object(GroveClient, "update_caps", return_value=[{**LISTED, "cap": 8}]) as update_caps:
 			self.assertEqual(api.set_api_key_caps(self.team, {"k1": "8"})[0]["cap"], 8)
@@ -411,6 +408,24 @@ class TestAI(IntegrationTestCase):
 		with patch.object(GroveClient, "revoke_key") as revoke_key:
 			api.revoke_api_key(self.team, "k1")
 		revoke_key.assert_called_once_with(self.team, "k1")
+
+	def test_a_team_revokes_fifteen_keys_an_hour(self):
+		"""The limit counts in a request, keyed by the `team` the console sends."""
+		self.enabled()
+		frappe.set_user(self.owner)
+		counter = "rl:central.services.api.ai.revoke_api_key"
+		frappe.cache.delete_keys(counter)
+		self.addCleanup(frappe.cache.delete_keys, counter)
+		frappe.local.request = frappe._dict(method="POST")
+		self.addCleanup(setattr, frappe.local, "request", None)
+		frappe.local.form_dict.team = self.team
+		self.addCleanup(frappe.local.form_dict.pop, "team", None)
+		with patch.object(GroveClient, "revoke_key") as revoke_key:
+			for _ in range(15):
+				api.revoke_api_key(self.team, "k1")
+			with self.assertRaises(frappe.RateLimitExceededError):
+				api.revoke_api_key(self.team, "k1")
+		self.assertEqual(revoke_key.call_count, 15)
 
 	def test_prompt_logging_is_set_at_grove_by_a_service_manager_only(self):
 		self.enabled()

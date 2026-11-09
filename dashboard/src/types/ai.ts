@@ -114,8 +114,6 @@ export interface AIApiKey {
 	title: string
 	status: 'active' | 'revoked'
 	creation: string
-	// UTC; Grove refuses to revoke a key before this, so the console does not ask.
-	revocable_at: string
 	masked: string
 	geography: string
 	// The base URL for both API surfaces, of the key's own geography.

@@ -61,7 +61,7 @@ The owner archives a team from the console (Settings > Team > Archive). A System
 
 When the checks pass, archiving does these steps in order:
 
-1. It stops the team's AI keys at Grove. Each live key gets a cap of 0, so it spends nothing. Keys past their `revocable_at` time are revoked. A Grove failure stops the archive, and the team stays Active.
+1. It stops the team's AI keys at Grove. Each live key gets a cap of 0, so it spends nothing. Every one is then revoked. A Grove failure stops the archive, and the team stays Active.
 2. It revokes pending invitations.
 3. It sets the status to `Archived` and adds a comment that names the user.
 4. It sends the `team_archived` email to the owner.
