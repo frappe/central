@@ -185,7 +185,6 @@ useServerLink(
 		>
 			<ServerListView
 				:rows="rows"
-				:settled-ids="settledIds"
 				:can-open="canOpenConsole"
 				:can-power="canPowerServer"
 				:can-resize="canResizeServer"

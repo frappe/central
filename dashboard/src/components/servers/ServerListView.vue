@@ -20,7 +20,6 @@ import { formatMemory } from '@/lib/units'
 
 interface ServerListViewProps {
 	rows: ResourceRow[]
-	settledIds: Set<string>
 	canOpen: boolean
 	canPower: boolean
 	canResize: boolean
@@ -67,6 +66,8 @@ const STATUS_TABS: Record<StatusTab, ServerVisual['key'][] | null> = {
 
 const query = ref(createListViewQuery({ pageSize: 20 }))
 const statusTab = ref<StatusTab>('all')
+
+const isRinged = (row: ResourceRow) => row.visual.motion === 'progress'
 
 const isInTab = (row: ResourceRow, tab: StatusTab) =>
 	STATUS_TABS[tab]?.includes(row.visual.key) ?? true
@@ -191,13 +192,14 @@ const filters = computed<ListViewFilter[]>(() => [
 				<span class="relative shrink-0">
 					<StatusRing
 						class="-inset-0.5"
-						:motion="row.visual.motion"
-						:color="row.visual.dot"
-						:is-settled="settledIds.has(row.id)"
+						shape="square"
+						:motion="isRinged(row) ? 'progress' : 'none'"
+						color="var(--ink-gray-6)"
 					/>
 					<Tooltip :text="row.server?.image_description ?? ''">
 						<span
-							class="relative grid size-8 place-items-center rounded-4 bg-surface-gray-1 text-ink-gray-5"
+							class="relative grid size-8 place-items-center rounded-4 text-ink-gray-5"
+							:class="!isRinged(row) && 'bg-surface-gray-1'"
 						>
 							<span class="size-4" :class="imageIcon(row)" />
 						</span>
