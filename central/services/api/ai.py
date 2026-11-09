@@ -148,8 +148,7 @@ def get_models(team: str | None = None, geography: str | None = None) -> list[di
 @frappe.whitelist(methods=["POST"])
 @require_capability("service:manage", MANAGE_DENIED)
 def revoke_api_key(team: str | None = None, key: str | None = None) -> dict:
-	"""Revoke one of the team's keys. Grove refuses another team's key, and a sixteenth revoke in
-	an hour."""
+	"""Revoke one of the team's keys. Grove refuses another team's key."""
 	require_ai(team)
 	GroveClient.from_settings().revoke_key(team, key)
 

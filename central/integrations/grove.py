@@ -115,8 +115,8 @@ class GroveClient:
 		self.call("grove.api.keys.revoke_key", team=team, key=key)
 
 	def revoke_keys(self, team: str, keys: list[str]) -> list[str]:
-		"""Revoke several keys in one call, which Grove counts as one of the team's fifteen an hour;
-		refused whole for a key the team does not hold. → the names revoked."""
+		"""Revoke several keys in one call; Grove refuses it whole for a key the team does not hold.
+		→ the names revoked."""
 		return self.call("grove.api.keys.revoke_keys", team=team, keys=keys) or []
 
 	def transfer_key(self, team: str, key: str, to_team: str, title: str) -> dict:
