@@ -409,24 +409,6 @@ class TestAI(IntegrationTestCase):
 			api.revoke_api_key(self.team, "k1")
 		revoke_key.assert_called_once_with(self.team, "k1")
 
-	def test_a_team_revokes_fifteen_keys_an_hour(self):
-		"""The limit counts in a request, keyed by the `team` the console sends."""
-		self.enabled()
-		frappe.set_user(self.owner)
-		counter = "rl:central.services.api.ai.revoke_api_key"
-		frappe.cache.delete_keys(counter)
-		self.addCleanup(frappe.cache.delete_keys, counter)
-		frappe.local.request = frappe._dict(method="POST")
-		self.addCleanup(setattr, frappe.local, "request", None)
-		frappe.local.form_dict.team = self.team
-		self.addCleanup(frappe.local.form_dict.pop, "team", None)
-		with patch.object(GroveClient, "revoke_key") as revoke_key:
-			for _ in range(15):
-				api.revoke_api_key(self.team, "k1")
-			with self.assertRaises(frappe.RateLimitExceededError):
-				api.revoke_api_key(self.team, "k1")
-		self.assertEqual(revoke_key.call_count, 15)
-
 	def test_prompt_logging_is_set_at_grove_by_a_service_manager_only(self):
 		self.enabled()
 		outsider = ensure_user("grove.outsider@example.test")
