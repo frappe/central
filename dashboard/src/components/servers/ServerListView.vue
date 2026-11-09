@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { TabButtons, Tooltip } from 'frappe-ui'
 import { computed, ref } from 'vue'
-import CopyButton from '@/components/common/CopyButton.vue'
 
 import {
 	createListViewQuery,
@@ -10,6 +9,7 @@ import {
 	type ListViewFilter,
 } from '@/components/common/list-view'
 
+import CopyableValue from '@/components/common/CopyableValue.vue'
 import ServerRowActions from '@/components/servers/ServerRowActions.vue'
 import StatusRing from '@/components/servers/StatusRing.vue'
 
@@ -239,12 +239,12 @@ const filters = computed<ListViewFilter[]>(() => [
 					{{ row.regionLabel }}
 				</span>
 				<span class="flex min-w-0 items-center gap-1 text-xs text-ink-gray-5">
-					<template v-if="row.server?.public_ipv4">
-						<span class="truncate tabular-nums">
-							{{ row.server.public_ipv4 }}
-						</span>
-						<CopyButton class="relative" :text="row.server.public_ipv4" />
-					</template>
+					<CopyableValue
+						v-if="row.server?.public_ipv4"
+						class="relative"
+						:value="row.server.public_ipv4"
+						label="IP address"
+					/>
 					<span v-else class="truncate">No public IP</span>
 
 					<Tooltip
