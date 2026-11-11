@@ -24,6 +24,10 @@ interface Window {
 	system_timezone?: string
 	/** Days a new team invitation stays open, from Central Settings. */
 	invitation_expiry_days?: number
+	/** The reader's language, such as "de". */
+	lang?: string
+	/** Changes when a translation changes, so the cached catalog URL changes. See lib/translate.ts. */
+	translations_version?: string
 	/** Upload limit in bytes, from System Settings. */
 	max_file_size?: number
 	/** Help menu links from Central Settings. Null when an operator left one empty. */

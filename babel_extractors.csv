@@ -1,1 +1,2 @@
 **/fixtures/notification_event_type.json,central.notification.extractor.extract
+**.ts,frappe.gettext.extractors.javascript.extract
