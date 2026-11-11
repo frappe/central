@@ -219,6 +219,9 @@ def build_envelope(
 	`message`/`remediation` override the catalog copy when the caller has better words
 	(e.g. the region's own error sentence)."""
 	entry = ERROR_CATALOG.get(code, ERROR_CATALOG["UNEXPECTED"])
+	# An action is a Resource Action option such as "resize", which the translation catalog holds.
+	if context.get("action"):
+		context["action"] = _(context["action"])
 	source = _SafeContext(context)
 
 	return {

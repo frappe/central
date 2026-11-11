@@ -1,7 +1,19 @@
-;(() => {
+;(async () => {
 	const page = document.getElementById('page')
 	const byId = (id) => document.getElementById(id)
-	const translations = JSON.parse(page.dataset.translations || '{}')
+	// The version changes when a translation does, so the browser keeps the catalog until then.
+	const translationsUrl = `/api/method/frappe.translate.get_boot_translations?${new URLSearchParams({
+		v: page.dataset.translationsVersion,
+		lang: document.documentElement.lang,
+	})}`
+	// A slow catalog must not hold the page back, so it falls back to English.
+	const translations = await fetch(translationsUrl, {
+		credentials: 'same-origin',
+		signal: AbortSignal.timeout(3000),
+	})
+		.then((response) => response.json())
+		.then((data) => data.message || {})
+		.catch(() => ({}))
 	// Frappe's __: the translation of a literal, with {0}, {1} filled from `values`.
 	const __ = (text, values = []) => (translations[text] || text).replace(/\{(\d+)\}/g, (match, index) => values[index] ?? match)
 

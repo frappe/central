@@ -213,7 +213,7 @@
 			data-progress="{{ (progress or '') | e }}"
 			data-query="{{ query | e }}"
 			data-preview="{{ 1 if preview else 0 }}"
-			data-translations="{{ translations | e }}"
+			data-translations-version="{{ translations_version | e }}"
 		>
 			<div class="card enter">
 				<div class="map" id="map" hidden>
@@ -309,7 +309,7 @@
 			<p class="visually-hidden" role="status" id="announce"></p>
 
 			{% if preview %}
-			<form class="preview" id="preview" aria-label="{{ _("Preview controls") }}">
+			<form class="preview" id="preview" aria-label="{{ _("Preview controls") | e }}">
 				<fieldset>
 					<legend>{{ _("State") }}</legend>
 					{% for step in ["saving", "moving", "starting", "ready", "failed", "invalid"] %}

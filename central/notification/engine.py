@@ -1,12 +1,15 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
 
+from collections import defaultdict
 from urllib.parse import urlsplit
 
 import frappe
 from frappe import _
+from frappe.translate import get_user_lang, print_language
 from frappe.utils import escape_html
 
+from central.errors import build_envelope
 from central.sso import central_url
 
 
@@ -79,8 +82,9 @@ def dispatch(
 			"email_failed": 0,
 		}
 
-	title = _render_template(event.in_app_title, ctx)
-	body = _render_template(event.in_app_body, ctx)
+	reader_ctx = _get_reader_context(ctx)
+	title = _render_template(event.in_app_title, reader_ctx)
+	body = _render_template(event.in_app_body, reader_ctx)
 
 	doc = None
 	if event.create_in_app:
@@ -100,6 +104,7 @@ def dispatch(
 			server=server,
 			action_label=event.action_label,
 			action_route=_render_template(event.action_route, ctx) if event.action_route else None,
+			template_context=ctx,
 			publish=True,
 		)
 
@@ -161,6 +166,54 @@ def get_event_type(event_type: str):
 	return event
 
 
+def render_for_reader(rows: list[frappe._dict]) -> None:
+	"""Fill each feed row's title, message and action label again in the current language,
+	from the context the row was created with. A row without a context keeps its stored copy."""
+	events = {}
+	failed_events = set()
+	for row in rows:
+		ctx = row.pop("template_context", None)
+		if not (ctx and row.event_type) or row.event_type in failed_events:
+			continue
+
+		if row.event_type not in events:
+			events[row.event_type] = get_event_type(row.event_type)
+		event = events[row.event_type]
+		if not event:
+			continue
+
+		try:
+			ctx = _get_reader_context(frappe.parse_json(ctx))
+			title = _render_template(event.in_app_title, ctx)
+			message = _render_template(event.in_app_body, ctx)
+		except Exception:
+			# A broken translation of one template must not break the whole feed.
+			frappe.log_error(title=f"Notification render failed: {row.event_type} ({frappe.local.lang})")
+			failed_events.add(row.event_type)
+			continue
+
+		row.title = title or row.title
+		row.message = message
+		row.action_label = event.action_label
+
+
+def _get_reader_context(ctx: dict) -> dict:
+	"""The template context with a Resource Action's error code turned into its catalog
+	sentence and its action into a word, both in the current language."""
+	context = ctx.get("context") or {}
+	if not context.get("error_code"):
+		return ctx
+
+	envelope = build_envelope(
+		context["error_code"], action=context.get("action"), resource_id=context.get("resource_id")
+	)
+	return {
+		**ctx,
+		"message": ctx.get("message") or envelope["message"],
+		"context": {**context, "action": _(context["action"]) if context.get("action") else ""},
+	}
+
+
 def _resolve_context(team, event_type, context, reference_name, reference_doctype=None):
 	"""Build the template context dict shared by all Jinja renders."""
 	ctx = {
@@ -220,7 +273,7 @@ def _render_template(template_str: str | None, ctx: dict) -> str | None:
 	"""Render a Jinja template string with *ctx*. Returns None if template is empty."""
 	if not template_str:
 		return None
-	# nosemgrep: frappe-ssti -- templates come from the System Manager-only Notification Event Type doctype (repo fixtures), never from users.
+	# nosemgrep: frappe-ssti -- templates come from the System Manager-only Notification Event Type doctype (repo fixtures) or its Translation records, never from customers; render_template is sandboxed.
 	return frappe.render_template(template_str, ctx)
 
 
@@ -310,15 +363,22 @@ def _email_recipients(team, event, *, server=None, affected_user=None) -> list[s
 
 
 def send_notification_emails(recipients: list[str], event_type: str, ctx: dict, message=None) -> None:
-	"""Background job: render the event's email once and send it to each recipient."""
-	event = get_event_type(event_type)
-	subject, body = _notification_email(event, ctx, message)
+	"""Background job: render the event's email once per language and send each recipient theirs."""
+	recipients_by_language = defaultdict(list)
 	for user in recipients:
-		try:
-			frappe.sendmail(recipients=[user], subject=subject, message=body)
-		except Exception:
-			# Delivery is best effort, but a failure must leave an error log.
-			frappe.log_error(title=f"Notification email send failed: {event.name} -> {user}")
+		recipients_by_language[get_user_lang(user)].append(user)
+
+	for language, users in recipients_by_language.items():
+		with print_language(language):
+			event = get_event_type(event_type)
+			subject, body = _notification_email(event, ctx, message)
+
+		for user in users:
+			try:
+				frappe.sendmail(recipients=[user], subject=subject, message=body)
+			except Exception:
+				# Delivery is best effort, but a failure must leave an error log.
+				frappe.log_error(title=f"Notification email send failed: {event.name} -> {user}")
 
 
 def _get_active_members(team: str) -> list[str]:
@@ -366,7 +426,7 @@ def _notification_email(event, ctx, message=None) -> tuple[str, str]:
 	from central.signups.doctype.product.product import GETTING_STARTED_EMAILS, get_email_product
 
 	# The email uses the same sentence as the in-app notification.
-	ctx = {**ctx, "message": message or ctx.get("message") or ""}
+	ctx = _get_reader_context({**ctx, "message": message or ctx.get("message") or ""})
 	site = _get_email_site(ctx["team"], ctx["reference_doctype"], ctx["reference_name"])
 	product = get_email_product(site.product) if site else None
 	extras = product.get_email_extras(event.name) if product else {}

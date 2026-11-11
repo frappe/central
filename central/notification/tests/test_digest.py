@@ -169,6 +169,27 @@ class TestDigestDelivery(EngineTestBase):
 			send_digest(self.user, TEAM, {"Server": now_datetime()}, "Daily")
 		mock_sendmail.assert_not_called()
 
+	def test_digest_is_written_in_the_readers_language(self):
+		self._ensure_event_type("backup_failure", in_app_title="Backup failed")
+		self._daily_preference()
+		frappe.db.set_value("User", self.user, "language", "de")
+		since = add_to_date(now_datetime(), seconds=-1)
+		dispatch(TEAM, "backup_failure", message="x")
+
+		german = {"Backup failed": "Sicherung fehlgeschlagen", "Server": "Server (de)"}
+		with (
+			patch(
+				"frappe.translate.get_all_translations",
+				side_effect=lambda lang: german if lang == "de" else {},
+			),
+			patch("central.notification.digest.frappe.sendmail") as mock_sendmail,
+		):
+			send_digest(self.user, TEAM, {"Server": since}, "Daily")
+
+		body = mock_sendmail.call_args.kwargs["message"]
+		self.assertIn("Sicherung fehlgeschlagen", body)
+		self.assertIn("Server (de)", body)
+
 	def test_digest_includes_entries_without_event_type(self):
 		self._daily_preference()
 		since = add_to_date(now_datetime(), seconds=-1)

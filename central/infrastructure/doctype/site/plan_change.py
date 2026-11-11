@@ -7,7 +7,7 @@ from frappe import _
 from frappe.utils import get_datetime, get_url, now_datetime
 from frappe.utils.verified_command import get_signed_params
 
-from central.infrastructure.doctype.resource_action.resource_action import ResourceAction
+from central.infrastructure.doctype.resource_action.resource_action import ResourceAction, get_error
 from central.infrastructure.doctype.site.site import Site
 from central.integrations.pilot import is_site_reachable
 
@@ -74,5 +74,5 @@ class PlanChange:
 				"Region", self.action.region, ["display_name", "latitude", "longitude"], as_dict=True
 			),
 			"elapsed_seconds": int((now_datetime() - get_datetime(self.action.creation)).total_seconds()),
-			"error": self.action.error_message if step == "failed" else None,
+			"error": (get_error(self.action) or {}).get("message") if step == "failed" else None,
 		}

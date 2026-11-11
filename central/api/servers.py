@@ -698,7 +698,10 @@ def _validate_firewall_change(firewall: dict | str) -> FirewallChange:
 		detail = error.errors(include_input=False)[0]
 		# Only our own validators raise a translated sentence; Pydantic's type errors are English.
 		if detail["type"] != "value_error":
-			frappe.throw(_("Check the firewall rules and try again."))
+			field = ".".join(str(part) for part in detail["loc"])
+			if not field:
+				frappe.throw(_("Check the firewall rules and try again."))
+			frappe.throw(_("Check {0} in the firewall rules and try again.").format(field))
 		frappe.throw(detail["msg"].removeprefix("Value error, "))
 
 

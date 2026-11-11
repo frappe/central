@@ -91,3 +91,5 @@ central.patches.v0_0.start_billing_run_outcomes_and_minimum_invoices
 central.patches.v0_0.allow_storage_in_vm_plans
 # Fill the activity feed from the Versions, deletions and server actions Central already keeps.
 central.patches.v0_0.backfill_activity_events
+# A Resource Action keeps only the error copy the catalog cannot rebuild in the reader's language.
+central.patches.v0_0.keep_only_custom_resource_action_copy

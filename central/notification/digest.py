@@ -7,6 +7,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import frappe
 from frappe import _
+from frappe.translate import get_user_lang, print_language
 from frappe.utils import escape_html, format_datetime, get_datetime, get_system_timezone, now_datetime
 
 from central.iam import can, is_active_team_member
@@ -17,6 +18,7 @@ from central.notification.doctype.notification_digest_setting.notification_diges
 from central.notification.doctype.user_notification_preference.user_notification_preference import (
 	UserNotificationPreference,
 )
+from central.notification.engine import render_for_reader
 from central.sso import central_url
 
 MAX_ITEMS = 50
@@ -32,6 +34,7 @@ FEED_FIELDS = [
 	"message",
 	"action_label",
 	"action_route",
+	"template_context",
 	"creation",
 ]
 
@@ -136,9 +139,11 @@ def send_digest(
 		return
 
 	time_zone = frappe.db.get_value("User", user, "time_zone")
-	subject, body = _render_digest(
-		team, rows[:MAX_ITEMS], len(rows), is_capped, frequency, min(since.values()), time_zone
-	)
+	with print_language(get_user_lang(user)):
+		render_for_reader(rows[:MAX_ITEMS])
+		subject, body = _render_digest(
+			team, rows[:MAX_ITEMS], len(rows), is_capped, frequency, min(since.values()), time_zone
+		)
 	frappe.sendmail(recipients=[user], subject=subject, message=body)
 
 
@@ -252,7 +257,7 @@ def _render_digest(
 def _digest_groups(rows: list[frappe._dict]) -> list[dict]:
 	return [
 		{
-			"category": escape_html(category),
+			"category": escape_html(_(category)),
 			"entries": [_digest_item(row) for row in rows if row.category == category],
 		}
 		for category in CATEGORIES
