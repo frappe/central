@@ -208,6 +208,20 @@ class TestRunway(IntegrationTestCase):
 			self.pool.validate()
 		self.assertIn("outside pilot limits", str(caught.exception))
 
+	def test_runner_identity_survives_schema_reload(self):
+		lease = self.reserve()
+		runner_id = 2**40 + 219
+		frappe.db.set_value("Runner Lease", lease["id"], "phase", "jit_pending")
+		result = runway.update_lease(
+			self.pool.name, self.owner, self.fence, lease["id"], "jit_ready", runner_id=runner_id
+		)
+		self.assertEqual(result["runner_id"], runner_id)
+		frappe.db.commit()
+
+		frappe.reload_doc("infrastructure", "doctype", "runner_lease", force=True)
+		stored = frappe.get_doc("Runner Lease", lease["id"])
+		self.assertEqual(runway.lease_snapshot(stored)["runner_id"], runner_id)
+
 	def test_duplicate_reservation_cannot_bypass_capacity(self):
 		lease = self.reserve()
 		self.assertEqual(

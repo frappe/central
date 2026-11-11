@@ -91,6 +91,7 @@
    "fieldname": "runner_id",
    "label": "Runner Id",
    "fieldtype": "Int",
+   "length": 20,
    "read_only": 1
   },
   {
