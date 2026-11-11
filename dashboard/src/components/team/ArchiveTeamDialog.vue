@@ -150,8 +150,15 @@ onBeforeUnmount(() => window.removeEventListener('focus', onFocus))
 				<LoadingIndicator class="size-4" />
 				Checking the team…
 			</div>
-			<Alert v-else-if="checksError" theme="red" :title="checksError">
-				<Button label="Try again" @click="reload" />
+			<Alert
+				v-else-if="checksError"
+				theme="red"
+				title="Couldn't check if the team can be archived"
+				:description="checksError"
+			>
+				<template #actions>
+					<Button label="Try again" @click="reload" />
+				</template>
 			</Alert>
 			<ul
 				v-else

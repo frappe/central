@@ -7,12 +7,21 @@ import { dayjs, dayjsLocal } from 'frappe-ui'
 
 type When = string | number | null | undefined
 
+const hasOffset = (value: string) => {
+	const time = value.split('T')[1] ?? ''
+
+	return time.endsWith('Z') || time.includes('+') || time.includes('-')
+}
+
+// handle utc stuff too
 function at(value: When) {
 	if (value == null || value === '') return null
 	const date =
 		typeof value === 'number'
 			? dayjs(value > 1e12 ? value : value * 1000)
-			: dayjsLocal(value)
+			: hasOffset(value)
+				? dayjs(value)
+				: dayjsLocal(value)
 	return date.isValid() ? date : null
 }
 

@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
-
 import frappe
 
 from central.integrations.grove import GroveClient
@@ -32,7 +30,7 @@ def enable(team: str) -> str:
 
 def stop_team_keys(team: str) -> None:
 	"""Stop every live key of a team that is closing. Each cap goes to 0 first, which Grove allows at
-	any time, so no key spends again. Then the keys old enough to revoke are revoked."""
+	any time, so no key spends again. Then every one is revoked."""
 	if not get_ai_service(team):
 		return
 
@@ -42,11 +40,8 @@ def stop_team_keys(team: str) -> None:
 		return
 
 	client.update_caps(team, {key["name"]: 0 for key in live})
-	# Grove sends UTC timestamps such as "2026-10-06T10:30:00Z".
-	now = datetime.now(UTC)
 	for key in live:
-		if datetime.fromisoformat(key["revocable_at"].replace("Z", "+00:00")) <= now:
-			client.revoke_key(team, key["name"])
+		client.revoke_key(team, key["name"])
 
 
 def set_team_suspended(team: str, suspended: bool) -> None:
@@ -141,7 +136,9 @@ def shape_models(rows: list[dict]) -> list[dict]:
 		{
 			"name": row["name"],
 			"provider": row.get("provider"),
+			"provider_display_name": row.get("provider_display_name"),
 			"model_id": row.get("model_id"),
+			"display_name": row.get("display_name"),
 			"zero_data_retention": bool(row.get("zero_data_retention")),
 			"input_modalities": row.get("input_modalities", []),
 			"output_modalities": row.get("output_modalities", []),

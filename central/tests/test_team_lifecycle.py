@@ -166,11 +166,11 @@ class TestTeamLifecycle(IntegrationTestCase):
 		self.assertEqual(frappe.db.get_value("Team", self.team.name, "status"), "Active")
 		self.assertTrue(can(self.admin, self.team.name, "team:edit"))
 
-	def test_archive_stops_every_live_ai_key_and_revokes_the_old_ones(self):
+	def test_archive_stops_and_revokes_every_live_ai_key(self):
 		keys = [
-			{"name": "old-key", "status": "active", "revocable_at": "2020-01-01T00:00:00Z"},
-			{"name": "new-key", "status": "active", "revocable_at": "2999-01-01T00:00:00Z"},
-			{"name": "gone-key", "status": "revoked", "revocable_at": "2020-01-01T00:00:00Z"},
+			{"name": "old-key", "status": "active"},
+			{"name": "new-key", "status": "active"},
+			{"name": "gone-key", "status": "revoked"},
 		]
 		client = MagicMock()
 		client.get_figures.return_value = {"keys": keys}
@@ -181,7 +181,10 @@ class TestTeamLifecycle(IntegrationTestCase):
 			stop_team_keys(self.team.name)
 
 		client.update_caps.assert_called_once_with(self.team.name, {"old-key": 0, "new-key": 0})
-		client.revoke_key.assert_called_once_with(self.team.name, "old-key")
+		self.assertEqual(
+			[c.args for c in client.revoke_key.call_args_list],
+			[(self.team.name, "old-key"), (self.team.name, "new-key")],
+		)
 
 	def test_a_member_cannot_change_the_status_by_saving_the_team(self):
 		frappe.set_user(self.owner)

@@ -12,8 +12,9 @@ worker, is `run.py`'s business.
 import frappe
 from frappe import _
 
-from central.billing import settings
+from central.billing.doctype.billing_profile.billing_profile import get_due_date, get_payment_date
 from central.billing.doctype.invoice.invoice import (
+	OUTSTANDING,
 	UNSETTLED,
 	is_owed,
 	is_unissued,
@@ -22,6 +23,7 @@ from central.billing.doctype.invoice.invoice import (
 )
 from central.billing.platform.records import save_billing_record
 from central.billing.revenue import credits
+from central.billing.revenue.dunning import get_suspension_date
 from central.billing.revenue.invoicing.generate import generate_team_invoice
 from central.billing.revenue.tax import is_internal_team
 from central.billing.states import record_event, transition
@@ -91,13 +93,17 @@ def open_and_collect(invoice: str, collect: bool = True) -> dict:
 	# Auto-charge target = gross total, less withheld TDS, less credits and the GST
 	# already paid with the top-ups those credits came from.
 	doc.expected_collection = frappe.utils.flt(collectable - draw.wallet - draw.gst, 2)
-	# Both dates are set from *today*, not from the period end: an invoice the run
-	# opened three days late is due three days later, and its dunning ladder starts
-	# three days later. A backlog delays collection; it never shortens the customer's
-	# window. From here the two diverge — due_date is the accounting fact and stays
-	# put, while dunning_starts_on moves if we fail to ask again (dunning.defer_dunning).
-	doc.due_date = frappe.utils.add_days(frappe.utils.nowdate(), settings.invoice_due_days())
-	doc.dunning_starts_on = doc.due_date
+	# Credits apply today; the card waits for the team's payment day.
+	doc.payment_date = get_payment_date(doc.team, frappe.utils.nowdate())
+
+	# The dates are set from *today*, not from the period end: an invoice the run opened
+	# three days late is due three days later, and its dunning ladder starts three days
+	# later. A backlog delays collection; it never shortens the customer's window. The
+	# ladder counts from the payment date. due_date is the accounting fact and stays put,
+	# while dunning_starts_on and suspends_on move if we fail to ask (dunning.defer_dunning).
+	doc.due_date = get_due_date(doc.team, frappe.utils.nowdate())
+	doc.dunning_starts_on = doc.payment_date
+	doc.suspends_on = get_suspension_date(doc.team, frappe.utils.nowdate())
 
 	# Credits cover it in full — settled, no card charge needed.
 	if doc.expected_collection <= 0:
@@ -120,6 +126,7 @@ def open_and_collect(invoice: str, collect: bool = True) -> dict:
 		from central.billing.payments import collection
 
 		charge = collection.collect_invoice(invoice)
+	_notify_payment_scheduled(invoice)
 
 	return {
 		"invoice": invoice,
@@ -129,6 +136,18 @@ def open_and_collect(invoice: str, collect: bool = True) -> dict:
 		"status": "Outstanding",
 		"charge": charge,
 	}
+
+
+def _notify_payment_scheduled(invoice: str) -> None:
+	"""Tell the team what the invoice it just opened charges, and when.
+
+	Only the run that claims the invoice gets here, so the team hears once. It runs after the
+	first collection step, which sets the debit time of a rail that owes a pre-debit notice."""
+	from central.billing.payments.payment_notices import notify_payment_scheduled
+
+	doc = frappe.get_doc("Invoice", invoice)
+	if doc.status == OUTSTANDING:
+		notify_payment_scheduled(doc)
 
 
 def settle_with_new_credit(team: str) -> list[dict]:
@@ -153,8 +172,9 @@ def settle_with_new_credit(team: str) -> list[dict]:
 def _settle_with_credit(invoice: str) -> dict:
 	"""Pay one unpaid invoice with the wallet, when the wallet covers all of it.
 
-	1. An invoice with a charge in flight is left alone: that charge is for the whole amount.
-	   A debit the gateway holds does not stop the credit. It is refunded if it goes through.
+	1. A charge in flight does not stop the credit. If that charge goes through later, it lands on a
+	   Paid invoice and is refunded to its source (`charges._mark_invoice_paid`). A capture whose
+	   settlement has not landed yet does stop it: that money is already taken.
 	2. Credit that covers only part of the invoice stays in the wallet. It is never split
 	   with a charge, so the customer pays the whole amount due in one way.
 	"""
@@ -167,7 +187,7 @@ def _settle_with_credit(invoice: str) -> dict:
 	doc = frappe.get_doc("Invoice", invoice)
 	doc.flags.ignore_links = True  # only its amounts and status change here
 	due = frappe.utils.flt(doc.expected_collection)
-	if not is_owed(doc) or due <= 0 or charges.unheld_attempt_in_flight(invoice):
+	if not is_owed(doc) or due <= 0 or charges.unsettled_capture(invoice):
 		return {"invoice": invoice, "applied": 0}
 
 	draw = _draw_wallet(doc, due, _gst_still_due(doc, due))

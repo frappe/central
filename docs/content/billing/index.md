@@ -12,8 +12,10 @@ A billing cycle is one calendar month, from the 1st to the last day. Charges add
 
 Each invoice is paid in this order:
 
-1. Prepaid credits in your wallet.
-2. Your payment methods, in the order shown under **Methods** on **Billing > Payments**. When one fails, the next one is tried.
+1. Prepaid credits in your wallet, on the invoice date.
+2. Your payment methods, on the payment date, in the order shown under **Methods** on **Billing > Payments**. When one fails, the next one is tried.
+
+The payment date is a day from the 1st to the 10th of the month. The default is the 1st. When the invoice is issued after that day, the payment method is charged on the invoice date. To pay an issued invoice before its payment date, open it and click **Pay *amount* now**. Only a user with the Owner, Admin, or Billing role sees this button. For UPI Autopay and other Indian mandates, Frappe Cloud sends a pre-debit notice no earlier than one day before the payment date, and charges 24 hours after the notice. When the payment date is the 1st, the notice goes out on the 1st and the charge is on the 2nd.
 
 You do not need to pay a normal invoice by hand. See [Invoices](/billing/invoices) for an invoice that stays open.
 
@@ -21,7 +23,7 @@ You do not need to pay a normal invoice by hand. See [Invoices](/billing/invoice
 
 | Charge | How it is billed |
 | --- | --- |
-| Servers | A monthly rate set by the server's plan. The invoice shows each server, its plan, and the dates it was billed. |
+| Servers | A monthly rate set by the server's plan. On the day a server is created, resized, or stopped, each plan is billed for the hours it ran on that day. The invoice shows each server, its plan, and the dates it was billed. |
 | Metered services | Usage, such as AI tokens. The amount is final when the month ends. |
 | Add-ons | Subscriptions such as storage buckets and paid snapshots. |
 | Tax | Added on each invoice for the tax region in your billing details. |
@@ -34,16 +36,32 @@ The panel at the top of **Billing > Overview** shows the current cycle.
 
 | Item | Meaning |
 | --- | --- |
-| Cycle and amount | The charges so far in this cycle, and the days until it is billed. Click **Breakdown** to see each line and the **Projected total**. |
+| Cycle and amount | The projected total for this cycle with tax, and the days until it is billed. Below it are the amount before tax and the tax. Click **See breakdown** to see each line. |
 | Spend limit | The most your team can spend in one cycle on its current tier. Click the tier to see all tiers. See [Credits and spend limits](/billing/limits). |
-| Next payment | The amount Frappe Cloud expects to collect next. It shows **Due now** when an invoice is unpaid. Click **Schedule** to see the payment schedule. |
+| Due now | The amount of your unpaid invoices. This row shows only when an invoice is unpaid. |
+| Payment in progress | The date Frappe Cloud started a charge that your bank has not confirmed yet. This row shows from the day of the charge until the bank confirms or refuses the payment, or until the suspension date. |
+| Next retry | The date Frappe Cloud tries the payment again. This row shows only after a payment date passes and the invoice is not paid. |
+| Suspends on | The date your servers stop if the invoice stays unpaid. This row shows when no retry is left. It also shows below **Payment in progress** when the invoice is overdue. To avoid suspension, add credit to your wallet. See [When a payment is still in progress near the suspension date](/billing/invoices#when-a-payment-is-still-in-progress-near-the-suspension-date). When your team is already suspended, the row shows **Suspended since** and the suspension date. |
 | Wallet | Your prepaid credit balance. Click the history icon to see its history. Click **Add credit** to top up. |
 | Payment method | The payment method that is charged first. |
 | Next invoice | The date of the next invoice. |
+| Next payment date | The next scheduled payment date. When an unpaid invoice passes its payment date, this row shows the payment date of the next invoice. |
+
+To change the payment date, click the calendar icon (**Change payment date**) next to **Next payment date**. The **Payment schedule** panel opens. It also shows the amount due, the date of the next charge or retry, the payment method that is charged, and the dates of each step if the invoice stays unpaid. Select a day from the 1st to the 10th of the month and click **Save payment date**. You can change it at most twice in a billing cycle. You need the Owner, Admin, or Billing role. Wallet credit still applies on the invoice date. A change does not move the payment date of an invoice that is already issued.
+
+A payment date from the 1st to the 6th gets a retry every 2 days until the invoice due date. A later payment date gets one retry, 24 hours after the failed charge. When you select a later day, the form shows a warning. In both cases, your servers stop on the 15th of the month if the invoice stays unpaid. See [When a payment fails](/billing/invoices#when-a-payment-fails).
+
+Frappe Cloud sends these payment emails to team members who can see billing:
+
+| Email | When |
+| --- | --- |
+| Invoice is ready | An invoice is issued with an amount to pay after wallet credit. It shows the total, the credit used, the amount to charge, the payment date, and the payment method. If the team has no payment method, it asks you to add one. |
+| Payment due tomorrow | One day before the payment date. Frappe Cloud does not send it for an Indian mandate, which gets a pre-debit notice instead. |
+| Payment date changed | You change the payment date. It shows the new day and the date of the next charge. An invoice that is already issued keeps its payment date. |
 
 ### Budget alerts
 
-Click the bell icon on the summary panel to set a budget alert. Type an amount and click **Set alert**. The team gets a notification when the projected spend for the cycle goes above that amount. Set `0` to turn the alert off.
+Click the bell icon on the summary panel to set a budget alert. Type an amount and click **Set alert**. The amount excludes tax. The team gets a notification when the projected spend for the cycle, before tax, goes above that amount. Set `0` to turn the alert off.
 
 ## The spend chart
 

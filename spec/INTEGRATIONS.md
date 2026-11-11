@@ -279,7 +279,7 @@ An app is a fixed service, such as Redis or MariaDB, that a region's Cargo build
 
 1. The console lists the region's apps with `central.api.images.list_apps`, and reads the inputs and minimum size of the selected one with `central.api.images.get_app_requirements`. Central gets both from Cargo.
 2. `eligible_plans` shows only the plans with enough CPU, memory and disk for the app.
-3. The customer sends the answers as `app_inputs`. Central refuses a plan below the app's minimum size, refuses customer user data, and asks Cargo for the user data. Cargo checks each answer. A blank input that the app marks `generate` is left out, and the server makes the value itself.
+3. The customer sends the answers as `app_inputs`. Central refuses a plan below the app's minimum size, refuses customer user data, checks each answer against the app's inputs, and writes the answers as cloud-init user data to `/etc/one-click/inputs.env`. A blank answer is left out, and the server makes the value itself.
 4. The server boots from the image. Its first-boot script sets up the service and keeps the settings, including generated passwords, in `/etc/one-click/app.env` on the server.
 
 An app server is a normal server after creation. Central does not route a name to it and does not open its ports. Without a public address, the service is reachable only on the region's private network. A server restored from a snapshot of an app server has no app requirements.
@@ -395,7 +395,7 @@ A session starts read-only. A change needs these, in order:
 1. The agent asks the user to switch the session to read-write, and the user approves the `switch_to_read_write` call. The switch lasts one hour.
 2. The user approves each change call.
 
-A session that approves its own tool calls, such as a Trigger session, cannot switch. `central/investigator/access.py` refuses any change that terminates or destroys a resource, or that returns a login, a console, or a secret. The operator does these in Desk.
+A session whose approval mode is not Ask cannot switch: in Auto a model approves its tool calls, and in Auto-approve, as in a Trigger session, nobody does. `central/investigator/access.py` refuses any change that terminates or destroys a resource, or that returns a login, a console, or a secret. The operator does these in Desk.
 
 The agent can read any Pilot `GET` path except those in `PILOT_DENIED_READ_PATHS`, which return a credential, a login, or a backup file. Performance data (database, monitor, metrics, system, storage, and site monitoring) comes back exact, because a scrub changes numbers and query text. Other results are scrubbed. `run_database_query` runs one `SELECT`, `WITH`, `EXPLAIN`, `SHOW`, or `DESCRIBE` statement in a read-only transaction. A `SELECT` stops after 10 seconds. A read-only transaction does not stop DDL, so the tool refuses any other statement. `PILOT_DENIED_WRITE_PATHS` refuses code, credentials, setup, and SQL changes.
 

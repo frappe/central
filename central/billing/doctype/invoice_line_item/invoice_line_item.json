@@ -2,7 +2,7 @@
  "actions": [],
  "allow_rename": 0,
  "creation": "2026-06-03 00:00:00.000000",
- "description": "Invoice line, generated once and never updated. Time-weighted from an event-log window x the locked price: whole days for a stable config, exact hours on a day the machine churned (multiple resizes within 24h).",
+ "description": "Invoice line, generated once and never updated. Time-weighted from an event-log window x the locked price: whole days for a stable config, exact hours on a day the resource started, changed plan or stopped mid-day.",
  "doctype": "DocType",
  "editable_grid": 1,
  "engine": "InnoDB",
@@ -95,13 +95,13 @@
    "fieldtype": "Float",
    "label": "Hours",
    "precision": "2",
-   "description": "Hours active, for a segment billed hourly on a churn day (multiple resizes within 24h)"
+   "description": "Hours active, for a segment billed hourly on a start, plan-change or stop day"
   },
   {
    "fieldname": "charge_date",
    "fieldtype": "Date",
    "label": "Charge Date",
-   "description": "The calendar date an hourly (churn-day) line was incurred; null for whole-day lines that span a range"
+   "description": "The calendar date an hourly line was incurred; null for whole-day lines that span a range"
   },
   {
    "fieldname": "period_from",

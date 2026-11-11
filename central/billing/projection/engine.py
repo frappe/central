@@ -8,20 +8,25 @@ lay out the escalation ladder — and stops before the effects. Whatever the run
 charge, this reports; whatever the run would do about non-payment, this dates.
 
 Two things it deliberately does not do. It never asserts whether a card will succeed,
-so the collection calendar is given as *both* branches: settled on the due date, and
+so the collection calendar is given as *both* branches: settled on the payment date, and
 the full ladder if nothing is ever paid. And it never writes, which is a database
 guarantee rather than a convention — see `guard`.
 """
 
 import frappe
 
-from central.billing import settings
 from central.billing.doctype.invoice.invoice import owed_filters
 from central.billing.projection import behaviour, estimate, outcomes, state
 from central.billing.projection import events as injected
 from central.billing.projection.basis import MEASURED, mark, split_totals
 from central.billing.projection.guard import read_only
-from central.billing.revenue.dunning import dunning_clock_start, dunning_policy, dunning_schedule
+from central.billing.revenue.dunning import (
+	LADDER_FIELDS,
+	dunning_policy,
+	dunning_schedule,
+	get_ladder_dates_by_invoice,
+	get_opening_ladder_dates,
+)
 from central.billing.revenue.invoicing.generate import rate_team_period, team_clusters
 
 
@@ -79,7 +84,7 @@ def _project(
 		injected.mark_assumed(invoice["lines"], events, start)
 		invoice.update(split_totals(invoice["lines"]))
 	currency = frappe.db.get_value("Billing Profile", team, "currency")
-	calendar = injected.apply_declines(_calendar(end, today), team, events)
+	calendar = injected.apply_declines(_calendar(team, end, today), team, events)
 
 	# Derived findings are read off the amount we would actually try to collect, not the
 	# headline total: credits and withholding both change what the gateway is asked for.
@@ -146,7 +151,7 @@ def _opens_on(period_end):
 	return frappe.utils.add_days(frappe.utils.getdate(period_end), 1)
 
 
-def _calendar(period_end, today) -> dict:
+def _calendar(team: str, period_end, today) -> dict:
 	"""Both branches of what happens next, dated.
 
 	The fork is the point of the thing: an operator asking "what happens to this team"
@@ -155,16 +160,17 @@ def _calendar(period_end, today) -> dict:
 	the team's state entails, if either, and both are rendered regardless.
 	"""
 	opens_on = _opens_on(period_end)
-	due_on = frappe.utils.add_days(opens_on, settings.invoice_due_days())
+	dates = get_opening_ladder_dates(team, opens_on)
 	return {
 		"opens_on": str(opens_on),
-		"due_on": str(due_on),
-		"if_paid_on_time": [{"date": str(due_on), "stage": "Settled"}],
-		"if_never_paid": _ladder(due_on),
+		"due_on": str(dates.retry_until),
+		# Collection charges on the payment date, the ladder's anchor.
+		"if_paid_on_time": [{"date": str(dates.anchor), "stage": "Settled"}],
+		"if_never_paid": _ladder(dates),
 	}
 
 
-def _ladder(clock_start, policy=None) -> list[dict]:
+def _ladder(dates, policy=None) -> list[dict]:
 	"""The escalation ladder as plain dated rows."""
 	return [
 		{
@@ -173,7 +179,7 @@ def _ladder(clock_start, policy=None) -> list[dict]:
 			"day": s.day,
 			**({"attempt": s.attempt} if s.get("attempt") else {}),
 		}
-		for s in dunning_schedule(clock_start, policy or dunning_policy())
+		for s in dunning_schedule(dates, policy or dunning_policy())
 	]
 
 
@@ -193,15 +199,19 @@ def _in_flight(team: str, today) -> list[dict]:
 			["invoice_type", "=", "Billable"],
 			["expected_collection", ">", 0],
 		],
-		fields=["name", "status", "due_date", "dunning_starts_on", "expected_collection", "currency"],
+		fields=[
+			"name",
+			*LADDER_FIELDS,
+			"expected_collection",
+			"currency",
+		],
 		order_by="due_date asc",
 	)
 
 	out = []
+	ladders = get_ladder_dates_by_invoice(unpaid)
 	for inv in unpaid:
-		if not inv.due_date:
-			continue
-		clock_start = dunning_clock_start(inv)
+		dates = ladders[inv.name]
 		out.append(
 			{
 				"invoice": inv.name,
@@ -209,10 +219,10 @@ def _in_flight(team: str, today) -> list[dict]:
 				"currency": inv.currency,
 				"outstanding": inv.expected_collection,
 				"due_date": str(inv.due_date),
-				"clock_starts_on": str(clock_start),
-				"clock_deferred": bool(inv.dunning_starts_on),
-				"ladder": _ladder(clock_start),
-				"days_in": (today - frappe.utils.getdate(clock_start)).days,
+				"clock_starts_on": str(dates.anchor),
+				"clock_deferred": dates.is_deferred,
+				"ladder": _ladder(dates),
+				"days_in": (today - dates.anchor).days,
 			}
 		)
 	return out
@@ -311,7 +321,7 @@ def _roll_one(team, carried, period_start, period_end, today, mode, assume, even
 	if invoice and events:
 		injected.mark_assumed(invoice["lines"], events, period_start)
 		invoice.update(split_totals(invoice["lines"]))
-	calendar = _calendar(period_end, today)
+	calendar = _calendar(team, period_end, today)
 
 	settlement_result = _settle(carried, invoice, calendar, mode, assume)
 	findings = (

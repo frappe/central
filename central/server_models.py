@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import ipaddress
 import re
-from typing import Annotated, Literal, TypedDict
+from typing import Annotated, Literal, NotRequired, TypedDict
 
 from pydantic import BaseModel, ConfigDict, Field, PositiveInt, StringConstraints, model_validator
 
@@ -57,7 +57,8 @@ class CreateServerInput(BaseModel):
 	is_firewall_enabled: bool = False
 	# Cloud-init reads the script as sent, so keep its whitespace.
 	user_data: Annotated[str, StringConstraints(strip_whitespace=False)] = ""
-	# The answers to an app's inputs. Its Cargo turns them into the user data.
+	# The answers to an app's inputs, as `AppAnswers`. Central turns them into the user data, and
+	# routes a `site_name` answer to the server.
 	app_inputs: dict[str, str] = Field(default_factory=dict, max_length=20)
 
 
@@ -172,6 +173,41 @@ class FirewallChange(BaseModel):
 				raise ValueError("Each rule can appear only once.")
 
 		return self
+
+
+class AppInput(TypedDict):
+	"""One entry of `inputs` in an app's template.yaml, as Cargo sends it."""
+
+	name: str
+	label: NotRequired[str]
+	type: NotRequired[Literal["string", "email", "domain", "password"]]
+	required: NotRequired[bool]
+	max_length: NotRequired[int]
+	pattern: NotRequired[str]
+	description: NotRequired[str]
+
+
+class AppMinimumSize(TypedDict):
+	cpu_millicores: int
+	memory_mib: int
+	disk_mib: int
+
+
+class AppPort(TypedDict):
+	port: int
+	protocol: Literal["tcp", "udp"]
+
+
+class AppRequirements(TypedDict):
+	"""What Cargo's `get_one_click_image_requirements` returns for an app."""
+
+	inputs: list[AppInput]
+	minimum_size: AppMinimumSize
+	ports: list[AppPort]
+
+
+# The customer's answer to each app input, by input name.
+AppAnswers = dict[str, str]
 
 
 class ActionStatus(TypedDict):

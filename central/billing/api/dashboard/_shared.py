@@ -253,7 +253,7 @@ def _describe_line(team: str, li) -> dict:
 		# support and the cluster logs know it as. A friendly name is optional and
 		# may be absent or duplicated; this never is.
 		row["server_id"] = li.subscription_resource
-		# Hourly lines come from a churn day (multiple resizes within 24h): they're
+		# Hourly lines come from a start, plan-change or stop day: they're
 		# tied to one calendar date, so name it. Daily lines span a range within the
 		# period — the invoice already carries the period dates, so no suffix.
 		# Say WHEN, not just how long. A month with a resize in it is several lines
@@ -299,8 +299,8 @@ def _server_name(resource_id: str | None) -> str | None:
 def _billed_window(li) -> str | None:
 	"""The span a line covers, in the words someone would use for it.
 
-	Whole days read as a date range ("1–13 Aug"); a churn date reads as the clock
-	hours on that date ("14 Aug, 20:00–24:00"), because that is the day a config
+	Whole days read as a date range ("1–13 Aug"); a plan-change date reads as the clock
+	hours on that date ("14 Aug, 20:00–24:00"), because that is the day a plan
 	changed and the hours are the whole reason it is billed differently.
 	"""
 	start, end = li.get("period_from"), li.get("period_to")

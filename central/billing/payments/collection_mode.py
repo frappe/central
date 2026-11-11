@@ -37,6 +37,9 @@ CUSTOMER_CHOOSABLE = ("Manual Checkout", "Prepaid")
 # working method, Auto Charge is a promise nothing can keep.
 RETURNABLE = ("Auto Charge",)
 
+# The modes that hold an off-session debit back (`is_debit_allowed`).
+DEBIT_HELD_MODES = ("Manual Checkout", "Action Required")
+
 
 def team_rail(team: str) -> tuple[str | None, str | None]:
 	"""The (gateway, currency) a team's bill would be pulled through.
@@ -106,7 +109,7 @@ def is_debit_allowed(team: str) -> bool:
 	only Manual Checkout (the customer pays by hand) and Action Required (paused at the
 	ceiling) hold a debit back."""
 	mode = frappe.db.get_value("Billing Profile", team, "collection_mode")
-	return mode not in ("Manual Checkout", "Action Required")
+	return mode not in DEBIT_HELD_MODES
 
 
 def start_auto_charge(team: str) -> None:

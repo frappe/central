@@ -112,7 +112,12 @@ const closeRotation = (open: boolean): void => {
 			/>
 		</Teleport>
 
-		<Alert v-if="actionError" theme="red" :title="actionError" />
+		<Alert
+			v-if="actionError"
+			theme="red"
+			title="Couldn't update your SSH keys"
+			:description="actionError"
+		/>
 
 		<EmptyState
 			v-if="error"

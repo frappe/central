@@ -6,6 +6,7 @@ import { useBillingOverview } from '@/composables/useBillingOverview'
 import { useBillingSetup } from '@/composables/useBillingSetup'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { shortDate } from '@/lib/date'
+import { type DunningTone, getDunningSteps } from '@/lib/dunning'
 import { formatDate, money } from '@/lib/format'
 
 interface Props {
@@ -31,23 +32,37 @@ const loading = computed(
 
 const hasOutstanding = computed(() => props.outstanding > 0)
 const nextCharge = computed(() => Number(nextPayment.data?.amount ?? 0))
-
-const amountDue = computed(() =>
-	hasOutstanding.value ? props.outstanding : nextCharge.value,
-)
-
 const blocker = computed(() =>
 	nextCharge.value > 0 ? nextPayment.data?.blockers?.[0] : undefined,
 )
+const nextPaymentOn = computed(() => shortDate(nextPayment.data?.charge_on))
+const nextPaymentFailed = computed(() =>
+	Boolean(nextPayment.error && !nextPayment.data),
+)
 
-const dueHint = computed(() => {
-	if (blocker.value) return blocker.value.title
-	if (hasOutstanding.value || !nextCharge.value) return ''
+// A missed bill's place on the dunning ladder, shown under "Due now".
+const dunningSteps = computed(() =>
+	hasOutstanding.value ? getDunningSteps(nextPayment.data) : [],
+)
 
-	const chargedOn = `Charged ${shortDate(nextPayment.data?.charge_on)}`
+const dunningToneClass: Record<DunningTone, string> = {
+	neutral: 'text-ink-gray-9',
+	warning: 'text-ink-amber-6',
+	danger: 'text-ink-red-7',
+}
+
+// The row describes this cycle's charge; a due-now bill carries its own warning.
+const cycleBlocker = computed(() =>
+	hasOutstanding.value ? undefined : blocker.value,
+)
+
+const paymentHint = computed(() => {
+	if (hasOutstanding.value) return ''
+	if (cycleBlocker.value) return cycleBlocker.value.title
+
 	const method = nextPayment.data?.method?.label
 
-	return method ? `${chargedOn} from ${method}` : chargedOn
+	return method ? `Charged to ${method}` : ''
 })
 
 const balance = computed(() => Number(credit.data?.balance ?? 0))
@@ -99,34 +114,41 @@ const onAddMethod = () => {
 
 <template>
 	<div
-		class="grid grid-cols-[auto_minmax(0,1fr)] content-between items-center gap-x-3 gap-y-3 px-4 py-3 text-base leading-6"
+		class="grid grid-cols-[minmax(0,1fr)_auto] content-between items-center gap-x-3 gap-y-3 px-4 py-3 text-base leading-6"
 	>
 		<LoadingText v-if="loading" :lines="4" class="col-span-2 py-2" />
 
 		<template v-else>
-			<span class="whitespace-nowrap text-ink-gray-5">
-				{{ hasOutstanding ? 'Due now' : 'Next payment' }}
-			</span>
+			<template v-if="hasOutstanding">
+				<span class="truncate text-ink-gray-5"> Due now </span>
 
-			<div class="flex items-center justify-end gap-2">
-				<Button
-					v-if="nextCharge > 0"
-					size="xs"
-					label="Schedule"
-					icon-left="lucide-calendar-clock"
-					@click="$emit('openSchedule')"
-				/>
+				<div class="flex items-center justify-end gap-2">
+					<Tooltip :text="blocker?.title" :disabled="!blocker">
+						<span
+							class="whitespace-nowrap text-base-medium tabular-nums text-ink-gray-9"
+						>
+							{{ money(outstanding, currency) }}
+						</span>
+					</Tooltip>
+				</div>
+			</template>
 
-				<Tooltip :text="dueHint" :disabled="!dueHint">
-					<span
-						class="whitespace-nowrap text-base-medium tabular-nums text-ink-gray-9"
-					>
-						{{ money(amountDue, currency) }}
-					</span>
-				</Tooltip>
-			</div>
+			<template v-for="step in dunningSteps" :key="step.label">
+				<span class="truncate text-ink-gray-5"> {{ step.label }} </span>
 
-			<span class="whitespace-nowrap text-ink-gray-5"> Wallet </span>
+				<div class="flex items-center justify-end gap-2">
+					<Tooltip :text="step.hint">
+						<span
+							class="whitespace-nowrap text-base-medium tabular-nums"
+							:class="dunningToneClass[step.tone]"
+						>
+							{{ shortDate(step.date) }}
+						</span>
+					</Tooltip>
+				</div>
+			</template>
+
+			<span class="truncate text-ink-gray-5"> Wallet </span>
 
 			<div class="flex items-center justify-end gap-2">
 				<Tooltip text="Wallet history">
@@ -156,7 +178,7 @@ const onAddMethod = () => {
 				</Tooltip>
 			</div>
 
-			<span class="whitespace-nowrap text-ink-gray-5"> Payment method </span>
+			<span class="truncate text-ink-gray-5"> Payment method </span>
 
 			<span
 				v-if="primaryMethod"
@@ -173,13 +195,39 @@ const onAddMethod = () => {
 			/>
 			<span v-else class="text-right text-ink-gray-5">None</span>
 
-			<span class="whitespace-nowrap text-ink-gray-5"> Next invoice </span>
+			<span class="truncate text-ink-gray-5"> Next invoice </span>
 
 			<span
 				class="whitespace-nowrap text-right text-base-medium tabular-nums text-ink-gray-9"
 			>
 				{{ nextInvoiceOn || '—' }}
 			</span>
+
+			<span class="truncate text-ink-gray-5"> Next payment date </span>
+
+			<div class="flex items-center justify-end gap-2">
+				<Tooltip v-if="canManageBilling" text="Change payment date">
+					<Button
+						variant="ghost"
+						size="xs"
+						icon="lucide-calendar-cog"
+						label="Change payment date"
+						@click="$emit('openSchedule')"
+					/>
+				</Tooltip>
+				<template v-if="nextPaymentFailed">
+					<span class="whitespace-nowrap text-ink-red-6">Couldn't load</span>
+					<Button size="xs" label="Retry" @click="nextPayment.reload()" />
+				</template>
+				<Tooltip v-else :text="paymentHint" :disabled="!paymentHint">
+					<span
+						class="whitespace-nowrap text-base-medium tabular-nums"
+						:class="cycleBlocker ? 'text-ink-amber-6' : 'text-ink-gray-9'"
+					>
+						{{ nextPaymentOn || '—' }}
+					</span>
+				</Tooltip>
+			</div>
 		</template>
 
 		<AddMethodDialog v-model="showAddMethod" @done="reloadMethods" />

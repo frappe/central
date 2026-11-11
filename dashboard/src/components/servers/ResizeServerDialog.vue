@@ -157,7 +157,12 @@ const open = computed({
 					:title="`You're on the ${convertedPlan.title} plan`"
 					description="Billing has started. Choose a bigger size below, or close this dialog to stay on this plan."
 				/>
-				<Alert v-if="resizeError" theme="red" :title="resizeError" />
+				<Alert
+					v-if="resizeError"
+					theme="red"
+					title="Couldn't resize the server"
+					:description="resizeError"
+				/>
 				<Alert
 					v-if="losesLockedRate && lock"
 					theme="amber"
@@ -220,7 +225,12 @@ const open = computed({
 					v-model:selected-plan="selectedPlan"
 					v-model:composed-config="composedConfig"
 				/>
-				<Alert v-if="selectionError" theme="red" :title="selectionError" />
+				<Alert
+					v-if="selectionError"
+					theme="red"
+					title="Can't use this size"
+					:description="selectionError"
+				/>
 				<div
 					v-if="totalShape && changed"
 					class="space-y-2 border-t border-outline-gray-2 pt-4"

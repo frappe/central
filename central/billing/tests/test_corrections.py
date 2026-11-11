@@ -413,6 +413,22 @@ class TestLateCaptureRefund(CorrectionsTestCase):
 		self.assertEqual(frappe.db.get_value("Refund", refund.name, "status"), "Completed")
 		self.assertEqual(self.remote.posted, [])
 
+	def test_the_team_hears_once_when_a_retried_refund_completes(self):
+		inv, refund = self._late_refund(status="Failed")
+		self.assertEqual(self._refund_notices(refund), 0)
+
+		self.gateway.refund.return_value = RefundResult(status="Completed", gateway_refund_id="re_2", raw={})
+		corrections.retry_failed_refunds(inv)
+		self._run_all(inv)
+		self._run_all(inv)
+
+		self.assertEqual(self._refund_notices(refund), 1)
+
+	def _refund_notices(self, refund) -> int:
+		return frappe.db.count(
+			"Billing Notification Log", {"event_type": "Payment Refunded", "reference_name": refund.name}
+		)
+
 	def test_cancelling_the_invoice_later_records_only_its_own_payment(self):
 		inv, refund = self._late_refund()
 		corrections.cancel_and_refund(inv, "customer asked")

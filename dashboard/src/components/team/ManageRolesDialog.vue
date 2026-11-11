@@ -159,7 +159,12 @@ const dialogOptions = computed(() => ({
 	>
 		<template #default>
 			<div class="space-y-4">
-				<Alert v-if="formError" theme="red" :title="formError" />
+				<Alert
+					v-if="formError"
+					theme="red"
+					title="Couldn't update access"
+					:description="formError"
+				/>
 				<div class="flex items-center gap-3">
 					<Avatar :label="member?.full_name" size="2xl" />
 					<div class="min-w-0">

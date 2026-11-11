@@ -7,6 +7,8 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 from frappe.model.naming import make_autoname
+from frappe.query_builder import Interval
+from frappe.query_builder.functions import Now
 from frappe.utils import add_to_date, cint, flt, now_datetime
 
 from central.integrations.grove import GroveClient
@@ -215,20 +217,23 @@ class AITrialKey(Document):
 		return self.status == "Revoking" or (self.status == "Conversion Failed" and not self.revoked)
 
 	@classmethod
-	def queue_revoke(cls, **filters) -> None:
-		"""Mark the matching ready or assigned keys Revoking and queue their revoke at Grove. A
-		Converted key is the team's now; a Conversion Failed one is already on its way out."""
-		for name in frappe.get_all(
+	def queue_revoke(cls, **filters) -> int:
+		"""Mark the matching ready or assigned keys (or the status `filters` names) Revoking and queue
+		their revoke at Grove; the count. A Converted key is the team's now; a Conversion Failed one
+		is already on its way out."""
+		names = frappe.get_all(
 			"AI Trial Key",
-			filters={**filters, "status": ("in", ("Available", "Assigned"))},
+			filters={"status": ("in", ("Available", "Assigned")), **filters},
 			pluck="name",
-		):
+		)
+		for name in names:
 			frappe.db.set_value("AI Trial Key", name, "status", "Revoking")
 			frappe.enqueue(
 				"central.services.doctype.ai_trial_key.ai_trial_key.revoke_trial_key",
 				name=name,
 				enqueue_after_commit=True,
 			)
+		return len(names)
 
 	@frappe.whitelist(methods=["POST"])
 	def revoke(self) -> None:
@@ -254,6 +259,23 @@ class AITrialKey(Document):
 		if self.status != "Revoked" and not (self.status == "Conversion Failed" and self.revoked):
 			frappe.throw(_("Use Revoke Key. Only a revoked key record can be deleted."))
 
+	@staticmethod
+	def clear_old_logs(days: int = 30) -> None:
+		"""Log Settings, daily: a record whose revoke landed `days` ago is history. A Revoked record,
+		or a Conversion Failed one whose key is revoked, goes with its secret."""
+		key = frappe.qb.DocType("AI Trial Key")
+		revoked = (key.status == "Revoked") | ((key.status == "Conversion Failed") & (key.revoked == 1))
+		names = (
+			frappe.qb.from_(key)
+			.select(key.name)
+			.where(revoked & (key.modified < (Now() - Interval(days=days))))
+		).run(pluck=True)
+		if not names:
+			return
+
+		for name in names:
+			frappe.delete_doc("AI Trial Key", name)
+
 	def revoke_at_grove(self) -> None:
 		"""Safe to repeat: Grove answers a revoked key's revoke as done. A Conversion Failed record
 		keeps its status and ticks `revoked`."""
@@ -265,11 +287,19 @@ class AITrialKey(Document):
 
 
 def revoke_trial_key(name: str) -> None:
-	"""The queued revoke. A refusal (Grove's six-hour mint guard, Grove down) is kept on the record as
+	"""The queued revoke. A refusal (Grove down) is kept on the record as
 	`last_error` and tried again hourly."""
 	key = frappe.get_doc("AI Trial Key", name)
 	if key.is_revoke_pending:
 		key.try_at_grove()
+
+
+@frappe.whitelist(methods=["POST"])
+def revoke_available_keys() -> int:
+	"""Desk, Revoke Available Keys: every ready key in the pools is queued for revoke at Grove. An
+	Assigned key stays; its trial runs on."""
+	frappe.has_permission("AI Trial Key", "write", throw=True)
+	return AITrialKey.queue_revoke(status="Available")
 
 
 def convert_trial_key(name: str) -> None:

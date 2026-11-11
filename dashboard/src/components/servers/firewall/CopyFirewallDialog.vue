@@ -86,7 +86,8 @@ async function copy(): Promise<void> {
 					v-for="(message, resourceId) in errors"
 					:key="resourceId"
 					theme="red"
-					:title="`${titleOf(resourceId)}: ${message}`"
+					:title="titleOf(resourceId)"
+					:description="message"
 				/>
 
 				<div class="flex flex-col gap-2">

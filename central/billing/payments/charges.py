@@ -19,7 +19,7 @@ from frappe import _
 
 from central.billing import settings
 from central.billing.doctype.invoice.invoice import is_issued
-from central.billing.doctype.payment_attempt.payment_attempt import gateway_hold_active
+from central.billing.doctype.payment_attempt.payment_attempt import in_flight_condition
 from central.billing.gateways.base import GatewayError, GatewayTimeout, PaymentResult
 from central.billing.payments.decline import Failure
 from central.billing.platform.records import delete_billing_record, save_billing_record
@@ -349,12 +349,11 @@ def in_flight_attempt(invoice: str) -> str | None:
 	return _first_in_flight(invoice)
 
 
-def unheld_attempt_in_flight(invoice: str) -> str | None:
-	"""An attempt in flight that blocks credit from paying the invoice. A debit the gateway
-	holds does not: credit may pay the invoice beside it, and the debit is refunded if it
-	later goes through."""
+def unsettled_capture(invoice: str) -> str | None:
+	"""A capture whose settlement has not landed yet. Its money is taken and it settles the
+	invoice, so credit must not pay the invoice beside it."""
 	attempt = frappe.qb.DocType("Payment Attempt")
-	return _first_in_flight(invoice, (attempt.status == "Captured") | ~gateway_hold_active(attempt))
+	return _first_in_flight(invoice, attempt.status == "Captured")
 
 
 def _first_in_flight(invoice: str, *conditions) -> str | None:
@@ -363,10 +362,7 @@ def _first_in_flight(invoice: str, *conditions) -> str | None:
 		frappe.qb.from_(attempt)
 		.select(attempt.name)
 		.where(attempt.invoice == invoice)
-		.where(
-			attempt.status.isin(["Initiated", "Authorised"])
-			| ((attempt.status == "Captured") & attempt.completed_at.isnull())
-		)
+		.where(in_flight_condition(attempt))
 		.limit(1)
 	)
 	for condition in conditions:

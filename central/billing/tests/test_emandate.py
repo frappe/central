@@ -17,7 +17,9 @@ def _set_mode(team, mode):
 	doc.save(ignore_permissions=True)
 
 
-class TestEmandatePredebit(IntegrationTestCase):
+class EmandateTestBase(IntegrationTestCase):
+	"""An Auto Charge INR team with an active UPI Autopay mandate."""
+
 	def setUp(self):
 		from central.billing.tests.test_razorpay_adapter import make_razorpay_gateway
 
@@ -55,6 +57,8 @@ class TestEmandatePredebit(IntegrationTestCase):
 					"invoice_type": "Billable",
 					"status": "Outstanding",
 					"due_date": "2026-12-31",
+					"payment_date": "2026-06-10",
+					"suspends_on": "2027-01-15",
 					"period_start": "2026-06-01",
 					"period_end": "2026-06-30",
 					"currency": "INR",
@@ -70,6 +74,8 @@ class TestEmandatePredebit(IntegrationTestCase):
 			.name
 		)
 
+
+class TestEmandatePredebit(EmandateTestBase):
 	def test_schedule_predebit_notifies_and_arms_window(self):
 		inv = self._invoice(5000)
 		out = emandate.schedule_predebit(inv, now="2026-06-10 09:00:00")
@@ -145,7 +151,12 @@ class TestEmandatePredebit(IntegrationTestCase):
 		from central.billing.gateways.base import PaymentResult
 
 		inv = self._invoice(5000)
-		emandate.schedule_predebit(inv, now="2099-06-10 09:00:00")
+		frappe.db.set_value("Invoice", inv, "payment_date", "2099-06-11")
+		out = emandate.schedule_predebit(inv, now="2099-06-10 09:00:00")
+		self.assertTrue(out.get("notified"))
+		# The debit waits 24 hours after the notice, which is later than the payment date start.
+		self.assertEqual(out["charge_after"], "2099-06-11 09:00:00")
+
 		adapter = MagicMock()
 		adapter.prepare_charge.return_value = None
 		adapter.charge.return_value = PaymentResult(
@@ -155,6 +166,28 @@ class TestEmandatePredebit(IntegrationTestCase):
 			emandate.charge_due(now="2099-06-11 10:00:00")
 		# charge_due reads the whole site, so count only this invoice's charge.
 		self.assertEqual(frappe.db.count("Payment Attempt", {"invoice": inv}), 1)
+
+	def test_an_exhausted_mandate_is_asked_for_another_method_once(self):
+		from unittest.mock import MagicMock, patch
+
+		from central.billing.gateways.base import PaymentResult
+		from central.billing.payments import collection
+
+		inv = self._invoice(5000)
+		emandate.schedule_predebit(inv, now="2026-06-10 09:00:00")  # window opens 06-11 09:00
+
+		adapter = MagicMock()
+		adapter.prepare_charge.return_value = None
+		adapter.charge.return_value = PaymentResult(
+			success=False, status="Failed", failure_code="card_declined", failure_reason="declined"
+		)
+		with patch("central.billing.gateways.registry.get_adapter", return_value=adapter):
+			collection.collect_on_payment_date(now="2026-06-11 10:00:00")
+			collection.collect_on_payment_date(now="2026-06-11 12:00:00")
+
+		adapter.charge.assert_called_once()
+		asks = {"team": TEAM, "event_type": "Add Payment Method", "reference_name": inv}
+		self.assertEqual(frappe.db.count("Billing Notification Log", asks), 1)
 
 
 class TestWhoOwesAPredebitNotice(IntegrationTestCase):
@@ -181,6 +214,7 @@ class TestWhoOwesAPredebitNotice(IntegrationTestCase):
 					"team": self.TEAM,
 					"invoice_type": "Billable",
 					"status": "Outstanding",
+					"payment_date": "2026-07-01",
 					"due_date": "2026-12-31",
 					"period_start": "2026-06-01",
 					"period_end": "2026-06-30",

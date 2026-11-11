@@ -12,13 +12,14 @@ Frappe writes a Version for each save of a DocType that tracks changes. `record_
 save() ─► Frappe writes Version ─► record_version ─► Activity Event rows
 insert / delete of a tracked DocType ─► record_created / record_deleted
 Resource Action reaches a final state ─► ActivityEvent.record_action
+Central returns a console URL ─► ActivityEvent.record
 ```
 
 `tracked.py` lists each tracked DocType: its event prefix, category, required capability, the fields the feed shows, and the fields that are events of their own.
 
 | DocType | Events |
 |---|---|
-| Virtual Machine | Renamed, configuration changed, SSH keys changed |
+| Virtual Machine | Renamed, configuration changed, SSH keys changed, SSH console opened, serial console (TTY) opened |
 | Resource Action | Server created, started, stopped, restarted, resized, terminated |
 | VM Snapshot | Requested, available, failed, deleted |
 | Site and Site Domain | Created, claimed, deleted |
@@ -28,6 +29,8 @@ Resource Action reaches a final state ─► ActivityEvent.record_action
 | Team SSH Key | Added, renamed, rotated, deleted |
 
 One save can produce more than one event. Each event keeps only its own details, so a detail never shows under a weaker capability. For example, a server rename needs `server:view`, and a server SSH key change needs `server:ssh-key`.
+
+A console event needs `server:console`. Central writes one event for each console URL it returns. A refused request or an Atlas failure returns no URL and writes no event. During support access the session user is the operator, so the event stores the operator as the actor. Customers see the operator as Frappe Cloud.
 
 `db_set` writes no Version. A tracked field that changes through `db_set` calls `save_version()` after it, so the feed sees the change.
 
@@ -53,4 +56,4 @@ Log Settings owns the retention. Its Activity Event row clears rows after 365 da
 
 `central.api.activity.server_activity` returns one server's events, including its sites, domains and snapshots. `central.api.activity.team_activity` returns the team feed. Both page newest first with an opaque cursor over `(creation, name)`. Both take an optional `category` and an optional `since` and `until` date range.
 
-Each event has a `sentence`, such as `{actor} restarted {resource}`. The API translates it for the reader. The actor is the person behind the event. A guest session acts for the person the record names, such as the invitee who accepts. A job, a schedule or a region report has no actor, and its sentence says only what happened, such as `Settings on {resource} changed`. A failed server action reads `{actor} tried to restart {resource}`. A change to team members is one event per member: added, removed, joined, left, or access changed. The resource label is the resource title when the event is written, so a deleted resource keeps its name in the feed.
+Each event has a `sentence`, such as `{actor} restarted {resource}`. The API translates it for the reader. The actor is the person behind the event. A guest session acts for the person the record names, such as the invitee who accepts. A job, a schedule or a region report has no actor, and its sentence says only what happened, such as `Settings on {resource} changed`. A failed server action reads `{actor} tried to restart {resource}`. A change to team members is one event per member: added, removed, joined, left, or access changed. The resource label is the resource title when the event is written, so a deleted resource keeps its name in the feed. An event without an actor carries `initiator` when its resource names the person who initiated it, such as `requested_by` on a VM Snapshot that the region reports ready. `initiator_field` in `tracked.py` names that field, and the API reads it with the page, so the row does not store it. An operator reads as Frappe Cloud to a customer and by name to another operator.

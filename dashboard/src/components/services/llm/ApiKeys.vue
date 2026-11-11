@@ -5,7 +5,6 @@ import {
 	Button,
 	Dialog,
 	type DropdownOptions,
-	dayjs,
 	LoadingText,
 	Select,
 	Spinner,
@@ -119,11 +118,6 @@ const mintable = computed(() => geographies.value.filter((g) => g.endpoint))
 const geographyLabel = (name: string): string =>
 	geographies.value.find((g) => g.name === name)?.label ?? name
 
-const isRevocable = (key: AIApiKey): boolean =>
-	new Date(key.revocable_at) <= new Date()
-const revocableFrom = (key: AIApiKey): string =>
-	dayjs(key.revocable_at).format('MMM D, h:mm A')
-
 const rowActions = (key: AIApiKey): DropdownOptions => [
 	{
 		label: 'Revoke',
@@ -197,19 +191,23 @@ const geographyOptions = computed(() =>
 	mintable.value.map((g) => ({ label: g.label, value: g.name })),
 )
 
+const canCreate = computed(
+	() =>
+		!!newLabel.value.trim() &&
+		!!newGeography.value &&
+		isValidCap(newCap.value),
+)
+
 const create = async (): Promise<void> => {
-	const label = newLabel.value.trim()
-	if (!label) return
+	if (!canCreate.value) return
 
 	creating.value = true
 	createError.value = ''
 	try {
 		await createApiKey({
-			label,
+			label: newLabel.value.trim(),
 			geography: newGeography.value,
-			...(prepaid.value && newCap.value !== ''
-				? { cap: Number(newCap.value) }
-				: {}),
+			cap: Number(newCap.value),
 		})
 		createOpen.value = false
 	} catch (e) {
@@ -237,10 +235,10 @@ const capsOverLimit = computed(
 		committedTotal.value > (spend.value?.spend_limit ?? 0) &&
 		committedTotal.value > (spend.value?.committed ?? 0),
 )
-const isWholeCap = (value: string): boolean =>
-	Number.isInteger(Number(value)) && Number(value) >= 0
+const isValidCap = (value: string): boolean =>
+	Number.isInteger(Number(value)) && Number(value) >= 1
 const capsInvalid = computed(() =>
-	activeKeys.value.some((key) => !isWholeCap(capValues.value[key.name])),
+	activeKeys.value.some((key) => !isValidCap(capValues.value[key.name])),
 )
 
 const openCaps = (): void => {
@@ -292,7 +290,6 @@ const revokeTarget = ref<AIApiKey | null>(null)
 const revokeError = ref('')
 
 const revoke = async (key: AIApiKey): Promise<void> => {
-	if (!isRevocable(key)) return
 	revokeError.value = ''
 	try {
 		await revokeApiKey(key.name)
@@ -557,7 +554,6 @@ const revoke = async (key: AIApiKey): Promise<void> => {
 						would with the vendor.
 					</p>
 					<Select
-						v-if="geographyOptions.length > 1"
 						v-model="helpGeography"
 						class="w-fit shrink-0"
 						:options="geographyOptions"
@@ -582,6 +578,7 @@ const revoke = async (key: AIApiKey): Promise<void> => {
 				<TextInput
 					v-model="newLabel"
 					label="Label"
+					required
 					placeholder="e.g. n8n prod"
 					description="A name to recognise this key by. New keys can take a few minutes to start working."
 					@keyup.enter="create"
@@ -590,17 +587,18 @@ const revoke = async (key: AIApiKey): Promise<void> => {
 					v-model="newGeography"
 					label="Geography"
 					:options="geographyOptions"
+					required
 					description="Where the key's requests are served. It cannot be changed later: create another key for another geography."
 				/>
 				<TextInput
-					v-if="prepaid"
 					v-model="newCap"
 					type="number"
-					min="0"
+					min="1"
 					step="1"
 					label="Cap (USD)"
-					placeholder="0"
-					description="What this key may spend each month. Leave it at 0 to set it later: the key is refused until it has a cap."
+					required
+					placeholder="e.g. 10"
+					description="What this key may spend each month, in whole dollars."
 					@keyup.enter="create"
 				/>
 			</div>
@@ -621,7 +619,7 @@ const revoke = async (key: AIApiKey): Promise<void> => {
 					variant="solid"
 					label="Create"
 					:loading="creating"
-					:disabled="!newLabel.trim() || !newGeography || !isWholeCap(newCap)"
+					:disabled="!canCreate"
 					@click="create"
 				/>
 			</div>
@@ -630,7 +628,13 @@ const revoke = async (key: AIApiKey): Promise<void> => {
 
 	<Dialog v-model="capsOpen" title="Set caps" size="2xl">
 		<template #default>
-			<Alert v-if="capsError" class="mb-4" theme="red" :title="capsError" />
+			<Alert
+				v-if="capsError"
+				class="mb-4"
+				theme="red"
+				title="Couldn't save the spending caps"
+				:description="capsError"
+			/>
 			<div
 				class="mb-2 grid grid-cols-[2fr_1fr_1fr_1fr] gap-3 text-sm-medium text-ink-gray-6"
 				aria-hidden="true"
@@ -658,9 +662,9 @@ const revoke = async (key: AIApiKey): Promise<void> => {
 					<TextInput
 						v-model="capValues[key.name]"
 						type="number"
-						min="0"
+						min="1"
 						step="1"
-						placeholder="0"
+						placeholder="e.g. 10"
 						:autofocus="index === 0"
 						:aria-label="`Monthly cap for ${key.title} (USD)`"
 						:disabled="capsSaving"
@@ -669,7 +673,7 @@ const revoke = async (key: AIApiKey): Promise<void> => {
 				</div>
 			</div>
 			<p class="mt-4 text-p-sm text-ink-gray-5">
-				A key at 0 is refused until it gets a cap. Spend is as of {{ asOf }}:
+				Every key needs a cap of at least $1. Spend is as of {{ asOf }}:
 				The live figure is checked when you save.
 			</p>
 		</template>
@@ -709,20 +713,12 @@ const revoke = async (key: AIApiKey): Promise<void> => {
 		confirm-label="Revoke"
 		theme="red"
 		:loading="busyKey === revokeTarget?.name"
-		:disabled="!!revokeTarget && !isRevocable(revokeTarget)"
 		:error="revokeError"
 		@confirm="revoke"
 		@after-leave="revokeError = ''"
 	>
 		<template v-if="revokeTarget">
-			<p v-if="!isRevocable(revokeTarget)" class="text-p-base text-ink-gray-7">
-				<span class="text-base-semibold text-ink-gray-9"
-					>{{ revokeTarget.title }}</span
-				>
-				can be revoked from {{ revocableFrom(revokeTarget) }}, six hours after
-				it was created.
-			</p>
-			<p v-else class="text-p-base text-ink-gray-7">
+			<p class="text-p-base text-ink-gray-7">
 				Revoke
 				<span class="text-base-semibold text-ink-gray-9"
 					>{{ revokeTarget.title }}</span

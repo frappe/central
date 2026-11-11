@@ -61,7 +61,7 @@ The owner archives a team from the console (Settings > Team > Archive). A System
 
 When the checks pass, archiving does these steps in order:
 
-1. It stops the team's AI keys at Grove. Each live key gets a cap of 0, so it spends nothing. Keys past their `revocable_at` time are revoked. A Grove failure stops the archive, and the team stays Active.
+1. It stops the team's AI keys at Grove. Each live key gets a cap of 0, so it spends nothing. Every one is then revoked. A Grove failure stops the archive, and the team stays Active.
 2. It revokes pending invitations.
 3. It sets the status to `Archived` and adds a comment that names the user.
 4. It sends the `team_archived` email to the owner.
@@ -87,3 +87,7 @@ Billing suspension is separate. Dunning marks a Subscription as `Suspended`. It 
 ## Impersonation
 
 A System Manager uses **Impersonate Team Owner** on the Team form to see the console as the customer sees it. The operator must enter a reason. `central.api.teams.impersonate_team_owner` adds a comment on the team with the operator and the reason, and returns `/dashboard/servers?view_as=<team>`. It sends no email by default. When the operator selects **Email the owner**, it sends the `team_impersonated` notification email to the owner, and the comment records it. The email does not include the reason. The console keeps `view_as` for the browser tab only, passes it to `my_teams`, and shows a banner with an **Exit** button. `my_teams` adds the team only for a System Manager. The operator acts with the operator bypass, so every action of the owner is available and changes apply to the team.
+
+## Credit adjustment
+
+A System Manager uses **Adjust Credit** on the Team form to correct a wallet, for example to give goodwill credit after an outage or to take back credit given by mistake. The operator selects **Credit** or **Debit**, enters the amount in the team's billing currency, which the dialog shows, and enters a reason. A team without a billing currency cannot be adjusted. `central.billing.api.admin.teams.adjust_team_credits` books one Credit Ledger Entry with the reference type `Admin` and the reason as its note. This credit does not expire and does not count as the welcome credit. A debit larger than the wallet balance fails. For promotional credit that expires, use **Grant Credit**, described in [the signups specification](../../../signups/SPEC.md).
