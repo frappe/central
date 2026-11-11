@@ -1,6 +1,5 @@
 import frappe
 from frappe import _
-from frappe.rate_limiter import rate_limit
 from frappe.utils import flt
 from frappe.utils.translations import _lt
 
@@ -147,11 +146,9 @@ def get_models(team: str | None = None, geography: str | None = None) -> list[di
 
 
 @frappe.whitelist(methods=["POST"])
-@rate_limit(key="team", limit=15, seconds=60 * 60, ip_based=False)
 @require_capability("service:manage", MANAGE_DENIED)
 def revoke_api_key(team: str | None = None, key: str | None = None) -> dict:
-	"""Revoke one of the team's keys. Grove refuses another team's key. Fifteen an hour per team:
-	Grove holds no key back by age, so a mint-and-revoke loop stops here."""
+	"""Revoke one of the team's keys. Grove refuses another team's key."""
 	require_ai(team)
 	GroveClient.from_settings().revoke_key(team, key)
 
