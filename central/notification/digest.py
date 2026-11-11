@@ -268,7 +268,7 @@ def _digest_item(row: frappe._dict) -> dict:
 		action_url = escape_html(f"{central_url()}/dashboard{route}")
 
 	return {
-		"summary": f"[{row.severity}] {escape_html(row.title or row.event_type)}",
+		"summary": f"[{_(row.severity)}] {escape_html(row.title or row.event_type)}",
 		"body_parts": parts,
 		"action_label": escape_html(row.action_label) if row.action_label else None,
 		"action_url": action_url,

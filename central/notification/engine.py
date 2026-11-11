@@ -125,9 +125,13 @@ def dispatch(
 	}
 
 
+# The copy a reader sees. `extractor.extract` adds it from the fixture to the translation catalog.
+TRANSLATED_FIELDS = ("in_app_title", "in_app_body", "action_label")
+
+
 def get_event_type(event_type: str):
-	"""Fetch the Event Type registry row."""
-	return frappe.db.get_value(
+	"""Fetch the Event Type registry row, with its copy in the current language."""
+	event = frappe.db.get_value(
 		"Notification Event Type",
 		event_type,
 		[
@@ -146,6 +150,15 @@ def get_event_type(event_type: str):
 		],
 		as_dict=True,
 	)
+	if not event:
+		return None
+
+	# Translate the Jinja source, so a translation keeps its {{ placeholders }}.
+	for field in TRANSLATED_FIELDS:
+		if event[field]:
+			event[field] = _(event[field])
+
+	return event
 
 
 def _resolve_context(team, event_type, context, reference_name, reference_doctype=None):

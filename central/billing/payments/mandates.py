@@ -377,6 +377,7 @@ def refund_authorisation_payment(payment_method: str, payment_id: str, amount: f
 			idempotency_key=f"mandate-authorisation-{payment_id}",
 		)
 		if not result.success:
+			# nosemgrep: central-untranslated-exception -- caught below and kept as a comment for the operator
 			raise frappe.ValidationError(f"Gateway refund status: {result.status}")
 	except Exception as error:
 		method.add_comment(
