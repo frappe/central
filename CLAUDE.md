@@ -168,7 +168,8 @@ The console serves customers. Desk serves the operator who has to answer a page 
 - Use type hints for public functions and important data structures.
 - Raise specific exceptions. Handle only errors that the code can recover from. Use `central/errors.py` for a failure that a person reads.
 - Prefer standard Frappe APIs and built-in DocTypes over custom machinery. Use `frappe.db` and `frappe.qb` instead of raw SQL.
-- Wrap every user-facing string in `_()`.
+- Wrap every user-facing string in `_()`. Pass values with `.format()`, for example `_("Server {0} is stopped.").format(name)`. Do not put an f-string, a concatenation, or a variable inside `_()`.
+- Mark a literal with `N_()` when the code keeps it in a constant or a dictionary, and call `_()` where the code reads it. A `_()` at import time fixes the language of the first request. `.semgrep/translation.yml` checks these rules in pre-commit.
 - Use `better-writing` for backend error messages shown to customers. Keep admin and developer diagnostics outside this copy review. See [interface copy guidance](llm/README.md#copy).
 - Avoid mutable global state, circular imports, and lazy re-exports in a package `__init__.py`.
 - Use `@property` only for a cheap, side-effect-free, no-argument operation that returns one noun-like value. Use `get_<what_it_returns>()` for an operation with arguments or multi-step work.

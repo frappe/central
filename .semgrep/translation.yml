@@ -1,0 +1,59 @@
+rules:
+  - id: central-untranslated-message
+    languages: [python]
+    severity: ERROR
+    message: >-
+      A person reads this message, so it must be translatable. Wrap the literal in _() and
+      pass values with .format(), for example _("Server {0} is stopped.").format(name).
+    pattern-either:
+      - pattern: frappe.throw("...", ...)
+      - pattern: frappe.throw(f"...", ...)
+      - pattern: frappe.throw("..." % $VALUES, ...)
+      - pattern: frappe.throw("...".format(...), ...)
+      - pattern: frappe.throw(..., title="...", ...)
+      - pattern: frappe.throw(..., title=f"...", ...)
+      - pattern: frappe.msgprint("...", ...)
+      - pattern: frappe.msgprint(f"...", ...)
+      - pattern: frappe.msgprint("..." % $VALUES, ...)
+      - pattern: frappe.msgprint("...".format(...), ...)
+      - pattern: frappe.msgprint(..., title="...", ...)
+      - pattern: frappe.msgprint(..., title=f"...", ...)
+    paths:
+      exclude: ["**/tests/**", "**/patches/**", "**/test_*.py"]
+
+  # A Frappe exception reaches the person as its message. A built-in exception marks a
+  # programming error that a person does not read, so it can stay in English. The app
+  # exceptions in the list subclass Exception, and their callers catch them, so a person
+  # reads a translated sentence instead. Add a new one here only when that is true.
+  - id: central-untranslated-exception
+    languages: [python]
+    severity: ERROR
+    message: >-
+      A person reads the message of this exception, so it must be translatable. Wrap the
+      literal in _(). Raise a built-in exception, such as ValueError, for a programming error.
+    patterns:
+      - pattern-either:
+          - pattern: raise $EXCEPTION("...", ...)
+          - pattern: raise $EXCEPTION(f"...", ...)
+          - pattern: raise $EXCEPTION("..." % $VALUES, ...)
+          - pattern: raise $EXCEPTION("...".format(...), ...)
+      - metavariable-regex:
+          metavariable: $EXCEPTION
+          regex: ^(?!(AssertionError|AttributeError|Exception|ImportError|IndexError|KeyError|LookupError|NotImplementedError|OSError|RuntimeError|TypeError|ValueError|requests\.\w+|GatewayError|GatewayTimeout|GatewayAuthError|GatewayUnsupported|WebhookNotFound|NoAccess)$)
+    paths:
+      exclude: ["**/tests/**", "**/patches/**", "**/test_*.py"]
+
+  - id: central-translation-at-import-time
+    languages: [python]
+    severity: ERROR
+    message: >-
+      This _() runs once at import time, so every reader gets the language of the first
+      request. Mark the literal with N_() and call _() where the code reads it.
+    patterns:
+      - pattern: _(...)
+      - pattern-not-inside: |
+          def $FUNCTION(...):
+            ...
+      - pattern-not-inside: "lambda $...ARGUMENTS: $BODY"
+    paths:
+      exclude: ["**/tests/**", "**/patches/**", "**/test_*.py"]
