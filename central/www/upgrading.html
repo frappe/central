@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="{{ lang }}" dir="{{ 'rtl' if is_rtl() else 'ltr' }}">
 	<head>
 		<meta charset="UTF-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<meta name="robots" content="noindex" />
-		<title>Upgrading your site</title>
+		<title>{{ _("Upgrading your site") }}</title>
 		<link rel="stylesheet" href="/assets/frappe/css/fonts/inter/inter.css" />
 		<style>
 			:root {
@@ -213,6 +213,7 @@
 			data-progress="{{ (progress or '') | e }}"
 			data-query="{{ query | e }}"
 			data-preview="{{ 1 if preview else 0 }}"
+			data-translations="{{ translations | e }}"
 		>
 			<div class="card enter">
 				<div class="map" id="map" hidden>
@@ -233,7 +234,7 @@
 						<span id="site-name"></span>
 					</div>
 
-					<h1 id="title" class="enter">Upgrading your site</h1>
+					<h1 id="title" class="enter">{{ _("Upgrading your site") }}</h1>
 					<p class="lead" id="lead"></p>
 
 					<div class="capacity" id="capacity" hidden>
@@ -241,7 +242,7 @@
 							<div class="ticket-main">
 								<div class="ticket-route">
 									<div class="ticket-end">
-										<span class="eyebrow">From</span>
+										<span class="eyebrow">{{ _("From") }}</span>
 										<strong id="from-plan"></strong>
 										<small id="from-shape"></small>
 									</div>
@@ -254,7 +255,7 @@
 										</span>
 									</div>
 									<div class="ticket-end">
-										<span class="eyebrow">To</span>
+										<span class="eyebrow">{{ _("To") }}</span>
 										<strong id="to-plan"></strong>
 										<small id="to-shape"></small>
 									</div>
@@ -262,9 +263,9 @@
 							</div>
 							<div class="ticket-perforation" aria-hidden="true"></div>
 							<div class="ticket-stub">
-								<div><span class="eyebrow">Site</span><span id="ticket-site"></span></div>
-								<div><span class="eyebrow">Region</span><span id="ticket-region"></span></div>
-								<div><span class="eyebrow">Status</span><span class="ticket-status" id="ticket-status"></span></div>
+								<div><span class="eyebrow">{{ _("Site") }}</span><span id="ticket-site"></span></div>
+								<div><span class="eyebrow">{{ _("Region") }}</span><span id="ticket-region"></span></div>
+								<div><span class="eyebrow">{{ _("Status") }}</span><span class="ticket-status" id="ticket-status"></span></div>
 							</div>
 						</div>
 					</div>
@@ -272,20 +273,20 @@
 					<ol class="steps" id="steps">
 						<li class="step" data-step="saving" data-state="pending">
 							<span class="icon" aria-hidden="true">{% include "templates/pages/upgrading_icons.html" %}</span>
-							<span><span class="step-label">Saving your new plan</span><span class="step-state visually-hidden"></span></span>
+							<span><span class="step-label">{{ _("Saving your new plan") }}</span><span class="step-state visually-hidden"></span></span>
 						</li>
 						<li class="step" data-step="moving" data-state="pending">
 							<span class="icon" aria-hidden="true">{% include "templates/pages/upgrading_icons.html" %}</span>
 							<span>
-								<span class="step-label">Moving to a bigger server</span><span class="step-state visually-hidden"></span>
-								<span class="step-note">Your site is offline during this step.</span>
+								<span class="step-label">{{ _("Moving to a bigger server") }}</span><span class="step-state visually-hidden"></span>
+								<span class="step-note">{{ _("Your site is offline during this step.") }}</span>
 							</span>
 						</li>
 						<li class="step" data-step="starting" data-state="pending">
 							<span class="icon" aria-hidden="true">{% include "templates/pages/upgrading_icons.html" %}</span>
 							<span>
-								<span class="step-label">Starting your site</span><span class="step-state visually-hidden"></span>
-								<span class="step-note">Almost there. Waiting for your site to answer.</span>
+								<span class="step-label">{{ _("Starting your site") }}</span><span class="step-state visually-hidden"></span>
+								<span class="step-note">{{ _("Almost there. Waiting for your site to answer.") }}</span>
 							</span>
 						</li>
 					</ol>
@@ -293,14 +294,14 @@
 					<div class="notice" id="notice" hidden></div>
 
 					<div class="actions" id="actions" hidden>
-						<a class="button" id="go" href="#">Go to your site</a>
+						<a class="button" id="go" href="#">{{ _("Go to your site") }}</a>
 						<span class="countdown" id="countdown"></span>
-						<button type="button" class="link" id="stay" hidden>Stay on this page</button>
+						<button type="button" class="link" id="stay" hidden>{{ _("Stay on this page") }}</button>
 					</div>
 
 					<div class="foot" id="foot">
-						<span id="elapsed">0:00 elapsed</span>
-						<span>Usually a few minutes</span>
+						<span id="elapsed">{{ _("{0} elapsed").format("0:00") }}</span>
+						<span>{{ _("Usually a few minutes") }}</span>
 					</div>
 				</div>
 			</div>
@@ -308,14 +309,14 @@
 			<p class="visually-hidden" role="status" id="announce"></p>
 
 			{% if preview %}
-			<form class="preview" id="preview" aria-label="Preview controls">
+			<form class="preview" id="preview" aria-label="{{ _("Preview controls") }}">
 				<fieldset>
-					<legend>State</legend>
+					<legend>{{ _("State") }}</legend>
 					{% for step in ["saving", "moving", "starting", "ready", "failed", "invalid"] %}
 					<label><input type="radio" name="step" value="{{ step }}" {{ "checked" if loop.first }} /> {{ step | capitalize }}</label>
 					{% endfor %}
 				</fieldset>
-				<button type="button" class="button" id="play">Play the whole upgrade</button>
+				<button type="button" class="button" id="play">{{ _("Play the whole upgrade") }}</button>
 			</form>
 			{% endif %}
 		</main>

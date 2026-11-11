@@ -1,31 +1,34 @@
 ;(() => {
 	const page = document.getElementById('page')
 	const byId = (id) => document.getElementById(id)
+	const translations = JSON.parse(page.dataset.translations || '{}')
+	// Frappe's __: the translation of a literal, with {0}, {1} filled from `values`.
+	const __ = (text, values = []) => (translations[text] || text).replace(/\{(\d+)\}/g, (match, index) => values[index] ?? match)
 
 	const STEPS = ['saving', 'moving', 'starting']
 	const TERMINAL = ['ready', 'failed', 'invalid']
 	const TITLES = {
-		ready: 'Your site is ready',
-		failed: 'The upgrade did not finish',
-		invalid: 'This link is not valid',
+		ready: __('Your site is ready'),
+		failed: __('The upgrade did not finish'),
+		invalid: __('This link is not valid'),
 	}
 	const ANNOUNCEMENTS = {
-		saving: 'Saving your new plan',
-		moving: 'Moving to a bigger server',
-		starting: 'Starting your site',
-		ready: 'Your site is ready',
-		failed: 'The upgrade did not finish',
-		invalid: 'This link is not valid',
+		saving: __('Saving your new plan'),
+		moving: __('Moving to a bigger server'),
+		starting: __('Starting your site'),
+		ready: __('Your site is ready'),
+		failed: __('The upgrade did not finish'),
+		invalid: __('This link is not valid'),
 	}
 	const TAB_TITLES = {
-		saving: 'Upgrading (1 of 3)',
-		moving: 'Upgrading (2 of 3)',
-		starting: 'Upgrading (3 of 3)',
-		ready: '✓ Your site is ready',
-		failed: 'Upgrade did not finish',
-		invalid: 'Link not valid',
+		saving: __('Upgrading ({0} of {1})', [1, 3]),
+		moving: __('Upgrading ({0} of {1})', [2, 3]),
+		starting: __('Upgrading ({0} of {1})', [3, 3]),
+		ready: `✓ ${__('Your site is ready')}`,
+		failed: __('Upgrade did not finish'),
+		invalid: __('Link not valid'),
 	}
-	const FLIGHT_STATUS = { saving: 'Boarding', moving: 'In flight', starting: 'Landing', ready: 'Arrived' }
+	const FLIGHT_STATUS = { saving: __('Boarding'), moving: __('In flight'), starting: __('Landing'), ready: __('Arrived') }
 	const POLL_MILLISECONDS = 3000
 	const REDIRECT_SECONDS = 5
 	// Map units of the dotted world asset, and the strip shown around the region.
@@ -61,30 +64,32 @@
 		const host = progress.site || ''
 		byId('site-name').textContent = host
 		byId('monogram').textContent = host.charAt(0).toUpperCase()
-		byId('title').textContent = TITLES[progress.step] || 'Upgrading your site'
+		byId('title').textContent = TITLES[progress.step] || __('Upgrading your site')
 		byId('lead').textContent = getLead(progress)
 	}
 
 	function getLead(progress) {
-		if (progress.step === 'failed') return 'We could not move your site to the new plan.'
-		if (progress.step === 'invalid') return "Open the upgrade again from your site's settings."
-		if (!progress.shape) return 'Your site is moving to its new plan.'
-		if (progress.step === 'ready') return `${progress.site} now runs with ${describeCapacity(progress.shape)}.`
-		return `${getChanges(previousShape, progress.shape)} Your site goes offline for a few minutes while it moves. Keep this tab open and we open your site when it is ready.`
+		if (progress.step === 'failed') return __('We could not move your site to the new plan.')
+		if (progress.step === 'invalid') return __("Open the upgrade again from your site's settings.")
+		if (!progress.shape) return __('Your site is moving to its new plan.')
+		if (progress.step === 'ready') return __('{0} now runs with {1}.', [progress.site, describeCapacity(progress.shape)])
+		return __('{0} Your site goes offline for a few minutes while it moves. Keep this tab open and we open your site when it is ready.', [
+			getChanges(previousShape, progress.shape),
+		])
 	}
 
 	// "Memory goes from 1 GB to 2 GB.", naming only what the plan change alters.
 	function getChanges(from, to) {
-		if (!from) return `Your site moves to ${describeCapacity(to)}.`
+		if (!from) return __('Your site moves to {0}.', [describeCapacity(to)])
 		const changes = [
-			['CPU', `${formatNumber(from.vcpus)} vCPU`, `${formatNumber(to.vcpus)} vCPU`],
-			['memory', formatMemory(from), formatMemory(to)],
-			['disk', `${formatNumber(from.disk_gigabytes)} GB`, `${formatNumber(to.disk_gigabytes)} GB`],
+			[__('CPU goes from {0} to {1}'), formatCPU(from), formatCPU(to)],
+			[__('memory goes from {0} to {1}'), formatMemory(from), formatMemory(to)],
+			[__('disk goes from {0} to {1}'), formatDisk(from), formatDisk(to)],
 		]
 			.filter(([, before, after]) => before !== after)
-			.map(([part, before, after]) => `${part} goes from ${before} to ${after}`)
-		if (!changes.length) return 'Your site keeps its size on the new plan.'
-		const sentence = new Intl.ListFormat('en', { type: 'conjunction' }).format(changes)
+			.map(([template, before, after]) => template.replace('{0}', before).replace('{1}', after))
+		if (!changes.length) return __('Your site keeps its size on the new plan.')
+		const sentence = new Intl.ListFormat(document.documentElement.lang || 'en', { type: 'conjunction' }).format(changes)
 		return `${sentence.charAt(0).toUpperCase()}${sentence.slice(1)}.`
 	}
 
@@ -132,7 +137,7 @@
 			const index = STEPS.indexOf(item.dataset.step)
 			const state = index < reached ? 'done' : index === reached ? 'current' : 'pending'
 			item.dataset.state = state
-			item.querySelector('.step-state').textContent = state === 'done' ? ', done' : state === 'current' ? ', in progress' : ''
+			item.querySelector('.step-state').textContent = state === 'done' ? `, ${__('done')}` : state === 'current' ? `, ${__('in progress')}` : ''
 		}
 	}
 
@@ -141,8 +146,8 @@
 		const notice = byId('notice')
 		notice.hidden = step !== 'failed'
 		if (step === 'failed') {
-			const heading = Object.assign(document.createElement('strong'), { textContent: 'Upgrade stopped. ' })
-			notice.replaceChildren(heading, progress.error || 'Your site should open on its current plan. If it does not, contact support.')
+			const heading = Object.assign(document.createElement('strong'), { textContent: `${__('Upgrade stopped.')} ` })
+			notice.replaceChildren(heading, progress.error || __('Your site should open on its current plan. If it does not, contact support.'))
 		}
 
 		byId('foot').hidden = TERMINAL.includes(step)
@@ -157,10 +162,10 @@
 		let seconds = REDIRECT_SECONDS
 		byId('stay').hidden = false
 		const tick = () => {
-			byId('countdown').textContent = `Taking you there in ${seconds} ${seconds === 1 ? 'second' : 'seconds'}`
+			byId('countdown').textContent = seconds === 1 ? __('Taking you there in 1 second') : __('Taking you there in {0} seconds', [seconds])
 			if (seconds-- > 0) return
 			stopCountdown()
-			if (isPreview) byId('countdown').textContent = 'Preview: this would open your site now.'
+			if (isPreview) byId('countdown').textContent = __('Preview: this would open your site now.')
 			else window.location.assign(current.site_url)
 		}
 		tick()
@@ -178,7 +183,7 @@
 		elapsedSeconds += 1
 		const minutes = Math.floor(elapsedSeconds / 60)
 		const seconds = String(elapsedSeconds % 60).padStart(2, '0')
-		byId('elapsed').textContent = `${minutes}:${seconds} elapsed`
+		byId('elapsed').textContent = __('{0} elapsed', [`${minutes}:${seconds}`])
 	}
 
 	async function poll() {
@@ -199,21 +204,29 @@
 	}
 
 	function describeShape(shape, separator = ' · ') {
-		return `${formatNumber(shape.vcpus)} vCPU${separator}${formatMemory(shape)}`
+		return `${formatCPU(shape)}${separator}${formatMemory(shape)}`
 	}
 
 	function describeCapacity(shape) {
-		return `${formatNumber(shape.vcpus)} vCPU and ${formatMemory(shape)} memory`
+		return __('{0} and {1} memory', [formatCPU(shape), formatMemory(shape)])
 	}
 
 	// A plan titled after its size, such as "0.5 vCPU / 1 GB", adds nothing below the size.
 	function getPlanDetail(plan, shape) {
 		const normalize = (text) => text.toLowerCase().replace(/[^0-9a-z.]/g, '')
-		return plan && normalize(plan) !== normalize(describeShape(shape)) ? `${plan} plan` : ''
+		return plan && normalize(plan) !== normalize(describeShape(shape)) ? __('{0} plan', [plan]) : ''
+	}
+
+	function formatCPU(shape) {
+		return __('{0} vCPU', [formatNumber(shape.vcpus)])
 	}
 
 	function formatMemory(shape) {
-		return `${formatNumber(shape.memory_megabytes / 1024)} GB`
+		return __('{0} GB', [formatNumber(shape.memory_megabytes / 1024)])
+	}
+
+	function formatDisk(shape) {
+		return __('{0} GB', [formatNumber(shape.disk_gigabytes)])
 	}
 
 	function formatNumber(value) {
@@ -226,7 +239,7 @@
 
 	byId('stay').addEventListener('click', () => {
 		stopCountdown()
-		byId('countdown').textContent = 'You can open your site when you are ready.'
+		byId('countdown').textContent = __('You can open your site when you are ready.')
 	})
 
 	window.setInterval(tickElapsed, 1000)
