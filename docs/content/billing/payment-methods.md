@@ -42,7 +42,7 @@ The options in the dialog depend on your billing currency. Teams billed in INR c
 
 You can close the bank's page or the dialog at any time. Start again at once: an unfinished setup does not block a new one.
 
-A card or UPI setup that is not finished in 24 hours is not saved. Frappe Cloud sends an email and an in-app notice: "Your card or UPI setup was not finished, so it was not saved. Add it again from Billing." You do not get the notice when you added another payment method after that setup.
+A card or UPI setup that is not finished in 24 hours is not saved. Frappe Cloud sends an email and an in-app notice: "Your card or UPI setup was not finished, so it was not saved. Add it again from Billing." If you add a payment method after you start that setup, you do not get the notice.
 
 ## Change the order
 
