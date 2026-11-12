@@ -1,0 +1,67 @@
+name: Bug Report
+description: Report a reproducible bug in the Frappe Cloud dashboard
+labels: ["bug"]
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before you create an issue:
+
+        1. Use this tracker for bugs only.
+            - For feedback, ideas, and documentation problems, use [Share feedback](https://dashboard.frappe.io/beta-feedback).
+            - For a security problem, email security@frappe.io. Do not open a public issue.
+        2. This issue is public. Do not paste passwords, API keys, tokens, backup links, or customer data. Blur them in screenshots.
+        3. Give all the required information. The easier it is to reproduce, the faster we can fix it.
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Sign-up and team
+        - Members and roles
+        - Servers
+        - Networking (firewall, WireGuard, SSH keys)
+        - Snapshots
+        - Storage buckets
+        - Billing and credits
+        - Migration from v1
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: bug-info
+    attributes:
+      label: Information about the bug
+      description: What happened, and what did you expect to happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: "1. Go to ...\n2. Click ...\n3. See ..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots or recordings
+      description: Drag and drop as many files as you need.
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant log output, stack trace, or full error message
+      description: This is formatted as code automatically.
+      render: shell
+
+  - type: input
+    id: resource
+    attributes:
+      label: Server or site name
+      description: Give the name only.
