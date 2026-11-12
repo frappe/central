@@ -45,11 +45,11 @@ class TestCollectionMode(IntegrationTestCase):
 		method.status = "Active"
 		method.save(ignore_permissions=True)
 
-	def test_the_first_active_method_starts_auto_charge(self):
+	def test_the_first_active_method_keeps_prepaid(self):
 		frappe.db.delete("Payment Method", {"team": TEAM})
 		_set_mode(TEAM, "Prepaid")
 		self._activate_method("tok_first")
-		self.assertEqual(frappe.db.get_value("Billing Profile", TEAM, "collection_mode"), "Auto Charge")
+		self.assertEqual(frappe.db.get_value("Billing Profile", TEAM, "collection_mode"), "Prepaid")
 
 	def test_a_later_method_keeps_the_chosen_mode(self):
 		frappe.db.delete("Payment Method", {"team": TEAM})
@@ -242,13 +242,17 @@ class TestInvoiceTimeTrip(IntegrationTestCase):
 		self.assertEqual(frappe.db.count("Payment Attempt", {"invoice": inv}), 0)
 		self.assertEqual(frappe.db.get_value("Billing Profile", TEAM, "collection_mode"), "Action Required")
 
-	def test_pay_over_15k_keeps_the_mode_the_customer_chose(self):
+	def test_pay_over_15k_moves_a_prepaid_team_to_action_required(self):
 		from central.billing.payments import charges
 
 		_set_mode(TEAM, "Prepaid")
+		frappe.db.delete("Billing Notification Log", {"team": TEAM})
 		out = charges.pay_invoice(self._invoice(20000), payment_method=self.pm, gateway=self.gw)
 		self.assertEqual(out["reason"], "action_required")
-		self.assertEqual(frappe.db.get_value("Billing Profile", TEAM, "collection_mode"), "Prepaid")
+		self.assertEqual(frappe.db.get_value("Billing Profile", TEAM, "collection_mode"), "Action Required")
+		self.assertTrue(
+			frappe.db.exists("Billing Notification Log", {"team": TEAM, "event_type": "Action Required"})
+		)
 
 
 class TestManualCheckout(IntegrationTestCase):

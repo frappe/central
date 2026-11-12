@@ -37,6 +37,9 @@ CUSTOMER_CHOOSABLE = ("Manual Checkout", "Prepaid")
 # working method, Auto Charge is a promise nothing can keep.
 RETURNABLE = ("Auto Charge",)
 
+# The modes whose saved method is charged off-session once the wallet is short.
+OFF_SESSION_MODES = ("Auto Charge", "Prepaid")
+
 # The modes that hold an off-session debit back (`is_debit_allowed`).
 DEBIT_HELD_MODES = ("Manual Checkout", "Action Required")
 
@@ -112,20 +115,6 @@ def is_debit_allowed(team: str) -> bool:
 	return mode not in DEBIT_HELD_MODES
 
 
-def start_auto_charge(team: str) -> None:
-	"""Move a team from the default Prepaid to Auto Charge when its first method becomes active.
-	A team that already holds another active method chose its mode with a method in hand, so it keeps it."""
-	if frappe.db.get_value("Billing Profile", team, "collection_mode") != "Prepaid":
-		return
-	if frappe.db.count("Payment Method", {"team": team, "status": "Active"}) != 1:
-		return
-	profile = frappe.get_doc("Billing Profile", team)
-	profile.collection_mode = "Auto Charge"
-	profile.collection_action_reason = None
-	# A stored field that fails validation must not block the method's activation.
-	profile.save_as_system("start Auto Charge when the first payment method became active")
-
-
 def evaluate(
 	team: str, projected_amount: float | None = None, reason: str = "forecast_over_threshold"
 ) -> dict:
@@ -162,9 +151,10 @@ def trip(team: str, reason: str) -> None:
 	)
 
 
-def trip_auto_charge(team: str, reason: str) -> None:
-	"""Trip Action Required only for an Auto Charge team. A mode the customer chose is kept."""
-	if frappe.db.get_value("Billing Profile", team, "collection_mode") == "Auto Charge":
+def trip_off_session_debit(team: str, reason: str) -> None:
+	"""Trip Action Required for a team whose method was to be charged off-session. A Manual
+	Checkout team already pays by hand, so it keeps its mode."""
+	if frappe.db.get_value("Billing Profile", team, "collection_mode") in OFF_SESSION_MODES:
 		trip(team, reason)
 
 
