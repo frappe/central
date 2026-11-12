@@ -319,6 +319,7 @@ scheduler_events = {
 		"central.billing.ingester.erpnext_sync.retry_failed_syncs",
 		"central.billing.payments.reconciliation.run_reconciliation",
 		"central.billing.payments.webhooks.retry_failed_webhooks",
+		"central.billing.payments.setup_expiry.expire_unfinished_setups",
 		"central.billing.platform.alerts.run_operator_alerts",
 		"central.signups.alerts.alert_failed_signups",
 		"central.notification.digest.send_due_digests",
