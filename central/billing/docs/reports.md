@@ -42,6 +42,8 @@ Used CPU, memory, disk and bandwidth come from the region's telemetry. Only serv
 
 ## Revenue
 
+Revenue is the pre-tax amount of the Billable invoices of external teams. Cancelled and Waived invoices and the invoices of internal teams are not revenue. MRR and YTD Revenue, Services Revenue, Cluster-wise Revenue and Atlas-based Revenue use this rule. Select **Include internal and waived** to add the waived and internal amounts back. The profitability reports use the same rule for revenue. To see what internal teams used, open Internal Usage and Waivers.
+
 | Report | Question it answers |
 |---|---|
 | MRR and YTD Revenue | What is the monthly recurring revenue, and the revenue for the year so far? |
