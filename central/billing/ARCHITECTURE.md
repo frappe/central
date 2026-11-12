@@ -230,6 +230,7 @@ flowchart LR
     H1 --> RF["retry_failed_syncs (ERPNext)"]
     H1 --> RR["run_reconciliation"]
     H1 --> OA["run_operator_alerts"]
+    H1 --> SE["expire_unfinished_setups"]
     M1 --> DMI["draft_monthly_invoices → draft page jobs"]
     M1 --> EX["expire_payment_methods"]
     H1 --> CDI["collect_due_invoices → settle page jobs"]
@@ -244,7 +245,7 @@ flowchart LR
 ```
 
 ### Scheduled (`central/hooks.py` → `scheduler_events`)
-Dunning, reconciliation, the e-mandate cycle, credit expiry, card expiry, accounting-sync retries and the subscription backfill run each row through `platform.jobs.each_isolated`: a savepoint and a commit per row, and a row that fails is logged to the Error Log and skipped, so it does not stop the rows after it.
+Dunning, reconciliation, the e-mandate cycle, credit expiry, card expiry, setup expiry, accounting-sync retries and the subscription backfill run each row through `platform.jobs.each_isolated`: a savepoint and a commit per row, and a row that fails is logged to the Error Log and skipped, so it does not stop the rows after it.
 
 | Cadence | Entry point | Purpose |
 |---|---|---|
@@ -260,11 +261,14 @@ Dunning, reconciliation, the e-mandate cycle, credit expiry, card expiry, accoun
 | hourly | `payments.webhooks.retry_failed_webhooks` | apply again failed and lost webhook events |
 | hourly | `payments.collection.collect_on_payment_date` | debit each pre-debit rail whose window has opened (e-mandate first debit), start the first charge on the payment date, run the single retry 24 hours after a failed first charge, and send the payment reminder the day before; a pre-debit rail is started no earlier than 24 hours before the payment date to send its notice |
 | hourly | `payments.reconciliation.run_reconciliation` | charged-but-never-webhooked gateway scan and Pending refunds |
+| hourly | `payments.setup_expiry.expire_unfinished_setups` | expire card and UPI setups left Pending Validation for `SETUP_EXPIRES_HOURS` (24); one `payment_method_setup_expired` notice per team per run |
 | hourly | `platform.alerts.run_operator_alerts` | alert operators (invariants, readiness, failed webhooks, stale attempts, unsettled captures, held invoices, failed refunds, failed accounting syncs) |
 | monthly | `revenue.invoicing.draft_monthly_invoices` | waive internal teams' unpaid invoices, then draft the just-closed month as page jobs on the `billing` queue |
 | hourly | `revenue.invoicing.collect_due_invoices` | collect every uncollected invoice whose month has closed, as page jobs; record progress on the Billing Run |
 | hourly | `ingester.erpnext_sync.retry_failed_syncs` | retry Sales Invoice push (backoff window elapsed) |
 | monthly | `payments.payments.expire_payment_methods` | flip cards past their printed month |
+
+**Unfinished setups expire.** A Payment Method that stays Pending Validation for 24 hours becomes Expired. Card expiry also uses Expired, so the console list hides only an Expired method with no `validated_at`. The team gets `payment_method_setup_expired` in-app and by email, unless it added an Active method after the latest expired setup started. An unfinished setup never blocks a new one: a new card setup on the same gateway cancels the older setups that have no saved card, and the other setups stay as they are.
 
 **The scheduled run is paged.** On the 1st, `draft_monthly_invoices` drafts the closed month as page jobs. Every hour, `collect_due_invoices` collects whatever has drafted and updates the **Billing Run** row for the month (start, counts, failures, completion). A lost worker stops one page only; the next hourly sweep picks up the rest. `run_monthly_billing` does both phases inline in one job; use it only for a small site or a test.
 

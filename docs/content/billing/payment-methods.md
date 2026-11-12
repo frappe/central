@@ -38,6 +38,12 @@ The dialog can ask for a phone number. A phone number is required to set up auto
 
 The options in the dialog depend on your billing currency. Teams billed in INR can also see RuPay Card and UPI Autopay, which you authorise on your bank's page. To authorise automatic payments, Razorpay charges ₹1. Frappe Cloud refunds it after the authorisation succeeds. Amex and Diners cards cannot be charged automatically. Add credit instead.
 
+## If you do not finish adding a method
+
+You can close the bank's page or the dialog at any time. Start again at once: an unfinished setup does not block a new one.
+
+A card or UPI setup that is not finished in 24 hours is not saved. Frappe Cloud sends an email and an in-app notice: "Your card or UPI setup was not finished, so it was not saved. Add it again from Billing." You do not get the notice when you added another payment method after that setup.
+
 ## Change the order
 
 1. On the **Methods** card, click the **⋯** menu on a payment method.
