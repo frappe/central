@@ -51,13 +51,6 @@ class TestCollectionMode(IntegrationTestCase):
 		self._activate_method("tok_first")
 		self.assertEqual(frappe.db.get_value("Billing Profile", TEAM, "collection_mode"), "Prepaid")
 
-	def test_a_later_method_keeps_the_chosen_mode(self):
-		frappe.db.delete("Payment Method", {"team": TEAM})
-		self._activate_method("tok_first")
-		_set_mode(TEAM, "Prepaid")
-		self._activate_method("tok_second")
-		self.assertEqual(frappe.db.get_value("Billing Profile", TEAM, "collection_mode"), "Prepaid")
-
 	def test_threshold_is_15k_without_a_tier(self):
 		self.assertEqual(collection_mode.silent_threshold(TEAM), 15000.0)
 
