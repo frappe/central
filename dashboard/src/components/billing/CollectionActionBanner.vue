@@ -52,7 +52,7 @@ async function choose(): Promise<void> {
 	}
 	successToast(
 		chosen.value === 'Prepaid'
-			? 'Prepaid wallet on: add credits to cover usage'
+			? 'Prepaid on: your wallet pays first, then your card or UPI'
 			: "You'll pay each invoice yourself",
 	)
 	choosing.value = false
@@ -72,7 +72,8 @@ const options = [
 		key: 'Prepaid',
 		icon: 'lucide-wallet',
 		title: 'Prepaid wallet',
-		blurb: 'Add credits up front; your usage draws them down.',
+		blurb:
+			'Your wallet pays first. When it is short, we charge your card or UPI.',
 		fit: 'Best for hands-off, predictable spending.',
 	},
 ]
