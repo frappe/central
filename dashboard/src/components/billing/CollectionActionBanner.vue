@@ -107,18 +107,25 @@ const options = computed(() => [
 		:primary-action="canManageBilling ? { label: 'Choose how to pay', onClick: () => { choosing = true } } : undefined"
 	>
 		<template #description>
-			<template v-if="s.reason === 'invoice_over_threshold'">
+			<template v-if="s.reason === 'mandate_failed'">
+				Your automatic payment approval was cancelled or stopped working. Choose
+				how to pay. Your services keep running.
+			</template>
+			<template v-else-if="s.reason === 'invoice_over_threshold'">
 				A bill is over the
-				<span class="text-p-sm-medium">{{ money(s.threshold, currency) }}</span>
+				<span v-if="s.threshold != null" class="text-p-sm-medium"
+					>{{ money(s.threshold, currency) }}</span
+				>
 				limit for automatic payments. Your services keep running.
 			</template>
 			<template v-else>
 				This month is heading to
 				<span class="text-p-sm-medium"
 					>{{ money(s.projected_total, currency) }}</span
+				>, past the
+				<span v-if="s.threshold != null" class="text-p-sm-medium"
+					>{{ money(s.threshold, currency) }}</span
 				>
-				, past the
-				<span class="text-p-sm-medium">{{ money(s.threshold, currency) }}</span>
 				limit for automatic payments. Your services keep running.
 			</template>
 		</template>
