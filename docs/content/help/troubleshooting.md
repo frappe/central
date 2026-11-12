@@ -28,7 +28,7 @@ This page lists common problems with teams, billing, and servers, and how to fix
 | **This plan and your pending server requests exceed your spending limit.** | Choose a smaller plan, or contact support to review your limit. See [Credits and spend limits](/billing/limits). |
 | A red or amber banner says an amount is overdue or outstanding. | Click **Pay now** and pay the invoice. See [Pay an outstanding invoice](/billing/invoices#pay-an-outstanding-invoice). |
 | A payment attempt failed. | Add another card or move a working card to the top, then pay the invoice. |
-| **Action required: choose how to keep paying.** | An INR amount above ₹15,000 cannot be charged to your card or UPI without you, after your wallet pays what it can. Click **Choose how to pay**. Select **Pay each invoice** or **Prepaid wallet**, then click **Confirm**. With **Prepaid wallet**, your wallet pays first and your card or UPI pays the rest. |
+| **Action required: choose how to keep paying.** | An INR amount above ₹15,000 cannot be charged to your card or UPI without you, after your wallet pays what it can. Or your UPI Autopay or card mandate was revoked or failed. Click **Choose how to pay**. Select **Pay each invoice** or **Prepaid wallet**, then click **Confirm**. With **Prepaid wallet**, your wallet pays first and your card or UPI pays the rest. |
 | The invoice download icon is disabled. | The invoice is not issued yet. The PDF is ready after the invoice is issued. |
 | **Primary payment method** is disabled. | Your wallet has a balance, so credits pay first. The option is available when the balance is zero. |
 
