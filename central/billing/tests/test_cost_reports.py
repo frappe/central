@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 import frappe
 
+from central.billing.report._economics import BilledMonth
 from central.billing.report._telemetry import Telemetry
 from central.billing.report.allocation_vs_usage import allocation_vs_usage
 from central.billing.report.bare_metal_capacity import bare_metal_capacity
@@ -14,7 +15,7 @@ from central.billing.report.service_profitability import service_profitability
 from central.billing.report.stranded_capacity import stranded_capacity
 from central.billing.report.vm_packing_matrix import vm_packing_matrix
 from central.billing.tests.test_unit_economics import REGION, make_metal_server, seed_fleet
-from central.billing.tests.utils import BillingTestCase
+from central.billing.tests.utils import BillingTestCase, complete_billing_profile, ensure_team
 
 HOST = "host-1"
 
@@ -54,6 +55,35 @@ class TestMoneyReports(BillingTestCase):
 		self.assertEqual((rows[0]["customers"], rows[0]["usage"]), (2, 2000))
 		self.assertEqual((rows[0]["revenue_per_unit"], rows[0]["cost_per_unit"]), (0.5, 0.2))
 		self.assertEqual(rows[0]["margin"], 60)
+
+	def test_an_internal_teams_invoice_earns_nothing_but_still_costs(self):
+		team = "team-cost-internal"
+		ensure_team(team)
+		complete_billing_profile(team)
+		frappe.db.set_value("Billing Profile", team, "is_internal", 1)
+		if not frappe.db.exists("Resource Type", "Cost Test Tokens"):
+			frappe.get_doc({"doctype": "Resource Type", "resource_type_name": "Cost Test Tokens"}).insert()
+		frappe.db.set_value("Resource Type", "Cost Test Tokens", "cost_per_unit_inr", 0.5)
+		frappe.get_doc(
+			{
+				"doctype": "Invoice",
+				"team": team,
+				"invoice_type": "Billable",
+				"status": "Outstanding",
+				"period_start": "2026-10-01",
+				"period_end": "2026-10-31",
+				"currency": "INR",
+				"subtotal": 300,
+				"total": 300,
+				"items": [{"resource_type": "Cost Test Tokens", "quantity": 100, "amount": 300}],
+			}
+		).insert(ignore_permissions=True)
+		filters = {"month": "2026-10-01", "team": team}
+
+		[only] = BilledMonth(filters).lines
+		self.assertEqual((only.revenue_inr, only.cost_inr), (0.0, 50))
+		_, rows, *_ = service_profitability.execute(filters)
+		self.assertEqual((rows[0]["revenue"], rows[0]["cost"]), (0, 50))
 
 
 class TestCapacityReports(BillingTestCase):
