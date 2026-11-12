@@ -35,7 +35,7 @@ MODES = (OPTIMISTIC, ASSUMED, DERIVED)
 
 # Modes in which nothing is charged off-session: the customer has to act. Dunning
 # knows this and escalates without retrying (ADR 0005).
-ON_SESSION_MODES = ("Manual Checkout", "Action Required")
+ON_SESSION_MODES = collection_mode.DEBIT_HELD_MODES
 
 
 def derive(team: str, amount: float, currency: str, due_on, today) -> list[frappe._dict]:
@@ -46,66 +46,92 @@ def derive(team: str, amount: float, currency: str, due_on, today) -> list[frapp
 	charge may or may not go through.
 	"""
 	amount = frappe.utils.flt(amount)
-	profile_mode = frappe.db.get_value("Billing Profile", team, "collection_mode")
 	sources = settlement.settlement_sources(team)
-	findings = []
+	return [
+		*_on_session_mode(team),
+		*_over_silent_threshold(team, amount, currency),
+		*_no_way_to_pay(team, sources),
+		*_mandate_reauth_pending(team),
+		*_over_mandate_cap(team, amount, currency),
+		*_credits_shortfall(team, amount, currency, sources),
+		*_expiring_cards(team, due_on),
+	]
 
-	if profile_mode in ON_SESSION_MODES:
-		findings.append(
-			_finding(
-				"on_session_mode",
-				f"Collection mode is {profile_mode}",
-				"Nothing is charged off-session in this mode — the customer has to act, "
-				"and dunning escalates without retrying.",
-			)
+
+def _on_session_mode(team: str) -> list[frappe._dict]:
+	"""A mode in which nothing is charged off-session."""
+	profile_mode = frappe.db.get_value("Billing Profile", team, "collection_mode")
+	if profile_mode not in ON_SESSION_MODES:
+		return []
+	return [
+		_finding(
+			"on_session_mode",
+			f"Collection mode is {profile_mode}",
+			"Nothing is charged off-session in this mode — the customer has to act, "
+			"and dunning escalates without retrying.",
 		)
+	]
 
+
+def _over_silent_threshold(team: str, amount: float, currency: str) -> list[frappe._dict]:
+	"""A bill the gateway may not take off-session."""
 	# A bill debited off-session over the gateway ceiling is never quietly taken; the real
 	# charge path trips the team into Action Required at exactly this point.
-	if (
+	if not (
 		amount
 		and collection_mode.is_debit_allowed(team)
 		and not collection_mode.is_within_gateway_ceiling(team, amount)
 	):
-		ceiling = collection_mode.gateway_ceiling(team)
-		findings.append(
-			_finding(
-				"over_silent_threshold",
-				"Over the silent-debit threshold",
-				f"{_money(amount, currency)} is above {_money(ceiling, currency)}, "
-				"so this lands in Action Required rather than being auto-charged.",
-			)
+		return []
+	ceiling = collection_mode.gateway_ceiling(team)
+	return [
+		_finding(
+			"over_silent_threshold",
+			"Over the silent-debit threshold",
+			f"{_money(amount, currency)} is above {_money(ceiling, currency)}, "
+			"so this lands in Action Required rather than being auto-charged.",
 		)
+	]
 
-	methods = collection.ordered_methods(team)
-	if not methods and not sources["has_credits"]:
-		findings.append(
+
+def _no_way_to_pay(team: str, sources: dict) -> list[frappe._dict]:
+	"""No active method, and maybe no credit either."""
+	if collection.ordered_methods(team):
+		return []
+	if not sources["has_credits"]:
+		return [
 			_finding(
 				"no_settlement_source",
 				"No way to pay",
 				"No active payment method and no credit balance, so there is nothing to "
 				"charge and nothing to draw down.",
 			)
+		]
+	return [
+		_finding(
+			"no_active_method",
+			"No active payment method",
+			"Nothing to auto-charge. Anything credits cannot cover will go unpaid.",
 		)
-	elif not methods:
-		findings.append(
-			_finding(
-				"no_active_method",
-				"No active payment method",
-				"Nothing to auto-charge. Anything credits cannot cover will go unpaid.",
-			)
-		)
+	]
 
-	if mandates.reauth_pending(team):
-		findings.append(
-			_finding(
-				"mandate_reauth_pending",
-				"A mandate is awaiting re-authorisation",
-				"Until the customer re-consents its ceiling stays where it was, and the "
-				"method is skipped by the charge loop.",
-			)
-		)
 
+def _mandate_reauth_pending(team: str) -> list[frappe._dict]:
+	"""A mandate the charge loop skips until the customer re-consents."""
+	if not mandates.reauth_pending(team):
+		return []
+	return [
+		_finding(
+			"mandate_reauth_pending",
+			"A mandate is awaiting re-authorisation",
+			"Until the customer re-consents its ceiling stays where it was, and the "
+			"method is skipped by the charge loop.",
+		)
+	]
+
+
+def _over_mandate_cap(team: str, amount: float, currency: str) -> list[frappe._dict]:
+	"""A bill above what the bank will let a mandate take."""
 	# The mandate ceiling is the amount the bank will actually let us take — but only
 	# where a mandate exists. `effective_cap` falls back to the trust-tier cap when
 	# there is none, and reporting that as "over the mandate cap" is wrong twice over:
@@ -113,30 +139,33 @@ def derive(team: str, amount: float, currency: str, due_on, today) -> list[frapp
 	# flag every team that has not been tiered yet.
 	ceiling = mandates.active_mandate_ceiling(team)
 	cap = mandates.effective_cap(team)
-	if amount and ceiling is not None and frappe.utils.flt(cap) < amount:
-		findings.append(
-			_finding(
-				"over_mandate_cap",
-				"Over the mandate cap",
-				f"{_money(amount, currency)} exceeds the effective cap of "
-				f"{_money(cap, currency)}, so the debit would be refused.",
-			)
+	if not (amount and ceiling is not None and frappe.utils.flt(cap) < amount):
+		return []
+	return [
+		_finding(
+			"over_mandate_cap",
+			"Over the mandate cap",
+			f"{_money(amount, currency)} exceeds the effective cap of "
+			f"{_money(cap, currency)}, so the debit would be refused.",
 		)
+	]
 
-	if sources["credits_only"] and amount:
-		balance = frappe.utils.flt(settlement.credits.get_balance(team, currency)["balance"])
-		if balance < amount:
-			findings.append(
-				_finding(
-					"credits_shortfall",
-					"Credits will not cover it",
-					f"{_money(balance, currency)} against {_money(amount, currency)} — "
-					f"short by {_money(amount - balance, currency)}, with no card behind it.",
-				)
-			)
 
-	findings += _expiring_cards(team, due_on)
-	return findings
+def _credits_shortfall(team: str, amount: float, currency: str, sources: dict) -> list[frappe._dict]:
+	"""A credits-only team whose balance will not cover the bill."""
+	if not (sources["credits_only"] and amount):
+		return []
+	balance = frappe.utils.flt(settlement.credits.get_balance(team, currency)["balance"])
+	if balance >= amount:
+		return []
+	return [
+		_finding(
+			"credits_shortfall",
+			"Credits will not cover it",
+			f"{_money(balance, currency)} against {_money(amount, currency)} — "
+			f"short by {_money(amount - balance, currency)}, with no card behind it.",
+		)
+	]
 
 
 def _expiring_cards(team: str, due_on) -> list[frappe._dict]:
