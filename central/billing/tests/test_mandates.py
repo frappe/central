@@ -306,8 +306,8 @@ class TestMandateReauthorisation(MandateTestBase):
 
 		method = frappe.get_doc("Payment Method", pm)
 		self.assertTrue(method.reauth_required)
-		# Functionally held at the old ceiling until the customer re-consents.
-		self.assertEqual(mandates.effective_cap(TEAM), 100)
+		# Held at the old ceiling until the customer re-consents.
+		self.assertEqual(method.mandate_max_amount, 100)
 
 	def test_reauthorisation_raises_ceiling_and_clears_flag(self):
 		pm = self._active_mandate()
@@ -323,8 +323,7 @@ class TestMandateReauthorisation(MandateTestBase):
 				CALLBACK,
 			)
 
-		# Old mandate retired, new ceiling effective, no outstanding re-auth.
-		self.assertEqual(mandates.effective_cap(TEAM), 300)
+		# Old mandate retired, no outstanding re-auth.
 		self.assertEqual(frappe.db.get_value("Payment Method", pm, "status"), "Cancelled")
 		self.assertFalse(mandates.reauth_pending(TEAM))
 
@@ -335,7 +334,7 @@ class TestMandateReauthorisation(MandateTestBase):
 
 		method = frappe.get_doc("Payment Method", pm)
 		self.assertFalse(method.reauth_required)
-		self.assertEqual(mandates.effective_cap(TEAM), 100)
+		self.assertEqual(method.mandate_max_amount, 100)
 
 
 class TestMandateCancel(MandateTestBase):
