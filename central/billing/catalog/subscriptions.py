@@ -1194,6 +1194,8 @@ def pause_billing(subscription: str, changed_by: str | None = None):
 def resume_billing(subscription: str, changed_by: str | None = None):
 	"""Bill a paused server again at the rates locked before the pause, and start it.
 	Refused when the team or project has no room left for it. A no-op if already active."""
+	if not frappe.db.get_value("Subscription", subscription, "server_id"):
+		frappe.throw(frappe._("Only a server's billing can be resumed."))
 	was_paused = is_billing_paused(subscription)
 	doc = reopen_paused_billing(subscription, changed_by=changed_by)
 	if was_paused:

@@ -122,6 +122,14 @@ class TestPauseAndResume(PauseBillingTestBase):
 		with self.assertRaises(frappe.ValidationError):
 			subscriptions.pause_billing(self.subscription)
 
+	def test_resuming_the_public_ipv4_alone_is_refused(self):
+		address = self._public_ipv4_subscription()
+		subscriptions.pause_billing(self.subscription)
+
+		with self.assertRaises(frappe.ValidationError):
+			subscriptions.resume_billing(address)
+		self.assertEqual(self._changes(address)[-1].change_type, "Paused")
+
 	def test_resuming_a_cancelled_subscription_is_refused(self):
 		subscriptions.cancel_subscription(self.subscription)
 
