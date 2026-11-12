@@ -3,7 +3,6 @@ import { readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import test from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { runInNewContext } from 'node:vm'
 import typescript from 'typescript'
 import { parse } from 'vue/compiler-sfc'
 
@@ -354,12 +353,35 @@ test('the scanner finds untranslated text and accepts __()', () => {
 	)
 })
 
-test('__ finds the translation for the context and fills the placeholders', async () => {
+let moduleCount = 0
+
+/** Load translate.ts as the browser does, with `fetch` and `window` as its globals. */
+async function importTranslate(fetch, window) {
 	const source = readFileSync(
 		new URL('../src/lib/translate.ts', import.meta.url),
 		'utf8',
 	)
-	const exports = {}
+	const code = typescript.transpileModule(source, {
+		compilerOptions: {
+			module: typescript.ModuleKind.ESNext,
+			target: typescript.ScriptTarget.ES2022,
+		},
+	}).outputText
+	const original = globalThis.fetch
+	Object.assign(globalThis, { fetch, window })
+	try {
+		// A unique URL, so each test loads its own copy of the module.
+		moduleCount += 1
+		return await import(
+			`data:text/javascript,${encodeURIComponent(`${code}\n// ${moduleCount}`)}`
+		)
+	} finally {
+		globalThis.fetch = original
+		delete globalThis.window
+	}
+}
+
+test('__ finds the translation for the context and fills the placeholders', async () => {
 	const translations = {
 		'{0} of {1} servers': '{1} में से {0} सर्वर',
 		Open: 'खोलें',
@@ -370,22 +392,11 @@ test('__ finds the translation for the context and fills the placeholders', asyn
 		requested.push(url)
 		return { ok: true, json: async () => ({ message: translations }) }
 	}
-	runInNewContext(
-		typescript.transpileModule(source, {
-			compilerOptions: { module: typescript.ModuleKind.CommonJS },
-		}).outputText,
-		{
-			exports,
-			fetch,
-			AbortSignal,
-			URLSearchParams,
-			window: { lang: 'hi', translations_version: 'v1' },
-		},
-	)
-	const { __, loadTranslations } = exports
 
-	assert.equal(__('Open'), 'Open')
-	await loadTranslations()
+	const { __ } = await importTranslate(fetch, {
+		lang: 'hi',
+		translations_version: 'v1',
+	})
 
 	assert.deepEqual(requested, [
 		'/api/method/frappe.translate.get_boot_translations?v=v1&lang=hi',
@@ -394,4 +405,21 @@ test('__ finds the translation for the context and fills the placeholders', asyn
 	assert.equal(__('Open'), 'खोलें')
 	assert.equal(__('Open', [], 'Status'), 'खुला')
 	assert.equal(__('Close {0}', []), 'Close {0}')
+})
+
+test('__ shows English when the catalog does not load', async () => {
+	const fetch = async () => ({ ok: false, status: 503 })
+	const warn = console.warn
+	console.warn = () => {}
+	try {
+		const { __ } = await importTranslate(fetch, {
+			lang: 'hi',
+			translations_version: 'v1',
+		})
+
+		assert.equal(__('Open'), 'Open')
+		assert.equal(__('{0} servers', [3]), '3 servers')
+	} finally {
+		console.warn = warn
+	}
 })
