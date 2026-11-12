@@ -14,6 +14,7 @@ import { useSession } from '@/composables/useSession'
 import { useTrialOnboarding } from '@/composables/useTrialOnboarding'
 import {
 	frappeErrorMessage,
+	frappeErrorType,
 	getFrappe,
 	methodUrl,
 	postFrappe,
@@ -158,28 +159,41 @@ function startOver() {
 	resetRequestKey()
 }
 
+// Central asks the region inside this call, so a refusal comes back here rather than
+// stranding the customer on the waiting page.
+async function requestSite(): Promise<CreationStatus> {
+	const send = () =>
+		postFrappe<CreationStatus>(methodUrl(API.createTrialSite), {
+			subdomain: subdomain.value.trim(),
+			request_key: requestKey.value,
+			team: team.value || undefined,
+			product: productKey.value || undefined,
+		})
+
+	try {
+		return await send()
+	} catch (exception) {
+		if (frappeErrorType(exception) !== 'RequestKeyReusedError') throw exception
+		// The saved key names an earlier request, such as a trial whose site is gone.
+		resetRequestKey()
+		return await send()
+	}
+}
+
 async function createSite() {
 	if (!availability.value?.available) return
 	creating.value = true
 	error.value = ''
 	try {
-		// Central asks the region inside this call, so a refusal comes back here rather
-		// than stranding the customer on the waiting page.
-		const result = await postFrappe<CreationStatus>(
-			methodUrl(API.createTrialSite),
-			{
-				subdomain: subdomain.value.trim(),
-				request_key: requestKey.value,
-				team: team.value || undefined,
-				product: productKey.value || undefined,
-			},
-		)
+		const result = await requestSite()
 		if (result.error) {
 			error.value = result.error.message
 			resetRequestKey()
 			creating.value = false
 			return
 		}
+		// Central accepted this request, so the next site starts with a new key.
+		resetRequestKey()
 		router.push(provisioning)
 	} catch (exception) {
 		error.value = frappeErrorMessage(exception, 'Could not create your site.')
