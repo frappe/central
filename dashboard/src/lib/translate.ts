@@ -10,7 +10,7 @@ async function loadTranslations(): Promise<Record<string, string>> {
 	try {
 		const response = await fetch(
 			`/api/method/frappe.translate.get_boot_translations?${query}`,
-			{ credentials: 'same-origin', signal: AbortSignal.timeout(3000) },
+			{ credentials: 'same-origin', signal: AbortSignal.timeout(5000) },
 		)
 		if (!response.ok) throw new Error(`HTTP ${response.status}`)
 		return (await response.json()).message ?? {}
