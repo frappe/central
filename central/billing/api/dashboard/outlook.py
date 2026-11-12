@@ -98,7 +98,7 @@ def get_next_payment(team: str | None = None) -> dict:
 		"invoice": invoice.name if invoice else None,
 		"period_end": str(period_end) if period_end else None,
 		"collection_mode": frappe.db.get_value("Billing Profile", team, "collection_mode"),
-		"method": _charging_method(team),
+		"method": _charging_method(team, amount, invoice.name if invoice else None),
 		# Empty blockers is not a promise the charge succeeds — only that nothing in
 		# the data decides otherwise. The UI says "we'll charge", never "it will work".
 		"will_auto_charge": not blockers,
@@ -276,27 +276,30 @@ def _blockers(team: str, amount: float, currency: str, charge_on, today) -> list
 	return blockers
 
 
-def _charging_method(team: str) -> dict | None:
-	"""The instrument that would actually be charged: the primary chargeable one."""
-	from central.billing.payments import collection
+def _charging_method(team: str, amount: float, invoice: str | None = None) -> dict | None:
+	"""The method the bill would be charged on, and the most it may take off-session.
 
-	methods = collection.ordered_methods(team)
+	1. The first method, primary first, whose limit covers `amount`, with that limit.
+	2. When none covers it: the first method, with the team's limit."""
+	from central.billing.payments import collection, collection_mode
+
+	currency = _team_currency(team)
+	methods = collection.get_methods_left(team, invoice)
 	if not methods:
 		return None
-	method = frappe.db.get_value(
-		"Payment Method",
-		methods[0].name,
-		["display_label", "method_type", "mandate_max_amount", "card_network"],
-		as_dict=True,
+	method = next((m for m in methods if collection_mode.is_within_method_limit(m, currency, amount)), None)
+	if method:
+		limit = collection_mode.method_limit(method.gateway, currency, method.mandate_max_amount)
+	else:
+		method, limit = methods[0], collection_mode.off_session_limit(team, invoice)
+	row = frappe.db.get_value(
+		"Payment Method", method.name, ["display_label", "method_type", "card_network"], as_dict=True
 	)
-	if not method:
-		return None
 	return {
-		"label": method.display_label,
-		"method_type": method.method_type,
-		"card_network": method.card_network,
-		# The ceiling is the number the blocker copy refers to, so it travels with it.
-		"ceiling": frappe.utils.flt(method.mandate_max_amount) or None,
+		"label": row.display_label,
+		"method_type": row.method_type,
+		"card_network": row.card_network,
+		"ceiling": limit,
 	}
 
 
