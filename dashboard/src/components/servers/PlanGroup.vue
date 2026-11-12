@@ -6,6 +6,7 @@ import { configSpecs, estimateConfig } from '@/lib/composed'
 import { money } from '@/lib/format'
 import {
 	formatTransfer,
+	hasSizeTitle,
 	planAllowances,
 	planName,
 	planQuantity,
@@ -115,10 +116,22 @@ const matchingPreset = computed<Plan | null>(() => {
 				class="flex flex-col rounded-6 border border-outline-gray-2 p-4 text-start transition-colors hover:bg-surface-gray-2 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-outline-gray-4 disabled:cursor-not-allowed disabled:opacity-50 aria-pressed:border-outline-gray-6"
 				@click="selectedPlan = plan.plan"
 			>
-				<span class="flex w-full items-center justify-between gap-2">
-					<span class="text-sm-medium text-ink-gray-7"
-						>{{ planName(plan) }}</span
-					>
+				<span class="flex w-full items-start justify-between gap-2">
+					<span class="min-w-0">
+						<span
+							v-if="!hasSizeTitle(plan)"
+							class="mb-2 block text-sm-medium text-ink-gray-7"
+							>{{ planName(plan) }}</span
+						>
+						<span class="block text-2xl-semibold text-ink-gray-9">
+							{{ priceFor(plan) === null ? 'Price unavailable' : money(priceFor(plan)!, plan.currency, { trimTrailingZeros: true }) }}
+							<span
+								v-if="priceFor(plan) !== null"
+								class="text-sm text-ink-gray-5"
+								>{{ plan.billing_cycle === 'Annual' ? '/yr' : '/mo' }}</span
+							>
+						</span>
+					</span>
 					<Badge
 						v-if="currentPlan === plan.plan"
 						label="Current"
@@ -126,12 +139,6 @@ const matchingPreset = computed<Plan | null>(() => {
 						variant="subtle"
 						size="sm"
 					/>
-				</span>
-				<span class="mt-2 block text-2xl-semibold text-ink-gray-9">
-					{{ priceFor(plan) === null ? 'Price unavailable' : money(priceFor(plan)!, plan.currency, { trimTrailingZeros: true }) }}
-					<span v-if="priceFor(plan) !== null" class="text-sm text-ink-gray-5"
-						>{{ plan.billing_cycle === 'Annual' ? '/yr' : '/mo' }}</span
-					>
 				</span>
 				<span class="mt-2 block text-p-sm text-ink-gray-5">
 					{{ planSize(plan) }}
