@@ -60,7 +60,19 @@ async function choose(): Promise<void> {
 	status.reload()
 }
 
-const options = [
+// Tripped by an INR bill over the limit: the card or UPI cannot pay it, so only
+// wallet credit gets Prepaid past it.
+const OVER_CEILING_REASONS = [
+	'invoice_over_threshold',
+	'forecast_over_threshold',
+]
+const isOverCeiling = computed(
+	() =>
+		currency.value === 'INR' &&
+		OVER_CEILING_REASONS.includes(s.value?.reason ?? ''),
+)
+
+const options = computed(() => [
 	{
 		key: 'Manual Checkout',
 		icon: 'lucide-receipt',
@@ -72,11 +84,12 @@ const options = [
 		key: 'Prepaid',
 		icon: 'lucide-wallet',
 		title: 'Prepaid wallet',
-		blurb:
-			'Your wallet pays first. When it is short, we charge your card or UPI.',
+		blurb: isOverCeiling.value
+			? 'Add credit to your wallet to cover this bill. Your card or UPI pays only amounts up to ₹15,000.'
+			: 'Your wallet pays first. When it is short, we charge your card or UPI.',
 		fit: 'Best for hands-off, predictable spending.',
 	},
-]
+])
 </script>
 
 <template>
