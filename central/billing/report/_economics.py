@@ -6,6 +6,7 @@ from frappe.utils import add_months, flt, get_first_day, get_last_day, getdate
 
 from central.billing import settings
 from central.billing.report._inventory import cost_per_vcpu, region_capacity
+from central.billing.report._revenue import internal_teams, is_revenue
 
 VM_SERVICE = "VM Plans"
 
@@ -27,7 +28,7 @@ def to_inr(amount: float, currency: str | None) -> float | None:
 class BilledMonth:
 	"""Every invoice line billed for one month, with its revenue in INR and what it cost us.
 
-	Revenue is the pre-tax line amount; a waived invoice (our own team) earns nothing. Cost is
+	Revenue is the pre-tax line amount of an external team's invoice that was not waived. Cost is
 	the server's vCPU share of its region's bare metal for a VM bundle, or the quantity times
 	the Resource Type's cost per unit for anything metered."""
 
@@ -78,9 +79,11 @@ class BilledMonth:
 			query = query.where(invoice.team == self.filters["team"])
 		rows = query.run(as_dict=True)
 		days_in_month = (self.end - self.start).days + 1
+		internal = internal_teams()
 		for row in rows:
 			row.service = row.category or (VM_SERVICE if row.resource_type == "bundle" else row.resource_type)
-			row.revenue_inr = 0.0 if row.status == "Waived" else to_inr(row.amount, row.currency)
+			revenue = is_revenue(row.status, row.team, internal)
+			row.revenue_inr = to_inr(row.amount, row.currency) if revenue else 0.0
 			row.cost_inr = self._cost(row, days_in_month)
 		return rows
 

@@ -336,7 +336,8 @@ def _line_items(team: str, start) -> list[dict]:
 		_plan_family_map,
 	)
 
-	lines = billable_line_items({"team": team, "from_date": str(start)})
+	# A customer sees all its usage, including a month the company waived.
+	lines = billable_line_items({"team": team, "from_date": str(start), "include_internal_and_waived": 1})
 	family_of_plan = _plan_family_map({line["plan"] for line in lines})
 	family_of_rt = _metered_resource_family_map()
 
