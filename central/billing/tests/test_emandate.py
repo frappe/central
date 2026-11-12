@@ -441,6 +441,68 @@ class TestOffSessionLimit(OffSessionLimitBase):
 		self.assertEqual(self._count("Add Payment Method"), 0)
 
 
+class TestDunningRetryRail(OffSessionLimitBase):
+	"""A Prepaid team with a ₹8,300 UPI first and a ₹15,000 card second, owing ₹9,000."""
+
+	def setUp(self):
+		super().setUp()
+		_set_mode(TEAM, "Prepaid")
+		frappe.db.set_value("Payment Method", self.card, "method_type", "UPI Autopay")
+		self.upi = self.card
+
+	def _charge(self, inv, result):
+		from unittest.mock import MagicMock, patch
+
+		from central.billing.revenue import dunning
+
+		adapter = _stub_adapter(self.gw)
+		if result:
+			adapter.charge = MagicMock(return_value=result)
+		with patch("central.billing.gateways.registry.get_adapter", return_value=adapter):
+			dunning.retry_payment(inv)
+		return adapter
+
+	def _last_method(self, inv):
+		return frappe.get_all(
+			"Payment Attempt",
+			filters={"invoice": inv},
+			fields=["payment_method"],
+			order_by="creation desc",
+			limit=1,
+		)[0].payment_method
+
+	def test_a_soft_declined_card_is_retried_over_the_small_upi(self):
+		from central.billing.gateways.base import PaymentResult
+		from central.billing.revenue import dunning
+
+		card = self._add_method("Card", 15000, priority=2)
+		inv = self._invoice(9000)
+		emandate.schedule_predebit(inv, now="2026-06-10 09:00:00")
+		declined = PaymentResult(
+			success=False, status="Failed", failure_code="card_declined", decline_code="insufficient_funds"
+		)
+		self._charge(inv, declined)
+		self.assertEqual(self._last_method(inv), card)
+		self.assertEqual(self._mode(), "Prepaid")
+
+		self.assertTrue(dunning.has_retry_rail(frappe.get_doc("Invoice", inv), TEAM))
+		adapter = self._charge(inv, None)
+		adapter.charge.assert_called_once()
+		self.assertEqual(self._last_method(inv), card)
+		self.assertFalse(frappe.db.exists("Payment Attempt", {"invoice": inv, "payment_method": self.upi}))
+
+	def test_a_bill_nothing_covers_trips_and_leaves_no_retry(self):
+		from central.billing.revenue import dunning
+
+		self._add_method("Card", 8500, priority=2)
+		inv = self._invoice(9000)
+		self.assertTrue(dunning.has_retry_rail(frappe.get_doc("Invoice", inv), TEAM))
+		adapter = self._charge(inv, None)
+		adapter.charge.assert_not_called()
+		self.assertEqual(self._mode(), "Action Required")
+		self.assertFalse(dunning.has_retry_rail(frappe.get_doc("Invoice", inv), TEAM))
+
+
 class TestChargingMethod(OffSessionLimitBase):
 	"""The method the next-payment card names, and its own limit."""
 
