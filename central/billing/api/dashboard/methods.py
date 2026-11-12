@@ -18,6 +18,7 @@ from central.billing.api.dashboard._shared import (
 	_resolve_team,
 	_team_currency,
 )
+from central.billing.doctype.payment_method.payment_method import without_expired_setups
 from central.billing.payments import decline
 
 
@@ -49,15 +50,10 @@ def list_payment_methods(team: str | None = None) -> list[dict]:
 		],
 		order_by="priority asc, creation asc",
 	)
-	listed = [row for row in rows if not _is_expired_setup(row)]
+	listed = without_expired_setups(rows)
 	for row in listed:
 		del row["validated_at"]
 	return listed
-
-
-def _is_expired_setup(row: dict) -> bool:
-	"""True for a setup that expired before it was ever validated."""
-	return row["status"] == "Expired" and not row["validated_at"]
 
 
 @frappe.whitelist()

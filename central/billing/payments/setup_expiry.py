@@ -9,6 +9,9 @@ from central.billing.states import transition
 
 SETUP_EXPIRES_HOURS = 24
 NOTICE = "Payment Method Setup Expired"
+# Card and UPI setups only. PayPal setups are not offered in the console.
+SETUP_METHOD_TYPES = ("Card", "UPI Autopay")
+PAYPAL_GATEWAY = "Paypal"
 
 
 def expire_unfinished_setups(now=None) -> dict:
@@ -16,7 +19,12 @@ def expire_unfinished_setups(now=None) -> dict:
 	cutoff = frappe.utils.add_to_date(now or frappe.utils.now_datetime(), hours=-SETUP_EXPIRES_HOURS)
 	due = frappe.get_all(
 		"Payment Method",
-		filters={"status": "Pending Validation", "creation": ["<=", cutoff]},
+		filters={
+			"status": "Pending Validation",
+			"creation": ["<=", cutoff],
+			"method_type": ["in", SETUP_METHOD_TYPES],
+			"gateway": ["!=", PAYPAL_GATEWAY],
+		},
 		fields=["name", "team"],
 		order_by="creation asc",
 	)

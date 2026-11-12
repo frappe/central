@@ -8,6 +8,7 @@ import frappe
 
 from central.billing.payments import payments, setup_expiry
 from central.billing.tests.test_payments import saved_card, stub_adapter
+from central.billing.tests.test_paypal_adapter import make_paypal_gateway
 from central.billing.tests.test_stripe_adapter import make_stripe_gateway
 from central.billing.tests.utils import BillingTestCase, ensure_team
 
@@ -101,6 +102,49 @@ class TestExpiry(SetupExpiryTestBase):
 		listed = [row["name"] for row in methods.list_payment_methods(TEAM)]
 		self.assertEqual(listed, [card])
 		self.assertEqual(self.status(setup), "Expired")
+
+	def test_pilot_lists_an_expired_card_but_not_an_expired_setup(self):
+		from central.billing.api import billing_api
+
+		setup = self.make_method()
+		card = self.make_method(
+			status="Expired", gateway_method_id="pm_lapsed", validated_at=hours_before_now(800)
+		)
+
+		setup_expiry.expire_unfinished_setups(now=NOW)
+
+		listed = [row["name"] for row in billing_api._payment_method_rows(TEAM)]
+		self.assertEqual(listed, [card])
+		self.assertEqual(self.status(setup), "Expired")
+
+	def test_a_upi_setup_expires_but_paypal_and_prepaid_rows_are_left_alone(self):
+		upi = self.make_method(method_type="UPI Autopay")
+		paypal = self.make_method(gateway=make_paypal_gateway().name)
+		prepaid = self.make_method(method_type="Prepaid Credits")
+
+		setup_expiry.expire_unfinished_setups(now=NOW)
+
+		self.assertEqual(self.status(upi), "Expired")
+		self.assertEqual(self.status(paypal), "Pending Validation")
+		self.assertEqual(self.status(prepaid), "Pending Validation")
+
+	def test_a_late_confirm_says_the_setup_expired(self):
+		setup = self.make_method()
+		setup_expiry.expire_unfinished_setups(now=NOW)
+
+		with stub_adapter() as adapter:
+			result = payments.confirm_payment_method(setup).get_confirmation()
+
+		adapter.read_saved_card.assert_not_called()
+		self.assertEqual(result["status"], "Expired")
+		self.assertEqual(result["message"], "This setup expired. Start again to add the card.")
+
+	def test_a_lapsed_card_gives_no_setup_message(self):
+		card = self.make_method(status="Expired", validated_at=hours_before_now(800))
+
+		result = frappe.get_doc("Payment Method", card).get_confirmation()
+
+		self.assertNotIn("message", result)
 
 
 class TestNotice(SetupExpiryTestBase):

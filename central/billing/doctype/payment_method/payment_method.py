@@ -53,12 +53,14 @@ class PaymentMethod(Document):
 		self.update(decline.failure_fields(failure))
 
 	def get_confirmation(self) -> dict:
-		"""What a confirm route answers. A failed method says why, in words for the customer."""
+		"""What a confirm route answers. A failed or expired setup says why, in words for the customer."""
 		result = {"payment_method": self.name, "status": self.status}
 		if self.status == "Failed":
 			result["message"] = decline.method_failure_message(
 				self.failure_code, self.decline_code, self.method_type
 			)
+		elif is_expired_setup(self):
+			result["message"] = _("This setup expired. Start again to add the card.")
 		return result
 
 
@@ -67,6 +69,16 @@ def held_method_filters() -> dict:
 	record as Cancelled with no gateway id, so the setup funnel can count it, but it
 	never held a card or a mandate."""
 	return {"status": ["!=", "Cancelled"], "gateway_method_id": ["is", "set"]}
+
+
+def is_expired_setup(method) -> bool:
+	"""True for a setup that expired before it was ever validated."""
+	return method.status == "Expired" and not method.validated_at
+
+
+def without_expired_setups(rows: list) -> list:
+	"""The rows, less the setups that expired before they were ever validated."""
+	return [row for row in rows if not is_expired_setup(row)]
 
 
 def on_doctype_update() -> None:
