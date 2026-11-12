@@ -11,6 +11,7 @@ import { useSession } from '@/composables/useSession'
 import { whenTeamReady } from '@/composables/useTeamScope'
 import { getErrorMessage, successToast } from '@/lib/feedback'
 import { money } from '@/lib/format'
+import { __ } from '@/lib/translate'
 import type { CollectionStatus } from '@/types/billing'
 
 const { activeTeam } = useSession()
@@ -52,7 +53,7 @@ async function choose(): Promise<void> {
 	}
 	successToast(
 		chosen.value === 'Prepaid'
-			? 'Prepaid on: your wallet pays first, then your card or UPI'
+			? __('Prepaid on: your wallet pays first, then your card or UPI')
 			: "You'll pay each invoice yourself",
 	)
 	choosing.value = false
@@ -74,9 +75,39 @@ const isOverCeiling = computed(
 )
 
 const prepaidOverLimitBlurb = computed(() => {
-	const ask = 'Add credit to your wallet to cover this bill.'
-	if (s.value?.threshold == null) return ask
-	return `${ask} Your card or UPI pays only amounts up to ${money(s.value.threshold, currency.value)}.`
+	if (s.value?.threshold == null)
+		return __('Add credit to your wallet to cover this bill.')
+	return __(
+		'Add credit to your wallet to cover this bill. Your card or UPI pays only amounts up to {0}.',
+		[money(s.value.threshold, currency.value)],
+	)
+})
+
+const reasonText = computed(() => {
+	const limit = s.value?.threshold
+	if (s.value?.reason === 'mandate_failed')
+		return __(
+			'Your automatic payment approval was cancelled or stopped working. Choose how to pay. Your services keep running.',
+		)
+	if (s.value?.reason === 'invoice_over_threshold')
+		return limit == null
+			? __(
+					'A bill is over the limit for automatic payments. Your services keep running.',
+				)
+			: __(
+					'A bill is over the {0} limit for automatic payments. Your services keep running.',
+					[money(limit, currency.value)],
+				)
+	const projected = money(s.value?.projected_total, currency.value)
+	return limit == null
+		? __(
+				'This month is heading to {0}, past the limit for automatic payments. Your services keep running.',
+				[projected],
+			)
+		: __(
+				'This month is heading to {0}, past the {1} limit for automatic payments. Your services keep running.',
+				[projected, money(limit, currency.value)],
+			)
 })
 
 const options = computed(() => [
@@ -93,7 +124,9 @@ const options = computed(() => [
 		title: 'Prepaid wallet',
 		blurb: isOverCeiling.value
 			? prepaidOverLimitBlurb.value
-			: 'Your wallet pays first. When it is short, we charge your card or UPI.',
+			: __(
+					'Your wallet pays first. When it is short, we charge your card or UPI.',
+				),
 		fit: 'Best for hands-off, predictable spending.',
 	},
 ])
@@ -106,29 +139,7 @@ const options = computed(() => [
 		title="Action required: choose how to keep paying"
 		:primary-action="canManageBilling ? { label: 'Choose how to pay', onClick: () => { choosing = true } } : undefined"
 	>
-		<template #description>
-			<template v-if="s.reason === 'mandate_failed'">
-				Your automatic payment approval was cancelled or stopped working. Choose
-				how to pay. Your services keep running.
-			</template>
-			<template v-else-if="s.reason === 'invoice_over_threshold'">
-				A bill is over the
-				<span v-if="s.threshold != null" class="text-p-sm-medium"
-					>{{ money(s.threshold, currency) }}</span
-				>
-				limit for automatic payments. Your services keep running.
-			</template>
-			<template v-else>
-				This month is heading to
-				<span class="text-p-sm-medium"
-					>{{ money(s.projected_total, currency) }}</span
-				>, past the
-				<span v-if="s.threshold != null" class="text-p-sm-medium"
-					>{{ money(s.threshold, currency) }}</span
-				>
-				limit for automatic payments. Your services keep running.
-			</template>
-		</template>
+		<template #description>{{ reasonText }}</template>
 	</Alert>
 
 	<Dialog v-model:open="choosing" title="How do you want to pay?">
