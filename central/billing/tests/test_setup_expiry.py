@@ -50,6 +50,11 @@ class SetupExpiryTestBase(BillingTestCase):
 		# Not swept by the base class, which commits after each test.
 		for doctype in ("Team Notification", "Billing Notification Log"):
 			frappe.db.delete(doctype, {"team": ["in", [TEAM, OTHER_TEAM]]})
+		methods = frappe.get_all("Payment Method", filters={"team": ["in", [TEAM, OTHER_TEAM]]}, pluck="name")
+		if methods:
+			frappe.db.delete(
+				"Comment", {"reference_doctype": "Payment Method", "reference_name": ["in", methods]}
+			)
 
 	def make_method(self, status="Pending Validation", started=None, team=TEAM, **fields) -> str:
 		method = frappe.get_doc(
@@ -147,7 +152,7 @@ class TestExpiry(SetupExpiryTestBase):
 
 		adapter.read_saved_card.assert_not_called()
 		self.assertEqual(result["status"], "Expired")
-		self.assertEqual(result["message"], "This setup expired. Start again to add the card.")
+		self.assertEqual(result["message"], "This setup expired. Start again to add it.")
 
 	def test_a_lapsed_card_gives_no_setup_message(self):
 		card = self.make_method(status="Expired", validated_at=hours_before_now(800))
@@ -272,7 +277,7 @@ class TestLateConfirm(LateSetupBase):
 		result, refunds = self.confirm_late(lambda: payments.confirm_payment_method(setup), adapter)
 
 		self.assertEqual(result["status"], "Expired")
-		self.assertEqual(result["message"], "This setup expired. Start again to add the card.")
+		self.assertEqual(result["message"], "This setup expired. Start again to add it.")
 		self.assertEqual(refunds, [])
 		adapter.read_saved_card.assert_not_called()
 		adapter.validate_payment_method.assert_not_called()
@@ -288,6 +293,52 @@ class TestLateConfirm(LateSetupBase):
 		self.assertEqual(result["status"], "Expired")
 		self.assertEqual(refunds, [])
 		adapter.remove_saved_method.assert_not_called()
+
+	def test_a_token_another_method_holds_is_kept_but_the_payment_refunded(self):
+		make_razorpay_gateway()
+		holder = self.make_method(
+			status="Active", gateway="Razorpay", method_type="UPI Autopay", gateway_method_id="token_shared"
+		)
+		setup = self.make_method(
+			status="Expired", gateway="Razorpay", method_type="UPI Autopay", setup_reference="order_shared"
+		)
+		payment = {"id": "pay_shared", "order_id": "order_shared", "status": "captured", "amount": 100}
+		adapter = MagicMock()
+		adapter.read_finished_setup.return_value = {"payment_method": "token_shared", "payment": payment}
+
+		_result, refunds = self.confirm_late(lambda: mandates.confirm_mandate(setup, {}), adapter)
+
+		adapter.remove_saved_method.assert_not_called()
+		self.assertEqual([r["payment_id"] for r in refunds], ["pay_shared"])
+		self.assertEqual(self.status(holder), "Active")
+		self.assertTrue(
+			frappe.db.exists(
+				"Comment",
+				{"reference_name": setup, "content": ["like", "Kept token_shared%"]},
+			)
+		)
+
+	def test_a_failed_removal_leaves_a_comment_and_fails_the_job(self):
+		setup = self.make_method(status="Expired", setup_reference="seti_fail")
+		adapter = MagicMock()
+		adapter.remove_saved_method.side_effect = GatewayTimeout("down")
+
+		with (
+			patch("central.billing.gateways.registry.get_adapter", return_value=adapter),
+			patch("frappe.db.commit"),
+		):
+			with self.assertRaises(GatewayTimeout):
+				setup_expiry.remove_late_saved_method(setup, "pm_fail", "cus_fail")
+
+		self.assertTrue(
+			frappe.db.exists(
+				"Comment",
+				{
+					"reference_name": setup,
+					"content": ["like", "pm_fail, saved at the gateway%not removed: down"],
+				},
+			)
+		)
 
 	def test_a_lapsed_card_is_never_released(self):
 		card = self.make_method(

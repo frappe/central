@@ -629,9 +629,15 @@ class StripeAdapter(GatewayAdapter):
 		}
 
 	def read_finished_setup(self, setup_reference: str) -> dict:
-		"""The card a SetupIntent or setup Checkout Session saved, or `{}`. Read only."""
+		"""The card a SetupIntent or setup Checkout Session saved, or `{}`. Read only.
+		A setup Stripe no longer has saved nothing."""
 		with _stripe_errors():
-			card = self.read_saved_card(setup_reference)
+			try:
+				card = self.read_saved_card(setup_reference)
+			except stripe.error.InvalidRequestError as e:
+				if not _is_missing_object(e):
+					raise
+				return {}
 		return card if card.get("payment_method") else {}
 
 	def remove_saved_method(self, method_id: str, customer_reference: str | None = None) -> None:
@@ -716,6 +722,11 @@ def _unfinished_setup(intent: dict) -> dict:
 		return {}
 
 	return {"setup_error": {"failure_code": error.get("code"), "decline_code": error.get("decline_code")}}
+
+
+def _is_missing_object(error: stripe.error.InvalidRequestError) -> bool:
+	"""True when Stripe has no object with the id asked for."""
+	return getattr(error, "code", None) == "resource_missing" or getattr(error, "http_status", None) == 404
 
 
 @contextmanager

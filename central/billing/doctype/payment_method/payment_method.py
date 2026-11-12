@@ -60,7 +60,7 @@ class PaymentMethod(Document):
 				self.failure_code, self.decline_code, self.method_type
 			)
 		elif is_expired_setup(self):
-			result["message"] = _("This setup expired. Start again to add the card.")
+			result["message"] = _("This setup expired. Start again to add it.")
 		return result
 
 

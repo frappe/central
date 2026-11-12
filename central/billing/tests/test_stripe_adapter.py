@@ -355,11 +355,86 @@ class TestStripeAdapter(GatewayAdapterContract, IntegrationTestCase):
 			with self.assertRaises(GatewayTimeout):
 				adapter.read_finished_setup("seti_x")
 
+	def test_a_setup_stripe_no_longer_has_reads_as_not_finished(self):
+		adapter = self.make_adapter()
+		missing = stripe.error.InvalidRequestError("No such setupintent", "intent", code="resource_missing")
+		with patch.object(stripe.SetupIntent, "retrieve", side_effect=missing):
+			self.assertEqual(adapter.read_finished_setup("seti_gone"), {})
+
+	def test_any_other_refused_setup_read_is_a_gateway_error(self):
+		from central.billing.gateways.base import GatewayError
+
+		adapter = self.make_adapter()
+		refused = stripe.error.InvalidRequestError("Invalid id", "intent", code="parameter_invalid_empty")
+		with patch.object(stripe.SetupIntent, "retrieve", side_effect=refused):
+			with self.assertRaises(GatewayError):
+				adapter.read_finished_setup("seti_x")
+
 	def test_removing_a_saved_card_detaches_it(self):
 		adapter = self.make_adapter()
 		with patch.object(stripe.PaymentMethod, "detach") as detach:
 			adapter.remove_saved_method("pm_x", customer_reference="cus_x")
 		self.assertEqual(detach.call_args.args, ("pm_x",))
+
+
+class FakeStripeHttp(stripe.HTTPClient):
+	"""Stands in for the stripe client's HTTP layer and records each request."""
+
+	name = "fake"
+
+	def __init__(self, body: dict):
+		super().__init__()
+		self.body = body
+		self.requests = []
+
+	def request(self, method, url, headers, post_data=None, **kwargs):
+		self.requests.append({"method": method, "url": url, "headers": dict(headers)})
+		return frappe.as_json(self.body), 200, {}
+
+	def close(self):
+		pass
+
+
+class TestStripeRealClient(IntegrationTestCase):
+	"""The real stripe client builds each request; only its HTTP layer is stubbed."""
+
+	def setUp(self):
+		self.adapter = StripeAdapter(make_stripe_gateway())
+
+	def send(self, body: dict, call) -> dict:
+		http = FakeStripeHttp(body)
+		with patch.object(stripe, "default_http_client", http):
+			call()
+		self.assertEqual(len(http.requests), 1)
+		return http.requests[0]
+
+	def assert_signed(self, request: dict):
+		from central.billing.gateways.stripe_adapter import STRIPE_API_VERSION
+
+		# assertTrue, so a failure never prints a key from the site config.
+		key = self.adapter.get_credential("api_secret")
+		self.assertTrue(request["headers"]["Authorization"] == f"Bearer {key}")
+		self.assertEqual(request["headers"]["Stripe-Version"], STRIPE_API_VERSION)
+
+	def test_removing_a_saved_card_posts_the_detach(self):
+		request = self.send(
+			{"id": "pm_x", "object": "payment_method"},
+			lambda: self.adapter.remove_saved_method("pm_x", customer_reference="cus_x"),
+		)
+
+		self.assertEqual(request["method"], "post")
+		self.assertTrue(request["url"].endswith("/v1/payment_methods/pm_x/detach"))
+		self.assert_signed(request)
+
+	def test_reading_a_setup_gets_the_setup_intent(self):
+		request = self.send(
+			{"id": "seti_x", "object": "setup_intent", "status": "requires_payment_method"},
+			lambda: self.assertEqual(self.adapter.read_finished_setup("seti_x"), {}),
+		)
+
+		self.assertEqual(request["method"], "get")
+		self.assertTrue(request["url"].endswith("/v1/setup_intents/seti_x"))
+		self.assert_signed(request)
 
 
 class TestIndiaCardMandate(IntegrationTestCase):

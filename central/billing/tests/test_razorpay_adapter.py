@@ -413,6 +413,12 @@ class TestRazorpayAdapter(GatewayAdapterContract, IntegrationTestCase):
 			with self.assertRaises(GatewayError):
 				adapter.read_finished_setup("order_1")
 
+	def test_a_setup_order_razorpay_does_not_have_reads_as_not_finished(self):
+		adapter = self.make_adapter()
+		with self._client() as c:
+			c.order.payments.side_effect = razorpay.errors.BadRequestError("The id provided does not exist")
+			self.assertEqual(adapter.read_finished_setup("order_gone"), {})
+
 	def test_removing_a_saved_token_cancels_it(self):
 		adapter = self.make_adapter()
 		with self._client() as c:

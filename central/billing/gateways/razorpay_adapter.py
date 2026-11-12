@@ -307,12 +307,15 @@ class RazorpayAdapter(GatewayAdapter):
 		return _verified(captured) if captured else None
 
 	def read_finished_setup(self, setup_reference: str) -> dict:
-		"""The payment that authorised a token on the setup order, or `{}`. Read only."""
+		"""The payment that authorised a token on the setup order, or `{}`. Read only.
+		An order Razorpay does not have saved nothing."""
 		try:
 			payments = _order_payments(self._client(), setup_reference)
 		except _TRANSIENT as e:
 			raise GatewayTimeout(str(e)) from e
 		except razorpay.errors.BadRequestError as e:
+			if _is_missing_id(e):
+				return {}
 			raise GatewayError(str(e)) from e
 		payment = next((p for p in payments if _is_token_authorisation(p)), None)
 		if not payment:
@@ -480,6 +483,12 @@ def _verified(payment: dict) -> VerifiedPayment:
 
 def _is_token_authorisation(payment: dict) -> bool:
 	return payment.get("status") in ("authorized", "captured") and bool(payment.get("token_id"))
+
+
+def _is_missing_id(error: razorpay.errors.BadRequestError) -> bool:
+	"""True when Razorpay has no object with the id asked for. The SDK keeps only the
+	error description, which reads "The id provided does not exist"."""
+	return "does not exist" in str(error).lower()
 
 
 def _order_payments(client, order_id: str) -> list[dict]:

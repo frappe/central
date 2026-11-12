@@ -2,6 +2,7 @@
 # For license information, please see license.txt
 
 import frappe
+from frappe import _
 
 from central.billing.doctype.payment_method.payment_method import is_expired_setup
 from central.billing.gateways.base import GatewayError
@@ -121,10 +122,46 @@ def release_late_setup(payment_method: str) -> None:
 
 
 def remove_late_saved_method(payment_method: str, method_id: str, customer_reference: str | None) -> None:
-	"""Remove the card or token a late setup saved, so it can never be charged."""
+	"""Remove the card or token a late setup saved, so it can never be charged.
+	One that another method also holds is kept, and a failure fails the job."""
 	method = frappe.get_doc("Payment Method", payment_method)
-	_adapter(method.gateway).remove_saved_method(method_id, customer_reference=customer_reference)
-	method.add_comment("Comment", f"Removed {method_id}, saved at the gateway after the setup expired.")
+	if _is_held_by_another_method(method, method_id):
+		method.add_comment(
+			"Comment", _("Kept {0}: another payment method uses it at the gateway.").format(method_id)
+		)
+		return
+
+	try:
+		_adapter(method.gateway).remove_saved_method(method_id, customer_reference=customer_reference)
+	except Exception as error:
+		method.add_comment(
+			"Comment",
+			_("{0}, saved at the gateway after the setup expired, was not removed: {1}").format(
+				method_id, error
+			),
+		)
+		# The job's own rollback would drop the comment the operator needs.
+		frappe.db.commit()
+		raise
+	method.add_comment(
+		"Comment", _("Removed {0}, saved at the gateway after the setup expired.").format(method_id)
+	)
+
+
+def _is_held_by_another_method(method, method_id: str) -> bool:
+	"""True when another live method on the gateway holds the same card or token.
+	Razorpay gives the same card and customer the same token."""
+	return bool(
+		frappe.db.exists(
+			"Payment Method",
+			{
+				"gateway": method.gateway,
+				"gateway_method_id": method_id,
+				"status": ["!=", "Cancelled"],
+				"name": ["!=", method.name],
+			},
+		)
+	)
 
 
 def _adapter(gateway: str):
