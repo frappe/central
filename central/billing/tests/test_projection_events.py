@@ -72,8 +72,8 @@ class TestTheChangeStreamIsInjectable(EventTestBase):
 		# 15 days at 3000 + 15 days at 6000 over a 30-day month.
 		self.assertEqual(out["invoice"]["subtotal"], 4500.0)
 
-	def test_a_resize_inside_the_churn_window_bills_that_date_hourly(self):
-		# The sub-24h rule is the line engine's, and an invented change gets it too.
+	def test_a_mid_day_resize_bills_that_date_hourly(self):
+		# The resize-day rule is the line engine's, and an invented change gets it too.
 		out = self._project(
 			[
 				{
@@ -93,7 +93,7 @@ class TestTheChangeStreamIsInjectable(EventTestBase):
 			]
 		)
 		hourly = [li for li in out["invoice"]["lines"] if li["unit"] == "hour"]
-		self.assertTrue(hourly, "a config held under 24h should push its date hourly")
+		self.assertTrue(hourly, "a mid-day resize should push its date hourly")
 
 	def test_an_injected_cancel_closes_the_segment(self):
 		out = self._project(

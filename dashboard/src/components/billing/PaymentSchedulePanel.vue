@@ -1,10 +1,15 @@
 <script setup lang="ts">
-import { Alert, LoadingText, useCall } from 'frappe-ui'
+import { Alert, LoadingText, Tooltip, useCall } from 'frappe-ui'
 import { computed, watch } from 'vue'
 import { API, method } from '@/api/methods'
+import PaymentDayForm from '@/components/billing/PaymentDayForm.vue'
 import SidePanel from '@/components/common/SidePanel.vue'
+import { useBillingOverview } from '@/composables/useBillingOverview'
+import { useCapabilities } from '@/composables/useCapabilities'
 import { useSession } from '@/composables/useSession'
 import { shortDate } from '@/lib/date'
+import { getDunningSteps } from '@/lib/dunning'
+import { getErrorMessage } from '@/lib/feedback'
 import { formatDate, money } from '@/lib/format'
 import type { PaymentSchedule } from '@/types/billing'
 
@@ -18,6 +23,8 @@ import type { PaymentSchedule } from '@/types/billing'
 // time. Loaded on open — nobody needs a dunning ladder on first paint.
 const open = defineModel<boolean>('open', { default: false })
 const { activeTeam } = useSession()
+const { nextPayment } = useBillingOverview()
+const { canManageBilling } = useCapabilities()
 
 const schedule = useCall<PaymentSchedule, { team: string }>({
 	url: method(API.paymentSchedule),
@@ -28,7 +35,13 @@ watch(open, (isOpen) => {
 	if (isOpen && activeTeam.value) schedule.reload()
 })
 
+function onPaymentDaySaved(): void {
+	schedule.reload()
+	nextPayment.reload()
+}
+
 const loading = computed(() => schedule.loading && !schedule.data)
+const loadFailed = computed(() => Boolean(schedule.error && !schedule.data))
 const data = computed(() => schedule.data)
 const currency = computed(() => data.value?.currency ?? 'INR')
 const amount = computed(() => Number(data.value?.amount ?? 0))
@@ -39,6 +52,17 @@ const blockerLines = computed(() => {
 	const lines = lead.fix ? [lead.fix] : []
 	return lines.concat(blockers.value.slice(1).map((b) => b.title))
 })
+
+// For a missed bill the amount above is that bill, so the date is its next step on
+// the dunning ladder rather than the next cycle's payment day.
+const chargeStep = computed(
+	() =>
+		getDunningSteps(data.value)[0] ?? {
+			label: "We'll charge on",
+			date: data.value?.charge_on,
+			hint: '',
+		},
+)
 </script>
 
 <template>
@@ -46,94 +70,113 @@ const blockerLines = computed(() => {
 		<LoadingText v-if="loading" :lines="5" class="p-4" />
 
 		<template v-else>
-			<!-- What we intend to do -->
-			<div class="border-b border-outline-gray-2 p-4">
-				<div class="flex items-baseline justify-between gap-3">
-					<span class="text-p-sm text-ink-gray-5">Amount due</span>
-					<span class="text-base-medium tabular-nums text-ink-gray-9">
-						{{ money(amount, currency) }}
-					</span>
-				</div>
-				<div class="mt-1.5 flex items-baseline justify-between gap-3">
-					<span class="text-p-sm text-ink-gray-5">We'll charge on</span>
-					<span class="text-sm-medium text-ink-gray-8">
-						{{ shortDate(data?.charge_on) || '—' }}
-					</span>
-				</div>
-				<div
-					v-if="data?.method?.label"
-					class="mt-1.5 flex items-baseline justify-between gap-3"
-				>
-					<span class="text-p-sm text-ink-gray-5">From</span>
-					<span class="text-sm-medium text-ink-gray-8">
-						{{ data.method.label }}
-					</span>
-				</div>
-				<div
-					v-if="data?.method?.ceiling"
-					class="mt-1.5 flex items-baseline justify-between gap-3"
-				>
-					<span class="text-p-sm text-ink-gray-5">Auto-debit limit</span>
-					<span class="text-sm-medium tabular-nums text-ink-gray-8">
-						{{ money(data.method.ceiling, currency) }}
-					</span>
-				</div>
+			<div v-if="canManageBilling" class="border-b border-outline-gray-2 p-4">
+				<PaymentDayForm :open="open" @saved="onPaymentDaySaved" />
 			</div>
 
-			<div v-if="blockers.length" class="border-b border-outline-gray-2 p-4">
-				<Alert theme="amber" :title="blockers[0].title">
-					<template v-if="blockerLines.length" #description>
-						<span v-for="(line, idx) in blockerLines" :key="idx" class="block"
-							>{{ line }}</span
+			<div v-if="loadFailed" class="p-4">
+				<Alert
+					theme="red"
+					title="The payment schedule couldn't load"
+					:description="getErrorMessage(schedule.error, 'Try again in a moment.')"
+					:primary-action="{ label: 'Retry', onClick: () => schedule.reload() }"
+				/>
+			</div>
+
+			<template v-else>
+				<!-- What we intend to do -->
+				<div class="border-b border-outline-gray-2 p-4">
+					<div class="flex items-baseline justify-between gap-3">
+						<span class="text-p-sm text-ink-gray-5">Amount due</span>
+						<span class="text-base-medium tabular-nums text-ink-gray-9">
+							{{ money(amount, currency) }}
+						</span>
+					</div>
+					<div class="mt-1.5 flex items-baseline justify-between gap-3">
+						<span class="text-p-sm text-ink-gray-5"
+							>{{ chargeStep.label }}</span
 						>
-					</template>
-				</Alert>
-			</div>
-
-			<!-- The compliance record, made the customer's -->
-			<div
-				v-if="data?.notices?.length"
-				class="border-b border-outline-gray-2 p-4"
-			>
-				<p class="mb-2 text-p-sm text-ink-gray-5">
-					Advance notices queued before debiting
-				</p>
-				<ul class="divide-y divide-outline-gray-1">
-					<li
-						v-for="(notice, idx) in data.notices"
-						:key="idx"
-						class="flex items-baseline justify-between gap-3 py-2"
+						<Tooltip :text="chargeStep.hint" :disabled="!chargeStep.hint">
+							<span class="text-sm-medium text-ink-gray-8">
+								{{ shortDate(chargeStep.date) || '—' }}
+							</span>
+						</Tooltip>
+					</div>
+					<div
+						v-if="data?.method?.label"
+						class="mt-1.5 flex items-baseline justify-between gap-3"
 					>
-						<span class="min-w-0 truncate text-p-sm text-ink-gray-7">
-							{{ notice.subject || notice.invoice || 'Pre-debit notice' }}
+						<span class="text-p-sm text-ink-gray-5">From</span>
+						<span class="text-sm-medium text-ink-gray-8">
+							{{ data.method.label }}
 						</span>
-						<span class="shrink-0 text-p-sm text-ink-gray-5">
-							{{ formatDate(notice.queued_at) }}
-						</span>
-					</li>
-				</ul>
-			</div>
-
-			<!-- Published up front, not discovered one retry at a time -->
-			<div v-if="data?.if_unpaid?.length" class="p-4">
-				<p class="mb-2 text-p-sm text-ink-gray-5">If this goes unpaid</p>
-				<ul class="space-y-2">
-					<li
-						v-for="(stage, idx) in data.if_unpaid"
-						:key="idx"
-						class="flex items-baseline justify-between gap-3"
+					</div>
+					<div
+						v-if="data?.method?.ceiling"
+						class="mt-1.5 flex items-baseline justify-between gap-3"
 					>
-						<span class="text-p-sm text-ink-gray-7">{{ stage.stage }}</span>
-						<span class="shrink-0 text-p-sm tabular-nums text-ink-gray-5">
-							{{ shortDate(stage.date) }}
+						<span class="text-p-sm text-ink-gray-5">Auto-debit limit</span>
+						<span class="text-sm-medium tabular-nums text-ink-gray-8">
+							{{ money(data.method.ceiling, currency) }}
 						</span>
-					</li>
-				</ul>
-				<p class="mt-3 text-p-sm text-ink-gray-5">
-					Servers stop at suspension. Nothing is deleted, and you can start them
-					again once the bill is settled.
-				</p>
-			</div>
+					</div>
+				</div>
+
+				<div v-if="blockers.length" class="border-b border-outline-gray-2 p-4">
+					<Alert theme="amber" :title="blockers[0].title">
+						<template v-if="blockerLines.length" #description>
+							<span v-for="(line, idx) in blockerLines" :key="idx" class="block"
+								>{{ line }}</span
+							>
+						</template>
+					</Alert>
+				</div>
+
+				<!-- The compliance record, made the customer's -->
+				<div
+					v-if="data?.notices?.length"
+					class="border-b border-outline-gray-2 p-4"
+				>
+					<p class="mb-2 text-p-sm text-ink-gray-5">
+						Advance notices queued before debiting
+					</p>
+					<ul class="divide-y divide-outline-gray-1">
+						<li
+							v-for="(notice, idx) in data.notices"
+							:key="idx"
+							class="flex items-baseline justify-between gap-3 py-2"
+						>
+							<span class="min-w-0 truncate text-p-sm text-ink-gray-7">
+								{{ notice.subject || notice.invoice || 'Pre-debit notice' }}
+							</span>
+							<span class="shrink-0 text-p-sm text-ink-gray-5">
+								{{ formatDate(notice.queued_at) }}
+							</span>
+						</li>
+					</ul>
+				</div>
+
+				<!-- Published up front, not discovered one retry at a time -->
+				<div v-if="data?.if_unpaid?.length" class="p-4">
+					<p class="mb-2 text-p-sm text-ink-gray-5">If this goes unpaid</p>
+					<ul class="space-y-2">
+						<li
+							v-for="(stage, idx) in data.if_unpaid"
+							:key="idx"
+							class="flex items-baseline justify-between gap-3"
+						>
+							<span class="text-p-sm text-ink-gray-7">{{ stage.stage }}</span>
+							<span class="shrink-0 text-p-sm tabular-nums text-ink-gray-5">
+								{{ shortDate(stage.date) }}
+							</span>
+						</li>
+					</ul>
+					<p class="mt-3 text-p-sm text-ink-gray-5">
+						Servers stop at suspension. Nothing is deleted, and you can start
+						them again once the bill is settled.
+					</p>
+				</div>
+			</template>
 		</template>
 	</SidePanel>
 </template>

@@ -1,4 +1,5 @@
 import hashlib
+from collections import defaultdict
 from datetime import datetime
 from functools import partial
 from typing import Any
@@ -228,6 +229,35 @@ def get_actor(resource: Document, actor: str) -> str | None:
 
 	# Frappe's standard users run jobs, schedules and unsigned requests, not people.
 	return None if actor in frappe.STANDARD_USERS else actor
+
+
+def _read_initiators(doctype: str, field: str, events: dict[str, list[str]]) -> dict[str, str]:
+	resources = frappe.get_list(doctype, {"name": ("in", list(events))}, ["name", field], as_list=True)
+	return {
+		event: initiator
+		for name, initiator in resources
+		if initiator and initiator not in frappe.STANDARD_USERS
+		for event in events[name]
+	}
+
+
+def get_initiators(rows: list[dict]) -> dict[str, str]:
+	"""Event name to the person who initiated an event that has no actor, such as a snapshot
+	the region reports ready. The resource names the initiator, so it is read, not stored."""
+	initiators = {}
+	for doctype, spec in TRACKED.items():
+		if not spec.initiator_field:
+			continue
+
+		events = defaultdict(list)
+		for row in rows:
+			if row.resource_type == doctype and not row.actor:
+				events[row.resource_name].append(row.name)
+
+		if events:
+			initiators.update(_read_initiators(doctype, spec.initiator_field, events))
+
+	return initiators
 
 
 def get_version_events(version, resource: Document, diff: dict) -> list[dict | None]:

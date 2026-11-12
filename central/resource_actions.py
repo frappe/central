@@ -3,8 +3,10 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import shlex
 
 import frappe
+import yaml
 from cryptography.exceptions import UnsupportedAlgorithm
 from cryptography.hazmat.primitives.serialization import load_ssh_public_key
 from frappe import _
@@ -29,27 +31,32 @@ from central.billing.doctype.billing_profile.billing_profile import (
 )
 from central.billing.payments.settlement import has_paid_by_hand, is_behind_on_payment, wallet_funds
 from central.billing.revenue.tax import is_internal_team
-from central.errors import throw_action_error
+from central.errors import RequestKeyReusedError, throw_action_error
 from central.iam import can, resolve_team
+from central.infrastructure.doctype.region.region import Region
 from central.infrastructure.doctype.resource_action.resource_action import (
 	ACTION_CAPABILITIES,
 	COMMAND_ACTIONS,
 	PENDING_STATES,
 	ResourceAction,
 )
-from central.integrations.cargo import CargoClient
 from central.integrations.images import (
-	APP_PURPOSE,
+	get_app_subdomain,
 	get_image_app_requirements,
+	get_minimum_memory_mib,
 	get_minimum_shape,
 	selected_image,
 	snapshot_image,
 	snapshot_source,
+	validate_app_answer,
 )
 from central.server_models import (
 	DNS_LABEL,
 	MAXIMUM_USER_DATA_BYTES,
 	ActionStatus,
+	AppAnswers,
+	AppInput,
+	AppRequirements,
 	CreateServerInput,
 	ServerCreation,
 	SiteCreation,
@@ -133,7 +140,10 @@ def submit_request(
 		return existing.customer_status()
 
 	is_free_trial = is_free_trial_creation(server_input.team, site.product if site else None)
-	configuration, rate = _build_server_configuration(server_input, snapshot, is_free_trial)
+	configuration, rate, app_subdomain = _build_server_configuration(server_input, snapshot, is_free_trial)
+	if subdomain and app_subdomain:
+		frappe.throw(_("Choose either a site or an app site name, not both."))
+	subdomain = subdomain or app_subdomain
 	configuration.site = site
 
 	return ResourceAction.queue(
@@ -290,7 +300,9 @@ def _repeated_request(server_input: CreateServerInput, digest: str):
 	if name:
 		action = frappe.get_doc("Resource Action", name)
 		if action.request_digest != digest:
-			frappe.throw(_("This request key was already used for different server settings."))
+			frappe.throw(
+				_("This request key was already used for different server settings."), RequestKeyReusedError
+			)
 		return action
 
 	name = unanswered_request(server_input.team, digest)
@@ -300,8 +312,9 @@ def _repeated_request(server_input: CreateServerInput, digest: str):
 
 def _build_server_configuration(
 	server_input: CreateServerInput, snapshot: str | None, is_free_trial: bool
-) -> tuple[ServerCreation, float]:
-	"""Resolve the authorized image, purchasable composition, and saved configuration."""
+) -> tuple[ServerCreation, float, str | None]:
+	"""Resolve the authorized image, purchasable composition, saved configuration, and the
+	site name an app server is routed at."""
 	image = (
 		snapshot_image(server_input.team, server_input.region, snapshot, "server:create")
 		if snapshot
@@ -321,13 +334,19 @@ def _build_server_configuration(
 		includes,
 		server_input.sub_category,
 		is_free_trial,
+		server_input.offering,
 	)
 	validate_guest_input(server_input)
 	# Check the saved keys now so the form shows the error. Dispatch reads their text, which a
 	# rotation can change before a retry.
 	resolve_team_ssh_keys(server_input.team, server_input.ssh_key_ids)
 	shape = image_shape(composition, image)
-	_validate_app_size(image, get_image_app_requirements(server_input.region, image, snapshot), shape)
+	requirements = get_image_app_requirements(server_input.region, image, snapshot)
+	_validate_minimum_size(
+		get_minimum_shape(image, requirements, get_minimum_memory_mib(server_input.offering)), shape
+	)
+	subdomain = get_app_subdomain(server_input.region, server_input.app_inputs) if requirements else None
+	user_data = _get_user_data(server_input, requirements, subdomain)
 
 	configuration = ServerCreation(
 		offering=server_input.offering,
@@ -345,39 +364,82 @@ def _build_server_configuration(
 		has_public_ipv4=server_input.has_public_ipv4,
 		has_public_ipv6=server_input.has_public_ipv6,
 		is_firewall_enabled=server_input.is_firewall_enabled,
-		user_data=_get_user_data(server_input, image, snapshot),
+		user_data=user_data,
 		image_tags=image["tags"],
 		**shape,
 	)
 
-	return configuration, rate
+	return configuration, rate, subdomain
 
 
-def _get_user_data(server_input: CreateServerInput, image: dict, snapshot: str | None) -> str:
-	"""The user data the server boots with. An app's comes from its region's Cargo, built
-	from the answers to its inputs, and names the application by the image's own tags. A
-	restored snapshot is already set up, so it takes none."""
-	if snapshot or image["tags"].get("purpose") != APP_PURPOSE:
+def _get_user_data(
+	server_input: CreateServerInput, requirements: AppRequirements | None, subdomain: str | None = None
+) -> str:
+	"""The user data the server boots with. An app's writes the answers to its inputs to
+	/etc/one-click/inputs.env, which its first-boot script reads. A blank answer is left out,
+	so the server makes that value itself. A routed app also gets SITE_DOMAIN, the full name
+	the proxy serves it at."""
+	_validate_user_data(server_input, requirements)
+	if not requirements:
+		return server_input.user_data
+
+	answers: AppAnswers = server_input.app_inputs
+	lines = [
+		f"{item['name'].upper()}={shlex.quote(answers[item['name']].strip())}"
+		for item in requirements["inputs"]
+		if answers.get(item["name"], "").strip()
+	]
+	if subdomain:
+		lines.append(f"SITE_DOMAIN={shlex.quote(f'{subdomain}.{Region.get_zone(server_input.region)}')}")
+	if not lines:
+		return ""
+
+	return "#cloud-config\n" + yaml.safe_dump(
+		{
+			"write_files": [
+				{
+					"path": "/etc/one-click/inputs.env",
+					"owner": "root:root",
+					"permissions": "0600",
+					"content": "\n".join(lines) + "\n",
+				}
+			]
+		},
+		sort_keys=False,
+	)
+
+
+def _validate_user_data(server_input: CreateServerInput, requirements: AppRequirements | None) -> None:
+	"""An app server takes only answers to its inputs. Any other server, and a restored
+	snapshot, takes only the customer's user data."""
+	if not requirements:
 		if server_input.app_inputs:
 			frappe.throw(_("Only an app takes app settings."))
-		return server_input.user_data
+		return
 
 	if server_input.user_data:
 		frappe.throw(_("An app server sets its own user data."))
 
-	region = frappe.get_doc("Region", server_input.region)
-	return CargoClient(region).get_app_user_data(image["tags"]["application"], server_input.app_inputs)
+	declared: dict[str, AppInput] = {item["name"]: item for item in requirements["inputs"]}
+	if unknown := set(server_input.app_inputs) - set(declared):
+		frappe.throw(_("This app has no setting {0}.").format(", ".join(sorted(unknown))))
+
+	for name, item in declared.items():
+		value = server_input.app_inputs.get(name, "").strip()
+		if value:
+			validate_app_answer(name, item, value)
+		elif item.get("required"):
+			frappe.throw(_("{0} is required.").format(item.get("label", name)))
 
 
-def _validate_app_size(image: dict, requirements: dict | None, shape: dict[str, int]) -> None:
-	"""A new app server needs at least the app's minimum size. Any other server, and a
-	restored snapshot, has no app requirements."""
-	if not requirements:
-		return
-
-	minimum = get_minimum_shape(image, requirements)
+def _validate_minimum_size(minimum: dict[str, int], shape: dict[str, int]) -> None:
+	"""A new server needs at least the size its image, image offering and app ask for."""
 	if any(shape[key] < minimum[key] for key in minimum):
-		frappe.throw(_("This app needs a bigger server. Choose a plan with more CPU, memory or storage."))
+		frappe.throw(
+			_(
+				"This server is too small for the selected image. Choose a plan with more CPU, memory or storage."
+			)
+		)
 
 
 def unanswered_request(team: str, digest: str) -> str | None:
@@ -403,9 +465,10 @@ def validate_purchase(
 	includes: list[dict] | None,
 	sub_category: str | None,
 	is_free_trial: bool = False,
+	offering: str | None = None,
 ) -> tuple[list[dict], float]:
-	"""The composition and monthly rate of a server the team may buy. A free trial site is not
-	bought, so only the trial limit applies to it."""
+	"""The composition and monthly rate of a server the team may buy on `offering`'s plans. A
+	free trial site is not bought, so only the trial limit applies to it."""
 	internal = is_internal_team(team)
 	trial = is_free_trial or (not internal and bool(frappe.db.get_value("Team", team, "is_staging_trial")))
 	if is_free_trial:
@@ -413,7 +476,7 @@ def validate_purchase(
 	elif trial:
 		validate_trial(team)
 
-	catalog = get_server_plans(team, cluster=region, include_trial_plans=is_free_trial)
+	catalog = get_server_plans(team, cluster=region, include_trial_plans=is_free_trial, offering=offering)
 	if plan:
 		choices = [row for rows in catalog["plans"].values() for row in rows]
 		selected = next((row for row in choices if row["plan"] == plan), None)

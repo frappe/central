@@ -99,6 +99,14 @@ export interface NextPayment {
 	/** Empty blockers is not a promise of success — only that nothing decides otherwise. */
 	will_auto_charge: boolean
 	blockers: PaymentBlocker[]
+	/**
+	 * Set once the open invoice is charged or its payment date has passed. At most one is set,
+	 * except that an overdue invoice with a payment in progress also has `suspends_on`.
+	 */
+	payment_in_progress_since: string | null
+	next_retry_on: string | null
+	suspends_on: string | null
+	suspended_since: string | null
 }
 
 export interface PredebitNotice {
@@ -447,6 +455,18 @@ export interface BillingSettings {
 	team: string
 	min_balance: number
 	spend_alert_threshold: number
+	/** Day of the month, 1 to 10, the card is charged on for the closed month. */
+	payment_day: number
+	/** Changes to the payment day the team can still make this billing cycle. */
+	payment_day_changes_left: number
+	/** The latest day of the month a team can pick as its payment day. */
+	last_payment_day: number
+	/** Changes to the payment day a team can make in one billing cycle. */
+	payment_day_changes_per_cycle: number
+	/** Day of the month on which a team with an unpaid invoice is suspended. */
+	suspension_day: number
+	/** The last payment day that still gets interval retries. A later day gets one retry. */
+	last_payment_day_with_retries: number
 }
 
 /** get_collection_status — collection mode + the "Action Required" banner feed (ADR 0005). */

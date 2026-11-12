@@ -774,13 +774,11 @@ function derivation_html(line, money) {
 		const items = d.configs_on_this_date
 			.map(
 				(c) =>
-					`<tr><td>${c.from} → ${c.to}</td><td>${money(c.rate)}</td><td>${
-						c.held_under_24h ? __("held under 24h") : ""
-					}</td></tr>`
+					`<tr><td>${c.from} → ${c.to}</td><td>${money(c.rate)}</td></tr>`
 			)
 			.join("");
 		shared = `<table class="bs-why-tbl">
-			<thead><tr><th>${__("Configs sharing this date")}</th><th>${__("Rate")}</th><th></th></tr></thead>
+			<thead><tr><th>${__("Configs sharing this date")}</th><th>${__("Rate")}</th></tr></thead>
 			<tbody>${items}</tbody></table>`;
 	}
 

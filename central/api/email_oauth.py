@@ -40,9 +40,13 @@ def start(
 # nosemgrep: guest-whitelisted-method -- pilot_credential_auth verifies the caller below.
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 @pilot_credential_auth
-def get_active_providers() -> list[str]:
-	"""Called by a site through its Pilot: the providers a mailbox can sign in with right now."""
-	return frappe.get_all("Email OAuth Provider", filters={"enabled": 1}, pluck="name", order_by="name")
+def get_active_providers() -> dict[str, str | None]:
+	"""Called by a site through its Pilot: the providers a mailbox can sign in with right now.
+	Google's comes with its client ID, which a Google Workspace admin looks up to allow the app."""
+	providers = frappe.get_all(
+		"Email OAuth Provider", filters={"enabled": 1}, fields=["name", "client_id"], order_by="name"
+	)
+	return {p.name: p.client_id if p.name == "google" else None for p in providers}
 
 
 # nosemgrep: guest-whitelisted-method -- the provider sends the browser here; the code only goes to the site's team.

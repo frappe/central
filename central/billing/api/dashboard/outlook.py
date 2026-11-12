@@ -19,7 +19,18 @@ import frappe
 from frappe import _
 
 from central.billing.api.dashboard._shared import _resolve_team, _team_currency
-from central.billing.doctype.invoice.invoice import owed_filters
+from central.billing.doctype.billing_profile.billing_profile import get_payment_date
+from central.billing.doctype.invoice.invoice import OVERDUE, owed_filters
+from central.billing.payments.charges import in_flight_attempt
+from central.billing.revenue.dunning import (
+	LADDER_FIELDS,
+	dunning_policy,
+	dunning_schedule,
+	get_ladder_dates,
+	get_opening_ladder_dates,
+	has_retry_rail,
+	is_retry_due,
+)
 
 # Customer-facing copy for the findings the engine can raise. `fix` is the sentence
 # that tells someone what to actually do — the reason this is worth showing at all.
@@ -65,21 +76,25 @@ def get_next_payment(team: str | None = None) -> dict:
 
 	Reads the collectable amount off an already-open invoice where one exists, and
 	falls back to the current month's projection when the period is still running.
+	`charge_on` is always the next scheduled payment day: the earliest upcoming charge
+	of an owed invoice, else the running cycle's. When the oldest owed invoice's own
+	payment date has passed, its place on the dunning ladder is reported beside it.
 	"""
 	team = _resolve_team(team)
 	currency = _team_currency(team)
 	today = frappe.utils.getdate()
 
-	invoice = _next_collectable_invoice(team)
+	owed = _owed_invoices(team)
+	invoice = owed[0] if owed else None
 	if invoice:
 		amount = frappe.utils.flt(invoice.expected_collection)
-		charge_on = invoice.predebit_charge_after or invoice.due_date
 		period_end = invoice.period_end
 	else:
 		amount, period_end = _projected_collectable(team, today)
-		charge_on = frappe.utils.add_days(period_end, 1)
 
-	blockers = _blockers(team, amount, currency, charge_on, today)
+	charge_on = _scheduled_charge_on(team, owed, today)
+	missed = _missed_payment(team, invoice, today)
+	blockers = _blockers(team, amount, currency, missed["next_retry_on"] or charge_on, today)
 	return {
 		"currency": currency,
 		"amount": amount,
@@ -92,6 +107,7 @@ def get_next_payment(team: str | None = None) -> dict:
 		# the data decides otherwise. The UI says "we'll charge", never "it will work".
 		"will_auto_charge": not blockers,
 		"blockers": blockers,
+		**missed,
 	}
 
 
@@ -105,13 +121,13 @@ def get_payment_schedule(team: str | None = None) -> dict:
 	return {
 		**next_payment,
 		"notices": _predebit_notices(team),
-		"if_unpaid": _escalation(period_end),
+		"if_unpaid": _escalation(team, next_payment["invoice"], period_end),
 	}
 
 
-def _next_collectable_invoice(team: str):
-	"""The open bill we would collect next, soonest due first."""
-	rows = frappe.get_all(
+def _owed_invoices(team: str) -> list[frappe._dict]:
+	"""The open bills we still have to collect, oldest due first."""
+	return frappe.get_all(
 		"Invoice",
 		filters=[
 			*owed_filters(),
@@ -119,11 +135,118 @@ def _next_collectable_invoice(team: str):
 			["invoice_type", "=", "Billable"],
 			["expected_collection", ">", 0],
 		],
-		fields=["name", "expected_collection", "due_date", "period_end", "predebit_charge_after"],
+		fields=[
+			"name",
+			"expected_collection",
+			*LADDER_FIELDS,
+			"period_end",
+			"predebit_charge_after",
+		],
 		order_by="due_date asc",
-		limit=1,
 	)
-	return frappe._dict(rows[0]) if rows else None
+
+
+def _invoice_charge_on(invoice):
+	"""When the open invoice is charged: its pre-debit charge time, else its payment date."""
+	return invoice.predebit_charge_after or invoice.payment_date
+
+
+def _is_charge_missed(invoice, today) -> bool:
+	"""The open invoice is on the dunning ladder.
+
+	1. Dunning marked it Overdue, whatever its charge day.
+	2. Its charge day has passed without the bill being settled."""
+	if invoice.status == OVERDUE:
+		return True
+	charge_on = _invoice_charge_on(invoice)
+	return bool(charge_on) and frappe.utils.getdate(charge_on) < today
+
+
+def _scheduled_charge_on(team: str, owed: list, today):
+	"""The next scheduled payment day: the earliest charge day, today or later, among the
+	owed invoices, else the day the running cycle's invoice is charged."""
+	upcoming = [
+		_invoice_charge_on(invoice)
+		for invoice in owed
+		if _invoice_charge_on(invoice) and not _is_charge_missed(invoice, today)
+	]
+	if upcoming:
+		return min(upcoming, key=frappe.utils.getdate)
+	return get_payment_date(team, frappe.utils.add_days(frappe.utils.get_last_day(today), 1))
+
+
+def _missed_payment(team: str, invoice, today) -> dict:
+	"""Where an open bill stands on the dunning ladder once its charge is made or missed.
+
+	1. No open bill, or one with no charge in flight before its charge day: all dates are empty.
+	2. A suspended team: only the date it was suspended.
+	3. Otherwise: its next step on the ladder (`_next_ladder_step`).
+	"""
+	missed = {
+		"payment_in_progress_since": None,
+		"next_retry_on": None,
+		"suspends_on": None,
+		"suspended_since": None,
+	}
+	if not invoice or not (_is_charge_missed(invoice, today) or in_flight_attempt(invoice.name)):
+		return missed
+
+	suspended_since = _suspended_since(team)
+	if suspended_since:
+		return {**missed, "suspended_since": str(frappe.utils.getdate(suspended_since))}
+	return {**missed, **_next_ladder_step(invoice, team, today)}
+
+
+def _next_ladder_step(invoice, team: str, today) -> dict:
+	"""The next step of an open bill on the dunning ladder of a team that is not suspended.
+
+	1. A charge in flight before the suspension date: the day the charge was made. Once the bill
+	   is Overdue, also the suspension date, because the team is suspended if the charge fails.
+	2. A retry still to come, today's included until it runs: the next retry date.
+	3. No retry left, or none dunning can run: the date the team is suspended.
+	"""
+	dates = get_ladder_dates(invoice)
+	schedule = dunning_schedule(dates)
+	suspend_on = next(s.date for s in schedule if s.stage == "Suspend")
+	if dates.in_flight_since and today < suspend_on:
+		return {
+			"payment_in_progress_since": str(frappe.utils.getdate(dates.in_flight_since)),
+			"suspends_on": str(suspend_on) if invoice.status == OVERDUE else None,
+		}
+
+	next_retry_on = _next_retry_on(invoice, team, schedule)
+	if next_retry_on:
+		return {"next_retry_on": str(next_retry_on)}
+	return {"suspends_on": str(suspend_on)}
+
+
+def _next_retry_on(invoice, team: str, schedule: list):
+	"""The first retry still to run, or None when dunning cannot retry the invoice.
+	A retry that is due stays next until its charge has been tried."""
+	if not has_retry_rail(invoice, team):
+		return None
+	now = frappe.utils.now_datetime()
+	for stage in schedule:
+		if stage.stage != "Retry":
+			continue
+		if stage.at > now or (stage.date == now.date() and is_retry_due(invoice.name, schedule, now)):
+			return stage.date
+	return None
+
+
+def _suspended_since(team: str):
+	"""When dunning suspended the team, or None while it is not suspended."""
+	from central.billing.catalog.subscriptions import anchor_subscription
+
+	anchor = anchor_subscription(team)
+	if not anchor or frappe.db.get_value("Subscription", anchor, "account_standing") != "Suspended":
+		return None
+	return frappe.db.get_value(
+		"Subscription Change",
+		{"subscription": anchor, "change_type": "Suspended"},
+		"effective_at",
+		order_by="effective_at desc",
+	)
 
 
 def _projected_collectable(team: str, today) -> tuple[float, object]:
@@ -204,17 +327,21 @@ def _predebit_notices(team: str, limit: int = 12) -> list[dict]:
 	]
 
 
-def _escalation(period_end) -> list[dict]:
+def _escalation(team: str, invoice: str | None, period_end) -> list[dict]:
 	"""What happens if the bill goes unpaid — published up front rather than
-	discovered one failed retry at a time."""
-	if not period_end:
-		return []
-	from central.billing import settings
-	from central.billing.revenue.dunning import dunning_policy, dunning_schedule
+	discovered one failed retry at a time.
 
-	opens_on = frappe.utils.add_days(frappe.utils.getdate(period_end), 1)
-	due_on = frappe.utils.add_days(opens_on, settings.invoice_due_days())
+	An open invoice counts from its own ladder dates. A projected one counts from the
+	dates the run would give it when it opens."""
+	if invoice:
+		dates = get_ladder_dates(
+			frappe.db.get_value("Invoice", invoice, ["name", *LADDER_FIELDS], as_dict=True)
+		)
+	elif period_end:
+		dates = get_opening_ladder_dates(team, frappe.utils.add_days(period_end, 1))
+	else:
+		return []
 	return [
 		{"date": str(stage.date), "stage": _(stage.stage), "day": stage.day}
-		for stage in dunning_schedule(due_on, dunning_policy())
+		for stage in dunning_schedule(dates, dunning_policy())
 	]

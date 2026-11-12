@@ -16,8 +16,9 @@ import frappe
 from central.notification import engine
 
 
-def _render_log_body(slug: str, ref: str | None, msg: str | None) -> str:
-	"""Render the billing log body from the Event Type's in_app_body template."""
+def _render_log_body(slug: str, ref: str | None, msg: str | None, context: dict) -> str:
+	"""Render the billing log body from the Event Type's in_app_body template, with the same
+	`context` the engine renders it with."""
 	event = frappe.db.get_value(
 		"Notification Event Type",
 		slug,
@@ -26,7 +27,7 @@ def _render_log_body(slug: str, ref: str | None, msg: str | None) -> str:
 	)
 	if not event:
 		return msg or slug
-	ctx = {"reference_name": ref or "", "message": msg or ""}
+	ctx = {"reference_name": ref or "", "message": msg or "", "context": context}
 	# nosemgrep: frappe-ssti -- in_app_body comes from the System Manager-only Notification Event Type doctype, never from users.
 	return frappe.render_template(event, ctx)
 
@@ -67,7 +68,7 @@ def notify(
 		reference_name=ref,
 	)
 
-	body = _render_log_body(slug, ref, msg)
+	body = _render_log_body(slug, ref, msg, src)
 	created = result.get("created", False)
 	queued = result.get("emails_queued", 0)
 	failed = result.get("email_failed", 0)

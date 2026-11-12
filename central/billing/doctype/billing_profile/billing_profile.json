@@ -44,6 +44,9 @@
   "column_break_settings",
   "spend_alert_threshold",
   "collection_action_reason",
+  "payment_day",
+  "payment_day_changes",
+  "payment_day_changes_cycle",
   "section_break_trust",
   "trust_tier_level",
   "trust_tier",
@@ -207,6 +210,7 @@
   },
   {
    "default": "0",
+   "description": "The team is alerted when the projected spend for the cycle, before tax, crosses this amount. 0 turns the alert off.",
    "fieldname": "spend_alert_threshold",
    "fieldtype": "Currency",
    "label": "Spend Alert Threshold"
@@ -216,6 +220,29 @@
    "fieldname": "collection_action_reason",
    "fieldtype": "Data",
    "label": "Collection Action Reason",
+   "read_only": 1
+  },
+  {
+   "default": "1",
+   "description": "Day of the month, 1 to 10, on which the card is charged for the invoice of the month that closed. Wallet credits still apply on the invoice date.",
+   "fieldname": "payment_day",
+   "fieldtype": "Int",
+   "label": "Payment Day",
+   "non_negative": 1
+  },
+  {
+   "default": "0",
+   "description": "Times the customer changed the payment day in the cycle below. The dashboard allows 2 for each cycle.",
+   "fieldname": "payment_day_changes",
+   "fieldtype": "Int",
+   "label": "Payment Day Changes",
+   "read_only": 1
+  },
+  {
+   "description": "First day of the cycle the change count belongs to.",
+   "fieldname": "payment_day_changes_cycle",
+   "fieldtype": "Date",
+   "label": "Payment Day Changes Cycle",
    "read_only": 1
   },
   {
@@ -336,7 +363,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-10-21 14:54:26.273541",
+ "modified": "2026-11-05 18:00:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Billing Profile",

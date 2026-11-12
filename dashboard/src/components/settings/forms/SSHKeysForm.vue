@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { Alert, Button } from 'frappe-ui'
-import { ref } from 'vue'
+import { Alert, Button, TextInput } from 'frappe-ui'
+import { computed, ref, watch } from 'vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import RowActionsMenu from '@/components/common/RowActionsMenu.vue'
 import Table from '@/components/common/Table.vue'
 import SSHKeyDialog from '@/components/servers/SSHKeyDialog.vue'
 import { useCapabilities } from '@/composables/useCapabilities'
+import { useSession } from '@/composables/useSession'
 import { useTeamSSHKeys } from '@/composables/useTeamSSHKeys'
 import { getErrorMessage, successToast } from '@/lib/feedback'
 import type { TeamSSHKey } from '@/types/sshKeys'
@@ -19,10 +20,26 @@ const COLUMNS = [
 const { keys, loading, error, reload, create, rotate, retry, remove } =
 	useTeamSSHKeys()
 const { canManageSSHKeys } = useCapabilities()
+const { activeTeam } = useSession()
 
 const adding = ref(false)
 const rotating = ref<TeamSSHKey | null>(null)
 const actionError = ref('')
+
+const keyQuery = ref('')
+
+watch(activeTeam, () => {
+	keyQuery.value = ''
+})
+
+const visibleKeys = computed(() => {
+	const query = keyQuery.value.trim().toLowerCase()
+	if (!query) return keys.value
+
+	return keys.value.filter((key) =>
+		[key.title, key.fingerprint].join(' ').toLowerCase().includes(query),
+	)
+})
 
 const rotateSelected = async (
 	_title: string,
@@ -112,7 +129,12 @@ const closeRotation = (open: boolean): void => {
 			/>
 		</Teleport>
 
-		<Alert v-if="actionError" theme="red" :title="actionError" />
+		<Alert
+			v-if="actionError"
+			theme="red"
+			title="Couldn't update your SSH keys"
+			:description="actionError"
+		/>
 
 		<EmptyState
 			v-if="error"
@@ -141,7 +163,36 @@ const closeRotation = (open: boolean): void => {
 		</EmptyState>
 
 		<template v-else>
-			<Table :columns="COLUMNS" :rows="keys" height="h-auto">
+			<TextInput
+				v-if="keys.length"
+				v-model="keyQuery"
+				type="search"
+				placeholder="Search keys"
+				aria-label="Search SSH keys"
+			>
+				<template #prefix>
+					<span
+						class="lucide-search size-4 text-ink-gray-5"
+						aria-hidden="true"
+					/>
+				</template>
+			</TextInput>
+
+			<p
+				v-if="keys.length && !visibleKeys.length"
+				class="py-4 text-p-sm text-ink-gray-6"
+			>
+				No key matches “{{ keyQuery.trim() }}”.
+				<button
+					type="button"
+					class="text-p-sm-medium text-ink-gray-8 underline"
+					@click="keyQuery = ''"
+				>
+					Clear search
+				</button>
+			</p>
+
+			<Table v-else :columns="COLUMNS" :rows="visibleKeys" height="h-auto">
 				<template #title="{ row }">
 					<div class="space-y-1 py-2">
 						<p class="truncate text-base text-ink-gray-8">{{ row.title }}</p>

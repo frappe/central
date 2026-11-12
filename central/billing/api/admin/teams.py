@@ -5,6 +5,7 @@ rollups, the team table, and the delinquency / payment-failure drill-downs.
 """
 
 import frappe
+from frappe import _
 
 from central.billing.api.admin._shared import (
 	_STANDING_RANK,
@@ -71,7 +72,11 @@ def adjust_team_credits(
 	"""Manual wallet correction for any team — operator only. The one HTTP door to
 	`credits.adjust_credits`; the primitive itself is not whitelisted."""
 	require_operator()
-	return credits.adjust_credits(team, amount, entry_type, currency=currency, note=note)
+	try:
+		return credits.adjust_credits(team, amount, entry_type, currency=currency, note=note)
+	except credits.InsufficientCredits as error:
+		# The ledger raises this without a message, so Desk would show nothing.
+		frappe.throw(str(error), credits.InsufficientCredits, title=_("Not enough credit"))
 
 
 @frappe.whitelist()

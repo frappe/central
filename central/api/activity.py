@@ -6,7 +6,7 @@ from frappe import _
 from frappe.utils import cint, convert_utc_to_system_timezone, get_datetime
 from frappe.utils.translations import _lt
 
-from central.central.doctype.activity_event.activity_event import ActivityEvent
+from central.central.doctype.activity_event.activity_event import ActivityEvent, get_initiators
 from central.central.doctype.activity_event.tracked import get_sentence
 from central.iam import user_has_operator_bypass
 from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
@@ -76,15 +76,16 @@ def get_activity(
 		after=_decode_cursor(cursor) if cursor else None,
 	)
 	page = rows[:page_size]
-	actors = _get_actors({row.actor for row in page})
+	initiators = get_initiators(page)
+	actors = _get_actors({row.actor for row in page} | set(initiators.values()))
 
 	return {
-		"events": [_to_event(row, actors) for row in page],
+		"events": [_to_event(row, actors, initiators.get(row.name)) for row in page],
 		"next_cursor": _encode_cursor(page[-1]) if len(rows) > page_size else None,
 	}
 
 
-def _to_event(row, actors: dict[str, dict]) -> dict:
+def _to_event(row, actors: dict[str, dict], initiator: str | None) -> dict:
 	return {
 		"id": row.name,
 		"event": row.event,
@@ -92,6 +93,7 @@ def _to_event(row, actors: dict[str, dict]) -> dict:
 		"occurred_at": str(row.creation),
 		"actor": actors.get(row.actor, NO_ACTOR),
 		"sentence": _(get_sentence(row.event, has_actor=bool(row.actor))),
+		"initiator": actors[initiator] if initiator else None,
 		"resource": {"type": row.resource_type, "name": row.resource_name, "label": row.resource_label},
 		"status": row.status or None,
 		"details": [
@@ -101,23 +103,28 @@ def _to_event(row, actors: dict[str, dict]) -> dict:
 	}
 
 
+def _actor_entry(user, is_operator_reader: bool) -> dict:
+	if not is_operator_reader and user_has_operator_bypass(user.name):
+		return {"label": _("Frappe Cloud"), "kind": "system", "image": None}
+	return {
+		"label": user.full_name or user.name,
+		"kind": "user",
+		"image": user.user_image,
+	}
+
+
 def _get_actors(emails: set[str | None]) -> dict[str, dict]:
-	"""Operators read as Frappe Cloud and members by name. A deleted user keeps their email."""
+	"""Operators read as Frappe Cloud to customers and by name to other operators. Members read
+	by name. A deleted user keeps their email."""
 	people = [email for email in emails if email]
+	is_operator_reader = user_has_operator_bypass(frappe.session.user)
 	# User grants customers no read, and the event already names the actor.
 	users = frappe.db.get_values(
 		"User", {"name": ("in", people or [""])}, ["name", "full_name", "user_image"], as_dict=True
 	)
 	actors = {email: {"label": email, "kind": "user", "image": None} for email in people}
 	for user in users:
-		if user_has_operator_bypass(user.name):
-			actors[user.name] = {"label": _("Frappe Cloud"), "kind": "system", "image": None}
-		else:
-			actors[user.name] = {
-				"label": user.full_name or user.name,
-				"kind": "user",
-				"image": user.user_image,
-			}
+		actors[user.name] = _actor_entry(user, is_operator_reader)
 
 	return actors
 

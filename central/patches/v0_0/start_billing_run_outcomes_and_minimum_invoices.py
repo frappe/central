@@ -2,11 +2,8 @@ import frappe
 
 from central.billing import settings
 from central.billing.doctype.billing_event.billing_event import flow_of, outcome_of
-from central.billing.doctype.billing_run_team.billing_run_team import BELOW_MINIMUM, FAILED, record_outcome
-from central.billing.doctype.invoice.invoice import unissued_filters
+from central.billing.doctype.billing_run_team.billing_run_team import FAILED, record_outcome
 from central.billing.payments.provisioning import ensure_tax_profile
-from central.billing.revenue.invoicing.generate import is_below_minimum
-from central.billing.revenue.invoicing.lifecycle import cancel_invoice
 
 
 def execute() -> None:
@@ -15,7 +12,6 @@ def execute() -> None:
 	frappe.clear_document_cache("Billing Settings", "Billing Settings")
 	add_missing_tax_profiles()
 	queue_teams_the_last_run_missed()
-	cancel_uncollected_invoices_below_the_minimum()
 
 
 def name_flow_and_outcome_on_old_events() -> None:
@@ -51,18 +47,3 @@ def queue_teams_the_last_run_missed() -> None:
 	for team in frappe.get_all("Subscription", pluck="team", distinct=True):
 		if team not in invoiced:
 			record_outcome(team, runs[0], FAILED, reason="Missed by the last billing run. Retrying.")
-
-
-def cancel_uncollected_invoices_below_the_minimum() -> None:
-	"""Collection never started on these, so they leave no statutory trace."""
-	for invoice in frappe.get_all(
-		"Invoice",
-		filters=unissued_filters(),
-		fields=["name", "team", "total", "currency", "period_end"],
-	):
-		if is_below_minimum(invoice):
-			reason = (
-				f"{invoice.currency} {invoice.total} is below the minimum invoice amount and was written off."
-			)
-			cancel_invoice(invoice.name, reason=reason)
-			record_outcome(invoice.team, invoice.period_end, BELOW_MINIMUM, reason=reason)

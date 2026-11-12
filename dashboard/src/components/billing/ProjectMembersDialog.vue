@@ -98,7 +98,12 @@ async function removeMember(sub: SubscriptionRow): Promise<void> {
 	<Dialog v-model="open" :title="project ? `${project.title} — servers` : ''">
 		<template #default>
 			<div class="space-y-4">
-				<Alert v-if="formError" theme="red" :title="formError" />
+				<Alert
+					v-if="formError"
+					theme="red"
+					title="Couldn't update the project's servers"
+					:description="formError"
+				/>
 				<div v-if="members.length" class="divide-y divide-outline-gray-1">
 					<div
 						v-for="sub in members"

@@ -8,7 +8,7 @@ from central.billing.revenue import credits
 from central.billing.states import transition
 from central.billing.tests.e2e import _enter_test_mode
 from central.infrastructure.doctype.site.plan_change import PlanChange
-from central.site_provisioning import get_cheapest_trial_plan, trial_regions
+from central.site_provisioning import get_cheapest_trial_plan, signup_offering, trial_regions
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
@@ -127,7 +127,7 @@ def _trial_region_and_plan(team: str) -> tuple[str, str]:
 	on Trial falls back to the cheapest plan of any active region. The seeded server is written
 	directly, so its region needs no proxy domain."""
 	for region in trial_regions():
-		plan = get_cheapest_trial_plan(team, region)
+		plan = get_cheapest_trial_plan(team, region, signup_offering())
 		if plan:
 			return region, plan
 	for region in frappe.get_all("Region", filters={"status": "Active"}, pluck="name", order_by="name asc"):

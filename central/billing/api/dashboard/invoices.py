@@ -618,6 +618,7 @@ def download_topup_receipt(name: str) -> None:
 @rate_limit(limit=30, seconds=60 * 60, user_based=True)
 def pay_invoice(invoice: str | None = None) -> dict:
 	"""Postpaid one-off settlement of an outstanding invoice (team-scoped)."""
+	# The payment date holds back automatic charges only. A customer who clicks Pay may pay early.
 	team = frappe.db.get_value("Invoice", invoice, "team")
 	_require_manage(team)
 	from central.billing.payments import charges
@@ -664,6 +665,7 @@ def get_fallback_offer(invoice: str | None = None) -> dict:
 def pay_invoice_checkout(invoice: str | None = None) -> dict:
 	"""Open an on-session gateway checkout to pay an invoice yourself
 	(collection_mode = manual_checkout). Any amount — on-session has no ₹15k limit."""
+	# The payment date holds back automatic charges only. A customer who clicks Pay may pay early.
 	team = frappe.db.get_value("Invoice", invoice, "team")
 	_require_manage(team)
 	from central.billing.payments import charges

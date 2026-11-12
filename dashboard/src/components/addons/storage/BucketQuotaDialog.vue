@@ -53,7 +53,13 @@ const save = async (): Promise<void> => {
 		@update:model-value="(open: boolean) => !open && (bucket = null)"
 		@after-leave="error = ''"
 	>
-		<Alert v-if="error" class="mb-4" theme="red" :title="error" />
+		<Alert
+			v-if="error"
+			class="mb-4"
+			theme="red"
+			title="Couldn't update the quota"
+			:description="error"
+		/>
 
 		<div class="space-y-5">
 			<TextInput

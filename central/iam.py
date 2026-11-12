@@ -83,7 +83,7 @@ def get_all_capabilities() -> list[str]:
 	return frappe.get_all("Capability", pluck="name", order_by="name")
 
 
-def get_user_team_names(user: str) -> list[str]:
+def get_user_team_names(user: str, statuses: tuple[str, ...] = ("Active",)) -> list[str]:
 	team = frappe.qb.DocType("Team")
 	member = frappe.qb.DocType("Team Member")
 
@@ -98,7 +98,7 @@ def get_user_team_names(user: str) -> list[str]:
 			& (member.parentfield == "members")
 			& (member.user == user)
 			& (member.status == "Active")
-			& (team.status == "Active")
+			& team.status.isin(statuses)
 		)
 		.orderby(team.name)
 	).run(as_dict=True)
@@ -106,9 +106,9 @@ def get_user_team_names(user: str) -> list[str]:
 	return [row.name for row in rows]
 
 
-def is_active_team_member(user: str, team: str) -> bool:
+def is_active_team_member(user: str, team: str, statuses: tuple[str, ...] = ("Active",)) -> bool:
 	"""
-	Whether `user` is an active member of the active team `team`. A scoped
+	Whether `user` is an active member of team `team` in one of `statuses`. A scoped
 	existence check — cheaper than resolving grants or listing every team.
 	"""
 
@@ -126,7 +126,7 @@ def is_active_team_member(user: str, team: str) -> bool:
 			& (member.user == user)
 			& (member.status == "Active")
 			& (team_doc.name == team)
-			& (team_doc.status == "Active")
+			& team_doc.status.isin(statuses)
 		)
 		.limit(1)
 	)
@@ -144,13 +144,13 @@ def get_team_names_with_role(role: str, teams: list[str]) -> list[str]:
 	)
 
 
-def resolve_team(user: str, team: str | None = None) -> str:
-	"""The team to act on: the one given, else the user's sole active team. With
+def resolve_team(user: str, team: str | None = None, statuses: tuple[str, ...] = ("Active",)) -> str:
+	"""The team to act on: the one given, else the user's sole team in `statuses`. With
 	zero or many teams and none specified, the caller must pick one."""
 	if team:
 		return team
 
-	teams = get_user_team_names(user)
+	teams = get_user_team_names(user, statuses)
 	if len(teams) != 1:
 		frappe.throw(_("Specify a team."), frappe.ValidationError)
 

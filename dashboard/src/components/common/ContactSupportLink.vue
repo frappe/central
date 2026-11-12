@@ -9,14 +9,22 @@ interface Props {
 
 const props = withDefaults(defineProps<Props>(), { context: () => ({}) })
 
-const { getTicketUrl } = useSupport()
+const { canUseInAppTickets, getTicketUrl, openSupport } = useSupport()
 const ticketUrl = computed(() => getTicketUrl(props.context))
 </script>
 
-<!-- Without a support URL the words stay as plain text, so the sentence still reads. -->
+<!-- Without support the words stay as plain text, so the sentence still reads. -->
 <template>
+	<button
+		v-if="canUseInAppTickets"
+		type="button"
+		class="text-ink-gray-8 underline underline-offset-2 hover:text-ink-gray-9"
+		@click="openSupport(props.context)"
+	>
+		<slot>contact support</slot>
+	</button>
 	<a
-		v-if="ticketUrl"
+		v-else-if="ticketUrl"
 		:href="ticketUrl"
 		target="_blank"
 		rel="noopener noreferrer"

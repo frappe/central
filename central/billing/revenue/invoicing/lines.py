@@ -3,17 +3,14 @@
 """The time-weighted line-item engine — fixed charges from Subscription Change
 rate-snapshot segments. Shared by draft generation and the dashboard forecast.
 
-Billing is daily by default: a stable config (one held for 24h or more) bills a
-whole day at a time, so a normal month reads as a handful of clean day lines and
-a full day always costs one day's rate — the "daily cap".
+Billing is daily by default: a date with no mid-day plan change bills a whole day
+at a time, so a normal month reads as a handful of clean day lines and a full day
+always costs one day's rate — the "daily cap".
 
-Hourly billing kicks in only when a machine *churns*: two config changes less
-than 24h apart (a resize twice in a day, or a peak-then-drop even across
-midnight). Any calendar date a churn segment touches is billed by the exact hours
-each config ran that date, which closes the sub-day gaming loophole and bills a
-short-lived config fairly. The date a resource starts and the date it stops, when
-mid-day, also bill by the hours it ran. Because a date is billed either daily OR
-hourly — never both — the two passes partition the period and the total stays exact.
+A plan change bills the exact hours: on the date of a mid-day change, each plan
+bills the hours it ran that date. The date a resource starts and the date it stops,
+when mid-day, also bill by the hours it ran. Because a date is billed either daily
+OR hourly — never both — the two passes partition the period and the total stays exact.
 """
 
 from datetime import datetime, time, timedelta
@@ -21,8 +18,6 @@ from datetime import datetime, time, timedelta
 import frappe
 
 from central.billing.catalog.subscriptions import _server_clusters
-
-CHURN_WINDOW_HOURS = 24
 
 
 def _days_in_period(period_start, period_end) -> int:
@@ -46,9 +41,8 @@ def compute_line_items(
 
 	Each `Created`/`Plan Changed` Subscription-Change row opens a segment at its
 	`locked_rate` snapshot that runs until the subscription's next change (or the
-	period end). `Cancelled` rows close the prior segment and carry no rate. A
-	segment held < 24h marks every date it touches as a churn date; those dates
-	bill hourly, all others bill daily.
+	period end). `Cancelled` rows close the prior segment and carry no rate. The
+	date of a mid-day plan change bills hourly; all other dates bill daily.
 
 	Single-cluster entry point — the dashboard forecast asks per cluster. The monthly
 	run bills a whole team at once and uses `team_line_items` instead, which reads the
@@ -163,66 +157,21 @@ def _subscription_lines(sub, cluster: str, changes: list, b, explain: bool = Fal
 	"""The daily/hourly fixed lines for one subscription in one cluster.
 
 	Splits the subscription's rate-snapshot changes into billable segments, marks the
-	churn dates (a segment held < 24h), then bills each date either daily or hourly —
-	never both — so the two passes partition the period and the total stays exact.
+	dates of mid-day plan changes as hourly, then bills each date either daily or
+	hourly — never both — so the two passes partition the period and the total stays exact.
 	"""
-	# Build the billable segments (clamped to the period), flagging churn from the
-	# real held duration (unclamped) so a resize near the period edge still counts.
-	segs = []
-	for i, change in enumerate(changes):
-		if change.change_type == "Cancelled" or change.locked_rate is None:
-			continue  # terminal marker or no rate snapshot — not a billable segment
-		seg_start_dt = frappe.utils.get_datetime(change.effective_at)
-		seg_end_dt = (
-			frappe.utils.get_datetime(changes[i + 1].effective_at)
-			if i + 1 < len(changes)
-			else b.period_end_excl_dt
-		)
-		held_hours = (seg_end_dt - seg_start_dt).total_seconds() / 3600.0
-		start = max(seg_start_dt, b.period_start_dt)
-		end = min(seg_end_dt, b.period_end_excl_dt)
-		if start >= b.period_end_excl_dt or end <= b.period_start_dt:
-			continue  # no overlap with this month
-		segs.append(
-			{
-				"start": start,
-				"end": end,
-				# When the rate was actually locked, before any clamping to this billing
-				# window. `start` answers "what does this month bill"; this answers "when
-				# was this price set", which is what grandfathering turns on — and the two
-				# are the same only in the month a resource was provisioned.
-				"opened_at": seg_start_dt,
-				"rate": frappe.utils.flt(change.locked_rate),
-				"plan": change.new_value,
-				"server": sub.server_id,
-				"cluster": cluster,
-				"churn": held_hours < CHURN_WINDOW_HOURS,
-				# The resource began or ended its life in this segment, not just a config. A
-				# segment always ends at the next change, so a stop after a resize closes it too.
-				"opens": change.change_type == "Created",
-				"closes": i + 1 < len(changes) and changes[i + 1].change_type == "Cancelled",
-			}
-		)
-
-	# A churn segment (< 24h) turns every date it touches into an hourly date; the
-	# 24h window spans midnight, so a cross-day churn marks both dates.
-	churn_dates = set()
-	for s in segs:
-		if s["churn"]:
-			churn_dates.update(_dates_touched(s["start"], s["end"]))
+	segs = _segments(sub, cluster, changes, b)
+	hourly_dates = {s["start"].date() for s in segs if s["resized_mid_day"]}
 
 	lines = []
 	for s in segs:
-		partial = {d: w for d, w in _partial_days(s).items() if d not in churn_dates}
-		billed_dates = [d for d in _owned_dates(s, b) if d not in churn_dates and d not in partial]
+		partial = _partial_days(s, hourly_dates)
+		billed_by_hour = hourly_dates | partial.keys()
+		billed_dates = [d for d in _owned_dates(s, b) if d not in billed_by_hour]
 		if billed_dates:
 			lines.append(_daily_line(s, len(billed_dates), b.day_units, explain, billed_dates))
-		for day, (lo, hi) in partial.items():
-			hours = (hi - lo).total_seconds() / 3600.0
-			lines.append(
-				_hourly_line(s, hours, b.hour_units, day, explain, window=(lo, hi), why=_PARTIAL_DAY)
-			)
-		lines.extend(_churn_lines(s, segs, churn_dates, b, explain))
+		lines.extend(_partial_day_lines(s, partial, b, explain))
+		lines.extend(_resize_day_lines(s, segs, hourly_dates, b, explain))
 
 	# Grouped by server, chronological within each. A resize chain only means
 	# anything against one machine, so sorting purely by time would shuffle three
@@ -230,13 +179,56 @@ def _subscription_lines(sub, cluster: str, changes: list, b, explain: bool = Fal
 	return _ordered(lines)
 
 
+def _segments(sub, cluster: str, changes: list, b) -> list[dict]:
+	"""The subscription's billable segments, clamped to the period."""
+	segs = []
+	for i, change in enumerate(changes):
+		if change.change_type == "Cancelled" or change.locked_rate is None:
+			continue  # terminal marker or no rate snapshot — not a billable segment
+		following = changes[i + 1] if i + 1 < len(changes) else None
+		seg = _segment(sub, cluster, change, following, b)
+		if seg:
+			segs.append(seg)
+	return segs
+
+
+def _segment(sub, cluster: str, change, following, b) -> dict | None:
+	"""One change's billable segment, clamped to the period, or None outside it."""
+	opened_at = frappe.utils.get_datetime(change.effective_at)
+	seg_end_dt = frappe.utils.get_datetime(following.effective_at) if following else b.period_end_excl_dt
+	start = max(opened_at, b.period_start_dt)
+	end = min(seg_end_dt, b.period_end_excl_dt)
+	if start >= b.period_end_excl_dt or end <= b.period_start_dt:
+		return None  # no overlap with this month
+	return {
+		"start": start,
+		"end": end,
+		# When the rate was actually locked, before any clamping to this billing
+		# window. `start` answers "what does this month bill"; this answers "when
+		# was this price set", which is what grandfathering turns on.
+		"opened_at": opened_at,
+		"rate": frappe.utils.flt(change.locked_rate),
+		"plan": change.new_value,
+		"server": sub.server_id,
+		"cluster": cluster,
+		# A resize that lands inside the period and not on midnight splits its date
+		# between two plans, so that date bills by the hour.
+		"resized_mid_day": change.change_type == "Plan Changed"
+		and start == opened_at
+		and start.time() != time.min,
+		# The resource began or ended its life in this segment, not just a config. A
+		# segment always ends at the next change, so a stop after a resize closes it too.
+		"opens": change.change_type == "Created",
+		"closes": bool(following) and following.change_type == "Cancelled",
+	}
+
+
 _PARTIAL_DAY = "the resource started or stopped during this date, so the date bills the hours it ran"
 
 
 def _owned_dates(seg: dict, b) -> list:
-	"""Whole dates the segment owns. A date belongs to the config active at its start
-	(the change-date boundary), so a single mid-day resize still sends the whole
-	transition day to one plan."""
+	"""Whole dates the segment covers from their start: its own start date up to, but not
+	including, the date it ends on."""
 	d, last = max(seg["start"].date(), b.ps), min(seg["end"].date(), b.pe + timedelta(days=1))
 	dates = []
 	while d < last:
@@ -245,26 +237,36 @@ def _owned_dates(seg: dict, b) -> list:
 	return dates
 
 
-def _partial_days(seg: dict) -> dict:
+def _partial_days(seg: dict, hourly_dates: set) -> dict:
 	"""The date a resource started and the date it stopped, when either was mid-day,
-	mapped to the window of that date it ran."""
+	mapped to the window of that date it ran. A plan-change date already bills by the
+	hour, so it is left out."""
 	out = {}
 	start, end = seg["start"], seg["end"]
 	if seg["opens"] and start.time() != time.min:
 		out[start.date()] = (start, min(end, datetime.combine(start.date() + timedelta(days=1), time.min)))
 	if seg["closes"] and end.time() != time.min:
 		out[end.date()] = (max(start, datetime.combine(end.date(), time.min)), end)
-	return out
+	return {day: window for day, window in out.items() if day not in hourly_dates}
 
 
-def _churn_lines(seg: dict, segs: list, churn_dates: set, b, explain: bool) -> list[dict]:
-	"""This segment's real hours on each churn date it touches."""
+def _partial_day_lines(seg: dict, partial: dict, b, explain: bool) -> list[dict]:
+	"""This segment's real hours on the mid-day date it started or stopped."""
 	lines = []
-	for cd in _dates_touched(seg["start"], seg["end"]):
-		if cd not in churn_dates:
+	for day, (lo, hi) in partial.items():
+		hours = (hi - lo).total_seconds() / 3600.0
+		lines.append(_hourly_line(seg, hours, b.hour_units, day, explain, window=(lo, hi), why=_PARTIAL_DAY))
+	return lines
+
+
+def _resize_day_lines(seg: dict, segs: list, hourly_dates: set, b, explain: bool) -> list[dict]:
+	"""This segment's real hours on each plan-change date it touches."""
+	lines = []
+	for day in _dates_touched(seg["start"], seg["end"]):
+		if day not in hourly_dates:
 			continue
-		day_start = max(seg["start"], datetime.combine(cd, time.min))
-		day_end = min(seg["end"], datetime.combine(cd + timedelta(days=1), time.min))
+		day_start = max(seg["start"], datetime.combine(day, time.min))
+		day_end = min(seg["end"], datetime.combine(day + timedelta(days=1), time.min))
 		hours = (day_end - day_start).total_seconds() / 3600.0
 		if hours <= 0:
 			continue
@@ -276,13 +278,12 @@ def _churn_lines(seg: dict, segs: list, churn_dates: set, b, explain: bool) -> l
 				"to": str(other["end"]),
 				"rate": other["rate"],
 				"plan": other["plan"],
-				"held_under_24h": other["churn"],
 			}
 			for other in segs
-			if cd in _dates_touched(other["start"], other["end"])
+			if day in _dates_touched(other["start"], other["end"])
 		]
 		lines.append(
-			_hourly_line(seg, hours, b.hour_units, cd, explain, touching, window=(day_start, day_end))
+			_hourly_line(seg, hours, b.hour_units, day, explain, touching, window=(day_start, day_end))
 		)
 	return lines
 
@@ -292,8 +293,8 @@ def _resolve_changes(subscription_names: list[str], changes=None) -> dict:
 
 	The run reads them from Subscription Change, which is the only source there is. A
 	projection may supply its own — the real rows plus a hypothetical resize, say — so
-	that an invented change is rated by exactly the code that rates a real one, churn
-	window and all. `changes` is either a ready-made mapping or a callable taking the
+	that an invented change is rated by exactly the code that rates a real one, resize
+	days and all. `changes` is either a ready-made mapping or a callable taking the
 	subscription names; absent, nothing changes.
 	"""
 	if changes is None:
@@ -350,7 +351,7 @@ def _daily_line(seg: dict, days: int, day_units: int, explain: bool = False, bil
 	if explain:
 		line["derivation"] = {
 			"mode": "Daily",
-			"why": "the config was held for a day or more, so whole days are billed",
+			"why": "the config was held for these whole dates, so whole days are billed",
 			"segment_from": str(seg["start"]),
 			"segment_to": str(seg["end"]),
 			"rate_locked_at": str(seg["opened_at"]),
@@ -391,8 +392,7 @@ def _hourly_line(
 	if explain:
 		line["derivation"] = {
 			"mode": "Hourly",
-			"why": why
-			or "a config on this date was held for less than 24 hours, so the whole date bills by the hour",
+			"why": why or "the plan changed during this date, so each plan bills the hours it ran",
 			"charge_date": str(charge_date),
 			"segment_from": str(seg["start"]),
 			"segment_to": str(seg["end"]),

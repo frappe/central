@@ -13,13 +13,16 @@ from itertools import pairwise
 
 import frappe
 
+from central.billing import settings
 from central.billing.api import dashboard
+from central.billing.doctype.billing_profile.billing_profile import get_payment_date
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import (
 	add_segment,
 	complete_billing_profile,
 	ensure_atlas_instance,
 	ensure_team,
+	give_team_a_card,
 	make_billing_subscription,
 	make_plan,
 	reset_gateway_roster,
@@ -29,6 +32,7 @@ from central.billing.tests.utils import (
 TEAM = "team-overview"
 CLUSTER = "ap-south-1"
 PLAN = "bundle-overview-test"
+LADDER = {"dunning_retry_interval_days": 2, "suspension_day": 15, "terminate_after_days": 10}
 
 
 class OverviewBase(IntegrationTestCase):
@@ -47,6 +51,7 @@ class OverviewBase(IntegrationTestCase):
 	def _purge(self):
 		for dt in (
 			"Invoice",
+			"Payment Attempt",
 			"Billing Notification Log",
 			"Credit Ledger Entry",
 			"Payment Method",
@@ -200,6 +205,232 @@ class TestNextPayment(OverviewBase):
 		out = dashboard.get_next_payment(TEAM)
 
 		self.assertEqual(out["amount"], 0.0)
+
+	def _open_invoice(self, payment_date, due_date=None, months_back=1, suspends_on=None):
+		period_start = frappe.utils.add_months(self.month_start, -months_back)
+		return frappe.get_doc(
+			{
+				"doctype": "Invoice",
+				"team": TEAM,
+				"invoice_type": "Billable",
+				"status": "Outstanding",
+				"period_start": period_start,
+				"period_end": frappe.utils.add_days(frappe.utils.add_months(period_start, 1), -1),
+				"currency": "INR",
+				"subtotal": 3000,
+				"total": 3000,
+				"expected_collection": 3000,
+				"payment_date": payment_date,
+				"due_date": due_date or payment_date,
+				"dunning_starts_on": payment_date,
+				"suspends_on": suspends_on,
+				"items": [
+					{"resource_type": "bundle", "plan": PLAN, "rate": 3000, "days": 30, "amount": 3000}
+				],
+			}
+		).insert(ignore_permissions=True)
+
+	def _next_cycle_payment_date(self):
+		next_month = frappe.utils.add_days(frappe.utils.get_last_day(self.today), 1)
+		return str(get_payment_date(TEAM, next_month))
+
+	def test_an_open_bill_is_charged_on_its_own_payment_date(self):
+		payment_date = frappe.utils.add_days(self.today, 3)
+		self._open_invoice(payment_date)
+
+		out = dashboard.get_next_payment(TEAM)
+
+		self.assertEqual(out["charge_on"], str(payment_date))
+		self.assertIsNone(out["next_retry_on"])
+		self.assertIsNone(out["suspends_on"])
+
+	def _missed_invoice(self, charged_days_ago, months_back=1):
+		"""An invoice charged `charged_days_ago`, due 7 days after that and suspended 7 days later."""
+		payment_date = frappe.utils.add_days(self.today, -charged_days_ago)
+		return self._open_invoice(
+			payment_date,
+			due_date=frappe.utils.add_days(payment_date, 7),
+			months_back=months_back,
+			suspends_on=frappe.utils.add_days(payment_date, 14),
+		)
+
+	def test_a_missed_bill_reports_its_next_retry(self):
+		give_team_a_card(TEAM)
+		invoice = self._missed_invoice(1)
+
+		with settings.overridden(**LADDER):
+			out = dashboard.get_next_payment(TEAM)
+
+		self.assertEqual(out["next_retry_on"], str(frappe.utils.add_days(invoice.payment_date, 2)))
+		self.assertIsNone(out["suspends_on"])
+		self.assertEqual(out["charge_on"], self._next_cycle_payment_date())
+
+	def test_a_missed_bill_with_no_retry_left_reports_the_suspension_date(self):
+		give_team_a_card(TEAM)
+		invoice = self._missed_invoice(10)
+
+		with settings.overridden(**LADDER):
+			out = dashboard.get_next_payment(TEAM)
+
+		self.assertIsNone(out["next_retry_on"])
+		self.assertEqual(out["suspends_on"], str(invoice.suspends_on))
+		self.assertEqual(out["charge_on"], self._next_cycle_payment_date())
+
+	def test_a_missed_bill_that_dunning_cannot_retry_reports_the_suspension_date(self):
+		give_team_a_card(TEAM)
+		complete_billing_profile(TEAM, currency="INR")
+		frappe.db.set_value("Billing Profile", TEAM, "collection_mode", "Manual Checkout")
+		invoice = self._missed_invoice(1)
+
+		with settings.overridden(**LADDER):
+			out = dashboard.get_next_payment(TEAM)
+
+		self.assertIsNone(out["next_retry_on"])
+		self.assertEqual(out["suspends_on"], str(invoice.suspends_on))
+
+	def test_an_overdue_bill_reports_no_retry(self):
+		give_team_a_card(TEAM)
+		invoice = self._missed_invoice(1)
+		frappe.db.set_value("Invoice", invoice.name, "status", "Overdue")
+
+		with settings.overridden(**LADDER):
+			out = dashboard.get_next_payment(TEAM)
+
+		self.assertIsNone(out["next_retry_on"])
+		self.assertEqual(out["suspends_on"], str(invoice.suspends_on))
+
+	def test_a_bill_overdue_on_its_payment_date_reports_the_suspension_date(self):
+		give_team_a_card(TEAM)
+		invoice = self._open_invoice(self.today, suspends_on=frappe.utils.add_days(self.today, 7))
+		frappe.db.set_value("Invoice", invoice.name, "status", "Overdue")
+
+		with settings.overridden(**LADDER):
+			out = dashboard.get_next_payment(TEAM)
+
+		self.assertEqual(out["suspends_on"], str(invoice.suspends_on))
+		self.assertEqual(out["charge_on"], self._next_cycle_payment_date())
+
+	def test_a_newer_bill_still_to_be_charged_sets_the_next_payment_date(self):
+		give_team_a_card(TEAM)
+		missed = self._missed_invoice(1, months_back=2)
+		payment_date = frappe.utils.add_days(self.today, 3)
+		self._open_invoice(payment_date, due_date=frappe.utils.add_days(self.today, 10))
+
+		with settings.overridden(**LADDER):
+			out = dashboard.get_next_payment(TEAM)
+
+		self.assertEqual(out["charge_on"], str(payment_date))
+		self.assertEqual(out["invoice"], missed.name)
+		self.assertEqual(out["next_retry_on"], str(frappe.utils.add_days(missed.payment_date, 2)))
+
+	def test_the_earliest_upcoming_charge_is_the_next_payment_date(self):
+		later = frappe.utils.add_days(self.today, 5)
+		earlier = frappe.utils.add_days(self.today, 2)
+		self._open_invoice(later, months_back=2)
+		self._open_invoice(earlier, due_date=frappe.utils.add_days(self.today, 6))
+
+		out = dashboard.get_next_payment(TEAM)
+
+		self.assertEqual(out["charge_on"], str(earlier))
+
+	def test_a_retry_due_today_stays_next_until_it_runs(self):
+		give_team_a_card(TEAM)
+		invoice = self._missed_invoice(6)
+
+		with settings.overridden(**LADDER):
+			before = dashboard.get_next_payment(TEAM)
+			self._attempt(invoice.name)
+			after = dashboard.get_next_payment(TEAM)
+
+		self.assertEqual(before["next_retry_on"], str(self.today))
+		self.assertIsNone(before["suspends_on"])
+		self.assertIsNone(after["next_retry_on"])
+		self.assertEqual(after["suspends_on"], str(invoice.suspends_on))
+
+	def test_the_single_retry_is_shown_24_hours_after_the_failed_first_charge(self):
+		give_team_a_card(TEAM)
+		# Due on its payment date, so no interval retry fits and the ladder has the single retry.
+		invoice = self._open_invoice(
+			frappe.utils.add_days(self.today, -1), suspends_on=frappe.utils.add_days(self.today, 7)
+		)
+		# The first charge failed today, after the payment date: a pre-debit rail charges late.
+		failed_at = frappe.utils.get_datetime(f"{self.today} 00:00:01")
+		frappe.db.set_value("Payment Attempt", self._attempt(invoice.name), "creation", failed_at)
+
+		with settings.overridden(**LADDER):
+			out = dashboard.get_next_payment(TEAM)
+
+		self.assertEqual(out["next_retry_on"], str(frappe.utils.add_days(self.today, 1)))
+
+	def _attempt(self, invoice, status="Failed") -> str:
+		# Test fixture: an attempt the gateway would record, not a user action.
+		return (
+			frappe.get_doc(
+				{
+					"doctype": "Payment Attempt",
+					"invoice": invoice,
+					"team": TEAM,
+					"gateway": "Stripe",
+					"amount": 3000,
+					"currency": "INR",
+					"status": status,
+					"initiated_at": frappe.utils.now_datetime(),
+				}
+			)
+			.insert(ignore_permissions=True)
+			.name
+		)
+
+	def _charge_in_flight_since(self, invoice, started_on):
+		attempt = self._attempt(invoice, status="Initiated")
+		frappe.db.set_value("Payment Attempt", attempt, "creation", f"{started_on} 10:00:00")
+
+	def test_a_charge_in_flight_reports_the_payment_in_progress(self):
+		give_team_a_card(TEAM)
+		invoice = self._missed_invoice(10)
+		yesterday = frappe.utils.add_days(self.today, -1)
+		self._charge_in_flight_since(invoice.name, yesterday)
+
+		with settings.overridden(**LADDER):
+			out = dashboard.get_next_payment(TEAM)
+
+		self.assertEqual(out["payment_in_progress_since"], str(yesterday))
+		self.assertIsNone(out["next_retry_on"])
+		self.assertIsNone(out["suspends_on"])
+
+	def test_a_charge_in_flight_on_the_charge_date_reports_the_payment_in_progress(self):
+		give_team_a_card(TEAM)
+		invoice = self._missed_invoice(0)
+		self._charge_in_flight_since(invoice.name, self.today)
+
+		with settings.overridden(**LADDER):
+			out = dashboard.get_next_payment(TEAM)
+
+		self.assertEqual(out["payment_in_progress_since"], str(self.today))
+		self.assertIsNone(out["suspends_on"])
+
+	def test_an_overdue_bill_with_a_charge_in_flight_reports_the_suspension_date_too(self):
+		give_team_a_card(TEAM)
+		invoice = self._missed_invoice(13)
+		frappe.db.set_value("Invoice", invoice.name, "status", "Overdue")
+		self._charge_in_flight_since(invoice.name, frappe.utils.add_days(self.today, -13))
+
+		with settings.overridden(**LADDER):
+			out = dashboard.get_next_payment(TEAM)
+
+		self.assertEqual(out["payment_in_progress_since"], str(frappe.utils.add_days(self.today, -13)))
+		self.assertEqual(out["suspends_on"], str(invoice.suspends_on))
+
+	def test_a_charge_in_flight_on_the_suspension_date_reports_the_suspension(self):
+		give_team_a_card(TEAM)
+		invoice = self._missed_invoice(14)
+		self._charge_in_flight_since(invoice.name, frappe.utils.add_days(self.today, -1))
+
+		with settings.overridden(**LADDER):
+			out = dashboard.get_next_payment(TEAM)
+
+		self.assertIsNone(out["payment_in_progress_since"])
+		self.assertEqual(out["suspends_on"], str(invoice.suspends_on))
 
 	def test_the_schedule_publishes_the_escalation_ladder(self):
 		self._provision(rate=3000)

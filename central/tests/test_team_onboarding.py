@@ -94,6 +94,13 @@ class TestTeamCreation(IntegrationTestCase):
 		self.assertTrue(frappe.db.get_value("Team", team, "is_staging_trial"))
 		self.assertEqual(onboarding_steps(team), {"invite": "Pending", "start": "Pending"})
 
+	def test_trial_funnel_team_skips_the_console_onboarding(self):
+		team = create_trial_team(self.owner)
+
+		self.assertEqual(
+			onboarding_steps(team), {"invite": "Skipped", "billing": "Skipped", "start": "Skipped"}
+		)
+
 	def test_trial_funnel_creates_a_team_only_for_a_user_with_none(self):
 		team = create_trial_team(self.owner)
 

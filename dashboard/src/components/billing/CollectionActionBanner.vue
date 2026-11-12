@@ -98,7 +98,13 @@ const options = [
 
 	<Dialog v-model:open="choosing" title="How do you want to pay?">
 		<template #default>
-			<Alert v-if="formError" class="mb-4" theme="red" :title="formError" />
+			<Alert
+				v-if="formError"
+				class="mb-4"
+				theme="red"
+				title="Couldn't change how you pay"
+				:description="formError"
+			/>
 			<div class="grid gap-3 sm:grid-cols-2">
 				<button
 					v-for="o in options"

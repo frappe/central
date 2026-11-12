@@ -28,6 +28,7 @@ CLUSTER = "ap-south-1"
 PLAN = "bundle-run-outcome"
 PERIOD = ("2026-06-01", "2026-06-30")
 RATE = "central.billing.revenue.invoicing.generate.rate_team_period"
+MINIMUM = "central.billing.settings.minimum_invoice_amount"
 
 
 def _outcome():
@@ -95,7 +96,7 @@ class TestBillingRunOutcomes(IntegrationTestCase):
 		self.assertGreaterEqual(status["failures"], 1)
 
 	def test_a_month_below_the_minimum_makes_no_invoice(self):
-		with billing_settings(minimum_invoice_amounts=[{"currency": "INR", "amount": 5000}]):
+		with patch(MINIMUM, return_value=5000):
 			self.assertEqual(run.draft_team_invoice(TEAM, *PERIOD), [])
 			run.draft_team_invoice(TEAM, *PERIOD)
 
@@ -107,6 +108,11 @@ class TestBillingRunOutcomes(IntegrationTestCase):
 	def test_a_month_at_or_above_the_minimum_is_invoiced(self):
 		with billing_settings(minimum_invoice_amounts=[{"currency": "INR", "amount": 1}]):
 			self.assertTrue(run.draft_team_invoice(TEAM, *PERIOD))
+
+	def test_a_minimum_above_the_gateway_minimum_charge_is_refused(self):
+		with self.assertRaises(frappe.ValidationError):
+			with billing_settings(minimum_invoice_amounts=[{"currency": "INR", "amount": 50}]):
+				pass
 
 
 class TestBillingRunCoverage(IntegrationTestCase):
@@ -140,7 +146,7 @@ class TestBillingRunCoverage(IntegrationTestCase):
 		make_plan(PLAN)
 		subscription = make_billing_subscription(TEAM, CLUSTER, PLAN, billing_cycle="Monthly")
 		add_segment(subscription, "Created", 1000, "2026-06-01 00:00:00")
-		with billing_settings(minimum_invoice_amounts=[{"currency": "INR", "amount": 5000}]):
+		with patch(MINIMUM, return_value=5000):
 			run.draft_team_invoice(TEAM, *PERIOD)
 
 		self.assertEqual(self._row(TEAM)["stage"], billing_run_coverage.BELOW_MINIMUM)
@@ -172,6 +178,15 @@ class TestTaxProfileCheck(IntegrationTestCase):
 		frappe.db.delete("Tax Profile", {"team": TEAM})
 
 		self.assertIn(TEAM, [v.team for v in readiness.check_billed_teams_have_a_tax_profile()])
+
+	def test_a_billed_team_outside_india_may_have_no_tax_profile(self):
+		make_plan(PLAN)
+		subscription = make_billing_subscription(OTHER_TEAM, CLUSTER, PLAN, billing_cycle="Monthly")
+		frappe.db.set_value("Subscription", subscription, "enabled", 1)
+		frappe.db.set_value("Billing Profile", OTHER_TEAM, {"country": "United States", "currency": "USD"})
+		frappe.db.delete("Tax Profile", {"team": OTHER_TEAM})
+
+		self.assertNotIn(OTHER_TEAM, [v.team for v in readiness.check_billed_teams_have_a_tax_profile()])
 
 
 class TestBillingActivity(IntegrationTestCase):

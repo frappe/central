@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { type ColorScheme, SettingsRow, useColorScheme } from 'frappe-ui'
+import FleetViewPreference from './FleetViewPreference.vue'
+import PreferenceCard from './PreferenceCard.vue'
 
 const { colorScheme, setColorScheme } = useColorScheme()
 
@@ -44,32 +46,15 @@ const options: ThemeOption[] = [
 		/>
 
 		<div class="mt-4 grid grid-cols-3 gap-3">
-			<button
+			<PreferenceCard
 				v-for="option in options"
 				:key="option.value"
-				type="button"
-				:aria-pressed="colorScheme === option.value"
-				class="grid grid-cols-2 overflow-hidden rounded-4 border focus-visible:focus-ring"
-				:class="
-					colorScheme === option.value
-						? 'border-outline-gray-6'
-						: 'border-outline-gray-2 hover:border-outline-gray-4'
-				"
+				:label="option.label"
+				:panes="option.panes"
+				:is-selected="colorScheme === option.value"
 				@click="setColorScheme(option.value)"
 			>
-				<span
-					v-for="(pane, index) in option.panes"
-					:key="pane"
-					class="flex overflow-hidden pl-2 pt-2 sm:pl-4 sm:pt-3"
-					:class="[
-							index === 0
-								? 'bg-surface-gray-1'
-								: 'border-l border-outline-gray-2 bg-surface-gray-2',
-							option.panes.length === 2
-								? 'aspect-[8/7]'
-								: 'col-span-2 aspect-[16/7]',
-						]"
-				>
+				<template #pane="{ pane }">
 					<span
 						class="grid shrink-0 grid-cols-[28%_1fr] grid-rows-[auto_1fr] overflow-hidden rounded-tl-1 shadow-lg"
 						:class="[tones[pane].page, tones[pane].border]"
@@ -107,24 +92,10 @@ const options: ThemeOption[] = [
 							/>
 						</span>
 					</span>
-				</span>
-
-				<span
-					class="col-span-full flex items-center justify-between border-t border-outline-gray-2 px-1.5 py-1 sm:px-2 sm:py-1.5"
-				>
-					<span class="text-p-xs sm:text-p-sm text-ink-gray-7">
-						{{ option.label }}
-					</span>
-					<span
-						class="size-3 rounded-full"
-						:class="
-							colorScheme === option.value
-								? 'border-4 border-outline-gray-7'
-								: 'border border-outline-gray-3'
-						"
-					/>
-				</span>
-			</button>
+				</template>
+			</PreferenceCard>
 		</div>
+
+		<FleetViewPreference />
 	</div>
 </template>

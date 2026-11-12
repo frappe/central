@@ -514,6 +514,7 @@ class ResourceAction(Document):
 			[row.model_dump() for row in configuration.includes],
 			configuration.sub_category,
 			is_free_trial=bool(self.is_free_trial),
+			offering=configuration.offering,
 		)
 
 	@classmethod

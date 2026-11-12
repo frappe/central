@@ -10,6 +10,7 @@ from requests import RequestException
 
 from central.iam import can, user_has_operator_bypass
 from central.infrastructure.doctype.pilot_credential.pilot_credential import PilotCredential
+from central.infrastructure.doctype.region.region import Region
 from central.infrastructure.doctype.user_mail_account.user_mail_account import UserMailAccount
 from central.services.doctype.ai_trial_key.ai_trial_key import AITrialKey
 from central.sso import mint_bench_login
@@ -149,6 +150,10 @@ class VirtualMachine(Document):
 
 		if self.has_value_changed("status") and self.status == "Failed":
 			self.queue_status_notification("server_failed")
+
+		previous = self.get_doc_before_save()
+		if self.ipv6_address and not (previous and previous.ipv6_address):
+			self.route_app_subdomain_once_addressable()
 
 		if self.has_value_changed("status") and self.status == "Terminated":
 			self.close_trial()
@@ -343,6 +348,44 @@ class VirtualMachine(Document):
 			doc.publish_state_change()
 
 		return True
+
+	def route_app_subdomain_once_addressable(self) -> None:
+		"""Route the site name chosen for an app server once, when it first gets an address, the
+		way a Pilot server's Site routes its own name. A job keeps a refused route from failing
+		the state report."""
+		if self.has_site:
+			return
+
+		subdomain = frappe.db.get_value(
+			"Resource Action", {"server": self.name, "action": "create"}, "subdomain"
+		)
+		if not subdomain:
+			return
+
+		frappe.enqueue_doc(
+			self.doctype,
+			self.name,
+			"route_app_subdomain",
+			queue="short",
+			enqueue_after_commit=True,
+			domain=f"{subdomain}.{Region.get_zone(self.region)}",
+		)
+
+	def route_app_subdomain(self, domain: str) -> None:
+		if frappe.db.exists("Site Domain", domain):
+			return
+
+		route = frappe.get_doc(
+			{
+				"doctype": "Site Domain",
+				"domain": domain,
+				"team": self.team,
+				"server": self.name,
+				"region": self.region,
+			}
+		)
+		# The system routes the name the customer chose at creation; no user acts here.
+		route.insert(ignore_permissions=True)
 
 	@frappe.whitelist(methods=["POST"])
 	def remove_routes(self) -> None:

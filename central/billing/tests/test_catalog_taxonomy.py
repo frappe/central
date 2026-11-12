@@ -16,7 +16,7 @@ class TestCatalogTaxonomy(IntegrationTestCase):
 		vm = frappe.get_doc("Plan Category", "VM Plans")
 		self.assertEqual(vm.configurator_builder, "VM Rungs")
 		self.assertEqual(vm.sub_category_label, "Optimization profile")
-		self.assertEqual(vm.allowed_types(), {"Compute", "Memory", "Disk", "Transfer"})
+		self.assertEqual(vm.allowed_types(), {"Compute", "Memory", "Disk", "Transfer", "Storage"})
 		for rt in ("Compute", "Memory", "Disk", "Transfer"):
 			self.assertTrue(frappe.db.exists("Resource Type", rt))
 		for sc in ("General", "CPU Optimised", "Memory Optimised", "Storage Optimised"):

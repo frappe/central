@@ -15,7 +15,6 @@ KEY_FIELDS = (
 	"title",
 	"status",
 	"creation",
-	"revocable_at",
 	"masked",
 	"geography",
 	"gateway_url",
@@ -65,18 +64,15 @@ def list_api_keys(team: str | None = None) -> list[dict]:
 def create_api_key(
 	team: str | None = None, label: str | None = None, geography: str | None = None, cap: int | None = None
 ) -> dict:
-	"""Mint a key for the team in `geography` (Grove's default when none) with `cap` whole USD
-	to spend a month (none: the key is refused until it gets one), and return its secret.
-	This is the only time it is shown. `models` is what it may call, for the quickstart."""
+	"""Mint a key for the team in `geography` with `cap` whole USD to spend a month, and return
+	its secret. This is the only time it is shown. `models` is what it may call, for the quickstart."""
 	require_ai(team)
 	label = (label or "").strip()
 	if not label:
 		frappe.throw(_("Enter a name for the API key so you can identify it later."))
-
-	client = GroveClient.from_settings()
-	key = client.provision_key(
-		team, label, geography or None, whole_dollars(cap) if cap is not None else None
-	)
+	if not geography:
+		frappe.throw(_("Pick a geography for the API key."))
+	key = GroveClient.from_settings().provision_key(team, label, geography, whole_dollars(cap))
 	return {
 		"name": key["name"],
 		"label": label,
@@ -110,12 +106,14 @@ def set_api_key_caps(team: str | None = None, caps: dict[str, int] | None = None
 	return [{field: row.get(field) for field in KEY_FIELDS} for row in rows]
 
 
-def whole_dollars(cap: int | float | str) -> int:
-	"""A monthly cap is whole US dollars. The console's inputs step by one; a fraction that
-	still arrives is refused, not rounded. Grove takes the figure as given."""
+def whole_dollars(cap: int | float | str | None) -> int:
+	"""A monthly cap is whole US dollars, at least 1: a key at 0 is refused by its gateway. The
+	console's inputs step by one; a fraction that still arrives is refused, not rounded."""
 	value = flt(cap)
 	if value != int(value):
 		frappe.throw(_("A cap is whole US dollars."))
+	if value < 1:
+		frappe.throw(_("Set a monthly cap of at least $1: a key without one is refused."))
 	return int(value)
 
 

@@ -148,7 +148,12 @@ defineExpose({ submit, saving: computed(() => save.loading) })
 	<LoadingText v-if="profile.loading && !profile.data" :lines="6" />
 
 	<div v-else class="space-y-4">
-		<Alert v-if="formError" theme="red" :title="formError" />
+		<Alert
+			v-if="formError"
+			theme="red"
+			title="Check your billing details"
+			:description="formError"
+		/>
 		<!-- One compact grid, so the form fits the onboarding dialog without a resize.
          Country decides the state field, the postal label, GSTIN and, until
          locked, the billing currency, which is stated under it, not a field. -->

@@ -20,6 +20,8 @@ is 0 at launch (no team self-declares yet).
 import frappe
 from frappe import _
 
+from central.billing import settings
+from central.billing.india_gst import INDIA
 from central.billing.revenue import gst_status
 
 _ZERO_BLOCK = {
@@ -39,21 +41,37 @@ def is_internal_team(team: str) -> bool:
 	return bool(frappe.db.get_value("Billing Profile", team, "is_internal"))
 
 
+def is_indian_team(team: str) -> bool:
+	"""Whether the team is billed in India, by its billing country or its INR currency."""
+	profile = frappe.db.get_value("Billing Profile", team, ["country", "currency"], as_dict=True)
+	if not profile:
+		return False
+	return (profile.country or "").strip() == INDIA or profile.currency == "INR"
+
+
+def get_country_output_tax(team: str) -> dict:
+	"""The output tax the team's billing country implies: GST in India, none elsewhere."""
+	if is_indian_team(team):
+		return {"output_tax_type": "GST", "output_tax_rate": settings.default_gst_rate()}
+	return {"output_tax_type": "None", "output_tax_rate": 0}
+
+
 def resolve_tax(team: str, subtotal) -> dict:
 	"""The invoice tax block for a team's taxable subtotal.
 
-	Reads the team's Tax Profile; a team with no profile is untaxed (the launch
-	default — output tax 0, no withholding). A GSTIN the GST portal calls lapsed
-	is left off, and the team is billed as unregistered.
+	Reads the team's Tax Profile. A team with no profile is taxed by its country:
+	GST at the default rate in India, no tax elsewhere. A GSTIN the GST portal calls
+	lapsed is left off, and the team is billed as unregistered.
 	"""
 	subtotal = frappe.utils.flt(subtotal)
 	gst = gst_status.standing(team)
 	block = dict(_ZERO_BLOCK, customer_gstin=gst.gstin)
 	# An internal team's usage is waived, not sold, so there is no supply to tax.
-	if is_internal_team(team) or not frappe.db.exists("Tax Profile", team):
+	if is_internal_team(team):
 		return block
 
-	p = frappe.get_doc("Tax Profile", team)
+	# GST is mandatory in India, so a missing profile must not bill an Indian team untaxed.
+	p = _get_tax_profile(team)
 	block["output_tax_type"] = p.output_tax_type or "None"
 	block["output_tax_rate"] = frappe.utils.flt(p.output_tax_rate)
 
@@ -73,6 +91,12 @@ def resolve_tax(team: str, subtotal) -> dict:
 		block["tds_amount"] = frappe.utils.flt(subtotal * block["tds_rate"] / 100, 2)
 
 	return block
+
+
+def _get_tax_profile(team: str):
+	if frappe.db.exists("Tax Profile", team):
+		return frappe.get_doc("Tax Profile", team)
+	return frappe._dict(get_country_output_tax(team))
 
 
 def is_paid(invoice) -> bool:

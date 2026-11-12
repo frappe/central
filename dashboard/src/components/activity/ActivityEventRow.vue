@@ -101,6 +101,10 @@ function toggle() {
 						/>
 						<template v-else>{{ part.text }}</template>
 					</template>
+					<span v-if="event.initiator" class="text-ink-gray-5">
+						· initiated by
+						<span class="text-ink-gray-7">{{ event.initiator.label }}</span>
+					</span>
 					<template v-if="isRun">
 						<span class="text-ink-gray-5"> · {{ repeatCount }}</span>
 					</template>

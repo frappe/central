@@ -8,6 +8,7 @@ from central.billing.revenue import invoicing, tax
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import (
 	add_segment,
+	billing_settings,
 	complete_billing_profile,
 	make_billing_subscription,
 	make_plan,
@@ -36,6 +37,7 @@ class TaxTestBase(IntegrationTestCase):
 
 	def _purge(self):
 		frappe.db.delete("Invoice", {"team": TEAM})
+		frappe.db.delete("Billing Profile", {"team": TEAM})
 		if frappe.db.exists("Tax Profile", TEAM):
 			frappe.db.delete("Tax Profile", {"team": TEAM})
 		for sub in frappe.get_all("Subscription", {"team": TEAM}, pluck="name"):
@@ -49,12 +51,24 @@ class TaxTestBase(IntegrationTestCase):
 
 
 class TestOutputTax(TaxTestBase):
-	def test_no_profile_is_untaxed(self):
-		inv = self._invoice()
-		self.assertEqual(inv.output_tax_type, "None")
-		self.assertEqual(inv.output_tax_amount, 0)
-		self.assertEqual(inv.total, 1000.0)
-		self.assertEqual(inv.expected_collection, 1000.0)
+	def test_an_indian_team_with_no_profile_pays_the_default_gst(self):
+		frappe.db.delete("Tax Profile", {"team": TEAM})
+		with billing_settings(default_gst_rate=18):
+			inv = self._invoice()
+		self.assertEqual(inv.output_tax_type, "GST")
+		self.assertEqual(inv.output_tax_amount, 180.0)
+		self.assertEqual(inv.total, 1180.0)
+
+	def test_a_team_outside_india_with_no_profile_is_untaxed(self):
+		complete_billing_profile(TEAM, currency="USD")
+		frappe.db.delete("Tax Profile", {"team": TEAM})
+		block = tax.resolve_tax(TEAM, 1000)
+		self.assertEqual(block["output_tax_type"], "None")
+		self.assertEqual(block["output_tax_amount"], 0)
+
+	def test_an_indian_profile_without_gst_is_refused(self):
+		with self.assertRaises(frappe.ValidationError):
+			set_tax_profile(output_tax_type="None")
 
 	def test_gst_is_additive_to_total(self):
 		set_tax_profile(output_tax_type="GST", output_tax_rate=18)
@@ -126,15 +140,15 @@ class TestWithholdingSeam(TaxTestBase):
 		self.assertEqual(inv.expected_collection, 1080.0)  # total - tds
 
 	def test_paid_state_defined_against_expected_collection(self):
-		set_tax_profile(tds_applicable=1, tds_rate=10)
-		inv = self._invoice()  # total 1000, tds 100, expected 900
+		set_tax_profile(output_tax_type="GST", output_tax_rate=18, tds_applicable=1, tds_rate=10)
+		inv = self._invoice()  # total 1180, tds 100, expected 1080
 		# A TDS customer legally short-pays the collected amount → still paid.
 		inv.amount_paid = inv.expected_collection
 		inv.tds_certificate_received = 1
 		self.assertTrue(tax.is_paid(inv))
 
 	def test_mandate_ceiling_uses_gross_total(self):
-		set_tax_profile(tds_applicable=1, tds_rate=10)
+		set_tax_profile(output_tax_type="GST", output_tax_rate=18, tds_applicable=1, tds_rate=10)
 		inv = self._invoice()
 		# The mandate was authorised for the gross, not the TDS-reduced amount.
 		self.assertEqual(tax.mandate_ceiling_amount(inv), inv.total)

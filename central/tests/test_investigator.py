@@ -165,9 +165,13 @@ class TestWriteRequests(IntegrationTestCase):
 			with self.subTest(method=method), self.assertRaises(frappe.PermissionError):
 				call_central_api(method=method, ctx=OPERATOR)
 
-	def test_an_auto_approved_session_stays_read_only(self):
-		with patch("central.investigator.access.frappe.db.get_value", return_value=1):
-			with self.assertRaises(frappe.PermissionError):
+	def test_an_unattended_session_stays_read_only(self):
+		for mode in ("Auto", "Auto-approve"):
+			with (
+				self.subTest(mode=mode),
+				patch("central.investigator.access.frappe.db.get_value", return_value=mode),
+				self.assertRaises(frappe.PermissionError),
+			):
 				switch_to_read_write(reason="Test.", ctx=OPERATOR)
 
 

@@ -15,13 +15,15 @@ defineEmits<{ retry: [] }>()
 			v-if="stale.length"
 			class="pointer-events-auto w-full max-w-xl shadow-sm"
 			theme="amber"
-			:title="`Showing last-known data. Couldn't reach: ${stale.join(', ')}`"
+			title="Showing last-known data"
+			:description="`Couldn't reach: ${stale.join(', ')}`"
 		/>
 		<Alert
 			v-else-if="error && hasRows"
 			class="pointer-events-auto w-full max-w-xl shadow-sm"
 			theme="red"
-			:title="error"
+			title="Couldn't refresh the map"
+			:description="error"
 			:primary-action="{ label: 'Retry', onClick: () => $emit('retry') }"
 		/>
 	</div>

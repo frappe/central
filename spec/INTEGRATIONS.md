@@ -279,7 +279,7 @@ An app is a fixed service, such as Redis or MariaDB, that a region's Cargo build
 
 1. The console lists the region's apps with `central.api.images.list_apps`, and reads the inputs and minimum size of the selected one with `central.api.images.get_app_requirements`. Central gets both from Cargo.
 2. `eligible_plans` shows only the plans with enough CPU, memory and disk for the app.
-3. The customer sends the answers as `app_inputs`. Central refuses a plan below the app's minimum size, refuses customer user data, and asks Cargo for the user data. Cargo checks each answer. A blank input that the app marks `generate` is left out, and the server makes the value itself.
+3. The customer sends the answers as `app_inputs`. Central refuses a plan below the app's minimum size, refuses customer user data, checks each answer against the app's inputs, and writes the answers as cloud-init user data to `/etc/one-click/inputs.env`. A blank answer is left out, and the server makes the value itself.
 4. The server boots from the image. Its first-boot script sets up the service and keeps the settings, including generated passwords, in `/etc/one-click/app.env` on the server.
 
 An app server is a normal server after creation. Central does not route a name to it and does not open its ports. Without a public address, the service is reachable only on the region's private network. A server restored from a snapshot of an app server has no app requirements.
@@ -395,7 +395,7 @@ A session starts read-only. A change needs these, in order:
 1. The agent asks the user to switch the session to read-write, and the user approves the `switch_to_read_write` call. The switch lasts one hour.
 2. The user approves each change call.
 
-A session that approves its own tool calls, such as a Trigger session, cannot switch. `central/investigator/access.py` refuses any change that terminates or destroys a resource, or that returns a login, a console, or a secret. The operator does these in Desk.
+A session whose approval mode is not Ask cannot switch: in Auto a model approves its tool calls, and in Auto-approve, as in a Trigger session, nobody does. `central/investigator/access.py` refuses any change that terminates or destroys a resource, or that returns a login, a console, or a secret. The operator does these in Desk.
 
 The agent can read any Pilot `GET` path except those in `PILOT_DENIED_READ_PATHS`, which return a credential, a login, or a backup file. Performance data (database, monitor, metrics, system, storage, and site monitoring) comes back exact, because a scrub changes numbers and query text. Other results are scrubbed. `run_database_query` runs one `SELECT`, `WITH`, `EXPLAIN`, `SHOW`, or `DESCRIBE` statement in a read-only transaction. A `SELECT` stops after 10 seconds. A read-only transaction does not stop DDL, so the tool refuses any other statement. `PILOT_DENIED_WRITE_PATHS` refuses code, credentials, setup, and SQL changes.
 
@@ -404,6 +404,39 @@ The `Central` and `Pilot` knowledge bases hold the Central documents and the Pil
 ```sh
 pilot --site <site> execute central.investigator.knowledge.load_knowledge_bases
 ```
+
+## How does Central create and list support tickets?
+
+Central calls a Frappe Helpdesk site through `central/integrations/helpdesk.py`. Ticket policy lives in `central/support.py`. Central uses one service user on that site with the `Agent` role. An operator sets the Helpdesk URL, the API key and the API secret in Central Settings under General > Helpdesk. Central stores the secret in a Password field.
+
+A request to Helpdesk carries `Authorization: token <key>:<secret>`. Frappe reads the key, finds the service user and runs the request as that user. No customer session and no Central token reaches Helpdesk. The service user is the actor that Helpdesk records as `owner` and `modified_by`.
+
+Central sends stock `HD Ticket` fields only. It does not change the Helpdesk schema or its forms.
+
+| Field | Value |
+| --- | --- |
+| `subject` | `[<Category> · <Topic>] <customer subject>` |
+| `description` | The customer's escaped text, then a Context block with Team, User, Category, Topic, the Server and Site that the caller can view, and links to the Team and records in Central |
+| `raised_by` | The caller's email |
+| `via_customer_portal` | `1` |
+
+A critical issue is `Unreachable or down`, `Site setup or provisioning failed`, or `Payment method or failed charge`. A ticket for one of these is `Urgent`. Every other ticket gets the Helpdesk default priority. The client cannot set a priority.
+
+Each Context block ends with an `Open in Central` line. It links the Team, and the Server or Site when the ticket names one, to the Desk record. An agent opens the record from the ticket.
+
+A ticket's team is the `Team:` line in the Context block. The whole marker is `<hr><p><strong>Context</strong><br>Team: <team><br>`. Helpdesk has no team field, so this line links a ticket to a Central Team. Central escapes the customer's text before it writes the block, so a description cannot fake the line.
+
+A list request asks for tickets where `status_category` is not `Resolved`, the description holds the team marker, and the owner is Central's service user. Anyone can email Helpdesk a description that copies the marker, so only a ticket that Central opened counts. Central asks Helpdesk for the service user once with `frappe.auth.get_logged_user` and caches it for a day. A ticket that waits on the customer is `Paused`, not `Resolved`, and stays in the list.
+
+Before a customer opens a ticket, the console asks Helpdesk for up to 5 matching articles and up to 5 of the team's tickets. An operator turns on Show Help Articles in Central Settings under Helpdesk after the desk publishes articles. While it is off, the dialog opens on the contact form and does not search. Central first lists every ticket whose description holds the team marker, then sends those ticket names in a POST body to Helpdesk's full-text search, so a match in the subject or in the thread counts. Central keeps only ticket and email rows. It drops agent comments, because Helpdesk returns them to an agent and Central reads Helpdesk as an agent. The ticket search accepts any status, because a resolved ticket can still answer the question. Central drops a search row that points to a ticket outside the team list. A failed search returns no tickets and never blocks ticket creation.
+
+Central waits up to 3 seconds to connect and 5 seconds for a search or list answer, because a late answer is no use while the customer types. It waits up to 30 seconds for a new ticket. A user can open 10 tickets an hour and run 60 searches a minute.
+
+Central logs each failed Helpdesk call once in the Error Log, with the status and the body. When Helpdesk cannot be reached, or answers 502, 503, or 504, the customer reads that support is unavailable. Any other refusal, or a reply that is not Frappe JSON, shows a generic message. An operator also sees the status and the start of the body.
+
+A ticket row opens `<Helpdesk URL>/help/my-tickets/<ticket name>`. This is the Helpdesk customer portal, so the customer needs a Helpdesk account there. The portal opens a ticket only for the person who raised it, so a teammate's ticket shows who raised it and has no link. An operator keeps every link.
+
+A member of a suspended team can create and list tickets. That member needs support to learn why the team was suspended. When Helpdesk is not configured, the console keeps the external Support Ticket URL and shows no in-app form.
 
 ## Validation
 

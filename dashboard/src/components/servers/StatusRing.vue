@@ -11,26 +11,31 @@ interface StatusRingProps {
 	/** CSS colour of the arc or halo; the status dot's colour. */
 	color: string
 	isSettled?: boolean
+	shape?: 'circle' | 'square'
 }
 
-defineProps<StatusRingProps>()
+withDefaults(defineProps<StatusRingProps>(), { shape: 'circle' })
 </script>
 
 <template>
-	<span class="pointer-events-none absolute rounded-full" aria-hidden="true">
+	<span
+		class="pointer-events-none absolute"
+		:class="shape === 'square' ? 'rounded-5' : 'rounded-full'"
+		aria-hidden="true"
+	>
 		<span
 			v-if="motion === 'alert'"
-			class="status-ring-alert absolute inset-0 rounded-full"
+			class="status-ring-alert absolute inset-0 rounded-[inherit]"
 			:style="{ background: color }"
 		/>
 		<span
 			v-else-if="motion === 'progress'"
-			class="status-ring-progress absolute inset-0 rounded-full"
+			class="status-ring-progress absolute inset-0 rounded-[inherit]"
 			:style="{ '--status-ring-color': color }"
 		/>
 		<span
 			v-if="isSettled"
-			class="status-ring-settled absolute inset-0 rounded-full"
+			class="status-ring-settled absolute inset-0 rounded-[inherit]"
 		/>
 	</span>
 </template>
@@ -49,17 +54,30 @@ defineProps<StatusRingProps>()
 	}
 }
 
-/* A faint full track with one bright quarter riding it. */
+@property --status-ring-angle {
+	syntax: "<angle>";
+	inherits: false;
+	initial-value: 0deg;
+}
+
 .status-ring-progress {
-	border: 2px solid transparent;
-	border-top-color: var(--status-ring-color);
-	box-shadow: inset 0 0 0 2px
-		color-mix(in srgb, var(--status-ring-color) 20%, transparent);
+	padding: 2px;
+	background: conic-gradient(
+		from var(--status-ring-angle),
+		var(--status-ring-color) 0deg 90deg,
+		color-mix(in srgb, var(--status-ring-color) 20%, transparent) 90deg 360deg
+	);
+	mask:
+		linear-gradient(#000 0 0) content-box exclude,
+		linear-gradient(#000 0 0);
+	-webkit-mask:
+		linear-gradient(#000 0 0) content-box xor,
+		linear-gradient(#000 0 0);
 	animation: status-ring-spin 1.1s linear infinite;
 }
 @keyframes status-ring-spin {
 	to {
-		transform: rotate(360deg);
+		--status-ring-angle: 360deg;
 	}
 }
 
@@ -91,7 +109,6 @@ defineProps<StatusRingProps>()
 	}
 	.status-ring-progress {
 		animation: none;
-		border-color: var(--status-ring-color);
 		opacity: 0.6;
 	}
 	.status-ring-settled {

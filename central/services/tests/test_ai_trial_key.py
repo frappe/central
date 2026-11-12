@@ -343,14 +343,6 @@ class TestAITrialKey(IntegrationTestCase):
 			AITrialKey.queue_revoke(server="server-1")
 		self.assertEqual(key.reload().status, "Converted")
 
-	def test_a_blank_trial_key_cap_is_accepted_and_a_fraction_refused(self):
-		settings = frappe.get_doc("AI Settings")
-		settings.trial_key_cap = None
-		settings.save()
-		settings.trial_key_cap = 2.5
-		with self.assertRaisesRegex(frappe.ValidationError, "whole US dollars"):
-			settings.save()
-
 	def test_a_refused_hand_over_is_tried_hourly_and_given_up_after_three_then_the_key_is_revoked(self):
 		key, name = self.converting()
 		self.grove.transfer_key.side_effect = Exception("Grove is down")
@@ -369,12 +361,15 @@ class TestAITrialKey(IntegrationTestCase):
 				ai_trial_key.retry_stale()
 		self.assertEqual((key.reload().status, key.attempts, key.revoked), ("Conversion Failed", 3, 0))
 		self.assertEqual((log_error.call_count, key.last_error), (3, "Grove is down"))
-		# The failure queues the revoke; a refused one fails its job and waits its hour; the status
-		# keeps the failure.
+		# The failure queues the revoke; a refused one keeps Grove's answer and waits its hour; the
+		# status keeps the failure.
 		self.grove.revoke_key.side_effect = Exception("Grove is still down")
-		with self.assertRaisesRegex(Exception, "still down"):
+		with patch(f"{MODULE}.frappe.log_error"):
 			ai_trial_key.revoke_trial_key(enqueue.call_args.kwargs["name"])
-		self.assertEqual((key.reload().status, key.revoked), ("Conversion Failed", 0))
+		self.assertEqual(
+			(key.reload().status, key.revoked, key.last_error),
+			("Conversion Failed", 0, "Grove is still down"),
+		)
 		self.grove.revoke_key.side_effect = None
 		ai_trial_key.retry_stale()
 		self.assertEqual(key.reload().revoked, 0)

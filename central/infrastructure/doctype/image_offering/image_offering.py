@@ -8,6 +8,7 @@ from frappe import _
 from frappe.model.document import Document
 
 from central.integrations.images import APP_PURPOSE
+from central.utils.units import MIB_PER_GIB
 
 
 class ImageOffering(Document):
@@ -26,7 +27,9 @@ class ImageOffering(Document):
 		display_order: DF.Int
 		enabled: DF.Check
 		logo: DF.AttachImage | None
+		minimum_memory_mib: DF.Int
 		offering_key: DF.Data
+		plan_category: DF.Link | None
 		required_tags: DF.Table[ImageOfferingTag]
 		title: DF.Data
 	# end: auto-generated types
@@ -39,6 +42,30 @@ class ImageOffering(Document):
 			frappe.throw(_("The offering key cannot change after creation."))
 
 		self.get_image_tags()
+		self.validate_plan_category()
+
+	def validate_plan_category(self) -> None:
+		if not self.plan_category:
+			return
+
+		if frappe.db.get_value("Plan Category", self.plan_category, "provision_target") != "Server":
+			frappe.throw(_("Select a plan category that provisions a server."))
+
+	def validate_custom_size(
+		self, sub_category: str | None, memory_gib: float, is_current: bool = False
+	) -> None:
+		"""Refuse a custom size outside this offering's plan family or below its minimum memory.
+		`is_current` marks the profile the server already runs, which it keeps."""
+		family = frappe.db.get_value("Plan Sub-Category", sub_category, "category") if sub_category else None
+		if self.plan_category and not is_current and family != self.plan_category:
+			frappe.throw(_("Custom sizes are not available for this server. Choose a plan from the list."))
+
+		if memory_gib * MIB_PER_GIB < self.minimum_memory_mib:
+			frappe.throw(
+				_("This server needs at least {0} GB of memory. Choose a size with more memory.").format(
+					f"{self.minimum_memory_mib / MIB_PER_GIB:g}"
+				)
+			)
 
 	def get_image_tags(self) -> dict[str, str]:
 		"""Build the Atlas selector without allowing query separators in a tag."""

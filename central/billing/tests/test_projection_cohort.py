@@ -232,10 +232,13 @@ class TestTheBatch(CohortTestBase):
 		rows = frappe.get_all(
 			"Billing Projection Summary",
 			filters={"batch": result["batch"]},
-			fields=["suspends_on", "outcome"],
+			fields=["team", "suspends_on", "outcome"],
 		)
-		self.assertTrue(all(r.suspends_on for r in rows))
-		self.assertTrue(all(r.outcome for r in rows))
+		# The batch holds every INR team on the site. Only this test's teams are known to have no method.
+		mine = [r for r in rows if r.team in self.teams]
+		self.assertEqual(len(mine), 2)
+		self.assertTrue(all(r.suspends_on for r in mine))
+		self.assertTrue(all(r.outcome for r in mine))
 
 	def test_pruning_drops_old_batches_and_their_rows(self):
 		result = self._batch()

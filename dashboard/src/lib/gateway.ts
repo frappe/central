@@ -75,7 +75,15 @@ interface PayPalCallbacks {
 
 declare global {
 	interface Window {
-		Razorpay: new (options: Record<string, unknown>) => { open: () => void }
+		Razorpay: new (
+			options: Record<string, unknown>,
+		) => {
+			open: () => void
+			on: (
+				event: 'payment.failed',
+				handler: (response: { error?: { description?: string } }) => void,
+			) => void
+		}
 		paypal?: {
 			Buttons: (config: Record<string, unknown>) => {
 				render: (el: Element) => unknown
@@ -108,6 +116,9 @@ export async function openRazorpayCheckout(
 ): Promise<RazorpayHandles> {
 	await loadScript('https://checkout.razorpay.com/v1/checkout.js')
 	return new Promise<RazorpayHandles>((resolve, reject) => {
+		// The sheet shows a failure itself and offers a retry. When the customer then
+		// closes it, the failure reason is the error; a plain close stays 'cancelled'.
+		let failure = ''
 		const options: Record<string, unknown> = {
 			// Backend returns the publishable key id as `key_id`; keep older aliases.
 			key: order.key_id || order.key || order.razorpay_key,
@@ -122,7 +133,9 @@ export async function openRazorpayCheckout(
 					razorpay_payment_id: resp.razorpay_payment_id,
 					razorpay_signature: resp.razorpay_signature,
 				}),
-			modal: { ondismiss: () => reject(new Error('cancelled')) },
+			modal: {
+				ondismiss: () => reject(new Error(failure || 'cancelled')),
+			},
 		}
 		// Reuse the team's customer (also prefills top-ups); a mandate setup runs
 		// Checkout in recurring mode — the only way Razorpay issues the token confirm
@@ -149,7 +162,13 @@ export async function openRazorpayCheckout(
 				},
 			}
 		}
-		new window.Razorpay(options).open()
+		const sheet = new window.Razorpay(options)
+		sheet.on('payment.failed', (response) => {
+			failure =
+				response.error?.description ||
+				"The payment didn't go through. Try again, or choose another payment method."
+		})
+		sheet.open()
 	})
 }
 

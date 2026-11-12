@@ -76,7 +76,12 @@ async function save(): Promise<void> {
 	>
 		<template #default>
 			<div class="space-y-4">
-				<Alert v-if="error" theme="red" :title="error" />
+				<Alert
+					v-if="error"
+					theme="red"
+					title="Couldn't update the SSH keys"
+					:description="error"
+				/>
 
 				<SSHKeysField v-model="selected" />
 

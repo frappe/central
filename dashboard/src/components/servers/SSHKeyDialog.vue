@@ -68,7 +68,12 @@ async function submit() {
 					? 'The new public key will replace this key on servers that selected it.'
 					: 'Save a public key for your team. It is selected here when you save it.' }}
 			</p>
-			<Alert v-if="error" theme="red" :title="error" />
+			<Alert
+				v-if="error"
+				theme="red"
+				title="Couldn't save the SSH key"
+				:description="error"
+			/>
 			<FormControl
 				v-if="!keyToRotate"
 				autofocus

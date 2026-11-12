@@ -14,6 +14,11 @@ class ResourceActionError(frappe.ValidationError):
 	"""A server-flow failure already shaped into a user-facing envelope."""
 
 
+class RequestKeyReusedError(frappe.ValidationError):
+	"""A request key already names a request with other settings. A client that sees this
+	sends its request again under a new key."""
+
+
 class AtlasConnectionError(frappe.ValidationError):
 	"""A regional read or authentication/configuration check failed."""
 
