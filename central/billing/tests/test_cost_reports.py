@@ -25,6 +25,23 @@ def line(team, service, amount, cost=0.0, **values):
 	return frappe._dict(base, team=team, service=service, revenue_inr=amount, cost_inr=cost, **values)
 
 
+def paid_invoice(team, server, amount):
+	frappe.get_doc(
+		{
+			"doctype": "Invoice",
+			"team": team,
+			"invoice_type": "Billable",
+			"status": "Paid",
+			"period_start": "2026-10-01",
+			"period_end": "2026-10-31",
+			"currency": "INR",
+			"subtotal": amount,
+			"total": amount,
+			"items": [{"subscription_resource": server, "amount": amount}],
+		}
+	).insert(ignore_permissions=True)
+
+
 def no_telemetry():
 	return patch.multiple(Telemetry, servers=lambda self, servers: {}, hosts=lambda self, machines: {})
 
@@ -172,6 +189,16 @@ class TestCapacityReports(BillingTestCase):
 		self.assertEqual(row["purchase_price"], 120000)
 		self.assertGreater(row["running_cost"], 0)
 		self.assertIsNone(row["payback_months"])  # it has earned nothing, so it never pays back
+
+	def test_an_internal_teams_paid_invoice_earns_the_machine_nothing(self):
+		frappe.db.set_value("Virtual Machine", "ue-internal", "atlas_host_id", HOST)
+		paid_invoice("team-ue-paid", "ue-paid", 3000)
+		paid_invoice("team-ue-internal", "ue-internal", 5000)
+
+		_, rows, *_ = bare_metal_roi.execute({"region": REGION})
+		row = next(row for row in rows if row["metal_server"] == "ue-metal-1")
+
+		self.assertEqual(row["earned"], 3000)
 
 
 class TestTelemetry(BillingTestCase):
