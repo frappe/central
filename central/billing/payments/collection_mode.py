@@ -89,9 +89,10 @@ def method_limit(gateway: str, currency: str | None, mandate_max_amount: float |
 
 def is_off_session_gateway(gateway: str) -> bool:
 	"""Whether the gateway can charge a saved method off-session at all."""
-	from central.billing.gateways.registry import get_adapter
+	from central.billing.gateways.registry import adapter_class
 
-	return bool(get_adapter(frappe.get_cached_doc("Payment Gateway", gateway)).supports_off_session_charge)
+	adapter_key = frappe.get_cached_value("Payment Gateway", gateway, "adapter_key")
+	return bool(adapter_class(adapter_key).supports_off_session_charge)
 
 
 def off_session_limit(team: str, invoice: str | None = None) -> float | None:

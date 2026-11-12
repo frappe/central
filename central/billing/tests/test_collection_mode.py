@@ -69,7 +69,7 @@ class TestCollectionMode(IntegrationTestCase):
 	def test_a_method_on_a_gateway_without_off_session_charges_has_no_limit_left(self):
 		_set_mode(TEAM, "Auto Charge")
 		adapter = MagicMock(supports_off_session_charge=False)
-		with patch("central.billing.gateways.registry.get_adapter", return_value=adapter):
+		with patch("central.billing.gateways.registry.adapter_class", return_value=adapter):
 			self.assertEqual(collection_mode.off_session_limit(TEAM), 0.0)
 			self.assertTrue(collection_mode.evaluate(TEAM, projected_amount=1)["action_required"])
 
