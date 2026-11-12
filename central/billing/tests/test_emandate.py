@@ -439,3 +439,74 @@ class TestOffSessionLimit(OffSessionLimitBase):
 		adapter.charge.assert_not_called()
 		self.assertEqual(self._count("Action Required"), 1)
 		self.assertEqual(self._count("Add Payment Method"), 0)
+
+
+class TestChargingMethod(OffSessionLimitBase):
+	"""The method the next-payment card names, and its own limit."""
+
+	def setUp(self):
+		super().setUp()
+		frappe.db.set_value("Payment Method", self.card, "method_type", "UPI Autopay")
+		self.upi = self.card
+
+	def _method(self, amount, invoice=None):
+		from central.billing.api.dashboard import outlook
+
+		return outlook._charging_method(TEAM, amount, invoice)
+
+	def _label(self, method):
+		return frappe.db.get_value("Payment Method", method, "display_label")
+
+	def test_the_card_is_named_over_a_too_small_primary_upi(self):
+		from central.billing.api import dashboard
+
+		card = self._add_method("Card", 15000, priority=2)
+		inv = self._invoice(9000)
+		out = dashboard.get_next_payment(TEAM)["method"]
+		self.assertEqual(out["label"], self._label(card))
+		self.assertEqual(out["ceiling"], 15000.0)
+		self.assertEqual(self._method(9000, inv)["ceiling"], 15000.0)
+
+	def test_the_primary_and_its_own_limit_when_nothing_covers(self):
+		self._add_method("Card", 8500, priority=2)
+		out = self._method(9000)
+		self.assertEqual(out["label"], self._label(self.upi))
+		self.assertEqual(out["ceiling"], 8300.0)
+
+	def test_a_hard_declined_method_is_left_out(self):
+		from unittest.mock import MagicMock, patch
+
+		from central.billing.gateways.base import PaymentResult
+		from central.billing.payments import collection
+
+		card = self._add_method("Card", 15000, priority=2)
+		inv = self._invoice(9000)
+		emandate.schedule_predebit(inv, now="2026-06-10 09:00:00")
+		adapter = _stub_adapter(self.gw)
+		adapter.charge = MagicMock(
+			return_value=PaymentResult(success=False, status="Failed", failure_code="expired_card")
+		)
+		with patch("central.billing.gateways.registry.get_adapter", return_value=adapter):
+			collection.collect_invoice(inv, now="2026-06-11 10:00:00")
+		self.assertEqual(self._method(9000)["label"], self._label(card))
+		out = self._method(9000, inv)
+		self.assertEqual(out["label"], self._label(self.upi))
+		self.assertEqual(out["ceiling"], 8300.0)
+
+	def test_a_method_off_session_cannot_reach_has_a_zero_limit(self):
+		from unittest.mock import MagicMock, patch
+
+		adapter = MagicMock(supports_off_session_charge=False)
+		with patch("central.billing.gateways.registry.adapter_class", return_value=adapter):
+			out = self._method(100)
+		self.assertEqual(out["label"], self._label(self.upi))
+		self.assertEqual(out["ceiling"], 0.0)
+
+	def test_a_method_without_a_ceiling_has_no_limit(self):
+		from unittest.mock import patch
+
+		with patch("central.billing.gateways.capabilities.silent_charge_ceiling", return_value=None):
+			frappe.db.set_value("Payment Method", self.upi, "mandate_max_amount", 0)
+			out = self._method(50000)
+		self.assertEqual(out["label"], self._label(self.upi))
+		self.assertIsNone(out["ceiling"])
