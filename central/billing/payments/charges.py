@@ -120,16 +120,16 @@ def _claim_attempt(
 	method_name, gateway_name = _resolve_method(inv, payment_method, gateway)
 	adapter = _adapter_for(gateway_name)
 
-	# A debit the gateway can't pull silently in this currency (INR above ₹15,000 —
-	# an RBI off-session rule that binds Stripe India and Razorpay alike) is never
-	# attempted: it would just fail. The caller sends the customer to checkout. A
-	# background charge also moves an Auto Charge or Prepaid team to Action Required
-	# and tells it (ADR 0022, #106). An uncapped currency and anything at or under
-	# the ceiling pass through.
-	if not adapter.can_charge_silently(frappe.utils.flt(inv.expected_collection), inv.currency):
-		if not on_session:
-			from central.billing.payments import collection_mode
+	# A debit over what this method may take off-session (the rail's silent ceiling, e.g.
+	# ₹15,000 in INR, or its mandate's maximum) is never attempted: it would just fail.
+	# The caller sends the customer to checkout. A background charge over the team's
+	# off-session limit also moves an Auto Charge or Prepaid team to Action Required
+	# and tells it (ADR 0022, #106).
+	amount = frappe.utils.flt(inv.expected_collection)
+	if not _is_silent_debit_allowed(adapter, gateway_name, method_name, inv.currency, amount):
+		from central.billing.payments import collection_mode
 
+		if not on_session and not collection_mode.is_within_off_session_limit(inv.team, amount):
 			collection_mode.trip_off_session_debit(inv.team, "invoice_over_threshold")
 		return {"charged": False, "reason": "action_required", "invoice": invoice}
 
@@ -171,6 +171,15 @@ def _claim_attempt(
 	if not frappe.in_test:
 		frappe.db.commit()
 	return {"claimed": True, "attempt": attempt.name}
+
+
+def _is_silent_debit_allowed(adapter, gateway: str, method_name: str, currency: str, amount: float) -> bool:
+	"""Whether this method may be charged `amount` off-session."""
+	from central.billing.payments import collection_mode
+
+	mandate = frappe.db.get_value("Payment Method", method_name, "mandate_max_amount")
+	limit = collection_mode.method_limit(gateway, currency, mandate)
+	return adapter.can_charge_silently(amount, currency) and collection_mode.is_within_limit(limit, amount)
 
 
 def _uncollectable_reason(inv) -> str | None:

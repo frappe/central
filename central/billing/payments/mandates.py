@@ -464,13 +464,6 @@ def effective_cap(team: str):
 	return cap if ceiling is None else min(cap, ceiling)
 
 
-def is_within_mandate_limit(method, amount: float) -> bool:
-	"""Whether a Payment Method row's mandate lets it be debited `amount`. No limit
-	means any amount."""
-	limit = frappe.utils.flt(method.mandate_max_amount)
-	return not limit or frappe.utils.flt(amount) <= limit
-
-
 def reauth_pending(team: str) -> bool:
 	"""True if any active mandate is awaiting customer re-authorisation."""
 	return bool(

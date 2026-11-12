@@ -9,10 +9,10 @@ the debit rather than about the provider. So collecting an `Auto Charge` team's
 invoice is two-phase:
 
   1. schedule_predebit — notify the customer and stamp the earliest debit time
-     (now + 24h) on the invoice. If the bill is over the silent ceiling it is NOT
+     (now + 24h) on the invoice. If the bill is over the off-session limit it is NOT
      notified; it forks to Action Required instead (the manual/prepaid choice).
   2. charge_due — once the window has elapsed, run the off-session debit through
-     the normal charge path, which re-checks the ₹15,000 ceiling (charges #50/1).
+     the normal charge path, which re-checks the limit (charges #50/1).
 
 Both are idempotent and safe to re-run from the hourly sweep and the daily backstop.
 The customer-side heads-up is sent here; the bank's own RBI pre-debit notification is
@@ -60,7 +60,7 @@ def await_predebit(invoice: str, gateway: str, now: datetime | str | None = None
 	2. WAIT: the notice is sent, now or before, and its window is still open, or it is too
 	   early to send it. The notice outcome comes with it.
 	3. ROTATE: this rail cannot debit this invoice now (the mode holds debits back, or over the
-	   silent ceiling), so the next method is tried instead of a window that never opens.
+	   off-session limit), so the next method is tried instead of a window that never opens.
 	"""
 	inv = frappe.get_doc("Invoice", invoice)
 	charge_after = inv.predebit_charge_after
@@ -77,9 +77,8 @@ def await_predebit(invoice: str, gateway: str, now: datetime | str | None = None
 
 def schedule_predebit(invoice: str, now=None, gateway: str | None = None) -> dict:
 	"""Send the pre-debit notice for an e-mandate invoice and arm its debit window.
-	Over the gateway ceiling → fork to Action Required rather than promise a debit we
-	can't make off-session. Over every mandate's limit → no notice, as no method will be
-	debited. Idempotent (skips an already-notified invoice).
+	Over the team's off-session limit → fork to Action Required rather than promise a
+	debit we can't make. Idempotent (skips an already-notified invoice).
 
 	`gateway` is the rail about to debit, when the caller knows it (a fallback onto a
 	second rail); otherwise the team's own rail decides."""
@@ -93,14 +92,11 @@ def schedule_predebit(invoice: str, now=None, gateway: str | None = None) -> dic
 	if now_dt < frappe.utils.add_to_date(payment_starts_at, hours=-PREDEBIT_NOTICE_HOURS):
 		return {"invoice": invoice, "skipped": "before_payment_date"}
 
-	# What is left after the wallet can't be debited off-session over the gateway ceiling,
+	# What is left after the wallet can't be debited off-session over the team's limit,
 	# whatever the mode. Ask the customer to act instead of notifying a debit that would fail.
-	if not collection_mode.is_within_gateway_ceiling(inv.team, inv.expected_collection, gateway):
+	if not collection_mode.is_within_off_session_limit(inv.team, inv.expected_collection):
 		collection_mode.trip_off_session_debit(inv.team, "invoice_over_threshold")
 		return {"invoice": invoice, "skipped": "over_threshold", "action_required": True}
-	if collection.is_over_every_mandate(inv.team, inv.expected_collection):
-		# No mandate on file may take this much, so the collector will not debit it.
-		return {"invoice": invoice, "skipped": "over_mandate_limit"}
 
 	charge_after = max(frappe.utils.add_to_date(now_dt, hours=PREDEBIT_NOTICE_HOURS), payment_starts_at)
 	frappe.db.set_value(
@@ -145,7 +141,7 @@ def _get_notice_skip_reason(inv, gateway: str | None) -> str | None:
 
 def charge_due(now=None) -> list[dict]:
 	"""Make the first off-session debit of every e-mandate invoice whose pre-debit window has
-	elapsed. The charge path re-checks the ₹15,000 ceiling (#50 item 1).
+	elapsed. The charge path re-checks the limit (#50 item 1).
 
 	An invoice already debited in its window is left to dunning, which retries it. Debiting it
 	again on every sweep would also repeat the ask for another method each hour."""

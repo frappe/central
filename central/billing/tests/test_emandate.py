@@ -264,121 +264,129 @@ def _stub_adapter(gateway: str):
 	return adapter
 
 
-class TestGatewayCeilingOnly(EmandateTestBase):
-	"""A Beginner-tier Prepaid team: the trust-tier cap never trips a debit, only the
-	₹15,000 ceiling does, and an amount equal to it is allowed."""
+class TestOffSessionLimit(EmandateTestBase):
+	"""A Beginner-tier INR team whose card mandate was registered at ₹8,300. The team may
+	be charged off-session up to the largest amount any of its methods can take."""
 
 	def setUp(self):
 		from central.billing.tests.utils import set_team_tier
 
 		super().setUp()
-		_set_mode(TEAM, "Prepaid")
 		set_team_tier(TEAM, level="t0", max_spend=8300)
+		frappe.db.delete("Payment Method", {"team": TEAM})
+		self.card = self._add_method("Card", 8300, priority=1)
+
+	def _add_method(self, method_type, limit, priority):
+		return (
+			frappe.get_doc(
+				{
+					"doctype": "Payment Method",
+					"team": TEAM,
+					"gateway": self.gw,
+					"method_type": method_type,
+					"status": "Active",
+					"gateway_method_id": f"tok_{method_type}_{limit}",
+					"gateway_customer_id": "cus",
+					"mandate_max_amount": limit,
+					"mandate_currency": "INR",
+					"priority": priority,
+					"validated_at": frappe.utils.now_datetime(),
+				}
+			)
+			.insert(ignore_permissions=True)
+			.name
+		)
 
 	def _mode(self):
 		return frappe.db.get_value("Billing Profile", TEAM, "collection_mode")
 
-	def _pay(self, inv):
+	def _count(self, event_type):
+		return frappe.db.count("Billing Notification Log", {"team": TEAM, "event_type": event_type})
+
+	def _collect(self, inv):
+		from unittest.mock import patch
+
+		from central.billing.payments import collection
+
+		adapter = _stub_adapter(self.gw)
+		with patch("central.billing.gateways.registry.get_adapter", return_value=adapter):
+			out = collection.collect_invoice(inv, now="2026-06-11 10:00:00")
+		return out, adapter
+
+	def test_a_bill_equal_to_the_card_limit_is_noticed_and_charged(self):
+		inv = self._invoice(8300)
+		self.assertTrue(emandate.schedule_predebit(inv, now="2026-06-10 09:00:00").get("notified"))
+		_out, adapter = self._collect(inv)
+		adapter.charge.assert_called_once()
+		self.assertEqual(self._mode(), "Auto Charge")
+
+	def test_a_bill_over_the_card_limit_trips_at_notice_time(self):
+		from central.billing.payments import collection_mode
+
+		inv = self._invoice(9000)
+		out = emandate.schedule_predebit(inv, now="2026-06-10 09:00:00")
+		self.assertEqual(out.get("skipped"), "over_threshold")
+		self.assertEqual(self._mode(), "Action Required")
+		self.assertIsNone(frappe.db.get_value("Invoice", inv, "predebit_notified_at"))
+		self.assertEqual(self._count("Pre-debit Notice"), 0)
+		self.assertEqual(self._count("Action Required"), 1)
+		self.assertEqual(collection_mode.status(TEAM)["threshold"], 8300.0)
+
+	def test_a_background_charge_over_the_card_limit_trips(self):
 		from unittest.mock import patch
 
 		from central.billing.payments import charges
 
 		adapter = _stub_adapter(self.gw)
 		with patch("central.billing.gateways.registry.get_adapter", return_value=adapter):
-			return charges.pay_invoice(inv, payment_method=self._method(), gateway=self.gw), adapter
-
-	def _method(self):
-		return frappe.db.get_value("Payment Method", {"team": TEAM}, "name")
-
-	def test_a_remainder_over_the_tier_cap_gets_a_notice(self):
-		out = emandate.schedule_predebit(self._invoice(9000), now="2026-06-10 09:00:00")
-		self.assertTrue(out.get("notified"))
-		self.assertEqual(self._mode(), "Prepaid")
-
-	def test_a_remainder_equal_to_the_ceiling_gets_a_notice(self):
-		out = emandate.schedule_predebit(self._invoice(15000), now="2026-06-10 09:00:00")
-		self.assertTrue(out.get("notified"))
-		self.assertEqual(self._mode(), "Prepaid")
-
-	def test_a_remainder_over_the_ceiling_trips_at_notice_time(self):
-		out = emandate.schedule_predebit(self._invoice(15001), now="2026-06-10 09:00:00")
-		self.assertEqual(out.get("skipped"), "over_threshold")
-		self.assertEqual(self._mode(), "Action Required")
-
-	def test_a_remainder_equal_to_the_ceiling_is_charged(self):
-		out, adapter = self._pay(self._invoice(15000))
-		self.assertNotEqual(out.get("reason"), "action_required")
-		adapter.charge.assert_called_once()
-		self.assertEqual(self._mode(), "Prepaid")
-
-	def test_a_remainder_over_the_ceiling_trips_at_charge_time(self):
-		out, adapter = self._pay(self._invoice(15001))
+			out = charges.pay_invoice(self._invoice(9000), payment_method=self.card, gateway=self.gw)
 		self.assertEqual(out["reason"], "action_required")
 		adapter.charge.assert_not_called()
 		self.assertEqual(self._mode(), "Action Required")
 
-	def test_the_banner_shows_the_ceiling_it_tripped_at(self):
-		from central.billing.payments import collection_mode
+	def test_the_pay_button_goes_to_checkout_without_tripping(self):
+		from unittest.mock import MagicMock, patch
 
-		emandate.schedule_predebit(self._invoice(15001), now="2026-06-10 09:00:00")
-		self.assertEqual(collection_mode.status(TEAM)["threshold"], 15000.0)
+		from central.billing.api.dashboard import invoices
 
-
-class TestMandateLimit(EmandateTestBase):
-	"""A UPI mandate registered at the tier cap cannot take more than that, so the
-	collector skips it rather than tripping Action Required."""
-
-	def setUp(self):
-		super().setUp()
-		frappe.db.set_value("Payment Method", {"team": TEAM}, "mandate_max_amount", 8300)
-
-	def test_no_notice_when_no_mandate_can_take_the_amount(self):
 		inv = self._invoice(9000)
+		adapter = _stub_adapter(self.gw)
+		adapter.create_order = MagicMock(return_value={"order_id": "order_pay", "key_id": "rzp"})
+		with patch("central.billing.gateways.registry.get_adapter", return_value=adapter):
+			out = invoices.pay_invoice(inv)
+			order = invoices.pay_invoice_checkout(inv)
+		self.assertEqual(out["reason"], "action_required")
+		self.assertTrue(order["created"])
+		adapter.charge.assert_not_called()
+		self.assertEqual(self._mode(), "Auto Charge")
+		self.assertEqual(self._count("Action Required"), 0)
+
+	def test_a_bill_over_the_upi_limit_is_charged_on_the_card(self):
+		frappe.db.set_value("Payment Method", self.card, "method_type", "UPI Autopay")
+		card = self._add_method("Card", 15000, priority=2)
+		inv = self._invoice(9000)
+		self.assertTrue(emandate.schedule_predebit(inv, now="2026-06-10 09:00:00").get("notified"))
+		self._collect(inv)
+		self.assertEqual(frappe.db.get_value("Payment Attempt", {"invoice": inv}, "payment_method"), card)
+		self.assertEqual(self._mode(), "Auto Charge")
+
+	def test_a_bill_over_every_limit_trips(self):
+		self._add_method("Card", 15000, priority=2)
+		inv = self._invoice(15001)
 		out = emandate.schedule_predebit(inv, now="2026-06-10 09:00:00")
-		self.assertEqual(out.get("skipped"), "over_mandate_limit")
-		self.assertIsNone(frappe.db.get_value("Invoice", inv, "predebit_notified_at"))
-		self.assertEqual(frappe.db.get_value("Billing Profile", TEAM, "collection_mode"), "Auto Charge")
+		self.assertEqual(out.get("skipped"), "over_threshold")
+		self.assertEqual(self._mode(), "Action Required")
 
-	def test_the_collector_skips_the_mandate_and_asks_for_another_method(self):
+	def test_an_over_limit_team_is_told_once_across_hourly_runs(self):
 		from unittest.mock import patch
 
 		from central.billing.payments import collection
 
-		inv = self._invoice(9000)
+		self._invoice(9000)
 		adapter = _stub_adapter(self.gw)
 		with patch("central.billing.gateways.registry.get_adapter", return_value=adapter):
-			out = collection.collect_invoice(inv, now="2026-06-11 10:00:00")
-		self.assertEqual(out["reason"], "no_method")
+			collection.collect_on_payment_date(now="2026-06-10 09:00:00")
+			collection.collect_on_payment_date(now="2026-06-10 11:00:00")
 		adapter.charge.assert_not_called()
-		self.assertEqual(frappe.db.get_value("Billing Profile", TEAM, "collection_mode"), "Auto Charge")
-		asks = {"team": TEAM, "event_type": "Add Payment Method", "reference_name": inv}
-		self.assertEqual(frappe.db.count("Billing Notification Log", asks), 1)
-
-	def test_the_collector_moves_on_to_a_method_that_can_take_it(self):
-		from unittest.mock import patch
-
-		from central.billing.payments import collection
-
-		frappe.get_doc(
-			{
-				"doctype": "Payment Method",
-				"team": TEAM,
-				"gateway": self.gw,
-				"method_type": "Card",
-				"status": "Active",
-				"gateway_method_id": "tok_card",
-				"gateway_customer_id": "cus",
-				"mandate_max_amount": 1000000,
-				"mandate_currency": "INR",
-				"priority": 2,
-				"validated_at": frappe.utils.now_datetime(),
-			}
-		).insert(ignore_permissions=True)
-		inv = self._invoice(9000)
-		adapter = _stub_adapter(self.gw)
-		with patch("central.billing.gateways.registry.get_adapter", return_value=adapter):
-			out = collection.collect_invoice(inv, now="2026-06-11 10:00:00")
-		# The card is on a notice rail, so it gets the notice the mandate could not.
-		self.assertEqual(out.get("reason"), "awaiting_predebit_window")
-		self.assertTrue(frappe.db.get_value("Invoice", inv, "predebit_notified_at"))
-		adapter.charge.assert_not_called()
+		self.assertEqual(self._count("Action Required"), 1)
+		self.assertEqual(self._count("Add Payment Method"), 0)

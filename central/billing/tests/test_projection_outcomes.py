@@ -198,28 +198,93 @@ class TestMandateCeiling(OutcomeTestBase):
 		self._profile(mode="Auto Charge")
 		self._mandate(ceiling=5000)
 		frappe.db.commit()
-		self.assertIn("over_mandate_cap", self._codes(amount=8000.0))
+		self.assertIn("over_silent_threshold", self._codes(amount=8000.0))
 
 	def test_a_bill_within_the_cap_is_not_flagged(self):
 		self._profile(mode="Auto Charge")
 		self._mandate(ceiling=20000)
 		frappe.db.commit()
-		self.assertNotIn("over_mandate_cap", self._codes(amount=8000.0))
+		self.assertNotIn("over_silent_threshold", self._codes(amount=8000.0))
 
-	def test_a_team_with_no_mandate_is_never_over_a_mandate_cap(self):
-		# effective_cap falls back to the tier cap when no mandate exists, and an untiered
-		# team reads as a ceiling of zero — which would flag everyone.
-		self._profile()
-		frappe.db.delete("Billing Profile", {"team": TEAM})
+	def test_a_team_with_no_method_is_never_over_a_limit(self):
 		self._profile()
 		frappe.db.commit()
-		self.assertNotIn("over_mandate_cap", self._codes(amount=99999.0))
+		self.assertNotIn("over_silent_threshold", self._codes(amount=99999.0))
 
 	def test_a_mandate_awaiting_reauthorisation_is_reported(self):
 		self._profile(mode="Auto Charge")
 		self._mandate(ceiling=100000, reauth=1)
 		frappe.db.commit()
 		self.assertIn("mandate_reauth_pending", self._codes(amount=1000.0))
+
+
+class TestAgreesWithTheCollector(OutcomeTestBase):
+	"""The projection flags a bill exactly when the collector would trip Action Required."""
+
+	def _set_limit(self, method, limit):
+		frappe.db.set_value("Payment Method", method, "mandate_max_amount", limit)
+
+	def _collector_trips(self, amount):
+		from unittest.mock import MagicMock, patch
+
+		from central.billing.gateways.base import PaymentResult
+		from central.billing.gateways.stripe_adapter import StripeAdapter
+		from central.billing.payments import collection
+
+		inv = frappe.get_doc(
+			{
+				"doctype": "Invoice",
+				"team": TEAM,
+				"invoice_type": "Billable",
+				"status": "Outstanding",
+				"payment_date": TODAY,
+				"due_date": DUE,
+				"period_start": "2026-07-01",
+				"period_end": "2026-07-31",
+				"currency": "INR",
+				"subtotal": amount,
+				"total": amount,
+				"expected_collection": amount,
+				"items": [
+					{"resource_type": "bundle", "plan": "p", "rate": amount, "days": 30, "amount": amount}
+				],
+			}
+		).insert(ignore_permissions=True)
+		adapter = StripeAdapter(frappe.get_doc("Payment Gateway", GATEWAY))
+		adapter.prepare_charge = MagicMock(return_value=None)
+		adapter.charge = MagicMock(
+			return_value=PaymentResult(success=True, status="Captured", gateway_transaction_id="pi_x")
+		)
+		with patch("central.billing.gateways.registry.get_adapter", return_value=adapter):
+			collection.collect_invoice(inv.name, now=f"{TODAY} 10:00:00")
+		return frappe.db.get_value("Billing Profile", TEAM, "collection_mode") == "Action Required"
+
+	def _assert_agrees(self, amount):
+		flagged = "over_silent_threshold" in self._codes(amount=amount)
+		self.assertEqual(flagged, self._collector_trips(amount))
+		return flagged
+
+	def test_a_card_mandate_at_its_limit(self):
+		self._profile(mode="Auto Charge")
+		self._set_limit(self._card(), 8300)
+		self.assertFalse(self._assert_agrees(8300.0))
+
+	def test_a_card_mandate_over_its_limit(self):
+		self._profile(mode="Auto Charge")
+		self._set_limit(self._card(), 8300)
+		self.assertTrue(self._assert_agrees(9000.0))
+
+	def test_a_small_upi_mandate_beside_a_larger_card(self):
+		self._profile(mode="Auto Charge")
+		self._mandate(ceiling=8300)
+		self._set_limit(self._card(), 15000)
+		self.assertFalse(self._assert_agrees(9000.0))
+
+	def test_over_every_method(self):
+		self._profile(mode="Auto Charge")
+		self._mandate(ceiling=8300)
+		self._set_limit(self._card(), 15000)
+		self.assertTrue(self._assert_agrees(15001.0))
 
 
 class TestExpiringCards(OutcomeTestBase):

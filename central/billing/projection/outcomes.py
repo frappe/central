@@ -4,8 +4,8 @@
 
 Whether a card will succeed is unknowable, so a projection never pretends. But a
 great deal of failure is not a guess at all: a team with no active payment method
-will not be auto-charged, an INR bill over the silent-debit threshold lands in Action
-Required by design, a mandate whose ceiling sits below the invoice cannot be debited.
+will not be auto-charged, a bill over what every saved method may take off-session
+(the INR silent ceiling, or a mandate's maximum) lands in Action Required by design.
 Those are facts already in the database, and reporting only those is what turns the
 simulator from a picture into a pre-flight check on the book.
 
@@ -15,9 +15,9 @@ Three modes, and the output always says which produced it:
   Assumed     the operator declares the outcome; the calendar follows their word.
   Derived     failure is reported only where state entails it, silence otherwise.
 
-Every rule below reuses the production helper that governs it — `is_within_gateway_ceiling`,
-`effective_cap`, `settlement_sources`, `ordered_methods` — so the simulator and the
-collector cannot disagree about who can be charged.
+Every check below reuses the production helper that governs it — `off_session_limit`,
+`settlement_sources`, `ordered_methods` — so the simulator and the collector cannot
+disagree about who can be charged.
 
 One helper is deliberately *not* used. `collection_mode.evaluate()` decides the same
 threshold question but **trips the profile into Action Required as a side effect**,
@@ -52,7 +52,6 @@ def derive(team: str, amount: float, currency: str, due_on, today) -> list[frapp
 		*_over_silent_threshold(team, amount, currency),
 		*_no_way_to_pay(team, sources),
 		*_mandate_reauth_pending(team),
-		*_over_mandate_cap(team, amount, currency),
 		*_credits_shortfall(team, amount, currency, sources),
 		*_expiring_cards(team, due_on),
 	]
@@ -74,21 +73,21 @@ def _on_session_mode(team: str) -> list[frappe._dict]:
 
 
 def _over_silent_threshold(team: str, amount: float, currency: str) -> list[frappe._dict]:
-	"""A bill the gateway may not take off-session."""
-	# A bill debited off-session over the gateway ceiling is never quietly taken; the real
-	# charge path trips the team into Action Required at exactly this point.
-	if not (
-		amount
-		and collection_mode.is_debit_allowed(team)
-		and not collection_mode.is_within_gateway_ceiling(team, amount)
+	"""A bill no saved method may take off-session: over the rail's silent ceiling or
+	every mandate's maximum."""
+	# The real charge path trips the team into Action Required at exactly this point.
+	limit = collection_mode.off_session_limit(team)
+	if (
+		not amount
+		or not collection_mode.is_debit_allowed(team)
+		or collection_mode.is_within_limit(limit, amount)
 	):
 		return []
-	ceiling = collection_mode.gateway_ceiling(team)
 	return [
 		_finding(
 			"over_silent_threshold",
 			"Over the silent-debit threshold",
-			f"{_money(amount, currency)} is above {_money(ceiling, currency)}, "
+			f"{_money(amount, currency)} is above {_money(limit, currency)}, "
 			"so this lands in Action Required rather than being auto-charged.",
 		)
 	]
@@ -126,27 +125,6 @@ def _mandate_reauth_pending(team: str) -> list[frappe._dict]:
 			"A mandate is awaiting re-authorisation",
 			"Until the customer re-consents its ceiling stays where it was, and the "
 			"method is skipped by the charge loop.",
-		)
-	]
-
-
-def _over_mandate_cap(team: str, amount: float, currency: str) -> list[frappe._dict]:
-	"""A bill above what the bank will let a mandate take."""
-	# The mandate ceiling is the amount the bank will actually let us take — but only
-	# where a mandate exists. `effective_cap` falls back to the trust-tier cap when
-	# there is none, and reporting that as "over the mandate cap" is wrong twice over:
-	# there is no mandate, and an unset tier reads as a ceiling of zero, which would
-	# flag every team that has not been tiered yet.
-	ceiling = mandates.active_mandate_ceiling(team)
-	cap = mandates.effective_cap(team)
-	if not (amount and ceiling is not None and frappe.utils.flt(cap) < amount):
-		return []
-	return [
-		_finding(
-			"over_mandate_cap",
-			"Over the mandate cap",
-			f"{_money(amount, currency)} exceeds the effective cap of "
-			f"{_money(cap, currency)}, so the debit would be refused.",
 		)
 	]
 

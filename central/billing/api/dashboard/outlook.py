@@ -35,10 +35,6 @@ from central.billing.revenue.dunning import (
 # Customer-facing copy for the findings the engine can raise. `fix` is the sentence
 # that tells someone what to actually do — the reason this is worth showing at all.
 _BLOCKER_COPY = {
-	"over_mandate_cap": {
-		"title": "We can't auto-debit this",
-		"fix": "Add credit to cover it, or pay this bill manually. Your servers keep running either way.",
-	},
 	"over_silent_threshold": {
 		"title": "This bill needs your approval",
 		"fix": "Bills above the auto-debit limit have to be paid by you. We'll send a link when it's due.",

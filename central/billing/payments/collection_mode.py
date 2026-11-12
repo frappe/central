@@ -1,18 +1,19 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
-"""Collection mode + the ₹15,000 "Action Required" threshold (ADR 0005, ADR 0022).
+"""Collection mode + the off-session limit behind "Action Required" (ADR 0005, ADR 0022).
 
-Billing is usage-based and variable. In India an *off-session* recurring debit
-above ₹15,000 needs the customer to re-authenticate every cycle (an RBI rule that
-binds Stripe India and Razorpay alike), so we auto-charge silently only while the
-bill stays at or under that line. When what is left of an `Auto Charge` or `Prepaid`
-team's bill after the wallet is over the ceiling, we do not try it and flip the team
-to `Action Required`. That check uses the gateway ceiling alone. An `Auto Charge` team
-is also flipped early when its month-to-date forecast reaches the ceiling or its
-trust-tier cap. The account keeps running until the customer picks
-`Manual Checkout` (pay each invoice on-session, any amount) or `Prepaid` (the wallet
-pays first and the card or UPI pays only amounts under the ceiling, so a larger bill
-needs enough credit). A customer who pays an invoice on-session keeps their mode.
+Billing is usage-based and variable. A saved method may be charged off-session only
+up to its limit: the rail's silent ceiling (₹15,000 in INR, an RBI rule that binds
+Stripe India and Razorpay alike) or its mandate's maximum, whichever is lower. A
+team's off-session limit is the largest of these across its saved methods. A bill
+at or under it is charged silently on a method that can take it. When what is left
+of an `Auto Charge` or `Prepaid` team's bill after the wallet is over the limit, we
+do not try it and flip the team to `Action Required`. An `Auto Charge` team is also
+flipped early when its month-to-date forecast goes over the limit. The account
+keeps running until the customer picks `Manual Checkout` (pay each invoice
+on-session, any amount) or `Prepaid` (the wallet pays first and the card or UPI
+pays only amounts up to the limit, so a larger bill needs enough credit). A
+customer who pays an invoice on-session keeps their mode.
 
 A mode names what the customer experiences, not which provider we called: an
 Indian card mandate on Stripe and a UPI Autopay mandate on Razorpay are both
@@ -29,7 +30,6 @@ import frappe
 from frappe import _
 
 from central.billing.gateways import capabilities
-from central.billing.payments import mandates
 
 # The modes a customer may pick to resolve action_required (or switch into).
 CUSTOMER_CHOOSABLE = ("Manual Checkout", "Prepaid")
@@ -64,29 +64,6 @@ def team_rail(team: str) -> tuple[str | None, str | None]:
 	return gateway, currency
 
 
-def gateway_ceiling(team: str) -> float | None:
-	"""The ceiling on the rail this team's bill would be pulled through, in major
-	units; None where nothing caps it.
-
-	A team with no rail at all is still held to whatever the law imposes on its
-	currency. The ₹15,000 line an Indian team lives under does not disappear because
-	it has not added a payment method yet.
-	"""
-	gateway, currency = team_rail(team)
-	if not currency:
-		return None
-	if not gateway:
-		return capabilities.regulatory_ceiling(currency)
-	return capabilities.silent_charge_ceiling(gateway, currency)
-
-
-def is_within_gateway_ceiling(team: str, amount: float, gateway: str | None = None) -> bool:
-	"""Whether an off-session debit of `amount` stays within the rail's silent ceiling.
-	`gateway` is the rail about to debit; without it the team's own rail is read."""
-	rail, currency = team_rail(team)
-	return capabilities.is_within_silent_ceiling(gateway or rail, currency, amount)
-
-
 def _default_gateway(currency: str) -> str | None:
 	from central.billing.gateways.registry import GatewayNotFound, resolve_gateway_for_currency
 
@@ -96,28 +73,53 @@ def _default_gateway(currency: str) -> str | None:
 		return None
 
 
-def silent_threshold(team: str) -> float | None:
-	"""The largest bill we may auto-charge silently: the gateway's ceiling for the
-	team's currency and the trust-tier cap, whichever binds first. None means no
-	ceiling binds at all, which is not the same as a ceiling of zero.
+def method_limit(gateway: str, currency: str | None, mandate_max_amount: float | None = None) -> float | None:
+	"""Most one method may be charged off-session; None when nothing caps it."""
+	if not currency:
+		return None
+	limits = [
+		capabilities.silent_charge_ceiling(gateway, currency),
+		frappe.utils.flt(mandate_max_amount) or None,
+	]
+	limits = [limit for limit in limits if limit is not None]
+	return float(min(limits)) if limits else None
 
-	In INR the gateway ceiling is ₹15,000 whichever gateway it is, because it is an
-	RBI rule rather than a provider limitation. In an unregulated currency the tier
-	cap is the whole answer.
-	"""
-	cap = frappe.utils.flt(mandates.team_cap(team))
-	ceiling = gateway_ceiling(team)
-	if ceiling is None:
-		return float(cap) if cap else None
-	return float(min(ceiling, cap)) if cap else float(ceiling)
+
+def off_session_limit(team: str) -> float | None:
+	"""Most the team's saved methods may be charged off-session; None when nothing caps
+	it or no method is on file."""
+	from central.billing.payments import collection
+
+	currency = frappe.db.get_value("Billing Profile", team, "currency")
+	limits = [
+		method_limit(m.gateway, currency, m.mandate_max_amount) for m in collection.ordered_methods(team)
+	]
+	if not limits or None in limits:
+		return None
+	return max(limits)
+
+
+def is_within_limit(limit: float | None, amount: float) -> bool:
+	"""Whether `amount` is at or under `limit`. No limit takes any amount."""
+	return limit is None or frappe.utils.flt(amount) <= limit
+
+
+def is_within_off_session_limit(team: str, amount: float) -> bool:
+	"""Whether some saved method of the team may take `amount` off-session."""
+	return is_within_limit(off_session_limit(team), amount)
+
+
+def is_within_method_limit(method, currency: str | None, amount: float) -> bool:
+	"""Whether this Payment Method row may take `amount` off-session."""
+	return is_within_limit(method_limit(method.gateway, currency, method.mandate_max_amount), amount)
 
 
 def is_debit_allowed(team: str) -> bool:
 	"""Whether a team's methods may be debited off-session once its credit runs out.
 
 	Prepaid is a promise to keep credit topped up, not a ban on the card behind it, so
-	only Manual Checkout (the customer pays by hand) and Action Required (paused at the
-	ceiling) hold a debit back."""
+	only Manual Checkout (the customer pays by hand) and Action Required (paused over the
+	limit) hold a debit back."""
 	mode = frappe.db.get_value("Billing Profile", team, "collection_mode")
 	return mode not in DEBIT_HELD_MODES
 
@@ -125,8 +127,8 @@ def is_debit_allowed(team: str) -> bool:
 def evaluate(
 	team: str, projected_amount: float | None = None, reason: str = "forecast_over_threshold"
 ) -> dict:
-	"""Re-check an `Auto Charge` team against the silent-debit threshold and trip
-	`Action Required` if `projected_amount` (major units) crosses it. A no-op for any
+	"""Re-check an `Auto Charge` team against its off-session limit and trip
+	`Action Required` if `projected_amount` (major units) goes over it. A no-op for any
 	other mode (so it's safe to call from the charge loop / dashboard). Returns the
 	current status()."""
 	mode = frappe.db.get_value("Billing Profile", team, "collection_mode")
@@ -135,16 +137,10 @@ def evaluate(
 	if (
 		mode == "Auto Charge"
 		and projected_amount is not None
-		and is_over_silent_threshold(team, projected_amount)
+		and not is_within_off_session_limit(team, projected_amount)
 	):
 		trip(team, reason)
 	return status(team)
-
-
-def is_over_silent_threshold(team: str, amount: float) -> bool:
-	"""Whether a forecast in major units reaches the gateway ceiling or the trust-tier cap."""
-	threshold = silent_threshold(team)
-	return threshold is not None and frappe.utils.flt(amount) >= threshold
 
 
 def trip(team: str, reason: str) -> None:
@@ -162,17 +158,10 @@ def trip(team: str, reason: str) -> None:
 	notifications.notify(
 		team,
 		"Action Required",
-		context={"reason": reason, "threshold": limit_for(team, reason)},
+		context={"reason": reason, "threshold": off_session_limit(team)},
 		reference_doctype="Billing Profile",
 		reference_name=team,
 	)
-
-
-def limit_for(team: str, reason: str | None) -> float | None:
-	"""The limit a trip for `reason` was measured against."""
-	if reason == "invoice_over_threshold":
-		return gateway_ceiling(team)
-	return silent_threshold(team)
 
 
 def trip_off_session_debit(team: str, reason: str) -> None:
@@ -232,7 +221,7 @@ def status(team: str) -> dict:
 		"collection_mode": mode,
 		"action_required": mode == "Action Required",
 		"reason": p.collection_action_reason,
-		"threshold": limit_for(team, p.collection_action_reason),
+		"threshold": off_session_limit(team),
 		"choices": list(CUSTOMER_CHOOSABLE),
 		"can_return_to_auto": _has_chargeable_method(team),
 	}
