@@ -23,7 +23,7 @@ You do not need to pay a normal invoice by hand. See [Invoices](/billing/invoice
 
 | Charge | How it is billed |
 | --- | --- |
-| Servers | A monthly rate set by the server's plan. On the day a server is created, resized, or stopped, each plan is billed for the hours it ran on that day. The invoice shows each server, its plan, and the dates it was billed. |
+| Servers | A monthly rate set by the server's plan. On the day a server is created, resized, or stopped, each plan is billed for the hours it ran on that day. The invoice shows each server, its plan, and the dates it was billed. A paused server and its public IPv4 address are not billed until you resume it. When you resume it, it is billed at the same rate as before the pause. |
 | Metered services | Usage, such as AI tokens. The amount is final when the month ends. |
 | Add-ons | Subscriptions such as storage buckets and paid snapshots. |
 | Tax | Added on each invoice for the tax region in your billing details. |

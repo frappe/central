@@ -455,6 +455,8 @@ central.api.servers.create_server | create_composed_server
 
 Resize: `central.api.servers.resize_server` → `catalog.subscriptions.begin_resize` (validates, persists a Resource Action) → `central.integrations.resource_actions` → `apply_resize_billing` → `resize_composed_subscription` → new Subscription Change (re-prices).
 
+Pause and resume: `catalog.subscriptions.pause_billing` writes a `Paused` change on the server's subscription and its public IPv4 subscription, which closes their segments. `resume_billing` checks the team and project headroom, then writes `Resumed` changes that carry the rate locked before the pause.
+
 ### B. Bill a period (draft → open → collect)
 ```mermaid
 flowchart TD
