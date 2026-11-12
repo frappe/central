@@ -90,6 +90,9 @@ const rows = computed(() => {
 								<template v-if="ticket.creation">
 									· {{ timeAgo(ticket.creation) }}</template
 								>
+								<template v-if="!ticket.url && ticket.raised_by">
+									· Raised by {{ ticket.raised_by }}</template
+								>
 							</span>
 						</span>
 						<Badge

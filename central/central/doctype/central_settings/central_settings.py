@@ -21,6 +21,7 @@ class CentralSettings(Document):
 	if TYPE_CHECKING:
 		from frappe.types import DF
 
+		articles_enabled: DF.Check
 		central_id: DF.Int
 		common_site_config: DF.JSON | None
 		disk_iops: DF.Int
@@ -121,10 +122,12 @@ class CentralSettings(Document):
 
 	def help_links(self) -> dict[str, str | bool | None]:
 		"""The console's Help menu links for window boot. An empty URL hides its menu item.
-		`in_app_tickets` is true once the Helpdesk URL, key and secret are all set."""
+		`in_app_tickets` is true once the Helpdesk URL, key and secret are all set.
+		`articles_enabled` makes the ticket dialog search help articles before it offers a ticket."""
 		return {
 			"support_ticket_url": self.support_ticket_url or None,
 			"feedback_url": self.feedback_url or None,
+			"articles_enabled": bool(self.articles_enabled),
 			"in_app_tickets": bool(
 				self.helpdesk_url
 				and self.helpdesk_api_key

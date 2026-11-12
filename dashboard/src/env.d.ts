@@ -32,6 +32,8 @@ interface Window {
 		feedback_url?: string | null
 		/** True when the Helpdesk API is configured, so the console opens its own dialog. */
 		in_app_tickets?: boolean
+		/** True when the dialog searches help articles before it offers a ticket. */
+		articles_enabled?: boolean
 	}
 	features?: {
 		addons?: boolean

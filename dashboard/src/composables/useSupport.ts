@@ -71,7 +71,10 @@ export interface SupportRelatedTicket {
 	name: string
 	subject: string
 	status: string | null
-	url: string
+	/** The email that raised the ticket. */
+	raised_by?: string | null
+	/** Null for a teammate's ticket, which the support portal does not open for this user. */
+	url: string | null
 }
 
 export interface SupportRelatedResults {
@@ -84,6 +87,9 @@ export interface SupportTicket {
 	subject: string
 	status: string
 	creation?: string | null
+	/** The email that raised the ticket. */
+	raised_by?: string | null
+	/** Null for a teammate's ticket, which the support portal does not open for this user. */
 	url?: string | null
 }
 
@@ -142,6 +148,7 @@ export function useSupport() {
 		support_ticket_url: ticketUrl,
 		feedback_url: feedbackUrl,
 		in_app_tickets: inAppTickets,
+		articles_enabled: isAnswersFirst,
 	} = window.help_links ?? {}
 
 	// Guest pages carry no team, so they keep the external URL.
@@ -198,6 +205,7 @@ export function useSupport() {
 		feedbackOption,
 		hasSupport,
 		canUseInAppTickets,
+		isAnswersFirst: Boolean(isAnswersFirst),
 		openSupport,
 	}
 }

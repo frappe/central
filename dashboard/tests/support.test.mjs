@@ -140,6 +140,18 @@ test('a guest keeps the external URL even when in-app tickets are configured', (
 	assert.equal(new URL(opened[0]).searchParams.get('q'), '[Page: Sign in] ')
 })
 
+test('the dialog searches first only when help articles are on', () => {
+	assert.equal(
+		loadSupport({ in_app_tickets: true }).support.isAnswersFirst,
+		false,
+	)
+	assert.equal(
+		loadSupport({ in_app_tickets: true, articles_enabled: true }).support
+			.isAnswersFirst,
+		true,
+	)
+})
+
 test('the category is resolved from the place the user asked for help', () => {
 	const { exports } = loadSupport({ in_app_tickets: true })
 

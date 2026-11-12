@@ -132,10 +132,18 @@ const recentTickets = computed(() => props.openTickets.slice(0, 3))
 					class="lucide-ticket size-4 shrink-0 text-ink-gray-6"
 					aria-hidden="true"
 				/>
-				<span
-					class="min-w-0 flex-1 truncate text-sm text-ink-gray-8"
-					v-html="highlightWords(ticket.subject, query)"
-				/>
+				<span class="min-w-0 flex-1">
+					<span
+						class="block truncate text-sm text-ink-gray-8"
+						v-html="highlightWords(ticket.subject, query)"
+					/>
+					<span
+						v-if="!ticket.url && ticket.raised_by"
+						class="block truncate text-p-xs text-ink-gray-5"
+					>
+						Raised by {{ ticket.raised_by }}
+					</span>
+				</span>
 				<Badge
 					v-if="ticket.status"
 					theme="blue"

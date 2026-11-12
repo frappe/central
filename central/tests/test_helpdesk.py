@@ -3,16 +3,27 @@ from __future__ import annotations
 import json
 from unittest.mock import patch
 
+import frappe
 import requests
 from frappe.tests import IntegrationTestCase
 
-from central.integrations.helpdesk import HelpdeskClient, HelpdeskUnavailable
+from central.integrations.helpdesk import (
+	SEARCH_TIMEOUT,
+	WRITE_TIMEOUT,
+	HelpdeskClient,
+	HelpdeskRequestFailed,
+	HelpdeskUnavailable,
+)
 from central.support import team_context_line
+from central.tests.test_iam import ensure_user
 
 
 class TestHelpdeskClient(IntegrationTestCase):
 	def setUp(self):
 		self.client = HelpdeskClient("https://support.test/", "key", "secret")
+		self.enterContext(
+			patch.object(HelpdeskClient, "get_service_user", return_value="central@support.test")
+		)
 
 	def response(self, status: int, body: dict) -> requests.Response:
 		response = requests.Response()
@@ -41,6 +52,7 @@ class TestHelpdeskClient(IntegrationTestCase):
 		self.assertEqual(doc["via_customer_portal"], 1)
 		self.assertEqual(doc["utm_source"], "central")
 		self.assertEqual(doc["priority"], "High")
+		self.assertEqual(post.call_args.kwargs["timeout"], WRITE_TIMEOUT)
 
 	def test_open_tickets_are_narrowed_to_the_team(self):
 		body = {"message": [{"name": "HD-1", "subject": "Slow"}]}
@@ -50,10 +62,9 @@ class TestHelpdeskClient(IntegrationTestCase):
 			tickets = self.client.list_open_tickets(team="Support")
 
 		self.assertEqual(tickets[0]["url"], "https://support.test/help/my-tickets/HD-1")
-		self.assertIn(
-			["HD Ticket", "description", "like", f"%{team_context_line('Support')}%"],
-			post.call_args.kwargs["json"]["filters"],
-		)
+		filters = post.call_args.kwargs["json"]["filters"]
+		self.assertIn(["HD Ticket", "description", "like", f"%{team_context_line('Support')}%"], filters)
+		self.assertIn(["HD Ticket", "owner", "=", "central@support.test"], filters)
 
 	def test_an_unavailable_status_says_the_helpdesk_is_unavailable(self):
 		for status in (502, 503, 504):
@@ -107,7 +118,7 @@ class TestHelpdeskClient(IntegrationTestCase):
 		self.assertEqual(get.call_args.kwargs["params"], {"query": "mail", "limit": 5})
 
 	def test_related_tickets_use_the_team_list_and_full_text_search(self):
-		names = {"message": [{"name": "HD-9"}]}
+		names = {"message": [{"name": "HD-9", "raised_by": "owner@example.test"}]}
 		found = {
 			"message": {
 				"results": [
@@ -126,16 +137,10 @@ class TestHelpdeskClient(IntegrationTestCase):
 				]
 			}
 		}
-		with (
-			patch(
-				"central.integrations.helpdesk.requests.post",
-				return_value=self.response(200, names),
-			) as post,
-			patch(
-				"central.integrations.helpdesk.requests.get",
-				return_value=self.response(200, found),
-			) as get,
-		):
+		with patch(
+			"central.integrations.helpdesk.requests.post",
+			side_effect=[self.response(200, names), self.response(200, found)],
+		) as post:
 			tickets = self.client.list_related_tickets(team="Support", query="mail broken")
 
 		self.assertEqual(
@@ -145,37 +150,40 @@ class TestHelpdeskClient(IntegrationTestCase):
 					"name": "HD-9",
 					"subject": "Mail & DNS broken",
 					"status": "Resolved",
+					"raised_by": "owner@example.test",
 					"url": "https://support.test/help/my-tickets/HD-9",
 				}
 			],
 		)
+		names_call, search_call = post.call_args_list
 		self.assertIn(
 			["HD Ticket", "description", "like", f"%{team_context_line('Support')}%"],
-			post.call_args.kwargs["json"]["filters"],
+			names_call.kwargs["json"]["filters"],
 		)
-		self.assertEqual(post.call_args.kwargs["json"]["limit_page_length"], 500)
+		self.assertIn(
+			["HD Ticket", "owner", "=", "central@support.test"], names_call.kwargs["json"]["filters"]
+		)
+		self.assertEqual(names_call.kwargs["json"]["fields"], ["name", "raised_by"])
+		self.assertEqual(names_call.kwargs["json"]["limit_page_length"], 500)
 
-		self.assertEqual(get.call_args.args[0], "https://support.test/api/method/helpdesk.api.search.search")
-		search = get.call_args.kwargs["params"]
+		self.assertEqual(search_call.args[0], "https://support.test/api/method/helpdesk.api.search.search")
+		search = search_call.kwargs["json"]
 		self.assertEqual(search["query"], "mail broken")
 		self.assertEqual(json.loads(search["filters"]), {"reference_ticket": ["HD-9"]})
 		self.assertEqual(search["limit"], 20)
+		self.assertEqual(search_call.kwargs["timeout"], SEARCH_TIMEOUT)
 
 	def test_related_tickets_without_a_team_ticket_skip_search(self):
-		with (
-			patch(
-				"central.integrations.helpdesk.requests.post",
-				return_value=self.response(200, {"message": []}),
-			) as post,
-			patch("central.integrations.helpdesk.requests.get") as get,
-		):
+		with patch(
+			"central.integrations.helpdesk.requests.post",
+			return_value=self.response(200, {"message": []}),
+		) as post:
 			self.assertEqual(self.client.list_related_tickets(team="Support", query="mail broken"), [])
 
 		self.assertEqual(post.call_count, 1)
-		get.assert_not_called()
 
 	def test_a_communication_hit_maps_to_its_ticket(self):
-		names = {"message": [{"name": "HD-9"}]}
+		names = {"message": [{"name": "HD-9", "raised_by": "owner@example.test"}]}
 		found = {
 			"message": {
 				"results": [
@@ -188,15 +196,9 @@ class TestHelpdeskClient(IntegrationTestCase):
 				]
 			}
 		}
-		with (
-			patch(
-				"central.integrations.helpdesk.requests.post",
-				return_value=self.response(200, names),
-			),
-			patch(
-				"central.integrations.helpdesk.requests.get",
-				return_value=self.response(200, found),
-			),
+		with patch(
+			"central.integrations.helpdesk.requests.post",
+			side_effect=[self.response(200, names), self.response(200, found)],
 		):
 			tickets = self.client.list_related_tickets(team="Support", query="mail broken")
 
@@ -207,7 +209,63 @@ class TestHelpdeskClient(IntegrationTestCase):
 					"name": "HD-9",
 					"subject": "Re: Mail & DNS",
 					"status": None,
+					"raised_by": "owner@example.test",
 					"url": "https://support.test/help/my-tickets/HD-9",
 				}
 			],
+		)
+
+	def test_an_agent_comment_never_becomes_a_related_ticket(self):
+		names = {"message": [{"name": "HD-9", "raised_by": "owner@example.test"}]}
+		found = {
+			"message": {
+				"results": [
+					{"doctype": "Comment", "reference_ticket": "HD-9", "title": "Internal: refund approved"}
+				]
+			}
+		}
+		with patch(
+			"central.integrations.helpdesk.requests.post",
+			side_effect=[self.response(200, names), self.response(200, found)],
+		):
+			self.assertEqual(self.client.list_related_tickets(team="Support", query="refund"), [])
+
+	def test_a_refusal_shows_a_generic_message_and_logs_the_detail(self):
+		frappe.set_user(ensure_user("support.reader@example.test"))
+		self.addCleanup(frappe.set_user, "Administrator")
+		body = {"exception": "frappe.exceptions.PermissionError: Agent api@support.test lacks HD Team"}
+		with (
+			patch("central.integrations.helpdesk.requests.post", return_value=self.response(403, body)),
+			patch("central.integrations.helpdesk.frappe.log_error") as log_error,
+		):
+			with self.assertRaises(HelpdeskRequestFailed) as caught:
+				self.client.list_open_tickets(team="Support")
+
+		self.assertNotIn("api@support.test", str(caught.exception))
+		self.assertIn("api@support.test", log_error.call_args.kwargs["message"])
+
+	def test_a_reply_that_is_not_json_fails_cleanly(self):
+		response = requests.Response()
+		response.status_code = 200
+		response._content = b"<html>Maintenance</html>"
+		with patch("central.integrations.helpdesk.requests.post", return_value=response):
+			with self.assertRaises(HelpdeskRequestFailed):
+				self.client.list_open_tickets(team="Support")
+
+
+class TestHelpdeskServiceUser(IntegrationTestCase):
+	def test_the_service_user_is_asked_once_and_cached(self):
+		client = HelpdeskClient("https://support.test", "key-cache", "secret")
+		frappe.cache.delete_value(f"central:helpdesk_service_user:{client.base_url}:{client.api_key}")
+		reply = requests.Response()
+		reply.status_code = 200
+		reply._content = json.dumps({"message": "central@support.test"}).encode()
+
+		with patch("central.integrations.helpdesk.requests.post", return_value=reply) as post:
+			self.assertEqual(client.get_service_user(), "central@support.test")
+			self.assertEqual(client.get_service_user(), "central@support.test")
+
+		post.assert_called_once()
+		self.assertEqual(
+			post.call_args.args[0], "https://support.test/api/method/frappe.auth.get_logged_user"
 		)

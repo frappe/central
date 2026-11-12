@@ -5,6 +5,8 @@ import html
 import frappe
 from frappe import _
 
+from central.iam import user_has_operator_bypass
+
 SUPPORT_CATEGORIES: dict[str, tuple[str, ...]] = {
 	"server": (
 		"Unreachable or down",
@@ -80,9 +82,23 @@ def get_ticket_options() -> list[dict]:
 	]
 
 
-def resolve_priority(issue_type: str, priority: str | None) -> str | None:
-	"""A critical issue reaches support first, whatever the client asked for."""
-	return "Urgent" if issue_type in CRITICAL_ISSUES else priority
+def resolve_priority(issue_type: str) -> str | None:
+	"""A critical issue reaches support first. Every other ticket takes Helpdesk's default."""
+	return "Urgent" if issue_type in CRITICAL_ISSUES else None
+
+
+def keep_own_ticket_links(tickets: list[dict]) -> list[dict]:
+	"""Helpdesk's portal opens a ticket only for the person who raised it, so a teammate's ticket
+	shows without a link. An operator keeps every link, because staff open tickets as agents."""
+	if user_has_operator_bypass():
+		return tickets
+
+	email = (frappe.db.get_value("User", frappe.session.user, "email") or "").lower()
+
+	return [
+		ticket if (ticket.get("raised_by") or "").lower() == email else ticket | {"url": None}
+		for ticket in tickets
+	]
 
 
 def get_user_email() -> str:
@@ -105,24 +121,24 @@ def validate_ticket(category: str, issue_type: str, description: str) -> None:
 
 
 def get_server(team: str, server: str) -> dict:
-	"""The named server, only when this team owns it.
-	A ticket never points at another team's machine."""
-	row = frappe.db.get_value(
-		"Virtual Machine", {"resource_id": server, "team": team}, SERVER_FIELDS, as_dict=True
+	"""The named server, only when this team owns it and the caller may view it.
+	The ticket shows the server's details back to the caller, so a scoped grant must cover it."""
+	rows = frappe.get_list(
+		"Virtual Machine", filters={"resource_id": server, "team": team}, fields=list(SERVER_FIELDS), limit=1
 	)
-	if not row:
-		frappe.throw(_("That server is not in this team."), frappe.PermissionError)
+	if not rows:
+		frappe.throw(_("You can't attach that server to a ticket."), frappe.PermissionError)
 
-	return row
+	return rows[0]
 
 
 def get_site(team: str, site: str) -> dict:
-	"""The named site, only when this team owns it."""
-	row = frappe.db.get_value("Site", {"name": site, "team": team}, SITE_FIELDS, as_dict=True)
-	if not row:
-		frappe.throw(_("That site is not in this team."), frappe.PermissionError)
+	"""The named site, only when this team owns it and the caller may view it."""
+	rows = frappe.get_list("Site", filters={"name": site, "team": team}, fields=list(SITE_FIELDS), limit=1)
+	if not rows:
+		frappe.throw(_("You can't attach that site to a ticket."), frappe.PermissionError)
 
-	return row
+	return rows[0]
 
 
 def build_subject(category: str, issue_type: str, subject: str) -> str:

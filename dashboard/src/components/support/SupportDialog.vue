@@ -6,10 +6,11 @@ import SupportAsk from '@/components/support/SupportAsk.vue'
 import SupportContactForm from '@/components/support/SupportContactForm.vue'
 import SupportTicketList from '@/components/support/SupportTicketList.vue'
 import { useSession } from '@/composables/useSession'
-import type {
-	SupportCategoryOption,
-	SupportContext,
-	SupportTicket,
+import {
+	type SupportCategoryOption,
+	type SupportContext,
+	type SupportTicket,
+	useSupport,
 } from '@/composables/useSupport'
 import {
 	contactAction,
@@ -29,9 +30,11 @@ const open = defineModel<boolean>('open', { required: true })
 const tab = defineModel<'new' | 'open'>('tab', { required: true })
 
 const { activeTeam } = useSession()
+// Without help articles there is nothing to search first, so the dialog starts on the form.
+const startStage = useSupport().isAnswersFirst ? 'ask' : 'contact'
 const creating = ref(false)
 const openCount = ref(0)
-const stage = ref<'ask' | 'contact' | 'tickets'>('ask')
+const stage = ref<'ask' | 'contact' | 'tickets'>(startStage)
 const askQuery = ref('')
 const presetIssue = ref<OutageIssue | null>(null)
 const ask = ref<InstanceType<typeof SupportAsk> | null>(null)
@@ -96,7 +99,7 @@ const title = computed(
 
 function goBack(): void {
 	if (stage.value === 'tickets') tab.value = 'new'
-	else stage.value = 'ask'
+	else stage.value = startStage
 	nextTick(() => ask.value?.focus())
 }
 
@@ -110,7 +113,7 @@ watch(askQuery, () => related.refresh(askQuery.value))
 watch(
 	tab,
 	(value) => {
-		stage.value = value === 'open' ? 'tickets' : 'ask'
+		stage.value = value === 'open' ? 'tickets' : startStage
 	},
 	{ immediate: true },
 )
@@ -122,7 +125,7 @@ watch(
 		openCount.value += 1
 		askQuery.value = ''
 		presetIssue.value = null
-		stage.value = tab.value === 'open' ? 'tickets' : 'ask'
+		stage.value = tab.value === 'open' ? 'tickets' : startStage
 		related.stop()
 		loadOptions()
 		loadTickets()
@@ -137,7 +140,7 @@ watch(
 			<div class="flex items-center justify-between gap-2">
 				<div class="flex items-center gap-1.5">
 					<Button
-						v-if="stage !== 'ask'"
+						v-if="stage !== startStage"
 						variant="ghost"
 						icon="lucide-arrow-left"
 						aria-label="Back"
@@ -149,7 +152,7 @@ watch(
 					</h3>
 				</div>
 				<Button
-					v-if="stage === 'ask'"
+					v-if="stage === startStage"
 					variant="subtle"
 					icon-left="lucide-ticket"
 					label="Your tickets"

@@ -6,6 +6,7 @@ import frappe
 from frappe.tests import IntegrationTestCase
 
 from central.api.support import create_ticket, find_related, get_ticket_options, list_tickets
+from central.iam import clear_grants_cache
 from central.integrations.helpdesk import HelpdeskUnavailable
 from central.support import team_context_line
 from central.tests.test_iam import ensure_user
@@ -31,11 +32,13 @@ class SupportTestCase(IntegrationTestCase):
 		self.site = self._site("chat", self.team, self.server)
 		self.foreign_server = ensure_server(f"support-foreign-{self.suffix}", self.other_team, title="web-2")
 		self.foreign_site = self._site("foreign", self.other_team, self.foreign_server)
+		clear_grants_cache()
 
 		self.helpdesk = self.enterContext(
 			patch("central.api.support.HelpdeskClient")
 		).from_settings.return_value
 		self.helpdesk.create_ticket.return_value = {"name": "HD-1", "url": "https://support.test/help"}
+		self.own_ticket = {"name": "HD-9", "raised_by": self.owner, "url": "https://support.test/help/HD-9"}
 
 	def _team(self, label: str, roles: dict[str, str]) -> str:
 		members = [{"user": self.owner, "role": "Owner", "status": "Active"}]
@@ -50,6 +53,22 @@ class SupportTestCase(IntegrationTestCase):
 		)
 
 		return team.insert().name
+
+	def _grant_server(self, user: str, server: str) -> None:
+		"""Make `user` a Developer on `server` only."""
+		team = frappe.get_doc("Team", self.team)
+		team.append(
+			"members",
+			{
+				"user": user,
+				"role": "Developer",
+				"resource_type": "Server",
+				"resource_name": server,
+				"status": "Active",
+			},
+		)
+		team.save()
+		clear_grants_cache()
 
 	def _site(self, label: str, team: str, server: str) -> str:
 		"""A site record without its lifecycle hooks, which would start a trial."""
@@ -87,6 +106,21 @@ class TestSupportTickets(SupportTestCase):
 		with self.assertRaises(frappe.PermissionError):
 			create_ticket(self.team, "site", SITE_ISSUE, description="It broke.", site=self.foreign_site)
 		self.helpdesk.create_ticket.assert_not_called()
+
+	def test_a_member_scoped_to_one_server_attaches_only_that_server_and_its_sites(self):
+		scoped = ensure_user("support.scoped@example.test")
+		second_server = ensure_server(f"support-second-{self.suffix}", self.team, title="web-3")
+		second_site = self._site("second", self.team, second_server)
+		self._grant_server(scoped, self.server)
+		frappe.set_user(scoped)
+
+		create_ticket(self.team, "server", SERVER_ISSUE, description="It broke.", server=self.server)
+		create_ticket(self.team, "site", SITE_ISSUE, description="It broke.", site=self.site)
+		with self.assertRaises(frappe.PermissionError):
+			create_ticket(self.team, "server", SERVER_ISSUE, description="It broke.", server=second_server)
+		with self.assertRaises(frappe.PermissionError):
+			create_ticket(self.team, "site", SITE_ISSUE, description="It broke.", site=second_site)
+		self.assertEqual(self.helpdesk.create_ticket.call_count, 2)
 
 	def test_an_unknown_category_or_topic_is_refused(self):
 		frappe.set_user(self.owner)
@@ -179,6 +213,19 @@ class TestSupportTickets(SupportTestCase):
 
 		self.helpdesk.list_open_tickets.assert_called_once_with(team=self.team)
 
+	def test_only_the_tickets_the_caller_raised_link_to_the_portal(self):
+		mate = {"name": "HD-8", "raised_by": "mate@example.test", "url": "https://support.test/help/HD-8"}
+		mine = self.own_ticket | {"raised_by": self.owner.upper()}
+		self.helpdesk.list_open_tickets.return_value = [mine, mate]
+		self.helpdesk.list_related_tickets.return_value = [mine, mate]
+		frappe.set_user(self.owner)
+
+		for tickets in (list_tickets(self.team), find_related(self.team, "broken mail")["tickets"]):
+			self.assertEqual([ticket["url"] for ticket in tickets], [mine["url"], None])
+
+		frappe.set_user("Administrator")
+		self.assertEqual([ticket["url"] for ticket in list_tickets(self.team)], [mine["url"], mate["url"]])
+
 	def test_a_suspended_team_member_can_open_and_list_tickets(self):
 		team = frappe.get_doc("Team", self.team)
 		team.status = "Suspended"
@@ -229,19 +276,14 @@ class TestSupportTickets(SupportTestCase):
 		billing = next(option for option in options if option["key"] == "billing")
 		self.assertIn({"label": "Payment method or failed charge", "is_critical": True}, billing["issues"])
 
-	def test_a_critical_issue_is_always_urgent(self):
+	def test_a_critical_issue_is_urgent_and_any_other_takes_the_helpdesk_default(self):
 		frappe.set_user(self.owner)
 
-		create_ticket(self.team, "server", "Unreachable or down", description="Down.", priority="Low")
-
+		create_ticket(self.team, "server", "Unreachable or down", description="Down.")
 		self.assertEqual(self.helpdesk.create_ticket.call_args.kwargs["priority"], "Urgent")
 
-	def test_a_non_critical_issue_keeps_the_asked_priority(self):
-		frappe.set_user(self.owner)
-
-		create_ticket(self.team, "server", SERVER_ISSUE, description="Slow.", priority="Low")
-
-		self.assertEqual(self.helpdesk.create_ticket.call_args.kwargs["priority"], "Low")
+		create_ticket(self.team, "server", SERVER_ISSUE, description="Slow.")
+		self.assertIsNone(self.helpdesk.create_ticket.call_args.kwargs["priority"])
 
 	def test_find_related_skips_helpdesk_for_a_short_query(self):
 		frappe.set_user(self.owner)
@@ -260,32 +302,32 @@ class TestSupportTickets(SupportTestCase):
 	def test_find_related_asks_for_articles_and_the_team_tickets(self):
 		frappe.set_user(self.owner)
 		self.helpdesk.search_articles.return_value = [{"name": "kb-1"}]
-		self.helpdesk.list_related_tickets.return_value = [{"name": "HD-9"}]
+		self.helpdesk.list_related_tickets.return_value = [self.own_ticket]
 
 		result = find_related(self.team, "  broken mail ")
 
-		self.assertEqual(result, {"articles": [{"name": "kb-1"}], "tickets": [{"name": "HD-9"}]})
+		self.assertEqual(result, {"articles": [{"name": "kb-1"}], "tickets": [self.own_ticket]})
 		self.helpdesk.search_articles.assert_called_once_with("broken mail")
 		self.helpdesk.list_related_tickets.assert_called_once_with(self.team, "broken mail")
 
 	def test_find_related_skips_articles_when_they_are_disabled(self):
 		frappe.set_user(self.owner)
 		frappe.db.set_single_value("Central Settings", "articles_enabled", 0)
-		self.helpdesk.list_related_tickets.return_value = [{"name": "HD-9"}]
+		self.helpdesk.list_related_tickets.return_value = [self.own_ticket]
 
 		result = find_related(self.team, "broken mail")
 
 		self.helpdesk.search_articles.assert_not_called()
-		self.assertEqual(result, {"articles": [], "tickets": [{"name": "HD-9"}]})
+		self.assertEqual(result, {"articles": [], "tickets": [self.own_ticket]})
 
 	def test_find_related_keeps_tickets_when_the_articles_fail(self):
 		frappe.set_user(self.owner)
 		self.helpdesk.search_articles.side_effect = HelpdeskUnavailable("down")
-		self.helpdesk.list_related_tickets.return_value = [{"name": "HD-9"}]
+		self.helpdesk.list_related_tickets.return_value = [self.own_ticket]
 
 		result = find_related(self.team, "broken mail")
 
-		self.assertEqual(result, {"articles": [], "tickets": [{"name": "HD-9"}]})
+		self.assertEqual(result, {"articles": [], "tickets": [self.own_ticket]})
 
 	def test_find_related_reports_an_outage_when_both_searches_fail(self):
 		frappe.set_user(self.owner)
