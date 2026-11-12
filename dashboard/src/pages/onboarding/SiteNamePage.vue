@@ -93,11 +93,9 @@ onMounted(async () => {
 				!['Failed', 'Timed Out'].includes(status.creation.status))
 		)
 			return router.replace(provisioning)
-		if (
-			status.creation?.status === 'Failed' ||
-			status.creation?.status === 'Timed Out'
-		)
-			resetRequestKey()
+		// Nothing is in flight, so a saved key is unused or belongs to a request that failed
+		// or whose site is gone, such as a terminated trial. A new site needs a new key.
+		resetRequestKey()
 		// The open trial of this product is on another team of the owner.
 		if (open) offerOpenTrial.value = true
 		isFreeTrial.value = status.is_free_trial
