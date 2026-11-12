@@ -153,8 +153,9 @@ def mandate_ceiling(team: str, gateway: str, currency: str | None) -> float | No
 def _cancel_abandoned_setups(team: str, gateway: str):
 	"""Cancel the team's never-confirmed setups on this gateway before a fresh attempt.
 	A Pending Validation method with no gateway_method_id is an abandoned setup (dialog
-	closed before confirm). It stays on record, so the setup funnel can count it.
-	Confirmed methods (any status) are left alone."""
+	closed before confirm). It stays on record, so the setup funnel can count it, and
+	whatever the gateway saved for it is released. Confirmed methods (any status) are
+	left alone."""
 	for name in frappe.get_all(
 		"Payment Method",
 		filters={
@@ -169,6 +170,7 @@ def _cancel_abandoned_setups(team: str, gateway: str):
 		transition(method, "Cancelled", reason="setup abandoned")
 		# Only billing code changes a method's status; the caller checked billing:manage.
 		method.save(ignore_permissions=True)
+		setup_expiry.queue_late_release(method)
 
 
 class CardNotSaved(frappe.ValidationError):

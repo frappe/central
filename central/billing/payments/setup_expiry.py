@@ -4,7 +4,6 @@
 import frappe
 from frappe import _
 
-from central.billing.doctype.payment_method.payment_method import is_expired_setup
 from central.billing.gateways.base import GatewayError
 from central.billing.platform import notifications
 from central.billing.platform.jobs import each_isolated
@@ -64,15 +63,14 @@ def _settle_setup(name: str, release_before):
 		"Payment Method", name, ["gateway", "setup_reference", "creation"], as_dict=True
 	)
 	if release_before and row.creation <= release_before:
-		return _expire_and_release(name, f"setup still unfinished after {SETUP_RELEASE_DAYS} days")
+		return expire_and_release(name, f"setup still unfinished after {SETUP_RELEASE_DAYS} days")
 	saved = _read_setup(name, row)
 	if saved is None:
 		return None
 	if saved.get("payment"):
-		_activate_mandate(name, saved["payment"])
-		return None
+		return _activate_mandate(name, saved["payment"])
 	if saved.get("payment_method"):
-		return _expire_and_release(name, "setup saved at the gateway but never confirmed")
+		return expire_and_release(name, "setup saved at the gateway but never confirmed")
 	return _expire_setup(name)
 
 
@@ -90,35 +88,38 @@ def _read_setup(name: str, row) -> dict | None:
 		return None
 
 
-def _activate_mandate(name: str, payment: dict) -> None:
+def _activate_mandate(name: str, payment: dict):
+	"""The setup, if the proof expired it instead (another method holds its token)."""
 	from central.billing.payments import mandates
 
-	mandates.activate_proven_mandate(name, payment, actor="scheduler")
+	method = mandates.activate_proven_mandate(name, payment, actor="scheduler")
+	return method if method.status == "Expired" else None
 
 
-def _expire_and_release(name: str, reason: str):
+def expire_and_release(name: str, reason: str, actor: str = "scheduler"):
 	"""Expire the setup, then queue giving back what it saved at the gateway."""
-	method = _expire_setup(name, reason=reason)
+	method = _expire_setup(name, reason=reason, actor=actor)
 	if method:
 		queue_late_release(method)
 	return method
 
 
-def _expire_setup(name: str, reason: str = "setup not finished in time"):
+def _expire_setup(name: str, reason: str = "setup not finished in time", actor: str = "scheduler"):
 	"""The setup, now Expired. None when it finished or failed meanwhile."""
 	method = frappe.get_doc("Payment Method", name, for_update=True)
 	if method.status != "Pending Validation":
 		return None
 
-	transition(method, "Expired", actor="scheduler", reason=reason)
+	transition(method, "Expired", actor=actor, reason=reason)
 	# The hourly job runs as the system with no session user to check.
 	method.save(ignore_permissions=True)
 	return method
 
 
 def queue_late_release(method) -> None:
-	"""Queue giving back what a setup saved at the gateway after it expired here."""
-	if not is_expired_setup(method) or not method.setup_reference:
+	"""Queue giving back what a setup saved at the gateway after it expired or was
+	cancelled here."""
+	if not is_released_setup(method):
 		return
 
 	frappe.enqueue(
@@ -131,12 +132,12 @@ def queue_late_release(method) -> None:
 
 
 def release_late_setup(payment_method: str) -> None:
-	"""Refund the authorisation payment of a setup that finished after it expired, and
-	queue the removal of its card or token. The method stays Expired."""
+	"""Refund the authorisation payment of a setup that finished after it expired or was
+	cancelled, and queue the removal of its card or token. The status does not change."""
 	from central.billing.payments import mandates
 
 	method = frappe.get_doc("Payment Method", payment_method)
-	if not is_expired_setup(method) or not method.setup_reference:
+	if not is_released_setup(method):
 		return
 	saved = _adapter(method.gateway).read_finished_setup(method.setup_reference)
 	if not saved.get("payment_method"):
@@ -179,6 +180,14 @@ def remove_late_saved_method(payment_method: str, method_id: str, customer_refer
 		raise
 	method.add_comment(
 		"Comment", _("Removed {0}, saved at the gateway after the setup expired.").format(method_id)
+	)
+
+
+def is_released_setup(method) -> bool:
+	"""True for a setup that expired or was cancelled before it was ever validated, and
+	that the gateway may have saved something for."""
+	return (
+		method.status in ("Expired", "Cancelled") and not method.validated_at and bool(method.setup_reference)
 	)
 
 

@@ -7,7 +7,7 @@ from unittest.mock import patch
 import frappe
 import stripe
 
-from central.billing.gateways.base import GatewayTimeout, GatewayUnsupported
+from central.billing.gateways.base import GatewayError, GatewayTimeout, GatewayUnsupported
 from central.billing.gateways.stripe_adapter import StripeAdapter
 from central.billing.tests.gateway_contract import GatewayAdapterContract
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
@@ -375,6 +375,25 @@ class TestStripeAdapter(GatewayAdapterContract, IntegrationTestCase):
 		with patch.object(stripe.PaymentMethod, "detach") as detach:
 			adapter.remove_saved_method("pm_x", customer_reference="cus_x")
 		self.assertEqual(detach.call_args.args, ("pm_x",))
+
+	def test_a_card_already_detached_or_gone_counts_as_removed(self):
+		adapter = self.make_adapter()
+		for error in (
+			stripe.error.InvalidRequestError("No such PaymentMethod: 'pm_x'", "id", code="resource_missing"),
+			stripe.error.InvalidRequestError(
+				"The payment method you provided is not attached to a customer so detachment is impossible.",
+				None,
+			),
+		):
+			with patch.object(stripe.PaymentMethod, "detach", side_effect=error):
+				adapter.remove_saved_method("pm_x", customer_reference="cus_x")
+
+	def test_another_refusal_to_detach_a_card_raises(self):
+		adapter = self.make_adapter()
+		error = stripe.error.InvalidRequestError("Invalid API version", None)
+		with patch.object(stripe.PaymentMethod, "detach", side_effect=error):
+			with self.assertRaises(GatewayError):
+				adapter.remove_saved_method("pm_x", customer_reference="cus_x")
 
 
 class FakeStripeHttp(stripe.HTTPClient):

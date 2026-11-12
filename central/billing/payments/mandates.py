@@ -317,14 +317,49 @@ def activate_proven_mandate(payment_method: str, payment: dict, actor: str):
 
 	method = frappe.get_doc("Payment Method", payment_method, for_update=True)
 	if method.status != "Pending Validation":
-		setup_expiry.queue_late_release(method)
+		_settle_late_proof(method, payment)
 		return method
 	if not is_proven_setup_payment(method, payment):
 		frappe.logger("billing").warning(
 			f"mandate {method.name} not activated: payment {payment.get('id')} does not match its setup"
 		)
 		return method
+	if _has_live_method_on_token(method, payment["token_id"]):
+		# The customer retried and finished another setup on the same token first.
+		return (
+			setup_expiry.expire_and_release(
+				method.name, "another payment method already holds this token", actor=actor
+			)
+			or method
+		)
 	return _activate_mandate(method, _adapter(method.gateway), payment, actor=actor)
+
+
+def _settle_late_proof(method, payment: dict) -> None:
+	"""Give back the ₹1 of a setup that is no longer pending. An Active mandate confirmed
+	before the capture still owes its refund; a released setup is released."""
+	from central.billing.payments import setup_expiry
+
+	if method.status == "Active" and method.gateway_method_id == payment.get("token_id"):
+		if is_proven_setup_payment(method, payment):
+			_queue_authorisation_refund(method, payment)
+		return
+	setup_expiry.queue_late_release(method)
+
+
+def _has_live_method_on_token(method, token_id: str) -> bool:
+	"""True when another Active or pending method on the gateway already holds the token."""
+	return bool(
+		frappe.db.exists(
+			"Payment Method",
+			{
+				"gateway": method.gateway,
+				"gateway_method_id": token_id,
+				"status": ["in", ["Active", "Pending Validation"]],
+				"name": ["!=", method.name],
+			},
+		)
+	)
 
 
 def apply_setup_payment_event(event) -> str | None:
@@ -345,9 +380,11 @@ def apply_setup_payment_event(event) -> str | None:
 
 
 def is_proven_setup_payment(method, payment: dict) -> bool:
-	"""True when the payment is this setup's ₹1 authorisation, for this team's customer."""
+	"""True when the payment is this setup's captured ₹1 authorisation, for this team's customer."""
 	return (
 		_is_mandate_payment(method, payment)
+		# Only a captured payment can be refunded, and the refund is always queued.
+		and payment.get("status") == "captured"
 		and bool(method.gateway_customer_id)
 		and round(frappe.utils.flt(payment.get("amount"))) == SETUP_AUTHORISATION_PAISE
 		and (payment.get("currency") or "").upper() == "INR"
@@ -415,6 +452,8 @@ def _queue_authorisation_refund(method, payment: dict) -> None:
 	if payment.get("status") != "captured":
 		return
 
+	# A savepoint rollback in jobs.each_isolated does not drop a job queued after commit.
+	# That is safe: the ₹1 is owed back whatever happens to the row, and the key is idempotent.
 	frappe.enqueue(
 		"central.billing.payments.mandates.refund_authorisation_payment",
 		payment_method=method.name,

@@ -641,10 +641,15 @@ class StripeAdapter(GatewayAdapter):
 		return card if card.get("payment_method") else {}
 
 	def remove_saved_method(self, method_id: str, customer_reference: str | None = None) -> None:
-		"""Detach the card from its customer. A mandate on the card ends with it."""
+		"""Detach the card from its customer. A mandate on the card ends with it. A card
+		Stripe no longer has, or one already detached, counts as removed."""
 		self._configure()
 		with _stripe_errors():
-			stripe.PaymentMethod.detach(method_id, **self._options())
+			try:
+				stripe.PaymentMethod.detach(method_id, **self._options())
+			except stripe.error.InvalidRequestError as e:
+				if not (_is_missing_object(e) or _is_not_attached(e)):
+					raise
 
 	def create_customer(self, team) -> str:
 		self._configure()
@@ -727,6 +732,11 @@ def _unfinished_setup(intent: dict) -> dict:
 def _is_missing_object(error: stripe.error.InvalidRequestError) -> bool:
 	"""True when Stripe has no object with the id asked for."""
 	return getattr(error, "code", None) == "resource_missing" or getattr(error, "http_status", None) == 404
+
+
+def _is_not_attached(error: stripe.error.InvalidRequestError) -> bool:
+	"""True when Stripe refuses a detach because the card is attached to no customer."""
+	return "not attached" in str(getattr(error, "user_message", None) or error).lower()
 
 
 @contextmanager

@@ -424,3 +424,17 @@ class TestRazorpayAdapter(GatewayAdapterContract, IntegrationTestCase):
 		with self._client() as c:
 			adapter.remove_saved_method("token_2", customer_reference="cust_2")
 		c.token.cancel.assert_called_once_with("cust_2", "token_2")
+
+	def test_a_token_already_cancelled_or_gone_counts_as_removed(self):
+		adapter = self.make_adapter()
+		for message in ("Token is already cancelled", "The id provided does not exist"):
+			with self._client() as c:
+				c.token.cancel.side_effect = razorpay.errors.BadRequestError(message)
+				adapter.remove_saved_method("token_2", customer_reference="cust_2")
+
+	def test_another_refusal_to_cancel_a_token_raises(self):
+		adapter = self.make_adapter()
+		with self._client() as c:
+			c.token.cancel.side_effect = razorpay.errors.BadRequestError("Customer is blocked")
+			with self.assertRaises(razorpay.errors.BadRequestError):
+				adapter.remove_saved_method("token_2", customer_reference="cust_2")

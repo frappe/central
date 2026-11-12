@@ -438,8 +438,12 @@ class RazorpayAdapter(GatewayAdapter):
 		return True
 
 	def remove_saved_method(self, method_id: str, customer_reference: str | None = None) -> None:
-		"""Cancel the recurring token."""
-		self.cancel_mandate(method_id, customer_reference=customer_reference)
+		"""Cancel the recurring token. A token already cancelled or gone counts as removed."""
+		try:
+			self.cancel_mandate(method_id, customer_reference=customer_reference)
+		except razorpay.errors.BadRequestError as e:
+			if not (_is_missing_id(e) or _is_already_cancelled(e)):
+				raise
 
 	def get_mandate_status(self, mandate_reference: str) -> str:
 		return self._client().invoice.fetch(mandate_reference).get("status")
@@ -489,6 +493,13 @@ def _is_missing_id(error: razorpay.errors.BadRequestError) -> bool:
 	"""True when Razorpay has no object with the id asked for. The SDK keeps only the
 	error description, which reads "The id provided does not exist"."""
 	return "does not exist" in str(error).lower()
+
+
+def _is_already_cancelled(error: razorpay.errors.BadRequestError) -> bool:
+	"""True when Razorpay refuses to cancel a token because it is no longer live. The SDK
+	keeps only the error description."""
+	message = str(error).lower()
+	return "already" in message and ("cancel" in message or "deleted" in message)
 
 
 def _order_payments(client, order_id: str) -> list[dict]:

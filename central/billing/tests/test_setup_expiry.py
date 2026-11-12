@@ -295,6 +295,41 @@ class TestLateConfirm(LateSetupBase):
 		adapter.validate_payment_method.assert_not_called()
 		adapter.remove_saved_method.assert_called_once_with("pm_late", customer_reference="cus_late")
 
+	def test_a_confirm_on_a_cancelled_setup_releases_the_card(self):
+		setup = self.make_method(
+			status="Cancelled", setup_reference="seti_cancel", gateway_customer_id="cus_c"
+		)
+		adapter = MagicMock()
+		adapter.read_finished_setup.return_value = saved_card(payment_method="pm_cancel", customer="cus_c")
+
+		result, _refunds = self.confirm_late(lambda: payments.confirm_payment_method(setup), adapter)
+
+		self.assertEqual(result["status"], "Cancelled")
+		adapter.read_saved_card.assert_not_called()
+		adapter.validate_payment_method.assert_not_called()
+		adapter.remove_saved_method.assert_called_once_with("pm_cancel", customer_reference="cus_c")
+
+	def test_a_late_capture_on_a_cancelled_mandate_setup_is_refunded(self):
+		make_razorpay_gateway()
+		setup = self.make_method(
+			status="Cancelled",
+			gateway="Razorpay",
+			method_type="UPI Autopay",
+			setup_reference="order_cancel",
+			gateway_customer_id="cust_c",
+		)
+		payment = {"id": "pay_c", "order_id": "order_cancel", "status": "captured", "amount": 100}
+		adapter = MagicMock()
+		adapter.read_finished_setup.return_value = {"payment_method": "token_c", "payment": payment}
+
+		_result, refunds = self.confirm_late(
+			lambda: mandates.activate_proven_mandate(setup, payment, actor="webhook"), adapter
+		)
+
+		self.assertEqual(self.status(setup), "Cancelled")
+		self.assertEqual([r["payment_id"] for r in refunds], ["pay_c"])
+		adapter.remove_saved_method.assert_called_once_with("token_c", customer_reference="cust_c")
+
 	def test_a_late_confirm_on_an_unsaved_setup_removes_nothing(self):
 		setup = self.make_method(status="Expired", setup_reference="seti_never")
 		adapter = MagicMock()
@@ -464,6 +499,35 @@ class TestNewSetupNeverBlocked(SetupExpiryTestBase):
 		self.assertEqual(method.status, "Active")
 		self.assertEqual(self.status(old), "Pending Validation")
 
+	def test_a_cancelled_setup_gives_back_the_card_the_gateway_saved(self):
+		old = self.make_method(started=NOW, setup_reference="seti_abandoned", gateway_customer_id="cus_old")
+		adapter = MagicMock()
+		adapter.read_finished_setup.return_value = saved_card(
+			payment_method="pm_abandoned", customer="cus_old"
+		)
+
+		with (
+			patch("central.billing.gateways.registry.get_adapter", return_value=adapter),
+			patch("frappe.enqueue", side_effect=run_enqueued_inline),
+		):
+			payments._cancel_abandoned_setups(TEAM, GATEWAY)
+
+		self.assertEqual(self.status(old), "Cancelled")
+		adapter.remove_saved_method.assert_called_once_with("pm_abandoned", customer_reference="cus_old")
+
+	def test_a_cancelled_setup_without_a_reference_reads_nothing(self):
+		old = self.make_method(started=NOW)
+		adapter = MagicMock()
+
+		with (
+			patch("central.billing.gateways.registry.get_adapter", return_value=adapter),
+			patch("frappe.enqueue", side_effect=run_enqueued_inline),
+		):
+			payments._cancel_abandoned_setups(TEAM, GATEWAY)
+
+		self.assertEqual(self.status(old), "Cancelled")
+		adapter.read_finished_setup.assert_not_called()
+
 
 def setup_payment(**fields) -> dict:
 	"""The ₹1 authorisation payment Razorpay takes on a setup order."""
@@ -497,13 +561,8 @@ class RazorpaySetupBase(SetupExpiryTestBase):
 		return run_enqueued_inline(method, **kwargs)
 
 	def make_mandate_setup(self, **fields) -> str:
-		return self.make_method(
-			gateway="Razorpay",
-			method_type="UPI Autopay",
-			setup_reference="order_setup",
-			gateway_customer_id="cust_setup",
-			**fields,
-		)
+		fields = {"setup_reference": "order_setup", "gateway_customer_id": "cust_setup", **fields}
+		return self.make_method(gateway="Razorpay", method_type="UPI Autopay", **fields)
 
 
 class TestRazorpaySweep(RazorpaySetupBase):
@@ -536,6 +595,38 @@ class TestRazorpaySweep(RazorpaySetupBase):
 
 		self.assertEqual(self.status(setup), "Pending Validation")
 		self.assertEqual(self.refunds, [])
+
+	def test_an_authorised_payment_is_not_activated_by_the_sweep(self):
+		setup = self.make_mandate_setup()
+		self.adapter.read_finished_setup.return_value = {
+			"payment_method": "token_setup",
+			"payment": setup_payment(status="authorized"),
+		}
+
+		setup_expiry.expire_unfinished_setups(now=NOW)
+
+		self.assertEqual(self.status(setup), "Pending Validation")
+		self.assertEqual(self.refunds, [])
+
+	def test_a_proof_on_a_token_another_method_holds_expires_the_setup(self):
+		holder = self.make_mandate_setup(
+			status="Active", gateway_method_id="token_setup", setup_reference="order_retry", validated_at=NOW
+		)
+		setup = self.make_mandate_setup()
+		self.adapter.read_finished_setup.return_value = {
+			"payment_method": "token_setup",
+			"customer": "cust_setup",
+			"payment": setup_payment(),
+		}
+
+		setup_expiry.expire_unfinished_setups(now=NOW)
+
+		self.assertEqual(self.status(setup), "Expired")
+		self.assertEqual(self.status(holder), "Active")
+		self.assertEqual(self.refunds, ["pay_setup"])
+		self.adapter.remove_saved_method.assert_not_called()
+		# The retried setup works, so the team is not told the old one expired.
+		self.assertEqual(self.notices(), [])
 
 
 class TestRazorpaySetupWebhook(RazorpaySetupBase):
@@ -573,7 +664,8 @@ class TestRazorpaySetupWebhook(RazorpaySetupBase):
 		self.assertEqual(method.status, "Active")
 		self.assertEqual(method.gateway_method_id, "token_setup")
 		self.assertEqual(second, {"handled": False, "reason": "already_applied"})
-		self.assertEqual(self.refunds, ["pay_setup"])
+		# The second delivery queues the same refund job again; its key keeps it to one refund.
+		self.assertEqual(set(self.refunds), {"pay_setup"})
 		self.assertEqual(
 			frappe.db.get_value("Webhook Event", event, ["status", "payment_method"]), ("Processed", setup)
 		)
@@ -604,6 +696,38 @@ class TestRazorpaySetupWebhook(RazorpaySetupBase):
 
 		self.assertEqual(self.status(setup), "Pending Validation")
 		self.assertEqual(frappe.db.get_value("Webhook Event", event, "status"), "Ignored")
+
+	def test_a_capture_on_a_token_another_method_holds_expires_the_setup(self):
+		from central.billing.payments import webhooks
+
+		holder = self.make_mandate_setup(
+			status="Active", gateway_method_id="token_setup", setup_reference="order_retry"
+		)
+		setup = self.make_mandate_setup(started=hours_before_now(1))
+		self.adapter.read_finished_setup.return_value = {
+			"payment_method": "token_setup",
+			"customer": "cust_setup",
+			"payment": setup_payment(),
+		}
+
+		webhooks.handle_webhook_event(self.store_event())
+
+		self.assertEqual(self.status(setup), "Expired")
+		self.assertEqual(self.status(holder), "Active")
+		self.assertEqual(self.refunds, ["pay_setup"])
+		self.adapter.remove_saved_method.assert_not_called()
+
+	def test_a_capture_after_the_browser_confirm_refunds_the_authorisation(self):
+		from central.billing.payments import webhooks
+
+		setup = self.make_mandate_setup(
+			status="Active", gateway_method_id="token_setup", validated_at=NOW, started=hours_before_now(1)
+		)
+
+		webhooks.handle_webhook_event(self.store_event())
+
+		self.assertEqual(self.status(setup), "Active")
+		self.assertEqual(self.refunds, ["pay_setup"])
 
 	def test_a_capture_after_the_setup_expired_is_released(self):
 		from central.billing.payments import webhooks
