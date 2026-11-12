@@ -494,21 +494,20 @@ def reconcile_payment_setup() -> dict:
 @pilot_credential_auth
 def get_available_plans() -> dict:
 	"""Active plans the credential's server can switch to — priced for the team's currency
-	on the server's cluster, admitted by the trust tier, within remaining headroom.
-	Grouped by sub-category. The server is resolved from the credential (a pilot only sees
-	its own server's options)."""
-	from central.billing.api.dashboard.catalog import get_eligible_plans
+	on the server's cluster, sold for its image offering, admitted by the trust tier, within
+	remaining headroom. Grouped by sub-category. The server is resolved from the credential
+	(a pilot only sees its own server's options)."""
+	from central.billing.catalog.server_plans import get_server_plans
 
 	team = _team()
-	cluster = frappe.db.get_value("Virtual Machine", _server(), "region")
+	server = _server()
+	cluster = frappe.db.get_value("Virtual Machine", server, "region")
 	# No provisioned cluster → offer nothing; a cluster-less menu skips the
 	# allowed-clusters guard and would leak plans from other regions.
 	if not cluster:
 		return {"plans": {}}
-	# The delegated menu gates on the session user's capability; the pilot is a Guest
-	# session, so act as operator — the team is fixed from the verified credential.
-	with _as_operator():
-		return get_eligible_plans(cluster=cluster, team=team)
+	# The team and the server are fixed from the verified credential.
+	return get_server_plans(team, cluster=cluster, server=server)
 
 
 # nosemgrep: guest-whitelisted-method -- pilot_credential_auth verifies the caller below.

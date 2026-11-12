@@ -431,7 +431,7 @@ def begin_resize(
 		return {"queued": True, "resized": True, **pending.customer_status()}
 
 	is_live = _is_live_for_resize(server)
-	_require_resize_target(doc, server, plan, includes)
+	_require_resize_target(doc, server, plan, includes, sub_category)
 	target = _resize_target(doc, plan, includes, sub_category, disk_gigabytes)
 	shape = _plan_resize(doc, server, target.plan, target.includes, target.sub_category, target.override_rate)
 	if shape is None:
@@ -545,15 +545,34 @@ def get_server_shape(server) -> dict | None:
 	}
 
 
-def _require_resize_target(doc, server, plan: str | None, includes: list | None) -> None:
+def _require_resize_target(
+	doc, server, plan: str | None, includes: list | None, sub_category: str | None
+) -> None:
 	"""The customer names the target, so it must be one their catalog offers today, and a
-	custom shape is checked row by row before it is priced."""
+	custom shape is checked row by row, and against the server's image offering, before it
+	is priced."""
 	if plan and plan != doc.plan:
 		_require_offered_plan(doc, plan, server.region if server else doc.cluster)
 	elif includes:
 		from central.billing.catalog.composition import validate_shape_rows
 
 		validate_shape_rows(includes)
+		_require_offered_size(doc, includes, sub_category)
+
+
+def _require_offered_size(doc, includes: list, sub_category: str | None) -> None:
+	"""Refuse a custom size the server's image offering does not sell. A server keeps the
+	profile it already runs, as it keeps a retired plan."""
+	from central.billing.catalog.composition import MEMORY, composition_quantities
+
+	offering = frappe.db.get_value("Virtual Machine", doc.server_id, "image_offering")
+	if not offering:
+		return
+
+	document = frappe.get_cached_doc("Image Offering", offering)
+	memory_gib = frappe.utils.flt(composition_quantities(includes).get(MEMORY, 0))
+	profile = sub_category or doc.sub_category
+	document.validate_custom_size(profile, memory_gib, is_current=profile == doc.sub_category)
 
 
 def _require_offered_plan(doc, plan: str, region: str | None) -> None:
