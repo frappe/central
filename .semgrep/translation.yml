@@ -1,0 +1,85 @@
+rules:
+  - id: central-untranslated-message
+    languages: [python]
+    severity: ERROR
+    message: >-
+      A person reads this message, so it must be translatable. Wrap the literal in _() and
+      pass values with .format(), for example _("Server {0} is stopped.").format(name).
+    patterns:
+      - pattern-either:
+          - pattern: 'frappe.$FUNCTION("...", ...)'
+          - pattern: 'frappe.$FUNCTION(f"...", ...)'
+          - pattern: 'frappe.$FUNCTION("..." % $VALUES, ...)'
+          - pattern: 'frappe.$FUNCTION("...".format(...), ...)'
+          - pattern: 'frappe.$FUNCTION("..." + $VALUE, ...)'
+          - pattern: 'frappe.$FUNCTION($VALUE + "...", ...)'
+          - pattern: 'frappe.$FUNCTION(..., msg="...", ...)'
+          - pattern: 'frappe.$FUNCTION(..., msg=f"...", ...)'
+          - pattern: 'frappe.$FUNCTION(..., msg="..." % $VALUES, ...)'
+          - pattern: 'frappe.$FUNCTION(..., msg="...".format(...), ...)'
+          - pattern: 'frappe.$FUNCTION(..., msg="..." + $VALUE, ...)'
+          - pattern: 'frappe.$FUNCTION(..., msg=$VALUE + "...", ...)'
+          - pattern: 'frappe.$FUNCTION(..., title="...", ...)'
+          - pattern: 'frappe.$FUNCTION(..., title=f"...", ...)'
+          - pattern: 'frappe.$FUNCTION(..., title="..." % $VALUES, ...)'
+          - pattern: 'frappe.$FUNCTION(..., title="...".format(...), ...)'
+          - pattern: 'frappe.$FUNCTION(..., title="..." + $VALUE, ...)'
+          - pattern: 'frappe.$FUNCTION(..., title=$VALUE + "...", ...)'
+      - metavariable-regex:
+          metavariable: $FUNCTION
+          regex: ^(throw|msgprint)$
+    paths:
+      exclude: &not_shipped ["**/tests/**", "**/patches/**", "**/test_*.py"]
+
+  # A Frappe exception reaches the person as its message. A built-in exception marks a
+  # programming error that a person does not read, so it can stay in English. The app
+  # exceptions in the list subclass Exception, and their callers catch them, so a person
+  # reads a translated sentence instead. Add a new one here only when that is true.
+  - id: central-untranslated-exception
+    languages: [python]
+    severity: ERROR
+    message: >-
+      A person reads the message of this exception, so it must be translatable. Wrap the
+      literal in _(). Raise a built-in exception, such as ValueError, for a programming error.
+    patterns:
+      - pattern-either:
+          - pattern: 'raise $EXCEPTION("...", ...)'
+          - pattern: 'raise $EXCEPTION(f"...", ...)'
+          - pattern: 'raise $EXCEPTION("..." % $VALUES, ...)'
+          - pattern: 'raise $EXCEPTION("...".format(...), ...)'
+          - pattern: 'raise $EXCEPTION("..." + $VALUE, ...)'
+          - pattern: 'raise $EXCEPTION($VALUE + "...", ...)'
+          - pattern: 'raise $EXCEPTION(..., message="...", ...)'
+          - pattern: 'raise $EXCEPTION(..., message=f"...", ...)'
+          - pattern: 'raise $EXCEPTION(..., message="..." % $VALUES, ...)'
+          - pattern: 'raise $EXCEPTION(..., message="...".format(...), ...)'
+          - pattern: 'raise $EXCEPTION(..., message="..." + $VALUE, ...)'
+          - pattern: 'raise $EXCEPTION(..., message=$VALUE + "...", ...)'
+      - metavariable-regex:
+          metavariable: $EXCEPTION
+          regex: ^(?!((\w+\.)*(AssertionError|AttributeError|Exception|ImportError|IndexError|KeyError|LookupError|NotImplementedError|OSError|RuntimeError|TypeError|ValueError|GatewayError|GatewayTimeout|GatewayAuthError|GatewayUnsupported|WebhookNotFound|NoAccess)|requests(\.\w+)+)$)
+    paths:
+      exclude: *not_shipped
+
+  - id: central-translation-at-import-time
+    languages: [python]
+    severity: ERROR
+    message: >-
+      This _() runs once at import time, so every reader gets the language of the first
+      request. Mark the literal with N_() and call _() where the code reads it.
+    pattern-either:
+      - patterns:
+          - pattern: _(...)
+          - pattern-not-inside: |
+              def $FUNCTION(...):
+                ...
+          - pattern-not-inside: "lambda $...ARGUMENTS: $BODY"
+      # A default value is computed once, when Python reads the def.
+      - patterns:
+          - pattern-inside: |
+              def $FUNCTION(..., $ARGUMENT=$DEFAULT, ...):
+                ...
+          - focus-metavariable: $DEFAULT
+          - pattern: _(...)
+    paths:
+      exclude: *not_shipped

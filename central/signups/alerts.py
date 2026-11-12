@@ -2,6 +2,7 @@ import frappe
 from frappe.utils import add_to_date, now_datetime
 
 from central.billing.platform.alerts import notify_operators
+from central.infrastructure.doctype.resource_action.resource_action import STATUS_FIELDS, get_error
 
 
 def alert_failed_signups() -> None:
@@ -15,7 +16,7 @@ def alert_failed_signups() -> None:
 			"status": ["in", ("Failed", "Timed Out")],
 			"completed_at": [">=", add_to_date(now_datetime(), hours=-1)],
 		},
-		fields=["name", "team", "error_code", "error_message"],
+		fields=["name", "team", *STATUS_FIELDS],
 	)
 	if not failed:
 		return
@@ -28,7 +29,7 @@ def alert_failed_signups() -> None:
 				"doctype": "Resource Action",
 				"subject": row.name,
 				"team": row.team,
-				"detail": row.error_message or "",
+				"detail": (get_error(row) or {}).get("message") or "",
 			}
 			for row in failed
 		],

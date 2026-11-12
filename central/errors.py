@@ -4,6 +4,7 @@ import functools
 
 import frappe
 from frappe import _
+from frappe.utils.translations import N_
 
 # The message key the envelope rides on inside each _server_messages entry.
 ENVELOPE_KEY = "action_error"
@@ -52,135 +53,157 @@ class CargoConnectionError(frappe.ValidationError):
 # the error path. `message` may be overridden when Central owns customer-safe copy.
 ERROR_CATALOG: dict[str, dict] = {
 	"PERMISSION_DENIED": {
-		"title": "You don't have access",
-		"message": "Your role on this team isn't allowed to {action} servers.",
-		"remediation": "Ask a team admin to grant you server access, or switch to a team where you have it.",
+		"title": N_("You don't have access"),
+		"message": N_("Your role on this team isn't allowed to {action} servers."),
+		"remediation": N_(
+			"Ask a team admin to grant you server access, or switch to a team where you have it."
+		),
 		"retriable": False,
 	},
 	"INPUT_REQUIRED": {
-		"title": "Missing information",
-		"message": "{field} is required to continue.",
+		"title": N_("Missing information"),
+		"message": N_("{field} is required to continue."),
 		"remediation": "",
 		"retriable": False,
 	},
 	"SERVER_NOT_FOUND": {
-		"title": "Server not found",
-		"message": "We couldn't find the server '{resource_id}' on this team.",
-		"remediation": "It may have been terminated, or it belongs to another team. Refresh your server list and try again.",
+		"title": N_("Server not found"),
+		"message": N_("We couldn't find the server '{resource_id}' on this team."),
+		"remediation": N_(
+			"It may have been terminated, or it belongs to another team. Refresh your server list and try again."
+		),
 		"retriable": False,
 	},
 	"SERVER_BUSY_RESIZING": {
-		"title": "Server is resizing",
-		"message": "This server is resizing right now. You can {action} it as soon as the resize finishes.",
+		"title": N_("Server is resizing"),
+		"message": N_(
+			"This server is resizing right now. You can {action} it as soon as the resize finishes."
+		),
 		"remediation": "",
 		"retriable": True,
 	},
 	"REGION_UNAVAILABLE": {
-		"title": "This region is temporarily unavailable",
-		"message": "We couldn't reach the selected region.",
-		"remediation": "Try again in a few minutes. If the problem continues, contact support.",
+		"title": N_("This region is temporarily unavailable"),
+		"message": N_("We couldn't reach the selected region."),
+		"remediation": N_("Try again in a few minutes. If the problem continues, contact support."),
 		"retriable": True,
 	},
 	"ATLAS_REJECTED": {
-		"title": "This request couldn't be completed",
-		"message": "The selected region couldn't complete this request.",
-		"remediation": "Review your selections and try again. If the problem continues, contact support.",
+		"title": N_("This request couldn't be completed"),
+		"message": N_("The selected region couldn't complete this request."),
+		"remediation": N_("Review your selections and try again. If the problem continues, contact support."),
 		"retriable": False,
 	},
 	"REGION_AT_CAPACITY": {
-		"title": "No room for this size",
-		"message": "The selected region has no room for this server size right now.",
-		"remediation": "Choose a smaller size, or try again later.",
+		"title": N_("No room for this size"),
+		"message": N_("The selected region has no room for this server size right now."),
+		"remediation": N_("Choose a smaller size, or try again later."),
 		"retriable": True,
 	},
 	"RESOURCE_GONE": {
-		"title": "This server is no longer available",
-		"message": "The server may already have been removed.",
-		"remediation": "Refresh your server list to see the current state.",
+		"title": N_("This server is no longer available"),
+		"message": N_("The server may already have been removed."),
+		"remediation": N_("Refresh your server list to see the current state."),
 		"retriable": False,
 	},
 	"ACTION_FAILED": {
-		"title": "The {action} didn't complete",
-		"message": "Your server reported a failure while trying to {action}, and it's now in a failed state.",
-		"remediation": "Review the existing server and contact support before submitting another operation.",
+		"title": N_("The {action} didn't complete"),
+		"message": N_(
+			"Your server reported a failure while trying to {action}, and it's now in a failed state."
+		),
+		"remediation": N_(
+			"Review the existing server and contact support before submitting another operation."
+		),
 		"retriable": False,
 	},
 	"ACTION_TIMED_OUT": {
-		"title": "The {action} is taking too long",
-		"message": "We haven't heard back that the {action} finished. It may still complete on its own.",
-		"remediation": "Refresh your server list in a few minutes. If it still looks stuck, contact support.",
+		"title": N_("The {action} is taking too long"),
+		"message": N_("We haven't heard back that the {action} finished. It may still complete on its own."),
+		"remediation": N_(
+			"Refresh your server list in a few minutes. If it still looks stuck, contact support."
+		),
 		"retriable": False,
 	},
 	"CREATE_NOT_ACCEPTED": {
-		"title": "The server wasn't created",
-		"message": "The selected region did not accept the request. No server was created.",
-		"remediation": "Try again, or select another region if the problem continues.",
+		"title": N_("The server wasn't created"),
+		"message": N_("The selected region did not accept the request. No server was created."),
+		"remediation": N_("Try again, or select another region if the problem continues."),
 		"retriable": True,
 	},
 	"SNAPSHOT_FAILED": {
-		"title": "The final snapshot didn't complete",
-		"message": "The snapshot failed, so the server was not removed. The server is stopped.",
-		"remediation": "Start the server again, or terminate it without a snapshot.",
+		"title": N_("The final snapshot didn't complete"),
+		"message": N_("The snapshot failed, so the server was not removed. The server is stopped."),
+		"remediation": N_("Start the server again, or terminate it without a snapshot."),
 		"retriable": True,
 	},
 	"OUTCOME_UNKNOWN": {
-		"title": "We're still confirming this request",
-		"message": "We couldn't confirm whether the selected region accepted it.",
-		"remediation": "We'll keep checking. Don't submit the request again.",
+		"title": N_("We're still confirming this request"),
+		"message": N_("We couldn't confirm whether the selected region accepted it."),
+		"remediation": N_("We'll keep checking. Don't submit the request again."),
 		"retriable": False,
 	},
 	"REFRESH_FAILED": {
-		"title": "Progress isn't available yet",
-		"message": "Your request was accepted, but we couldn't load its latest status.",
-		"remediation": "We'll check again automatically. Don't submit another request.",
+		"title": N_("Progress isn't available yet"),
+		"message": N_("Your request was accepted, but we couldn't load its latest status."),
+		"remediation": N_("We'll check again automatically. Don't submit another request."),
 		"retriable": False,
 	},
 	"FINALIZATION_FAILED": {
-		"title": "Setup needs support",
-		"message": "The selected region accepted the request, but setup did not finish.",
-		"remediation": "Don't submit another request. Contact support with this action ID.",
+		"title": N_("Setup needs support"),
+		"message": N_("The selected region accepted the request, but setup did not finish."),
+		"remediation": N_("Don't submit another request. Contact support with this action ID."),
 		"retriable": False,
 	},
 	"VALIDATION_ERROR": {
-		"title": "Check the request details",
-		"message": "The request could not be completed with these details.",
-		"remediation": "Review the information you entered. Contact support if you cannot resolve the problem.",
+		"title": N_("Check the request details"),
+		"message": N_("The request could not be completed with these details."),
+		"remediation": N_(
+			"Review the information you entered. Contact support if you cannot resolve the problem."
+		),
 		"retriable": False,
 	},
 	"PAYMENT_METHOD_REQUIRED": {
-		"title": "Add a payment method to create servers",
-		"message": "Your credit does not cover this server, and your team has no payment method.",
-		"remediation": "Open Billing to add your billing details and a payment method. Ask a team admin if you cannot manage billing.",
+		"title": N_("Add a payment method to create servers"),
+		"message": N_("Your credit does not cover this server, and your team has no payment method."),
+		"remediation": N_(
+			"Open Billing to add your billing details and a payment method. Ask a team admin if you cannot manage billing."
+		),
 		"retriable": False,
 	},
 	"PAYMENT_OVERDUE": {
-		"title": "Pay what your team owes to continue",
-		"message": "Your team has an unpaid invoice that is overdue, or its account is past due or suspended.",
-		"remediation": "Open Billing and pay the unpaid invoice. Ask a team admin if you cannot manage billing.",
+		"title": N_("Pay what your team owes to continue"),
+		"message": N_(
+			"Your team has an unpaid invoice that is overdue, or its account is past due or suspended."
+		),
+		"remediation": N_(
+			"Open Billing and pay the unpaid invoice. Ask a team admin if you cannot manage billing."
+		),
 		"retriable": False,
 	},
 	"TRIAL_IN_PROGRESS": {
-		"title": "You already have a free trial",
-		"message": "Your {product} trial at {address} is still open.",
-		"remediation": "Use that site, or delete it to start a new trial.",
+		"title": N_("You already have a free trial"),
+		"message": N_("Your {product} trial at {address} is still open."),
+		"remediation": N_("Use that site, or delete it to start a new trial."),
 		"retriable": False,
 	},
 	"TRUST_TIER_LIMIT": {
-		"title": "Your trust tier limit is reached",
-		"message": "Your trust tier allows {limit} servers, and your team already has {count}.",
-		"remediation": "Terminate a server you no longer need, or contact support to review your trust tier.",
+		"title": N_("Your trust tier limit is reached"),
+		"message": N_("Your trust tier allows {limit} servers, and your team already has {count}."),
+		"remediation": N_(
+			"Terminate a server you no longer need, or contact support to review your trust tier."
+		),
 		"retriable": False,
 	},
 	"MAILBOX_POOL_EMPTY": {
-		"title": "The server wasn't created",
-		"message": "This region has no mailbox ready for a new server. No server was created.",
-		"remediation": "Try again in a few minutes.",
+		"title": N_("The server wasn't created"),
+		"message": N_("This region has no mailbox ready for a new server. No server was created."),
+		"remediation": N_("Try again in a few minutes."),
 		"retriable": True,
 	},
 	"UNEXPECTED": {
-		"title": "We couldn't complete that",
-		"message": "Something went wrong while we were processing your request.",
-		"remediation": "Check its status before trying again. If the result is unclear, contact support.",
+		"title": N_("We couldn't complete that"),
+		"message": N_("Something went wrong while we were processing your request."),
+		"remediation": N_("Check its status before trying again. If the result is unclear, contact support."),
 		"retriable": False,
 	},
 }
@@ -201,6 +224,9 @@ def build_envelope(
 	`message`/`remediation` override the catalog copy when the caller has better words
 	(e.g. the region's own error sentence)."""
 	entry = ERROR_CATALOG.get(code, ERROR_CATALOG["UNEXPECTED"])
+	# An action is a Resource Action option such as "resize", which the translation catalog holds.
+	if context.get("action"):
+		context["action"] = _(context["action"])
 	source = _SafeContext(context)
 
 	return {

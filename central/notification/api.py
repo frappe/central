@@ -144,7 +144,7 @@ def _event_catalog(user: str, team: str) -> list[dict]:
 	for event in events:
 		by_category[event.category].append(_catalog_entry(event, allowed))
 	return [
-		{"category": category, "label": category, "events": by_category[category]}
+		{"category": category, "label": _(category), "events": by_category[category]}
 		for category in CATEGORIES
 		if by_category[category]
 	]
@@ -163,7 +163,7 @@ def _catalog_entry(event: frappe._dict, allowed: dict[str, bool]) -> dict:
 	can_receive = (
 		not event.required_cap or event.direct_recipients == "Affected User" or allowed[event.required_cap]
 	)
-	title = event.in_app_title
+	title = _(event.in_app_title)
 	if "{{" in title or "{%" in title:
 		title = frappe.unscrub(event.event_type)
 	return {

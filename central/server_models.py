@@ -4,6 +4,7 @@ import ipaddress
 import re
 from typing import Annotated, Literal, NotRequired, TypedDict
 
+from frappe import _
 from pydantic import BaseModel, ConfigDict, Field, PositiveInt, StringConstraints, model_validator
 
 from central.billing.catalog.rate_card import COMPONENT_UNITS
@@ -30,7 +31,7 @@ class ResourceQuantity(BaseModel):
 		# The server shape is read from these units, so they must match.
 		unit = COMPONENT_UNITS.get(self.resource_type)
 		if unit and self.unit != unit:
-			raise ValueError("The unit must match the selected resource type.")
+			raise ValueError(_("The unit must match the selected resource type."))
 
 		return self
 
@@ -134,21 +135,23 @@ class FirewallRule(BaseModel):
 	@model_validator(mode="after")
 	def validate_rule(self):
 		if self.ports and self.protocol not in ("tcp", "udp"):
-			raise ValueError("Ports apply only to TCP and UDP rules.")
+			raise ValueError(_("Ports apply only to TCP and UDP rules."))
 
 		match = PORTS.fullmatch(self.ports) if self.ports else None
 		if self.ports and not match:
-			raise ValueError("Enter one port, such as 8000, or one range, such as 8000-8100.")
+			raise ValueError(_("Enter one port, such as 8000, or one range, such as 8000-8100."))
 		if match and not int(match[1]) <= int(match[2] or match[1]) <= 65535:
-			raise ValueError("Ports go from 1 to 65535, with the smaller number first.")
+			raise ValueError(_("Ports go from 1 to 65535, with the smaller number first."))
 
 		for cidr in self.cidrs:
 			try:
 				network = ipaddress.ip_network(cidr)
 			except ValueError:
-				raise ValueError(f"{cidr} is not an IP address range, such as 198.51.100.0/24.") from None
+				raise ValueError(
+					_("{0} is not an IP address range, such as 198.51.100.0/24.").format(cidr)
+				) from None
 			if str(network) != cidr:
-				raise ValueError(f"Write {cidr} as {network}.")
+				raise ValueError(_("Write {0} as {1}.").format(cidr, network))
 
 		return self
 
@@ -165,12 +168,12 @@ class FirewallChange(BaseModel):
 	@model_validator(mode="after")
 	def validate_unique_rules(self):
 		if self.enabled is None and self.inbound is None and self.outbound is None:
-			raise ValueError("Send the firewall state or a rule list to change.")
+			raise ValueError(_("Send the firewall state or a rule list to change."))
 
 		for rules in (self.inbound or [], self.outbound or []):
 			keys = [(rule.protocol, rule.ports, tuple(sorted(rule.cidrs))) for rule in rules]
 			if len(keys) != len(set(keys)):
-				raise ValueError("Each rule can appear only once.")
+				raise ValueError(_("Each rule can appear only once."))
 
 		return self
 

@@ -309,7 +309,7 @@ class TestResourceActions(IntegrationTestCase):
 		diagnostic = action.diagnostic
 		self.assertIn("Traceback", diagnostic)
 		self.assertIn("AtlasConnectionError: region refused", diagnostic)
-		self.assertNotIn("region refused", action.error_message)
+		self.assertNotIn("region refused", action.customer_status()["error"]["message"])
 
 	def bundle_bucket(self):
 		"""Make the selected plan bundle storage and return its Cargo client."""

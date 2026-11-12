@@ -25,6 +25,7 @@ def create_notification(
 	server: str | None = None,
 	action_label: str | None = None,
 	action_route: str | None = None,
+	template_context: dict | None = None,
 	publish: bool = True,
 ):
 	"""Record one in-app notification for a team and nudge the console. Email preferences do
@@ -50,6 +51,7 @@ def create_notification(
 			"server": server or get_reference_server(reference_doctype, reference_name),
 			"action_label": action_label,
 			"action_route": action_route,
+			"template_context": frappe.as_json(template_context) if template_context else None,
 			"is_read": 0,
 		}
 	)
@@ -89,6 +91,7 @@ _FEED_FIELDS = (
 	"reference_name",
 	"action_label",
 	"action_route",
+	"template_context",
 	"creation",
 )
 
@@ -183,9 +186,12 @@ def list_notifications(
 	if frappe.utils.cint(unread_only):
 		query = query.where(nr.name.isnull())
 
+	from central.notification.engine import render_for_reader
+
 	items = query.run(as_dict=True)
 	has_next_page = len(items) > limit
 	items = items[:limit]
+	render_for_reader(items)
 	for row in items:
 		row["is_read"] = 1 if row.pop("_read_marker", None) else 0
 

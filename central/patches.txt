@@ -105,3 +105,4 @@ central.patches.v0_0.charge_gst_to_indian_tax_profiles
 central.patches.v0_0.set_minimum_invoice_amounts_to_gateway_minimum
 # The Growth trust tier is renamed, so it does not read as the Growth plan.
 central.patches.v0_0.rename_growth_trust_tier_to_emerging
+central.patches.v0_0.keep_only_custom_resource_action_copy
