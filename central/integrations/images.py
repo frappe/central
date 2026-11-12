@@ -181,8 +181,8 @@ def _restorable_snapshot(team: str, snapshot: str):
 
 
 def eligible_plans(team: str, region: str, offering: str, image_id: str, snapshot: str | None = None) -> dict:
-	"""Combine billing eligibility with the selected image's disk requirement. A restore
-	passes `snapshot` instead of an offering and image."""
+	"""Combine the offering's plan family and minimum memory with the selected image's disk
+	requirement. A restore passes `snapshot` instead of an offering and image."""
 	from math import ceil
 
 	from central.billing.catalog.composition import composition_quantities
@@ -193,8 +193,12 @@ def eligible_plans(team: str, region: str, offering: str, image_id: str, snapsho
 		if snapshot
 		else selected_image(team, region, offering, image_id)
 	)
-	minimum = get_minimum_shape(image, get_image_app_requirements(region, image, snapshot))
-	catalog = get_server_plans(team, cluster=region)
+	if snapshot:
+		offering = snapshot_source(team, snapshot)[0]
+	minimum = get_minimum_shape(
+		image, get_image_app_requirements(region, image, snapshot), get_minimum_memory_mib(offering)
+	)
+	catalog = get_server_plans(team, cluster=region, offering=offering)
 	groups = {}
 	for name, plans in catalog["plans"].items():
 		rows = [plan for plan in plans if is_shape_enough(composition_quantities(plan["includes"]), minimum)]
@@ -235,12 +239,19 @@ def get_image_app_requirements(
 	return CargoClient(region_document).get_app_requirements(image["tags"]["application"])
 
 
-def get_minimum_shape(image: dict, requirements: AppRequirements | None) -> dict[str, int]:
-	"""The smallest machine an image runs on: its root disk, and an app's minimum size."""
+def get_minimum_memory_mib(offering: str) -> int:
+	return frappe.get_cached_doc("Image Offering", offering).minimum_memory_mib
+
+
+def get_minimum_shape(
+	image: dict, requirements: AppRequirements | None, minimum_memory_mib: int = 0
+) -> dict[str, int]:
+	"""The smallest machine an image runs on: its root disk, its offering's minimum memory,
+	and an app's minimum size."""
 	minimum = (requirements or {}).get("minimum_size") or {}
 	return {
 		"cpu_millicores": minimum.get("cpu_millicores", 0),
-		"memory_mib": minimum.get("memory_mib", 0),
+		"memory_mib": max(minimum.get("memory_mib", 0), minimum_memory_mib),
 		"disk_mib": max(image["rootfs_size_mib"], minimum.get("disk_mib", 0)),
 	}
 

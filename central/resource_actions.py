@@ -43,6 +43,7 @@ from central.infrastructure.doctype.resource_action.resource_action import (
 from central.integrations.images import (
 	get_app_subdomain,
 	get_image_app_requirements,
+	get_minimum_memory_mib,
 	get_minimum_shape,
 	selected_image,
 	snapshot_image,
@@ -331,6 +332,7 @@ def _build_server_configuration(
 		includes,
 		server_input.sub_category,
 		is_free_trial,
+		server_input.offering,
 	)
 	validate_guest_input(server_input)
 	# Check the saved keys now so the form shows the error. Dispatch reads their text, which a
@@ -338,7 +340,9 @@ def _build_server_configuration(
 	resolve_team_ssh_keys(server_input.team, server_input.ssh_key_ids)
 	shape = image_shape(composition, image)
 	requirements = get_image_app_requirements(server_input.region, image, snapshot)
-	_validate_app_size(image, requirements, shape)
+	_validate_minimum_size(
+		get_minimum_shape(image, requirements, get_minimum_memory_mib(server_input.offering)), shape
+	)
 	subdomain = get_app_subdomain(server_input.region, server_input.app_inputs) if requirements else None
 	user_data = _get_user_data(server_input, requirements, subdomain)
 
@@ -426,15 +430,14 @@ def _validate_user_data(server_input: CreateServerInput, requirements: AppRequir
 			frappe.throw(_("{0} is required.").format(item.get("label", name)))
 
 
-def _validate_app_size(image: dict, requirements: AppRequirements | None, shape: dict[str, int]) -> None:
-	"""A new app server needs at least the app's minimum size. Any other server, and a
-	restored snapshot, has no app requirements."""
-	if not requirements:
-		return
-
-	minimum = get_minimum_shape(image, requirements)
+def _validate_minimum_size(minimum: dict[str, int], shape: dict[str, int]) -> None:
+	"""A new server needs at least the size its image, image offering and app ask for."""
 	if any(shape[key] < minimum[key] for key in minimum):
-		frappe.throw(_("This app needs a bigger server. Choose a plan with more CPU, memory or storage."))
+		frappe.throw(
+			_(
+				"This server is too small for the selected image. Choose a plan with more CPU, memory or storage."
+			)
+		)
 
 
 def unanswered_request(team: str, digest: str) -> str | None:
@@ -460,9 +463,10 @@ def validate_purchase(
 	includes: list[dict] | None,
 	sub_category: str | None,
 	is_free_trial: bool = False,
+	offering: str | None = None,
 ) -> tuple[list[dict], float]:
-	"""The composition and monthly rate of a server the team may buy. A free trial site is not
-	bought, so only the trial limit applies to it."""
+	"""The composition and monthly rate of a server the team may buy on `offering`'s plans. A
+	free trial site is not bought, so only the trial limit applies to it."""
 	internal = is_internal_team(team)
 	trial = is_free_trial or (not internal and bool(frappe.db.get_value("Team", team, "is_staging_trial")))
 	if is_free_trial:
@@ -470,7 +474,7 @@ def validate_purchase(
 	elif trial:
 		validate_trial(team)
 
-	catalog = get_server_plans(team, cluster=region, include_trial_plans=is_free_trial)
+	catalog = get_server_plans(team, cluster=region, include_trial_plans=is_free_trial, offering=offering)
 	if plan:
 		choices = [row for rows in catalog["plans"].values() for row in rows]
 		selected = next((row for row in choices if row["plan"] == plan), None)
