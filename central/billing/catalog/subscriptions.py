@@ -1168,12 +1168,19 @@ def pause_billing(subscription: str, changed_by: str | None = None):
 	it is resumed. A no-op if already paused. If the server can't be stopped the whole
 	pause rolls back."""
 	doc = frappe.get_doc("Subscription", subscription)
-	if not doc.enabled:
+	if not doc.server_id:
+		frappe.throw(frappe._("Only a server's billing can be paused."))
+	latest = _latest_segment_by_subscription([subscription, *_public_ipv4_subscriptions(doc)], True)
+	state = latest.get(subscription)
+	if state and state.change_type == "Paused":
 		return doc
+	if not state or state.change_type not in RATED_CHANGE_TYPES:
+		frappe.throw(frappe._("Only a running server's billing can be paused."))
 	doc.enabled = 0
 	doc.save(ignore_permissions=True)
-	for name in [subscription, *_public_ipv4_subscriptions(doc)]:
-		_record_change(name, "Paused", changed_by=changed_by)
+	for name, segment in latest.items():
+		if segment.change_type in RATED_CHANGE_TYPES:
+			_record_change(name, "Paused", changed_by=changed_by)
 	_control_subscription_server(doc, "stop")
 	return doc
 
@@ -1182,12 +1189,17 @@ def resume_billing(subscription: str, changed_by: str | None = None):
 	"""Bill a paused server again at the rates locked before the pause, and start it.
 	Refused when the team or project has no room left for it. A no-op if already active."""
 	doc = frappe.get_doc("Subscription", subscription)
-	if doc.enabled:
+	latest = _latest_segment_by_subscription([subscription, *_public_ipv4_subscriptions(doc)], True)
+	state = latest.get(subscription)
+	if state and state.change_type in RATED_CHANGE_TYPES:
 		return doc
-	reopened = {name: _last_rated_change(name) for name in [subscription, *_public_ipv4_subscriptions(doc)]}
-	rate = sum(frappe.utils.flt(change.locked_rate) for change in reopened.values() if change)
-	enforce_headroom(doc.team, rate)
-	enforce_project_headroom(doc.team, doc.project, rate)
+	if not state or state.change_type != "Paused":
+		frappe.throw(frappe._("Only a paused server can be resumed."))
+	reopened = _last_rated_changes_of_paused(latest)
+	rates = {name: frappe.utils.flt(change.locked_rate) for name, change in reopened.items()}
+	enforce_headroom(doc.team, sum(rates.values()), for_update=True)
+	# Only the server carries the project; its public IPv4 never counts toward a project.
+	enforce_project_headroom(doc.team, doc.project, rates.get(subscription, 0.0))
 
 	doc.enabled = 1
 	doc.save(ignore_permissions=True)
@@ -1195,6 +1207,13 @@ def resume_billing(subscription: str, changed_by: str | None = None):
 		_reopen_segment(name, change, changed_by)
 	_control_subscription_server(doc, "start")
 	return doc
+
+
+def _last_rated_changes_of_paused(latest: dict) -> dict:
+	"""The last rated change of each paused subscription, by subscription."""
+	paused = [name for name, segment in latest.items() if segment.change_type == "Paused"]
+	changes = {name: _last_rated_change(name) for name in paused}
+	return {name: change for name, change in changes.items() if change}
 
 
 def _public_ipv4_subscriptions(doc) -> list[str]:

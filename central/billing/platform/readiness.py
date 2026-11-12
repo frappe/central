@@ -291,19 +291,17 @@ def check_subscriptions_name_a_known_region() -> list[Violation]:
 
 
 def check_running_servers_are_billed() -> list[Violation]:
-	"""A running server has an active subscription, unless it is a free trial."""
+	"""A running server has an open billing segment, unless it is a free trial."""
 	from central.signups.trial import is_billing_deferred
 
-	billed = set(
-		frappe.get_all("Subscription", filters={"enabled": 1, "server_id": ["is", "set"]}, pluck="server_id")
-	)
+	billed = {segment.server_id for segment in active_segments({"server_id": ["is", "set"]})}
 	return [
 		Violation(
 			check="S2",
 			team=vm.team,
 			subject_doctype="Virtual Machine",
 			subject=vm.name,
-			detail="Running with no active subscription, so nothing bills it.",
+			detail="Running with no open billing period, so nothing bills it.",
 		)
 		for vm in frappe.get_all("Virtual Machine", filters={"status": "Running"}, fields=["name", "team"])
 		if vm.name not in billed and not is_billing_deferred(vm.name)

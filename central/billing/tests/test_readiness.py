@@ -132,7 +132,8 @@ class TestReadiness(IntegrationTestCase):
 		frappe.db.set_value("Virtual Machine", server, "status", "Running")
 		self.assertEqual(_found("S2"), [])
 
-		frappe.db.set_value("Subscription", self.subscription, "enabled", 0)
+		# An enabled subscription whose segment is paused bills nothing.
+		add_segment(self.subscription, "Paused", None, "2026-06-11 00:00:00")
 		self.assertEqual(len(_found("S2")), 1)
 
 	def test_terminated_server_still_billed_is_found(self):

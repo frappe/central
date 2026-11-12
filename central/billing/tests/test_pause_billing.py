@@ -33,6 +33,7 @@ class PauseBillingTestBase(IntegrationTestCase):
 
 	def _purge(self):
 		frappe.db.delete("Invoice", {"team": TEAM})
+		frappe.db.delete("Project", {"team": TEAM})
 		for name in frappe.get_all("Subscription", {"team": TEAM}, pluck="name"):
 			frappe.db.delete("Subscription Change", {"subscription": name})
 			frappe.db.delete("Subscription", {"name": name})
@@ -122,6 +123,30 @@ class TestPauseAndResume(PauseBillingTestBase):
 		with self.assertRaises(frappe.ValidationError):
 			subscriptions.resume_billing(self.subscription)
 		self.assertEqual(self._changes(self.subscription)[-1].change_type, "Paused")
+
+	def test_pausing_a_subscription_with_no_server_is_refused(self):
+		frappe.db.set_value("Subscription", self.subscription, "server_id", None)
+
+		with self.assertRaises(frappe.ValidationError):
+			subscriptions.pause_billing(self.subscription)
+
+	def test_resuming_a_cancelled_subscription_is_refused(self):
+		subscriptions.cancel_subscription(self.subscription)
+
+		with self.assertRaises(frappe.ValidationError):
+			subscriptions.resume_billing(self.subscription)
+
+	def test_the_project_limit_on_resume_leaves_out_the_public_ipv4(self):
+		self._public_ipv4_subscription()
+		project = frappe.get_doc(
+			{"doctype": "Project", "title": "Paused", "team": TEAM, "spending_limit": 3000}
+		).insert()
+		frappe.db.set_value("Subscription", self.subscription, "project", project.name)
+		subscriptions.pause_billing(self.subscription)
+
+		subscriptions.resume_billing(self.subscription)
+
+		self.assertEqual(subscriptions.current_segment_rate(self.subscription), 3000)
 
 	def test_terminating_a_paused_server_cancels_its_subscription(self):
 		subscriptions.pause_billing(self.subscription)
