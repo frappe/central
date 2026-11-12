@@ -11,17 +11,22 @@ from central.billing.platform.jobs import each_isolated
 from central.billing.states import transition
 
 SETUP_EXPIRES_HOURS = 24
+# A setup still pending this long is released and expired, whatever the gateway says.
+SETUP_RELEASE_DAYS = 7
 NOTICE = "Payment Method Setup Expired"
 # Card and UPI setups only. PayPal setups are not offered in the console.
 SETUP_METHOD_TYPES = ("Card", "UPI Autopay")
 PAYPAL_GATEWAY = "Paypal"
 # Each due setup with a reference costs one gateway read, so one run reads at most this many.
+# Oldest first: a row the gateway cannot read reaches the release age and leaves the queue.
 SETUPS_PER_RUN = 500
 
 
 def expire_unfinished_setups(now=None) -> dict:
-	"""Expire card and UPI setups left unfinished for a day, and tell each team once."""
-	cutoff = frappe.utils.add_to_date(now or frappe.utils.now_datetime(), hours=-SETUP_EXPIRES_HOURS)
+	"""Settle card and UPI setups left unfinished for a day, and tell each team once."""
+	now = now or frappe.utils.now_datetime()
+	cutoff = frappe.utils.add_to_date(now, hours=-SETUP_EXPIRES_HOURS)
+	release_before = frappe.utils.add_to_date(now, days=-SETUP_RELEASE_DAYS)
 	due = frappe.get_all(
 		"Payment Method",
 		filters={
@@ -39,44 +44,73 @@ def expire_unfinished_setups(now=None) -> dict:
 		setups_by_team.setdefault(row.team, []).append(row.name)
 
 	def expire(team: str) -> dict:
-		return expire_team_setups(team, setups_by_team[team])
+		return expire_team_setups(team, setups_by_team[team], release_before)
 
 	return {"expired": each_isolated("Setup expiry", "Team", list(setups_by_team), expire)}
 
 
-def expire_team_setups(team: str, names: list[str]) -> dict:
-	"""Expire the team's unfinished setups. One notice covers them all."""
-	unfinished = [name for name in names if not _is_kept_pending(name)]
-	expired = [method for method in map(_expire_setup, unfinished) if method]
+def expire_team_setups(team: str, names: list[str], release_before=None) -> dict:
+	"""Settle the team's unfinished setups. One notice covers the ones that expired."""
+	expired = [method for method in (_settle_setup(name, release_before) for name in names) if method]
 	if expired:
 		_notify(team, expired)
 	return {"team": team, "expired": [method.name for method in expired]}
 
 
-def _is_kept_pending(name: str) -> bool:
-	"""True when the gateway says the setup finished, or cannot say now. A finished setup
-	waits for its confirm; one the gateway cannot read is tried again next run."""
-	row = frappe.db.get_value("Payment Method", name, ["gateway", "setup_reference"], as_dict=True)
+def _settle_setup(name: str, release_before):
+	"""The setup, if it expired now. A Razorpay setup the gateway proves finished is
+	activated. A card the gateway saved but nobody confirmed is removed and expired."""
+	row = frappe.db.get_value(
+		"Payment Method", name, ["gateway", "setup_reference", "creation"], as_dict=True
+	)
+	if release_before and row.creation <= release_before:
+		return _expire_and_release(name, f"setup still unfinished after {SETUP_RELEASE_DAYS} days")
+	saved = _read_setup(name, row)
+	if saved is None:
+		return None
+	if saved.get("payment"):
+		_activate_mandate(name, saved["payment"])
+		return None
+	if saved.get("payment_method"):
+		return _expire_and_release(name, "setup saved at the gateway but never confirmed")
+	return _expire_setup(name)
+
+
+def _read_setup(name: str, row) -> dict | None:
+	"""What the gateway says the setup saved. None when it cannot say now, so the
+	row waits for the next run."""
 	if not row.setup_reference:
-		return False
-	logger = frappe.logger("billing")
+		return {}
 	try:
-		saved = _adapter(row.gateway).read_finished_setup(row.setup_reference)
+		return _adapter(row.gateway).read_finished_setup(row.setup_reference)
 	except GatewayError as error:  # a timeout or an unsupported read is a GatewayError too
-		logger.warning(f"setup expiry skipped {name}: the gateway could not be read ({error})")
-		return True
-	if saved:
-		logger.info(f"setup expiry kept {name}: the gateway says the setup finished, awaiting its confirm")
-	return bool(saved)
+		frappe.logger("billing").warning(
+			f"setup expiry skipped {name}: the gateway could not be read ({error})"
+		)
+		return None
 
 
-def _expire_setup(name: str):
+def _activate_mandate(name: str, payment: dict) -> None:
+	from central.billing.payments import mandates
+
+	mandates.activate_proven_mandate(name, payment, actor="scheduler")
+
+
+def _expire_and_release(name: str, reason: str):
+	"""Expire the setup, then queue giving back what it saved at the gateway."""
+	method = _expire_setup(name, reason=reason)
+	if method:
+		queue_late_release(method)
+	return method
+
+
+def _expire_setup(name: str, reason: str = "setup not finished in time"):
 	"""The setup, now Expired. None when it finished or failed meanwhile."""
 	method = frappe.get_doc("Payment Method", name, for_update=True)
 	if method.status != "Pending Validation":
 		return None
 
-	transition(method, "Expired", actor="scheduler", reason="setup not finished in time")
+	transition(method, "Expired", actor="scheduler", reason=reason)
 	# The hourly job runs as the system with no session user to check.
 	method.save(ignore_permissions=True)
 	return method

@@ -44,7 +44,13 @@ You can close the bank's page or the dialog at any time. Start again at once: an
 
 A card or UPI setup that is not finished in 24 hours is not saved. Frappe Cloud sends an email and an in-app notice: "Your card or UPI setup was not finished, so it was not saved. Add it again from Billing." If you add a payment method after you start that setup, you do not get the notice.
 
-If you finished adding a card on the gateway's page but closed the window before Frappe Cloud showed it, the setup does not expire. The card shows in Billing the next time you open it. If you finish a setup after it expired, Frappe Cloud does not save it. It refunds the ₹1 authorisation charge and removes the card or UPI authorisation at the gateway.
+If you authorised RuPay or UPI Autopay on the bank's page but closed the window before Frappe Cloud showed it, Frappe Cloud still saves it when Razorpay confirms the payment. The method shows in Billing, and the ₹1 authorisation charge is refunded.
+
+If you added a card on the card page but closed the window before Frappe Cloud showed it, the card is not saved. After 24 hours Frappe Cloud removes the card from the payment gateway and sends the notice. The card is not charged. Add it again from Billing.
+
+A setup that is still not finished after 7 days is not saved, whatever its state at the gateway. Frappe Cloud refunds any ₹1 authorisation charge, removes any card or UPI authorisation at the gateway, and sends the notice.
+
+If you finish a setup after it expired, Frappe Cloud does not save it. It refunds the ₹1 authorisation charge and removes the card or UPI authorisation at the gateway.
 
 ## Change the order
 

@@ -33,6 +33,11 @@ UPI_RECURRING_MAX = 100000
 # the mandate with "The max amount may not be greater than 100000000".
 CARD_TOKEN_MAX = 1000000
 
+# A setup order authorises ₹1 (100 paise); the payment on it carries the token.
+SETUP_AUTHORISATION_PAISE = 100
+# Setup orders auto-capture, so the captured payment is the one that is refunded.
+SETUP_PROOF_EVENTS = ("payment.captured",)
+
 
 def team_cap(team: str):
 	"""Current trust-tier monthly cap for a team (0 when no tier exists yet)."""
@@ -302,11 +307,65 @@ def confirm_mandate(payment_method: str, callback: dict):
 	payment = adapter.get_payment(callback.get("razorpay_payment_id"))
 	if not _is_mandate_payment(method, payment):
 		return _refuse_mandate(method, PAYMENT_NOT_AUTHORISED, "The payment does not authorise this mandate.")
+	return _activate_mandate(method, adapter, payment, actor=frappe.session.user)
 
+
+def activate_proven_mandate(payment_method: str, payment: dict, actor: str):
+	"""Activate a mandate from the gateway's own setup payment, without the browser.
+	A payment that does not match the setup is logged and not acted on."""
+	from central.billing.payments import setup_expiry
+
+	method = frappe.get_doc("Payment Method", payment_method, for_update=True)
+	if method.status != "Pending Validation":
+		setup_expiry.queue_late_release(method)
+		return method
+	if not is_proven_setup_payment(method, payment):
+		frappe.logger("billing").warning(
+			f"mandate {method.name} not activated: payment {payment.get('id')} does not match its setup"
+		)
+		return method
+	return _activate_mandate(method, _adapter(method.gateway), payment, actor=actor)
+
+
+def apply_setup_payment_event(event) -> str | None:
+	"""Activate the mandate a captured setup payment proves. The method, or None when the
+	payment is for no setup of ours."""
+	if event.event_type not in SETUP_PROOF_EVENTS:
+		return None
+	payload = frappe.parse_json(event.raw_payload) if event.raw_payload else {}
+	payment = ((payload.get("payload") or {}).get("payment") or {}).get("entity") or {}
+	if not payment.get("order_id"):
+		return None
+	name = frappe.db.get_value(
+		"Payment Method", {"gateway": event.gateway, "setup_reference": payment["order_id"]}
+	)
+	if name:
+		activate_proven_mandate(name, payment, actor="webhook")
+	return name
+
+
+def is_proven_setup_payment(method, payment: dict) -> bool:
+	"""True when the payment is this setup's ₹1 authorisation, for this team's customer."""
+	return (
+		_is_mandate_payment(method, payment)
+		and bool(method.gateway_customer_id)
+		and round(frappe.utils.flt(payment.get("amount"))) == SETUP_AUTHORISATION_PAISE
+		and (payment.get("currency") or "").upper() == "INR"
+		and _notes_team(payment) in (None, method.team)
+	)
+
+
+def _notes_team(payment: dict) -> str | None:
+	notes = payment.get("notes")
+	return (notes.get("team") or None) if isinstance(notes, dict) else None
+
+
+def _activate_mandate(method, adapter, payment: dict, actor: str):
+	"""Make the mandate Active on its token and refund the authorisation payment."""
 	method.gateway_method_id = payment["token_id"]
 	method.display_label = _mandate_label(method, payment)
 	method.set_instrument_fingerprint(adapter.read_instrument_fingerprint(payment))
-	transition(method, "Active", actor=frappe.session.user)
+	transition(method, "Active", actor=actor)
 	method.validated_at = frappe.utils.now_datetime()
 	method.reauth_required = 0
 	method.save(ignore_permissions=True)
