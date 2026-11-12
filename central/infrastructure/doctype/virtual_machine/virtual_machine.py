@@ -249,7 +249,9 @@ class VirtualMachine(Document):
 			self.disable_active_subscription()
 
 	def ensure_subscription_enabled(self):
-		"""Create the subscription if missing, else enable it if disabled. A free trial has none."""
+		"""Create the subscription if missing, else enable it if disabled. A free trial has none,
+		and a paused one stays disabled until the customer resumes it."""
+		from central.billing.catalog.subscriptions import is_billing_paused
 		from central.signups.trial import is_billing_deferred
 
 		if is_billing_deferred(self.name):
@@ -260,7 +262,7 @@ class VirtualMachine(Document):
 		)
 		if existing:
 			sub = frappe.get_doc("Subscription", existing)
-			if not sub.enabled:
+			if not sub.enabled and not is_billing_paused(sub.name):
 				sub.enable()
 			if sub.plan != self.plan:
 				sub.plan = self.plan

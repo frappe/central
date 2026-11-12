@@ -1194,6 +1194,22 @@ def pause_billing(subscription: str, changed_by: str | None = None):
 def resume_billing(subscription: str, changed_by: str | None = None):
 	"""Bill a paused server again at the rates locked before the pause, and start it.
 	Refused when the team or project has no room left for it. A no-op if already active."""
+	was_paused = is_billing_paused(subscription)
+	doc = reopen_paused_billing(subscription, changed_by=changed_by)
+	if was_paused:
+		_control_subscription_server(doc, "start")
+	return doc
+
+
+def is_billing_paused(subscription: str) -> bool:
+	"""Whether the subscription's latest segment change is a pause."""
+	state = _latest_segment_by_subscription([subscription]).get(subscription)
+	return bool(state and state.change_type == "Paused")
+
+
+def reopen_paused_billing(subscription: str, changed_by: str | None = None):
+	"""Bill a paused server again at the rates locked before the pause, without starting it.
+	Refused when the team or project has no room left for it. A no-op if already active."""
 	doc = frappe.get_doc("Subscription", subscription)
 	latest = _latest_segment_by_subscription([subscription, *_public_ipv4_subscriptions(doc)], True)
 	state = latest.get(subscription)
@@ -1219,7 +1235,6 @@ def resume_billing(subscription: str, changed_by: str | None = None):
 			locked_rate=change.locked_rate,
 			currency=change.currency,
 		)
-	_control_subscription_server(doc, "start")
 	return doc
 
 

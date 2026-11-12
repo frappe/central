@@ -34,6 +34,7 @@ class PauseBillingTestBase(IntegrationTestCase):
 	def _purge(self):
 		frappe.db.delete("Invoice", {"team": TEAM})
 		frappe.db.delete("Project", {"team": TEAM})
+		frappe.db.delete("Resource Action", {"team": TEAM})
 		for name in frappe.get_all("Subscription", {"team": TEAM}, pluck="name"):
 			frappe.db.delete("Subscription Change", {"subscription": name})
 			frappe.db.delete("Subscription", {"name": name})
@@ -145,6 +146,41 @@ class TestPauseAndResume(PauseBillingTestBase):
 		frappe.get_doc("Virtual Machine", self.server).disable_active_subscription()
 
 		self.assertEqual(self._changes(self.subscription)[-1].change_type, "Cancelled")
+
+	def test_a_running_report_leaves_a_paused_server_unbilled(self):
+		subscriptions.pause_billing(self.subscription)
+		server = frappe.get_doc("Virtual Machine", self.server)
+		server.status = "Running"
+
+		server.sync_subscription_on_status_change()
+
+		self.assertFalse(frappe.db.get_value("Subscription", self.subscription, "enabled"))
+		self.assertTrue(subscriptions.is_billing_paused(self.subscription))
+
+	def test_starting_a_paused_server_resumes_its_billing(self):
+		subscriptions.pause_billing(self.subscription)
+
+		self._start_server()
+
+		resumed = self._changes(self.subscription)[-1]
+		self.assertEqual((resumed.change_type, resumed.locked_rate), ("Resumed", 3000))
+		self.assertTrue(frappe.db.get_value("Subscription", self.subscription, "enabled"))
+		self.assertEqual(frappe.db.count("Resource Action", {"server": self.server, "action": "start"}), 1)
+
+	def test_starting_a_paused_server_over_the_spending_limit_is_refused(self):
+		subscriptions.pause_billing(self.subscription)
+		set_team_tier(TEAM, max_spend=1000)
+
+		with self.assertRaises(frappe.ValidationError):
+			self._start_server()
+		self.assertTrue(subscriptions.is_billing_paused(self.subscription))
+
+	def _start_server(self) -> None:
+		from central.resource_actions import submit_command
+
+		frappe.db.set_value("Virtual Machine", self.server, {"status": "Stopped", "atlas_vm_id": "vm-paused"})
+		with patch("central.infrastructure.doctype.resource_action.resource_action.ResourceAction.enqueue"):
+			submit_command("start", TEAM, self.server)
 
 	def _public_ipv4_subscription(self) -> str:
 		address = make_billing_subscription(TEAM, CLUSTER, PLAN, billing_cycle="Monthly")
