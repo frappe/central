@@ -291,17 +291,13 @@ class VirtualMachine(Document):
 			public_ips.close_public_ipv4_subscription(subscription)
 
 	def disable_active_subscription(self):
-		"""Cancel and disable the team's active subscription for this terminated server.
+		"""Cancel and disable this terminated server's subscription, running or paused.
 		The Cancelled change closes the billing segment, so the estimate stops counting the server and
 		its headroom is freed. It is safe to repeat."""
-		existing = frappe.db.get_value(
-			"Subscription", {"team": self.team, "server_id": self.name, "enabled": 1}, "name"
-		)
-		if existing:
-			from central.billing.catalog.subscriptions import cancel_subscription
+		from central.billing.catalog.subscriptions import end_subscription, uncancelled_subscriptions
 
-			cancel_subscription(existing)
-			frappe.get_doc("Subscription", existing).disable()
+		for name in uncancelled_subscriptions({"team": self.team, "server_id": self.name}):
+			end_subscription(name)
 
 	# Central owns this record. Provisioning opens it, and the fields below are the only
 	# ones a region reports back. Identity, title, plan, image and billing links are

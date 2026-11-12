@@ -311,26 +311,19 @@ def check_running_servers_are_billed() -> list[Violation]:
 
 
 def check_terminated_servers_stop_billing() -> list[Violation]:
-	"""A terminated server's subscription is closed."""
-	subscription = frappe.qb.DocType("Subscription")
-	machine = frappe.qb.DocType("Virtual Machine")
-	rows = (
-		frappe.qb.from_(subscription)
-		.join(machine)
-		.on(machine.name == subscription.server_id)
-		.select(subscription.name, subscription.team)
-		.where((subscription.enabled == 1) & (machine.status == "Terminated"))
-		.run(as_dict=True)
-	)
+	"""A terminated server's subscription has no open billing segment, whatever `enabled` says."""
+	terminated = frappe.get_all("Virtual Machine", filters={"status": "Terminated"}, pluck="name")
+	if not terminated:
+		return []
 	return [
 		Violation(
 			check="S3",
-			team=row.team,
+			team=segment.team,
 			subject_doctype="Subscription",
-			subject=row.name,
-			detail="Still active on a terminated server, so it keeps billing.",
+			subject=segment.subscription,
+			detail="Still billing on a terminated server.",
 		)
-		for row in rows
+		for segment in active_segments({"server_id": ["in", terminated]})
 	]
 
 

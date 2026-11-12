@@ -18,6 +18,10 @@ from datetime import datetime, time, timedelta
 import frappe
 
 from central.billing.catalog.subscriptions import _server_clusters
+from central.billing.doctype.subscription_change.subscription_change import (
+	CLOSING_CHANGE_TYPES,
+	SEGMENT_CHANGE_TYPES,
+)
 
 
 def _days_in_period(period_start, period_end) -> int:
@@ -39,9 +43,9 @@ def compute_line_items(
 ) -> list[dict]:
 	"""Time-weighted fixed line items for one (team, cluster) over the billing month.
 
-	Each `Created`/`Plan Changed` Subscription-Change row opens a segment at its
-	`locked_rate` snapshot that runs until the subscription's next change (or the
-	period end). `Cancelled` rows close the prior segment and carry no rate. The
+	Each `Created`/`Plan Changed`/`Resumed` Subscription-Change row opens a segment at
+	its `locked_rate` snapshot that runs until the subscription's next change (or the
+	period end). `Paused` and `Cancelled` rows close the prior segment and carry no rate. The
 	date of a mid-day plan change bills hourly; all other dates bill daily.
 
 	Single-cluster entry point — the dashboard forecast asks per cluster. The monthly
@@ -183,8 +187,8 @@ def _segments(sub, cluster: str, changes: list, b) -> list[dict]:
 	"""The subscription's billable segments, clamped to the period."""
 	segs = []
 	for i, change in enumerate(changes):
-		if change.change_type == "Cancelled" or change.locked_rate is None:
-			continue  # terminal marker or no rate snapshot — not a billable segment
+		if change.change_type in CLOSING_CHANGE_TYPES or change.locked_rate is None:
+			continue  # closing marker or no rate snapshot — not a billable segment
 		following = changes[i + 1] if i + 1 < len(changes) else None
 		seg = _segment(sub, cluster, change, following, b)
 		if seg:
@@ -218,8 +222,8 @@ def _segment(sub, cluster: str, change, following, b) -> dict | None:
 		and start.time() != time.min,
 		# The resource began or ended its life in this segment, not just a config. A
 		# segment always ends at the next change, so a stop after a resize closes it too.
-		"opens": change.change_type == "Created",
-		"closes": bool(following) and following.change_type == "Cancelled",
+		"opens": change.change_type in ("Created", "Resumed"),
+		"closes": bool(following) and following.change_type in CLOSING_CHANGE_TYPES,
 	}
 
 
@@ -314,7 +318,7 @@ def _changes_by_subscription(subscription_names: list[str]) -> dict:
 		"Subscription Change",
 		filters={
 			"subscription": ["in", subscription_names],
-			"change_type": ["in", ["Created", "Plan Changed", "Cancelled"]],
+			"change_type": ["in", SEGMENT_CHANGE_TYPES],
 		},
 		fields=["subscription", "change_type", "new_value", "locked_rate", "effective_at"],
 		# Secondary sort on creation so changes sharing an effective_at (e.g. a
