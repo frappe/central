@@ -25,6 +25,11 @@ def hours_before_now(hours: float, minutes: int = 0):
 	return frappe.utils.add_to_date(NOW, hours=-hours, minutes=-minutes)
 
 
+def refunded(adapter) -> list[tuple]:
+	"""The payments the stubbed gateway was asked to refund, with their amounts."""
+	return [(c.args[0].gateway_transaction_id, c.args[1]) for c in adapter.refund.call_args_list]
+
+
 def gateway_reads(answer=None, error=None):
 	"""Stub the gateway the job reads setups from. `answer` is what it says the setup saved."""
 	adapter = MagicMock()
@@ -50,11 +55,6 @@ class SetupExpiryTestBase(BillingTestCase):
 		# Not swept by the base class, which commits after each test.
 		for doctype in ("Team Notification", "Billing Notification Log"):
 			frappe.db.delete(doctype, {"team": ["in", [TEAM, OTHER_TEAM]]})
-		methods = frappe.get_all("Payment Method", filters={"team": ["in", [TEAM, OTHER_TEAM]]}, pluck="name")
-		if methods:
-			frappe.db.delete(
-				"Comment", {"reference_doctype": "Payment Method", "reference_name": ["in", methods]}
-			)
 
 	def make_method(self, status="Pending Validation", started=None, team=TEAM, **fields) -> str:
 		method = frappe.get_doc(
@@ -74,6 +74,9 @@ class SetupExpiryTestBase(BillingTestCase):
 
 	def status(self, name: str) -> str:
 		return frappe.db.get_value("Payment Method", name, "status")
+
+	def released_at(self, name: str):
+		return frappe.db.get_value("Payment Method", name, "setup_released_at")
 
 	def notices(self, team=TEAM) -> list:
 		return frappe.get_all(
@@ -221,21 +224,13 @@ class TestGatewayIsAsked(SetupExpiryTestBase):
 
 class LateSetupBase(SetupExpiryTestBase):
 	def confirm_late(self, confirm, adapter):
-		"""Confirm, run the queued release jobs inline, and return the refunds they queued."""
-		refunds = []
-
-		def enqueue(method, **kwargs):
-			if method.endswith("refund_authorisation_payment"):
-				refunds.append(kwargs)
-				return None
-			return run_enqueued_inline(method, **kwargs)
-
+		"""Confirm, run the queued release jobs inline, and return the refunds they made."""
 		with (
 			patch("central.billing.gateways.registry.get_adapter", return_value=adapter),
-			patch("frappe.enqueue", side_effect=enqueue),
+			patch("frappe.enqueue", side_effect=run_enqueued_inline),
 		):
 			result = confirm().get_confirmation()
-		return result, refunds
+		return result, refunded(adapter)
 
 
 class TestLateConfirm(LateSetupBase):
@@ -272,12 +267,11 @@ class TestLateConfirm(LateSetupBase):
 
 		self.assertEqual(result["status"], "Expired")
 		self.assertEqual(self.status(setup), "Expired")
-		self.assertEqual(
-			[(r["payment_id"], r["amount"], r["job_id"]) for r in refunds],
-			[("pay_late", 1.0, "mandate-authorisation-refund::pay_late")],
-		)
+		self.assertEqual(refunds, [("pay_late", 1.0)])
+		self.assertEqual(adapter.refund.call_args.kwargs["idempotency_key"], "mandate-authorisation-pay_late")
 		adapter.remove_saved_method.assert_called_once_with("token_late", customer_reference="cust_late")
 		adapter.verify_payment_signature.assert_not_called()
+		self.assertTrue(self.released_at(setup))
 
 	def test_a_card_saved_after_its_setup_expired_is_detached(self):
 		setup = self.make_method(
@@ -327,7 +321,7 @@ class TestLateConfirm(LateSetupBase):
 		)
 
 		self.assertEqual(self.status(setup), "Cancelled")
-		self.assertEqual([r["payment_id"] for r in refunds], ["pay_c"])
+		self.assertEqual(refunds, [("pay_c", 1.0)])
 		adapter.remove_saved_method.assert_called_once_with("token_c", customer_reference="cust_c")
 
 	def test_a_late_confirm_on_an_unsaved_setup_removes_nothing(self):
@@ -340,6 +334,8 @@ class TestLateConfirm(LateSetupBase):
 		self.assertEqual(result["status"], "Expired")
 		self.assertEqual(refunds, [])
 		adapter.remove_saved_method.assert_not_called()
+		# Nothing to give back is a finished release.
+		self.assertTrue(self.released_at(setup))
 
 	def test_a_token_another_method_holds_is_kept_but_the_payment_refunded(self):
 		make_razorpay_gateway()
@@ -356,7 +352,8 @@ class TestLateConfirm(LateSetupBase):
 		_result, refunds = self.confirm_late(lambda: mandates.confirm_mandate(setup, {}), adapter)
 
 		adapter.remove_saved_method.assert_not_called()
-		self.assertEqual([r["payment_id"] for r in refunds], ["pay_shared"])
+		self.assertEqual(refunds, [("pay_shared", 1.0)])
+		self.assertTrue(self.released_at(setup))
 		self.assertEqual(self.status(holder), "Active")
 		self.assertTrue(
 			frappe.db.exists(
@@ -365,27 +362,49 @@ class TestLateConfirm(LateSetupBase):
 			)
 		)
 
-	def test_a_failed_removal_leaves_a_comment_and_fails_the_job(self):
-		setup = self.make_method(status="Expired", setup_reference="seti_fail")
+	def test_a_failed_removal_fails_the_release_and_leaves_it_unmarked(self):
+		setup = self.make_method(status="Expired", setup_reference="seti_fail", gateway_customer_id="cus_f")
 		adapter = MagicMock()
+		adapter.read_finished_setup.return_value = saved_card(payment_method="pm_fail", customer="cus_f")
 		adapter.remove_saved_method.side_effect = GatewayTimeout("down")
 
-		with (
-			patch("central.billing.gateways.registry.get_adapter", return_value=adapter),
-			patch("frappe.db.commit"),
-		):
+		with patch("central.billing.gateways.registry.get_adapter", return_value=adapter):
 			with self.assertRaises(GatewayTimeout):
-				setup_expiry.remove_late_saved_method(setup, "pm_fail", "cus_fail")
+				setup_expiry.release_late_setup(setup)
 
-		self.assertTrue(
-			frappe.db.exists(
-				"Comment",
-				{
-					"reference_name": setup,
-					"content": ["like", "pm_fail, saved at the gateway%not removed: down"],
-				},
-			)
+		self.assertIsNone(self.released_at(setup))
+
+	def test_an_authorised_payment_is_released_only_once_captured(self):
+		make_razorpay_gateway()
+		setup = self.make_method(
+			status="Expired", gateway="Razorpay", method_type="UPI Autopay", setup_reference="order_auth"
 		)
+		payment = {"id": "pay_auth", "order_id": "order_auth", "status": "authorized", "amount": 100}
+		adapter = MagicMock()
+		adapter.read_finished_setup.return_value = {"payment_method": "token_auth", "payment": payment}
+
+		with patch("central.billing.gateways.registry.get_adapter", return_value=adapter):
+			setup_expiry.release_late_setup(setup)
+
+		self.assertEqual(refunded(adapter), [])
+		adapter.remove_saved_method.assert_not_called()
+		self.assertIsNone(self.released_at(setup))
+
+	def test_a_refunded_payment_is_not_refunded_again_but_its_token_is_removed(self):
+		make_razorpay_gateway()
+		setup = self.make_method(
+			status="Expired", gateway="Razorpay", method_type="UPI Autopay", setup_reference="order_ref"
+		)
+		payment = {"id": "pay_ref", "order_id": "order_ref", "status": "refunded", "amount": 100}
+		adapter = MagicMock()
+		adapter.read_finished_setup.return_value = {"payment_method": "token_ref", "payment": payment}
+
+		with patch("central.billing.gateways.registry.get_adapter", return_value=adapter):
+			setup_expiry.release_late_setup(setup)
+
+		self.assertEqual(refunded(adapter), [])
+		adapter.remove_saved_method.assert_called_once_with("token_ref", customer_reference=None)
+		self.assertTrue(self.released_at(setup))
 
 	def test_a_lapsed_card_is_never_released(self):
 		card = self.make_method(
@@ -550,19 +569,44 @@ class RazorpaySetupBase(SetupExpiryTestBase):
 		make_razorpay_gateway()
 		self.adapter = MagicMock()
 		self.adapter.read_instrument_fingerprint.return_value = None
-		self.refunds = []
 		self.enterContext(patch("central.billing.gateways.registry.get_adapter", return_value=self.adapter))
 		self.enterContext(patch("frappe.enqueue", side_effect=self.enqueue))
 
 	def enqueue(self, method, **kwargs):
-		if method.endswith("refund_authorisation_payment"):
-			self.refunds.append(kwargs["payment_id"])
-			return None
 		return run_enqueued_inline(method, **kwargs)
+
+	@property
+	def refunds(self) -> list[str]:
+		return [payment_id for payment_id, _amount in refunded(self.adapter)]
 
 	def make_mandate_setup(self, **fields) -> str:
 		fields = {"setup_reference": "order_setup", "gateway_customer_id": "cust_setup", **fields}
 		return self.make_method(gateway="Razorpay", method_type="UPI Autopay", **fields)
+
+	def make_newer_mandate(self) -> str:
+		"""An Active UPI mandate the team confirmed after the setup under test started."""
+		return self.make_mandate_setup(
+			status="Active",
+			gateway_method_id="token_newer",
+			setup_reference="order_newer",
+			validated_at=hours_before_now(2),
+			started=hours_before_now(3),
+		)
+
+	def assert_newer_mandate_kept(self, newer: str, setup: str):
+		self.assertEqual(self.status(setup), "Expired")
+		self.assertEqual(self.status(newer), "Active")
+		self.adapter.cancel_mandate.assert_not_called()
+		self.assertEqual(self.refunds, ["pay_setup"])
+		self.adapter.remove_saved_method.assert_called_once_with(
+			"token_setup", customer_reference="cust_setup"
+		)
+		self.assertTrue(
+			frappe.db.exists(
+				"Billing Event",
+				{"subject": setup, "reason": "a newer mandate was confirmed after this setup started"},
+			)
+		)
 
 
 class TestRazorpaySweep(RazorpaySetupBase):
@@ -628,6 +672,41 @@ class TestRazorpaySweep(RazorpaySetupBase):
 		# The retried setup works, so the team is not told the old one expired.
 		self.assertEqual(self.notices(), [])
 
+	def test_a_newer_upi_mandate_wins_over_a_late_proof(self):
+		newer = self.make_newer_mandate()
+		setup = self.make_mandate_setup()
+		self.adapter.read_finished_setup.return_value = {
+			"payment_method": "token_setup",
+			"customer": "cust_setup",
+			"payment": setup_payment(),
+		}
+
+		setup_expiry.expire_unfinished_setups(now=NOW)
+
+		self.assert_newer_mandate_kept(newer, setup)
+		# The team chose a working mandate after this setup, so it is not told this one expired.
+		self.assertEqual(self.notices(), [])
+
+	def test_an_older_mandate_is_superseded_by_the_proof(self):
+		older = self.make_mandate_setup(
+			status="Active",
+			gateway_method_id="token_older",
+			setup_reference="order_older",
+			validated_at=hours_before_now(48),
+			started=hours_before_now(50),
+		)
+		setup = self.make_mandate_setup()
+		self.adapter.read_finished_setup.return_value = {
+			"payment_method": "token_setup",
+			"customer": "cust_setup",
+			"payment": setup_payment(),
+		}
+
+		setup_expiry.expire_unfinished_setups(now=NOW)
+
+		self.assertEqual(self.status(setup), "Active")
+		self.assertEqual(self.status(older), "Cancelled")
+
 
 class TestRazorpaySetupWebhook(RazorpaySetupBase):
 	def store_event(self, event_type="payment.captured", **fields) -> str:
@@ -664,8 +743,12 @@ class TestRazorpaySetupWebhook(RazorpaySetupBase):
 		self.assertEqual(method.status, "Active")
 		self.assertEqual(method.gateway_method_id, "token_setup")
 		self.assertEqual(second, {"handled": False, "reason": "already_applied"})
-		# The second delivery queues the same refund job again; its key keeps it to one refund.
+		# The second delivery refunds again under the same key, which keeps it to one refund.
 		self.assertEqual(set(self.refunds), {"pay_setup"})
+		self.assertEqual(
+			{c.kwargs["idempotency_key"] for c in self.adapter.refund.call_args_list},
+			{"mandate-authorisation-pay_setup"},
+		)
 		self.assertEqual(
 			frappe.db.get_value("Webhook Event", event, ["status", "payment_method"]), ("Processed", setup)
 		)
@@ -716,6 +799,21 @@ class TestRazorpaySetupWebhook(RazorpaySetupBase):
 		self.assertEqual(self.status(holder), "Active")
 		self.assertEqual(self.refunds, ["pay_setup"])
 		self.adapter.remove_saved_method.assert_not_called()
+
+	def test_a_capture_after_a_newer_upi_mandate_does_not_replace_it(self):
+		from central.billing.payments import webhooks
+
+		newer = self.make_newer_mandate()
+		setup = self.make_mandate_setup(started=hours_before_now(4))
+		self.adapter.read_finished_setup.return_value = {
+			"payment_method": "token_setup",
+			"customer": "cust_setup",
+			"payment": setup_payment(),
+		}
+
+		webhooks.handle_webhook_event(self.store_event())
+
+		self.assert_newer_mandate_kept(newer, setup)
 
 	def test_a_capture_after_the_browser_confirm_refunds_the_authorisation(self):
 		from central.billing.payments import webhooks
@@ -807,3 +905,68 @@ class TestReleaseAge(SetupExpiryTestBase):
 		self.assertEqual(self.status(old), "Expired")
 		self.assertEqual([self.status(name) for name in stuck], ["Pending Validation"] * 3)
 		self.assertEqual([kwargs["payment_method"] for kwargs in self.queued], [old])
+
+
+class TestReleaseRetry(SetupExpiryTestBase):
+	def make_released(self, ended, **fields) -> str:
+		name = self.make_method(
+			status="Expired", setup_reference=f"seti_{frappe.generate_hash(length=6)}", **fields
+		)
+		frappe.db.set_value("Payment Method", name, "modified", ended, update_modified=False)
+		return name
+
+	def retry(self, adapter=None):
+		queued = []
+		with (
+			patch("central.billing.gateways.registry.get_adapter", return_value=adapter or MagicMock()),
+			patch("frappe.enqueue", side_effect=lambda method, **kwargs: queued.append(kwargs)),
+		):
+			result = setup_expiry.retry_unfinished_releases(now=NOW)
+		return result, [kwargs["payment_method"] for kwargs in queued]
+
+	def give_up_comments(self, name: str) -> int:
+		return frappe.db.count(
+			"Comment",
+			{
+				"reference_doctype": "Payment Method",
+				"reference_name": name,
+				"content": ["like", f"{setup_expiry.GIVE_UP_NOTE}%"],
+			},
+		)
+
+	def test_an_unfinished_release_is_queued_again_oldest_first(self):
+		newer = self.make_released(hours_before_now(2))
+		older = self.make_released(hours_before_now(30))
+		self.make_released(hours_before_now(5), setup_released_at=hours_before_now(4))
+		self.make_released(hours_before_now(5), validated_at=hours_before_now(800))
+		self.make_method(setup_reference="seti_pending")
+
+		_result, queued = self.retry()
+
+		self.assertEqual(queued, [older, newer])
+
+	def test_a_retried_release_that_finishes_is_not_queued_again(self):
+		setup = self.make_released(hours_before_now(2))
+		adapter = MagicMock()
+		adapter.read_finished_setup.return_value = saved_card(payment_method="pm_retry", customer="cus_r")
+
+		with (
+			patch("central.billing.gateways.registry.get_adapter", return_value=adapter),
+			patch("frappe.enqueue", side_effect=run_enqueued_inline),
+		):
+			setup_expiry.retry_unfinished_releases(now=NOW)
+
+		adapter.remove_saved_method.assert_called_once_with("pm_retry", customer_reference="cus_r")
+		self.assertTrue(self.released_at(setup))
+		self.assertEqual(self.retry()[1], [])
+
+	def test_a_release_unfinished_after_a_week_is_left_to_an_operator_once(self):
+		stale = self.make_released(hours_before_now(24 * setup_expiry.RELEASE_RETRY_DAYS + 1))
+
+		first, queued = self.retry()
+		second, queued_again = self.retry()
+
+		self.assertEqual((queued, queued_again), ([], []))
+		self.assertEqual((first["given_up"], second["given_up"]), ([stale], []))
+		self.assertEqual(self.give_up_comments(stale), 1)
+		self.assertIsNone(self.released_at(stale))

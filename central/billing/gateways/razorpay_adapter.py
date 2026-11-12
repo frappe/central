@@ -486,7 +486,8 @@ def _verified(payment: dict) -> VerifiedPayment:
 
 
 def _is_token_authorisation(payment: dict) -> bool:
-	return payment.get("status") in ("authorized", "captured") and bool(payment.get("token_id"))
+	# A refunded setup payment still left its token, which a retried release must remove.
+	return payment.get("status") in ("authorized", "captured", "refunded") and bool(payment.get("token_id"))
 
 
 def _is_missing_id(error: razorpay.errors.BadRequestError) -> bool:

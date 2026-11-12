@@ -401,6 +401,14 @@ class TestRazorpayAdapter(GatewayAdapterContract, IntegrationTestCase):
 		c.order.payments.assert_called_with("order_1")
 		self.assertEqual(saved, {"payment_method": "token_2", "customer": "cust_2", "payment": payment})
 
+	def test_a_refunded_setup_payment_still_reads_its_token(self):
+		adapter = self.make_adapter()
+		payment = {"id": "pay_3", "status": "refunded", "token_id": "token_3", "customer_id": "cust_3"}
+		with self._client() as c:
+			c.order.payments.return_value = {"items": [payment]}
+			saved = adapter.read_finished_setup("order_1")
+		self.assertEqual(saved, {"payment_method": "token_3", "customer": "cust_3", "payment": payment})
+
 	def test_a_failed_setup_read_is_a_gateway_error(self):
 		from central.billing.gateways.base import GatewayError, GatewayTimeout
 

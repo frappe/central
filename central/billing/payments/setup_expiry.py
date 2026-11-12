@@ -3,6 +3,7 @@
 
 import frappe
 from frappe import _
+from pypika.terms import ExistsCriterion
 
 from central.billing.gateways.base import GatewayError
 from central.billing.platform import notifications
@@ -19,6 +20,9 @@ PAYPAL_GATEWAY = "Paypal"
 # Each due setup with a reference costs one gateway read, so one run reads at most this many.
 # Oldest first: a row the gateway cannot read reaches the release age and leaves the queue.
 SETUPS_PER_RUN = 500
+# A release that has not finished is tried again every hour for this long, then left to an operator.
+RELEASE_RETRY_DAYS = 7
+GIVE_UP_NOTE = "This setup's release at the gateway did not finish in time."
 
 
 def expire_unfinished_setups(now=None) -> dict:
@@ -132,52 +136,97 @@ def queue_late_release(method) -> None:
 
 
 def release_late_setup(payment_method: str) -> None:
-	"""Refund the authorisation payment of a setup that finished after it expired or was
-	cancelled, and queue the removal of its card or token. The status does not change."""
-	from central.billing.payments import mandates
-
+	"""Give back what a setup saved at the gateway after it expired or was cancelled here:
+	refund its captured authorisation payment, then remove its card or token. Each step is
+	safe to repeat, so a failed release is tried again until `setup_released_at` is set.
+	The status does not change."""
 	method = frappe.get_doc("Payment Method", payment_method)
 	if not is_released_setup(method):
 		return
-	saved = _adapter(method.gateway).read_finished_setup(method.setup_reference)
-	if not saved.get("payment_method"):
-		return
+	adapter = _adapter(method.gateway)
+	saved = adapter.read_finished_setup(method.setup_reference)
+	payment = saved.get("payment") or {}
+	if payment.get("status") == "authorized":
+		return  # The setup order captures it by itself; the next try refunds the capture.
 
-	if saved.get("payment"):
-		mandates._queue_authorisation_refund(method, saved["payment"])
-	frappe.enqueue(
-		"central.billing.payments.setup_expiry.remove_late_saved_method",
-		payment_method=method.name,
-		method_id=saved["payment_method"],
-		customer_reference=saved.get("customer") or method.gateway_customer_id,
-		job_id=f"late-setup-remove::{saved['payment_method']}",
-		deduplicate=True,
-		enqueue_after_commit=True,
+	if payment.get("status") == "captured":
+		from central.billing.payments import mandates
+
+		mandates.refund_authorisation(method, payment["id"], frappe.utils.flt(payment.get("amount")) / 100)
+	if saved.get("payment_method"):
+		_remove_saved_method(method, adapter, saved["payment_method"], saved.get("customer"))
+	frappe.db.set_value(
+		"Payment Method", method.name, "setup_released_at", frappe.utils.now_datetime(), update_modified=False
 	)
 
 
-def remove_late_saved_method(payment_method: str, method_id: str, customer_reference: str | None) -> None:
-	"""Remove the card or token a late setup saved, so it can never be charged.
-	One that another method also holds is kept, and a failure fails the job."""
-	method = frappe.get_doc("Payment Method", payment_method)
+def retry_unfinished_releases(now=None) -> dict:
+	"""Queue the release again for setups whose release has not finished. One still
+	unfinished `RELEASE_RETRY_DAYS` after the setup ended gets one comment and no more tries."""
+	now = now or frappe.utils.now_datetime()
+	give_up_before = frappe.utils.add_to_date(now, days=-RELEASE_RETRY_DAYS)
+	# The row changes last when it expires or is cancelled; the release leaves `modified` alone.
+	ended = frappe.qb.DocType("Payment Method").modified
+	due = _unreleased_setups(ended >= give_up_before)
+	retried = each_isolated("Setup release retry", "Payment Method", due, _queue_release)
+	stale = _unreleased_setups((ended < give_up_before) & _give_up_comments().negate())
+	each_isolated("Setup release give-up", "Payment Method", stale, _give_up_release)
+	return {"retried": retried, "given_up": stale}
+
+
+def _queue_release(name: str) -> str:
+	queue_late_release(frappe.get_doc("Payment Method", name))
+	return name
+
+
+def _give_up_release(name: str) -> None:
+	frappe.get_doc("Payment Method", name).add_comment(
+		"Comment",
+		_("{0} Refund its authorisation and remove its card or token at the gateway by hand.").format(
+			GIVE_UP_NOTE
+		),
+	)
+
+
+def _unreleased_setups(condition) -> list[str]:
+	"""Released setups whose release has not finished, oldest first."""
+	method = frappe.qb.DocType("Payment Method")
+	return (
+		frappe.qb.from_(method)
+		.select(method.name)
+		.where(method.status.isin(["Expired", "Cancelled"]))
+		.where(method.validated_at.isnull())
+		.where(method.setup_reference.notnull() & (method.setup_reference != ""))
+		.where(method.setup_released_at.isnull())
+		.where(condition)
+		.orderby(method.modified)
+		.limit(SETUPS_PER_RUN)
+		.run(pluck=True)
+	)
+
+
+def _give_up_comments():
+	method = frappe.qb.DocType("Payment Method")
+	comment = frappe.qb.DocType("Comment")
+	return ExistsCriterion(
+		frappe.qb.from_(comment)
+		.select(comment.name)
+		.where(comment.reference_doctype == "Payment Method")
+		.where(comment.reference_name == method.name)
+		.where(comment.content.like(f"{GIVE_UP_NOTE}%"))
+	)
+
+
+def _remove_saved_method(method, adapter, method_id: str, customer: str | None) -> None:
+	"""Remove the card or token a late setup saved, so it can never be charged. One that
+	another method also holds is kept. A failure raises, and the release is tried again."""
 	if _is_held_by_another_method(method, method_id):
 		method.add_comment(
 			"Comment", _("Kept {0}: another payment method uses it at the gateway.").format(method_id)
 		)
 		return
 
-	try:
-		_adapter(method.gateway).remove_saved_method(method_id, customer_reference=customer_reference)
-	except Exception as error:
-		method.add_comment(
-			"Comment",
-			_("{0}, saved at the gateway after the setup expired, was not removed: {1}").format(
-				method_id, error
-			),
-		)
-		# The job's own rollback would drop the comment the operator needs.
-		frappe.db.commit()
-		raise
+	adapter.remove_saved_method(method_id, customer_reference=customer or method.gateway_customer_id)
 	method.add_comment(
 		"Comment", _("Removed {0}, saved at the gateway after the setup expired.").format(method_id)
 	)

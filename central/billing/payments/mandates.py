@@ -324,15 +324,39 @@ def activate_proven_mandate(payment_method: str, payment: dict, actor: str):
 			f"mandate {method.name} not activated: payment {payment.get('id')} does not match its setup"
 		)
 		return method
-	if _has_live_method_on_token(method, payment["token_id"]):
-		# The customer retried and finished another setup on the same token first.
-		return (
-			setup_expiry.expire_and_release(
-				method.name, "another payment method already holds this token", actor=actor
-			)
-			or method
-		)
+	reason = _reason_not_to_activate(method, payment["token_id"])
+	if reason:
+		return setup_expiry.expire_and_release(method.name, reason, actor=actor) or method
 	return _activate_mandate(method, _adapter(method.gateway), payment, actor=actor)
+
+
+def _reason_not_to_activate(method, token_id: str) -> str | None:
+	"""Why a proven setup must not become Active, or None. The browser confirm does not ask."""
+	if _has_live_method_on_token(method, token_id):
+		# The customer retried and finished another setup on the same token first.
+		return "another payment method already holds this token"
+	if _has_newer_mandate(method):
+		# The customer chose another UPI mandate after starting this one; the newest choice wins.
+		return "a newer mandate was confirmed after this setup started"
+	return None
+
+
+def _has_newer_mandate(method) -> bool:
+	"""True when the team has an Active UPI mandate on this gateway, validated after this
+	setup started. Activating this one would retire it. Cards coexist, so they never count."""
+	return method.method_type == MANDATE_METHOD and bool(
+		frappe.db.exists(
+			"Payment Method",
+			{
+				"team": method.team,
+				"gateway": method.gateway,
+				"method_type": MANDATE_METHOD,
+				"status": "Active",
+				"validated_at": [">=", method.creation],
+				"name": ["!=", method.name],
+			},
+		)
+	)
 
 
 def _settle_late_proof(method, payment: dict) -> None:
@@ -474,15 +498,7 @@ def refund_authorisation_payment(payment_method: str, payment_id: str, amount: f
 	"""
 	method = frappe.get_doc("Payment Method", payment_method)
 	try:
-		result = _adapter(method.gateway).refund(
-			frappe._dict(gateway_transaction_id=payment_id),
-			amount,
-			reason="Mandate authorisation",
-			idempotency_key=f"mandate-authorisation-{payment_id}",
-		)
-		if not result.success:
-			# nosemgrep: central-untranslated-exception -- caught below and kept as a comment for the operator
-			raise frappe.ValidationError(f"Gateway refund status: {result.status}")
+		refund_authorisation(method, payment_id, amount)
 	except Exception as error:
 		method.add_comment(
 			"Comment", f"Authorisation payment {payment_id} ({amount} INR) was not refunded: {error}"
@@ -490,6 +506,20 @@ def refund_authorisation_payment(payment_method: str, payment_id: str, amount: f
 		# The job's own rollback would drop the comment the operator needs.
 		frappe.db.commit()
 		raise
+
+
+def refund_authorisation(method, payment_id: str, amount: float) -> None:
+	"""Refund an authorisation payment, or raise. Keyed on the payment, so a repeat
+	returns the first refund instead of making a second one."""
+	result = _adapter(method.gateway).refund(
+		frappe._dict(gateway_transaction_id=payment_id),
+		amount,
+		reason="Mandate authorisation",
+		idempotency_key=f"mandate-authorisation-{payment_id}",
+	)
+	if not result.success:
+		# nosemgrep: central-untranslated-exception -- an operator reads it in the comment or the Error Log
+		raise frappe.ValidationError(f"Gateway refund status: {result.status}")
 
 
 def _is_mandate_payment(method, payment: dict) -> bool:
