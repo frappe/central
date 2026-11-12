@@ -5,10 +5,11 @@
 Billing is usage-based and variable. In India an *off-session* recurring debit
 above ₹15,000 needs the customer to re-authenticate every cycle (an RBI rule that
 binds Stripe India and Razorpay alike), so we auto-charge silently only while the
-bill stays under that line. When an off-session charge of an `Auto Charge` or
-`Prepaid` team's bill crosses the ceiling, we do not try it and flip the team to
-`Action Required`. An `Auto Charge` team is also flipped early when its month-to-date
-forecast crosses the ceiling. The account keeps running until the customer picks
+bill stays at or under that line. When what is left of an `Auto Charge` or `Prepaid`
+team's bill after the wallet is over the ceiling, we do not try it and flip the team
+to `Action Required`. That check uses the gateway ceiling alone. An `Auto Charge` team
+is also flipped early when its month-to-date forecast reaches the ceiling or its
+trust-tier cap. The account keeps running until the customer picks
 `Manual Checkout` (pay each invoice on-session, any amount) or `Prepaid` (the wallet
 pays first and the card or UPI pays only amounts under the ceiling, so a larger bill
 needs enough credit). A customer who pays an invoice on-session keeps their mode.
@@ -79,6 +80,13 @@ def gateway_ceiling(team: str) -> float | None:
 	return capabilities.silent_charge_ceiling(gateway, currency)
 
 
+def is_within_gateway_ceiling(team: str, amount: float, gateway: str | None = None) -> bool:
+	"""Whether an off-session debit of `amount` stays within the rail's silent ceiling.
+	`gateway` is the rail about to debit; without it the team's own rail is read."""
+	rail, currency = team_rail(team)
+	return capabilities.is_within_silent_ceiling(gateway or rail, currency, amount)
+
+
 def _default_gateway(currency: str) -> str | None:
 	from central.billing.gateways.registry import GatewayNotFound, resolve_gateway_for_currency
 
@@ -134,7 +142,7 @@ def evaluate(
 
 
 def is_over_silent_threshold(team: str, amount: float) -> bool:
-	"""Whether an amount in major units is at or above the most the team may be charged silently."""
+	"""Whether a forecast in major units reaches the gateway ceiling or the trust-tier cap."""
 	threshold = silent_threshold(team)
 	return threshold is not None and frappe.utils.flt(amount) >= threshold
 
@@ -154,10 +162,17 @@ def trip(team: str, reason: str) -> None:
 	notifications.notify(
 		team,
 		"Action Required",
-		context={"reason": reason, "threshold": silent_threshold(team)},
+		context={"reason": reason, "threshold": limit_for(team, reason)},
 		reference_doctype="Billing Profile",
 		reference_name=team,
 	)
+
+
+def limit_for(team: str, reason: str | None) -> float | None:
+	"""The limit a trip for `reason` was measured against."""
+	if reason == "invoice_over_threshold":
+		return gateway_ceiling(team)
+	return silent_threshold(team)
 
 
 def trip_off_session_debit(team: str, reason: str) -> None:
@@ -217,7 +232,7 @@ def status(team: str) -> dict:
 		"collection_mode": mode,
 		"action_required": mode == "Action Required",
 		"reason": p.collection_action_reason,
-		"threshold": silent_threshold(team),
+		"threshold": limit_for(team, p.collection_action_reason),
 		"choices": list(CUSTOMER_CHOOSABLE),
 		"can_return_to_auto": _has_chargeable_method(team),
 	}

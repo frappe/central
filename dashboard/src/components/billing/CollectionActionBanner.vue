@@ -61,7 +61,9 @@ async function choose(): Promise<void> {
 }
 
 // Tripped by an INR bill over the limit: the card or UPI cannot pay it, so only
-// wallet credit gets Prepaid past it.
+// wallet credit gets Prepaid past it. The banner's `threshold` is the limit the trip
+// used: the ₹15,000 ceiling for a bill, or the lower of it and the tier cap for a
+// forecast.
 const OVER_CEILING_REASONS = [
 	'invoice_over_threshold',
 	'forecast_over_threshold',
@@ -100,13 +102,20 @@ const options = computed(() => [
 		:primary-action="canManageBilling ? { label: 'Choose how to pay', onClick: () => { choosing = true } } : undefined"
 	>
 		<template #description>
-			This month is heading to
-			<span class="text-p-sm-medium"
-				>{{ money(s.projected_total, currency) }}</span
-			>
-			, past the
-			<span class="text-p-sm-medium">{{ money(s.threshold, currency) }}</span>
-			limit for automatic payments. Your services keep running.
+			<template v-if="s.reason === 'invoice_over_threshold'">
+				A bill is over the
+				<span class="text-p-sm-medium">{{ money(s.threshold, currency) }}</span>
+				limit for automatic payments. Your services keep running.
+			</template>
+			<template v-else>
+				This month is heading to
+				<span class="text-p-sm-medium"
+					>{{ money(s.projected_total, currency) }}</span
+				>
+				, past the
+				<span class="text-p-sm-medium">{{ money(s.threshold, currency) }}</span>
+				limit for automatic payments. Your services keep running.
+			</template>
 		</template>
 	</Alert>
 

@@ -15,7 +15,7 @@ Three modes, and the output always says which produced it:
   Assumed     the operator declares the outcome; the calendar follows their word.
   Derived     failure is reported only where state entails it, silence otherwise.
 
-Every rule below reuses the production helper that governs it — `silent_threshold`,
+Every rule below reuses the production helper that governs it — `is_within_gateway_ceiling`,
 `effective_cap`, `settlement_sources`, `ordered_methods` — so the simulator and the
 collector cannot disagree about who can be charged.
 
@@ -60,19 +60,22 @@ def derive(team: str, amount: float, currency: str, due_on, today) -> list[frapp
 			)
 		)
 
-	# A bill debited off-session at or over the silent-debit ceiling is never quietly taken;
-	# the real charge path trips the team into Action Required at exactly this point.
-	if amount and collection_mode.is_debit_allowed(team):
-		threshold = collection_mode.silent_threshold(team)
-		if threshold is not None and amount >= threshold:
-			findings.append(
-				_finding(
-					"over_silent_threshold",
-					"Over the silent-debit threshold",
-					f"{_money(amount, currency)} is at or above {_money(threshold, currency)}, "
-					"so this lands in Action Required rather than being auto-charged.",
-				)
+	# A bill debited off-session over the gateway ceiling is never quietly taken; the real
+	# charge path trips the team into Action Required at exactly this point.
+	if (
+		amount
+		and collection_mode.is_debit_allowed(team)
+		and not collection_mode.is_within_gateway_ceiling(team, amount)
+	):
+		ceiling = collection_mode.gateway_ceiling(team)
+		findings.append(
+			_finding(
+				"over_silent_threshold",
+				"Over the silent-debit threshold",
+				f"{_money(amount, currency)} is above {_money(ceiling, currency)}, "
+				"so this lands in Action Required rather than being auto-charged.",
 			)
+		)
 
 	methods = collection.ordered_methods(team)
 	if not methods and not sources["has_credits"]:

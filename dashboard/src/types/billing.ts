@@ -477,6 +477,7 @@ export interface CollectionStatus {
 	mandate_gap_note?: string | null
 	action_required: boolean
 	reason: string | null
+	/** The limit the reason was measured against: the gateway ceiling for a bill. */
 	threshold: number | null
 	projected_total: number
 	wallet_balance: number

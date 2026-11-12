@@ -176,8 +176,7 @@ class GatewayAdapter(ABC):
 			return False
 		from central.billing.gateways import capabilities
 
-		ceiling = capabilities.silent_charge_ceiling(self.gateway.name, currency)
-		return ceiling is None or frappe.utils.flt(amount) <= ceiling
+		return capabilities.is_within_silent_ceiling(self.gateway.name, currency, amount)
 
 	def __init__(self, gateway):
 		self.gateway = gateway

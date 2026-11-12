@@ -192,14 +192,25 @@ class TestNextPayment(OverviewBase):
 	def test_a_bill_over_the_silent_ceiling_is_flagged_before_the_first(self):
 		complete_billing_profile(TEAM, currency="INR")
 		frappe.db.set_value("Billing Profile", TEAM, "collection_mode", "Auto Charge")
-		# Tier cap under the bill: the charge path would refuse this off-session, so
-		# the customer is told now rather than after a failed debit.
+		# A bill over ₹15,000: the charge path would refuse this off-session, so the
+		# customer is told now rather than after a failed debit.
+		set_team_tier(TEAM, max_spend=100000)
+		self._provision(rate=20000)
+
+		out = dashboard.get_next_payment(TEAM)
+
+		self.assertIn("over_silent_threshold", [b["code"] for b in out["blockers"]])
+
+	def test_a_bill_over_only_the_tier_cap_is_not_flagged(self):
+		complete_billing_profile(TEAM, currency="INR")
+		frappe.db.set_value("Billing Profile", TEAM, "collection_mode", "Auto Charge")
+		# The tier cap does not stop a debit; only the ₹15,000 ceiling does.
 		set_team_tier(TEAM, max_spend=1000)
 		self._provision(rate=3000)
 
 		out = dashboard.get_next_payment(TEAM)
 
-		self.assertIn("over_silent_threshold", [b["code"] for b in out["blockers"]])
+		self.assertNotIn("over_silent_threshold", [b["code"] for b in out["blockers"]])
 
 	def test_nothing_due_is_not_a_blocker(self):
 		out = dashboard.get_next_payment(TEAM)

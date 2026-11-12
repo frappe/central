@@ -37,8 +37,36 @@ def ordered_methods(team: str) -> list:
 		"Payment Method",
 		filters={"team": team, "status": "Active", "reauth_required": 0},
 		order_by="priority asc, creation asc",
-		fields=["name", "gateway", "priority"],
+		fields=["name", "gateway", "priority", "mandate_max_amount"],
 	)
+
+
+def is_over_every_mandate(team: str, amount: float) -> bool:
+	"""Whether the team has methods and none of their mandates may take `amount`."""
+	from central.billing.payments import mandates
+
+	methods = ordered_methods(team)
+	return bool(methods) and not any(mandates.is_within_mandate_limit(m, amount) for m in methods)
+
+
+def _next_method_within_mandate(inv, earlier: set | None, skipped: set):
+	"""The next method to try whose mandate may take the amount. A debit above a mandate's
+	limit would fail at the gateway, so those methods join `skipped`."""
+	while method := next_method_for(inv.name, inv.team, earlier, skip=skipped):
+		if not _is_mandate_too_small(inv, method):
+			return method
+		skipped.add(method.name)
+	return None
+
+
+def _is_mandate_too_small(inv, method) -> bool:
+	"""Whether the rail could take the amount silently but this method's mandate cannot."""
+	from central.billing.payments import collection_mode, mandates
+
+	amount = inv.expected_collection
+	return collection_mode.is_within_gateway_ceiling(
+		inv.team, amount, method.gateway
+	) and not mandates.is_within_mandate_limit(method, amount)
 
 
 def get_teams_with_retry_rail(teams: set[str]) -> set[str]:
@@ -103,15 +131,15 @@ def next_method_for(invoice: str, team: str, earlier: set | None = None, skip: s
 def _ask_for_another_method(inv) -> None:
 	"""Tell a customer we have run out of ways to charge them.
 
-	Only after something has actually been tried and refused. A team that has never
+	Only after something has actually been tried and refused, or when no mandate on
+	file may take the amount. A team that has never
 	added a method is already being asked elsewhere (onboarding, the Action Required
 	banner), and this notification would be the third voice saying it.
 
 	The engine dedupes on unread notifications for the same event and invoice, so a
 	dunning run that re-enters here daily does not repeat itself.
 	"""
-	tried = frappe.get_all("Payment Attempt", filters={"invoice": inv.name, "status": "Failed"}, limit=1)
-	if not tried:
+	if not _has_refused_method(inv):
 		return
 
 	from central.billing.platform import notifications
@@ -121,6 +149,18 @@ def _ask_for_another_method(inv) -> None:
 		"Add Payment Method",
 		reference_doctype="Invoice",
 		reference_name=inv.name,
+	)
+
+
+def _has_refused_method(inv) -> bool:
+	"""Whether a method declined this invoice, or every mandate is too small for it while
+	the team may still be debited."""
+	from central.billing.payments import collection_mode
+
+	if frappe.get_all("Payment Attempt", filters={"invoice": inv.name, "status": "Failed"}, limit=1):
+		return True
+	return collection_mode.is_debit_allowed(inv.team) and is_over_every_mandate(
+		inv.team, inv.expected_collection
 	)
 
 
@@ -234,7 +274,7 @@ def _charge_next_method(
 	if in_flight := charges.in_flight_attempt(inv.name):
 		return {"collected": False, "reason": "attempt_in_flight", "attempt": in_flight}
 
-	method = next_method_for(inv.name, inv.team, earlier, skip=skipped)
+	method = _next_method_within_mandate(inv, earlier, skipped)
 	if not method:
 		# Every method has failed (or there are none) — leave it for dunning, and
 		# ask the customer for another way to pay. Off-session there is nobody to

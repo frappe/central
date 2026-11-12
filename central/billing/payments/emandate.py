@@ -77,8 +77,9 @@ def await_predebit(invoice: str, gateway: str, now: datetime | str | None = None
 
 def schedule_predebit(invoice: str, now=None, gateway: str | None = None) -> dict:
 	"""Send the pre-debit notice for an e-mandate invoice and arm its debit window.
-	Over the silent ceiling → fork to Action Required rather than promise a debit we
-	can't make off-session. Idempotent (skips an already-notified invoice).
+	Over the gateway ceiling → fork to Action Required rather than promise a debit we
+	can't make off-session. Over every mandate's limit → no notice, as no method will be
+	debited. Idempotent (skips an already-notified invoice).
 
 	`gateway` is the rail about to debit, when the caller knows it (a fallback onto a
 	second rail); otherwise the team's own rail decides."""
@@ -92,11 +93,14 @@ def schedule_predebit(invoice: str, now=None, gateway: str | None = None) -> dic
 	if now_dt < frappe.utils.add_to_date(payment_starts_at, hours=-PREDEBIT_NOTICE_HOURS):
 		return {"invoice": invoice, "skipped": "before_payment_date"}
 
-	# What is left after the wallet can't be debited off-session over the silent ceiling,
+	# What is left after the wallet can't be debited off-session over the gateway ceiling,
 	# whatever the mode. Ask the customer to act instead of notifying a debit that would fail.
-	if collection_mode.is_over_silent_threshold(inv.team, inv.expected_collection):
+	if not collection_mode.is_within_gateway_ceiling(inv.team, inv.expected_collection, gateway):
 		collection_mode.trip_off_session_debit(inv.team, "invoice_over_threshold")
 		return {"invoice": invoice, "skipped": "over_threshold", "action_required": True}
+	if collection.is_over_every_mandate(inv.team, inv.expected_collection):
+		# No mandate on file may take this much, so the collector will not debit it.
+		return {"invoice": invoice, "skipped": "over_mandate_limit"}
 
 	charge_after = max(frappe.utils.add_to_date(now_dt, hours=PREDEBIT_NOTICE_HOURS), payment_starts_at)
 	frappe.db.set_value(

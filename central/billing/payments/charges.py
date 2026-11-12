@@ -124,8 +124,8 @@ def _claim_attempt(
 	# an RBI off-session rule that binds Stripe India and Razorpay alike) is never
 	# attempted: it would just fail. The caller sends the customer to checkout. A
 	# background charge also moves an Auto Charge or Prepaid team to Action Required
-	# and tells it (ADR 0022, #106). An uncapped currency and anything under the
-	# ceiling pass through.
+	# and tells it (ADR 0022, #106). An uncapped currency and anything at or under
+	# the ceiling pass through.
 	if not adapter.can_charge_silently(frappe.utils.flt(inv.expected_collection), inv.currency):
 		if not on_session:
 			from central.billing.payments import collection_mode

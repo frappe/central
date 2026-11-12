@@ -141,7 +141,12 @@ class TestTheIndianThreshold(OutcomeTestBase):
 		self._profile(mode="Auto Charge")
 		self._mandate(ceiling=100000)
 		frappe.db.commit()
-		self.assertIn("over_silent_threshold", self._codes(amount=15000.0))
+		self.assertIn("over_silent_threshold", self._codes(amount=15001.0))
+
+	def test_a_bill_equal_to_the_ceiling_is_charged_silently(self):
+		self._profile(mode="Auto Charge")
+		self._mandate(ceiling=100000)
+		self.assertNotIn("over_silent_threshold", self._codes(amount=15000.0))
 
 	def test_under_the_threshold_is_charged_silently(self):
 		self._profile(mode="Auto Charge")
