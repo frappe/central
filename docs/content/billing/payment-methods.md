@@ -44,6 +44,8 @@ You can close the bank's page or the dialog at any time. Start again at once: an
 
 A card or UPI setup that is not finished in 24 hours is not saved. Frappe Cloud sends an email and an in-app notice: "Your card or UPI setup was not finished, so it was not saved. Add it again from Billing." If you add a payment method after you start that setup, you do not get the notice.
 
+If you finished adding a card on the gateway's page but closed the window before Frappe Cloud showed it, the setup does not expire. The card shows in Billing the next time you open it. If you finish a setup after it expired, Frappe Cloud does not save it. It refunds the ₹1 authorisation charge and removes the card or UPI authorisation at the gateway.
+
 ## Change the order
 
 1. On the **Methods** card, click the **⋯** menu on a payment method.
