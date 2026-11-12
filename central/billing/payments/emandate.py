@@ -92,15 +92,10 @@ def schedule_predebit(invoice: str, now=None, gateway: str | None = None) -> dic
 	if now_dt < frappe.utils.add_to_date(payment_starts_at, hours=-PREDEBIT_NOTICE_HOURS):
 		return {"invoice": invoice, "skipped": "before_payment_date"}
 
-	# A bill over the silent ceiling can't be debited off-session — fork to the
-	# customer's choice (manual checkout / prepaid) instead of notifying a debit
-	# that would fail.
-	st = collection_mode.evaluate(
-		inv.team,
-		projected_amount=frappe.utils.flt(inv.expected_collection),
-		reason="invoice_over_threshold",
-	)
-	if st["action_required"]:
+	# What is left after the wallet can't be debited off-session over the silent ceiling,
+	# whatever the mode. Ask the customer to act instead of notifying a debit that would fail.
+	if collection_mode.is_over_silent_threshold(inv.team, inv.expected_collection):
+		collection_mode.trip_off_session_debit(inv.team, "invoice_over_threshold")
 		return {"invoice": invoice, "skipped": "over_threshold", "action_required": True}
 
 	charge_after = max(frappe.utils.add_to_date(now_dt, hours=PREDEBIT_NOTICE_HOURS), payment_starts_at)

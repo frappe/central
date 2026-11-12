@@ -120,11 +120,19 @@ def evaluate(
 	other mode (so it's safe to call from the charge loop / dashboard). Returns the
 	current status()."""
 	mode = frappe.db.get_value("Billing Profile", team, "collection_mode")
-	if mode == "Auto Charge" and projected_amount is not None:
-		threshold = silent_threshold(team)
-		if threshold is not None and frappe.utils.flt(projected_amount) >= threshold:
-			trip(team, reason)
+	if (
+		mode == "Auto Charge"
+		and projected_amount is not None
+		and is_over_silent_threshold(team, projected_amount)
+	):
+		trip(team, reason)
 	return status(team)
+
+
+def is_over_silent_threshold(team: str, amount: float) -> bool:
+	"""Whether an amount in major units is at or above the most the team may be charged silently."""
+	threshold = silent_threshold(team)
+	return threshold is not None and frappe.utils.flt(amount) >= threshold
 
 
 def trip(team: str, reason: str) -> None:

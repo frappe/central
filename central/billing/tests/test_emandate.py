@@ -120,6 +120,20 @@ class TestEmandatePredebit(EmandateTestBase):
 			frappe.db.exists("Billing Notification Log", {"team": TEAM, "event_type": "Pre-debit Notice"})
 		)
 
+	def test_a_prepaid_remainder_over_threshold_moves_to_action_required_no_notice(self):
+		_set_mode(TEAM, "Prepaid")
+		inv = self._invoice(20000)  # what is left after the wallet, over ₹15k
+		out = emandate.schedule_predebit(inv, now="2026-06-10 09:00:00")
+		self.assertTrue(out.get("action_required"))
+		self.assertIsNone(frappe.db.get_value("Invoice", inv, "predebit_notified_at"))
+		self.assertEqual(frappe.db.get_value("Billing Profile", TEAM, "collection_mode"), "Action Required")
+		self.assertFalse(
+			frappe.db.exists("Billing Notification Log", {"team": TEAM, "event_type": "Pre-debit Notice"})
+		)
+		self.assertTrue(
+			frappe.db.exists("Billing Notification Log", {"team": TEAM, "event_type": "Action Required"})
+		)
+
 	def test_charge_due_only_after_window(self):
 		from unittest.mock import MagicMock, patch
 
