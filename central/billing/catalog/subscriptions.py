@@ -1321,9 +1321,9 @@ def _suspend_one(sub) -> str | None:
 def restore_after_payment(team: str) -> list[str]:
 	"""Return a team that no longer owes anything to Current, and start what dunning stopped.
 
-	A server the customer stopped themselves stays stopped. A server that will not start
-	does not undo the payment that triggered this; it is logged and the customer can
-	start it themselves."""
+	A server the customer stopped or paused themselves stays stopped. A server that will
+	not start does not undo the payment that triggered this; it is logged and the customer
+	can start it themselves."""
 	restored = []
 	for sub in frappe.get_all(
 		"Subscription",
@@ -1332,8 +1332,11 @@ def restore_after_payment(team: str) -> list[str]:
 	):
 		set_standing(sub.name, "Current", changed_by="payment", reason="invoice settled")
 		restored.append(sub.name)
-		if sub.stopped_for_nonpayment:
-			frappe.db.set_value("Subscription", sub.name, "stopped_for_nonpayment", 0)
+		if not sub.stopped_for_nonpayment:
+			continue
+		frappe.db.set_value("Subscription", sub.name, "stopped_for_nonpayment", 0)
+		# A server the customer paused stays stopped until they resume it.
+		if not is_billing_paused(sub.name):
 			_queue_power_for_billing(sub, "start", f"Could not start server {sub.server_id} after payment")
 	return restored
 
