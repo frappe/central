@@ -515,7 +515,7 @@ require_type_annotated_api_methods = True
 
 # Days Log Settings keeps a record before its daily clean-up drops it.
 default_log_clearing_doctypes = {
-  "Activity Event": 365,
+	"Activity Event": 365,
 	"AI Trial Key": 30,
 }
 

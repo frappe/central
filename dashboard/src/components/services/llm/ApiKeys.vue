@@ -193,9 +193,7 @@ const geographyOptions = computed(() =>
 
 const canCreate = computed(
 	() =>
-		!!newLabel.value.trim() &&
-		!!newGeography.value &&
-		isValidCap(newCap.value),
+		!!newLabel.value.trim() && !!newGeography.value && isValidCap(newCap.value),
 )
 
 const create = async (): Promise<void> => {
@@ -673,8 +671,8 @@ const revoke = async (key: AIApiKey): Promise<void> => {
 				</div>
 			</div>
 			<p class="mt-4 text-p-sm text-ink-gray-5">
-				Every key needs a cap of at least $1. Spend is as of {{ asOf }}:
-				The live figure is checked when you save.
+				Every key needs a cap of at least $1. Spend is as of {{ asOf }}: The
+				live figure is checked when you save.
 			</p>
 		</template>
 		<template #actions>

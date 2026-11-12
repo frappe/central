@@ -379,8 +379,17 @@ class TestAI(IntegrationTestCase):
 		):
 			created = api.create_api_key(self.team, " app ", "eu", "5")
 			# A cap is whole dollars, and label, geography and cap are all asked: refused here, before Grove.
-			for label, geography, cap in [("app", "eu", "2.5"), ("", "eu", "5"), ("app", "", "5"), ("app", "eu", None), ("app", "eu", "0")]:
-				with self.subTest(label=label, geography=geography, cap=cap), self.assertRaises(frappe.ValidationError):
+			for label, geography, cap in [
+				("app", "eu", "2.5"),
+				("", "eu", "5"),
+				("app", "", "5"),
+				("app", "eu", None),
+				("app", "eu", "0"),
+			]:
+				with (
+					self.subTest(label=label, geography=geography, cap=cap),
+					self.assertRaises(frappe.ValidationError),
+				):
 					api.create_api_key(self.team, label, geography, cap)
 		provision_key.assert_called_once_with(self.team, "app", "eu", 5)
 		list_models.assert_called_once_with(team=self.team, geography="eu")
