@@ -37,9 +37,6 @@ CUSTOMER_CHOOSABLE = ("Manual Checkout", "Prepaid")
 # working method, Auto Charge is a promise nothing can keep.
 RETURNABLE = ("Auto Charge",)
 
-# The modes whose saved method is charged off-session once the wallet is short.
-OFF_SESSION_MODES = ("Auto Charge", "Prepaid")
-
 # The modes that hold an off-session debit back (`is_debit_allowed`).
 DEBIT_HELD_MODES = ("Manual Checkout", "Action Required")
 
@@ -154,7 +151,7 @@ def trip(team: str, reason: str) -> None:
 def trip_off_session_debit(team: str, reason: str) -> None:
 	"""Trip Action Required for a team whose method was to be charged off-session. A Manual
 	Checkout team already pays by hand, so it keeps its mode."""
-	if frappe.db.get_value("Billing Profile", team, "collection_mode") in OFF_SESSION_MODES:
+	if is_debit_allowed(team):
 		trip(team, reason)
 
 
