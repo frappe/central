@@ -370,6 +370,28 @@ class TestOffSessionLimit(EmandateTestBase):
 		self.assertEqual(frappe.db.get_value("Payment Attempt", {"invoice": inv}, "payment_method"), card)
 		self.assertEqual(self._mode(), "Auto Charge")
 
+	def test_a_bill_left_with_only_a_too_small_method_trips(self):
+		from unittest.mock import MagicMock, patch
+
+		from central.billing.gateways.base import PaymentResult
+		from central.billing.payments import collection
+		from central.billing.revenue import dunning
+
+		frappe.db.set_value("Payment Method", self.card, "method_type", "UPI Autopay")
+		card = self._add_method("Card", 15000, priority=2)
+		inv = self._invoice(9000)
+		emandate.schedule_predebit(inv, now="2026-06-10 09:00:00")
+		adapter = _stub_adapter(self.gw)
+		adapter.charge = MagicMock(
+			return_value=PaymentResult(success=False, status="Failed", failure_code="expired_card")
+		)
+		with patch("central.billing.gateways.registry.get_adapter", return_value=adapter):
+			collection.collect_invoice(inv, now="2026-06-11 10:00:00")
+		self.assertEqual(frappe.db.get_value("Payment Attempt", {"invoice": inv}, "payment_method"), card)
+		adapter.charge.assert_called_once()
+		self.assertEqual(self._mode(), "Action Required")
+		self.assertFalse(dunning.has_retry_rail(frappe.get_doc("Invoice", inv), TEAM))
+
 	def test_a_bill_over_every_limit_trips(self):
 		self._add_method("Card", 15000, priority=2)
 		inv = self._invoice(15001)
@@ -382,11 +404,11 @@ class TestOffSessionLimit(EmandateTestBase):
 
 		from central.billing.payments import collection
 
-		self._invoice(9000)
+		inv = self._invoice(9000)
 		adapter = _stub_adapter(self.gw)
 		with patch("central.billing.gateways.registry.get_adapter", return_value=adapter):
-			collection.collect_on_payment_date(now="2026-06-10 09:00:00")
-			collection.collect_on_payment_date(now="2026-06-10 11:00:00")
+			collection.collect_invoice(inv, now="2026-06-10 09:00:00")
+			collection.collect_invoice(inv, now="2026-06-10 11:00:00")
 		adapter.charge.assert_not_called()
 		self.assertEqual(self._count("Action Required"), 1)
 		self.assertEqual(self._count("Add Payment Method"), 0)

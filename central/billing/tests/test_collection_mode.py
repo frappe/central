@@ -66,6 +66,13 @@ class TestCollectionMode(IntegrationTestCase):
 		frappe.db.delete("Payment Method", {"team": TEAM})
 		self.assertIsNone(collection_mode.off_session_limit(TEAM))
 
+	def test_a_method_on_a_gateway_without_off_session_charges_has_no_limit_left(self):
+		_set_mode(TEAM, "Auto Charge")
+		adapter = MagicMock(supports_off_session_charge=False)
+		with patch("central.billing.gateways.registry.get_adapter", return_value=adapter):
+			self.assertEqual(collection_mode.off_session_limit(TEAM), 0.0)
+			self.assertTrue(collection_mode.evaluate(TEAM, projected_amount=1)["action_required"])
+
 	def test_auto_charge_forecast_at_the_limit_stays_silent(self):
 		_set_mode(TEAM, "Auto Charge")
 		self.assertFalse(collection_mode.evaluate(TEAM, projected_amount=15000)["action_required"])

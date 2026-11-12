@@ -94,7 +94,7 @@ def schedule_predebit(invoice: str, now=None, gateway: str | None = None) -> dic
 
 	# What is left after the wallet can't be debited off-session over the team's limit,
 	# whatever the mode. Ask the customer to act instead of notifying a debit that would fail.
-	if not collection_mode.is_within_off_session_limit(inv.team, inv.expected_collection):
+	if not collection_mode.is_within_off_session_limit(inv.team, inv.expected_collection, invoice):
 		collection_mode.trip_off_session_debit(inv.team, "invoice_over_threshold")
 		return {"invoice": invoice, "skipped": "over_threshold", "action_required": True}
 

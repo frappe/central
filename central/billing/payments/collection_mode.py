@@ -1,9 +1,9 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
-"""Collection mode + the off-session limit behind "Action Required" (ADR 0005, ADR 0022).
+"""Collection mode + the off-session limit behind "Action Required".
 
 Billing is usage-based and variable. A saved method may be charged off-session only
-up to its limit: the rail's silent ceiling (₹15,000 in INR, an RBI rule that binds
+up to its limit: the rail's silent ceiling (₹15,000 in INR, an RBI limit that binds
 Stripe India and Razorpay alike) or its mandate's maximum, whichever is lower. A
 team's off-session limit is the largest of these across its saved methods. A bill
 at or under it is charged silently on a method that can take it. When what is left
@@ -75,6 +75,8 @@ def _default_gateway(currency: str) -> str | None:
 
 def method_limit(gateway: str, currency: str | None, mandate_max_amount: float | None = None) -> float | None:
 	"""Most one method may be charged off-session; None when nothing caps it."""
+	if not is_off_session_gateway(gateway):
+		return 0.0
 	if not currency:
 		return None
 	limits = [
@@ -85,14 +87,22 @@ def method_limit(gateway: str, currency: str | None, mandate_max_amount: float |
 	return float(min(limits)) if limits else None
 
 
-def off_session_limit(team: str) -> float | None:
+def is_off_session_gateway(gateway: str) -> bool:
+	"""Whether the gateway can charge a saved method off-session at all."""
+	from central.billing.gateways.registry import get_adapter
+
+	return bool(get_adapter(frappe.get_cached_doc("Payment Gateway", gateway)).supports_off_session_charge)
+
+
+def off_session_limit(team: str, invoice: str | None = None) -> float | None:
 	"""Most the team's saved methods may be charged off-session; None when nothing caps
-	it or no method is on file."""
+	it or no method is on file. For an `invoice`, a method it hard-declined is left out."""
 	from central.billing.payments import collection
 
 	currency = frappe.db.get_value("Billing Profile", team, "currency")
 	limits = [
-		method_limit(m.gateway, currency, m.mandate_max_amount) for m in collection.ordered_methods(team)
+		method_limit(m.gateway, currency, m.mandate_max_amount)
+		for m in collection.get_methods_left(team, invoice)
 	]
 	if not limits or None in limits:
 		return None
@@ -104,9 +114,10 @@ def is_within_limit(limit: float | None, amount: float) -> bool:
 	return limit is None or frappe.utils.flt(amount) <= limit
 
 
-def is_within_off_session_limit(team: str, amount: float) -> bool:
-	"""Whether some saved method of the team may take `amount` off-session."""
-	return is_within_limit(off_session_limit(team), amount)
+def is_within_off_session_limit(team: str, amount: float, invoice: str | None = None) -> bool:
+	"""Whether some saved method of the team may take `amount` off-session. For an
+	`invoice`, a method it hard-declined does not count."""
+	return is_within_limit(off_session_limit(team, invoice), amount)
 
 
 def is_within_method_limit(method, currency: str | None, amount: float) -> bool:

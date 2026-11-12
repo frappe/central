@@ -41,17 +41,19 @@ def ordered_methods(team: str) -> list:
 	)
 
 
-def _next_method_for_amount(inv, earlier: set | None, skipped: set):
-	"""The next method to try. While some method on file can take the amount off-session,
-	one that cannot is passed over and joins `skipped`."""
+def next_method_for_amount(inv, earlier: set | None = None, skipped: set | None = None):
+	"""The next method to charge the invoice's amount on. While some method left on file can
+	take the amount off-session, one that cannot is passed over. `inv` carries name, team,
+	currency and expected_collection."""
 	from central.billing.payments import collection_mode
 
 	amount = inv.expected_collection
-	is_covered = collection_mode.is_within_off_session_limit(inv.team, amount)
-	while method := next_method_for(inv.name, inv.team, earlier, skip=skipped):
+	is_covered = collection_mode.is_within_off_session_limit(inv.team, amount, invoice=inv.name)
+	passed_over = set(skipped or ())
+	while method := next_method_for(inv.name, inv.team, earlier, skip=passed_over):
 		if not is_covered or collection_mode.is_within_method_limit(method, inv.currency, amount):
 			return method
-		skipped.add(method.name)
+		passed_over.add(method.name)
 	return None
 
 
@@ -101,6 +103,16 @@ def _failed_methods_for(invoice: str, earlier: set | None = None) -> set:
 		or a.name not in earlier
 		or not decline.is_retryable_later(a.failure_code, a.decline_code)
 	}
+
+
+def get_methods_left(team: str, invoice: str | None = None) -> list:
+	"""The team's chargeable methods, less any whose decline on `invoice` no later round
+	can clear."""
+	methods = ordered_methods(team)
+	if not invoice:
+		return methods
+	failed = _failed_methods_for(invoice, attempts_of(invoice))
+	return [m for m in methods if m.name not in failed]
 
 
 def next_method_for(invoice: str, team: str, earlier: set | None = None, skip: set | None = None):
@@ -248,7 +260,7 @@ def _charge_next_method(
 	if in_flight := charges.in_flight_attempt(inv.name):
 		return {"collected": False, "reason": "attempt_in_flight", "attempt": in_flight}
 
-	method = _next_method_for_amount(inv, earlier, skipped)
+	method = next_method_for_amount(inv, earlier, skipped)
 	if not method:
 		# Every method has failed (or there are none) — leave it for dunning, and
 		# ask the customer for another way to pay. Off-session there is nobody to

@@ -129,7 +129,7 @@ def _claim_attempt(
 	if not _is_silent_debit_allowed(adapter, gateway_name, method_name, inv.currency, amount):
 		from central.billing.payments import collection_mode
 
-		if not on_session and not collection_mode.is_within_off_session_limit(inv.team, amount):
+		if not on_session and not collection_mode.is_within_off_session_limit(inv.team, amount, invoice):
 			collection_mode.trip_off_session_debit(inv.team, "invoice_over_threshold")
 		return {"charged": False, "reason": "action_required", "invoice": invoice}
 
