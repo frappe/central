@@ -221,7 +221,7 @@ def _prepare_start(server, team: str) -> None:
 	subscription = frappe.db.get_value(
 		"Subscription", {"server_id": server.name}, "name", order_by="creation desc"
 	)
-	if subscription and subscriptions.is_billing_paused(subscription):
+	if subscription:
 		# Start is the server action the user may take, so it resumes billing without billing:manage.
 		subscriptions.reopen_paused_billing(subscription, changed_by=frappe.session.user)
 
