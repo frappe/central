@@ -247,6 +247,27 @@ class TestInvoiceTimeTrip(IntegrationTestCase):
 			frappe.db.exists("Billing Notification Log", {"team": TEAM, "event_type": "Action Required"})
 		)
 
+	def test_pay_button_over_15k_keeps_prepaid_and_opens_checkout(self):
+		from central.billing.api.dashboard import invoices
+
+		_set_mode(TEAM, "Prepaid")
+		inv = self._invoice(20000)
+		adapter = MagicMock()
+		adapter.can_charge_silently.return_value = False
+		adapter.create_order.return_value = {"order_id": "order_pay", "key_id": "rzp"}
+		with patch("central.billing.gateways.registry.get_adapter", return_value=adapter):
+			out = invoices.pay_invoice(inv)
+			# The dashboard opens checkout on this reason.
+			self.assertEqual(out["reason"], "action_required")
+			self.assertEqual(frappe.db.get_value("Billing Profile", TEAM, "collection_mode"), "Prepaid")
+			self.assertFalse(
+				frappe.db.exists("Billing Notification Log", {"team": TEAM, "event_type": "Action Required"})
+			)
+			order = invoices.pay_invoice_checkout(inv)
+		self.assertTrue(order["created"])
+		self.assertEqual(order["order_id"], "order_pay")
+		adapter.charge.assert_not_called()
+
 
 class TestManualCheckout(IntegrationTestCase):
 	"""On-session pay-an-invoice for Manual Checkout teams: any amount, settled by
