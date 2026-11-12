@@ -14,6 +14,7 @@ import { useSession } from '@/composables/useSession'
 import { useTrialOnboarding } from '@/composables/useTrialOnboarding'
 import {
 	frappeErrorMessage,
+	frappeErrorType,
 	getFrappe,
 	methodUrl,
 	postFrappe,
@@ -93,9 +94,11 @@ onMounted(async () => {
 				!['Failed', 'Timed Out'].includes(status.creation.status))
 		)
 			return router.replace(provisioning)
-		// Nothing is in flight, so a saved key is unused or belongs to a request that failed
-		// or whose site is gone, such as a terminated trial. A new site needs a new key.
-		resetRequestKey()
+		if (
+			status.creation?.status === 'Failed' ||
+			status.creation?.status === 'Timed Out'
+		)
+			resetRequestKey()
 		// The open trial of this product is on another team of the owner.
 		if (open) offerOpenTrial.value = true
 		isFreeTrial.value = status.is_free_trial
@@ -156,28 +159,41 @@ function startOver() {
 	resetRequestKey()
 }
 
+// Central asks the region inside this call, so a refusal comes back here rather than
+// stranding the customer on the waiting page.
+async function requestSite(): Promise<CreationStatus> {
+	const send = () =>
+		postFrappe<CreationStatus>(methodUrl(API.createTrialSite), {
+			subdomain: subdomain.value.trim(),
+			request_key: requestKey.value,
+			team: team.value || undefined,
+			product: productKey.value || undefined,
+		})
+
+	try {
+		return await send()
+	} catch (exception) {
+		if (frappeErrorType(exception) !== 'RequestKeyReusedError') throw exception
+		// The saved key names an earlier request, such as a trial whose site is gone.
+		resetRequestKey()
+		return await send()
+	}
+}
+
 async function createSite() {
 	if (!availability.value?.available) return
 	creating.value = true
 	error.value = ''
 	try {
-		// Central asks the region inside this call, so a refusal comes back here rather
-		// than stranding the customer on the waiting page.
-		const result = await postFrappe<CreationStatus>(
-			methodUrl(API.createTrialSite),
-			{
-				subdomain: subdomain.value.trim(),
-				request_key: requestKey.value,
-				team: team.value || undefined,
-				product: productKey.value || undefined,
-			},
-		)
+		const result = await requestSite()
 		if (result.error) {
 			error.value = result.error.message
 			resetRequestKey()
 			creating.value = false
 			return
 		}
+		// Central accepted this request, so the next site starts with a new key.
+		resetRequestKey()
 		router.push(provisioning)
 	} catch (exception) {
 		error.value = frappeErrorMessage(exception, 'Could not create your site.')

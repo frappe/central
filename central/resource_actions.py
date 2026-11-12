@@ -31,7 +31,7 @@ from central.billing.doctype.billing_profile.billing_profile import (
 )
 from central.billing.payments.settlement import has_paid_by_hand, is_behind_on_payment, wallet_funds
 from central.billing.revenue.tax import is_internal_team
-from central.errors import throw_action_error
+from central.errors import RequestKeyReusedError, throw_action_error
 from central.iam import can, resolve_team
 from central.infrastructure.doctype.region.region import Region
 from central.infrastructure.doctype.resource_action.resource_action import (
@@ -300,7 +300,9 @@ def _repeated_request(server_input: CreateServerInput, digest: str):
 	if name:
 		action = frappe.get_doc("Resource Action", name)
 		if action.request_digest != digest:
-			frappe.throw(_("This request key was already used for different server settings."))
+			frappe.throw(
+				_("This request key was already used for different server settings."), RequestKeyReusedError
+			)
 		return action
 
 	name = unanswered_request(server_input.team, digest)
