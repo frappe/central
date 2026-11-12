@@ -20,6 +20,7 @@ import frappe
 from central.billing.catalog.subscriptions import _server_clusters
 from central.billing.doctype.subscription_change.subscription_change import (
 	CLOSING_CHANGE_TYPES,
+	OPENING_CHANGE_TYPES,
 	SEGMENT_CHANGE_TYPES,
 )
 
@@ -222,7 +223,7 @@ def _segment(sub, cluster: str, change, following, b) -> dict | None:
 		and start.time() != time.min,
 		# The resource began or ended its life in this segment, not just a config. A
 		# segment always ends at the next change, so a stop after a resize closes it too.
-		"opens": change.change_type in ("Created", "Resumed"),
+		"opens": change.change_type in OPENING_CHANGE_TYPES,
 		"closes": bool(following) and following.change_type in CLOSING_CHANGE_TYPES,
 	}
 

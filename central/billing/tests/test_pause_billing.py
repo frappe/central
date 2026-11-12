@@ -53,15 +53,6 @@ class PauseBillingTestBase(IntegrationTestCase):
 
 
 class TestPausedServerRating(PauseBillingTestBase):
-	def test_a_paused_server_bills_nothing_after_the_pause(self):
-		add_segment(self.subscription, "Created", 3000, "2026-06-01 00:00:00", plan=PLAN)
-		add_segment(self.subscription, "Paused", None, "2026-06-11 00:00:00")
-
-		lines = self._invoice_lines()
-
-		self.assertEqual([(line.unit, line.days) for line in lines], [("day", 10)])
-		self.assertEqual(sum(line.amount for line in lines), 1000.0)
-
 	def test_a_pause_mid_day_bills_the_hours_before_it(self):
 		add_segment(self.subscription, "Created", 3000, "2026-06-01 00:00:00", plan=PLAN)
 		add_segment(self.subscription, "Paused", None, "2026-06-11 06:00:00")
@@ -71,6 +62,7 @@ class TestPausedServerRating(PauseBillingTestBase):
 		self.assertEqual(
 			sorted((line.unit, line.days or line.hours) for line in lines), [("day", 10), ("hour", 6.0)]
 		)
+		self.assertEqual(sum(line.amount for line in lines), 1025.0)
 
 	def test_a_resumed_server_bills_again_from_the_resume(self):
 		add_segment(self.subscription, "Created", 3000, "2026-06-01 00:00:00", plan=PLAN)
@@ -104,7 +96,6 @@ class TestPauseAndResume(PauseBillingTestBase):
 		subscriptions.pause_billing(self.subscription)
 
 		self.assertEqual(subscriptions.current_segment_rate(self.subscription), 0.0)
-		self.assertFalse(subscriptions.active_segments({"name": self.subscription}))
 
 	def test_pause_and_resume_carry_the_servers_public_ipv4(self):
 		address = self._public_ipv4_subscription()

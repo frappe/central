@@ -19,14 +19,15 @@ writes an append-only Subscription Change.
 import frappe
 from frappe.query_builder import Order
 
-# The account-standing state machine (which moves are legal) now lives in the one
-# transition authority; re-exported so callers that catch `subscriptions.InvalidTransition`
-# keep working. Suspension is still staged through Past Due (grace), never a direct jump.
 from central.billing.doctype.subscription_change.subscription_change import (
 	CLOSING_CHANGE_TYPES,
 	RATED_CHANGE_TYPES,
 	SEGMENT_CHANGE_TYPES,
 )
+
+# The account-standing state machine (which moves are legal) now lives in the one
+# transition authority; re-exported so callers that catch `subscriptions.InvalidTransition`
+# keep working. Suspension is still staged through Past Due (grace), never a direct jump.
 from central.billing.states import InvalidTransition, transition
 from central.infrastructure.doctype.resource_action.resource_action import ResourceAction
 from central.server_models import ActionStatus
@@ -54,10 +55,16 @@ _STANDING_CHANGE_TYPE = {
 
 
 def _record_change(
-	subscription: str, change_type: str, old_value=None, new_value=None, changed_by=None, **rate
+	subscription: str,
+	change_type: str,
+	old_value=None,
+	new_value=None,
+	changed_by=None,
+	locked_rate=None,
+	currency=None,
 ):
-	"""Append one immutable Subscription Change row. `rate` carries `locked_rate` and
-	`currency` for a change that opens a segment."""
+	"""Append one immutable Subscription Change row. A change that opens a segment
+	carries its locked rate and currency."""
 	return frappe.get_doc(
 		{
 			"doctype": "Subscription Change",
@@ -67,7 +74,8 @@ def _record_change(
 			"new_value": new_value,
 			"effective_at": frappe.utils.now_datetime(),
 			"changed_by": changed_by or frappe.session.user,
-			**rate,
+			"locked_rate": locked_rate,
+			"currency": currency,
 		}
 	).insert(ignore_permissions=True)
 
@@ -1117,10 +1125,9 @@ def project_run_rate(team: str, project: str, exclude: str | None = None) -> flo
 
 
 def enforce_project_headroom(team: str, project: str | None, new_rate, exclude: str | None = None) -> None:
-	"""Reject tagging a new server into a project that would push its committed
-	run-rate past its `spending_limit` (0/unset = unlimited). Blocks new servers
-	only (the breaking-change spec) — an already-tagged subscription keeps running
-	untouched even if the limit is lowered afterward."""
+	"""Reject a new, resized or resumed server that would push its project's committed
+	run-rate past its `spending_limit` (0/unset = unlimited). A server already running
+	keeps running untouched even if the limit is lowered afterward."""
 	if not project:
 		return
 	limit = frappe.utils.flt(frappe.db.get_value("Project", project, "spending_limit"))
@@ -1132,8 +1139,7 @@ def enforce_project_headroom(team: str, project: str | None, new_rate, exclude: 
 	if frappe.utils.flt(new_rate) > available:
 		frappe.throw(
 			frappe._(
-				"Tagging this server into the project would exceed its spending limit "
-				"({0} committed, {1} available)."
+				"This server would exceed the project's spending limit ({0} committed, {1} available)."
 			).format(frappe.utils.flt(new_rate), frappe.utils.flt(available))
 		)
 
@@ -1204,7 +1210,15 @@ def resume_billing(subscription: str, changed_by: str | None = None):
 	doc.enabled = 1
 	doc.save(ignore_permissions=True)
 	for name, change in reopened.items():
-		_reopen_segment(name, change, changed_by)
+		# The rate locked before the pause, not today's price.
+		_record_change(
+			name,
+			"Resumed",
+			new_value=change.new_value,
+			changed_by=changed_by,
+			locked_rate=change.locked_rate,
+			currency=change.currency,
+		)
 	_control_subscription_server(doc, "start")
 	return doc
 
@@ -1235,20 +1249,6 @@ def _last_rated_change(subscription: str):
 		limit=1,
 	)
 	return changes[0] if changes else None
-
-
-def _reopen_segment(subscription: str, change, changed_by: str | None) -> None:
-	"""Record a Resumed change at the rate locked before the pause (ADR 0010)."""
-	if not change:
-		return
-	_record_change(
-		subscription,
-		"Resumed",
-		new_value=change.new_value,
-		changed_by=changed_by,
-		locked_rate=change.locked_rate,
-		currency=change.currency,
-	)
 
 
 def mark_past_due(team: str) -> list[str]:
