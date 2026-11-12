@@ -155,9 +155,10 @@ def evaluate(
 	return status(team)
 
 
-def trip(team: str, reason: str) -> None:
+def trip(team: str, reason: str, invoice: str | None = None) -> None:
 	"""Pause silent auto-charge and raise Action Required. Idempotent — notifies
-	once (a team already in action_required is left as-is)."""
+	once (a team already in action_required is left as-is). The notice quotes the
+	limit left for `invoice`, when one tripped it."""
 	profile = frappe.get_doc("Billing Profile", team)
 	if profile.collection_mode == "Action Required":
 		return
@@ -170,17 +171,17 @@ def trip(team: str, reason: str) -> None:
 	notifications.notify(
 		team,
 		"Action Required",
-		context={"reason": reason, "threshold": off_session_limit(team)},
+		context={"reason": reason, "threshold": off_session_limit(team, invoice)},
 		reference_doctype="Billing Profile",
 		reference_name=team,
 	)
 
 
-def trip_off_session_debit(team: str, reason: str) -> None:
+def trip_off_session_debit(team: str, reason: str, invoice: str | None = None) -> None:
 	"""Trip Action Required for a team whose method was to be charged off-session. A Manual
 	Checkout team already pays by hand, so it keeps its mode."""
 	if is_debit_allowed(team):
-		trip(team, reason)
+		trip(team, reason, invoice)
 
 
 def choose(team: str, mode: str) -> dict:
@@ -233,7 +234,33 @@ def status(team: str) -> dict:
 		"collection_mode": mode,
 		"action_required": mode == "Action Required",
 		"reason": p.collection_action_reason,
-		"threshold": off_session_limit(team),
+		"threshold": shown_limit(team, p.collection_action_reason),
 		"choices": list(CUSTOMER_CHOOSABLE),
 		"can_return_to_auto": _has_chargeable_method(team),
 	}
+
+
+def shown_limit(team: str, reason: str | None) -> float | None:
+	"""The limit the banner quotes. A bill over the limit is read against the oldest
+	owed bill, so the banner and the notice agree."""
+	invoice = _oldest_owed_invoice(team) if reason == "invoice_over_threshold" else None
+	return off_session_limit(team, invoice)
+
+
+def _oldest_owed_invoice(team: str) -> str | None:
+	"""The team's oldest owed bill with something left to collect."""
+	from central.billing.doctype.invoice.invoice import owed_filters
+
+	owed = frappe.get_all(
+		"Invoice",
+		filters=[
+			*owed_filters(),
+			["team", "=", team],
+			["invoice_type", "=", "Billable"],
+			["expected_collection", ">", 0],
+		],
+		order_by="due_date asc, creation asc",
+		pluck="name",
+		limit=1,
+	)
+	return owed[0] if owed else None

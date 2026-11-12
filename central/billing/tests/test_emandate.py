@@ -264,7 +264,7 @@ def _stub_adapter(gateway: str):
 	return adapter
 
 
-class TestOffSessionLimit(EmandateTestBase):
+class OffSessionLimitBase(EmandateTestBase):
 	"""A Beginner-tier INR team whose card mandate was registered at ₹8,300. The team may
 	be charged off-session up to the largest amount any of its methods can take."""
 
@@ -313,6 +313,8 @@ class TestOffSessionLimit(EmandateTestBase):
 			out = collection.collect_invoice(inv, now="2026-06-11 10:00:00")
 		return out, adapter
 
+
+class TestOffSessionLimit(OffSessionLimitBase):
 	def test_a_bill_equal_to_the_card_limit_is_noticed_and_charged(self):
 		inv = self._invoice(8300)
 		self.assertTrue(emandate.schedule_predebit(inv, now="2026-06-10 09:00:00").get("notified"))
@@ -391,6 +393,31 @@ class TestOffSessionLimit(EmandateTestBase):
 		adapter.charge.assert_called_once()
 		self.assertEqual(self._mode(), "Action Required")
 		self.assertFalse(dunning.has_retry_rail(frappe.get_doc("Invoice", inv), TEAM))
+
+	def test_the_banner_and_the_notice_quote_the_limit_left_for_the_bill(self):
+		from unittest.mock import MagicMock, patch
+
+		from central.billing.gateways.base import PaymentResult
+		from central.billing.payments import collection, collection_mode
+		from central.billing.platform import notifications
+
+		frappe.db.set_value("Payment Method", self.card, "method_type", "UPI Autopay")
+		self._add_method("Card", 15000, priority=2)
+		inv = self._invoice(9000)
+		emandate.schedule_predebit(inv, now="2026-06-10 09:00:00")
+		adapter = _stub_adapter(self.gw)
+		adapter.charge = MagicMock(
+			return_value=PaymentResult(success=False, status="Failed", failure_code="expired_card")
+		)
+		with (
+			patch("central.billing.gateways.registry.get_adapter", return_value=adapter),
+			patch.object(notifications, "notify", wraps=notifications.notify) as notify,
+		):
+			collection.collect_invoice(inv, now="2026-06-11 10:00:00")
+		sent = [c for c in notify.call_args_list if c.args[1] == "Action Required"]
+		self.assertEqual(len(sent), 1)
+		self.assertEqual(sent[0].kwargs["context"]["threshold"], 8300.0)
+		self.assertEqual(collection_mode.status(TEAM)["threshold"], 8300.0)
 
 	def test_a_bill_over_every_limit_trips(self):
 		self._add_method("Card", 15000, priority=2)
