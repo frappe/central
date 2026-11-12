@@ -1,10 +1,9 @@
 <script setup lang="ts">
-import { Badge, Button, Skeleton, TextInput } from 'frappe-ui'
+import { Badge, Button, Skeleton, TabButtons, TextInput } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import RowActionsMenu from '@/components/common/RowActionsMenu.vue'
-import SettingsSection from '@/components/common/SettingsSection.vue'
 import Table from '@/components/common/Table.vue'
 import AddWireGuardDeviceDialog from '@/components/wireguard/AddWireGuardDeviceDialog.vue'
 import WireGuardDeviceAddedDialog from '@/components/wireguard/WireGuardDeviceAddedDialog.vue'
@@ -27,14 +26,51 @@ const { devices, regions, servers, loading, error, reload, create, remove } =
 const { canManageWireGuard } = useCapabilities()
 const { activeTeam } = useSession()
 
+type WireGuardView = 'devices' | 'servers'
+
+const VIEWS: {
+	label: string
+	value: WireGuardView
+	iconLeft: string
+	searchLabel: string
+}[] = [
+	{
+		label: 'Devices',
+		value: 'devices',
+		iconLeft: 'lucide-laptop',
+		searchLabel: 'Search devices',
+	},
+	{
+		label: 'Server access',
+		value: 'servers',
+		iconLeft: 'lucide-shield-check',
+		searchLabel: 'Search servers',
+	},
+]
+
+const view = ref<WireGuardView>('devices')
+const queries = ref<Record<WireGuardView, string>>({ devices: '', servers: '' })
 const adding = ref(false)
 const opened = ref<OpenedWireGuardDevice | null>(null)
 const deleting = ref<WireGuardDevice | null>(null)
 const busy = ref(false)
 const deleteError = ref('')
 
+const activeView = computed(() =>
+	VIEWS.find((option) => option.value === view.value),
+)
+
+const countLabels = computed<Record<WireGuardView, string>>(() => ({
+	devices: devices.value.length ? String(devices.value.length) : '',
+	servers: servers.value.length
+		? `${servers.value.filter((server) => server.has_wireguard_access).length}/${servers.value.length}`
+		: '',
+}))
+
 // the device lists reset with the team, so close anything that points at the old team
 watch(activeTeam, () => {
+	view.value = 'devices'
+	queries.value = { devices: '', servers: '' }
 	adding.value = false
 	opened.value = null
 	deleting.value = null
@@ -44,10 +80,8 @@ watch(activeTeam, () => {
 const regionLabel = (name: string): string =>
 	regions.value.find((region) => region.name === name)?.display_name || name
 
-const deviceQuery = ref('')
-const isDeviceSearchable = computed(() => devices.value.length > 6)
 const visibleDevices = computed(() => {
-	const query = deviceQuery.value.trim().toLowerCase()
+	const query = queries.value.devices.trim().toLowerCase()
 	if (!query) return devices.value
 
 	return devices.value.filter((device) =>
@@ -112,7 +146,12 @@ const getActions = (device: WireGuardDevice) => [
 	<div class="space-y-4 pt-6">
 		<Teleport defer to="#settings-actions-wireguard">
 			<Button
-				v-if="canManageWireGuard && devices.length && regions.length"
+				v-if="
+					view === 'devices' &&
+					canManageWireGuard &&
+					devices.length &&
+					regions.length
+				"
 				label="Add"
 				icon-left="lucide-plus"
 				@click="adding = true"
@@ -142,7 +181,40 @@ const getActions = (device: WireGuardDevice) => [
 		/>
 
 		<template v-else>
-			<SettingsSection title="Devices">
+			<div class="flex flex-wrap items-center justify-between gap-2">
+				<TabButtons
+					v-model="view"
+					:options="VIEWS"
+					aria-label="WireGuard VPN sections"
+				>
+					<template #suffix="{ button }">
+						<span
+							v-if="countLabels[button.value as WireGuardView]"
+							class="text-sm tabular-nums text-ink-gray-5"
+						>
+							{{ countLabels[button.value as WireGuardView] }}
+						</span>
+					</template>
+				</TabButtons>
+
+				<TextInput
+					v-if="countLabels[view]"
+					v-model="queries[view]"
+					type="search"
+					class="w-full sm:w-48"
+					:placeholder="activeView?.searchLabel"
+					:aria-label="activeView?.searchLabel"
+				>
+					<template #prefix>
+						<span
+							class="lucide-search size-4 text-ink-gray-5"
+							aria-hidden="true"
+						/>
+					</template>
+				</TextInput>
+			</div>
+
+			<div v-if="view === 'devices'" class="space-y-4">
 				<EmptyState
 					v-if="!devices.length"
 					icon="lucide-shield"
@@ -159,30 +231,15 @@ const getActions = (device: WireGuardDevice) => [
 				</EmptyState>
 
 				<template v-else>
-					<TextInput
-						v-if="isDeviceSearchable"
-						v-model="deviceQuery"
-						type="search"
-						placeholder="Search devices"
-						aria-label="Search devices"
-					>
-						<template #prefix>
-							<span
-								class="lucide-search size-4 text-ink-gray-5"
-								aria-hidden="true"
-							/>
-						</template>
-					</TextInput>
-
 					<p
 						v-if="!visibleDevices.length"
 						class="py-4 text-p-sm text-ink-gray-6"
 					>
-						No device matches “{{ deviceQuery.trim() }}”.
+						No device matches “{{ queries.devices.trim() }}”.
 						<button
 							type="button"
 							class="text-p-sm-medium text-ink-gray-8 underline"
-							@click="deviceQuery = ''"
+							@click="queries.devices = ''"
 						>
 							Clear search
 						</button>
@@ -227,18 +284,20 @@ const getActions = (device: WireGuardDevice) => [
 						</template>
 					</Table>
 				</template>
-			</SettingsSection>
+			</div>
 
-			<SettingsSection
-				title="Servers"
-				description="Turn on WireGuard VPN for a server to let your team's devices reach its private address."
-			>
+			<div v-else class="space-y-4">
+				<p class="text-p-sm text-ink-gray-6">
+					Choose which servers your team's devices can reach over WireGuard VPN.
+				</p>
+
 				<WireGuardServerList
+					v-model:query="queries.servers"
 					:regions="regions"
 					:servers="servers"
 					@changed="reload"
 				/>
-			</SettingsSection>
+			</div>
 		</template>
 
 		<ConfirmDialog

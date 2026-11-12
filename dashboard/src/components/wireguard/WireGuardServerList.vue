@@ -1,6 +1,5 @@
 <script setup lang="ts">
-import { TextInput } from 'frappe-ui'
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
 import WireGuardServerRow from '@/components/wireguard/WireGuardServerRow.vue'
 import type { WireGuardRegion, WireGuardServer } from '@/types/wireguard'
 
@@ -12,8 +11,7 @@ interface Props {
 const props = defineProps<Props>()
 const emit = defineEmits<{ changed: [] }>()
 
-const query = ref('')
-const isSearchable = computed(() => props.servers.length > 6)
+const query = defineModel<string>('query', { default: '' })
 const matches = (server: WireGuardServer): boolean => {
 	const text = query.value.trim().toLowerCase()
 	return [server.title, server.ipv6_address ?? '']
@@ -37,18 +35,6 @@ const groups = computed(() =>
 </script>
 
 <template>
-	<TextInput
-		v-if="isSearchable"
-		v-model="query"
-		type="search"
-		placeholder="Search servers"
-		aria-label="Search servers"
-	>
-		<template #prefix>
-			<span class="lucide-search size-4 text-ink-gray-5" aria-hidden="true" />
-		</template>
-	</TextInput>
-
 	<p
 		v-if="!groups.length && query.trim()"
 		class="py-4 text-p-sm text-ink-gray-6"
