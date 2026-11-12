@@ -28,6 +28,15 @@ def is_revenue(status: str, team: str, internal: set[str]) -> bool:
 	return status not in NOT_REVENUE_STATUSES and team not in internal
 
 
+def revenue_criterion(invoice):
+	"""Query condition on an Invoice table that keeps only revenue."""
+	criterion = invoice.status.notin(NOT_REVENUE_STATUSES)
+	internal = internal_teams()
+	if internal:
+		criterion &= invoice.team.notin(list(internal))
+	return criterion
+
+
 def billable_line_items(filters: dict | None = None) -> list[dict]:
 	"""Enriched line-item rows for revenue reporting, honouring team / currency /
 	period-start filters. `include_internal_and_waived` adds back the usage that is
