@@ -25,19 +25,19 @@ def line(team, service, amount, cost=0.0, **values):
 	return frappe._dict(base, team=team, service=service, revenue_inr=amount, cost_inr=cost, **values)
 
 
-def paid_invoice(team, server, amount):
+def invoice(team, item, amount, status="Paid"):
 	frappe.get_doc(
 		{
 			"doctype": "Invoice",
 			"team": team,
 			"invoice_type": "Billable",
-			"status": "Paid",
+			"status": status,
 			"period_start": "2026-10-01",
 			"period_end": "2026-10-31",
 			"currency": "INR",
 			"subtotal": amount,
 			"total": amount,
-			"items": [{"subscription_resource": server, "amount": amount}],
+			"items": [{**item, "amount": amount}],
 		}
 	).insert(ignore_permissions=True)
 
@@ -81,20 +81,7 @@ class TestMoneyReports(BillingTestCase):
 		if not frappe.db.exists("Resource Type", "Cost Test Tokens"):
 			frappe.get_doc({"doctype": "Resource Type", "resource_type_name": "Cost Test Tokens"}).insert()
 		frappe.db.set_value("Resource Type", "Cost Test Tokens", "cost_per_unit_inr", 0.5)
-		frappe.get_doc(
-			{
-				"doctype": "Invoice",
-				"team": team,
-				"invoice_type": "Billable",
-				"status": "Outstanding",
-				"period_start": "2026-10-01",
-				"period_end": "2026-10-31",
-				"currency": "INR",
-				"subtotal": 300,
-				"total": 300,
-				"items": [{"resource_type": "Cost Test Tokens", "quantity": 100, "amount": 300}],
-			}
-		).insert(ignore_permissions=True)
+		invoice(team, {"resource_type": "Cost Test Tokens", "quantity": 100}, 300, status="Outstanding")
 		filters = {"month": "2026-10-01", "team": team}
 
 		[only] = BilledMonth(filters).lines
@@ -192,8 +179,8 @@ class TestCapacityReports(BillingTestCase):
 
 	def test_an_internal_teams_paid_invoice_earns_the_machine_nothing(self):
 		frappe.db.set_value("Virtual Machine", "ue-internal", "atlas_host_id", HOST)
-		paid_invoice("team-ue-paid", "ue-paid", 3000)
-		paid_invoice("team-ue-internal", "ue-internal", 5000)
+		invoice("team-ue-paid", {"subscription_resource": "ue-paid"}, 3000)
+		invoice("team-ue-internal", {"subscription_resource": "ue-internal"}, 5000)
 
 		_, rows, *_ = bare_metal_roi.execute({"region": REGION})
 		row = next(row for row in rows if row["metal_server"] == "ue-metal-1")
