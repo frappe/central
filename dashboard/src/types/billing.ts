@@ -477,7 +477,7 @@ export interface CollectionStatus {
 	mandate_gap_note?: string | null
 	action_required: boolean
 	reason: string | null
-	/** The limit the reason was measured against: the gateway ceiling for a bill. */
+	/** Most the team's card or UPI may be charged automatically; null when nothing caps it. */
 	threshold: number | null
 	projected_total: number
 	wallet_balance: number

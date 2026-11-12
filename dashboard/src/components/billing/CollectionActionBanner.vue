@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Alert, Button, Dialog, useCall } from 'frappe-ui'
-// "Action Required" banner — shown when an INR e-mandate team's bill crosses the
-// ₹15,000 silent-debit limit and the customer must choose how to keep paying
+// "Action Required" banner — shown when an INR team's bill goes over what its card
+// or UPI may pay automatically and the customer must choose how to keep paying
 // (ADR 0005 / payments-inr.md). Calm, not alarming: services keep running; this
 // is an invitation to decide. Backend feed: get_collection_status.
 import { computed, ref, watch } from 'vue'
@@ -61,9 +61,8 @@ async function choose(): Promise<void> {
 }
 
 // Tripped by an INR bill over the limit: the card or UPI cannot pay it, so only
-// wallet credit gets Prepaid past it. The banner's `threshold` is the limit the trip
-// used: the ₹15,000 ceiling for a bill, or the lower of it and the tier cap for a
-// forecast.
+// wallet credit gets Prepaid past it. `threshold` is the most the card or UPI may
+// pay automatically (at most ₹15,000, lower under a smaller mandate).
 const OVER_CEILING_REASONS = [
 	'invoice_over_threshold',
 	'forecast_over_threshold',
@@ -73,6 +72,12 @@ const isOverCeiling = computed(
 		currency.value === 'INR' &&
 		OVER_CEILING_REASONS.includes(s.value?.reason ?? ''),
 )
+
+const prepaidOverLimitBlurb = computed(() => {
+	const ask = 'Add credit to your wallet to cover this bill.'
+	if (s.value?.threshold == null) return ask
+	return `${ask} Your card or UPI pays only amounts up to ${money(s.value.threshold, currency.value)}.`
+})
 
 const options = computed(() => [
 	{
@@ -87,7 +92,7 @@ const options = computed(() => [
 		icon: 'lucide-wallet',
 		title: 'Prepaid wallet',
 		blurb: isOverCeiling.value
-			? 'Add credit to your wallet to cover this bill. Your card or UPI pays only amounts up to ₹15,000.'
+			? prepaidOverLimitBlurb.value
 			: 'Your wallet pays first. When it is short, we charge your card or UPI.',
 		fit: 'Best for hands-off, predictable spending.',
 	},
