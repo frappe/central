@@ -5,11 +5,13 @@
 Billing is usage-based and variable. In India an *off-session* recurring debit
 above ₹15,000 needs the customer to re-authenticate every cycle (an RBI rule that
 binds Stripe India and Razorpay alike), so we auto-charge silently only while the
-bill stays under that line. The moment an `Auto Charge` team's bill (or its
-month-to-date forecast) crosses the ceiling we stop trying to charge silently and
-flip the team to `Action Required` — the account keeps running until the customer
-picks `Manual Checkout` (pay each invoice on-session, any amount) or `Prepaid`
-(fund the wallet).
+bill stays under that line. When an off-session charge of an `Auto Charge` or
+`Prepaid` team's bill crosses the ceiling, we do not try it and flip the team to
+`Action Required`. An `Auto Charge` team is also flipped early when its month-to-date
+forecast crosses the ceiling. The account keeps running until the customer picks
+`Manual Checkout` (pay each invoice on-session, any amount) or `Prepaid` (the wallet
+pays first and the card or UPI pays only amounts under the ceiling, so a larger bill
+needs enough credit). A customer who pays an invoice on-session keeps their mode.
 
 A mode names what the customer experiences, not which provider we called: an
 Indian card mandate on Stripe and a UPI Autopay mandate on Razorpay are both
@@ -120,6 +122,8 @@ def evaluate(
 	other mode (so it's safe to call from the charge loop / dashboard). Returns the
 	current status()."""
 	mode = frappe.db.get_value("Billing Profile", team, "collection_mode")
+	# Auto Charge only: the forecast is the gross bill, not the wallet shortfall, so it
+	# cannot tell whether a Prepaid wallet will cover it.
 	if (
 		mode == "Auto Charge"
 		and projected_amount is not None
