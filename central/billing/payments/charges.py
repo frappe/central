@@ -398,12 +398,8 @@ def _claim_on_session_attempt(invoice: str, gateway: str | None) -> dict:
 	).for_update().run()
 	inv = frappe.get_doc("Invoice", invoice)
 
-	if inv.status not in _UNSETTLED_INVOICE:
-		return {"created": False, "reason": "not_open"}
-	if not is_issued(inv):
-		return {"created": False, "reason": "not_issued"}
-	if frappe.utils.flt(inv.expected_collection) <= 0:
-		return {"created": False, "reason": "nothing_due"}
+	if reason := _uncollectable_reason(inv):
+		return {"created": False, "reason": reason}
 	if in_flight := in_flight_attempt(invoice):
 		return {"created": False, "reason": "attempt_in_flight", "attempt": in_flight}
 
