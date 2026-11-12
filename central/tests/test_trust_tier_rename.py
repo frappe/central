@@ -3,7 +3,7 @@ from unittest.mock import patch
 import frappe
 from frappe.tests import IntegrationTestCase
 
-from central.billing.tests.utils import complete_billing_profile, ensure_team
+from central.billing.tests.utils import complete_billing_profile, ensure_team, ensure_trust_tier_level
 from central.patches.v0_0.rename_growth_trust_tier_to_emerging import execute
 
 
@@ -13,10 +13,9 @@ class TestTrustTierRename(IntegrationTestCase):
 		frappe.set_user("Administrator")
 		self.addCleanup(frappe.db.rollback)
 		self.on_level_update = self.enterContext(patch("central.services.ai.on_level_update"))
-		# A migrated site already has Emerging, so put the old name back first.
-		if frappe.db.exists("Trust Tier Level", "Emerging"):
-			frappe.rename_doc("Trust Tier Level", "Emerging", "Growth", force=True)
-			frappe.db.set_value("Trust Tier Level", "Growth", "tier", "Growth")
+		# A site can have the new name, the old name, or no fixture level. Start from the old name.
+		frappe.db.delete("Trust Tier Level", {"name": "Emerging"})
+		ensure_trust_tier_level("Growth")
 		self.on_level_update.reset_mock()
 
 		self.team = ensure_team("team-trust-tier-rename")
