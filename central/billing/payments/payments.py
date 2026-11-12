@@ -21,7 +21,7 @@ from frappe import _
 from frappe.model.document import Document
 
 from central.billing.doctype.billing_event import billing_event
-from central.billing.payments import decline
+from central.billing.payments import decline, setup_expiry
 from central.billing.states import record_event, transition
 
 CARD_METHOD = "Card"
@@ -188,13 +188,16 @@ def confirm_payment_method(payment_method: str) -> Document:
 	3. The micro-charge validation runs; the method becomes Active only on success, and
 	   the first active method for a team becomes its default.
 	4. A method already past validation is returned as it is, so a repeated confirm
-	   never charges the card again.
+	   never charges the card again. The method is locked first, so the setup expiry
+	   job and a confirm never both act on it. A card saved after its setup expired is
+	   removed at the gateway.
 	5. A card the bank refused at setup raises CardDeclinedAtSetup with the gateway's
 	   reason. Nothing is written: the setup webhook records the failure, and the
 	   method stays Pending Validation so the customer can try another card.
 	"""
-	method = frappe.get_doc("Payment Method", payment_method)
+	method = frappe.get_doc("Payment Method", payment_method, for_update=True)
 	if method.status != "Pending Validation":
+		setup_expiry.queue_late_release(method)
 		return method
 
 	card = _adapter(method.gateway).read_saved_card(method.setup_reference) if method.setup_reference else {}

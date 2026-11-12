@@ -282,10 +282,16 @@ def confirm_mandate(payment_method: str, callback: dict):
 	A new active mandate retires any sibling active mandate for the same team+gateway
 	(the re-authorisation case), so the higher ceiling cleanly supersedes.
 	A method already past validation is returned as it is, so a repeated callback
-	neither activates a refused mandate nor refunds an authorisation twice.
+	neither activates a refused mandate nor refunds an authorisation twice. The method
+	is locked first, so the setup expiry job and a confirm never both act on it. A
+	mandate authorised after its setup expired has its payment refunded and its token
+	cancelled; the method stays Expired.
 	"""
-	method = frappe.get_doc("Payment Method", payment_method)
+	from central.billing.payments import setup_expiry
+
+	method = frappe.get_doc("Payment Method", payment_method, for_update=True)
 	if method.status != "Pending Validation":
+		setup_expiry.queue_late_release(method)
 		return method
 	adapter = _adapter(method.gateway)
 

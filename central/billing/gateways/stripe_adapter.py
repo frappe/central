@@ -628,6 +628,18 @@ class StripeAdapter(GatewayAdapter):
 			"fingerprint": card.get("fingerprint"),
 		}
 
+	def read_finished_setup(self, setup_reference: str) -> dict:
+		"""The card a SetupIntent or setup Checkout Session saved, or `{}`. Read only."""
+		with _stripe_errors():
+			card = self.read_saved_card(setup_reference)
+		return card if card.get("payment_method") else {}
+
+	def remove_saved_method(self, method_id: str, customer_reference: str | None = None) -> None:
+		"""Detach the card from its customer. A mandate on the card ends with it."""
+		self._configure()
+		with _stripe_errors():
+			stripe.PaymentMethod.detach(method_id, **self._options())
+
 	def create_customer(self, team) -> str:
 		self._configure()
 		# Team.owner_user is a Link to User, whose name IS the email address.

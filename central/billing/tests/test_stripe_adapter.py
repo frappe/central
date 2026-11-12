@@ -325,6 +325,42 @@ class TestStripeAdapter(GatewayAdapterContract, IntegrationTestCase):
 			out, {"setup_error": {"failure_code": "card_declined", "decline_code": "generic_decline"}}
 		)
 
+	def test_an_unfinished_or_refused_setup_reads_as_not_finished(self):
+		adapter = self.make_adapter()
+		for status in ("requires_payment_method", "processing"):
+			intent = stripe.SetupIntent.construct_from({"id": "seti_x", "status": status}, "sk_test")
+			with patch.object(stripe.SetupIntent, "retrieve", return_value=intent):
+				self.assertEqual(adapter.read_finished_setup("seti_x"), {})
+
+	def test_a_finished_setup_reads_back_its_card(self):
+		adapter = self.make_adapter()
+		intent = stripe.SetupIntent.construct_from(
+			{"id": "seti_x", "status": "succeeded", "payment_method": "pm_x", "customer": "cus_x"}, "sk_test"
+		)
+		card = stripe.PaymentMethod.construct_from({"id": "pm_x", "card": {"last4": "4242"}}, "sk_test")
+		with (
+			patch.object(stripe.SetupIntent, "retrieve", return_value=intent),
+			patch.object(stripe.PaymentMethod, "retrieve", return_value=card),
+		):
+			saved = adapter.read_finished_setup("seti_x")
+		self.assertEqual((saved["payment_method"], saved["customer"]), ("pm_x", "cus_x"))
+
+	def test_a_failed_setup_read_is_a_gateway_error(self):
+		from central.billing.gateways.base import GatewayTimeout
+
+		adapter = self.make_adapter()
+		with patch.object(
+			stripe.SetupIntent, "retrieve", side_effect=stripe.error.APIConnectionError("down")
+		):
+			with self.assertRaises(GatewayTimeout):
+				adapter.read_finished_setup("seti_x")
+
+	def test_removing_a_saved_card_detaches_it(self):
+		adapter = self.make_adapter()
+		with patch.object(stripe.PaymentMethod, "detach") as detach:
+			adapter.remove_saved_method("pm_x", customer_reference="cus_x")
+		self.assertEqual(detach.call_args.args, ("pm_x",))
+
 
 class TestIndiaCardMandate(IntegrationTestCase):
 	"""Stripe India registers the mandate an Indian recurring card debit needs, and

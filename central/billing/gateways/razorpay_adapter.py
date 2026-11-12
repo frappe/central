@@ -306,6 +306,23 @@ class RazorpayAdapter(GatewayAdapter):
 		captured = next((p for p in payments if p.get("status") == "captured"), None)
 		return _verified(captured) if captured else None
 
+	def read_finished_setup(self, setup_reference: str) -> dict:
+		"""The payment that authorised a token on the setup order, or `{}`. Read only."""
+		try:
+			payments = _order_payments(self._client(), setup_reference)
+		except _TRANSIENT as e:
+			raise GatewayTimeout(str(e)) from e
+		except razorpay.errors.BadRequestError as e:
+			raise GatewayError(str(e)) from e
+		payment = next((p for p in payments if _is_token_authorisation(p)), None)
+		if not payment:
+			return {}
+		return {
+			"payment_method": payment["token_id"],
+			"customer": payment.get("customer_id"),
+			"payment": payment,
+		}
+
 	def checkout_payment(self, session_id: str) -> VerifiedPayment | None:
 		link = self.get_checkout_session(session_id)
 		if link.get("status") != "paid":
@@ -417,6 +434,10 @@ class RazorpayAdapter(GatewayAdapter):
 		self._client().token.cancel(customer_reference, mandate_reference)
 		return True
 
+	def remove_saved_method(self, method_id: str, customer_reference: str | None = None) -> None:
+		"""Cancel the recurring token."""
+		self.cancel_mandate(method_id, customer_reference=customer_reference)
+
 	def get_mandate_status(self, mandate_reference: str) -> str:
 		return self._client().invoice.fetch(mandate_reference).get("status")
 
@@ -455,6 +476,10 @@ def _verified(payment: dict) -> VerifiedPayment:
 		currency=(payment.get("currency") or "").upper(),
 		order_id=payment.get("order_id"),
 	)
+
+
+def _is_token_authorisation(payment: dict) -> bool:
+	return payment.get("status") in ("authorized", "captured") and bool(payment.get("token_id"))
 
 
 def _order_payments(client, order_id: str) -> list[dict]:

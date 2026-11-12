@@ -2,15 +2,17 @@
 # For license information, please see license.txt
 """Unfinished card and UPI setups expire after a day, and the team is told once."""
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import frappe
 
-from central.billing.payments import payments, setup_expiry
+from central.billing.gateways.base import GatewayTimeout, GatewayUnsupported
+from central.billing.payments import mandates, payments, setup_expiry
 from central.billing.tests.test_payments import saved_card, stub_adapter
 from central.billing.tests.test_paypal_adapter import make_paypal_gateway
+from central.billing.tests.test_razorpay_adapter import make_razorpay_gateway
 from central.billing.tests.test_stripe_adapter import make_stripe_gateway
-from central.billing.tests.utils import BillingTestCase, ensure_team
+from central.billing.tests.utils import BillingTestCase, ensure_team, run_enqueued_inline
 
 TEAM = "team-setup-expiry"
 OTHER_TEAM = "team-setup-expiry-2"
@@ -21,6 +23,14 @@ NOTICE = "Your card or UPI setup was not finished, so it was not saved. Add it a
 
 def hours_before_now(hours: float, minutes: int = 0):
 	return frappe.utils.add_to_date(NOW, hours=-hours, minutes=-minutes)
+
+
+def gateway_reads(answer=None, error=None):
+	"""Stub the gateway the job reads setups from. `answer` is what it says the setup saved."""
+	adapter = MagicMock()
+	adapter.read_finished_setup.return_value = answer or {}
+	adapter.read_finished_setup.side_effect = error
+	return patch("central.billing.gateways.registry.get_adapter", return_value=adapter)
 
 
 class SetupExpiryTestBase(BillingTestCase):
@@ -145,6 +155,153 @@ class TestExpiry(SetupExpiryTestBase):
 		result = frappe.get_doc("Payment Method", card).get_confirmation()
 
 		self.assertNotIn("message", result)
+
+
+class TestGatewayIsAsked(SetupExpiryTestBase):
+	def test_a_setup_the_gateway_says_finished_stays_pending_without_a_notice(self):
+		setup = self.make_method(setup_reference="seti_done")
+
+		with gateway_reads(saved_card(payment_method="pm_done")) as get_adapter:
+			setup_expiry.expire_unfinished_setups(now=NOW)
+
+		get_adapter.return_value.read_finished_setup.assert_called_once_with("seti_done")
+		self.assertEqual(self.status(setup), "Pending Validation")
+		self.assertEqual(self.notices(), [])
+		self.emails.assert_not_called()
+
+	def test_a_setup_the_gateway_says_unfinished_expires_with_a_notice(self):
+		setup = self.make_method(setup_reference="seti_open")
+
+		with gateway_reads({}) as get_adapter:
+			setup_expiry.expire_unfinished_setups(now=NOW)
+
+		get_adapter.return_value.read_finished_setup.assert_called_once_with("seti_open")
+		self.assertEqual(self.status(setup), "Expired")
+		self.assertEqual(len(self.notices()), 1)
+
+	def test_a_setup_with_no_reference_expires_without_a_read(self):
+		setup = self.make_method()
+
+		with gateway_reads() as get_adapter:
+			setup_expiry.expire_unfinished_setups(now=NOW)
+
+		get_adapter.return_value.read_finished_setup.assert_not_called()
+		self.assertEqual(self.status(setup), "Expired")
+
+	def test_a_setup_the_gateway_cannot_read_is_skipped_and_the_sweep_goes_on(self):
+		for error in (GatewayTimeout("down"), GatewayUnsupported("no read")):
+			unread = self.make_method(setup_reference="seti_unread")
+			other = self.make_method(team=OTHER_TEAM)
+
+			with gateway_reads(error=error):
+				setup_expiry.expire_unfinished_setups(now=NOW)
+
+			self.assertEqual(self.status(unread), "Pending Validation")
+			self.assertEqual(self.status(other), "Expired")
+			self.assertEqual(self.notices(), [])
+			frappe.db.delete("Payment Method", {"name": ["in", [unread, other]]})
+
+
+class LateSetupBase(SetupExpiryTestBase):
+	def confirm_late(self, confirm, adapter):
+		"""Confirm, run the queued release jobs inline, and return the refunds they queued."""
+		refunds = []
+
+		def enqueue(method, **kwargs):
+			if method.endswith("refund_authorisation_payment"):
+				refunds.append(kwargs)
+				return None
+			return run_enqueued_inline(method, **kwargs)
+
+		with (
+			patch("central.billing.gateways.registry.get_adapter", return_value=adapter),
+			patch("frappe.enqueue", side_effect=enqueue),
+		):
+			result = confirm().get_confirmation()
+		return result, refunds
+
+
+class TestLateConfirm(LateSetupBase):
+	def test_a_late_upi_authorisation_is_refunded_and_its_token_cancelled(self):
+		make_razorpay_gateway()
+		setup = self.make_method(
+			status="Expired",
+			gateway="Razorpay",
+			method_type="UPI Autopay",
+			setup_reference="order_late",
+			gateway_customer_id="cust_late",
+		)
+		payment = {
+			"id": "pay_late",
+			"order_id": "order_late",
+			"status": "captured",
+			"amount": 100,
+			"token_id": "token_late",
+			"customer_id": "cust_late",
+		}
+		adapter = MagicMock()
+		adapter.read_finished_setup.return_value = {
+			"payment_method": "token_late",
+			"customer": "cust_late",
+			"payment": payment,
+		}
+		callback = {
+			"razorpay_order_id": "order_late",
+			"razorpay_payment_id": "pay_late",
+			"razorpay_signature": "s",
+		}
+
+		result, refunds = self.confirm_late(lambda: mandates.confirm_mandate(setup, callback), adapter)
+
+		self.assertEqual(result["status"], "Expired")
+		self.assertEqual(self.status(setup), "Expired")
+		self.assertEqual(
+			[(r["payment_id"], r["amount"], r["job_id"]) for r in refunds],
+			[("pay_late", 1.0, "mandate-authorisation-refund::pay_late")],
+		)
+		adapter.remove_saved_method.assert_called_once_with("token_late", customer_reference="cust_late")
+		adapter.verify_payment_signature.assert_not_called()
+
+	def test_a_card_saved_after_its_setup_expired_is_detached(self):
+		setup = self.make_method(
+			status="Expired", setup_reference="seti_late", gateway_customer_id="cus_late"
+		)
+		adapter = MagicMock()
+		adapter.read_finished_setup.return_value = saved_card(payment_method="pm_late", customer="cus_late")
+
+		result, refunds = self.confirm_late(lambda: payments.confirm_payment_method(setup), adapter)
+
+		self.assertEqual(result["status"], "Expired")
+		self.assertEqual(result["message"], "This setup expired. Start again to add the card.")
+		self.assertEqual(refunds, [])
+		adapter.read_saved_card.assert_not_called()
+		adapter.validate_payment_method.assert_not_called()
+		adapter.remove_saved_method.assert_called_once_with("pm_late", customer_reference="cus_late")
+
+	def test_a_late_confirm_on_an_unsaved_setup_removes_nothing(self):
+		setup = self.make_method(status="Expired", setup_reference="seti_never")
+		adapter = MagicMock()
+		adapter.read_finished_setup.return_value = {}
+
+		result, refunds = self.confirm_late(lambda: payments.confirm_payment_method(setup), adapter)
+
+		self.assertEqual(result["status"], "Expired")
+		self.assertEqual(refunds, [])
+		adapter.remove_saved_method.assert_not_called()
+
+	def test_a_lapsed_card_is_never_released(self):
+		card = self.make_method(
+			status="Expired",
+			setup_reference="seti_old",
+			gateway_method_id="pm_old",
+			validated_at=hours_before_now(800),
+		)
+		adapter = MagicMock()
+
+		self.confirm_late(lambda: payments.confirm_payment_method(card), adapter)
+
+		adapter.read_finished_setup.assert_not_called()
+		adapter.remove_saved_method.assert_not_called()
 
 
 class TestNotice(SetupExpiryTestBase):

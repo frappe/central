@@ -389,3 +389,32 @@ class TestRazorpayAdapter(GatewayAdapterContract, IntegrationTestCase):
 			c.token.fetch.side_effect = razorpay.errors.BadRequestError("no such token")
 			payment = {"token_id": "token_x", "customer_id": "cust_x"}
 			self.assertIsNone(adapter.read_instrument_fingerprint(payment))
+
+	def test_a_setup_order_reads_finished_only_once_a_token_is_authorised(self):
+		adapter = self.make_adapter()
+		with self._client() as c:
+			c.order.payments.return_value = {"items": [{"id": "pay_1", "status": "failed"}]}
+			self.assertEqual(adapter.read_finished_setup("order_1"), {})
+			payment = {"id": "pay_2", "status": "captured", "token_id": "token_2", "customer_id": "cust_2"}
+			c.order.payments.return_value = {"items": [payment]}
+			saved = adapter.read_finished_setup("order_1")
+		c.order.payments.assert_called_with("order_1")
+		self.assertEqual(saved, {"payment_method": "token_2", "customer": "cust_2", "payment": payment})
+
+	def test_a_failed_setup_read_is_a_gateway_error(self):
+		from central.billing.gateways.base import GatewayError, GatewayTimeout
+
+		adapter = self.make_adapter()
+		with self._client() as c:
+			c.order.payments.side_effect = requests.exceptions.ConnectionError("down")
+			with self.assertRaises(GatewayTimeout):
+				adapter.read_finished_setup("order_1")
+			c.order.payments.side_effect = razorpay.errors.BadRequestError("no such order")
+			with self.assertRaises(GatewayError):
+				adapter.read_finished_setup("order_1")
+
+	def test_removing_a_saved_token_cancels_it(self):
+		adapter = self.make_adapter()
+		with self._client() as c:
+			adapter.remove_saved_method("token_2", customer_reference="cust_2")
+		c.token.cancel.assert_called_once_with("cust_2", "token_2")
