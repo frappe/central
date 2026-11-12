@@ -6,7 +6,8 @@ from frappe.utils import add_months, flt, get_first_day, get_last_day, getdate
 
 from central.billing import settings
 from central.billing.report._inventory import cost_per_vcpu, region_capacity
-from central.billing.report._revenue import internal_teams, is_revenue
+from central.billing.report._revenue import is_revenue
+from central.billing.revenue.tax import internal_teams
 
 VM_SERVICE = "VM Plans"
 

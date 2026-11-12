@@ -4,9 +4,10 @@
 
 All three read the same grain: an **Invoice Line Item** joined to its parent
 invoice's currency and period, limited to real revenue: Billable invoices of
-external teams that were neither Cancelled nor Waived. The line `amount` is the pre-tax charge — tax is a
-pass-through, not revenue — so summing line amounts is additive across every cut
-(by cluster, by service, by month) and each cut reconciles to the same total.
+external teams that were neither Cancelled nor Waived. The line `amount` is the
+pre-tax charge — tax is a pass-through, not revenue — so summing line amounts is
+additive across every cut (by cluster, by service, by month) and each cut
+reconciles to the same total.
 
 A line is **recurring** when its `resource_type` is `bundle` (the flat-rate
 compute charge the invoicing engine stamps); everything else — metered overage,
@@ -16,13 +17,10 @@ consumer services, add-ons — is usage.
 import frappe
 from frappe.utils import cint, flt
 
-# Usage the company gave away: a waived invoice, or any invoice of its own teams.
+from central.billing.revenue.tax import internal_teams
+
+# A cancelled invoice was never owed, and a waived one was given away.
 NOT_REVENUE_STATUSES = ("Cancelled", "Waived")
-
-
-def internal_teams() -> set[str]:
-	"""The teams the company runs for itself."""
-	return set(frappe.get_all("Billing Profile", filters={"is_internal": 1}, pluck="team"))
 
 
 def is_revenue(status: str, team: str, internal: set[str]) -> bool:

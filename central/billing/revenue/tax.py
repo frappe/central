@@ -41,6 +41,11 @@ def is_internal_team(team: str) -> bool:
 	return bool(frappe.db.get_value("Billing Profile", team, "is_internal"))
 
 
+def internal_teams() -> set[str]:
+	"""The teams the company runs for itself."""
+	return set(frappe.get_all("Billing Profile", filters={"is_internal": 1}, pluck="team"))
+
+
 def is_indian_team(team: str) -> bool:
 	"""Whether the team is billed in India, by its billing country or its INR currency."""
 	profile = frappe.db.get_value("Billing Profile", team, ["country", "currency"], as_dict=True)
