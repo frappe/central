@@ -90,6 +90,18 @@ class TestExpiry(SetupExpiryTestBase):
 		self.assertEqual(self.status(failed), "Failed")
 		self.assertEqual(self.notices(), [])
 
+	def test_an_expired_setup_is_not_listed_but_an_expired_card_is(self):
+		from central.billing.api.dashboard import methods
+
+		setup = self.make_method()
+		card = self.make_method(status="Expired", validated_at=hours_before_now(800))
+
+		setup_expiry.expire_unfinished_setups(now=NOW)
+
+		listed = [row["name"] for row in methods.list_payment_methods(TEAM)]
+		self.assertEqual(listed, [card])
+		self.assertEqual(self.status(setup), "Expired")
+
 
 class TestNotice(SetupExpiryTestBase):
 	def test_the_team_is_told_once_in_app_and_by_email(self):

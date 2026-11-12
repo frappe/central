@@ -25,14 +25,16 @@ from central.billing.payments import decline
 def list_payment_methods(team: str | None = None) -> list[dict]:
 	"""Payment methods — display fields only; gateway secrets are never returned.
 
-	Hides Cancelled methods and ones still mid-setup (Pending Validation): until a
-	card clears the micro-charge it isn't usable, isn't in the charge order, and
-	would only confuse the list (it has no label/expiry yet)."""
+	Hides Cancelled methods, ones still mid-setup (Pending Validation) and setups
+	that expired unfinished: until a card clears the micro-charge it isn't usable,
+	isn't in the charge order, and would only confuse the list (it has no
+	label/expiry yet). A card that expired after use stays listed."""
 	team = _resolve_team(team)
 	rows = frappe.get_all(
 		"Payment Method",
 		filters={"team": team, "status": ["not in", ["Cancelled", "Pending Validation"]]},
 		fields=[
+			"validated_at",
 			"name",
 			"method_type",
 			"status",
@@ -47,7 +49,15 @@ def list_payment_methods(team: str | None = None) -> list[dict]:
 		],
 		order_by="priority asc, creation asc",
 	)
-	return rows
+	listed = [row for row in rows if not _is_expired_setup(row)]
+	for row in listed:
+		del row["validated_at"]
+	return listed
+
+
+def _is_expired_setup(row: dict) -> bool:
+	"""True for a setup that expired before it was ever validated."""
+	return row["status"] == "Expired" and not row["validated_at"]
 
 
 @frappe.whitelist()
