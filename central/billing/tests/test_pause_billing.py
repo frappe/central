@@ -38,7 +38,6 @@ class PauseBillingTestBase(IntegrationTestCase):
 		for name in frappe.get_all("Subscription", {"team": TEAM}, pluck="name"):
 			frappe.db.delete("Subscription Change", {"subscription": name})
 			frappe.db.delete("Subscription", {"name": name})
-		frappe.db.commit()
 
 	def _invoice_lines(self) -> list:
 		name = invoicing.generate_draft_invoice(self.subscription, "2026-06-01", "2026-06-30")
