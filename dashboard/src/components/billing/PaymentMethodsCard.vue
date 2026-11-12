@@ -29,8 +29,8 @@ import type { PaymentMethod } from '@/types/billing'
 // list is worth having to a team that only ever uses one card.
 //
 // Prepaid credits are the first entry because the engine spends them before it
-// charges anything (the credits waterfall, credits.md). When the wallet is short,
-// the methods below are charged in order, whatever the collection mode.
+// charges anything (the credits waterfall, credits.md). When the wallet is short, the
+// methods below are charged in order, unless the team pays each invoice by hand.
 //
 // The card owns the calls and the destructive remove confirm (a local Dialog, since
 // this app mounts no global <Dialogs /> container).
