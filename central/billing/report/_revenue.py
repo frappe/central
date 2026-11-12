@@ -14,7 +14,7 @@ consumer services, add-ons — is usage.
 """
 
 import frappe
-from frappe.utils import flt
+from frappe.utils import cint, flt
 
 # Usage the company gave away: a waived invoice, or any invoice of its own teams.
 NOT_REVENUE_STATUSES = ("Cancelled", "Waived")
@@ -81,7 +81,7 @@ def billable_line_items(filters: dict | None = None) -> list[dict]:
 
 
 def _revenue_conditions(filters: dict) -> list:
-	if filters.get("include_internal_and_waived"):
+	if cint(filters.get("include_internal_and_waived")):
 		return [["status", "!=", "Cancelled"]]
 	conditions = [["status", "not in", NOT_REVENUE_STATUSES]]
 	internal = internal_teams()
