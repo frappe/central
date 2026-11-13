@@ -17,6 +17,7 @@ import { getSupportCategory } from '@/composables/useSupport'
 import type { OutageIssue } from '@/composables/useSupportAnswers'
 import { getErrorMessage, successToast } from '@/lib/feedback'
 import { submitOrThrow } from '@/lib/frappeCall'
+import { __ } from '@/lib/translate'
 
 interface Props {
 	context: SupportContext
@@ -125,7 +126,7 @@ async function submit(): Promise<void> {
 			server: serverId.value || undefined,
 			site: siteName.value || undefined,
 		})
-		successToast('Support ticket created')
+		successToast(__('Support ticket created'))
 		resetForm()
 		emit('created')
 	} catch (error) {
@@ -190,19 +191,19 @@ watch(
 			<Textarea
 				v-model="description"
 				:rows="4"
-				label="Details for support"
-				placeholder="What were you doing, what did you expect, and what error did you see?"
+				:label="__('Details for support')"
+				:placeholder="__('What were you doing, what did you expect, and what error did you see?')"
 				required
 			/>
 
 			<Alert
 				v-if="isCriticalIssue"
 				theme="amber"
-				title="This is urgent, so support sees it first."
+				:title="__('This is urgent, so support sees it first.')"
 			/>
 
 			<p v-if="sentLine" class="text-p-sm text-ink-gray-5">
-				Sent as {{ sentLine }}
+				{{ __('Sent as {0}', [sentLine]) }}
 			</p>
 
 			<Alert v-if="formError" theme="red" :title="formError" />
@@ -214,14 +215,14 @@ watch(
 			<Button
 				class="-ml-2"
 				variant="ghost"
-				label="Cancel"
+				:label="__('Cancel')"
 				:disabled="creating"
 				@click="emit('cancel')"
 			/>
 			<Button
 				type="submit"
 				variant="solid"
-				label="Send to support"
+				:label="__('Send to support')"
 				:loading="creating"
 				:disabled="!canSubmit"
 			/>

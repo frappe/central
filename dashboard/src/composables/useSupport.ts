@@ -1,5 +1,6 @@
 import type { DropdownOption } from 'frappe-ui'
 import { ref } from 'vue'
+import { __ } from '@/lib/translate'
 
 /** The server a ticket was opened from, so the dialog fills it in at once. */
 export interface SupportServer {
@@ -31,19 +32,19 @@ export const SUPPORT_CATEGORY_DETAILS: Record<
 	SupportCategoryDetails
 > = {
 	server: {
-		description: 'Power, disk, network, or console trouble.',
+		description: __('Power, disk, network, or console trouble.'),
 		icon: 'lucide-server',
 	},
 	site: {
-		description: 'Setup, domains, apps, or email delivery.',
+		description: __('Setup, domains, apps, or email delivery.'),
 		icon: 'lucide-globe',
 	},
 	billing: {
-		description: 'Invoices, payments, credits, or plans.',
+		description: __('Invoices, payments, credits, or plans.'),
 		icon: 'lucide-credit-card',
 	},
 	account: {
-		description: 'Sign-in, members, roles, or managed services.',
+		description: __('Sign-in, members, roles, or managed services.'),
 		icon: 'lucide-users',
 	},
 }
@@ -185,7 +186,7 @@ export function useSupport() {
 		if (!hasSupport) return null
 
 		return {
-			label: 'Contact support',
+			label: __('Contact support'),
 			icon: 'lucide-life-buoy',
 			onClick: () => openSupport(context, 'new'),
 		}
@@ -193,7 +194,7 @@ export function useSupport() {
 
 	const feedbackOption: DropdownOption | null = feedbackUrl
 		? {
-				label: 'Share feedback',
+				label: __('Share feedback'),
 				icon: 'lucide-message-square-text',
 				onClick: () => openInNewTab(feedbackUrl),
 			}

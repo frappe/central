@@ -35,8 +35,8 @@ const rows = computed(() => {
 		<div v-if="tickets.length" class="pb-3">
 			<SupportSearchInput
 				v-model="filter"
-				placeholder="Search your tickets"
-				label="Search your tickets"
+				:placeholder="__('Search your tickets')"
+				:label="__('Search your tickets')"
 			/>
 		</div>
 
@@ -48,22 +48,26 @@ const rows = computed(() => {
 			<EmptyState
 				v-else-if="error"
 				icon="lucide-cloud-off"
-				title="Tickets couldn't load"
+				:title="__('Tickets couldn\'t load')"
 				:description="getErrorMessage(error, 'Try again in a moment.')"
 			>
 				<template #action>
-					<Button label="Retry" @click="emit('retry')" />
+					<Button :label="__('Retry')" @click="emit('retry')" />
 				</template>
 			</EmptyState>
 
 			<EmptyState
 				v-else-if="!tickets.length"
 				icon="lucide-life-buoy"
-				title="No tickets yet"
-				description="Ask a question in Get help. A ticket appears here after you send it."
+				:title="__('No tickets yet')"
+				:description="__('Ask a question in Get help. A ticket appears here after you send it.')"
 			>
 				<template #action>
-					<Button variant="solid" label="Get help" @click="emit('create')" />
+					<Button
+						variant="solid"
+						:label="__('Get help')"
+						@click="emit('create')"
+					/>
 				</template>
 			</EmptyState>
 
@@ -91,7 +95,7 @@ const rows = computed(() => {
 									· {{ timeAgo(ticket.creation) }}</template
 								>
 								<template v-if="!ticket.url && ticket.raised_by">
-									· Raised by {{ ticket.raised_by }}</template
+									{{ __('· Raised by {0}', [ticket.raised_by]) }}</template
 								>
 							</span>
 						</span>
@@ -111,7 +115,7 @@ const rows = computed(() => {
 			</ul>
 
 			<p v-else class="px-2 py-6 text-center text-p-sm text-ink-gray-5">
-				No tickets match "{{ filter.trim() }}".
+				{{ __('No tickets match "{0}".', [filter.trim()]) }}
 			</p>
 		</div>
 	</div>

@@ -61,8 +61,8 @@ defineExpose({ focus })
 			<SupportSearchInput
 				ref="search"
 				v-model="query"
-				placeholder="Describe what is going wrong"
-				label="Describe what is going wrong"
+				:placeholder="__('Describe what is going wrong')"
+				:label="__('Describe what is going wrong')"
 				@keydown="submitOnShortcut"
 			/>
 			<div
@@ -97,7 +97,7 @@ defineExpose({ focus })
 				class="-ml-2"
 				variant="ghost"
 				icon-left="lucide-siren"
-				label="Report an outage"
+				:label="__('Report an outage')"
 				@click="emit('outage')"
 			/>
 			<div class="flex items-center gap-2">
@@ -109,7 +109,7 @@ defineExpose({ focus })
 				</kbd>
 				<Button
 					:variant="action === 'contact' ? 'solid' : 'subtle'"
-					:label="action === 'dismiss' ? 'Still need help?' : 'Contact support'"
+					:label="action === 'dismiss' ? __('Still need help?') : __('Contact support')"
 					:disabled="action === 'disabled'"
 					@click="emit('contact')"
 				/>
