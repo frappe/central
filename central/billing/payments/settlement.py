@@ -127,7 +127,20 @@ def credit_funded_headroom(team: str, for_update: bool = False) -> float:
 	else:
 		balance = frappe.utils.flt(credits.get_balance(team)["balance"])
 		running = team_run_rate(team)
-	return max(0.0, min(_tier_cap(team), balance) - running)
+	return max(0.0, min(_tier_cap(team), credit_funded_spend(team, balance)) - running)
+
+
+def credit_funded_spend(team: str, balance: float) -> float:
+	"""The pre-tax spend a wallet `balance` pays for, drawn the way a bill draws it.
+
+	A top-up pays the pre-tax amount and the GST paid with it pays the tax. Other
+	credit, such as promotional credit, pays the bill with its GST, so it covers less.
+	"""
+	currency = frappe.db.get_value("Billing Profile", team, "currency")
+	other = sum(lot.remaining for lot in credits.credit_lots(team, currency) if not lot.paid_in)
+	other = min(frappe.utils.flt(other), balance)
+	share = credits.top_up_gst_rate(team)
+	return frappe.utils.flt(balance - other * share / (1 + share), 2)
 
 
 def details_overdue(team: str) -> bool:

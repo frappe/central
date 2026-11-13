@@ -204,7 +204,7 @@ class TestConcurrentFunding(CreditFundedTestBase):
 
 class TestCreditFundedHeadroom(CreditFundedTestBase):
 	def test_headroom_is_the_wallet_under_the_tier_cap(self):
-		self._grant(3000)
+		self._grant(3540)  # 3,000 before GST
 
 		self.assertEqual(settlement.credit_funded_headroom(TEAM), 3000)
 
@@ -213,6 +213,17 @@ class TestCreditFundedHeadroom(CreditFundedTestBase):
 		self._grant(9000)
 
 		self.assertEqual(settlement.credit_funded_headroom(TEAM), 1000)
+
+	def test_promotional_credit_also_pays_the_gst(self):
+		self._grant(1180)
+
+		self.assertEqual(settlement.credit_funded_headroom(TEAM), 1000)
+
+	def test_a_top_up_funds_its_pre_tax_amount_and_its_gst_pays_the_tax(self):
+		credits.purchase(TEAM, 1180, "INR", gateway_payment_id="pi_headroom", gateway="Stripe")
+		self._grant(1180)
+
+		self.assertEqual(settlement.credit_funded_headroom(TEAM), 2000)
 
 	def test_no_credits_is_no_headroom_even_under_a_tier(self):
 		# Deliberately NOT effective_spend_cap's behaviour: that falls back to the
@@ -326,7 +337,7 @@ class TestBillingDetailsEscalation(CreditFundedTestBase):
 		return self._draft(period_end=frappe.utils.add_days(frappe.utils.nowdate(), -grace - 1))
 
 	def test_credit_stops_funding_once_a_bill_has_waited_too_long(self):
-		self._grant(5000)
+		self._grant(5900)  # 5,000 before GST
 		self.assertEqual(settlement.credit_funded_headroom(TEAM), 5000)
 
 		self._overdue_draft()
@@ -336,7 +347,7 @@ class TestBillingDetailsEscalation(CreditFundedTestBase):
 			self._purchase()
 
 	def test_a_bill_still_inside_the_grace_period_funds_as_before(self):
-		self._grant(5000)
+		self._grant(5900)
 		self._draft(period_end=frappe.utils.nowdate())
 
 		self.assertEqual(settlement.credit_funded_headroom(TEAM), 5000)
