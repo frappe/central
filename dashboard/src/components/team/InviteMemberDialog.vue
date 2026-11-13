@@ -71,7 +71,7 @@ async function send(): Promise<void> {
 <template>
 	<Dialog
 		v-model="open"
-		title="Invite members"
+		:title="__('Invite members')"
 		size="2xl"
 		:show-close-button="false"
 		:dismissible="!saving"
@@ -81,13 +81,13 @@ async function send(): Promise<void> {
 				v-if="requestError"
 				class="mb-4"
 				theme="red"
-				title="Couldn't send the invitations"
+				:title="__('Couldn\'t send the invitations')"
 				:description="requestError"
 			/>
 			<Alert
 				v-if="rolesError"
 				theme="red"
-				title="Couldn't load the roles"
+				:title="__('Couldn\'t load the roles')"
 				:description="rolesError"
 			/>
 			<LoadingText v-else-if="rolesLoading && !roleOptions.length" :lines="2" />
@@ -102,7 +102,11 @@ async function send(): Promise<void> {
 		</template>
 		<template #actions>
 			<div class="flex items-center justify-end gap-2">
-				<Button label="Cancel" :disabled="saving" @click="open = false" />
+				<Button
+					:label="__('Cancel')"
+					:disabled="saving"
+					@click="open = false"
+				/>
 				<Button
 					variant="solid"
 					:label="submitLabel"

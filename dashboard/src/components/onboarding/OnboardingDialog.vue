@@ -114,7 +114,7 @@ async function finish(): Promise<void> {
 			v-if="error"
 			class="mb-4"
 			theme="red"
-			title="Couldn't finish this step"
+			:title="__('Couldn\'t finish this step')"
 			:description="error"
 		/>
 
@@ -148,7 +148,7 @@ async function finish(): Promise<void> {
 					v-if="canGoBack"
 					variant="ghost"
 					icon-left="lucide-arrow-left"
-					label="Back"
+					:label="__('Back')"
 					:disabled="busy || stepHandle?.saving"
 					@click="goBack"
 				/>
@@ -157,13 +157,13 @@ async function finish(): Promise<void> {
 				<div class="flex flex-col-reverse gap-2 sm:flex-row">
 					<Button
 						v-if="canSkip"
-						:label="isAnswered ? 'Next' : 'Skip'"
+						:label="isAnswered ? __('Next') : __('Skip')"
 						:disabled="busy || stepHandle?.saving"
 						@click="advance('Skipped')"
 					/>
 					<Button
 						variant="solid"
-						:label="stepHandle?.submitLabel ?? 'Continue'"
+						:label="stepHandle?.submitLabel ?? __('Continue')"
 						:loading="busy || stepHandle?.saving"
 						:disabled="!stepHandle?.canSubmit"
 						@click="runPrimary"

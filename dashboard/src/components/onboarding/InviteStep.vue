@@ -30,13 +30,13 @@ defineExpose({
 		v-if="requestError"
 		class="mb-4"
 		theme="red"
-		title="Couldn't send the invitations"
+		:title="__('Couldn\'t send the invitations')"
 		:description="requestError"
 	/>
 	<Alert
 		v-if="rolesError"
 		theme="red"
-		title="Couldn't load the roles"
+		:title="__('Couldn\'t load the roles')"
 		:description="rolesError"
 	/>
 	<LoadingText v-else-if="rolesLoading && !roleOptions.length" :lines="2" />

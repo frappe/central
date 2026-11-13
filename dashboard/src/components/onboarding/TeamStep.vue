@@ -27,15 +27,15 @@ const hint = computed(() =>
 		<Alert
 			v-if="error"
 			theme="red"
-			title="Couldn't create the team"
+			:title="__('Couldn\'t create the team')"
 			:description="error"
 		/>
 		<div>
 			<TextInput
 				v-model="teamName"
-				label="Team name"
+				:label="__('Team name')"
 				size="md"
-				placeholder="e.g. Acme"
+				:placeholder="__('e.g. Acme')"
 				autocomplete="off"
 				autofocus
 				@keyup.enter="$emit('submit')"

@@ -4,6 +4,7 @@ import { computed, onBeforeUnmount, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import ContactSupportLink from '@/components/common/ContactSupportLink.vue'
+import TranslatedText from '@/components/common/TranslatedText.vue'
 import { useSession } from '@/composables/useSession'
 import { settingsOpen } from '@/composables/useSettings'
 import {
@@ -123,8 +124,8 @@ onBeforeUnmount(() => window.removeEventListener('focus', onFocus))
 <template>
 	<ConfirmDialog
 		v-model:target="target"
-		title="Archive team"
-		confirm-label="Archive team"
+		:title="__('Archive team')"
+		:confirm-label="__('Archive team')"
 		theme="red"
 		size="md"
 		:loading="archiving"
@@ -135,12 +136,18 @@ onBeforeUnmount(() => window.removeEventListener('focus', onFocus))
 	>
 		<div class="space-y-4">
 			<p class="text-p-base text-ink-gray-7">
-				Every member of
-				<span class="text-p-base-semibold text-ink-gray-9"
-					>{{ activeTeamLabel }}</span
+				<TranslatedText
+					:text="__('Every member of {0} loses access. Invoices and records are kept. To use the team again, {1}.')"
 				>
-				loses access. Invoices and records are kept. To use the team again,
-				<ContactSupportLink :context="{ Team: activeTeamLabel }" />.
+					<template #0>
+						<span class="text-p-base-semibold text-ink-gray-9"
+							>{{ activeTeamLabel }}</span
+						>
+					</template>
+					<template #1>
+						<ContactSupportLink :context="{ Team: activeTeamLabel }" />
+					</template>
+				</TranslatedText>
 			</p>
 
 			<div
@@ -148,22 +155,22 @@ onBeforeUnmount(() => window.removeEventListener('focus', onFocus))
 				class="flex items-center gap-2 text-p-sm text-ink-gray-5"
 			>
 				<LoadingIndicator class="size-4" />
-				Checking the team…
+				{{ __('Checking the team…') }}
 			</div>
 			<Alert
 				v-else-if="checksError"
 				theme="red"
-				title="Couldn't check if the team can be archived"
+				:title="__('Couldn\'t check if the team can be archived')"
 				:description="checksError"
 			>
 				<template #actions>
-					<Button label="Try again" @click="reload" />
+					<Button :label="__('Try again')" @click="reload" />
 				</template>
 			</Alert>
 			<ul
 				v-else
 				class="divide-y divide-outline-gray-1 rounded-6 border border-outline-gray-2"
-				aria-label="Before you archive"
+				:aria-label="__('Before you archive')"
 			>
 				<li
 					v-for="check in checks"
@@ -180,7 +187,9 @@ onBeforeUnmount(() => window.removeEventListener('focus', onFocus))
 						"
 					/>
 					<span class="min-w-0 flex-1 text-p-sm text-ink-gray-8">
-						<span class="sr-only">{{ check.passed ? 'Done:' : 'To do:' }}</span>
+						<span class="sr-only"
+							>{{ check.passed ? __('Done:') : __('To do:') }}</span
+						>
 						{{ describe(check) }}
 					</span>
 					<Button
@@ -195,7 +204,7 @@ onBeforeUnmount(() => window.removeEventListener('focus', onFocus))
 			<Alert
 				v-if="creditText"
 				theme="amber"
-				:title="`The team has ${creditText} of credit. Archiving forfeits it.`"
+				:title="__('The team has {0} of credit. Archiving forfeits it.', [creditText])"
 			/>
 		</div>
 	</ConfirmDialog>

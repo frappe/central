@@ -7,6 +7,7 @@ import { useSession } from '@/composables/useSession'
 import { teamSwitcherOpen } from '@/composables/useTeamSwitcher'
 import { getErrorMessage } from '@/lib/feedback'
 import { getTeamSwitcherRows } from '@/lib/teamSwitcher'
+import { __ } from '@/lib/translate'
 import CreateTeamDialog from './CreateTeamDialog.vue'
 
 interface TeamSwitcherProps {
@@ -23,7 +24,7 @@ const switching = ref(false)
 const createTeamOpen = ref(false)
 const searchable = computed(() => teams.value.length > 6)
 const activeTeamTitle = computed(() =>
-	activeTeam.value ? activeTeamLabel.value : 'Select a team',
+	activeTeam.value ? activeTeamLabel.value : __('Select a team'),
 )
 const teamRows = computed(() => getTeamSwitcherRows(teams.value))
 const activeTeamIdentity = computed(
@@ -78,20 +79,20 @@ const { onKeydown } = useMenuKeyboardNavigation(() => {
 				<Button
 					variant="ghost"
 					size="lg"
-					aria-label="Switch team"
+					:aria-label="__('Switch team')"
 					:tooltip="activeTeamIdentity"
 					class="team-switcher-button w-full !justify-start !px-1.5 !text-left"
 				>
 					<template #prefix>
 						<img
 							:src="frappeCloudLogo"
-							alt="Frappe Cloud"
+							:alt="__('Frappe Cloud')"
 							class="size-6 shrink-0"
 						/>
 					</template>
 					<span v-if="!collapsed" class="flex min-w-0 flex-col gap-0.5">
 						<span class="truncate text-sm-medium text-ink-gray-8"
-							>Frappe Cloud</span
+							>{{ __('Frappe Cloud') }}</span
 						>
 						<span class="truncate text-sm text-ink-gray-6"
 							>{{ activeTeamTitle }}</span
@@ -106,32 +107,36 @@ const { onKeydown } = useMenuKeyboardNavigation(() => {
 				</Button>
 			</template>
 
-			<div class="w-64 max-w-full p-1" aria-label="Teams" @keydown="onKeydown">
+			<div
+				class="w-64 max-w-full p-1"
+				:aria-label="__('Teams')"
+				@keydown="onKeydown"
+			>
 				<TextInput
 					v-if="searchable"
 					v-model="query"
-					aria-label="Search teams"
-					placeholder="Search teams"
+					:aria-label="__('Search teams')"
+					:placeholder="__('Search teams')"
 					class="mb-1"
 				/>
 				<Alert
 					v-if="switchError || error"
 					theme="red"
-					:title="switchError ? `Couldn't switch teams` : `Couldn't load your teams`"
+					:title="switchError ? __('Couldn\'t switch teams') : __('Couldn\'t load your teams')"
 					:description="switchError || getErrorMessage(error, 'Reload the page to try again.')"
 					class="mb-2"
 				/>
 				<Button
 					v-if="error"
-					label="Retry"
+					:label="__('Retry')"
 					:loading="loading"
 					@click="session.reload"
 				/>
 				<p v-if="loading" class="p-3 text-p-sm text-ink-gray-5" role="status">
-					Loading teams…
+					{{ __('Loading teams…') }}
 				</p>
 				<p v-if="switching" class="p-2 text-p-sm text-ink-gray-5" role="status">
-					Switching team…
+					{{ __('Switching team…') }}
 				</p>
 				<div
 					v-if="!loading && !switching"
@@ -178,14 +183,14 @@ const { onKeydown } = useMenuKeyboardNavigation(() => {
 						v-if="!visibleTeams.length && !error"
 						class="p-3 text-p-sm text-ink-gray-5"
 					>
-						{{ query ? 'No matching teams.' : 'You do not belong to a team yet.' }}
+						{{ query ? __('No matching teams.') : __('You do not belong to a team yet.') }}
 					</p>
 				</div>
 				<div class="mt-1 border-t border-outline-gray-2 pt-1">
 					<Button
 						variant="ghost"
 						icon-left="lucide-plus"
-						label="Create team"
+						:label="__('Create team')"
 						class="w-full !justify-start"
 						:disabled="switching"
 						@click="createTeam"

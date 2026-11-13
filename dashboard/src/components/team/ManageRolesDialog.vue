@@ -8,6 +8,7 @@ import { useTeamRoles } from '@/composables/useTeamRoles'
 import { teamParams } from '@/composables/useTeamScope'
 import { getErrorMessage } from '@/lib/feedback'
 import { getResourceOptions } from '@/lib/resourceScope'
+import { __ } from '@/lib/translate'
 import type {
 	ResourceType,
 	TeamMemberRoleAssignment,
@@ -135,13 +136,13 @@ const dialogOptions = computed(() => ({
 	size: 'lg' as const,
 	actions: [
 		{
-			label: 'Add role',
+			label: __('Add role'),
 			onClick: addRow,
 			class: 'mr-auto',
 			iconLeft: 'lucide-plus',
 		},
 		{
-			label: 'Save',
+			label: __('Save'),
 			variant: 'solid' as const,
 			disabled: !canSubmit.value,
 			onClick: submit,
@@ -153,7 +154,7 @@ const dialogOptions = computed(() => ({
 <template>
 	<Dialog
 		v-model="open"
-		title="Manage access"
+		:title="__('Manage access')"
 		:size="dialogOptions.size"
 		:actions="dialogOptions.actions"
 	>
@@ -162,7 +163,7 @@ const dialogOptions = computed(() => ({
 				<Alert
 					v-if="formError"
 					theme="red"
-					title="Couldn't update access"
+					:title="__('Couldn\'t update access')"
 					:description="formError"
 				/>
 				<div class="flex items-center gap-3">
@@ -178,19 +179,19 @@ const dialogOptions = computed(() => ({
 				</div>
 
 				<p class="text-p-sm text-ink-gray-5">
-					Assign roles to specific servers or sites, or to all resources.
+					{{ __('Assign roles to specific servers or sites, or to all resources.') }}
 				</p>
 
 				<Alert
 					v-if="dominatingIndex !== -1"
 					theme="blue"
-					title="Admin already covers everything"
+					:title="__('Admin already covers everything')"
 				/>
 
 				<Alert
 					v-if="shadowedIndexes.size"
 					theme="blue"
-					title="A role on all resources already covers the rest"
+					:title="__('A role on all resources already covers the rest')"
 				/>
 
 				<div class="space-y-2">
@@ -203,10 +204,12 @@ const dialogOptions = computed(() => ({
 						<Select
 							v-model="row.role"
 							:options="roleOptions"
-							placeholder="Choose a role"
+							:placeholder="__('Choose a role')"
 							class="min-w-0 flex-1"
 						/>
-						<span class="shrink-0 text-p-sm text-ink-gray-5">on</span>
+						<span class="shrink-0 text-p-sm text-ink-gray-5"
+							>{{ __('on') }}</span
+						>
 						<Select
 							:model-value="resourceKey(row.resource_type, row.resource_name)"
 							:options="resourceOptions"
@@ -216,7 +219,7 @@ const dialogOptions = computed(() => ({
 						<Button
 							variant="ghost"
 							icon="lucide-x"
-							label="Remove role"
+							:label="__('Remove role')"
 							@click="removeRow(index)"
 						/>
 					</div>
