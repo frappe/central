@@ -132,7 +132,8 @@ class TestReadiness(IntegrationTestCase):
 		frappe.db.set_value("Virtual Machine", server, "status", "Running")
 		self.assertEqual(_found("S2"), [])
 
-		frappe.db.set_value("Subscription", self.subscription, "enabled", 0)
+		# An enabled subscription whose segment is paused bills nothing.
+		add_segment(self.subscription, "Paused", None, "2026-06-11 00:00:00")
 		self.assertEqual(len(_found("S2")), 1)
 
 	def test_terminated_server_still_billed_is_found(self):
@@ -140,7 +141,11 @@ class TestReadiness(IntegrationTestCase):
 		frappe.db.set_value("Virtual Machine", server, "status", "Terminated")
 		self.assertEqual(len(_found("S3")), 1)
 
+		# A disabled subscription still bills while its segment is open.
 		frappe.db.set_value("Subscription", self.subscription, "enabled", 0)
+		self.assertEqual(len(_found("S3")), 1)
+
+		add_segment(self.subscription, "Paused", None, "2026-06-11 00:00:00")
 		self.assertEqual(_found("S3"), [])
 
 	def test_promotional_credit_with_no_expiry_is_found(self):

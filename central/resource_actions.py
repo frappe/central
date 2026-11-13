@@ -14,6 +14,7 @@ from frappe.query_builder.functions import Count, Sum
 from frappe.utils import cint, flt
 from pydantic import ValidationError
 
+from central.billing.catalog import subscriptions
 from central.billing.catalog.composition import (
 	COMPUTE,
 	DISK,
@@ -196,22 +197,33 @@ def submit_command(
 		)
 	if action == "restart" and server.status != "Running":
 		frappe.throw(_("Only a running server can be restarted."))
-	if action == "start" and frappe.db.exists(
-		"Subscription", {"server_id": server.name, "account_standing": "Suspended"}
-	):
-		throw_action_error(
-			"PAYMENT_OVERDUE", message=_("This server is suspended because an invoice is unpaid.")
-		)
-	if action == "start" and frappe.db.exists("Site", {"server": server.name, "trial_state": "Ended"}):
-		if has_active_payment_method(team):
-			frappe.throw(_("This trial has ended. Choose Keep this site to start it on its paid plan."))
-		frappe.throw(_("This trial has ended. Add a payment method to start it again."))
+	if action == "start":
+		_prepare_start(server, team)
 	if action == "terminate" and server.is_termination_protected:
 		frappe.throw(_("Turn off termination protection before you terminate this server."))
 	if take_snapshot:
 		server.require_server_access()
 
 	return _queue_command(action, server, take_snapshot=take_snapshot)
+
+
+def _prepare_start(server, team: str) -> None:
+	"""Refuse a start the server's billing does not allow, and resume paused billing."""
+	if frappe.db.exists("Subscription", {"server_id": server.name, "account_standing": "Suspended"}):
+		throw_action_error(
+			"PAYMENT_OVERDUE", message=_("This server is suspended because an invoice is unpaid.")
+		)
+	if frappe.db.exists("Site", {"server": server.name, "trial_state": "Ended"}):
+		if has_active_payment_method(team):
+			frappe.throw(_("This trial has ended. Choose Keep this site to start it on its paid plan."))
+		frappe.throw(_("This trial has ended. Add a payment method to start it again."))
+
+	subscription = frappe.db.get_value(
+		"Subscription", {"server_id": server.name}, "name", order_by="creation desc"
+	)
+	if subscription:
+		# Start is the server action the user may take, so it resumes billing without billing:manage.
+		subscriptions.reopen_paused_billing(subscription, changed_by=frappe.session.user)
 
 
 def submit_billing_command(action: str, server_name: str) -> ActionStatus:
