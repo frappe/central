@@ -176,8 +176,8 @@ class TestCollectionMode(IntegrationTestCase):
 		self.assertEqual(st["collection_mode"], "Auto Charge")
 		frappe.db.delete("Payment Method", {"team": TEAM})
 
-	def test_a_method_awaiting_reauth_does_not_count(self):
-		"""It is skipped by the charge loop, so it cannot be what auto-pay rests on."""
+	def test_a_method_awaiting_reauth_still_counts(self):
+		"""It is still charged, up to its own maximum."""
 		from central.billing.tests.test_stripe_adapter import make_stripe_gateway
 
 		frappe.db.delete("Payment Method", {"team": TEAM})
@@ -195,8 +195,7 @@ class TestCollectionMode(IntegrationTestCase):
 			}
 		).insert(ignore_permissions=True)
 		_set_mode(TEAM, "Prepaid")
-		with self.assertRaises(frappe.ValidationError):
-			collection_mode.choose(TEAM, "Auto Charge")
+		self.assertEqual(collection_mode.choose(TEAM, "Auto Charge")["collection_mode"], "Auto Charge")
 		frappe.db.delete("Payment Method", {"team": TEAM})
 
 	def test_invalid_mode_choice_is_rejected(self):

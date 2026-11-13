@@ -31,11 +31,11 @@ from central.billing.payments import charges, decline
 
 
 def ordered_methods(team: str) -> list:
-	"""A team's chargeable methods, primary first. Skips non-active and methods
-	whose mandate needs re-authorisation."""
+	"""A team's chargeable methods, primary first. A mandate awaiting re-authorisation
+	stays in: `collection_mode.method_limit` holds it to its own maximum."""
 	return frappe.get_all(
 		"Payment Method",
-		filters={"team": team, "status": "Active", "reauth_required": 0},
+		filters={"team": team, "status": "Active"},
 		order_by="priority asc, creation asc",
 		fields=["name", "gateway", "priority", "mandate_max_amount"],
 	)
@@ -76,7 +76,7 @@ def get_teams_with_retry_rail(teams: set[str]) -> set[str]:
 	return set(
 		frappe.get_all(
 			"Payment Method",
-			filters={"team": ["in", list(allowed)], "status": "Active", "reauth_required": 0},
+			filters={"team": ["in", list(allowed)], "status": "Active"},
 			pluck="team",
 			distinct=True,
 		)

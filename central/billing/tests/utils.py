@@ -90,6 +90,8 @@ class BillingTestCase(IntegrationTestCase):
 		"User",
 		"Webhook Event",
 		"Notification Log",
+		"Billing Notification Log",
+		"Team Notification",
 		"Billing Event",
 		"Billing Run",
 		"Billing Run Team",

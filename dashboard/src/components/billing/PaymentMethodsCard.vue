@@ -228,7 +228,7 @@ const showTopup = ref(false)
 							{{ pm.display_label || pm.method_type }}
 						</span>
 						<Badge
-							v-if="pm.reauth_required"
+							v-if="pm.reauth_required && pm.status === 'Active'"
 							theme="amber"
 							label="Re-auth needed"
 						/>

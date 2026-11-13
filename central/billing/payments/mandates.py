@@ -556,10 +556,10 @@ def cancel_mandate(payment_method: str):
 
 
 def reauthorise_mandate(payment_method: str) -> dict:
-	"""Start a fresh authorisation at the team's current (raised) cap.
+	"""Start a fresh authorisation at the ceiling a new mandate gets.
 
-	The existing mandate stays active at its old ceiling until the new one is
-	confirmed — the customer is never left without a working mandate.
+	The flagged mandate is still charged, up to its own maximum, until the new one
+	is confirmed and supersedes it.
 	"""
 	method = frappe.get_doc("Payment Method", payment_method)
 	return setup_mandate(method.team, method.gateway, customer_id=method.gateway_customer_id)
@@ -585,21 +585,31 @@ def reconcile_mandates_to_cap(team: str):
 	"""After a tier change, flag/clear re-authorisation on active mandates.
 
 	An active mandate below the ceiling a new mandate would get needs re-consent
-	(the team is held at the old ceiling until then). A mandate that already
-	covers it, e.g. after a demotion, is cleared.
-	Returns the list of mandates newly requiring re-authorisation.
+	(it is still charged, up to its own maximum). A mandate that already covers
+	it, e.g. after a demotion, is cleared. The team is asked once, when a mandate
+	is first flagged. Returns the mandates newly flagged.
 	"""
 	flagged = []
 	for method in frappe.get_all(
 		"Payment Method",
 		filters={"team": team, "method_type": MANDATE_METHOD, "status": "Active"},
-		fields=["name", "gateway", "mandate_max_amount"],
+		fields=["name", "gateway", "mandate_max_amount", "reauth_required"],
 	):
 		needs = payments.mandate_ceiling(team, method.gateway, "INR") > (method.mandate_max_amount or 0)
 		frappe.db.set_value("Payment Method", method.name, "reauth_required", 1 if needs else 0)
-		if needs:
+		if needs and not method.reauth_required:
 			flagged.append(method.name)
+			_ask_to_reauthorise(team, method.name)
 	return flagged
+
+
+def _ask_to_reauthorise(team: str, payment_method: str):
+	"""Tell the team a mandate needs authorising again."""
+	from central.billing.platform import notifications
+
+	notifications.notify(
+		team, "Mandate Reauth", reference_doctype="Payment Method", reference_name=payment_method
+	)
 
 
 def _retire_superseded_mandates(new_method):

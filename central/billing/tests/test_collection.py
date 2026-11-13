@@ -173,14 +173,14 @@ class TestSyncFallback(FallbackTestBase):
 		)
 		self.assertEqual((backup.payment_method, backup.status), (self.backup, "Captured"))
 
-	def test_reauth_required_method_is_skipped(self):
+	def test_a_method_awaiting_reauth_is_still_charged(self):
 		frappe.db.set_value("Payment Method", self.backup, "reauth_required", 1)
 		inv = self._open_invoice()
-		with stub_charges([(False, None)]) as adapter:
-			result = collection.collect_invoice(inv)
+		with stub_charges([(False, None), (True, "pi_backup")]) as adapter:
+			collection.collect_invoice(inv)
 
-		self.assertEqual(adapter.charge.call_count, 1)  # only the primary; backup skipped
-		self.assertEqual(result["reason"], "no_method")
+		self.assertEqual(adapter.charge.call_count, 2)
+		self.assertEqual(self._attempts()[1].payment_method, self.backup)
 
 
 class TestWebhookFallback(FallbackTestBase):

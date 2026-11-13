@@ -5,7 +5,7 @@
 import frappe
 
 from central.billing.catalog.entitlements import recompute_trust_tier
-from central.billing.payments import mandates, payments
+from central.billing.payments import collection, collection_mode, mandates, payments
 from central.billing.tests.test_entitlements import make_ladder
 from central.billing.tests.test_mandates import CALLBACK, GATEWAY, make_gateway, stub_adapter
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
@@ -15,6 +15,7 @@ from central.billing.tests.utils import (
 	ensure_team,
 	set_team_tier,
 )
+from central.patches.v0_0 import flag_upi_mandates_below_the_gst_ceiling
 
 TEAM = "team-mandate-gst"
 
@@ -78,6 +79,29 @@ class TestUpiMandate(MandateGstTestBase):
 		pm = self._active_mandate()
 		frappe.db.set_value("Payment Method", pm, "mandate_max_amount", 100)  # the pre-GST ceiling
 		self.assertEqual(mandates.reconcile_mandates_to_cap(TEAM), [pm])
+
+	def test_a_flagged_mandate_is_still_charged_up_to_its_maximum(self):
+		recompute_trust_tier(TEAM, paid_invoice_count=0, cumulative_paid=0)
+		pm = self._active_mandate()
+		frappe.db.set_value("Payment Method", pm, "mandate_max_amount", 100)
+		mandates.reconcile_mandates_to_cap(TEAM)
+
+		[method] = collection.ordered_methods(TEAM)
+		self.assertEqual(method.name, pm)
+		self.assertTrue(collection_mode.is_within_method_limit(method, "INR", 100))
+		self.assertFalse(collection_mode.is_within_method_limit(method, "INR", 101))
+
+	def test_the_patch_flags_a_short_mandate_and_asks_once(self):
+		recompute_trust_tier(TEAM, paid_invoice_count=0, cumulative_paid=0)
+		pm = self._active_mandate()
+		frappe.db.set_value("Payment Method", pm, "mandate_max_amount", 100)
+
+		flag_upi_mandates_below_the_gst_ceiling.execute()
+		flag_upi_mandates_below_the_gst_ceiling.execute()
+
+		self.assertTrue(frappe.db.get_value("Payment Method", pm, "reauth_required"))
+		asks = {"team": TEAM, "event_type": "Mandate Reauth", "reference_name": pm}
+		self.assertEqual(frappe.db.count("Billing Notification Log", asks), 1)
 
 	def test_a_mandate_with_gst_needs_no_re_authorisation(self):
 		recompute_trust_tier(TEAM, paid_invoice_count=0, cumulative_paid=0)
