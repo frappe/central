@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Alert } from 'frappe-ui'
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import CollectionActionBanner from '@/components/billing/CollectionActionBanner.vue'
 import CycleBreakdownPanel from '@/components/billing/CycleBreakdownPanel.vue'
 import CycleFacts from '@/components/billing/CycleFacts.vue'
@@ -23,6 +24,9 @@ import { useBillingOverview } from '@/composables/useBillingOverview'
 import { useBillingReports } from '@/composables/useBillingReports'
 import { useBillingSetup } from '@/composables/useBillingSetup'
 import { useServerMapData } from '@/composables/useServerMapData'
+import { useSession } from '@/composables/useSession'
+import { fetchBillingSetup } from '@/data/billingSetup'
+import { parseTopupAmount } from '@/lib/topupAmount'
 
 const { complete, setupDialogOpen, requireSetup } = useBillingSetup()
 const { currency, reloadMoney } = useBillingOverview()
@@ -64,6 +68,7 @@ const showProjects = trayModel('projects')
 const showTiers = trayModel('tiers')
 
 const showTopup = ref(false)
+const topupAmount = ref<number>()
 
 // The trial's Upgrade dialog opens here, so the customer stays on Billing.
 const { servers } = useServerMapData()
@@ -79,9 +84,30 @@ const showUpgrade = computed({
 	},
 })
 
-const onAddCredits = () => {
+const onAddCredits = (amount?: number) => {
+	topupAmount.value = amount
 	if (requireSetup()) showTopup.value = true
 }
+
+// A top-up reminder links here with the amount to add. The param is dropped once read,
+// so a refresh does not open the dialog again. The setup check loads first, so a
+// complete profile is never sent to the billing-details dialog.
+const route = useRoute()
+const router = useRouter()
+const { activeTeam } = useSession()
+watch(
+	() => route.query.topup,
+	async (value) => {
+		if (value === undefined) return
+		const { topup: _topup, ...query } = route.query
+		router.replace({ query })
+		const amount = parseTopupAmount(value)
+		if (!amount) return
+		await fetchBillingSetup(activeTeam.value)
+		onAddCredits(amount)
+	},
+	{ immediate: true },
+)
 </script>
 
 <template>
@@ -100,7 +126,7 @@ const onAddCredits = () => {
 				description="Currency, legal name, and address are needed to add credit, save a payment method, and provision servers."
 				:primary-action="{ label: 'Add billing details', onClick: () => { setupDialogOpen = true } }"
 			/>
-			<CollectionActionBanner />
+			<CollectionActionBanner @add-credit="onAddCredits" />
 			<TrialBillingBanner @upgrade="upgradeServerName = $event" />
 			<GstStatusBanner @edit="setupDialogOpen = true" />
 
@@ -117,7 +143,7 @@ const onAddCredits = () => {
 					:wallet-active="showWalletHistory"
 					@open-schedule="showSchedule = true"
 					@open-wallet="showWalletHistory = true"
-					@add-credit="onAddCredits"
+					@add-credit="onAddCredits()"
 				/>
 			</div>
 
@@ -140,7 +166,12 @@ const onAddCredits = () => {
 	</div>
 
 	<EditBillingProfileDialog v-model="setupDialogOpen" />
-	<TopupDialog v-model="showTopup" :currency="currency" @done="reloadMoney" />
+	<TopupDialog
+		v-model="showTopup"
+		:currency="currency"
+		:initial-amount="topupAmount"
+		@done="reloadMoney"
+	/>
 	<ResizeServerDialog
 		v-model:open="showUpgrade"
 		:server="upgradeServer"

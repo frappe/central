@@ -483,6 +483,19 @@ export interface CollectionStatus {
 	wallet_balance: number
 	shortfall: number
 	currency: Currency
+	/** What to add to the wallet before the next payment date; null when the card or UPI can pay. */
+	top_up_due: TopUpDue | null
+}
+
+/** A top-up the card or UPI limit makes necessary before the payment date (INR only). */
+export interface TopUpDue {
+	/** The bill less the wallet, rounded up to ₹100. */
+	amount: number
+	/** ISO payment date. */
+	date: string
+	/** Most the card or UPI may pay automatically; 0 when none is saved. */
+	limit: number
+	has_method: boolean
 }
 
 export type NotificationCategory = 'Billing' | 'Server' | 'Team' | 'Trial'

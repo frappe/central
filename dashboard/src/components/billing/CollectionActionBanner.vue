@@ -10,9 +10,11 @@ import { useCapabilities } from '@/composables/useCapabilities'
 import { useSession } from '@/composables/useSession'
 import { whenTeamReady } from '@/composables/useTeamScope'
 import { getErrorMessage, successToast } from '@/lib/feedback'
-import { money } from '@/lib/format'
+import { formatDate, money } from '@/lib/format'
 import { __ } from '@/lib/translate'
 import type { CollectionStatus } from '@/types/billing'
+
+const emit = defineEmits<{ 'add-credit': [amount: number] }>()
 
 const { activeTeam } = useSession()
 const { canManageBilling } = useCapabilities()
@@ -28,6 +30,30 @@ whenTeamReady(() => status.reload())
 const s = computed(() => status.data)
 const show = computed(() => !!s.value?.action_required)
 const currency = computed(() => s.value?.currency || 'INR')
+
+// The next bill, less the wallet, is above what the card or UPI may pay automatically:
+// ask for the top-up before the payment date. Services keep running either way.
+const topUp = computed(() => (show.value ? null : s.value?.top_up_due))
+const topUpTitle = __('Add credit before your payment date')
+const topUpText = computed(() => {
+	const due = topUp.value
+	if (!due) return ''
+	const amount = money(due.amount, currency.value, { trimTrailingZeros: true })
+	const date = formatDate(due.date)
+	if (!due.has_method)
+		return __(
+			'Add {0} to your wallet by {1}. No card or UPI is saved to pay the rest.',
+			[amount, date],
+		)
+	return __(
+		'Add {0} to your wallet by {1}. Your card or UPI pays only amounts up to {2}.',
+		[
+			amount,
+			date,
+			money(due.limit, currency.value, { trimTrailingZeros: true }),
+		],
+	)
+})
 
 const choosing = ref(false)
 const chosen = ref<string | null>(null) // 'Manual Checkout' | 'Prepaid'
@@ -140,6 +166,15 @@ const options = computed(() => [
 		:primary-action="canManageBilling ? { label: 'Choose how to pay', onClick: () => { choosing = true } } : undefined"
 	>
 		<template #description>{{ reasonText }}</template>
+	</Alert>
+
+	<Alert
+		v-else-if="topUp"
+		theme="blue"
+		:title="topUpTitle"
+		:primary-action="canManageBilling ? { label: __('Add credit'), onClick: () => emit('add-credit', topUp!.amount) } : undefined"
+	>
+		<template #description>{{ topUpText }}</template>
 	</Alert>
 
 	<Dialog v-model:open="choosing" title="How do you want to pay?">

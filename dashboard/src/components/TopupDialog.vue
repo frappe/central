@@ -31,11 +31,18 @@ import type { PaymentInstrument } from '@/types/billing'
 // `instrument` is set when the caller already knows what the customer is paying
 // with — the Amex/Diners route says so by arriving here at all. Asking again is
 // the whole reason that route felt broken, so the picker is skipped and the
-// instrument is stated instead.
-const props = withDefaults(
-	defineProps<{ currency?: string; instrument?: string }>(),
-	{ currency: 'INR', instrument: undefined },
-)
+// instrument is stated instead. `initialAmount` fills the amount on a fresh open, for a
+// top-up the customer was asked for (a reminder link or the billing banner).
+interface TopupDialogProps {
+	currency?: string
+	instrument?: string
+	initialAmount?: number
+}
+const props = withDefaults(defineProps<TopupDialogProps>(), {
+	currency: 'INR',
+	instrument: undefined,
+	initialAmount: undefined,
+})
 const open = defineModel<boolean>({ default: false })
 const emit = defineEmits<{ done: [res?: unknown] }>()
 
@@ -226,6 +233,9 @@ watch(open, (isOpen) => {
 		return
 	}
 	options.reload()
+	// A return from the Razorpay sheet keeps the amount the customer had.
+	if (props.initialAmount && amount.value === undefined)
+		amount.value = props.initialAmount
 	// A return from the Razorpay sheet keeps the customer's pick and its error;
 	// only a fresh open (form reset, so no instrument) takes the caller's instrument.
 	if (props.instrument && !instrument.value) {
