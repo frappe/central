@@ -54,6 +54,8 @@ _FAILURE_EVENTS = {
 	"PAYMENT.CAPTURE.DENIED",
 }
 
+TOPUP_CANCELLED_EVENT = "payment_intent.canceled"
+
 _TERMINAL_ATTEMPT = ("Captured", "Failed", "Refunded")
 _UNSETTLED_INVOICE = ("Outstanding", "Overdue")
 
@@ -841,6 +843,10 @@ def _prune_webhook_events(cutoff) -> int:
 
 def _apply_topup_event(event, order, payment, is_success: bool, decline: dict | None) -> dict:
 	"""Credit a top-up for its captured payment, or keep why its payment was declined."""
+	# A cancelled intent is not a new refusal, though it still carries the last one, already counted.
+	if event.event_type == TOPUP_CANCELLED_EVENT:
+		_mark_event(event, "Ignored")
+		return {"handled": False, "reason": "topup_cancelled"}
 	if decline is not None:
 		order.record_decline(decline, event.gateway_event_id)
 		_mark_event(event, "Processed")

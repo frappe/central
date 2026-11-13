@@ -83,9 +83,9 @@ class TopupOrder(Document):
 	def record_gateway_order(self, gateway_order_id: str) -> None:
 		self.db_set("gateway_order_id", gateway_order_id)
 
-	def expire(self) -> None:
+	def expire(self, actor: str = "reconciliation", reason: str | None = None) -> None:
 		"""Stop asking the gateway about an order nobody paid."""
-		transition(self, "Expired", actor="reconciliation", correlation=self.team)
+		transition(self, "Expired", reason=reason, actor=actor, correlation=self.team)
 		save_billing_record(self)
 
 	def record_decline(self, failure: decline.Failure, gateway_event_id: str) -> None:

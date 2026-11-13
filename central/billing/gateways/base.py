@@ -301,6 +301,16 @@ class GatewayAdapter(ABC):
 		after the session is confirmed paid (see get_checkout_session)."""
 		raise GatewayUnsupported(f"{type(self).__name__} does not support create_checkout_session")
 
+	def cancel_setup(self, setup_reference: str) -> str:
+		"""Close an unfinished payment method setup, so no card can be tried on it. Returns the
+		status after the call: "canceled" or "expired" when closed, else the status the
+		gateway kept because the setup finished or is processing."""
+		raise GatewayUnsupported(f"{type(self).__name__} does not support cancel_setup")
+
+	def cancel_order(self, order_id: str) -> str:
+		"""Close an unpaid top-up order, as `cancel_setup` closes a setup."""
+		raise GatewayUnsupported(f"{type(self).__name__} does not support cancel_order")
+
 	def get_checkout_session(self, session_id: str) -> dict:
 		"""Retrieve a hosted-checkout session to confirm it was paid (server-side)."""
 		raise GatewayUnsupported(f"{type(self).__name__} does not support get_checkout_session")

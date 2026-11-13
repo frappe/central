@@ -1,5 +1,10 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
+"""The wait after repeated failed payment method setups and top-ups.
+
+The lock is read from the failure Billing Events in FAILURE_EVENTS and the decline
+code in their `payload`. Any retention job must keep these events, with their payload,
+for at least LOOKBACK (77 days: 10 failures, each within 7 days of the next)."""
 
 import math
 from datetime import datetime, timedelta
@@ -57,7 +62,7 @@ def check(team: str, user: str | None = None) -> None:
 def wait_for(team: str, user: str | None = None) -> timedelta | None:
 	"""How long the team, or the user, must still wait. None when they need not."""
 	lockouts = [Lockout.for_team(team)]
-	if _is_person(user):
+	if is_person(user):
 		lockouts.append(Lockout.for_user(user, team))
 	waits = [wait for wait in (lockout.get_wait() for lockout in lockouts) if wait]
 	return max(waits, default=None)
@@ -87,14 +92,17 @@ def wait_message(wait: timedelta) -> str:
 
 
 def note_failure(team: str, user: str | None, failure_code: str | None, decline_code: str | None = None):
-	"""Tell the operators when a bank refusal is the one that starts the longest wait.
+	"""After a bank refusal that makes the team or the user wait, close their open gateway
+	setups and top-ups, and tell the operators when it starts the longest wait.
 
 	The team's run is reported first; a user's run only when the team's has not reached it."""
 	if not decline.is_bank_refusal(failure_code, decline_code):
 		return
+	if wait_for(team, user):
+		_enqueue_close(team, user)
 	if Lockout.for_team(team).get_count() == ALERT_AT:
 		_enqueue_alert(team, None)
-	elif _is_person(user) and Lockout.for_user(user, team).get_count() == ALERT_AT:
+	elif is_person(user) and Lockout.for_user(user, team).get_count() == ALERT_AT:
 		_enqueue_alert(team, user)
 
 
@@ -266,6 +274,16 @@ class _OwnedSubjects:
 		return condition
 
 
+def _enqueue_close(team: str, user: str | None) -> None:
+	# After commit, so the gateway is called only once the failure is on record.
+	frappe.enqueue(
+		"central.billing.payments.setup_lockout_cancel.close_open",
+		team=team,
+		user=user,
+		enqueue_after_commit=True,
+	)
+
+
 def _enqueue_alert(team: str, user: str | None) -> None:
 	frappe.enqueue(
 		"central.billing.payments.setup_lockout.alert_operators",
@@ -296,7 +314,7 @@ def _failure_query(event):
 	)
 
 
-def _is_person(user: str | None) -> bool:
+def is_person(user: str | None) -> bool:
 	return bool(user) and user not in _UNATTRIBUTED_USERS
 
 
