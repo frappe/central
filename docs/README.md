@@ -10,6 +10,7 @@ This folder holds the customer documentation site for Frappe Cloud. It uses Vite
 | `content/public/media/{light,dark}/` | Screenshots (`.webp`) and recordings (`.mp4` with a `.webp` poster), one file per theme. |
 | `.vitepress/` | Site configuration, sidebar, and theme components. |
 | `capture/` | The demo seed and the scripts that capture media from the real console. |
+| `content/apps/` | The app guides. `scripts/sync-apps.mjs` copies them from [one-click-templates](https://github.com/frappe/one-click-templates) before each build. Do not edit them here. |
 
 Do not put operator procedures, internal hostnames, or credentials in these pages. The operator handbook is a separate site.
 
@@ -21,7 +22,7 @@ yarn install
 yarn dev
 ```
 
-Open `http://localhost:5173`. Set `DOCS_BASE` when the host serves the site below a path, such as `DOCS_BASE=/cloud/ yarn build`.
+Open `http://localhost:5173`. `yarn dev` and `yarn build` clone `frappe/one-click-templates` for the app guides. To preview your own edits to the guides, set `ONE_CLICK_DOCS` to your `_docs` folder: `ONE_CLICK_DOCS=../../one-click-templates/_docs yarn dev`. Set `DOCS_BASE` when the host serves the site below a path, such as `DOCS_BASE=/cloud/ yarn build`.
 
 ## Configuration
 
@@ -32,7 +33,7 @@ Open `http://localhost:5173`. Set `DOCS_BASE` when the host serves the site belo
 
 ## Publication
 
-`.github/workflows/docs.yml` builds the site and publishes it to GitHub Pages at `https://frappe.github.io/central/`. It runs on a push to `develop` that changes `docs/`, and on demand from the Actions tab.
+`.github/workflows/docs.yml` builds the site and publishes it to GitHub Pages at `https://frappe.github.io/central/`. It runs on a push to `develop` that changes `docs/`, every day to pick up changes to the app guides, and on demand from the Actions tab.
 
 Before the first run, a repository admin sets **Settings > Pages > Build and deployment > Source** to **GitHub Actions**.
 

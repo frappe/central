@@ -12,6 +12,7 @@ from central.iam import can, user_has_operator_bypass
 from central.infrastructure.doctype.pilot_credential.pilot_credential import PilotCredential
 from central.infrastructure.doctype.region.region import Region
 from central.infrastructure.doctype.user_mail_account.user_mail_account import UserMailAccount
+from central.integrations.images import APP_PURPOSE
 from central.services.doctype.ai_trial_key.ai_trial_key import AITrialKey
 from central.sso import mint_bench_login
 from central.utils.units import mebibytes_to_gigabytes, millicores_to_vcpus
@@ -47,10 +48,12 @@ class VirtualMachine(Document):
 		admin_domain_diagnostic: DF.Code | None
 		admin_domain_error: DF.SmallText | None
 		admin_domain_task: DF.Data | None
+		application: DF.Data | None
 		atlas_image_id: DF.Data | None
 		atlas_host_id: DF.Data | None
 		atlas_vm_id: DF.Data | None
 		disk_gigabytes: DF.Float
+		documentation_url: DF.Data | None
 		firewall_rules: DF.JSON | None
 		frappe_version: DF.Data | None
 		gateway_url: DF.Data | None
@@ -118,6 +121,10 @@ class VirtualMachine(Document):
 				"disk_gigabytes": mebibytes_to_gigabytes(configuration.disk_mib),
 				"frappe_version": configuration.image_tags.get("frappe_version"),
 				"has_site": configuration.image_tags.get("has_site") == "1",
+				"application": configuration.image_tags.get("application")
+				if configuration.image_tags.get("purpose") == APP_PURPOSE
+				else None,
+				"documentation_url": configuration.documentation_url,
 				"ssh_keys": [{"team_ssh_key": key} for key in configuration.ssh_key_ids],
 				"has_public_ipv6": configuration.has_public_ipv6,
 				"is_firewall_enabled": configuration.is_firewall_enabled,

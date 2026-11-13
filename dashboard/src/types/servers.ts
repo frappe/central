@@ -46,6 +46,10 @@ export interface ServerOverview {
 		team_name: string
 		ssh_command: string | null
 		ssh_keys: ServerSSHKey[]
+		/** The one-click app the server was created from, or null for any other server. */
+		application: string | null
+		/** The https:// address of the app's guide, or null when it has none. */
+		documentation_url: string | null
 		has_public_ipv6: 0 | 1
 		is_firewall_enabled: 0 | 1
 		is_termination_protected: 0 | 1

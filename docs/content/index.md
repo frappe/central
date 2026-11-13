@@ -28,6 +28,7 @@ Get a server of your own in the region you choose. Run Frappe apps on it with Pi
 | Topic | What you can do |
 | --- | --- |
 | [Servers](/servers/) | [Create a server](/servers/create), [connect with SSH](/servers/access), [set firewall rules](/servers/networking), and [take snapshots](/servers/snapshots). |
+| [Apps](/apps/) | Create a [Redis](/apps/redis), [MariaDB](/apps/mariadb), or [Prometheus and Grafana](/apps/prometheus-and-grafana) server. |
 | [Pilot](/pilot/) | Manage [benches](/pilot/benches), [sites](/pilot/sites), [apps](/pilot/apps), [domains](/pilot/domains), and [backups](/pilot/backups). |
 | [Team and access](/team/members) | [Invite members](/team/members) and give each one a [role](/team/roles). |
 | [Billing](/billing/) | Add a [payment method](/billing/payment-methods), read [invoices](/billing/invoices), and see your [spend limit](/billing/limits). |

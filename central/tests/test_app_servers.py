@@ -1,12 +1,12 @@
 from types import SimpleNamespace
 from unittest import TestCase
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import frappe
 import yaml
 
 from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
-from central.integrations.images import get_app_subdomain, get_minimum_shape, is_shape_enough
+from central.integrations.images import get_app_subdomain, get_minimum_shape, is_shape_enough, list_apps
 from central.resource_actions import _get_user_data, _validate_minimum_size
 
 SHAPE = {"cpu_millicores": 1000, "memory_mib": 1024, "disk_mib": 10240}
@@ -32,6 +32,61 @@ def requirements(inputs: list[dict] | None = None, **minimum: int) -> dict:
 
 def server_input(**values) -> SimpleNamespace:
 	return SimpleNamespace(**{"region": "region-a", "user_data": "", "app_inputs": {}, **values})
+
+
+class TestAppList(TestCase):
+	@patch("central.integrations.images._app_cargo")
+	def test_only_an_https_guide_is_linked(self, app_cargo) -> None:
+		guides = [
+			"https://docs.example.com/apps/redis",
+			"javascript:alert(1)",
+			"http://docs.example.com",
+			None,
+		]
+		app_cargo.return_value.get_apps.return_value = [{"documentation": guide} for guide in guides]
+
+		linked = [app["documentation"] for app in list_apps("team-a", "region-a")]
+
+		self.assertEqual(linked, ["https://docs.example.com/apps/redis", None, None, None])
+
+
+@patch("central.infrastructure.doctype.virtual_machine.virtual_machine.frappe.db.exists", return_value=False)
+@patch("central.infrastructure.doctype.virtual_machine.virtual_machine.frappe.get_doc")
+class TestAppServerRecord(TestCase):
+	def create(self, get_doc: MagicMock, image_tags: dict, documentation_url: str | None) -> dict:
+		configuration = SimpleNamespace(
+			image_id="image",
+			offering="apps",
+			plan=None,
+			cpu_millicores=1000,
+			memory_mib=1024,
+			disk_mib=10240,
+			image_tags=image_tags,
+			documentation_url=documentation_url,
+			ssh_key_ids=[],
+			has_public_ipv6=False,
+			is_firewall_enabled=False,
+		)
+		action = SimpleNamespace(
+			title="cache",
+			team="team-a",
+			region="region-a",
+			remote_vm_id="vm-1",
+			get_configuration=lambda: configuration,
+		)
+		VirtualMachine.create_from_action(action, "server-1")
+		return get_doc.call_args.args[0]
+
+	def test_an_app_server_keeps_its_app_and_guide(self, get_doc, _exists) -> None:
+		guide = "https://docs.example.com/apps/redis"
+		record = self.create(get_doc, APP_IMAGE["tags"], guide)
+
+		self.assertEqual((record["application"], record["documentation_url"]), ("redis", guide))
+
+	def test_any_other_server_has_no_app(self, get_doc, _exists) -> None:
+		record = self.create(get_doc, {"purpose": "pilot", "application": "erpnext"}, None)
+
+		self.assertEqual((record["application"], record["documentation_url"]), (None, None))
 
 
 class TestAppSize(TestCase):

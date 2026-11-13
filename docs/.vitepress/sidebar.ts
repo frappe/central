@@ -1,4 +1,20 @@
+import { readdirSync, readFileSync } from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import type { SidebarSection } from '../node_modules/frappe-ui/vitepress/index.node'
+
+const appsDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../content/apps')
+
+/** One item per app guide that scripts/sync-apps.mjs copied, the overview first. */
+function getAppItems() {
+	const pages = readdirSync(appsDir).filter((file) => file.endsWith('.md') && file !== 'index.md')
+	const items = pages.sort().map((file) => ({
+		text: readFileSync(path.join(appsDir, file), 'utf8').match(/^title: (.+)$/m)![1],
+		link: `/apps/${file.replace(/\.md$/, '')}`,
+	}))
+
+	return [{ text: 'Apps', link: '/apps/' }, ...items]
+}
 
 export const sidebar: SidebarSection[] = [
 	{
@@ -24,6 +40,10 @@ export const sidebar: SidebarSection[] = [
 			{ text: 'Snapshots', link: '/servers/snapshots' },
 			{ text: 'Resize, stop, and terminate', link: '/servers/lifecycle' },
 		],
+	},
+	{
+		text: 'Apps',
+		items: getAppItems(),
 	},
 	{
 		text: 'Pilot',
