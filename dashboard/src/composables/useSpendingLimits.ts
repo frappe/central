@@ -36,7 +36,7 @@ export function useSpendingLimits() {
 	const currency = computed(() => tier.data?.currency || 'INR')
 	const current = computed(() => tier.data?.current)
 	const progress = computed(() => tier.data?.progress)
-	// The spend limit is before tax (D-13), so it is compared with spend before tax.
+	// The spend limit is before tax, so it is compared with spend before tax.
 	const monthlySpend = computed(() => forecast.data?.subtotal)
 	const nextLevel = computed(() => tier.data?.next ?? null)
 

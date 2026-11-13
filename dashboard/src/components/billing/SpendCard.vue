@@ -61,7 +61,7 @@ const limit = computed(() => Number(tierCurrent.value?.max_spend ?? 0))
 const chartRows = computed(() => {
 	const rows = history.value?.months ?? []
 
-	// Before tax, like the spend limit (D-13): taxes are added on top of both.
+	// Before tax, like the spend limit: taxes are added on top of both.
 	const accrued = Number(
 		forecast.data?.measured ?? forecast.data?.subtotal ?? 0,
 	)
