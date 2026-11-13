@@ -50,16 +50,14 @@ website_user_home_page = "dashboard"
 
 # required_apps = []
 
-# Each item in the list will be shown as an app in the apps page
-# add_to_apps_screen = [
-# 	{
-# 		"name": "central",
-# 		"logo": "/assets/central/logo.png",
-# 		"title": "Central",
-# 		"route": "/central",
-# 		"has_permission": "central.api.permission.has_app_permission"
-# 	}
-# ]
+add_to_apps_screen = [
+	{
+		"name": "central",
+		"logo": "/assets/central/logo.svg",
+		"title": "Central",
+		"route": "/desk/central",
+	}
+]
 
 # Includes in <head>
 # ------------------
