@@ -110,6 +110,24 @@ class TestFilingFollowsTheRecordedState(SyncTestCase):
 		self.assertEqual(self._sales_invoice()["place_of_supply"], "27-Maharashtra")
 		self.assertEqual(_recorded(inv), ("Maharashtra", 1))
 
+	def test_an_existing_filing_is_left_for_the_backfill_to_read(self):
+		billing_team(TEAM, state="Karnataka")
+		inv = self._invoice(team=TEAM)
+		frappe.db.set_value("Invoice", inv, {"output_tax_type": "GST", "due_date": "2026-09-01"})
+		marker = erpnext_sync._marker(frappe.get_doc("Invoice", inv))
+		self.remote.records[("Sales Invoice", "SINV-LOST")] = {
+			"remarks": marker,
+			"docstatus": 1,
+			"place_of_supply": "27-Maharashtra",
+		}
+		erpnext_sync.sync_invoice(inv)
+		self.assertEqual(frappe.db.get_value("Invoice", inv, "erpnext_invoice"), "SINV-LOST")
+		self.assertEqual(_recorded(inv), (None, 0))
+		frappe.cache().delete_value(CURSOR_KEY)
+		self.addCleanup(frappe.cache().delete_value, CURSOR_KEY)
+		record_missing_gst_states()
+		self.assertEqual(_recorded(inv), ("Maharashtra", 1))
+
 
 class TestRefundFollowsTheRecordedState(CorrectionsTestCase):
 	def test_returned_gst_is_filed_as_the_invoice_was(self):

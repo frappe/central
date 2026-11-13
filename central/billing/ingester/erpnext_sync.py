@@ -59,7 +59,6 @@ def sync_invoice(invoice: str) -> dict:
 	try:
 		customer = _customer_for(inv.team)
 		if not inv.erpnext_invoice:
-			_record_state_before_filing(inv)
 			inv.erpnext_invoice = _issue(inv, customer)
 			frappe.db.set_value("Invoice", invoice, "erpnext_invoice", inv.erpnext_invoice)
 		if _card_attempt(inv) and not inv.payment_record_id:
@@ -150,7 +149,8 @@ def _customer_for(team: str) -> str:
 
 def _record_state_before_filing(inv) -> None:
 	"""An invoice issued before states were recorded is filed under its state at issue,
-	the same one the daily backfill would record, so the two never disagree."""
+	the same one the daily backfill would record, so the two never disagree.
+	Only for a new filing: an existing one is read by the backfill instead."""
 	if gst.is_state_recorded(inv) or inv.currency != "INR" or not has_gst_charged(inv):
 		return
 	inv.gst_state, inv.gst_state_recorded = state_at_issue(inv), 1
@@ -166,6 +166,7 @@ def _issue(inv, customer: str) -> str:
 	)
 	if existing:
 		return existing[0].name
+	_record_state_before_filing(inv)
 	return connection.post("api/resource/Sales Invoice", _build_sales_invoice(inv, customer)).name
 
 
