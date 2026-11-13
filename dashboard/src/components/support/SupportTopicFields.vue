@@ -45,7 +45,7 @@ const issueOptions = computed(() =>
 				theme="red"
 				:title="getErrorMessage(error, 'The ticket categories could not load.')"
 			/>
-			<Button label="Retry" @click="emit('retryOptions')" />
+			<Button :label="__('Retry')" @click="emit('retryOptions')" />
 		</div>
 
 		<div
@@ -60,16 +60,16 @@ const issueOptions = computed(() =>
 		<div v-else class="grid grid-cols-2 gap-3">
 			<Select
 				v-model="category"
-				label="Topic"
+				:label="__('Topic')"
 				:options="categoryOptions"
-				placeholder="Choose a topic"
+				:placeholder="__('Choose a topic')"
 				required
 			/>
 			<Select
 				v-model="issueType"
-				label="Issue"
+				:label="__('Issue')"
 				:options="issueOptions"
-				placeholder="Choose the issue"
+				:placeholder="__('Choose the issue')"
 				:disabled="!category"
 				required
 			/>

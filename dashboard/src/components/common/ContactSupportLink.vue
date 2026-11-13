@@ -21,7 +21,7 @@ const ticketUrl = computed(() => getTicketUrl(props.context))
 		class="text-ink-gray-8 underline underline-offset-2 hover:text-ink-gray-9"
 		@click="openSupport(props.context)"
 	>
-		<slot>contact support</slot>
+		<slot>{{ __('contact support') }}</slot>
 	</button>
 	<a
 		v-else-if="ticketUrl"
@@ -29,7 +29,7 @@ const ticketUrl = computed(() => getTicketUrl(props.context))
 		target="_blank"
 		rel="noopener noreferrer"
 		class="text-ink-gray-8 underline underline-offset-2 hover:text-ink-gray-9"
-		><slot>contact support</slot></a
+		><slot>{{ __('contact support') }}</slot></a
 	>
-	<span v-else><slot>contact support</slot></span>
+	<span v-else><slot>{{ __('contact support') }}</slot></span>
 </template>

@@ -15,11 +15,13 @@ import { computed, ref, watch } from 'vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import ListViewPagination from '@/components/common/list-view/ListViewPagination.vue'
 import RowActionsMenu from '@/components/common/RowActionsMenu.vue'
+import TranslatedText from '@/components/common/TranslatedText.vue'
 import Quickstart from '@/components/services/llm/Quickstart.vue'
 import { useAI } from '@/composables/useAI'
 import { formatDateTime, timeAgo } from '@/lib/datetime'
 import { getErrorMessage, reportError } from '@/lib/feedback'
 import { compactNumber } from '@/lib/format'
+import { __ } from '@/lib/translate'
 import type { AIApiKey, AIRateLimit } from '@/types/ai'
 
 interface Props {
@@ -120,7 +122,7 @@ const geographyLabel = (name: string): string =>
 
 const rowActions = (key: AIApiKey): DropdownOptions => [
 	{
-		label: 'Revoke',
+		label: __('Revoke'),
 		icon: 'lucide-trash-2',
 		theme: 'red',
 		onClick: () => (revokeTarget.value = key),
@@ -296,6 +298,17 @@ const revoke = async (key: AIApiKey): Promise<void> => {
 		revokeError.value = getErrorMessage(e)
 	}
 }
+
+const geographyDescription = __(
+	"Where the key's requests are served. It cannot be changed later: create another key for another geography.",
+)
+const saveSpendingCapsErrorTitle = __("Couldn't save the spending caps")
+const revokePrepaidText = __(
+	"Revoke {0}? Any app using it stops working within a few minutes and its cap frees room for another key. This can't be undone.",
+)
+const revokeText = __(
+	"Revoke {0}? Any app using it stops working within a few minutes. This can't be undone.",
+)
 </script>
 
 <template>
@@ -306,8 +319,8 @@ const revoke = async (key: AIApiKey): Promise<void> => {
 					v-if="searchable"
 					v-model="query"
 					class="w-56"
-					placeholder="Search keys"
-					aria-label="Search keys by title"
+					:placeholder="__('Search keys')"
+					:aria-label="__('Search keys by title')"
 				>
 					<template #prefix>
 						<span
@@ -319,7 +332,7 @@ const revoke = async (key: AIApiKey): Promise<void> => {
 
 				<Button
 					v-if="canSetCaps"
-					label="Set caps"
+					:label="__('Set caps')"
 					icon-left="lucide-wallet"
 					@click="openCaps"
 				/>
@@ -330,8 +343,8 @@ const revoke = async (key: AIApiKey): Promise<void> => {
 			v-if="spend?.suspended"
 			class="mb-4"
 			theme="red"
-			title="Keys are paused"
-			description="An invoice is unpaid. Every key is refused until it is settled."
+			:title="__('Keys are paused')"
+			:description="__('An invoice is unpaid. Every key is refused until it is settled.')"
 		/>
 
 		<LoadingText v-if="apiKeysLoading && !apiKeys.length" :lines="3" />
@@ -343,7 +356,7 @@ const revoke = async (key: AIApiKey): Promise<void> => {
 			<p class="text-p-sm text-ink-gray-6">
 				{{ getErrorMessage(apiKeysError, "Couldn't load your keys.") }}
 			</p>
-			<Button label="Retry" @click="loadApiKeys" />
+			<Button :label="__('Retry')" @click="loadApiKeys" />
 		</div>
 
 		<div
@@ -351,11 +364,11 @@ const revoke = async (key: AIApiKey): Promise<void> => {
 			class="flex flex-wrap items-center justify-between gap-3 rounded-5 border border-dashed border-outline-gray-2 px-4 py-3"
 		>
 			<p class="text-p-sm text-ink-gray-6">
-				No keys yet. Create one to call the models from your own apps.
+				{{ __('No keys yet. Create one to call the models from your own apps.') }}
 			</p>
 			<Button
 				v-if="canManage"
-				label="Create key"
+				:label="__('Create key')"
 				icon-left="lucide-plus"
 				@click="openCreate"
 			/>
@@ -365,31 +378,31 @@ const revoke = async (key: AIApiKey): Promise<void> => {
 			v-else-if="!visibleKeys.length"
 			class="rounded-5 border border-dashed border-outline-gray-2 px-4 py-3 text-p-sm text-ink-gray-6"
 		>
-			No key is named that. Try another name, or clear the search.
+			{{ __('No key is named that. Try another name, or clear the search.') }}
 		</p>
 
 		<table v-else class="w-full border-separate border-spacing-0 text-left">
 			<thead>
 				<tr class="text-sm text-ink-gray-5">
-					<th scope="col" class="pb-2 font-normal">Name</th>
+					<th scope="col" class="pb-2 font-normal">{{ __('Name') }}</th>
 					<th scope="col" class="hidden pb-2 font-normal sm:table-cell">
-						Geography
+						{{ __('Geography') }}
 					</th>
 					<th
 						v-if="!sharedLimits"
 						scope="col"
 						class="hidden pb-2 font-normal lg:table-cell"
 					>
-						Rate limits
+						{{ __('Rate limits') }}
 					</th>
 					<th scope="col" class="hidden pb-2 font-normal md:table-cell">
-						Created
+						{{ __('Created') }}
 					</th>
 					<th v-if="prepaid" scope="col" class="w-36 pb-2 font-normal">
-						This month
+						{{ __('This month') }}
 					</th>
 					<th scope="col" class="w-10 pb-2">
-						<span class="sr-only">Actions</span>
+						<span class="sr-only">{{ __('Actions') }}</span>
 					</th>
 				</tr>
 			</thead>
@@ -408,7 +421,7 @@ const revoke = async (key: AIApiKey): Promise<void> => {
 							>
 								{{ key.title }}
 							</span>
-							<Badge v-if="key.status === 'revoked'" label="Revoked" />
+							<Badge v-if="key.status === 'revoked'" :label="__('Revoked')" />
 						</span>
 						<span
 							class="mt-0.5 flex items-center gap-1.5 font-mono text-xs text-ink-gray-5"
@@ -459,16 +472,16 @@ const revoke = async (key: AIApiKey): Promise<void> => {
 						<template v-if="key.status === 'active'">
 							<Tooltip
 								v-if="!key.cap"
-								text="Refused until it gets a monthly cap."
+								:text="__('Refused until it gets a monthly cap.')"
 							>
-								<Badge theme="orange" label="No cap yet" />
+								<Badge theme="orange" :label="__('No cap yet')" />
 							</Tooltip>
 							<Tooltip
 								v-else
 								:text="
 									isCapReached(key)
-										? 'Cap reached: refused until the month ends or the cap is raised.'
-										: `Spent this month of its ${usd(key.cap)} monthly cap.`
+										? __('Cap reached: refused until the month ends or the cap is raised.')
+										: __('Spent this month of its {0} monthly cap.', [usd(key.cap)])
 								"
 							>
 								<div>
@@ -484,7 +497,7 @@ const revoke = async (key: AIApiKey): Promise<void> => {
 										:aria-valuenow="key.month_spent"
 										aria-valuemin="0"
 										:aria-valuemax="key.cap"
-										:aria-label="`${key.title}: spent this month of its cap`"
+										:aria-label="__('{0}: spent this month of its cap', [key.title])"
 									>
 										<span
 											class="block h-full rounded-full transition-[width] duration-300 ease-out"
@@ -504,7 +517,7 @@ const revoke = async (key: AIApiKey): Promise<void> => {
 						<RowActionsMenu
 							v-if="canManage && key.status === 'active'"
 							:options="rowActions(key)"
-							:label="`Actions for ${key.title}`"
+							:label="__('Actions for {0}', [key.title])"
 							:busy="busyKey === key.name"
 						/>
 					</td>
@@ -516,7 +529,7 @@ const revoke = async (key: AIApiKey): Promise<void> => {
 			v-if="sharedLimits && apiKeys.length"
 			class="mt-3 flex flex-wrap items-center gap-x-2 text-p-xs text-ink-gray-5"
 		>
-			Every key is limited to
+			{{ __('Every key is limited to') }}
 			<template v-for="(chip, index) in sharedLimits" :key="chip.key">
 				<span v-if="index" aria-hidden="true">·</span>
 				<Tooltip :text="chip.text">
@@ -542,23 +555,21 @@ const revoke = async (key: AIApiKey): Promise<void> => {
 		/>
 	</section>
 
-	<Dialog v-model="helpOpen" title="How to call the models" size="2xl">
+	<Dialog v-model="helpOpen" :title="__('How to call the models')" size="2xl">
 		<template #default>
 			<div class="space-y-4">
 				<div class="flex items-start justify-between gap-4">
 					<p class="text-p-sm text-ink-gray-6">
-						A key works in its own geography, on both surfaces: point the OpenAI
-						or the Anthropic SDK at that geography's base URL and use it as you
-						would with the vendor.
+						{{ __("A key works in its own geography, on both surfaces: point the OpenAI or the Anthropic SDK at that geography's base URL and use it as you would with the vendor.") }}
 					</p>
 					<Select
 						v-model="helpGeography"
 						class="w-fit shrink-0"
 						:options="geographyOptions"
-						aria-label="Geography"
+						:aria-label="__('Geography')"
 					>
 						<template #prefix>
-							<span class="text-ink-gray-5">Geography</span>
+							<span class="text-ink-gray-5">{{ __('Geography') }}</span>
 						</template>
 					</Select>
 				</div>
@@ -570,33 +581,33 @@ const revoke = async (key: AIApiKey): Promise<void> => {
 		</template>
 	</Dialog>
 
-	<Dialog v-model="createOpen" title="Create API key">
+	<Dialog v-model="createOpen" :title="__('Create API key')">
 		<template #default>
 			<div class="space-y-4">
 				<TextInput
 					v-model="newLabel"
-					label="Label"
+					:label="__('Label')"
 					required
-					placeholder="e.g. n8n prod"
-					description="A name to recognise this key by. New keys can take a few minutes to start working."
+					:placeholder="__('e.g. n8n prod')"
+					:description="__('A name to recognise this key by. New keys can take a few minutes to start working.')"
 					@keyup.enter="create"
 				/>
 				<Select
 					v-model="newGeography"
-					label="Geography"
+					:label="__('Geography')"
 					:options="geographyOptions"
 					required
-					description="Where the key's requests are served. It cannot be changed later: create another key for another geography."
+					:description="geographyDescription"
 				/>
 				<TextInput
 					v-model="newCap"
 					type="number"
 					min="1"
 					step="1"
-					label="Cap (USD)"
+					:label="__('Cap (USD)')"
 					required
-					placeholder="e.g. 10"
-					description="What this key may spend each month, in whole dollars."
+					:placeholder="__('e.g. 10')"
+					:description="__('What this key may spend each month, in whole dollars.')"
 					@keyup.enter="create"
 				/>
 			</div>
@@ -607,15 +618,11 @@ const revoke = async (key: AIApiKey): Promise<void> => {
 		<template #actions>
 			<div class="flex items-center justify-end gap-3">
 				<p v-if="prepaid" class="mr-auto text-p-sm text-ink-gray-5">
-					Caps and this month's spend take up
-					{{ usd(spend?.committed ?? 0) }}
-					of your plan's
-					{{ usd(spend?.spend_limit ?? 0) }}
-					a month, as of {{ asOf }}.
+					{{ __("Caps and this month's spend take up {0} of your plan's {1} a month, as of {2}.", [usd(spend?.committed ?? 0), usd(spend?.spend_limit ?? 0), asOf]) }}
 				</p>
 				<Button
 					variant="solid"
-					label="Create"
+					:label="__('Create')"
 					:loading="creating"
 					:disabled="!canCreate"
 					@click="create"
@@ -624,23 +631,23 @@ const revoke = async (key: AIApiKey): Promise<void> => {
 		</template>
 	</Dialog>
 
-	<Dialog v-model="capsOpen" title="Set caps" size="2xl">
+	<Dialog v-model="capsOpen" :title="__('Set caps')" size="2xl">
 		<template #default>
 			<Alert
 				v-if="capsError"
 				class="mb-4"
 				theme="red"
-				title="Couldn't save the spending caps"
+				:title="saveSpendingCapsErrorTitle"
 				:description="capsError"
 			/>
 			<div
 				class="mb-2 grid grid-cols-[2fr_1fr_1fr_1fr] gap-3 text-sm-medium text-ink-gray-6"
 				aria-hidden="true"
 			>
-				<span class="min-w-0">Key</span>
-				<span class="text-center">Geography</span>
-				<span class="text-center">Spent this month</span>
-				<span>Cap (USD)</span>
+				<span class="min-w-0">{{ __('Key') }}</span>
+				<span class="text-center">{{ __('Geography') }}</span>
+				<span class="text-center">{{ __('Spent this month') }}</span>
+				<span>{{ __('Cap (USD)') }}</span>
 			</div>
 			<div class="space-y-3">
 				<div
@@ -662,17 +669,16 @@ const revoke = async (key: AIApiKey): Promise<void> => {
 						type="number"
 						min="1"
 						step="1"
-						placeholder="e.g. 10"
+						:placeholder="__('e.g. 10')"
 						:autofocus="index === 0"
-						:aria-label="`Monthly cap for ${key.title} (USD)`"
+						:aria-label="__('Monthly cap for {0} (USD)', [key.title])"
 						:disabled="capsSaving"
 						@keyup.enter="saveCaps"
 					/>
 				</div>
 			</div>
 			<p class="mt-4 text-p-sm text-ink-gray-5">
-				Every key needs a cap of at least $1. Spend is as of {{ asOf }}: The
-				live figure is checked when you save.
+				{{ __('Every key needs a cap of at least $1. Spend is as of {0}: The live figure is checked when you save.', [asOf]) }}
 			</p>
 		</template>
 		<template #actions>
@@ -682,20 +688,17 @@ const revoke = async (key: AIApiKey): Promise<void> => {
 					:class="capsOverLimit ? 'text-ink-red-6' : 'text-ink-gray-5'"
 					aria-live="polite"
 				>
-					{{ usd(committedTotal) }}
-					of your plan's
-					{{ usd(spend?.spend_limit ?? 0) }}
-					a month, caps and this month's spend together, as of {{ asOf }}
+					{{ __("{0} of your plan's {1} a month, caps and this month's spend together, as of {2}", [usd(committedTotal), usd(spend?.spend_limit ?? 0), asOf]) }}
 				</p>
 				<div class="flex items-center gap-2">
 					<Button
-						label="Cancel"
+						:label="__('Cancel')"
 						:disabled="capsSaving"
 						@click="capsOpen = false"
 					/>
 					<Button
 						variant="solid"
-						label="Save caps"
+						:label="__('Save caps')"
 						:loading="capsSaving"
 						:disabled="capsInvalid || capsOverLimit"
 						@click="saveCaps"
@@ -707,8 +710,8 @@ const revoke = async (key: AIApiKey): Promise<void> => {
 
 	<ConfirmDialog
 		v-model:target="revokeTarget"
-		title="Revoke API key"
-		confirm-label="Revoke"
+		:title="__('Revoke API key')"
+		:confirm-label="__('Revoke')"
 		theme="red"
 		:loading="busyKey === revokeTarget?.name"
 		:error="revokeError"
@@ -717,14 +720,19 @@ const revoke = async (key: AIApiKey): Promise<void> => {
 	>
 		<template v-if="revokeTarget">
 			<p class="text-p-base text-ink-gray-7">
-				Revoke
-				<span class="text-base-semibold text-ink-gray-9"
-					>{{ revokeTarget.title }}</span
-				>? Any app using it stops working within a few minutes<template
-					v-if="prepaid"
+				<TranslatedText
+					:text="
+						prepaid
+							? revokePrepaidText
+							: revokeText
+					"
 				>
-					and its cap frees room for another key</template
-				>. This can't be undone.
+					<template #0>
+						<span class="text-base-semibold text-ink-gray-9"
+							>{{ revokeTarget.title }}</span
+						>
+					</template>
+				</TranslatedText>
 			</p>
 		</template>
 	</ConfirmDialog>

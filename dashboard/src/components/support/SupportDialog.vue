@@ -143,7 +143,7 @@ watch(
 						v-if="stage !== startStage"
 						variant="ghost"
 						icon="lucide-arrow-left"
-						aria-label="Back"
+						:aria-label="__('Back')"
 						:disabled="creating"
 						@click="goBack"
 					/>
@@ -155,7 +155,7 @@ watch(
 					v-if="stage === startStage"
 					variant="subtle"
 					icon-left="lucide-ticket"
-					label="Your tickets"
+					:label="__('Your tickets')"
 					@click="showTickets"
 				>
 					<template v-if="ticketCount" #suffix>

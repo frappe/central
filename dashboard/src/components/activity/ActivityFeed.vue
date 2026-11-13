@@ -9,6 +9,7 @@ import DateRangeFilter, {
 import EmptyState from '@/components/common/EmptyState.vue'
 import { type ActivityScope, useActivityFeed } from '@/composables/useActivity'
 import { groupActivity } from '@/lib/activity'
+import { __ } from '@/lib/translate'
 
 interface Props {
 	scope: ActivityScope
@@ -32,23 +33,23 @@ const {
 } = useActivityFeed(toRef(props, 'scope'), resourceId)
 
 const SERVER_TYPES = [
-	{ label: 'All types', value: '' },
-	{ label: 'Actions', value: 'action' },
-	{ label: 'Configuration', value: 'configuration' },
-	{ label: 'Sites', value: 'site' },
-	{ label: 'Access', value: 'access' },
-	{ label: 'Snapshots', value: 'snapshot' },
+	{ label: __('All types'), value: '' },
+	{ label: __('Actions'), value: 'action' },
+	{ label: __('Configuration'), value: 'configuration' },
+	{ label: __('Sites'), value: 'site' },
+	{ label: __('Access'), value: 'access' },
+	{ label: __('Snapshots'), value: 'snapshot' },
 ]
 
 const TEAM_TYPES = [
-	{ label: 'All types', value: '' },
-	{ label: 'Team', value: 'team' },
-	{ label: 'Members', value: 'member' },
-	{ label: 'Access', value: 'access' },
-	{ label: 'Actions', value: 'action' },
-	{ label: 'Configuration', value: 'configuration' },
-	{ label: 'Sites', value: 'site' },
-	{ label: 'Snapshots', value: 'snapshot' },
+	{ label: __('All types'), value: '' },
+	{ label: __('Team'), value: 'team' },
+	{ label: __('Members'), value: 'member' },
+	{ label: __('Access'), value: 'access' },
+	{ label: __('Actions'), value: 'action' },
+	{ label: __('Configuration'), value: 'configuration' },
+	{ label: __('Sites'), value: 'site' },
+	{ label: __('Snapshots'), value: 'snapshot' },
 ]
 
 const daysAgo = (count: number): string =>
@@ -56,11 +57,11 @@ const daysAgo = (count: number): string =>
 
 // Rows are kept for 12 months, so a longer preset would never show more.
 const PERIOD_PRESETS: DateRangePreset[] = [
-	{ label: 'Today', range: () => [daysAgo(0), daysAgo(0)] },
-	{ label: 'Last 7 days', range: () => [daysAgo(6), daysAgo(0)] },
-	{ label: 'Last 30 days', range: () => [daysAgo(29), daysAgo(0)] },
-	{ label: 'Last 6 months', range: () => [daysAgo(182), daysAgo(0)] },
-	{ label: 'Last 12 months', range: () => [daysAgo(364), daysAgo(0)] },
+	{ label: __('Today'), range: () => [daysAgo(0), daysAgo(0)] },
+	{ label: __('Last 7 days'), range: () => [daysAgo(6), daysAgo(0)] },
+	{ label: __('Last 30 days'), range: () => [daysAgo(29), daysAgo(0)] },
+	{ label: __('Last 6 months'), range: () => [daysAgo(182), daysAgo(0)] },
+	{ label: __('Last 12 months'), range: () => [daysAgo(364), daysAgo(0)] },
 ]
 
 const types = computed(() =>
@@ -72,21 +73,24 @@ const months = computed(() => groupActivity(events.value))
 const linkResource = computed(() => props.scope === 'team')
 
 const emptyDescription = computed(() => {
-	if (isFiltered.value) return 'Try another type or date range.'
+	if (isFiltered.value) return __('Try another type or date range.')
 	if (props.scope === 'server')
-		return 'Changes to this server, its sites and its snapshots show here.'
-	return 'Changes to the team, its members and its servers show here.'
+		return __('Changes to this server, its sites and its snapshots show here.')
+	return __('Changes to the team, its members and its servers show here.')
 })
 
 function clearFilters() {
 	category.value = ''
 	period.value = []
 }
+
+const activityLoadErrorTitle = __("Activity couldn't load")
+const loadActivityErrorTitle = __("Couldn't load the activity")
 </script>
 
 <template>
 	<section class="min-w-0" aria-labelledby="activity-feed-heading">
-		<h2 id="activity-feed-heading" class="sr-only">Activity</h2>
+		<h2 id="activity-feed-heading" class="sr-only">{{ __('Activity') }}</h2>
 
 		<div class="flex flex-wrap items-center gap-2 pb-3">
 			<slot name="controls" />
@@ -94,13 +98,13 @@ function clearFilters() {
 				v-model="category"
 				class="w-40"
 				:options="types"
-				aria-label="Filter by type"
+				:aria-label="__('Filter by type')"
 			/>
 			<DateRangeFilter
 				v-model="period"
 				class="md:flex-none"
 				:presets="PERIOD_PRESETS"
-				any-label="Last 12 months"
+				:any-label="__('Last 12 months')"
 			/>
 		</div>
 
@@ -109,7 +113,7 @@ function clearFilters() {
 			class="space-y-1 pt-2"
 			aria-busy="true"
 		>
-			<span class="sr-only">Loading activity</span>
+			<span class="sr-only">{{ __('Loading activity') }}</span>
 			<Skeleton class="mb-4 h-5 w-32 rounded-4" />
 			<div
 				v-for="index in 6"
@@ -125,22 +129,26 @@ function clearFilters() {
 		<EmptyState
 			v-else-if="error && !events.length"
 			icon="lucide-cloud-off"
-			title="Activity couldn't load"
+			:title="activityLoadErrorTitle"
 			:description="error"
 		>
 			<template #action>
-				<Button label="Retry" @click="reload" />
+				<Button :label="__('Retry')" @click="reload" />
 			</template>
 		</EmptyState>
 
 		<EmptyState
 			v-else-if="!events.length"
 			icon="lucide-history"
-			:title="isFiltered ? 'No matching activity' : 'No activity yet'"
+			:title="isFiltered ? __('No matching activity') : __('No activity yet')"
 			:description="emptyDescription"
 		>
 			<template v-if="isFiltered" #action>
-				<Button label="Clear filters" variant="subtle" @click="clearFilters" />
+				<Button
+					:label="__('Clear filters')"
+					variant="subtle"
+					@click="clearFilters"
+				/>
 			</template>
 		</EmptyState>
 
@@ -172,15 +180,15 @@ function clearFilters() {
 			<Alert
 				v-if="error"
 				theme="red"
-				title="Couldn't load the activity"
+				:title="loadActivityErrorTitle"
 				:description="error"
-				:primary-action="{ label: 'Retry', onClick: reload }"
+				:primary-action="{ label: __('Retry'), onClick: reload }"
 				class="mt-3"
 			/>
 
 			<div v-if="nextCursor" class="mt-4 px-3.5">
 				<Button
-					label="Load more"
+					:label="__('Load more')"
 					class="border border-outline-gray-2 bg-surface-gray-2 text-ink-gray-8 hover:bg-surface-gray-3 hover:text-ink-gray-9 active:bg-surface-gray-4"
 					size="sm"
 					:loading="loadingMore"

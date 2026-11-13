@@ -12,6 +12,7 @@ import {
 } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import { API, method } from '@/api/methods'
+import TranslatedText from '@/components/common/TranslatedText.vue'
 import { useBillingOverview } from '@/composables/useBillingOverview'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { useSession } from '@/composables/useSession'
@@ -19,6 +20,7 @@ import { useSpendingLimits } from '@/composables/useSpendingLimits'
 import { whenTeamReady } from '@/composables/useTeamScope'
 import { getErrorMessage, successToast } from '@/lib/feedback'
 import { currencySymbol, money } from '@/lib/format'
+import { __ } from '@/lib/translate'
 import type { BillingSettings } from '@/types/billing'
 
 defineProps<{ active?: boolean }>()
@@ -40,11 +42,16 @@ const hasCycle = computed(() => projected.value > 0)
 const daysRemaining = computed(() => fc.value?.days_remaining ?? null)
 
 const cycleLabel = computed(() => {
-	if (!fc.value?.period_start || !fc.value.period_end) return 'This cycle'
+	if (!fc.value?.period_start || !fc.value.period_end) return __('This cycle')
 
 	const start = dayjs(fc.value.period_start)
 
-	return `${start.format('MMMM')} cycle · ${start.format('D')} – ${dayjs(fc.value.period_end).format('D MMM')}`
+	const range = [
+		start.format('MMMM'),
+		start.format('D'),
+		dayjs(fc.value.period_end).format('D MMM'),
+	]
+	return __('{0} cycle · {1} – {2}', range)
 })
 
 const limit = computed(() => Number(tierCurrent.value?.max_spend ?? 0))
@@ -106,13 +113,13 @@ const near = computed(
 )
 
 const alertLabel = computed(() => {
-	if (spendAlert.value <= 0) return 'Set a budget alert'
+	if (spendAlert.value <= 0) return __('Set a budget alert')
 
 	const amount = money(spendAlert.value, currency.value)
-	if (crossed.value) return `Over your ${amount} alert before tax`
-	if (near.value) return `Nearing your ${amount} alert before tax`
+	if (crossed.value) return __('Over your {0} alert before tax', [amount])
+	if (near.value) return __('Nearing your {0} alert before tax', [amount])
 
-	return `Budget alert at ${amount} before tax`
+	return __('Budget alert at {0} before tax', [amount])
 })
 
 const alertTint = computed(() =>
@@ -142,13 +149,18 @@ async function submitAlert(): Promise<void> {
 		if (saveAlert.error) throw saveAlert.error
 
 		spendAlert.value = Number(draft.value) || 0
-		successToast('Billing alert saved')
+		successToast(__('Billing alert saved'))
 		dialogOpen.value = false
 		settings.reload()
 	} catch (e) {
-		formError.value = getErrorMessage(e, "The budget alert couldn't be saved.")
+		formError.value = getErrorMessage(
+			e,
+			__("The budget alert couldn't be saved."),
+		)
 	}
 }
+
+const saveBudgetAlertErrorTitle = __("Couldn't save the budget alert")
 </script>
 
 <template>
@@ -172,7 +184,7 @@ async function submitAlert(): Promise<void> {
 
 			<div class="flex items-center gap-2">
 				<Tooltip v-if="canManageBilling" :text="alertLabel">
-					<Button size="xs" label="Budget alerts" @click="openDialog">
+					<Button size="xs" :label="__('Budget alerts')" @click="openDialog">
 						<template #icon>
 							<span
 								class="lucide-bell size-4"
@@ -196,11 +208,11 @@ async function submitAlert(): Promise<void> {
 						{{ money(projected, currency) }}
 					</span>
 					<span v-if="!hasCycle" class="text-base text-ink-gray-5">
-						nothing billed yet this cycle
+						{{ __('nothing billed yet this cycle') }}
 					</span>
 					<Badge
 						v-if="hasCycle && daysRemaining != null"
-						:label="`Bills in ${daysRemaining} days`"
+						:label="__('Bills in {0} days', [daysRemaining])"
 					/>
 				</div>
 
@@ -209,7 +221,7 @@ async function submitAlert(): Promise<void> {
 					<template v-if="taxAmount">
 						+
 						<span class="tabular-nums">{{ money(taxAmount, currency) }}</span>
-						{{ fc?.tax_type || 'tax' }}
+						{{ fc?.tax_type || __('tax') }}
 					</template>
 					·
 					<button
@@ -217,7 +229,7 @@ async function submitAlert(): Promise<void> {
 						class="text-ink-gray-9 underline decoration-dotted underline-offset-[3px] transition-colors hover:decoration-solid"
 						@click="$emit('open')"
 					>
-						See breakdown
+						{{ __('See breakdown') }}
 					</button>
 				</p>
 			</div>
@@ -245,19 +257,22 @@ async function submitAlert(): Promise<void> {
 					class="flex flex-wrap justify-between gap-x-3 gap-y-1 text-sm text-ink-gray-6"
 				>
 					<span v-if="limit">
-						Spend limit
-						<span class="tabular-nums text-ink-gray-9"
-							>{{ money(limit, currency) }}</span
-						>
-						before tax on
-						<button
-							type="button"
-							class="text-ink-gray-9 underline decoration-dotted underline-offset-[3px] transition-colors hover:decoration-solid"
-							@click="$emit('openTiers')"
-						>
-							{{ tierCurrent?.tier }}
-							tier
-						</button>
+						<TranslatedText :text="__('Spend limit {0} before tax on {1}')">
+							<template #0>
+								<span class="tabular-nums text-ink-gray-9"
+									>{{ money(limit, currency) }}</span
+								>
+							</template>
+							<template #1>
+								<button
+									type="button"
+									class="text-ink-gray-9 underline decoration-dotted underline-offset-[3px] transition-colors hover:decoration-solid"
+									@click="$emit('openTiers')"
+								>
+									{{ __('{0} tier', [tierCurrent?.tier]) }}
+								</button>
+							</template>
+						</TranslatedText>
 					</span>
 					<button
 						v-else
@@ -265,45 +280,44 @@ async function submitAlert(): Promise<void> {
 						class="text-ink-gray-9 underline underline-offset-[3px]"
 						@click="$emit('openTiers')"
 					>
-						Spend limits
+						{{ __('Spend limits') }}
 					</button>
 
 					<span v-if="overLimit" class="text-ink-amber-6">
 						<span class="tabular-nums">{{ money(overLimit, currency) }}</span>
-						over limit
+						{{ __('over limit') }}
 					</span>
 				</div>
 			</div>
 		</template>
 
-		<Dialog v-model:open="dialogOpen" title="Set a budget alert">
+		<Dialog v-model:open="dialogOpen" :title="__('Set a budget alert')">
 			<template #default>
 				<Alert
 					v-if="formError"
 					class="mb-4"
 					theme="red"
-					title="Couldn't save the budget alert"
+					:title="saveBudgetAlertErrorTitle"
 					:description="formError"
 				/>
 				<TextInput
 					v-model="draft"
 					autofocus
 					type="number"
-					:label="`Alert me above, excluding tax (${currencySymbol(currency)})`"
+					:label="__('Alert me above, excluding tax ({0})', [currencySymbol(currency)])"
 					min="0"
 					placeholder="20000"
 				/>
 				<p class="mt-2 text-p-sm text-ink-gray-5">
-					We'll notify the team once projected spend before tax crosses this.
-					Set 0 to turn it off.
+					{{ __("We'll notify the team once projected spend before tax crosses this. Set 0 to turn it off.") }}
 				</p>
 			</template>
 			<template #actions>
 				<div class="flex justify-end gap-2">
-					<Button label="Cancel" @click="dialogOpen = false" />
+					<Button :label="__('Cancel')" @click="dialogOpen = false" />
 					<Button
 						variant="solid"
-						label="Set alert"
+						:label="__('Set alert')"
 						:loading="saveAlert.loading"
 						@click="submitAlert"
 					/>
