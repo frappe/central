@@ -199,6 +199,38 @@ def is_retryable_later(failure_code: str | None, decline_code: str | None) -> bo
 	return reason not in HARD_DECLINE_CODES and reason not in HARD_CODES
 
 
+# The bank refused the card or account, or its verification step failed. Closing the
+# bank's window, a timeout and our own refusals are not here: Stripe reports a closed
+# 3DS window as `setup_intent_authentication_failure`, so that code is left out too.
+BANK_REFUSAL_CODES = (
+	"card_declined",
+	"card_not_supported",
+	"authentication_failed",
+	"expired_card",
+	"card_expired",
+	"incorrect_number",
+	"invalid_number",
+	"incorrect_cvc",
+	"invalid_cvc",
+	"invalid_expiry_month",
+	"invalid_expiry_year",
+	"insufficient_funds",
+	"insufficient_balance",
+	"do_not_honor",
+	"generic_decline",
+	"incorrect_otp",
+	"incorrect_pin",
+	"transaction_not_approved",
+	*HARD_DECLINE_CODES,
+)
+
+
+def is_bank_refusal(failure_code: str | None, decline_code: str | None = None) -> bool:
+	"""True where the bank refused the card or account, or failed its verification."""
+	codes = {(failure_code or "").lower(), (decline_code or "").lower()}
+	return bool(codes & set(BANK_REFUSAL_CODES))
+
+
 def fallback_enabled() -> bool:
 	"""Whether offering the other rail is switched on. Routing is configuration, so
 	the bet on one gateway can be reversed without a deploy."""
