@@ -57,6 +57,7 @@ Frappe Cloud sends these payment emails to team members who can see billing:
 | --- | --- |
 | Invoice is ready | An invoice is issued with an amount to pay after wallet credit. It shows the total, the credit used, the amount to charge, the payment date, and the payment method. If the team has no payment method, it asks you to add one. |
 | Payment due tomorrow | One day before the payment date. Frappe Cloud does not send it for an Indian mandate, which gets a pre-debit notice instead. |
+| Add credit before your payment date | INR bills only, on Prepaid or automatic payments. Your next bill, less your wallet, is more than your card or UPI can pay automatically (at most ₹15,000), or no card or UPI is saved. Frappe Cloud sends it 5 days and 2 days before the payment date, at most once a day. It asks you to add the full amount the wallet is short, rounded up to the next ₹100. Click **Add credit** to open the top-up with that amount filled in. When an invoice like this is issued, you get this email instead of **Invoice is ready**. |
 | Payment date changed | You change the payment date. It shows the new day and the date of the next charge. An invoice that is already issued keeps its payment date. |
 
 ### Budget alerts
