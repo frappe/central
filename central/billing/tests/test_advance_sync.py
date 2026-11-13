@@ -151,6 +151,19 @@ class TestGstTreatment(AdvanceTestCase):
 		t = gst.treatment(TEAM)
 		self.assertEqual((t.gst_category, t.template), ("SEZ", None))
 
+	def test_lapsed_sez_files_the_gst_it_is_charged(self):
+		for state, template in (("Maharashtra", IN_STATE), ("Karnataka", OUT_STATE)):
+			billing_team(TEAM, state=state, gstin=GSTIN)
+			frappe.db.set_value("Tax Profile", TEAM, {"zero_rated": 1, "zero_rating_reason": "SEZ"})
+			frappe.db.set_value("Billing Profile", TEAM, "gst_status", "Cancelled")
+			t = gst.treatment(TEAM)
+			self.assertEqual((t.gst_category, t.template), ("Unregistered", template), state)
+
+	def test_no_state_is_taxed_as_out_of_state(self):
+		billing_team(TEAM, state=None)
+		t = gst.treatment(TEAM)
+		self.assertEqual((t.place_of_supply, t.template), (None, OUT_STATE))
+
 	def test_overseas(self):
 		billing_team(TEAM, country="United States", state="California", currency="USD")
 		t = gst.treatment(TEAM)

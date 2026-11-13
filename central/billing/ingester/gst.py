@@ -92,6 +92,13 @@ def company_state_code() -> str:
 
 
 def _zero_rated_sez(team: str) -> bool:
-	return bool(
-		frappe.db.get_value("Tax Profile", {"team": team, "zero_rated": 1, "zero_rating_reason": "SEZ"})
+	"""The rule the invoice tax uses, so what is filed matches what is charged."""
+	from central.billing.revenue import gst_status, tax
+
+	profile = frappe.db.get_value(
+		"Tax Profile",
+		{"team": team, "zero_rating_reason": "SEZ"},
+		["zero_rated", "zero_rating_reason"],
+		as_dict=True,
 	)
+	return bool(profile) and tax.has_zero_rating(profile, gst_status.standing(team))
