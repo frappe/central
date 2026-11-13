@@ -152,6 +152,27 @@ def team_ssh_key_has_permission(doc, user: str | None = None, ptype: str | None 
 	return bool(doc.team) and can_on_any_server(user, doc.team, "server:view")
 
 
+def firewall_ruleset_query_conditions(user: str | None = None) -> str:
+	"""1. Operators see all rulesets.
+	2. Users see rulesets in teams where they can view servers.
+	3. Other users see no rulesets.
+	"""
+	return _team_field_query_conditions("Firewall Ruleset", "server:view", user)
+
+
+def firewall_ruleset_has_permission(doc, user: str | None = None, ptype: str | None = None, **kwargs) -> bool:
+	"""1. Operators may manage rulesets.
+	2. A user who can view a server of the team may read its rulesets.
+	3. A user with team-wide server:network may create, change, or remove rulesets. A grant
+	   on one server does not count, because a ruleset changes every server that uses it.
+	"""
+	user = user or frappe.session.user
+	if ptype in MUTATING_PERMISSION_TYPES or user_has_operator_bypass(user):
+		return _team_field_has_permission(doc, (), ("server:network",), user, ptype)
+
+	return bool(doc.team) and can_on_any_server(user, doc.team, "server:view")
+
+
 def wireguard_device_query_conditions(user: str | None = None) -> str:
 	"""1. Operators see all devices.
 	2. Users see devices in teams where they hold server:wireguard.

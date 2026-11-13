@@ -1,0 +1,10 @@
+{
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": ["firewall_ruleset"],
+ "fields": [{"fieldname": "firewall_ruleset", "fieldtype": "Link", "label": "Firewall Ruleset", "options": "Firewall Ruleset", "reqd": 1, "in_list_view": 1, "search_index": 1}],
+ "istable": 1,
+ "module": "Infrastructure",
+ "name": "Server Firewall Ruleset",
+ "permissions": []
+}
