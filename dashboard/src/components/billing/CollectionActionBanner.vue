@@ -31,25 +31,48 @@ const s = computed(() => status.data)
 const show = computed(() => !!s.value?.action_required)
 const currency = computed(() => s.value?.currency || 'INR')
 
-// The next bill, less the wallet, is above what the card or UPI may pay automatically:
-// ask for the top-up before the payment date. Services keep running either way.
+// The card or UPI would be asked for more than it may pay automatically: ask for the
+// credit that lets the wallet pay the whole bill. Services keep running either way.
 const topUp = computed(() => (show.value ? null : s.value?.top_up_due))
 const topUpTitle = __('Add credit before your payment date')
 // The amounts and the date come formatted from the server, as the reminder email shows them.
 const topUpText = computed(() => {
 	const due = topUp.value
 	if (!due) return ''
-	const { amount, payment_date: date, limit } = due.labels
+	const {
+		amount,
+		amount_with_gst: withGst,
+		payment_date: date,
+		limit,
+	} = due.labels
+	if (withGst) return topUpTextWithGst(amount, withGst, date, limit)
 	if (!limit)
 		return __(
-			'Add {0} to your wallet by {1}. No card or UPI is saved to pay the rest.',
+			'Add {0} of credit to your wallet by {1}. No card or UPI is saved to pay the rest.',
 			[amount, date],
 		)
 	return __(
-		'Add {0} to your wallet by {1}. Your card or UPI pays only amounts up to {2}.',
+		'Add {0} of credit to your wallet by {1}. Your card or UPI pays only amounts up to {2}.',
 		[amount, date, limit],
 	)
 })
+
+function topUpTextWithGst(
+	amount: string,
+	withGst: string,
+	date: string,
+	limit: string | null,
+) {
+	if (!limit)
+		return __(
+			'Add {0} of credit to your wallet by {1} ({2} with GST). No card or UPI is saved to pay the rest.',
+			[amount, date, withGst],
+		)
+	return __(
+		'Add {0} of credit to your wallet by {1} ({2} with GST). Your card or UPI pays only amounts up to {3}.',
+		[amount, date, withGst, limit],
+	)
+}
 
 const choosing = ref(false)
 const chosen = ref<string | null>(null) // 'Manual Checkout' | 'Prepaid'

@@ -4,9 +4,10 @@
 
 A card or UPI may pay off-session only up to the team's off-session limit. When the card
 or UPI would be asked for more than that on the payment date, the team is asked to add
-the shortfall to its wallet 5 and 2 days before, and the billing page shows the same ask.
-Before the bill is issued that is the bill less the wallet; after, the whole bill unless
-the wallet covers it. Nothing here moves money or changes the limit.
+credit to its wallet 5 and 2 days before, and the billing page shows the same ask. The
+card or UPI share follows the collector's draw: before the bill is issued it is what the
+wallet leaves; after, the whole bill unless the wallet covers it. The ask is the purchased
+credit that makes the wallet pay the whole bill. Nothing here moves money or changes the limit.
 """
 
 import math
@@ -17,6 +18,8 @@ from central.billing.doctype.billing_profile.billing_profile import DEFAULT_PAYM
 from central.billing.doctype.invoice.invoice import owed_filters
 from central.billing.platform import notifications
 from central.billing.platform.jobs import each_isolated
+from central.billing.revenue import credits
+from central.billing.revenue.invoicing import wallet_draw
 
 EVENT = "Top-up Reminder"
 REMINDER_DAYS = (5, 2)
@@ -70,23 +73,27 @@ def get_top_up_due(team: str, today=None, forecast: float | None = None) -> dict
 	`forecast` is this month's projected bill when the caller already has it."""
 	if not is_reminded_team(team):
 		return None
-	today = frappe.utils.getdate(today)
-	amount, date, invoice = get_next_bill(team, today, forecast)
-	return get_shortfall_due(team, amount, date, invoice)
+	bill = get_next_bill(team, frappe.utils.getdate(today), forecast)
+	return get_shortfall_due(team, bill.amount, bill.gst, bill.date, bill.invoice)
 
 
-def get_shortfall_due(team: str, bill: float, date, invoice: str | None = None) -> dict | None:
-	"""The top-up ask for `bill`, due on `date`, or None when the wallet and the card or
-	UPI pay it. A team with no saved method has a limit of 0."""
+def get_shortfall_due(team: str, bill: float, gst: float, date, invoice: str | None = None) -> dict | None:
+	"""The top-up ask for `bill`, of which `gst` is GST, due on `date`, or None when the
+	wallet and the card or UPI pay it. A team with no saved method has a limit of 0.
+
+	The ask is the whole shortfall: purchased credit that makes the wallet pay all of the
+	bill, rounded up to ₹100. `amount_with_gst` is what that credit costs."""
 	from central.billing.payments import collection, collection_mode
 
 	has_method = bool(collection.get_methods_left(team, invoice))
 	limit = collection_mode.off_session_limit(team, invoice) if has_method else 0.0
-	wallet = get_wallet_on(team, date)
-	if collection_mode.is_within_limit(limit, get_card_share(bill, wallet, invoice)):
+	draw = get_draw_on(team, bill, gst, date)
+	if collection_mode.is_within_limit(limit, get_card_share(bill, draw.owed, invoice)):
 		return None
+	credit = get_credit_to_add(team, draw, bill, gst)
 	return {
-		"amount": math.ceil(frappe.utils.flt(bill - wallet, 2) / ROUND_TO) * ROUND_TO,
+		"amount": credit,
+		"amount_with_gst": frappe.utils.flt(credit + credits.top_up_gst(team, credit), 2),
 		"date": str(date),
 		"limit": limit,
 		"has_method": has_method,
@@ -94,34 +101,36 @@ def get_shortfall_due(team: str, bill: float, date, invoice: str | None = None) 
 	}
 
 
-def get_card_share(bill: float, wallet: float, invoice: str | None = None) -> float:
-	"""What the card or UPI is asked for on the payment date.
+def get_card_share(bill: float, owed: float, invoice: str | None = None) -> float:
+	"""What the card or UPI is asked for on the payment date, when the wallet leaves `owed`.
 
 	On the day a bill is issued the wallet pays what it can and the card the rest. Credit
 	added after that pays the bill only when it covers all of it."""
-	left = frappe.utils.flt(bill - wallet, 2)
-	if left <= 0:
+	if frappe.utils.flt(owed, 2) <= 0:
 		return 0.0
-	return frappe.utils.flt(bill, 2) if invoice else left
+	return frappe.utils.flt(bill, 2) if invoice else frappe.utils.flt(owed, 2)
 
 
-def get_wallet_on(team: str, date) -> float:
-	"""Wallet credit still there on `date`: promotional credit that expires by then is left out."""
-	from central.billing.revenue import credits
-
+def get_draw_on(team: str, bill: float, gst: float, date) -> frappe._dict:
+	"""What the wallet would pay of `bill` on `date`, as the collector draws it. Promotional
+	credit that expires by then is left out."""
 	on = frappe.utils.getdate(date)
-	return frappe.utils.flt(
-		sum(
-			frappe.utils.flt(lot.remaining)
-			for lot in credits.credit_lots(team, "INR")
-			if not lot.expires_on or frappe.utils.getdate(lot.expires_on) > on
-		),
-		2,
-	)
+	lots = [
+		lot
+		for lot in credits.credit_lots(team, "INR")
+		if not lot.expires_on or frappe.utils.getdate(lot.expires_on) > on
+	]
+	return wallet_draw.plan_draw(lots, bill, gst, credits.advance_gst_balance(team, "INR"))
+
+
+def get_credit_to_add(team: str, draw: frappe._dict, bill: float, gst: float) -> int:
+	"""Purchased credit that pays what the wallet leaves of `bill`, rounded up to ₹100."""
+	needed = wallet_draw.credit_to_cover(draw, bill, gst, credits.top_up_gst_rate(team))
+	return math.ceil(frappe.utils.flt(needed, 2) / ROUND_TO) * ROUND_TO
 
 
 def send_top_up_notice(team: str, due: dict) -> dict:
-	"""Email and in-app notice asking the team to add `due["amount"]` to its wallet."""
+	"""Email and in-app notice asking the team to add `due["amount"]` of credit to its wallet."""
 	held = frappe.db.get_value("Billing Profile", team, "collection_mode") == "Action Required"
 	return notifications.notify(
 		team,
@@ -133,12 +142,17 @@ def send_top_up_notice(team: str, due: dict) -> dict:
 
 
 def format_due(due: dict, held: bool = False) -> dict:
-	"""The amount, payment date and limit as the email and the billing page show them.
-	A held team's card or UPI is not charged, so its limit is not named."""
+	"""The credit, its cost with GST, the payment date and the limit as the email and the
+	billing page show them. The cost is left out when there is no GST on it. A held team's
+	card or UPI is not charged, so its limit is not named."""
 	from central.billing.payments.payment_notices import format_date
 
+	with_gst = frappe.utils.flt(due.get("amount_with_gst"))
 	return {
 		"amount": frappe.utils.fmt_money(due["amount"], currency="INR"),
+		"amount_with_gst": frappe.utils.fmt_money(with_gst, currency="INR")
+		if with_gst > frappe.utils.flt(due["amount"])
+		else None,
 		"payment_date": format_date(due["date"]),
 		"limit": frappe.utils.fmt_money(due["limit"], currency="INR")
 		if due["has_method"] and not held
@@ -174,8 +188,9 @@ def reminder_dates(today) -> list:
 	return [frappe.utils.getdate(frappe.utils.add_days(today, days)) for days in REMINDER_DAYS]
 
 
-def get_next_bill(team: str, today, forecast: float | None = None) -> tuple[float, object, str | None]:
-	"""The next bill, its payment date, and its invoice once issued.
+def get_next_bill(team: str, today, forecast: float | None = None) -> frappe._dict:
+	"""The next bill (`amount`, of which `gst` is GST), its payment `date`, and its `invoice`
+	once issued.
 
 	1. An issued invoice not yet charged is that bill.
 	2. Up to this month's payment date, last month's bill not issued yet: its draft's
@@ -183,14 +198,16 @@ def get_next_bill(team: str, today, forecast: float | None = None) -> tuple[floa
 	3. Otherwise this month's forecast, paid on the payment date next month."""
 	invoice = _get_uncharged_invoice(team, today)
 	if invoice:
-		return frappe.utils.flt(invoice.expected_collection), invoice.payment_date, invoice.name
+		return _issued_bill(invoice)
 	pay_on = get_payment_date(team, frappe.utils.get_first_day(today))
 	if today <= pay_on and (last_bill := _get_unissued_last_bill(team, today)) is not None:
-		return last_bill, pay_on, None
+		return frappe._dict(last_bill, date=pay_on, invoice=None)
 	if forecast is None:
 		forecast = get_forecast_total(team, frappe.utils.get_first_day(today), today)
 	next_month = frappe.utils.add_months(frappe.utils.get_first_day(today), 1)
-	return frappe.utils.flt(forecast), get_payment_date(team, next_month), None
+	return frappe._dict(
+		_projected_bill(team, forecast), date=get_payment_date(team, next_month), invoice=None
+	)
 
 
 def get_forecast_total(team: str, period_start, today) -> float:
@@ -247,21 +264,41 @@ def _teams_by_invoice(dates: list) -> set[str]:
 	)
 
 
-def _get_unissued_last_bill(team: str, today) -> float | None:
-	"""Last month's bill while it is not issued: a held draft's total, or the projection
+def _get_unissued_last_bill(team: str, today) -> dict | None:
+	"""Last month's bill while it is not issued: a held draft's amount due, or the projection
 	when no invoice is drafted yet. None once it is issued or it is not billed."""
 	start = frappe.utils.getdate(frappe.utils.add_months(frappe.utils.get_first_day(today), -1))
 	draft = frappe.db.get_value(
 		"Invoice",
 		{"team": team, "period_start": start, "status": ["!=", "Cancelled"]},
-		["invoice_type", "total", "due_date"],
+		["invoice_type", "total", "tds_amount", "output_tax_amount", "due_date"],
 		as_dict=True,
 	)
 	if not draft:
-		return get_forecast_total(team, start, today)
+		return _projected_bill(team, get_forecast_total(team, start, today))
 	if draft.invoice_type != "Billable" or draft.due_date:
 		return None
-	return frappe.utils.flt(draft.total)
+	return {
+		"amount": frappe.utils.flt(draft.total) - frappe.utils.flt(draft.tds_amount),
+		"gst": frappe.utils.flt(draft.output_tax_amount),
+	}
+
+
+def _projected_bill(team: str, total) -> dict:
+	"""A projected bill, tax included. Its GST is read at the team's rate today."""
+	total = frappe.utils.flt(total)
+	rate = credits.top_up_gst_rate(team)
+	return {"amount": total, "gst": total - total / (1 + rate)}
+
+
+def _issued_bill(invoice) -> frappe._dict:
+	due = frappe.utils.flt(invoice.expected_collection)
+	return frappe._dict(
+		amount=due,
+		gst=wallet_draw.gst_still_due(invoice, due),
+		date=invoice.payment_date,
+		invoice=invoice.name,
+	)
 
 
 def _get_uncharged_invoice(team: str, today):
@@ -275,7 +312,7 @@ def _get_uncharged_invoice(team: str, today):
 			["expected_collection", ">", 0],
 			["payment_date", ">=", today],
 		],
-		fields=["name", "expected_collection", "payment_date"],
+		fields=["name", "expected_collection", "payment_date", "total", "tds_amount", "output_tax_amount"],
 		order_by="payment_date asc",
 		limit=1,
 	)

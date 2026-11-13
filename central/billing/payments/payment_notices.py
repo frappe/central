@@ -41,14 +41,15 @@ def _get_top_up_due(invoice) -> dict | None:
 	"""The top-up ask for an INR bill above the team's off-session limit. A Manual Checkout
 	team pays by hand, so it keeps the plain notice."""
 	from central.billing.payments import top_up_reminders
+	from central.billing.revenue.invoicing import wallet_draw
 
 	if invoice.currency != "INR":
 		return None
 	if frappe.db.get_value("Billing Profile", invoice.team, "collection_mode") == "Manual Checkout":
 		return None
-	return top_up_reminders.get_shortfall_due(
-		invoice.team, invoice.expected_collection, invoice.payment_date, invoice.name
-	)
+	due = frappe.utils.flt(invoice.expected_collection)
+	gst = wallet_draw.gst_still_due(invoice, due)
+	return top_up_reminders.get_shortfall_due(invoice.team, due, gst, invoice.payment_date, invoice.name)
 
 
 def _ask_for_top_up(invoice, due: dict, collect_started) -> None:

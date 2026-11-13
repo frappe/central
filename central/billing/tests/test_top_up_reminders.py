@@ -85,7 +85,7 @@ class TestWhenTheReminderGoesOut(TopUpTestCase):
 
 		messages = [row.message for row in _reminders()]
 		self.assertEqual(len(messages), 2)
-		self.assertIn("Add ₹ 40,000.00 to your wallet by 1 December 2026.", messages[0])
+		self.assertIn("Add ₹ 40,000.00 of credit to your wallet by 1 December 2026.", messages[0])
 		self.assertIn("Your card or UPI pays only amounts up to ₹ 15,000.00.", messages[0])
 
 	def test_no_other_day_and_not_the_payment_day(self):
@@ -115,7 +115,7 @@ class TestWhenTheReminderGoesOut(TopUpTestCase):
 		reminders = _reminders()
 		self.assertEqual(len(reminders), 1)
 		self.assertEqual(reminders[0].reference_name, invoice)
-		self.assertIn("Add ₹ 30,000.00 to your wallet by 8 December 2026.", reminders[0].message)
+		self.assertIn("Add ₹ 30,000.00 of credit to your wallet by 8 December 2026.", reminders[0].message)
 
 
 class TestWhoIsReminded(TopUpTestCase):
@@ -163,7 +163,7 @@ class TestWhoIsReminded(TopUpTestCase):
 		self._run(REMINDER_DAYS[0])
 
 		message = _reminders()[0].message
-		self.assertIn("Add ₹ 3,000.00 to your wallet by 1 December 2026.", message)
+		self.assertIn("Add ₹ 3,000.00 of credit to your wallet by 1 December 2026.", message)
 		self.assertIn("No card or UPI is saved to pay the rest.", message)
 
 
@@ -212,7 +212,7 @@ class TestPaymentScheduledOverTheLimit(TopUpTestCase):
 		reminders = _reminders()
 		self.assertEqual(len(reminders), 1)
 		self.assertEqual(reminders[0].reference_name, invoice)
-		self.assertIn("Add ₹ 30,000.00 to your wallet by 5 November 2026.", reminders[0].message)
+		self.assertIn("Add ₹ 30,000.00 of credit to your wallet by 5 November 2026.", reminders[0].message)
 
 	def test_a_bill_within_the_limit_keeps_the_payment_scheduled_notice(self):
 		frappe.db.set_value("Billing Profile", TEAM, "payment_day", 5)
@@ -252,7 +252,13 @@ class TestBanner(TopUpTestCase):
 			labels = account.get_collection_status(TEAM)["top_up_due"]["labels"]
 
 		self.assertEqual(
-			labels, {"amount": "₹ 40,000.00", "payment_date": "1 December 2026", "limit": "₹ 15,000.00"}
+			labels,
+			{
+				"amount": "₹ 40,000.00",
+				"amount_with_gst": None,
+				"payment_date": "1 December 2026",
+				"limit": "₹ 15,000.00",
+			},
 		)
 
 	def test_no_banner_once_the_card_can_pay_what_the_wallet_leaves(self):
@@ -320,7 +326,7 @@ class TestLastMonthNotIssuedYet(TopUpTestCase):
 		_draft(TEAM, 30000, period_start="2026-11-01")
 
 		self.assertEqual(self._run("2026-12-01"), [{"team": TEAM, "reminded": True}])
-		self.assertIn("Add ₹ 30,000.00 to your wallet by 6 December 2026.", _reminders()[0].message)
+		self.assertIn("Add ₹ 30,000.00 of credit to your wallet by 6 December 2026.", _reminders()[0].message)
 
 	def test_with_no_draft_last_month_is_projected(self):
 		with patch.object(top_up_reminders, "get_forecast_total", return_value=20000) as forecast:
@@ -356,7 +362,9 @@ class TestHeldTeam(TopUpTestCase):
 		)
 
 		message = _reminders()[0].message
-		self.assertIn("Add ₹ 30,000.00 to your wallet by 5 December 2026 to pay this bill.", message)
+		self.assertIn(
+			"Add ₹ 30,000.00 of credit to your wallet by 5 December 2026 to pay this bill.", message
+		)
 		self.assertNotIn("Your card or UPI", message)
 
 

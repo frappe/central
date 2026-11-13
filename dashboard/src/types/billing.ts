@@ -489,15 +489,22 @@ export interface CollectionStatus {
 
 /** A top-up the card or UPI limit makes necessary before the payment date (INR only). */
 export interface TopUpDue {
-	/** The bill less the wallet, rounded up to ₹100. */
+	/** Credit that lets the wallet pay the whole bill, rounded up to ₹100. */
 	amount: number
+	/** What that credit costs with GST on top; equal to `amount` when no GST applies. */
+	amount_with_gst: number
 	/** ISO payment date. */
 	date: string
 	/** Most the card or UPI may pay automatically; 0 when none is saved. */
 	limit: number
 	has_method: boolean
-	/** The amount, date and limit as the reminder email shows them; `limit` is null with no method. */
-	labels: { amount: string; payment_date: string; limit: string | null }
+	/** As the reminder email shows them; `amount_with_gst` is null with no GST, `limit` with no method. */
+	labels: {
+		amount: string
+		amount_with_gst: string | null
+		payment_date: string
+		limit: string | null
+	}
 }
 
 export type NotificationCategory = 'Billing' | 'Server' | 'Team' | 'Trial'

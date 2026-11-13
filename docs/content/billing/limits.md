@@ -25,9 +25,14 @@ Frappe Cloud adds the credit to your wallet after the payment goes through. Add 
 
 ### Credit for a large INR bill
 
-A card or UPI can pay only up to its limit automatically, at most ₹15,000. The overview shows **Add credit before your payment date** when your card or UPI would be asked for more than that limit on the payment date. It shows the amount to add and the payment date. Click **Add credit** to open the top-up with that amount filled in. Frappe Cloud also sends an email 5 days and 2 days before the payment date.
+A card or UPI can pay only up to its limit automatically, at most ₹15,000. The overview shows **Add credit before your payment date** when your card or UPI would be asked for more than that limit on the payment date. This also applies to automatic payments: your payment mode does not change until an invoice is charged. Frappe Cloud also sends an email 5 days and 2 days before the payment date.
 
-- Before the invoice is issued, your wallet pays what it can and the card or UPI pays the rest. The message goes away when your next bill, less your wallet, is within the limit.
+The message asks for enough credit for your wallet to pay the whole bill, rounded up to the next ₹100. If you pay GST on top-ups, it also shows what that credit costs with GST, for example "Add ₹28,900 of credit to your wallet by 8 December 2026 (₹34,102 with GST)". Click **Add credit** to open the top-up with that credit filled in. The dialog shows the GST and the same total to pay.
+
+The amount follows how your wallet pays an invoice:
+
+- Credit you paid GST on pays the invoice amount before tax, and its GST pays the invoice GST. Promotional credit pays the invoice as it stands, tax included.
+- Before the invoice is issued, your wallet pays what it can and the card or UPI pays the rest. The message goes away when what your wallet leaves is within the limit.
 - After the invoice is issued, credit you add pays it only when the credit covers the whole amount due. The message goes away when your wallet covers the whole amount due, or when that amount is within the limit.
 
 Promotional credit that expires before the payment date does not count. If you do not add credit, Frappe Cloud cannot charge the bill automatically, and the invoice stays unpaid until you pay it.
