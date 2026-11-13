@@ -459,6 +459,33 @@ class TestNotice(SetupExpiryTestBase):
 		self.assertEqual(len(self.notices()), 1)
 		self.assertEqual(self.emails.call_count, 1)
 
+	def test_a_later_setup_expiring_within_a_day_sends_no_second_notice(self):
+		self.make_method(started=hours_before_now(26))
+		setup_expiry.expire_unfinished_setups(now=NOW)
+		later = self.make_method(started=hours_before_now(25))
+
+		setup_expiry.expire_unfinished_setups(now=NOW)
+
+		self.assertEqual(self.status(later), "Expired")
+		self.assertEqual(len(self.notices()), 1)
+		self.assertEqual(self.emails.call_count, 1)
+
+	def test_a_setup_expiring_a_day_after_the_last_notice_is_told_again(self):
+		self.make_method(started=hours_before_now(26))
+		setup_expiry.expire_unfinished_setups(now=NOW)
+		frappe.db.set_value(
+			"Billing Notification Log",
+			{"team": TEAM, "event_type": "Payment Method Setup Expired"},
+			"creation",
+			hours_before_now(25),
+			update_modified=False,
+		)
+		self.make_method(started=hours_before_now(25))
+
+		setup_expiry.expire_unfinished_setups(now=NOW)
+
+		self.assertEqual(self.emails.call_count, 2)
+
 	def test_no_notice_when_a_working_method_was_added_after_the_setup(self):
 		setup = self.make_method(started=hours_before_now(30))
 		self.make_method(status="Active", gateway_method_id="pm_later", validated_at=hours_before_now(29))

@@ -27,6 +27,8 @@ SETUPS_PER_RUN = 500
 RELEASE_RETRY_DAYS = 7
 # Untranslated, so the comment always starts with it and a second give-up is never written.
 GIVE_UP_NOTE = "This setup's release at the gateway did not finish in time."
+# A team gets at most one expiry notice in this many hours.
+NOTICE_COOLDOWN_HOURS = 24
 
 
 def expire_unfinished_setups(now=None) -> dict:
@@ -277,7 +279,7 @@ def _adapter(gateway: str):
 
 def _notify(team: str, expired: list) -> None:
 	latest = max(expired, key=lambda method: method.creation)
-	if has_active_method_since(team, latest.creation):
+	if has_active_method_since(team, latest.creation) or has_recent_notice(team):
 		return
 
 	notifications.notify(
@@ -285,6 +287,16 @@ def _notify(team: str, expired: list) -> None:
 		NOTICE,
 		reference_doctype="Payment Method",
 		reference_name=latest.name,
+	)
+
+
+def has_recent_notice(team: str) -> bool:
+	"""True when the team was sent an expiry notice in the last `NOTICE_COOLDOWN_HOURS`."""
+	since = frappe.utils.add_to_date(frappe.utils.now_datetime(), hours=-NOTICE_COOLDOWN_HOURS)
+	return bool(
+		frappe.db.exists(
+			"Billing Notification Log", {"team": team, "event_type": NOTICE, "creation": [">=", since]}
+		)
 	)
 
 

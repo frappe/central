@@ -42,7 +42,7 @@ The options in the dialog depend on your billing currency. Teams billed in INR c
 
 You can close the bank's page or the dialog at any time. Start again at once: an unfinished setup does not block a new one. When you start again, Frappe Cloud cancels the unfinished setup. About 30 minutes to 1.5 hours later, it refunds any ₹1 authorisation charge the setup took and removes any card or UPI authorisation it saved at the gateway. If you used the same card or UPI account again, it keeps that authorisation for your new payment method.
 
-A card or UPI setup that is not finished in 24 hours is not saved. Frappe Cloud sends an email and an in-app notice: "Your card or UPI setup was not finished, so it was not saved. Add it again from Billing." If you add a payment method after you start that setup, you do not get the notice.
+A card or UPI setup that is not finished in 24 hours is not saved. Frappe Cloud sends an email and an in-app notice: "Your card or UPI setup was not finished, so it was not saved. Add it again from Billing." If you add a payment method after you start that setup, you do not get the notice. You get at most one such notice a day.
 
 If you authorised RuPay or UPI Autopay on the bank's page but closed the window before Frappe Cloud showed it, Frappe Cloud still saves it when Razorpay confirms the payment. The method shows in Billing, and the ₹1 authorisation charge is refunded. If you then added the same card again and that setup finished first, the earlier setup is not saved a second time. Its ₹1 authorisation charge is refunded. If you set up a new UPI Autopay mandate after you started the earlier one, the newer mandate stays: the earlier one is not saved, and its ₹1 authorisation charge is refunded.
 
