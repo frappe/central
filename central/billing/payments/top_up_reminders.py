@@ -91,6 +91,10 @@ def get_shortfall_due(team: str, bill: float, gst: float, date, invoice: str | N
 		return None
 	ask = wallet_draw.TopUpAsk(lots, bill, gst, gst_left, credits.top_up_gst_rate(team))
 	credit = ask.credit(ROUND_TO)
+	if credit is None:
+		# No amount would be true to state, so nothing is asked.
+		frappe.logger("billing").warning(f"top-up reminder skipped for {team}: no credit pays the bill")
+		return None
 	return {
 		"amount": credit,
 		"amount_with_gst": frappe.utils.flt(credit + credits.top_up_gst(team, credit), 2),

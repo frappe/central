@@ -46,6 +46,10 @@ def plan_draw(lots: list, collectable: float, gst_due: float, gst_left: float) -
 	)
 
 
+# The cover formula can miss by a rounding step; a larger gap means the inputs disagree.
+MAX_EXTRA_STEPS = 3
+
+
 class TopUpAsk:
 	"""The least purchased credit, in whole steps, that makes the wallet pay all of a bill.
 
@@ -58,19 +62,28 @@ class TopUpAsk:
 		self.lots, self.collectable, self.gst_due = lots, collectable, gst_due
 		self.gst_left, self.top_up_rate = gst_left, top_up_rate
 
-	def credit(self, step: int) -> int:
+	def credit(self, step: int) -> int | None:
 		draw = plan_draw(self.lots, self.collectable, self.gst_due, self.gst_left)
 		cover = credit_to_cover(draw, self.collectable, self.gst_due, self.top_up_rate)
 		pays = math.ceil(frappe.utils.flt(cover, 2) / step)
 		if not pays:
 			return 0
-		if not self.is_paid_with(pays * step):
-			pays += 1
+		pays = self._first_paying(pays, step)
+		if pays is None:
+			return None
 		short = 0
 		while pays - short > 1:
 			mid = (pays + short) // 2
 			pays, short = (mid, short) if self.is_paid_with(mid * step) else (pays, mid)
 		return pays * step
+
+	def _first_paying(self, pays: int, step: int) -> int | None:
+		"""The first step from `pays` that pays the bill, a few steps up at most, or None
+		when none does (the bill's GST and the top-up GST disagree)."""
+		for extra in range(MAX_EXTRA_STEPS + 1):
+			if self.is_paid_with((pays + extra) * step):
+				return pays + extra
+		return None
 
 	def is_paid_with(self, credit: float) -> bool:
 		"""Whether the wallet pays the bill once `credit`, with its GST, is added last."""

@@ -206,3 +206,11 @@ class TestRounding(TopUpCreditTestCase):
 		self.assertEqual(ask.credit(100), 87500)
 		self.assertFalse(ask.is_paid_with(87400))
 		self.assertTrue(ask.is_paid_with(87500))
+
+	def test_no_ask_when_no_credit_can_pay_the_bill(self):
+		"""With no GST on a top-up but GST on the bill, purchased credit never pays the
+		GST, so no amount is asked."""
+		lots = [frappe._dict(remaining=5000.0, paid_in=1)]
+		ask = wallet_draw.TopUpAsk(lots, 40000.0, 6101.69, 900.0, 0.0)
+
+		self.assertIsNone(ask.credit(100))
