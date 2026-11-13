@@ -250,10 +250,11 @@ def save_billing_settings(
 def get_collection_status(team: str | None = None) -> dict:
 	"""Collection mode + the "Action Required" banner feed (ADR 0005, #50).
 
-	Re-checks an Auto Charge team against its off-session limit using the
-	month-to-date forecast (so we warn before the bill lands), then returns the state
-	the banner renders from: the mode, whether action is required and why, the
-	threshold, and the numbers (projected total, wallet balance, shortfall).
+	Returns the state the banner renders from: the mode, whether action is required
+	and why, the threshold, the numbers (projected total, wallet balance, shortfall),
+	and `top_up_due`: the credit to add before the next payment date when the card or
+	UPI would be asked for more than its limit (#191). The forecast only informs: a
+	team moves to Action Required when a bill is charged, never on this read.
 
 	It also carries `mandate_gap_note`: the networks no rail will auto-charge. This
 	is the screen where a customer decides how they want to pay, so it is the honest
@@ -265,15 +266,41 @@ def get_collection_status(team: str | None = None) -> dict:
 	from central.billing.revenue import credits
 
 	projected = frappe.utils.flt(get_forecast(team).get("projected_total"))
-	st = collection_mode.evaluate(team, projected_amount=projected)
+	st = collection_mode.status(team)
 	wallet = frappe.utils.flt(credits.get_balance(team)["balance"])
 	return {
 		**st,
+		"top_up_due": None if st["action_required"] else _top_up_due(team, projected),
 		"projected_total": projected,
 		"wallet_balance": wallet,
 		"shortfall": max(0.0, frappe.utils.flt(projected - wallet, 2)),
 		"currency": _team_currency(team),
 		"mandate_gap_note": instruments.mandate_gap_note(_team_currency(team)),
+	}
+
+
+def _top_up_due(team: str, projected: float) -> dict | None:
+	"""The top-up the banner asks for before the next payment date (#191)."""
+	from central.billing.payments import top_up_reminders
+
+	due = top_up_reminders.get_top_up_due(team, forecast=projected)
+	if not due:
+		return None
+	# `labels` are formatted as the reminder email shows them, so both read the same.
+	return {
+		**{
+			key: due[key]
+			for key in (
+				"amount",
+				"amount_with_gst",
+				"tax_label",
+				"date",
+				"limit",
+				"has_method",
+				"includes_earlier_gst",
+			)
+		},
+		"labels": top_up_reminders.format_due(due),
 	}
 
 

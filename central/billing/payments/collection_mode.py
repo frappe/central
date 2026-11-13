@@ -8,8 +8,8 @@ Stripe India and Razorpay alike) or its mandate's maximum, whichever is lower. A
 team's off-session limit is the largest of these across its saved methods. A bill
 at or under it is charged silently on a method that can take it. When what is left
 of an `Auto Charge` or `Prepaid` team's bill after the wallet is over the limit, we
-do not try it and flip the team to `Action Required`. An `Auto Charge` team is also
-flipped early when its month-to-date forecast goes over the limit. The account
+do not try it and flip the team to `Action Required`. A forecast never flips a team:
+before the bill, the billing page and a reminder ask for a top-up instead. The account
 keeps running until the customer picks `Manual Checkout` (pay each invoice
 on-session, any amount) or `Prepaid` (the wallet pays first and the card or UPI
 pays only amounts up to the limit, so a larger bill needs enough credit). A
@@ -20,10 +20,9 @@ Indian card mandate on Stripe and a UPI Autopay mandate on Razorpay are both
 `Auto Charge`. Whether a ceiling applies is derived from the currency and the
 rail's own capability, never from the mode.
 
-This module is the pure state machine over `Billing Profile.collection_mode`; the
-forecast number is supplied by the caller (the dashboard computes it in the authed
-request, the charge loop passes the invoice total), so the logic stays unit-clean
-and side-effect free apart from the profile write + one notification.
+This module is the state machine over `Billing Profile.collection_mode`. The charge
+loop decides when a bill trips it; the only side effects are the profile write and one
+notification.
 """
 
 import frappe
@@ -134,25 +133,6 @@ def is_debit_allowed(team: str) -> bool:
 	limit) hold a debit back."""
 	mode = frappe.db.get_value("Billing Profile", team, "collection_mode")
 	return mode not in DEBIT_HELD_MODES
-
-
-def evaluate(
-	team: str, projected_amount: float | None = None, reason: str = "forecast_over_threshold"
-) -> dict:
-	"""Re-check an `Auto Charge` team against its off-session limit and trip
-	`Action Required` if `projected_amount` (major units) goes over it. A no-op for any
-	other mode (so it's safe to call from the charge loop / dashboard). Returns the
-	current status()."""
-	mode = frappe.db.get_value("Billing Profile", team, "collection_mode")
-	# Auto Charge only: the forecast is the gross bill, not the wallet shortfall, so it
-	# cannot tell whether a Prepaid wallet will cover it.
-	if (
-		mode == "Auto Charge"
-		and projected_amount is not None
-		and not is_within_off_session_limit(team, projected_amount)
-	):
-		trip(team, reason)
-	return status(team)
 
 
 def trip(team: str, reason: str, invoice: str | None = None) -> None:

@@ -12,7 +12,9 @@ import { whenTeamReady } from '@/composables/useTeamScope'
 import { getErrorMessage, successToast } from '@/lib/feedback'
 import { money } from '@/lib/format'
 import { __ } from '@/lib/translate'
-import type { CollectionStatus } from '@/types/billing'
+import type { CollectionStatus, TopUpDue } from '@/types/billing'
+
+const emit = defineEmits<{ 'add-credit': [amount: number] }>()
 
 const { activeTeam } = useSession()
 const { canManageBilling } = useCapabilities()
@@ -28,6 +30,59 @@ whenTeamReady(() => status.reload())
 const s = computed(() => status.data)
 const show = computed(() => !!s.value?.action_required)
 const currency = computed(() => s.value?.currency || 'INR')
+
+// The card or UPI would be asked for more than it may pay automatically: ask for the
+// credit that lets the wallet pay the whole bill. Services keep running either way.
+const topUp = computed(() => (show.value ? null : s.value?.top_up_due))
+const topUpTitle = __('Add credit before your payment date')
+// The amounts and the date come formatted from the server, as the reminder email shows them.
+const topUpText = computed(() => {
+	const due = topUp.value
+	if (!due) return ''
+	const text = topUpAsk(due)
+	// Earlier credit with no GST paid takes its GST from this top-up, so the ask is more than the gap.
+	if (!due.includes_earlier_gst) return text
+	return `${text} ${__('This includes GST on earlier credit that had none.')}`
+})
+
+function topUpAsk(due: TopUpDue) {
+	const {
+		amount,
+		amount_with_gst: withGst,
+		tax_label: taxLabel,
+		payment_date: date,
+		limit,
+	} = due.labels
+	if (withGst)
+		return topUpTextWithGst(amount, withGst, taxLabel ?? '', date, limit)
+	if (!limit)
+		return __(
+			'Add {0} of credit to your wallet by {1}. No card or UPI is saved to pay the rest.',
+			[amount, date],
+		)
+	return __(
+		'Add {0} of credit to your wallet by {1}. Your card or UPI pays only amounts up to {2}.',
+		[amount, date, limit],
+	)
+}
+
+function topUpTextWithGst(
+	amount: string,
+	withGst: string,
+	taxLabel: string,
+	date: string,
+	limit: string | null,
+) {
+	if (!limit)
+		return __(
+			'Add {0} of credit to your wallet by {1} ({2} incl. {3}). No card or UPI is saved to pay the rest.',
+			[amount, date, withGst, taxLabel],
+		)
+	return __(
+		'Add {0} of credit to your wallet by {1} ({2} incl. {3}). Your card or UPI pays only amounts up to {4}.',
+		[amount, date, withGst, taxLabel, limit],
+	)
+}
 
 const choosing = ref(false)
 const chosen = ref<string | null>(null) // 'Manual Checkout' | 'Prepaid'
@@ -140,6 +195,15 @@ const options = computed(() => [
 		:primary-action="canManageBilling ? { label: 'Choose how to pay', onClick: () => { choosing = true } } : undefined"
 	>
 		<template #description>{{ reasonText }}</template>
+	</Alert>
+
+	<Alert
+		v-else-if="topUp"
+		theme="blue"
+		:title="topUpTitle"
+		:primary-action="canManageBilling ? { label: __('Add credit'), onClick: () => emit('add-credit', topUp!.amount) } : undefined"
+	>
+		<template #description>{{ topUpText }}</template>
 	</Alert>
 
 	<Dialog v-model:open="choosing" title="How do you want to pay?">

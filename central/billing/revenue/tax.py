@@ -108,6 +108,38 @@ def has_zero_rating(profile, gst) -> bool:
 	return bool(profile.zero_rated) and not (gst.lapsed and profile.zero_rating_reason == "SEZ")
 
 
+def tax_label(team: str) -> str | None:
+	"""The GST the team is charged, as its documents name it: "IGST 18%",
+	"CGST 9% + SGST 9%" or "No GST (SEZ)". None when no GST applies. While the
+	company's state was never known, the split cannot be told, so it reads "GST 18%"."""
+	from central.billing.ingester import gst
+
+	block = resolve_tax(team, 100)
+	if block["zero_rating_reason"] == "SEZ":
+		return _("No GST (SEZ)")
+	if block["output_tax_type"] != "GST" or not block["output_tax_amount"]:
+		return None
+	rate = frappe.utils.flt(block["output_tax_rate"])
+	company_code = gst.cached_company_state_code()
+	if not company_code:
+		return _("GST {0}%").format(_percent(rate))
+	if is_in_state_supply(team, company_code):
+		return _("CGST {0}% + SGST {0}%").format(_percent(rate / 2))
+	return _("IGST {0}%").format(_percent(rate))
+
+
+def is_in_state_supply(team: str, company_code: str) -> bool:
+	"""Whether the team's billing state is the company's own. A team with no state is inter-state."""
+	from central.billing.ingester import gst
+
+	state = frappe.db.get_value("Billing Profile", {"team": team, "country": INDIA}, "state")
+	return gst.is_in_state(state, company_code)
+
+
+def _percent(rate: float) -> str:
+	return f"{frappe.utils.flt(rate, 2):g}"
+
+
 def _get_tax_profile(team: str):
 	if frappe.db.exists("Tax Profile", team):
 		return frappe.get_doc("Tax Profile", team)

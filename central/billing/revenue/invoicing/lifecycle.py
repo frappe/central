@@ -24,6 +24,7 @@ from central.billing.doctype.invoice.invoice import (
 from central.billing.platform.records import save_billing_record
 from central.billing.revenue import credits
 from central.billing.revenue.dunning import get_suspension_date
+from central.billing.revenue.invoicing import wallet_draw
 from central.billing.revenue.invoicing.generate import generate_team_invoice
 from central.billing.revenue.tax import is_internal_team
 from central.billing.states import record_event, transition
@@ -122,11 +123,12 @@ def open_and_collect(invoice: str, collect: bool = True) -> dict:
 	# Leg 2 — charge the remainder, walking the team's methods primary→backup
 	# (#28). Credits-only teams (no active method) fall through to dunning.
 	charge = None
+	collect_started = frappe.utils.now_datetime()
 	if collect:
 		from central.billing.payments import collection
 
 		charge = collection.collect_invoice(invoice)
-	_notify_payment_scheduled(invoice)
+	_notify_payment_scheduled(invoice, collect_started)
 
 	return {
 		"invoice": invoice,
@@ -138,16 +140,16 @@ def open_and_collect(invoice: str, collect: bool = True) -> dict:
 	}
 
 
-def _notify_payment_scheduled(invoice: str) -> None:
+def _notify_payment_scheduled(invoice: str, collect_started) -> None:
 	"""Tell the team what the invoice it just opened charges, and when.
 
 	Only the run that claims the invoice gets here, so the team hears once. It runs after the
-	first collection step, which sets the debit time of a rail that owes a pre-debit notice."""
+	first collection step, which sets a pre-debit time and may trip Action Required."""
 	from central.billing.payments.payment_notices import notify_payment_scheduled
 
 	doc = frappe.get_doc("Invoice", invoice)
 	if doc.status == OUTSTANDING:
-		notify_payment_scheduled(doc)
+		notify_payment_scheduled(doc, collect_started)
 
 
 def settle_with_new_credit(team: str) -> list[dict]:
@@ -190,8 +192,8 @@ def _settle_with_credit(invoice: str) -> dict:
 	if not is_owed(doc) or due <= 0 or charges.unsettled_capture(invoice):
 		return {"invoice": invoice, "applied": 0}
 
-	draw = _draw_wallet(doc, due, _gst_still_due(doc, due))
-	if draw.wallet <= 0 or frappe.utils.flt(due - draw.wallet - draw.gst, 2) > 0:
+	draw = _draw_wallet(doc, due, wallet_draw.gst_still_due(doc, due))
+	if not wallet_draw.is_paid_by(draw, due):
 		return {"invoice": invoice, "applied": 0}
 
 	_apply_draw(doc, draw)
@@ -226,14 +228,6 @@ def _settle_paid_by_credit(doc, reason: str, applied: float) -> None:
 	enqueue_invoice_sync(doc.name)
 
 
-def _gst_still_due(doc, due: float) -> float:
-	"""The GST share of what is still due. Earlier credit paid GST in proportion to what it paid."""
-	collectable = frappe.utils.flt(doc.total) - frappe.utils.flt(doc.tds_amount)
-	if collectable <= 0:
-		return 0.0
-	return frappe.utils.flt(doc.output_tax_amount) * due / collectable
-
-
 def _waive_internal(doc) -> dict:
 	"""Waive an internal team's invoice in full: rated for the record, never collected."""
 	_retax(doc)
@@ -256,34 +250,14 @@ HOLD_KEYS = {
 
 
 def _draw_wallet(doc, collectable: float, gst_due: float) -> frappe._dict:
-	"""What the wallet pays of `collectable`, of which `gst_due` is GST, in the order it is spent.
-
-	Credit with GST already paid on it (a top-up) pays the invoice's net amount, and
-	that GST pays the GST on it. Any other credit (promotional, a refund) pays the
-	invoice as it stands, GST included. The wallet stays locked until this commits.
-	"""
+	"""What the wallet pays of `collectable`, of which `gst_due` is GST. The wallet stays
+	locked until this commits."""
 	credits.lock_team_wallet(doc.team, doc.currency)
-	net_due = collectable - gst_due
-	gst_per_net = gst_due / net_due if gst_due and net_due > 0 else 0
-	gst_left = credits.advance_gst_balance(doc.team, doc.currency)
-
-	owed, wallet, advance, gst = collectable, 0.0, 0.0, 0.0
-	for lot in credits.credit_lots(doc.team, doc.currency):
-		if owed <= 0.005:
-			break
-		if lot.remaining <= 0:
-			continue
-		if lot.paid_in and gst_per_net:
-			net = min(lot.remaining, owed / (1 + gst_per_net))
-			tax = min(net * gst_per_net, max(gst_left - gst, 0))
-			wallet, advance, gst, owed = wallet + net, advance + net, gst + tax, owed - net - tax
-		else:
-			use = min(lot.remaining, owed)
-			wallet, owed = wallet + use, owed - use
-			if lot.paid_in:
-				advance += use
-	return frappe._dict(
-		wallet=frappe.utils.flt(wallet, 2), advance=frappe.utils.flt(advance, 2), gst=frappe.utils.flt(gst, 2)
+	return wallet_draw.plan_draw(
+		credits.credit_lots(doc.team, doc.currency),
+		collectable,
+		gst_due,
+		credits.advance_gst_balance(doc.team, doc.currency),
 	)
 
 

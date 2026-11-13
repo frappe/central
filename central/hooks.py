@@ -278,6 +278,8 @@ scheduler_events = {
 			"central.integrations.servers.reconcile",
 			"central.infrastructure.doctype.region.cargo_connection.register_pending_cargo",
 		],
+		# 09:00 system time (Asia/Kolkata): remind INR teams to top up before the payment date.
+		"0 9 * * *": ["central.billing.payments.top_up_reminders.run_top_up_reminders"],
 		# Retry proxy routes that failed or never ran, up to the attempt limit.
 		"*/5 * * * *": [
 			"central.infrastructure.doctype.site_domain.site_domain.retry_failed",
