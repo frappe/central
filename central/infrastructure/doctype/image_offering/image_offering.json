@@ -15,6 +15,10 @@
   "display_order",
   "logo",
   "description",
+  "plans_section",
+  "plan_category",
+  "column_break_plans",
+  "minimum_memory_mib",
   "selection_section",
   "required_tags"
  ],
@@ -75,6 +79,31 @@
    "fieldname": "description",
    "fieldtype": "Small Text",
    "label": "Description"
+  },
+  {
+   "fieldname": "plans_section",
+   "fieldtype": "Section Break",
+   "label": "Plans"
+  },
+  {
+   "description": "The plan family a server from this offering is sold on. Leave blank to offer every server plan.",
+   "fieldname": "plan_category",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Plan Category",
+   "options": "Plan Category"
+  },
+  {
+   "fieldname": "column_break_plans",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "The smallest memory a server from this offering runs on. Smaller plans and custom sizes are not offered. Leave at 0 for no minimum.",
+   "fieldname": "minimum_memory_mib",
+   "fieldtype": "Int",
+   "label": "Minimum Memory (MiB)",
+   "non_negative": 1
   },
   {
    "fieldname": "selection_section",

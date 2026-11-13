@@ -181,10 +181,7 @@ class TestTeamLifecycle(IntegrationTestCase):
 			stop_team_keys(self.team.name)
 
 		client.update_caps.assert_called_once_with(self.team.name, {"old-key": 0, "new-key": 0})
-		self.assertEqual(
-			[c.args for c in client.revoke_key.call_args_list],
-			[(self.team.name, "old-key"), (self.team.name, "new-key")],
-		)
+		client.revoke_keys.assert_called_once_with(self.team.name, ["old-key", "new-key"])
 
 	def test_a_member_cannot_change_the_status_by_saving_the_team(self):
 		frappe.set_user(self.owner)

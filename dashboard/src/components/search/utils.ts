@@ -8,7 +8,7 @@ const HTML_ENTITIES: Record<string, string> = {
 	"'": '&#39;',
 }
 
-const escapeHtml = (text: string): string =>
+export const escapeHtml = (text: string): string =>
 	text.replace(/[&<>"']/g, (character) => HTML_ENTITIES[character])
 
 /** HTML for a result label with the query in <mark>. Names are user data, so the

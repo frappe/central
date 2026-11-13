@@ -477,6 +477,7 @@ export interface CollectionStatus {
 	mandate_gap_note?: string | null
 	action_required: boolean
 	reason: string | null
+	/** Most the team's card or UPI may be charged automatically; null when nothing caps it. */
 	threshold: number | null
 	projected_total: number
 	wallet_balance: number

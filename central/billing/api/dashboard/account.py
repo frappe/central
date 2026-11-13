@@ -244,7 +244,7 @@ def save_billing_settings(
 def get_collection_status(team: str | None = None) -> dict:
 	"""Collection mode + the "Action Required" banner feed (ADR 0005, #50).
 
-	Re-checks an e-mandate team against the ₹15,000 silent-debit threshold using the
+	Re-checks an Auto Charge team against its off-session limit using the
 	month-to-date forecast (so we warn before the bill lands), then returns the state
 	the banner renders from: the mode, whether action is required and why, the
 	threshold, and the numbers (projected total, wallet balance, shortfall).

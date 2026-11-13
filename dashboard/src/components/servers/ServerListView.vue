@@ -1,15 +1,13 @@
 <script setup lang="ts">
 import { TabButtons, Tooltip } from 'frappe-ui'
 import { computed, ref } from 'vue'
-
+import CopyableValue from '@/components/common/CopyableValue.vue'
 import {
 	createListViewQuery,
 	ListView,
 	type ListViewColumn,
 	type ListViewFilter,
 } from '@/components/common/list-view'
-
-import CopyableValue from '@/components/common/CopyableValue.vue'
 import ServerRowActions from '@/components/servers/ServerRowActions.vue'
 import StatusRing from '@/components/servers/StatusRing.vue'
 

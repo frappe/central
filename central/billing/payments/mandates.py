@@ -377,6 +377,7 @@ def refund_authorisation_payment(payment_method: str, payment_id: str, amount: f
 			idempotency_key=f"mandate-authorisation-{payment_id}",
 		)
 		if not result.success:
+			# nosemgrep: central-untranslated-exception -- caught below and kept as a comment for the operator
 			raise frappe.ValidationError(f"Gateway refund status: {result.status}")
 	except Exception as error:
 		method.add_comment(
@@ -436,31 +437,6 @@ def reauthorise_mandate(payment_method: str) -> dict:
 	"""
 	method = frappe.get_doc("Payment Method", payment_method)
 	return setup_mandate(method.team, method.gateway, customer_id=method.gateway_customer_id)
-
-
-# --- cap reconciliation -----------------------------------------------------
-
-
-def active_mandate_ceiling(team: str):
-	"""Highest ceiling among a team's active mandates (None if none active)."""
-	ceilings = frappe.get_all(
-		"Payment Method",
-		filters={"team": team, "method_type": MANDATE_METHOD, "status": "Active"},
-		pluck="mandate_max_amount",
-	)
-	return max(ceilings) if ceilings else None
-
-
-def effective_cap(team: str):
-	"""The cap a mandate team is actually held to: min(tier cap, mandate ceiling).
-
-	A team with no active mandate is bounded purely by its tier cap. A pending
-	re-authorisation keeps the ceiling at the *old* value even after the tier
-	cap rises, so this naturally returns the old ceiling until re-consent.
-	"""
-	cap = team_cap(team)
-	ceiling = active_mandate_ceiling(team)
-	return cap if ceiling is None else min(cap, ceiling)
 
 
 def reauth_pending(team: str) -> bool:

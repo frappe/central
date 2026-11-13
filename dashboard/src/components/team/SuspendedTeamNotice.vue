@@ -1,13 +1,11 @@
 <script setup lang="ts">
 import { Button } from 'frappe-ui'
-import { computed } from 'vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import { useSession } from '@/composables/useSession'
 import { useSupport } from '@/composables/useSupport'
 
 const { activeTeamLabel } = useSession()
-const { getTicketUrl } = useSupport()
-const ticketUrl = computed(() => getTicketUrl({ Team: activeTeamLabel.value }))
+const { hasSupport, openSupport } = useSupport()
 </script>
 
 <template>
@@ -19,10 +17,10 @@ const ticketUrl = computed(() => getTicketUrl({ Team: activeTeamLabel.value }))
 		>
 			<template #action>
 				<Button
-					v-if="ticketUrl"
+					v-if="hasSupport"
 					label="Contact support"
-					:href="ticketUrl"
-					icon-right="lucide-external-link"
+					icon-left="lucide-life-buoy"
+					@click="openSupport({ Team: activeTeamLabel })"
 				/>
 			</template>
 		</EmptyState>

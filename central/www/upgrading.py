@@ -1,6 +1,7 @@
 from urllib.parse import urlencode
 
 import frappe
+from frappe.translate import get_translation_version
 
 from central.infrastructure.doctype.site.plan_change import PlanChange
 
@@ -12,6 +13,8 @@ def get_context(context):
 	developer or test bench also serves `?preview=1`, which plays every state with sample data."""
 	context.no_cache = 1
 	context.build_version = frappe.utils.get_build_version()
+	context.lang = frappe.local.lang
+	context.translations_version = get_translation_version()
 	context.preview = bool(
 		(frappe.conf.developer_mode or frappe.conf.allow_tests) and frappe.form_dict.preview
 	)

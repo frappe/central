@@ -14,6 +14,7 @@ from frappe.query_builder.functions import Count, Sum
 from frappe.utils import cint, flt
 from pydantic import ValidationError
 
+from central.billing.catalog import subscriptions
 from central.billing.catalog.composition import (
 	COMPUTE,
 	DISK,
@@ -31,7 +32,7 @@ from central.billing.doctype.billing_profile.billing_profile import (
 )
 from central.billing.payments.settlement import has_paid_by_hand, is_behind_on_payment, wallet_funds
 from central.billing.revenue.tax import is_internal_team
-from central.errors import throw_action_error
+from central.errors import RequestKeyReusedError, throw_action_error
 from central.iam import can, resolve_team
 from central.infrastructure.doctype.region.region import Region
 from central.infrastructure.doctype.resource_action.resource_action import (
@@ -44,6 +45,7 @@ from central.integrations.images import (
 	get_app_subdomain,
 	get_guide_url,
 	get_image_app_requirements,
+	get_minimum_memory_mib,
 	get_minimum_shape,
 	selected_image,
 	snapshot_image,
@@ -196,22 +198,33 @@ def submit_command(
 		)
 	if action == "restart" and server.status != "Running":
 		frappe.throw(_("Only a running server can be restarted."))
-	if action == "start" and frappe.db.exists(
-		"Subscription", {"server_id": server.name, "account_standing": "Suspended"}
-	):
-		throw_action_error(
-			"PAYMENT_OVERDUE", message=_("This server is suspended because an invoice is unpaid.")
-		)
-	if action == "start" and frappe.db.exists("Site", {"server": server.name, "trial_state": "Ended"}):
-		if has_active_payment_method(team):
-			frappe.throw(_("This trial has ended. Choose Keep this site to start it on its paid plan."))
-		frappe.throw(_("This trial has ended. Add a payment method to start it again."))
+	if action == "start":
+		_prepare_start(server, team)
 	if action == "terminate" and server.is_termination_protected:
 		frappe.throw(_("Turn off termination protection before you terminate this server."))
 	if take_snapshot:
 		server.require_server_access()
 
 	return _queue_command(action, server, take_snapshot=take_snapshot)
+
+
+def _prepare_start(server, team: str) -> None:
+	"""Refuse a start the server's billing does not allow, and resume paused billing."""
+	if frappe.db.exists("Subscription", {"server_id": server.name, "account_standing": "Suspended"}):
+		throw_action_error(
+			"PAYMENT_OVERDUE", message=_("This server is suspended because an invoice is unpaid.")
+		)
+	if frappe.db.exists("Site", {"server": server.name, "trial_state": "Ended"}):
+		if has_active_payment_method(team):
+			frappe.throw(_("This trial has ended. Choose Keep this site to start it on its paid plan."))
+		frappe.throw(_("This trial has ended. Add a payment method to start it again."))
+
+	subscription = frappe.db.get_value(
+		"Subscription", {"server_id": server.name}, "name", order_by="creation desc"
+	)
+	if subscription:
+		# Start is the server action the user may take, so it resumes billing without billing:manage.
+		subscriptions.reopen_paused_billing(subscription, changed_by=frappe.session.user)
 
 
 def submit_billing_command(action: str, server_name: str) -> ActionStatus:
@@ -300,7 +313,9 @@ def _repeated_request(server_input: CreateServerInput, digest: str):
 	if name:
 		action = frappe.get_doc("Resource Action", name)
 		if action.request_digest != digest:
-			frappe.throw(_("This request key was already used for different server settings."))
+			frappe.throw(
+				_("This request key was already used for different server settings."), RequestKeyReusedError
+			)
 		return action
 
 	name = unanswered_request(server_input.team, digest)
@@ -332,6 +347,7 @@ def _build_server_configuration(
 		includes,
 		server_input.sub_category,
 		is_free_trial,
+		server_input.offering,
 	)
 	validate_guest_input(server_input)
 	# Check the saved keys now so the form shows the error. Dispatch reads their text, which a
@@ -339,7 +355,9 @@ def _build_server_configuration(
 	resolve_team_ssh_keys(server_input.team, server_input.ssh_key_ids)
 	shape = image_shape(composition, image)
 	requirements = get_image_app_requirements(server_input.region, image, snapshot)
-	_validate_app_size(image, requirements, shape)
+	_validate_minimum_size(
+		get_minimum_shape(image, requirements, get_minimum_memory_mib(server_input.offering)), shape
+	)
 	subdomain = get_app_subdomain(server_input.region, server_input.app_inputs) if requirements else None
 	user_data = _get_user_data(server_input, requirements, subdomain)
 
@@ -428,15 +446,14 @@ def _validate_user_data(server_input: CreateServerInput, requirements: AppRequir
 			frappe.throw(_("{0} is required.").format(item.get("label", name)))
 
 
-def _validate_app_size(image: dict, requirements: AppRequirements | None, shape: dict[str, int]) -> None:
-	"""A new app server needs at least the app's minimum size. Any other server, and a
-	restored snapshot, has no app requirements."""
-	if not requirements:
-		return
-
-	minimum = get_minimum_shape(image, requirements)
+def _validate_minimum_size(minimum: dict[str, int], shape: dict[str, int]) -> None:
+	"""A new server needs at least the size its image, image offering and app ask for."""
 	if any(shape[key] < minimum[key] for key in minimum):
-		frappe.throw(_("This app needs a bigger server. Choose a plan with more CPU, memory or storage."))
+		frappe.throw(
+			_(
+				"This server is too small for the selected image. Choose a plan with more CPU, memory or storage."
+			)
+		)
 
 
 def unanswered_request(team: str, digest: str) -> str | None:
@@ -462,9 +479,10 @@ def validate_purchase(
 	includes: list[dict] | None,
 	sub_category: str | None,
 	is_free_trial: bool = False,
+	offering: str | None = None,
 ) -> tuple[list[dict], float]:
-	"""The composition and monthly rate of a server the team may buy. A free trial site is not
-	bought, so only the trial limit applies to it."""
+	"""The composition and monthly rate of a server the team may buy on `offering`'s plans. A
+	free trial site is not bought, so only the trial limit applies to it."""
 	internal = is_internal_team(team)
 	trial = is_free_trial or (not internal and bool(frappe.db.get_value("Team", team, "is_staging_trial")))
 	if is_free_trial:
@@ -472,7 +490,7 @@ def validate_purchase(
 	elif trial:
 		validate_trial(team)
 
-	catalog = get_server_plans(team, cluster=region, include_trial_plans=is_free_trial)
+	catalog = get_server_plans(team, cluster=region, include_trial_plans=is_free_trial, offering=offering)
 	if plan:
 		choices = [row for rows in catalog["plans"].values() for row in rows]
 		selected = next((row for row in choices if row["plan"] == plan), None)

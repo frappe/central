@@ -47,6 +47,13 @@ def silent_charge_ceiling(gateway: str, currency: str) -> float | None:
 	return min(configured, statutory) if statutory is not None else configured
 
 
+def is_within_silent_ceiling(gateway: str, currency: str | None, amount: float) -> bool:
+	"""Whether `amount` may be debited off-session on this rail. An amount equal to the
+	ceiling is allowed."""
+	ceiling = silent_charge_ceiling(gateway, currency)
+	return ceiling is None or frappe.utils.flt(amount) <= ceiling
+
+
 def requires_predebit_notice(gateway: str, currency: str) -> bool:
 	"""Whether every off-session debit on this rail is preceded by a notice."""
 	row = currency_row(gateway, currency)

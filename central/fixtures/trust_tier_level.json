@@ -15,8 +15,8 @@
  },
  {
   "doctype": "Trust Tier Level",
-  "name": "Growth",
-  "tier": "Growth",
+  "name": "Emerging",
+  "tier": "Emerging",
   "sequence": 1,
   "is_default": 0,
   "max_resource_count": 10,

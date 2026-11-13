@@ -19,6 +19,7 @@ arithmetic over one.
 import frappe
 
 from central.billing.doctype.invoice.invoice import owed_filters
+from central.billing.payments import collection_mode
 from central.billing.revenue.dunning import (
 	LADDER_FIELDS,
 	dunning_policy,
@@ -29,7 +30,7 @@ from central.billing.revenue.dunning import (
 
 # Modes in which nothing is charged off-session — dunning escalates without retrying, so
 # a row for one of these teams is asking a human to act rather than waiting on a gateway.
-ON_SESSION_MODES = ("Manual Checkout", "Action Required")
+ON_SESSION_MODES = collection_mode.DEBIT_HELD_MODES
 
 
 def unpaid_invoices(filters: dict | None = None) -> list[frappe._dict]:

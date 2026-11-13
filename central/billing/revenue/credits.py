@@ -299,7 +299,7 @@ def _post_entry(
 	new_balance = balance + (amount if entry_type == "Credit" else -amount)
 	if new_balance < 0:
 		raise InsufficientCredits(
-			f"Debit of {amount} {currency} exceeds wallet balance {balance} for {team}."
+			_("Debit of {0} {1} exceeds wallet balance {2} for {3}.").format(amount, currency, balance, team)
 		)
 
 	# Append the immutable ledger entry, then advance the authoritative balance on the

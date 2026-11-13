@@ -707,7 +707,14 @@ def _validate_firewall_change(firewall: dict | str) -> FirewallChange:
 	try:
 		return FirewallChange.model_validate(frappe.parse_json(firewall))
 	except ValidationError as error:
-		frappe.throw(error.errors(include_input=False)[0]["msg"].removeprefix("Value error, "))
+		detail = error.errors(include_input=False)[0]
+		# Only our own validators raise a translated sentence; Pydantic's type errors are English.
+		if detail["type"] != "value_error":
+			field = ".".join(str(part) for part in detail["loc"])
+			if not field:
+				frappe.throw(_("Check the firewall rules and try again."))
+			frappe.throw(_("Check {0} in the firewall rules and try again.").format(field))
+		frappe.throw(detail["msg"].removeprefix("Value error, "))
 
 
 def _update_one_firewall(team: str, resource_id: str, change: FirewallChange) -> str | None:

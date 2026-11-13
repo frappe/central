@@ -63,19 +63,28 @@ STATUS_FIELDS = (
 
 def action_status(row) -> ActionStatus:
 	"""The one shape a console reads an action in, built from a document or a query row."""
-	error = None
-	if row.error_code:
-		error = build_envelope(
-			row.error_code, action=row.action, message=row.error_message, remediation=row.remediation
-		)
-
 	return {
 		"action": row.name,
 		"status": row.status,
 		"resource_id": row.resource_id,
 		"title": row.title or row.resource_id or row.action,
-		"error": error,
+		"error": get_error(row),
 	}
+
+
+def get_error(row) -> dict | None:
+	"""The action's error envelope in the reader's language, from a document or a query row
+	with the STATUS_FIELDS. The record keeps only the copy that the catalog cannot rebuild."""
+	if not row.error_code:
+		return None
+
+	return build_envelope(
+		row.error_code,
+		action=row.action,
+		resource_id=row.resource_id,
+		message=row.error_message,
+		remediation=row.remediation,
+	)
 
 
 class ResourceAction(Document):
@@ -261,8 +270,7 @@ class ResourceAction(Document):
 			"last_checked_at": now,
 			"completed_at": now if status in TERMINAL_STATES else None,
 			"error_code": envelope["code"] if envelope else None,
-			"error_message": envelope["message"] if envelope else None,
-			"remediation": envelope["remediation"] if envelope else None,
+			**self._get_custom_copy(envelope),
 			"retriable": int(envelope["retriable"]) if envelope else 0,
 		}
 		if status in ("Queued", "Dispatching"):
@@ -358,6 +366,20 @@ class ResourceAction(Document):
 			event, self.team, site.product if site else None, user=self.requested_by, **properties
 		)
 
+	def _get_custom_copy(self, envelope: dict | None) -> dict:
+		"""The envelope's message and remediation when they differ from the catalog copy. The
+		catalog copy is left out, so each reader gets it in their own language."""
+		if not envelope:
+			return {"error_message": None, "remediation": None}
+
+		catalog = build_envelope(envelope["code"], action=self.action, resource_id=self.resource_id)
+		return {
+			"error_message": envelope["message"] if envelope["message"] != catalog["message"] else None,
+			"remediation": envelope["remediation"]
+			if envelope["remediation"] != catalog["remediation"]
+			else None,
+		}
+
 	def queue_attention_notification(self, envelope: dict | None) -> None:
 		"""Notify once when an action reaches a terminal state that needs attention."""
 		from central.notification.engine import queue_event
@@ -366,11 +388,17 @@ class ResourceAction(Document):
 			"create": "provision_failure",
 			"resize": "resize_failed",
 		}.get(self.action, "server_action_required")
+		# Catalog copy goes as its code, so each reader gets the sentence in their own language.
 		queue_event(
 			self.team,
 			event_type,
-			message=envelope["message"] if envelope else _("The operation did not finish."),
-			context={"action": self.action, "title": self.title or self.resource_id or self.name},
+			message=self.error_message if envelope else _("The operation did not finish."),
+			context={
+				"action": self.action,
+				"title": self.title or self.resource_id or self.name,
+				"error_code": self.error_code,
+				"resource_id": self.resource_id,
+			},
 			reference_doctype=self.doctype,
 			reference_name=self.name,
 		)
@@ -417,6 +445,10 @@ class ResourceAction(Document):
 
 		self.enqueue()
 
+	def onload(self) -> None:
+		# The form shows the error in the operator's language, also when only the code is stored.
+		self.set_onload("error", get_error(self))
+
 	@frappe.whitelist(methods=["GET"])
 	def get_setup_timeline(self) -> list[dict]:
 		"""Each step a new site takes, with when it happened, so an operator sees where a signup
@@ -434,7 +466,7 @@ class ResourceAction(Document):
 			{
 				"label": _("Server created"),
 				"at": self.completed_at if self.status == "Succeeded" else None,
-				"error": (self.error_message or self.status) if failed else None,
+				"error": ((get_error(self) or {}).get("message") or self.status) if failed else None,
 			},
 			{"label": _("Site addressable"), "at": site.creation},
 			{"label": _("Site answered"), "at": site.ready_at},
@@ -482,6 +514,7 @@ class ResourceAction(Document):
 			[row.model_dump() for row in configuration.includes],
 			configuration.sub_category,
 			is_free_trial=bool(self.is_free_trial),
+			offering=configuration.offering,
 		)
 
 	@classmethod

@@ -291,19 +291,17 @@ def check_subscriptions_name_a_known_region() -> list[Violation]:
 
 
 def check_running_servers_are_billed() -> list[Violation]:
-	"""A running server has an active subscription, unless it is a free trial."""
+	"""A running server has an open billing segment, unless it is a free trial."""
 	from central.signups.trial import is_billing_deferred
 
-	billed = set(
-		frappe.get_all("Subscription", filters={"enabled": 1, "server_id": ["is", "set"]}, pluck="server_id")
-	)
+	billed = {segment.server_id for segment in active_segments({"server_id": ["is", "set"]})}
 	return [
 		Violation(
 			check="S2",
 			team=vm.team,
 			subject_doctype="Virtual Machine",
 			subject=vm.name,
-			detail="Running with no active subscription, so nothing bills it.",
+			detail="Running with no open billing period, so nothing bills it.",
 		)
 		for vm in frappe.get_all("Virtual Machine", filters={"status": "Running"}, fields=["name", "team"])
 		if vm.name not in billed and not is_billing_deferred(vm.name)
@@ -311,26 +309,19 @@ def check_running_servers_are_billed() -> list[Violation]:
 
 
 def check_terminated_servers_stop_billing() -> list[Violation]:
-	"""A terminated server's subscription is closed."""
-	subscription = frappe.qb.DocType("Subscription")
-	machine = frappe.qb.DocType("Virtual Machine")
-	rows = (
-		frappe.qb.from_(subscription)
-		.join(machine)
-		.on(machine.name == subscription.server_id)
-		.select(subscription.name, subscription.team)
-		.where((subscription.enabled == 1) & (machine.status == "Terminated"))
-		.run(as_dict=True)
-	)
+	"""A terminated server's subscription has no open billing segment, whatever `enabled` says."""
+	terminated = frappe.get_all("Virtual Machine", filters={"status": "Terminated"}, pluck="name")
+	if not terminated:
+		return []
 	return [
 		Violation(
 			check="S3",
-			team=row.team,
+			team=segment.team,
 			subject_doctype="Subscription",
-			subject=row.name,
-			detail="Still active on a terminated server, so it keeps billing.",
+			subject=segment.subscription,
+			detail="Still billing on a terminated server.",
 		)
-		for row in rows
+		for segment in active_segments({"server_id": ["in", terminated]})
 	]
 
 

@@ -65,12 +65,13 @@ class Subscription(Document):
 
 		if project.team != self.team:
 			frappe.throw(
-				f"Project {self.project} belongs to team {project.team}, not {self.team}.",
+				_("Project {0} belongs to team {1}, not {2}.").format(self.project, project.team, self.team)
 			)
 		if not project.enabled:
 			frappe.throw(
-				f"Project {self.project} is disabled; its servers bill untagged on "
-				f"{self.team}'s consolidated invoice.",
+				_("Project {0} is disabled; its servers bill untagged on {1}'s consolidated invoice.").format(
+					self.project, self.team
+				)
 			)
 
 		if self.is_new() or self.has_value_changed("project"):

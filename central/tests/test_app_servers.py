@@ -7,7 +7,7 @@ import yaml
 
 from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
 from central.integrations.images import get_app_subdomain, get_minimum_shape, is_shape_enough, list_apps
-from central.resource_actions import _get_user_data, _validate_app_size
+from central.resource_actions import _get_user_data, _validate_minimum_size
 
 SHAPE = {"cpu_millicores": 1000, "memory_mib": 1024, "disk_mib": 10240}
 APP_IMAGE = {"tags": {"purpose": "one-click", "application": "redis"}, "rootfs_size_mib": 4096}
@@ -91,15 +91,22 @@ class TestAppServerRecord(TestCase):
 
 class TestAppSize(TestCase):
 	def test_a_big_enough_server_passes(self) -> None:
-		_validate_app_size(APP_IMAGE, requirements(), SHAPE)
+		_validate_minimum_size(get_minimum_shape(APP_IMAGE, requirements()), SHAPE)
 
 	def test_a_server_smaller_than_the_app_is_refused(self) -> None:
 		for minimum in ({"cpu_millicores": 2000}, {"memory_mib": 2048}, {"disk_mib": 20480}):
 			with self.subTest(minimum=minimum), self.assertRaises(frappe.ValidationError):
-				_validate_app_size(APP_IMAGE, requirements(**minimum), SHAPE)
+				_validate_minimum_size(get_minimum_shape(APP_IMAGE, requirements(**minimum)), SHAPE)
 
-	def test_a_server_without_app_requirements_is_not_checked(self) -> None:
-		_validate_app_size(UBUNTU_IMAGE, None, {**SHAPE, "cpu_millicores": 100})
+	def test_a_server_without_app_requirements_needs_only_the_image_disk(self) -> None:
+		_validate_minimum_size(get_minimum_shape(UBUNTU_IMAGE, None), {**SHAPE, "cpu_millicores": 100})
+
+	def test_a_server_below_the_offering_minimum_memory_is_refused(self) -> None:
+		minimum = get_minimum_shape(UBUNTU_IMAGE, None, minimum_memory_mib=1024)
+
+		_validate_minimum_size(minimum, SHAPE)
+		with self.assertRaises(frappe.ValidationError):
+			_validate_minimum_size(minimum, {**SHAPE, "memory_mib": 512})
 
 	def test_a_plan_must_reach_the_app_minimum(self) -> None:
 		minimum = get_minimum_shape(APP_IMAGE, requirements())

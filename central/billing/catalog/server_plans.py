@@ -16,6 +16,7 @@ from central.billing.catalog.rate_card import COMPONENT_UNITS
 from central.billing.catalog.trials import trial_plan_names
 from central.billing.doctype.billing_profile.billing_profile import get_team_currency
 from central.billing.revenue.tax import is_internal_team
+from central.utils.units import MIB_PER_GIB
 
 
 def _allowlist(value) -> set[str] | None:
@@ -43,15 +44,23 @@ def get_server_plans(
 	for_resize: int | str | None = None,
 	server: str | None = None,
 	include_trial_plans: bool = False,
+	offering: str | None = None,
 ) -> dict:
 	"""Return priced server plans and custom profiles authorized for this Team.
 
 	Exclude the named subscription from existing spend when comparing resize options.
 	`server` names a trial server that has no subscription yet, so its plan floor applies.
 	Plans marked Available on Trial are left out unless `include_trial_plans` asks for a
-	free trial site's plans. Atlas performs placement at creation; this catalog does not
-	promise regional capacity.
+	free trial site's plans. `offering` names the image offering a new server boots from. Its
+	plan category and minimum memory narrow the menu. A menu for an existing server uses that
+	server's offering. Atlas performs placement at creation; this catalog does not promise
+	regional capacity.
 	"""
+	if not server and exclude_subscription:
+		server = frappe.db.get_value("Subscription", exclude_subscription, "server_id")
+	image_offering = _get_image_offering(offering, server)
+	minimum_memory_gib = image_offering.minimum_memory_mib / MIB_PER_GIB if image_offering else 0
+
 	currency = get_team_currency(team)
 	caps = get_team_caps(team)
 	spend_cap = frappe.utils.flt(caps.max_spend)
@@ -97,14 +106,15 @@ def get_server_plans(
 	# Tokens, storage subscriptions, etc. are billable but not provisioned here. The
 	# family declares this via Plan Category.provision_target (ADR 0007); no server
 	# category means nothing is provisionable.
-	server_categories = frappe.get_all(
-		"Plan Category", filters={"provision_target": "Server"}, pluck="name", limit=0
-	)
+	category_filters = {"provision_target": "Server"}
+	if image_offering and image_offering.plan_category:
+		category_filters["name"] = image_offering.plan_category
+	server_categories = frappe.get_all("Plan Category", filters=category_filters, pluck="name", limit=0)
 	if not server_categories:
 		return empty
 
 	rate_card = {} if is_trial_menu else _rate_card(currency, cluster)
-	profiles = [] if is_trial_menu else _profiles(server_categories)
+	profiles = [] if is_trial_menu else _profiles(server_categories, minimum_memory_gib)
 
 	# The whole active catalog (in server families) is wanted on purpose —
 	# currency/cluster/headroom filtering happens in Python below — so opt out of
@@ -127,15 +137,15 @@ def get_server_plans(
 	rates_by_plan = _rates_by_plan(names)
 	includes_by_plan = _includes_by_plan(names)
 
-	floor = _get_trial_plan_floor(server, exclude_subscription)
+	floor = _get_plan_floor(server, minimum_memory_gib)
 
 	plans = []
 	for p in candidates:
 		rate = resolve_rate(rates_by_plan.get(p.name, []), currency, cluster)
 		if rate is None:
 			continue  # not priced for this currency/cluster → not available here
-		if floor and _is_below(includes_by_plan.get(p.name, []), floor):
-			continue  # smaller than the plan the server's product trial started on
+		if _is_below(includes_by_plan.get(p.name, []), floor):
+			continue  # smaller than the image runs on, or than the plan a product trial started on
 		# Every team but an internal one is held to its trust-tier headroom, trials included.
 		if is_capped and frappe.utils.flt(rate) > available:
 			continue  # would push the team past its remaining trust-tier headroom
@@ -174,10 +184,11 @@ def _rate_card(currency: str, cluster: str | None) -> dict:
 	return card
 
 
-def _profiles(server_categories: list[str]) -> list[dict]:
+def _profiles(server_categories: list[str], minimum_memory_gib: float = 0) -> list[dict]:
 	"""The optimisation profiles (#81) the slider bounds itself with: ratio, the
 	allowed vCPU steps, and the storage ladder (the disk rungs within [min, max]),
-	per active compute Plan Sub-Category."""
+	per active compute Plan Sub-Category. A vCPU step whose memory is below
+	`minimum_memory_gib` is left out."""
 	from central.billing.catalog.composition import disk_steps_for
 
 	rows = frappe.get_all(
@@ -191,7 +202,9 @@ def _profiles(server_categories: list[str]) -> list[dict]:
 		{
 			"sub_category": r.name,
 			"ram_ratio": r.ram_ratio,
-			"vcpu_steps": parse_vcpu_steps(r.vcpu_steps),
+			"vcpu_steps": [
+				vcpus for vcpus in parse_vcpu_steps(r.vcpu_steps) if vcpus * r.ram_ratio >= minimum_memory_gib
+			],
 			"disk_steps": disk_steps_for(r.disk_min, r.disk_max),
 			"disk_min": r.disk_min,
 			"disk_max": r.disk_max,
@@ -254,12 +267,21 @@ def _current_run_rate(team: str, exclude: str | None = None) -> float:
 	return team_run_rate(team, exclude=exclude)
 
 
-def _get_trial_plan_floor(server: str | None, subscription: str | None) -> dict | None:
+def _get_image_offering(offering: str | None, server: str | None):
+	"""The Image Offering that narrows the menu: the one named, or the one `server` runs."""
+	if not offering and server:
+		offering = frappe.db.get_value("Virtual Machine", server, "image_offering")
+	return frappe.get_cached_doc("Image Offering", offering) if offering else None
+
+
+def _get_plan_floor(server: str | None, minimum_memory_gib: float) -> dict:
+	"""The smallest composition the menu offers: the plan a trial server started on, raised
+	to the memory its image offering needs."""
 	from central.signups.trial import get_trial_plan_floor
 
-	if not server and subscription:
-		server = frappe.db.get_value("Subscription", subscription, "server_id")
-	return get_trial_plan_floor(server) if server else None
+	floor = dict((get_trial_plan_floor(server) if server else None) or {})
+	floor[MEMORY] = max(floor.get(MEMORY, 0.0), minimum_memory_gib)
+	return floor
 
 
 def _is_below(includes, floor: dict) -> bool:
