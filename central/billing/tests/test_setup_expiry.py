@@ -2,6 +2,7 @@
 # For license information, please see license.txt
 """Unfinished card and UPI setups expire after a day, and the team is told once."""
 
+from contextlib import ExitStack
 from unittest.mock import MagicMock, patch
 
 import frappe
@@ -518,21 +519,53 @@ class TestNewSetupNeverBlocked(SetupExpiryTestBase):
 		self.assertEqual(method.status, "Active")
 		self.assertEqual(self.status(old), "Pending Validation")
 
-	def test_a_cancelled_setup_gives_back_the_card_the_gateway_saved(self):
+	def cancel_old_setup(self, method_id="pm_abandoned"):
+		"""Cancel an old setup the gateway saved a card for, running any queued job inline."""
 		old = self.make_method(started=NOW, setup_reference="seti_abandoned", gateway_customer_id="cus_old")
-		adapter = MagicMock()
-		adapter.read_finished_setup.return_value = saved_card(
-			payment_method="pm_abandoned", customer="cus_old"
+		self.adapter = MagicMock()
+		self.adapter.read_finished_setup.return_value = saved_card(
+			payment_method=method_id, customer="cus_old"
 		)
-
-		with (
-			patch("central.billing.gateways.registry.get_adapter", return_value=adapter),
-			patch("frappe.enqueue", side_effect=run_enqueued_inline),
-		):
+		with self.gateway_inline():
 			payments._cancel_abandoned_setups(TEAM, GATEWAY)
+		return old
+
+	def gateway_inline(self):
+		stack = ExitStack()
+		stack.enter_context(patch("central.billing.gateways.registry.get_adapter", return_value=self.adapter))
+		stack.enter_context(patch("frappe.enqueue", side_effect=run_enqueued_inline))
+		return stack
+
+	def retry_releases(self, minutes_after_cancel: int, old: str):
+		cancelled_at = frappe.db.get_value("Payment Method", old, "modified")
+		with self.gateway_inline():
+			setup_expiry.retry_unfinished_releases(
+				now=frappe.utils.add_to_date(cancelled_at, minutes=minutes_after_cancel)
+			)
+
+	def test_a_cancelled_setup_is_not_released_at_once(self):
+		old = self.cancel_old_setup()
+		self.retry_releases(setup_expiry.CANCELLED_SETUP_RELEASE_DELAY_MINUTES - 1, old)
 
 		self.assertEqual(self.status(old), "Cancelled")
-		adapter.remove_saved_method.assert_called_once_with("pm_abandoned", customer_reference="cus_old")
+		self.adapter.read_finished_setup.assert_not_called()
+		self.assertIsNone(self.released_at(old))
+
+	def test_a_cancelled_setup_gives_back_the_card_after_the_delay(self):
+		old = self.cancel_old_setup()
+		self.retry_releases(setup_expiry.CANCELLED_SETUP_RELEASE_DELAY_MINUTES, old)
+
+		self.adapter.remove_saved_method.assert_called_once_with("pm_abandoned", customer_reference="cus_old")
+		self.assertTrue(self.released_at(old))
+
+	def test_a_retry_that_finished_on_the_same_token_keeps_it(self):
+		old = self.cancel_old_setup(method_id="token_shared")
+		retry = self.make_method(status="Active", started=NOW, gateway_method_id="token_shared")
+		self.retry_releases(setup_expiry.CANCELLED_SETUP_RELEASE_DELAY_MINUTES + 1, old)
+
+		self.adapter.remove_saved_method.assert_not_called()
+		self.assertTrue(self.released_at(old))
+		self.assertEqual(self.status(retry), "Active")
 
 	def test_a_cancelled_setup_without_a_reference_reads_nothing(self):
 		old = self.make_method(started=NOW)
@@ -854,7 +887,7 @@ class TestReleaseAge(SetupExpiryTestBase):
 		):
 			setup_expiry.expire_unfinished_setups(now=NOW)
 
-	def test_a_week_old_setup_is_released_whatever_the_gateway_says(self):
+	def test_a_week_old_setup_is_released_quietly_whatever_the_gateway_says(self):
 		setup = self.make_method(setup_reference="seti_week", started=hours_before_now(24 * 7))
 		adapter = MagicMock()
 		adapter.read_finished_setup.return_value = {}
@@ -862,7 +895,8 @@ class TestReleaseAge(SetupExpiryTestBase):
 		self.sweep(adapter)
 
 		self.assertEqual(self.status(setup), "Expired")
-		self.assertEqual(len(self.notices()), 1)
+		self.assertTrue(self.released_at(setup))
+		self.assertEqual(self.notices(), [])
 		# Only the release reads the gateway; it found nothing saved to remove.
 		adapter.read_finished_setup.assert_called_once_with("seti_week")
 		adapter.remove_saved_method.assert_not_called()
@@ -877,9 +911,17 @@ class TestReleaseAge(SetupExpiryTestBase):
 
 		self.assertEqual(self.status(young), "Pending Validation")
 		self.assertEqual(self.status(old), "Expired")
-		self.assertEqual(len(self.notices()), 1)
+		self.assertEqual(self.notices(), [])
 		# The release is queued for the old row; it reads the gateway in its own job.
 		self.assertEqual([kwargs["job_id"] for kwargs in self.queued], [f"late-setup-release::{old}"])
+
+	def test_a_two_day_old_setup_still_sends_the_notice(self):
+		setup = self.make_method(setup_reference="seti_two_days", started=hours_before_now(48))
+
+		self.sweep(MagicMock(**{"read_finished_setup.return_value": {}}))
+
+		self.assertEqual(self.status(setup), "Expired")
+		self.assertEqual([notice.reference_name for notice in self.notices()], [setup])
 
 	def sweep_queueing_only(self, adapter):
 		queued = []
@@ -908,9 +950,9 @@ class TestReleaseAge(SetupExpiryTestBase):
 
 
 class TestReleaseRetry(SetupExpiryTestBase):
-	def make_released(self, ended, **fields) -> str:
+	def make_released(self, ended, status="Expired", **fields) -> str:
 		name = self.make_method(
-			status="Expired", setup_reference=f"seti_{frappe.generate_hash(length=6)}", **fields
+			status=status, setup_reference=f"seti_{frappe.generate_hash(length=6)}", **fields
 		)
 		frappe.db.set_value("Payment Method", name, "modified", ended, update_modified=False)
 		return name
@@ -970,3 +1012,21 @@ class TestReleaseRetry(SetupExpiryTestBase):
 		self.assertEqual((first["given_up"], second["given_up"]), ([stale], []))
 		self.assertEqual(self.give_up_comments(stale), 1)
 		self.assertIsNone(self.released_at(stale))
+
+	def test_the_give_up_comment_starts_with_the_marker_in_any_language(self):
+		stale = self.make_released(hours_before_now(24 * setup_expiry.RELEASE_RETRY_DAYS + 1))
+
+		with patch.object(setup_expiry, "_", side_effect=lambda text: f"Traduit {{0}}: {text}"):
+			self.retry()
+			self.retry()
+
+		self.assertEqual(self.give_up_comments(stale), 1)
+
+	def test_a_cancelled_setup_is_queued_only_after_the_delay(self):
+		recent = self.make_released(hours_before_now(0, minutes=10), status="Cancelled")
+		settled = self.make_released(hours_before_now(1), status="Cancelled")
+
+		_result, queued = self.retry()
+
+		self.assertEqual(queued, [settled])
+		self.assertNotIn(recent, queued)

@@ -11,8 +11,11 @@ from central.billing.platform.jobs import each_isolated
 from central.billing.states import transition
 
 SETUP_EXPIRES_HOURS = 24
-# A setup still pending this long is released and expired, whatever the gateway says.
+# A setup still pending this long is released and expired quietly, whatever the gateway says.
 SETUP_RELEASE_DAYS = 7
+# A setup cancelled by a new one is released this late, so a retry with the same card can
+# finish first and keep the shared token.
+CANCELLED_SETUP_RELEASE_DELAY_MINUTES = 30
 NOTICE = "Payment Method Setup Expired"
 # Card and UPI setups only. PayPal setups are not offered in the console.
 SETUP_METHOD_TYPES = ("Card", "UPI Autopay")
@@ -22,6 +25,7 @@ PAYPAL_GATEWAY = "Paypal"
 SETUPS_PER_RUN = 500
 # A release that has not finished is tried again every hour for this long, then left to an operator.
 RELEASE_RETRY_DAYS = 7
+# Untranslated, so the comment always starts with it and a second give-up is never written.
 GIVE_UP_NOTE = "This setup's release at the gateway did not finish in time."
 
 
@@ -53,11 +57,20 @@ def expire_unfinished_setups(now=None) -> dict:
 
 
 def expire_team_setups(team: str, names: list[str], release_before=None) -> dict:
-	"""Settle the team's unfinished setups. One notice covers the ones that expired."""
+	"""Settle the team's unfinished setups. One notice covers the ones that expired,
+	except those released for age, which expire quietly."""
 	expired = [method for method in (_settle_setup(name, release_before) for name in names) if method]
-	if expired:
-		_notify(team, expired)
+	noticed = _expired_since(expired, release_before)
+	if noticed:
+		_notify(team, noticed)
 	return {"team": team, "expired": [method.name for method in expired]}
+
+
+def _expired_since(expired: list, release_before) -> list:
+	"""The expired setups started after `release_before`."""
+	if not release_before:
+		return expired
+	return [method for method in expired if method.creation > release_before]
 
 
 def _settle_setup(name: str, release_before):
@@ -161,13 +174,17 @@ def release_late_setup(payment_method: str) -> None:
 
 
 def retry_unfinished_releases(now=None) -> dict:
-	"""Queue the release again for setups whose release has not finished. One still
-	unfinished `RELEASE_RETRY_DAYS` after the setup ended gets one comment and no more tries."""
+	"""Queue the release for setups whose release has not finished. A cancelled setup is
+	first queued here, `CANCELLED_SETUP_RELEASE_DELAY_MINUTES` after it was cancelled. One
+	still unfinished `RELEASE_RETRY_DAYS` after the setup ended gets one comment and no more tries."""
 	now = now or frappe.utils.now_datetime()
 	give_up_before = frappe.utils.add_to_date(now, days=-RELEASE_RETRY_DAYS)
+	cancelled_before = frappe.utils.add_to_date(now, minutes=-CANCELLED_SETUP_RELEASE_DELAY_MINUTES)
 	# The row changes last when it expires or is cancelled; the release leaves `modified` alone.
-	ended = frappe.qb.DocType("Payment Method").modified
-	due = _unreleased_setups(ended >= give_up_before)
+	method = frappe.qb.DocType("Payment Method")
+	ended = method.modified
+	settled = (method.status != "Cancelled") | (ended <= cancelled_before)
+	due = _unreleased_setups((ended >= give_up_before) & settled)
 	retried = each_isolated("Setup release retry", "Payment Method", due, _queue_release)
 	stale = _unreleased_setups((ended < give_up_before) & _give_up_comments().negate())
 	each_isolated("Setup release give-up", "Payment Method", stale, _give_up_release)
@@ -180,12 +197,8 @@ def _queue_release(name: str) -> str:
 
 
 def _give_up_release(name: str) -> None:
-	frappe.get_doc("Payment Method", name).add_comment(
-		"Comment",
-		_("{0} Refund its authorisation and remove its card or token at the gateway by hand.").format(
-			GIVE_UP_NOTE
-		),
-	)
+	advice = _("Refund its authorisation and remove its card or token at the gateway by hand.")
+	frappe.get_doc("Payment Method", name).add_comment("Comment", f"{GIVE_UP_NOTE} {advice}")
 
 
 def _unreleased_setups(condition) -> list[str]:

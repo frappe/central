@@ -40,7 +40,7 @@ The options in the dialog depend on your billing currency. Teams billed in INR c
 
 ## If you do not finish adding a method
 
-You can close the bank's page or the dialog at any time. Start again at once: an unfinished setup does not block a new one. When you start again, Frappe Cloud cancels the unfinished setup, refunds any ₹1 authorisation charge it took, and removes any card or UPI authorisation it saved at the gateway.
+You can close the bank's page or the dialog at any time. Start again at once: an unfinished setup does not block a new one. When you start again, Frappe Cloud cancels the unfinished setup. About 30 minutes to 1.5 hours later, it refunds any ₹1 authorisation charge the setup took and removes any card or UPI authorisation it saved at the gateway. If you used the same card or UPI account again, it keeps that authorisation for your new payment method.
 
 A card or UPI setup that is not finished in 24 hours is not saved. Frappe Cloud sends an email and an in-app notice: "Your card or UPI setup was not finished, so it was not saved. Add it again from Billing." If you add a payment method after you start that setup, you do not get the notice.
 
@@ -48,7 +48,7 @@ If you authorised RuPay or UPI Autopay on the bank's page but closed the window 
 
 If you added a card on the card page but closed the window before Frappe Cloud showed it, the card is not saved. After 24 hours Frappe Cloud removes the card from the payment gateway and sends the notice. The card is not charged. Add it again from Billing.
 
-A setup that is still not finished after 7 days is not saved, whatever its state at the gateway. Frappe Cloud refunds any ₹1 authorisation charge, removes any card or UPI authorisation at the gateway, and sends the notice.
+A setup that is still not finished after 7 days is not saved, whatever its state at the gateway. Frappe Cloud refunds any ₹1 authorisation charge and removes any card or UPI authorisation at the gateway. It does not send the notice for a setup this old.
 
 If you finish a setup after it expired, Frappe Cloud does not save it. It refunds the ₹1 authorisation charge and removes the card or UPI authorisation at the gateway.
 
