@@ -3,8 +3,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vitepress dev",
-    "build": "vitepress build",
+    "apps": "node scripts/sync-apps.mjs",
+    "dev": "yarn apps && vitepress dev",
+    "build": "yarn apps && vitepress build",
     "preview": "vitepress preview",
     "capture": "node capture/run.mjs"
   },

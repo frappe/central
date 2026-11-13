@@ -13,7 +13,7 @@ Go to **Servers** to see all the servers of your team. The list shows the name, 
 
 ## Images
 
-The image is the disk that a server starts from. Select **Frappe** for a server with Pilot, a bench, and optionally a site. Select **Ubuntu** for a clean operating system. Read [Images](/servers/images) for the builds and how they are made.
+The image is the disk that a server starts from. Select **Frappe** for a server with Pilot, a bench, and optionally a site. Select **Apps** for a server with one service set up, such as Redis or MariaDB. Select **Ubuntu** for a clean operating system. Read [Images](/servers/images) for the builds and how they are made.
 
 ## One server for each workload
 
@@ -29,7 +29,7 @@ The server header shows the plan and its price. You can [resize](/servers/lifecy
 
 ## Server page
 
-Click a server to open its page. The header shows the status, the region, the plan, and one address. The page has these tabs:
+Click a server to open its page. The header shows the status, the region, the plan, and one address. For an [app](/apps/) server, **Getting started** opens the guide of the app. The page has these tabs:
 
 | Tab | Shows |
 | --- | --- |

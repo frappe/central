@@ -5,6 +5,9 @@ on:
     branches: [develop]
     paths: ['docs/**', '.github/workflows/docs.yml']
   workflow_dispatch:
+  # The app guides live in frappe/one-click-templates, so a daily build picks up their changes.
+  schedule:
+    - cron: '30 2 * * *'
 
 permissions:
   contents: read

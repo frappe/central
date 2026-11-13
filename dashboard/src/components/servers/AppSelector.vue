@@ -21,13 +21,18 @@ const options = computed(() =>
 	props.apps.map((app) => ({ label: app.title, value: app.snapshot_id })),
 )
 
-const selectedDescription = computed(() => {
-	const app = props.apps.find((item) => item.snapshot_id === props.modelValue)
+const selectedApp = computed(() =>
+	props.apps.find((item) => item.snapshot_id === props.modelValue),
+)
 
-	return [app?.information, app?.os_version && `Ubuntu ${app.os_version}`]
+const selectedDescription = computed(() =>
+	[
+		selectedApp.value?.information,
+		selectedApp.value?.os_version && `Ubuntu ${selectedApp.value.os_version}`,
+	]
 		.filter(Boolean)
-		.join(' · ')
-})
+		.join(' · '),
+)
 </script>
 
 <template>
@@ -53,5 +58,14 @@ const selectedDescription = computed(() => {
 
 	<p v-if="selectedDescription" class="text-p-sm text-ink-gray-5">
 		{{ selectedDescription }}
+	</p>
+	<p v-if="selectedApp?.documentation" class="text-p-sm">
+		<a
+			:href="selectedApp.documentation"
+			target="_blank"
+			rel="noopener"
+			class="text-p-sm-medium text-ink-gray-8 underline"
+			>Read the {{ selectedApp.title }} guide</a
+		>
 	</p>
 </template>

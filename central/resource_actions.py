@@ -42,6 +42,7 @@ from central.infrastructure.doctype.resource_action.resource_action import (
 )
 from central.integrations.images import (
 	get_app_subdomain,
+	get_guide_url,
 	get_image_app_requirements,
 	get_minimum_shape,
 	selected_image,
@@ -360,6 +361,7 @@ def _build_server_configuration(
 		is_firewall_enabled=server_input.is_firewall_enabled,
 		user_data=user_data,
 		image_tags=image["tags"],
+		documentation_url=get_guide_url((requirements or {}).get("documentation")),
 		**shape,
 	)
 
