@@ -12,7 +12,8 @@ frappe.ui.form.on("Billing Profile", {
 	country: (frm) => set_state_options(frm),
 });
 
-// Shown only while the team, or one of its members, must wait after too many failed setups or top-ups.
+// Shown only to an operator, and only while the team or one of its members must wait
+// after too many failed setups or top-ups. The server sets setup_lock_wait for operators only.
 function add_clear_setup_lock(frm) {
 	if (!frm.doc.__onload?.setup_lock_wait) return;
 	const meaning = __(

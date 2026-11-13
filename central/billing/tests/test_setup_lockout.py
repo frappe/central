@@ -375,7 +375,7 @@ class TestSetupLockout(BillingTestCase):
 		detail = self.sent.call_args.args[1][0]["detail"]
 		self.assertRegex(
 			detail,
-			rf"^Team {TEAM} \({TEAM}\) had 10 failed attempts in a row and must wait 24 hours, "
+			rf"^Team {TEAM} \({TEAM}\) had 10 failed attempts in a row\. They must wait 24h, "
 			rf"until \d{{2}} \w{{3}} \d{{4}} \d{{2}}:\d{{2}} {frappe.utils.get_system_timezone()}\. "
 			r"To let them try now, open the Billing Profile and click Clear Setup Lock\.$",
 		)
@@ -390,7 +390,7 @@ class TestSetupLockout(BillingTestCase):
 		self.assertTrue(
 			alert["detail"].startswith(
 				f"User {self.user} had 10 failed attempts in a row across their teams, "
-				f"the latest in team {THIRD_TEAM} ({THIRD_TEAM}), and must wait 24 hours"
+				f"the latest in team {THIRD_TEAM} ({THIRD_TEAM}). They must wait 24h"
 			)
 		)
 		self.assertTrue(alert["detail"].endswith("The clear lets them try again in this team only."))
@@ -400,6 +400,17 @@ class TestSetupLockout(BillingTestCase):
 		self.assertFalse(setup_lockout.is_anyone_waiting(team))
 		self.record_failures(times=5, team=OTHER_TEAM, user=self.user)
 		self.assertTrue(setup_lockout.is_anyone_waiting(team))
+
+	def test_only_an_operator_is_offered_the_clear(self):
+		self.record_failures(times=5)
+		profile = frappe.get_doc("Billing Profile", TEAM)
+		profile.run_method("onload")
+		self.assertTrue(profile.get_onload().setup_lock_wait)
+
+		frappe.set_user(self.user)
+		self.addCleanup(frappe.set_user, "Administrator")
+		profile.run_method("onload")
+		self.assertFalse(profile.get_onload().setup_lock_wait)
 
 	def test_the_refusal_carries_the_wait(self):
 		self.record_failures(times=7)

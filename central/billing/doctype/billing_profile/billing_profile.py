@@ -191,9 +191,12 @@ class BillingProfile(Document):
 	# end: auto-generated types
 
 	def onload(self):
+		from central.billing import authz
 		from central.billing.payments import setup_lockout
 
-		self.set_onload("setup_lock_wait", setup_lockout.is_anyone_waiting(self.name))
+		# Only an operator may clear the lock, so only an operator is told about it.
+		is_shown = authz.is_operator() and setup_lockout.is_anyone_waiting(self.name)
+		self.set_onload("setup_lock_wait", is_shown)
 
 	def validate(self):
 		self.validate_phone()

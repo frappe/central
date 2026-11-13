@@ -144,6 +144,16 @@ def get_team_names_with_role(role: str, teams: list[str]) -> list[str]:
 	)
 
 
+def get_active_team_member_users(team: str) -> list[str]:
+	"""The users with an Active membership in `team`."""
+	return frappe.get_all(
+		"Team Member",
+		filters={"parenttype": "Team", "parentfield": "members", "parent": team, "status": "Active"},
+		pluck="user",
+		distinct=True,
+	)
+
+
 def resolve_team(user: str, team: str | None = None, statuses: tuple[str, ...] = ("Active",)) -> str:
 	"""The team to act on: the one given, else the user's sole team in `statuses`. With
 	zero or many teams and none specified, the caller must pick one."""

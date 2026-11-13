@@ -1,11 +1,6 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
-"""Close the open gateway setups and top-ups of a team, or a user, that must wait.
-
-The wait is checked when a setup or top-up starts. A dialog opened before that still
-holds its Stripe client secret and could keep trying cards at Stripe, so its intent is
-cancelled. A Razorpay order cannot be cancelled: its open sheet keeps the order, but a
-closed sheet needs our server for a new one, and that call checks the wait."""
+"""Close the open gateway setups and top-ups of a team, or a user, that must wait."""
 
 import frappe
 
@@ -22,8 +17,10 @@ CLOSED = ("canceled", "expired")
 
 def close_open(team: str, user: str | None = None) -> dict:
 	"""Cancel at the gateway the open setups and top-ups of the team while it waits, and
-	the user's own open ones in each team where the user waits. Runs after the failure
-	that started the wait has committed."""
+	the user's own open ones in each team where the user waits.
+
+	An open Stripe dialog could keep trying cards, so its intent is cancelled. A Razorpay
+	order cannot be cancelled, but a new one needs our server, which checks the wait."""
 	scopes = _scopes(team, user)
 	return {
 		"setups": each_isolated(JOB, "Payment Method", _open_methods(scopes), close_setup),
@@ -69,7 +66,8 @@ def _scopes(team: str, user: str | None) -> list[dict]:
 	if setup_lockout.Lockout.for_team(team).get_wait():
 		scopes.append({"team": team})
 	if setup_lockout.is_person(user):
-		teams = [t for t in _open_teams(user) if setup_lockout.Lockout.for_user(user, t).get_wait()]
+		lockouts = setup_lockout.Lockout.for_user_in_teams(user, sorted(_open_teams(user)))
+		teams = [name for name, lockout in lockouts.items() if lockout.get_wait()]
 		if teams:
 			scopes.append({"owner": user, "team": ["in", teams]})
 	return scopes
