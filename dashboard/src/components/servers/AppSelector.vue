@@ -65,7 +65,7 @@ const selectedDescription = computed(() =>
 			target="_blank"
 			rel="noopener"
 			class="text-p-sm-medium text-ink-gray-8 underline"
-			>Read the {{ selectedApp.title }} guide</a
+			>{{ __('Read the {0} guide', [selectedApp.title]) }}</a
 		>
 	</p>
 </template>

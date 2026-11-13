@@ -243,7 +243,7 @@ const menu = computed(() => {
 
 			<Button
 				v-if="details?.documentation_url"
-				label="Getting started"
+				:label="__('Getting started')"
 				icon-right="lucide-external-link"
 				:href="details.documentation_url"
 			/>
