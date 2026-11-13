@@ -16,6 +16,8 @@ from central.billing.tests.utils import complete_billing_profile, ensure_team
 TEAM = "team-tax-labels"
 # The company is in Maharashtra (27).
 COMPANY_STATE = "27"
+# A payment date after any credit these tests grant today.
+PAY_ON = frappe.utils.add_days(frappe.utils.today(), 30)
 
 
 def _set_gst(team: str, **kw) -> None:
@@ -98,7 +100,8 @@ class TestInvoiceKeepsItsTax(TaxLabelTestCase):
 
 	def test_an_sez_invoice_stays_zero_rated_after_the_profile_changes(self):
 		doc = frappe.get_doc("Invoice", _invoice(TEAM, sez=True))
-		self.assertEqual(tax.TaxNames(TEAM).note(doc), "No GST (SEZ)")
+		self.assertEqual(tax.TaxNames(TEAM).label(doc), "No GST (SEZ)")
+		self.assertEqual(tax.TaxNames(TEAM).note(doc), "SEZ supply, no GST")
 		self.assertIn("Special Economic Zone", tax.TaxNames.reason(doc))
 
 	def test_an_untaxed_invoice_names_nothing(self):
@@ -135,6 +138,22 @@ class TestApisExposeTheLabel(TaxLabelTestCase):
 		self.assertEqual(rows[0]["tax_label"], "IGST 18%")
 		self.assertEqual(rows[0]["tax_amount"], 180)
 
+	def test_a_top_up_keeps_its_gst_after_the_team_turns_sez(self):
+		with patch("central.billing.ingester.advance.enqueue_sync"):
+			credits.purchase(TEAM, 1180, "INR", gateway_payment_id="pay_tax_labels_sez", gateway="razorpay")
+		_set_gst(TEAM, zero_rated=1, zero_rating_reason="SEZ")
+		self.assertEqual(invoice_api.credit_ledger(TEAM)[0]["tax_label"], "CGST 9% + SGST 9%")
+
+	def test_a_top_up_names_the_rate_it_was_paid_at(self):
+		with patch("central.billing.ingester.advance.enqueue_sync"):
+			credits.purchase(TEAM, 1180, "INR", gateway_payment_id="pay_tax_labels_rate", gateway="razorpay")
+		_set_gst(TEAM, output_tax_rate=12)
+		self.assertEqual(invoice_api.credit_ledger(TEAM)[0]["tax_label"], "CGST 9% + SGST 9%")
+
+	def test_credit_without_gst_names_no_tax(self):
+		credits.grant_promotional_credits(TEAM, 500, "INR")
+		self.assertIsNone(invoice_api.credit_ledger(TEAM)[0]["tax_label"])
+
 
 class TestSpendLimitIsBeforeTax(TaxLabelTestCase):
 	def test_spend_history_carries_spend_before_tax(self):
@@ -155,8 +174,16 @@ class TestShortfallCountsTopUpGst(TaxLabelTestCase):
 			credits.purchase(TEAM, 11800, "INR", gateway_payment_id="pay_tax_labels_gst", gateway="razorpay")
 
 		self.assertEqual(credits.get_balance(TEAM)["balance"], 10000)
-		self.assertEqual(wallet_draw.get_wallet_shortfall(TEAM, "INR", 11800, 1800), 0)
+		self.assertEqual(wallet_draw.get_wallet_shortfall(TEAM, "INR", 11800, 1800, PAY_ON), 0)
 
 	def test_promotional_credit_pays_the_bill_with_its_gst(self):
 		credits.grant_promotional_credits(TEAM, 10000, "INR")
-		self.assertEqual(wallet_draw.get_wallet_shortfall(TEAM, "INR", 11800, 1800), 1800)
+		self.assertEqual(wallet_draw.get_wallet_shortfall(TEAM, "INR", 11800, 1800, PAY_ON), 1800)
+
+	def test_promotional_credit_expiring_by_the_payment_date_is_left_out(self):
+		credits.grant_promotional_credits(TEAM, 10000, "INR", expires_on=PAY_ON)
+		self.assertEqual(wallet_draw.get_wallet_shortfall(TEAM, "INR", 11800, 1800, PAY_ON), 11800)
+
+	def test_promotional_credit_valid_after_the_payment_date_counts(self):
+		credits.grant_promotional_credits(TEAM, 10000, "INR", expires_on=frappe.utils.add_days(PAY_ON, 1))
+		self.assertEqual(wallet_draw.get_wallet_shortfall(TEAM, "INR", 11800, 1800, PAY_ON), 1800)

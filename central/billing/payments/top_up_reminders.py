@@ -89,7 +89,7 @@ def get_shortfall_due(team: str, bill: float, gst: float, date, invoice: str | N
 
 	has_method = bool(collection.get_methods_left(team, invoice))
 	limit = collection_mode.off_session_limit(team, invoice) if has_method else 0.0
-	lots, gst_left = get_wallet_on(team, date)
+	lots, gst_left = wallet_draw.get_wallet_on(team, "INR", date)
 	draw = wallet_draw.plan_draw(lots, bill, gst, gst_left)
 	if collection_mode.is_within_limit(limit, get_card_share(bill, draw.owed, invoice)):
 		return None
@@ -121,18 +121,6 @@ def get_card_share(bill: float, owed: float, invoice: str | None = None) -> floa
 	if frappe.utils.flt(owed, 2) <= 0:
 		return 0.0
 	return frappe.utils.flt(bill, 2) if invoice else frappe.utils.flt(owed, 2)
-
-
-def get_wallet_on(team: str, date) -> tuple[list, float]:
-	"""The wallet's credit lots and top-up GST balance as the collector reads them on `date`.
-	Promotional credit that expires by then is left out."""
-	on = frappe.utils.getdate(date)
-	lots = [
-		lot
-		for lot in credits.credit_lots(team, "INR")
-		if not lot.expires_on or frappe.utils.getdate(lot.expires_on) > on
-	]
-	return lots, credits.advance_gst_balance(team, "INR")
 
 
 def send_top_up_notice(team: str, due: dict) -> dict:

@@ -23,6 +23,7 @@ from central.billing.api.dashboard._shared import (
 	_resolve_team,
 	_team_currency,
 )
+from central.billing.doctype.billing_profile.billing_profile import get_payment_date
 from central.billing.doctype.invoice.invoice import is_issued
 from central.billing.doctype.top_up_order.top_up_order import TopupOrder
 from central.billing.gateways.base import VerifiedPayment
@@ -62,7 +63,9 @@ def get_forecast(team: str | None = None) -> dict:
 	currency = projection["currency"] or _team_currency(team)
 	tax_amount = frappe.utils.flt(invoice.get("output_tax_amount"))
 	collectable = frappe.utils.flt(invoice.get("expected_collection"))
-	shortfall = wallet_draw.get_wallet_shortfall(team, currency, collectable, tax_amount)
+	# This month's bill is charged on next month's payment date.
+	pay_on = get_payment_date(team, frappe.utils.add_days(month_end, 1))
+	shortfall = wallet_draw.get_wallet_shortfall(team, currency, collectable, tax_amount, pay_on)
 
 	return {
 		"period_start": str(month_start),
@@ -598,12 +601,12 @@ def credit_ledger(team: str | None = None, limit: int = 50) -> list[dict]:
 		order_by="creation desc",
 		limit=limit,
 	)
-	# A top-up's GST is named as the team's invoices name it.
-	label = tax.tax_label(team) or _("GST")
+	# Each top-up is named from the GST it was paid with, not the team's tax today.
+	names = tax.TaxNames(team)
 	for row in rows:
 		# A top-up booked in the accounting system has a receipt to download.
 		row["has_receipt"] = bool(row.pop("advance_id"))
-		row["tax_label"] = label if frappe.utils.flt(row.tax_amount) else None
+		row["tax_label"] = names.paid_label(row.amount, row.tax_amount)
 	return rows
 
 
