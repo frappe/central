@@ -8,6 +8,8 @@ import { useCapabilities } from '@/composables/useCapabilities'
 import { shortDate } from '@/lib/date'
 import { type DunningTone, getDunningSteps } from '@/lib/dunning'
 import { formatDate, money } from '@/lib/format'
+import { walletCoverPercent } from '@/lib/spendShare'
+import { __ } from '@/lib/translate'
 
 interface Props {
 	outstanding: number
@@ -72,20 +74,23 @@ const workingMethod = computed(() =>
 	(methods.data ?? []).find((method) => method.status === 'Active'),
 )
 
-const short = computed(
-	() => projected.value > 0 && balance.value < projected.value,
-)
+// What the card or UPI is left with after the wallet, drawn as the bill draws it, so
+// GST already paid with top-ups counts.
+const shortfall = computed(() => Number(forecast.data?.shortfall ?? 0))
+
+const short = computed(() => projected.value > 0 && shortfall.value > 0)
 
 const atRisk = computed(() => short.value && !workingMethod.value)
 
 const coverage = computed(() => {
 	if (!projected.value) return ''
-	if (!short.value) return 'Covers this cycle in full'
+	if (!short.value) return __('Covers this cycle in full')
 
-	const percent = Math.floor((balance.value / projected.value) * 100)
-	const covers = `Covers ${percent}% of this cycle`
+	const percent = walletCoverPercent(projected.value, shortfall.value)
 
-	return atRisk.value ? covers : `${covers}, card pays the rest`
+	return atRisk.value
+		? __('Covers {0}% of this cycle', [percent])
+		: __('Covers {0}% of this cycle, card pays the rest', [percent])
 })
 
 const expiry = computed(() => {
