@@ -413,6 +413,8 @@ export interface BillingProfile {
 	supported_currencies: Currency[]
 	/** GSTIN on file but not Active: invoices go out as unregistered. */
 	gst_lapsed?: boolean
+	/** An Indian profile with no state: GST is charged as IGST until one is set. */
+	gst_state_missing?: boolean
 	/** A new server needs a payment method first: no credit covers it. */
 	payment_method_required?: boolean
 	/** What the team's first payment method adds, while the owner has not had it. */

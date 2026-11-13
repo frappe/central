@@ -305,6 +305,7 @@ class TestInvoiceHeldForBillingDetails(CreditFundedTestBase):
 				legal_name="Acme Pvt Ltd",
 				address_line1="1 Main Street",
 				city="Pune",
+				state="Maharashtra",
 				country="India",
 			)
 

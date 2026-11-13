@@ -51,12 +51,14 @@ def get_billing_profile(team: str | None = None) -> dict:
 	  exists, so the UI disables the currency picker.
 	- `supported_currencies` — the allowed set (gateway-backed; not stored on the
 	  profile).
+	- `gst_state_missing` — an Indian profile with no state; its GST is IGST until one is set.
 	- `payment_method_required`, `welcome_credit`, `open_trial` — see `signups.credit.get_purchase_state`.
 
 	The stored fields (currency, legal name, address, GSTIN, …) come straight off
 	the doc for the edit forms; the derived fields drive routing and locking.
 	"""
 	from central.billing.gateways.registry import supported_currencies
+	from central.billing.payments.profile import is_state_missing
 	from central.signups.credit import get_purchase_state
 
 	team = _resolve_team(team)
@@ -74,6 +76,7 @@ def get_billing_profile(team: str | None = None) -> dict:
 			"currency_locked": _has_money_activity(team),
 			"supported_currencies": supported_currencies(),
 			"gst_lapsed": gst_status.standing(team).lapsed,
+			"gst_state_missing": is_state_missing(team),
 			**get_purchase_state(team),
 		}
 	)
