@@ -2,10 +2,11 @@
 # For license information, please see license.txt
 """Top-up reminders for INR bills a saved card or UPI cannot pay (issue #191).
 
-A card or UPI may pay off-session only up to the team's off-session limit. When the
-next bill, less the wallet, is above it, the team is asked to add the shortfall to its
-wallet 5 and 2 days before the payment date, and the billing page shows the same ask.
-Nothing here moves money or changes the limit.
+A card or UPI may pay off-session only up to the team's off-session limit. When the card
+or UPI would be asked for more than that on the payment date, the team is asked to add
+the shortfall to its wallet 5 and 2 days before, and the billing page shows the same ask.
+Before the bill is issued that is the bill less the wallet; after, the whole bill unless
+the wallet covers it. Nothing here moves money or changes the limit.
 """
 
 import math
@@ -74,18 +75,18 @@ def get_top_up_due(team: str, today=None, forecast: float | None = None) -> dict
 	return get_shortfall_due(team, amount, date, invoice)
 
 
-def get_shortfall_due(team: str, shortfall: float, date, invoice: str | None = None) -> dict | None:
-	"""The top-up ask for a bill of `shortfall` after the wallet, or None when the card or
-	UPI may pay it. A team with no saved method has a limit of 0."""
+def get_shortfall_due(team: str, bill: float, date, invoice: str | None = None) -> dict | None:
+	"""The top-up ask for `bill`, due on `date`, or None when the wallet and the card or
+	UPI pay it. A team with no saved method has a limit of 0."""
 	from central.billing.payments import collection, collection_mode
 
 	has_method = bool(collection.get_methods_left(team, invoice))
 	limit = collection_mode.off_session_limit(team, invoice) if has_method else 0.0
-	shortfall = frappe.utils.flt(shortfall, 2)
-	if collection_mode.is_within_limit(limit, shortfall):
+	wallet = get_wallet_on(team, date)
+	if collection_mode.is_within_limit(limit, get_card_share(bill, wallet, invoice)):
 		return None
 	return {
-		"amount": math.ceil(shortfall / ROUND_TO) * ROUND_TO,
+		"amount": math.ceil(frappe.utils.flt(bill - wallet, 2) / ROUND_TO) * ROUND_TO,
 		"date": str(date),
 		"limit": limit,
 		"has_method": has_method,
@@ -93,23 +94,56 @@ def get_shortfall_due(team: str, shortfall: float, date, invoice: str | None = N
 	}
 
 
+def get_card_share(bill: float, wallet: float, invoice: str | None = None) -> float:
+	"""What the card or UPI is asked for on the payment date.
+
+	On the day a bill is issued the wallet pays what it can and the card the rest. Credit
+	added after that pays the bill only when it covers all of it."""
+	left = frappe.utils.flt(bill - wallet, 2)
+	if left <= 0:
+		return 0.0
+	return frappe.utils.flt(bill, 2) if invoice else left
+
+
+def get_wallet_on(team: str, date) -> float:
+	"""Wallet credit still there on `date`: promotional credit that expires by then is left out."""
+	from central.billing.revenue import credits
+
+	on = frappe.utils.getdate(date)
+	return frappe.utils.flt(
+		sum(
+			frappe.utils.flt(lot.remaining)
+			for lot in credits.credit_lots(team, "INR")
+			if not lot.expires_on or frappe.utils.getdate(lot.expires_on) > on
+		),
+		2,
+	)
+
+
 def send_top_up_notice(team: str, due: dict) -> dict:
 	"""Email and in-app notice asking the team to add `due["amount"]` to its wallet."""
-	from central.billing.payments.payment_notices import format_date
-
-	currency = "INR"
+	held = frappe.db.get_value("Billing Profile", team, "collection_mode") == "Action Required"
 	return notifications.notify(
 		team,
 		EVENT,
-		context={
-			"amount": frappe.utils.fmt_money(due["amount"], currency=currency),
-			"payment_date": format_date(due["date"]),
-			"limit": frappe.utils.fmt_money(due["limit"], currency=currency) if due["has_method"] else None,
-			"topup": int(due["amount"]),
-		},
+		context={**format_due(due, held), "held": held, "topup": int(due["amount"])},
 		reference_doctype="Invoice" if due.get("invoice") else None,
 		reference_name=due.get("invoice"),
 	)
+
+
+def format_due(due: dict, held: bool = False) -> dict:
+	"""The amount, payment date and limit as the email and the billing page show them.
+	A held team's card or UPI is not charged, so its limit is not named."""
+	from central.billing.payments.payment_notices import format_date
+
+	return {
+		"amount": frappe.utils.fmt_money(due["amount"], currency="INR"),
+		"payment_date": format_date(due["date"]),
+		"limit": frappe.utils.fmt_money(due["limit"], currency="INR")
+		if due["has_method"] and not held
+		else None,
+	}
 
 
 def is_reminded_team(team: str) -> bool:
@@ -120,13 +154,20 @@ def is_reminded_team(team: str) -> bool:
 
 def is_first_notice_today(team: str, today) -> bool:
 	"""Whether the team has had no top-up notice today. The profile row lock makes two
-	runs wait for each other, so only one of them sends."""
+	runs wait for each other. The log is read with a locking read, which sees a notice
+	the other run committed after this transaction began."""
 	profile = frappe.qb.DocType("Billing Profile")
 	frappe.qb.from_(profile).select(profile.name).where(profile.name == team).for_update().run()
-	return not frappe.db.exists(
-		"Billing Notification Log",
-		{"team": team, "event_type": EVENT, "creation": [">=", frappe.utils.getdate(today)]},
+	log = frappe.qb.DocType("Billing Notification Log")
+	sent = (
+		frappe.qb.from_(log)
+		.select(log.name)
+		.where((log.team == team) & (log.event_type == EVENT) & (log.creation >= frappe.utils.getdate(today)))
+		.limit(1)
+		.for_update()
+		.run()
 	)
+	return not sent
 
 
 def reminder_dates(today) -> list:
@@ -134,31 +175,34 @@ def reminder_dates(today) -> list:
 
 
 def get_next_bill(team: str, today, forecast: float | None = None) -> tuple[float, object, str | None]:
-	"""The next bill after the wallet, its payment date, and its invoice once issued.
+	"""The next bill, its payment date, and its invoice once issued.
 
-	An issued invoice not yet charged is that bill. Before the run issues it, the bill is
-	this month's forecast, paid on the team's payment date next month."""
-	from central.billing.revenue import credits
-
-	wallet = frappe.utils.flt(credits.get_balance(team, "INR")["balance"])
+	1. An issued invoice not yet charged is that bill.
+	2. Up to this month's payment date, last month's bill not issued yet: its draft's
+	   total, or its projection when there is no draft.
+	3. Otherwise this month's forecast, paid on the payment date next month."""
 	invoice = _get_uncharged_invoice(team, today)
 	if invoice:
-		return frappe.utils.flt(invoice.expected_collection) - wallet, invoice.payment_date, invoice.name
+		return frappe.utils.flt(invoice.expected_collection), invoice.payment_date, invoice.name
+	pay_on = get_payment_date(team, frappe.utils.get_first_day(today))
+	if today <= pay_on and (last_bill := _get_unissued_last_bill(team, today)) is not None:
+		return last_bill, pay_on, None
 	if forecast is None:
-		forecast = get_forecast_total(team, today)
+		forecast = get_forecast_total(team, frappe.utils.get_first_day(today), today)
 	next_month = frappe.utils.add_months(frappe.utils.get_first_day(today), 1)
-	return frappe.utils.flt(forecast) - wallet, get_payment_date(team, next_month), None
+	return frappe.utils.flt(forecast), get_payment_date(team, next_month), None
 
 
-def get_forecast_total(team: str, today) -> float:
-	"""This month's projected bill, tax included: the figure the dashboard forecast shows."""
+def get_forecast_total(team: str, period_start, today) -> float:
+	"""The projected bill of the month from `period_start`, tax included: the figure the
+	dashboard forecast shows."""
 	from central.billing.projection import engine
 
 	# Unguarded like the dashboard forecast: a job may hold the reminder's own writes.
 	projection = engine.project(
 		team,
-		frappe.utils.get_first_day(today),
-		frappe.utils.get_last_day(today),
+		period_start,
+		frappe.utils.get_last_day(period_start),
 		today=today,
 		mode="Optimistic",
 		guarded=False,
@@ -201,6 +245,23 @@ def _teams_by_invoice(dates: list) -> set[str]:
 			distinct=True,
 		)
 	)
+
+
+def _get_unissued_last_bill(team: str, today) -> float | None:
+	"""Last month's bill while it is not issued: a held draft's total, or the projection
+	when no invoice is drafted yet. None once it is issued or it is not billed."""
+	start = frappe.utils.getdate(frappe.utils.add_months(frappe.utils.get_first_day(today), -1))
+	draft = frappe.db.get_value(
+		"Invoice",
+		{"team": team, "period_start": start, "status": ["!=", "Cancelled"]},
+		["invoice_type", "total", "due_date"],
+		as_dict=True,
+	)
+	if not draft:
+		return get_forecast_total(team, start, today)
+	if draft.invoice_type != "Billable" or draft.due_date:
+		return None
+	return frappe.utils.flt(draft.total)
 
 
 def _get_uncharged_invoice(team: str, today):

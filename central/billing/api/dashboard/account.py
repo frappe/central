@@ -280,7 +280,11 @@ def _top_up_due(team: str, projected: float) -> dict | None:
 	due = top_up_reminders.get_top_up_due(team, forecast=projected)
 	if not due:
 		return None
-	return {key: due[key] for key in ("amount", "date", "limit", "has_method")}
+	# `labels` are formatted as the reminder email shows them, so both read the same.
+	return {
+		**{key: due[key] for key in ("amount", "date", "limit", "has_method")},
+		"labels": top_up_reminders.format_due(due),
+	}
 
 
 @frappe.whitelist(methods=["POST"])

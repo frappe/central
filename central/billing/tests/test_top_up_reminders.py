@@ -2,6 +2,7 @@
 # For license information, please see license.txt
 """Top-up reminders before the payment date for INR bills above the card or UPI limit (#191)."""
 
+from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
 
 import frappe
@@ -241,22 +242,125 @@ class TestBanner(TopUpTestCase):
 		):
 			status = account.get_collection_status(TEAM)
 
+		due = {key: status["top_up_due"][key] for key in ("amount", "date", "limit", "has_method")}
+		self.assertEqual(due, {"amount": 40000, "date": "2026-12-01", "limit": 15000.0, "has_method": True})
+
+	def test_the_banner_shows_the_amounts_as_the_email_does(self):
+		from central.billing.api.dashboard import account
+
+		with self._forecast(40000):
+			labels = account.get_collection_status(TEAM)["top_up_due"]["labels"]
+
 		self.assertEqual(
-			status["top_up_due"],
-			{"amount": 40000, "date": "2026-12-01", "limit": 15000.0, "has_method": True},
+			labels, {"amount": "₹ 40,000.00", "payment_date": "1 December 2026", "limit": "₹ 15,000.00"}
 		)
+
+	def test_no_banner_once_the_card_can_pay_what_the_wallet_leaves(self):
+		"""Before issue the wallet pays what it can and the card the rest."""
+		from central.billing.api.dashboard import account
+
+		credits.purchase(TEAM, 30000, "INR")
+		with self._forecast(40000):
+			self.assertIsNone(account.get_collection_status(TEAM)["top_up_due"])
 
 	def test_no_banner_once_the_wallet_covers_the_bill(self):
 		from central.billing.api.dashboard import account
 
-		credits.purchase(TEAM, 30000, "INR")
-		with patch(
-			"central.billing.api.dashboard.invoices.get_forecast", return_value={"projected_total": 40000}
-		):
+		frappe.db.delete("Payment Method", {"team": TEAM})
+		credits.purchase(TEAM, 40000, "INR")
+		with self._forecast(40000):
 			self.assertIsNone(account.get_collection_status(TEAM)["top_up_due"])
 
+	@contextmanager
+	def _forecast(self, total):
+		with (
+			self.freeze_time("2026-11-13 10:00:00"),
+			patch(
+				"central.billing.api.dashboard.invoices.get_forecast",
+				return_value={"projected_total": total},
+			),
+		):
+			yield
 
-def _draft(team: str, total) -> str:
+
+class TestAnIssuedBill(TopUpTestCase):
+	"""Credit added after issue pays the invoice only when it covers all of it."""
+
+	def setUp(self):
+		super().setUp()
+		frappe.db.set_value("Billing Profile", TEAM, "payment_day", 8)
+		self.invoice = _issued_invoice(TEAM, 40000, payment_date="2026-12-08")
+
+	def test_a_top_up_that_leaves_the_rest_within_the_limit_does_not_stop_it(self):
+		credits.purchase(TEAM, 25000, "INR")
+
+		due = top_up_reminders.get_top_up_due(TEAM, "2026-12-03")
+
+		self.assertEqual((due["amount"], due["invoice"]), (15000, self.invoice))
+
+	def test_a_wallet_that_covers_the_invoice_stops_it(self):
+		credits.purchase(TEAM, 40000, "INR")
+
+		self.assertIsNone(top_up_reminders.get_top_up_due(TEAM, "2026-12-03"))
+
+	def test_an_invoice_within_the_limit_is_not_reminded(self):
+		frappe.db.set_value("Invoice", self.invoice, "expected_collection", 15000)
+
+		self.assertIsNone(top_up_reminders.get_top_up_due(TEAM, "2026-12-03"))
+
+
+class TestLastMonthNotIssuedYet(TopUpTestCase):
+	"""From the 1st to the payment date, the bill is last month's, even while it is held."""
+
+	def setUp(self):
+		super().setUp()
+		frappe.db.set_value("Billing Profile", TEAM, "payment_day", 6)
+
+	def test_a_held_draft_is_the_bill(self):
+		_draft(TEAM, 30000, period_start="2026-11-01")
+
+		self.assertEqual(self._run("2026-12-01"), [{"team": TEAM, "reminded": True}])
+		self.assertIn("Add ₹ 30,000.00 to your wallet by 6 December 2026.", _reminders()[0].message)
+
+	def test_with_no_draft_last_month_is_projected(self):
+		with patch.object(top_up_reminders, "get_forecast_total", return_value=20000) as forecast:
+			due = top_up_reminders.get_top_up_due(TEAM, "2026-12-04")
+
+		self.assertEqual((due["amount"], due["date"]), (20000, "2026-12-06"))
+		self.assertEqual(forecast.call_args.args[1], frappe.utils.getdate("2026-11-01"))
+
+	def test_after_the_payment_date_it_is_this_month(self):
+		_draft(TEAM, 30000, period_start="2026-11-01")
+
+		self.assertEqual(top_up_reminders.get_top_up_due(TEAM, "2026-12-07")["date"], "2027-01-06")
+
+
+class TestExpiringCredit(TopUpTestCase):
+	def test_promotional_credit_that_expires_before_the_payment_date_does_not_count(self):
+		credits.grant_promotional_credits(TEAM, 10000, "INR", expires_on="2026-11-28")
+
+		self.assertEqual(top_up_reminders.get_top_up_due(TEAM, REMINDER_DAYS[0])["amount"], 40000)
+
+	def test_credit_still_valid_on_the_payment_date_counts(self):
+		credits.grant_promotional_credits(TEAM, 10000, "INR", expires_on="2026-12-05")
+
+		self.assertEqual(top_up_reminders.get_top_up_due(TEAM, REMINDER_DAYS[0])["amount"], 30000)
+
+
+class TestHeldTeam(TopUpTestCase):
+	def test_a_team_in_action_required_is_not_told_about_the_card_limit(self):
+		_set_mode("Action Required")
+
+		top_up_reminders.send_top_up_notice(
+			TEAM, {"amount": 30000, "date": "2026-12-05", "limit": 15000.0, "has_method": True}
+		)
+
+		message = _reminders()[0].message
+		self.assertIn("Add ₹ 30,000.00 to your wallet by 5 December 2026 to pay this bill.", message)
+		self.assertNotIn("Your card or UPI", message)
+
+
+def _draft(team: str, total, period_start: str = "2026-10-01") -> str:
 	return (
 		frappe.get_doc(
 			{
@@ -264,8 +368,8 @@ def _draft(team: str, total) -> str:
 				"team": team,
 				"invoice_type": "Billable",
 				"status": "Outstanding",
-				"period_start": "2026-10-01",
-				"period_end": "2026-10-31",
+				"period_start": period_start,
+				"period_end": frappe.utils.get_last_day(period_start),
 				"currency": "INR",
 				"subtotal": total,
 				"total": total,

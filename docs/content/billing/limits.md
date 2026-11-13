@@ -25,7 +25,12 @@ Frappe Cloud adds the credit to your wallet after the payment goes through. Add 
 
 ### Credit for a large INR bill
 
-A card or UPI can pay only up to its limit automatically, at most ₹15,000. When your next bill, less your wallet, is more than that limit, the overview shows **Add credit before your payment date**. It shows the amount to add and the payment date. Click **Add credit** to open the top-up with that amount filled in. Frappe Cloud also sends an email 5 days and 2 days before the payment date. The message goes away when your wallet covers the bill. If you do not add credit, Frappe Cloud cannot charge the rest automatically, and the invoice stays unpaid until you pay it.
+A card or UPI can pay only up to its limit automatically, at most ₹15,000. The overview shows **Add credit before your payment date** when your card or UPI would be asked for more than that limit on the payment date. It shows the amount to add and the payment date. Click **Add credit** to open the top-up with that amount filled in. Frappe Cloud also sends an email 5 days and 2 days before the payment date.
+
+- Before the invoice is issued, your wallet pays what it can and the card or UPI pays the rest. The message goes away when your next bill, less your wallet, is within the limit.
+- After the invoice is issued, credit you add pays it only when the credit covers the whole amount due. The message goes away when your wallet covers the whole amount due, or when that amount is within the limit.
+
+Promotional credit that expires before the payment date does not count. If you do not add credit, Frappe Cloud cannot charge the bill automatically, and the invoice stays unpaid until you pay it.
 
 ### Wallet history
 

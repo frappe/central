@@ -496,6 +496,8 @@ export interface TopUpDue {
 	/** Most the card or UPI may pay automatically; 0 when none is saved. */
 	limit: number
 	has_method: boolean
+	/** The amount, date and limit as the reminder email shows them; `limit` is null with no method. */
+	labels: { amount: string; payment_date: string; limit: string | null }
 }
 
 export type NotificationCategory = 'Billing' | 'Server' | 'Team' | 'Trial'
