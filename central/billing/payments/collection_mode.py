@@ -159,15 +159,22 @@ def trip(team: str, reason: str, invoice: str | None = None) -> None:
 
 def _get_limit_context(team: str, invoice: str | None) -> dict:
 	"""The limit the notice quotes, formatted, and the tax the amounts it limits include."""
-	from central.billing.revenue import tax
-
 	threshold = off_session_limit(team, invoice)
 	currency = frappe.db.get_value("Billing Profile", team, "currency")
 	return {
 		"threshold": threshold,
 		"limit": frappe.utils.fmt_money(threshold, currency=currency) if threshold is not None else None,
-		"tax_note": tax.get_tax_names(team)["tax_note"],
+		"tax_note": _get_included_tax_note(team),
 	}
+
+
+def _get_included_tax_note(team: str) -> str | None:
+	"""The tax the limited amounts include, or None for a team not taxed: an SEZ note says
+	nothing about a limit."""
+	from central.billing.revenue import tax
+
+	block = tax.resolve_tax(team, 100)
+	return tax.TaxNames(team).note(block) if frappe.utils.flt(block["output_tax_amount"]) else None
 
 
 def trip_off_session_debit(team: str, reason: str, invoice: str | None = None) -> None:

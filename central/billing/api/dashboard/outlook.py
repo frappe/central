@@ -124,7 +124,7 @@ def get_payment_schedule(team: str | None = None) -> dict:
 
 
 def _tax_note(team: str, invoice) -> str | None:
-	"""What the amount includes: "incl. IGST 18%", or "No GST (SEZ)". A projection takes the team's tax today."""
+	"""What the amount includes: "incl. IGST 18%", or "SEZ supply, no GST". A projection takes the team's tax today."""
 	return tax.TaxNames(team).note(invoice) if invoice else tax.get_tax_names(team)["tax_note"]
 
 

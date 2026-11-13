@@ -44,7 +44,7 @@ class TestNoticesNameTheTax(TaxLabelTestCase):
 		self.assertIn("₹ 11,800.00 (incl. CGST 9% + SGST 9%)", self._remind(_invoice(TEAM)))
 
 	def test_sez(self):
-		self.assertIn("₹ 10,000.00 (No GST (SEZ))", self._remind(_invoice(TEAM, sez=True)))
+		self.assertIn("₹ 10,000.00 (SEZ supply, no GST)", self._remind(_invoice(TEAM, sez=True)))
 
 	def test_outside_india_names_no_tax(self):
 		complete_billing_profile(TEAM, currency="USD")
@@ -70,6 +70,17 @@ class TestNoticesNameTheTax(TaxLabelTestCase):
 		collection_mode.trip(TEAM, "invoice_over_threshold")
 
 		self.assertIn("up to ₹ 15,000.00 (incl. IGST 18%).", _message(TEAM, "Action Required"))
+
+	def test_action_required_for_an_sez_team_names_no_tax_on_the_limit(self):
+		_set_gst(TEAM, zero_rated=1, zero_rating_reason="SEZ")
+		give_team_a_card(TEAM)
+		frappe.db.set_value("Billing Profile", TEAM, "collection_mode", "Auto Charge")
+
+		collection_mode.trip(TEAM, "invoice_over_threshold")
+
+		message = _message(TEAM, "Action Required")
+		self.assertIn("up to ₹ 15,000.00.", message)
+		self.assertNotIn("SEZ", message)
 
 
 class TestPredebitNoticeShowsTheAmount(test_emandate.EmandateTestBase):

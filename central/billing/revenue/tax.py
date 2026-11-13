@@ -138,22 +138,25 @@ class TaxNames:
 		"""The label: "IGST 18%", "CGST 9% + SGST 9%", "No GST (SEZ)", or None when no GST applies."""
 		if block.get("zero_rating_reason") == "SEZ":
 			return _("No GST (SEZ)")
-		if block.get("output_tax_type") != "GST" or not frappe.utils.flt(block.get("output_tax_amount")):
-			return None
-		rate = frappe.utils.flt(block.get("output_tax_rate"))
-		if not self._company_code:
-			return _("GST {0}%").format(_percent(rate))
-		if self._is_in_state:
-			return _("CGST {0}% + SGST {0}%").format(_percent(rate / 2))
-		return _("IGST {0}%").format(_percent(rate))
+		return self._name(block, _LABELS)
 
 	def note(self, block) -> str | None:
 		"""What follows an amount that includes the block's tax: "incl. IGST 18%", or
-		"No GST (SEZ)" for a zero-rated supply. None when no GST applies."""
-		label = self.label(block)
-		if label and frappe.utils.flt(block.get("output_tax_amount")):
-			return _("incl. {0}").format(label)
-		return label
+		"SEZ supply, no GST" for a zero-rated supply. None when no GST applies."""
+		if block.get("zero_rating_reason") == "SEZ":
+			return _("SEZ supply, no GST")
+		return self._name(block, _NOTES)
+
+	def paid_label(self, amount, tax_amount) -> str | None:
+		"""The GST paid on a top-up of `amount` credit, named from its own `tax_amount`, or
+		None when it carried no GST. Never the SEZ label: GST was paid."""
+		tax_amount, amount = frappe.utils.flt(tax_amount), frappe.utils.flt(amount)
+		if tax_amount <= 0 or amount <= 0:
+			return None
+		rate = frappe.utils.flt(tax_amount / amount * 100, 1)
+		return self._name(
+			{"output_tax_type": "GST", "output_tax_amount": tax_amount, "output_tax_rate": rate}, _LABELS
+		)
 
 	@staticmethod
 	def reason(block) -> str | None:
@@ -161,16 +164,35 @@ class TaxNames:
 		reason = ZERO_RATING_REASONS.get(block.get("zero_rating_reason") or "")
 		return _(reason) if reason else None
 
+	def _name(self, block, names: dict) -> str | None:
+		if block.get("output_tax_type") != "GST" or not frappe.utils.flt(block.get("output_tax_amount")):
+			return None
+		rate = frappe.utils.flt(block.get("output_tax_rate"))
+		split = self._split
+		return _(names[split]).format(_percent(rate / 2 if split == "CGST" else rate))
+
 	@cached_property
-	def _company_code(self) -> str | None:
+	def _split(self) -> str:
+		"""GST while the company's state was never known, else CGST (in state) or IGST."""
 		from central.billing.ingester import gst
 
-		return gst.cached_company_state_code()
+		company_code = gst.cached_company_state_code()
+		if not company_code:
+			return "GST"
+		return "CGST" if is_in_state_supply(self.team, company_code) else "IGST"
 
-	@cached_property
-	def _is_in_state(self) -> bool:
-		return is_in_state_supply(self.team, self._company_code)
 
+# Whole phrases, so a translator never joins a label to "incl.".
+_LABELS = {
+	"GST": N_("GST {0}%"),
+	"CGST": N_("CGST {0}% + SGST {0}%"),
+	"IGST": N_("IGST {0}%"),
+}
+_NOTES = {
+	"GST": N_("incl. GST {0}%"),
+	"CGST": N_("incl. CGST {0}% + SGST {0}%"),
+	"IGST": N_("incl. IGST {0}%"),
+}
 
 # The fields of a stored invoice that `TaxNames` reads.
 LABEL_FIELDS = ("output_tax_type", "output_tax_rate", "output_tax_amount", "zero_rating_reason")
