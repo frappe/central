@@ -12,12 +12,15 @@ frappe.ui.form.on("Billing Profile", {
 	country: (frm) => set_state_options(frm),
 });
 
-// Shown only while the team must wait after too many failed setups or top-ups.
+// Shown only while the team, or one of its members, must wait after too many failed setups or top-ups.
 function add_clear_setup_lock(frm) {
 	if (!frm.doc.__onload?.setup_lock_wait) return;
-	frm.add_custom_button(__("Clear Setup Lock"), () =>
+	const meaning = __(
+		"Clear Setup Lock ignores the earlier failed payment method setups and top-ups of this team and its members, so they can try again in this team now."
+	);
+	const button = frm.add_custom_button(__("Clear Setup Lock"), () =>
 		frappe.confirm(
-			__("Let this team add a payment method or top up again now?"),
+			meaning,
 			() =>
 				frappe
 					.call({
@@ -26,11 +29,15 @@ function add_clear_setup_lock(frm) {
 						freeze: true,
 					})
 					.then(() => {
-						frappe.show_alert({ message: __("Setup lock cleared"), indicator: "green" });
+						frappe.show_alert({
+							message: __("Setup lock cleared. The team and its members can try again now."),
+							indicator: "green",
+						});
 						frm.reload_doc();
 					})
 		)
 	);
+	button.attr("title", meaning);
 }
 
 function set_state_options(frm) {

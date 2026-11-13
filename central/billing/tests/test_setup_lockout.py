@@ -8,11 +8,14 @@ import frappe
 
 from central.billing.doctype.top_up_order.top_up_order import TopupOrder
 from central.billing.payments import mandates, payments, setup_lockout
+from central.billing.platform.records import save_billing_record
+from central.billing.states import transition
 from central.billing.tests.test_stripe_adapter import make_stripe_gateway
 from central.billing.tests.utils import (
 	BillingTestCase,
 	complete_billing_profile,
 	ensure_team,
+	make_billing_team,
 	make_user,
 	run_enqueued_inline,
 )
@@ -59,6 +62,17 @@ class TestSetupLockout(BillingTestCase):
 		).insert(ignore_permissions=True)
 		frappe.db.set_value("Payment Method", method.name, "owner", user or "Administrator")
 		return method.name
+
+	def paid_top_up(self, team=TEAM, user=None) -> str:
+		"""A top-up moved to Credited now, as `credit_wallet` moves it."""
+		order = frappe.get_doc(
+			{"doctype": "Top-up Order", "team": team, "gateway": "Stripe", "currency": "INR", "total": 500}
+		).insert(ignore_permissions=True)
+		frappe.db.set_value("Top-up Order", order.name, "owner", user or "Administrator")
+		order.reload()
+		transition(order, "Credited", actor="gateway", correlation=team, amount=order.total)
+		save_billing_record(order)
+		return order.name
 
 	def backdate(self, subject, ago):
 		latest = frappe.get_all(
@@ -242,14 +256,98 @@ class TestSetupLockout(BillingTestCase):
 		self.fail(times=2)
 		self.sent.assert_called_once()
 
-	def test_the_message_names_the_wait(self):
-		message = setup_lockout.wait_message
-		self.assertEqual(
-			message(timedelta(minutes=27, seconds=10)), "Too many failed attempts. Try again in 28 minutes."
+	def test_the_message_names_the_exact_wait(self):
+		expected = {
+			timedelta(seconds=20): "1 minute",
+			timedelta(minutes=1): "1 minute",
+			timedelta(minutes=27, seconds=10): "28 minutes",
+			timedelta(minutes=59): "59 minutes",
+			timedelta(minutes=59, seconds=1): "1 hour",
+			timedelta(minutes=60): "1 hour",
+			timedelta(minutes=61): "1 hour 1 minute",
+			timedelta(minutes=65): "1 hour 5 minutes",
+			timedelta(minutes=120): "2 hours",
+			timedelta(minutes=121): "2 hours 1 minute",
+			timedelta(minutes=125): "2 hours 5 minutes",
+			timedelta(minutes=360): "6 hours",
+			timedelta(hours=24): "24 hours",
+		}
+		for wait, duration in expected.items():
+			self.assertEqual(
+				setup_lockout.wait_message(wait), f"Too many failed attempts. Try again in {duration}."
+			)
+
+	def test_a_paid_top_up_resets_the_team_count(self):
+		self.fail(times=5)
+		self.paid_top_up()
+		self.assert_wait(None)
+
+	def test_a_top_up_paid_before_the_failures_does_not_reset(self):
+		order = self.paid_top_up()
+		self.backdate(order, timedelta(hours=1))
+		self.fail(times=5)
+		self.assert_wait(10 * MINUTE)
+
+	def test_a_top_up_the_user_paid_resets_their_count(self):
+		self.fail(times=5, team=OTHER_TEAM, user=self.user)
+		self.paid_top_up(THIRD_TEAM, self.user)
+		self.assert_wait(None, team=TEAM, user=self.user)
+
+	def test_another_users_top_up_resets_the_team_but_not_the_user(self):
+		self.fail(times=3, team=TEAM, user=self.user)
+		self.fail(times=2, team=OTHER_TEAM, user=self.user)
+		self.fail(times=2, team=TEAM, user=make_user())
+		self.assert_wait(10 * MINUTE, team=TEAM)
+		self.paid_top_up(TEAM, make_user())
+		self.assert_wait(None, team=TEAM)
+		self.assert_wait(10 * MINUTE, team=THIRD_TEAM, user=self.user)
+		self.assert_wait(10 * MINUTE, team=TEAM, user=self.user)
+
+	def test_a_relock_within_a_day_does_not_alert_again(self):
+		from central.billing.api.admin.teams import clear_setup_lock
+
+		self.fail(times=10)
+		clear_setup_lock(TEAM)
+		self.fail(times=10)
+		self.sent.assert_called_once()
+
+		alerted = {"team": TEAM, "event_type": setup_lockout.ALERTED_EVENT}
+		frappe.db.set_value(
+			"Billing Event", alerted, "occurred_at", frappe.utils.add_to_date(None, hours=-25)
 		)
-		self.assertEqual(message(timedelta(seconds=20)), "Too many failed attempts. Try again in 1 minute.")
-		self.assertEqual(message(timedelta(hours=2)), "Too many failed attempts. Try again in 2 hours.")
-		self.assertEqual(message(timedelta(minutes=50)), "Too many failed attempts. Try again in 50 minutes.")
+		clear_setup_lock(TEAM)
+		self.fail(times=10)
+		self.assertEqual(self.sent.call_count, 2)
+
+	def test_the_team_alert_says_who_how_many_how_long_and_how_to_clear(self):
+		self.fail(times=10)
+		detail = self.sent.call_args.args[1][0]["detail"]
+		self.assertRegex(
+			detail,
+			rf"^Team {TEAM} \({TEAM}\) had 10 failed attempts in a row and must wait 24 hours, "
+			rf"until \d{{2}} \w{{3}} \d{{4}} \d{{2}}:\d{{2}} {frappe.utils.get_system_timezone()}\. "
+			r"To let them try now, open the Billing Profile and click Clear Setup Lock\.$",
+		)
+		self.assertNotIn("do_not_honor", detail)
+
+	def test_the_user_alert_names_the_user(self):
+		self.fail(times=5, team=OTHER_TEAM, user=self.user)
+		self.fail(times=5, team=THIRD_TEAM, user=self.user)
+		self.sent.assert_called_once()
+		alert = self.sent.call_args.args[1][0]
+		self.assertEqual(alert["team"], THIRD_TEAM)
+		self.assertTrue(
+			alert["detail"].startswith(
+				f"User {self.user} in team {THIRD_TEAM} ({THIRD_TEAM}) had 10 failed attempts in a row"
+			)
+		)
+		self.assertIn("must wait 24 hours", alert["detail"])
+
+	def test_the_clear_button_shows_while_a_member_waits(self):
+		team = make_billing_team(self.user).name
+		self.assertFalse(setup_lockout.is_anyone_waiting(team))
+		self.fail(times=5, team=OTHER_TEAM, user=self.user)
+		self.assertTrue(setup_lockout.is_anyone_waiting(team))
 
 	def test_the_refusal_carries_the_wait(self):
 		self.fail(times=7)

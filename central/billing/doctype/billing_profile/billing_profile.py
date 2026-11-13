@@ -193,7 +193,7 @@ class BillingProfile(Document):
 	def onload(self):
 		from central.billing.payments import setup_lockout
 
-		self.set_onload("setup_lock_wait", bool(setup_lockout.wait_for(self.name)))
+		self.set_onload("setup_lock_wait", setup_lockout.is_anyone_waiting(self.name))
 
 	def validate(self):
 		self.validate_phone()
