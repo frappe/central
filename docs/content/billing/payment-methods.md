@@ -36,7 +36,7 @@ Frappe Cloud validates the card with a small temporary charge, and refunds it at
 
 The dialog can ask for a phone number. A phone number is required to set up automatic card payments, and it is saved to your billing profile.
 
-The options in the dialog depend on your billing currency. Teams billed in INR can also see RuPay Card and UPI Autopay, which you authorise on your bank's page. A card you add through Stripe and a UPI Autopay mandate are authorised for a maximum amount per debit: your spend limit plus GST, but not more than ₹15,000. A RuPay or other card you add through Razorpay is authorised for a higher amount, but Frappe Cloud charges it automatically only up to ₹15,000 at a time. UPI Autopay is not available when your spend limit plus GST is ₹1,00,000 or more. To authorise automatic payments, Razorpay charges ₹1. Frappe Cloud refunds it after the authorisation succeeds. Amex and Diners cards cannot be charged automatically. Add credit instead.
+The options in the dialog depend on your billing currency. Teams billed in INR can also see RuPay Card and UPI Autopay, which you authorise on your bank's page. A card you add through Stripe and a UPI Autopay mandate are authorised for a maximum amount per debit: your spend limit plus GST, but not more than ₹15,000. A RuPay or other card you add through Razorpay is authorised for a higher amount, but Frappe Cloud charges it automatically only up to ₹15,000 at a time. UPI Autopay is not available when your spend limit plus GST is ₹1,00,000 or more. When your spend limit goes up, a UPI Autopay mandate below the new amount shows **Re-auth needed**, and you get a notice to authorise it again. Until you do, it is still charged, up to its old maximum. A card you saved earlier keeps the maximum it was authorised for. A bill above that maximum is charged to your next payment method. To raise the maximum, remove the card and add it again. To authorise automatic payments, Razorpay charges ₹1. Frappe Cloud refunds it after the authorisation succeeds. Amex and Diners cards cannot be charged automatically. Add credit instead.
 
 ### When you see "Too many failed attempts"
 
@@ -83,7 +83,7 @@ Invoices then use your other methods, if any. With no payment method and no cred
 | --- | --- |
 | **Primary** | Charged first after credits. |
 | **Fallback 1**, **Fallback 2** | Charged in this order when the methods above fail. |
-| **Re-auth needed** | The method must be authorised again before it can be charged. |
+| **Re-auth needed** | The mandate's maximum is below your spend limit plus GST. It is still charged, up to that maximum. Authorise it again to cover larger bills. |
 | Any other status | The method is not active and is not charged. |
 
 ## See also
