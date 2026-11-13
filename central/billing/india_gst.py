@@ -11,6 +11,10 @@ saved GSTIN's state code matches the chosen state.
 
 INDIA = "India"
 
+# The GST split an invoice is charged and filed with (Invoice.gst_split).
+IGST = "IGST"
+CGST_SGST = "CGST + SGST"
+
 # State / UT name -> 2-digit GST state code (per the GST state code list).
 GST_STATE_CODES = {
 	"Jammu and Kashmir": "01",

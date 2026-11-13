@@ -110,3 +110,5 @@ central.patches.v0_0.keep_only_custom_resource_action_copy
 central.patches.v0_0.mark_old_setups_released
 # A UPI mandate covers a bill at the spend limit with GST. Ask teams with a lower one to re-authorise it.
 central.patches.v0_0.flag_upi_mandates_below_the_gst_ceiling
+# Each issued GST invoice keeps the split it was filed with, so a later state change does not relabel it.
+central.patches.v0_0.record_gst_split_on_issued_invoices

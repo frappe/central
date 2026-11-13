@@ -161,7 +161,7 @@ def _build_sales_invoice(inv, customer: str) -> dict:
 	Usage paid with promotional credit is left out, so the Sales Invoice closes exactly
 	against the advances and the card payment."""
 	settings = accounting_settings()
-	tax = gst.treatment(inv.team, charged_tax=inv.output_tax_amount)
+	tax = gst.treatment(inv.team, charged_tax=inv.output_tax_amount, split=inv.gst_split)
 	template = tax.template
 	items = [_item(li, settings) for li in inv.items]
 	taxes = gst.tax_rows(template)

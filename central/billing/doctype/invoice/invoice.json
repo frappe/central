@@ -32,6 +32,7 @@
   "output_tax_amount",
   "zero_rating_reason",
   "customer_gstin",
+  "gst_split",
   "total",
   "column_break_totals",
   "tds_applicable",
@@ -215,6 +216,15 @@
    "fieldname": "customer_gstin",
    "fieldtype": "Data",
    "label": "Customer GSTIN",
+   "read_only": 1
+  },
+  {
+   "description": "The GST this invoice was charged and filed with. Set when it is issued, so a later change to the team's state does not relabel it. Blank when no GST was charged.",
+   "fieldname": "gst_split",
+   "fieldtype": "Select",
+   "label": "GST Split",
+   "no_copy": 1,
+   "options": "\nIGST\nCGST + SGST",
    "read_only": 1
   },
   {
@@ -404,7 +414,7 @@
    "link_fieldname": "invoice"
   }
  ],
- "modified": "2026-11-05 18:00:00.000000",
+ "modified": "2026-11-13 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Invoice",

@@ -9,7 +9,7 @@ up front always matches the tax on the invoice it later pays.
 import frappe
 import requests
 
-from central.billing.india_gst import INDIA, state_code
+from central.billing.india_gst import CGST_SGST, INDIA, state_code
 from central.billing.ingester import connection
 from central.billing.ingester.settings import accounting_settings
 
@@ -21,11 +21,12 @@ COMPANY_STATE_TTL = 24 * 60 * 60
 RETRY_AFTER = 60 * 60
 
 
-def treatment(team: str, charged_tax: float | None = None) -> frappe._dict:
+def treatment(team: str, charged_tax: float | None = None, split: str | None = None) -> frappe._dict:
 	"""GSTIN, GST category, place of supply, and the tax template (None: no GST).
 
 	`charged_tax` is the GST already on the document. When given, it decides the template,
 	so the filing matches what was charged even if the team's standing changed since.
+	`split` is the GST split the invoice was issued with; when given, it picks the template.
 	"""
 	from central.billing.revenue import gst_status
 
@@ -48,7 +49,7 @@ def treatment(team: str, charged_tax: float | None = None) -> frappe._dict:
 		gstin=gstin,
 		gst_category=(profile.gst_category or "Registered Regular") if gstin else "Unregistered",
 		place_of_supply=place_of_supply,
-		template=_template_for_state(profile.state),
+		template=_template_for_state(profile.state, split),
 	)
 
 
@@ -97,6 +98,13 @@ def is_in_state(state: str | None, company_code: str | None = None) -> bool:
 	return bool(code) and code == (company_code or company_state_code())
 
 
+def known_company_state_code() -> str | None:
+	"""The company's GST state code as last read, without asking the accounting system."""
+	return frappe.cache.get_value(COMPANY_STATE_KEY, use_local_cache=False) or frappe.cache.get_value(
+		LAST_COMPANY_STATE_KEY, use_local_cache=False
+	)
+
+
 def cached_company_state_code() -> str | None:
 	"""The company's GST state code, read from the accounting system at most once a day.
 	The last known code when a read fails; None when it was never known."""
@@ -133,9 +141,11 @@ def _read_company_state_code() -> str | None:
 		return None
 
 
-def _template_for_state(state: str | None) -> str:
+def _template_for_state(state: str | None, split: str | None = None) -> str:
+	"""The split stored on the invoice wins, so the filing matches its label."""
 	settings = accounting_settings()
-	return settings.in_state_template if is_in_state(state) else settings.out_state_template
+	is_in_state_supply = split == CGST_SGST if split else is_in_state(state)
+	return settings.in_state_template if is_in_state_supply else settings.out_state_template
 
 
 def _is_untaxed(team: str, charged_tax: float | None) -> bool:
