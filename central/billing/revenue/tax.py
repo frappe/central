@@ -97,6 +97,12 @@ def resolve_tax(team: str, subtotal) -> dict:
 	return block
 
 
+def with_output_tax(team: str, amount) -> float:
+	"""`amount` plus the output tax the team pays on it."""
+	amount = frappe.utils.flt(amount)
+	return amount + resolve_tax(team, amount)["output_tax_amount"]
+
+
 def has_zero_rating(profile, gst) -> bool:
 	"""Whether the Tax Profile's zero-rating holds. An SEZ supply is zero-rated only to a GSTIN that has not lapsed."""
 	return bool(profile.zero_rated) and not (gst.lapsed and profile.zero_rating_reason == "SEZ")

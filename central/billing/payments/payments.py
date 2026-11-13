@@ -136,18 +136,18 @@ def mandate_ceiling(team: str, gateway: str, currency: str | None) -> float | No
 
 	The customer authenticates once against this number and the bank enforces it,
 	so it is the same ceiling the charge path checks: the regulatory limit on the
-	rail, held down by the team's trust tier where the tier is lower. Registering
-	anything higher would consent the customer to more than we may ever take.
+	rail, held down by the team's trust-tier cap plus its GST where that is lower.
 	"""
 	from central.billing.gateways import capabilities
 	from central.billing.payments import mandates
+	from central.billing.revenue import tax
 
 	if not currency:
 		return None
 	ceiling = capabilities.silent_charge_ceiling(gateway, currency)
 	if ceiling is None:
 		return None
-	cap = frappe.utils.flt(mandates.team_cap(team))
+	cap = tax.with_output_tax(team, mandates.team_cap(team))
 	return float(min(ceiling, cap)) if cap else float(ceiling)
 
 

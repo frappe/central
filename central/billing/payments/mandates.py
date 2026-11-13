@@ -2,11 +2,10 @@
 # For license information, please see license.txt
 """UPI Autopay mandate lifecycle (issue #08).
 
-A mandate's ceiling is structurally tied to the team's trust-tier cap: the
-mandate is authorised with `max_amount` = the current cap, so a bill can never
-exceed it. A tier promotion that raises the cap requires customer re-consent
-(re-authorisation); until then the team is held at the old ceiling. Cards are
-exempt (off-session, any amount), so only `upi_autopay` methods participate.
+A mandate is authorised for the team's trust-tier cap plus its GST, held to the
+₹15,000 silent-debit ceiling, so a bill at the cap fits. A tier promotion that
+raises this requires customer re-consent (re-authorisation); until then the team
+is held at the old ceiling. Only `UPI Autopay` methods are re-authorised here.
 
 This module never imports a gateway SDK directly — it resolves an adapter
 through the registry, keeping the gateway seam intact (see gateways/base.py).
@@ -16,8 +15,9 @@ import frappe
 from frappe import _
 
 from central.billing.doctype.billing_profile.billing_profile import normalize_phone, usable_phone
-from central.billing.payments import setup_lockout
+from central.billing.payments import payments, setup_lockout
 from central.billing.payments.decline import ORDER_MISMATCH, PAYMENT_NOT_AUTHORISED, SIGNATURE_INVALID
+from central.billing.revenue import tax
 from central.billing.states import transition
 
 MANDATE_METHOD = "UPI Autopay"
@@ -58,15 +58,14 @@ def last_invoice_amount(team: str):
 
 def upi_eligibility(team: str) -> dict:
 	"""Whether UPI Autopay is usable for a team, given the Rs. 1,00,000 recurring
-	limit. Blocked when the trust-tier cap or the last invoice would breach it."""
-	cap = frappe.utils.flt(team_cap(team))
+	limit. Blocked when the trust-tier cap with GST, or the last invoice, would breach it."""
+	cap = tax.with_output_tax(team, team_cap(team))
 	last = last_invoice_amount(team)
 	reason = None
 	if cap >= UPI_RECURRING_MAX:
-		reason = (
-			f"Your spend cap (₹{cap:,.0f}) is at or above the ₹{UPI_RECURRING_MAX:,.0f} "
-			"UPI Autopay recurring limit — set up a card instead."
-		)
+		reason = _(
+			"Your spend cap with GST (₹{0}) is at or above the ₹{1} UPI Autopay recurring limit. Set up a card instead."
+		).format(f"{cap:,.0f}", f"{UPI_RECURRING_MAX:,.0f}")
 	elif last >= UPI_RECURRING_MAX:
 		reason = (
 			f"Your last invoice (₹{last:,.0f}) is at or above the ₹{UPI_RECURRING_MAX:,.0f} "
@@ -110,8 +109,6 @@ def _ensure_customer(team: str, gateway: str, adapter, customer_id: str | None =
 	"""Reuse-or-create a gateway customer for a mandate setup. Recurring orders
 	need a customer (see payments.ensure_gateway_customer for the why); shared so
 	the card-lifecycle (#05) and mandate (#08) paths provision identically."""
-	from central.billing.payments import payments
-
 	return payments.ensure_gateway_customer(team, gateway, adapter, customer_id)
 
 
@@ -181,9 +178,7 @@ def _switch_to_existing_customer(team: str, gateway: str, adapter, customer_id: 
 	Instead, fetch the customer that already has (email, contact) — create with
 	fail_existing returns it now that the phone is on the profile — and repoint
 	our stored row so the recurring order uses the contact-bearing customer."""
-	from central.billing.payments.payments import gateway_customer_info
-
-	corrected = adapter.create_customer(gateway_customer_info(team))
+	corrected = adapter.create_customer(payments.gateway_customer_info(team))
 	if corrected and corrected != customer_id:
 		frappe.db.set_value(
 			"Gateway Customer",
@@ -196,7 +191,7 @@ def _switch_to_existing_customer(team: str, gateway: str, adapter, customer_id: 
 
 
 def setup_mandate(team: str, gateway: str, customer_id: str | None = None, is_default: int = 0) -> dict:
-	"""Begin UPI Autopay authorisation, with the ceiling locked to the team's trust-tier cap.
+	"""Begin UPI Autopay authorisation, with the ceiling `payments.mandate_ceiling` gives.
 
 	Refuses a team above the UPI recurring limit (cap or last invoice >= Rs. 1,00,000).
 	Returns the Razorpay Checkout handles and the pending Payment Method. No money moves.
@@ -206,7 +201,7 @@ def setup_mandate(team: str, gateway: str, customer_id: str | None = None, is_de
 	if not elig["eligible"]:
 		frappe.throw(elig["reason"], frappe.ValidationError)
 
-	cap = team_cap(team)
+	cap = payments.mandate_ceiling(team, gateway, "INR")
 	adapter = _adapter(gateway)
 	customer_id = _ensure_customer(team, gateway, adapter, customer_id)
 	# UPI Autopay carries no customer contact — no phone needed here.
@@ -437,8 +432,6 @@ def _activate_mandate(method, adapter, payment: dict, actor: str):
 		_retire_superseded_mandates(method)
 	_fill_profile_contact(method.team, payment)
 
-	from central.billing.payments import payments
-
 	payments.densify_priorities(method.team)  # slot the new method into the fallback order
 	_queue_authorisation_refund(method, payment)
 	method.reload()
@@ -592,19 +585,18 @@ def reauth_pending(team: str) -> bool:
 def reconcile_mandates_to_cap(team: str):
 	"""After a tier change, flag/clear re-authorisation on active mandates.
 
-	An active mandate whose ceiling is below the new cap needs re-consent (the
-	team is functionally held at the old ceiling until then). A mandate whose
-	ceiling already covers the cap — e.g. after a demotion — is cleared.
+	An active mandate below the ceiling a new mandate would get needs re-consent
+	(the team is held at the old ceiling until then). A mandate that already
+	covers it, e.g. after a demotion, is cleared.
 	Returns the list of mandates newly requiring re-authorisation.
 	"""
-	cap = team_cap(team)
 	flagged = []
 	for method in frappe.get_all(
 		"Payment Method",
 		filters={"team": team, "method_type": MANDATE_METHOD, "status": "Active"},
-		fields=["name", "mandate_max_amount"],
+		fields=["name", "gateway", "mandate_max_amount"],
 	):
-		needs = cap > (method.mandate_max_amount or 0)
+		needs = payments.mandate_ceiling(team, method.gateway, "INR") > (method.mandate_max_amount or 0)
 		frappe.db.set_value("Payment Method", method.name, "reauth_required", 1 if needs else 0)
 		if needs:
 			flagged.append(method.name)
