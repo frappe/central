@@ -195,6 +195,21 @@ class TestSetupLockoutCancel(BillingTestCase):
 		self.assertEqual(self.receive("payment_intent.canceled", intent), "Ignored")
 		self.assertEqual(frappe.db.count("Billing Event", {"subject": order}), declines)
 
+	def test_a_payment_that_lands_after_the_cancel_still_credits(self):
+		order = self.make_top_up(order_id="pi_late")
+		self.assertEqual(setup_lockout_cancel.close_top_up(order), "Expired")
+		intent = {
+			"object": "payment_intent",
+			"id": "pi_late",
+			"status": "succeeded",
+			"amount_received": 50000,
+			"currency": "inr",
+			"metadata": {"receipt": order},
+		}
+		self.assertEqual(self.receive("payment_intent.succeeded", intent), "Processed")
+		self.assertEqual(self.status("Top-up Order", order), "Credited")
+		self.assertEqual(frappe.db.count("Credit Ledger Entry", {"reference_name": "pi_late"}), 1)
+
 
 class _FakeStripeHTTP(stripe.HTTPClient):
 	"""Answers every Stripe request with one canned response, and keeps the request."""
