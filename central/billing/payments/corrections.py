@@ -577,8 +577,8 @@ def _advance_again(doc, refund, amount: float) -> str:
 		name = existing[0].name
 	else:
 		settings = accounting_settings()
-		tax = gst.treatment(doc.team)
 		gst_back = frappe.utils.flt(refund.tax_amount if refund.partial else doc.advance_tax_applied)
+		tax = gst.treatment(doc.team, charged_tax=gst_back)
 		name = connection.post(
 			"api/resource/Payment Entry",
 			{
@@ -602,7 +602,7 @@ def _advance_again(doc, refund, amount: float) -> str:
 				"billing_address_gstin": tax.gstin,
 				"gst_category": tax.gst_category,
 				"place_of_supply": tax.place_of_supply,
-				"taxes": gst.tax_rows(tax.template, paid_amount=amount) if gst_back else [],
+				"taxes": gst.tax_rows(tax.template, paid_amount=amount),
 				"remarks": f"Wallet credit returned by refund {refund.name} of Central invoice {doc.name}",
 			},
 		).name

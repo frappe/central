@@ -96,6 +96,21 @@ class TestTopUp(AdvanceTestCase):
 		self.assertEqual(payment["taxes"], [])
 		self.assertEqual(payment["paid_to"], "Stripe Clearing USD - TC")
 
+	def test_the_gst_on_the_top_up_decides_the_advance_rows(self):
+		billing_team(TEAM, gstin=GSTIN)
+		frappe.db.set_value("Tax Profile", TEAM, {"zero_rated": 1, "zero_rating_reason": "SEZ"})
+		untaxed, _ = self._top_up(amount=10000, payment_id="pi_sez")
+		frappe.db.set_value("Tax Profile", TEAM, {"zero_rated": 0, "zero_rating_reason": None})
+		taxed, _ = self._top_up(amount=11800, payment_id="pi_taxed")
+		frappe.db.set_value("Tax Profile", TEAM, {"zero_rated": 1, "zero_rating_reason": "SEZ"})
+
+		advance.sync_advance(untaxed)
+		payment = self.remote.posts("Payment Entry")[-1]
+		self.assertEqual((payment["gst_category"], payment["taxes"]), ("SEZ", []))
+		advance.sync_advance(taxed)
+		payment = self.remote.posts("Payment Entry")[-1]
+		self.assertEqual([t["tax_amount"] for t in payment["taxes"]], [900, 900])
+
 	def test_waits_for_the_customer(self):
 		billing_team(TEAM, gstin=GSTIN)
 		frappe.db.set_value("Billing Profile", TEAM, "profile_id", None)
@@ -158,6 +173,14 @@ class TestGstTreatment(AdvanceTestCase):
 			frappe.db.set_value("Billing Profile", TEAM, "gst_status", "Cancelled")
 			t = gst.treatment(TEAM)
 			self.assertEqual((t.gst_category, t.template), ("Unregistered", template), state)
+
+	def test_the_gst_charged_overrides_the_standing(self):
+		billing_team(TEAM, state="Karnataka", gstin=GSTIN)
+		frappe.db.set_value("Tax Profile", TEAM, {"zero_rated": 1, "zero_rating_reason": "SEZ"})
+		self.assertEqual(gst.treatment(TEAM, charged_tax=180).template, OUT_STATE)
+		frappe.db.set_value("Tax Profile", TEAM, {"zero_rated": 0, "zero_rating_reason": None})
+		t = gst.treatment(TEAM, charged_tax=0)
+		self.assertEqual((t.gst_category, t.template), ("SEZ", None))
 
 	def test_no_state_is_taxed_as_out_of_state(self):
 		billing_team(TEAM, state=None)

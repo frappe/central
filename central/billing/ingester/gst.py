@@ -15,8 +15,12 @@ from central.billing.ingester.settings import accounting_settings
 OVERSEAS_PLACE_OF_SUPPLY = "96-Other Countries"
 
 
-def treatment(team: str) -> frappe._dict:
-	"""GSTIN, GST category, place of supply, and the tax template (None: no GST)."""
+def treatment(team: str, charged_tax: float | None = None) -> frappe._dict:
+	"""GSTIN, GST category, place of supply, and the tax template (None: no GST).
+
+	`charged_tax` is the GST already on the document. When given, it decides the template,
+	so the filing matches what was charged even if the team's standing changed since.
+	"""
 	from central.billing.revenue import gst_status
 
 	profile = (
@@ -31,16 +35,14 @@ def treatment(team: str) -> frappe._dict:
 	gstin = gst_status.standing(team).gstin or ""
 	code = state_code(profile.state)
 	place_of_supply = f"{code}-{profile.state}" if code else None
-	if _zero_rated_sez(team):
+	if _is_untaxed(team, charged_tax):
 		return frappe._dict(gstin=gstin, gst_category="SEZ", place_of_supply=place_of_supply, template=None)
 
-	settings = accounting_settings()
-	in_state = code and code == company_state_code()
 	return frappe._dict(
 		gstin=gstin,
 		gst_category=(profile.gst_category or "Registered Regular") if gstin else "Unregistered",
 		place_of_supply=place_of_supply,
-		template=settings.in_state_template if in_state else settings.out_state_template,
+		template=_template_for_state(code),
 	)
 
 
@@ -91,7 +93,20 @@ def company_state_code() -> str:
 	return company_gstin()[:2]
 
 
-def _zero_rated_sez(team: str) -> bool:
+def _template_for_state(code: str | None) -> str:
+	settings = accounting_settings()
+	if code and code == company_state_code():
+		return settings.in_state_template
+	return settings.out_state_template
+
+
+def _is_untaxed(team: str, charged_tax: float | None) -> bool:
+	if charged_tax is None:
+		return _is_zero_rated_sez(team)
+	return not frappe.utils.flt(charged_tax)
+
+
+def _is_zero_rated_sez(team: str) -> bool:
 	"""The rule the invoice tax uses, so what is filed matches what is charged."""
 	from central.billing.revenue import gst_status, tax
 
