@@ -5,7 +5,11 @@
 <tr>
 	<td class="fc-body">
 		{{ ui.heading(_("Payment due")) }}
+		{% if tax_note %}
+		{{ ui.paragraph(_("{0} ({1}) is due on {2}.").format(amount, tax_note, due_date)) }}
+		{% else %}
 		{{ ui.paragraph(_("{0} is due on {1}.").format(amount, due_date)) }}
+		{% endif %}
 
 		{% if note %}{{ ui.paragraph(note) }}{% endif %}
 
