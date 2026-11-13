@@ -69,7 +69,17 @@ def list_images(
 
 def list_apps(team: str, region: str) -> list[dict]:
 	"""The ready-to-run apps the region's Cargo has built, one per application."""
-	return _app_cargo(team, region).get_apps()
+	apps = _app_cargo(team, region).get_apps()
+	for app in apps:
+		app["documentation"] = get_guide_url(app.get("documentation"))
+
+	return apps
+
+
+def get_guide_url(documentation: str | None) -> str | None:
+	"""An app's guide address from its template, or None unless it is an https page. The
+	console opens it as a link."""
+	return documentation if str(documentation or "").startswith("https://") else None
 
 
 def get_app_requirements(team: str, region: str, application: str) -> AppRequirements:

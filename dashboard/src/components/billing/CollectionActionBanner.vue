@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Alert, Button, Dialog, useCall } from 'frappe-ui'
-// "Action Required" banner — shown when an INR e-mandate team's bill crosses the
-// ₹15,000 silent-debit limit and the customer must choose how to keep paying
+// "Action Required" banner — shown when an INR team's bill goes over what its card
+// or UPI may pay automatically and the customer must choose how to keep paying
 // (ADR 0005 / payments-inr.md). Calm, not alarming: services keep running; this
 // is an invitation to decide. Backend feed: get_collection_status.
 import { computed, ref, watch } from 'vue'
@@ -11,6 +11,7 @@ import { useSession } from '@/composables/useSession'
 import { whenTeamReady } from '@/composables/useTeamScope'
 import { getErrorMessage, successToast } from '@/lib/feedback'
 import { money } from '@/lib/format'
+import { __ } from '@/lib/translate'
 import type { CollectionStatus } from '@/types/billing'
 
 const { activeTeam } = useSession()
@@ -52,7 +53,7 @@ async function choose(): Promise<void> {
 	}
 	successToast(
 		chosen.value === 'Prepaid'
-			? 'Prepaid wallet on: add credits to cover usage'
+			? __('Prepaid on: your wallet pays first, then your card or UPI')
 			: "You'll pay each invoice yourself",
 	)
 	choosing.value = false
@@ -60,7 +61,56 @@ async function choose(): Promise<void> {
 	status.reload()
 }
 
-const options = [
+// Tripped by an INR bill over the limit: the card or UPI cannot pay it, so only
+// wallet credit gets Prepaid past it. `threshold` is the most the card or UPI may
+// pay automatically (at most ₹15,000, lower under a smaller mandate).
+const OVER_CEILING_REASONS = [
+	'invoice_over_threshold',
+	'forecast_over_threshold',
+]
+const isOverCeiling = computed(
+	() =>
+		currency.value === 'INR' &&
+		OVER_CEILING_REASONS.includes(s.value?.reason ?? ''),
+)
+
+const prepaidOverLimitBlurb = computed(() => {
+	if (s.value?.threshold == null)
+		return __('Add credit to your wallet to cover this bill.')
+	return __(
+		'Add credit to your wallet to cover this bill. Your card or UPI pays only amounts up to {0}.',
+		[money(s.value.threshold, currency.value)],
+	)
+})
+
+const reasonText = computed(() => {
+	const limit = s.value?.threshold
+	if (s.value?.reason === 'mandate_failed')
+		return __(
+			'Your automatic payment approval was cancelled or stopped working. Choose how to pay. Your services keep running.',
+		)
+	if (s.value?.reason === 'invoice_over_threshold')
+		return limit == null
+			? __(
+					'A bill is over the limit for automatic payments. Your services keep running.',
+				)
+			: __(
+					'A bill is over the {0} limit for automatic payments. Your services keep running.',
+					[money(limit, currency.value)],
+				)
+	const projected = money(s.value?.projected_total, currency.value)
+	return limit == null
+		? __(
+				'This month is heading to {0}, past the limit for automatic payments. Your services keep running.',
+				[projected],
+			)
+		: __(
+				'This month is heading to {0}, past the {1} limit for automatic payments. Your services keep running.',
+				[projected, money(limit, currency.value)],
+			)
+})
+
+const options = computed(() => [
 	{
 		key: 'Manual Checkout',
 		icon: 'lucide-receipt',
@@ -72,10 +122,14 @@ const options = [
 		key: 'Prepaid',
 		icon: 'lucide-wallet',
 		title: 'Prepaid wallet',
-		blurb: 'Add credits up front; your usage draws them down.',
+		blurb: isOverCeiling.value
+			? prepaidOverLimitBlurb.value
+			: __(
+					'Your wallet pays first. When it is short, we charge your card or UPI.',
+				),
 		fit: 'Best for hands-off, predictable spending.',
 	},
-]
+])
 </script>
 
 <template>
@@ -85,15 +139,7 @@ const options = [
 		title="Action required: choose how to keep paying"
 		:primary-action="canManageBilling ? { label: 'Choose how to pay', onClick: () => { choosing = true } } : undefined"
 	>
-		<template #description>
-			This month is heading to
-			<span class="text-p-sm-medium"
-				>{{ money(s.projected_total, currency) }}</span
-			>
-			, past the
-			<span class="text-p-sm-medium">{{ money(s.threshold, currency) }}</span>
-			limit for automatic payments. Your services keep running.
-		</template>
+		<template #description>{{ reasonText }}</template>
 	</Alert>
 
 	<Dialog v-model:open="choosing" title="How do you want to pay?">

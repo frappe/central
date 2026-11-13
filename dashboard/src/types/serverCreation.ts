@@ -23,6 +23,8 @@ export interface App {
 	information: string | null
 	/** A data URI of the app's SVG logo, or null when its template names none. */
 	logo: string | null
+	/** The https:// address of the app's user guide, or null when its template names none. */
+	documentation: string | null
 	snapshot_id: string
 }
 

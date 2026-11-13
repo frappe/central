@@ -25,6 +25,8 @@
   "capacity_column",
   "image_offering",
   "has_site",
+  "application",
+  "documentation_url",
   "skip_automatic_snapshot",
   "is_termination_protected",
   "access_tab",
@@ -177,6 +179,21 @@
    "fieldname": "has_site",
    "fieldtype": "Check",
    "label": "Has Site",
+   "read_only": 1
+  },
+  {
+   "description": "The one-click app the server was created from, such as redis.",
+   "fieldname": "application",
+   "fieldtype": "Data",
+   "label": "App",
+   "read_only": 1
+  },
+  {
+   "description": "The app's user guide. The server page links to it as Getting started.",
+   "fieldname": "documentation_url",
+   "fieldtype": "Data",
+   "label": "App Guide",
+   "options": "URL",
    "read_only": 1
   },
   {
@@ -396,7 +413,7 @@
    "link_fieldname": "server"
   }
  ],
- "modified": "2026-11-04 12:00:00.000000",
+ "modified": "2026-11-13 11:12:18.707390",
  "modified_by": "Administrator",
  "module": "Infrastructure",
  "name": "Virtual Machine",

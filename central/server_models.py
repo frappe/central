@@ -91,6 +91,8 @@ class ServerCreation(BaseModel):
 	is_firewall_enabled: bool = False
 	user_data: str = ""
 	image_tags: dict[str, str]
+	# The https guide of an app server, from its template.
+	documentation_url: str | None = None
 	site: SiteCreation | None = None
 	cpu_millicores: int = Field(ge=100, le=32000)
 	memory_mib: PositiveInt
@@ -207,6 +209,7 @@ class AppRequirements(TypedDict):
 	inputs: list[AppInput]
 	minimum_size: AppMinimumSize
 	ports: list[AppPort]
+	documentation: NotRequired[str | None]
 
 
 # The customer's answer to each app input, by input name.
