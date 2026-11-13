@@ -38,6 +38,14 @@ The dialog can ask for a phone number. A phone number is required to set up auto
 
 The options in the dialog depend on your billing currency. Teams billed in INR can also see RuPay Card and UPI Autopay, which you authorise on your bank's page. To authorise automatic payments, Razorpay charges ₹1. Frappe Cloud refunds it after the authorisation succeeds. Amex and Diners cards cannot be charged automatically. Add credit instead.
 
+### When you see "Too many failed attempts"
+
+After 5 failed attempts in a row, you must wait before you try again. The message tells you how long, for example "Too many failed attempts. Try again in 28 minutes." The wait gets longer with each failure, to 24 hours after the 10th. Only a card or account that your bank declines, or a bank verification that fails, counts as a failed attempt. If you close the bank's window or cancel, you can try again at once. Failed top-ups count too. A bank that is down or asks you to try again later does not count.
+
+When the wait starts, a card setup or card top-up that is still open in another window is closed. If you try a card in it, the dialog shows the wait. A UPI or netbanking window that is already open is not closed, but you cannot open a new one until the wait ends.
+
+Your failed attempts in all your teams count together. The count goes back to zero when you add a payment method, when a top-up you make is paid, or after 7 days with no failed attempt. To try again sooner, contact support. When support clears the wait for a team, you can try again in that team only. In your other teams, you must still wait.
+
 ## If you do not finish adding a method
 
 You can close the bank's page or the dialog at any time. Start again at once: an unfinished setup does not block a new one. When you start again, Frappe Cloud cancels the unfinished setup. About 30 minutes to 1.5 hours later, it refunds any ₹1 authorisation charge the setup took and removes any card or UPI authorisation it saved at the gateway. If you used the same card or UPI account again, it keeps that authorisation for your new payment method.

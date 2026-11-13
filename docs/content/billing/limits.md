@@ -23,6 +23,8 @@ Credit that you add while an invoice is unpaid pays that invoice only when it co
 
 Frappe Cloud adds the credit to your wallet after the payment goes through. Add your billing details before you add credit.
 
+After 5 failed card or UPI setups or wallet top-ups in a row that your bank declines, you must wait before you try again. See [When you see "Too many failed attempts"](/billing/payment-methods#when-you-see-too-many-failed-attempts).
+
 ### Wallet history
 
 Click **Wallet** in the summary panel to see each credit and debit and the balance. Click the download icon on a top-up to download its receipt.

@@ -21,7 +21,7 @@ from frappe import _
 from frappe.model.document import Document
 
 from central.billing.doctype.billing_event import billing_event
-from central.billing.payments import decline, setup_expiry
+from central.billing.payments import decline, setup_expiry, setup_lockout
 from central.billing.states import record_event, transition
 
 CARD_METHOD = "Card"
@@ -102,6 +102,7 @@ def initiate_payment_method_setup(team: str, gateway: str, gateway_customer_id: 
 	Returns the client secret the frontend confirms the card against. No money
 	moves here and the method is not yet usable.
 	"""
+	setup_lockout.check(team, frappe.session.user)
 	_cancel_abandoned_setups(team, gateway)
 	adapter = _adapter(gateway)
 	gateway_customer_id = ensure_gateway_customer(team, gateway, adapter, gateway_customer_id)
@@ -152,11 +153,8 @@ def mandate_ceiling(team: str, gateway: str, currency: str | None) -> float | No
 
 def _cancel_abandoned_setups(team: str, gateway: str):
 	"""Cancel the team's never-confirmed setups on this gateway before a fresh attempt.
-	A Pending Validation method with no gateway_method_id is an abandoned setup (dialog
-	closed before confirm). It stays on record, so the setup funnel can count it, and
-	whatever the gateway saved for it is released later by the hourly
-	`retry_unfinished_releases`, so a retry with the same card can finish first and keep
-	the shared token. Confirmed methods (any status) are left alone."""
+	The rows stay for the setup funnel. What the gateway saved for them is released
+	later, so a retry with the same card can finish first and keep the shared token."""
 	for name in frappe.get_all(
 		"Payment Method",
 		filters={
@@ -260,9 +258,16 @@ def _saved_card_fields(card: dict, method) -> dict:
 
 def _fail_method(method, failure: dict) -> Document:
 	method.record_failure(failure)
-	transition(method, "Failed", actor=frappe.session.user, reason=method.failure_code)
+	transition(
+		method,
+		"Failed",
+		actor=frappe.session.user,
+		reason=method.failure_code,
+		payload={"decline_code": method.decline_code},
+	)
 	# Only billing code changes a method's status; the caller checked billing:manage.
 	method.save(ignore_permissions=True)
+	setup_lockout.note_failure(method.team, method.owner, method.failure_code, method.decline_code)
 	return method
 
 
@@ -483,7 +488,12 @@ def _record_setup_failure(payment_method: str, decline: dict) -> None:
 	method = frappe.get_doc("Payment Method", payment_method, for_update=True)
 	method.record_failure(decline)
 	record_event(
-		method, "Payment Method Setup Failed", reason=method.failure_code, outcome=billing_event.FAILED
+		method,
+		setup_lockout.SETUP_FAILED_EVENT,
+		reason=method.failure_code,
+		outcome=billing_event.FAILED,
+		payload={"decline_code": method.decline_code},
 	)
 	# The webhook runs as the system, and only billing code writes a method's failure.
 	method.save(ignore_permissions=True)
+	setup_lockout.note_failure(method.team, method.owner, method.failure_code, method.decline_code)

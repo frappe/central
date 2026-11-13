@@ -16,6 +16,7 @@ import frappe
 from frappe import _
 
 from central.billing.doctype.billing_profile.billing_profile import normalize_phone, usable_phone
+from central.billing.payments import setup_lockout
 from central.billing.payments.decline import ORDER_MISMATCH, PAYMENT_NOT_AUTHORISED, SIGNATURE_INVALID
 from central.billing.states import transition
 
@@ -195,14 +196,12 @@ def _switch_to_existing_customer(team: str, gateway: str, adapter, customer_id: 
 
 
 def setup_mandate(team: str, gateway: str, customer_id: str | None = None, is_default: int = 0) -> dict:
-	"""Begin UPI Autopay authorisation.
+	"""Begin UPI Autopay authorisation, with the ceiling locked to the team's trust-tier cap.
 
-	The ceiling is locked to the team's current trust-tier cap. Refuses when the
-	team is above the UPI recurring limit (cap or last invoice >= Rs. 1,00,000) —
-	the UI hides UPI in that case, this is the server-side backstop. Returns the
-	client-side handles the UI runs Razorpay Checkout against, plus the name of
-	the (pending) Payment Method. No money is moved and no token exists yet.
+	Refuses a team above the UPI recurring limit (cap or last invoice >= Rs. 1,00,000).
+	Returns the Razorpay Checkout handles and the pending Payment Method. No money moves.
 	"""
+	setup_lockout.check(team, frappe.session.user)
 	elig = upi_eligibility(team)
 	if not elig["eligible"]:
 		frappe.throw(elig["reason"], frappe.ValidationError)
@@ -248,6 +247,7 @@ def setup_card(
 	`contact` is the phone the dashboard collects inline when the profile has none.
 	Returns the client-side handles plus the pending Payment Method name.
 	"""
+	setup_lockout.check(team, frappe.session.user)
 	adapter = _adapter(gateway)
 	customer_id = _ensure_customer(team, gateway, adapter, customer_id)
 	# May return a different (contact-bearing) customer if the held one collided.
