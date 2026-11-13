@@ -68,10 +68,9 @@ class TaxProfile(Document):
 		)
 
 	def is_overseas_in_india(self) -> bool:
-		"""Whether the profile is zero-rated as Overseas for an India billing address."""
-		from central.billing.india_gst import INDIA
+		"""Whether the profile is zero-rated as Overseas for a team billed in India (India address or INR)."""
+		from central.billing.revenue.tax import is_indian_team
 
 		if not (self.zero_rated and self.zero_rating_reason == "Overseas"):
 			return False
-		country = frappe.db.get_value("Billing Profile", self.team, "country") or ""
-		return country.strip() == INDIA
+		return is_indian_team(self.team)

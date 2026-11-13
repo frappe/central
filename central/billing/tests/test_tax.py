@@ -124,7 +124,7 @@ class TestGstinStanding(TaxTestBase):
 
 	def test_lapsed_gstin_keeps_overseas_zero_rating(self):
 		self._gstin("Cancelled")
-		frappe.db.set_value("Billing Profile", TEAM, "country", "United States")
+		frappe.db.set_value("Billing Profile", TEAM, {"country": "United States", "currency": "USD"})
 		set_tax_profile(
 			output_tax_type="GST", output_tax_rate=18, zero_rated=1, zero_rating_reason="Overseas"
 		)
@@ -193,6 +193,13 @@ class TestOutputTaxFollowsTheCountry(IntegrationTestCase):
 
 	def test_overseas_zero_rating_is_refused_for_india(self):
 		self._signup_from("India")
+		profile = frappe.get_doc("Tax Profile", self.TEAM)
+		profile.update({"zero_rated": 1, "zero_rating_reason": "Overseas"})
+		self.assertRaises(frappe.ValidationError, profile.save, ignore_permissions=True)
+
+	def test_overseas_zero_rating_is_refused_for_an_inr_team_abroad(self):
+		self._signup_from("India")
+		frappe.db.set_value("Billing Profile", self.TEAM, "country", "United States")
 		profile = frappe.get_doc("Tax Profile", self.TEAM)
 		profile.update({"zero_rated": 1, "zero_rating_reason": "Overseas"})
 		self.assertRaises(frappe.ValidationError, profile.save, ignore_permissions=True)
