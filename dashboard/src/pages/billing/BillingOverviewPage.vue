@@ -23,6 +23,7 @@ import TopupDialog from '@/components/TopupDialog.vue'
 import { useBillingOverview } from '@/composables/useBillingOverview'
 import { useBillingReports } from '@/composables/useBillingReports'
 import { useBillingSetup } from '@/composables/useBillingSetup'
+import { useCapabilities } from '@/composables/useCapabilities'
 import { useServerMapData } from '@/composables/useServerMapData'
 import { useSession } from '@/composables/useSession'
 import { fetchBillingSetup } from '@/data/billingSetup'
@@ -91,10 +92,12 @@ const onAddCredits = (amount?: number) => {
 
 // A top-up reminder links here with the amount to add. The param is dropped once read,
 // so a refresh does not open the dialog again. The setup check loads first, so a
-// complete profile is never sent to the billing-details dialog.
+// complete profile is never sent to the billing-details dialog. A member who cannot
+// manage billing gets no dialog, as the banner offers them no button.
 const route = useRoute()
 const router = useRouter()
 const { activeTeam } = useSession()
+const { canManageBilling, reload: reloadCapabilities } = useCapabilities()
 watch(
 	() => route.query.topup,
 	async (value) => {
@@ -103,8 +106,11 @@ watch(
 		router.replace({ query })
 		const amount = parseTopupAmount(value)
 		if (!amount) return
-		await fetchBillingSetup(activeTeam.value)
-		onAddCredits(amount)
+		await Promise.all([
+			fetchBillingSetup(activeTeam.value),
+			reloadCapabilities(),
+		])
+		if (canManageBilling.value) onAddCredits(amount)
 	},
 	{ immediate: true },
 )
