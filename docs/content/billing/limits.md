@@ -23,11 +23,13 @@ Credit that you add while an invoice is unpaid pays that invoice only when it co
 
 Frappe Cloud adds the credit to your wallet after the payment goes through. Add your billing details before you add credit.
 
+After 5 failed card or UPI setups or wallet top-ups in a row that your bank declines, you must wait before you try again. See [When you see "Too many failed attempts"](/billing/payment-methods#when-you-see-too-many-failed-attempts).
+
 ### Credit for a large INR bill
 
 A card or UPI can pay only up to its limit automatically, at most ₹15,000. The overview shows **Add credit before your payment date** when your card or UPI would be asked for more than that limit on the payment date. This also applies to automatic payments: your payment mode does not change until an invoice is charged. Frappe Cloud also sends an email 5 days and 2 days before the payment date.
 
-The message asks for enough credit for your wallet to pay the whole bill, rounded up to the next ₹100. If you pay GST on top-ups, it also shows what that credit costs with GST, for example "Add ₹28,900 of credit to your wallet by 8 December 2026 (₹34,102 with GST)". Click **Add credit** on the overview, or **Open billing** in the email, to open the top-up with that credit filled in. The dialog shows the GST and the same total to pay.
+The message asks for enough credit for your wallet to pay the whole bill, rounded up to the next ₹100. If you pay GST on top-ups, it also shows what that credit costs with GST, for example "Add ₹28,900 of credit to your wallet by 8 December 2026 (₹34,102 incl. IGST 18%)". The GST is named from your tax profile: IGST, or CGST and SGST when your state is the same as Frappe's. Click **Add credit** on the overview, or **Open billing** in the email, to open the top-up with that credit filled in. The dialog shows the GST and the same total to pay.
 
 If earlier credit in your wallet came with no GST paid on it, the new top-up pays that GST too, so the credit asked for can be more than what your wallet is short. The message then says "This includes GST on earlier credit that had none."
 

@@ -22,8 +22,9 @@ import {
 import { useCall } from 'frappe-ui'
 import { ref } from 'vue'
 import { API, method } from '@/api/methods'
+import { useSetupWait } from '@/composables/useSetupWait'
 import { getErrorMessage, successToast } from '@/lib/feedback'
-import { stripeCardElementStyle } from '@/lib/gateway'
+import { isCancelledIntent, stripeCardElementStyle } from '@/lib/gateway'
 import { __ } from '@/lib/translate'
 
 interface CardSetupOrder {
@@ -65,6 +66,25 @@ export function useAddStripeCard({
 	let stripe: Stripe | null = null
 	let card: StripeCardElement | null = null
 	let orderPromise: Promise<CardSetupOrder | null> | null = null
+	let setupTeam = ''
+	const { closedAttemptMessage } = useSetupWait()
+
+	// useCall.submit() resolves void — read the order off `.data` once it settles.
+	function startSetup(): Promise<CardSetupOrder | null> {
+		return initiate
+			.submit({ team: setupTeam })
+			.then(() => initiate.data)
+			.catch(() => null)
+	}
+
+	// The server closed this setup after too many failed attempts. Say the wait, or
+	// ask for a fresh start; nothing new is opened on the customer's behalf.
+	async function explainClosedSetup(): Promise<string> {
+		return closedAttemptMessage(
+			setupTeam,
+			__('This attempt was closed. Start again to add your card.'),
+		)
+	}
 
 	// A form mistake keeps Stripe's own field text. A bank refusal is explained by
 	// Central, which reads the reason from Stripe and words it with the next step.
@@ -103,11 +123,8 @@ export function useAddStripeCard({
 
 		// Swallow here so a reject doesn't become an unhandled rejection if the user
 		// cancels before submitting; submit() turns the null into a clean message.
-		// useCall.submit() resolves void — read the order off `.data` once it settles.
-		orderPromise = initiate
-			.submit({ team })
-			.then(() => initiate.data)
-			.catch(() => null)
+		setupTeam = team
+		orderPromise = startSetup()
 		card = stripe.elements().create('card', {
 			hidePostalCode: true,
 			style: stripeCardElementStyle(),
@@ -149,6 +166,11 @@ export function useAddStripeCard({
 					payment_method: paymentMethod.id,
 				},
 			)
+			if (setupError && isCancelledIntent(setupError)) {
+				const closed = await explainClosedSetup()
+				if (card) error.value = closed
+				return
+			}
 			if (setupError) {
 				error.value = await explainSetupError(setupError, order.payment_method)
 				return

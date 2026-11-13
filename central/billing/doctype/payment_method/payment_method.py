@@ -81,3 +81,5 @@ def on_doctype_update() -> None:
 	frappe.db.add_index("Payment Method", ["team", "status"])
 	# A failed hosted card setup webhook finds its card by this.
 	frappe.db.add_index("Payment Method", ["setup_intent_id"])
+	# The wait after failed setups reads a user's own methods.
+	frappe.db.add_index("Payment Method", ["owner"])

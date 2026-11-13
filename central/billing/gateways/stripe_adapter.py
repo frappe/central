@@ -628,6 +628,20 @@ class StripeAdapter(GatewayAdapter):
 			"fingerprint": card.get("fingerprint"),
 		}
 
+	def cancel_setup(self, setup_reference: str) -> str:
+		"""Cancel a SetupIntent (`seti_`) or expire a setup Checkout Session (`cs_`)."""
+		self._configure()
+		if setup_reference.startswith("cs_"):
+			return _expire_session(setup_reference, self._options())
+		return _cancel_intent(stripe.SetupIntent, setup_reference, "setup_intent", self._options())
+
+	def cancel_order(self, order_id: str) -> str:
+		"""Cancel a top-up PaymentIntent (`pi_`) or expire a top-up Checkout Session (`cs_`)."""
+		self._configure()
+		if order_id.startswith("cs_"):
+			return _expire_session(order_id, self._options())
+		return _cancel_intent(stripe.PaymentIntent, order_id, "payment_intent", self._options())
+
 	def read_finished_setup(self, setup_reference: str) -> dict:
 		"""The card a SetupIntent or setup Checkout Session saved, or `{}`. Read only.
 		A setup Stripe no longer has saved nothing."""
@@ -727,6 +741,30 @@ def _unfinished_setup(intent: dict) -> dict:
 		return {}
 
 	return {"setup_error": {"failure_code": error.get("code"), "decline_code": error.get("decline_code")}}
+
+
+def _cancel_intent(resource, intent_id: str, kind: str, options: dict) -> str:
+	"""Stripe refuses to cancel an intent that succeeded, is processing or is already
+	cancelled. That refusal names the intent's status, which is returned instead."""
+	with _stripe_errors():
+		try:
+			return _to_dict(resource.cancel(intent_id, cancellation_reason="abandoned", **options)).get(
+				"status"
+			)
+		except stripe.error.InvalidRequestError as e:
+			error = (getattr(e, "json_body", None) or {}).get("error") or {}
+			if error.get("code") != f"{kind}_unexpected_state":
+				raise
+			return (error.get(kind) or {}).get("status") or "unknown"
+
+
+def _expire_session(session_id: str, options: dict) -> str:
+	"""Stripe expires only an open Checkout Session; a completed or expired one is left as it is."""
+	with _stripe_errors():
+		try:
+			return _to_dict(stripe.checkout.Session.expire(session_id, **options)).get("status")
+		except stripe.error.InvalidRequestError:
+			return "not_open"
 
 
 def _is_missing_object(error: stripe.error.InvalidRequestError) -> bool:

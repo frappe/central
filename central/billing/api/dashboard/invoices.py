@@ -26,6 +26,7 @@ from central.billing.api.dashboard._shared import (
 from central.billing.doctype.invoice.invoice import is_issued
 from central.billing.doctype.top_up_order.top_up_order import TopupOrder
 from central.billing.gateways.base import VerifiedPayment
+from central.billing.payments import setup_lockout
 from central.billing.revenue import credits, tax
 
 
@@ -753,16 +754,15 @@ def create_topup_order(
 	amount = frappe.utils.flt(amount)
 	if amount <= 0:
 		frappe.throw(_("Top-up amount must be greater than zero."), frappe.ValidationError)
+	# Before the gateway customer is minted, so a locked team makes no gateway call.
+	setup_lockout.check(team, frappe.session.user)
 	currency = _team_currency(team)
 	gw, display_paypal = _top_up_gateway(currency, gateway, method, instrument)
 	from central.billing.gateways.registry import get_adapter
 
 	gw_doc = frappe.get_doc("Payment Gateway", gw)
 	adapter = get_adapter(gw_doc)
-	# Mint-or-reuse the team's customer at this gateway *before* the order, so the
-	# top-up attaches to the one customer every later charge reuses (the card #05 and
-	# mandate #08 paths share this same Gateway Customer row). ensure_gateway_customer
-	# commits the row the instant it mints, so a failed order can't orphan it.
+	# The team's one gateway customer, committed on mint so a failed order can't orphan it.
 	from central.billing.gateways.base import customer_safe_gateway_errors
 	from central.billing.payments.payments import ensure_gateway_customer
 
