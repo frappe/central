@@ -20,7 +20,7 @@
 	"src/components/billing/BillingDetailsCard.vue": 12,
 	"src/components/billing/BillingProfileForm.vue": 23,
 	"src/components/billing/ChargeBreakdown.vue": 6,
-	"src/components/billing/CollectionActionBanner.vue": 12,
+	"src/components/billing/CollectionActionBanner.vue": 9,
 	"src/components/billing/CreateProjectDialog.vue": 8,
 	"src/components/billing/CycleBreakdownPanel.vue": 7,
 	"src/components/billing/CycleFacts.vue": 11,

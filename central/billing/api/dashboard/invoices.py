@@ -623,7 +623,8 @@ def pay_invoice(invoice: str | None = None) -> dict:
 	_require_manage(team)
 	from central.billing.payments import charges
 
-	return charges.pay_invoice(invoice)
+	# Over the silent ceiling the customer is sent to checkout; the team keeps its mode.
+	return charges.pay_invoice(invoice, on_session=True)
 
 
 @frappe.whitelist()

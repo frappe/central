@@ -25,8 +25,10 @@ class TestCollectionMode(IntegrationTestCase):
 	def setUp(self):
 		ensure_team(TEAM)
 		complete_billing_profile(TEAM)
-		clear_team_tier(TEAM)  # no tier → flat ₹15k threshold
+		clear_team_tier(TEAM)
 		frappe.db.delete("Billing Notification Log", {"team": TEAM})
+		frappe.db.delete("Payment Method", {"team": TEAM})
+		self._activate_method("tok_card")  # no mandate → the ₹15k ceiling
 
 	def _activate_method(self, method_id):
 		from central.billing.tests.test_razorpay_adapter import make_razorpay_gateway
@@ -45,25 +47,57 @@ class TestCollectionMode(IntegrationTestCase):
 		method.status = "Active"
 		method.save(ignore_permissions=True)
 
-	def test_the_first_active_method_starts_auto_charge(self):
+	def test_the_first_active_method_keeps_prepaid(self):
 		frappe.db.delete("Payment Method", {"team": TEAM})
 		_set_mode(TEAM, "Prepaid")
 		self._activate_method("tok_first")
-		self.assertEqual(frappe.db.get_value("Billing Profile", TEAM, "collection_mode"), "Auto Charge")
-
-	def test_a_later_method_keeps_the_chosen_mode(self):
-		frappe.db.delete("Payment Method", {"team": TEAM})
-		self._activate_method("tok_first")
-		_set_mode(TEAM, "Prepaid")
-		self._activate_method("tok_second")
 		self.assertEqual(frappe.db.get_value("Billing Profile", TEAM, "collection_mode"), "Prepaid")
 
-	def test_threshold_is_15k_without_a_tier(self):
-		self.assertEqual(collection_mode.silent_threshold(TEAM), 15000.0)
+	def test_limit_is_the_ceiling_without_a_mandate(self):
+		self.assertEqual(collection_mode.off_session_limit(TEAM), 15000.0)
 
-	def test_threshold_is_capped_by_a_lower_tier(self):
+	def test_limit_follows_a_smaller_mandate_not_the_tier(self):
 		set_team_tier(TEAM, level="t0", max_spend=8000)
-		self.assertEqual(collection_mode.silent_threshold(TEAM), 8000.0)
+		self.assertEqual(collection_mode.off_session_limit(TEAM), 15000.0)
+		frappe.db.set_value("Payment Method", {"team": TEAM}, "mandate_max_amount", 8300)
+		self.assertEqual(collection_mode.off_session_limit(TEAM), 8300.0)
+
+	def test_a_team_without_a_method_has_no_limit(self):
+		frappe.db.delete("Payment Method", {"team": TEAM})
+		self.assertIsNone(collection_mode.off_session_limit(TEAM))
+
+	def test_a_method_on_a_gateway_without_off_session_charges_has_no_limit_left(self):
+		_set_mode(TEAM, "Auto Charge")
+		adapter = MagicMock(supports_off_session_charge=False)
+		with patch("central.billing.gateways.registry.adapter_class", return_value=adapter):
+			self.assertEqual(collection_mode.off_session_limit(TEAM), 0.0)
+			self.assertTrue(collection_mode.evaluate(TEAM, projected_amount=1)["action_required"])
+
+	def test_auto_charge_forecast_at_the_limit_stays_silent(self):
+		_set_mode(TEAM, "Auto Charge")
+		self.assertFalse(collection_mode.evaluate(TEAM, projected_amount=15000)["action_required"])
+		self.assertTrue(collection_mode.evaluate(TEAM, projected_amount=15000.01)["action_required"])
+
+	def test_a_usd_forecast_over_the_tier_cap_stays_silent(self):
+		from central.billing.tests.test_stripe_adapter import make_stripe_gateway
+
+		team = "team-collection-usd"
+		ensure_team(team)
+		complete_billing_profile(team, currency="USD")
+		set_team_tier(team, level="t0", max_spend=500)
+		_set_mode(team, "Auto Charge")
+		frappe.db.delete("Payment Method", {"team": team})
+		frappe.get_doc(
+			{
+				"doctype": "Payment Method",
+				"team": team,
+				"gateway": make_stripe_gateway().name,
+				"method_type": "Card",
+				"status": "Active",
+				"gateway_method_id": "pm_usd",
+			}
+		).insert(ignore_permissions=True)
+		self.assertFalse(collection_mode.evaluate(team, projected_amount=5000)["action_required"])
 
 	def test_auto_charge_under_threshold_stays_silent(self):
 		_set_mode(TEAM, "Auto Charge")
@@ -146,6 +180,7 @@ class TestCollectionMode(IntegrationTestCase):
 		"""It is skipped by the charge loop, so it cannot be what auto-pay rests on."""
 		from central.billing.tests.test_stripe_adapter import make_stripe_gateway
 
+		frappe.db.delete("Payment Method", {"team": TEAM})
 		gw = make_stripe_gateway().name
 		frappe.get_doc(
 			{
@@ -242,13 +277,38 @@ class TestInvoiceTimeTrip(IntegrationTestCase):
 		self.assertEqual(frappe.db.count("Payment Attempt", {"invoice": inv}), 0)
 		self.assertEqual(frappe.db.get_value("Billing Profile", TEAM, "collection_mode"), "Action Required")
 
-	def test_pay_over_15k_keeps_the_mode_the_customer_chose(self):
+	def test_pay_over_15k_moves_a_prepaid_team_to_action_required(self):
 		from central.billing.payments import charges
 
 		_set_mode(TEAM, "Prepaid")
+		frappe.db.delete("Billing Notification Log", {"team": TEAM})
 		out = charges.pay_invoice(self._invoice(20000), payment_method=self.pm, gateway=self.gw)
 		self.assertEqual(out["reason"], "action_required")
-		self.assertEqual(frappe.db.get_value("Billing Profile", TEAM, "collection_mode"), "Prepaid")
+		self.assertEqual(frappe.db.get_value("Billing Profile", TEAM, "collection_mode"), "Action Required")
+		self.assertTrue(
+			frappe.db.exists("Billing Notification Log", {"team": TEAM, "event_type": "Action Required"})
+		)
+
+	def test_pay_button_over_15k_keeps_prepaid_and_opens_checkout(self):
+		from central.billing.api.dashboard import invoices
+
+		_set_mode(TEAM, "Prepaid")
+		inv = self._invoice(20000)
+		adapter = MagicMock()
+		adapter.can_charge_silently.return_value = False
+		adapter.create_order.return_value = {"order_id": "order_pay", "key_id": "rzp"}
+		with patch("central.billing.gateways.registry.get_adapter", return_value=adapter):
+			out = invoices.pay_invoice(inv)
+			# The dashboard opens checkout on this reason.
+			self.assertEqual(out["reason"], "action_required")
+			self.assertEqual(frappe.db.get_value("Billing Profile", TEAM, "collection_mode"), "Prepaid")
+			self.assertFalse(
+				frappe.db.exists("Billing Notification Log", {"team": TEAM, "event_type": "Action Required"})
+			)
+			order = invoices.pay_invoice_checkout(inv)
+		self.assertTrue(order["created"])
+		self.assertEqual(order["order_id"], "order_pay")
+		adapter.charge.assert_not_called()
 
 
 class TestManualCheckout(IntegrationTestCase):

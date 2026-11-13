@@ -64,9 +64,17 @@ def _adapter_for(gateway: str):
 	return get_adapter(frappe.get_doc("Payment Gateway", gateway))
 
 
-def pay_invoice(invoice: str, payment_method: str | None = None, gateway: str | None = None) -> dict:
+def pay_invoice(
+	invoice: str,
+	payment_method: str | None = None,
+	gateway: str | None = None,
+	on_session: bool = False,
+) -> dict:
 	"""Charge an unsettled (Open or Overdue) invoice. Creates at most one in-flight
 	Payment Attempt.
+
+	`on_session` means the customer clicked Pay. A bill that cannot be charged silently
+	then goes to checkout and the team keeps its collection mode.
 
 	Two steps, with the gateway call sitting between them:
 
@@ -80,13 +88,15 @@ def pay_invoice(invoice: str, payment_method: str | None = None, gateway: str | 
 	after step 1 is on disk, so there is always a record to reconcile against. The
 	invoice is never marked Paid here — that waits for the webhook.
 	"""
-	claim = _claim_attempt(invoice, payment_method, gateway)
+	claim = _claim_attempt(invoice, payment_method, gateway, on_session)
 	if not claim.get("claimed"):
 		return claim
 	return _charge_claimed_attempt(claim["attempt"])
 
 
-def _claim_attempt(invoice: str, payment_method: str | None, gateway: str | None) -> dict:
+def _claim_attempt(
+	invoice: str, payment_method: str | None, gateway: str | None, on_session: bool = False
+) -> dict:
 	"""Step 1: write down that we are about to charge, and commit it.
 
 	The invoice row is locked FOR UPDATE, so concurrent callers serialise: the first
@@ -101,14 +111,8 @@ def _claim_attempt(invoice: str, payment_method: str | None, gateway: str | None
 	).for_update().run()
 	inv = frappe.get_doc("Invoice", invoice)
 
-	# An Overdue invoice is still collectable — retrying the card is exactly what a
-	# customer clicking Pay (or dunning) does — so allow both unsettled states.
-	if inv.status not in _UNSETTLED_INVOICE:
-		return {"charged": False, "reason": "not_open"}
-	if not is_issued(inv):
-		return {"charged": False, "reason": "not_issued"}
-	if frappe.utils.flt(inv.expected_collection) <= 0:
-		return {"charged": False, "reason": "nothing_due"}
+	if reason := _uncollectable_reason(inv):
+		return {"charged": False, "reason": reason}
 
 	if in_flight := in_flight_attempt(invoice):
 		return {"charged": False, "reason": "attempt_in_flight", "attempt": in_flight}
@@ -116,15 +120,17 @@ def _claim_attempt(invoice: str, payment_method: str | None, gateway: str | None
 	method_name, gateway_name = _resolve_method(inv, payment_method, gateway)
 	adapter = _adapter_for(gateway_name)
 
-	# A debit the gateway can't pull silently in this currency (INR above ₹15,000 —
-	# an RBI off-session rule that binds Stripe India and Razorpay alike) is never
-	# attempted: it would just fail. An Auto Charge team is moved to Action Required so
-	# it picks manual checkout / prepaid (ADR 0022, #106); a mode the customer already
-	# chose is kept. An uncapped currency and anything under the ceiling pass through.
-	if not adapter.can_charge_silently(frappe.utils.flt(inv.expected_collection), inv.currency):
+	# A debit over what this method may take off-session (the rail's silent ceiling, e.g.
+	# ₹15,000 in INR, or its mandate's maximum) is never attempted: it would just fail.
+	# The caller sends the customer to checkout. A background charge over the team's
+	# off-session limit also moves an Auto Charge or Prepaid team to Action Required
+	# and tells it (ADR 0022, #106).
+	amount = frappe.utils.flt(inv.expected_collection)
+	if not _is_silent_debit_allowed(adapter, gateway_name, method_name, inv.currency, amount):
 		from central.billing.payments import collection_mode
 
-		collection_mode.trip_auto_charge(inv.team, "invoice_over_threshold")
+		if not on_session and not collection_mode.is_within_off_session_limit(inv.team, amount, invoice):
+			collection_mode.trip_off_session_debit(inv.team, "invoice_over_threshold", invoice)
 		return {"charged": False, "reason": "action_required", "invoice": invoice}
 
 	retry_number = frappe.db.count("Payment Attempt", {"invoice": invoice})
@@ -165,6 +171,28 @@ def _claim_attempt(invoice: str, payment_method: str | None, gateway: str | None
 	if not frappe.in_test:
 		frappe.db.commit()
 	return {"claimed": True, "attempt": attempt.name}
+
+
+def _is_silent_debit_allowed(adapter, gateway: str, method_name: str, currency: str, amount: float) -> bool:
+	"""Whether this method may be charged `amount` off-session."""
+	from central.billing.payments import collection_mode
+
+	mandate = frappe.db.get_value("Payment Method", method_name, "mandate_max_amount")
+	limit = collection_mode.method_limit(gateway, currency, mandate)
+	return adapter.can_charge_silently(amount, currency) and collection_mode.is_within_limit(limit, amount)
+
+
+def _uncollectable_reason(inv) -> str | None:
+	"""Why this invoice cannot be charged now; None when it can."""
+	# An Overdue invoice is still collectable — retrying the card is exactly what a
+	# customer clicking Pay (or dunning) does — so allow both unsettled states.
+	if inv.status not in _UNSETTLED_INVOICE:
+		return "not_open"
+	if not is_issued(inv):
+		return "not_issued"
+	if frappe.utils.flt(inv.expected_collection) <= 0:
+		return "nothing_due"
+	return None
 
 
 def _charge_claimed_attempt(attempt_name: str) -> dict:
@@ -379,12 +407,8 @@ def _claim_on_session_attempt(invoice: str, gateway: str | None) -> dict:
 	).for_update().run()
 	inv = frappe.get_doc("Invoice", invoice)
 
-	if inv.status not in _UNSETTLED_INVOICE:
-		return {"created": False, "reason": "not_open"}
-	if not is_issued(inv):
-		return {"created": False, "reason": "not_issued"}
-	if frappe.utils.flt(inv.expected_collection) <= 0:
-		return {"created": False, "reason": "nothing_due"}
+	if reason := _uncollectable_reason(inv):
+		return {"created": False, "reason": reason}
 	if in_flight := in_flight_attempt(invoice):
 		return {"created": False, "reason": "attempt_in_flight", "attempt": in_flight}
 

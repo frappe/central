@@ -344,13 +344,16 @@ def has_retry_rail(invoice, team: str) -> bool:
 
 	1. The invoice is Outstanding. Dunning never retries an Overdue invoice.
 	2. The team's collection mode allows an off-session debit.
-	3. A chargeable method is left to try in a new round."""
+	3. A method is left to try in a new round. One too small for the amount is passed over
+	   while another can take it."""
 	from central.billing.payments import collection, collection_mode
 
 	if invoice.status != OUTSTANDING or not collection_mode.is_debit_allowed(team):
 		return False
-	attempts = collection.attempts_of(invoice.name)
-	return bool(collection.next_method_for(invoice.name, team, attempts))
+	inv = frappe.db.get_value(
+		"Invoice", invoice.name, ["name", "team", "currency", "expected_collection"], as_dict=True
+	)
+	return bool(collection.next_method_for_amount(inv, collection.attempts_of(invoice.name)))
 
 
 def is_retry_due(invoice: str, schedule: list, now) -> bool:
