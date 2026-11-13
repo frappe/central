@@ -68,7 +68,7 @@ const period = computed(() =>
 					class="flex items-baseline justify-between gap-3 py-1"
 				>
 					<span class="text-p-sm text-ink-gray-5">
-						{{ fc?.tax_type || 'Tax' }}
+						{{ fc?.tax_label || fc?.tax_type || __('Tax') }}
 					</span>
 					<span class="text-sm-medium tabular-nums text-ink-gray-8">
 						{{ money(fc?.tax_amount ?? 0, currency) }}

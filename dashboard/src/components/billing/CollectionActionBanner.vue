@@ -153,7 +153,7 @@ const reasonText = computed(() => {
 					'A bill is over the {0} limit for automatic payments. Your services keep running.',
 					[money(limit, currency.value)],
 				)
-	const projected = money(s.value?.projected_total, currency.value)
+	const projected = withTaxNote(money(s.value?.projected_total, currency.value))
 	return limit == null
 		? __(
 				'This month is heading to {0}, past the limit for automatic payments. Your services keep running.',
@@ -164,6 +164,12 @@ const reasonText = computed(() => {
 				[projected, money(limit, currency.value)],
 			)
 })
+
+// The projection includes tax: "₹11,800.00 (incl. IGST 18%)".
+function withTaxNote(amount: string): string {
+	const note = s.value?.tax_note
+	return note ? __('{0} ({1})', [amount, note]) : amount
+}
 
 const options = computed(() => [
 	{

@@ -221,7 +221,7 @@ const saveBudgetAlertErrorTitle = __("Couldn't save the budget alert")
 					<template v-if="taxAmount">
 						+
 						<span class="tabular-nums">{{ money(taxAmount, currency) }}</span>
-						{{ fc?.tax_type || __('tax') }}
+						{{ fc?.tax_label || fc?.tax_type || __('tax') }}
 					</template>
 					·
 					<button

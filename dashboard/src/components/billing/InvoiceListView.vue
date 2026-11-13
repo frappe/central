@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import dayjs from 'dayjs'
-import { Badge, Button } from 'frappe-ui'
+import { Badge, Button, Tooltip } from 'frappe-ui'
 import { computed, ref } from 'vue'
 import DateRangeFilter, {
 	type DateRangePreset,
@@ -145,9 +145,11 @@ const filters: ListViewFilter[] = [
 		</template>
 
 		<template #total="{ row }">
-			<span class="tabular-nums text-ink-gray-8">
-				{{ money(row.total, row.currency) }}
-			</span>
+			<Tooltip :text="row.tax_note" :disabled="!row.tax_note">
+				<span class="tabular-nums text-ink-gray-8">
+					{{ money(row.total, row.currency) }}
+				</span>
+			</Tooltip>
 		</template>
 
 		<template #actions="{ row }">
