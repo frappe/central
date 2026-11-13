@@ -40,6 +40,18 @@ Click an invoice to open it. The panel shows:
 
 <Screenshot name="billing/invoice" alt="An invoice panel for September 2026 with each server, its plan, and its amount" />
 
+### How the tax is named
+
+Each amount that includes tax names the tax. Teams in India see one of these names:
+
+| Name | When |
+| --- | --- |
+| `IGST 18%` | Your billing state is not the state Frappe Cloud bills from, or your billing profile has no state. |
+| `CGST 9% + SGST 9%` | Your billing state is the state Frappe Cloud bills from. |
+| `No GST (SEZ)` | Your GSTIN is for a unit in a Special Economic Zone, and the GSTIN is active. The invoice shows the reason for zero tax. |
+
+An amount that includes tax shows it after the amount, for example `₹11,800.00 (incl. IGST 18%)`. This applies to the invoice list, the payment schedule, and the payment emails. An issued invoice keeps its tax rate and its SEZ zero rating. The split between IGST and CGST + SGST follows your billing state today. In **Wallet history**, a top-up shows the GST paid on it, for example **IGST 18% ₹180.00 paid**.
+
 ## Download an invoice
 
 Click the download icon on the invoice row or at the top of the invoice panel. The PDF is your tax invoice.
