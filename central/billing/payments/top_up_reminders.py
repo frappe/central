@@ -80,7 +80,9 @@ def get_shortfall_due(team: str, bill: float, gst: float, date, invoice: str | N
 	wallet and the card or UPI pay it. A team with no saved method has a limit of 0.
 
 	The ask is the whole shortfall: purchased credit that makes the wallet pay all of the
-	bill, rounded up to ₹100. `amount_with_gst` is what that credit costs."""
+	bill, rounded up to ₹100. `amount_with_gst` is what that credit costs.
+	`includes_earlier_gst` is set when part of its GST pays for earlier purchased credit
+	that the GST balance does not cover, which makes the ask more than the gap."""
 	from central.billing.payments import collection, collection_mode
 
 	has_method = bool(collection.get_methods_left(team, invoice))
@@ -102,6 +104,7 @@ def get_shortfall_due(team: str, bill: float, gst: float, date, invoice: str | N
 		"limit": limit,
 		"has_method": has_method,
 		"invoice": invoice,
+		"includes_earlier_gst": draw.gst_unpaid > 0,
 	}
 
 
@@ -133,7 +136,12 @@ def send_top_up_notice(team: str, due: dict) -> dict:
 	return notifications.notify(
 		team,
 		EVENT,
-		context={**format_due(due, held), "held": held, "topup": int(due["amount"])},
+		context={
+			**format_due(due, held),
+			"held": held,
+			"topup": int(due["amount"]),
+			"includes_earlier_gst": bool(due.get("includes_earlier_gst")),
+		},
 		reference_doctype="Invoice" if due.get("invoice") else None,
 		reference_name=due.get("invoice"),
 	)

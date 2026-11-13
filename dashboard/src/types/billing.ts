@@ -498,6 +498,8 @@ export interface TopUpDue {
 	/** Most the card or UPI may pay automatically; 0 when none is saved. */
 	limit: number
 	has_method: boolean
+	/** Part of the credit's GST pays for earlier purchased credit that had none, so it is more than the gap. */
+	includes_earlier_gst: boolean
 	/** As the reminder email shows them; `amount_with_gst` is null with no GST, `limit` with no method. */
 	labels: {
 		amount: string

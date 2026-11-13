@@ -12,7 +12,7 @@ import { whenTeamReady } from '@/composables/useTeamScope'
 import { getErrorMessage, successToast } from '@/lib/feedback'
 import { money } from '@/lib/format'
 import { __ } from '@/lib/translate'
-import type { CollectionStatus } from '@/types/billing'
+import type { CollectionStatus, TopUpDue } from '@/types/billing'
 
 const emit = defineEmits<{ 'add-credit': [amount: number] }>()
 
@@ -39,6 +39,13 @@ const topUpTitle = __('Add credit before your payment date')
 const topUpText = computed(() => {
 	const due = topUp.value
 	if (!due) return ''
+	const text = topUpAsk(due)
+	// Earlier credit with no GST paid takes its GST from this top-up, so the ask is more than the gap.
+	if (!due.includes_earlier_gst) return text
+	return `${text} ${__('This includes GST on earlier credit that had none.')}`
+})
+
+function topUpAsk(due: TopUpDue) {
 	const {
 		amount,
 		amount_with_gst: withGst,
@@ -55,7 +62,7 @@ const topUpText = computed(() => {
 		'Add {0} of credit to your wallet by {1}. Your card or UPI pays only amounts up to {2}.',
 		[amount, date, limit],
 	)
-})
+}
 
 function topUpTextWithGst(
 	amount: string,

@@ -19,10 +19,11 @@ def plan_draw(lots: list, collectable: float, gst_due: float, gst_left: float) -
 
 	Credit with GST already paid on it (a top-up) pays the bill's net amount, and that GST
 	(`gst_left` in all) pays the GST on it. Any other credit (promotional, a refund) pays
-	the bill as it stands, GST included. `owed` is what the card or UPI is left with, and
-	`gst_spare` the top-up GST this draw did not use."""
+	the bill as it stands, GST included. `owed` is what the card or UPI is left with,
+	`gst_spare` the top-up GST this draw did not use, and `gst_unpaid` the GST its top-up
+	lots needed that `gst_left` did not have."""
 	gst_per_net = get_gst_per_net(collectable, gst_due)
-	owed, wallet, advance, gst = collectable, 0.0, 0.0, 0.0
+	owed, wallet, advance, gst, gst_needed = collectable, 0.0, 0.0, 0.0, 0.0
 	for lot in lots:
 		if owed <= PAID_TOLERANCE:
 			break
@@ -30,6 +31,7 @@ def plan_draw(lots: list, collectable: float, gst_due: float, gst_left: float) -
 			continue
 		if lot.paid_in and gst_per_net:
 			net = min(lot.remaining, owed / (1 + gst_per_net))
+			gst_needed += net * gst_per_net
 			tax = min(net * gst_per_net, max(gst_left - gst, 0))
 			wallet, advance, gst, owed = wallet + net, advance + net, gst + tax, owed - net - tax
 		else:
@@ -43,6 +45,7 @@ def plan_draw(lots: list, collectable: float, gst_due: float, gst_left: float) -
 		gst=frappe.utils.flt(gst, 2),
 		owed=max(owed, 0.0),
 		gst_spare=max(gst_left - gst, 0.0),
+		gst_unpaid=max(frappe.utils.flt(gst_needed - gst, 2), 0.0),
 	)
 
 

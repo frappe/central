@@ -282,7 +282,10 @@ def _top_up_due(team: str, projected: float) -> dict | None:
 		return None
 	# `labels` are formatted as the reminder email shows them, so both read the same.
 	return {
-		**{key: due[key] for key in ("amount", "amount_with_gst", "date", "limit", "has_method")},
+		**{
+			key: due[key]
+			for key in ("amount", "amount_with_gst", "date", "limit", "has_method", "includes_earlier_gst")
+		},
 		"labels": top_up_reminders.format_due(due),
 	}
 

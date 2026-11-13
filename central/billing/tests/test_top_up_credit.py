@@ -214,3 +214,52 @@ class TestRounding(TopUpCreditTestCase):
 		ask = wallet_draw.TopUpAsk(lots, 40000.0, 6101.69, 900.0, 0.0)
 
 		self.assertIsNone(ask.credit(100))
+
+
+EARLIER_GST_NOTE = "This includes GST on earlier credit that had none."
+
+
+class TestEarlierCreditWithoutGst(TopUpCreditTestCase):
+	def _message(self):
+		top_up_reminders.send_top_up_notice(TEAM, self._due())
+		return frappe.db.get_value(
+			"Billing Notification Log", {"team": TEAM, "event_type": "Top-up Reminder"}, "message"
+		)
+
+	def test_the_ask_says_it_carries_gst_for_earlier_credit(self):
+		"""10,000 of purchased credit came with no GST. The new credit must bring all of the
+		bill's 6,101.69 GST: 33,898.28, so 33,900, more than the 30,000 gap."""
+		invoice = self._issue()
+		credits.purchase(
+			TEAM,
+			10000,
+			"INR",
+			gateway_payment_id=frappe.generate_hash(length=8),
+			gateway="Stripe",
+			credit=10000,
+		)
+
+		due = self._due()
+
+		self.assertEqual((due["amount"], due["amount_with_gst"]), (33900, 40002))
+		self.assertTrue(due["includes_earlier_gst"])
+		self.assertIn(
+			"Add ₹ 33,900.00 of credit to your wallet by 8 December 2026 (₹ 40,002.00 with GST). "
+			f"Your card or UPI pays only amounts up to ₹ 15,000.00. {EARLIER_GST_NOTE}",
+			self._message(),
+		)
+		self._assert_it_settles(invoice, due["amount"])
+
+	def test_purchased_credit_with_its_gst_says_nothing_more(self):
+		self._issue()
+		self._top_up(5000)
+
+		self.assertFalse(self._due()["includes_earlier_gst"])
+		self.assertNotIn(EARLIER_GST_NOTE, self._message())
+
+	def test_promotional_credit_says_nothing_more(self):
+		self._issue()
+		credits.grant_promotional_credits(TEAM, 5000, "INR", expires_on="2027-01-31")
+
+		self.assertFalse(self._due()["includes_earlier_gst"])
+		self.assertNotIn(EARLIER_GST_NOTE, self._message())
