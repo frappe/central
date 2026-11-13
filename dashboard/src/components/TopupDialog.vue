@@ -17,6 +17,7 @@ import { useSession } from '@/composables/useSession'
 import { useTopup } from '@/composables/useTopup'
 import { getErrorMessage } from '@/lib/feedback'
 import { currencySymbol, money } from '@/lib/format'
+import { __ } from '@/lib/translate'
 import type { PaymentInstrument } from '@/types/billing'
 
 // Amount entry → in-app payment. Shared by the wallet card and credits surface.
@@ -234,48 +235,48 @@ watch(open, (isOpen) => {
 	// A reopen reuses the cached list, since the reload may not change or may fail.
 	pickFirstInstrument()
 })
+
+const topUpWalletErrorTitle = __("Couldn't top up your wallet")
 </script>
 
 <template>
-	<Dialog v-model:open="open" title="Top up wallet">
+	<Dialog v-model:open="open" :title="__('Top up wallet')">
 		<template #default>
 			<Alert
 				v-if="visibleError"
 				class="mb-4"
 				theme="red"
-				title="Couldn't top up your wallet"
+				:title="topUpWalletErrorTitle"
 				:description="visibleError"
 			/>
 			<!-- Stripe card entry: Element renders inside the iframe Stripe hosts. -->
 			<div v-if="cardPhase" class="space-y-3">
 				<p class="text-sm text-ink-gray-8">
-					Paying {{ money(payable, currency) }}
+					{{ __('Paying {0}', [money(payable, currency)]) }}
 				</p>
 				<p v-if="cardLoading" class="text-p-sm text-ink-gray-6">
-					Loading secure card field…
+					{{ __('Loading secure card field…') }}
 				</p>
 				<div
 					ref="cardEl"
 					class="rounded-4 border border-outline-gray-2 px-3 py-3"
 				/>
 				<p class="text-p-sm text-ink-gray-6">
-					Card details are entered on Stripe's secure field. We never see your
-					card number. Your billing address is taken from your billing profile.
+					{{ __("Card details are entered on Stripe's secure field. We never see your card number. Your billing address is taken from your billing profile.") }}
 				</p>
 			</div>
 
 			<!-- PayPal entry: PayPal Buttons render here; approval happens in PayPal's popup. -->
 			<div v-else-if="paypalPhase" class="space-y-3">
 				<p class="text-sm text-ink-gray-8">
-					Paying {{ money(payable, currency) }}
+					{{ __('Paying {0}', [money(payable, currency)]) }}
 				</p>
 				<p v-if="paypalLoading" class="text-p-sm text-ink-gray-6">
-					Loading PayPal…
+					{{ __('Loading PayPal…') }}
 				</p>
 				<div ref="paypalEl" />
 				<p class="text-p-sm text-ink-gray-6">
-					You'll approve the payment in PayPal. Your wallet is credited only
-					after PayPal confirms.
+					{{ __("You'll approve the payment in PayPal. Your wallet is credited only after PayPal confirms.") }}
 				</p>
 			</div>
 
@@ -285,7 +286,7 @@ watch(open, (isOpen) => {
 						v-model="amount"
 						autofocus
 						type="number"
-						label="Amount"
+						:label="__('Amount')"
 						placeholder="0"
 						min="1"
 					>
@@ -298,7 +299,7 @@ watch(open, (isOpen) => {
 					<div
 						class="mt-2 grid grid-cols-4 gap-2"
 						role="group"
-						aria-label="Quick amounts"
+						:aria-label="__('Quick amounts')"
 					>
 						<Button
 							v-for="preset in presets"
@@ -320,12 +321,12 @@ watch(open, (isOpen) => {
 						aria-hidden="true"
 					/>
 					<p class="text-p-sm text-ink-gray-7">
-						Paying with your {{ chosenLabel.toLowerCase() }}
+						{{ __('Paying with your {0}', [chosenLabel.toLowerCase()]) }}
 					</p>
 					<Button
 						class="ml-auto"
 						variant="ghost"
-						label="Change"
+						:label="__('Change')"
 						@click="fixed = false"
 					/>
 				</div>
@@ -334,7 +335,7 @@ watch(open, (isOpen) => {
 				<RadioGroup
 					v-else-if="instruments.length > 1"
 					v-model="instrument"
-					label="Pay with"
+					:label="__('Pay with')"
 					size="md"
 					padded
 				>
@@ -357,15 +358,15 @@ watch(open, (isOpen) => {
 				</RadioGroup>
 
 				<div v-if="showMethodChoice">
-					<p class="mb-1.5 text-p-sm text-ink-gray-5">Pay with</p>
+					<p class="mb-1.5 text-p-sm text-ink-gray-5">{{ __('Pay with') }}</p>
 					<div class="flex gap-2">
 						<Button
-							label="Card"
+							:label="__('Card')"
 							:variant="payMethod === 'card' ? 'solid' : 'subtle'"
 							@click="payMethod = 'card'"
 						/>
 						<Button
-							label="PayPal"
+							:label="__('PayPal')"
 							:variant="payMethod === 'paypal' ? 'solid' : 'subtle'"
 							@click="payMethod = 'paypal'"
 						/>
@@ -377,26 +378,26 @@ watch(open, (isOpen) => {
 					class="space-y-1.5 rounded-6 bg-surface-gray-1 px-3 py-2.5 text-p-sm"
 				>
 					<div v-if="gstRate" class="flex justify-between">
-						<dt class="text-ink-gray-6">Wallet credit</dt>
+						<dt class="text-ink-gray-6">{{ __('Wallet credit') }}</dt>
 						<dd class="tabular-nums text-ink-gray-8">
 							{{ money(Number(amount), currency) }}
 						</dd>
 					</div>
 					<div v-if="gstRate" class="flex justify-between">
-						<dt class="text-ink-gray-6">GST ({{ gstRate }}%)</dt>
+						<dt class="text-ink-gray-6">{{ __('GST ({0}%)', [gstRate]) }}</dt>
 						<dd class="tabular-nums text-ink-gray-8">
 							{{ money(gst, currency) }}
 						</dd>
 					</div>
 					<div class="flex justify-between text-p-sm-medium">
-						<dt class="text-ink-gray-8">You pay</dt>
+						<dt class="text-ink-gray-8">{{ __('You pay') }}</dt>
 						<dd class="tabular-nums text-ink-gray-9">
 							{{ money(payable, currency) }}
 						</dd>
 					</div>
 				</dl>
 				<p class="text-p-sm text-ink-gray-6">
-					We add the credit to your wallet once the payment goes through.
+					{{ __('We add the credit to your wallet once the payment goes through.') }}
 				</p>
 			</div>
 		</template>
@@ -404,7 +405,7 @@ watch(open, (isOpen) => {
 			<Button
 				v-if="cardPhase"
 				variant="solid"
-				:label="submitting ? 'Paying…' : 'Pay'"
+				:label="submitting ? __('Paying…') : __('Pay')"
 				:loading="submitting"
 				:disabled="!cardComplete"
 				class="w-full"
@@ -414,7 +415,7 @@ watch(open, (isOpen) => {
 			<Button
 				v-else-if="!paypalPhase"
 				variant="solid"
-				label="Continue to payment"
+				:label="__('Continue to payment')"
 				:loading="loading"
 				:disabled="!amount || Number(amount) <= 0"
 				class="w-full"

@@ -7,6 +7,13 @@ import typescript from 'typescript'
 // The composable holds the dialog state in `ref`s, so the sandbox needs the one
 // piece of Vue it imports. Everything else is a plain function.
 const vue = { ref: (value) => ({ value }) }
+// English __(): fills {0}, {1} from the values, as translate.ts does with no catalog.
+const translate = {
+	__: (text, values = []) =>
+		text.replace(/\{(\d+)\}/g, (match, index) =>
+			String(values[index] ?? match),
+		),
+}
 
 function loadSupport(helpLinks, user = 'member@test') {
 	const source = readFileSync(
@@ -22,7 +29,7 @@ function loadSupport(helpLinks, user = 'member@test') {
 		{
 			exports,
 			URL,
-			require: (name) => (name === 'vue' ? vue : undefined),
+			require: (name) => ({ vue, '@/lib/translate': translate })[name],
 			window: { help_links: helpLinks, user, open: (url) => opened.push(url) },
 		},
 	)

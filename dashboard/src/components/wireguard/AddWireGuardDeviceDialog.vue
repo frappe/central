@@ -2,7 +2,9 @@
 import { Alert, Button, Checkbox, Dialog, FormControl } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import CopyButton from '@/components/common/CopyButton.vue'
+import TranslatedText from '@/components/common/TranslatedText.vue'
 import { getErrorMessage } from '@/lib/feedback'
+import { __ } from '@/lib/translate'
 import {
 	generateKeyPair,
 	isWireGuardKey,
@@ -99,45 +101,48 @@ async function submit(): Promise<void> {
 		busy.value = false
 	}
 }
+
+const addDeviceErrorTitle = __("Couldn't add the device")
 </script>
 
 <template>
 	<Dialog
 		v-model="open"
-		title="Add WireGuard VPN device"
+		:title="__('Add WireGuard VPN device')"
 		size="xl"
 		:dismissible="!busy"
 	>
 		<div class="flex flex-col gap-5">
 			<p class="text-p-sm text-ink-gray-6">
-				The device reaches the servers in one region that have WireGuard VPN on.
+				{{ __('The device reaches the servers in one region that have WireGuard VPN on.') }}
 			</p>
-			<Alert theme="amber" title="Your servers can reach this device too">
+			<Alert
+				theme="amber"
+				:title="__('Your servers can reach this device too')"
+			>
 				<template #description>
-					The tunnel works both ways. Servers with WireGuard VPN on can connect
-					to any open port on this device. Turn on its firewall before you
-					connect, most of all on a server or another machine that stays
-					connected.
+					{{ __('The tunnel works both ways. Servers with WireGuard VPN on can connect to any open port on this device. Turn on its firewall before you connect, most of all on a server or another machine that stays connected.') }}
 					<a
 						:href="`${WIREGUARD_DOCS_URL}#protect-the-device`"
 						target="_blank"
 						rel="noopener"
 						class="text-p-sm-medium underline"
-						>Read how to protect the device</a
+						>{{ __('Read how to protect the device') }}</a
 					>
 				</template>
 			</Alert>
 			<Alert
 				v-if="error"
 				theme="red"
-				title="Couldn't add the device"
+				:title="addDeviceErrorTitle"
 				:description="error"
 			/>
 			<div v-if="error && generatedKey" class="flex flex-col gap-2">
-				<p class="text-p-sm-medium text-ink-gray-8">Save your private key</p>
+				<p class="text-p-sm-medium text-ink-gray-8">
+					{{ __('Save your private key') }}
+				</p>
 				<p class="text-p-sm text-ink-gray-6">
-					If the device was created, close this dialog, open its settings, and
-					paste this key.
+					{{ __('If the device was created, close this dialog, open its settings, and paste this key.') }}
 				</p>
 				<div class="relative">
 					<pre
@@ -147,52 +152,55 @@ async function submit(): Promise<void> {
 						class="absolute right-2 top-2"
 						size="sm"
 						:text="generatedKey.privateKey"
-						label="Copy private key"
+						:label="__('Copy private key')"
 					/>
 				</div>
 			</div>
 			<FormControl
 				v-model="title"
 				autofocus
-				label="Name"
-				placeholder="Work laptop"
+				:label="__('Name')"
+				:placeholder="__('Work laptop')"
 			/>
 			<FormControl
 				v-model="region"
 				type="select"
-				label="Region"
+				:label="__('Region')"
 				:options="regionOptions"
 			/>
-			<Checkbox v-model="hasOwnKey" label="I have my own key pair" />
+			<Checkbox v-model="hasOwnKey" :label="__('I have my own key pair')" />
 			<template v-if="hasOwnKey">
 				<FormControl
 					v-model="publicKey"
-					label="Public key"
-					placeholder="Paste your public key"
+					:label="__('Public key')"
+					:placeholder="__('Paste your public key')"
 					:aria-invalid="!!keyProblem"
 				/>
 				<p v-if="keyProblem" class="text-p-sm text-ink-red-6">
 					{{ keyProblem }}
 				</p>
 				<p v-else class="text-p-sm text-ink-gray-5">
-					Run
-					<code class="font-mono text-ink-gray-7"
-						>umask 077; wg genkey > private.key; wg pubkey &lt; private.key</code
+					<TranslatedText
+						:text="__('Run {0} and paste the output. Never paste the private key.')"
 					>
-					and paste the output. Never paste the private key.
+						<template #0>
+							<code class="font-mono text-ink-gray-7"
+								>umask 077; wg genkey > private.key; wg pubkey &lt; private.key</code
+							>
+						</template>
+					</TranslatedText>
 				</p>
 			</template>
 			<p v-else class="text-p-sm text-ink-gray-5">
-				Your browser makes the key pair. Only the public key is sent to Frappe
-				Cloud.
+				{{ __('Your browser makes the key pair. Only the public key is sent to Frappe Cloud.') }}
 			</p>
 		</div>
 
 		<template #actions>
 			<div class="flex justify-end gap-2">
-				<Button label="Cancel" :disabled="busy" @click="open = false" />
+				<Button :label="__('Cancel')" :disabled="busy" @click="open = false" />
 				<Button
-					label="Add device"
+					:label="__('Add device')"
 					variant="solid"
 					:loading="busy"
 					:disabled="!canSave"

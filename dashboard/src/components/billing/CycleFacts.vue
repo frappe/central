@@ -120,7 +120,7 @@ const onAddMethod = () => {
 
 		<template v-else>
 			<template v-if="hasOutstanding">
-				<span class="truncate text-ink-gray-5"> Due now </span>
+				<span class="truncate text-ink-gray-5"> {{ __('Due now') }} </span>
 
 				<div class="flex items-center justify-end gap-2">
 					<Tooltip :text="blocker?.title" :disabled="!blocker">
@@ -148,15 +148,15 @@ const onAddMethod = () => {
 				</div>
 			</template>
 
-			<span class="truncate text-ink-gray-5"> Wallet </span>
+			<span class="truncate text-ink-gray-5"> {{ __('Wallet') }} </span>
 
 			<div class="flex items-center justify-end gap-2">
-				<Tooltip text="Wallet history">
+				<Tooltip :text="__('Wallet history')">
 					<Button
 						variant="ghost"
 						size="xs"
 						icon="lucide-history"
-						label="Wallet history"
+						:label="__('Wallet history')"
 						:disabled="walletActive"
 						@click="$emit('openWallet')"
 					/>
@@ -165,7 +165,7 @@ const onAddMethod = () => {
 				<Button
 					v-if="canManageBilling"
 					size="xs"
-					label="Add credit"
+					:label="__('Add credit')"
 					@click="$emit('addCredit')"
 				/>
 
@@ -178,7 +178,7 @@ const onAddMethod = () => {
 				</Tooltip>
 			</div>
 
-			<span class="truncate text-ink-gray-5"> Payment method </span>
+			<span class="truncate text-ink-gray-5"> {{ __('Payment method') }} </span>
 
 			<span
 				v-if="primaryMethod"
@@ -190,12 +190,12 @@ const onAddMethod = () => {
 				v-else-if="canManageBilling"
 				class="justify-self-end"
 				size="xs"
-				label="Add card"
+				:label="__('Add card')"
 				@click="onAddMethod"
 			/>
-			<span v-else class="text-right text-ink-gray-5">None</span>
+			<span v-else class="text-right text-ink-gray-5">{{ __('None') }}</span>
 
-			<span class="truncate text-ink-gray-5"> Next invoice </span>
+			<span class="truncate text-ink-gray-5"> {{ __('Next invoice') }} </span>
 
 			<span
 				class="whitespace-nowrap text-right text-base-medium tabular-nums text-ink-gray-9"
@@ -203,21 +203,29 @@ const onAddMethod = () => {
 				{{ nextInvoiceOn || '—' }}
 			</span>
 
-			<span class="truncate text-ink-gray-5"> Next payment date </span>
+			<span class="truncate text-ink-gray-5">
+				{{ __('Next payment date') }}
+			</span>
 
 			<div class="flex items-center justify-end gap-2">
-				<Tooltip v-if="canManageBilling" text="Change payment date">
+				<Tooltip v-if="canManageBilling" :text="__('Change payment date')">
 					<Button
 						variant="ghost"
 						size="xs"
 						icon="lucide-calendar-cog"
-						label="Change payment date"
+						:label="__('Change payment date')"
 						@click="$emit('openSchedule')"
 					/>
 				</Tooltip>
 				<template v-if="nextPaymentFailed">
-					<span class="whitespace-nowrap text-ink-red-6">Couldn't load</span>
-					<Button size="xs" label="Retry" @click="nextPayment.reload()" />
+					<span class="whitespace-nowrap text-ink-red-6"
+						>{{ __("Couldn't load") }}</span
+					>
+					<Button
+						size="xs"
+						:label="__('Retry')"
+						@click="nextPayment.reload()"
+					/>
 				</template>
 				<Tooltip v-else :text="paymentHint" :disabled="!paymentHint">
 					<span

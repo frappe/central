@@ -11,6 +11,7 @@ import {
 } from 'frappe-ui/list'
 import { computed, getCurrentInstance, ref } from 'vue'
 import Scrollbar from '@/components/common/Scrollbar.vue'
+import { __ } from '@/lib/translate'
 import ListViewPagination from './ListViewPagination.vue'
 import ListViewState from './ListViewState.vue'
 import {
@@ -56,7 +57,7 @@ const props = withDefaults(
 		loading: false,
 		error: null,
 		searchable: false,
-		searchPlaceholder: 'Search…',
+		searchPlaceholder: __('Search…'),
 		filters: () => [],
 		selectable: false,
 		paginated: true,
@@ -71,8 +72,8 @@ const props = withDefaults(
 		externalFilterActive: false,
 		minWidth: '720px',
 		emptyState: () => ({
-			title: 'No data',
-			description: 'There is nothing to show yet.',
+			title: __('No data'),
+			description: __('There is nothing to show yet.'),
 		}),
 	},
 )
@@ -163,7 +164,7 @@ const pageCount = computed(() =>
 )
 const countText = computed(() => {
 	const label =
-		resultCount.value === 1 ? props.itemLabel : `${props.itemLabel}s`
+		resultCount.value === 1 ? props.itemLabel : __('{0}s', [props.itemLabel])
 	return `${resultCount.value.toLocaleString()} ${label}`
 })
 
@@ -245,6 +246,9 @@ const clearFilters = (): void => {
 const showListControls = computed(
 	() => props.searchable || props.filters.length > 0,
 )
+
+const refreshListErrorTitle = __("Couldn't refresh the list")
+const loadListErrorTitle = __("Couldn't load this list")
 </script>
 
 <template>
@@ -259,8 +263,7 @@ const showListControls = computed(
 				class="flex min-w-0 flex-1 items-center justify-between gap-3"
 			>
 				<p class="text-sm-medium text-ink-gray-8 tabular-nums">
-					{{ selectedRows.length }}
-					selected
+					{{ __('{0} selected', [selectedRows.length]) }}
 				</p>
 
 				<div class="flex items-center gap-2">
@@ -269,7 +272,11 @@ const showListControls = computed(
 						:rows="selectedRows"
 						:clear="clearSelection"
 					/>
-					<Button label="Clear" variant="ghost" @click="clearSelection" />
+					<Button
+						:label="__('Clear')"
+						variant="ghost"
+						@click="clearSelection"
+					/>
 				</div>
 			</div>
 
@@ -298,9 +305,9 @@ const showListControls = computed(
 					:key="filter.key"
 					:model-value="query.filters[filter.key] || ''"
 					class="w-36"
-					:placeholder="filter.allLabel || `All ${filter.label.toLowerCase()}`"
+					:placeholder="filter.allLabel || __('All {0}', [filter.label.toLowerCase()])"
 					:options="[
-						{ label: filter.allLabel || `All ${filter.label.toLowerCase()}`, value: '' },
+						{ label: filter.allLabel || __('All {0}', [filter.label.toLowerCase()]), value: '' },
 						...filter.options,
 					]"
 					@update:model-value="setFilter(filter.key, $event)"
@@ -320,9 +327,9 @@ const showListControls = computed(
 		<Alert
 			v-if="error && hasRows"
 			theme="red"
-			title="Couldn't refresh the list"
+			:title="refreshListErrorTitle"
 			:description="error"
-			:primary-action="{ label: 'Retry', onClick: () => $emit('retry') }"
+			:primary-action="{ label: __('Retry'), onClick: () => $emit('retry') }"
 			class="mb-2"
 		/>
 
@@ -392,7 +399,7 @@ const showListControls = computed(
 							v-if="interactive"
 							type="button"
 							class="absolute inset-0 rounded-5"
-							:aria-label="`Open ${readValue(item, columns[0])}`"
+							:aria-label="__('Open {0}', [readValue(item, columns[0])])"
 							@click="emit('rowClick', item)"
 						/>
 
@@ -422,15 +429,15 @@ const showListControls = computed(
 		<ListViewState
 			v-else-if="stateKind === 'error'"
 			kind="error"
-			title="Couldn't load this list"
+			:title="loadListErrorTitle"
 			:description="error ?? undefined"
 			@retry="$emit('retry')"
 		/>
 		<ListViewState
 			v-else-if="stateKind === 'filtered'"
 			kind="filtered"
-			title="No matching results"
-			description="Change or clear the filters to see more results."
+			:title="__('No matching results')"
+			:description="__('Change or clear the filters to see more results.')"
 			@clear="clearFilters"
 		/>
 		<ListViewState

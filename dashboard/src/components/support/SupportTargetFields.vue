@@ -133,7 +133,7 @@ defineExpose({ reset })
 			<Skeleton class="h-9 rounded-4" />
 		</div>
 		<p v-else-if="!serverOptions.length" class="text-p-sm text-ink-gray-5">
-			This team has no servers yet.
+			{{ __('This team has no servers yet.') }}
 		</p>
 		<div
 			v-else
@@ -142,17 +142,17 @@ defineExpose({ reset })
 		>
 			<Select
 				v-model="serverId"
-				label="Server"
+				:label="__('Server')"
 				:options="serverOptions"
-				placeholder="Not about one server"
+				:placeholder="__('Not about one server')"
 				side="bottom"
 			/>
 			<Select
 				v-if="siteOptions.length"
 				v-model="siteName"
-				label="Site"
+				:label="__('Site')"
 				:options="siteOptions"
-				placeholder="Not about one site"
+				:placeholder="__('Not about one site')"
 				side="bottom"
 			/>
 		</div>

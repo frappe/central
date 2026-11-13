@@ -10,10 +10,10 @@ import {
 } from '@/components/common/list-view'
 import ServerRowActions from '@/components/servers/ServerRowActions.vue'
 import StatusRing from '@/components/servers/StatusRing.vue'
-
 import type { ConsoleMode, VirtualMachineRow } from '@/composables/useServers'
 import { timeAgo } from '@/lib/datetime'
 import type { ResourceRow, ServerVisual } from '@/lib/serverMap'
+import { __ } from '@/lib/translate'
 import { formatMemory } from '@/lib/units'
 
 interface ServerListViewProps {
@@ -75,10 +75,10 @@ const tabRows = computed(() =>
 )
 
 const STATUS_TAB_OPTIONS = [
-	{ label: 'All', value: 'all' },
-	{ label: 'Running', value: 'running' },
-	{ label: 'In progress', value: 'progress' },
-	{ label: 'Attention', value: 'attention' },
+	{ label: __('All'), value: 'all' },
+	{ label: __('Running'), value: 'running' },
+	{ label: __('In progress'), value: 'progress' },
+	{ label: __('Attention'), value: 'attention' },
 ]
 
 const planOf = (row: ResourceRow) =>
@@ -96,35 +96,35 @@ const specsOf = (server?: VirtualMachineRow) =>
 const columns: ListViewColumn<ResourceRow>[] = [
 	{
 		key: 'name',
-		label: 'Server',
+		label: __('Server'),
 		value: (row) => `${row.name} ${row.server?.image_title ?? ''}`,
 		width: 'minmax(12rem,1fr)',
 		sortable: true,
 	},
 	{
 		key: 'status',
-		label: 'Status',
+		label: __('Status'),
 		value: (row) => row.visual.label,
 		width: 'minmax(8rem,1fr)',
 		sortable: true,
 	},
 	{
 		key: 'region',
-		label: 'Region',
+		label: __('Region'),
 		value: (row) => `${row.regionLabel} ${row.server?.public_ipv4 ?? ''}`,
 		width: 'minmax(11rem,1fr)',
 		sortable: true,
 	},
 	{
 		key: 'plan',
-		label: 'Plan',
+		label: __('Plan'),
 		value: planOf,
 		width: 'minmax(10rem,1fr)',
 		sortable: true,
 	},
 	{
 		key: 'version',
-		label: 'Version',
+		label: __('Version'),
 		value: (row) => row.server?.frappe_version ?? '',
 		width: 'minmax(6rem,1fr)',
 		sortable: true,
@@ -140,23 +140,27 @@ const optionsFor = (read: (row: ResourceRow) => string | undefined) =>
 const filters = computed<ListViewFilter[]>(() => [
 	{
 		key: 'region',
-		label: 'Region',
+		label: __('Region'),
 		allLabel: 'All regions',
 		options: optionsFor((row) => row.regionLabel),
 	},
 	{
 		key: 'plan',
-		label: 'Plan',
+		label: __('Plan'),
 		allLabel: 'All plans',
 		options: optionsFor(planOf),
 	},
 	{
 		key: 'version',
-		label: 'Version',
+		label: __('Version'),
 		allLabel: 'All versions',
 		options: optionsFor((row) => row.server?.frappe_version),
 	},
 ])
+
+const vpnTooltipText = __(
+	"Your team's WireGuard VPN devices reach this server at its private address.",
+)
 </script>
 
 <template>
@@ -168,12 +172,12 @@ const filters = computed<ListViewFilter[]>(() => [
 		:row-key="(row) => row.id"
 		:filters="filters"
 		searchable
-		search-placeholder="Search by name, region or IP"
+		:search-placeholder="__('Search by name, region or IP')"
 		item-label="server"
 		row-class="min-h-14 py-1.5"
 		:empty-state="{
-			title: 'No servers match',
-			description: 'Try a different search or clear the filters.',
+			title: __('No servers match'),
+			description: __('Try a different search or clear the filters.'),
 		}"
 		@row-click="$emit('openRow', $event)"
 	>
@@ -241,17 +245,19 @@ const filters = computed<ListViewFilter[]>(() => [
 						v-if="row.server?.public_ipv4"
 						class="relative"
 						:value="row.server.public_ipv4"
-						label="IP address"
+						:label="__('IP address')"
 					/>
-					<span v-else class="truncate">No public IP</span>
+					<span v-else class="truncate">{{ __('No public IP') }}</span>
 
 					<Tooltip
 						v-if="row.server"
-						text="Your team's WireGuard VPN devices reach this server at its private address."
+						:text="vpnTooltipText"
 						:disabled="!row.server.has_wireguard_access"
 					>
 						<span class="relative shrink-0">
-							· VPN {{ row.server.has_wireguard_access ? 'on' : 'off' }}
+							{{ row.server.has_wireguard_access
+									? __('· VPN on')
+									: __('· VPN off') }}
 						</span>
 					</Tooltip>
 				</span>

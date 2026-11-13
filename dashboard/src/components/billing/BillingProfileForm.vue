@@ -9,6 +9,7 @@ import { useSession } from '@/composables/useSession'
 import { whenTeamReady } from '@/composables/useTeamScope'
 import { emailError as validateEmail } from '@/lib/auth'
 import { getErrorMessage, successToast } from '@/lib/feedback'
+import { __ } from '@/lib/translate'
 import type { BillingGeo } from '@/types/billing'
 
 // The billing profile fields: currency (locked after activity), contact, address,
@@ -82,7 +83,9 @@ const emailIssue = computed(() =>
 )
 
 // India's term for it is "PIN code"; everywhere else says postal code.
-const postalLabel = computed(() => (isIndia.value ? 'PIN code' : 'Postal code'))
+const postalLabel = computed(() =>
+	isIndia.value ? __('PIN code') : __('Postal code'),
+)
 
 const requiredFields = [
 	['legal_name', 'Legal name'],
@@ -133,7 +136,7 @@ async function submit(): Promise<boolean> {
 			formError.value = `Saved, but these fields are still required: ${missing}.`
 			return false
 		}
-		successToast('Billing details saved')
+		successToast(__('Billing details saved'))
 		return true
 	} catch (e) {
 		formError.value = getErrorMessage(e)
@@ -151,7 +154,7 @@ defineExpose({ submit, saving: computed(() => save.loading) })
 		<Alert
 			v-if="formError"
 			theme="red"
-			title="Check your billing details"
+			:title="__('Check your billing details')"
 			:description="formError"
 		/>
 		<!-- One compact grid, so the form fits the onboarding dialog without a resize.
@@ -160,8 +163,8 @@ defineExpose({ submit, saving: computed(() => save.loading) })
 		<div class="grid gap-3 sm:grid-cols-2">
 			<TextInput
 				v-model="form.legal_name"
-				label="Legal name"
-				placeholder="Acme Technologies Pvt. Ltd."
+				:label="__('Legal name')"
+				:placeholder="__('Acme Technologies Pvt. Ltd.')"
 				:error="requiredError('legal_name', 'Legal name')"
 				required
 				autofocus
@@ -170,8 +173,8 @@ defineExpose({ submit, saving: computed(() => save.loading) })
 				<TextInput
 					v-model="form.email"
 					type="email"
-					label="Billing email"
-					placeholder="billing@company.com"
+					:label="__('Billing email')"
+					:placeholder="__('billing@company.com')"
 				/>
 				<p v-if="emailIssue" class="mt-1 text-p-xs text-ink-red-7">
 					{{ emailIssue }}
@@ -180,56 +183,56 @@ defineExpose({ submit, saving: computed(() => save.loading) })
 			<div>
 				<Combobox
 					v-model="form.country"
-					label="Country"
-					placeholder="Select country"
+					:label="__('Country')"
+					:placeholder="__('Select country')"
 					:options="countryOptions"
 					:error="requiredError('country', 'Country')"
 					required
 				/>
 				<p class="mt-1 text-p-xs text-ink-gray-5">
 					{{ currencyLocked
-							? `Billed in ${form.currency}: locked by billing activity.`
-							: `Sets your billing currency (${form.currency || 'USD'}).` }}
+							? __('Billed in {0}: locked by billing activity.', [form.currency])
+							: __('Sets your billing currency ({0}).', [form.currency || 'USD']) }}
 				</p>
 			</div>
 			<TextInput
 				v-model="form.city"
-				label="City"
+				:label="__('City')"
 				:error="requiredError('city', 'City')"
 				required
 			/>
 			<TextInput
 				v-model="form.address_line1"
-				label="Address line 1"
-				placeholder="Street address"
+				:label="__('Address line 1')"
+				:placeholder="__('Street address')"
 				:error="requiredError('address_line1', 'Address line 1')"
 				required
 			/>
 			<TextInput
 				v-model="form.address_line2"
-				label="Address line 2"
-				placeholder="Suite, floor (optional)"
+				:label="__('Address line 2')"
+				:placeholder="__('Suite, floor (optional)')"
 			/>
 			<Combobox
 				v-if="isIndia"
 				v-model="form.state"
-				label="State"
-				placeholder="Select state"
+				:label="__('State')"
+				:placeholder="__('Select state')"
 				:options="stateOptions"
 			/>
-			<TextInput v-else v-model="form.state" label="State" />
+			<TextInput v-else v-model="form.state" :label="__('State')" />
 			<TextInput v-model="form.pincode" :label="postalLabel" />
 			<TextInput
 				v-model="form.phone"
-				label="Phone"
+				:label="__('Phone')"
 				placeholder="+91 98765 43210"
 			/>
 			<TextInput
 				v-if="isIndia"
 				v-model="form.gstin"
-				label="GSTIN"
-				placeholder="22AAAAA0000A1Z5"
-				description="Its first two digits must match the selected state."
+				:label="__('GSTIN')"
+				:placeholder="__('22AAAAA0000A1Z5')"
+				:description="__('Its first two digits must match the selected state.')"
 			/>
 		</div>
 	</div>

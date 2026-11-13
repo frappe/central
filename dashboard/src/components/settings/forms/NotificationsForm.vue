@@ -16,6 +16,7 @@ import EmptyState from '@/components/common/EmptyState.vue'
 import { teamParams, whenTeamReady } from '@/composables/useTeamScope'
 import { getErrorMessage, successToast } from '@/lib/feedback'
 import { submitOrThrow } from '@/lib/frappeCall'
+import { __ } from '@/lib/translate'
 import type {
 	NotificationCategory as Category,
 	NotificationFrequency,
@@ -37,30 +38,30 @@ interface Channels {
 const CATEGORIES: { key: Category; label: string; hint: string }[] = [
 	{
 		key: 'Billing',
-		label: 'Billing',
+		label: __('Billing'),
 		hint: 'Payments, invoices, credit balance and mandates.',
 	},
 	{
 		key: 'Server',
-		label: 'Servers',
+		label: __('Servers'),
 		hint: 'Server lifecycle, resizes and health.',
 	},
 	{
 		key: 'Team',
-		label: 'Team',
+		label: __('Team'),
 		hint: 'Invitations, role changes and membership.',
 	},
 	{
 		key: 'Trial',
-		label: 'Trial',
+		label: __('Trial'),
 		hint: 'When a free trial ends, stops and is deleted.',
 	},
 ]
 
 const FREQUENCIES = [
-	{ label: 'Instantly', value: 'Instant' },
-	{ label: 'Daily digest', value: 'Daily' },
-	{ label: 'Weekly digest', value: 'Weekly' },
+	{ label: __('Instantly'), value: 'Instant' },
+	{ label: __('Daily digest'), value: 'Daily' },
+	{ label: __('Weekly digest'), value: 'Weekly' },
 ]
 
 const formatHour = (hour: number) => `${String(hour).padStart(2, '0')}:00`
@@ -182,7 +183,7 @@ async function onSave(): Promise<void> {
 			digest_hour: digestHour.value ?? undefined,
 		})
 		await load.reload()
-		successToast('Notification preferences saved')
+		successToast(__('Notification preferences saved'))
 	} catch (e) {
 		formError.value = getErrorMessage(
 			e,
@@ -190,6 +191,13 @@ async function onSave(): Promise<void> {
 		)
 	}
 }
+
+const saveNotificationSettingsErrorTitle = __(
+	"Couldn't save your notification settings",
+)
+const notificationSettingsLoadErrorTitle = __(
+	"Notification settings couldn't load",
+)
 </script>
 
 <template>
@@ -198,17 +206,17 @@ async function onSave(): Promise<void> {
 			v-if="formError"
 			class="mb-4"
 			theme="red"
-			title="Couldn't save your notification settings"
+			:title="saveNotificationSettingsErrorTitle"
 			:description="formError"
 		/>
 		<EmptyState
 			v-if="load.error"
 			icon="lucide-cloud-off"
-			title="Notification settings couldn't load"
+			:title="notificationSettingsLoadErrorTitle"
 			:description="getErrorMessage(load.error, 'Try again in a moment.')"
 		>
 			<template #action>
-				<Button label="Retry" @click="load.reload()" />
+				<Button :label="__('Retry')" @click="load.reload()" />
 			</template>
 		</EmptyState>
 		<div v-else-if="!load.data" class="space-y-2">
@@ -221,8 +229,8 @@ async function onSave(): Promise<void> {
 			<div
 				class="flex items-center justify-end gap-6 pb-1 text-p-sm text-ink-gray-5"
 			>
-				<span class="w-12 text-center">Email</span>
-				<span class="w-12 text-center">In-app</span>
+				<span class="w-12 text-center">{{ __('Email') }}</span>
+				<span class="w-12 text-center">{{ __('In-app') }}</span>
 			</div>
 
 			<div
@@ -234,13 +242,13 @@ async function onSave(): Promise<void> {
 							<span class="flex w-12 justify-center">
 								<Switch
 									v-model="state[cat.key].email"
-									:aria-label="`Email notifications for ${cat.label}`"
+									:aria-label="__('Email notifications for {0}', [cat.label])"
 								/>
 							</span>
 							<span class="flex w-12 justify-center">
 								<Switch
 									v-model="state[cat.key].in_app"
-									:aria-label="`In-app notifications for ${cat.label}`"
+									:aria-label="__('In-app notifications for {0}', [cat.label])"
 								/>
 							</span>
 						</div>
@@ -254,7 +262,7 @@ async function onSave(): Promise<void> {
 							v-model="state[cat.key].frequency"
 							class="w-40"
 							:options="FREQUENCIES"
-							:aria-label="`Email frequency for ${cat.label}`"
+							:aria-label="__('Email frequency for {0}', [cat.label])"
 						/>
 						<Button
 							v-if="eventsOf(cat.key).length"
@@ -262,8 +270,8 @@ async function onSave(): Promise<void> {
 							variant="ghost"
 							:label="
 								expanded === cat.key
-									? 'Hide events'
-									: 'Choose events'
+									? __('Hide events')
+									: __('Choose events')
 							"
 							:aria-expanded="expanded === cat.key"
 							@click="
@@ -285,7 +293,7 @@ async function onSave(): Promise<void> {
 							<Badge
 								v-if="event.is_critical"
 								theme="gray"
-								label="Always sent"
+								:label="__('Always sent')"
 							/>
 							<Switch
 								:model-value="
@@ -296,7 +304,7 @@ async function onSave(): Promise<void> {
 									Boolean(event.is_critical) ||
 									!event.can_receive
 								"
-								:aria-label="`Email for ${event.title}`"
+								:aria-label="__('Email for {0}', [event.title])"
 								@update:model-value="
 									toggleEvent(cat.key, event.event_type, $event)
 								"
@@ -306,29 +314,28 @@ async function onSave(): Promise<void> {
 				</div>
 				<SettingsRow
 					v-if="usesDigest"
-					title="Digest time"
-					:description="`Daily and weekly digests go out at this hour, ${load.data?.time_zone}. Weekly digests go out on Monday.`"
+					:title="__('Digest time')"
+					:description="__('Daily and weekly digests go out at this hour, {0}. Weekly digests go out on Monday.', [load.data?.time_zone])"
 				>
 					<TimePicker
 						class="w-28"
 						:model-value="digestTime"
 						:interval="60"
 						:typeable="false"
-						aria-label="Digest time"
+						:aria-label="__('Digest time')"
 						@update:model-value="setDigestHour"
 					/>
 				</SettingsRow>
 			</div>
 
 			<p class="mt-3 text-p-sm text-ink-gray-5">
-				Critical events, such as a failed payment or a server that is down, are
-				always emailed, even when a category's email is off.
+				{{ __("Critical events, such as a failed payment or a server that is down, are always emailed, even when a category's email is off.") }}
 			</p>
 
 			<div class="mt-4 flex justify-end">
 				<Button
 					variant="solid"
-					label="Save preferences"
+					:label="__('Save preferences')"
 					:loading="save.loading"
 					:disabled="!dirty"
 					@click="onSave"

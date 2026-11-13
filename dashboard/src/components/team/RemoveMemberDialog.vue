@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { Alert, Dialog } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
+import TranslatedText from '@/components/common/TranslatedText.vue'
 import { useSession } from '@/composables/useSession'
 import { useTeamMembers } from '@/composables/useTeamMembers'
 import { getErrorMessage } from '@/lib/feedback'
+import { __ } from '@/lib/translate'
 import type { TeamMemberRow } from '@/types/api'
 
 interface Props {
@@ -40,26 +42,31 @@ const confirmRemove = async (): Promise<void> => {
 const dialogOptions = computed(() => ({
 	actions: [
 		{
-			label: 'Cancel',
+			label: __('Cancel'),
 			variant: 'outline' as const,
 			onClick: () => {
 				open.value = false
 			},
 		},
 		{
-			label: 'Remove',
+			label: __('Remove'),
 			variant: 'solid' as const,
 			theme: 'red' as const,
 			onClick: confirmRemove,
 		},
 	],
 }))
+
+const removeMemberErrorTitle = __("Couldn't remove the member")
+const loseAccessText = __(
+	"They'll immediately lose access to {0} team and all its servers and sites. You can re-invite them at any time.",
+)
 </script>
 
 <template>
 	<Dialog
 		v-model="open"
-		:title="`Remove ${member?.full_name}?`"
+		:title="__('Remove {0}?', [member?.full_name])"
 		size="sm"
 		:actions="dialogOptions.actions"
 	>
@@ -67,15 +74,17 @@ const dialogOptions = computed(() => ({
 			<Alert
 				v-if="formError"
 				theme="red"
-				title="Couldn't remove the member"
+				:title="removeMemberErrorTitle"
 				:description="formError"
 			/>
 			<p class="text-p-base text-ink-gray-7">
-				They'll immediately lose access to
-				<span class="text-p-base-semibold text-ink-gray-9"
-					>{{ activeTeamLabel }}'s</span
-				>
-				team and all its servers and sites. You can re-invite them at any time.
+				<TranslatedText :text="loseAccessText">
+					<template #0>
+						<span class="text-p-base-semibold text-ink-gray-9"
+							>{{ __("{0}'s", [activeTeamLabel]) }}</span
+						>
+					</template>
+				</TranslatedText>
 			</p>
 		</div>
 	</Dialog>

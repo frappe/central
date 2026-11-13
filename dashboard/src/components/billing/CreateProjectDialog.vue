@@ -4,6 +4,7 @@ import { computed, ref, watch } from 'vue'
 import { API, method } from '@/api/methods'
 import { useSession } from '@/composables/useSession'
 import { getErrorMessage } from '@/lib/feedback'
+import { __ } from '@/lib/translate'
 
 // Create a new Project for the active team — a tag it can attach to
 // subscriptions so they show grouped under it in the invoice/forecast cost
@@ -54,10 +55,10 @@ async function submit(): Promise<void> {
 }
 
 const dialogOptions = computed(() => ({
-	title: 'Create project',
+	title: __('Create project'),
 	actions: [
 		{
-			label: 'Create',
+			label: __('Create'),
 			variant: 'solid' as const,
 			loading: create.loading,
 			disabled: !canSubmit.value,
@@ -65,6 +66,8 @@ const dialogOptions = computed(() => ({
 		},
 	],
 }))
+
+const createProjectErrorTitle = __("Couldn't create the project")
 </script>
 
 <template>
@@ -78,23 +81,23 @@ const dialogOptions = computed(() => ({
 				<Alert
 					v-if="formError"
 					theme="red"
-					title="Couldn't create the project"
+					:title="createProjectErrorTitle"
 					:description="formError"
 				/>
 				<TextInput
 					v-model="title"
 					autofocus
-					label="Title"
-					placeholder="e.g. Acme Corp"
-					description="Subscriptions tagged into this project show grouped under it in your cost breakdown."
+					:label="__('Title')"
+					:placeholder="__('e.g. Acme Corp')"
+					:description="__('Subscriptions tagged into this project show grouped under it in your cost breakdown.')"
 					@keyup.enter="submit"
 				/>
 				<TextInput
 					v-model="spendingLimit"
 					type="number"
-					label="Spending limit"
-					placeholder="No limit"
-					description="Prevents adding a resource when its monthly cost would put the project over this limit. Existing resources keep running. Leave blank for no limit."
+					:label="__('Spending limit')"
+					:placeholder="__('No limit')"
+					:description="__('Prevents adding a resource when its monthly cost would put the project over this limit. Existing resources keep running. Leave blank for no limit.')"
 					min="0"
 				/>
 			</div>
