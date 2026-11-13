@@ -148,6 +148,38 @@ class TestSetupLockout(BillingTestCase):
 			)
 		self.assert_wait(10 * MINUTE)
 
+	def test_bank_refusals_are_told_from_temporary_declines(self):
+		from central.billing.payments.decline import is_bank_refusal
+
+		cases = {
+			("card_declined", None): True,
+			("card_declined", "do_not_honor"): True,
+			("card_declined", "insufficient_funds"): True,
+			("card_declined", "issuer_not_available"): False,
+			("card_declined", "try_again_later"): False,
+			("card_declined", "processing_error"): False,
+			("card_declined", "reenter_transaction"): False,
+			("card_declined", "approve_with_id"): False,
+			("incorrect_zip", None): True,
+			("payment_method_provider_decline", None): True,
+			("BAD_REQUEST_ERROR", "payment_failed"): True,
+			("BAD_REQUEST_ERROR", "authentication_failed"): True,
+			("BAD_REQUEST_ERROR", "payment_cancelled"): False,
+			("processing_error", None): False,
+			# Our own fallback when a gateway gave no code; Razorpay sends its reason as the decline code.
+			("payment_failed", None): False,
+		}
+		for (code, reason), expected in cases.items():
+			self.assertEqual(is_bank_refusal(code, reason), expected, (code, reason))
+
+	def test_a_bank_that_asks_for_a_retry_does_not_lock(self):
+		self.record_failures(
+			times=5, failure={"failure_code": "card_declined", "decline_code": "try_again_later"}
+		)
+		self.assert_wait(None)
+		self.record_failures(times=5, failure={"failure_code": "card_declined"})
+		self.assert_wait(10 * MINUTE)
+
 	def test_an_expired_or_cancelled_setup_does_not_count(self):
 		for _ in range(5):
 			method = frappe.get_doc("Payment Method", self.pending_method())
