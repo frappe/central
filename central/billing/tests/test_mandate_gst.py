@@ -2,6 +2,8 @@
 # For license information, please see license.txt
 """A mandate covers a bill at the trust-tier cap, GST included."""
 
+from unittest.mock import patch
+
 import frappe
 
 from central.billing.catalog.entitlements import recompute_trust_tier
@@ -100,6 +102,24 @@ class TestUpiMandate(MandateGstTestBase):
 		flag_upi_mandates_below_the_gst_ceiling.execute()
 
 		self.assertTrue(frappe.db.get_value("Payment Method", pm, "reauth_required"))
+		asks = {"team": TEAM, "event_type": "Mandate Reauth", "reference_name": pm}
+		self.assertEqual(frappe.db.count("Billing Notification Log", asks), 1)
+
+	def test_a_run_that_read_the_mandate_before_another_flagged_it_asks_no_second_time(self):
+		recompute_trust_tier(TEAM, paid_invoice_count=0, cumulative_paid=0)
+		pm = self._active_mandate()
+		frappe.db.set_value("Payment Method", pm, "mandate_max_amount", 100)
+		fields = ["name", "gateway", "mandate_max_amount", "reauth_required"]
+		stale = frappe.get_all("Payment Method", filters={"name": pm}, fields=fields)
+		self.assertEqual(mandates.reconcile_mandates_to_cap(TEAM), [pm])
+
+		get_all = frappe.get_all
+		reads = iter([stale])
+		with patch.object(
+			frappe, "get_all", side_effect=lambda *a, **kw: next(reads, None) or get_all(*a, **kw)
+		):
+			self.assertEqual(mandates.reconcile_mandates_to_cap(TEAM), [])
+
 		asks = {"team": TEAM, "event_type": "Mandate Reauth", "reference_name": pm}
 		self.assertEqual(frappe.db.count("Billing Notification Log", asks), 1)
 

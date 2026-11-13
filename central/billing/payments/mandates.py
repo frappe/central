@@ -595,12 +595,22 @@ def reconcile_mandates_to_cap(team: str):
 		filters={"team": team, "method_type": MANDATE_METHOD, "status": "Active"},
 		fields=["name", "gateway", "mandate_max_amount", "reauth_required"],
 	):
-		needs = payments.mandate_ceiling(team, method.gateway, "INR") > (method.mandate_max_amount or 0)
-		frappe.db.set_value("Payment Method", method.name, "reauth_required", 1 if needs else 0)
-		if needs and not method.reauth_required:
+		if payments.mandate_ceiling(team, method.gateway, "INR") <= (method.mandate_max_amount or 0):
+			frappe.db.set_value("Payment Method", method.name, "reauth_required", 0)
+		elif _has_claimed_reauth(method.name):
 			flagged.append(method.name)
 			_ask_to_reauthorise(team, method.name)
 	return flagged
+
+
+def _has_claimed_reauth(payment_method: str) -> bool:
+	"""Flag the mandate for re-authorisation unless another run did it first. Only the run
+	whose update changes the row asks the team, so two overlapping runs send one notice."""
+	method = frappe.qb.DocType("Payment Method")
+	frappe.qb.update(method).set(method.reauth_required, 1).where(method.name == payment_method).where(
+		method.reauth_required == 0
+	).run()
+	return frappe.db._cursor.rowcount == 1
 
 
 def _ask_to_reauthorise(team: str, payment_method: str):
