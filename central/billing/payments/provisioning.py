@@ -148,7 +148,7 @@ def apply_output_tax_for_country(team: str) -> None:
 	profile = ensure_tax_profile(team)
 	values = get_country_output_tax(team)
 	if profile.is_overseas_in_india():
-		values.update({"zero_rated": 0, "zero_rating_reason": ""})  # a team moved into India is not Overseas
+		values.update({"zero_rated": 0, "zero_rating_reason": ""})
 	if all(profile.get(field) == value for field, value in values.items()):
 		return
 	profile.update(values)
