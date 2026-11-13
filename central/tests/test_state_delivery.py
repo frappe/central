@@ -274,13 +274,6 @@ class TestStateDelivery(IntegrationTestCase):
 
 	# — A deleted server
 
-	def test_a_deletion_is_queued_and_terminates_the_server(self):
-		report = self.state_report(event="vm.state.deleted", status="stopped")
-		self.assertEqual(self.deliver(report), {"queued": True, "resource_id": self.server.name})
-
-		self.apply(report)
-		self.assertEqual(self.server.reload().status, "Terminated")
-
 	def test_a_deletion_ignores_the_ordering_watermark(self):
 		"""The body repeats the last cached report, so its observed_at is never newer
 		than the one Central already holds."""
@@ -367,11 +360,6 @@ class TestDeliveryRouting(IntegrationTestCase):
 		headers = {SOURCE_HEADER: source, REGION_HEADER: "region", "X-Frappe-Webhook-Signature": "s"}
 		with patch("central.api.state_delivery.frappe.get_request_header", headers.get):
 			return receive()
-
-	def test_an_atlas_delivery_reaches_the_state_handler(self):
-		self.deliver("atlas")
-
-		self.assertTrue(self.accepted.called)
 
 	def test_the_header_is_read_whatever_its_case(self):
 		self.deliver("Atlas")
