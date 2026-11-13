@@ -42,7 +42,7 @@ class TestSetupLockout(BillingTestCase):
 		self.sent = self.notify.start()
 		self.addCleanup(self.notify.stop)
 
-	def fail(self, times=1, team=TEAM, user=None, failure=None, ago=timedelta(0)):
+	def record_failures(self, times=1, team=TEAM, user=None, failure=None, ago=timedelta(0)):
 		"""Record failed setups on a new pending method, each `ago` before now."""
 		method = self.pending_method(team, user)
 		for _ in range(times):
@@ -108,7 +108,7 @@ class TestSetupLockout(BillingTestCase):
 				self.assert_wait(expected[failures])
 
 	def test_the_wait_counts_from_the_latest_failure(self):
-		self.fail(times=5, ago=timedelta(minutes=4))
+		self.record_failures(times=5, ago=timedelta(minutes=4))
 		self.assert_wait(6 * MINUTE)
 		frappe.db.set_value(
 			"Billing Event", {"team": TEAM}, "occurred_at", frappe.utils.add_to_date(None, minutes=-11)
@@ -116,15 +116,15 @@ class TestSetupLockout(BillingTestCase):
 		self.assert_wait(None)
 
 	def test_one_user_is_counted_across_teams(self):
-		self.fail(times=3, team=TEAM, user=self.user)
-		self.fail(times=2, team=OTHER_TEAM, user=self.user)
+		self.record_failures(times=3, team=TEAM, user=self.user)
+		self.record_failures(times=2, team=OTHER_TEAM, user=self.user)
 		self.assert_wait(10 * MINUTE, team=THIRD_TEAM, user=self.user)
 		self.assert_wait(None, team=THIRD_TEAM)
 		self.assert_wait(None, team=TEAM)
 
 	def test_one_team_is_counted_across_users(self):
 		for _ in range(5):
-			self.fail(user=make_user())
+			self.record_failures(user=make_user())
 		self.assert_wait(10 * MINUTE, user=make_user("lockout-newcomer@example.com"))
 
 	def test_only_bank_refusals_count(self):
@@ -139,11 +139,13 @@ class TestSetupLockout(BillingTestCase):
 			{"failure_code": "setup_failed"},
 		)
 		for failure in not_counted:
-			self.fail(failure=failure)
+			self.record_failures(failure=failure)
 		self.assert_wait(None)
 
 		for _ in range(5):
-			self.fail(failure={"failure_code": "BAD_REQUEST_ERROR", "decline_code": "authentication_failed"})
+			self.record_failures(
+				failure={"failure_code": "BAD_REQUEST_ERROR", "decline_code": "authentication_failed"}
+			)
 		self.assert_wait(10 * MINUTE)
 
 	def test_an_expired_or_cancelled_setup_does_not_count(self):
@@ -164,14 +166,14 @@ class TestSetupLockout(BillingTestCase):
 		self.assert_wait(10 * MINUTE)
 
 	def test_a_working_method_for_the_team_resets_the_count(self):
-		self.fail(times=5)
+		self.record_failures(times=5)
 		frappe.db.set_value(
 			"Payment Method", self.pending_method(), "validated_at", frappe.utils.now_datetime()
 		)
 		self.assert_wait(None)
 
 	def test_a_method_the_user_added_resets_their_count(self):
-		self.fail(times=5, team=OTHER_TEAM, user=self.user)
+		self.record_failures(times=5, team=OTHER_TEAM, user=self.user)
 		self.assert_wait(10 * MINUTE, team=THIRD_TEAM, user=self.user)
 		someone_else = self.pending_method(THIRD_TEAM, make_user())
 		frappe.db.set_value("Payment Method", someone_else, "validated_at", frappe.utils.now_datetime())
@@ -185,35 +187,35 @@ class TestSetupLockout(BillingTestCase):
 		frappe.db.set_value(
 			"Payment Method", proven, "validated_at", frappe.utils.add_to_date(None, hours=-1)
 		)
-		self.fail(times=5)
+		self.record_failures(times=5)
 		self.assert_wait(10 * MINUTE)
 
 	def test_seven_quiet_days_reset_the_count(self):
-		self.fail(times=4, ago=timedelta(days=8))
-		self.fail(times=1)
+		self.record_failures(times=4, ago=timedelta(days=8))
+		self.record_failures(times=1)
 		self.assert_wait(None)
 
 	def test_failures_less_than_seven_days_apart_stay_in_one_run(self):
 		for days_ago in (24, 18, 12, 6, 0):
-			self.fail(ago=timedelta(days=days_ago))
+			self.record_failures(ago=timedelta(days=days_ago))
 		self.assert_wait(10 * MINUTE)
 
 	def test_an_operator_clears_the_lock(self):
 		from central.billing.api.admin.teams import clear_setup_lock
 
-		self.fail(times=10)
+		self.record_failures(times=10)
 		self.assert_wait(24 * HOUR)
 		clear_setup_lock(TEAM)
 		self.assert_wait(None)
 		self.assertTrue(frappe.db.exists("Billing Event", {"team": TEAM, "event_type": "Setup Lock Cleared"}))
 
-		self.fail(times=5)
+		self.record_failures(times=5)
 		self.assert_wait(10 * MINUTE)
 
 	def test_only_an_operator_can_clear_the_lock(self):
 		from central.billing.api.admin.teams import clear_setup_lock
 
-		self.fail(times=10)
+		self.record_failures(times=10)
 		frappe.set_user(self.user)
 		self.addCleanup(frappe.set_user, "Administrator")
 		with self.assertRaises(frappe.PermissionError):
@@ -222,7 +224,7 @@ class TestSetupLockout(BillingTestCase):
 		self.assert_wait(24 * HOUR)
 
 	def test_a_locked_team_cannot_start_a_setup(self):
-		self.fail(times=5)
+		self.record_failures(times=5)
 		adapter = MagicMock()
 		with patch("central.billing.gateways.registry.get_adapter", return_value=adapter):
 			with self.assertRaises(setup_lockout.TooManyFailedSetups):
@@ -234,9 +236,19 @@ class TestSetupLockout(BillingTestCase):
 		adapter.setup_payment_method.assert_not_called()
 
 	def test_a_locked_team_cannot_top_up(self):
-		self.fail(times=5)
+		self.record_failures(times=5)
 		with self.assertRaises(setup_lockout.TooManyFailedSetups):
 			TopupOrder.start(TEAM, "Stripe", "INR", 500)
+
+	def test_a_locked_team_top_up_makes_no_gateway_call(self):
+		from central.billing.api import dashboard
+
+		self.record_failures(times=5)
+		adapter = MagicMock()
+		with patch("central.billing.gateways.registry.get_adapter", return_value=adapter):
+			with self.assertRaises(setup_lockout.TooManyFailedSetups):
+				dashboard.create_topup_order(team=TEAM, amount=500)
+		adapter.create_customer.assert_not_called()
 
 	def test_declined_top_ups_count(self):
 		order = TopupOrder.start(TEAM, "Stripe", "INR", 500)
@@ -248,12 +260,12 @@ class TestSetupLockout(BillingTestCase):
 		self.assert_wait(10 * MINUTE)
 
 	def test_operators_are_alerted_once_on_the_tenth_failure(self):
-		self.fail(times=9)
+		self.record_failures(times=9)
 		self.sent.assert_not_called()
-		self.fail(times=1)
+		self.record_failures(times=1)
 		self.sent.assert_called_once()
 		self.assertEqual(self.sent.call_args.args[1][0]["subject"], TEAM)
-		self.fail(times=2)
+		self.record_failures(times=2)
 		self.sent.assert_called_once()
 
 	def test_the_message_names_the_exact_wait(self):
@@ -278,25 +290,25 @@ class TestSetupLockout(BillingTestCase):
 			)
 
 	def test_a_paid_top_up_resets_the_team_count(self):
-		self.fail(times=5)
+		self.record_failures(times=5)
 		self.paid_top_up()
 		self.assert_wait(None)
 
 	def test_a_top_up_paid_before_the_failures_does_not_reset(self):
 		order = self.paid_top_up()
 		self.backdate(order, timedelta(hours=1))
-		self.fail(times=5)
+		self.record_failures(times=5)
 		self.assert_wait(10 * MINUTE)
 
 	def test_a_top_up_the_user_paid_resets_their_count(self):
-		self.fail(times=5, team=OTHER_TEAM, user=self.user)
+		self.record_failures(times=5, team=OTHER_TEAM, user=self.user)
 		self.paid_top_up(THIRD_TEAM, self.user)
 		self.assert_wait(None, team=TEAM, user=self.user)
 
 	def test_another_users_top_up_resets_the_team_but_not_the_user(self):
-		self.fail(times=3, team=TEAM, user=self.user)
-		self.fail(times=2, team=OTHER_TEAM, user=self.user)
-		self.fail(times=2, team=TEAM, user=make_user())
+		self.record_failures(times=3, team=TEAM, user=self.user)
+		self.record_failures(times=2, team=OTHER_TEAM, user=self.user)
+		self.record_failures(times=2, team=TEAM, user=make_user())
 		self.assert_wait(10 * MINUTE, team=TEAM)
 		self.paid_top_up(TEAM, make_user())
 		self.assert_wait(None, team=TEAM)
@@ -306,9 +318,9 @@ class TestSetupLockout(BillingTestCase):
 	def test_a_relock_within_a_day_does_not_alert_again(self):
 		from central.billing.api.admin.teams import clear_setup_lock
 
-		self.fail(times=10)
+		self.record_failures(times=10)
 		clear_setup_lock(TEAM)
-		self.fail(times=10)
+		self.record_failures(times=10)
 		self.sent.assert_called_once()
 
 		alerted = {"team": TEAM, "event_type": setup_lockout.ALERTED_EVENT}
@@ -316,11 +328,11 @@ class TestSetupLockout(BillingTestCase):
 			"Billing Event", alerted, "occurred_at", frappe.utils.add_to_date(None, hours=-25)
 		)
 		clear_setup_lock(TEAM)
-		self.fail(times=10)
+		self.record_failures(times=10)
 		self.assertEqual(self.sent.call_count, 2)
 
 	def test_the_team_alert_says_who_how_many_how_long_and_how_to_clear(self):
-		self.fail(times=10)
+		self.record_failures(times=10)
 		detail = self.sent.call_args.args[1][0]["detail"]
 		self.assertRegex(
 			detail,
@@ -331,26 +343,27 @@ class TestSetupLockout(BillingTestCase):
 		self.assertNotIn("do_not_honor", detail)
 
 	def test_the_user_alert_names_the_user(self):
-		self.fail(times=5, team=OTHER_TEAM, user=self.user)
-		self.fail(times=5, team=THIRD_TEAM, user=self.user)
+		self.record_failures(times=5, team=OTHER_TEAM, user=self.user)
+		self.record_failures(times=5, team=THIRD_TEAM, user=self.user)
 		self.sent.assert_called_once()
 		alert = self.sent.call_args.args[1][0]
 		self.assertEqual(alert["team"], THIRD_TEAM)
 		self.assertTrue(
 			alert["detail"].startswith(
-				f"User {self.user} in team {THIRD_TEAM} ({THIRD_TEAM}) had 10 failed attempts in a row"
+				f"User {self.user} had 10 failed attempts in a row across their teams, "
+				f"the latest in team {THIRD_TEAM} ({THIRD_TEAM}), and must wait 24 hours"
 			)
 		)
-		self.assertIn("must wait 24 hours", alert["detail"])
+		self.assertTrue(alert["detail"].endswith("The clear lets them try again in this team only."))
 
 	def test_the_clear_button_shows_while_a_member_waits(self):
 		team = make_billing_team(self.user).name
 		self.assertFalse(setup_lockout.is_anyone_waiting(team))
-		self.fail(times=5, team=OTHER_TEAM, user=self.user)
+		self.record_failures(times=5, team=OTHER_TEAM, user=self.user)
 		self.assertTrue(setup_lockout.is_anyone_waiting(team))
 
 	def test_the_refusal_carries_the_wait(self):
-		self.fail(times=7)
+		self.record_failures(times=7)
 		with self.assertRaises(setup_lockout.TooManyFailedSetups) as raised:
 			setup_lockout.check(TEAM)
 		self.assertIn("Try again in 30 minutes", str(raised.exception))

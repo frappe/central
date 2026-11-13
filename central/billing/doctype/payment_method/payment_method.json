@@ -266,7 +266,7 @@
    "link_fieldname": "payment_method"
   }
  ],
- "modified": "2026-11-03 12:00:00.000000",
+ "modified": "2026-11-13 18:00:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Payment Method",

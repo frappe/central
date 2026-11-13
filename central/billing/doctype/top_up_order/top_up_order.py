@@ -209,3 +209,5 @@ class TopupOrder(Document):
 def on_doctype_update() -> None:
 	frappe.db.add_index("Top-up Order", ["gateway", "gateway_order_id"])
 	frappe.db.add_index("Top-up Order", ["status", "creation"])
+	# The wait after failed top-ups reads a user's own orders.
+	frappe.db.add_index("Top-up Order", ["owner"])

@@ -42,7 +42,7 @@ The options in the dialog depend on your billing currency. Teams billed in INR c
 
 After 5 failed attempts in a row, you must wait before you try again. The message tells you how long, for example "Too many failed attempts. Try again in 28 minutes." The wait gets longer with each failure, to 24 hours after the 10th. Only a card or account that your bank declines, or a bank verification that fails, counts as a failed attempt. If you close the bank's window or cancel, you can try again at once. Failed top-ups count too.
 
-The count goes back to zero when you add a payment method, when a top-up you make is paid, or after 7 days with no failed attempt. To try again sooner, contact support.
+Your failed attempts in all your teams count together. The count goes back to zero when you add a payment method, when a top-up you make is paid, or after 7 days with no failed attempt. To try again sooner, contact support. When support clears the wait for a team, you can try again in that team only. In your other teams, you must still wait.
 
 ## Change the order
 

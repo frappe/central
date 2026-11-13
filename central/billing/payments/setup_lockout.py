@@ -66,7 +66,7 @@ def wait_for(team: str, user: str | None = None) -> timedelta | None:
 def is_anyone_waiting(team: str) -> bool:
 	"""True while the team, or any member of it, must wait. Clear Setup Lock ends both."""
 	members = frappe.get_all("Team Member", {"parenttype": "Team", "parent": team}, pluck="user")
-	lockouts = [Lockout.for_team(team), *(Lockout.for_user(user, team) for user in set(members) if user)]
+	lockouts = [Lockout.for_team(team), *Lockout.for_users(members, team).values()]
 	return any(lockout.get_wait() for lockout in lockouts)
 
 
@@ -98,31 +98,43 @@ def note_failure(team: str, user: str | None, failure_code: str | None, decline_
 		_enqueue_alert(team, user)
 
 
-def alert_operators(team: str, user: str | None = None) -> list[str]:
-	"""Send the lock to the billing operators' alert channel, once a day at most for the
-	same team, or the same user in that team."""
-	from central.billing.platform.alerts import notify_operators
-
-	# Locked, so two failures that both reach the alert send it once.
+def alert_operators(team: str, user: str | None = None) -> None:
+	"""Record the lock alert and send it to the billing operators once this job commits,
+	once a day at most for the same team, or the same user in that team."""
+	# Locked, so two failures that both reach the alert record it once.
 	frappe.db.get_value("Team", team, "name", for_update=True)
 	if _is_recently_alerted(team, user or team):
-		return []
+		return
 	lockout = Lockout.for_user(user, team) if user else Lockout.for_team(team)
 	record_event(_profile(team), ALERTED_EVENT, correlation=user or team, reason=user)
-	return notify_operators("Billing: payment setups locked", [lock_alert(team, user, lockout)])
+	# Sent only after the record commits, so a second job skips it even if the send fails.
+	frappe.enqueue(
+		"central.billing.payments.setup_lockout.send_alert",
+		alert=lock_alert(team, user, lockout),
+		enqueue_after_commit=True,
+	)
+
+
+def send_alert(alert: dict) -> list[str]:
+	"""Send one recorded lock alert. A failed send goes to the Error Log, not to a retry."""
+	from central.billing.platform.alerts import notify_operators
+
+	try:
+		return notify_operators("Billing: payment setups locked", [alert])
+	except Exception:
+		frappe.log_error(title="Billing setup lock alert not sent")
+		return []
 
 
 def lock_alert(team: str, user: str | None, lockout: "Lockout") -> dict:
 	"""The operator alert for one lock: who, how many failures, how long, and how to clear it."""
 	team_name = frappe.db.get_value("Team", team, "team_name") or team
-	who = f"User {user} in team {team_name} ({team})" if user else f"Team {team_name} ({team})"
-	ends_at = lockout.get_ends_at()
-	wait = (
-		f"must wait {_duration(ends_at - lockout.now)}, until {ends_at:%d %b %Y %H:%M} "
-		f"{frappe.utils.get_system_timezone()}"
-		if ends_at and ends_at > lockout.now
-		else "need not wait now"
-	)
+	count = lockout.get_count()
+	if user:
+		who = f"User {user} had {count} failed attempts in a row across their teams, the latest in team {team_name} ({team}),"
+		clear_scope = " The clear lets them try again in this team only."
+	else:
+		who, clear_scope = f"Team {team_name} ({team}) had {count} failed attempts in a row", ""
 	return {
 		"alert": "setup_lockout",
 		"meaning": "A team or user had too many payment method setups or top-ups refused by the bank.",
@@ -130,14 +142,14 @@ def lock_alert(team: str, user: str | None, lockout: "Lockout") -> dict:
 		"subject": team,
 		"team": team,
 		"detail": (
-			f"{who} had {lockout.get_count()} failed attempts in a row and {wait}. "
-			"To let them try now, open the Billing Profile and click Clear Setup Lock."
+			f"{who} and {_wait_phrase(lockout)}. "
+			f"To let them try now, open the Billing Profile and click Clear Setup Lock.{clear_scope}"
 		),
 	}
 
 
 def clear(team: str) -> None:
-	"""Forget the team's failures so far. Only an operator calls this."""
+	"""Forget the failures so far in this team, of the team and of its members. Only an operator calls this."""
 	profile = frappe.get_doc("Billing Profile", team)
 	profile.db_set("setup_lock_cleared_at", frappe.utils.now_datetime())
 	record_event(profile, "Setup Lock Cleared")
@@ -157,34 +169,39 @@ class Lockout:
 
 	@classmethod
 	def for_team(cls, team: str) -> "Lockout":
+		now = frappe.utils.now_datetime()
+		orders = frappe.qb.DocType("Top-up Order")
+		team_orders = frappe.qb.from_(orders).select(orders.name).where(orders.team == team)
+		paid_at = max(_credited_at(team_orders).values(), default=None)
+		since = _since(now, _cleared_at(team), _last_method({"team": team}), paid_at)
 		event = frappe.qb.DocType("Billing Event")
-		query = _failure_query(event).where(event.team == team)
-		filters = {"team": team}
-		return cls._from_rows(query, _cleared_at(team), _last_method(filters), _last_top_up(filters))
+		rows = (
+			_failure_query(event).where(event.team == team).where(event.occurred_at > since).run(as_dict=True)
+		)
+		return cls([row.occurred_at for row in rows if _is_counted(row)], now)
 
 	@classmethod
 	def for_user(cls, user: str, team: str) -> "Lockout":
-		event = frappe.qb.DocType("Billing Event")
-		method = frappe.qb.DocType("Payment Method")
-		order = frappe.qb.DocType("Top-up Order")
-		query = (
-			_failure_query(event)
-			.left_join(method)
-			.on((event.subject_doctype == "Payment Method") & (event.subject == method.name))
-			.left_join(order)
-			.on((event.subject_doctype == "Top-up Order") & (event.subject == order.name))
-			.where((method.owner == user) | (order.owner == user))
-		)
-		filters = {"owner": user}
-		return cls._from_rows(query, _cleared_at(team), _last_method(filters), _last_top_up(filters))
+		return cls.for_users([user], team)[user]
 
 	@classmethod
-	def _from_rows(cls, query, *resets) -> "Lockout":
+	def for_users(cls, users: list[str], team: str) -> dict[str, "Lockout"]:
+		"""Each user's run, read from the methods and top-ups they own, in a fixed number of queries."""
+		users = sorted({user for user in users if user})
+		if not users:
+			return {}
 		now = frappe.utils.now_datetime()
-		since = max([now - LOOKBACK, *(frappe.utils.get_datetime(r) for r in resets if r)])
-		event = frappe.qb.DocType("Billing Event")
-		rows = query.where(event.occurred_at > since).run(as_dict=True)
-		return cls([row.occurred_at for row in rows if _is_counted(row)], now)
+		subjects = _OwnedSubjects(users)
+		failures = subjects.get_failures(now - LOOKBACK)
+		cleared_at = _cleared_at(team)
+		lockouts = {}
+		for user in users:
+			since = _since(now, cleared_at, *subjects.get_resets(user))
+			counted = [
+				row.occurred_at for row in failures[user] if row.occurred_at > since and _is_counted(row)
+			]
+			lockouts[user] = cls(counted, now)
+		return lockouts
 
 	def get_count(self) -> int:
 		"""Failures in the current run: each within seven days of the next, the newest within seven days of now."""
@@ -205,6 +222,50 @@ class Lockout:
 		return ends_at - self.now if ends_at and ends_at > self.now else None
 
 
+class _OwnedSubjects:
+	"""The Payment Methods and Top-up Orders some users own, and their failure and reset events."""
+
+	def __init__(self, users: list[str]):
+		self.users = users
+		self.methods = frappe.get_all(
+			"Payment Method", {"owner": ["in", users]}, ["name", "owner", "validated_at"]
+		)
+		self.orders = frappe.get_all("Top-up Order", {"owner": ["in", users]}, ["name", "owner"])
+		self.owner_of = {
+			**{("Payment Method", row.name): row.owner for row in self.methods},
+			**{("Top-up Order", row.name): row.owner for row in self.orders},
+		}
+		self.paid_at = _credited_at([row.name for row in self.orders]) if self.orders else {}
+
+	def get_failures(self, since: datetime) -> dict[str, list]:
+		"""Each user's failure events after `since`, newest first."""
+		failures = {user: [] for user in self.users}
+		if not self.owner_of:
+			return failures
+		event = frappe.qb.DocType("Billing Event")
+		query = _failure_query(event).select(event.subject_doctype, event.subject)
+		rows = query.where(self._is_owned(event)).where(event.occurred_at > since).run(as_dict=True)
+		for row in rows:
+			failures[self.owner_of[(row.subject_doctype, row.subject)]].append(row)
+		return failures
+
+	def get_resets(self, user: str) -> tuple:
+		"""When the user's newest method was proven, and their newest top-up was paid."""
+		validated = [row.validated_at for row in self.methods if row.owner == user and row.validated_at]
+		paid = [
+			self.paid_at[row.name] for row in self.orders if row.owner == user and row.name in self.paid_at
+		]
+		return max(validated, default=None), max(paid, default=None)
+
+	def _is_owned(self, event):
+		condition = None
+		for doctype, rows in (("Payment Method", self.methods), ("Top-up Order", self.orders)):
+			if rows:
+				part = (event.subject_doctype == doctype) & event.subject.isin([row.name for row in rows])
+				condition = part if condition is None else condition | part
+		return condition
+
+
 def _enqueue_alert(team: str, user: str | None) -> None:
 	frappe.enqueue(
 		"central.billing.payments.setup_lockout.alert_operators",
@@ -215,13 +276,10 @@ def _enqueue_alert(team: str, user: str | None) -> None:
 
 
 def _is_recently_alerted(team: str, party: str) -> bool:
+	"""A locking read, so it sees an alert another job committed after this one began."""
 	since = frappe.utils.now_datetime() - ALERT_COOLDOWN
-	return bool(
-		frappe.db.exists(
-			"Billing Event",
-			{"team": team, "event_type": ALERTED_EVENT, "correlation": party, "occurred_at": [">", since]},
-		)
-	)
+	filters = {"team": team, "event_type": ALERTED_EVENT, "correlation": party, "occurred_at": [">", since]}
+	return bool(frappe.db.get_value("Billing Event", filters, "name", for_update=True))
 
 
 def _profile(team: str):
@@ -242,6 +300,11 @@ def _is_person(user: str | None) -> bool:
 	return bool(user) and user not in _UNATTRIBUTED_USERS
 
 
+def _since(now: datetime, *resets) -> datetime:
+	"""The oldest failure time that can still count: the latest reset, or the lookback."""
+	return max([now - LOOKBACK, *(frappe.utils.get_datetime(r) for r in resets if r)])
+
+
 def _cleared_at(team: str):
 	return frappe.db.get_value("Billing Profile", team, "setup_lock_cleared_at")
 
@@ -256,26 +319,31 @@ def _last_method(filters: dict):
 	)
 
 
-def _last_top_up(filters: dict):
-	"""When the newest top-up these filters match was paid: its move to Credited."""
+def _credited_at(orders) -> dict:
+	"""When each of these top-ups (names, or a query of names) was paid: its move to Credited."""
 	event = frappe.qb.DocType("Billing Event")
-	order = frappe.qb.DocType("Top-up Order")
 	query = (
 		frappe.qb.from_(event)
-		.join(order)
-		.on(event.subject == order.name)
-		.select(Max(event.occurred_at))
+		.select(event.subject, Max(event.occurred_at))
 		.where(event.subject_doctype == "Top-up Order")
+		.where(event.subject.isin(orders))
 		.where(event.to_state == "Credited")
+		.groupby(event.subject)
 	)
-	for field, value in filters.items():
-		query = query.where(order[field] == value)
-	return query.run()[0][0]
+	return dict(query.run())
 
 
 def _is_counted(row) -> bool:
 	payload = frappe.parse_json(row.payload) if row.payload else {}
 	return decline.is_bank_refusal(row.reason, (payload or {}).get("decline_code"))
+
+
+def _wait_phrase(lockout: "Lockout") -> str:
+	ends_at = lockout.get_ends_at()
+	if not ends_at or ends_at <= lockout.now:
+		return "need not wait now"
+	timezone = frappe.utils.get_system_timezone()
+	return f"must wait {_duration(ends_at - lockout.now)}, until {ends_at:%d %b %Y %H:%M} {timezone}"
 
 
 def _whole_minutes(wait: timedelta) -> int:
