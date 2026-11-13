@@ -49,6 +49,16 @@ def plan_draw(lots: list, collectable: float, gst_due: float, gst_left: float) -
 	)
 
 
+def get_wallet_shortfall(team: str, currency: str, collectable: float, gst_due: float) -> float:
+	"""What the card or UPI is left to pay of `collectable` once today's wallet is drawn the
+	way the collector draws it: GST paid with top-ups counts, credit without it pays its own GST."""
+	from central.billing.revenue import credits
+
+	lots = credits.credit_lots(team, currency)
+	draw = plan_draw(lots, collectable, gst_due, credits.advance_gst_balance(team, currency))
+	return frappe.utils.flt(draw.owed, 2)
+
+
 # The cover formula can miss by a rounding step; a larger gap means the inputs disagree.
 MAX_EXTRA_STEPS = 3
 

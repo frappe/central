@@ -22,6 +22,7 @@ from central.billing.api.dashboard._shared import _resolve_team, _team_currency
 from central.billing.doctype.billing_profile.billing_profile import get_payment_date
 from central.billing.doctype.invoice.invoice import OVERDUE, owed_filters
 from central.billing.payments.charges import in_flight_attempt
+from central.billing.revenue import tax
 from central.billing.revenue.dunning import (
 	LADDER_FIELDS,
 	dunning_policy,
@@ -94,6 +95,7 @@ def get_next_payment(team: str | None = None) -> dict:
 	return {
 		"currency": currency,
 		"amount": amount,
+		"tax_note": _tax_note(team, invoice),
 		"charge_on": str(charge_on) if charge_on else None,
 		"invoice": invoice.name if invoice else None,
 		"period_end": str(period_end) if period_end else None,
@@ -121,6 +123,11 @@ def get_payment_schedule(team: str | None = None) -> dict:
 	}
 
 
+def _tax_note(team: str, invoice) -> str | None:
+	"""What the amount includes: "incl. IGST 18%", or "No GST (SEZ)". A projection takes the team's tax today."""
+	return tax.TaxNames(team).note(invoice) if invoice else tax.get_tax_names(team)["tax_note"]
+
+
 def _owed_invoices(team: str) -> list[frappe._dict]:
 	"""The open bills we still have to collect, oldest due first."""
 	return frappe.get_all(
@@ -137,6 +144,7 @@ def _owed_invoices(team: str) -> list[frappe._dict]:
 			*LADDER_FIELDS,
 			"period_end",
 			"predebit_charge_after",
+			*tax.LABEL_FIELDS,
 		],
 		order_by="due_date asc",
 	)

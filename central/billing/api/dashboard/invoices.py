@@ -28,6 +28,7 @@ from central.billing.doctype.top_up_order.top_up_order import TopupOrder
 from central.billing.gateways.base import VerifiedPayment
 from central.billing.payments import setup_lockout
 from central.billing.revenue import credits, tax
+from central.billing.revenue.invoicing import wallet_draw
 
 
 @frappe.whitelist()
@@ -58,12 +59,10 @@ def get_forecast(team: str | None = None) -> dict:
 	subtotal = frappe.utils.flt(invoice.get("subtotal"))
 	projected_total = frappe.utils.flt(invoice.get("total"))
 	credit_balance = frappe.utils.flt(credits.get_balance(team)["balance"])
-	shortfall = max(0.0, frappe.utils.flt(projected_total - credit_balance, 2))
 	currency = projection["currency"] or _team_currency(team)
-	tax = {
-		"output_tax_amount": frappe.utils.flt(invoice.get("output_tax_amount")),
-		"output_tax_type": invoice.get("output_tax_type"),
-	}
+	tax_amount = frappe.utils.flt(invoice.get("output_tax_amount"))
+	collectable = frappe.utils.flt(invoice.get("expected_collection"))
+	shortfall = wallet_draw.get_wallet_shortfall(team, currency, collectable, tax_amount)
 
 	return {
 		"period_start": str(month_start),
@@ -80,8 +79,10 @@ def get_forecast(team: str | None = None) -> dict:
 		"measured": frappe.utils.flt(invoice.get("measured")),
 		"estimated": frappe.utils.flt(invoice.get("estimated")),
 		"has_estimates": bool(invoice.get("has_estimates")),
-		"tax_amount": tax["output_tax_amount"],
-		"tax_type": tax["output_tax_type"],
+		"tax_amount": tax_amount,
+		"tax_type": invoice.get("output_tax_type"),
+		# The projection carries no zero-rating, so it is named by the team's tax today.
+		**tax.get_tax_names(team),
 		"credit_balance": credit_balance,
 		"shortfall": shortfall,
 		"days_remaining": (month_end - today).days,
@@ -312,11 +313,14 @@ def list_invoices(team: str | None = None) -> list[dict]:
 			"currency",
 			"due_date",
 			"erpnext_invoice",
+			*tax.LABEL_FIELDS,
 		],
 		order_by="period_start desc",
 	)
+	names = tax.TaxNames(team)
 	for row in rows:
 		row["has_pdf"] = bool(row.pop("erpnext_invoice"))
+		row["tax_note"] = names.note(row)
 	return rows
 
 
@@ -380,6 +384,9 @@ def get_invoice(name: str) -> dict:
 		"output_tax_rate": doc.output_tax_rate,
 		"output_tax_amount": doc.output_tax_amount,
 		"zero_rating_reason": doc.zero_rating_reason,
+		# Named from the invoice's own rate and zero-rating, so an issued invoice keeps its tax.
+		"tax_label": tax.TaxNames(doc.team).label(doc),
+		"tax_reason": tax.TaxNames.reason(doc),
 		"total": doc.total,
 		"credit_applied": doc.credit_applied,
 		"advance_tax_applied": doc.advance_tax_applied,
@@ -591,9 +598,12 @@ def credit_ledger(team: str | None = None, limit: int = 50) -> list[dict]:
 		order_by="creation desc",
 		limit=limit,
 	)
+	# A top-up's GST is named as the team's invoices name it.
+	label = tax.tax_label(team) or _("GST")
 	for row in rows:
 		# A top-up booked in the accounting system has a receipt to download.
 		row["has_receipt"] = bool(row.pop("advance_id"))
+		row["tax_label"] = label if frappe.utils.flt(row.tax_amount) else None
 	return rows
 
 

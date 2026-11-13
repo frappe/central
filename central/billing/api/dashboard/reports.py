@@ -45,7 +45,7 @@ def get_spend_history(team: str | None = None, months: int = 12) -> dict:
 			"status": ["!=", "Cancelled"],
 			"period_start": [">=", start],
 		},
-		fields=["name", "period_start", "total", "amount_paid", "status", "currency"],
+		fields=["name", "period_start", "subtotal", "total", "amount_paid", "status", "currency"],
 		order_by="period_start asc",
 	)
 
@@ -377,7 +377,8 @@ def _by_month(invoices, months: int, currency: str) -> list[dict]:
 	totals: dict[str, dict] = {}
 	for inv in invoices:
 		key = frappe.utils.getdate(inv.period_start).strftime("%Y-%m")
-		bucket = totals.setdefault(key, {"total": 0.0, "paid": 0.0})
+		bucket = totals.setdefault(key, {"subtotal": 0.0, "total": 0.0, "paid": 0.0})
+		bucket["subtotal"] += frappe.utils.flt(inv.subtotal)
 		bucket["total"] += frappe.utils.flt(inv.total)
 		bucket["paid"] += frappe.utils.flt(inv.amount_paid)
 
@@ -386,11 +387,12 @@ def _by_month(invoices, months: int, currency: str) -> list[dict]:
 	for offset in range(months - 1, -1, -1):
 		day = frappe.utils.add_months(today, -offset)
 		key = day.strftime("%Y-%m")
-		bucket = totals.get(key, {"total": 0.0, "paid": 0.0})
+		bucket = totals.get(key, {"subtotal": 0.0, "total": 0.0, "paid": 0.0})
 		out.append(
 			{
 				"month": key,
 				"label": day.strftime("%b"),
+				"subtotal": frappe.utils.flt(bucket["subtotal"], 2),
 				"total": frappe.utils.flt(bucket["total"], 2),
 				"paid": frappe.utils.flt(bucket["paid"], 2),
 				"currency": currency,

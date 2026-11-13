@@ -17,8 +17,11 @@ paid-state) lands now so adding TDS later is additive, not a rewrite. tds_amount
 is 0 at launch (no team self-declares yet).
 """
 
+from functools import cached_property
+
 import frappe
 from frappe import _
+from frappe.utils.translations import N_
 
 from central.billing import settings
 from central.billing.india_gst import CGST_SGST, IGST, INDIA
@@ -113,20 +116,69 @@ def tax_label(team: str) -> str | None:
 	"""The GST the team is charged, as its documents name it: "IGST 18%",
 	"CGST 9% + SGST 9%" or "No GST (SEZ)". None when no GST applies. While the
 	company's state was never known, the split cannot be told, so it reads "GST 18%"."""
-	from central.billing.ingester import gst
+	return TaxNames(team).label(resolve_tax(team, 100))
 
-	block = resolve_tax(team, 100)
-	if block["zero_rating_reason"] == "SEZ":
-		return _("No GST (SEZ)")
-	if block["output_tax_type"] != "GST" or not block["output_tax_amount"]:
-		return None
-	rate = frappe.utils.flt(block["output_tax_rate"])
-	company_code = gst.cached_company_state_code()
-	if not company_code:
-		return _("GST {0}%").format(_percent(rate))
-	if is_in_state_supply(team, company_code):
-		return _("CGST {0}% + SGST {0}%").format(_percent(rate / 2))
-	return _("IGST {0}%").format(_percent(rate))
+
+def get_tax_names(team: str) -> dict:
+	"""The team's tax today as `tax_label` ("IGST 18%") and `tax_note` ("incl. IGST 18%")."""
+	block, names = resolve_tax(team, 100), TaxNames(team)
+	return {"tax_label": names.label(block), "tax_note": names.note(block)}
+
+
+class TaxNames:
+	"""Names the GST on one team's amounts, from a tax block: the team's tax today, an
+	invoice or a forecast. The rate and the SEZ zero-rating come from the block. An
+	invoice does not keep its place of supply, so IGST or CGST + SGST follows the
+	team's billing state today."""
+
+	def __init__(self, team: str):
+		self.team = team
+
+	def label(self, block) -> str | None:
+		"""The label: "IGST 18%", "CGST 9% + SGST 9%", "No GST (SEZ)", or None when no GST applies."""
+		if block.get("zero_rating_reason") == "SEZ":
+			return _("No GST (SEZ)")
+		if block.get("output_tax_type") != "GST" or not frappe.utils.flt(block.get("output_tax_amount")):
+			return None
+		rate = frappe.utils.flt(block.get("output_tax_rate"))
+		if not self._company_code:
+			return _("GST {0}%").format(_percent(rate))
+		if self._is_in_state:
+			return _("CGST {0}% + SGST {0}%").format(_percent(rate / 2))
+		return _("IGST {0}%").format(_percent(rate))
+
+	def note(self, block) -> str | None:
+		"""What follows an amount that includes the block's tax: "incl. IGST 18%", or
+		"No GST (SEZ)" for a zero-rated supply. None when no GST applies."""
+		label = self.label(block)
+		if label and frappe.utils.flt(block.get("output_tax_amount")):
+			return _("incl. {0}").format(label)
+		return label
+
+	@staticmethod
+	def reason(block) -> str | None:
+		"""Why a zero-rated block carries no tax, in words, or None when it is not zero-rated."""
+		reason = ZERO_RATING_REASONS.get(block.get("zero_rating_reason") or "")
+		return _(reason) if reason else None
+
+	@cached_property
+	def _company_code(self) -> str | None:
+		from central.billing.ingester import gst
+
+		return gst.cached_company_state_code()
+
+	@cached_property
+	def _is_in_state(self) -> bool:
+		return is_in_state_supply(self.team, self._company_code)
+
+
+# The fields of a stored invoice that `TaxNames` reads.
+LABEL_FIELDS = ("output_tax_type", "output_tax_rate", "output_tax_amount", "zero_rating_reason")
+
+ZERO_RATING_REASONS = {
+	"SEZ": N_("Zero-rated supply to a Special Economic Zone (SEZ) unit."),
+	"Overseas": N_("Zero-rated export of services outside India."),
+}
 
 
 def gst_state_at_issue(team: str, block) -> dict:
