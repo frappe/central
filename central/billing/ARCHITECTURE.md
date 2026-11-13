@@ -382,7 +382,7 @@ Configure it in **Billing Settings → Operator Alerts**:
 | Bot API Key, Bot API Secret | The API key of a bot user that is a member of the channel. The alert is posted as this user through `raven.api.raven_message.send_message`. |
 | Muted Alerts | Billing alerts the hourly digest does not send. Choose a **Category**: Payments, Invoicing, Dunning, Money checks or Readiness checks. Leave **Alert** empty to mute the whole category, or choose one alert or one check in it. **Until** is when the alert is sent again; leave it empty to mute until the row is removed. Enter the reason, for example the ticket of the known issue. `platform/kinds.py` owns the categories. |
 
-When a Raven post fails, or Raven is not configured, the alert goes to the email addresses once and the failure is written to the Error Log. Use **Send Test Alert** on the form to check the saved settings. The hourly digest keeps one Error Log row for each digest it sends, and it does not send the same digest again for `REPEAT_AFTER_HOURS`. A muted alert is left out of the digest and counted as `muted` in the `billing.alerts` metric. Muting applies only to the hourly billing digest (`run_operator_alerts`). Signup alerts and **Send Test Alert** are never muted. The message groups the alerts under a readable name, such as `B1 · Billing currency matches the country` or `Failed webhook`, and says what each group means: the first paragraph of the check's docstring, after `Expected:`, or of the alert source's docstring. Keep that first paragraph in plain words, because operators read it.
+When a Raven post fails, or Raven is not configured, the alert goes to the email addresses once and the failure is written to the Error Log. Use **Send Test Alert** on the form to check the saved settings. The hourly digest keeps one Error Log row for each digest it sends, and it does not send the same digest again for `REPEAT_AFTER_HOURS`. A muted alert is left out of the digest and counted as `muted` in the `billing.alerts` metric. Muting applies only to the hourly billing digest (`run_operator_alerts`). Signup alerts, the setup lockout alert and **Send Test Alert** are never muted. The message groups the alerts under a readable name, such as `B1 · Billing currency matches the country` or `Failed webhook`, and says what each group means: the first paragraph of the check's docstring, after `Expected:`, or of the alert source's docstring. Keep that first paragraph in plain words, because operators read it.
 
 ### Lifecycle / install hooks
 - `after_install` / `after_migrate` / `before_tests` → `catalog.taxonomy_setup.ensure_catalog_masters` (idempotent seed of catalog masters, ADR 0007), `settings.ensure_snapshot_settings`, `platform.constraints.ensure_constraints`, `gateways.setup.ensure_gateway_records`, `navigation.ensure_workspace_sidebars` (also imports the workspace's Custom HTML Block). `after_install` and `before_tests` also run `settings.ensure_welcome_credit_amounts`.
@@ -687,6 +687,19 @@ get_team_caps resolves caps live (no per-team Trust Tier doctype — dropped)
 
 **Limits on the payment routes.** Top-up, invoice payment, checkout and their confirms allow 30 calls an hour; card setup, mandate setup, hosted card setup and the card and mandate confirms allow 20, to slow card testing. The two pilot polls, the checkout status poll and the hosted card setup poll, allow 300, because they run until the payer finishes the hosted page. Console routes count per user and pilot routes count per address. A pilot checkout returns the payer only to a site (or custom domain) on the credential's own server, over HTTPS. A pilot usage report cannot be negative, and an Authoritative total cannot go below the one already recorded. CSV exports prefix a cell that starts with `=`, `+`, `-`, `@`, tab or return with a quote. The `tests/e2e.py` endpoints answer only on a site whose own `site_config.json` sets `allow_tests`.
 
+**Wait after failed setups** (`payments/setup_lockout.py`). Card setup, mandate setup, hosted card setup and top-up creation call `setup_lockout.check(team, user)` before they reach the gateway. It raises `TooManyFailedSetups` with "Too many failed attempts. Try again in 28 minutes." The count is read from failure Billing Events: `Payment Method Setup Failed`, `Payment Method Failed` and `Top-up Order Declined`. Only a bank refusal counts (`decline.is_bank_refusal`, on the failure code or the decline code in the event payload). A closed bank window (`setup_intent_authentication_failure`, `authentication_abandoned`, `payment_cancelled`), a cancelled or expired setup, a timeout and our own refusals (`customer_mismatch`, mandate signature checks) do not count.
+
+| Failures in the run | Wait from the latest failure |
+|---|---|
+| 1 to 4 | None |
+| 5 and 6 | 10 minutes |
+| 7 | 30 minutes |
+| 8 | 2 hours |
+| 9 | 6 hours |
+| 10 and more | 24 hours |
+
+The team and the signed-in user are counted apart, and either one can lock. A user is the owner of the Payment Method or Top-up Order that failed, in any team. A pilot call is counted for the team only. The run ends after 7 days with no failure, when a method of the team is validated (for the user, a method the user added), and at the Billing Profile's `setup_lock_cleared_at`. The 10th failure of a run sends one operator alert through `notify_operators`. An operator clears the lock with **Clear Setup Lock** on the Billing Profile (`api/admin/teams.clear_setup_lock`). The clear also resets the count of every user for that team.
+
 **`api/dashboard/`** (customer, team-scoped)
 - `account.py`: whoami, get/save_billing_profile, get_billing_geo, get/save_billing_settings, get_collection_status, set_collection_mode, get_team_overview, get_trust_tier.
 - `catalog.py`: get_eligible_plans and provision/get_composed_config.
@@ -701,7 +714,7 @@ get_team_caps resolves caps live (no per-team Trust Tier doctype — dropped)
 **`api/admin/`** (Billing-Admin)
 - `catalog.py`: get_catalog, create_configured_plan, update_plan_rate, get_cluster/plan_consumption, get_conversion, get_trial_detail/get_trial_costs_detail.
 - `revenue.py`: summary, revenue_trend, cluster/team_breakdown, payment_analytics, overdue_aging, free_trial_costs, list_all_invoices.
-- `teams.py`: team_billing, adjust_team_credits, retention, metrics, list_teams, payment_failures, delinquent_teams.
+- `teams.py`: team_billing, adjust_team_credits, clear_setup_lock, retention, metrics, list_teams, payment_failures, delinquent_teams.
 - `gateways.py`: get_gateways, effective_routing, set_default_gateway.
 - `projection.py`: team and cohort projections, scenarios, scenario library, drift and batch comparison.
 - `rerating.py`: preview_rerating, apply_rerating, correct_rollup_terms.
@@ -733,6 +746,7 @@ get_team_caps resolves caps live (no per-team Trust Tier doctype — dropped)
 | Tier/cap wrong | `catalog.entitlements` (`get_team_caps`, `evaluate_tier`, per-currency Trust Tier Threshold) |
 | Provisioning failed | `central.resource_actions.submit_request` / `validate_purchase` (`require_payment_method_or_credit`, `reserved_rate`, spending limit), the Resource Action record, `composition.validate_composition` bounds |
 | Invoice Outstanding with no due date | `lifecycle._hold_for_billing_details` / `held_drafts`: is the Billing Profile incomplete? `platform.alerts.held_invoices` lists drafts held past `billing_details_grace_days` |
+| "Too many failed attempts" on card setup or top-up | `payments/setup_lockout.py`: read the team's failure Billing Events and the Billing Profile's `setup_lock_cleared_at`. **Clear Setup Lock** on the Billing Profile ends the wait |
 | Card declined repeatedly | `collection` (escalate don't repeat), `collection_mode.off_session_limit`, the dunning retry dates (`dunning.dunning_schedule`) |
 | A line's Project breakdown is missing/wrong | `generate._tag_projects`/`_resource_project_map` — is the resource's Subscription tagged, is its Project `enabled`? A disabled Project's lines carry no tag by design (§2.1); check `Invoice Line Item.project`/`project_title` on a real invoice, or the same fields on a forecast line |
 | Tagging a subscription into a Project is refused | `Subscription.validate_project` — same-team? Project `enabled`? `catalog.subscriptions.enforce_project_headroom` — would the tag push the Project's committed run-rate (`project_run_rate`) past its `spending_limit`? (blocks new tagging only, §2.1) |

@@ -38,6 +38,12 @@ The dialog can ask for a phone number. A phone number is required to set up auto
 
 The options in the dialog depend on your billing currency. Teams billed in INR can also see RuPay Card and UPI Autopay, which you authorise on your bank's page. To authorise automatic payments, Razorpay charges ₹1. Frappe Cloud refunds it after the authorisation succeeds. Amex and Diners cards cannot be charged automatically. Add credit instead.
 
+### When you see "Too many failed attempts"
+
+After 5 failed attempts in a row, you must wait before you try again. The message tells you how long, for example "Too many failed attempts. Try again in 28 minutes." The wait gets longer with each failure, to 24 hours after the 10th. Only a card or account that your bank declines, or a bank verification that fails, counts as a failed attempt. If you close the bank's window or cancel, you can try again at once. Failed top-ups count too.
+
+The count goes back to zero when you add a payment method, or after 7 days with no failed attempt. To try again sooner, contact support.
+
 ## Change the order
 
 1. On the **Methods** card, click the **⋯** menu on a payment method.
