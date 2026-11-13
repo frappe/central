@@ -8,7 +8,7 @@ import frappe
 
 from central.billing.payments import top_up_reminders
 from central.billing.revenue import credits
-from central.billing.revenue.invoicing import lifecycle
+from central.billing.revenue.invoicing import lifecycle, wallet_draw
 from central.billing.tests.accounting_fake import billing_team
 from central.billing.tests.test_top_up_reminders import _add_upi, _issued_invoice
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
@@ -60,6 +60,13 @@ class TopUpCreditTestCase(IntegrationTestCase):
 	def _due(self):
 		return top_up_reminders.get_top_up_due(TEAM, TODAY)
 
+	def _assert_it_settles(self, invoice, credit):
+		"""₹100 less leaves the bill to the card; the credit asked for pays all of it."""
+		self._top_up(credit - 100)
+		self.assertEqual(lifecycle._settle_with_credit(invoice)["applied"], 0)
+		self._top_up(100)
+		self.assertEqual(lifecycle._settle_with_credit(invoice)["status"], "Paid")
+
 
 class TestAnIssuedBillWithGst(TopUpCreditTestCase):
 	def test_purchased_credit_pays_net_and_its_gst(self):
@@ -99,12 +106,40 @@ class TestAnIssuedBillWithGst(TopUpCreditTestCase):
 			message,
 		)
 
-	def _assert_it_settles(self, invoice, credit):
-		"""₹100 less leaves the bill to the card; the credit asked for pays all of it."""
-		self._top_up(credit - 100)
-		self.assertEqual(lifecycle._settle_with_credit(invoice)["applied"], 0)
-		self._top_up(100)
-		self.assertEqual(lifecycle._settle_with_credit(invoice)["status"], "Paid")
+
+class TestTds(TopUpCreditTestCase):
+	def test_a_tds_bill_asks_for_the_gst_the_collector_draws(self):
+		"""With 677.97 TDS the collector draws 6,101.69 GST on 33,220.34 net, 18.37%, more
+		than the 18% a top-up carries. So the 5,000 top-up's 900 GST runs short, and the
+		credit must bring 5,201.69 of GST: 28,898.28, so 28,900. The ask is tight."""
+		invoice = self._issue()
+		frappe.db.set_value("Invoice", invoice, {"tds_amount": 677.97, "expected_collection": 39322.03})
+		self._top_up(5000)
+
+		due = self._due()
+
+		self.assertEqual((due["amount"], due["amount_with_gst"]), (28900, 34102))
+		self._assert_it_settles(invoice, due["amount"])
+
+
+class TestGstBalanceBelowTheLots(TopUpCreditTestCase):
+	def test_new_gst_pays_the_older_lot_first(self):
+		"""A 5,000 top-up that brought only 450 GST pays 5,450. The new credit must bring
+		the rest of the bill's GST, 5,651.69: 31,398.28, so 31,400. The ask is tight."""
+		invoice = self._issue()
+		credits.purchase(
+			TEAM,
+			5450,
+			"INR",
+			gateway_payment_id=frappe.generate_hash(length=8),
+			gateway="Stripe",
+			credit=5000,
+		)
+
+		due = self._due()
+
+		self.assertEqual(due["amount"], 31400)
+		self._assert_it_settles(invoice, due["amount"])
 
 
 class TestABillNotIssuedYet(TopUpCreditTestCase):
@@ -157,3 +192,17 @@ class TestRounding(TopUpCreditTestCase):
 
 		# 40,001.18 / 1.18 = 33,899.31, so 33,900.
 		self.assertEqual(self._due()["amount"], 33900)
+
+	def test_a_credit_short_by_a_paisa_steps_up(self):
+		"""Here the credit that pays is 87,400.003. Rounded to 87,400 it leaves 0.01 owed
+		after the collector rounds its draw, so the ask is 87,500."""
+		lots = [
+			frappe._dict(remaining=36982.96, paid_in=1),
+			frappe._dict(remaining=24218.48, paid_in=1),
+			frappe._dict(remaining=24978.49, paid_in=0),
+		]
+		ask = wallet_draw.TopUpAsk(lots, 191776.03, 20921.02, 11016.26, 0.18)
+
+		self.assertEqual(ask.credit(100), 87500)
+		self.assertFalse(ask.is_paid_with(87400))
+		self.assertTrue(ask.is_paid_with(87500))

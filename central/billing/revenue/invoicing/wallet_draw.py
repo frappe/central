@@ -6,6 +6,8 @@ The collector spends this draw, and the top-up ask reads it to know how much pur
 credit a bill still needs.
 """
 
+import math
+
 import frappe
 
 # What is left owed below this is treated as paid.
@@ -44,16 +46,59 @@ def plan_draw(lots: list, collectable: float, gst_due: float, gst_left: float) -
 	)
 
 
+class TopUpAsk:
+	"""The least purchased credit, in whole steps, that makes the wallet pay all of a bill.
+
+	The cover formula gives a credit that always pays (one step more when the 2-dp rounding
+	of the draw misses by 0.01). It can be more than needed: when the GST left is short,
+	older top-ups pay less and promotional credit more. So the steps below it are searched
+	with the collector's own draw."""
+
+	def __init__(self, lots: list, collectable: float, gst_due: float, gst_left: float, top_up_rate: float):
+		self.lots, self.collectable, self.gst_due = lots, collectable, gst_due
+		self.gst_left, self.top_up_rate = gst_left, top_up_rate
+
+	def credit(self, step: int) -> int:
+		draw = plan_draw(self.lots, self.collectable, self.gst_due, self.gst_left)
+		cover = credit_to_cover(draw, self.collectable, self.gst_due, self.top_up_rate)
+		pays = math.ceil(frappe.utils.flt(cover, 2) / step)
+		if not pays:
+			return 0
+		if not self.is_paid_with(pays * step):
+			pays += 1
+		short = 0
+		while pays - short > 1:
+			mid = (pays + short) // 2
+			pays, short = (mid, short) if self.is_paid_with(mid * step) else (pays, mid)
+		return pays * step
+
+	def is_paid_with(self, credit: float) -> bool:
+		"""Whether the wallet pays the bill once `credit`, with its GST, is added last."""
+		top_up = frappe._dict(remaining=credit, paid_in=1)
+		gst_left = self.gst_left + frappe.utils.flt(credit * self.top_up_rate, 2)
+		draw = plan_draw([*self.lots, top_up], self.collectable, self.gst_due, gst_left)
+		return is_paid_by(draw, self.collectable)
+
+
 def credit_to_cover(draw: frappe._dict, collectable: float, gst_due: float, top_up_rate: float) -> float:
 	"""Purchased credit that, spent after the wallet in `draw`, pays what it left owed.
 
-	New credit never expires and is the newest, so it is spent last. With GST on the bill it
-	pays the net, and its own GST (`top_up_rate`) with what GST is spare pays the GST."""
-	owed = draw.owed
-	if frappe.utils.flt(owed, 2) <= 0:
+	New credit never expires, so it is spent last. Purchased credit pays the bill's net and
+	top-up GST pays its GST, so all purchased credit together must reach the net of what it
+	pays, and all top-up GST the GST of that. Older lots use the new GST first."""
+	if frappe.utils.flt(draw.owed, 2) <= 0:
 		return 0.0
-	gst_per_net = get_gst_per_net(collectable, gst_due)
-	return max(owed / (1 + gst_per_net), (owed - draw.gst_spare) / (1 + top_up_rate))
+	gross = draw.owed + draw.advance + draw.gst
+	net = gross / (1 + get_gst_per_net(collectable, gst_due))
+	needed = net - draw.advance
+	if top_up_rate:
+		needed = max(needed, (gross - net - draw.gst - draw.gst_spare) / top_up_rate)
+	return needed
+
+
+def is_paid_by(draw: frappe._dict, collectable: float) -> bool:
+	"""Whether `draw` pays all of `collectable`, as the collector rounds it."""
+	return draw.wallet > 0 and frappe.utils.flt(collectable - draw.wallet - draw.gst, 2) <= 0
 
 
 def gst_still_due(doc, due: float) -> float:

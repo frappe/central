@@ -10,8 +10,6 @@ wallet leaves; after, the whole bill unless the wallet covers it. The ask is the
 credit that makes the wallet pay the whole bill. Nothing here moves money or changes the limit.
 """
 
-import math
-
 import frappe
 
 from central.billing.doctype.billing_profile.billing_profile import DEFAULT_PAYMENT_DAY, get_payment_date
@@ -87,10 +85,12 @@ def get_shortfall_due(team: str, bill: float, gst: float, date, invoice: str | N
 
 	has_method = bool(collection.get_methods_left(team, invoice))
 	limit = collection_mode.off_session_limit(team, invoice) if has_method else 0.0
-	draw = get_draw_on(team, bill, gst, date)
+	lots, gst_left = get_wallet_on(team, date)
+	draw = wallet_draw.plan_draw(lots, bill, gst, gst_left)
 	if collection_mode.is_within_limit(limit, get_card_share(bill, draw.owed, invoice)):
 		return None
-	credit = get_credit_to_add(team, draw, bill, gst)
+	ask = wallet_draw.TopUpAsk(lots, bill, gst, gst_left, credits.top_up_gst_rate(team))
+	credit = ask.credit(ROUND_TO)
 	return {
 		"amount": credit,
 		"amount_with_gst": frappe.utils.flt(credit + credits.top_up_gst(team, credit), 2),
@@ -111,22 +111,16 @@ def get_card_share(bill: float, owed: float, invoice: str | None = None) -> floa
 	return frappe.utils.flt(bill, 2) if invoice else frappe.utils.flt(owed, 2)
 
 
-def get_draw_on(team: str, bill: float, gst: float, date) -> frappe._dict:
-	"""What the wallet would pay of `bill` on `date`, as the collector draws it. Promotional
-	credit that expires by then is left out."""
+def get_wallet_on(team: str, date) -> tuple[list, float]:
+	"""The wallet's credit lots and top-up GST balance as the collector reads them on `date`.
+	Promotional credit that expires by then is left out."""
 	on = frappe.utils.getdate(date)
 	lots = [
 		lot
 		for lot in credits.credit_lots(team, "INR")
 		if not lot.expires_on or frappe.utils.getdate(lot.expires_on) > on
 	]
-	return wallet_draw.plan_draw(lots, bill, gst, credits.advance_gst_balance(team, "INR"))
-
-
-def get_credit_to_add(team: str, draw: frappe._dict, bill: float, gst: float) -> int:
-	"""Purchased credit that pays what the wallet leaves of `bill`, rounded up to ₹100."""
-	needed = wallet_draw.credit_to_cover(draw, bill, gst, credits.top_up_gst_rate(team))
-	return math.ceil(frappe.utils.flt(needed, 2) / ROUND_TO) * ROUND_TO
+	return lots, credits.advance_gst_balance(team, "INR")
 
 
 def send_top_up_notice(team: str, due: dict) -> dict:

@@ -193,7 +193,7 @@ def _settle_with_credit(invoice: str) -> dict:
 		return {"invoice": invoice, "applied": 0}
 
 	draw = _draw_wallet(doc, due, wallet_draw.gst_still_due(doc, due))
-	if draw.wallet <= 0 or frappe.utils.flt(due - draw.wallet - draw.gst, 2) > 0:
+	if not wallet_draw.is_paid_by(draw, due):
 		return {"invoice": invoice, "applied": 0}
 
 	_apply_draw(doc, draw)
