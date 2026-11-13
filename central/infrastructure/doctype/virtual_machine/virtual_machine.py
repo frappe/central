@@ -43,6 +43,9 @@ class VirtualMachine(Document):
 	if TYPE_CHECKING:
 		from frappe.types import DF
 
+		from central.infrastructure.doctype.server_firewall_ruleset.server_firewall_ruleset import (
+			ServerFirewallRuleset,
+		)
 		from central.infrastructure.doctype.server_ssh_key.server_ssh_key import ServerSSHKey
 
 		admin_domain_diagnostic: DF.Code | None
@@ -55,6 +58,7 @@ class VirtualMachine(Document):
 		disk_gigabytes: DF.Float
 		documentation_url: DF.Data | None
 		firewall_rules: DF.JSON | None
+		firewall_rulesets: DF.Table[ServerFirewallRuleset]
 		frappe_version: DF.Data | None
 		gateway_url: DF.Data | None
 		has_ipv4_internet: DF.Check
@@ -525,7 +529,44 @@ class VirtualMachine(Document):
 		from central.integrations.servers import update_firewall
 
 		self.require_live()
+		if self.firewall_rulesets and (change.inbound is not None or change.outbound is not None):
+			frappe.throw(
+				_(
+					"This server uses a firewall ruleset. Edit the ruleset, or detach it to change the rules here."
+				)
+			)
+
 		update_firewall(self, change)
+
+	def set_firewall_rulesets(self, rulesets: list[str]) -> None:
+		"""Use these team rulesets together and turn the firewall on. With none, keep the rules
+		as the server's own."""
+		from central.infrastructure.doctype.firewall_ruleset.firewall_ruleset import get_merged_firewall
+		from central.integrations.servers import update_firewall
+
+		self.require_live()
+		rulesets = list(dict.fromkeys(rulesets))
+		owned = frappe.get_all(
+			"Firewall Ruleset", filters={"team": self.team, "name": ["in", rulesets]}, pluck="name"
+		)
+		if len(owned) != len(rulesets):
+			frappe.throw(_("A ruleset does not belong to the team."), frappe.PermissionError)
+
+		if rulesets:
+			update_firewall(self, get_merged_firewall(rulesets).model_copy(update={"enabled": True}))
+			# The region's report was saved on a fresh copy of this server.
+			self.reload()
+
+		self.set("firewall_rulesets", [{"firewall_ruleset": name} for name in rulesets])
+		# Customers cannot write a Virtual Machine; the route checks server:network.
+		self.save(ignore_permissions=True)
+
+	def sync_firewall_rulesets(self) -> None:
+		"""Send the rules of this server's rulesets to the region again, after one of them changed."""
+		from central.infrastructure.doctype.firewall_ruleset.firewall_ruleset import get_merged_firewall
+		from central.integrations.servers import update_firewall
+
+		update_firewall(self, get_merged_firewall([row.firewall_ruleset for row in self.firewall_rulesets]))
 
 	def require_live(self) -> None:
 		if self.status == "Terminated":

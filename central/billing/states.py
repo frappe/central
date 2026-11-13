@@ -102,7 +102,8 @@ PAYMENT_METHOD = StateMachine(
 	"Payment Method",
 	"status",
 	{
-		"Pending Validation": {"Active", "Failed", "Cancelled"},
+		# Expired: a setup the customer did not finish within a day.
+		"Pending Validation": {"Active", "Failed", "Cancelled", "Expired"},
 		"Active": {"Paused", "Cancelled", "Expired", "Failed"},
 		"Paused": {"Active", "Cancelled", "Expired"},
 		"Failed": set(),  # terminal — a fresh attempt is a new method

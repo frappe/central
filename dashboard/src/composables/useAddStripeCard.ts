@@ -180,8 +180,9 @@ export function useAddStripeCard({
 			if (confirm.error) throw confirm.error
 			const res = confirm.data
 			if (!res || res.status !== 'Active') {
+				// A failed or expired setup carries the server's reason.
 				error.value =
-					res?.message ?? "Couldn't verify that card. Try a different one"
+					res?.message ?? __("Couldn't verify that card. Try a different one")
 				return
 			}
 			successToast('Card added')

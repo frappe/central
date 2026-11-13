@@ -642,6 +642,29 @@ class StripeAdapter(GatewayAdapter):
 			return _expire_session(order_id, self._options())
 		return _cancel_intent(stripe.PaymentIntent, order_id, "payment_intent", self._options())
 
+	def read_finished_setup(self, setup_reference: str) -> dict:
+		"""The card a SetupIntent or setup Checkout Session saved, or `{}`. Read only.
+		A setup Stripe no longer has saved nothing."""
+		with _stripe_errors():
+			try:
+				card = self.read_saved_card(setup_reference)
+			except stripe.error.InvalidRequestError as e:
+				if not _is_missing_object(e):
+					raise
+				return {}
+		return card if card.get("payment_method") else {}
+
+	def remove_saved_method(self, method_id: str, customer_reference: str | None = None) -> None:
+		"""Detach the card from its customer. A mandate on the card ends with it. A card
+		Stripe no longer has, or one already detached, counts as removed."""
+		self._configure()
+		with _stripe_errors():
+			try:
+				stripe.PaymentMethod.detach(method_id, **self._options())
+			except stripe.error.InvalidRequestError as e:
+				if not (_is_missing_object(e) or _is_not_attached(e)):
+					raise
+
 	def create_customer(self, team) -> str:
 		self._configure()
 		# Team.owner_user is a Link to User, whose name IS the email address.
@@ -742,6 +765,16 @@ def _expire_session(session_id: str, options: dict) -> str:
 			return _to_dict(stripe.checkout.Session.expire(session_id, **options)).get("status")
 		except stripe.error.InvalidRequestError:
 			return "not_open"
+
+
+def _is_missing_object(error: stripe.error.InvalidRequestError) -> bool:
+	"""True when Stripe has no object with the id asked for."""
+	return getattr(error, "code", None) == "resource_missing" or getattr(error, "http_status", None) == 404
+
+
+def _is_not_attached(error: stripe.error.InvalidRequestError) -> bool:
+	"""True when Stripe refuses a detach because the card is attached to no customer."""
+	return "not attached" in str(getattr(error, "user_message", None) or error).lower()
 
 
 @contextmanager

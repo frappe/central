@@ -70,6 +70,12 @@ export const API = {
 	setRescueMode: 'central.api.servers.set_rescue_mode',
 	setTerminationProtection: 'central.api.servers.set_termination_protection',
 	updateServerFirewall: 'central.api.servers.update_server_firewall',
+	listFirewallRulesets: 'central.api.firewall_rulesets.list_firewall_rulesets',
+	saveFirewallRuleset: 'central.api.firewall_rulesets.save_firewall_ruleset',
+	deleteFirewallRuleset:
+		'central.api.firewall_rulesets.delete_firewall_ruleset',
+	setServerFirewallRulesets:
+		'central.api.firewall_rulesets.set_server_firewall_rulesets',
 	setServerPublicIp: 'central.api.servers.set_server_public_ip',
 	setServerIpv4Internet: 'central.api.servers.set_server_ipv4_internet',
 	setServerWireguardAccess: 'central.api.servers.set_server_wireguard_access',

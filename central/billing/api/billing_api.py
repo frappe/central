@@ -23,7 +23,7 @@ from central.billing.api.dashboard._shared import (
 	_require_billing_setup,
 	_team_currency,
 )
-from central.billing.doctype.payment_method.payment_method import held_method_filters
+from central.billing.doctype.payment_method.payment_method import held_method_filters, without_expired_setups
 from central.billing.gateways import capabilities
 from central.infrastructure.doctype.resource_action.resource_action import PENDING_STATES
 
@@ -237,7 +237,7 @@ def _payment_method_rows(team: str) -> list[dict]:
 	rows = frappe.get_all(
 		"Payment Method",
 		{"team": team},
-		["name", "method_type", "display_label", "is_default", "status"],
+		["name", "method_type", "display_label", "is_default", "status", "validated_at"],
 		or_filters=held_method_filters(),
 		order_by="is_default desc, priority asc, creation asc",
 	)
@@ -249,7 +249,7 @@ def _payment_method_rows(team: str) -> list[dict]:
 			"is_default": bool(r.is_default),
 			"status": r.status,
 		}
-		for r in rows
+		for r in without_expired_setups(rows)
 	]
 
 

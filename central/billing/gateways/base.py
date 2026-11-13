@@ -350,6 +350,16 @@ class GatewayAdapter(ABC):
 		the bank refused gives only `setup_error`, with its failure_code and decline_code."""
 		raise GatewayUnsupported(f"{type(self).__name__} does not support read_saved_card")
 
+	def read_finished_setup(self, setup_reference: str) -> dict:
+		"""What a finished setup saved, read without changing anything, or `{}` while it is
+		not finished. Keys: payment_method (None when the gateway makes it only on
+		confirm), customer, and `payment` when the setup took an authorisation payment."""
+		raise GatewayUnsupported(f"{type(self).__name__} does not support read_finished_setup")
+
+	def remove_saved_method(self, method_id: str, customer_reference: str | None = None) -> None:
+		"""Remove a saved card or token at the gateway, so it can never be charged."""
+		raise GatewayUnsupported(f"{type(self).__name__} does not support remove_saved_method")
+
 	def verify_payment(self, payment_id: str) -> VerifiedPayment:
 		"""Read one payment back from the gateway (server-side)."""
 		raise GatewayUnsupported(f"{type(self).__name__} does not support verify_payment")

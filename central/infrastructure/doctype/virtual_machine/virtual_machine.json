@@ -38,6 +38,7 @@
   "gateway_url",
   "has_public_ipv6",
   "is_firewall_enabled",
+  "firewall_rulesets",
   "firewall_rules",
   "has_ipv4_internet",
   "has_wireguard_access",
@@ -286,6 +287,14 @@
    "read_only": 1
   },
   {
+   "description": "The team rulesets this server uses. Their rules together are the firewall. Empty when the server has its own rules.",
+   "fieldname": "firewall_rulesets",
+   "fieldtype": "Table",
+   "label": "Firewall Rulesets",
+   "options": "Server Firewall Ruleset",
+   "read_only": 1
+  },
+  {
    "description": "The customer's firewall rules, as Atlas last reported, without the rules Central adds.",
    "fieldname": "firewall_rules",
    "fieldtype": "JSON",
@@ -413,7 +422,7 @@
    "link_fieldname": "server"
   }
  ],
- "modified": "2026-11-13 11:12:18.707390",
+ "modified": "2026-11-13 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Infrastructure",
  "name": "Virtual Machine",

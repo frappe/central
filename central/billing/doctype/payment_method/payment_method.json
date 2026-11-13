@@ -23,6 +23,7 @@
   "gateway_mandate_id",
   "instrument_fingerprint",
   "setup_reference",
+  "setup_released_at",
   "setup_intent_id",
   "display_label",
   "section_break_card",
@@ -145,6 +146,15 @@
    "fieldtype": "Data",
    "label": "Setup Reference",
    "description": "The gateway setup handle: the SetupIntent of an in-app setup, or the Checkout Session of a hosted setup."
+  },
+  {
+   "depends_on": "eval:doc.setup_released_at",
+   "description": "When what an unfinished setup saved at the gateway was given back: the authorisation refunded and the card or token removed.",
+   "fieldname": "setup_released_at",
+   "fieldtype": "Datetime",
+   "label": "Setup Released At",
+   "no_copy": 1,
+   "read_only": 1
   },
   {
    "fieldname": "setup_intent_id",

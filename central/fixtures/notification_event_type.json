@@ -522,6 +522,24 @@
   "reportable_by": "None"
  },
  {
+  "action_label": "Add payment method",
+  "action_route": "/billing/payments",
+  "category": "Billing",
+  "create_in_app": 1,
+  "direct_recipients": "None",
+  "docstatus": 0,
+  "doctype": "Notification Event Type",
+  "event_type": "payment_method_setup_expired",
+  "in_app_body": "Your card or UPI setup was not finished, so it was not saved. Add it again from Billing.",
+  "in_app_title": "Payment method not saved",
+  "modified": "2026-11-12 00:00:00",
+  "name": "payment_method_setup_expired",
+  "required_cap": "billing:view",
+  "severity": "Warning",
+  "is_critical": 0,
+  "reportable_by": "None"
+ },
+ {
   "action_label": "Add billing details",
   "action_route": "/billing/payments",
   "category": "Billing",

@@ -7,7 +7,7 @@ from unittest.mock import patch
 import frappe
 import stripe
 
-from central.billing.gateways.base import GatewayTimeout, GatewayUnsupported
+from central.billing.gateways.base import GatewayError, GatewayTimeout, GatewayUnsupported
 from central.billing.gateways.stripe_adapter import StripeAdapter
 from central.billing.tests.gateway_contract import GatewayAdapterContract
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
@@ -324,6 +324,136 @@ class TestStripeAdapter(GatewayAdapterContract, IntegrationTestCase):
 		self.assertEqual(
 			out, {"setup_error": {"failure_code": "card_declined", "decline_code": "generic_decline"}}
 		)
+
+	def test_an_unfinished_or_refused_setup_reads_as_not_finished(self):
+		adapter = self.make_adapter()
+		for status in ("requires_payment_method", "processing"):
+			intent = stripe.SetupIntent.construct_from({"id": "seti_x", "status": status}, "sk_test")
+			with patch.object(stripe.SetupIntent, "retrieve", return_value=intent):
+				self.assertEqual(adapter.read_finished_setup("seti_x"), {})
+
+	def test_a_finished_setup_reads_back_its_card(self):
+		adapter = self.make_adapter()
+		intent = stripe.SetupIntent.construct_from(
+			{"id": "seti_x", "status": "succeeded", "payment_method": "pm_x", "customer": "cus_x"}, "sk_test"
+		)
+		card = stripe.PaymentMethod.construct_from({"id": "pm_x", "card": {"last4": "4242"}}, "sk_test")
+		with (
+			patch.object(stripe.SetupIntent, "retrieve", return_value=intent),
+			patch.object(stripe.PaymentMethod, "retrieve", return_value=card),
+		):
+			saved = adapter.read_finished_setup("seti_x")
+		self.assertEqual((saved["payment_method"], saved["customer"]), ("pm_x", "cus_x"))
+
+	def test_a_failed_setup_read_is_a_gateway_error(self):
+		from central.billing.gateways.base import GatewayTimeout
+
+		adapter = self.make_adapter()
+		with patch.object(
+			stripe.SetupIntent, "retrieve", side_effect=stripe.error.APIConnectionError("down")
+		):
+			with self.assertRaises(GatewayTimeout):
+				adapter.read_finished_setup("seti_x")
+
+	def test_a_setup_stripe_no_longer_has_reads_as_not_finished(self):
+		adapter = self.make_adapter()
+		missing = stripe.error.InvalidRequestError("No such setupintent", "intent", code="resource_missing")
+		with patch.object(stripe.SetupIntent, "retrieve", side_effect=missing):
+			self.assertEqual(adapter.read_finished_setup("seti_gone"), {})
+
+	def test_any_other_refused_setup_read_is_a_gateway_error(self):
+		from central.billing.gateways.base import GatewayError
+
+		adapter = self.make_adapter()
+		refused = stripe.error.InvalidRequestError("Invalid id", "intent", code="parameter_invalid_empty")
+		with patch.object(stripe.SetupIntent, "retrieve", side_effect=refused):
+			with self.assertRaises(GatewayError):
+				adapter.read_finished_setup("seti_x")
+
+	def test_removing_a_saved_card_detaches_it(self):
+		adapter = self.make_adapter()
+		with patch.object(stripe.PaymentMethod, "detach") as detach:
+			adapter.remove_saved_method("pm_x", customer_reference="cus_x")
+		self.assertEqual(detach.call_args.args, ("pm_x",))
+
+	def test_a_card_already_detached_or_gone_counts_as_removed(self):
+		adapter = self.make_adapter()
+		for error in (
+			stripe.error.InvalidRequestError("No such PaymentMethod: 'pm_x'", "id", code="resource_missing"),
+			stripe.error.InvalidRequestError(
+				"The payment method you provided is not attached to a customer so detachment is impossible.",
+				None,
+			),
+		):
+			with patch.object(stripe.PaymentMethod, "detach", side_effect=error):
+				adapter.remove_saved_method("pm_x", customer_reference="cus_x")
+
+	def test_another_refusal_to_detach_a_card_raises(self):
+		adapter = self.make_adapter()
+		error = stripe.error.InvalidRequestError("Invalid API version", None)
+		with patch.object(stripe.PaymentMethod, "detach", side_effect=error):
+			with self.assertRaises(GatewayError):
+				adapter.remove_saved_method("pm_x", customer_reference="cus_x")
+
+
+class FakeStripeHttp(stripe.HTTPClient):
+	"""Stands in for the stripe client's HTTP layer and records each request."""
+
+	name = "fake"
+
+	def __init__(self, body: dict):
+		super().__init__()
+		self.body = body
+		self.requests = []
+
+	def request(self, method, url, headers, post_data=None, **kwargs):
+		self.requests.append({"method": method, "url": url, "headers": dict(headers)})
+		return frappe.as_json(self.body), 200, {}
+
+	def close(self):
+		pass
+
+
+class TestStripeRealClient(IntegrationTestCase):
+	"""The real stripe client builds each request; only its HTTP layer is stubbed."""
+
+	def setUp(self):
+		self.adapter = StripeAdapter(make_stripe_gateway())
+
+	def send(self, body: dict, call) -> dict:
+		http = FakeStripeHttp(body)
+		with patch.object(stripe, "default_http_client", http):
+			call()
+		self.assertEqual(len(http.requests), 1)
+		return http.requests[0]
+
+	def assert_signed(self, request: dict):
+		from central.billing.gateways.stripe_adapter import STRIPE_API_VERSION
+
+		# assertTrue, so a failure never prints a key from the site config.
+		key = self.adapter.get_credential("api_secret")
+		self.assertTrue(request["headers"]["Authorization"] == f"Bearer {key}")
+		self.assertEqual(request["headers"]["Stripe-Version"], STRIPE_API_VERSION)
+
+	def test_removing_a_saved_card_posts_the_detach(self):
+		request = self.send(
+			{"id": "pm_x", "object": "payment_method"},
+			lambda: self.adapter.remove_saved_method("pm_x", customer_reference="cus_x"),
+		)
+
+		self.assertEqual(request["method"], "post")
+		self.assertTrue(request["url"].endswith("/v1/payment_methods/pm_x/detach"))
+		self.assert_signed(request)
+
+	def test_reading_a_setup_gets_the_setup_intent(self):
+		request = self.send(
+			{"id": "seti_x", "object": "setup_intent", "status": "requires_payment_method"},
+			lambda: self.assertEqual(self.adapter.read_finished_setup("seti_x"), {}),
+		)
+
+		self.assertEqual(request["method"], "get")
+		self.assertTrue(request["url"].endswith("/v1/setup_intents/seti_x"))
+		self.assert_signed(request)
 
 
 class TestIndiaCardMandate(IntegrationTestCase):

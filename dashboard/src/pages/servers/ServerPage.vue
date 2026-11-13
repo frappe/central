@@ -369,13 +369,6 @@ watch(
 					:server="server"
 					:overview="details"
 					:can-manage-network="!!actions.network"
-					:servers="
-						servers.filter(
-							(row) =>
-								row.resource_id !== server?.resource_id &&
-								row.status !== 'Terminated',
-						)
-					"
 					class="mt-6"
 					@changed="reloadOverview"
 				/>

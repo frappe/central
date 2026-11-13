@@ -6,8 +6,9 @@ from central.server_models import FirewallChange, FirewallRule
 
 ANYWHERE = ["0.0.0.0/0", "::/0"]
 
-# The region's private network. The web console, the regional proxy and the team's other
-# servers reach a machine through it, and an enabled firewall filters it too.
+# The region's private network. The regional proxy and the team's other servers reach a
+# machine through it, and an enabled firewall filters it too. The web console does not use
+# it: Atlas opens the console inside the machine's own network namespace.
 PRIVATE_NETWORK = "fdaa::/16"
 
 # Every new server starts with these rules. They are ordinary rules: the customer sees them
