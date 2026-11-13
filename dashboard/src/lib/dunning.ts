@@ -25,7 +25,7 @@ export function getDunningSteps(
 				label: __('Suspended since'),
 				date: payment.suspended_since,
 				tone: 'danger',
-				hint: 'Your servers are stopped. Pay the bill to start them again.',
+				hint: __('Your servers are stopped. Pay the bill to start them again.'),
 			},
 		]
 	}
@@ -36,7 +36,7 @@ export function getDunningSteps(
 			label: __('Payment in progress'),
 			date: payment.payment_in_progress_since,
 			tone: 'neutral',
-			hint: 'We are waiting for your bank to confirm this payment.',
+			hint: __('We are waiting for your bank to confirm this payment.'),
 		})
 	}
 	if (payment?.next_retry_on) {
@@ -44,7 +44,7 @@ export function getDunningSteps(
 			label: __('Next retry'),
 			date: payment.next_retry_on,
 			tone: 'warning',
-			hint: 'We will try to charge your payment method again on this date.',
+			hint: __('We will try to charge your payment method again on this date.'),
 		})
 	}
 	if (payment?.suspends_on) {
@@ -53,8 +53,10 @@ export function getDunningSteps(
 			date: payment.suspends_on,
 			tone: 'danger',
 			hint: payment.payment_in_progress_since
-				? 'Your servers stop on this date if the payment fails. Add credit to your wallet to avoid this. If the payment also goes through, we will refund it.'
-				: 'Your servers stop on this date if the bill stays unpaid.',
+				? __(
+						'Your servers stop on this date if the payment fails. Add credit to your wallet to avoid this. If the payment also goes through, we will refund it.',
+					)
+				: __('Your servers stop on this date if the bill stays unpaid.'),
 		})
 	}
 

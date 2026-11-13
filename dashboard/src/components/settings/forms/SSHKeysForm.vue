@@ -67,11 +67,10 @@ const retrySelected = async (key: TeamSSHKey): Promise<void> => {
 }
 
 const deleteSelected = async (key: TeamSSHKey): Promise<void> => {
+	const keyName = [key.title]
 	if (
 		!confirm(
-			__('Delete {0}? It must first be removed from every server.', [
-				key.title,
-			]),
+			__('Delete {0}? It must first be removed from every server.', keyName),
 		)
 	)
 		return

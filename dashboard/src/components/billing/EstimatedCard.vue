@@ -46,11 +46,12 @@ const cycleLabel = computed(() => {
 
 	const start = dayjs(fc.value.period_start)
 
-	return __('{0} cycle · {1} – {2}', [
+	const range = [
 		start.format('MMMM'),
 		start.format('D'),
 		dayjs(fc.value.period_end).format('D MMM'),
-	])
+	]
+	return __('{0} cycle · {1} – {2}', range)
 })
 
 const limit = computed(() => Number(tierCurrent.value?.max_spend ?? 0))
@@ -152,7 +153,10 @@ async function submitAlert(): Promise<void> {
 		dialogOpen.value = false
 		settings.reload()
 	} catch (e) {
-		formError.value = getErrorMessage(e, "The budget alert couldn't be saved.")
+		formError.value = getErrorMessage(
+			e,
+			__("The budget alert couldn't be saved."),
+		)
 	}
 }
 
