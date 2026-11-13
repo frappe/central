@@ -64,6 +64,8 @@ const chargeStep = computed(
 			hint: '',
 		},
 )
+
+const paymentScheduleLoadErrorTitle = __("The payment schedule couldn't load")
 </script>
 
 <template>
@@ -78,7 +80,7 @@ const chargeStep = computed(
 			<div v-if="loadFailed" class="p-4">
 				<Alert
 					theme="red"
-					:title="__('The payment schedule couldn\'t load')"
+					:title="paymentScheduleLoadErrorTitle"
 					:description="getErrorMessage(schedule.error, 'Try again in a moment.')"
 					:primary-action="{ label: __('Retry'), onClick: () => schedule.reload() }"
 				/>

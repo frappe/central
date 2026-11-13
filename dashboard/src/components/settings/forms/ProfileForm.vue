@@ -61,6 +61,9 @@ async function onPhotoChange(fileUrl: string | null): Promise<void> {
 		photoError.value = getErrorMessage(e, "Your photo couldn't be updated.")
 	}
 }
+
+const updatePhotoErrorTitle = __("Couldn't update your photo")
+const updateNameErrorTitle = __("Couldn't update your name")
 </script>
 
 <template>
@@ -70,7 +73,7 @@ async function onPhotoChange(fileUrl: string | null): Promise<void> {
 				v-if="photoError"
 				class="mb-3"
 				theme="red"
-				:title="__('Couldn\'t update your photo')"
+				:title="updatePhotoErrorTitle"
 				:description="photoError"
 			/>
 			<ImageUpload
@@ -91,7 +94,7 @@ async function onPhotoChange(fileUrl: string | null): Promise<void> {
 			v-if="nameError"
 			class="mb-3"
 			theme="red"
-			:title="__('Couldn\'t update your name')"
+			:title="updateNameErrorTitle"
 			:description="nameError"
 		/>
 		<div class="grid grid-cols-1 gap-6 sm:grid-cols-2">

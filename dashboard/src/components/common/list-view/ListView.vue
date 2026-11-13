@@ -246,6 +246,9 @@ const clearFilters = (): void => {
 const showListControls = computed(
 	() => props.searchable || props.filters.length > 0,
 )
+
+const refreshListErrorTitle = __("Couldn't refresh the list")
+const loadListErrorTitle = __("Couldn't load this list")
 </script>
 
 <template>
@@ -324,7 +327,7 @@ const showListControls = computed(
 		<Alert
 			v-if="error && hasRows"
 			theme="red"
-			:title="__('Couldn\'t refresh the list')"
+			:title="refreshListErrorTitle"
 			:description="error"
 			:primary-action="{ label: __('Retry'), onClick: () => $emit('retry') }"
 			class="mb-2"
@@ -426,7 +429,7 @@ const showListControls = computed(
 		<ListViewState
 			v-else-if="stateKind === 'error'"
 			kind="error"
-			:title="__('Couldn\'t load this list')"
+			:title="loadListErrorTitle"
 			:description="error ?? undefined"
 			@retry="$emit('retry')"
 		/>

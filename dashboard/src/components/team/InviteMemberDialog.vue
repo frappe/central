@@ -7,6 +7,7 @@ import { useBulkInvite } from '@/composables/useBulkInvite'
 import { useRegions } from '@/composables/useRegions'
 import { teamParams } from '@/composables/useTeamScope'
 import { getResourceOptions } from '@/lib/resourceScope'
+import { __ } from '@/lib/translate'
 import type { TeamRegistry } from '@/types/api'
 
 const props = defineProps<{ open: boolean }>()
@@ -66,6 +67,9 @@ async function send(): Promise<void> {
 	if (sent) emit('invited')
 	if (!failed) open.value = false
 }
+
+const sendInvitationsErrorTitle = __("Couldn't send the invitations")
+const loadRolesErrorTitle = __("Couldn't load the roles")
 </script>
 
 <template>
@@ -81,13 +85,13 @@ async function send(): Promise<void> {
 				v-if="requestError"
 				class="mb-4"
 				theme="red"
-				:title="__('Couldn\'t send the invitations')"
+				:title="sendInvitationsErrorTitle"
 				:description="requestError"
 			/>
 			<Alert
 				v-if="rolesError"
 				theme="red"
-				:title="__('Couldn\'t load the roles')"
+				:title="loadRolesErrorTitle"
 				:description="rolesError"
 			/>
 			<LoadingText v-else-if="rolesLoading && !roleOptions.length" :lines="2" />

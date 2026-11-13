@@ -8,6 +8,7 @@ import { useCapabilities } from '@/composables/useCapabilities'
 import { useSession } from '@/composables/useSession'
 import { settingsOpen } from '@/composables/useSettings'
 import { useTeamSettings } from '@/composables/useTeamSettings'
+import { __ } from '@/lib/translate'
 
 const router = useRouter()
 const { activeTeam, activeTeamLabel, activeTeamLogo } = useSession()
@@ -40,6 +41,8 @@ async function onArchive(): Promise<void> {
 		router.push('/servers')
 	}
 }
+
+const updateTeamErrorTitle = __("Couldn't update the team")
 </script>
 
 <template>
@@ -48,7 +51,7 @@ async function onArchive(): Promise<void> {
 			<Alert
 				v-if="error && !archiveTarget"
 				theme="red"
-				:title="__('Couldn\'t update the team')"
+				:title="updateTeamErrorTitle"
 				:description="error"
 			/>
 			<ImageUpload

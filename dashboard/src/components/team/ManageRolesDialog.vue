@@ -149,6 +149,8 @@ const dialogOptions = computed(() => ({
 		},
 	],
 }))
+
+const updateAccessErrorTitle = __("Couldn't update access")
 </script>
 
 <template>
@@ -163,7 +165,7 @@ const dialogOptions = computed(() => ({
 				<Alert
 					v-if="formError"
 					theme="red"
-					:title="__('Couldn\'t update access')"
+					:title="updateAccessErrorTitle"
 					:description="formError"
 				/>
 				<div class="flex items-center gap-3">

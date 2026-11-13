@@ -6,6 +6,7 @@ import SupportSearchInput from '@/components/support/SupportSearchInput.vue'
 import type { SupportTicket } from '@/composables/useSupport'
 import { timeAgo } from '@/lib/datetime'
 import { getErrorMessage } from '@/lib/feedback'
+import { __ } from '@/lib/translate'
 
 interface Props {
 	tickets: SupportTicket[] | null
@@ -28,6 +29,8 @@ const rows = computed(() => {
 			ticket.name.toLowerCase().includes(query),
 	)
 })
+
+const ticketsLoadErrorTitle = __("Tickets couldn't load")
 </script>
 
 <template>
@@ -48,7 +51,7 @@ const rows = computed(() => {
 			<EmptyState
 				v-else-if="error"
 				icon="lucide-cloud-off"
-				:title="__('Tickets couldn\'t load')"
+				:title="ticketsLoadErrorTitle"
 				:description="getErrorMessage(error, 'Try again in a moment.')"
 			>
 				<template #action>

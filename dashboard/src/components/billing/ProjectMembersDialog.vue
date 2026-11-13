@@ -93,6 +93,8 @@ async function removeMember(sub: SubscriptionRow): Promise<void> {
 		busy.value = ''
 	}
 }
+
+const updateServersErrorTitle = __("Couldn't update the project's servers")
 </script>
 
 <template>
@@ -105,7 +107,7 @@ async function removeMember(sub: SubscriptionRow): Promise<void> {
 				<Alert
 					v-if="formError"
 					theme="red"
-					:title="__('Couldn\'t update the project\'s servers')"
+					:title="updateServersErrorTitle"
 					:description="formError"
 				/>
 				<div v-if="members.length" class="divide-y divide-outline-gray-1">

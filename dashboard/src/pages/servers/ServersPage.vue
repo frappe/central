@@ -150,6 +150,8 @@ useServerLink(
 		},
 	},
 )
+
+const loadServersErrorTitle = __("Couldn't load your servers")
 </script>
 
 <template>
@@ -336,7 +338,7 @@ useServerLink(
 					<Alert
 						class="pointer-events-auto w-full max-w-md shadow-lg"
 						theme="red"
-						:title="__('Couldn\'t load your servers')"
+						:title="loadServersErrorTitle"
 						:description="error"
 						:primary-action="{ label: __('Retry'), onClick: reload }"
 					/>

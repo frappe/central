@@ -6,13 +6,13 @@ import { useMeteredServices } from '@/composables/useMeteredServices'
 import { useObjectStorage } from '@/composables/useObjectStorage'
 import { getErrorMessage } from '@/lib/feedback'
 import { money } from '@/lib/format'
-
 import {
 	flagEmoji,
 	hasMapCoords,
 	type MapSpot,
 	regionLabel,
 } from '@/lib/serverMap'
+import { __ } from '@/lib/translate'
 
 import type { BucketCredentials } from '@/types/storage'
 
@@ -75,6 +75,11 @@ const create = async (): Promise<void> => {
 		creating.value = false
 	}
 }
+
+const createBucketErrorTitle = __("Couldn't create the bucket")
+const regionDescription = __(
+	"Objects stay in this region. A bucket can't move later.",
+)
 </script>
 
 <template>
@@ -90,7 +95,7 @@ const create = async (): Promise<void> => {
 			<Alert
 				v-if="error"
 				theme="red"
-				:title="__('Couldn\'t create the bucket')"
+				:title="createBucketErrorTitle"
 				:description="error"
 			/>
 
@@ -123,7 +128,7 @@ const create = async (): Promise<void> => {
 				v-model="region"
 				:label="__('Region')"
 				:options="regionOptions"
-				:description="__('Objects stay in this region. A bucket can\'t move later.')"
+				:description="regionDescription"
 				side="bottom"
 				:disabled="creating"
 			/>

@@ -20,6 +20,7 @@ import { useSession } from '@/composables/useSession'
 import { whenTeamReady } from '@/composables/useTeamScope'
 import { getErrorMessage } from '@/lib/feedback'
 import { money } from '@/lib/format'
+import { __ } from '@/lib/translate'
 import type { PaymentInstrument, PaymentMethodOptions } from '@/types/billing'
 
 const open = defineModel<boolean>({ default: false })
@@ -231,6 +232,8 @@ watch(open, (isOpen) => {
 	selected.value = null
 	dialogError.value = ''
 })
+
+const addPaymentMethodErrorTitle = __("Couldn't add the payment method")
 </script>
 
 <template>
@@ -246,7 +249,7 @@ watch(open, (isOpen) => {
 				v-if="paymentError"
 				class="mb-4"
 				theme="red"
-				:title="__('Couldn\'t add the payment method')"
+				:title="addPaymentMethodErrorTitle"
 				:description="paymentError"
 			/>
 			<LoadingText v-if="options.loading && !options.data" :lines="3" />

@@ -66,6 +66,8 @@ const dialogOptions = computed(() => ({
 		},
 	],
 }))
+
+const createProjectErrorTitle = __("Couldn't create the project")
 </script>
 
 <template>
@@ -79,7 +81,7 @@ const dialogOptions = computed(() => ({
 				<Alert
 					v-if="formError"
 					theme="red"
-					:title="__('Couldn\'t create the project')"
+					:title="createProjectErrorTitle"
 					:description="formError"
 				/>
 				<TextInput

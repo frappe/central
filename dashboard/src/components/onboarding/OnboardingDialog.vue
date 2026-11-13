@@ -8,6 +8,7 @@ import type {
 } from '@/components/onboarding/steps'
 import { type StepStatus, useOnboarding } from '@/composables/useOnboarding'
 import { getErrorMessage } from '@/lib/feedback'
+import { __ } from '@/lib/translate'
 
 // The dialog orders the steps, moves between them, and records each answer. Every
 // step saves its own work. It cannot be dismissed: the owner finishes or skips it.
@@ -91,6 +92,8 @@ async function finish(): Promise<void> {
 	open.value = false
 	await router.push('/servers')
 }
+
+const finishStepErrorTitle = __("Couldn't finish this step")
 </script>
 
 <template>
@@ -114,7 +117,7 @@ async function finish(): Promise<void> {
 			v-if="error"
 			class="mb-4"
 			theme="red"
-			:title="__('Couldn\'t finish this step')"
+			:title="finishStepErrorTitle"
 			:description="error"
 		/>
 

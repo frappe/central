@@ -56,6 +56,11 @@ const dialogOptions = computed(() => ({
 		},
 	],
 }))
+
+const removeMemberErrorTitle = __("Couldn't remove the member")
+const loseAccessText = __(
+	"They'll immediately lose access to {0} team and all its servers and sites. You can re-invite them at any time.",
+)
 </script>
 
 <template>
@@ -69,13 +74,11 @@ const dialogOptions = computed(() => ({
 			<Alert
 				v-if="formError"
 				theme="red"
-				:title="__('Couldn\'t remove the member')"
+				:title="removeMemberErrorTitle"
 				:description="formError"
 			/>
 			<p class="text-p-base text-ink-gray-7">
-				<TranslatedText
-					:text="__('They\'ll immediately lose access to {0} team and all its servers and sites. You can re-invite them at any time.')"
-				>
+				<TranslatedText :text="loseAccessText">
 					<template #0>
 						<span class="text-p-base-semibold text-ink-gray-9"
 							>{{ __("{0}'s", [activeTeamLabel]) }}</span

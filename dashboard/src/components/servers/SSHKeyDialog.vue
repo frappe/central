@@ -3,6 +3,7 @@ import { Alert, Button, Dialog, FormControl } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import { getErrorMessage } from '@/lib/feedback'
 import { sshKeysProblem } from '@/lib/sshKeys'
+import { __ } from '@/lib/translate'
 import type { TeamSSHKey } from '@/types/sshKeys'
 
 interface Props {
@@ -54,6 +55,8 @@ async function submit() {
 		busy.value = false
 	}
 }
+
+const saveSshKeyErrorTitle = __("Couldn't save the SSH key")
 </script>
 
 <template>
@@ -71,7 +74,7 @@ async function submit() {
 			<Alert
 				v-if="error"
 				theme="red"
-				:title="__('Couldn\'t save the SSH key')"
+				:title="saveSshKeyErrorTitle"
 				:description="error"
 			/>
 			<FormControl

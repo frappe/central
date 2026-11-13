@@ -298,6 +298,17 @@ const revoke = async (key: AIApiKey): Promise<void> => {
 		revokeError.value = getErrorMessage(e)
 	}
 }
+
+const geographyDescription = __(
+	"Where the key's requests are served. It cannot be changed later: create another key for another geography.",
+)
+const saveSpendingCapsErrorTitle = __("Couldn't save the spending caps")
+const revokePrepaidText = __(
+	"Revoke {0}? Any app using it stops working within a few minutes and its cap frees room for another key. This can't be undone.",
+)
+const revokeText = __(
+	"Revoke {0}? Any app using it stops working within a few minutes. This can't be undone.",
+)
 </script>
 
 <template>
@@ -586,7 +597,7 @@ const revoke = async (key: AIApiKey): Promise<void> => {
 					:label="__('Geography')"
 					:options="geographyOptions"
 					required
-					:description="__('Where the key\'s requests are served. It cannot be changed later: create another key for another geography.')"
+					:description="geographyDescription"
 				/>
 				<TextInput
 					v-model="newCap"
@@ -626,7 +637,7 @@ const revoke = async (key: AIApiKey): Promise<void> => {
 				v-if="capsError"
 				class="mb-4"
 				theme="red"
-				:title="__('Couldn\'t save the spending caps')"
+				:title="saveSpendingCapsErrorTitle"
 				:description="capsError"
 			/>
 			<div
@@ -712,8 +723,8 @@ const revoke = async (key: AIApiKey): Promise<void> => {
 				<TranslatedText
 					:text="
 						prepaid
-							? __('Revoke {0}? Any app using it stops working within a few minutes and its cap frees room for another key. This can\'t be undone.')
-							: __('Revoke {0}? Any app using it stops working within a few minutes. This can\'t be undone.')
+							? revokePrepaidText
+							: revokeText
 					"
 				>
 					<template #0>

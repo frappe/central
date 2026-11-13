@@ -59,6 +59,8 @@ async function save(): Promise<void> {
 	open.value = false
 	emit('renamed')
 }
+
+const renameServerErrorTitle = __("Couldn't rename the server")
 </script>
 
 <template>
@@ -79,7 +81,7 @@ async function save(): Promise<void> {
 				<Alert
 					v-if="error"
 					theme="red"
-					:title="__('Couldn\'t rename the server')"
+					:title="renameServerErrorTitle"
 					:description="error"
 				/>
 

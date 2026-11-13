@@ -88,6 +88,8 @@ const dialogOptions = computed(() => ({
 		},
 	],
 }))
+
+const changeProjectErrorTitle = __("Couldn't change the project")
 </script>
 
 <template>
@@ -101,7 +103,7 @@ const dialogOptions = computed(() => ({
 				v-if="formError"
 				class="mb-4"
 				theme="red"
-				:title="__('Couldn\'t change the project')"
+				:title="changeProjectErrorTitle"
 				:description="formError"
 			/>
 			<Select

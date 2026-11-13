@@ -121,6 +121,9 @@ const getActions = (key: TeamSSHKey) =>
 const closeRotation = (open: boolean): void => {
 	if (!open) rotating.value = null
 }
+
+const updateSshKeysErrorTitle = __("Couldn't update your SSH keys")
+const keysLoadErrorTitle = __("Keys couldn't load")
 </script>
 
 <template>
@@ -137,14 +140,14 @@ const closeRotation = (open: boolean): void => {
 		<Alert
 			v-if="actionError"
 			theme="red"
-			:title="__('Couldn\'t update your SSH keys')"
+			:title="updateSshKeysErrorTitle"
 			:description="actionError"
 		/>
 
 		<EmptyState
 			v-if="error"
 			icon="lucide-cloud-off"
-			:title="__('Keys couldn\'t load')"
+			:title="keysLoadErrorTitle"
 			:description="error"
 		>
 			<template #action>

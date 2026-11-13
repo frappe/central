@@ -13,6 +13,7 @@ import {
 	useTeamArchiveChecks,
 } from '@/composables/useTeamArchiveChecks'
 import { money, plural } from '@/lib/format'
+import { __ } from '@/lib/translate'
 
 interface ArchiveTeamDialogProps {
 	/** The team to archive; null closes the dialog. */
@@ -119,6 +120,8 @@ watch(
 )
 window.addEventListener('focus', onFocus)
 onBeforeUnmount(() => window.removeEventListener('focus', onFocus))
+
+const archiveCheckErrorTitle = __("Couldn't check if the team can be archived")
 </script>
 
 <template>
@@ -160,7 +163,7 @@ onBeforeUnmount(() => window.removeEventListener('focus', onFocus))
 			<Alert
 				v-else-if="checksError"
 				theme="red"
-				:title="__('Couldn\'t check if the team can be archived')"
+				:title="archiveCheckErrorTitle"
 				:description="checksError"
 			>
 				<template #actions>

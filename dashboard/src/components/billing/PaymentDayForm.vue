@@ -117,6 +117,9 @@ async function submit(): Promise<void> {
 		)
 	}
 }
+
+const paymentDateLoadErrorTitle = __("The payment date couldn't load")
+const changePaymentDateErrorTitle = __("Couldn't change the payment date")
 </script>
 
 <template>
@@ -125,7 +128,7 @@ async function submit(): Promise<void> {
 	<Alert
 		v-else-if="settings.error && !settings.data"
 		theme="red"
-		:title="__('The payment date couldn\'t load')"
+		:title="paymentDateLoadErrorTitle"
 		:description="getErrorMessage(settings.error, 'Try again in a moment.')"
 		:primary-action="{ label: __('Retry'), onClick: () => settings.reload() }"
 	/>
@@ -138,7 +141,7 @@ async function submit(): Promise<void> {
 		<Alert
 			v-if="formError"
 			theme="red"
-			:title="__('Couldn\'t change the payment date')"
+			:title="changePaymentDateErrorTitle"
 			:description="formError"
 		/>
 

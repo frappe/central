@@ -67,6 +67,9 @@ function createTeam(): void {
 const { onKeydown } = useMenuKeyboardNavigation(() => {
 	teamSwitcherOpen.value = false
 })
+
+const switchTeamsErrorTitle = __("Couldn't switch teams")
+const loadTeamsErrorTitle = __("Couldn't load your teams")
 </script>
 
 <template>
@@ -122,7 +125,7 @@ const { onKeydown } = useMenuKeyboardNavigation(() => {
 				<Alert
 					v-if="switchError || error"
 					theme="red"
-					:title="switchError ? __('Couldn\'t switch teams') : __('Couldn\'t load your teams')"
+					:title="switchError ? switchTeamsErrorTitle : loadTeamsErrorTitle"
 					:description="switchError || getErrorMessage(error, 'Reload the page to try again.')"
 					class="mb-2"
 				/>

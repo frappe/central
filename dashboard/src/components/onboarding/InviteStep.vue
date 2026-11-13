@@ -2,6 +2,7 @@
 import { Alert, LoadingText } from 'frappe-ui'
 import InviteRows from '@/components/team/InviteRows.vue'
 import { useBulkInvite } from '@/composables/useBulkInvite'
+import { __ } from '@/lib/translate'
 
 // A new team has no servers or sites yet, so every invitation covers the whole team.
 const {
@@ -23,6 +24,9 @@ defineExpose({
 	saving,
 	submit: async () => (await submit()).failed === 0,
 })
+
+const sendInvitationsErrorTitle = __("Couldn't send the invitations")
+const loadRolesErrorTitle = __("Couldn't load the roles")
 </script>
 
 <template>
@@ -30,13 +34,13 @@ defineExpose({
 		v-if="requestError"
 		class="mb-4"
 		theme="red"
-		:title="__('Couldn\'t send the invitations')"
+		:title="sendInvitationsErrorTitle"
 		:description="requestError"
 	/>
 	<Alert
 		v-if="rolesError"
 		theme="red"
-		:title="__('Couldn\'t load the roles')"
+		:title="loadRolesErrorTitle"
 		:description="rolesError"
 	/>
 	<LoadingText v-else-if="rolesLoading && !roleOptions.length" :lines="2" />

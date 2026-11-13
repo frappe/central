@@ -16,6 +16,7 @@ import { useResizeServer } from '@/composables/useResizeServer'
 import type { VirtualMachineRow } from '@/composables/useServers'
 import { useTrialConversion } from '@/composables/useTrialConversion'
 import { configSpecs } from '@/lib/composed'
+import { __ } from '@/lib/translate'
 import { formatGb } from '@/lib/units'
 
 interface Props {
@@ -84,6 +85,14 @@ const open = computed({
 		if (!value && !resizeCall.loading) model.value = false
 	},
 })
+
+const loadResizeOptionsErrorTitle = __("Couldn't load resize options")
+const resizeServerErrorTitle = __("Couldn't resize the server")
+const useSizeErrorTitle = __("Can't use this size")
+
+function getConvertedPlanTitle(plan: string): string {
+	return __("You're on the {0} plan", [plan])
+}
 </script>
 
 <template>
@@ -126,7 +135,7 @@ const open = computed({
 			<div v-else-if="optionsError" class="space-y-3">
 				<Alert
 					theme="red"
-					:title="__('Couldn\'t load resize options')"
+					:title="loadResizeOptionsErrorTitle"
 					:description="optionsError"
 				/>
 				<Button :label="__('Retry')" @click="reloadOptions" />
@@ -156,13 +165,13 @@ const open = computed({
 				<Alert
 					v-if="convertedPlan"
 					theme="green"
-					:title="__('You\'re on the {0} plan', [convertedPlan.title])"
+					:title="getConvertedPlanTitle(convertedPlan.title)"
 					:description="__('Billing has started. Choose a bigger size below, or close this dialog to stay on this plan.')"
 				/>
 				<Alert
 					v-if="resizeError"
 					theme="red"
-					:title="__('Couldn\'t resize the server')"
+					:title="resizeServerErrorTitle"
 					:description="resizeError"
 				/>
 				<Alert
@@ -231,7 +240,7 @@ const open = computed({
 				<Alert
 					v-if="selectionError"
 					theme="red"
-					:title="__('Can\'t use this size')"
+					:title="useSizeErrorTitle"
 					:description="selectionError"
 				/>
 				<div

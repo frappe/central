@@ -3,6 +3,7 @@ import { Alert, Button, Dialog, TextInput } from 'frappe-ui'
 import { ref, watch } from 'vue'
 import { bucketLabel, useObjectStorage } from '@/composables/useObjectStorage'
 import { getErrorMessage } from '@/lib/feedback'
+import { __ } from '@/lib/translate'
 import type { BucketUsage, StorageBucket } from '@/types/storage'
 
 interface Props {
@@ -43,6 +44,8 @@ const save = async (): Promise<void> => {
 		saving.value = false
 	}
 }
+
+const updateQuotaErrorTitle = __("Couldn't update the quota")
 </script>
 
 <template>
@@ -57,7 +60,7 @@ const save = async (): Promise<void> => {
 			v-if="error"
 			class="mb-4"
 			theme="red"
-			:title="__('Couldn\'t update the quota')"
+			:title="updateQuotaErrorTitle"
 			:description="error"
 		/>
 

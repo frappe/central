@@ -58,6 +58,9 @@ const dialogOptions = computed(() => ({
 		},
 	],
 }))
+
+const transferOwnershipErrorTitle = __("Couldn't transfer ownership")
+const nameConfirmLabel = __("Type the member's name to confirm")
 </script>
 
 <template>
@@ -71,7 +74,7 @@ const dialogOptions = computed(() => ({
 			<Alert
 				v-if="error"
 				theme="red"
-				:title="__('Couldn\'t transfer ownership')"
+				:title="transferOwnershipErrorTitle"
 				:description="error"
 			/>
 			<p class="text-p-base text-ink-gray-7">
@@ -93,7 +96,7 @@ const dialogOptions = computed(() => ({
 			<TextInput
 				v-model="typed"
 				autofocus
-				:label="__('Type the member\'s name to confirm')"
+				:label="nameConfirmLabel"
 				:placeholder="expected"
 				autocomplete="off"
 			/>

@@ -88,6 +88,9 @@ async function submit() {
 		formError.value = getErrorMessage(e, "The role couldn't be created.")
 	}
 }
+
+const createRoleErrorTitle = __("Couldn't create the role")
+const loadPermissionsErrorTitle = __("Couldn't load the permissions")
 </script>
 
 <template>
@@ -104,7 +107,7 @@ async function submit() {
 				<Alert
 					v-if="formError"
 					theme="red"
-					:title="__('Couldn\'t create the role')"
+					:title="createRoleErrorTitle"
 					:description="formError"
 				/>
 				<TextInput
@@ -125,7 +128,7 @@ async function submit() {
 					<Alert
 						v-if="capabilitiesError"
 						theme="red"
-						:title="__('Couldn\'t load the permissions')"
+						:title="loadPermissionsErrorTitle"
 						:description="capabilitiesError"
 					/>
 					<Button

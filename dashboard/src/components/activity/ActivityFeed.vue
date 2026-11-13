@@ -83,6 +83,9 @@ function clearFilters() {
 	category.value = ''
 	period.value = []
 }
+
+const activityLoadErrorTitle = __("Activity couldn't load")
+const loadActivityErrorTitle = __("Couldn't load the activity")
 </script>
 
 <template>
@@ -126,7 +129,7 @@ function clearFilters() {
 		<EmptyState
 			v-else-if="error && !events.length"
 			icon="lucide-cloud-off"
-			:title="__('Activity couldn\'t load')"
+			:title="activityLoadErrorTitle"
 			:description="error"
 		>
 			<template #action>
@@ -177,7 +180,7 @@ function clearFilters() {
 			<Alert
 				v-if="error"
 				theme="red"
-				:title="__('Couldn\'t load the activity')"
+				:title="loadActivityErrorTitle"
 				:description="error"
 				:primary-action="{ label: __('Retry'), onClick: reload }"
 				class="mt-3"

@@ -17,6 +17,7 @@ import { useSession } from '@/composables/useSession'
 import { useTopup } from '@/composables/useTopup'
 import { getErrorMessage } from '@/lib/feedback'
 import { currencySymbol, money } from '@/lib/format'
+import { __ } from '@/lib/translate'
 import type { PaymentInstrument } from '@/types/billing'
 
 // Amount entry → in-app payment. Shared by the wallet card and credits surface.
@@ -234,6 +235,8 @@ watch(open, (isOpen) => {
 	// A reopen reuses the cached list, since the reload may not change or may fail.
 	pickFirstInstrument()
 })
+
+const topUpWalletErrorTitle = __("Couldn't top up your wallet")
 </script>
 
 <template>
@@ -243,7 +246,7 @@ watch(open, (isOpen) => {
 				v-if="visibleError"
 				class="mb-4"
 				theme="red"
-				:title="__('Couldn\'t top up your wallet')"
+				:title="topUpWalletErrorTitle"
 				:description="visibleError"
 			/>
 			<!-- Stripe card entry: Element renders inside the iframe Stripe hosts. -->

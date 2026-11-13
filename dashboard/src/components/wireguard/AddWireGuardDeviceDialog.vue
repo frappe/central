@@ -4,6 +4,7 @@ import { computed, ref, watch } from 'vue'
 import CopyButton from '@/components/common/CopyButton.vue'
 import TranslatedText from '@/components/common/TranslatedText.vue'
 import { getErrorMessage } from '@/lib/feedback'
+import { __ } from '@/lib/translate'
 import {
 	generateKeyPair,
 	isWireGuardKey,
@@ -100,6 +101,8 @@ async function submit(): Promise<void> {
 		busy.value = false
 	}
 }
+
+const addDeviceErrorTitle = __("Couldn't add the device")
 </script>
 
 <template>
@@ -131,7 +134,7 @@ async function submit(): Promise<void> {
 			<Alert
 				v-if="error"
 				theme="red"
-				:title="__('Couldn\'t add the device')"
+				:title="addDeviceErrorTitle"
 				:description="error"
 			/>
 			<div v-if="error && generatedKey" class="flex flex-col gap-2">

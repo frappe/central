@@ -157,6 +157,10 @@ const filters = computed<ListViewFilter[]>(() => [
 		options: optionsFor((row) => row.server?.frappe_version),
 	},
 ])
+
+const vpnTooltipText = __(
+	"Your team's WireGuard VPN devices reach this server at its private address.",
+)
 </script>
 
 <template>
@@ -247,7 +251,7 @@ const filters = computed<ListViewFilter[]>(() => [
 
 					<Tooltip
 						v-if="row.server"
-						:text="__('Your team\'s WireGuard VPN devices reach this server at its private address.')"
+						:text="vpnTooltipText"
 						:disabled="!row.server.has_wireguard_access"
 					>
 						<span class="relative shrink-0">

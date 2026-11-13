@@ -155,6 +155,8 @@ async function submitAlert(): Promise<void> {
 		formError.value = getErrorMessage(e, "The budget alert couldn't be saved.")
 	}
 }
+
+const saveBudgetAlertErrorTitle = __("Couldn't save the budget alert")
 </script>
 
 <template>
@@ -291,7 +293,7 @@ async function submitAlert(): Promise<void> {
 					v-if="formError"
 					class="mb-4"
 					theme="red"
-					:title="__('Couldn\'t save the budget alert')"
+					:title="saveBudgetAlertErrorTitle"
 					:description="formError"
 				/>
 				<TextInput

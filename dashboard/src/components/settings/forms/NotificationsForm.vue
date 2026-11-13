@@ -191,6 +191,13 @@ async function onSave(): Promise<void> {
 		)
 	}
 }
+
+const saveNotificationSettingsErrorTitle = __(
+	"Couldn't save your notification settings",
+)
+const notificationSettingsLoadErrorTitle = __(
+	"Notification settings couldn't load",
+)
 </script>
 
 <template>
@@ -199,13 +206,13 @@ async function onSave(): Promise<void> {
 			v-if="formError"
 			class="mb-4"
 			theme="red"
-			:title="__('Couldn\'t save your notification settings')"
+			:title="saveNotificationSettingsErrorTitle"
 			:description="formError"
 		/>
 		<EmptyState
 			v-if="load.error"
 			icon="lucide-cloud-off"
-			:title="__('Notification settings couldn\'t load')"
+			:title="notificationSettingsLoadErrorTitle"
 			:description="getErrorMessage(load.error, 'Try again in a moment.')"
 		>
 			<template #action>

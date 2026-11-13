@@ -25,6 +25,8 @@ const actions = computed(() => [
 		onClick: onSubmit,
 	},
 ])
+
+const createTeamErrorTitle = __("Couldn't create the team")
 </script>
 
 <template>
@@ -38,7 +40,7 @@ const actions = computed(() => [
 			v-if="error"
 			class="mb-4"
 			theme="red"
-			:title="__('Couldn\'t create the team')"
+			:title="createTeamErrorTitle"
 			:description="error"
 		/>
 		<div>
