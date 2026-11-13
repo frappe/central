@@ -597,6 +597,7 @@ def credit_ledger(team: str | None = None, limit: int = 50) -> list[dict]:
 			"reference_type",
 			"reference_name",
 			"advance_id",
+			"gateway_payment_id",
 		],
 		order_by="creation desc",
 		limit=limit,
@@ -606,7 +607,10 @@ def credit_ledger(team: str | None = None, limit: int = 50) -> list[dict]:
 	for row in rows:
 		# A top-up booked in the accounting system has a receipt to download.
 		row["has_receipt"] = bool(row.pop("advance_id"))
-		row["tax_label"] = names.paid_label(row.amount, row.tax_amount)
+		# Only money paid in through a gateway carries a real GST rate; returned
+		# credit carries back a share of GST whose ratio is not a rate.
+		is_top_up = bool(row.pop("gateway_payment_id"))
+		row["tax_label"] = names.paid_label(row.amount, row.tax_amount) if is_top_up else None
 	return rows
 
 

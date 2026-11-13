@@ -180,6 +180,14 @@ class TestApisExposeTheLabel(TaxLabelTestCase):
 		credits.grant_promotional_credits(TEAM, 500, "INR")
 		self.assertIsNone(invoice_api.credit_ledger(TEAM)[0]["tax_label"])
 
+	def test_returned_credit_with_gst_names_no_rate(self):
+		credits.return_credit(
+			TEAM, 1000, "INR", "Invoice", "INV-RETURNED", "Returned", paid_in=True, tax_amount=90
+		)
+		row = invoice_api.credit_ledger(TEAM)[0]
+		self.assertEqual(row["tax_amount"], 90)
+		self.assertIsNone(row["tax_label"])
+
 
 class TestSpendLimitIsBeforeTax(TaxLabelTestCase):
 	def test_spend_history_carries_spend_before_tax(self):
