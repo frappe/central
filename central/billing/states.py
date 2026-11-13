@@ -205,6 +205,7 @@ def transition(
 	correlation: str | None = None,
 	amount=None,
 	event_type: str | None = None,
+	payload: dict | None = None,
 ) -> None:
 	"""Move `doc` to `to_state` through its machine, and append a Billing Event.
 
@@ -232,7 +233,18 @@ def transition(
 		)
 	doc.set(machine.field, to_state)
 	outcome = billing_event.FAILED if to_state == "Failed" else None
-	_append_event(doc, from_state, to_state, reason, actor, correlation, amount, event_type, outcome=outcome)
+	_append_event(
+		doc,
+		from_state,
+		to_state,
+		reason,
+		actor,
+		correlation,
+		amount,
+		event_type,
+		outcome=outcome,
+		payload=payload,
+	)
 
 
 def _append_event(

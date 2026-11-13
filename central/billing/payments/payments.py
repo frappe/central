@@ -256,10 +256,16 @@ def _saved_card_fields(card: dict, method) -> dict:
 
 def _fail_method(method, failure: dict) -> Document:
 	method.record_failure(failure)
-	transition(method, "Failed", actor=frappe.session.user, reason=method.failure_code)
+	transition(
+		method,
+		"Failed",
+		actor=frappe.session.user,
+		reason=method.failure_code,
+		payload={"decline_code": method.decline_code},
+	)
 	# Only billing code changes a method's status; the caller checked billing:manage.
 	method.save(ignore_permissions=True)
-	setup_lockout.note_failure(method.team, method.owner, method.failure_code)
+	setup_lockout.note_failure(method.team, method.owner, method.failure_code, method.decline_code)
 	return method
 
 

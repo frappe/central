@@ -197,6 +197,13 @@ class TestSetupLockout(BillingTestCase):
 			payments._fail_method(frappe.get_doc("Payment Method", self.pending_method()), DECLINED)
 		self.assert_wait(10 * MINUTE)
 
+	def test_a_card_check_the_bank_asks_to_retry_does_not_count(self):
+		for reason in ("try_again_later", "issuer_not_available"):
+			for _ in range(3):
+				method = frappe.get_doc("Payment Method", self.pending_method())
+				payments._fail_method(method, {"failure_code": "card_declined", "decline_code": reason})
+		self.assert_wait(None)
+
 	def test_a_working_method_for_the_team_resets_the_count(self):
 		self.record_failures(times=5)
 		frappe.db.set_value(
