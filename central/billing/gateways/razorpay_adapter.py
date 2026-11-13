@@ -23,9 +23,9 @@ from central.billing.gateways.base import (
 	token_check,
 )
 from central.billing.gateways.razorpay_recurring import recurring_charge, recurring_result, refused
-
-# Razorpay raises these for transient/server failures; a refused request is BadRequestError.
-_TRANSIENT = (razorpay.errors.GatewayError, razorpay.errors.ServerError, requests.exceptions.RequestException)
+from central.billing.gateways.razorpay_setup import TRANSIENT as _TRANSIENT
+from central.billing.gateways.razorpay_setup import RazorpaySetup
+from central.billing.gateways.razorpay_setup import order_payments as _order_payments
 
 # The events the webhook spine consumes (see webhooks.handle_webhook_event).
 RAZORPAY_WEBHOOK_EVENTS = (
@@ -47,7 +47,7 @@ def _entity_ids(entity: dict) -> set[str]:
 	return {entity[field] for field in fields if isinstance(entity.get(field), str) and entity[field]}
 
 
-class RazorpayAdapter(GatewayAdapter):
+class RazorpayAdapter(RazorpaySetup, GatewayAdapter):
 	# common_site_config.json overrides for live keys (see GatewayAdapter.get_credential).
 	conf_keys: ClassVar[dict[str, str]] = {
 		"api_key": "razorpay_key_id",
@@ -306,26 +306,6 @@ class RazorpayAdapter(GatewayAdapter):
 		captured = next((p for p in payments if p.get("status") == "captured"), None)
 		return _verified(captured) if captured else None
 
-	def read_finished_setup(self, setup_reference: str) -> dict:
-		"""The payment that authorised a token on the setup order, or `{}`. Read only.
-		An order Razorpay does not have saved nothing."""
-		try:
-			payments = _order_payments(self._client(), setup_reference)
-		except _TRANSIENT as e:
-			raise GatewayTimeout(str(e)) from e
-		except razorpay.errors.BadRequestError as e:
-			if _is_missing_id(e):
-				return {}
-			raise GatewayError(str(e)) from e
-		payment = next((p for p in payments if _is_token_authorisation(p)), None)
-		if not payment:
-			return {}
-		return {
-			"payment_method": payment["token_id"],
-			"customer": payment.get("customer_id"),
-			"payment": payment,
-		}
-
 	def checkout_payment(self, session_id: str) -> VerifiedPayment | None:
 		link = self.get_checkout_session(session_id)
 		if link.get("status") != "paid":
@@ -437,14 +417,6 @@ class RazorpayAdapter(GatewayAdapter):
 		self._client().token.cancel(customer_reference, mandate_reference)
 		return True
 
-	def remove_saved_method(self, method_id: str, customer_reference: str | None = None) -> None:
-		"""Cancel the recurring token. A token already cancelled or gone counts as removed."""
-		try:
-			self.cancel_mandate(method_id, customer_reference=customer_reference)
-		except razorpay.errors.BadRequestError as e:
-			if not (_is_missing_id(e) or _is_already_cancelled(e)):
-				raise
-
 	def get_mandate_status(self, mandate_reference: str) -> str:
 		return self._client().invoice.fetch(mandate_reference).get("status")
 
@@ -483,28 +455,6 @@ def _verified(payment: dict) -> VerifiedPayment:
 		currency=(payment.get("currency") or "").upper(),
 		order_id=payment.get("order_id"),
 	)
-
-
-def _is_token_authorisation(payment: dict) -> bool:
-	# A refunded setup payment still left its token, which a retried release must remove.
-	return payment.get("status") in ("authorized", "captured", "refunded") and bool(payment.get("token_id"))
-
-
-def _is_missing_id(error: razorpay.errors.BadRequestError) -> bool:
-	"""True when Razorpay has no object with the id asked for. The SDK keeps only the
-	error description, which reads "The id provided does not exist"."""
-	return "does not exist" in str(error).lower()
-
-
-def _is_already_cancelled(error: razorpay.errors.BadRequestError) -> bool:
-	"""True when Razorpay refuses to cancel a token because it is no longer live. The SDK
-	keeps only the error description."""
-	message = str(error).lower()
-	return "already" in message and ("cancel" in message or "deleted" in message)
-
-
-def _order_payments(client, order_id: str) -> list[dict]:
-	return (client.order.payments(order_id) or {}).get("items") or []
 
 
 def _settled_or_live(payments: list[dict]) -> PaymentResult | None:
