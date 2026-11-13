@@ -112,6 +112,13 @@ def credit_to_cover(draw: frappe._dict, collectable: float, gst_due: float, top_
 	return needed
 
 
+def has_credit_without_gst(lots: list, gst_left: float, top_up_rate: float) -> bool:
+	"""Whether some purchased credit in `lots` was bought without its GST: the GST balance is
+	below what the lots carry at the top-up rate, past each lot's rounding."""
+	purchased = [lot.remaining for lot in lots if lot.paid_in and lot.remaining > 0]
+	return sum(purchased) * top_up_rate - gst_left > PAID_TOLERANCE * len(purchased)
+
+
 def is_paid_by(draw: frappe._dict, collectable: float) -> bool:
 	"""Whether `draw` pays all of `collectable`, as the collector rounds it."""
 	return draw.wallet > 0 and frappe.utils.flt(collectable - draw.wallet - draw.gst, 2) <= 0

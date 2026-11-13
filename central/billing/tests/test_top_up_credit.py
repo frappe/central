@@ -257,6 +257,16 @@ class TestEarlierCreditWithoutGst(TopUpCreditTestCase):
 		self.assertFalse(self._due()["includes_earlier_gst"])
 		self.assertNotIn(EARLIER_GST_NOTE, self._message())
 
+	def test_a_tds_bill_with_credit_bought_with_its_gst_says_nothing_more(self):
+		"""The TDS bill draws GST at 18.37%, so the new GST tops up the 5,000 lot, but that
+		lot was bought with its 18% GST."""
+		invoice = self._issue()
+		frappe.db.set_value("Invoice", invoice, {"tds_amount": 677.97, "expected_collection": 39322.03})
+		self._top_up(5000)
+
+		self.assertFalse(self._due()["includes_earlier_gst"])
+		self.assertNotIn(EARLIER_GST_NOTE, self._message())
+
 	def test_promotional_credit_says_nothing_more(self):
 		self._issue()
 		credits.grant_promotional_credits(TEAM, 5000, "INR", expires_on="2027-01-31")

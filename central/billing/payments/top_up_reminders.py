@@ -82,7 +82,7 @@ def get_shortfall_due(team: str, bill: float, gst: float, date, invoice: str | N
 	The ask is the whole shortfall: purchased credit that makes the wallet pay all of the
 	bill, rounded up to ₹100. `amount_with_gst` is what that credit costs.
 	`includes_earlier_gst` is set when part of its GST pays for earlier purchased credit
-	that the GST balance does not cover, which makes the ask more than the gap."""
+	that was bought without its GST, which makes the ask more than the gap."""
 	from central.billing.payments import collection, collection_mode
 
 	has_method = bool(collection.get_methods_left(team, invoice))
@@ -91,7 +91,8 @@ def get_shortfall_due(team: str, bill: float, gst: float, date, invoice: str | N
 	draw = wallet_draw.plan_draw(lots, bill, gst, gst_left)
 	if collection_mode.is_within_limit(limit, get_card_share(bill, draw.owed, invoice)):
 		return None
-	ask = wallet_draw.TopUpAsk(lots, bill, gst, gst_left, credits.top_up_gst_rate(team))
+	rate = credits.top_up_gst_rate(team)
+	ask = wallet_draw.TopUpAsk(lots, bill, gst, gst_left, rate)
 	credit = ask.credit(ROUND_TO)
 	if credit is None:
 		# No amount would be true to state, so nothing is asked.
@@ -104,7 +105,8 @@ def get_shortfall_due(team: str, bill: float, gst: float, date, invoice: str | N
 		"limit": limit,
 		"has_method": has_method,
 		"invoice": invoice,
-		"includes_earlier_gst": draw.gst_unpaid > 0,
+		"includes_earlier_gst": draw.gst_unpaid > 0
+		and wallet_draw.has_credit_without_gst(lots, gst_left, rate),
 	}
 
 
