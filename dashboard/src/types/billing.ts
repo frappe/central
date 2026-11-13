@@ -60,6 +60,8 @@ export interface Forecast {
 	/** What follows the tax-inclusive total, e.g. "incl. IGST 18%" or "SEZ supply, no GST". */
 	tax_note: string | null
 	credit_balance: number
+	/** What is collected after TDS; the shortfall is part of it. */
+	expected_collection: number
 	/** What the card or UPI pays after the wallet, drawn as the bill draws it. */
 	shortfall: number
 	days_remaining: number

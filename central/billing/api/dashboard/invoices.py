@@ -87,6 +87,8 @@ def get_forecast(team: str | None = None) -> dict:
 		# The projection carries no zero-rating, so it is named by the team's tax today.
 		**tax.get_tax_names(team),
 		"credit_balance": credit_balance,
+		# What is collected after TDS, the amount the shortfall is measured against.
+		"expected_collection": collectable,
 		"shortfall": shortfall,
 		"days_remaining": (month_end - today).days,
 		"currency": currency,

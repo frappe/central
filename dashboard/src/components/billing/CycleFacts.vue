@@ -77,6 +77,10 @@ const workingMethod = computed(() =>
 // What the card or UPI is left with after the wallet, drawn as the bill draws it, so
 // GST already paid with top-ups counts.
 const shortfall = computed(() => Number(forecast.data?.shortfall ?? 0))
+// The shortfall is measured against what is collected, which is less than the total under TDS.
+const collectable = computed(() =>
+	Number(forecast.data?.expected_collection ?? projected.value),
+)
 
 const short = computed(() => projected.value > 0 && shortfall.value > 0)
 
@@ -86,7 +90,7 @@ const coverage = computed(() => {
 	if (!projected.value) return ''
 	if (!short.value) return __('Covers this cycle in full')
 
-	const percent = walletCoverPercent(projected.value, shortfall.value)
+	const percent = walletCoverPercent(collectable.value, shortfall.value)
 
 	return atRisk.value
 		? __('Covers {0}% of this cycle', [percent])

@@ -24,6 +24,11 @@ test('the wallet covers what the card or UPI is not left to pay', () => {
 	assert.equal(walletCoverPercent(11800, 11800), 0)
 })
 
+test('the cover is measured against what is collected after TDS', () => {
+	// ₹11,800 billed, ₹1,000 withheld: a ₹10,800 shortfall leaves the wallet paying nothing.
+	assert.equal(walletCoverPercent(10800, 10800), 0)
+})
+
 test('a shortfall outside the bill is clamped', () => {
 	assert.equal(walletCoverPercent(1000, 5000), 0)
 	assert.equal(walletCoverPercent(1000, -5), 100)
