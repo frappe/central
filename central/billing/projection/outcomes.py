@@ -19,9 +19,7 @@ Every check below reuses the production helper that governs it — `off_session_
 `settlement_sources`, `ordered_methods` — so the simulator and the collector cannot
 disagree about who can be charged.
 
-One helper is deliberately *not* used. `collection_mode.evaluate()` decides the same
-threshold question but **trips the profile into Action Required as a side effect**,
-which is a write. A projection asks; it does not push the team into a new mode.
+A projection asks; it never pushes the team into a new mode (`collection_mode.trip`).
 """
 
 import frappe

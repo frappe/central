@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Alert } from 'frappe-ui'
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import CollectionActionBanner from '@/components/billing/CollectionActionBanner.vue'
 import CycleBreakdownPanel from '@/components/billing/CycleBreakdownPanel.vue'
 import CycleFacts from '@/components/billing/CycleFacts.vue'
@@ -22,7 +23,11 @@ import TopupDialog from '@/components/TopupDialog.vue'
 import { useBillingOverview } from '@/composables/useBillingOverview'
 import { useBillingReports } from '@/composables/useBillingReports'
 import { useBillingSetup } from '@/composables/useBillingSetup'
+import { useCapabilities } from '@/composables/useCapabilities'
 import { useServerMapData } from '@/composables/useServerMapData'
+import { sessionReady, useSession } from '@/composables/useSession'
+import { fetchBillingSetup } from '@/data/billingSetup'
+import { parseTopupAmount } from '@/lib/topupAmount'
 
 const { complete, setupDialogOpen, requireSetup } = useBillingSetup()
 const { currency, reloadMoney } = useBillingOverview()
@@ -64,6 +69,7 @@ const showProjects = trayModel('projects')
 const showTiers = trayModel('tiers')
 
 const showTopup = ref(false)
+const topupAmount = ref<number>()
 
 // The trial's Upgrade dialog opens here, so the customer stays on Billing.
 const { servers } = useServerMapData()
@@ -79,9 +85,48 @@ const showUpgrade = computed({
 	},
 })
 
-const onAddCredits = () => {
+const onAddCredits = (amount?: number) => {
+	topupAmount.value = amount
 	if (requireSetup()) showTopup.value = true
 }
+
+// A top-up reminder links here with its team and the amount; billing managers get the dialog.
+const route = useRoute()
+const router = useRouter()
+const { activeTeam, teams, setActiveTeam } = useSession()
+const { canManageBilling, reload: reloadCapabilities } = useCapabilities()
+
+const isOtherTeam = (team: unknown) =>
+	team !== undefined && team !== activeTeam.value
+
+async function openTopupLink(value: unknown) {
+	await sessionReady
+	const team = route.query.team
+	if (isOtherTeam(team) && teams.value.some((row) => row.name === team)) {
+		try {
+			// Switching reloads the page with the same link, now on its team.
+			setActiveTeam(team as string)
+			return
+		} catch {
+			// No browser storage: stay on this team and drop the link.
+		}
+	}
+
+	const { topup: _topup, team: _team, ...query } = route.query
+	router.replace({ query })
+	const amount = parseTopupAmount(value)
+	if (!amount || !activeTeam.value || isOtherTeam(team)) return
+	await Promise.all([fetchBillingSetup(activeTeam.value), reloadCapabilities()])
+	if (canManageBilling.value) onAddCredits(amount)
+}
+
+watch(
+	() => route.query.topup,
+	(value) => {
+		if (value !== undefined) void openTopupLink(value)
+	},
+	{ immediate: true },
+)
 </script>
 
 <template>
@@ -100,7 +145,7 @@ const onAddCredits = () => {
 				description="Currency, legal name, and address are needed to add credit, save a payment method, and provision servers."
 				:primary-action="{ label: 'Add billing details', onClick: () => { setupDialogOpen = true } }"
 			/>
-			<CollectionActionBanner />
+			<CollectionActionBanner @add-credit="onAddCredits" />
 			<TrialBillingBanner @upgrade="upgradeServerName = $event" />
 			<GstStatusBanner @edit="setupDialogOpen = true" />
 
@@ -117,7 +162,7 @@ const onAddCredits = () => {
 					:wallet-active="showWalletHistory"
 					@open-schedule="showSchedule = true"
 					@open-wallet="showWalletHistory = true"
-					@add-credit="onAddCredits"
+					@add-credit="onAddCredits()"
 				/>
 			</div>
 
@@ -140,7 +185,12 @@ const onAddCredits = () => {
 	</div>
 
 	<EditBillingProfileDialog v-model="setupDialogOpen" />
-	<TopupDialog v-model="showTopup" :currency="currency" @done="reloadMoney" />
+	<TopupDialog
+		v-model="showTopup"
+		:currency="currency"
+		:initial-amount="topupAmount"
+		@done="reloadMoney"
+	/>
 	<ResizeServerDialog
 		v-model:open="showUpgrade"
 		:server="upgradeServer"

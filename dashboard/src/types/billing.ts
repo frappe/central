@@ -483,6 +483,32 @@ export interface CollectionStatus {
 	wallet_balance: number
 	shortfall: number
 	currency: Currency
+	/** What to add to the wallet before the next payment date; null when the card or UPI can pay. */
+	top_up_due: TopUpDue | null
+}
+
+/** A top-up the card or UPI limit makes necessary before the payment date (INR only). */
+export interface TopUpDue {
+	/** Credit that lets the wallet pay the whole bill, rounded up to ₹100. */
+	amount: number
+	/** What that credit costs with GST on top; equal to `amount` when no GST applies. */
+	amount_with_gst: number
+	/** ISO payment date. */
+	date: string
+	/** Most the card or UPI may pay automatically; 0 when none is saved. */
+	limit: number
+	has_method: boolean
+	/** Part of the credit's GST pays for earlier purchased credit that had none, so it is more than the gap. */
+	includes_earlier_gst: boolean
+	/** As the reminder email shows them; `amount_with_gst` and `tax_label` are null with no GST, `limit` with no method. */
+	labels: {
+		amount: string
+		amount_with_gst: string | null
+		/** The GST it includes, e.g. "IGST 18%" or "CGST 9% + SGST 9%". */
+		tax_label: string | null
+		payment_date: string
+		limit: string | null
+	}
 }
 
 export type NotificationCategory = 'Billing' | 'Server' | 'Team' | 'Trial'

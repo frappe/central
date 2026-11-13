@@ -255,6 +255,8 @@ class TestPaymentReminder(test_emandate.EmandateTestBase):
 		self.assertEqual(payment_notices.send_payment_reminder(name, now)["skipped"], "predebit_notice")
 
 		frappe.db.delete("Payment Method", {"team": TEAM})
+		# An INR bill with no method gets the top-up notice instead, so keep the bill in USD.
+		frappe.db.set_value("Invoice", name, "currency", "USD")
 		self.assertTrue(payment_notices.send_payment_reminder(name, now)["reminded"])
 
 	def test_the_reminder_names_the_amount_the_date_and_the_method(self):
