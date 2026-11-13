@@ -34,8 +34,8 @@ class TopUpCreditTestCase(IntegrationTestCase):
 			"central.billing.payments.collection.collect_invoice",
 		):
 			self.enterContext(patch(target))
-		# The company's state is read from the accounting system; inter-state unless a test says so.
-		self.enterContext(patch("central.billing.revenue.tax.is_in_state_supply", return_value=False))
+		# The company is in Karnataka unless a test says so; the team is in Maharashtra (IGST).
+		self.enterContext(patch("central.billing.ingester.gst.cached_company_state_code", return_value="29"))
 		# No test may reach a gateway.
 		self.enterContext(patch("central.billing.gateways.registry.get_adapter", return_value=MagicMock()))
 
@@ -112,7 +112,7 @@ class TestAnIssuedBillWithGst(TopUpCreditTestCase):
 		self._issue()
 		self._top_up(5000)
 
-		with patch("central.billing.revenue.tax.is_in_state_supply", return_value=True):
+		with patch("central.billing.ingester.gst.cached_company_state_code", return_value="27"):
 			due = self._due()
 		top_up_reminders.send_top_up_notice(TEAM, due)
 

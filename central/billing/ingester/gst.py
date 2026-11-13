@@ -7,12 +7,18 @@ up front always matches the tax on the invoice it later pays.
 """
 
 import frappe
+import requests
 
 from central.billing.india_gst import INDIA, state_code
 from central.billing.ingester import connection
 from central.billing.ingester.settings import accounting_settings
 
 OVERSEAS_PLACE_OF_SUPPLY = "96-Other Countries"
+COMPANY_STATE_KEY = "billing:company_state_code"
+LAST_COMPANY_STATE_KEY = "billing:company_state_code:last"
+COMPANY_STATE_TTL = 24 * 60 * 60
+# After a failed read, the last known code is reused this long before trying again.
+RETRY_AFTER = 60 * 60
 
 
 def treatment(team: str) -> frappe._dict:
@@ -82,10 +88,28 @@ def tax_rows(template: str | None, paid_amount: float | None = None) -> list[dic
 	return shaped
 
 
-def is_in_state(state: str | None) -> bool:
-	"""Whether a supply to `state` stays in the company's own state (CGST + SGST, not IGST)."""
+def is_in_state(state: str | None, company_code: str | None = None) -> bool:
+	"""Whether a supply to `state` stays in the company's own state (CGST + SGST, not IGST).
+	The company's state is read live unless `company_code` is given."""
 	code = state_code(state)
-	return bool(code) and code == company_state_code()
+	return bool(code) and code == (company_code or company_state_code())
+
+
+def cached_company_state_code() -> str | None:
+	"""The company's GST state code, read from the accounting system at most once a day.
+	The last known code when a read fails; None when it was never known."""
+	code = frappe.cache.get_value(COMPANY_STATE_KEY, use_local_cache=False)
+	if code:
+		return code
+	code = _read_company_state_code()
+	if code:
+		frappe.cache.set_value(LAST_COMPANY_STATE_KEY, code)
+		frappe.cache.set_value(COMPANY_STATE_KEY, code, expires_in_sec=COMPANY_STATE_TTL)
+		return code
+	last = frappe.cache.get_value(LAST_COMPANY_STATE_KEY, use_local_cache=False)
+	if last:
+		frappe.cache.set_value(COMPANY_STATE_KEY, last, expires_in_sec=RETRY_AFTER)
+	return last
 
 
 def company_gstin() -> str:
@@ -95,6 +119,16 @@ def company_gstin() -> str:
 
 def company_state_code() -> str:
 	return company_gstin()[:2]
+
+
+def _read_company_state_code() -> str | None:
+	if not connection.enabled():
+		return None
+	try:
+		return company_state_code() or None
+	except (requests.RequestException, connection.NoAccess):
+		frappe.log_error(title="Company GST state could not be read")
+		return None
 
 
 def _zero_rated_sez(team: str) -> bool:

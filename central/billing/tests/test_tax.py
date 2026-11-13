@@ -7,6 +7,7 @@ from unittest.mock import patch
 import frappe
 import requests
 
+from central.billing.ingester import gst
 from central.billing.revenue import invoicing, tax
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import (
@@ -140,10 +141,12 @@ class TestTaxLabel(TaxTestBase):
 		super().setUp()
 		complete_billing_profile(TEAM)
 		set_tax_profile(output_tax_type="GST", output_tax_rate=18)
-		company = patch("central.billing.ingester.gst.company_state_code", return_value="27")
-		sync_on = patch("central.billing.ingester.connection.enabled", return_value=True)
-		company.start(), sync_on.start()
-		self.addCleanup(company.stop), self.addCleanup(sync_on.stop)
+		_forget_company_state()
+		self.addCleanup(_forget_company_state)
+		self.read = self.enterContext(
+			patch("central.billing.ingester.gst.company_state_code", return_value="27")
+		)
+		self.enterContext(patch("central.billing.ingester.connection.enabled", return_value=True))
 
 	def test_same_state_is_cgst_and_sgst(self):
 		self.assertEqual(tax.tax_label(TEAM), "CGST 9% + SGST 9%")
@@ -170,9 +173,29 @@ class TestTaxLabel(TaxTestBase):
 		frappe.db.delete("Tax Profile", {"team": TEAM})
 		self.assertIsNone(tax.tax_label(TEAM))
 
-	def test_an_unreachable_accounting_system_falls_back_to_igst(self):
-		with patch("central.billing.ingester.gst.company_state_code", side_effect=requests.ConnectionError):
-			self.assertEqual(tax.tax_label(TEAM), "IGST 18%")
+	def test_the_company_state_is_read_once_a_day(self):
+		tax.tax_label(TEAM)
+		tax.tax_label(TEAM)
+		self.assertEqual(self.read.call_count, 1)
+
+	def test_a_failed_read_uses_the_last_known_state(self):
+		tax.tax_label(TEAM)
+		frappe.cache.delete_value(gst.COMPANY_STATE_KEY)  # the day is over
+		self.read.side_effect = requests.ConnectionError
+		self.assertEqual(tax.tax_label(TEAM), "CGST 9% + SGST 9%")
+
+	def test_a_company_state_never_known_names_gst_only(self):
+		self.read.side_effect = requests.ConnectionError
+		self.assertEqual(tax.tax_label(TEAM), "GST 18%")
+
+	def test_with_the_sync_off_and_no_known_state_it_names_gst_only(self):
+		with patch("central.billing.ingester.connection.enabled", return_value=False):
+			self.assertEqual(tax.tax_label(TEAM), "GST 18%")
+		self.read.assert_not_called()
+
+
+def _forget_company_state():
+	frappe.cache.delete_value([gst.COMPANY_STATE_KEY, gst.LAST_COMPANY_STATE_KEY])
 
 
 class TestWithholdingSeam(TaxTestBase):

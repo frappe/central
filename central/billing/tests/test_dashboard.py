@@ -1036,7 +1036,7 @@ class TestPaymentMethodOptions(IntegrationTestCase):
 			{"output_tax_rate": 0, "zero_rated": 0, "zero_rating_reason": None},
 		)
 		frappe.db.set_value("Tax Profile", self.TEAM, "output_tax_rate", 18)
-		with patch("central.billing.revenue.tax.is_in_state_supply", return_value=False):
+		with patch("central.billing.ingester.gst.cached_company_state_code", return_value="29"):
 			self.assertEqual(invoices.get_topup_options(self.TEAM)["tax_label"], "IGST 18%")
 		frappe.db.set_value("Tax Profile", self.TEAM, {"zero_rated": 1, "zero_rating_reason": "SEZ"})
 		self.assertEqual(invoices.get_topup_options(self.TEAM)["tax_label"], "No GST (SEZ)")
