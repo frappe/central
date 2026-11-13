@@ -529,11 +529,9 @@ class TestChargingMethod(OffSessionLimitBase):
 		self.assertEqual(out["ceiling"], 15000.0)
 		self.assertEqual(self._method(9000, inv)["ceiling"], 15000.0)
 
-	def test_the_primary_and_its_own_limit_when_nothing_covers(self):
+	def test_no_method_is_named_when_none_covers_the_bill(self):
 		self._add_method("Card", 8500, priority=2)
-		out = self._method(9000)
-		self.assertEqual(out["label"], self._label(self.upi))
-		self.assertEqual(out["ceiling"], 8300.0)
+		self.assertIsNone(self._method(9000))
 
 	def test_a_hard_declined_method_is_left_out(self):
 		from unittest.mock import MagicMock, patch
@@ -551,18 +549,17 @@ class TestChargingMethod(OffSessionLimitBase):
 		with patch("central.billing.gateways.registry.get_adapter", return_value=adapter):
 			collection.collect_invoice(inv, now="2026-06-11 10:00:00")
 		self.assertEqual(self._method(9000)["label"], self._label(card))
-		out = self._method(9000, inv)
+		self.assertIsNone(self._method(9000, inv))
+		out = self._method(8000, inv)
 		self.assertEqual(out["label"], self._label(self.upi))
 		self.assertEqual(out["ceiling"], 8300.0)
 
-	def test_a_method_off_session_cannot_reach_has_a_zero_limit(self):
+	def test_a_method_off_session_cannot_reach_is_not_named(self):
 		from unittest.mock import MagicMock, patch
 
 		adapter = MagicMock(supports_off_session_charge=False)
 		with patch("central.billing.gateways.registry.adapter_class", return_value=adapter):
-			out = self._method(100)
-		self.assertEqual(out["label"], self._label(self.upi))
-		self.assertEqual(out["ceiling"], 0.0)
+			self.assertIsNone(self._method(100))
 
 	def test_a_method_without_a_ceiling_has_no_limit(self):
 		from unittest.mock import patch

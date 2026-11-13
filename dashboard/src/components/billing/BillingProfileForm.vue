@@ -93,8 +93,13 @@ const requiredFields = [
 	['city', 'City'],
 	['country', 'Country'],
 ] as const
+// GST depends on an Indian customer's state, so India asks for it.
+const stateLabel = __('State')
 const missingRequired = computed(() =>
-	requiredFields
+	[
+		...requiredFields,
+		...(isIndia.value ? [['state', stateLabel] as const] : []),
+	]
 		.filter(([field]) => !form[field]?.trim())
 		.map(([, label]) => label),
 )
@@ -219,6 +224,8 @@ defineExpose({ submit, saving: computed(() => save.loading) })
 				:label="__('State')"
 				:placeholder="__('Select state')"
 				:options="stateOptions"
+				:error="requiredError('state', stateLabel)"
+				required
 			/>
 			<TextInput v-else v-model="form.state" :label="__('State')" />
 			<TextInput v-model="form.pincode" :label="postalLabel" />

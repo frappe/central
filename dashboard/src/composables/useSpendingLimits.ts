@@ -119,7 +119,7 @@ export function useSpendingLimits() {
 		const cumulative = Number(progress.value?.cumulative_paid ?? 0)
 		if (level.sequence <= 0) {
 			const hasChargeableMethod = (methods.data ?? []).some(
-				(method) => method.status === 'Active' && !method.reauth_required,
+				(method) => method.status === 'Active',
 			)
 			return [
 				{

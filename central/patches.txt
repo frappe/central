@@ -108,3 +108,5 @@ central.patches.v0_0.rename_growth_trust_tier_to_emerging
 central.patches.v0_0.keep_only_custom_resource_action_copy
 # Setups released by the old code are marked released, so the hourly retry does not call the gateway for them.
 central.patches.v0_0.mark_old_setups_released
+# A UPI mandate covers a bill at the spend limit with GST. Ask teams with a lower one to re-authorise it.
+central.patches.v0_0.flag_upi_mandates_below_the_gst_ceiling

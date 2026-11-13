@@ -31,11 +31,11 @@ from central.billing.payments import charges, decline
 
 
 def ordered_methods(team: str) -> list:
-	"""A team's chargeable methods, primary first. Skips non-active and methods
-	whose mandate needs re-authorisation."""
+	"""A team's chargeable methods, primary first. A mandate awaiting re-authorisation
+	stays in: `collection_mode.method_limit` holds it to its own maximum."""
 	return frappe.get_all(
 		"Payment Method",
-		filters={"team": team, "status": "Active", "reauth_required": 0},
+		filters={"team": team, "status": "Active"},
 		order_by="priority asc, creation asc",
 		fields=["name", "gateway", "priority", "mandate_max_amount"],
 	)
@@ -76,7 +76,7 @@ def get_teams_with_retry_rail(teams: set[str]) -> set[str]:
 	return set(
 		frappe.get_all(
 			"Payment Method",
-			filters={"team": ["in", list(allowed)], "status": "Active", "reauth_required": 0},
+			filters={"team": ["in", list(allowed)], "status": "Active"},
 			pluck="team",
 			distinct=True,
 		)
@@ -113,6 +113,21 @@ def get_methods_left(team: str, invoice: str | None = None) -> list:
 		return methods
 	failed = _failed_methods_for(invoice, attempts_of(invoice))
 	return [m for m in methods if m.name not in failed]
+
+
+def method_for_amount(team: str, currency: str | None, amount: float, invoice: str | None = None):
+	"""The method a charge of `amount` lands on: the first, primary first, whose limit covers
+	it. None when no method left can take it off-session."""
+	from central.billing.payments import collection_mode
+
+	return next(
+		(
+			m
+			for m in get_methods_left(team, invoice)
+			if collection_mode.is_within_method_limit(m, currency, amount)
+		),
+		None,
+	)
 
 
 def next_method_for(invoice: str, team: str, earlier: set | None = None, skip: set | None = None):

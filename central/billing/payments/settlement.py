@@ -122,12 +122,36 @@ def credit_funded_headroom(team: str, for_update: bool = False) -> float:
 	if for_update:
 		# Wallet first, then the subscriptions: one order everywhere, so a booking
 		# and a provision can never hold each other's next lock.
-		balance = credits.lock_team_wallet(team)
+		credits.lock_team_wallet(team)
 		running = locked_team_run_rate(team)
 	else:
-		balance = frappe.utils.flt(credits.get_balance(team)["balance"])
 		running = team_run_rate(team)
-	return max(0.0, min(_tier_cap(team), balance) - running)
+	return max(0.0, min(_tier_cap(team), credit_funded_spend(team)) - running)
+
+
+def credit_funded_spend(team: str) -> float:
+	"""The pre-tax spend the team's wallet pays for, drawn the way a bill draws it.
+
+	A top-up pays the pre-tax amount, and top-up GST no bill has used yet pays the tax.
+	Other credit, such as promotional credit, pays the bill with its GST, so it covers less.
+	Promotional credit past its expiry date is not the team's to spend.
+	"""
+	currency = credits.team_currency(team)
+	lots = _spendable_lots(team, currency)
+	paid_in = sum(lot.remaining for lot in lots if lot.paid_in)
+	other = sum(lot.remaining for lot in lots if not lot.paid_in)
+	rate = credits.top_up_gst_rate(team)
+	gst = min(paid_in * rate, max(credits.advance_gst_balance(team, currency), 0.0))
+	return frappe.utils.flt((paid_in + gst + other) / (1 + rate), 2)
+
+
+def _spendable_lots(team: str, currency: str) -> list:
+	today = frappe.utils.getdate()
+	return [
+		lot
+		for lot in credits.credit_lots(team, currency)
+		if not lot.expires_on or frappe.utils.getdate(lot.expires_on) > today
+	]
 
 
 def details_overdue(team: str) -> bool:

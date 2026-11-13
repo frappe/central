@@ -7,6 +7,7 @@ import CycleBreakdownPanel from '@/components/billing/CycleBreakdownPanel.vue'
 import CycleFacts from '@/components/billing/CycleFacts.vue'
 import EditBillingProfileDialog from '@/components/billing/EditBillingProfileDialog.vue'
 import EstimatedCard from '@/components/billing/EstimatedCard.vue'
+import GstStateBanner from '@/components/billing/GstStateBanner.vue'
 import GstStatusBanner from '@/components/billing/GstStatusBanner.vue'
 import LimitsCard from '@/components/billing/LimitsCard.vue'
 import OutstandingAlert from '@/components/billing/OutstandingAlert.vue'
@@ -148,6 +149,7 @@ watch(
 			<CollectionActionBanner @add-credit="onAddCredits" />
 			<TrialBillingBanner @upgrade="upgradeServerName = $event" />
 			<GstStatusBanner @edit="setupDialogOpen = true" />
+			<GstStateBanner @edit="setupDialogOpen = true" />
 
 			<div class="grid gap-3 md:gap-4 lg:grid-cols-3">
 				<EstimatedCard

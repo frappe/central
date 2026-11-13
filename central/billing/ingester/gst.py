@@ -21,8 +21,12 @@ COMPANY_STATE_TTL = 24 * 60 * 60
 RETRY_AFTER = 60 * 60
 
 
-def treatment(team: str) -> frappe._dict:
-	"""GSTIN, GST category, place of supply, and the tax template (None: no GST)."""
+def treatment(team: str, charged_tax: float | None = None) -> frappe._dict:
+	"""GSTIN, GST category, place of supply, and the tax template (None: no GST).
+
+	`charged_tax` is the GST already on the document. When given, it decides the template,
+	so the filing matches what was charged even if the team's standing changed since.
+	"""
 	from central.billing.revenue import gst_status
 
 	profile = (
@@ -37,16 +41,14 @@ def treatment(team: str) -> frappe._dict:
 	gstin = gst_status.standing(team).gstin or ""
 	code = state_code(profile.state)
 	place_of_supply = f"{code}-{profile.state}" if code else None
-	if _zero_rated_sez(team):
+	if _is_untaxed(team, charged_tax):
 		return frappe._dict(gstin=gstin, gst_category="SEZ", place_of_supply=place_of_supply, template=None)
 
-	settings = accounting_settings()
-	in_state = is_in_state(profile.state)
 	return frappe._dict(
 		gstin=gstin,
 		gst_category=(profile.gst_category or "Registered Regular") if gstin else "Unregistered",
 		place_of_supply=place_of_supply,
-		template=settings.in_state_template if in_state else settings.out_state_template,
+		template=_template_for_state(profile.state),
 	)
 
 
@@ -131,7 +133,25 @@ def _read_company_state_code() -> str | None:
 		return None
 
 
-def _zero_rated_sez(team: str) -> bool:
-	return bool(
-		frappe.db.get_value("Tax Profile", {"team": team, "zero_rated": 1, "zero_rating_reason": "SEZ"})
+def _template_for_state(state: str | None) -> str:
+	settings = accounting_settings()
+	return settings.in_state_template if is_in_state(state) else settings.out_state_template
+
+
+def _is_untaxed(team: str, charged_tax: float | None) -> bool:
+	if charged_tax is None:
+		return _is_zero_rated_sez(team)
+	return not frappe.utils.flt(charged_tax)
+
+
+def _is_zero_rated_sez(team: str) -> bool:
+	"""The rule the invoice tax uses, so what is filed matches what is charged."""
+	from central.billing.revenue import gst_status, tax
+
+	profile = frappe.db.get_value(
+		"Tax Profile",
+		{"team": team, "zero_rating_reason": "SEZ"},
+		["zero_rated", "zero_rating_reason"],
+		as_dict=True,
 	)
+	return bool(profile) and tax.has_zero_rating(profile, gst_status.standing(team))

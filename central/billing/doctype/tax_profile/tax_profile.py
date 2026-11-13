@@ -32,6 +32,7 @@ class TaxProfile(Document):
 				frappe.ValidationError,
 			)
 		self.validate_indian_team_pays_gst()
+		self.validate_overseas_is_outside_india()
 
 	def validate_indian_team_pays_gst(self):
 		"""GST is mandatory in India. Only a zero-rated profile, which states its reason, has no GST."""
@@ -45,3 +46,31 @@ class TaxProfile(Document):
 			),
 			frappe.ValidationError,
 		)
+
+	def validate_overseas_is_outside_india(self):
+		"""An India billing address is never filed as Overseas, so the bill and the filed invoice agree.
+		Checked only when the zero-rating changes, so an older row still saves other edits."""
+		if not self.has_zero_rating_changed():
+			return
+		if self.is_overseas_in_india():
+			frappe.throw(
+				_(
+					"A team billed in India cannot be zero-rated as Overseas. Use SEZ, or remove the zero-rating."
+				),
+				frappe.ValidationError,
+			)
+
+	def has_zero_rating_changed(self) -> bool:
+		return (
+			self.is_new()
+			or self.has_value_changed("zero_rated")
+			or self.has_value_changed("zero_rating_reason")
+		)
+
+	def is_overseas_in_india(self) -> bool:
+		"""Whether the profile is zero-rated as Overseas for a team billed in India (India address or INR)."""
+		from central.billing.revenue.tax import is_indian_team
+
+		if not (self.zero_rated and self.zero_rating_reason == "Overseas"):
+			return False
+		return is_indian_team(self.team)

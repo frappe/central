@@ -73,6 +73,7 @@ The tiers and amounts in your console depend on your billing currency. The conso
 Frappe Cloud checks your limits when you create or resize a server. It refuses the change when:
 
 - The new monthly cost and your current costs go above your spend limit. Choose a smaller plan.
+- You pay with credits only, and your credits do not cover the new monthly cost and your current costs. Credit you added pays the cost before tax, and the GST you paid with it pays the tax. Free credit pays the tax too, so it covers less before tax. Add credit or a payment method.
 - Your team already runs the most servers that your tier allows. Terminate a server you no longer need.
 
 When your projected spend reaches 80% of the limit, the spend on the **Limits** card turns amber.

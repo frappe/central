@@ -56,7 +56,7 @@ def team_rail(team: str) -> tuple[str | None, str | None]:
 		return None, None
 	gateway = frappe.db.get_value(
 		"Payment Method",
-		{"team": team, "status": "Active", "reauth_required": 0},
+		{"team": team, "status": "Active"},
 		"gateway",
 		order_by="priority asc, creation asc",
 	) or _default_gateway(currency)
@@ -191,11 +191,11 @@ def choose(team: str, mode: str) -> dict:
 
 
 def _has_chargeable_method(team: str) -> bool:
-	"""An active method that is not waiting on the customer to re-authorise it."""
+	"""An active method. A mandate awaiting re-authorisation still counts."""
 	return bool(
 		frappe.get_all(
 			"Payment Method",
-			filters={"team": team, "status": "Active", "reauth_required": 0},
+			filters={"team": team, "status": "Active"},
 			limit=1,
 		)
 	)

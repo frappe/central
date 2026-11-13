@@ -80,8 +80,7 @@ def resolve_tax(team: str, subtotal) -> dict:
 	block["output_tax_type"] = p.output_tax_type or "None"
 	block["output_tax_rate"] = frappe.utils.flt(p.output_tax_rate)
 
-	# An SEZ supply is zero-rated only to a live GSTIN; a lapsed one is taxed.
-	if p.zero_rated and not (gst.lapsed and p.zero_rating_reason == "SEZ"):
+	if has_zero_rating(p, gst):
 		# Zero-rated WITH a reason — the tax is 0 but auditable.
 		if not p.zero_rating_reason:
 			frappe.throw(_("Zero-rated team has no zero-rating reason."), frappe.ValidationError)
@@ -96,6 +95,17 @@ def resolve_tax(team: str, subtotal) -> dict:
 		block["tds_amount"] = frappe.utils.flt(subtotal * block["tds_rate"] / 100, 2)
 
 	return block
+
+
+def with_output_tax(team: str, amount) -> float:
+	"""`amount` plus the output tax the team pays on it."""
+	amount = frappe.utils.flt(amount)
+	return amount + resolve_tax(team, amount)["output_tax_amount"]
+
+
+def has_zero_rating(profile, gst) -> bool:
+	"""Whether the Tax Profile's zero-rating holds. An SEZ supply is zero-rated only to a GSTIN that has not lapsed."""
+	return bool(profile.zero_rated) and not (gst.lapsed and profile.zero_rating_reason == "SEZ")
 
 
 def tax_label(team: str) -> str | None:

@@ -110,14 +110,14 @@ def _no_way_to_pay(team: str, sources: dict) -> list[frappe._dict]:
 
 
 def _mandate_reauth_pending(team: str) -> list[frappe._dict]:
-	"""A mandate the charge loop skips until the customer re-consents."""
+	"""A mandate below the spend limit with GST, until the customer re-consents."""
 	if not mandates.reauth_pending(team):
 		return []
 	finding = _finding(
 		"mandate_reauth_pending",
 		"A mandate is awaiting re-authorisation",
-		"Until the customer re-consents its ceiling stays where it was, and the "
-		"method is skipped by the charge loop.",
+		"Until the customer re-consents it is charged only up to its old maximum, "
+		"so a larger bill goes to the next method.",
 	)
 	return [finding]
 

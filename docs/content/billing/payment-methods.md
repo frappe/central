@@ -8,7 +8,7 @@ You need the Owner, Admin, or Billing role to add, order, or remove payment meth
 
 ## Before you begin
 
-Add your billing details first. Frappe Cloud needs your currency, legal name, and address before you can add a payment method or credit. When they are missing, **Billing > Payments** shows **Add your billing details**. Click **Add billing details**, complete the form, and click **Save**. The **Add payment method** dialog then opens, so you can add a card at once.
+Add your billing details first. Frappe Cloud needs your currency, legal name, and address before you can add a payment method or credit. A billing address in India also needs its state, because the GST on your bills depends on it. Until you add the state, GST is charged as IGST, and **Billing > Overview** shows **Your bills carry IGST 18% until you add your state.** with your GST rate. Click **Add state** to add it. When they are missing, **Billing > Payments** shows **Add your billing details**. Click **Add billing details**, complete the form, and click **Save**. The **Add payment method** dialog then opens, so you can add a card at once.
 
 ## How payment methods are used
 
@@ -36,7 +36,7 @@ Frappe Cloud validates the card with a small temporary charge, and refunds it at
 
 The dialog can ask for a phone number. A phone number is required to set up automatic card payments, and it is saved to your billing profile.
 
-The options in the dialog depend on your billing currency. Teams billed in INR can also see RuPay Card and UPI Autopay, which you authorise on your bank's page. To authorise automatic payments, Razorpay charges ₹1. Frappe Cloud refunds it after the authorisation succeeds. Amex and Diners cards cannot be charged automatically. Add credit instead.
+The options in the dialog depend on your billing currency. Teams billed in INR can also see RuPay Card and UPI Autopay, which you authorise on your bank's page. A card you add through Stripe and a UPI Autopay mandate are authorised for a maximum amount per debit: your spend limit plus GST, but not more than ₹15,000. A RuPay or other card you add through Razorpay is authorised for a higher amount, but Frappe Cloud charges it automatically only up to ₹15,000 at a time. UPI Autopay is not available when your spend limit plus GST is ₹1,00,000 or more. When your spend limit goes up, a UPI Autopay mandate below the new amount shows **Re-auth needed**, and you get a notice to authorise it again. Frappe Cloud also checked each UPI Autopay mandate once when GST was added to the maximum. A mandate below your spend limit plus GST shows **Re-auth needed** even if your spend limit did not change. Until you do, it is still charged, up to its old maximum. A card you saved earlier keeps the maximum it was authorised for. A bill above that maximum is charged to your next payment method. If no payment method can take the bill, your account shows **Action Required** and you pay the bill by hand. To raise the maximum, remove the card and add it again. To authorise automatic payments, Razorpay charges ₹1. Frappe Cloud refunds it after the authorisation succeeds. Amex and Diners cards cannot be charged automatically. Add credit instead.
 
 ### When you see "Too many failed attempts"
 
@@ -83,7 +83,7 @@ Invoices then use your other methods, if any. With no payment method and no cred
 | --- | --- |
 | **Primary** | Charged first after credits. |
 | **Fallback 1**, **Fallback 2** | Charged in this order when the methods above fail. |
-| **Re-auth needed** | The method must be authorised again before it can be charged. |
+| **Re-auth needed** | The mandate's maximum is below your spend limit plus GST. It is still charged, up to that maximum. Authorise it again to cover larger bills. |
 | Any other status | The method is not active and is not charged. |
 
 ## See also
