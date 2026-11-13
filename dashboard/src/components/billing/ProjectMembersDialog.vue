@@ -6,6 +6,7 @@ import RowActionsMenu from '@/components/common/RowActionsMenu.vue'
 import { useBillingOverview } from '@/composables/useBillingOverview'
 import { getErrorMessage, successToast } from '@/lib/feedback'
 import { subscriptionTitle } from '@/lib/subscriptions'
+import { __ } from '@/lib/translate'
 import type { Project, SubscriptionRow } from '@/types/billing'
 
 // Which servers show under a Project's heading in the cost breakdown — the other
@@ -83,7 +84,7 @@ async function removeMember(sub: SubscriptionRow): Promise<void> {
 	try {
 		await assign.submit({ subscription: sub.name, project: null })
 		if (assign.error) throw assign.error
-		successToast(`${subscriptionTitle(sub)} removed from this project.`)
+		successToast(__('{0} removed from this project.', [subscriptionTitle(sub)]))
 		reloadSubscriptionGrouping()
 		emit('changed')
 	} catch (e) {
@@ -95,13 +96,16 @@ async function removeMember(sub: SubscriptionRow): Promise<void> {
 </script>
 
 <template>
-	<Dialog v-model="open" :title="project ? `${project.title} — servers` : ''">
+	<Dialog
+		v-model="open"
+		:title="project ? __('{0} — servers', [project.title]) : ''"
+	>
 		<template #default>
 			<div class="space-y-4">
 				<Alert
 					v-if="formError"
 					theme="red"
-					title="Couldn't update the project's servers"
+					:title="__('Couldn\'t update the project\'s servers')"
 					:description="formError"
 				/>
 				<div v-if="members.length" class="divide-y divide-outline-gray-1">
@@ -116,35 +120,35 @@ async function removeMember(sub: SubscriptionRow): Promise<void> {
 						<RowActionsMenu
 							:options="[
 								{
-									label: 'Remove from project',
+									label: __('Remove from project'),
 									icon: 'lucide-x',
 									onClick: () => removeMember(sub),
 								},
 							]"
-							label="Remove from project"
+							:label="__('Remove from project')"
 							icon="lucide-ellipsis"
 							:busy="busy === sub.name"
 						/>
 					</div>
 				</div>
 				<p v-else class="text-p-sm text-ink-gray-5">
-					No servers in this project yet — add one below.
+					{{ __('No servers in this project yet — add one below.') }}
 				</p>
 
 				<div class="flex items-end gap-2 border-t border-outline-gray-2 pt-4">
 					<Select
 						v-if="candidates.length"
 						v-model="toAdd"
-						:options="[{ label: 'Choose a server…', value: NONE }, ...candidates]"
-						label="Add a server"
+						:options="[{ label: __('Choose a server…'), value: NONE }, ...candidates]"
+						:label="__('Add a server')"
 						class="flex-1"
 					/>
 					<p v-else class="text-p-sm text-ink-gray-5">
-						Every server is already in this project.
+						{{ __('Every server is already in this project.') }}
 					</p>
 					<Button
 						v-if="candidates.length"
-						label="Add"
+						:label="__('Add')"
 						:disabled="!toAdd"
 						@click="addMember"
 					/>

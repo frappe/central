@@ -5,6 +5,7 @@ import { API, method } from '@/api/methods'
 import { useSession } from '@/composables/useSession'
 import { ordinal } from '@/lib/date'
 import { getErrorMessage, successToast } from '@/lib/feedback'
+import { __ } from '@/lib/translate'
 import type { BillingSettings } from '@/types/billing'
 
 interface Props {
@@ -55,7 +56,7 @@ watch(draft, () => (formError.value = ''))
 
 const options = computed(() =>
 	Array.from({ length: settings.data?.last_payment_day ?? 0 }, (_, index) => ({
-		label: `${ordinal(index + 1)} of the month`,
+		label: __('{0} of the month', [ordinal(index + 1)]),
 		value: String(index + 1),
 	})),
 )
@@ -106,7 +107,7 @@ async function submit(): Promise<void> {
 
 		if (save.error) throw save.error
 
-		successToast('Payment date saved')
+		successToast(__('Payment date saved'))
 		settings.reload()
 		emit('saved')
 	} catch (error) {
@@ -124,9 +125,9 @@ async function submit(): Promise<void> {
 	<Alert
 		v-else-if="settings.error && !settings.data"
 		theme="red"
-		title="The payment date couldn't load"
+		:title="__('The payment date couldn\'t load')"
 		:description="getErrorMessage(settings.error, 'Try again in a moment.')"
-		:primary-action="{ label: 'Retry', onClick: () => settings.reload() }"
+		:primary-action="{ label: __('Retry'), onClick: () => settings.reload() }"
 	/>
 
 	<form
@@ -137,7 +138,7 @@ async function submit(): Promise<void> {
 		<Alert
 			v-if="formError"
 			theme="red"
-			title="Couldn't change the payment date"
+			:title="__('Couldn\'t change the payment date')"
 			:description="formError"
 		/>
 
@@ -145,14 +146,14 @@ async function submit(): Promise<void> {
 			v-model="draft"
 			:options="options"
 			:disabled="!canChange"
-			label="Payment date"
+			:label="__('Payment date')"
 			:description="hint"
 		/>
 
 		<Alert
 			v-if="oneRetryWarning"
 			theme="amber"
-			title="This day gets one retry"
+			:title="__('This day gets one retry')"
 			:description="oneRetryWarning"
 		/>
 
@@ -160,7 +161,7 @@ async function submit(): Promise<void> {
 			<Button
 				type="submit"
 				variant="solid"
-				label="Save payment date"
+				:label="__('Save payment date')"
 				:disabled="isUnchanged || settings.loading"
 				:loading="save.loading"
 			/>

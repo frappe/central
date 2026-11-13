@@ -11,6 +11,7 @@ import { shortDate } from '@/lib/date'
 import { getDunningSteps } from '@/lib/dunning'
 import { getErrorMessage } from '@/lib/feedback'
 import { formatDate, money } from '@/lib/format'
+import { __ } from '@/lib/translate'
 import type { PaymentSchedule } from '@/types/billing'
 
 // The tray behind "Next payment": the debit itself, the 24-hour pre-debit notices
@@ -58,7 +59,7 @@ const blockerLines = computed(() => {
 const chargeStep = computed(
 	() =>
 		getDunningSteps(data.value)[0] ?? {
-			label: "We'll charge on",
+			label: __("We'll charge on"),
 			date: data.value?.charge_on,
 			hint: '',
 		},
@@ -66,7 +67,7 @@ const chargeStep = computed(
 </script>
 
 <template>
-	<SidePanel v-model:open="open" title="Payment schedule">
+	<SidePanel v-model:open="open" :title="__('Payment schedule')">
 		<LoadingText v-if="loading" :lines="5" class="p-4" />
 
 		<template v-else>
@@ -77,9 +78,9 @@ const chargeStep = computed(
 			<div v-if="loadFailed" class="p-4">
 				<Alert
 					theme="red"
-					title="The payment schedule couldn't load"
+					:title="__('The payment schedule couldn\'t load')"
 					:description="getErrorMessage(schedule.error, 'Try again in a moment.')"
-					:primary-action="{ label: 'Retry', onClick: () => schedule.reload() }"
+					:primary-action="{ label: __('Retry'), onClick: () => schedule.reload() }"
 				/>
 			</div>
 
@@ -87,7 +88,9 @@ const chargeStep = computed(
 				<!-- What we intend to do -->
 				<div class="border-b border-outline-gray-2 p-4">
 					<div class="flex items-baseline justify-between gap-3">
-						<span class="text-p-sm text-ink-gray-5">Amount due</span>
+						<span class="text-p-sm text-ink-gray-5"
+							>{{ __('Amount due') }}</span
+						>
 						<span class="text-base-medium tabular-nums text-ink-gray-9">
 							{{ money(amount, currency) }}
 						</span>
@@ -106,7 +109,7 @@ const chargeStep = computed(
 						v-if="data?.method?.label"
 						class="mt-1.5 flex items-baseline justify-between gap-3"
 					>
-						<span class="text-p-sm text-ink-gray-5">From</span>
+						<span class="text-p-sm text-ink-gray-5">{{ __('From') }}</span>
 						<span class="text-sm-medium text-ink-gray-8">
 							{{ data.method.label }}
 						</span>
@@ -115,7 +118,9 @@ const chargeStep = computed(
 						v-if="data?.method?.ceiling"
 						class="mt-1.5 flex items-baseline justify-between gap-3"
 					>
-						<span class="text-p-sm text-ink-gray-5">Auto-debit limit</span>
+						<span class="text-p-sm text-ink-gray-5"
+							>{{ __('Auto-debit limit') }}</span
+						>
 						<span class="text-sm-medium tabular-nums text-ink-gray-8">
 							{{ money(data.method.ceiling, currency) }}
 						</span>
@@ -138,7 +143,7 @@ const chargeStep = computed(
 					class="border-b border-outline-gray-2 p-4"
 				>
 					<p class="mb-2 text-p-sm text-ink-gray-5">
-						Advance notices queued before debiting
+						{{ __('Advance notices queued before debiting') }}
 					</p>
 					<ul class="divide-y divide-outline-gray-1">
 						<li
@@ -147,7 +152,7 @@ const chargeStep = computed(
 							class="flex items-baseline justify-between gap-3 py-2"
 						>
 							<span class="min-w-0 truncate text-p-sm text-ink-gray-7">
-								{{ notice.subject || notice.invoice || 'Pre-debit notice' }}
+								{{ notice.subject || notice.invoice || __('Pre-debit notice') }}
 							</span>
 							<span class="shrink-0 text-p-sm text-ink-gray-5">
 								{{ formatDate(notice.queued_at) }}
@@ -158,7 +163,9 @@ const chargeStep = computed(
 
 				<!-- Published up front, not discovered one retry at a time -->
 				<div v-if="data?.if_unpaid?.length" class="p-4">
-					<p class="mb-2 text-p-sm text-ink-gray-5">If this goes unpaid</p>
+					<p class="mb-2 text-p-sm text-ink-gray-5">
+						{{ __('If this goes unpaid') }}
+					</p>
 					<ul class="space-y-2">
 						<li
 							v-for="(stage, idx) in data.if_unpaid"
@@ -172,8 +179,7 @@ const chargeStep = computed(
 						</li>
 					</ul>
 					<p class="mt-3 text-p-sm text-ink-gray-5">
-						Servers stop at suspension. Nothing is deleted, and you can start
-						them again once the bill is settled.
+						{{ __('Servers stop at suspension. Nothing is deleted, and you can start them again once the bill is settled.') }}
 					</p>
 				</div>
 			</template>
