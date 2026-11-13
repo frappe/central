@@ -109,6 +109,32 @@ class TestInvoiceKeepsItsTax(TaxLabelTestCase):
 		self.assertIsNone(tax.TaxNames(TEAM).note(doc))
 
 
+class TestInvoiceKeepsItsState(TaxLabelTestCase):
+	"""An invoice is named by the state it was issued with, as it is filed."""
+
+	def _recorded(self, state, **kw):
+		return _invoice(TEAM, gst_state=state, gst_state_recorded=1, **kw)
+
+	def test_an_in_state_invoice_stays_cgst_after_the_team_moves(self):
+		name = self._recorded("Maharashtra")
+		self._move_to("Karnataka")
+		self.assertEqual(tax.TaxNames(TEAM).label(frappe.get_doc("Invoice", name)), "CGST 9% + SGST 9%")
+		self.assertEqual(invoice_api.get_invoice(name)["tax_label"], "CGST 9% + SGST 9%")
+
+	def test_an_invoice_issued_without_a_state_stays_igst(self):
+		name = self._recorded(None)
+		row = next(r for r in invoice_api.list_invoices(TEAM) if r["name"] == name)
+		self.assertEqual(row["tax_note"], "incl. IGST 18%")
+
+	def test_the_next_payment_follows_the_recorded_state(self):
+		self._recorded("Karnataka")
+		self.assertEqual(outlook.get_next_payment(TEAM)["tax_note"], "incl. IGST 18%")
+
+	def test_the_team_tax_today_follows_the_team_state(self):
+		self._recorded("Karnataka")
+		self.assertEqual(tax.tax_label(TEAM), "CGST 9% + SGST 9%")
+
+
 class TestApisExposeTheLabel(TaxLabelTestCase):
 	def test_the_invoice_detail_names_its_tax_and_reason(self):
 		self._move_to("Karnataka")

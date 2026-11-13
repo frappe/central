@@ -127,9 +127,8 @@ def get_tax_names(team: str) -> dict:
 
 class TaxNames:
 	"""Names the GST on one team's amounts, from a tax block: the team's tax today, an
-	invoice or a forecast. The rate and the SEZ zero-rating come from the block. An
-	invoice does not keep its place of supply, so IGST or CGST + SGST follows the
-	team's billing state today."""
+	invoice or a forecast. The rate and the SEZ zero-rating come from the block. IGST or
+	CGST + SGST follows the state an invoice was issued with, else the team's state today."""
 
 	def __init__(self, team: str):
 		self.team = team
@@ -168,8 +167,18 @@ class TaxNames:
 		if block.get("output_tax_type") != "GST" or not frappe.utils.flt(block.get("output_tax_amount")):
 			return None
 		rate = frappe.utils.flt(block.get("output_tax_rate"))
-		split = self._split
+		split = self._split_for(block)
 		return _(names[split]).format(_percent(rate / 2 if split == "CGST" else rate))
+
+	def _split_for(self, block) -> str:
+		"""An invoice that recorded its state is named as it was filed."""
+		from central.billing.ingester import gst
+
+		if not gst.is_state_recorded(block):
+			return self._split
+		invoice = block if block.get("team") else frappe._dict(block, team=self.team)
+		split = gst_split_for_invoice(invoice)
+		return {CGST_SGST: "CGST", IGST: "IGST"}.get(split, "GST")
 
 	@cached_property
 	def _split(self) -> str:
@@ -195,7 +204,14 @@ _NOTES = {
 }
 
 # The fields of a stored invoice that `TaxNames` reads.
-LABEL_FIELDS = ("output_tax_type", "output_tax_rate", "output_tax_amount", "zero_rating_reason")
+LABEL_FIELDS = (
+	"output_tax_type",
+	"output_tax_rate",
+	"output_tax_amount",
+	"zero_rating_reason",
+	"gst_state",
+	"gst_state_recorded",
+)
 
 ZERO_RATING_REASONS = {
 	"SEZ": N_("Zero-rated supply to a Special Economic Zone (SEZ) unit."),
@@ -219,7 +235,7 @@ def gst_split_for_invoice(invoice) -> str | None:
 
 	It follows the state recorded at issue, the same one the invoice is filed under, and the
 	team's current state until one is recorded. None when the invoice charges no GST, the team
-	is outside India, or the company's state was never known. Nothing shows it yet.
+	is outside India, or the company's state was never known.
 	"""
 	from central.billing.ingester import gst
 
