@@ -22,6 +22,7 @@ import {
 import { useCall } from 'frappe-ui'
 import { ref } from 'vue'
 import { API, method } from '@/api/methods'
+import { useSetupWait } from '@/composables/useSetupWait'
 import { getErrorMessage, successToast } from '@/lib/feedback'
 import { isCancelledIntent, stripeCardElementStyle } from '@/lib/gateway'
 import { __ } from '@/lib/translate'
@@ -66,6 +67,7 @@ export function useAddStripeCard({
 	let card: StripeCardElement | null = null
 	let orderPromise: Promise<CardSetupOrder | null> | null = null
 	let setupTeam = ''
+	const { closedAttemptMessage } = useSetupWait()
 
 	// useCall.submit() resolves void — read the order off `.data` once it settles.
 	function startSetup(): Promise<CardSetupOrder | null> {
@@ -75,18 +77,12 @@ export function useAddStripeCard({
 			.catch(() => null)
 	}
 
-	// The server cancelled this setup after too many failed attempts. Asking it for a
-	// new one shows the wait; if the wait is over, the customer gets a fresh setup.
-	async function reopenSetup(): Promise<string> {
-		orderPromise = startSetup()
-		const order = await orderPromise
-		if (!order?.client_secret)
-			return getErrorMessage(
-				initiate.error,
-				__('Could not start card setup. Please try again.'),
-			)
-		return __(
-			'This card setup was closed. Add the card again to try once more.',
+	// The server closed this setup after too many failed attempts. Say the wait, or
+	// ask for a fresh start; nothing new is opened on the customer's behalf.
+	async function explainClosedSetup(): Promise<string> {
+		return closedAttemptMessage(
+			setupTeam,
+			__('This attempt was closed. Start again to add your card.'),
 		)
 	}
 
@@ -171,7 +167,8 @@ export function useAddStripeCard({
 				},
 			)
 			if (setupError && isCancelledIntent(setupError)) {
-				error.value = await reopenSetup()
+				const closed = await explainClosedSetup()
+				if (card) error.value = closed
 				return
 			}
 			if (setupError) {

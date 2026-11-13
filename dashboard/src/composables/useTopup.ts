@@ -22,6 +22,7 @@ import { useCall } from 'frappe-ui'
 import { computed, ref } from 'vue'
 import { API, method } from '@/api/methods'
 import { useSession } from '@/composables/useSession'
+import { useSetupWait } from '@/composables/useSetupWait'
 import { getErrorMessage, successToast } from '@/lib/feedback'
 import {
 	type GatewayOrder,
@@ -57,7 +58,7 @@ export function useTopup({ onDone }: { onDone?: (res: unknown) => void } = {}) {
 	let stripe: Stripe | null = null
 	let card: StripeCardElement | null = null
 	let order: GatewayOrder | null = null
-	let orderParams: Record<string, unknown> = {}
+	const { closedAttemptMessage } = useSetupWait()
 
 	// Create the gateway order, then resolve by rail:
 	//  - Stripe → { card: true }: dialog mounts the card Element.
@@ -73,15 +74,14 @@ export function useTopup({ onDone }: { onDone?: (res: unknown) => void } = {}) {
 	): Promise<BeginResult> {
 		error.value = ''
 		try {
-			orderParams = {
+			await createOrder.submit({
 				team: activeTeam.value,
 				amount,
 				method: payMethod,
 				// What the customer tapped. The backend resolves the rail from it, so a
 				// card top-up reaches Stripe even though Razorpay owns the INR default.
 				instrument,
-			}
-			await createOrder.submit(orderParams)
+			})
 			if (createOrder.error) throw createOrder.error
 			// Capture locally: the shared `order` is nulled by destroy() when the dialog
 			// closes, which can race an in-flight confirm below.
@@ -184,7 +184,9 @@ export function useTopup({ onDone }: { onDone?: (res: unknown) => void } = {}) {
 					payment_method: { card },
 				})
 			if (payError && isCancelledIntent(payError)) {
-				error.value = await reopenOrder()
+				const closed = await explainClosedOrder()
+				// The dialog may have closed while the server answered.
+				if (card) error.value = closed
 				return
 			}
 			if (payError) throw payError
@@ -205,17 +207,13 @@ export function useTopup({ onDone }: { onDone?: (res: unknown) => void } = {}) {
 		}
 	}
 
-	// The server cancelled this payment after too many failed attempts. Asking it for a
-	// new order shows the wait; if the wait is over, the customer gets a fresh order.
-	async function reopenOrder(): Promise<string> {
-		await createOrder.submit(orderParams)
-		if (createOrder.error || !createOrder.data)
-			return getErrorMessage(
-				createOrder.error,
-				__('Top-up could not be completed'),
-			)
-		order = createOrder.data
-		return __('This payment was closed. Pay again to try once more.')
+	// The server closed this payment after too many failed attempts. Say the wait, or
+	// ask for a fresh start; nothing new is opened on the customer's behalf.
+	async function explainClosedOrder(): Promise<string> {
+		return closedAttemptMessage(
+			activeTeam.value ?? '',
+			__('This attempt was closed. Start again to add credit.'),
+		)
 	}
 
 	function finish(res: unknown): void {

@@ -122,6 +122,18 @@ def initiate_card_setup(team: str | None = None, gateway: str | None = None) -> 
 		return payments.initiate_payment_method_setup(team, gateway)
 
 
+@frappe.whitelist()
+def get_setup_wait(team: str | None = None) -> dict:
+	"""How long the caller must wait before a new setup or top-up. It creates nothing."""
+	team = _resolve_team(team)
+	from central.billing.payments import setup_lockout
+
+	wait = setup_lockout.wait_for(team, frappe.session.user)
+	if not wait:
+		return {"message": None, "seconds": None}
+	return {"message": setup_lockout.wait_message(wait), "seconds": int(wait.total_seconds())}
+
+
 @frappe.whitelist(methods=["POST"])
 @rate_limit(limit=20, seconds=60 * 60, user_based=True)
 def confirm_card(payment_method: str | None = None) -> dict:

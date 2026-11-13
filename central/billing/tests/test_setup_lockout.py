@@ -406,3 +406,27 @@ class TestSetupLockout(BillingTestCase):
 		with self.assertRaises(setup_lockout.TooManyFailedSetups) as raised:
 			setup_lockout.check(TEAM)
 		self.assertIn("Try again in 30 minutes", str(raised.exception))
+
+	def test_the_dashboard_reads_the_wait_without_opening_anything(self):
+		from central.billing.api.dashboard import get_setup_wait
+
+		team = make_billing_team(self.user).name
+		frappe.set_user(self.user)
+		self.addCleanup(frappe.set_user, "Administrator")
+		self.assertEqual(get_setup_wait(team), {"message": None, "seconds": None})
+		frappe.set_user("Administrator")
+		self.record_failures(times=5, team=team)
+		frappe.set_user(self.user)
+		wait = get_setup_wait(team)
+		self.assertIn("Try again in 10 minutes", wait["message"])
+		self.assertAlmostEqual(wait["seconds"], 10 * MINUTE, delta=MINUTE)
+		self.assertFalse(frappe.db.exists("Top-up Order", {"team": team}))
+		self.assertEqual(frappe.db.count("Payment Method", {"team": team}), 1)
+
+	def test_the_dashboard_wait_refuses_another_team(self):
+		from central.billing.api.dashboard import get_setup_wait
+
+		frappe.set_user(self.user)
+		self.addCleanup(frappe.set_user, "Administrator")
+		with self.assertRaises(frappe.PermissionError):
+			get_setup_wait(TEAM)
