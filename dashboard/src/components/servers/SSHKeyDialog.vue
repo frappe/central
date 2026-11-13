@@ -3,6 +3,7 @@ import { Alert, Button, Dialog, FormControl } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import { getErrorMessage } from '@/lib/feedback'
 import { sshKeysProblem } from '@/lib/sshKeys'
+import { __ } from '@/lib/translate'
 import type { TeamSSHKey } from '@/types/sshKeys'
 
 interface Props {
@@ -54,49 +55,51 @@ async function submit() {
 		busy.value = false
 	}
 }
+
+const saveSshKeyErrorTitle = __("Couldn't save the SSH key")
 </script>
 
 <template>
 	<Dialog
 		v-model="open"
-		:title="keyToRotate ? 'Rotate SSH key' : 'Add SSH key'"
+		:title="keyToRotate ? __('Rotate SSH key') : __('Add SSH key')"
 		size="lg"
 	>
 		<div class="flex flex-col gap-5">
 			<p class="text-p-sm text-ink-gray-6">
 				{{ keyToRotate
-					? 'The new public key will replace this key on servers that selected it.'
-					: 'Save a public key for your team. It is selected here when you save it.' }}
+					? __('The new public key will replace this key on servers that selected it.')
+					: __('Save a public key for your team. It is selected here when you save it.') }}
 			</p>
 			<Alert
 				v-if="error"
 				theme="red"
-				title="Couldn't save the SSH key"
+				:title="saveSshKeyErrorTitle"
 				:description="error"
 			/>
 			<FormControl
 				v-if="!keyToRotate"
 				autofocus
 				v-model="title"
-				label="Name"
-				placeholder="Work laptop"
+				:label="__('Name')"
+				:placeholder="__('Work laptop')"
 			/>
 			<FormControl
 				v-model="publicKey"
 				:autofocus="!!keyToRotate"
 				type="textarea"
-				label="SSH public key"
-				placeholder="ssh-ed25519 AAAA…"
+				:label="__('SSH public key')"
+				:placeholder="__('ssh-ed25519 AAAA…')"
 				:aria-invalid="!!problem"
 			/>
 			<p v-if="problem" class="text-p-sm text-ink-red-6">{{ problem }}</p>
 			<p v-else class="text-p-sm text-ink-gray-5">
-				Paste one line from a .pub file. Private keys are never needed.
+				{{ __('Paste one line from a .pub file. Private keys are never needed.') }}
 			</p>
 			<div class="flex justify-end gap-2">
-				<Button label="Cancel" :disabled="busy" @click="open = false" />
+				<Button :label="__('Cancel')" :disabled="busy" @click="open = false" />
 				<Button
-					:label="keyToRotate ? 'Rotate key' : 'Add key'"
+					:label="keyToRotate ? __('Rotate key') : __('Add key')"
 					variant="solid"
 					:loading="busy"
 					:disabled="!title.trim() || !publicKey.trim() || !!problem"

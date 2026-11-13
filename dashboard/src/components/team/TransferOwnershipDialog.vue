@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { Alert, Dialog, TextInput } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
+import TranslatedText from '@/components/common/TranslatedText.vue'
 import { useSession } from '@/composables/useSession'
 import { useTeamMembers } from '@/composables/useTeamMembers'
 import { useTeamSettings } from '@/composables/useTeamSettings'
+import { __ } from '@/lib/translate'
 import type { TeamMemberRow } from '@/types/api'
 
 interface Props {
@@ -41,14 +43,14 @@ const confirm = async (): Promise<void> => {
 const dialogOptions = computed(() => ({
 	actions: [
 		{
-			label: 'Cancel',
+			label: __('Cancel'),
 			variant: 'outline' as const,
 			onClick: () => {
 				open.value = false
 			},
 		},
 		{
-			label: 'Transfer ownership',
+			label: __('Transfer ownership'),
 			variant: 'solid' as const,
 			theme: 'red' as const,
 			disabled: !confirmed.value,
@@ -56,12 +58,15 @@ const dialogOptions = computed(() => ({
 		},
 	],
 }))
+
+const transferOwnershipErrorTitle = __("Couldn't transfer ownership")
+const nameConfirmLabel = __("Type the member's name to confirm")
 </script>
 
 <template>
 	<Dialog
 		v-model="open"
-		title="Transfer ownership"
+		:title="__('Transfer ownership')"
 		size="sm"
 		:actions="dialogOptions.actions"
 	>
@@ -69,21 +74,29 @@ const dialogOptions = computed(() => ({
 			<Alert
 				v-if="error"
 				theme="red"
-				title="Couldn't transfer ownership"
+				:title="transferOwnershipErrorTitle"
 				:description="error"
 			/>
 			<p class="text-p-base text-ink-gray-7">
-				<span class="text-p-base-medium text-ink-gray-9">{{ expected }}</span>
-				becomes the owner of
-				<span class="text-p-base-medium text-ink-gray-9"
-					>{{ activeTeamLabel }}</span
+				<TranslatedText
+					:text="__('{0} becomes the owner of {1} and you drop to Admin. Only the new owner can hand it back.')"
 				>
-				and you drop to Admin. Only the new owner can hand it back.
+					<template #0>
+						<span class="text-p-base-medium text-ink-gray-9"
+							>{{ expected }}</span
+						>
+					</template>
+					<template #1>
+						<span class="text-p-base-medium text-ink-gray-9"
+							>{{ activeTeamLabel }}</span
+						>
+					</template>
+				</TranslatedText>
 			</p>
 			<TextInput
 				v-model="typed"
 				autofocus
-				label="Type the member's name to confirm"
+				:label="nameConfirmLabel"
 				:placeholder="expected"
 				autocomplete="off"
 			/>

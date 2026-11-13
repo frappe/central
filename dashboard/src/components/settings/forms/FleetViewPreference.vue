@@ -5,6 +5,7 @@ import {
 	type FleetViewChoice,
 	fleetViewChoice,
 } from '@/composables/useFleetViewChoice'
+import { __ } from '@/lib/translate'
 import PreferenceCard from './PreferenceCard.vue'
 
 interface FleetViewOption {
@@ -14,9 +15,9 @@ interface FleetViewOption {
 }
 
 const OPTIONS: FleetViewOption[] = [
-	{ value: 'auto', label: 'Automatic', panes: ['map', 'list'] },
-	{ value: 'map', label: 'Map', panes: ['map'] },
-	{ value: 'list', label: 'List', panes: ['list'] },
+	{ value: 'auto', label: __('Automatic'), panes: ['map', 'list'] },
+	{ value: 'map', label: __('Map'), panes: ['map'] },
+	{ value: 'list', label: __('List'), panes: ['list'] },
 ]
 
 const LAND = [
@@ -49,8 +50,8 @@ const PINS = [
 	<div class="mt-8">
 		<SettingsRow
 			class="!py-0"
-			title="Servers view"
-			description="Automatic uses List when a region has more than 10 servers."
+			:title="__('Servers view')"
+			:description="__('Automatic uses List when a region has more than 10 servers.')"
 		/>
 
 		<div class="mt-4 grid grid-cols-3 gap-3">

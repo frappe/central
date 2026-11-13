@@ -3,6 +3,7 @@ import { Alert, Button, Spinner, TabButtons } from 'frappe-ui'
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
+import TranslatedText from '@/components/common/TranslatedText.vue'
 import MapHealthStrips from '@/components/servers/MapHealthStrips.vue'
 import ResizeServerDialog from '@/components/servers/ResizeServerDialog.vue'
 import ServerFilters from '@/components/servers/ServerFilters.vue'
@@ -20,6 +21,7 @@ import { useServers } from '@/composables/useServers'
 import { getServerActions, type ServerActions } from '@/lib/capabilities'
 import { infoToast } from '@/lib/feedback'
 import { canChange } from '@/lib/status'
+import { __ } from '@/lib/translate'
 
 const router = useRouter()
 const route = useRoute()
@@ -57,13 +59,13 @@ const {
 } = useServerFleet()
 
 const FLEET_VIEW_OPTIONS = [
-	{ label: 'Map', value: 'map', iconLeft: 'lucide-map' },
-	{ label: 'List', value: 'list', iconLeft: 'lucide-list' },
+	{ label: __('Map'), value: 'map', iconLeft: 'lucide-map' },
+	{ label: __('List'), value: 'list', iconLeft: 'lucide-list' },
 ]
 
 const MAP_VIEW_OPTIONS = [
-	{ label: 'My regions', value: 'fleet' },
-	{ label: 'World', value: 'world' },
+	{ label: __('My regions'), value: 'fleet' },
+	{ label: __('World'), value: 'world' },
 ]
 const { refreshing, stale, busy, opening, openConsole } = useServers()
 
@@ -130,24 +132,26 @@ useServerLink(
 		overview: showServer,
 		resize: (server) => {
 			if (!canChange(server))
-				infoToast("This server can't be resized right now.")
+				infoToast(__("This server can't be resized right now."))
 			else if (!getServerActions(server, teamActions.value).resize)
-				infoToast("You can't resize this server.")
+				infoToast(__("You can't resize this server."))
 			else openResize(server)
 		},
 		'open-bench': (server) => {
 			if (!getServerActions(server, teamActions.value).open)
-				infoToast("You can't open this server.")
+				infoToast(__("You can't open this server."))
 			else void openBench(server, { inPlace: true })
 		},
 		// An app's "End subscription" lands here, so its customer meets one server, not the list.
 		terminate: (server) => {
 			if (!getServerActions(server, teamActions.value).terminate)
-				infoToast("You can't terminate this server.")
+				infoToast(__("You can't terminate this server."))
 			else pendingTerminate.value = server
 		},
 	},
 )
+
+const loadServersErrorTitle = __("Couldn't load your servers")
 </script>
 
 <template>
@@ -157,13 +161,13 @@ useServerLink(
 				v-if="activeTeam && !isFleetEmpty"
 				v-model="fleetView"
 				size="sm"
-				aria-label="Servers view"
+				:aria-label="__('Servers view')"
 				:options="FLEET_VIEW_OPTIONS"
 			/>
 
 			<Button
 				v-if="activeTeam"
-				label="Refresh"
+				:label="__('Refresh')"
 				icon-left="lucide-refresh-cw"
 				:loading="refreshing"
 				@click="refresh"
@@ -172,7 +176,7 @@ useServerLink(
 			<Button
 				v-if="activeTeam && canCreateServer && !isFleetEmpty"
 				variant="solid"
-				label="New server"
+				:label="__('New server')"
 				icon-left="lucide-plus"
 				@click="$router.push('/servers/new')"
 			/>
@@ -315,7 +319,7 @@ useServerLink(
 					<TabButtons
 						v-model="mapView"
 						variant="ghost"
-						aria-label="Map view"
+						:aria-label="__('Map view')"
 						:options="MAP_VIEW_OPTIONS"
 					/>
 				</div>
@@ -334,9 +338,9 @@ useServerLink(
 					<Alert
 						class="pointer-events-auto w-full max-w-md shadow-lg"
 						theme="red"
-						title="Couldn't load your servers"
+						:title="loadServersErrorTitle"
 						:description="error"
-						:primary-action="{ label: 'Retry', onClick: reload }"
+						:primary-action="{ label: __('Retry'), onClick: reload }"
 					/>
 				</div>
 			</div>
@@ -344,16 +348,21 @@ useServerLink(
 
 		<ConfirmDialog
 			v-model:target="pendingRestart"
-			title="Restart server"
-			confirm-label="Restart"
+			:title="__('Restart server')"
+			:confirm-label="__('Restart')"
 			:loading="busy === pendingRestart?.resource_id"
 			@confirm="confirmRestart"
 		>
 			<p class="text-p-base text-ink-gray-7">
-				Restart
-				<span class="text-p-base-semibold text-ink-gray-9"
-					>{{ pendingRestart?.title || pendingRestart?.resource_id }}</span
-				>? It will be unavailable for a moment.
+				<TranslatedText
+					:text="__('Restart {0}? It will be unavailable for a moment.')"
+				>
+					<template #0>
+						<span class="text-p-base-semibold text-ink-gray-9"
+							>{{ pendingRestart?.title || pendingRestart?.resource_id }}</span
+						>
+					</template>
+				</TranslatedText>
 			</p>
 		</ConfirmDialog>
 

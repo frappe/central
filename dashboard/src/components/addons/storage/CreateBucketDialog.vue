@@ -6,13 +6,13 @@ import { useMeteredServices } from '@/composables/useMeteredServices'
 import { useObjectStorage } from '@/composables/useObjectStorage'
 import { getErrorMessage } from '@/lib/feedback'
 import { money } from '@/lib/format'
-
 import {
 	flagEmoji,
 	hasMapCoords,
 	type MapSpot,
 	regionLabel,
 } from '@/lib/serverMap'
+import { __ } from '@/lib/translate'
 
 import type { BucketCredentials } from '@/types/storage'
 
@@ -75,12 +75,17 @@ const create = async (): Promise<void> => {
 		creating.value = false
 	}
 }
+
+const createBucketErrorTitle = __("Couldn't create the bucket")
+const regionDescription = __(
+	"Objects stay in this region. A bucket can't move later.",
+)
 </script>
 
 <template>
 	<Dialog
 		v-model="open"
-		title="Create bucket"
+		:title="__('Create bucket')"
 		size="lg"
 		:dismissible="!creating"
 		:show-close-button="!creating"
@@ -90,7 +95,7 @@ const create = async (): Promise<void> => {
 			<Alert
 				v-if="error"
 				theme="red"
-				title="Couldn't create the bucket"
+				:title="createBucketErrorTitle"
 				:description="error"
 			/>
 
@@ -109,21 +114,21 @@ const create = async (): Promise<void> => {
 			<TextInput
 				v-model="name"
 				autofocus
-				label="Name"
-				placeholder="media"
-				description="Lowercase letters, digits, dots and hyphens."
+				:label="__('Name')"
+				:placeholder="__('media')"
+				:description="__('Lowercase letters, digits, dots and hyphens.')"
 				required
 				pattern="[a-z0-9.\-]*[a-z0-9]"
-				title="Lowercase letters, digits, dots and hyphens, ending in a letter or digit."
+				:title="__('Lowercase letters, digits, dots and hyphens, ending in a letter or digit.')"
 				autocomplete="off"
 				:disabled="creating"
 			/>
 
 			<Select
 				v-model="region"
-				label="Region"
+				:label="__('Region')"
 				:options="regionOptions"
-				description="Objects stay in this region. A bucket can't move later."
+				:description="regionDescription"
 				side="bottom"
 				:disabled="creating"
 			/>
@@ -132,19 +137,23 @@ const create = async (): Promise<void> => {
 				v-if="plan"
 				class="flex items-baseline justify-between gap-3 border-t border-outline-gray-2 pt-4 text-sm text-ink-gray-6"
 			>
-				{{ plan.allowance }} {{ plan.unit }} included
+				{{ __('{0} {1} included', [plan.allowance, plan.unit]) }}
 				<span class="shrink-0 text-base-semibold tabular-nums text-ink-gray-9">
 					{{ money(plan.rate, currency, { trimTrailingZeros: true }) }}
-					<span class="text-sm text-ink-gray-5">/ month</span>
+					<span class="text-sm text-ink-gray-5">{{ __('/ month') }}</span>
 				</span>
 			</p>
 
 			<div class="flex justify-end gap-2">
-				<Button label="Cancel" :disabled="creating" @click="open = false" />
+				<Button
+					:label="__('Cancel')"
+					:disabled="creating"
+					@click="open = false"
+				/>
 				<Button
 					type="submit"
 					variant="solid"
-					label="Create bucket"
+					:label="__('Create bucket')"
 					:loading="creating"
 				/>
 			</div>

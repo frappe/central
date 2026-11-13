@@ -9,11 +9,12 @@ import { useCapabilities } from '@/composables/useCapabilities'
 import { useSession } from '@/composables/useSession'
 import { useTeamSSHKeys } from '@/composables/useTeamSSHKeys'
 import { getErrorMessage, successToast } from '@/lib/feedback'
+import { __ } from '@/lib/translate'
 import type { TeamSSHKey } from '@/types/sshKeys'
 
 const COLUMNS = [
-	{ key: 'title', label: 'Key', class: 'w-full max-w-0' },
-	{ key: 'server_count', label: 'Servers' },
+	{ key: 'title', label: __('Key'), class: 'w-full max-w-0' },
+	{ key: 'server_count', label: __('Servers') },
 	{ key: 'actions', label: '', class: 'w-10 pr-1' },
 ]
 
@@ -48,7 +49,7 @@ const rotateSelected = async (
 	if (!rotating.value) return
 
 	await rotate(rotating.value.name, publicKey)
-	successToast('Key rotation queued for selected servers')
+	successToast(__('Key rotation queued for selected servers'))
 }
 
 const retrySelected = async (key: TeamSSHKey): Promise<void> => {
@@ -56,7 +57,7 @@ const retrySelected = async (key: TeamSSHKey): Promise<void> => {
 
 	try {
 		await retry(key.name)
-		successToast(`Retry queued for ${key.title}`)
+		successToast(__('Retry queued for {0}', [key.title]))
 	} catch (failure) {
 		actionError.value = getErrorMessage(
 			failure,
@@ -66,8 +67,11 @@ const retrySelected = async (key: TeamSSHKey): Promise<void> => {
 }
 
 const deleteSelected = async (key: TeamSSHKey): Promise<void> => {
+	const keyName = [key.title]
 	if (
-		!confirm(`Delete ${key.title}? It must first be removed from every server.`)
+		!confirm(
+			__('Delete {0}? It must first be removed from every server.', keyName),
+		)
 	)
 		return
 
@@ -75,7 +79,7 @@ const deleteSelected = async (key: TeamSSHKey): Promise<void> => {
 
 	try {
 		await remove(key.name)
-		successToast(`${key.title} deleted`)
+		successToast(__('{0} deleted', [key.title]))
 	} catch (failure) {
 		actionError.value = getErrorMessage(failure, "The key couldn't be deleted.")
 	}
@@ -87,14 +91,14 @@ const getActions = (key: TeamSSHKey) =>
 				...(key.last_sync_error
 					? [
 							{
-								label: 'Retry sync',
+								label: __('Retry sync'),
 								icon: 'lucide-refresh-cw',
 								onClick: () => retrySelected(key),
 							},
 						]
 					: []),
 				{
-					label: 'Rotate key',
+					label: __('Rotate key'),
 					icon: 'lucide-refresh-cw',
 					onClick: () => {
 						rotating.value = key
@@ -104,7 +108,7 @@ const getActions = (key: TeamSSHKey) =>
 					? []
 					: [
 							{
-								label: 'Delete',
+								label: __('Delete'),
 								icon: 'lucide-trash-2',
 								theme: 'red' as const,
 								onClick: () => deleteSelected(key),
@@ -116,6 +120,9 @@ const getActions = (key: TeamSSHKey) =>
 const closeRotation = (open: boolean): void => {
 	if (!open) rotating.value = null
 }
+
+const updateSshKeysErrorTitle = __("Couldn't update your SSH keys")
+const keysLoadErrorTitle = __("Keys couldn't load")
 </script>
 
 <template>
@@ -123,7 +130,7 @@ const closeRotation = (open: boolean): void => {
 		<Teleport defer to="#settings-actions-ssh-keys">
 			<Button
 				v-if="canManageSSHKeys && keys.length"
-				label="Add"
+				:label="__('Add')"
 				icon-left="lucide-plus"
 				@click="adding = true"
 			/>
@@ -132,30 +139,30 @@ const closeRotation = (open: boolean): void => {
 		<Alert
 			v-if="actionError"
 			theme="red"
-			title="Couldn't update your SSH keys"
+			:title="updateSshKeysErrorTitle"
 			:description="actionError"
 		/>
 
 		<EmptyState
 			v-if="error"
 			icon="lucide-cloud-off"
-			title="Keys couldn't load"
+			:title="keysLoadErrorTitle"
 			:description="error"
 		>
 			<template #action>
-				<Button label="Retry" @click="reload" />
+				<Button :label="__('Retry')" @click="reload" />
 			</template>
 		</EmptyState>
 
 		<EmptyState
 			v-else-if="!loading && !keys.length"
 			icon="lucide-key-round"
-			title="No SSH keys yet"
-			description="Add a public key, then use it when you create servers."
+			:title="__('No SSH keys yet')"
+			:description="__('Add a public key, then use it when you create servers.')"
 		>
 			<template v-if="canManageSSHKeys" #action>
 				<Button
-					label="Add SSH key"
+					:label="__('Add SSH key')"
 					icon-left="lucide-plus"
 					@click="adding = true"
 				/>
@@ -167,8 +174,8 @@ const closeRotation = (open: boolean): void => {
 				v-if="keys.length"
 				v-model="keyQuery"
 				type="search"
-				placeholder="Search keys"
-				aria-label="Search SSH keys"
+				:placeholder="__('Search keys')"
+				:aria-label="__('Search SSH keys')"
 			>
 				<template #prefix>
 					<span
@@ -182,13 +189,13 @@ const closeRotation = (open: boolean): void => {
 				v-if="keys.length && !visibleKeys.length"
 				class="py-4 text-p-sm text-ink-gray-6"
 			>
-				No key matches “{{ keyQuery.trim() }}”.
+				{{ __('No key matches “{0}”.', [keyQuery.trim()]) }}
 				<button
 					type="button"
 					class="text-p-sm-medium text-ink-gray-8 underline"
 					@click="keyQuery = ''"
 				>
-					Clear search
+					{{ __('Clear search') }}
 				</button>
 			</p>
 
@@ -220,7 +227,10 @@ const closeRotation = (open: boolean): void => {
 				</template>
 
 				<template #actions="{ row }">
-					<RowActionsMenu :options="getActions(row)" label="SSH key actions" />
+					<RowActionsMenu
+						:options="getActions(row)"
+						:label="__('SSH key actions')"
+					/>
 				</template>
 			</Table>
 		</template>
@@ -228,7 +238,7 @@ const closeRotation = (open: boolean): void => {
 		<SSHKeyDialog
 			v-model="adding"
 			:save="create"
-			@saved="successToast('SSH key added')"
+			@saved="successToast(__('SSH key added'))"
 		/>
 
 		<SSHKeyDialog

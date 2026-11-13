@@ -8,6 +8,7 @@ import { useCapabilities } from '@/composables/useCapabilities'
 import { useSession } from '@/composables/useSession'
 import { settingsOpen } from '@/composables/useSettings'
 import { useTeamSettings } from '@/composables/useTeamSettings'
+import { __ } from '@/lib/translate'
 
 const router = useRouter()
 const { activeTeam, activeTeamLabel, activeTeamLogo } = useSession()
@@ -40,6 +41,8 @@ async function onArchive(): Promise<void> {
 		router.push('/servers')
 	}
 }
+
+const updateTeamErrorTitle = __("Couldn't update the team")
 </script>
 
 <template>
@@ -48,12 +51,12 @@ async function onArchive(): Promise<void> {
 			<Alert
 				v-if="error && !archiveTarget"
 				theme="red"
-				title="Couldn't update the team"
+				:title="updateTeamErrorTitle"
 				:description="error"
 			/>
 			<ImageUpload
 				v-if="canEditTeam && activeTeam"
-				label="Logo"
+				:label="__('Logo')"
 				:name="name.trim() || activeTeamLabel"
 				:image="activeTeamLogo"
 				:attach-to="{
@@ -70,7 +73,7 @@ async function onArchive(): Promise<void> {
 				<TextInput
 					v-model="name"
 					v-focus="canEditTeam"
-					label="Team name"
+					:label="__('Team name')"
 					class="flex-1"
 					:disabled="!canEditTeam"
 					@keydown.enter="onSave"
@@ -78,24 +81,24 @@ async function onArchive(): Promise<void> {
 				<Button
 					v-if="canEditTeam && changed"
 					variant="solid"
-					label="Save"
+					:label="__('Save')"
 					:loading="saving"
 					@click="onSave"
 				/>
 			</div>
 			<p v-if="!canEditTeam" class="text-p-sm text-ink-gray-5">
-				Editing the team requires the Admin or Owner role.
+				{{ __('Editing the team requires the Admin or Owner role.') }}
 			</p>
 		</div>
 
 		<div v-if="canDeleteTeam" class="mt-8 border-t border-outline-gray-1">
 			<SettingsRow
-				title="Archive team"
-				description="Close this team for every member. Terminate its servers and pay its invoices first."
+				:title="__('Archive team')"
+				:description="__('Close this team for every member. Terminate its servers and pay its invoices first.')"
 			>
 				<Button
 					theme="red"
-					label="Archive"
+					:label="__('Archive')"
 					@click="archiveTarget = activeTeam"
 				/>
 			</SettingsRow>

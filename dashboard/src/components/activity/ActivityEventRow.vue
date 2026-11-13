@@ -102,14 +102,16 @@ function toggle() {
 						<template v-else>{{ part.text }}</template>
 					</template>
 					<span v-if="event.initiator" class="text-ink-gray-5">
-						· initiated by
+						{{ __('· initiated by') }}
 						<span class="text-ink-gray-7">{{ event.initiator.label }}</span>
 					</span>
 					<template v-if="isRun">
 						<span class="text-ink-gray-5"> · {{ repeatCount }}</span>
 					</template>
 					<template v-else-if="hasMultipleChanges">
-						<span class="text-ink-gray-5"> · {{ changeCount }} changes</span>
+						<span class="text-ink-gray-5">
+							{{ __('· {0} changes', [changeCount]) }}</span
+						>
 					</template>
 					<template v-else-if="summary.length">
 						<span class="text-ink-gray-4" aria-hidden="true"> · </span>
@@ -148,7 +150,7 @@ function toggle() {
 					class="flex size-6 items-center justify-center rounded-4 text-ink-gray-4 transition-colors hover:text-ink-gray-7 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-outline-gray-3"
 					:aria-expanded="isOpen"
 					:aria-controls="detailId"
-					:aria-label="isOpen ? 'Hide details' : 'Show details'"
+					:aria-label="isOpen ? __('Hide details') : __('Show details')"
 					@click.stop="toggle"
 				>
 					<span
@@ -228,11 +230,11 @@ function toggle() {
 					<Button
 						variant="subtle"
 						size="sm"
-						:label="`Show ${Math.min(hiddenCount, 10)} more`"
+						:label="__('Show {0} more', [Math.min(hiddenCount, 10)])"
 						@click.stop="runLimit += 10"
 					/>
 					<span class="text-xs text-ink-gray-5">
-						Showing {{ visibleRun.length }} of {{ events.length }} events
+						{{ __('Showing {0} of {1} events', [visibleRun.length, events.length]) }}
 					</span>
 				</div>
 			</template>

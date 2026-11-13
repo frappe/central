@@ -29,11 +29,11 @@ const recentTickets = computed(() => props.openTickets.slice(0, 3))
 <template>
 	<div v-if="!hasQuery" class="space-y-2">
 		<p v-if="!recentTickets.length" class="text-p-sm text-ink-gray-5">
-			Type to search help articles and your team's past tickets.
+			{{ __("Type to search help articles and your team's past tickets.") }}
 		</p>
 		<template v-else>
 			<p class="px-2 py-1 text-xs uppercase text-ink-gray-4">
-				Your open tickets
+				{{ __('Your open tickets') }}
 			</p>
 			<component
 				:is="ticket.url ? 'a' : 'div'"
@@ -67,19 +67,21 @@ const recentTickets = computed(() => props.openTickets.slice(0, 3))
 	</div>
 
 	<p v-else-if="error" class="text-p-sm text-ink-gray-5">
-		Search is not available right now.
+		{{ __('Search is not available right now.') }}
 	</p>
 
 	<p
 		v-else-if="!hasResults"
 		class="grid h-full place-items-center text-p-sm text-ink-gray-5"
 	>
-		No answers for "{{ query.trim() }}"
+		{{ __('No answers for "{0}"', [query.trim()]) }}
 	</p>
 
 	<div v-else class="space-y-3">
 		<div v-if="articles.length">
-			<p class="px-2 py-1 text-xs uppercase text-ink-gray-4">Help articles</p>
+			<p class="px-2 py-1 text-xs uppercase text-ink-gray-4">
+				{{ __('Help articles') }}
+			</p>
 			<a
 				v-for="article in articles"
 				:key="article.name"
@@ -116,7 +118,7 @@ const recentTickets = computed(() => props.openTickets.slice(0, 3))
 
 		<div v-if="tickets.length">
 			<p class="px-2 py-1 text-xs uppercase text-ink-gray-4">
-				Your team's tickets
+				{{ __("Your team's tickets") }}
 			</p>
 			<component
 				:is="ticket.url ? 'a' : 'div'"
@@ -141,7 +143,7 @@ const recentTickets = computed(() => props.openTickets.slice(0, 3))
 						v-if="!ticket.url && ticket.raised_by"
 						class="block truncate text-p-xs text-ink-gray-5"
 					>
-						Raised by {{ ticket.raised_by }}
+						{{ __('Raised by {0}', [ticket.raised_by]) }}
 					</span>
 				</span>
 				<Badge
