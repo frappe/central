@@ -124,6 +124,7 @@ class TestGstinStanding(TaxTestBase):
 
 	def test_lapsed_gstin_keeps_overseas_zero_rating(self):
 		self._gstin("Cancelled")
+		frappe.db.set_value("Billing Profile", TEAM, "country", "United States")
 		set_tax_profile(
 			output_tax_type="GST", output_tax_rate=18, zero_rated=1, zero_rating_reason="Overseas"
 		)
@@ -189,6 +190,22 @@ class TestOutputTaxFollowsTheCountry(IntegrationTestCase):
 		self._move_to("United States", "USD")
 
 		self.assertEqual(tax.resolve_tax(self.TEAM, 1000)["output_tax_amount"], 0)
+
+	def test_overseas_zero_rating_is_refused_for_india(self):
+		self._signup_from("India")
+		profile = frappe.get_doc("Tax Profile", self.TEAM)
+		profile.update({"zero_rated": 1, "zero_rating_reason": "Overseas"})
+		self.assertRaises(frappe.ValidationError, profile.save, ignore_permissions=True)
+
+	def test_a_profile_moved_into_india_is_no_longer_overseas(self):
+		self._signup_from("United States")
+		frappe.db.set_value("Tax Profile", self.TEAM, {"zero_rated": 1, "zero_rating_reason": "Overseas"})
+		self._move_to("India", "INR")
+
+		zero_rated, reason = frappe.db.get_value(
+			"Tax Profile", self.TEAM, ["zero_rated", "zero_rating_reason"]
+		)
+		self.assertFalse(zero_rated or reason)
 
 	def test_operator_tax_settings_survive_a_country_change(self):
 		self._signup_from("United States")

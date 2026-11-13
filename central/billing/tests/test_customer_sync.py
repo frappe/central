@@ -190,6 +190,7 @@ class TestGstCategory(CustomerSyncTestCase):
 		self.assertEqual(profile.zero_rated, 0)
 
 	def test_other_zero_rating_is_left_alone(self):
+		frappe.db.set_value("Billing Profile", TEAM, "country", "United States")  # Overseas is outside India
 		profile = ensure_tax_profile(TEAM)
 		profile.update({"zero_rated": 1, "zero_rating_reason": "Overseas"})
 		profile.save(ignore_permissions=True)
