@@ -150,56 +150,56 @@ class TestTaxLabel(TaxTestBase):
 		self.enterContext(patch("central.billing.ingester.connection.enabled", return_value=True))
 
 	def test_same_state_is_cgst_and_sgst(self):
-		self.assertEqual(tax.tax_label(TEAM), "CGST 9% + SGST 9%")
+		self.assertEqual(tax.get_tax_names(TEAM)["tax_label"], "CGST 9% + SGST 9%")
 
 	def test_other_state_is_igst(self):
 		frappe.db.set_value("Billing Profile", TEAM, "state", "Karnataka")
-		self.assertEqual(tax.tax_label(TEAM), "IGST 18%")
+		self.assertEqual(tax.get_tax_names(TEAM)["tax_label"], "IGST 18%")
 
 	def test_no_state_is_igst(self):
 		frappe.db.set_value("Billing Profile", TEAM, "state", None)
-		self.assertEqual(tax.tax_label(TEAM), "IGST 18%")
+		self.assertEqual(tax.get_tax_names(TEAM)["tax_label"], "IGST 18%")
 
 	def test_sez_is_named(self):
 		set_tax_profile(output_tax_type="GST", output_tax_rate=18, zero_rated=1, zero_rating_reason="SEZ")
-		self.assertEqual(tax.tax_label(TEAM), "No GST (SEZ)")
+		self.assertEqual(tax.get_tax_names(TEAM)["tax_label"], "No GST (SEZ)")
 
 	def test_sez_with_a_lapsed_gstin_names_the_gst_charged(self):
 		frappe.db.set_value("Billing Profile", TEAM, {"gstin": "27AAPFU0939F1ZV", "gst_status": "Cancelled"})
 		set_tax_profile(output_tax_type="GST", output_tax_rate=18, zero_rated=1, zero_rating_reason="SEZ")
-		self.assertEqual(tax.tax_label(TEAM), "CGST 9% + SGST 9%")
+		self.assertEqual(tax.get_tax_names(TEAM)["tax_label"], "CGST 9% + SGST 9%")
 
 	def test_outside_india_has_no_label(self):
 		complete_billing_profile(TEAM, currency="USD")
 		frappe.db.delete("Tax Profile", {"team": TEAM})
-		self.assertIsNone(tax.tax_label(TEAM))
+		self.assertIsNone(tax.get_tax_names(TEAM)["tax_label"])
 
 	def test_the_company_state_is_read_once_a_day(self):
-		tax.tax_label(TEAM)
-		tax.tax_label(TEAM)
+		tax.get_tax_names(TEAM)["tax_label"]
+		tax.get_tax_names(TEAM)["tax_label"]
 		self.assertEqual(self.read.call_count, 1)
 
 	def test_a_failed_read_uses_the_last_known_state(self):
-		tax.tax_label(TEAM)
+		tax.get_tax_names(TEAM)["tax_label"]
 		frappe.cache.delete_value(gst.COMPANY_STATE_KEY)  # the day is over
 		self.read.side_effect = requests.ConnectionError
-		self.assertEqual(tax.tax_label(TEAM), "CGST 9% + SGST 9%")
+		self.assertEqual(tax.get_tax_names(TEAM)["tax_label"], "CGST 9% + SGST 9%")
 
 	def test_a_company_state_never_known_names_gst_only(self):
 		self.read.side_effect = requests.ConnectionError
-		self.assertEqual(tax.tax_label(TEAM), "GST 18%")
+		self.assertEqual(tax.get_tax_names(TEAM)["tax_label"], "GST 18%")
 
 	def test_a_failed_read_of_a_state_never_known_waits_an_hour(self):
 		self.read.side_effect = requests.ConnectionError
 		with patch("frappe.log_error") as log_error:
-			tax.tax_label(TEAM)
-			self.assertEqual(tax.tax_label(TEAM), "GST 18%")
+			tax.get_tax_names(TEAM)["tax_label"]
+			self.assertEqual(tax.get_tax_names(TEAM)["tax_label"], "GST 18%")
 		self.assertEqual(self.read.call_count, 1)
 		self.assertEqual(log_error.call_count, 1)
 
 	def test_with_the_sync_off_and_no_known_state_it_names_gst_only(self):
 		with patch("central.billing.ingester.connection.enabled", return_value=False):
-			self.assertEqual(tax.tax_label(TEAM), "GST 18%")
+			self.assertEqual(tax.get_tax_names(TEAM)["tax_label"], "GST 18%")
 		self.read.assert_not_called()
 
 

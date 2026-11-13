@@ -112,13 +112,6 @@ def has_zero_rating(profile, gst) -> bool:
 	return bool(profile.zero_rated) and not (gst.lapsed and profile.zero_rating_reason == "SEZ")
 
 
-def tax_label(team: str) -> str | None:
-	"""The GST the team is charged, as its documents name it: "IGST 18%",
-	"CGST 9% + SGST 9%" or "No GST (SEZ)". None when no GST applies. While the
-	company's state was never known, the split cannot be told, so it reads "GST 18%"."""
-	return TaxNames(team).label(resolve_tax(team, 100))
-
-
 def get_tax_names(team: str) -> dict:
 	"""The team's tax today as `tax_label` ("IGST 18%") and `tax_note` ("incl. IGST 18%")."""
 	block, names = resolve_tax(team, 100), TaxNames(team)

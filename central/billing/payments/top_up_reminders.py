@@ -103,7 +103,7 @@ def get_shortfall_due(team: str, bill: float, gst: float, date, invoice: str | N
 	return {
 		"amount": credit,
 		"amount_with_gst": frappe.utils.flt(credit + credits.top_up_gst(team, credit), 2),
-		"tax_label": tax.tax_label(team),
+		"tax_label": tax.get_tax_names(team)["tax_label"],
 		"date": str(date),
 		"limit": limit,
 		"has_method": has_method,

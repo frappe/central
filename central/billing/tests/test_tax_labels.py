@@ -132,7 +132,7 @@ class TestInvoiceKeepsItsState(TaxLabelTestCase):
 
 	def test_the_team_tax_today_follows_the_team_state(self):
 		self._recorded("Karnataka")
-		self.assertEqual(tax.tax_label(TEAM), "CGST 9% + SGST 9%")
+		self.assertEqual(tax.get_tax_names(TEAM)["tax_label"], "CGST 9% + SGST 9%")
 
 
 class TestApisExposeTheLabel(TaxLabelTestCase):
