@@ -358,7 +358,7 @@ def create_payment_method_checkout(redirect_url: str, gateway: str | None = None
 	reference, gateway}`; redirect the payer to `checkout_url`, then poll
 	`confirm_payment_method_checkout`. Stripe only for now (hosted `setup` mode)."""
 	from central.billing.gateways.registry import get_adapter
-	from central.billing.payments import payments
+	from central.billing.payments import payments, setup_lockout
 
 	redirect_url = _require_own_site_url(redirect_url)
 	team = _team()
@@ -374,14 +374,14 @@ def create_payment_method_checkout(redirect_url: str, gateway: str | None = None
 			frappe.ValidationError,
 		)
 
+	setup_lockout.check(team)
 	adapter = get_adapter(gw_doc)
 	payments._cancel_abandoned_setups(team, gw_doc.name)  # close prior never-finished attempts
 	customer = payments.ensure_gateway_customer(team, gw_doc.name, adapter)
 	session = adapter.create_setup_checkout_session(
 		customer, success_url=redirect_url, cancel_url=redirect_url
 	)
-	# Persist the checkout session on the pending row so the setup can be reconciled
-	# on return (or by a webhook) even if the poll below never runs.
+	# Kept on the pending row, so a webhook can reconcile the setup if the poll never runs.
 	method = frappe.get_doc(
 		{
 			"doctype": "Payment Method",

@@ -181,6 +181,7 @@ class BillingProfile(Document):
 		profile_id: DF.Data | None
 		promoted_at: DF.Datetime | None
 		promotion_basis: DF.SmallText | None
+		setup_lock_cleared_at: DF.Datetime | None
 		spend_alert_threshold: DF.Currency
 		state: DF.Autocomplete | None
 		team: DF.Link
@@ -188,6 +189,11 @@ class BillingProfile(Document):
 		trust_tier: DF.Data | None
 		trust_tier_level: DF.Link | None
 	# end: auto-generated types
+
+	def onload(self):
+		from central.billing.payments import setup_lockout
+
+		self.set_onload("setup_lock_wait", bool(setup_lockout.wait_for(self.name)))
 
 	def validate(self):
 		self.validate_phone()
