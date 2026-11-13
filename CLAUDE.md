@@ -289,6 +289,7 @@ Use `pilot frappe ...` for any Frappe CLI command, such as `migrate` or `clear-c
 - Keep valid error handling, boundary validation, cleanup, synchronization, and security checks.
 - Validate untrusted input at its boundary. Central is the authorization source, so treat every capability and team check as security-sensitive.
 - Run the focused tests for the changed module, and the full app suite only before a broad refactor.
+- CI skips the billing tests on a pull request that changes only modules in `skippable` in `.github/workflows/ci.yml`. When billing code starts to use one of those modules, remove it from `skippable`.
 - Always run tests in isolation and in a separate site.
 - In the handover, report the result, the changed paths, and the verification. Explain implementation details only when the user asks or the reason is not clear.
 

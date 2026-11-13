@@ -32,10 +32,11 @@ jobs:
       - name: Pick the test groups this change needs
         id: groups
         run: |
-          # Billing tests never run these modules.
+          # Billing tests never run these modules. A link from billing to one of them makes billing run anyway.
           skippable='investigator|www|oidc|support|geo'
           unrelated="^(dashboard|docs|e2e|llm|\.claude)/|\.md\$|^central/($skippable)(/|\.py\$)"
           if [ "${{ github.event_name }}" = pull_request ] \
+            && ! git grep -qE "central[./]($skippable)([^a-z_]|$)" -- central/billing \
             && ! git diff --name-only HEAD^1 HEAD | grep -qvE "$unrelated"; then
             echo 'groups=["core"]' >> "$GITHUB_OUTPUT"
           else
