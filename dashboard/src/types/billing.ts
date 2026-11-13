@@ -501,6 +501,8 @@ export interface CollectionStatus {
 	projected_total: number
 	/** The tax the projected total includes, e.g. "incl. IGST 18%". */
 	tax_note: string | null
+	/** The tax the amounts the limit caps include, e.g. "incl. IGST 18%"; null for a team not taxed. */
+	limit_tax_note: string | null
 	wallet_balance: number
 	shortfall: number
 	currency: Currency
@@ -529,6 +531,8 @@ export interface TopUpDue {
 		tax_label: string | null
 		payment_date: string
 		limit: string | null
+		/** The tax the amounts the limit caps include; null with no limit or no GST. */
+		limit_tax_note: string | null
 	}
 }
 

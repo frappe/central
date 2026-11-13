@@ -262,6 +262,7 @@ class TestBanner(TopUpTestCase):
 				"tax_label": None,
 				"payment_date": "1 December 2026",
 				"limit": "₹ 15,000.00",
+				"limit_tax_note": None,
 			},
 		)
 

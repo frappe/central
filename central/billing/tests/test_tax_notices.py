@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import frappe
 
-from central.billing.payments import collection_mode, emandate, payment_notices
+from central.billing.payments import collection_mode, emandate, payment_notices, top_up_reminders
 from central.billing.platform import notifications
 from central.billing.tests import test_emandate
 from central.billing.tests.test_tax_labels import COMPANY_STATE, TEAM, TaxLabelTestCase, _invoice, _set_gst
@@ -81,6 +81,16 @@ class TestNoticesNameTheTax(TaxLabelTestCase):
 		message = _message(TEAM, "Action Required")
 		self.assertIn("up to ₹ 15,000.00.", message)
 		self.assertNotIn("SEZ", message)
+
+	def test_the_top_up_reminder_names_the_tax_the_limit_applies_to(self):
+		self._move_to("Karnataka")
+		give_team_a_card(TEAM)
+		frappe.db.set_value("Billing Profile", TEAM, "collection_mode", "Auto Charge")
+		due = top_up_reminders.get_shortfall_due(TEAM, 47200, 7200, "2026-12-01")
+
+		self.assertEqual(top_up_reminders.format_due(due)["limit_tax_note"], "incl. IGST 18%")
+		top_up_reminders.send_top_up_notice(TEAM, due)
+		self.assertIn("up to ₹ 15,000.00 (incl. IGST 18%).", _message(TEAM, top_up_reminders.EVENT))
 
 
 class TestPredebitNoticeShowsTheAmount(test_emandate.EmandateTestBase):

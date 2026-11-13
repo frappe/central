@@ -164,11 +164,11 @@ def _get_limit_context(team: str, invoice: str | None) -> dict:
 	return {
 		"threshold": threshold,
 		"limit": frappe.utils.fmt_money(threshold, currency=currency) if threshold is not None else None,
-		"tax_note": _get_included_tax_note(team),
+		"tax_note": get_included_tax_note(team),
 	}
 
 
-def _get_included_tax_note(team: str) -> str | None:
+def get_included_tax_note(team: str) -> str | None:
 	"""The tax the limited amounts include, or None for a team not taxed: an SEZ note says
 	nothing about a limit."""
 	from central.billing.revenue import tax
