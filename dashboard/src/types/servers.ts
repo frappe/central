@@ -57,6 +57,8 @@ export interface ServerOverview {
 		has_wireguard_access: 0 | 1
 		/** Null until Central first reads the firewall from the region. */
 		firewall_rules: FirewallRules | null
+		/** The team rulesets the server uses. Empty when it has its own rules. */
+		firewall_rulesets: string[]
 		/** Set only for a System Manager. */
 		operator_links: {
 			desk_url: string

@@ -3,6 +3,7 @@ import type { Component } from 'vue'
 import { computed, defineAsyncComponent, ref } from 'vue'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { MOBILE_BREAKPOINT } from '@/composables/useIsMobile'
+import { __ } from '@/lib/translate'
 import { router } from '@/router'
 
 const ProfileForm = defineAsyncComponent(
@@ -23,6 +24,9 @@ const InvitationsForm = defineAsyncComponent(
 const SSHKeysForm = defineAsyncComponent(
 	() => import('@/components/settings/forms/SSHKeysForm.vue'),
 )
+const FirewallRulesetsForm = defineAsyncComponent(
+	() => import('@/components/settings/forms/FirewallRulesetsForm.vue'),
+)
 const WireGuardForm = defineAsyncComponent(
 	() => import('@/components/settings/forms/WireGuardForm.vue'),
 )
@@ -34,6 +38,7 @@ export type SettingsTab =
 	| 'team'
 	| 'invitations'
 	| 'ssh-keys'
+	| 'firewall-rulesets'
 	| 'wireguard'
 
 /** The sidebar sections, in display order. */
@@ -115,6 +120,18 @@ export const SETTINGS_TABS: SettingsTabDef[] = [
 		title: 'SSH keys',
 		description: 'Team keys that sign in to your servers.',
 		component: SSHKeysForm,
+		requires: 'member',
+	},
+	{
+		value: 'firewall-rulesets',
+		group: 'Access',
+		label: __('Firewall rulesets'),
+		icon: 'lucide-brick-wall',
+		title: __('Firewall rulesets'),
+		description: __(
+			'Firewall rules you define once and apply to any server of the team.',
+		),
+		component: FirewallRulesetsForm,
 		requires: 'member',
 	},
 	{

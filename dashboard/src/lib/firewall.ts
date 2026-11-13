@@ -1,3 +1,5 @@
+import { __ } from '@/lib/translate'
+
 export type FirewallProtocol = 'any' | 'tcp' | 'udp' | 'icmp'
 
 /** One allow rule, in the form Atlas stores it. */
@@ -7,7 +9,7 @@ export interface FirewallRule {
 	cidrs: string[]
 }
 
-/** The customer's rules. Central adds its own rules for the private network, VPN and ping. */
+/** The customer's rules, as the region stores them. */
 export interface FirewallRules {
 	inbound: FirewallRule[]
 	outbound: FirewallRule[]
@@ -22,9 +24,9 @@ export interface FirewallService {
 
 export const ANYWHERE_IPV4 = '0.0.0.0/0'
 export const ANYWHERE_IPV6 = '::/0'
-/** The region's private network: the web console, the regional proxy and the team's servers. */
+/** The region's network: the regional proxy and the team's other servers. */
 export const PRIVATE_NETWORK = 'fdaa::/16'
-/** Every WireGuard VPN device of every team in the region. */
+/** The team's WireGuard VPN devices. The region drops devices of other teams. */
 export const WIREGUARD_NETWORK = 'fdac::/16'
 
 export const SERVICES: FirewallService[] = [
@@ -64,7 +66,7 @@ const allow = (...ports: string[]): FirewallRule[] => [
 	})),
 ]
 
-/** Starting rule sets. Each one keeps the private network and ping, and lets the server reach the internet. */
+/** Starting rule sets. Each one keeps the Frappe Cloud network and ping, and lets the server reach the internet. */
 export const PRESETS: { label: string; rules: FirewallRules }[] = [
 	{
 		label: 'Web server',
@@ -104,14 +106,14 @@ export function getAddressLabel(
 	cidr: string,
 	names: Record<string, string> = {},
 ): string {
-	if (cidr === ANYWHERE_IPV4) return 'Anywhere (IPv4)'
-	if (cidr === ANYWHERE_IPV6) return 'Anywhere (IPv6)'
-	if (cidr === PRIVATE_NETWORK) return 'Private network'
-	if (cidr === WIREGUARD_NETWORK) return 'All WireGuard VPN devices'
+	if (cidr === ANYWHERE_IPV4) return __('Any IPv4')
+	if (cidr === ANYWHERE_IPV6) return __('Any IPv6')
+	if (cidr === PRIVATE_NETWORK) return __('Frappe Cloud network')
+	if (cidr === WIREGUARD_NETWORK) return __('Your VPN devices')
 	return names[cidr] ?? cidr
 }
 
-// The web console and the regional proxy use more than one port, so only All traffic keeps them.
+// The regional proxy uses more than one port, so only All traffic keeps it.
 const allowsPrivateNetwork = (rules: FirewallRule[]): boolean =>
 	rules.some(
 		(rule) =>
@@ -263,6 +265,57 @@ export function isSameRule(a: FirewallRule, b: FirewallRule): boolean {
 	)
 }
 
+/** Opening one of these to the whole internet is rarely intended. */
+const EXPOSED_SERVICES = ['MariaDB', 'PostgreSQL', 'Redis', 'All traffic']
+
+/** True when an incoming rule opens a sensitive service to anyone on the internet. */
+export function isExposedRule(rule: FirewallRule): boolean {
+	return (
+		rule.cidrs.includes(ANYWHERE_IPV4) &&
+		rule.cidrs.includes(ANYWHERE_IPV6) &&
+		EXPOSED_SERVICES.includes(getService(rule).label)
+	)
+}
+
+/** A range as its address bits and prefix length. Both ranges are valid before this runs. */
+function getRange(cidr: string): { bits: bigint; mask: number; width: number } {
+	const [address, prefix] = cidr.split('/')
+	const width = address.includes(':') ? 128 : 32
+	const mask = Number(prefix)
+	const parsed = width === 128 ? parseIpv6(address, mask) : parseIpv4(address)
+	return { bits: parsed.bits ?? 0n, mask, width }
+}
+
+function containsRange(outer: string, inner: string): boolean {
+	const wide = getRange(outer)
+	const narrow = getRange(inner)
+	if (wide.width !== narrow.width || wide.mask > narrow.mask) return false
+
+	const shift = BigInt(wide.width - wide.mask)
+	return wide.bits >> shift === narrow.bits >> shift
+}
+
+function containsPorts(outer: string, inner: string): boolean {
+	if (!outer) return true
+	if (!inner) return false
+
+	const [outerStart, outerEnd = outerStart] = outer.split('-').map(Number)
+	const [innerStart, innerEnd = innerStart] = inner.split('-').map(Number)
+	return outerStart <= innerStart && innerEnd <= outerEnd
+}
+
+/** True when `wider` allows everything `rule` allows, so `rule` changes nothing beside it. */
+export function isCoveredBy(rule: FirewallRule, wider: FirewallRule): boolean {
+	return (
+		!isSameRule(rule, wider) &&
+		(wider.protocol === 'any' || wider.protocol === rule.protocol) &&
+		containsPorts(wider.ports, rule.ports) &&
+		rule.cidrs.every((cidr) =>
+			wider.cidrs.some((other) => containsRange(other, cidr)),
+		)
+	)
+}
+
 function opensSSH(rules: FirewallRule[]): boolean {
 	return rules.some(
 		(rule) =>
@@ -280,7 +333,7 @@ export function getFirewallTexts(before: Firewall, after: Firewall): string[] {
 	const hasPrivate = allowsPrivateNetwork(after.inbound)
 	if (!hasPrivate && (!before.enabled || allowsPrivateNetwork(before.inbound)))
 		warnings.push(
-			"No rule allows the private network, so the web console, the regional proxy and your other servers can't reach this server. Sites stop loading through the proxy.",
+			"No rule allows the Frappe Cloud network, so the Frappe Cloud proxy and your other servers can't reach this server. Sites stop loading through the proxy.",
 		)
 	const allowsPing = (rules: FirewallRule[]) =>
 		rules.some(
@@ -295,9 +348,7 @@ export function getFirewallTexts(before: Firewall, after: Firewall): string[] {
 		warnings.push('No rule allows ping, so some IPv6 connections can fail.')
 	if (!opensSSH(after.inbound) && (!before.enabled || opensSSH(before.inbound)))
 		warnings.push(
-			hasPrivate
-				? 'No rule allows SSH, so SSH connections will stop. The web console still works.'
-				: 'No rule allows SSH, so SSH connections will stop.',
+			'No rule allows SSH, so SSH connections will stop. The web console still works.',
 		)
 	if (!after.outbound.length && (!before.enabled || before.outbound.length))
 		warnings.push(

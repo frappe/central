@@ -6,8 +6,11 @@ import { createApp } from 'vue'
 import { createRouter, createWebHistory } from 'vue-router'
 import { FrappeUI } from 'frappe-ui'
 import ServerControls from './ServerControls.vue'
+import { __ } from '../src/lib/translate'
 import '../src/style.css'
 const router = createRouter({history: createWebHistory(), routes: [{path: '/:pathMatch(.*)*', component: ServerControls}]})
-createApp(ServerControls).use(router).use(FrappeUI).mount('#app')
+const app = createApp(ServerControls).use(router).use(FrappeUI)
+app.config.globalProperties.__ = __
+app.mount('#app')
 </script></body>
 </html>

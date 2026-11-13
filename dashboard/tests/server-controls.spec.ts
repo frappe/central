@@ -76,6 +76,7 @@ async function openControls(
 			}
 		if (method === 'resize_server') data = { queued: true, resized: true }
 		if (method === 'update_server_firewall') data = { 'test-vm': null }
+		if (method === 'list_firewall_rulesets') data = []
 		await route.fulfill({ json: { data } })
 	})
 	await page.goto('/tests/server-controls.html')
@@ -213,8 +214,8 @@ test('Mod+Z leaves text undo to the field being typed in', async ({ page }) => {
 	await page.goto('/tests/server-controls.html?specificFirewall=1')
 	const httpsRule = page.getByRole('button', { name: 'Remove HTTPS rule' })
 	await httpsRule.click()
-	const address = page.getByRole('textbox', {
-		name: 'Add an IP address or range, rule 1',
+	const address = page.getByRole('combobox', {
+		name: 'Allowed from, rule 1',
 		exact: true,
 	})
 	await address.fill('203.0.113.9')
@@ -270,18 +271,15 @@ test('specific addresses replace unrestricted access and invalid ranges stay in 
 	page,
 }, testInfo) => {
 	await openControls(page)
-	await page
-		.getByRole('combobox', { name: 'Allowed from, rule 2', exact: true })
-		.click()
-	await page
-		.getByRole('option', { name: 'Specific addresses', exact: true })
-		.click()
-	const input = page.getByRole('textbox', {
-		name: 'Add an IP address or range, rule 2',
+	// Rule 1 and rule 2 both allow anyone, so the second match is the chip of rule 2.
+	for (const name of ['Remove Any IPv4', 'Remove Any IPv6'])
+		await page.getByRole('button', { name, exact: true }).nth(1).click()
+	const input = page.getByRole('combobox', {
+		name: 'Allowed from, rule 2',
 		exact: true,
 	})
 	await input.fill('999.1.1.1')
-	await page.getByRole('button', { name: 'Add', exact: true }).click()
+	await input.press('Enter')
 	await expect(page.getByText('Enter a valid IPv4 address.')).toBeVisible()
 	await input.fill('203.0.113.7')
 	await input.press('Enter')
@@ -333,6 +331,29 @@ test('address validation accepts IPv4 and IPv6 and rejects malformed or non-netw
 	])
 })
 
+test('a rule is covered only by a rule that allows everything it allows', async ({
+	page,
+}) => {
+	await openControls(page)
+	const covered = await page.evaluate(async () => {
+		const modulePath = '/src/lib/firewall.ts'
+		const { isCoveredBy } = await import(modulePath)
+		const anyone = ['0.0.0.0/0', '::/0']
+		const office = { protocol: 'tcp', ports: '22', cidrs: ['198.51.100.0/24'] }
+		return [
+			{ protocol: 'tcp', ports: '22', cidrs: anyone },
+			{ protocol: 'tcp', ports: '20-25', cidrs: ['198.51.0.0/16'] },
+			{ protocol: 'any', ports: '', cidrs: ['0.0.0.0/0'] },
+			office,
+			{ protocol: 'tcp', ports: '443', cidrs: anyone },
+			{ protocol: 'udp', ports: '22', cidrs: anyone },
+			{ protocol: 'tcp', ports: '22', cidrs: ['198.51.100.0/25'] },
+			{ protocol: 'tcp', ports: '22', cidrs: ['::/0'] },
+		].map((wider) => isCoveredBy(office, wider))
+	})
+	expect(covered).toEqual([true, true, true, false, false, false, false, false])
+})
+
 test('trial resizing preserves the catalog spending exemption', async ({
 	page,
 }) => {
@@ -361,11 +382,15 @@ test('enabling an empty firewall applies the complete web defaults together', as
 	const { firewall } = (await request).postDataJSON()
 	expect(firewall).toEqual({
 		enabled: true,
-		inbound: ['22', '80', '443'].map((ports) => ({
-			protocol: 'tcp',
-			ports,
-			cidrs: ['0.0.0.0/0', '::/0'],
-		})),
+		inbound: [
+			{ protocol: 'any', ports: '', cidrs: ['fdaa::/16'] },
+			{ protocol: 'icmp', ports: '', cidrs: ['0.0.0.0/0', '::/0'] },
+			...['22', '80', '443'].map((ports) => ({
+				protocol: 'tcp',
+				ports,
+				cidrs: ['0.0.0.0/0', '::/0'],
+			})),
+		],
 		outbound: [{ protocol: 'any', ports: '', cidrs: ['0.0.0.0/0', '::/0'] }],
 	})
 })
@@ -382,8 +407,8 @@ test('new rules show guidance without an empty error or empty address picker', a
 		.click()
 	await page.getByRole('option', { name: 'Custom TCP', exact: true }).click()
 	await expect(
-		page.getByRole('textbox', {
-			name: 'Add an IP address or range, rule 3',
+		page.getByRole('combobox', {
+			name: 'Allowed from, rule 3',
 			exact: true,
 		}),
 	).toBeVisible()
@@ -396,20 +421,20 @@ test('new rules show guidance without an empty error or empty address picker', a
 	).toBeDisabled()
 })
 
-test('background observations preserve an address still being typed', async ({
+test('an address typed before clicking away is kept through a background observation', async ({
 	page,
 }) => {
 	await openControls(page)
 	await page.goto('/tests/server-controls.html?specificFirewall=1')
-	const input = page.getByRole('textbox', {
-		name: 'Add an IP address or range, rule 1',
-		exact: true,
-	})
-	await input.fill('203.0.113.8')
+	await page
+		.getByRole('combobox', { name: 'Allowed from, rule 1', exact: true })
+		.fill('203.0.113.8')
 	await page
 		.getByRole('button', { name: 'Refresh observed rules', exact: true })
 		.click()
-	await expect(input).toHaveValue('203.0.113.8')
+	await expect(
+		page.getByRole('button', { name: 'Remove 203.0.113.8/32', exact: true }),
+	).toBeVisible()
 })
 
 test('resize option failure shows a retry and cannot submit', async ({

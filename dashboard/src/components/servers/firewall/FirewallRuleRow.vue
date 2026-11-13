@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Button, Combobox, FormControl, Select } from 'frappe-ui'
-import { computed, ref, useId, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
+import Chip from '@/components/common/Chip.vue'
 import {
 	ANYWHERE_IPV4,
 	ANYWHERE_IPV6,
@@ -8,17 +9,19 @@ import {
 	getAddressLabel,
 	getCidrError,
 	getService,
+	isExposedRule,
 	isValidPortRange,
 	SERVICES,
 	toCidr,
 } from '@/lib/firewall'
+import { __ } from '@/lib/translate'
 
 interface Props {
 	rule: FirewallRule
 	index: number
 	incoming: boolean
 	disabled: boolean
-	/** Addresses used by the other rules, offered while typing a new one. */
+	/** The named sources and the addresses of the other rules, offered in the list. */
 	options: string[]
 	/** Names for known addresses, such as the team's WireGuard VPN devices. */
 	names: Record<string, string>
@@ -40,9 +43,7 @@ const PRIVATE_SERVICES = [
 	'Custom TCP',
 	'Custom UDP',
 ]
-const EXPOSED_SERVICES = ['MariaDB', 'PostgreSQL', 'Redis', 'All traffic']
 
-const suggestionsId = useId()
 const address = ref('')
 const addressError = ref('')
 const portTouched = ref(false)
@@ -57,10 +58,14 @@ const anyone = computed(
 		props.rule.cidrs.includes(ANYWHERE_IPV6),
 )
 
-// Typed text that was never added would be silently dropped on apply.
+// Typed text that was never added would be silently dropped on apply. An error belongs to
+// the text that caused it, so it goes when the text changes.
 watch(
-	[address, anyone],
-	() => emit('invalid', !anyone.value && !!address.value.trim()),
+	address,
+	() => {
+		addressError.value = ''
+		emit('invalid', !!address.value.trim())
+	},
 	{ flush: 'sync' },
 )
 
@@ -74,32 +79,50 @@ const portError = computed(() =>
 		? ''
 		: 'Use a port from 1 to 65535, or a range such as 8000-8100.',
 )
-const isExposed = computed(
-	() =>
-		anyone.value &&
-		props.incoming &&
-		EXPOSED_SERVICES.includes(service.value.label),
-)
+const isExposed = computed(() => props.incoming && isExposedRule(props.rule))
 const serviceOptions = SERVICES.map((item) => ({
 	label: item.label,
 	value: item.label,
 }))
-const suggestions = computed(() =>
-	[...new Set(props.options)].filter(
-		(cidr) => !props.rule.cidrs.includes(cidr),
-	),
+const typedCidr = computed(() => toCidr(address.value))
+// The named sources and known addresses this rule does not have yet, then the typed address.
+const sourceOptions = computed(() => [
+	...[...new Set(props.options)]
+		.filter((cidr) => !props.rule.cidrs.includes(cidr))
+		.map((cidr) => {
+			const label = getAddressLabel(cidr, props.names)
+			return {
+				label,
+				value: cidr,
+				description: label === cidr ? undefined : cidr,
+			}
+		}),
+	{
+		type: 'custom' as const,
+		key: 'typed-address',
+		label: __('Add this address'),
+		icon: 'lucide-plus',
+		condition: () => isNewAddress.value,
+		onClick: addTypedAddress,
+	},
+])
+const isNewAddress = computed(
+	() =>
+		!!address.value.trim() &&
+		!getCidrError(address.value) &&
+		!props.rule.cidrs.includes(typedCidr.value),
 )
 
-function clearAddress(): void {
-	address.value = ''
-	addressError.value = ''
+// A named source shows its real range on hover, so the name never hides the address.
+function getTooltip(cidr: string): string | undefined {
+	return getAddressLabel(cidr, props.names) === cidr ? undefined : cidr
 }
 
 function changeService(label: string): void {
 	const next = SERVICES.find((item) => item.label === label)!
 	selectedService.value = label
 	portTouched.value = false
-	clearAddress()
+	address.value = ''
 	emit('update', {
 		...props.rule,
 		protocol: next.protocol,
@@ -109,26 +132,33 @@ function changeService(label: string): void {
 	})
 }
 
-function changeAccess(value: string): void {
-	clearAddress()
-	emit('update', {
-		...props.rule,
-		cidrs: value === 'anyone' ? [ANYWHERE_IPV4, ANYWHERE_IPV6] : [],
-	})
-}
-
-function addAddress(): void {
-	const cidr = toCidr(address.value)
-	addressError.value = getCidrError(address.value)
-	if ([ANYWHERE_IPV4, ANYWHERE_IPV6].includes(cidr))
-		addressError.value = 'Choose Anyone on the internet to allow all addresses.'
-	if (addressError.value) return
+function addSource(cidr: string | null): void {
+	if (!cidr) return
 
 	emit('update', {
 		...props.rule,
 		cidrs: [...new Set([...props.rule.cidrs, cidr])],
 	})
-	clearAddress()
+	address.value = ''
+}
+
+function addTypedAddress(): void {
+	addressError.value = address.value.trim() ? getCidrError(address.value) : ''
+	if (isNewAddress.value) addSource(typedCidr.value)
+}
+
+// The list drops the typed text when it closes, so a valid address is added, not lost.
+function keepTypedAddress(isOpen: boolean): void {
+	if (isOpen) return
+
+	if (isNewAddress.value) addSource(typedCidr.value)
+	else address.value = ''
+}
+
+// Backspace in the empty field removes the last source, as in other chip fields.
+function removeLastAddress(): void {
+	if (!address.value && props.rule.cidrs.length)
+		removeAddress(props.rule.cidrs[props.rule.cidrs.length - 1])
 }
 
 function removeAddress(cidr: string): void {
@@ -181,74 +211,49 @@ function removeAddress(cidr: string): void {
 			{{ portLabel }}
 		</p>
 
+		<!-- The remove button has its own padding, so the field reaches 8px closer to it. -->
 		<div
-			class="order-last col-span-3 min-w-0 space-y-2 sm:order-none sm:col-span-1"
+			class="order-last col-span-3 min-w-0 space-y-2 sm:order-none sm:col-span-1 sm:-mr-2"
 		>
-			<Select
-				:model-value="anyone ? 'anyone' : 'specific'"
-				:aria-label="`${incoming ? 'Allowed from' : 'Allowed to'}, rule ${index + 1}`"
-				:options="[
-					{ label: 'Anyone on the internet', value: 'anyone' },
-					{ label: 'Specific addresses', value: 'specific' },
-				]"
-				:disabled="disabled"
-				class="w-full"
-				@update:model-value="changeAccess"
-			/>
+			<div
+				class="flex min-h-7 flex-wrap items-center gap-1 rounded-4 bg-surface-gray-2 px-1 focus-within:focus-ring"
+				:class="{ 'pr-2': disabled }"
+				@keydown.enter="addTypedAddress"
+				@keydown.backspace="removeLastAddress"
+			>
+				<Chip
+					v-for="cidr in rule.cidrs"
+					:key="cidr"
+					:label="getAddressLabel(cidr, names)"
+					:tooltip="getTooltip(cidr)"
+					:remove-label="disabled ? undefined : `Remove ${getAddressLabel(cidr, names)}`"
+					@remove="removeAddress(cidr)"
+				/>
 
-			<template v-if="!anyone">
-				<ul v-if="rule.cidrs.length" class="flex flex-wrap gap-1.5">
-					<li
-						v-for="cidr in rule.cidrs"
-						:key="cidr"
-						class="inline-flex h-6 items-center rounded-3 bg-surface-gray-2 text-sm text-ink-gray-8"
-						:class="disabled ? 'px-2' : 'pl-2'"
-					>
-						<span
-							:title="getAddressLabel(cidr, names) === cidr ? undefined : cidr"
-						>
-							{{ getAddressLabel(cidr, names) }}
-						</span>
-						<Button
-							v-if="!disabled"
-							variant="ghost"
-							size="xs"
-							icon="lucide-x"
-							:aria-label="`Remove ${getAddressLabel(cidr, names)}`"
-							@click="removeAddress(cidr)"
-						/>
-					</li>
-				</ul>
-
-				<template v-if="!disabled">
-					<FormControl
-						v-model="address"
-						:aria-label="`Add an IP address or range, rule ${index + 1}`"
-						:list="suggestions.length ? suggestionsId : undefined"
-						placeholder="Add an IP address, a range or a device, then press Enter"
-						:error="addressError"
-						@keyup.enter="addAddress"
-					>
-						<template #suffix>
-							<Button
-								v-if="address.trim()"
-								variant="ghost"
-								size="xs"
-								label="Add"
-								@click="addAddress"
-							/>
-						</template>
-					</FormControl>
-					<datalist v-if="suggestions.length" :id="suggestionsId">
-						<option
-							v-for="cidr in suggestions"
-							:key="cidr"
-							:value="cidr"
-							:label="getAddressLabel(cidr, names)"
-						/>
-					</datalist>
-				</template>
-			</template>
+				<Combobox
+					v-if="!disabled"
+					v-model:query="address"
+					:model-value="null"
+					:options="sourceOptions"
+					variant="ghost"
+					open-on-focus
+					:aria-label="`${incoming ? 'Allowed from' : 'Allowed to'}, rule ${index + 1}`"
+					:placeholder="rule.cidrs.length ? __('Add another') : __('Choose who, or type an IP address or range')"
+					:empty-text="__('Type an IP address or range, such as 203.0.113.7')"
+					class="min-w-32 flex-1 !px-1"
+					@update:model-value="addSource"
+					@update:open="keepTypedAddress"
+				/>
+				<span
+					v-else-if="!rule.cidrs.length"
+					class="px-1.5 text-sm text-ink-gray-5"
+				>
+					{{ __('No address') }}
+				</span>
+			</div>
+			<p v-if="addressError" class="text-p-sm text-ink-red-6" role="alert">
+				{{ addressError }}
+			</p>
 
 			<p
 				v-if="isExposed"
@@ -272,10 +277,3 @@ function removeAddress(cidr: string): void {
 		/>
 	</div>
 </template>
-
-<style scoped>
-/* Chrome draws a dropdown arrow on inputs with suggestions, which reads as a select. */
-:deep(input[list]::-webkit-calendar-picker-indicator) {
-	display: none !important;
-}
-</style>
