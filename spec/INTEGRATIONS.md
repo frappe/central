@@ -109,11 +109,11 @@ The Networking tab of a server shows its firewall. A member with `server:network
 | --- | --- | --- |
 | Turn the firewall on or off | `enabled`, plus default rules when enabling an empty firewall | When it opens every port, or blocks SSH or all outbound traffic |
 | Apply changes | `inbound` and `outbound` only | When the saved rules block SSH or all outbound traffic on an enabled firewall |
-| Copy to other servers | `enabled`, `inbound`, and `outbound` | None. The dialog names the servers. |
+| Apply rulesets | `enabled: true` with the merged rules of the selected rulesets | When the merged rules block the private network, SSH, or all outbound traffic |
 
-Rule edits stay in the browser until the customer selects Apply changes. Each direction is a table with the columns Service, Port and Allowed from or Allowed to. Removing a rule takes it out of the table at once. Undo, or Cmd+Z on macOS and Ctrl+Z elsewhere, restores the draft one step at a time. Quick edits to one rule count as one step. In a text field and in a dialog, the shortcut keeps its normal text behavior. A footer below the rules always shows the number of unsaved changes or the reason Apply changes is blocked, with Undo, Discard and Apply changes. Discard restores the saved lists. An unchanged background observation does not replace a pending draft. If the saved rules change, Apply changes is blocked until the customer discards the draft to load the latest saved rules. The presets Web server, SSH only, and Private only fill the rule lists for review before applying. Enabling a firewall with no saved rules allows SSH, HTTP, HTTPS and all outgoing connections.
+Rule edits stay in the browser until the customer selects Apply changes. Each direction is a table with the columns Service, Port and Allowed from or Allowed to. Removing a rule takes it out of the table at once. Undo, or Cmd+Z on macOS and Ctrl+Z elsewhere, restores the draft one step at a time. Quick edits to one rule count as one step. In a text field and in a dialog, the shortcut keeps its normal text behavior. A footer below the rules always shows the number of unsaved changes or the reason Apply changes is blocked, with Undo, Discard and Apply changes. Discard restores the saved lists. An unchanged background observation does not replace a pending draft. If the saved rules change, Apply changes is blocked until the customer discards the draft to load the latest saved rules. The built-in rule sets Web server, SSH only, and Private only are in the Apply ruleset dialog and fill the rule lists for review before applying. Enabling a firewall with no saved rules allows SSH, HTTP, HTTPS and all outgoing connections.
 
-Each row selects a service and either Anyone on the internet or Specific addresses. Anyone permits both IPv4 and IPv6. Specific addresses shows each address of the rule as a removable chip, and an input for another IP address or canonical CIDR range. Enter or Add adds it to the rule. The input suggests addresses that other rules in the same direction use. A single IP becomes a one-address range. Incomplete rules show guidance and cannot be applied. Invalid entries show a field error. An empty TCP or UDP port means all ports for that protocol. Custom ports stay editable when their value matches a preset service port. Central validates the complete change before sending it to Atlas.
+Each row selects a service and has one field for its addresses. The field shows each address as a removable chip and has a list of named sources: Any IPv4, Any IPv6, Frappe Cloud network (`fdaa::/16`), Your VPN devices (`fdac::/16`), each WireGuard VPN device, and the addresses that other rules in the same direction use. A name shows its range on hover. A typed IP address or canonical CIDR range is added with Enter, or when the field loses focus. A single IP becomes a one-address range. Incomplete rules show guidance and cannot be applied. Invalid entries show a field error. An empty TCP or UDP port means all ports for that protocol. Custom ports stay editable when their value matches a preset service port. Central validates the complete change before sending it to Atlas.
 
 `update_server_firewall` takes a list of servers and returns an error or `null` for each one. Central validates the change first: protocol `any`, `tcp`, `udp`, or `icmp`; ports only for TCP and UDP, as one port or one ascending range; address ranges in canonical CIDR form; and each rule only once.
 
@@ -121,13 +121,28 @@ Central sends the change through `PATCH /virtual-machines/{id}/network`. Atlas r
 
 | Rule | Why |
 | --- | --- |
-| All traffic from `fdaa::/16` | The console and the regional gateway reach a machine over the mesh, and an enabled firewall filters mesh traffic too. |
+| All traffic from `fdaa::/16` | The regional proxy and the team's other servers reach a machine over the mesh, and an enabled firewall filters mesh traffic too. The web console does not need it, because Atlas opens the console inside the machine's network namespace. |
 | ICMP from anywhere | IPv6 neighbour discovery and path MTU need it. |
 | TCP 22, 80, and 443 from anywhere | SSH, HTTP, and HTTPS. |
 
 A WireGuard VPN device reaches a server only through a rule that allows its address in `fdac::/16`. Central used to add all traffic from `fdac::/16` to every server and hide it. The patch `remove_wireguard_device_firewall_rule` queues a background job that reads each live server from Atlas and removes the `fdac::/16` rule when the server has it. The job is safe to run again: `central.integrations.servers.remove_legacy_device_rules`.
 
 Atlas checks at most 50 address ranges across all rules. The PATCH reply does not hold the firewall, so Central reads the VM again. Every read stores `is_firewall_enabled` and the customer's rules in `firewall_rules`. A server that Central has not read since this field was added shows its firewall after the next reconcile, which runs every 10 minutes.
+
+### Firewall rulesets
+
+A `Firewall Ruleset` holds named inbound and outbound rules for one Team. Members manage rulesets in Settings > Firewall rulesets. A member needs team-wide `server:network` to create, change, or delete a ruleset, because a ruleset changes every server that uses it.
+
+A server can use more than one ruleset. `Virtual Machine.firewall_rulesets` lists them. Central merges their rules, keeps each rule once, and sends the result as the firewall of the server. Central refuses a selection that holds more than 50 address ranges together.
+
+| Operation | Behavior |
+| --- | --- |
+| `set_server_firewall_rulesets(team, resource_id, rulesets)` | Sends the merged rules with `enabled: true`, then saves the list on the server. An empty list removes every ruleset and the server keeps the rules as its own. |
+| Change the rules of a ruleset | A background job sends the merged rules again to each server that uses the ruleset. A server that fails is named in `last_sync_error`, and Desk has a Sync Servers button to send again. |
+| `update_server_firewall` with rule lists | Refused while the server uses a ruleset. The firewall state can still change. |
+| Delete a ruleset | Refused while a server uses it. |
+
+The Apply ruleset dialog shows the merged rules before it applies them, with the ruleset each rule comes from. It names a rule that a wider rule already covers, a sensitive service that is open to anyone, and a ruleset that adds no rule.
 
 ## Public addresses
 

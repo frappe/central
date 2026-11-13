@@ -51,13 +51,24 @@ When the firewall is off, every port is open to the internet. When you turn it o
 
 | Rule | Why |
 | --- | --- |
-| **All traffic** from **Private network** (`fdaa::/16`) | The web console, the regional proxy that serves your sites, and your other servers in the region connect through it. |
+| **All traffic** from **Frappe Cloud network** (`fdaa::/16`) | The Frappe Cloud proxy that serves your sites and your other servers in the region connect through it. |
 | **Ping** from anyone | IPv6 needs ICMP to find neighbours and the path size. |
 | **SSH**, **HTTP**, and **HTTPS** from anyone | Sign in, and serve sites directly. |
 
-You can remove any of these rules. If you remove **Private network**, the web console and your sites stop working through Frappe Cloud. The console warns you before it applies such a change.
+You can remove any of these rules. If you remove **Frappe Cloud network**, your sites stop working through Frappe Cloud. The web console still works. The console warns you before it applies such a change.
 
-The firewall also filters [WireGuard VPN devices](/servers/wireguard). To let a device in, add a rule and select the device by its name in **Specific addresses**.
+The firewall shows each address range by a name. Hover over a name to see the range.
+
+| Name | Range | Who it is |
+| --- | --- | --- |
+| **Any IPv4** | `0.0.0.0/0` | Anyone on the internet, over IPv4. |
+| **Any IPv6** | `::/0` | Anyone on the internet, over IPv6. |
+| **Frappe Cloud network** | `fdaa::/16` | The Frappe Cloud proxy and your other servers in the region. |
+| **Your VPN devices** | `fdac::/16` | The devices your team added under WireGuard VPN. |
+
+The firewall does not limit who opens a site that the Frappe Cloud proxy serves. The proxy connects to the server from the Frappe Cloud network for every visitor.
+
+The firewall also filters [WireGuard VPN devices](/servers/wireguard). To let a device in, add a rule and select the device by its name in **Allowed from**.
 
 ### Change the rules
 
@@ -65,23 +76,43 @@ The firewall also filters [WireGuard VPN devices](/servers/wireguard). To let a 
 2. Under **Incoming** or **Outgoing**, click **Add incoming rule** or **Add outgoing rule**.
 3. Select a **Service**, such as **SSH**, **HTTPS**, or **Custom TCP**.
 4. For a custom service, type a **Port**. Use one port, a range such as `8000-8005`, or leave it empty for all ports.
-5. In **Allowed from** or **Allowed to**, select **Anyone on the internet**, or select **Specific addresses**. Then type an IP address or range, such as `198.51.100.0/24`, or select a WireGuard VPN device. Press Enter.
+5. Click **Allowed from** or **Allowed to** and select who the rule allows, such as **Any IPv4**, **Your VPN devices**, or a WireGuard VPN device. To allow another address, type an IP address or range, such as `198.51.100.0/24`, then press Enter. Click the cross on a name to remove it.
 6. Click **Apply changes**. Confirm the change.
 
 Click **Undo** to revert the last edit, or **Discard** to drop all unsaved edits. To delete a rule, click its delete icon.
 
-### Use a preset or copy the rules
+### Use rulesets
 
-Click the options button next to the firewall switch:
+A firewall ruleset holds rules that you define once and apply to many servers. When you change a ruleset, every server that uses it gets the new rules.
 
-| Option | Effect |
+A server can use more than one ruleset. The server then allows what any of its rulesets allows. For example, apply a **Base** ruleset to every server, and add a **Proxy** ruleset only to the servers that need its extra rules.
+
+1. Open **Settings**, then click **Firewall rulesets**.
+2. Click **Add ruleset**. Type a **Name**, change the rules, then click **Create ruleset**.
+3. Open the **Networking** tab of a server. In **Firewall**, click **Apply ruleset**.
+4. Select the checkbox of each ruleset the server must use. Click a name to see its rules. Then click **Apply**.
+
+The server now shows the rules of its rulesets, and each rule shows the ruleset it comes from. You cannot change these rules on the server.
+
+| To | Do this |
 | --- | --- |
-| **Use a preset** > **Web server** | Allow the private network, ping, and SSH, HTTP, and HTTPS from the internet, and all outgoing connections. |
-| **Use a preset** > **SSH only** | Allow the private network, ping, and SSH from the internet, and all outgoing connections. |
-| **Use a preset** > **Private only** | Allow the private network and ping. Block other incoming connections. Allow all outgoing connections. |
-| **Copy to other servers** | Apply the same rules to other servers of your team. |
+| Remove one ruleset | Click the cross on its name above the rules. |
+| Change which rulesets the server uses | Click **Change rulesets**. |
+| Change the rules for this server only | Remove every ruleset. The server keeps the rules as its own, and you can change them. |
 
-A preset replaces the rules in the editor. Click **Apply changes** to save them.
+The rulesets of one server can hold 50 addresses together. You can delete a ruleset only when no server uses it. Changing rulesets needs the network capability on the whole team, not on one server.
+
+### Use built-in rules
+
+The **Apply ruleset** dialog also lists three built-in rule sets. Select one and click **Use these rules**. The console copies the rules to the editor of this server. Review them, then click **Apply changes**.
+
+| Built-in | Effect |
+| --- | --- |
+| **Web server** | Allow the Frappe Cloud network, ping, and SSH, HTTP, and HTTPS from the internet, and all outgoing connections. |
+| **SSH only** | Allow the Frappe Cloud network, ping, and SSH from the internet, and all outgoing connections. |
+| **Private only** | Allow the Frappe Cloud network and ping. Block other incoming connections. Allow all outgoing connections. |
+
+If the server uses rulesets, the console removes them first.
 
 ## Domains
 
