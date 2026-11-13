@@ -16,8 +16,10 @@ nothing is ever read back from ERPNext into billing.
 import frappe
 
 from central.billing.ingester import connection, gst
+from central.billing.ingester.gst_state_backfill import state_at_issue
 from central.billing.ingester.settings import accounting_settings, invoice_series, receivable_account
 from central.billing.platform.jobs import each_isolated
+from central.billing.revenue.tax import has_gst_charged
 
 MAX_ATTEMPTS = 3
 BACKOFF_BASE_SECONDS = 60  # 60s, 120s, 240s
@@ -57,6 +59,7 @@ def sync_invoice(invoice: str) -> dict:
 	try:
 		customer = _customer_for(inv.team)
 		if not inv.erpnext_invoice:
+			_record_state_before_filing(inv)
 			inv.erpnext_invoice = _issue(inv, customer)
 			frappe.db.set_value("Invoice", invoice, "erpnext_invoice", inv.erpnext_invoice)
 		if _card_attempt(inv) and not inv.payment_record_id:
@@ -143,6 +146,17 @@ def _customer_for(team: str) -> str:
 	if not customer:
 		raise RuntimeError(f"team {team} has no customer in ERPNext yet; its sync is queued")
 	return customer
+
+
+def _record_state_before_filing(inv) -> None:
+	"""An invoice issued before states were recorded is filed under its state at issue,
+	the same one the daily backfill would record, so the two never disagree."""
+	if gst.is_state_recorded(inv) or inv.currency != "INR" or not has_gst_charged(inv):
+		return
+	inv.gst_state, inv.gst_state_recorded = state_at_issue(inv), 1
+	frappe.db.set_value(
+		"Invoice", inv.name, {"gst_state": inv.gst_state, "gst_state_recorded": 1}, update_modified=False
+	)
 
 
 def _issue(inv, customer: str) -> str:

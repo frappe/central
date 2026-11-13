@@ -11,7 +11,6 @@ saved GSTIN's state code matches the chosen state.
 
 INDIA = "India"
 
-# How an invoice's GST is split and labelled.
 IGST = "IGST"
 CGST_SGST = "CGST + SGST"
 
@@ -68,8 +67,11 @@ def state_code(state: str | None) -> str | None:
 
 
 def state_for_place_of_supply(place_of_supply: str | None) -> str | None:
-	"""The state name in a place of supply such as "27-Maharashtra", or None if unrecognised."""
+	"""The state in a place of supply such as "27-Maharashtra", or None if unrecognised.
+
+	The code decides when the name is spelt differently; a name of another state is a conflict."""
 	code, _sep, name = (place_of_supply or "").partition("-")
-	if state_code(name) == code:
-		return name.strip()
-	return next((state for state, known_code in GST_STATE_CODES.items() if known_code == code), None)
+	named_code = state_code(name)
+	if named_code:
+		return name.strip() if named_code == code.strip() else None
+	return next((state for state, known_code in GST_STATE_CODES.items() if known_code == code.strip()), None)

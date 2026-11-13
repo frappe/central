@@ -10,7 +10,7 @@ from frappe.utils import getdate
 
 from central.billing.doctype.invoice.invoice import period_key_for
 from central.billing.ingester import erpnext_sync
-from central.billing.ingester.gst_state_backfill import record_missing_gst_states
+from central.billing.ingester.gst_state_backfill import CURSOR_KEY, record_missing_gst_states
 from central.billing.payments import corrections
 from central.billing.revenue import invoicing
 from central.billing.revenue.tax import gst_split_for_invoice
@@ -98,6 +98,18 @@ class TestFilingFollowsTheRecordedState(SyncTestCase):
 	def test_not_recorded_follows_the_team_state(self):
 		self.assertEqual(self._filed("Karnataka", None, recorded=0), ("29-Karnataka", OUT_STATE))
 
+	def test_not_recorded_is_filed_and_recorded_with_the_state_at_issue(self):
+		billing_team(TEAM, state="Karnataka")
+		self.addCleanup(_forget_versions)
+		_forget_versions()
+		inv = self._invoice(team=TEAM)
+		frappe.db.set_value("Invoice", inv, "output_tax_type", "GST")
+		_issued_event(inv, "2026-06-01 10:00:00")
+		_state_change("Maharashtra", "Karnataka", "2026-07-01")
+		erpnext_sync.sync_invoice(inv)
+		self.assertEqual(self._sales_invoice()["place_of_supply"], "27-Maharashtra")
+		self.assertEqual(_recorded(inv), ("Maharashtra", 1))
+
 
 class TestRefundFollowsTheRecordedState(CorrectionsTestCase):
 	def test_returned_gst_is_filed_as_the_invoice_was(self):
@@ -157,6 +169,8 @@ class TestBackfillFromTheFiling(SyncTestCase):
 		super().setUp()
 		billing_team(TEAM, state="Maharashtra")
 		self.addCleanup(_forget_versions)
+		frappe.cache().delete_value(CURSOR_KEY)
+		self.addCleanup(frappe.cache().delete_value, CURSOR_KEY)
 
 	def _synced(self, sales_invoice, place_of_supply, period_end="2026-05-31", **fields):
 		self.remote.records[("Sales Invoice", sales_invoice)] = {"place_of_supply": place_of_supply}
@@ -190,6 +204,38 @@ class TestBackfillFromTheFiling(SyncTestCase):
 		self.assertEqual(_recorded(inv), (None, 0))
 		logger.return_value.warning.assert_called_once()
 		self.assertIn(inv, logger.return_value.warning.call_args.args[0])
+
+	def test_a_missing_filing_is_not_guessed(self):
+		inv = _insert_invoice(TEAM, "2026-05-31", erpnext_invoice="SINV-GONE")
+		with patch(f"{BACKFILL}.frappe.logger") as logger:
+			record_missing_gst_states()
+		self.assertEqual(_recorded(inv), (None, 0))
+		self.assertIn(inv, logger.return_value.warning.call_args.args[0])
+
+	def test_a_place_of_supply_naming_another_state_is_not_recorded(self):
+		inv = self._synced("SINV-1", "27-Karnataka")
+		record_missing_gst_states()
+		self.assertEqual(_recorded(inv), (None, 0))
+
+	def test_a_differently_spelt_state_follows_its_code(self):
+		inv = self._synced("SINV-1", "29-Karnatak")
+		record_missing_gst_states()
+		self.assertEqual(_recorded(inv), ("Karnataka", 1))
+
+	def test_unsynced_invoices_go_first(self):
+		synced = self._synced("SINV-1", "29-Karnataka", name="INV-GST-STATE-1")
+		unsynced = _insert_invoice(TEAM, "2026-04-30", name="INV-GST-STATE-2")
+		with patch(f"{BACKFILL}.MAX_PER_RUN", 1):
+			record_missing_gst_states()
+		self.assertEqual([_recorded(synced), _recorded(unsynced)], [(None, 0), ("Maharashtra", 1)])
+
+	def test_unreadable_filings_do_not_hold_back_the_rest(self):
+		unreadable = self._synced("SINV-1", "Atlantis", name="INV-GST-STATE-1")
+		readable = self._synced("SINV-2", "29-Karnataka", "2026-04-30", name="INV-GST-STATE-2")
+		with patch(f"{BACKFILL}.MAX_PER_RUN", 1):
+			record_missing_gst_states()
+			record_missing_gst_states()
+		self.assertEqual([_recorded(unreadable), _recorded(readable)], [(None, 0), ("Karnataka", 1)])
 
 	def test_with_sync_off_synced_invoices_do_not_crowd_out_unsynced_ones(self):
 		synced = self._synced("SINV-1", "29-Karnataka", name="INV-GST-STATE-1")
