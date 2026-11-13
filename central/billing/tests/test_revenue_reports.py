@@ -13,17 +13,18 @@ from frappe.tests import IntegrationTestCase
 from central.billing.report.atlas_based_revenue.atlas_based_revenue import execute as cluster_execute
 from central.billing.report.mrr_and_ytd_revenue.mrr_and_ytd_revenue import execute as mrr_execute
 from central.billing.report.services_revenue.services_revenue import execute as services_execute
-from central.billing.tests.utils import ensure_team
+from central.billing.tests.utils import complete_billing_profile, ensure_team
 
 TEAM = "team-revenue-report"
+INTERNAL_TEAM = "team-revenue-report-internal"
 
 
-def _invoice(period_start, period_end, items, status="Paid", currency="INR"):
+def _invoice(period_start, period_end, items, status="Paid", currency="INR", team=TEAM):
 	total = sum(i["amount"] for i in items)
 	frappe.get_doc(
 		{
 			"doctype": "Invoice",
-			"team": TEAM,
+			"team": team,
 			"invoice_type": "Billable",
 			"status": status,
 			"period_start": period_start,
@@ -57,10 +58,12 @@ class TestRevenueReports(IntegrationTestCase):
 		self._purge()
 
 	def _purge(self):
-		frappe.db.delete("Invoice", {"team": TEAM})
+		frappe.db.delete("Invoice", {"team": ["in", [TEAM, INTERNAL_TEAM]]})
 
-	def _rows(self, execute):
-		_cols, rows, *_ = execute({"team": TEAM, "from_date": "2026-01-01", "to_date": "2026-12-31"})
+	def _rows(self, execute, **filters):
+		_cols, rows, *_ = execute(
+			{"team": TEAM, "from_date": "2026-01-01", "to_date": "2026-12-31", **filters}
+		)
 		return rows
 
 	def test_mrr_and_ytd(self):
@@ -89,3 +92,22 @@ class TestRevenueReports(IntegrationTestCase):
 		self.assertEqual(rows["VM Plans"]["kind"], "Recurring")
 		self.assertEqual(rows["AI Tokens"]["revenue"], 200.0)
 		self.assertEqual(rows["AI Tokens"]["kind"], "Usage")
+
+	def test_a_waived_invoice_is_not_revenue_unless_asked_for(self):
+		_invoice("2026-07-01", "2026-07-31", [_bundle(800)], status="Waived")
+
+		self.assertNotIn("2026-07", {r["month"] for r in self._rows(mrr_execute)})
+		rows = {r["month"]: r for r in self._rows(mrr_execute, include_internal_and_waived=1)}
+		self.assertEqual(rows["2026-07"]["revenue"], 800.0)
+
+	def test_an_internal_teams_invoice_is_not_revenue_unless_asked_for(self):
+		ensure_team(INTERNAL_TEAM)
+		complete_billing_profile(INTERNAL_TEAM)
+		frappe.db.set_value("Billing Profile", INTERNAL_TEAM, "is_internal", 1)
+		_invoice("2026-07-01", "2026-07-31", [_bundle(800)], status="Outstanding", team=INTERNAL_TEAM)
+
+		def july(**filters):
+			_cols, rows, *_ = mrr_execute({"from_date": "2026-07-01", "to_date": "2026-07-31", **filters})
+			return sum(r["revenue"] for r in rows)
+
+		self.assertEqual(july() + 800.0, july(include_internal_and_waived=1))

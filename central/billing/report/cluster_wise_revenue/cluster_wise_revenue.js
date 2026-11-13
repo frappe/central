@@ -27,5 +27,10 @@ frappe.query_reports["Cluster-wise Revenue"] = {
 			fieldtype: "Link",
 			options: "Currency",
 		},
+		{
+			fieldname: "include_internal_and_waived",
+			label: __("Include internal and waived"),
+			fieldtype: "Check",
+		},
 	],
 };
