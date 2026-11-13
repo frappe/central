@@ -106,3 +106,5 @@ central.patches.v0_0.set_minimum_invoice_amounts_to_gateway_minimum
 # The Growth trust tier is renamed, so it does not read as the Growth plan.
 central.patches.v0_0.rename_growth_trust_tier_to_emerging
 central.patches.v0_0.keep_only_custom_resource_action_copy
+# Setups released by the old code are marked released, so the hourly retry does not call the gateway for them.
+central.patches.v0_0.mark_old_setups_released

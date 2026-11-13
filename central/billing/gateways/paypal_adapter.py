@@ -23,9 +23,8 @@ from central.billing.gateways.base import (
 	header_value,
 	token_check,
 )
-
-# Network/server failures are transient → GatewayTimeout (retry reuses the key).
-_TRANSIENT = (requests.exceptions.RequestException,)
+from central.billing.gateways.paypal_setup import TRANSIENT as _TRANSIENT
+from central.billing.gateways.paypal_setup import PayPalSetup
 
 # The only hosts the client secret is ever sent to.
 PAYPAL_API_HOSTS = ("https://api-m.paypal.com", "https://api-m.sandbox.paypal.com")
@@ -52,7 +51,7 @@ PAYPAL_WEBHOOK_EVENTS = [
 _DISPUTE_OUTCOMES = {"RESOLVED_BUYER_FAVOUR": "lost", "ACCEPTED": "lost", "RESOLVED_SELLER_FAVOUR": "won"}
 
 
-class PayPalAdapter(GatewayAdapter):
+class PayPalAdapter(PayPalSetup, GatewayAdapter):
 	webhook_events = tuple(PAYPAL_WEBHOOK_EVENTS)
 
 	def _base(self) -> str:

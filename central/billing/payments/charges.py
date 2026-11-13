@@ -855,16 +855,19 @@ def _apply_topup_event(event, order, payment, is_success: bool, decline: dict | 
 
 def _apply_unmatched_event(event, payment, decline: dict | None) -> dict:
 	"""A payment with no top-up and no invoice attempt. A declined mandate authorisation
-	is kept on the method it was for; anything else is not ours."""
-	from central.billing.payments import payments
+	is kept on the method it was for, and a captured one activates it; anything else
+	is not ours."""
+	from central.billing.payments import mandates, payments
 
-	method = None
 	if decline is not None:
 		method = payments.note_setup_payment_failure(event.gateway, payment.order_id, decline)
+	else:
+		method = mandates.apply_setup_payment_event(event)
 	if method:
 		event.payment_method = method
 		_mark_event(event, "Processed")
-		return {"handled": True, "result": "setup_payment_declined", "payment_method": method}
+		result = "setup_payment_declined" if decline is not None else "setup_payment"
+		return {"handled": True, "result": result, "payment_method": method}
 	_mark_event(event, "Ignored")
 	return {"handled": False, "reason": "no_matching_attempt"}
 

@@ -33,6 +33,11 @@ UPI_RECURRING_MAX = 100000
 # the mandate with "The max amount may not be greater than 100000000".
 CARD_TOKEN_MAX = 1000000
 
+# A setup order authorises ₹1 (100 paise); the payment on it carries the token.
+SETUP_AUTHORISATION_PAISE = 100
+# Setup orders auto-capture, so the captured payment is the one that is refunded.
+SETUP_PROOF_EVENTS = ("payment.captured",)
+
 
 def team_cap(team: str):
 	"""Current trust-tier monthly cap for a team (0 when no tier exists yet)."""
@@ -282,10 +287,16 @@ def confirm_mandate(payment_method: str, callback: dict):
 	A new active mandate retires any sibling active mandate for the same team+gateway
 	(the re-authorisation case), so the higher ceiling cleanly supersedes.
 	A method already past validation is returned as it is, so a repeated callback
-	neither activates a refused mandate nor refunds an authorisation twice.
+	neither activates a refused mandate nor refunds an authorisation twice. The method
+	is locked first, so the setup expiry job and a confirm never both act on it. A
+	mandate authorised after its setup expired has its payment refunded and its token
+	cancelled; the method stays Expired.
 	"""
-	method = frappe.get_doc("Payment Method", payment_method)
+	from central.billing.payments import setup_expiry
+
+	method = frappe.get_doc("Payment Method", payment_method, for_update=True)
 	if method.status != "Pending Validation":
+		setup_expiry.queue_late_release(method)
 		return method
 	adapter = _adapter(method.gateway)
 
@@ -296,11 +307,126 @@ def confirm_mandate(payment_method: str, callback: dict):
 	payment = adapter.get_payment(callback.get("razorpay_payment_id"))
 	if not _is_mandate_payment(method, payment):
 		return _refuse_mandate(method, PAYMENT_NOT_AUTHORISED, "The payment does not authorise this mandate.")
+	return _activate_mandate(method, adapter, payment, actor=frappe.session.user)
 
+
+def activate_proven_mandate(payment_method: str, payment: dict, actor: str):
+	"""Activate a mandate from the gateway's own setup payment, without the browser.
+	A payment that does not match the setup is logged and not acted on."""
+	from central.billing.payments import setup_expiry
+
+	method = frappe.get_doc("Payment Method", payment_method, for_update=True)
+	if method.status != "Pending Validation":
+		_settle_late_proof(method, payment)
+		return method
+	if not is_proven_setup_payment(method, payment):
+		frappe.logger("billing").warning(
+			f"mandate {method.name} not activated: payment {payment.get('id')} does not match its setup"
+		)
+		return method
+	reason = _reason_not_to_activate(method, payment["token_id"])
+	if reason:
+		return setup_expiry.expire_and_release(method.name, reason, actor=actor) or method
+	return _activate_mandate(method, _adapter(method.gateway), payment, actor=actor)
+
+
+def _reason_not_to_activate(method, token_id: str) -> str | None:
+	"""Why a proven setup must not become Active, or None. The browser confirm does not ask."""
+	if _has_live_method_on_token(method, token_id):
+		# The customer retried and finished another setup on the same token first.
+		return "another payment method already holds this token"
+	if _has_newer_mandate(method):
+		# The customer chose another UPI mandate after starting this one; the newest choice wins.
+		return "a newer mandate was confirmed after this setup started"
+	return None
+
+
+def _has_newer_mandate(method) -> bool:
+	"""True when the team has an Active UPI mandate on this gateway, validated after this
+	setup started. Activating this one would retire it. Cards coexist, so they never count."""
+	return method.method_type == MANDATE_METHOD and bool(
+		frappe.db.exists(
+			"Payment Method",
+			{
+				"team": method.team,
+				"gateway": method.gateway,
+				"method_type": MANDATE_METHOD,
+				"status": "Active",
+				"validated_at": [">=", method.creation],
+				"name": ["!=", method.name],
+			},
+		)
+	)
+
+
+def _settle_late_proof(method, payment: dict) -> None:
+	"""Give back the ₹1 of a setup that is no longer pending. An Active mandate confirmed
+	before the capture still owes its refund; a released setup is released."""
+	from central.billing.payments import setup_expiry
+
+	if method.status == "Active" and method.gateway_method_id == payment.get("token_id"):
+		if is_proven_setup_payment(method, payment):
+			_queue_authorisation_refund(method, payment)
+		return
+	setup_expiry.queue_late_release(method)
+
+
+def _has_live_method_on_token(method, token_id: str) -> bool:
+	"""True when another Active or pending method on the gateway already holds the token."""
+	return bool(
+		frappe.db.exists(
+			"Payment Method",
+			{
+				"gateway": method.gateway,
+				"gateway_method_id": token_id,
+				"status": ["in", ["Active", "Pending Validation"]],
+				"name": ["!=", method.name],
+			},
+		)
+	)
+
+
+def apply_setup_payment_event(event) -> str | None:
+	"""Activate the mandate a captured setup payment proves. The method, or None when the
+	payment is for no setup of ours."""
+	if event.event_type not in SETUP_PROOF_EVENTS:
+		return None
+	payload = frappe.parse_json(event.raw_payload) if event.raw_payload else {}
+	payment = ((payload.get("payload") or {}).get("payment") or {}).get("entity") or {}
+	if not payment.get("order_id"):
+		return None
+	name = frappe.db.get_value(
+		"Payment Method", {"gateway": event.gateway, "setup_reference": payment["order_id"]}
+	)
+	if name:
+		activate_proven_mandate(name, payment, actor="webhook")
+	return name
+
+
+def is_proven_setup_payment(method, payment: dict) -> bool:
+	"""True when the payment is this setup's captured ₹1 authorisation, for this team's customer."""
+	return (
+		_is_mandate_payment(method, payment)
+		# Only a captured payment can be refunded, and the refund is always queued.
+		and payment.get("status") == "captured"
+		and bool(method.gateway_customer_id)
+		and round(frappe.utils.flt(payment.get("amount"))) == SETUP_AUTHORISATION_PAISE
+		and (payment.get("currency") or "").upper() == "INR"
+		and _notes_team(payment) in (None, method.team)
+	)
+
+
+def _notes_team(payment: dict) -> str | None:
+	notes = payment.get("notes")
+	return (notes.get("team") or None) if isinstance(notes, dict) else None
+
+
+def _activate_mandate(method, adapter, payment: dict, actor: str):
+	"""Make the mandate Active on its token and refund the authorisation payment."""
 	method.gateway_method_id = payment["token_id"]
 	method.display_label = _mandate_label(method, payment)
 	method.set_instrument_fingerprint(adapter.read_instrument_fingerprint(payment))
-	transition(method, "Active", actor=frappe.session.user)
+	transition(method, "Active", actor=actor)
 	method.validated_at = frappe.utils.now_datetime()
 	method.reauth_required = 0
 	method.save(ignore_permissions=True)
@@ -350,6 +476,8 @@ def _queue_authorisation_refund(method, payment: dict) -> None:
 	if payment.get("status") != "captured":
 		return
 
+	# A savepoint rollback in jobs.each_isolated does not drop a job queued after commit.
+	# That is safe: the ₹1 is owed back whatever happens to the row, and the key is idempotent.
 	frappe.enqueue(
 		"central.billing.payments.mandates.refund_authorisation_payment",
 		payment_method=method.name,
@@ -370,15 +498,7 @@ def refund_authorisation_payment(payment_method: str, payment_id: str, amount: f
 	"""
 	method = frappe.get_doc("Payment Method", payment_method)
 	try:
-		result = _adapter(method.gateway).refund(
-			frappe._dict(gateway_transaction_id=payment_id),
-			amount,
-			reason="Mandate authorisation",
-			idempotency_key=f"mandate-authorisation-{payment_id}",
-		)
-		if not result.success:
-			# nosemgrep: central-untranslated-exception -- caught below and kept as a comment for the operator
-			raise frappe.ValidationError(f"Gateway refund status: {result.status}")
+		refund_authorisation(method, payment_id, amount)
 	except Exception as error:
 		method.add_comment(
 			"Comment", f"Authorisation payment {payment_id} ({amount} INR) was not refunded: {error}"
@@ -386,6 +506,20 @@ def refund_authorisation_payment(payment_method: str, payment_id: str, amount: f
 		# The job's own rollback would drop the comment the operator needs.
 		frappe.db.commit()
 		raise
+
+
+def refund_authorisation(method, payment_id: str, amount: float) -> None:
+	"""Refund an authorisation payment, or raise. Keyed on the payment, so a repeat
+	returns the first refund instead of making a second one."""
+	result = _adapter(method.gateway).refund(
+		frappe._dict(gateway_transaction_id=payment_id),
+		amount,
+		reason="Mandate authorisation",
+		idempotency_key=f"mandate-authorisation-{payment_id}",
+	)
+	if not result.success:
+		# nosemgrep: central-untranslated-exception -- an operator reads it in the comment or the Error Log
+		raise frappe.ValidationError(f"Gateway refund status: {result.status}")
 
 
 def _is_mandate_payment(method, payment: dict) -> bool:

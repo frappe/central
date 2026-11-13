@@ -311,6 +311,15 @@ class TestPayPalAdapter(GatewayAdapterContract, IntegrationTestCase):
 			("vault_tok", "buyer@example.com", "PAYER1"),
 		)
 
+	def test_a_setup_reads_finished_once_the_buyer_approved_it(self):
+		adapter = self.make_adapter()
+		with patch.object(
+			PayPalAdapter, "_get_setup_token", return_value={"status": "PAYER_ACTION_REQUIRED"}
+		):
+			self.assertEqual(adapter.read_finished_setup("setup_1"), {})
+		with patch.object(PayPalAdapter, "_get_setup_token", return_value={"status": "APPROVED"}):
+			self.assertTrue(adapter.read_finished_setup("setup_1"))
+
 	def test_an_order_is_paid_only_once_captured(self):
 		adapter = self.make_adapter()
 		captured = {
