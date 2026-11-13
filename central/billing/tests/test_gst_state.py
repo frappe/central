@@ -13,7 +13,7 @@ from central.billing.ingester import erpnext_sync
 from central.billing.ingester.gst_state_backfill import CURSOR_KEY, record_missing_gst_states
 from central.billing.payments import corrections
 from central.billing.revenue import invoicing
-from central.billing.revenue.tax import gst_split_for_invoice
+from central.billing.revenue.tax import TaxNames
 from central.billing.tests.accounting_fake import IN_STATE, OUT_STATE, billing_team
 from central.billing.tests.test_corrections import CorrectionsTestCase
 from central.billing.tests.test_erpnext_sync import SyncTestCase
@@ -150,34 +150,48 @@ class TestSplitLabel(IntegrationTestCase):
 		complete_billing_profile(TEAM)
 		self.addCleanup(_forget_versions)
 
-	def _split(self, company_state="27", **fields):
+	def _label(self, company_state="27", **fields):
 		invoice = frappe._dict(
 			{
-				"team": TEAM,
 				"output_tax_type": "GST",
+				"output_tax_rate": 18,
 				"output_tax_amount": 180,
 				"gst_state_recorded": 1,
 				**fields,
 			}
 		)
 		with patch(COMPANY_STATE, return_value=company_state):
-			return gst_split_for_invoice(invoice)
+			return TaxNames(TEAM).label(invoice)
 
 	def test_recorded_company_state_is_cgst_and_sgst(self):
 		frappe.db.set_value("Billing Profile", TEAM, "state", "Karnataka")
-		self.assertEqual(self._split(gst_state="Maharashtra"), "CGST + SGST")
+		self.assertEqual(self._label(gst_state="Maharashtra"), "CGST 9% + SGST 9%")
 
 	def test_recorded_no_state_is_igst(self):
-		self.assertEqual(self._split(gst_state=None), "IGST")
+		self.assertEqual(self._label(gst_state=None), "IGST 18%")
 
 	def test_not_recorded_follows_the_team_state(self):
-		self.assertEqual(self._split(gst_state=None, gst_state_recorded=0), "CGST + SGST")
+		self.assertEqual(self._label(gst_state=None, gst_state_recorded=0), "CGST 9% + SGST 9%")
 
-	def test_no_gst_has_no_split(self):
-		self.assertIsNone(self._split(gst_state="Karnataka", output_tax_amount=0))
+	def test_no_gst_has_no_label(self):
+		self.assertIsNone(self._label(gst_state="Karnataka", output_tax_amount=0))
 
 	def test_an_unknown_company_state_is_not_guessed(self):
-		self.assertIsNone(self._split(company_state=None, gst_state="Karnataka"))
+		self.assertEqual(self._label(company_state=None, gst_state="Karnataka"), "GST 18%")
+
+	def test_outside_india_unrecorded_has_no_split(self):
+		frappe.db.set_value("Billing Profile", TEAM, "country", "Germany")
+		self.assertEqual(self._label(gst_state_recorded=0), "GST 18%")
+
+	def test_profile_is_read_once_for_many_invoices(self):
+		names = TaxNames(TEAM)
+		invoice = frappe._dict(output_tax_type="GST", output_tax_rate=18, output_tax_amount=180)
+		with patch(COMPANY_STATE, return_value="27"):
+			names.label(invoice)
+			with patch("frappe.db.get_value") as get_value:
+				for _ in range(3):
+					names.label(invoice)
+		get_value.assert_not_called()
 
 
 class TestBackfillFromTheFiling(SyncTestCase):

@@ -63,7 +63,7 @@ def is_state_recorded(invoice) -> bool:
 
 def filed_state(invoice, current_state: str | None) -> str | None:
 	"""The state an invoice's GST is filed under: the one recorded at issue, else the team's current one."""
-	return (invoice.gst_state or None) if is_state_recorded(invoice) else current_state
+	return (invoice.get("gst_state") or None) if is_state_recorded(invoice) else current_state
 
 
 def tax_rows(template: str | None, paid_amount: float | None = None) -> list[dict]:
