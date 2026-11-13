@@ -189,7 +189,7 @@ class TestPreferences(TopUpTestCase):
 		route = frappe.db.get_value(
 			"Team Notification", {"team": TEAM, "event_type": "top_up_reminder"}, "action_route"
 		)
-		self.assertEqual(route, "/billing?topup=40000")
+		self.assertEqual(route, f"/billing?team={TEAM}&topup=40000")
 
 
 class TestPaymentScheduledOverTheLimit(TopUpTestCase):
@@ -350,6 +350,23 @@ class TestAnIssuedBill(TopUpTestCase):
 		frappe.db.set_value("Invoice", self.invoice, "expected_collection", 15000)
 
 		self.assertIsNone(top_up_reminders.get_top_up_due(TEAM, "2026-12-03"))
+
+	def test_no_payment_reminder_the_day_before_a_bill_over_the_limit(self):
+		self.assertEqual(self._remind_day_before().get("skipped"), "top_up_notice")
+		self.assertFalse(
+			frappe.db.exists("Billing Notification Log", {"team": TEAM, "event_type": "Payment Reminder"})
+		)
+
+	def test_a_bill_within_the_limit_keeps_the_payment_reminder_path(self):
+		frappe.db.set_value("Invoice", self.invoice, "expected_collection", 15000)
+
+		self.assertNotEqual(self._remind_day_before().get("skipped"), "top_up_notice")
+
+	def _remind_day_before(self) -> dict:
+		from central.billing.payments import payment_notices
+
+		with self.freeze_time("2026-12-07 10:00:00"):
+			return payment_notices.send_payment_reminder(self.invoice, frappe.utils.now_datetime())
 
 
 class TestLastMonthNotIssuedYet(TopUpTestCase):

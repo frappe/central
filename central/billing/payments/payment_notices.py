@@ -235,12 +235,15 @@ def send_payment_reminders(now: datetime) -> list[dict]:
 
 
 def send_payment_reminder(invoice: str, now: datetime) -> dict:
-	"""Send one payment reminder. A method that owes a pre-debit notice gets that notice instead."""
+	"""Send one payment reminder. A method that owes a pre-debit notice gets that notice instead,
+	and a bill the card or UPI cannot pay keeps the top-up notice as its only one."""
 	from central.billing.payments import emandate
 
 	doc = frappe.get_doc("Invoice", invoice)
 	if not _is_reminder_due(doc, now):
 		return {"invoice": invoice, "skipped": "not_due"}
+	if _get_top_up_due(doc):
+		return {"invoice": invoice, "skipped": "top_up_notice"}
 	gateway = _get_charged_gateway(doc.team)
 	if gateway and emandate.is_notice_required(doc, gateway):
 		return {"invoice": invoice, "skipped": "predebit_notice"}
