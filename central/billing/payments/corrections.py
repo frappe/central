@@ -578,7 +578,7 @@ def _advance_again(doc, refund, amount: float) -> str:
 	else:
 		settings = accounting_settings()
 		gst_back = frappe.utils.flt(refund.tax_amount if refund.partial else doc.advance_tax_applied)
-		tax = gst.treatment(doc.team, charged_tax=gst_back)
+		tax = gst.treatment(doc.team, charged_tax=gst_back, invoice=doc)
 		name = connection.post(
 			"api/resource/Payment Entry",
 			{

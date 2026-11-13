@@ -286,7 +286,7 @@ def _mark_held(doc, hold: str) -> None:
 
 def _retax(doc) -> None:
 	"""Recompute the draft's tax block from the team's current tax standing."""
-	from central.billing.revenue.tax import gst_split, resolve_tax
+	from central.billing.revenue.tax import gst_state_at_issue, resolve_tax
 
 	base = frappe.utils.flt(
 		frappe.utils.flt(doc.subtotal)
@@ -296,7 +296,7 @@ def _retax(doc) -> None:
 	)
 	doc.update(resolve_tax(doc.team, base))
 	doc.total = frappe.utils.flt(base + frappe.utils.flt(doc.output_tax_amount), 2)
-	doc.gst_split = gst_split(doc.team, doc)
+	doc.update(gst_state_at_issue(doc.team, doc))
 	doc.hold_reason = None
 
 
