@@ -6,7 +6,8 @@ import { useCapabilities } from '@/composables/useCapabilities'
 import { __ } from '@/lib/translate'
 
 // A complete Indian profile with no state is charged IGST. Only a member who can
-// edit the billing details is asked to add the state.
+// edit the billing details is asked to add the state. A team charged no GST has no
+// rate, so it sees no banner.
 defineEmits<{ edit: [] }>()
 const { profile } = useBillingOverview()
 const { canManageBilling } = useCapabilities()
@@ -15,9 +16,9 @@ const show = computed(
 	() =>
 		canManageBilling.value &&
 		!!profile.data?.complete &&
-		!!profile.data?.gst_state_missing,
+		!!profile.data?.igst_rate,
 )
-const rate = computed(() => `${profile.data?.igst_rate ?? 0}%`)
+const rate = computed(() => `${profile.data?.igst_rate}%`)
 </script>
 
 <template>

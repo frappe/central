@@ -45,12 +45,13 @@ def is_state_missing(team: str) -> bool:
 
 
 def igst_rate(team: str) -> float | None:
-	"""The GST rate charged, as IGST, to an Indian team with no state; None once it has one."""
+	"""The GST rate charged, as IGST, to an Indian team with no state; None once it has one,
+	or when it is charged no GST (zero-rated or internal)."""
 	from central.billing.revenue.tax import resolve_tax
 
 	if not is_state_missing(team):
 		return None
-	return resolve_tax(team, 100)["output_tax_amount"]
+	return resolve_tax(team, 100)["output_tax_amount"] or None
 
 
 def _require_indian_state(doc, values: dict) -> None:

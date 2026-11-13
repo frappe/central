@@ -46,6 +46,15 @@ class TestIndianState(CustomerDataBase):
 		self.assertTrue(self._profile()["gst_state_missing"])
 		self.assertEqual(self._profile()["igst_rate"], 18)
 
+	def test_a_zero_rated_team_without_a_state_is_shown_no_igst(self):
+		complete_billing_profile(TEAM)
+		frappe.db.set_value("Billing Profile", TEAM, "state", None)
+		frappe.db.set_value(
+			"Tax Profile", TEAM, {"output_tax_rate": 18, "zero_rated": 1, "zero_rating_reason": "SEZ"}
+		)
+
+		self.assertIsNone(self._profile()["igst_rate"])
+
 
 class TestPilotIndianState(CustomerDataBase):
 	"""The pilot API saves through the same rule as the console."""

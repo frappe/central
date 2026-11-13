@@ -52,7 +52,8 @@ def get_billing_profile(team: str | None = None) -> dict:
 	- `supported_currencies` — the allowed set (gateway-backed; not stored on the
 	  profile).
 	- `gst_state_missing` — an Indian profile with no state; its GST is IGST until one is set.
-	- `igst_rate` — the GST rate charged as IGST while the state is missing, else None.
+	- `igst_rate` — the GST rate charged as IGST while the state is missing; None when
+	  the state is set or no GST is charged.
 	- `payment_method_required`, `welcome_credit`, `open_trial` — see `signups.credit.get_purchase_state`.
 
 	The stored fields (currency, legal name, address, GSTIN, …) come straight off
