@@ -285,12 +285,9 @@ def _charging_method(team: str, amount: float, invoice: str | None = None) -> di
 	from central.billing.payments import collection, collection_mode
 
 	currency = _team_currency(team)
-	methods = collection.get_methods_left(team, invoice)
-	if not methods:
+	method = collection.method_for_amount(team, currency, amount, invoice)
+	if not method:
 		return None
-	method = next(
-		(m for m in methods if collection_mode.is_within_method_limit(m, currency, amount)), methods[0]
-	)
 	limit = collection_mode.method_limit(method.gateway, currency, method.mandate_max_amount)
 	row = frappe.db.get_value(
 		"Payment Method", method.name, ["display_label", "method_type", "card_network"], as_dict=True

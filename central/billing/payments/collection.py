@@ -115,6 +115,19 @@ def get_methods_left(team: str, invoice: str | None = None) -> list:
 	return [m for m in methods if m.name not in failed]
 
 
+def method_for_amount(team: str, currency: str | None, amount: float, invoice: str | None = None):
+	"""The method a charge of `amount` lands on: the first, primary first, whose limit covers
+	it, else the first. None when the team has no method left."""
+	from central.billing.payments import collection_mode
+
+	methods = get_methods_left(team, invoice)
+	if not methods:
+		return None
+	return next(
+		(m for m in methods if collection_mode.is_within_method_limit(m, currency, amount)), methods[0]
+	)
+
+
 def next_method_for(invoice: str, team: str, earlier: set | None = None, skip: set | None = None):
 	"""The next untried, chargeable method for this invoice, or None if exhausted.
 	`earlier` starts a new round, as in `_failed_methods_for`. `skip` holds methods that

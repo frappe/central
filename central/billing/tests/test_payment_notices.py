@@ -112,6 +112,28 @@ class TestPaymentScheduledOnAMandate(test_emandate.EmandateTestBase):
 		self.assertEqual(len(logs), 1)
 		self.assertIn("2 December 2026", logs[0].message)
 
+	def test_a_bill_over_the_mandate_maximum_names_the_card_that_takes_it(self):
+		frappe.db.set_value(
+			"Payment Method", {"team": test_emandate.TEAM}, {"mandate_max_amount": 10000, "priority": 1}
+		)
+		frappe.get_doc(
+			{
+				"doctype": "Payment Method",
+				"team": test_emandate.TEAM,
+				"gateway": "Stripe",
+				"method_type": "Card",
+				"status": "Active",
+				"priority": 2,
+				"display_label": "Visa ending 4242",
+				"gateway_method_id": "pm_fallback",
+				"gateway_customer_id": "cus_fallback",
+			}
+		).insert(ignore_permissions=True)
+		invoice = frappe.get_doc("Invoice", self._invoice(12000))
+
+		self.assertEqual(payment_notices.get_payment_context(invoice)["method"], "Visa ending 4242")
+		self.assertEqual(payment_notices._get_charged_gateway(invoice), "Stripe")
+
 
 class TestPaymentDateChanged(IntegrationTestCase):
 	"""A new payment day is confirmed, with the invoice it applies to."""

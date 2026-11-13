@@ -201,7 +201,7 @@ def send_payment_reminder(invoice: str, now: datetime) -> dict:
 	doc = frappe.get_doc("Invoice", invoice)
 	if not _is_reminder_due(doc, now):
 		return {"invoice": invoice, "skipped": "not_due"}
-	gateway = _get_charged_gateway(doc.team)
+	gateway = _get_charged_gateway(doc)
 	if gateway and emandate.is_notice_required(doc, gateway):
 		return {"invoice": invoice, "skipped": "predebit_notice"}
 	if not _has_claimed_reminder(invoice, now):
@@ -217,12 +217,10 @@ def send_payment_reminder(invoice: str, now: datetime) -> dict:
 	return {"invoice": invoice, "reminded": True}
 
 
-def _get_charged_gateway(team: str) -> str | None:
-	"""The gateway of the method the charge uses first, or None when the team has no method."""
-	from central.billing.payments import collection
-
-	methods = collection.ordered_methods(team)
-	return methods[0].gateway if methods else None
+def _get_charged_gateway(invoice) -> str | None:
+	"""The gateway of the method the charge lands on, or None when the team has no method."""
+	method = _get_charging_method(invoice)
+	return method.gateway if method else None
 
 
 def _has_claimed_reminder(invoice: str, now: datetime) -> bool:
@@ -255,18 +253,24 @@ def get_payment_context(invoice) -> dict:
 	return {
 		"amount": frappe.utils.fmt_money(invoice.expected_collection, currency=invoice.currency),
 		"payment_date": _format_date(invoice.payment_date),
-		"method": get_charging_method_label(invoice.team),
+		"method": get_charging_method_label(invoice),
 	}
 
 
-def get_charging_method_label(team: str) -> str | None:
-	"""The label of the method the next charge uses, or None when the team has none."""
+def get_charging_method_label(invoice) -> str | None:
+	"""The label of the method the invoice's charge lands on, or None when the team has none."""
+	method = _get_charging_method(invoice)
+	if not method:
+		return None
+	return frappe.db.get_value("Payment Method", method.name, "display_label") or method.gateway
+
+
+def _get_charging_method(invoice):
 	from central.billing.payments import collection
 
-	methods = collection.ordered_methods(team)
-	if not methods:
-		return None
-	return frappe.db.get_value("Payment Method", methods[0].name, "display_label") or methods[0].gateway
+	return collection.method_for_amount(
+		invoice.team, invoice.currency, frappe.utils.flt(invoice.expected_collection), invoice.name
+	)
 
 
 def _format_date(value) -> str:
