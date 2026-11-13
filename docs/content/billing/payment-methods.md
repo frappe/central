@@ -38,6 +38,22 @@ The dialog can ask for a phone number. A phone number is required to set up auto
 
 The options in the dialog depend on your billing currency. Teams billed in INR can also see RuPay Card and UPI Autopay, which you authorise on your bank's page. To authorise automatic payments, Razorpay charges ₹1. Frappe Cloud refunds it after the authorisation succeeds. Amex and Diners cards cannot be charged automatically. Add credit instead.
 
+## If you do not finish adding a method
+
+You can close the bank's page or the dialog at any time. Start again at once: an unfinished setup does not block a new one. When you start again, Frappe Cloud cancels the unfinished setup. About 30 minutes to 1.5 hours later, it refunds any ₹1 authorisation charge the setup took and removes any card or UPI authorisation it saved at the gateway. If you used the same card or UPI account again, it keeps that authorisation for your new payment method.
+
+A card or UPI setup that is not finished in 24 hours is not saved. Frappe Cloud sends an email and an in-app notice: "Your card or UPI setup was not finished, so it was not saved. Add it again from Billing." If you add a payment method after you start that setup, you do not get the notice. You get at most one such notice a day.
+
+If you authorised RuPay or UPI Autopay on the bank's page but closed the window before Frappe Cloud showed it, Frappe Cloud still saves it when Razorpay confirms the payment. The method shows in Billing, and the ₹1 authorisation charge is refunded. If you then added the same card again and that setup finished first, the earlier setup is not saved a second time. Its ₹1 authorisation charge is refunded. If you set up a new UPI Autopay mandate after you started the earlier one, the newer mandate stays: the earlier one is not saved, and its ₹1 authorisation charge is refunded.
+
+If you added a card on the card page but closed the window before Frappe Cloud showed it, the card is not saved. After 24 hours Frappe Cloud removes the card from the payment gateway and sends the notice. The card is not charged. Add it again from Billing.
+
+A setup that is still not finished after 7 days is not saved, whatever its state at the gateway. Frappe Cloud refunds any ₹1 authorisation charge and removes any card or UPI authorisation at the gateway. It does not send the notice for a setup this old.
+
+If you finish a setup after it expired, Frappe Cloud does not save it. It refunds the ₹1 authorisation charge and removes the card or UPI authorisation at the gateway.
+
+If the payment gateway cannot be reached when Frappe Cloud gives back the ₹1 or removes the card or UPI authorisation, Frappe Cloud tries again every hour for 7 days. After that, the support team completes it by hand.
+
 ## Change the order
 
 1. On the **Methods** card, click the **⋯** menu on a payment method.

@@ -13,8 +13,6 @@ interface Props {
 	overview: ServerOverview
 	/** The viewer holds server:network on this server. */
 	canManageNetwork: boolean
-	/** The other servers of the team, for copying firewall rules. */
-	servers: VirtualMachineRow[]
 }
 
 const props = defineProps<Props>()
@@ -39,7 +37,7 @@ const { hostnames, loading, error } = useServerHostnames(
 			:is-enabled="!!overview.server.is_firewall_enabled"
 			:rules="overview.server.firewall_rules"
 			:can-edit="canManageNetwork"
-			:servers="servers"
+			:attached="overview.server.firewall_rulesets"
 			@changed="emit('changed')"
 		/>
 

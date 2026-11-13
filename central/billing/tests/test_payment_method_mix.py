@@ -18,7 +18,7 @@ TEAM_A = "team-pmm-a"
 TEAM_B = "team-pmm-b"
 
 
-def _method(team, status, gateway_method_id=None):
+def _method(team, status, gateway_method_id=None, validated_at=None):
 	frappe.get_doc(
 		{
 			"doctype": "Payment Method",
@@ -27,6 +27,7 @@ def _method(team, status, gateway_method_id=None):
 			"method_type": "Card",
 			"status": status,
 			"gateway_method_id": gateway_method_id,
+			"validated_at": validated_at,
 		}
 	).db_insert()
 
@@ -123,3 +124,13 @@ class TestPaymentMethodMixCredits(IntegrationTestCase):
 		_columns, rows, *_ = execute({"team": TEAM_A})
 		cards = next(r for r in rows if r["method_type"] == "Card")
 		self.assertEqual((cards["total"], cards["cancelled"], cards["active"]), (2, 1, 1))
+
+	def test_an_expired_setup_counts_apart_from_a_lapsed_card(self):
+		frappe.db.delete("Payment Method", {"team": TEAM_A})
+		_method(TEAM_A, "Expired")
+		_method(TEAM_A, "Expired", gateway_method_id="pm_lapsed", validated_at="2026-01-05 10:00:00")
+
+		_columns, rows, *_ = execute({"team": TEAM_A})
+		cards = next(r for r in rows if r["method_type"] == "Card")
+		self.assertEqual((cards["total"], cards["expired"], cards["setup_expired"]), (2, 1, 1))
+		self.assertIn("setup_expired", {c["fieldname"] for c in _columns})

@@ -23,6 +23,7 @@
   "gateway_mandate_id",
   "instrument_fingerprint",
   "setup_reference",
+  "setup_released_at",
   "setup_intent_id",
   "display_label",
   "section_break_card",
@@ -147,6 +148,15 @@
    "description": "The gateway setup handle: the SetupIntent of an in-app setup, or the Checkout Session of a hosted setup."
   },
   {
+   "depends_on": "eval:doc.setup_released_at",
+   "description": "When what an unfinished setup saved at the gateway was given back: the authorisation refunded and the card or token removed.",
+   "fieldname": "setup_released_at",
+   "fieldtype": "Datetime",
+   "label": "Setup Released At",
+   "no_copy": 1,
+   "read_only": 1
+  },
+  {
    "fieldname": "setup_intent_id",
    "fieldtype": "Data",
    "label": "Setup Intent ID",
@@ -266,7 +276,7 @@
    "link_fieldname": "payment_method"
   }
  ],
- "modified": "2026-11-03 12:00:00.000000",
+ "modified": "2026-11-12 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Payment Method",

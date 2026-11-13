@@ -321,6 +321,8 @@ scheduler_events = {
 		"central.billing.ingester.erpnext_sync.retry_failed_syncs",
 		"central.billing.payments.reconciliation.run_reconciliation",
 		"central.billing.payments.webhooks.retry_failed_webhooks",
+		"central.billing.payments.setup_expiry.expire_unfinished_setups",
+		"central.billing.payments.setup_expiry.retry_unfinished_releases",
 		"central.billing.platform.alerts.run_operator_alerts",
 		"central.signups.alerts.alert_failed_signups",
 		"central.notification.digest.send_due_digests",
@@ -466,6 +468,7 @@ _BILLING_TEAM_RECORDS = (
 permission_query_conditions = {
 	"Team SSH Key": "central.permissions.team_ssh_key_query_conditions",
 	"WireGuard Device": "central.permissions.wireguard_device_query_conditions",
+	"Firewall Ruleset": "central.permissions.firewall_ruleset_query_conditions",
 	"Virtual Machine": "central.permissions.server_query_conditions",
 	"Pilot Credential": "central.permissions.pilot_credential_query_conditions",
 	"Resource Action": "central.permissions.resource_action_query_conditions",
@@ -486,6 +489,7 @@ permission_query_conditions = {
 has_permission = {
 	"Team SSH Key": "central.permissions.team_ssh_key_has_permission",
 	"WireGuard Device": "central.permissions.wireguard_device_has_permission",
+	"Firewall Ruleset": "central.permissions.firewall_ruleset_has_permission",
 	"Virtual Machine": "central.permissions.server_has_permission",
 	"Pilot Credential": "central.permissions.pilot_credential_has_permission",
 	"Resource Action": "central.permissions.resource_action_has_permission",
