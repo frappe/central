@@ -8,7 +8,7 @@ You need the Owner, Admin, or Billing role to add, order, or remove payment meth
 
 ## Before you begin
 
-Add your billing details first. Frappe Cloud needs your currency, legal name, and address before you can add a payment method or credit. When they are missing, **Billing > Payments** shows **Add your billing details**. Click **Add billing details**, complete the form, and click **Save**. The **Add payment method** dialog then opens, so you can add a card at once.
+Add your billing details first. Frappe Cloud needs your currency, legal name, and address before you can add a payment method or credit. A billing address in India also needs its state, because the GST on your bills depends on it. Until you add the state, GST is charged as IGST, and **Billing > Overview** shows **Add your state so we apply the right GST.** When they are missing, **Billing > Payments** shows **Add your billing details**. Click **Add billing details**, complete the form, and click **Save**. The **Add payment method** dialog then opens, so you can add a card at once.
 
 ## How payment methods are used
 
@@ -36,7 +36,7 @@ Frappe Cloud validates the card with a small temporary charge, and refunds it at
 
 The dialog can ask for a phone number. A phone number is required to set up automatic card payments, and it is saved to your billing profile.
 
-The options in the dialog depend on your billing currency. Teams billed in INR can also see RuPay Card and UPI Autopay, which you authorise on your bank's page. To authorise automatic payments, Razorpay charges ₹1. Frappe Cloud refunds it after the authorisation succeeds. Amex and Diners cards cannot be charged automatically. Add credit instead.
+The options in the dialog depend on your billing currency. Teams billed in INR can also see RuPay Card and UPI Autopay, which you authorise on your bank's page. An automatic payment authorisation in INR has a maximum amount per debit: your spend limit plus GST, but not more than ₹15,000. UPI Autopay is not available when your spend limit plus GST is ₹1,00,000 or more. To authorise automatic payments, Razorpay charges ₹1. Frappe Cloud refunds it after the authorisation succeeds. Amex and Diners cards cannot be charged automatically. Add credit instead.
 
 ### When you see "Too many failed attempts"
 

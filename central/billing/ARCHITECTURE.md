@@ -385,6 +385,8 @@ Every billing step adds a **Billing Event**: profile, subscription, customer syn
 
 A team gets a customer in the accounting system only when it has an enabled subscription, a live invoice or a paid top-up. A waived invoice is never sent, and its sync status is Not Required.
 
+**GST on documents.** `ingester/gst.treatment` gives the GST category, place of supply and tax template that the Sales Invoice and the top-up advance carry. It decides SEZ zero-rating with `tax.has_zero_rating`, the same rule `tax.resolve_tax` uses, so an SEZ team whose GSTIN lapsed is filed with the GST it was charged. An Indian profile with no state has no place of supply and gets the out-of-state template (IGST). The console asks a member with `billing:manage` for the state (`gst_state_missing` on `get_billing_profile`). A customer save of an Indian billing address (`payments/profile.create_or_update_billing_profile`, with any address field) must name the state. Other saves of an existing profile without a state still go through.
+
 ### Operator alerts
 
 `platform.alerts.notify_operators(title, alerts)` sends every billing alert for operators. No other billing code mails operators. Customer notifications use `platform.notifications` and do not change with these settings.
@@ -671,6 +673,8 @@ revenue.credits.purchase → Credit Ledger Entry (append-only) + Credit Wallet (
 settlement.effective_spend_cap = min(trust-tier cap, wallet)   (credits-only mode)
 settlement.can_accept_spend gates money movement; 80% forecast warning
 ```
+`settlement.credit_funded_headroom` is the pre-tax run rate the wallet can fund, under the tier cap. It counts the wallet the way `lifecycle._draw_wallet` spends it: a top-up pays the pre-tax amount and its prepaid GST pays the tax, and other credit (promotional, a refund) pays the bill with its GST, so it funds `amount / (1 + GST rate)` (`settlement.credit_funded_spend`).
+
 `open_and_collect`'s credits leg draws `credits.get_balance(team, currency)` — the
 team's one wallet, no scoping of any kind (Projects have no relationship to credits;
 see §2.1).
@@ -697,6 +701,7 @@ catalog.entitlements.recompute_trust_tier(team)
   → issue_token → catalog.signing (Ed25519) → Entitlement Token (offline cluster enforcement)
 get_team_caps resolves caps live (no per-team Trust Tier doctype — dropped)
 ```
+**Mandate ceiling.** A bill at the tier cap is debited with its GST. So `payments.mandate_ceiling` registers a new card or UPI Autopay mandate for `min(silent-debit ceiling, tier cap + tax.resolve_tax on it)`. An SEZ team with a live GSTIN adds no GST. `mandates.reconcile_mandates_to_cap` compares each Active UPI mandate with this ceiling when the tier changes and flags a lower one for re-authorisation. `mandates.upi_eligibility` compares the cap with GST against the ₹1,00,000 UPI recurring limit.
 
 ---
 
