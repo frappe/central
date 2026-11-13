@@ -13,8 +13,8 @@ fixtures = [
 	{"dt": "Team Role", "filters": [["is_system", "=", 1]]},
 	# Warpgate signs in through the Central OpenID Connect provider and checks the Atlas roles.
 	# Product Operators create and edit products; only System Managers delete them.
-	# Staff Viewers read Team, Site and Virtual Machine in Desk, without customer data fields,
-	# and manage Product and Email OAuth Provider.
+	# Staff Viewers read Team, Site and Virtual Machine in Desk, and manage Product and
+	# Email OAuth Provider.
 	{
 		"dt": "Role",
 		"filters": [
@@ -198,7 +198,7 @@ after_install = [
 
 doc_events = {
 	"User": {
-		"validate": ["central.users.validate_user_image", "central.users.validate_staff_viewer_roles"],
+		"validate": "central.users.validate_user_image",
 		"after_insert": "central.users.grant_central_user_role",
 		"on_update": "central.infrastructure.doctype.wireguard_device.wireguard_device.remove_disabled_user_devices",
 	},

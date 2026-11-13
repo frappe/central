@@ -1,26 +1,19 @@
 from unittest.mock import patch
 
 import frappe
-from frappe.desk.form.load import getdoc
-from frappe.desk.reportview import execute as reportview_execute
 from frappe.tests import IntegrationTestCase
 
 from central.iam import can
 from central.tests.test_iam import ensure_user
 from central.tests.utils import ensure_atlas_instance
+from central.users import ensure_staff_role_profile
+
+STAFF_ROLES = ("Central User", "Staff Viewer")
 
 
 def ensure_staff_viewer(email: str) -> str:
-	if not frappe.db.exists("User", email):
-		frappe.get_doc(
-			{
-				"doctype": "User",
-				"email": email,
-				"first_name": "Staff",
-				"send_welcome_email": 0,
-				"role_profiles": [{"role_profile": "Frappe Employee"}],
-			}
-		).insert()
+	"""A user with the roles of the Frappe Employee role profile."""
+	frappe.get_doc("User", ensure_user(email)).add_roles(*STAFF_ROLES)
 	return email
 
 
@@ -58,35 +51,16 @@ class TestStaffViewer(IntegrationTestCase):
 		with self.assertRaises(frappe.PermissionError):
 			team.save()
 
-	def test_a_staff_viewer_does_not_read_customer_data_fields(self):
+	def test_staff_read_customer_data_fields_of_every_team(self):
 		frappe.set_user(self.staff)
 
 		team = frappe.get_doc("Team", self.team.name)
 		team.apply_fieldlevel_read_permissions()
-		self.assertEqual(team.team_name, self.team.team_name)
-		self.assertIsNone(team.get("owner_user"))
-		self.assertFalse(team.get("members"))
-
-		server = frappe.get_doc("Virtual Machine", self.server.name)
-		server.apply_fieldlevel_read_permissions()
-		self.assertIsNone(server.get("firewall_rules"))
+		self.assertEqual(team.owner_user, self.owner)
+		self.assertEqual([member.user for member in team.members], [self.owner])
 
 		rows = frappe.get_list("Team", filters={"name": self.team.name}, fields=["name", "owner_user"])
-		self.assertEqual(rows, [{"name": self.team.name}])
-		with self.assertRaises(frappe.PermissionError):
-			frappe.get_list("Team", filters={"owner_user": self.owner})
-
-	def test_desk_form_and_list_hide_customer_data_fields(self):
-		frappe.set_user(self.staff)
-
-		getdoc("Team", self.team.name)
-		form = frappe.response.docs[0].as_dict()
-		self.assertEqual(form.team_name, self.team.team_name)
-		self.assertIsNone(form.get("owner_user"))
-		self.assertFalse(form.get("members"))
-
-		rows = reportview_execute("Team", fields=["name", "owner_user"], filters={"name": self.team.name})
-		self.assertEqual([row.get("owner_user") for row in rows], [None])
+		self.assertEqual(rows, [{"name": self.team.name, "owner_user": self.owner}])
 
 	def test_a_staff_viewer_manages_products_and_email_oauth_providers(self):
 		frappe.set_user(self.staff)
@@ -128,10 +102,10 @@ class TestStaffViewer(IntegrationTestCase):
 			product.preview_images("par-2")
 		preview.assert_called_once()
 
-	def test_a_staff_viewer_reads_no_other_customer_doctype(self):
+	def test_staff_read_no_operator_doctype(self):
 		frappe.set_user(self.staff)
 
-		for doctype in ("Invoice", "Payment Method", "Team SSH Key", "Team Service", "Activity Event"):
+		for doctype in ("Invoice", "Payment Method", "Activity Event"):
 			self.assertFalse(frappe.has_permission(doctype, "read"), doctype)
 
 	def test_a_staff_viewer_gets_no_capability(self):
@@ -151,15 +125,17 @@ class TestStaffViewer(IntegrationTestCase):
 		)
 		self.assertEqual(rows[0].firewall_rules, self.server.firewall_rules)
 
-	def test_a_new_staff_viewer_does_not_get_central_user(self):
-		self.assertNotIn("Central User", frappe.get_roles(self.staff))
+	def test_staff_keep_central_user(self):
+		self.assertLessEqual(set(STAFF_ROLES), set(frappe.get_roles(self.staff)))
 		self.assertEqual(frappe.db.get_value("User", self.staff, "user_type"), "System User")
 
-	def test_a_user_cannot_be_both_staff_viewer_and_central_user(self):
-		user = frappe.get_doc("User", self.owner)
-		user.append("roles", {"role": "Staff Viewer"})
-		with self.assertRaises(frappe.ValidationError):
-			user.save()
+	def test_the_staff_role_profile_holds_central_user(self):
+		name = f"Frappe Employee {self.suffix}"
+		with patch("central.users.STAFF_ROLE_PROFILE", name):
+			ensure_staff_role_profile()
+
+		profile = frappe.get_doc("Role Profile", name)
+		self.assertEqual({row.role for row in profile.roles}, set(STAFF_ROLES))
 
 	def _team(self):
 		return frappe.get_doc(
