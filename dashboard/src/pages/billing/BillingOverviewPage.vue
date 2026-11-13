@@ -25,7 +25,7 @@ import { useBillingReports } from '@/composables/useBillingReports'
 import { useBillingSetup } from '@/composables/useBillingSetup'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { useServerMapData } from '@/composables/useServerMapData'
-import { useSession } from '@/composables/useSession'
+import { sessionReady, useSession } from '@/composables/useSession'
 import { fetchBillingSetup } from '@/data/billingSetup'
 import { parseTopupAmount } from '@/lib/topupAmount'
 
@@ -90,27 +90,40 @@ const onAddCredits = (amount?: number) => {
 	if (requireSetup()) showTopup.value = true
 }
 
-// A top-up reminder links here with the amount to add. The param is dropped once read,
-// so a refresh does not open the dialog again. The setup check loads first, so a
-// complete profile is never sent to the billing-details dialog. A member who cannot
-// manage billing gets no dialog, as the banner offers them no button.
+// A top-up reminder links here with its team and the amount; billing managers get the dialog.
 const route = useRoute()
 const router = useRouter()
-const { activeTeam } = useSession()
+const { activeTeam, teams, setActiveTeam } = useSession()
 const { canManageBilling, reload: reloadCapabilities } = useCapabilities()
+
+const isOtherTeam = (team: unknown) =>
+	team !== undefined && team !== activeTeam.value
+
+async function openTopupLink(value: unknown) {
+	await sessionReady
+	const team = route.query.team
+	if (isOtherTeam(team) && teams.value.some((row) => row.name === team)) {
+		try {
+			// Switching reloads the page with the same link, now on its team.
+			setActiveTeam(team as string)
+			return
+		} catch {
+			// No browser storage: stay on this team and drop the link.
+		}
+	}
+
+	const { topup: _topup, team: _team, ...query } = route.query
+	router.replace({ query })
+	const amount = parseTopupAmount(value)
+	if (!amount || !activeTeam.value || isOtherTeam(team)) return
+	await Promise.all([fetchBillingSetup(activeTeam.value), reloadCapabilities()])
+	if (canManageBilling.value) onAddCredits(amount)
+}
+
 watch(
 	() => route.query.topup,
-	async (value) => {
-		if (value === undefined) return
-		const { topup: _topup, ...query } = route.query
-		router.replace({ query })
-		const amount = parseTopupAmount(value)
-		if (!amount) return
-		await Promise.all([
-			fetchBillingSetup(activeTeam.value),
-			reloadCapabilities(),
-		])
-		if (canManageBilling.value) onAddCredits(amount)
+	(value) => {
+		if (value !== undefined) void openTopupLink(value)
 	},
 	{ immediate: true },
 )
