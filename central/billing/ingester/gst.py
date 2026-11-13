@@ -16,6 +16,8 @@ from central.billing.ingester.settings import accounting_settings
 OVERSEAS_PLACE_OF_SUPPLY = "96-Other Countries"
 COMPANY_STATE_KEY = "billing:company_state_code"
 LAST_COMPANY_STATE_KEY = "billing:company_state_code:last"
+# Set after a failed read, so screens do not call the accounting system on every view.
+MISSED_COMPANY_STATE_KEY = "billing:company_state_code:missed"
 COMPANY_STATE_TTL = 24 * 60 * 60
 # After a failed read, the last known code is reused this long before trying again.
 RETRY_AFTER = 60 * 60
@@ -136,12 +138,13 @@ def company_state_code() -> str:
 
 
 def _read_company_state_code() -> str | None:
-	if not connection.enabled():
+	if not connection.enabled() or frappe.cache.get_value(MISSED_COMPANY_STATE_KEY, use_local_cache=False):
 		return None
 	try:
 		return company_state_code() or None
 	except (requests.RequestException, connection.NoAccess):
 		frappe.log_error(title="Company GST state could not be read")
+		frappe.cache.set_value(MISSED_COMPANY_STATE_KEY, 1, expires_in_sec=RETRY_AFTER)
 		return None
 
 

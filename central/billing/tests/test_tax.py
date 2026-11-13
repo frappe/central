@@ -189,6 +189,14 @@ class TestTaxLabel(TaxTestBase):
 		self.read.side_effect = requests.ConnectionError
 		self.assertEqual(tax.tax_label(TEAM), "GST 18%")
 
+	def test_a_failed_read_of_a_state_never_known_waits_an_hour(self):
+		self.read.side_effect = requests.ConnectionError
+		with patch("frappe.log_error") as log_error:
+			tax.tax_label(TEAM)
+			self.assertEqual(tax.tax_label(TEAM), "GST 18%")
+		self.assertEqual(self.read.call_count, 1)
+		self.assertEqual(log_error.call_count, 1)
+
 	def test_with_the_sync_off_and_no_known_state_it_names_gst_only(self):
 		with patch("central.billing.ingester.connection.enabled", return_value=False):
 			self.assertEqual(tax.tax_label(TEAM), "GST 18%")
@@ -196,7 +204,9 @@ class TestTaxLabel(TaxTestBase):
 
 
 def _forget_company_state():
-	frappe.cache.delete_value([gst.COMPANY_STATE_KEY, gst.LAST_COMPANY_STATE_KEY])
+	frappe.cache.delete_value(
+		[gst.COMPANY_STATE_KEY, gst.LAST_COMPANY_STATE_KEY, gst.MISSED_COMPANY_STATE_KEY]
+	)
 
 
 class TestWithholdingSeam(TaxTestBase):
