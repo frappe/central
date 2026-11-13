@@ -369,7 +369,7 @@ def _metered_lines(team: str, clusters: list, period_start, period_end, explain:
 			Rollup.cluster,
 		)
 		.where(Rollup.team == team)
-		.where(Rollup.cluster.isin(clusters))
+		.where(_in_clusters(Rollup.cluster, clusters))
 		# A superseded row has been replaced by a corrected-terms version; billing the
 		# old one as well would double-charge the same usage.
 		.where(Rollup.superseded_by.isnull())
@@ -481,3 +481,13 @@ def _metered_lines(team: str, clusters: list, period_start, period_end, explain:
 			)
 		)
 	return lines
+
+
+def _in_clusters(column, clusters: list):
+	"""`column` is one of `clusters`. A blank cluster is stored as NULL or "", so it matches both."""
+	named = [c for c in clusters if c]
+	condition = column.isin(named) if named else None
+	if len(named) < len(clusters):
+		blank = column.isnull() | (column == "")
+		condition = blank if condition is None else condition | blank
+	return condition
