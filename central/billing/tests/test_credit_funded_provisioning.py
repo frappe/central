@@ -225,6 +225,18 @@ class TestCreditFundedHeadroom(CreditFundedTestBase):
 
 		self.assertEqual(settlement.credit_funded_headroom(TEAM), 2000)
 
+	def test_top_up_gst_a_bill_already_used_is_not_counted_again(self):
+		credits.purchase(TEAM, 1180, "INR", gateway_payment_id="pi_gst_used", gateway="Stripe")
+
+		with patch.object(credits, "advance_gst_balance", return_value=0):
+			self.assertEqual(settlement.credit_funded_headroom(TEAM), 847.46)  # 1,000 / 1.18
+
+	def test_expired_promotional_credit_funds_nothing(self):
+		credits.grant_promotional_credits(TEAM, 1180, "INR", expires_on=frappe.utils.nowdate())
+		self._grant(1180)
+
+		self.assertEqual(settlement.credit_funded_headroom(TEAM), 1000)
+
 	def test_no_credits_is_no_headroom_even_under_a_tier(self):
 		# Deliberately NOT effective_spend_cap's behaviour: that falls back to the
 		# tier cap, which is only safe as a ceiling when a card backs it.

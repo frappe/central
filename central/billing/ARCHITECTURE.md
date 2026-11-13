@@ -673,7 +673,7 @@ revenue.credits.purchase → Credit Ledger Entry (append-only) + Credit Wallet (
 settlement.effective_spend_cap = min(trust-tier cap, wallet)   (credits-only mode)
 settlement.can_accept_spend gates money movement; 80% forecast warning
 ```
-`settlement.credit_funded_headroom` is the pre-tax run rate the wallet can fund, under the tier cap. It counts the wallet the way `lifecycle._draw_wallet` spends it: a top-up pays the pre-tax amount and its prepaid GST pays the tax, and other credit (promotional, a refund) pays the bill with its GST, so it funds `amount / (1 + GST rate)` (`settlement.credit_funded_spend`).
+`settlement.credit_funded_headroom` is the pre-tax run rate the wallet can fund, under the tier cap. It counts the wallet the way `lifecycle._draw_wallet` spends it: a top-up pays the pre-tax amount and top-up GST no bill has used yet (`credits.advance_gst_balance`) pays the tax, and other credit (promotional, a refund) pays the bill with its GST, so it funds `amount / (1 + GST rate)` (`settlement.credit_funded_spend`). Promotional credit past its expiry date counts for nothing.
 
 `open_and_collect`'s credits leg draws `credits.get_balance(team, currency)` — the
 team's one wallet, no scoping of any kind (Projects have no relationship to credits;
