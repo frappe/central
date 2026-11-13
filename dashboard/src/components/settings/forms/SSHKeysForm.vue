@@ -14,7 +14,7 @@ import type { TeamSSHKey } from '@/types/sshKeys'
 
 const COLUMNS = [
 	{ key: 'title', label: __('Key'), class: 'w-full max-w-0' },
-	{ key: 'server_count', label: __('Servers') },
+	{ key: 'server_count', label: __('Servers'), class: 'text-right' },
 	{ key: 'actions', label: '', class: 'w-10 pr-1' },
 ]
 

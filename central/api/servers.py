@@ -164,6 +164,13 @@ def server_overview(team: str | None = None, resource_id: str | None = None) -> 
 			frappe.DoesNotExistError,
 		)
 
+	firewall_rulesets = frappe.get_all(
+		"Server Firewall Ruleset",
+		filters={"parent": row.resource_id, "parenttype": "Virtual Machine"},
+		pluck="firewall_ruleset",
+		order_by="idx asc",
+	)
+
 	server = frappe._dict(
 		{
 			"resource_id": row.resource_id,
@@ -184,6 +191,7 @@ def server_overview(team: str | None = None, resource_id: str | None = None) -> 
 			"public_ipv6": row.public_ipv6,
 			"has_public_ipv6": row.has_public_ipv6,
 			"is_firewall_enabled": row.is_firewall_enabled,
+			"firewall_rulesets": firewall_rulesets,
 			"is_termination_protected": row.is_termination_protected,
 			"has_ipv4_internet": row.has_ipv4_internet,
 			"has_wireguard_access": row.has_wireguard_access,
