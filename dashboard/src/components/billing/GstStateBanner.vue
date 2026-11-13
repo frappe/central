@@ -17,13 +17,14 @@ const show = computed(
 		!!profile.data?.complete &&
 		!!profile.data?.gst_state_missing,
 )
+const rate = computed(() => `${profile.data?.igst_rate ?? 0}%`)
 </script>
 
 <template>
 	<Alert
 		v-if="show"
 		theme="amber"
-		:title="__('Add your state so we apply the right GST.')"
-		:primary-action="{ label: __('Edit billing details'), onClick: () => $emit('edit') }"
+		:title="__('Your bills carry IGST {0} until you add your state.', [rate])"
+		:primary-action="{ label: __('Add state'), onClick: () => $emit('edit') }"
 	/>
 </template>

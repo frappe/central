@@ -67,10 +67,9 @@ def upi_eligibility(team: str) -> dict:
 			"Your spend cap with GST (₹{0}) is at or above the ₹{1} UPI Autopay recurring limit. Set up a card instead."
 		).format(f"{cap:,.0f}", f"{UPI_RECURRING_MAX:,.0f}")
 	elif last >= UPI_RECURRING_MAX:
-		reason = (
-			f"Your last invoice (₹{last:,.0f}) is at or above the ₹{UPI_RECURRING_MAX:,.0f} "
-			"UPI Autopay recurring limit — set up a card instead."
-		)
+		reason = _(
+			"Your last invoice (₹{0}) is at or above the ₹{1} UPI Autopay recurring limit. Set up a card instead."
+		).format(f"{last:,.0f}", f"{UPI_RECURRING_MAX:,.0f}")
 	return {
 		"eligible": reason is None,
 		"reason": reason,

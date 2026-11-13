@@ -385,7 +385,7 @@ Every billing step adds a **Billing Event**: profile, subscription, customer syn
 
 A team gets a customer in the accounting system only when it has an enabled subscription, a live invoice or a paid top-up. A waived invoice is never sent, and its sync status is Not Required.
 
-**GST on documents.** `ingester/gst.treatment` gives the GST category, place of supply and tax template that the Sales Invoice and the top-up advance carry. It decides SEZ zero-rating with `tax.has_zero_rating`, the same rule `tax.resolve_tax` uses, so an SEZ team whose GSTIN lapsed is filed with the GST it was charged. An Indian profile with no state has no place of supply and gets the out-of-state template (IGST). The console asks a member with `billing:manage` for the state (`gst_state_missing` on `get_billing_profile`). A customer save of an Indian billing address (`payments/profile.create_or_update_billing_profile`, with any address field) must name the state. Other saves of an existing profile without a state still go through.
+**GST on documents.** `ingester/gst.treatment` gives the GST category, place of supply and tax template that the Sales Invoice and the top-up advance carry. It decides SEZ zero-rating with `tax.has_zero_rating`, the same rule `tax.resolve_tax` uses, so an SEZ team whose GSTIN lapsed is filed with the GST it was charged. An Indian profile with no state has no place of supply and gets the out-of-state template (IGST). The console asks a member with `billing:manage` for the state and shows the IGST rate charged meanwhile (`gst_state_missing` and `igst_rate` on `get_billing_profile`). A customer save of an Indian billing address (`payments/profile.create_or_update_billing_profile`, with any address field) must name the state. Other saves of an existing profile without a state still go through.
 
 ### Operator alerts
 
@@ -701,7 +701,7 @@ catalog.entitlements.recompute_trust_tier(team)
   → issue_token → catalog.signing (Ed25519) → Entitlement Token (offline cluster enforcement)
 get_team_caps resolves caps live (no per-team Trust Tier doctype — dropped)
 ```
-**Mandate ceiling.** A bill at the tier cap is debited with its GST. So `payments.mandate_ceiling` registers a new card or UPI Autopay mandate for `min(silent-debit ceiling, tier cap + tax.resolve_tax on it)`. An SEZ team with a live GSTIN adds no GST. `mandates.reconcile_mandates_to_cap` compares each Active UPI mandate with this ceiling when the tier changes and flags a lower one for re-authorisation. `mandates.upi_eligibility` compares the cap with GST against the ₹1,00,000 UPI recurring limit.
+**Mandate ceiling.** A bill at the tier cap is debited with its GST. So `payments.mandate_ceiling` registers a new Stripe card (`payments.initiate_payment_method_setup`) or UPI Autopay mandate (`mandates.setup_mandate`) for `min(silent-debit ceiling, tier cap + tax.resolve_tax on it)`. A Razorpay recurring card (`mandates.setup_card`) registers `CARD_TOKEN_MAX`; its off-session charges are held to the rail's silent-debit ceiling (₹15,000) by `collection_mode.method_limit`. An SEZ team with a live GSTIN adds no GST. `mandates.reconcile_mandates_to_cap` compares each Active UPI mandate with this ceiling when the tier changes and flags a lower one for re-authorisation. `mandates.upi_eligibility` compares the cap with GST against the ₹1,00,000 UPI recurring limit.
 
 ---
 

@@ -44,6 +44,15 @@ def is_state_missing(team: str) -> bool:
 	return is_indian_team(team) and not (state or "").strip()
 
 
+def igst_rate(team: str) -> float | None:
+	"""The GST rate charged, as IGST, to an Indian team with no state; None once it has one."""
+	from central.billing.revenue.tax import resolve_tax
+
+	if not is_state_missing(team):
+		return None
+	return resolve_tax(team, 100)["output_tax_amount"]
+
+
 def _require_indian_state(doc, values: dict) -> None:
 	"""An Indian billing address the customer saves names its state.
 
