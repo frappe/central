@@ -197,6 +197,21 @@ class TestOutputTaxFollowsTheCountry(IntegrationTestCase):
 		profile.update({"zero_rated": 1, "zero_rating_reason": "Overseas"})
 		self.assertRaises(frappe.ValidationError, profile.save, ignore_permissions=True)
 
+	def test_an_older_overseas_row_in_india_still_saves_other_edits(self):
+		self._signup_from("India")
+		frappe.db.set_value("Tax Profile", self.TEAM, {"zero_rated": 1, "zero_rating_reason": "Overseas"})
+		profile = frappe.get_doc("Tax Profile", self.TEAM)
+		profile.tds_rate = 2
+		profile.save(ignore_permissions=True)
+		self.assertEqual(frappe.db.get_value("Tax Profile", self.TEAM, "tds_rate"), 2)
+
+	def test_changing_the_reason_to_overseas_in_india_is_refused(self):
+		self._signup_from("India")
+		frappe.db.set_value("Tax Profile", self.TEAM, {"zero_rated": 1, "zero_rating_reason": "SEZ"})
+		profile = frappe.get_doc("Tax Profile", self.TEAM)
+		profile.zero_rating_reason = "Overseas"
+		self.assertRaises(frappe.ValidationError, profile.save, ignore_permissions=True)
+
 	def test_a_profile_moved_into_india_is_no_longer_overseas(self):
 		self._signup_from("United States")
 		frappe.db.set_value("Tax Profile", self.TEAM, {"zero_rated": 1, "zero_rating_reason": "Overseas"})

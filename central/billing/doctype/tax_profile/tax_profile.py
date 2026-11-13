@@ -48,7 +48,10 @@ class TaxProfile(Document):
 		)
 
 	def validate_overseas_is_outside_india(self):
-		"""An India billing address is never filed as Overseas, so the bill and the filed invoice agree."""
+		"""An India billing address is never filed as Overseas, so the bill and the filed invoice agree.
+		Checked only when the zero-rating changes, so an older row still saves other edits."""
+		if not self.has_zero_rating_changed():
+			return
 		if self.is_overseas_in_india():
 			frappe.throw(
 				_(
@@ -56,6 +59,13 @@ class TaxProfile(Document):
 				),
 				frappe.ValidationError,
 			)
+
+	def has_zero_rating_changed(self) -> bool:
+		return (
+			self.is_new()
+			or self.has_value_changed("zero_rated")
+			or self.has_value_changed("zero_rating_reason")
+		)
 
 	def is_overseas_in_india(self) -> bool:
 		"""Whether the profile is zero-rated as Overseas for an India billing address."""
