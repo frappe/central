@@ -57,7 +57,7 @@ export interface Forecast {
 	tax_type: string | null
 	/** The GST named as invoices name it, e.g. "IGST 18%"; null when no GST applies. */
 	tax_label: string | null
-	/** What follows the tax-inclusive total, e.g. "incl. IGST 18%" or "No GST (SEZ)". */
+	/** What follows the tax-inclusive total, e.g. "incl. IGST 18%" or "SEZ supply, no GST". */
 	tax_note: string | null
 	credit_balance: number
 	/** What the card or UPI pays after the wallet, drawn as the bill draws it. */
@@ -96,7 +96,7 @@ export interface ChargingMethod {
 export interface NextPayment {
 	currency: Currency
 	amount: number
-	/** The tax the amount includes, e.g. "incl. IGST 18%" or "No GST (SEZ)". */
+	/** The tax the amount includes, e.g. "incl. IGST 18%" or "SEZ supply, no GST". */
 	tax_note: string | null
 	charge_on: string | null
 	invoice: string | null
@@ -242,7 +242,7 @@ export interface InvoiceSummary {
 	due_date: string | null
 	/** Issued in the accounting system, so its PDF can be downloaded. */
 	has_pdf: boolean
-	/** The tax the total includes, e.g. "incl. IGST 18%" or "No GST (SEZ)". */
+	/** The tax the total includes, e.g. "incl. IGST 18%" or "SEZ supply, no GST". */
 	tax_note: string | null
 }
 

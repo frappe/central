@@ -60,10 +60,7 @@ const taxLineLabel = computed(() => {
 	if (!invoice) return ''
 	if (invoice.tax_label) return invoice.tax_label
 	if (!invoice.output_tax_rate) return invoice.output_tax_type || __('Tax')
-	return __('{0} {1}%', [
-		invoice.output_tax_type || __('Tax'),
-		invoice.output_tax_rate,
-	])
+	return `${invoice.output_tax_type || __('Tax')} ${invoice.output_tax_rate}%`
 })
 
 // Activity is folded away by default — for a settled invoice the log is
