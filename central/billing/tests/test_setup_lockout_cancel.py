@@ -47,7 +47,7 @@ class TestSetupLockoutCancel(BillingTestCase):
 		patcher.start()
 		self.addCleanup(patcher.stop)
 
-	def fail(self, times=1, team=TEAM, user=None):
+	def record_failures(self, times=1, team=TEAM, user=None):
 		"""Bank refusals on a setup that holds no gateway object of its own."""
 		method = self.make_method(team, user, setup_reference=None)
 		for _ in range(times):
@@ -105,11 +105,11 @@ class TestSetupLockoutCancel(BillingTestCase):
 
 	def test_the_fifth_failure_cancels_the_open_setup_and_top_up_once(self):
 		method, order = self.make_method(), self.make_top_up()
-		self.fail(times=4)
+		self.record_failures(times=4)
 		self.adapter.cancel_setup.assert_not_called()
 		self.adapter.cancel_order.assert_not_called()
 
-		self.fail(times=2)
+		self.record_failures(times=2)
 		self.adapter.cancel_setup.assert_called_once_with("seti_open")
 		self.adapter.cancel_order.assert_called_once_with("pi_open")
 		self.assertEqual(self.status("Payment Method", method), "Cancelled")
@@ -123,7 +123,7 @@ class TestSetupLockoutCancel(BillingTestCase):
 
 	def test_the_cancel_runs_in_a_job_after_the_failure_commits(self):
 		with patch("frappe.enqueue") as enqueue:
-			self.fail(times=5)
+			self.record_failures(times=5)
 		closes = [c for c in enqueue.call_args_list if c.args[0].endswith("setup_lockout_cancel.close_open")]
 		self.assertEqual(len(closes), 1)
 		self.assertTrue(closes[0].kwargs["enqueue_after_commit"])
@@ -132,7 +132,7 @@ class TestSetupLockoutCancel(BillingTestCase):
 		self.adapter.cancel_setup.return_value = "succeeded"
 		self.adapter.cancel_order.return_value = "processing"
 		method, order = self.make_method(), self.make_top_up()
-		self.fail(times=5)
+		self.record_failures(times=5)
 		self.assertEqual(self.status("Payment Method", method), "Pending Validation")
 		self.assertEqual(self.status("Top-up Order", order), "Created")
 
@@ -140,23 +140,23 @@ class TestSetupLockoutCancel(BillingTestCase):
 		configure_gateway("Razorpay", (("INR", 1),))
 		self.adapter.cancel_setup.side_effect = GatewayUnsupported("no cancel")
 		method = self.make_method(setup_reference="order_open", gateway="Razorpay")
-		errors = frappe.db.count("Error Log")
-		self.fail(times=5)
+		with patch.object(frappe, "log_error") as log_error:
+			self.record_failures(times=5)
 		self.assertEqual(self.status("Payment Method", method), "Pending Validation")
-		self.assertEqual(frappe.db.count("Error Log"), errors)
+		log_error.assert_not_called()
 
 	def test_a_saved_card_awaiting_its_check_is_not_cancelled(self):
 		method = self.make_method()
 		frappe.db.set_value("Payment Method", method, "gateway_method_id", "pm_saved")
-		self.fail(times=5)
+		self.record_failures(times=5)
 		self.adapter.cancel_setup.assert_not_called()
 
 	def test_a_locked_user_loses_their_open_setups_in_other_teams(self):
 		theirs = self.make_method(OTHER_TEAM, self.user, "seti_theirs")
 		someone_elses = self.make_method(OTHER_TEAM, make_user(), "seti_someone_else")
 		same_team_other_member = self.make_method(TEAM, make_user(), "seti_same_team")
-		self.fail(times=3, team=TEAM, user=self.user)
-		self.fail(times=2, team=THIRD_TEAM, user=self.user)
+		self.record_failures(times=3, team=TEAM, user=self.user)
+		self.record_failures(times=2, team=THIRD_TEAM, user=self.user)
 
 		self.assertEqual(self.status("Payment Method", theirs), "Cancelled")
 		self.assertEqual(self.status("Payment Method", someone_elses), "Pending Validation")
@@ -167,20 +167,20 @@ class TestSetupLockoutCancel(BillingTestCase):
 
 		complete_billing_profile(OTHER_TEAM)
 		theirs = self.make_method(OTHER_TEAM, self.user, "seti_theirs")
-		self.fail(times=4, team=TEAM, user=self.user)
+		self.record_failures(times=4, team=TEAM, user=self.user)
 		clear_setup_lock(OTHER_TEAM)
-		self.fail(times=1, team=THIRD_TEAM, user=self.user)
+		self.record_failures(times=1, team=THIRD_TEAM, user=self.user)
 		self.assertEqual(self.status("Payment Method", theirs), "Pending Validation")
 
 	def test_a_later_setup_intent_canceled_webhook_is_a_no_op(self):
 		method = self.make_method()
-		self.fail(times=5)
+		self.record_failures(times=5)
 		self.assertEqual(self.receive("setup_intent.canceled", {"id": "seti_open"}), "Ignored")
 		self.assertEqual(self.status("Payment Method", method), "Cancelled")
 
 	def test_a_cancelled_top_up_intent_is_not_counted_again(self):
 		order = self.make_top_up()
-		self.fail(times=5)
+		self.record_failures(times=5)
 		declines = frappe.db.count("Billing Event", {"subject": order})
 		intent = {
 			"object": "payment_intent",
