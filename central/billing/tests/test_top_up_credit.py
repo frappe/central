@@ -34,6 +34,8 @@ class TopUpCreditTestCase(IntegrationTestCase):
 			"central.billing.payments.collection.collect_invoice",
 		):
 			self.enterContext(patch(target))
+		# The company's state is read from the accounting system; inter-state unless a test says so.
+		self.enterContext(patch("central.billing.revenue.tax.is_in_state_supply", return_value=False))
 		# No test may reach a gateway.
 		self.enterContext(patch("central.billing.gateways.registry.get_adapter", return_value=MagicMock()))
 
@@ -101,10 +103,24 @@ class TestAnIssuedBillWithGst(TopUpCreditTestCase):
 			"Billing Notification Log", {"team": TEAM, "event_type": "Top-up Reminder"}, "message"
 		)
 		self.assertIn(
-			"Add ₹ 28,900.00 of credit to your wallet by 8 December 2026 (₹ 34,102.00 with GST). "
+			"Add ₹ 28,900.00 of credit to your wallet by 8 December 2026 (₹ 34,102.00 incl. IGST 18%). "
 			"Your card or UPI pays only amounts up to ₹ 15,000.00.",
 			message,
 		)
+
+	def test_a_same_state_team_is_told_cgst_and_sgst(self):
+		self._issue()
+		self._top_up(5000)
+
+		with patch("central.billing.revenue.tax.is_in_state_supply", return_value=True):
+			due = self._due()
+		top_up_reminders.send_top_up_notice(TEAM, due)
+
+		self.assertEqual(top_up_reminders.format_due(due)["tax_label"], "CGST 9% + SGST 9%")
+		message = frappe.db.get_value(
+			"Billing Notification Log", {"team": TEAM, "event_type": "Top-up Reminder"}, "message"
+		)
+		self.assertIn("(₹ 34,102.00 incl. CGST 9% + SGST 9%). ", message)
 
 
 class TestTds(TopUpCreditTestCase):
@@ -178,7 +194,7 @@ class TestNoGst(TopUpCreditTestCase):
 			"Billing Notification Log", {"team": TEAM, "event_type": "Top-up Reminder"}, "message"
 		)
 		self.assertIn("Add ₹ 35,000.00 of credit to your wallet by 8 December 2026. Your card", message)
-		self.assertNotIn("with GST", message)
+		self.assertNotIn("incl.", message)
 
 
 class TestRounding(TopUpCreditTestCase):
@@ -244,7 +260,7 @@ class TestEarlierCreditWithoutGst(TopUpCreditTestCase):
 		self.assertEqual((due["amount"], due["amount_with_gst"]), (33900, 40002))
 		self.assertTrue(due["includes_earlier_gst"])
 		self.assertIn(
-			"Add ₹ 33,900.00 of credit to your wallet by 8 December 2026 (₹ 40,002.00 with GST). "
+			"Add ₹ 33,900.00 of credit to your wallet by 8 December 2026 (₹ 40,002.00 incl. IGST 18%). "
 			f"Your card or UPI pays only amounts up to ₹ 15,000.00. {EARLIER_GST_NOTE}",
 			self._message(),
 		)

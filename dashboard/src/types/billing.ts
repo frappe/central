@@ -500,10 +500,12 @@ export interface TopUpDue {
 	has_method: boolean
 	/** Part of the credit's GST pays for earlier purchased credit that had none, so it is more than the gap. */
 	includes_earlier_gst: boolean
-	/** As the reminder email shows them; `amount_with_gst` is null with no GST, `limit` with no method. */
+	/** As the reminder email shows them; `amount_with_gst` and `tax_label` are null with no GST, `limit` with no method. */
 	labels: {
 		amount: string
 		amount_with_gst: string | null
+		/** The GST it includes, e.g. "IGST 18%" or "CGST 9% + SGST 9%". */
+		tax_label: string | null
 		payment_date: string
 		limit: string | null
 	}

@@ -11,12 +11,13 @@ credit that makes the wallet pay the whole bill. Nothing here moves money or cha
 """
 
 import frappe
+from frappe import _
 
 from central.billing.doctype.billing_profile.billing_profile import DEFAULT_PAYMENT_DAY, get_payment_date
 from central.billing.doctype.invoice.invoice import owed_filters
 from central.billing.platform import notifications
 from central.billing.platform.jobs import each_isolated
-from central.billing.revenue import credits
+from central.billing.revenue import credits, tax
 from central.billing.revenue.invoicing import wallet_draw
 
 EVENT = "Top-up Reminder"
@@ -80,7 +81,8 @@ def get_shortfall_due(team: str, bill: float, gst: float, date, invoice: str | N
 	wallet and the card or UPI pay it. A team with no saved method has a limit of 0.
 
 	The ask is the whole shortfall: purchased credit that makes the wallet pay all of the
-	bill, rounded up to ₹100. `amount_with_gst` is what that credit costs.
+	bill, rounded up to ₹100. `amount_with_gst` is what that credit costs, and `tax_label`
+	names its GST.
 	`includes_earlier_gst` is set when part of its GST pays for earlier purchased credit
 	that was bought without its GST, which makes the ask more than the gap."""
 	from central.billing.payments import collection, collection_mode
@@ -101,6 +103,7 @@ def get_shortfall_due(team: str, bill: float, gst: float, date, invoice: str | N
 	return {
 		"amount": credit,
 		"amount_with_gst": frappe.utils.flt(credit + credits.top_up_gst(team, credit), 2),
+		"tax_label": tax.tax_label(team),
 		"date": str(date),
 		"limit": limit,
 		"has_method": has_method,
@@ -150,17 +153,17 @@ def send_top_up_notice(team: str, due: dict) -> dict:
 
 
 def format_due(due: dict, held: bool = False) -> dict:
-	"""The credit, its cost with GST, the payment date and the limit as the email and the
-	billing page show them. The cost is left out when there is no GST on it. A held team's
-	card or UPI is not charged, so its limit is not named."""
+	"""The credit, its cost with GST and the GST it names, the payment date and the limit as
+	the email and the billing page show them. The cost is left out when there is no GST on
+	it. A held team's card or UPI is not charged, so its limit is not named."""
 	from central.billing.payments.payment_notices import format_date
 
 	with_gst = frappe.utils.flt(due.get("amount_with_gst"))
+	has_gst = with_gst > frappe.utils.flt(due["amount"])
 	return {
 		"amount": frappe.utils.fmt_money(due["amount"], currency="INR"),
-		"amount_with_gst": frappe.utils.fmt_money(with_gst, currency="INR")
-		if with_gst > frappe.utils.flt(due["amount"])
-		else None,
+		"amount_with_gst": frappe.utils.fmt_money(with_gst, currency="INR") if has_gst else None,
+		"tax_label": (due.get("tax_label") or _("GST")) if has_gst else None,
 		"payment_date": format_date(due["date"]),
 		"limit": frappe.utils.fmt_money(due["limit"], currency="INR")
 		if due["has_method"] and not held

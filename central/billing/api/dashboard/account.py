@@ -284,7 +284,15 @@ def _top_up_due(team: str, projected: float) -> dict | None:
 	return {
 		**{
 			key: due[key]
-			for key in ("amount", "amount_with_gst", "date", "limit", "has_method", "includes_earlier_gst")
+			for key in (
+				"amount",
+				"amount_with_gst",
+				"tax_label",
+				"date",
+				"limit",
+				"has_method",
+				"includes_earlier_gst",
+			)
 		},
 		"labels": top_up_reminders.format_due(due),
 	}

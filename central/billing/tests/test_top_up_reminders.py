@@ -256,6 +256,7 @@ class TestBanner(TopUpTestCase):
 			{
 				"amount": "₹ 40,000.00",
 				"amount_with_gst": None,
+				"tax_label": None,
 				"payment_date": "1 December 2026",
 				"limit": "₹ 15,000.00",
 			},

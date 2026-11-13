@@ -35,7 +35,7 @@ def treatment(team: str) -> frappe._dict:
 		return frappe._dict(gstin=gstin, gst_category="SEZ", place_of_supply=place_of_supply, template=None)
 
 	settings = accounting_settings()
-	in_state = code and code == company_state_code()
+	in_state = is_in_state(profile.state)
 	return frappe._dict(
 		gstin=gstin,
 		gst_category=(profile.gst_category or "Registered Regular") if gstin else "Unregistered",
@@ -80,6 +80,12 @@ def tax_rows(template: str | None, paid_amount: float | None = None) -> list[dic
 			}
 		)
 	return shaped
+
+
+def is_in_state(state: str | None) -> bool:
+	"""Whether a supply to `state` stays in the company's own state (CGST + SGST, not IGST)."""
+	code = state_code(state)
+	return bool(code) and code == company_state_code()
 
 
 def company_gstin() -> str:

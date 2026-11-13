@@ -49,10 +49,12 @@ function topUpAsk(due: TopUpDue) {
 	const {
 		amount,
 		amount_with_gst: withGst,
+		tax_label: taxLabel,
 		payment_date: date,
 		limit,
 	} = due.labels
-	if (withGst) return topUpTextWithGst(amount, withGst, date, limit)
+	if (withGst)
+		return topUpTextWithGst(amount, withGst, taxLabel ?? '', date, limit)
 	if (!limit)
 		return __(
 			'Add {0} of credit to your wallet by {1}. No card or UPI is saved to pay the rest.',
@@ -67,17 +69,18 @@ function topUpAsk(due: TopUpDue) {
 function topUpTextWithGst(
 	amount: string,
 	withGst: string,
+	taxLabel: string,
 	date: string,
 	limit: string | null,
 ) {
 	if (!limit)
 		return __(
-			'Add {0} of credit to your wallet by {1} ({2} with GST). No card or UPI is saved to pay the rest.',
-			[amount, date, withGst],
+			'Add {0} of credit to your wallet by {1} ({2} incl. {3}). No card or UPI is saved to pay the rest.',
+			[amount, date, withGst, taxLabel],
 		)
 	return __(
-		'Add {0} of credit to your wallet by {1} ({2} with GST). Your card or UPI pays only amounts up to {3}.',
-		[amount, date, withGst, limit],
+		'Add {0} of credit to your wallet by {1} ({2} incl. {3}). Your card or UPI pays only amounts up to {4}.',
+		[amount, date, withGst, taxLabel, limit],
 	)
 }
 

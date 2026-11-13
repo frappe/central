@@ -1024,6 +1024,23 @@ class TestPaymentMethodOptions(IntegrationTestCase):
 			},
 		)
 
+	def test_the_recharge_surface_names_the_gst(self):
+		from unittest.mock import patch
+
+		from central.billing.api.dashboard import invoices
+
+		self.addCleanup(
+			frappe.db.set_value,
+			"Tax Profile",
+			self.TEAM,
+			{"output_tax_rate": 0, "zero_rated": 0, "zero_rating_reason": None},
+		)
+		frappe.db.set_value("Tax Profile", self.TEAM, "output_tax_rate", 18)
+		with patch("central.billing.revenue.tax.is_in_state_supply", return_value=False):
+			self.assertEqual(invoices.get_topup_options(self.TEAM)["tax_label"], "IGST 18%")
+		frappe.db.set_value("Tax Profile", self.TEAM, {"zero_rated": 1, "zero_rating_reason": "SEZ"})
+		self.assertEqual(invoices.get_topup_options(self.TEAM)["tax_label"], "No GST (SEZ)")
+
 	def test_tiles_name_their_networks_rather_than_saying_other(self):
 		"""A customer holding an unusual Visa must never read a tile as theirs by
 		accident, so no tile is labelled "Other cards"."""

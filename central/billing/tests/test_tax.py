@@ -2,7 +2,10 @@
 # For license information, please see license.txt
 """Tax — GST + SEZ; TDS withholding seam (issue #13)."""
 
+from unittest.mock import patch
+
 import frappe
+import requests
 
 from central.billing.revenue import invoicing, tax
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
@@ -128,6 +131,48 @@ class TestGstinStanding(TaxTestBase):
 			output_tax_type="GST", output_tax_rate=18, zero_rated=1, zero_rating_reason="Overseas"
 		)
 		self.assertEqual(self._invoice().output_tax_amount, 0)
+
+
+class TestTaxLabel(TaxTestBase):
+	"""The GST named on top-ups and notices, as the invoice files it. The company is in Maharashtra."""
+
+	def setUp(self):
+		super().setUp()
+		complete_billing_profile(TEAM)
+		set_tax_profile(output_tax_type="GST", output_tax_rate=18)
+		company = patch("central.billing.ingester.gst.company_state_code", return_value="27")
+		sync_on = patch("central.billing.ingester.connection.enabled", return_value=True)
+		company.start(), sync_on.start()
+		self.addCleanup(company.stop), self.addCleanup(sync_on.stop)
+
+	def test_same_state_is_cgst_and_sgst(self):
+		self.assertEqual(tax.tax_label(TEAM), "CGST 9% + SGST 9%")
+
+	def test_other_state_is_igst(self):
+		frappe.db.set_value("Billing Profile", TEAM, "state", "Karnataka")
+		self.assertEqual(tax.tax_label(TEAM), "IGST 18%")
+
+	def test_no_state_is_igst(self):
+		frappe.db.set_value("Billing Profile", TEAM, "state", None)
+		self.assertEqual(tax.tax_label(TEAM), "IGST 18%")
+
+	def test_sez_is_named(self):
+		set_tax_profile(output_tax_type="GST", output_tax_rate=18, zero_rated=1, zero_rating_reason="SEZ")
+		self.assertEqual(tax.tax_label(TEAM), "No GST (SEZ)")
+
+	def test_sez_with_a_lapsed_gstin_names_the_gst_charged(self):
+		frappe.db.set_value("Billing Profile", TEAM, {"gstin": "27AAPFU0939F1ZV", "gst_status": "Cancelled"})
+		set_tax_profile(output_tax_type="GST", output_tax_rate=18, zero_rated=1, zero_rating_reason="SEZ")
+		self.assertEqual(tax.tax_label(TEAM), "CGST 9% + SGST 9%")
+
+	def test_outside_india_has_no_label(self):
+		complete_billing_profile(TEAM, currency="USD")
+		frappe.db.delete("Tax Profile", {"team": TEAM})
+		self.assertIsNone(tax.tax_label(TEAM))
+
+	def test_an_unreachable_accounting_system_falls_back_to_igst(self):
+		with patch("central.billing.ingester.gst.company_state_code", side_effect=requests.ConnectionError):
+			self.assertEqual(tax.tax_label(TEAM), "IGST 18%")
 
 
 class TestWithholdingSeam(TaxTestBase):

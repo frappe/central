@@ -51,7 +51,11 @@ const presets = [1000, 5000, 10000, 25000]
 
 const { activeTeam } = useSession()
 const options = useCall<
-	{ instruments: PaymentInstrument[]; gst_rate: number },
+	{
+		instruments: PaymentInstrument[]
+		gst_rate: number
+		tax_label: string | null
+	},
 	{ team: string }
 >({
 	url: method(API.topupOptions),
@@ -62,6 +66,11 @@ const options = useCall<
 const instruments = computed(() => options.data?.instruments ?? [])
 // GST is charged on top of a top-up; the wallet is credited the amount entered.
 const gstRate = computed(() => options.data?.gst_rate ?? 0)
+// "IGST 18%", "CGST 9% + SGST 9%" or "No GST (SEZ)", as the invoice names it.
+const taxLabel = computed(
+	() => options.data?.tax_label || __('GST ({0}%)', [gstRate.value]),
+)
+const showTax = computed(() => !!gstRate.value || !!options.data?.tax_label)
 const gst = computed(
 	() => Math.round(Number(amount.value || 0) * gstRate.value) / 100,
 )
@@ -387,14 +396,14 @@ const topUpWalletErrorTitle = __("Couldn't top up your wallet")
 					v-if="Number(amount) > 0"
 					class="space-y-1.5 rounded-6 bg-surface-gray-1 px-3 py-2.5 text-p-sm"
 				>
-					<div v-if="gstRate" class="flex justify-between">
+					<div v-if="showTax" class="flex justify-between">
 						<dt class="text-ink-gray-6">{{ __('Wallet credit') }}</dt>
 						<dd class="tabular-nums text-ink-gray-8">
 							{{ money(Number(amount), currency) }}
 						</dd>
 					</div>
-					<div v-if="gstRate" class="flex justify-between">
-						<dt class="text-ink-gray-6">{{ __('GST ({0}%)', [gstRate]) }}</dt>
+					<div v-if="showTax" class="flex justify-between">
+						<dt class="text-ink-gray-6">{{ taxLabel }}</dt>
 						<dd class="tabular-nums text-ink-gray-8">
 							{{ money(gst, currency) }}
 						</dd>

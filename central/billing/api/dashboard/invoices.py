@@ -26,7 +26,7 @@ from central.billing.api.dashboard._shared import (
 from central.billing.doctype.invoice.invoice import is_issued
 from central.billing.doctype.top_up_order.top_up_order import TopupOrder
 from central.billing.gateways.base import VerifiedPayment
-from central.billing.revenue import credits
+from central.billing.revenue import credits, tax
 
 
 @frappe.whitelist()
@@ -721,6 +721,8 @@ def get_topup_options(team: str | None = None) -> dict:
 		"publishable_key": publishable_key,
 		# GST charged on top of a top-up, as a percentage. 0 where none applies.
 		"gst_rate": frappe.utils.flt(credits.top_up_gst_rate(team) * 100, 2),
+		# The GST named as invoices name it ("IGST 18%", "No GST (SEZ)"); None with no GST.
+		"tax_label": tax.tax_label(team),
 	}
 
 
