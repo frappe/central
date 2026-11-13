@@ -71,14 +71,13 @@ class TestCollectionMode(IntegrationTestCase):
 		adapter = MagicMock(supports_off_session_charge=False)
 		with patch("central.billing.gateways.registry.adapter_class", return_value=adapter):
 			self.assertEqual(collection_mode.off_session_limit(TEAM), 0.0)
-			self.assertTrue(collection_mode.evaluate(TEAM, projected_amount=1)["action_required"])
+			self.assertFalse(collection_mode.is_within_off_session_limit(TEAM, 1))
 
-	def test_auto_charge_forecast_at_the_limit_stays_silent(self):
-		_set_mode(TEAM, "Auto Charge")
-		self.assertFalse(collection_mode.evaluate(TEAM, projected_amount=15000)["action_required"])
-		self.assertTrue(collection_mode.evaluate(TEAM, projected_amount=15000.01)["action_required"])
+	def test_an_amount_at_the_limit_is_within_it(self):
+		self.assertTrue(collection_mode.is_within_off_session_limit(TEAM, 15000))
+		self.assertFalse(collection_mode.is_within_off_session_limit(TEAM, 15000.01))
 
-	def test_a_usd_forecast_over_the_tier_cap_stays_silent(self):
+	def test_a_usd_amount_over_the_tier_cap_is_within_the_limit(self):
 		from central.billing.tests.test_stripe_adapter import make_stripe_gateway
 
 		team = "team-collection-usd"
@@ -97,20 +96,15 @@ class TestCollectionMode(IntegrationTestCase):
 				"gateway_method_id": "pm_usd",
 			}
 		).insert(ignore_permissions=True)
-		self.assertFalse(collection_mode.evaluate(team, projected_amount=5000)["action_required"])
+		self.assertTrue(collection_mode.is_within_off_session_limit(team, 5000))
 
-	def test_auto_charge_under_threshold_stays_silent(self):
+	def test_a_trip_raises_action_required(self):
 		_set_mode(TEAM, "Auto Charge")
-		st = collection_mode.evaluate(TEAM, projected_amount=9000)
-		self.assertEqual(st["collection_mode"], "Auto Charge")
-		self.assertFalse(st["action_required"])
-
-	def test_auto_charge_over_threshold_trips_action_required(self):
-		_set_mode(TEAM, "Auto Charge")
-		st = collection_mode.evaluate(TEAM, projected_amount=18400)
+		collection_mode.trip(TEAM, "invoice_over_threshold")
+		st = collection_mode.status(TEAM)
 		self.assertEqual(st["collection_mode"], "Action Required")
 		self.assertTrue(st["action_required"])
-		self.assertEqual(st["reason"], "forecast_over_threshold")
+		self.assertEqual(st["reason"], "invoice_over_threshold")
 		# A notification was raised for the customer to act on.
 		self.assertTrue(
 			frappe.db.exists("Billing Notification Log", {"team": TEAM, "event_type": "Action Required"})
@@ -118,19 +112,11 @@ class TestCollectionMode(IntegrationTestCase):
 
 	def test_trip_is_idempotent_one_notification(self):
 		_set_mode(TEAM, "Auto Charge")
-		collection_mode.evaluate(TEAM, projected_amount=20000)
-		collection_mode.evaluate(TEAM, projected_amount=25000)
+		collection_mode.trip(TEAM, "invoice_over_threshold")
+		collection_mode.trip(TEAM, "invoice_over_threshold")
 		self.assertEqual(
 			frappe.db.count("Billing Notification Log", {"team": TEAM, "event_type": "Action Required"}), 1
 		)
-
-	def test_modes_that_never_charge_silently_are_never_tripped(self):
-		# A prepaid team running a huge bill is not "action required" — it just draws
-		# the wallet; only the silent off-session rail has the ₹15k ceiling.
-		_set_mode(TEAM, "Prepaid")
-		st = collection_mode.evaluate(TEAM, projected_amount=99999)
-		self.assertEqual(st["collection_mode"], "Prepaid")
-		self.assertFalse(st["action_required"])
 
 	def test_customer_chooses_manual_checkout_clears_action(self):
 		_set_mode(TEAM, "Action Required", reason="forecast_over_threshold")

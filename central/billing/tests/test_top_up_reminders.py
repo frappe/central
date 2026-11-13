@@ -277,6 +277,43 @@ class TestBanner(TopUpTestCase):
 		with self._forecast(40000):
 			self.assertIsNone(account.get_collection_status(TEAM)["top_up_due"])
 
+	def test_auto_charge_over_the_limit_after_the_wallet_sees_the_top_up(self):
+		"""A forecast only informs: the read never moves the team to Action Required."""
+		from central.billing.api.dashboard import account
+
+		_set_mode("Auto Charge")
+		with self._forecast(40000):
+			status = account.get_collection_status(TEAM)
+
+		self.assertFalse(status["action_required"])
+		self.assertEqual(status["collection_mode"], "Auto Charge")
+		self.assertEqual(status["top_up_due"]["amount"], 40000)
+		self.assertEqual(frappe.db.get_value("Billing Profile", TEAM, "collection_mode"), "Auto Charge")
+		self.assertFalse(
+			frappe.db.exists("Billing Notification Log", {"team": TEAM, "event_type": "Action Required"})
+		)
+
+	def test_auto_charge_over_the_limit_only_before_the_wallet_sees_nothing(self):
+		from central.billing.api.dashboard import account
+
+		_set_mode("Auto Charge")
+		credits.purchase(TEAM, 30000, "INR")
+		with self._forecast(40000):
+			status = account.get_collection_status(TEAM)
+
+		self.assertFalse(status["action_required"])
+		self.assertIsNone(status["top_up_due"])
+
+	def test_a_team_in_action_required_sees_that_banner_not_the_top_up(self):
+		from central.billing.api.dashboard import account
+
+		_set_mode("Action Required")
+		with self._forecast(40000):
+			status = account.get_collection_status(TEAM)
+
+		self.assertTrue(status["action_required"])
+		self.assertIsNone(status["top_up_due"])
+
 	@contextmanager
 	def _forecast(self, total):
 		with (

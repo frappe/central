@@ -244,11 +244,11 @@ def save_billing_settings(
 def get_collection_status(team: str | None = None) -> dict:
 	"""Collection mode + the "Action Required" banner feed (ADR 0005, #50).
 
-	Re-checks an Auto Charge team against its off-session limit using the
-	month-to-date forecast (so we warn before the bill lands), then returns the state
-	the banner renders from: the mode, whether action is required and why, the
-	threshold, the numbers (projected total, wallet balance, shortfall), and
-	`top_up_due`: what to add to the wallet before the next payment date (#191).
+	Returns the state the banner renders from: the mode, whether action is required
+	and why, the threshold, the numbers (projected total, wallet balance, shortfall),
+	and `top_up_due`: the credit to add before the next payment date when the card or
+	UPI would be asked for more than its limit (#191). The forecast only informs: a
+	team moves to Action Required when a bill is charged, never on this read.
 
 	It also carries `mandate_gap_note`: the networks no rail will auto-charge. This
 	is the screen where a customer decides how they want to pay, so it is the honest
@@ -260,7 +260,7 @@ def get_collection_status(team: str | None = None) -> dict:
 	from central.billing.revenue import credits
 
 	projected = frappe.utils.flt(get_forecast(team).get("projected_total"))
-	st = collection_mode.evaluate(team, projected_amount=projected)
+	st = collection_mode.status(team)
 	wallet = frappe.utils.flt(credits.get_balance(team)["balance"])
 	return {
 		**st,
@@ -282,7 +282,7 @@ def _top_up_due(team: str, projected: float) -> dict | None:
 		return None
 	# `labels` are formatted as the reminder email shows them, so both read the same.
 	return {
-		**{key: due[key] for key in ("amount", "date", "limit", "has_method")},
+		**{key: due[key] for key in ("amount", "amount_with_gst", "date", "limit", "has_method")},
 		"labels": top_up_reminders.format_due(due),
 	}
 
