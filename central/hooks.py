@@ -297,6 +297,7 @@ scheduler_events = {
 	],
 	"daily_long": [
 		"central.infrastructure.doctype.vm_snapshot.vm_snapshot.take_automatic_snapshots",
+		"central.billing.ingester.gst_state_backfill.record_missing_gst_states",
 	],
 	"daily": [
 		"central.identity.doctype.team_invitation.team_invitation.expire_pending_invitations",

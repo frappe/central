@@ -21,11 +21,13 @@ COMPANY_STATE_TTL = 24 * 60 * 60
 RETRY_AFTER = 60 * 60
 
 
-def treatment(team: str, charged_tax: float | None = None) -> frappe._dict:
+def treatment(team: str, charged_tax: float | None = None, invoice=None) -> frappe._dict:
 	"""GSTIN, GST category, place of supply, and the tax template (None: no GST).
 
 	`charged_tax` is the GST already on the document. When given, it decides the template,
 	so the filing matches what was charged even if the team's standing changed since.
+	`invoice` gives the state it was issued with. The place of supply and the template both
+	follow that state, so a later change to the team's state does not change the filing.
 	"""
 	from central.billing.revenue import gst_status
 
@@ -33,14 +35,14 @@ def treatment(team: str, charged_tax: float | None = None) -> frappe._dict:
 		frappe.db.get_value("Billing Profile", team, ["country", "state", "gst_category"], as_dict=True)
 		or frappe._dict()
 	)
-	if profile.country != INDIA:
+	if profile.country != INDIA and not is_state_recorded(invoice):
 		return frappe._dict(
 			gstin="", gst_category="Overseas", place_of_supply=OVERSEAS_PLACE_OF_SUPPLY, template=None
 		)
 
 	gstin = gst_status.standing(team).gstin or ""
-	code = state_code(profile.state)
-	place_of_supply = f"{code}-{profile.state}" if code else None
+	state = filed_state(invoice, profile.state)
+	place_of_supply = _place_of_supply(state)
 	if _is_untaxed(team, charged_tax):
 		return frappe._dict(gstin=gstin, gst_category="SEZ", place_of_supply=place_of_supply, template=None)
 
@@ -48,8 +50,18 @@ def treatment(team: str, charged_tax: float | None = None) -> frappe._dict:
 		gstin=gstin,
 		gst_category=(profile.gst_category or "Registered Regular") if gstin else "Unregistered",
 		place_of_supply=place_of_supply,
-		template=_template_for_state(profile.state),
+		template=_template_for_state(state),
 	)
+
+
+def is_state_recorded(invoice) -> bool:
+	"""Whether the invoice recorded the team's state when it was issued (a blank state counts)."""
+	return bool(invoice and invoice.get("gst_state_recorded"))
+
+
+def filed_state(invoice, current_state: str | None) -> str | None:
+	"""The state an invoice's GST is filed under: the one recorded at issue, else the team's current one."""
+	return (invoice.gst_state or None) if is_state_recorded(invoice) else current_state
 
 
 def tax_rows(template: str | None, paid_amount: float | None = None) -> list[dict]:
@@ -131,6 +143,11 @@ def _read_company_state_code() -> str | None:
 	except (requests.RequestException, connection.NoAccess):
 		frappe.log_error(title="Company GST state could not be read")
 		return None
+
+
+def _place_of_supply(state: str | None) -> str | None:
+	code = state_code(state)
+	return f"{code}-{state}" if code else None
 
 
 def _template_for_state(state: str | None) -> str:

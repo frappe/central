@@ -21,7 +21,7 @@ import frappe
 from frappe import _
 
 from central.billing import settings
-from central.billing.india_gst import INDIA
+from central.billing.india_gst import CGST_SGST, IGST, INDIA
 from central.billing.revenue import gst_status
 
 _ZERO_BLOCK = {
@@ -34,6 +34,7 @@ _ZERO_BLOCK = {
 	"tds_amount": 0,
 	"customer_gstin": None,
 }
+_STATE_NOT_RECORDED = {"gst_state": None, "gst_state_recorded": 0}
 
 
 def is_internal_team(team: str) -> bool:
@@ -126,6 +127,43 @@ def tax_label(team: str) -> str | None:
 	if is_in_state_supply(team, company_code):
 		return _("CGST {0}% + SGST {0}%").format(_percent(rate / 2))
 	return _("IGST {0}%").format(_percent(rate))
+
+
+def gst_state_at_issue(team: str, block) -> dict:
+	"""The team's billing state to record on an invoice with this tax `block` as it is issued.
+	Recorded only when it charges GST in India; a team with no state is recorded with none."""
+	if not has_gst_charged(block):
+		return dict(_STATE_NOT_RECORDED)
+	profile = frappe.db.get_value("Billing Profile", {"team": team, "country": INDIA}, "state", as_dict=True)
+	if not profile:
+		return dict(_STATE_NOT_RECORDED)
+	return {"gst_state": profile.state or None, "gst_state_recorded": 1}
+
+
+def gst_split_for_invoice(invoice) -> str | None:
+	"""How an invoice's GST is labelled: "CGST + SGST" or "IGST".
+
+	It follows the state recorded at issue, the same one the invoice is filed under, and the
+	team's current state until one is recorded. None when the invoice charges no GST, the team
+	is outside India, or the company's state was never known. Nothing shows it yet.
+	"""
+	from central.billing.ingester import gst
+
+	if not has_gst_charged(invoice):
+		return None
+	profile = frappe.db.get_value("Billing Profile", invoice.team, ["country", "state"], as_dict=True)
+	profile = profile or frappe._dict()
+	if profile.country != INDIA and not gst.is_state_recorded(invoice):
+		return None
+	company_code = gst.cached_company_state_code()
+	if not company_code:
+		return None
+	return CGST_SGST if gst.is_in_state(gst.filed_state(invoice, profile.state), company_code) else IGST
+
+
+def has_gst_charged(block) -> bool:
+	"""Whether a tax block or an invoice charges GST."""
+	return block.get("output_tax_type") == "GST" and bool(frappe.utils.flt(block.get("output_tax_amount")))
 
 
 def is_in_state_supply(team: str, company_code: str) -> bool:
