@@ -48,7 +48,7 @@ const save = async (): Promise<void> => {
 <template>
 	<Dialog
 		:model-value="!!bucket"
-		:title="bucket ? `Quota for ${bucketLabel(bucket)}` : ''"
+		:title="bucket ? __('Quota for {0}', [bucketLabel(bucket)]) : ''"
 		size="md"
 		@update:model-value="(open: boolean) => !open && (bucket = null)"
 		@after-leave="error = ''"
@@ -57,7 +57,7 @@ const save = async (): Promise<void> => {
 			v-if="error"
 			class="mb-4"
 			theme="red"
-			title="Couldn't update the quota"
+			:title="__('Couldn\'t update the quota')"
 			:description="error"
 		/>
 
@@ -66,24 +66,24 @@ const save = async (): Promise<void> => {
 				v-model="sizeGib"
 				autofocus
 				type="number"
-				label="Size limit (GiB)"
+				:label="__('Size limit (GiB)')"
 				:min="0"
-				description="Uploads that would pass this size are refused. 0 means no limit."
+				:description="__('Uploads that would pass this size are refused. 0 means no limit.')"
 			/>
 			<TextInput
 				v-model="maxObjects"
 				type="number"
-				label="Object limit"
+				:label="__('Object limit')"
 				:min="0"
-				description="The most objects the bucket may hold. 0 means no limit."
+				:description="__('The most objects the bucket may hold. 0 means no limit.')"
 			/>
 		</div>
 
 		<div class="mt-6 flex justify-end gap-2">
-			<Button label="Cancel" @click="bucket = null" />
+			<Button :label="__('Cancel')" @click="bucket = null" />
 			<Button
 				variant="solid"
-				label="Save quota"
+				:label="__('Save quota')"
 				:loading="saving"
 				@click="save"
 			/>

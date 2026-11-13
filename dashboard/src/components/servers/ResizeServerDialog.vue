@@ -89,7 +89,7 @@ const open = computed({
 <template>
 	<Dialog
 		v-model="open"
-		:title="trial ? 'Upgrade from free trial' : 'Resize server'"
+		:title="trial ? __('Upgrade from free trial') : __('Resize server')"
 		size="3xl"
 	>
 		<template #default>
@@ -99,16 +99,18 @@ const open = computed({
 				class="flex flex-col items-center gap-3 py-10 text-center"
 			>
 				<LoadingIndicator class="h-6 w-6 text-ink-gray-5" />
-				<p class="text-p-base-medium text-ink-gray-8">Starting resize…</p>
+				<p class="text-p-base-medium text-ink-gray-8">
+					{{ __('Starting resize…') }}
+				</p>
 				<p class="max-w-xs text-p-sm text-ink-gray-5">
-					Follow progress in the server list.
+					{{ __('Follow progress in the server list.') }}
 				</p>
 			</div>
 			<div
 				v-else-if="(configCall.loading && !trial && !starting) || plansLoading"
 				class="space-y-4"
 				aria-busy="true"
-				aria-label="Loading resize options"
+				:aria-label="__('Loading resize options')"
 			>
 				<div class="space-y-2">
 					<Skeleton class="h-4 w-full rounded-4" />
@@ -124,10 +126,10 @@ const open = computed({
 			<div v-else-if="optionsError" class="space-y-3">
 				<Alert
 					theme="red"
-					title="Couldn't load resize options"
+					:title="__('Couldn\'t load resize options')"
 					:description="optionsError"
 				/>
-				<Button label="Retry" @click="reloadOptions" />
+				<Button :label="__('Retry')" @click="reloadOptions" />
 			</div>
 			<TrialUpgradePanel
 				v-else-if="trial"
@@ -141,53 +143,54 @@ const open = computed({
 			<Alert
 				v-else-if="starting"
 				theme="blue"
-				title="Your payment method is confirmed"
-				description="We are moving your server to its paid plan. This takes a few minutes, then the plans show here."
+				:title="__('Your payment method is confirmed')"
+				:description="__('We are moving your server to its paid plan. This takes a few minutes, then the plans show here.')"
 			/>
 			<p
 				v-else-if="!resizable || nothingToShow"
 				class="text-p-sm text-ink-gray-5"
 			>
-				This server can't be resized right now.
+				{{ __("This server can't be resized right now.") }}
 			</p>
 			<div v-else class="space-y-4">
 				<Alert
 					v-if="convertedPlan"
 					theme="green"
-					:title="`You're on the ${convertedPlan.title} plan`"
-					description="Billing has started. Choose a bigger size below, or close this dialog to stay on this plan."
+					:title="__('You\'re on the {0} plan', [convertedPlan.title])"
+					:description="__('Billing has started. Choose a bigger size below, or close this dialog to stay on this plan.')"
 				/>
 				<Alert
 					v-if="resizeError"
 					theme="red"
-					title="Couldn't resize the server"
+					:title="__('Couldn\'t resize the server')"
 					:description="resizeError"
 				/>
 				<Alert
 					v-if="losesLockedRate && lock"
 					theme="amber"
-					title="Resizing will change your rate"
-					description="Resizing uses today’s rates. Your current rate cannot be restored."
+					:title="__('Resizing will change your rate')"
+					:description="__('Resizing uses today’s rates. Your current rate cannot be restored.')"
 				/>
 
 				<p class="text-p-sm text-ink-gray-7">
-					Choose a new CPU and memory size. You can also increase storage, but
-					you cannot reduce it later.
+					{{ __('Choose a new CPU and memory size. You can also increase storage, but you cannot reduce it later.') }}
 				</p>
-				<RadioGroup v-model="computeOnly" label="Storage" padded>
+				<RadioGroup v-model="computeOnly" :label="__('Storage')" padded>
 					<Radio
 						:value="true"
-						:label="`Keep current ${formatGb(currentDisk)} GB disk size`"
+						:label="__('Keep current {0} GB disk size', [formatGb(currentDisk)])"
 					/>
-					<Radio :value="false" label="Increase storage">
+					<Radio :value="false" :label="__('Increase storage')">
 						<template #description>
 							<strong class="text-p-sm-medium text-ink-amber-7">
-								Disk size cannot be decreased later.
+								{{ __('Disk size cannot be decreased later.') }}
 							</strong>
 						</template>
 					</Radio>
 				</RadioGroup>
-				<p class="text-p-sm text-ink-gray-6">Prices include storage.</p>
+				<p class="text-p-sm text-ink-gray-6">
+					{{ __('Prices include storage.') }}
+				</p>
 
 				<Tabs v-if="hasTabs" v-model="activeTab" :tabs="classTabs">
 					<template #tab-panel="{ tab }">
@@ -228,7 +231,7 @@ const open = computed({
 				<Alert
 					v-if="selectionError"
 					theme="red"
-					title="Can't use this size"
+					:title="__('Can\'t use this size')"
 					:description="selectionError"
 				/>
 				<div
@@ -236,11 +239,12 @@ const open = computed({
 					class="space-y-2 border-t border-outline-gray-2 pt-4"
 					aria-live="polite"
 				>
-					<p class="text-sm-medium text-ink-gray-9">After resizing</p>
+					<p class="text-sm-medium text-ink-gray-9">
+						{{ __('After resizing') }}
+					</p>
 					<p class="text-p-sm text-ink-gray-7">{{ configSpecs(totalShape) }}</p>
 					<p class="text-p-sm text-ink-gray-6">
-						{{ downtimeNote }}
-						Your files are kept.
+						{{ __('{0} Your files are kept.', [downtimeNote]) }}
 					</p>
 				</div>
 			</div>
@@ -248,7 +252,7 @@ const open = computed({
 		<template #actions>
 			<div v-if="starting" class="flex justify-end">
 				<Button
-					label="Check again"
+					:label="__('Check again')"
 					:loading="configCall.loading"
 					@click="configCall.reload()"
 				/>
@@ -258,7 +262,7 @@ const open = computed({
 					v-if="trial.can_keep"
 					variant="solid"
 					icon-left="lucide-play"
-					label="Keep this site"
+					:label="__('Keep this site')"
 					:disabled="!trialPanel?.canContinue"
 					:loading="trialPanel?.saving"
 					@click="trialPanel?.keep()"
@@ -266,14 +270,14 @@ const open = computed({
 				<Button
 					v-else-if="trial.held"
 					variant="solid"
-					label="Use this plan"
+					:label="__('Use this plan')"
 					:disabled="!trialPanel?.canContinue"
 					:loading="trialPanel?.saving || configCall.loading"
 					@click="trialPanel?.choosePlan()"
 				/>
 				<Button
 					v-else-if="trialPanel?.methodAdded"
-					label="Check again"
+					:label="__('Check again')"
 					:loading="configCall.loading"
 					@click="configCall.reload()"
 				/>
@@ -281,7 +285,7 @@ const open = computed({
 					v-else
 					variant="solid"
 					icon-left="lucide-credit-card"
-					label="Add payment method"
+					:label="__('Add payment method')"
 					:disabled="!trialPanel?.canContinue"
 					:loading="trialPanel?.saving"
 					@click="trialPanel?.addMethod()"
@@ -295,13 +299,13 @@ const open = computed({
 					{{ currentPrice }}
 					<span
 						class="lucide-arrow-right mx-1 inline-block size-3.5 align-[-2px]"
-						aria-label="to"
+						:aria-label="__('to')"
 					/>
 					<span class="text-p-sm-medium text-ink-gray-9">{{ totalPrice }}</span>
 				</p>
 				<Button
 					variant="solid"
-					label="Resize"
+					:label="__('Resize')"
 					:disabled="!canConfirm"
 					@click="confirm"
 				/>
