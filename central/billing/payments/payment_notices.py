@@ -218,7 +218,7 @@ def send_payment_reminder(invoice: str, now: datetime) -> dict:
 
 
 def _get_charged_gateway(invoice) -> str | None:
-	"""The gateway of the method the charge lands on, or None when the team has no method."""
+	"""The gateway of the method the charge lands on, or None when no method can take it."""
 	method = _get_charging_method(invoice)
 	return method.gateway if method else None
 
@@ -249,17 +249,22 @@ def _is_reminder_due(invoice, now: datetime) -> bool:
 
 
 def get_payment_context(invoice) -> dict:
-	"""The amount, the payment date and the method a payment notice names."""
+	"""The amount, the payment date and the method a payment notice names.
+
+	`over_limit` is set when the team has methods but none may take the amount off-session,
+	so the notice asks for a payment by hand instead of naming a method."""
+	from central.billing.payments import collection
+
+	method = _get_charging_method(invoice)
 	return {
 		"amount": frappe.utils.fmt_money(invoice.expected_collection, currency=invoice.currency),
 		"payment_date": _format_date(invoice.payment_date),
-		"method": get_charging_method_label(invoice),
+		"method": _get_method_label(method),
+		"over_limit": not method and bool(collection.get_methods_left(invoice.team, invoice.name)),
 	}
 
 
-def get_charging_method_label(invoice) -> str | None:
-	"""The label of the method the invoice's charge lands on, or None when the team has none."""
-	method = _get_charging_method(invoice)
+def _get_method_label(method) -> str | None:
 	if not method:
 		return None
 	return frappe.db.get_value("Payment Method", method.name, "display_label") or method.gateway

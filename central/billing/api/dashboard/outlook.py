@@ -279,9 +279,8 @@ def _blockers(team: str, amount: float, currency: str, charge_on, today) -> list
 def _charging_method(team: str, amount: float, invoice: str | None = None) -> dict | None:
 	"""The method the bill would be charged on, and the most it may take off-session.
 
-	1. The first method, primary first, whose limit covers `amount`.
-	2. When none covers it: the first method.
-	The limit is always the chosen method's own."""
+	The first method, primary first, whose own limit covers `amount`. None when none does:
+	the bill is then paid by hand, and a blocker says so."""
 	from central.billing.payments import collection, collection_mode
 
 	currency = _team_currency(team)

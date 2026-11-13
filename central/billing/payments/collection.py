@@ -117,14 +117,16 @@ def get_methods_left(team: str, invoice: str | None = None) -> list:
 
 def method_for_amount(team: str, currency: str | None, amount: float, invoice: str | None = None):
 	"""The method a charge of `amount` lands on: the first, primary first, whose limit covers
-	it, else the first. None when the team has no method left."""
+	it. None when no method left can take it off-session."""
 	from central.billing.payments import collection_mode
 
-	methods = get_methods_left(team, invoice)
-	if not methods:
-		return None
 	return next(
-		(m for m in methods if collection_mode.is_within_method_limit(m, currency, amount)), methods[0]
+		(
+			m
+			for m in get_methods_left(team, invoice)
+			if collection_mode.is_within_method_limit(m, currency, amount)
+		),
+		None,
 	)
 
 

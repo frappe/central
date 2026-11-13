@@ -134,6 +134,15 @@ class TestPaymentScheduledOnAMandate(test_emandate.EmandateTestBase):
 		self.assertEqual(payment_notices.get_payment_context(invoice)["method"], "Visa ending 4242")
 		self.assertEqual(payment_notices._get_charged_gateway(invoice), "Stripe")
 
+	def test_a_bill_no_method_can_take_names_no_method_and_still_gets_a_reminder(self):
+		frappe.db.set_value("Payment Method", {"team": test_emandate.TEAM}, "mandate_max_amount", 10000)
+		invoice = frappe.get_doc("Invoice", self._invoice(12000))
+
+		context = payment_notices.get_payment_context(invoice)
+		self.assertEqual((context["method"], context["over_limit"]), (None, True))
+		now = frappe.utils.get_datetime("2026-06-09 00:30:00")
+		self.assertTrue(payment_notices.send_payment_reminder(invoice.name, now).get("reminded"))
+
 
 class TestPaymentDateChanged(IntegrationTestCase):
 	"""A new payment day is confirmed, with the invoice it applies to."""
