@@ -145,7 +145,7 @@ def gst_split_for_invoice(invoice) -> str | None:
 
 	It follows the state recorded at issue, the same one the invoice is filed under, and the
 	team's current state until one is recorded. None when the invoice charges no GST, the team
-	is outside India, or the company's state was never known.
+	is outside India, or the company's state was never known. Nothing shows it yet.
 	"""
 	from central.billing.ingester import gst
 

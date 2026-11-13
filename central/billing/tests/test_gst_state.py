@@ -30,6 +30,7 @@ TEAM = "team-gst-state"
 PLAN = "bundle-gst-state"
 COMPANY_STATE = "central.billing.ingester.gst.cached_company_state_code"
 FETCH = "central.billing.ingester.connection.fetch"
+BACKFILL = "central.billing.ingester.gst_state_backfill"
 
 
 def _set_gst(team, **kw):
@@ -157,9 +158,9 @@ class TestBackfillFromTheFiling(SyncTestCase):
 		billing_team(TEAM, state="Maharashtra")
 		self.addCleanup(_forget_versions)
 
-	def _synced(self, sales_invoice, place_of_supply):
+	def _synced(self, sales_invoice, place_of_supply, period_end="2026-05-31", **fields):
 		self.remote.records[("Sales Invoice", sales_invoice)] = {"place_of_supply": place_of_supply}
-		return _insert_invoice(TEAM, "2026-05-31", erpnext_invoice=sales_invoice)
+		return _insert_invoice(TEAM, period_end, erpnext_invoice=sales_invoice, **fields)
 
 	def test_the_filed_state_is_recorded(self):
 		inv = self._synced("SINV-1", "29-Karnataka")
@@ -181,6 +182,34 @@ class TestBackfillFromTheFiling(SyncTestCase):
 
 		record_missing_gst_states()
 		self.assertEqual(_recorded(first), ("Karnataka", 1))
+
+	def test_an_unknown_place_of_supply_is_not_recorded(self):
+		inv = self._synced("SINV-1", "Atlantis")
+		with patch(f"{BACKFILL}.frappe.logger") as logger:
+			record_missing_gst_states()
+		self.assertEqual(_recorded(inv), (None, 0))
+		logger.return_value.warning.assert_called_once()
+		self.assertIn(inv, logger.return_value.warning.call_args.args[0])
+
+	def test_with_sync_off_synced_invoices_do_not_crowd_out_unsynced_ones(self):
+		synced = self._synced("SINV-1", "29-Karnataka", name="INV-GST-STATE-1")
+		unsynced = _insert_invoice(TEAM, "2026-04-30", name="INV-GST-STATE-2")
+		with patch.dict(frappe.local.conf, {"enable_erpnext_sync": 0}), patch(f"{BACKFILL}.MAX_PER_RUN", 1):
+			record_missing_gst_states()
+		self.assertEqual([_recorded(synced), _recorded(unsynced)], [(None, 0), ("Maharashtra", 1)])
+
+	def test_once_unreachable_only_unsynced_invoices_are_paged(self):
+		first = self._synced("SINV-1", "29-Karnataka", name="INV-GST-STATE-1")
+		second = self._synced("SINV-2", "29-Karnataka", "2026-04-30", name="INV-GST-STATE-2")
+		unsynced = _insert_invoice(TEAM, "2026-03-31", name="INV-GST-STATE-3")
+		with (
+			patch(FETCH, side_effect=requests.ConnectionError),
+			patch(f"{BACKFILL}.PAGE", 1),
+			patch(f"{BACKFILL}.MAX_PER_RUN", 2),
+		):
+			record_missing_gst_states()
+		recorded = [_recorded(n) for n in (first, second, unsynced)]
+		self.assertEqual(recorded, [(None, 0), (None, 0), ("Maharashtra", 1)])
 
 
 class TestBackfillFromHistory(IntegrationTestCase):

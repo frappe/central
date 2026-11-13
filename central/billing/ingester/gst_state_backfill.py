@@ -34,7 +34,8 @@ class GstStateBackfill:
 	def run(self) -> None:
 		after = ""
 		while self.seen < MAX_PER_RUN:
-			names = _unrecorded_invoices(after, min(PAGE, MAX_PER_RUN - self.seen))
+			limit = min(PAGE, MAX_PER_RUN - self.seen)
+			names = _unrecorded_invoices(after, limit, unsynced_only=not self._is_accounting_readable())
 			if not names:
 				break
 			self.results += each_isolated("GST state backfill", "Invoice", names, self.record)
@@ -55,7 +56,9 @@ class GstStateBackfill:
 		filed = self._filed_place_of_supply(inv.erpnext_invoice) if inv.erpnext_invoice else None
 		if filed is SKIPPED:
 			return SKIPPED
-		state = state_for_place_of_supply(filed) if filed is not None else state_at_issue(inv)
+		state = _filed_state(inv.name, filed) if filed is not None else state_at_issue(inv)
+		if state is SKIPPED:
+			return SKIPPED
 		frappe.db.set_value(
 			"Invoice", invoice, {"gst_state": state, "gst_state_recorded": 1}, update_modified=False
 		)
@@ -63,7 +66,7 @@ class GstStateBackfill:
 
 	def _filed_place_of_supply(self, sales_invoice: str):
 		"""The Sales Invoice's place of supply ("" if blank), None if it is gone, or SKIPPED."""
-		if self.is_accounting_down or not connection.enabled():
+		if not self._is_accounting_readable():
 			return SKIPPED
 		try:
 			record = connection.fetch("Sales Invoice", sales_invoice)
@@ -72,6 +75,21 @@ class GstStateBackfill:
 			self.is_accounting_down = True
 			return SKIPPED
 		return (record.place_of_supply or "") if record else None
+
+	def _is_accounting_readable(self) -> bool:
+		return not self.is_accounting_down and connection.enabled()
+
+
+def _filed_state(invoice: str, place_of_supply: str):
+	"""The state a filing names, None if it names none, or SKIPPED if it cannot be read."""
+	if not place_of_supply.strip():
+		return None
+	state = state_for_place_of_supply(place_of_supply)
+	if state is None:
+		# Recording no state would file it as IGST, which is a guess.
+		frappe.logger("central").warning(f"GST state backfill: unknown place of supply on {invoice}")
+		return SKIPPED
+	return state
 
 
 def state_at_issue(invoice) -> str | None:
@@ -120,12 +138,17 @@ def _state_changes(team: str) -> list[tuple]:
 	]
 
 
-def _unrecorded_invoices(after: str, limit: int) -> list[str]:
-	"""Issued INR invoices that charged GST and have no state recorded, by name after `after`."""
+def _unrecorded_invoices(after: str, limit: int, unsynced_only: bool) -> list[str]:
+	"""Issued INR invoices that charged GST and have no state recorded, by name after `after`.
+
+	With `unsynced_only`, synced invoices wait, so they cannot fill the run's cap.
+	"""
 	invoice = frappe.qb.DocType("Invoice")
+	query = frappe.qb.from_(invoice)
+	if unsynced_only:
+		query = query.where(invoice.erpnext_invoice.isnull() | (invoice.erpnext_invoice == ""))
 	return (
-		frappe.qb.from_(invoice)
-		.select(invoice.name)
+		query.select(invoice.name)
 		.where(invoice.name > after)
 		.where(invoice.due_date.isnotnull())
 		.where(invoice.currency == "INR")

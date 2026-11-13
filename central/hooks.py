@@ -297,6 +297,7 @@ scheduler_events = {
 	],
 	"daily_long": [
 		"central.infrastructure.doctype.vm_snapshot.vm_snapshot.take_automatic_snapshots",
+		"central.billing.ingester.gst_state_backfill.record_missing_gst_states",
 	],
 	"daily": [
 		"central.identity.doctype.team_invitation.team_invitation.expire_pending_invitations",
@@ -311,7 +312,6 @@ scheduler_events = {
 		"central.billing.revenue.gst_status.run_gst_status_refresh",
 		"central.billing.ingester.customer.sync_pending_profiles",
 		"central.billing.ingester.advance.sync_pending_advances",
-		"central.billing.ingester.gst_state_backfill.record_missing_gst_states",
 		"central.billing.revenue.storage_usage.record_storage_usage",
 		"central.billing.platform.invariants.run_invariant_audit",
 		"central.billing.payments.reconciliation.recheck_completed_refunds",
