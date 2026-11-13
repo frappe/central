@@ -79,6 +79,7 @@ class TestPaymentScheduled(IntegrationTestCase):
 		self.assertIn("5 November 2026", logs[0].message)
 
 	def test_opening_again_sends_nothing_more(self):
+		give_team_a_card(TEAM)
 		invoice = _draft(TEAM)
 
 		self._open(invoice)
@@ -87,9 +88,21 @@ class TestPaymentScheduled(IntegrationTestCase):
 		self.assertEqual(len(_scheduled(TEAM)), 1)
 
 	def test_a_team_without_a_method_is_asked_to_add_one(self):
-		self._open(_draft(TEAM))
+		complete_billing_profile(TEAM, currency="USD")
+		frappe.db.set_value("Billing Profile", TEAM, "payment_day", 5)
+		invoice = _draft(TEAM)
+		frappe.db.set_value("Invoice", invoice, "currency", "USD")
+
+		self._open(invoice)
 
 		self.assertIn("Add a payment method", _scheduled(TEAM)[0].message)
+
+	def test_an_inr_team_without_a_method_is_asked_to_top_up(self):
+		"""No card or UPI can pay an INR bill, so the notice asks for wallet credit (#191)."""
+		self._open(_draft(TEAM))
+
+		self.assertEqual(_scheduled(TEAM), [])
+		self.assertIn("No card or UPI is saved to pay the rest.", _logs("Top-up Reminder")[0].message)
 
 	def test_a_held_invoice_sends_no_schedule(self):
 		frappe.db.set_value("Billing Profile", TEAM, "legal_name", None)

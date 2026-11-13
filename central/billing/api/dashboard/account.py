@@ -247,7 +247,8 @@ def get_collection_status(team: str | None = None) -> dict:
 	Re-checks an Auto Charge team against its off-session limit using the
 	month-to-date forecast (so we warn before the bill lands), then returns the state
 	the banner renders from: the mode, whether action is required and why, the
-	threshold, and the numbers (projected total, wallet balance, shortfall).
+	threshold, the numbers (projected total, wallet balance, shortfall), and
+	`top_up_due`: what to add to the wallet before the next payment date (#191).
 
 	It also carries `mandate_gap_note`: the networks no rail will auto-charge. This
 	is the screen where a customer decides how they want to pay, so it is the honest
@@ -263,12 +264,23 @@ def get_collection_status(team: str | None = None) -> dict:
 	wallet = frappe.utils.flt(credits.get_balance(team)["balance"])
 	return {
 		**st,
+		"top_up_due": None if st["action_required"] else _top_up_due(team, projected),
 		"projected_total": projected,
 		"wallet_balance": wallet,
 		"shortfall": max(0.0, frappe.utils.flt(projected - wallet, 2)),
 		"currency": _team_currency(team),
 		"mandate_gap_note": instruments.mandate_gap_note(_team_currency(team)),
 	}
+
+
+def _top_up_due(team: str, projected: float) -> dict | None:
+	"""The top-up the banner asks for before the next payment date (#191)."""
+	from central.billing.payments import top_up_reminders
+
+	due = top_up_reminders.get_top_up_due(team, forecast=projected)
+	if not due:
+		return None
+	return {key: due[key] for key in ("amount", "date", "limit", "has_method")}
 
 
 @frappe.whitelist(methods=["POST"])

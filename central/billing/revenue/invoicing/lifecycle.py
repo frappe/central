@@ -122,11 +122,12 @@ def open_and_collect(invoice: str, collect: bool = True) -> dict:
 	# Leg 2 — charge the remainder, walking the team's methods primary→backup
 	# (#28). Credits-only teams (no active method) fall through to dunning.
 	charge = None
+	collect_started = frappe.utils.now_datetime()
 	if collect:
 		from central.billing.payments import collection
 
 		charge = collection.collect_invoice(invoice)
-	_notify_payment_scheduled(invoice)
+	_notify_payment_scheduled(invoice, collect_started)
 
 	return {
 		"invoice": invoice,
@@ -138,16 +139,16 @@ def open_and_collect(invoice: str, collect: bool = True) -> dict:
 	}
 
 
-def _notify_payment_scheduled(invoice: str) -> None:
+def _notify_payment_scheduled(invoice: str, collect_started) -> None:
 	"""Tell the team what the invoice it just opened charges, and when.
 
 	Only the run that claims the invoice gets here, so the team hears once. It runs after the
-	first collection step, which sets the debit time of a rail that owes a pre-debit notice."""
+	first collection step, which sets a pre-debit time and may trip Action Required."""
 	from central.billing.payments.payment_notices import notify_payment_scheduled
 
 	doc = frappe.get_doc("Invoice", invoice)
 	if doc.status == OUTSTANDING:
-		notify_payment_scheduled(doc)
+		notify_payment_scheduled(doc, collect_started)
 
 
 def settle_with_new_credit(team: str) -> list[dict]:
