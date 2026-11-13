@@ -200,7 +200,8 @@ const isChanged = computed(
 )
 const applyLabel = computed(() => {
 	if (isConfirming.value) return __('Apply anyway')
-	if (!checked.value.length) return __('Detach all')
+	if (!checked.value.length)
+		return props.applied.length ? __('Detach all') : __('Apply')
 	return checked.value.length === 1
 		? __('Apply 1 ruleset')
 		: __('Apply {0} rulesets', [checked.value.length])
@@ -322,8 +323,8 @@ function openSettingsAfterClose(): void {
 								class="flex items-center gap-2 rounded-4 px-2"
 								:class="choice.value === previewed ? 'bg-surface-gray-2' : 'hover:bg-surface-gray-1'"
 							>
-								<!-- The lane stays in every row, so the names keep one edge. -->
-								<span class="flex w-4 shrink-0">
+								<!-- With rulesets in the list, the lane stays in every row, so the names keep one edge. -->
+								<span v-if="rulesets.length" class="flex w-4 shrink-0">
 									<Checkbox
 										v-if="!choice.isBuiltIn"
 										:model-value="checked.includes(choice.value)"
@@ -433,6 +434,7 @@ function openSettingsAfterClose(): void {
 						{{ __('{0} of 50 addresses', [addressCount]) }}
 					</p>
 					<Button
+						v-if="rulesets.length"
 						variant="solid"
 						:label="applyLabel"
 						:loading="busy"
