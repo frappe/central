@@ -1,11 +1,8 @@
-import { useCall } from 'frappe-ui'
 import { computed } from 'vue'
-import { API, method } from '@/api/methods'
 import { useBillingOverview } from '@/composables/useBillingOverview'
-import { teamParams, whenTeamReady } from '@/composables/useTeamScope'
 import { money } from '@/lib/format'
 import { spendLimitRatio } from '@/lib/spendShare'
-import type { TierLevel, TrustTier } from '@/types/billing'
+import type { TierLevel } from '@/types/billing'
 
 interface Gate {
 	label: string
@@ -22,16 +19,8 @@ interface Requirement {
 
 type RungState = 'reached' | 'current' | 'locked'
 
-const tier = useCall<TrustTier, { team: string }>({
-	url: method(API.trustTier),
-	params: teamParams,
-	immediate: false,
-	refetch: true,
-})
-whenTeamReady(() => tier.reload())
-
 export function useSpendingLimits() {
-	const { credit, methods } = useBillingOverview()
+	const { credit, methods, tier } = useBillingOverview()
 
 	const currency = computed(() => tier.data?.currency || 'INR')
 	const current = computed(() => tier.data?.current)
