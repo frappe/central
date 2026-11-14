@@ -14,7 +14,7 @@ import type { ConsoleMode, VirtualMachineRow } from '@/composables/useServers'
 import { timeAgo } from '@/lib/datetime'
 import type { ResourceRow, ServerVisual } from '@/lib/serverMap'
 import { __ } from '@/lib/translate'
-import { formatMemory } from '@/lib/units'
+import { formatMemory, gigabytesToMegabytes } from '@/lib/units'
 
 interface ServerListViewProps {
 	rows: ResourceRow[]
@@ -88,7 +88,8 @@ const specsOf = (server?: VirtualMachineRow) =>
 	[
 		server?.vcpus && `${server.vcpus} vCPU`,
 		server?.memory_megabytes && formatMemory(server.memory_megabytes),
-		server?.disk_gigabytes && `${server.disk_gigabytes} GB`,
+		server?.disk_gigabytes &&
+			formatMemory(gigabytesToMegabytes(server.disk_gigabytes)),
 	]
 		.filter(Boolean)
 		.join(' · ')
