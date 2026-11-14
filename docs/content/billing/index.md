@@ -37,7 +37,7 @@ The panel at the top of **Billing > Overview** shows the current cycle.
 | Item | Meaning |
 | --- | --- |
 | Cycle and amount | The projected total for this cycle with tax, and the days until it is billed. Below it are the amount before tax and the tax. Click **See breakdown** to see each line. |
-| Servers running and spending limit | What everything your team runs now costs a month before tax, against your spending limit. This line is separate from the cycle amount above it, which includes tax. Taxes are added on top of the limit. Click the tier to see all tiers. See [Credits and spend limits](/billing/limits). |
+| Running now and spending limit | What everything your team runs now costs a month before tax, against your spending limit. This line is separate from the cycle amount above it, which includes tax. Taxes are added on top of the limit. Click the tier to see all tiers. See [Credits and spend limits](/billing/limits). |
 | Due now | The amount of your unpaid invoices. This row shows only when an invoice is unpaid. |
 | Payment in progress | The date Frappe Cloud started a charge that your bank has not confirmed yet. This row shows from the day of the charge until the bank confirms or refuses the payment, or until the suspension date. |
 | Next retry | The date Frappe Cloud tries the payment again. This row shows only after a payment date passes and the invoice is not paid. |

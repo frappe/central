@@ -243,9 +243,7 @@ const saveBudgetAlertErrorTitle = __("Couldn't save the budget alert")
 					class="flex flex-wrap justify-between gap-x-3 gap-y-1 text-sm text-ink-gray-6"
 				>
 					<span>
-						<TranslatedText
-							:text="__('Servers running: {0} a month before tax')"
-						>
+						<TranslatedText :text="__('Running now: {0} a month before tax')">
 							<template #0>
 								<span class="tabular-nums text-ink-gray-9"
 									>{{ money(running, currency) }}</span
