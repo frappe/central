@@ -59,6 +59,8 @@ export interface Forecast {
 	tax_label: string | null
 	/** What follows the tax-inclusive total, e.g. "incl. IGST 18%" or "SEZ supply, no GST". */
 	tax_note: string | null
+	/** The note for the off-session limit, from the team's tax today; null when not taxed. */
+	limit_tax_note: string | null
 	credit_balance: number
 	/** What is collected after TDS; the shortfall is part of it. */
 	expected_collection: number

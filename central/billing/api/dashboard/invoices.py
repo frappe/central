@@ -84,8 +84,7 @@ def get_forecast(team: str | None = None) -> dict:
 		"has_estimates": bool(invoice.get("has_estimates")),
 		"tax_amount": tax_amount,
 		"tax_type": invoice.get("output_tax_type"),
-		# The projection carries no zero-rating, so it is named by the team's tax today.
-		**tax.get_tax_names(team),
+		**_tax_names(team, projection["invoice"]),
 		"credit_balance": credit_balance,
 		# What is collected after TDS, the amount the shortfall is measured against.
 		"expected_collection": collectable,
@@ -97,6 +96,15 @@ def get_forecast(team: str | None = None) -> dict:
 		# Spell out each service/plan + metered overage driving the projection.
 		"line_items": [_describe_line(team, frappe._dict(li)) for li in line_items],
 	}
+
+
+def _tax_names(team: str, invoice: dict | None) -> dict:
+	"""Names the forecast's tax from the projected bill it totals. The limit note stays on
+	the team's tax today: it describes an off-session limit, not this bill."""
+	names = tax.get_tax_names(team)
+	if invoice:
+		names.update(tax_label=tax.TaxNames(team).label(invoice), tax_note=tax.TaxNames(team).note(invoice))
+	return names
 
 
 def _previous_month(team: str, month_start) -> dict:

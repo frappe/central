@@ -189,6 +189,31 @@ class TestApisExposeTheLabel(TaxLabelTestCase):
 		self.assertIsNone(row["tax_label"])
 
 
+class TestForecastIsNamedByItsBill(TaxLabelTestCase):
+	def _forecast(self, tax_amount=0, zero_rating_reason=None):
+		block = {
+			"lines": [],
+			"subtotal": 0,
+			"output_tax_type": "GST",
+			"output_tax_rate": 18,
+			"output_tax_amount": tax_amount,
+			"zero_rating_reason": zero_rating_reason,
+			"total": tax_amount,
+			"expected_collection": tax_amount,
+		}
+		projection = {"invoice": block, "currency": "INR"}
+		with patch("central.billing.projection.engine.project", return_value=projection):
+			return invoice_api.get_forecast(TEAM)
+
+	def test_a_forecast_with_no_gst_charged_names_none(self):
+		forecast = self._forecast()
+		self.assertIsNone(forecast["tax_note"])
+		self.assertEqual(forecast["limit_tax_note"], "incl. CGST 9% + SGST 9%")
+
+	def test_an_sez_forecast_is_named_no_gst(self):
+		self.assertEqual(self._forecast(zero_rating_reason="SEZ")["tax_label"], "No GST (SEZ)")
+
+
 class TestSpendLimitIsBeforeTax(TaxLabelTestCase):
 	def test_spend_history_carries_spend_before_tax(self):
 		from central.billing.api.dashboard import reports

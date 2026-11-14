@@ -131,6 +131,7 @@ def _invoice(rated) -> dict | None:
 		"output_tax_type": payload["output_tax_type"],
 		"output_tax_rate": payload["output_tax_rate"],
 		"output_tax_amount": payload["output_tax_amount"],
+		"zero_rating_reason": payload.get("zero_rating_reason"),
 		"tds_amount": payload["tds_amount"],
 		"total": payload["total"],
 		"expected_collection": payload["expected_collection"],
