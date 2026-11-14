@@ -15,6 +15,7 @@ from central.sso import mint_datum_token
 
 CURSOR_KEY = "central:telemetry:error_log_cursor"
 RESOURCE_ID = "central"
+DATUM_WRITE_HOST = "telemetry-svc"
 # Datum takes 1,000 lines a request. One request a minute stays under its rate limit.
 MAXIMUM_LINES = 1_000
 TRACEBACK_TAIL_CHARACTERS = 1_024
@@ -57,10 +58,20 @@ def get_central_telemetry_region() -> str | None:
 	return frappe.db.get_value("Region", {"is_central_telemetry_region": 1}, "name")
 
 
+def get_central_datum_url(region: str) -> str | None:
+	"""The public address of the Datum of a region. The reported endpoint is on the WireGuard mesh,
+	which Central is not on. Central sends nothing while that Datum does not report itself Available."""
+	if not get_telemetry_base_url(region):
+		return None
+
+	proxy_domain = frappe.db.get_value("Region", region, "proxy_domain")
+	return f"https://{DATUM_WRITE_HOST}.{proxy_domain}" if proxy_domain else None
+
+
 def send_to_datum(region: str, path: str, payload: dict) -> bool:
 	"""Post one payload to the Datum of a region as Central. A failure is a warning, not an Error Log,
 	so an unreachable Datum does not make a Central error each minute. Returns whether Datum took it."""
-	url = get_telemetry_base_url(region)
+	url = get_central_datum_url(region)
 	if not url:
 		return False
 

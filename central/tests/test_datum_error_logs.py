@@ -9,6 +9,7 @@ from frappe.tests import IntegrationTestCase
 from central.integrations.datum import (
 	CURSOR_KEY,
 	ErrorLogPublisher,
+	get_central_datum_url,
 	get_central_telemetry_region,
 	to_log_line,
 )
@@ -63,7 +64,10 @@ class TestErrorLogPublisher(IntegrationTestCase):
 		self.addCleanup(frappe.cache.delete_value, CURSOR_KEY)
 		frappe.log_error("Central telemetry first push test")
 		with (
-			patch("central.integrations.datum.get_telemetry_base_url", return_value="https://datum.test"),
+			patch(
+				"central.integrations.datum.get_central_datum_url",
+				return_value="https://telemetry-svc.datum.test",
+			),
 			patch("central.integrations.datum.region_id_of", return_value=1),
 			patch("central.integrations.datum.mint_datum_token", return_value="token"),
 			patch("central.integrations.datum.requests.post", side_effect=requests.ConnectionError("down")),
@@ -93,3 +97,20 @@ class TestCentralTelemetryRegion(IntegrationTestCase):
 		second.is_central_telemetry_region = 1
 		with self.assertRaises(frappe.ValidationError):
 			second.save(ignore_permissions=True)
+
+
+class TestCentralDatumUrl(IntegrationTestCase):
+	def test_central_sends_to_the_public_name_of_the_mesh_endpoint(self) -> None:
+		region = frappe.get_doc("Region", ensure_region("telemetry-test-a"))
+		region.db_set("proxy_domain", "par-9.example.com")
+		with patch(
+			"central.integrations.datum.get_telemetry_base_url",
+			return_value="http://internal-telemetry-svc.par-9.example.com",
+		):
+			self.assertEqual(get_central_datum_url(region.name), "https://telemetry-svc.par-9.example.com")
+
+	def test_central_sends_nothing_while_the_datum_is_not_available(self) -> None:
+		region = frappe.get_doc("Region", ensure_region("telemetry-test-a"))
+		region.db_set("proxy_domain", "par-9.example.com")
+		with patch("central.integrations.datum.get_telemetry_base_url", return_value=None):
+			self.assertIsNone(get_central_datum_url(region.name))
