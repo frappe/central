@@ -79,7 +79,7 @@ const workingMethod = computed(() =>
 const shortfall = computed(() => Number(forecast.data?.shortfall ?? 0))
 // The shortfall is measured against what is collected, which is less than the total under TDS.
 const collectable = computed(() =>
-	Number(forecast.data?.expected_collection ?? projected.value),
+	Number(forecast.data?.expected_collection ?? 0),
 )
 
 const short = computed(() => projected.value > 0 && shortfall.value > 0)
