@@ -36,7 +36,6 @@ function onAddCredit(): void {
 	if (requireSetup()) showTopup.value = true
 }
 
-// The GST paid on a top-up, named by the rate it was paid at: "GST paid: ₹180.00 (IGST 18%)".
 function gstPaid(entry: CreditLedgerEntry): string {
 	const amount = money(entry.tax_amount, entry.currency || currency.value)
 	return entry.tax_label

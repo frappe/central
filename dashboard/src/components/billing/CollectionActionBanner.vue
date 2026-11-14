@@ -167,7 +167,6 @@ const reasonText = computed(() => {
 			)
 })
 
-// The projection includes tax: "₹11,800.00 (incl. IGST 18%)".
 function withTaxNote(amount: string): string {
 	return withNote(amount, s.value?.tax_note)
 }
