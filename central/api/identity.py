@@ -92,6 +92,8 @@ def my_teams(view_as: str | None = None) -> list[dict[str, Any]]:
 
 	if view_as and user_has_operator_bypass(user):
 		teams[view_as] = _get_impersonated_team(view_as)
+	for entry in _get_partner_access_teams(user):
+		teams.setdefault(entry["name"], entry)
 
 	if not teams:
 		return []
@@ -124,6 +126,44 @@ def my_teams(view_as: str | None = None) -> list[dict[str, Any]]:
 		teams[row.parent]["onboarding"].append(row.step)
 
 	return list(teams.values())
+
+
+def _get_partner_access_teams(user: str) -> list[dict[str, Any]]:
+	"""The customer teams the user acts on for a partner team. `via_partner` names the partner."""
+	partner_grants = {
+		team: grant
+		for team, grants in resolve_user_grants(user).items()
+		for grant in grants
+		if grant["source"] == "partner"
+	}
+	if not partner_grants:
+		return []
+
+	names = list(partner_grants) + [grant["partner_team"] for grant in partner_grants.values()]
+	rows = {
+		row.name: row
+		for row in frappe.get_all(
+			"Team",
+			filters={"name": ("in", names)},
+			fields=["name", "team_name", "team_logo", "owner_user", "creation", "status"],
+		)
+	}
+	return [
+		{
+			"name": team,
+			"label": rows[team].team_name,
+			"logo": rows[team].team_logo,
+			"owner": rows[team].owner_user,
+			"role": grant["role"],
+			"members": 0,
+			"created": rows[team].creation,
+			"status": rows[team].status,
+			"is_partner": False,
+			"has_partner": True,
+			"via_partner": rows[grant["partner_team"]].team_name,
+		}
+		for team, grant in partner_grants.items()
+	]
 
 
 def _get_impersonated_team(name: str) -> dict[str, Any]:

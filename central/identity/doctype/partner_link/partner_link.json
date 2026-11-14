@@ -10,6 +10,7 @@
   "partner_team",
   "column_break_identity",
   "status",
+  "role",
   "linked_on",
   "linked_by",
   "reference",
@@ -56,6 +57,17 @@
    "label": "Status",
    "options": "Active\nEnded",
    "read_only": 1
+  },
+  {
+   "default": "Viewer",
+   "description": "What the partner's staff can do in the customer team: Viewer or Developer. The customer chooses it.",
+   "fieldname": "role",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Role",
+   "options": "Team Role",
+   "read_only": 1,
+   "reqd": 1
   },
   {
    "fieldname": "linked_on",

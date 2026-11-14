@@ -57,6 +57,9 @@
    },
    {
     "capability": "team:manage_partners"
+   },
+   {
+    "capability": "partner:act_on_customers"
    }
   ],
   "docstatus": 0,
@@ -122,6 +125,9 @@
    },
    {
     "capability": "team:manage_partners"
+   },
+   {
+    "capability": "partner:act_on_customers"
    }
   ],
   "docstatus": 0,
@@ -172,12 +178,15 @@
    },
    {
     "capability": "server:console"
+   },
+   {
+    "capability": "partner:act_on_customers"
    }
   ],
   "docstatus": 0,
   "doctype": "Team Role",
   "is_system": 1,
-  "modified": "2026-10-25 12:21:44",
+  "modified": "2026-11-14 12:00:00",
   "name": "Developer",
   "role_name": "Developer",
   "team": null

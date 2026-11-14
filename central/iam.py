@@ -11,7 +11,7 @@ OPERATOR_BYPASS_ROLE = "System Manager"
 STAFF_VIEWER_ROLE = "Staff Viewer"
 
 # The revision of the capability taxonomy. Bump it with every change (see CAPABILITIES.md).
-CAPABILITY_VERSION = 8
+CAPABILITY_VERSION = 9
 
 # Granting a key implies each capability in its value, because acting on a resource needs
 # seeing it. Every grant is closed under these before it is checked.
@@ -43,6 +43,25 @@ SERVER_CAPABILITIES = frozenset(
 )
 # The scope of a team-wide grant. A scoped grant's scope is its server's name.
 ALL_SERVERS = "*"
+
+PARTNER_CAPABILITY = "partner:act_on_customers"
+# The roles a customer can give its partner.
+PARTNER_ROLES = ("Viewer", "Developer")
+# A partner never gets these on a customer team. SSH keys and WireGuard devices would outlive the
+# link, so ending it would not revoke them. The partner capability itself is here, so a partner
+# cannot reach the customers of a customer that is also a partner.
+PARTNER_BLOCKED_CAPABILITIES = frozenset(
+	{
+		"team:edit",
+		"team:manage_members",
+		"team:delete",
+		"team:manage_partners",
+		"billing:manage",
+		"server:ssh-key",
+		"server:wireguard",
+		PARTNER_CAPABILITY,
+	}
+)
 
 
 def expand_capabilities(caps: list[str]) -> list[str]:
@@ -240,7 +259,8 @@ def _get_membership_capability_rows(user: str) -> list[dict[str, Any]]:
 
 @request_cache
 def resolve_user_grants(user: str) -> dict[str, list[dict[str, Any]]]:
-	"""The user's grants per team: Team Member, then Team Role, then Capability.
+	"""The user's grants per team: Team Member, then Team Role, then Capability. A partner
+	grant adds the customer teams the user acts on for a partner team, see _add_partner_grants.
 	Cached per request, because permission checks call it once per row."""
 	grants_by_team: dict[str, list[dict[str, Any]]] = defaultdict(list)
 
@@ -284,7 +304,80 @@ def resolve_user_grants(user: str) -> dict[str, list[dict[str, Any]]]:
 			caps = [cap for cap in caps if cap in SERVER_CAPABILITIES]
 		grant["caps"] = caps
 
+	_add_partner_grants(grants_by_team)
 	return dict(grants_by_team)
+
+
+def _add_partner_grants(grants_by_team: dict[str, list[dict[str, Any]]]) -> None:
+	"""A grant on each customer team the user acts on for a partner:
+
+	1. The user holds `partner:act_on_customers` team-wide in the partner team.
+	2. A Partner Link from that partner team to the customer team is Active.
+	3. The customer team is Active. Partner Link allows only the PARTNER_ROLES.
+	4. The grant has the role's capabilities, except PARTNER_BLOCKED_CAPABILITIES."""
+	partner_teams = [
+		team
+		for team, grants in grants_by_team.items()
+		if any(
+			grant["source"] == "member"
+			and grant["scope"] == ALL_SERVERS
+			and PARTNER_CAPABILITY in grant["caps"]
+			for grant in grants
+		)
+	]
+	if not partner_teams:
+		return
+
+	grants_by_key: dict[tuple[str, str], dict[str, Any]] = {}
+	for row in _get_partner_link_capability_rows(partner_teams):
+		key = (row.customer_team, row.partner_team)
+		if key not in grants_by_key:
+			grants_by_key[key] = {
+				"role": row.role,
+				"source": "partner",
+				"partner_team": row.partner_team,
+				"scope": ALL_SERVERS,
+				"caps": [],
+			}
+			grants_by_team[row.customer_team].append(grants_by_key[key])
+		grants_by_key[key]["caps"].append(row.capability)
+
+	for grant in grants_by_key.values():
+		grant["caps"] = [
+			cap for cap in expand_capabilities(grant["caps"]) if cap not in PARTNER_BLOCKED_CAPABILITIES
+		]
+
+
+def _get_partner_link_capability_rows(partner_teams: list[str]) -> list[dict[str, Any]]:
+	link = frappe.qb.DocType("Partner Link")
+	customer = frappe.qb.DocType("Team")
+	role_capability = frappe.qb.DocType("Role Capability")
+
+	return (
+		frappe.qb.from_(link)
+		.join(customer)
+		.on(customer.name == link.customer_team)
+		.join(role_capability)
+		.on(
+			(role_capability.parent == link.role)
+			& (role_capability.parenttype == "Team Role")
+			& (role_capability.parentfield == "capabilities")
+		)
+		.select(link.customer_team, link.partner_team, link.role, role_capability.capability)
+		.where(
+			link.partner_team.isin(partner_teams) & (link.status == "Active") & (customer.status == "Active")
+		)
+		.orderby(link.customer_team, role_capability.idx)
+	).run(as_dict=True)
+
+
+def get_partner_team_of(user: str, team: str) -> str | None:
+	"""The partner team through which `user` acts on `team`. None when the user is a member
+	of `team`, because a member acts as themselves."""
+	grants = resolve_user_grants(user).get(team, [])
+	if any(grant["source"] != "partner" for grant in grants):
+		return None
+	return next((grant["partner_team"] for grant in grants if grant["source"] == "partner"), None)
 
 
 def _get_grant_scope(row) -> str | None:

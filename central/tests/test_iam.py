@@ -53,10 +53,10 @@ class TestCentralIAM(IntegrationTestCase):
 		return team
 
 	def test_fixtures_create_capability_catalog_and_system_roles(self):
-		# 19 capabilities across two live planes: central (10) + atlas (9). v5 merges
+		# 20 capabilities across two live planes: central (11) + atlas (9). v5 merges
 		# server:open into server:view. The bench plane remains deferred.
-		self.assertEqual(frappe.db.count("Capability"), 19)
-		self.assertEqual(frappe.db.count("Capability", {"plane": "central"}), 10)
+		self.assertEqual(frappe.db.count("Capability"), 20)
+		self.assertEqual(frappe.db.count("Capability", {"plane": "central"}), 11)
 		self.assertEqual(frappe.db.count("Capability", {"plane": "atlas"}), 9)
 		self.assertEqual(frappe.db.count("Capability", {"plane": "bench"}), 0)
 		# The retired roles are gone; the five-rung ladder is all that remains.

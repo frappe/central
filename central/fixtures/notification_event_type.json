@@ -279,7 +279,7 @@
   "doctype": "Notification Event Type",
   "event_type": "action_required",
   "in_app_body": "Your usage is above the limit for automatic payments.{% if context.limit %} Your card or UPI pays only amounts up to {{ context.limit }}{% if context.tax_note %} ({{ context.tax_note }}){% endif %}.{% endif %} Please choose to pay each invoice or prepay your wallet.",
-  "in_app_title": "Action required \u2014 choose how to pay",
+  "in_app_title": "Action required — choose how to pay",
   "modified": "2026-11-13 17:46:00",
   "name": "action_required",
   "required_cap": "billing:view",
@@ -860,6 +860,24 @@
   "severity": "Success",
   "in_app_title": "Your team is active again",
   "in_app_body": "{{ team_name }} is active again, and its members can open it.\n\nServers that were stopped stay stopped. Start them from Frappe Cloud when you need them. Rotate the key of each storage bucket to get a key that works.",
+  "is_critical": 0,
+  "reportable_by": "None"
+ },
+ {
+  "action_label": null,
+  "action_route": null,
+  "category": "Team",
+  "create_in_app": 1,
+  "direct_recipients": null,
+  "docstatus": 0,
+  "doctype": "Notification Event Type",
+  "event_type": "partner_link_ended",
+  "in_app_body": "The partner link between {{ customer_name }} and {{ partner_name }} ended.\n\nReason: {{ message }}",
+  "in_app_title": "A partner link ended",
+  "modified": "2026-11-14 12:00:00",
+  "name": "partner_link_ended",
+  "required_cap": "team:manage_partners",
+  "severity": "Info",
   "is_critical": 0,
   "reportable_by": "None"
  }

@@ -1,5 +1,11 @@
 <script setup lang="ts">
-import { Avatar, Button, ErrorMessage, LoadingText } from 'frappe-ui'
+import {
+	Avatar,
+	Button,
+	ErrorMessage,
+	FormControl,
+	LoadingText,
+} from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import AddPartnerDialog from '@/components/partners/AddPartnerDialog.vue'
@@ -7,13 +13,15 @@ import EndPartnerLinkDialog from '@/components/partners/EndPartnerLinkDialog.vue
 import { useCapabilities } from '@/composables/useCapabilities'
 import { useOnboarding } from '@/composables/useOnboarding'
 import {
+	setPartnerRole,
 	usePartnerLinkIntent,
 	useTeamPartner,
 } from '@/composables/usePartnerLinks'
 import { useSession } from '@/composables/useSession'
+import { getErrorMessage, successToast } from '@/lib/feedback'
 import { formatDate } from '@/lib/format'
 import { __ } from '@/lib/translate'
-import type { PartnerLink } from '@/types/api'
+import type { PartnerLink, PartnerRole } from '@/types/api'
 
 const session = useSession()
 const intent = usePartnerLinkIntent()
@@ -48,6 +56,37 @@ watch(adding, (isOpen) => {
 	if (!isOpen && intent.code.value) intent.clear()
 })
 
+const roleOptions = [
+	{ label: __('Viewer'), value: 'Viewer' },
+	{ label: __('Developer'), value: 'Developer' },
+]
+const roleHint = computed(() =>
+	link.value?.role === 'Developer'
+		? __(
+				'Your partner can create, change and delete servers. They cannot manage members or billing.',
+			)
+		: __(
+				'Your partner can see your servers and sites, and cannot change them.',
+			),
+)
+const savingRole = ref(false)
+const roleError = ref('')
+
+async function changeRole(role: PartnerRole): Promise<void> {
+	if (!link.value || role === link.value.role) return
+	savingRole.value = true
+	roleError.value = ''
+	try {
+		await setPartnerRole(link.value.name, role)
+		await reload()
+		successToast(__('Access changed to {0}', [role]))
+	} catch (failure) {
+		roleError.value = getErrorMessage(failure, "We couldn't change the access.")
+	} finally {
+		savingRole.value = false
+	}
+}
+
 function onChanged(): void {
 	session.reload()
 	reload()
@@ -71,31 +110,46 @@ function onChanged(): void {
 				<Button :label="__('Try again')" @click="reload" />
 			</div>
 
-			<div
-				v-else-if="link"
-				class="flex items-center gap-3 rounded-6 border border-outline-gray-2 p-4"
-			>
-				<Avatar
-					:image="link.partner_logo ?? undefined"
-					:label="link.partner_name"
-					size="2xl"
-					shape="square"
-				/>
-				<div class="min-w-0 flex-1">
-					<p class="truncate text-base-medium text-ink-gray-9">
-						{{ link.partner_name }}
-					</p>
-					<p class="mt-0.5 text-p-sm text-ink-gray-5">
-						{{ __('Partner since {0}', [formatDate(link.linked_on)]) }}
-					</p>
+			<template v-else-if="link">
+				<div
+					class="flex items-center gap-3 rounded-6 border border-outline-gray-2 p-4"
+				>
+					<Avatar
+						:image="link.partner_logo ?? undefined"
+						:label="link.partner_name"
+						size="2xl"
+						shape="square"
+					/>
+					<div class="min-w-0 flex-1">
+						<p class="truncate text-base-medium text-ink-gray-9">
+							{{ link.partner_name }}
+						</p>
+						<p class="mt-0.5 text-p-sm text-ink-gray-5">
+							{{ __('Partner since {0}', [formatDate(link.linked_on)]) }}
+						</p>
+					</div>
+					<Button
+						v-if="canManagePartners"
+						theme="red"
+						:label="__('End link')"
+						@click="ending = link"
+					/>
 				</div>
-				<Button
-					v-if="canManagePartners"
-					theme="red"
-					:label="__('End link')"
-					@click="ending = link"
-				/>
-			</div>
+
+				<div class="rounded-6 border border-outline-gray-2 p-4">
+					<FormControl
+						type="select"
+						size="md"
+						:label="__('Access')"
+						:options="roleOptions"
+						:model-value="link.role"
+						:disabled="!canManagePartners || savingRole"
+						@update:model-value="changeRole"
+					/>
+					<p class="mt-1.5 text-p-sm text-ink-gray-5">{{ roleHint }}</p>
+					<ErrorMessage v-if="roleError" class="mt-2" :message="roleError" />
+				</div>
+			</template>
 
 			<EmptyState
 				v-else

@@ -4,7 +4,12 @@ import { useRoute, useRouter } from 'vue-router'
 import { API, method, methodV1 } from '@/api/methods'
 import { teamParams, whenTeamReady } from '@/composables/useTeamScope'
 import { getErrorMessage } from '@/lib/feedback'
-import type { PartnerLink, PartnerPreview, TeamCustomers } from '@/types/api'
+import type {
+	PartnerLink,
+	PartnerPreview,
+	PartnerRole,
+	TeamCustomers,
+} from '@/types/api'
 
 /** The active team's partner, for the customer side. */
 export function useTeamPartner() {
@@ -77,6 +82,13 @@ export function endPartnerLink(
 	reason: string,
 ): Promise<PartnerLink> {
 	return call<PartnerLink>(API.endPartnerLink, { link, reason })
+}
+
+export function setPartnerRole(
+	link: string,
+	role: PartnerRole,
+): Promise<PartnerLink> {
+	return call<PartnerLink>(API.setPartnerRole, { link, role })
 }
 
 /** The partner a Frappe Connect link asks to add: `/dashboard/partner?code=&reference=`. The

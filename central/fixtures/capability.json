@@ -188,5 +188,15 @@
   "name": "team:manage_partners",
   "plane": "central",
   "resource": "team"
+ },
+ {
+  "capability": "partner:act_on_customers",
+  "description": "Act on the customer teams linked to this partner team, with the role each customer chose",
+  "docstatus": 0,
+  "doctype": "Capability",
+  "modified": "2026-11-14 12:00:00.000000",
+  "name": "partner:act_on_customers",
+  "plane": "central",
+  "resource": "partner"
  }
 ]

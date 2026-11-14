@@ -81,3 +81,11 @@ def end_partner_link(link: str, reason: str) -> dict:
 	doc.check_permission("write")
 	doc.end(reason)
 	return doc.get_summary()
+
+
+@frappe.whitelist(methods=["POST"])
+def set_partner_role(link: str, role: str) -> dict:
+	"""Change what the partner can do in the customer team: Viewer or Developer."""
+	doc = frappe.get_doc("Partner Link", link)
+	doc.set_role(role)
+	return doc.get_summary()

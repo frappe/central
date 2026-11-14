@@ -159,6 +159,13 @@ def restore_team(team: str) -> dict[str, Any]:
 
 
 @frappe.whitelist(methods=["POST"])
+def remove_from_partner_program(team: str, reason: str) -> dict[str, Any]:
+	"""Operator action: end the partner's links and clear its partner code."""
+	frappe.get_doc("Team", team).remove_from_partner_program(reason)
+	return {"team": team}
+
+
+@frappe.whitelist(methods=["POST"])
 def suspend_team(team: str, reason: str) -> dict[str, Any]:
 	"""Operator action: suspend the team, for example for abuse."""
 	frappe.get_doc("Team", team).suspend(reason)

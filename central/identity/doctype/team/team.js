@@ -48,6 +48,13 @@ frappe.ui.form.on("Team", {
 			if (frm.doc.status === "Archived") {
 				frm.add_custom_button(__("Restore Team"), () => restore_team(frm), actions);
 			}
+			if (frm.doc.connect_partner_id) {
+				frm.add_custom_button(
+					__("Remove from Partner Program"),
+					() => remove_from_partner_program(frm),
+					actions,
+				);
+			}
 		}
 	},
 });
@@ -251,4 +258,24 @@ async function adjust_credit(frm) {
 		},
 	});
 	dialog.show();
+}
+
+function remove_from_partner_program(frm) {
+	frappe.prompt(
+		[
+			{
+				fieldtype: "HTML",
+				options: `<p class="text-muted">${__(
+					"Every customer link of this partner ends now, and the team loses its partner code. Each customer's owner gets the reason by email.",
+				)}</p>`,
+			},
+			{ fieldname: "reason", fieldtype: "Small Text", label: __("Reason"), reqd: 1 },
+		],
+		(values) =>
+			frappe
+				.call("central.api.teams.remove_from_partner_program", { team: frm.doc.name, reason: values.reason })
+				.then(() => frm.reload_doc()),
+		__("Remove from Partner Program"),
+		__("Remove"),
+	);
 }

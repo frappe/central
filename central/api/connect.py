@@ -62,6 +62,7 @@ def _to_connect_row(link: dict) -> dict:
 		"link": link["name"],
 		"reference": link["reference"],
 		"status": link["status"],
+		"role": link["role"],
 		"customer_team": link["customer_team"],
 		"customer_team_name": link["customer_name"],
 		"customer_email": link["customer_email"],

@@ -1,3 +1,4 @@
+import { __ } from '@/lib/translate'
 import type { Team } from '@/types/api'
 
 export interface TeamSwitcherRow extends Team {
@@ -20,7 +21,11 @@ export function getTeamSwitcherRows(teams: Team[]): TeamSwitcherRow[] {
 			matches.filter((match) => match.owner === team.owner).length === 1
 		const owner =
 			matches.length > 1 ? (hasUniqueOwner ? team.owner! : team.name) : ''
-		const detail = [owner, team.status === 'Suspended' ? 'Suspended' : '']
+		const detail = [
+			owner,
+			team.via_partner ? __('Through {0}', [team.via_partner]) : '',
+			team.status === 'Suspended' ? 'Suspended' : '',
+		]
 			.filter(Boolean)
 			.join(' · ')
 		return {

@@ -82,7 +82,7 @@ The relationship between one partner team and one customer team.
 | `partner_team` | The partner's team |
 | `customer_team` | The customer's team |
 | `status` | `Active` or `Ended` |
-| `role` | A Team Role of the customer team, or empty for no access. See [Partner access](#partner-access). |
+| `role` | `Viewer` or `Developer`. A new link starts as `Viewer`. See [Partner access](#partner-access). |
 | `payer` | `Customer`, `Partner Requested`, or `Partner`. See [Partner pays](#partner-pays). |
 | `reference` | An opaque value from Connect's deep link, normally the Partner Customer ID. Empty when the customer typed the code. |
 | `linked_by`, `linked_on` | The customer user who added the partner, and when |
@@ -242,7 +242,7 @@ Example: Northwind hires Tridots on Connect. Northwind opens the link, signs up,
 | The customer has no Central account | Central signs them up and returns them to the Add partner page. |
 | The customer changes partner | The customer ends the current link and adds the new code. Each invoice keeps the partner it had at generation. |
 | A partner staff member leaves | The partner removes them from its team. They lose every customer at once. |
-| Connect removes a partner from the program | Connect calls `end_partner_link` for each link. An operator clears `connect_partner_id` in desk. |
+| Connect removes a partner from the program | An operator uses Remove from Partner Program on the partner's Team in desk. It ends every link of the partner. |
 | The partner hosts a client that wants no account | No link. The partner creates the servers in its own team and groups them in one Project per client. |
 | A customer moves from Press | See [Press migration](#press-migration). |
 
@@ -258,20 +258,21 @@ Central has only the pages that decide access, money, or the trust boundary. Con
 
 ## Partner access
 
-A partner staff member can act on a customer team only when all of these rules pass:
+A partner staff member can act on a customer team only when all of these rules pass. `central/iam.py` adds them as a partner grant, so every capability check applies them.
 
-1. The staff member holds `partner:act_on_customers` in the partner team.
-2. A Partner Link from the partner team to the customer team is `Active`.
-3. The link's `role` is not empty, and the capability is in that role.
+1. The staff member holds `partner:act_on_customers` team-wide in the partner team.
+2. A Partner Link from the partner team to the customer team is `Active`, and the customer team is `Active`.
+3. The capability is in the link's `role`.
 4. The capability is not in the list that a partner can never get.
 
 A partner can never get these capabilities on a customer team:
 
-- `team:edit`
-- `team:manage_members`
-- `team:delete`
-- `team:manage_partners`
-- `billing:manage`
+| Capability | Why |
+|---|---|
+| `team:edit`, `team:manage_members`, `team:delete`, `team:manage_partners` | The customer runs its own team. |
+| `billing:manage` | The customer controls payment. |
+| `server:ssh-key`, `server:wireguard` | A key or a device would outlive the link. Without them, ending a link revokes all partner access. |
+| `partner:act_on_customers` | A partner cannot reach the customers of a customer that is also a partner. |
 
 Capabilities:
 
@@ -282,11 +283,11 @@ Capabilities:
 
 The role on a link:
 
-- The customer chooses `Viewer`, `Developer`, a custom role of their team, or no access. Central does not offer `Owner`, `Admin`, or `Billing`.
-- There is no separate partner role. A partner that wants to keep a staff member away from customers gives them a custom role without `partner:act_on_customers`.
-- The Add partner page must say that `Developer` can create and terminate servers.
+- A new link has the `Viewer` role. The customer changes it to `Developer` on the Partner page, which says that `Developer` can create, change, and delete servers. Only the customer side changes the role.
+- There is no other choice. A partner always has `Viewer` or `Developer` access.
+- There is no separate partner role. A partner that wants to keep a staff member away from customers gives them a role without `partner:act_on_customers`, such as `Viewer`.
 
-The partner staff member is never a member of the customer team. The customer team appears in their team switcher with the partner's name. The customer's activity log shows each action with the staff member and the partner team.
+The partner staff member is never a member of the customer team, so the team's members, roles, and activity stay closed to them. The customer team appears in their team switcher as "Through <partner>". Each activity event that partner staff cause stores `partner_team`, and the customer's activity log shows the person as "<name> from <partner>".
 
 Connect's own roster (`Connect Partner Member.access`) controls Connect pages only. Central does not read it.
 
@@ -311,23 +312,22 @@ The partner gets one invoice per customer with every line item. Central does not
 
 ## What ending a link does
 
-Either side can end a link: the customer on the Partner page, the partner on the Customers page, Connect with `end_partner_link`, and Central when the customer team is deleted or the partner team loses `connect_partner_id`.
+Either side can end a link: the customer on the Partner page, the partner on the Customers page, and Connect with `end_partner_link`. Central ends the links of a team that is archived, and an operator ends a partner's links with Remove from Partner Program on the Team in desk, which also clears its `connect_partner_id` and `partner_code`.
 
 | Area | Result |
 |---|---|
 | Console and API access | The next request from partner staff is refused. The customer team leaves their team switcher. |
-| Open sessions on the customer's sites | Central asks Pilot to end the sessions of partner staff on the customer's sites. |
-| SSH keys that partner staff added | Central removes them from the customer's servers. |
+| Open sessions on the customer's sites | A site session that partner staff opened before the link ended runs until it expires, as for a member who is removed from a team. Central refuses new ones. |
 | Servers and sites the partner created | They stay with the customer. The customer team owns everything in it. |
 | Billing | Existing invoices keep `partner_team` and `payer_team`. New invoices have neither. |
-| Notification | Central sends an email to the owner of the other team. Connect reads the change with `get_partner_customers`. |
+| Notification | Central sends the `partner_link_ended` notification, with the reason, to the members with `team:manage_partners` in both teams, by email and in the console. Connect reads the change with `get_partner_customers`. |
 
 ## Press migration
 
 Press holds 276 partner teams and 1,387 customer teams that name a partner. 112 of the customer teams are `Paid By Partner`.
 
 1. Register each active Press partner before its customers move, and keep its Press `partner_referral_code` as `partner_code`.
-2. When a customer team moves to Central, the migration creates the Partner Link directly as `Active`, with an empty `role`. A Press partner has no access to a customer by default.
+2. When a customer team moves to Central, the migration creates the Partner Link directly as `Active`, with the `Viewer` role.
 3. Set `payer` to `Partner` when the Press team is `Paid By Partner`. Press already recorded both approvals.
 4. Central does not ask the customer again. The customer can change the role and the payer afterward.
 5. The 87 Press child teams become ordinary teams. Their owner decides whether to keep them or move the servers into a Project.
@@ -340,7 +340,7 @@ The steps go from the simplest to the hardest. Each step works without the next 
 |---|---|---|
 | 1. Registration and code | `Team.connect_partner_id`, `Team.partner_code`, the signed registration link, the landing page, `register_partner`, `get_partner_registration` | Already calls both. Store the partner code on Partner. Replace the derived `referral_code`. |
 | 2. Link | `team:manage_partners`, Partner Link with `status` and `reference`, the Add partner dialog with the code only, `get_partner_customers` without `sites`, `end_partner_link`, the Partner and Customers pages and their sidebar items | Replace `request_cloud_link` and `sync_cloud_links` with the deep link and a list sync. Move the link state from Customer Project to Partner Customer. Remove the manual Approve link. Create `Own` customers. Call `end_partner_link` when the partner marks a customer Churned. |
-| 3. Access | `partner:act_on_customers`, the `role` field, the rules in `central/iam.py`, the team switcher, the activity log, the effects of ending a link | Show the role. |
+| 3. Access | `partner:act_on_customers`, the `role` field, the rules in `central/iam.py`, the team switcher, the activity log, the effects of ending a link, Remove from Partner Program | Show the role. |
 | 4. Reads for Connect | `sites` and `mrr` in `get_partner_customers`; `get_partner_invoices` | Replace the demo data in `central_billing.py` and the Invoicing page. Compute the tier from Central and Press invoices together. |
 | 5. Attribution and partner pays | `Invoice.partner_team`, the `payer` field, the accept action, `Invoice.payer_team`, collection, dunning, and permissions through the payer | Show who pays. |
 | 6. Press migration | The import of partners and links | The import of Partner Customer rows |

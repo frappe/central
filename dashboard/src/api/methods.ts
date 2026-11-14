@@ -60,6 +60,7 @@ export const API = {
 	getTeamPartner: 'central.api.partners.get_team_partner',
 	getTeamCustomers: 'central.api.partners.get_team_customers',
 	endPartnerLink: 'central.api.partners.end_partner_link',
+	setPartnerRole: 'central.api.partners.set_partner_role',
 
 	registry: 'central.api.servers.registry',
 	listInstances: 'central.api.servers.list_instances',

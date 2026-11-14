@@ -6,17 +6,27 @@ from frappe import _
 from frappe.model.document import Document
 from frappe.utils import now
 
-from central.iam import user_has_operator_bypass
+from central.iam import PARTNER_ROLES, can, user_has_operator_bypass
 
 REFERENCE_MAX_LENGTH = 140
 END_REASON_MAX_LENGTH = 500
 # Only the link actions change these after the link exists.
-ACTION_FIELDS = ("status", "linked_by", "linked_on", "reference", "ended_by", "ended_on", "end_reason")
+ACTION_FIELDS = (
+	"status",
+	"role",
+	"linked_by",
+	"linked_on",
+	"reference",
+	"ended_by",
+	"ended_on",
+	"end_reason",
+)
 
 
 class PartnerLink(Document):
 	"""The relationship between one partner team and one customer team. The customer starts it
-	with the partner code, and either side ends it. An ended link never becomes active again."""
+	with the partner code and chooses its role, and either side ends it. An ended link never
+	becomes active again."""
 
 	# begin: auto-generated types
 	# This code is auto-generated. Do not modify anything in this block.
@@ -34,6 +44,7 @@ class PartnerLink(Document):
 		linked_on: DF.Datetime | None
 		partner_team: DF.Link
 		reference: DF.Data | None
+		role: DF.Link
 		status: DF.Literal["Active", "Ended"]
 	# end: auto-generated types
 
@@ -59,6 +70,8 @@ class PartnerLink(Document):
 		self.ended_by = self.ended_on = self.end_reason = None
 
 	def validate(self) -> None:
+		if self.role not in PARTNER_ROLES:
+			frappe.throw(_("A partner can have the Viewer or the Developer role."))
 		if self.is_new():
 			self._validate_new_link()
 		else:
@@ -113,11 +126,58 @@ class PartnerLink(Document):
 
 		return True
 
+	# Internal; the HTTP surface is central.api.partners.set_partner_role.
+	def set_role(self, role: str) -> None:
+		"""Change what the partner can do. Only the customer side decides it."""
+		user = frappe.session.user
+		if not user_has_operator_bypass(user) and not can(user, self.customer_team, "team:manage_partners"):
+			frappe.throw(_("Only the customer team can change the partner's access."), frappe.PermissionError)
+
+		self.role = role
+		self.flags.from_link_action = True
+		self.save()
+
+	def on_update(self) -> None:
+		if self.has_value_changed("status") and self.status == "Ended":
+			self._notify_end()
+
+	def _notify_end(self) -> None:
+		"""Tell the partner managers of both teams why the link ended."""
+		from central.notification.engine import dispatch
+
+		names = dict(
+			frappe.get_all(
+				"Team",
+				filters={"name": ("in", (self.customer_team, self.partner_team))},
+				fields=["name", "team_name"],
+				as_list=True,
+			)
+		)
+		context = {"customer_name": names[self.customer_team], "partner_name": names[self.partner_team]}
+		for team in (self.customer_team, self.partner_team):
+			dispatch(
+				team,
+				"partner_link_ended",
+				message=self.end_reason,
+				context=context,
+				reference_doctype=self.doctype,
+				reference_name=self.name,
+			)
+
 	def get_summary(self) -> dict:
 		return summarize_links([self])[0]
 
 
-LINK_FIELDS = ["name", "status", "reference", "linked_on", "ended_on", "customer_team", "partner_team"]
+LINK_FIELDS = [
+	"name",
+	"status",
+	"role",
+	"reference",
+	"linked_on",
+	"ended_on",
+	"customer_team",
+	"partner_team",
+]
 
 
 def summarize_links(links: list) -> list[dict]:

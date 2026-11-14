@@ -4,6 +4,7 @@ from frappe import _
 from central.central.doctype.activity_event.activity_event import ActivityEvent
 from central.central.doctype.activity_event.tracked import EventKind
 from central.identity.doctype.team.archive import get_archive_blockers
+from central.identity.doctype.team.partner import end_team_links
 
 
 class TeamLifecycle:
@@ -28,12 +29,28 @@ class TeamLifecycle:
 			"Team Invitation", {"team": self.name, "status": "Pending"}, pluck="name"
 		):
 			frappe.get_doc("Team Invitation", invitation).revoke()
+		end_team_links(self.name, _("The team was archived."))
 
 		self.status = "Archived"
 		self.flags.from_team_archive = True
 		self.save()
 		self.add_comment("Info", _("{0} archived this team.").format(frappe.session.user))
 		dispatch(self.name, "team_archived", affected_user=self.owner_user)
+
+	# Internal; the HTTP surface is central.api.teams.remove_from_partner_program.
+	def remove_from_partner_program(self, reason: str) -> None:
+		"""Operator action: the partner left the Frappe partner program. Its links end, and the
+		team keeps its servers but loses its partner code."""
+		frappe.only_for("System Manager")
+		if not self.connect_partner_id:
+			frappe.throw(_("This team is not a partner."))
+		if not (reason or "").strip():
+			frappe.throw(_("Enter the reason. Each customer's owner reads it."))
+
+		end_team_links(self.name, reason.strip())
+		self.connect_partner_id = None
+		self.partner_code = None
+		self.save()
 
 	# Internal; the HTTP surface is central.api.teams.restore_team.
 	def restore(self) -> None:

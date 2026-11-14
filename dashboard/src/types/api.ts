@@ -28,6 +28,8 @@ export interface Team {
 	is_partner: boolean
 	/** The team has an Active link to a partner. */
 	has_partner: boolean
+	/** The partner through which the user reaches this team. The user is not a member. */
+	via_partner?: string | null
 }
 
 export type MemberStatus = 'Active' | 'Suspended'
@@ -132,10 +134,14 @@ export interface InvitationSummary {
 	has_account: boolean
 }
 
+/** What a partner's staff can do in the customer team. */
+export type PartnerRole = 'Viewer' | 'Developer'
+
 /** The link between a partner team and a customer team (central Partner Link). */
 export interface PartnerLink {
 	name: string
 	status: 'Active' | 'Ended'
+	role: PartnerRole
 	reference: string | null
 	linked_on: string
 	ended_on: string | null

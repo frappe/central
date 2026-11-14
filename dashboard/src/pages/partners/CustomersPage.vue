@@ -23,6 +23,7 @@ const partnerCode = computed(() => customers.value?.partner_code ?? '')
 
 const columns = computed<ListViewColumn<PartnerLink>[]>(() => [
 	{ key: 'customer_name', label: __('Customer'), width: 'minmax(0,3fr)' },
+	{ key: 'role', label: __('Access'), width: '7rem' },
 	{ key: 'status', label: __('Status'), width: '7rem' },
 	{
 		key: 'linked_on',

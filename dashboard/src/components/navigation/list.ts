@@ -73,7 +73,8 @@ export const sidebarSections = computed<SidebarSection[]>(() => {
 					label: 'Team',
 					icon: 'lucide-users',
 					to: '/team/members',
-					condition: isMember.value,
+					// Partner staff act on a customer team without being its members.
+					condition: isMember.value && !team?.via_partner,
 				},
 				// Only a team that works with partners sees these.
 				{

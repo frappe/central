@@ -1,3 +1,5 @@
+from unittest.mock import patch
+
 import frappe
 from frappe.tests import IntegrationTestCase
 
@@ -16,6 +18,8 @@ from central.tests.test_team_management import create_user
 class TestPartnerLinks(IntegrationTestCase):
 	def setUp(self):
 		frappe.set_user("Administrator")
+		self.dispatch = patch("central.notification.engine.dispatch").start()
+		self.addCleanup(patch.stopall)
 		suffix = frappe.generate_hash(length=6)
 		self.customer_owner = create_user(f"customer.owner.{suffix}@example.test")
 		self.developer = create_user(f"customer.developer.{suffix}@example.test")

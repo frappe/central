@@ -159,3 +159,17 @@ def validate_return_url(return_url: str | None) -> None:
 	parsed = urlparse(return_url)
 	if parsed.scheme not in ("http", "https") or parsed.hostname != connect_host:
 		frappe.throw(_("The return URL must be on the Connect host {0}.").format(connect_host))
+
+
+def end_team_links(team: str, reason: str) -> None:
+	"""End every Active link where `team` is the customer or the partner."""
+	for name in frappe.get_all(
+		"Partner Link",
+		filters=[["status", "=", "Active"]],
+		or_filters=[["customer_team", "=", team], ["partner_team", "=", team]],
+		pluck="name",
+	):
+		link = frappe.get_doc("Partner Link", name)
+		# A team closing or leaving the program ends its links; the caller checked who may.
+		link.flags.ignore_permissions = True
+		link.end(reason)
