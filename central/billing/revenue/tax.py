@@ -113,9 +113,16 @@ def has_zero_rating(profile, gst) -> bool:
 
 
 def get_tax_names(team: str) -> dict:
-	"""The team's tax today as `tax_label` ("IGST 18%") and `tax_note` ("incl. IGST 18%")."""
+	"""The team's tax today as `tax_label` ("IGST 18%") and `tax_note` ("incl. IGST 18%").
+	`limit_tax_note` follows an off-session limit: None for a team not taxed, since an SEZ
+	note says nothing about a limit."""
 	block, names = resolve_tax(team, 100), TaxNames(team)
-	return {"tax_label": names.label(block), "tax_note": names.note(block)}
+	note = names.note(block)
+	return {
+		"tax_label": names.label(block),
+		"tax_note": note,
+		"limit_tax_note": note if frappe.utils.flt(block["output_tax_amount"]) else None,
+	}
 
 
 class TaxNames:

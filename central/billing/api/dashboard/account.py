@@ -275,7 +275,7 @@ def get_collection_status(team: str | None = None) -> dict:
 		"projected_total": projected,
 		"tax_note": forecast["tax_note"],
 		# The tax the amounts the limit caps include, as the Action Required notice names it.
-		"limit_tax_note": collection_mode.get_included_tax_note(team),
+		"limit_tax_note": forecast["limit_tax_note"],
 		"wallet_balance": wallet,
 		"shortfall": forecast["shortfall"],
 		"currency": _team_currency(team),

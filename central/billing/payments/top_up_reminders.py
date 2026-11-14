@@ -100,13 +100,14 @@ def get_shortfall_due(team: str, bill: float, gst: float, date, invoice: str | N
 		# No amount would be true to state, so nothing is asked.
 		frappe.logger("billing").warning(f"top-up reminder skipped for {team}: no credit pays the bill")
 		return None
+	names = tax.get_tax_names(team)
 	return {
 		"amount": credit,
 		"amount_with_gst": frappe.utils.flt(credit + credits.top_up_gst(team, credit), 2),
-		"tax_label": tax.get_tax_names(team)["tax_label"],
+		"tax_label": names["tax_label"],
 		"date": str(date),
 		"limit": limit,
-		"limit_tax_note": collection_mode.get_included_tax_note(team) if has_method else None,
+		"limit_tax_note": names["limit_tax_note"] if has_method else None,
 		"has_method": has_method,
 		"invoice": invoice,
 		"includes_earlier_gst": draw.gst_unpaid > 0

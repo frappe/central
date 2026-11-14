@@ -45,7 +45,7 @@ def _add_upi(team=TEAM) -> None:
 
 def _forecast_of(total) -> dict:
 	"""A forecast of `total` that the wallet does not pay."""
-	return {"projected_total": total, "shortfall": total, "tax_note": None}
+	return {"projected_total": total, "shortfall": total, "tax_note": None, "limit_tax_note": None}
 
 
 def _set_mode(mode, team=TEAM) -> None:
