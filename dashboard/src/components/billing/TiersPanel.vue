@@ -9,8 +9,16 @@ import type { TierLevel } from '@/types/billing'
 
 const open = defineModel<boolean>('open', { default: false })
 
-const { tier, currency, levels, nextLevel, record, requirementsFor } =
-	useSpendingLimits()
+const {
+	tier,
+	currency,
+	levels,
+	nextLevel,
+	record,
+	requirementsFor,
+	spendingLimit,
+	runningMonthly,
+} = useSpendingLimits()
 
 const columns = [
 	{ key: 'tier', label: 'Tier' },
@@ -22,6 +30,10 @@ type Level = (typeof levels.value)[number]
 
 const rowClass = (level: Level) =>
 	level.state === 'current' ? 'bg-surface-gray-1' : undefined
+
+// The team's own limit may carry an override, so its row shows the limit the check uses.
+const limitFor = (level: Level) =>
+	level.state === 'current' ? spendingLimit.value : level.max_spend
 
 const requirementText = (level: TierLevel) =>
 	requirementsFor(level)
@@ -86,7 +98,15 @@ const requirementText = (level: TierLevel) =>
 								: 'text-base-medium text-ink-gray-9'
 						"
 					>
-						{{ money(row.max_spend, currency, { trimTrailingZeros: true }) }}
+						{{ money(limitFor(row), currency, { trimTrailingZeros: true }) }}
+						<span
+							v-if="row.state === 'current'"
+							class="block text-sm text-ink-gray-5"
+						>
+							{{ __('{0} running a month before tax', [
+									money(runningMonthly, currency, { trimTrailingZeros: true }),
+								]) }}
+						</span>
 						<span
 							v-if="row.max_resource_count != null"
 							class="block text-sm text-ink-gray-5"
@@ -109,7 +129,9 @@ const requirementText = (level: TierLevel) =>
 				>
 
 				<span class="text-ink-gray-8">Limit</span>
-				<span>The most your team can spend in one billing cycle.</span>
+				<span
+					>{{ __('The most that everything your team runs can cost a month, before tax. Taxes are added on top.') }}</span
+				>
 
 				<p v-if="record" class="col-span-2">{{ record }}</p>
 

@@ -128,7 +128,7 @@ defineExpose({ addMethod, choosePlan, keep, methodAdded, saving, canContinue })
 			v-if="trial.held"
 			theme="amber"
 			title="This site stays on its free trial"
-			description="Your payment method is added, but this plan is above your spending limit. Choose a smaller plan, or contact support to raise the limit."
+			:description="__('Your payment method is added, but this plan is above your spending limit. Choose a smaller plan, or contact support to raise the limit.')"
 		/>
 		<Alert
 			v-if="actionError"
@@ -138,7 +138,7 @@ defineExpose({ addMethod, choosePlan, keep, methodAdded, saving, canContinue })
 		/>
 
 		<p v-if="!plans.length" class="text-p-sm text-ink-gray-6">
-			No plan fits your spending limit. Contact support to raise it.
+			{{ __('No plan fits your spending limit. Contact support to raise it.') }}
 		</p>
 		<RadioGroup
 			v-else

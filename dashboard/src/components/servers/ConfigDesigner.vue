@@ -12,6 +12,7 @@ import {
 	maxVcpuForCapacity,
 	ramFor,
 } from '@/lib/composed'
+import { money } from '@/lib/format'
 import { formatGb, formatVcpu } from '@/lib/units'
 import type { Capacity, ComposedConfig, Profile, RateCard } from '@/types/api'
 
@@ -25,6 +26,7 @@ interface Props {
 	profiles: Profile[]
 	rateCard: RateCard
 	available: number
+	currency: string
 	// The region's live capacity — the slider's second hard stop (below headroom), so a
 	// customer can't design a config the region can't currently seat. Absent → no cap.
 	capacity?: Capacity | null
@@ -334,7 +336,9 @@ function indexOf(ladder: number[], value: number): number {
 			</div>
 
 			<p v-if="overHeadroom" class="text-p-xs text-ink-red-6">
-				This config is over your remaining spending limit.
+				{{ __('This config is over your spending limit. Up to {0} a month fits, before tax.', [
+						money(available, currency, { trimTrailingZeros: true }),
+					]) }}
 			</p>
 			<p v-else-if="cappedByCapacity" class="text-p-xs text-ink-gray-5">
 				Sizes are limited by this region's available capacity right now.

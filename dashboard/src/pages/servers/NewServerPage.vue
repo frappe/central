@@ -4,6 +4,7 @@ import { computed, ref, watch } from 'vue'
 import PaymentMethodFlow from '@/components/billing/PaymentMethodFlow.vue'
 import ChoiceCards from '@/components/common/ChoiceCards.vue'
 import ContactSupportLink from '@/components/common/ContactSupportLink.vue'
+import TranslatedText from '@/components/common/TranslatedText.vue'
 import AppInputs from '@/components/servers/AppInputs.vue'
 import AppSelector from '@/components/servers/AppSelector.vue'
 import CreateServerButton from '@/components/servers/CreateServerButton.vue'
@@ -17,6 +18,7 @@ import SSHKeysField from '@/components/servers/SSHKeysField.vue'
 import { useBreadcrumbs } from '@/composables/useBreadcrumbs'
 import { useServerCreation } from '@/composables/useServerCreation'
 import { features } from '@/lib/features'
+import { money } from '@/lib/format'
 import { flagEmoji, regionLabel } from '@/lib/serverMap'
 import { getCreationStage } from '@/lib/status'
 import type { ActionStatus } from '@/types/serverCreation'
@@ -93,6 +95,14 @@ const {
 	submitting,
 	submitError,
 } = useServerCreation()
+
+// What the team can still add before its spending limit, before tax.
+const availableLabel = computed(() =>
+	money(available.value ?? 0, currency.value ?? 'USD', {
+		trimTrailingZeros: true,
+	}),
+)
+
 const paymentFlow = ref<InstanceType<typeof PaymentMethodFlow> | null>(null)
 
 const { setBreadcrumbs } = useBreadcrumbs()
@@ -381,25 +391,37 @@ watch(
 							class="rounded-6 border border-outline-gray-2 bg-surface-gray-1 px-4 py-3"
 						>
 							<p class="text-p-sm-medium text-ink-gray-8">
-								You've reached your spending limit
+								{{ __("You've reached your spending limit") }}
 							</p>
 							<p class="mt-1 text-p-sm text-ink-gray-5">
-								No plans fit your remaining spending limit in this region.
-								Remove a server to free some up, or
-								<ContactSupportLink
-									:context="{ Topic: 'Higher spending limit' }"
-								/>
-								to raise your limit.
+								<TranslatedText
+									:text="__('No plans fit the {0} a month, before tax, left in your spending limit in this region. Remove a server to free some up, or {1} to raise your limit.')"
+								>
+									<template #0>{{ availableLabel }}</template>
+									<template #1>
+										<ContactSupportLink
+											:context="{ Topic: 'Higher spending limit' }"
+										/>
+									</template>
+								</TranslatedText>
 							</p>
 						</div>
 
 						<p v-else-if="nothingToShow" class="text-p-sm text-ink-gray-5">
-							No plans are available for this region within your current
-							spending limit. Select another region, or
-							<ContactSupportLink
-								:context="{ Topic: 'Higher spending limit' }"
-							/>
-							to review your limit.
+							<TranslatedText
+								:text="
+									available == null
+										? __('No plans are available for this region within your spending limit. Select another region, or {1} to review your limit.')
+										: __('No plans fit the {0} a month, before tax, left in your spending limit in this region. Select another region, or {1} to review your limit.')
+								"
+							>
+								<template #0>{{ availableLabel }}</template>
+								<template #1>
+									<ContactSupportLink
+										:context="{ Topic: 'Higher spending limit' }"
+									/>
+								</template>
+							</TranslatedText>
 						</p>
 
 						<Tabs v-else-if="hasTabs" v-model="activeTab" :tabs="classTabs">

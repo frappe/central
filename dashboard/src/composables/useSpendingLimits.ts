@@ -31,13 +31,14 @@ const tier = useCall<TrustTier, { team: string }>({
 whenTeamReady(() => tier.reload())
 
 export function useSpendingLimits() {
-	const { forecast, credit, methods } = useBillingOverview()
+	const { credit, methods } = useBillingOverview()
 
 	const currency = computed(() => tier.data?.currency || 'INR')
 	const current = computed(() => tier.data?.current)
 	const progress = computed(() => tier.data?.progress)
-	// The spend limit is before tax, so it is compared with spend before tax.
-	const monthlySpend = computed(() => forecast.data?.subtotal)
+	// The figures the server-create check compares, both before tax.
+	const spendingLimit = computed(() => Number(tier.data?.spending_limit ?? 0))
+	const runningMonthly = computed(() => Number(tier.data?.running_monthly ?? 0))
 	const nextLevel = computed(() => tier.data?.next ?? null)
 
 	const payingSince = computed(() => {
@@ -55,11 +56,8 @@ export function useSpendingLimits() {
 			: `${months} month${months === 1 ? '' : 's'}`
 	})
 
-	const cycleRatio = computed(() =>
-		spendLimitRatio(
-			Number(monthlySpend.value ?? 0),
-			Number(current.value?.max_spend ?? 0),
-		),
+	const limitRatio = computed(() =>
+		spendLimitRatio(runningMonthly.value, spendingLimit.value),
 	)
 	const resourcesUsed = computed(() =>
 		Number(progress.value?.resources_used ?? 0),
@@ -180,9 +178,10 @@ export function useSpendingLimits() {
 		currency,
 		current,
 		progress,
-		monthlySpend,
+		spendingLimit,
+		runningMonthly,
 		nextLevel,
-		cycleRatio,
+		limitRatio,
 		resourcesUsed,
 		resourceRatio,
 		record,

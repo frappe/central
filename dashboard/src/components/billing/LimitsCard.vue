@@ -2,6 +2,7 @@
 import { Button, LoadingText, Tooltip } from 'frappe-ui'
 import { computed, ref } from 'vue'
 import AddMethodDialog from '@/components/AddMethodDialog.vue'
+import TranslatedText from '@/components/common/TranslatedText.vue'
 import { useBillingSetup } from '@/composables/useBillingSetup'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { useSpendingLimits } from '@/composables/useSpendingLimits'
@@ -13,9 +14,10 @@ const {
 	tier,
 	currency,
 	current,
-	monthlySpend,
+	spendingLimit,
+	runningMonthly,
 	nextLevel,
-	cycleRatio,
+	limitRatio,
 	resourcesUsed,
 	resourceRatio,
 	gates,
@@ -27,7 +29,7 @@ const { complete, requireSetup } = useBillingSetup()
 const { canManageBilling } = useCapabilities()
 
 const loading = computed(() => tier.loading && !tier.data)
-const nearLimit = computed(() => cycleRatio.value >= 0.8)
+const nearLimit = computed(() => limitRatio.value >= 0.8)
 
 const showAddMethod = ref(false)
 
@@ -69,53 +71,63 @@ const startFirstTier = () => {
 				/>
 			</div>
 
-			<div
-				v-else
-				class="grid auto-cols-fr grid-flow-col grid-rows-3 gap-x-4 gap-y-1"
-			>
-				<Tooltip
-					:text="__('The spend and the limit are before tax. Taxes are added on top.')"
+			<div v-else class="flex flex-col gap-3">
+				<div
+					class="grid auto-cols-fr grid-flow-col grid-rows-3 gap-x-4 gap-y-1"
 				>
-					<span class="text-sm text-ink-gray-5"
-						>{{ __('Spend per cycle, before tax') }}</span
+					<Tooltip
+						:text="__('What everything running now costs a month, before tax, against your spending limit.')"
 					>
-				</Tooltip>
-
-				<span class="text-base-medium tabular-nums">
-					<span :class="nearLimit ? 'text-ink-amber-6' : 'text-ink-gray-9'">
-						{{ money(monthlySpend ?? 0, currency, { trimTrailingZeros: true }) }}
-					</span>
-					<span class="text-ink-gray-5">
-						of
-						{{ money(current.max_spend, currency, { trimTrailingZeros: true }) }}
-					</span>
-				</span>
-
-				<div class="mt-1 h-1 overflow-hidden rounded-1 bg-surface-gray-2">
-					<div
-						class="h-full"
-						:class="nearLimit ? 'bg-surface-amber-5' : 'bg-surface-gray-10'"
-						:style="{ width: `${cycleRatio * 100}%` }"
-					/>
-				</div>
-
-				<template v-if="current.max_resource_count != null">
-					<span class="text-sm text-ink-gray-5">Resources</span>
-
-					<span class="text-base-medium tabular-nums text-ink-gray-9">
-						{{ resourcesUsed }}
-						<span class="text-ink-gray-5"
-							>of {{ current.max_resource_count }}</span
+						<span class="text-sm text-ink-gray-5"
+							>{{ __('Running a month, before tax') }}</span
 						>
+					</Tooltip>
+
+					<span class="text-base-medium tabular-nums text-ink-gray-5">
+						<TranslatedText :text="__('{0} of {1} limit')">
+							<template #0>
+								<span
+									:class="nearLimit ? 'text-ink-amber-6' : 'text-ink-gray-9'"
+								>
+									{{ money(runningMonthly, currency, { trimTrailingZeros: true }) }}
+								</span>
+							</template>
+							<template #1>
+								{{ money(spendingLimit, currency, { trimTrailingZeros: true }) }}
+							</template>
+						</TranslatedText>
 					</span>
 
 					<div class="mt-1 h-1 overflow-hidden rounded-1 bg-surface-gray-2">
 						<div
-							class="h-full bg-surface-gray-10"
-							:style="{ width: `${resourceRatio * 100}%` }"
+							class="h-full"
+							:class="nearLimit ? 'bg-surface-amber-5' : 'bg-surface-gray-10'"
+							:style="{ width: `${limitRatio * 100}%` }"
 						/>
 					</div>
-				</template>
+
+					<template v-if="current.max_resource_count != null">
+						<span class="text-sm text-ink-gray-5">Resources</span>
+
+						<span class="text-base-medium tabular-nums text-ink-gray-9">
+							{{ resourcesUsed }}
+							<span class="text-ink-gray-5"
+								>of {{ current.max_resource_count }}</span
+							>
+						</span>
+
+						<div class="mt-1 h-1 overflow-hidden rounded-1 bg-surface-gray-2">
+							<div
+								class="h-full bg-surface-gray-10"
+								:style="{ width: `${resourceRatio * 100}%` }"
+							/>
+						</div>
+					</template>
+				</div>
+
+				<p class="text-p-sm text-ink-gray-5">
+					{{ __('The spending limit is before tax. Taxes are added on top.') }}
+				</p>
 			</div>
 		</div>
 

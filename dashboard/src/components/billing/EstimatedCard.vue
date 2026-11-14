@@ -29,12 +29,17 @@ defineEmits<{ open: []; openTiers: [] }>()
 const { forecast, currency } = useBillingOverview()
 const { activeTeam } = useSession()
 const { canManageBilling } = useCapabilities()
-const { current: tierCurrent } = useSpendingLimits()
+const {
+	current: tierCurrent,
+	spendingLimit: limit,
+	runningMonthly: running,
+} = useSpendingLimits()
 
 const loading = computed(() => forecast.loading && !forecast.data)
 const fc = computed(() => forecast.data)
 // The headline is what the cycle will cost with tax, the same figure the card is
-// charged. The spend limit and the budget alert compare the amount before tax.
+// charged. The budget alert compares the cycle before tax; the spending limit is
+// compared with what runs now, the figure the server-create check uses.
 const projected = computed(() => Number(fc.value?.projected_total ?? 0))
 const taxAmount = computed(() => Number(fc.value?.tax_amount ?? 0))
 const subtotal = computed(() => Number(fc.value?.subtotal ?? 0))
@@ -54,18 +59,17 @@ const cycleLabel = computed(() => {
 	return __('{0} cycle · {1} – {2}', range)
 })
 
-const limit = computed(() => Number(tierCurrent.value?.max_spend ?? 0))
-const scale = computed(() => Math.max(subtotal.value, limit.value))
+const scale = computed(() => Math.max(running.value, limit.value))
 
 const percentOf = (amount: number): string =>
 	`${scale.value ? (amount / scale.value) * 100 : 0}%`
 
 const withinLimit = computed(() =>
-	limit.value ? Math.min(subtotal.value, limit.value) : subtotal.value,
+	limit.value ? Math.min(running.value, limit.value) : running.value,
 )
 
 const overLimit = computed(() =>
-	limit.value ? Math.max(0, subtotal.value - limit.value) : 0,
+	limit.value ? Math.max(0, running.value - limit.value) : 0,
 )
 
 // ── Billing alert (spend-alert threshold) ────────────────────────────────────
@@ -235,6 +239,26 @@ const saveBudgetAlertErrorTitle = __("Couldn't save the budget alert")
 			</div>
 
 			<div class="flex flex-col gap-2">
+				<div
+					class="flex flex-wrap justify-between gap-x-3 gap-y-1 text-sm text-ink-gray-6"
+				>
+					<span>
+						<TranslatedText
+							:text="__('Servers running: {0} a month before tax')"
+						>
+							<template #0>
+								<span class="tabular-nums text-ink-gray-9"
+									>{{ money(running, currency) }}</span
+								>
+							</template>
+						</TranslatedText>
+					</span>
+
+					<span v-if="overLimit" class="tabular-nums text-ink-amber-6">
+						{{ __('{0} over the limit', [money(overLimit, currency)]) }}
+					</span>
+				</div>
+
 				<div class="relative h-2 overflow-hidden rounded-2 bg-surface-gray-2">
 					<div
 						class="absolute inset-y-0 left-0 bg-surface-gray-10 transition-[width] duration-300"
@@ -253,11 +277,11 @@ const saveBudgetAlertErrorTitle = __("Couldn't save the budget alert")
 					/>
 				</div>
 
-				<div
-					class="flex flex-wrap justify-between gap-x-3 gap-y-1 text-sm text-ink-gray-6"
-				>
+				<div class="text-sm text-ink-gray-6">
 					<span v-if="limit">
-						<TranslatedText :text="__('Spend limit {0} before tax on {1}')">
+						<TranslatedText
+							:text="__('Spending limit {0} on the {1}. Taxes are added on top.')"
+						>
 							<template #0>
 								<span class="tabular-nums text-ink-gray-9"
 									>{{ money(limit, currency) }}</span
@@ -280,13 +304,8 @@ const saveBudgetAlertErrorTitle = __("Couldn't save the budget alert")
 						class="text-ink-gray-9 underline underline-offset-[3px]"
 						@click="$emit('openTiers')"
 					>
-						{{ __('Spend limits') }}
+						{{ __('Spending limits') }}
 					</button>
-
-					<span v-if="overLimit" class="text-ink-amber-6">
-						<span class="tabular-nums">{{ money(overLimit, currency) }}</span>
-						{{ __('over limit') }}
-					</span>
 				</div>
 			</div>
 		</template>
