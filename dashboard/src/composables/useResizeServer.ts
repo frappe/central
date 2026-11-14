@@ -354,7 +354,7 @@ export function useResizeServer(
 			return 'The price could not be loaded. Please try again.'
 		if (available.value != null && targetPrice.value > available.value)
 			return __(
-				'This size is over your spending limit, including retained storage. This server can cost up to {0} a month, before tax.',
+				'This size is over your spending limit, including retained storage. Up to {0} a month fits, before tax.',
 				[
 					money(available.value, currency.value || 'USD', {
 						trimTrailingZeros: true,
