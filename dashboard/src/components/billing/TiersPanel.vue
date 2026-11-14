@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { LoadingText } from 'frappe-ui'
+import { computed } from 'vue'
 import ContactSupportLink from '@/components/common/ContactSupportLink.vue'
 import SideSheet from '@/components/common/SideSheet.vue'
 import Table from '@/components/common/Table.vue'
@@ -12,12 +13,14 @@ const open = defineModel<boolean>('open', { default: false })
 const {
 	tier,
 	currency,
+	current,
 	levels,
 	nextLevel,
 	record,
 	requirementsFor,
 	spendingLimit,
 	runningMonthly,
+	limitKnown,
 	limitFailed,
 } = useSpendingLimits()
 
@@ -26,6 +29,14 @@ const columns = [
 	{ key: 'requirements', label: 'To qualify' },
 	{ key: 'limit', label: 'Limit' },
 ]
+
+// A manual limit with no tier has no ladder row, so it is shown on its own.
+const limitWithoutTier = computed(
+	() => limitKnown.value && !current.value && spendingLimit.value > 0,
+)
+
+const formatMoney = (amount: number) =>
+	money(amount, currency.value, { trimTrailingZeros: true })
 
 type Level = (typeof levels.value)[number]
 
@@ -54,12 +65,28 @@ const requirementText = (level: TierLevel) =>
 			{{ __("Couldn't load your spending limit.") }}
 		</p>
 
-		<p v-else-if="!levels.length" class="p-5 text-p-sm text-ink-gray-5">
-			Spending tiers aren't configured yet.
-		</p>
-
 		<template v-else>
-			<Table flush :columns="columns" :rows="levels" :row-class="rowClass">
+			<p
+				v-if="limitWithoutTier"
+				class="border-b border-outline-gray-1 p-5 text-p-sm text-ink-gray-7"
+			>
+				{{ __('Your spending limit is {0}, set for your team. {1} running now.', [
+						formatMoney(spendingLimit),
+						formatMoney(runningMonthly),
+					]) }}
+			</p>
+
+			<p v-if="!levels.length" class="p-5 text-p-sm text-ink-gray-5">
+				Spending tiers aren't configured yet.
+			</p>
+
+			<Table
+				v-else
+				flush
+				:columns="columns"
+				:rows="levels"
+				:row-class="rowClass"
+			>
 				<template #tier="{ row }">
 					<span class="flex items-center gap-2">
 						<span

@@ -32,6 +32,9 @@ export function useSpendingLimits() {
 	const limitKnown = computed(() => Boolean(tier.data))
 	const limitFailed = computed(() => Boolean(tier.error) && !tier.data)
 	const nextLevel = computed(() => tier.data?.next ?? null)
+	const hasActiveMethod = computed(() =>
+		(methods.data ?? []).some((method) => method.status === 'Active'),
+	)
 
 	const payingSince = computed(() => {
 		const firstPaidAt = progress.value?.first_paid_at
@@ -111,13 +114,10 @@ export function useSpendingLimits() {
 		const paid = Number(progress.value?.paid_invoices ?? 0)
 		const cumulative = Number(progress.value?.cumulative_paid ?? 0)
 		if (level.sequence <= 0) {
-			const hasChargeableMethod = (methods.data ?? []).some(
-				(method) => method.status === 'Active',
-			)
 			return [
 				{
 					text: 'Card or prepaid credits',
-					met: hasChargeableMethod || Number(credit.data?.balance ?? 0) > 0,
+					met: hasActiveMethod.value || Number(credit.data?.balance ?? 0) > 0,
 				},
 			]
 		}
@@ -175,6 +175,7 @@ export function useSpendingLimits() {
 		limitKnown,
 		limitFailed,
 		nextLevel,
+		hasActiveMethod,
 		limitRatio,
 		resourcesUsed,
 		resourceRatio,

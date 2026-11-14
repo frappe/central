@@ -17,6 +17,7 @@ const {
 	spendingLimit,
 	runningMonthly,
 	limitFailed,
+	hasActiveMethod,
 	nextLevel,
 	limitRatio,
 	resourcesUsed,
@@ -31,6 +32,13 @@ const { canManageBilling } = useCapabilities()
 
 const loading = computed(() => tier.loading && !tier.data)
 const nearLimit = computed(() => limitRatio.value >= 0.8)
+// A manual limit applies even when the team has no tier yet.
+const hasLimit = computed(
+	() => Boolean(current.value) || spendingLimit.value > 0,
+)
+const setupLabel = computed(() =>
+	complete.value ? 'Add payment method' : 'Add billing details',
+)
 
 const showAddMethod = ref(false)
 
@@ -57,11 +65,19 @@ const startFirstTier = () => {
 
 			<LoadingText v-if="loading" :lines="2" />
 
-			<p v-else-if="limitFailed" class="text-p-sm text-ink-gray-6">
-				{{ __("Couldn't load your spending limit.") }}
-			</p>
+			<div v-else-if="limitFailed" class="flex flex-col items-start gap-3">
+				<p class="text-p-sm text-ink-gray-6">
+					{{ __("Couldn't load your spending limit.") }}
+				</p>
+				<Button
+					v-if="canManageBilling && !hasActiveMethod"
+					variant="solid"
+					:label="setupLabel"
+					@click="startFirstTier"
+				/>
+			</div>
 
-			<div v-else-if="!current" class="flex flex-col items-start gap-3">
+			<div v-else-if="!hasLimit" class="flex flex-col items-start gap-3">
 				<p class="text-p-sm text-ink-gray-6">
 					Add a payment method to start on the
 					{{ levels[0]?.tier }}
@@ -71,7 +87,7 @@ const startFirstTier = () => {
 				<Button
 					v-if="canManageBilling"
 					variant="solid"
-					:label="complete ? 'Add payment method' : 'Add billing details'"
+					:label="setupLabel"
 					@click="startFirstTier"
 				/>
 			</div>
@@ -111,13 +127,13 @@ const startFirstTier = () => {
 						/>
 					</div>
 
-					<template v-if="current.max_resource_count != null">
+					<template v-if="current?.max_resource_count != null">
 						<span class="text-sm text-ink-gray-5">Resources</span>
 
 						<span class="text-base-medium tabular-nums text-ink-gray-9">
 							{{ resourcesUsed }}
 							<span class="text-ink-gray-5"
-								>of {{ current.max_resource_count }}</span
+								>of {{ current?.max_resource_count }}</span
 							>
 						</span>
 

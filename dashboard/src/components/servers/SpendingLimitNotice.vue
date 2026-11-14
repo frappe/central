@@ -25,7 +25,9 @@ const availableLabel = computed(() =>
 		class="rounded-6 border border-outline-gray-2 bg-surface-gray-1 px-4 py-3"
 	>
 		<p class="text-p-sm-medium text-ink-gray-8">
-			{{ __("You've reached your spending limit") }}
+			{{ (available ?? 0) > 0
+					? __('No plan fits your spending limit')
+					: __("You've reached your spending limit") }}
 		</p>
 		<p class="mt-1 text-p-sm text-ink-gray-5">
 			<TranslatedText
