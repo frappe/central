@@ -3,12 +3,14 @@ import json
 import frappe
 from frappe import _
 
+from central.infrastructure.doctype.deploy_app.deploy_app import DeployApp
 from central.infrastructure.doctype.github_deploy_app_installation.github_deploy_app_installation import (
 	GitHubDeployAppInstallation,
 )
 from central.integrations.github import GitHubDeployApp
 
 DELIVERY_TTL_SECONDS = 24 * 60 * 60
+BRANCH_REF_PREFIX = "refs/heads/"
 
 
 # nosemgrep: guest-whitelisted-method -- the state binds the callback to the user who started it.
@@ -35,7 +37,7 @@ def oauth_callback(
 # nosemgrep: guest-whitelisted-method -- the HMAC signature authenticates GitHub.
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 def webhook() -> None:
-	"""Events of the deploy App. Each delivery is handled once; for now events are only logged."""
+	"""Events of the deploy App. Each delivery is handled once; a push logs the apps it would deploy."""
 	body = frappe.request.get_data()
 	if not GitHubDeployApp().is_valid_webhook_signature(
 		body, frappe.get_request_header("X-Hub-Signature-256")
@@ -50,15 +52,28 @@ def webhook() -> None:
 	if not frappe.cache.set(key, 1, nx=True, ex=DELIVERY_TTL_SECONDS):
 		return
 
+	event = frappe.get_request_header("X-GitHub-Event")
 	payload = json.loads(body)
 	frappe.logger("github_deploy").info(
 		{
 			"delivery": delivery,
-			"event": frappe.get_request_header("X-GitHub-Event"),
+			"event": event,
 			"action": payload.get("action"),
 			"installation_id": payload.get("installation", {}).get("id"),
 			"repository": payload.get("repository", {}).get("full_name"),
 			"ref": payload.get("ref"),
 			"after": payload.get("after"),
+			"deploy_apps": get_deploy_apps(payload) if event == "push" else [],
 		}
+	)
+
+
+def get_deploy_apps(push: dict) -> list[str]:
+	"""The apps a push deploys. A tag push or a deleted branch deploys nothing."""
+	ref = push.get("ref", "")
+	if not ref.startswith(BRANCH_REF_PREFIX) or push.get("deleted"):
+		return []
+
+	return DeployApp.get_for_push(
+		str(push["installation"]["id"]), str(push["repository"]["id"]), ref.removeprefix(BRANCH_REF_PREFIX)
 	)

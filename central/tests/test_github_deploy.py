@@ -7,7 +7,12 @@ import frappe
 from frappe.tests import IntegrationTestCase
 
 from central.api.integrations.github_deploy import webhook
+from central.infrastructure.doctype.github_connection.test_github_connection import make_team
+from central.infrastructure.doctype.github_deploy_app_installation.test_github_deploy_app_installation import (
+	make_installation,
+)
 from central.integrations.github import GitHubApp, GitHubDeployApp
+from central.tests.test_iam import ensure_user
 
 PUSH = {
 	"ref": "refs/heads/main",
@@ -38,8 +43,8 @@ class IntegrationTestGitHubDeploy(IntegrationTestCase):
 		self.settings.start()
 		self.addCleanup(self.settings.stop)
 
-	def deliver(self, delivery: str, secret: bytes = b"deploy-secret") -> MagicMock:
-		body = json.dumps(PUSH).encode()
+	def deliver(self, delivery: str, secret: bytes = b"deploy-secret", payload: dict = PUSH) -> MagicMock:
+		body = json.dumps(payload).encode()
 		headers = {
 			"X-Hub-Signature-256": "sha256=" + hmac.new(secret, body, hashlib.sha256).hexdigest(),
 			"X-GitHub-Delivery": delivery,
@@ -72,3 +77,28 @@ class IntegrationTestGitHubDeploy(IntegrationTestCase):
 	def test_a_push_signed_with_another_secret_is_refused(self):
 		with self.assertRaises(frappe.AuthenticationError):
 			self.deliver(frappe.generate_hash(), secret=b"pilot-secret")
+
+	def test_a_push_to_a_deployed_branch_names_its_apps(self):
+		team = make_team("GitHub Deploy Push Team", ensure_user("github.deploy.push@example.test"))
+		app = frappe.get_doc(
+			{
+				"doctype": "Deploy App",
+				"team": team,
+				"installation": make_installation(team).name,
+				"repository": "octo/app",
+				"repository_id": "11",
+				"branch": "main",
+			}
+		).insert()
+
+		log = self.deliver(frappe.generate_hash())
+		self.assertEqual(log.call_args.args[0]["deploy_apps"], [app.name])
+
+		tag = {**PUSH, "ref": "refs/tags/main"}
+		self.assertEqual(
+			self.deliver(frappe.generate_hash(), payload=tag).call_args.args[0]["deploy_apps"], []
+		)
+		deleted = {**PUSH, "deleted": True}
+		self.assertEqual(
+			self.deliver(frappe.generate_hash(), payload=deleted).call_args.args[0]["deploy_apps"], []
+		)
