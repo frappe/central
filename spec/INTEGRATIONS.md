@@ -394,6 +394,8 @@ Each minute, `central.integrations.metrics.publish_metrics` sends gauges to the 
 
 The rules in `beacon/rules/` read these gauges, and the runbooks in `beacon/runbooks/` tell the responder what to do.
 
+Two SLOs in `beacon/services/` read the same data. `dashboard-api` counts the requests that did not fail with 5xx. `server-actions` counts the finished create, start, stop, restart and resize actions that succeeded. Both are global, so in Beacon set their Query Region to the Central Telemetry Region.
+
 ## How do rename, routes, and TLS work?
 
 Central calls the Pilot Admin API for renames.
