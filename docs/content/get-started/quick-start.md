@@ -7,6 +7,10 @@ description: Sign up, create a Frappe server, and open your first site.
 
 This guide shows how to create a server with Pilot and open your first site. It takes about 10 minutes.
 
+::: info
+To move a site from the earlier Frappe Cloud, read [Migrate a site from Frappe Cloud Classic](/migrate/classic).
+:::
+
 ## Before you begin
 
 - A work email address. Frappe Cloud signs you in with a code that it sends to this address. There is no password.

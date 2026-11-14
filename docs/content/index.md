@@ -18,6 +18,7 @@ Get a server of your own in the region you choose. Run Frappe apps on it with Pi
 
 <Cards>
 <Card title="Quick start" link="/get-started/quick-start" icon="lucide-rocket">Create a server and open your first site.</Card>
+<Card title="Migrate from Frappe Cloud Classic" link="/migrate/classic" icon="lucide-arrow-right-left">Move a site from the earlier Frappe Cloud to a server of your own.</Card>
 <Card title="How Frappe Cloud works" link="/get-started/how-it-works" icon="lucide-layers">Servers, Pilot, benches, and sites in one picture.</Card>
 <Card title="Servers" link="/servers/" icon="lucide-server">Create, connect to, and manage your servers.</Card>
 <Card title="Pilot" link="/pilot/" icon="lucide-plane">Manage benches, sites, and apps inside a server.</Card>
@@ -30,10 +31,11 @@ Get a server of your own in the region you choose. Run Frappe apps on it with Pi
 | [Servers](/servers/) | [Create a server](/servers/create), [connect with SSH](/servers/access), [set firewall rules](/servers/networking), and [take snapshots](/servers/snapshots). |
 | [Apps](/apps/) | Create a [Redis](/apps/redis), [MariaDB](/apps/mariadb), or [Prometheus and Grafana](/apps/prometheus-and-grafana) server. |
 | [Pilot](/pilot/) | Manage [benches](/pilot/benches), [sites](/pilot/sites), [apps](/pilot/apps), [domains](/pilot/domains), and [backups](/pilot/backups). |
+| [Services](/services/object-storage) | Keep files in [Object Storage](/services/object-storage) and call AI models with [LLM](/services/llm). |
 | [Team and access](/team/members) | [Invite members](/team/members) and give each one a [role](/team/roles). |
 | [Billing](/billing/) | Add a [payment method](/billing/payment-methods), read [invoices](/billing/invoices), and see your [spend limit](/billing/limits). |
 | [Account](/account/profile) | Change your [profile and theme](/account/profile) and choose your [notifications](/account/notifications). |
 
 ## Get help
 
-Read [Troubleshooting](/help/troubleshooting) for fixes to common problems.
+Read [Troubleshooting](/help/troubleshooting) for fixes to common problems. To send a ticket, read [Contact support](/help/support).

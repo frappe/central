@@ -89,8 +89,13 @@ A server can use more than one ruleset. The server then allows what any of its r
 
 1. Open **Settings**, then click **Firewall rulesets**.
 2. Click **Add ruleset**. Type a **Name**, change the rules, then click **Create ruleset**.
+
+<Screenshot name="servers/firewall-rulesets" alt="The Firewall rulesets page in Settings. The rulesets Base and Monitoring show their number of rules and the number of servers that use them." />
+
 3. Open the **Networking** tab of a server. In **Firewall**, click **Apply ruleset**.
 4. Select the checkbox of each ruleset the server must use. Click a name to see its rules. Then click **Apply**.
+
+<Screenshot name="servers/apply-ruleset" alt="The Apply rulesets dialog. The Base ruleset is selected in the list of rulesets and built-in rules. The right side shows the incoming and outgoing rules that the server gets." />
 
 The server now shows the rules of its rulesets, and each rule shows the ruleset it comes from. You cannot change these rules on the server.
 

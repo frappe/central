@@ -90,7 +90,7 @@ Use this to move a site to Frappe Cloud, or to copy data between sites.
 | **Upload files** | The backup files from your computer. The database file usually ends in `.sql.gz`. The files archives end in `-files.tar` and `-private-files.tar`. |
 | **Other site** | A site on the same bench. |
 | **Remote site** | The address and **Administrator password** of a Frappe site on another host. Click **Get backups**, then select a **Backup**. |
-| **Frappe Cloud v1** | The address of a site on Frappe Cloud v1. Click **Connect**. Click **Open Frappe Cloud** and type the pass code there to allow access. Then select a backup, or click **Take new backup**. |
+| **Frappe Cloud v1** | The address of a site on Frappe Cloud Classic. Read [Migrate a site from Frappe Cloud Classic](/migrate/classic). |
 
 Select **Skip failing patches** if the backup comes from an older version and a database patch fails during the restore.
 
