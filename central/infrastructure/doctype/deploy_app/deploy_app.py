@@ -102,3 +102,4 @@ def find_repository(app: GitHubDeployApp, team: str, repository: str) -> tuple[D
 
 def on_doctype_update() -> None:
 	frappe.db.add_unique("Deploy App", ["team", "repository_id", "branch"])
+	frappe.db.add_index("Deploy App", ["installation", "repository_id", "branch"])

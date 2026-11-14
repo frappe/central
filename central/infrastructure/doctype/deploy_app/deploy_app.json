@@ -66,8 +66,7 @@
    "label": "Repository ID",
    "description": "GitHub's ID, which stays the same when the repository is renamed or transferred.",
    "read_only": 1,
-   "reqd": 1,
-   "search_index": 1
+   "reqd": 1
   }
  ],
  "index_web_pages_for_search": 0,

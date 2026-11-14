@@ -130,3 +130,4 @@ def state_key(state: str) -> str:
 
 def on_doctype_update() -> None:
 	frappe.db.add_unique("GitHub Deploy App Installation", ["team", "installation_id"])
+	frappe.db.add_index("GitHub Deploy App Installation", ["installation_id", "status"])
