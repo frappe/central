@@ -450,6 +450,8 @@ def begin_resize(
 	is_live = _is_live_for_resize(server)
 	_require_resize_target(doc, server, plan, includes, sub_category)
 	target = _resize_target(doc, plan, includes, sub_category, disk_gigabytes)
+	if not target.plan:
+		get_resize_profile(doc, target.sub_category, target.preset_plan)
 	shape = _plan_resize(doc, server, target.plan, target.includes, target.sub_category, target.override_rate)
 	if shape is None:
 		return {"queued": False, "resized": False}  # same config — nothing to do
@@ -736,6 +738,15 @@ def _preset_plus_disk_rate(doc, plan: str, disk_gigabytes) -> float | None:
 	return base + extra * frappe.utils.flt(resolve_component_rate("Disk", currency, cluster) or 0)
 
 
+def get_resize_profile(doc, sub_category: str | None, preset_plan: str | None) -> str | None:
+	"""The optimisation profile of a composed resize target. A preset with another disk keeps
+	the preset's own CPU and memory, so a plan family without profiles can still resize."""
+	profile = sub_category or doc.sub_category
+	if not profile and not preset_plan:
+		frappe.throw(frappe._("A composed config needs an optimisation profile."))
+	return profile
+
+
 def resize_composed_subscription(
 	subscription: str,
 	includes: list,
@@ -759,9 +770,7 @@ def resize_composed_subscription(
 	if not _is_resizable(doc):
 		return None
 
-	profile = sub_category or doc.sub_category
-	if not profile:
-		frappe.throw(frappe._("A composed config needs an optimisation profile."))
+	profile = get_resize_profile(doc, sub_category, preset_plan)
 
 	rows = [dict(r) for r in includes]
 	from central.billing.catalog.composition import composition_quantities, validate_shape_rows
@@ -834,7 +843,7 @@ def get_plan_shape(plan: str) -> dict:
 
 
 def _validate_resize_shape(
-	profile: str, rows: list, server_id: str | None, preset_plan: str | None = None
+	profile: str | None, rows: list, server_id: str | None, preset_plan: str | None = None
 ) -> None:
 	"""Validate a resize shape. A disk the server already has may sit below the
 	profile minimum. CPU and memory the server runs now, or that `preset_plan` sells,
@@ -870,9 +879,11 @@ def _is_same_compute(quantities: dict, current) -> bool:
 	return same_vcpus and frappe.utils.flt(quantities.get(MEMORY, 0)) == memory_gigabytes
 
 
-def _validate_resize_disk(profile: str, server_id: str, new_disk: float) -> None:
+def _validate_resize_disk(profile: str | None, server_id: str, new_disk: float) -> None:
 	"""The disk checks alone: no shrink, and no more than the profile maximum."""
 	_guard_disk_shrink(server_id, {"disk_gigabytes": int(new_disk)})
+	if not profile:
+		return
 	disk_max = frappe.utils.flt(frappe.db.get_value("Plan Sub-Category", profile, "disk_max"))
 	if disk_max and new_disk > disk_max:
 		frappe.throw(
