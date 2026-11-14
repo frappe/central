@@ -156,7 +156,9 @@ const matchingPreset = computed<Plan | null>(() => {
 					v-else-if="priceFor(plan)! > available"
 					class="mt-1 text-p-sm text-ink-gray-5"
 				>
-					Over your spending limit
+					{{ __('Over your spending limit. Up to {0} a month fits, before tax.', [
+							money(available, currency, { trimTrailingZeros: true }),
+						]) }}
 				</span>
 				<span
 					v-else-if="omitDisk && currentDisk != null && currentDisk > planQuantity(plan, 'Disk')"
@@ -210,6 +212,7 @@ const matchingPreset = computed<Plan | null>(() => {
 				:profiles="[profile]"
 				:rate-card="rateCard"
 				:available="available"
+				:currency="currency"
 				:capacity="capacity"
 				:initial="initial"
 				:hide-disk="omitDisk"

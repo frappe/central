@@ -180,6 +180,10 @@ export interface TrustTier {
 	current: TierLevel | null
 	next: TierLevel | null
 	is_top_tier: boolean
+	/** The limit the server-create check uses, with any manual override. */
+	spending_limit: number
+	/** Monthly cost before tax of everything running now. */
+	running_monthly: number
 	progress: {
 		resources_used: number
 		paid_invoices: number

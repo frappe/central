@@ -32,12 +32,12 @@ You do not need to pay a normal invoice by hand. See [Invoices](/billing/invoice
 
 The panel at the top of **Billing > Overview** shows the current cycle.
 
-<Screenshot name="billing/summary" alt="The billing summary: October cycle, 650.58 dollars so far, bills in 7 days, a spend limit of 12,048.19 dollars on the t3 tier, and the next payment, wallet, payment method, and next invoice date" />
+<Screenshot name="billing/summary" alt="The billing summary: October cycle, 650.58 dollars so far, bills in 7 days, what the servers running cost a month before tax against a spending limit of 12,048.19 dollars on the t3 tier, and the next payment, wallet, payment method, and next invoice date" />
 
 | Item | Meaning |
 | --- | --- |
 | Cycle and amount | The projected total for this cycle with tax, and the days until it is billed. Below it are the amount before tax and the tax. Click **See breakdown** to see each line. |
-| Spend limit | The most your team can spend in one cycle on its current tier. Click the tier to see all tiers. See [Credits and spend limits](/billing/limits). |
+| Running now and spending limit | What everything your team runs now costs a month before tax, against your spending limit. This line is separate from the cycle amount above it, which includes tax. Taxes are added on top of the limit. Click the tier to see all tiers. See [Credits and spend limits](/billing/limits). |
 | Due now | The amount of your unpaid invoices. This row shows only when an invoice is unpaid. |
 | Payment in progress | The date Frappe Cloud started a charge that your bank has not confirmed yet. This row shows from the day of the charge until the bank confirms or refuses the payment, or until the suspension date. |
 | Next retry | The date Frappe Cloud tries the payment again. This row shows only after a payment date passes and the invoice is not paid. |
@@ -74,7 +74,8 @@ The **Spend** card shows what your team was invoiced in the last 3, 6, or 12 mon
 <Screenshot name="billing/spend" alt="The Spend card with 12 months of invoiced amounts, the totals for invoiced, monthly average, paid by credits, and tax, and the spend by product" />
 
 - The top row shows the total invoiced, the monthly average, the amount paid by credits, and the tax.
-- The dark bars are invoiced months. The light bar is the current cycle. The bars and the spend limit line are before tax. Taxes are added on top.
+- The dark bars are invoiced months. The light bar is the current cycle. The bars are before tax. Taxes are added on top.
+- The chart shows spend history only. To compare what you run with your spending limit, see the summary panel or the **Limits** card.
 - **By product** splits the total, such as servers and AI tokens.
 - Click the download icon to export the data as a CSV file.
 
@@ -82,7 +83,7 @@ The **Spend** card shows what your team was invoiced in the last 3, 6, or 12 mon
 
 | Card | Use it to |
 | --- | --- |
-| **Limits** | See your tier, your spend this cycle against the limit, and your resource count. |
+| **Limits** | See your tier, what everything your team runs costs a month before tax against your spending limit, and your resource count. |
 | **Subscriptions** | See each server and service you pay for and its cost this cycle. |
 | **Breakdown** | See what the team was invoiced by product and by region for the chosen period. |
 
