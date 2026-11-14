@@ -3,6 +3,7 @@ from datetime import datetime
 from unittest.mock import patch
 
 import frappe
+import requests
 from frappe.tests import IntegrationTestCase
 
 from central.integrations.datum import CURSOR_KEY, ErrorLogPublisher, to_log_line
@@ -50,3 +51,20 @@ class TestErrorLogPublisher(IntegrationTestCase):
 			ErrorLogPublisher("any").publish()
 
 		post.assert_not_called()
+
+	def test_a_failed_first_push_keeps_the_first_cursor(self) -> None:
+		frappe.cache.delete_value(CURSOR_KEY)
+		self.addCleanup(frappe.cache.delete_value, CURSOR_KEY)
+		frappe.log_error("Central telemetry first push test")
+		with (
+			patch("central.integrations.datum.get_telemetry_base_url", return_value="https://datum.test"),
+			patch("central.integrations.datum.region_id_of", return_value=1),
+			patch("central.integrations.datum.mint_datum_token", return_value="token"),
+			patch("central.integrations.datum.requests.post", side_effect=requests.ConnectionError("down")),
+		):
+			ErrorLogPublisher("any").publish()
+			first_cursor = frappe.cache.get_value(CURSOR_KEY)
+			ErrorLogPublisher("any").publish()
+
+		self.assertTrue(first_cursor)
+		self.assertEqual(frappe.cache.get_value(CURSOR_KEY), first_cursor)
