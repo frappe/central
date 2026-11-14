@@ -87,7 +87,9 @@ pilot --yes -b docs-pilot install-app erp.bom.frappe.cloud erpnext
 pilot --yes -b docs-pilot install-app chat.bom.frappe.cloud raven
 ```
 
-In `docs-pilot/bench.toml`, set `onboarding = "dismissed"` and `allow_developer_mode = true` under `[bench]`. Run `pilot admin build` once, so the Admin UI is current. The Pilot Admin is at `http://localhost:7003` with the password `Docs@2026`. It allows 5 sign-ins a minute.
+In `docs-pilot/bench.toml`, set `onboarding = "dismissed"` and `allow_developer_mode = true` under `[bench]`. Run `pilot admin build` once, so the Admin UI is current. The Pilot Admin is at the `port` under `[admin]` in `bench.toml`, with the password `Docs@2026`. The capture expects `http://localhost:7003`. For another port, set `DOCS_PILOT_URL`, such as `DOCS_PILOT_URL=http://localhost:7004 node capture/run.mjs migrate/`. It allows 5 sign-ins a minute.
+
+If the web process stops with `--dev needs watchdog`, install it: `uv pip install --python <benches>/docs-pilot/env/bin/python watchdog`.
 
 Back up each site once from its **Backups** tab, so the **Tasks** page has entries. Do not add SSH keys in this Pilot, because Pilot writes them to the host user's `authorized_keys`.
 
@@ -118,6 +120,10 @@ export default [
 
 The frame is the same for every file: a theme gradient, 28 px padding, a 10 px radius, an edge line, and a soft shadow. Capture both themes from one scene, never by hand.
 
+`capture/services.mjs` answers the console reads that come from a remote service: Object Storage, LLM, the support desk, and GitHub. The buckets, models, keys, tickets, and repositories in those screenshots are demo values.
+
+`capture/scenes/migrate.mjs` stands in for Frappe Cloud Classic, so the restore dialog shows a pass code and a list of backups without a Classic site.
+
 `capture/fixtures.mjs` answers the reads that differ from a real Frappe Cloud server. In the console, these are server metrics and the image list, which need a live region. In Pilot, these are storage (scoped to the bench's own databases), domains and their DNS records, wildcard domains, and SSH keys. A failed scene does not stop the run, and the run exits with an error at the end.
 
 ## Writing
@@ -144,6 +150,7 @@ End every page with **See also** (3 to 5 links) or **What next** (a bold link an
 - Write values, commands, states, and hostnames in `code`.
 - Use sentence case for headings. A task heading is a verb phrase: "Take a snapshot". A concept heading is a noun: "Regions".
 - Use one term for one thing: server (not VM, instance, or machine) in the console pages. Define a term once and link to it.
+- Call the earlier Frappe Cloud "Frappe Cloud Classic". Write **Frappe Cloud v1** only for the label in Pilot.
 - State limits as facts with numbers. Do not write "may", "might", "simply", "just", or "easy".
 - Put the consequence before an irreversible step: "This deletes the disk. You cannot undo this."
 - Use at most 2 callouts on a page: `::: info` for a role or plan condition, `::: warning` for data loss or cost.

@@ -72,6 +72,8 @@ def seed() -> dict:
 	servers = _servers(team, keys)
 	_sites(team, servers)
 	_snapshots(team, servers, owner)
+	_activity(team, servers)
+	_firewall_rulesets(team)
 	_invitations(team, owner)
 	return {"team": team, "sign_in": owner, "password": PASSWORD, "servers": len(servers)}
 
@@ -103,6 +105,14 @@ def _settings() -> None:
 			"enable_firewall": 1,
 			"enable_public_ipv4": 1,
 			"enable_public_ipv6": 1,
+			"enable_addons": 1,
+			"enable_object_storage_service": 1,
+			"enable_llm_service": 1,
+			# The capture answers every Helpdesk and GitHub read, so these only switch the screens on.
+			"helpdesk_url": "https://support.contrail.example",
+			"helpdesk_api_key": "docs-demo",
+			"helpdesk_api_secret": "docs-demo",
+			"articles_enabled": 1,
 		}
 	)
 	settings.save(ignore_permissions=True)
@@ -363,6 +373,78 @@ def _snapshots(team: str, servers: list[dict], owner: str) -> None:
 			}
 		)
 		document.db_insert()
+
+
+# (hours ago, event, category, capability, first name of the person, changes)
+ACTIVITY = [
+	(-2, "server.ssh_console_opened", "access", "server:console", "Kofi", None),
+	(
+		-5,
+		"server.updated",
+		"configuration",
+		"server:view",
+		"Zara",
+		[{"label": "Termination protection", "from": "Off", "to": "On"}, {"label": "Firewall rules"}],
+	),
+	(
+		-26,
+		"server.resized",
+		"action",
+		"server:view",
+		"Zara",
+		[{"label": "Plan", "from": "2 vCPU · 4 GB RAM", "to": "4 vCPU · 8 GB RAM"}],
+	),
+	(-27, "server.restarted", "action", "server:view", "Ines", None),
+	(-52, "server.ssh_keys_changed", "access", "server:ssh-key", "Kofi", None),
+	(-98, "server.restarted", "action", "server:view", "Ines", None),
+]
+
+
+def _activity(team: str, servers: list[dict]) -> None:
+	"""Give the production server a history of actions by named people."""
+	server = next(row["name"] for row in servers if row["title"] == "erp-production")
+	frappe.db.delete("Activity Event", {"server": server, "actor": ["is", "set"]})
+	for hours, event, category, capability, first_name, details in ACTIVITY:
+		occurred_at = add_to_date(now_datetime(), hours=hours)
+		frappe.get_doc(
+			{
+				"doctype": "Activity Event",
+				"team": team,
+				"server": server,
+				"resource_type": "Virtual Machine",
+				"resource_name": server,
+				"resource_label": "erp-production",
+				"event": event,
+				"category": category,
+				"required_capability": capability,
+				"actor": f"{first_name.lower()}@{EMAIL_DOMAIN}",
+				"status": "Succeeded",
+				"details": frappe.as_json(details) if details else None,
+				"creation": occurred_at,
+				"modified": occurred_at,
+			}
+		).db_insert()
+
+
+RULESETS = {
+	"Base": [("tcp", "22"), ("tcp", "80"), ("tcp", "443")],
+	"Monitoring": [("tcp", "9100")],
+}
+
+
+def _firewall_rulesets(team: str) -> None:
+	"""Give the team two rulesets that no server uses yet."""
+	for name in frappe.get_all("Firewall Ruleset", {"team": team}, pluck="name"):
+		frappe.delete_doc("Firewall Ruleset", name, ignore_permissions=True)
+	for title, ports in RULESETS.items():
+		inbound = [
+			{"protocol": protocol, "ports": port, "cidrs": ["0.0.0.0/0", "::/0"]} for protocol, port in ports
+		]
+		outbound = [{"protocol": "any", "ports": "", "cidrs": ["0.0.0.0/0", "::/0"]}]
+		rules = {"inbound": inbound, "outbound": outbound}
+		frappe.get_doc({"doctype": "Firewall Ruleset", "team": team, "title": title, "rules": rules}).insert(
+			ignore_permissions=True
+		)
 
 
 def _invitations(team: str, owner: str) -> None:

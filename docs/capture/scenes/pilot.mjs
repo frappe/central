@@ -86,6 +86,15 @@ export default [
 			await page.getByText('hooks.py', { exact: true }).first().click()
 		},
 	},
+	{
+		// The page where Frappe Cloud asks which repositories a Pilot may read. It is part of the console.
+		name: 'pilot/github-connect',
+		path: '/github/connect/docs',
+		async setup(page) {
+			await page.getByText('contrail-coffee/roastery').click()
+			await page.getByText('contrail-coffee/loyalty').click()
+		},
+	},
 	{ app: 'pilot', name: 'pilot/settings-general', path: '/settings' },
 	{ app: 'pilot', name: 'pilot/ssh-keys', path: '/settings/security/ssh-keys' },
 ]
